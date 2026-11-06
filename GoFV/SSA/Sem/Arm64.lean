@@ -331,10 +331,11 @@ end GoFV.SSA.Sem.Arm64
 
 namespace GoFV.SSA.Sem.Arm64
 
-/-- Whether a register is zero (`CBZ`), for a pointer without an integer form whether it is nil
-(Phase 1's `IsNonNil`: such a pointer is never the address 0). -/
+/-- Whether a register is zero (`CBZ`); a pointer is zero when it is nil (Phase 1's `IsNonNil`):
+a pointer's register (`ptrReg`) is 0 exactly when it is nil, and a pointer without a register is
+never nil. -/
 def isZero : Val → Option Bool
-  | .ptr p => some (p.isNil || p.addr? == some 0)
+  | .ptr p => some p.isNil
   | v => (reg v).map (· == 0)
 
 /-- Whether the conditional arm64 block of kind `kind` (auxint `k`, control value `c`) takes its

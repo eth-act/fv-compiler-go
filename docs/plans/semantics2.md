@@ -178,16 +178,30 @@ through one lifting `liftW`, with these provenance cases taken first:
   `ADDshiftLL p i [s]`, which the addressing rules produce) with `p` a pointer and `i` an
   integer give the pointer `p + i` (Phase 1 `AddPtr`/`OffPtr`);
 - `SUB p q` of two pointers is Phase 1's `SubPtr`; `CMP p q`/`CMPconst [0] p` compare as
-  Phase 1's `EqPtr`/`IsNonNil` where those are defined (same block, or nil), and otherwise by
-  concrete addresses (`Ptr.addr?`);
-- any other op reads pointers as concrete words (`Ptr.addr?`; no address ⇒ `poison`), and its
-  64-bit integer result keeps its word at a pointer shape (Phase 1 §3.2: an integer is read back
-  as a pointer through `Ptr.ofAddr`).
+  Phase 1's `EqPtr`/`IsNonNil`: two registers by their words, a pointer without a register by
+  provenance (same block: by offset; else unequal);
+- any other op reads pointers as concrete words, and its 64-bit integer result keeps its word at
+  a pointer shape (Phase 1 §3.2: an integer is read back as a pointer through `Ptr.ofAddr`).
+
+A pointer's register (`Arm64.reg`, `Arm64.ptrReg`) is its concrete address `a` only when it is
+the pointer at that address (`Ptr.ofAddr a = p`; every `Ptr.convertible` pointer is,
+`Ptr.ofAddr_addr`); any other pointer (a global, a frame temporary, one outside its window or
+whose address wraps) has none (`poison` for an op that needs its bits). So pointers with a
+register have distinct registers and only nil has register 0, and Phase 1 reads an integer word
+`x` as `Ptr.ofAddr x`: `CMP`/`CMPconst [0]` are Phase 1's `EqPtr`/`IsNonNil`
+(`ARM64.rules:243,251,450`, #385). Without the gate a frame variable and the frame temporary of
+the same name share an address, and an out-of-window heap pointer can have address 0. `CBZ`'s
+zero test of a pointer is `Ptr.isNil` (`Arm64.isZero`).
 
 This inherits Phase 1's open points on concrete addresses (#156: out-of-window arithmetic, nil
 comparison by block, `Convert` round-trips). Lowered code adds one: an `ADD p i` whose `i` is
 itself a pointer (rare; `unsafe` code) is computed on words, the sum of the two addresses
 (`poison` if one has none), symmetrically, as `ADD` is `commutative` and cse swaps its operands.
+A provenance case moves the pointer by the other operand's whole register, which a narrow
+operand zero-extends, so `ADD <int32> p (MOVDconst <int32> [c])` (a `uintptr` held at `int64`
+after a truncation copy) and `ADDconst [c] p` move `p` by different amounts. The lowering
+validator therefore admits no word-shaped argument (the shapes such a pointer has, `Val.hasTy`)
+under one of these ops at a non-word shape (`Pat.argsOKLs`, `provOp`; `ARM64.rules:970`).
 
 **Pair accesses (#156, #385).** A pair load or store (`LDP`, `LDPW`, `LDPSW`, `FLDP{S,D,Q}`,
 `STP`, `STPW`, `FSTP{S,D,Q}`) of `n`-byte elements addresses element `i` as the single access

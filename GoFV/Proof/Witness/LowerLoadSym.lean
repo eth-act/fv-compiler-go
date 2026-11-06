@@ -1,8 +1,8 @@
 import GoFV.Proof.Witness.LowerStoreSym
 
 /-!
-# Witness functions for `lower` folding a global's or a frame variable's address into a load:
-`gld`, `fra`, `fr0` (hand-written, issue #385)
+# Witness functions for `lower` folding a global's or a frame variable's address, or an offset of
+the stack pointer, into a load: `gld`, `fra`, `fr0`, `spo` (hand-written, issue #385)
 
 `gld() int { return g[1] }` with a global `g [2]int` as `lower` sees it (one block: `v3 = Addr
 <*int> {g} v2` of `v2 = SB`, `v4 = OffPtr <*int> [8] v3`, `v5 = Load <int> v4 v1`, returned by `v6 =
@@ -28,7 +28,16 @@ no change (`addrFoldEv`: `v5` stays `ADDconst [0] v4`); the store and the load f
 through it (`frameAddr`: `MOVDstore {a} v2 v3 v1`, `MOVDload {a} v2 v6`), and `lower` deletes the
 dead `v4` and `v5`. Both return 7.
 
-By `lower_refines` every returning or panicking `run` of either is, up to refinement, a `runL` of
+`spo` stores 7 to the outgoing-arguments area (16 bytes: its tables describe a call with a stack
+argument at offset 8) and reads it back (one block: `v2 = SP`, `v3 =
+Const64 [7]`, `v4 = OffPtr <*int> [8] v2`, `v5 = Store {int} v4 v3 v1`, `v6 = Load <int> v4 v5`,
+returned by `v7 = MakeResult v6 v5`). `(OffPtr [off] ptr:(SP)) && is32Bit(off) => (MOVDaddr
+[int32(off)] ptr)` (305) makes `v4` `MOVDaddr [8] v2`, which the validator replays as no change
+(`spFoldEv`: `v4` stays `OffPtr [8] v2`); the store folds it as an offset (893, `stFold`: `MOVDstore
+[8] v2 v3 v1`), the load as the load of `v2` at 8 (856, `ldOffFold`: `MOVDload [8] v2 v5`), and
+`lower` deletes the dead `v4`. Both return 7.
+
+By `lower_refines` every returning or panicking `run` of each is, up to refinement, a `runL` of
 the result.
 -/
 
@@ -257,5 +266,93 @@ theorem fr0_lower :
     obtain ⟨-, h5, h6, h7, hl, -⟩ := h1
     exact ⟨out, rfl, hl, h5, h6, h7, GoFV.Proof.Low.lower_refines hc fr0_generic,
       fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc fr0_generic fr0_noFma hE hd⟩
+
+/-- The ABI of `spo`'s `AuxCall`: one `int` argument on the stack at offset 8. -/
+def spoABI : CallABI :=
+  { abi := 0, nin := 1, nout := 0, spillOff := 16, spillSize := 0, inRegs := 0, outRegs := 0,
+    params := #[{ out := false, index := 0, type := 2, name := none, regs := #[], offset := 8 }] }
+
+/-- The definition tables of `spo`: `fra`'s, and an `AuxCall` (aux 6, `spoABI`), so the
+outgoing-arguments area holds 16 bytes (`outargsSize`). -/
+def spoTabs : Tables :=
+  { fraTabs with
+    auxes := fraTabs.auxes.push (some
+      { fmt := GoStr.ofString "AuxCall{main.f}", kind := .call none (some spoABI) }) }
+
+/-- `spo`, the input of `lower`. -/
+def spoFunc : Func where
+  entry := 1
+  type := 1
+  ownAux := some 1
+  vidLast := 7
+  bidLast := 1
+  blocks := #[1]
+  blockTab := #[none, some (mkB 1 .Ret p0 #[7] #[] #[] #[1, 2, 3, 4, 5, 6, 7])]
+  valueTab := #[none,
+    some (mkV 1 .InitMem 28 none p0 1 #[] 1),
+    some (mkV 2 .SP 4 none p0 1 #[] 1),
+    some (mkVI 3 .Const64 2 7 none p0 1 #[] 1),
+    some (mkVI 4 .OffPtr 3 8 none p0 2 #[2] 1),
+    some (mkV 5 .Store 28 (some 5) p0 2 #[4, 3, 1] 1),
+    some (mkV 6 .Load 2 none p0 1 #[4, 5] 1),
+    some (mkV 7 .MakeResult 33 none p0 1 #[6, 5] 1)]
+  names := #[]
+  namedx := #[]
+  splits := #[]
+  canon := #[]
+  consts := #[]
+  freeValues := []
+  freeBlocks := []
+  cache := { lineStarts := some #[] }
+
+/-- The pass environment of `lower` on `spo`. -/
+def spoPassEnv : PassEnv :=
+  { fraPassEnv with funcName := GoStr.ofString "spo", tables := spoTabs }
+
+theorem spo_generic : spoFunc.lowered = false := by decide +kernel
+
+/-- `spo` has no fused multiply-add shape: its contraction is itself. -/
+theorem spo_noFma : GoFV.Opt.FmaContract.contractAll spoFunc = spoFunc := by decide +kernel
+
+set_option synthInstance.maxSize 2048 in
+/-- By kernel evaluation: the checked lower keeps a lowered result without `v4`, whose store `v5`
+is `MOVDstore [8] v2 v3 v1` and load `v6` `MOVDload [8] v2 v5`, and `spo` returns 7 under `run` of
+the input and `runL` of the result. -/
+theorem spo_checks :
+    (lowerChecked spoPassEnv spoFunc).toOption.map (fun o =>
+      ((o.func.value? 4).isSome,
+        (o.func.value? 5).map (fun v => (v.op, v.auxInt, v.aux, v.args)),
+        (o.func.value? 6).map (fun v => (v.op, v.auxInt, v.aux, v.args)), o.func.lowered,
+        returnsInt (runL Env.p1 o.tables o.func [] {} 1) 7)) =
+      some (false, some (.ARM64MOVDstore, 8, none, #[2, 3, 1]),
+        some (.ARM64MOVDload, 8, none, #[2, 5]), true, true) ∧
+    returnsInt (run Env.p1 spoTabs spoFunc [] {} 1) 7 = true := by
+  decide +kernel
+
+/-- **Pass execution witness** for `lower_refines` (`lower_refines_run`) on an offset of the stack
+pointer (`ARM64.rules:305` replayed as no change, `spFoldEv`) folded into a store (`stFold`) and a
+load (`ldOffFold`): on `spo`, the checked lower stores and loads at `[8]` of `SP` directly, and every
+returning or panicking `run` of `spo` is, up to refinement, a `runL` of the result. -/
+theorem spo_lower :
+    ∃ out, lowerChecked spoPassEnv spoFunc = .ok out ∧ out.func.lowered = true ∧
+      (out.func.value? 4).isSome = false ∧
+      (out.func.value? 5).map (fun v => (v.op, v.auxInt, v.aux, v.args)) =
+        some (.ARM64MOVDstore, 8, none, #[2, 3, 1]) ∧
+      (out.func.value? 6).map (fun v => (v.op, v.auxInt, v.aux, v.args)) =
+        some (.ARM64MOVDload, 8, none, #[2, 5]) ∧
+      (∃ f', GoFV.Proof.Low.Contract spoFunc f' ∧
+        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func spoPassEnv.tables f') ∧
+      ∀ env, env.Mono → ∀ args mem fuel, (run env spoTabs spoFunc args mem fuel).Defined →
+        ∃ fuel', OutcomeRefines 0 (run env spoTabs spoFunc args mem fuel)
+          (runL env out.tables out.func args mem fuel') := by
+  obtain ⟨h1, -⟩ := spo_checks
+  cases hc : lowerChecked spoPassEnv spoFunc with
+  | error e => rw [hc] at h1; cases h1
+  | ok out =>
+    rw [hc] at h1
+    simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
+    obtain ⟨h4, h5, h6, hl, -⟩ := h1
+    exact ⟨out, rfl, hl, h4, h5, h6, GoFV.Proof.Low.lower_refines hc spo_generic,
+      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc spo_generic spo_noFma hE hd⟩
 
 end GoFV.Proof.Witness

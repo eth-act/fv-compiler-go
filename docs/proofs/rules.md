@@ -1995,23 +1995,48 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   (`x | (c^d) == c` iff `x == c || x == d` when `d ⊆ c` and `c^d` is one bit); `onebit_int`
   and `onebit_int_ne` read it off the condition's `Int` facts.
 
+- **`ARM64.rules:243`, `:251`, `:450` (pointer compares) false under the old register of a
+  pointer, proven under the gated one** (#385, PtrAddr18; model limits, not Go bugs).
+  `(EqPtr x y) => (Equal (CMP x y))`, `NeqPtr` → `NotEqual`, `(IsNonNil ptr) => (NotEqual
+  (CMPconst [0] ptr))`. Phase 1 compares pointers by allocation and offset; `CMP` compared the
+  two 64-bit words, and `Arm64.reg` gave every pointer with a base its address `Ptr.addr?`. Two
+  distinct allocations could have the same address (`Blk.base?` gives `local a k` and `temp a k`
+  one base, and offsets wrap mod 2^64): at `x` the address of the frame variable `local 0 1` and
+  `y` the pointer `temp 0 1 + 0`, `EqPtr` was `false` and `CMP` saw equal words; and a
+  non-convertible pointer could have address 0 (`heap 0 + (2^64 - 2^40)`), non-nil for Phase 1
+  while `CMPconst [0]` set `Z`. Gating on `Ptr.convertible` alone is not enough: frame
+  addresses of activation `a ≥ 2^20` decode (`Ptr.ofAddr`) to non-convertible `local a k`
+  pointers, so the integer word of such an address is that pointer for `EqPtr` while `CMP` would
+  see a register against no register. Now a pointer's register is its address `a` only when it
+  is `Ptr.ofAddr a` (`Arm64.ptrReg`; every convertible pointer is, `Ptr.ofAddr_addr`), and `CMP`
+  compares a pointer without one by provenance; `CBZ` tests a pointer by `Ptr.isNil`
+  (`Arm64.isZero`). Proven: `r_ARM64_243_sound`, `r_ARM64_251_sound`, `r_ARM64_450_sound`
+  (`GoFV/Proof/Low/Rules/Cmp.lean`, `cmp_z_ptr`).
+
 - **`ARM64.rules` lowering rules false under the semantics** (#385, P2ProofLow; model limits,
   not Go bugs; the checked lower leaves them out of `GoFV.Rules.ProvenARM64`):
-  - `:243`, `:251` (`(EqPtr x y) => (Equal (CMP x y))`, `NeqPtr` → `NotEqual`): Phase 1
-    compares pointers by allocation and offset, `CMP` compares the two 64-bit words, and two
-    distinct allocations can have the same address in the model (`Blk.base?` gives `local a k`
-    and `temp a k` one base, and offsets wrap mod 2^64): at `x` the address of the frame
-    variable `local 0 1` and `y` the pointer `temp 0 1 + 0`, `EqPtr` is `false` and `CMP` sees
-    equal words. A proof needs disjoint addresses for distinct live allocations.
-  - `:450` (`(IsNonNil ptr) => (NotEqual (CMPconst [0] ptr))`): a non-convertible pointer can
-    have address 0 (`heap 0 + (2^64 - 2^40)` wraps to 0); Phase 1 calls it non-nil (`nil` is a
-    block, not an address), `CMPconst [0]` sets `Z`. A proof needs non-nil pointers to have
-    non-zero addresses (offsets inside the allocation's window).
   - `:148`–`:150` (the ellipsis rules `(Lsh{8,16,32}x<a> ...) => (Lsh64x<a> ...)`): the
     rename keeps the narrow operand, and Phase 1's `Lsh64x<a>` asks for a 64-bit one: on the
     `int8` value 1 shifted by 0, `Lsh8x64` gives 1 and `Lsh64x64` `poison`. A proof needs
     `Lsh64x<a>` to read its operand's low 64 bits at any integer width.
-  Recorded also in the module docs of `GoFV/Proof/Low/Rules/Cmp.lean` and `Shift.lean`.
+  - `:970` (`(ADD x (MOVDconst <t> [c])) && !t.IsPtr() => (ADDconst [c] x)`) was false as
+    the validator stood (PR #481): an `ADD <int32>` whose first argument is a pointer without
+    an integer form at the `int64` shape and whose `int32` constant has high bits; the
+    constant's register is zero-extended, so `ADD` moves the pointer by another 64-bit amount
+    than `ADDconst [c]`. Proven (`Rules/Peep.lean`, `r_ARM64_970_sound`) since the validator's
+    provenance clause (`Pat.argsOKLs`) keeps word-shaped arguments (the shapes such a pointer
+    has, `Val.hasTy`) away from a provenance op (`provOp`) at a non-word shape; it costs no
+    function on quick-v7.
+  - `:1190`, `:1191` (`(CSEL [cc] x (ADDconst [1] a) flag) => (CSINC [cc] x a flag)` and its
+    mirror on `arm64Negate(cc)`): `ADDconst` of a pointer `a` without an integer form (a global
+    `&g`, no concrete address; the provenance case `Arm64.addP` the validator admits at a word
+    shape) is the pointer `&g + 1`, which `CSEL` moves as the pointer (`regVal`); `CSINC` reads
+    `a`'s register, which `&g` has none of. When the condition fails the source is `&g + 1`, the
+    target `poison`. A proof needs `CSINC` to add to a pointer as `ADDconst` does.
+  - `:133`, `:134` (`(AndB ...) => (AND ...)`, `(OrB ...) => (OR ...)`): Phase 1's `AndB`/`OrB`
+    are parallel (`Cmp.andB`: `false && poison` is `false`), `AND`/`OR` read both registers:
+    `AndB false poison` is `false`, `AND` of it `poison` (`OrB true poison` likewise).
+  Recorded also in the module docs of `GoFV/Proof/Low/Rules/Shift.lean` and `CselBits.lean`.
 
 - **`InvertFlags` rules outside the ghost-bit semantics** (#385; model limits, not Go bugs).
   Flags are `[n, z, c, v, g]` with `g` the sign of an integer compare's negated difference,
@@ -2043,6 +2068,34 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   - `:1463`–`:1468` (`(CMP x0 x1:(SLLconst [c] y)) && … => (CMPshiftLL x0 y [c])`, `(CMP
     x0:(SLLconst [c] y) x1) && … => (InvertFlags (CMPshiftLL x1 y [c]))`, and the `SRL`/`SRA`
     forms).
+
+- **Pointer arithmetic peepholes false under the lowered semantics** (#385; model limits, not Go
+  bugs; module doc of `GoFV/Proof/Low/Rules/ShiftOp.lean`). `ADD`/`SUB` keep a pointer without
+  an integer form (`Arm64.add`, `sub`, `addP`: the window rule of `PtrOps.ptrRes`, a `.ptr`
+  result while the pointer does not convert), `MADD`/`MSUB`/`NEG` read registers only, and a
+  word (pointer or `uintptr` shape) may hold such a pointer (`Val.hasTy`). False, so left out of
+  `GoFV.Rules.ProvenARM64` (each counterexample evaluated with `#eval`; shapes `int64`/`*T`):
+  - `:1012`, `:1013` (`(ADD a l:(MUL x y)) && … => (MADD a x y)`, `SUB` → `MSUB`): `a` the
+    global pointer `g + 0`, `x = y = 1`: `ADD` gives the pointer `g + 1` (`SUB`: `g - 1`),
+    `MADD` (`MSUB`) `poison` (a global has no address).
+  - `:1183` (`(NEG (SUB x y)) => (SUB y x)`): `x = 0`, `y` the frame temporary `temp 0 1 + 0`
+    (an address but no integer form): the source negates the register difference to the
+    integer `2^62 + 2^24`, the target keeps the pointer `temp 0 1 + 0`.
+  - `:1184` (`(NEG (NEG x)) => x`): `x` that frame temporary: the integer `2^62 + 2^24` against
+    the pointer.
+  - `:1197` (`(SUB x (SUB y z)) => (SUB (ADD <v.Type> x z) y)`): `x` the pointer
+    `heap (2^22) + 0` (no integer form), `y = z = 2^41`: the source is `x`, the target's
+    `ADD x z` leaves the heap window (`poison`).
+  - `:1198` (`(SUB (SUB x y) z) => (SUB x (ADD <y.Type> y z))`): `x = heap 0 + 2^40` (outside
+    its window, so no integer form), `y = 1`, `z = 2^40`: `x - 1` re-enters the window and
+    becomes the word `2^41 - 1`, from which `SUB` takes `z` as integers (`2^40 - 1`); the
+    target's `x - (2^40 + 1)` leaves the window (`poison`).
+  The shifted-operand forms `:1433`–`:1438` (`(ADD x0 x1:(SLLconst [c] y)) && … => (ADDshiftLL
+  x0 y [c])`, …) were false under the earlier provenance clause of `Pat.argsOKLs` (only
+  pointer-typed arguments forced a word-shaped result: at an `int32` `ADD`, a `uintptr` `x0`
+  holding `heap 0 + (2^64 - 1)` plus the `int32`-truncated shift `512` re-enters the window,
+  while `ADDshiftLL` adds the whole `2^40 + 512`); with the clause on every word-shaped argument
+  they are proven.
 
 ## Narrow result types
 

@@ -33,6 +33,8 @@ input `f`, and the output `g` must have the replayed definitions. The difference
   (a term) or into an `ADDconst` is replayed as the folded term (`frameFold`); one folding
   `ADDconst [0]` into the lowered frame address it reads (`650` at offset 0, whose result is an
   atom) is replayed as no change (`addrFoldEv`), and the later folds see through it (`frameAddr`);
+  so is one lowering `OffPtr [off] SP` to `MOVDaddr [off] SP` (`305`, `spFoldEv`), which a store
+  then folds as an offset (`stFold`) and a load replays as the folded load (`ldOffFold`);
 * a rule event folding a constant operand into a lowered bounds panic (`ARM64.rules:513-516`) is
   replayed as no change (`pbFoldEv`): the output's `LoweredPanicBounds{RC,CR,CC}` must keep the
   replayed `LoweredPanicBoundsRR`'s other arguments (`pbFinal`), and its aux constants are the
@@ -197,15 +199,16 @@ def setOpDef (tabs : Tables) (M : Defs) (r : Rule) (v : ID) : Option Value :=
 
 /-- The atom `u` folds the address `ADDconst [k2] b` of the arm64 store `x` (`x`'s argument 0 in
 `M`, a term at a word shape) into its offset (`(MOV…store [k1] {sym} (ADDconst [k2] ptr) val mem)
-=> (MOV…store [k1+int32(k2)] {sym} ptr val mem)`, `ARM64.rules:758-776`): the same op and type,
-no aux, `b` for the address, the offset `k1 + k2`, all three offsets small and non-negative
-(`offOK`). -/
+=> (MOV…store [k1+int32(k2)] {sym} ptr val mem)`, `ARM64.rules:758-776`), or the address
+`OffPtr [k2] b` (`305`'s `MOVDaddr [k2] SP`, replayed as no change, `spFoldEv`, folded by `893` and
+the other stores of `881-905` without a symbol): the same op and type, no aux, `b` for the
+address, the offset `k1 + k2`, all three offsets small and non-negative (`offOK`). -/
 def stFold (tabs : Tables) (M : Defs) (x u : Value) : Bool :=
   (stSize x.op).isSome && u.op == x.op && u.type == x.type && x.aux == none && u.aux == none &&
   x.args.size == 3 && offOK x.auxInt && offOK u.auxInt &&
   match M.get? x.args[0]! with
   | some y =>
-    y.op == .ARM64ADDconst && termVL tabs y && y.args.size == 1 &&
+    (y.op == .ARM64ADDconst || y.op == .OffPtr) && termVL tabs y && y.args.size == 1 &&
       wordShape (shpL tabs y.type) && offOK y.auxInt &&
       u.auxInt.toInt == x.auxInt.toInt + y.auxInt.toInt &&
       u.args == #[y.args[0]!, x.args[1]!, x.args[2]!]
@@ -313,6 +316,30 @@ def frameFold (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value)
     | none => none
   | _, _ => none
 
+/-- A rule event at the integer load `x` at `v` (no aux) whose address is `OffPtr [k2] b` in `M`
+(`305`'s `MOVDaddr [k2] SP`, replayed as no change, `spFoldEv`) replayed as the load `u` of `b` at
+offset `k1 + k2` (`(MOV…load [off1] {sym1} (MOVDaddr [off2] {sym2} ptr) mem) && canMergeSym(sym1,sym2)
+… => (MOV…load [off1+off2] {mergeSym(sym1,sym2)} ptr mem)`, `ARM64.rules:832-856`, without a
+symbol): the same op and type, the `OffPtr` a term at a word shape on a value of `M`, all three
+offsets small and non-negative (`offOK`). -/
+def ldOffFold (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Option Value :=
+  match M.get? v, defs with
+  | some x, [_, u] =>
+    match x.args[0]? with
+    | none => none
+    | some p =>
+    match M.get? p with
+    | some y =>
+      if x.id == v && u.id == v && u.op == x.op && u.type == x.type && (ldOp? x.op).isSome &&
+          x.aux == none && u.aux == none && x.args.size == 2 && offOK x.auxInt &&
+          offOK u.auxInt && y.op == .OffPtr && termVL tabs y && y.args.size == 1 &&
+          wordShape (shpL tabs y.type) && offOK y.auxInt &&
+          u.auxInt.toInt == x.auxInt.toInt + y.auxInt.toInt && u.args == #[y.args[0]!, x.args[1]!] &&
+          (M.get? y.args[0]!).isSome
+      then some u else none
+    | none => none
+  | _, _ => none
+
 /-- A rule event at the renamed bounds panic `LoweredPanicBoundsRR` at `v` building a lowered
 bounds panic with constant operands (`pbKeep`; `ARM64.rules:513-516`, the later ones on the
 result of the first): the replay keeps `v`'s definition, which `finalOKL` relates to the output's
@@ -332,6 +359,17 @@ def addrFoldEv (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Bool :=
   | some x, [_, u] =>
     x.op == .ARM64ADDconst && u.id == v && u.op == .ARM64MOVDaddr && !termVL tabs u &&
       (frameAddr tabs M v).any fun (_, m) => u.aux == m.aux && u.args == m.args
+  | _, _ => false
+
+/-- A rule event lowering `OffPtr [off]` of the stack pointer `SP` at `v` to `MOVDaddr [off] SP`
+(`305`; `SP` is an atom, so `ruleOKL` never matches the rule's `(SP)` node): the replay keeps
+`v`'s definition, which `stFold` folds into a store; `finalOKL` compares it with the output's
+(`lower` deletes `v` once nothing reads it). -/
+def spFoldEv (M : Defs) (v : ID) (defs : List Value) : Bool :=
+  match M.get? v, defs with
+  | some x, [_, u] =>
+    x.op == .OffPtr && u.id == v && u.op == .ARM64MOVDaddr && u.aux == none && u.args == x.args &&
+      x.args.size == 1 && (M.get? x.args[0]!).any (·.op == .SP)
   | _, _ => false
 
 /-! ## Copies -/
@@ -470,7 +508,8 @@ def replayL (tabs : Tables) (t : Interp.Table) (f : Func) :
     match M.get? v with
     | none => none
     | some x =>
-      if pbFoldEv M v defs.toList || addrFoldEv tabs M v defs.toList then replayL tabs t f M B evs
+      if pbFoldEv M v defs.toList || addrFoldEv tabs M v defs.toList || spFoldEv M v defs.toList then
+        replayL tabs t f M B evs
       else
       match (t.values[x.op.ctorIdx]?).bind (·[i]?) with
       | none => none
@@ -489,7 +528,10 @@ def replayL (tabs : Tables) (t : Interp.Table) (f : Func) :
             | none =>
               match frameFold tabs f M v defs.toList with
               | some u => replayL tabs t f (M.put v u) B evs
-              | none => none
+              | none =>
+                match ldOffFold tabs M v defs.toList with
+                | some u => replayL tabs t f (M.put v u) B evs
+                | none => none
   | M, B, .copyArg v i src :: evs =>
     match M.get? v with
     | none => none
@@ -569,8 +611,14 @@ def pbConstOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
     | some l => l.all fun (i, k) => constArg tabs f u i k
     | none => false
 
+/-- The atoms `lower` may delete: `RewriteCheck.dropAtom`'s, and `Invalid` values (a value an
+earlier pass invalidated, with no arguments and no uses, which `lower`'s dead-value removal frees).
+Neither is a root (`Sem.isRoot`): the schedule check of `atomsOKL` already requires that of every
+atom only `f` has, and the simulation (`GoFV.Proof.Low.Sim.atomsOKL_spec`) needs nothing else. -/
+def dropAtomL (op : Op) : Bool := GoFV.Opt.RewriteCheck.dropAtom op || op == .Invalid
+
 /-- `RewriteCheck.atomsOK` with `atomPair` (and `pbConstOK`): the same entry, blocks and own aux; every atom of `g`
-corresponds to an atom of `f`, the atoms only `f` has are droppable (`dropAtom`), and each block
+corresponds to an atom of `f`, the atoms only `f` has are droppable (`dropAtomL`), and each block
 evaluates `f`'s roots, atoms of `g`, in the same order (`Sem.schedule`; `g` may evaluate a lowered
 `Zero`, which is not a root of lowered SSA, earlier). -/
 def atomsOKL (tabs : Tables) (f g : Func) : Bool :=
@@ -584,7 +632,7 @@ def atomsOKL (tabs : Tables) (f g : Func) : Bool :=
       ag.all (fun x => af.contains x && match f.value? x, g.value? x with
         | some u, some w => atomPair tabs u w && pbConstOK tabs f u w
         | _, _ => false) &&
-      af.all (fun x => ag.contains x || (f.value? x).any (dropAtom ·.op)) &&
+      af.all (fun x => ag.contains x || (f.value? x).any (dropAtomL ·.op)) &&
       match Sem.schedule f fb, Sem.schedule g gb with
       | some of, some og =>
         of.toList.filter (fun x => (f.value? x).any (Sem.isRoot ·.op)) ==

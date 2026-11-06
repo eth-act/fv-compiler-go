@@ -57,6 +57,8 @@ import GoFV.Proof.Low.Rules.CmpNeg
 import GoFV.Proof.Low.Rules.CondSel
 import GoFV.Proof.Low.Rules.Const
 import GoFV.Proof.Low.Rules.ConstBool
+import GoFV.Proof.Low.Rules.ConstFold
+import GoFV.Proof.Low.Rules.CselBits
 import GoFV.Proof.Low.Rules.Flags
 import GoFV.Proof.Low.Rules.Fold
 import GoFV.Proof.Low.Rules.Invert
@@ -68,6 +70,7 @@ import GoFV.Proof.Low.Rules.Ptr
 import GoFV.Proof.Low.Rules.Rename
 import GoFV.Proof.Low.Rules.SetOpInt
 import GoFV.Proof.Low.Rules.Shift
+import GoFV.Proof.Low.Rules.ShiftOp
 import GoFV.Proof.Low.Rules.Tactic
 import GoFV.Proof.Low.Sim
 import GoFV.Proof.Low.SimAtom
@@ -706,10 +709,13 @@ import GoFV.Proof.Witness.LoadSplit
 import GoFV.Proof.Witness.LoopRotateLoc
 import GoFV.Proof.Witness.LowCong
 import GoFV.Proof.Witness.LowerAdd
+import GoFV.Proof.Witness.LowerAddConst
 import GoFV.Proof.Witness.LowerAtomic
+import GoFV.Proof.Witness.LowerBitLen
 import GoFV.Proof.Witness.LowerBlockTB
 import GoFV.Proof.Witness.LowerBlockTT
 import GoFV.Proof.Witness.LowerCondSel
+import GoFV.Proof.Witness.LowerConstFold
 import GoFV.Proof.Witness.LowerCopyPtr
 import GoFV.Proof.Witness.LowerInvert
 import GoFV.Proof.Witness.LowerLoadFold
@@ -719,6 +725,8 @@ import GoFV.Proof.Witness.LowerLoadSym
 import GoFV.Proof.Witness.LowerLocalAddr
 import GoFV.Proof.Witness.LowerNegOff
 import GoFV.Proof.Witness.LowerPanicConst
+import GoFV.Proof.Witness.LowerPtrCmp
+import GoFV.Proof.Witness.LowerShiftOp
 import GoFV.Proof.Witness.LowerStoreFold
 import GoFV.Proof.Witness.LowerStoreSym
 import GoFV.Proof.Witness.LowerWBPanic

@@ -765,3 +765,9 @@ above. The rest applies as rules; move an entry up once measured in gofv.
   (PutUint16) in 31 s. `ChgRefP` passes `Ctx.make tabs g` explicitly to
   `memRoot_of_memDef_store`: leaving the context a metavariable made unification unfold
   `Ctx.make` (whnf heartbeat timeout).
+- **Whole-tree build after a semantics change** (#385, `Sem/Arm64/Reg.lean` `ptrReg` plus a
+  `Pat.argsOKLs` clause change): `lake build GoFV GoFVTest` at 16G was killed (exit 143, the
+  scope's 16G memory peak) about 15 s in, every retry, because ~500 dependents of the changed
+  modules start at once. Building all modules in batches of 15 targets (`find GoFV GoFVTest
+  -name '*.lean'`, 16G under the heavy lock, a failed batch retried module by module) took
+  5 min; the whole-tree build is then a no-op (1,089 jobs).

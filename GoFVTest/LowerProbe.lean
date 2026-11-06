@@ -172,7 +172,7 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
           | none, some w => return s!"atoms: new atom {w.op.name} v{x}"
           | _, _ => return s!"atoms: v{x}?"
         for x in atomsOfL tabs f fb do
-          if !(atomsOfL tabs g gb).contains x && !((f.value? x).any (dropAtom ·.op)) then
+          if !(atomsOfL tabs g gb).contains x && !((f.value? x).any (dropAtomL ·.op)) then
             return s!"atoms: dropped {((f.value? x).map (·.op.name)).getD "?"} v{x}"
       | _, _ => pure ()
     return "atoms: order"
@@ -185,7 +185,7 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
       match M.get? v with
       | none => return s!"rule at missing v{v}"
       | some x =>
-        if pbFoldEv M v defs.toList || addrFoldEv tabs M v defs.toList then continue
+        if pbFoldEv M v defs.toList || addrFoldEv tabs M v defs.toList || spFoldEv M v defs.toList then continue
         match ((t.values[x.op.ctorIdx]?).bind (·[i]?) : Option Interp.CRule) with
         | none => return "no rule"
         | some cr =>
@@ -202,7 +202,10 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
               | none =>
                 match frameFold tabs f M v defs.toList with
                 | some u => M := M.put v u
-                | none => return s!"rule {key cr.rule} v{v} {ruleWhyL tabs M cr.rule v defs.toList}"
+                | none =>
+                  match ldOffFold tabs M v defs.toList with
+                  | some u => M := M.put v u
+                  | none => return s!"rule {key cr.rule} v{v} {ruleWhyL tabs M cr.rule v defs.toList}"
     | .copyArg v i src =>
       match M.get? v with
       | none => return "copyArg missing"
@@ -324,6 +327,11 @@ def whyFamily (c : String) : String :=
 structure St where
   firings : Std.HashMap String Nat := {}
   fns : Array (Array String) := #[]
+  /-- The fired rules of the functions the validator accepts with every rule (`accepted`). -/
+  fnsOk : Array (Array String) := #[]
+  /-- Per function: its first-rejection class (`whyClass`, `ok` if accepted), whether the checked
+  lower equals stock, its fired rules (`--dump`). -/
+  rows : Array (String × Bool × Array String) := #[]
   errors : Nat := 0
   accepted : Nat := 0
   checkedSame : Nat := 0
@@ -332,7 +340,7 @@ structure St where
 
 def St.merge (a b : St) : St :=
   { firings := b.firings.fold (fun m k n => m.insert k (m.getD k 0 + n)) a.firings
-    fns := a.fns ++ b.fns, errors := a.errors + b.errors, accepted := a.accepted + b.accepted, checkedSame := a.checkedSame + b.checkedSame, checkedProven := a.checkedProven + b.checkedProven
+    fns := a.fns ++ b.fns, fnsOk := a.fnsOk ++ b.fnsOk, rows := a.rows ++ b.rows, errors := a.errors + b.errors, accepted := a.accepted + b.accepted, checkedSame := a.checkedSame + b.checkedSame, checkedProven := a.checkedProven + b.checkedProven
     why := b.why.fold (fun m k n => m.insert k (m.getD k 0 + n)) a.why }
 
 def checkFile (path : System.FilePath) (S : St) : IO St := do
@@ -355,9 +363,11 @@ def checkFile (path : System.FilePath) (S : St) : IO St := do
     -- the checked lower against stock
     let full := (← IO.getEnv "LOWER_PROBE_FULL").isSome
     let tbl := if full then ceilTable else lowerProvenTable
+    let mut same := false
     match GoFV.Opt.LowerCheck.checkedLowerWith tbl env (GoFV.Opt.FmaContract.contractAll e.sections[k-1]!.func) with
     | .ok co =>
       if (GoFVTest.Parity.compare prev co tables s).isNone then
+        same := true
         S := { S with checkedSame := S.checkedSame + 1
                       checkedProven := if co.func == e.sections[k-1]!.func then S.checkedProven else S.checkedProven + 1 }
       else if (← IO.getEnv "LOWER_PROBE_MISS").isSome then
@@ -375,7 +385,8 @@ def checkFile (path : System.FilePath) (S : St) : IO St := do
             | .ok () => "ok"
             | .error m => s!"check out: {m.take 50}") else w
       let w := if w == "ok" && !tabsAgree prev out.tables e.sections[k-1]!.func then "tabsAgree" else w
-      if !(w.startsWith "atoms" || w == "ok" || w == "not lowered") then IO.println s!"FAIL\t{w}\t{path}"
+      if (← IO.getEnv "LOWER_PROBE_ALL").isSome && w != "ok" ||
+          !(w.startsWith "atoms" || w == "ok" || w == "not lowered") then IO.println s!"FAIL\t{w}\t{path}"
       let w := whyClass w
       S := { S with why := S.why.insert w (S.why.getD w 0 + 1), accepted := if w == "ok" then S.accepted + 1 else S.accepted }
       let ks := firedKeys ceilTable e.sections[k-1]!.func log
@@ -383,20 +394,25 @@ def checkFile (path : System.FilePath) (S : St) : IO St := do
       for x in ks do
         S := { S with firings := S.firings.insert x (S.firings.getD x 0 + 1) }
         fs := fs.insert x
-      S := { S with fns := S.fns.push fs.toArray }
+      S := { S with fns := S.fns.push fs.toArray
+                    fnsOk := if w == "ok" then S.fnsOk.push fs.toArray else S.fnsOk
+                    rows := S.rows.push (w, same, fs.toArray) }
     | .error _ => S := { S with errors := S.errors + 1 }
   return S
 
-/-- The command line: `--jobs N`, `--next-md FILE`, then the export files and directories. -/
+/-- The command line: `--jobs N`, `--next-md FILE`, `--dump FILE`, then the export files and
+directories. -/
 structure Args where
   jobs : Nat := 1
   nextMd : Option String := none
+  dump : Option String := none
   paths : Array String := #[]
 
 partial def parseArgs : List String → Args → Args
   | [], o => o
   | "--jobs" :: n :: rest, o => parseArgs rest { o with jobs := max (n.toNat?.getD 1) 1 }
   | "--next-md" :: f :: rest, o => parseArgs rest { o with nextMd := some f }
+  | "--dump" :: f :: rest, o => parseArgs rest { o with dump := some f }
   | a :: rest, o => parseArgs rest { o with paths := o.paths.push a }
 
 /-- The keys of the rules of a table (`key`, `blockKey`). -/
@@ -452,9 +468,11 @@ def families (why : Std.HashMap String Nat) : Array (String × Nat) :=
 def classes (why : Std.HashMap String Nat) : Array (String × Nat) :=
   (why.toArray.filter (·.1 != "ok")).qsort (fun a b => a.2 > b.2 || (a.2 == b.2 && a.1 < b.1))
 
-/-- The `NEXT` table and the validator's ceiling (`classes`, `families`) as a markdown document. -/
+/-- The `NEXT` table, the `NEXTOK` table and the validator's ceiling (`classes`, `families`) as a
+markdown document. -/
 def nextMarkdown (paths : Array String) (nfns checked : Nat) (base : Nat)
     (rows : Array (Nat × String × Nat × Nat)) (nfn : Std.HashMap String Nat) (accepted : Nat)
+    (baseOk : Nat) (rowsOk : Array (Nat × String × Nat × Nat))
     (why : Std.HashMap String Nat) : String := Id.run do
   let mut s := "<!-- Generated by `lake exe lower-probe --next-md` (GoFVTest/LowerProbe.lean). Do not edit. -->\n\n"
   s := s ++ "# The next `ARM64.rules` rules to prove for the checked lower (issue #385)\n\n"
@@ -464,6 +482,11 @@ def nextMarkdown (paths : Array String) (nfns checked : Nat) (base : Nat)
   s := s ++ s!"The checked lower (proven rules) equals stock on {checked} of them. `lower` fires only proven rules on {base}: the greedy cover below starts there and adds, at each step, the rule whose proof completes the most functions (all the rules `lower` fires on them proven; the validator may still reject an instance). Columns: the rule (`ARM64.rules` line and op, or block kind), the functions covered with it, the functions it completes, the functions that fire it. The validator's ceiling (every rule assumed proven) and its rejections follow the table.\n\n"
   s := s ++ "| step | rule | covered | completes | fired in |\n|---:|---|---:|---:|---:|\n"
   for (step, k, covered, gained) in rows do
+    s := s ++ s!"| {step} | `{k}` | {covered} | {gained} | {nfn.getD k 0} |\n"
+  s := s ++ "\n## The next rules by functions gained at stock\n\n"
+  s := s ++ s!"The same greedy cover over the {accepted} functions the validator accepts with every rule (below): there the checked lower equals stock once every rule `lower` fires is proven. Of them, {baseOk} fire only proven rules. A step's completed functions are the functions its proof adds at stock, up to the validator's verdict on the proven rules alone.\n\n"
+  s := s ++ "| step | rule | covered | completes | fired in |\n|---:|---|---:|---:|---:|\n"
+  for (step, k, covered, gained) in rowsOk do
     s := s ++ s!"| {step} | `{k}` | {covered} | {gained} | {nfn.getD k 0} |\n"
   s := s ++ "\n## The validator's ceiling\n\n"
   s := s ++ s!"With every rule of `ARM64.rules` (the derived forms of the proven set included), the validator accepts {accepted} of the {nfns} functions. Each rejected function counts once, under the first check that rejects it (`whyL`): its class is the reason without value IDs, a rule's reasons one per commutation choice (`nomatch`: the pattern does not match the replayed definitions; `top`/`argsL`: a shape check; `ctrls`: the new block controls; `result`: the built values). Fixing a class gains at most its functions: a function may fail a later check too.\n\n"
@@ -518,9 +541,19 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"NEXT\t0\t(proven)\t{base}\t{base}"
   for (step, k, covered, gained) in next do
     IO.println s!"NEXT\t{step}\t{k}\t{covered}\t{gained}"
+  -- the same over the functions the validator accepts with every rule: the gains at stock
+  let (baseOk, nextOk) := greedy (tableKeys GoFV.Opt.lowerProvenTable) acc.fnsOk 150
+  IO.println s!"NEXTOK\t0\t(proven)\t{baseOk}\t{baseOk}"
+  for (step, k, covered, gained) in nextOk do
+    IO.println s!"NEXTOK\t{step}\t{k}\t{covered}\t{gained}"
   if let some md := a.nextMd then
     IO.FS.writeFile md (nextMarkdown a.paths acc.fns.size acc.checkedSame base next nfn
-      acc.accepted acc.why)
+      acc.accepted baseOk nextOk acc.why)
+  -- per function: its first-rejection class (`ok` if accepted), whether the checked lower equals
+  -- stock (1/0), its fired rules
+  if let some d := a.dump then
+    IO.FS.writeFile d (String.join (acc.rows.map fun (w, same, fs) =>
+      s!"{w}\t{if same then 1 else 0}\t{"|".intercalate fs.toList}\n").toList)
   return 0
 
 end GoFVTest.LowerProbe
