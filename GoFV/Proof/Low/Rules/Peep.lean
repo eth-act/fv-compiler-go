@@ -28,7 +28,7 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Rules GoFV.Proof.Rules GoFV.Proof.Low
 open GoFV.Rules.Generated.ARM64
 
 /-- A 64-bit constant register read at a shape with a whole register: the constant, or `poison`. -/
-private theorem retypeL_res_wide {T : Ty} (h : 64 ≤ argWidth T) (k : BitVec 64) :
+theorem retypeL_res_wide {T : Ty} (h : 64 ≤ argWidth T) (k : BitVec 64) :
     (Arm64.res T k).retypeL T = .int .w64 k ∨ (Arm64.res T k).retypeL T = .poison := by
   cases T with
   | int w => cases w <;> simp_all [argWidth, Width.bits, Arm64.res, Val.retypeL, Val.widen, Val.retype]

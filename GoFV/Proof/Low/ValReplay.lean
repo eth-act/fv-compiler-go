@@ -15,7 +15,7 @@ refinement, or for the address of an arm64 store lowering a `Store` the `AddrRef
 and aux, which an `ADDconst` offset folded into the store keeps, `ReplayInvL.fold`, and a global
 symbol's or frame variable's address, `ReplayInvL.foldAddr`, the latter in every activation whose
 frame addresses the valuation holds, `FrameVals`). Value rule events use `RuleFactsL.step` and
-`ArmRule.Sound1`, ellipsis events on terms `SetOpSound` (`setOp_den`), atom replacements change no
+`ArmRule.Sound1`, ellipsis events on terms `SetOpSoundT` (`setOp_den`), atom replacements change no
 denotation (`rename_den`); terminators keep `BInvL`.
 -/
 
@@ -139,7 +139,8 @@ theorem renameOp_src_ne {o o' : Op} (h : renameOp o o' = true) : o ≠ .ARM64MOV
 theorem setOpDef_facts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {x' : Value}
     (h : setOpDef tabs M r v = some x') : ∃ x o', M.get? v = some x ∧ r.result = .setOp o' ∧
       x' = { x with op := o' } ∧ ellipsisOn x.op r.pat = true ∧
-      ((termVL tabs x = true ∧ termVL tabs x' = true ∧ topOKL x.op (shpL tabs x.type) = true) ∨
+      ((termVL tabs x = true ∧ termVL tabs x' = true ∧ topOKL x.op (shpL tabs x.type) = true ∧
+          setArgsOK tabs M x = true) ∨
         (renameOp x.op o' = true ∧ termVL tabs x = false)) := by
   unfold setOpDef at h
   split at h
@@ -151,8 +152,8 @@ theorem setOpDef_facts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {x' : Valu
       simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, Bool.not_eq_true'] at hc
       obtain ⟨⟨⟨⟨-, he⟩, -⟩, -⟩, hk⟩ := hc
       refine ⟨x, o', hx, hr, rfl, he, ?_⟩
-      rcases hk with ⟨⟨h1, h2⟩, h3⟩ | ⟨h1, h2⟩
-      · exact .inl ⟨h1, h2, h3⟩
+      rcases hk with ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ | ⟨h1, h2⟩
+      · exact .inl ⟨h1, h2, h3, h4⟩
       · exact .inr ⟨h1, h2⟩
   · cases h
 
@@ -280,23 +281,46 @@ section SetOp
 
 variable {tabs : Tables} {M : Defs} {v : ID} {x : Value} {o' : Op}
 
-/-- An ellipsis event on a term refines the denotations (`SetOpSound`), at the same fuel. -/
+/-- The arguments `setArgW64` asks for, denoted under `TypedL`, are 64-bit integers
+(`setArgsOK`, `den_hasTyL`). -/
+theorem setArgs_hasTy {ρ : ID → Val} (hT : TypedL true M.get? tabs ρ)
+    (hs : setArgsOK tabs M x = true) (n : Nat) :
+    ∀ i w, (x.args.toList.map (denL true M.get? tabs ρ n))[i]? = some w →
+      setArgW64 x.op i = true → w.hasTy (.int .w64) = true := by
+  intro i w hw hi
+  simp only [List.getElem?_map, Array.getElem?_toList, Option.map_eq_some_iff] at hw
+  obtain ⟨a, ha, rfl⟩ := hw
+  obtain ⟨hlt, -⟩ := Array.getElem?_eq_some_iff.1 ha
+  have ha' : x.args[i]! = a := by rw [getElem!_def, ha]
+  unfold setArgsOK at hs
+  rw [List.all_eq_true] at hs
+  have h1 := hs i (List.mem_range.2 hlt)
+  simp only [hi, Bool.not_true, Bool.false_or, ha'] at h1
+  cases hy : M.get? a with
+  | none => rw [hy] at h1; cases h1
+  | some y =>
+    rw [hy, Option.any_some, GoFV.Proof.Rules.isInt64Ty_iff] at h1
+    have h := den_hasTyL hT n hy
+    rwa [h1] at h
+
+/-- An ellipsis event on a term refines the denotations (`SetOpSoundT`), at the same fuel. -/
 theorem setOp_den (hx : M.get? v = some x) (ht : termVL tabs x = true)
     (ht' : termVL tabs { x with op := o' } = true) (htop : topOKL x.op (shpL tabs x.type) = true)
-    (hso : SetOpSound x.op o') {ρ : ID → Val} :
+    (hs : setArgsOK tabs M x = true) (hso : SetOpSoundT x.op o') {ρ : ID → Val}
+    (hT : TypedL true M.get? tabs ρ) :
     ∀ n y, Sem.Refines (denL true M.get? tabs ρ n y)
       (denL true (M.put v { x with op := o' }).get? tabs ρ n y)
   | 0, _ => .poison _
   | n + 1, y => by
-    have ih := fun a => setOp_den hx ht ht' htop hso (ρ := ρ) n a
+    have ih := fun a => setOp_den hx ht ht' htop hs hso hT n a
     by_cases hyv : y = v
     · rw [hyv]
       have hnew : (M.put v { x with op := o' }).get? v = some { x with op := o' } := by
         rw [get?_put]; simp
       rw [denT_succ hx ht, denT_succ hnew ht']
-      refine Sem.Refines.trans (retypeL_mono _ (opValL_mono_term ht _
-        (GoFV.Proof.AtomSim.refinesList_map fun a _ => ih a))) ?_
-      exact hso tabs _ _ _ _ htop
+      exact Sem.Refines.trans (hso tabs _ _ _ _ htop (setArgs_hasTy hT hs n))
+        (retypeL_mono _ (opValL_mono_term ht' _
+          (GoFV.Proof.AtomSim.refinesList_map fun a _ => ih a)))
     · have hkeep : ∀ w, (M.put v { x with op := o' }).get? y = w ↔ M.get? y = w := by
         intro w; rw [get?_put]; simp [hyv]
       cases hm : M.get? y with
@@ -311,7 +335,7 @@ theorem setOp_den (hx : M.get? v = some x) (ht : termVL tabs x = true)
         by_cases htm : termVL tabs m = true
         · rw [denT_succ hm htm, denT_succ h' htm]
           exact retypeL_mono _ (opValL_mono_term htm _
-            (GoFV.Proof.AtomSim.refinesList_map fun a _ => setOp_den hx ht ht' htop hso n a))
+            (GoFV.Proof.AtomSim.refinesList_map fun a _ => ih a))
         · have h1 : ¬ IsTermL tabs M.get? y := fun ⟨u, hu, hu'⟩ => by
             rw [hm] at hu; cases hu; exact htm hu'
           have h2 : ¬ IsTermL tabs (M.put v { x with op := o' }).get? y := fun ⟨u, hu, hu'⟩ => by
@@ -576,19 +600,19 @@ theorem ReplayInvL.rule {r : Rule} {v : ID} {defs : List Value} (hI : ReplayInvL
 theorem ReplayInvL.setOp {v : ID} {x : Value} {o' : Op} (hI : ReplayInvL tabs D₀ C₀ M C)
     (hx : M.get? v = some x) (ht : termVL tabs x = true)
     (ht' : termVL tabs { x with op := o' } = true) (htop : topOKL x.op (shpL tabs x.type) = true)
-    (hso : SetOpSound x.op o') :
+    (hs : setArgsOK tabs M x = true) (hso : SetOpSoundT x.op o') :
     ReplayInvL tabs D₀ C₀ (M.put v { x with op := o' }) C where
   closed := put_closed (x' := { x with op := o' }) (fun hv a ha => closed_args hI.closed hx hv a ha)
     hI.closed
   sub := hI.sub
   typed := fun ρ h => put_typed (x' := { x with op := o' }) hx rfl (by rw [ht, ht']) (hI.typed ρ h)
   denRef := fun y hy => denL_compose (g := id) (hI.denRef y hy) hI.typed
-    fun ρ _ _ n => setOp_den hx ht ht' htop hso n y
+    fun ρ hρ _ n => setOp_den hx ht ht' htop hs hso hρ n y
   atoms := fun y a hy ha hargs => by
     obtain ⟨a', ha', hat, hrest⟩ := hI.atoms y a hy ha hargs
     have hyv : y ≠ v := fun h => by subst h; rw [hx] at ha'; cases ha'; rw [ht] at hat; cases hat
     exact ⟨a', by rw [get?_put]; simp [hyv, ha'], hat, hrest.imp id fun hr =>
-      hr.step (g := id) (fun _ h => h) hI.typed fun ρ _ _ n z _ => setOp_den hx ht ht' htop hso n z⟩
+      hr.step (g := id) (fun _ h => h) hI.typed fun ρ hρ _ n z _ => setOp_den hx ht ht' htop hs hso hρ n z⟩
 
 /-- Replacing the atom `x` at `v` by an atom `x'` of the same type: a rename, a lowered store
 (the same arguments, related as before) or a lowered frame address (`argFree`). -/
@@ -1209,8 +1233,8 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
         obtain ⟨x0, o2, hx0, hr2, rfl, he, hk⟩ := setOpDef_facts hdef
         rw [hx] at hx0; cases hx0
         rw [hres] at hr2; cases hr2
-        rcases hk with ⟨ht, ht', htop⟩ | ⟨hren, ht⟩
-        · have hso : SetOpSound x.op o' := by
+        rcases hk with ⟨ht, ht', htop, hsa⟩ | ⟨hren, ht⟩
+        · have hso : SetOpSoundT x.op o' := by
             rcases hck with hsd | ⟨o, o3, he3, hr3, -, -, -, -, hso⟩ | ⟨o, o3, he3, hr3, -, -, hren⟩ |
                 ⟨om, n, pty, pai, pax, par, pargs, pc, hpat, hom⟩
             · exact absurd hsd (not_sound_of_ellipsis he)
@@ -1227,9 +1251,9 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
               rw [hc] at hpat
               injection hpat with hxo
               rw [termVL_mem tabs x hom hxo] at ht; cases ht
-          exact replayL_inv hs hD evs _ M' B B' C h (hI.setOp hx ht ht' htop hso)
-            (hB.mono (g := id) (fun _ h => h) hI.typed fun ρ _ _ n y _ =>
-              setOp_den hx ht ht' htop hso n y)
+          exact replayL_inv hs hD evs _ M' B B' C h (hI.setOp hx ht ht' htop hsa hso)
+            (hB.mono (g := id) (fun _ h => h) hI.typed fun ρ hρ _ n y _ =>
+              setOp_den hx ht ht' htop hsa hso hρ n y)
         · have ht' := renameOp_dst hren tabs { x with op := o' } rfl
           have hfree : argFree tabs x = true → argFree tabs { x with op := o' } = true :=
             fun hf => absurd (argFree_cases hf).1 (renameOp_src_ne hren)
