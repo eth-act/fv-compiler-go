@@ -2028,11 +2028,11 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
     has, `Val.hasTy`) away from a provenance op (`provOp`) at a non-word shape; it costs no
     function on quick-v7.
   - `:1190`, `:1191` (`(CSEL [cc] x (ADDconst [1] a) flag) => (CSINC [cc] x a flag)` and its
-    mirror on `arm64Negate(cc)`): `ADDconst` of a pointer `a` without an integer form (a global
-    `&g`, no concrete address; the provenance case `Arm64.addP` the validator admits at a word
-    shape) is the pointer `&g + 1`, which `CSEL` moves as the pointer (`regVal`); `CSINC` reads
-    `a`'s register, which `&g` has none of. When the condition fails the source is `&g + 1`, the
-    target `poison`. A proof needs `CSINC` to add to a pointer as `ADDconst` does.
+    mirror on `arm64Negate(cc)`) were false while `CSINC` read `a`'s register only: `ADDconst`
+    of a pointer `a` without an integer form (a global `&g`) is the pointer `&g + 1`, which
+    `CSEL` moves as the pointer (`regVal`). Proven (`Rules/CselBits.lean`, `r_ARM64_1190_sound`,
+    `r_ARM64_1191_cc_sound`) since `CSINC` adds to a pointer as `ADDconst` does (`Arm64.csinc`,
+    `docs/plans/semantics2.md` §3).
   - `:133`, `:134` (`(AndB ...) => (AND ...)`, `(OrB ...) => (OR ...)`): Phase 1's `AndB`/`OrB`
     are parallel (`Cmp.andB`: `false && poison` is `false`), `AND`/`OR` read both registers:
     `AndB false poison` is `false`, `AND` of it `poison` (`OrB true poison` likewise).
@@ -2057,27 +2057,28 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
     condition (as for 1342-1345); they are provable split by `cc` on the integer conditions
     (`GoFV.Rules.Derive.ccSplit`, `r_ARM64_1352_cc_sound` … `r_ARM64_1357_cc_sound`).
 
-- **Compares false under the lowered semantics** (#385; model limits, not Go bugs; module doc of
-  `GoFV/Proof/Low/Rules/CmpNeg.lean`). `CMP` compares a pointer without a concrete address with
-  an integer as unequal (`Arm64.cmp`, `Z` clear). `CMN` and `CMPshift*` read registers only
-  (`Arm64.cmp1`/`cmp2`), so they leave that case `poison`, and a 64-bit word may hold such a
-  pointer (`Val.hasTy`). False, so left out of `GoFV.Rules.ProvenARM64`:
-  - `:597`'s `CMPconst` form (`(CMPconst [c] y) && c < 0 && c != -1<<63 => (CMNconst [-c] y)`).
-    Its `CMNconst → CMPconst` form and both forms of `:598` (`CMPWconst`↔`CMNWconst`) are
-    proven (`subFlags_eq_cmn`).
-  - `:1463`–`:1468` (`(CMP x0 x1:(SLLconst [c] y)) && … => (CMPshiftLL x0 y [c])`, `(CMP
-    x0:(SLLconst [c] y) x1) && … => (InvertFlags (CMPshiftLL x1 y [c]))`, and the `SRL`/`SRA`
-    forms).
+- **Compares with a pointer** (#385; module docs of `GoFV/Proof/Low/Rules/CmpNeg.lean` and
+  `Invert.lean`). `CMP` compares a pointer without a concrete address with an integer as unequal
+  (`Arm64.cmp`, `Z` clear). While `CMN` and `CMPshift*` read registers only (`Arm64.cmp1`/`cmp2`),
+  they left that case `poison`, and a 64-bit word may hold such a pointer (`Val.hasTy`), so
+  `:597`'s `CMPconst` form (`(CMPconst [c] y) && c < 0 && c != -1<<63 => (CMNconst [-c] y)`) and
+  `:1463`–`:1468` (`(CMP x0 x1:(SLLconst [c] y)) && … => (CMPshiftLL x0 y [c])`, `(CMP
+  x0:(SLLconst [c] y) x1) && … => (InvertFlags (CMPshiftLL x1 y [c]))`, and the `SRL`/`SRA`
+  forms) were false. Proven (`r_ARM64_597_2_sound`; `r_ARM64_1463_sound` … `r_ARM64_1468_sound`)
+  since `CMN`, `CMNconst` and `CMPshift*`/`CMNshift*` give `cmp`'s `Z` clear for such a pointer
+  (`Arm64.cmpP`, `cmp1P`, `cmpSh`, `docs/plans/semantics2.md` §3).
 
 - **Pointer arithmetic peepholes false under the lowered semantics** (#385; model limits, not Go
   bugs; module doc of `GoFV/Proof/Low/Rules/ShiftOp.lean`). `ADD`/`SUB` keep a pointer without
   an integer form (`Arm64.add`, `sub`, `addP`: the window rule of `PtrOps.ptrRes`, a `.ptr`
-  result while the pointer does not convert), `MADD`/`MSUB`/`NEG` read registers only, and a
-  word (pointer or `uintptr` shape) may hold such a pointer (`Val.hasTy`). False, so left out of
+  result while the pointer does not convert), `NEG` reads registers only, and a word (pointer or
+  `uintptr` shape) may hold such a pointer (`Val.hasTy`). False, so left out of
   `GoFV.Rules.ProvenARM64` (each counterexample evaluated with `#eval`; shapes `int64`/`*T`):
-  - `:1012`, `:1013` (`(ADD a l:(MUL x y)) && … => (MADD a x y)`, `SUB` → `MSUB`): `a` the
-    global pointer `g + 0`, `x = y = 1`: `ADD` gives the pointer `g + 1` (`SUB`: `g - 1`),
-    `MADD` (`MSUB`) `poison` (a global has no address).
+  - `:1012`–`:1015` (`(ADD a l:(MUL x y)) && … => (MADD a x y)`, `SUB` → `MSUB`, the `MNEG`
+    forms) were false while `MADD`/`MSUB` read `a`'s register only (`a` the global pointer `g +
+    0`, `x = y = 1`: `ADD` gives the pointer `g + 1`, `MADD` `poison`). Proven
+    (`Rules/ShiftOp.lean`, `r_ARM64_1012_sound` … `r_ARM64_1015_sound`) since `MADD`/`MSUB`
+    move a pointer `a` as `ADD` does (`Arm64.madd`, `docs/plans/semantics2.md` §3).
   - `:1183` (`(NEG (SUB x y)) => (SUB y x)`): `x = 0`, `y` the frame temporary `temp 0 1 + 0`
     (an address but no integer form): the source negates the register difference to the
     integer `2^62 + 2^24`, the target keeps the pointer `temp 0 1 + 0`.

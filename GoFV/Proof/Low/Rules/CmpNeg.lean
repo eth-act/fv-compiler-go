@@ -4,18 +4,11 @@ import GoFV.Proof.Low.Rules.Peep
 # Lowering rule lemmas: compares with a negated immediate (`ARM64.rules:597`, `598`)
 
 `(CMPWconst [c] y) && c < 0 && c != -1<<31 => (CMNWconst [-c] y)`, its converse on `CMNWconst`
-(`598`), and `(CMNconst [c] y) && c < 0 && c != -1<<63 => (CMPconst [-c] y)` (`597`): `SUBS x, k`
-and `ADDS x, -k` give the same result and `NZCV` when `k` is neither 0 nor `intMin`
-(`subFlags_eq_cmn`: the carry of `x + ~k + 1` is that of `x + (2^n - k)`, the signed sum alike),
-and so the same ghost sign `g` (`Arm64.cmpRes`).
-
-False under the semantics, so not proven: `(CMPconst [c] y) && c < 0 && c != -1<<63 =>
-(CMNconst [-c] y)` (`597`, the `CMPconst` form) and the shifted-operand compares
-`(CMP x0 x1:(SLLconst [c] y)) => (CMPshiftLL x0 y [c])`, `(CMP x0:(SLLconst [c] y) x1) =>
-(InvertFlags (CMPshiftLL x1 y [c]))` and their `SRL`/`SRA` forms (`1463-1468`): `CMP` compares a
-pointer without a concrete address with an integer as unequal (`Arm64.cmp`, `Z` clear), which
-`CMN`/`CMPshift*` (registers only, `Arm64.cmp1`/`cmp2`) leave `poison`; a 64-bit word may hold such
-a pointer (`Val.hasTy`).
+(`598`), and `(CMNconst [c] y) && c < 0 && c != -1<<63 => (CMPconst [-c] y)` with its converse
+on `CMPconst` (`597`): `SUBS x, k` and `ADDS x, -k` give the same result and `NZCV` when `k` is
+neither 0 nor `intMin` (`subFlags_eq_cmn`: the carry of `x + ~k + 1` is that of `x + (2^n - k)`,
+the signed sum alike), and so the same ghost sign `g` (`Arm64.cmpRes`). A pointer without a
+register gives `Z` clear under both `CMP` and `CMN` (`Arm64.cmp`, `cmp1P`; `cmp_const_eq`).
 -/
 
 namespace GoFV.Proof.Low.Rules

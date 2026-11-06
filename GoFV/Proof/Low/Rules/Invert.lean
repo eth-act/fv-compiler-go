@@ -2,7 +2,7 @@ import GoFV.Proof.Low.Rules.BlockFlags
 import GoFV.Rules.Derive
 
 /-!
-# Lowering rule lemmas: `InvertFlags` (`ARM64.rules:991`, `993`, `1003`, `1352-1357`, `1374-1383`)
+# Lowering rule lemmas: `InvertFlags` (`ARM64.rules:991`, `993`, `1003`, `1352-1357`, `1374-1383`, `1463-1468`)
 
 `InvertFlags f` is the flags of the compare with swapped operands (`Sem.invertFlags`, from the
 fifth flags component `g`, the sign of the negated difference, which only `InvertFlags` reads):
@@ -19,6 +19,11 @@ fifth flags component `g`, the sign of the negated difference, which only `Inver
   (`GoFV.Rules.Derive.ccSplit`; the lowered binding of a `CCop` auxint is its op, `ccDV`): the
   auxint's condition on `InvertFlags cmp` is the swapped one on `cmp` (`condOn_invert`); an
   auxint that names no op decides nothing, and the source is `poison` (`ccDV_cases`).
+* `(CMP x0 x1:(SLLconst [c] y)) => (CMPshiftLL x0 y [c])`, `(CMP x0:(SLLconst [c] y) x1) =>
+  (InvertFlags (CMPshiftLL x1 y [c]))` and the `SRL`/`SRA` forms (`1463-1468`): `CMP` reads the
+  shift whole, so it compares with the register `CMPshift*` shifts, and a pointer `x0` without a
+  register gives `Z` clear under both (`Arm64.cmpSh`, `cmp_shifted_eq`); the swapped forms by
+  `invertFlags_cmp`.
 -/
 
 namespace GoFV.Proof.Low.Rules
@@ -174,6 +179,103 @@ theorem r_ARM64_1382_sound : ArmRule.Checked r_ARM64_1382 := by
 /-- `ARM64.rules:1383`: `(GreaterEqualU (InvertFlags x)) => (LessEqualU x)` -/
 theorem r_ARM64_1383_sound : ArmRule.Checked r_ARM64_1383 := by
   left; arm_unfold; arm_norm; exact refines_cset_invert rfl rfl rfl _ _ _
+
+/-! ## Compares with a shifted operand (`1463-1468`) -/
+
+/-- `CMP x0 r` of a shifted register `r` of `y` is `CMPshift x0 y`: on registers alike, and a
+pointer `x0` without a register gives `Z` clear on both sides (`Arm64.cmp`, `Arm64.cmpSh`). -/
+theorem cmp_shifted_eq (sh : Arm64.Shift) (k : Int64) (x0 y : Val) {v : BitVec 64}
+    (hy : Arm64.reg y = some v) :
+    Arm64.cmp x0 (.int .w64 (sh.apply v (Arm64.amt k))) =
+      Arm64.cmpSh (fun a b => Arm64.subFlags a (Arm64.shifted sh k b)) [x0, y] := by
+  have hr : Arm64.reg (.int .w64 (sh.apply v (Arm64.amt k))) = some (sh.apply v (Arm64.amt k)) := by
+    simp [Arm64.reg]
+  cases hx : Arm64.reg x0 with
+  | some u => simp only [Arm64.cmp, Arm64.cmpSh, hx, hr, hy, Arm64.shifted]
+  | none =>
+    cases x0 with
+    | ptr p => simp [Arm64.cmp, Arm64.cmpSh, hx, hr, hy, Arm64.zClear]
+    | _ => simp_all [Arm64.cmp, Arm64.cmpSh, Arm64.reg]
+
+theorem retypeL_flags_cmpSh (f : BitVec 64 → BitVec 64 → BitVec 64 × Flags) (as : List Val) :
+    (Arm64.cmpSh f as).retypeL Ty.flags = Arm64.cmpSh f as := by
+  unfold Arm64.cmpSh
+  split
+  · split
+    · rfl
+    · split <;> rfl
+    · rfl
+  · rfl
+
+private theorem cmp_poison_right (a : Val) : Arm64.cmp a .poison = .poison := by
+  cases a with
+  | ptr p => cases h : Arm64.ptrReg p <;> simp [Arm64.cmp, Arm64.reg, h]
+  | _ => simp [Arm64.cmp, Arm64.reg]
+
+/-- `(CMP x0 (SHIFT [k] y))` (the shift at shape `T1`, read whole) as `(CMPshift x0 y [k])`. -/
+theorem refines_cmpSh {T T1 : Ty} (sh : Arm64.Shift) (k : Int64) (h64 : 64 ≤ argWidth T1)
+    (x0 y : Val) :
+    Refines ((Arm64.cmp x0 ((Arm64.op1 T1 (fun b => sh.apply b (Arm64.amt k)) [y]).retypeL T1)).retypeL T)
+      ((Arm64.cmpSh (fun a b => Arm64.subFlags a (Arm64.shifted sh (Int64.ofInt k.toInt) b))
+        [x0, y]).retypeL T) := by
+  rw [Int64.ofInt_toInt]
+  cases hy : Arm64.reg y with
+  | none =>
+    simp only [Arm64.op1, hy, retypeL_poison, cmp_poison_right]; exact .poison _
+  | some v =>
+    simp only [Arm64.op1, hy]
+    rcases retypeL_res_wide h64 (sh.apply v (Arm64.amt k)) with h | h <;> rw [h]
+    · rw [cmp_shifted_eq sh k x0 y hy]; exact Refines.refl _
+    · rw [cmp_poison_right, retypeL_poison]; exact .poison _
+
+/-- `(CMP (SHIFT [k] y) x1)` as `(InvertFlags (CMPshift x1 y [k]))` (`invertFlags_cmp`). -/
+theorem refines_cmpSh_inv {T T0 : Ty} (sh : Arm64.Shift) (k : Int64) (h64 : 64 ≤ argWidth T0)
+    (x1 y : Val) :
+    Refines ((Arm64.cmp ((Arm64.op1 T0 (fun b => sh.apply b (Arm64.amt k)) [y]).retypeL T0) x1).retypeL T)
+      ((invertFlags ((Arm64.cmpSh (fun a b => Arm64.subFlags a (Arm64.shifted sh (Int64.ofInt k.toInt) b))
+        [x1, y]).retypeL Ty.flags)).retypeL T) := by
+  rw [Int64.ofInt_toInt, retypeL_flags_cmpSh]
+  cases hy : Arm64.reg y with
+  | none =>
+    simp only [Arm64.op1, hy, retypeL_poison, cmp_poison_left]; exact .poison _
+  | some v =>
+    simp only [Arm64.op1, hy]
+    rcases retypeL_res_wide h64 (sh.apply v (Arm64.amt k)) with h | h <;> rw [h]
+    · rw [← cmp_shifted_eq sh k x1 y hy, invertFlags_cmp]; exact Refines.refl _
+    · rw [cmp_poison_left, retypeL_poison]; exact .poison _
+
+private theorem armReadW_cmp (T : Ty) (i : Nat) : armReadW .ARM64CMP T i = 64 := by
+  cases T <;> rfl
+
+/-- `ARM64.rules:1463`: `(CMP x0 x1:(SLLconst [c] y)) && clobberIfDead(x1) => (CMPshiftLL x0 y [c])` -/
+theorem r_ARM64_1463_sound : ArmRule.Checked r_ARM64_1463 := by
+  left; arm_unfold; arm_norm
+  exact refines_cmpSh .ll _ (armReadW_cmp _ 1 ▸ harg.2.1) _ _
+
+/-- `ARM64.rules:1464`: `(CMP x0:(SLLconst [c] y) x1) && clobberIfDead(x0) => (InvertFlags (CMPshiftLL x1 y [c]))` -/
+theorem r_ARM64_1464_sound : ArmRule.Checked r_ARM64_1464 := by
+  left; arm_unfold; arm_norm
+  exact refines_cmpSh_inv .ll _ (armReadW_cmp _ 0 ▸ harg.1.1) _ _
+
+/-- `ARM64.rules:1465`: `(CMP x0 x1:(SRLconst [c] y)) && clobberIfDead(x1) => (CMPshiftRL x0 y [c])` -/
+theorem r_ARM64_1465_sound : ArmRule.Checked r_ARM64_1465 := by
+  left; arm_unfold; arm_norm
+  exact refines_cmpSh .rl _ (armReadW_cmp _ 1 ▸ harg.2.1) _ _
+
+/-- `ARM64.rules:1466`: `(CMP x0:(SRLconst [c] y) x1) && clobberIfDead(x0) => (InvertFlags (CMPshiftRL x1 y [c]))` -/
+theorem r_ARM64_1466_sound : ArmRule.Checked r_ARM64_1466 := by
+  left; arm_unfold; arm_norm
+  exact refines_cmpSh_inv .rl _ (armReadW_cmp _ 0 ▸ harg.1.1) _ _
+
+/-- `ARM64.rules:1467`: `(CMP x0 x1:(SRAconst [c] y)) && clobberIfDead(x1) => (CMPshiftRA x0 y [c])` -/
+theorem r_ARM64_1467_sound : ArmRule.Checked r_ARM64_1467 := by
+  left; arm_unfold; arm_norm
+  exact refines_cmpSh .ra _ (armReadW_cmp _ 1 ▸ harg.2.1) _ _
+
+/-- `ARM64.rules:1468`: `(CMP x0:(SRAconst [c] y) x1) && clobberIfDead(x0) => (InvertFlags (CMPshiftRA x1 y [c]))` -/
+theorem r_ARM64_1468_sound : ArmRule.Checked r_ARM64_1468 := by
+  left; arm_unfold; arm_norm
+  exact refines_cmpSh_inv .ra _ (armReadW_cmp _ 0 ▸ harg.1.1) _ _
 
 /-! ## Conditional ops on `InvertFlags`, split by the condition (`Derive.ccSplit`) -/
 

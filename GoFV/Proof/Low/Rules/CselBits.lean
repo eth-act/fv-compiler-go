@@ -1,5 +1,6 @@
 import GoFV.Proof.Low.Rules.Peep
 import GoFV.Proof.Low.Rules.Invert
+import GoFV.Proof.Low.ArmMonoRetype
 
 /-!
 # Lowering rule lemmas: bit lengths, conditional selects, `TST` conditions, booleans, division (`ARM64.rules:15-35`, `104-106`, `135-137`, `187`, `271`, `564-570`, `1186-1195`)
@@ -20,6 +21,11 @@ import GoFV.Proof.Low.Rules.Invert
 * their mirrored forms on `arm64Negate(cc)` (`1187`, `1189`, `1193`, `1195`), split by the
   condition op (`GoFV.Rules.Derive.ccSplit` over `negCondOps`): the negated condition holds
   exactly when the condition does not, the float conditions included (`eval_condNeg`).
+* `(CSEL [cc] x (ADDconst [1] a) flag) => (CSINC [cc] x a flag)` (`1190`) and its mirror on
+  `arm64Negate(cc)` (`1191`, split as above): `CSINC` adds 1 to `a` as `ADDconst` does, a pointer
+  `a` included (`Arm64.csinc`, `addP`); the `ADDconst` arm is read whole, so a pointer's word is
+  kept at a word shape or `poison` (`retypeL_word_wide`), a register's sum likewise
+  (`refines_regVal_addP`).
 * `((Equal|NotEqual|LessThan|LessEqual|GreaterThan|GreaterEqual) (CMPconst [0] z:(AND x y)))
   => (… (TST x y))` (`564`) and the `CMPWconst`/`ANDconst`/`TSTW`/`TSTWconst`/`TSTconst` forms
   (`566`, `568`, `570`): the flags of `r − 0` and of `TST` (`r &&& r'`) differ only in `C`
@@ -40,12 +46,6 @@ import GoFV.Proof.Low.Rules.Invert
 
 Found false (not proven; `docs/proofs/rules.md` "Findings"):
 
-* `(CSEL [cc] x (ADDconst [1] a) flag) => (CSINC [cc] x a flag)` (`1190`) and its mirror `1191`.
-  `ADDconst` of a pointer `a` without an integer form (a global `&g`, which has no concrete
-  address) is the pointer `&g + 1` (`Arm64.addP`, the provenance case the validator admits at a
-  word shape), which `CSEL` moves as the pointer (`regVal`); `CSINC` reads `a`'s register, which a
-  global has none of: when the condition fails the source is the pointer `&g + 1`, the target
-  `poison`.
 * `(AndB ...) => (AND ...)` (`133`) and `(OrB ...) => (OR ...)` (`134`): Phase 1's `AndB`/`OrB`
   are parallel (`Cmp.andB`: `false && poison` is `false`), `AND`/`OR` read both registers:
   `AndB false poison` is `false`, `AND` of it `poison` (`OrB true poison`: `true`, `poison`).
@@ -517,6 +517,134 @@ theorem r_ARM64_1195_cc_sound : ForallL ArmRule.Checked (ccSplit r_ARM64_1195) :
       exact refines_csel_op1_neg harg.1.1
         (condOn_neg (hk.trans rfl) (by decide) (by decide) _) _ _ _
     · exact refines_csel_op1_neg harg.1.1 (condOn_none hk _ _ _) _ _ _
+
+/-! ## `CSINC` of an incremented operand (`1190`, `1191`) -/
+
+/-- A register result moved unchanged (`regVal`) is itself. -/
+private theorem regVal_res (T : Ty) (r : BitVec 64) :
+    Arm64.regVal T (Arm64.res T r) = Arm64.res T r := by
+  cases T with
+  | bool =>
+    simp only [Arm64.res, Arm64.regVal, Arm64.reg]
+    cases r.getLsbD 0 <;> rfl
+  | _ => simp [Arm64.res, Arm64.regVal, Arm64.reg]
+
+/-- A pointer's word at a shape with a whole register: kept (a word shape) or `poison` (an
+aggregate). -/
+private theorem retypeL_word_wide (p : Ptr) {T : Ty} (hT : 64 ≤ argWidth T) :
+    p.word.retypeL T = p.word ∨ p.word.retypeL T = .poison := by
+  cases T with
+  | int w =>
+    cases w <;> simp [argWidth, Width.bits] at hT
+    left; unfold Val.retypeL
+    rw [Mono.widen_of_hasTy _ _ (Ptr.word_hasTy_i64 p), Ptr.word_retype_i64]
+  | ptr e =>
+    left; unfold Val.retypeL
+    rw [Mono.widen_of_hasTy _ _ (Ptr.word_hasTy_ptr p e), Ptr.word_retype_ptr]
+  | agg fs n =>
+    right
+    rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ <;> rw [h] <;> rfl
+  | _ => simp [argWidth] at hT
+
+/-- `ADDconst [1] a` at a shape with a whole register, moved (`regVal`): `CSINC`'s register
+(`Arm64.csinc`). A pointer `a` moves alike at every shape, its word kept at a word shape
+(`retypeL_word_wide`); a register `a` gives the 64-bit sum. -/
+private theorem refines_regVal_addP {T1 : Ty} (h : 64 ≤ argWidth T1) (T : Ty) (a : Val) :
+    Refines ((Arm64.regVal T ((Arm64.addP T1 a 1).retypeL T1)).retypeL T)
+      ((Arm64.regVal T (Arm64.addP T a 1)).retypeL T) := by
+  have hP : Arm64.regVal T .poison = .poison := rfl
+  by_cases hap : ∃ p, a = .ptr p
+  · obtain ⟨p, rfl⟩ := hap
+    simp only [Arm64.addP, PtrOps.ptrRes]
+    split
+    · rcases retypeL_word_wide (p.add 1) h with h' | h' <;> rw [h']
+      · exact Refines.refl _
+      · rw [hP, retypeL_poison]; exact .poison _
+    · rw [retypeL_poison]; exact Refines.refl _
+  · have hA : ∀ T', Arm64.addP T' a 1 = match Arm64.reg a with
+        | some x => Arm64.res T' (x + 1)
+        | none => .poison := fun T' => by
+      cases a <;> first | rfl | exact absurd ⟨_, rfl⟩ hap
+    rw [hA, hA]
+    cases hr : Arm64.reg a with
+    | none => simp only [retypeL_poison, hP]; exact .poison _
+    | some x =>
+      rcases retypeL_res_wide h (x + 1) with h' | h' <;> simp only [h']
+      · have : Arm64.regVal T (.int .w64 (x + 1)) = Arm64.res T (x + 1) := by
+          simp [Arm64.regVal, Arm64.reg]
+        rw [this, regVal_res]; exact Refines.refl _
+      · rw [hP, retypeL_poison]; exact .poison _
+
+private theorem refines_csel_csinc {T T1 : Ty} (h1 : 64 ≤ argWidth T1) {k k' : Int64} {F : Val}
+    (hk : ∀ b, Arm64.condOn k F = some b → Arm64.condOn k' F = some (id b)) (X a : Val) :
+    Refines ((Arm64.csel T k none [X, (Arm64.addP T1 a 1).retypeL T1, F]).retypeL T)
+      ((Arm64.csinc T k' [X, a, F]).retypeL T) := by
+  simp only [Arm64.csel, Arm64.csinc]
+  cases hA : Arm64.condOn k F with
+  | none => simp only [retypeL_poison]; exact .poison _
+  | some b =>
+    rw [hk b hA]
+    cases b
+    · exact refines_regVal_addP h1 T a
+    · exact Refines.refl _
+
+private theorem refines_csel_csinc_neg {T T0 : Ty} (h0 : 64 ≤ argWidth T0) {k k' : Int64}
+    {F : Val} (hk : ∀ b, Arm64.condOn k F = some b → Arm64.condOn k' F = some (!b)) (X a : Val) :
+    Refines ((Arm64.csel T k none [(Arm64.addP T0 a 1).retypeL T0, X, F]).retypeL T)
+      ((Arm64.csinc T k' [X, a, F]).retypeL T) := by
+  simp only [Arm64.csel, Arm64.csinc]
+  cases hA : Arm64.condOn k F with
+  | none => simp only [retypeL_poison]; exact .poison _
+  | some b =>
+    rw [hk b hA]
+    cases b
+    · exact Refines.refl _
+    · exact refines_regVal_addP h0 T a
+
+private theorem auxInt_one {k : Int64} (h : DV.int k.toInt = DV.int 1) :
+    BitVec.ofInt 64 k.toInt = 1 := by
+  injection h with h; rw [h]; rfl
+
+/-- `ARM64.rules:1190`: `(CSEL [cc] x (ADDconst [1] a) flag) => (CSINC [cc] x a flag)` -/
+theorem r_ARM64_1190_sound : ArmRule.Checked r_ARM64_1190 := by
+  left; arm_unfold; arm_norm
+  rw [auxInt_one hc]
+  rcases ccDV_cases (e.auxInt []) with ⟨o, ho, hk⟩ | ⟨ho, hk⟩ <;> simp only [ho]
+  · exact refines_csel_csinc harg.2.1.1 (condOn_goNum hk _) _ _
+  · exact refines_csel_csinc harg.2.1.1 (condOn_none hk _ _ _) _ _
+
+/-- `ccSplit r_ARM64_1191` on the condition op `cc`. -/
+private def r1191 (cc : Op) : Rule where
+  loc := ⟨"ARM64", 1191⟩
+  op := .ARM64CSEL
+  vars := [⟨"cc", .auxInt, (.named "Op")⟩, ⟨"a", .value, (.named "*Value")⟩, ⟨"x", .value, (.named "*Value")⟩, ⟨"flag", .value, (.named "*Value")⟩]
+  pat := (.op .ARM64CSEL none .any (.bind 0) .any .fixed [(.op .ARM64ADDconst none .any (.eq (.lit .int64 (.int 1))) .any .fixed [(.bind 1)] false), (.bind 2), (.bind 3)] false)
+  cond := some (ccCond 0 cc)
+  block := none
+  result := .build
+      [{ op := .ARM64CSINC, ty := none, auxInt := some (.op (negOp cc)), aux := none, args := [.var 2, .var 1, .var 3] }]
+  pos := []
+
+private theorem ccSplit_1191 : ccSplit r_ARM64_1191 = negCondOps.map r1191 := by rfl
+
+set_option maxRecDepth 100000 in
+/-- `ARM64.rules:1191`: `(CSEL [cc] (ADDconst [1] a) x flag) => (CSINC [arm64Negate(cc)] x a flag)`, split by the condition (`ccSplit`) -/
+theorem r_ARM64_1191_cc_sound : ForallL ArmRule.Checked (ccSplit r_ARM64_1191) := by
+  rw [ccSplit_1191]
+  simp only [negCondOps, intCondOps, List.cons_append, List.nil_append, List.map_cons,
+    List.map_nil, ForallL]
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, trivial⟩
+  all_goals
+    left; arm_unfold; arm_norm
+    simp only [ccCond, rule_unfold_ds, sigmaL, Pat.bindsL, Pat.bindssL, auxIntDVL] at hcond
+    rw [auxInt_one hc]
+    rcases ccDV_cases (e.auxInt []) with ⟨o, ho, hk⟩ | ⟨ho, hk⟩
+    · rw [ho] at hcond
+      simp [binE, binDV] at hcond
+      subst hcond
+      exact refines_csel_csinc_neg harg.1.1
+        (condOn_neg (hk.trans rfl) (by decide) (by decide) _) _ _
+    · exact refines_csel_csinc_neg harg.1.1 (condOn_none hk _ _ _) _ _
 
 /-! ## Conditions on `TST` (`564-570`) -/
 
