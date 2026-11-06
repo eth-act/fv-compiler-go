@@ -672,8 +672,10 @@ theorem atomPair_phi {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true
   rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h | h, -⟩ | h | h
   · rw [h]
   · rcases renameOp_cases h with ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ |
-        ⟨h1, h2⟩ | ⟨h1, h2⟩ <;>
-      rw [h1, h2] <;> decide
+        ⟨h1, h2⟩ | ⟨h1, h2⟩ | h9 <;> first
+      | (rw [h1, h2]; decide)
+      | (obtain ⟨-, -, -, -, -, -, h1, h2, -⟩ := atomicOf_facts h9
+         exact ⟨fun h' => absurd h' h2, fun h' => absurd h' h1⟩)
   · obtain ⟨h1, h2, -⟩ := memLower_ops h
     exact ⟨fun h' => absurd h' h2, fun h' => absurd h' h1⟩
   · obtain ⟨h1, h2, -⟩ := bulkLower_ops h
@@ -691,8 +693,10 @@ theorem atomPair_isRoot {tabs : Tables} {u w : Value} (h : atomPair tabs u w = t
   · exact .inl (by rw [h])
   · left
     rcases renameOp_cases h with ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ |
-        ⟨h1, h2⟩ | ⟨h1, h2⟩ <;>
-      rw [h1, h2] <;> decide
+        ⟨h1, h2⟩ | ⟨h1, h2⟩ | h9 <;> first
+      | (rw [h1, h2]; decide)
+      | (obtain ⟨-, -, -, -, h1, h2, -⟩ := atomicOf_facts h9
+         rw [h1, h2])
   · exact .inl (memLower_ops h).2.2
   · exact .inr h
   · exact .inl (addrLower_ops h).2.2
@@ -872,7 +876,7 @@ theorem atomPair_eval {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
       rw [evalOpL_generic _ _ _ _ _ _ (hop ▸ hgen)]
       exact hmono
     · rcases evalOpL_rename (env := env) (ctx := Ctx.makeL tabs g) (fr := GT) (argv := AT) (ty := ty)
-          hop with ⟨k, hk, he⟩ | ⟨-, he⟩ | ⟨-, msg, he⟩
+          hop with ⟨k, hk, he⟩ | ⟨-, he⟩ | ⟨-, msg, he⟩ | ⟨-, he, ht⟩
       · rw [he]
         have ht : evalOp env (Ctx.makeL tabs g) GT { w with op := u.op } AT ty =
             callOp env (Ctx.makeL tabs g) { w with op := u.op } AT := evalOp_postCall hk
@@ -881,6 +885,8 @@ theorem atomPair_eval {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
         exact resRefines_trans hmono hfit
       · rw [he]; exact hmono
       · rw [he] at hmono; exact resRefines_trans hmono (.stuck msg _)
+      · rw [he]; rw [ht] at hmono
+        exact resRefines_trans hmono (atomicRoot_fit { w with op := u.op } AT)
   exact Res.Rel.bind hev fun x y hxy => .ok (rty_le hl ty hxy)
 
 

@@ -270,8 +270,9 @@ theorem atom_ref (hfrS : RegsFrame tabs 0 f.value? G) (hfr : T = { G with regs :
           rw [hop, (argFree_cases hf).1] at hg; exact absurd hg (by decide)
         · have hw' := (argFree_cases hf).1
           rcases renameOp_cases hop with ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ |
-              ⟨-, h2⟩ | ⟨-, h2⟩ <;>
-            rw [h2] at hw' <;> cases hw'
+              ⟨-, h2⟩ | ⟨-, h2⟩ | h9 <;> first
+            | (rw [h2] at hw'; cases hw')
+            | exact (atomicOf_facts h9).2.2.2.2.2.2.2.2.1 hw'
         · obtain ⟨-, -, -, n, hs, -⟩ := memLower_cases hm
           rw [(argFree_cases hf).1] at hs; cases hs
         · have hzw := bulkLower_op hz
@@ -335,7 +336,7 @@ theorem evalOpL_safeL {env : Env} {ctx : Ctx} {fr : Frame} {u w : Value} {argv :
   · rw [evalOpL_generic _ _ _ _ _ _ (hop ▸ hgen)]
     exact evalOp_safe hr ha hai
   · rcases evalOpL_rename (env := env) (ctx := ctx) (fr := fr) (argv := argv) (ty := ty) hop with
-      ⟨k, hk, -⟩ | ⟨ho, he⟩ | ⟨ho, -⟩
+      ⟨k, hk, -⟩ | ⟨ho, he⟩ | ⟨ho, -⟩ | ⟨hat, -⟩
     · rcases hk with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] at hr' <;> exact absurd hr' (by decide)
     · rw [he]
       rcases ho with ho | ho | ho
@@ -344,6 +345,8 @@ theorem evalOpL_safeL {env : Env} {ctx : Ctx} {fr : Frame} {u w : Value} {argv :
           (by rw [ho]; decide) (by rw [ho]; decide)
       · rw [ho] at hr'; exact absurd hr' (by decide)
     · rcases ho with ho | ho <;> rw [ho] at hr' <;> exact absurd hr' (by decide)
+    · have := (atomicOf_facts hat).2.2.2.2.2.1
+      rw [hr] at this; cases this
   · obtain ⟨-, -, hu, -⟩ := memLower_cases hm
     rw [hu] at hr'; exact absurd hr' (by decide)
   · rw [hz] at hz'; cases hz'

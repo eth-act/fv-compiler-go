@@ -370,8 +370,95 @@ theorem atomicRoot_tail {v : Value} (hv : v.op = .TailCall ∨ v.op = .TailCallI
     · exact ⟨_, rfl⟩
   · exact ⟨_, rfl⟩
 
+/-- `fitPiece t x` is `x`, or `x` is an integer of another width or a boolean, which the shape
+`t` stores as `poison` and reads as no integer. -/
+theorem fitPiece_cases (t : Ty) (x : Val) :
+    fitPiece t x = x ∨ (encode t x = encode t .poison ∧ x.asInt (Atomic.width t) = none) := by
+  unfold fitPiece
+  split
+  · next w b w' =>
+    by_cases h : w = w'
+    · subst h; left; simp
+    · right
+      refine ⟨?_, ?_⟩
+      · cases w <;> cases w' <;> first | exact absurd rfl h | rfl
+      · simp [Atomic.width, Val.asInt, h]
+  · next w b e =>
+    by_cases h : w = .w64
+    · subst h; left; simp
+    · right
+      refine ⟨?_, ?_⟩
+      · cases w <;> first | exact absurd rfl h | rfl
+      · simp [Atomic.width, Val.asInt, h]
+  · next b w => right; exact ⟨by cases w <;> rfl, rfl⟩
+  · next b e => right; exact ⟨rfl, rfl⟩
+  · left; rfl
+
+/-- **An atomic on its operands fitted to the location refines it** (`Sem.atomicArgs`): an
+operand `fitPiece` changes the location stores as `poison`, and as an old value of a
+compare-and-swap it is `stuck`. -/
+theorem atomicRoot_fit (v : Value) (argv : List Val) :
+    Res.Refines (atomicRoot v argv) (atomicRoot v (atomicArgs v.op argv)) := by
+  unfold atomicArgs
+  split
+  · next a x m k t hi =>
+    show Res.Refines (Atomic.rmwRoot v a x m) (Atomic.rmwRoot v a (fitPiece t x) m)
+    cases m
+    case mem m =>
+      simp only [Atomic.rmwRoot, hi]
+      cases a.asPtrWord with
+      | none => exact .stuck _ _
+      | some p =>
+        dsimp only
+        rcases fitPiece_cases t x with h | ⟨he, hx⟩
+        · rw [h]; exact Res.Refines.refl _
+        · exact atomicRmw_poisonArg v k t p _ m he hx
+    all_goals exact .stuck _ _
+  · next a o n m w hc =>
+    show Res.Refines (Atomic.casRoot v a o n m)
+      (Atomic.casRoot v a (fitPiece (.int w) o) (fitPiece (.int w) n) m)
+    cases m
+    case mem m =>
+      simp only [Atomic.casRoot, hc]
+      cases a.asPtrWord with
+      | none => exact .stuck _ _
+      | some p =>
+        dsimp only
+        rcases fitPiece_cases (.int w) o with ho | ⟨-, ho⟩
+        · rw [ho]
+          rcases fitPiece_cases (.int w) n with hn | ⟨hn, -⟩
+          · rw [hn]; exact Res.Refines.refl _
+          · exact atomicCas_poisonArg v w p o _ m hn
+        · exact atomicCas_stuckArg v w p n m ho _
+    all_goals exact .stuck _ _
+  · exact Res.Refines.refl _
+
+/-- An arm64 atomic evaluates as the generic atomic it is (`Arm64.atomicOf`) on its operands
+fitted to the location (`Sem.atomicArgs`); the generic atomic is `atomicRoot`'s. -/
+theorem evalOpL_atomic {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : List Val}
+    {ty : Ty} {o : Op} (h : Arm64.atomicOf w.op = some o) :
+    evalOpL false env ctx fr w argv ty = atomicRoot { w with op := o } (atomicArgs o argv) ∧
+      evalOp env ctx fr { w with op := o } argv ty = atomicRoot { w with op := o } argv := by
+  have h0 : nilFaults false ctx w argv = none := rfl
+  generalize hb : w.op = b at h
+  have hg := (atomicOf_facts h).2.1
+  unfold Arm64.atomicOf at h
+  split at h <;> first
+    | (cases h; done)
+    | (cases h
+       refine ⟨?_, rfl⟩
+       unfold evalOpL
+       rw [hb]
+       simp only [hg, Bool.false_eq_true, ite_false]
+       unfold arm64Op
+       rw [h0]
+       dsimp only
+       rw [hb]
+       rfl)
+
 /-- A renamed atom evaluates as the generic op it renames (`arm64Op`), on fitted pieces for a
-call; the generic tail calls are `stuck` (`atomicRoot`). -/
+call; the generic tail calls are `stuck` (`atomicRoot`); an arm64 atomic is its generic atomic on
+its operands fitted to the location (`evalOpL_atomic`). -/
 theorem evalOpL_rename {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : List Val} {ty : Ty}
     {o : Op} (h : renameOp o w.op = true) :
     (∃ k, PostCall o k ∧ evalOpL false env ctx fr w argv ty =
@@ -379,10 +466,13 @@ theorem evalOpL_rename {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : 
       ((o = .NilCheck ∨ o = .GetClosurePtr ∨ o = .PanicBounds) ∧
         evalOpL false env ctx fr w argv ty = evalOp env ctx fr { w with op := o } argv ty) ∨
       ((o = .TailCall ∨ o = .TailCallInter) ∧
-        ∃ msg, evalOp env ctx fr { w with op := o } argv ty = .stuck msg) := by
+        ∃ msg, evalOp env ctx fr { w with op := o } argv ty = .stuck msg) ∨
+      (Arm64.atomicOf w.op = some o ∧
+        evalOpL false env ctx fr w argv ty = atomicRoot { w with op := o } (atomicArgs o argv) ∧
+        evalOp env ctx fr { w with op := o } argv ty = atomicRoot { w with op := o } argv) := by
   have h0 : nilFaults false ctx w argv = none := rfl
   rcases renameOp_cases h with ⟨rfl, hw⟩ | ⟨rfl, hw⟩ | ⟨rfl, hw⟩ | ⟨rfl, hw⟩ | ⟨rfl, hw⟩ |
-    ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, hw⟩
+    ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, hw⟩ | hat
   · refine .inr (.inl ⟨.inl rfl, ?_⟩)
     have hg : Op.ARM64LoweredNilCheck.generic = false := by decide
     unfold evalOpL
@@ -435,11 +525,11 @@ theorem evalOpL_rename {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : 
     rw [hw]
     unfold evalOp
     rfl
-  · refine .inr (.inr ⟨.inl rfl, ?_⟩)
+  · refine .inr (.inr (.inl ⟨.inl rfl, ?_⟩))
     have : evalOp env ctx fr { w with op := .TailCall } argv ty =
         atomicRoot { w with op := .TailCall } argv := rfl
     rw [this]; exact atomicRoot_tail (.inl rfl) argv
-  · refine .inr (.inr ⟨.inr rfl, ?_⟩)
+  · refine .inr (.inr (.inl ⟨.inr rfl, ?_⟩))
     have : evalOp env ctx fr { w with op := .TailCallInter } argv ty =
         atomicRoot { w with op := .TailCallInter } argv := rfl
     rw [this]; exact atomicRoot_tail (.inr rfl) argv
@@ -454,6 +544,7 @@ theorem evalOpL_rename {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : 
     rw [hw]
     unfold evalOp
     rfl
+  · exact .inr (.inr (.inr ⟨hat, evalOpL_atomic hat⟩))
 
 /-- A call of a post-`expand calls` generic op evaluates by `callOp`. -/
 theorem evalOp_postCall {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}

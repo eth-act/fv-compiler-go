@@ -2,12 +2,14 @@ import GoFV.Proof.Low.Rules.Kit
 import GoFV.Rules.Generated.ARM64
 
 /-!
-# Lowering rule lemmas: atom renames and atomic loads (`ARM64.rules:376-377`, `438-439`, `442-455`, `482-485`, `507`, `512-516`)
+# Lowering rule lemmas: atom renames and atomics (`ARM64.rules:376-377`, `438-439`, `442-455`, `482-489`, `492-504`, `507`, `512-516`)
 
 `ArmRule.Rename` of the ellipsis rules renaming an atom (`renameOp`): calls, tail calls, nil
-checks, the closure pointer and the bounds panic; the rules folding a constant operand into a
-lowered bounds panic (`ArmRule.Mem`, `pbAtom`) and lowering a `Zero` to `LoweredZero` or
-`LoweredZeroLoop` or a `Move` to `LoweredMove` or `LoweredMoveLoop` (`ArmRule.Mem`).
+checks, the closure pointer, the bounds panic and the atomics (`Arm64.atomicOf`: an arm64 atomic
+runs as the generic atomic it is on its operands fitted to the location, `Sem.atomicArgs`); the
+rules folding a constant operand into a lowered bounds panic (`ArmRule.Mem`, `pbAtom`) and
+lowering a `Zero` to `LoweredZero` or `LoweredZeroLoop` or a `Move` to `LoweredMove` or
+`LoweredMoveLoop` (`ArmRule.Mem`).
 `ArmRule.SetOp` of the write barrier (`WB` and `LoweredWB` are terms, both `wbOp`) and of the
 atomic loads: `AtomicLoad{8,32,64,Ptr}` and the acquiring loads `LDAR{B,W,}` they lower to are
 terms (`ldarOp`), both Phase 1's `atomicLoad` (`armPure_ldar`).
@@ -120,5 +122,121 @@ theorem r_ARM64_484_sound : ArmRule.Checked r_ARM64_484 :=
 theorem r_ARM64_485_sound : ArmRule.Checked r_ARM64_485 :=
   checked_setOp .AtomicLoadPtr .ARM64LDAR rfl rfl rfl rfl (termVL_generic _ rfl rfl)
     (termVL_ldar _ rfl) (setOpSound_ldar rfl rfl rfl fun _ _ _ _ => rfl)
+
+/-- `ARM64.rules:487`: `(AtomicStore8 ...) => (STLRB ...)` -/
+theorem r_ARM64_487_sound : ArmRule.Checked r_ARM64_487 :=
+  checked_rename .AtomicStore8 .ARM64STLRB rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:488`: `(AtomicStore32 ...) => (STLRW ...)` -/
+theorem r_ARM64_488_sound : ArmRule.Checked r_ARM64_488 :=
+  checked_rename .AtomicStore32 .ARM64STLRW rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:489`: `(AtomicStore64 ...) => (STLR ...)` -/
+theorem r_ARM64_489_sound : ArmRule.Checked r_ARM64_489 :=
+  checked_rename .AtomicStore64 .ARM64STLR rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:492`: `(AtomicExchange(8|32|64) ...) => (LoweredAtomicExchange(8|32|64) ...)` -/
+theorem r_ARM64_492_sound : ArmRule.Checked r_ARM64_492 :=
+  checked_rename .AtomicExchange32 .ARM64LoweredAtomicExchange32 rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:492`: `(AtomicExchange(8|32|64) ...) => (LoweredAtomicExchange(8|32|64) ...)` -/
+theorem r_ARM64_492_2_sound : ArmRule.Checked r_ARM64_492_2 :=
+  checked_rename .AtomicExchange64 .ARM64LoweredAtomicExchange64 rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:492`: `(AtomicExchange(8|32|64) ...) => (LoweredAtomicExchange(8|32|64) ...)` -/
+theorem r_ARM64_492_3_sound : ArmRule.Checked r_ARM64_492_3 :=
+  checked_rename .AtomicExchange8 .ARM64LoweredAtomicExchange8 rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:493`: `(AtomicAdd(32|64) ...) => (LoweredAtomicAdd(32|64) ...)` -/
+theorem r_ARM64_493_sound : ArmRule.Checked r_ARM64_493 :=
+  checked_rename .AtomicAdd32 .ARM64LoweredAtomicAdd32 rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:493`: `(AtomicAdd(32|64) ...) => (LoweredAtomicAdd(32|64) ...)` -/
+theorem r_ARM64_493_2_sound : ArmRule.Checked r_ARM64_493_2 :=
+  checked_rename .AtomicAdd64 .ARM64LoweredAtomicAdd64 rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:494`: `(AtomicCompareAndSwap(32|64) ...) => (LoweredAtomicCas(32|64) ...)` -/
+theorem r_ARM64_494_sound : ArmRule.Checked r_ARM64_494 :=
+  checked_rename .AtomicCompareAndSwap32 .ARM64LoweredAtomicCas32 rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:494`: `(AtomicCompareAndSwap(32|64) ...) => (LoweredAtomicCas(32|64) ...)` -/
+theorem r_ARM64_494_2_sound : ArmRule.Checked r_ARM64_494_2 :=
+  checked_rename .AtomicCompareAndSwap64 .ARM64LoweredAtomicCas64 rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:496`: `(AtomicAdd(32|64)Variant ...) => (LoweredAtomicAdd(32|64)Variant ...)` -/
+theorem r_ARM64_496_sound : ArmRule.Checked r_ARM64_496 :=
+  checked_rename .AtomicAdd32Variant .ARM64LoweredAtomicAdd32Variant rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:496`: `(AtomicAdd(32|64)Variant ...) => (LoweredAtomicAdd(32|64)Variant ...)` -/
+theorem r_ARM64_496_2_sound : ArmRule.Checked r_ARM64_496_2 :=
+  checked_rename .AtomicAdd64Variant .ARM64LoweredAtomicAdd64Variant rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:497`: `(AtomicExchange(8|32|64)Variant ...) => (LoweredAtomicExchange(8|32|64)Variant ...)` -/
+theorem r_ARM64_497_sound : ArmRule.Checked r_ARM64_497 :=
+  checked_rename .AtomicExchange32Variant .ARM64LoweredAtomicExchange32Variant rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:497`: `(AtomicExchange(8|32|64)Variant ...) => (LoweredAtomicExchange(8|32|64)Variant ...)` -/
+theorem r_ARM64_497_2_sound : ArmRule.Checked r_ARM64_497_2 :=
+  checked_rename .AtomicExchange64Variant .ARM64LoweredAtomicExchange64Variant rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:497`: `(AtomicExchange(8|32|64)Variant ...) => (LoweredAtomicExchange(8|32|64)Variant ...)` -/
+theorem r_ARM64_497_3_sound : ArmRule.Checked r_ARM64_497_3 :=
+  checked_rename .AtomicExchange8Variant .ARM64LoweredAtomicExchange8Variant rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:498`: `(AtomicCompareAndSwap(32|64)Variant ...) => (LoweredAtomicCas(32|64)Variant ...)` -/
+theorem r_ARM64_498_sound : ArmRule.Checked r_ARM64_498 :=
+  checked_rename .AtomicCompareAndSwap32Variant .ARM64LoweredAtomicCas32Variant rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:498`: `(AtomicCompareAndSwap(32|64)Variant ...) => (LoweredAtomicCas(32|64)Variant ...)` -/
+theorem r_ARM64_498_2_sound : ArmRule.Checked r_ARM64_498_2 :=
+  checked_rename .AtomicCompareAndSwap64Variant .ARM64LoweredAtomicCas64Variant rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:501`: `(AtomicAnd(64|32|8)value ...) => (LoweredAtomicAnd(64|32|8) ...)` -/
+theorem r_ARM64_501_sound : ArmRule.Checked r_ARM64_501 :=
+  checked_rename .AtomicAnd32value .ARM64LoweredAtomicAnd32 rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:501`: `(AtomicAnd(64|32|8)value ...) => (LoweredAtomicAnd(64|32|8) ...)` -/
+theorem r_ARM64_501_2_sound : ArmRule.Checked r_ARM64_501_2 :=
+  checked_rename .AtomicAnd64value .ARM64LoweredAtomicAnd64 rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:501`: `(AtomicAnd(64|32|8)value ...) => (LoweredAtomicAnd(64|32|8) ...)` -/
+theorem r_ARM64_501_3_sound : ArmRule.Checked r_ARM64_501_3 :=
+  checked_rename .AtomicAnd8value .ARM64LoweredAtomicAnd8 rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:502`: `(AtomicOr(64|32|8)value ...) => (LoweredAtomicOr(64|32|8) ...)` -/
+theorem r_ARM64_502_sound : ArmRule.Checked r_ARM64_502 :=
+  checked_rename .AtomicOr32value .ARM64LoweredAtomicOr32 rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:502`: `(AtomicOr(64|32|8)value ...) => (LoweredAtomicOr(64|32|8) ...)` -/
+theorem r_ARM64_502_2_sound : ArmRule.Checked r_ARM64_502_2 :=
+  checked_rename .AtomicOr64value .ARM64LoweredAtomicOr64 rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:502`: `(AtomicOr(64|32|8)value ...) => (LoweredAtomicOr(64|32|8) ...)` -/
+theorem r_ARM64_502_3_sound : ArmRule.Checked r_ARM64_502_3 :=
+  checked_rename .AtomicOr8value .ARM64LoweredAtomicOr8 rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:503`: `(AtomicAnd(64|32|8)valueVariant ...) => (LoweredAtomicAnd(64|32|8)Variant ...)` -/
+theorem r_ARM64_503_sound : ArmRule.Checked r_ARM64_503 :=
+  checked_rename .AtomicAnd32valueVariant .ARM64LoweredAtomicAnd32Variant rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:503`: `(AtomicAnd(64|32|8)valueVariant ...) => (LoweredAtomicAnd(64|32|8)Variant ...)` -/
+theorem r_ARM64_503_2_sound : ArmRule.Checked r_ARM64_503_2 :=
+  checked_rename .AtomicAnd64valueVariant .ARM64LoweredAtomicAnd64Variant rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:503`: `(AtomicAnd(64|32|8)valueVariant ...) => (LoweredAtomicAnd(64|32|8)Variant ...)` -/
+theorem r_ARM64_503_3_sound : ArmRule.Checked r_ARM64_503_3 :=
+  checked_rename .AtomicAnd8valueVariant .ARM64LoweredAtomicAnd8Variant rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:504`: `(AtomicOr(64|32|8)valueVariant ...) => (LoweredAtomicOr(64|32|8)Variant ...)` -/
+theorem r_ARM64_504_sound : ArmRule.Checked r_ARM64_504 :=
+  checked_rename .AtomicOr32valueVariant .ARM64LoweredAtomicOr32Variant rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:504`: `(AtomicOr(64|32|8)valueVariant ...) => (LoweredAtomicOr(64|32|8)Variant ...)` -/
+theorem r_ARM64_504_2_sound : ArmRule.Checked r_ARM64_504_2 :=
+  checked_rename .AtomicOr64valueVariant .ARM64LoweredAtomicOr64Variant rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:504`: `(AtomicOr(64|32|8)valueVariant ...) => (LoweredAtomicOr(64|32|8)Variant ...)` -/
+theorem r_ARM64_504_3_sound : ArmRule.Checked r_ARM64_504_3 :=
+  checked_rename .AtomicOr8valueVariant .ARM64LoweredAtomicOr8Variant rfl rfl rfl rfl rfl
 
 end GoFV.Proof.Low.Rules
