@@ -926,8 +926,7 @@ theorem atomicRmw_poisonArg (v : Value) (k : Atomic.Kind) (t : Ty) (p : Ptr) {x 
         (Atomic.step k (Atomic.width t) (m.load t p) .poison).2 := by
     cases k <;>
       simp only [Atomic.step, GoFV.SSA.Sem.Int.add, GoFV.SSA.Sem.Int.and, GoFV.SSA.Sem.Int.or, he,
-        hp x hi, hp .poison rfl] <;>
-      exact ⟨rfl, rfl⟩
+        hp x hi, hp .poison rfl, and_self]
   have h : Atomic.rmw v k t p x m = Atomic.rmw v k t p .poison m := by
     unfold Atomic.rmw; rw [hs.1, hs.2]
   rw [h]; exact atomicRmw_mono v k t p (.poison x') (Mem.Refines.refl m)

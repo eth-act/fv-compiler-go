@@ -63,7 +63,7 @@ def b2iNorm (r : Rule) : Rule where
     | res => res
   pos := r.pos
 
-/-- `ARM64.rules` restricted to its 379 proven value rules and 93 proven block rules. -/
+/-- `ARM64.rules` restricted to its 408 proven value rules and 93 proven block rules. -/
 def lower : RuleSet where
   name := "ARM64"
   values := [(.ARM64ADD, [Generated.ARM64.r_ARM64_970, Generated.ARM64.r_ARM64_1017, Generated.ARM64.r_ARM64_1433, Generated.ARM64.r_ARM64_1434, Generated.ARM64.r_ARM64_1435]),
@@ -146,10 +146,39 @@ def lower : RuleSet where
     (.And32, [Generated.ARM64.r_ARM64_43_2]),
     (.And64, [Generated.ARM64.r_ARM64_43_3]),
     (.And8, [Generated.ARM64.r_ARM64_43_4]),
+    (.AtomicAdd32, [Generated.ARM64.r_ARM64_493]),
+    (.AtomicAdd32Variant, [Generated.ARM64.r_ARM64_496]),
+    (.AtomicAdd64, [Generated.ARM64.r_ARM64_493_2]),
+    (.AtomicAdd64Variant, [Generated.ARM64.r_ARM64_496_2]),
+    (.AtomicAnd32value, [Generated.ARM64.r_ARM64_501]),
+    (.AtomicAnd32valueVariant, [Generated.ARM64.r_ARM64_503]),
+    (.AtomicAnd64value, [Generated.ARM64.r_ARM64_501_2]),
+    (.AtomicAnd64valueVariant, [Generated.ARM64.r_ARM64_503_2]),
+    (.AtomicAnd8value, [Generated.ARM64.r_ARM64_501_3]),
+    (.AtomicAnd8valueVariant, [Generated.ARM64.r_ARM64_503_3]),
+    (.AtomicCompareAndSwap32, [Generated.ARM64.r_ARM64_494]),
+    (.AtomicCompareAndSwap32Variant, [Generated.ARM64.r_ARM64_498]),
+    (.AtomicCompareAndSwap64, [Generated.ARM64.r_ARM64_494_2]),
+    (.AtomicCompareAndSwap64Variant, [Generated.ARM64.r_ARM64_498_2]),
+    (.AtomicExchange32, [Generated.ARM64.r_ARM64_492]),
+    (.AtomicExchange32Variant, [Generated.ARM64.r_ARM64_497]),
+    (.AtomicExchange64, [Generated.ARM64.r_ARM64_492_2]),
+    (.AtomicExchange64Variant, [Generated.ARM64.r_ARM64_497_2]),
+    (.AtomicExchange8, [Generated.ARM64.r_ARM64_492_3]),
+    (.AtomicExchange8Variant, [Generated.ARM64.r_ARM64_497_3]),
     (.AtomicLoad32, [Generated.ARM64.r_ARM64_483]),
     (.AtomicLoad64, [Generated.ARM64.r_ARM64_484]),
     (.AtomicLoad8, [Generated.ARM64.r_ARM64_482]),
     (.AtomicLoadPtr, [Generated.ARM64.r_ARM64_485]),
+    (.AtomicOr32value, [Generated.ARM64.r_ARM64_502]),
+    (.AtomicOr32valueVariant, [Generated.ARM64.r_ARM64_504]),
+    (.AtomicOr64value, [Generated.ARM64.r_ARM64_502_2]),
+    (.AtomicOr64valueVariant, [Generated.ARM64.r_ARM64_504_2]),
+    (.AtomicOr8value, [Generated.ARM64.r_ARM64_502_3]),
+    (.AtomicOr8valueVariant, [Generated.ARM64.r_ARM64_504_3]),
+    (.AtomicStore32, [Generated.ARM64.r_ARM64_488]),
+    (.AtomicStore64, [Generated.ARM64.r_ARM64_489]),
+    (.AtomicStore8, [Generated.ARM64.r_ARM64_487]),
     (.BitLen16, [Generated.ARM64.r_ARM64_106]),
     (.BitLen32, [Generated.ARM64.r_ARM64_105]),
     (.BitLen64, [Generated.ARM64.r_ARM64_104]),

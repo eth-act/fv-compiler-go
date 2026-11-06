@@ -239,7 +239,14 @@ Go's rules rely on in exactly two ways, and `runL` follows both:
    wider integer or a pointer shape is zero-extended (`Val.widen`), then shaped by Phase 1's
    `Val.retype`. Calls pass their register pieces at their leaves' shapes (`fitPieces`, since
    Phase 1's `encode` makes a piece of another width `poison`), atomics their operands at the
-   location's width (`atomicArgs`). Phase 1's `Val.retype` and `encode` are unchanged (§1).
+   location's shape the same way (`atomicArgs`, `fitPiece`: an integer of another width or a
+   boolean is fitted, a pointer, a blob or any other operand is passed as the generic atomic
+   reads it). **Change (#385, lowered layer only):** `atomicArgs` was `Val.retypeL` of every
+   operand, which makes a blob or a pointer at an integer location `poison` where Phase 1's
+   `encode` stores it, so an arm64 atomic did not refine the generic atomic it lowers
+   (`ARM64.rules:487-504`); with `fitPiece` it does (`GoFV.Proof.Low.Sim.atomicRoot_fit`).
+   sem-difftest (native and the quick-v7 corpus) is unchanged by it. Phase 1's `Val.retype` and
+   `encode` are unchanged (§1).
 2. *Register copies of extended loads.* `(MOVBreg x:(MOVBload …)) => (MOVDreg x)` and the other
    "don't extend after proper load" / "fold double extensions" rules (`ARM64latelower.rules`)
    pass a sign-extended narrow register on through `MOVDreg`/`MOVDnop`. These read their
