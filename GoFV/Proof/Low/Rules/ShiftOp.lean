@@ -284,15 +284,25 @@ private theorem sub_low {n : Nat} (hn : n ≤ 64) (a b b' : BitVec 64)
     BitVec.setWidth_add _ _ hn, BitVec.setWidth_neg_of_le hn, BitVec.setWidth_neg_of_le hn, h]
 
 /-- A register result read at its shape is never a pointer. -/
-private theorem retypeL_op1_nonptr (T : Ty) (g : BitVec 64 → BitVec 64) (y : Val) (p : Ptr) :
-    (Arm64.op1 T g [y]).retypeL T ≠ .ptr p := by
+private theorem retypeL_res_nonptr (T : Ty) (r : BitVec 64) (p : Ptr) :
+    (Arm64.res T r).retypeL T ≠ .ptr p := by
   intro h
-  cases hy : Arm64.reg y <;> simp only [Arm64.op1, hy, retypeL_poison, reduceCtorEq] at h
   cases T with
   | int w => rw [retypeL_res_int] at h; cases h
   | bool => cases h
   | ptr el => cases h
   | _ => simp [Arm64.res, Val.retypeL, Val.widen, Val.retype] at h
+
+private theorem retypeL_op1_nonptr (T : Ty) (g : BitVec 64 → BitVec 64) (y : Val) (p : Ptr) :
+    (Arm64.op1 T g [y]).retypeL T ≠ .ptr p := by
+  cases hy : Arm64.reg y <;> simp only [Arm64.op1, hy, retypeL_poison, ne_eq, reduceCtorEq,
+    not_false_eq_true, retypeL_res_nonptr]
+
+private theorem retypeL_op2w_nonptr (T : Ty) (g : BitVec 32 → BitVec 32 → BitVec 32) (a b : Val)
+    (p : Ptr) : (Arm64.op2w T g [a, b]).retypeL T ≠ .ptr p := by
+  cases ha : Arm64.reg32 a <;> cases hb : Arm64.reg32 b <;>
+    simp only [Arm64.op2w, Arm64.res32, ha, hb, retypeL_poison, ne_eq, reduceCtorEq,
+      not_false_eq_true, retypeL_res_nonptr]
 
 private theorem add_nonptr (T : Ty) {x v : Val} (hx : ∀ p, x ≠ .ptr p) (hv : ∀ p, v ≠ .ptr p) :
     Arm64.add T [x, v] = Arm64.op2 T (· + ·) [x, v] := by
@@ -467,5 +477,138 @@ theorem r_ARM64_1438_sound : ArmRule.Checked r_ARM64_1438 := by
   left; arm_unfold; arm_norm
   exact refines_subSh .ra _ (armReadW_addSub .ARM64SUB _ 1 (.inr rfl) ▸ harg.2.1.1) harg.1.2
     _ _ hty.1
+
+/-! ## `MADDW`/`MSUBW` -/
+
+/-- A value of shape `T0` where the validator's provenance clause holds at a non-word result
+shape: not a pointer. -/
+private theorem nonptr_of_shape {T T0 : Ty} {x : Val} (hT : wordShape T = false)
+    (hp : (!wordShape T0) = true ∨ wordShape T = true) (hx : x.hasTy T0 = true) :
+    ∀ p, x ≠ .ptr p := by
+  rintro p rfl
+  have := wordShape_of_ptr hx
+  rcases hp with h | h <;> simp_all
+
+/-- A register result at a non-word shape whose low bits are not at most 32: `poison`. -/
+private theorem retypeL_res_wideOther {T : Ty} (hT : wordShape T = false) (hl : ¬ lowW T ≤ 32)
+    (r : BitVec 64) : (Arm64.res T r).retypeL T = .poison := by
+  cases T with
+  | int w => cases w <;> simp_all [wordShape, lowW, Width.bits]
+  | bool => simp [lowW] at hl
+  | ptr _ => simp [wordShape] at hT
+  | _ => rfl
+
+private theorem op2_res_cases (T : Ty) (f : BitVec 64 → BitVec 64 → BitVec 64) (args : List Val) :
+    Arm64.op2 T f args = .poison ∨ ∃ r, Arm64.op2 T f args = Arm64.res T r := by
+  unfold Arm64.op2
+  split
+  · split
+    · exact .inr ⟨_, rfl⟩
+    · exact .inl rfl
+  · exact .inl rfl
+
+/-- `ADD x (MULW a b)` (or `SUB`, `hs`) at a shape of at most 32 bits as `MADDW x a b`
+(`MSUBW`): the low bits of the 64-bit sum of the 32-bit product are the 32-bit sum's; at a
+non-word shape `x` is not a pointer (`hp`), and any other non-word shape reads `poison`. -/
+private theorem refines_op2_mulw {T T1 : Ty} (f : BitVec 64 → BitVec 64 → BitVec 64)
+    (f32 : BitVec 32 → BitVec 32 → BitVec 32)
+    (hf : ∀ n, n ≤ 32 → ∀ (u z : BitVec 64) (m : BitVec 32), z.setWidth n = m.setWidth n →
+      (f u z).setWidth n = (f32 (u.setWidth 32) m).setWidth n)
+    (hT : wordShape T = false) (hw : lowW T ≤ argWidth T1) (x a b : Val) :
+    Refines ((Arm64.op2 T f [x, (Arm64.op2w T1 (· * ·) [a, b]).retypeL T1]).retypeL T)
+      ((Arm64.op3w T (fun u v w => f32 u (v * w)) [x, a, b]).retypeL T) := by
+  by_cases hl : lowW T ≤ 32
+  · obtain ⟨h1, h2⟩ := lowW_pos T
+    cases ha : Arm64.reg32 a with
+    | none =>
+      have : Arm64.op2w T1 (· * ·) [a, b] = .poison := by simp only [Arm64.op2w, ha]
+      rw [this, retypeL_poison, op2_poison_r, retypeL_poison]; exact .poison _
+    | some va =>
+      cases hb : Arm64.reg32 b with
+      | none =>
+        have : Arm64.op2w T1 (· * ·) [a, b] = .poison := by simp only [Arm64.op2w, ha, hb]
+        rw [this, retypeL_poison, op2_poison_r, retypeL_poison]; exact .poison _
+      | some vb =>
+        have : Arm64.op2w T1 (· * ·) [a, b] = Arm64.res T1 ((va * vb).setWidth 64) := by
+          simp only [Arm64.op2w, Arm64.res32, ha, hb]
+        rw [this]
+        rcases retypeL_res_reg h1 h2 hw ((va * vb).setWidth 64) with h | ⟨z, hz, hzk⟩
+        · rw [h, op2_poison_r, retypeL_poison]; exact .poison _
+        · cases hx : Arm64.reg x with
+          | none => simp only [Arm64.op2, hx, retypeL_poison]; exact .poison _
+          | some u =>
+            have hx32 : Arm64.reg32 x = some (u.setWidth 32) := by
+              simp only [Arm64.reg32, hx, Option.map_some]
+            simp only [Arm64.op2, Arm64.op3w, Arm64.res32, hx, hx32, ha, hb, hz]
+            apply Eq.subst (motive := fun v => Refines v _) (retypeL_res_low T _).symm
+            · exact Refines.refl _
+            · rw [hf _ hl u z (va * vb) (by rw [hzk, BitVec.setWidth_setWidth_of_le _ (by omega)]),
+                BitVec.setWidth_setWidth_of_le _ (by omega)]
+  · rcases op2_res_cases T f [x, (Arm64.op2w T1 (· * ·) [a, b]).retypeL T1] with h | ⟨r, h⟩ <;>
+      rw [h]
+    · rw [retypeL_poison]; exact .poison _
+    · rw [retypeL_res_wideOther hT hl]; exact .poison _
+
+private theorem add32_low (n : Nat) (hn : n ≤ 32) (u z : BitVec 64) (m : BitVec 32)
+    (h : z.setWidth n = m.setWidth n) :
+    (u + z).setWidth n = (u.setWidth 32 + m).setWidth n := by
+  rw [BitVec.setWidth_add _ _ (by omega), BitVec.setWidth_add _ _ hn, h,
+    BitVec.setWidth_setWidth_of_le _ hn]
+
+private theorem sub32_low (n : Nat) (hn : n ≤ 32) (u z : BitVec 64) (m : BitVec 32)
+    (h : z.setWidth n = m.setWidth n) :
+    (u - z).setWidth n = (u.setWidth 32 - m).setWidth n := by
+  rw [BitVec.sub_eq_add_neg, BitVec.sub_eq_add_neg, BitVec.setWidth_add _ _ (by omega),
+    BitVec.setWidth_add _ _ hn, BitVec.setWidth_neg_of_le (by omega), BitVec.setWidth_neg_of_le hn,
+    h, BitVec.setWidth_setWidth_of_le _ hn]
+
+/-- `ADD x (MULW a b)` at a non-word shape as `MADDW x a b` (`refines_op2_mulw`). -/
+theorem refines_maddw {T T0 T1 : Ty} (hT : wordShape T = false) (hw : lowW T ≤ argWidth T1)
+    (hp : (!wordShape T0) = true ∨ wordShape T = true) (x a b : Val) (hx : x.hasTy T0 = true) :
+    Refines ((Arm64.add T [x, (Arm64.op2w T1 (· * ·) [a, b]).retypeL T1]).retypeL T)
+      ((Arm64.op3w T (fun u v w => u + v * w) [x, a, b]).retypeL T) := by
+  rw [add_nonptr T (nonptr_of_shape hT hp hx) (retypeL_op2w_nonptr T1 _ a b)]
+  exact refines_op2_mulw (· + ·) (· + ·) add32_low hT hw x a b
+
+/-- `refines_maddw` with the product first. -/
+theorem refines_maddw_swap {T T0 T1 : Ty} (hT : wordShape T = false) (hw : lowW T ≤ argWidth T1)
+    (hp : (!wordShape T0) = true ∨ wordShape T = true) (x a b : Val) (hx : x.hasTy T0 = true) :
+    Refines ((Arm64.add T [(Arm64.op2w T1 (· * ·) [a, b]).retypeL T1, x]).retypeL T)
+      ((Arm64.op3w T (fun u v w => u + v * w) [x, a, b]).retypeL T) := by
+  rw [add_nonptr T (retypeL_op2w_nonptr T1 _ a b) (nonptr_of_shape hT hp hx),
+    op2_swap T (fun u v => BitVec.add_comm u v)]
+  exact refines_op2_mulw (· + ·) (· + ·) add32_low hT hw x a b
+
+/-- `SUB x (MULW a b)` at a non-word shape as `MSUBW x a b` (`refines_op2_mulw`). -/
+theorem refines_msubw {T T0 T1 : Ty} (hT : wordShape T = false) (hw : lowW T ≤ argWidth T1)
+    (hp : (!wordShape T0) = true ∨ wordShape T = true) (x a b : Val) (hx : x.hasTy T0 = true) :
+    Refines ((Arm64.sub T [x, (Arm64.op2w T1 (· * ·) [a, b]).retypeL T1]).retypeL T)
+      ((Arm64.op3w T (fun u v w => u - v * w) [x, a, b]).retypeL T) := by
+  rw [sub_nonptr T (nonptr_of_shape hT hp hx)]
+  exact refines_op2_mulw (· - ·) (· - ·) sub32_low hT hw x a b
+
+/-- `ARM64.rules:1017`: `(ADD a l:(MULW x y)) && v.Type.Size() <= 4 && l.Uses==1 && clobber(l) => (MADDW a x y)` -/
+theorem r_ARM64_1017_sound : ArmRule.Checked r_ARM64_1017 := by
+  left; arm_unfold
+  all_goals arm_norm
+  · arm_shape
+    all_goals first
+      | (simp [binE] at hcond; done)
+      | exact refines_maddw rfl (armReadW_addSub .ARM64ADD _ 1 (.inl rfl) ▸ harg.2.1.1) harg.1.2
+          _ _ _ hty.1
+  · arm_shape
+    all_goals first
+      | (simp [binE] at hcond; done)
+      | exact refines_maddw_swap rfl (armReadW_addSub .ARM64ADD _ 0 (.inl rfl) ▸ harg.1.1.1)
+          harg.2.2 _ _ _ hty.2
+
+/-- `ARM64.rules:1018`: `(SUB a l:(MULW x y)) && v.Type.Size() <= 4 && l.Uses==1 && clobber(l) => (MSUBW a x y)` -/
+theorem r_ARM64_1018_sound : ArmRule.Checked r_ARM64_1018 := by
+  left; arm_unfold; arm_norm
+  arm_shape
+  all_goals first
+    | (simp [binE] at hcond; done)
+    | exact refines_msubw rfl (armReadW_addSub .ARM64SUB _ 1 (.inr rfl) ▸ harg.2.1.1) harg.1.2
+        _ _ _ hty.1
 
 end GoFV.Proof.Low.Rules
