@@ -2,6 +2,7 @@ import GoFV.Proof.RetypeL
 import GoFV.Proof.Speculate
 import GoFV.Opt.ScheduleCheck
 import GoFV.Proof.EvalOpLDispatch
+import GoFV.Proof.PtrAddr
 
 /-!
 # `schedule` on `runSched`: what a value's class says about its evaluation
@@ -760,6 +761,95 @@ theorem evalValueL_nc_nil {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v :
     rfl
   rw [evalValueL_bind hm, hf, evalOpL_nc_nil hop hb]
   rfl
+
+/-! ## Parameter pieces -/
+
+/-- **A parameter's register piece evaluates** (`argOK`) in a frame with an image per
+parameter. -/
+theorem evalValueL_argOK {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
+    (h : argOK ctx.tabs ctx.params v = true) (himg : fr.images.size = ctx.params.size) :
+    ∃ y, evalValueL md env ctx fr v = .ok y := by
+  unfold argOK at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨hop, hargs⟩, haux⟩ := h
+  have hm : argsM fr v = .ok [] := by
+    have h0 : v.args = #[] := by simpa using hargs
+    simp only [argsM, h0]; rfl
+  rw [evalValueL_bind hm]
+  have hg : v.op.generic = true := by rw [hop]; rfl
+  rw [evalOpL_generic _ _ _ _ _ _ hg]
+  split at haux
+  · rename_i d n off hx
+    have hex : ∃ x, x ∈ ctx.params ∧ (x == some n) = true :=
+      ⟨some n, Array.mem_of_contains_eq_true haux, by simp⟩
+    have hi := Array.findIdx?_eq_some_of_exists hex
+    have hlt := Array.findIdx_lt_size_of_exists hex
+    have hev : evalOp env ctx fr v [] (ctx.tys[v.id]?.getD .other) =
+        argVal ctx fr n off (ctx.tys[v.id]?.getD .other) := by
+      unfold evalOp; rw [hop]; dsimp only; rw [hx]
+    rw [hev]
+    unfold argVal
+    rw [hi]
+    dsimp only
+    rw [Array.getElem?_eq_getElem (by rw [himg]; exact hlt)]
+    dsimp only
+    split <;> exact ⟨_, rfl⟩
+  · cases haux
+
+/-! ## Pointers outside the nil block -/
+
+/-- A pointer outside the nil block is one at a word shape. -/
+theorem nonNil_retype_ptr (md : LMode) {t : Ty} (ht : wordShape t = true) {p : Ptr}
+    (hp : p.blk ≠ .nil) : NonNil (md.retype t (.ptr p)) := by
+  refine ⟨p, ?_, hp⟩
+  unfold wordShape at ht
+  split at ht
+  · cases md with
+    | mk low faulting =>
+      cases low <;> simp [LMode.retype, Val.retypeL, Val.widen, Val.retype, Ptr.word_asPtrWord]
+  · cases md with
+    | mk low faulting =>
+      cases low <;> simp [LMode.retype, Val.retypeL, Val.widen, Val.retype, Ptr.word_asPtrWord]
+  · cases ht
+
+/-- **`SP` and `GetG` hold pointers outside the nil block** at a word shape: the
+outgoing-arguments area and the current goroutine. -/
+theorem evalValueL_spg {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {y : Val}
+    (hop : v.op = .SP ∨ v.op = .GetG) (hw : wordShape (ctx.tys[v.id]?.getD .other) = true)
+    (h : evalValueL md env ctx fr v = .ok y) : NonNil y := by
+  obtain ⟨argv, hm⟩ := evalValueL_args_ok h (by intro msg hh; cases hh)
+  rw [evalValueL_bind hm] at h
+  have hg : v.op.generic = true := by rcases hop with h | h <;> rw [h] <;> rfl
+  rw [evalOpL_generic _ _ _ _ _ _ hg] at h
+  rcases hop with hop | hop
+  · have he : evalOp env ctx fr v argv (ctx.tys[v.id]?.getD .other) =
+        .ok (.ptr ⟨.outargs ctx.act, 0⟩) := by
+      unfold evalOp; rw [hop]; simp only [frameVal, hop]; rfl
+    rw [he] at h; cases h
+    exact nonNil_retype_ptr md hw (by simp)
+  · have he : evalOp env ctx fr v argv (ctx.tys[v.id]?.getD .other) =
+        .ok (.ptr ⟨.global "runtime.g", 0⟩) := by
+      unfold evalOp; rw [hop]; simp only [frameVal, hop]; rfl
+    rw [he] at h; cases h
+    exact nonNil_retype_ptr md hw (by simp)
+
+/-- **Without a closure context** (a run of the function itself: `entryFrame` sets none),
+`GetClosurePtr` is `poison`, which has no nil base. -/
+theorem evalValueL_clo {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {y : Val}
+    (hop : v.op = .ARM64LoweredGetClosurePtr) (hc : fr.closure = none)
+    (h : evalValueL md env ctx fr v = .ok y) : ¬ NilBase y := by
+  obtain ⟨argv, hm⟩ := evalValueL_args_ok h (by intro msg hh; cases hh)
+  rw [evalValueL_bind hm, evalOpL_act (by rw [hop]; decide)] at h
+  have he : arm64Op md.faulting env ctx fr v argv (ctx.tys[v.id]?.getD .other) = .ok .poison := by
+    have hnf : nilFaults md.faulting ctx v argv = none := by
+      apply nilFaults_none_of <;> rw [hop] <;> rfl
+    unfold arm64Op; simp only [hnf]; rw [hop]; dsimp only; rw [hc]; rfl
+  rw [he] at h; cases h
+  rintro ⟨b, hb, -⟩
+  cases md with
+  | mk low faulting =>
+    cases low <;> simp [LMode.retype, Val.retypeL, Val.widen, Val.retype, Arm64.addr,
+      Arm64.reg] at hb
 
 /-! ## Value correspondence -/
 

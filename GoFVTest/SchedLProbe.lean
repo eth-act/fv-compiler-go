@@ -80,7 +80,8 @@ def why (tabs : Tables) (f g : Func) : String := Id.run do
             if isNC f p then return "use: nil check chain"
             return s!"use: nil check type ({repr (tys[a]?.getD .other)} vs {repr (tys[p]?.getD .other)})"
     return "uses (control)"
-  let sS := (Ctx.makeL tabs f).sched
+  let cS := Ctx.makeL tabs f
+  let sS := cS.sched
   let sT := (Ctx.makeSched tabs g).sched
   for b in List.range f.blockTab.size do
     if (f.block? b).isNone then continue
@@ -90,14 +91,14 @@ def why (tabs : Tables) (f g : Func) : String := Id.run do
         if oT.toList != gb.values.toList.filter (!isPhi g ·) then return "target order: not the block's non-Phis"
         if !topoB g oT.toList then return "target order: not topological"
       else return "block presence (orders)"
-      if !orderOK tabs f f.valueTab.size oS oT then
+      if !orderOK tabs cS.params cS.tys f f.valueTab.size oS oT then
         let pS := posFill oS.toList 0 (Array.replicate f.valueTab.size 0)
         let ns := oT.filter (mayFail tabs f)
         for l in List.range ns.size do
           for k in List.range l do
             let x := ns[l]!
             let y := ns[k]!
-            if pS[x]! < pS[y]! && !swapOK tabs f x y then
+            if pS[x]! < pS[y]! && !swapOK tabs cS.params cS.tys f x y then
               let sameMem := match f.value? x, f.value? y with
                 | some vx, some vy => s!"{vx.args.back? == vy.args.back?}, same ptr {vx.args[0]? == vy.args[0]?}, y ptr {(vy.args[0]?.bind f.value?).map (fun (u : Value) => u.op.name)} x base {(vx.args[0]?.bind f.value?).map (fun (u : Value) => u.op.name)}"
                 | _, _ => "?"

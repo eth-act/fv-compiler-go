@@ -18,7 +18,7 @@ op and no nil check, so `runLF` is `runL` on it (`noNilFault_of_noAct`) and
 
 namespace GoFV.Proof.Witness
 
-open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Proof GoFV.Proof.SchedL
+open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Proof GoFV.Proof.SchedL GoFV.Opt.ScheduleCheck
 
 /-- A pass environment for `schedule` on lowered `clamp` (`optimize 1`; the SSA pseudo-types). -/
 def clampSchedPassEnv : PassEnv :=
@@ -78,5 +78,25 @@ theorem schedule_refinesSchedL_witness :
       cases t
       cases h1
       exact ⟨m', rfl⟩
+
+/-- **`swapOK`'s `argOK` case is not vacuous**: `clampL`'s `x` (`v8`, an `ArgIntReg` of
+parameter `x`) is a parameter's register piece, so `scheduleCheck` lets the target run it before
+any value that may fail (`evalValueL_argOK`: it evaluates). -/
+theorem clampL_argOK :
+    argOK clampLTabs (Ctx.makeL clampLTabs clampL).params
+      (mkVI 8 .ArgIntReg 2 0 (some 7) (pos 2 22 7 0) 3 #[] 1) = true := by
+  decide +kernel
+
+/-- `clampL` plus `v25 = LoweredNilCheck v8 v1` in `b1`. -/
+def clampNC : Func :=
+  { clampL with
+    vidLast := 25
+    valueTab := clampLValues.push (some (mkV 25 .ARM64LoweredNilCheck 0 none p0 1 #[8, 1] 1)) }
+
+/-- **`swapOK`'s `nnBase` case is not vacuous**: a load `MOVDload v25 v1` whose pointer is a nil
+check's result never faults, so `swapOK` lets the target run a later failing value before it. -/
+theorem clampNC_nnBase :
+    nnBase clampLTabs #[] clampNC (mkV 26 .ARM64MOVDload 2 none p0 1 #[25, 1] 1) = true := by
+  decide +kernel
 
 end GoFV.Proof.Witness
