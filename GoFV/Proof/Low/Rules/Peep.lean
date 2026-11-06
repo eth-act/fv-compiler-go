@@ -2,7 +2,7 @@ import GoFV.Proof.Low.Rules.Cmp
 import GoFV.Proof.Low.ArmMonoFam
 
 /-!
-# Lowering rule lemmas: constant operands and compares with zero (`ARM64.rules:600-601`, `972-1000`)
+# Lowering rule lemmas: constant operands and compares with zero (`ARM64.rules:600-601`, `970-1000`)
 
 Peepholes of lowered code (#385):
 
@@ -15,6 +15,11 @@ Peepholes of lowered code (#385):
 * `(AND|OR|XOR x (MOVDconst [c]))` (both argument orders) take the constant as an immediate: the
   result is read at its low `lowW` bits, which only the constant's low bits at its own shape decide
   (`retypeL_res_low`, `retypeL_res_reg`, `refines_bitop_const`).
+* `(ADD x (MOVDconst [c]))` (both argument orders) as `(ADDconst [c] x)`: a pointer operand
+  (`Arm64.add`'s provenance case) holds a word shape, so the validator's provenance clause
+  (`Pat.argsOKLs`) makes the result a word, whose constant operand is read whole
+  (`retypeL_res_wide`); any other operand adds as a register, as the bitwise ops do
+  (`refines_add_const`).
 * `(ADDconst [c] y) && c < 0 => (SUBconst [-c] y)`: subtracting `-c` is adding `c` modulo `2^64`.
 * `(EQ|NE (CMPconst [0] x))` as `(Z|NZ x)`, `(EQ|NE (CMPWconst [0] x))` as `(ZW|NZW x)`: the flags
   of a compare read at any shape refine the flags (`retypeL_cmp_ref`), whose `Z` bit is whether the
@@ -410,6 +415,75 @@ private theorem refines_bitop_const {T T1 : Ty} (f : BitVec 64 → BitVec 64 →
 private theorem op2_comm (T : Ty) {f : BitVec 64 → BitVec 64 → BitVec 64} (hc : ∀ a b, f a b = f b a)
     (a b : Val) : Arm64.op2 T f [a, b] = Arm64.op2 T f [b, a] := by
   cases ha : Arm64.reg a <;> cases hb : Arm64.reg b <;> simp only [Arm64.op2, ha, hb, hc]
+
+private theorem armReadW_add (T : Ty) (i : Nat) : armReadW .ARM64ADD T i = lowW T := by
+  cases T <;> rfl
+
+/-- A constant register read at its node's shape is not a pointer. -/
+private theorem retypeL_res_not_ptr (T : Ty) (k : BitVec 64) (q : Ptr) :
+    (Arm64.res T k).retypeL T ≠ .ptr q := by
+  cases T with
+  | int w => cases w <;> simp [Arm64.res, Val.retypeL, Val.widen, Val.retype, Width.bits]
+  | _ => simp [Arm64.res, Val.retypeL, Val.widen, Val.retype]
+
+private theorem add_comm2 (T : Ty) (a b : Val) : Arm64.add T [a, b] = Arm64.add T [b, a] := by
+  cases a <;> cases b <;> (delta Arm64.add; dsimp only) <;>
+    first | rfl | exact op2_comm T (fun x y => BitVec.add_comm x y) _ _
+
+private theorem add_nonptr (T : Ty) {x c : Val} (hx : ∀ p, x ≠ .ptr p) (hc : ∀ q, c ≠ .ptr q) :
+    Arm64.add T [x, c] = Arm64.op2 T (· + ·) [x, c] := by
+  unfold Arm64.add; split <;> simp_all
+
+private theorem addP_nonptr (T : Ty) {x : Val} (hx : ∀ p, x ≠ .ptr p) (k : BitVec 64) :
+    Arm64.addP T x k = Arm64.op1 T (fun a => a + k) [x] := by
+  unfold Arm64.addP; split
+  · simp_all
+  · rfl
+
+private theorem setWidth_add_congr (n : Nat) (a b b' : BitVec 64)
+    (h : b.setWidth n = b'.setWidth n) : (a + b).setWidth n = (a + b').setWidth n := by
+  by_cases hn : n ≤ 64
+  · rw [BitVec.setWidth_add _ _ hn, BitVec.setWidth_add _ _ hn, h]
+  · have hb : b = b' := by
+      have := congrArg (BitVec.setWidth 64) h
+      rwa [BitVec.setWidth_setWidth_of_le _ (by omega), BitVec.setWidth_setWidth_of_le _ (by omega),
+        BitVec.setWidth_eq, BitVec.setWidth_eq] at this
+    rw [hb]
+
+/-- `ADD` with a constant operand, as `ADDconst`: a pointer operand (at a word shape, `Val.hasTy`)
+needs a word result (`hs`, `Pat.argsOKLs`'s provenance clause), whose constant operand is read
+whole (`retypeL_res_wide`); any other operand adds as a register, whose result keeps the low bits
+only the constant's low bits decide (`refines_bitop_const`). -/
+private theorem refines_add_const {T T0 T1 : Ty} (hw : lowW T ≤ argWidth T1)
+    (hs : (!wordShape T0) = true ∨ wordShape T = true) {x : Val} (hx : x.hasTy T0 = true)
+    (k : BitVec 64) :
+    Refines ((Arm64.add T [x, (Arm64.res T1 k).retypeL T1]).retypeL T)
+      ((Arm64.addP T x k).retypeL T) := by
+  by_cases hp : ∃ p, x = .ptr p
+  · obtain ⟨p, rfl⟩ := hp
+    have hT0 : wordShape T0 = true := by
+      cases T0 with
+      | int w => cases w <;> simp_all [Val.hasTy, wordShape]
+      | _ => simp_all [Val.hasTy, wordShape]
+    have hT : wordShape T = true := by simpa [hT0] using hs
+    have h64 : lowW T = 64 := by
+      cases T with
+      | int w => cases w <;> simp_all [wordShape, lowW, Width.bits]
+      | _ => simp_all [wordShape, lowW]
+    rcases retypeL_res_wide (h64 ▸ hw) k with h | h
+    · rw [h]; simp only [Arm64.add, Arm64.reg, BitVec.setWidth_eq, Arm64.addP]; exact Refines.refl _
+    · rw [h]; simp only [Arm64.add, Arm64.reg, retypeL_poison]; exact .poison _
+  · have hp' : ∀ p, x ≠ .ptr p := fun p h => hp ⟨p, h⟩
+    rw [add_nonptr T hp' (retypeL_res_not_ptr T1 k), addP_nonptr T hp']
+    exact refines_bitop_const (· + ·) setWidth_add_congr hw x k
+
+/-- `ARM64.rules:970`: `(ADD x (MOVDconst <t> [c])) && !t.IsPtr() => (ADDconst [c] x)` -/
+theorem r_ARM64_970_sound : ArmRule.Checked r_ARM64_970 := by
+  left; arm_unfold
+  all_goals arm_norm
+  · exact refines_add_const (armReadW_add _ 1 ▸ harg.2.1) harg.1.2 hty _
+  · rw [add_comm2]
+    exact refines_add_const (armReadW_add _ 0 ▸ harg.1.1) harg.2.2 hty _
 
 /-- `ARM64.rules:972`: `(AND x (MOVDconst [c])) => (ANDconst [c] x)` -/
 theorem r_ARM64_972_sound : ArmRule.Checked r_ARM64_972 := by

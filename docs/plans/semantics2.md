@@ -188,6 +188,11 @@ This inherits Phase 1's open points on concrete addresses (#156: out-of-window a
 comparison by block, `Convert` round-trips). Lowered code adds one: an `ADD p i` whose `i` is
 itself a pointer (rare; `unsafe` code) is computed on words, the sum of the two addresses
 (`poison` if one has none), symmetrically, as `ADD` is `commutative` and cse swaps its operands.
+A provenance case moves the pointer by the other operand's whole register, which a narrow
+operand zero-extends, so `ADD <int32> p (MOVDconst <int32> [c])` (a `uintptr` held at `int64`
+after a truncation copy) and `ADDconst [c] p` move `p` by different amounts. The lowering
+validator therefore admits no word-shaped argument (the shapes such a pointer has, `Val.hasTy`)
+under one of these ops at a non-word shape (`Pat.argsOKLs`, `provOp`; `ARM64.rules:970`).
 
 **Pair accesses (#156, #385).** A pair load or store (`LDP`, `LDPW`, `LDPSW`, `FLDP{S,D,Q}`,
 `STP`, `STPW`, `FSTP{S,D,Q}`) of `n`-byte elements addresses element `i` as the single access
