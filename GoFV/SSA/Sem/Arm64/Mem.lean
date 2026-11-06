@@ -42,11 +42,14 @@ def tupleTy (ty : Ty) (i : Nat) : Ty :=
   | .tuple ts => ts.getD i .other
   | _ => .other
 
-/-- A pair load (`LDP`, `LDPW`, `LDPSW`, `FLDP{S,D,Q}`) of two `n`-byte elements at `p`. -/
-def loadPair (ty : Ty) (n : Nat) (signed : Bool) (m : Mem) (p : Ptr) : Val :=
-  if n = 16 then .tuple [load16 m p, load16 m (p.add 16)]
-  else .tuple [loadN (tupleTy ty 0) n signed m p,
-    loadN (tupleTy ty 1) n signed m (p.add (BitVec.ofNat 64 n))]
+/-- One `n`-byte element of a pair load at `p`: a `Vec128` value if `n = 16`, else `loadN`. -/
+def loadElt (ty : Ty) (n : Nat) (signed : Bool) (m : Mem) (p : Ptr) : Val :=
+  if n = 16 then load16 m p else loadN ty n signed m p
+
+/-- A pair load (`LDP`, `LDPW`, `LDPSW`, `FLDP{S,D,Q}`) of two `n`-byte elements, at `p` and at
+`q` (the address `n` bytes higher, `arm64Op`'s `ldPair`). -/
+def loadPair (ty : Ty) (n : Nat) (signed : Bool) (m : Mem) (p q : Ptr) : Val :=
+  .tuple [loadElt (tupleTy ty 0) n signed m p, loadElt (tupleTy ty 1) n signed m q]
 
 /-- The `n` bytes (`1, 2, 4, 8, 16`) a store of `v` writes: the low bytes of its register, a
 pointer as its fragments (8 bytes), a `Vec128` blob as its bytes; `poison` bytes otherwise. -/
@@ -61,9 +64,10 @@ def storeBytes (n : Nat) (v : Val) : Array Byte :=
 /-- A store of `v` (`n` bytes) at `p`. -/
 def storeN (n : Nat) (p : Ptr) (v : Val) (m : Mem) : Option Mem := m.write p (storeBytes n v)
 
-/-- A pair store (`STP`, `STPW`, `FSTP{S,D,Q}`) of `a` at `p` and `b` after it. -/
-def storePair (n : Nat) (p : Ptr) (a b : Val) (m : Mem) : Option Mem :=
-  m.write p (storeBytes n a ++ storeBytes n b)
+/-- A pair store (`STP`, `STPW`, `FSTP{S,D,Q}`) of `a` at `p` and `b` at `q` (the address `n`
+bytes higher, `arm64Op`'s `stPair`). -/
+def storePair (n : Nat) (p q : Ptr) (a b : Val) (m : Mem) : Option Mem :=
+  (m.write p (storeBytes n a)).bind (·.write q (storeBytes n b))
 
 /-- `LoweredZero [n] p mem` (and `LoweredZeroLoop`): `n` zero bytes at `p`; `poison` (a memory
 no later access can use) if the write is invalid. -/

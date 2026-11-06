@@ -191,10 +191,25 @@ theorem resRel_lift {md : LMode} {t : Ty} {r r' : Res Val} (h : ResRel U r r') :
 
 /-! ## Eliminated writes -/
 
+theorem storePair_eqOff {n : Nat} {p q : Ptr} {a b : Val} {M M1 : Mem}
+    (hw : Arm64.storePair n p q a b M = some M1) (hp : U p.blk) (hq : U q.blk) :
+    ∀ M', Mem.EqOff U M M' → Mem.EqOff U M1 M' := by
+  unfold Arm64.storePair at hw
+  obtain ⟨M2, h1, h2⟩ := Option.bind_eq_some_iff.1 hw
+  intro M' hM
+  exact EqOff.write_left (EqOff.write_left hM h1 hp) h2 hq
+
+theorem storePair_av {n : Nat} {p q : Ptr} {a b : Val} {M M1 : Mem} (hm : M.Avoids U)
+    (hw : Arm64.storePair n p q a b M = some M1) (ha : BAv U (Arm64.storeBytes n a))
+    (hb : BAv U (Arm64.storeBytes n b)) : M1.Avoids U := by
+  unfold Arm64.storePair at hw
+  obtain ⟨M2, h1, h2⟩ := Option.bind_eq_some_iff.1 hw
+  exact memAvoids_write (memAvoids_write hm h1 fun _ => ha) h2 fun _ => hb
+
 /-- An eliminated symbol store writes into `U`: the source's memory after it is equal outside
 `U` to the target's, and it avoids `U` when its arguments do. -/
 theorem elimStore {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {ty : Ty}
-    (hop : v.op ∈ armA) (hstore : v.op ∈ elimOps) (hsym : ∀ a p, symAddr ctx v a = some p → U p.blk)
+    (hop : v.op ∈ armA) (hstore : v.op ∈ elimOps) (hsym : ∀ (k : Int64) a p, symAddr ctx { v with auxInt := k } a = some p → U p.blk)
     {L : List Val} {w : Val} {r : Val}
     (h : evalOpL false env ctx fr v (L ++ [w]) ty = .ok r) :
     ∃ M M1, w = .mem M ∧ r = .mem M1 ∧ (∀ M', Mem.EqOff U M M' → Mem.EqOff U M1 M') ∧
@@ -214,19 +229,19 @@ theorem elimStore {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {ty : Ty}
        | none => rw [hw] at h; cases h
        | some M1 =>
          rw [hw] at h; cases h
-         exact ⟨_, M1, rfl, rfl, fun M' hM => EqOff.write_left hM hw (hsym _ _ ‹_›),
+         exact ⟨_, M1, rfl, rfl, fun M' hM => EqOff.write_left hM hw (hsym _ _ _ ‹_›),
            fun hav => memAvoids_write (hav (.mem _) (by simp)) hw
              (fun _ => storeBytes_av _ (hav _ (by simp)))⟩)
     | (simp only [snoc3, snoc4] at *
        rcases ‹L = _ ∧ _› with ⟨rfl, rfl⟩
-       cases hw : Arm64.storePair _ _ _ _ _ with
+       cases hw : Arm64.storePair _ _ _ _ _ _ with
        | none => rw [hw] at h; cases h
        | some M1 =>
          rw [hw] at h; cases h
-         exact ⟨_, M1, rfl, rfl, fun M' hM => EqOff.write_left hM hw (hsym _ _ ‹_›),
-           fun hav => memAvoids_write (hav (.mem _) (by simp)) hw
-             (fun _ => bav_append (storeBytes_av _ (hav _ (by simp)))
-               (storeBytes_av _ (hav _ (by simp))))⟩)
+         obtain ⟨h1, h2⟩ := pairAddr_eq_some ‹pairAddr _ _ _ _ = some (_, _)›
+         exact ⟨_, M1, rfl, rfl, storePair_eqOff hw (hsym _ _ _ h1) (hsym _ _ _ h2),
+           fun hav => storePair_av (hav (.mem _) (by simp)) hw (storeBytes_av _ (hav _ (by simp)))
+             (storeBytes_av _ (hav _ (by simp)))⟩)
     | (exfalso; simp only [armA, List.mem_cons, List.not_mem_nil, or_false] at hop; simp_all; done)
 
 /-! ## The eliminated variables' symbols -/
@@ -391,7 +406,7 @@ theorem tgt_rel {env : Env} (hfs : env.FrameSafe) {tabs : Tables} {f g : Func} {
       refine .mem (EqOff.poison_left hM ⟨n, hnE, ?_⟩)
       rw [tabs_makeL, act_makeL0, frameBlk_temp (R.temp n hnE)]
     · obtain ⟨M, M1, rfl, rfl, hM1, -⟩ := elimStore (elimOps_store hop hvd) hop
-        (symAddr_elim hn hnE (R.temp n hnE)) hr
+        (fun k => symAddr_elim (v := { fv with auxInt := k }) hn hnE (R.temp n hnE)) hr
       obtain ⟨M', rfl, hM⟩ := VR.mem_inv hVm
       exact .mem (hM1 M' hM)
 
@@ -424,7 +439,7 @@ theorem src_av {env : Env} (hfs : env.FrameSafe) {tabs : Tables} {f g : Func} {E
       obtain ⟨M, n0, hL, -, rfl, -⟩ := DSE.varDef_shape hvd hr
       exact memAvoids_poison (hav (.mem M) (by rw [hL]; simp)) _
     · obtain ⟨M, M1, rfl, rfl, -, hA⟩ := elimStore (elimOps_store hop hvd) hop
-        (symAddr_elim hn hnE (R.temp n hnE)) hr
+        (fun k => symAddr_elim (v := { fv with auxInt := k }) hn hnE (R.temp n hnE)) hr
       exact hA hav
 
 /-- **A value the source evaluates panics avoiding the eliminated variables.** -/

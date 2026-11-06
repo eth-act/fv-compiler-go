@@ -204,8 +204,9 @@ theorem frameBlk_notUE {E : List AuxRef} {tabs : Tables} {n : AuxRef} (hn : n �
 /-- A value whose aux is no variable of `E` addresses no block of `UE E`. -/
 theorem symOK_of {E : List AuxRef} {ctx : Ctx} (hact : ctx.act = 0) {v : Value}
     (hv : ∀ n, v.aux = some n → n ∉ E) : SymOK (UE E) ctx v := by
-  intro a p ha hp
+  intro k a p ha hp
   unfold symAddr at hp
+  dsimp only at hp
   split at hp
   · rename_i n hn
     split at hp

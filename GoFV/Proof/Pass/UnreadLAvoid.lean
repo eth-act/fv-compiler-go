@@ -364,12 +364,16 @@ theorem load16_av {m : Mem} (hm : m.Avoids U) {p : Ptr} (hp : ¬ U p.blk) :
     exact fun x hx => read_avoids hm hr hp x (by simpa using hx)
   · trivial
 
-theorem loadPair_av (hU : TempU U) (ty : Ty) (n : Nat) (signed : Bool) {m : Mem} (hm : m.Avoids U)
-    {p : Ptr} (hp : ¬ U p.blk) : Val.Avoids U (Arm64.loadPair ty n signed m p) := by
-  unfold Arm64.loadPair
+theorem loadElt_av (hU : TempU U) (ty : Ty) (n : Nat) (signed : Bool) {m : Mem} (hm : m.Avoids U)
+    {p : Ptr} (hp : ¬ U p.blk) : Val.Avoids U (Arm64.loadElt ty n signed m p) := by
+  unfold Arm64.loadElt
   split
-  · exact ⟨load16_av hm hp, load16_av hm (by rw [add_ptr_blk]; exact hp), trivial⟩
-  · exact ⟨loadN_av hU _ _ _ hm hp, loadN_av hU _ _ _ hm (by rw [add_ptr_blk]; exact hp), trivial⟩
+  · exact load16_av hm hp
+  · exact loadN_av hU _ _ _ hm hp
+
+theorem loadPair_av (hU : TempU U) (ty : Ty) (n : Nat) (signed : Bool) {m : Mem} (hm : m.Avoids U)
+    {p q : Ptr} (hp : ¬ U p.blk) (hq : ¬ U q.blk) : Val.Avoids U (Arm64.loadPair ty n signed m p q) :=
+  ⟨loadElt_av hU _ _ _ hm hp, loadElt_av hU _ _ _ hm hq, trivial⟩
 
 theorem loadIdx_av (hU : TempU U) (ty : Ty) (n scale : Nat) (signed : Bool) {args : List Val}
     (h : ∀ z ∈ args, Val.Avoids U z) : Val.Avoids U (Arm64.loadIdx ty n scale signed args) := by
@@ -550,34 +554,36 @@ theorem atomicArgs_av (hU : TempU U) (g : Op) {argv : List Val} (h : ∀ z ∈ a
 
 /-- What a symbol address of a value avoiding `U` points into avoids `U`. -/
 def SymOK (U : Blk → Prop) (ctx : Ctx) (v : Value) : Prop :=
-  ∀ a p, Val.Avoids U a → symAddr ctx v a = some p → ¬ U p.blk
+  ∀ (k : Int64) a p, Val.Avoids U a → symAddr ctx { v with auxInt := k } a = some p → ¬ U p.blk
 
 theorem elim_ld (hU : TempU U) {ctx : Ctx} {v : Value} (hs : SymOK U ctx v) {a : Val}
     (ha : Val.Avoids U a) {m : Mem} (hm : m.Avoids U) (ty : Ty) (n : Nat) (sg : Bool) :
     Val.Avoids U ((symAddr ctx v a).elim .poison (Arm64.loadN ty n sg m)) := by
   cases hp : symAddr ctx v a with
   | none => trivial
-  | some p => exact loadN_av hU ty n sg hm (hs a p ha hp)
+  | some p => exact loadN_av hU ty n sg hm (hs _ a p ha hp)
 
 theorem elim_ldPair (hU : TempU U) {ctx : Ctx} {v : Value} (hs : SymOK U ctx v) {a : Val}
     (ha : Val.Avoids U a) {m : Mem} (hm : m.Avoids U) (ty : Ty) (n : Nat) (sg : Bool) :
-    Val.Avoids U ((symAddr ctx v a).elim .poison (Arm64.loadPair ty n sg m)) := by
-  cases hp : symAddr ctx v a with
+    Val.Avoids U ((pairAddr ctx v n a).elim .poison fun pq => Arm64.loadPair ty n sg m pq.1 pq.2) := by
+  cases hp : pairAddr ctx v n a with
   | none => trivial
-  | some p => exact loadPair_av hU ty n sg hm (hs a p ha hp)
+  | some pq =>
+    obtain ⟨h1, h2⟩ := pairAddr_eq_some hp
+    exact loadPair_av hU ty n sg hm (hs _ a _ ha h1) (hs _ a _ ha h2)
 
 theorem elim_ld16 {ctx : Ctx} {v : Value} (hs : SymOK U ctx v) {a : Val}
     (ha : Val.Avoids U a) {m : Mem} (hm : m.Avoids U) :
     Val.Avoids U ((symAddr ctx v a).elim .poison (Arm64.load16 m)) := by
   cases hp : symAddr ctx v a with
   | none => trivial
-  | some p => exact load16_av hm (hs a p ha hp)
+  | some p => exact load16_av hm (hs _ a p ha hp)
 
 theorem elim_addr {ctx : Ctx} {v : Value} (hs : SymOK U ctx v) {a : Val}
     (ha : Val.Avoids U a) : Val.Avoids U ((symAddr ctx v a).elim .poison PtrOps.ptrRes) := by
   cases hp : symAddr ctx v a with
   | none => trivial
-  | some p => exact ptrRes_avoids (hs a p ha hp)
+  | some p => exact ptrRes_avoids (hs _ a p ha hp)
 
 theorem writeRes_av {what : String} {o : Option Mem} {r : Val}
     (h : writeRes what o = .ok r) (ho : ∀ M, o = some M → M.Avoids U) : Val.Avoids U r := by
