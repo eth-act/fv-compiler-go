@@ -63,7 +63,7 @@ def b2iNorm (r : Rule) : Rule where
     | res => res
   pos := r.pos
 
-/-- `ARM64.rules` restricted to its 409 proven value rules and 93 proven block rules. -/
+/-- `ARM64.rules` restricted to its 418 proven value rules and 93 proven block rules. -/
 def lower : RuleSet where
   name := "ARM64"
   values := [(.ARM64ADD, [Generated.ARM64.r_ARM64_970, Generated.ARM64.r_ARM64_1017, Generated.ARM64.r_ARM64_1433, Generated.ARM64.r_ARM64_1434, Generated.ARM64.r_ARM64_1435]),
@@ -83,9 +83,9 @@ def lower : RuleSet where
     (.ARM64CSNEG, Derive.ccSplit Generated.ARM64.r_ARM64_1357),
     (.ARM64Equal, [Generated.ARM64.r_ARM64_564, Generated.ARM64.r_ARM64_566, Generated.ARM64.r_ARM64_568, Generated.ARM64.r_ARM64_570, Generated.ARM64.r_ARM64_1374]),
     (.ARM64FMOVDloadidx, [Generated.ARM64.r_ARM64_750, Generated.ARM64.r_ARM64_752]),
-    (.ARM64FMOVDstore, [Generated.ARM64.r_ARM64_776, Generated.ARM64.r_ARM64_905]),
+    (.ARM64FMOVDstore, [Generated.ARM64.r_ARM64_776, Generated.ARM64.r_ARM64_790, Generated.ARM64.r_ARM64_905]),
     (.ARM64FMOVSloadidx, [Generated.ARM64.r_ARM64_751, Generated.ARM64.r_ARM64_753]),
-    (.ARM64FMOVSstore, [Generated.ARM64.r_ARM64_773, Generated.ARM64.r_ARM64_901]),
+    (.ARM64FMOVSstore, [Generated.ARM64.r_ARM64_773, Generated.ARM64.r_ARM64_791, Generated.ARM64.r_ARM64_901]),
     (.ARM64GreaterEqual, [Generated.ARM64.r_ARM64_564_2, Generated.ARM64.r_ARM64_566_2, Generated.ARM64.r_ARM64_568_2, Generated.ARM64.r_ARM64_570_2, Generated.ARM64.r_ARM64_1382]),
     (.ARM64GreaterEqualU, [Generated.ARM64.r_ARM64_1383]),
     (.ARM64GreaterThan, [Generated.ARM64.r_ARM64_564_3, Generated.ARM64.r_ARM64_566_3, Generated.ARM64.r_ARM64_568_3, Generated.ARM64.r_ARM64_570_3, Generated.ARM64.r_ARM64_1378]),
@@ -103,12 +103,12 @@ def lower : RuleSet where
     (.ARM64MOVBload, [Generated.ARM64.r_ARM64_658, Generated.ARM64.r_ARM64_701, Generated.ARM64.r_ARM64_832]),
     (.ARM64MOVBloadidx, [Generated.ARM64.r_ARM64_717, Generated.ARM64.r_ARM64_718]),
     (.ARM64MOVBreg, [Generated.ARM64.r_ARM64_1254]),
-    (.ARM64MOVBstore, [Generated.ARM64.r_ARM64_758, Generated.ARM64.r_ARM64_881]),
+    (.ARM64MOVBstore, [Generated.ARM64.r_ARM64_758, Generated.ARM64.r_ARM64_789, Generated.ARM64.r_ARM64_881]),
     (.ARM64MOVDload, [Generated.ARM64.r_ARM64_676, Generated.ARM64.r_ARM64_695, Generated.ARM64.r_ARM64_725, Generated.ARM64.r_ARM64_856]),
     (.ARM64MOVDloadidx, [Generated.ARM64.r_ARM64_705, Generated.ARM64.r_ARM64_706, Generated.ARM64.r_ARM64_730, Generated.ARM64.r_ARM64_737]),
     (.ARM64MOVDloadidx8, [Generated.ARM64.r_ARM64_742]),
     (.ARM64MOVDreg, [Generated.ARM64.r_ARM64_1260]),
-    (.ARM64MOVDstore, [Generated.ARM64.r_ARM64_767, Generated.ARM64.r_ARM64_893]),
+    (.ARM64MOVDstore, [Generated.ARM64.r_ARM64_767, Generated.ARM64.r_ARM64_786, Generated.ARM64.r_ARM64_806, Generated.ARM64.r_ARM64_893]),
     (.ARM64MOVHUload, [Generated.ARM64.r_ARM64_667, Generated.ARM64.r_ARM64_698, Generated.ARM64.r_ARM64_728, Generated.ARM64.r_ARM64_844]),
     (.ARM64MOVHUloadidx, [Generated.ARM64.r_ARM64_711, Generated.ARM64.r_ARM64_712, Generated.ARM64.r_ARM64_734, Generated.ARM64.r_ARM64_736, Generated.ARM64.r_ARM64_741]),
     (.ARM64MOVHUloadidx2, [Generated.ARM64.r_ARM64_745]),
@@ -117,7 +117,7 @@ def lower : RuleSet where
     (.ARM64MOVHloadidx, [Generated.ARM64.r_ARM64_713, Generated.ARM64.r_ARM64_714, Generated.ARM64.r_ARM64_733, Generated.ARM64.r_ARM64_735, Generated.ARM64.r_ARM64_740]),
     (.ARM64MOVHloadidx2, [Generated.ARM64.r_ARM64_746]),
     (.ARM64MOVHreg, [Generated.ARM64.r_ARM64_1256]),
-    (.ARM64MOVHstore, [Generated.ARM64.r_ARM64_761, Generated.ARM64.r_ARM64_885]),
+    (.ARM64MOVHstore, [Generated.ARM64.r_ARM64_761, Generated.ARM64.r_ARM64_788, Generated.ARM64.r_ARM64_808, Generated.ARM64.r_ARM64_885]),
     (.ARM64MOVWUload, [Generated.ARM64.r_ARM64_673, Generated.ARM64.r_ARM64_696, Generated.ARM64.r_ARM64_726, Generated.ARM64.r_ARM64_852]),
     (.ARM64MOVWUloadidx, [Generated.ARM64.r_ARM64_707, Generated.ARM64.r_ARM64_708, Generated.ARM64.r_ARM64_732, Generated.ARM64.r_ARM64_739]),
     (.ARM64MOVWUloadidx4, [Generated.ARM64.r_ARM64_743]),
@@ -126,7 +126,7 @@ def lower : RuleSet where
     (.ARM64MOVWloadidx, [Generated.ARM64.r_ARM64_709, Generated.ARM64.r_ARM64_710, Generated.ARM64.r_ARM64_731, Generated.ARM64.r_ARM64_738]),
     (.ARM64MOVWloadidx4, [Generated.ARM64.r_ARM64_744]),
     (.ARM64MOVWreg, [Generated.ARM64.r_ARM64_1258]),
-    (.ARM64MOVWstore, [Generated.ARM64.r_ARM64_764, Generated.ARM64.r_ARM64_889]),
+    (.ARM64MOVWstore, [Generated.ARM64.r_ARM64_764, Generated.ARM64.r_ARM64_787, Generated.ARM64.r_ARM64_807, Generated.ARM64.r_ARM64_889]),
     (.ARM64MVN, [Generated.ARM64.r_ARM64_1182]),
     (.ARM64NotEqual, [Generated.ARM64.r_ARM64_564_6, Generated.ARM64.r_ARM64_566_6, Generated.ARM64.r_ARM64_568_6, Generated.ARM64.r_ARM64_570_6, Generated.ARM64.r_ARM64_1375]),
     (.ARM64OR, [Generated.ARM64.r_ARM64_973, Generated.ARM64.r_ARM64_1181, Generated.ARM64.r_ARM64_1443, Generated.ARM64.r_ARM64_1444, Generated.ARM64.r_ARM64_1445, Generated.ARM64.r_ARM64_1446]),

@@ -140,7 +140,10 @@ theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
     have hsz : u.args.size = w.args.size := atomPair_size hs (by
       cases hal : addrLower tabs u w
       · rfl
-      · exact absurd huph (addrLower_ops hal).1) hnpb
+      · exact absurd huph (addrLower_ops hal).1) hnpb (by
+      cases hix : idxLower tabs u w
+      · rfl
+      · exact absurd huph (idxLower_ops hix).1)
     have hzf : z ∈ fb.values := by
       obtain ⟨-, -, blk, hblk', hzv⟩ := hpu
       rw [hblk, hwb, B.hfb] at hblk'; cases hblk'; exact hzv
@@ -157,10 +160,7 @@ theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
     have hai' : w.args[i]! = a' := by
       rw [getElem!_pos w.args i hi']; exact (Array.getElem?_eq_some_iff.1 ha').2
     have hr := (atom_ref H hDS hDT hVT (R.rel hDT hVT) R.tyS R.tyT R.frames R.fr hpw hpu.1 ht).2.1
-      (by rw [hph]; rfl)
-      (by cases hf : argFree tabs w
-          · rfl
-          · exact absurd hph (by rw [(argFree_cases hf).1]; decide)) i hi'
+      hph i hi'
       (by rw [argIx_of_not hnpb, hai]; exact hVSa) (by rw [hai']; exact hVTa)
     rw [argIx_of_not hnpb, hai, hai', rv_of hy, stArg_of_ne (by rw [huph]; decide)] at hr
     have hshape : (Ctx.makeL tabs g).tys[z]?.getD .other = (Ctx.makeL tabs f).tys[z]?.getD .other := by
@@ -557,7 +557,7 @@ theorem arg_beforeL {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
 /-- A corresponding atom of a generic op of `g` has the same op in `f`. -/
 theorem atomPair_op_of_generic {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true)
     (hg : w.op.generic = true) : u.op = w.op := by
-  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h | h, -⟩ | h | h
+  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h | h, -⟩ | h | h | h
   · exact h
   · exfalso
     rcases renameOp_cases h with ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ |
@@ -574,6 +574,9 @@ theorem atomPair_op_of_generic {tabs : Tables} {u w : Value} (h : atomPair tabs 
   · exfalso
     obtain ⟨-, -, -, ks, hks, -⟩ := pbLower_cases h
     rcases pbKeep_cases hks with ⟨h2, -⟩ | ⟨h2, -⟩ | ⟨h2, -⟩ <;> rw [h2] at hg <;> exact absurd hg (by decide)
+  · exfalso
+    obtain ⟨-, -, -, -, -, p, s, -, hp, -⟩ := idxLower_cases h
+    rw [(idxStore_facts hp).1] at hg; cases hg
 
 /-- **A panicking block entry.** -/
 theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')

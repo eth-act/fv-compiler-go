@@ -3,7 +3,7 @@ import GoFV.Proof.Low.AddrFold
 
 /-!
 # Lowering rule lemmas: offsets folded into loads (`ARM64.rules:658-676`) and stores (`758-776`),
-symbols and frame variables folded into stores (`881-905`)
+symbols and frame variables folded into stores (`881-905`), indexed stores (`786-791`, `806-808`)
 
 `(MOV{B,BU,H,HU,W,WU,D}load [off1] {sym} (ADDconst [off2] ptr) mem) && is32Bit(int64(off1)+off2)
 && … => (MOV…load [off1+int32(off2)] {sym} ptr mem)`. The validator admits an instance only
@@ -17,7 +17,11 @@ its address related by `AddrRef`, `GoFV.Proof.Low.addrRef_fold`), so these rules
 `ArmRule.Mem` (`checked_armStore`). Likewise `(MOV…store [off1] {sym1} (MOVDaddr [off2] {sym2}
 ptr) val mem) && canMergeSym(sym1,sym2) && … => (MOV…store [off1+off2] {mergeSym(sym1,sym2)} ptr
 val mem)`: the validator replays a global symbol's or a frame variable's address folded into the
-store (`LowerCheck.stFoldAddr`; `GoFV.Proof.Low.addrRef_foldSym`, `addrRef_foldFrame`).
+store (`LowerCheck.stFoldAddr`; `GoFV.Proof.Low.addrRef_foldSym`, `addrRef_foldFrame`). And
+`(MOV…store [off] {sym} (ADD ptr idx) val mem) && off == 0 && sym == nil => (MOV…storeidx ptr idx
+val mem)` (and `ADDshiftLL [k]` to the scaled `MOV…storeidx{2,4,8}`): the validator replays the
+indexed store as the store's new definition (`LowerCheck.stIdxFold`), whose indexed address is the
+`ADD`'s (`GoFV.Proof.Low.Val.ReplayInvL.idxFold`).
 -/
 
 namespace GoFV.Proof.Low.Rules
@@ -290,6 +294,33 @@ theorem r_ARM64_901_sound : ArmRule.Checked r_ARM64_901 := checked_armStore rfl 
 
 /-- `ARM64.rules:905`: `(FMOVDstore [off1] {sym1} (MOVDaddr [off2] {sym2} ptr) val mem) && canMergeSym(sym1,sym2) && is32Bit(int64(off1)+int64(off2)) && (ptr.Op != OpSB || !config.ctxt.Flag_dynlink) => (FMOVDstore [off1+off2] {mergeSym(sym1,sym2)} ptr val mem)` -/
 theorem r_ARM64_905_sound : ArmRule.Checked r_ARM64_905 := checked_armStore rfl rfl
+
+/-- `ARM64.rules:786`: `(MOVDstore [off] {sym} (ADD ptr idx) val mem) && off == 0 && sym == nil => (MOVDstoreidx ptr idx val mem)` -/
+theorem r_ARM64_786_sound : ArmRule.Checked r_ARM64_786 := checked_armStore rfl rfl
+
+/-- `ARM64.rules:787`: `(MOVWstore [off] {sym} (ADD ptr idx) val mem) && off == 0 && sym == nil => (MOVWstoreidx ptr idx val mem)` -/
+theorem r_ARM64_787_sound : ArmRule.Checked r_ARM64_787 := checked_armStore rfl rfl
+
+/-- `ARM64.rules:788`: `(MOVHstore [off] {sym} (ADD ptr idx) val mem) && off == 0 && sym == nil => (MOVHstoreidx ptr idx val mem)` -/
+theorem r_ARM64_788_sound : ArmRule.Checked r_ARM64_788 := checked_armStore rfl rfl
+
+/-- `ARM64.rules:789`: `(MOVBstore [off] {sym} (ADD ptr idx) val mem) && off == 0 && sym == nil => (MOVBstoreidx ptr idx val mem)` -/
+theorem r_ARM64_789_sound : ArmRule.Checked r_ARM64_789 := checked_armStore rfl rfl
+
+/-- `ARM64.rules:790`: `(FMOVDstore [off] {sym} (ADD ptr idx) val mem) && off == 0 && sym == nil => (FMOVDstoreidx ptr idx val mem)` -/
+theorem r_ARM64_790_sound : ArmRule.Checked r_ARM64_790 := checked_armStore rfl rfl
+
+/-- `ARM64.rules:791`: `(FMOVSstore [off] {sym} (ADD ptr idx) val mem) && off == 0 && sym == nil => (FMOVSstoreidx ptr idx val mem)` -/
+theorem r_ARM64_791_sound : ArmRule.Checked r_ARM64_791 := checked_armStore rfl rfl
+
+/-- `ARM64.rules:806`: `(MOVDstore [off] {sym} (ADDshiftLL [3] ptr idx) val mem) && off == 0 && sym == nil => (MOVDstoreidx8 ptr idx val mem)` -/
+theorem r_ARM64_806_sound : ArmRule.Checked r_ARM64_806 := checked_armStore rfl rfl
+
+/-- `ARM64.rules:807`: `(MOVWstore [off] {sym} (ADDshiftLL [2] ptr idx) val mem) && off == 0 && sym == nil => (MOVWstoreidx4 ptr idx val mem)` -/
+theorem r_ARM64_807_sound : ArmRule.Checked r_ARM64_807 := checked_armStore rfl rfl
+
+/-- `ARM64.rules:808`: `(MOVHstore [off] {sym} (ADDshiftLL [1] ptr idx) val mem) && off == 0 && sym == nil => (MOVHstoreidx2 ptr idx val mem)` -/
+theorem r_ARM64_808_sound : ArmRule.Checked r_ARM64_808 := checked_armStore rfl rfl
 
 /-- `ARM64.rules:650`: `(ADDconst [off1] (MOVDaddr [off2] {sym} ptr)) && is32Bit(off1+int64(off2)) => (MOVDaddr [int32(off1)+off2] {sym} ptr)` -/
 theorem r_ARM64_650_sound : ArmRule.Checked r_ARM64_650 := by
