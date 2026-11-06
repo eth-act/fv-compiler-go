@@ -9,7 +9,9 @@ import GoFV.Rules.Generated.ARM64
 and 64-bit sign extensions compute the zero-extended register of the generic result, sound at
 every shape (`setOpSound_int1`, `setOpSound_int2`); narrow arithmetic, the narrow sign
 extensions and the truncations agree on the low bits, at the op's own shape (`setOpSound_top1`,
-`setOpSound_top2`, the `topOKL` premise).
+`setOpSound_top2`, the `topOKL` premise). `(AddPtr ...) => (ADD ...)` is sound on a 64-bit
+integer index (`SetOpSoundT`, which the validator checks, `setArgsOK`): `AddPtr` sign-extends its
+index, `ADD` reads the register.
 -/
 
 namespace GoFV.Proof.Low.Rules
@@ -186,6 +188,51 @@ theorem r_ARM64_5_3_sound : ArmRule.Checked r_ARM64_5_3 :=
 theorem r_ARM64_5_4_sound : ArmRule.Checked r_ARM64_5_4 :=
   checked_setOp .Add8 .ARM64ADD rfl rfl rfl rfl (termVL_generic _ rfl rfl) (termVL_arm _ rfl rfl rfl)
     s_Add8_ARM64ADD
+
+/-- `AddPtr p i` at a pointer shape (`topOKL`) with `i` a 64-bit integer (`setArgW64`) is `ADD p i`:
+`PtrOps.addPtr` sign-extends the index, which at 64 bits is its register; a pointer moves under
+the window rule on both sides (`PtrOps.ptrRes`); an integer word adds as an integer, which
+`PtrOps.wordRes` makes `poison` outside the window; any other base or index is `poison`. -/
+private theorem s_AddPtr_ARM64ADD : SetOpSoundT .AddPtr .ARM64ADD := by
+  intro tabs ty ai ax args htop hw
+  obtain ⟨e, rfl⟩ : ∃ e, ty = .ptr e := by
+    revert htop
+    cases ty <;> simp [topOKL, GoFV.Opt.RewriteCheck.topOK, GoFV.Opt.RewriteCheck.natShape,
+      GoFV.Opt.RewriteCheck.ptrTop, GoFV.Opt.RewriteCheck.constTop, GoFV.Opt.RewriteCheck.frameTop,
+      atomicLoadOp] <;>
+      first | exact ⟨rfl, rfl⟩ | exact ⟨rfl, rfl, rfl⟩ | decide | (rename_i w; cases w <;> decide)
+  rw [opValL_gen rfl rfl, opValL_arm rfl rfl rfl]
+  show Sem.Refines ((PtrOps.addPtr args).retypeL (.ptr e)) ((Arm64.add (.ptr e) args).retypeL (.ptr e))
+  rcases args with _ | ⟨a, _ | ⟨i, _ | ⟨c, rest⟩⟩⟩
+  · exact .poison _
+  · cases a <;> first | exact .poison _ | (rename_i w _; cases w <;> exact .poison _)
+  · have hi := hw 1 i rfl rfl
+    cases i with
+    | int w k =>
+      obtain rfl : w = .w64 := by cases w <;> simp_all [Val.hasTy]
+      cases a with
+      | ptr p =>
+        simp only [PtrOps.addPtr, asOffset, BitVec.signExtend_eq, Arm64.add, Arm64.reg,
+          BitVec.setWidth_eq]
+        exact Refines.refl _
+      | int w x =>
+        cases w
+        all_goals try exact .poison _
+        simp only [PtrOps.addPtr, asOffset, BitVec.signExtend_eq, PtrOps.wordRes, Arm64.add,
+          Arm64.op2, Arm64.reg, BitVec.setWidth_eq, Arm64.res]
+        split
+        · exact Refines.refl _
+        · exact .poison _
+      | _ => exact .poison _
+    | ptr q => cases a <;> first | exact .poison _ | (rename_i w _; cases w <;> exact .poison _)
+    | poison => cases a <;> first | exact .poison _ | (rename_i w _; cases w <;> exact .poison _)
+    | _ => simp [Val.hasTy] at hi
+  · cases a <;> first | exact .poison _ | (rename_i w _; cases w <;> exact .poison _)
+
+/-- `ARM64.rules:5`: `(AddPtr ...) => (ADD ...)` -/
+theorem r_ARM64_5_5_sound : ArmRule.Checked r_ARM64_5_5 :=
+  checked_setOpT .AddPtr .ARM64ADD rfl rfl rfl rfl (termVL_generic _ rfl rfl)
+    (termVL_arm _ rfl rfl rfl) s_AddPtr_ARM64ADD
 
 /-- `ARM64.rules:8`: `(Sub16 ...) => (SUB ...)` -/
 theorem r_ARM64_8_sound : ArmRule.Checked r_ARM64_8 :=

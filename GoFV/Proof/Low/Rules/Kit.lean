@@ -520,13 +520,21 @@ theorem termVL_ldar (o : Op) (hd : ldarOp o = true) :
   simp only [termVL, hv, hg, hm, ldOp?_of_ldar hd, hd, Option.isSome_none, Bool.false_eq_true,
     ite_false, ite_true]
 
+/-- An ellipsis rule `(o ...) => (o' ...)` on terms with `SetOpSoundT o o'`. -/
+theorem checked_setOpT {r : Rule} (o o' : Op) (hp : ellipsisOn o r.pat = true)
+    (hr : r.result = .setOp o') (hc : r.cond = none) (hb : r.block = none)
+    (h1 : ∀ tabs (v : Value), v.op = o → termVL tabs v = true)
+    (h2 : ∀ tabs (v : Value), v.op = o' → termVL tabs v = true) (hs : SetOpSoundT o o') :
+    ArmRule.Checked r :=
+  .inr (.inl ⟨o, o', hp, hr, hc, hb, h1, h2, hs⟩)
+
 /-- An ellipsis rule `(o ...) => (o' ...)` on terms with `SetOpSound o o'`. -/
 theorem checked_setOp {r : Rule} (o o' : Op) (hp : ellipsisOn o r.pat = true)
     (hr : r.result = .setOp o') (hc : r.cond = none) (hb : r.block = none)
     (h1 : ∀ tabs (v : Value), v.op = o → termVL tabs v = true)
     (h2 : ∀ tabs (v : Value), v.op = o' → termVL tabs v = true) (hs : SetOpSound o o') :
     ArmRule.Checked r :=
-  .inr (.inl ⟨o, o', hp, hr, hc, hb, h1, h2, hs⟩)
+  checked_setOpT o o' hp hr hc hb h1 h2 hs.typed
 
 /-- An atom rename `(o ...) => (o' ...)`. -/
 theorem checked_rename {r : Rule} (o o' : Op) (hp : ellipsisOn o r.pat = true)

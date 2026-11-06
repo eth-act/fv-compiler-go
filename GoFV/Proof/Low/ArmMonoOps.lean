@@ -905,11 +905,91 @@ theorem evalPure_ARM64LoweredWB (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr :
     Refines (Arm64.evalPure .ARM64LoweredWB ty k ax as) (Arm64.evalPure .ARM64LoweredWB ty k ax bs) :=
   GoFV.SSA.Sem.wbOp_mono k hr
 
+theorem evalPure_ARM64MOVDloadidx (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
+    Refines (Arm64.evalPure .ARM64MOVDloadidx ty k ax as) (Arm64.evalPure .ARM64MOVDloadidx ty k ax bs) :=
+  loadIdx_mono ty 8 1 false hr
+
+theorem evalPure_ARM64MOVWloadidx (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
+    Refines (Arm64.evalPure .ARM64MOVWloadidx ty k ax as) (Arm64.evalPure .ARM64MOVWloadidx ty k ax bs) :=
+  loadIdx_mono ty 4 1 true hr
+
+theorem evalPure_ARM64MOVWUloadidx (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
+    Refines (Arm64.evalPure .ARM64MOVWUloadidx ty k ax as) (Arm64.evalPure .ARM64MOVWUloadidx ty k ax bs) :=
+  loadIdx_mono ty 4 1 false hr
+
+theorem evalPure_ARM64MOVHloadidx (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
+    Refines (Arm64.evalPure .ARM64MOVHloadidx ty k ax as) (Arm64.evalPure .ARM64MOVHloadidx ty k ax bs) :=
+  loadIdx_mono ty 2 1 true hr
+
+theorem evalPure_ARM64MOVHUloadidx (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
+    Refines (Arm64.evalPure .ARM64MOVHUloadidx ty k ax as) (Arm64.evalPure .ARM64MOVHUloadidx ty k ax bs) :=
+  loadIdx_mono ty 2 1 false hr
+
+theorem evalPure_ARM64MOVBloadidx (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
+    Refines (Arm64.evalPure .ARM64MOVBloadidx ty k ax as) (Arm64.evalPure .ARM64MOVBloadidx ty k ax bs) :=
+  loadIdx_mono ty 1 1 true hr
+
+theorem evalPure_ARM64MOVBUloadidx (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
+    Refines (Arm64.evalPure .ARM64MOVBUloadidx ty k ax as) (Arm64.evalPure .ARM64MOVBUloadidx ty k ax bs) :=
+  loadIdx_mono ty 1 1 false hr
+
+theorem evalPure_ARM64FMOVSloadidx (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
+    Refines (Arm64.evalPure .ARM64FMOVSloadidx ty k ax as) (Arm64.evalPure .ARM64FMOVSloadidx ty k ax bs) :=
+  loadIdx_mono ty 4 1 false hr
+
+theorem evalPure_ARM64FMOVDloadidx (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
+    Refines (Arm64.evalPure .ARM64FMOVDloadidx ty k ax as) (Arm64.evalPure .ARM64FMOVDloadidx ty k ax bs) :=
+  loadIdx_mono ty 8 1 false hr
+
+theorem evalPure_ARM64MOVHloadidx2 (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
+    Refines (Arm64.evalPure .ARM64MOVHloadidx2 ty k ax as) (Arm64.evalPure .ARM64MOVHloadidx2 ty k ax bs) :=
+  loadIdx_mono ty 2 2 true hr
+
+theorem evalPure_ARM64MOVHUloadidx2 (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
+    Refines (Arm64.evalPure .ARM64MOVHUloadidx2 ty k ax as) (Arm64.evalPure .ARM64MOVHUloadidx2 ty k ax bs) :=
+  loadIdx_mono ty 2 2 false hr
+
+theorem evalPure_ARM64MOVWloadidx4 (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
+    Refines (Arm64.evalPure .ARM64MOVWloadidx4 ty k ax as) (Arm64.evalPure .ARM64MOVWloadidx4 ty k ax bs) :=
+  loadIdx_mono ty 4 4 true hr
+
+theorem evalPure_ARM64MOVWUloadidx4 (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
+    Refines (Arm64.evalPure .ARM64MOVWUloadidx4 ty k ax as) (Arm64.evalPure .ARM64MOVWUloadidx4 ty k ax bs) :=
+  loadIdx_mono ty 4 4 false hr
+
+theorem evalPure_ARM64MOVDloadidx8 (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
+    Refines (Arm64.evalPure .ARM64MOVDloadidx8 ty k ax as) (Arm64.evalPure .ARM64MOVDloadidx8 ty k ax bs) :=
+  loadIdx_mono ty 8 8 false hr
+
+theorem evalPure_ARM64FMOVSloadidx4 (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
+    Refines (Arm64.evalPure .ARM64FMOVSloadidx4 ty k ax as) (Arm64.evalPure .ARM64FMOVSloadidx4 ty k ax bs) :=
+  loadIdx_mono ty 4 4 false hr
+
+theorem evalPure_ARM64FMOVDloadidx8 (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
+    Refines (Arm64.evalPure .ARM64FMOVDloadidx8 ty k ax as) (Arm64.evalPure .ARM64FMOVDloadidx8 ty k ax bs) :=
+  loadIdx_mono ty 8 8 false hr
+
 theorem armPure_cases {op : Op} (h : armTerm op = true) (ty : Ty) (k : Int64) (ax : Option AuxRef)
     (hr : RefinesList as bs) :
     Refines (Arm64.evalPure op ty k ax as) (Arm64.evalPure op ty k ax bs) := by
   cases op <;> try exact absurd h Bool.false_ne_true
   case ARM64ADD => exact evalPure_ARM64ADD ty k ax hr
+  case ARM64MOVDloadidx => exact evalPure_ARM64MOVDloadidx ty k ax hr
+  case ARM64MOVWloadidx => exact evalPure_ARM64MOVWloadidx ty k ax hr
+  case ARM64MOVWUloadidx => exact evalPure_ARM64MOVWUloadidx ty k ax hr
+  case ARM64MOVHloadidx => exact evalPure_ARM64MOVHloadidx ty k ax hr
+  case ARM64MOVHUloadidx => exact evalPure_ARM64MOVHUloadidx ty k ax hr
+  case ARM64MOVBloadidx => exact evalPure_ARM64MOVBloadidx ty k ax hr
+  case ARM64MOVBUloadidx => exact evalPure_ARM64MOVBUloadidx ty k ax hr
+  case ARM64FMOVSloadidx => exact evalPure_ARM64FMOVSloadidx ty k ax hr
+  case ARM64FMOVDloadidx => exact evalPure_ARM64FMOVDloadidx ty k ax hr
+  case ARM64MOVHloadidx2 => exact evalPure_ARM64MOVHloadidx2 ty k ax hr
+  case ARM64MOVHUloadidx2 => exact evalPure_ARM64MOVHUloadidx2 ty k ax hr
+  case ARM64MOVWloadidx4 => exact evalPure_ARM64MOVWloadidx4 ty k ax hr
+  case ARM64MOVWUloadidx4 => exact evalPure_ARM64MOVWUloadidx4 ty k ax hr
+  case ARM64MOVDloadidx8 => exact evalPure_ARM64MOVDloadidx8 ty k ax hr
+  case ARM64FMOVSloadidx4 => exact evalPure_ARM64FMOVSloadidx4 ty k ax hr
+  case ARM64FMOVDloadidx8 => exact evalPure_ARM64FMOVDloadidx8 ty k ax hr
   case ARM64ADDconst => exact evalPure_ARM64ADDconst ty k ax hr
   case ARM64SUB => exact evalPure_ARM64SUB ty k ax hr
   case ARM64SUBconst => exact evalPure_ARM64SUBconst ty k ax hr

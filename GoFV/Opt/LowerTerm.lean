@@ -88,6 +88,10 @@ def armTerm : Op → Bool
   | .ARM64REV16W
   | .ARM64MOVBreg | .ARM64MOVBUreg | .ARM64MOVHreg | .ARM64MOVHUreg | .ARM64MOVWreg
   | .ARM64MOVWUreg | .ARM64MOVDconst | .ARM64ZERO
+  | .ARM64MOVDloadidx | .ARM64MOVWloadidx | .ARM64MOVWUloadidx | .ARM64MOVHloadidx
+  | .ARM64MOVHUloadidx | .ARM64MOVBloadidx | .ARM64MOVBUloadidx | .ARM64FMOVSloadidx
+  | .ARM64FMOVDloadidx | .ARM64MOVHloadidx2 | .ARM64MOVHUloadidx2 | .ARM64MOVWloadidx4
+  | .ARM64MOVWUloadidx4 | .ARM64MOVDloadidx8 | .ARM64FMOVSloadidx4 | .ARM64FMOVDloadidx8
   | .ARM64CMP | .ARM64CMPconst | .ARM64CMPW | .ARM64CMPWconst | .ARM64CMN | .ARM64CMNconst
   | .ARM64CMNW | .ARM64CMNWconst | .ARM64TST | .ARM64TSTconst | .ARM64TSTW | .ARM64TSTWconst
   | .ARM64CMPshiftLL | .ARM64CMPshiftRL | .ARM64CMPshiftRA | .ARM64CMNshiftLL

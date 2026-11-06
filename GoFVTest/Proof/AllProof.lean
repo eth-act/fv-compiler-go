@@ -57,6 +57,7 @@ import GoFV.Proof.Low.Rules.ConstBool
 import GoFV.Proof.Low.Rules.Flags
 import GoFV.Proof.Low.Rules.Fold
 import GoFV.Proof.Low.Rules.Kit
+import GoFV.Proof.Low.Rules.LoadIdx
 import GoFV.Proof.Low.Rules.LoadStore
 import GoFV.Proof.Low.Rules.Peep
 import GoFV.Proof.Low.Rules.Ptr
@@ -694,6 +695,7 @@ import GoFV.Proof.Witness.LowerAtomic
 import GoFV.Proof.Witness.LowerCondSel
 import GoFV.Proof.Witness.LowerCopyPtr
 import GoFV.Proof.Witness.LowerLoadFold
+import GoFV.Proof.Witness.LowerLoadIdx
 import GoFV.Proof.Witness.LowerLoadStore
 import GoFV.Proof.Witness.LowerLoadSym
 import GoFV.Proof.Witness.LowerLocalAddr

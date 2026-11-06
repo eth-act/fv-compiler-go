@@ -25,8 +25,9 @@ validator checks on the instance: an integer load at the top reads as many bytes
 (`resFitsL`), and an addressing node whose base the rule folds has no symbol and small
 non-negative offsets, an `ADDconst` folded into a `MOVDaddr` an aux (`Pat.addrOKL`).
 
-`SetOpSound o o'`: the ellipsis rule `(o ...) => (o' ...)` on a term (same arguments, type and
-fields), at shapes where a generic `o` produces its shape (`topOKL`). `BlockRuleL.Sound`: a block
+`SetOpSoundT o o'`: the ellipsis rule `(o ...) => (o' ...)` on a term (same arguments, type and
+fields), at shapes where a generic `o` produces its shape (`topOKL`), on arguments whose
+`setArgW64` ones are 64-bit integers (`AddPtr`'s index). `BlockRuleL.Sound`: a block
 rule `(K ctrl) && cond => (K' x)` (or `First`, successors
 possibly swapped) on one control, of a conditional kind (`If` or an arm64 flags/register kind):
 whenever the old block takes a successor (`brVal`), the new one takes the same edge.
@@ -310,8 +311,8 @@ def argWidth : Ty → Nat
 /-- The low bits of argument `i` an arm64 op of shape `ty` reads (`Arm64.reg` zero-extends a
 narrow value, while Go's registers hold full words): low-bit ops (add, subtract, multiply,
 logic, negate, left shift's operand) their result's width, `W` ops 32, sign and zero
-extensions their source width, an integer load none of its memory argument, every other op the
-whole register. -/
+extensions their source width, an integer or indexed load none of its memory argument, every
+other op the whole register. -/
 def armReadW (o : Op) (ty : Ty) (i : Nat) : Nat :=
   let w := match ty with
     | .int w => w.bits
@@ -330,6 +331,11 @@ def armReadW (o : Op) (ty : Ty) (i : Nat) : Nat :=
   | .ARM64MOVHreg | .ARM64MOVHUreg => 16
   | .ARM64MOVBload | .ARM64MOVBUload | .ARM64MOVHload | .ARM64MOVHUload | .ARM64MOVWload
   | .ARM64MOVWUload | .ARM64MOVDload => if i == 0 then 64 else 0
+  | .ARM64MOVDloadidx | .ARM64MOVWloadidx | .ARM64MOVWUloadidx | .ARM64MOVHloadidx
+  | .ARM64MOVHUloadidx | .ARM64MOVBloadidx | .ARM64MOVBUloadidx | .ARM64FMOVSloadidx
+  | .ARM64FMOVDloadidx | .ARM64MOVHloadidx2 | .ARM64MOVHUloadidx2 | .ARM64MOVWloadidx4
+  | .ARM64MOVWUloadidx4 | .ARM64MOVDloadidx8 | .ARM64FMOVSloadidx4
+  | .ARM64FMOVDloadidx8 => if i == 2 then 0 else 64
   | _ => 64
 
 /-- The arm64 ops with pointer provenance cases (`Arm64.addP`, `add`, `sub`). -/
@@ -449,13 +455,28 @@ def SetOpSound (o o' : Op) : Prop :=
     topOKL o ty = true →
     Refines ((opValL tabs o ty ai ax args).retypeL ty) ((opValL tabs o' ty ai ax args).retypeL ty)
 
+/-- The arguments of an ellipsis rule's op the validator requires at a 64-bit integer shape
+(`GoFV.Opt.LowerCheck.setOpDef`): `AddPtr`'s index, which `PtrOps.addPtr` sign-extends where
+`ADD` reads the register. -/
+def setArgW64 (o : Op) (i : Nat) : Bool := o == .AddPtr && i == 1
+
+/-- `SetOpSound` on arguments whose `setArgW64` ones hold 64-bit integers (`Val.hasTy`). -/
+def SetOpSoundT (o o' : Op) : Prop :=
+  ∀ (tabs : Tables) (ty : Ty) (ai : Int64) (ax : Option AuxRef) (args : List Val),
+    topOKL o ty = true →
+    (∀ i v, args[i]? = some v → setArgW64 o i = true → v.hasTy (.int .w64) = true) →
+    Refines ((opValL tabs o ty ai ax args).retypeL ty) ((opValL tabs o' ty ai ax args).retypeL ty)
+
+theorem SetOpSound.typed {o o' : Op} (h : SetOpSound o o') : SetOpSoundT o o' :=
+  fun tabs ty ai ax args htop _ => h tabs ty ai ax args htop
+
 /-- An ellipsis rule without a condition, from `o` to `o'`, both term ops of every value
 (generic term ops or `armTerm` ops: not `MOVDaddr`, whose being a term depends on the aux), with
-`SetOpSound o o'`. -/
+`SetOpSoundT o o'`. -/
 def ArmRule.SetOp (r : Rule) : Prop :=
   ∃ o o', ellipsisOn o r.pat = true ∧ r.result = .setOp o' ∧ r.cond = none ∧ r.block = none ∧
     (∀ tabs (v : Value), v.op = o → termVL tabs v = true) ∧
-    (∀ tabs (v : Value), v.op = o' → termVL tabs v = true) ∧ SetOpSound o o'
+    (∀ tabs (v : Value), v.op = o' → termVL tabs v = true) ∧ SetOpSoundT o o'
 
 /-- The atom ellipsis rules the atom simulation relates by itself (`GoFV.Opt.LowerCheck.atomPair`):
 the input atom and its renamed output have the same arguments and fields, and the output's

@@ -17,7 +17,8 @@ input `f`, and the output `g` must have the replayed definitions. The difference
   flags shape) and the aux `nodeAuxL` gives (a pattern-bound `{sym}`); a result whose top is an
   integer load reads the matched shape's size (`resFitsL`); there are no block (`@b`) results;
 * an ellipsis rule `(o ...) => (o' ...)` (`setOp`) is replayed as the op change: on a term whose
-  new op is a term (`ArmRule.SetOp`), or on an atom renamed by `renameOp` (`ArmRule.Rename`);
+  new op is a term (`ArmRule.SetOp`), its `setArgW64` arguments (`AddPtr`'s index) values at a
+  64-bit integer shape (`setArgsOK`), or on an atom renamed by `renameOp` (`ArmRule.Rename`);
 * a block rule event is checked by `blockOKL` against `BlockRuleL.Sound`: one control matched by
   the rule's control pattern, the block's auxint (tracked in `BStateL`) as the rule asks, the new
   controls the rule's variables, the new auxint the rule's;
@@ -172,6 +173,12 @@ def ruleOKL (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) :
     termVL tabs x && x.id == v &&
     (choices (Pat.commutes r.pat)).any fun sw => ruleOK1 tabs M (Rule.swapC r sw) v x defs
 
+/-- The arguments of `x` that `setArgW64` asks for are values of `M` at a 64-bit integer shape. -/
+def setArgsOK (tabs : Tables) (M : Defs) (x : Value) : Bool :=
+  (List.range x.args.size).all fun i =>
+    !setArgW64 x.op i ||
+      (M.get? x.args[i]!).any fun y => GoFV.Proof.Rules.isInt64Ty (shpL tabs y.type)
+
 /-- An ellipsis rule `(o ...) => (o' ...)` at `v`: the new definition of `v` (`ArmRule.SetOp` on
 terms, `ArmRule.Rename` on atoms). -/
 def setOpDef (tabs : Tables) (M : Defs) (r : Rule) (v : ID) : Option Value :=
@@ -179,7 +186,8 @@ def setOpDef (tabs : Tables) (M : Defs) (r : Rule) (v : ID) : Option Value :=
   | some x, .setOp o' =>
     let x' := { x with op := o' }
     if x.id == v && ellipsisOn x.op r.pat && r.cond.isNone && r.block.isNone &&
-        ((termVL tabs x && termVL tabs x' && topOKL x.op (shpL tabs x.type)) ||
+        ((termVL tabs x && termVL tabs x' && topOKL x.op (shpL tabs x.type) &&
+            setArgsOK tabs M x) ||
           (renameOp x.op o' && !termVL tabs x)) then some x'
     else none
   | _, _ => none
