@@ -1,5 +1,20 @@
 import GoFV.Proof.Low.Rules.BlockFlags
 
+/-!
+# Lowering rule lemmas: block rules that build a new control (`ARM64.rules:558-561`, `603`, `604`)
+
+Block rules of lowered code whose result control is a fresh node built from the matched values
+(#385; the build case of `BlockRuleL.Sound`, `obl_build`):
+
+* `(K (CMPconst [0] z:(AND x y)))` as `(K (TST x y))` (`558`), `(K (CMPconst [0] x:(ANDconst [c]
+  y)))` as `(K (TSTconst [c] y))` (`559`), and the `CMPWconst` forms as `TSTW` (`560`) and
+  `TSTWconst [int32(c)]` (`561`), for `K` among `EQ NE LT LE GT GE`: `TST` leaves `C` clear where
+  `CMP k, #0` sets it, and both leave `V` clear, so they agree on every condition that does not
+  read `C` (`logic_sub0`).
+* `(UGT|ULE (CMPconst [0] x))` as `(NE|EQ (CMPconst [0] x))` (`603`) and the `CMPWconst` forms
+  (`604`): with `C` set by `x - 0`, `HI` is `NE` and `LS` is `EQ` (`hi_sub0`, `ls_sub0`).
+-/
+
 namespace GoFV.Proof.Low.Rules
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Rules GoFV.Proof.Rules GoFV.Proof.Low
