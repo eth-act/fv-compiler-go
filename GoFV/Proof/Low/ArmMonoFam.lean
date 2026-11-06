@@ -237,6 +237,65 @@ theorem add_mono (ty : Ty) (h : RefinesList as bs) : Refines (add ty as) (add ty
   · cases h1 <;> cases h2 <;> first | exact .poison _ | exact Refines.refl _
   · cases h1 <;> cases h2 <;> exact .poison _
 
+/-- An arm64 load on a refined memory refines. -/
+theorem loadN_mono {m m' : Mem} (h : Mem.Refines m m') (ty : Ty) (n : Nat) (s : Bool) (p : Ptr) :
+    Sem.Refines (Arm64.loadN ty n s m p) (Arm64.loadN ty n s m' p) := by
+  unfold Arm64.loadN
+  split
+  · have hl := GoFV.SSA.Sem.load_mono h (.int .w64) p
+    revert hl
+    generalize m.load (.int .w64) p = x
+    generalize m'.load (.int .w64) p = y
+    intro hl
+    cases hl <;> first | exact .poison _ | exact Sem.Refines.refl _ | (constructor; assumption)
+  · split
+    · rename_i w _
+      have hl := GoFV.SSA.Sem.load_mono h (.int w) p
+      revert hl
+      generalize m.load (.int w) p = x
+      generalize m'.load (.int w) p = y
+      intro hl
+      cases hl <;> first | exact .poison _ | exact Sem.Refines.refl _
+    · exact Sem.Refines.refl _
+
+/-- An address read from a refined value: the same, unless the source's is undefined. -/
+theorem addr_of_refines (h : Refines a b) {k : BitVec 64} {p : Ptr}
+    (hp : Arm64.addr a k = some p) : Arm64.addr b k = some p := by
+  cases h <;> first | exact hp | simp [Arm64.addr, reg] at hp
+
+/-- A load at the address of a refined value, on a refined memory, refines. -/
+theorem addrLoad_mono {x y : Val} (hxy : Refines x y) {m m' : Mem} (hm : Mem.Refines m m')
+    (ty : Ty) (n : Nat) (s : Bool) :
+    Refines (match Arm64.addr x 0 with | some p => loadN ty n s m p | none => .poison)
+      (match Arm64.addr y 0 with | some p => loadN ty n s m' p | none => .poison) := by
+  cases hx : Arm64.addr x 0 with
+  | none => exact .poison _
+  | some p => rw [addr_of_refines hxy hx]; exact loadN_mono hm ty n s p
+
+/-- A register-indexed load (`MOV…loadidx`, `Arm64.loadIdx`) on refined arguments refines: its
+address is `add` of the base and the (scaled) index. -/
+theorem loadIdx_mono (ty : Ty) (n scale : Nat) (s : Bool) (h : RefinesList as bs) :
+    Refines (loadIdx ty n scale s as) (loadIdx ty n scale s bs) := by
+  rcases h with _ | ⟨h1, _ | ⟨h2, _ | ⟨h3, _ | ⟨_, _⟩⟩⟩⟩
+  · exact .poison _
+  · simp only [loadIdx]; exact .poison _
+  · simp only [loadIdx]; exact .poison _
+  · rename_i a a' i i' m m'
+    cases h3 with
+    | mem hm =>
+      simp only [loadIdx]
+      by_cases hsc : scale = 1
+      · simp only [hsc, ite_true]
+        exact addrLoad_mono (add_mono _ (.cons h1 (.cons h2 .nil))) hm ty n s
+      · simp only [hsc, ite_false]
+        cases hk : reg i with
+        | none => exact addrLoad_mono (.poison _) hm ty n s
+        | some k =>
+          rw [reg_of h2 hk]
+          exact addrLoad_mono (add_mono _ (.cons h1 (.cons (Refines.refl _) .nil))) hm ty n s
+    | _ => simp only [loadIdx]; exact .poison _
+  · simp only [loadIdx]; exact .poison _
+
 theorem sub_mono (ty : Ty) (h : RefinesList as bs) : Refines (sub ty as) (sub ty bs) := by
   rcases h with _ | ⟨h1, _ | ⟨h2, _ | ⟨_, _⟩⟩⟩
   · exact .poison _

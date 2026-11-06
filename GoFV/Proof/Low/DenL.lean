@@ -43,27 +43,6 @@ theorem rty_hasTy (low : Bool) (t : Ty) (v : Val) : (rty low t v).hasTy t = true
 /-- `rty` is `runL`'s shaping (`Sem.LMode.retype`). -/
 theorem LMode.retype_eq (md : LMode) (t : Ty) (v : Val) : md.retype t v = rty md.low t v := rfl
 
-/-- An arm64 load on a refined memory refines. -/
-theorem loadN_mono {m m' : Mem} (h : Mem.Refines m m') (ty : Ty) (n : Nat) (s : Bool) (p : Ptr) :
-    Sem.Refines (Arm64.loadN ty n s m p) (Arm64.loadN ty n s m' p) := by
-  unfold Arm64.loadN
-  split
-  · have hl := GoFV.SSA.Sem.load_mono h (.int .w64) p
-    revert hl
-    generalize m.load (.int .w64) p = x
-    generalize m'.load (.int .w64) p = y
-    intro hl
-    cases hl <;> first | exact .poison _ | exact Sem.Refines.refl _ | (constructor; assumption)
-  · split
-    · rename_i w _
-      have hl := GoFV.SSA.Sem.load_mono h (.int w) p
-      revert hl
-      generalize m.load (.int w) p = x
-      generalize m'.load (.int w) p = y
-      intro hl
-      cases hl <;> first | exact .poison _ | exact Sem.Refines.refl _
-    · exact Sem.Refines.refl _
-
 /-- `ldVal` is monotone. -/
 theorem ldVal_mono (tabs : Tables) (n : Nat) (s : Bool) (ty : Ty) (ai : Int64)
     (ax : Option AuxRef) {as bs : List Val} (hr : RefinesList as bs) :
@@ -90,7 +69,7 @@ theorem ldVal_mono (tabs : Tables) (n : Nat) (s : Bool) (ty : Ty) (ai : Int64)
     · simp only [ldVal, he]
       cases symPtr tabs ai ax a' with
       | none => exact .poison _
-      | some p => exact loadN_mono hm ty n s p
+      | some p => exact Mono.loadN_mono hm ty n s p
   | _ => first | exact .poison _ | exact Sem.Refines.refl _
 
 /-- `opValL` of a term value is monotone. -/
