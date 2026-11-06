@@ -6,6 +6,7 @@ import GoFV.Proof.Low.Rules.BlockCtl
 import GoFV.Proof.Low.Rules.BlockFlags
 import GoFV.Proof.Low.Rules.Cmp
 import GoFV.Proof.Low.Rules.CmpF
+import GoFV.Proof.Low.Rules.CmpNeg
 import GoFV.Proof.Low.Rules.CondSel
 import GoFV.Proof.Low.Rules.Const
 import GoFV.Proof.Low.Rules.ConstBool
@@ -37,8 +38,17 @@ theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
   · simp only [ProvenARM64.lower, ForallL, ForallL.append_iff]
     exact ⟨⟨r_ARM64_650_sound, r_ARM64_1000_sound, r_ARM64_1201_sound, trivial⟩,
       ⟨r_ARM64_972_sound, trivial⟩,
+      ⟨r_ARM64_598_sound, trivial⟩,
+      ⟨r_ARM64_597_sound, trivial⟩,
       ⟨r_ARM64_990_sound, r_ARM64_991_sound, r_ARM64_1003_sound, trivial⟩,
       ⟨r_ARM64_992_sound, r_ARM64_993_sound, r_ARM64_1003_2_sound, trivial⟩,
+      ⟨r_ARM64_598_2_sound, trivial⟩,
+      r_ARM64_1352_cc_sound,
+      r_ARM64_1353_cc_sound,
+      r_ARM64_1354_cc_sound,
+      r_ARM64_1355_cc_sound,
+      r_ARM64_1356_cc_sound,
+      r_ARM64_1357_cc_sound,
       ⟨r_ARM64_1374_sound, trivial⟩,
       ⟨r_ARM64_750_sound, r_ARM64_752_sound, trivial⟩,
       ⟨r_ARM64_776_sound, r_ARM64_905_sound, trivial⟩,

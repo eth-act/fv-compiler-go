@@ -186,13 +186,18 @@ def Pat.rawL (tabs : Tables) (e : PEnv) : Pat → Val
     opValL tabs o (e.ty []) (e.auxInt []) (e.aux []) (Pat.densL tabs e [] 0 args)
   | _ => e.leaf []
 
-/-- `auxIntDV` for lowered ops: a `CCop` auxint (`CSEL [cc]`) is the op of that Go opcode number
-(Go's `auxIntToOp`, `GoFV.Rules.Interp.auxIntVal`), so a rule can test and rewrite `cc`. -/
+/-- A `CCop` auxint as the op of that Go opcode number (Go's `auxIntToOp`,
+`GoFV.Rules.Interp.auxIntVal`), else unknown. -/
+def ccDV (i : Int64) : DV :=
+  match (if i.toInt < 0 then none else Op.ofGoNum? i.toInt.toNat) with
+  | some o => .op o
+  | none => .other
+
+/-- `auxIntDV` for lowered ops: a `CCop` auxint (`CSEL [cc]`) is an op (`ccDV`), so a rule can
+test and rewrite `cc`. -/
 def auxIntDVL (aty : AuxType) (i : Int64) : DV :=
   match aty with
-  | .CCop => match (if i.toInt < 0 then none else Op.ofGoNum? i.toInt.toNat) with
-    | some o => .op o
-    | none => .other
+  | .CCop => ccDV i
   | _ => auxIntDV aty i
 
 mutual

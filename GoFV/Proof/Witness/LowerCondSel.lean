@@ -10,9 +10,11 @@ block: `v4 = Less64 v2 v3` of the register arguments, `v5 = CondSelect <int> v2 
 (CMP y x))` (`1003`: `v7` becomes `InvertFlags v8` of a fresh `v8 = CMP v3 v2`), then
 `(CondSelect x y boolval) && flagArg(boolval) != nil => (CSEL [boolval.Op] x y flagArg(boolval))`
 (`302`) in its split form on `LessThan` (`GoFV.Rules.Derive.flagSplit`): `v5` becomes `CSEL
-[LessThan] v2 v3 v7` and `v4` is dead. `CSEL` reads `LT` on the flags of the swapped compare
-(`Sem.invertFlags`). By `lower_refines` every returning or panicking `run` of `smin` is, up to
-refinement, a `runL` of the result; `smin(3, 4)` returns 3 and `smin(5, 4)` returns 4 under both.
+[LessThan] v2 v3 v7` and `v4` is dead; last `(CSEL [cc] x y (InvertFlags cmp)) => (CSEL
+[arm64Invert(cc)] x y cmp)` (`1352`) in its split form on `LessThan` (`GoFV.Rules.Derive.ccSplit`):
+`v5` becomes `CSEL [GreaterThan] v2 v3 v8` and `v7` is gone. By `lower_refines` every returning or
+panicking `run` of `smin` is, up to refinement, a `runL` of the result; `smin(3, 4)` returns 3 and
+`smin(5, 4)` returns 4 under both.
 -/
 
 namespace GoFV.Proof.Witness
@@ -64,8 +66,8 @@ theorem lcs_generic : lcsFunc.lowered = false := by decide +kernel
 theorem lcs_noFma : GoFV.Opt.FmaContract.contractAll lcsFunc = lcsFunc := by decide +kernel
 
 /-- By kernel evaluation: the checked lower keeps a lowered result whose `v5` is `CSEL
-[LessThan] v2 v3 v7`, `v7` `InvertFlags v8` and `v8` `CMP v3 v2`, and `smin(3, 4) = 3`,
-`smin(5, 4) = 4` under `run` of the input and `runL` of the result. -/
+[GreaterThan] v2 v3 v8`, `v8` `CMP v3 v2`, without `v7`, and `smin(3, 4) = 3`, `smin(5, 4) = 4`
+under `run` of the input and `runL` of the result. -/
 theorem lcs_checks :
     (lowerChecked lcsPassEnv lcsFunc).toOption.map (fun o =>
       ((o.func.value? 5).map (fun v => (v.op, v.auxInt, v.args)),
@@ -73,20 +75,21 @@ theorem lcs_checks :
         (o.func.value? 8).map (fun v => (v.op, v.args)), o.func.lowered,
         returnsInt (runL Env.p1 o.tables o.func [.int .w64 3, .int .w64 4] {} 1) 3,
         returnsInt (runL Env.p1 o.tables o.func [.int .w64 5, .int .w64 4] {} 1) 4)) =
-      some (some (.ARM64CSEL, Int64.ofNat Op.ARM64LessThan.goNum, #[2, 3, 7]),
-        some (.ARM64InvertFlags, #[8]), some (.ARM64CMP, #[3, 2]), true, true, true) ∧
+      some (some (.ARM64CSEL, Int64.ofNat Op.ARM64GreaterThan.goNum, #[2, 3, 8]),
+        none, some (.ARM64CMP, #[3, 2]), true, true, true) ∧
     returnsInt (run Env.p1 lcsTabs lcsFunc [.int .w64 3, .int .w64 4] {} 1) 3 = true ∧
     returnsInt (run Env.p1 lcsTabs lcsFunc [.int .w64 5, .int .w64 4] {} 1) 4 = true := by
   decide +kernel
 
 /-- **Pass execution witness** for `lower_refines` (`lower_refines_run`) on a `CondSelect`: on
-`smin`, the checked lower selects by `CSEL [LessThan]` on `InvertFlags` of `CMP v3 v2`, and every
-returning or panicking `run` of `smin` is, up to refinement, a `runL` of the result. -/
+`smin`, the checked lower selects by `CSEL [GreaterThan]` on `CMP v3 v2` (the `InvertFlags` of
+`1003` absorbed by `1352`), and every returning or panicking `run` of `smin` is, up to refinement,
+a `runL` of the result. -/
 theorem lcs_lower :
     ∃ out, lowerChecked lcsPassEnv lcsFunc = .ok out ∧ out.func.lowered = true ∧
       (out.func.value? 5).map (fun v => (v.op, v.auxInt, v.args)) =
-        some (.ARM64CSEL, Int64.ofNat Op.ARM64LessThan.goNum, #[2, 3, 7]) ∧
-      (out.func.value? 7).map (fun v => (v.op, v.args)) = some (.ARM64InvertFlags, #[8]) ∧
+        some (.ARM64CSEL, Int64.ofNat Op.ARM64GreaterThan.goNum, #[2, 3, 8]) ∧
+      (out.func.value? 7).map (fun v => (v.op, v.args)) = none ∧
       (out.func.value? 8).map (fun v => (v.op, v.args)) = some (.ARM64CMP, #[3, 2]) ∧
       (∃ f', GoFV.Proof.Low.Contract lcsFunc f' ∧
         RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func lcsPassEnv.tables f') ∧

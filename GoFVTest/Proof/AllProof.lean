@@ -53,6 +53,7 @@ import GoFV.Proof.Low.Rules.BlockCtl
 import GoFV.Proof.Low.Rules.BlockFlags
 import GoFV.Proof.Low.Rules.Cmp
 import GoFV.Proof.Low.Rules.CmpF
+import GoFV.Proof.Low.Rules.CmpNeg
 import GoFV.Proof.Low.Rules.CondSel
 import GoFV.Proof.Low.Rules.Const
 import GoFV.Proof.Low.Rules.ConstBool

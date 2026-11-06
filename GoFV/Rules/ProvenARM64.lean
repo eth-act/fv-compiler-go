@@ -9,7 +9,8 @@ import GoFV.Rules.Derive
 `ArmRule.SetOp`, `ArmRule.Rename`, `BlockRuleL.Sound`; `GoFV/Proof/Low/ProvenARM64.lean`), in
 matching order: the rule set of the checked `lower` (`GoFV.Opt.lowerChecked`). A rule on a
 condition's op and flags (`flagArg`) is listed split by the condition op
-(`GoFV.Rules.Derive.flagSplit`), which rewrites the same instances.
+(`GoFV.Rules.Derive.flagSplit`), which rewrites the same instances; a rule on `arm64Invert` of
+its `CCop` auxint is listed split by the integer condition ops (`GoFV.Rules.Derive.ccSplit`).
 -/
 
 namespace GoFV.Rules.ProvenARM64
@@ -61,13 +62,22 @@ def b2iNorm (r : Rule) : Rule where
     | res => res
   pos := r.pos
 
-/-- `ARM64.rules` restricted to its 275 proven value rules and 93 proven block rules. -/
+/-- `ARM64.rules` restricted to its 284 proven value rules and 93 proven block rules. -/
 def lower : RuleSet where
   name := "ARM64"
   values := [(.ARM64ADDconst, [Generated.ARM64.r_ARM64_650, Generated.ARM64.r_ARM64_1000, Generated.ARM64.r_ARM64_1201]),
     (.ARM64AND, [Generated.ARM64.r_ARM64_972]),
+    (.ARM64CMNWconst, [Generated.ARM64.r_ARM64_598]),
+    (.ARM64CMNconst, [Generated.ARM64.r_ARM64_597]),
     (.ARM64CMP, [Generated.ARM64.r_ARM64_990, Generated.ARM64.r_ARM64_991, Generated.ARM64.r_ARM64_1003]),
     (.ARM64CMPW, [Generated.ARM64.r_ARM64_992, Generated.ARM64.r_ARM64_993, Generated.ARM64.r_ARM64_1003_2]),
+    (.ARM64CMPWconst, [Generated.ARM64.r_ARM64_598_2]),
+    (.ARM64CSEL, Derive.ccSplit Generated.ARM64.r_ARM64_1352),
+    (.ARM64CSEL0, Derive.ccSplit Generated.ARM64.r_ARM64_1353),
+    (.ARM64CSETM, Derive.ccSplit Generated.ARM64.r_ARM64_1354),
+    (.ARM64CSINC, Derive.ccSplit Generated.ARM64.r_ARM64_1355),
+    (.ARM64CSINV, Derive.ccSplit Generated.ARM64.r_ARM64_1356),
+    (.ARM64CSNEG, Derive.ccSplit Generated.ARM64.r_ARM64_1357),
     (.ARM64Equal, [Generated.ARM64.r_ARM64_1374]),
     (.ARM64FMOVDloadidx, [Generated.ARM64.r_ARM64_750, Generated.ARM64.r_ARM64_752]),
     (.ARM64FMOVDstore, [Generated.ARM64.r_ARM64_776, Generated.ARM64.r_ARM64_905]),
