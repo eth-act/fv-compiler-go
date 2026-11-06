@@ -144,16 +144,18 @@ def ownB (g : Func) (b : ID) (gb : Block) : Bool :=
       | none => false
 
 /-- Block `b`: well formed in `g`; same kind, `auxInt`, edges, `Phi`s; `g`'s order is a
-schedule; the walk. -/
-def blockB (tabs : Tables) (dc : Cert) (f g : Func) (cert : Array (Option ID)) (b : ID) : Bool :=
+schedule; the walk. `tf`, `tg`: the value shapes of `f` and `g` (`(Ctx.makeL tabs _).tys`,
+computed once per function by `flagAllocWith`). -/
+def blockB (tf tg : Array Ty) (dc : Cert) (f g : Func) (cert : Array (Option ID)) (b : ID) :
+    Bool :=
   match f.block? b, g.block? b with
   | some fb, some gb =>
     ownB g b gb && gb.kind == fb.kind && gb.auxInt == fb.auxInt && gb.succs == fb.succs &&
       gb.preds == fb.preds && phisOK f g fb gb &&
       let LF := fb.values.filter (!isPhiIn f ·)
       let LG := gb.values.filter (!isPhiIn g ·)
-      let oF := schedOrder f (Ctx.makeL tabs f).tys fb
-      schedOrder g (Ctx.makeL tabs g).tys gb == some LG && (oF == none || oF == some LF) &&
+      let oF := schedOrder f tf fb
+      schedOrder g tg gb == some LG && (oF == none || oF == some LF) &&
         walkB dc f g cert b fb gb LF.toList LG.toList [] []
   | _, _ => false
 
@@ -161,7 +163,9 @@ def blockB (tabs : Tables) (dc : Cert) (f g : Func) (cert : Array (Option ID)) (
 def flagAllocWith (tabs : Tables) (cert : Array (Option ID)) (f g : Func) : Bool :=
   g.entry == f.entry && g.blocks == f.blocks && g.ownAux == f.ownAux && g.lowered == f.lowered &&
     let dc := make f
-    f.blocks.all (blockB tabs dc f g cert)
+    let tf := (Ctx.makeL tabs f).tys
+    let tg := (Ctx.makeL tabs g).tys
+    f.blocks.all (blockB tf tg dc f g cert)
 
 /-! ## The certificate (untrusted) -/
 
