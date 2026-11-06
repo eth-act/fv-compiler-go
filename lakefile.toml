@@ -187,3 +187,7 @@ root = "GoFVTest.LowFragProbe"
 name = "axioms-audit"
 root = "GoFVTest.AxiomsAudit"
 supportInterpreter = true
+
+[[lean_exe]]
+name = "stocklow-probe"
+root = "GoFVTest.StockLowProbe"
