@@ -278,15 +278,15 @@ theorem runL_normF (env : Env) (tabs : Tables) (f : Func) (args : List Val) (mem
   dsimp only
   split
   · rfl
-  · have he : entryFrame env { Ctx.makeL tabs f with f := normF f } args mem =
+  · have hf : (Ctx.makeL tabs f).f = f := by unfold Ctx.makeL; split <;> rfl
+    have he : entryFrame env { Ctx.makeL tabs f with f := normF f } args mem =
         entryFrame env (Ctx.makeL tabs f) args mem := by
       unfold entryFrame frameMem frameAllocs
-      simp only [normF, Array.size_map]
-    have hf : (Ctx.makeL tabs f).f = f := by unfold Ctx.makeL; split <;> rfl
+      simp only [normF, Array.size_map, hf]
     have hrl := runLoopL_normF ⟨f.lowered, false⟩ env (Ctx.makeL tabs f)
     rw [hf] at hrl
     rw [he, hrl]
-    simp only [normF]
+    rw [hf]; rfl
 
 /-! ## The pass -/
 
@@ -296,9 +296,16 @@ theorem lateLower_refinesL {penv : PassEnv} {f : Func} {out : PassOut}
     (_h : lateLower penv f = .ok out) (hv : renameB penv.tables out.tables f out.func = true) :
     RefinesL out.tables out.func penv.tables f := by
   unfold renameB at hv
-  rw [Bool.and_eq_true, decide_eq_true_eq] at hv
-  obtain ⟨hta, he⟩ := hv
+  simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hv
+  obtain ⟨⟨⟨⟨hta, hen⟩, hown⟩, hvt⟩, hbt⟩ := hv
+  have he : eraseFL (normF out.func) = eraseFL (normF f) := by
+    have h1 : (normF out.func).blockTab.map (Option.map eraseB) =
+        (normF f).blockTab.map (Option.map eraseB) := hbt
+    have h2 : (normF out.func).entry = (normF f).entry := hen
+    have h3 : (normF out.func).ownAux = (normF f).ownAux := hown
+    unfold eraseFL
+    rw [hvt, h1, h2, h3]
   refine RefinesL.of_runL_eq fun env args mem fuel => ?_
-  rw [← runL_normF, runL_congr he, runL_normF, runL_tabsAgreeL hta]
+  rw [← runL_normF, runL_congr he, runL_normF, Low.runL_tabsAgreeL hta]
 
 end GoFV.Proof.LateLowerL

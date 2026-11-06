@@ -29,8 +29,11 @@ def normV (v : Value) : Value :=
 /-- `f` with its values `normV`ed. -/
 def normF (f : Func) : Func := { f with valueTab := f.valueTab.map (Option.map normV) }
 
-/-- **The `late lower` rename validator** (module doc). -/
+/-- **The `late lower` rename validator** (module doc). The `eraseFL` equality is decided field
+by field (`eraseFL`'s `default` cache does not reduce in the kernel). -/
 def renameB (tabs tabs' : Tables) (f g : Func) : Bool :=
-  LowerCheck.tabsAgreeL tabs tabs' f && decide (eraseFL (normF g) = eraseFL (normF f))
+  LowerCheck.tabsAgreeL tabs tabs' f && g.entry == f.entry && g.ownAux == f.ownAux &&
+    decide ((normF g).valueTab.map (Option.map eraseV) = (normF f).valueTab.map (Option.map eraseV)) &&
+    decide (g.blockTab.map (Option.map eraseB) = f.blockTab.map (Option.map eraseB))
 
 end GoFV.Opt.LateLowerCheck

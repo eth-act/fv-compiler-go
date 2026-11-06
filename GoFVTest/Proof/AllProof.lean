@@ -253,6 +253,7 @@ import GoFV.Proof.Pass.KnownBitsInv
 import GoFV.Proof.Pass.KnownBitsKind
 import GoFV.Proof.Pass.KnownBitsShift
 import GoFV.Proof.Pass.KnownBitsTerm
+import GoFV.Proof.Pass.LateLowerL
 import GoFV.Proof.Pass.LicmL
 import GoFV.Proof.Pass.LoadFwd
 import GoFV.Proof.Pass.LoadFwdArg
@@ -686,6 +687,7 @@ import GoFV.Proof.Witness.FwdZeroStr
 import GoFV.Proof.Witness.HasWaitingReaders
 import GoFV.Proof.Witness.InitF10
 import GoFV.Proof.Witness.KnownBits
+import GoFV.Proof.Witness.LateLowerL
 import GoFV.Proof.Witness.LicmL
 import GoFV.Proof.Witness.LoadFwd
 import GoFV.Proof.Witness.LoadSel
