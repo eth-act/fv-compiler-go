@@ -10,8 +10,11 @@ bridge, used by every op family of `Sem/Arm64`:
 * **Reading** (`reg`): an integer of width `w` is the register holding it zero-extended (a value
   of a narrow type has unspecified upper bits on the machine; Go's rules only rely on them where
   the producing instruction defines them, and those producers keep their full register, see
-  `Sem/RunL.lean` `arm64Op` for `MOVDreg`), a boolean is 0 or 1, a pointer its concrete address
-  (`Ptr.addr?`; a global has none, so an op that needs its bits is `poison`).
+  `Sem/RunL.lean` `arm64Op` for `MOVDreg`), a boolean is 0 or 1, a pointer that is the pointer
+  at its concrete address (`ptrReg`; every `Ptr.convertible` one, `Ptr.ofAddr_addr`) that
+  address; any other pointer (a global, a frame temporary, one outside its window or the address
+  encoding) has none, so an op that needs its bits is `poison` and `CMP` compares it by
+  provenance (`cmp`).
 * **Writing** (`res`): a 64-bit integer, or at the `bool` shape the boolean of bit 0 (the bit Go
   branches on, `(If c) => (TBNZ [0] c)`); `runL` then shapes it at the value's type
   (`Val.retypeL`).
@@ -21,11 +24,23 @@ bridge, used by every op family of `Sem/Arm64`:
 
 namespace GoFV.SSA.Sem.Arm64
 
+/-- The register of a pointer: its concrete address `a` when it is the pointer at that address
+(`Ptr.ofAddr a = p`, so every `Ptr.convertible` pointer, `Ptr.ofAddr_addr`). Pointers with a
+register therefore have distinct registers, and only the nil pointer has register 0, so `CMP` of
+two registers is Phase 1's `EqPtr` (which reads an integer word `x` as `Ptr.ofAddr x`). Any other
+pointer (a global, a frame temporary, which shares its address with the frame variable of its
+name, one outside its window or whose address wraps) has none, and `cmp` compares it by
+provenance. -/
+def ptrReg (p : Ptr) : Option (BitVec 64) :=
+  match p.addr? with
+  | some a => if Ptr.ofAddr a = p then some a else none
+  | none => none
+
 /-- The 64-bit register holding `v`. -/
 def reg : Val → Option (BitVec 64)
   | .int _ x => some (x.setWidth 64)
   | .bool b => some (if b then 1 else 0)
-  | .ptr p => p.addr?
+  | .ptr p => ptrReg p
   | _ => none
 
 /-- The low 32 bits of the register holding `v` (the `W` register). -/

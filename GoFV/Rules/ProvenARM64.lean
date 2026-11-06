@@ -62,7 +62,7 @@ def b2iNorm (r : Rule) : Rule where
     | res => res
   pos := r.pos
 
-/-- `ARM64.rules` restricted to its 284 proven value rules and 93 proven block rules. -/
+/-- `ARM64.rules` restricted to its 287 proven value rules and 93 proven block rules. -/
 def lower : RuleSet where
   name := "ARM64"
   values := [(.ARM64ADDconst, [Generated.ARM64.r_ARM64_650, Generated.ARM64.r_ARM64_1000, Generated.ARM64.r_ARM64_1201]),
@@ -155,9 +155,11 @@ def lower : RuleSet where
     (.Eq64, [Generated.ARM64.r_ARM64_242]),
     (.Eq64F, [Generated.ARM64.r_ARM64_245]),
     (.Eq8, [Generated.ARM64.r_ARM64_239]),
+    (.EqPtr, [Generated.ARM64.r_ARM64_243]),
     (.GetClosurePtr, [Generated.ARM64.r_ARM64_455]),
     (.InterCall, [Generated.ARM64.r_ARM64_444]),
     (.IsInBounds, [Generated.ARM64.r_ARM64_451]),
+    (.IsNonNil, [Generated.ARM64.r_ARM64_450]),
     (.IsSliceInBounds, [Generated.ARM64.r_ARM64_452]),
     (.Leq16, [Generated.ARM64.r_ARM64_282]),
     (.Leq16U, [Generated.ARM64.r_ARM64_291]),
@@ -199,6 +201,7 @@ def lower : RuleSet where
     (.Neq64, [Generated.ARM64.r_ARM64_250]),
     (.Neq64F, [Generated.ARM64.r_ARM64_252_2]),
     (.Neq8, [Generated.ARM64.r_ARM64_247]),
+    (.NeqPtr, [Generated.ARM64.r_ARM64_251]),
     (.NilCheck, [Generated.ARM64.r_ARM64_449]),
     (.OffPtr, [Generated.ARM64.r_ARM64_306]),
     (.Or16, [Generated.ARM64.r_ARM64_44]),
