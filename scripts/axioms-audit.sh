@@ -99,10 +99,14 @@ for l in cfg.get("lean_lib", []):
     if l["name"] not in ("GoFV", "GoFVTest"):
         print("LIB " + l["name"])
 ')
+# a here-string, not `printf … | grep -q`: under pipefail, grep exiting at its first match while
+# printf still writes the ~30 KB list kills printf with SIGPIPE (status 141) and fails the check
+# at random (more often when the machine is loaded or pipes shrink to one page)
+audited=$(printf '%s\n' "$lib" "$rest" "$roots")
 while read -r r; do
   [ -n "$r" ] || continue
   case $r in LIB\ *) echo "axioms-audit: lean_lib ${r#LIB } is not audited" >&2; exit 1 ;; esac
-  printf '%s\n' "$lib" "$rest" "$roots" | grep -qxF "$r" ||
+  grep -qxF "$r" <<<"$audited" ||
     { echo "axioms-audit: lean_exe root $r is not audited (outside GoFV/ and GoFVTest/)" >&2; exit 1; }
 done <<<"$exes"
 status=0
