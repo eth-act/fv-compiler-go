@@ -21,12 +21,14 @@ accepts `g` as such a scheduling of `f` (decision (b) of #384, `docs/plans/seman
   `y` before `x` and the source runs `x` before `y`, `y` is a parameter's register piece (it
   evaluates, `argOK`), or `x` never fails (`Cls.safe`) or never faults (a load or nil check whose
   pointer is a nil check's result, `SP`, `GetG` or the closure pointer, `nnBase`), or `y` is a
-  load and `x` a load or nil check on the same memory, so that whichever fails first fails with
-  `nilDeref` of that memory, or `y` is a nil check on that memory of `x`'s base or of a
-  pointer-shaped parameter's register piece the source runs before `x` (`argPtr`: on the inputs
-  where those read nil or a pointer that is not wild, `GoFV.Proof.ArgPtrsOK`, it panics alike or
-  passes) (`swapOK`). This is the ready-root rule (#96) for runs where memory ops fault
-  (`LMode.faulting`).
+  load (a `faultOp`, including `LDAR*`) and `x` a load or nil check on the same memory, so that
+  whichever fails first fails with `nilDeref` of that memory, or `y` is a nil check on that
+  memory of `x`'s base or of a pointer-shaped parameter's register piece the source runs before
+  `x` or outside the block (`argPtr`: on the inputs where those read nil or a pointer that is not
+  wild, `GoFV.Proof.ArgPtrsOK`, it panics alike or passes) (`swapOKB`), or of another
+  pointer-shaped value the source runs before `x` or outside the block (`nilPtrSwap`, on the
+  inputs where checked pointers are nil or not wild, `GoFV.Proof.NilPtrsOK`) (`swapOK`). This is
+  the ready-root rule (#96) for runs where memory ops fault (`LMode.faulting`).
 -/
 
 namespace GoFV.Opt.ScheduleCheck
@@ -74,10 +76,10 @@ def ldOps : List Op :=
 def ldOp (op : Op) : Bool := decide (op ∈ ldOps)
 
 /-- The arm64 ops that evaluate (`.ok`) unless they fault (`nilFaults`): the loads, `LoweredZero`,
-`LoweredMove` (and their loops) and `LoweredMemEq`. -/
+`LoweredMove` (and their loops), `LoweredMemEq` and the acquiring loads `LDAR*`. -/
 def faultOps : List Op :=
   ldOps ++ [.ARM64LoweredZero, .ARM64LoweredZeroLoop, .ARM64LoweredMove, .ARM64LoweredMoveLoop,
-    .ARM64LoweredMemEq]
+    .ARM64LoweredMemEq, .ARM64LDAR, .ARM64LDARB, .ARM64LDARW]
 
 /-- `op` is in `faultOps`. -/
 def faultOp (op : Op) : Bool := decide (op ∈ faultOps)
@@ -190,17 +192,18 @@ def argPtr (tabs : Tables) (params : Array (Option AuxRef)) (tys : Array Ty) (f 
   | some vp => argOK tabs params vp && ptrShape (tys[p]?.getD .other)
   | none => false
 
-/-- The source runs `x` before `y`, the target `y` before `x` (both may fail). Allowed if `y`
-evaluates (a parameter's register piece, `argOK`; `params`: `f`'s input parameters'
-names); or if `x` never panics (so the source cannot stop at `x` with `y` not run: a value that
-never panics, or a load or nil check whose base is not nil, `nnBase`; `tys`: `f`'s `runL`
-shapes); or `x` and `y` fault alike: `x` is a `faultOp` or a nil check, and `y` on the same
-memory is a `faultOp` (whichever stops first panics with `nilDeref` of it), a nil check of the
-base of `x` when `x` is a load or nil check (if `x` faults, its base is nil, so `y` panics as
-well), or a nil check of a pointer-shaped parameter's register piece (`argPtr`) that the source
-runs before `x` (`pS`: the source positions from 1, 0 for a value not in the block), which
-panics with `nilDeref` of that memory or passes. -/
-def swapOK (tabs : Tables) (params : Array (Option AuxRef)) (tys : Array Ty) (f : Func)
+/-- `swapOK` without its `NilPtrsOK` case (`nilPtrSwap`). The source runs `x` before `y`, the
+target `y` before `x` (both may fail). Allowed if `y` evaluates (a parameter's register piece,
+`argOK`; `params`: `f`'s input parameters' names); or if `x` never panics (so the source cannot
+stop at `x` with `y` not run: a value that never panics, or a load or nil check whose base is not
+nil, `nnBase`; `tys`: `f`'s `runL` shapes); or `x` and `y` fault alike: `x` is a `faultOp` or a
+nil check, and `y` on the same memory is a `faultOp` (whichever stops first panics with
+`nilDeref` of it), a nil check of the base of `x` when `x` is a load or nil check (if `x` faults,
+its base is nil, so `y` panics as well), or a nil check of a pointer-shaped parameter's register
+piece (`argPtr`) that the source runs before `x` or that is outside the block (`pS`: the source
+positions from 1, 0 for a value not in the block), which panics with `nilDeref` of that memory
+or passes. -/
+def swapOKB (tabs : Tables) (params : Array (Option AuxRef)) (tys : Array Ty) (f : Func)
     (pS : Array Nat) (x y : ID) : Bool :=
   match f.value? x, f.value? y with
   | some vx, some vy =>
@@ -211,8 +214,28 @@ def swapOK (tabs : Tables) (params : Array (Option AuxRef)) (tys : Array Ty) (f 
           cls tabs vy == .nil && (ldOp vx.op || cls tabs vx == .nil) && vx.args[0]? == vy.args[0]? &&
             (vy.args[0]?.all fun p => !isSPA f p) ||
           cls tabs vy == .nil &&
-            (vy.args[0]?.any fun p => argPtr tabs params tys f p && 0 < pS[p]! && pS[p]! < pS[x]!)))
+            (vy.args[0]?.any fun p => argPtr tabs params tys f p && pS[p]! < pS[x]!)))
   | _, _ => false
+
+/-- `swapOK`'s `NilPtrsOK` case: `x` is a `faultOp` or a nil check and `y` a nil check on the same
+memory of a pointer-shaped value `q` (`tys`), no nil check or `SPanchored`, that the source runs
+before `x` or that is outside the block (`pS`). On the inputs where every pointer-shaped value a
+nil check checks reads nil or a pointer that is not wild once evaluated (`GoFV.Proof.NilPtrsOK`,
+a Go-level assumption), `y` panics with `nilDeref` of that memory, as `x` would, or passes. -/
+def nilPtrSwap (tabs : Tables) (tys : Array Ty) (f : Func) (pS : Array Nat) (x y : ID) : Bool :=
+  match f.value? x, f.value? y with
+  | some vx, some vy =>
+    (cls tabs vx == .load || cls tabs vx == .nil) && vx.args.back? == vy.args.back? &&
+      !(vx.args.back?.any (isSPA f)) && cls tabs vy == .nil &&
+      (vy.args[0]?.any fun q => ptrShape (tys[q]?.getD .other) && !isNC f q && !isSPA f q &&
+        pS[q]! < pS[x]!)
+  | _, _ => false
+
+/-- The source runs `x` before `y`, the target `y` before `x` (both may fail): allowed by
+`swapOKB` or by its `NilPtrsOK` case `nilPtrSwap`. -/
+def swapOK (tabs : Tables) (params : Array (Option AuxRef)) (tys : Array Ty) (f : Func)
+    (pS : Array Nat) (x y : ID) : Bool :=
+  swapOKB tabs params tys f pS x y || nilPtrSwap tabs tys f pS x y
 
 /-- `posFill l i a`: `a` with each element of `l` set to its position (from `i`). -/
 def posFill : List ID → Nat → Array Nat → Array Nat

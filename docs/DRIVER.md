@@ -216,7 +216,12 @@ per-pass table of verdicts, and the skipped and unverified runs by reason. For d
 copyelim runs before `lower` outside their fragment it adds which conditions of
 `deadFragB`/`copyGuard` fail (`GoFVTest/Driver/FragWhy.lean`, with the first offending value's op
 and type shapes): per run, for first unverified runs, and for functions whose only unverified
-runs are such deadcode runs. It exits 1 only for parse errors or no input. The nightly gate runs
+runs are such deadcode runs. It also counts the functions fully verified through `trim` whose
+`schedule` step relies on `NilPtrsOK` (a swap that only `nilPtrSwap` allows,
+`GoFVTest.SchedClass.relyNilPtrs`), and lists the rejected `regalloc` runs (`raClass`) and the
+rejected `schedule` runs (`SchedClass.schedClass`: the classes of the pairs `swapOK` rejects) by
+class, first unverified from `lower` on / all. It exits 1 only for parse errors or no input. The
+nightly gate runs
 it on the full corpus, and `driver-e2e.sh --verified`, as reports (`docs/GATE.md`).
 
 `gofv-ssa-opt --verified --profile <in.ssa>` prints to stderr where the verified pipeline spends

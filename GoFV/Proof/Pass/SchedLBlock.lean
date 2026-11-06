@@ -225,6 +225,11 @@ structure BStep (tabs : Tables) (f g : Func) (md : LMode) (oS oT : List ID)
   img : frPS.images.size = (Ctx.makeL tabs f).params.size
   /-- No closure context (`GetClosurePtr` is `poison`). -/
   clo : frPS.closure = none
+  /-- The pointer-shaped parameter pieces that the block's values take from outside it read nil
+  or pointers that are not wild. -/
+  argOut : ∀ x ∈ oS, ∀ a ∈ argsF f x, a ∉ oS →
+    argPtr tabs (Ctx.makeL tabs f).params (Ctx.makeL tabs f).tys f a = true →
+    ∀ z, frPS.regs[a]? = some (some z) → PtrOK z
 
 /-- The source after the prefix `P` of its order. -/
 structure Src (tabs : Tables) (f : Func) (md : LMode) (env : Env) (frPS H : Frame) (P : List ID) :

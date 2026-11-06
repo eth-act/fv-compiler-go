@@ -1,7 +1,7 @@
 import GoFV.SSA.Parse
 import GoFV.SSA.Check
 import GoFV.Opt.Schedule
-import GoFV.Opt.ScheduleCheck
+import GoFVTest.SchedClass
 
 /-!
 # `lake exe schedl-probe [--jobs N] <dir>...`: `scheduleCheck` on the corpus
@@ -9,11 +9,13 @@ import GoFV.Opt.ScheduleCheck
 For every `schedule` section (input: the previous section), runs the Lean `schedule` on the
 input and counts the sections whose input passes `check` (the hypothesis of
 `schedule_refinesSchedLF`; the output's `check` is reported, not needed), those the pass changed,
-and those `scheduleCheck` accepts (what `schedule_refinesSchedLF` covers); for the rejected ones
-the first failing condition, and small accepted witness candidates.
+and those `scheduleCheck` accepts (what `schedule_refinesSchedLF` covers), with how many of them
+rely on `swapOK`'s `argPtr` (`ArgPtrsOK`) and `NilPtrsOK` cases; for the rejected ones the first
+failing condition and the rejected functions by class (`GoFVTest.SchedClass`), and small accepted
+witness candidates.
 -/
 
-open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.ScheduleCheck
+open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.ScheduleCheck GoFVTest.SchedClass
 
 namespace GoFVTest.SchedLProbe
 
@@ -28,7 +30,14 @@ structure Cnt where
   /-- Accepted sections where some swap needs `swapOK`'s `argPtr` case. -/
   viaArgPtr : Nat := 0
   argPtrCands : Array (Nat × String) := #[]
+  /-- Accepted sections where some swap needs `swapOK`'s `NilPtrsOK` case. -/
+  viaNilPtr : Nat := 0
   whys : Std.HashMap String Nat := {}
+  /-- An example function per rejection reason. -/
+  whyEx : Std.HashMap String String := {}
+  /-- Rejected functions by the classes of all their failing pairs (`pairClasses`). -/
+  fnCls : Std.HashMap String Nat := {}
+  fnClsEx : Std.HashMap String String := {}
   cands : Array (Nat × String) := #[]
 
 def Cnt.merge (a b : Cnt) : Cnt :=
@@ -37,112 +46,12 @@ def Cnt.merge (a b : Cnt) : Cnt :=
     changed := a.changed + b.changed, accepted := a.accepted + b.accepted
     acceptedChanged := a.acceptedChanged + b.acceptedChanged
     viaArgPtr := a.viaArgPtr + b.viaArgPtr, argPtrCands := a.argPtrCands ++ b.argPtrCands
+    viaNilPtr := a.viaNilPtr + b.viaNilPtr
     whys := b.whys.fold (fun m k n => m.insert k (m.getD k 0 + n)) a.whys
+    whyEx := b.whyEx.fold (fun m k e => if m.contains k then m else m.insert k e) a.whyEx
+    fnCls := b.fnCls.fold (fun m k n => m.insert k (m.getD k 0 + n)) a.fnCls
+    fnClsEx := b.fnClsEx.fold (fun m k e => if m.contains k then m else m.insert k e) a.fnClsEx
     cands := a.cands ++ b.cands }
-
-def clsName : Cls → String
-  | .safe => "safe" | .load => "load" | .nil => "nil" | .other => "other"
-
-def opName (tabs : Tables) (f : Func) (x : ID) : String :=
-  match f.value? x with
-  | some v => s!"{v.op.name}/{clsName (cls tabs v)}{if mayPanic tabs v then "" else "/nopanic"}"
-  | none => "none"
-
-/-- The first failing condition of `scheduleCheck tabs f g`. -/
-def why (tabs : Tables) (f g : Func) : String := Id.run do
-  if g.entry != f.entry then return "entry"
-  if g.ownAux != f.ownAux then return "ownAux"
-  if g.lowered != f.lowered then return "lowered"
-  if g.valueTab.size != f.valueTab.size then return "valueTab size"
-  if g.blockTab.size != f.blockTab.size then return "blockTab size"
-  for id in List.range f.valueTab.size do
-    if !valueOK f g id then
-      match f.value? id, g.value? id with
-      | some fv, some gv =>
-        if gv.args != fv.args.map (rep f) then return s!"value args {fv.op.name}"
-        if !(fv.op.nilCheck || gv.type == fv.type) then return s!"value type {fv.op.name}"
-        return s!"value other {fv.op.name}"
-      | _, _ => return "value presence"
-  for b in List.range f.blockTab.size do
-    if !blockOK f g b then
-      match f.block? b, g.block? b with
-      | some fb, some gb =>
-        if gb.controls != fb.controls.map (rep f) then return "block controls"
-        if !gb.values.toList.isPerm (fb.values.toList.filter (!isSPA f ·)) then
-          return "block values perm"
-        return "block other"
-      | _, _ => return "block presence"
-  if !usesOK tabs f then
-    let tys := (Ctx.makeL tabs f).tys
-    for o in f.valueTab do
-      if let some u := o then
-        for k in List.range u.args.size do
-          let a := u.args[k]!
-          if !useOK tabs tys f (some u) k a then
-            let p := rep f a
-            if isSPA f a then return s!"use of SPanchored by {u.op.name} (arg {k}, rep {opName tabs f p})"
-            if isNC f p then return "use: nil check chain"
-            return s!"use: nil check type ({repr (tys[a]?.getD .other)} vs {repr (tys[p]?.getD .other)})"
-    return "uses (control)"
-  let cS := Ctx.makeL tabs f
-  let sS := cS.sched
-  let sT := (Ctx.makeSched tabs g).sched
-  for b in List.range f.blockTab.size do
-    if (f.block? b).isNone then continue
-    match sS[b]?.join, sT[b]?.join with
-    | some oS, some oT =>
-      if let some gb := g.block? b then
-        if oT.toList != gb.values.toList.filter (!isPhi g ·) then return "target order: not the block's non-Phis"
-        if !topoB g oT.toList then return "target order: not topological"
-      else return "block presence (orders)"
-      if !orderOK tabs cS.params cS.tys f f.valueTab.size oS oT then
-        let pS := srcPos f.valueTab.size oS.toList
-        let ns := oT.filter (mayFail tabs f)
-        for l in List.range ns.size do
-          for k in List.range l do
-            let x := ns[l]!
-            let y := ns[k]!
-            if pS[x]! < pS[y]! && !swapOK tabs cS.params cS.tys f pS x y then
-              let sameMem := match f.value? x, f.value? y with
-                | some vx, some vy => s!"{vx.args.back? == vy.args.back?}, same ptr {vx.args[0]? == vy.args[0]?}, y ptr {(vy.args[0]?.bind f.value?).map (fun (u : Value) => u.op.name)} x base {(vx.args[0]?.bind f.value?).map (fun (u : Value) => u.op.name)}"
-                | _, _ => "?"
-              -- a nil check of a parameter piece: where the piece is, and whether it is `argPtr`
-              let ap := match f.value? y with
-                | some vy => match vy.args[0]? with
-                  | some p =>
-                    if ((f.value? p).map fun (u : Value) => u.op == Op.ArgIntReg).getD false then
-                      let pos := if pS[p]! == 0 then "outside the block"
-                        else if pS[p]! < pS[x]! then "before x" else "after x"
-                      s!"; y's ArgIntReg {pos}, argPtr {argPtr tabs cS.params cS.tys f p}"
-                    else ""
-                  | none => ""
-                | none => ""
-              return s!"order: src {opName tabs f x} before {opName tabs f y} (same mem {sameMem}){ap}"
-        return "order ?"
-    | none, _ => return "no runL order"
-    | _, none => return "no runSched order"
-  return "accepted"
-
-/-- Some block of `f` needs `swapOK`'s `argPtr` case: a pair the target swaps that `swapOK`
-allows only with the source positions (without them, all 0, the case never holds). -/
-def needsArgPtr (tabs : Tables) (f g : Func) : Bool := Id.run do
-  let cS := Ctx.makeL tabs f
-  let sS := cS.sched
-  let sT := (Ctx.makeSched tabs g).sched
-  for b in List.range f.blockTab.size do
-    match sS[b]?.join, sT[b]?.join with
-    | some oS, some oT =>
-      let pS := srcPos f.valueTab.size oS.toList
-      let ns := oT.filter (mayFail tabs f)
-      for l in List.range ns.size do
-        for k in List.range l do
-          let x := ns[l]!
-          let y := ns[k]!
-          if pS[x]! < pS[y]! &&
-              !swapOK tabs cS.params cS.tys f (Array.replicate f.valueTab.size 0) x y then
-            return true
-    | _, _ => pure ()
-  return false
 
 def listed (f : Func) : Nat :=
   f.blocks.foldl (fun n bid => n + (((f.block? bid).map (·.values.size)).getD 0)) 0
@@ -187,12 +96,19 @@ def doFile (pass : String) (path : System.FilePath) (c : Cnt) : IO Cnt := do
                       acceptedChanged := c.acceptedChanged + (if ch then 1 else 0) }
         if ch then
           c := { c with cands := c.cands.push (listed f, s!"{path} section {k - 1} -> {k}: {f.blocks.size} blocks, {listed f} values") }
-        if needsArgPtr prev f g then
+        if relyArgPtrs prev f g then
           c := { c with viaArgPtr := c.viaArgPtr + 1
                         argPtrCands := c.argPtrCands.push (listed f, s!"{path} section {k - 1} -> {k}: {listed f} values") }
+        if relyNilPtrs prev f g then c := { c with viaNilPtr := c.viaNilPtr + 1 }
       else
         let w := why prev f g
-        c := { c with whys := c.whys.insert w (c.whys.getD w 0 + 1) }
+        c := { c with whys := c.whys.insert w (c.whys.getD w 0 + 1)
+                      whyEx := if c.whyEx.contains w then c.whyEx
+                        else c.whyEx.insert w s!"{e.pkg}.{e.name} ({path})" }
+        let fc := schedClass prev f g
+        c := { c with fnCls := c.fnCls.insert fc (c.fnCls.getD fc 0 + 1)
+                      fnClsEx := if c.fnClsEx.contains fc then c.fnClsEx
+                        else c.fnClsEx.insert fc s!"{e.pkg}.{e.name} ({path})" }
   -- keep only the smallest candidates
   return { c with cands := (c.cands.qsort (fun a b => a.1 < b.1)).extract 0 20 }
 
@@ -222,11 +138,17 @@ def main (args : List String) : IO UInt32 := do
     | .error err => IO.eprintln s!"task error: {err}"; return 1
   IO.println s!"schedule: sections {c.secs}, pass errors {c.passErr}, input checked {c.checked} (output not checked {c.outUnchecked}), changed {c.changed}, scheduleCheck accepted {c.accepted} (changed {c.acceptedChanged}), rejected {c.checked - c.accepted}"
   IO.println s!"accepted through swapOK's argPtr case (ArgPtrsOK): {c.viaArgPtr}"
+  IO.println s!"accepted through swapOK's NilPtrsOK case: {c.viaNilPtr}"
   for (_, l) in (c.argPtrCands.qsort (fun a b => a.1 < b.1)).extract 0 5 do
     IO.println s!"  {l}"
   IO.println "outside (first failing condition):"
   for (k, n) in c.whys.toList.toArray.qsort (fun a b => a.2 > b.2) do
     IO.println s!"  {n} {k}"
+    if let some ex := c.whyEx.get? k then IO.println s!"      e.g. {ex}"
+  IO.println "rejected functions by the classes of all their failing pairs:"
+  for (k, n) in c.fnCls.toList.toArray.qsort (fun a b => a.2 > b.2) do
+    IO.println s!"  {n} {k}"
+    if let some ex := c.fnClsEx.get? k then IO.println s!"      e.g. {ex}"
   IO.println "witness candidates (accepted, changed), smallest first:"
   for (_, l) in (c.cands.qsort (fun a b => a.1 < b.1)).extract 0 20 do
     IO.println s!"  {l}"

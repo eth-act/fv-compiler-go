@@ -407,10 +407,30 @@ it is right for L0. From `schedule` on two things change:
   pointer-shaped register piece of a parameter (`ArgIntReg` at a `.ptr` shape) reads nil or a
   pointer that is not wild (`GoFV.Proof.ArgPtrsOK`). This is a Go-level assumption: Go's type
   system and the garbage collector require a pointer parameter to be nil or valid, and `unsafe`
-  code that forges a wild pointer is outside the model. Go's `schedule` may run a nil check of
+  code that forges a wild pointer is outside the model (falsified by a caller passing a forged
+  pointer argument). Go's `schedule` may run a nil check of
   such a piece before a load or nil check of another pointer on the same memory that the source
   order runs first; under the assumption the moved check panics with `nilDeref` of that memory
-  (as the other value would) or passes (`ScheduleCheck.swapOK`'s `argPtr` case).
+  (as the other value would) or passes (`ScheduleCheck.swapOKB`'s `argPtr` case), also when the
+  piece is outside the block.
+  **Checked pointers (decision, #385):** the theorems also assume `GoFV.Proof.NilPtrsOK`: in
+  every state `runLF` of the `schedule` input reaches (a block entry, after its `Phi`s and any
+  prefix of its order), every pointer-shaped value that a nil check checks reads nil or a pointer
+  that is not wild, once it has a register. Go's `schedule` runs nil checks first
+  (`ScoreNilCheck`), `runL`'s `kahn` runs ready loads first, so a nil check of a loaded,
+  converted or returned pointer `q` (computed before the load `x` or outside the block) moves
+  before `x` on the same memory; if `x` faults, the moved check panics alike or passes, unless
+  `q` is wild (`stuck`). This is not a panic-order difference (#96): the outcomes agree except at
+  wild pointers (`ScheduleCheck.nilPtrSwap`). Justification: Go memory safety, as for
+  `ArgPtrsOK`; a Go pointer is nil or points into an allocated object (the `unsafe.Pointer`
+  rules), and the runtime throws on a pointer in the nil page (`runtime/stack.go:676`,
+  `0 < p < minLegalPointer`). Falsified by a function that nil-checks a forged pointer (an
+  integer address, or nil plus an offset, obtained through `unsafe`). It covers only checked
+  pointers, not every pointer-shaped value: a compiler-made `nil + k` (`ADDconst` of a nil base)
+  is computed before the check of the base panics, so a run-wide "no wild pointer" would be
+  false. Not covered: a checked pointer the source computes after `x` (the source never computes
+  it on the panicking run). All assumptions of the end-to-end theorems: `docs/proofs/STATUS.md`
+  § Assumptions.
 - **Order is the schedule.** `runSched` evaluates the non-phi values in `b.Values` order (no
   `kahn`), with one current memory (a memory-typed value updates it; a memory argument must be
   the current memory or a load's memory still current at that point, else `stuck`).

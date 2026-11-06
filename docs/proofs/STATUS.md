@@ -92,7 +92,8 @@ carry no provenance, so the pointer made from `addr(p) + off` need not be in `p`
 `GoFV.Proof.PipelineFull.verifiedPipelineFull_refines`: for a `fullyVerified` result of
 `verifiedPipelineFull`, every returning or panicking `run` of the input is, up to refinement, a
 `runLoc` of the allocated function after `trim`, under Phase 1's `VPre`, no nil-page fault of
-the recorded `schedule` inputs and valid pointer parameters (`ArgPtrsOK`, below)
+the recorded `schedule` inputs, valid pointer parameters and valid checked pointers (`ArgPtrsOK`,
+`NilPtrsOK`; all assumptions in one table below, § Assumptions)
 (`docs/PASSES2.md` §0; witness `verifiedPipelineFull_witness`).
 Measured with `gofv-ssa-opt --check --verified --jobs 4` on main 51ef75c1 (with `lateB` #520,
 `ArgPtrsOK` #521 and `tabsAgreeModL` #522; full-v9: 96,560 functions, format 5.1, 252 min on a
@@ -188,38 +189,37 @@ Not validator classes, recorded with the remaining gaps:
   `runDefers` reads the result's stack slot, which is `poison`, so such a run is `stuck` (sound:
   no obligation; 5 functions on full-v5).
 
-## Trusted assumptions: `VPre`
+## Assumptions
 
 `verifiedPipeline_refines` concludes `RefinesFrom (VPre k ro)` (`GoFV/Proof/Pass/Pipeline.lean`);
 every pass theorem's precondition is a conjunct. `k` are the input's dictionary parameters, `ro`
-its read-only symbols. Each conjunct, what it assumes, and whether the runtime model
-(`Env.runtime`) and the Phase 1 test environment (`Env.p1`) satisfy it:
+its read-only symbols. `verifiedPipelineFull_refines` adds three assumptions on the recorded
+`schedule` inputs `r.nnf` (its `hn`, `ha`, `hnp`). Every assumption of the end-to-end theorems,
+in one table: what it assumes, why it is justified, what would falsify it, and what
+discharges it (the runtime model `Env.runtime`, the Phase 1 test environment `Env.p1`, or the
+witnesses):
 
-| Conjunct | Assumes | Discharged for |
-| --- | --- | --- |
-| `env.Mono` | every contract is monotone: a refined call (arguments, closure, memory) gives a refined outcome; calls observe their arguments (`Contract.Mono`, `GoFV/Proof/RunMono.lean`) | `Env.p1_mono` |
-| `env.FrameSafe` | contracts cannot read or keep pointers into the caller's frame temporaries (results and memory avoid them, the rest equal off them) | — (assumed of the runtime) |
-| `InitAvoids env args mem` | the arguments, the memory and the global image hold no pointer into a `temp` block (no frame temporary exists before the frame) | a property of the inputs |
-| `env.AllocNonNil` | malloc-family contracts return a non-nil pointer first (`NilCheck.mallocName`) | `Env.runtime_allocNonNil`, `Env.p1_allocNonNil` |
-| `DictArgs k args` | the dictionary arguments (indices `k`) are non-nil pointers | a property of the inputs |
-| `WB.WbPre env args mem` | the memory with the global image has a defined, read-only `runtime.writeBarrier` flag and no write-barrier buffer, contracts keep that, and `runtime.wbZero`/`runtime.wbMove` are the runtime's helpers that do not spill into the caller's outgoing area (`WbHelpers`, `env.noSpill`: checked against the go1.27.3 linux/arm64 disassembly, #36) | trusted (`env.noSpill`) |
-| `env.TempOblivious` | contracts cannot tell whether unreachable `temp` blocks exist | — (assumed of the runtime) |
-| `env.MemOps` | `runtime.memclrNoHeapPointers`/`runtime.memmove`, if present, are the runtime model's | `Env.runtime_memOps`, `Env.p1_memOps` |
-| `RoImage ro env mem` | contracts keep the read-only global allocations and return no memory; the symbols `ro` are read-only allocations of the memory with the global image holding their exported bytes | `Env.runtime_keepsRo`, `Env.p1_keepsRo` (the image part is a property of the inputs) |
-| `env.FrameKeep` | contracts keep the caller's frame allocations and return no memory | `Env.runtime_frameKeep`, `Env.p1_frameKeep` |
-| `env.AllocZero` | malloc-family contracts asked for a positive size return a fresh all-zero heap block (size 0 returns `runtime.zerobase`, about which nothing is claimed) | `Env.runtime_allocZero`, `Env.p1_allocZero` |
-| `env.GrowLen` | `runtime.growslice`/`growsliceNoAlias`, if present, return a slice of their `newLen` argument | `Env.runtime_growLen`, `Env.p1_growLen` |
+| Assumption | Assumes | Justification | Falsified by | Discharged for |
+| --- | --- | --- | --- | --- |
+| `env.Mono` (`VPre`) | every contract is monotone: a refined call (arguments, closure, memory) gives a refined outcome; calls observe their arguments (`Contract.Mono`, `GoFV/Proof/RunMono.lean`) | a callee cannot behave better on less defined arguments | a contract whose outcome on a more defined argument is less defined | `Env.p1_mono` |
+| `env.FrameSafe` (`VPre`) | contracts cannot read or keep pointers into the caller's frame temporaries (results and memory avoid them, the rest equal off them) | Go's escape analysis keeps frame temporaries out of callees' reach | a callee that reads or retains a pointer into the caller's frame temporaries | — (assumed of the runtime) |
+| `InitAvoids env args mem` (`VPre`) | the arguments, the memory and the global image hold no pointer into a `temp` block | no frame temporary exists before the frame | an input pointing into a `temp` block | a property of the inputs; `pfRunEnv_initAvoids` |
+| `env.AllocNonNil` (`VPre`) | malloc-family contracts return a non-nil pointer first (`NilCheck.mallocName`) | the runtime's allocator throws instead of returning nil | an allocation returning nil | `Env.runtime_allocNonNil`, `Env.p1_allocNonNil` |
+| `DictArgs k args` (`VPre`) | the dictionary arguments (indices `k`) are non-nil pointers | the compiler passes the instantiation's dictionary | a nil dictionary argument | a property of the inputs |
+| `WB.WbPre env args mem` (`VPre`) | the memory with the global image has a defined, read-only `runtime.writeBarrier` flag and no write-barrier buffer, contracts keep that, and `runtime.wbZero`/`runtime.wbMove` are the runtime's helpers | the runtime's write-barrier protocol | a contract writing the flag, or helpers other than the runtime's | `plRunEnv_wbPre` (witness) |
+| `env.noSpill` (trusted, in `WbHelpers`) | `runtime.wbZero`/`runtime.wbMove` do not spill into the caller's outgoing area | checked by hand against the go1.27.3 linux/arm64 disassembly (#36) | a runtime build whose helpers spill into the outgoing area | trusted |
+| `env.TempOblivious` (`VPre`) | contracts cannot tell whether unreachable `temp` blocks exist | unreachable memory is unobservable to Go code | a contract whose outcome depends on unreachable frame temporaries | — (assumed of the runtime) |
+| `env.MemOps` (`VPre`) | `runtime.memclrNoHeapPointers`/`runtime.memmove`, if present, are the runtime model's | they are the runtime's functions | other definitions of those symbols | `Env.runtime_memOps`, `Env.p1_memOps` |
+| `RoImage ro env mem` (`VPre`) | contracts keep the read-only global allocations and return no memory; the symbols `ro` are read-only allocations of the memory with the global image holding their exported bytes | read-only data is mapped read-only | a write to a read-only symbol | `Env.runtime_keepsRo`, `Env.p1_keepsRo` (the image part is a property of the inputs) |
+| `env.FrameKeep` (`VPre`) | contracts keep the caller's frame allocations and return no memory | callees do not free their caller's frame | a contract that drops the caller's frame | `Env.runtime_frameKeep`, `Env.p1_frameKeep` |
+| `env.AllocZero` (`VPre`) | malloc-family contracts asked for a positive size return a fresh all-zero heap block (size 0 returns `runtime.zerobase`, about which nothing is claimed) | the allocator's contract | a non-zeroed or aliased allocation | `Env.runtime_allocZero`, `Env.p1_allocZero` |
+| `env.GrowLen` (`VPre`) | `runtime.growslice`/`growsliceNoAlias`, if present, return a slice of their `newLen` argument | the runtime's contract | another length | `Env.runtime_growLen`, `Env.p1_growLen` |
+| `NoNilFault tabs f env args mem` (`r.nnf`) | no run of the `schedule` input faults in the nil page or checks a wild pointer (`runL` and `runLF` agree) | `schedule`'s theorem is stated against `runLF` (memory ops fault), the passes before it against `runL`; this restricts the end-to-end statement to such inputs | — (a restriction, not a claim about Go) | `noNilFault_of_noAct` (witnesses) |
+| `ArgPtrsOK tabs f env args mem` (`r.nnf`) | every pointer-shaped register piece of a parameter (`ArgIntReg` at a `.ptr` shape) reads nil or a pointer that is not wild (`Ptr.wild`: into the nil block but not nil) | Go-level: Go's type system and the garbage collector require a pointer parameter to be nil or valid; `unsafe` code that forges a wild pointer is outside the model. `swapOKB`'s `argPtr` case moves a nil check of such a piece before a fault on the same memory: it panics alike or passes, where a wild pointer would leave it `stuck` | a caller passing a forged pointer (an integer address, or nil plus an offset) as a pointer argument | `argPtrsOK_of_none` (witnesses) |
+| `NilPtrsOK tabs f env args mem` (`r.nnf`, approved on #385) | in every state `runLF` of the `schedule` input reaches (a block entry, after its `Phi`s and any prefix of its order), every pointer-shaped value that a nil check checks reads nil or a pointer that is not wild, once it has a register (`NilRegsOK`) | Go-level, as `ArgPtrsOK`: a Go pointer is nil or points into an allocated object (the `unsafe.Pointer` rules); the runtime throws on a pointer in the nil page (`runtime/stack.go:676`, "invalid pointer found on stack", `0 < p < minLegalPointer`). Only checked pointers: a compiler-made `nil + k` may be computed before the check of its base panics. `nilPtrSwap` moves such a check before a fault on the same memory | a function that loads, converts or receives a forged pointer and nil-checks it (`unsafe` misuse) | `nilPtrsOK_of_none` (witnesses: `clampL_noNilPtr`, `pfF_pipeline`'s `noNilPtrB`) |
 
-Not in `VPre` by decision: disjointness of parameter slots from the other frame slots (the
+Not assumed, by decision: disjointness of parameter slots from the other frame slots (the
 `not disjoint` class above stays open), and type-based aliasing (#111).
-
-Phase 2 adds two assumptions on the recorded `schedule` inputs `r.nnf`
-(`verifiedPipelineFull_refines`'s `hn` and `ha`):
-
-| Assumption | Assumes | Why |
-| --- | --- | --- |
-| `NoNilFault tabs f env args mem` | no run of the `schedule` input faults in the nil page (`runL` and `runLF` agree) | `schedule`'s theorem is stated against `runLF` (memory ops fault), the passes before it against `runL` |
-| `ArgPtrsOK tabs f env args mem` | every pointer-shaped register piece of a parameter (`ArgIntReg` at a `.ptr` shape) reads nil or a pointer that is not wild (`Ptr.wild`: into the nil block but not nil) | a Go-level assumption: Go's type system and the garbage collector require a pointer parameter to be nil or valid; `unsafe` code that forges a wild pointer is outside the model. `scheduleCheck` lets the target run a nil check of such a piece before a fault on the same memory (`swapOK`'s `argPtr` case): it then panics with `nilDeref` of that memory or passes, where a wild pointer would leave it `stuck` |
 
 Besides `VPre`, the theorems rest on the semantics itself (`GoFV.SSA.Sem`, its documented gaps in
 `docs/plans/semantics.md` §10) and on the exporter (`docs/contracts/export.md`). Axioms: `propext`,

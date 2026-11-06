@@ -28,8 +28,8 @@ import GoFV.Proof.TabsAgreeModL
 
 The pass theorems from `lower` on relate two runners each (`docs/plans/semantics2.md` §2):
 `run`/`runL` (`lower`), `runL`/`runL` (`lower` … `layout`), `runL`/`runSched` (`schedule`,
-against `runLF` on the inputs whose pointer-shaped parameter pieces read nil or pointers that
-are not wild, `ArgPtrsOK`; on those where `runL` and `runLF` agree as well, `NoNilFault`, a `runL`
+against `runLF` on the inputs whose pointer-shaped parameter pieces and checked pointer-shaped
+values read nil or pointers that are not wild, `ArgPtrsOK` and `NilPtrsOK`; on those where `runL` and `runLF` agree as well, `NoNilFault`, a `runL`
 refinement), `runSched`/`runSched` (`late nilcheck`), `runSched`/`runLoc` (`regalloc`) and
 `runLoc`/`runLoc` (`loop rotate`, `trim`). `LayerRefines P lt tabs' f' ls tabs f` is the one
 relation with the runner of each side given by its `Layer` (`layerRun`); `RefinesFrom`,
@@ -44,8 +44,8 @@ of new spill slots), for inputs and contracts with `InitAvoids`, `TempOblivious`
 
 `loweredVPasses_sound`: every `proven` step of `GoFV.Opt.loweredVPasses` satisfies its theorem
 (`stepSoundL`). `verifiedPipelineFull_layer`: a `verified` result of `verifiedPipelineFull`
-refines the input across the layers, under `PreFull`: Phase 1's `VPre`, and `NoNilFault` and
-`ArgPtrsOK` of the recorded `schedule` inputs. `verifiedPipelineFull_refines`: for a
+refines the input across the layers, under `PreFull`: Phase 1's `VPre`, and `NoNilFault`,
+`ArgPtrsOK` and `NilPtrsOK` of the recorded `schedule` inputs. `verifiedPipelineFull_refines`: for a
 `fullyVerified` result, every returning or panicking `run` of the input is, up to refinement, a
 `runLoc` of the result.
 -/
@@ -138,7 +138,8 @@ end
 def lrelPre : LRel → Tables → Func → Env → List Val → Mem → Prop
   | .lower, _, _ => fun env _ _ => env.Mono
   | .lowFrame, _, _ => fun env args mem => env.FrameSafe ∧ InitAvoids env args mem
-  | .sched, tabs, f => fun env args mem => NoNilFault tabs f env args mem ∧ ArgPtrsOK tabs f env args mem
+  | .sched, tabs, f => fun env args mem =>
+    NoNilFault tabs f env args mem ∧ ArgPtrsOK tabs f env args mem ∧ NilPtrsOK tabs f env args mem
   | .ls, _, _ => fun env args mem =>
     env.TempOblivious ∧ env.FrameSafe ∧ InitAvoids env args mem
   | _, _, _ => fun _ _ _ => True
@@ -282,12 +283,14 @@ theorem loweredVPasses_names : loweredVPasses.map (·.name) = loweredPasses := b
 
 /-- The precondition of the end-to-end theorem: Phase 1's `VPre` for the input's dictionary
 parameters `k` and read-only symbols `ro`, no nil-page fault of the `schedule` inputs `nnf`
-(`NoNilFault`: `runL` and `runLF` of each agree), and their pointer-shaped parameter pieces read
-nil or pointers that are not wild (`ArgPtrsOK`, a Go-level assumption). -/
+(`NoNilFault`: `runL` and `runLF` of each agree), and their pointer-shaped parameter pieces
+(`ArgPtrsOK`) and checked pointer-shaped values (`NilPtrsOK`) read nil or pointers that are not
+wild (Go-level assumptions). -/
 def PreFull (k : List Nat) (ro : List (String × Alloc)) (nnf : List (Tables × Func)) (env : Env)
     (args : List Val) (mem : Mem) : Prop :=
   VPre k ro env args mem ∧
-    ∀ x ∈ nnf, NoNilFault x.1 x.2 env args mem ∧ ArgPtrsOK x.1 x.2 env args mem
+    ∀ x ∈ nnf, NoNilFault x.1 x.2 env args mem ∧ ArgPtrsOK x.1 x.2 env args mem ∧
+      NilPtrsOK x.1 x.2 env args mem
 
 variable {env : PassEnv} {f0 : Func} {l0 : Layer}
 
@@ -489,19 +492,21 @@ identity or skipped, the state allocated and free of `InvertFlags`), every retur
 `f` (with the environment's tables) is, up to refinement, a `runLoc` of the result after `trim`,
 on every environment and input in Phase 1's `VPre` (with `f`'s dictionary parameters and
 read-only symbols) on which the recorded `schedule` inputs do not fault in the nil page and
-their pointer-shaped parameter pieces read nil or pointers that are not wild. -/
+their pointer-shaped parameter pieces and checked pointer-shaped values read nil or pointers
+that are not wild. -/
 theorem verifiedPipelineFull_refines {env : PassEnv} {f : Func} {zv : Array (ID × Nat)}
     {dcl : Nat} {r : FState} (h : verifiedPipelineFull env f 0 zv dcl = .ok r)
     (hv : r.fullyVerified = true) {e : Env} {args : List Val} {mem : Mem}
     (hP : VPre (NilCheck.dictParams env.tables f) (pipelineRo env f) e args mem)
     (hn : ∀ x ∈ r.nnf, NoNilFault x.1 x.2 e args mem)
-    (ha : ∀ x ∈ r.nnf, ArgPtrsOK x.1 x.2 e args mem) {fuel : Nat}
+    (ha : ∀ x ∈ r.nnf, ArgPtrsOK x.1 x.2 e args mem)
+    (hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 e args mem) {fuel : Nat}
     (hd : (GoFV.SSA.run e env.tables f args mem fuel).Defined) :
     ∃ fuel', OutcomeRefines 0 (GoFV.SSA.run e env.tables f args mem fuel)
       (runLoc e r.st.tables r.st.func args mem fuel') := by
   simp only [FState.fullyVerified, Bool.and_eq_true, beq_iff_eq] at hv
   have R := verifiedPipelineFull_layer h hv.1.1
   rw [hv.1.2, show startLayer 0 = .gen by simp [startLayer]] at R
-  exact R e args mem ⟨hP, fun x hx => ⟨hn x hx, ha x hx⟩⟩ fuel hd
+  exact R e args mem ⟨hP, fun x hx => ⟨hn x hx, ha x hx, hnp x hx⟩⟩ fuel hd
 
 end GoFV.Proof.PipelineFull

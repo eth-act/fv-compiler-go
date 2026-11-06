@@ -57,7 +57,8 @@ the checked result differs, the stock result is kept and the run is `unverified 
 variant incomplete)`. A `schedule` run adds its input to `FState.nnf`: the refinement of
 `schedule` holds on the inputs on which that function does not fault in the nil page
 (`NoNilFault`, `GoFV.Proof.RefinesSchedLFFrom.schedL`) and its pointer-shaped parameter pieces
-read nil or pointers that are not wild (`ArgPtrsOK`), preconditions of the end-to-end theorem.
+and checked pointer-shaped values read nil or pointers that are not wild (`ArgPtrsOK`,
+`NilPtrsOK`), preconditions of the end-to-end theorem.
 
 The result is `fullyVerified` when every verdict is `proven`, `identity` or `skipped`, the
 state is allocated (`loc`) and it has no `InvertFlags` (`Func.noInvertFlags`, as Go's codegen
@@ -260,7 +261,8 @@ structure FState where
   layer : Layer := .gen
   /-- The inputs (tables, function) of the `schedule` runs: the end-to-end theorem assumes that
   they do not fault in the nil page (`NoNilFault`) and that their pointer-shaped parameter pieces
-  read nil or pointers that are not wild (`ArgPtrsOK`). -/
+  and checked pointer-shaped values read nil or pointers that are not wild (`ArgPtrsOK`,
+  `NilPtrsOK`). -/
   nnf : List (Tables × Func) := []
   /-- `len(curfn.Dcl)` (`PassEnv.dclLen`): the input's, plus the autos the passes created. -/
   dclLen : Nat := 0
