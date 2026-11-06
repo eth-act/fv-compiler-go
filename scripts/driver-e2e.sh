@@ -21,8 +21,8 @@
 # Exit status 1 (report line "- result: FAIL") when a std archive or a program binary differs
 # from stock, a driver build failed, a program's output or exit status differs, a function fell
 # back to the stock passes, or nothing was compared; 0 otherwise ("- result: PASS"). With
-# --verified, only a failed driver build, a differing program output or exit status, or nothing
-# compared fail.
+# --verified, only a failed driver build, a differing program output or exit status, a fallback
+# (the importer rejected the verified pipeline's output), or nothing compared fail.
 #
 # Toolchain: $GOFV_DRIVER_GO (default tmp/go-driver, built by
 # `GOFV_GO_DRIVER=1 GOFV_GO_BUILD=$PWD/tmp/go-driver scripts/build-go.sh`, patches 0001 and 0002). Lean
@@ -187,17 +187,22 @@ report=$out/report.md
     echo "## verified pipeline (gofv-ssa-opt --vstats; the last run of each function)"
     echo
     awk -F '\t' '
-      { last[$1 "\t" $2 "\t" $3] = $4 }
+      { k = $1 "\t" $2 "\t" $3; last[k] = $4; full[k] = ""
+        for (i = 5; i <= NF; i++) if ($i ~ /^trim=/) full[k] = substr($i, 6) }
       END {
         for (k in last) {
-          n++; v = last[k]
+          n++; v = last[k]; t = full[k]
           if (v == "verified") ver++
           else if (v ~ /^error/) err++
           else { sub(/^unverified /, "", v); r[v]++ }
+          if (t == "verified") tver++
+          else if (v == "verified" && t != "") { sub(/^unverified /, "", t); rt[t]++ }
         }
-        printf "- functions: %d; fully verified: %d; pass errors: %d\n", n, ver, err
-        print "- unverified, by first unverified run:"
+        printf "- functions: %d; fully verified (before lower): %d; through trim: %d; pass errors: %d\n", n, ver, tver, err
+        print "- unverified, by first unverified run before lower:"
         for (k in r) printf "  - %s: %d\n", k, r[k]
+        print "- verified before lower, not through trim, by first unverified run:"
+        for (k in rt) printf "  - %s: %d\n", k, rt[k]
       }' "$out/lean/vstats.txt"
   fi
 } >"$report"
@@ -206,8 +211,8 @@ if [ "$verified" = 1 ]; then
   grep -qE '^  - .*: (driver build failed|output differs)$' "$report" && fail=1
 else
   grep -qE '^  - (differs: |.*: (driver build failed|binary differs|output differs)$)' "$report" && fail=1
-  grep -qE '^- all passes by the stock compiler \(fallback\): [1-9]' "$report" && fail=1
 fi
+grep -qE '^- all passes by the stock compiler \(fallback\): [1-9]' "$report" && fail=1
 grep -qE '^- (std package archives byte-identical: [0-9]+ / [1-9]|programs: [1-9])' "$report" || fail=1
 if [ "$fail" = 0 ]; then echo "- result: PASS" >>"$report"; else echo "- result: FAIL" >>"$report"; fi
 cat "$report"

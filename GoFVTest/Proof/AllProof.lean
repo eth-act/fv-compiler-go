@@ -305,6 +305,7 @@ import GoFV.Proof.Pass.PhiSelRel
 import GoFV.Proof.Pass.PhiSelSim
 import GoFV.Proof.Pass.PhiTightenL
 import GoFV.Proof.Pass.Pipeline
+import GoFV.Proof.Pass.PipelineFull
 import GoFV.Proof.Pass.Prove
 import GoFV.Proof.Pass.Rewrite
 import GoFV.Proof.Pass.RewriteCases
@@ -721,6 +722,7 @@ import GoFV.Proof.Witness.PhiElim
 import GoFV.Proof.Witness.PhiOpt
 import GoFV.Proof.Witness.PhiTightenL
 import GoFV.Proof.Witness.Pipeline
+import GoFV.Proof.Witness.PipelineFull
 import GoFV.Proof.Witness.Prove
 import GoFV.Proof.Witness.RandnRA
 import GoFV.Proof.Witness.RoZero

@@ -28,7 +28,7 @@ get the file's `typelink` groups (`PassEnv.typeLink`).
 
 ```
 gofv-ssa-opt [--from <pass>] [--to <pass>] [--partial] <in.ssa>
-gofv-ssa-opt --verified [--from <pass>] [--vstats FILE] <in.ssa>
+gofv-ssa-opt --verified [--from <pass>] [--vstats FILE] [--profile] <in.ssa>
 gofv-ssa-opt --list
 gofv-ssa-opt --check [--mixed] [--whole-file-env] [--strict] [--jobs N] [--max-report N] [--table FILE] <dir|file>...
 gofv-ssa-opt --check --verified [--whole-file-env] [--jobs N] [--max-report N] [--table FILE] <dir|file>...
@@ -154,23 +154,31 @@ a higher number by key in the cut tables (#119).
 
 Do not combine with `GOFV_SSA_EXPORT` (its sections are written only after stock passes).
 
-## Verified mode (`--verified`, issue #189)
+## Verified mode (`--verified`, issues #189, #385)
 
-`gofv-ssa-opt --verified <in.ssa>` runs `GoFV.Opt.verifiedPipeline` (`docs/PASSES.md` §0, "The
-verified pipeline") instead of the registered ports: the checked variant of every pass with a
-refinement theorem, the stock port of the others, `check` between passes. Its output has the
-format of driver mode and is always `status ok` unless a pass fails; `--vstats FILE` appends one
-line per function: `"<pkg>" "<func>" <abi>`, then `verified` or `unverified "<pass>: <verdict>"`
-(the first run that is not proven, identity or skipped) and the number of runs per verdict,
-tab-separated, and `lowered=<n>`. The passes from `lower` on have no theorems yet (H7, #385):
-after the verified pipeline their registered ports run, as in driver mode, so that the driver
-can import the state after `trim`; `lowered=<n>` counts them. A function whose line says
-`verified` is, by `verifiedPipeline_refines`, refined by the verified pipeline's result (the
-input of `lower`); the passes from `lower` on are trusted ports. The output differs from stock wherever a checked variant undoes a rewrite, so
-the importer's check against the Lean text still applies but stock identity does not.
+`gofv-ssa-opt --verified <in.ssa>` runs `GoFV.Opt.verifiedPipelineFull` (`docs/PASSES.md` §0,
+"The verified pipeline", for the passes before `lower`; `docs/PASSES2.md` §0, "The verified
+pipeline through `trim`", for the rest) instead of the registered ports: the checked variant of
+every pass with a refinement theorem, the stock port of the others, `check` between passes,
+from `number lines` through `trim`. Its output has the format of driver mode and is always
+`status ok` unless a pass fails; `--vstats FILE` appends one line per function:
+`"<pkg>" "<func>" <abi>`, then `verified` or `unverified "<pass>: <verdict>"` (the first run
+before `lower` that is not proven, identity or skipped), the number of runs per verdict before
+`lower`, `lowered=<n>` (the runs from `lower` on) and `trim=verified` or
+`trim=unverified "<pass>: <verdict>"` (through `trim`), tab-separated. A function whose line says
+`verified` is, by `verifiedPipeline_refines`, refined by the state before `lower`; one whose line
+says `trim=verified` is, by `verifiedPipelineFull_refines`, refined by the allocated function
+after `trim` (`runLoc` of the output against `run` of the input, under `VPre` and no nil-page
+fault of the `schedule` input). The output differs from stock wherever a checked variant undoes
+a rewrite or an optional pass is skipped. The verified `regalloc` drops the call auxes' register
+caches (`AuxCall.Reg`/`ResultReg`, which only Go's `regalloc` reads; `eraseCallRegs`); the
+driver output fills them back (`GoFV.Opt.Regalloc.fillCallRegs`: `regspec` of every call and
+`MakeResult`, in value order, as the importer replays them), because the importer checks that
+every call aux it fills renders as the Lean output's (without this every function with a call
+fell back to the stock passes).
 
 How each pass of `GoFV.Opt.stockPasses` runs (`stockPasses_sound` checks every `proven`/`guarded`
-entry against its theorem):
+entry against its theorem; the passes from `lower` on: `docs/PASSES2.md` §0):
 
 | status | passes |
 | --- | --- |
@@ -187,21 +195,35 @@ incomplete)`, because later passes and `lower` need every rewrite (an undone `Pt
 `scripts/driver-e2e.sh --verified` builds std and the programs with
 `GOFV_SSA_DRIVER=<wrapper running gofv-ssa-opt --verified --vstats …>` in full mode, counts the
 byte-identical archives and binaries without failing on the others, and fails only when a build
-fails or a program's output or exit status differs from stock under qemu. The report adds the
-per-function verdicts.
+fails, a program's output or exit status differs from stock under qemu, or a function falls back
+to the stock passes. The report adds the per-function verdicts.
 
 `gofv-ssa-opt --check --verified <dir|file>...` is the corpus report: per function, the
-verified pipeline from section 0 (driver export environment and type rounds, as `--check`),
-the state after each pass compared with the stock section until the first difference, and the
-final state compared with the last stock section. It prints the functions fully verified, the
-functions whose final state equals stock, the unverified functions by first unverified run,
-the functions by first difference (pass and its verdict), a per-pass table of verdicts, and the
-skipped and unverified runs by reason. For deadcode and copyelim runs outside their fragment it
-adds which conditions of `deadFragB`/`copyGuard` fail (`GoFVTest/Driver/FragWhy.lean`, with
-the first offending value's op and type shapes): per run, for first unverified runs, and for
-functions whose only unverified runs are such deadcode runs. It exits 1 only for parse errors
-or no input. The nightly gate runs it on the full corpus, and `driver-e2e.sh --verified`, as
-reports (`docs/GATE.md`).
+verified pipeline through `trim` from section 0 (driver export environment and type rounds, as
+`--check`), the state after each pass compared with the stock section until the first difference
+(from `lower` on also the chain's `dcllen`; the stock tables without their call-register caches),
+and the final state compared with the last stock section (`trim`'s). It prints the functions fully
+verified through `rewrite tern` and through `trim`; of those, the ones verified vacuously (the
+input has an op or block kind that `run` leaves `stuck` whatever its arguments: a root that
+`evalOp` hands to `atomicRoot` and `Atomic.modelled` does not cover, such as `TailLECall`, or a
+block kind outside `stepTerm`'s arms other than `Exit`, such as `RetJmp`; `unmodelledIn` in
+`GoFVTest/Driver/Main.lean`; the theorems say nothing about the inputs that reach one), listed by
+op or block kind, and the ones whose final state equals stock. Then the functions whose final
+state equals stock, the unverified functions by first
+unverified run before `lower`, the functions verified through `rewrite tern` but not through
+`trim` by their first unverified run, the functions by first difference (pass and its verdict), a
+per-pass table of verdicts, and the skipped and unverified runs by reason. For deadcode and
+copyelim runs before `lower` outside their fragment it adds which conditions of
+`deadFragB`/`copyGuard` fail (`GoFVTest/Driver/FragWhy.lean`, with the first offending value's op
+and type shapes): per run, for first unverified runs, and for functions whose only unverified
+runs are such deadcode runs. It exits 1 only for parse errors or no input. The nightly gate runs
+it on the full corpus, and `driver-e2e.sh --verified`, as reports (`docs/GATE.md`).
+
+`gofv-ssa-opt --verified --profile <in.ssa>` prints to stderr where the verified pipeline spends
+its time on one function (ms): `verifiedPipeline` through `rewrite tern`, then per pass from
+`lower` on its run, the stock port of a checked variant, `check` of the result and the theorem's
+guard (for `regalloc`: `tabsAgreeL`, `Cx.make`, `certify`, `checkWith`). Each piece is timed
+alone, then `runPassL` advances the chain, so it takes about twice a normal run.
 
 ## Whole-pipeline parity (`gofv-ssa-opt --check`)
 
@@ -245,6 +267,11 @@ and the corpus programs built for linux/arm64 by `scripts/driver-e2e.sh`). H8, e
   functions go through Lean from `number lines` to `trim`, with 0 fallbacks: PASS (17 min).
 - `driver-e2e.sh --verified -p 8`: 183/183 programs behave as stock. 40,887 of 42,899
   functions are fully verified, with 0 pass errors and 0 fallbacks: PASS (18 min).
+- Through `trim` (#385; main 60367c8 plus the verified pipeline through `trim`):
+  `driver-e2e.sh --verified -p 8`: 183/183 programs behave as stock, 44,189 functions through
+  Lean, 0 fallbacks, 0 pass errors; of 42,899 functions, 40,897 fully verified before `lower` and
+  12,830 through `trim`: PASS (28 min). `--check --verified --jobs 4`: quick-v7 8,885 / 2,873
+  (through `rewrite tern` / through `trim`), full-v9 the table in `docs/PASSES2.md` §0.
 
 State of the known gaps:
 

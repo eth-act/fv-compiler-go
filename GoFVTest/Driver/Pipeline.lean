@@ -1,5 +1,5 @@
 import GoFVTest.Parity.Registry
-import GoFV.Opt.Verified
+import GoFV.Opt.VerifiedFull
 
 /-!
 # The Lean pipeline
@@ -9,7 +9,8 @@ import GoFV.Opt.Verified
 table) followed by `loweredStockPasses` (`lower` … `trim`), with `StockPass.enabled`
 (`optimize || required`, not `disabled`, as in `ssa.Compile`). The pipeline chains the
 registered Lean ports and stops at the first enabled pass without a port (`docs/DRIVER.md`).
-`GoFV.Opt.verifiedPipeline` is the verified variant of the passes before `lower`.
+`GoFV.Opt.verifiedPipelineFull` is the verified variant (`GoFV.Opt.Verified.LStep` for the
+passes from `lower` on).
 -/
 
 namespace GoFVTest.Driver
@@ -20,8 +21,8 @@ open GoFV.SSA GoFV.Opt GoFVTest.Parity
 def port? (name : String) : Option PassEntry := registry.find? (·.names.contains name)
 
 /-- `compile.go`'s `passes` from `lower` to `trim` (`GoFV.SSA.loweredPasses`) with their
-`required` flags; none has a `disabled` condition for linux/arm64. They have no theorem: the
-verified pipeline does not run them (`Verified.Step.stock`, the registered port). -/
+`required` flags; none has a `disabled` condition for linux/arm64. The registered ports
+(`GoFV.Opt.loweredVPasses` is the verified pipeline's table of the same passes). -/
 def loweredStockPasses : Array StockPass :=
   let required := #["lower", "late lower", "tighten tuple selectors", "lowered deadcode",
     "checkLower", "tighten", "critical", "layout", "schedule", "flagalloc", "regalloc"]
@@ -36,15 +37,6 @@ def pipelinePasses : Array StockPass := stockPasses ++ loweredStockPasses
 
 /-- Index of stock pass `name` in `pipelinePasses`. -/
 def pipelineIndex? (name : String) : Option Nat := pipelinePasses.findIdx? (·.name == name)
-
-/-- The autos a pass created (`fe.SplitSlot`, `f.NewLocal`: each appends to `curfn.Dcl`): the
-`name` aux values `out` defines and `input` does not. -/
-def newAutos (input out : Tables) : Nat := Id.run do
-  let mut k := 0
-  for h : i in [0:out.auxes.size] do
-    if let some { kind := .name .., .. } := out.auxes[i] then
-      if (input.aux? i).isNone then k := k + 1
-  return k
 
 /-- Why the pipeline stopped. -/
 inductive Stop where

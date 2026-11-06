@@ -71,6 +71,14 @@ into the Phase 2 end-to-end statement (H7/H8):
 for register-passed arguments, `g` (x28) is preserved by callees, and memory below
 `minZeroPage` (4,096, `nilcheck.go:192`) is unmapped.
 
+Proven form (#385, `GoFV.Proof.PipelineFull.verifiedPipelineFull_refines`, `docs/PASSES2.md` §0):
+for a `fullyVerified` result of the verified pipeline from `number lines` through `trim`, every
+returning or panicking `run` of the ssagen output `f₀` is, up to refinement, a `runLoc` of the
+result, under Phase 1's `VPre` and `NoNilFault` of the `schedule` input (where `schedule`'s
+`runLF` theorem meets `runL`). The verified `lower` accepts only inputs without fused
+multiply-add shapes (`contractAll f = f`), so no `Contract` appears; composing a contraction
+with the refinements before `lower` is open.
+
 ### 2.1 Floating-point contraction (decision on #384)
 
 The Go spec allows an implementation to fuse `x*y + z` into one rounding ("An implementation may

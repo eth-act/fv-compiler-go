@@ -603,6 +603,22 @@ avoiding): the problem, the trick, the numbers, where it is used.
   `--check --verified --jobs 6`: 104 → 20 min (slowest function 3 min: prove's linear-fact
   search, `linFacts`, on functions with long fact lists).
 
+#### Verified pipeline through `trim`: `copyLFragB` built `Ctx.makeL` once per copy (#385)
+- **Problem:** `--check --verified` (through `trim`) spent 2,472 s on `cmd/internal/obj/arm64/init`
+  (33,194 values): `gofv-ssa-opt --verified --profile` (per-piece timings) put 1,177 s in the guard
+  of `lowered deadcode for cse` alone. `CopyElim.shapeOKB` read `(Ctx.makeL tabs g).tys` (and
+  `g.lowered`) for every `Copy` of the function, so `copyLFragB` rebuilt the whole context per
+  copy; right after `lower` the function is full of copies. Same pattern as `emptyFragB` above.
+- **Trick:** `shapeOKB low tys` takes `g.lowered` and the shapes as arguments; `copyLFragB` binds
+  them with a `let` outside the `f.blocks.all` lambda (`copyLFrag_of` unchanged but for the
+  arguments).
+- **Effect:** that guard 1,177 s → under 1 s; `obj/arm64/init` 2,472 → 103 s in the check;
+  full-v9 `--check --verified --jobs 4` 1 h 28 min (5,274 s, 1.65 GB peak) with the slowest
+  function at 414 s (`ssagen.simdAMD64Intrinsics`, 73k values, mostly Phase 1). The `regalloc`
+  checker is not a bottleneck: `certify` + `checkWith` take 209 + 193 s on `obj/arm64/init`
+  (list-based facts), but `tabsAgreeL` rejects that function first; on the other profiled giants
+  (`ppc64asm.init` 69k values, `(*regAllocState).regalloc`) they take under 7 s.
+
 ## Inherited from clifv (measured there, eth-act/clifv `LEARNINGS.md`)
 
 None of these weaken what is proven: every compiler theorem still prints only `propext`,
