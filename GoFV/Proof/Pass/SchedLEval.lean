@@ -305,7 +305,7 @@ theorem arm64Op_fault_none {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {arg
   simp only [faultOps, ldOps, List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at h
   unfold arm64Op
   simp only [hnf]
-  rcases h with (h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h)|(h|h|h|h|h) <;> rw [h] <;> dsimp only <;>
+  rcases h with (h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h)|(h|h|h|h|h|h|h|h) <;> rw [h] <;> dsimp only <;>
     first | exact ⟨_, rfl⟩ | ((repeat' split) <;> exact ⟨_, rfl⟩)
 
 theorem arm64Op_fault {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
@@ -322,7 +322,7 @@ theorem ldOps_sub {op : Op} (h : op ∈ ldOps) : op ∈ faultOps ∧ op ∈ symA
 
 theorem faultOps_act {op : Op} (h : op ∈ faultOps) : op ∈ actOps := by
   simp only [faultOps, ldOps, List.mem_append, List.mem_cons, List.not_mem_nil, or_false] at h
-  rcases h with (h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h)|(h|h|h|h|h) <;> subst h <;> decide
+  rcases h with (h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h)|(h|h|h|h|h|h|h|h) <;> subst h <;> decide
 
 theorem symAddrOps_act {op : Op} (h : op ∈ symAddrOps) : op ∈ actOps := by
   simp only [symAddrOps, ldOps, stOps, List.mem_append, List.mem_cons, List.not_mem_nil,
@@ -1079,5 +1079,12 @@ theorem argPtrsOK_of_none {tabs : Tables} {f : Func}
   have := List.all_eq_true.1 h x (List.mem_range.2 hx)
   rw [hp] at this
   cases this
+
+/-- In frame `fr`, every pointer-shaped value (`f`'s `runL` shapes) that a nil check of `f`
+checks reads nil or a pointer that is not wild, if it has a register. -/
+def NilRegsOK (tabs : Tables) (f : Func) (fr : Frame) : Prop :=
+  ∀ y vy q, f.value? y = some vy → vy.op.nilCheck = true → vy.args[0]? = some q →
+    ScheduleCheck.ptrShape ((Ctx.makeL tabs f).tys[q]?.getD .other) = true →
+    ∀ z, fr.regs[q]? = some (some z) → PtrOK z
 
 end GoFV.Proof

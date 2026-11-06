@@ -2,6 +2,7 @@ import GoFVTest.Driver.FragWhy
 import GoFVTest.Driver.Pipeline
 import GoFVTest.Parity.Compare
 import GoFV.SSA.Parse
+import GoFVTest.SchedClass
 import GoFV.SSA.Print
 
 /-!
@@ -630,6 +631,10 @@ structure VFile where
   frag : Array (Nat × String × Array String) := #[]
   /-- A rejected `regalloc` run: its class (`raClass`) and the checker's message. -/
   raWhy : Option (String × String) := none
+  /-- A rejected `schedule` run: its class (`SchedClass.schedClass`). -/
+  schedWhy : Option String := none
+  /-- A proven `schedule` run relies on `NilPtrsOK` (`SchedClass.relyNilPtrs`). -/
+  nilRely : Bool := false
 
 /-- The first conjunct of `LowerCheck.tabsAgreeL tabs tabs' f` that fails, with the first value or
 aux it fails on. -/
@@ -705,6 +710,8 @@ def walkVerified (e : ExportFile) (x : ExportExt) (env : PassEnv) (t0 : Tables) 
   let mut diff : Option (String × String × String) := none
   let mut frag : Array (Nat × String × Array String) := #[]
   let mut raWhy : Option (String × String) := none
+  let mut schedWhy : Option String := none
+  let mut nilRely := false
   -- the stock section `k` against the state after pass `name` (verdict `v`)
   let cmp (k : Nat) (want : Tables) (name v : String) (func : Func) (tables : Tables)
       (dcl : Option Nat) : Option (String × String × String) × Tables :=
@@ -741,6 +748,13 @@ def walkVerified (e : ExportFile) (x : ExportExt) (env : PassEnv) (t0 : Tables) 
     if p.name == "regalloc" then
       if let some (_, .unverified "rejected") := fs'.st.log.back? then
         raWhy := some (raClass (fs.passEnv env p.name) fs.st.func diff)
+    if p.name == "schedule" && fs'.st.log.size > fs.st.log.size then
+      let tabs := (fs.passEnv env p.name).tables
+      match fs'.st.log.back? with
+      | some (_, .unverified "rejected") =>
+        schedWhy := some (SchedClass.schedClass tabs fs.st.func fs'.st.func)
+      | some (_, .proven) => nilRely := SchedClass.relyNilPtrs tabs fs.st.func fs'.st.func
+      | _ => pure ()
     if fs'.st.log.size > fs.st.log.size then
       if diff.isNone then
         let v := match fs'.st.log.back? with | some (_, v) => toString v | none => "-"
@@ -748,7 +762,8 @@ def walkVerified (e : ExportFile) (x : ExportExt) (env : PassEnv) (t0 : Tables) 
         diff := d; want := w
       k := k + 1
     fs := fs'
-  if diff.isNone && k == e.sections.size then return { st := fs, diff, same := true, frag, raWhy }
+  if diff.isNone && k == e.sections.size then
+    return { st := fs, diff, same := true, frag, raWhy, schedWhy, nilRely }
   if diff.isNone then
     diff := some (fs.st.last, "-", s!"{e.sections.size - k} stock sections after the last pass")
   let wantAll := (e.sections.extract 1 e.sections.size).foldl (fun t s => t.addAll s.defs) t0
@@ -757,7 +772,7 @@ def walkVerified (e : ExportFile) (x : ExportExt) (env : PassEnv) (t0 : Tables) 
       (compare t0 { func := fs.st.func, tables := fs.st.tables } (eraseCallRegs wantAll) s
         (loose := true)).isNone
     | none => false
-  return { st := fs, diff, same, frag, raWhy }
+  return { st := fs, diff, same, frag, raWhy, schedWhy, nilRely }
 
 /-- The verified pipeline on one export file, with the driver's type rounds. -/
 def verifiedExport (wholeFile : Bool) (e : ExportFile) (x : ExportExt) :
@@ -834,6 +849,14 @@ structure VStats where
   raFirst : Std.HashMap String Nat := {}
   /-- All rejected `regalloc` runs, by `raClass`. -/
   raAll : Std.HashMap String Nat := {}
+  /-- Fully verified (through `trim`) functions whose `schedule` step relies on `NilPtrsOK`
+  (`SchedClass.relyNilPtrs`). -/
+  nilRelyFull : Nat := 0
+  /-- Rejected `schedule` runs that are the first unverified run from `lower` on, by
+  `SchedClass.schedClass`. -/
+  schedFirst : Std.HashMap String Nat := {}
+  /-- All rejected `schedule` runs, by `SchedClass.schedClass`. -/
+  schedAll : Std.HashMap String Nat := {}
 
 def VStats.merge (a b : VStats) : VStats :=
   let mm (x y : Std.HashMap String Nat) := y.fold (fun m k n => bumpMap m k n) x
@@ -849,7 +872,9 @@ def VStats.merge (a b : VStats) : VStats :=
     counts := (a.counts.zip b.counts).map fun (x, y) => x.add y
     reports := a.reports ++ b.reports, fragAll := mm a.fragAll b.fragAll
     fragFirst := mm a.fragFirst b.fragFirst, fragOnly := mm a.fragOnly b.fragOnly
-    raFirst := mm a.raFirst b.raFirst, raAll := mm a.raAll b.raAll }
+    raFirst := mm a.raFirst b.raFirst, raAll := mm a.raAll b.raAll
+    nilRelyFull := a.nilRelyFull + b.nilRelyFull
+    schedFirst := mm a.schedFirst b.schedFirst, schedAll := mm a.schedAll b.schedAll }
 
 def verifiedFile (wholeFile : Bool) (maxReport : Nat) (path : System.FilePath) (st : VStats) :
     IO VStats := do
@@ -893,6 +918,7 @@ def verifiedFile (wholeFile : Bool) (maxReport : Nat) (path : System.FilePath) (
       if full then
         st := { st with vacuousFull := st.vacuousFull + 1
                         vacuousByFull := stuck.foldl (fun m k => bumpMap m k) st.vacuousByFull }
+    if full && r.nilRely then st := { st with nilRelyFull := st.nilRelyFull + 1 }
     if let some (p, v) := firstUnverified? r.st.st then
       st := { st with firstUnverified := bumpMap st.firstUnverified s!"{p}: {v}" }
     else if !full then
@@ -903,7 +929,11 @@ def verifiedFile (wholeFile : Bool) (maxReport : Nat) (path : System.FilePath) (
       if let some (c, m) := r.raWhy then
         if k == "regalloc: unverified (rejected)" then
           st := report { st with raFirst := bumpMap st.raFirst c } s!"regalloc {c}" m
+      if let some c := r.schedWhy then
+        if k == "schedule: unverified (rejected)" then
+          st := report { st with schedFirst := bumpMap st.schedFirst c } s!"schedule {c}" ""
     if let some (c, _) := r.raWhy then st := { st with raAll := bumpMap st.raAll c }
+    if let some c := r.schedWhy then st := { st with schedAll := bumpMap st.schedAll c }
     for (_, p, ws) in r.frag do
       for w in ws do
         let k := s!"{p}: {FragWhy.whyKey w}"
@@ -940,6 +970,7 @@ def verifiedText (st : VStats) (ms : Nat) : String := Id.run do
   out := out ++ s!"| fully verified (every run proven, identity or skipped) | {st.verified} | {st.verifiedFull} |\n"
   out := out ++ s!"| … verified (vacuous: unmodelled op), input has an op or block kind `run` leaves stuck | {st.vacuous} | {st.vacuousFull} |\n"
   out := out ++ s!"| … verified, no unmodelled op | {st.verified - st.vacuous} | {st.verifiedFull - st.vacuousFull} |\n"
+  out := out ++ s!"| … relies on `NilPtrsOK` (a `schedule` swap through `nilPtrSwap`) | - | {st.nilRelyFull} |\n"
   out := out ++ s!"| … and identical to stock after `trim` | {st.both} | {st.bothFull} |\n\n"
   out := out ++ s!"- verified-pipeline output identical to stock after `trim` (compared as the importer): {st.same}\n"
   out := out ++ s!"- verified (vacuous: unmodelled op), by op or block kind (through `rewrite tern` / through `trim`):\n"
@@ -973,6 +1004,9 @@ def verifiedText (st : VStats) (ms : Nat) : String := Id.run do
   if !st.raAll.isEmpty then
     out := out ++ "\nRejected `regalloc` runs (input origin | `tabsAgreeL` or `checkRA`'s failure), first unverified from `lower` on / all:\n\n"
     for (k, c) in byCount st.raAll do out := out ++ s!"- `{k}`: {st.raFirst.getD k 0} / {c}\n"
+  if !st.schedAll.isEmpty then
+    out := out ++ "\nRejected `schedule` runs by class (`SchedClass.schedClass`), first unverified from `lower` on / all:\n\n"
+    for (k, c) in byCount st.schedAll do out := out ++ s!"- `{k}`: {st.schedFirst.getD k 0} / {c}\n"
   return out
 
 /-- `--check --verified`: the verified pipeline over stock export files, a report (exit 1 only

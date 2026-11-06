@@ -10,11 +10,12 @@ import GoFV.Proof.RunLFCases
 
 `schedule` (`GoFV.Opt.schedulePass`) runs on `clampL` (by kernel evaluation): it lists `b1`'s
 values in Go's order `v8 v9 v10 v1 v22` (`clampS`'s blocks, section 53 of the corpus), and
-`scheduleCheck` accepts the output. `clampL` has no pointer-shaped parameter piece, so
-`ArgPtrsOK` holds on every input (`argPtrsOK_of_none`), and by `schedule_refinesSchedLF` the
-output's `runSched` returns `clamp(5, 0, 10) = 5`, as `runLF` of `clampL` does (`clampL_runLF`).
-`clampL` has no memory op and no nil check, so `runLF` is `runL` on it (`noNilFault_of_noAct`)
-and `schedule_refinesSchedL` reads the same off `runL` (`clampL_run5`).
+`scheduleCheck` accepts the output. `clampL` has no pointer-shaped parameter piece and no nil
+check, so `ArgPtrsOK` and `NilPtrsOK` hold on every input (`argPtrsOK_of_none`,
+`nilPtrsOK_of_none`), and by `schedule_refinesSchedLF` the output's `runSched` returns
+`clamp(5, 0, 10) = 5`, as `runLF` of `clampL` does (`clampL_runLF`). `clampL` has no memory op
+and no nil check, so `runLF` is `runL` on it (`noNilFault_of_noAct`) and `schedule_refinesSchedL`
+reads the same off `runL` (`clampL_run5`).
 -/
 
 namespace GoFV.Proof.Witness
@@ -43,6 +44,13 @@ theorem clampL_noArgPtr :
         (Ctx.makeL clampLTabs clampL).tys clampL x) = true := by
   decide +kernel
 
+/-- No nil check of `clampL` checks a pointer-shaped value (it has no nil check). -/
+theorem clampL_noNilPtr :
+    clampL.valueTab.all (fun o => o.all fun v => !v.op.nilCheck ||
+      (v.args[0]?.all fun q => !ptrShape ((Ctx.makeL clampLTabs clampL).tys[q]?.getD .other))) =
+      true := by
+  decide +kernel
+
 /-- **`schedule_refinesSchedLF` is not vacuous**: `schedule` accepts `clampL`, `scheduleCheck`
 accepts its output, and the output's `runSched` returns `clamp(5, 0, 10) = 5`. -/
 theorem schedule_witness :
@@ -55,7 +63,8 @@ theorem schedule_witness :
   refine ⟨out, hp, hv, hb, ?_⟩
   obtain ⟨m, hm⟩ := returnsInt_iff.1 clampL_runLF.1
   exact (schedule_refinesSchedLF (penv := clampSchedPassEnv) hp (ok_of_toBool clampL_check) hv).returned_int
-    (argPtrsOK_of_none clampL_noArgPtr Env.p1 (clampArgs 5) {}) hm
+    ⟨argPtrsOK_of_none clampL_noArgPtr Env.p1 (clampArgs 5) {},
+      nilPtrsOK_of_none clampL_noNilPtr Env.p1 (clampArgs 5) {}⟩ hm
 
 /-- `clampL` has no value evaluated by `arm64Op`. -/
 theorem clampL_noAct :
@@ -75,7 +84,8 @@ theorem schedule_refinesSchedL_witness :
   obtain ⟨fuel', ho⟩ := schedule_refinesSchedL (penv := clampSchedPassEnv) hp
     (ok_of_toBool clampL_check) hv Env.p1 (clampArgs 5) {}
     ⟨noNilFault_of_noAct clampL_noAct Env.p1 (clampArgs 5) {},
-      argPtrsOK_of_none clampL_noArgPtr Env.p1 (clampArgs 5) {}⟩ 3
+      argPtrsOK_of_none clampL_noArgPtr Env.p1 (clampArgs 5) {},
+      nilPtrsOK_of_none clampL_noNilPtr Env.p1 (clampArgs 5) {}⟩ 3
     (by show (runL Env.p1 clampLTabs clampL (clampArgs 5) {} 3).Defined; rw [hm]; trivial)
   change OutcomeRefines 0 (runL Env.p1 clampLTabs clampL (clampArgs 5) {} 3) _ at ho
   rw [hm] at ho
@@ -128,6 +138,58 @@ theorem clampAP_argPtr :
         (srcPos 27 [1, 8, 9, 10, 25, 26, 22]) 25 26 = true ∧
       swapOK clampLTabs (Ctx.makeL clampLTabs clampAP).params clampAPTys clampAP #[] 25 26 =
         false := by
+  decide +kernel
+
+/-- **`swapOK`'s `argPtr` case for a piece outside the block is not vacuous**: with the source
+order `v1 v9 v10 v25 v26 v22` of a block without `v8` (the pointer-shaped parameter piece), the
+target may run the nil check `v26` of `v8` before the load `v25` on the same memory; with `v8`
+listed after the load it may not. -/
+theorem clampAP_argPtrOut :
+    swapOK clampLTabs (Ctx.makeL clampLTabs clampAP).params clampAPTys clampAP
+        (srcPos 27 [1, 9, 10, 25, 26, 22]) 25 26 = true ∧
+      swapOK clampLTabs (Ctx.makeL clampLTabs clampAP).params clampAPTys clampAP
+        (srcPos 27 [1, 9, 10, 25, 8, 26, 22]) 25 26 = false := by
+  decide +kernel
+
+/-- `clampL` plus `v25 = LDAR v9 v1` and `v26 = MOVDload v8 v1` in `b1`. -/
+def clampLD : Func :=
+  { clampL with
+    vidLast := 26
+    valueTab := (clampLValues.push (some (mkV 25 .ARM64LDAR 0 none p0 1 #[9, 1] 1))).push
+      (some (mkV 26 .ARM64MOVDload 2 none p0 1 #[8, 1] 1)) }
+
+/-- **`swapOK`'s load case covers `LDAR`** (a `faultOp`, `Cls.load`): the target may run the load
+`v26` before the acquiring load `v25` on the same memory, whichever faults first panics with
+`nilDeref` of it. -/
+theorem clampLD_ldar :
+    cls clampLTabs (mkV 25 .ARM64LDAR 0 none p0 1 #[9, 1] 1) = .load ∧
+      swapOK clampLTabs (Ctx.makeL clampLTabs clampLD).params #[] clampLD
+        (srcPos 27 [1, 8, 9, 10, 25, 26, 22]) 25 26 = true := by
+  decide +kernel
+
+/-- `clampL` plus `v25 = MOVDload v9 v1` (a loaded pointer), `v26 = MOVDload v8 v1` and
+`v27 = LoweredNilCheck v25 v1` in `b1`. -/
+def clampNP : Func :=
+  { clampL with
+    vidLast := 27
+    valueTab := ((clampLValues.push (some (mkV 25 .ARM64MOVDload 2 none p0 1 #[9, 1] 1))).push
+      (some (mkV 26 .ARM64MOVDload 2 none p0 1 #[8, 1] 1))).push
+      (some (mkV 27 .ARM64LoweredNilCheck 0 none p0 1 #[25, 1] 1)) }
+
+/-- Shapes of `clampNP` with `v25` a pointer. -/
+def clampNPTys : Array Ty := (Array.replicate 28 Ty.other).set! 25 (.ptr none)
+
+/-- **`swapOK`'s `NilPtrsOK` case (`nilPtrSwap`) is not vacuous**: with the source order
+`v1 v8 v9 v10 v25 v26 v27 v22`, the target may run the nil check `v27` of the loaded pointer
+`v25` before the load `v26` on the same memory, only through `nilPtrSwap` (`swapOKB` rejects the
+swap); with `v25` listed after the load it may not. -/
+theorem clampNP_nilPtr :
+    swapOK clampLTabs (Ctx.makeL clampLTabs clampNP).params clampNPTys clampNP
+        (srcPos 28 [1, 8, 9, 10, 25, 26, 27, 22]) 26 27 = true ∧
+      swapOKB clampLTabs (Ctx.makeL clampLTabs clampNP).params clampNPTys clampNP
+        (srcPos 28 [1, 8, 9, 10, 25, 26, 27, 22]) 26 27 = false ∧
+      swapOK clampLTabs (Ctx.makeL clampLTabs clampNP).params clampNPTys clampNP
+        (srcPos 28 [1, 8, 9, 10, 26, 25, 27, 22]) 26 27 = false := by
   decide +kernel
 
 end GoFV.Proof.Witness

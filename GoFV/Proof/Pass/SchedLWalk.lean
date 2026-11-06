@@ -98,7 +98,9 @@ theorem walk_ok (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : List 
 /-- **The target panics where the source does, alike.** -/
 theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : List ID}
     {frPS frPT : Frame} (B : BStep tabs f g md oS oT frPS frPT)
-    (hAP : ArgPtrsAt md env tabs f frPS) {e : Panic} {m : Mem}
+    (hAP : ArgPtrsAt md env tabs f frPS)
+    (hNR : ∀ k H, evalAllL md env (Ctx.makeL tabs f) frPS (oS.take k) = .ok H → NilRegsOK tabs f H)
+    {e : Panic} {m : Mem}
     (hev : evalAllL md env (Ctx.makeL tabs f) frPS oS = .panic e m) :
     evalAllL md env (Ctx.makeSched tabs g) frPT oT = .panic e m := by
   obtain ⟨pre, r, post, H, hsplit, hpre, hr⟩ := evalAllL_panic_split hev
@@ -223,7 +225,7 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
   have hl : (pre ++ r :: post)[pre.length + (l' + 1)]? = some y := by
     rw [List.getElem?_append_right (by omega), Nat.add_sub_cancel_left, List.getElem?_cons_succ, hl']
   have hsw := B.swap j n r y hj hyj hn hfy hfr pre.length (pre.length + (l' + 1)) (by omega) hk hl
-  unfold swapOK at hsw
+  unfold swapOK swapOKB nilPtrSwap at hsw
   rw [hvr, hfv] at hsw
   -- `y` is a parameter's register piece: it evaluates
   cases hao : argOK tabs (Ctx.makeL tabs f).params fv
@@ -237,7 +239,9 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
     exact .inr ⟨z, hz, fun h => absurd h hyP⟩
   simp only [hao, hmp, hrnb, Bool.not_true, Bool.false_or, Bool.and_eq_true, Bool.or_eq_true,
     beq_iff_eq, Bool.not_eq_true'] at hsw
-  obtain ⟨⟨⟨hcr, hlast⟩, hnspa⟩, hcy⟩ := hsw
+  obtain ⟨hcr, hlast, hnspa⟩ : (cls tabs vr = .load ∨ cls tabs vr = .nil) ∧
+      vr.args.back? = fv.args.back? ∧ vr.args.back?.any (isSPA f) = false := by
+    rcases hsw with ⟨⟨⟨h1, h2⟩, h3⟩, -⟩ | ⟨⟨⟨⟨h1, h2⟩, h3⟩, -⟩, -⟩ <;> exact ⟨h1, h2, h3⟩
   obtain ⟨rfl, ℓ, hℓ, hHℓ⟩ := hld hcr
   have hℓspa : isSPA f ℓ = false := by rw [hℓ] at hnspa; simpa using hnspa
   have hDo : ∀ a ∈ oT.take j, a ∈ oT := fun a ha => List.mem_of_mem_take ha
@@ -249,7 +253,7 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
       (fun hm => topo_before B.tTopo hyj hgℓm hm)
     rw [hns hℓspa, hHℓ]
   have hgsz : gv.args.size = fv.args.size := by rw [hrv.args, Array.size_map]
-  rcases hcy with (hload | ⟨⟨⟨hnil, hrk⟩, h0⟩, hall⟩) | ⟨hnil, hany⟩
+  rcases hsw with ⟨-, (hload | ⟨⟨⟨hnil, hrk⟩, h0⟩, hall⟩) | ⟨hnil, hany⟩⟩ | ⟨⟨-, hnil⟩, hany⟩
   · rcases evalValueL_load (env := env) hf (hcl.trans hload) hargsT with ⟨z, hz⟩ |
       ⟨ℓ', m', hb', hT', hp'⟩
     · exact .inr ⟨z, hz, fun h => absurd h hyP⟩
@@ -278,16 +282,13 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
       rw [hns hpspa, hHp]
     exact .inl (evalValueL_nc_nil (env := env) (ctx := Ctx.makeSched tabs g) hf (hrv.op.trans hnc)
       hgargs hTp hpa hTℓ)
-  · -- `y` is a nil check of a pointer-shaped parameter piece `p` the source ran before `r`
+  · -- `y` is a nil check of a pointer-shaped parameter piece `p` that the source ran before `r`
+    -- or that is outside the block
     obtain ⟨hnc, hsz2⟩ := cls_nil hnil
     obtain ⟨p, hp0⟩ : ∃ p, fv.args[0]? = some p := ⟨fv.args[0], by simp [hsz2]⟩
     rw [hp0] at hany
     simp only [Option.any_some, Bool.and_eq_true, decide_eq_true_eq] at hany
-    obtain ⟨⟨hap, hpos0⟩, hposr⟩ := hany
-    obtain ⟨k', hk'lt, hk'⟩ := srcPos_before B.sNodup B.sLt hk hpos0 hposr
-    have hpP : p ∈ pre := by
-      rw [List.getElem?_append_left hk'lt] at hk'
-      exact List.mem_of_getElem? hk'
+    obtain ⟨hap, hposr⟩ := hany
     obtain ⟨vp, hvp, hpok⟩ : ∃ vp, f.value? p = some vp ∧
         argOK tabs (Ctx.makeL tabs f).params vp = true := by
       unfold argPtr at hap
@@ -308,25 +309,77 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
       dsimp only
       rw [hpop]
       rfl
-    -- the source's value of `p`: nil or a pointer that is not wild
-    obtain ⟨vp', z, hvp', hHz, hevz⟩ := Sr.eval p hpP
-    rw [hvp] at hvp'; cases hvp'
-    obtain ⟨q, hq, hqw⟩ := hAP.regs Sr.frH p vp hvp hap z hevz
-    -- the target's register of `p`
     have hf1 : fv.args[1]? = some ℓ := by rw [hsz2] at hfℓ; exact hfℓ
     have hfargs : fv.args = #[p, ℓ] := arr_two hsz2 hp0 hf1
     have hgargs : gv.args = #[p, rep f ℓ] := by rw [hrv.args, hfargs]; simp [hrepp]
-    obtain ⟨-, hg0m⟩ := argsF_g hgv hrv hp0
-    rw [hrepp] at hg0m
-    have hpD : p ∈ oT.take j :=
-      topo_before B.tTopo hyj hg0m ((B.tMem p).2 ⟨hPS p hpP, hpspa⟩)
-    have hTp : T.regs[p]? = some (some z) := by rw [I.inP p hpD hpP hpnc, hHz]
+    -- the target's register of `p`: nil or a pointer that is not wild
+    obtain ⟨z, q, hTp, hq, hqw⟩ : ∃ z q, T.regs[p]? = some (some z) ∧ z.asPtrWord = some q ∧
+        q.wild = false := by
+      by_cases hpS : p ∈ pre ++ r :: post
+      · -- the source ran `p` before `r`
+        obtain ⟨k', hk'⟩ := List.mem_iff_getElem?.1 hpS
+        rw [srcPos_get B.sNodup B.sLt hk', srcPos_get B.sNodup B.sLt hk] at hposr
+        have hpP : p ∈ pre := by
+          rw [List.getElem?_append_left (by omega)] at hk'
+          exact List.mem_of_getElem? hk'
+        obtain ⟨vp', z, hvp', hHz, hevz⟩ := Sr.eval p hpP
+        rw [hvp] at hvp'; cases hvp'
+        obtain ⟨q, hq, hqw⟩ := hAP.regs Sr.frH p vp hvp hap z hevz
+        obtain ⟨-, hg0m⟩ := argsF_g hgv hrv hp0
+        rw [hrepp] at hg0m
+        have hpD : p ∈ oT.take j :=
+          topo_before B.tTopo hyj hg0m ((B.tMem p).2 ⟨hPS p hpP, hpspa⟩)
+        exact ⟨z, q, by rw [I.inP p hpD hpP hpnc, hHz], hq, hqw⟩
+      · -- `p` is outside the block
+        have hyS : y ∈ pre ++ r :: post := ((B.tMem y).1 hyT).1
+        have hpy : p ∈ argsF f y := by
+          rw [argsF_of hfv]; exact Array.mem_toList_iff.2 (Array.mem_of_getElem? hp0)
+        obtain ⟨z, hz⟩ := (B.out y hyS p hpy hpS).1
+        obtain ⟨q, hq, hqw⟩ := B.argOut y hyS p hpy hpS hap z hz
+        have hpD : p ∉ oT.take j := fun h => hpS ((B.tMem p).1 (List.mem_of_mem_take h)).1
+        exact ⟨z, q, by rw [I.out p hpD, B.agree p hpnc hpspa, hz], hq, hqw⟩
     by_cases hqb : q.blk = .nil
     · have hqn : q.isNil = true := by simpa [Ptr.wild, hqb] using hqw
       exact .inl (evalValueL_nc_nil (env := env) (ctx := Ctx.makeSched tabs g) hf
         (hrv.op.trans hnc) hgargs hTp ⟨q, addr_of_asPtrWord hq, hqn⟩ hTℓ)
     · obtain ⟨w, hw⟩ := evalValueL_nc_pass (md := md) (env := env) (ctx := Ctx.makeSched tabs g)
         (hrv.op.trans hnc) hgargs hTp ⟨q, hq, hqb⟩ hTℓ
+      exact .inr ⟨w, hw, fun h => absurd h hyP⟩
+  · -- `y` is a nil check of a pointer-shaped value `q` that the source ran before `r` or that is
+    -- outside the block: `NilPtrsOK`
+    obtain ⟨hnc, hsz2⟩ := cls_nil hnil
+    obtain ⟨q, hq0⟩ : ∃ q, fv.args[0]? = some q := ⟨fv.args[0], by simp [hsz2]⟩
+    rw [hq0] at hany
+    simp only [Option.any_some, Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at hany
+    obtain ⟨⟨⟨hsh, hqnc⟩, hqspa⟩, hposr⟩ := hany
+    have hrepq : rep f q = q := rep_self hqnc hqspa
+    have hf1 : fv.args[1]? = some ℓ := by rw [hsz2] at hfℓ; exact hfℓ
+    have hfargs : fv.args = #[q, ℓ] := arr_two hsz2 hq0 hf1
+    have hgargs : gv.args = #[q, rep f ℓ] := by rw [hrv.args, hfargs]; simp [hrepq]
+    -- the target's register of `q` is the source's at the panic
+    have hTq : T.regs[q]? = H.regs[q]? := by
+      by_cases hqS : q ∈ pre ++ r :: post
+      · obtain ⟨k', hk'⟩ := List.mem_iff_getElem?.1 hqS
+        rw [srcPos_get B.sNodup B.sLt hk', srcPos_get B.sNodup B.sLt hk] at hposr
+        have hqP : q ∈ pre := by
+          rw [List.getElem?_append_left (by omega)] at hk'
+          exact List.mem_of_getElem? hk'
+        obtain ⟨-, hg0m⟩ := argsF_g hgv hrv hq0
+        rw [hrepq] at hg0m
+        have hqD : q ∈ oT.take j :=
+          topo_before B.tTopo hyj hg0m ((B.tMem q).2 ⟨hPS q hqP, hqspa⟩)
+        exact I.inP q hqD hqP hqnc
+      · have hqD : q ∉ oT.take j := fun h => hqS ((B.tMem q).1 (List.mem_of_mem_take h)).1
+        rw [I.out q hqD, B.agree q hqnc hqspa, Sr.out q (fun h => hqS (hPS q h))]
+    obtain ⟨z, hz⟩ := hargsT q (by rw [hgargs]; simp)
+    have hNRH : NilRegsOK tabs f H := hNR pre.length H (by rw [List.take_left]; exact hpre)
+    obtain ⟨p, hp, hpw⟩ := hNRH y fv q hfv (by rw [hnc]; rfl) hq0 hsh z (by rw [← hTq]; exact hz)
+    by_cases hpb : p.blk = .nil
+    · have hpn : p.isNil = true := by simpa [Ptr.wild, hpb] using hpw
+      exact .inl (evalValueL_nc_nil (env := env) (ctx := Ctx.makeSched tabs g) hf
+        (hrv.op.trans hnc) hgargs hz ⟨p, addr_of_asPtrWord hp, hpn⟩ hTℓ)
+    · obtain ⟨w, hw⟩ := evalValueL_nc_pass (md := md) (env := env) (ctx := Ctx.makeSched tabs g)
+        (hrv.op.trans hnc) hgargs hz ⟨p, hp, hpb⟩ hTℓ
       exact .inr ⟨w, hw, fun h => absurd h hyP⟩
 
 end GoFV.Proof.SchedL
