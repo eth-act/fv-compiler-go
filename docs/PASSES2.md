@@ -89,7 +89,7 @@ output, `guard` its remaining hypotheses, decided after the run on the input and
 | critical | `criticalPass`, `RefinesL` | `critRelB` | `Crit.critical_refinesL` |
 | schedule | `schedulePass`, `runL` → `runSched` on `NoNilFault` of the input | `scheduleCheck` | `SchedL.schedule_refinesSchedLF` (`.schedL`) |
 | late nilcheck | `nilcheckelim2Pass`, `RefinesSched` | `nilLateB` | `NilLateL.nilcheckelim2_refinesSched` |
-| flagalloc | stock (theorem in progress, P2ProofCfg2) | — | — |
+| flagalloc | stock (theorem `FlagAllocL.flagalloc_refinesSched` on its way) | — | — |
 | regalloc | `regallocV`, `runSched` → `runLoc` | `tabsAgreeL` of the input in the output's tables, `checkRA` | `RA.checkRA_sound`, `runSched_tabsAgreeL` |
 | loop rotate, trim | the pass, `RefinesLoc` | trim: `trimRelB` | `loopRotate_refinesLoc`, `trim_refinesLoc` |
 
@@ -128,6 +128,23 @@ layer. Witness: `verifiedPipelineFull_witness` (`GoFV/Proof/Witness/PipelineFull
 Fused multiply-add shapes (`Contract`, §2.1 of `docs/plans/semantics2.md`) are outside the
 guard: `lower_refines` relates the output to a contraction of its input, which does not compose
 with the refinement before `lower`.
+
+Numbers (`gofv-ssa-opt --check --verified --jobs 4`, main 088d827 plus this pipeline; full-v9
+57 min, 1.65 GB peak; quick-v7 5 min):
+
+| | full-v9 through `rewrite tern` | full-v9 through `trim` | quick-v7 through `rewrite tern` | quick-v7 through `trim` |
+| --- | ---: | ---: | ---: | ---: |
+| fully verified | 92,925 | 31,307 | 8,885 | 2,873 |
+| … verified (vacuous: unmodelled op) | 1,576 | 1,415 | 168 | 164 |
+| … and identical to stock after `trim` | 75,906 | 31,259 | 7,317 | 2,867 |
+
+"Vacuous" counts the functions whose input has an op or block kind `run` leaves `stuck`
+whatever its arguments (full-v9: `RetJmp` blocks 1,576 / 1,415, `TailLECall` 1,432 / 1,415,
+`TailLECallInter` 144 / 0; `docs/DRIVER.md`, verified mode): the theorems say nothing about the
+inputs that reach one. Of the full-v9 functions verified through `rewrite tern` but not through
+`trim`, the first unverified run is `lower` (checked variant incomplete) for 53,486, `late lower`
+(no theorem) 4,122, `pair` (no theorem) 3,615, `schedule` (rejected) 257, `regalloc` (rejected)
+138.
 
 ## 1. Shared infrastructure new in Phase 2
 

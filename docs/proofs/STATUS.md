@@ -87,6 +87,26 @@ carry no provenance, so the pointer made from `addr(p) + off` need not be in `p`
   phi elimination is proven, "Phi eliminations" in `rules.md`). `:785` is the second most
   frequent sole obstacle on full-v6 (185 functions).
 
+## Phase 2: the verified pipeline through `trim` (#385, #189)
+
+`GoFV.Proof.PipelineFull.verifiedPipelineFull_refines`: for a `fullyVerified` result of
+`verifiedPipelineFull`, every returning or panicking `run` of the input is, up to refinement, a
+`runLoc` of the allocated function after `trim`, under Phase 1's `VPre` and no nil-page fault of
+the recorded `schedule` inputs (`docs/PASSES2.md` §0; witness `verifiedPipelineFull_witness`).
+Measured with `gofv-ssa-opt --check --verified --jobs 4` on main 088d827 plus the pipeline
+(full-v9: 96,560 functions, format 5.1, 57 min):
+
+| Measure | full-v9 through `rewrite tern` (Phase 1) | full-v9 through `trim` | quick-v7 Phase 1 | quick-v7 through `trim` |
+| --- | --: | --: | --: | --: |
+| Functions fully verified | 92,925 | 31,307 | 8,885 | 2,873 |
+| … verified (vacuous: unmodelled op): the input has an op or block kind `run` leaves stuck (`TailLECall*`, `RetJmp`) | 1,576 | 1,415 | 168 | 164 |
+| … and identical to stock after `trim` | 75,906 | 31,259 | 7,317 | 2,867 |
+
+Passes from `lower` on without a theorem: addressing modes, late lower, pair, flagalloc. Of the
+full-v9 functions verified through Phase 1 but not through `trim`, the first unverified run is
+`lower` (checked variant incomplete) for 53,486. `driver-e2e.sh --verified -p 8`: 183/183
+programs behave as stock, 0 fallbacks; 12,830 of 42,899 functions fully verified through `trim`.
+
 ## Per-pass fragment coverage (verified pipeline, full-v6)
 
 Runs per pass of `gofv-ssa-opt --check --verified` (96,553 functions, each pass run once per function). *Proven*: the theorem's variant ran and changed the function; *identity*: same function (or tables the function cannot tell apart); *skipped*: an optional pass outside its fragment (the input is kept); *unverified*: a required pass outside its fragment, or a checked rewrite pass whose result differs from stock (`checked variant incomplete`: an unproven rule fired or the validator rejected; the stock result is kept). Every Phase 1 pass has a theorem; `insert resched checks`, `cpufeatures` and `rewrite tern` never run for linux/arm64.
