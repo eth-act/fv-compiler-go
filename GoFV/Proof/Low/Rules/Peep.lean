@@ -205,47 +205,26 @@ theorem subFlags_zero_z {n : Nat} (r : BitVec n) : (Arm64.subFlags r 0).2.z = (r
       Nat.mod_eq_of_lt this]
   simp only [Arm64.subFlags, addWithCarry, ite_true, h]
 
-private theorem addr_of_isNil {p : Ptr} (h : p.isNil = true) : p.addr? = some 0 := by
-  obtain ⟨b, o⟩ := p
-  simp only [Ptr.isNil, Bool.and_eq_true, beq_iff_eq] at h
-  obtain ⟨rfl, rfl⟩ := h
-  rfl
-
 private theorem isZero_of_cmp0 {x : Val} {b : Bool}
     (h : Cond.eq.onVal (Arm64.cmp x (.int .w64 0)) = some b) : Arm64.isZero x = some b := by
   have h0 : Arm64.reg (.int .w64 (0 : BitVec 64)) = some 0 := rfl
-  cases hx : Arm64.reg x with
-  | some r =>
-    have hc : Arm64.cmp x (.int .w64 0) = Arm64.cmpRes (Arm64.subFlags r 0) := by
-      unfold Arm64.cmp; rw [hx, h0]
-    rw [hc, onVal_cmpRes] at h
-    simp only [Flags.toVal, Cond.onVal, Cond.eval, Val.flagBit, Option.some.injEq,
-      subFlags_zero_z] at h
-    subst h
-    cases x with
-    | ptr p =>
-      simp only [Arm64.reg] at hx
-      simp only [Arm64.isZero, hx]
-      cases hn : p.isNil
-      · rfl
-      · rw [addr_of_isNil hn] at hx; cases hx; rfl
-    | _ => simp only [Arm64.isZero, hx, Option.map_some]
-  | none =>
-    cases x with
-    | ptr p =>
-      simp only [Arm64.reg] at hx
-      have hc : Arm64.cmp (.ptr p) (.int .w64 0) =
-          .agg [.poison, .bool false, .poison, .poison, .poison] := by
-        unfold Arm64.cmp; simp only [Arm64.reg, hx, h0]; rfl
-      rw [hc] at h
-      simp only [Cond.onVal, Cond.eval, Val.flagBit, Option.some.injEq] at h
+  by_cases hp : ∃ p, x = .ptr p
+  · obtain ⟨p, rfl⟩ := hp
+    rw [cmp_z_ptr_zero, Option.some.injEq] at h
+    subst h; rfl
+  · have hz : Arm64.isZero x = (Arm64.reg x).map (· == 0) := by
+      cases x <;> first | rfl | exact absurd ⟨_, rfl⟩ hp
+    rw [hz]
+    cases hx : Arm64.reg x with
+    | some r =>
+      have hc : Arm64.cmp x (.int .w64 0) = Arm64.cmpRes (Arm64.subFlags r 0) := by
+        unfold Arm64.cmp; rw [hx, h0]
+      rw [hc, onVal_cmpRes] at h
+      simp only [Flags.toVal, Cond.onVal, Cond.eval, Val.flagBit, Option.some.injEq,
+        subFlags_zero_z] at h
       subst h
-      have hn : p.isNil = false := by
-        cases hn : p.isNil
-        · rfl
-        · rw [addr_of_isNil hn] at hx; cases hx
-      simp only [Arm64.isZero, hx, hn]; rfl
-    | _ => simp_all [Arm64.cmp, Arm64.reg, Cond.onVal]
+      rfl
+    | none => cases x <;> simp_all [Arm64.cmp, Arm64.reg, Cond.onVal]
 
 private theorem ofInt64_zero : BitVec.ofInt 64 0 = 0 := rfl
 

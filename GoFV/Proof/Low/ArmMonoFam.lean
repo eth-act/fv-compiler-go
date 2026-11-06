@@ -390,7 +390,7 @@ theorem cmp_mono {c d : Val} (h : Refines a b) (h' : Refines c d) : Refines (cmp
   cases h <;> cases h' <;> first
     | exact .poison _
     | exact Refines.refl _
-    | (rename_i p; cases hp : p.addr? <;> simp only [cmp, reg, hp] <;> exact .poison _)
+    | (rename_i p; cases hp : ptrReg p <;> simp only [cmp, reg, hp] <;> exact .poison _)
 
 /-! ## Conditional ops -/
 

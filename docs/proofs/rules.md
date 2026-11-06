@@ -1995,18 +1995,26 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   (`x | (c^d) == c` iff `x == c || x == d` when `d ⊆ c` and `c^d` is one bit); `onebit_int`
   and `onebit_int_ne` read it off the condition's `Int` facts.
 
+- **`ARM64.rules:243`, `:251`, `:450` (pointer compares) false under the old register of a
+  pointer, proven under the gated one** (#385, PtrAddr18; model limits, not Go bugs).
+  `(EqPtr x y) => (Equal (CMP x y))`, `NeqPtr` → `NotEqual`, `(IsNonNil ptr) => (NotEqual
+  (CMPconst [0] ptr))`. Phase 1 compares pointers by allocation and offset; `CMP` compared the
+  two 64-bit words, and `Arm64.reg` gave every pointer with a base its address `Ptr.addr?`. Two
+  distinct allocations could have the same address (`Blk.base?` gives `local a k` and `temp a k`
+  one base, and offsets wrap mod 2^64): at `x` the address of the frame variable `local 0 1` and
+  `y` the pointer `temp 0 1 + 0`, `EqPtr` was `false` and `CMP` saw equal words; and a
+  non-convertible pointer could have address 0 (`heap 0 + (2^64 - 2^40)`), non-nil for Phase 1
+  while `CMPconst [0]` set `Z`. Gating on `Ptr.convertible` alone is not enough: frame
+  addresses of activation `a ≥ 2^20` decode (`Ptr.ofAddr`) to non-convertible `local a k`
+  pointers, so the integer word of such an address is that pointer for `EqPtr` while `CMP` would
+  see a register against no register. Now a pointer's register is its address `a` only when it
+  is `Ptr.ofAddr a` (`Arm64.ptrReg`; every convertible pointer is, `Ptr.ofAddr_addr`), and `CMP`
+  compares a pointer without one by provenance; `CBZ` tests a pointer by `Ptr.isNil`
+  (`Arm64.isZero`). Proven: `r_ARM64_243_sound`, `r_ARM64_251_sound`, `r_ARM64_450_sound`
+  (`GoFV/Proof/Low/Rules/Cmp.lean`, `cmp_z_ptr`).
+
 - **`ARM64.rules` lowering rules false under the semantics** (#385, P2ProofLow; model limits,
   not Go bugs; the checked lower leaves them out of `GoFV.Rules.ProvenARM64`):
-  - `:243`, `:251` (`(EqPtr x y) => (Equal (CMP x y))`, `NeqPtr` → `NotEqual`): Phase 1
-    compares pointers by allocation and offset, `CMP` compares the two 64-bit words, and two
-    distinct allocations can have the same address in the model (`Blk.base?` gives `local a k`
-    and `temp a k` one base, and offsets wrap mod 2^64): at `x` the address of the frame
-    variable `local 0 1` and `y` the pointer `temp 0 1 + 0`, `EqPtr` is `false` and `CMP` sees
-    equal words. A proof needs disjoint addresses for distinct live allocations.
-  - `:450` (`(IsNonNil ptr) => (NotEqual (CMPconst [0] ptr))`): a non-convertible pointer can
-    have address 0 (`heap 0 + (2^64 - 2^40)` wraps to 0); Phase 1 calls it non-nil (`nil` is a
-    block, not an address), `CMPconst [0]` sets `Z`. A proof needs non-nil pointers to have
-    non-zero addresses (offsets inside the allocation's window).
   - `:148`–`:150` (the ellipsis rules `(Lsh{8,16,32}x<a> ...) => (Lsh64x<a> ...)`): the
     rename keeps the narrow operand, and Phase 1's `Lsh64x<a>` asks for a 64-bit one: on the
     `int8` value 1 shifted by 0, `Lsh8x64` gives 1 and `Lsh64x64` `poison`. A proof needs
@@ -2028,8 +2036,7 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   - `:133`, `:134` (`(AndB ...) => (AND ...)`, `(OrB ...) => (OR ...)`): Phase 1's `AndB`/`OrB`
     are parallel (`Cmp.andB`: `false && poison` is `false`), `AND`/`OR` read both registers:
     `AndB false poison` is `false`, `AND` of it `poison` (`OrB true poison` likewise).
-  Recorded also in the module docs of `GoFV/Proof/Low/Rules/Cmp.lean`, `Shift.lean` and
-  `CselBits.lean`.
+  Recorded also in the module docs of `GoFV/Proof/Low/Rules/Shift.lean` and `CselBits.lean`.
 
 - **`InvertFlags` rules outside the ghost-bit semantics** (#385; model limits, not Go bugs).
   Flags are `[n, z, c, v, g]` with `g` the sign of an integer compare's negated difference,

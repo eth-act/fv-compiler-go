@@ -1,9 +1,10 @@
 import GoFV.Proof.Low.Rules.Flags
 import GoFV.Proof.Low.Rules.Tactic
+import GoFV.Proof.PtrAddr
 import GoFV.Rules.Generated.ARM64
 
 /-!
-# Lowering rule lemmas: integer comparisons (`ARM64.rules:239-293`, `451-452`)
+# Lowering rule lemmas: integer and pointer comparisons (`ARM64.rules:239-293`, `450-452`)
 
 `(Eq64 x y) => (Equal (CMP x y))` and the `Neq`/`Less`/`Leq` (signed and unsigned) forms of all
 widths: 32- and 64-bit operands compare by `CMPW`/`CMP` directly, 8- and 16-bit ones after a
@@ -13,10 +14,12 @@ widths: 32- and 64-bit operands compare by `CMPW`/`CMP` directly, 8- and 16-bit 
 `IsInBounds`/`IsSliceInBounds` are `LessThanU`/`LessEqualU` of `CMP` on an index of any width
 (`refines_inBounds`).
 
-False under the semantics, so not proven: `EqPtr`/`NeqPtr` (243, 251; `x` the 64-bit address of
-the frame variable `local 0 1`, `y` the pointer `temp 0 1 + 0`: `EqPtr` is `false`, `CMP` sees
-equal addresses) and `IsNonNil` (450; a non-convertible pointer `heap 0 + (2^64 - 2^40)` has
-address 0: non-nil, while `CMPconst [0]` sets `Z`).
+`EqPtr`/`NeqPtr` (243, 251) and `IsNonNil` (450): a pointer's register is its address `a` only
+when it is the pointer `Ptr.ofAddr a` (`Arm64.ptrReg`, `ptrReg_eq_some`), and Phase 1 reads an
+integer word `x` as `Ptr.ofAddr x`, so `CMP` of two registers is pointer equality
+(`Ptr.ofAddr_eq_ofAddr`); a pointer without a register is no word's pointer and `CMP` compares it
+by provenance (`cmp_z_ptr`). Before that gate both were false: the frame variable `local 0 1` and
+the frame temporary `temp 0 1` share an address, and `heap 0 + (2^64 - 2^40)` has address 0.
 -/
 
 namespace GoFV.Proof.Low.Rules
@@ -368,5 +371,167 @@ theorem r_ARM64_452_sound : ArmRule.Checked r_ARM64_452 := by
   all_goals arm_shape
   all_goals arm_norm
   exact refines_inBounds true rfl (fun x y => (cond_sub x y (sub_lt64 x y)).2.2.2.2.2) _ _
+
+/-! ## Pointer compares -/
+
+/-- A pointer's register is `a` exactly when it is the pointer at `a`. -/
+theorem ptrReg_eq_some {p : Ptr} {a : BitVec 64} :
+    Arm64.ptrReg p = some a ↔ Ptr.ofAddr a = p := by
+  unfold Arm64.ptrReg
+  constructor
+  · intro h
+    split at h
+    · split at h
+      · cases h; assumption
+      · cases h
+    · cases h
+  · rintro rfl
+    rw [Ptr.addr?_ofAddr]
+    simp
+
+/-- A pointer without a register is the pointer at no address. -/
+theorem ofAddr_ne_of_ptrReg {p : Ptr} (h : Arm64.ptrReg p = none) (a : BitVec 64) :
+    Ptr.ofAddr a ≠ p := fun he => by
+  have := ptrReg_eq_some.2 he
+  rw [h] at this; cases this
+
+private theorem asPtrWord_cases {v : Val} {p : Ptr} (hv : v.asPtrWord = some p) :
+    (∃ x, v = .int .w64 x ∧ Ptr.ofAddr x = p) ∨ v = .ptr p := by
+  cases v with
+  | ptr p' => simp only [Val.asPtrWord, Option.some.injEq] at hv; exact .inr (hv ▸ rfl)
+  | int w x =>
+    cases w <;> simp only [Val.asPtrWord, Option.some.injEq, reduceCtorEq] at hv
+    exact .inl ⟨x, rfl, hv⟩
+  | _ => simp only [Val.asPtrWord, reduceCtorEq] at hv
+
+private theorem z_sub64 (x y : BitVec 64) :
+    Cond.eq.onVal (Arm64.cmpRes (Arm64.subFlags x y)) = some (x == y) := by
+  rw [onVal_cmpRes, (cond_sub x y (sub_lt64 x y)).1]
+
+private theorem z_none :
+    Cond.eq.onVal (Val.agg [.poison, .bool false, .poison, .poison, .poison]) = some false := rfl
+
+/-- `CMP`'s result is flags-shaped. -/
+@[simp] theorem retypeL_cmp (a b : Val) : (Arm64.cmp a b).retypeL Ty.flags = Arm64.cmp a b := by
+  unfold Arm64.cmp
+  split
+  · rfl
+  · split <;> (try split) <;> rfl
+
+/-- The `Z` flag of `CMP a b` on two pointer words is Phase 1's pointer equality (`EqPtr`):
+pointers with registers are the pointers at those registers (`ptrReg_eq_some`), and a pointer
+without one is no integer word's pointer and compares by provenance. -/
+theorem cmp_z_ptr {a b : Val} {p q : Ptr} (ha : a.asPtrWord = some p)
+    (hb : b.asPtrWord = some q) :
+    Cond.eq.onVal (Arm64.cmp a b) = some (p.eq q) := by
+  have hne : ∀ {r : Ptr}, Arm64.ptrReg r = none → ∀ x, (Ptr.ofAddr x).eq r = false ∧
+      r.eq (Ptr.ofAddr x) = false := fun {r} hr x => by
+    have h := ofAddr_ne_of_ptrReg hr x
+    constructor
+    · cases he : (Ptr.ofAddr x).eq r
+      · rfl
+      · exact absurd ((Ptr.eq_iff _ _).1 he) h
+    · cases he : r.eq (Ptr.ofAddr x)
+      · rfl
+      · exact absurd ((Ptr.eq_iff _ _).1 he).symm h
+  rcases asPtrWord_cases ha with ⟨x, rfl, rfl⟩ | rfl <;>
+    rcases asPtrWord_cases hb with ⟨y, rfl, rfl⟩ | rfl
+  · rw [cmp_int, setWidth_w64, setWidth_w64, z_sub64, Ptr.ofAddr_eq_ofAddr]
+  · cases hq : Arm64.ptrReg q with
+    | none =>
+      simp only [Arm64.cmp, Arm64.reg, hq, Option.isSome_some, ite_true]
+      rw [z_none, (hne hq x).1]
+    | some y =>
+      obtain rfl := ptrReg_eq_some.1 hq
+      simp only [Arm64.cmp, Arm64.reg, hq, setWidth_w64]
+      rw [z_sub64, Ptr.ofAddr_eq_ofAddr]
+  · cases hp : Arm64.ptrReg p with
+    | none =>
+      simp only [Arm64.cmp, Arm64.reg, hp, Option.isSome_some, ite_true]
+      rw [z_none, (hne hp y).2]
+    | some x =>
+      obtain rfl := ptrReg_eq_some.1 hp
+      simp only [Arm64.cmp, Arm64.reg, hp, setWidth_w64]
+      rw [z_sub64, Ptr.ofAddr_eq_ofAddr]
+  · cases hp : Arm64.ptrReg p <;> cases hq : Arm64.ptrReg q
+    rotate_left 3
+    · rename_i x y
+      obtain rfl := ptrReg_eq_some.1 hp
+      obtain rfl := ptrReg_eq_some.1 hq
+      simp only [Arm64.cmp, Arm64.reg, hp, hq]
+      rw [z_sub64, Ptr.ofAddr_eq_ofAddr]
+    all_goals
+      simp only [Arm64.cmp, Arm64.reg, hp, hq]
+      obtain ⟨bp, op⟩ := p; obtain ⟨bq, oq⟩ := q
+      by_cases hb : bp = bq
+      · subst hb
+        simp only [beq_self_eq_true, ite_true, z_sub64, Ptr.eq, Bool.true_and]
+      · have hb' : (bp == bq) = false := by simp [hb]
+        simp only [hb', ite_false, Bool.false_eq_true, z_none, Ptr.eq, Bool.false_and]
+
+/-- `Z` of `CMPconst [0] p`: whether `p` is nil. -/
+theorem cmp_z_ptr_zero (p : Ptr) : Cond.eq.onVal (Arm64.cmp (.ptr p) (.int .w64 0)) = some p.isNil := by
+  have hz : (Val.int .w64 (0 : BitVec 64)).asPtrWord = some Ptr.null := rfl
+  rw [cmp_z_ptr rfl hz]
+  obtain ⟨b, o⟩ := p
+  simp [Ptr.eq, Ptr.isNil, Ptr.null]
+
+theorem onVal_ne_eq (f : Val) : Cond.ne.onVal f = (Cond.eq.onVal f).map (!·) := by
+  unfold Cond.onVal; split <;> rfl
+
+/-- `EqPtr`/`NeqPtr` (`neg`) as `Equal`/`NotEqual` of `CMP` (`ARM64.rules:243`, `251`). -/
+theorem refines_eqPtr (neg : Bool) {op : Op} {c : Cond} (hop : Cond.ofOp op = some c)
+    (hc : ∀ f, c.onVal f = (Cond.eq.onVal f).map (· != neg)) (a b : Val) :
+    Refines ((PtrOps.eqPtr neg [a, b]).retypeL .bool)
+      ((Arm64.cset .bool op [(Arm64.cmp a b).retypeL Ty.flags]).retypeL .bool) := by
+  cases ha : a.asPtrWord with
+  | none => simp only [PtrOps.eqPtr, ha, retypeL_poison]; exact .poison _
+  | some p =>
+    cases hb : b.asPtrWord with
+    | none => simp only [PtrOps.eqPtr, ha, hb, retypeL_poison]; exact .poison _
+    | some q =>
+      simp only [PtrOps.eqPtr, ha, hb]
+      refine refines_cset_bool hop ?_
+      rw [hc, retypeL_cmp, cmp_z_ptr ha hb]; rfl
+
+/-- `ARM64.rules:243`: `(EqPtr x y) => (Equal (CMP x y))` -/
+theorem r_ARM64_243_sound : ArmRule.Checked r_ARM64_243 := by
+  left
+  arm_unfold
+  all_goals arm_shape
+  all_goals arm_norm
+  exact refines_eqPtr false rfl (fun f => by cases Cond.eq.onVal f <;> simp) _ _
+
+/-- `ARM64.rules:251`: `(NeqPtr x y) => (NotEqual (CMP x y))` -/
+theorem r_ARM64_251_sound : ArmRule.Checked r_ARM64_251 := by
+  left
+  arm_unfold
+  all_goals arm_shape
+  all_goals arm_norm
+  exact refines_eqPtr true rfl (fun f => by rw [onVal_ne_eq]; cases Cond.eq.onVal f <;> simp) _ _
+
+/-- `ARM64.rules:450`: `(IsNonNil ptr) => (NotEqual (CMPconst [0] ptr))` -/
+theorem r_ARM64_450_sound : ArmRule.Checked r_ARM64_450 := by
+  left
+  arm_unfold
+  all_goals arm_shape
+  all_goals arm_norm
+  have h0 : BitVec.ofInt 64 0 = 0 := rfl
+  rw [h0]
+  cases ha : e.leaf [0] with
+  | int w x =>
+    simp only [PtrOps.isNonNil]
+    rw [cmp_int, setWidth_w64, retypeL_cmpRes]
+    refine refines_cset_bool rfl ?_
+    have hw : w.bits ≤ 64 := by cases w <;> decide
+    rw [onVal_ne_eq, show (0 : BitVec 64) = (0 : BitVec w.bits).setWidth 64 by simp, z_sub64,
+      Option.map_some, zext_beq x 0 hw]
+    rfl
+  | ptr p =>
+    simp only [PtrOps.isNonNil]
+    refine refines_cset_bool rfl ?_
+    rw [retypeL_cmp, onVal_ne_eq, cmp_z_ptr_zero]
+    rfl
+  | _ => simp only [PtrOps.isNonNil, retypeL_poison]; exact .poison _
 
 end GoFV.Proof.Low.Rules
