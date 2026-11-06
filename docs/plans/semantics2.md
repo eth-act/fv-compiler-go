@@ -127,6 +127,45 @@ is the four bits N, Z, C, V, as `PSTATE.NZCV` in clifv's model (`Arm.PFlag`). Tw
 `decode`), and `Flags` is a plain Lean structure with `ConditionHolds` on it. Revisit only if
 a proof is measurably easier with 1.
 
+**`InvertFlags` and the ghost bit `g` (#385).** Since #385's `InvertFlags` change a flags value
+is `Val.agg [n, z, c, v, g]` (`Ty.flags` has five booleans). `InvertFlags f` means "the flags of
+the compare with swapped operands" (Go reads it through `arm64Invert`, and `ssaGenValue` fails
+if one reaches codegen). The flags of `x - y` are not a function of the `NZCV` of `y - x`: at
+`(x, y) = (0, MIN)` and `(0, -1)` the flags of `y - x` agree and those of `x - y` differ in `N`
+and `V`. So a pure `NZCV` value cannot make `(CMP x y) && canonLessThan(x,y) => (InvertFlags
+(CMP y x))` sound, and before this change `InvertFlags` was `poison`. The fifth component `g` is
+the sign of the negated difference: the integer compares (`CMP`, `CMPconst`, `CMPW*`,
+`CMPshift*`, `CMN*`, through `Flags.toValSub`/`Arm64.cmpRes`) set it, and every other producer
+(`TST*`, `FCMP*`, `FlagConstant`, `CCMP*`, the `ADDS`/`SUBS`/`ADCS`/`SBCS`/`NEGS` tuples:
+`Flags.toVal`) leaves it `poison`. `invertFlags [n,z,c,v,g] = [g, z, ¬c ∨ z, g ⊕ (n = v ∧ ¬z),
+n]` (`GoFV/SSA/Sem/Flags.lean`; a bit is `poison` where the input cannot be the flags of a
+subtraction), so `invertFlags (CMP y x) = CMP x y` exactly.
+
+Why this is faithful to the machine, which has no `g`:
+
+1. *`g` is ghost state: only `InvertFlags` reads it.* Every consumer of a flags value reads it
+   through `Cond.onVal` (conditional selects, sets, compares, `CCMP`), `Arm64.taken` (block
+   kinds) or the carry read (`ADC`/`SBC`/`NGC`, `Arm64.carry`), and each ignores the fifth
+   component: `Cond.onVal_ghost`, `Flags.onVal_toValSub` (a condition on a compare's flags is
+   the condition on its `NZCV`), `Arm64.taken_ghost`, `Arm64.carry_ghost`. Copies, `Phi`s,
+   `retypeL` at `Ty.flags` and flagalloc's rematerialisations pass the value on unchanged;
+   flags never reach memory, the ABI or `decode`. So two flags values that differ only in `g`
+   are interchangeable for every op but `InvertFlags`.
+2. *`InvertFlags` never reaches codegen.* `FState.fullyVerified` requires
+   `Func.noInvertFlags` of the final (`trim`) function (`GoFV/Opt/VerifiedFull.lean`), as Go's
+   `ssaGenValue` does; `verifiedPipelineFull_refines` is stated under it. In an
+   `InvertFlags`-free function `g` is read by nothing (1.), so erasing it gives a semantics over
+   `NZCV` alone: the machine's.
+3. *Rules that consume `InvertFlags`* on an integer condition (the block kinds 1332-1341, the
+   condition ops 1374-1383) hold for every flags value
+   (`GoFV.Proof.Low.Rules.invertFlags_cond`: an integer condition on `invertFlags f` is
+   `arm64Invert`'s swapped condition on `f`, whatever `g` is), and the rules that produce it
+   (`CMP`/`CMPW` swaps 1003, `CMP`/`CMPW` of a constant 991/993) are exact.
+
+Lowered layer only: `Flags.lean`, `Arm64.lean`, `Arm64/Reg.lean` and `RunLoc.lean`
+(`Ty.isFlags`); no Phase 1 file changes. Lost (they held only while `InvertFlags` was
+`poison`, or their target has no `g`): see `docs/proofs/rules.md` "Findings".
+
 **Pointer arithmetic.** `lower` turns `AddPtr`, `SubPtr`, `OffPtr` and pointer compares into
 integer ops (`_gen/ARM64.rules:5,8,243,251,305-306,450`): `(Add(Ptr|64|…) ...) => (ADD ...)`,
 `(OffPtr [off] ptr:(SP)) => (MOVDaddr [int32(off)] ptr)` else `(ADDconst [off] ptr)`,
