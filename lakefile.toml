@@ -191,3 +191,7 @@ supportInterpreter = true
 [[lean_exe]]
 name = "stocklow-probe"
 root = "GoFVTest.StockLowProbe"
+
+[[lean_exe]]
+name = "flagalloc-probe"
+root = "GoFVTest.FlagAllocProbe"
