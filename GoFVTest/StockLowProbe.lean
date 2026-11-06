@@ -8,8 +8,9 @@ import GoFV.Opt.PairCheck
 # `lake exe stocklow-probe [--jobs N] <dir>...`: what `late lower` and `pair` change
 
 For every `late lower` section (input: the previous section), runs the Lean `late lower` with its
-rewrite log and counts the sections it changes, those `renameB` accepts (`late lower`'s checked
-renames, `GoFV.Opt.LateLowerCheck`) and, per `ARM64latelower.rules` rule (by source line), the
+rewrite log and counts the sections it changes, those `lateB` accepts (the `late lower`
+validator, `GoFV.Opt.LateLowerCheck`; rejected sections by the first failing check, with a file
+per check) and, per `ARM64latelower.rules` rule (by source line), the
 sections where it fires (and where it fires in a rejected section); for every `pair` section, the
 sections `pair` changes and the ops of the values it adds (`LDP*`, `STP*`, selectors, copies),
 split into sections that only pair loads within a block and the rest, and the changed sections
@@ -29,6 +30,8 @@ structure Cnt where
   llRejRules : Std.HashMap String Nat := {}
   llRules : Std.HashMap String Nat := {}
   llSets : Std.HashMap String Nat := {}
+  llWhy : Std.HashMap String Nat := {}
+  llWhyEx : Std.HashMap String String := {}
   prSecs : Nat := 0
   prErr : Nat := 0
   prChanged : Nat := 0
@@ -46,11 +49,47 @@ def Cnt.merge (a b : Cnt) : Cnt :=
   { llSecs := a.llSecs + b.llSecs, llErr := a.llErr + b.llErr
     llChanged := a.llChanged + b.llChanged, llRules := mg a.llRules b.llRules
     llAcc := a.llAcc + b.llAcc, llAccChanged := a.llAccChanged + b.llAccChanged
-    llRejRules := mg a.llRejRules b.llRejRules
+    llRejRules := mg a.llRejRules b.llRejRules, llWhy := mg a.llWhy b.llWhy
+    llWhyEx := b.llWhyEx.fold (fun m k p => if m.contains k then m else m.insert k p) a.llWhyEx
     llSets := mg a.llSets b.llSets, prSecs := a.prSecs + b.prSecs, prErr := a.prErr + b.prErr
     prChanged := a.prChanged + b.prChanged, prKinds := mg a.prKinds b.prKinds
     prAcc := a.prAcc + b.prAcc, prRejKinds := mg a.prRejKinds b.prRejKinds
     prRejEx := b.prRejEx.fold (fun m k p => if m.contains k then m else m.insert k p) a.prRejEx }
+
+open LateLowerCheck in
+/-- The first check of `lateB` that fails (diagnostics). -/
+def whyLate (tabs tabs' : Tables) (f g : Func) : String := Id.run do
+  if !LowerCheck.tabsAgreeL tabs tabs' f then return "tabsAgreeL"
+  if !(f.lowered && g.lowered) then return "not lowered"
+  if !(g.entry == f.entry && g.ownAux == f.ownAux && g.blockTab.size == f.blockTab.size) then
+    return "entry/ownAux/blocks"
+  let tysF := shapesL tabs' f
+  let tysG := shapesL tabs' g
+  for i in [0:max f.valueTab.size g.valueTab.size] do
+    if !valOK tysF tysG f g i then
+      return match f.value? i, g.value? i with
+        | some u, some w =>
+          let a := match u.args[0]? with
+            | some x => ((f.value? x).map (·.op.name)).getD "-"
+            | none => "-"
+          s!"value {u.op.name}({a}) -> {w.op.name}"
+        | some u, none => s!"value {u.op.name} removed"
+        | none, some w => s!"new {w.op.name}"
+        | none, none => "value ?"
+  for b in [0:f.blockTab.size] do
+    if !blkOK f g b then
+      return match f.block? b, g.block? b with
+        | some fb, some gb =>
+          if !decide ({ gb with values := fb.values, pos := fb.pos, likely := fb.likely } = fb) then
+            "block shape"
+          else if !(gb.values.toList.filter (inF f) == fb.values.toList) then "block values"
+          else match Sem.schedule f fb, Sem.schedule g gb with
+            | some oS, some oT =>
+              if !(oT.toList.filter (inF f) == oS.toList) then "block order" else "fresh order"
+            | _, _ => "block schedule"
+        | _, _ => "block missing"
+  if !sxOK f g then return "sxOK"
+  return "?"
 
 /-- The source lines of the rules the log fired (replaying the ops to index the table's rows). -/
 def firedRules (t : Interp.Table) (f : Func) (log : Array RwEvent) : Array String := Id.run do
@@ -111,7 +150,12 @@ def doFile (path : System.FilePath) (c : Cnt) : IO Cnt := do
       match rewriteRun lateLowerTable true true env f with
       | .error _ => c := { c with llErr := c.llErr + 1 }
       | .ok (out, _, log) =>
-        let acc := LateLowerCheck.renameB prev out.tables f out.func
+        let acc := LateLowerCheck.lateB prev out.tables f out.func
+        if !acc then
+          let k := whyLate prev out.tables f out.func
+          c := { c with llWhy := bump c.llWhy k
+                        llWhyEx := if c.llWhyEx.contains k then c.llWhyEx
+                          else c.llWhyEx.insert k path.toString }
         let changed := out.func.valueTab != f.valueTab || out.func.blockTab != f.blockTab
         if acc then c := { c with llAcc := c.llAcc + 1 }
         if changed then
@@ -164,7 +208,10 @@ def main (args : List String) : IO UInt32 := do
     | .ok x => c := c.merge x
     | .error err => IO.eprintln s!"task error: {err}"; return 1
   IO.println s!"late lower: sections {c.llSecs}, errors {c.llErr}, changed {c.llChanged}"
-  IO.println s!"renameB accepts {c.llAcc} (changed {c.llAccChanged}), rejects {c.llSecs - c.llErr - c.llAcc}"
+  IO.println s!"lateB accepts {c.llAcc} (changed {c.llAccChanged}), rejects {c.llSecs - c.llErr - c.llAcc}"
+  IO.println "lateB rejections by first failing check:"
+  for (k, n) in (sorted c.llWhy).extract 0 40 do
+    IO.println s!"  {n} {k}    e.g. {c.llWhyEx.getD k ""}"
   IO.println "rules (ARM64latelower.rules line, sections where fired):"
   for (k, n) in sorted c.llRules do IO.println s!"  {n} {k}"
   IO.println "rules in rejected sections (line, sections):"
