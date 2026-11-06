@@ -152,6 +152,22 @@ def symAddr (ctx : Ctx) (v : Value) (base : Val) : Option Ptr :=
     | _ => none
   | none => Arm64.addr base off
 
+/-- The element addresses of a pair access (`LDP*`, `STP*`) of `n`-byte elements: `symAddr`
+at offsets `auxInt` and `auxInt + n` (the machine's `base + off` and `base + off + n` on an integer
+base; the first pointer moved by `n` on a pointer or symbol base). -/
+def pairAddr (ctx : Ctx) (v : Value) (n : Nat) (base : Val) : Option (Ptr × Ptr) :=
+  (symAddr ctx v base).bind fun p =>
+    (symAddr ctx { v with auxInt := v.auxInt + Int64.ofNat n } base).map (p, ·)
+
+theorem pairAddr_eq_some {ctx : Ctx} {v : Value} {n : Nat} {base : Val} {p q : Ptr}
+    (h : pairAddr ctx v n base = some (p, q)) :
+    symAddr ctx v base = some p ∧
+      symAddr ctx { v with auxInt := v.auxInt + Int64.ofNat n } base = some q := by
+  unfold pairAddr at h
+  simp only [Option.bind_eq_some_iff, Option.map_eq_some_iff, Prod.mk.injEq] at h
+  obtain ⟨p', h1, q', h2, rfl, rfl⟩ := h
+  exact ⟨h1, h2⟩
+
 /-- `minZeroPage` (`nilcheck.go:192`): the lowest mapped address (`VPre₂`: no allocation below
 it), so an access below it is a nil dereference. -/
 def minZeroPage : Nat := 4096
@@ -239,7 +255,8 @@ def fitPieces (tabs : Tables) : List ABIParam → List Val → List Val
 panics, `LoweredMemEq`, atomics, `DMB`, `PRFM`. Each is Phase 1's meaning of the generic op it
 lowers (calls, nil checks, atomics run as that op; `memRoot`/`callOp`/`atomicRoot`), or an access
 on the Phase 1 memory (`Sem/Arm64/Mem.lean`). A load is pure (`poison` on an invalid access), a
-store `stuck` on an invalid one, as Phase 1's `Load`/`Store`.
+store `stuck` on an invalid one, as Phase 1's `Load`/`Store`. A pair access (`LDP*`, `STP*`)
+addresses its elements by `pairAddr` (semantics2.md, #156).
 
 `MOVDreg x`/`MOVDnop x` copy `x`'s register; when `x` has a narrow type its upper bits are those
 of its producer (`Arm64.signExtendsIn`: a sign-extending load or extension, or a component of the
@@ -257,7 +274,8 @@ def arm64Op (faulting : Bool) (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) (
     | [a, .mem m] => .ok ((symAddr ctx v a).elim .poison (Arm64.loadN ty n signed m))
     | _ => .ok .poison
   let ldPair (n : Nat) (signed : Bool) : Res Val := match argv with
-    | [a, .mem m] => .ok ((symAddr ctx v a).elim .poison (Arm64.loadPair ty n signed m))
+    | [a, .mem m] => .ok ((pairAddr ctx v n a).elim .poison fun pq =>
+      Arm64.loadPair ty n signed m pq.1 pq.2)
     | _ => .ok .poison
   let ld16 : Res Val := match argv with
     | [a, .mem m] => .ok ((symAddr ctx v a).elim .poison (Arm64.load16 m))
@@ -271,8 +289,8 @@ def arm64Op (faulting : Bool) (env : Env) (ctx : Ctx) (fr : Frame) (v : Value) (
       | none => bad
     | _ => bad
   let stPair (n : Nat) : Res Val := match argv with
-    | [a, x, y, .mem m] => match symAddr ctx v a with
-      | some p => writeRes what (Arm64.storePair n p x y m)
+    | [a, x, y, .mem m] => match pairAddr ctx v n a with
+      | some (p, q) => writeRes what (Arm64.storePair n p q x y m)
       | none => bad
     | _ => bad
   let stIdx (n scale : Nat) : Res Val := match argv with

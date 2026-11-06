@@ -61,7 +61,7 @@ theorem evalOpL_congr {faulting : Bool} {env : Env} {ctx ctx' : Ctx} {fr : Frame
     dsimp only at htabs hpar hact hsx
     subst htabs hpar hact
     unfold sxOf at hsx
-    unfold arm64Op nilFaults nilAccesses wildNil symAddr frameVal memRoot callOp callTarget
+    unfold arm64Op nilFaults nilAccesses wildNil pairAddr symAddr frameVal memRoot callOp callTarget
       atomicRoot Atomic.barrier
       Atomic.prefetch Atomic.rmwRoot Atomic.casRoot Atomic.rmw Atomic.cas Atomic.unmodelled
     simp only [hop, haux, hai, hid, hsx]

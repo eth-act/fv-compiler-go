@@ -64,9 +64,8 @@ theorem arm64Op_av {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} 
     | (cases h; done)
     | exact writeRes_av h (fun M hM => memAvoids_write (hargs (.mem _) (by simp)) hM
         (fun _ => storeBytes_av _ (hargs _ (by simp))))
-    | exact writeRes_av h (fun M hM => memAvoids_write (hargs (.mem _) (by simp)) hM
-        (fun _ => bav_append (storeBytes_av _ (hargs _ (by simp)))
-          (storeBytes_av _ (hargs _ (by simp)))))
+    | exact writeRes_av h (fun M hM => storePair_av (hargs (.mem _) (by simp)) hM
+        (storeBytes_av _ (hargs _ (by simp))) (storeBytes_av _ (hargs _ (by simp))))
     | exact callOp_avoids hfs hU (callArgs_av hU _ _ _ hargs) r h
     | exact memRoot_avoids hU hargs h
     | exact absurd h panicBounds_not_ok
@@ -204,8 +203,9 @@ theorem frameBlk_notUE {E : List AuxRef} {tabs : Tables} {n : AuxRef} (hn : n �
 /-- A value whose aux is no variable of `E` addresses no block of `UE E`. -/
 theorem symOK_of {E : List AuxRef} {ctx : Ctx} (hact : ctx.act = 0) {v : Value}
     (hv : ∀ n, v.aux = some n → n ∉ E) : SymOK (UE E) ctx v := by
-  intro a p ha hp
+  intro k a p ha hp
   unfold symAddr at hp
+  dsimp only at hp
   split at hp
   · rename_i n hn
     split at hp

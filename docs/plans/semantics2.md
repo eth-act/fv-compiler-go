@@ -189,6 +189,17 @@ comparison by block, `Convert` round-trips). Lowered code adds one: an `ADD p i`
 itself a pointer (rare; `unsafe` code) is computed on words, the sum of the two addresses
 (`poison` if one has none), symmetrically, as `ADD` is `commutative` and cse swaps its operands.
 
+**Pair accesses (#156, #385).** A pair load or store (`LDP`, `LDPW`, `LDPSW`, `FLDP{S,D,Q}`,
+`STP`, `STPW`, `FSTP{S,D,Q}`) of `n`-byte elements addresses element `i` as the single access
+at offset `auxInt + i*n` would (`Sem.pairAddr`: `symAddr` at `auxInt` and `auxInt + n`), and a
+pair store is the two element writes in order (`Arm64.storePair`). On a pointer or symbol base
+this is the first address moved by `n`, as before. On an integer base the machine computes
+`base + off + n`, which is `Ptr.ofAddr (base + off + n)`; the previous definition took the
+first element's pointer moved by `n`, which differs from it where `base + off` and
+`base + off + n` fall in different windows of `Ptr.ofAddr` (the out-of-window point of #156).
+With this definition `pair`'s merge of two adjacent loads or stores is a refinement on every
+base. Phase 1 has no pair ops and is unchanged.
+
 **Totality.** ARM64 ops are total, as the instructions are: `UDIV`/`SDIV` by zero give 0, shifts
 take the amount modulo the width, `CLZ`/`RBIT` of 0 are defined. Passes rely on it: `loop
 invariant` hoists every `earlyOk` op (division included, `_gen/ARM64Ops.go:198-219`) out of

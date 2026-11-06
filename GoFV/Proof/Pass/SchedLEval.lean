@@ -243,6 +243,13 @@ theorem symAddr_symbolic {ctx : Ctx} {v : Value} (h : symbolic ctx.tabs v = true
         simp only [frameBlk]; split <;> simp
       | _ => simp at h
 
+/-- A symbolic value's pair addresses (`pairAddr`) do not depend on its base. -/
+theorem pairAddr_symbolic {ctx : Ctx} {v : Value} (h : symbolic ctx.tabs v = true) (n : Nat) :
+    ∃ pq, ∀ a, pairAddr ctx v n a = some pq := by
+  obtain ⟨q, -, hq⟩ := symAddr_symbolic h
+  obtain ⟨q', -, hq'⟩ := symAddr_symbolic (ctx := ctx) (v := { v with auxInt := v.auxInt + Int64.ofNat n }) h
+  exact ⟨(q, q'), fun a => by simp only [pairAddr, hq, hq', Option.bind_some, Option.map_some]⟩
+
 /-- A nil-page access through `symAddr`: the base without a symbol, at some offset. -/
 theorem symAddr_nilFault {ctx : Ctx} {v : Value} {a : Val} {q : Ptr}
     (h : symAddr ctx v a = some q) (hq : q.nilFault = true) : ∃ k, Arm64.addr a k = some q := by
@@ -525,13 +532,16 @@ theorem arm64Op_arg0 {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {ty : Ty} 
     {rest : List Val} (hop : v.op ∈ symAddrOps) (hs : symbolic ctx.tabs v = true) :
     ResSim (arm64Op true env ctx fr v (a :: rest) ty) (arm64Op true env ctx fr v (a' :: rest) ty) := by
   obtain ⟨q, -, hall⟩ := symAddr_symbolic hs
+  obtain ⟨_, h4⟩ := pairAddr_symbolic hs 4
+  obtain ⟨_, h8⟩ := pairAddr_symbolic hs 8
+  obtain ⟨_, h16⟩ := pairAddr_symbolic hs 16
   have hn : ∀ l, nilFaults true ctx v l = none := fun l => nilFaults_symbolic hop hs
   unfold arm64Op
   simp only [hn]
   simp only [symAddrOps, ldOps, stOps, List.mem_append, List.mem_cons, List.not_mem_nil,
     or_false] at hop
   rcases hop with ((h|h|h|h|h|h|h|h|h|h|h|h|h|h|h|h)|(h|h|h|h|h|h|h|h|h|h|h|h))|h <;> rw [h] <;>
-    dsimp only <;> simp only [hall] <;>
+    dsimp only <;> simp only [hall, h4, h8, h16] <;>
     exact ⟨fun y hy => by
         split at hy <;> (try (obtain ⟨-, rfl⟩ := ‹_ ∧ rest = _›)) <;> simp_all [ite_stuck_ne_ok],
       fun e m hm => by

@@ -73,11 +73,16 @@ theorem load16_eq {M M' : Mem} (hM : Mem.EqOff U M M') {p : Ptr} (hp : ¬ U p.bl
     Arm64.load16 M' p = Arm64.load16 M p := by
   unfold Arm64.load16; rw [EqOff.read hM p _ hp]
 
-theorem loadPair_eq {M M' : Mem} (hM : Mem.EqOff U M M') {p : Ptr} (hp : ¬ U p.blk) (ty : Ty)
-    (n : Nat) (sg : Bool) : Arm64.loadPair ty n sg M' p = Arm64.loadPair ty n sg M p := by
-  have hp' : ∀ k, ¬ U (p.add k).blk := fun k => by rw [add_ptr_blk]; exact hp
+theorem loadElt_eq {M M' : Mem} (hM : Mem.EqOff U M M') {p : Ptr} (hp : ¬ U p.blk) (ty : Ty)
+    (n : Nat) (sg : Bool) : Arm64.loadElt ty n sg M' p = Arm64.loadElt ty n sg M p := by
+  unfold Arm64.loadElt
+  rw [load16_eq hM hp, loadN_eq hM hp]
+
+theorem loadPair_eq {M M' : Mem} (hM : Mem.EqOff U M M') {p q : Ptr} (hp : ¬ U p.blk)
+    (hq : ¬ U q.blk) (ty : Ty) (n : Nat) (sg : Bool) :
+    Arm64.loadPair ty n sg M' p q = Arm64.loadPair ty n sg M p q := by
   unfold Arm64.loadPair
-  rw [load16_eq hM hp, load16_eq hM (hp' _), loadN_eq hM hp, loadN_eq hM (hp' _)]
+  rw [loadElt_eq hM hp, loadElt_eq hM hq]
 
 theorem elim_ld_eq {ctx : Ctx} {v : Value} (hs : SymOK U ctx v) {a : Val} (ha : Val.Avoids U a)
     {M M' : Mem} (hM : Mem.EqOff U M M') (ty : Ty) (n : Nat) (sg : Bool) :
@@ -85,15 +90,17 @@ theorem elim_ld_eq {ctx : Ctx} {v : Value} (hs : SymOK U ctx v) {a : Val} (ha : 
       (symAddr ctx v a).elim .poison (Arm64.loadN ty n sg M) := by
   cases hp : symAddr ctx v a with
   | none => rfl
-  | some p => exact loadN_eq hM (hs a p ha hp) ty n sg
+  | some p => exact loadN_eq hM (hs _ a p ha hp) ty n sg
 
 theorem elim_ldPair_eq {ctx : Ctx} {v : Value} (hs : SymOK U ctx v) {a : Val}
     (ha : Val.Avoids U a) {M M' : Mem} (hM : Mem.EqOff U M M') (ty : Ty) (n : Nat) (sg : Bool) :
-    (symAddr ctx v a).elim .poison (Arm64.loadPair ty n sg M') =
-      (symAddr ctx v a).elim .poison (Arm64.loadPair ty n sg M) := by
-  cases hp : symAddr ctx v a with
+    ((pairAddr ctx v n a).elim .poison fun pq => Arm64.loadPair ty n sg M' pq.1 pq.2) =
+      ((pairAddr ctx v n a).elim .poison fun pq => Arm64.loadPair ty n sg M pq.1 pq.2) := by
+  cases hp : pairAddr ctx v n a with
   | none => rfl
-  | some p => exact loadPair_eq hM (hs a p ha hp) ty n sg
+  | some pq =>
+    obtain ⟨h1, h2⟩ := pairAddr_eq_some hp
+    exact loadPair_eq hM (hs _ a _ ha h1) (hs _ a _ ha h2) ty n sg
 
 theorem elim_ld16_eq {ctx : Ctx} {v : Value} (hs : SymOK U ctx v) {a : Val}
     (ha : Val.Avoids U a) {M M' : Mem} (hM : Mem.EqOff U M M') :
@@ -101,7 +108,7 @@ theorem elim_ld16_eq {ctx : Ctx} {v : Value} (hs : SymOK U ctx v) {a : Val}
       (symAddr ctx v a).elim .poison (Arm64.load16 M) := by
   cases hp : symAddr ctx v a with
   | none => rfl
-  | some p => exact load16_eq hM (hs a p ha hp)
+  | some p => exact load16_eq hM (hs _ a p ha hp)
 
 /-- The same write on related memories. -/
 theorem writeRes_rel {what : String} {M M' : Mem} (hM : Mem.EqOff U M M') {p : Ptr}
@@ -113,6 +120,20 @@ theorem writeRes_rel {what : String} {M M' : Mem} (hM : Mem.EqOff U M M') {p : P
     rw [hw] at h; cases h
     obtain ⟨M1', hw', hM1⟩ := EqOff.write hM hw
     exact ⟨_, by rw [hw']; rfl, .mem hM1⟩
+
+/-- The same pair store on related memories. -/
+theorem storePair_rel {what : String} {M M' : Mem} (hM : Mem.EqOff U M M') {n : Nat} {p q : Ptr}
+    {a b y : Val} (h : writeRes what (Arm64.storePair n p q a b M) = .ok y) :
+    ∃ y', writeRes what (Arm64.storePair n p q a b M') = .ok y' ∧ VR U y y' := by
+  cases hw : Arm64.storePair n p q a b M with
+  | none => rw [hw] at h; cases h
+  | some M1 =>
+    rw [hw] at h; cases h
+    unfold Arm64.storePair at hw
+    obtain ⟨M2, h1, h2⟩ := Option.bind_eq_some_iff.1 hw
+    obtain ⟨M2', h1', hM2⟩ := EqOff.write hM h1
+    obtain ⟨M1', h2', hM1⟩ := EqOff.write hM2 h2
+    exact ⟨_, by unfold Arm64.storePair; rw [h1', Option.bind_some, h2']; rfl, .mem hM1⟩
 
 /-! ## Calls -/
 
@@ -218,8 +239,10 @@ theorem armA_ok {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} {fr
        simp only [List.cons_append, List.nil_append] at *
        try simp only [‹symAddr ctx v _ = some _›]
        try simp only [‹Arm64.addr _ 0 = some _›]
+       try simp only [‹pairAddr ctx v _ _ = some _›]
        first
          | exact writeRes_rel hM h
+         | exact storePair_rel hM h
          | (cases h
             first
               | exact ⟨_, rfl, by rw [elim_ld_eq hs (hL _ (by simp)) hM]; exact .refl _⟩

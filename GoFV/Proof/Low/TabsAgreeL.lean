@@ -37,6 +37,11 @@ theorem symAddr_tabs (h : AuxAgree ctx.tabs tabs' v.aux) (a : Val) :
     · rw [h.frameBlk]
     · rfl
 
+theorem pairAddr_tabs (h : AuxAgree ctx.tabs tabs' v.aux) (n : Nat) (a : Val) :
+    pairAddr { ctx with tabs := tabs' } v n a = pairAddr ctx v n a := by
+  unfold pairAddr
+  rw [symAddr_tabs h, symAddr_tabs (v := { v with auxInt := v.auxInt + Int64.ofNat n }) h]
+
 theorem nilFaults_tabs (h : AuxAgree ctx.tabs tabs' v.aux) (faulting : Bool) (argv : List Val) :
     nilFaults faulting { ctx with tabs := tabs' } v argv = nilFaults faulting ctx v argv := by
   unfold nilFaults nilAccesses
@@ -71,7 +76,7 @@ theorem arm64Op_tabs (h : AuxAgree ctx.tabs tabs' v.aux) (faulting : Bool) (env 
   have hlk : ∀ n : Option AuxRef, n = v.aux → n.bind tabs'.aux? = n.bind ctx.tabs.aux? := by
     intro n hn; rw [hn]; exact h.lookup
   unfold arm64Op
-  simp only [nilFaults_tabs h, symAddr_tabs h, h.callABI, hfit, callOp_tabs (hgen _),
+  simp only [nilFaults_tabs h, symAddr_tabs h, pairAddr_tabs h, h.callABI, hfit, callOp_tabs (hgen _),
     memRoot_tabs (hgen _), frameVal_tabs (hgen _), hlk v.aux rfl]
 
 theorem evalOpL_tabs (h : AuxAgree ctx.tabs tabs' v.aux) (faulting : Bool) (env : Env)
