@@ -20,7 +20,10 @@ cover starting from the proven rules (`GoFV.Opt.lowerProvenTable`; row 0), the n
 `--next-md FILE` writes the `NEXT` table and the ceiling's rejection classes as a markdown
 document (`docs/proofs/lower-next.md`).
 
-Usage: `lower-probe [--jobs N] [--next-md FILE] <dir|file>...`.
+Usage: `lower-probe [--jobs N] [--next-md FILE] [--dump FILE] <dir|file>...`. With
+`LOWER_PROBE_LEAVES=l1,l2,…` it also prints one `LEAF line classes file` row per instance of a rule
+on those `ARM64.rules` lines: per leaf of the pattern, its definition's op (`*` if an atom) or `N`
+at a non-word shape (`leafStatsL`).
 -/
 
 open GoFV.SSA GoFV.Opt GoFV.Rules
