@@ -34,7 +34,7 @@ input `f`, and the output `g` must have the replayed definitions. The difference
   `ADDconst [0]` into the lowered frame address it reads (`650` at offset 0, whose result is an
   atom) is replayed as no change (`addrFoldEv`), and the later folds see through it (`frameAddr`);
   so is one lowering `OffPtr [off] SP` to `MOVDaddr [off] SP` (`305`, `spFoldEv`), which a store
-  then folds as an offset (`stFold`);
+  then folds as an offset (`stFold`) and a load replays as the folded load (`ldOffFold`);
 * a rule event folding a constant operand into a lowered bounds panic (`ARM64.rules:513-516`) is
   replayed as no change (`pbFoldEv`): the output's `LoweredPanicBounds{RC,CR,CC}` must keep the
   replayed `LoweredPanicBoundsRR`'s other arguments (`pbFinal`), and its aux constants are the
@@ -316,6 +316,30 @@ def frameFold (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value)
     | none => none
   | _, _ => none
 
+/-- A rule event at the integer load `x` at `v` (no aux) whose address is `OffPtr [k2] b` in `M`
+(`305`'s `MOVDaddr [k2] SP`, replayed as no change, `spFoldEv`) replayed as the load `u` of `b` at
+offset `k1 + k2` (`(MOV…load [off1] {sym1} (MOVDaddr [off2] {sym2} ptr) mem) && canMergeSym(sym1,sym2)
+… => (MOV…load [off1+off2] {mergeSym(sym1,sym2)} ptr mem)`, `ARM64.rules:832-856`, without a
+symbol): the same op and type, the `OffPtr` a term at a word shape on a value of `M`, all three
+offsets small and non-negative (`offOK`). -/
+def ldOffFold (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Option Value :=
+  match M.get? v, defs with
+  | some x, [_, u] =>
+    match x.args[0]? with
+    | none => none
+    | some p =>
+    match M.get? p with
+    | some y =>
+      if x.id == v && u.id == v && u.op == x.op && u.type == x.type && (ldOp? x.op).isSome &&
+          x.aux == none && u.aux == none && x.args.size == 2 && offOK x.auxInt &&
+          offOK u.auxInt && y.op == .OffPtr && termVL tabs y && y.args.size == 1 &&
+          wordShape (shpL tabs y.type) && offOK y.auxInt &&
+          u.auxInt.toInt == x.auxInt.toInt + y.auxInt.toInt && u.args == #[y.args[0]!, x.args[1]!] &&
+          (M.get? y.args[0]!).isSome
+      then some u else none
+    | none => none
+  | _, _ => none
+
 /-- A rule event at the renamed bounds panic `LoweredPanicBoundsRR` at `v` building a lowered
 bounds panic with constant operands (`pbKeep`; `ARM64.rules:513-516`, the later ones on the
 result of the first): the replay keeps `v`'s definition, which `finalOKL` relates to the output's
@@ -504,7 +528,10 @@ def replayL (tabs : Tables) (t : Interp.Table) (f : Func) :
             | none =>
               match frameFold tabs f M v defs.toList with
               | some u => replayL tabs t f (M.put v u) B evs
-              | none => none
+              | none =>
+                match ldOffFold tabs M v defs.toList with
+                | some u => replayL tabs t f (M.put v u) B evs
+                | none => none
   | M, B, .copyArg v i src :: evs =>
     match M.get? v with
     | none => none

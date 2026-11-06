@@ -1208,14 +1208,13 @@ theorem termVL_ld {x : Value} {p : Nat × Bool} (hl : ldOp? x.op = some p) :
   simp only [termVL, hg, hm, hl, Bool.false_eq_true, ite_false, Option.isSome_some, ite_true]
 
 /-- **Replacing the term `x` at `v` by the term `u`** refines every denotation, where the top
-node does (`htop`) for argument values refining each other whose value at `a0` is `a0`'s
-denotation (`poison` or a frame variable's address word, `hden`). -/
-theorem framePut_den {v a0 : ID} {x u : Value} {n : AuxRef} (hx : M.get? v = some x)
+node does (`htop`) for argument values refining each other that have a property `P` every
+denotation of `M` has (`hP`: e.g. an address argument's value is `poison` or a frame variable's
+address word). -/
+theorem termPut_den {v : ID} {x u : Value} {P : (ID → Val) → Prop} (hx : M.get? v = some x)
     (hxt : termVL tabs x = true) (hut : termVL tabs u = true) {ρ : ID → Val}
-    (hden : ∀ k, denL true M.get? tabs ρ k a0 = .poison ∨
-      denL true M.get? tabs ρ k a0 = (framePtr tabs 0 n).word)
-    (htop : ∀ F G : ID → Val, (∀ a, Sem.Refines (F a) (G a)) →
-      (F a0 = .poison ∨ F a0 = (framePtr tabs 0 n).word) →
+    (hP : ∀ k, P (denL true M.get? tabs ρ k))
+    (htop : ∀ F G : ID → Val, (∀ a, Sem.Refines (F a) (G a)) → P F →
       Sem.Refines
         ((opValL tabs x.op (shpL tabs x.type) x.auxInt x.aux (x.args.toList.map F)).retypeL
           (shpL tabs x.type))
@@ -1224,12 +1223,12 @@ theorem framePut_den {v a0 : ID} {x u : Value} {n : AuxRef} (hx : M.get? v = som
     ∀ k y, Sem.Refines (denL true M.get? tabs ρ k y) (denL true (M.put v u).get? tabs ρ k y)
   | 0, _ => .poison _
   | k + 1, y => by
-    have ih := fun a => framePut_den hx hxt hut hden htop k a
+    have ih := fun a => termPut_den hx hxt hut hP htop k a
     by_cases hyv : y = v
     · subst hyv
       have hnew : (M.put y u).get? y = some u := by rw [get?_put]; simp
       rw [denT_succ hx hxt, denT_succ hnew hut]
-      exact htop _ _ ih (hden k)
+      exact htop _ _ ih (hP k)
     · have h' : (M.put v u).get? y = M.get? y := by rw [get?_put]; simp [hyv]
       cases hmy : M.get? y with
       | none =>
@@ -1254,7 +1253,7 @@ the term `x` at `v`, whose address argument is a lowered frame address (`frameAd
 `MOVDaddr {n}` of a `LocalAddr {n}` of `f`, or `ADDconst [0]` of it), becomes the load of `n` or
 `MOVDaddr {n}` at the same offset. Its denotation refines the old one where the valuation holds
 the frame addresses of activation 0 (`FrameVals`; `frameAddr_den`, `ldVal_frameFold`,
-`addConst_frameFold`): the step `M → M.put v u` refines every denotation, and `ReplayInvL`
+`addConst_frameFold`, `termPut_den`): the step `M → M.put v u` refines every denotation, and `ReplayInvL`
 carries over. -/
 theorem ReplayInvL.frameFold {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : ID}
     {defs : List Value} {u : Value} (hI : ReplayInvL tabs D₀ C₀ M C)
@@ -1296,7 +1295,8 @@ theorem ReplayInvL.frameFold {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : I
       exact addConst_frameFold hname hk hw hF _
   have hstep : ∀ ρ, TypedL true M.get? tabs ρ → FrameVals tabs 0 D₀ ρ → ∀ n y, C y →
       Sem.Refines (denL true M.get? tabs ρ n y) (denL true (M.put v u).get? tabs ρ (id n) y) :=
-    fun ρ _ hF n y _ => framePut_den hx hxt hut (n := nn)
+    fun ρ _ hF n y _ => termPut_den hx hxt hut
+      (P := fun F => F x.args[0]! = .poison ∨ F x.args[0]! = (framePtr tabs 0 nn).word)
       (frameAddr_den hD hfa hlf hlop (by rw [hlax, hnn]) hnn hF) htop n y
   have hcl : C v → ∀ z ∈ u.args, C z := fun hv z hz => by
     have hxa' := closed_args hI.closed hx hv
@@ -1315,6 +1315,139 @@ theorem ReplayInvL.frameFold {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : I
     · rw [huargs] at hz
       simp only [List.mem_toArray, List.mem_cons, List.not_mem_nil, or_false] at hz
       rw [hz]; exact hm0
+  refine ⟨{ closed := put_closed hcl hI.closed
+            sub := hI.sub
+            typed := fun ρ h => put_typed hx hty (by rw [hxt, hut]) (hI.typed ρ h)
+            denRef := fun y hy => denL_compose (g := id) (hI.denRef y hy) hI.typed
+              fun ρ hρ hF n => hstep ρ hρ hF n y (hI.sub y hy)
+            atoms := fun y a hy ha hargs => ?_ }, hstep⟩
+  obtain ⟨a', ha', hat, hrest⟩ := hI.atoms y a hy ha hargs
+  have hyv : y ≠ v := fun h => by subst h; rw [hx] at ha'; cases ha'; rw [hxt] at hat; cases hat
+  exact ⟨a', by rw [get?_put]; simp [hyv, ha'], hat, hrest.imp id fun hr =>
+    hr.step (g := id) (fun _ h => h) hI.typed hstep⟩
+
+/-! ### A load folding the offset of an `OffPtr` (`ldOffFold`) -/
+
+/-- What `ldOffFold` says. -/
+theorem ldOffFold_cases {v : ID} {defs : List Value} {u : Value}
+    (h : ldOffFold tabs M v defs = some u) :
+    ∃ x y bv, M.get? v = some x ∧ M.get? x.args[0]! = some y ∧ u.op = x.op ∧ u.type = x.type ∧
+      (ldOp? x.op).isSome = true ∧ x.aux = none ∧ u.aux = none ∧ x.args.size = 2 ∧
+      offOK x.auxInt = true ∧ y.op = .OffPtr ∧ termVL tabs y = true ∧ y.args.size = 1 ∧
+      wordShape (shpL tabs y.type) = true ∧ offOK y.auxInt = true ∧
+      u.auxInt.toInt = x.auxInt.toInt + y.auxInt.toInt ∧ u.args = #[y.args[0]!, x.args[1]!] ∧
+      M.get? y.args[0]! = some bv := by
+  unfold ldOffFold at h
+  split at h
+  · rename_i x _ u' hx
+    split at h
+    · cases h
+    rename_i p hp
+    have e : x.args[0]! = p := by simp [getElem!_def, hp]
+    subst e
+    split at h
+    · rename_i y hy
+      split at h
+      · rename_i hc
+        cases h
+        simp only [Bool.and_eq_true, beq_iff_eq] at hc
+        obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, -⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, -⟩, h11⟩, h12⟩, h13⟩, h14⟩,
+          h15⟩, h16⟩, h17⟩, h18⟩ := hc
+        obtain ⟨bv, hbv⟩ := Option.isSome_iff_exists.1 h18
+        exact ⟨x, y, bv, hx, hy, h3, h4, h5, h6, h7, h8, h9, h11, h12, h13, h14, h15, h16, h17, hbv⟩
+      · cases h
+    · cases h
+  · cases h
+
+/-- **The folded load offset**: an integer load at offset `k1` (no aux) of `OffPtr [k2] z` (at a
+word shape) is refined by the load at `k1 + k2` of any refinement of `z`, on a refined memory
+(`offPtr_cases`, `addr_fold`). -/
+theorem ldVal_offFold {T0 U : Ty} {z z' X X' : Val} (hz : z.hasTy T0 = true)
+    (hU : wordShape U = true) {k1 k2 k : Int64} (h1 : offOK k1 = true) (h2 : offOK k2 = true)
+    (hk : k.toInt = k1.toInt + k2.toInt) (hzz : Sem.Refines z z') (hX : Sem.Refines X X')
+    (sz : Nat) (s : Bool) (T : Ty) :
+    Sem.Refines (ldVal tabs sz s T k1 none [(PtrOps.offPtr k2 [z]).retypeL U, X])
+      (ldVal tabs sz s T k none [z', X']) := by
+  obtain ⟨b1, -⟩ := offOK_toNat h1
+  obtain ⟨b2, -⟩ := offOK_toNat h2
+  have hp : symPtr tabs k1 none ((PtrOps.offPtr k2 [z]).retypeL U) = none ∨
+      symPtr tabs k1 none ((PtrOps.offPtr k2 [z]).retypeL U) = symPtr tabs k none z := by
+    simp only [symPtr]
+    rcases offPtr_cases hU k2 z with h0 | h0
+    · left; rw [h0, retypeL_poison]; rfl
+    · rw [h0]
+      rcases addr_fold hz (argWidth_of_wordShape hU) b1 b2 with h | h
+      · exact .inl h
+      · right; rw [h, hk, BitVec.ofInt_add]
+  rcases hp with hp | hp
+  · have : ldVal tabs sz s T k1 none [(PtrOps.offPtr k2 [z]).retypeL U, X] = .poison := by
+      cases X <;> simp only [ldVal, hp, Option.elim]
+    rw [this]; exact .poison _
+  · have : ldVal tabs sz s T k1 none [(PtrOps.offPtr k2 [z]).retypeL U, X] =
+        ldVal tabs sz s T k none [z, X] := by
+      cases X <;> simp only [ldVal, hp]
+    rw [this]
+    exact ldVal_mono tabs sz s T k none (.cons hzz (.cons hX .nil))
+
+/-- **An `OffPtr` offset folded into an integer load** (`ldOffFold`): the load `x` at `v` of
+`OffPtr [k2] b` becomes the load `u` of `b` at `k1 + k2`. Its denotation refines the old one
+(`ldVal_offFold`, `termPut_den`): the step `M → M.put v u` refines every denotation, and
+`ReplayInvL` carries over. -/
+theorem ReplayInvL.ldOffFold {v : ID} {defs : List Value} {u : Value}
+    (hI : ReplayInvL tabs D₀ C₀ M C) (hld : ldOffFold tabs M v defs = some u) :
+    ReplayInvL tabs D₀ C₀ (M.put v u) C ∧
+      ∀ ρ, TypedL true M.get? tabs ρ → FrameVals tabs 0 D₀ ρ → ∀ n y, C y →
+        Sem.Refines (denL true M.get? tabs ρ n y) (denL true (M.put v u).get? tabs ρ (id n) y) := by
+  obtain ⟨x, y, bv, hx, hy, hop, hty, hl0, hxa, hua, hsz, hk1, hyop, hyt, hysz, hyw, hk2, hk,
+    huargs, hbv⟩ := ldOffFold_cases hld
+  obtain ⟨⟨sz, sg⟩, hl⟩ := Option.isSome_iff_exists.1 hl0
+  obtain ⟨hg, hmd⟩ := ldOp_arm hl
+  have hxt : termVL tabs x = true := termVL_ld hl
+  have hut : termVL tabs u = true := termVL_ld (p := (sz, sg)) (by rw [hop]; exact hl)
+  have hyl : y.args.toList = [y.args[0]!] := congrArg Array.toList (args_one hysz)
+  have hxl : x.args.toList = [x.args[0]!, x.args[1]!] := congrArg Array.toList (args_two hsz)
+  have hul : u.args.toList = [y.args[0]!, x.args[1]!] := by rw [huargs]
+  let P : (ID → Val) → Prop := fun F => F x.args[0]! = .poison ∨
+    ∃ w, w.hasTy (shpL tabs bv.type) = true ∧ Sem.Refines w (F y.args[0]!) ∧
+      F x.args[0]! = (PtrOps.offPtr y.auxInt [w]).retypeL (shpL tabs y.type)
+  have htop : ∀ F G : ID → Val, (∀ a, Sem.Refines (F a) (G a)) → P F →
+      Sem.Refines
+        ((opValL tabs x.op (shpL tabs x.type) x.auxInt x.aux (x.args.toList.map F)).retypeL
+          (shpL tabs x.type))
+        ((opValL tabs u.op (shpL tabs u.type) u.auxInt u.aux (u.args.toList.map G)).retypeL
+          (shpL tabs u.type)) := by
+    intro F G hFG hPF
+    rw [hop, hty, hxa, hua, hxl, hul]
+    simp only [List.map_cons, List.map_nil]
+    rw [opValL_ld hg hmd hl, opValL_ld hg hmd hl]
+    apply retypeL_mono
+    rcases hPF with h0 | ⟨w, hw, hwb, h0⟩
+    · rw [h0]
+      have : ldVal tabs sz sg (shpL tabs x.type) x.auxInt none [.poison, F x.args[1]!] = .poison := by
+        cases F x.args[1]! <;> rfl
+      rw [this]; exact .poison _
+    · rw [h0]
+      exact ldVal_offFold hw hyw hk1 hk2 hk (hwb.trans (hFG _)) (hFG _) _ _ _
+  have hP : ∀ ρ, TypedL true M.get? tabs ρ → ∀ k, P (denL true M.get? tabs ρ k) := fun ρ hT k => by
+    rcases k with _ | k
+    · exact .inl rfl
+    · refine .inr ⟨denL true M.get? tabs ρ k y.args[0]!, den_hasTyL hT k hbv,
+        denL_fuel_mono true M.get? tabs ρ k (k + 1) _ (by omega), ?_⟩
+      rw [denT_succ hy hyt, hyop, hyl]
+      simp only [List.map_cons, List.map_nil, opValL_offPtr]
+  have hstep : ∀ ρ, TypedL true M.get? tabs ρ → FrameVals tabs 0 D₀ ρ → ∀ n y, C y →
+      Sem.Refines (denL true M.get? tabs ρ n y) (denL true (M.put v u).get? tabs ρ (id n) y) :=
+    fun ρ hT _ n z _ => termPut_den hx hxt hut (hP ρ hT) htop n z
+  have hcl : C v → ∀ z ∈ u.args, C z := fun hv z hz => by
+    have hxa' := closed_args hI.closed hx hv
+    have h0 : C x.args[0]! :=
+      hxa' _ (by rw [getElem!_pos x.args 0 (by omega)]; exact Array.getElem_mem _)
+    rw [huargs] at hz
+    simp only [List.mem_toArray, List.mem_cons, List.not_mem_nil, or_false] at hz
+    rcases hz with rfl | rfl
+    · exact closed_args hI.closed hy h0 _
+        (by rw [getElem!_pos y.args 0 (by omega)]; exact Array.getElem_mem _)
+    · exact hxa' _ (by rw [getElem!_pos x.args 1 (by omega)]; exact Array.getElem_mem _)
   refine ⟨{ closed := put_closed hcl hI.closed
             sub := hI.sub
             typed := fun ρ h => put_typed hx hty (by rw [hxt, hut]) (hI.typed ρ h)
@@ -1497,7 +1630,13 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
             obtain ⟨hI', hstep⟩ := hI.frameFold hD hld
             exact replayL_inv hs hD evs _ M' B B' C h hI'
               (hB.mono (g := id) (fun _ h => h) hI.typed hstep)
-          · cases h
+          · -- an `OffPtr` offset folded into a load (`ldOffFold`)
+            split at h
+            · rename_i u hld
+              obtain ⟨hI', hstep⟩ := hI.ldOffFold hld
+              exact replayL_inv hs hD evs _ M' B B' C h hI'
+                (hB.mono (g := id) (fun _ h => h) hI.typed hstep)
+            · cases h
   | .copyArg v i src :: evs, M, M', B, B', C, h, hI, hB => by
     unfold replayL at h
     split at h
