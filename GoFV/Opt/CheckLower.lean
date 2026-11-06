@@ -20,10 +20,9 @@ namespace GoFV.Opt
 open GoFV.SSA
 
 /-- `addressingModes(f)`: identity on arm64 (the only arch the port covers). -/
-def addressingModesPass : Pass := Pass.ofFunc fun env f => do
-  match env.config? "arch" with
-  | some #[.word "arm64"] => return f
-  | _ => throw "addressing modes: only arm64 is ported"
+def addressingModesPass : Pass := Pass.ofFunc fun env f =>
+  if env.config? "arch" = some #[.word "arm64"] then return f
+  else throw "addressing modes: only arm64 is ported"
 
 /-- Generic ops `checkLower` accepts unconditionally (`lower.go:31-34`). -/
 def CheckLower.residual : Op → Bool

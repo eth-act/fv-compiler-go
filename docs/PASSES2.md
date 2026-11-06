@@ -258,6 +258,8 @@ For comparison only, supported architectures combine the pointer expression into
 
 **Proof strategy & difficulty:** **parity S; refinement S.** Prove identity under `Config.arch = "arm64"` directly from the architecture switch (`addressingmodes.go:11-18`).
 
+**Proof (#385):** `GoFV.Proof.addressingModes_refinesL (h : addressingModesPass penv f = .ok out) : RefinesL out.tables out.func penv.tables f` (`GoFV/Proof/Pass/LowCong.lean`), from `addressingModes_eq` (`out.func = f ∧ out.tables = penv.tables`: the pass returns its input on arm64 and fails elsewhere); witness `GoFV.Proof.Witness.addressingModes_witness` (`GoFV/Proof/Witness/LowCong.lean`: lowered `clamp` returned unchanged, `clamp(5, 0, 10) = 5` under `runL`). Coverage: every arm64 section (the pass is the identity).
+
 **Issue summary:** Represent index-36 `addressing modes` as an ARM64 identity pass, skipped under `-N`. Do not port other architectures’ combination tables or introduce an ARM64 splitLoad hook; the target’s relevant address rewrites belong to `lower` (`compile.go:494`; `addressingmodes.go:9-18`; `_gen/ARM64.rules:657-914`).
 
 ### late lower — issue #390

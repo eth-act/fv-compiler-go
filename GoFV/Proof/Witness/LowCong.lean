@@ -2,12 +2,13 @@ import GoFV.Proof.Pass.LowCong
 import GoFV.Proof.Witness.ClampL
 
 /-!
-# Non-vacuity witnesses: `checkLower`, `likelyadjust`, `layout` on lowered `clamp`
+# Non-vacuity witnesses: `checkLower`, `likelyadjust`, `layout`, `addressing modes` on lowered `clamp`
 
 Each pass accepts `clampL` (by kernel evaluation); `likelyadjust` predicts `b1`'s branch
 `unlikely` (as Go does in section 49) and `layout` reorders the blocks to `b1 b3 b2 b5 b4` (on
-`clampL` itself, without `likelyadjust`'s prediction). By the pass theorems the outputs return
-`clamp(5, 0, 10) = 5` under `runL`, as the source does (`clampL_run5`).
+`clampL` itself, without `likelyadjust`'s prediction); `addressing modes` returns `clampL`. By the
+pass theorems the outputs return `clamp(5, 0, 10) = 5` under `runL`, as the source does
+(`clampL_run5`).
 -/
 
 namespace GoFV.Proof.Witness
@@ -68,6 +69,17 @@ theorem layout_witness :
     (p := layoutPass (clampLPassEnv "layout") clampL) (by decide +kernel)
   refine ⟨out, hp, hb, ?_⟩
   obtain ⟨fuel, m', h⟩ := RefinesL.returned_int (layout_refinesL hp) hm
+  exact ⟨fuel, m', h⟩
+
+theorem addressingModes_witness :
+    ∃ out, addressingModesPass (clampLPassEnv "addressing modes") clampL = .ok out ∧
+      out.func = clampL ∧
+      ∃ fuel m, runL Env.p1 out.tables out.func (clampArgs 5) {} fuel = .returned [.i64 5] m := by
+  obtain ⟨m, hm⟩ := clampL_run5
+  obtain ⟨out, hp, -⟩ := ok_of_toOption (P := fun _ => True)
+    (p := addressingModesPass (clampLPassEnv "addressing modes") clampL) (by decide +kernel)
+  refine ⟨out, hp, (addressingModes_eq hp).1, ?_⟩
+  obtain ⟨fuel, m', h⟩ := RefinesL.returned_int (addressingModes_refinesL hp) hm
   exact ⟨fuel, m', h⟩
 
 end GoFV.Proof.Witness
