@@ -909,6 +909,47 @@ private theorem atomicCas_mono (v : Value) (w : Width) (p : Ptr) {o o' n n' : Va
           exact .ok (.tuple (.cons (.bool false) (.cons (.mem hm) .nil)))
   · simp only [ha, Bool.false_eq_true, ↓reduceIte]; exact .stuck _ _
 
+/-- A read-modify-write on an operand `x` that the location's shape `t` stores as `poison` and
+reads as no integer is the one on `poison`, so the one on any operand refines it. -/
+theorem atomicRmw_poisonArg (v : Value) (k : Atomic.Kind) (t : Ty) (p : Ptr) {x : Val} (x' : Val)
+    (m : Mem) (he : encode t x = encode t .poison) (hi : x.asInt (Atomic.width t) = none) :
+    Res.Refines (Atomic.rmw v k t p x m) (Atomic.rmw v k t p x' m) := by
+  have hp : ∀ y : Val, y.asInt (Atomic.width t) = none →
+      ∀ f : BitVec (Atomic.width t).bits → BitVec (Atomic.width t).bits → Val,
+        int2 (Atomic.width t) f [m.load t p, y] = .poison := by
+    intro y hy f
+    simp only [int2, hy]
+    split <;> simp_all
+  have hs : encode t (Atomic.step k (Atomic.width t) (m.load t p) x).1 =
+        encode t (Atomic.step k (Atomic.width t) (m.load t p) .poison).1 ∧
+      (Atomic.step k (Atomic.width t) (m.load t p) x).2 =
+        (Atomic.step k (Atomic.width t) (m.load t p) .poison).2 := by
+    cases k <;>
+      simp only [Atomic.step, GoFV.SSA.Sem.Int.add, GoFV.SSA.Sem.Int.and, GoFV.SSA.Sem.Int.or, he,
+        hp x hi, hp .poison rfl, and_self]
+  have h : Atomic.rmw v k t p x m = Atomic.rmw v k t p .poison m := by
+    unfold Atomic.rmw; rw [hs.1, hs.2]
+  rw [h]; exact atomicRmw_mono v k t p (.poison x') (Mem.Refines.refl m)
+
+/-- A compare-and-swap whose old operand is no `w`-bit integer is `stuck`: anything refines it. -/
+theorem atomicCas_stuckArg (v : Value) (w : Width) (p : Ptr) {o : Val} (n : Val) (m : Mem)
+    (ho : o.asInt w = none) (r : Res Val) : Res.Refines (Atomic.cas v w p o n m) r := by
+  unfold Atomic.cas
+  split
+  · split
+    · next heq => rw [ho] at heq; simp at heq
+    · exact .stuck _ _
+  · exact .stuck _ _
+
+/-- A compare-and-swap whose new operand the location stores as `poison` is refined by the one
+on any new operand. -/
+theorem atomicCas_poisonArg (v : Value) (w : Width) (p : Ptr) (o : Val) {n : Val} (n' : Val)
+    (m : Mem) (he : encode (.int w) n = encode (.int w) .poison) :
+    Res.Refines (Atomic.cas v w p o n m) (Atomic.cas v w p o n' m) := by
+  have h : Atomic.cas v w p o n m = Atomic.cas v w p o .poison m := by
+    unfold Atomic.cas; rw [he]
+  rw [h]; exact atomicCas_mono v w p (Sem.Refines.refl o) (.poison n') (Mem.Refines.refl m)
+
 /-- **The atomic roots are monotone.** -/
 theorem atomicRoot_mono (v : Value) {as bs : List Val} (h : RefinesList as bs) :
     Res.Refines (atomicRoot v as) (atomicRoot v bs) := by

@@ -541,14 +541,14 @@ theorem atomicArgs_av (hU : TempU U) (g : Op) {argv : List Val} (h : ∀ z ∈ a
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hz
     rcases hz with rfl | rfl | rfl
     · exact h _ (by simp)
-    · exact retypeL_av hU _ (h _ (by simp))
+    · exact fitPiece_av hU _ (h _ (by simp))
     · exact h _ (by simp)
   · intro z hz
     simp only [List.mem_cons, List.not_mem_nil, or_false] at hz
     rcases hz with rfl | rfl | rfl | rfl
     · exact h _ (by simp)
-    · exact retypeL_av hU _ (h _ (by simp))
-    · exact retypeL_av hU _ (h _ (by simp))
+    · exact fitPiece_av hU _ (h _ (by simp))
+    · exact fitPiece_av hU _ (h _ (by simp))
     · exact h _ (by simp)
   · exact h
 
