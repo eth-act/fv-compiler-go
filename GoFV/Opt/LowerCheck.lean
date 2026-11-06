@@ -168,7 +168,7 @@ def ruleOK1 (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (x : Value) (defs : L
     (match r.cond with
       | some c => match ev c with | .bool true => true | _ => false
       | none => true) &&
-    Pat.argsOK e.ty [] r.pat && Pat.topOKL (e.ty []) r.pat && Pat.argsOKL e.ty [] r.pat &&
+    Pat.argsOK e.ty [] r.pat && Pat.topOKL (e.ty []) r.pat && argsOKLr r.loc e.ty r.pat &&
     resFitsL (e.ty []) r.result && Pat.addrOKL e.ty e.aux e.auxInt [] r.pat && leavesOK M I [] r.pat &&
     resultOKL tabs M e r.pat ev or σ I r x defs
 
@@ -538,7 +538,7 @@ def blockOK1 (tabs : Tables) (M : Defs) (br : BlockRule) (pat : Pat) (st : BStat
         (match br.cond with
           | some cd => match ev cd with | .bool true => true | _ => false
           | none => true) &&
-        Pat.argsOK e.ty [] pat && Pat.topOKL (e.ty []) pat && Pat.argsOKL e.ty [] pat &&
+        Pat.argsOK e.ty [] pat && Pat.topOKL (e.ty []) pat && argsOKLr br.loc e.ty pat &&
         leavesOK M I [] pat &&
         blockAuxOKB br.auxInt st.auxInt then
       match builtL tabs M br e pat ev or σ I c nc, newAuxL ev br.newAuxInt with

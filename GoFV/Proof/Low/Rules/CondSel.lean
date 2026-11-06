@@ -9,8 +9,9 @@ import GoFV.Rules.Generated.ARM64
 in its derived form (`GoFV.Rules.Derive.flagSplit`): one rule `(CondSelect x y boolval:(cc f)) =>
 (CSEL [cc] x y f)` per condition op `cc` (`condOps`). The boolean `cc f` is the condition `cc` of
 the flags `f` (`Arm64.cset`), which `CSEL [cc]` decides alike (`Cond.ofAux` of `cc`'s Go opcode
-number); the selected arm moves as its register (`regVal`), which a word shape (`topOKL`) reads
-back whole (`retypeL_regVal_word`).
+number); the selected arm moves as its register (`regVal`), which a word or integer shape
+(`topOKL`) reads back as the arm's own reading (`retypeL_regVal`: `Arm64.reg` zero-extends a
+narrow integer, `retypeL` keeps its low bits).
 -/
 
 namespace GoFV.Proof.Low.Rules
@@ -18,20 +19,21 @@ namespace GoFV.Proof.Low.Rules
 open GoFV.SSA GoFV.SSA.Sem GoFV.Rules GoFV.Proof.Rules GoFV.Proof.Low
 open GoFV.Rules.Generated.ARM64 GoFV.Rules.Derive
 
-/-- A register value moved unchanged (`regVal`) and read at a word shape is the value read at
-that shape. -/
-theorem retypeL_regVal_word {T : Ty} (hT : T = .int .w64 ∨ ∃ e, T = .ptr e) (X : Val) :
+/-- A register value moved unchanged (`regVal`) and read at a word or integer shape is the value
+read at that shape. -/
+theorem retypeL_regVal {T : Ty} (hT : (∃ w, T = .int w) ∨ ∃ e, T = .ptr e) (X : Val) :
     Refines (X.retypeL T) ((Arm64.regVal T X).retypeL T) := by
-  rcases hT with rfl | ⟨el, rfl⟩
+  rcases hT with ⟨⟨⟩, rfl⟩ | ⟨el, rfl⟩
   all_goals
     cases X with
     | ptr p => exact Refines.refl _
     | int w x =>
       cases w <;> simp [Arm64.regVal, Arm64.reg, Arm64.res, Val.retypeL, Val.widen, Val.retype,
-        Width.bits] <;> exact Refines.refl _
+        Width.bits, BitVec.setWidth_setWidth_of_le] <;> exact Refines.refl _
     | bool b =>
-      simp [Arm64.regVal, Arm64.reg, Arm64.res, Val.retypeL, Val.widen, Val.retype, Width.bits]
-      exact Refines.refl _
+      cases b <;>
+        simp [Arm64.regVal, Arm64.reg, Arm64.res, Val.retypeL, Val.widen, Val.retype, Width.bits] <;>
+        exact Refines.refl _
     | _ => simp [Arm64.regVal, Arm64.reg, Val.retypeL, Val.widen, Val.retype]; exact .poison _
 
 /-- A `CSET` result read as a boolean at any shape is the condition (or not a boolean). -/
@@ -43,9 +45,9 @@ theorem asBool_cset {Tc : Ty} {b b' : Bool}
       simp_all [Arm64.res, Val.retypeL, Val.widen, Val.retype, Val.asBool, Width.bits]
   | _ => cases b <;> simp_all [Arm64.res, Val.retypeL, Val.widen, Val.retype, Val.asBool]
 
-/-- **`CondSelect x y (cc f)` as `CSEL [cc] x y f`** at a word shape: both select by the condition
-of `cc` on `f` (`CSEL`'s auxint is `cc`'s Go opcode number, `hk`). -/
-theorem refines_condSel_csel {T : Ty} (hT : T = .int .w64 ∨ ∃ e, T = .ptr e) {cc : Op}
+/-- **`CondSelect x y (cc f)` as `CSEL [cc] x y f`** at a word or integer shape: both select by
+the condition of `cc` on `f` (`CSEL`'s auxint is `cc`'s Go opcode number, `hk`). -/
+theorem refines_condSel_csel {T : Ty} (hT : (∃ w, T = .int w) ∨ ∃ e, T = .ptr e) {cc : Op}
     (hk : Cond.ofAux (Int64.ofNat cc.goNum) = Cond.ofOp cc) (Tc : Ty) (X Y F : Val) :
     Refines (Val.retypeL T
       ((Val.retypeL Tc (Arm64.cset Tc cc [F])).asBool.elim Val.poison fun b => bif b then X else Y))
@@ -58,8 +60,8 @@ theorem refines_condSel_csel {T : Ty} (hT : T = .int .w64 ∨ ∃ e, T = .ptr e)
     · simp only [Option.elim, retypeL_poison]; exact .poison _
     · obtain rfl := asBool_cset hs
       cases b'
-      · exact retypeL_regVal_word hT Y
-      · exact retypeL_regVal_word hT X
+      · exact retypeL_regVal hT Y
+      · exact retypeL_regVal hT X
 
 /-- `flagSplit r_ARM64_302` on the condition op `cc`. -/
 def r302 (cc : Op) : Rule where
@@ -90,7 +92,7 @@ theorem r_ARM64_302_flag_sound : ForallL ArmRule.Checked (flagSplit r_ARM64_302)
     all_goals arm_shape
     all_goals arm_norm
     all_goals first
-      | exact refines_condSel_csel (.inl rfl) (by rfl) _ _ _ _
+      | exact refines_condSel_csel (.inl ⟨_, rfl⟩) (by rfl) _ _ _ _
       | exact refines_condSel_csel (.inr ⟨_, rfl⟩) (by rfl) _ _ _ _
 
 end GoFV.Proof.Low.Rules

@@ -21,6 +21,13 @@ open Lean Meta Elab Tactic
 
 attribute [rule_unfold_ds] GoFV.Proof.Low.auxIntDVL
 
+set_option hygiene false in
+/-- `harg : argsOKLr loc ty pat = true` (`loc` a literal) as `Pat.argsOKL ty [] pat = true`, or
+`Pat.argsOKLn` for the rules of `leafWideL`. -/
+macro "arm_argsL" : tactic => `(tactic| (try simp only [argsOKLr, leafWideL, Nat.reduceBEq,
+  Bool.false_or, Bool.or_false, Bool.true_or, Bool.or_true, Bool.false_and, Bool.true_and,
+  beq_self_eq_true, Bool.false_eq_true, ite_true, ite_false] at harg))
+
 /-- `ArmRule.Sound r` (`r` a constant, or a constant applied to closed arguments): one goal per
 commutation choice, unfolded (module doc). -/
 elab "arm_unfold" : tactic => do
@@ -57,9 +64,10 @@ elab "arm_unfold" : tactic => do
     intro $(mkIdent `hwf):ident $(mkIdent `hc):ident $(mkIdent `hcond):ident
       $(mkIdent `hty):ident $(mkIdent `hat):ident $(mkIdent `htop):ident $(mkIdent `harg):ident
       $(mkIdent `hcs):ident $(mkIdent `hfit):ident $(mkIdent `hadr):ident
-    (try simp (config := { decide := true }) only [Pat.argsOKL, Pat.argsOKLs, Bool.and_eq_true,
-      Bool.or_eq_true, decide_eq_true_eq, and_true, true_and, false_or, true_or, or_true,
-      Nat.reduceAdd] at $(mkIdent `harg):ident)
+    arm_argsL
+    (try simp (config := { decide := true }) only [Pat.argsOKL, Pat.argsOKLs, Pat.argsOKLn,
+      Pat.argsOKLns, Pat.isOpL, Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq, and_true,
+      true_and, false_or, true_or, or_true, Nat.reduceAdd] at $(mkIdent `harg):ident)
     (try simp only [copyShapeOK, sigmaL, Pat.bindsL, Pat.bindssL, Pat.denL, Pat.densL,
       rule_unfold_ds] at $(mkIdent `hcs):ident)
     (try dsimp only [GoFV.Proof.Rules.condHolds, rule_unfold_ds] at $(mkIdent `hcond):ident)
@@ -139,6 +147,7 @@ elab "arm_bunfold" : tactic => do
     intro $(mkIdent `hwf):ident $(mkIdent `hc):ident $(mkIdent `hcond):ident
       $(mkIdent `hty):ident $(mkIdent `hat):ident $(mkIdent `htop):ident $(mkIdent `harg):ident
       $(mkIdent `hb):ident $(mkIdent `hai):ident $(mkIdent `b):ident $(mkIdent `hbr):ident
+    arm_argsL
     (try simp only [Option.some.injEq] at $(mkIdent `hai):ident)
     (try subst $(mkIdent `hai):ident))))
 
