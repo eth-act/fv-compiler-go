@@ -99,10 +99,16 @@ for l in cfg.get("lean_lib", []):
     if l["name"] not in ("GoFV", "GoFVTest"):
         print("LIB " + l["name"])
 ')
+# a here-string, not `printf … | grep -q`: under pipefail, grep exiting at its first match while
+# printf still writes the ~30 KB list kills printf with SIGPIPE (status 141) and fails the check
+# at random, even with 64 KB pipes (measured: PIPESTATUS (141 0) in 9 of 4,500 checks, so about
+# one audit in eleven failed with "lean_exe root … is not audited" and passed on a rerun); more
+# often when the machine is loaded or pipes shrink to one page past pipe-user-pages-soft
+audited=$(printf '%s\n' "$lib" "$rest" "$roots")
 while read -r r; do
   [ -n "$r" ] || continue
   case $r in LIB\ *) echo "axioms-audit: lean_lib ${r#LIB } is not audited" >&2; exit 1 ;; esac
-  printf '%s\n' "$lib" "$rest" "$roots" | grep -qxF "$r" ||
+  grep -qxF "$r" <<<"$audited" ||
     { echo "axioms-audit: lean_exe root $r is not audited (outside GoFV/ and GoFVTest/)" >&2; exit 1; }
 done <<<"$exes"
 status=0

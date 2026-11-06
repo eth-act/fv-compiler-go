@@ -92,7 +92,7 @@ output, `guard` its remaining hypotheses, decided after the run on the input and
 | schedule | `schedulePass`, `runL` → `runSched` on `NoNilFault` and `ArgPtrsOK` of the input | `scheduleCheck` | `SchedL.schedule_refinesSchedL` |
 | late nilcheck | `nilcheckelim2Pass`, `RefinesSched` | `nilLateB` | `NilLateL.nilcheckelim2_refinesSched` |
 | flagalloc | `flagallocPass`, `RefinesSched` | `flagAllocB` | `FlagAllocL.flagalloc_refinesSched` |
-| regalloc | `regallocV`, `runSched` → `runLoc` | `tabsAgreeL` of the input in the output's tables, `checkRA` | `RA.checkRA_sound`, `runSched_tabsAgreeL` |
+| regalloc | `regallocV`, `runSched` → `runLoc` on `TempOblivious`, `FrameSafe`, `InitAvoids` | `tabsAgreeL` or `tabsAgreeModL` of the input in the output's tables, `checkRA` | `RA.checkRA_sound`, `runSched_tabsAgreeL`, `runSched_tabsAgreeModL` |
 | loop rotate, trim | the pass, `RefinesLoc` | trim: `trimRelB` | `loopRotate_refinesLoc`, `trim_refinesLoc` |
 
 Verdicts as before `lower`: `identity` (same function and tables in the same layer), `proven`,
@@ -103,6 +103,14 @@ call auxes' register caches (`CallABI.reg`, `AuxCall.Reg`/`ResultReg`, which onl
 reads in Go and no runner reads) dropped from its output tables (`eraseCallRegs`): they made
 every call aux of the input differ between the input's and the output's tables, so
 `tabsAgreeL` failed on every function with a call. Go's later phases do not read them.
+`regalloc`'s `stackalloc` (and its shuffle) also add the `PAUTO` names of new spill slots
+(`f.NewLocal`): running the input in the output's tables then allocates a frame block for each,
+which `tabsAgreeL` (same frame) rejects. `tabsAgreeModL` (`GoFV/Opt/TabsAgreeModL.lean`) accepts
+extra non-forgeable autos the input does not name, on the lowered fragment `tamOpOKL` (a memory-
+or tuple-shaped argument only last, for `tamMemOps` or `elim unread autos`' arm64 memory ops, the
+atomics and `LoweredGetCallerSP`); `runSched_tabsAgreeModL` (`GoFV/Proof/TabsAgreeModL.lean`,
+witness `clampS_run_spill`) is Phase 1's `run_tabsAgreeMod` for `runSched`, so the `regalloc`
+step's relation takes `TempOblivious ∧ FrameSafe ∧ InitAvoids` (all in `VPre`).
 
 `GoFV/Proof/Pass/PipelineFull.lean`: `LayerRefines P lt tabs' f' ls tabs f` is the refinement
 with the runner of each side given by its layer (`RefinesFrom`, `RefinesLFrom`,

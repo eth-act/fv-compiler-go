@@ -21,6 +21,7 @@ import GoFV.Proof.Pass.PairL
 import GoFV.Proof.Pass.LoopRotateLoc
 import GoFV.Proof.Pass.TrimLoc
 import GoFV.Proof.Regalloc.Sound
+import GoFV.Proof.TabsAgreeModL
 
 /-!
 # The verified pipeline through `trim` refines its input (issues #385, #189)
@@ -37,7 +38,9 @@ are its instances, and it composes (`LayerRefines.trans`).
 
 `regalloc`'s theorem `checkRA_sound` runs both sides in the `regalloc` section's tables; the
 source ran in the `flagalloc` section's. `runSched_tabsAgreeL`: when `tabsAgreeL` holds (Phase 1's
-`tabsAgree` and the lowered shapes of the function's values), the source runs alike in both.
+`tabsAgree` and the lowered shapes of the function's values), the source runs alike in both;
+`runSched_tabsAgreeModL`: so it does when `tabsAgreeModL` holds (the output tables add the autos
+of new spill slots), for inputs and contracts with `InitAvoids`, `TempOblivious`, `FrameSafe`.
 
 `loweredVPasses_sound`: every `proven` step of `GoFV.Opt.loweredVPasses` satisfies its theorem
 (`stepSoundL`). `verifiedPipelineFull_layer`: a `verified` result of `verifiedPipelineFull`
@@ -136,6 +139,8 @@ def lrelPre : LRel → Tables → Func → Env → List Val → Mem → Prop
   | .lower, _, _ => fun env _ _ => env.Mono
   | .lowFrame, _, _ => fun env args mem => env.FrameSafe ∧ InitAvoids env args mem
   | .sched, tabs, f => fun env args mem => NoNilFault tabs f env args mem ∧ ArgPtrsOK tabs f env args mem
+  | .ls, _, _ => fun env args mem =>
+    env.TempOblivious ∧ env.FrameSafe ∧ InitAvoids env args mem
   | _, _, _ => fun _ _ _ => True
 
 /-- The relation an `LRel` names. -/
@@ -250,15 +255,20 @@ theorem loweredVPasses_sound : ∀ p ∈ loweredVPasses.toList, stepSoundL p := 
     exact fun env args mem _ => FlagAllocL.flagalloc_refinesSched h (hw rfl).1 hg env args mem
   -- regalloc
   · refine ⟨rfl, fun penv f out _ _ hg => ?_⟩
-    simp only [regallocGuard, Bool.and_eq_true] at hg
+    simp only [regallocGuard, Bool.and_eq_true, Bool.or_eq_true] at hg
     obtain ⟨hta, hra⟩ := hg
     have R := RA.checkRA_sound (ok_of_toBoolF hra)
-    intro env args mem _ fuel hd
+    intro env args mem hpre fuel hd
     change (runSched env penv.tables f args mem fuel).Defined at hd
     show ∃ fuel', OutcomeRefines 0 (runSched env penv.tables f args mem fuel)
       (runLoc env out.tables out.func args mem fuel')
-    rw [← runSched_tabsAgreeL hta] at hd ⊢
-    exact R env args mem fuel hd
+    rcases hta with hta | hta
+    · rw [← runSched_tabsAgreeL hta] at hd ⊢
+      exact R env args mem fuel hd
+    · obtain ⟨hE, hfs, hinit⟩ := hpre
+      have h1 := runSched_tabsAgreeModL hta hE hfs hinit hd
+      obtain ⟨fuel', h2⟩ := R env args mem fuel h1.defined_right
+      exact ⟨fuel', h1.trans h2⟩
   -- loop rotate
   · exact ⟨rfl, fun _ _ _ h _ _ => loc_of (loopRotate_refinesLoc h)⟩
   -- trim
@@ -371,7 +381,8 @@ theorem pre_lrel {k : List Nat} {ro : List (String × Alloc)} {s : FState} (rel 
       unfold FState.nnfAfter
       exact List.mem_cons_self
     exact h.2 _ hm
-  | low | schedS | ls | loc => trivial
+  | ls => exact ⟨h.1.2.2.2.2.2.2.1, h.1.2.1, h.1.2.2.1⟩
+  | low | schedS | loc => trivial
 
 theorem nnfAfter_sub (s : FState) (rel : LRel) : ∀ x ∈ s.nnf, x ∈ s.nnfAfter rel := by
   intro x hx

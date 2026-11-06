@@ -641,6 +641,8 @@ import GoFV.Proof.SimLocSign
 import GoFV.Proof.Speculate
 import GoFV.Proof.TabsAgree
 import GoFV.Proof.TabsAgreeMod
+import GoFV.Proof.TabsAgreeModL
+import GoFV.Proof.TabsAgreeModLOps
 import GoFV.Proof.TabsAgreeModMem
 import GoFV.Proof.TabsAgreeModOps
 import GoFV.Proof.TabsAgreeModSim
@@ -662,6 +664,7 @@ import GoFV.Proof.Witness.CSEL
 import GoFV.Proof.Witness.Clamp
 import GoFV.Proof.Witness.ClampL
 import GoFV.Proof.Witness.ClampRA
+import GoFV.Proof.Witness.ClampRAMod
 import GoFV.Proof.Witness.CondSel
 import GoFV.Proof.Witness.ConstString
 import GoFV.Proof.Witness.CopyElim

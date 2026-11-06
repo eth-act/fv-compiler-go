@@ -118,7 +118,14 @@ value. Any certificate will do (`certify` is untrusted). No precondition on the 
 from `regalloc`'s output tables (`GoFV.Opt.Verified.regallocV`, `eraseCallRegs`; no runner and,
 after `regalloc`, no Go code reads them) and checks `tabsAgreeL` of `f` in them
 (`GoFV.Proof.PipelineFull.runSched_tabsAgreeL`; `docs/PASSES2.md` §0, "The verified pipeline
-through `trim`").
+through `trim`"). The output tables also define the autos of new spill slots (`stackalloc`'s
+`f.NewLocal`), which give the source's frame extra blocks; `tabsAgreeModL` accepts them
+(non-forgeable, unnamed by `f`, `f` in the fragment `tamOpOKL`) and
+`GoFV.Proof.runSched_tabsAgreeModL` shows the source runs alike, for inputs without pointers into
+frame temporaries (`InitAvoids`) and contracts that cannot tell whether unreachable temporaries
+exist (`TempOblivious`, `FrameSafe`). Before it, every function that spilled to a new slot was
+rejected (full-v9 on 1cedc332: all 5,147 functions whose first unverified run was `regalloc`, all
+21,197 rejected `regalloc` runs, were `tabsAgreeL frameLocals`).
 
 ## 5. The simulation
 

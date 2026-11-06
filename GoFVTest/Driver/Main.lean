@@ -628,6 +628,69 @@ structure VFile where
   /-- Deadcode and copyelim runs outside their fragment: log index, pass, failing conditions
   (`FragWhy.fragWhy`). -/
   frag : Array (Nat × String × Array String) := #[]
+  /-- A rejected `regalloc` run: its class (`raClass`) and the checker's message. -/
+  raWhy : Option (String × String) := none
+
+/-- The first conjunct of `LowerCheck.tabsAgreeL tabs tabs' f` that fails, with the first value or
+aux it fails on. -/
+def tabsWhy (tabs tabs' : Tables) (f : Func) : String × String := Id.run do
+  let ps := Sem.abiParams tabs f
+  let params := (ps.filter (!·.out)).map (·.name)
+  let ls := Sem.frameLocals tabs params
+  if decide ((Sem.abiParams tabs' f).toList ≠ ps.toList) then return ("abiParams", "")
+  if !ps.toList.all (fun p => Sem.Ty.beq (tabs'.ty p.type) (tabs.ty p.type)) then return ("paramTys", "")
+  if decide ((Sem.frameLocals tabs' params).toList ≠ ls.toList) then
+    return ("frameLocals", s!"{(Sem.frameLocals tabs' params).size} vs {ls.size}")
+  if !ls.toList.all (fun l => tabs'.forgeable l.1 == tabs.forgeable l.1) then return ("forgeable", "")
+  if Sem.outargsSize tabs' != Sem.outargsSize tabs then
+    return ("outargsSize", s!"{Sem.outargsSize tabs'} vs {Sem.outargsSize tabs}")
+  if decide (Sem.deferInfo tabs' ≠ Sem.deferInfo tabs) then return ("deferInfo", "")
+  let sh := Sem.typeShapes tabs
+  let sh' := Sem.typeShapes tabs'
+  let shL := Sem.typeShapesL tabs
+  let shL' := Sem.typeShapesL tabs'
+  for o in f.valueTab do
+    let some v := o | continue
+    if !Sem.Ty.beq (Sem.valueTy sh' o) (Sem.valueTy sh o) then return ("valueTy", s!"v{v.id} {v.op.name}")
+    if let some a := v.aux then
+      if decide (tabs'.aux? a ≠ tabs.aux? a) then return ("aux", s!"v{v.id} {v.op.name} a{a}")
+      if decide (tabs'.callee? a ≠ tabs.callee? a) then return ("callee", s!"v{v.id} {v.op.name}")
+      if !Sem.Ty.beq (Sem.auxTy tabs' (some a)) (Sem.auxTy tabs (some a)) then
+        return ("auxTy", s!"v{v.id} {v.op.name}")
+      if !GoFV.Opt.valueAuxAgree tabs tabs' o then return ("abiParamTys", s!"v{v.id} {v.op.name}")
+    if !Sem.Ty.beq (Sem.valueTy shL' o) (Sem.valueTy shL o) then return ("shapeL", s!"v{v.id} {v.op.name}")
+  return ("?", "")
+
+/-- Why `tabsAgreeModL tabs tabs' f` fails on a function `tabsAgreeL` rejects for its frame: a
+value not at its ID, the op of the first value outside `tamOpOKL`, or another conjunct. -/
+def modWhy (tabs : Tables) (f : Func) : String := Id.run do
+  if !idsOK f then return "ids"
+  for o in f.valueTab do
+    if let some v := o then
+      if !tamOpOKL tabs f v then return s!"op {v.op.name}"
+  return "frame"
+
+/-- Why the verified pipeline's `regalloc` guard (`regallocGuard`) rejects the run of `penv` on
+`f` (`diff`: the first pass whose state differs from stock, if one before `regalloc` does): the
+input's origin (`stock input` or `input differs at <pass>`), then the failing conjunct of
+`tabsAgreeL` (`tabsWhy`; for the frame, why `tabsAgreeModL` fails too, `modWhy`) or the first
+word of `checkRA`'s message; and the detail. -/
+def raClass (penv : PassEnv) (f : Func) (diff : Option (String × String × String)) :
+    String × String :=
+  let src := match diff with
+    | some (p, v, _) => s!"input differs at {p}: {v}"
+    | none => "stock input"
+  match regallocV penv f with
+  | .error e => (s!"{src} | error", e)
+  | .ok out =>
+    if !(LowerCheck.tabsAgreeL penv.tables out.tables f ||
+        tabsAgreeModL penv.tables out.tables f) then
+      let (c, d) := tabsWhy penv.tables out.tables f
+      let c := if c == "frameLocals" then s!"{c}, tabsAgreeModL: {modWhy penv.tables f}" else c
+      (s!"{src} | tabsAgreeL {c}", d)
+    else match RegallocCheck.checkRA out.tables f out.func with
+      | .ok () => (s!"{src} | accepted", "")
+      | .error m => (s!"{src} | {(m.splitOn " ").headD m}", m)
 
 /-- Run the verified pipeline through `trim` from section 0 of `e` (environment `env`, input
 tables `t0`), comparing the state after each pass with the stock section of that pass until the
@@ -641,6 +704,7 @@ def walkVerified (e : ExportFile) (x : ExportExt) (env : PassEnv) (t0 : Tables) 
   let mut want := t0
   let mut diff : Option (String × String × String) := none
   let mut frag : Array (Nat × String × Array String) := #[]
+  let mut raWhy : Option (String × String) := none
   -- the stock section `k` against the state after pass `name` (verdict `v`)
   let cmp (k : Nat) (want : Tables) (name v : String) (func : Func) (tables : Tables)
       (dcl : Option Nat) : Option (String × String × String) × Tables :=
@@ -674,6 +738,9 @@ def walkVerified (e : ExportFile) (x : ExportExt) (env : PassEnv) (t0 : Tables) 
     { st, dclLen := (x.dclLen? 0).getD 0 + newAutos t0 st.tables, genVerified := st.verified }
   for p in loweredVPasses do
     let fs' ← runPassL env fs p
+    if p.name == "regalloc" then
+      if let some (_, .unverified "rejected") := fs'.st.log.back? then
+        raWhy := some (raClass (fs.passEnv env p.name) fs.st.func diff)
     if fs'.st.log.size > fs.st.log.size then
       if diff.isNone then
         let v := match fs'.st.log.back? with | some (_, v) => toString v | none => "-"
@@ -681,7 +748,7 @@ def walkVerified (e : ExportFile) (x : ExportExt) (env : PassEnv) (t0 : Tables) 
         diff := d; want := w
       k := k + 1
     fs := fs'
-  if diff.isNone && k == e.sections.size then return { st := fs, diff, same := true, frag }
+  if diff.isNone && k == e.sections.size then return { st := fs, diff, same := true, frag, raWhy }
   if diff.isNone then
     diff := some (fs.st.last, "-", s!"{e.sections.size - k} stock sections after the last pass")
   let wantAll := (e.sections.extract 1 e.sections.size).foldl (fun t s => t.addAll s.defs) t0
@@ -690,7 +757,7 @@ def walkVerified (e : ExportFile) (x : ExportExt) (env : PassEnv) (t0 : Tables) 
       (compare t0 { func := fs.st.func, tables := fs.st.tables } (eraseCallRegs wantAll) s
         (loose := true)).isNone
     | none => false
-  return { st := fs, diff, same, frag }
+  return { st := fs, diff, same, frag, raWhy }
 
 /-- The verified pipeline on one export file, with the driver's type rounds. -/
 def verifiedExport (wholeFile : Bool) (e : ExportFile) (x : ExportExt) :
@@ -763,6 +830,10 @@ structure VStats where
   /-- Functions whose only unverified runs are deadcode runs outside their fragment, by the
   failing conditions of those runs (what widening them would verify). -/
   fragOnly : Std.HashMap String Nat := {}
+  /-- Rejected `regalloc` runs that are the first unverified run from `lower` on, by `raClass`. -/
+  raFirst : Std.HashMap String Nat := {}
+  /-- All rejected `regalloc` runs, by `raClass`. -/
+  raAll : Std.HashMap String Nat := {}
 
 def VStats.merge (a b : VStats) : VStats :=
   let mm (x y : Std.HashMap String Nat) := y.fold (fun m k n => bumpMap m k n) x
@@ -777,7 +848,8 @@ def VStats.merge (a b : VStats) : VStats :=
     reasons := mm a.reasons b.reasons, diverged := mm a.diverged b.diverged
     counts := (a.counts.zip b.counts).map fun (x, y) => x.add y
     reports := a.reports ++ b.reports, fragAll := mm a.fragAll b.fragAll
-    fragFirst := mm a.fragFirst b.fragFirst, fragOnly := mm a.fragOnly b.fragOnly }
+    fragFirst := mm a.fragFirst b.fragFirst, fragOnly := mm a.fragOnly b.fragOnly
+    raFirst := mm a.raFirst b.raFirst, raAll := mm a.raAll b.raAll }
 
 def verifiedFile (wholeFile : Bool) (maxReport : Nat) (path : System.FilePath) (st : VStats) :
     IO VStats := do
@@ -828,6 +900,10 @@ def verifiedFile (wholeFile : Bool) (maxReport : Nat) (path : System.FilePath) (
         | some (p, v) => s!"{p}: {v}"
         | none => "not allocated"
       st := { st with firstUnverifiedLow := bumpMap st.firstUnverifiedLow k }
+      if let some (c, m) := r.raWhy then
+        if k == "regalloc: unverified (rejected)" then
+          st := report { st with raFirst := bumpMap st.raFirst c } s!"regalloc {c}" m
+    if let some (c, _) := r.raWhy then st := { st with raAll := bumpMap st.raAll c }
     for (_, p, ws) in r.frag do
       for w in ws do
         let k := s!"{p}: {FragWhy.whyKey w}"
@@ -894,6 +970,9 @@ def verifiedText (st : VStats) (ms : Nat) : String := Id.run do
     for (k, c) in byCount st.fragFirst do out := out ++ s!"- `{k}`: {c}\n"
     out := out ++ "\nFunctions unverified only by deadcode fragment failures, by failing conditions:\n\n"
     for (k, c) in byCount st.fragOnly do out := out ++ s!"- `{k}`: {c}\n"
+  if !st.raAll.isEmpty then
+    out := out ++ "\nRejected `regalloc` runs (input origin | `tabsAgreeL` or `checkRA`'s failure), first unverified from `lower` on / all:\n\n"
+    for (k, c) in byCount st.raAll do out := out ++ s!"- `{k}`: {st.raFirst.getD k 0} / {c}\n"
   return out
 
 /-- `--check --verified`: the verified pipeline over stock export files, a report (exit 1 only

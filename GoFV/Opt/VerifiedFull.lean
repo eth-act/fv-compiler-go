@@ -21,6 +21,7 @@ import GoFV.Opt.NilLateCheck
 import GoFV.Opt.FlagAlloc
 import GoFV.Opt.Regalloc
 import GoFV.Opt.RegallocCheck
+import GoFV.Opt.TabsAgreeModL
 import GoFV.Opt.LoopRotate
 import GoFV.Opt.Trim
 import GoFV.Proof.Pass.DeadcodePassL
@@ -171,10 +172,10 @@ def licmGuard (penv : PassEnv) (f : Func) (out : PassOut) : Bool :=
   let u := MoveL.unhoist f out.func
   checkOK (checkEnv penv out.tables) u && Crit.critRelB f u && MoveL.moveB u out.func
 
-/-- `regalloc`: the input runs alike in the output's tables (`tabsAgreeL`) and `checkRA`
-accepts (`checkRA_sound`). -/
+/-- `regalloc`: the input runs alike in the output's tables (`tabsAgreeL`, or `tabsAgreeModL` when
+the output tables add the autos of new spill slots) and `checkRA` accepts (`checkRA_sound`). -/
 def regallocGuard (penv : PassEnv) (f : Func) (out : PassOut) : Bool :=
-  LowerCheck.tabsAgreeL penv.tables out.tables f &&
+  (LowerCheck.tabsAgreeL penv.tables out.tables f || tabsAgreeModL penv.tables out.tables f) &&
     (RegallocCheck.checkRA out.tables f out.func).toBool
 
 /-- `tabs` without the `AuxCall.Reg`/`ResultReg` caches (`CallABI.reg := none` in every call

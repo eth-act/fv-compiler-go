@@ -69,8 +69,8 @@ theorem frameLocals_aux {tabs : Tables} {params : Array (Option AuxRef)}
     · cases hn
   · cases hn
 
-/-- What `tabsAgreeMod` gives. -/
-structure ModAgree (tabs tabs' : Tables) (f : Func) : Prop where
+/-- What `tabsAgreeMod` gives about the frame and the auxes (shared with `tabsAgreeModL`). -/
+structure ModAgreeF (tabs tabs' : Tables) (f : Func) : Prop where
   ctx : Ctx.make tabs' f =
     { Ctx.make tabs f with tabs := tabs', locals := frameLocals tabs' (Ctx.make tabs f).params }
   outargs : outargsSize tabs' = outargsSize tabs
@@ -80,6 +80,9 @@ structure ModAgree (tabs tabs' : Tables) (f : Func) : Prop where
     (tabs.aux? l.1).isSome = false → tabs'.forgeable l.1 = false
   forgeable : ∀ l ∈ (Ctx.make tabs f).locals.toList, tabs'.forgeable l.1 = tabs.forgeable l.1
   value : ∀ id v, f.value? id = some v → AuxAgree tabs tabs' v.aux
+
+/-- What `tabsAgreeMod` gives. -/
+structure ModAgree (tabs tabs' : Tables) (f : Func) : Prop extends ModAgreeF tabs tabs' f where
   opOK : ∀ id v, f.value? id = some v → tamOpOK tabs f v = true
 
 theorem mem_valueTab {f : Func} {id : ID} {v : Value} (hv : f.value? id = some v) :
@@ -96,7 +99,7 @@ theorem tabsAgreeMod_sound {tabs tabs' : Tables} {f : Func} (h : tabsAgreeMod ta
   have hps' : abiParams tabs' f = abiParams tabs f := Array.toList_inj.mp hps
   have hty : ∀ p ∈ abiParams tabs f, tabs'.ty p.type = tabs.ty p.type :=
     fun p hp => Ty.eq_of_beq (hpty p (Array.mem_def.mp hp))
-  refine ⟨?_, hout, hls, fun l hl hn => ?_, hforg, fun id v hv => ?_, fun id v hv => ?_⟩
+  refine ⟨⟨?_, hout, hls, fun l hl hn => ?_, hforg, fun id v hv => ?_⟩, fun id v hv => ?_⟩
   · unfold Ctx.make
     simp only [hps', hdi]
     congr 1
@@ -110,7 +113,7 @@ theorem tabsAgreeMod_sound {tabs tabs' : Tables} {f : Func} (h : tabsAgreeMod ta
   · exact hops (some v) (mem_valueTab hv)
 
 /-- A value's aux names no extra frame temporary. -/
-theorem loc_extraX {tabs tabs' : Tables} {f : Func} (A : ModAgree tabs tabs' f) (x : ID)
+theorem loc_extraX {tabs tabs' : Tables} {f : Func} (A : ModAgreeF tabs tabs' f) (x : ID)
     (fv : Value) (n : AuxRef) (hfv : f.value? x = some fv) (hn : fv.aux = some n) :
     extraX tabs tabs' (frameBlk tabs 0 n) = false := by
   have ha : tabs'.aux? n = tabs.aux? n := by
@@ -267,7 +270,7 @@ theorem foldl_filter_eqX {α : Type} (keep : α → Bool) (g g' : Mem → α →
       exact foldl_filter_eqX keep g g' l ihk ihn _ _ (hk e List.mem_cons_self he m m' h)
 
 /-- **The frames in the input and the extended tables** are equal without the extra blocks. -/
-theorem frameMem_eqX {tabs tabs' : Tables} {f : Func} (A : ModAgree tabs tabs' f) (env : Env)
+theorem frameMem_eqX {tabs tabs' : Tables} {f : Func} (A : ModAgreeF tabs tabs' f) (env : Env)
     (images : Array (Array Byte)) (mem : Mem) :
     EqX (extraX tabs tabs') (frameMem env (Ctx.make tabs f) images mem)
       (frameMem env (Ctx.make tabs' f) images mem) := by
@@ -359,7 +362,7 @@ theorem run_tabsAgreeMod {tabs tabs' : Tables} {f : Func} {ce : CheckEnv}
   have hX := tempX_extraX tabs tabs'
   have hU := tempU_of hX
   have H : Hyps env (extraX tabs tabs') tabs f :=
-    ⟨hE, hX, A.opOK, fun x fv n hfv hn => loc_extraX A x fv n hfv hn⟩
+    ⟨hE, hX, A.opOK, fun x fv n hfv hn => loc_extraX A.toModAgreeF x fv n hfv hn⟩
   have hloop : runLoop env (Ctx.make tabs' f) fuel = runLoop env (Ctx.make tabs f) fuel := by
     funext fr bid i
     rw [A.ctx]
@@ -402,7 +405,7 @@ theorem run_tabsAgreeMod {tabs tabs' : Tables} {f : Func} {ce : CheckEnv}
         fun z y hz => ?_, fun z y hz => ?_, typed_replicate _ _ _ rfl,
         ⟨himg, rfl, frameAllocs_avoids himg (addGlobals_avoids hglob hmem)⟩⟩
       · unfold entryFrame; rw [hpty, hvsz]
-      · unfold entryFrame; rw [hpty]; exact frameMem_eqX A env _ mem
+      · unfold entryFrame; rw [hpty]; exact frameMem_eqX A.toModAgreeF env _ mem
       · simp [entryFrame, Array.getElem?_replicate] at hz
       · simp [entryFrame, Array.getElem?_replicate] at hz
     exact finish_rel hE hX (deferAvoid_extraX tabs tabs') hd (runLoop_simX
