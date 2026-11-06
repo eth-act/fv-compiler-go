@@ -384,6 +384,20 @@ theorem sub_mono (ty : Ty) (h : RefinesList as bs) : Refines (sub ty as) (sub ty
   · cases h1 <;> cases h2 <;> first | exact .poison _ | exact Refines.refl _
   · cases h1 <;> cases h2 <;> exact .poison _
 
+theorem madd_mono (ty : Ty) (n : Bool) : RefinesList as bs → Refines (madd ty n as) (madd ty n bs)
+  | .nil => .poison _
+  | .cons _ .nil => .poison _
+  | .cons _ (.cons _ .nil) => .poison _
+  | .cons ha (.cons (a := x) hx (.cons (a := y) hy .nil)) => by
+    simp only [madd]
+    cases hu : reg x with
+    | none => exact .poison _
+    | some u =>
+      cases hv : reg y with
+      | none => exact .poison _
+      | some v => rw [reg_of hx hu, reg_of hy hv]; exact addP_mono _ _ ha
+  | .cons _ (.cons _ (.cons _ (.cons _ _))) => .poison _
+
 /-! ## Compares -/
 
 theorem cmp_mono {c d : Val} (h : Refines a b) (h' : Refines c d) : Refines (cmp a c) (cmp b d) := by
@@ -391,6 +405,35 @@ theorem cmp_mono {c d : Val} (h : Refines a b) (h' : Refines c d) : Refines (cmp
     | exact .poison _
     | exact Refines.refl _
     | (rename_i p; cases hp : ptrReg p <;> simp only [cmp, reg, hp] <;> exact .poison _)
+
+theorem cmpP_mono (f : BitVec 64 → BitVec 64 → BitVec 64 × Flags) :
+    RefinesList as bs → Refines (cmpP f as) (cmpP f bs)
+  | .nil => .poison _
+  | .cons _ .nil => .poison _
+  | .cons h (.cons h' .nil) => by
+    cases h <;> cases h' <;> first
+      | exact .poison _
+      | exact Refines.refl _
+      | (rename_i p; cases hp : ptrReg p <;> simp only [cmpP, reg, hp] <;> exact .poison _)
+  | .cons _ (.cons _ (.cons _ _)) => .poison _
+
+theorem cmpSh_mono (f : BitVec 64 → BitVec 64 → BitVec 64 × Flags) :
+    RefinesList as bs → Refines (cmpSh f as) (cmpSh f bs)
+  | .nil => .poison _
+  | .cons _ .nil => .poison _
+  | .cons h (.cons h' .nil) => by
+    cases h <;> cases h' <;> first
+      | exact .poison _
+      | exact Refines.refl _
+      | (rename_i p; cases hp : ptrReg p <;> simp only [cmpSh, reg, hp] <;> exact .poison _)
+  | .cons _ (.cons _ (.cons _ _)) => .poison _
+
+theorem cmp1P_mono (f : BitVec 64 → BitVec 64 × Flags) :
+    RefinesList as bs → Refines (cmp1P f as) (cmp1P f bs)
+  | .nil => .poison _
+  | .cons h .nil => by
+    cases h <;> first | exact .poison _ | exact Refines.refl _
+  | .cons _ (.cons _ _) => .poison _
 
 /-! ## Conditional ops -/
 
@@ -415,6 +458,21 @@ theorem csel_mono (ty : Ty) (k : Int64) (g : Option (BitVec 64 → BitVec 64)) :
           cases hr : reg y with
           | none => exact .poison _
           | some r => rw [reg_of hy hr]; exact Refines.refl _
+  | .cons _ (.cons _ (.cons _ (.cons _ _))) => .poison _
+
+theorem csinc_mono (ty : Ty) (k : Int64) : RefinesList as bs → Refines (csinc ty k as) (csinc ty k bs)
+  | .nil => .poison _
+  | .cons _ .nil => .poison _
+  | .cons _ (.cons _ .nil) => .poison _
+  | .cons (a := x) hx (.cons hy (.cons (a := f) hf .nil)) => by
+    simp only [csinc]
+    cases hc : condOn k f with
+    | none => exact .poison _
+    | some c =>
+      rw [condOn_of k hf hc]
+      cases c with
+      | true => exact regVal_mono _ hx
+      | false => exact addP_mono _ _ hy
   | .cons _ (.cons _ (.cons _ (.cons _ _))) => .poison _
 
 theorem csel0_mono (ty : Ty) (k : Int64) : RefinesList as bs → Refines (csel0 ty k as) (csel0 ty k bs)
