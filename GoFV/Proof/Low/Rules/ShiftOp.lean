@@ -1,9 +1,9 @@
 import GoFV.Proof.Low.Rules.Peep
 
 /-!
-# Lowering rule lemmas: shifted and inverted operands of bitwise ops (`ARM64.rules:1179-1182`, `1439-1449`)
+# Lowering rule lemmas: folded operand producers (`ARM64.rules:1017-1018`, `1179-1182`, `1433-1449`)
 
-Peepholes of lowered code (#385) that fold an operand's producer into a bitwise op:
+Peepholes of lowered code (#385) that fold an operand's producer into its consumer:
 
 * `(AND|OR|XOR x0 x1:(SLLconst|SRLconst|SRAconst|RORconst [c] y)) && clobberIfDead(x1) =>
   (ANDshift..|ORshift..|XORshift.. x0 y [c])` (1439-1449, both argument orders) and
@@ -12,6 +12,25 @@ Peepholes of lowered code (#385) that fold an operand's producer into a bitwise 
   at its own shape keeps at least those bits (`armReadW` of the bitwise op, `harg`), so the folded
   form computes the same low bits from the producer's input (`refines_op2_op1`).
 * `(MVN (XOR x y)) => (EON x y)` (1182): likewise for the inverted result (`refines_op1_op2`).
+* `(ADD|SUB x0 x1:(SLLconst|SRLconst|SRAconst [c] y)) && clobberIfDead(x1) => (ADDshift..|SUBshift..
+  x0 y [c])` (1433-1438): a pointer `x0` has a word shape, so by the validator's provenance clause
+  (`Pat.argsOKLs`) the result has one and the shifted operand is read whole (`retypeL_res_wide`):
+  both sides move the pointer by the same amount (`PtrOps.ptrRes`); any other `x0` adds as a
+  register, low bits as above (`refines_addSh`, `refines_subSh`).
+* `(ADD|SUB a l:(MULW x y)) && v.Type.Size() <= 4 && … => (MADDW|MSUBW a x y)` (1017, 1018): the
+  condition rules out the word shapes, so `a` is no pointer (provenance clause); at most 32 low
+  bits are read, which the 32-bit `MADDW` computes, and any other non-word shape is `poison`
+  (`refines_op2_mulw`).
+
+False under the semantics (docs/proofs/rules.md, Findings; counterexamples evaluated with
+`#eval`), so not proven: 1012/1013 (`MADD`/`MSUB` read the registers of a global pointer `a`,
+which has none, where `ADD`/`SUB` move it: `a = g + 0`, `x = y = 1`); 1183 (`(NEG (SUB x y)) =>
+(SUB y x)`: `x = 0`, `y` the frame temporary `temp 0 1 + 0`, the source the integer `2^62 + 2^24`,
+the target the pointer); 1184 (`(NEG (NEG x)) => x`, the same `x`); 1197 (`x = heap (2^22) + 0`,
+`y = z = 2^41`: the target's `ADD x z` leaves the window); 1198 (`x = heap 0 + 2^40`, `y = 1`,
+`z = 2^40`: `x - 1` becomes an integer word, the target's `x - (2^40 + 1)` leaves the window).
+Not provable: 1701/1703 (`UBFX [armBFAuxInt(…)]`): `armBFAuxInt` is not a modelled helper
+(`Helper.ofName`), so the result's auxint is the oracle's.
 -/
 
 namespace GoFV.Proof.Low.Rules
