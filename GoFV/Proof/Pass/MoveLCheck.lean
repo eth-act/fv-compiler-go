@@ -199,14 +199,58 @@ def okLocal (pr : Bool) (ok : Array Bool) (f g : Func) (x : ID) : Bool :=
 def certValid (pr : Bool) (ok : Array Bool) (f g : Func) : Bool :=
   (List.range ok.size).all fun x => !okAt ok x || okLocal pr ok f g x
 
-/-- The certificate: the greatest fixed point of `okLocal` (untrusted, `certValid` checks it). -/
+/-- The values of `g` through which `relB` reads the certificate beyond its arguments: it follows
+the arguments of a `Copy`, a tuple selector, a pair load (behind a selector) and a pair store. -/
+def conduitOp (op : Op) : Bool :=
+  op == .Copy || (selIdx op).isSome || op == .ARM64LDP || op == .ARM64LDPW ||
+    op == .ARM64LDPSW || op == .ARM64FLDPD || op == .ARM64FLDPS || op == .ARM64STP ||
+    op == .ARM64STPW || op == .ARM64FSTPD || op == .ARM64FSTPS
+
+/-- The certificate: the greatest fixed point of `okLocal` (untrusted, `certValid` checks it),
+by a worklist. `okLocal pr ok f g z` reads `okAt ok x` only for `x` reached from `z` by at most
+`2 * fuelOf pr + 2` argument edges whose intermediate values are conduits (`conduitOp`), except
+the one next to `x`, which may be any value (`cloneB` reads its arguments). So when `x` leaves
+the certificate, only the users reached from `x` that way are checked again; each value is
+checked once at the start. (Rechecking every value until nothing changes took one round per
+value of a dropped memory chain: 23 s on a 33,194-value function.) -/
 def okCert (pr : Bool) (f g : Func) : Array Bool := Id.run do
   let n := g.valueTab.size
+  let mut users : Array (Array ID) := Array.replicate n #[]
+  for o in g.valueTab do
+    if let some v := o then
+      for a in v.args do
+        if a < n then users := users.modify a (·.push v.id)
+  let conduit : Array Bool := g.valueTab.map fun o => match o with
+    | some v => conduitOp v.op
+    | none => false
+  let depth := 2 * fuelOf pr + 2
   let mut ok : Array Bool := Array.replicate n true
-  for _ in [0:n + 1] do
-    let ok' := (Array.range n).map fun x => okAt ok x && okLocal pr ok f g x
-    if ok' == ok then break
-    ok := ok'
+  let mut queued : Array Bool := Array.replicate n true
+  let mut work : Array ID := (Array.range n).reverse
+  -- the drop that last reached each value (`0`: none yet)
+  let mut seen : Array Nat := Array.replicate n 0
+  let mut drops := 0
+  for _ in [0:n * (n + 1) + 1] do
+    let some x := work.back? | break
+    work := work.pop
+    queued := queued.set! x false
+    if okAt ok x && !okLocal pr ok f g x then
+      ok := ok.set! x false
+      drops := drops + 1
+      let mut front : Array ID := #[x]
+      for d in [0:depth] do
+        let mut next : Array ID := #[]
+        for u in front do
+          if d ≤ 1 || conduit.getD u false then
+            for z in users.getD u #[] do
+              if seen.getD z 0 != drops then
+                seen := seen.set! z drops
+                next := next.push z
+                if !queued.getD z true then
+                  queued := queued.set! z true
+                  work := work.push z
+        if next.isEmpty then break
+        front := next
   return ok
 
 /-- Not total in `f`. -/
