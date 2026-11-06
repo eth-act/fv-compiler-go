@@ -217,6 +217,15 @@ theorem argTermRefL_regs (hfrS : RegsFrame tabs 0 f.value? G)
     (tyS' H hDS hDT hVT hrel htyS htyT) (tyT' H hDS hDT hVT hrel htyS htyT)
     (fun a _ _ hat' hdef _ => shapeL_atom_def H hat' hdef) hfrS hT hx hy
 
+/-- `ArgTermFitL` between registers of two frames whose atoms are refined, the source's frame
+addresses those of activation 0 (`RegsFrame`). -/
+theorem argTermFitL_regs (hfrS : RegsFrame tabs 0 f.value? G) {t : Ty} {x y : ID}
+    (hT : ArgTermFitL t f.lowered f.value? tabs x g.lowered (listedDefs g) tabs y) (hx : VS x)
+    (hy : VT y) : Sem.Refines (fitPiece t (rv G x)) (fitPiece t (rv T y)) :=
+  argTermFitL_apply H.low hDS hDT (fun a h1 h2 h3 h4 => hrel a h3 h1 h2 h4)
+    (tyS' H hDS hDT hVT hrel htyS htyT) (tyT' H hDS hDT hVT hrel htyS htyT)
+    (fun a _ _ hat' hdef _ => shapeL_atom_def H hat' hdef) hfrS hT hx hy
+
 /-- The terminators between two frames whose atoms are refined, the source's frame addresses
 those of activation 0 (`RegsFrame`). -/
 theorem termStepRefL_regs (hfrS : RegsFrame tabs 0 f.value? G) {b : ID} (hb : b ∈ g.blocks)
@@ -229,14 +238,16 @@ theorem termStepRefL_regs (hfrS : RegsFrame tabs 0 f.value? G) {b : ID} (hb : b 
     hx hy
 
 /-- **Corresponding atoms, given the frames' relation** (the only use of `AtomArgsRefL`): their
-arguments' registers are related (`ArgRel` of `stArg`) where both frames hold them as terms over
-the atoms (unless `w` reads no argument, `argFree`), and a non-`Phi` pair whose arguments the
-frames hold evaluates to refinements (`atomPair_eval`, `addr_lower_eval`). -/
+arguments' registers are related (`ArgRel` of `stArg`; for a lowered call also fitted to the leaf
+the call reads, `callFitTy`) where both frames hold them as terms over the atoms (unless `w`
+reads no argument, `argFree`), and a non-`Phi` pair whose arguments the frames hold evaluates to
+refinements (`atomPair_eval`, `addr_lower_eval`). -/
 theorem atom_ref (hfrS : RegsFrame tabs 0 f.value? G) (hfr : T = { G with regs := T.regs })
     {x : ID} {u w : Value} (hpw : Placed g x w) (hu : f.value? x = some u)
     (ht : termVL tabs w = false) :
     atomPair tabs u w = true ∧
-    (argFree tabs w = false → ∀ i < w.args.size, VS u.args[argIx u w i]! → VT w.args[i]! →
+    (callLead w.op = none → argFree tabs w = false → ∀ i < w.args.size,
+      VS u.args[argIx u w i]! → VT w.args[i]! →
       ArgRel tabs 0 (stArg u w i) (rv G u.args[argIx u w i]!) (rv T w.args[i]!)) ∧
     (∀ env : Env, env.Mono → (∀ a ∈ u.args, VS a) → (∀ a ∈ w.args, VT a) → w.op ≠ .Phi →
       Res.Refines (evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) G u)
@@ -245,12 +256,22 @@ theorem atom_ref (hfrS : RegsFrame tabs 0 f.value? G) (hfr : T = { G with regs :
   obtain ⟨u', hu', hpair, hpc, hTR⟩ := H.args w.block hbm blk hblk x hx w hw ht
   rw [hu] at hu'; cases hu'
   obtain ⟨-, hty, -, hid⟩ := atomPair_spec hpair
-  have hargs : argFree tabs w = false → ∀ i < w.args.size, VS u.args[argIx u w i]! → VT w.args[i]! →
-      ArgRel tabs 0 (stArg u w i) (rv G u.args[argIx u w i]!) (rv T w.args[i]!) :=
+  have hargs2 : argFree tabs w = false → ∀ i < w.args.size, VS u.args[argIx u w i]! →
+      VT w.args[i]! →
+      ArgRel tabs 0 (stArg u w i) (rv G u.args[argIx u w i]!) (rv T w.args[i]!) ∨
+      ∃ t, callFitTy tabs w i = some t ∧
+        Sem.Refines (fitPiece t (rv G u.args[argIx u w i]!)) (fitPiece t (rv T w.args[i]!)) :=
     fun hf i hi h1 h2 => by
     rcases hTR with hf' | hTR
     · rw [hf] at hf'; cases hf'
-    · exact argTermRefL_regs H hDS hDT hVT hrel htyS htyT hfrS (hTR i hi) h1 h2
+    · rcases hTR i hi with hTR | ⟨t, ht, hTR⟩
+      · exact .inl (argTermRefL_regs H hDS hDT hVT hrel htyS htyT hfrS hTR h1 h2)
+      · exact .inr ⟨t, ht, argTermFitL_regs H hDS hDT hVT hrel htyS htyT hfrS hTR h1 h2⟩
+  have hargs : callLead w.op = none → argFree tabs w = false → ∀ i < w.args.size,
+      VS u.args[argIx u w i]! → VT w.args[i]! →
+      ArgRel tabs 0 (stArg u w i) (rv G u.args[argIx u w i]!) (rv T w.args[i]!) :=
+    fun hcl hf i hi h1 h2 => (hargs2 hf i hi h1 h2).resolve_right
+      (by rintro ⟨t, ht, -⟩; simp [callFitTy, hcl] at ht)
   refine ⟨hpair, hargs, fun env hE hS hT _ => ?_⟩
   obtain ⟨w', hw', hwid, -⟩ := H.wg.valueId w.block blk ⟨hbm, hblk⟩ x hx
   rw [hw] at hw'; cases hw'
@@ -286,7 +307,7 @@ theorem atom_ref (hfrS : RegsFrame tabs 0 f.value? G) (hfr : T = { G with regs :
         (fun a ha => (hDS a (hS a ha)).1) (fun a ha => (hDT a (hT a ha)).1) fun i hi => ?_
       have hi' : i < w.args.size := hsz ▸ hi
       rw [makeL_act]
-      have := hargs hf i hi' (by rw [argIx_of_not hpb]; exact hS _ (getElem!_mem' hi))
+      have := hargs2 hf i hi' (by rw [argIx_of_not hpb]; exact hS _ (getElem!_mem' hi))
         (hT _ (getElem!_mem' hi'))
       rwa [argIx_of_not hpb] at this
     · -- a bounds panic with constant operands
@@ -304,7 +325,13 @@ theorem atom_ref (hfrS : RegsFrame tabs 0 f.value? G) (hfr : T = { G with regs :
         (fun a ha => (hDT a (hT a ha)).1) (fun i hi => ?_) hl fun p hp => ?_
       · have hik : i < ks.length := hsz ▸ hi
         have hk3 := pbKeep_lt hks hik
-        have := hargs hf i hi (hS _ (getElem!_mem' (by rw [argIx_of_pb hpb hks hik, h3]; exact hk3)))
+        have hcl : callLead w.op = none := by
+          cases hc : callLead w.op with
+          | none => rfl
+          | some k =>
+            rcases callLead_some hc with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] at hks <;> cases hks
+        have := hargs hcl hf i hi
+          (hS _ (getElem!_mem' (by rw [argIx_of_pb hpb hks hik, h3]; exact hk3)))
           (hT _ (getElem!_mem' hi))
         rwa [stArg_of_ne (by rw [hu3]; decide)] at this
       · obtain ⟨y, hy, hop, hk, -, hs⟩ := constArg_cases (hcl p hp)

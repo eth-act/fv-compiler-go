@@ -795,12 +795,9 @@ theorem stArgs_split {tabs : Tables} {act : Nat} {F G : ID → Val} {k : Int64}
   | [], _ :: _, hl, _ => absurd hl (by simp)
   | _ :: _, [], hl, _ => absurd hl (by simp)
 
-/-- **Corresponding atoms evaluate to refinements.** An atom `w` of `g` (lowered) corresponding to
-the atom `u` of `f` (`atomPair`, `u` generic, not a lowered frame address), in frames of one
-activation whose argument registers are related (`ArgRel` of `stArg`: refined, or a lowered
-store's address at its offset), at the same shape, evaluates in `g`'s mode to a refinement of `u`
-in `f`'s mode. -/
-theorem atomPair_eval {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
+/-- `atomPair_eval` for an atom `w` with every argument register related by `ArgRel` of
+`stArg`. -/
+private theorem atomPair_eval_arg {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
     (hown : f.ownAux = g.ownAux) (hl : f.lowered = true → g.lowered = true) (hgl : g.lowered = true)
     {GS GT : Frame} (hfr : GT = { GS with regs := GT.regs }) {u w : Value}
     (hp : atomPair tabs u w = true) (hn : addrLower tabs u w = false) (hb : pbLower u w = false)
@@ -888,6 +885,101 @@ theorem atomPair_eval {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
       · rw [he]; rw [ht] at hmono
         exact resRefines_trans hmono (atomicRoot_fit { w with op := u.op } AT)
   exact Res.Rel.bind hev fun x y hxy => .ok (rty_le hl ty hxy)
+
+/-- `atomPair_eval` for a lowered call `w` (`callLead`): each argument register refines, or
+refines fitted to the leaf the call reads it at (`callFitTy`). -/
+private theorem atomPair_eval_call {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
+    (hown : f.ownAux = g.ownAux) (hl : f.lowered = true → g.lowered = true)
+    {GS GT : Frame} (hfr : GT = { GS with regs := GT.regs }) {u w : Value} {k : Nat}
+    (hk : callLead w.op = some k)
+    (hp : atomPair tabs u w = true) (hn : addrLower tabs u w = false) (hb : pbLower u w = false)
+    (hgen : u.op.generic = true)
+    (hty : (Ctx.makeL tabs g).tys[w.id]?.getD .other = (Ctx.makeL tabs f).tys[u.id]?.getD .other)
+    (hregS : ∀ a ∈ u.args, Reg GS a) (hregT : ∀ a ∈ w.args, Reg GT a)
+    (hargs : ∀ i < u.args.size, Sem.Refines (rv GS u.args[i]!) (rv GT w.args[i]!) ∨
+      ∃ t, callFitTy tabs w i = some t ∧
+        Sem.Refines (fitPiece t (rv GS u.args[i]!)) (fitPiece t (rv GT w.args[i]!))) :
+    Res.Refines (evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) GS u)
+      (evalValueL ⟨g.lowered, false⟩ env (Ctx.makeL tabs g) GT w) := by
+  obtain ⟨hk', -, -, hid⟩ := atomPair_spec hp
+  obtain ⟨hk2, hsz⟩ := hk'.resolve_right (by rw [hn, hb]; decide)
+  rw [evalValueL_of_regs hregS, evalValueL_of_regs hregT, hty]
+  generalize (Ctx.makeL tabs f).tys[u.id]?.getD .other = ty
+  have hwst : stSize w.op = none := by
+    rcases callLead_some hk with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl
+  rcases hk2 with ⟨hop, hai, hax⟩ | hm | hz
+  rotate_left
+  · obtain ⟨-, -, -, n, hst, -⟩ := memLower_cases hm
+    have := stOp_stSize hst
+    rw [hwst] at this; cases this
+  · rcases bulkLower_op hz with h | h | h | h <;>
+      rcases callLead_some hk with ⟨h', -⟩ | ⟨h', -⟩ | ⟨h', -⟩ <;> rw [h] at h' <;> cases h'
+  have hren : renameOp u.op w.op = true := by
+    rcases hop with hop | hop
+    · exfalso
+      rw [hop] at hgen
+      rcases callLead_some hk with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] at hgen <;> cases hgen
+    · exact hop
+  obtain ⟨hpc, he⟩ := evalOpL_callLead (env := env) (ctx := Ctx.makeL tabs g) (fr := GT)
+    (argv := w.args.toList.map (rv GT)) (ty := ty) hk hren
+  have hfl : RefinesList (fitArgs tabs u k (u.args.toList.map (rv GS)))
+      (fitArgs tabs u k (w.args.toList.map (rv GT))) :=
+    fitArgs_refines tabs hk u hax (by simp [hsz]) fun i h1 h2 => by
+      have hi : i < u.args.size := by simpa using h1
+      have hi' : i < w.args.size := by simpa using h2
+      have := hargs i hi
+      rw [getElem!_pos u.args i hi, getElem!_pos w.args i hi'] at this
+      simpa using this
+  generalize u.args.toList.map (rv GS) = AS at hfl ⊢
+  generalize w.args.toList.map (rv GT) = AT at hfl he ⊢
+  have hctx : Ctx.makeL tabs g =
+      { (Ctx.makeL tabs f) with f := (Ctx.makeL tabs g).f, sched := (Ctx.makeL tabs g).sched, tys := (Ctx.makeL tabs g).tys } := by
+    rw [makeL_f]; exact ctxL_eq (tabs := tabs) hown
+  have h2 : Res.Refines (callOp env (Ctx.makeL tabs f) u (fitArgs tabs u k AS))
+      (callOp env (Ctx.makeL tabs g) { w with op := u.op } (fitArgs tabs u k AT)) := by
+    have hm := evalOp_mono env hE (Ctx.makeL tabs f) (Ctx.makeL tabs g) hctx GS GT (by rw [hfr])
+      (by rw [hfr]) (by rw [hfr]) (by rw [hfr]) u ty hfl
+    rw [← evalOp_congr (ctx := Ctx.makeL tabs g) (ctx' := Ctx.makeL tabs g) (fr := GT) (v := u)
+      (v' := { w with op := u.op }) rfl hax.symm hai.symm hid.symm rfl rfl rfl] at hm
+    rwa [evalOp_postCall hpc, evalOp_postCall (v := { w with op := u.op }) hpc] at hm
+  have h1 := callOp_fit hE (Ctx.makeL tabs f) u hpc AS
+  rw [makeL_tabs] at h1
+  have hfa : fitArgs (Ctx.makeL tabs g).tabs { w with op := u.op } k AT = fitArgs tabs u k AT := by
+    rw [makeL_tabs]; unfold fitArgs callIns; rw [hax]
+  have hev : Res.Refines (evalOpL false env (Ctx.makeL tabs f) GS u AS ty)
+      (evalOpL false env (Ctx.makeL tabs g) GT w AT ty) := by
+    rw [evalOpL_generic _ _ _ _ _ _ hgen, he, evalOp_postCall hpc, hfa]
+    exact resRefines_trans h1 h2
+  exact Res.Rel.bind hev fun x y hxy => .ok (rty_le hl ty hxy)
+
+/-- **Corresponding atoms evaluate to refinements.** An atom `w` of `g` (lowered) corresponding to
+the atom `u` of `f` (`atomPair`, `u` generic, not a lowered frame address), in frames of one
+activation whose argument registers are related (`ArgRel` of `stArg`: refined, or a lowered
+store's address at its offset; or, for a lowered call, refined fitted to the leaf the call reads,
+`callFitTy`), at the same shape, evaluates in `g`'s mode to a refinement of `u` in `f`'s mode. -/
+theorem atomPair_eval {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
+    (hown : f.ownAux = g.ownAux) (hl : f.lowered = true → g.lowered = true) (hgl : g.lowered = true)
+    {GS GT : Frame} (hfr : GT = { GS with regs := GT.regs }) {u w : Value}
+    (hp : atomPair tabs u w = true) (hn : addrLower tabs u w = false) (hb : pbLower u w = false)
+    (hgen : u.op.generic = true)
+    (hty : (Ctx.makeL tabs g).tys[w.id]?.getD .other = (Ctx.makeL tabs f).tys[u.id]?.getD .other)
+    (hregS : ∀ a ∈ u.args, Reg GS a) (hregT : ∀ a ∈ w.args, Reg GT a)
+    (hargs : ∀ i < u.args.size, ArgRel tabs (Ctx.makeL tabs g).act (stArg u w i)
+      (rv GS u.args[i]!) (rv GT w.args[i]!) ∨
+      ∃ t, callFitTy tabs w i = some t ∧
+        Sem.Refines (fitPiece t (rv GS u.args[i]!)) (fitPiece t (rv GT w.args[i]!))) :
+    Res.Refines (evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) GS u)
+      (evalValueL ⟨g.lowered, false⟩ env (Ctx.makeL tabs g) GT w) := by
+  cases hk : callLead w.op with
+  | none =>
+    exact atomPair_eval_arg hE hown hl hgl hfr hp hn hb hgen hty hregS hregT fun i hi =>
+      (hargs i hi).resolve_right (by rintro ⟨t, ht, -⟩; simp [callFitTy, hk] at ht)
+  | some k =>
+    have hwst : stSize w.op = none := by
+      rcases callLead_some hk with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl
+    exact atomPair_eval_call hE hown hl hfr hk hp hn hb hgen hty hregS hregT fun i hi => by
+      have := hargs i hi
+      rwa [stArg_none hwst] at this
 
 
 /-! ### Bounds panics with constant operands (`pbLower`) -/

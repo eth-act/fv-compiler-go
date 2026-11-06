@@ -138,6 +138,53 @@ def ArgTermRefL (o : Option (Int64 × Option AuxRef)) (lowD : Bool) (D : ID → 
   ∀ n, ∃ m, ∀ ρ ρ', ValRef ρ ρ' → TypedL lowD D tabs ρ → TypedL lowE E tabs' ρ' →
     FrameVals tabs 0 D ρ → ArgRel tabs 0 o (denL lowD D tabs ρ n x) (denL lowE E tabs' ρ' m y)
 
+/-- `fitPiece t` is monotone. -/
+theorem fitPiece_mono (t : Ty) {x y : Val} (h : Sem.Refines x y) :
+    Sem.Refines (fitPiece t x) (fitPiece t y) := by
+  cases h with
+  | poison v => cases t <;> exact .poison _
+  | int w a => exact Sem.Refines.refl _
+  | bool b => exact Sem.Refines.refl _
+  | ptr p => exact Sem.Refines.refl _
+  | mem h => cases t <;> exact .mem h
+  | tuple h => cases t <;> exact .tuple h
+  | agg h => cases t <;> exact .agg h
+  | blob h => cases t <;> exact .blob h
+  | empty => exact Sem.Refines.refl _
+
+/-- **A piece narrowed to `w ≥ w'` bits fits an integer leaf of `w'` bits as the piece does**
+(`fitPiece` keeps the leaf's low bits, `Val.retypeL`). -/
+theorem fitPiece_retypeL {w w' : Width} (hw : w'.bits ≤ w.bits) (hw64 : w ≠ .w64) (X : Val) :
+    Sem.Refines (fitPiece (.int w') (X.retypeL (.int w))) (fitPiece (.int w') X) := by
+  cases X with
+  | int v x =>
+    cases w <;> cases w' <;> cases v <;> simp_all (config := { decide := true }) [fitPiece,
+      Val.retypeL, Val.widen, Val.retype, Width.bits, BitVec.setWidth_setWidth_of_le] <;>
+      exact Sem.Refines.refl _
+  | bool b =>
+    cases w <;> cases w' <;> cases b <;> simp_all (config := { decide := true }) [fitPiece,
+      Val.retypeL, Val.widen, Val.retype, Width.bits] <;> exact Sem.Refines.refl _
+  | ptr p =>
+    have : (Val.ptr p).retypeL (.int w) = .poison := by
+      cases w <;> simp_all [Val.retypeL, Val.widen, Val.retype]
+    rw [this]; exact .poison _
+  | _ => simp only [Val.retypeL, Val.widen, Val.retype]; exact .poison _
+
+/-- The lowered calls `callLead` lists. -/
+theorem callLead_some {o : Op} {k : Nat} (h : callLead o = some k) :
+    (o = .ARM64CALLstatic ∧ k = 0) ∨ (o = .ARM64CALLclosure ∧ k = 2) ∨
+      (o = .ARM64CALLinter ∧ k = 1) := by
+  unfold callLead at h
+  split at h <;> simp_all
+
+/-- `y` in `E` holds, fitted to the leaf shape `t` (`fitPiece`, a lowered call's register piece),
+a refinement of `x` in `D` so fitted, as terms over the atoms (as `ArgTermRefL`). -/
+def ArgTermFitL (t : Ty) (lowD : Bool) (D : ID → Option Value) (tabs : Tables) (x : ID)
+    (lowE : Bool) (E : ID → Option Value) (tabs' : Tables) (y : ID) : Prop :=
+  ∀ n, ∃ m, ∀ ρ ρ', ValRef ρ ρ' → TypedL lowD D tabs ρ → TypedL lowE E tabs' ρ' →
+    FrameVals tabs 0 D ρ →
+      Sem.Refines (fitPiece t (denL lowD D tabs ρ n x)) (fitPiece t (denL lowE E tabs' ρ' m y))
+
 /-- A refinement whose source is a pointer word is that word. -/
 theorem asPtrWord_of_refines {x y : Val} {p : Ptr} (h : Sem.Refines x y)
     (hp : x.asPtrWord = some p) : y = x := by
@@ -200,14 +247,17 @@ theorem addrRef_zero {tabs : Tables} {act : Nat} {x y : Val} (h : Sem.Refines x 
 /-- The arguments of every atom listed in `g` refine, as terms, those of the atom of `f` it
 corresponds to (`atomPair`: the same ID and fields, a renamed op, or a lowered store, whose address
 is related by `AddrRef` at its offset, `stArg`; a bounds panic with constant operands reads the
-kept ones, `argIx`, and its constants are `f`'s, `pbConstOK`), unless the atom of `g` reads no
+kept ones, `argIx`, and its constants are `f`'s, `pbConstOK`), or, for a lowered call's register
+piece, refine fitted to its leaf (`callFitTy`, `ArgTermFitL`), unless the atom of `g` reads no
 argument (`argFree`: a lowered frame address). -/
 def AtomArgsRefL (tabs : Tables) (f g : Func) : Prop :=
   ∀ b ∈ g.blocks, ∀ gb, g.block? b = some gb → ∀ a ∈ gb.values, ∀ u, g.value? a = some u →
     termVL tabs u = false →
     ∃ u', f.value? a = some u' ∧ atomPair tabs u' u = true ∧ pbConstOK tabs f u' u = true ∧
       (argFree tabs u = true ∨ ∀ i < u.args.size, ArgTermRefL (stArg u' u i)
-        f.lowered f.value? tabs u'.args[argIx u' u i]! g.lowered (listedDefs g) tabs u.args[i]!)
+        f.lowered f.value? tabs u'.args[argIx u' u i]! g.lowered (listedDefs g) tabs u.args[i]! ∨
+        ∃ t, callFitTy tabs u i = some t ∧ ArgTermFitL t
+          f.lowered f.value? tabs u'.args[argIx u' u i]! g.lowered (listedDefs g) tabs u.args[i]!)
 
 /-- The terminator of `b` (`Sem.stepTermL`) on the control values `cs`. -/
 def stepValsL (b : Block) (cs : List Val) : Res Next :=

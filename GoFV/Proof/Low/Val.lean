@@ -187,6 +187,24 @@ theorem termVL_narrow {tabs : Tables} {v : Value} {i k : Nat} (h : narrowReadW v
     simp only [termVL, hg, hm, hl, pureActOp_of_act hact, Option.isSome_none, Bool.false_eq_true,
       ite_false, ht]
 
+/-- What `truncFromL` says. -/
+theorem truncFromL_cases {tabs : Tables} {M : Defs} {n k : Nat} {a a' : ID}
+    (h : truncFromL tabs M n k a a' = true) :
+    ∃ c w, M.get? a = some c ∧ c.op = .Copy ∧ c.args.size = 1 ∧
+      shpL tabs c.type = .int w ∧ k ≤ w.bits ∧ w ≠ .w64 ∧
+      copyReachL tabs M n c.args[0]! a' = true := by
+  unfold truncFromL at h
+  split at h
+  · rename_i c hc
+    simp only [Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨⟨⟨hop, hsz⟩, hsh⟩, hr⟩ := h
+    split at hsh
+    · rename_i w hw
+      simp only [Bool.and_eq_true, decide_eq_true_eq, bne_iff_ne, ne_eq] at hsh
+      exact ⟨c, w, hc, hop, hsz, hw, hsh.1, hsh.2, hr⟩
+    · cases hsh
+  · cases h
+
 /-- What `truncReachL` says. -/
 theorem truncReachL_cases {tabs : Tables} {M : Defs} {n : Nat} {o : Op} {i : Nat} {a a' : ID}
     (h : truncReachL tabs M n o i a a' = true) :
@@ -196,16 +214,31 @@ theorem truncReachL_cases {tabs : Tables} {M : Defs} {n : Nat} {o : Op} {i : Nat
   unfold truncReachL at h
   simp only [Option.any_eq_true] at h
   obtain ⟨k, hk, h⟩ := h
+  obtain ⟨c, w, h⟩ := truncFromL_cases h
+  exact ⟨k, c, w, hk, h⟩
+
+/-- What `truncCallL` says. -/
+theorem truncCallL_cases {tabs : Tables} {M : Defs} {n : Nat} {v : Value} {i : Nat} {a a' : ID}
+    (h : truncCallL tabs M n v i a a' = true) :
+    ∃ w' c w, callFitTy tabs v i = some (.int w') ∧ M.get? a = some c ∧ c.op = .Copy ∧
+      c.args.size = 1 ∧ shpL tabs c.type = .int w ∧ w'.bits ≤ w.bits ∧ w ≠ .w64 ∧
+      copyReachL tabs M n c.args[0]! a' = true := by
+  unfold truncCallL at h
   split at h
-  · rename_i c hc
-    simp only [Bool.and_eq_true, beq_iff_eq] at h
-    obtain ⟨⟨⟨hop, hsz⟩, hsh⟩, hr⟩ := h
-    split at hsh
-    · rename_i w hw
-      simp only [Bool.and_eq_true, decide_eq_true_eq, bne_iff_ne, ne_eq] at hsh
-      exact ⟨k, c, w, hk, hc, hop, hsz, hw, hsh.1, hsh.2, hr⟩
-    · cases hsh
+  · rename_i w' hw'
+    obtain ⟨c, w, h⟩ := truncFromL_cases h
+    exact ⟨w', c, w, hw', h⟩
   · cases h
+
+/-- A lowered call (one `callFitTy` fits an argument of) is an atom. -/
+theorem termVL_callFit {tabs : Tables} {v : Value} {i : Nat} {t : Ty}
+    (h : callFitTy tabs v i = some t) : termVL tabs v = false := by
+  unfold callFitTy at h
+  cases hk : callLead v.op with
+  | none => rw [hk] at h; cases h
+  | some k =>
+    rcases callLead_some hk with ⟨hv, -⟩ | ⟨hv, -⟩ | ⟨hv, -⟩ <;>
+      (rw [termVL_arm (by decide) (by decide) (by decide) (by decide) hv]; decide)
 
 /-! ## A `W` op reads the low 32 bits of each argument -/
 
@@ -416,7 +449,8 @@ theorem finalOKL_facts {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
         ((u.op = m.op ∧ u.aux = m.aux ∧ u.args.size = m.args.size ∧
           ∀ j (h1 : j < m.args.size) (h2 : j < u.args.size),
             copyReachL tabs M M.size m.args[j] u.args[j] = true ∨
-              truncReachL tabs M M.size m.op j m.args[j] u.args[j] = true) ∨
+              truncReachL tabs M M.size m.op j m.args[j] u.args[j] = true ∨
+              truncCallL tabs M M.size m j m.args[j] u.args[j] = true) ∨
          (m.op = .ARM64LoweredPanicBoundsRR ∧ m.args.size = 3 ∧ (f.value? x).any (pbLower · u) ∧
           ∃ ks, pbKeep u.op = some ks ∧ u.args.size = ks.length ∧
             ∀ j (h : j < ks.length), copyReachL tabs M M.size m.args[ks[j]]! u.args[j]! = true)) := by
@@ -448,7 +482,7 @@ theorem finalOKL_facts {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
         · obtain ⟨⟨⟨⟨⟨⟨⟨-, -⟩, hop⟩, hty⟩, hai⟩, hax⟩, hsz⟩, hargs⟩ := this
           refine ⟨m, u, hm, hu, hty, hai, .inl ⟨hop, hax, hsz, fun j h1 h2 => ?_⟩⟩
           have := List.all_eq_true.1 hargs j (List.mem_range.2 h1)
-          simpa [getElem!_pos m.args j h1, getElem!_pos u.args j h2] using this
+          simpa [getElem!_pos m.args j h1, getElem!_pos u.args j h2, or_assoc] using this
         · rcases hrd with hrd | hrd
           · exact absurd hrd hr
           · rw [hrd u hu] at ht; cases ht
@@ -516,6 +550,13 @@ theorem final_denL {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
         exact (copyReachL_den hT _ _ _ (hall j (by simpa using h1) (by simpa using h2)) n).trans
           (hrec j (by simpa using h2))
       · -- an extension or `W` op with an argument a narrowing `Copy` (`truncReachL`)
+        -- a lowered call is no term (`termVL_callFit`)
+        replace hargs : ∀ j (h1 : j < m.args.size) (h2 : j < u.args.size),
+            copyReachL tabs M M.size m.args[j] u.args[j] = true ∨
+              truncReachL tabs M M.size m.op j m.args[j] u.args[j] = true := fun j h1 h2 =>
+          (hargs j h1 h2).imp_right fun h => h.resolve_right fun hc => by
+            obtain ⟨_, _, _, hcf, -⟩ := truncCallL_cases hc
+            rw [termVL_callFit hcf] at ht; cases ht
         simp only [Classical.not_forall] at hall
         obtain ⟨j, h1, h2, hj⟩ := hall
         obtain ⟨k, c, w, hk, hc, hcop, hcsz, hsh, hkw, hw64, hcr⟩ :=
@@ -804,6 +845,7 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
         have hmark := (closedOK_facts hcg b hb gb hgb).2 a ha u hu u.args[i] (Array.getElem_mem hi)
         have hlv : LiveL tabs g u.args[i] :=
           (liveOKL_facts hlive) b hb gb hgb |>.2 a ha u hu (.inl hat) _ (Array.getElem_mem hi)
+        left
         intro n
         obtain ⟨k, hk⟩ := (hrest ks[i] hk').2 n
         refine ⟨k, fun ρ ρ' hρ hT hT' hF => ?_⟩
@@ -826,24 +868,60 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
       refine .inr fun i hi => ?_
       rw [argIx_of_not hnpb]
       have hi' : i < u'.args.size := by omega
-      have hcopy := (hargs i (by omega) hi).resolve_right fun htr => by
-        obtain ⟨k, -, -, hk, -⟩ := truncReachL_cases htr
-        rw [← hop] at hk
-        rw [termVL_narrow hk] at hat; cases hat
+      have hcc : copyReachL tabs M M.size m.args[i] u.args[i] = true ∨
+          truncCallL tabs M M.size m i m.args[i] u.args[i] = true :=
+        (hargs i (by omega) hi).imp_right fun h => h.resolve_left fun htr => by
+          obtain ⟨k, -, -, hk, -⟩ := truncReachL_cases htr
+          rw [← hop] at hk
+          rw [termVL_narrow hk] at hat; cases hat
       have hmark := (closedOK_facts hcg b hb gb hgb).2 a ha u hu u.args[i] (Array.getElem_mem hi)
       have hlv : LiveL tabs g u.args[i] :=
         (liveOKL_facts hlive) b hb gb hgb |>.2 a ha u hu (.inl hat) _ (Array.getElem_mem hi)
-      intro n
-      obtain ⟨k, hk⟩ := (hrest i hi').2 n
-      refine ⟨k, fun ρ ρ' hρ hT hT' hF => ?_⟩
-      rw [hgl] at hT'
-      rw [hgl, getElem!_pos u.args i hi]
-      have h1 := hk (midVal tabs f ρ) (mid_typed tabs f ρ) (mid_frame hF)
-      rw [getElem!_pos m.args i (by omega),
-        stArg_congr (u := u') (i := i) hop.symm hai.symm hax.symm] at h1
-      exact ArgRel.trans_left (bridge_den hsh hT n _) (h1.trans_right
-        ((copyReachL_den (hTM ρ) _ _ _ hcopy k).trans
-          (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) k _ hmark hlv)))
+      rcases hcc with hcopy | hcall
+      · left
+        intro n
+        obtain ⟨k, hk⟩ := (hrest i hi').2 n
+        refine ⟨k, fun ρ ρ' hρ hT hT' hF => ?_⟩
+        rw [hgl] at hT'
+        rw [hgl, getElem!_pos u.args i hi]
+        have h1 := hk (midVal tabs f ρ) (mid_typed tabs f ρ) (mid_frame hF)
+        rw [getElem!_pos m.args i (by omega),
+          stArg_congr (u := u') (i := i) hop.symm hai.symm hax.symm] at h1
+        exact ArgRel.trans_left (bridge_den hsh hT n _) (h1.trans_right
+          ((copyReachL_den (hTM ρ) _ _ _ hcopy k).trans
+            (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) k _ hmark hlv)))
+      · -- a lowered call's argument through a narrowing `Copy` of the leaf it reads
+        obtain ⟨w', c, w, hcf, hc, hcop, hcsz, hsh', hww, hw64, hcr⟩ := truncCallL_cases hcall
+        have hcfu : callFitTy tabs u i = some (.int w') := by
+          rw [← hcf]; unfold callFitTy callIns; rw [hop, hax]
+        have hst : stSize m.op = none := by
+          unfold callFitTy at hcf
+          cases hk : callLead m.op with
+          | none => rw [hk] at hcf; cases hcf
+          | some k =>
+            rcases callLead_some hk with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;>
+              rw [h] <;> rfl
+        right
+        refine ⟨.int w', hcfu, fun n => ?_⟩
+        obtain ⟨k, hk⟩ := (hrest i hi').2 n
+        refine ⟨k, fun ρ ρ' hρ hT hT' hF => ?_⟩
+        rw [hgl] at hT'
+        rw [hgl, getElem!_pos u.args i hi]
+        have h1 := hk (midVal tabs f ρ) (mid_typed tabs f ρ) (mid_frame hF)
+        rw [getElem!_pos m.args i (by omega), stArg_none hst] at h1
+        have h1' : Sem.Refines _ _ := h1
+        have hct : termVL tabs c = true := termVL_of_copy hcop
+        have hcl1 : c.args.toList = [c.args[0]!] := toList_of_size_one hcsz
+        have hden : denL true M.get? tabs (midVal tabs f ρ) (k + 1) m.args[i] =
+            (denL true M.get? tabs (midVal tabs f ρ) k c.args[0]!).retypeL (.int w) := by
+          rw [denT_succ hc hct, hcl1, hcop, hsh']
+          simp only [List.map_cons, List.map_nil, opValL_copy]
+        have h2 := (bridge_den hsh hT n _).trans
+          (h1'.trans (denL_fuel_mono true M.get? tabs _ k (k + 1) _ (by omega)))
+        rw [hden] at h2
+        exact (fitPiece_mono _ h2).trans ((fitPiece_retypeL hww hw64 _).trans (fitPiece_mono _
+          ((copyReachL_den (hTM ρ) _ _ _ hcr k).trans
+            (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) k _ hmark hlv))))
     · intro b hb fb gb hfb hgb
       obtain ⟨fb', hfb', hid, -⟩ := hAf b hb gb hgb
       rw [hfb] at hfb'; obtain rfl := Option.some.inj hfb'
