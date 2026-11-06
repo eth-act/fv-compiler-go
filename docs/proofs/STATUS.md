@@ -94,22 +94,26 @@ carry no provenance, so the pointer made from `addr(p) + off` need not be in `p`
 `runLoc` of the allocated function after `trim`, under Phase 1's `VPre`, no nil-page fault of
 the recorded `schedule` inputs and valid pointer parameters (`ArgPtrsOK`, below)
 (`docs/PASSES2.md` §0; witness `verifiedPipelineFull_witness`).
-Measured with `gofv-ssa-opt --check --verified --jobs 4` on main a717e6db plus the wiring of
-addressing modes, late lower, pair and flagalloc (full-v9: 96,560 functions, format 5.1, 81 min):
+Measured with `gofv-ssa-opt --check --verified --jobs 4` on main 51ef75c1 (with `lateB` #520,
+`ArgPtrsOK` #521 and `tabsAgreeModL` #522; full-v9: 96,560 functions, format 5.1, 252 min on a
+machine at load 130; quick-v7 6 min):
 
 | Measure | full-v9 through `rewrite tern` (Phase 1) | full-v9 through `trim` | quick-v7 Phase 1 | quick-v7 through `trim` |
 | --- | --: | --: | --: | --: |
-| Functions fully verified | 92,925 | 54,812 (#503: 31,307) | 8,885 | 5,138 (#503: 2,873) |
+| Functions fully verified | 92,925 | 68,915 (a717e6db+: 54,812; #503: 31,307) | 8,885 | 6,383 (a717e6db+: 5,138; #503: 2,873) |
 | … verified (vacuous: unmodelled op): the input has an op or block kind `run` leaves stuck (`TailLECall*`, `RetJmp`) | 1,576 | 1,568 (#503: 1,415) | 168 | 168 |
-| … and identical to stock after `trim` | 74,348 | 50,478 | 7,233 | 4,623 |
+| … and identical to stock after `trim` | 74,348 | 60,977 (a717e6db+: 50,478) | 7,233 | 5,699 (a717e6db+: 4,623) |
 
 Every pass from `lower` to `trim` has a theorem (addressing modes `addressingModes_refinesL`,
-late lower `lateLower_refinesL`, pair `pair_refinesL`, flagalloc `flagalloc_refinesSched`). Of
-the full-v9 functions verified through Phase 1 but not through `trim`, the first unverified run
-is `lower` for 25,738 (checked variant incomplete 24,516), `regalloc` (rejected) 4,978, `late
-lower` (rejected) 4,710, `schedule` (rejected) 2,687. `driver-e2e.sh --verified -p 8`: 183/183
-programs behave as stock, 0 fallbacks; 23,941 of 42,899 functions fully verified through `trim`
-(#503: 12,830).
+late lower `lateLower_refinesL`, pair `pair_refinesL`, flagalloc `flagalloc_refinesSched`).
+`regalloc` now accepts all 96,560 full-v9 runs (`tabsAgreeModL` takes the new spill autos that
+rejected 21,197 runs before). Of the 24,010 full-v9 functions verified through Phase 1 but not
+through `trim`, the first unverified run is `lower` for 20,619 (checked variant incomplete
+18,951, rejected 1,668), `schedule` (rejected) 3,365, `late lower` (rejected) 25, `lowered
+deadcode` (rejected) 1 (before: `lower` 25,738, `regalloc` 4,978, `late lower` 4,710, `schedule`
+2,687). `driver-e2e.sh --verified -p 8` (66 min): 183/183 programs behave as stock, 0 fallbacks,
+0 pass errors; 29,590 of 42,899 functions fully verified through `trim` (a717e6db+: 23,941;
+#503: 12,830).
 
 ## Per-pass fragment coverage (verified pipeline, full-v6)
 

@@ -142,24 +142,27 @@ Fused multiply-add shapes (`Contract`, §2.1 of `docs/plans/semantics2.md`) are 
 guard: `lower_refines` relates the output to a contraction of its input, which does not compose
 with the refinement before `lower`.
 
-Numbers (`gofv-ssa-opt --check --verified --jobs 4`, main a717e6db plus the wiring of
-addressing modes, late lower, pair and flagalloc; full-v9 81 min, 1.67 GB peak; quick-v7 7 min):
+Numbers (`gofv-ssa-opt --check --verified --jobs 4`, main 51ef75c1: `lateB` #520, `ArgPtrsOK`
+#521, `tabsAgreeModL` #522; full-v9 252 min on a machine at load 130; quick-v7 6 min):
 
 | | full-v9 through `rewrite tern` | full-v9 through `trim` | quick-v7 through `rewrite tern` | quick-v7 through `trim` |
 | --- | ---: | ---: | ---: | ---: |
-| fully verified | 92,925 | 54,812 | 8,885 | 5,138 |
+| fully verified | 92,925 | 68,915 | 8,885 | 6,383 |
 | … verified (vacuous: unmodelled op) | 1,576 | 1,568 | 168 | 168 |
-| … and identical to stock after `trim` | 74,348 | 50,478 | 7,233 | 4,623 |
+| … and identical to stock after `trim` | 74,348 | 60,977 | 7,233 | 5,699 |
 
-At #503 (main 088d827: the four passes stock, fewer proven `lower` rules), full-v9 through `trim`
-was 31,307 (1,415 vacuous) and quick-v7 2,873. "Vacuous" counts the functions whose input has an
-op or block kind `run` leaves `stuck`
+Before #520-#522 (main a717e6db plus the wiring of addressing modes, late lower, pair and
+flagalloc) full-v9 through `trim` was 54,812 and quick-v7 5,138; at #503 (main 088d827: the four
+passes stock, fewer proven `lower` rules) 31,307 (1,415 vacuous) and 2,873. "Vacuous" counts the
+functions whose input has an op or block kind `run` leaves `stuck`
 whatever its arguments (full-v9: `RetJmp` blocks 1,576 / 1,568, `TailLECall` 1,432 / 1,424,
 `TailLECallInter` 144 / 144; `docs/DRIVER.md`, verified mode): the theorems say nothing about the
-inputs that reach one. Of the full-v9 functions verified through `rewrite tern` but not through
-`trim`, the first unverified run is `lower` for 25,738 (checked variant incomplete 24,516,
-rejected 1,222), `regalloc` (rejected) 4,978, `late lower` (rejected: then `renameB`, rules 91
-and 98 only) 4,710, `schedule` (rejected) 2,687. `pair` is optional: `pairB` rejects 3,330 runs,
+inputs that reach one. Of the 24,010 full-v9 functions verified through `rewrite tern` but not
+through `trim`, the first unverified run is `lower` for 20,619 (checked variant incomplete 18,951,
+rejected 1,668), `schedule` (rejected) 3,365, `late lower` (rejected) 25, `lowered deadcode`
+(rejected) 1. `regalloc` accepts all 96,560 runs (before `tabsAgreeModL`, 21,197 runs and the
+first unverified run of 5,147 functions were rejected for the new spill autos). Rejected runs:
+`schedule` 6,976, `late lower` 911. `pair` is optional: `pairB` rejects 3,330 runs,
 whose result is dropped (`skipped`; the first difference from stock in 1,666 functions, so the
 "identical to stock" counts through `rewrite tern` dropped from 75,906). `flagalloc`: 5,971
 runs proven, 90,589 identity, none rejected. `addressing modes` is the identity on every function.
