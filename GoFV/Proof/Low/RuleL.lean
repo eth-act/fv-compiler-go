@@ -391,11 +391,16 @@ def Pat.argsOKLns (ty : Path â†’ Ty) (p : Path) (o : Op) (i : Nat) : List Pat â†
 end
 
 /-- The rules whose obligation holds when an op of the pattern reads more bits of a bound value
-than its shape holds (`Pat.argsOKLn`): `(cc (CMPWconst [0] x:(ANDconst [c] y)))` as `(cc
-(TSTWconst [int32(c)] y))` (`ARM64.rules:561`, `566`) reads `y`'s register on both sides, where
-Go builds the `ANDconst` at 32 bits on a narrow `y` (`(MOVBUreg (ANDconst [c] y)) => (ANDconst
-[c&(1<<8-1)] y)`). -/
-def leafWideL (loc : Loc) : Bool := (loc.line == 561 || loc.line == 566) && loc.file == "ARM64"
+than its shape holds (`Pat.argsOKLn`; their proofs read no leaf's width): `(cc (CMPWconst [0]
+x:(ANDconst [c] y)))` as `(cc (TSTWconst [int32(c)] y))` (`ARM64.rules:561`, `566`) reads `y`'s
+register on both sides, where Go builds the `ANDconst` at 32 bits on a narrow `y` (`(MOVBUreg
+(ANDconst [c] y)) => (ANDconst [c&(1<<8-1)] y)`); then `(EQ|NE (TSTWconst [c] x))` as `TBZ`/`TBNZ`
+on `x`'s register (`623`, `624`); the conditional selects on `InvertFlags` move their arms'
+registers alike (`1352`-`1357`). -/
+def leafWideL (loc : Loc) : Bool :=
+  (loc.line == 561 || loc.line == 566 || loc.line == 623 || loc.line == 624 ||
+    loc.line == 1352 || loc.line == 1353 || loc.line == 1354 || loc.line == 1355 ||
+    loc.line == 1356 || loc.line == 1357) && loc.file == "ARM64"
 
 /-- The argument check of the rule at `loc` on the pattern `pat`: `Pat.argsOKLn` for the rules
 of `leafWideL`, `Pat.argsOKL` otherwise. -/
