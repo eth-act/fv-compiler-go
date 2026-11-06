@@ -2011,6 +2011,14 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
     rename keeps the narrow operand, and Phase 1's `Lsh64x<a>` asks for a 64-bit one: on the
     `int8` value 1 shifted by 0, `Lsh8x64` gives 1 and `Lsh64x64` `poison`. A proof needs
     `Lsh64x<a>` to read its operand's low 64 bits at any integer width.
+  - `:970` (`(ADD x (MOVDconst <t> [c])) && !t.IsPtr() => (ADDconst [c] x)`) was false as
+    the validator stood (PR #481): an `ADD <int32>` whose first argument is a pointer without
+    an integer form at the `int64` shape and whose `int32` constant has high bits; the
+    constant's register is zero-extended, so `ADD` moves the pointer by another 64-bit amount
+    than `ADDconst [c]`. Proven (`Rules/Peep.lean`, `r_ARM64_970_sound`) since the validator's
+    provenance clause (`Pat.argsOKLs`) keeps word-shaped arguments (the shapes such a pointer
+    has, `Val.hasTy`) away from a provenance op (`provOp`) at a non-word shape; it costs no
+    function on quick-v7.
   Recorded also in the module docs of `GoFV/Proof/Low/Rules/Cmp.lean` and `Shift.lean`.
 
 - **`InvertFlags` rules outside the ghost-bit semantics** (#385; model limits, not Go bugs).
