@@ -185,18 +185,114 @@ theorem decodeArgs_fit (tabs : Tables) (act : Nat) (m : Mem) :
 
 /-! ## Calls on fitted pieces -/
 
-/-- The input parameters of a call's ABI assignments (as `arm64Op`'s `call` collects them). -/
-def insOf (tabs : Tables) (v : Value) : List ABIParam :=
-  ((callABI? tabs v.aux).map (·.params.toList.filter (!·.out))).getD []
-
-theorem insOf_eq (tabs : Tables) (v : Value) :
-    (((callABI? tabs v.aux).map (·.params.toList)).getD []).filter (!·.out) = insOf tabs v := by
-  unfold insOf
+theorem callIns_eq (tabs : Tables) (v : Value) :
+    (((callABI? tabs v.aux).map (·.params.toList)).getD []).filter (!·.out) = callIns tabs v := by
+  unfold callIns
   cases callABI? tabs v.aux <;> rfl
 
 /-- The fitted argument list of a post-`expand calls` call with `k` leading non-pieces. -/
 def fitArgs (tabs : Tables) (v : Value) (k : Nat) (argv : List Val) : List Val :=
-  argv.take k ++ fitPieces tabs (insOf tabs v) (argv.drop k)
+  argv.take k ++ fitPieces tabs (callIns tabs v) (argv.drop k)
+
+/-- A piece fitted at the shape `o` (`fitPiece`), or kept (`none`). -/
+def fitAt (o : Option Ty) (x : Val) : Val :=
+  match o with
+  | some t => fitPiece t x
+  | none => x
+
+theorem fitPieces_length (tabs : Tables) : ∀ (ps : List ABIParam) (pieces : List Val),
+    (fitPieces tabs ps pieces).length = pieces.length
+  | [], _ => rfl
+  | p :: ps, pieces => by
+    unfold fitPieces
+    split
+    · exact fitPieces_length tabs ps pieces
+    · simp only [List.length_append, List.length_mapIdx, List.length_take, fitPieces_length tabs ps,
+        List.length_drop]
+      omega
+
+/-- `fitPieces` fits piece `j` at the leaf shape `fitTys` lists at `j`. -/
+theorem fitPieces_eq_mapIdx (tabs : Tables) : ∀ (ps : List ABIParam) (pieces : List Val),
+    fitPieces tabs ps pieces = pieces.mapIdx fun j x => fitAt ((fitTys tabs ps)[j]?.join) x
+  | [], pieces => by
+    apply List.ext_getElem (by simp [fitPieces_length])
+    intro j h1 h2
+    simp [fitPieces, fitTys, fitAt]
+  | p :: ps, pieces => by
+    by_cases he : p.regs.isEmpty = true
+    · simp only [fitPieces, fitTys, he, ite_true]
+      exact fitPieces_eq_mapIdx tabs ps pieces
+    · simp only [fitPieces, fitTys, he, Bool.false_eq_true, ite_false]
+      rw [fitPieces_eq_mapIdx tabs ps]
+      apply List.ext_getElem (by
+        simp only [List.length_append, List.length_mapIdx, List.length_take, List.length_drop]
+        omega)
+      intro j h1 h2
+      simp only [List.length_append, List.length_mapIdx, List.length_take, List.length_drop] at h1
+      simp only [List.getElem_mapIdx]
+      by_cases hj : j < p.regs.size
+      · rw [List.getElem_append_left (by simp only [List.length_mapIdx, List.length_take]; omega)]
+        simp only [List.getElem_mapIdx, List.getElem_take]
+        rw [List.getElem?_append_left (by simp only [List.length_map, List.length_range]; omega)]
+        simp only [List.getElem?_map, List.getElem?_range hj, Option.map_some, Option.join_some,
+          fitAt]
+        cases (leaves (tabs.ty p.type))[j]? <;> rfl
+      · have hk : (List.take p.regs.size pieces).length = p.regs.size := by
+          simp only [List.length_take]; omega
+        rw [List.getElem_append_right (by simp only [List.length_mapIdx, hk]; omega)]
+        simp only [List.getElem_mapIdx, List.getElem_drop, List.length_mapIdx, hk]
+        rw [List.getElem?_append_right (by simp only [List.length_map, List.length_range]; omega)]
+        simp only [List.length_map, List.length_range]
+        congr 3
+        omega
+
+/-- A call's fitted arguments fit argument `i` at `callFitTy`. -/
+theorem fitArgs_eq_mapIdx (tabs : Tables) {w : Value} {k : Nat} (hk : callLead w.op = some k)
+    (v : Value) (hax : v.aux = w.aux) (argv : List Val) :
+    fitArgs tabs v k argv = argv.mapIdx fun i x => fitAt (callFitTy tabs w i) x := by
+  have hins : callIns tabs v = callIns tabs w := by unfold callIns; rw [hax]
+  unfold fitArgs
+  rw [hins, fitPieces_eq_mapIdx]
+  apply List.ext_getElem (by
+    simp only [List.length_append, List.length_mapIdx, List.length_take, List.length_drop]
+    omega)
+  intro i h1 h2
+  simp only [List.length_append, List.length_mapIdx, List.length_take, List.length_drop] at h1
+  simp only [List.getElem_mapIdx, callFitTy, hk, Option.bind_some]
+  by_cases hi : i < k
+  · rw [List.getElem_append_left (by simp only [List.length_take]; omega)]
+    simp [hi, fitAt]
+  · have hl : (List.take k argv).length = k := by simp only [List.length_take]; omega
+    rw [List.getElem_append_right (by simp only [hl]; omega)]
+    simp only [List.getElem_mapIdx, List.getElem_drop, hl, hi, ite_false]
+    congr 3 <;> omega
+
+/-- Pointwise refinement of two lists mapped by the same indexed function. -/
+theorem refinesList_mapIdx : ∀ {F : Nat → Val → Val} {L L' : List Val}, L.length = L'.length →
+    (∀ i (h1 : i < L.length) (h2 : i < L'.length), Sem.Refines (F i L[i]) (F i L'[i])) →
+    RefinesList (L.mapIdx F) (L'.mapIdx F)
+  | _, [], [], _, _ => .nil
+  | F, a :: L, b :: L', hl, h => by
+    simp only [List.mapIdx_cons]
+    exact .cons (h 0 (by simp) (by simp))
+      (refinesList_mapIdx (F := fun i => F (i + 1)) (by simpa using hl) fun i h1 h2 =>
+        h (i + 1) (by simpa using h1) (by simpa using h2))
+  | _, [], _ :: _, hl, _ | _, _ :: _, [], hl, _ => by simp at hl
+
+/-- The fitted arguments of a call refine where each argument refines, or refines fitted at its
+leaf (`callFitTy`). -/
+theorem fitArgs_refines (tabs : Tables) {w : Value} {k : Nat} (hk : callLead w.op = some k)
+    (v : Value) (hax : v.aux = w.aux) {AS AT : List Val} (hl : AS.length = AT.length)
+    (h : ∀ i (h1 : i < AS.length) (h2 : i < AT.length), Sem.Refines AS[i] AT[i] ∨
+      ∃ t, callFitTy tabs w i = some t ∧ Sem.Refines (fitPiece t AS[i]) (fitPiece t AT[i])) :
+    RefinesList (fitArgs tabs v k AS) (fitArgs tabs v k AT) := by
+  rw [fitArgs_eq_mapIdx tabs hk v hax, fitArgs_eq_mapIdx tabs hk v hax]
+  refine refinesList_mapIdx hl fun i h1 h2 => ?_
+  rcases h i h1 h2 with h | ⟨t, ht, h⟩
+  · cases hc : callFitTy tabs w i with
+    | none => simpa [fitAt] using h
+    | some t => simpa [fitAt] using fitPiece_mono t h
+  · simpa [ht, fitAt] using h
 
 /-- The post-`expand calls` generic calls and their leading non-piece arguments. -/
 def PostCall (op : Op) (k : Nat) : Prop :=
@@ -205,7 +301,7 @@ def PostCall (op : Op) (k : Nat) : Prop :=
 theorem callTarget_fit {ctx : Ctx} {v : Value} {k : Nat} (hc : PostCall v.op k) (argv : List Val) :
     ∃ R, callTarget ctx v (fitArgs ctx.tabs v k argv) =
       ((callTarget ctx v argv).1, (callTarget ctx v argv).2.1, R) ∧
-      (R = fitPieces ctx.tabs (insOf ctx.tabs v) (callTarget ctx v argv).2.2 ∨
+      (R = fitPieces ctx.tabs (callIns ctx.tabs v) (callTarget ctx v argv).2.2 ∨
         R = (callTarget ctx v argv).2.2) := by
   unfold fitArgs
   rcases hc with ⟨hop, rfl⟩ | ⟨hop, rfl⟩ | ⟨hop, rfl⟩
@@ -265,13 +361,13 @@ theorem callOp_fit {env : Env} (hE : env.Mono) (ctx : Ctx) (v : Value) {k : Nat}
     cases last with
     | mem m =>
       dsimp only
-      simp only [hpost, ↓reduceIte, insOf_eq]
-      cases hd : decodeArgs ctx.tabs ctx.act m (insOf ctx.tabs v) rest.dropLast with
+      simp only [hpost, ↓reduceIte, callIns_eq]
+      cases hd : decodeArgs ctx.tabs ctx.act m (callIns ctx.tabs v) rest.dropLast with
       | none => exact .stuck _ _
       | some args =>
         have hrest : rest = rest.dropLast ++ [.mem m] := eq_dropLast_of_getLast? hl
-        have hfit : fitPieces ctx.tabs (insOf ctx.tabs v) rest =
-            fitPieces ctx.tabs (insOf ctx.tabs v) rest.dropLast ++ [.mem m] := by
+        have hfit : fitPieces ctx.tabs (callIns ctx.tabs v) rest =
+            fitPieces ctx.tabs (callIns ctx.tabs v) rest.dropLast ++ [.mem m] := by
           conv => lhs; rw [hrest]
           exact fitPieces_append ctx.tabs ctx.act m _ _ hd
         rw [hfit, List.getLast?_concat, List.dropLast_concat]

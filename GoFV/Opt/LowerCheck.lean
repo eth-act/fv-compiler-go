@@ -439,23 +439,60 @@ def narrowReadW (o : Op) (i : Nat) : Option Nat :=
   | some k => if i == 0 then some k else none
   | none => if w32Op o then some 32 else none
 
-/-- An argument `a` (argument `i`) of the op `o` in the replay, a `Copy` at an integer shape
-narrower than 64 bits that keeps the bits `o` reads of it (`narrowReadW`; lowering a truncation,
-`(Trunc64to32 x) => x`), whose argument reaches `a'` through at most `n` compatible copies: `o`
-reads the same bits of `a'` (`GoFV.Proof.Low.Val.op1_ext_retypeL`, `GoFV.Proof.Low.Val.w32_narrow`).
-`lower` eliminates such a copy inline (in an extension while still generic, in a node a rule
-builds on it, `ruleDefsL`), which the replay cannot follow (`copyReachL`); `finalOKL` accepts the
-output's `a'`. -/
+/-- The value `a` of the replay is a `Copy` at an integer shape of at least `k` and fewer than 64
+bits (lowering a truncation, `(Trunc64to32 x) => x`), whose argument reaches `a'` through at most
+`n` compatible copies: `a'` holds `a`'s low `k` bits. -/
+def truncFromL (tabs : Tables) (M : Defs) (n k : Nat) (a a' : ID) : Bool :=
+  match M.get? a with
+  | some c =>
+    c.op == .Copy && c.args.size == 1 &&
+      (match shpL tabs c.type with
+        | .int w => decide (k ≤ w.bits) && w != .w64
+        | _ => false) &&
+      copyReachL tabs M n c.args[0]! a'
+  | none => false
+
+/-- Argument `i` of the op `o` in the replay is `a`, a narrowing `Copy` that keeps the bits `o`
+reads of it (`narrowReadW`, `truncFromL`), and the output's is `a'`: `o` reads the same bits of
+`a'` (`GoFV.Proof.Low.Val.op1_ext_retypeL`, `GoFV.Proof.Low.Val.w32_mono`). `lower` eliminates
+such a copy inline (in an extension while still generic, in a node a rule builds on it,
+`ruleDefsL`), which the replay cannot follow (`copyReachL`); `finalOKL` accepts the output's
+`a'`. -/
 def truncReachL (tabs : Tables) (M : Defs) (n : Nat) (o : Op) (i : Nat) (a a' : ID) : Bool :=
-  (narrowReadW o i).any fun k =>
-    match M.get? a with
-    | some c =>
-      c.op == .Copy && c.args.size == 1 &&
-        (match shpL tabs c.type with
-          | .int w => decide (k ≤ w.bits) && w != .w64
-          | _ => false) &&
-        copyReachL tabs M n c.args[0]! a'
-    | none => false
+  (narrowReadW o i).any fun k => truncFromL tabs M n k a a'
+
+/-- The leading arguments of a lowered call that are no register pieces (`Sem.arm64Op`'s `call`):
+none of `CALLstatic`, the closure's code and context of `CALLclosure`, the code of `CALLinter`. -/
+def callLead : Op → Option Nat
+  | .ARM64CALLstatic => some 0
+  | .ARM64CALLclosure => some 2
+  | .ARM64CALLinter => some 1
+  | _ => none
+
+/-- The input parameters of the ABI of the call `v` (`Sem.arm64Op`'s `call`). -/
+def callIns (tabs : Tables) (v : Value) : List ABIParam :=
+  ((Sem.callABI? tabs v.aux).map (·.params.toList.filter (!·.out))).getD []
+
+/-- The leaf shapes `fitPieces` fits a call's register pieces at, in order (`none`: a piece it
+keeps). -/
+def fitTys (tabs : Tables) : List ABIParam → List (Option Sem.Ty)
+  | [] => []
+  | p :: ps =>
+    if p.regs.isEmpty then fitTys tabs ps
+    else (List.range p.regs.size).map (fun i => (Sem.leaves (tabs.ty p.type))[i]?.map (·.2)) ++
+      fitTys tabs ps
+
+/-- The shape the lowered call `v` fits its argument `i` at (`fitPieces`). -/
+def callFitTy (tabs : Tables) (v : Value) (i : Nat) : Option Sem.Ty :=
+  (callLead v.op).bind fun k => if i < k then none else ((fitTys tabs (callIns tabs v))[i - k]?).join
+
+/-- Argument `i` of the lowered call `v` in the replay is `a`, a narrowing `Copy` keeping the bits
+of the integer leaf the call fits the argument at (`callFitTy`, `truncFromL`), and the output's
+is `a'`: the callee reads the same leaf (`GoFV.Proof.Low.Val.fitPiece_retypeL`). -/
+def truncCallL (tabs : Tables) (M : Defs) (n : Nat) (v : Value) (i : Nat) (a a' : ID) : Bool :=
+  match callFitTy tabs v i with
+  | some (.int w) => truncFromL tabs M n w.bits a a'
+  | _ => false
 
 /-! ## Blocks -/
 
@@ -771,7 +808,8 @@ def finalOKL (tabs : Tables) (f g : Func) (M : Defs) (B : BMapL) : Bool :=
             u.aux == m.aux && u.args.size == m.args.size &&
             (List.range m.args.size).all fun j =>
               copyReachL tabs M n m.args[j]! u.args[j]! ||
-                truncReachL tabs M n m.op j m.args[j]! u.args[j]!) ||
+                truncReachL tabs M n m.op j m.args[j]! u.args[j]! ||
+                truncCallL tabs M n m j m.args[j]! u.args[j]!) ||
           (termVL tabs u && L[x]? != some true) || pbFinal tabs f M n x m u
         | _, _ => false
     | _, _, _ => false
