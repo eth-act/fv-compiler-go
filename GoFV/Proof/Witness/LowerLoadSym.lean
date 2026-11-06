@@ -2,7 +2,7 @@ import GoFV.Proof.Witness.LowerStoreSym
 
 /-!
 # Witness functions for `lower` folding a global's or a frame variable's address into a load:
-`gld`, `fra` (hand-written, issue #385)
+`gld`, `fra`, `fr0` (hand-written, issue #385)
 
 `gld() int { return g[1] }` with a global `g [2]int` as `lower` sees it (one block: `v3 = Addr
 <*int> {g} v2` of `v2 = SB`, `v4 = OffPtr <*int> [8] v3`, `v5 = Load <int> v4 v1`, returned by `v6 =
@@ -21,6 +21,12 @@ lower lowers `v4` to the frame address `MOVDaddr {a} v2` (310, an atom), folds i
 (650 on a frame variable: `v5` becomes the term `MOVDaddr [8] {a} v2`, the validator's
 `frameFold`), into the store (893: `MOVDstore [8] {a} v2 v3 v1`) and into the load (856: `MOVDload
 [8] {a} v2 v6`); `v4` and `v5` are dead. Both return 7.
+
+`fr0() int { var a [2]int; a[0] = 7; return a[0] }`: `fra` with `v5 = OffPtr <*int> [0] v4`. 650 at
+offset 0 makes `v5` the frame address `MOVDaddr {a} v2`, an atom, which the validator replays as
+no change (`addrFoldEv`: `v5` stays `ADDconst [0] v4`); the store and the load fold the address
+through it (`frameAddr`: `MOVDstore {a} v2 v3 v1`, `MOVDload {a} v2 v6`), and `lower` deletes the
+dead `v4` and `v5`. Both return 7.
 
 By `lower_refines` every returning or panicking `run` of either is, up to refinement, a `runL` of
 the result.
@@ -196,5 +202,60 @@ theorem fra_lower :
     obtain ⟨h6, h7, hl, -⟩ := h1
     exact ⟨out, rfl, hl, h6, h7, GoFV.Proof.Low.lower_refines hc fra_generic,
       fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc fra_generic fra_noFma hE hd⟩
+
+/-- `fr0`, the input of `lower`: `fra` with the offset 0. -/
+def fr0Func : Func :=
+  { fraFunc with
+    valueTab := fraFunc.valueTab.set! 5 (some (mkVI 5 .OffPtr 3 0 none p0 2 #[4] 1)) }
+
+/-- The pass environment of `lower` on `fr0`. -/
+def fr0PassEnv : PassEnv :=
+  { fraPassEnv with funcName := GoStr.ofString "fr0" }
+
+theorem fr0_generic : fr0Func.lowered = false := by decide +kernel
+
+/-- `fr0` has no fused multiply-add shape: its contraction is itself. -/
+theorem fr0_noFma : GoFV.Opt.FmaContract.contractAll fr0Func = fr0Func := by decide +kernel
+
+set_option synthInstance.maxSize 2048 in
+/-- By kernel evaluation: the checked lower keeps a lowered result without `v4` and `v5`, whose
+store `v6` is `MOVDstore {a} v2 v3 v1` and load `v7` `MOVDload {a} v2 v6`, and `fr0` returns 7
+under `run` of the input and `runL` of the result. -/
+theorem fr0_checks :
+    (lowerChecked fr0PassEnv fr0Func).toOption.map (fun o =>
+      ((o.func.value? 4).isSome, (o.func.value? 5).isSome,
+        (o.func.value? 6).map (fun v => (v.op, v.auxInt, v.aux, v.args)),
+        (o.func.value? 7).map (fun v => (v.op, v.auxInt, v.aux, v.args)), o.func.lowered,
+        returnsInt (runL Env.p1 o.tables o.func [] {} 1) 7)) =
+      some (false, false, some (.ARM64MOVDstore, 0, some 4, #[2, 3, 1]),
+        some (.ARM64MOVDload, 0, some 4, #[2, 6]), true, true) ∧
+    returnsInt (run Env.p1 fraTabs fr0Func [] {} 1) 7 = true := by
+  decide +kernel
+
+/-- **Pass execution witness** for `lower_refines` (`lower_refines_run`) on a frame variable's
+address at offset 0 (`ARM64.rules:650` replayed as no change, `addrFoldEv`) folded into a store and
+a load: on `fr0`, the checked lower stores and loads at `{a}` directly, and every returning or
+panicking `run` of `fr0` is, up to refinement, a `runL` of the result. -/
+theorem fr0_lower :
+    ∃ out, lowerChecked fr0PassEnv fr0Func = .ok out ∧ out.func.lowered = true ∧
+      (out.func.value? 5).isSome = false ∧
+      (out.func.value? 6).map (fun v => (v.op, v.auxInt, v.aux, v.args)) =
+        some (.ARM64MOVDstore, 0, some 4, #[2, 3, 1]) ∧
+      (out.func.value? 7).map (fun v => (v.op, v.auxInt, v.aux, v.args)) =
+        some (.ARM64MOVDload, 0, some 4, #[2, 6]) ∧
+      (∃ f', GoFV.Proof.Low.Contract fr0Func f' ∧
+        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func fr0PassEnv.tables f') ∧
+      ∀ env, env.Mono → ∀ args mem fuel, (run env fraTabs fr0Func args mem fuel).Defined →
+        ∃ fuel', OutcomeRefines 0 (run env fraTabs fr0Func args mem fuel)
+          (runL env out.tables out.func args mem fuel') := by
+  obtain ⟨h1, -⟩ := fr0_checks
+  cases hc : lowerChecked fr0PassEnv fr0Func with
+  | error e => rw [hc] at h1; cases h1
+  | ok out =>
+    rw [hc] at h1
+    simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
+    obtain ⟨-, h5, h6, h7, hl, -⟩ := h1
+    exact ⟨out, rfl, hl, h5, h6, h7, GoFV.Proof.Low.lower_refines hc fr0_generic,
+      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc fr0_generic fr0_noFma hE hd⟩
 
 end GoFV.Proof.Witness
