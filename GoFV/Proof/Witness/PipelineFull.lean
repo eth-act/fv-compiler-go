@@ -248,11 +248,17 @@ def pfArgs : List Val := [.int .w64 0x7FF8000000000001]
 def noActB (f : Func) : Bool :=
   f.valueTab.all (fun o => o.all fun v => !GoFV.Opt.ScheduleCheck.actOp v.op)
 
-/-- The pipeline returns a `fullyVerified` state whose `schedule` inputs have no memory op
-(compiled evaluation). -/
+/-- No value of `f` (in `tabs`) is a pointer-shaped register piece of a parameter
+(`argPtrsOK_of_none`). -/
+def noArgPtrB (tabs : Tables) (f : Func) : Bool :=
+  (List.range f.valueTab.size).all
+    (fun x => !GoFV.Opt.ScheduleCheck.argPtr tabs (Ctx.makeL tabs f).params (Ctx.makeL tabs f).tys f x)
+
+/-- The pipeline returns a `fullyVerified` state whose `schedule` inputs have no memory op and no
+pointer-shaped parameter piece (compiled evaluation). -/
 theorem pfF_pipeline :
     ((verifiedPipelineFull pfEnv pfF).toOption.map fun r =>
-      r.fullyVerified && r.nnf.all (noActB ·.2)) = some true := by
+      r.fullyVerified && r.nnf.all (fun x => noActB x.2 && noArgPtrB x.1 x.2)) = some true := by
   native_decide
 
 theorem pfF_run : returnsBool (run plRunEnv pfTabs pfF pfArgs {} 1) true = true := by
@@ -302,9 +308,14 @@ theorem verifiedPipelineFull_witness :
     obtain ⟨hv, hn⟩ := hp
     obtain ⟨m, hm⟩ := returnsBool_iff.1 pfF_run
     refine ⟨r, rfl, hv, ⟨m, hm⟩, ?_⟩
+    have hx2 : ∀ x ∈ r.nnf, noActB x.2 = true ∧ noArgPtrB x.1 x.2 = true := fun x hx => by
+      have := List.all_eq_true.1 hn x hx
+      simpa only [Bool.and_eq_true] using this
     have hnn : ∀ x ∈ r.nnf, NoNilFault x.1 x.2 plRunEnv pfArgs {} := fun x hx =>
-      noNilFault_of_noAct (List.all_eq_true.1 hn x hx) plRunEnv pfArgs {}
-    obtain ⟨fuel', ho⟩ := verifiedPipelineFull_refines hpe hv pfRunEnv_vpre hnn
+      noNilFault_of_noAct (hx2 x hx).1 plRunEnv pfArgs {}
+    have hap : ∀ x ∈ r.nnf, ArgPtrsOK x.1 x.2 plRunEnv pfArgs {} := fun x hx =>
+      argPtrsOK_of_none (hx2 x hx).2 plRunEnv pfArgs {}
+    obtain ⟨fuel', ho⟩ := verifiedPipelineFull_refines hpe hv pfRunEnv_vpre hnn hap
       (fuel := 1) (by rw [show pfEnv.tables = pfTabs from rfl, hm]; trivial)
     rw [show pfEnv.tables = pfTabs from rfl, hm] at ho
     refine ⟨fuel', ?_⟩

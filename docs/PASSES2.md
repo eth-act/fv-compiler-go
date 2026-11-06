@@ -89,7 +89,7 @@ output, `guard` its remaining hypotheses, decided after the run on the input and
 | loop invariant | `licmPass`, `RefinesL` | `check` of `unhoist`, `critRelB`, `moveB` | `MoveL.licm_refinesL` |
 | late phielim and copyelim | `copyelimPass`, `RefinesL` | `copyFrag`, `emptyFragB`, form kept, `copyLFragB` | `CopyElim.copyelim_refinesL` |
 | critical | `criticalPass`, `RefinesL` | `critRelB` | `Crit.critical_refinesL` |
-| schedule | `schedulePass`, `runL` → `runSched` on `NoNilFault` of the input | `scheduleCheck` | `SchedL.schedule_refinesSchedLF` (`.schedL`) |
+| schedule | `schedulePass`, `runL` → `runSched` on `NoNilFault` and `ArgPtrsOK` of the input | `scheduleCheck` | `SchedL.schedule_refinesSchedL` |
 | late nilcheck | `nilcheckelim2Pass`, `RefinesSched` | `nilLateB` | `NilLateL.nilcheckelim2_refinesSched` |
 | flagalloc | `flagallocPass`, `RefinesSched` | `flagAllocB` | `FlagAllocL.flagalloc_refinesSched` |
 | regalloc | `regallocV`, `runSched` → `runLoc` | `tabsAgreeL` of the input in the output's tables, `checkRA` | `RA.checkRA_sound`, `runSched_tabsAgreeL` |
@@ -117,13 +117,16 @@ theorem GoFV.Proof.PipelineFull.verifiedPipelineFull_refines
     (h : verifiedPipelineFull env f 0 zv dcl = .ok r) (hv : r.fullyVerified = true)
     (hP : VPre (NilCheck.dictParams env.tables f) (pipelineRo env f) e args mem)
     (hn : ∀ x ∈ r.nnf, NoNilFault x.1 x.2 e args mem)
+    (ha : ∀ x ∈ r.nnf, ArgPtrsOK x.1 x.2 e args mem)
     (hd : (run e env.tables f args mem fuel).Defined) :
     ∃ fuel', OutcomeRefines 0 (run e env.tables f args mem fuel)
       (runLoc e r.st.tables r.st.func args mem fuel')
 ```
 
 `r.nnf` are the `schedule` inputs (`schedule`'s theorem is stated against `runLF`, `runL` with
-faulting memory ops; `NoNilFault`: no run of that input faults in the nil page). The general form
+faulting memory ops; `NoNilFault`: no run of that input faults in the nil page; `ArgPtrsOK`:
+its pointer-shaped parameter pieces read nil or pointers that are not wild, a Go-level
+assumption, `docs/proofs/STATUS.md`). The general form
 `verifiedPipelineFull_layer` holds from any start pass and for every `verified` state, in its
 layer. Witness: `verifiedPipelineFull_witness` (`GoFV/Proof/Witness/PipelineFull.lean`,
 `isNaN` from quick-v7, through `trim`, returns `true` under `runLoc` for a NaN argument).

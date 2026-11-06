@@ -230,15 +230,38 @@ where
       have hxy : y ≠ x := fun h => hx (h ▸ List.mem_cons_self)
       simp [getElem!_def, Array.set!_eq_setIfInBounds, hxy]
 
+/-- The source positions: `x` at index `k` of `l` is at `k + 1`; a value not in `l` at 0. -/
+theorem srcPos_get {n : Nat} {l : List ID} (hnd : l.Nodup) (hlt : ∀ x ∈ l, x < n) {k : Nat}
+    {x : ID} (h : l[k]? = some x) : (srcPos n l)[x]! = k + 1 := by
+  unfold srcPos
+  rw [posFill_get l 1 _ hnd (by simpa using hlt) k x h]
+  omega
+
+theorem srcPos_out {n : Nat} {l : List ID} {x : ID} (hx : x ∉ l) : (srcPos n l)[x]! = 0 := by
+  unfold srcPos
+  rw [posFill_get.posFill_out l 1 _ x hx]
+  simp [getElem!_def, Array.getElem?_replicate]
+  split <;> rfl
+
+/-- A value at a positive source position before `x`'s is listed before `x`. -/
+theorem srcPos_before {n : Nat} {l : List ID} (hnd : l.Nodup) (hlt : ∀ x ∈ l, x < n) {k : Nat}
+    {x p : ID} (hx : l[k]? = some x) (h0 : 0 < (srcPos n l)[p]!)
+    (hpx : (srcPos n l)[p]! < (srcPos n l)[x]!) : ∃ k', k' < k ∧ l[k']? = some p := by
+  by_cases hp : p ∈ l
+  · obtain ⟨k', hk'⟩ := List.mem_iff_getElem?.1 hp
+    rw [srcPos_get hnd hlt hk', srcPos_get hnd hlt hx] at hpx
+    exact ⟨k', by omega, hk'⟩
+  · rw [srcPos_out hp] at h0; cases h0
+
 /-- **What `orderOK` gives**: failing values `y` before `x` in the target order, with `x`
-before `y` in the source order, satisfy `swapOK`. -/
+before `y` in the source order, satisfy `swapOK` at the source positions. -/
 theorem orderOK_swap {tabs : Tables} {params : Array (Option AuxRef)} {tys : Array Ty} {f : Func}
     {n : Nat} {oS oT : Array ID}
     (h : orderOK tabs params tys f n oS oT = true) (hnd : oS.toList.Nodup) (hlt : ∀ x ∈ oS.toList, x < n)
     {i j : Nat} {x y : ID} (hij : i < j) (hy : oT.toList[i]? = some y) (hx : oT.toList[j]? = some x)
     (hfy : mayFail tabs f y = true) (hfx : mayFail tabs f x = true)
     {k l : Nat} (hkl : k < l) (hxk : oS.toList[k]? = some x) (hyl : oS.toList[l]? = some y) :
-    swapOK tabs params tys f x y = true := by
+    swapOK tabs params tys f (srcPos n oS.toList) x y = true := by
   unfold orderOK at h
   have hp := of_decide_eq_true h
   rw [List.pairwise_filter, List.pairwise_iff_getElem] at hp
@@ -247,9 +270,7 @@ theorem orderOK_swap {tabs : Tables} {params : Array (Option AuxRef)} {tys : Arr
   have := hp i j hi hj hij
   rw [(List.getElem?_eq_some_iff.1 hy).2, (List.getElem?_eq_some_iff.1 hx).2] at this
   have h2 := this hfy hfx
-  have pk := posFill_get oS.toList 0 (Array.replicate n 0) hnd (by simpa using hlt) k x hxk
-  have pl := posFill_get oS.toList 0 (Array.replicate n 0) hnd (by simpa using hlt) l y hyl
-  rw [pk, pl] at h2
+  rw [srcPos_get hnd hlt hxk, srcPos_get hnd hlt hyl] at h2
   simpa [hkl] using h2
 
 end GoFV.Proof.SchedL

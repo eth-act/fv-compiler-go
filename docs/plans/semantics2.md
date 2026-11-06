@@ -74,10 +74,10 @@ for register-passed arguments, `g` (x28) is preserved by callees, and memory bel
 Proven form (#385, `GoFV.Proof.PipelineFull.verifiedPipelineFull_refines`, `docs/PASSES2.md` §0):
 for a `fullyVerified` result of the verified pipeline from `number lines` through `trim`, every
 returning or panicking `run` of the ssagen output `f₀` is, up to refinement, a `runLoc` of the
-result, under Phase 1's `VPre` and `NoNilFault` of the `schedule` input (where `schedule`'s
-`runLF` theorem meets `runL`). The verified `lower` accepts only inputs without fused
-multiply-add shapes (`contractAll f = f`), so no `Contract` appears; composing a contraction
-with the refinements before `lower` is open.
+result, under Phase 1's `VPre`, `NoNilFault` of the `schedule` input (where `schedule`'s
+`runLF` theorem meets `runL`) and `ArgPtrsOK` of it (§6). The verified `lower` accepts only
+inputs without fused multiply-add shapes (`contractAll f = f`), so no `Contract` appears;
+composing a contraction with the refinements before `lower` is open.
 
 ### 2.1 Floating-point contraction (decision on #384)
 
@@ -399,6 +399,14 @@ it is right for L0. From `schedule` on two things change:
   With it a check panics exactly when an access at `p + k` (`k < minZeroPage`) faults: when `p`
   is nil. `runL` (L0) keeps Phase 1's `NilCheck` (every `Blk.nil` pointer panics); `runLF`
   (`GoFV.Proof.RefineSched`) differs from `runL` by these faults and stuck wild checks.
+  **Pointer parameters (decision, #385):** the theorems assume of the `schedule` input that every
+  pointer-shaped register piece of a parameter (`ArgIntReg` at a `.ptr` shape) reads nil or a
+  pointer that is not wild (`GoFV.Proof.ArgPtrsOK`). This is a Go-level assumption: Go's type
+  system and the garbage collector require a pointer parameter to be nil or valid, and `unsafe`
+  code that forges a wild pointer is outside the model. Go's `schedule` may run a nil check of
+  such a piece before a load or nil check of another pointer on the same memory that the source
+  order runs first; under the assumption the moved check panics with `nilDeref` of that memory
+  (as the other value would) or passes (`ScheduleCheck.swapOK`'s `argPtr` case).
 - **Order is the schedule.** `runSched` evaluates the non-phi values in `b.Values` order (no
   `kahn`), with one current memory (a memory-typed value updates it; a memory argument must be
   the current memory or a load's memory still current at that point, else `stuck`).

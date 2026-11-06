@@ -25,6 +25,9 @@ structure Cnt where
   changed : Nat := 0
   accepted : Nat := 0
   acceptedChanged : Nat := 0
+  /-- Accepted sections where some swap needs `swapOK`'s `argPtr` case. -/
+  viaArgPtr : Nat := 0
+  argPtrCands : Array (Nat × String) := #[]
   whys : Std.HashMap String Nat := {}
   cands : Array (Nat × String) := #[]
 
@@ -33,6 +36,7 @@ def Cnt.merge (a b : Cnt) : Cnt :=
     outUnchecked := a.outUnchecked + b.outUnchecked
     changed := a.changed + b.changed, accepted := a.accepted + b.accepted
     acceptedChanged := a.acceptedChanged + b.acceptedChanged
+    viaArgPtr := a.viaArgPtr + b.viaArgPtr, argPtrCands := a.argPtrCands ++ b.argPtrCands
     whys := b.whys.fold (fun m k n => m.insert k (m.getD k 0 + n)) a.whys
     cands := a.cands ++ b.cands }
 
@@ -92,13 +96,13 @@ def why (tabs : Tables) (f g : Func) : String := Id.run do
         if !topoB g oT.toList then return "target order: not topological"
       else return "block presence (orders)"
       if !orderOK tabs cS.params cS.tys f f.valueTab.size oS oT then
-        let pS := posFill oS.toList 0 (Array.replicate f.valueTab.size 0)
+        let pS := srcPos f.valueTab.size oS.toList
         let ns := oT.filter (mayFail tabs f)
         for l in List.range ns.size do
           for k in List.range l do
             let x := ns[l]!
             let y := ns[k]!
-            if pS[x]! < pS[y]! && !swapOK tabs cS.params cS.tys f x y then
+            if pS[x]! < pS[y]! && !swapOK tabs cS.params cS.tys f pS x y then
               let sameMem := match f.value? x, f.value? y with
                 | some vx, some vy => s!"{vx.args.back? == vy.args.back?}, same ptr {vx.args[0]? == vy.args[0]?}, y ptr {(vy.args[0]?.bind f.value?).map (fun (u : Value) => u.op.name)} x base {(vx.args[0]?.bind f.value?).map (fun (u : Value) => u.op.name)}"
                 | _, _ => "?"
@@ -107,6 +111,25 @@ def why (tabs : Tables) (f g : Func) : String := Id.run do
     | none, _ => return "no runL order"
     | _, none => return "no runSched order"
   return "accepted"
+
+/-- Some block of `f` needs `swapOK`'s `argPtr` case: a pair the target swaps that `swapOK`
+allows only with the source positions (without them, `pS = #[]`, the case never holds). -/
+def needsArgPtr (tabs : Tables) (f g : Func) : Bool := Id.run do
+  let cS := Ctx.makeL tabs f
+  let sS := cS.sched
+  let sT := (Ctx.makeSched tabs g).sched
+  for b in List.range f.blockTab.size do
+    match sS[b]?.join, sT[b]?.join with
+    | some oS, some oT =>
+      let pS := srcPos f.valueTab.size oS.toList
+      let ns := oT.filter (mayFail tabs f)
+      for l in List.range ns.size do
+        for k in List.range l do
+          let x := ns[l]!
+          let y := ns[k]!
+          if pS[x]! < pS[y]! && !swapOK tabs cS.params cS.tys f #[] x y then return true
+    | _, _ => pure ()
+  return false
 
 def listed (f : Func) : Nat :=
   f.blocks.foldl (fun n bid => n + (((f.block? bid).map (·.values.size)).getD 0)) 0
@@ -151,6 +174,9 @@ def doFile (pass : String) (path : System.FilePath) (c : Cnt) : IO Cnt := do
                       acceptedChanged := c.acceptedChanged + (if ch then 1 else 0) }
         if ch then
           c := { c with cands := c.cands.push (listed f, s!"{path} section {k - 1} -> {k}: {f.blocks.size} blocks, {listed f} values") }
+        if needsArgPtr prev f g then
+          c := { c with viaArgPtr := c.viaArgPtr + 1
+                        argPtrCands := c.argPtrCands.push (listed f, s!"{path} section {k - 1} -> {k}: {listed f} values") }
       else
         let w := why prev f g
         c := { c with whys := c.whys.insert w (c.whys.getD w 0 + 1) }
@@ -182,6 +208,9 @@ def main (args : List String) : IO UInt32 := do
     | .ok x => c := c.merge x
     | .error err => IO.eprintln s!"task error: {err}"; return 1
   IO.println s!"schedule: sections {c.secs}, pass errors {c.passErr}, input checked {c.checked} (output not checked {c.outUnchecked}), changed {c.changed}, scheduleCheck accepted {c.accepted} (changed {c.acceptedChanged}), rejected {c.checked - c.accepted}"
+  IO.println s!"accepted through swapOK's argPtr case (ArgPtrsOK): {c.viaArgPtr}"
+  for (_, l) in (c.argPtrCands.qsort (fun a b => a.1 < b.1)).extract 0 5 do
+    IO.println s!"  {l}"
   IO.println "outside (first failing condition):"
   for (k, n) in c.whys.toList.toArray.qsort (fun a b => a.2 > b.2) do
     IO.println s!"  {n} {k}"

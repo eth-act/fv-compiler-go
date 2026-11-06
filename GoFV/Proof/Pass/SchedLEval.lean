@@ -772,6 +772,50 @@ theorem evalValueL_nc_nil {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v :
   rw [evalValueL_bind hm, hf, evalOpL_nc_nil hop hb]
   rfl
 
+/-- **A nil check of a pointer outside the nil block on a memory evaluates** (memory ops faulting
+or not). -/
+theorem evalValueL_nc_pass {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
+    {p ℓ : ID} {a : Val} {m : Mem}
+    (hop : v.op = .ARM64LoweredNilCheck) (hargs : v.args = #[p, ℓ])
+    (hp : fr.regs[p]? = some (some a)) (hn : NonNil a)
+    (hl : fr.regs[ℓ]? = some (some (.mem m))) :
+    ∃ y, evalValueL md env ctx fr v = .ok y := by
+  obtain ⟨q, hq, hblk⟩ := hn
+  have hm : argsM fr v = .ok [a, .mem m] := by
+    simp only [argsM, hargs]
+    simp [hp, hl, Res.ofOption]
+    rfl
+  have hacc : nilAccesses ctx v [a, .mem m] = [(q, q)] := by
+    have h0 : Op.ARM64LoweredNilCheck.faultOnNilArg0 = true := rfl
+    have h1 : Op.ARM64LoweredNilCheck.faultOnNilArg1 = false := rfl
+    have hs : (Op.ARM64LoweredNilCheck.auxType == .SymOff) = false := rfl
+    unfold nilAccesses
+    simp only [hop, h0, h1, hs, Bool.not_true, Bool.not_false, Bool.false_eq_true, ite_true,
+      ite_false, List.head?_cons, Option.bind_some, addr_of_asPtrWord hq, Option.map_some,
+      Option.toList_some, Option.toList_none, List.append_nil]
+  have hqn : q.isNil = false := by simp [Ptr.isNil, hblk]
+  have hnf : nilFaults md.faulting ctx v [a, .mem m] = none := by
+    unfold nilFaults
+    split
+    · rfl
+    · simp [hacc, hqn]
+  have hw : wildNil [a, .mem m] = false := by
+    simp [wildNil, addr_of_asPtrWord hq, Ptr.wild, hblk]
+  rw [evalValueL_bind hm, evalOpL_ncL hop, hnf]
+  simp only [hw, Bool.and_false, Bool.false_eq_true, ite_false]
+  cases hr : memRoot ctx { v with op := .NilCheck } [a, .mem m] with
+  | ok y => exact ⟨_, rfl⟩
+  | panic e m' =>
+    obtain ⟨-, a', ha', q', hq', hb'⟩ := memRoot_nc_panic rfl hr
+    simp only [List.cons.injEq, Val.mem.injEq, and_true] at ha'
+    obtain ⟨rfl, -⟩ := ha'
+    rw [hq] at hq'; cases hq'
+    exact absurd hb' hblk
+  | stuck msg =>
+    exfalso
+    unfold memRoot at hr
+    simp [hq, hblk] at hr
+
 /-! ## Parameter pieces -/
 
 /-- **A parameter's register piece evaluates** (`argOK`) in a frame with an image per
@@ -982,3 +1026,56 @@ theorem evalValueL_vc {md : LMode} {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame}
     | stuck msg => rw [hr] at hp; cases hp
 
 end GoFV.Proof.SchedL
+
+namespace GoFV.Proof
+
+open GoFV.SSA GoFV.SSA.Sem GoFV.Opt
+
+/-- `y`, read as a pointer word, is nil or a pointer that is not wild (`Ptr.wild`). -/
+def PtrOK (y : Val) : Prop := ∃ p, y.asPtrWord = some p ∧ p.wild = false
+
+/-- In frame `fr` (mode `md`), every pointer-shaped register piece of a parameter of `f`
+(`ScheduleCheck.argPtr`) evaluates to nil or a pointer that is not wild. -/
+def ArgPtrsAt (md : LMode) (env : Env) (tabs : Tables) (f : Func) (fr : Frame) : Prop :=
+  ∀ x v, f.value? x = some v →
+    ScheduleCheck.argPtr tabs (Ctx.makeL tabs f).params (Ctx.makeL tabs f).tys f x = true →
+    ∀ y, evalValueL md env (Ctx.makeL tabs f) fr v = .ok y → PtrOK y
+
+/-- **The pointer parameters are valid** (`docs/plans/semantics2.md` §6): on the input `args`,
+`mem`, every pointer-shaped register piece of a parameter of `f` (`ArgIntReg` at a `.ptr` shape)
+reads nil or a pointer that is not wild, in `runLF`'s entry frame. A Go-level assumption: Go's
+type system and the garbage collector require a pointer parameter to be nil or valid; `unsafe`
+code that forges a wild pointer is outside the model. `schedule` may move a nil check of such a
+piece before a fault on the same memory (`ScheduleCheck.swapOK`). -/
+def ArgPtrsOK (tabs : Tables) (f : Func) (env : Env) (args : List Val) (mem : Mem) : Prop :=
+  ArgPtrsAt ⟨f.lowered, true⟩ env tabs f (entryFrame env (Ctx.makeL tabs f) args mem)
+
+/-- A parameter's register piece reads no register: `ArgPtrsAt` holds in every frame equal up
+to the registers. -/
+theorem ArgPtrsAt.regs {md : LMode} {env : Env} {tabs : Tables} {f : Func} {fr fr' : Frame}
+    (h : ArgPtrsAt md env tabs f fr) (hfr : fr' = { fr with regs := fr'.regs }) :
+    ArgPtrsAt md env tabs f fr' := by
+  intro x v hv hp y hy
+  have ha : v.args = #[] := by
+    unfold ScheduleCheck.argPtr at hp
+    rw [hv] at hp
+    simp only [ScheduleCheck.argOK, Bool.and_eq_true, beq_iff_eq, Array.isEmpty_iff] at hp
+    exact hp.1.1.2
+  rw [← evalValueL_congr hfr (fun a h => by rw [ha] at h; simp at h)] at hy
+  exact h x v hv hp y hy
+
+/-- `ArgPtrsOK` holds when `f` has no pointer-shaped register piece of a parameter. -/
+theorem argPtrsOK_of_none {tabs : Tables} {f : Func}
+    (h : (List.range f.valueTab.size).all
+      (fun x => !ScheduleCheck.argPtr tabs (Ctx.makeL tabs f).params (Ctx.makeL tabs f).tys f x) =
+        true)
+    (env : Env) (args : List Val) (mem : Mem) : ArgPtrsOK tabs f env args mem := by
+  intro x v hv hp
+  have hx : x < f.valueTab.size := by
+    simp only [Func.value?, Option.join_eq_some_iff] at hv
+    exact (Array.getElem?_eq_some_iff.1 hv).1
+  have := List.all_eq_true.1 h x (List.mem_range.2 hx)
+  rw [hp] at this
+  cases this
+
+end GoFV.Proof

@@ -49,6 +49,8 @@ structure AtS (md : LMode) (env : Env) (tabs : Tables) (f : Func) (frS frT : Fra
   img : frS.images.size = (Ctx.makeL tabs f).params.size
   /-- No closure context (`GetClosurePtr` is `poison`). -/
   clo : frS.closure = none
+  /-- The pointer-shaped parameter pieces read nil or pointers that are not wild. -/
+  argPtr : ArgPtrsAt md env tabs f frS
 
 /-! ## Facts of `f` -/
 
@@ -337,7 +339,8 @@ theorem bstep (Su : Setup tabs f g) {frS frT : Frame} {bid : ID} {i : Nat}
     by rw [hA.frEq], by simp [setPhis_size, hA.sizeT], by simp [setPhis_size, hA.size], hagree, ?_,
     hout, fun i j x y hij hy hx hfy hfx k l hkl hxk hyl => orderOK_swap hord ond
       (fun z hz => by obtain ⟨-, v, hv, -⟩ := (omem z).1 hz; exact lt_of_value? hv)
-      hij hy hx hfy hfx hkl hxk hyl, hA.img, hA.clo⟩
+      hij hy hx hfy hfx hkl hxk hyl,
+    fun z hz => by obtain ⟨-, v, hv, -⟩ := (omem z).1 hz; exact lt_of_value? hv, hA.img, hA.clo⟩
   · obtain ⟨hxf, -⟩ := (omem x).1 hx
     obtain ⟨v', hv', hid⟩ := hown x hxf
     rw [hv] at hv'; cases hv'; exact hid
@@ -379,7 +382,7 @@ theorem stepS (Su : Setup tabs f g) (hmd : md.faulting = true) {frS frT : Frame}
     obtain ⟨ps, o, hps, ho, hev⟩ := enterBlockL_panic hen
     rw [hsSid] at ho; cases ho
     obtain ⟨psT, hpsT, B⟩ := bstep Su hA hfb hgb hperm hsS' hoT htopoT hord hps
-    have hT := walk_panic S hmd B hev
+    have hT := walk_panic S hmd B (hA.argPtr.regs rfl) hev
     rw [enterBlockL_of' hpsT hsTid, hT]
     all_goals rfl
   | ok GS =>
@@ -455,7 +458,7 @@ theorem stepS (Su : Setup tabs f g) (hmd : md.faulting = true) {frS frT : Frame}
       have hclo : GS.closure = frS.closure := by rw [e1]
       refine ⟨GT, rfl, ⟨heb, hedge.2.1⟩, by rw [hGSsz, hA.size], hGTsz, hGTfr, hGSty,
         dinvL_edge hc hb hfb htr hem hD, hagree, ?_, by rw [himg]; exact hA.img,
-        by rw [hclo]; exact hA.clo⟩
+        by rw [hclo]; exact hA.clo, hA.argPtr.regs (by rw [e1])⟩
       intro blk z v a hblk hz hv hp ha
       rw [hcblk] at hblk; cases hblk
       have hanc := hc.domRel.phiUse heb hcblk hedge.2.1 hz hv hp ha hcp htr
@@ -497,7 +500,7 @@ theorem entryFrame_sched (S : SchedRel tabs f g) (env : Env) (args : List Val) (
 
 /-- The invariant at the entry block (`hn`: `runCtxL`'s arity check). -/
 theorem atS_entry (Su : Setup tabs f g) (env : Env) {args : List Val} (mem : Mem)
-    (hn : args.length = (Ctx.makeL tabs f).params.size) :
+    (hn : args.length = (Ctx.makeL tabs f).params.size) (ha : ArgPtrsOK tabs f env args mem) :
     AtS ⟨f.lowered, true⟩ env tabs f (entryFrame env (Ctx.makeL tabs f) args mem)
       (entryFrame env (Ctx.makeL tabs f) args mem) f.entry 0 := by
   obtain ⟨ce, hwf⟩ := Su.wf
@@ -508,17 +511,19 @@ theorem atS_entry (Su : Setup tabs f g) (env : Env) {args : List Val} (mem : Mem
     simp only [entryFrame, Array.size_map, Array.size_zip, List.size_toArray, hps, hn,
       Nat.min_self]
   refine ⟨⟨hwf.entry, Su.cf.domRel.entry⟩, by simp [entryFrame, makeL_f], rfl, rfl,
-    typedL_replicate _ _ _ _ rfl, dinvL_entry Su.cf _, fun _ _ _ => rfl, ?_, himg, rfl⟩
+    typedL_replicate _ _ _ _ rfl, dinvL_entry Su.cf _, fun _ _ _ => rfl, ?_, himg, rfl, ha⟩
   intro blk z v a hblk hz hv hp ha
   have h1 := hwf.phiArity _ _ _ _ ⟨⟨hwf.entry, hblk⟩, hz, hv⟩ hp
   have h2 := hwf.entryPreds blk hblk
   rw [Array.getElem?_eq_none (by omega)] at ha; cases ha
 
 /-- **A scheduling validated by `scheduleCheck` refines its checked input**: every returning or
-panicking `runLF` of `f` is matched by a `runSched` of `g`. -/
-theorem refinesSchedLF_of_rel (Su : Setup tabs f g) : RefinesSchedLF tabs g tabs f := by
+panicking `runLF` of `f` on an input whose pointer-shaped parameter pieces are nil or not wild
+(`ArgPtrsOK`) is matched by a `runSched` of `g`. -/
+theorem refinesSchedLF_of_rel (Su : Setup tabs f g) :
+    RefinesSchedLFFrom (ArgPtrsOK tabs f) tabs g tabs f := by
   have S := Su.rel
-  intro env args mem fuel hd
+  intro env args mem ha fuel hd
   refine ⟨fuel, ?_⟩
   unfold runLF runCtxL at hd
   unfold runLF runSched runCtxL LMode.sched
@@ -542,6 +547,6 @@ theorem refinesSchedLF_of_rel (Su : Setup tabs f g) : RefinesSchedLF tabs g tabs
     exact finish_refines hd (runLoopL_sim
       (fun frS frT b i => AtS ⟨f.lowered, true⟩ env tabs f frS frT b i)
       (fun _ _ _ _ hR => stepS Su rfl hR) fuel _ _ _ _
-      (by rw [makeL_f]; exact atS_entry Su env mem hlen) (finish_defined hd))
+      (by rw [makeL_f]; exact atS_entry Su env mem hlen ha) (finish_defined hd))
 
 end GoFV.Proof.SchedL
