@@ -41,8 +41,9 @@ input `f`, and the output `g` must have the replayed definitions. The difference
   `Const64` operands of `f`'s `PanicBounds` (`pbLower`, `pbConstOK`);
 * each block evaluates `f`'s roots in the same order in `g` (a lowered `Zero` is not a root of
   lowered SSA: `g` may evaluate it earlier, which never fails without faulting memory);
-* copies are compatible at the lowered shapes (`copyCompatL`); phi eliminations and snapshots
-  reject.
+* copies are compatible at the lowered shapes (`copyCompatL`); the output's sign or zero extension
+  may also read the value a narrowing integer `Copy` of its replayed argument copies, when the
+  `Copy` keeps the bits the extension reads (`truncReachL`); phi eliminations and snapshots reject.
 -/
 
 namespace GoFV.Opt.LowerCheck
@@ -393,6 +394,31 @@ def copyReachL (tabs : Tables) (M : Defs) : Nat → ID → ID → Bool
       copyReachL tabs M n x.args[0]! w
     | none => false
 
+/-- The sign and zero extensions `MOV{B,H,W}{,U}reg` and the low bits of their argument they read
+(`Arm64.ext`). -/
+def extReadW : Op → Option Nat
+  | .ARM64MOVBreg | .ARM64MOVBUreg => some 8
+  | .ARM64MOVHreg | .ARM64MOVHUreg => some 16
+  | .ARM64MOVWreg | .ARM64MOVWUreg => some 32
+  | _ => none
+
+/-- An argument `a` of the extension op `o` (`extReadW`) in the replay, a `Copy` at an integer shape
+narrower than 64 bits that keeps the bits `o` reads (lowering a truncation, `(Trunc64to32 x) =>
+x`), whose argument reaches `a'` through at most `n` compatible copies: `o` reads the same bits of
+`a'` (`GoFV.Proof.Low.Val.op1_ext_retypeL`). `lower` eliminates such a copy while the extension is
+still generic, which the replay cannot follow (`copyReachL`); `finalOKL` accepts the output's
+`a'`. -/
+def truncReachL (tabs : Tables) (M : Defs) (n : Nat) (o : Op) (a a' : ID) : Bool :=
+  (extReadW o).any fun k =>
+    match M.get? a with
+    | some c =>
+      c.op == .Copy && c.args.size == 1 &&
+        (match shpL tabs c.type with
+          | .int w => decide (k ≤ w.bits) && w != .w64
+          | _ => false) &&
+        copyReachL tabs M n c.args[0]! a'
+    | none => false
+
 /-! ## Blocks -/
 
 /-- The replayed terminator of a block: kind, controls, auxint, successors swapped. -/
@@ -682,10 +708,11 @@ def pbFinal (tabs : Tables) (f : Func) (M : Defs) (n : Nat) (x : ID) (m u : Valu
         (ks.zip u.args.toList).all fun (k, a') => copyReachL tabs M n m.args[k]! a'
     | none => false
 
-/-- Every value listed in `g` has its replayed definition up to copies in its arguments (a bounds
-panic with constant operands its replayed `LoweredPanicBoundsRR`'s, `pbFinal`), or is a
-term `g` does not read; every block of `g` its replayed terminator (kind, auxint, successors as
-the replay swapped them, controls up to copies). -/
+/-- Every value listed in `g` has its replayed definition up to copies in its arguments (an
+extension's argument also up to a narrowing `Copy`, `truncReachL`; a bounds panic with constant
+operands its replayed `LoweredPanicBoundsRR`'s, `pbFinal`), or is a term `g` does not read; every
+block of `g` its replayed terminator (kind, auxint, successors as the replay swapped them, controls
+up to copies). -/
 def finalOKL (tabs : Tables) (f g : Func) (M : Defs) (B : BMapL) : Bool :=
   let n := M.size
   let L := liveMarksL tabs g
@@ -703,7 +730,8 @@ def finalOKL (tabs : Tables) (f g : Func) (M : Defs) (B : BMapL) : Bool :=
         | some m, some u =>
           (u.id == x && m.id == x && u.op == m.op && u.type == m.type && u.auxInt == m.auxInt &&
             u.aux == m.aux && u.args.size == m.args.size &&
-            (m.args.toList.zip u.args.toList).all fun (a, a') => copyReachL tabs M n a a') ||
+            (m.args.toList.zip u.args.toList).all fun (a, a') =>
+              copyReachL tabs M n a a' || truncReachL tabs M n m.op a a') ||
           (termVL tabs u && L[x]? != some true) || pbFinal tabs f M n x m u
         | _, _ => false
     | _, _, _ => false

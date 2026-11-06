@@ -251,7 +251,8 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
               return s!"final: v{x} fields {m.op.name}->{u.op.name}"
           else
             for (a, a') in m.args.toList.zip u.args.toList do
-              if !copyReachL tabs M M.size a a' && !(termVL tabs u && L[x]? != some true) then
+              if !copyReachL tabs M M.size a a' && !truncReachL tabs M M.size m.op a a' &&
+                  !(termVL tabs u && L[x]? != some true) then
                 let d := fun (y : ID) => ((M.get? y).map (·.op.name)).getD "-"
                 return s!"final: v{x} {u.op.name} arg v{a}({d a})->v{a'}({d a'})"
         | _, _ => return s!"final: v{x} missing"
@@ -330,8 +331,9 @@ structure St where
   /-- The fired rules of the functions the validator accepts with every rule (`accepted`). -/
   fnsOk : Array (Array String) := #[]
   /-- Per function: its first-rejection class (`whyClass`, `ok` if accepted), whether the checked
-  lower equals stock, its fired rules (`--dump`). -/
-  rows : Array (String × Bool × Array String) := #[]
+  lower equals stock, its fired rules, its file, and the proven table's first rejection (`whyL`
+  with `lowerProvenTable`, `ok` if accepted; `--dump`). -/
+  rows : Array (String × Bool × Array String × String × String) := #[]
   errors : Nat := 0
   accepted : Nat := 0
   checkedSame : Nat := 0
@@ -364,19 +366,20 @@ def checkFile (path : System.FilePath) (S : St) : IO St := do
     let full := (← IO.getEnv "LOWER_PROBE_FULL").isSome
     let tbl := if full then ceilTable else lowerProvenTable
     let mut same := false
-    match GoFV.Opt.LowerCheck.checkedLowerWith tbl env (GoFV.Opt.FmaContract.contractAll e.sections[k-1]!.func) with
+    let fc := GoFV.Opt.FmaContract.contractAll e.sections[k-1]!.func
+    match GoFV.Opt.LowerCheck.checkedLowerWith tbl env fc with
     | .ok co =>
       if (GoFVTest.Parity.compare prev co tables s).isNone then
         same := true
         S := { S with checkedSame := S.checkedSame + 1
                       checkedProven := if co.func == e.sections[k-1]!.func then S.checkedProven else S.checkedProven + 1 }
-      else if (← IO.getEnv "LOWER_PROBE_MISS").isSome then
-        let fc := GoFV.Opt.FmaContract.contractAll e.sections[k-1]!.func
-        match rewriteRun tbl true true env fc with
-        | .ok (o2, _, log2) =>
-          IO.println s!"MISS\t{whyL o2.tables tbl fc o2.func log2}\t{path}"
-        | .error _ => pure ()
     | .error _ => pure ()
+    -- the proven table's first rejection
+    let pwhy := match rewriteRun tbl true true env fc with
+      | .ok (o2, _, log2) => whyL o2.tables tbl fc o2.func log2
+      | .error _ => "error"
+    if !same && (← IO.getEnv "LOWER_PROBE_MISS").isSome then
+      IO.println s!"MISS\t{pwhy}\t{path}"
     match rewriteRun ceilTable true true env e.sections[k-1]!.func with
     | .ok (out, _, log) =>
       let w := whyL out.tables ceilTable e.sections[k-1]!.func out.func log
@@ -396,7 +399,7 @@ def checkFile (path : System.FilePath) (S : St) : IO St := do
         fs := fs.insert x
       S := { S with fns := S.fns.push fs.toArray
                     fnsOk := if w == "ok" then S.fnsOk.push fs.toArray else S.fnsOk
-                    rows := S.rows.push (w, same, fs.toArray) }
+                    rows := S.rows.push (w, same, fs.toArray, path.toString, whyClass pwhy) }
     | .error _ => S := { S with errors := S.errors + 1 }
   return S
 
@@ -539,6 +542,8 @@ def main (args : List String) : IO UInt32 := do
   -- the next rules to prove: the greedy cover from the proven rules
   let (base, next) := greedy (tableKeys GoFV.Opt.lowerProvenTable) acc.fns 400
   IO.println s!"NEXT\t0\t(proven)\t{base}\t{base}"
+  for k in (tableKeys GoFV.Opt.lowerProvenTable).toArray do
+    IO.println s!"PROVEN\t{k}"
   for (step, k, covered, gained) in next do
     IO.println s!"NEXT\t{step}\t{k}\t{covered}\t{gained}"
   -- the same over the functions the validator accepts with every rule: the gains at stock
@@ -550,10 +555,10 @@ def main (args : List String) : IO UInt32 := do
     IO.FS.writeFile md (nextMarkdown a.paths acc.fns.size acc.checkedSame base next nfn
       acc.accepted baseOk nextOk acc.why)
   -- per function: its first-rejection class (`ok` if accepted), whether the checked lower equals
-  -- stock (1/0), its fired rules
+  -- stock (1/0), its fired rules, its file, the proven table's first rejection class
   if let some d := a.dump then
-    IO.FS.writeFile d (String.join (acc.rows.map fun (w, same, fs) =>
-      s!"{w}\t{if same then 1 else 0}\t{"|".intercalate fs.toList}\n").toList)
+    IO.FS.writeFile d (String.join (acc.rows.map fun (w, same, fs, p, pw) =>
+      s!"{w}\t{if same then 1 else 0}\t{"|".intercalate fs.toList}\t{p}\t{pw}\n").toList)
   return 0
 
 end GoFVTest.LowerProbe
