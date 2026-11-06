@@ -131,22 +131,27 @@ Fused multiply-add shapes (`Contract`, §2.1 of `docs/plans/semantics2.md`) are 
 guard: `lower_refines` relates the output to a contraction of its input, which does not compose
 with the refinement before `lower`.
 
-Numbers (`gofv-ssa-opt --check --verified --jobs 4`, main 088d827 plus this pipeline; full-v9
-57 min, 1.65 GB peak; quick-v7 5 min):
+Numbers (`gofv-ssa-opt --check --verified --jobs 4`, main a717e6db plus the wiring of
+addressing modes, late lower, pair and flagalloc; full-v9 81 min, 1.67 GB peak; quick-v7 7 min):
 
 | | full-v9 through `rewrite tern` | full-v9 through `trim` | quick-v7 through `rewrite tern` | quick-v7 through `trim` |
 | --- | ---: | ---: | ---: | ---: |
-| fully verified | 92,925 | 31,307 | 8,885 | 2,873 |
-| … verified (vacuous: unmodelled op) | 1,576 | 1,415 | 168 | 164 |
-| … and identical to stock after `trim` | 75,906 | 31,259 | 7,317 | 2,867 |
+| fully verified | 92,925 | 54,812 | 8,885 | 5,138 |
+| … verified (vacuous: unmodelled op) | 1,576 | 1,568 | 168 | 168 |
+| … and identical to stock after `trim` | 74,348 | 50,478 | 7,233 | 4,623 |
 
-"Vacuous" counts the functions whose input has an op or block kind `run` leaves `stuck`
-whatever its arguments (full-v9: `RetJmp` blocks 1,576 / 1,415, `TailLECall` 1,432 / 1,415,
-`TailLECallInter` 144 / 0; `docs/DRIVER.md`, verified mode): the theorems say nothing about the
+At #503 (main 088d827: the four passes stock, fewer proven `lower` rules), full-v9 through `trim`
+was 31,307 (1,415 vacuous) and quick-v7 2,873. "Vacuous" counts the functions whose input has an
+op or block kind `run` leaves `stuck`
+whatever its arguments (full-v9: `RetJmp` blocks 1,576 / 1,568, `TailLECall` 1,432 / 1,424,
+`TailLECallInter` 144 / 144; `docs/DRIVER.md`, verified mode): the theorems say nothing about the
 inputs that reach one. Of the full-v9 functions verified through `rewrite tern` but not through
-`trim`, the first unverified run is `lower` (checked variant incomplete) for 53,486, `late lower`
-(no theorem) 4,122, `pair` (no theorem) 3,615, `schedule` (rejected) 257, `regalloc` (rejected)
-138.
+`trim`, the first unverified run is `lower` for 25,738 (checked variant incomplete 24,516,
+rejected 1,222), `regalloc` (rejected) 4,978, `late lower` (rejected: `renameB` covers rules 91
+and 98 only) 4,710, `schedule` (rejected) 2,687. `pair` is optional: `pairB` rejects 3,330 runs,
+whose result is dropped (`skipped`; the first difference from stock in 1,666 functions, so the
+"identical to stock" counts through `rewrite tern` dropped from 75,906). `flagalloc`: 5,971
+runs proven, 90,589 identity, none rejected. `addressing modes` is the identity on every function.
 
 ## 1. Shared infrastructure new in Phase 2
 
