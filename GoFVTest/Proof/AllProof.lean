@@ -723,12 +723,14 @@ import GoFV.Proof.Witness.LowerLoadIdx
 import GoFV.Proof.Witness.LowerLoadStore
 import GoFV.Proof.Witness.LowerLoadSym
 import GoFV.Proof.Witness.LowerLocalAddr
+import GoFV.Proof.Witness.LowerMove
 import GoFV.Proof.Witness.LowerNegOff
 import GoFV.Proof.Witness.LowerPanicConst
 import GoFV.Proof.Witness.LowerPtrCmp
 import GoFV.Proof.Witness.LowerShiftOp
 import GoFV.Proof.Witness.LowerStoreFold
 import GoFV.Proof.Witness.LowerStoreSym
+import GoFV.Proof.Witness.LowerTrunc
 import GoFV.Proof.Witness.LowerWBPanic
 import GoFV.Proof.Witness.LowerZero
 import GoFV.Proof.Witness.MakeSel
