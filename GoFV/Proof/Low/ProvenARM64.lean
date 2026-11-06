@@ -2,6 +2,7 @@
 import GoFV.Proof.Low.RuleL
 import GoFV.Rules.ProvenARM64
 import GoFV.Proof.Low.Rules.BlockCset
+import GoFV.Proof.Low.Rules.BlockFlags
 import GoFV.Proof.Low.Rules.Cmp
 import GoFV.Proof.Low.Rules.CmpF
 import GoFV.Proof.Low.Rules.CondSel
@@ -219,10 +220,18 @@ theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
       ⟨r_ARM64_200_sound, trivial⟩,
       ⟨r_ARM64_202_sound, trivial⟩, trivial⟩
   · simp only [ProvenARM64.lower, ForallL, ForallL.append_iff]
-    exact ⟨⟨r_ARM64_600_sound, r_ARM64_601_sound, trivial⟩,
+    exact ⟨⟨r_ARM64_600_sound, r_ARM64_601_sound, r_ARM64_621_sound, r_ARM64_623_sound, r_ARM64_1340_sound, trivial⟩,
+      ⟨r_ARM64_644_sound, r_ARM64_645_sound, r_ARM64_1335_sound, trivial⟩,
+      ⟨r_ARM64_1333_sound, trivial⟩,
       ⟨r_ARM64_461_sound, r_ARM64_462_sound, r_ARM64_463_sound, r_ARM64_464_sound, r_ARM64_465_sound, r_ARM64_466_sound, r_ARM64_467_sound, r_ARM64_468_sound, r_ARM64_469_sound, r_ARM64_470_sound, r_ARM64_471_sound, r_ARM64_472_sound, r_ARM64_473_sound, r_ARM64_474_sound, r_ARM64_476_sound, trivial⟩,
-      ⟨r_ARM64_600_2_sound, r_ARM64_601_2_sound, trivial⟩,
+      ⟨r_ARM64_1334_sound, trivial⟩,
+      ⟨r_ARM64_646_sound, r_ARM64_647_sound, r_ARM64_1332_sound, trivial⟩,
+      ⟨r_ARM64_600_2_sound, r_ARM64_601_2_sound, r_ARM64_622_sound, r_ARM64_624_sound, r_ARM64_1341_sound, trivial⟩,
       ⟨r_ARM64_526_sound, r_ARM64_527_sound, r_ARM64_528_sound, r_ARM64_529_sound, r_ARM64_530_sound, r_ARM64_531_sound, r_ARM64_532_sound, r_ARM64_533_sound, r_ARM64_534_sound, r_ARM64_535_sound, r_ARM64_536_sound, r_ARM64_537_sound, r_ARM64_538_sound, r_ARM64_539_sound, trivial⟩,
-      ⟨r_ARM64_541_sound, r_ARM64_542_sound, r_ARM64_543_sound, r_ARM64_544_sound, r_ARM64_545_sound, r_ARM64_546_sound, r_ARM64_547_sound, r_ARM64_548_sound, r_ARM64_549_sound, r_ARM64_550_sound, r_ARM64_551_sound, r_ARM64_552_sound, r_ARM64_553_sound, r_ARM64_554_sound, trivial⟩, trivial⟩
+      ⟨r_ARM64_541_sound, r_ARM64_542_sound, r_ARM64_543_sound, r_ARM64_544_sound, r_ARM64_545_sound, r_ARM64_546_sound, r_ARM64_547_sound, r_ARM64_548_sound, r_ARM64_549_sound, r_ARM64_550_sound, r_ARM64_551_sound, r_ARM64_552_sound, r_ARM64_553_sound, r_ARM64_554_sound, trivial⟩,
+      ⟨r_ARM64_1339_sound, trivial⟩,
+      ⟨r_ARM64_1337_sound, trivial⟩,
+      ⟨r_ARM64_1338_sound, trivial⟩,
+      ⟨r_ARM64_1336_sound, trivial⟩, trivial⟩
 
 end GoFV.Proof.Low

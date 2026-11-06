@@ -144,13 +144,13 @@ theorem r_ARM64_992_sound : ArmRule.Checked r_ARM64_992 := by
     exact Refines.refl _
   · rw [h, flags2w_poison, retypeL_poison]; exact .poison _
 
-private theorem retype_bit_ref (t : Ty) {a : Val} (ha : a = .poison ∨ ∃ b, a = .bool b) :
+theorem retype_bit_ref (t : Ty) {a : Val} (ha : a = .poison ∨ ∃ b, a = .bool b) :
     Refines (a.retype t) a := by
   rcases ha with rfl | ⟨b, rfl⟩
   · cases t <;> exact .poison _
   · cases t <;> first | exact Refines.refl _ | exact .poison _
 
-private theorem retypeL_agg4_ref (T : Ty) {a0 a1 a2 a3 : Val}
+theorem retypeL_agg4_ref (T : Ty) {a0 a1 a2 a3 : Val}
     (h0 : a0 = .poison ∨ ∃ b, a0 = .bool b) (h1 : a1 = .poison ∨ ∃ b, a1 = .bool b)
     (h2 : a2 = .poison ∨ ∃ b, a2 = .bool b) (h3 : a3 = .poison ∨ ∃ b, a3 = .bool b) :
     Refines ((Val.agg [a0, a1, a2, a3]).retypeL T) (.agg [a0, a1, a2, a3]) := by
@@ -166,7 +166,7 @@ private theorem retypeL_agg4_ref (T : Ty) {a0 a1 a2 a3 : Val}
   | _ => exact .poison _
 
 /-- A comparison's flags read at any shape refine the flags. -/
-private theorem retypeL_cmp_ref (T : Ty) (a b : Val) : Refines ((Arm64.cmp a b).retypeL T) (Arm64.cmp a b) := by
+theorem retypeL_cmp_ref (T : Ty) (a b : Val) : Refines ((Arm64.cmp a b).retypeL T) (Arm64.cmp a b) := by
   have hp : ∀ v, v = Val.poison → Refines (v.retypeL T) v := fun v h => by
     subst h; rw [retypeL_poison]; exact .poison _
   have hb : ∀ x : Bool, Val.bool x = .poison ∨ ∃ b, Val.bool x = .bool b := fun x => .inr ⟨x, rfl⟩
@@ -186,7 +186,7 @@ private theorem retypeL_cmp_ref (T : Ty) (a b : Val) : Refines ((Arm64.cmp a b).
       · exact hp _ rfl
     · exact hp _ rfl
 
-private theorem subFlags_zero_z {n : Nat} (r : BitVec n) : (Arm64.subFlags r 0).2.z = (r == 0) := by
+theorem subFlags_zero_z {n : Nat} (r : BitVec n) : (Arm64.subFlags r 0).2.z = (r == 0) := by
   have h : BitVec.ofNat n (r.toNat + (~~~(0 : BitVec n)).toNat + 1) = r := by
     apply BitVec.eq_of_toNat_eq
     have := r.isLt
@@ -269,21 +269,21 @@ theorem r_ARM64_600_2_sound : BlockRuleL.Sound r_ARM64_600_2 := by
     rw [h2] at h1; cases h1
     rw [isZero_of_cmp0 h2]; rfl
 
-private theorem retypeL_flags1w_ref (T : Ty) (f : BitVec 32 → Flags) (a : Val) :
+theorem retypeL_flags1w_ref (T : Ty) (f : BitVec 32 → Flags) (a : Val) :
     Refines ((Arm64.flags1w f [a]).retypeL T) (Arm64.flags1w f [a]) := by
   have hb : ∀ x : Bool, Val.bool x = .poison ∨ ∃ b, Val.bool x = .bool b := fun x => .inr ⟨x, rfl⟩
   cases h : Arm64.reg32 a <;> simp only [Arm64.flags1w, h]
   · rw [retypeL_poison]; exact .poison _
   · exact retypeL_agg4_ref T (hb _) (hb _) (hb _) (hb _)
 
-private theorem reg32_of_cmpw0 {x : Val} {c : Cond} {b : Bool}
+theorem reg32_of_cmpw0 {x : Val} {c : Cond} {b : Bool}
     (h : c.onVal (Arm64.flags1w (fun r => (Arm64.subFlags r 0).snd) [x]) = some b) :
     ∃ r, Arm64.reg32 x = some r ∧ c.onVal (Arm64.subFlags r 0).snd.toVal = some b := by
   cases hr : Arm64.reg32 x <;> simp only [Arm64.flags1w, hr] at h
   · simp [Cond.onVal] at h
   · exact ⟨_, rfl, h⟩
 
-private theorem imm32_of_zero {k : Int64} (h : wrapInt 32 true k.toInt = 0) : Arm64.imm32 k = 0 := by
+theorem imm32_of_zero {k : Int64} (h : wrapInt 32 true k.toInt = 0) : Arm64.imm32 k = 0 := by
   simp only [wrapInt, ite_true] at h
   have he := Int.bmod_emod (x := k.toInt) (m := 2 ^ 32)
   rw [h] at he
