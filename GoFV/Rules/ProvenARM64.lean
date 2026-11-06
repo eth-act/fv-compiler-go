@@ -63,10 +63,10 @@ def b2iNorm (r : Rule) : Rule where
     | res => res
   pos := r.pos
 
-/-- `ARM64.rules` restricted to its 418 proven value rules and 93 proven block rules. -/
+/-- `ARM64.rules` restricted to its 420 proven value rules and 93 proven block rules. -/
 def lower : RuleSet where
   name := "ARM64"
-  values := [(.ARM64ADD, [Generated.ARM64.r_ARM64_970, Generated.ARM64.r_ARM64_1017, Generated.ARM64.r_ARM64_1433, Generated.ARM64.r_ARM64_1434, Generated.ARM64.r_ARM64_1435]),
+  values := [(.ARM64ADD, [Generated.ARM64.r_ARM64_970, Generated.ARM64.r_ARM64_1017, Generated.ARM64.r_ARM64_1433, Generated.ARM64.r_ARM64_1434, Generated.ARM64.r_ARM64_1435, Generated.ARM64.r_ARM64_1635]),
     (.ARM64ADDconst, [Generated.ARM64.r_ARM64_650, Generated.ARM64.r_ARM64_1000, Generated.ARM64.r_ARM64_1201]),
     (.ARM64AND, [Generated.ARM64.r_ARM64_972, Generated.ARM64.r_ARM64_1179, Generated.ARM64.r_ARM64_1439, Generated.ARM64.r_ARM64_1440, Generated.ARM64.r_ARM64_1441, Generated.ARM64.r_ARM64_1442]),
     (.ARM64ANDconst, [Generated.ARM64.r_ARM64_1241, Generated.ARM64.r_ARM64_1242, Generated.ARM64.r_ARM64_1243, Generated.ARM64.r_ARM64_1244]),
@@ -195,6 +195,7 @@ def lower : RuleSet where
     (.Const8, [Generated.ARM64.r_ARM64_182_4]),
     (.ConstBool, [b2iNorm Generated.ARM64.r_ARM64_185]),
     (.ConstNil, [Generated.ARM64.r_ARM64_184]),
+    (.CvtBoolToUint8, [Generated.ARM64.r_ARM64_233]),
     (.Div64, [Generated.ARM64.r_ARM64_22]),
     (.Div64u, [Generated.ARM64.r_ARM64_28]),
     (.Eq16, [Generated.ARM64.r_ARM64_240]),

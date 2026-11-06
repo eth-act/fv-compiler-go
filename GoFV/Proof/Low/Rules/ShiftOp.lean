@@ -497,6 +497,154 @@ theorem r_ARM64_1438_sound : ArmRule.Checked r_ARM64_1438 := by
   exact refines_subSh .ra _ (armReadW_addSub .ARM64SUB _ 1 (.inr rfl) ▸ harg.2.1.1) harg.1.2
     _ _ hty.1
 
+/-! ## `ADD` of a sign-masked shifted operand (1635) -/
+
+private theorem add_poison_r (T : Ty) (x : Val) : Arm64.add T [x, .poison] = .poison := by
+  cases x <;> rfl
+
+private theorem op2_none_r (T : Ty) (f : BitVec 64 → BitVec 64 → BitVec 64) (a : Val) {b : Val}
+    (hb : Arm64.reg b = none) : Arm64.op2 T f [a, b] = .poison := by
+  cases ha : Arm64.reg a <;> simp only [Arm64.op2, ha, hb]
+
+/-- A register result at the shape of a value with a register whose shape holds 64 bits (a word
+shape): the 64-bit integer. -/
+private theorem retypeL_res_of_reg {T : Ty} {y : Val} {v : BitVec 64} (h : 64 ≤ argWidth T)
+    (hy : y.hasTy T = true) (hr : Arm64.reg y = some v) (r : BitVec 64) :
+    (Arm64.res T r).retypeL T = .int .w64 r := by
+  cases T with
+  | int w => cases w <;> simp_all [argWidth, Width.bits, Arm64.res, Val.retypeL, Val.widen, Val.retype]
+  | ptr _ => simp [Arm64.res, Val.retypeL, Val.widen, Val.retype]
+  | agg _ _ => cases y <;> simp_all [Val.hasTy, Arm64.reg]
+  | _ => simp_all [argWidth]
+
+/-- The sign mask `z >> 63`: all ones or zero. -/
+private theorem sra63_eq (z : BitVec 64) :
+    z.sshiftRight 63 = if z.msb then BitVec.allOnes 64 else 0#64 := by
+  apply BitVec.eq_of_getElem_eq
+  intro i hi
+  rw [BitVec.getElem_sshiftRight]
+  rcases Nat.lt_or_ge i 1 with h | h
+  · obtain rfl : i = 0 := by omega
+    rw [BitVec.msb_eq_getLsbD_last]
+    by_cases hb : z.getLsbD 63 <;> simp [hb, BitVec.getLsbD_eq_getElem] at * <;> simp [hb]
+  · by_cases hb : z.msb <;>
+      simp only [hb, show ¬ 63 + i < 64 by omega, dite_false, ite_true, ite_false,
+        BitVec.getElem_allOnes, BitVec.getElem_zero, Bool.false_eq_true]
+
+/-- The sign mask `z >> 63` commutes with a left shift of the other operand. -/
+private theorem sra63_and_shl (z y : BitVec 64) (j : Nat) :
+    z.sshiftRight 63 &&& y <<< j = (y &&& z.sshiftRight 63) <<< j := by
+  rw [sra63_eq]
+  split <;> simp only [BitVec.allOnes_and, BitVec.and_allOnes, BitVec.zero_and, BitVec.and_zero,
+    BitVec.zero_shiftLeft]
+
+/-- `ADD x (ANDshiftLL (SRAconst [63] z) y [k])` (the `AND` computed at shape `T1`, the sign mask at
+`T2`) as `ADDshiftLL x (ANDshiftRA y z [63]) [k]` (the `AND` at `y`'s shape `T3`): the mask is all
+ones or zero, so it commutes with the shift (`sra63_and_shl`); both mask producers read whole
+registers (`h2`, `h3`); a pointer `x` has a word shape, so the result has one (`hp`, the
+validator's provenance clause) and the operand is read whole; otherwise only the low `lowW T` bits
+count. -/
+theorem refines_add_andSh {T T0 T1 T2 T3 : Ty} (k c : Int64) (hc : c.toInt = 63)
+    (hw : lowW T ≤ argWidth T1) (hp : (!wordShape T0) = true ∨ wordShape T = true)
+    (h2 : 64 ≤ argWidth T2) (h3 : 64 ≤ argWidth T3) (x y z : Val) (hx : x.hasTy T0 = true)
+    (hy : y.hasTy T3 = true) :
+    Refines ((Arm64.add T [x, (Arm64.opSh T1 .ll k (fun a b => a &&& b)
+        [(Arm64.op1 T2 (fun a => Arm64.Shift.ra.apply a (Arm64.amt c)) [z]).retypeL T2, y]).retypeL T1]).retypeL T)
+      ((Arm64.addSh T .ll (Int64.ofInt k.toInt) [x, (Arm64.opSh T3 .ra (Int64.ofInt 63)
+        (fun a b => a &&& b) [y, z]).retypeL T3]).retypeL T) := by
+  rw [Int64.ofInt_toInt]
+  have hamt : Arm64.amt c = 63 := by simp [Arm64.amt, hc]
+  have hamt' : Arm64.amt (Int64.ofInt 63) = 63 := by decide
+  have hsp : ∀ t, Refines ((Arm64.add T [x, Val.poison.retypeL T1]).retypeL T) t := fun t => by
+    rw [retypeL_poison, add_poison_r, retypeL_poison]; exact .poison _
+  have hreg : ∀ v : BitVec 64, Arm64.reg (.int .w64 v) = some v := fun v => by
+    simp [Arm64.reg]
+  have h64n : Width.w64.bits = 64 := rfl
+  have hpl : ∀ (T' : Ty) (f : BitVec 64 → BitVec 64 → BitVec 64),
+      Arm64.op2 T' f [.poison, y] = .poison := fun T' f => by
+    cases hy' : Arm64.reg y <;> simp only [Arm64.op2, hy', show Arm64.reg .poison = none from rfl]
+  cases hz : Arm64.reg z with
+  | none =>
+    simp only [Arm64.op1, hz, retypeL_poison, Arm64.opSh, hpl, add_poison_r]
+    exact .poison _
+  | some zv =>
+    cases hyr : Arm64.reg y with
+    | none =>
+      simp only [Arm64.opSh, op2_none_r _ _ _ hyr]
+      exact hsp _
+    | some yv =>
+      have hN : (Arm64.opSh T3 .ra (Int64.ofInt 63) (fun a b => a &&& b) [y, z]).retypeL T3 =
+          .int .w64 (yv &&& zv.sshiftRight 63) := by
+        simp only [Arm64.opSh, Arm64.op2, Arm64.shifted, hyr, hz, hamt', Arm64.Shift.apply,
+          Nat.reduceMod]
+        exact retypeL_res_of_reg h3 hy hyr _
+      rw [hN]
+      simp only [Arm64.op1, hz, hamt]
+      rcases retypeL_res_wide h2 (Arm64.Shift.ra.apply zv 63) with hS | hS <;> rw [hS]
+      · have hm : Arm64.opSh T1 .ll k (fun a b => a &&& b)
+            [.int .w64 (Arm64.Shift.ra.apply zv 63), y] =
+            Arm64.op1 T1 (fun b => Arm64.Shift.ll.apply b (Arm64.amt k))
+              [.int .w64 (yv &&& zv.sshiftRight 63)] := by
+          simp only [Arm64.opSh, Arm64.op2, Arm64.op1, Arm64.shifted, hreg, hyr,
+            Arm64.Shift.apply, h64n, Nat.reduceMod]
+          rw [sra63_and_shl]
+        rw [hm]
+        by_cases hxp : ∃ p, x = .ptr p
+        · obtain ⟨p, rfl⟩ := hxp
+          have hT : wordShape T = true := by
+            have := wordShape_of_ptr hx
+            rcases hp with h | h
+            · simp [this] at h
+            · exact h
+          have h64 : 64 ≤ argWidth T1 := lowW_word hT ▸ hw
+          simp only [Arm64.op1, hreg]
+          rcases retypeL_res_wide h64
+            (Arm64.Shift.ll.apply (yv &&& zv.sshiftRight 63) (Arm64.amt k)) with h | h <;> rw [h]
+          · simp only [Arm64.add, Arm64.addSh, Arm64.addP, Arm64.shifted, hreg]
+            exact Refines.refl _
+          · rw [add_poison_r, retypeL_poison]; exact .poison _
+        · have hx' : ∀ p, x ≠ .ptr p := fun p h => hxp ⟨p, h⟩
+          rw [add_nonptr T hx' (retypeL_op1_nonptr T1 _ _), addSh_nonptr T .ll k hx']
+          exact refines_op2_op1 (· + ·) _ (fun a b b' h => add_low (lowW_pos T).2 a b b' h) hw x _
+      · simp only [Arm64.opSh, hpl]
+        exact hsp _
+
+private theorem armReadW_andSh (T : Ty) (i : Nat) : armReadW .ARM64ANDshiftLL T i = 64 := by
+  cases T <;> rfl
+
+private theorem armReadW_sra (T : Ty) (i : Nat) : armReadW .ARM64SRAconst T i = 64 := by
+  cases T <;> rfl
+
+private theorem retypeL_opSh_nonptr (T : Ty) (sh : Arm64.Shift) (k : Int64)
+    (g : BitVec 64 → BitVec 64 → BitVec 64) (a b : Val) (p : Ptr) :
+    (Arm64.opSh T sh k g [a, b]).retypeL T ≠ .ptr p := by
+  cases ha : Arm64.reg a <;> cases hb : Arm64.reg b <;>
+    simp only [Arm64.opSh, Arm64.op2, ha, hb, retypeL_poison, ne_eq, reduceCtorEq,
+      not_false_eq_true, retypeL_res_nonptr]
+
+/-- `ADD` of an operand that is no pointer, in either order. -/
+private theorem add_comm_nonptr (T : Ty) {v : Val} (hv : ∀ p, v ≠ .ptr p) (x : Val) :
+    Arm64.add T [v, x] = Arm64.add T [x, v] := by
+  cases x with
+  | ptr p => cases v <;> first | rfl | exact absurd rfl (hv _)
+  | _ =>
+    rw [add_nonptr T hv (fun p h => by cases h), add_nonptr T (fun p h => by cases h) hv]
+    exact op2_swap T (fun a b => BitVec.add_comm a b) _ _
+
+/-- `ARM64.rules:1635`: `(ADD x0 x1:(ANDshiftLL x2:(SRAconst [63] z) y [sl])) && x1.Uses == 1 && x2.Uses == 1 => (ADDshiftLL x0 (ANDshiftRA <y.Type> y z [63]) [sl])` -/
+theorem r_ARM64_1635_sound : ArmRule.Checked r_ARM64_1635 := by
+  left; arm_unfold
+  all_goals arm_norm
+  · have hc' : (e.auxInt [0, 1]).toInt = 63 := by injection hc
+    exact refines_add_andSh _ _ hc' (armReadW_addSub .ARM64ADD _ 1 (.inl rfl) ▸ harg.2.1.1)
+      harg.1.2 (armReadW_andSh _ 0 ▸ harg.2.2.1.1) (armReadW_andSh _ 1 ▸ harg.2.2.2) _ _ _ hty.1
+      hty.2.2
+  · have hc' : (e.auxInt [0, 0]).toInt = 63 := by injection hc
+    rw [add_comm_nonptr _ (retypeL_opSh_nonptr _ _ _ _ _ _)]
+    exact refines_add_andSh _ _ hc' (armReadW_addSub .ARM64ADD _ 0 (.inl rfl) ▸ harg.1.1.1)
+      harg.2.2 (armReadW_andSh _ 0 ▸ harg.1.2.1.1) (armReadW_andSh _ 1 ▸ harg.1.2.2) _ _ _ hty.2
+      hty.1.2
+
 /-! ## `MADDW`/`MSUBW` -/
 
 /-- A value of shape `T0` where the validator's provenance clause holds at a non-word result

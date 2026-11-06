@@ -263,6 +263,68 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
     return "final: succs"
   return "ok"
 
+/-- The leaf paths of a pattern at `p`. -/
+partial def leafPathsP : Pat → List Nat → List (List Nat)
+  | .op _ _ _ _ _ _ args _, p => (args.zipIdx).flatMap fun (q, i) => leafPathsP q (i :: p)
+  | _, p => [p]
+
+open GoFV.Opt.LowerCheck GoFV.Opt.RewriteCheck GoFV.Proof.Low GoFV.Proof.Rules in
+/-- Per instance of a rule on line `lines`: the rule, and per leaf its definition's op and shape
+(`N` a non-word shape). Diagnostics (`LOWER_PROBE_LEAVES`). -/
+def leafStatsL (tabs : Tables) (t : Interp.Table) (f : Func) (log : Array RwEvent)
+    (lines : List Nat) : Array String := Id.run do
+  let mut M : Defs := f.valueTab
+  let mut out : Array String := #[]
+  for ev in log do
+    match ev with
+    | .rule v i _ defs =>
+      match M.get? v with
+      | none => return out
+      | some x =>
+        if pbFoldEv M v defs.toList || addrFoldEv tabs M v defs.toList || spFoldEv M v defs.toList then continue
+        match ((t.values[x.op.ctorIdx]?).bind (·[i]?) : Option Interp.CRule) with
+        | none => return out
+        | some cr =>
+          if lines.contains cr.rule.loc.line then
+            let ms := (choices (Pat.commutes cr.rule.pat)).filterMap fun sw =>
+              let r := Rule.swapC cr.rule sw
+              (matchPatL tabs M r.pat [] v).map (r, ·)
+            match ms with
+            | (r, I) :: _ =>
+              let cls := (leafPathsP r.pat []).map fun p =>
+                match M.get? (I.at p) with
+                | some m => if wordShape (shpL tabs m.type) then
+                    s!"{m.op.name}{if termVL tabs m then "" else "*"}" else "N"
+                | none => "?"
+              out := out.push s!"{cr.rule.loc.line}\t{" ".intercalate cls}"
+            | [] => out := out.push s!"{cr.rule.loc.line}\tnomatch"
+          match cr.rule.result with
+          | .setOp _ =>
+            match setOpDef tabs M cr.rule v with
+            | some x' => M := M.put v x'
+            | none => return out
+          | _ =>
+            match ruleOKL tabs M cr.rule v defs.toList with
+            | some ds => M := ds.foldl (fun M u => M.put u.id u) M
+            | none => match atomDef tabs f M v defs.toList with
+              | some (u, none) => M := M.put v u
+              | some (u, some s) => M := (M.put s.id s).put v u
+              | none =>
+                match frameFold tabs f M v defs.toList with
+                | some u => M := M.put v u
+                | none =>
+                  match ldOffFold tabs M v defs.toList with
+                  | some u => M := M.put v u
+                  | none => return out
+    | .copyArg v i src =>
+      match M.get? v with
+      | none => return out
+      | some x =>
+        if h : i < x.args.size then
+          if copyReachL tabs M M.size x.args[i] src then M := M.put v { x with args := x.args.set i src }
+    | _ => pure ()
+  return out
+
 /-- `s` without its value IDs (`v` and digits after a character that is no letter or digit). -/
 def dropIDs (s : String) : String := Id.run do
   let cs := s.toList.toArray
@@ -402,6 +464,10 @@ def checkFile (path : System.FilePath) (S : St) : IO St := do
       S := { S with fns := S.fns.push fs.toArray
                     fnsOk := if w == "ok" then S.fnsOk.push fs.toArray else S.fnsOk
                     rows := S.rows.push (w, same, fs.toArray, path.toString, whyClass pwhy) }
+      if let some ls := (← IO.getEnv "LOWER_PROBE_LEAVES") then
+        let lines := (ls.splitOn ",").filterMap String.toNat?
+        for s in leafStatsL out.tables ceilTable e.sections[k-1]!.func log lines do
+          IO.println s!"LEAF\t{s}\t{path}"
     | .error _ => S := { S with errors := S.errors + 1 }
   return S
 

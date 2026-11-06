@@ -39,7 +39,7 @@ set_option maxRecDepth 4096 in
 theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
   refine ⟨?_, ?_, rfl, rfl, rfl, rfl, rfl, rfl⟩
   · simp only [ProvenARM64.lower, ForallL, ForallL.append_iff]
-    exact ⟨⟨r_ARM64_970_sound, r_ARM64_1017_sound, r_ARM64_1433_sound, r_ARM64_1434_sound, r_ARM64_1435_sound, trivial⟩,
+    exact ⟨⟨r_ARM64_970_sound, r_ARM64_1017_sound, r_ARM64_1433_sound, r_ARM64_1434_sound, r_ARM64_1435_sound, r_ARM64_1635_sound, trivial⟩,
       ⟨r_ARM64_650_sound, r_ARM64_1000_sound, r_ARM64_1201_sound, trivial⟩,
       ⟨r_ARM64_972_sound, r_ARM64_1179_sound, r_ARM64_1439_sound, r_ARM64_1440_sound, r_ARM64_1441_sound, r_ARM64_1442_sound, trivial⟩,
       ⟨r_ARM64_1241_sound, r_ARM64_1242_sound, r_ARM64_1243_sound, r_ARM64_1244_sound, trivial⟩,
@@ -168,6 +168,7 @@ theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
       ⟨r_ARM64_182_4_sound, trivial⟩,
       ⟨r_ARM64_185_b2i_sound, trivial⟩,
       ⟨r_ARM64_184_sound, trivial⟩,
+      ⟨r_ARM64_233_sound, trivial⟩,
       ⟨r_ARM64_22_sound, trivial⟩,
       ⟨r_ARM64_28_sound, trivial⟩,
       ⟨r_ARM64_240_sound, trivial⟩,
