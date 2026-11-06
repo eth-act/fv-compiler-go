@@ -8,7 +8,8 @@ import GoFV.SSA.Sem.Arm64.Mem
 The arm64 ops `runL` evaluates without the activation (no symbol, frame or closure): the
 arithmetic, logic, shift, bitfield, multiply/divide, compare, conditional, float and conversion
 ops, the register-indexed loads (`MOV*loadidx*`, no symbol), `LDAR*` (Phase 1's `AtomicLoad*`),
-`LoweredZero`/`LoweredMove` and their loop forms, `LoweredWB` (Phase 1's `WB`), `FlagConstant`;
+`LoweredZero`/`LoweredMove` and their loop forms, `LoweredWB` (Phase 1's `WB`), `FlagConstant`,
+`InvertFlags` (`invertFlags`, the flags of the swapped compare; Go fails if one reaches codegen);
 `poison` for every other op. The ops that need the activation (loads and stores with a symbol,
 `MOVDaddr`, `MOVDreg`, calls, nil checks, panics, atomics, barriers) are `Sem.arm64Op`
 (`Sem/RunL.lean`). Phase 1's `evalPure` is unchanged: lowered ops reach this module only through
@@ -182,27 +183,30 @@ def evalPure (op : Op) (ty : Ty) (k : Int64) (_aux : Option AuxRef) (args : List
   | .ARM64CMPconst => match args with
     | [a] => cmp a (.int .w64 (imm k))
     | _ => .poison
-  | .ARM64CMPW => flags2w (fun x y => (subFlags x y).2) args
-  | .ARM64CMPWconst => flags1w (fun x => (subFlags x (imm32 k)).2) args
-  | .ARM64CMN => flags2 cmnFlags args
-  | .ARM64CMNconst => flags1 (fun x => cmnFlags x (imm k)) args
-  | .ARM64CMNW => flags2w cmnFlags args
-  | .ARM64CMNWconst => flags1w (fun x => cmnFlags x (imm32 k)) args
+  | .ARM64CMPW => cmp2w (fun x y => subFlags x y) args
+  | .ARM64CMPWconst => cmp1w (fun x => subFlags x (imm32 k)) args
+  | .ARM64CMN => cmp2 (fun x y => addWithCarry x y false) args
+  | .ARM64CMNconst => cmp1 (fun x => addWithCarry x (imm k) false) args
+  | .ARM64CMNW => cmp2w (fun x y => addWithCarry x y false) args
+  | .ARM64CMNWconst => cmp1w (fun x => addWithCarry x (imm32 k) false) args
   | .ARM64TST => flags2 (fun x y => logicFlags (x &&& y)) args
   | .ARM64TSTconst => flags1 (fun x => logicFlags (x &&& imm k)) args
   | .ARM64TSTW => flags2w (fun x y => logicFlags (x &&& y)) args
   | .ARM64TSTWconst => flags1w (fun x => logicFlags (x &&& imm32 k)) args
-  | .ARM64CMPshiftLL => flags2 (fun x y => (subFlags x (shifted .ll k y)).2) args
-  | .ARM64CMPshiftRL => flags2 (fun x y => (subFlags x (shifted .rl k y)).2) args
-  | .ARM64CMPshiftRA => flags2 (fun x y => (subFlags x (shifted .ra k y)).2) args
-  | .ARM64CMNshiftLL => flags2 (fun x y => cmnFlags x (shifted .ll k y)) args
-  | .ARM64CMNshiftRL => flags2 (fun x y => cmnFlags x (shifted .rl k y)) args
-  | .ARM64CMNshiftRA => flags2 (fun x y => cmnFlags x (shifted .ra k y)) args
+  | .ARM64CMPshiftLL => cmp2 (fun x y => subFlags x (shifted .ll k y)) args
+  | .ARM64CMPshiftRL => cmp2 (fun x y => subFlags x (shifted .rl k y)) args
+  | .ARM64CMPshiftRA => cmp2 (fun x y => subFlags x (shifted .ra k y)) args
+  | .ARM64CMNshiftLL => cmp2 (fun x y => addWithCarry x (shifted .ll k y) false) args
+  | .ARM64CMNshiftRL => cmp2 (fun x y => addWithCarry x (shifted .rl k y) false) args
+  | .ARM64CMNshiftRA => cmp2 (fun x y => addWithCarry x (shifted .ra k y) false) args
   | .ARM64TSTshiftLL => flags2 (fun x y => logicFlags (x &&& shifted .ll k y)) args
   | .ARM64TSTshiftRL => flags2 (fun x y => logicFlags (x &&& shifted .rl k y)) args
   | .ARM64TSTshiftRA => flags2 (fun x y => logicFlags (x &&& shifted .ra k y)) args
   | .ARM64TSTshiftRO => flags2 (fun x y => logicFlags (x &&& shifted .ro k y)) args
   | .ARM64FlagConstant => (Flags.ofFlagConstant k.toInt.toNat).toVal
+  | .ARM64InvertFlags => match args with
+    | [f] => invertFlags f
+    | _ => .poison
   -- flag-setting arithmetic
   | .ARM64ADDSflags => adds ty args
   | .ARM64ADDSconstflags => addsConst ty k args
@@ -359,10 +363,10 @@ def taken (kind : BlockKind) (k : Int64) (c : Val) : Option Bool :=
   | .ARM64LTnoov => fl .mi
   | .ARM64GEnoov => fl .pl
   | .ARM64LEnoov => match c with
-    | .agg [n, z, _, _] => do let n ← n.flagBit; let z ← z.flagBit; pure (n || z)
+    | .agg [n, z, _, _, _] => do let n ← n.flagBit; let z ← z.flagBit; pure (n || z)
     | _ => none
   | .ARM64GTnoov => match c with
-    | .agg [n, z, _, _] => do let n ← n.flagBit; let z ← z.flagBit; pure (!n && !z)
+    | .agg [n, z, _, _, _] => do let n ← n.flagBit; let z ← z.flagBit; pure (!n && !z)
     | _ => none
   | .ARM64Z => isZero c
   | .ARM64NZ => (isZero c).map (!·)
@@ -371,6 +375,15 @@ def taken (kind : BlockKind) (k : Int64) (c : Val) : Option Bool :=
   | .ARM64TBZ => (reg c).map fun x => !x.getLsbD k.toInt.toNat
   | .ARM64TBNZ => (reg c).map fun x => x.getLsbD k.toInt.toNat
   | _ => none
+
+/-- A block kind never reads a flags value's fifth component `g` (`Cond.onVal_ghost`). -/
+theorem taken_ghost (kind : BlockKind) (k : Int64) (n z cf v g g' : Val) :
+    taken kind k (.agg [n, z, cf, v, g]) = taken kind k (.agg [n, z, cf, v, g']) := by
+  cases kind <;> rfl
+
+/-- `ADCS`/`SBCS` read only `C`, never `g`. -/
+theorem carry_ghost (n z cf v g g' : Val) :
+    carry (.agg [n, z, cf, v, g]) = carry (.agg [n, z, cf, v, g']) := rfl
 
 /-- The loads and register-indexed loads that sign-extend their result (`LDRS*`), and the
 sign extensions: the producers whose narrow-typed result holds a sign-extended register, which

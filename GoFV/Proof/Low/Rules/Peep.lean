@@ -49,10 +49,10 @@ private theorem op2_poison (T : Ty) (f : BitVec 64 → BitVec 64 → BitVec 64) 
   have hk : Arm64.reg .poison = none := rfl
   cases h : Arm64.reg a <;> simp only [Arm64.op2, h, hk]
 
-private theorem flags2w_poison (f : BitVec 32 → BitVec 32 → Flags) (a : Val) :
-    Arm64.flags2w f [a, .poison] = .poison := by
+private theorem cmp2w_poison (f : BitVec 32 → BitVec 32 → BitVec 32 × Flags) (a : Val) :
+    Arm64.cmp2w f [a, .poison] = .poison := by
   have hk : Arm64.reg32 .poison = none := rfl
-  cases h : Arm64.reg32 a <;> simp only [Arm64.flags2w, h, hk]
+  cases h : Arm64.reg32 a <;> simp only [Arm64.cmp2w, h, hk]
 
 private theorem amt63 (c : Int) :
     Arm64.amt (Int64.ofInt (wrapInt 64 true ((pat64 c &&& pat64 63 : Nat) : Int))) =
@@ -131,18 +131,18 @@ theorem retypeL_res_w32 {T : Ty} (h : 32 ≤ argWidth T) (k : BitVec 64) :
   | agg fs n => exact .inr rfl
   | _ => simp [argWidth] at h
 
-private theorem flags2w_reg (f : BitVec 32 → BitVec 32 → Flags) (a b : Val) {k : BitVec 32}
-    (hb : Arm64.reg32 b = some k) :
-    Arm64.flags2w f [a, b] = Arm64.flags1w (fun x => f x k) [a] := by
-  cases h : Arm64.reg32 a <;> simp only [Arm64.flags2w, Arm64.flags1w, h, hb]
+private theorem cmp2w_reg (f : BitVec 32 → BitVec 32 → BitVec 32 × Flags) (a b : Val)
+    {k : BitVec 32} (hb : Arm64.reg32 b = some k) :
+    Arm64.cmp2w f [a, b] = Arm64.cmp1w (fun x => f x k) [a] := by
+  cases h : Arm64.reg32 a <;> simp only [Arm64.cmp2w, Arm64.cmp1w, h, hb]
 
 /-- `ARM64.rules:992`: `(CMPW x (MOVDconst [c])) => (CMPWconst [int32(c)] x)` -/
 theorem r_ARM64_992_sound : ArmRule.Checked r_ARM64_992 := by
   left; arm_unfold; arm_norm
   rcases retypeL_res_w32 harg.2 (BitVec.ofInt 64 (e.auxInt [1]).toInt) with h | h
-  · rw [flags2w_reg _ _ _ h, imm32_wrap, setWidth_ofInt_le (by decide)]
+  · rw [cmp2w_reg _ _ _ h, imm32_wrap, setWidth_ofInt_le (by decide)]
     exact Refines.refl _
-  · rw [h, flags2w_poison, retypeL_poison]; exact .poison _
+  · rw [h, cmp2w_poison, retypeL_poison]; exact .poison _
 
 theorem retype_bit_ref (t : Ty) {a : Val} (ha : a = .poison ∨ ∃ b, a = .bool b) :
     Refines (a.retype t) a := by
@@ -150,19 +150,22 @@ theorem retype_bit_ref (t : Ty) {a : Val} (ha : a = .poison ∨ ∃ b, a = .bool
   · cases t <;> exact .poison _
   · cases t <;> first | exact Refines.refl _ | exact .poison _
 
-theorem retypeL_agg4_ref (T : Ty) {a0 a1 a2 a3 : Val}
+theorem retypeL_agg5_ref (T : Ty) {a0 a1 a2 a3 a4 : Val}
     (h0 : a0 = .poison ∨ ∃ b, a0 = .bool b) (h1 : a1 = .poison ∨ ∃ b, a1 = .bool b)
-    (h2 : a2 = .poison ∨ ∃ b, a2 = .bool b) (h3 : a3 = .poison ∨ ∃ b, a3 = .bool b) :
-    Refines ((Val.agg [a0, a1, a2, a3]).retypeL T) (.agg [a0, a1, a2, a3]) := by
-  have hw : (Val.agg [a0, a1, a2, a3]).widen T = .agg [a0, a1, a2, a3] := by cases T <;> rfl
+    (h2 : a2 = .poison ∨ ∃ b, a2 = .bool b) (h3 : a3 = .poison ∨ ∃ b, a3 = .bool b)
+    (h4 : a4 = .poison ∨ ∃ b, a4 = .bool b) :
+    Refines ((Val.agg [a0, a1, a2, a3, a4]).retypeL T) (.agg [a0, a1, a2, a3, a4]) := by
+  have hw : (Val.agg [a0, a1, a2, a3, a4]).widen T = .agg [a0, a1, a2, a3, a4] := by
+    cases T <;> rfl
   rw [Val.retypeL, hw]
   cases T with
   | agg fs n =>
-    rcases fs with _ | ⟨⟨_, t0⟩, _ | ⟨⟨_, t1⟩, _ | ⟨⟨_, t2⟩, _ | ⟨⟨_, t3⟩, _ | ⟨_, _⟩⟩⟩⟩⟩
+    rcases fs with _ | ⟨⟨_, t0⟩, _ | ⟨⟨_, t1⟩, _ | ⟨⟨_, t2⟩, _ | ⟨⟨_, t3⟩, _ | ⟨⟨_, t4⟩, _ | ⟨_, _⟩⟩⟩⟩⟩⟩
     all_goals first
       | exact .poison _
       | exact .agg (.cons (retype_bit_ref t0 h0) (.cons (retype_bit_ref t1 h1)
-          (.cons (retype_bit_ref t2 h2) (.cons (retype_bit_ref t3 h3) .nil))))
+          (.cons (retype_bit_ref t2 h2) (.cons (retype_bit_ref t3 h3)
+            (.cons (retype_bit_ref t4 h4) .nil)))))
   | _ => exact .poison _
 
 /-- A comparison's flags read at any shape refine the flags. -/
@@ -173,16 +176,16 @@ theorem retypeL_cmp_ref (T : Ty) (a b : Val) : Refines ((Arm64.cmp a b).retypeL 
   have hq : Val.poison = .poison ∨ ∃ b, Val.poison = .bool b := .inl rfl
   unfold Arm64.cmp
   split
-  · exact retypeL_agg4_ref T (hb _) (hb _) (hb _) (hb _)
+  · exact retypeL_agg5_ref T (hb _) (hb _) (hb _) (hb _) (hb _)
   · split
     · split
-      · exact retypeL_agg4_ref T (hb _) (hb _) (hb _) (hb _)
-      · exact retypeL_agg4_ref T hq (hb _) hq hq
+      · exact retypeL_agg5_ref T (hb _) (hb _) (hb _) (hb _) (hb _)
+      · exact retypeL_agg5_ref T hq (hb _) hq hq hq
     · split
-      · exact retypeL_agg4_ref T hq (hb _) hq hq
+      · exact retypeL_agg5_ref T hq (hb _) hq hq hq
       · exact hp _ rfl
     · split
-      · exact retypeL_agg4_ref T hq (hb _) hq hq
+      · exact retypeL_agg5_ref T hq (hb _) hq hq hq
       · exact hp _ rfl
     · exact hp _ rfl
 
@@ -208,9 +211,9 @@ private theorem isZero_of_cmp0 {x : Val} {b : Bool}
   have h0 : Arm64.reg (.int .w64 (0 : BitVec 64)) = some 0 := rfl
   cases hx : Arm64.reg x with
   | some r =>
-    have hc : Arm64.cmp x (.int .w64 0) = (Arm64.subFlags r 0).2.toVal := by
+    have hc : Arm64.cmp x (.int .w64 0) = Arm64.cmpRes (Arm64.subFlags r 0) := by
       unfold Arm64.cmp; rw [hx, h0]
-    rw [hc] at h
+    rw [hc, onVal_cmpRes] at h
     simp only [Flags.toVal, Cond.onVal, Cond.eval, Val.flagBit, Option.some.injEq,
       subFlags_zero_z] at h
     subst h
@@ -226,7 +229,8 @@ private theorem isZero_of_cmp0 {x : Val} {b : Bool}
     cases x with
     | ptr p =>
       simp only [Arm64.reg] at hx
-      have hc : Arm64.cmp (.ptr p) (.int .w64 0) = .agg [.poison, .bool false, .poison, .poison] := by
+      have hc : Arm64.cmp (.ptr p) (.int .w64 0) =
+          .agg [.poison, .bool false, .poison, .poison, .poison] := by
         unfold Arm64.cmp; simp only [Arm64.reg, hx, h0]; rfl
       rw [hc] at h
       simp only [Cond.onVal, Cond.eval, Val.flagBit, Option.some.injEq] at h
@@ -274,12 +278,19 @@ theorem retypeL_flags1w_ref (T : Ty) (f : BitVec 32 → Flags) (a : Val) :
   have hb : ∀ x : Bool, Val.bool x = .poison ∨ ∃ b, Val.bool x = .bool b := fun x => .inr ⟨x, rfl⟩
   cases h : Arm64.reg32 a <;> simp only [Arm64.flags1w, h]
   · rw [retypeL_poison]; exact .poison _
-  · exact retypeL_agg4_ref T (hb _) (hb _) (hb _) (hb _)
+  · exact retypeL_agg5_ref T (hb _) (hb _) (hb _) (hb _) (.inl rfl)
+
+theorem retypeL_cmp1w_ref (T : Ty) (f : BitVec 32 → BitVec 32 × Flags) (a : Val) :
+    Refines ((Arm64.cmp1w f [a]).retypeL T) (Arm64.cmp1w f [a]) := by
+  have hb : ∀ x : Bool, Val.bool x = .poison ∨ ∃ b, Val.bool x = .bool b := fun x => .inr ⟨x, rfl⟩
+  cases h : Arm64.reg32 a <;> simp only [Arm64.cmp1w, h]
+  · rw [retypeL_poison]; exact .poison _
+  · exact retypeL_agg5_ref T (hb _) (hb _) (hb _) (hb _) (hb _)
 
 theorem reg32_of_cmpw0 {x : Val} {c : Cond} {b : Bool}
-    (h : c.onVal (Arm64.flags1w (fun r => (Arm64.subFlags r 0).snd) [x]) = some b) :
+    (h : c.onVal (Arm64.cmp1w (fun r => Arm64.subFlags r 0) [x]) = some b) :
     ∃ r, Arm64.reg32 x = some r ∧ c.onVal (Arm64.subFlags r 0).snd.toVal = some b := by
-  cases hr : Arm64.reg32 x <;> simp only [Arm64.flags1w, hr] at h
+  cases hr : Arm64.reg32 x <;> simp only [Arm64.cmp1w, hr] at h
   · simp [Cond.onVal] at h
   · exact ⟨_, rfl, h⟩
 
@@ -299,7 +310,7 @@ theorem r_ARM64_601_sound : BlockRuleL.Sound r_ARM64_601 := by
   simp only [brVal, show BlockKind.ARM64EQ.isArm64 = true from rfl,
     show BlockKind.ARM64ZW.isArm64 = true from rfl, ite_true, Arm64.taken] at hbr ⊢
   rw [Bool.bne_false]
-  obtain ⟨r, hr, h⟩ := reg32_of_cmpw0 (Mono.onVal_of (retypeL_flags1w_ref _ _ _) hbr)
+  obtain ⟨r, hr, h⟩ := reg32_of_cmpw0 (Mono.onVal_of (retypeL_cmp1w_ref _ _ _) hbr)
   simp only [Flags.toVal, Cond.onVal, Cond.eval, Val.flagBit, Option.some.injEq,
     subFlags_zero_z] at h
   rw [hr, ← h]; rfl
@@ -312,7 +323,7 @@ theorem r_ARM64_601_2_sound : BlockRuleL.Sound r_ARM64_601_2 := by
   simp only [brVal, show BlockKind.ARM64NE.isArm64 = true from rfl,
     show BlockKind.ARM64NZW.isArm64 = true from rfl, ite_true, Arm64.taken] at hbr ⊢
   rw [Bool.bne_false]
-  obtain ⟨r, hr, h⟩ := reg32_of_cmpw0 (Mono.onVal_of (retypeL_flags1w_ref _ _ _) hbr)
+  obtain ⟨r, hr, h⟩ := reg32_of_cmpw0 (Mono.onVal_of (retypeL_cmp1w_ref _ _ _) hbr)
   simp only [Flags.toVal, Cond.onVal, Cond.eval, Val.flagBit, Option.map_some, Option.some.injEq,
     subFlags_zero_z] at h
   rw [hr, ← h]; simp [bne]

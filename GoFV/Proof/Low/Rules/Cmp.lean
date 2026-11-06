@@ -34,14 +34,20 @@ theorem asInt_cases (w : Width) (v : Val) : v.asInt w = none ∨ ∃ x, v = .int
 
 @[simp] theorem retypeL_flags_toVal (f : Flags) : f.toVal.retypeL Ty.flags = f.toVal := rfl
 
+@[simp] theorem retypeL_cmpRes {n : Nat} (p : BitVec n × Flags) :
+    (Arm64.cmpRes p).retypeL Ty.flags = Arm64.cmpRes p := rfl
+
+@[simp] theorem onVal_cmpRes (c : Cond) {n : Nat} (p : BitVec n × Flags) :
+    c.onVal (Arm64.cmpRes p) = c.onVal p.2.toVal := rfl
+
 theorem cmp_int (w w' : Width) (x : BitVec w.bits) (y : BitVec w'.bits) :
-    Arm64.cmp (.int w x) (.int w' y) = (Arm64.subFlags (x.setWidth 64) (y.setWidth 64)).2.toVal :=
+    Arm64.cmp (.int w x) (.int w' y) = Arm64.cmpRes (Arm64.subFlags (x.setWidth 64) (y.setWidth 64)) :=
   rfl
 
-theorem flags2w_int (f : BitVec 32 → BitVec 32 → Flags) (w w' : Width) (x : BitVec w.bits)
+theorem cmp2w_int (f : BitVec 32 → BitVec 32 → BitVec 32 × Flags) (w w' : Width) (x : BitVec w.bits)
     (y : BitVec w'.bits) :
-    Arm64.flags2w f [.int w x, .int w' y] = (f (x.setWidth 32) (y.setWidth 32)).toVal := by
-  simp only [Arm64.flags2w, Arm64.reg32, Arm64.reg, Option.map_some,
+    Arm64.cmp2w f [.int w x, .int w' y] = Arm64.cmpRes (f (x.setWidth 32) (y.setWidth 32)) := by
+  simp only [Arm64.cmp2w, Arm64.reg32, Arm64.reg, Option.map_some,
     BitVec.setWidth_setWidth_of_le _ (show 32 ≤ 64 by decide)]
 
 @[simp] theorem setWidth_w64 (x : BitVec Width.w64.bits) : x.setWidth 64 = x := BitVec.setWidth_eq x
@@ -100,8 +106,9 @@ theorem refines_inBounds (slice : Bool) {op : Op} {c : Cond} (hop : Cond.ofOp op
     · simp only [Cmp.inBounds, Val.asInt_int]
       split
       · rw [retypeL_poison]; exact .poison _
-      · rw [cmp_int, retypeL_flags_toVal]
+      · rw [cmp_int, retypeL_cmpRes]
         refine refines_cset_bool hop ?_
+        rw [onVal_cmpRes]
         have hw : w.bits ≤ 64 := by cases w <;> decide
         rw [hc]
         cases slice <;> simp only [ite_true, ite_false, Bool.false_eq_true, zext_ult _ _ hw,
@@ -118,8 +125,9 @@ macro "arm_leaves " w:term : tactic => `(tactic| (
 
 /-- Close `CSET [cc] (CMP/CMPW …)` against Phase 1's comparison of the leaves. -/
 macro "arm_cmp" : tactic => `(tactic| (
-  simp only [cmp_int, flags2w_int, retypeL_flags_toVal, setWidth_w64, setWidth_w32]
+  simp only [cmp_int, cmp2w_int, retypeL_cmpRes, setWidth_w64, setWidth_w32]
   refine refines_cset_bool rfl ?_
+  rw [onVal_cmpRes]
   first
     | rw [(cond_sub _ _ (sub_lt64 _ _)).1] | rw [(cond_sub _ _ (sub_lt64 _ _)).2.1]
     | rw [(cond_sub _ _ (sub_lt64 _ _)).2.2.1] | rw [(cond_sub _ _ (sub_lt64 _ _)).2.2.2.1]

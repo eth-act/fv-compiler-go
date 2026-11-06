@@ -49,7 +49,7 @@ private theorem onVal_of {a b : Val} {c : Cond} {r : Bool} (h : Sem.Refines a b)
     (hr : c.onVal a = some r) : c.onVal b = some r := by
   cases h with
   | agg hl =>
-    rcases hl with _ | ⟨h1, _ | ⟨h2, _ | ⟨h3, _ | ⟨h4, _ | ⟨_, _⟩⟩⟩⟩⟩
+    rcases hl with _ | ⟨h1, _ | ⟨h2, _ | ⟨h3, _ | ⟨h4, _ | ⟨_, _ | ⟨_, _⟩⟩⟩⟩⟩⟩
     all_goals first
       | (simp only [Cond.onVal] at hr; cases hr)
       | exact eval_of (flagBit_cases h1) (flagBit_cases h2) (flagBit_cases h3) (flagBit_cases h4) hr
@@ -74,7 +74,7 @@ private theorem noov_of {k : BlockKind} (hk : k = .ARM64LEnoov ∨ k = .ARM64GTn
     Arm64.taken k ai b = some r := by
   cases h with
   | agg hl =>
-    rcases hl with _ | ⟨h1, _ | ⟨h2, _ | ⟨h3, _ | ⟨h4, _ | ⟨_, _⟩⟩⟩⟩⟩
+    rcases hl with _ | ⟨h1, _ | ⟨h2, _ | ⟨h3, _ | ⟨h4, _ | ⟨_, _ | ⟨_, _⟩⟩⟩⟩⟩⟩
     all_goals rcases hk with rfl | rfl
     all_goals first
       | (simp [Arm64.taken] at hr; done)

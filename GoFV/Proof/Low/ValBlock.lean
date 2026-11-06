@@ -82,10 +82,10 @@ theorem taken_blob (k : BlockKind) (ai : Int64) (l : List Byte) :
     Arm64.taken k ai (.blob l) = none := by
   cases k <;> rfl
 
-theorem taken_agg4 (k : BlockKind) (ai : Int64) {n z f v n' z' f' v' : Val}
+theorem taken_agg4 (k : BlockKind) (ai : Int64) {n z f v g n' z' f' v' g' : Val}
     (hn : Sem.Refines n n') (hz : Sem.Refines z z') (hf : Sem.Refines f f')
     (hv : Sem.Refines v v') :
-    OptLE (Arm64.taken k ai (.agg [n, z, f, v])) (Arm64.taken k ai (.agg [n', z', f', v'])) := by
+    OptLE (Arm64.taken k ai (.agg [n, z, f, v, g])) (Arm64.taken k ai (.agg [n', z', f', v', g'])) := by
   have e := fun c => eval_mono c (flagBit_mono hn) (flagBit_mono hz) (flagBit_mono hf)
     (flagBit_mono hv)
   have nv := optLE_bind (flagBit_mono hn) fun nb => optLE_bind (flagBit_mono hz) fun zb =>
@@ -124,9 +124,11 @@ theorem taken_agg (k : BlockKind) (ai : Int64) {as bs : List Val} (hl : RefinesL
   · rw [show Arm64.taken k ai (.agg [_, _]) = none by cases k <;> rfl]; exact optLE_none _
   rcases hl with _ | ⟨hv, hl⟩
   · rw [show Arm64.taken k ai (.agg [_, _, _]) = none by cases k <;> rfl]; exact optLE_none _
+  rcases hl with _ | ⟨_, hl⟩
+  · rw [show Arm64.taken k ai (.agg [_, _, _, _]) = none by cases k <;> rfl]; exact optLE_none _
   rcases hl with _ | ⟨_, _⟩
   · exact taken_agg4 k ai hn hz hf hv
-  · rw [show Arm64.taken k ai (.agg (_ :: _ :: _ :: _ :: _ :: _)) = none by cases k <;> rfl]
+  · rw [show Arm64.taken k ai (.agg (_ :: _ :: _ :: _ :: _ :: _ :: _)) = none by cases k <;> rfl]
     exact optLE_none _
 
 /-- **`Arm64.taken` is monotone** in the control. -/

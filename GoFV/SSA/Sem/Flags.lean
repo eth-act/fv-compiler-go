@@ -5,11 +5,15 @@ import GoFV.SSA.Sem.Val
 # Condition flags of lowered arm64 SSA (`docs/plans/semantics2.md` §3, §5)
 
 A value of Go's `flags` type is `PSTATE.NZCV` after the instruction that produced it: the four
-bits as a value of the shape `Ty.flags`, `Val.agg [n, z, c, v]` of booleans (§3 option 2: no new
-`Val` constructor, so no Phase 1 case analysis changes). A component may be `poison` on its own:
-a comparison of pointers without concrete addresses fixes `Z` (allocations are distinct) and
-leaves the order bits undefined. A condition reads only the bits it needs (`Cond.eval`), so it
-is defined whenever those are.
+bits and a fifth (below) as a value of the shape `Ty.flags`, `Val.agg [n, z, c, v, g]` of
+booleans (§3 option 2: no new `Val` constructor, so no Phase 1 case analysis changes). A
+component may be `poison` on its own: a comparison of pointers without concrete addresses fixes
+`Z` (allocations are distinct) and leaves the order bits undefined. A condition reads only the
+bits it needs (`Cond.eval`), so it is defined whenever those are.
+
+The fifth component `g` is no machine state: it is the sign of the negated difference of an
+integer compare (`CMP x y`: the `N` of `y - x`), which `InvertFlags` needs to give the flags of
+the swapped compare exactly (`invertFlags`); `poison` for every other flags producer.
 
 Definitions follow the Arm ARM pseudocode (DDI 0487, shared/functions): `AddWithCarry`
 (`aarch64/functions/arithmetic`), `ConditionHolds` (`shared/functions/system`), the `FPCompare`
@@ -29,8 +33,12 @@ structure Flags where
 
 namespace Flags
 
-/-- The flags as a value of shape `Ty.flags`. -/
-def toVal (f : Flags) : Val := .agg [.bool f.n, .bool f.z, .bool f.c, .bool f.v]
+/-- The flags as a value of shape `Ty.flags`, without the swapped compare's sign (`g` `poison`). -/
+def toVal (f : Flags) : Val := .agg [.bool f.n, .bool f.z, .bool f.c, .bool f.v, .poison]
+
+/-- The flags of an integer compare whose difference is `r`, with `g` the sign of `-r`. -/
+def toValSub {n : Nat} (f : Flags) (r : BitVec n) : Val :=
+  .agg [.bool f.n, .bool f.z, .bool f.c, .bool f.v, .bool (-r).msb]
 
 /-- Go's `flagConstant` encoding (`rewrite.go:2329`): `N` bit 0, `Z` bit 1, `C` bit 2, `V` bit 3. -/
 def ofFlagConstant (k : Nat) : Flags :=
@@ -42,8 +50,8 @@ def ofNZCV (k : Nat) : Flags :=
 
 end Flags
 
-/-- The shape of Go's `flags` type: four booleans. -/
-def Ty.flags : Ty := .agg [(0, .bool), (1, .bool), (2, .bool), (3, .bool)] 4
+/-- The shape of Go's `flags` type: four booleans and the swapped compare's sign. -/
+def Ty.flags : Ty := .agg [(0, .bool), (1, .bool), (2, .bool), (3, .bool), (4, .bool)] 5
 
 /-- `AddWithCarry(x, y, carry_in)` of width `n`: the result and `NZCV`. -/
 def addWithCarry {n : Nat} (x y : BitVec n) (carry : Bool) : BitVec n × Flags :=
@@ -123,10 +131,44 @@ def Val.flagBit : Val → Option Bool
   | .bool b => some b
   | _ => none
 
-/-- Condition `c` on a flags value (`Val.agg [n, z, c, v]`); `none` if a bit it reads is not a
+/-- Condition `c` on a flags value (`Val.agg [n, z, c, v, g]`); `none` if a bit it reads is not a
 boolean (`poison`). -/
 def Cond.onVal (c : Cond) : Val → Option Bool
-  | .agg [n, z, cf, v] => c.eval n.flagBit z.flagBit cf.flagBit v.flagBit
+  | .agg [n, z, cf, v, _] => c.eval n.flagBit z.flagBit cf.flagBit v.flagBit
   | _ => none
+
+/-- A condition never reads the fifth component `g` (no machine state; only `invertFlags` reads
+it). -/
+theorem Cond.onVal_ghost (c : Cond) (n z cf v g g' : Val) :
+    c.onVal (.agg [n, z, cf, v, g]) = c.onVal (.agg [n, z, cf, v, g']) := rfl
+
+/-- A condition on a compare's flags is the condition on its `NZCV`. -/
+@[simp] theorem Flags.onVal_toValSub (c : Cond) (f : Flags) {k : Nat} (r : BitVec k) :
+    c.onVal (f.toValSub r) = c.onVal f.toVal := rfl
+
+/-- A flags component of an optional bit: `poison` if unknown. -/
+def Val.ofFlagBit : Option Bool → Val
+  | some b => .bool b
+  | none => .poison
+
+/-- `InvertFlags f`: the flags of the compare with swapped operands, as Go's `arm64Invert` reads
+them. For `f` the flags `[n, z, c, v, g]` of `x - y` (`g` the sign of `y - x`), the flags of
+`y - x` are `N = g`, `Z = z`, `C = ¬c ∨ z` (no borrow), `V = g ⊕ (x > y)` (`N ⊕ V` is `y < x`),
+and its `g` is `n`. A bit is `poison` if a bit it is computed from is, and where `[n, z, c, v, g]`
+cannot be the flags of a subtraction: `C` if `z ∧ ¬c`, `V` if `z ∧ n ≠ v` (a zero difference
+has `C` set and `N = V = 0`). So every integer condition (`EQ` … `UGE`, swapped by `arm64Invert`)
+reads, on the result, what its swapped condition reads on `f`, whatever `f`
+(`GoFV.Proof.Low.Rules.invertFlags_cond`), and each bit is monotone in `f`'s. -/
+def invertFlags : Val → Val
+  | .agg [n, z, c, v, g] =>
+    let n := n.flagBit; let z := z.flagBit; let c := c.flagBit; let v := v.flagBit
+    let g := g.flagBit
+    .agg [Val.ofFlagBit g, Val.ofFlagBit z,
+      Val.ofFlagBit (do let c ← c; let z ← z; if z && !c then none else pure (!c || z)),
+      Val.ofFlagBit (do
+        let g ← g; let n ← n; let v ← v; let z ← z
+        if z && n != v then none else pure (g != (n == v && !z))),
+      Val.ofFlagBit n]
+  | _ => .poison
 
 end GoFV.SSA.Sem

@@ -19,7 +19,18 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Proof.DAE
 variable {U : Blk → Prop}
 
 theorem flags_av (fl : Flags) : Val.Avoids U fl.toVal :=
-  ⟨trivial, trivial, trivial, trivial, trivial⟩
+  ⟨trivial, trivial, trivial, trivial, trivial, trivial⟩
+
+theorem cmpRes_av {n : Nat} (p : BitVec n × Flags) : Val.Avoids U (Arm64.cmpRes p) :=
+  ⟨trivial, trivial, trivial, trivial, trivial, trivial⟩
+
+theorem ofFlagBit_av (o : Option Bool) : Val.Avoids U (Val.ofFlagBit o) := by
+  cases o <;> trivial
+
+theorem invertFlags_av (f : Val) : Val.Avoids U (invertFlags f) := by
+  unfold invertFlags; split
+  · exact ⟨ofFlagBit_av _, ofFlagBit_av _, ofFlagBit_av _, ofFlagBit_av _, ofFlagBit_av _, trivial⟩
+  · trivial
 
 theorem res_av (ty : Ty) (r : BitVec 64) : Val.Avoids U (Arm64.res ty r) := by
   unfold Arm64.res; split <;> trivial
@@ -31,7 +42,7 @@ theorem res32_av (ty : Ty) (r : BitVec 32) : Val.Avoids U (Arm64.res32 ty r) := 
 syntax "avL_tac" : tactic
 macro_rules
   | `(tactic| avL_tac) =>
-    `(tactic| repeat' (first | exact True.intro | exact res_av _ _ | exact res32_av _ _ | exact flags_av _ | split | refine ⟨?_, ?_⟩))
+    `(tactic| repeat' (first | exact True.intro | exact res_av _ _ | exact res32_av _ _ | exact flags_av _ | exact cmpRes_av _ | split | refine ⟨?_, ?_⟩))
 
 theorem op1_av (ty : Ty) (f : BitVec 64 → BitVec 64) (args : List Val) :
     Val.Avoids U (Arm64.op1 ty f args) := by unfold Arm64.op1; avL_tac
@@ -65,6 +76,18 @@ theorem flags1w_av (f : BitVec 32 → Flags) (args : List Val) :
 
 theorem flags2w_av (f : BitVec 32 → BitVec 32 → Flags) (args : List Val) :
     Val.Avoids U (Arm64.flags2w f args) := by unfold Arm64.flags2w; avL_tac
+
+theorem cmp1_av (f : BitVec 64 → BitVec 64 × Flags) (args : List Val) :
+    Val.Avoids U (Arm64.cmp1 f args) := by unfold Arm64.cmp1; avL_tac
+
+theorem cmp2_av (f : BitVec 64 → BitVec 64 → BitVec 64 × Flags) (args : List Val) :
+    Val.Avoids U (Arm64.cmp2 f args) := by unfold Arm64.cmp2; avL_tac
+
+theorem cmp1w_av (f : BitVec 32 → BitVec 32 × Flags) (args : List Val) :
+    Val.Avoids U (Arm64.cmp1w f args) := by unfold Arm64.cmp1w; avL_tac
+
+theorem cmp2w_av (f : BitVec 32 → BitVec 32 → BitVec 32 × Flags) (args : List Val) :
+    Val.Avoids U (Arm64.cmp2w f args) := by unfold Arm64.cmp2w; avL_tac
 
 theorem cmp_av (a b : Val) : Val.Avoids U (Arm64.cmp a b) := by unfold Arm64.cmp; avL_tac
 
