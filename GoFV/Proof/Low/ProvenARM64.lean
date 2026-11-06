@@ -10,6 +10,7 @@ import GoFV.Proof.Low.Rules.CondSel
 import GoFV.Proof.Low.Rules.Const
 import GoFV.Proof.Low.Rules.ConstBool
 import GoFV.Proof.Low.Rules.Fold
+import GoFV.Proof.Low.Rules.Invert
 import GoFV.Proof.Low.Rules.LoadIdx
 import GoFV.Proof.Low.Rules.LoadStore
 import GoFV.Proof.Low.Rules.Peep
@@ -36,12 +37,21 @@ theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
   · simp only [ProvenARM64.lower, ForallL, ForallL.append_iff]
     exact ⟨⟨r_ARM64_650_sound, r_ARM64_1000_sound, r_ARM64_1201_sound, trivial⟩,
       ⟨r_ARM64_972_sound, trivial⟩,
-      ⟨r_ARM64_990_sound, trivial⟩,
-      ⟨r_ARM64_992_sound, trivial⟩,
+      ⟨r_ARM64_990_sound, r_ARM64_991_sound, r_ARM64_1003_sound, trivial⟩,
+      ⟨r_ARM64_992_sound, r_ARM64_993_sound, r_ARM64_1003_2_sound, trivial⟩,
+      ⟨r_ARM64_1374_sound, trivial⟩,
       ⟨r_ARM64_750_sound, r_ARM64_752_sound, trivial⟩,
       ⟨r_ARM64_776_sound, r_ARM64_905_sound, trivial⟩,
       ⟨r_ARM64_751_sound, r_ARM64_753_sound, trivial⟩,
       ⟨r_ARM64_773_sound, r_ARM64_901_sound, trivial⟩,
+      ⟨r_ARM64_1382_sound, trivial⟩,
+      ⟨r_ARM64_1383_sound, trivial⟩,
+      ⟨r_ARM64_1378_sound, trivial⟩,
+      ⟨r_ARM64_1379_sound, trivial⟩,
+      ⟨r_ARM64_1380_sound, trivial⟩,
+      ⟨r_ARM64_1381_sound, trivial⟩,
+      ⟨r_ARM64_1376_sound, trivial⟩,
+      ⟨r_ARM64_1377_sound, trivial⟩,
       ⟨r_ARM64_516_sound, trivial⟩,
       ⟨r_ARM64_515_sound, trivial⟩,
       ⟨r_ARM64_513_sound, r_ARM64_514_sound, trivial⟩,
@@ -68,6 +78,7 @@ theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
       ⟨r_ARM64_709_sound, r_ARM64_710_sound, r_ARM64_731_sound, r_ARM64_738_sound, trivial⟩,
       ⟨r_ARM64_744_sound, trivial⟩,
       ⟨r_ARM64_764_sound, r_ARM64_889_sound, trivial⟩,
+      ⟨r_ARM64_1375_sound, trivial⟩,
       ⟨r_ARM64_973_sound, trivial⟩,
       ⟨r_ARM64_983_sound, trivial⟩,
       ⟨r_ARM64_985_sound, trivial⟩,
