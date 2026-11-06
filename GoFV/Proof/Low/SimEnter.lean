@@ -162,11 +162,13 @@ theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
     have hr := (atom_ref H hDS hDT hVT (R.rel hDT hVT) R.tyS R.tyT R.frames R.fr hpw hpu.1 ht).2.1
       hph i hi'
       (by rw [argIx_of_not hnpb, hai]; exact hVSa) (by rw [hai']; exact hVTa)
-    rw [argIx_of_not hnpb, hai, hai', rv_of hy, stArg_of_ne (by rw [huph]; decide)] at hr
+    rw [argIx_of_not hnpb, hai, hai', rv_of hy] at hr
     have hshape : (Ctx.makeL tabs g).tys[z]?.getD .other = (Ctx.makeL tabs f).tys[z]?.getD .other := by
       rw [tysL_of_value hw, tysL_of_value hpu.1, H.shp z u hpu.1, hty]
-    rw [hshape]
-    exact rty_le H.low _ hr
+    have hshf : (Ctx.makeL tabs f).tys[z]?.getD .other = shpL tabs w.type := by
+      rw [tysL_of_value hpu.1, H.shp z u hpu.1, hty, H.glow]; rfl
+    rw [hshape, hshf]
+    exact hr
   obtain ⟨psT, hpsT⟩ := filterMapM_phiL_ok (md := ⟨g.lowered, false⟩) (ctx := Ctx.makeL tabs g)
     (fr := frT) (i := i) (l := gb.values.toList) fun z hz => by
       have hz' := Array.mem_toList_iff.1 hz

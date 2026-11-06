@@ -722,6 +722,7 @@ import GoFV.Proof.Witness.LowerBlockTT
 import GoFV.Proof.Witness.LowerCallTrunc
 import GoFV.Proof.Witness.LowerCondSel
 import GoFV.Proof.Witness.LowerConstFold
+import GoFV.Proof.Witness.LowerCopyArgs
 import GoFV.Proof.Witness.LowerCopyPtr
 import GoFV.Proof.Witness.LowerInvert
 import GoFV.Proof.Witness.LowerLoadFold
