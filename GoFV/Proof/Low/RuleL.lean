@@ -113,32 +113,27 @@ theorem ldOp?_mem {o : Op} {p : Nat × Bool} (h : ldOp? o = some p) :
   unfold ldOp? at h
   split at h <;> simp_all
 
-theorem ldarOp_cases {o : Op} (h : ldarOp o = true) :
-    o = .ARM64LDAR ∨ o = .ARM64LDARB ∨ o = .ARM64LDARW := by
-  unfold ldarOp at h
+theorem pureActOp_cases {o : Op} (h : pureActOp o = true) :
+    o = .ARM64LDAR ∨ o = .ARM64LDARB ∨ o = .ARM64LDARW ∨ o = .ARM64LoweredMemEq := by
+  unfold pureActOp at h
   split at h <;> simp_all
 
-/-- The acquiring loads are activation ops (`Sem.arm64Op`). -/
-theorem ldarOp_of_act {o : Op} (h : actOp o = false) : ldarOp o = false := by
-  cases hd : ldarOp o
+/-- The acquiring loads and `LoweredMemEq` are activation ops (`Sem.arm64Op`). -/
+theorem pureActOp_of_act {o : Op} (h : actOp o = false) : pureActOp o = false := by
+  cases hd : pureActOp o
   · rfl
-  · rcases ldarOp_cases hd with rfl | rfl | rfl <;> exact absurd h (by decide)
+  · rcases pureActOp_cases hd with rfl | rfl | rfl | rfl <;> exact absurd h (by decide)
 
-/-- The acquiring loads are no integer loads. -/
-theorem ldOp?_of_ldar {o : Op} (h : ldarOp o = true) : ldOp? o = none := by
-  rcases ldarOp_cases h with rfl | rfl | rfl <;> rfl
-
-/-- An acquiring load is Phase 1's `atomicLoad` (`Arm64.evalPure`). -/
-theorem armPure_ldar {op : Op} (h : ldarOp op = true) (ty : Ty) (k : Int64) (ax : Option AuxRef)
-    (as : List Val) : Arm64.evalPure op ty k ax as = atomicLoad ty as := by
-  rcases ldarOp_cases h with rfl | rfl | rfl <;> rfl
+/-- The acquiring loads and `LoweredMemEq` are no integer loads. -/
+theorem ldOp?_of_pureAct {o : Op} (h : pureActOp o = true) : ldOp? o = none := by
+  rcases pureActOp_cases h with rfl | rfl | rfl | rfl <;> rfl
 
 /-- The value `v` is a term of a lowered function (module doc of `GoFV.Opt.LowerTerm`). -/
 def termVL (tabs : Tables) (v : Value) : Bool :=
   if v.op.generic then GoFV.Opt.RewriteCheck.termOp v.op
   else if v.op == .ARM64MOVDaddr then !(auxIsName tabs v.aux && v.auxInt == 0)
   else if (ldOp? v.op).isSome then true
-  else if ldarOp v.op then true
+  else if pureActOp v.op then true
   else armTerm v.op && !actOp v.op && !isRoot v.op
 
 /-! ## Commutation choices -/

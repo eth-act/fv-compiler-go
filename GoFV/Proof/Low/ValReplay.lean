@@ -110,7 +110,7 @@ theorem termVL_gen {tabs : Tables} {v : Value} {o : Op} (hg : o.generic = true) 
 
 theorem termVL_arm {tabs : Tables} {v : Value} {o : Op} (hg : o.generic = false)
     (hm : (o == .ARM64MOVDaddr) = false) (hl : ldOp? o = none)
-    (hd : GoFV.Opt.LowerTerm.ldarOp o = false) (hv : v.op = o) :
+    (hd : GoFV.Opt.LowerTerm.pureActOp o = false) (hv : v.op = o) :
     termVL tabs v = (GoFV.Opt.LowerTerm.armTerm o && !GoFV.Opt.LowerTerm.actOp o && !isRoot o) := by
   unfold termVL; rw [hv]; simp only [hg, hm, hl, hd, Option.isSome_none, Bool.false_eq_true, ite_false]
 

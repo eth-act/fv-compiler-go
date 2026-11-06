@@ -335,6 +335,10 @@ ASL-derived model:
    `LoweredPanicBounds*`, `LoweredMemEq`, `LoweredRound*F`, write barrier calls — are defined on
    the Phase 1 memory model as the generic op they come from (often literally
    `evalPure`/`evalValue` of that op), their instruction sequences proven in Phase 3.
+   **Change (#385, lowered layer only):** `Arm64.evalPure` gained the arm `LoweredMemEq =
+   memEq`, so the checked lower reads `LoweredMemEq` as a term with `MemEq`'s meaning (`pureActOp`,
+   like the acquiring loads). `runL` is unchanged: `Sem.arm64Op` evaluates `LoweredMemEq` as
+   `memEq` after its nil check and never reaches that arm, so sem-difftest is unchanged.
 5. **Deferred until the licence decision:** per-op agreement theorems
    `evalArm64 op args = result of Arm.exec (the instruction)` against an ASL-derived Lean
    model (clifv's `FV/Arm` is the candidate), which would move the ~250 definitions out of the

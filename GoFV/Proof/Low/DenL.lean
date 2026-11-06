@@ -89,8 +89,12 @@ theorem opValL_mono_term {tabs : Tables} {v : Value} (ht : termVL tabs v = true)
       | none =>
         unfold termVL at ht
         simp only [hg, Bool.false_eq_true, ite_false, hm', hl, Option.isSome_none] at ht
-        by_cases hd : ldarOp v.op = true
-        · rw [armPure_ldar hd, armPure_ldar hd]; exact atomicLoad_mono ty h
+        by_cases hd : pureActOp v.op = true
+        · rcases pureActOp_cases hd with hv | hv | hv | hv <;> rw [hv]
+          · exact atomicLoad_mono ty h
+          · exact atomicLoad_mono ty h
+          · exact atomicLoad_mono ty h
+          · exact memEq_mono h
         · simp only [hd, Bool.false_eq_true, ite_false, Bool.and_eq_true] at ht
           exact armPure_mono ht.1.1 ty v.auxInt v.aux h
 
@@ -247,12 +251,13 @@ theorem arm64Op_ld {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List
     unfold ldVal
     split <;> simp_all
 
-/-- An acquiring load evaluates by `Arm64.evalPure` (non-faulting mode: `arm64Op`'s default). -/
-theorem arm64Op_ldar {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
-    (hd : ldarOp v.op = true) :
+/-- An acquiring load or `LoweredMemEq` evaluates by `Arm64.evalPure` (non-faulting mode:
+`arm64Op`'s default, `memEq`). -/
+theorem arm64Op_pureAct {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
+    (hd : pureActOp v.op = true) :
     evalOpL false env ctx fr v argv ty = .ok (Arm64.evalPure v.op ty v.auxInt v.aux argv) := by
   have h0 : nilFaults false ctx v argv = none := rfl
-  rcases ldarOp_cases hd with h | h | h <;>
+  rcases pureActOp_cases hd with h | h | h | h <;>
   · unfold evalOpL
     rw [h, if_neg (by decide)]
     dsimp only
@@ -289,8 +294,8 @@ theorem evalOpL_termVL {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : 
         simp only [opValL, hg, Bool.false_eq_true, ite_false, hm', hl]
       | none =>
       simp only [hl, Option.isSome_none, Bool.false_eq_true, ite_false] at ht
-      by_cases hd : ldarOp v.op = true
-      · rw [arm64Op_ldar hd]
+      by_cases hd : pureActOp v.op = true
+      · rw [arm64Op_pureAct hd]
         simp only [opValL, hg, Bool.false_eq_true, ite_false, hm', hl]
       simp only [hd, Bool.false_eq_true, ite_false, Bool.and_eq_true, Bool.not_eq_true'] at ht
       obtain ⟨⟨-, ha⟩, hr⟩ := ht
