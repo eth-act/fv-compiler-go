@@ -47,16 +47,6 @@ theorem and_mask_setWidth {n : Nat} (k w : Nat) (hk : k ≤ w) (x : BitVec n) :
     simp [this, hik]
   · simp [hik]
 
-/-- Zero-extending to `w ≥ n` bits, then to 64, is zero-extending to 64. -/
-theorem setWidth_setWidth_wide {n : Nat} (w m : Nat) (hn : n ≤ w) (x : BitVec n) :
-    (x.setWidth w).setWidth m = x.setWidth m := by
-  ext i hi
-  simp only [← BitVec.getLsbD_eq_getElem, BitVec.getLsbD_setWidth]
-  by_cases h : i < w
-  · simp [h]
-  · have : x.getLsbD i = false := BitVec.getLsbD_of_ge x i (by omega)
-    simp [h, this]
-
 /-- An extension of the low `k ≤ w` bits reads the same bits of a `w`-bit truncation. -/
 theorem ext_setWidth {n : Nat} (s : Bool) (k w : Nat) (hk : k ≤ w) (x : BitVec n) :
     Arm64.ext s k ((x.setWidth w).setWidth 64) = Arm64.ext s k (x.setWidth 64) := by
@@ -187,24 +177,6 @@ theorem termVL_narrow {tabs : Tables} {v : Value} {i k : Nat} (h : narrowReadW v
     simp only [termVL, hg, hm, hl, pureActOp_of_act hact, Option.isSome_none, Bool.false_eq_true,
       ite_false, ht]
 
-/-- What `truncFromL` says. -/
-theorem truncFromL_cases {tabs : Tables} {M : Defs} {n k : Nat} {a a' : ID}
-    (h : truncFromL tabs M n k a a' = true) :
-    ∃ c w, M.get? a = some c ∧ c.op = .Copy ∧ c.args.size = 1 ∧
-      shpL tabs c.type = .int w ∧ k ≤ w.bits ∧ w ≠ .w64 ∧
-      copyReachL tabs M n c.args[0]! a' = true := by
-  unfold truncFromL at h
-  split at h
-  · rename_i c hc
-    simp only [Bool.and_eq_true, beq_iff_eq] at h
-    obtain ⟨⟨⟨hop, hsz⟩, hsh⟩, hr⟩ := h
-    split at hsh
-    · rename_i w hw
-      simp only [Bool.and_eq_true, decide_eq_true_eq, bne_iff_ne, ne_eq] at hsh
-      exact ⟨c, w, hc, hop, hsz, hw, hsh.1, hsh.2, hr⟩
-    · cases hsh
-  · cases h
-
 /-- What `truncReachL` says. -/
 theorem truncReachL_cases {tabs : Tables} {M : Defs} {n : Nat} {o : Op} {i : Nat} {a a' : ID}
     (h : truncReachL tabs M n o i a a' = true) :
@@ -258,16 +230,6 @@ theorem r32List_idx {α β : Type} {F : α → Val} {G : β → Val} :
   | _ :: _, _ :: _, hl, h => .cons (h 0 (by simp) (by simp))
       (r32List_idx (by simpa using hl) fun j h1 h2 => h (j + 1) (by simpa using h1) (by simpa using h2))
   | [], _ :: _, hl, _ | _ :: _, [], hl, _ => by simp at hl
-
-/-- A narrowing to 32 bits keeps the `W` register. -/
-theorem reg32_retypeL_w32 {X : Val} {x : BitVec 32}
-    (h : Arm64.reg32 (X.retypeL (.int .w32)) = some x) : Arm64.reg32 X = some x := by
-  cases X with
-  | int w v =>
-    cases w <;> simp_all [Val.retypeL, Val.widen, Val.retype, Arm64.reg32, Arm64.reg, Width.bits,
-      setWidth_setWidth_wide, BitVec.setWidth_setWidth_of_le]
-  | bool b => cases b <;> simp_all [Val.retypeL, Val.widen, Val.retype, Arm64.reg32, Arm64.reg]
-  | _ => simp [Val.retypeL, Val.widen, Val.retype, Arm64.reg32, Arm64.reg] at h
 
 section
 variable {as bs : List Val}
@@ -1043,14 +1005,6 @@ theorem finalOKL_facts {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
   · cases this
 
 /-! ## The final definitions -/
-
-/-- A narrowing `Copy` in lowered mode: the copied value at the copy's shape. -/
-theorem copy_den {tabs : Tables} {M : Defs} {ρ : ID → Val} {n : Nat} {a : ID} {c : Value}
-    {w : Width} (hc : M.get? a = some c) (hcop : c.op = .Copy) (hcsz : c.args.size = 1)
-    (hsh : shpL tabs c.type = .int w) :
-    denL true M.get? tabs ρ (n + 1) a = (denL true M.get? tabs ρ n c.args[0]!).retypeL (.int w) := by
-  rw [denT_succ hc (termVL_of_copy hcop), toList_of_size_one hcsz, hcop, hsh]
-  simp only [List.map_cons, List.map_nil, opValL_copy]
 
 theorem narrowReadW_makeResult (i : Nat) : narrowReadW .MakeResult i = none := by
   have he : extReadW .MakeResult = none := by decide

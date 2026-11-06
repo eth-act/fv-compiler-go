@@ -606,13 +606,19 @@ def ctrlDefL (e : PEnv) (pat : Pat) (ev : Expr → DV) (or : Oracle) (σ : Nat �
 
 /-- The new control of a block-rule event (new controls `nc`, matched control `c`): none for
 `First`, a rule variable's value, or one node built on rule variables at a fresh value
-(`ctrlDefL`, `nodeOKL`); the definitions the replay adds (the built one). -/
+(`ctrlDefL`, `nodeOKL`); the definitions the replay adds (the built one). A `ZW`/`NZW` control
+reads the low 32 bits of its register (`Sem.Arm64.taken`), so it may also be the source of a
+narrowing `Copy` of at least 32 bits that the rule variable's value is (`truncFromL`), which
+`lower` eliminates inline (`GoFV.Proof.Low.Val.brVal_r32`). -/
 def builtL (tabs : Tables) (M : Defs) (br : BlockRule) (e : PEnv) (pat : Pat) (ev : Expr → DV)
     (or : Oracle) (σ : Nat → DV) (I : Inst) (c : ID) (nc : Array ID) : Option (List Value) :=
   match br.newKind, br.newControls, nc.toList with
   | .First, [], [] => some []
   | k, [(.var x, _)], [c'] =>
-    if k != .First && (DV.pos? (σ x)).map I.at == some c' then some [] else none
+    if k != .First && ((DV.pos? (σ x)).map I.at == some c' ||
+        (k == .ARM64ZW || k == .ARM64NZW) &&
+          (DV.pos? (σ x)).any fun p => truncFromL tabs M M.size 32 (I.at p) c') then some []
+    else none
   | k, [(.build [n], _)], [c'] =>
     match M.get? c with
     | some x =>
