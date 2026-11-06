@@ -771,3 +771,7 @@ above. The rest applies as rules; move an entry up once measured in gofv.
   modules start at once. Building all modules in batches of 15 targets (`find GoFV GoFVTest
   -name '*.lean'`, 16G under the heavy lock, a failed batch retried module by module) took
   5 min; the whole-tree build is then a no-op (1,089 jobs).
+  **Fix:** `FV_LEAN_SLOTS=N scripts/memcap.sh lake build …` caps concurrent `lean` processes at N
+  (a sysroot of symlinks whose `bin/lean` waits for one of N flock slots; Lake 4.34.1 has no job
+  limit of its own). It causes no rebuilds (traces use the githash). Measured: 6 × 3 s `lean` runs
+  at 2 slots took 11 s.

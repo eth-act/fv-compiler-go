@@ -275,11 +275,13 @@ gate_allproof() {
 }
 
 # gate_lake <targets>: `lake build` at $GATE_BUILD_MEMCAP (default 16G) under ../gofv-heavy.lock
-# (AGENTS.md: above 8G only under that lock). At 8G a cold -j4 build of the whole tree was
-# memcg-OOM-killed (2026-11-05, #487): four lean processes at ~4 GB RSS each.
+# (AGENTS.md: above 8G only under that lock), with at most $GATE_LEAN_SLOTS (default 4)
+# concurrent lean processes (memcap.sh FV_LEAN_SLOTS). At 8G a cold -j4 build of the whole tree
+# was memcg-OOM-killed (2026-11-05, #487); after a root change Lake starts ~500 lean at once.
 gate_lake() {
   flock -w 10800 "$parent/gofv-heavy.lock" \
-    env FV_MEMCAP="${GATE_BUILD_MEMCAP:-16G}" scripts/memcap.sh lake build "$@"
+    env FV_MEMCAP="${GATE_BUILD_MEMCAP:-16G}" FV_LEAN_SLOTS="${GATE_LEAN_SLOTS:-4}" \
+    scripts/memcap.sh lake build "$@"
 }
 
 # gate_e2e <run>: the driver toolchain for this commit's patches (rebuilt when they changed),
