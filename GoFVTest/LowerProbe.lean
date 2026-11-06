@@ -185,7 +185,7 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
       match M.get? v with
       | none => return s!"rule at missing v{v}"
       | some x =>
-        if pbFoldEv M v defs.toList then continue
+        if pbFoldEv M v defs.toList || addrFoldEv tabs M v defs.toList then continue
         match ((t.values[x.op.ctorIdx]?).bind (·[i]?) : Option Interp.CRule) with
         | none => return "no rule"
         | some cr =>

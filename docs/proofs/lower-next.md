@@ -4,7 +4,7 @@
 
 Corpus: `full-v9/plain`; 96560 `lower` sections.
 
-The checked lower (proven rules) equals stock on 46624 of them. `lower` fires only proven rules on 49240: the greedy cover below starts there and adds, at each step, the rule whose proof completes the most functions (all the rules `lower` fires on them proven; the validator may still reject an instance). Columns: the rule (`ARM64.rules` line and op, or block kind), the functions covered with it, the functions it completes, the functions that fire it. The validator's ceiling (every rule assumed proven) and its rejections follow the table.
+The checked lower (proven rules) equals stock on 48590 of them. `lower` fires only proven rules on 49240: the greedy cover below starts there and adds, at each step, the rule whose proof completes the most functions (all the rules `lower` fires on them proven; the validator may still reject an instance). Columns: the rule (`ARM64.rules` line and op, or block kind), the functions covered with it, the functions it completes, the functions that fire it. The validator's ceiling (every rule assumed proven) and its rejections follow the table.
 
 | step | rule | covered | completes | fired in |
 |---:|---|---:|---:|---:|
@@ -411,51 +411,51 @@ The checked lower (proven rules) equals stock on 46624 of them. `lower` fires on
 
 ## The validator's ceiling
 
-With every rule of `ARM64.rules` (the derived forms of the proven set included), the validator accepts 63572 of the 96560 functions. Each rejected function counts once, under the first check that rejects it (`whyL`): its class is the reason without value IDs, a rule's reasons one per commutation choice (`nomatch`: the pattern does not match the replayed definitions; `top`/`argsL`: a shape check; `ctrls`: the new block controls; `result`: the built values). Fixing a class gains at most its functions: a function may fail a later check too.
+With every rule of `ARM64.rules` (the derived forms of the proven set included), the validator accepts 69308 of the 96560 functions. Each rejected function counts once, under the first check that rejects it (`whyL`): its class is the reason without value IDs, a rule's reasons one per commutation choice (`nomatch`: the pattern does not match the replayed definitions; `top`/`argsL`: a shape check; `ctrls`: the new block controls; `result`: the built values). Fixing a class gains at most its functions: a function may fail a later check too.
 
 ### By family (the rule, the atom's input op, the final check)
 
 | rank | family | functions |
 |---:|---|---:|
-| 1 | `rule ARM64:650 ADDconst` | 7710 |
-| 2 | `atoms: Move -> *` | 4105 |
-| 3 | `atoms: dropped OpInvalid` | 3737 |
-| 4 | `atoms: Store -> *` | 3154 |
-| 5 | `atoms: MemEq -> *` | 2111 |
+| 1 | `atoms: Move -> *` | 4105 |
+| 2 | `atoms: dropped OpInvalid` | 3737 |
+| 3 | `atoms: Store -> *` | 3154 |
+| 4 | `atoms: MemEq -> *` | 2111 |
+| 5 | `final: MOVWreg` | 1348 |
 | 6 | `atoms: AtomicCompareAndSwap32Variant -> *` | 1291 |
 | 7 | `atoms: AtomicAdd32Variant -> *` | 1198 |
 | 8 | `not lowered` | 958 |
-| 9 | `rule ARM64:1043 MUL` | 730 |
+| 9 | `rule ARM64:1043 MUL` | 792 |
 | 10 | `atoms: OffPtr -> *` | 622 |
 | 11 | `rule ARM64:305 OffPtr` | 579 |
-| 12 | `rule ARM64:152 Lsh64x64` | 538 |
-| 13 | `rule ARM64:566 NotEqual` | 489 |
-| 14 | `atoms: Zero -> *` | 329 |
-| 15 | `blockRule ARM64:478 block JumpTable kind/aux` | 279 |
-| 16 | `final: MOVWreg` | 253 |
-| 17 | `rule ARM64:166 Rsh64Ux64` | 252 |
-| 18 | `atoms: GetCallerSP -> *` | 242 |
-| 19 | `atoms: Load -> *` | 242 |
-| 20 | `rule ARM64:302 CondSelect` | 230 |
-| 21 | `rule ARM64:249 Neq32` | 198 |
-| 22 | `final: MOVBUreg` | 182 |
-| 23 | `rule ARM64:322 Load` | 167 |
-| 24 | `final: MakeResult` | 165 |
-| 25 | `blockRule ARM64:561 block NE` | 154 |
-| 26 | `atoms: AtomicCompareAndSwap64Variant -> *` | 150 |
-| 27 | `final: CALLstatic` | 135 |
-| 28 | `rule ARM64:255 Less32` | 126 |
-| 29 | `atoms: AtomicStore32 -> *` | 110 |
-| 30 | `rule ARM64:241 Eq32` | 105 |
+| 12 | `rule ARM64:152 Lsh64x64` | 558 |
+| 13 | `rule ARM64:566 NotEqual` | 502 |
+| 14 | `final: MOVBUreg` | 398 |
+| 15 | `atoms: Zero -> *` | 329 |
+| 16 | `blockRule ARM64:478 block JumpTable kind/aux` | 279 |
+| 17 | `final: MOVBreg` | 279 |
+| 18 | `rule ARM64:166 Rsh64Ux64` | 261 |
+| 19 | `atoms: GetCallerSP -> *` | 242 |
+| 20 | `atoms: Load -> *` | 242 |
+| 21 | `rule ARM64:302 CondSelect` | 230 |
+| 22 | `blockRule ARM64:561 block NE` | 202 |
+| 23 | `rule ARM64:249 Neq32` | 198 |
+| 24 | `final: MakeResult` | 169 |
+| 25 | `rule ARM64:322 Load` | 167 |
+| 26 | `final: CALLstatic` | 154 |
+| 27 | `atoms: AtomicCompareAndSwap64Variant -> *` | 150 |
+| 28 | `rule ARM64:1811 MOVBUload` | 131 |
+| 29 | `rule ARM64:255 Less32` | 126 |
+| 30 | `atoms: AtomicStore32 -> *` | 110 |
 
 ### By class
 
 | rank | class | functions |
 |---:|---|---:|
-| 1 | `rule ARM64:650 ADDconst [nomatch]` | 7710 |
-| 2 | `atoms: dropped OpInvalid` | 3737 |
-| 3 | `atoms: MemEq -> LoweredMemEq` | 2111 |
-| 4 | `atoms: Move -> LoweredMove` | 1510 |
+| 1 | `atoms: dropped OpInvalid` | 3737 |
+| 2 | `atoms: MemEq -> LoweredMemEq` | 2111 |
+| 3 | `atoms: Move -> LoweredMove` | 1510 |
+| 4 | `final: MOVWreg arg (Copy)->(MOVDload)` | 1297 |
 | 5 | `atoms: AtomicCompareAndSwap32Variant -> LoweredAtomicCas32Variant` | 1291 |
 | 6 | `atoms: Store -> MOVDstoreidx8` | 1210 |
 | 7 | `atoms: AtomicAdd32Variant -> LoweredAtomicAdd32Variant` | 1198 |
@@ -466,69 +466,69 @@ With every rule of `ARM64.rules` (the derived forms of the proven set included),
 | 12 | `atoms: OffPtr -> MOVDaddr` | 622 |
 | 13 | `rule ARM64:305 OffPtr [nomatch]` | 579 |
 | 14 | `atoms: Move -> FMOVQstore` | 538 |
-| 15 | `rule ARM64:566 NotEqual [argsL]` | 489 |
-| 16 | `rule ARM64:1043 MUL [nomatch, result]` | 481 |
+| 15 | `rule ARM64:1043 MUL [nomatch, result]` | 516 |
+| 16 | `rule ARM64:566 NotEqual [argsL]` | 502 |
 | 17 | `atoms: Store -> MOVWstoreidx4` | 407 |
-| 18 | `rule ARM64:152 Lsh64x64 [top int (w32)]` | 388 |
+| 18 | `rule ARM64:152 Lsh64x64 [top int (w32)]` | 401 |
 | 19 | `atoms: Store -> MOVDstoreidx` | 353 |
 | 20 | `blockRule ARM64:478 block JumpTable kind/aux` | 279 |
-| 21 | `atoms: Move -> LoweredMoveLoop` | 255 |
-| 22 | `rule ARM64:1043 MUL [result, nomatch]` | 249 |
+| 21 | `rule ARM64:1043 MUL [result, nomatch]` | 276 |
+| 22 | `atoms: Move -> LoweredMoveLoop` | 255 |
 | 23 | `atoms: GetCallerSP -> LoweredGetCallerSP` | 242 |
-| 24 | `final: MOVWreg arg (Copy)->(MOVDload)` | 203 |
+| 24 | `blockRule ARM64:561 block NE [argsL]` | 202 |
 | 25 | `atoms: Load -> FMOVDload` | 199 |
 | 26 | `rule ARM64:249 Neq32 [result]` | 198 |
-| 27 | `rule ARM64:166 Rsh64Ux64 [top int (w32)]` | 169 |
-| 28 | `rule ARM64:322 Load [result]` | 167 |
-| 29 | `blockRule ARM64:561 block NE [argsL]` | 154 |
-| 30 | `atoms: AtomicCompareAndSwap64Variant -> LoweredAtomicCas64Variant` | 150 |
-| 31 | `rule ARM64:152 Lsh64x64 [top int (w8)]` | 135 |
-| 32 | `rule ARM64:255 Less32 [result]` | 126 |
-| 33 | `atoms: Zero -> STP` | 113 |
-| 34 | `rule ARM64:302 CondSelect [top int (w32)]` | 111 |
-| 35 | `atoms: AtomicStore32 -> STLRW` | 110 |
-| 36 | `rule ARM64:241 Eq32 [result]` | 105 |
-| 37 | `rule ARM64:302 CondSelect [top int (w8)]` | 103 |
-| 38 | `rule ARM64:239 Eq8 [result]` | 102 |
-| 39 | `rule ARM64:1811 MOVBUload [ok]` | 100 |
-| 40 | `rule ARM64:247 Neq8 [result]` | 91 |
-| 41 | `atoms: Zero -> MOVDstore` | 86 |
-| 42 | `rule ARM64:278 Less32U [result]` | 82 |
-| 43 | `atoms: AtomicAdd64Variant -> LoweredAtomicAdd64Variant` | 80 |
-| 44 | `atoms: Zero -> MOVWstore` | 73 |
-| 45 | `atoms: AtomicStore8 -> STLRB` | 71 |
-| 46 | `atoms: Move -> MOVWstore` | 70 |
-| 47 | `atoms: AtomicStore64 -> STLR` | 68 |
-| 48 | `atoms: AtomicStorePtrNoWB -> STLR` | 64 |
-| 49 | `final: CALLstatic arg (Copy)->(ArgIntReg)` | 63 |
-| 50 | `final: CALLstatic arg (Copy)->(MOVDload)` | 60 |
-| 51 | `atoms: Store -> MOVWstoreidx` | 59 |
-| 52 | `rule ARM64:328 Store not a term` | 59 |
-| 53 | `atoms: Move -> MOVBstore` | 58 |
-| 54 | `rule ARM64:1815 MOVBload [ok]` | 58 |
-| 55 | `atoms: GetCallerPC -> LoweredGetCallerPC` | 57 |
-| 56 | `blockRule ARM64:561 block EQ [argsL]` | 57 |
-| 57 | `final: MakeResult arg (Copy)->(SRLconst)` | 55 |
-| 58 | `rule ARM64:166 Rsh64Ux64 [top int (w8)]` | 55 |
-| 59 | `final: MOVBreg arg (Copy)->(MOVDload)` | 53 |
-| 60 | `atoms: Select1 -> ADCzerocarry` | 52 |
-| 61 | `final: MOVBUreg arg (Copy)->(Equal)` | 48 |
-| 62 | `atoms: Store -> MOVHstoreidx2` | 46 |
-| 63 | `atoms: Move -> MOVBstoreidx` | 45 |
-| 64 | `final: MOVHreg arg (Copy)->(MOVDload)` | 45 |
-| 65 | `atoms: Load -> FMOVSload` | 43 |
-| 66 | `atoms: Store -> MOVHstoreidx` | 43 |
-| 67 | `atoms: Zero -> MOVHstore` | 43 |
-| 68 | `rule ARM64:162 Rsh32Ux64 [result]` | 43 |
-| 69 | `rule ARM64:972 AND [result, nomatch]` | 43 |
-| 70 | `rule ARM64:99 MOVDload [nomatch]` | 41 |
-| 71 | `rule ARM64:970 ADD [result, nomatch]` | 40 |
-| 72 | `rule ARM64:326 Store not a term` | 39 |
-| 73 | `rule ARM64:566 Equal [argsL]` | 39 |
-| 74 | `atoms: Move -> MOVHstore` | 38 |
-| 75 | `rule ARM64:19 Select0 [top int (w64)]` | 38 |
-| 76 | `atoms: Move -> MOVHstoreidx` | 36 |
-| 77 | `rule ARM64:159 Rsh64x64 [top int (w32)]` | 36 |
-| 78 | `final: Phi arg (Copy)->(ORconst)` | 35 |
-| 79 | `rule ARM64:972 AND [nomatch, result]` | 35 |
-| 80 | `atoms: new atom SUBSflags` | 33 |
+| 27 | `final: MOVBreg arg (Copy)->(CSEL0)` | 196 |
+| 28 | `final: MOVBUreg arg (Copy)->(MOVDload)` | 185 |
+| 29 | `rule ARM64:166 Rsh64Ux64 [top int (w32)]` | 176 |
+| 30 | `rule ARM64:322 Load [result]` | 167 |
+| 31 | `atoms: AtomicCompareAndSwap64Variant -> LoweredAtomicCas64Variant` | 150 |
+| 32 | `rule ARM64:152 Lsh64x64 [top int (w8)]` | 141 |
+| 33 | `rule ARM64:1811 MOVBUload [ok]` | 131 |
+| 34 | `rule ARM64:255 Less32 [result]` | 126 |
+| 35 | `atoms: Zero -> STP` | 113 |
+| 36 | `rule ARM64:302 CondSelect [top int (w32)]` | 111 |
+| 37 | `atoms: AtomicStore32 -> STLRW` | 110 |
+| 38 | `rule ARM64:241 Eq32 [result]` | 105 |
+| 39 | `rule ARM64:302 CondSelect [top int (w8)]` | 103 |
+| 40 | `rule ARM64:239 Eq8 [result]` | 102 |
+| 41 | `rule ARM64:247 Neq8 [result]` | 91 |
+| 42 | `rule ARM64:566 Equal [argsL]` | 89 |
+| 43 | `atoms: Zero -> MOVDstore` | 86 |
+| 44 | `blockRule ARM64:561 block EQ [argsL]` | 83 |
+| 45 | `rule ARM64:278 Less32U [result]` | 82 |
+| 46 | `rule ARM64:1815 MOVBload [ok]` | 81 |
+| 47 | `atoms: AtomicAdd64Variant -> LoweredAtomicAdd64Variant` | 80 |
+| 48 | `atoms: Zero -> MOVWstore` | 73 |
+| 49 | `atoms: AtomicStore8 -> STLRB` | 71 |
+| 50 | `atoms: Move -> MOVWstore` | 70 |
+| 51 | `final: CALLstatic arg (Copy)->(ArgIntReg)` | 69 |
+| 52 | `atoms: AtomicStore64 -> STLR` | 68 |
+| 53 | `atoms: AtomicStorePtrNoWB -> STLR` | 64 |
+| 54 | `final: CALLstatic arg (Copy)->(MOVDload)` | 62 |
+| 55 | `atoms: Store -> MOVWstoreidx` | 59 |
+| 56 | `final: MOVBreg arg (Copy)->(MOVDload)` | 59 |
+| 57 | `rule ARM64:328 Store not a term` | 59 |
+| 58 | `atoms: Move -> MOVBstore` | 58 |
+| 59 | `rule ARM64:99 MOVDload [nomatch]` | 58 |
+| 60 | `atoms: GetCallerPC -> LoweredGetCallerPC` | 57 |
+| 61 | `rule ARM64:166 Rsh64Ux64 [top int (w8)]` | 57 |
+| 62 | `final: MakeResult arg (Copy)->(SRLconst)` | 55 |
+| 63 | `final: MOVBUreg arg (Copy)->(Equal)` | 53 |
+| 64 | `atoms: Select1 -> ADCzerocarry` | 52 |
+| 65 | `rule ARM64:972 AND [result, nomatch]` | 51 |
+| 66 | `final: MOVHreg arg (Copy)->(MOVDload)` | 49 |
+| 67 | `rule ARM64:1814 MOVDload [ok]` | 49 |
+| 68 | `atoms: Store -> MOVHstoreidx2` | 46 |
+| 69 | `atoms: Move -> MOVBstoreidx` | 45 |
+| 70 | `atoms: Load -> FMOVSload` | 43 |
+| 71 | `atoms: Store -> MOVHstoreidx` | 43 |
+| 72 | `atoms: Zero -> MOVHstore` | 43 |
+| 73 | `rule ARM64:162 Rsh32Ux64 [result]` | 43 |
+| 74 | `rule ARM64:972 AND [nomatch, result]` | 41 |
+| 75 | `rule ARM64:970 ADD [result, nomatch]` | 40 |
+| 76 | `rule ARM64:326 Store not a term` | 39 |
+| 77 | `atoms: Move -> MOVHstore` | 38 |
+| 78 | `rule ARM64:19 Select0 [top int (w64)]` | 38 |
+| 79 | `rule ARM64:159 Rsh64x64 [top int (w32)]` | 37 |
+| 80 | `atoms: Move -> MOVHstoreidx` | 36 |
