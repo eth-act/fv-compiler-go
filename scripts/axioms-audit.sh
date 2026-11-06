@@ -101,7 +101,9 @@ for l in cfg.get("lean_lib", []):
 ')
 # a here-string, not `printf … | grep -q`: under pipefail, grep exiting at its first match while
 # printf still writes the ~30 KB list kills printf with SIGPIPE (status 141) and fails the check
-# at random (more often when the machine is loaded or pipes shrink to one page)
+# at random, even with 64 KB pipes (measured: PIPESTATUS (141 0) in 9 of 4,500 checks, so about
+# one audit in eleven failed with "lean_exe root … is not audited" and passed on a rerun); more
+# often when the machine is loaded or pipes shrink to one page past pipe-user-pages-soft
 audited=$(printf '%s\n' "$lib" "$rest" "$roots")
 while read -r r; do
   [ -n "$r" ] || continue

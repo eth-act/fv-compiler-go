@@ -263,7 +263,10 @@ cleanup
 plant GoFV/SSA/ZzAuditα.lean <<'EOF'
 def zzAuditα : Nat := 1
 EOF
-if scripts/axioms-audit.sh --print-changed | grep -qxF 'GoFV.SSA.ZzAuditα'; then
+# to a file first: `--print-changed | grep -q` under pipefail fails when grep exits before the
+# list is written (SIGPIPE, as in axioms-audit.sh's exe check)
+scripts/axioms-audit.sh --print-changed >"$work/changed.txt" 2>&1 || true
+if grep -qxF 'GoFV.SSA.ZzAuditα' "$work/changed.txt"; then
   echo "ok   changed-nonascii"
 else
   echo "FAIL changed-nonascii: GoFV.SSA.ZzAuditα not listed as changed"; fails=$((fails + 1))
