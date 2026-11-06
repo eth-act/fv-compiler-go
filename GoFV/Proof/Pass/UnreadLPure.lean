@@ -349,23 +349,23 @@ theorem evalPure_av (hU : TempU U) (op : Op) (ty : Ty) (k : Int64) (aux : Option
   case ARM64CMP => exact cmpArgs_av _
   case ARM64CMPconst => exact cmpK_av _ _
   case ARM64CMPW =>
-    show Val.Avoids U (Arm64.flags2w (fun x y => (Arm64.subFlags x y).2) args)
-    exact flags2w_av _ _
+    show Val.Avoids U (Arm64.cmp2w (fun x y => Arm64.subFlags x y) args)
+    exact cmp2w_av _ _
   case ARM64CMPWconst =>
-    show Val.Avoids U (Arm64.flags1w (fun x => (Arm64.subFlags x (Arm64.imm32 k)).2) args)
-    exact flags1w_av _ _
+    show Val.Avoids U (Arm64.cmp1w (fun x => Arm64.subFlags x (Arm64.imm32 k)) args)
+    exact cmp1w_av _ _
   case ARM64CMN =>
-    show Val.Avoids U (Arm64.flags2 Arm64.cmnFlags args)
-    exact flags2_av _ _
+    show Val.Avoids U (Arm64.cmp2 (fun x y => addWithCarry x y false) args)
+    exact cmp2_av _ _
   case ARM64CMNconst =>
-    show Val.Avoids U (Arm64.flags1 (fun x => Arm64.cmnFlags x (Arm64.imm k)) args)
-    exact flags1_av _ _
+    show Val.Avoids U (Arm64.cmp1 (fun x => addWithCarry x (Arm64.imm k) false) args)
+    exact cmp1_av _ _
   case ARM64CMNW =>
-    show Val.Avoids U (Arm64.flags2w Arm64.cmnFlags args)
-    exact flags2w_av _ _
+    show Val.Avoids U (Arm64.cmp2w (fun x y => addWithCarry x y false) args)
+    exact cmp2w_av _ _
   case ARM64CMNWconst =>
-    show Val.Avoids U (Arm64.flags1w (fun x => Arm64.cmnFlags x (Arm64.imm32 k)) args)
-    exact flags1w_av _ _
+    show Val.Avoids U (Arm64.cmp1w (fun x => addWithCarry x (Arm64.imm32 k) false) args)
+    exact cmp1w_av _ _
   case ARM64TST =>
     show Val.Avoids U (Arm64.flags2 (fun x y => logicFlags (x &&& y)) args)
     exact flags2_av _ _
@@ -379,23 +379,23 @@ theorem evalPure_av (hU : TempU U) (op : Op) (ty : Ty) (k : Int64) (aux : Option
     show Val.Avoids U (Arm64.flags1w (fun x => logicFlags (x &&& Arm64.imm32 k)) args)
     exact flags1w_av _ _
   case ARM64CMPshiftLL =>
-    show Val.Avoids U (Arm64.flags2 (fun x y => (Arm64.subFlags x (Arm64.shifted .ll k y)).2) args)
-    exact flags2_av _ _
+    show Val.Avoids U (Arm64.cmp2 (fun x y => Arm64.subFlags x (Arm64.shifted .ll k y)) args)
+    exact cmp2_av _ _
   case ARM64CMPshiftRL =>
-    show Val.Avoids U (Arm64.flags2 (fun x y => (Arm64.subFlags x (Arm64.shifted .rl k y)).2) args)
-    exact flags2_av _ _
+    show Val.Avoids U (Arm64.cmp2 (fun x y => Arm64.subFlags x (Arm64.shifted .rl k y)) args)
+    exact cmp2_av _ _
   case ARM64CMPshiftRA =>
-    show Val.Avoids U (Arm64.flags2 (fun x y => (Arm64.subFlags x (Arm64.shifted .ra k y)).2) args)
-    exact flags2_av _ _
+    show Val.Avoids U (Arm64.cmp2 (fun x y => Arm64.subFlags x (Arm64.shifted .ra k y)) args)
+    exact cmp2_av _ _
   case ARM64CMNshiftLL =>
-    show Val.Avoids U (Arm64.flags2 (fun x y => Arm64.cmnFlags x (Arm64.shifted .ll k y)) args)
-    exact flags2_av _ _
+    show Val.Avoids U (Arm64.cmp2 (fun x y => addWithCarry x (Arm64.shifted .ll k y) false) args)
+    exact cmp2_av _ _
   case ARM64CMNshiftRL =>
-    show Val.Avoids U (Arm64.flags2 (fun x y => Arm64.cmnFlags x (Arm64.shifted .rl k y)) args)
-    exact flags2_av _ _
+    show Val.Avoids U (Arm64.cmp2 (fun x y => addWithCarry x (Arm64.shifted .rl k y) false) args)
+    exact cmp2_av _ _
   case ARM64CMNshiftRA =>
-    show Val.Avoids U (Arm64.flags2 (fun x y => Arm64.cmnFlags x (Arm64.shifted .ra k y)) args)
-    exact flags2_av _ _
+    show Val.Avoids U (Arm64.cmp2 (fun x y => addWithCarry x (Arm64.shifted .ra k y) false) args)
+    exact cmp2_av _ _
   case ARM64TSTshiftLL =>
     show Val.Avoids U (Arm64.flags2 (fun x y => logicFlags (x &&& Arm64.shifted .ll k y)) args)
     exact flags2_av _ _
@@ -411,6 +411,11 @@ theorem evalPure_av (hU : TempU U) (op : Op) (ty : Ty) (k : Int64) (aux : Option
   case ARM64FlagConstant =>
     show Val.Avoids U ((Flags.ofFlagConstant k.toInt.toNat).toVal)
     exact flags_av _
+  case ARM64InvertFlags =>
+    rcases args with _ | ⟨f, _ | ⟨_, _⟩⟩
+    · exact True.intro
+    · exact invertFlags_av f
+    · exact True.intro
   case ARM64ADDSflags =>
     show Val.Avoids U (Arm64.adds ty args)
     exact adds_av _ _

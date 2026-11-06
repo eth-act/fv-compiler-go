@@ -42,7 +42,7 @@ theorem ls_sub0 {n : Nat} (hn : 0 < n) (k : BitVec n) :
   rw [subFlags_zero hn]; simp [Flags.toVal, Cond.onVal, Cond.eval, Val.flagBit]
 
 theorem cmp_int0 (k : BitVec 64) :
-    Arm64.cmp (.int .w64 k) (.int .w64 0) = (Arm64.subFlags k 0).2.toVal := by
+    Arm64.cmp (.int .w64 k) (.int .w64 0) = Arm64.cmpRes (Arm64.subFlags k 0) := by
   simp [Arm64.cmp, Arm64.reg]
 
 theorem cmp_poison_int0 : Arm64.cmp .poison (.int .w64 0) = .poison := by
@@ -75,9 +75,9 @@ local macro "arm_ugt0" hr:term "," hs:term : tactic => `(tactic| (
   rw [hc, show BitVec.ofInt 64 0 = 0 from rfl] at hbr
   obtain ⟨r, hrx, h⟩ := reg_of_cmp0 $hr (Mono.onVal_of (retypeL_cmp_ref _ _ _) hbr)
   have hcmp : Arm64.cmp (e.leaf [0]) (.int .w64 (BitVec.ofInt 64 0)) =
-      (Arm64.subFlags r 0).2.toVal := by
+      Arm64.cmpRes (Arm64.subFlags r 0) := by
     unfold Arm64.cmp; rw [hrx]; rfl
-  rw [hcmp, retypeL_flags_toVal, ← h, $hs (by decide)]))
+  rw [hcmp, retypeL_cmpRes, onVal_cmpRes, ← h, $hs (by decide)]))
 
 /-- `ARM64.rules:603`: `(UGT (CMPconst [0] x)) => (NE (CMPconst [0] x))` -/
 theorem r_ARM64_603_sound : BlockRuleL.Sound r_ARM64_603 := by arm_ugt0 readsN_hi, hi_sub0
@@ -101,7 +101,7 @@ local macro "arm_tstc" : tactic => `(tactic| (
     simp only [Arm64.flags1, hy, retypeL_flags_toVal]
     rcases retypeL_res_wide hw (r &&& BitVec.ofInt 64 (e.auxInt [0]).toInt) with h | h <;>
       rw [h] at h1
-    · rw [cmp_int0] at h1; rw [logic_sub0 (by decide) _ rfl]; exact h1
+    · rw [cmp_int0, onVal_cmpRes] at h1; rw [logic_sub0 (by decide) _ rfl]; exact h1
     · rw [cmp_poison_int0] at h1; simp [Cond.onVal] at h1))
 
 /-- `ARM64.rules:559`: `(EQ (CMPconst [0] x:(ANDconst [c] y)) yes no) && x.Uses == 1 => (EQ (TSTconst [c] y) yes no)` -/
@@ -128,8 +128,8 @@ local macro "arm_ugtw0" hs:term : tactic => `(tactic| (
   arm_bbuild
   rw [imm32_of_zero hc] at hbr
   rw [show Arm64.imm32 (Int64.ofInt 0) = 0 from rfl]
-  obtain ⟨r, hr, h⟩ := reg32_of_cmpw0 (Mono.onVal_of (retypeL_flags1w_ref _ _ _) hbr)
-  simp only [Arm64.flags1w, hr, retypeL_flags_toVal]
+  obtain ⟨r, hr, h⟩ := reg32_of_cmpw0 (Mono.onVal_of (retypeL_cmp1w_ref _ _ _) hbr)
+  simp only [Arm64.cmp1w, hr, retypeL_cmpRes, onVal_cmpRes]
   rw [← h, $hs (by decide)]))
 
 /-- `ARM64.rules:604`: `(UGT (CMPWconst [0] x)) => (NE (CMPWconst [0] x))` -/
@@ -160,7 +160,7 @@ local macro "arm_tstwc" : tactic => `(tactic| (
   have hw : 32 ≤ argWidth (e.ty [0]) := harg.1
   rw [imm32_of_zero hc] at hbr
   rw [imm32_wrap]
-  obtain ⟨r, hr, h⟩ := reg32_of_cmpw0 (Mono.onVal_of (retypeL_flags1w_ref _ _ _) hbr)
+  obtain ⟨r, hr, h⟩ := reg32_of_cmpw0 (Mono.onVal_of (retypeL_cmp1w_ref _ _ _) hbr)
   cases hy : Arm64.reg (e.leaf [0, 0]) with
   | none =>
     simp only [Arm64.op1, hy, retypeL_poison] at hr
@@ -213,7 +213,7 @@ theorem tst2_core {c : Cond} (hc : noC c = true) {T0 : Ty} (hw : 64 ≤ argWidth
       simp only [Arm64.op2, hx, hy] at h1
       simp only [Arm64.flags2, hx, hy, retypeL_flags_toVal]
       rcases retypeL_res_wide hw (rx &&& ry) with h | h <;> rw [h] at h1
-      · rw [cmp_int0] at h1
+      · rw [cmp_int0, onVal_cmpRes] at h1
         rw [logic_sub0 (by decide) _ hc, logic_sub0 (by decide) _ hc, BitVec.and_comm ry rx]
         exact ⟨h1, h1⟩
       · rw [cmp_poison_int0] at h1; cases h1
@@ -249,7 +249,7 @@ theorem r_ARM64_558_6_sound : BlockRuleL.Sound r_ARM64_558_6 := by arm_tst2
 do not read `C`. -/
 theorem tstw2_core {c : Cond} (hc : noC c = true) {T0 : Ty} (hw : 32 ≤ argWidth T0) {x y : Val}
     {b : Bool}
-    (h1 : c.onVal (Arm64.flags1w (fun r => (Arm64.subFlags r 0).2)
+    (h1 : c.onVal (Arm64.cmp1w (fun r => Arm64.subFlags r 0)
       [(Arm64.op2 T0 (fun x1 x2 => x1 &&& x2) [x, y]).retypeL T0]) = some b) :
     c.onVal ((Arm64.flags2w (fun a b => logicFlags (a &&& b)) [x, y]).retypeL Ty.flags) = some b ∧
     c.onVal ((Arm64.flags2w (fun a b => logicFlags (a &&& b)) [y, x]).retypeL Ty.flags) =
@@ -277,7 +277,7 @@ local macro "arm_tstw2" : tactic => `(tactic| (
   arm_bbuild
   all_goals (
     rw [imm32_of_zero hc] at hbr
-    have h1 := tstw2_core (by decide) harg.1 (Mono.onVal_of (retypeL_flags1w_ref _ _ _) hbr)
+    have h1 := tstw2_core (by decide) harg.1 (Mono.onVal_of (retypeL_cmp1w_ref _ _ _) hbr)
     first | exact h1.1 | exact h1.2)))
 
 /-- `ARM64.rules:560`: `(EQ (CMPWconst [0] z:(AND x y)) yes no) && z.Uses == 1 => (EQ (TSTW x y) yes no)` -/

@@ -146,21 +146,54 @@ def addr (base : Val) (k : BitVec 64) : Option Ptr :=
 /-- `SUBS x y` (`CMP`): `AddWithCarry(x, NOT y, 1)`. -/
 def subFlags {n : Nat} (x y : BitVec n) : BitVec n × Flags := addWithCarry x (~~~y) true
 
+/-- The flags of the compare `SUBS`/`ADDS` result `p` (`Flags.toValSub`: with the sign of the
+negated difference). -/
+@[inline] def cmpRes {n : Nat} (p : BitVec n × Flags) : Val := p.2.toValSub p.1
+
 /-- `CMP a b` of 64-bit registers (`f` the second operand's transformation: a shift or a
 constant). Pointers of one allocation compare by offset; pointers of different allocations
 without concrete addresses only by `Z` (they are never equal, Phase 1's `EqPtr`), the order bits
 being unknown. -/
 def cmp (a b : Val) : Val :=
   match reg a, reg b with
-  | some x, some y => (subFlags x y).2.toVal
+  | some x, some y => cmpRes (subFlags x y)
   | _, _ =>
     match a, b with
     | .ptr p, .ptr q =>
-      if p.blk == q.blk then (subFlags p.off q.off).2.toVal
-      else .agg [.poison, .bool false, .poison, .poison]
+      if p.blk == q.blk then cmpRes (subFlags p.off q.off)
+      else .agg [.poison, .bool false, .poison, .poison, .poison]
     | .ptr _, b | b, .ptr _ =>
-      if (reg b).isSome then .agg [.poison, .bool false, .poison, .poison] else .poison
+      if (reg b).isSome then .agg [.poison, .bool false, .poison, .poison, .poison] else .poison
     | _, _ => .poison
+
+/-- Flags of a binary 64-bit compare (`CMP`/`CMN` forms; `f` gives the difference and the flags)
+whose operands are registers. -/
+@[inline] def cmp2 (f : BitVec 64 → BitVec 64 → BitVec 64 × Flags) : List Val → Val
+  | [a, b] => match reg a, reg b with
+    | some x, some y => cmpRes (f x y)
+    | _, _ => .poison
+  | _ => .poison
+
+/-- Flags of a binary 32-bit compare. -/
+@[inline] def cmp2w (f : BitVec 32 → BitVec 32 → BitVec 32 × Flags) : List Val → Val
+  | [a, b] => match reg32 a, reg32 b with
+    | some x, some y => cmpRes (f x y)
+    | _, _ => .poison
+  | _ => .poison
+
+/-- Flags of a 64-bit compare with an immediate. -/
+@[inline] def cmp1 (f : BitVec 64 → BitVec 64 × Flags) : List Val → Val
+  | [a] => match reg a with
+    | some x => cmpRes (f x)
+    | none => .poison
+  | _ => .poison
+
+/-- Flags of a 32-bit compare with an immediate. -/
+@[inline] def cmp1w (f : BitVec 32 → BitVec 32 × Flags) : List Val → Val
+  | [a] => match reg32 a with
+    | some x => cmpRes (f x)
+    | none => .poison
+  | _ => .poison
 
 /-- Flags of a binary 64-bit op whose operands are registers. -/
 @[inline] def flags2 (f : BitVec 64 → BitVec 64 → Flags) : List Val → Val
@@ -192,7 +225,7 @@ def cmp (a b : Val) : Val :=
 
 /-- The `PSTATE.C` bit of a flags value. -/
 def carry : Val → Option Bool
-  | .agg [_, _, c, _] => c.flagBit
+  | .agg [_, _, c, _, _] => c.flagBit
   | _ => none
 
 end GoFV.SSA.Sem.Arm64

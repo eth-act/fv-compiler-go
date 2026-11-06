@@ -41,7 +41,7 @@ theorem onVal_of {c : Cond} {r : Bool} (h : Refines a b) (hr : c.onVal a = some 
     c.onVal b = some r := by
   cases h with
   | agg hl =>
-    rcases hl with _ | ⟨h1, _ | ⟨h2, _ | ⟨h3, _ | ⟨h4, _ | ⟨_, _⟩⟩⟩⟩⟩
+    rcases hl with _ | ⟨h1, _ | ⟨h2, _ | ⟨h3, _ | ⟨h4, _ | ⟨_, _ | ⟨_, _⟩⟩⟩⟩⟩⟩
     all_goals first
       | (simp only [Cond.onVal] at hr; cases hr)
       | exact eval_of (flagBit_cases h1) (flagBit_cases h2) (flagBit_cases h3) (flagBit_cases h4) hr
@@ -193,6 +193,87 @@ theorem flags2w_mono (f : BitVec 32 → BitVec 32 → Flags) :
       | none => exact .poison _
       | some y => rw [reg32_of h ha, reg32_of h' hc]; exact Refines.refl _
   | .cons _ (.cons _ (.cons _ _)) => .poison _
+
+theorem cmp1_mono (f : BitVec 64 → BitVec 64 × Flags) :
+    RefinesList as bs → Refines (cmp1 f as) (cmp1 f bs)
+  | .nil => .poison _
+  | .cons (a := a) h .nil => by
+    simp only [cmp1]
+    cases ha : reg a with
+    | none => exact .poison _
+    | some x => rw [reg_of h ha]; exact Refines.refl _
+  | .cons _ (.cons _ _) => .poison _
+
+theorem cmp2_mono (f : BitVec 64 → BitVec 64 → BitVec 64 × Flags) :
+    RefinesList as bs → Refines (cmp2 f as) (cmp2 f bs)
+  | .nil => .poison _
+  | .cons _ .nil => .poison _
+  | .cons (a := a) h (.cons (a := c) h' .nil) => by
+    simp only [cmp2]
+    cases ha : reg a with
+    | none => exact .poison _
+    | some x =>
+      cases hc : reg c with
+      | none => exact .poison _
+      | some y => rw [reg_of h ha, reg_of h' hc]; exact Refines.refl _
+  | .cons _ (.cons _ (.cons _ _)) => .poison _
+
+theorem cmp1w_mono (f : BitVec 32 → BitVec 32 × Flags) :
+    RefinesList as bs → Refines (cmp1w f as) (cmp1w f bs)
+  | .nil => .poison _
+  | .cons (a := a) h .nil => by
+    simp only [cmp1w]
+    cases ha : reg32 a with
+    | none => exact .poison _
+    | some x => rw [reg32_of h ha]; exact Refines.refl _
+  | .cons _ (.cons _ _) => .poison _
+
+theorem cmp2w_mono (f : BitVec 32 → BitVec 32 → BitVec 32 × Flags) :
+    RefinesList as bs → Refines (cmp2w f as) (cmp2w f bs)
+  | .nil => .poison _
+  | .cons _ .nil => .poison _
+  | .cons (a := a) h (.cons (a := c) h' .nil) => by
+    simp only [cmp2w]
+    cases ha : reg32 a with
+    | none => exact .poison _
+    | some x =>
+      cases hc : reg32 c with
+      | none => exact .poison _
+      | some y => rw [reg32_of h ha, reg32_of h' hc]; exact Refines.refl _
+  | .cons _ (.cons _ (.cons _ _)) => .poison _
+
+theorem ofFlagBit_mono {o o' : Option Bool} (h : o = none ∨ o' = o) :
+    Refines (Val.ofFlagBit o) (Val.ofFlagBit o') := by
+  rcases h with rfl | rfl
+  · exact .poison _
+  · exact Refines.refl _
+
+theorem invertFlags5_mono {a1 a2 a3 a4 a5 b1 b2 b3 b4 b5 : Val} (h1 : Refines a1 b1)
+    (h2 : Refines a2 b2) (h3 : Refines a3 b3) (h4 : Refines a4 b4) (h5 : Refines a5 b5) :
+    Refines (invertFlags (.agg [a1, a2, a3, a4, a5])) (invertFlags (.agg [b1, b2, b3, b4, b5])) := by
+  simp only [invertFlags]
+  have e1 := flagBit_cases h1; have e2 := flagBit_cases h2; have e3 := flagBit_cases h3
+  have e4 := flagBit_cases h4; have e5 := flagBit_cases h5
+  generalize a1.flagBit = n at e1 ⊢; generalize b1.flagBit = n' at e1 ⊢
+  generalize a2.flagBit = z at e2 ⊢; generalize b2.flagBit = z' at e2 ⊢
+  generalize a3.flagBit = c at e3 ⊢; generalize b3.flagBit = c' at e3 ⊢
+  generalize a4.flagBit = v at e4 ⊢; generalize b4.flagBit = v' at e4 ⊢
+  generalize a5.flagBit = g at e5 ⊢; generalize b5.flagBit = g' at e5 ⊢
+  refine .agg (.cons (ofFlagBit_mono e5) (.cons (ofFlagBit_mono e2) (.cons
+    (ofFlagBit_mono ?_) (.cons (ofFlagBit_mono ?_) (.cons (ofFlagBit_mono e1) .nil)))))
+  · rcases e3 with rfl | rfl <;> rcases e2 with rfl | rfl <;> simp
+  · rcases e5 with rfl | rfl <;> rcases e1 with rfl | rfl <;> rcases e4 with rfl | rfl <;>
+      rcases e2 with rfl | rfl <;> simp
+
+/-- `invertFlags` is monotone: each bit is strict in the bits it reads. -/
+theorem invertFlags_mono (h : Refines a b) : Refines (invertFlags a) (invertFlags b) := by
+  cases h with
+  | agg hl =>
+    rcases hl with _ | ⟨h1, _ | ⟨h2, _ | ⟨h3, _ | ⟨h4, _ | ⟨h5, _ | ⟨_, _⟩⟩⟩⟩⟩⟩
+    all_goals first
+      | exact invertFlags5_mono h1 h2 h3 h4 h5
+      | (simp only [invertFlags]; exact .poison _)
+  | _ => first | exact .poison _ | (simp only [invertFlags]; exact .poison _)
 
 /-! ## Pointer cases -/
 

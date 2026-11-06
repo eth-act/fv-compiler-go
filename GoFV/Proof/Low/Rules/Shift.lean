@@ -542,16 +542,17 @@ theorem ofAux_lessThanU : Cond.ofAux (Int64.ofNat Op.ARM64LessThanU.goNum) = som
 theorem lo_cmp64 (a : Width) (ha : a.bits ≤ 64) (s : BitVec a.bits) :
     Cond.lo.onVal ((Arm64.cmp (.int a s) (.int .w64 (BitVec.ofInt 64 64))).retypeL .flags) =
       some (decide (s.toNat < 64)) := by
-  rw [cmp_int, retypeL_flags_toVal, (cond_sub _ _ (sub_lt64 _ _)).2.2.2.2.1]
+  rw [cmp_int, retypeL_cmpRes, onVal_cmpRes, (cond_sub _ _ (sub_lt64 _ _)).2.2.2.2.1]
   have hs := Nat.lt_of_lt_of_le s.isLt (Nat.pow_le_pow_right (by decide) ha)
   simp [BitVec.ult, BitVec.toNat_setWidth, Nat.mod_eq_of_lt hs]
 
 /-- `LO` on the flags of `CMPWconst [64] y`: `y < 64` (a 32-bit integer). -/
 theorem lo_cmp32 (s : BitVec Width.w32.bits) :
-    Cond.lo.onVal ((Arm64.flags1w (fun x => (Arm64.subFlags x (Arm64.imm32 (Int64.ofInt 64))).snd)
+    Cond.lo.onVal ((Arm64.cmp1w (fun x => Arm64.subFlags x (Arm64.imm32 (Int64.ofInt 64)))
       [.int .w32 s]).retypeL .flags) = some (decide (s.toNat < 64)) := by
-  simp only [Arm64.flags1w, Arm64.reg32, Arm64.reg, Option.map_some,
-    BitVec.setWidth_setWidth_of_le _ (show 32 ≤ 64 by decide), setWidth_w32, retypeL_flags_toVal]
+  simp only [Arm64.cmp1w, Arm64.reg32, Arm64.reg, Option.map_some,
+    BitVec.setWidth_setWidth_of_le _ (show 32 ≤ 64 by decide), setWidth_w32, retypeL_cmpRes,
+    onVal_cmpRes]
   rw [(cond_sub _ _ (sub_lt32 _ _)).2.2.2.2.1]
   simp [BitVec.ult, Arm64.imm32]
 
@@ -667,7 +668,7 @@ theorem r_ARM64_170_sound : ArmRule.Checked r_ARM64_170 := by
   all_goals arm_norm
   have hk : e.auxInt [] = 0 := by simpa using hcond
   exact refines_shiftCsel .w32 (by decide) (fun x n => x <<< n) shiftLeft_ge _ hk
-    (fun B => Val.retypeL Ty.flags (Arm64.flags1w (fun x => (Arm64.subFlags x (Arm64.imm32 (Int64.ofInt 64))).snd) [B])) lo_cmp32 _ _
+    (fun B => Val.retypeL Ty.flags (Arm64.cmp1w (fun x => Arm64.subFlags x (Arm64.imm32 (Int64.ofInt 64))) [B])) lo_cmp32 _ _
 
 /-- `ARM64.rules:173`: `(Rsh64Ux64 <t> x y) && !shiftIsBounded(v) => (CSEL [OpARM64LessThanU] (SRL <t> x y) (Const64 <t> [0]) (CMPconst [64] y))` -/
 theorem r_ARM64_173_sound : ArmRule.Checked r_ARM64_173 := by
@@ -687,7 +688,7 @@ theorem r_ARM64_174_sound : ArmRule.Checked r_ARM64_174 := by
   all_goals arm_norm
   have hk : e.auxInt [] = 0 := by simpa using hcond
   exact refines_shiftCsel .w32 (by decide) (fun x n => x >>> n) ushiftRight_ge _ hk
-    (fun B => Val.retypeL Ty.flags (Arm64.flags1w (fun x => (Arm64.subFlags x (Arm64.imm32 (Int64.ofInt 64))).snd) [B])) lo_cmp32 _ _
+    (fun B => Val.retypeL Ty.flags (Arm64.cmp1w (fun x => Arm64.subFlags x (Arm64.imm32 (Int64.ofInt 64))) [B])) lo_cmp32 _ _
 
 /-- `CSEL`'s selected 32-bit input at the 32-bit shape: its zero-extended register. -/
 theorem reg_regVal_w32 (s : BitVec Width.w32.bits) :
@@ -735,7 +736,7 @@ theorem r_ARM64_178_sound : ArmRule.Checked r_ARM64_178 := by
   cases T <;> simp [Val.hasTy] at hT
   subst hT
   exact refines_sraCsel .w32 (by decide) _ hk _ (fun B => Val.retypeL Ty.flags
-    (Arm64.flags1w (fun x => (Arm64.subFlags x (Arm64.imm32 (Int64.ofInt 64))).snd) [B])) lo_cmp32
+    (Arm64.cmp1w (fun x => Arm64.subFlags x (Arm64.imm32 (Int64.ofInt 64))) [B])) lo_cmp32
     reg_regVal_w32 rfl _ _
 
 end GoFV.Proof.Low.Rules

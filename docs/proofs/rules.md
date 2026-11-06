@@ -2013,6 +2013,24 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
     `Lsh64x<a>` to read its operand's low 64 bits at any integer width.
   Recorded also in the module docs of `GoFV/Proof/Low/Rules/Cmp.lean` and `Shift.lean`.
 
+- **`InvertFlags` rules outside the ghost-bit semantics** (#385; model limits, not Go bugs).
+  Flags are `[n, z, c, v, g]` with `g` the sign of an integer compare's negated difference,
+  read only by `InvertFlags` (`docs/plans/semantics2.md` §3). Proven with it: 991, 993, 1003
+  (and `CMPW`), 1332-1341, 1374-1383 (`Rules/Invert.lean`, `Rules/BlockFlags.lean`). Not
+  provable under it, so left out of `GoFV.Rules.ProvenARM64`:
+  - `:1263`, `:1264` (`(CMPconst (MOVDconst [x]) [y]) => (FlagConstant [subFlags64(x,y)])`,
+    `CMPWconst`): the compare sets `g`, a `FlagConstant` has none (`Flags.toVal`, `g` `poison`),
+    so the target is less defined than the source in that component.
+  - `:297`, `:299` (`(FCMPS (FMOVSconst [0]) x) => (InvertFlags (FCMPS0 x))`, `FCMPD`):
+    `invertFlags` swaps integer compares; on an unordered float compare (`NZCV = 0011`) it gives
+    `C = 0`, and `FCMP*` sets no `g`.
+  - `:1342`–`:1345` (`(FLT (InvertFlags cmp) yes no) => (FGT cmp yes no)`, …): the float
+    conditions read `N`/`V`, which on `invertFlags` of an integer compare are its `g` and a
+    function of it; the swap holds for integer conditions only (`invertFlags_cond`).
+  - `:1352`–`:1357` as whole rules (`(CSEL [cc] x y (InvertFlags cmp)) => (CSEL
+    [arm64Invert(cc)] x y cmp)`, `CSEL0`/`CSETM`/`CSINC`/`CSINV`/`CSNEG`): `cc` may be a float
+    condition (as for 1342-1345); they are provable split by `cc` on the integer conditions.
+
 ## Narrow result types
 
 `Rule.Sound` assumes the matched value's type is not narrower than its op. The checker does

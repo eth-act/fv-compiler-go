@@ -61,17 +61,26 @@ def b2iNorm (r : Rule) : Rule where
     | res => res
   pos := r.pos
 
-/-- `ARM64.rules` restricted to its 261 proven value rules and 93 proven block rules. -/
+/-- `ARM64.rules` restricted to its 275 proven value rules and 93 proven block rules. -/
 def lower : RuleSet where
   name := "ARM64"
   values := [(.ARM64ADDconst, [Generated.ARM64.r_ARM64_650, Generated.ARM64.r_ARM64_1000, Generated.ARM64.r_ARM64_1201]),
     (.ARM64AND, [Generated.ARM64.r_ARM64_972]),
-    (.ARM64CMP, [Generated.ARM64.r_ARM64_990]),
-    (.ARM64CMPW, [Generated.ARM64.r_ARM64_992]),
+    (.ARM64CMP, [Generated.ARM64.r_ARM64_990, Generated.ARM64.r_ARM64_991, Generated.ARM64.r_ARM64_1003]),
+    (.ARM64CMPW, [Generated.ARM64.r_ARM64_992, Generated.ARM64.r_ARM64_993, Generated.ARM64.r_ARM64_1003_2]),
+    (.ARM64Equal, [Generated.ARM64.r_ARM64_1374]),
     (.ARM64FMOVDloadidx, [Generated.ARM64.r_ARM64_750, Generated.ARM64.r_ARM64_752]),
     (.ARM64FMOVDstore, [Generated.ARM64.r_ARM64_776, Generated.ARM64.r_ARM64_905]),
     (.ARM64FMOVSloadidx, [Generated.ARM64.r_ARM64_751, Generated.ARM64.r_ARM64_753]),
     (.ARM64FMOVSstore, [Generated.ARM64.r_ARM64_773, Generated.ARM64.r_ARM64_901]),
+    (.ARM64GreaterEqual, [Generated.ARM64.r_ARM64_1382]),
+    (.ARM64GreaterEqualU, [Generated.ARM64.r_ARM64_1383]),
+    (.ARM64GreaterThan, [Generated.ARM64.r_ARM64_1378]),
+    (.ARM64GreaterThanU, [Generated.ARM64.r_ARM64_1379]),
+    (.ARM64LessEqual, [Generated.ARM64.r_ARM64_1380]),
+    (.ARM64LessEqualU, [Generated.ARM64.r_ARM64_1381]),
+    (.ARM64LessThan, [Generated.ARM64.r_ARM64_1376]),
+    (.ARM64LessThanU, [Generated.ARM64.r_ARM64_1377]),
     (.ARM64LoweredPanicBoundsCR, [Generated.ARM64.r_ARM64_516]),
     (.ARM64LoweredPanicBoundsRC, [Generated.ARM64.r_ARM64_515]),
     (.ARM64LoweredPanicBoundsRR, [Generated.ARM64.r_ARM64_513, Generated.ARM64.r_ARM64_514]),
@@ -98,6 +107,7 @@ def lower : RuleSet where
     (.ARM64MOVWloadidx, [Generated.ARM64.r_ARM64_709, Generated.ARM64.r_ARM64_710, Generated.ARM64.r_ARM64_731, Generated.ARM64.r_ARM64_738]),
     (.ARM64MOVWloadidx4, [Generated.ARM64.r_ARM64_744]),
     (.ARM64MOVWstore, [Generated.ARM64.r_ARM64_764, Generated.ARM64.r_ARM64_889]),
+    (.ARM64NotEqual, [Generated.ARM64.r_ARM64_1375]),
     (.ARM64OR, [Generated.ARM64.r_ARM64_973]),
     (.ARM64SLL, [Generated.ARM64.r_ARM64_983]),
     (.ARM64SRA, [Generated.ARM64.r_ARM64_985]),

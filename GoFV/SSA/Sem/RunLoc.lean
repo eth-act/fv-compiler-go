@@ -74,7 +74,7 @@ def LocCtx.ty (lc : LocCtx) (id : ID) : Ty := lc.ctx.tys[id]?.getD .other
 /-- The flags shape (`Ty.flags`), which no other lowered value has: SSA-able structs are
 decomposed before `lower`. -/
 def Ty.isFlags : Ty → Bool
-  | .agg [(0, .bool), (1, .bool), (2, .bool), (3, .bool)] 4 => true
+  | .agg [(0, .bool), (1, .bool), (2, .bool), (3, .bool), (4, .bool)] 5 => true
   | _ => false
 
 /-- The machine state of `runLoc`. -/

@@ -12,8 +12,8 @@ Block rules of lowered code that branch on a rule variable (#385):
 * `(EQ|NE (TSTconst [c] x)) && oneBit(c)` as `(TBZ|TBNZ [ntz64(c)] x)`, and the `TSTWconst` forms
   on `int64(uint32(c))`: `c` is the single bit `ntz64(c)` (`oneBit_twoPow`, `oneBit_twoPow32`),
   whose `AND` with the register is zero iff the bit is clear (`and_twoPow_eq_zero`).
-* `(K (InvertFlags cmp))` as `(K' cmp)`: `InvertFlags` is `poison` in `Arm64.evalPure` (no
-  lowered rule that produces it is proven), so the old block never takes an edge on it.
+* `(K (InvertFlags cmp))` as `(K' cmp)` for the integer kinds: `K` on the flags of the swapped
+  compare is `K'` on `cmp`, whatever `cmp` (`invertFlags_cond`).
 -/
 
 namespace GoFV.Proof.Low.Rules
@@ -55,13 +55,14 @@ theorem reg_of_cmp0 {x : Val} {c : Cond} {b : Bool} (hc : readsN c)
   cases hx : Arm64.reg x with
   | some r =>
     refine ⟨r, rfl, ?_⟩
-    have hc' : Arm64.cmp x (.int .w64 0) = (Arm64.subFlags r 0).2.toVal := by
+    have hc' : Arm64.cmp x (.int .w64 0) = Arm64.cmpRes (Arm64.subFlags r 0) := by
       unfold Arm64.cmp; rw [hx, h0]
-    rwa [hc'] at h
+    rwa [hc', onVal_cmpRes] at h
   | none =>
     cases x with
     | ptr p =>
-      have hc' : Arm64.cmp (.ptr p) (.int .w64 0) = .agg [.poison, .bool false, .poison, .poison] := by
+      have hc' : Arm64.cmp (.ptr p) (.int .w64 0) =
+          .agg [.poison, .bool false, .poison, .poison, .poison] := by
         unfold Arm64.cmp; simp only [Arm64.reg] at hx; simp only [Arm64.reg, hx]; rfl
       rw [hc'] at h
       simp only [Cond.onVal, Val.flagBit] at h
@@ -70,7 +71,7 @@ theorem reg_of_cmp0 {x : Val} {c : Cond} {b : Bool} (hc : readsN c)
 
 /-- A defined condition on the flags of `CMPWconst [0] x`: `x` has a register. -/
 theorem reg_of_cmpw0 {x : Val} {c : Cond} {b : Bool}
-    (h : c.onVal (Arm64.flags1w (fun r => (Arm64.subFlags r 0).2) [x]) = some b) :
+    (h : c.onVal (Arm64.cmp1w (fun r => Arm64.subFlags r 0) [x]) = some b) :
     ∃ r, Arm64.reg x = some r ∧ c.onVal (Arm64.subFlags (r.setWidth 32) 0).2.toVal = some b := by
   obtain ⟨r, hr, h⟩ := reg32_of_cmpw0 h
   cases hx : Arm64.reg x with
@@ -127,7 +128,7 @@ theorem r_ARM64_644_sound : BlockRuleL.Sound r_ARM64_644 := by
   simp only [brVal, show BlockKind.ARM64GE.isArm64 = true from rfl,
     show BlockKind.ARM64TBZ.isArm64 = true from rfl, ite_true, Arm64.taken] at hbr ⊢
   rw [Bool.bne_false]
-  obtain ⟨r, hr, h⟩ := reg_of_cmpw0 (Mono.onVal_of (retypeL_flags1w_ref _ _ _) hbr)
+  obtain ⟨r, hr, h⟩ := reg_of_cmpw0 (Mono.onVal_of (retypeL_cmp1w_ref _ _ _) hbr)
   rw [hr, Option.map_some, ← ge_n (by decide) h, msb32]; rfl
 
 /-- `ARM64.rules:646`: `(LT (CMPWconst [0] x) yes no) => (TBNZ [31] x yes no)` -/
@@ -138,15 +139,31 @@ theorem r_ARM64_646_sound : BlockRuleL.Sound r_ARM64_646 := by
   simp only [brVal, show BlockKind.ARM64LT.isArm64 = true from rfl,
     show BlockKind.ARM64TBNZ.isArm64 = true from rfl, ite_true, Arm64.taken] at hbr ⊢
   rw [Bool.bne_false]
-  obtain ⟨r, hr, h⟩ := reg_of_cmpw0 (Mono.onVal_of (retypeL_flags1w_ref _ _ _) hbr)
+  obtain ⟨r, hr, h⟩ := reg_of_cmpw0 (Mono.onVal_of (retypeL_cmp1w_ref _ _ _) hbr)
   rw [hr, Option.map_some, ← lt_n (by decide) h, msb32]; rfl
 
+theorem ofFlagBit_cases (o : Option Bool) : Val.ofFlagBit o = .poison ∨ ∃ b, Val.ofFlagBit o = .bool b := by
+  cases o with
+  | none => exact .inl rfl
+  | some b => exact .inr ⟨b, rfl⟩
+
+/-- `InvertFlags`' result read at any shape refines it. -/
+theorem retypeL_invertFlags_ref (T : Ty) (f : Val) :
+    Refines ((invertFlags f).retypeL T) (invertFlags f) := by
+  unfold invertFlags
+  split
+  · exact retypeL_agg5_ref T (ofFlagBit_cases _) (ofFlagBit_cases _) (ofFlagBit_cases _)
+      (ofFlagBit_cases _) (ofFlagBit_cases _)
+  · rw [retypeL_poison]; exact .poison _
+
 set_option hygiene false in
-/-- `(K (InvertFlags cmp)) => (K' cmp)`: the old block's control is `poison`. -/
+/-- `(K (InvertFlags cmp)) => (K' cmp)`: `K` on `InvertFlags cmp` is `K'` on `cmp`
+(`invertFlags_cond`). -/
 local macro "arm_invflags" : tactic => `(tactic| (
   arm_bunfold; arm_norm
-  rw [retypeL_poison] at hbr
-  cases hbr))
+  simp (config := { decide := true }) only [brVal, Arm64.taken, ite_true, Bool.bne_false]
+    at hbr ⊢
+  exact invertFlags_cond rfl (Mono.onVal_of (retypeL_invertFlags_ref _ _) hbr)))
 
 /-- `ARM64.rules:1332`: `(LT (InvertFlags cmp) yes no) => (GT cmp yes no)` -/
 theorem r_ARM64_1332_sound : BlockRuleL.Sound r_ARM64_1332 := by arm_invflags
@@ -250,7 +267,7 @@ theorem retypeL_flags1_ref (T : Ty) (f : BitVec 64 → Flags) (a : Val) :
   have hb : ∀ x : Bool, Val.bool x = .poison ∨ ∃ b, Val.bool x = .bool b := fun x => .inr ⟨x, rfl⟩
   cases h : Arm64.reg a <;> simp only [Arm64.flags1, h]
   · rw [retypeL_poison]; exact .poison _
-  · exact retypeL_agg4_ref T (hb _) (hb _) (hb _) (hb _)
+  · exact retypeL_agg5_ref T (hb _) (hb _) (hb _) (hb _) (.inl rfl)
 
 /-- `EQ`/`NE` on the flags of `TSTconst [c] x`: `x` has a register, whose `Z` decides. -/
 theorem reg_of_tst {x : Val} {c : Cond} {C : BitVec 64} {b : Bool}
