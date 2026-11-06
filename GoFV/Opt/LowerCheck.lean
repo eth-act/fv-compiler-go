@@ -27,11 +27,13 @@ input `f`, and the output `g` must have the replayed definitions. The difference
   `renameOp` with the same type, auxint, aux and arguments' count, or a `Store` lowered to an
   arm64 store (`memLower`), or a `Zero` or `Move` lowered to `LoweredZero`/`LoweredZeroLoop` or
   `LoweredMove`/`LoweredMoveLoop` (`bulkLower`), or a `LocalAddr` lowered to `MOVDaddr`
-  (`addrLower`); a rule event lowering a store, a `Zero`, a `Move` or a frame address, or folding
-  an `ADDconst` offset (`stFold`) or a global symbol's or frame variable's `MOVDaddr`
-  (`stFoldAddr`) into an arm64 store, is replayed as its
-  new definitions (`atomDef`); a rule event folding a lowered frame address into an integer load
-  (a term) or into an `ADDconst` is replayed as the folded term (`frameFold`); one folding
+  (`addrLower`), or a `Store` lowered to an indexed store (`idxLower`); a rule event lowering a
+  store, a `Zero`, a `Move` or a frame address, or folding an `ADDconst` offset (`stFold`) or a
+  global symbol's or frame variable's `MOVDaddr` (`stFoldAddr`) into an arm64 store, or indexing
+  an arm64 store at offset 0 without aux whose address is `ADD p i` or `ADDshiftLL [k] p i`
+  (`stIdxFold`), is replayed as its new definitions (`atomDef`); a rule event folding a lowered
+  frame address into an integer load (a term) or into an `ADDconst` is replayed as the folded term
+  (`frameFold`); one folding
   `ADDconst [0]` into the lowered frame address it reads (`650` at offset 0, whose result is an
   atom) is replayed as no change (`addrFoldEv`), and the later folds see through it (`frameAddr`);
   so is one lowering `OffPtr [off] SP` to `MOVDaddr [off] SP` (`305`, `spFoldEv`), which a store

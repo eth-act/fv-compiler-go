@@ -832,10 +832,17 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
         -- `LoweredPanicBoundsRR`, which are `f`'s (`argIx`)
         rw [hu'] at hpl
         have hpl' : pbLower u' u = true := by simpa using hpl
-        rcases hrest with hfree | ⟨hsz'', hrest⟩
+        rcases hrest with hfree | ⟨hsz'', hrest⟩ | hidx
         · rw [(argFree_cases hfree).1] at hmop; cases hmop
+        rotate_left
+        · obtain ⟨⟨p, s⟩, hio⟩ := Option.isSome_iff_exists.1 hidx.2.2.1
+          rw [hmop] at hio; cases hio
         have hu'op := (pbLower_cases hpl').1
-        refine .inr fun i hi => ?_
+        have hnix : idxLower tabs u' u = false := by
+          cases hix : idxLower tabs u' u
+          · rfl
+          · rw [(idxLower_cases hix).1] at hu'op; cases hu'op
+        refine .inr (.inl ⟨hnix, fun i hi => ?_⟩)
         have hik : i < ks.length := hszk ▸ hi
         have hix := argIx_of_pb hpl' hks hik
         have hk3 := pbKeep_lt hks hik
@@ -856,8 +863,69 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
         exact ArgRel.trans_left (bridge_den hsh hT n _) (h1.trans_right
           ((copyReachL_den (hTM ρ) _ _ _ hcopy k).trans
             (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) k _ hmark hlv)))
-      rcases hrest with hfree | ⟨hsz'', hrest⟩
+      have hcopy : ∀ j (h1 : j < m.args.size) (h2 : j < u.args.size),
+          copyReachL tabs M M.size m.args[j] u.args[j] = true ∨
+            truncCallL tabs M M.size m j m.args[j] u.args[j] = true := fun j h1 h2 =>
+        (hargs j h1 h2).imp_right fun h => h.resolve_left fun htr => by
+          obtain ⟨k, -, -, hk, -⟩ := truncReachL_cases htr
+          rw [← hop] at hk
+          rw [termVL_narrow hk] at hat; cases hat
+      rcases hrest with hfree | ⟨hsz'', hrest⟩ | ⟨h3, h4, hixs, hC, hAd, hV⟩
       · exact .inl (by rw [argFree_congr hop hax]; exact hfree)
+      rotate_left
+      · -- a `Store` lowered to an indexed store: the address from the base and the index, the
+        -- value and the memory
+        obtain ⟨⟨p, s⟩, hio⟩ := Option.isSome_iff_exists.1 hixs
+        have hix : idxLower tabs u' u = true := by
+          have hpa := hp
+          unfold atomPair at hpa
+          simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hpa
+          rcases hpa.1.1.1 with ((⟨-, hs⟩ | hal) | hpb) | hx
+          · omega
+          · have := (addrLower_cases hal).2.2.2.2.2; omega
+          · obtain ⟨-, -, -, ks, hks, -⟩ := pbLower_cases hpb
+            rw [hop, (idxStore_facts hio).2.2.2.2.2.2.1] at hks; cases hks
+          · exact hx
+        have hden : ∀ j (h1 : j < m.args.size) (h2 : j < u.args.size) (k : Nat) (ρ ρ' : ID → Val),
+            ValRef ρ ρ' → TypedL true (listedDefs g) tabs ρ' →
+            Sem.Refines (denL true M.get? tabs (midVal tabs f ρ) k m.args[j]!)
+              (denL true (listedDefs g) tabs ρ' k u.args[j]!) := fun j h1 h2 k ρ ρ' hρ hT' => by
+          rw [getElem!_pos m.args j h1, getElem!_pos u.args j h2]
+          have hc := (hcopy j h1 h2).resolve_right fun hcall => by
+            obtain ⟨w', -, -, hcf, -⟩ := truncCallL_cases hcall
+            unfold callFitTy at hcf
+            cases hk : callLead m.op with
+            | none => rw [hk] at hcf; cases hcf
+            | some k =>
+              rcases callLead_some hk with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] at hio <;> cases hio
+          exact (copyReachL_den (hTM ρ) _ _ _ hc k).trans
+            (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) k _
+              ((closedOK_facts hcg b hb gb hgb).2 a ha u hu u.args[j] (Array.getElem_mem h2))
+              ((liveOKL_facts hlive) b hb gb hgb |>.2 a ha u hu (.inl hat) _
+                (Array.getElem_mem h2)))
+        refine .inr (.inr ⟨hix, fun n => ?_, fun n => ?_, fun n => ?_⟩)
+        · obtain ⟨k, hk⟩ := hAd n
+          refine ⟨k, fun ρ ρ' hρ hT hT' hF => ?_⟩
+          rw [hgl] at hT'
+          rw [hgl, hop]
+          have h1 := hk (midVal tabs f ρ) (mid_typed tabs f ρ) (mid_frame hF)
+          exact ArgRel.trans_left (o := some (0, none)) (bridge_den hsh hT n _)
+            (ArgRel.trans_right (o := some (0, none)) h1 (idxAddr_mono _
+              (hden 0 (by omega) (by omega) k ρ ρ' hρ hT') (hden 1 (by omega) (by omega) k ρ ρ' hρ hT')))
+        · obtain ⟨k, hk⟩ := hV 0 (by omega) n
+          refine ⟨k, fun ρ ρ' hρ hT hT' hF => ?_⟩
+          rw [hgl] at hT'
+          rw [hgl]
+          have h1 := hk (midVal tabs f ρ) (mid_typed tabs f ρ) (mid_frame hF)
+          exact ArgRel.trans_left (bridge_den hsh hT n _)
+            (h1.trans_right (hden 2 (by omega) (by omega) k ρ ρ' hρ hT'))
+        · obtain ⟨k, hk⟩ := hV 1 (by omega) n
+          refine ⟨k, fun ρ ρ' hρ hT hT' hF => ?_⟩
+          rw [hgl] at hT'
+          rw [hgl]
+          have h1 := hk (midVal tabs f ρ) (mid_typed tabs f ρ) (mid_frame hF)
+          exact ArgRel.trans_left (bridge_den hsh hT n _)
+            (h1.trans_right (hden 3 (by omega) (by omega) k ρ ρ' hρ hT'))
       have hnpb : pbLower u' u = false := by
         cases hpb : pbLower u' u
         · rfl
@@ -865,19 +933,18 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
           obtain ⟨-, h3, -, ks, hks, hsk⟩ := pbLower_cases hpb
           have := pbKeep_len hks
           omega
-      refine .inr fun i hi => ?_
+      have hnix : idxLower tabs u' u = false := by
+        cases hix : idxLower tabs u' u
+        · rfl
+        · obtain ⟨-, h3, h4, -⟩ := idxLower_cases hix
+          omega
+      refine .inr (.inl ⟨hnix, fun i hi => ?_⟩)
       rw [argIx_of_not hnpb]
       have hi' : i < u'.args.size := by omega
-      have hcc : copyReachL tabs M M.size m.args[i] u.args[i] = true ∨
-          truncCallL tabs M M.size m i m.args[i] u.args[i] = true :=
-        (hargs i (by omega) hi).imp_right fun h => h.resolve_left fun htr => by
-          obtain ⟨k, -, -, hk, -⟩ := truncReachL_cases htr
-          rw [← hop] at hk
-          rw [termVL_narrow hk] at hat; cases hat
       have hmark := (closedOK_facts hcg b hb gb hgb).2 a ha u hu u.args[i] (Array.getElem_mem hi)
       have hlv : LiveL tabs g u.args[i] :=
         (liveOKL_facts hlive) b hb gb hgb |>.2 a ha u hu (.inl hat) _ (Array.getElem_mem hi)
-      rcases hcc with hcopy | hcall
+      rcases hcopy i (by omega) hi with hcopy | hcall
       · left
         intro n
         obtain ⟨k, hk⟩ := (hrest i hi').2 n

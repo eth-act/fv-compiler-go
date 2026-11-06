@@ -277,8 +277,9 @@ def AtomArgsRefL (tabs : Tables) (f g : Func) : Prop :=
   ∀ b ∈ g.blocks, ∀ gb, g.block? b = some gb → ∀ a ∈ gb.values, ∀ u, g.value? a = some u →
     termVL tabs u = false →
     ∃ u', f.value? a = some u' ∧ atomPair tabs u' u = true ∧ pbConstOK tabs f u' u = true ∧
-      (argFree tabs u = true ∨ (∀ i < u.args.size, ArgTermRefL (stArg u' u i)
-        f.lowered f.value? tabs u'.args[argIx u' u i]! g.lowered (listedDefs g) tabs u.args[i]! ∨
+      (argFree tabs u = true ∨ (idxLower tabs u' u = false ∧ ∀ i < u.args.size, ArgTermRefL
+        (stArg u' u i) f.lowered f.value? tabs u'.args[argIx u' u i]! g.lowered (listedDefs g) tabs
+          u.args[i]! ∨
         ∃ t, callFitTy tabs u i = some t ∧ ArgTermFitL t
           f.lowered f.value? tabs u'.args[argIx u' u i]! g.lowered (listedDefs g) tabs u.args[i]!) ∨
         (idxLower tabs u' u = true ∧

@@ -3,7 +3,7 @@ import GoFV.Proof.Low.AddrFold
 
 /-!
 # Lowering rule lemmas: offsets folded into loads (`ARM64.rules:658-676`) and stores (`758-776`),
-symbols and frame variables folded into stores (`881-905`)
+symbols and frame variables folded into stores (`881-905`), indexed stores (`786-791`, `806-808`)
 
 `(MOV{B,BU,H,HU,W,WU,D}load [off1] {sym} (ADDconst [off2] ptr) mem) && is32Bit(int64(off1)+off2)
 && … => (MOV…load [off1+int32(off2)] {sym} ptr mem)`. The validator admits an instance only
@@ -17,7 +17,11 @@ its address related by `AddrRef`, `GoFV.Proof.Low.addrRef_fold`), so these rules
 `ArmRule.Mem` (`checked_armStore`). Likewise `(MOV…store [off1] {sym1} (MOVDaddr [off2] {sym2}
 ptr) val mem) && canMergeSym(sym1,sym2) && … => (MOV…store [off1+off2] {mergeSym(sym1,sym2)} ptr
 val mem)`: the validator replays a global symbol's or a frame variable's address folded into the
-store (`LowerCheck.stFoldAddr`; `GoFV.Proof.Low.addrRef_foldSym`, `addrRef_foldFrame`).
+store (`LowerCheck.stFoldAddr`; `GoFV.Proof.Low.addrRef_foldSym`, `addrRef_foldFrame`). And
+`(MOV…store [off] {sym} (ADD ptr idx) val mem) && off == 0 && sym == nil => (MOV…storeidx ptr idx
+val mem)` (and `ADDshiftLL [k]` to the scaled `MOV…storeidx{2,4,8}`): the validator replays the
+indexed store as the store's new definition (`LowerCheck.stIdxFold`), whose indexed address is the
+`ADD`'s (`GoFV.Proof.Low.Val.ReplayInvL.idxFold`).
 -/
 
 namespace GoFV.Proof.Low.Rules
