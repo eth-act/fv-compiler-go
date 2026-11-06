@@ -38,7 +38,9 @@ are its instances, and it composes (`LayerRefines.trans`).
 
 `regalloc`'s theorem `checkRA_sound` runs both sides in the `regalloc` section's tables; the
 source ran in the `flagalloc` section's. `runSched_tabsAgreeL`: when `tabsAgreeL` holds (Phase 1's
-`tabsAgree` and the lowered shapes of the function's values), the source runs alike in both.
+`tabsAgree` and the lowered shapes of the function's values), the source runs alike in both;
+`runSched_tabsAgreeModL`: so it does when `tabsAgreeModL` holds (the output tables add the autos
+of new spill slots), for inputs and contracts with `InitAvoids`, `TempOblivious`, `FrameSafe`.
 
 `loweredVPasses_sound`: every `proven` step of `GoFV.Opt.loweredVPasses` satisfies its theorem
 (`stepSoundL`). `verifiedPipelineFull_layer`: a `verified` result of `verifiedPipelineFull`

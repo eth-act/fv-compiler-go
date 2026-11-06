@@ -21,8 +21,9 @@ variables, `runLoopL_locals`) from initial memories equal without the extra bloc
 
 * a value of `tamOpOKL` evaluates on related registers to related results (`value_relL`): its
   arguments of shapes without memories or tuples are equal (typed registers); a generic op of
-  `tamMemOps` is Phase 1's (`TabsMod.memOp_rel`); an arm64 memory op of `UnreadL.armMemOps` reads
-  and writes outside the extra blocks (`armMemOp_relX`), and when memory ops fault it faults alike
+  `tamMemOps` is Phase 1's (`TabsMod.memOp_rel`); an arm64 memory op of `armMemOpsL` reads and
+  writes outside the extra blocks (`armMemOpL_relX`: `elim unread autos`' memory ops, the atomics
+  as their generic atomic, `LoweredGetCallerSP`), and when memory ops fault it faults alike
   (`resRel_faulting`);
 * the source's results and panics avoid the extra blocks (`evalValueL_avX`, the arm64 ops by
   `elim unread autos`' `UnreadL.evalValueL_av`);
@@ -43,7 +44,7 @@ local notation "U" => fun b => X b = true
 theorem tamOpOKL_spec {tabs : Tables} {f : Func} {fv : Value} (h : tamOpOKL tabs f fv = true) :
     fv.op = .Phi ∨ (∀ a ∈ fv.args, UnreadL.plainArg tabs f a = true) ∨
       ((∀ a ∈ fv.args.pop, UnreadL.plainArg tabs f a = true) ∧
-        (fv.op ∈ tamMemOps ∨ (fv.op ∈ UnreadL.armMemOps ∧ UnreadL.memLast tabs f fv = true))) := by
+        (fv.op ∈ tamMemOps ∨ (fv.op ∈ armMemOpsL ∧ UnreadL.memLast tabs f fv = true))) := by
   unfold tamOpOKL at h
   simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq, Array.all_eq_true',
     List.contains_iff_mem] at h
@@ -355,7 +356,7 @@ theorem value_relL {env : Env} {tabs : Tables} {f : Func} (H : HypsL env X tabs 
       have hLa : ∀ z ∈ L, Val.Avoids U z := fun z hz => by
         obtain ⟨a, -, hza⟩ := hL z hz
         exact I.av a z hza
-      exact resRel_faulting hM (armMemOp_relX H.E hX (symOK_of H hfv) harm hLa hM (I.av m _ hwm))
+      exact resRel_faulting hM (armMemOpL_relX H.E hX (symOK_of H hfv) harm hLa hM (I.av m _ hwm))
     · rw [hww.eq (fun _ => nofun) (fun _ => nofun)]
       exact resRel_refl _
 

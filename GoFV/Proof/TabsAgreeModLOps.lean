@@ -2,6 +2,7 @@ import GoFV.Proof.TabsAgreeModStep
 import GoFV.Proof.Pass.UnreadLStep
 import GoFV.Proof.RunLFCases
 import GoFV.Proof.Pass.NilLateLEval
+import GoFV.Opt.TabsAgreeModL
 
 /-!
 # Running a scheduled function in tables with extra frame temporaries: the arm64 memory ops
@@ -485,5 +486,89 @@ theorem evalOpL_mem0 {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v :
   split
   · exact evalOp_mem0 hn m
   · rfl
+
+/-! ## The arm64 atomics and `LoweredGetCallerSP` -/
+
+/-- The operands of an atomic do not depend on its memory. -/
+theorem atomicArgs_snoc (g : Op) (L : List Val) (M M' : Mem) :
+    atomicArgs g (L ++ [.mem M']) = (atomicArgs g (L ++ [.mem M])).dropLast ++ [.mem M'] := by
+  rcases L with _ | ⟨a, _ | ⟨b, _ | ⟨c, _ | ⟨d, L⟩⟩⟩⟩
+  · rfl
+  · rfl
+  · simp only [List.cons_append, List.nil_append, atomicArgs]
+    cases Atomic.info? g <;> rfl
+  · simp only [List.cons_append, List.nil_append, atomicArgs]
+    cases Atomic.info? g <;> cases Atomic.casWidth? g <;> rfl
+  · have e : ∀ N : Mem, atomicArgs g (a :: b :: c :: d :: L ++ [.mem N]) =
+        a :: b :: c :: d :: L ++ [.mem N] := by
+      intro N
+      rcases L with _ | ⟨e, L⟩ <;> unfold atomicArgs <;>
+        cases Atomic.info? g <;> cases Atomic.casWidth? g <;> rfl
+    rw [e, e, List.dropLast_concat]
+
+/-- An atomic root on related memories (its other operands avoid `X`). -/
+theorem atomicRoot_relX (hX : TempX X) {v : Value} {A : List Val}
+    (hA : ∀ z ∈ A, Val.Avoids U z) {M M' : Mem} (hM : EqX X M M') :
+    ResRel X (atomicRoot v (A ++ [.mem M])) (atomicRoot v (A ++ [.mem M'])) := by
+  refine ⟨fun y h => ?_, fun e m h => absurd h atomicRoot_ne_panic⟩
+  have hR : AtomicSimRel (EqX X) (fun b => X b = false) :=
+    ⟨fun t p h hp => EqX.load h t p hp, fun _ _ h hp hw => EqX.write h hp hw⟩
+  obtain ⟨y', hy', m1, m1', hm1, hs⟩ := atomicRoot_sim hR
+    (fun p hp => by have := hA _ hp; simp only [Val.Avoids] at this; simpa using this)
+    (fun x => by simpa using DAE.ofAddr_notU (tempU_of hX) x) hM h
+  refine ⟨y', hy', ?_⟩
+  rcases hs with ⟨rfl, rfl⟩ | ⟨z, rfl, rfl⟩
+  · exact .mem hm1
+  · exact .tuple (.cons (.refl z) (.cons (.mem hm1) .nil))
+
+theorem armAtomOps_act {op : Op} (h : op ∈ armAtomOps) :
+    op.generic = false ∧ GoFV.Opt.LowerTerm.actOp op = true := by
+  have key : armAtomOps.all (fun o => !o.generic && GoFV.Opt.LowerTerm.actOp o) = true := by
+    decide +kernel
+  simpa using List.all_eq_true.1 key op h
+
+/-- An arm64 atomic runs as its generic atomic. -/
+theorem arm64Op_atom {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {ty : Ty}
+    (hop : v.op ∈ armAtomOps) :
+    ∃ g, ∀ argv, arm64Op false env ctx fr v argv ty =
+      atomicRoot { v with op := g } (atomicArgs g argv) := by
+  simp only [armAtomOps, List.mem_cons, List.not_mem_nil, or_false] at hop
+  rcases hop with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h |
+    h | h | h | h | h | h | h | h | h
+  all_goals
+    refine ⟨(Arm64.atomicOf v.op).getD v.op, fun argv => ?_⟩
+    unfold arm64Op
+    simp only [nilFaults, Bool.not_false, ite_true, h, Arm64.atomicOf, Option.getD_some]
+
+/-- **An arm64 memory op of `armMemOpsL`** on related memories (the other arguments avoid `X`),
+when memory ops do not fault. -/
+theorem armMemOpL_relX {env : Env} (hE : env.TempOblivious) (hX : TempX X) {ctx : Ctx}
+    {fr : Frame} {v : Value} {ty : Ty} (hs : UnreadL.SymOK U ctx v) (hop : v.op ∈ armMemOpsL)
+    {L : List Val} (hL : ∀ z ∈ L, Val.Avoids U z) {M M' : Mem} (hM : EqX X M M')
+    (hMA : M.Avoids U) :
+    ResRel X (evalOpL false env ctx fr v (L ++ [.mem M]) ty)
+      (evalOpL false env ctx fr v (L ++ [.mem M']) ty) := by
+  simp only [armMemOpsL, List.mem_append, List.mem_singleton] at hop
+  rcases hop with (h | h) | h
+  · exact armMemOp_relX hE hX hs h hL hM hMA
+  · obtain ⟨hg, ha⟩ := armAtomOps_act h
+    obtain ⟨g, hg'⟩ := arm64Op_atom (env := env) (ctx := ctx) (fr := fr) (ty := ty) h
+    rw [evalOpL_of_actOp hg ha, evalOpL_of_actOp hg ha, hg', hg', atomicArgs_snoc g L M M']
+    have hA := UnreadL.atomicArgs_av (tempU_of hX) g (argv := L ++ [.mem M]) (fun z hz => by
+      rcases List.mem_append.1 hz with hz | hz
+      · exact hL z hz
+      · simp at hz; subst hz; exact hMA)
+    have hself := atomicArgs_snoc g L M M
+    generalize atomicArgs g (L ++ [.mem M]) = B at hself hA ⊢
+    generalize B.dropLast = A at hself ⊢
+    subst hself
+    exact atomicRoot_relX hX (fun z hz => hA z (List.mem_append_left _ hz)) hM
+  · have hg : v.op.generic = false := by rw [h]; rfl
+    have ha : GoFV.Opt.LowerTerm.actOp v.op = true := by rw [h]; rfl
+    have e : ∀ argv, evalOpL false env ctx fr v argv ty =
+        .ok ((frameVal ctx { v with op := .GetCallerSP }).getD .poison) := fun argv => by
+      rw [evalOpL_of_actOp hg ha]; unfold arm64Op
+      simp only [nilFaults, Bool.not_false, ite_true, h]
+    rw [e, e]; exact resRel_refl _
 
 end GoFV.Proof.TabsModL
