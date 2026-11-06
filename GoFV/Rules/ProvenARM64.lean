@@ -61,7 +61,7 @@ def b2iNorm (r : Rule) : Rule where
     | res => res
   pos := r.pos
 
-/-- `ARM64.rules` restricted to its 261 proven value rules and 47 proven block rules. -/
+/-- `ARM64.rules` restricted to its 261 proven value rules and 65 proven block rules. -/
 def lower : RuleSet where
   name := "ARM64"
   values := [(.ARM64ADDconst, [Generated.ARM64.r_ARM64_650, Generated.ARM64.r_ARM64_1000, Generated.ARM64.r_ARM64_1201]),
@@ -250,10 +250,18 @@ def lower : RuleSet where
     (.ZeroExt8to16, [Generated.ARM64.r_ARM64_199]),
     (.ZeroExt8to32, [Generated.ARM64.r_ARM64_200]),
     (.ZeroExt8to64, [Generated.ARM64.r_ARM64_202])]
-  blocks := [(.ARM64EQ, [Generated.ARM64.r_ARM64_600, Generated.ARM64.r_ARM64_601]),
+  blocks := [(.ARM64EQ, [Generated.ARM64.r_ARM64_600, Generated.ARM64.r_ARM64_601, Generated.ARM64.r_ARM64_621, Generated.ARM64.r_ARM64_623, Generated.ARM64.r_ARM64_1340]),
+    (.ARM64GE, [Generated.ARM64.r_ARM64_644, Generated.ARM64.r_ARM64_645, Generated.ARM64.r_ARM64_1335]),
+    (.ARM64GT, [Generated.ARM64.r_ARM64_1333]),
     (.If, [Generated.ARM64.r_ARM64_461, Generated.ARM64.r_ARM64_462, Generated.ARM64.r_ARM64_463, Generated.ARM64.r_ARM64_464, Generated.ARM64.r_ARM64_465, Generated.ARM64.r_ARM64_466, Generated.ARM64.r_ARM64_467, Generated.ARM64.r_ARM64_468, Generated.ARM64.r_ARM64_469, Generated.ARM64.r_ARM64_470, Generated.ARM64.r_ARM64_471, Generated.ARM64.r_ARM64_472, Generated.ARM64.r_ARM64_473, Generated.ARM64.r_ARM64_474, Generated.ARM64.r_ARM64_476]),
-    (.ARM64NE, [Generated.ARM64.r_ARM64_600_2, Generated.ARM64.r_ARM64_601_2]),
+    (.ARM64LE, [Generated.ARM64.r_ARM64_1334]),
+    (.ARM64LT, [Generated.ARM64.r_ARM64_646, Generated.ARM64.r_ARM64_647, Generated.ARM64.r_ARM64_1332]),
+    (.ARM64NE, [Generated.ARM64.r_ARM64_600_2, Generated.ARM64.r_ARM64_601_2, Generated.ARM64.r_ARM64_622, Generated.ARM64.r_ARM64_624, Generated.ARM64.r_ARM64_1341]),
     (.ARM64NZ, [Generated.ARM64.r_ARM64_526, Generated.ARM64.r_ARM64_527, Generated.ARM64.r_ARM64_528, Generated.ARM64.r_ARM64_529, Generated.ARM64.r_ARM64_530, Generated.ARM64.r_ARM64_531, Generated.ARM64.r_ARM64_532, Generated.ARM64.r_ARM64_533, Generated.ARM64.r_ARM64_534, Generated.ARM64.r_ARM64_535, Generated.ARM64.r_ARM64_536, Generated.ARM64.r_ARM64_537, Generated.ARM64.r_ARM64_538, Generated.ARM64.r_ARM64_539]),
-    (.ARM64TBNZ, [Generated.ARM64.r_ARM64_541, Generated.ARM64.r_ARM64_542, Generated.ARM64.r_ARM64_543, Generated.ARM64.r_ARM64_544, Generated.ARM64.r_ARM64_545, Generated.ARM64.r_ARM64_546, Generated.ARM64.r_ARM64_547, Generated.ARM64.r_ARM64_548, Generated.ARM64.r_ARM64_549, Generated.ARM64.r_ARM64_550, Generated.ARM64.r_ARM64_551, Generated.ARM64.r_ARM64_552, Generated.ARM64.r_ARM64_553, Generated.ARM64.r_ARM64_554])]
+    (.ARM64TBNZ, [Generated.ARM64.r_ARM64_541, Generated.ARM64.r_ARM64_542, Generated.ARM64.r_ARM64_543, Generated.ARM64.r_ARM64_544, Generated.ARM64.r_ARM64_545, Generated.ARM64.r_ARM64_546, Generated.ARM64.r_ARM64_547, Generated.ARM64.r_ARM64_548, Generated.ARM64.r_ARM64_549, Generated.ARM64.r_ARM64_550, Generated.ARM64.r_ARM64_551, Generated.ARM64.r_ARM64_552, Generated.ARM64.r_ARM64_553, Generated.ARM64.r_ARM64_554]),
+    (.ARM64UGE, [Generated.ARM64.r_ARM64_1339]),
+    (.ARM64UGT, [Generated.ARM64.r_ARM64_1337]),
+    (.ARM64ULE, [Generated.ARM64.r_ARM64_1338]),
+    (.ARM64ULT, [Generated.ARM64.r_ARM64_1336])]
 
 end GoFV.Rules.ProvenARM64
