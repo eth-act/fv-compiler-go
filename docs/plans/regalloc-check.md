@@ -124,7 +124,8 @@ through `trim`"). The output tables also define the autos of new spill slots (`s
 `GoFV.Proof.runSched_tabsAgreeModL` shows the source runs alike, for inputs without pointers into
 frame temporaries (`InitAvoids`) and contracts that cannot tell whether unreachable temporaries
 exist (`TempOblivious`, `FrameSafe`). Before it, every function that spilled to a new slot was
-rejected (full-v9: all 4,978 functions whose first unverified run was `regalloc`).
+rejected (full-v9 on 1cedc332: all 5,147 functions whose first unverified run was `regalloc`, all
+21,197 rejected `regalloc` runs, were `tabsAgreeL frameLocals`).
 
 ## 5. The simulation
 
