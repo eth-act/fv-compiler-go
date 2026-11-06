@@ -170,9 +170,12 @@ before `lower` that is not proven, identity or skipped), the number of runs per 
 says `trim=verified` is, by `verifiedPipelineFull_refines`, refined by the allocated function
 after `trim` (`runLoc` of the output against `run` of the input, under `VPre` and no nil-page
 fault of the `schedule` input). The output differs from stock wherever a checked variant undoes
-a rewrite or an optional pass is skipped, and in the call auxes' register caches (the verified
-`regalloc` drops `AuxCall.Reg`/`ResultReg`, which only Go's `regalloc` reads), so the importer's
-check against the Lean text still applies but stock identity does not.
+a rewrite or an optional pass is skipped. The verified `regalloc` drops the call auxes' register
+caches (`AuxCall.Reg`/`ResultReg`, which only Go's `regalloc` reads; `eraseCallRegs`); the
+driver output fills them back (`GoFV.Opt.Regalloc.fillCallRegs`: `regspec` of every call and
+`MakeResult`, in value order, as the importer replays them), because the importer checks that
+every call aux it fills renders as the Lean output's (without this every function with a call
+fell back to the stock passes).
 
 How each pass of `GoFV.Opt.stockPasses` runs (`stockPasses_sound` checks every `proven`/`guarded`
 entry against its theorem; the passes from `lower` on: `docs/PASSES2.md` §0):
@@ -192,8 +195,8 @@ incomplete)`, because later passes and `lower` need every rewrite (an undone `Pt
 `scripts/driver-e2e.sh --verified` builds std and the programs with
 `GOFV_SSA_DRIVER=<wrapper running gofv-ssa-opt --verified --vstats …>` in full mode, counts the
 byte-identical archives and binaries without failing on the others, and fails only when a build
-fails or a program's output or exit status differs from stock under qemu. The report adds the
-per-function verdicts.
+fails, a program's output or exit status differs from stock under qemu, or a function falls back
+to the stock passes. The report adds the per-function verdicts.
 
 `gofv-ssa-opt --check --verified <dir|file>...` is the corpus report: per function, the
 verified pipeline through `trim` from section 0 (driver export environment and type rounds, as
@@ -264,6 +267,11 @@ and the corpus programs built for linux/arm64 by `scripts/driver-e2e.sh`). H8, e
   functions go through Lean from `number lines` to `trim`, with 0 fallbacks: PASS (17 min).
 - `driver-e2e.sh --verified -p 8`: 183/183 programs behave as stock. 40,887 of 42,899
   functions are fully verified, with 0 pass errors and 0 fallbacks: PASS (18 min).
+- Through `trim` (#385; main 60367c8 plus the verified pipeline through `trim`):
+  `driver-e2e.sh --verified -p 8`: 183/183 programs behave as stock, 44,189 functions through
+  Lean, 0 fallbacks, 0 pass errors; of 42,899 functions, 40,897 fully verified before `lower` and
+  12,830 through `trim`: PASS (28 min). `--check --verified --jobs 4`: quick-v7 8,885 / 2,873
+  (through `rewrite tern` / through `trim`), full-v9 the table in `docs/PASSES2.md` §0.
 
 State of the known gaps:
 

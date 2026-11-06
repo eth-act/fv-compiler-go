@@ -560,9 +560,14 @@ def optimiseVerified (e : ExportFile) (x : ExportExt) (start : Nat) : String × 
     (s!"status error {GoStr.quote err.pass} {GoStr.quote err.msg}\n", s!"error {GoStr.quote err.pass}")
   | .ok fs =>
     let st := fs.st
-    let sec : Section := { index := st.ran, pass := st.last, defs := tableDiff tables st.tables
-                           func := st.func, typs := none, zvar := #[], warns := #[] }
-    ("status ok\n" ++ resultText e x sec st.effects fs.dclLen, vstatsFields fs)
+    -- the importer replays regalloc's call-register caches, which the verified `regalloc` drops
+    let out := if fs.layer == .loc then Regalloc.fillCallRegs env st.func st.tables else .ok st.tables
+    match out with
+    | .error err => (s!"status error \"regalloc\" {GoStr.quote err}\n", "error \"regalloc\"")
+    | .ok tabs =>
+      let sec : Section := { index := st.ran, pass := st.last, defs := tableDiff tables tabs
+                             func := st.func, typs := none, zvar := #[], warns := #[] }
+      ("status ok\n" ++ resultText e x sec st.effects fs.dclLen, vstatsFields fs)
 
 /-- `k ()` and the milliseconds it took (not inlined, so the result is computed here). -/
 @[noinline] def timed (k : Unit → α) : IO (α × Nat) := do

@@ -130,4 +130,18 @@ def regallocPass : Pass := fun env f => do
   let f := { f with valueTab, freeValues, low := { f.low with regAlloc, tempRegs } }
   return { func := f, tables := s.tabs }
 
+/-- `tabs` with the register caches `regalloc` stores in the call auxes (`AuxCall.Reg`,
+`ResultReg`) filled in as the driver's importer replays them: `regspec` of every call and
+`MakeResult` of the allocated `f`, in block and value order, from the caches of `tabs`. The
+verified pipeline drops them (`Verified.eraseCallRegs`); its driver output needs them, because
+the importer checks that every call aux it fills renders as the Lean output's. -/
+def fillCallRegs (env : PassEnv) (f : Func) (tabs : Tables) : Except String Tables := do
+  let cfg ← mkCfg { env with tables := tabs } f
+  let go : M Unit := f.blocks.forM fun b => (f.getB b).values.forM fun id =>
+    match f.value? id with
+    | some v => if v.op.call || v.op == .MakeResult then discard (regspec v) else pure ()
+    | none => pure ()
+  let ((), s) ← (go.run cfg).run { f, tabs, values := #[], orig := #[], regs := #[] }
+  return s.tabs
+
 end GoFV.Opt.Regalloc
