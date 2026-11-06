@@ -33,6 +33,8 @@ input `f`, and the output `g` must have the replayed definitions. The difference
   (a term) or into an `ADDconst` is replayed as the folded term (`frameFold`); one folding
   `ADDconst [0]` into the lowered frame address it reads (`650` at offset 0, whose result is an
   atom) is replayed as no change (`addrFoldEv`), and the later folds see through it (`frameAddr`);
+  so is one lowering `OffPtr [off] SP` to `MOVDaddr [off] SP` (`305`, `spFoldEv`), which a store
+  then folds as an offset (`stFold`);
 * a rule event folding a constant operand into a lowered bounds panic (`ARM64.rules:513-516`) is
   replayed as no change (`pbFoldEv`): the output's `LoweredPanicBounds{RC,CR,CC}` must keep the
   replayed `LoweredPanicBoundsRR`'s other arguments (`pbFinal`), and its aux constants are the
@@ -197,15 +199,16 @@ def setOpDef (tabs : Tables) (M : Defs) (r : Rule) (v : ID) : Option Value :=
 
 /-- The atom `u` folds the address `ADDconst [k2] b` of the arm64 store `x` (`x`'s argument 0 in
 `M`, a term at a word shape) into its offset (`(MOV…store [k1] {sym} (ADDconst [k2] ptr) val mem)
-=> (MOV…store [k1+int32(k2)] {sym} ptr val mem)`, `ARM64.rules:758-776`): the same op and type,
-no aux, `b` for the address, the offset `k1 + k2`, all three offsets small and non-negative
-(`offOK`). -/
+=> (MOV…store [k1+int32(k2)] {sym} ptr val mem)`, `ARM64.rules:758-776`), or the address
+`OffPtr [k2] b` (`305`'s `MOVDaddr [k2] SP`, replayed as no change, `spFoldEv`, folded by `893` and
+the other stores of `881-905` without a symbol): the same op and type, no aux, `b` for the
+address, the offset `k1 + k2`, all three offsets small and non-negative (`offOK`). -/
 def stFold (tabs : Tables) (M : Defs) (x u : Value) : Bool :=
   (stSize x.op).isSome && u.op == x.op && u.type == x.type && x.aux == none && u.aux == none &&
   x.args.size == 3 && offOK x.auxInt && offOK u.auxInt &&
   match M.get? x.args[0]! with
   | some y =>
-    y.op == .ARM64ADDconst && termVL tabs y && y.args.size == 1 &&
+    (y.op == .ARM64ADDconst || y.op == .OffPtr) && termVL tabs y && y.args.size == 1 &&
       wordShape (shpL tabs y.type) && offOK y.auxInt &&
       u.auxInt.toInt == x.auxInt.toInt + y.auxInt.toInt &&
       u.args == #[y.args[0]!, x.args[1]!, x.args[2]!]
@@ -332,6 +335,17 @@ def addrFoldEv (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Bool :=
   | some x, [_, u] =>
     x.op == .ARM64ADDconst && u.id == v && u.op == .ARM64MOVDaddr && !termVL tabs u &&
       (frameAddr tabs M v).any fun (_, m) => u.aux == m.aux && u.args == m.args
+  | _, _ => false
+
+/-- A rule event lowering `OffPtr [off]` of the stack pointer `SP` at `v` to `MOVDaddr [off] SP`
+(`305`; `SP` is an atom, so `ruleOKL` never matches the rule's `(SP)` node): the replay keeps
+`v`'s definition, which `stFold` folds into a store; `finalOKL` compares it with the output's
+(`lower` deletes `v` once nothing reads it). -/
+def spFoldEv (M : Defs) (v : ID) (defs : List Value) : Bool :=
+  match M.get? v, defs with
+  | some x, [_, u] =>
+    x.op == .OffPtr && u.id == v && u.op == .ARM64MOVDaddr && u.aux == none && u.args == x.args &&
+      x.args.size == 1 && (M.get? x.args[0]!).any (·.op == .SP)
   | _, _ => false
 
 /-! ## Copies -/
@@ -470,7 +484,8 @@ def replayL (tabs : Tables) (t : Interp.Table) (f : Func) :
     match M.get? v with
     | none => none
     | some x =>
-      if pbFoldEv M v defs.toList || addrFoldEv tabs M v defs.toList then replayL tabs t f M B evs
+      if pbFoldEv M v defs.toList || addrFoldEv tabs M v defs.toList || spFoldEv M v defs.toList then
+        replayL tabs t f M B evs
       else
       match (t.values[x.op.ctorIdx]?).bind (·[i]?) with
       | none => none

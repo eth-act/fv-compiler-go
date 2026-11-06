@@ -656,19 +656,45 @@ theorem ReplayInvL.atomPut {v : ID} {x x' : Value} (hI : ReplayInvL tabs D₀ C�
 theorem stFold_cases {x u : Value} (h : stFold tabs M x u = true) :
     ∃ y, M.get? x.args[0]! = some y ∧ (stSize x.op).isSome = true ∧ u.op = x.op ∧
       u.type = x.type ∧ x.args.size = 3 ∧ offOK x.auxInt = true ∧ offOK u.auxInt = true ∧
-      y.op = .ARM64ADDconst ∧ termVL tabs y = true ∧ y.args.size = 1 ∧
+      (y.op = .ARM64ADDconst ∨ y.op = .OffPtr) ∧ termVL tabs y = true ∧ y.args.size = 1 ∧
       wordShape (shpL tabs y.type) = true ∧ offOK y.auxInt = true ∧
       u.auxInt.toInt = x.auxInt.toInt + y.auxInt.toInt ∧
       u.args = #[y.args[0]!, x.args[1]!, x.args[2]!] ∧ x.aux = none ∧ u.aux = none := by
   unfold stFold at h
-  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
   obtain ⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩ := h
   split at h9
   · rename_i y hy
-    simp only [Bool.and_eq_true, beq_iff_eq] at h9
+    simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h9
     obtain ⟨⟨⟨⟨⟨⟨h10, h11⟩, h12⟩, h13⟩, h14⟩, h15⟩, h16⟩ := h9
     exact ⟨y, hy, h1, h2, h3, h6, h7, h8, h10, h11, h12, h13, h14, h15, h16, h4, h5⟩
   · cases h9
+
+/-- `opValL` of the generic `OffPtr [k]` on one argument: `PtrOps.offPtr`. -/
+theorem opValL_offPtr (tabs : Tables) (T : Ty) (k : Int64) (ax : Option AuxRef) (z : Val) :
+    opValL tabs .OffPtr T k ax [z] = PtrOps.offPtr k [z] := by
+  simp only [opValL, show Op.OffPtr.generic = true by decide, ite_true]
+  rfl
+
+/-- `OffPtr [k]` is `poison` or `ADDconst [k]` (`Arm64.addP`) at a word shape: both move a pointer
+by `ptrRes`, and on an integer word `OffPtr`'s window check (`wordRes`) only adds `poison`. -/
+theorem offPtr_cases {T : Ty} (hT : wordShape T = true) (k : Int64) (z : Val) :
+    PtrOps.offPtr k [z] = .poison ∨ PtrOps.offPtr k [z] = Arm64.addP T z (BitVec.ofInt 64 k.toInt) := by
+  have hres : ∀ a : BitVec 64, Arm64.res T a = .int .w64 a := fun a => by
+    rcases wordShape_cases hT with rfl | ⟨e, rfl⟩ <;> rfl
+  cases z with
+  | ptr p => exact .inr rfl
+  | int w x =>
+    cases w with
+    | w64 =>
+      change PtrOps.wordRes x _ = .poison ∨ PtrOps.wordRes x _ = Arm64.addP T (.int .w64 x) _
+      unfold PtrOps.wordRes
+      split
+      · right
+        simp only [Arm64.addP, Arm64.reg, BitVec.setWidth_eq, hres]
+      · exact .inl rfl
+    | _ => exact .inl rfl
+  | _ => exact .inl rfl
 
 /-- A word shape is at least 64 bits wide. -/
 theorem argWidth_of_wordShape {T : Ty} (h : wordShape T = true) : 64 ≤ argWidth T := by
@@ -780,11 +806,23 @@ theorem ReplayInvL.fold {v : ID} {x u : Value} (hI : ReplayInvL tabs D₀ C₀ M
     simp [denL, addrAt, Arm64.addr, Arm64.reg] at this
   · refine ⟨m, fun ρ hρ hF => ?_⟩
     have h1 := hm ρ hρ hF
-    rw [denT_succ hy hyt, hyop, hb, show (#[y.args[0]!] : Array ID).toList = [y.args[0]!] from rfl]
+    rw [denT_succ hy hyt, hb, show (#[y.args[0]!] : Array ID).toList = [y.args[0]!] from rfl]
       at h1
-    simp only [List.map_cons, List.map_nil, opValL_addConst] at h1
-    exact addrRef_fold (den_hasTyL (hI.typed ρ hρ) m hw) (argWidth_of_wordShape hyw)
-      hk1 hk2 hk h1
+    rcases hyop with hyop | hyop
+    · rw [hyop] at h1
+      simp only [List.map_cons, List.map_nil, opValL_addConst] at h1
+      exact addrRef_fold (den_hasTyL (hI.typed ρ hρ) m hw) (argWidth_of_wordShape hyw)
+        hk1 hk2 hk h1
+    · rw [hyop] at h1
+      simp only [List.map_cons, List.map_nil, opValL_offPtr] at h1
+      rcases offPtr_cases hyw y.auxInt (denL true M.get? tabs ρ m y.args[0]!) with h0 | h0
+      · rw [h0, retypeL_poison] at h1
+        intro p hp
+        have := h1 p hp
+        simp [addrAt, Arm64.addr, Arm64.reg] at this
+      · rw [h0] at h1
+        exact addrRef_fold (den_hasTyL (hI.typed ρ hρ) m hw) (argWidth_of_wordShape hyw)
+          hk1 hk2 hk h1
 
 /-- What `stFoldAddr` says. -/
 theorem stFoldAddr_cases {f : Func} {x u : Value} (h : stFoldAddr tabs f M x u = true) :
