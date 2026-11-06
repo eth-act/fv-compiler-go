@@ -166,6 +166,10 @@ theorem swapC_op (o : Op) (n : Option Nat) (ty ai ax : GoFV.Rules.Field) (ar : G
 theorem termVL_store (tabs : Tables) (v : Value) (h : v.op = .Store) : termVL tabs v = false := by
   rw [termVL_gen (by decide) h]; decide
 
+/-- `Zero`s are atoms. -/
+theorem termVL_zero (tabs : Tables) (v : Value) (h : v.op = .Zero) : termVL tabs v = false := by
+  rw [termVL_gen (by decide) h]; decide
+
 /-- `LocalAddr`s are atoms. -/
 theorem termVL_localAddr (tabs : Tables) (v : Value) (h : v.op = .LocalAddr) :
     termVL tabs v = false := by
@@ -197,13 +201,14 @@ theorem termVL_pbKeep (tabs : Tables) (v : Value) {o : Op} {ks : List Nat} (hk :
 
 /-- The atoms `ArmRule.Mem` rules match. -/
 theorem termVL_mem (tabs : Tables) (v : Value) {o : Op}
-    (ho : o = .Store ∨ o = .LocalAddr ∨ (stSize o).isSome = true ∨ pbAtom o = true)
+    (ho : o = .Store ∨ o = .LocalAddr ∨ (stSize o).isSome = true ∨ pbAtom o = true ∨ o = .Zero)
     (h : v.op = o) : termVL tabs v = false := by
-  rcases ho with rfl | rfl | ho | ho
+  rcases ho with rfl | rfl | ho | ho | rfl
   · exact termVL_store tabs v h
   · exact termVL_localAddr tabs v h
   · exact termVL_st tabs v ho h
   · exact termVL_pb tabs v ho h
+  · exact termVL_zero tabs v h
 
 theorem any_store {o : Option Value} (h : o.any (·.op == .Store) = true) :
     ∃ a, o = some a ∧ a.op = .Store := by
@@ -218,6 +223,7 @@ theorem atomDef_one {tabs : Tables} {f : Func} {M : Defs} {v : ID} {defs : List 
     (h : atomDef tabs f M v defs = some (u, none)) : ∃ x, M.get? v = some x ∧
       termVL tabs x = false ∧ termVL tabs u = false ∧ u.type = x.type ∧
       ((u.args = x.args ∧ memLower tabs x u = true ∧ u.auxInt = 0 ∧ u.aux = none) ∨
+        (u.args = x.args ∧ zeroLower x u = true) ∨
         ((∀ a ∈ u.args, a ∈ x.args) ∧ addrLower tabs x u = true) ∨
         ((stFold tabs M x u = true ∨ stFoldAddr tabs f M x u = true) ∧
           ∃ a, f.value? v = some a ∧ a.op = .Store)) := by
@@ -231,13 +237,14 @@ theorem atomDef_one {tabs : Tables} {f : Func} {M : Defs} {v : ID} {defs : List 
     obtain ⟨⟨⟨⟨⟨-, -⟩, ht⟩, ht'⟩, hty⟩, hk⟩ := hc
     simp only [Bool.not_eq_true'] at ht ht'
     refine ⟨x, hx, ht, ht', beq_iff_eq.1 hty, ?_⟩
-    rcases hk with (⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ | ⟨h1, h2⟩) | ⟨h1, h2⟩
+    rcases hk with ((⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ | ⟨h1, h2⟩) | ⟨h1, h2⟩) | ⟨h1, h2⟩
     · exact .inl ⟨beq_iff_eq.1 h1, h2, beq_iff_eq.1 h3, beq_iff_eq.1 h4⟩
-    · refine .inr (.inl ⟨fun a ha => ?_, h2⟩)
+    · exact .inr (.inl ⟨beq_iff_eq.1 h1, h2⟩)
+    · refine .inr (.inr (.inl ⟨fun a ha => ?_, h2⟩))
       simp only [Array.all_eq_true, Array.contains_iff_mem] at h1
       obtain ⟨i, hi, rfl⟩ := Array.mem_iff_getElem.1 ha
       exact h1 i hi
-    · exact .inr (.inr ⟨h1, any_store h2⟩)
+    · exact .inr (.inr (.inr ⟨h1, any_store h2⟩))
   · rename_i x _ u' s hx
     rw [Option.ite_none_right_eq_some] at h
     obtain ⟨-, h⟩ := h
@@ -1268,7 +1275,7 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
           obtain ⟨x0, hx0, ht, ht', hty, hk⟩ := atomDef_one hdef
           have hB' := hB.mono (g := id) (fun _ h => h) hI.typed fun ρ _ _ n y _ => by
             rw [rename_den (x' := u) hx0 ht ht']; exact Sem.Refines.refl _
-          rcases hk with ⟨heq, hm, h0, hax⟩ | ⟨hsub, hal⟩ | ⟨hfold | hfold, a, ha, hS⟩
+          rcases hk with ⟨heq, hm, h0, hax⟩ | ⟨heq, hz⟩ | ⟨hsub, hal⟩ | ⟨hfold | hfold, a, ha, hS⟩
           · have hrel : ∀ (a : Value) (i act : Nat) (s t : Val),
                 ArgRel tabs act (stArg a x0 i) s t → ArgRel tabs act (stArg a u i) s t :=
               fun a i act s t h => by
@@ -1280,6 +1287,18 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
               (hI.atomPut hx0 ht ht' hty (fun hv a ha => closed_args hI.closed hx0 hv a (heq ▸ ha))
                 (.inr ⟨heq, fun hf =>
                   absurd ((memLower_op hm).symm.trans (argFree_cases hf).1) (by decide), hrel⟩)) hB'
+          · -- a lowered `Zero` on the same arguments
+            obtain ⟨hzu, hzw, -⟩ := zeroLower_cases hz
+            have hst : stSize u.op = none := by rcases hzw with h | h <;> rw [h] <;> rfl
+            have hrel : ∀ (a : Value) (i act : Nat) (s t : Val),
+                ArgRel tabs act (stArg a x0 i) s t → ArgRel tabs act (stArg a u i) s t :=
+              fun a i act s t h => by
+                rw [stArg_none (by rw [hzu]; rfl)] at h
+                rw [stArg_none hst]; exact h
+            exact replayL_inv hs hD evs _ M' B B' C h
+              (hI.atomPut hx0 ht ht' hty (fun hv a ha => closed_args hI.closed hx0 hv a (heq ▸ ha))
+                (.inr ⟨heq, fun hf =>
+                  absurd (hzu.symm.trans (argFree_cases hf).1) (by decide), hrel⟩)) hB'
           · exact replayL_inv hs hD evs _ M' B B' C h
               (hI.atomPut hx0 ht ht' hty (fun hv a ha => closed_args hI.closed hx0 hv a (hsub a ha))
                 (.inl (argFree_of_addrLower hal))) hB'
