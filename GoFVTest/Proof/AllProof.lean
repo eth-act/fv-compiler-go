@@ -57,6 +57,7 @@ import GoFV.Proof.Low.Rules.CmpNeg
 import GoFV.Proof.Low.Rules.CondSel
 import GoFV.Proof.Low.Rules.Const
 import GoFV.Proof.Low.Rules.ConstBool
+import GoFV.Proof.Low.Rules.ConstFold
 import GoFV.Proof.Low.Rules.Flags
 import GoFV.Proof.Low.Rules.Fold
 import GoFV.Proof.Low.Rules.Invert
@@ -710,6 +711,7 @@ import GoFV.Proof.Witness.LowerAtomic
 import GoFV.Proof.Witness.LowerBlockTB
 import GoFV.Proof.Witness.LowerBlockTT
 import GoFV.Proof.Witness.LowerCondSel
+import GoFV.Proof.Witness.LowerConstFold
 import GoFV.Proof.Witness.LowerCopyPtr
 import GoFV.Proof.Witness.LowerInvert
 import GoFV.Proof.Witness.LowerLoadFold

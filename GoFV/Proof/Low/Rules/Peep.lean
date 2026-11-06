@@ -329,17 +329,17 @@ theorem r_ARM64_601_2_sound : BlockRuleL.Sound r_ARM64_601_2 := by
   rw [hr, ← h]; simp [bne]
 
 /-- The low bits of a register `retypeL` keeps at shape `T` (`armReadW` of a low-bit op). -/
-private def lowW : Ty → Nat
+def lowW : Ty → Nat
   | .int w => w.bits
   | .bool => 1
   | _ => 64
 
-private theorem armReadW_low (o : Op) (T : Ty) (i : Nat)
+theorem armReadW_low (o : Op) (T : Ty) (i : Nat)
     (ho : o = .ARM64AND ∨ o = .ARM64OR ∨ o = .ARM64XOR) : armReadW o T i = lowW T := by
   rcases ho with rfl | rfl | rfl <;> cases T <;> rfl
 
 /-- `retypeL` of a register result reads its low `lowW` bits. -/
-private theorem retypeL_res_low (T : Ty) {r r' : BitVec 64}
+theorem retypeL_res_low (T : Ty) {r r' : BitVec 64}
     (h : r.setWidth (lowW T) = r'.setWidth (lowW T)) :
     (Arm64.res T r).retypeL T = (Arm64.res T r').retypeL T := by
   cases T with
@@ -356,7 +356,7 @@ private theorem retypeL_res_low (T : Ty) {r r' : BitVec 64}
 
 /-- A constant register read at a shape holding at least `n` low bits: `poison`, or a register
 with the constant's low `n` bits. -/
-private theorem retypeL_res_reg {T : Ty} {n : Nat} (hn : 1 ≤ n) (hn' : n ≤ 64) (h : n ≤ argWidth T)
+theorem retypeL_res_reg {T : Ty} {n : Nat} (hn : 1 ≤ n) (hn' : n ≤ 64) (h : n ≤ argWidth T)
     (k : BitVec 64) : (Arm64.res T k).retypeL T = .poison ∨
       ∃ y, Arm64.reg ((Arm64.res T k).retypeL T) = some y ∧ y.setWidth n = k.setWidth n := by
   cases T with
@@ -383,7 +383,7 @@ private theorem retypeL_res_reg {T : Ty} {n : Nat} (hn : 1 ≤ n) (hn' : n ≤ 6
   | agg fs m => left; rfl
   | _ => simp [argWidth] at h; omega
 
-private theorem lowW_pos (T : Ty) : 1 ≤ lowW T ∧ lowW T ≤ 64 := by
+theorem lowW_pos (T : Ty) : 1 ≤ lowW T ∧ lowW T ≤ 64 := by
   cases T with
   | int w => cases w <;> decide
   | _ => simp [lowW]

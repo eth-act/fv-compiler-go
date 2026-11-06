@@ -393,16 +393,19 @@ def checkFile (path : System.FilePath) (S : St) : IO St := do
     | .error _ => S := { S with errors := S.errors + 1 }
   return S
 
-/-- The command line: `--jobs N`, `--next-md FILE`, then the export files and directories. -/
+/-- The command line: `--jobs N`, `--next-md FILE`, `--dump FILE`, then the export files and
+directories. -/
 structure Args where
   jobs : Nat := 1
   nextMd : Option String := none
+  dump : Option String := none
   paths : Array String := #[]
 
 partial def parseArgs : List String → Args → Args
   | [], o => o
   | "--jobs" :: n :: rest, o => parseArgs rest { o with jobs := max (n.toNat?.getD 1) 1 }
   | "--next-md" :: f :: rest, o => parseArgs rest { o with nextMd := some f }
+  | "--dump" :: f :: rest, o => parseArgs rest { o with dump := some f }
   | a :: rest, o => parseArgs rest { o with paths := o.paths.push a }
 
 /-- The keys of the rules of a table (`key`, `blockKey`). -/
@@ -539,6 +542,10 @@ def main (args : List String) : IO UInt32 := do
   if let some md := a.nextMd then
     IO.FS.writeFile md (nextMarkdown a.paths acc.fns.size acc.checkedSame base next nfn
       acc.accepted baseOk nextOk acc.why)
+  -- the fired rules per function (`F`), and per function the validator accepts with every rule (`A`)
+  if let some d := a.dump then
+    let line (tag : String) (fs : Array String) := s!"{tag}\t{"|".intercalate fs.toList}\n"
+    IO.FS.writeFile d (String.join ((acc.fns.map (line "F")) ++ (acc.fnsOk.map (line "A"))).toList)
   return 0
 
 end GoFVTest.LowerProbe
