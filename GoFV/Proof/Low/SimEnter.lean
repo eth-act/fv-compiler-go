@@ -157,6 +157,7 @@ theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
     have hai' : w.args[i]! = a' := by
       rw [getElem!_pos w.args i hi']; exact (Array.getElem?_eq_some_iff.1 ha').2
     have hr := (atom_ref H hDS hDT hVT (R.rel hDT hVT) R.tyS R.tyT R.frames R.fr hpw hpu.1 ht).2.1
+      (by rw [hph]; rfl)
       (by cases hf : argFree tabs w
           · rfl
           · exact absurd hph (by rw [(argFree_cases hf).1]; decide)) i hi'

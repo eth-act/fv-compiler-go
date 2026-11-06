@@ -170,6 +170,13 @@ theorem fitPiece_retypeL {w w' : Width} (hw : w'.bits ≤ w.bits) (hw64 : w ≠ 
     rw [this]; exact .poison _
   | _ => simp only [Val.retypeL, Val.widen, Val.retype]; exact .poison _
 
+/-- The lowered calls `callLead` lists. -/
+theorem callLead_some {o : Op} {k : Nat} (h : callLead o = some k) :
+    (o = .ARM64CALLstatic ∧ k = 0) ∨ (o = .ARM64CALLclosure ∧ k = 2) ∨
+      (o = .ARM64CALLinter ∧ k = 1) := by
+  unfold callLead at h
+  split at h <;> simp_all
+
 /-- `y` in `E` holds, fitted to the leaf shape `t` (`fitPiece`, a lowered call's register piece),
 a refinement of `x` in `D` so fitted, as terms over the atoms (as `ArgTermRefL`). -/
 def ArgTermFitL (t : Ty) (lowD : Bool) (D : ID → Option Value) (tabs : Tables) (x : ID)

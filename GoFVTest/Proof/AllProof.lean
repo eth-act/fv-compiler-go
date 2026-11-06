@@ -719,6 +719,7 @@ import GoFV.Proof.Witness.LowerAtomicRmw
 import GoFV.Proof.Witness.LowerBitLen
 import GoFV.Proof.Witness.LowerBlockTB
 import GoFV.Proof.Witness.LowerBlockTT
+import GoFV.Proof.Witness.LowerCallTrunc
 import GoFV.Proof.Witness.LowerCondSel
 import GoFV.Proof.Witness.LowerConstFold
 import GoFV.Proof.Witness.LowerCopyPtr

@@ -647,4 +647,27 @@ theorem evalOp_postCall {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv :
     {ty : Ty} {k : Nat} (hc : PostCall v.op k) : evalOp env ctx fr v argv ty = callOp env ctx v argv := by
   rcases hc with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> (unfold evalOp; rw [h])
 
+/-- A lowered call renaming `o` (`callLead`) evaluates as the call `o` on its fitted pieces. -/
+theorem evalOpL_callLead {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : List Val}
+    {ty : Ty} {o : Op} {k : Nat} (hk : callLead w.op = some k) (h : renameOp o w.op = true) :
+    PostCall o k ∧ evalOpL false env ctx fr w argv ty =
+      callOp env ctx { w with op := o } (fitArgs ctx.tabs { w with op := o } k argv) := by
+  have hpc : PostCall o k := by
+    rcases callLead_some hk with ⟨hw, rfl⟩ | ⟨hw, rfl⟩ | ⟨hw, rfl⟩ <;> rw [hw] at h <;>
+      rcases renameOp_cases h with h | h | h | h | h | h | h | h | h <;>
+      first
+        | (obtain ⟨rfl, -⟩ := h; simp [PostCall]; done)
+        | (obtain ⟨-, h2⟩ := h; simp at h2; done)
+        | (cases h; done)
+  rcases evalOpL_rename (env := env) (ctx := ctx) (fr := fr) (argv := argv) (ty := ty) h with
+    ⟨k', hk', he⟩ | ⟨ho, -⟩ | ⟨ho, -⟩ | ⟨hat, -⟩
+  · refine ⟨hpc, ?_⟩
+    have : k' = k := by
+      rcases hk' with ⟨h1, rfl⟩ | ⟨h1, rfl⟩ | ⟨h1, rfl⟩ <;>
+        rcases hpc with ⟨h2, rfl⟩ | ⟨h2, rfl⟩ | ⟨h2, rfl⟩ <;> simp_all
+    rw [he, this]
+  · rcases hpc with ⟨h2, -⟩ | ⟨h2, -⟩ | ⟨h2, -⟩ <;> rcases ho with h1 | h1 | h1 <;> simp_all
+  · rcases hpc with ⟨h2, -⟩ | ⟨h2, -⟩ | ⟨h2, -⟩ <;> rcases ho with h1 | h1 <;> simp_all
+  · rcases callLead_some hk with ⟨hw, -⟩ | ⟨hw, -⟩ | ⟨hw, -⟩ <;> rw [hw] at hat <;> cases hat
+
 end GoFV.Proof.Low.Sim
