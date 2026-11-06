@@ -172,7 +172,7 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
           | none, some w => return s!"atoms: new atom {w.op.name} v{x}"
           | _, _ => return s!"atoms: v{x}?"
         for x in atomsOfL tabs f fb do
-          if !(atomsOfL tabs g gb).contains x && !((f.value? x).any (dropAtom ·.op)) then
+          if !(atomsOfL tabs g gb).contains x && !((f.value? x).any (dropAtomL ·.op)) then
             return s!"atoms: dropped {((f.value? x).map (·.op.name)).getD "?"} v{x}"
       | _, _ => pure ()
     return "atoms: order"
@@ -385,7 +385,8 @@ def checkFile (path : System.FilePath) (S : St) : IO St := do
             | .ok () => "ok"
             | .error m => s!"check out: {m.take 50}") else w
       let w := if w == "ok" && !tabsAgree prev out.tables e.sections[k-1]!.func then "tabsAgree" else w
-      if !(w.startsWith "atoms" || w == "ok" || w == "not lowered") then IO.println s!"FAIL\t{w}\t{path}"
+      if (← IO.getEnv "LOWER_PROBE_ALL").isSome && w != "ok" ||
+          !(w.startsWith "atoms" || w == "ok" || w == "not lowered") then IO.println s!"FAIL\t{w}\t{path}"
       let w := whyClass w
       S := { S with why := S.why.insert w (S.why.getD w 0 + 1), accepted := if w == "ok" then S.accepted + 1 else S.accepted }
       let ks := firedKeys ceilTable e.sections[k-1]!.func log

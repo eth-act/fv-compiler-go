@@ -611,8 +611,14 @@ def pbConstOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
     | some l => l.all fun (i, k) => constArg tabs f u i k
     | none => false
 
+/-- The atoms `lower` may delete: `RewriteCheck.dropAtom`'s, and `Invalid` values (a value an
+earlier pass invalidated, with no arguments and no uses, which `lower`'s dead-value removal frees).
+Neither is a root (`Sem.isRoot`): the schedule check of `atomsOKL` already requires that of every
+atom only `f` has, and the simulation (`GoFV.Proof.Low.Sim.atomsOKL_spec`) needs nothing else. -/
+def dropAtomL (op : Op) : Bool := GoFV.Opt.RewriteCheck.dropAtom op || op == .Invalid
+
 /-- `RewriteCheck.atomsOK` with `atomPair` (and `pbConstOK`): the same entry, blocks and own aux; every atom of `g`
-corresponds to an atom of `f`, the atoms only `f` has are droppable (`dropAtom`), and each block
+corresponds to an atom of `f`, the atoms only `f` has are droppable (`dropAtomL`), and each block
 evaluates `f`'s roots, atoms of `g`, in the same order (`Sem.schedule`; `g` may evaluate a lowered
 `Zero`, which is not a root of lowered SSA, earlier). -/
 def atomsOKL (tabs : Tables) (f g : Func) : Bool :=
@@ -626,7 +632,7 @@ def atomsOKL (tabs : Tables) (f g : Func) : Bool :=
       ag.all (fun x => af.contains x && match f.value? x, g.value? x with
         | some u, some w => atomPair tabs u w && pbConstOK tabs f u w
         | _, _ => false) &&
-      af.all (fun x => ag.contains x || (f.value? x).any (dropAtom ·.op)) &&
+      af.all (fun x => ag.contains x || (f.value? x).any (dropAtomL ·.op)) &&
       match Sem.schedule f fb, Sem.schedule g gb with
       | some of, some og =>
         of.toList.filter (fun x => (f.value? x).any (Sem.isRoot ·.op)) ==
