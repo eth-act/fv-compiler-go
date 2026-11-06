@@ -266,28 +266,48 @@ def topoB (f : Func) : List ID → Bool
 /-- `x` is a `Phi` of `f`. -/
 def isPhi (f : Func) (x : ID) : Bool := ((f.value? x).map (·.op == .Phi)).getD false
 
-/-- `schedule`'s bypass of an argument or control `a`, one step: the first argument of an
+/-- One step of `schedule`'s bypass of an argument or control `a`: the first argument of an
 `SPanchored` or a nil check. -/
-def rep (f : Func) (a : ID) : ID :=
+def rep1 (f : Func) (a : ID) : ID :=
   match f.value? a with
   | some v => if v.op == .SPanchored || v.op.nilCheck then (v.args[0]?).getD a else a
   | none => a
 
+/-- `rep1` repeated until it stops changing `a`, at most `k` times. -/
+def repK (f : Func) : Nat → ID → ID
+  | 0, a => a
+  | k + 1, a => if rep1 f a == a then a else repK f k (rep1 f a)
+
+/-- `schedule`'s bypass of an argument or control `a` (`schedule.go:331-344`): `rep1` while `a`
+is an `SPanchored` or a nil check (at most the size of the value table times). -/
+def rep (f : Func) (a : ID) : ID := repK f f.valueTab.size a
+
+/-- A nil check `a` and its pointer `rep1 f a`: they differ, the pointer is a value and no
+`SPanchored`, and it has the check's type or both have word shapes (`tys`: `f`'s `runL`
+shapes). -/
+def ncStep (tys : Array Ty) (f : Func) (a : ID) : Bool :=
+  let p := rep1 f a
+  p != a && !isSPA f p && ((f.value? p).map (·.type)).isSome &&
+    ((f.value? p).map (·.type) == (f.value? a).map (·.type) ||
+      wordShape (tys[a]?.getD .other) && wordShape (tys[p]?.getD .other))
+
+/-- A chain of nil checks from `a`, each the pointer of the one before (`ncStep`), ends within
+`k` steps at a value that is no nil check. -/
+def ncChain (tys : Array Ty) (f : Func) : Nat → ID → Bool
+  | 0, _ => false
+  | k + 1, a => ncStep tys f a && (!isNC f (rep1 f a) || ncChain tys f k (rep1 f a))
+
 /-- A use `a` of `f`, argument `k` of the value `user` (`none`: a control). If `schedule`
-bypasses it, its first argument `rep f a` exists and is no `SPanchored` or nil check; an
-`SPanchored` is only the base (`k = 0`) of a `symAddrOp` at a symbol or frame variable, a nil
-check's pointer has the check's type or both have word shapes (`tys`: `f`'s `runL` shapes). -/
+bypasses it: an `SPanchored` is only the base (`k = 0`) of a `symAddrOp` at a symbol or frame
+variable, and its first argument exists and is no `SPanchored` or nil check; a nil check starts
+a chain of nil checks (`ncChain`, `tys`: `f`'s `runL` shapes). -/
 def useOK (tabs : Tables) (tys : Array Ty) (f : Func) (user : Option Value) (k : Nat) (a : ID) :
     Bool :=
   if isSPA f a then
     k == 0 && (user.map fun u => symAddrOp u.op && symbolic tabs u).getD false &&
-      let p := rep f a
+      let p := rep1 f a
       p != a && (f.value? p).isSome && !isNC f p && !isSPA f p
-  else if isNC f a then
-    let p := rep f a
-    p != a && !isNC f p && !isSPA f p && ((f.value? p).map (·.type)).isSome &&
-      ((f.value? p).map (·.type) == (f.value? a).map (·.type) ||
-        wordShape (tys[a]?.getD .other) && wordShape (tys[p]?.getD .other))
+  else if isNC f a then ncChain tys f f.valueTab.size a
   else true
 
 /-- Every use in `f` is `useOK`. -/
