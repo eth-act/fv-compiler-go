@@ -78,7 +78,9 @@ output, `guard` its remaining hypotheses, decided after the run on the input and
 | pass | step (`run`, `rel`) | guard | theorem |
 | --- | --- | --- | --- |
 | lower | `lowerChecked`, `run` → `runL` under `Env.Mono`; stock `lower` as `full` | generic input without fused multiply-add shapes (`contractAll f = f`) | `Low.lower_refines_run` |
-| addressing modes, late lower, pair | stock | — | — (addressing modes is a no-op on arm64) |
+| addressing modes | `addressingModesPass`, `RefinesL` (the identity on arm64) | — | `addressingModes_refinesL` |
+| late lower | `lateLower`, `RefinesL` | `renameB` (rules 91 and 98 only) | `LateLowerL.lateLower_refinesL` |
+| pair | stock | — | — |
 | lowered deadcode for cse, lowered deadcode, late deadcode | `deadcodePass`, `RefinesL` | `deadFragB`, `deadFragLB`, form kept | `Dead.deadcode_refinesL` |
 | lowered cse | `loweredCsePass`, `RefinesL` | `CSEL.frag` | `CSEL.loweredCse_refinesL` |
 | elim unread autos | `elimUnreadAutosPass`, `RefinesLFrom (FrameSafe ∧ InitAvoids)` | `unreadLFrag` | `UnreadL.elimUnreadAutos_refinesL` |
@@ -89,7 +91,7 @@ output, `guard` its remaining hypotheses, decided after the run on the input and
 | critical | `criticalPass`, `RefinesL` | `critRelB` | `Crit.critical_refinesL` |
 | schedule | `schedulePass`, `runL` → `runSched` on `NoNilFault` of the input | `scheduleCheck` | `SchedL.schedule_refinesSchedLF` (`.schedL`) |
 | late nilcheck | `nilcheckelim2Pass`, `RefinesSched` | `nilLateB` | `NilLateL.nilcheckelim2_refinesSched` |
-| flagalloc | stock (theorem `FlagAllocL.flagalloc_refinesSched`, not yet wired) | — | — |
+| flagalloc | `flagallocPass`, `RefinesSched` | `flagAllocB` | `FlagAllocL.flagalloc_refinesSched` |
 | regalloc | `regallocV`, `runSched` → `runLoc` | `tabsAgreeL` of the input in the output's tables, `checkRA` | `RA.checkRA_sound`, `runSched_tabsAgreeL` |
 | loop rotate, trim | the pass, `RefinesLoc` | trim: `trimRelB` | `loopRotate_refinesLoc`, `trim_refinesLoc` |
 
