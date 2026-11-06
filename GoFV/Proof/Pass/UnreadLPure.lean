@@ -818,6 +818,9 @@ theorem evalPure_av (hU : TempU U) (op : Op) (ty : Ty) (k : Int64) (aux : Option
   case ARM64LoweredWB =>
     show Val.Avoids U (wbOp k args)
     exact wbOp_avoids hU _ h
+  case ARM64LoweredMemEq =>
+    show Val.Avoids U (memEq args)
+    exact memEq_avoids _
   all_goals exact True.intro
 
 end GoFV.Proof.UnreadL
