@@ -264,6 +264,7 @@ import GoFV.Proof.Pass.KnownBitsKind
 import GoFV.Proof.Pass.KnownBitsShift
 import GoFV.Proof.Pass.KnownBitsTerm
 import GoFV.Proof.Pass.LateLowerL
+import GoFV.Proof.Pass.LateLowerVal
 import GoFV.Proof.Pass.LicmL
 import GoFV.Proof.Pass.LoadFwd
 import GoFV.Proof.Pass.LoadFwdArg
