@@ -17,16 +17,16 @@ namespace GoFV.Proof.MoveL
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Proof Dom
 
-variable {ok : Array Bool} {f g : Func} {tabs : Tables} {md : LMode} {env : Env}
+variable {pr : Bool} {ok : Array Bool} {f g : Func} {tabs : Tables} {md : LMode} {env : Env}
 
 /-- What `refinesL_of_move` assumes: both functions well formed with dominator certificates, and
 the validator with certificate `ok` accepts. -/
-structure Setup (ok : Array Bool) (f g : Func) : Prop where
+structure Setup (pr : Bool) (ok : Array Bool) (f g : Func) : Prop where
   wf : ∃ ce, WF ce f
   wg : ∃ ce, WF ce g
   cf : CertOK f
   cg : CertOK g
-  mv : moveWith ok f g = true
+  mv : moveWith pr ok f g = true
 
 /-- Value `a` is placed in a block of `A`. -/
 def PlacedIn (h : Func) (A : ID → Prop) (a : ID) : Prop := ∃ v, Placed h a v ∧ A v.block
@@ -38,8 +38,8 @@ def X0 (h : Func) (hb : Block) (b : ID) (a : ID) : Prop :=
     (a ∈ hb.values ∧ ∃ v, h.value? a = some v ∧ v.op = .Phi)
 
 /-- **The simulation relation** at the entry of block `b` along edge `i`. -/
-def St (ok : Array Bool) (f g : Func) (tabs : Tables) (md : LMode) (env : Env) (frS frT : Frame)
-    (b : ID) (i : Nat) : Prop :=
+def St (pr : Bool) (ok : Array Bool) (f g : Func) (tabs : Tables) (md : LMode) (env : Env)
+    (frS frT : Frame) (b : ID) (i : Nat) : Prop :=
   b ∈ f.blocks ∧ ((make f).depthOf b).isSome ∧ ((make g).depthOf b).isSome ∧
   frT = { frS with regs := frT.regs } ∧ frS.regs.size = f.valueTab.size ∧
   frT.regs.size = g.valueTab.size ∧
@@ -47,7 +47,7 @@ def St (ok : Array Bool) (f g : Func) (tabs : Tables) (md : LMode) (env : Env) (
   DInvL md env (Ctx.makeL tabs g) (fun a => Anc (make g) a b ∧ a ≠ b) frT ∧
   ∃ AS AT : ID → Prop, (∀ a, Anc (make f) a b ∧ a ≠ b → AS a) ∧
     (∀ a, Anc (make g) a b ∧ a ≠ b → AT a) ∧
-    Agree ok f g (PlacedIn g AT) (PlacedIn f AS) frT frS ∧
+    Agree pr ok f g (PlacedIn g AT) (PlacedIn f AS) frT frS ∧
     (∀ blk x v a, f.block? b = some blk → x ∈ blk.values → f.value? x = some v → v.op = .Phi →
       v.args[i]? = some a → PlacedIn f AS a) ∧
     (∀ blk x v a, g.block? b = some blk → x ∈ blk.values → g.value? x = some v → v.op = .Phi →
@@ -55,20 +55,20 @@ def St (ok : Array Bool) (f g : Func) (tabs : Tables) (md : LMode) (env : Env) (
 
 /-! ## The validator -/
 
-theorem moveWith_spec (h : moveWith ok f g = true) :
+theorem moveWith_spec (h : moveWith pr ok f g = true) :
     g.entry = f.entry ∧ g.blocks = f.blocks ∧ g.ownAux = f.ownAux ∧ g.lowered = f.lowered ∧
-      certValid ok f g = true ∧ ∀ b ∈ f.blocks, blockOK ok f g b = true := by
+      certValid pr ok f g = true ∧ ∀ b ∈ f.blocks, blockOK pr ok f g b = true := by
   unfold moveWith at h
   simp only [Bool.and_eq_true, beq_iff_eq, Array.all_eq_true'] at h
   obtain ⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩ := h
   exact ⟨h1, h2, h3, h4, h5, h6⟩
 
-theorem blockOK_spec {b : ID} (h : blockOK ok f g b = true) :
+theorem blockOK_spec {b : ID} (h : blockOK pr ok f g b = true) :
     ∃ fb gb oT oS, f.block? b = some fb ∧ g.block? b = some gb ∧ gb.kind = fb.kind ∧
       gb.auxInt = fb.auxInt ∧ gb.succs = fb.succs ∧ gb.preds = fb.preds ∧
-      gb.controls = fb.controls ∧ (∀ c ∈ gb.controls, relB ok f g relFuel c c = true) ∧
-      (∀ x ∈ gb.values, valueOK ok g fb x = true) ∧ schedule g gb = some oT ∧
-      schedule f fb = some oS ∧ orderOK ok f g oT.toList oS.toList = true := by
+      gb.controls = fb.controls ∧ (∀ c ∈ gb.controls, relB pr ok f g (fuelOf pr) c c = true) ∧
+      (∀ x ∈ gb.values, valueOK pr ok f g fb x = true) ∧ schedule g gb = some oT ∧
+      schedule f fb = some oS ∧ orderOK pr ok f g fb oT.toList oS.toList = true := by
   unfold blockOK at h
   cases hf : f.block? b with
   | none => rw [hf] at h; cases h
@@ -88,9 +88,26 @@ theorem blockOK_spec {b : ID} (h : blockOK ok f g b = true) :
   rw [hoT, hoS] at hord
   exact ⟨fb, gb, oT, oS, rfl, rfl, hk, hai, hsu, hpr, hct, hcok, hvals, hoT, hoS, hord⟩
 
-theorem valueOK_spec {fb : Block} {x : ID} (h : valueOK ok g fb x = true) :
+/-- What `pairSrc` finds: a pairable store of the block. -/
+theorem pairSrc_spec {fb : Block} {x y : ID} (h : pairSrc f fb x = some y) :
+    y ∈ fb.values ∧ ∃ fv, f.value? y = some fv ∧ fv.op ≠ .Phi := by
+  unfold pairSrc at h
+  have hm := Array.mem_of_find?_eq_some h
+  have hp := Array.find?_some h
+  refine ⟨hm, ?_⟩
+  cases hfv : f.value? y with
+  | none => rw [hfv] at hp; cases hp
+  | some fv =>
+    rw [hfv] at hp
+    simp only [Bool.and_eq_true, Option.isSome_iff_exists] at hp
+    obtain ⟨⟨⟨w, pop⟩, hw⟩, -⟩ := hp
+    exact ⟨fv, rfl, stPairOf_ne_phi hw⟩
+
+theorem valueOK_spec {fb : Block} {x : ID} (h : valueOK pr ok f g fb x = true) :
     ∃ gv, g.value? x = some gv ∧ (gv.op = .Phi → okAt ok x = true ∧ x ∈ fb.values) ∧
-      (gv.op ≠ .Phi → totalOp gv.op = true ∨ (okAt ok x = true ∧ x ∈ fb.values)) := by
+      (gv.op ≠ .Phi → totalOp gv.op = true ∨ (okAt ok x = true ∧ x ∈ fb.values) ∨
+        (pr = true ∧ okAt ok x = false ∧ ∃ y, pairSrc f fb x = some y ∧
+          relB pr ok f g (fuelOf pr) x y = true)) := by
   unfold valueOK at h
   cases hg : g.value? x with
   | none => rw [hg] at h; cases h
@@ -102,8 +119,14 @@ theorem valueOK_spec {fb : Block} {x : ID} (h : valueOK ok g fb x = true) :
     simp only [Bool.and_eq_true, Array.contains_iff_mem] at h
     exact h
   · rw [ite_eq_right (by simpa using hp)] at h
-    simp only [Bool.or_eq_true, Bool.and_eq_true, Array.contains_iff_mem] at h
-    exact h
+    simp only [Bool.or_eq_true, Bool.and_eq_true, Array.contains_iff_mem, Bool.not_eq_true'] at h
+    rcases h with (h | h) | ⟨⟨hpr, hno⟩, h⟩
+    · exact .inl h
+    · exact .inr (.inl h)
+    · refine .inr (.inr ⟨hpr, hno, ?_⟩)
+      split at h
+      · rename_i y hy; exact ⟨y, hy, h⟩
+      · cases h
 
 theorem before_eq {r : ID} : ∀ {pre post : List ID}, r ∉ pre → before (pre ++ r :: post) r = pre
   | [], post, _ => by simp [before]
@@ -113,9 +136,10 @@ theorem before_eq {r : ID} : ∀ {pre post : List ID}, r ∉ pre → before (pre
     unfold before at ih ⊢
     simp [List.takeWhile_cons, hy, ih]
 
-theorem orderOK_spec {oT oS : List ID} (h : orderOK ok f g oT oS = true) {r : ID} (hr : r ∈ oS)
-    (hp : mayPanic f r = true) :
-    okAt ok r = true ∧ r ∈ oT ∧ ∀ x ∈ before oT r, nonTotal g x = true → x ∈ before oS r := by
+theorem orderOK_spec {fb : Block} {oT oS : List ID} (h : orderOK pr ok f g fb oT oS = true)
+    {r : ID} (hr : r ∈ oS) (hp : mayPanic f r = true) :
+    okAt ok r = true ∧ r ∈ oT ∧
+      ∀ x ∈ before oT r, nonTotal g x = true → srcOf pr ok f fb x ∈ before oS r := by
   unfold orderOK at h
   have := List.all_eq_true.1 h r hr
   simp only [hp, Bool.not_true, Bool.false_or, Bool.and_eq_true, List.contains_iff_mem,
@@ -125,6 +149,27 @@ theorem orderOK_spec {oT oS : List ID} (h : orderOK ok f g oT oS = true) {r : ID
   rcases h3 x hx with h | h
   · rw [hn] at h; cases h
   · exact h
+
+/-- A value of `g`'s block that `g` may evaluate is total, or stands for a value of `f`'s block:
+itself in the certificate, or with `pr` its `pairSrc`, which is then `srcOf`. -/
+theorem valueOK_src (hc : certValid pr ok f g = true) {fb : Block} {x : ID} {gv : Value}
+    (h : valueOK pr ok f g fb x = true) (hgv : g.value? x = some gv) (hph : gv.op ≠ .Phi) :
+    totalOp gv.op = true ∨ (srcOf pr ok f fb x ∈ fb.values ∧
+      (∃ fv, f.value? (srcOf pr ok f fb x) = some fv ∧ fv.op ≠ .Phi) ∧
+      Rel pr ok f g x (srcOf pr ok f fb x)) := by
+  obtain ⟨gv', hgv', -, hnp⟩ := valueOK_spec h
+  rw [hgv] at hgv'; cases hgv'
+  rcases hnp hph with ht | ⟨hok, hxf⟩ | ⟨hpr, hno, y, hy, hr⟩
+  · exact .inl ht
+  · have hs : srcOf pr ok f fb x = x := by unfold srcOf; simp [hok]
+    rw [hs]
+    obtain ⟨gv', fv, hgv', hfv, hop, -⟩ := okLocal_spec (okLocal_of hc hok)
+    rw [hgv] at hgv'; cases hgv'
+    exact .inr ⟨hxf, ⟨fv, hfv, hop ▸ hph⟩, rel_ident hok⟩
+  · have hs : srcOf pr ok f fb x = y := by unfold srcOf; simp [hpr, hno, hy]
+    rw [hs]
+    obtain ⟨hyf, hfv⟩ := pairSrc_spec hy
+    exact .inr ⟨hyf, hfv, ⟨_, hr⟩⟩
 
 /-! ## Dominance facts -/
 
@@ -227,8 +272,8 @@ theorem Ready.mono_mem {D : ID → List ID} {P P' : ID → Prop} :
       Ready.mono_mem (fun z hz => hPP z (List.mem_cons_of_mem _ hz)) hr⟩
 
 theorem Agree.mono {XT XS XT' XS' : ID → Prop} {frT frS : Frame}
-    (h : Agree ok f g XT XS frT frS) (hT : ∀ x, XT' x → XT x) (hS : ∀ y, XS' y → XS y) :
-    Agree ok f g XT' XS' frT frS :=
+    (h : Agree pr ok f g XT XS frT frS) (hT : ∀ x, XT' x → XT x) (hS : ∀ y, XS' y → XS y) :
+    Agree pr ok f g XT' XS' frT frS :=
   fun x y hx hy hr => h x y (hT x hx) (hS y hy) hr
 
 /-! ## After the `Phi`s -/
@@ -266,17 +311,17 @@ theorem av_X0 {ce : CheckEnv} {h : Func} (hwf : WF ce h) (hc : CertOK h) {b : ID
 /-- **Related block entries, after the `Phi`s**: the target's `Phi`s read registers, and the
 strict dominators' values and the `Phi`s of both sides agree. -/
 theorem enter_phis {ce ce' : CheckEnv} (hwf : WF ce f) (hwg : WF ce' g) (hcf : CertOK f)
-    (hcg : CertOK g) (H : Hyp ok f g md) {frS frT : Frame} {b : ID} {i : Nat}
-    (hR : St ok f g tabs md env frS frT b i) {fb gb : Block} (hfb : f.block? b = some fb)
+    (hcg : CertOK g) (H : Hyp pr ok f g tabs md) {frS frT : Frame} {b : ID} {i : Nat}
+    (hR : St pr ok f g tabs md env frS frT b i) {fb gb : Block} (hfb : f.block? b = some fb)
     (hgb : g.block? b = some gb) (hbg : b ∈ g.blocks)
-    (hvals : ∀ x ∈ gb.values, valueOK ok g fb x = true) {ps : List (ID × Val)}
+    (hvals : ∀ x ∈ gb.values, valueOK pr ok f g fb x = true) {ps : List (ID × Val)}
     (hps : fb.values.toList.filterMapM (phiStepL md (Ctx.makeL tabs f) frS i) = .ok ps) :
     ∃ psT, gb.values.toList.filterMapM (phiStepL md (Ctx.makeL tabs g) frT i) = .ok psT ∧
       Av md env (Ctx.makeL tabs f) (X0 f fb b) { frS with regs := setPhis ps frS.regs } ∧
       Closed f (X0 f fb b) ∧
       Av md env (Ctx.makeL tabs g) (X0 g gb b) { frT with regs := setPhis psT frT.regs } ∧
       Closed g (X0 g gb b) ∧
-      Agree ok f g (X0 g gb b) (X0 f fb b) { frT with regs := setPhis psT frT.regs }
+      Agree pr ok f g (X0 g gb b) (X0 f fb b) { frT with regs := setPhis psT frT.regs }
         { frS with regs := setPhis ps frS.regs } := by
   obtain ⟨hb, htf, htg, hfr, hsS, hsT, hdS, hdT, AS, AT, hAS, hAT, hag, hphS, hphT⟩ := hR
   have hcF : (Ctx.makeL tabs f).f = f := makeL_f tabs f

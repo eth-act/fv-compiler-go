@@ -21,7 +21,7 @@ namespace GoFV.Proof.MoveL
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Proof Dom
 
-variable {ok : Array Bool} {f g : Func} {tabs : Tables} {md : LMode} {env : Env}
+variable {pr : Bool} {ok : Array Bool} {f g : Func} {tabs : Tables} {md : LMode} {env : Env}
 
 theorem enterBlockL_ok_split {ctx : Ctx} {fr fr' : Frame} {b : Block} {i : Nat}
     (h : enterBlockL md env ctx fr b i = .ok fr') :
@@ -86,16 +86,17 @@ theorem phiArgs_edge {ce : CheckEnv} {h : Func} (hwf : WF ce h) (hc : CertOK h) 
   exact ⟨va, hpa, hba ▸ hu⟩
 
 /-- **One block step** of the simulation. -/
-theorem stepL (S : Setup ok f g) (hmd : md.faulting = false) {frS frT : Frame} {b : ID} {i : Nat}
-    (hR : St ok f g tabs md env frS frT b i) :
-    StepSim (fun frS frT b i => St ok f g tabs md env frS frT b i)
+theorem stepL (S : Setup pr ok f g) (hmd : md.faulting = false)
+    (hsel : pr = true → md.low = true ∧ g.lowered = true ∧ SelShapes tabs g) {frS frT : Frame}
+    {b : ID} {i : Nat} (hR : St pr ok f g tabs md env frS frT b i) :
+    StepSim (fun frS frT b i => St pr ok f g tabs md env frS frT b i)
       (blockStepL md env (Ctx.makeL tabs f) frS b i) (blockStepL md env (Ctx.makeL tabs g) frT b i) := by
   obtain ⟨ce, hwf⟩ := S.wf
   obtain ⟨ce', hwg⟩ := S.wg
   have hcf := S.cf
   have hcg := S.cg
   obtain ⟨-, hbl, hown, hlow, hcert, hall⟩ := moveWith_spec S.mv
-  have H : Hyp ok f g md := ⟨hcert, hown, hlow, hmd⟩
+  have H : Hyp pr ok f g tabs md := ⟨hcert, hown, hlow, hmd, hsel⟩
   have hR' := hR
   obtain ⟨hb, htf, htg, hfr, hsS, hsT, hdS, hdT, -⟩ := hR
   obtain ⟨fb, gb, oT, oS, hfb, hgb, hk, hai, hsu, -, hct, hcok, hvals, hoT, hoS, hord⟩ :=
@@ -142,19 +143,17 @@ theorem stepL (S : Setup ok f g) (hmd : md.faulting = false) {frS frT : Frame} {
     obtain ⟨hAvS', hclS', hagS', hGS', -⟩ := phaseS H hAvT hclT hrdS
       (by simp [setPhis_size, hsS]) hfrP hAvS hclS hag hpre
     have hrdT' := hrdT.mono_mem (P' := fun x => ∃ gv, g.value? x = some gv ∧ gv.id = x ∧
-        gv.op ≠ .Phi ∧ (totalOp gv.op = true ∨ ((X0 f fb b x ∨ x ∈ pre) ∧ okAt ok x = true)))
+        gv.op ≠ .Phi ∧ (totalOp gv.op = true ∨ ∃ y, (X0 f fb b y ∨ y ∈ pre) ∧ Rel pr ok f g x y))
       fun y hy ⟨gv, hgv, hid, hph⟩ => by
         refine ⟨gv, hgv, hid, hph, ?_⟩
-        obtain ⟨gv', hgv', -, hnp⟩ := valueOK_spec (hvals y ((hmT y).1 (by
-          rw [hsplitT]; exact List.mem_append_left _ hy)).1)
-        rw [hgv] at hgv'; cases hgv'
-        rcases hnp hph with ht | ⟨hok, -⟩
+        rcases valueOK_src hcert (hvals y ((hmT y).1 (by
+          rw [hsplitT]; exact List.mem_append_left _ hy)).1) hgv hph with ht | ⟨-, -, hrel⟩
         · exact .inl ht
         · by_cases ht : totalOp gv.op = true
           · exact .inl ht
           · have hnt : nonTotal g y = true := by
               unfold nonTotal; rw [hgv]; simpa using ht
-            exact .inr ⟨.inr (hbS ▸ hbef y (hbT ▸ hy) hnt), hok⟩
+            exact .inr ⟨_, .inr (hbS ▸ hbef y (hbT ▸ hy) hnt), hrel⟩
     obtain ⟨GT', hevT, -, -, hagT', hGT', -⟩ := phaseT H hAvS' hclS' hrdT'
       (by simp [setPhis_size, hsT]) (frame_eq3 hfrP rfl hGS') hAvT hclT hagS'
     -- the target reaches `r`
@@ -194,16 +193,13 @@ theorem stepL (S : Setup ok f g) (hmd : md.faulting = false) {frS frT : Frame} {
     obtain ⟨hAvS', hclS', hagS', hGS', -⟩ := phaseS H hAvT hclT hrS
       (by simp [setPhis_size, hsS]) hfrP hAvS hclS hag hev
     have hrT' := hrT.mono_mem (P' := fun x => ∃ gv, g.value? x = some gv ∧ gv.id = x ∧
-        gv.op ≠ .Phi ∧ (totalOp gv.op = true ∨ ((X0 f fb b x ∨ x ∈ oS.toList) ∧ okAt ok x = true)))
+        gv.op ≠ .Phi ∧ (totalOp gv.op = true ∨
+          ∃ y, (X0 f fb b y ∨ y ∈ oS.toList) ∧ Rel pr ok f g x y))
       fun y hy ⟨gv, hgv, hid, hph⟩ => by
         refine ⟨gv, hgv, hid, hph, ?_⟩
-        obtain ⟨gv', hgv', -, hnp⟩ := valueOK_spec (hvals y ((hmT y).1 hy).1)
-        rw [hgv] at hgv'; cases hgv'
-        rcases hnp hph with ht | ⟨hok, hyf⟩
+        rcases valueOK_src hcert (hvals y ((hmT y).1 hy).1) hgv hph with ht | ⟨hsf, hsv, hrel⟩
         · exact .inl ht
-        · obtain ⟨gv', fv, hgv', hfv, hop, -⟩ := okLocal_spec (okLocal_of H.cert hok)
-          rw [hgv] at hgv'; cases hgv'
-          exact .inr ⟨.inr ((hmS y).2 ⟨hyf, fv, hfv, hop ▸ hph⟩), hok⟩
+        · exact .inr ⟨_, .inr ((hmS _).2 ⟨hsf, hsv⟩), hrel⟩
     obtain ⟨GT, hevT, -, -, hagT, -, -⟩ := phaseT H hAvS' hclS' hrT'
       (by simp [setPhis_size, hsT]) (frame_eq3 hfrP rfl hGS') hAvT hclT hagS'
     have hTen : enterBlockL md env (Ctx.makeL tabs g) frT gb i = .ok GT := by
@@ -212,7 +208,7 @@ theorem stepL (S : Setup ok f g) (hmd : md.faulting = false) {frS frT : Frame} {
     dsimp only
     obtain ⟨dS', hGSfr, hGSsz⟩ := dinvL_enter hwf hcf hb hfb hsS hdS hen
     obtain ⟨dT', hGTfr, hGTsz⟩ := dinvL_enter hwg hcg hbg hgb hsT hdT hTen
-    have hagA : Agree ok f g (PlacedIn g (fun a => Anc (make g) a b))
+    have hagA : Agree pr ok f g (PlacedIn g (fun a => Anc (make g) a b))
         (PlacedIn f (fun a => Anc (make f) a b)) GT GS :=
       hagT.mono (fun x hx => placedIn_X0 hwg hbg hgb hmT hx)
         (fun y hy => placedIn_X0 hwf hb hfb hmS hy)
@@ -221,7 +217,7 @@ theorem stepL (S : Setup ok f g) (hmd : md.faulting = false) {frS frT : Frame} {
       obtain ⟨vg, hpg, hbg'⟩ := placed_of_listed hwg (hwg.ctrlListed b gb ⟨hbg, hgb⟩ c hcg')
       obtain ⟨vf, hpf, hbf'⟩ := placed_of_listed hwf (hwf.ctrlListed b fb ⟨hb, hfb⟩ c hc)
       exact hagA c c ⟨vg, hpg, hbg' ▸ hcg.domRel.ctrlUse hbg hgb htg hcg'⟩
-        ⟨vf, hpf, hbf' ▸ hcf.domRel.ctrlUse hb hfb htf hc⟩ ⟨relFuel, hcok c hcg'⟩
+        ⟨vf, hpf, hbf' ▸ hcf.domRel.ctrlUse hb hfb htf hc⟩ ⟨fuelOf pr, hcok c hcg'⟩
     cases hst : stepTermL GS fb with
     | stuck msg => exact True.intro
     | panic e m => exact absurd hst Dead.stepTermL_not_panic
@@ -261,13 +257,33 @@ private theorem locals_makeL (tabs : Tables) (f : Func) :
     (Ctx.makeL tabs f).locals = (Ctx.make tabs f).locals := by
   unfold Ctx.makeL; split <;> rfl
 
-/-- **Value motion validated by `moveWith` refines under `runL`.** -/
-theorem refinesL_of_moveWith (S : Setup ok f g) : RefinesL tabs g tabs f := by
+/-- What `selShapesB` checks. -/
+theorem selShapes_of {tabs : Tables} {g : Func} (h : selShapesB tabs g = true) :
+    g.lowered = true ∧ SelShapes tabs g := by
+  unfold selShapesB at h
+  simp only [Bool.and_eq_true, Array.all_eq_true'] at h
+  refine ⟨h.1, fun x gv i l lv hgv hsel hgl hlv hpl => ?_⟩
+  have hm : some gv ∈ g.valueTab :=
+    Array.mem_of_getElem? (Option.join_eq_some_iff.mp hgv)
+  have := h.2 (some gv) hm
+  simp only [hsel, hgl, hlv, hpl, Bool.not_true, Bool.false_or] at this
+  split at this
+  · rename_i c0 c1 hc; exact ⟨c0, c1, hc, Ty.eq_of_beq this⟩
+  · cases this
+
+/-- **Value motion validated by `moveWith` refines under `runL`** (with `pr`, in tables `tabs`
+whose selector shapes `selShapesB` checks). -/
+theorem refinesL_of_moveWith (S : Setup pr ok f g) (hsel : pr = true → selShapesB tabs g = true) :
+    RefinesL tabs g tabs f := by
   obtain ⟨ce, hwf⟩ := S.wf
   obtain ⟨ce', hwg⟩ := S.wg
   have hcf := S.cf
   have hcg := S.cg
   obtain ⟨hent, -, hown, hlow, -, -⟩ := moveWith_spec S.mv
+  have hsel' : pr = true → (⟨f.lowered, false⟩ : LMode).low = true ∧ g.lowered = true ∧
+      SelShapes tabs g := fun hpr => by
+    obtain ⟨hl, hs⟩ := selShapes_of (hsel hpr)
+    exact ⟨hlow ▸ hl, hl, hs⟩
   have hpar : (Ctx.makeL tabs g).params = (Ctx.makeL tabs f).params := by
     rw [params_makeL, params_makeL]; simp only [Ctx.make, abiParams, hown]
   intro env args mem fuel hd
@@ -293,7 +309,7 @@ theorem refinesL_of_moveWith (S : Setup ok f g) : RefinesL tabs g tabs f := by
     rw [makeL_f, act_makeL] at hd
     -- the entry state
     have hT0 : ((make g).depthOf f.entry).isSome := hent ▸ hcg.domRel.entry
-    have h0 : St ok f g tabs ⟨f.lowered, false⟩ env (entryFrame env (Ctx.makeL tabs f) args mem)
+    have h0 : St pr ok f g tabs ⟨f.lowered, false⟩ env (entryFrame env (Ctx.makeL tabs f) args mem)
         { entryFrame env (Ctx.makeL tabs f) args mem with
           regs := Array.replicate g.valueTab.size none } f.entry 0 := by
       refine ⟨hwf.entry, hcf.domRel.entry, hT0, rfl, by simp [entryFrame, makeL_f],
@@ -316,8 +332,9 @@ theorem refinesL_of_moveWith (S : Setup ok f g) : RefinesL tabs g tabs f := by
         have h1 := hwg.phiArity _ _ _ _ ⟨⟨hwg.entry, hblk⟩, hx, hv⟩ hph
         have h2 := hwg.entryPreds blk hblk
         rw [Array.getElem?_eq_none (by omega)] at ha; cases ha
-    exact finish_refines hd (runLoopL_sim (fun frS frT b i => St ok f g tabs ⟨f.lowered, false⟩ env frS frT b i)
-      (fun _ _ _ _ hR => stepL S rfl hR) fuel _ _ _ _ h0 (finish_defined hd))
+    exact finish_refines hd (runLoopL_sim
+      (fun frS frT b i => St pr ok f g tabs ⟨f.lowered, false⟩ env frS frT b i)
+      (fun _ _ _ _ hR => stepL S rfl hsel' hR) fuel _ _ _ _ h0 (finish_defined hd))
 
 /-- **Value motion over a fixed CFG refines under `runL`** (issue #385): `g` keeps the blocks,
 kinds, `auxInt`s, edges and controls of `f` and moves, clones or copies values as `moveB`
@@ -325,7 +342,7 @@ validates. -/
 theorem refinesL_of_move {ce ce' : CheckEnv} {tabs : Tables} {f g : Func}
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ()) (hm : moveB f g = true) :
     RefinesL tabs g tabs f :=
-  refinesL_of_moveWith ⟨⟨ce, check_wf hf⟩, ⟨ce', check_wf hg⟩, certOK_of_check (check_domCert hf),
-    certOK_of_check (check_domCert hg), hm⟩
+  refinesL_of_moveWith (pr := false) ⟨⟨ce, check_wf hf⟩, ⟨ce', check_wf hg⟩,
+    certOK_of_check (check_domCert hf), certOK_of_check (check_domCert hg), hm⟩ nofun
 
 end GoFV.Proof.MoveL

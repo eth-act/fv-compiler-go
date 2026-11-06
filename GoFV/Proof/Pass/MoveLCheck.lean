@@ -1,4 +1,5 @@
 import GoFV.Proof.EvalL
+import GoFV.SSA.Sem.TyEq
 
 /-!
 # The fixed-CFG value-motion validator `moveB` (issue #385)
@@ -85,6 +86,36 @@ def totalOp (op : Op) : Bool :=
 /-- The depth of `Copy` chains `relB` follows. -/
 def relFuel : Nat := 4
 
+/-- The depth `relB` follows: with `pr`, chains of adjacent pair stores relate through each
+pair's memory (one level per pair). -/
+def fuelOf (pr : Bool) : Nat := if pr then 32 else relFuel
+
+/-- `pair`'s pairable loads (`pairableLoads`): element width and pair load. Each pair load
+evaluates its element `i` as the load does at offset `auxInt + i * width` (`arm64Op`'s `ld` and
+`ldPair` with the same width and sign extension). -/
+def ldPairOf : Op → Option (Nat × Op)
+  | .ARM64MOVDload => some (8, .ARM64LDP)
+  | .ARM64MOVWUload => some (4, .ARM64LDPW)
+  | .ARM64MOVWload => some (4, .ARM64LDPSW)
+  | .ARM64FMOVDload => some (8, .ARM64FLDPD)
+  | .ARM64FMOVSload => some (4, .ARM64FLDPS)
+  | _ => none
+
+/-- `pair`'s pairable stores (`pairableStores`): element width and pair store, which writes
+as the two stores at offsets `auxInt` and `auxInt + width` in that order (`st`, `stPair`). -/
+def stPairOf : Op → Option (Nat × Op)
+  | .ARM64MOVDstore => some (8, .ARM64STP)
+  | .ARM64MOVWstore => some (4, .ARM64STPW)
+  | .ARM64FMOVDstore => some (8, .ARM64FSTPD)
+  | .ARM64FMOVSstore => some (4, .ARM64FSTPS)
+  | _ => none
+
+/-- The component a tuple selector reads. -/
+def selIdx : Op → Option Nat
+  | .Select0 => some 0
+  | .Select1 => some 1
+  | _ => none
+
 /-- `x` of `g` is a clone of `y` of `f`: a total op with the same op, type, aux, auxint, first
 argument sign extension and arguments, each in the certificate. -/
 def cloneB (ok : Array Bool) (f g : Func) (gv fv : Value) : Bool :=
@@ -92,8 +123,12 @@ def cloneB (ok : Array Bool) (f g : Func) (gv fv : Value) : Bool :=
     gv.auxInt == fv.auxInt && gv.args == fv.args && gv.args.all (okAt ok) &&
     sxOf g gv == sxOf f fv
 
-/-- **Related values** `x ≈ y` (`x` of `g`, `y` of `f`), following at most `n` copies. -/
-def relB (ok : Array Bool) (f g : Func) : Nat → ID → ID → Bool
+/-- **Related values** `x ≈ y` (`x` of `g`, `y` of `f`), following at most `n` copies. With
+`pr` (`pair`), also a selector `Select_i l` of a pair load `l` for the load `y` of element `i`
+(the same aux, `y`'s offset `i` widths above `l`'s, related pointer and memory), and a pair
+store for the second store `y` of two adjacent stores (`y`'s memory the first store, at one
+width below `y`'s offset with `y`'s pointer; related pointer, values and memory). -/
+def relB (pr : Bool) (ok : Array Bool) (f g : Func) : Nat → ID → ID → Bool
   | n, x, y =>
     (x == y && okAt ok x) ||
     match g.value? x, f.value? y with
@@ -101,32 +136,60 @@ def relB (ok : Array Bool) (f g : Func) : Nat → ID → ID → Bool
       cloneB ok f g gv fv ||
         (gv.op == .Copy && fv.op != .Phi && gv.type == fv.type &&
           match n, gv.args.toList with
-          | n + 1, [z] => relB ok f g n z y
-          | _, _ => false)
+          | n + 1, [z] => relB pr ok f g n z y
+          | _, _ => false) ||
+        (pr && gv.type == fv.type &&
+          match n with
+          | 0 => false
+          | n + 1 =>
+            (match selIdx gv.op, gv.args.toList, ldPairOf fv.op with
+              | some i, [l], some (w, pop) =>
+                match g.value? l with
+                | some lv =>
+                  lv.op == pop && lv.aux == fv.aux &&
+                    fv.auxInt == lv.auxInt + Int64.ofNat (i * w) &&
+                    match lv.args.toList, fv.args.toList with
+                    | [p', m'], [p, m] => relB pr ok f g n p' p && relB pr ok f g n m' m
+                    | _, _ => false
+                | none => false
+              | _, _, _ => false) ||
+            (match stPairOf fv.op, gv.args.toList, fv.args.toList with
+              | some (w, pop), [p', a', b', m'], [p2, b, ym] =>
+                match f.value? ym with
+                | some mv =>
+                  gv.op == pop && mv.op == fv.op && mv.aux == fv.aux && gv.aux == fv.aux &&
+                    gv.auxInt == mv.auxInt && fv.auxInt == mv.auxInt + Int64.ofNat w &&
+                    match mv.args.toList with
+                    | [p1, a, m] =>
+                      p1 == p2 && relB pr ok f g n p' p1 && relB pr ok f g n a' a &&
+                        relB pr ok f g n b' b && relB pr ok f g n m' m
+                    | _ => false
+                | none => false
+              | _, _, _ => false))
     | _, _ => false
 
 /-- The certificate's local condition at `x`: the values `x` of `g` and `f` have the same op and
 type, pairwise related arguments, and are `Phi`s in the same block or agree on aux, auxint and
 first argument sign extension. -/
-def okLocal (ok : Array Bool) (f g : Func) (x : ID) : Bool :=
+def okLocal (pr : Bool) (ok : Array Bool) (f g : Func) (x : ID) : Bool :=
   match g.value? x, f.value? x with
   | some gv, some fv =>
     gv.op == fv.op && gv.type == fv.type && gv.args.size == fv.args.size &&
-      (List.range gv.args.size).all (fun k => relB ok f g relFuel gv.args[k]! fv.args[k]!) &&
+      (List.range gv.args.size).all (fun k => relB pr ok f g (fuelOf pr) gv.args[k]! fv.args[k]!) &&
       if gv.op == .Phi then gv.block == fv.block
       else gv.aux == fv.aux && gv.auxInt == fv.auxInt && sxOf g gv == sxOf f fv
   | _, _ => false
 
 /-- The certificate is locally valid. -/
-def certValid (ok : Array Bool) (f g : Func) : Bool :=
-  (List.range ok.size).all fun x => !okAt ok x || okLocal ok f g x
+def certValid (pr : Bool) (ok : Array Bool) (f g : Func) : Bool :=
+  (List.range ok.size).all fun x => !okAt ok x || okLocal pr ok f g x
 
 /-- The certificate: the greatest fixed point of `okLocal` (untrusted, `certValid` checks it). -/
-def okCert (f g : Func) : Array Bool := Id.run do
+def okCert (pr : Bool) (f g : Func) : Array Bool := Id.run do
   let n := g.valueTab.size
   let mut ok : Array Bool := Array.replicate n true
   for _ in [0:n + 1] do
-    let ok' := (Array.range n).map fun x => okAt ok x && okLocal ok f g x
+    let ok' := (Array.range n).map fun x => okAt ok x && okLocal pr ok f g x
     if ok' == ok then break
     ok := ok'
   return ok
@@ -136,13 +199,29 @@ def nonTotal (f : Func) (x : ID) : Bool := match f.value? x with
   | some v => !totalOp v.op
   | none => true
 
+/-- The store of `f`'s block `fb` a pair store `x` of `g` stands for (`relB`'s store case): a
+pairable store whose memory is `x`, the first of the two stores `pair` merged into `x`. -/
+def pairSrc (f : Func) (fb : Block) (x : ID) : Option ID :=
+  fb.values.find? fun y => match f.value? y with
+    | some fv => (stPairOf fv.op).isSome && fv.args.back? == some x
+    | none => false
+
+/-- The value of `f` that `g`'s evaluation of `x` waits for: `x` itself, or with `pr` and `x`
+outside the certificate, the store `pairSrc` (a pair store evaluates once both stores have). -/
+def srcOf (pr : Bool) (ok : Array Bool) (f : Func) (fb : Block) (x : ID) : ID :=
+  if pr && !okAt ok x then (pairSrc f fb x).getD x else x
+
 /-- A value of `g`'s block `b`: a `Phi` or non-total value in place in `f`'s block `fb` with the
-certificate, or a total one. -/
-def valueOK (ok : Array Bool) (g : Func) (fb : Block) (x : ID) : Bool :=
+certificate, a total one, or with `pr` a pair store outside the certificate related to its
+`pairSrc`. -/
+def valueOK (pr : Bool) (ok : Array Bool) (f g : Func) (fb : Block) (x : ID) : Bool :=
   match g.value? x with
   | some gv =>
     if gv.op == .Phi then okAt ok x && fb.values.contains x
-    else totalOp gv.op || (okAt ok x && fb.values.contains x)
+    else totalOp gv.op || (okAt ok x && fb.values.contains x) ||
+      (pr && !okAt ok x && match pairSrc f fb x with
+        | some y => relB pr ok f g (fuelOf pr) x y
+        | none => false)
   | none => false
 
 /-- A value of `f` that may panic (`PanickingL false`: a call or a nil check). -/
@@ -154,33 +233,60 @@ def mayPanic (f : Func) (x : ID) : Bool := match f.value? x with
 def before (l : List ID) (r : ID) : List ID := l.takeWhile (· != r)
 
 /-- **Panics in the same order**: every value `r` of `f`'s schedule `oS` that may panic is in
-the certificate and in `g`'s schedule `oT`, and every non-total value `g` evaluates before it,
-`f` evaluates before it. -/
-def orderOK (ok : Array Bool) (f g : Func) (oT oS : List ID) : Bool :=
+the certificate and in `g`'s schedule `oT`, and for every non-total value `g` evaluates before
+it, `f` evaluates its `srcOf` before it. -/
+def orderOK (pr : Bool) (ok : Array Bool) (f g : Func) (fb : Block) (oT oS : List ID) : Bool :=
   oS.all fun r => !mayPanic f r ||
     (okAt ok r && oT.contains r &&
-      (before oT r).all fun x => !nonTotal g x || (before oS r).contains x)
+      (before oT r).all fun x => !nonTotal g x || (before oS r).contains (srcOf pr ok f fb x))
 
 /-- Block `b` of `f`: the same block in `g` up to its values (see the module doc). -/
-def blockOK (ok : Array Bool) (f g : Func) (b : ID) : Bool :=
+def blockOK (pr : Bool) (ok : Array Bool) (f g : Func) (b : ID) : Bool :=
   match f.block? b, g.block? b with
   | some fb, some gb =>
     gb.kind == fb.kind && gb.auxInt == fb.auxInt && gb.succs == fb.succs &&
       gb.preds == fb.preds && gb.controls == fb.controls &&
-      gb.controls.all (fun c => relB ok f g relFuel c c) &&
-      gb.values.all (valueOK ok g fb) &&
+      gb.controls.all (fun c => relB pr ok f g (fuelOf pr) c c) &&
+      gb.values.all (valueOK pr ok f g fb) &&
       match schedule g gb, schedule f fb with
-      | some oT, some oS => orderOK ok f g oT.toList oS.toList
+      | some oT, some oS => orderOK pr ok f g fb oT.toList oS.toList
       | _, _ => false
   | _, _ => false
 
 /-- **The value-motion validator** with certificate `ok`. -/
-def moveWith (ok : Array Bool) (f g : Func) : Bool :=
+def moveWith (pr : Bool) (ok : Array Bool) (f g : Func) : Bool :=
   g.entry == f.entry && g.blocks == f.blocks && g.ownAux == f.ownAux && g.lowered == f.lowered &&
-    certValid ok f g &&
-    f.blocks.all (blockOK ok f g)
+    certValid pr ok f g &&
+    f.blocks.all (blockOK pr ok f g)
 
 /-- **The value-motion validator.** -/
-def moveB (f g : Func) : Bool := moveWith (okCert f g) f g
+def moveB (f g : Func) : Bool := moveWith false (okCert false f g) f g
+
+/-- A lowered shape (`typeShapesL`, the shapes `runL` gives a lowered function's values). -/
+def shapeL (tabs : Tables) (t : TypeRef) : Ty := (typeShapesL tabs)[t]?.getD .other
+
+/-- The pair loads (`ldPairOf`'s). -/
+def pairLoadOp (op : Op) : Bool :=
+  op == .ARM64LDP || op == .ARM64LDPW || op == .ARM64LDPSW || op == .ARM64FLDPD ||
+    op == .ARM64FLDPS
+
+/-- `g` is lowered, and every selector `Select_i l` of a pair load `l` has the shape of
+component `i` of `l`'s two-component tuple shape. -/
+def selShapesB (tabs : Tables) (g : Func) : Bool :=
+  g.lowered && g.valueTab.all fun o => match o with
+    | some gv => match selIdx gv.op, gv.args.toList with
+      | some i, [l] => match g.value? l with
+        | some lv => !pairLoadOp lv.op || match shapeL tabs lv.type with
+          | .tuple [c0, c1] => Ty.beq ([c0, c1].getD i .other) (shapeL tabs gv.type)
+          | _ => false
+        | none => true
+      | _, _ => true
+    | none => true
+
+/-- **The `pair` validator** in tables `tabs` (`pair`'s output tables): the moves of
+`moveWith` plus the selectors of pair loads and pair stores (`relB` with `pr`), the selectors'
+shapes (`selShapesB`). -/
+def pairMoveB (tabs : Tables) (f g : Func) : Bool :=
+  selShapesB tabs g && moveWith true (okCert true f g) f g
 
 end GoFV.Proof.MoveL
