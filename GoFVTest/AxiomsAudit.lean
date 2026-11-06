@@ -332,6 +332,120 @@ def replayAll (kenv : Kernel.Environment) (cis : Array ConstantInfo) :
     fresh := fresh.insert n (.thmInfo { v with name := n, all := [n] })
   return (← kenv.replay fresh, copies.size)
 
+/-- Add to `kenv` what the kernel produced in `src` for the constants `cis` (one module's), with
+`addDeclWithoutChecking`: definitions, theorems, opaques and axioms unchanged; each inductive type's
+mutual block from `src`'s types and constructors, which the kernel checks again (it has no
+unchecked path for inductive types), after the blocks of `cis` they use, with their constructors
+and recursors. A constant that is not in `src` (unsafe or partial: not replayed) is not added. -/
+def addChecked (kenv src : Kernel.Environment) (cis : Array ConstantInfo) :
+    IO Kernel.Environment := do
+  let add (kenv : Kernel.Environment) (n : Name) (d : Declaration) := do
+    match kenv.addDeclWithoutChecking d with
+    | .ok kenv => return kenv
+    | .error e => throw <| IO.userError s!"adding {n}: {← (e.toMessageData {}).toString}"
+  let mine : NameSet := cis.foldl (·.insert ·.name) {}
+  let mut kenv := kenv
+  let mut blocks : Array (NameSet × NameSet × Declaration) := #[]  -- names, used, declaration
+  for ci in cis do
+    if (kenv.find? ci.name).isSome then continue
+    match src.find? ci.name with
+    | some (.defnInfo v) => kenv ← add kenv ci.name (.defnDecl v)
+    | some (.thmInfo v) => kenv ← add kenv ci.name (.thmDecl v)
+    | some (.opaqueInfo v) => kenv ← add kenv ci.name (.opaqueDecl v)
+    | some (.axiomInfo v) => kenv ← add kenv ci.name (.axiomDecl v)
+    | some (.inductInfo v) =>
+      if v.all.head? != some ci.name then continue  -- one declaration per mutual block
+      let mut names : NameSet := {}
+      let mut used : NameSet := {}
+      let mut types := #[]
+      for t in v.all do
+        let some (.inductInfo w) := src.find? t | throw <| IO.userError s!"{t} not an inductive type"
+        let mut ctors := #[]
+        for c in w.ctors do
+          let some cc := src.find? c | throw <| IO.userError s!"constructor {c} not found"
+          ctors := ctors.push { name := c, type := cc.type : Constructor }
+          used := used.union cc.type.getUsedConstantsAsSet
+          names := names.insert c
+        types := types.push { name := t, type := w.type, ctors := ctors.toList : InductiveType }
+        used := used.union w.type.getUsedConstantsAsSet
+        names := names.insert t
+      blocks := blocks.push (names, used, .inductDecl v.levelParams v.numParams types.toList v.isUnsafe)
+    | _ => pure ()  -- constructors and recursors come with their inductive type
+  while !blocks.isEmpty do
+    let before := blocks.size
+    let mut later := #[]
+    for (names, used, d) in blocks do
+      if used.toList.all fun n => (kenv.find? n).isSome || names.contains n || !mine.contains n then
+        kenv ← add kenv (names.toList.headD .anonymous) d
+      else later := later.push (names, used, d)
+    blocks := later
+    if blocks.size == before then throw <| IO.userError "inductive types that use each other"
+  return kenv
+
+/-- Run `run s i` for every `i < deps.size` in its own task, at most `jobs` at a time, each once
+every `deps[i]` has finished, the ready one of highest `prio` first; `s` is the state when the
+task starts, and `finish s i a` makes the next state from each result, in this thread, in the
+order the tasks finish. -/
+def schedule {σ α : Type} (deps : Array (Array Nat)) (prio : Array Nat) (jobs : Nat) (s : σ)
+    (run : σ → Nat → IO α) (finish : σ → Nat → α → IO σ) : IO σ := do
+  let mut users : Array (Array Nat) := Array.replicate deps.size #[]
+  for ds in deps, i in 0...deps.size do
+    for d in ds do users := users.modify d (·.push i)
+  let mut waiting := deps.map (·.size)
+  let mut ready := (Array.range deps.size).filter (deps[·]!.isEmpty)
+  let mut running : Array (Task (Except IO.Error (Nat × α))) := #[]
+  let mut s := s
+  let mut done := 0
+  while done < deps.size do
+    while running.size < max jobs 1 && !ready.isEmpty do
+      let k := (Array.range ready.size).foldl (fun k j => if prio[ready[j]!]! > prio[ready[k]!]! then j else k) 0
+      let i := ready[k]!
+      ready := ready.eraseIdx! k
+      let s0 := s
+      running := running.push (← IO.asTask do return (i, ← run s0 i))
+    if h : running.size > 0 then
+      let (j, r) ← IO.waitAny (running.toList.mapIdx fun j t => t.map (sync := true) (j, ·))
+        (by simpa using h)
+      running := running.eraseIdx! j
+      let (i, a) ← IO.ofExcept r
+      s ← finish s i a
+      done := done + 1
+      for u in users[i]! do
+        waiting := waiting.modify u (· - 1)
+        if waiting[u]! == 0 then ready := ready.push u
+    else throw <| IO.userError "the modules import each other in a cycle"
+  return s
+
+/-- Replay the modules `mds` on `kenv`, at most `jobs` at a time (`schedule`), each in its own task
+once the modules of `mds` it imports (`deps`, indices into `mds`) are done, against `kenv` and the
+modules done by then (`replayAll`, every copy of a duplicated theorem included); then what the
+task's kernel added for the module's constants is added to `kenv` (`addChecked`): the kernel's own
+constants, not the stored ones (`replay` compares only constructors and recursors with the
+kernel's, not an inductive type's `InductiveVal`), and no unsafe or partial constant (`replay`
+skips them, so a checked constant that uses one fails). So every constant of `kenv` passed the
+kernel in an environment of constants that did. A theorem declared by several modules
+keeps the copy of the module done first; a name declared twice that is not a theorem each time is
+an error. Modules with the longest chains of importers (`prio`) start first. Returns the
+environment, the number of copies checked and each module's replay time in ms. -/
+def replayModules (kenv : Kernel.Environment) (mds : Array (Name × ModuleData))
+    (deps : Array (Array Nat)) (prio : Array Nat) (jobs : Nat) :
+    IO (Kernel.Environment × Nat × Array Nat) := do
+  let mut thm : Std.HashMap Name Bool := {}
+  for (_, md) in mds do
+    for ci in md.constants do
+      let t := ci matches .thmInfo _
+      if (thm[ci.name]? |>.any (!· || !t)) then throw <| IO.userError s!"{ci.name} declared twice"
+      thm := thm.insert ci.name t
+  schedule deps prio jobs (kenv, 0, Array.replicate mds.size 0)
+    (fun (base, _) i => do
+      let t0 ← IO.monoMsNow
+      try
+        let r ← replayAll base mds[i]!.2.constants
+        return (r, (← IO.monoMsNow) - t0)
+      catch e => throw <| IO.userError s!"{mds[i]!.1}: {e}")
+    (fun (kenv, copies, ms) i ((env, n), dt) => do
+      return (← addChecked kenv env mds[i]!.2.constants, copies + n, ms.set! i dt))
+
 open GoFVTest.AxiomsAudit in
 /-- `--replay LIB ROOTS`: send every constant declared in the `LIB` modules to the kernel again,
 then each root's, in an environment holding only the modules they import that are not in `LIB`
@@ -342,7 +456,10 @@ the kernel; the axioms audit reads declarations and would not notice. `LIB` must
 importers (a module importing a `LIB` module is in `LIB` or a root): the base is imported once,
 and an `.olean` mapped twice is copied onto the heap. Unsafe and partial constants are not
 replayed, as in `leanchecker` (a checked constant that uses one fails); every copy of a theorem
-that several modules declare is (`replayAll`). -/
+that several modules declare is (`replayAll`). The modules are checked in parallel
+(`replayModules`, `GOFV_REPLAY_JOBS` modules at a time, default 2), then the roots. A module whose
+witness proofs the kernel evaluates (`GoFV.Proof.Witness.Lower*`) holds about 3 GB while it is
+replayed. -/
 def replayMain (lib roots : Array Name) (trustedOk : NameSet := {}) : IO UInt32 := do
   let libSet : NameSet := lib.foldl (·.insert ·) {}
   let mut base : Array Import := #[]
@@ -365,13 +482,40 @@ def replayMain (lib roots : Array Name) (trustedOk : NameSet := {}) : IO UInt32 
   let env ← importModules base {} (loadExts := false)
   if trusted > 0 then
     IO.println s!"trusted, not replayed: {trusted} GoFV/GoFVTest modules imported directly"
+  -- the LIB modules in an order where each follows its imports (`depth`: its longest chain of LIB
+  -- imports), each with the LIB modules it imports and its longest chain of LIB importers
+  let mut depth : Std.HashMap Name Nat := {}
+  let libMds0 := mds.filter (libSet.contains ·.1)
+  while depth.size < libMds0.size do
+    let before := depth.size
+    for (m, md) in libMds0 do
+      if depth.contains m then continue
+      let deps := md.imports.filter (libSet.contains ·.module)
+      if deps.all (depth.contains ·.module) then
+        depth := depth.insert m (deps.foldl (fun k i => max k (depth[i.module]! + 1)) 0)
+    if depth.size == before then throw <| IO.userError "the LIB modules import each other in a cycle"
+  let libMds := libMds0.qsort (fun a b => depth[a.1]! < depth[b.1]!)
+  let idx : Std.HashMap Name Nat := libMds.foldl (init := {}) fun s (m, _) => s.insert m s.size
+  let deps := libMds.map fun (_, md) => md.imports.filterMap (idx[·.module]?)
+  let mut height := Array.replicate libMds.size 0
+  for i in (List.range libMds.size).reverse do
+    for d in deps[i]! do height := height.set! d (max height[d]! (height[i]! + 1))
+  let jobs := (← IO.getEnv "GOFV_REPLAY_JOBS").bind (·.toNat?) |>.getD 2
   let t0 ← IO.monoMsNow
-  let libConsts := mds.filter (libSet.contains ·.1) |>.flatMap (·.2.constants)
-  let (kenv, n) ← replayAll env.toKernelEnv libConsts
-  IO.println s!"replayed {libConsts.size} constants ({n} copies) of {lib.size} modules in {(← IO.monoMsNow) - t0} ms"
-  for (m, md) in mds do
-    if libSet.contains m then continue
-    discard <| replayAll kenv md.constants
+  let (kenv, n, ms) ← replayModules env.toKernelEnv libMds deps height jobs
+  let t1 ← IO.monoMsNow
+  let nConsts := libMds.foldl (fun k (_, md) => k + md.constants.size) 0
+  -- the critical path: the slowest chain of imports, a lower bound on the replay's time
+  let mut path := Array.replicate libMds.size 0
+  for i in 0...libMds.size do
+    path := path.set! i (ms[i]! + deps[i]!.foldl (fun k d => max k path[d]!) 0)
+  IO.println s!"replayed {nConsts} constants ({n} copies) of {lib.size} modules in {t1 - t0} ms, {jobs} at a time ({ms.foldl (· + ·) 0} ms of tasks, critical path {path.foldl max 0} ms, {depth.fold (fun k _ d => max k (d + 1)) 0} modules long)"
+  let rootMds := mds.filter (!libSet.contains ·.1)
+  discard <| schedule (rootMds.map fun _ => #[]) (rootMds.map fun _ => 0) jobs ()
+    (fun _ i => do
+      try discard <| replayAll kenv rootMds[i]!.2.constants
+      catch e => throw <| IO.userError s!"{rootMds[i]!.1}: {e}")
+    (fun _ _ _ => pure ())
   IO.println s!"replayed {roots.size} executable roots"
   IO.println "RESULT PASS"
   return 0

@@ -208,7 +208,9 @@ gate_steps() {
   step no-sorry python3 scripts/no-sorry.py
   step reverts scripts/scan-history-reverts.sh 80
   if [ "$built" = 1 ]; then
-    step axioms scripts/axioms-audit.sh --replay --out "$run/axioms"
+    # the replay checks one module per 4 GB of FV_MEMCAP at a time (scripts/axioms-audit.sh)
+    step axioms flock -w 10800 "$parent/gofv-heavy.lock" env FV_MEMCAP="${GATE_BUILD_MEMCAP:-16G}" \
+      scripts/axioms-audit.sh --replay --out "$run/axioms"
   else
     skip axioms "build failed"
   fi

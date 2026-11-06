@@ -74,18 +74,27 @@ when the run starts (`readlink -f`), so a corpus switch during the run does not 
   declarations (the audit, `#print axioms`) cannot tell. `axioms-audit --replay` sends the
   constants of `GoFV`/`GoFVTest` to the kernel again, every copy of a theorem several modules
   declare included (the extra copies under fresh names); unsafe and partial constants are not
-  replayed, as in `leanchecker` (a checked constant that uses one fails). The nightly run replays
-  the whole tree (`--replay`, on `Init`/`Std`/`Lean` alone: about 20 minutes and 5.3 GB, one
-  thread). Per PR, `--replay-changed` replays the modules that differ from the merge base with
-  `origin/main` and every module importing one (their elaboration ran the changed code), on the
-  other modules, which an earlier replay checked; the whole tree when `lakefile.toml`,
-  `lean-toolchain` or `lake-manifest.json` changed. It runs after the rebase onto `origin/main`,
-  right before the merge (what it trusts is main). A leaf proof module takes seconds, a core
-  module most of the 20 minutes. `lakefile.toml` must not mention `skipKernelTC`, and no module
-  may be a symlink (its source could change with no diff under `GoFV`/`GoFVTest`). Trust rests on
-  sources: a module whose elaboration does IO (`run_meta`/`include_str` reading a repository file
-  outside `GoFV`/`GoFVTest`, the directory, the environment, the clock) is trusted as unchanged
-  until the nightly replay. (Lean's
+  replayed, as in `leanchecker` (a checked constant that uses one fails). Modules are replayed in
+  parallel, `GOFV_REPLAY_JOBS` at a time (`scripts/axioms-audit.sh`: one per 4 GB of
+  `FV_MEMCAP`, so 2 at the default 8G): each in its own task once the modules it imports are
+  done, against the constants the kernel has accepted so far, to which the kernel's versions of
+  its constants are then added. A module whose witness proofs the kernel evaluates
+  (`GoFV.Proof.Witness.Lower*`) holds about 3 GB while it is replayed. The nightly run replays
+  the whole tree (`--replay`, on `Init`/`Std`/`Lean` alone) at `FV_MEMCAP=16G` under
+  `../gofv-heavy.lock`, 4 modules at a time. Measured on an orb (16 cores): 8.2 minutes and
+  14.3 GB peak RSS; 2 at a time 14.4 minutes and 9.0 GB; one at a time 30.5 minutes and 6.5 GB.
+  The longest import chain is 46 modules, and its replay takes about 4.2 minutes. Per PR,
+  `--replay-changed` replays the modules that differ from the merge base with `origin/main` and
+  every module importing one (their elaboration ran the changed code), on the other modules,
+  which an earlier replay checked; the whole tree when `lakefile.toml`, `lean-toolchain` or
+  `lake-manifest.json` changed. It runs after the rebase onto `origin/main`, right before the
+  merge (what it trusts is main). A leaf proof module takes seconds; #525 (`GoFV.Opt.LowerCheck`
+  and 10 proof modules, 73 modules with their importers) 6.9 minutes and 8.7 GB at the default 8G
+  (4.1 minutes at 16G, 11.8 minutes one at a time). `lakefile.toml` must not mention
+  `skipKernelTC`, and no module may be a symlink (its source could change with no diff under
+  `GoFV`/`GoFVTest`). Trust rests on sources: a module whose elaboration does IO
+  (`run_meta`/`include_str` reading a repository file outside `GoFV`/`GoFVTest`, the directory,
+  the environment, the clock) is trusted as unchanged until the nightly replay. (Lean's
   `leanchecker GoFV GoFVTest` checks the same, but imports each module's dependencies anew in
   parallel tasks: killed at 6 GiB after 11 minutes.)
 - The audit program and scripts, and the allowlist, are built from the PR they check: a change to

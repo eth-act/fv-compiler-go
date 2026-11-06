@@ -267,6 +267,31 @@ avoiding): the problem, the trick, the numbers, where it is used.
 - **Requires:** all proof modules import together (issue #133). The nightly gate's `allproof`
   step builds `GoFVTest/Proof/AllProof.lean` (`scripts/gen-allproof.sh`) to keep it so.
 
+#### Kernel replay: modules in parallel tasks on one environment, bounded by memory (#526)
+- **Problem:** `axioms-audit --replay` (#496) sent all 84,561 constants of the 1,051 `GoFV`/
+  `GoFVTest` library modules to the kernel in one `Kernel.Environment.replay` call on one thread:
+  the nightly axioms step took 17 min on the gate machine, 30.5 min and 6.5 GB peak RSS on a
+  16-core orb.
+- **Trick:** one task per module, started once the modules it imports are done, against the
+  environment of every module done so far; then the kernel's versions of its constants (looked up
+  in the task's resulting environment, so not a stored `InductiveVal`, which `replay` never
+  compares) are added with `Kernel.Environment.addDeclWithoutChecking` (inductive types are
+  checked again: the kernel has no unchecked path for them). Not the private
+  `Kernel.Environment.add` through an `@[extern "lean_environment_add"]`: the audit forbids
+  `@[extern]` in an executable root. The modules with the longest chains of importers start
+  first. Layers of equal import depth with a barrier (the first plan) waste the wait for each
+  layer's slowest module, and starting every ready module at once was killed at 16G after 5 min:
+  each `GoFV.Proof.Witness.Lower*` module (kernel-evaluated witnesses, about 20 s each) holds
+  about 3 GB while it is checked. So at most `GOFV_REPLAY_JOBS` at a time, one per 4 GB of
+  `FV_MEMCAP` (`scripts/axioms-audit.sh`).
+- **Effect** (whole tree, same build, orb): 1 at a time 30.5 min / 6.5 GB (the old sequential
+  program; the new one at 1 job 29.8 min); 2 at a time 14.4 min / 9.0 GB (6.3 GB anonymous);
+  4 at a time 8.2 min / 14.3 GB (11.4 GB anonymous), 3.7×. The longest import chain is 46
+  modules and replays in 4.1–4.7 min, the floor for any job count. The tasks add up to 29.7 min
+  at 1 job (no measurable cost of sharing one environment across threads) and 31.3 min at 4.
+  Per PR, `--replay-changed` for #525 (73 modules): 11.8 min / 5.7 GB sequential, 6.9 min /
+  8.7 GB at 2, 4.1 min / 14.4 GB at 4 (critical path 3.4–3.7 min).
+
 #### `first | … | …` does not catch maximum recursion or heartbeats
 - **Problem:** six `Trunc` rule lemmas (`(Trunc16to8 (And16 (Const16 [y]) x)) && y&0xFF ==
   0xFF`) failed with "maximum recursion depth" although the alternative that hit it
