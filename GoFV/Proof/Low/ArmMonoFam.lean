@@ -472,7 +472,7 @@ theorem csinc_mono (ty : Ty) (k : Int64) : RefinesList as bs → Refines (csinc 
       rw [condOn_of k hf hc]
       cases c with
       | true => exact regVal_mono _ hx
-      | false => exact addP_mono _ _ hy
+      | false => exact regVal_mono _ (addP_mono _ _ hy)
   | .cons _ (.cons _ (.cons _ (.cons _ _))) => .poison _
 
 theorem csel0_mono (ty : Ty) (k : Int64) : RefinesList as bs → Refines (csel0 ty k as) (csel0 ty k bs)

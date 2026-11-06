@@ -215,10 +215,6 @@ what the hardware computes on the pointer's address, as the `ADD`/`SUB` cases do
 - `CSINC [cc] x y f` (`Arm64.csinc`): when the condition fails, a pointer `y` is moved by 1
   (`addP`), as `CSEL [cc] x (ADDconst [1] y) f` moves it (`1190`, `1191`); the hardware selects
   `y`'s address plus 1.
-- `SUB i p` with `p` a pointer without a register (`Arm64.sub`): the negation of `SUB p i`, so
-  the integer `−(addr − i)` when `p − i` converts, else `poison` (`(NEG (SUB x y)) => (SUB y x)`,
-  `1183`); the hardware computes `i − addr = −(addr − i)`. A pointer with a register keeps the
-  word difference.
 - `CMN a b`, `CMNconst [c] a`, `CMPshift* a b`, `CMNshift* a b` (`Arm64.cmpP`, `cmp1P`,
   `cmpSh`): a pointer without a register against a register gives `Z` clear and every other bit
   unknown (`Arm64.zClear`), exactly `cmp`'s case for `CMP p i`: Phase 1 never equates such a
@@ -227,9 +223,12 @@ what the hardware computes on the pointer's address, as the `ADD`/`SUB` cases do
   and the shifted operand of `CMPshift*` (a shifted pointer has no meaning) stay `poison`.
 
 With registers on every operand each op is unchanged. sem-difftest (native and the quick-v7
-corpus) is unchanged by these cases. Still false: `(SUB x (SUB y z)) => (SUB (ADD x z) y)` and
-`(SUB (SUB x y) z) => (SUB x (ADD y z))` (`1197`, `1198`), whose target moves a pointer through an
-intermediate outside its window (`docs/proofs/rules.md`, Findings).
+corpus) is unchanged by these cases. Still false (`docs/proofs/rules.md`, Findings): `(SUB x (SUB
+y z)) => (SUB (ADD x z) y)` and `(SUB (SUB x y) z) => (SUB x (ADD y z))` (`1197`, `1198`), whose
+target moves a pointer through an intermediate outside its window, and `(NEG (SUB x y)) => (SUB y
+x)` (`1183`): a pointer with a register that does not convert (`Ptr.ofAddr` of an address at or
+above `2^63`, a frame of activation `2^20` or more) is read as its register by `SUB x y` and
+`NEG`, which give an integer, where the target's `SUB y x` moves the pointer.
 
 **Pair accesses (#156, #385).** A pair load or store (`LDP`, `LDPW`, `LDPSW`, `FLDP{S,D,Q}`,
 `STP`, `STPW`, `FSTP{S,D,Q}`) of `n`-byte elements addresses element `i` as the single access

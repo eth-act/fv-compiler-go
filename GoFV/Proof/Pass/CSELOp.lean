@@ -73,6 +73,16 @@ theorem cmp2_swap {g : BitVec 64 → BitVec 64 → BitVec 64 × Flags} (hg : ∀
     cases Arm64.reg b <;> cases Arm64.reg a <;> dsimp only <;> first | rfl | exact congrArg _ (hg _ _)
   | cons _ _ => rfl
 
+theorem cmpP_swap {g : BitVec 64 → BitVec 64 → BitVec 64 × Flags} (hg : ∀ x y, g x y = g y x)
+    (a b : Val) (rest : List Val) :
+    Arm64.cmpP g (b :: a :: rest) = Arm64.cmpP g (a :: b :: rest) := by
+  cases rest with
+  | nil =>
+    unfold Arm64.cmpP; dsimp only
+    cases ha : Arm64.reg a <;> cases hb : Arm64.reg b <;> dsimp only <;>
+      (cases a <;> cases b <;> simp_all [Arm64.reg, hg])
+  | cons _ _ => rfl
+
 theorem cmp2w_swap {g : BitVec 32 → BitVec 32 → BitVec 32 × Flags} (hg : ∀ x y, g x y = g y x)
     (a b : Val) (rest : List Val) :
     Arm64.cmp2w g (b :: a :: rest) = Arm64.cmp2w g (a :: b :: rest) := by
@@ -167,7 +177,7 @@ theorem armEvalPure_swap {op : Op} {ty : Ty} {k : Int64} {aux : Option AuxRef} {
   case ARM64OR => exact op2_swap (fun x y => BitVec.or_comm x y) a b rest
   case ARM64XOR => exact op2_swap (fun x y => BitVec.xor_comm x y) a b rest
   case ARM64CMN =>
-    exact cmp2_swap (fun x y => addWithCarry_comm x y false) a b rest
+    exact cmpP_swap (fun x y => addWithCarry_comm x y false) a b rest
   case ARM64CMNW =>
     exact cmp2w_swap (fun x y => addWithCarry_comm x y false) a b rest
   case ARM64TST => exact flags2_swap (fun x y => by rw [BitVec.and_comm x]) a b rest

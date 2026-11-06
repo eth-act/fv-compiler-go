@@ -96,24 +96,46 @@ theorem r_ARM64_598_sound : ArmRule.Checked r_ARM64_598 := by
     funext fun x => cmn_eq_subFlags_neg _ _ n0 nm
   rw [this]; exact Refines.refl _
 
+/-- `CMP` of a value with a constant: the compare on its register, else `cmp`'s `Z` clear for a
+pointer without one (`Arm64.cmp1P`, which `CMNconst` is). -/
+theorem cmp_const_eq (y : Val) (K : BitVec 64) :
+    Arm64.cmp y (.int .w64 K) = Arm64.cmp1P (fun x => Arm64.subFlags x K) [y] := by
+  cases y with
+  | ptr p => cases hp : Arm64.ptrReg p <;> simp [Arm64.cmp, Arm64.cmp1P, Arm64.reg, hp, Arm64.zClear]
+  | _ => simp [Arm64.cmp, Arm64.cmp1P, Arm64.reg]
+
+/-- The immediate of `[c]` for a 64-bit `c < 0` other than `intMin`: neither 0 nor `intMin`. -/
+private theorem imm_neg_ok {c : Int64} (h1 : c.toInt < 0) (h2 : c.toInt ≠ -9223372036854775808) :
+    BitVec.ofInt 64 c.toInt ≠ 0 ∧ BitVec.ofInt 64 c.toInt ≠ BitVec.intMin 64 := by
+  have hk := c.le_toInt
+  have hk2 := c.toInt_lt
+  have hK : (BitVec.ofInt 64 c.toInt).toInt = c.toInt := by
+    rw [BitVec.toInt_ofInt]; exact Int.bmod_eq_of_le (by omega) (by omega)
+  refine ⟨fun h => by rw [h] at hK; simp at hK; omega, fun h => ?_⟩
+  rw [h] at hK; simp [BitVec.toInt_intMin] at hK; omega
+
 /-- `ARM64.rules:597`: `(CMNconst [c] y) && c < 0 && c != -1<<63 => (CMPconst [-c] y)` -/
 theorem r_ARM64_597_sound : ArmRule.Checked r_ARM64_597 := by
   left; arm_unfold; arm_norm
   obtain ⟨h1, h2⟩ := hcond
   simp only [decide_eq_true_eq] at h1
-  have hk := (e.auxInt []).le_toInt
-  have hk2 := (e.auxInt []).toInt_lt
-  have hK : (BitVec.ofInt 64 (e.auxInt []).toInt).toInt = (e.auxInt []).toInt := by
-    rw [BitVec.toInt_ofInt]; exact Int.bmod_eq_of_le (by omega) (by omega)
-  have n0 : BitVec.ofInt 64 (e.auxInt []).toInt ≠ 0 := fun h => by rw [h] at hK; simp at hK; omega
-  have nm : BitVec.ofInt 64 (e.auxInt []).toInt ≠ BitVec.intMin 64 := fun h => by
-    rw [h] at hK; simp [BitVec.toInt_intMin] at hK; omega
-  rw [BitVec.ofInt_neg]
-  simp only [Arm64.cmp1, Arm64.cmp]
-  cases hy : Arm64.reg (e.leaf [0]) with
-  | none => rw [retypeL_poison]; exact .poison _
-  | some x =>
-    simp only [Arm64.reg, BitVec.setWidth_eq]
-    rw [cmn_eq_subFlags_neg x _ n0 nm]; exact Refines.refl _
+  obtain ⟨n0, nm⟩ := imm_neg_ok h1 h2
+  rw [BitVec.ofInt_neg, cmp_const_eq]
+  have : (fun x => addWithCarry x (BitVec.ofInt 64 (e.auxInt []).toInt) false) =
+      fun x => Arm64.subFlags x (-BitVec.ofInt 64 (e.auxInt []).toInt) :=
+    funext fun x => cmn_eq_subFlags_neg _ _ n0 nm
+  rw [this]; exact Refines.refl _
+
+/-- `ARM64.rules:597`: `(CMPconst [c] y) && c < 0 && c != -1<<63 => (CMNconst [-c] y)` -/
+theorem r_ARM64_597_2_sound : ArmRule.Checked r_ARM64_597_2 := by
+  left; arm_unfold; arm_norm
+  obtain ⟨h1, h2⟩ := hcond
+  simp only [decide_eq_true_eq] at h1
+  obtain ⟨n0, nm⟩ := imm_neg_ok h1 h2
+  rw [BitVec.ofInt_neg, cmp_const_eq]
+  have : (fun x => Arm64.subFlags x (BitVec.ofInt 64 (e.auxInt []).toInt)) =
+      fun x => addWithCarry x (-BitVec.ofInt 64 (e.auxInt []).toInt) false :=
+    funext fun x => subFlags_eq_cmn _ _ n0 nm
+  rw [this]; exact Refines.refl _
 
 end GoFV.Proof.Low.Rules

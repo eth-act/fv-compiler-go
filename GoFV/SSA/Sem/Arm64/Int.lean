@@ -199,12 +199,13 @@ def csel (ty : Ty) (k : Int64) (g : Option (BitVec 64 → BitVec 64)) : List Val
     | none => .poison
   | _ => .poison
 
-/-- `CSINC [cc] x y f`: `x` if the condition holds, else `y + 1` with `ADDconst`'s provenance
-case of a pointer `y` (`addP`: `(CSEL [cc] x (ADDconst [1] y) f)` moves it by 1). -/
+/-- `CSINC [cc] x y f`: `x` if the condition holds, else the register `y + 1`, with `ADDconst`'s
+provenance case of a pointer `y` (`addP`; `(CSEL [cc] x (ADDconst [1] y) f)` selects that
+register, `regVal`). -/
 def csinc (ty : Ty) (k : Int64) : List Val → Val
   | [x, y, f] => match condOn k f with
     | some true => regVal ty x
-    | some false => addP ty y 1
+    | some false => regVal ty (addP ty y 1)
     | none => .poison
   | _ => .poison
 

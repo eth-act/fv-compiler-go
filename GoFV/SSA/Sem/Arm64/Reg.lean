@@ -138,10 +138,8 @@ def add (ty : Ty) : List Val → Val
     | none => .poison
   | args => op2 ty (· + ·) args
 
-/-- `SUB a b` with the provenance cases `SUB p i` (a pointer), `SUB p q` (Phase 1's `SubPtr`:
-the difference of offsets within one allocation) and `SUB i p` of a pointer without a register:
-the negation of `SUB p i` (the hardware's `i − addr` is `−(addr − i)`, so the result is the
-integer `SUB p i` gives when that pointer converts, else no register: `poison`). -/
+/-- `SUB a b` with the provenance cases `SUB p i` (a pointer) and `SUB p q` (Phase 1's `SubPtr`:
+the difference of offsets within one allocation). -/
 def sub (ty : Ty) : List Val → Val
   | [.ptr p, .ptr q] =>
     match p.addr?, q.addr? with
@@ -150,10 +148,6 @@ def sub (ty : Ty) : List Val → Val
   | [.ptr p, b] => match reg b with
     | some k => PtrOps.ptrRes (p.add (-k))
     | none => .poison
-  | [a, .ptr p] => match reg a, ptrReg p with
-    | some x, some y => res ty (x - y)
-    | some k, none => op1 ty (- ·) [PtrOps.ptrRes (p.add (-k))]
-    | none, _ => .poison
   | args => op2 ty (· - ·) args
 
 /-- `MADD a x y` (`MSUB` if `neg`): `a ± x·y`, with `ADD`'s provenance case of a pointer `a`

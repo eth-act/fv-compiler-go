@@ -210,6 +210,14 @@ theorem refines_csel_cond {ty : Ty} {k k' : Int64} {g : Option (BitVec 64 → Bi
   | none => simp only [retypeL_poison]; exact .poison _
   | some b => rw [h b hA]; exact Refines.refl _
 
+theorem refines_csinc_cond {ty : Ty} {k k' : Int64} {x y A B : Val}
+    (h : ∀ b, Arm64.condOn k A = some b → Arm64.condOn k' B = some b) (T : Ty) :
+    Refines ((Arm64.csinc ty k [x, y, A]).retypeL T) ((Arm64.csinc ty k' [x, y, B]).retypeL T) := by
+  simp only [Arm64.csinc]
+  cases hA : Arm64.condOn k A with
+  | none => simp only [retypeL_poison]; exact .poison _
+  | some b => rw [h b hA]; exact Refines.refl _
+
 theorem refines_csel0_cond {ty : Ty} {k k' : Int64} {x A B : Val}
     (h : ∀ b, Arm64.condOn k A = some b → Arm64.condOn k' B = some b) (T : Ty) :
     Refines ((Arm64.csel0 ty k [x, A]).retypeL T) ((Arm64.csel0 ty k' [x, B]).retypeL T) := by
@@ -355,8 +363,8 @@ theorem r_ARM64_1355_cc_sound : ForallL ArmRule.Checked (ccSplit r_ARM64_1355) :
     · rw [ho] at hcond
       simp [binE, binDV] at hcond
       subst hcond
-      exact refines_csel_cond (condOn_invert (hk.trans rfl) (by rfl) (by rfl) _ _) _
-    · exact refines_csel_cond (fun b h => by simp [Arm64.condOn, hk] at h) _
+      exact refines_csinc_cond (condOn_invert (hk.trans rfl) (by rfl) (by rfl) _ _) _
+    · exact refines_csinc_cond (fun b h => by simp [Arm64.condOn, hk] at h) _
 
 /-- `ccSplit r_ARM64_1356` on the integer condition op `cc`. -/
 def r1356 (cc : Op) : Rule where

@@ -83,14 +83,14 @@ theorem evalPure_av (hU : TempU U) (op : Op) (ty : Ty) (k : Int64) (aux : Option
     show Val.Avoids U (Arm64.op2w ty Arm64.urem args)
     exact op2w_av _ _ _
   case ARM64MADD =>
-    show Val.Avoids U (Arm64.op3 ty (fun a x y => a + x * y) args)
-    exact op3_av _ _ _
+    show Val.Avoids U (Arm64.madd ty false args)
+    exact madd_av _ _ h
   case ARM64MADDW =>
     show Val.Avoids U (Arm64.op3w ty (fun a x y => a + x * y) args)
     exact op3w_av _ _ _
   case ARM64MSUB =>
-    show Val.Avoids U (Arm64.op3 ty (fun a x y => a - x * y) args)
-    exact op3_av _ _ _
+    show Val.Avoids U (Arm64.madd ty true args)
+    exact madd_av _ _ h
   case ARM64MSUBW =>
     show Val.Avoids U (Arm64.op3w ty (fun a x y => a - x * y) args)
     exact op3w_av _ _ _
@@ -355,11 +355,11 @@ theorem evalPure_av (hU : TempU U) (op : Op) (ty : Ty) (k : Int64) (aux : Option
     show Val.Avoids U (Arm64.cmp1w (fun x => Arm64.subFlags x (Arm64.imm32 k)) args)
     exact cmp1w_av _ _
   case ARM64CMN =>
-    show Val.Avoids U (Arm64.cmp2 (fun x y => addWithCarry x y false) args)
-    exact cmp2_av _ _
+    show Val.Avoids U (Arm64.cmpP (fun x y => addWithCarry x y false) args)
+    exact cmpP_av _ _
   case ARM64CMNconst =>
-    show Val.Avoids U (Arm64.cmp1 (fun x => addWithCarry x (Arm64.imm k) false) args)
-    exact cmp1_av _ _
+    show Val.Avoids U (Arm64.cmp1P (fun x => addWithCarry x (Arm64.imm k) false) args)
+    exact cmp1P_av _ _
   case ARM64CMNW =>
     show Val.Avoids U (Arm64.cmp2w (fun x y => addWithCarry x y false) args)
     exact cmp2w_av _ _
@@ -379,23 +379,23 @@ theorem evalPure_av (hU : TempU U) (op : Op) (ty : Ty) (k : Int64) (aux : Option
     show Val.Avoids U (Arm64.flags1w (fun x => logicFlags (x &&& Arm64.imm32 k)) args)
     exact flags1w_av _ _
   case ARM64CMPshiftLL =>
-    show Val.Avoids U (Arm64.cmp2 (fun x y => Arm64.subFlags x (Arm64.shifted .ll k y)) args)
-    exact cmp2_av _ _
+    show Val.Avoids U (Arm64.cmpSh (fun x y => Arm64.subFlags x (Arm64.shifted .ll k y)) args)
+    exact cmpSh_av _ _
   case ARM64CMPshiftRL =>
-    show Val.Avoids U (Arm64.cmp2 (fun x y => Arm64.subFlags x (Arm64.shifted .rl k y)) args)
-    exact cmp2_av _ _
+    show Val.Avoids U (Arm64.cmpSh (fun x y => Arm64.subFlags x (Arm64.shifted .rl k y)) args)
+    exact cmpSh_av _ _
   case ARM64CMPshiftRA =>
-    show Val.Avoids U (Arm64.cmp2 (fun x y => Arm64.subFlags x (Arm64.shifted .ra k y)) args)
-    exact cmp2_av _ _
+    show Val.Avoids U (Arm64.cmpSh (fun x y => Arm64.subFlags x (Arm64.shifted .ra k y)) args)
+    exact cmpSh_av _ _
   case ARM64CMNshiftLL =>
-    show Val.Avoids U (Arm64.cmp2 (fun x y => addWithCarry x (Arm64.shifted .ll k y) false) args)
-    exact cmp2_av _ _
+    show Val.Avoids U (Arm64.cmpSh (fun x y => addWithCarry x (Arm64.shifted .ll k y) false) args)
+    exact cmpSh_av _ _
   case ARM64CMNshiftRL =>
-    show Val.Avoids U (Arm64.cmp2 (fun x y => addWithCarry x (Arm64.shifted .rl k y) false) args)
-    exact cmp2_av _ _
+    show Val.Avoids U (Arm64.cmpSh (fun x y => addWithCarry x (Arm64.shifted .rl k y) false) args)
+    exact cmpSh_av _ _
   case ARM64CMNshiftRA =>
-    show Val.Avoids U (Arm64.cmp2 (fun x y => addWithCarry x (Arm64.shifted .ra k y) false) args)
-    exact cmp2_av _ _
+    show Val.Avoids U (Arm64.cmpSh (fun x y => addWithCarry x (Arm64.shifted .ra k y) false) args)
+    exact cmpSh_av _ _
   case ARM64TSTshiftLL =>
     show Val.Avoids U (Arm64.flags2 (fun x y => logicFlags (x &&& Arm64.shifted .ll k y)) args)
     exact flags2_av _ _
@@ -447,8 +447,8 @@ theorem evalPure_av (hU : TempU U) (op : Op) (ty : Ty) (k : Int64) (aux : Option
     show Val.Avoids U (Arm64.csel0 ty k args)
     exact csel0_av _ _ h
   case ARM64CSINC =>
-    show Val.Avoids U (Arm64.csel ty k (some (· + 1)) args)
-    exact csel_av _ _ _ h
+    show Val.Avoids U (Arm64.csinc ty k args)
+    exact csinc_av _ _ h
   case ARM64CSINV =>
     show Val.Avoids U (Arm64.csel ty k (some (~~~ ·)) args)
     exact csel_av _ _ _ h
