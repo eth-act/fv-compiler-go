@@ -121,6 +121,20 @@ theorem writeRes_rel {what : String} {M M' : Mem} (hM : Mem.EqOff U M M') {p : P
     obtain ⟨M1', hw', hM1⟩ := EqOff.write hM hw
     exact ⟨_, by rw [hw']; rfl, .mem hM1⟩
 
+/-- The same pair store on related memories. -/
+theorem storePair_rel {what : String} {M M' : Mem} (hM : Mem.EqOff U M M') {n : Nat} {p q : Ptr}
+    {a b y : Val} (h : writeRes what (Arm64.storePair n p q a b M) = .ok y) :
+    ∃ y', writeRes what (Arm64.storePair n p q a b M') = .ok y' ∧ VR U y y' := by
+  cases hw : Arm64.storePair n p q a b M with
+  | none => rw [hw] at h; cases h
+  | some M1 =>
+    rw [hw] at h; cases h
+    unfold Arm64.storePair at hw
+    obtain ⟨M2, h1, h2⟩ := Option.bind_eq_some_iff.1 hw
+    obtain ⟨M2', h1', hM2⟩ := EqOff.write hM h1
+    obtain ⟨M1', h2', hM1⟩ := EqOff.write hM2 h2
+    exact ⟨_, by unfold Arm64.storePair; rw [h1', Option.bind_some, h2']; rfl, .mem hM1⟩
+
 /-! ## Calls -/
 
 theorem fitPiece_mem (t : Ty) (M : Mem) : fitPiece t (.mem M) = .mem M := by
@@ -225,8 +239,10 @@ theorem armA_ok {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} {fr
        simp only [List.cons_append, List.nil_append] at *
        try simp only [‹symAddr ctx v _ = some _›]
        try simp only [‹Arm64.addr _ 0 = some _›]
+       try simp only [‹pairAddr ctx v _ _ = some _›]
        first
          | exact writeRes_rel hM h
+         | exact storePair_rel hM h
          | (cases h
             first
               | exact ⟨_, rfl, by rw [elim_ld_eq hs (hL _ (by simp)) hM]; exact .refl _⟩

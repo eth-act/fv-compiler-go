@@ -591,4 +591,11 @@ theorem writeRes_av {what : String} {o : Option Mem} {r : Val}
   | none => cases h
   | some M => cases h; exact ho M rfl
 
+theorem storePair_av {n : Nat} {p q : Ptr} {a b : Val} {M M1 : Mem} (hm : M.Avoids U)
+    (hw : Arm64.storePair n p q a b M = some M1) (ha : BAv U (Arm64.storeBytes n a))
+    (hb : BAv U (Arm64.storeBytes n b)) : M1.Avoids U := by
+  unfold Arm64.storePair at hw
+  obtain ⟨M2, h1, h2⟩ := Option.bind_eq_some_iff.1 hw
+  exact memAvoids_write (memAvoids_write hm h1 fun _ => ha) h2 fun _ => hb
+
 end GoFV.Proof.UnreadL

@@ -64,9 +64,8 @@ theorem arm64Op_av {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} 
     | (cases h; done)
     | exact writeRes_av h (fun M hM => memAvoids_write (hargs (.mem _) (by simp)) hM
         (fun _ => storeBytes_av _ (hargs _ (by simp))))
-    | exact writeRes_av h (fun M hM => memAvoids_write (hargs (.mem _) (by simp)) hM
-        (fun _ => bav_append (storeBytes_av _ (hargs _ (by simp)))
-          (storeBytes_av _ (hargs _ (by simp)))))
+    | exact writeRes_av h (fun M hM => storePair_av (hargs (.mem _) (by simp)) hM
+        (storeBytes_av _ (hargs _ (by simp))) (storeBytes_av _ (hargs _ (by simp))))
     | exact callOp_avoids hfs hU (callArgs_av hU _ _ _ hargs) r h
     | exact memRoot_avoids hU hargs h
     | exact absurd h panicBounds_not_ok

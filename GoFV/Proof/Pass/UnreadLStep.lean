@@ -199,13 +199,6 @@ theorem storePair_eqOff {n : Nat} {p q : Ptr} {a b : Val} {M M1 : Mem}
   intro M' hM
   exact EqOff.write_left (EqOff.write_left hM h1 hp) h2 hq
 
-theorem storePair_av {n : Nat} {p q : Ptr} {a b : Val} {M M1 : Mem} (hm : M.Avoids U)
-    (hw : Arm64.storePair n p q a b M = some M1) (ha : BAv U (Arm64.storeBytes n a))
-    (hb : BAv U (Arm64.storeBytes n b)) : M1.Avoids U := by
-  unfold Arm64.storePair at hw
-  obtain ⟨M2, h1, h2⟩ := Option.bind_eq_some_iff.1 hw
-  exact memAvoids_write (memAvoids_write hm h1 fun _ => ha) h2 fun _ => hb
-
 /-- An eliminated symbol store writes into `U`: the source's memory after it is equal outside
 `U` to the target's, and it avoids `U` when its arguments do. -/
 theorem elimStore {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {ty : Ty}
