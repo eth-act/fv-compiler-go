@@ -2052,6 +2052,34 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
     x0:(SLLconst [c] y) x1) && … => (InvertFlags (CMPshiftLL x1 y [c]))`, and the `SRL`/`SRA`
     forms).
 
+- **Pointer arithmetic peepholes false under the lowered semantics** (#385; model limits, not Go
+  bugs; module doc of `GoFV/Proof/Low/Rules/ShiftOp.lean`). `ADD`/`SUB` keep a pointer without
+  an integer form (`Arm64.add`, `sub`, `addP`: the window rule of `PtrOps.ptrRes`, a `.ptr`
+  result while the pointer does not convert), `MADD`/`MSUB`/`NEG` read registers only, and a
+  word (pointer or `uintptr` shape) may hold such a pointer (`Val.hasTy`). False, so left out of
+  `GoFV.Rules.ProvenARM64` (each counterexample evaluated with `#eval`; shapes `int64`/`*T`):
+  - `:1012`, `:1013` (`(ADD a l:(MUL x y)) && … => (MADD a x y)`, `SUB` → `MSUB`): `a` the
+    global pointer `g + 0`, `x = y = 1`: `ADD` gives the pointer `g + 1` (`SUB`: `g - 1`),
+    `MADD` (`MSUB`) `poison` (a global has no address).
+  - `:1183` (`(NEG (SUB x y)) => (SUB y x)`): `x = 0`, `y` the frame temporary `temp 0 1 + 0`
+    (an address but no integer form): the source negates the register difference to the
+    integer `2^62 + 2^24`, the target keeps the pointer `temp 0 1 + 0`.
+  - `:1184` (`(NEG (NEG x)) => x`): `x` that frame temporary: the integer `2^62 + 2^24` against
+    the pointer.
+  - `:1197` (`(SUB x (SUB y z)) => (SUB (ADD <v.Type> x z) y)`): `x` the pointer
+    `heap (2^22) + 0` (no integer form), `y = z = 2^41`: the source is `x`, the target's
+    `ADD x z` leaves the heap window (`poison`).
+  - `:1198` (`(SUB (SUB x y) z) => (SUB x (ADD <y.Type> y z))`): `x = heap 0 + 2^40` (outside
+    its window, so no integer form), `y = 1`, `z = 2^40`: `x - 1` re-enters the window and
+    becomes the word `2^41 - 1`, from which `SUB` takes `z` as integers (`2^40 - 1`); the
+    target's `x - (2^40 + 1)` leaves the window (`poison`).
+  The shifted-operand forms `:1433`–`:1438` (`(ADD x0 x1:(SLLconst [c] y)) && … => (ADDshiftLL
+  x0 y [c])`, …) were false under the earlier provenance clause of `Pat.argsOKLs` (only
+  pointer-typed arguments forced a word-shaped result: at an `int32` `ADD`, a `uintptr` `x0`
+  holding `heap 0 + (2^64 - 1)` plus the `int32`-truncated shift `512` re-enters the window,
+  while `ADDshiftLL` adds the whole `2^40 + 512`); with the clause on every word-shaped argument
+  they are proven.
+
 ## Narrow result types
 
 `Rule.Sound` assumes the matched value's type is not narrower than its op. The checker does

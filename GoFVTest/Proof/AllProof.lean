@@ -69,6 +69,7 @@ import GoFV.Proof.Low.Rules.Ptr
 import GoFV.Proof.Low.Rules.Rename
 import GoFV.Proof.Low.Rules.SetOpInt
 import GoFV.Proof.Low.Rules.Shift
+import GoFV.Proof.Low.Rules.ShiftOp
 import GoFV.Proof.Low.Rules.Tactic
 import GoFV.Proof.Low.Sim
 import GoFV.Proof.Low.SimAtom
@@ -722,6 +723,7 @@ import GoFV.Proof.Witness.LowerLoadSym
 import GoFV.Proof.Witness.LowerLocalAddr
 import GoFV.Proof.Witness.LowerNegOff
 import GoFV.Proof.Witness.LowerPanicConst
+import GoFV.Proof.Witness.LowerShiftOp
 import GoFV.Proof.Witness.LowerStoreFold
 import GoFV.Proof.Witness.LowerStoreSym
 import GoFV.Proof.Witness.LowerWBPanic
