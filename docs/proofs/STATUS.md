@@ -91,8 +91,9 @@ carry no provenance, so the pointer made from `addr(p) + off` need not be in `p`
 
 `GoFV.Proof.PipelineFull.verifiedPipelineFull_refines`: for a `fullyVerified` result of
 `verifiedPipelineFull`, every returning or panicking `run` of the input is, up to refinement, a
-`runLoc` of the allocated function after `trim`, under Phase 1's `VPre` and no nil-page fault of
-the recorded `schedule` inputs (`docs/PASSES2.md` §0; witness `verifiedPipelineFull_witness`).
+`runLoc` of the allocated function after `trim`, under Phase 1's `VPre`, no nil-page fault of
+the recorded `schedule` inputs and valid pointer parameters (`ArgPtrsOK`, below)
+(`docs/PASSES2.md` §0; witness `verifiedPipelineFull_witness`).
 Measured with `gofv-ssa-opt --check --verified --jobs 4` on main a717e6db plus the wiring of
 addressing modes, late lower, pair and flagalloc (full-v9: 96,560 functions, format 5.1, 81 min):
 
@@ -207,6 +208,14 @@ its read-only symbols. Each conjunct, what it assumes, and whether the runtime m
 
 Not in `VPre` by decision: disjointness of parameter slots from the other frame slots (the
 `not disjoint` class above stays open), and type-based aliasing (#111).
+
+Phase 2 adds two assumptions on the recorded `schedule` inputs `r.nnf`
+(`verifiedPipelineFull_refines`'s `hn` and `ha`):
+
+| Assumption | Assumes | Why |
+| --- | --- | --- |
+| `NoNilFault tabs f env args mem` | no run of the `schedule` input faults in the nil page (`runL` and `runLF` agree) | `schedule`'s theorem is stated against `runLF` (memory ops fault), the passes before it against `runL` |
+| `ArgPtrsOK tabs f env args mem` | every pointer-shaped register piece of a parameter (`ArgIntReg` at a `.ptr` shape) reads nil or a pointer that is not wild (`Ptr.wild`: into the nil block but not nil) | a Go-level assumption: Go's type system and the garbage collector require a pointer parameter to be nil or valid; `unsafe` code that forges a wild pointer is outside the model. `scheduleCheck` lets the target run a nil check of such a piece before a fault on the same memory (`swapOK`'s `argPtr` case): it then panics with `nilDeref` of that memory or passes, where a wild pointer would leave it `stuck` |
 
 Besides `VPre`, the theorems rest on the semantics itself (`GoFV.SSA.Sem`, its documented gaps in
 `docs/plans/semantics.md` §10) and on the exporter (`docs/contracts/export.md`). Axioms: `propext`,

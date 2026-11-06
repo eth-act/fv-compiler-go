@@ -217,7 +217,10 @@ structure BStep (tabs : Tables) (f g : Func) (md : LMode) (oS oT : List ID)
   out : Out (Ctx.makeL tabs f).tys f oS frPS
   swap : ∀ (i j : Nat) (x y : ID), i < j → oT[i]? = some y → oT[j]? = some x →
     mayFail tabs f y = true → mayFail tabs f x = true → ∀ (k l : Nat), k < l → oS[k]? = some x →
-    oS[l]? = some y → swapOK tabs (Ctx.makeL tabs f).params (Ctx.makeL tabs f).tys f x y = true
+    oS[l]? = some y → swapOK tabs (Ctx.makeL tabs f).params (Ctx.makeL tabs f).tys f
+      (srcPos f.valueTab.size oS) x y = true
+  /-- The values of `oS` are values of `f` (`srcPos`). -/
+  sLt : ∀ x ∈ oS, x < f.valueTab.size
   /-- An image per parameter (`argOK` pieces evaluate). -/
   img : frPS.images.size = (Ctx.makeL tabs f).params.size
   /-- No closure context (`GetClosurePtr` is `poison`). -/

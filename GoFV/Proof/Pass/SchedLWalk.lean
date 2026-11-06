@@ -10,9 +10,10 @@ Before the source's panicking value `r` the target runs values the source ran be
 (alike, `stepT`), values that never fail (`Cls.safe`), parameters' register pieces (`argOK`:
 they evaluate), and values `swapOK` lets it run first (the source's `r` cannot be a load or nil
 check whose pointer is a nil check's result, `SP`, `GetG` or the closure pointer, `nnBase`: that
-pointer has no nil base) (a load on `r`'s memory, or a nil check of `r`'s pointer word on it), which
-evaluate or panic with `nilDeref` of that memory, as `r` does; at `r` the target panics as the
-source.
+pointer has no nil base) (a load on `r`'s memory, or a nil check on it of `r`'s pointer word or
+of a pointer-shaped parameter piece the source ran before `r`, which reads nil or a pointer that
+is not wild, `ArgPtrsAt`), which evaluate or panic with `nilDeref` of that memory, as `r` does;
+at `r` the target panics as the source.
 -/
 
 namespace GoFV.Proof.SchedL
@@ -96,7 +97,8 @@ theorem walk_ok (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : List 
 
 /-- **The target panics where the source does, alike.** -/
 theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : List ID}
-    {frPS frPT : Frame} (B : BStep tabs f g md oS oT frPS frPT) {e : Panic} {m : Mem}
+    {frPS frPT : Frame} (B : BStep tabs f g md oS oT frPS frPT)
+    (hAP : ArgPtrsAt md env tabs f frPS) {e : Panic} {m : Mem}
     (hev : evalAllL md env (Ctx.makeL tabs f) frPS oS = .panic e m) :
     evalAllL md env (Ctx.makeSched tabs g) frPT oT = .panic e m := by
   obtain ⟨pre, r, post, H, hsplit, hpre, hr⟩ := evalAllL_panic_split hev
@@ -247,7 +249,7 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
       (fun hm => topo_before B.tTopo hyj hgℓm hm)
     rw [hns hℓspa, hHℓ]
   have hgsz : gv.args.size = fv.args.size := by rw [hrv.args, Array.size_map]
-  rcases hcy with hload | ⟨⟨⟨hnil, hrk⟩, h0⟩, hall⟩
+  rcases hcy with (hload | ⟨⟨⟨hnil, hrk⟩, h0⟩, hall⟩) | ⟨hnil, hany⟩
   · rcases evalValueL_load (env := env) hf (hcl.trans hload) hargsT with ⟨z, hz⟩ |
       ⟨ℓ', m', hb', hT', hp'⟩
     · exact .inr ⟨z, hz, fun h => absurd h hyP⟩
@@ -276,5 +278,55 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
       rw [hns hpspa, hHp]
     exact .inl (evalValueL_nc_nil (env := env) (ctx := Ctx.makeSched tabs g) hf (hrv.op.trans hnc)
       hgargs hTp hpa hTℓ)
+  · -- `y` is a nil check of a pointer-shaped parameter piece `p` the source ran before `r`
+    obtain ⟨hnc, hsz2⟩ := cls_nil hnil
+    obtain ⟨p, hp0⟩ : ∃ p, fv.args[0]? = some p := ⟨fv.args[0], by simp [hsz2]⟩
+    rw [hp0] at hany
+    simp only [Option.any_some, Bool.and_eq_true, decide_eq_true_eq] at hany
+    obtain ⟨⟨hap, hpos0⟩, hposr⟩ := hany
+    obtain ⟨k', hk'lt, hk'⟩ := srcPos_before B.sNodup B.sLt hk hpos0 hposr
+    have hpP : p ∈ pre := by
+      rw [List.getElem?_append_left hk'lt] at hk'
+      exact List.mem_of_getElem? hk'
+    obtain ⟨vp, hvp, hpok⟩ : ∃ vp, f.value? p = some vp ∧
+        argOK tabs (Ctx.makeL tabs f).params vp = true := by
+      unfold argPtr at hap
+      cases hvp : f.value? p with
+      | none => rw [hvp] at hap; cases hap
+      | some vp =>
+        rw [hvp] at hap
+        simp only [Bool.and_eq_true] at hap
+        exact ⟨vp, rfl, hap.1⟩
+    have hpop : vp.op = .ArgIntReg := by
+      simp only [argOK, Bool.and_eq_true, beq_iff_eq] at hpok
+      exact hpok.1.1
+    have hpnc : isNC f p = false := by rw [isNC_of hvp, hpop]; rfl
+    have hpspa : isSPA f p = false := by rw [isSPA_of hvp, hpop]; rfl
+    have hrepp : rep f p = p := by
+      unfold rep
+      rw [hvp]
+      dsimp only
+      rw [hpop]
+      rfl
+    -- the source's value of `p`: nil or a pointer that is not wild
+    obtain ⟨vp', z, hvp', hHz, hevz⟩ := Sr.eval p hpP
+    rw [hvp] at hvp'; cases hvp'
+    obtain ⟨q, hq, hqw⟩ := hAP.regs Sr.frH p vp hvp hap z hevz
+    -- the target's register of `p`
+    have hf1 : fv.args[1]? = some ℓ := by rw [hsz2] at hfℓ; exact hfℓ
+    have hfargs : fv.args = #[p, ℓ] := arr_two hsz2 hp0 hf1
+    have hgargs : gv.args = #[p, rep f ℓ] := by rw [hrv.args, hfargs]; simp [hrepp]
+    obtain ⟨-, hg0m⟩ := argsF_g hgv hrv hp0
+    rw [hrepp] at hg0m
+    have hpD : p ∈ oT.take j :=
+      topo_before B.tTopo hyj hg0m ((B.tMem p).2 ⟨hPS p hpP, hpspa⟩)
+    have hTp : T.regs[p]? = some (some z) := by rw [I.inP p hpD hpP hpnc, hHz]
+    by_cases hqb : q.blk = .nil
+    · have hqn : q.isNil = true := by simpa [Ptr.wild, hqb] using hqw
+      exact .inl (evalValueL_nc_nil (env := env) (ctx := Ctx.makeSched tabs g) hf
+        (hrv.op.trans hnc) hgargs hTp ⟨q, addr_of_asPtrWord hq, hqn⟩ hTℓ)
+    · obtain ⟨w, hw⟩ := evalValueL_nc_pass (md := md) (env := env) (ctx := Ctx.makeSched tabs g)
+        (hrv.op.trans hnc) hgargs hTp ⟨q, hq, hqb⟩ hTℓ
+      exact .inr ⟨w, hw, fun h => absurd h hyP⟩
 
 end GoFV.Proof.SchedL

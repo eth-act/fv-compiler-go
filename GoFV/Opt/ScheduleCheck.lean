@@ -22,8 +22,11 @@ accepts `g` as such a scheduling of `f` (decision (b) of #384, `docs/plans/seman
   evaluates, `argOK`), or `x` never fails (`Cls.safe`) or never faults (a load or nil check whose
   pointer is a nil check's result, `SP`, `GetG` or the closure pointer, `nnBase`), or `y` is a
   load and `x` a load or nil check on the same memory, so that whichever fails first fails with
-  `nilDeref` of that memory (`swapOK`). This is the ready-root rule (#96) for runs where memory
-  ops fault (`LMode.faulting`).
+  `nilDeref` of that memory, or `y` is a nil check on that memory of `x`'s base or of a
+  pointer-shaped parameter's register piece the source runs before `x` (`argPtr`: on the inputs
+  where those read nil or a pointer that is not wild, `GoFV.Proof.ArgPtrsOK`, it panics alike or
+  passes) (`swapOK`). This is the ready-root rule (#96) for runs where memory ops fault
+  (`LMode.faulting`).
 -/
 
 namespace GoFV.Opt.ScheduleCheck
@@ -172,16 +175,33 @@ def argOK (tabs : Tables) (params : Array (Option AuxRef)) (v : Value) : Bool :=
     | some { kind := .nameOff n _, .. } => params.contains (some n)
     | _ => false
 
+/-- A pointer shape (`.ptr _`). -/
+def ptrShape : Ty → Bool
+  | .ptr _ => true
+  | _ => false
+
+/-- Value `p` of `f` is a parameter's register piece (`argOK`) at a pointer shape (`tys`: `f`'s
+`runL` shapes): on the inputs where such a piece reads nil or a pointer that is not wild
+(`GoFV.Proof.ArgPtrsOK`, a Go-level assumption), a nil check of it panics with `nilDeref` or
+passes. -/
+def argPtr (tabs : Tables) (params : Array (Option AuxRef)) (tys : Array Ty) (f : Func) (p : ID) :
+    Bool :=
+  match f.value? p with
+  | some vp => argOK tabs params vp && ptrShape (tys[p]?.getD .other)
+  | none => false
+
 /-- The source runs `x` before `y`, the target `y` before `x` (both may fail). Allowed if `y`
 evaluates (a parameter's register piece, `argOK`; `params`: `f`'s input parameters'
 names); or if `x` never panics (so the source cannot stop at `x` with `y` not run: a value that
 never panics, or a load or nil check whose base is not nil, `nnBase`; `tys`: `f`'s `runL`
-shapes); or `x` and `y` fault alike: `y` is a `faultOp` and `x` a `faultOp` or a nil check on the
-same memory (whichever stops first panics with `nilDeref` of it); or `y` is a nil check of the
-base of `x`, a load or nil check on the same memory (if `x` faults, its base is nil, so `y` panics
-as well). -/
+shapes); or `x` and `y` fault alike: `x` is a `faultOp` or a nil check, and `y` on the same
+memory is a `faultOp` (whichever stops first panics with `nilDeref` of it), a nil check of the
+base of `x` when `x` is a load or nil check (if `x` faults, its base is nil, so `y` panics as
+well), or a nil check of a pointer-shaped parameter's register piece (`argPtr`) that the source
+runs before `x` (`pS`: the source positions from 1, 0 for a value not in the block), which
+panics with `nilDeref` of that memory or passes. -/
 def swapOK (tabs : Tables) (params : Array (Option AuxRef)) (tys : Array Ty) (f : Func)
-    (x y : ID) : Bool :=
+    (pS : Array Nat) (x y : ID) : Bool :=
   match f.value? x, f.value? y with
   | some vx, some vy =>
     argOK tabs params vy || !mayPanic tabs vx || nnBase tabs tys f vx ||
@@ -189,7 +209,9 @@ def swapOK (tabs : Tables) (params : Array (Option AuxRef)) (tys : Array Ty) (f 
         !(vx.args.back?.any (isSPA f)) &&
         (cls tabs vy == .load ||
           cls tabs vy == .nil && (ldOp vx.op || cls tabs vx == .nil) && vx.args[0]? == vy.args[0]? &&
-            (vy.args[0]?.all fun p => !isSPA f p)))
+            (vy.args[0]?.all fun p => !isSPA f p) ||
+          cls tabs vy == .nil &&
+            (vy.args[0]?.any fun p => argPtr tabs params tys f p && 0 < pS[p]! && pS[p]! < pS[x]!)))
   | _, _ => false
 
 /-- `posFill l i a`: `a` with each element of `l` set to its position (from `i`). -/
@@ -197,14 +219,18 @@ def posFill : List ID → Nat → Array Nat → Array Nat
   | [], _, a => a
   | x :: xs, i, a => posFill xs (i + 1) (a.set! x i)
 
+/-- The source positions of the order `oS` (from 1; 0 for a value not in `oS`). `n`: the size of
+the value table. -/
+def srcPos (n : Nat) (oS : List ID) : Array Nat := posFill oS 1 (Array.replicate n 0)
+
 /-- The values of the block that may fail keep their source order up to `swapOK`: for failing
 values `y` before `x` in the target order `oT`, if the source order `oS` runs `x` before `y`
-then `swapOK tabs params tys f x y`. `n`: the size of the value table. -/
+then `swapOK tabs params tys f (srcPos n oS) x y`. `n`: the size of the value table. -/
 def orderOK (tabs : Tables) (params : Array (Option AuxRef)) (tys : Array Ty) (f : Func) (n : Nat)
     (oS oT : Array ID) : Bool :=
-  let pS := posFill oS.toList 0 (Array.replicate n 0)
+  let pS := srcPos n oS.toList
   decide ((oT.toList.filter (mayFail tabs f)).Pairwise
-    fun y x => (!(pS[x]! < pS[y]!) || swapOK tabs params tys f x y) = true)
+    fun y x => (!(pS[x]! < pS[y]!) || swapOK tabs params tys f pS x y) = true)
 
 /-- The arguments of value `x` of `f` (none if `x` is not in `f`). -/
 def argsOf (f : Func) (x : ID) : List ID := ((f.value? x).map (·.args.toList)).getD []

@@ -262,12 +262,13 @@ theorem RefinesSched.returned_int {tabs tabs' : Tables} {f f' : Func}
       cases h1
       exact ⟨m', rfl⟩
 
-/-- `RefinesSched.returned_int` for `RefinesSchedLF`. -/
-theorem RefinesSchedLF.returned_int {tabs tabs' : Tables} {f f' : Func}
-    (h : RefinesSchedLF tabs' f' tabs f) {env : Env} {args : List Val} {mem m : Mem} {fuel : Nat}
-    {w : Width} {x : BitVec w.bits} (hs : runLF env tabs f args mem fuel = .returned [.int w x] m) :
+/-- `RefinesSched.returned_int` for `RefinesSchedLFFrom`, on an input in `P`. -/
+theorem RefinesSchedLFFrom.returned_int {P : Env → List Val → Mem → Prop} {tabs tabs' : Tables}
+    {f f' : Func} (h : RefinesSchedLFFrom P tabs' f' tabs f) {env : Env} {args : List Val}
+    {mem m : Mem} {fuel : Nat} {w : Width} {x : BitVec w.bits} (hP : P env args mem)
+    (hs : runLF env tabs f args mem fuel = .returned [.int w x] m) :
     ∃ fuel' m', runSched env tabs' f' args mem fuel' = .returned [.int w x] m' := by
-  obtain ⟨fuel', ho⟩ := h env args mem fuel (by rw [hs]; trivial)
+  obtain ⟨fuel', ho⟩ := h env args mem hP fuel (by rw [hs]; trivial)
   rw [hs] at ho
   refine ⟨fuel', ?_⟩
   generalize runSched env tabs' f' args mem fuel' = o at ho ⊢
