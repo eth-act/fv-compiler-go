@@ -2019,7 +2019,17 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
     provenance clause (`Pat.argsOKLs`) keeps word-shaped arguments (the shapes such a pointer
     has, `Val.hasTy`) away from a provenance op (`provOp`) at a non-word shape; it costs no
     function on quick-v7.
-  Recorded also in the module docs of `GoFV/Proof/Low/Rules/Cmp.lean` and `Shift.lean`.
+  - `:1190`, `:1191` (`(CSEL [cc] x (ADDconst [1] a) flag) => (CSINC [cc] x a flag)` and its
+    mirror on `arm64Negate(cc)`): `ADDconst` of a pointer `a` without an integer form (a global
+    `&g`, no concrete address; the provenance case `Arm64.addP` the validator admits at a word
+    shape) is the pointer `&g + 1`, which `CSEL` moves as the pointer (`regVal`); `CSINC` reads
+    `a`'s register, which `&g` has none of. When the condition fails the source is `&g + 1`, the
+    target `poison`. A proof needs `CSINC` to add to a pointer as `ADDconst` does.
+  - `:133`, `:134` (`(AndB ...) => (AND ...)`, `(OrB ...) => (OR ...)`): Phase 1's `AndB`/`OrB`
+    are parallel (`Cmp.andB`: `false && poison` is `false`), `AND`/`OR` read both registers:
+    `AndB false poison` is `false`, `AND` of it `poison` (`OrB true poison` likewise).
+  Recorded also in the module docs of `GoFV/Proof/Low/Rules/Cmp.lean`, `Shift.lean` and
+  `CselBits.lean`.
 
 - **`InvertFlags` rules outside the ghost-bit semantics** (#385; model limits, not Go bugs).
   Flags are `[n, z, c, v, g]` with `g` the sign of an integer compare's negated difference,

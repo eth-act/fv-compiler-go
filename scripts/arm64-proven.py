@@ -13,9 +13,10 @@ r_ARM64_<n>)`, and the rule set lists `b2iNorm r_ARM64_<n>` (`b2iNorm` is emitte
 set module). A rule whose result reads `b.Op` and `flagArg(b)` of a bound value `b` is proven in
 its split form by `r_ARM64_<n>_flag_sound : ForallL ArmRule.Checked (flagSplit r_ARM64_<n>)`
 (`GoFV.Rules.Derive.flagSplit`: one rule per condition op), and the rule set lists the rules of
-`flagSplit r_ARM64_<n>` in its place; likewise a rule whose result reads `arm64Invert(cc)` of
-its `CCop` auxint by `r_ARM64_<n>_cc_sound : ForallL ArmRule.Checked (ccSplit r_ARM64_<n>)`
-(`GoFV.Rules.Derive.ccSplit`: one rule per integer condition op). The rule set keeps the generated
+`flagSplit r_ARM64_<n>` in its place; likewise a rule whose result reads `arm64Invert(cc)` or
+`arm64Negate(cc)` of its `CCop` auxint by `r_ARM64_<n>_cc_sound : ForallL ArmRule.Checked
+(ccSplit r_ARM64_<n>)` (`GoFV.Rules.Derive.ccSplit`: one rule per integer condition op, per
+condition op `arm64Negate` maps for the latter). The rule set keeps the generated
 matching order (`GoFV.Rules.Generated.ARM64.ruleSet`: ops by Go name, rules per op as rulegen
 tries them; block kinds likewise) restricted to the proven rules.
 """
@@ -122,8 +123,9 @@ import GoFV.Rules.Derive
 `ArmRule.SetOp`, `ArmRule.Rename`, `BlockRuleL.Sound`; `GoFV/Proof/Low/ProvenARM64.lean`), in
 matching order: the rule set of the checked `lower` (`GoFV.Opt.lowerChecked`). A rule on a
 condition's op and flags (`flagArg`) is listed split by the condition op
-(`GoFV.Rules.Derive.flagSplit`), which rewrites the same instances; a rule on `arm64Invert` of
-its `CCop` auxint is listed split by the integer condition ops (`GoFV.Rules.Derive.ccSplit`).
+(`GoFV.Rules.Derive.flagSplit`), which rewrites the same instances; a rule on `arm64Invert` or
+`arm64Negate` of its `CCop` auxint is listed split by the condition ops
+(`GoFV.Rules.Derive.ccSplit`).
 -/
 
 namespace GoFV.Rules.ProvenARM64
@@ -190,10 +192,13 @@ end GoFV.Rules.ProvenARM64
         return "⟨" + ", ".join(r + ("_b2i_sound" if r in pn else "_sound") for r in x) + ", trivial⟩"
 
     def opProof(rs):
+        # `l₁ ++ l₂ ++ l₃` parses as `(l₁ ++ l₂) ++ l₃`, which `ForallL.append_iff` splits into
+        # `(F l₁ ∧ F l₂) ∧ F l₃`: the segment proofs nest to the left
         segs = segments(rs)
-        if len(segs) == 1:
-            return segProof(*segs[0])
-        return "⟨" + ", ".join(segProof(k, x) for k, x in segs) + "⟩"
+        acc = segProof(*segs[0])
+        for k, x in segs[1:]:
+            acc = "⟨" + acc + ", " + segProof(k, x) + "⟩"
+        return acc
 
     def proofs(xs):
         if not xs:
