@@ -211,6 +211,7 @@ theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
       ⟨r_ARM64_152_2_sound, r_ARM64_170_sound, trivial⟩,
       ⟨r_ARM64_152_3_sound, r_ARM64_169_sound, trivial⟩,
       ⟨r_ARM64_152_4_sound, r_ARM64_171_2_sound, trivial⟩,
+      ⟨r_ARM64_458_sound, trivial⟩,
       ⟨r_ARM64_33_sound, trivial⟩,
       ⟨r_ARM64_35_sound, trivial⟩,
       ⟨r_ARM64_438_sound, r_ARM64_439_sound, trivial⟩,
