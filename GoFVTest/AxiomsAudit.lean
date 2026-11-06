@@ -332,6 +332,44 @@ def replayAll (kenv : Kernel.Environment) (cis : Array ConstantInfo) :
     fresh := fresh.insert n (.thmInfo { v with name := n, all := [n] })
   return (← kenv.replay fresh, copies.size)
 
+/-- Insert `ci` into `env` unchanged: `Lean.Kernel.Environment.add` (private), what
+`Kernel.Environment.replay` does once the kernel has accepted a declaration. Only for constants a
+replay has checked (`replayLayers`). -/
+@[extern "lean_environment_add"]
+opaque kenvAdd (env : Kernel.Environment) (ci : ConstantInfo) : Kernel.Environment
+
+/-- Replay the modules `mds` (each with the depth of its longest import chain inside `mds`) on
+`kenv`, one layer of equal depth at a time: the modules of a layer import none of each other, so
+each is checked in its own task against the layers before it (`replayAll`, every copy of a
+duplicated theorem included), and the layer's constants are then added as checked (`kenvAdd`).
+Adds what a sequential replay would: no unsafe or partial constant (`replay` skips them, so a
+checked constant that uses one fails), one copy of a duplicated theorem, and an error for any
+other name declared twice. Returns the environment and the number of copies checked. -/
+def replayLayers (kenv : Kernel.Environment) (mds : Array (Name × ModuleData × Nat)) :
+    IO (Kernel.Environment × Nat) := do
+  let depth := mds.foldl (fun d (_, _, k) => max d k) 0
+  let mut kenv := kenv
+  let mut copies := 0
+  for d in 0...depth + 1 do
+    let layer := mds.filter (·.2.2 == d)
+    let base := kenv
+    let tasks ← layer.mapM fun (m, md, _) => do
+      return (m, ← IO.asTask (replayAll base md.constants))
+    let mut failed := #[]
+    for (m, t) in tasks do
+      match t.get with
+      | .ok (_, n) => copies := copies + n
+      | .error e => failed := failed.push s!"{m}: {e}"
+    unless failed.isEmpty do throw <| IO.userError ("\n".intercalate failed.toList)
+    for (_, md, _) in layer do
+      for ci in md.constants do
+        if ci.isUnsafe || ci.isPartial then continue
+        match kenv.find? ci.name, ci with
+        | none, _ => kenv := kenvAdd kenv ci
+        | some (.thmInfo _), .thmInfo _ => pure ()  -- a copy: its task checked it
+        | some _, _ => throw <| IO.userError s!"{ci.name} declared twice"
+  return (kenv, copies)
+
 open GoFVTest.AxiomsAudit in
 /-- `--replay LIB ROOTS`: send every constant declared in the `LIB` modules to the kernel again,
 then each root's, in an environment holding only the modules they import that are not in `LIB`
@@ -342,7 +380,8 @@ the kernel; the axioms audit reads declarations and would not notice. `LIB` must
 importers (a module importing a `LIB` module is in `LIB` or a root): the base is imported once,
 and an `.olean` mapped twice is copied onto the heap. Unsafe and partial constants are not
 replayed, as in `leanchecker` (a checked constant that uses one fails); every copy of a theorem
-that several modules declare is (`replayAll`). -/
+that several modules declare is (`replayAll`). The modules are checked in parallel, a layer of
+modules that import none of each other at a time (`replayLayers`), then the roots. -/
 def replayMain (lib roots : Array Name) (trustedOk : NameSet := {}) : IO UInt32 := do
   let libSet : NameSet := lib.foldl (·.insert ·) {}
   let mut base : Array Import := #[]
@@ -365,13 +404,26 @@ def replayMain (lib roots : Array Name) (trustedOk : NameSet := {}) : IO UInt32 
   let env ← importModules base {} (loadExts := false)
   if trusted > 0 then
     IO.println s!"trusted, not replayed: {trusted} GoFV/GoFVTest modules imported directly"
+  -- the depth of each LIB module: one more than its deepest LIB import
+  let libMds := mds.filter (libSet.contains ·.1)
+  let mut depth : Std.HashMap Name Nat := {}
+  while depth.size < libMds.size do
+    let before := depth.size
+    for (m, md) in libMds do
+      if depth.contains m then continue
+      let deps := md.imports.filter (libSet.contains ·.module)
+      if deps.all (depth.contains ·.module) then
+        depth := depth.insert m (deps.foldl (fun k i => max k (depth[i.module]! + 1)) 0)
+    if depth.size == before then throw <| IO.userError "the LIB modules import each other in a cycle"
   let t0 ← IO.monoMsNow
-  let libConsts := mds.filter (libSet.contains ·.1) |>.flatMap (·.2.constants)
-  let (kenv, n) ← replayAll env.toKernelEnv libConsts
-  IO.println s!"replayed {libConsts.size} constants ({n} copies) of {lib.size} modules in {(← IO.monoMsNow) - t0} ms"
-  for (m, md) in mds do
-    if libSet.contains m then continue
-    discard <| replayAll kenv md.constants
+  let (kenv, n) ← replayLayers env.toKernelEnv (libMds.map fun (m, md) => (m, md, depth[m]!))
+  let nConsts := libMds.foldl (fun k (_, md) => k + md.constants.size) 0
+  let layers := depth.fold (fun k _ d => max k (d + 1)) 0
+  IO.println s!"replayed {nConsts} constants ({n} copies) of {lib.size} modules ({layers} layers) in {(← IO.monoMsNow) - t0} ms"
+  let tasks ← (mds.filter (!libSet.contains ·.1)).mapM fun (m, md) =>
+    return (m, ← IO.asTask (replayAll kenv md.constants))
+  for (m, t) in tasks do
+    if let .error e := t.get then throw <| IO.userError s!"{m}: {e}"
   IO.println s!"replayed {roots.size} executable roots"
   IO.println "RESULT PASS"
   return 0
