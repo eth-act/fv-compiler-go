@@ -2011,7 +2011,17 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
     rename keeps the narrow operand, and Phase 1's `Lsh64x<a>` asks for a 64-bit one: on the
     `int8` value 1 shifted by 0, `Lsh8x64` gives 1 and `Lsh64x64` `poison`. A proof needs
     `Lsh64x<a>` to read its operand's low 64 bits at any integer width.
-  Recorded also in the module docs of `GoFV/Proof/Low/Rules/Cmp.lean` and `Shift.lean`.
+  - `:1190`, `:1191` (`(CSEL [cc] x (ADDconst [1] a) flag) => (CSINC [cc] x a flag)` and its
+    mirror on `arm64Negate(cc)`): `ADDconst` of a pointer `a` without an integer form (a global
+    `&g`, no concrete address; the provenance case `Arm64.addP` the validator admits at a word
+    shape) is the pointer `&g + 1`, which `CSEL` moves as the pointer (`regVal`); `CSINC` reads
+    `a`'s register, which `&g` has none of. When the condition fails the source is `&g + 1`, the
+    target `poison`. A proof needs `CSINC` to add to a pointer as `ADDconst` does.
+  - `:133`, `:134` (`(AndB ...) => (AND ...)`, `(OrB ...) => (OR ...)`): Phase 1's `AndB`/`OrB`
+    are parallel (`Cmp.andB`: `false && poison` is `false`), `AND`/`OR` read both registers:
+    `AndB false poison` is `false`, `AND` of it `poison` (`OrB true poison` likewise).
+  Recorded also in the module docs of `GoFV/Proof/Low/Rules/Cmp.lean`, `Shift.lean` and
+  `CselBits.lean`.
 
 - **`InvertFlags` rules outside the ghost-bit semantics** (#385; model limits, not Go bugs).
   Flags are `[n, z, c, v, g]` with `g` the sign of an integer compare's negated difference,

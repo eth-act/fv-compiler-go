@@ -57,6 +57,7 @@ import GoFV.Proof.Low.Rules.CmpNeg
 import GoFV.Proof.Low.Rules.CondSel
 import GoFV.Proof.Low.Rules.Const
 import GoFV.Proof.Low.Rules.ConstBool
+import GoFV.Proof.Low.Rules.CselBits
 import GoFV.Proof.Low.Rules.Flags
 import GoFV.Proof.Low.Rules.Fold
 import GoFV.Proof.Low.Rules.Invert
@@ -707,6 +708,7 @@ import GoFV.Proof.Witness.LoopRotateLoc
 import GoFV.Proof.Witness.LowCong
 import GoFV.Proof.Witness.LowerAdd
 import GoFV.Proof.Witness.LowerAtomic
+import GoFV.Proof.Witness.LowerBitLen
 import GoFV.Proof.Witness.LowerBlockTB
 import GoFV.Proof.Witness.LowerBlockTT
 import GoFV.Proof.Witness.LowerCondSel

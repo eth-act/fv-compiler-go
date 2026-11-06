@@ -23,7 +23,11 @@ exactly the same instances (the rewrite engine evaluates the same Go expressions
   `1352`), as one rule per integer condition op `X` (`intCondOps`): the condition `cc == X` added,
   `arm64Invert(cc)` the op `arm64Invert(X)`. It rewrites the instances whose `cc` is an integer
   condition; on a float condition the swap does not hold under the flags semantics
-  (`docs/proofs/rules.md` "Findings").
+  (`docs/proofs/rules.md` "Findings"). A result reading `arm64Negate(cc)` (`(CSEL [cc]
+  (MOVDconst [0]) y flag) => (CSEL0 [arm64Negate(cc)] y flag)`, `1189`) is split alike over the
+  condition ops `arm64Negate` maps (`negCondOps`, the integer and float ones), `arm64Negate(cc)`
+  the op `arm64Negate(X)`: a negated condition holds exactly when the condition does not, float
+  conditions included.
 -/
 
 namespace GoFV.Rules.Derive
@@ -192,15 +196,29 @@ def intCondOps : List Op :=
 /-- `k == cc`. -/
 def ccCond (k : Nat) (cc : Op) : Expr := .binop .eq (.var k) (.op cc) .bool
 
-/-- `arm64Invert(var k)` as the op it gives on `cc`; any other expression unchanged. -/
+/-- The condition ops `arm64Negate` maps: the integer ones and the eight float ones. -/
+def negCondOps : List Op :=
+  intCondOps ++ [.ARM64LessThanF, .ARM64LessEqualF, .ARM64GreaterThanF, .ARM64GreaterEqualF,
+    .ARM64NotLessThanF, .ARM64NotLessEqualF, .ARM64NotGreaterThanF, .ARM64NotGreaterEqualF]
+
+/-- `arm64Invert(var k)` / `arm64Negate(var k)` as the op it gives on `cc`; any other expression
+unchanged. -/
 def ccInvert (k : Nat) (cc : Op) : Expr → Expr
   | e@(.call fn [.var x] _) =>
-    if fn == "arm64Invert" && x == k then
-      match Arm64.arm64Invert cc with
+    if x == k && (fn == "arm64Invert" || fn == "arm64Negate") then
+      match (if fn == "arm64Invert" then Arm64.arm64Invert cc else Arm64.arm64Negate cc) with
       | .ok o => .op o
       | .error _ => e
     else e
   | e => e
+
+/-- Some result node's auxint is `arm64Negate(…)`. -/
+def negates (r : Rule) : Bool :=
+  match r.result with
+  | .build ns => ns.any fun n => match n.auxInt with
+    | some (.call "arm64Negate" _ _) => true
+    | _ => false
+  | _ => false
 
 /-- The form of `r` on the condition op `cc` of its `CCop` auxint variable `k` (module doc). -/
 def ccAt (r : Rule) (k : Nat) (cc : Op) : Rule :=
@@ -212,12 +230,14 @@ def ccAt (r : Rule) (k : Nat) (cc : Op) : Rule :=
       | .build ns => .build (ns.map fun n => { n with auxInt := n.auxInt.map (ccInvert k cc) })
       | res => res }
 
-/-- `r` as one rule per integer condition op if its top node binds an auxint of Go type `Op`,
-else itself (module doc). -/
+/-- `r` as one rule per condition op (`negCondOps` if it negates its condition, else
+`intCondOps`) if its top node binds an auxint of Go type `Op`, else itself (module doc). -/
 def ccSplit (r : Rule) : List Rule :=
   match r.pat with
   | .op _ _ _ (.bind k) _ _ _ _ =>
-    if (r.vars[k]?.map (·.ty)) == some (.named "Op") then intCondOps.map (ccAt r k) else [r]
+    if (r.vars[k]?.map (·.ty)) == some (.named "Op") then
+      (if negates r then negCondOps else intCondOps).map (ccAt r k)
+    else [r]
   | _ => [r]
 
 end GoFV.Rules.Derive
