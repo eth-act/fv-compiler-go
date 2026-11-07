@@ -21,12 +21,14 @@ and stack slots of the function's own ABI assignment, and run from the function'
 `native.txt` (`tools/semdiff/prog` under `qemu-aarch64-static`).
 
 **Execution.** The run is `runMach`'s loop (`GoFV.Arm64.step` for words, `rtHook` for runtime
-entry points) with the machine memory kept in a persistent map: after each step the bytes the
-instruction may have stored (its effective addresses) are copied from the step's memory into
-the map, after each hook its writes. Every call whose run takes at most `--check-steps` steps
-(default 20,000) is run a second time with the definition itself,
+entry points) with the machine memory kept in a persistent map and the register files in arrays:
+after each step the bytes the instruction may have stored (its effective addresses) are copied
+from the step's memory into the map, after each hook its writes. Every call whose run takes at
+most `--check-steps` steps (default 200) is run a second time with the definition itself,
 `runMach R.hooks code ret fuel s0`, and the two outcomes must print the same (`definition
-agrees`), so the loop is checked to be `runMach`.
+check`), so the loop is checked to be `runMach`. (The definition's memory and registers are
+closures that nest once per write, which makes long runs quadratic: the threshold keeps the
+check to a few minutes.) The summary counts the runtime entry points the runs called (`hooks`).
 
 **Selection.** Functions whose code (or a program function it calls) calls the defer machinery
 (`runtime.deferproc*`, `deferreturn`, `gorecover`), which the hooks do not model (§6), are
@@ -236,6 +238,13 @@ def link (dir : String) : IO (Except String Program) := do
       else addr := addr.insert nm dataNext
       dataSyms := dataSyms.push (dataNext, i, d)
       dataNext := align (dataNext + d.data.size + 16) 64
+  -- the runtime's data the contracts return pointers to: `runtime.zerobase` (every zero-sized
+  -- allocation, `Runtime.alloc`)
+  if !addr.contains "runtime.zerobase" then
+    addr := addr.insert "runtime.zerobase" dataNext
+    windows := windows.push { blk := .global "runtime.zerobase", base := BitVec.ofNat 64 dataNext,
+                              size := 8, data := true }
+    dataNext := align (dataNext + 8 + 16) 64
   -- every other referenced name: a runtime entry point
   let mut hookNext := HOOK0
   let mut entries : Std.HashMap Nat String := {}
@@ -346,14 +355,16 @@ def flatten (s : MState) (pm : PMem) : MState :=
   let vs : Array (BitVec 128) := (List.range 32).toArray.map fun i => s.v (BitVec.ofNat 5 i)
   { s with x := fun i => xs[i.toNat]!, v := fun i => vs[i.toNat]!, mem := memOf pm }
 
-/-- `runMach`'s loop with the memory in `pm`: the outcome, the final memory, the step count. -/
+/-- `runMach`'s loop with the memory in `pm`: the outcome, the runtime entry points the run
+called (in order), the step count. -/
 partial def runLoop (P : Program) (fuel : Nat) (s : MState) (pm : PMem) :
-    MOutcome × PMem × Nat := Id.run do
+    MOutcome × Array String × Nat := Id.run do
   let code : Code := fun a => P.code.get? a.toNat
   let mut s := s
   let mut pm := pm
+  let mut hs : Array String := #[]
   for k in [0:fuel] do
-    if s.pc = RET0 then return (.returned s, pm, k)
+    if s.pc = RET0 then return (.returned s, hs, k)
     match code s.pc with
     | some w =>
       match step code s with
@@ -366,18 +377,19 @@ partial def runLoop (P : Program) (fuel : Nat) (s : MState) (pm : PMem) :
               pm' := pm'.insert x.toUInt64 (s'.mem x).toNat.toUInt8
         pm := pm'
         s := flatten s' pm
-      | .error f => return (.ofFault s f, pm, k)
+      | .error f => return (.ofFault s f, hs, k)
     | none =>
+      hs := hs.push ((P.entries.get? s.pc.toNat).getD "?")
       match rtHook P.rt s with
       | some (.ret s' ws) =>
         for (a, x) in ws do pm := pm.insert a.toUInt64 x.toNat.toUInt8
         s := flatten s' pm
       | some (.panicked e s' ws) =>
         for (a, x) in ws do pm := pm.insert a.toUInt64 x.toNat.toUInt8
-        return (.panicked e { s' with mem := memOf pm }, pm, k)
-      | some (.stuck msg) => return (.stuck msg, pm, k)
-      | none => return (.stuck s!"no code and no hook at {s.pc.toHex}", pm, k)
-  return (.outOfFuel, pm, fuel)
+        return (.panicked e { s' with mem := memOf pm }, hs, k)
+      | some (.stuck msg) => return (.stuck msg, hs, k)
+      | none => return (.stuck s!"no code and no hook at {s.pc.toHex}", hs, k)
+  return (.outOfFuel, hs, fuel)
 
 /-! ## Calls -/
 
@@ -469,7 +481,8 @@ structure Stats where
   checked : Nat := 0
   checkAgree : Nat := 0
   steps : Nat := 0
-  hookCalls : Nat := 0
+  /-- Calls of each runtime entry point (hooks). -/
+  hooks : Std.HashMap String Nat := {}
   outcomes : Std.HashMap String Nat := {}
 
 def main (args : List String) : IO UInt32 := do
@@ -477,7 +490,7 @@ def main (args : List String) : IO UInt32 := do
     | "--check-steps" :: n :: rest => let (_, f, r) := opts rest; (n.toNat!, f, r)
     | "--fuel" :: n :: rest => let (c, _, r) := opts rest; (c, n.toNat!, r)
     | a :: rest => let (c, f, r) := opts rest; (c, f, a :: r)
-    | [] => (20000, 50000000, [])
+    | [] => (200, 50000000, [])
   let (checkSteps, fuel, pos) := opts args
   let [dir, callsFile, nativeFile] := pos
     | IO.eprintln "usage: mach-difftest <export dir> <calls> <native> [--check-steps N] [--fuel N]"; return 2
@@ -525,8 +538,9 @@ def main (args : List String) : IO UInt32 := do
         | .error e => pure s!"stuck: entry: {e}"
         | .ok (s0, pm) =>
           let t0 ← IO.monoMsNow
-          let (o, _, k) := runLoop P fuel s0 pm
-          st := { st with steps := st.steps + k }
+          let (o, hs, k) := runLoop P fuel s0 pm
+          st := { st with steps := st.steps + k,
+                          hooks := hs.foldl (fun m h => m.insert h (m.getD h 0 + 1)) st.hooks }
           let r := render P fn l params imgs s0 o
           let t1 ← IO.monoMsNow
           if t1 - t0 > 2000 then IO.eprintln s!"slow: {t1 - t0} ms, {k} steps: {call}"
@@ -552,6 +566,8 @@ def main (args : List String) : IO UInt32 := do
     {st.bad} mismatches; definition check: {st.checkAgree} of {st.checked} runs of at most \
     {checkSteps} steps agree with runMach itself"
   IO.println s!"excluded: {", ".intercalate (exclFns.toList.mergeSort (· ≤ ·))}"
+  let hk := st.hooks.toList.mergeSort fun a b => a.2 > b.2 || (a.2 == b.2 && a.1 < b.1)
+  IO.println s!"hooks: {", ".intercalate (hk.map fun (h, n) => s!"{h} {n}")}"
   return if st.bad == 0 && st.checkAgree == st.checked && st.selected > 0 then 0 else 1
 
 end GoFVTest.MachDiff

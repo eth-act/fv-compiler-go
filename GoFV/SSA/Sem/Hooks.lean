@@ -126,12 +126,15 @@ def Layout.wordOf (L : Layout) (s : MState) (bs : Array Byte) : BitVec 64 :=
     acc ||| (((L.pushByte s bs[i]!).getD 0).setWidth 64 <<< (8 * i))) 0
 
 /-- The results `rs` (Go-typed) written to their ABI locations (`outs`): register pieces, and
-stack slots at `SP + offset` as memory writes. `none` if they do not match. -/
+stack slots at `SP + offset` as memory writes. An error if they do not match the assignments or
+a result points into a block with no address. -/
 def Layout.abiResults (L : Layout) (s : MState) :
-    List AbiSlot → List Val → Option (MState × Array (BitVec 64 × BitVec 8))
-  | [], [] => some (s, #[])
+    List AbiSlot → List Val → Except String (MState × Array (BitVec 64 × BitVec 8))
+  | [], [] => pure (s, #[])
   | p :: ps, r :: rs => do
     let bs := encode p.ty (r.retype p.ty)
+    if bs.any fun b => match b with | .frag q _ => (L.addr? s q).isNone | _ => false then
+      throw "hook: a result points into a block with no address"
     if p.regs.isEmpty then
       let a := s.sp + BitVec.ofInt 64 p.offset
       let ws := (List.range bs.size).toArray.filterMap fun i =>
@@ -142,7 +145,7 @@ def Layout.abiResults (L : Layout) (s : MState) :
       let s := ((leaves p.ty).zip p.regs).foldl (fun s ((o, lt), reg) =>
         setAbiReg s reg (L.wordOf s (bs.extract o (o + lt.size)))) s
       L.abiResults s ps rs
-  | _, _ => none
+  | _, _ => throw "hook: results do not match the ABI"
 
 /-- Phase 1's contract `c` of a callee with ABI assignments `ins`, `outs`, lifted to the
 machine (see the module comment). -/
@@ -161,8 +164,8 @@ def liftContract (L : Layout) (ins outs : List AbiSlot) (c : Contract) (s : MSta
     | none => .stuck "hook: a block of the callee's memory has no address"
     | some (ws, s1) =>
       match L.abiResults (clobber s1) outs rs with
-      | some (s2, ws2) => .ret { s2 with pc := s.x 30, mem := s.mem } (ws ++ ws2)
-      | none => .stuck "hook: results do not match the ABI"
+      | .ok (s2, ws2) => .ret { s2 with pc := s.x 30, mem := s.mem } (ws ++ ws2)
+      | .error msg => .stuck msg
   | .panicked e m =>
     match back m with
     | some (ws, _) => .panicked e s ws
