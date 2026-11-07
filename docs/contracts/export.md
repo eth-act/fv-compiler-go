@@ -1,4 +1,4 @@
-# Contract: per-pass SSA export (`gofv-ssa` v5.1)
+# Contract: per-pass SSA export (`gofv-ssa` v5.1) and Phase 3 export (`gofv-prog 1`)
 
 Owner: Exporter (issue #4; format 5: #379). Consumers: LeanIR (parser/printer, #21), RulesExport
 (#22), every pass port (G4, H*). Changing the format bumps the version in the first line and is
@@ -9,6 +9,11 @@ block kinds, the cached loop nest, `flagslive`/`hotness`/`fstate`/`regalloc`/`te
 `callreg` sub-line of `call` aux values, the `typelink` line and the machine `config` keys
 (section "Format 5"). The sections before `lower` are byte-identical to v4's. v5.1 (#386) adds
 one line per section, `dcllen` (section "Format 5.1"). The parser reads v2–v5 files too.
+
+Phase 3 (#546, I1 #547) adds a second format in a separate file next to each `.ssa` file: the
+`gofv-prog 1` record (`<name>,<abi>.prog`) with the frame layout, the Prog list after `genssa`
+and the assembled function (section "Phase 3: `gofv-prog 1`" below). It leaves the `.ssa`
+files byte-identical.
 
 The patched `go1.27.3` compiler (`patches/go/*.patch`, built by `scripts/build-go.sh` into
 `third_party/go-build`) writes, for each selected function, the complete SSA state the passes
@@ -517,8 +522,10 @@ one of them must raise it on #4.
 - `f.HTMLWriter`, `ruleMatches`, `dumpFileSeq`, `PrintOrHtmlSSA`: debugging only.
 - `f.RegArgs`, `CloSlot`, `maxCPUFeatures`, `DeferReturn`, `Block.CPUfeatures`: read by
   `ssagen`/`genssa` (Phase 3) or SIMD only; `ctxt.Flag_locationlists` (debug info, genssa).
+  `f.RegArgs` and `Flag_locationlists` are in the `.prog` file (`regargs`, `config`).
 - The `loopnest`'s `po`/`sdom` (see `cache loopnest`) and `f` fields.
-- `ir.Name` frame offsets of autos (`AllocFrame` runs after `ssa.Compile`).
+- `ir.Name` frame offsets of autos (`AllocFrame` runs after `ssa.Compile`; they are in the
+  `.prog` file's `frame` section).
 - `ir.Name` details beyond the listed flags (positions of definitions, `Curfn`, closure vars,
   `Heapaddr`, …): read by `ssagen`, not by the passes. New autos made by `decompose`
   (`fe.SplitSlot`) get `Sym.Name = parent + suffix`, `Class = PAUTO`, `used`, `escnever`;
@@ -539,6 +546,204 @@ one of them must raise it on #4.
   `fe.Func().SetWBPos`, `StringData` creating the data symbol, warnings): they do not change
   the SSA of this or any other function.
 
+## Phase 3: `gofv-prog 1`
+
+Owner: Phase3IO (I1 #547; tracking #546; `docs/PASSES3.md` §2). Consumers: `GoFV.Asm`
+(`GoFV/Asm/{As,Prog,Parse,Print}.lean`, I2 #548), the `asm-check` round trip, the I3/I4 parity
+checks. A change bumps the version on the first line and is announced on #546.
+
+For every function whose `.ssa` file the exporter writes (same selection, `GOFV_SSA_EXPORT`,
+`GOFV_SSA_PKG`, `GOFV_SSA_FUNC`), the patched compiler writes a companion file with the same
+stem and the extension `.prog`: `<name>,<abi>.prog` next to `<name>,<abi>.ssa`, or
+`<name>,<abi>#<h>.prog` when the `.ssa` file is `<name>,<abi>#<h>.ssa` (`<h>` is the hash of
+the `.ssa` file's contents, so the pair stays together; a `.prog` written before a later
+function of the same stem appeared is renamed with its `.ssa` file). Functions that
+`ssagen.Compile` rejects for their frame size (`>= 1<<30`) have a `.ssa` file and no `.prog`
+file. The exporter (`ssagen/export_prog_gofv.go`, hooks in `ssagen/pgen.go`, accessors
+`FuncInfo.GOFVSpills`, `InlMark.GOFVMark`, `InlTree.GOFVNodes` in `cmd/internal/obj`) only reads
+compiler state: it creates no symbol, computes no type size (types whose size or whose inline
+parts' sizes are not calculated are written with `?`), and never sets `Debugasm` (`-S` disables
+Prog reuse and sorts `LSym.R` in place, `docs/PASSES3.md` §2), so the object code is unchanged.
+
+### Cut points
+
+| section | written | form (`docs/PASSES3.md` §0) |
+| --- | --- | --- |
+| `frame` | when `AllocFrame` ends (input recorded when it starts) | L2 → L2f (A1, A2) |
+| `prog0` | after `genssa` returns (after `defframe`), before the frame-size check and `Flush` | P0 |
+| `asm` | at the end of `ssagen.Compile`: after `Flush` (`Flushplist`: `linkpatch`, `progedit`, `preprocess`, `span7`, `linkpcln`, `populateDWARF`), `weakenGlobalMapInitRelocs` and `fieldtrack` | M |
+
+The lexical format is the one above ("Lexical format"): strings, decimal integers, `-` for none
+and empty lists, comma lists, positions `p<index>:<line>:<col>:<stmt>:<xlogue>`. Additionally:
+`_` is a nil entry inside a list and the zero `Addr`; hex is lower-case (`<bytes>`: two digits
+per byte, `-` when empty; `<hexnum>`: a number without leading zeros).
+
+### File layout
+
+```
+gofv-prog 1
+pkg "<base.Ctxt.Pkgpath>"
+func "<f.Name>" <abi>
+config <key> <value>                  (one line per key; table below)
+frame
+<definitions>
+in <n> <off> <flags>                  (fn.Dcl when AllocFrame starts, in order)
+out <n> <off> <flags>                 (fn.Dcl after AllocFrame)
+opt <n> <off> <flags>                 (FuncDebug.OptDcl: the unused tail AllocFrame cut off)
+merge <leader n> <followers n,…>      (MergeLocals partitions, leaders in Dcl order)
+stack <stksize> <stkptrsize> <stkalign>
+warn "<text>"                         (zero or more)
+end
+prog0
+<definitions>
+p …                                   (the Prog list from pp.Text along Link, the final AEND placeholder included)
+<funcinfo>
+needzero <n,…>                        (Dcl names with Needzero after liveness, Dcl order)
+regargs <reg>:<offset>:<t>,…          (f.RegArgs: obj register, frame offset, type)
+warn "<text>"
+end
+asm
+<definitions>
+p …                                   (the text symbol's Prog list, fn.LSym.Func().Text along Link)
+<funcinfo>
+text <size> <align> <bytes> <nrelocs> (LSym.Size, Align, P of the text symbol)
+reloc …                               (nrelocs lines: LSym.R in append order)
+pcln <pcsp y> <pcfile y> <pcline y> <pcinline y> <pcdata y|_,…> <funcdata y|_,…>
+usedfiles <i,…>                       (Pcln.UsedFiles, ascending)
+inltree <i> <parent> <pos> <func y|-> "<name>" <parentpc>   (Pcln.InlTree, the local tree, i = 0, 1, …)
+data <y> <kind> <size> <align> <attr hexnum> <bytes> <nrelocs>   (zero or more; reloc lines follow)
+warn "<text>"
+end
+eof
+```
+
+`<funcinfo>` is the text symbol with its `FuncInfo` at that cut:
+
+```
+fn <y> <Args> <Locals> <FuncID> <FuncFlag> <StartLine> <attr hexnum>
+spill <addr> <reg> <reg2> <spill as> <unspill as>   (FuncInfo spills, RegSpill, in order)
+inlmark @<prog> <global inlining index>             (FuncInfo.InlMarks, in order)
+jumptable <y> <@prog,…>                             (FuncInfo.JumpTables: symbol, targets)
+funcaux <GCArgs> <GCLocals> <StackObjects> <OpenCodedDeferInfo> <ArgInfo> <ArgLiveInfo> <WrapInfo>   (y or -)
+```
+
+`attr` is the raw `LSym.Attribute` (`uint32`, ABI bits included).
+
+### Definitions
+
+As in `.ssa` sections, a section's definition lines come right after its header, and every
+object is defined before the first line that references it; numbers are per file, from 1, in
+first-use order (`p` is the `XPos` index itself, `i` the global inlining index), and a
+definition stays valid in later sections. Within a block, a definition follows those it
+references.
+
+- `type t<n> <size> <align> <ptrdata> <hasptr 0|1> <ptrmask> "<t.String()>"`: `t.Size()`,
+  `t.Alignment()`, `types.PtrDataSize(t)`, `t.HasPointers()` and the pointer bitmap of
+  `typebits.Set(t, 0, ·)` over `ptrdata / 8` words (bit `i` = word `i`, bytes little-endian;
+  `-` when `ptrdata` is 0). All five are `?` when the size of `t` or of a type stored inline in
+  it is not calculated. Types are numbered by the definition text (identical text, one number):
+  the frame and liveness steps read only these facts, and backend type objects are not
+  reproducible by pointer (see "Definitions (tables)").
+- `name n<k> "<Sym().Name>" <class> t<type>`: an `*ir.Name` (`ir.Class.String()`: `PAUTO`,
+  `PPARAM`, `PPARAMOUT`), numbered by identity. Its frame offset and flags are written per cut
+  (`in`/`out`/`opt` lines): `off` is `FrameOffset()` (for parameters the ABI offset, for an
+  open-defer slot before `AllocFrame` its defer index); `flags` from `used`, `addrtaken`,
+  `needzero`, `opendeferslot`, `nonmergeable`, `autotmp`, `outregs`
+  (`IsOutputParamInRegisters`), in that order.
+- `sym y<k> "<name>" <abi>`: an `*obj.LSym`, numbered by identity (`LSym.ABI()`). Contents are
+  written only in `data` lines (below) and the `text` line.
+- `posbase p<index> "<abs filename>" <line> <col> <inl> <fileindex>`: as in `.ssa` files plus
+  `FileIndex()` (the file number `pcfile` uses; `?` if the base is not registered).
+- `inl i<k> <parent i|-> <pos> <func y|-> "<name>"`: node `k` of the global inlining tree
+  (`base.Ctxt.InlTree`: parent, call position, inlined function, bare name), defined with its
+  parents before the first `posbase` whose `inl` is `k`.
+
+### Progs
+
+`p <id> <pc> <spadj> <isize> <optab> <pool @id|-> <as> <scond> <from> <reg> <rest> <to> <regto2> <mark> <pos>`
+
+- `id`: the Prog's stable ID. In `prog0` it is the Prog's `Pc` there (`objw` numbers every Prog
+  it allocates, including those `defframe` appends, in allocation order, so IDs are unique and
+  not in list order). In `asm` the Progs of `prog0` keep their ID; Progs the assembler added
+  (`progedit` constants, `preprocess` prologue/epilogue/stack check, `span7` pools and
+  veneers) get the next IDs (from `pp.PC`) in list order. A Prog referenced by a branch,
+  `Pool`, an inline mark or a jump table but not in the list gets a fresh ID and a `warn`.
+- `pc`, `spadj`, `isize`, `optab`, `scond`, `reg`, `regto2`, `mark`: the Go fields (`Optab` is
+  the 1-based index into the sorted `optab` that `oplook` caches; 0 before `span7`; `Pc` is
+  the byte offset after `span7`).
+- `as`: `As.String()` (`TEXT`, `PCDATA`, `MOVD`, `CALL`, …; `GoFV.Asm.As`, generated by
+  `tools/asgen`).
+- `<from>`, `<to>`, and each `RestArgs` entry `<pos>:<addr>` (`pos` = `obj.Source` 0 or
+  `obj.Destination` 1; `-` for no `RestArgs`) are an `obj.Addr`:
+  `<type>/<reg>/<index>/<scale>/<name>/<class>/<offset>/<sym y|->/<val>` with `type` the
+  `TYPE_` name without prefix (`NONE`, `BRANCH`, `TEXTSIZE`, `MEM`, `CONST`, `FCONST`, `SCONST`,
+  `REG`, `ADDR`, `SHIFT`, `REGREG`, `REGREG2`, `INDIR`, `REGLIST`, `SPECIAL`), `name` the
+  `NAME_` name (`NONE`, `EXTERN`, `STATIC`, `AUTO`, `PARAM`, `GOTREF`, `TOCREF`), registers as
+  obj numbers (`REG_R0 = 8192`, …, with arrangement/extension bits), `class` the cached operand
+  class (`aclass + 1`, 0 before assembly), and `val` the `Val` field: `-` (nil), `@<id>` (a
+  branch target `*Prog`), `i<n>` (`int32`, `TEXTSIZE`'s argument size), `f<hexnum>` (a
+  `float64`'s raw bits), `s<bytes>` (a string). The zero `Addr` is `_` (and only `_`).
+- `pos`: `Prog.Pos`.
+
+### Data symbols (`data`)
+
+`data <y> <SymKind.String()> <Size> <Align> <attr> <P> <nrelocs>`, then `nrelocs` lines
+`reloc <off> <siz> <RelocType.String()> <add> <sym y|->` (append order), for every symbol of
+the file, in number order, that is one of the function's metadata symbols (the `funcaux`
+symbols, the `pcln` symbols, the jump tables) or an assembler constant (name starting with
+`$`: `$f64.<bits>`, `$i64.…`), except the text symbol itself (the `text` line). These are the
+stack maps (`gclocals·…`: two `uint32` counts, then the bit vectors, `docs/PASSES3.md` §1.6),
+stack objects, argument info, open-defer info, wrapper info, pc-value tables (pcsp, pcfile,
+pcline, pcinline, pcdata: zig-zag value deltas, pc deltas in units of 4) and jump-table
+words, as they are when the function's `Compile` ends: shared, content-addressed symbols
+(`gclocals·`, `.wrapinfo`, constants) have deterministic contents; their kind and size are set
+only later, per package, by `addGCLocals` (`gc/obj.go`), so `Sxxx 0` is what a funcdata symbol
+shows here.
+
+### Configuration (`config` lines)
+
+| key | source | corpus value |
+| --- | --- | --- |
+| `arch` | `base.Ctxt.Arch.Name` | `arm64` |
+| `goarm64` | `buildcfg.GOARM64.String()` | `"v8.0"` |
+| `experiments` | `buildcfg.Experiment.Enabled()`, comma-joined | `"regabiwrappers,regabiargs,dwarf5,jsonv2,greenteagc,randomizedheapbase64,sizespecializedmalloc"` |
+| `flagshared`, `flagdynlink`, `flaglinkshared` | `base.Ctxt.Flag_*` | 0, 0, 0 |
+| `locationlists` | `base.Ctxt.Flag_locationlists` | 1 |
+| `optimize` | `base.Ctxt.Flag_optimize` | 1 |
+| `maymorestack` | `base.Ctxt.Flag_maymorestack` | `""` |
+| `mergelocals` | `base.Debug.MergeLocals` | 1 |
+| `flagN` | `base.Flag.N` | 0 |
+| `clobberdead`, `clobberdeadreg` | `base.Flag.ClobberDead*` | 0, 0 |
+| `compilingruntime` | `base.Flag.CompilingRuntime` | 1 for the runtime packages (`objabi.LookupPkgSpecial`; in the quick corpus `runtime` and `internal/bytealg`), else 0 |
+| `gendwarfinl` | `base.Flag.GenDwarfInl` | 2 |
+| `debugasm` | `base.Ctxt.Debugasm` (`-S`; must be 0) | 0 |
+
+### Determinism
+
+The `.prog` files are byte-identical across exports (`scripts/export-corpus.sh
+--check-determinism` compares them with the `.ssa` files). Functions compile concurrently; the
+file writes only per-function state, symbols by name and ABI, and contents of symbols that are
+the function's own or content-addressed.
+
+### Not exported yet
+
+From the `docs/PASSES3.md` §2 list, the first version leaves out: the intermediate graphs
+inside `Flushplist` (after `linkpatch`/`progedit` and after `preprocess`, before `span7`
+strips the packed `extrasize`); MergeLocals' candidates, evictions and intervals; liveness's
+`Map.Vals`/`UnsafeVals`/`UnsafeBlocks`/`DeferReturn`, the partially live arguments and the
+argument-liveness maps (their results are in the PCDATA Progs, `needzero`, the `defframe`
+spills and the metadata symbols); `bstart` and `valueToProgAfter`; DWARF (E1, E2) and the
+package-level writer (F1, F2). They are added with a version bump when I3–I5 need them.
+
+### Reading it in Lean
+
+`GoFV.Asm.parseProgFile : ByteArray → Except String ProgFile` and
+`GoFV.Asm.printProgFile : ProgFile → String` (`GoFV/Asm/Parse.lean`, `GoFV/Asm/Print.lean`;
+the IR is `GoFV/Asm/Prog.lean`, the opcodes `GoFV/Asm/As.lean`, generated by
+`scripts/gen-asm.sh`). The parser is strict, so print ∘ parse is the identity on every file it
+accepts; `lake exe asm-check <dir>` checks that on a corpus and that no file has a `warn` line
+(`--hist FILE` writes the `oplook` histogram of the assembled Progs).
+
 ## Building and the corpus
 
 - `scripts/build-go.sh` builds the patched toolchain into `third_party/go-build` (fresh copy of
@@ -550,7 +755,8 @@ one of them must raise it on #4.
   every `// run` program without build constraints in `test/*.go` and `test/ken/*.go` (one unit
   each; those that do not build are listed as `skip`), and `examples/*/main.go`. Dumps go to
   `../gofv-corpus/<pin12>/plain/<set>/<unit>/…` and `<set>.tar.zst`, outside git; the committed
-  `corpus/manifest.txt` lists every unit with its file count and digest, and the
+  `corpus/manifest.txt` lists every unit with its `.ssa` file count and digest and its `.prog`
+  file count and digest (from quick-v8), the total bytes of each kind (`bytes` line), and the
   `tools/ssastats` table (functions, values, per pass how many functions changed). This is the
   quick corpus, the per-PR parity gate. Each export is a new version directory published by an
   atomic symlink switch (`docs/PARITY.md`, "Corpus versions").

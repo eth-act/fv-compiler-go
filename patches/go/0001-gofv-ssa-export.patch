@@ -122,7 +122,7 @@
  		// Ensure we write any pending phases to the html
 --- a/src/cmd/compile/internal/ssa/export_gofv.go
 +++ b/src/cmd/compile/internal/ssa/export_gofv.go
-@@ -0,0 +1,1720 @@
+@@ -0,0 +1,1763 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -1801,12 +1801,21 @@
 +			if x.set.gotext {
 +				os.Rename(first+".txt", moved+".txt")
 +			}
++			// Companion files (GOFVWriteCompanion) written so far follow their .ssa file.
++			for _, ext := range gofvCompanionExts {
++				err := os.Rename(strings.TrimSuffix(first, ".ssa")+ext, strings.TrimSuffix(moved, ".ssa")+ext)
++				if err != nil && !os.IsNotExist(err) {
++					base.Fatalf("gofv export: %v", err)
++				}
++			}
 +			gofvWritten.m[stem] = ""
 +		}
 +		path = gofvHashedPath(stem, x.out.Bytes())
 +	} else {
 +		gofvWritten.m[stem] = path
 +	}
++	x.f.gofvStem = stem
++	x.f.gofvHash = fmt.Sprintf("%x", sha256.Sum256(x.out.Bytes()))[:16]
 +	fd, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
 +	if err == nil {
 +		_, err = fd.Write(x.out.Bytes())
@@ -1816,6 +1825,40 @@
 +	}
 +	if err == nil && x.set.gotext {
 +		err = os.WriteFile(path+".txt", x.text.Bytes(), 0o666)
++	}
++	if err != nil {
++		base.Fatalf("gofv export: %v", err)
++	}
++}
++
++// gofvCompanionExts are the extensions of the files written next to a function's .ssa file
++// (GOFVWriteCompanion): ".prog", the Phase 3 export (ssagen/export_prog_gofv.go).
++var gofvCompanionExts = []string{".prog"}
++
++// GOFVExported reports whether f's SSA export file has been written (GOFV_SSA_EXPORT selected
++// f and ssa.Compile finished).
++func (f *Func) GOFVExported() bool { return f.gofvStem != "" }
++
++// GOFVWriteCompanion writes data as f's companion file with extension ext (one of
++// gofvCompanionExts): <stem><ext> next to <stem>.ssa, or <stem>#<h><ext> when the .ssa file
++// is <stem>#<h>.ssa; write renames companions written earlier when a later function of the
++// same stem suffixes the first one.
++func (f *Func) GOFVWriteCompanion(ext string, data []byte) {
++	if !slices.Contains(gofvCompanionExts, ext) {
++		base.Fatalf("gofv export: unknown companion extension %q", ext)
++	}
++	gofvWritten.Lock()
++	defer gofvWritten.Unlock()
++	path := f.gofvStem + ext
++	if gofvWritten.m[f.gofvStem] == "" {
++		path = f.gofvStem + "#" + f.gofvHash + ext
++	}
++	fd, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
++	if err == nil {
++		_, err = fd.Write(data)
++		if cerr := fd.Close(); err == nil {
++			err = cerr
++		}
 +	}
 +	if err != nil {
 +		base.Fatalf("gofv export: %v", err)
@@ -1845,7 +1888,7 @@
 +}
 --- a/src/cmd/compile/internal/ssa/func.go
 +++ b/src/cmd/compile/internal/ssa/func.go
-@@ -85,6 +85,10 @@
+@@ -85,6 +85,15 @@
  
  	auxmap    auxmap             // map from aux values to opaque ids used by CSE
  	constants map[int64][]*Value // constants cache, keyed by constant value; users must check value's Op and Type
@@ -1853,6 +1896,11 @@
 +	// gofvTypeInfo maps the type descriptor symbols this function obtained whose TypeInfo
 +	// another function set concurrently to the type this function asked for (export_gofv.go).
 +	gofvTypeInfo map[*obj.LSym]*types.Type
++
++	// gofvStem and gofvHash locate this function's export file once it is written:
++	// <gofvStem>.ssa, or <gofvStem>#<gofvHash>.ssa when another function has the same stem
++	// (export_gofv.go, GOFVWriteCompanion).
++	gofvStem, gofvHash string
  }
  
  type LocalSlotSplitKey struct {
@@ -1953,3 +2001,695 @@
  // when a type's width should be known, we call CheckSize
  // to compute it.  during a declaration like
  //
+--- a/src/cmd/compile/internal/ssagen/pgen.go
++++ b/src/cmd/compile/internal/ssagen/pgen.go
+@@ -125,6 +125,7 @@
+ 	s.stkptrsize = 0
+ 	s.stkalign = int64(types.RegSize)
+ 	fn := s.curfn
++	gx := gofvProgBegin(f, fn) // gofv Prog exporter (GOFV_SSA_EXPORT); nil unless f is exported
+ 
+ 	// Mark the PAUTO's unused.
+ 	for _, ln := range fn.Dcl {
+@@ -292,6 +293,9 @@
+ 
+ 	s.stksize = types.RoundUp(s.stksize, s.stkalign)
+ 	s.stkptrsize = types.RoundUp(s.stkptrsize, s.stkalign)
++	if gx != nil {
++		gx.frame(s, mls)
++	}
+ }
+ 
+ const maxStackSize = 1 << 30
+@@ -302,6 +306,7 @@
+ // worker indicates which of the backend workers is doing the processing.
+ func Compile(fn *ir.Func, worker int, profile *pgoir.Profile) {
+ 	f := buildssa(fn, worker, inline.IsPgoHotFunc(fn, profile) || inline.HasPgoHotInline(fn))
++	gx := gofvProgTake(f) // gofv Prog exporter: nil unless f is exported
+ 	// Note: check arg size to fix issue 25507.
+ 	if f.Frontend().(*ssafn).stksize >= maxStackSize || f.OwnAux.ArgWidth() >= maxStackSize {
+ 		largeStackFramesMu.Lock()
+@@ -312,6 +317,9 @@
+ 	pp := objw.NewProgs(fn, worker)
+ 	defer pp.Free()
+ 	genssa(f, pp)
++	if gx != nil {
++		gx.prog0(pp)
++	}
+ 	// Check frame size again.
+ 	// The check above included only the space needed for local variables.
+ 	// After genssa, the space needed includes local variables and the callee arg region.
+@@ -337,6 +345,9 @@
+ 
+ 	// fieldtrack must be called after pp.Flush. See issue 20014.
+ 	fieldtrack(pp.Text.From.Sym, fn.FieldTrack)
++	if gx != nil {
++		gx.asm(pp)
++	}
+ }
+ 
+ // globalMapInitLsyms records the LSym of each map.init.NNN outlined
+--- a/src/cmd/compile/internal/ssagen/export_prog_gofv.go
++++ b/src/cmd/compile/internal/ssagen/export_prog_gofv.go
+@@ -0,0 +1,607 @@
++// Copyright 2026 The gofv Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style
++// license that can be found in the LICENSE file.
++
++// gofv Phase 3 exporter (fv-compiler-go, docs/contracts/export.md, section "gofv-prog 1").
++// For every function whose SSA the gofv SSA exporter writes (GOFV_SSA_EXPORT), it writes a
++// companion file <stem>.prog with the frame layout after AllocFrame, the Prog list after
++// genssa (before Flush) and the assembled function after Flush (Prog list with PCs, bytes,
++// relocations, pc tables, funcdata). Read-only: it never creates symbols, never computes type
++// sizes and never enables Debugasm, so compilation is unchanged.
++
++package ssagen
++
++import (
++	"bytes"
++	"fmt"
++	"internal/buildcfg"
++	"math"
++	"slices"
++	"strconv"
++	"strings"
++	"sync"
++
++	"cmd/compile/internal/base"
++	"cmd/compile/internal/bitvec"
++	"cmd/compile/internal/ir"
++	"cmd/compile/internal/liveness"
++	"cmd/compile/internal/objw"
++	"cmd/compile/internal/ssa"
++	"cmd/compile/internal/typebits"
++	"cmd/compile/internal/types"
++	"cmd/internal/obj"
++	"cmd/internal/src"
++)
++
++// gofvProgExporter accumulates one function's .prog file.
++type gofvProgExporter struct {
++	f  *ssa.Func
++	fn *ir.Func
++
++	out   bytes.Buffer // the whole file
++	defs  bytes.Buffer // definitions of the current section
++	body  bytes.Buffer // other lines of the current section
++	warns []string
++
++	types    map[string]int // type definition tail -> number
++	typeOf   map[*types.Type]int
++	names    map[*ir.Name]int
++	syms     map[*obj.LSym]int
++	symList  []*obj.LSym // by number - 1
++	posbases map[int32]bool
++	inls     map[int]bool
++	ids      map[*obj.Prog]int // stable Prog IDs
++	nextID   int
++
++	dclIn []gofvDcl // fn.Dcl when AllocFrame starts
++}
++
++// gofvDcl is a Dcl entry with the name's frame offset and flags at one point.
++type gofvDcl struct {
++	n     *ir.Name
++	off   int64
++	flags string
++}
++
++// gofvProgs holds the exporters between AllocFrame (inside buildssa) and Compile.
++var gofvProgs = struct {
++	sync.Mutex
++	m map[*ssa.Func]*gofvProgExporter
++}{m: map[*ssa.Func]*gofvProgExporter{}}
++
++// gofvProgBegin starts the .prog file of f when f's SSA was exported; called when AllocFrame
++// starts. It returns nil otherwise.
++func gofvProgBegin(f *ssa.Func, fn *ir.Func) *gofvProgExporter {
++	if !f.GOFVExported() {
++		return nil
++	}
++	x := &gofvProgExporter{
++		f:        f,
++		fn:       fn,
++		types:    map[string]int{},
++		typeOf:   map[*types.Type]int{},
++		names:    map[*ir.Name]int{},
++		syms:     map[*obj.LSym]int{},
++		posbases: map[int32]bool{},
++		inls:     map[int]bool{},
++		ids:      map[*obj.Prog]int{},
++	}
++	fmt.Fprintf(&x.out, "gofv-prog 1\npkg %s\nfunc %s %d\n", gofvQuoteP(base.Ctxt.Pkgpath),
++		gofvQuoteP(f.Name), f.ABISelf.Which())
++	x.config()
++	for _, n := range fn.Dcl {
++		x.dclIn = append(x.dclIn, gofvDcl{n, n.FrameOffset(), gofvNameFlags(n)})
++	}
++	gofvProgs.Lock()
++	gofvProgs.m[f] = x
++	gofvProgs.Unlock()
++	return x
++}
++
++// gofvProgTake returns (and forgets) f's exporter, nil if f is not exported.
++func gofvProgTake(f *ssa.Func) *gofvProgExporter {
++	gofvProgs.Lock()
++	defer gofvProgs.Unlock()
++	x := gofvProgs.m[f]
++	delete(gofvProgs.m, f)
++	return x
++}
++
++func (x *gofvProgExporter) config() {
++	kv := func(k string, v any) { fmt.Fprintf(&x.out, "config %s %v\n", k, v) }
++	b := gofvBoolP
++	kv("arch", base.Ctxt.Arch.Name)
++	kv("goarm64", gofvQuoteP(buildcfg.GOARM64.String()))
++	kv("experiments", gofvQuoteP(strings.Join(buildcfg.Experiment.Enabled(), ",")))
++	kv("flagshared", b(base.Ctxt.Flag_shared))
++	kv("flagdynlink", b(base.Ctxt.Flag_dynlink))
++	kv("flaglinkshared", b(base.Ctxt.Flag_linkshared))
++	kv("locationlists", b(base.Ctxt.Flag_locationlists))
++	kv("optimize", b(base.Ctxt.Flag_optimize))
++	kv("maymorestack", gofvQuoteP(base.Ctxt.Flag_maymorestack))
++	kv("mergelocals", base.Debug.MergeLocals)
++	kv("flagN", base.Flag.N)
++	kv("clobberdead", b(base.Flag.ClobberDead))
++	kv("clobberdeadreg", b(base.Flag.ClobberDeadReg))
++	kv("compilingruntime", b(base.Flag.CompilingRuntime))
++	kv("gendwarfinl", base.Flag.GenDwarfInl)
++	kv("debugasm", base.Ctxt.Debugasm)
++}
++
++func gofvBoolP(v bool) int {
++	if v {
++		return 1
++	}
++	return 0
++}
++
++// gofvQuoteP is the string token of docs/contracts/export.md ("Lexical format").
++func gofvQuoteP(s string) string {
++	var b strings.Builder
++	b.WriteByte('"')
++	for i := range len(s) {
++		c := s[i]
++		switch {
++		case c == '"' || c == '\\':
++			b.WriteByte('\\')
++			b.WriteByte(c)
++		case c >= 0x20 && c <= 0x7e:
++			b.WriteByte(c)
++		default:
++			fmt.Fprintf(&b, "\\x%02x", c)
++		}
++	}
++	b.WriteByte('"')
++	return b.String()
++}
++
++func gofvListP(xs []string) string {
++	if len(xs) == 0 {
++		return "-"
++	}
++	return strings.Join(xs, ",")
++}
++
++func gofvHexP(b []byte) string {
++	if len(b) == 0 {
++		return "-"
++	}
++	return fmt.Sprintf("%x", b)
++}
++
++// gofvNameFlags are the flags of a Dcl entry, in the order of the contract.
++func gofvNameFlags(n *ir.Name) string {
++	var xs []string
++	add := func(b bool, s string) {
++		if b {
++			xs = append(xs, s)
++		}
++	}
++	add(n.Used(), "used")
++	add(n.Addrtaken(), "addrtaken")
++	add(n.Needzero(), "needzero")
++	add(n.OpenDeferSlot(), "opendeferslot")
++	add(n.NonMergeable(), "nonmergeable")
++	add(n.AutoTemp(), "autotmp")
++	add(n.IsOutputParamInRegisters(), "outregs")
++	return gofvListP(xs)
++}
++
++func (x *gofvProgExporter) warn(format string, args ...any) {
++	x.warns = append(x.warns, fmt.Sprintf(format, args...))
++}
++
++// section writes one section: its header line, the definitions its lines need, the lines,
++// its warn lines and end.
++func (x *gofvProgExporter) section(name string, render func()) {
++	x.defs.Reset()
++	x.body.Reset()
++	x.warns = x.warns[:0]
++	render()
++	x.out.WriteString(name + "\n")
++	x.out.Write(x.defs.Bytes())
++	x.out.Write(x.body.Bytes())
++	for _, w := range x.warns {
++		fmt.Fprintf(&x.out, "warn %s\n", gofvQuoteP(w))
++	}
++	x.out.WriteString("end\n")
++}
++
++// gofvDeepKnownP reports whether the sizes of t and of every type stored inline in t are
++// calculated, so that typebits.Set does not call CalcSize (fatal in the backend).
++func gofvDeepKnownP(t *types.Type) bool {
++	if !t.GOFVSizeKnown() {
++		return false
++	}
++	switch t.Kind() {
++	case types.TSSA, types.TTUPLE, types.TRESULTS:
++		return false
++	case types.TARRAY:
++		return gofvDeepKnownP(t.Elem())
++	case types.TSTRUCT:
++		for _, f := range t.Fields() {
++			if !gofvDeepKnownP(f.Type) {
++				return false
++			}
++		}
++	}
++	return true
++}
++
++// typ returns the reference of t. Types are numbered by their definition text.
++func (x *gofvProgExporter) typ(t *types.Type) string {
++	if t == nil {
++		return "-"
++	}
++	if k, ok := x.typeOf[t]; ok {
++		return "t" + strconv.Itoa(k)
++	}
++	size, align, ptrdata, hasptr, mask := "?", "?", "?", "?", "?"
++	if gofvDeepKnownP(t) {
++		pd := types.PtrDataSize(t)
++		size = strconv.FormatInt(t.Size(), 10)
++		align = strconv.FormatInt(t.Alignment(), 10)
++		ptrdata = strconv.FormatInt(pd, 10)
++		hasptr = strconv.Itoa(gofvBoolP(t.HasPointers()))
++		nw := pd / int64(types.PtrSize)
++		bv := bitvec.New(int32(nw))
++		typebits.Set(t, 0, bv)
++		bs := make([]byte, (nw+7)/8)
++		for i := range nw {
++			if bv.Get(int32(i)) {
++				bs[i/8] |= 1 << (i % 8)
++			}
++		}
++		mask = gofvHexP(bs)
++	}
++	tail := fmt.Sprintf("%s %s %s %s %s %s", size, align, ptrdata, hasptr, mask, gofvQuoteP(t.String()))
++	k, ok := x.types[tail]
++	if !ok {
++		k = len(x.types) + 1
++		x.types[tail] = k
++		fmt.Fprintf(&x.defs, "type t%d %s\n", k, tail)
++	}
++	x.typeOf[t] = k
++	return "t" + strconv.Itoa(k)
++}
++
++// name returns the reference of n, defining it when new.
++func (x *gofvProgExporter) name(n *ir.Name) string {
++	if k, ok := x.names[n]; ok {
++		return "n" + strconv.Itoa(k)
++	}
++	k := len(x.names) + 1
++	x.names[n] = k
++	sym := ""
++	if n.Sym() != nil {
++		sym = n.Sym().Name
++	}
++	t := x.typ(n.Type())
++	fmt.Fprintf(&x.defs, "name n%d %s %s %s\n", k, gofvQuoteP(sym), n.Class, t)
++	return "n" + strconv.Itoa(k)
++}
++
++// sym returns the reference of s ("-" for nil), defining it when new.
++func (x *gofvProgExporter) sym(s *obj.LSym) string {
++	if s == nil {
++		return "-"
++	}
++	if k, ok := x.syms[s]; ok {
++		return "y" + strconv.Itoa(k)
++	}
++	x.symList = append(x.symList, s)
++	k := len(x.symList)
++	x.syms[s] = k
++	fmt.Fprintf(&x.defs, "sym y%d %s %d\n", k, gofvQuoteP(s.Name), s.ABI())
++	return "y" + strconv.Itoa(k)
++}
++
++// symOrHole is sym for an entry of a list: "_" for nil.
++func (x *gofvProgExporter) symOrHole(s *obj.LSym) string {
++	if s == nil {
++		return "_"
++	}
++	return x.sym(s)
++}
++
++// pos renders a position, defining its position base (and the inlining nodes the base
++// refers to) when new.
++func (x *gofvProgExporter) pos(p src.XPos) string {
++	idx := p.FileIndex()
++	if idx != 0 && !x.posbases[idx] {
++		x.posbases[idx] = true
++		b := base.Ctxt.PosTable.Pos(p).Base()
++		if b == nil {
++			fmt.Fprintf(&x.defs, "posbase p%d \"\" 0 0 -1 -1\n", idx)
++		} else {
++			inl := b.InliningIndex()
++			if inl >= 0 {
++				x.inl(inl)
++			}
++			fi := "?"
++			func() {
++				defer func() { recover() }()
++				fi = strconv.Itoa(b.FileIndex())
++			}()
++			fmt.Fprintf(&x.defs, "posbase p%d %s %d %d %d %s\n", idx, gofvQuoteP(b.AbsFilename()), b.Line(), b.Col(), inl, fi)
++		}
++	}
++	stmt := p.IsStmt()
++	if p.WithIsStmt().IsStmt() == src.PosNotStmt {
++		stmt = 0
++	}
++	return fmt.Sprintf("p%d:%d:%d:%d:%d", idx, p.Line(), p.Col(), stmt, p.Xlogue())
++}
++
++// inl defines node k of the global inlining tree (and its parents) when new.
++func (x *gofvProgExporter) inl(k int) {
++	if x.inls[k] {
++		return
++	}
++	x.inls[k] = true
++	nodes := base.Ctxt.InlTree.GOFVNodes()
++	if k >= len(nodes) {
++		x.warn("inlining index %d out of range", k)
++		return
++	}
++	c := nodes[k]
++	parent := "-"
++	if c.Parent >= 0 {
++		x.inl(c.Parent)
++		parent = "i" + strconv.Itoa(c.Parent)
++	}
++	ps := x.pos(c.Pos)
++	fs := x.sym(c.Func)
++	fmt.Fprintf(&x.defs, "inl i%d %s %s %s %s\n", k, parent, ps, fs, gofvQuoteP(c.Name))
++}
++
++var gofvAddrTypes = [...]string{
++	obj.TYPE_NONE: "NONE", obj.TYPE_BRANCH: "BRANCH", obj.TYPE_TEXTSIZE: "TEXTSIZE",
++	obj.TYPE_MEM: "MEM", obj.TYPE_CONST: "CONST", obj.TYPE_FCONST: "FCONST",
++	obj.TYPE_SCONST: "SCONST", obj.TYPE_REG: "REG", obj.TYPE_ADDR: "ADDR",
++	obj.TYPE_SHIFT: "SHIFT", obj.TYPE_REGREG: "REGREG", obj.TYPE_REGREG2: "REGREG2",
++	obj.TYPE_INDIR: "INDIR", obj.TYPE_REGLIST: "REGLIST", obj.TYPE_SPECIAL: "SPECIAL",
++}
++
++var gofvAddrNames = [...]string{
++	obj.NAME_NONE: "NONE", obj.NAME_EXTERN: "EXTERN", obj.NAME_STATIC: "STATIC",
++	obj.NAME_AUTO: "AUTO", obj.NAME_PARAM: "PARAM", obj.NAME_GOTREF: "GOTREF",
++	obj.NAME_TOCREF: "TOCREF",
++}
++
++// id returns the stable ID of p. A Prog outside the list gets the next fresh ID.
++func (x *gofvProgExporter) id(p *obj.Prog) int {
++	if k, ok := x.ids[p]; ok {
++		return k
++	}
++	k := x.nextID
++	x.nextID++
++	x.ids[p] = k
++	x.warn("Prog %d is referenced but not in the list", k)
++	return k
++}
++
++// addr renders every field of an obj.Addr; "_" for the zero Addr.
++func (x *gofvProgExporter) addr(a *obj.Addr) string {
++	if a.Type == obj.TYPE_NONE && a.Reg == 0 && a.Index == 0 && a.Scale == 0 && a.Name == obj.NAME_NONE &&
++		a.Class == 0 && a.Offset == 0 && a.Sym == nil && a.Val == nil {
++		return "_"
++	}
++	ty := "?"
++	if int(a.Type) < len(gofvAddrTypes) {
++		ty = gofvAddrTypes[a.Type]
++	} else {
++		x.warn("unknown Addr type %d", a.Type)
++	}
++	nm := "?"
++	if a.Name >= 0 && int(a.Name) < len(gofvAddrNames) {
++		nm = gofvAddrNames[a.Name]
++	} else {
++		x.warn("unknown Addr name %d", a.Name)
++	}
++	sym := x.sym(a.Sym)
++	val := "-"
++	switch v := a.Val.(type) {
++	case nil:
++	case *obj.Prog:
++		val = "@" + strconv.Itoa(x.id(v))
++	case int32:
++		val = "i" + strconv.FormatInt(int64(v), 10)
++	case float64:
++		val = "f" + strconv.FormatUint(math.Float64bits(v), 16)
++	case string:
++		val = "s" + fmt.Sprintf("%x", v)
++	default:
++		x.warn("unknown Addr value %T", v)
++		val = "?"
++	}
++	return fmt.Sprintf("%s/%d/%d/%d/%s/%d/%d/%s/%s", ty, a.Reg, a.Index, a.Scale, nm, a.Class, a.Offset, sym, val)
++}
++
++// prog writes one p line.
++func (x *gofvProgExporter) prog(p *obj.Prog) {
++	id := x.id(p)
++	pool := "-"
++	if p.Pool != nil {
++		pool = "@" + strconv.Itoa(x.id(p.Pool))
++	}
++	from := x.addr(&p.From)
++	var rest []string
++	for _, a := range p.RestArgs {
++		rest = append(rest, strconv.Itoa(int(a.Pos))+":"+x.addr(&a.Addr))
++	}
++	to := x.addr(&p.To)
++	pos := x.pos(p.Pos)
++	fmt.Fprintf(&x.body, "p %d %d %d %d %d %s %s %d %s %d %s %s %d %d %s\n", id, p.Pc, p.Spadj, p.Isize,
++		p.Optab, pool, p.As, p.Scond, from, p.Reg, gofvListP(rest), to, p.RegTo2, p.Mark, pos)
++}
++
++// funcInfo writes the fn line and the FuncInfo records set so far.
++func (x *gofvProgExporter) funcInfo() {
++	s := x.fn.LSym
++	fi := s.Func()
++	fmt.Fprintf(&x.body, "fn %s %d %d %d %d %d %x\n", x.sym(s), fi.Args, fi.Locals, fi.FuncID, fi.FuncFlag,
++		fi.StartLine, uint32(s.Attribute))
++	for _, sp := range fi.GOFVSpills() {
++		fmt.Fprintf(&x.body, "spill %s %d %d %s %s\n", x.addr(&sp.Addr), sp.Reg, sp.Reg2, sp.Spill, sp.Unspill)
++	}
++	for _, m := range fi.InlMarks {
++		p, id := m.GOFVMark()
++		fmt.Fprintf(&x.body, "inlmark @%d %d\n", x.id(p), id)
++	}
++	for _, jt := range fi.JumpTables {
++		js := x.sym(jt.Sym)
++		var ts []string
++		for _, p := range jt.Targets {
++			ts = append(ts, "@"+strconv.Itoa(x.id(p)))
++		}
++		fmt.Fprintf(&x.body, "jumptable %s %s\n", js, gofvListP(ts))
++	}
++	fmt.Fprintf(&x.body, "funcaux %s %s %s %s %s %s %s\n", x.sym(fi.GCArgs), x.sym(fi.GCLocals),
++		x.sym(fi.StackObjects), x.sym(fi.OpenCodedDeferInfo), x.sym(fi.ArgInfo), x.sym(fi.ArgLiveInfo),
++		x.sym(fi.WrapInfo))
++}
++
++// relocs writes the reloc lines of s.
++func (x *gofvProgExporter) relocs(s *obj.LSym) {
++	for _, r := range s.R {
++		fmt.Fprintf(&x.body, "reloc %d %d %s %d %s\n", r.Off, r.Siz, r.Type, r.Add, x.sym(r.Sym))
++	}
++}
++
++func (x *gofvProgExporter) dcl(tag string, n *ir.Name, off int64, flags string) {
++	fmt.Fprintf(&x.body, "%s %s %d %s\n", tag, x.name(n), off, flags)
++}
++
++// frame writes the frame section; called when AllocFrame ends.
++func (x *gofvProgExporter) frame(s *ssafn, mls *liveness.MergeLocalsState) {
++	x.section("frame", func() {
++		for _, d := range x.dclIn {
++			x.dcl("in", d.n, d.off, d.flags)
++		}
++		for _, n := range x.fn.Dcl {
++			x.dcl("out", n, n.FrameOffset(), gofvNameFlags(n))
++		}
++		if fd, ok := x.fn.DebugInfo.(*ssa.FuncDebug); ok {
++			for _, n := range fd.OptDcl {
++				x.dcl("opt", n, n.FrameOffset(), gofvNameFlags(n))
++			}
++		}
++		if mls != nil {
++			for _, n := range x.fn.Dcl {
++				if !mls.IsLeader(n) {
++					continue
++				}
++				var fs []string
++				for _, m := range mls.Followers(n, nil) {
++					fs = append(fs, x.name(m))
++				}
++				fmt.Fprintf(&x.body, "merge %s %s\n", x.name(n), gofvListP(fs))
++			}
++		}
++		fmt.Fprintf(&x.body, "stack %d %d %d\n", s.stksize, s.stkptrsize, s.stkalign)
++	})
++}
++
++// prog0 writes the prog0 section: the Prog list after genssa, before Flush.
++func (x *gofvProgExporter) prog0(pp *objw.Progs) {
++	x.nextID = int(pp.PC)
++	for p := pp.Text; p != nil; p = p.Link {
++		if _, dup := x.ids[p]; dup {
++			break
++		}
++		x.ids[p] = int(p.Pc)
++	}
++	x.section("prog0", func() {
++		seen := map[int64]bool{}
++		for p := pp.Text; p != nil; p = p.Link {
++			if seen[p.Pc] {
++				x.warn("Prog number %d repeats", p.Pc)
++			}
++			seen[p.Pc] = true
++			x.prog(p)
++		}
++		x.funcInfo()
++		var nz []string
++		for _, n := range x.fn.Dcl {
++			if n.Needzero() {
++				nz = append(nz, x.name(n))
++			}
++		}
++		fmt.Fprintf(&x.body, "needzero %s\n", gofvListP(nz))
++		var ra []string
++		for _, a := range x.f.RegArgs {
++			ra = append(ra, fmt.Sprintf("%d:%d:%s", a.Reg, a.Offset, x.typ(a.Type)))
++		}
++		fmt.Fprintf(&x.body, "regargs %s\n", gofvListP(ra))
++	})
++}
++
++// asm writes the asm section (the function after Flush and the Compile tail) and the file.
++func (x *gofvProgExporter) asm(pp *objw.Progs) {
++	s := x.fn.LSym
++	fi := s.Func()
++	for p := fi.Text; p != nil; p = p.Link {
++		if _, ok := x.ids[p]; !ok {
++			x.ids[p] = x.nextID
++			x.nextID++
++		}
++	}
++	x.section("asm", func() {
++		for p := fi.Text; p != nil; p = p.Link {
++			x.prog(p)
++		}
++		x.funcInfo()
++		fmt.Fprintf(&x.body, "text %d %d %s %d\n", s.Size, s.Align, gofvHexP(s.P), len(s.R))
++		x.relocs(s)
++		pc := &fi.Pcln
++		var pd, fd []string
++		for _, d := range pc.Pcdata {
++			pd = append(pd, x.symOrHole(d))
++		}
++		for _, d := range pc.Funcdata {
++			fd = append(fd, x.symOrHole(d))
++		}
++		fmt.Fprintf(&x.body, "pcln %s %s %s %s %s %s\n", x.sym(pc.Pcsp), x.sym(pc.Pcfile), x.sym(pc.Pcline),
++			x.sym(pc.Pcinline), gofvListP(pd), gofvListP(fd))
++		var files []int
++		for k := range pc.UsedFiles {
++			files = append(files, int(k))
++		}
++		slices.Sort(files)
++		var fs []string
++		for _, k := range files {
++			fs = append(fs, strconv.Itoa(k))
++		}
++		fmt.Fprintf(&x.body, "usedfiles %s\n", gofvListP(fs))
++		for i, c := range pc.InlTree.GOFVNodes() {
++			ps := x.pos(c.Pos)
++			fmt.Fprintf(&x.body, "inltree %d %d %s %s %s %d\n", i, c.Parent, ps, x.sym(c.Func), gofvQuoteP(c.Name), c.ParentPC)
++		}
++		// Contents of the function's own data symbols and of the assembler's constants.
++		own := map[*obj.LSym]bool{fi.GCArgs: true, fi.GCLocals: true, fi.StackObjects: true,
++			fi.OpenCodedDeferInfo: true, fi.ArgInfo: true, fi.ArgLiveInfo: true, fi.WrapInfo: true,
++			pc.Pcsp: true, pc.Pcfile: true, pc.Pcline: true, pc.Pcinline: true}
++		for _, d := range pc.Pcdata {
++			own[d] = true
++		}
++		for _, d := range pc.Funcdata {
++			own[d] = true
++		}
++		for _, jt := range fi.JumpTables {
++			own[jt.Sym] = true
++		}
++		delete(own, nil)
++		for i := 0; i < len(x.symList); i++ {
++			d := x.symList[i]
++			if d == s || !own[d] && !strings.HasPrefix(d.Name, "$") {
++				continue
++			}
++			fmt.Fprintf(&x.body, "data y%d %s %d %d %x %s %d\n", i+1, d.Type, d.Size, d.Align, uint32(d.Attribute),
++				gofvHexP(d.P), len(d.R))
++			x.relocs(d)
++		}
++	})
++	x.out.WriteString("eof\n")
++	x.f.GOFVWriteCompanion(".prog", x.out.Bytes())
++}
+--- a/src/cmd/internal/obj/link.go
++++ b/src/cmd/internal/obj/link.go
+@@ -828,6 +828,17 @@
+ 	fi.spills = append(fi.spills, s)
+ }
+ 
++// GOFVSpills returns the spill records of fi in order (gofv Prog exporter).
++func (fi *FuncInfo) GOFVSpills() []RegSpill {
++	return fi.spills
++}
++
++// GOFVMark returns the Prog and the global inlining index of an inline mark (gofv Prog
++// exporter).
++func (m InlMark) GOFVMark() (*Prog, int32) {
++	return m.p, m.id
++}
++
+ // Record the type symbol for an auto variable so that the linker
+ // an emit DWARF type information for the type.
+ func (fi *FuncInfo) RecordAutoType(gotype *LSym) {
+--- a/src/cmd/internal/obj/inl.go
++++ b/src/cmd/internal/obj/inl.go
+@@ -101,6 +101,11 @@
+ 	return tree.nodes[inlIndex].Pos
+ }
+ 
++// GOFVNodes returns the nodes of tree in index order (gofv Prog exporter).
++func (tree *InlTree) GOFVNodes() []InlinedCall {
++	return tree.nodes
++}
++
+ func (tree *InlTree) setParentPC(inlIndex int, pc int32) {
+ 	tree.nodes[inlIndex].ParentPC = pc
+ }

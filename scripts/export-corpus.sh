@@ -32,10 +32,11 @@
 # previous version stays; a version that has not been current for 24 hours is deleted by
 # later switches (its RETIRED file holds the time it stopped being current).
 #
-# Version layout: <version>/plain/<set>/<unit>/<pkgpath>/<func>,<abi>.ssa (std: one unit
-# "std"), <version>/<set>.tar.zst, stats.txt, manifest.txt (also copied to the committed
-# manifest: every unit with its file count and a sha256 digest of its dumps, plus the stats
-# table, tools/ssastats), determinism.diff.
+# Version layout: <version>/plain/<set>/<unit>/<pkgpath>/<func>,<abi>.ssa and, next to it, the
+# gofv-prog companion <func>,<abi>.prog (std: one unit "std"), <version>/<set>.tar.zst,
+# stats.txt, manifest.txt (also copied to the committed manifest: every unit with its .ssa and
+# .prog file counts and sha256 digests of its dumps, the total sizes, plus the stats table,
+# tools/ssastats), determinism.diff.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 main_root=$(git -C "$root" worktree list --porcelain | sed -n '1s/^worktree //p')
@@ -202,9 +203,18 @@ export_all() {
   rm -rf "$cache"
 }
 
-# unit_digest <dir>: sha256 over the sorted (relative path, file sha256) list.
+# unit_digest <dir> <ext>: sha256 over the sorted (relative path, file sha256) list of the
+# *.<ext> files.
 unit_digest() {
-  (cd "$1" && find . -name '*.ssa' -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum) | sha256sum | cut -c1-16
+  (cd "$1" && find . -name "*.$2" -print0 | LC_ALL=C sort -z | xargs -0 -r sha256sum) | sha256sum | cut -c1-16
+}
+
+# unit_cols <dir>: "<ssa files> <ssa digest> <prog files> <prog digest>" of a unit.
+unit_cols() {
+  local e
+  for e in ssa prog; do
+    printf '%s %s ' "$(find "$1" -name "*.$e" 2>/dev/null | wc -l)" "$(unit_digest "$1" "$e")"
+  done | sed 's/ $//'
 }
 
 work=$out.new
@@ -215,7 +225,7 @@ if [ "$check" = 1 ]; then
   echo "export-corpus: determinism check, second export" >&2
   export_all "$work/plain2"
   if diff -r -q "$work/plain" "$work/plain2" -x log >"$work/determinism.diff"; then
-    determinism="identical ($(find "$work/plain" -name '*.ssa' | wc -l) files, two exports with fresh caches)"
+    determinism="identical ($(find "$work/plain" -name '*.ssa' | wc -l) .ssa and $(find "$work/plain" -name '*.prog' | wc -l) .prog files, two exports with fresh caches)"
   else
     determinism="DIFFERENT, see $out/determinism.diff"
     publish=0
@@ -237,14 +247,15 @@ statsbin=$root/tmp/ssastats
   echo "version $version"
   echo "sets $sets"
   [ "$check" = 1 ] && echo "determinism $determinism"
+  echo "bytes ssa $(find "$work/plain" -name '*.ssa' -printf '%s\n' | awk '{s+=$1} END {print s+0}') prog $(find "$work/plain" -name '*.prog' -printf '%s\n' | awk '{s+=$1} END {print s+0}')"
   echo
-  echo "# kind unit source files digest"
+  echo "# kind unit source files digest progfiles progdigest (*.ssa, then the gofv-prog *.prog files)"
   while read -r kind u src; do
     case $kind in
-      skip) echo "skip $u $src - -" ;;
-      std) echo "std std $(IFS=,; echo "${std_pkgs[*]}") $(find "$work/plain/std" -name '*.ssa' | wc -l) $(unit_digest "$work/plain/std")" ;;
-      stdall|cmd) echo "$kind $u $src $(find "$work/plain/$kind" -name '*.ssa' | wc -l) $(unit_digest "$work/plain/$kind")" ;;
-      *) echo "$kind $u $src $(find "$work/plain/$kind/$u" -name '*.ssa' 2>/dev/null | wc -l) $(unit_digest "$work/plain/$kind/$u")" ;;
+      skip) echo "skip $u $src - - - -" ;;
+      std) echo "std std $(IFS=,; echo "${std_pkgs[*]}") $(unit_cols "$work/plain/std")" ;;
+      stdall|cmd) echo "$kind $u $src $(unit_cols "$work/plain/$kind")" ;;
+      *) echo "$kind $u $src $(unit_cols "$work/plain/$kind/$u")" ;;
     esac
   done <"$work/plain/units"
   echo
