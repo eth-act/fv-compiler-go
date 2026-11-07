@@ -389,7 +389,8 @@ def dwarf : L Dwarf := do
                external := ← w boolW, wrapper := ← w boolW, useBASEntries := ← w boolW,
                dwTextCount := ← w natW })
     else pure none
-  let (dcl, needctxt, closure, marks, parents, params, precursors, names) ← if fn.isSome then do
+  let (dcl, needctxt, closure, marks, parents, params, precursors, inlFns, inlDcls, names) ←
+    if fn.isSome then do
       let dcl ← line "dwdcl" (w (listW (refW 'n')))
       let (needctxt, closure) ← line "dwclosure" do
         return (← w boolW, ← w (listW fun x => do
@@ -400,15 +401,19 @@ def dwarf : L Dwarf := do
       let params ← line "dwparams" (w (listW fun x => if isHole x then pure none else some <$> refW 'n' x))
       let precursors ← many "dwprecursor" do
         return (← w (refW 'y'), ← w (refW 'y'), ← w (listW (refW 'n')))
+      let inlFns ← many "dwinlfn" do return (← w (refW 'y'), ← w (refW 'y'))
+      let inlDcls ← many "dwinldcl" do
+        return ({ fn := ← w (refW 'y'), sym := ← str, untyped := ← w boolW, pos := ← w posW }
+          : DwInlDcl)
       let names ← many "dwname" do
         return { name := ← w (refW 'n'), oname := ← w boolW, used := ← w boolW, autotmp := ← w boolW,
                  inlFormal := ← w boolW, inlLocal := ← w boolW, dictIndex := ← w natW,
                  frameOffset := ← w intW, outregs := ← w boolW, heapaddr := ← w (optRefW 'n'),
-                 canonical := ← w (optRefW 'n'),
+                 canonicalPos := ← w (fun x => if x.isDash then pure none else some <$> posW x),
                  typeSym := ← optStr,
                  untyped := ← w boolW, tssa := ← w boolW, canSSA := ← w optBoolW, pos := ← w posW }
-      pure (dcl, needctxt, closure, marks, parents, params, precursors, names)
-    else pure (#[], false, #[], #[], #[], #[], #[], #[])
+      pure (dcl, needctxt, closure, marks, parents, params, precursors, inlFns, inlDcls, names)
+    else pure (#[], false, #[], #[], #[], #[], #[], #[], #[], #[])
   let mut vars := #[]
   for _ in [0:(← read).lines.size] do
     unless ← tagIs "var" do break
@@ -445,8 +450,8 @@ def dwarf : L Dwarf := do
     else pure none
   let data ← dataLines
   let warns ← warnsEnd
-  return { defs, fn, dcl, needctxt, closure, marks, parents, params, precursors, names, vars,
-           scopes, inlCalls, dieRefs, dieOffs, data, warns }
+  return { defs, fn, dcl, needctxt, closure, marks, parents, params, precursors, inlFns, inlDcls,
+           names, vars, scopes, inlCalls, dieRefs, dieOffs, data, warns }
 
 def file : L ProgFile := do
   line "gofv-prog" do

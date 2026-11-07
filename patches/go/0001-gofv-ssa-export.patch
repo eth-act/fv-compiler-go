@@ -1943,7 +1943,7 @@
  type LocalSlotSplitKey struct {
 --- a/src/cmd/compile/internal/ssagen/export_prog_gofv.go
 +++ b/src/cmd/compile/internal/ssagen/export_prog_gofv.go
-@@ -0,0 +1,1209 @@
+@@ -0,0 +1,1241 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -2902,6 +2902,13 @@
 +// and the final Progs (fn.Dcl, the closure layout, scope marks and parents, the signature's
 +// parameter names, the pre-inlining declarations of the function and of the inlined functions
 +// with their abstract-function symbols, and per name the facts Info reads).
++//
++// It reads only state the function being compiled owns: other functions are compiled
++// concurrently and their backends write the facts of their names (Used, FrameOffset, Heapaddr,
++// IsOutputParamInRegisters, Class). So the per-name dwname lines cover only the function's own
++// names; an inlined function's pre-inlining declarations are written as what Info reads of them
++// (preInliningDcls' shouldEmitDwarfVarSafe and makePreinlineDclMap: name, IsUntyped, Pos), and a
++// captured variable's declaration in the enclosing function as its position (declPos).
 +func (x *gofvProgExporter) dwarfInputs(fs *dwarf.FnState) {
 +	fn := x.fn
 +	var ns []*ir.Name
@@ -2912,6 +2919,7 @@
 +			ns = append(ns, n)
 +		}
 +	}
++	optDcl := map[*ir.Name]bool{}
 +	var dcl []string
 +	for _, n := range fn.Dcl {
 +		add(n)
@@ -2921,6 +2929,7 @@
 +	if fd, ok := fn.DebugInfo.(*ssa.FuncDebug); ok && fd != nil {
 +		for _, n := range fd.OptDcl {
 +			add(n)
++			optDcl[n] = true
 +		}
 +		for _, n := range fd.Vars {
 +			add(n)
@@ -2978,8 +2987,10 @@
 +		for ; done < len(ns); done++ {
 +			n := ns[done]
 +			add(n.Heapaddr)
-+			add(n.Canonical())
 +			x.pos(n.Pos())
++			if c := n.Canonical(); c != n {
++				x.pos(c.Pos())
++			}
 +		}
 +		var inls []int
 +		for k := range x.inls {
@@ -2999,8 +3010,13 @@
 +			var ds []string
 +			if pf, _ := base.Ctxt.DwFixups.GetPrecursorFunc(s).(*ir.Func); pf != nil && pf.Inl != nil {
 +				for _, n := range pf.Inl.Dcl {
-+					add(n)
-+					ds = append(ds, x.name(n))
++					if s == fn.LSym {
++						add(n)
++						ds = append(ds, x.name(n))
++					} else {
++						ds = append(ds, fmt.Sprintf("dwinldcl %s %s %d %s\n", x.sym(s), gofvQuoteP(n.Sym().Name),
++							gofvBoolP(n.Type().IsUntyped()), x.pos(n.Pos())))
++					}
 +				}
 +			}
 +			pre[s] = ds
@@ -3010,13 +3026,26 @@
 +			break
 +		}
 +	}
++	var inlfns []*obj.LSym
 +	for _, s := range fsyms {
 +		if pf, _ := base.Ctxt.DwFixups.GetPrecursorFunc(s).(*ir.Func); pf == nil || pf.Inl == nil {
 +			continue
 +		}
-+		fmt.Fprintf(&x.body, "dwprecursor %s %s %s\n", x.sym(s), x.sym(base.Ctxt.DwFixups.AbsFuncDwarfSym(s)), gofvListP(pre[s]))
++		if s == fn.LSym {
++			fmt.Fprintf(&x.body, "dwprecursor %s %s %s\n", x.sym(s), x.sym(base.Ctxt.DwFixups.AbsFuncDwarfSym(s)), gofvListP(pre[s]))
++		} else {
++			inlfns = append(inlfns, s)
++		}
 +	}
-+	// Per name (with their Heapaddr and Canonical names, added above).
++	for _, s := range inlfns {
++		fmt.Fprintf(&x.body, "dwinlfn %s %s\n", x.sym(s), x.sym(base.Ctxt.DwFixups.AbsFuncDwarfSym(s)))
++	}
++	for _, s := range inlfns {
++		for _, d := range pre[s] {
++			x.body.WriteString(d)
++		}
++	}
++	// Per own name (with their Heapaddr names, added above).
 +	for _, n := range ns {
 +		ref := func(m *ir.Name) string {
 +			if m == nil {
@@ -3024,23 +3053,26 @@
 +			}
 +			return x.name(m)
 +		}
-+		canon := n.Canonical()
-+		if canon == n {
-+			canon = nil
++		decl := "-"
++		if c := n.Canonical(); c != n {
++			decl = x.pos(c.Pos())
 +		}
++		// TypeSymName and CanSSA only of the names Info may make a variable of
++		// (shouldEmitDwarfVar, or a zero-sized OptDcl auto).
++		named := optDcl[n] || (!ir.IsAutoTmp(n) && n.Sym() != nil && n.Sym().Name != "_" && ssa.IsVarWantedForDebug(n))
 +		t := n.Type()
 +		tsym, untyped, tssa, canssa := "?", 0, 0, "?"
 +		if t != nil {
 +			untyped = gofvBoolP(t.IsUntyped())
 +			tssa = gofvBoolP(t.Kind() == types.TSSA)
-+			if !t.IsUntyped() && gofvDeepKnownP(t) {
++			if named && !t.IsUntyped() && gofvDeepKnownP(t) {
 +				tsym = gofvQuoteP(types.TypeSymName(t))
 +				canssa = strconv.Itoa(gofvBoolP(ssa.CanSSA(t)))
 +			}
 +		}
 +		fmt.Fprintf(&x.body, "dwname %s %d %d %d %d %d %d %d %d %s %s %s %d %d %s %s\n", x.name(n),
 +			gofvBoolP(n.Op() == ir.ONAME), gofvBoolP(n.Used()), gofvBoolP(ir.IsAutoTmp(n)), gofvBoolP(n.InlFormal()), gofvBoolP(n.InlLocal()),
-+			n.DictIndex, n.FrameOffset(), gofvBoolP(n.IsOutputParamInRegisters()), ref(n.Heapaddr), ref(canon),
++			n.DictIndex, n.FrameOffset(), gofvBoolP(n.IsOutputParamInRegisters()), ref(n.Heapaddr), decl,
 +			tsym, untyped, tssa, canssa, x.pos(n.Pos()))
 +	}
 +}

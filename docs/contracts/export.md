@@ -652,6 +652,8 @@ dwmark …
 dwparents …
 dwparams …
 dwprecursor …
+dwinlfn …
+dwinldcl …
 dwname …
 var …
 scope …
@@ -785,17 +787,26 @@ end of `Compile`. It is empty when `populateDWARF` did not run.
   `ctxt.UseBASEntries`, `ctxt.DwTextCount` (the `R_DWTXTADDR_U*` size depends on it).
 - `dwarfgen.Info`'s inputs besides the frame, `prog0` (`autot`, `dbg*`, the text relocations)
   and the final Progs, written at the end of `Compile` (the facts are fixed by then; `Info` has
-  computed the type sizes it needs): `dwdcl <n,…>` (`fn.Dcl`); `dwclosure <Needctxt()>
+  computed the type sizes it needs). They read only state the function owns: other functions
+  are compiled concurrently, and their backends write their names' facts (`Used`,
+  `FrameOffset`, `Heapaddr`, `IsOutputParamInRegisters`, `Class`), so reading them makes the
+  export nondeterministic. `dwdcl <n,…>` (`fn.Dcl`); `dwclosure <Needctxt()>
   <n>:<offset>,…` (the closure variables' offsets, `NewClosureStructIter`, with their `Heapaddr`
   names at the same offsets); `dwmark <pos> <scope>` (`fn.Marks`); `dwparents <scope,…>`
   (`fn.Parents`); `dwparams <n|_,…>` (`fn.Type().RecvParamsResults()` names, `_` when not an
   `*ir.Name`); `dwprecursor <fn y> <absfn y> <n,…>` (the precursor's `Inl.Dcl` of the function
-  when it was inlined and of every function of the file's inlining nodes, with
-  `AbsFuncDwarfSym`); `dwname <n> <ONAME> <Used> <IsAutoTmp> <InlFormal> <InlLocal> <DictIndex>
-  <FrameOffset> <IsOutputParamInRegisters> <Heapaddr n|-> <Canonical n|-> "<TypeSymName>"|?
-  <IsUntyped> <TSSA> <CanSSA|?> <Pos>` for every name of these lists, of `OptDcl`, `Vars`,
-  `RegOutputParams`, and their `Heapaddr` and `Canonical()` names (`?`: the type's size is not
-  computed, so neither is `TypeSymName`).
+  itself when it was inlined, with `AbsFuncDwarfSym`); `dwinlfn <fn y> <absfn y>` for every
+  other function of the file's inlining nodes, then `dwinldcl <fn y> "<Sym().Name>"
+  <IsUntyped> <Pos>` for each name of its precursor's `Inl.Dcl`, in order (all `preInliningDcls`
+  and `makePreinlineDclMap` read of them); `dwname <n> <ONAME> <Used> <IsAutoTmp> <InlFormal>
+  <InlLocal> <DictIndex> <FrameOffset> <IsOutputParamInRegisters> <Heapaddr n|-> <canonical
+  pos|-> "<TypeSymName>"|? <IsUntyped> <TSSA> <CanSSA|?> <Pos>` for every name of `fn.Dcl`,
+  the closure variables, the parameters, the function's own `dwprecursor` names, `OptDcl`,
+  `Vars`, `RegOutputParams` and their `Heapaddr` names. `<canonical pos>` is
+  `Canonical().Pos()` when `Canonical()` is another name (a captured variable's declaration in
+  the enclosing function, `declPos`). `TypeSymName` and `CanSSA` are written only for names
+  `Info` may make a variable of (`shouldEmitDwarfVar`, or an `OptDcl` name) whose type's size
+  is computed, `?` otherwise.
 - `var <k> <Scope> "<Name>" <Tag> <WithLoclist> <IsReturnValue> <IsInlFormal> <DictIndex>
   <StackOffset> <Type y|-> "<DeclFile>" <DeclLine> <DeclCol> <InlIndex> <ChildIndex>
   <IsInAbstract> <ClosureOffset> <list>`: every distinct `*dwarf.Var` of the scopes and inlined

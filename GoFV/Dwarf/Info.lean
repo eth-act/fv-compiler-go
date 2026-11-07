@@ -25,8 +25,10 @@ anonymous, so `isODCLFUNC` holds), from `cmd/compile/internal/dwarfgen`:
 
 Inputs, all from the `.prog` file (`docs/contracts/export.md`, "gofv-prog 3", "DWARF"): the
 `dwarf` section's `dw*` lines (`fn.Dcl`, the closure offsets, scope marks and parents, the
-signature's parameter names, the pre-inlining `Inl.Dcl` with each function's abstract-function
-symbol, the names' facts), `prog0`'s `FuncDebug`, `Autot` and marker relocations (`R_USEIFACE`),
+signature's parameter names, the pre-inlining declarations with each function's
+abstract-function symbol: the function's own as names, an inlined function's as name, untyped
+flag and position; the facts of the function's own names, a captured variable's declaration as
+its position), `prog0`'s `FuncDebug`, `Autot` and marker relocations (`R_USEIFACE`),
 the `frame` section's `OptDcl`, the `asm` section's final Prog list and text size, the position
 bases and the inlining tree. Symbols are looked up by name among the file's `sym` definitions
 (ABI 0): `go:info.<TypeSymName>` (`Var.Type`) and `type:<TypeSymName>` (`R_USETYPE`).
@@ -113,8 +115,12 @@ structure Env where
   /-- Frame offsets and `IsOutputParamInRegisters` of the frame section's `Dcl` (for slot
   names without a `dwname` line). -/
   frame : Std.HashMap Nat (Int × Bool)
-  /-- `dwprecursor`: function symbol ↦ (abstract-function symbol, pre-inlining `Inl.Dcl`). -/
+  /-- `dwprecursor`: the function's own symbol ↦ (abstract-function symbol, its pre-inlining
+  `Inl.Dcl`, names with `dwname` lines). -/
   precursors : Std.HashMap Nat (Nat × Array Nat)
+  /-- `dwinlfn`/`dwinldcl`: another inlined function's symbol ↦ (abstract-function symbol, its
+  pre-inlining declarations). -/
+  inlPre : Std.HashMap Nat (Nat × Array DwInlDcl)
   /-- `closureVars` (`nil` unless `fn.Needctxt()`). -/
   closureVars : Std.HashMap Nat Int
   dbg : Option FuncDebug
@@ -217,19 +223,19 @@ def findScope (e : Env) (marks : Array (Pos × Nat)) (pos : Pos) : Except String
 /-- `declPos(n)`: `n.Canonical().Pos()`. -/
 def declPos (e : Env) (n : Nat) : Except String Pos := do
   let f ← e.fact n
-  match f.canonical with
-  | some c => return (← e.fact c).pos
-  | none => return f.pos
+  return f.canonicalPos.getD f.pos
+
+/-- `shouldEmitDwarfVarSafe` of a name with symbol name `sym`. -/
+def emitSafe (sym : GoStr) (untyped : Bool) : Bool :=
+  -- ssa.IsVarWantedForDebug
+  let s := sym.bytes
+  let s := if s.size > 0 && s[0]! == '&'.toUInt8 then s.extract 1 s.size else s
+  let wanted := if s.size > 0 && s[0]! == '#'.toUInt8 then hasPrefix s "#yield".toUTF8 else true
+  wanted && sym.bytes != "_".toUTF8 && !untyped
 
 /-- `shouldEmitDwarfVarSafe`. -/
 def shouldEmitSafe (e : Env) (n : Nat) : Except String Bool := do
-  let d ← e.name n
-  let f ← e.fact n
-  -- ssa.IsVarWantedForDebug
-  let s := d.sym.bytes
-  let s := if s.size > 0 && s[0]! == '&'.toUInt8 then s.extract 1 s.size else s
-  let wanted := if s.size > 0 && s[0]! == '#'.toUInt8 then hasPrefix s "#yield".toUTF8 else true
-  return wanted && d.sym.bytes != "_".toUTF8 && !f.untyped
+  return emitSafe (← e.name n).sym (← e.fact n).untyped
 
 /-- `shouldEmitDwarfVar`. -/
 def shouldEmit (e : Env) (n : Nat) : Except String Bool := do
@@ -255,7 +261,7 @@ def inlInfo (e : Env) (f : DwName) (tag : Nat) : Except String (Int × Nat) := d
     return (ii + 1, if f.inlFormal then DW_TAG_formal_parameter else tag)
   return (0, tag)
 
-/-- `preInliningDcls(fnsym)`. -/
+/-- `preInliningDcls(fnsym)` of the function itself. -/
 def preInliningDcls (e : Env) (sym : Nat) : Except String (Array Nat) := do
   let some (_, ns) := e.precursors[sym]?
     | throw s!"Info: preInliningDcls: no dwprecursor for y{sym}"
@@ -267,11 +273,27 @@ def preInliningDcls (e : Env) (sym : Nat) : Except String (Array Nat) := do
     r := r.push n
   return r
 
+/-- What `makePreinlineDclMap` reads of `preInliningDcls(fnsym)`: each name's `Sym().Name` and
+`Pos()` (the function's own names, or another inlined function's `dwinldcl` lines). -/
+def preInliningKeys (e : Env) (sym : Nat) : Except String (Array (GoStr × Pos)) := do
+  if sym == e.fnsym then
+    return ← (← e.preInliningDcls sym).mapM fun n => do return ((← e.name n).sym, (← e.fact n).pos)
+  let some (_, ds) := e.inlPre[sym]?
+    | throw s!"Info: preInliningDcls: no dwinlfn for y{sym}"
+  let mut r := #[]
+  for d in ds do
+    let s := d.sym.bytes
+    if s.size == 0 then throw s!"Info: preInliningDcls: {d.sym.quote} has an empty name"
+    if s[0]! == '.'.toUInt8 || !emitSafe d.sym d.untyped then continue
+    r := r.push (d.sym, d.pos)
+  return r
+
 /-- `DwFixups.AbsFuncDwarfSym(fnsym)`. -/
 def absFunc (e : Env) (sym : Nat) : Except String Nat :=
-  match e.precursors[sym]? with
-  | some (a, _) => pure a
-  | none => throw s!"Info: AbsFuncDwarfSym: no dwprecursor for y{sym}"
+  match e.precursors[sym]?, e.inlPre[sym]? with
+  | some (a, _), _ => pure a
+  | none, some (a, _) => pure a
+  | none, none => throw s!"Info: AbsFuncDwarfSym: no dwprecursor or dwinlfn for y{sym}"
 
 end Env
 
@@ -642,12 +664,12 @@ def assembleInlines (e : Env) (vars : Array DwVar) :
           | none => throw s!"Info: InlinedFunction({ii - 1}): node has no function"
         | none => throw s!"Info: InlinedFunction({ii - 1}): no inlining tree node"
     -- makePreinlineDclMap
-    let dcl ← e.preInliningDcls sym
+    let dcl ← e.preInliningKeys sym
     let mut m : Std.HashMap (GoStr × GoStr × Nat × Nat) Nat := {}
     for h : i in [0:dcl.size] do
-      let n := dcl[i]
-      let (file, line, col) ← e.relPos (← e.fact n).pos
-      let vp := ((← e.name n).sym, file, line, col)
+      let (name, pos) := dcl[i]
+      let (file, line, col) ← e.relPos pos
+      let vp := (name, file, line, col)
       if m.contains vp then continue
       m := m.insert vp i
     let mut synthCount := m.size
@@ -721,6 +743,8 @@ def Env.ofFile (pf : ProgFile) : Except String Env := do
   let frame := (pf.frame.dclOut ++ pf.frame.optDcl).foldl
     (fun m (d : DclEntry) => m.insert d.name (d.off, d.flags.outregs)) {}
   let precursors := dw.precursors.foldl (fun m (s, a, ns) => m.insert s (a, ns)) {}
+  let inlPre := dw.inlDcls.foldl (fun m d => m.modify d.fn fun (a, ds) => (a, ds.push d))
+    (dw.inlFns.foldl (fun m (s, a) => m.insert s (a, #[])) {})
   let closureVars := if dw.needctxt then dw.closure.foldl (fun m (n, o) => m.insert n o) {}
     else {}
   let dbg := pf.prog0.dbg
@@ -730,7 +754,7 @@ def Env.ofFile (pf : ProgFile) : Except String Env := do
        d.lists.foldl (fun s (k, es) => if es.isEmpty then s else s.insert k) {})
     | none => ({}, {})
   let wasInlined := pf.asm.fn.attr &&& Obj.AttrWasInlined.toNat != 0
-  return { pf, names, types, symByName, symName, bases, inls, facts, frame, precursors,
+  return { pf, names, types, symByName, symName, bases, inls, facts, frame, precursors, inlPre,
            closureVars, dbg, varIDMap, lists, fnsym := pf.asm.fn.sym, wasInlined,
            regabi := pf.abi != 0, textSize := pf.asm.textSize }
 

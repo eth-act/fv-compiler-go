@@ -658,6 +658,27 @@ avoiding): the problem, the trick, the numbers, where it is used.
   rounds of n values on rejected functions) took 15–23 s on `obj/arm64/init`; P2ProofPair2's
   worklist `okCert` (agent/pairperf) brings that file to 3 s.
 
+#### Export determinism: an exporter may read only state the compiled function owns (#551, #426)
+- **Problem:** `cmd/compile` compiles functions concurrently (`-c`, the default), and each
+  backend writes facts of its own `*ir.Name`s (`Used`, `FrameOffset`, `Heapaddr`,
+  `IsOutputParamInRegisters`, `Class`) while it runs. The first `dwname` lines of `gofv-prog 3`
+  (`export_prog_gofv.go` `dwarfInputs`) wrote these facts for every name `dwarfgen.Info` reaches,
+  including the pre-inlining `Inl.Dcl` of inlined callees (the callee's own names for a function
+  of the package) and a captured variable's declaration in the enclosing function (and through
+  them their `Heapaddr`/`Canonical` names, which change the name numbering). Whether the callee
+  had been compiled yet decided the bits: the second quick-v10 export differed from the first in
+  205 `.prog` files (`dwname` lines only), and the first one passed by chance. #426 was the same
+  bug class (a shared symbol's type info from whichever goroutine made it first).
+- **Trick:** write per-name facts only for the function's own names; for other names write only
+  what is fixed before the concurrent phase and what Go itself reads of them (`dwarfgen` reads
+  callees' declarations through `shouldEmitDwarfVarSafe`: `dwinldcl` lines with the name, the
+  untyped flag and the position; `declPos` of a captured variable: a position on the closure
+  variable's own `dwname` line). When adding an export field, ask who writes it and when; a
+  field another function's goroutine may write is off limits, however stable it looks in one
+  run. Always re-export with `--check-determinism` before reading parity numbers.
+- **Effect:** the re-export of the same tree is deterministic (0 differing files, was 205), with
+  dwarf-parity unchanged at 100%.
+
 ## Inherited from clifv (measured there, eth-act/clifv `LEARNINGS.md`)
 
 None of these weaken what is proven: every compiler theorem still prints only `propext`,

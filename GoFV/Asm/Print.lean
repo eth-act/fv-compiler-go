@@ -205,10 +205,14 @@ def dwarf (d : Dwarf) : W Unit := do
     s "dwparams "; list (fun x => match x with | some k => ref 'n' k | none => s "_") d.params; nl
     for (f, a, ns) in d.precursors do
       s "dwprecursor "; ref 'y' f; sp; ref 'y' a; sp; list (ref 'n') ns; nl
+    for (f, a) in d.inlFns do s "dwinlfn "; ref 'y' f; sp; ref 'y' a; nl
+    for x in d.inlDcls do
+      s "dwinldcl "; ref 'y' x.fn; sp; q x.sym; sp; bool x.untyped; sp; pos x.pos; nl
     for x in d.names do
       s "dwname "; ref 'n' x.name; sp; bool x.oname; sp; bool x.used; sp; bool x.autotmp; sp
       bool x.inlFormal; sp; bool x.inlLocal; sp; n x.dictIndex; sp; i x.frameOffset; sp
-      bool x.outregs; sp; optRef 'n' x.heapaddr; sp; optRef 'n' x.canonical; sp
+      bool x.outregs; sp; optRef 'n' x.heapaddr; sp
+      (match x.canonicalPos with | some p => pos p | none => s "-"); sp
       (match x.typeSym with | some t => q t | none => s "?"); sp; bool x.untyped; sp; bool x.tssa
       sp; optBool x.canSSA; sp; pos x.pos; nl
   for h : k in [0:d.vars.size] do dwVar k d.vars[k]

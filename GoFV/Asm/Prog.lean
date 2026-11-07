@@ -463,11 +463,13 @@ structure DwFn where
   dwTextCount : Nat
   deriving Inhabited
 
-/-- The facts `dwarfgen.Info` reads of an `*ir.Name` (`dwname` line) besides its definition:
-`Op() == ONAME`, `Used()`, `IsAutoTmp`, `InlFormal()`, `InlLocal()`, `DictIndex`, `FrameOffset()`,
-`IsOutputParamInRegisters()`, `Heapaddr`, `Canonical()` (when not itself), `TypeSymName` of its
-type (`none`: not computed, the type's size is unknown), `IsUntyped()`, kind `TSSA`,
-`CanSSA` (`none`: unknown) and `Pos()`. -/
+/-- The facts `dwarfgen.Info` reads of one of the function's own `*ir.Name`s (`dwname` line)
+besides its definition: `Op() == ONAME`, `Used()`, `IsAutoTmp`, `InlFormal()`, `InlLocal()`,
+`DictIndex`, `FrameOffset()`, `IsOutputParamInRegisters()`, `Heapaddr`, the position of
+`Canonical()` (when not itself: a captured variable's declaration in the enclosing function),
+`TypeSymName` of its type (`none`: not exported, the name is not one `Info` may make a variable
+of or the type's size is unknown), `IsUntyped()`, kind `TSSA`, `CanSSA` (`none` likewise) and
+`Pos()`. -/
 structure DwName where
   name : Nat
   oname : Bool
@@ -479,11 +481,21 @@ structure DwName where
   frameOffset : Int
   outregs : Bool
   heapaddr : Option Nat
-  canonical : Option Nat
+  canonicalPos : Option Pos
   typeSym : Option GoStr
   untyped : Bool
   tssa : Bool
   canSSA : Option Bool
+  pos : Pos
+  deriving Inhabited, BEq
+
+/-- A pre-inlining declaration of an inlined function (`dwinldcl` line): the function symbol,
+`Sym().Name`, `Type().IsUntyped()` and `Pos()`, what `preInliningDcls` and
+`makePreinlineDclMap` read of it. -/
+structure DwInlDcl where
+  fn : Nat
+  sym : GoStr
+  untyped : Bool
   pos : Pos
   deriving Inhabited, BEq
 
@@ -496,9 +508,10 @@ structure Dwarf where
   /-- `dwarfgen.Info`'s inputs besides the frame, `FuncDebug` and Progs: `fn.Dcl`; `Needctxt()`
   and the closure variables' offsets (`NewClosureStructIter`, with `Heapaddr` entries);
   `fn.Marks` (position, scope); `fn.Parents`; the signature's parameter names
-  (`RecvParamsResults`, `none` when not a name); the pre-inlining `Inl.Dcl` of the function (if
-  inlined) and of the inlined functions: (function, abstract-function symbol, names); the
-  names' facts. -/
+  (`RecvParamsResults`, `none` when not a name); the function's own pre-inlining `Inl.Dcl` when
+  it was inlined: (function, abstract-function symbol, names); the other inlined functions
+  (function, abstract-function symbol) and their pre-inlining declarations; the own names'
+  facts. -/
   dcl : Array Nat
   needctxt : Bool
   closure : Array (Nat × Int)
@@ -506,6 +519,8 @@ structure Dwarf where
   parents : Array Nat
   params : Array (Option Nat)
   precursors : Array (Nat × Nat × Array Nat)
+  inlFns : Array (Nat × Nat)
+  inlDcls : Array DwInlDcl
   names : Array DwName
   /-- Every distinct `dwarf.Var` of the scopes and inlined calls (identity matters:
   `putscope` skips the variables of inlined calls), the scopes' first. -/
