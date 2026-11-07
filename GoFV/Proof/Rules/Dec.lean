@@ -20,9 +20,10 @@ Not provable under `Rule.Sound` (`docs/proofs/rules.md`, "Dec rules"):
   `.agg [(0, .ptr _)] 8`; Go represents it as the bare pointer. Model gap, not a Go bug
   (agreed with agent Semantics4; `docs/plans/semantics.md` §10). Their obligation is
   `Rule.Drop` (`DecMakeSel.lean`): the checked rewrite keeps the `Make`.
-- `dec.rules:103`/`:104`/`:127` (`StructSelect`/`ArraySelect` of `IData x`), `:125`
-  (`(IMake _typ (ArrayMake1 val)) => (IMake _typ val)`): correct only at the interface shape,
-  which the obligation does not fix (an `IData` or `IMake` typed with an aggregate data word).
+- `dec.rules:125` (`(IMake _typ (ArrayMake1 val)) => (IMake _typ val)`): correct only at the
+  interface shape, which the obligation does not fix (an `IMake` typed with an aggregate data
+  word). `:103`/`:104`/`:127` (`StructSelect`/`ArraySelect` of `IData x`) are proven in
+  `IDataSel.lean` (`argShapeOk` fixes an `IData` operand's shape, `idataArgOk`).
 - `dec.rules:102` (`imakeOfStructMake(v)`), `:106` (`StructSelect [i] (StructMake ___)`,
   variadic, `x.Args[i]`): no `Rule.Sound` form (`Pat.arityOk`, custom result).
 -/
@@ -154,7 +155,7 @@ theorem r_dec_82_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_82 := by
 /-- `dec.rules:83`: `(IData (IMake _ data)) && data.Op != OpStructMake && data.Op != OpArrayMake1 => data` -/
 theorem r_dec_83_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_83 := by
   dec_unfold GoFV.Rules.Generated.Dec.r_dec_83
-  exact sel_make2 hlt.1 hlt.2 hat.1 hat.2 1
+  exact sel_make2 hlt.1 hlt.2 hat.2.1 hat.2.2 1
 
 /-- `dec.rules:115`: `(StructSelect x) && x.Type.IsPtrShaped() => x` -/
 theorem r_dec_115_sound : Rule.Sound GoFV.Rules.Generated.Dec.r_dec_115 := by

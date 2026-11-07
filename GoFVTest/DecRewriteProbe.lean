@@ -175,6 +175,10 @@ def replayWhy (tabs : Tables) (t : Interp.Table) (f : Func) :
           if imsOK tabs M v defs.toList then
             replayWhy tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
           else .error s!"rule {key cr.rule}: imsOK"
+        else if addrCmpShape cr.rule then
+          if addrCmpOK tabs M v defs.toList then
+            replayWhy tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
+          else .error s!"rule {key cr.rule}: addrCmpOK"
         else if ruleOK tabs M cr.rule v defs.toList then
           replayWhy tabs t f (defs.foldl (fun M u => M.put u.id u) M) B evs
         else .error s!"rule {key cr.rule}: {why tabs M cr.rule v defs.toList}"

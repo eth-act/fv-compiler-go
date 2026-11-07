@@ -980,12 +980,51 @@ def imsOK (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Bool :=
     | _, _ => false
   | _, _ => false
 
+/-! ## Comparisons of symbol addresses (issue #69)
+
+`(EqPtr (Addr {x} _) (Addr {y} _)) => (ConstBool [x == y])` (`generic.rules:1648`) and its
+`NeqPtr` form (`:1651`; `GoFV.Proof.Rules.addrCmpShape`) compare two symbols' auxes, which the
+denotation does not model (the oracle answers `x == y`). The semantics gives an `Addr` the
+pointer to offset 0 of the global block named by its symbol (`GoFV.Proof.Rules.addrVal`), so two
+such pointers are equal iff the names are: each instance is validated (`addrCmpOK`), and only so,
+by those names. -/
+
+/-- The global block name an `Addr` aux points to (`GoFV.Proof.Rules.addrVal`). -/
+def addrName? (tabs : Tables) (ax : Option AuxRef) : Option String :=
+  match ax.bind tabs.aux? with
+  | some { kind := .sym name .., .. } => some name.toStringLossy
+  | _ => none
+
+/-- The global block an `Addr` operand of an address comparison points to. -/
+def addrSymOf (tabs : Tables) (M : Defs) (a : ID) : Option String :=
+  match M.get? a with
+  | some x => if x.op == .Addr then addrName? tabs x.aux else none
+  | none => none
+
+/-- The event `(v, [u0, u])` folds the comparison `v` of two symbol addresses: `u` is `v` as
+`ConstBool` of whether the names are equal (`NeqPtr`: differ). The interpreter logs `v`'s new
+definition twice for an in-place result (`Interp.tryRule`): `u0` is at `v` too. -/
+def addrCmpOK (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Bool :=
+  match M.get? v, defs with
+  | some x, [u0, u] =>
+    match x.args.toList with
+    | [a, b] =>
+      match addrSymOf tabs M a, addrSymOf tabs M b with
+      | some na, some nb =>
+        (x.op == .EqPtr || x.op == .NeqPtr) && u0.id == v &&
+          u.id == v && u.op == .ConstBool && u.args.isEmpty && u.type == x.type &&
+          u.auxInt == (if (na == nb) != (x.op == .NeqPtr) then 1 else 0)
+      | _, _ => false
+    | _ => false
+  | _, _ => false
+
 /-- Replay the log on the definitions `M` and the terminators `B`, starting from `f`'s; `none`
 if an event is not validated. An event of a dropped rule (`dropShape`) and a copy-argument
 replacement the copies of `M` do not justify are skipped: `M` keeps its definition, and
 `finalOK` accepts the output only where that value is no longer read (issue #17). A selection of
-a `Make` (`makeSelOK`) is accepted from any rule; a selection of a `Load` (`loadSelOK`) and an
-`IMake` of a `StructMake` (`imsOK`) only per instance. With `lax` (`validate`), an event of a table
+a `Make` (`makeSelOK`) is accepted from any rule; a selection of a `Load` (`loadSelOK`), an
+`IMake` of a `StructMake` (`imsOK`) and a comparison of symbol addresses (`addrCmpOK`) only per
+instance. With `lax` (`validate`), an event of a table
 rule that is not validated is skipped the same way (keeping a definition is always sound;
 `finalOK` decides): a selection of a dropped `Make` whose argument Go's `copyOf` retyped, issue
 #17. The `ld` layer replays strictly, to take only validated events. -/
@@ -1011,6 +1050,10 @@ def replay (tabs : Tables) (t : Interp.Table) (f : Func) (lax : Bool) :
           else none
         else if imsShape cr.rule then
           if imsOK tabs M v defs.toList then
+            replay tabs t f lax (defs.foldl (fun M u => M.put u.id u) M) B evs
+          else none
+        else if addrCmpShape cr.rule then
+          if addrCmpOK tabs M v defs.toList then
             replay tabs t f lax (defs.foldl (fun M u => M.put u.id u) M) B evs
           else none
         else if ruleOK tabs M cr.rule v defs.toList then

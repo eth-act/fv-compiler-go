@@ -49,7 +49,10 @@ those of the semantics, `GoFV.SSA.Sem.evalValue`: a pure value is
   that address), the argument of `SlicePtr`/`SliceLen`/`SliceCap` a slice (#69 RuleProofs20:
   then it is `poison` or has `0 ≤ len ≤ cap`, `Val.hasTy_slice`, which `:278`
   `(IsSliceInBounds (SliceLen x) (SliceCap x))` needs; `:1035–1038` select from a `SliceMake`
-  of a slice shape). With
+  of a slice shape), the argument of `IData` of the interface shape (`idataArgOk`: an aggregate
+  whose second component is a word; #69 Phase1Tail2: `:982`, `:983`, `:1001` and `dec.rules:103`,
+  `:104`, `:127` select from `IData x`, which at an aggregate data word would select a field and
+  is otherwise a word, whose selection is `poison`). With
   `Pat.typed` the leaves then have these shapes. Without it
   `generic.rules:964` (`(OffPtr (OffPtr p [y]) [x]) => (OffPtr p [x+y])`) is false: a
   `uintptr` leaf `p = 2^40-8` under a pointer-typed inner `OffPtr` becomes the pointer
@@ -885,10 +888,15 @@ read; `Live`, `liveOK_facts`), and `final_den` is stated for read values. Witnes
 `GoFV.Proof.Witness.decNested_witness` (`nest`, the proven dec rules: a selection skipped by
 `lax`, one resolved through a kept selection, one through a copy, and a dead `StructMake` over a
 dropped one; `main` before rejected the run). Decompose builtin in the fragment (base f52e649):
-quick-v4 9199 → 9200, full-v5 91647 → 92054. **Not provable as
-`Rule.Sound`**: `:103`,
-`:104`, `:125`, `:127` (correct only at the interface shape, which the obligation does not fix),
-`:102` (`imakeOfStructMake`). **Pending**: the size-0 `Store` elimination `:10` (`=> mem`).
+quick-v4 9199 → 9200, full-v5 91647 → 92054. **Proven since #69 (Phase1Tail2)**: `:103`,
+`:104`, `:127` (and `generic.rules:982`, `:983`, `:1001`), the selections of an `IData`
+(`IDataSel.lean`): `argShapeOk` gives an `IData` operand the interface shape (`idataArgOk`: the
+second component a word), so `IData x` is a word retyped and its selection is `poison`
+(`selectAux_idata`); as for `:115`, `:116`, `rule-sat` finds no instance (witness of the pass
+execution: `GoFV.Proof.Witness.idsel_checkedRewrite`, `unbox`, `{generic.rules:982}`); `:102`
+(`imakeOfStructMake`, `Rule.IMakeSM`, per instance, `RewriteCheck.imsOK`). **Not provable as
+`Rule.Sound`**: `:125` (correct only at the interface shape, which the obligation does not fix
+for an `IMake`). **Pending**: the size-0 `Store` elimination `:10` (`=> mem`).
 
 **`Store` splits** (`:23`, `:35`, `:51`, `:72`, `:93`, `:129` in place, `:123` =
 `rewriteStructStore`; `EffectRule.StructStore`, `GoFV/Proof/Rules/DecStore.lean`). A `Store` of
@@ -959,6 +967,21 @@ of the `Load`'s pointer, from its memory). `LSFacts.step` proves it refines the 
 closed set with three times the fuel (`selLoad_ref` at `v`); `ReplayInv.loadSel` keeps the replay
 invariant. Pass execution witness: `GoFV.Proof.Witness.lsel_checkedRewrite` (`loadField`,
 `{dec.rules:141}`).
+
+**Comparisons of symbol addresses: `Rule.AddrCmp`** (`AllSound.lean`, `AddrCmp.lean`,
+`GoFV/Proof/Pass/RewriteAddrCmp.lean`; #69 Phase1Tail2). `(EqPtr (Addr {x} _) (Addr {y} _)) =>
+(ConstBool [x == y])` (`generic.rules:1648`) and its `NeqPtr` form (`:1651`) compare the symbols,
+an oracle atom of the denotation, so they are no `Rule.Sound`. `Rule.Checked` gains
+`Rule.AddrCmp` (`addrCmpShape`: `EqPtr`/`NeqPtr` of two `Addr` patterns, a `ConstBool` built in
+place); the replay validates such an event per instance (`RewriteCheck.addrCmpOK`: both
+arguments are `Addr`s whose auxes are symbols `na`, `nb`, and `v` becomes `ConstBool` of
+`(na == nb) != (v.op == NeqPtr)` at `v`'s type; the interpreter logs an in-place result twice,
+`[v, v]`). An `Addr` denotes offset 0 of the global block its symbol names
+(`Rules.addrVal`, `Run.frameVal`), and `Ptr.eq` of two such pointers is the comparison of the
+names (`eqPtr_globals`), so `ACFacts.step` refines the denotations of a closed set at the same
+fuel; `ReplayInv.addrCmp` keeps the replay invariant. The `OffPtr` (`:1649`, `:1650`, …) and
+`Convert` (`:1666`, `:1667`) forms stay open. Pass execution witness:
+`GoFV.Proof.Witness.ac_checkedRewrite` (`same`, `&a == &b`, `{generic.rules:1648}`).
 
 **Selections of a `Make`: `makeSelOK`, `Rule.MakeSel`** (`GoFV/Proof/Rules/AllSound.lean`,
 `DecMakeSel.lean`, `GoFV/Proof/Pass/RewriteMakeSel.lean`). An event of a rule with
@@ -1044,7 +1067,7 @@ needs a later phase of the semantics.
 | File | Family | Proven | Pending (P1/P2) | False | Not pure | Total |
 | --- | --- | --: | --: | --: | --: | --: |
 | `dec` | ArrayMake | 1 | 0 | 0 | 0 | 1 |
-| `dec` | ArraySelect | 3 | 1 | 0 | 0 | 4 |
+| `dec` | ArraySelect | 4 | 0 | 0 | 0 | 4 |
 | `dec` | ComplexImag | 3 | 0 | 0 | 0 | 3 |
 | `dec` | ComplexReal | 3 | 0 | 0 | 0 | 3 |
 | `dec` | IData | 2 | 0 | 0 | 0 | 2 |
@@ -1059,7 +1082,7 @@ needs a later phase of the semantics.
 | `dec` | StringLen | 2 | 0 | 0 | 0 | 2 |
 | `dec` | StringPtr | 2 | 0 | 0 | 0 | 2 |
 | `dec` | StructMake | 1 | 0 | 0 | 0 | 1 |
-| `dec` | StructSelect | 3 | 2 | 0 | 1 | 5 |
+| `dec` | StructSelect | 5 | 0 | 0 | 1 | 5 |
 | `divisible` | Eq | 16 | 0 | 0 | 0 | 16 |
 | `divisible` | Neq | 16 | 0 | 0 | 0 | 16 |
 | `divmod` | Div | 17 | 6 | 4 | 2 | 29 |
@@ -1067,7 +1090,7 @@ needs a later phase of the semantics.
 | `generic` | AddPtr | 1 | 1 | 0 | 0 | 2 |
 | `generic` | And | 40 | 8 | 0 | 0 | 48 |
 | `generic` | AndB | 36 | 0 | 0 | 0 | 36 |
-| `generic` | ArraySelect | 1 | 1 | 0 | 0 | 2 |
+| `generic` | ArraySelect | 2 | 0 | 0 | 0 | 2 |
 | `generic` | BitLen | 8 | 0 | 0 | 0 | 8 |
 | `generic` | Block | 3 | 0 | 0 | 3 | 3 |
 | `generic` | Ceil | 0 | 0 | 0 | 1 | 1 |
@@ -1084,7 +1107,7 @@ needs a later phase of the semantics.
 | `generic` | Eq | 58 | 0 | 0 | 2 | 58 |
 | `generic` | EqB | 5 | 0 | 0 | 0 | 5 |
 | `generic` | EqInter | 1 | 0 | 0 | 0 | 1 |
-| `generic` | EqPtr | 2 | 7 | 0 | 11 | 20 |
+| `generic` | EqPtr | 3 | 7 | 0 | 11 | 20 |
 | `generic` | EqSlice | 1 | 0 | 0 | 0 | 1 |
 | `generic` | Floor | 0 | 0 | 0 | 1 | 1 |
 | `generic` | IMake | 1 | 1 | 0 | 1 | 2 |
@@ -1104,7 +1127,7 @@ needs a later phase of the semantics.
 | `generic` | Neq | 54 | 0 | 0 | 2 | 54 |
 | `generic` | NeqB | 5 | 0 | 0 | 0 | 5 |
 | `generic` | NeqInter | 1 | 0 | 0 | 0 | 1 |
-| `generic` | NeqPtr | 3 | 6 | 0 | 11 | 20 |
+| `generic` | NeqPtr | 4 | 6 | 0 | 11 | 20 |
 | `generic` | NeqSlice | 1 | 0 | 0 | 0 | 1 |
 | `generic` | NilCheck | 8 | 0 | 0 | 8 | 8 |
 | `generic` | Not | 27 | 2 | 0 | 4 | 33 |
@@ -1132,13 +1155,13 @@ needs a later phase of the semantics.
 | `generic` | Store | 12 | 0 | 0 | 21 | 21 |
 | `generic` | StringLen | 1 | 0 | 0 | 0 | 1 |
 | `generic` | StringPtr | 1 | 0 | 0 | 1 | 1 |
-| `generic` | StructSelect | 1 | 3 | 0 | 1 | 4 |
+| `generic` | StructSelect | 3 | 1 | 0 | 1 | 4 |
 | `generic` | Sub | 68 | 0 | 0 | 2 | 70 |
 | `generic` | Trunc | 32 | 0 | 0 | 1 | 33 |
 | `generic` | Xor | 60 | 4 | 4 | 0 | 68 |
 | `generic` | Zero | 2 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1375 | 198 | 31 | 258 | 1762 |
+| all | | 1383 | 192 | 31 | 258 | 1762 |
 
 <!-- END coverage -->
 
