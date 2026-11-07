@@ -503,18 +503,19 @@ step is not modelled yet (the ID layout only makes `runProg` usable on P0/P1 lis
 `MachRefines` composes with `LayerRefines` of Phase 2 (`GoFV/Proof/Pass/PipelineFull.lean`)
 through the outcome relation of §2.
 
-## 8. Modules (proposed)
+## 8. Modules
 
 | Module | Content | Milestone |
 | --- | --- | --- |
-| `GoFV/Obj/{As,Reg,Addr,Prog,LSym,Parse,Print}.lean` | the Prog IR; `As` and register constants generated from `a.out.go`/`anames.go` | I2 |
-| `GoFV/Gen/{MergeLocals,Frame,Liveness,ArgLive,Meta,Progs,Genssa,Arm64Value,Arm64Block,Defframe}.lean` | ports of A1–C7 | I3 |
-| `GoFV/Asm/{Linkpatch,Progedit,Preprocess,Optab,Span,Encode,Unsafe,Pcln}.lean` | ports of D1–D7 (`Optab` generated) | I4 |
+| `GoFV/Asm/{As,Reg,Prog,Parse,Print,…}.lean` | the Prog IR; `As` and register constants generated from `a.out.go`/`anames.go`; **done** | I2 |
+| `GoFV/Gen/{MergeLocals,Frame,Liveness,ArgLive,Meta,Progs,Genssa,Arm64Value,Arm64Block,Defframe}.lean` | ports of A1–C7; **done** (gen-parity) | I3 |
+| `GoFV/Asm/{Obj7,Optab,Span7,Asmout,Pcln,…}.lean` | ports of D1–D7 (`Optab` generated); **done** (#569, asm-parity) | I4 |
 | `GoFV/Debug/{LocLists,Dwarf,Inline,Lines}.lean` | ports of E1–E2 | I5 |
 | `GoFV/Arm64/{State,Insn,Decode,Exec}.lean` | §3 (a); **done** (#552): `MState`, `Insn` (one constructor per encoding class), `decode`, `exec`, `step`, `run` | I6 |
-| `GoFV/SSA/Sem/{RunFrame,RunProg,RunMach,Inject,Hooks}.lean` | §4, §6, §7 | I6 |
-| `GoFVTest/Arm64Cosim.lean`, `GoFVTest/Arm64Decode.lean`, `tools/arm64cosim`, `scripts/arm64-cosim.sh` | co-simulation under qemu and the decoder round trip on the asm sections; **done** (#552) | I6 |
-| `GoFV/Proof/{Frame,Gen,Asm,ObjCheck,Meta}/*.lean` | §7 | I7 |
+| `GoFV/SSA/Sem/{RunFrame,RunProg,RunMach,Inject,Hooks,LocMatch}.lean` | §4, §6, §7; **done** (#552) | I6 |
+| `GoFVTest/Arm64Cosim.lean`, `GoFVTest/Arm64Decode.lean`, `tools/arm64cosim`, `scripts/arm64-cosim.sh` | co-simulation under qemu and the decoder round trip on the asm sections; the per-Prog and per-block `runProg` checks; **done** (#552) | I6 |
+| `GoFVTest/MachDiff.lean` (`mach-difftest`, `scripts/sem-difftest.sh --mach`), the frame run in `GoFVTest/SemDiff.lean` | native difftests of `runMach` and `runFrame`; **done** (#552) | I6 |
+| `GoFV/Proof/{Frame,Gen,Asm,ObjCheck,Meta}/*.lean` | §7; plan in `docs/plans/proofs3.md` | I7 |
 | (blocked on #415) `GoFV/Arm/**`, `GoFV/Proof/ArmAgree/*.lean` | §3 (b) agreement | I6b #555 |
 
 ## 9. Phasing (I6)
@@ -539,10 +540,21 @@ through the outcome relation of §2.
    decoder bug (the pair class's `opc` field); the random words found two more no corpus word
    exercises (the literal class's `opc` field, `SMULH`'s should-be-one `Ra`) and a wrong `CLS`.
 3. `runMach` with hooks (calls, morestack, faults, panics); native difftest of whole corpus
-   functions (Lean machine on the stock object's words vs qemu).
+   functions (Lean machine on the stock object's words vs native).
 4. `progSpec`, `runProg`; difftest of `runProg` on P0/P1/P2 exports against `runMach`.
 5. `runFrame` and the injection; semantic difftest from `runLoc` (Phase 2's sections) through
    `runFrame` and `runMach`.
+
+   Steps 3–5 are done (#552). `mach-difftest` (`scripts/sem-difftest.sh --mach`) runs the
+   sem-difftest set's functions under `runMach` on the stock asm-section bytes, linked with
+   their relocations, with the hooks of §6: of 254 functions and 10,160 calls, 237 functions
+   (9,480 calls) run and agree with native on all 9,480 (8,987 returned, 493 panicked); 17
+   functions (680 calls) use defer or recover, which the hooks do not model, and are excluded.
+   `arm64-decode` checks every Prog of quick-v9 through `progStep` against the decoded words
+   (429,386/429,386) and every basic block through `runProg` against `runMach`
+   (122,770/122,770; the block check found CASALD's size, 1 instead of 8 bytes). The frame run
+   of the trim section through `runFrame` agrees with native on 10,157 of 10,160 calls; the
+   other 3 fail on every existing section too.
 6. After #415 only: agreement with an ASL-derived model (I6b).
 
 ## 10. Open questions and risks
