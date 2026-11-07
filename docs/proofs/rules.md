@@ -1048,7 +1048,7 @@ needs a later phase of the semantics.
 | `dec` | ComplexImag | 3 | 0 | 0 | 0 | 3 |
 | `dec` | ComplexReal | 3 | 0 | 0 | 0 | 3 |
 | `dec` | IData | 2 | 0 | 0 | 0 | 2 |
-| `dec` | IMake | 0 | 1 | 0 | 1 | 2 |
+| `dec` | IMake | 1 | 1 | 0 | 1 | 2 |
 | `dec` | ITab | 2 | 0 | 0 | 0 | 2 |
 | `dec` | Load | 5 | 0 | 0 | 0 | 5 |
 | `dec` | SliceCap | 2 | 0 | 0 | 0 | 2 |
@@ -1087,7 +1087,7 @@ needs a later phase of the semantics.
 | `generic` | EqPtr | 2 | 7 | 0 | 11 | 20 |
 | `generic` | EqSlice | 1 | 0 | 0 | 0 | 1 |
 | `generic` | Floor | 0 | 0 | 0 | 1 | 1 |
-| `generic` | IMake | 0 | 1 | 0 | 1 | 2 |
+| `generic` | IMake | 1 | 1 | 0 | 1 | 2 |
 | `generic` | InterLECall | 0 | 0 | 0 | 1 | 1 |
 | `generic` | IsInBounds | 11 | 18 | 0 | 0 | 29 |
 | `generic` | IsNonNil | 3 | 2 | 0 | 3 | 6 |
@@ -1111,7 +1111,7 @@ needs a later phase of the semantics.
 | `generic` | OffPtr | 2 | 0 | 0 | 0 | 2 |
 | `generic` | Or | 76 | 0 | 4 | 0 | 80 |
 | `generic` | OrB | 48 | 0 | 0 | 20 | 56 |
-| `generic` | Phi | 0 | 0 | 0 | 5 | 5 |
+| `generic` | Phi | 4 | 0 | 0 | 5 | 5 |
 | `generic` | PopCount | 0 | 8 | 0 | 0 | 8 |
 | `generic` | PtrIndex | 1 | 1 | 0 | 0 | 2 |
 | `generic` | RotateLeft | 88 | 0 | 0 | 0 | 88 |
@@ -1138,7 +1138,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 60 | 4 | 4 | 0 | 68 |
 | `generic` | Zero | 2 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1369 | 198 | 31 | 258 | 1762 |
+| all | | 1375 | 198 | 31 | 258 | 1762 |
 
 <!-- END coverage -->
 
@@ -2102,6 +2102,25 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   holding `heap 0 + (2^64 - 1)` plus the `int32`-truncated shift `512` re-enters the window,
   while `ADDshiftLL` adds the whole `2^40 + 512`); with the clause on every word-shaped argument
   they are proven.
+
+- **`MemEq` → `Eq*` of two `Load`s** (`generic.rules:1560`, `:1568`, `:1576`, `:1584`;
+  Phase1Tail, #69): false under the semantics, not a Go bug. `memEq` (`Sem/Ptr.lean`) reads the
+  bytes of both operands and compares them as bytes, so equal pointer fragments compare equal;
+  an integer `Load` decodes a pointer's fragment bytes as `poison`. Counterexample for `:1560`
+  (`(MemEq sptr tptr (Const64 [1]) mem) => (Eq8 (Load <typ.Int8> sptr mem) (Load <typ.Int8>
+  tptr mem))`): `sptr` and `tptr` point at two bytes that both hold fragment 0 of the pointer
+  `⟨global g, 0⟩` (not convertible): the source is `true`, the target `Eq8 poison poison =
+  poison`. The same holds at 2, 4 and 8 bytes. On full-v6 they fire in about 330 functions as a
+  sole obstacle, in pairs with the read-only loads `:1564`/`:1572`/`:1580`/`:1588`. A proof needs
+  integer loads that read the bytes of pointers (a provenance-free byte model, #290's
+  discussion), which the semantics does not have.
+
+- **`generic.rules:2159`** (`(Zero {t} [s] dst1 vardef:(VarDef (Zero {t} [s] dst2 _))) &&
+  isSamePtr(dst1, dst2) => vardef`; Phase1Tail, #69): false under the semantics, not a Go bug.
+  `VarDef` starts the variable's lifetime with `poison` bytes, so the outer `Zero` is not an
+  identity write: at `dst1 = dst2 = LocalAddr {x}` of an 8-byte `x`, a later `Load` of `x` reads
+  `0` in the source and `poison` in the target. Go relies on the `VarDef` not clobbering the
+  zeroed bytes. 48 functions on full-v6 as a sole obstacle.
 
 ## Narrow result types
 
