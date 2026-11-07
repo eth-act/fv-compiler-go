@@ -1,4 +1,5 @@
 import GoFV.Gen.Frame
+import GoFV.Dwarf.Const
 import GoFV.Dwarf.Sym
 import GoFV.SSA.Alloc
 import GoFV.SSA.OpARM64
@@ -89,12 +90,6 @@ def dwarfReg (obj : Int) : Nat :=
   if 8192 ≤ obj ∧ obj ≤ 8222 then (obj - 8192).toNat
   else if 8224 ≤ obj ∧ obj ≤ 8255 then (obj - 8224 + 64).toNat
   else 0
-
-def DW_OP_reg0 : UInt8 := 0x50
-def DW_OP_regx : UInt8 := 0x90
-def DW_OP_fbreg : UInt8 := 0x91
-def DW_OP_piece : UInt8 := 0x93
-def DW_OP_call_frame_cfa : UInt8 := 0x9c
 
 /-- `BlockStart.ID`, `BlockEnd.ID`, `FuncEnd.ID`. -/
 def blockStartID : Int := -10000
@@ -571,16 +566,16 @@ def writePendingEntry (c : Ctx) (varID : Nat) (endBlock endValue : Int) : DbgM U
     let slot := st.slots[slotID]!
     if !loc.absent then
       if let some off := loc.stack then
-        if off == 0 then expr := expr.push DW_OP_call_frame_cfa
-        else expr := DwM.appendSleb128 (expr.push DW_OP_fbreg) off
+        if off == 0 then expr := expr.push DW_OP_call_frame_cfa.toUInt8
+        else expr := DwM.appendSleb128 (expr.push DW_OP_fbreg.toUInt8) off
       else
         let some r := ARM64.registers[firstReg loc.regs]? | throw "no register"
         let regnum := dwarfReg r.objNum
-        if regnum < 32 then expr := expr.push (DW_OP_reg0 + regnum.toUInt8)
-        else expr := DwM.appendUleb128 (expr.push DW_OP_regx) regnum
+        if regnum < 32 then expr := expr.push (DW_OP_reg0 + regnum).toUInt8
+        else expr := DwM.appendUleb128 (expr.push DW_OP_regx.toUInt8) regnum
     if vs.size > 1 then
       let w ← typeSize c.tabs slot.type
-      expr := DwM.appendUleb128 (expr.push DW_OP_piece) (w % (2 ^ 64 : Nat)).toNat
+      expr := DwM.appendUleb128 (expr.push DW_OP_piece.toUInt8) (w % (2 ^ 64 : Nat)).toNat
   let e : GoFV.Asm.LocEntry :=
     { startBlock := p.startBlock, startValue := p.startValue, endBlock, endValue, expr }
   modify fun s => { s with lists := s.lists.modify varID (·.push e) }
