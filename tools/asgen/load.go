@@ -25,6 +25,8 @@ type loader struct {
 	allow  map[string]bool
 	pkgs   map[string]*types.Package
 	files  map[string][]*ast.File
+	// info records the types and constant values of every package-level expression.
+	info map[string]*types.Info
 }
 
 func newLoader(goroot string, allow ...string) *loader {
@@ -35,7 +37,8 @@ func newLoader(goroot string, allow ...string) *loader {
 	ctx.CgoEnabled = false
 	ctx.Compiler = "gc"
 	l := &loader{goroot: goroot, ctx: ctx, fset: token.NewFileSet(), allow: map[string]bool{},
-		pkgs: map[string]*types.Package{}, files: map[string][]*ast.File{}}
+		pkgs: map[string]*types.Package{}, files: map[string][]*ast.File{},
+		info: map[string]*types.Info{}}
 	for _, p := range allow {
 		l.allow[p] = true
 	}
@@ -71,9 +74,11 @@ func (l *loader) load(path string) *types.Package {
 		files = append(files, f)
 	}
 	conf := types.Config{Importer: l, IgnoreFuncBodies: true, Error: func(error) {}}
-	p, _ := conf.Check(path, l.fset, files, nil)
+	info := &types.Info{Types: map[ast.Expr]types.TypeAndValue{}}
+	p, _ := conf.Check(path, l.fset, files, info)
 	l.pkgs[path] = p
 	l.files[path] = files
+	l.info[path] = info
 	return p
 }
 
