@@ -120,6 +120,13 @@ and later switches delete versions retired more than 24 hours ago. Long runs tha
 a switch should read a version directory (`readlink -f ../gofv-corpus/<pin12>/plain`) instead
 of the published name.
 
+Disk: `--check-determinism` compares the second export set by set and deletes each set after its
+comparison, so it never holds two full copies; `--link-from <version>` (e.g. `full-v9`) replaces
+every dump whose sha256 equals the same path in that version by a hard link and records the
+counts in the manifest's `link` lines (full-v10: only the cmd corpus's own `cmd/compile` and
+`cmd/internal/obj` functions, which change with the exporter patch, cost new space, #547).
+`--switch … --keep-retired` publishes without deleting old versions.
+
 Format changes: export with `--no-switch` (the new version is written but not published), merge
 the PR whose parser reads the new format, then publish with
 `scripts/export-corpus.sh --switch quick-v<N>` (and `full-v<N>`). Every switch is announced to
