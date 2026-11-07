@@ -282,7 +282,8 @@ under-aligned, e.g. a `.stmp_` symbol of alignment 1). Under `gofv-prog 2` the h
 accept these two differences as "explained" (quick-v9: 7,540 of 9,297 functions byte-exact;
 full-v10: 68,260 of 96,634); the acceptance is gone.
 
-Result on quick-v10 (9,297 functions, 570,997 asm Progs, 1,909,776 text bytes; 7 s with 8 jobs):
+Result on quick-v10 (9,297 functions, 570,997 asm Progs, 1,909,776 text bytes; 7 s with 8 jobs;
+the export is deterministic under `--check-determinism`):
 
 | cut | functions | match | mismatch | parity |
 | --- | ---: | ---: | ---: | ---: |
