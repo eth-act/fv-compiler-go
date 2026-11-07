@@ -209,25 +209,28 @@ def setTextAttr (a : Int) (v : Bool) : AsmM Unit :=
 def emitEntryStackMap (p : Nat) : AsmM Nat := do
   let q ← appendp p
   let tpos := (← getP (← get).text).pos
-  modP q fun x => { x with pos := tpos, as := .PCDATA,
-    from_ := { type := .CONST, offset := Abi.PCDATA_StackMapIndex },
-    to := { type := .CONST, offset := -1 } }
+  modP q fun x =>
+    { x with as := .PCDATA, pos := tpos,
+             from_ := { type := .CONST, offset := Abi.PCDATA_StackMapIndex },
+             to := { type := .CONST, offset := -1 } }
   return q
 
 /-- `ctxt.StartUnsafePoint(p, newprog)` (`plist.go:308-317`). -/
 def startUnsafePoint (p : Nat) : AsmM Nat := do
   let q ← appendp p
-  modP q fun x => { x with as := .PCDATA,
-    from_ := { type := .CONST, offset := Abi.PCDATA_UnsafePoint },
-    to := { type := .CONST, offset := Abi.UnsafePointUnsafe } }
+  modP q fun x =>
+    { x with as := .PCDATA,
+             from_ := { type := .CONST, offset := Abi.PCDATA_UnsafePoint },
+             to := { type := .CONST, offset := Abi.UnsafePointUnsafe } }
   return q
 
 /-- `ctxt.EndUnsafePoint(p, newprog, oldval)` (`plist.go:323-332`). -/
 def endUnsafePoint (p : Nat) (oldval : Int) : AsmM Nat := do
   let q ← appendp p
-  modP q fun x => { x with as := .PCDATA,
-    from_ := { type := .CONST, offset := Abi.PCDATA_UnsafePoint },
-    to := { type := .CONST, offset := oldval } }
+  modP q fun x =>
+    { x with as := .PCDATA,
+             from_ := { type := .CONST, offset := Abi.PCDATA_UnsafePoint },
+             to := { type := .CONST, offset := oldval } }
   return q
 
 end AsmM
