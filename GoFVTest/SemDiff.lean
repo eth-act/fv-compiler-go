@@ -377,7 +377,7 @@ def load (path : System.FilePath) : IO (Except String Loaded) := do
         | _ =>
           let frame := match pf? with
             | some (.ok pf) =>
-              (locs.back?.join).map fun lc => ({ lc, lay := progLayout pf } : FrameCtx)
+              (locs.back?.join).map (FrameCtx.ofLoc · (progLayout pf))
             | _ => none
           return .ok { sections := secs, modes, locs, params := ps, results := rs,
                        env := { Env.runtime with globals := globalImage e }, frame }

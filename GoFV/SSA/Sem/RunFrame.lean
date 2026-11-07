@@ -50,6 +50,14 @@ activation's frame**, laid out as on arm64 (CompCert's Linear → Mach "stacking
   in `runLoc`; their place in the frame is the injection's `frameOf`
   (`local act n ↦ (outargs act, autosize - extrasize + FrameOffset n)` for a `PAUTO`, the
   `NAME_PARAM` offset for a parameter, `outargs act ↦ (outargs act, 0)`).
+* **Calls** (the L2f reading of the callee contract, §6: the callee owns only its call frame,
+  which lies in the caller's outgoing area; everything above it is the caller's). After a call
+  value (one whose aux has an ABI, `callABI?`), the frame block's bytes at and above
+  `callAreaEnd` are as before the call (`restoreFrame`); below it the contract's memory stands
+  (Phase 1's `callOp` poisons `[0, callFrame)`). This matters for `runtime.deferreturn`: Phase 1
+  runs each deferred closure on memory with the whole outgoing-area block poisoned
+  (`callDeferred`'s `poisonBlock (.outargs act)`), which in `runFrame` also holds the spill
+  slots; without the restore every slot reloaded after `deferreturn` would read `poison`.
 * Everything else is `runLoc`'s: registers, flags, clobbers, ops, terminators, `finish`. The
   state is `LocState` with `slots` always empty.
 -/
@@ -112,14 +120,40 @@ def loadSlot (act : Nat) (off : Int) (t : Ty) (m : Mem) : Val :=
   | some bs => decode bs 0 t
   | none => .poison
 
+/-- The end of the outgoing-argument bytes Phase 1 uses in `f`: over the calls `f` makes, the end
+of each stack-assigned argument or result and of the register-spill area. -/
+def callAreaEnd (tabs : Tables) (f : Func) : Int :=
+  f.valueTab.foldl (fun e o =>
+    match o.bind (fun v => callABI? tabs v.aux) with
+    | some abi =>
+      abi.params.foldl (fun e p =>
+          if p.regs.isEmpty then max e (p.offset + (typeSize? tabs p.type).getD 0) else e)
+        (max e (abi.spillOff + abi.spillSize))
+    | none => e) 0
+
 /-- The context of `runFrame`: `runLoc`'s and the layout. -/
 structure FrameCtx where
   lc : LocCtx
   lay : FrameLayout
+  /-- `callAreaEnd` of the function: the frame bytes from here up are the activation's own. -/
+  callEnd : Nat
+
+/-- The context of `runFrame` from `runLoc`'s. -/
+def FrameCtx.ofLoc (lc : LocCtx) (lay : FrameLayout) : FrameCtx :=
+  { lc, lay, callEnd := (callAreaEnd lc.ctx.tabs lc.ctx.f).toNat }
 
 /-- The context of `runFrame` for `f` (its export section's tables `tabs`). -/
 def FrameCtx.make (tabs : Tables) (f : Func) (lay : FrameLayout) : FrameCtx :=
-  { lc := LocCtx.make tabs f, lay }
+  FrameCtx.ofLoc (LocCtx.make tabs f) lay
+
+/-- `new` with the bytes of activation `act`'s frame block at and above `lo` as in `old` (the
+caller's own frame across a call). -/
+def restoreFrame (act lo : Nat) (old new : Mem) : Mem :=
+  match old.find? (.outargs act), new.find? (.outargs act) with
+  | some a, some a' =>
+    new.set (.outargs act)
+      { a' with data := a'.data.mapIdx fun i x => if lo ≤ i then a.data.getD i x else x }
+  | _, _ => new
 
 /-- The offset of slot `k`, or `stuck`. -/
 def FrameCtx.slotOff (fc : FrameCtx) (k : SlotKey) : Res Int :=
@@ -161,7 +195,7 @@ def LocState.writeF (fc : FrameCtx) (s : LocState) (id : ID) (x : Val) : Res Loc
   | _ => .ok (s.write fc.lc id x)
 
 /-- Run value `v` on the state `s` (`stepLoc` with slots in the frame; `InitMem` is the current
-memory). -/
+memory; after a call, the frame bytes from `callEnd` up are as before it, `restoreFrame`). -/
 def stepFrame (env : Env) (fc : FrameCtx) (s : LocState) (v : Value) : Res LocState :=
   let lc := fc.lc
   if v.op == .Phi then
@@ -177,7 +211,12 @@ def stepFrame (env : Env) (fc : FrameCtx) (s : LocState) (v : Value) : Res LocSt
       | .ARM64MOVDreg, _ | .ARM64MOVDnop, _ => pure (movdLoc lc v argv ty)
       | .InitMem, _ => pure s.mem
       | _, _ => evalOpL md.faulting env lc.ctx s.fr v argv ty
-    (s.clobber lc v).writeF fc v.id (md.retype ty r)
+    let s' ← (s.clobber lc v).writeF fc v.id (md.retype ty r)
+    if (callABI? lc.ctx.tabs v.aux).isSome then
+      match s.mem, s'.mem with
+      | .mem m, .mem m' => pure { s' with mem := .mem (restoreFrame lc.ctx.act fc.callEnd m m') }
+      | _, _ => pure s'
+    else pure s'
 
 /-- Run the values of block `b` in order. -/
 def enterBlockFrame (env : Env) (fc : FrameCtx) (s : LocState) (b : Block) : Res LocState := do
@@ -255,17 +294,6 @@ def runCtxFrame (env : Env) (fc : FrameCtx) (args : List Val) (mem : Mem) (fuel 
     finish env ctx.outs ctx.defers ctx.act (runLoopFrame env fc fuel s ctx.f.entry)
 
 /-! ## Checking a layout against a function -/
-
-/-- The end of the outgoing-argument bytes Phase 1 uses in `f`: over the calls `f` makes, the end
-of each stack-assigned argument or result and of the register-spill area. -/
-def callAreaEnd (tabs : Tables) (f : Func) : Int :=
-  f.valueTab.foldl (fun e o =>
-    match o.bind (fun v => callABI? tabs v.aux) with
-    | some abi =>
-      abi.params.foldl (fun e p =>
-          if p.regs.isEmpty then max e (p.offset + (typeSize? tabs p.type).getD 0) else e)
-        (max e (abi.spillOff + abi.spillSize))
-    | none => e) 0
 
 /-- What is wrong with layout `fc.lay` for `fc`'s function (empty: nothing): a slot home with no
 offset, outside the frame block, or (a `PAUTO`'s) overlapping the outgoing-argument bytes or the
