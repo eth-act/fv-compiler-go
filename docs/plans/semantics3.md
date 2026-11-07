@@ -178,20 +178,36 @@ storage: disjoint ranges for live slots (A2's checker) and non-overlapping lifet
 ones (A1's validator). Pointers into named autos become pointers into `frame a` at an offset;
 `temp` blocks stay unforgeable (Phase 1's `FrameSafe` argument carries over).
 
+**Implemented (I6)** in `GoFV/SSA/Sem/RunFrame.lean`, a reduced form of the plan above. The
+frame block is Phase 1's `outargs act` (Phase 1's `SP`, the machine `SP` after the prologue),
+extended to `autosize + 8 + argsize` bytes. Spill slots become bytes of that block at their
+machine offsets: a `PAUTO` slot at `autosize − extrasize + FrameOffset + off`, a
+`PPARAM`/`PPARAMOUT` slot at `autosize + 8 + FrameOffset + off`. A `StoreReg` encodes the value
+at the slot's type, a `LoadReg` decodes it, and an unwritten slot reads poison. Named autos stay
+Phase 1 blocks; `frameOf` places them in the frame for `ι`. After a call, the frame bytes at
+and above the call area (`callAreaEnd`) are restored, because the callee owns only its call
+frame (Phase 1's `deferreturn` poisons the whole `outargs` block). `FrameLayout.problems` checks
+a layout. In `sem-difftest run`, the last section run under `runFrame`, with the layout from
+the `.prog` file, gives 10,160 runs. Native agrees on 10,157; the other 3 calls already fail on
+every existing section.
+
 ### 4.3 Memory: the injection `ι`
 
 `runFrame` memory is Phase 1's block memory; the machine's is flat. The relation is an
-injection `ι : Blk → Option (BitVec 64)` (CompCert's `Mem.inject` with offsets): `frame a ↦` the
-activation's SP + 8 (the outgoing-argument area starts at `8(SP)`, §5), heap blocks `↦` the
-runtime's allocation addresses (extended at each allocating call by the allocator hook), globals
-`↦` their linked addresses (`link`), `nil ↦ 0`; bytes of live blocks equal machine bytes at
-`ι`, pointer bytes (`Byte.frag`) equal the encoding of the injected address. `ι` must be
-injective on the windows of live blocks.
+injection `ι : Blk → Option (BitVec 64)` (CompCert's `Mem.inject` with offsets): the frame
+block `outargs a` (Phase 1's `SP`) `↦` the activation's SP after the prologue (the exported
+`ABIParam.offset` of a stack argument includes arm64's fixed frame word: `main.many`'s stack
+arguments have offsets 8 and 16 and are stored with `STP (R0, R16), 8(RSP)`, so the outgoing
+arguments start at offset 8 in both), heap blocks `↦` the runtime's allocation addresses
+(extended at each allocating call by the allocator hook), globals `↦` their linked addresses
+(`link`), `nil ↦ 0`; bytes of live blocks equal machine bytes at `ι`, pointer bytes
+(`Byte.frag`) equal the encoding of the injected address. `ι` must be injective on the windows
+of live blocks.
 
-**Concrete addresses (open decision, I6).** Phase 1 gives every block a fixed address
+**Concrete addresses (decided, I6).** Phase 1 gives every block a fixed address
 (`Blk.base?`, `GoFV/SSA/Sem/Mem.lean`: heap at `(n+1)·2^40`, frames from `2^62`), observable
-through `Convert` pointer → integer and back (#156). The machine's addresses are different, so a
-run that converts a pointer to an integer and prints it differs. Options:
+through `Convert` pointer → integer and back (#156), and through `Ptr.word`: a convertible
+pointer loaded at pointer shape is its integer address even without `Convert`. Options were:
 
 1. **Guard first**: the Phase 3 theorem covers functions without pointer→integer `Convert` of a
    non-nil pointer (a syntactic guard on the input; I1 measures how many corpus functions it
@@ -202,9 +218,24 @@ run that converts a pointer to an integer and prints it differs. Options:
    the Phase 1/2 theorems for every admissible assignment, and instantiate it with `ι`. Cost:
    every lemma that unfolds `Blk.base?`/`Ptr.ofAddr` (#156's round trips).
 
-Recommended: 1 for the first end-to-end theorem, 2 as a follow-up issue. Stack moves (§6)
-change `ι` on frame blocks in the middle of a run; a `uintptr` taken earlier is then stale on
-the machine, which Go permits and Phase 1 does not model, which is one more reason for 1 first.
+Decision: **heap blocks keep Phase 1's addresses, frames take the guard.** The runtime hooks
+(§6) allocate `heap n` at `(n+1)·2^40` (`ι .heap n = Blk.base? (.heap n)`), so a heap pointer
+is the same 64-bit word in both semantics (`Ptr.word`, `Convert`, integer arithmetic within the
+block) and no guard is needed for it. Frame blocks are the stack on the machine, at addresses
+relative to `SP`; a function that converts a pointer to one of its frame variables to an
+integer (`addrconv`) and observes the integer is excluded by option 1's guard; option 2 stays
+the follow-up for frames. Globals have no Phase 1 address and sit at their linked addresses.
+Stack moves (§6) change `ι` on frame blocks in the middle of a run; a `uintptr` taken earlier
+is then stale on the machine, which Go permits and Phase 1 does not model, one more reason for
+the guard on frames.
+
+**Executable `ι`** (`GoFV/SSA/Sem/Inject.lean`, I6). A `Layout` of windows (globals, code
+symbols, runtime entry points, the top of the stack) and the heap rule above; the allocator
+table (`nextHeap`, each heap block's size) lives in the runtime's memory, so `ι` and the hooks
+are functions of the machine state. `Layout.pull` reads the Phase 1 memory a runtime entry
+point sees (the blocks reachable from its arguments; an aligned word holding a window address
+is that pointer's fragments, heap addresses stay concrete bytes), `Layout.pushWrites` writes a
+Phase 1 memory back (fragments as the injected address).
 
 ### 4.4 Control
 
@@ -319,6 +350,27 @@ At a call, `runLoc`'s `clobber` writes `poison` into the call's clobbered regist
 where P0 and M differ: on P0 it is the Prog's ID (`runProg`), on M the linked address after
 `span7`, so the same `LocMatch` serves both layers of §7.
 
+**Implemented** in `GoFV/SSA/Sem/LocMatch.lean` (I6: definitions, the I7 obligations stated as
+`ValueSim`/`TermSim`/`FaultSim : Prop`, non-vacuity witnesses; no simulation proof). Changes
+against the sketch, forced by the real definitions:
+
+- `ValRel` at `.int .w64`: the register is `x`, or `x` is Phase 1's address of a pointer
+  (`Ptr.word`: a convertible pointer loaded at pointer shape is its integer address) and the
+  register is its injected address; `BytesRel` takes a set of 8-byte pointer words in memory for
+  the same reason. With §4.3's decision (`ι .heap n = Blk.base? (.heap n)`) both coincide for
+  heap pointers; they differ for frame blocks.
+- `FlagsRel` accepts `poison` (`runLoc` starts with poison flags, `clobberFlags` writes poison).
+- `MemInj` is a structure (`nil`, `mapped`: every live block mapped above the nil page,
+  `inj`: disjoint windows, `bytes`); slots compare like registers read back at the slot's shape
+  (`SlotRel`); a frameless leaf keeps LR/FP in `X30`/`X29` (`MatchEnv.framed`).
+- `objX?`/`objV?` are explicit tables with lemmas equating them to `registers[r].objNum - REG_R0`
+  (`REG_F0`) for every `r`: dense 0–17 → X0–X17, 18–25 → X19–X26, 26 (`g`) → X28, 27 → X29,
+  28 → X30, 31–62 → V0–V31; `ZERO`, `SP`, `SB` hold no values.
+- The obligations are stated over `MStar` (continuing `runMach` steps: executed words or
+  returning hooks, with `MStar.runMach` relating it back to `runMach`) and `MPanics`; `ι` may
+  grow (`MatchEnv.Extends`). Not stated yet: the return (`MachRet` with results in place), the
+  memory of a panic, stack moves (`Extends` only grows `ι`).
+
 ## 5. ABI and frame layout (linux/arm64, ABIInternal)
 
 Facts the proofs use, all from the pin; ABI0 (assembly functions) is reached only through the
@@ -363,9 +415,13 @@ compiler's ABI wrappers, which are ordinary compiled functions.
   records, forward order), calls `runtime.morestack_noctxt` (or `morestack` with a closure
   context), unspills and retries. The runtime also sets `stackguard0 = stackPreempt` to request
   a synchronous preemption, so this path is taken even when the stack is large enough.
-- **Entry/exit predicates** (I6): `MachEntry` (§2), `BodyEntry` (after the prologue: the frame
-  above, saved LR/FP, arguments in place) and `MachRet` (PC = entry LR, SP/R28/R29 restored,
-  results in place), in the style of clifv's `AbiEntry`/`BodyEntry`/`ArmRet`.
+- **Entry/exit predicates** (I6, `GoFV/SSA/Sem/RunMach.lean`): `MachEntry` (§2), `BodyEntry`
+  (after the prologue: the frame above, saved LR/FP) and `MachRet` (PC = entry LR, SP/R28/R29
+  restored), in the style of clifv's `AbiEntry`/`BodyEntry`/`ArmRet`; arguments and results in
+  place are `LocMatch`'s (§4.5). `MachEntry` includes the frame-pointer chain `R29 = SP − 8`:
+  epilogues do not reload the caller's FP, they recompute it from `SP`
+  (`ADD $(autosize − 8), RSP, R29` before `ADD $autosize, RSP`), so a call that starts with
+  another `R29` returns without `MachRet` (the machine difftest found this).
 
 ## 6. Calls, the runtime and GC metadata: trusted and proven
 
@@ -398,6 +454,24 @@ simulation, D2–D3 refinements, D4–D5 object validator), and the metadata the
 stack maps and stack objects, unsafe and restartable points, `PCDATA_PanicBounds`, the
 morestack spill records.
 
+**Implemented (I6).** `GoFV/SSA/Sem/RunMach.lean`: `Hooks` (`call : MState → Option HookOut`,
+consulted at a PC with no code), `runMach H code ret` (returns at `ret`; a nil-page access is
+`panicked nilDeref`; `BRK`/`UDF`, undecodable words and PCs with neither code nor hook are
+`stuck`). `GoFV/SSA/Sem/Hooks.lean`, the trusted hooks: a runtime entry point with a Phase 1
+contract (`Env.runtime`) is that contract lifted through the ABI (`liftContract`: arguments from
+the call's `ABIParam` registers and stack slots, or the fixed registers of an op without
+`AuxCall` such as `LoweredMemEq` → `runtime.memequal`; memory pulled back through `ι` from the
+blocks the arguments reach; the contract's memory pushed forward, new heap blocks recorded in
+the allocator table; every caller-saved register, `R27` and the flags overwritten with garbage;
+the results written to their ABI locations; a panicking contract is `panicked` with its
+`Panic`); `morestack`/`morestack_noctxt` grows the stack in place (`δ = 0`: `stackguard0`
+lowered, no lower than `stack.lo + StackGuard`) and resumes after the call with `X30` = the
+saved `R3`; `gcWriteBarrier<n>` returns the buffer in `R25`; `panicBounds` decodes the caller's
+`PCDATA_PanicBounds` (`pcvalue` at `X30 − 1`, `abi.BoundsDecode`) and panics with
+`.bounds kind x y`. Not modelled (a call is `stuck`): the defer machinery (`deferproc*`,
+`deferreturn`, `gorecover`), runtime entry points called through function values, asynchronous
+preemption, stack moves with `δ ≠ 0`, the collector.
+
 ## 7. `runProg` and the proof layers
 
 `runProg H p link`: the machine of §3 with PC a Prog ID. Each Prog has a relational
@@ -406,6 +480,16 @@ for calls, the hook's havoc) left free when its class may use REGTMP. `TEXT`, `P
 `FUNCDATA`, `NOP`/`ANOP`, `HINT` are skips; P0/P1's symbolic `NAME_AUTO`/`NAME_PARAM` operands
 are interpreted through the frame of §5 as `aclass` resolves them; P0's implicit prologue is a
 single step establishing `BodyEntry`, P2's explicit prologue replaces it.
+
+**Implemented (I6)** in `GoFV/SSA/Sem/RunProg.lean`: `Link` (symbol addresses, text base, Prog
+ID → offset and fall-through offset, `autosize`/`extrasize`; `Link.ofProgs` for P2 with `Pc`,
+`Link.byId` for P0/P1: Prog `n` at `text + 4n`), `progEffect` (an `Eff`: registers, `SP`, `V`,
+flags, stores, loads, next PC, in Go's operand conventions), `Eff.apply`, the deterministic
+`progStep`, the relation `progSpec` (R27 free unless the Prog names it in an operand) with
+`progStep_spec : progStep L p s = .ok s' → progSpec L p s s'`, and `runProg H L ps ret` with
+`runMach`'s hooks and outcomes. The PC is an address under the `Link`: the Prog executed at a
+PC is the first one occupying that address; zero-size Progs never run. P0's implicit prologue
+step is not modelled yet (the ID layout only makes `runProg` usable on P0/P1 lists).
 
 | Layer | Relation | Method | Difficulty |
 | --- | --- | --- | --- |
@@ -419,18 +503,19 @@ single step establishing `BodyEntry`, P2's explicit prologue replaces it.
 `MachRefines` composes with `LayerRefines` of Phase 2 (`GoFV/Proof/Pass/PipelineFull.lean`)
 through the outcome relation of §2.
 
-## 8. Modules (proposed)
+## 8. Modules
 
 | Module | Content | Milestone |
 | --- | --- | --- |
-| `GoFV/Obj/{As,Reg,Addr,Prog,LSym,Parse,Print}.lean` | the Prog IR; `As` and register constants generated from `a.out.go`/`anames.go` | I2 |
-| `GoFV/Gen/{MergeLocals,Frame,Liveness,ArgLive,Meta,Progs,Genssa,Arm64Value,Arm64Block,Defframe}.lean` | ports of A1–C7 | I3 |
-| `GoFV/Asm/{Linkpatch,Progedit,Preprocess,Optab,Span,Encode,Unsafe,Pcln}.lean` | ports of D1–D7 (`Optab` generated) | I4 |
+| `GoFV/Asm/{As,Reg,Prog,Parse,Print,…}.lean` | the Prog IR; `As` and register constants generated from `a.out.go`/`anames.go`; **done** | I2 |
+| `GoFV/Gen/{MergeLocals,Frame,Liveness,ArgLive,Meta,Progs,Genssa,Arm64Value,Arm64Block,Defframe}.lean` | ports of A1–C7; **done** (gen-parity) | I3 |
+| `GoFV/Asm/{Obj7,Optab,Span7,Asmout,Pcln,…}.lean` | ports of D1–D7 (`Optab` generated); **done** (#569, asm-parity) | I4 |
 | `GoFV/Debug/{LocLists,Dwarf,Inline,Lines}.lean` | ports of E1–E2 | I5 |
 | `GoFV/Arm64/{State,Insn,Decode,Exec}.lean` | §3 (a); **done** (#552): `MState`, `Insn` (one constructor per encoding class), `decode`, `exec`, `step`, `run` | I6 |
-| `GoFV/SSA/Sem/{RunFrame,RunProg,RunMach,Inject,Hooks}.lean` | §4, §6, §7 | I6 |
-| `GoFVTest/Arm64Cosim.lean`, `GoFVTest/Arm64Decode.lean`, `tools/arm64cosim`, `scripts/arm64-cosim.sh` | co-simulation under qemu and the decoder round trip on the asm sections; **done** (#552) | I6 |
-| `GoFV/Proof/{Frame,Gen,Asm,ObjCheck,Meta}/*.lean` | §7 | I7 |
+| `GoFV/SSA/Sem/{RunFrame,RunProg,RunMach,Inject,Hooks,LocMatch}.lean` | §4, §6, §7; **done** (#552) | I6 |
+| `GoFVTest/Arm64Cosim.lean`, `GoFVTest/Arm64Decode.lean`, `tools/arm64cosim`, `scripts/arm64-cosim.sh` | co-simulation under qemu and the decoder round trip on the asm sections; the per-Prog and per-block `runProg` checks; **done** (#552) | I6 |
+| `GoFVTest/MachDiff.lean` (`mach-difftest`, `scripts/sem-difftest.sh --mach`), the frame run in `GoFVTest/SemDiff.lean` | native difftests of `runMach` and `runFrame`; **done** (#552) | I6 |
+| `GoFV/Proof/{Frame,Gen,Asm,ObjCheck,Meta}/*.lean` | §7; plan in `docs/plans/proofs3.md` | I7 |
 | (blocked on #415) `GoFV/Arm/**`, `GoFV/Proof/ArmAgree/*.lean` | §3 (b) agreement | I6b #555 |
 
 ## 9. Phasing (I6)
@@ -455,10 +540,21 @@ through the outcome relation of §2.
    decoder bug (the pair class's `opc` field); the random words found two more no corpus word
    exercises (the literal class's `opc` field, `SMULH`'s should-be-one `Ra`) and a wrong `CLS`.
 3. `runMach` with hooks (calls, morestack, faults, panics); native difftest of whole corpus
-   functions (Lean machine on the stock object's words vs qemu).
+   functions (Lean machine on the stock object's words vs native).
 4. `progSpec`, `runProg`; difftest of `runProg` on P0/P1/P2 exports against `runMach`.
 5. `runFrame` and the injection; semantic difftest from `runLoc` (Phase 2's sections) through
    `runFrame` and `runMach`.
+
+   Steps 3–5 are done (#552). `mach-difftest` (`scripts/sem-difftest.sh --mach`) runs the
+   sem-difftest set's functions under `runMach` on the stock asm-section bytes, linked with
+   their relocations, with the hooks of §6: of 254 functions and 10,160 calls, 237 functions
+   (9,480 calls) run and agree with native on all 9,480 (8,987 returned, 493 panicked); 17
+   functions (680 calls) use defer or recover, which the hooks do not model, and are excluded.
+   `arm64-decode` checks every Prog of quick-v9 through `progStep` against the decoded words
+   (429,386/429,386) and every basic block through `runProg` against `runMach`
+   (122,770/122,770; the block check found CASALD's size, 1 instead of 8 bytes). The frame run
+   of the trim section through `runFrame` agrees with native on 10,157 of 10,160 calls; the
+   other 3 fail on every existing section too.
 6. After #415 only: agreement with an ASL-derived model (I6b).
 
 ## 10. Open questions and risks
