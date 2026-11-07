@@ -849,6 +849,27 @@ position. `segs_refines` composes the two `layers_refines` directly. quick-v3: b
 `ps` rejects (`strings.(*byteStringReplacer).Replace`, `runtime.reflect_rselect`) accepted; fully
 at stock 8,656 → 8,658 on 0ce15bb.
 
+**`Phi`s of `Not`s** (`generic.rules:1068`, issue #69). `(Phi <t> nx:(Not x) ny:(Not y)) &&
+nx.Uses == 1 && ny.Uses == 1 => (Not (Phi <t> x y))` turns a `Phi` into the `Not` of a fresh
+`Phi`, an atom the source lacks, which neither `validate` nor sccp's checker relates. It is a
+`phiSels` rule, so each instance is the first event of its segment; the `pn` layer (after `pc`,
+`pnPre`) puts the fresh `Phi` in and redefines the `Phi` as the logged `Not`, and `pnRel`
+relates the layer to its input: the same control-flow graph and own aux, every other value kept
+(`ssSame`), each turned `Phi` `v` (of a `bool` shape, outside the entry block) `Not p` of the
+same type and block with `p` no value of the source, a `Phi` of `v`'s type listed in `v`'s block
+whose argument `j` is the argument of `v`'s argument `j`, a `bool`-shaped `Not` (`pnOK`); per
+block the same kind and controls, the source's values in their order with only fresh `Phi`s
+added (`pnFresh`), and the source's schedule the target's without the turned `Phi`s. Proof
+(`GoFV/Proof/Pass/PhiNotRel.lean`, `PhiNotSim.lean`; `PhiNot.pn_refines : RefinesUnder Env.Mono`,
+`chain_refines`/`layersOK_refines`, `LayerChain.pn`): lock-step simulation along the target's
+schedule. Entering `v`'s block along edge `i`, lemma (D) re-evaluates `v`'s argument `Not x_i`
+from `x_i`'s register, which the fresh `Phi` takes, so `v`'s register is refined by the `Not` of
+`p`'s (`Fact`, `entry`); both are `Phi`s, so neither changes in the block, and the target-only
+step at `v`'s position restores the refinement of `v`'s register (`loop`, `eval_not`); every
+other value's arguments are not pending turned `Phi`s, by the schedule's topological order.
+Witness: `pn_checkedRewrite` (`Witness/PhiNot.lean`: `nsel(b, x, y bool)` returns `!x` or `!y`;
+`v7 = Phi (Not x) (Not y)` becomes `Not v9`, `v9 = Phi x y`).
+
 ### Frame-value rules (`ConstString`, `GoFV/Proof/Rules/DenT.lean`, `ConstString.lean`)
 
 `ConstString {str}` and `Addr {sym} SB` are term nodes evaluated from the tables
@@ -1203,7 +1224,7 @@ needs a later phase of the semantics.
 | `generic` | OffPtr | 2 | 0 | 0 | 0 | 2 |
 | `generic` | Or | 76 | 0 | 4 | 0 | 80 |
 | `generic` | OrB | 48 | 0 | 0 | 20 | 56 |
-| `generic` | Phi | 4 | 0 | 0 | 5 | 5 |
+| `generic` | Phi | 5 | 0 | 0 | 5 | 5 |
 | `generic` | PopCount | 0 | 8 | 0 | 0 | 8 |
 | `generic` | PtrIndex | 1 | 1 | 0 | 0 | 2 |
 | `generic` | RotateLeft | 88 | 0 | 0 | 0 | 88 |
@@ -1230,7 +1251,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 60 | 4 | 4 | 0 | 68 |
 | `generic` | Zero | 2 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1386 | 192 | 31 | 258 | 1762 |
+| all | | 1387 | 192 | 31 | 258 | 1762 |
 
 <!-- END coverage -->
 

@@ -25,7 +25,7 @@ open GoFV.Rules
 
 /-- `generic.rules` restricted to its 1226 proven value rules, 3 proven block rules, 9
 nil-check eliminations, 30 Load-of-Store forwardings, 1 struct-load
-expansions, 2 struct-store splits, 15 segment rules and 6 `Phi`
+expansions, 2 struct-store splits, 15 segment rules and 7 `Phi`
 rules validated per instance. -/
 def generic : RuleSet where
   name := "generic"
@@ -226,7 +226,7 @@ def generic : RuleSet where
   structLoads := [Generated.Generic.r_generic_974]
   structStores := [Generated.Generic.r_generic_975, Generated.Generic.r_generic_997]
   segs := [Generated.Generic.r_generic_1743, Generated.Generic.r_generic_1978, Generated.Generic.r_generic_1992, Generated.Generic.r_generic_2011, Generated.Generic.r_generic_2035, Generated.Generic.r_generic_2049, Generated.Generic.r_generic_2064, Generated.Generic.r_generic_2084, Generated.Generic.r_generic_2109, Generated.Generic.r_generic_1638, Generated.Generic.r_generic_1721, Generated.Generic.r_generic_1730, Generated.Generic.r_generic_1833, Generated.Generic.r_generic_1844, Generated.Generic.r_generic_1857]
-  phiSels := [Generated.Generic.r_generic_782, Generated.Generic.r_generic_783, Generated.Generic.r_generic_784, Generated.Generic.r_generic_785, Generated.Generic.r_generic_1050, Generated.Generic.r_generic_1049]
+  phiSels := [Generated.Generic.r_generic_782, Generated.Generic.r_generic_783, Generated.Generic.r_generic_784, Generated.Generic.r_generic_785, Generated.Generic.r_generic_1068, Generated.Generic.r_generic_1050, Generated.Generic.r_generic_1049]
 
 /-- `dec.rules` restricted to its 38 proven value rules, 0 proven block rules, 0
 nil-check eliminations, 0 Load-of-Store forwardings, 0 struct-load
