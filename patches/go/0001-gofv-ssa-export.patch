@@ -1943,7 +1943,7 @@
  type LocalSlotSplitKey struct {
 --- a/src/cmd/compile/internal/ssagen/export_prog_gofv.go
 +++ b/src/cmd/compile/internal/ssagen/export_prog_gofv.go
-@@ -0,0 +1,1189 @@
+@@ -0,0 +1,1209 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -2965,39 +2965,59 @@
 +	}
 +	fmt.Fprintf(&x.body, "dwparams %s\n", gofvListP(pn))
 +	// Pre-inlining declarations: the function's own (when it was inlined somewhere) and those of
-+	// every function of the inlining tree nodes the file defines.
++	// every function of the inlining tree nodes the file defines, to a fixpoint (the names'
++	// positions define further nodes, e.g. of an inlined call that only a variable reaches).
 +	var fsyms []*obj.LSym
++	pre := map[*obj.LSym][]string{}
 +	if fn.LSym.WasInlined() {
 +		fsyms = append(fsyms, fn.LSym)
 +	}
-+	var inls []int
-+	for k := range x.inls {
-+		inls = append(inls, k)
-+	}
-+	slices.Sort(inls)
 +	nodes := base.Ctxt.InlTree.GOFVNodes()
-+	for _, k := range inls {
-+		if k < len(nodes) && nodes[k].Func != nil && !slices.Contains(fsyms, nodes[k].Func) {
-+			fsyms = append(fsyms, nodes[k].Func)
++	done := 0
++	for {
++		for ; done < len(ns); done++ {
++			n := ns[done]
++			add(n.Heapaddr)
++			add(n.Canonical())
++			x.pos(n.Pos())
++		}
++		var inls []int
++		for k := range x.inls {
++			inls = append(inls, k)
++		}
++		slices.Sort(inls)
++		for _, k := range inls {
++			if k < len(nodes) && nodes[k].Func != nil && !slices.Contains(fsyms, nodes[k].Func) {
++				fsyms = append(fsyms, nodes[k].Func)
++			}
++		}
++		grew := false
++		for _, s := range fsyms {
++			if _, ok := pre[s]; ok {
++				continue
++			}
++			var ds []string
++			if pf, _ := base.Ctxt.DwFixups.GetPrecursorFunc(s).(*ir.Func); pf != nil && pf.Inl != nil {
++				for _, n := range pf.Inl.Dcl {
++					add(n)
++					ds = append(ds, x.name(n))
++				}
++			}
++			pre[s] = ds
++			grew = true
++		}
++		if !grew && done == len(ns) {
++			break
 +		}
 +	}
 +	for _, s := range fsyms {
-+		pf, _ := base.Ctxt.DwFixups.GetPrecursorFunc(s).(*ir.Func)
-+		if pf == nil || pf.Inl == nil {
++		if pf, _ := base.Ctxt.DwFixups.GetPrecursorFunc(s).(*ir.Func); pf == nil || pf.Inl == nil {
 +			continue
 +		}
-+		var ds []string
-+		for _, n := range pf.Inl.Dcl {
-+			add(n)
-+			ds = append(ds, x.name(n))
-+		}
-+		fmt.Fprintf(&x.body, "dwprecursor %s %s %s\n", x.sym(s), x.sym(base.Ctxt.DwFixups.AbsFuncDwarfSym(s)), gofvListP(ds))
++		fmt.Fprintf(&x.body, "dwprecursor %s %s %s\n", x.sym(s), x.sym(base.Ctxt.DwFixups.AbsFuncDwarfSym(s)), gofvListP(pre[s]))
 +	}
-+	// Per name (transitively their Heapaddr and Canonical names).
-+	for i := 0; i < len(ns); i++ {
-+		n := ns[i]
-+		add(n.Heapaddr)
-+		add(n.Canonical())
++	// Per name (with their Heapaddr and Canonical names, added above).
++	for _, n := range ns {
 +		ref := func(m *ir.Name) string {
 +			if m == nil {
 +				return "-"

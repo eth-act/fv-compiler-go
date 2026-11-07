@@ -315,8 +315,17 @@ calls) and `prog0`'s `BuildFuncDebug` lists with their `GetPC` endpoints. Per fu
 compares, byte for byte and relocation for relocation, the debug lines, debug info, location
 list, range list and abstract-function symbols at the end of `Compile` and the child-DIE
 references and offsets for the package's fixups (`dieref`, `dieoff`). DWARF constants are
-generated into `GoFV/Dwarf/Const.lean` by `tools/asgen` (`scripts/gen-asm.sh`). The info
-symbol's leading `R_USETYPE` relocations are `dwarfgen.Info`'s and are taken from the record.
+generated into `GoFV/Dwarf/Const.lean` by `tools/asgen` (`scripts/gen-asm.sh`). In these rows the
+info symbol's leading `R_USETYPE` relocations (`dwarfgen.Info`'s) are taken from the record.
+
+Two more rows check `dwarfgen.Info` itself (`GoFV/Dwarf/Info.lean`: `createDwarfVars` with the
+complex, simple and conservative variables, `sortDeclsAndVars`, `Autot` and the `R_USETYPE`
+relocations, `findScope`/`assembleScopes`, `assembleInlines` with `makePreinlineDclMap`) on the
+`dwarf` section's `dw*` inputs, `prog0`'s `FuncDebug`, `Autot` and marker relocations, the
+frame's `OptDcl` and the final Progs: **Info records (E2)** compares its variables, scopes,
+inlined calls (`==` on the section's `var`, `scope`, `inlcall` records) and `R_USETYPE`
+relocations with the record; **Info → DIE chain** runs the writers on its records and compares
+every DWARF symbol and the fixups as above.
 
 Result on quick-v10 (9,297 functions with DWARF, 2,886,136 DWARF bytes; 3 s with 8 jobs; a
 function without a location list, range list or abstract function counts as a match of that
@@ -332,9 +341,7 @@ row):
 | child-DIE fixups | 9297 | 9297 | 0 | 100% |
 | end to end | 9297 | 9297 | 0 | 100% |
 
-Not ported yet: `dwarfgen.Info` (declarations → `dwarf.Var`s, scopes, inlined calls; its
-inputs are not exported) and the package-level abstract functions and fixups
-(`DwarfFixupTable.Finalize`).
+Not ported yet: the package-level abstract functions and fixups (`DwarfFixupTable.Finalize`).
 
 `lake exe debug-parity [--jobs N] [--max-report N] [--table FILE] <dir|file>...`
 (`GoFVTest/DebugParity.lean`) checks the Lean port of the optimized `ssa.BuildFuncDebug`

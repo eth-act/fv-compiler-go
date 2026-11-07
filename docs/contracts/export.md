@@ -622,6 +622,7 @@ regargs <reg>:<offset>:<t>,…          (f.RegArgs: obj register, frame offset, 
 text <size> <align> <bytes> <nrelocs> (v3: LSym.Size, Align, P, R of the text symbol at the cut)
 reloc …                               (nrelocs lines: the frontend's and the SSA passes' markers)
 symalign <y>:<align>,…                (v3: LSym.Align of the Prog operands' symbols, nonzero ones)
+autot <y,…>                           (v3: FuncInfo.Autot, the autos' type symbols recorded for DWARF)
 dbgentry <EntryID>|-                  (v3: BuildFuncDebug's result, section "DWARF" below)
 dbgslot <k> <n> <t> <off>
 dbgvar <k> <n> <slot,…>
@@ -644,7 +645,14 @@ warn "<text>"
 end
 dwarf                                 (v3; section "DWARF" below)
 <definitions>
-dwfn …                                (when populateDWARF ran)
+dwfn …                                (when populateDWARF ran; then the dwarfgen.Info inputs:)
+dwdcl …
+dwclosure …
+dwmark …
+dwparents …
+dwparams …
+dwprecursor …
+dwname …
 var …
 scope …
 inlcall …
@@ -698,8 +706,12 @@ references.
   `outheapaddr` (`IsOutputParamHeapAddr`), in that order.
 - `sym y<k> "<name>" <abi>`: an `*obj.LSym`, numbered by identity (`LSym.ABI()`). Contents are
   written only in `data` lines (below) and the `text` line.
-- `posbase p<index> "<abs filename>" <line> <col> <inl> <fileindex>`: as in `.ssa` files plus
-  `FileIndex()` (the file number `pcfile` uses; `?` if the base is not registered).
+- `posbase p<index> "<abs filename>" <line> <col> <inl> <fileindex> "<filename>" "<pos filename>"
+  <pos line> <pos col>`: as in `.ssa` files plus `FileIndex()` (the file number `pcfile` uses; `?`
+  if the base is not registered) and (v3) `Filename()` (what `RelFilename` reports) and the
+  base's own position `Pos()`: `RelFilename()`, `Line()`, `Col()` (`src.Pos.Before` compares
+  `Pos().RelFilename()`; `RelLine`/`RelCol` subtract `Pos().Line()`/`Col()`; a `//line` base's
+  position is the directive's).
 - `inl i<k> <parent i|-> <pos> <func y|-> "<name>"`: node `k` of the global inlining tree
   (`base.Ctxt.InlTree`: parent, call position, inlined function, bare name), defined with its
   parents before the first `posbase` whose `inl` is `k`.
@@ -771,6 +783,19 @@ end of `Compile`. It is empty when `populateDWARF` did not run.
   <wrapper> <UseBASEntries> <DwTextCount>`: the symbols (`dwarfSym`), `TrimInlineHash(s.Name)`,
   `StartPos` as `FileIndex()`:`RelLine()`, `!s.Static()`, `s.Wrapper()`,
   `ctxt.UseBASEntries`, `ctxt.DwTextCount` (the `R_DWTXTADDR_U*` size depends on it).
+- `dwarfgen.Info`'s inputs besides the frame, `prog0` (`autot`, `dbg*`, the text relocations)
+  and the final Progs, written at the end of `Compile` (the facts are fixed by then; `Info` has
+  computed the type sizes it needs): `dwdcl <n,…>` (`fn.Dcl`); `dwclosure <Needctxt()>
+  <n>:<offset>,…` (the closure variables' offsets, `NewClosureStructIter`, with their `Heapaddr`
+  names at the same offsets); `dwmark <pos> <scope>` (`fn.Marks`); `dwparents <scope,…>`
+  (`fn.Parents`); `dwparams <n|_,…>` (`fn.Type().RecvParamsResults()` names, `_` when not an
+  `*ir.Name`); `dwprecursor <fn y> <absfn y> <n,…>` (the precursor's `Inl.Dcl` of the function
+  when it was inlined and of every function of the file's inlining nodes, with
+  `AbsFuncDwarfSym`); `dwname <n> <ONAME> <Used> <IsAutoTmp> <InlFormal> <InlLocal> <DictIndex>
+  <FrameOffset> <IsOutputParamInRegisters> <Heapaddr n|-> <Canonical n|-> "<TypeSymName>"|?
+  <IsUntyped> <TSSA> <CanSSA|?> <Pos>` for every name of these lists, of `OptDcl`, `Vars`,
+  `RegOutputParams`, and their `Heapaddr` and `Canonical()` names (`?`: the type's size is not
+  computed, so neither is `TypeSymName`).
 - `var <k> <Scope> "<Name>" <Tag> <WithLoclist> <IsReturnValue> <IsInlFormal> <DictIndex>
   <StackOffset> <Type y|-> "<DeclFile>" <DeclLine> <DeclCol> <InlIndex> <ChildIndex>
   <IsInAbstract> <ClosureOffset> <list>`: every distinct `*dwarf.Var` of the scopes and inlined
@@ -793,9 +818,10 @@ end of `Compile`. It is empty when `populateDWARF` did not run.
   symbols that exist, at the end of `Compile`. The info symbol starts with `dwarfgen.Info`'s
   `R_USETYPE` relocations.
 
-Not recorded: `dwarfgen.Info`'s own inputs (declarations' positions, inline and dictionary
-flags, closure layout, scope marks, pre-inlining declarations of inlined callees) and
-`BuildFuncDebug`'s fresh-value allocation; the `prog0` records are the cut between E1 and E2.
+Not recorded: `BuildFuncDebug`'s fresh-value allocation (the IDs of the `ArgIntReg`/`ArgFloatReg`
+values `PopulateABIInRegArgOps` adds come from the free list, which the `.ssa` file sorts; they
+only index `valueNames` and their list entries start at `BlockStart`, so the lists do not
+depend on them).
 
 ### Configuration (`config` lines)
 
@@ -843,7 +869,8 @@ I5 cut points: the text symbol's `Size`, `Align`, `P` and `R` at the `prog0` cut
 zero-size marker relocations, `R_USEIFACE`, `R_USEIFACEMETHOD`, `R_USENAMEDMETHOD`, that walk,
 `reflectdata` and the SSA rewrite rules put on the function before `Flushplist` appends the
 assembler's), `symalign` (`Optab.size` reads `LSym.Align` of a `C_ADDR` operand's symbol, e.g. a
-`.stmp_` symbol of alignment 1), the `dbg*` lines and the `dwarf` section (hooks
+`.stmp_` symbol of alignment 1), the position bases' `Filename()` and `Pos()`, `autot`, the
+`dbg*` lines and the `dwarf` section (hooks
 `obj.GOFVPopulateDWARF`, `GOFVChildDIERef`, `GOFVChildDIEOffsets` in `obj/dwarf.go` and
 `ssa.GOFVDwarfVarList` in `dwarfgen`, nil unless `GOFV_SSA_EXPORT` is set). The `.ssa` files are
 unchanged.
@@ -862,8 +889,9 @@ inside `Flushplist` (after `linkpatch`/`progedit` and after `preprocess`, before
 strips the packed `extrasize`); MergeLocals' candidates, evictions and intervals; liveness's
 `Map.Vals`/`UnsafeVals`/`UnsafeBlocks`/`DeferReturn`, the partially live arguments and the
 argument-liveness maps (their results are in the PCDATA Progs, `needzero`, the `defframe`
-spills and the metadata symbols); `bstart` and `valueToProgAfter` (beyond the location list endpoints, `dbgpc`); the inputs of
-`dwarfgen.Info` (section "DWARF") and the package-level writer (F1, F2). They are added with a
+spills and the metadata symbols); `bstart` and `valueToProgAfter` (beyond the location list endpoints, `dbgpc`); the package-level
+DWARF (abstract functions of inlined functions of other packages, `DwarfFixupTable.Finalize`)
+and the package-level writer (F1, F2). They are added with a
 version bump when I3–I5 need them.
 
 ### Reading it in Lean
