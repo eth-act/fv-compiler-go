@@ -414,14 +414,15 @@ structure DwVar where
   list : VarList
   deriving Inhabited, BEq
 
-/-- `dwarf.Scope` with its variables. -/
+/-- `dwarf.Scope`; its variables by index into `Dwarf.vars`. -/
 structure DwScope where
   parent : Int
   ranges : Array (Int × Int)
-  vars : Array DwVar
+  vars : Array Nat
   deriving Inhabited, BEq
 
-/-- `dwarf.InlCall` with its variables; `CallPos` as (`FileIndex()`, `RelLine()`). -/
+/-- `dwarf.InlCall`; `CallPos` as (`FileIndex()`, `RelLine()`); its variables by index into
+`Dwarf.vars`. -/
 structure DwInlCall where
   inlIndex : Int
   callFile : Int
@@ -430,7 +431,7 @@ structure DwInlCall where
   children : Array Nat
   root : Bool
   ranges : Array (Int × Int)
-  vars : Array DwVar
+  vars : Array Nat
   deriving Inhabited, BEq
 
 /-- `populateDWARF`'s `dwarf.FnState` (`dwfn` line): the DWARF symbols, the name, `StartPos`
@@ -456,6 +457,9 @@ structure Dwarf where
   defs : Array Def
   /-- `none` when `populateDWARF` did not run. -/
   fn : Option DwFn
+  /-- Every distinct `dwarf.Var` of the scopes and inlined calls (identity matters:
+  `putscope` skips the variables of inlined calls), the scopes' first. -/
+  vars : Array DwVar
   scopes : Array DwScope
   inlCalls : Array DwInlCall
   /-- Child-DIE references (`ReferenceChildDIE`): symbol, relocation index, abstract function,

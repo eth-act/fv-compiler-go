@@ -379,15 +379,22 @@ def dwarf : L Dwarf := do
                external := ← w boolW, wrapper := ← w boolW, useBASEntries := ← w boolW,
                dwTextCount := ← w natW })
     else pure none
+  let mut vars := #[]
+  for _ in [0:(← read).lines.size] do
+    unless ← tagIs "var" do break
+    let k := vars.size
+    vars := vars.push (← line "var" do
+      let i ← w natW
+      if i != k then throw s!"var index {i}, expected {k}"
+      dwVarLine)
   let mut scopes := #[]
   for _ in [0:(← read).lines.size] do
     unless ← tagIs "scope" do break
     let k := scopes.size
-    let (parent, ranges) ← line "scope" do
+    scopes := scopes.push (← line "scope" do
       let i ← w natW
       if i != k then throw s!"scope index {i}, expected {k}"
-      return (← w intW, ← w pairsW)
-    scopes := scopes.push { parent, ranges, vars := ← many "var" dwVarLine }
+      return { parent := ← w intW, ranges := ← w pairsW, vars := ← w (listW natW) })
   let mut inlCalls := #[]
   for _ in [0:(← read).lines.size] do
     unless ← tagIs "inlcall" do break
@@ -399,8 +406,8 @@ def dwarf : L Dwarf := do
       let (callFile, callLine) ← w fileLineW
       return ({ inlIndex, callFile, callLine, absFun := ← w (optRefW 'y'),
                 children := ← w (listW natW), root := ← w boolW, ranges := ← w pairsW,
-                vars := #[] } : DwInlCall)
-    inlCalls := inlCalls.push { c with vars := ← many "var" dwVarLine }
+                vars := ← w (listW natW) } : DwInlCall)
+    inlCalls := inlCalls.push c
   let dieRefs ← many "dieref" do
     return (← w (refW 'y'), ← w natW, ← w (refW 'y'), ← w intW)
   let dieOffs ← if ← tagIs "dieoff" then some <$> line "dieoff" (do
@@ -408,7 +415,7 @@ def dwarf : L Dwarf := do
     else pure none
   let data ← dataLines
   let warns ← warnsEnd
-  return { defs, fn, scopes, inlCalls, dieRefs, dieOffs, data, warns }
+  return { defs, fn, vars, scopes, inlCalls, dieRefs, dieOffs, data, warns }
 
 def file : L ProgFile := do
   line "gofv-prog" do

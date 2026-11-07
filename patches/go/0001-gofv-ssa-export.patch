@@ -1943,7 +1943,7 @@
  type LocalSlotSplitKey struct {
 --- a/src/cmd/compile/internal/ssagen/export_prog_gofv.go
 +++ b/src/cmd/compile/internal/ssagen/export_prog_gofv.go
-@@ -0,0 +1,1003 @@
+@@ -0,0 +1,1027 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -2841,9 +2841,9 @@
 +	return x.sym(ls)
 +}
 +
-+// dwvar writes a var line: every dwarf.Var field and its location list (- none, v<varID>
++// dwvar writes var line k: every dwarf.Var field and its location list (- none, v<varID>
 +// the FuncDebug variable's, e<entries> one dwarfgen built).
-+func (x *gofvProgExporter) dwvar(d *gofvDwarfFn, v *dwarf.Var) {
++func (x *gofvProgExporter) dwvar(d *gofvDwarfFn, k int, v *dwarf.Var) {
 +	list := "-"
 +	if v.PutLocationList != nil {
 +		if l, ok := d.lists[v]; !ok {
@@ -2859,7 +2859,7 @@
 +			list = "e" + strings.Join(es, ",")
 +		}
 +	}
-+	fmt.Fprintf(&x.body, "var %d %s %d %d %d %d %d %d %s %s %d %d %d %d %d %d %s\n", v.Scope,
++	fmt.Fprintf(&x.body, "var %d %d %s %d %d %d %d %d %d %s %s %d %d %d %d %d %d %s\n", k, v.Scope,
 +		gofvQuoteP(v.Name), v.Tag, gofvBoolP(v.WithLoclist), gofvBoolP(v.IsReturnValue),
 +		gofvBoolP(v.IsInlFormal), v.DictIndex, v.StackOffset, x.dwsym(v.Type), gofvQuoteP(v.DeclFile),
 +		v.DeclLine, v.DeclCol, v.InlIndex, v.ChildIndex, gofvBoolP(v.IsInAbstract), v.ClosureOffset, list)
@@ -2900,22 +2900,46 @@
 +		fmt.Fprintf(&x.body, "dwfn %s %s %s %s %s %s %s %d %d %d %d\n", x.dwsym(fs.Info), x.dwsym(fs.Loc),
 +			x.dwsym(fs.Ranges), x.dwsym(fs.Absfn), x.sym(d.lines), gofvQuoteP(fs.Name), gofvPosFL(fs.StartPos),
 +			gofvBoolP(fs.External), gofvBoolP(d.wrapper), gofvBoolP(fs.UseBASEntries), base.Ctxt.DwTextCount)
-+		for k, sc := range fs.Scopes {
-+			fmt.Fprintf(&x.body, "scope %d %d %s\n", k, sc.Parent, gofvRanges(sc.Ranges))
-+			for _, v := range sc.Vars {
-+				x.dwvar(d, v)
++		// Every distinct variable once (by identity: putscope skips the inlined calls'
++		// variables), the scopes' first.
++		vix := map[*dwarf.Var]int{}
++		var vs []*dwarf.Var
++		ref := func(v *dwarf.Var) string {
++			k, ok := vix[v]
++			if !ok {
++				k = len(vs)
++				vix[v] = k
++				vs = append(vs, v)
 +			}
++			return strconv.Itoa(k)
++		}
++		var scs, ics []string
++		for k, sc := range fs.Scopes {
++			var rs []string
++			for _, v := range sc.Vars {
++				rs = append(rs, ref(v))
++			}
++			scs = append(scs, fmt.Sprintf("scope %d %d %s %s\n", k, sc.Parent, gofvRanges(sc.Ranges), gofvListP(rs)))
 +		}
 +		for k, c := range fs.InlCalls.Calls {
-+			var ch []string
++			var ch, rs []string
 +			for _, i := range c.Children {
 +				ch = append(ch, strconv.Itoa(i))
 +			}
-+			fmt.Fprintf(&x.body, "inlcall %d %d %s %s %s %d %s\n", k, c.InlIndex, gofvPosFL(c.CallPos),
-+				x.dwsym(c.AbsFunSym), gofvListP(ch), gofvBoolP(c.Root), gofvRanges(c.Ranges))
 +			for _, v := range c.InlVars {
-+				x.dwvar(d, v)
++				rs = append(rs, ref(v))
 +			}
++			ics = append(ics, fmt.Sprintf("inlcall %d %d %s %s %s %d %s %s\n", k, c.InlIndex, gofvPosFL(c.CallPos),
++				x.dwsym(c.AbsFunSym), gofvListP(ch), gofvBoolP(c.Root), gofvRanges(c.Ranges), gofvListP(rs)))
++		}
++		for k, v := range vs {
++			x.dwvar(d, k, v)
++		}
++		for _, l := range scs {
++			x.body.WriteString(l)
++		}
++		for _, l := range ics {
++			x.body.WriteString(l)
 +		}
 +		syms := []*obj.LSym{info, loc, ranges, d.lines, absfn}
 +		gofvDwarf.Lock()

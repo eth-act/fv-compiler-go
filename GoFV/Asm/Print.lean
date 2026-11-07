@@ -177,8 +177,8 @@ def asm (a : Asm) : W Unit := do
   dataLines a.data
   warnsEnd a.warns
 
-def dwVar (v : DwVar) : W Unit := do
-  s "var "; i v.scope; sp; q v.name; sp; n v.tag; sp; bool v.withLoclist; sp
+def dwVar (k : Nat) (v : DwVar) : W Unit := do
+  s "var "; n k; sp; i v.scope; sp; q v.name; sp; n v.tag; sp; bool v.withLoclist; sp
   bool v.isReturnValue; sp; bool v.isInlFormal; sp; n v.dictIndex; sp; i v.stackOffset; sp
   optRef 'y' v.type; sp; q v.declFile; sp; n v.declLine; sp; n v.declCol; sp; i v.inlIndex; sp
   i v.childIndex; sp; bool v.isInAbstract; sp; i v.closureOffset; sp
@@ -195,15 +195,15 @@ def dwarf (d : Dwarf) : W Unit := do
     s "dwfn "; ref 'y' f.info; sp; optRef 'y' f.loc; sp; ref 'y' f.ranges; sp; optRef 'y' f.absfn
     sp; ref 'y' f.lines; sp; q f.name; sp; i f.startFile; s ":"; n f.startLine; sp
     bool f.external; sp; bool f.wrapper; sp; bool f.useBASEntries; sp; n f.dwTextCount; nl
+  for h : k in [0:d.vars.size] do dwVar k d.vars[k]
   for h : k in [0:d.scopes.size] do
     let sc := d.scopes[k]
-    s "scope "; n k; sp; i sc.parent; sp; pairs sc.ranges; nl
-    for v in sc.vars do dwVar v
+    s "scope "; n k; sp; i sc.parent; sp; pairs sc.ranges; sp; list n sc.vars; nl
   for h : k in [0:d.inlCalls.size] do
     let c := d.inlCalls[k]
     s "inlcall "; n k; sp; i c.inlIndex; sp; i c.callFile; s ":"; n c.callLine; sp
-    optRef 'y' c.absFun; sp; list n c.children; sp; bool c.root; sp; pairs c.ranges; nl
-    for v in c.vars do dwVar v
+    optRef 'y' c.absFun; sp; list n c.children; sp; bool c.root; sp; pairs c.ranges; sp
+    list n c.vars; nl
   for (y, ridx, tgt, dcl) in d.dieRefs do
     s "dieref "; ref 'y' y; sp; n ridx; sp; ref 'y' tgt; sp; i dcl; nl
   if let some (y, offs) := d.dieOffs then s "dieoff "; ref 'y' y; sp; pairs offs; nl
