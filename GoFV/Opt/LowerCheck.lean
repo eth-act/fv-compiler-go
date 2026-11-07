@@ -320,9 +320,18 @@ def stValW : Op → Option Sem.Width
   | .ARM64MOVWstore => some .w32
   | _ => none
 
-/-- The shape a narrow integer store reads its value (argument 1) at (`stValW`). -/
+/-- The width of the value a narrow indexed integer store writes (argument 2; `MOVBstoreidx`,
+`MOVHstoreidx`, `MOVWstoreidx` and the scaled `MOVHstoreidx2`, `MOVWstoreidx4`). -/
+def stIdxValW : Op → Option Sem.Width
+  | .ARM64MOVBstoreidx => some .w8
+  | .ARM64MOVHstoreidx | .ARM64MOVHstoreidx2 => some .w16
+  | .ARM64MOVWstoreidx | .ARM64MOVWstoreidx4 => some .w32
+  | _ => none
+
+/-- The shape a narrow integer store reads its value (argument 1, `stValW`; argument 2 of an
+indexed one, `stIdxValW`) at. -/
 def stFitTy (o : Op) (i : Nat) : Option Sem.Ty :=
-  if i == 1 then (stValW o).map .int else none
+  if i == 1 then (stValW o).map .int else if i == 2 then (stIdxValW o).map .int else none
 
 /-- The shape the atom `v` reads its argument `i` at, for the atoms that read no more of it: a
 lowered call the leaf it fits the register piece at (`callFitTy`, `fitPieces`), a narrow integer
@@ -463,19 +472,42 @@ def stIdxFold (tabs : Tables) (M : Defs) (x u : Value) : Bool :=
       u.args == #[y.args[0]!, y.args[1]!, x.args[1]!, x.args[2]!]
   | _, _ => false
 
-/-- The lowered store `u` of the `Store` `x` reads the value through a narrowing `Copy` that
-`lower` eliminated (`(Trunc64to32 x) => x`, a copy argument replacement `copyReachL` cannot
-follow): `x`'s address and memory, and for the value the source of `x`'s narrowing `Copy` of at
-least the store's width (`truncFitL` at `stFitTy`). -/
-def stValFit (tabs : Tables) (M : Defs) (x u : Value) : Bool :=
-  x.args.size == 3 && u.args.size == 3 && u.args[0]! == x.args[0]! && u.args[2]! == x.args[2]! &&
-    truncFitL tabs M M.size u 1 x.args[1]! u.args[1]!
+/-- The position of a narrow integer store's value: 1 (`stValW`), 2 for an indexed one
+(`stIdxValW`). -/
+def stValIx (o : Op) : Option Nat :=
+  if (stValW o).isSome then some 1 else if (stIdxValW o).isSome then some 2 else none
+
+/-- The store `u` a rule event builds at the store `x` (both atoms), with its value (`stValIx`)
+read back as `x`'s (argument 1) where `u` reads it through a narrowing `Copy` that `lower`
+eliminated inline (`(Trunc64to32 x) => x`, a copy argument replacement `copyReachL` cannot
+follow): the source of `x`'s narrowing `Copy` of at least the store's width (`truncFitL` at
+`stFitTy`). The replay keeps the `Copy`; `finalOKL` relates the output's value to it
+(`truncFitL`). -/
+def stValPick (tabs : Tables) (M : Defs) (x u : Value) : Value :=
+  match stValIx u.op with
+  | some k =>
+    if x.args.size == 3 && k < u.args.size && truncFitL tabs M M.size u k x.args[1]! u.args[k]! then
+      { u with args := u.args.set! k x.args[1]! }
+    else u
+  | none => u
+
+/-- `atomDef` for one new definition `u` at the atom `x` at `v`. -/
+def atomDef1 (tabs : Tables) (f : Func) (M : Defs) (v : ID) (x u : Value) :
+    Option (Value × Option Value) :=
+  if x.id == v && u.id == v && !termVL tabs x && !termVL tabs u && u.type == x.type &&
+      (u.args == x.args && memLower tabs x u && u.auxInt == 0 && u.aux == none ||
+        u.args == x.args && bulkLower x u ||
+        u.args.all x.args.contains && addrLower tabs x u ||
+        (stFold tabs M x u || stFoldAddr tabs f M x u || stIdxFold tabs M x u) &&
+          (f.value? v).any (·.op == .Store))
+    then some (u, none)
+  else none
 
 /-- A rule event at the atom `v` replayed as the atom its top result node `u` defines (the log
-lists the reset value, then the nodes, as for any `build`), with `v`'s type:
+lists the reset value, then the nodes, as for any `build`), with `v`'s type, a narrow store's
+value read back through the narrowing `Copy` `lower` eliminated (`stValPick`):
 * a lowered store (`memLower` at offset 0 without aux: `(Store {t} ptr val mem) => (MOVDstore ptr
-  val mem)` and the other sizes), on `v`'s arguments, or on its value through a narrowing `Copy`
-  (`stValFit`), replayed on `v`'s arguments (`finalOKL` relates the value, `truncFitL`);
+  val mem)` and the other sizes), on `v`'s arguments;
 * a lowered `Zero` or `Move` (`bulkLower`: `LoweredZero`, `LoweredZeroLoop`, `LoweredMove`,
   `LoweredMoveLoop`), on `v`'s arguments;
 * an offset folded into an arm64 store lowering a `Store` of `f` (`stFold`), or a global symbol's
@@ -487,18 +519,7 @@ The new definitions: `u` and the fresh term, if any. -/
 def atomDef (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value) :
     Option (Value × Option Value) :=
   match M.get? v, defs with
-  | some x, [_, u] =>
-    if x.id == v && u.id == v && !termVL tabs x && !termVL tabs u && u.type == x.type &&
-        (u.args == x.args && memLower tabs x u && u.auxInt == 0 && u.aux == none ||
-          u.args == x.args && bulkLower x u ||
-          u.args.all x.args.contains && addrLower tabs x u ||
-          (stFold tabs M x u || stFoldAddr tabs f M x u || stIdxFold tabs M x u) &&
-            (f.value? v).any (·.op == .Store))
-        then some (u, none)
-    else if x.id == v && u.id == v && !termVL tabs x && !termVL tabs u && u.type == x.type &&
-        memLower tabs x u && u.auxInt == 0 && u.aux == none && stValFit tabs M x u
-        then some ({ u with args := x.args }, none)
-    else none
+  | some x, [_, u] => atomDef1 tabs f M v x (stValPick tabs M x u)
   | some x, [_, u, s] =>
     if x.id == v && u.id == v && !termVL tabs x && !termVL tabs u && u.type == x.type &&
         addrLower tabs x u && u.args == #[s.id] && s.id != v && (M.get? s.id).isNone &&

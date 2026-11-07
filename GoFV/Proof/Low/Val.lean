@@ -215,8 +215,7 @@ theorem termVL_callFit {tabs : Tables} {v : Value} {i : Nat} {t : Ty}
 /-- A narrow integer store (one `stFitTy` fits the value of) is an atom. -/
 theorem termVL_stFit {tabs : Tables} {v : Value} {i : Nat} {t : Ty}
     (h : stFitTy v.op i = some t) : termVL tabs v = false := by
-  obtain ⟨-, w, hw, -⟩ := stFitTy_cases h
-  rcases stValW_some hw with ⟨hv, -⟩ | ⟨hv, -⟩ | ⟨hv, -⟩ <;>
+  rcases stFitTy_ops h with hv | hv | hv | hv | hv | hv | hv | hv <;>
     (rw [termVL_arm (by decide) (by decide) (by decide) (by decide) hv]; decide)
 
 /-! ## A `W` op reads the low 32 bits of each argument -/
@@ -687,11 +686,12 @@ theorem narrowReadW_low {o : Op} {d : Nat} (h : lowOpArgs o = some d) (i : Nat) 
 theorem argFitTy_low {tabs : Tables} {v : Value} {d : Nat} (h : lowOpArgs v.op = some d)
     (i : Nat) : argFitTy tabs v i = none := by
   obtain ⟨-, -, -, -, -, hc, hp, hr⟩ := lowOp_facts h
-  have hs : stValW v.op = none := by
-    cases hw : stValW v.op with
+  have hs : ∀ j, stFitTy v.op j = none := fun j => by
+    cases hw : stFitTy v.op j with
     | none => rfl
-    | some w => rcases stValW_some hw with ⟨ho, -⟩ | ⟨ho, -⟩ | ⟨ho, -⟩ <;> rw [ho] at h <;> cases h
-  simp [argFitTy, atomFitTy, stFitTy, hc, hp, hr, hs]
+    | some w =>
+      rcases stFitTy_ops hw with ho | ho | ho | ho | ho | ho | ho | ho <;> rw [ho] at h <;> cases h
+  simp [argFitTy, atomFitTy, hc, hp, hr, hs]
 
 /-- What `lowShape` says. -/
 theorem lowShape_cases {tabs : Tables} {M : Defs} {m : Value} {k : Nat}
@@ -1110,8 +1110,8 @@ theorem final_denL {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
               · rw [hmr] at hk; cases hk
               · rw [hmr] at hp; cases hp
               · rw [hs] at hts'; cases hts'; exact hti
-              · obtain ⟨-, w'', hw'', -⟩ := stFitTy_cases hst
-                simp [hmr, stValW] at hw''
+              · rcases stFitTy_ops hst with h | h | h | h | h | h | h | h <;> rw [hmr] at h <;>
+                  cases h
             refine ⟨fun t ht => ?_, fun h => by rw [hti] at h; cases h⟩
             rw [hti] at ht; cases ht
             rcases hnarrow i h1 h2 hc hcop hcsz hsh' hcr with he | ⟨X, he, hX⟩ <;> rw [he]
@@ -1482,10 +1482,10 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
           · obtain ⟨-, -, -, ks, hks, -⟩ := pbLower_cases hpb
             rw [hop, (idxStore_facts hio).2.2.2.2.2.2.1] at hks; cases hks
           · exact hx
-        have hden : ∀ j (h1 : j < m.args.size) (h2 : j < u.args.size) (k : Nat) (ρ ρ' : ID → Val),
-            ValRef ρ ρ' → TypedL true (listedDefs g) tabs ρ' →
+        have hden : ∀ j (h1 : j < m.args.size) (h2 : j < u.args.size), j ≠ 2 → ∀ (k : Nat)
+            (ρ ρ' : ID → Val), ValRef ρ ρ' → TypedL true (listedDefs g) tabs ρ' →
             Sem.Refines (denL true M.get? tabs (midVal tabs f ρ) k m.args[j]!)
-              (denL true (listedDefs g) tabs ρ' k u.args[j]!) := fun j h1 h2 k ρ ρ' hρ hT' => by
+              (denL true (listedDefs g) tabs ρ' k u.args[j]!) := fun j h1 h2 hj k ρ ρ' hρ hT' => by
           rw [getElem!_pos m.args j h1, getElem!_pos u.args j h2]
           have hc := (hcopy j h1 h2).resolve_right fun hfit => by
             obtain ⟨w', -, -, hcf, -⟩ := truncFitL_cases hfit
@@ -1494,14 +1494,20 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
               rcases callLead_some hk with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] at hio <;> cases hio
             · rw [h] at hio; cases hio
             · rw [h] at hio; cases hio
-            · obtain ⟨-, w'', hw'', -⟩ := stFitTy_cases hst
-              rcases stValW_some hw'' with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] at hio <;> cases hio
+            · obtain ⟨w0, -, ⟨-, hw''⟩ | ⟨rfl, -⟩⟩ := stFitTy_cases hst
+              · rcases stValW_some hw'' with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] at hio <;>
+                  cases hio
+              · exact hj rfl
           exact (copyReachL_den (hTM ρ) _ _ _ hc k).trans
             (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) k _
               ((closedOK_facts hcg b hb gb hgb).2 a ha u hu u.args[j] (Array.getElem_mem h2))
               ((liveOKL_facts hlive) b hb gb hgb |>.2 a ha u hu (.inl hat) _
                 (Array.getElem_mem h2)))
-        refine .inr (.inr ⟨hix, fun n => ?_, fun n => ?_, fun n => ?_⟩)
+        have hmark2 := (closedOK_facts hcg b hb gb hgb).2 a ha u hu u.args[2]
+          (Array.getElem_mem (by omega))
+        have hlv2 : LiveL tabs g u.args[2] :=
+          (liveOKL_facts hlive) b hb gb hgb |>.2 a ha u hu (.inl hat) _ (Array.getElem_mem (by omega))
+        refine .inr (.inr ⟨hix, fun n => ?_, ?_, fun n => ?_⟩)
         · obtain ⟨k, hk⟩ := hAd n
           refine ⟨k, fun ρ ρ' hρ hT hT' hF => ?_⟩
           rw [hgl] at hT'
@@ -1509,21 +1515,52 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
           have h1 := hk (midVal tabs f ρ) (mid_typed tabs f ρ) (mid_frame hF)
           exact ArgRel.trans_left (o := some (0, none)) (bridge_den hsh hT n _)
             (ArgRel.trans_right (o := some (0, none)) h1 (idxAddr_mono _
-              (hden 0 (by omega) (by omega) k ρ ρ' hρ hT') (hden 1 (by omega) (by omega) k ρ ρ' hρ hT')))
-        · obtain ⟨k, hk⟩ := hV 0 (by omega) n
-          refine ⟨k, fun ρ ρ' hρ hT hT' hF => ?_⟩
-          rw [hgl] at hT'
-          rw [hgl]
-          have h1 := hk (midVal tabs f ρ) (mid_typed tabs f ρ) (mid_frame hF)
-          exact ArgRel.trans_left (bridge_den hsh hT n _)
-            (h1.trans_right (hden 2 (by omega) (by omega) k ρ ρ' hρ hT'))
+              (hden 0 (by omega) (by omega) (by omega) k ρ ρ' hρ hT')
+              (hden 1 (by omega) (by omega) (by omega) k ρ ρ' hρ hT')))
+        · rcases hcopy 2 (by omega) (by omega) with hc2 | hfit2
+          · left
+            intro n
+            obtain ⟨k, hk⟩ := hV 0 (by omega) n
+            refine ⟨k, fun ρ ρ' hρ hT hT' hF => ?_⟩
+            rw [hgl] at hT'
+            rw [hgl, getElem!_pos u.args 2 (by omega)]
+            have h1 := hk (midVal tabs f ρ) (mid_typed tabs f ρ) (mid_frame hF)
+            rw [getElem!_pos m.args 2 (by omega)] at h1
+            exact ArgRel.trans_left (bridge_den hsh hT n _) (h1.trans_right
+              ((copyReachL_den (hTM ρ) _ _ _ hc2 k).trans
+                (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) k _ hmark2 hlv2)))
+          · -- the value through a narrowing `Copy` of at least the store's width
+            right
+            obtain ⟨w', c, w, hcf, hc, hcop, hcsz, hsh', hww, hw64, hcr⟩ := truncFitL_cases hfit2
+            have hcfu : argFitTy tabs u 2 = some (.int w') := by
+              rw [← hcf]; unfold argFitTy atomFitTy stFitTy callFitTy callIns; rw [hop, hax, hwty]
+            refine ⟨.int w', hcfu, fun n => ?_⟩
+            obtain ⟨k, hk⟩ := hV 0 (by omega) n
+            refine ⟨k, fun ρ ρ' hρ hT hT' hF => ?_⟩
+            rw [hgl] at hT'
+            rw [hgl, getElem!_pos u.args 2 (by omega)]
+            have h1 := hk (midVal tabs f ρ) (mid_typed tabs f ρ) (mid_frame hF)
+            rw [getElem!_pos m.args 2 (by omega)] at h1
+            have h1' : Sem.Refines _ _ := h1
+            have hct : termVL tabs c = true := termVL_of_copy hcop
+            have hcl1 : c.args.toList = [c.args[0]!] := toList_of_size_one hcsz
+            have hden2 : denL true M.get? tabs (midVal tabs f ρ) (k + 1) m.args[2] =
+                (denL true M.get? tabs (midVal tabs f ρ) k c.args[0]!).retypeL (.int w) := by
+              rw [denT_succ hc hct, hcl1, hcop, hsh']
+              simp only [List.map_cons, List.map_nil, opValL_copy]
+            have h2 := (bridge_den hsh hT n _).trans
+              (h1'.trans (denL_fuel_mono true M.get? tabs _ k (k + 1) _ (by omega)))
+            rw [hden2] at h2
+            exact (fitPiece_mono _ h2).trans ((fitPiece_retypeL hww hw64 _).trans (fitPiece_mono _
+              ((copyReachL_den (hTM ρ) _ _ _ hcr k).trans
+                (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) k _ hmark2 hlv2))))
         · obtain ⟨k, hk⟩ := hV 1 (by omega) n
           refine ⟨k, fun ρ ρ' hρ hT hT' hF => ?_⟩
           rw [hgl] at hT'
           rw [hgl]
           have h1 := hk (midVal tabs f ρ) (mid_typed tabs f ρ) (mid_frame hF)
           exact ArgRel.trans_left (bridge_den hsh hT n _)
-            (h1.trans_right (hden 3 (by omega) (by omega) k ρ ρ' hρ hT'))
+            (h1.trans_right (hden 3 (by omega) (by omega) (by omega) k ρ ρ' hρ hT'))
       have hnpb : pbLower u' u = false := by
         cases hpb : pbLower u' u
         · rfl
@@ -1568,8 +1605,9 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
             exact fun x => stArg_none hst
           · exact fun x => stArg_none (by rw [h]; rfl)
           · rw [← hop] at h; rw [termVL_makeResult h] at hat; cases hat
-          · obtain ⟨rfl, -⟩ := stFitTy_cases hs1
-            exact fun x => stArg_succ x m 0
+          · obtain ⟨w0, -, ⟨rfl, -⟩ | ⟨rfl, -⟩⟩ := stFitTy_cases hs1
+            · exact fun x => stArg_succ x m 0
+            · exact fun x => stArg_succ x m 1
         right
         refine ⟨.int w', hcfu, fun n => ?_⟩
         obtain ⟨k, hk⟩ := (hrest i hi').2 n

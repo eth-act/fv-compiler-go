@@ -10,7 +10,7 @@ returned by `v9 = MakeResult v8 v7`), built with `-dynlink` so the global's addr
 into the store. The checked lower fires `(Trunc64to32 ...) => (Copy ...)` (196) and `(Store {t} ptr
 val mem) && t.Size() == 4 && !t.IsFloat() => (MOVWstore ptr val mem)` (328); `lower` eliminates the
 `Copy` inline, so `v7` is `MOVWstore v3 v5 v1`: the validator accepts the store's value, which the
-narrowing `Copy` `v6` copies and whose low 32 bits the `MOVWstore` writes (`stValFit`,
+narrowing `Copy` `v6` copies and whose low 32 bits the `MOVWstore` writes (`stValPick`,
 `truncFitL`, `GoFV.Proof.Low.encode_le_storeBytes_fit`). By `lower_refines` every returning or
 panicking `run` of `stw` is, up to refinement, a `runL` of the result; on `g` holding `2^32 - 5`
 both return `2^32 - 10`.
@@ -77,7 +77,7 @@ theorem stw_checks :
 
 /-- **Pass execution witness** for `lower_refines` (`lower_refines_run`) on a narrow store of a
 truncation: on `stw`, the checked lower's `v7` is `MOVWstore v3 v5 v1` (the narrowing `Copy` it
-read is gone, `stValFit`), and every returning or panicking `run` of `stw` is, up to refinement, a
+read is gone, `stValPick`), and every returning or panicking `run` of `stw` is, up to refinement, a
 `runL` of the result. -/
 theorem stw_lower :
     ∃ out, lowerChecked stwPassEnv stwFunc = .ok out ∧ out.func.lowered = true ∧

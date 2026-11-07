@@ -258,9 +258,9 @@ theorem any_store {o : Option Value} (h : o.any (·.op == .Store) = true) :
   | some a => exact ⟨a, rfl, by simpa using h⟩
 
 /-- What `atomDef` establishes for one new definition: a lowered store on the same arguments at
-offset 0 without aux (its value possibly read through a narrowing `Copy`, replayed on `x`'s
-arguments, `stValFit`), a lowered frame address on some of them, or an offset or a symbol's or
-frame variable's address folded into an arm64 store of a `Store` of `f`, or that store indexed. -/
+offset 0 without aux, a lowered frame address on some of them, or an offset or a symbol's or frame
+variable's address folded into an arm64 store of a `Store` of `f`, or that store indexed (a narrow
+store's value read back through a narrowing `Copy`, `stValPick`). -/
 theorem atomDef_one {tabs : Tables} {f : Func} {M : Defs} {v : ID} {defs : List Value} {u : Value}
     (h : atomDef tabs f M v defs = some (u, none)) : ∃ x, M.get? v = some x ∧
       termVL tabs x = false ∧ termVL tabs u = false ∧ u.type = x.type ∧
@@ -273,6 +273,7 @@ theorem atomDef_one {tabs : Tables} {f : Func} {M : Defs} {v : ID} {defs : List 
   unfold atomDef at h
   split at h
   · rename_i x _ u' hx
+    unfold atomDef1 at h
     split at h
     · rename_i hc
       cases h
@@ -288,12 +289,7 @@ theorem atomDef_one {tabs : Tables} {f : Func} {M : Defs} {v : ID} {defs : List 
         obtain ⟨i, hi, rfl⟩ := Array.mem_iff_getElem.1 ha
         exact h1 i hi
       · exact .inr (.inr (.inr ⟨or_assoc.1 h1, any_store h2⟩))
-    · rw [Option.ite_none_right_eq_some] at h
-      obtain ⟨hc, h⟩ := h
-      cases h
-      simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at hc
-      obtain ⟨⟨⟨⟨⟨⟨⟨⟨-, -⟩, ht⟩, ht'⟩, hty⟩, hm⟩, hk⟩, hax⟩, -⟩ := hc
-      exact ⟨x, hx, ht, ht', hty, .inl ⟨rfl, hm, hk, hax⟩⟩
+    · cases h
   · rename_i x _ u' s hx
     rw [Option.ite_none_right_eq_some] at h
     obtain ⟨-, h⟩ := h
@@ -310,11 +306,8 @@ theorem atomDef_two {tabs : Tables} {f : Func} {M : Defs} {v : ID} {defs : List 
   unfold atomDef at h
   split at h
   · rename_i x _ u' hx
-    split at h
-    · cases h
-    · rw [Option.ite_none_right_eq_some] at h
-      obtain ⟨-, h⟩ := h
-      cases h
+    unfold atomDef1 at h
+    split at h <;> cases h
   · rename_i x _ u' s' hx
     rw [Option.ite_none_right_eq_some] at h
     obtain ⟨hc, h⟩ := h
