@@ -233,19 +233,44 @@ private theorem condOn_neg {k k' : Int64} {c : Cond} (hk : Cond.ofAux k = some c
 
 /-! ## `CSEL` arms -/
 
-/-- A 64-bit constant register read at a shape with a whole register, moved (`regVal`). -/
-private theorem refines_regVal_res {T1 : Ty} (h : 64 ≤ argWidth T1) (T : Ty) (k : BitVec 64) :
+/-- `CSEL` reads its arms at the result's low bits (`armReadW`). -/
+private theorem armReadW_csel (T : Ty) {i : Nat} (hi : i < 2) :
+    armReadW .ARM64CSEL T i = lowW T := by
+  cases T <;> simp [armReadW, lowW, hi]
+
+private theorem armReadW_csel0 (T : Ty) : armReadW .ARM64CSEL T 0 = lowW T :=
+  armReadW_csel T (by decide)
+
+private theorem armReadW_csel1 (T : Ty) : armReadW .ARM64CSEL T 1 = lowW T :=
+  armReadW_csel T (by decide)
+
+/-- A constant register read at its node's shape is not a pointer. -/
+private theorem retypeL_res_noPtr (T : Ty) (k : BitVec 64) (q : Ptr) :
+    (Arm64.res T k).retypeL T ≠ .ptr q := by
+  cases T with
+  | int w => cases w <;> simp [Arm64.res, Val.retypeL, Val.widen, Val.retype, Width.bits]
+  | _ => simp [Arm64.res, Val.retypeL, Val.widen, Val.retype]
+
+/-- A 64-bit constant register read at a shape keeping the result's low bits (`lowW`), moved
+(`regVal`): the constant at the result's shape, or `poison`. -/
+private theorem refines_regVal_res {T T1 : Ty} (h : lowW T ≤ argWidth T1) (k : BitVec 64) :
     Refines ((Arm64.regVal T ((Arm64.res T1 k).retypeL T1)).retypeL T)
       ((Arm64.res T k).retypeL T) := by
-  rcases retypeL_res_wide h k with h' | h' <;> rw [h']
-  · have : Arm64.regVal T (.int .w64 k) = Arm64.res T k := by simp [Arm64.regVal, Arm64.reg]
-    rw [this]; exact Refines.refl _
-  · have : Arm64.regVal T .poison = .poison := rfl
+  obtain ⟨h1, h2⟩ := lowW_pos T
+  rcases retypeL_res_reg h1 h2 h k with h' | ⟨y, hy, hyk⟩
+  · rw [h']
+    have : Arm64.regVal T .poison = .poison := rfl
     rw [this, retypeL_poison]; exact .poison _
+  · have hrv : Arm64.regVal T ((Arm64.res T1 k).retypeL T1) = Arm64.res T y := by
+      generalize hV : (Arm64.res T1 k).retypeL T1 = V at hy
+      cases V with
+      | ptr q => exact absurd hV (retypeL_res_noPtr T1 k q)
+      | _ => simp only [Arm64.regVal, hy]
+    rw [hrv, retypeL_res_low T hyk]; exact Refines.refl _
 
-/-- A unary op's register read at a shape with a whole register, moved (`regVal`): the
+/-- A unary op's register read at a shape keeping the result's low bits, moved (`regVal`): the
 register the conditional op computes from the operand. -/
-private theorem refines_regVal_op1 {T1 : Ty} (h : 64 ≤ argWidth T1) (T : Ty)
+private theorem refines_regVal_op1 {T T1 : Ty} (h : lowW T ≤ argWidth T1)
     (g : BitVec 64 → BitVec 64) (a : Val) :
     Refines ((Arm64.regVal T ((Arm64.op1 T1 g [a]).retypeL T1)).retypeL T)
       ((match Arm64.reg a with
@@ -256,10 +281,10 @@ private theorem refines_regVal_op1 {T1 : Ty} (h : 64 ≤ argWidth T1) (T : Ty)
     have hp : Arm64.op1 T1 g [a] = .poison := by simp only [Arm64.op1, hr]
     have hq : Arm64.regVal T .poison = .poison := rfl
     simp only [hp, retypeL_poison, hq]; exact .poison _
-  | some r => simp only [Arm64.op1, hr]; exact refines_regVal_res h T (g r)
+  | some r => simp only [Arm64.op1, hr]; exact refines_regVal_res h (g r)
 
-private theorem refines_csel_csel0 {T T1 : Ty} (h1 : 64 ≤ argWidth T1) {k k' : Int64} {F : Val}
-    (hk : ∀ b, Arm64.condOn k F = some b → Arm64.condOn k' F = some (id b)) (X : Val) :
+private theorem refines_csel_csel0 {T T1 : Ty} (h1 : lowW T ≤ argWidth T1) {k k' : Int64}
+    {F : Val} (hk : ∀ b, Arm64.condOn k F = some b → Arm64.condOn k' F = some (id b)) (X : Val) :
     Refines ((Arm64.csel T k none [X, (Arm64.res T1 0).retypeL T1, F]).retypeL T)
       ((Arm64.csel0 T k' [X, F]).retypeL T) := by
   simp only [Arm64.csel, Arm64.csel0]
@@ -268,10 +293,10 @@ private theorem refines_csel_csel0 {T T1 : Ty} (h1 : 64 ≤ argWidth T1) {k k' :
   | some b =>
     rw [hk b hA]
     cases b
-    · exact refines_regVal_res h1 T 0
+    · exact refines_regVal_res h1 0
     · exact Refines.refl _
 
-private theorem refines_csel_csel0_neg {T T0 : Ty} (h0 : 64 ≤ argWidth T0) {k k' : Int64}
+private theorem refines_csel_csel0_neg {T T0 : Ty} (h0 : lowW T ≤ argWidth T0) {k k' : Int64}
     {F : Val} (hk : ∀ b, Arm64.condOn k F = some b → Arm64.condOn k' F = some (!b)) (Y : Val) :
     Refines ((Arm64.csel T k none [(Arm64.res T0 0).retypeL T0, Y, F]).retypeL T)
       ((Arm64.csel0 T k' [Y, F]).retypeL T) := by
@@ -282,10 +307,10 @@ private theorem refines_csel_csel0_neg {T T0 : Ty} (h0 : 64 ≤ argWidth T0) {k 
     rw [hk b hA]
     cases b
     · exact Refines.refl _
-    · exact refines_regVal_res h0 T 0
+    · exact refines_regVal_res h0 0
 
-private theorem refines_csel_csetm {T T0 T1 : Ty} (h0 : 64 ≤ argWidth T0)
-    (h1 : 64 ≤ argWidth T1) {k k' : Int64} {F : Val}
+private theorem refines_csel_csetm {T T0 T1 : Ty} (h0 : lowW T ≤ argWidth T0)
+    (h1 : lowW T ≤ argWidth T1) {k k' : Int64} {F : Val}
     (hk : ∀ b, Arm64.condOn k F = some b → Arm64.condOn k' F = some (id b)) :
     Refines ((Arm64.csel T k none [(Arm64.res T0 (-1)).retypeL T0, (Arm64.res T1 0).retypeL T1,
         F]).retypeL T)
@@ -296,11 +321,11 @@ private theorem refines_csel_csetm {T T0 T1 : Ty} (h0 : 64 ≤ argWidth T0)
   | some b =>
     rw [hk b hA]
     cases b
-    · exact refines_regVal_res h1 T 0
-    · exact refines_regVal_res h0 T (-1)
+    · exact refines_regVal_res h1 0
+    · exact refines_regVal_res h0 (-1)
 
-private theorem refines_csel_csetm_neg {T T0 T1 : Ty} (h0 : 64 ≤ argWidth T0)
-    (h1 : 64 ≤ argWidth T1) {k k' : Int64} {F : Val}
+private theorem refines_csel_csetm_neg {T T0 T1 : Ty} (h0 : lowW T ≤ argWidth T0)
+    (h1 : lowW T ≤ argWidth T1) {k k' : Int64} {F : Val}
     (hk : ∀ b, Arm64.condOn k F = some b → Arm64.condOn k' F = some (!b)) :
     Refines ((Arm64.csel T k none [(Arm64.res T0 0).retypeL T0, (Arm64.res T1 (-1)).retypeL T1,
         F]).retypeL T)
@@ -311,11 +336,11 @@ private theorem refines_csel_csetm_neg {T T0 T1 : Ty} (h0 : 64 ≤ argWidth T0)
   | some b =>
     rw [hk b hA]
     cases b
-    · exact refines_regVal_res h1 T (-1)
-    · exact refines_regVal_res h0 T 0
+    · exact refines_regVal_res h1 (-1)
+    · exact refines_regVal_res h0 0
 
-private theorem refines_csel_op1 {T T1 : Ty} (h1 : 64 ≤ argWidth T1) {k k' : Int64} {F : Val}
-    (hk : ∀ b, Arm64.condOn k F = some b → Arm64.condOn k' F = some (id b))
+private theorem refines_csel_op1 {T T1 : Ty} (h1 : lowW T ≤ argWidth T1) {k k' : Int64}
+    {F : Val} (hk : ∀ b, Arm64.condOn k F = some b → Arm64.condOn k' F = some (id b))
     (g : BitVec 64 → BitVec 64) (X a : Val) :
     Refines ((Arm64.csel T k none [X, (Arm64.op1 T1 g [a]).retypeL T1, F]).retypeL T)
       ((Arm64.csel T k' (some g) [X, a, F]).retypeL T) := by
@@ -325,10 +350,10 @@ private theorem refines_csel_op1 {T T1 : Ty} (h1 : 64 ≤ argWidth T1) {k k' : I
   | some b =>
     rw [hk b hA]
     cases b
-    · exact refines_regVal_op1 h1 T g a
+    · exact refines_regVal_op1 h1 g a
     · exact Refines.refl _
 
-private theorem refines_csel_op1_neg {T T0 : Ty} (h0 : 64 ≤ argWidth T0) {k k' : Int64}
+private theorem refines_csel_op1_neg {T T0 : Ty} (h0 : lowW T ≤ argWidth T0) {k k' : Int64}
     {F : Val} (hk : ∀ b, Arm64.condOn k F = some b → Arm64.condOn k' F = some (!b))
     (g : BitVec 64 → BitVec 64) (X a : Val) :
     Refines ((Arm64.csel T k none [(Arm64.op1 T0 g [a]).retypeL T0, X, F]).retypeL T)
@@ -340,7 +365,7 @@ private theorem refines_csel_op1_neg {T T0 : Ty} (h0 : 64 ≤ argWidth T0) {k k'
     rw [hk b hA]
     cases b
     · exact Refines.refl _
-    · exact refines_regVal_op1 h0 T g a
+    · exact refines_regVal_op1 h0 g a
 
 private theorem auxInt_zero {k : Int64} (h : DV.int k.toInt = DV.int 0) :
     BitVec.ofInt 64 k.toInt = 0 := by
@@ -353,6 +378,7 @@ private theorem auxInt_m1 {k : Int64} (h : DV.int k.toInt = DV.int (-1)) :
 /-- `ARM64.rules:1186`: `(CSEL [cc] (MOVDconst [-1]) (MOVDconst [0]) flag) => (CSETM [cc] flag)` -/
 theorem r_ARM64_1186_sound : ArmRule.Checked r_ARM64_1186 := by
   left; arm_unfold; arm_norm
+  simp only [armReadW_csel0, armReadW_csel1] at harg
   rw [auxInt_m1 hc.1, auxInt_zero hc.2]
   rcases ccDV_cases (e.auxInt []) with ⟨o, ho, hk⟩ | ⟨ho, hk⟩ <;> simp only [ho]
   · exact refines_csel_csetm harg.1 harg.2.1 (condOn_goNum hk _)
@@ -361,6 +387,7 @@ theorem r_ARM64_1186_sound : ArmRule.Checked r_ARM64_1186 := by
 /-- `ARM64.rules:1188`: `(CSEL [cc] x (MOVDconst [0]) flag) => (CSEL0 [cc] x flag)` -/
 theorem r_ARM64_1188_sound : ArmRule.Checked r_ARM64_1188 := by
   left; arm_unfold; arm_norm
+  simp only [armReadW_csel0, armReadW_csel1] at harg
   rw [auxInt_zero hc]
   rcases ccDV_cases (e.auxInt []) with ⟨o, ho, hk⟩ | ⟨ho, hk⟩ <;> simp only [ho]
   · exact refines_csel_csel0 harg.2.1 (condOn_goNum hk _) _
@@ -369,6 +396,7 @@ theorem r_ARM64_1188_sound : ArmRule.Checked r_ARM64_1188 := by
 /-- `ARM64.rules:1192`: `(CSEL [cc] x (MVN a) flag) => (CSINV [cc] x a flag)` -/
 theorem r_ARM64_1192_sound : ArmRule.Checked r_ARM64_1192 := by
   left; arm_unfold; arm_norm
+  simp only [armReadW_csel0, armReadW_csel1] at harg
   rcases ccDV_cases (e.auxInt []) with ⟨o, ho, hk⟩ | ⟨ho, hk⟩ <;> simp only [ho]
   · exact refines_csel_op1 harg.2.1.1 (condOn_goNum hk _) _ _ _
   · exact refines_csel_op1 harg.2.1.1 (condOn_none hk _ _ _) _ _ _
@@ -376,6 +404,7 @@ theorem r_ARM64_1192_sound : ArmRule.Checked r_ARM64_1192 := by
 /-- `ARM64.rules:1194`: `(CSEL [cc] x (NEG a) flag) => (CSNEG [cc] x a flag)` -/
 theorem r_ARM64_1194_sound : ArmRule.Checked r_ARM64_1194 := by
   left; arm_unfold; arm_norm
+  simp only [armReadW_csel0, armReadW_csel1] at harg
   rcases ccDV_cases (e.auxInt []) with ⟨o, ho, hk⟩ | ⟨ho, hk⟩ <;> simp only [ho]
   · exact refines_csel_op1 harg.2.1.1 (condOn_goNum hk _) _ _ _
   · exact refines_csel_op1 harg.2.1.1 (condOn_none hk _ _ _) _ _ _
@@ -411,6 +440,7 @@ theorem r_ARM64_1187_cc_sound : ForallL ArmRule.Checked (ccSplit r_ARM64_1187) :
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, trivial⟩
   all_goals
     left; arm_unfold; arm_norm
+    simp only [armReadW_csel0, armReadW_csel1] at harg
     simp only [ccCond, rule_unfold_ds, sigmaL, Pat.bindsL, Pat.bindssL, auxIntDVL] at hcond
     rw [auxInt_zero hc.1, auxInt_m1 hc.2]
     rcases ccDV_cases (e.auxInt []) with ⟨o, ho, hk⟩ | ⟨ho, hk⟩
@@ -444,6 +474,7 @@ theorem r_ARM64_1189_cc_sound : ForallL ArmRule.Checked (ccSplit r_ARM64_1189) :
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, trivial⟩
   all_goals
     left; arm_unfold; arm_norm
+    simp only [armReadW_csel0, armReadW_csel1] at harg
     simp only [ccCond, rule_unfold_ds, sigmaL, Pat.bindsL, Pat.bindssL, auxIntDVL] at hcond
     rw [auxInt_zero hc]
     rcases ccDV_cases (e.auxInt []) with ⟨o, ho, hk⟩ | ⟨ho, hk⟩
@@ -477,6 +508,7 @@ theorem r_ARM64_1193_cc_sound : ForallL ArmRule.Checked (ccSplit r_ARM64_1193) :
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, trivial⟩
   all_goals
     left; arm_unfold; arm_norm
+    simp only [armReadW_csel0, armReadW_csel1] at harg
     simp only [ccCond, rule_unfold_ds, sigmaL, Pat.bindsL, Pat.bindssL, auxIntDVL] at hcond
     rcases ccDV_cases (e.auxInt []) with ⟨o, ho, hk⟩ | ⟨ho, hk⟩
     · rw [ho] at hcond
@@ -509,6 +541,7 @@ theorem r_ARM64_1195_cc_sound : ForallL ArmRule.Checked (ccSplit r_ARM64_1195) :
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, trivial⟩
   all_goals
     left; arm_unfold; arm_norm
+    simp only [armReadW_csel0, armReadW_csel1] at harg
     simp only [ccCond, rule_unfold_ds, sigmaL, Pat.bindsL, Pat.bindssL, auxIntDVL] at hcond
     rcases ccDV_cases (e.auxInt []) with ⟨o, ho, hk⟩ | ⟨ho, hk⟩
     · rw [ho] at hcond
@@ -546,10 +579,21 @@ private theorem retypeL_word_wide (p : Ptr) {T : Ty} (hT : 64 ≤ argWidth T) :
     rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ <;> rw [h] <;> rfl
   | _ => simp [argWidth] at hT
 
-/-- `ADDconst [1] a` at a shape with a whole register, moved (`regVal`): `CSINC`'s register
-(`Arm64.csinc`). A pointer `a` moves alike at every shape, its word kept at a word shape
-(`retypeL_word_wide`); a register `a` gives the 64-bit sum. -/
-private theorem refines_regVal_addP {T1 : Ty} (h : 64 ≤ argWidth T1) (T : Ty) (a : Val) :
+/-- A pointer at a shape without a whole register (`argWidth < 64`: a narrow integer or a
+boolean, as `lowW T ≤ argWidth T1` leaves): `poison`. -/
+private theorem retypeL_ptr_narrow {T T1 : Ty} (h : lowW T ≤ argWidth T1)
+    (h64 : ¬ 64 ≤ argWidth T1) (q : Ptr) : (Val.ptr q).retypeL T1 = .poison := by
+  have hl := (lowW_pos T).1
+  cases T1 with
+  | int w => cases w <;> simp_all [argWidth, Width.bits, Val.retypeL, Val.widen, Val.retype]
+  | bool => simp [Val.retypeL, Val.widen, Val.retype]
+  | _ => simp_all [argWidth] <;> omega
+
+/-- `ADDconst [1] a` at a shape keeping the result's low bits, moved (`regVal`): `CSINC`'s
+register (`Arm64.csinc`). With a whole register, a pointer `a` moves alike at every shape, its
+word kept at a word shape (`retypeL_word_wide`); else a pointer is `poison` there
+(`retypeL_ptr_narrow`). A register `a` gives the sum's low bits (`refines_regVal_res`). -/
+private theorem refines_regVal_addP {T T1 : Ty} (h : lowW T ≤ argWidth T1) (a : Val) :
     Refines ((Arm64.regVal T ((Arm64.addP T1 a 1).retypeL T1)).retypeL T)
       ((Arm64.regVal T (Arm64.addP T a 1)).retypeL T) := by
   have hP : Arm64.regVal T .poison = .poison := rfl
@@ -557,9 +601,21 @@ private theorem refines_regVal_addP {T1 : Ty} (h : 64 ≤ argWidth T1) (T : Ty) 
   · obtain ⟨p, rfl⟩ := hap
     simp only [Arm64.addP, PtrOps.ptrRes]
     split
-    · rcases retypeL_word_wide (p.add 1) h with h' | h' <;> rw [h']
-      · exact Refines.refl _
-      · rw [hP, retypeL_poison]; exact .poison _
+    · by_cases h64 : 64 ≤ argWidth T1
+      · rcases retypeL_word_wide (p.add 1) h64 with h' | h' <;> rw [h']
+        · exact Refines.refl _
+        · rw [hP, retypeL_poison]; exact .poison _
+      · rcases Ptr.word_cases (p.add 1) with ⟨-, h'⟩ | ⟨-, x, -, h'⟩ <;> rw [h']
+        · rw [retypeL_ptr_narrow h h64, hP, retypeL_poison]; exact .poison _
+        · have hw : Arm64.regVal T (.int .w64 x) = Arm64.res T x := by
+            simp [Arm64.regVal, Arm64.reg]
+          rw [hw]
+          cases T1 with
+          | bool =>
+            have : (Val.int .w64 x).retypeL .bool = .poison := by
+              simp [Val.retypeL, Val.widen, Val.retype]
+            rw [this, hP, retypeL_poison]; exact .poison _
+          | _ => exact refines_regVal_res h x
     · rw [retypeL_poison]; exact Refines.refl _
   · have hA : ∀ T', Arm64.addP T' a 1 = match Arm64.reg a with
         | some x => Arm64.res T' (x + 1)
@@ -569,14 +625,12 @@ private theorem refines_regVal_addP {T1 : Ty} (h : 64 ≤ argWidth T1) (T : Ty) 
     cases hr : Arm64.reg a with
     | none => simp only [retypeL_poison, hP]; exact .poison _
     | some x =>
-      rcases retypeL_res_wide h (x + 1) with h' | h' <;> simp only [h']
-      · have : Arm64.regVal T (.int .w64 (x + 1)) = Arm64.res T (x + 1) := by
-          simp [Arm64.regVal, Arm64.reg]
-        rw [this, regVal_res]; exact Refines.refl _
-      · rw [hP, retypeL_poison]; exact .poison _
+      refine (refines_regVal_res h (x + 1)).trans ?_
+      rw [regVal_res]; exact Refines.refl _
 
-private theorem refines_csel_csinc {T T1 : Ty} (h1 : 64 ≤ argWidth T1) {k k' : Int64} {F : Val}
-    (hk : ∀ b, Arm64.condOn k F = some b → Arm64.condOn k' F = some (id b)) (X a : Val) :
+private theorem refines_csel_csinc {T T1 : Ty} (h1 : lowW T ≤ argWidth T1) {k k' : Int64}
+    {F : Val} (hk : ∀ b, Arm64.condOn k F = some b → Arm64.condOn k' F = some (id b))
+    (X a : Val) :
     Refines ((Arm64.csel T k none [X, (Arm64.addP T1 a 1).retypeL T1, F]).retypeL T)
       ((Arm64.csinc T k' [X, a, F]).retypeL T) := by
   simp only [Arm64.csel, Arm64.csinc]
@@ -585,10 +639,10 @@ private theorem refines_csel_csinc {T T1 : Ty} (h1 : 64 ≤ argWidth T1) {k k' :
   | some b =>
     rw [hk b hA]
     cases b
-    · exact refines_regVal_addP h1 T a
+    · exact refines_regVal_addP h1 a
     · exact Refines.refl _
 
-private theorem refines_csel_csinc_neg {T T0 : Ty} (h0 : 64 ≤ argWidth T0) {k k' : Int64}
+private theorem refines_csel_csinc_neg {T T0 : Ty} (h0 : lowW T ≤ argWidth T0) {k k' : Int64}
     {F : Val} (hk : ∀ b, Arm64.condOn k F = some b → Arm64.condOn k' F = some (!b)) (X a : Val) :
     Refines ((Arm64.csel T k none [(Arm64.addP T0 a 1).retypeL T0, X, F]).retypeL T)
       ((Arm64.csinc T k' [X, a, F]).retypeL T) := by
@@ -599,7 +653,7 @@ private theorem refines_csel_csinc_neg {T T0 : Ty} (h0 : 64 ≤ argWidth T0) {k 
     rw [hk b hA]
     cases b
     · exact Refines.refl _
-    · exact refines_regVal_addP h0 T a
+    · exact refines_regVal_addP h0 a
 
 private theorem auxInt_one {k : Int64} (h : DV.int k.toInt = DV.int 1) :
     BitVec.ofInt 64 k.toInt = 1 := by
@@ -608,6 +662,7 @@ private theorem auxInt_one {k : Int64} (h : DV.int k.toInt = DV.int 1) :
 /-- `ARM64.rules:1190`: `(CSEL [cc] x (ADDconst [1] a) flag) => (CSINC [cc] x a flag)` -/
 theorem r_ARM64_1190_sound : ArmRule.Checked r_ARM64_1190 := by
   left; arm_unfold; arm_norm
+  simp only [armReadW_csel0, armReadW_csel1] at harg
   rw [auxInt_one hc]
   rcases ccDV_cases (e.auxInt []) with ⟨o, ho, hk⟩ | ⟨ho, hk⟩ <;> simp only [ho]
   · exact refines_csel_csinc harg.2.1.1 (condOn_goNum hk _) _ _
@@ -636,6 +691,7 @@ theorem r_ARM64_1191_cc_sound : ForallL ArmRule.Checked (ccSplit r_ARM64_1191) :
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, trivial⟩
   all_goals
     left; arm_unfold; arm_norm
+    simp only [armReadW_csel0, armReadW_csel1] at harg
     simp only [ccCond, rule_unfold_ds, sigmaL, Pat.bindsL, Pat.bindssL, auxIntDVL] at hcond
     rw [auxInt_one hc]
     rcases ccDV_cases (e.auxInt []) with ⟨o, ho, hk⟩ | ⟨ho, hk⟩

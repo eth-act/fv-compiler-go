@@ -255,7 +255,7 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
               return s!"final: v{x} fields {m.op.name}->{u.op.name}"
           else
             for ((a, a'), j) in (m.args.toList.zip u.args.toList).zipIdx do
-              if !copyReachL tabs M M.size a a' && !truncReachL tabs M M.size m.op j a a' &&
+              if !copyReachL tabs M M.size a a' && !truncReachL tabs M M.size m.op m.auxInt j a a' &&
                   !truncFitL tabs M M.size m j a a' && !lowReachL tabs M M.size m j a a' &&
                   !(termVL tabs u && L[x]? != some true) then
                 let d := fun (y : ID) => ((M.get? y).map (·.op.name)).getD "-"

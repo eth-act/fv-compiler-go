@@ -2124,6 +2124,10 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
     `CSEL` moves as the pointer (`regVal`). Proven (`Rules/CselBits.lean`, `r_ARM64_1190_sound`,
     `r_ARM64_1191_cc_sound`) since `CSINC` adds to a pointer as `ADDconst` does (`Arm64.csinc`,
     `docs/plans/semantics2.md` §3).
+  - `:1186`–`:1195` at a narrow shape (a `CSEL <uint8>` that `lower` builds from `Rsh8Ux8`)
+    were rejected while `CSEL` read its arms at 64 bits: an arm narrower than the result's
+    argument shape has unknown high bits. `CSEL` reads its arms at the result's width
+    (`armReadW`), and the `CselBits` lemmas take `lowW T ≤ argWidth T1` (witness `nsel_lower`).
   - `:133`, `:134` (`(AndB ...) => (AND ...)`, `(OrB ...) => (OR ...)`): Phase 1's `AndB`/`OrB`
     are parallel (`Cmp.andB`: `false && poison` is `false`), `AND`/`OR` read both registers:
     `AndB false poison` is `false`, `AND` of it `poison` (`OrB true poison` likewise).
