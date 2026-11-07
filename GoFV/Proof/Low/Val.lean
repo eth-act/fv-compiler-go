@@ -17,7 +17,10 @@ shapes agree, `retype_le_retypeL`). Along the replay the listed values of `f` ke
 lowered denotations (`replayL_inv`); the final definitions and terminators are `g`'s up to copies
 (`finalOKL`), whose lowered denotation over the listed values of `g` refines theirs
 (`final_denL`); `midVal` at an atom listed in `g` is refined by the target valuation, since the
-atom of `g` has the type of `f`'s (`atomsOKL`, `mid_le_target`).
+atom of `g` has the type of `f`'s (`atomsOKL`, `mid_le_target`), or, at a lowered frame address
+where `f` has a term (`frameAtomG`), is `f`'s own valuation there. Such an atom is related to the
+replayed `ADDconst [0]` of the frame address (`frameFinal`): `poison` or the variable's word
+(`FrameVals`), which the target valuation holds (`FrameValsL`).
 -/
 
 namespace GoFV.Proof.Low.Val
