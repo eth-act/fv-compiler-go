@@ -88,8 +88,11 @@ def MState.word (s : MState) (a : BitVec 64) : BitVec 64 := (readMem s.mem a 8).
 
 /-- A call of the function at `entry` (§2, §5): the PC at the entry, `SP` 16-aligned with `room`
 bytes mapped below it for the frame (outside the nil page), the return address `X30` outside
-the code, and `R28` a `g` whose `stackguard0` (`16(g)`) lets the frame's stack check pass or
-branch to `morestack`. Arguments and memory are related to the source by the injection
+the code, `R28` a `g` whose `stackguard0` (`16(g)`) lets the frame's stack check pass or branch
+to `morestack`, and the frame-pointer chain: `R29 = SP - 8`, the caller's frame pointer after
+its prologue (`obj7.go`: a framed caller sets `R29` to its `SP - 8`, and its callees restore
+`R29` by recomputing it from their `SP` in the epilogue, `ADD $(autosize - 8), RSP, R29`, not by
+reloading it). Arguments and memory are related to the source by the injection
 (`GoFV/SSA/Sem/LocMatch.lean`), not here. -/
 structure MachEntry (code : Code) (entry : BitVec 64) (room : Nat) (s : MState) : Prop where
   pc : s.pc = entry
@@ -97,6 +100,7 @@ structure MachEntry (code : Code) (entry : BitVec 64) (room : Nat) (s : MState) 
   room : 4096 + room ≤ s.sp.toNat
   lrOutside : code (s.x 30) = Option.none
   gOutside : 4096 ≤ (s.x 28).toNat
+  fp : s.x 29 = s.sp - 8
 
 /-- After the prologue of a framed function with frame size `autosize` (`obj7.go`
 `preprocess`): `SP` lowered by `autosize`, the caller's `LR` saved at `0(SP)` and its `FP` at
@@ -124,13 +128,16 @@ def MState.const (r sp pc : BitVec 64) : MState :=
   { x := fun _ => r, sp, v := fun _ => 0, nzcv := GoFV.SSA.Sem.Flags.ofNZCV 0, pc,
     mem := fun _ => 0 }
 
-/-- `MachEntry` is satisfiable: no code, SP = 2^20, LR = g = 2^16. -/
-example : MachEntry (fun _ => Option.none) 0x1000 4096 (MState.const 0x10000 0x100000 0x1000) where
+/-- `MachEntry` is satisfiable: no code, SP = 2^20, LR = g = 2^16, R29 = SP - 8. -/
+example : MachEntry (fun _ => Option.none) 0x1000 4096
+    { MState.const 0x10000 0x100000 0x1000 with
+      x := fun i => if i = 29 then 0x100000 - 8 else 0x10000 } where
   pc := rfl
   spAlign := by decide
   room := by decide
   lrOutside := rfl
   gOutside := by decide
+  fp := rfl
 
 /-- A run of no code whose PC is already the return address returns. -/
 example : (runMach Hooks.none (fun _ => Option.none) 0x2000 1

@@ -87,26 +87,38 @@ def abiReg (s : MState) (r : Nat) : BitVec 64 :=
 def setAbiReg (s : MState) (r : Nat) (x : BitVec 64) : MState :=
   if r < 16 then s.wX (BitVec.ofNat 5 r) x else s.wV (BitVec.ofNat 5 (r - 16)) (x.setWidth 128)
 
-/-- The Phase 1 bytes of a register piece of `n` bytes (a word that is a window address: the
-pointer's fragments). -/
-def Layout.regBytes (L : Layout) (x : BitVec 64) (n : Nat) : Array Byte :=
-  if n == 8 then
-    match L.windowPtr? x with
-    | some p => ptrBytes p
-    | none => intBytes 8 x.toNat
-  else intBytes n x.toNat
+/-- The Phase 1 bytes of a register piece of shape `t`: a pointer-shaped piece whose word is a
+window address is that pointer's fragments (heap addresses are concrete bytes, as Phase 1
+stores them); every other piece its low bytes. -/
+def Layout.regBytes (L : Layout) (x : BitVec 64) (t : Ty) : Array Byte :=
+  match t, L.windowPtr? x with
+  | .ptr _, some p => ptrBytes p
+  | t, _ => intBytes t.size x.toNat
 
-/-- The Go-typed arguments of a call (`ins`: the input ABI assignments) read from the machine. -/
-def Layout.abiArgs (L : Layout) (tabs : Tables) (s : MState) (ins : List ABIParam) :
-    List (Array Byte × Ty) :=
+/-- An ABI assignment of a parameter or result: its shape, its registers (`abi.RegIndex`, in
+`leaves` order), its stack offset (from `SP` at the call, the fixed frame word included). -/
+structure AbiSlot where
+  ty : Ty
+  regs : List Nat
+  offset : Int
+
+/-- The assignment of an exported `ABIParam` (its type in the tables `tabs`). -/
+def AbiSlot.ofParam (tabs : Tables) (p : ABIParam) : AbiSlot :=
+  ⟨tabs.ty p.type, p.regs.toList, p.offset⟩
+
+/-- The inputs and outputs of exported ABI assignments. -/
+def AbiSlot.ofParams (tabs : Tables) (ps : List ABIParam) : List AbiSlot × List AbiSlot :=
+  ((ps.filter (!·.out)).map (.ofParam tabs), (ps.filter (·.out)).map (.ofParam tabs))
+
+/-- The Go-typed arguments of a call (`ins`) read from the machine: their bytes and shapes. -/
+def Layout.abiArgs (L : Layout) (s : MState) (ins : List AbiSlot) : List (Array Byte × Ty) :=
   ins.map fun p =>
-    let t := tabs.ty p.type
-    if p.regs.isEmpty then (L.pullBytes s (s.sp + BitVec.ofInt 64 p.offset) t.size, t)
+    if p.regs.isEmpty then (L.pullBytes s (s.sp + BitVec.ofInt 64 p.offset) p.ty.size, p.ty)
     else
-      let buf := ((leaves t).zip p.regs.toList).foldl
-        (fun buf ((o, lt), r) => putBytes buf o (L.regBytes (abiReg s r) lt.size))
-        (Array.replicate t.size Byte.poison)
-      (buf, t)
+      let buf := ((leaves p.ty).zip p.regs).foldl
+        (fun buf ((o, lt), r) => putBytes buf o (L.regBytes (abiReg s r) lt))
+        (Array.replicate p.ty.size Byte.poison)
+      (buf, p.ty)
 
 /-- The machine word of Phase 1 bytes (`poison` and unmapped fragments: 0). -/
 def Layout.wordOf (L : Layout) (s : MState) (bs : Array Byte) : BitVec 64 :=
@@ -115,31 +127,27 @@ def Layout.wordOf (L : Layout) (s : MState) (bs : Array Byte) : BitVec 64 :=
 
 /-- The results `rs` (Go-typed) written to their ABI locations (`outs`): register pieces, and
 stack slots at `SP + offset` as memory writes. `none` if they do not match. -/
-def Layout.abiResults (L : Layout) (tabs : Tables) (s : MState) :
-    List ABIParam → List Val → Option (MState × Array (BitVec 64 × BitVec 8))
+def Layout.abiResults (L : Layout) (s : MState) :
+    List AbiSlot → List Val → Option (MState × Array (BitVec 64 × BitVec 8))
   | [], [] => some (s, #[])
   | p :: ps, r :: rs => do
-    let t := tabs.ty p.type
-    let bs := encode t (r.retype t)
+    let bs := encode p.ty (r.retype p.ty)
     if p.regs.isEmpty then
       let a := s.sp + BitVec.ofInt 64 p.offset
       let ws := (List.range bs.size).toArray.filterMap fun i =>
         (L.pushByte s bs[i]!).map fun x => (a + BitVec.ofNat 64 i, x)
-      let (s', ws') ← L.abiResults tabs s ps rs
+      let (s', ws') ← L.abiResults s ps rs
       return (s', ws ++ ws')
     else
-      let s := ((leaves t).zip p.regs.toList).foldl (fun s ((o, lt), reg) =>
+      let s := ((leaves p.ty).zip p.regs).foldl (fun s ((o, lt), reg) =>
         setAbiReg s reg (L.wordOf s (bs.extract o (o + lt.size)))) s
-      L.abiResults tabs s ps rs
+      L.abiResults s ps rs
   | _, _ => none
 
-/-- Phase 1's contract `c` of a callee with ABI assignments `params` (in the caller's tables
-`tabs`), lifted to the machine (see the module comment). -/
-def liftContract (L : Layout) (tabs : Tables) (params : List ABIParam) (c : Contract)
-    (s : MState) : HookRes :=
-  let ins := params.filter (!·.out)
-  let outs := params.filter (·.out)
-  let args := L.abiArgs tabs s ins
+/-- Phase 1's contract `c` of a callee with ABI assignments `ins`, `outs`, lifted to the
+machine (see the module comment). -/
+def liftContract (L : Layout) (ins outs : List AbiSlot) (c : Contract) (s : MState) : HookRes :=
+  let args := L.abiArgs s ins
   let roots := args.foldl (fun acc (bs, _) => L.pointees s bs ++ acc) []
   let m0 := L.pull s roots
   let vals := args.map fun (bs, t) => GoFV.SSA.Sem.decode bs 0 t
@@ -152,7 +160,7 @@ def liftContract (L : Layout) (tabs : Tables) (params : List ABIParam) (c : Cont
     match back m with
     | none => .stuck "hook: a block of the callee's memory has no address"
     | some (ws, s1) =>
-      match L.abiResults tabs (clobber s1) outs rs with
+      match L.abiResults (clobber s1) outs rs with
       | some (s2, ws2) => .ret { s2 with pc := s.x 30, mem := s.mem } (ws ++ ws2)
       | none => .stuck "hook: results do not match the ABI"
   | .panicked e m =>
@@ -160,6 +168,15 @@ def liftContract (L : Layout) (tabs : Tables) (params : List ABIParam) (c : Cont
     | some (ws, _) => .panicked e s ws
     | none => .panicked e s #[]
   | .stuck msg => .stuck msg
+
+/-- Runtime entry points the compiler calls from a fixed-register op rather than an SSA call
+with an `AuxCall` (`ARM64.rules`, `ARM64Ops.go`): their ABIInternal assignments.
+`LoweredMemEq` (`R0`, `R1`, `R2` → `R0`) calls `runtime.memequal(a, b unsafe.Pointer, size
+uintptr) bool`. -/
+def fixedABI : String → Option (List AbiSlot × List AbiSlot)
+  | "runtime.memequal" =>
+    some ([⟨.ptr none, [0], 0⟩, ⟨.ptr none, [1], 0⟩, ⟨.int .w64, [2], 0⟩], [⟨.bool, [0], 0⟩])
+  | _ => none
 
 /-- `runtime.morestack`: grow the stack in place and resume after the call (module comment). -/
 def morestackHook (R : RtInfo) (s : MState) : HookRes :=
@@ -247,8 +264,9 @@ def rtHookNamed (R : RtInfo) (name : String) (s : MState) : HookRes :=
     match R.funcs.find? fun f => f.entry.toNat < ret.toNat && ret.toNat ≤ f.entry.toNat + f.size with
     | none => .stuck s!"{name}: caller unknown"
     | some f =>
-      match f.callABI name, R.env.extern name with
-      | some (tabs, params), some c => liftContract R.layout tabs params c s
+      let abi := (f.callABI name).map (fun (tabs, ps) => AbiSlot.ofParams tabs ps) <|> fixedABI name
+      match abi, R.env.extern name with
+      | some (ins, outs), some c => liftContract R.layout ins outs c s
       | none, _ => .stuck s!"{name}: no ABI for the call in {f.name}"
       | _, none => .stuck s!"{name}: no contract"
 

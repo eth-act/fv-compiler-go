@@ -42,19 +42,24 @@ namespace GoFVTest.MachDiff
 
 def _root_.BitVec.toUInt64 (a : BitVec 64) : UInt64 := UInt64.ofBitVec a
 
-/-! ## Address plan (all below `2^40`, where no heap block is) -/
+/-! ## Address plan
 
-def TEXT0 : Nat := 0x400000
-def HOOK0 : Nat := 0x4000000
-def RET0 : BitVec 64 := 0x7ff0000
-def DATA0 : Nat := 0x10000000
-def GADDR : BitVec 64 := 0x20000000
-def RTADDR : BitVec 64 := 0x30000000
-def WBUF : BitVec 64 := 0x38000000
+All below `2^40`, where no heap block is, and away from round numbers: a word of memory that
+holds an address inside a window is read back as a pointer (`Layout.pullBytes`), so the windows
+should not sit where the test's integers (edge values, powers of two) fall. Code, entry points
+and data are within `ADRP`'s ±4 GB and the entry points within `BL`'s ±128 MB of the code. -/
+
+def TEXT0 : Nat := 0x53a5c0000
+def HOOK0 : Nat := TEXT0 + 0x4000000
+def RET0 : BitVec 64 := BitVec.ofNat 64 (HOOK0 + 0x3ff0000)
+def DATA0 : Nat := 0x56b7d0000
+def GADDR : BitVec 64 := 0x57c3e1000
+def RTADDR : BitVec 64 := 0x57d4f2000
+def WBUF : BitVec 64 := 0x57e5a3000
 /-- The stack region `[STACK_LO, STACK_HI)`: the goroutine starts with 8 KB and `morestack`
 grows it in place. -/
-def STACK_LO : Nat := 0x8000000000
-def STACK_HI : Nat := 0x8001000000
+def STACK_LO : Nat := 0xe5d3000000
+def STACK_HI : Nat := STACK_LO + 0x1000000
 /-- The part of the stack a runtime entry point can see (`Layout`'s window `gofv:stack`). -/
 def STACK_WINDOW : Nat := 0x10000
 def stackBlk : Blk := .global "gofv:stack"
@@ -212,6 +217,8 @@ def link (dir : String) : IO (Except String Program) := do
     addr := addr.insert fn.name fn.base
     windows := windows.push { blk := .global fn.name, base := BitVec.ofNat 64 fn.base,
                               size := fn.prog.asm.text.size, data := false, writable := false }
+  -- a program function's symbol is its code, not a data block (closures point to it)
+  gorder := gorder.filter fun k => !byName.contains k
   for k in gorder do
     let a := globals[k]!
     addr := addr.insert k dataNext
@@ -416,8 +423,9 @@ def entryState (P : Program) (fn : Fn) (params : List ABIParam) (imgs : Array (A
     else
       s := ((leaves t).zip p.regs.toList).foldl (fun s ((o, lt), r) =>
         setAbiReg s r (L.wordOf s (bs.extract o (o + lt.size)))) s
+  -- MachEntry: X30 the return address, R28 g, R29 = SP - 8 (the frame-pointer chain)
   s := { s with x := fun i => if i = 30 then RET0 else if i = 28 then GADDR
-                    else if i = 29 then BitVec.ofNat 64 (STACK_HI - 16) else s.x i }
+                    else if i = 29 then s.sp - 8 else s.x i }
   return (s, pm)
 
 /-- The final Phase 1 memory a printed outcome reads: the blocks reachable from the results'
@@ -431,14 +439,15 @@ def render (P : Program) (fn : Fn) (l : SemDiff.Loaded) (params : List ABIParam)
   | .returned s =>
     let L := P.rt.layout
     if s.sp != s0.sp || s.x 28 != s0.x 28 || s.x 29 != s0.x 29 then
-      "stuck: return without MachRet (SP, R28 or R29 not restored)"
+      s!"stuck: return without MachRet (SP {s0.sp.toHex} → {s.sp.toHex}, R28 {(s0.x 28).toHex} → \
+        {(s.x 28).toHex}, R29 {(s0.x 29).toHex} → {(s.x 29).toHex})"
     else
     let outs := params.filter (·.out)
     let rbytes := outs.map fun p =>
       let t := fn.tabs.ty p.type
       if p.regs.isEmpty then L.pullBytes s (s.sp + BitVec.ofInt 64 p.offset) t.size
       else ((leaves t).zip p.regs.toList).foldl
-        (fun buf ((o, lt), r) => putBytes buf o (L.regBytes (abiReg s r) lt.size))
+        (fun buf ((o, lt), r) => putBytes buf o (L.regBytes (abiReg s r) lt))
         (Array.replicate t.size Byte.poison)
     let m := finalMem L s (rbytes ++ imgs.toList)
     let rsT := (rbytes.zip l.results.toList).map fun (bs, t) =>
