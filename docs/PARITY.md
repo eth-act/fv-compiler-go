@@ -267,7 +267,8 @@ tail's `weakenGlobalMapInitRelocs`. It compares with the `asm` section (M), per 
 5. **data**: the `$f32.`/`$f64.`/`$i64.` constants `progedit` creates and the jump-table words.
 
 A difference caused outside the port is classed `explained:<class>`: it counts as a match of
-its cut and the function as "exact or explained". There is one such class:
+its cut and the function as "exact or explained". There are two such classes (the second,
+`explained:text:sym-align`, is described with the full-v10 result below). The first is
 `explained:text:reloc:pre-flush-markers`. The frontend puts zero-size marker relocations on the
 function's `LSym.R` before assembly (`R_USEIFACE`/`R_USEIFACEMETHOD`/`R_USENAMEDMETHOD` from
 `reflectdata.MarkTypeUsedInInterface`, `MarkUsedIfaceMethod` and `walk`), so they come first in
@@ -288,7 +289,18 @@ Result on quick-v9 (9,297 functions, 570,997 asm Progs, 1,909,776 text bytes; 12
 | end to end, exact | 9297 | 7540 | 1757 | 81.10% |
 | end to end, exact or explained | 9297 | 9297 | 0 | 100% |
 
-The 1,757 inexact functions are all `explained:text:reloc:pre-flush-markers`. Paths that compiled
+The 1,757 inexact functions are all `explained:text:reloc:pre-flush-markers`.
+
+Result on full-v10 (by path; 96,634 functions, 9,059,979 asm Progs, 30,514,928 text bytes; 49 s
+with 8 jobs): every cut 100% exact or explained; end to end exact 68,260 (70.63%), explained
+28,374: `explained:text:reloc:pre-flush-markers` in all of them, and in 2 also
+`explained:text:sym-align` (`crypto/internal/fips140/check/checktest.init.0` and
+`crypto/internal/fips140/aes/gcm.init.0.func1` load `.stmp_<n>` symbols whose `LSym.Align` is
+below 8, so `Optab.size` picks the 12-byte `ADRP`+`ADD`+load form; `gofv-prog 2` does not record
+the alignment of data symbols, which the port then takes as 0 like other packages' symbols; the
+harness reruns the port with `Align = 1` for the operands that the stock encoding shows to be
+under-aligned and accepts only an exact match). gen-parity on full-v10: frame, f.RegArgs, prog0
+and end to end 96,634/96,634 (100%), 7,044,350 prog0 Progs. Paths that compiled
 linux/arm64 code does not take fail loudly rather than being guessed: `-dynlink`
 (`rewriteToUseGot` needs symbol kinds the export does not record), `MRS`/`MSR` (asmout cases
 35–37), SVE (case 127), a `//line` position base whose own position is not line 1 (pcline needs
