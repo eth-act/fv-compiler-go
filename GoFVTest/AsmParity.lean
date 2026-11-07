@@ -332,6 +332,24 @@ def Cmp.data (c : Cmp) : Option (String × String) := Id.run do
         {(dx.map cdataStr).getD "none"}, stock {(dy.map cdataStr).getD "none"}")
   return none
 
+/-- Symbols whose `LSym.Align` the stock encoding shows to be below the access size: operands
+of `C_ADDR` loads/stores (`movesize` 0–3) at an aligned offset that the stock assembled to 12
+bytes (the next Prog's PC). -/
+def addrAlignHints (pf : ProgFile) : Std.HashMap Nat Int := Id.run do
+  let ps := pf.asm.progs
+  let mut m := {}
+  for h : i in [0:ps.size] do
+    let p := ps[i]
+    let some o := optabAt? p.optab | continue
+    let sz := movesize p.as
+    if sz < 0 || sz > 3 then continue
+    let some q := ps[i + 1]? | continue
+    if q.pc - p.pc != 12 then continue
+    for (cls, a) in [(o.a1, p.from_), (o.a4, p.to)] do
+      if cls == ARM64.C_ADDR.toNat && a.offset % (2 ^ sz.toNat : Nat) == 0 then
+        if let some y := a.sym then m := m.insert y 1
+  return m
+
 /-! ## Driver -/
 
 def checkFile (maxReport : Nat) (path : System.FilePath) (st : Stats) : IO Stats := do
@@ -348,11 +366,28 @@ def checkFile (maxReport : Nat) (path : System.FilePath) (st : Stats) : IO Stats
   | .error msg => return st.record maxReport file (errClass msg) msg
   | .ok out =>
   let fsyms := fileSyms pf
-  let c : Cmp := { ours := fun k => out.st.syms[k]?, stock := fun k => fsyms[k]?, out, pf }
+  let cmps (out : FlushOut) : Array (Option (String × String)) :=
+    let c : Cmp := { ours := fun k => out.st.syms[k]?, stock := fun k => fsyms[k]?, out, pf }
+    #[c.progs, c.fn, c.text, c.pcln, c.data]
+  let real (rs : Array (Option (String × String))) : Bool :=
+    rs.any fun r => match r with | some (cls, _) => !cls.startsWith "explained:" | none => false
+  let mut rs := cmps out
+  -- Unrecorded symbol alignment: rerun with `LSym.Align = 1` for the symbols of `C_ADDR`
+  -- loads/stores whose stock encoding is the 12-byte form although their offset is aligned
+  -- (`Optab.size`, `asm7.go:1107-1140`), and accept only an exact match.
+  if real rs then
+    let al := addrAlignHints pf
+    if !al.isEmpty then
+      if let .ok out2 := flush pf al then
+        let rs2 := cmps out2
+        if !real rs2 then
+          let syms := al.toList.map fun (k, _) => symStr fsyms[k]?
+          rs := rs2.push (some ("explained:text:sym-align", s!"with Align 1 for {syms}"))
   let mut st := st
   let mut ok := true
   let mut exact := true
-  for (sel, get) in [(0, c.progs), (1, c.fn), (2, c.text), (3, c.pcln), (4, c.data)] do
+  for h : sel in [0:rs.size] do
+    let get := rs[sel]
     let mut res := get
     if let some (cls, m) := get then
       if cls.startsWith "explained:" then
@@ -366,7 +401,8 @@ def checkFile (maxReport : Nat) (path : System.FilePath) (st : Stats) : IO Stats
         | 1 => { st with fnMatch := st.fnMatch + 1 }
         | 2 => { st with textMatch := st.textMatch + 1 }
         | 3 => { st with pclnMatch := st.pclnMatch + 1 }
-        | _ => { st with dataMatch := st.dataMatch + 1 }
+        | 4 => { st with dataMatch := st.dataMatch + 1 }
+        | _ => st
     | some (cls, m) => st := st.record maxReport file cls m; ok := false
   if ok then
     st := if exact then { st with allMatch := st.allMatch + 1 }

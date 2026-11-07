@@ -182,10 +182,13 @@ structure FlushOut where
   fn : FuncInfo
   deriving Inhabited
 
-/-- `Flushplist` on the function of a `.prog` file, from its `prog0` section. -/
-def flush (pf : ProgFile) : Except String FlushOut := do
+/-- `Flushplist` on the function of a `.prog` file, from its `prog0` section. `symAlign` gives
+`LSym.Align` of input symbols (by number) that the export does not record (default: unknown,
+0, as for symbols of other packages). -/
+def flush (pf : ProgFile) (symAlign : Std.HashMap Nat Int := {}) : Except String FlushOut := do
   let ctx ← AsmCtxt.ofFile pf
   let st ← AsmSt.ofProg0 pf
+  let st := { st with symAlign := symAlign }
   let ((), st) ← (flushSteps.run ctx).run st
   let (progs, fn) := renumber st
   return { st, progs, fn }
