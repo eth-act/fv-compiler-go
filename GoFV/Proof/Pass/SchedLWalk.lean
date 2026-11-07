@@ -10,10 +10,11 @@ Before the source's panicking value `r` the target runs values the source ran be
 (alike, `stepT`), values that never fail (`Cls.safe`), parameters' register pieces (`argOK`:
 they evaluate), and values `swapOK` lets it run first (the source's `r` cannot be a load or nil
 check whose pointer is a nil check's result, `SP`, `GetG` or the closure pointer, `nnBase`: that
-pointer has no nil base) (a load on `r`'s memory, or a nil check on it of `r`'s pointer word or
-of a pointer-shaped parameter piece the source ran before `r`, which reads nil or a pointer that
-is not wild, `ArgPtrsAt`), which evaluate or panic with `nilDeref` of that memory, as `r` does;
-at `r` the target panics as the source.
+pointer has no nil base) (a load on `r`'s memory, which may also be the memory of the `LDAR*`
+whose `Select1` `r`'s is, `ldReach_src`, or a nil check on it of `r`'s pointer word or of a
+pointer-shaped parameter piece the source ran before `r`, which reads nil or a pointer that is
+not wild, `ArgPtrsAt`), which evaluate or panic with `nilDeref` of that memory, as `r` does; at
+`r` the target panics as the source.
 -/
 
 namespace GoFV.Proof.SchedL
@@ -67,6 +68,77 @@ theorem spa_not_mayPanic {v : Value} (h : v.op = .SPanchored) : mayPanic tabs v 
   have h2 : Op.SPanchored.call = false := by decide
   have h3 : Op.SPanchored.nilCheck = false := by decide
   unfold mayPanic; rw [h]; simp [h1, h2, h3]
+
+/-! ## Memories through acquiring loads -/
+
+theorem srcPos_pos {n : Nat} {l : List ID} {x : ID} (h : 0 < (srcPos n l)[x]!) : x ∈ l := by
+  by_cases hx : x ∈ l
+  · exact hx
+  · rw [srcPos_out hx] at h; exact absurd h (Nat.lt_irrefl 0)
+
+theorem ldMem1_spec {pS : Array Nat} {ℓ ℓ' : ID} (h : ldMem1 f pS ℓ = some ℓ') :
+    ∃ vz l vl, f.value? ℓ = some vz ∧ vz.op = .Select1 ∧ 0 < pS[ℓ]! ∧ vz.args.toList = [l] ∧
+      f.value? l = some vl ∧ ldarOp vl.op = true ∧ 0 < pS[l]! ∧ vl.args.back? = some ℓ' := by
+  unfold ldMem1 at h
+  split at h
+  · rename_i vz hvz
+    split at h
+    · rename_i hc
+      simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hc
+      split at h
+      · rename_i l hl
+        split at h
+        · rename_i vl hvl
+          split at h
+          · rename_i hc2
+            simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hc2
+            exact ⟨vz, l, vl, hvz, hc.1, hc.2, hl, hvl, hc2.1.1, hc2.2, h⟩
+          · cases h
+        · cases h
+      · cases h
+    · cases h
+  · cases h
+
+/-- **`ldReach` along the source**: the memory the source's frame `H` holds at `ℓ` (when `ℓ` is in
+the block, the source ran it) it holds at every `ℓ'` that `ldReach` reaches from `ℓ`, which is
+`ℓ` or the memory argument of an `LDAR*` the source ran. -/
+theorem ldReach_src {oS : List ID} {frPS H : Frame} {P : List ID}
+    (Sr : Src tabs f md env frPS H P) (hPc : ∀ x ∈ P, ∀ a ∈ argsF f x, a ∈ oS → a ∈ P)
+    {m : Mem} :
+    ∀ (k : Nat) (ℓ ℓ' : ID), ldReach f (srcPos f.valueTab.size oS) k ℓ ℓ' = true →
+      (ℓ ∈ oS → ℓ ∈ P) → H.regs[ℓ]? = some (some (.mem m)) →
+      H.regs[ℓ']? = some (some (.mem m)) ∧
+        (ℓ' = ℓ ∨ ∃ l ∈ P, ∃ vl, f.value? l = some vl ∧ vl.args.back? = some ℓ')
+  | 0, ℓ, ℓ', hr, _, h => by
+    simp only [ldReach, beq_iff_eq] at hr; subst hr; exact ⟨h, .inl rfl⟩
+  | k + 1, ℓ, ℓ', hr, hℓP, h => by
+    unfold ldReach at hr
+    by_cases he : ℓ = ℓ'
+    · subst he; exact ⟨h, .inl rfl⟩
+    have he' : (ℓ == ℓ') = false := by simpa using he
+    rw [he', Bool.false_or] at hr
+    cases h1 : ldMem1 f (srcPos f.valueTab.size oS) ℓ with
+    | none => rw [h1] at hr; cases hr
+    | some ℓ'' =>
+      rw [h1] at hr
+      obtain ⟨vz, l, vl, hvz, hz, hpz, hza, hvl, hl, hpl, hb⟩ := ldMem1_spec h1
+      have hℓS := hℓP (srcPos_pos hpz)
+      have hla : l ∈ argsF f ℓ := by rw [argsF_of hvz, hza]; exact List.mem_singleton_self l
+      have hlP : l ∈ P := hPc ℓ hℓS l hla (srcPos_pos hpl)
+      obtain ⟨vz', y, hvz', hy, hevz⟩ := Sr.eval ℓ hℓS
+      rw [hvz] at hvz'; cases hvz'
+      rw [h] at hy; cases hy
+      obtain ⟨vl', yl, hvl', hyl, hevl⟩ := Sr.eval l hlP
+      rw [hvl] at hvl'; cases hvl'
+      obtain ⟨ℓ3, hb', hH'⟩ := evalValueL_select1_ldar hz hza hl hyl hevl hevz
+      rw [hb] at hb'; cases hb'
+      have hℓ''a : ℓ'' ∈ argsF f l := by
+        rw [argsF_of hvl]; exact Array.mem_toList_iff.2 (Array.mem_of_getElem? (back_get hb))
+      obtain ⟨hH, hc⟩ := ldReach_src Sr hPc k ℓ'' ℓ' hr (hPc l hlP ℓ'' hℓ''a) hH'
+      refine ⟨hH, .inr ?_⟩
+      rcases hc with hc | hc
+      · subst hc; exact ⟨l, hlP, vl, hvl, hb⟩
+      · exact hc
 
 /-! ## The walk -/
 
@@ -156,7 +228,7 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
           rw [hvq] at hvq'; cases hvq'
           rcases hc with hqnc | hop | ⟨hop, hw⟩
           · have hu := S.argUse hvr hq0
-            obtain ⟨-, hne, -, -, -, hsh⟩ := nc_shape hu hqnc
+            obtain ⟨hne, hsh⟩ := nc_step1 hu hqnc
             exact (ncNonNil hvq (B.sOwn q hqS vq hvq) hqnc ⟨y, hy, hevq⟩ Sr.typed hsh hne a
               hHp).not_nilBase
           · rw [hHp] at hy; cases hy
@@ -239,19 +311,38 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
     exact .inr ⟨z, hz, fun h => absurd h hyP⟩
   simp only [hao, hmp, hrnb, Bool.not_true, Bool.false_or, Bool.and_eq_true, Bool.or_eq_true,
     beq_iff_eq, Bool.not_eq_true'] at hsw
-  obtain ⟨hcr, hlast, hnspa⟩ : (cls tabs vr = .load ∨ cls tabs vr = .nil) ∧
-      vr.args.back? = fv.args.back? ∧ vr.args.back?.any (isSPA f) = false := by
-    rcases hsw with ⟨⟨⟨h1, h2⟩, h3⟩, -⟩ | ⟨⟨⟨⟨h1, h2⟩, h3⟩, -⟩, -⟩ <;> exact ⟨h1, h2, h3⟩
-  obtain ⟨rfl, ℓ, hℓ, hHℓ⟩ := hld hcr
-  have hℓspa : isSPA f ℓ = false := by rw [hℓ] at hnspa; simpa using hnspa
+  obtain ⟨hcr, hsm⟩ : (cls tabs vr = .load ∨ cls tabs vr = .nil) ∧
+      sameMem f (srcPos f.valueTab.size (pre ++ r :: post)) vr fv = true := by
+    rcases hsw with ⟨⟨h1, h2⟩, -⟩ | ⟨⟨⟨h1, h2⟩, -⟩, -⟩ <;> exact ⟨h1, h2⟩
+  obtain ⟨rfl, ℓx, hℓx, hHℓx⟩ := hld hcr
   have hDo : ∀ a ∈ oT.take j, a ∈ oT := fun a ha => List.mem_of_mem_take ha
-  -- the memory: `y`'s last argument is `r`'s
-  have hfℓ : fv.args[fv.args.size - 1]? = some ℓ := back_get (by rw [← hlast]; exact hℓ)
+  -- the memory: `y`'s last argument `ℓ` is `r`'s, or the memory argument of an `LDAR*` whose
+  -- `Select1` `r`'s reaches (`ldReach`), which holds the same memory
+  obtain ⟨ℓ, hfb, hreach, hℓspa⟩ : ∃ ℓ, fv.args.back? = some ℓ ∧
+      ldReach f (srcPos f.valueTab.size (pre ++ r :: post)) f.valueTab.size ℓx ℓ = true ∧
+      isSPA f ℓ = false := by
+    unfold sameMem at hsm
+    rw [hℓx] at hsm
+    cases hfb : fv.args.back? with
+    | none => rw [hfb] at hsm; cases hsm
+    | some ℓ =>
+      rw [hfb] at hsm
+      simp only [Bool.and_eq_true, Bool.not_eq_true'] at hsm
+      exact ⟨ℓ, rfl, hsm.1, hsm.2⟩
+  have hfℓ : fv.args[fv.args.size - 1]? = some ℓ := back_get hfb
   obtain ⟨hgℓ, hgℓm⟩ := argsF_g hgv hrv hfℓ
+  have hℓxr : ℓx ∈ argsF f r := by
+    rw [argsF_of hvr]; exact Array.mem_toList_iff.2 (Array.mem_of_getElem? (back_get hℓx))
+  obtain ⟨hHℓ, hcase⟩ := ldReach_src Sr hPc f.valueTab.size ℓx ℓ hreach (hdoneR ℓx hℓxr) hHℓx
   have hTℓ : T.regs[rep f ℓ]? = some (some (.mem m)) := by
-    obtain ⟨-, -, hns, -⟩ := argFact S B Sr hPS hPc I hDo hvr hrS hdoneR (back_get hℓ)
-      (fun hm => topo_before B.tTopo hyj hgℓm hm)
-    rw [hns hℓspa, hHℓ]
+    have hrepT : rep f ℓ ∈ oT → rep f ℓ ∈ oT.take j := fun hm => topo_before B.tTopo hyj hgℓm hm
+    rcases hcase with hc | ⟨l, hlP, vl, hvl, hb⟩
+    · subst hc
+      obtain ⟨-, -, hns, -⟩ := argFact S B Sr hPS hPc I hDo hvr hrS hdoneR (back_get hℓx) hrepT
+      rw [hns hℓspa, hHℓ]
+    · obtain ⟨-, -, hns, -⟩ := argFact S B Sr hPS hPc I hDo hvl (hPS l hlP)
+        (fun a ha hm => hPc l hlP a ha hm) (back_get hb) hrepT
+      rw [hns hℓspa, hHℓ]
   have hgsz : gv.args.size = fv.args.size := by rw [hrv.args, Array.size_map]
   rcases hsw with ⟨-, (hload | ⟨⟨⟨hnil, hrk⟩, h0⟩, hall⟩) | ⟨hnil, hany⟩⟩ | ⟨⟨-, hnil⟩, hany⟩
   · rcases evalValueL_load (env := env) hf (hcl.trans hload) hargsT with ⟨z, hz⟩ |
@@ -303,12 +394,7 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
       exact hpok.1.1
     have hpnc : isNC f p = false := by rw [isNC_of hvp, hpop]; rfl
     have hpspa : isSPA f p = false := by rw [isSPA_of hvp, hpop]; rfl
-    have hrepp : rep f p = p := by
-      unfold rep
-      rw [hvp]
-      dsimp only
-      rw [hpop]
-      rfl
+    have hrepp : rep f p = p := rep_self hpnc hpspa
     have hf1 : fv.args[1]? = some ℓ := by rw [hsz2] at hfℓ; exact hfℓ
     have hfargs : fv.args = #[p, ℓ] := arr_two hsz2 hp0 hf1
     have hgargs : gv.args = #[p, rep f ℓ] := by rw [hrv.args, hfargs]; simp [hrepp]
@@ -345,17 +431,17 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
     · obtain ⟨w, hw⟩ := evalValueL_nc_pass (md := md) (env := env) (ctx := Ctx.makeSched tabs g)
         (hrv.op.trans hnc) hgargs hTp ⟨q, hq, hqb⟩ hTℓ
       exact .inr ⟨w, hw, fun h => absurd h hyP⟩
-  · -- `y` is a nil check of a pointer-shaped value `q` that the source ran before `r` or that is
-    -- outside the block: `NilPtrsOK`
+  · -- `y` is a nil check of a value whose bypass `q` is pointer-shaped and that the source ran
+    -- before `r` or that is outside the block: `NilPtrsOK`
     obtain ⟨hnc, hsz2⟩ := cls_nil hnil
-    obtain ⟨q, hq0⟩ : ∃ q, fv.args[0]? = some q := ⟨fv.args[0], by simp [hsz2]⟩
+    obtain ⟨q0, hq0⟩ : ∃ q, fv.args[0]? = some q := ⟨fv.args[0], by simp [hsz2]⟩
     rw [hq0] at hany
     simp only [Option.any_some, Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at hany
     obtain ⟨⟨⟨hsh, hqnc⟩, hqspa⟩, hposr⟩ := hany
-    have hrepq : rep f q = q := rep_self hqnc hqspa
+    generalize hqdef : rep f q0 = q at hsh hqnc hqspa hposr
     have hf1 : fv.args[1]? = some ℓ := by rw [hsz2] at hfℓ; exact hfℓ
-    have hfargs : fv.args = #[q, ℓ] := arr_two hsz2 hq0 hf1
-    have hgargs : gv.args = #[q, rep f ℓ] := by rw [hrv.args, hfargs]; simp [hrepq]
+    have hfargs : fv.args = #[q0, ℓ] := arr_two hsz2 hq0 hf1
+    have hgargs : gv.args = #[q, rep f ℓ] := by rw [hrv.args, hfargs, ← hqdef]; simp
     -- the target's register of `q` is the source's at the panic
     have hTq : T.regs[q]? = H.regs[q]? := by
       by_cases hqS : q ∈ pre ++ r :: post
@@ -365,7 +451,7 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
           rw [List.getElem?_append_left (by omega)] at hk'
           exact List.mem_of_getElem? hk'
         obtain ⟨-, hg0m⟩ := argsF_g hgv hrv hq0
-        rw [hrepq] at hg0m
+        rw [hqdef] at hg0m
         have hqD : q ∈ oT.take j :=
           topo_before B.tTopo hyj hg0m ((B.tMem q).2 ⟨hPS q hqP, hqspa⟩)
         exact I.inP q hqD hqP hqnc
@@ -373,7 +459,21 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
         rw [I.out q hqD, B.agree q hqnc hqspa, Sr.out q (fun h => hqS (hPS q h))]
     obtain ⟨z, hz⟩ := hargsT q (by rw [hgargs]; simp)
     have hNRH : NilRegsOK tabs f H := hNR pre.length H (by rw [List.take_left]; exact hpre)
-    obtain ⟨p, hp, hpw⟩ := hNRH y fv q hfv (by rw [hnc]; rfl) hq0 hsh z (by rw [← hTq]; exact hz)
+    -- the nil check of the source that checks `q`: `y`, or the last of `q0`'s chain
+    have hu := S.argUse hfv hq0
+    have hq0spa : isSPA f q0 = false := by
+      cases h : isSPA f q0
+      · rfl
+      · obtain ⟨-, hsym, -⟩ := (use_rep hu).2.2.1 h
+        simp only [Option.map_some, Option.getD_some, hnc, Bool.and_eq_true] at hsym
+        exact absurd hsym.1 (by decide)
+    obtain ⟨c, vc, hvc, hcnc, hc0⟩ : ∃ c vc, f.value? c = some vc ∧ vc.op.nilCheck = true ∧
+        vc.args[0]? = some q := by
+      cases hn0 : isNC f q0
+      · refine ⟨y, fv, hfv, by rw [hnc]; rfl, ?_⟩
+        rw [hq0, ← hqdef, rep_self hn0 hq0spa]
+      · rw [← hqdef]; exact chain_last _ q0 (use_chain hu hn0) (Nat.le_refl _) hn0
+    obtain ⟨p, hp, hpw⟩ := hNRH c vc q hvc hcnc hc0 hsh z (by rw [← hTq]; exact hz)
     by_cases hpb : p.blk = .nil
     · have hpn : p.isNil = true := by simpa [Ptr.wild, hpb] using hpw
       exact .inl (evalValueL_nc_nil (env := env) (ctx := Ctx.makeSched tabs g) hf

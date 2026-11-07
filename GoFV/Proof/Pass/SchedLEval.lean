@@ -3,6 +3,7 @@ import GoFV.Proof.Speculate
 import GoFV.Opt.ScheduleCheck
 import GoFV.Proof.EvalOpLDispatch
 import GoFV.Proof.PtrAddr
+import GoFV.Proof.Pass.CSEOp
 
 /-!
 # `schedule` on `runSched`: what a value's class says about its evaluation
@@ -22,7 +23,10 @@ The classes of `scheduleCheck` (`GoFV.Opt.ScheduleCheck.cls`) under faulting eva
   a nil pointer on a memory panics with `nilDeref` of it (`evalValueL_nc_nil`);
 * a symbolic `symAddrOp` (`MOV*load`, `MOV*store`, `MOVDaddr` at a symbol or frame variable)
   ignores its first argument's value (`evalOpL_arg0`), which `schedule`'s `SPanchored` bypass
-  changes.
+  changes;
+* a `Select1` of an acquiring load `LDAR*` that evaluated to a memory holds the load's memory
+  argument's (`evalValueL_select1_ldar`: `atomicLoad` keeps the memory), what `sameMem`'s
+  `ldReach` steps read.
 -/
 
 namespace GoFV.Proof.SchedL
@@ -1026,6 +1030,122 @@ theorem evalValueL_vc {md : LMode} {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame}
       rw [hr] at hp; cases hp
       rw [hS.2 _ _ hr]; rfl
     | stuck msg => rw [hr] at hp; cases hp
+
+/-! ## `Select1` of an acquiring load -/
+
+theorem word_ne_mem (p : Ptr) (m : Mem) : p.word ≠ .mem m := by
+  unfold Ptr.word; split <;> nofun
+
+theorem Val.retype_eq_mem {t : Ty} {v : Val} {m : Mem} (h : v.retype t = .mem m) : v = .mem m := by
+  unfold Val.retype at h
+  split at h <;>
+    first
+    | exact h
+    | exact absurd h (word_ne_mem _ _)
+    | (split at h <;> cases h)
+    | (unfold Val.ofStr at h; split at h <;> cases h)
+    | (unfold Val.ofSlice at h; split at h <;> cases h)
+    | cases h
+
+theorem Val.widen_eq_mem {t : Ty} {v : Val} {m : Mem} (h : v.widen t = .mem m) : v = .mem m := by
+  unfold Val.widen at h
+  split at h <;>
+    first
+    | exact h
+    | (split at h <;> cases h)
+    | cases h
+
+/-- A value retyped to a memory was that memory. -/
+theorem LMode.retype_eq_mem {md : LMode} {t : Ty} {v : Val} {m : Mem}
+    (h : md.retype t v = .mem m) : v = .mem m := by
+  unfold LMode.retype at h
+  split at h
+  · exact Val.widen_eq_mem (Val.retype_eq_mem h)
+  · exact Val.retype_eq_mem h
+
+theorem LMode.retype_poison (md : LMode) (t : Ty) : md.retype t .poison = .poison := by
+  unfold LMode.retype Val.retypeL
+  split <;> cases t <;> rfl
+
+/-- **The memory of an acquiring load's result** at its shape is its memory argument's. -/
+theorem atomicLoad_mem {md : LMode} {t : Ty} {argv vs : List Val} {m : Mem}
+    (h : md.retype t (atomicLoad t argv) = .tuple vs) (h1 : vs.getD 1 .poison = .mem m) :
+    argv.getLast? = some (.mem m) := by
+  unfold atomicLoad at h
+  split at h
+  · rename_i a m'
+    split at h
+    · rename_i p vt hp
+      unfold LMode.retype at h
+      split at h <;>
+        simp [Val.retypeL, Val.widen, Val.widenList, Val.retype, Val.retypePre] at h <;>
+        subst h <;> simp at h1 <;> subst h1 <;> rfl
+    · rw [LMode.retype_poison] at h; cases h
+  · rw [LMode.retype_poison] at h; cases h
+
+theorem evalOpL_select1 {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
+    {argv : List Val} {ty : Ty} (h : v.op = .Select1) :
+    evalOpL faulting env ctx fr v argv ty = .ok (Tuple.select 1 argv) := by
+  have hg : v.op.generic = true := by rw [h]; rfl
+  rw [evalOpL_generic _ _ _ _ _ _ hg]
+  have hr : isRoot v.op = false := by rw [h]; rfl
+  rw [CSE.evalOp_tail hr (by rw [h]; nofun) (by rw [h]; nofun) (by rw [h]; nofun)
+    (by rw [h]; nofun) (by rw [h]; nofun)]
+  have hf : frameVal ctx v = none := by unfold frameVal; rw [h]
+  rw [hf, h]; rfl
+
+theorem ldarOp_cases {op : Op} (h : ldarOp op = true) :
+    op = .ARM64LDAR ∨ op = .ARM64LDARB ∨ op = .ARM64LDARW := by
+  simpa [ldarOp, or_assoc] using h
+
+theorem ldarOp_act {op : Op} (h : ldarOp op = true) : op ∈ actOps := by
+  rcases ldarOp_cases h with h | h | h <;> rw [h] <;> decide
+
+theorem arm64Op_ldar {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
+    {argv : List Val} {ty : Ty} (h : ldarOp v.op = true) :
+    arm64Op faulting env ctx fr v argv ty =
+      match nilFaults faulting ctx v argv with
+      | some m => .panic .nilDeref m
+      | none => .ok (atomicLoad ty argv) := by
+  unfold arm64Op
+  cases nilFaults faulting ctx v argv with
+  | some m => rfl
+  | none => rcases ldarOp_cases h with h | h | h <;> rw [h] <;> rfl
+
+/-- **A `Select1` of an acquiring load holds the load's memory argument's memory.** -/
+theorem evalValueL_select1_ldar {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {vz vl : Value}
+    {l : ID} {m : Mem} {yl : Val} (hz : vz.op = .Select1) (hza : vz.args.toList = [l])
+    (hl : ldarOp vl.op = true) (hyl : fr.regs[l]? = some (some yl))
+    (hevl : evalValueL md env ctx fr vl = .ok yl)
+    (hevz : evalValueL md env ctx fr vz = .ok (.mem m)) :
+    ∃ ℓ, vl.args.back? = some ℓ ∧ fr.regs[ℓ]? = some (some (.mem m)) := by
+  -- the `Select1` reads the second component of `yl`
+  obtain ⟨argv, hm⟩ := evalValueL_args_ok hevz (by intro msg hh; cases hh)
+  rw [evalValueL_bind hm, evalOpL_select1 hz] at hevz
+  have h2 := LMode.retype_eq_mem (Res.ok.inj hevz)
+  have hargv : argv = [yl] := by
+    have hlen := argsM_length hm
+    have h0 : vz.args[0]? = some l := by rw [← Array.getElem?_toList, hza]; rfl
+    obtain ⟨z, hz', hk⟩ := argsM_get hm h0
+    rw [hyl] at hz'; cases hz'
+    have hsz : vz.args.size = 1 := by rw [← Array.length_toList, hza]; rfl
+    rw [hsz] at hlen
+    match argv, hlen, hk with
+    | [a], _, hk => simp at hk; rw [hk]
+  subst hargv
+  unfold Tuple.select at h2
+  split at h2
+  · rename_i vs hvs
+    cases hvs
+    -- the `LDAR*`
+    obtain ⟨argl, hml⟩ := evalValueL_args_ok hevl (by intro msg hh; cases hh)
+    rw [evalValueL_bind hml, evalOpL_act (ldarOp_act hl), arm64Op_ldar hl] at hevl
+    cases hnf : nilFaults md.faulting ctx vl argl with
+    | some mm => rw [hnf] at hevl; cases hevl
+    | none =>
+      rw [hnf] at hevl
+      exact argsM_last hml (atomicLoad_mem (Res.ok.inj hevl) h2)
+  · cases h2
 
 end GoFV.Proof.SchedL
 

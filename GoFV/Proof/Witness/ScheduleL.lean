@@ -192,4 +192,108 @@ theorem clampNP_nilPtr :
         (srcPos 28 [1, 8, 9, 10, 26, 25, 27, 22]) 26 27 = false := by
   decide +kernel
 
+/-- `clampNP` with `v27 = LoweredNilCheck v28 v1` of `v28 = LoweredNilCheck v25 v1`. -/
+def clampNQ : Func :=
+  { clampL with
+    vidLast := 28
+    valueTab := (((clampLValues.push (some (mkV 25 .ARM64MOVDload 2 none p0 1 #[9, 1] 1))).push
+      (some (mkV 26 .ARM64MOVDload 2 none p0 1 #[8, 1] 1))).push
+      (some (mkV 27 .ARM64LoweredNilCheck 0 none p0 1 #[28, 1] 1))).push
+      (some (mkV 28 .ARM64LoweredNilCheck 2 none p0 1 #[25, 1] 1)) }
+
+/-- **`nilPtrSwap` through a chain of nil checks is not vacuous**: the nil check `v27` checks the
+nil check `v28`, whose pointer `v25` (`rep`) the source runs before the load `v26`; the target may
+run `v27` first. -/
+theorem clampNQ_nilPtr :
+    isNC clampNQ 28 = true ∧ rep clampNQ 28 = 25 ∧
+      nilPtrSwap clampLTabs ((Array.replicate 29 Ty.other).set! 25 (.ptr none)) clampNQ
+        (srcPos 29 [1, 8, 9, 10, 25, 28, 26, 27, 22]) 26 27 = true := by
+  decide +kernel
+
+/-- `clampL` plus `v25 = LDAR v9 v1`, `v26 = Select1 v25` (its memory), `v27 = MOVDload v8 v26`
+and `v28 = MOVDload v9 v1` in `b1`. -/
+def clampLM : Func :=
+  { clampL with
+    vidLast := 28
+    valueTab := (((clampLValues.push (some (mkV 25 .ARM64LDAR 0 none p0 1 #[9, 1] 1))).push
+      (some (mkV 26 .Select1 28 none p0 1 #[25] 1))).push
+      (some (mkV 27 .ARM64MOVDload 2 none p0 1 #[8, 26] 1))).push
+      (some (mkV 28 .ARM64MOVDload 2 none p0 1 #[9, 1] 1)) }
+
+/-- **`swapOK`'s memories through an `LDAR*` (`sameMem`, `ldReach`) are not vacuous**: with the
+source order `v1 v8 v9 v10 v25 v26 v27 v28 v22`, the target may run the load `v28` on `v1` before
+the load `v27` on `v26 = Select1 (LDAR v9 v1)`, which holds `v1`'s memory
+(`evalValueL_select1_ldar`); without the source positions (the `Select1` not listed in the block)
+it may not. -/
+theorem clampLM_ldMem :
+    swapOK clampLTabs (Ctx.makeL clampLTabs clampLM).params #[] clampLM
+        (srcPos 29 [1, 8, 9, 10, 25, 26, 27, 28, 22]) 27 28 = true ∧
+      swapOK clampLTabs (Ctx.makeL clampLTabs clampLM).params #[] clampLM #[] 27 28 = false ∧
+      ldReach clampLM (srcPos 29 [1, 8, 9, 10, 25, 26, 27, 28, 22]) 29 26 1 = true := by
+  decide +kernel
+
+/-- `clampL` plus a chain of two nil checks in `b1`: `v27 = SP`, `v25 = LoweredNilCheck v27 v1`,
+`v26 = LoweredNilCheck v25 v1` and `v28 = MOVDreg v26`. -/
+def clampCh : Func :=
+  { clampL with
+    vidLast := 28
+    valueTab :=
+      let t := clampLValues.set! 1 (some (mkV 1 .InitMem 28 none p0 5 #[] 1))
+      (((t.push (some (mkV 25 .ARM64LoweredNilCheck 15 none p0 1 #[27, 1] 1))).push
+        (some (mkV 26 .ARM64LoweredNilCheck 15 none p0 1 #[25, 1] 1))).push
+        (some (mkV 27 .SP 15 none p0 1 #[] 1))).push
+        (some (mkV 28 .ARM64MOVDreg 15 none p0 0 #[26] 1))
+    blockTab := clampLBlocks.set! 1 (some (mkB 1 .ARM64GT (pos 2 22 7 0) #[22]
+      #[⟨3, 0⟩, ⟨2, 0⟩] #[] #[1, 8, 9, 10, 27, 25, 26, 28, 22])) }
+
+theorem clampCh_check : (check clampLCheckEnv clampCh).toBool = true := by decide +kernel
+
+/-- `schedule` accepts `clampCh`: `v28` takes the end of the chain, `v27`, and `scheduleCheck`
+holds. -/
+theorem clampCh_schedule_facts :
+    ((schedulePass clampSchedPassEnv clampCh).toOption.map fun o =>
+      decide (scheduleCheck clampLTabs clampCh o.func = true ∧
+        (o.func.value? 28).map (·.args) = some #[27])) = some true := by
+  decide +kernel
+
+/-- `runLF` of `clampCh` returns `clamp(5, 0, 10) = 5` (the nil checks of `SP` pass). -/
+theorem clampCh_runLF : returnsInt (runLF Env.p1 clampLTabs clampCh (clampArgs 5) {} 3) 5 = true := by
+  decide +kernel
+
+/-- `clampCh` has no pointer-shaped register piece of a parameter. -/
+theorem clampCh_noArgPtr :
+    (List.range clampCh.valueTab.size).all
+      (fun x => !argPtr clampLTabs (Ctx.makeL clampLTabs clampCh).params
+        (Ctx.makeL clampLTabs clampCh).tys clampCh x) = true := by
+  decide +kernel
+
+/-- No nil check of `clampCh` checks a pointer-shaped value (`SP` is a `uintptr`). -/
+theorem clampCh_noNilPtr :
+    clampCh.valueTab.all (fun o => o.all fun v => !v.op.nilCheck ||
+      (v.args[0]?.all fun q => !ptrShape ((Ctx.makeL clampLTabs clampCh).tys[q]?.getD .other))) =
+      true := by
+  decide +kernel
+
+/-- **The multi-step bypass (`rep`, `ncChain`) is not vacuous**: in `clampCh` the nil check `v26`
+checks the nil check `v25` (one step of `rep1` ends at a nil check, which a one-step bypass
+rejects), `rep` follows the chain to `SP` (`v27`), `schedule` rewires `v28` to it and
+`scheduleCheck` accepts; the output's `runSched` returns `clamp(5, 0, 10) = 5`. -/
+theorem schedule_chain_witness :
+    rep1 clampCh 26 = 25 ∧ isNC clampCh 25 = true ∧ rep clampCh 26 = 27 ∧
+      ∃ out, schedulePass clampSchedPassEnv clampCh = .ok out ∧
+        scheduleCheck clampLTabs clampCh out.func = true ∧
+        (out.func.value? 28).map (·.args) = some #[27] ∧
+        ∃ fuel m, runSched Env.p1 out.tables out.func (clampArgs 5) {} fuel = .returned [.i64 5] m := by
+  refine ⟨by decide +kernel, by decide +kernel, by decide +kernel, ?_⟩
+  obtain ⟨out, hp, hv, ha⟩ := ok_of_toOption
+    (P := fun o => scheduleCheck clampLTabs clampCh o.func = true ∧
+      (o.func.value? 28).map (·.args) = some #[27])
+    clampCh_schedule_facts
+  refine ⟨out, hp, hv, ha, ?_⟩
+  obtain ⟨m, hm⟩ := returnsInt_iff.1 clampCh_runLF
+  exact (schedule_refinesSchedLF (penv := clampSchedPassEnv) hp (ok_of_toBool clampCh_check)
+    hv).returned_int
+    ⟨argPtrsOK_of_none clampCh_noArgPtr Env.p1 (clampArgs 5) {},
+      nilPtrsOK_of_none clampCh_noNilPtr Env.p1 (clampArgs 5) {}⟩ hm
+
 end GoFV.Proof.Witness

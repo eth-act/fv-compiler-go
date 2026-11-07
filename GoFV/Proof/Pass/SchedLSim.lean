@@ -140,17 +140,45 @@ theorem phi_not_spa {a : ID} {v : Value} (hv : f.value? a = some v) (hp : v.op =
     isSPA f a = false := by
   rw [isSPA_of hv, hp]; rfl
 
-/-- **A nil check available in a frame holds its pointer's register** (lemma (D) and the shape
-condition of its use). -/
-theorem ncFact {ce : CheckEnv} (hwf : WF ce f) {A : ID → Prop} {fr : Frame}
+/-- **A bypass step stays in a set of tree blocks closed under ancestors**: a value placed in such
+a block bypasses (`rep1`) to a value placed in one (an argument of a non-`Phi` value is placed in
+an ancestor of its block). -/
+theorem rep1_placed {ce : CheckEnv} (hwf : WF ce f) (hc : CertOK f) {A : ID → Prop}
+    (hAc : ∀ b b', A b' → Anc (make f) b b' → A b) (hAt : ∀ b, A b → ((make f).depthOf b).isSome)
+    {z : ID} {vz : Value} (hpz : Placed f z vz) (hA : A vz.block) :
+    ∃ vp, Placed f (rep1 f z) vp ∧ A vp.block := by
+  by_cases hra : rep1 f z = z
+  · exact ⟨vz, by rw [hra]; exact hpz, hA⟩
+  · have hm : rep1 f z ∈ vz.args := Array.mem_of_getElem? (rep1_arg0 hpz.1 hra)
+    have hanp : vz.op ≠ .Phi := fun hp =>
+      hra (rep1_self (phi_not_nc hpz.1 hp) (phi_not_spa hpz.1 hp))
+    obtain ⟨hvbm, blk, hblk, hab⟩ := hpz.2
+    have hanc2 := hc.domRel.uses hvbm hblk (hAt _ hA) hab hpz.1 hanp hm
+    obtain ⟨vr, hpr, hbr⟩ := placed_listed hwf
+      (hwf.argListed vz.block blk z vz ⟨⟨hvbm, hblk⟩, hab, hpz.1⟩ _ hm)
+    rw [hbr] at hanc2
+    exact ⟨vr, hpr, hAc _ _ hA hanc2⟩
+
+/-- The strict ancestors of a block are closed under ancestors. -/
+theorem sanc_closed (hc : CertOK f) {bid : ID} (b b' : ID)
+    (h : Anc (make f) b' bid ∧ b' ≠ bid) (hb : Anc (make f) b b') :
+    Anc (make f) b bid ∧ b ≠ bid :=
+  ⟨hc.domRel.trans hb h.1, fun he => h.2 (by rw [he] at hb; exact hc.domRel.antisymm h.1 hb)⟩
+
+/-- **A nil check available in a frame holds its chain's end's register** (lemma (D) along the
+chain, whose values are placed in ancestors, and the shape condition of its use). -/
+theorem ncFact {ce : CheckEnv} (hwf : WF ce f) (hc : CertOK f) {A : ID → Prop} {fr : Frame}
+    (hAc : ∀ b b', A b' → Anc (make f) b b' → A b) (hAt : ∀ b, A b → ((make f).depthOf b).isSome)
     (hD : DInvL md env (Ctx.makeL tabs f) A fr) (ht : TypedL md (Ctx.makeL tabs f) fr)
     {a : ID} {va : Value} (hpa : Placed f a va) (hA : A va.block) {user : Option Value} {k : Nat}
     (hu : useOK tabs (Ctx.makeL tabs f).tys f user k a = true) (hnc : isNC f a = true) :
     fr.regs[rep f a]? = fr.regs[a]? := by
-  obtain ⟨y, hy, hev⟩ := hD a va (by rw [makeL_f]; exact hpa) hA
-  have hnp : va.op ≠ .Phi := fun h => by rw [phi_not_nc hpa.1 h] at hnc; cases hnc
-  obtain ⟨-, hne, -, -, -, hsh⟩ := nc_shape hu hnc
-  exact ncEq hpa.1 (placed_id hwf hpa) hnc ⟨y, hy, hev hnp⟩ ht hsh hne
+  refine ncEq (env := env) (fun z => ∃ vz, Placed f z vz ∧ A vz.block)
+    (fun z ⟨vz, hpz, hAz⟩ hzn => ?_) ht
+    _ a (use_chain hu hnc) (Nat.le_refl _) ⟨va, hpa, hA⟩ hnc
+  obtain ⟨y, hy, hev⟩ := hD z vz (by rw [makeL_f]; exact hpz) hAz
+  have hnp : vz.op ≠ .Phi := fun h => by rw [phi_not_nc hpz.1 h] at hzn; cases hzn
+  exact ⟨⟨vz, y, hpz.1, placed_id hwf hpz, hy, hev hnp⟩, rep1_placed hwf hc hAc hAt hpz hAz⟩
 
 /-- **A nil check available in a frame holds a pointer outside the nil block.** -/
 theorem ncFactNN {ce : CheckEnv} (hwf : WF ce f) {A : ID → Prop} {fr : Frame}
@@ -160,7 +188,7 @@ theorem ncFactNN {ce : CheckEnv} (hwf : WF ce f) {A : ID → Prop} {fr : Frame}
     ∀ z, fr.regs[a]? = some (some z) → NonNil z := by
   obtain ⟨y, hy, hev⟩ := hD a va (by rw [makeL_f]; exact hpa) hA
   have hnp : va.op ≠ .Phi := fun h => by rw [phi_not_nc hpa.1 h] at hnc; cases hnc
-  obtain ⟨-, hne, -, -, -, hsh⟩ := nc_shape hu hnc
+  obtain ⟨hne, hsh⟩ := nc_step1 hu hnc
   exact ncNonNil hpa.1 (placed_id hwf hpa) hnc ⟨y, hy, hev hnp⟩ ht hsh hne
 
 theorem symAddrOp_phi : symAddrOp .Phi = false := by decide
@@ -350,29 +378,27 @@ theorem bstep (Su : Setup tabs f g) {frS frT : Frame} {bid : ID} {i : Nat}
     · -- a value of a strict dominator
       have hstrict : Anc (make f) va.block bid ∧ va.block ≠ bid := ⟨hanc, hvb⟩
       obtain ⟨y, hy, -⟩ := hA.up a va (by rw [hcF]; exact hpa) hstrict
+      have hcl : ∀ z (vz : Value), Placed f z vz → Anc (make f) vz.block bid ∧ vz.block ≠ bid →
+          ∃ vp, Placed f (rep1 f z) vp ∧ Anc (make f) vp.block bid ∧ vp.block ≠ bid :=
+        fun _ _ hpz hAz => rep1_placed hwf hc (sanc_closed hc) (fun _ h => hc.domRel.left h.1)
+          hpz hAz
       have hrep : ∃ vr, Placed f (rep f a) vr ∧ Anc (make f) vr.block bid ∧ vr.block ≠ bid := by
-        by_cases hra : rep f a = a
-        · exact ⟨va, by rw [hra]; exact hpa, hanc, hvb⟩
-        · have h0 := rep_arg0 hpa.1 hra
-          have hm : rep f a ∈ va.args := Array.mem_of_getElem? h0
-          have hanp : va.op ≠ .Phi := fun hp =>
-            hra (rep_self (phi_not_nc hpa.1 hp) (phi_not_spa hpa.1 hp))
-          obtain ⟨hvbm, blk, hblk, hab⟩ := hpa.2
-          have htva : ((make f).depthOf va.block).isSome := hc.domRel.left hanc
-          have hanc2 := hc.domRel.uses hvbm hblk htva hab hpa.1 hanp hm
-          obtain ⟨vr, hpr, hbr⟩ := placed_listed hwf
-            (hwf.argListed va.block blk a va ⟨⟨hvbm, hblk⟩, hab, hpa.1⟩ _ hm)
-          rw [hbr] at hanc2
-          refine ⟨vr, hpr, hc.domRel.trans hanc2 hanc, fun he => hvb ?_⟩
-          rw [he] at hanc2
-          exact hc.domRel.antisymm hanc hanc2
+        by_cases hs : isSPA f a = true
+        · rw [(use_spa hu hs).2.2.2.2.2.2]; exact hcl _ _ hpa hstrict
+        · cases hn : isNC f a
+          · rw [rep_self hn (by simpa using hs)]; exact ⟨va, hpa, hstrict⟩
+          · exact chain_closed
+              (fun z => ∃ vz, Placed f z vz ∧ Anc (make f) vz.block bid ∧ vz.block ≠ bid)
+              (fun z ⟨vz, hpz, hAz⟩ _ => hcl _ _ hpz hAz) _ a (use_chain hu hn) (Nat.le_refl _)
+              ⟨va, hpa, hstrict⟩ hn
       obtain ⟨vr, hpr, hancr, hner⟩ := hrep
       obtain ⟨yr, hyr, -⟩ := hA.up (rep f a) vr (by rw [hcF]; exact hpr) ⟨hancr, hner⟩
       refine ⟨⟨y, by rw [hkeep a va hpa hvb, hy]⟩, fun hm => hnotin _ vr hpr hner ((omem _).1 hm).1,
         ⟨yr, by rw [hkeep _ vr hpr hner, hyr]⟩, fun hn => ?_, fun hn z hz => ?_⟩
       · show (setPhis ps frS.regs)[rep f a]? = (setPhis ps frS.regs)[a]?
         rw [hkeep _ vr hpr hner, hkeep a va hpa hvb]
-        exact ncFact hwf hA.up hA.typed hpa hstrict hu hn
+        exact ncFact hwf hc (sanc_closed hc) (fun _ h => hc.domRel.left h.1) hA.up hA.typed hpa
+          hstrict hu hn
       · have hz' : frS.regs[a]? = some (some z) := by
           rw [← hkeep a va hpa hvb]; exact hz
         obtain ⟨va', hva', hcs⟩ := isNN_cases hn
@@ -521,7 +547,8 @@ theorem stepS (Su : Setup tabs f g) (hmd : md.faulting = true) {frS frT : Frame}
       · obtain ⟨vc, hpc, hbc⟩ := placed_listed hwf (hwf.ctrlListed bid fb ⟨hb, hfb⟩ c hcm)
         have hancc := hc.domRel.ctrlUse hb hfb htr hcm
         rw [hbc] at hancc
-        exact ncFact hwf hD hGSty hpc hancc hu hn
+        exact ncFact hwf hc (fun _ _ h hb => hc.domRel.trans hb h) (fun _ h => hc.domRel.left h)
+          hD hGSty hpc hancc hu hn
     cases hst : stepTermL GS fb with
     | stuck msg => exact True.intro
     | panic e m => exact absurd hst Dead.stepTermL_not_panic
@@ -563,7 +590,8 @@ theorem stepS (Su : Setup tabs f g) (hmd : md.faulting = true) {frS frT : Frame}
         (hwf.argListed e.b cblk z v ⟨⟨heb, hcblk⟩, hz, hv⟩ a (Array.mem_of_getElem? ha))
       rw [hba] at hanc
       obtain ⟨y, hy, -⟩ := hD a va (by rw [makeL_f]; exact hpa) hanc
-      exact ⟨⟨y, hy⟩, fun hn => ncFact hwf hD hGSty hpa hanc (S.argUse hv ha) hn⟩
+      exact ⟨⟨y, hy⟩, fun hn => ncFact hwf hc (fun _ _ h hb => hc.domRel.trans hb h)
+        (fun _ h => hc.domRel.left h) hD hGSty hpa hanc (S.argUse hv ha) hn⟩
     · rw [hst']
       exact ⟨rs, rfl, RefinesList.refl rs⟩
 

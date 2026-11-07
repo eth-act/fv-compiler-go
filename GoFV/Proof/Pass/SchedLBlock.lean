@@ -88,47 +88,37 @@ theorem tys_eq_of_type {tabs : Tables} {f : Func} {a p : ID} {va vp : Value}
     (Ctx.makeL tabs f).tys[a]? = (Ctx.makeL tabs f).tys[p]? := by
   rw [tysL_of_value ha, tysL_of_value hp, h]
 
-/-- The shape condition of `useOK` for a nil check `a` of `p`. -/
-theorem nc_shape {tabs : Tables} {f : Func} {user : Option Value} {k : Nat} {a : ID}
-    (hu : useOK tabs (Ctx.makeL tabs f).tys f user k a = true) (hnc : isNC f a = true) :
-    isSPA f a = false ∧ rep f a ≠ a ∧ isNC f (rep f a) = false ∧ isSPA f (rep f a) = false ∧
-      (∃ vp, f.value? (rep f a) = some vp) ∧
-      (((Ctx.makeL tabs f).tys[a]?.getD .other) = ((Ctx.makeL tabs f).tys[rep f a]?.getD .other) ∨
-        (wordShape ((Ctx.makeL tabs f).tys[a]?.getD .other) = true ∧
-          wordShape ((Ctx.makeL tabs f).tys[rep f a]?.getD .other) = true)) := by
-  have hspa : isSPA f a = false := by
-    unfold isNC at hnc; unfold isSPA
-    cases hv : f.value? a with
-    | none => rw [hv] at hnc; cases hnc
-    | some v =>
-      rw [hv] at hnc; simp only [Option.map_some, Option.getD_some] at hnc
-      simp only [Option.map_some, Option.getD_some, beq_eq_false_iff_ne, ne_eq]
-      intro he; rw [he] at hnc; cases hnc
-  unfold useOK at hu
-  rw [hspa, hnc] at hu
-  simp only [Bool.false_eq_true, ite_false, ite_true, Bool.and_eq_true, bne_iff_ne, ne_eq,
-    Bool.not_eq_true', Bool.or_eq_true, beq_iff_eq, Option.isSome_iff_exists] at hu
-  obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, ⟨tp, htp⟩⟩, h5⟩ := hu
-  refine ⟨hspa, h1, h2, h3, ?_, ?_⟩
-  · cases hvp : f.value? (rep f a) with
-    | none => rw [hvp] at htp; cases htp
-    | some vp => exact ⟨vp, rfl⟩
-  · rcases h5 with h5 | h5
-    · left
-      cases hvp : f.value? (rep f a) with
-      | none => rw [hvp] at htp; cases htp
-      | some vp =>
-        cases hva : f.value? a with
-        | none => rw [hvp, hva] at h5; cases h5
-        | some va =>
-          rw [hvp, hva] at h5; simp at h5
-          rw [tys_eq_of_type hva hvp h5.symm]
-    · exact .inr h5
+/-- `a` and `p` have the same `runL` shape, or both word shapes. -/
+def Shp (tabs : Tables) (f : Func) (a p : ID) : Prop :=
+  ((Ctx.makeL tabs f).tys[a]?.getD .other) = ((Ctx.makeL tabs f).tys[p]?.getD .other) ∨
+    (wordShape ((Ctx.makeL tabs f).tys[a]?.getD .other) = true ∧
+      wordShape ((Ctx.makeL tabs f).tys[p]?.getD .other) = true)
 
-/-- A bypassed value's `rep` is its first argument. -/
-theorem rep_arg0 {f : Func} {a : ID} {v : Value} (hv : f.value? a = some v) (hne : rep f a ≠ a) :
-    v.args[0]? = some (rep f a) := by
-  unfold rep at hne ⊢
+theorem Shp.trans {tabs : Tables} {f : Func} {a b c : ID} (h1 : Shp tabs f a b)
+    (h2 : Shp tabs f b c) : Shp tabs f a c := by
+  unfold Shp at *
+  rcases h1 with h1 | ⟨h1, h1'⟩ <;> rcases h2 with h2 | ⟨h2, h2'⟩
+  · exact .inl (h1.trans h2)
+  · exact .inr ⟨by rw [h1]; exact h2, h2'⟩
+  · exact .inr ⟨h1, by rw [← h2]; exact h1'⟩
+  · exact .inr ⟨h1, h2'⟩
+
+/-! ## Bypasses -/
+
+/-- A nil check is no `SPanchored`. -/
+theorem nc_not_spa {f : Func} {a : ID} (hnc : isNC f a = true) : isSPA f a = false := by
+  unfold isNC at hnc; unfold isSPA
+  cases hv : f.value? a with
+  | none => rw [hv] at hnc; cases hnc
+  | some v =>
+    rw [hv] at hnc; simp only [Option.map_some, Option.getD_some] at hnc
+    simp only [Option.map_some, Option.getD_some, beq_eq_false_iff_ne, ne_eq]
+    intro he; rw [he] at hnc; cases hnc
+
+/-- A value `rep1` changes is a bypassed one, and its bypass is its first argument. -/
+theorem rep1_arg0 {f : Func} {a : ID} {v : Value} (hv : f.value? a = some v) (hne : rep1 f a ≠ a) :
+    v.args[0]? = some (rep1 f a) := by
+  unfold rep1 at hne ⊢
   rw [hv] at hne ⊢
   simp only at hne ⊢
   split at hne
@@ -139,9 +129,9 @@ theorem rep_arg0 {f : Func} {a : ID} {v : Value} (hv : f.value? a = some v) (hne
     | some p => rfl
   · exact absurd rfl hne
 
-/-- `rep` of a value that is not bypassed. -/
-theorem rep_self {f : Func} {a : ID} (h1 : isNC f a = false) (h2 : isSPA f a = false) : rep f a = a := by
-  unfold rep
+theorem rep1_self {f : Func} {a : ID} (h1 : isNC f a = false) (h2 : isSPA f a = false) :
+    rep1 f a = a := by
+  unfold rep1
   unfold isNC at h1; unfold isSPA at h2
   cases hv : f.value? a with
   | none => rfl
@@ -149,6 +139,175 @@ theorem rep_self {f : Func} {a : ID} (h1 : isNC f a = false) (h2 : isSPA f a = f
     rw [hv] at h1 h2
     simp only [Option.map_some, Option.getD_some] at h1 h2
     simp [h1, h2]
+
+theorem repK_fix {f : Func} {a : ID} (h : rep1 f a = a) : ∀ k, repK f k a = a
+  | 0 => rfl
+  | k + 1 => by simp only [repK, h, beq_self_eq_true, ite_true]
+
+theorem repK_succ {f : Func} {a : ID} (hne : rep1 f a ≠ a) (k : Nat) :
+    repK f (k + 1) a = repK f k (rep1 f a) := by
+  have h : (rep1 f a == a) = false := by simpa using hne
+  simp only [repK, h, Bool.false_eq_true, ite_false]
+
+theorem rep_self {f : Func} {a : ID} (h1 : isNC f a = false) (h2 : isSPA f a = false) :
+    rep f a = a :=
+  repK_fix (rep1_self h1 h2) _
+
+/-- What a step of a nil-check chain gives, at any shapes. -/
+theorem ncStep_basic {tys : Array Ty} {f : Func} {a : ID} (h : ncStep tys f a = true) :
+    rep1 f a ≠ a ∧ isSPA f (rep1 f a) = false ∧ ∃ vp, f.value? (rep1 f a) = some vp := by
+  unfold ncStep at h
+  simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, Bool.not_eq_true', Option.isSome_iff_exists] at h
+  obtain ⟨⟨⟨h1, h2⟩, ⟨tp, htp⟩⟩, -⟩ := h
+  refine ⟨h1, h2, ?_⟩
+  cases hvp : f.value? (rep1 f a) with
+  | none => rw [hvp] at htp; cases htp
+  | some vp => exact ⟨vp, rfl⟩
+
+/-- What a step of a nil-check chain gives: the shape condition. -/
+theorem ncStep_shp {tabs : Tables} {f : Func} {a : ID}
+    (h : ncStep (Ctx.makeL tabs f).tys f a = true) : Shp tabs f a (rep1 f a) := by
+  unfold ncStep at h
+  simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, Bool.not_eq_true', Bool.or_eq_true, beq_iff_eq,
+    Option.isSome_iff_exists] at h
+  obtain ⟨⟨-, ⟨tp, htp⟩⟩, h5⟩ := h
+  rcases h5 with h5 | h5
+  · left
+    cases hvp : f.value? (rep1 f a) with
+    | none => rw [hvp] at htp; cases htp
+    | some vp =>
+      cases hva : f.value? a with
+      | none => rw [hvp, hva] at h5; cases h5
+      | some va =>
+        rw [hvp, hva] at h5; simp at h5
+        rw [tys_eq_of_type hva hvp h5.symm]
+  · exact .inr h5
+
+/-- More steps do not change the end of a chain. -/
+theorem ncChain_rep {tys : Array Ty} {f : Func} :
+    ∀ (k : Nat) (a : ID), ncChain tys f k a = true → ∀ j, k ≤ j → repK f j a = repK f k a
+  | 0, a, h, _, _ => by simp [ncChain] at h
+  | k + 1, a, h, j, hj => by
+    obtain ⟨j, rfl⟩ : ∃ j', j = j' + 1 := ⟨j - 1, by omega⟩
+    simp only [ncChain, Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true'] at h
+    obtain ⟨hs, hc⟩ := h
+    obtain ⟨hne, hsp, -⟩ := ncStep_basic hs
+    rw [repK_succ hne, repK_succ hne]
+    rcases hc with hn | hc
+    · rw [repK_fix (rep1_self hn hsp), repK_fix (rep1_self hn hsp)]
+    · exact ncChain_rep k _ hc j (by omega)
+
+/-- **One step of a nil-check chain** (fuel `k + 1` within the value table's size): the step's
+facts, the bypass is the next value's, and the chain goes on from it or ends there. -/
+theorem chain_cases {tys : Array Ty} {f : Func} {k : Nat} {a : ID}
+    (hc : ncChain tys f (k + 1) a = true) (hk : k + 1 ≤ f.valueTab.size) :
+    ncStep tys f a = true ∧ rep f a = rep f (rep1 f a) ∧
+      (isNC f (rep1 f a) = true → ncChain tys f k (rep1 f a) = true) ∧
+      (isNC f (rep1 f a) = false → rep f (rep1 f a) = rep1 f a) := by
+  simp only [ncChain, Bool.and_eq_true, Bool.or_eq_true, Bool.not_eq_true'] at hc
+  obtain ⟨hs, hc⟩ := hc
+  obtain ⟨hne, hsp, -⟩ := ncStep_basic hs
+  obtain ⟨n, hn⟩ : ∃ n, f.valueTab.size = n + 1 := ⟨f.valueTab.size - 1, by omega⟩
+  have hfix : isNC f (rep1 f a) = false → rep f (rep1 f a) = rep1 f a :=
+    fun h => repK_fix (rep1_self h hsp) _
+  refine ⟨hs, ?_, fun h => ?_, hfix⟩
+  · unfold rep
+    rw [hn, repK_succ hne]
+    rcases hc with h' | h'
+    · rw [repK_fix (rep1_self h' hsp), repK_fix (rep1_self h' hsp)]
+    · rw [ncChain_rep k _ h' n (by omega), ncChain_rep k _ h' (n + 1) (by omega)]
+  · rcases hc with h' | h'
+    · rw [h] at h'; cases h'
+    · exact h'
+
+/-- The end of a nil-check chain is a value, no nil check or `SPanchored`. -/
+theorem chain_end {tys : Array Ty} {f : Func} :
+    ∀ (k : Nat) (a : ID), ncChain tys f k a = true → k ≤ f.valueTab.size →
+      isNC f (rep f a) = false ∧ isSPA f (rep f a) = false ∧ ∃ vp, f.value? (rep f a) = some vp
+  | 0, a, h, _ => by simp [ncChain] at h
+  | k + 1, a, h, hk => by
+    obtain ⟨hs, hrep, hnext, hfix⟩ := chain_cases h hk
+    obtain ⟨-, hsp, hv⟩ := ncStep_basic hs
+    cases hn : isNC f (rep1 f a)
+    · rw [hrep, hfix hn]; exact ⟨hn, hsp, hv⟩
+    · rw [hrep]; exact chain_end k _ (hnext hn) (by omega)
+
+/-- The shape condition along a nil-check chain. -/
+theorem chain_shp {tabs : Tables} {f : Func} :
+    ∀ (k : Nat) (a : ID), ncChain (Ctx.makeL tabs f).tys f k a = true → k ≤ f.valueTab.size →
+      Shp tabs f a (rep f a)
+  | 0, a, h, _ => by simp [ncChain] at h
+  | k + 1, a, h, hk => by
+    obtain ⟨hs, hrep, hnext, hfix⟩ := chain_cases h hk
+    have h1 := ncStep_shp hs
+    cases hn : isNC f (rep1 f a)
+    · rw [hrep, hfix hn]; exact h1
+    · rw [hrep]; exact h1.trans (chain_shp k _ (hnext hn) (by omega))
+
+/-- A property closed under one bypass step of a nil check holds of the chain's end. -/
+theorem chain_closed {tys : Array Ty} {f : Func} (P : ID → Prop)
+    (hcl : ∀ z, P z → isNC f z = true → P (rep1 f z)) :
+    ∀ (k : Nat) (a : ID), ncChain tys f k a = true → k ≤ f.valueTab.size → P a →
+      isNC f a = true → P (rep f a)
+  | 0, a, h, _, _, _ => by simp [ncChain] at h
+  | k + 1, a, h, hk, ha, hn => by
+    obtain ⟨-, hrep, hnext, hfix⟩ := chain_cases h hk
+    have hp := hcl a ha hn
+    cases hn' : isNC f (rep1 f a)
+    · rw [hrep, hfix hn']; exact hp
+    · rw [hrep]; exact chain_closed P hcl k _ (hnext hn') (by omega) hp hn'
+
+/-- A use that is a nil check starts a nil-check chain. -/
+theorem use_chain {tabs : Tables} {tys : Array Ty} {f : Func} {user : Option Value} {k : Nat}
+    {a : ID} (hu : useOK tabs tys f user k a = true) (hnc : isNC f a = true) :
+    ncChain tys f f.valueTab.size a = true := by
+  unfold useOK at hu
+  rw [nc_not_spa hnc, hnc] at hu
+  simpa using hu
+
+/-- A bypassed `SPanchored` use: one step, to a value that is no nil check or `SPanchored`. -/
+theorem use_spa {tabs : Tables} {tys : Array Ty} {f : Func} {user : Option Value} {k : Nat}
+    {a : ID} (hu : useOK tabs tys f user k a = true) (hs : isSPA f a = true) :
+    k = 0 ∧ (user.map fun u => symAddrOp u.op && symbolic tabs u).getD false = true ∧
+      rep1 f a ≠ a ∧ (∃ vp, f.value? (rep1 f a) = some vp) ∧ isNC f (rep1 f a) = false ∧
+      isSPA f (rep1 f a) = false ∧ rep f a = rep1 f a := by
+  unfold useOK at hu
+  simp only [hs, ite_true] at hu
+  simp only [Bool.and_eq_true, beq_iff_eq, bne_iff_ne, ne_eq, Bool.not_eq_true',
+    Option.isSome_iff_exists] at hu
+  obtain ⟨⟨hk, hsym⟩, ⟨⟨hne, vp, hvp⟩, hnc⟩, hspa⟩ := hu
+  refine ⟨hk, hsym, hne, ⟨vp, hvp⟩, hnc, hspa, ?_⟩
+  have hsz : 0 < f.valueTab.size := by
+    unfold isSPA at hs
+    cases hv : f.value? a with
+    | none => rw [hv] at hs; cases hs
+    | some v => exact Nat.lt_of_le_of_lt (Nat.zero_le _) (lt_of_value? hv)
+  obtain ⟨n, hn⟩ : ∃ n, f.valueTab.size = n + 1 := ⟨f.valueTab.size - 1, by omega⟩
+  unfold rep
+  rw [hn, repK_succ hne, repK_fix (rep1_self hnc hspa)]
+
+/-- The shape condition of `useOK` for a nil check `a`, through its chain to `rep f a`. -/
+theorem nc_shape {tabs : Tables} {f : Func} {user : Option Value} {k : Nat} {a : ID}
+    (hu : useOK tabs (Ctx.makeL tabs f).tys f user k a = true) (hnc : isNC f a = true) :
+    isSPA f a = false ∧ rep f a ≠ a ∧ isNC f (rep f a) = false ∧ isSPA f (rep f a) = false ∧
+      (∃ vp, f.value? (rep f a) = some vp) ∧ Shp tabs f a (rep f a) := by
+  have hc := use_chain hu hnc
+  obtain ⟨h1, h2, h3⟩ := chain_end _ _ hc (Nat.le_refl _)
+  refine ⟨nc_not_spa hnc, fun h => ?_, h1, h2, h3, chain_shp _ _ hc (Nat.le_refl _)⟩
+  rw [h, hnc] at h1; cases h1
+
+/-- One step of a nil check use: its pointer, of a compatible shape. -/
+theorem nc_step1 {tabs : Tables} {f : Func} {user : Option Value} {k : Nat} {a : ID}
+    (hu : useOK tabs (Ctx.makeL tabs f).tys f user k a = true) (hnc : isNC f a = true) :
+    rep1 f a ≠ a ∧ Shp tabs f a (rep1 f a) := by
+  have hc := use_chain hu hnc
+  obtain ⟨n, hn⟩ : ∃ n, f.valueTab.size = n + 1 := by
+    cases h : f.valueTab.size with
+    | zero => rw [h] at hc; simp [ncChain] at hc
+    | succ n => exact ⟨n, rfl⟩
+  rw [hn] at hc
+  obtain ⟨hs, -⟩ := chain_cases hc (by omega)
+  exact ⟨(ncStep_basic hs).1, ncStep_shp hs⟩
 
 /-! ## Lists -/
 
@@ -259,6 +418,22 @@ theorem isNC_of {f : Func} {a : ID} {v : Value} (hv : f.value? a = some v) :
     isNC f a = v.op.nilCheck := by
   unfold isNC; rw [hv]; rfl
 
+/-- The end of a nil-check chain is the pointer of the chain's last check. -/
+theorem chain_last {tys : Array Ty} {f : Func} :
+    ∀ (k : Nat) (a : ID), ncChain tys f k a = true → k ≤ f.valueTab.size → isNC f a = true →
+      ∃ c vc, f.value? c = some vc ∧ vc.op.nilCheck = true ∧ vc.args[0]? = some (rep f a)
+  | 0, a, h, _, _ => by simp [ncChain] at h
+  | k + 1, a, h, hk, hn => by
+    obtain ⟨hs, hrep, hnext, hfix⟩ := chain_cases h hk
+    obtain ⟨hne, -, -⟩ := ncStep_basic hs
+    cases hn' : isNC f (rep1 f a)
+    · cases hva : f.value? a with
+      | none => unfold isNC at hn; rw [hva] at hn; cases hn
+      | some va =>
+        refine ⟨a, va, hva, by rw [← isNC_of hva]; exact hn, ?_⟩
+        rw [hrep, hfix hn']; exact rep1_arg0 hva hne
+    · rw [hrep]; exact chain_last k _ (hnext hn') (by omega) hn'
+
 /-- What a use says of its bypass. -/
 theorem use_rep {tys : Array Ty} {user : Option Value} {k : Nat} {a : ID}
     (hu : useOK tabs tys f user k a = true) :
@@ -266,56 +441,65 @@ theorem use_rep {tys : Array Ty} {user : Option Value} {k : Nat} {a : ID}
       (isSPA f a = true → k = 0 ∧ (user.map fun u => symAddrOp u.op && symbolic tabs u).getD false = true ∧
         rep f a ≠ a) ∧
       (isNC f a = true → rep f a ≠ a) := by
-  unfold useOK at hu
   by_cases hs : isSPA f a = true
-  · simp only [hs, ite_true] at hu
-    simp only [Bool.and_eq_true, beq_iff_eq, bne_iff_ne, ne_eq, Bool.not_eq_true'] at hu
-    obtain ⟨⟨hk, hsym⟩, ⟨⟨hne, -⟩, hnc⟩, hspa⟩ := hu
-    refine ⟨hnc, hspa, fun _ => ⟨hk, hsym, hne⟩, fun hn => hne⟩
-  · simp only [hs, Bool.false_eq_true, ite_false] at hu
+  · obtain ⟨hk, hsym, hne, -, hnc, hspa, hr⟩ := use_spa hu hs
+    rw [hr]
+    exact ⟨hnc, hspa, fun _ => ⟨hk, hsym, hne⟩, fun hn => by rw [nc_not_spa hn] at hs; cases hs⟩
+  · have hs' : isSPA f a = false := by simpa using hs
     by_cases hn : isNC f a = true
-    · simp only [hn, ite_true] at hu
-      simp only [Bool.and_eq_true, bne_iff_ne, ne_eq, Bool.not_eq_true'] at hu
-      obtain ⟨⟨⟨⟨hne, hnc⟩, hspa⟩, -⟩, -⟩ := hu
-      exact ⟨hnc, hspa, fun h => absurd h hs, fun _ => hne⟩
-    · have hs' : isSPA f a = false := by simpa using hs
-      have hn' : isNC f a = false := by simpa using hn
+    · obtain ⟨h1, h2, -⟩ := chain_end _ _ (use_chain hu hn) (Nat.le_refl _)
+      refine ⟨h1, h2, fun h => absurd h hs, fun _ h => ?_⟩
+      rw [h, hn] at h1; cases h1
+    · have hn' : isNC f a = false := by simpa using hn
       rw [rep_self hn' hs']
       exact ⟨hn', hs', fun h => absurd h hs, fun h => absurd h hn⟩
 
-/-- **A nil check's result is its pointer** in a frame where it evaluated. -/
-theorem ncEq {fr : Frame} {a : ID} {va : Value} (hva : f.value? a = some va) (hid : va.id = a)
+/-- **A nil check's result is its pointer** (one step) in a frame where it evaluated. -/
+theorem ncEq1 {fr : Frame} {a : ID} {va : Value} (hva : f.value? a = some va) (hid : va.id = a)
     (hnc : isNC f a = true) (hev : ∃ y, fr.regs[a]? = some (some y) ∧
       evalValueL md env (Ctx.makeL tabs f) fr va = .ok y)
-    (ht : TypedL md (Ctx.makeL tabs f) fr)
-    (hsh : ((Ctx.makeL tabs f).tys[a]?.getD .other) = ((Ctx.makeL tabs f).tys[rep f a]?.getD .other) ∨
-      (wordShape ((Ctx.makeL tabs f).tys[a]?.getD .other) = true ∧
-        wordShape ((Ctx.makeL tabs f).tys[rep f a]?.getD .other) = true))
-    (hne : rep f a ≠ a) : fr.regs[rep f a]? = fr.regs[a]? := by
+    (ht : TypedL md (Ctx.makeL tabs f) fr) (hsh : Shp tabs f a (rep1 f a))
+    (hne : rep1 f a ≠ a) : fr.regs[rep1 f a]? = fr.regs[a]? := by
   obtain ⟨y, hy, hev⟩ := hev
   rw [isNC_of hva] at hnc
   obtain ⟨p, yp, hp, hyp, hyy, -⟩ := evalValueL_nc_ok hnc hev
-  have hrp : rep f a = p := by rw [rep_arg0 hva hne] at hp; cases hp; rfl
+  have hrp : rep1 f a = p := by rw [rep1_arg0 hva hne] at hp; cases hp; rfl
+  unfold Shp at hsh
   rw [hrp] at hsh ⊢
   rw [hy, hyp, hyy, hid]
   congr 2
   exact (retype_shape (ht p yp hyp) hsh).symm
 
+/-- **A chain of nil checks' result is its end** in a frame where the chain's nil checks
+evaluated (`P`: values with that fact, closed under a nil check's pointer). -/
+theorem ncEq {fr : Frame} (P : ID → Prop)
+    (hP : ∀ z, P z → isNC f z = true → (∃ vz y, f.value? z = some vz ∧ vz.id = z ∧
+      fr.regs[z]? = some (some y) ∧ evalValueL md env (Ctx.makeL tabs f) fr vz = .ok y) ∧
+      P (rep1 f z))
+    (ht : TypedL md (Ctx.makeL tabs f) fr) :
+    ∀ (k : Nat) (a : ID), ncChain (Ctx.makeL tabs f).tys f k a = true → k ≤ f.valueTab.size →
+      P a → isNC f a = true → fr.regs[rep f a]? = fr.regs[a]?
+  | 0, a, h, _, _, _ => by simp [ncChain] at h
+  | k + 1, a, h, hk, ha, hn => by
+    obtain ⟨hs, hrep, hnext, hfix⟩ := chain_cases h hk
+    obtain ⟨⟨va, y, hva, hid, hy, hev⟩, hp⟩ := hP a ha hn
+    have h1 := ncEq1 hva hid hn ⟨y, hy, hev⟩ ht (ncStep_shp hs) (ncStep_basic hs).1
+    cases hn' : isNC f (rep1 f a)
+    · rw [hrep, hfix hn', h1]
+    · rw [hrep, ncEq P hP ht k _ (hnext hn') (by omega) hp hn', h1]
+
 /-- **A nil check's result is a pointer outside the nil block** in a frame where it evaluated. -/
 theorem ncNonNil {fr : Frame} {a : ID} {va : Value} (hva : f.value? a = some va) (hid : va.id = a)
     (hnc : isNC f a = true) (hev : ∃ y, fr.regs[a]? = some (some y) ∧
       evalValueL md env (Ctx.makeL tabs f) fr va = .ok y)
-    (ht : TypedL md (Ctx.makeL tabs f) fr)
-    (hsh : ((Ctx.makeL tabs f).tys[a]?.getD .other) = ((Ctx.makeL tabs f).tys[rep f a]?.getD .other) ∨
-      (wordShape ((Ctx.makeL tabs f).tys[a]?.getD .other) = true ∧
-        wordShape ((Ctx.makeL tabs f).tys[rep f a]?.getD .other) = true))
-    (hne : rep f a ≠ a) : ∀ z, fr.regs[a]? = some (some z) → NonNil z := by
+    (ht : TypedL md (Ctx.makeL tabs f) fr) (hsh : Shp tabs f a (rep1 f a))
+    (hne : rep1 f a ≠ a) : ∀ z, fr.regs[a]? = some (some z) → NonNil z := by
   intro z hz
-  have heq := ncEq hva hid hnc hev ht hsh hne
+  have heq := ncEq1 hva hid hnc hev ht hsh hne
   obtain ⟨y, -, hev'⟩ := hev
   rw [isNC_of hva] at hnc
   obtain ⟨p, yp, hp, hyp, -, hnn⟩ := evalValueL_nc_ok hnc hev'
-  have hrp : rep f a = p := by rw [rep_arg0 hva hne] at hp; cases hp; rfl
+  have hrp : rep1 f a = p := by rw [rep1_arg0 hva hne] at hp; cases hp; rfl
   rw [hrp, hyp, hz] at heq
   cases heq
   exact hnn
@@ -325,6 +509,41 @@ theorem frame_eq {frPS frPT H T : Frame} (hPT : frPT = { frPS with regs := frPT.
     (hH : H = { frPS with regs := H.regs }) (hT : T = { frPT with regs := T.regs }) :
     T = { H with regs := T.regs } := by
   rw [hT, hPT, hH]
+
+/-- **A chain of nil checks from a value the source evaluated**: in the target, the chain's end
+holds the first check's register (`n`: the chain's fuel). -/
+theorem argFactNC {oS oT : List ID} {frPS frPT H T : Frame} {P D : List ID}
+    (B : BStep tabs f g md oS oT frPS frPT) (Sr : Src tabs f md env frPS H P)
+    (hPS : ∀ x ∈ P, x ∈ oS) (hPc : ∀ x ∈ P, ∀ a ∈ argsF f x, a ∈ oS → a ∈ P)
+    (I : Inv f frPT H T P D) (hDo : ∀ a ∈ D, a ∈ oT) :
+    ∀ (n : Nat) (a : ID), ncChain (Ctx.makeL tabs f).tys f n a = true → n ≤ f.valueTab.size →
+      a ∈ P → isNC f a = true → (rep f a ∈ oT → rep f a ∈ D) → T.regs[rep f a]? = H.regs[a]?
+  | 0, a, h, _, _, _, _ => by simp [ncChain] at h
+  | n + 1, a, h, hk, haP, hn, hrep => by
+    obtain ⟨hs, hra, hnext, hfix⟩ := chain_cases h hk
+    obtain ⟨hne, hsp, -⟩ := ncStep_basic hs
+    have haS := hPS a haP
+    obtain ⟨va, z, hva, hz, hev⟩ := Sr.eval a haP
+    have hid := B.sOwn a haS va hva
+    have h1 := ncEq1 hva hid hn ⟨z, hz, hev⟩ Sr.typed (ncStep_shp hs) hne
+    have hpa : rep1 f a ∈ argsF f a := by
+      rw [argsF_of hva]; exact Array.mem_toList_iff.2 (Array.mem_of_getElem? (rep1_arg0 hva hne))
+    rw [hra] at hrep ⊢
+    rw [← h1]
+    cases hpn : isNC f (rep1 f a)
+    · -- the chain ends at `rep1 f a`
+      rw [hfix hpn] at hrep ⊢
+      by_cases hpS : rep1 f a ∈ oS
+      · exact I.inP _ (hrep ((B.tMem _).2 ⟨hpS, hsp⟩)) (hPc a haP _ hpa hpS) hpn
+      · rw [I.out _ (fun hD => hpS ((B.tMem _).1 (hDo _ hD)).1), B.agree _ hpn hsp,
+          Sr.out _ (fun hP => hpS (hPS _ hP))]
+    · by_cases hpS : rep1 f a ∈ oS
+      · exact argFactNC B Sr hPS hPc I hDo n _ (hnext hpn) (by omega) (hPc a haP _ hpa hpS) hpn
+          hrep
+      · obtain ⟨-, hrS, -, hnc, -⟩ := B.out a haS _ hpa hpS
+        obtain ⟨hrn, hrs, -⟩ := chain_end _ _ (hnext hpn) (by omega)
+        rw [I.out _ (fun hD => hrS ((B.tMem _).1 (hDo _ hD)).1), B.agree _ hrn hrs, hnc hpn,
+          Sr.out _ (fun hP => hpS (hPS _ hP))]
 
 /-- **The arguments of a value the source evaluated (or reached) hold, in the target, the
 source's registers** (a bypassed `SPanchored`: some register, as the base of a symbolic
@@ -340,7 +559,7 @@ theorem argFact (S : SchedRel tabs f g) {oS oT : List ID} {frPS frPT H T : Frame
       (isSPA f a = false → T.regs[rep f a]? = H.regs[a]?) ∧
       (isSPA f a = true → k = 0 ∧ vy.op ∈ symAddrOps ∧ symbolic tabs vy = true) := by
   have hu := S.argUse hy ha
-  obtain ⟨hrn, hrs, hspa, hncr⟩ := use_rep hu
+  obtain ⟨hrn, hrs, hspa, -⟩ := use_rep hu
   have haf : a ∈ argsF f y := by
     rw [argsF_of hy]; exact Array.mem_toList_iff.2 (Array.mem_of_getElem? ha)
   have hspa' : isSPA f a = true → k = 0 ∧ vy.op ∈ symAddrOps ∧ symbolic tabs vy = true := by
@@ -358,32 +577,23 @@ theorem argFact (S : SchedRel tabs f g) {oS oT : List ID} {frPS frPT H T : Frame
   by_cases haS : a ∈ oS
   · have haP : a ∈ P := hdone a haf haS
     obtain ⟨va, z, hva, hz, hev⟩ := Sr.eval a haP
-    have hid := B.sOwn a haS va hva
-    -- the bypass of a bypassed `a` is its first argument, which `a`'s evaluation read
-    have hrH : rep f a ≠ a → (∃ z, H.regs[rep f a]? = some (some z)) ∧
-        (rep f a ∈ oS → rep f a ∈ P) := fun hne => by
-      have h0 := rep_arg0 hva hne
-      have hm : rep f a ∈ va.args := Array.mem_of_getElem? h0
-      refine ⟨evalValueL_args_def (fun msg h => by rw [hev] at h; cases h) _ hm, fun hS => ?_⟩
-      exact hPc a haP _ (by rw [argsF_of hva]; exact Array.mem_toList_iff.2 hm) hS
     by_cases hs : isSPA f a = true
-    · obtain ⟨-, -, hne⟩ := hspa hs
-      obtain ⟨hz', hin⟩ := hrH hne
+    · -- a bypassed `SPanchored`: its first argument, which `a`'s evaluation read
+      obtain ⟨-, -, hne, -, -, -, hr1⟩ := use_spa hu hs
+      have h0 := rep1_arg0 hva hne
+      have hm : rep1 f a ∈ va.args := Array.mem_of_getElem? h0
+      have hz' := evalValueL_args_def (fun msg h => by rw [hev] at h; cases h) _ hm
+      have hin : rep1 f a ∈ oS → rep1 f a ∈ P := fun hS =>
+        hPc a haP _ (by rw [argsF_of hva]; exact Array.mem_toList_iff.2 hm) hS
       refine ⟨⟨z, hz⟩, ?_, fun h => (by rw [hs] at h; cases h), hspa'⟩
-      by_cases hr : rep f a ∈ oS
+      rw [hr1] at hTin hTout ⊢
+      by_cases hr : rep1 f a ∈ oS
       · rw [hTin hr (hin hr)]; exact hz'
       · rw [hTout hr]; exact hz'
     · have hs' : isSPA f a = false := by simpa using hs
       by_cases hn : isNC f a = true
-      · have hne := hncr hn
-        obtain ⟨hz', hin⟩ := hrH hne
-        obtain ⟨-, -, -, -, -, hsh⟩ := nc_shape hu hn
-        have heq : H.regs[rep f a]? = H.regs[a]? :=
-          ncEq hva hid hn ⟨z, hz, hev⟩ Sr.typed hsh hne
-        have hT : T.regs[rep f a]? = H.regs[a]? := by
-          by_cases hr : rep f a ∈ oS
-          · rw [hTin hr (hin hr), heq]
-          · rw [hTout hr, heq]
+      · have hT : T.regs[rep f a]? = H.regs[a]? :=
+          argFactNC B Sr hPS hPc I hDo _ a (use_chain hu hn) (Nat.le_refl _) haP hn hrep
         exact ⟨⟨z, hz⟩, ⟨z, by rw [hT, hz]⟩, fun _ => hT, fun h => (by rw [hs'] at h; cases h)⟩
       · have hn' : isNC f a = false := by simpa using hn
         have hr := rep_self hn' hs'
@@ -498,6 +708,25 @@ theorem stepT (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : List ID
   · exact h
   · rw [isNC_of hfv, h] at hn; cases hn
 
+/-- A chain of nil checks of the block whose end is outside it: the end has a register at the
+block's entry. -/
+theorem chainOutReg {oS oT : List ID} {frPS frPT : Frame} (B : BStep tabs f g md oS oT frPS frPT) :
+    ∀ (n : Nat) (a : ID), ncChain (Ctx.makeL tabs f).tys f n a = true → n ≤ f.valueTab.size →
+      a ∈ oS → rep f a ∉ oS → ∃ z, frPS.regs[rep f a]? = some (some z)
+  | 0, a, h, _, _, _ => by simp [ncChain] at h
+  | n + 1, a, h, hk, haS, hrS => by
+    obtain ⟨hs, hra, hnext, hfix⟩ := chain_cases h hk
+    obtain ⟨hne, -, -⟩ := ncStep_basic hs
+    obtain ⟨va, hva⟩ := B.sVal a haS
+    have hpa : rep1 f a ∈ argsF f a := by
+      rw [argsF_of hva]; exact Array.mem_toList_iff.2 (Array.mem_of_getElem? (rep1_arg0 hva hne))
+    rw [hra] at hrS ⊢
+    by_cases hpS : rep1 f a ∈ oS
+    · cases hpn : isNC f (rep1 f a)
+      · rw [hfix hpn] at hrS; exact absurd hpS hrS
+      · exact chainOutReg B n _ (hnext hpn) (by omega) hpS hrS
+    · exact (B.out a haS _ hpa hpS).2.2.1
+
 /-- **Every argument of a target value has a register** once the values before it ran. -/
 theorem targs (S : SchedRel tabs f g) {oS oT : List ID} {frPS frPT H T : Frame} {P : List ID}
     (B : BStep tabs f g md oS oT frPS frPT) {j : Nat} (I : Inv f frPT H T P (oT.take j))
@@ -522,13 +751,22 @@ theorem targs (S : SchedRel tabs f g) {oS oT : List ID} {frPS frPT H T : Frame} 
     have haf : a ∈ argsF f y := by
       rw [argsF_of hfv]; exact Array.mem_toList_iff.2 (Array.mem_of_getElem? ha)
     by_cases haS : a ∈ oS
-    · -- `a` is a bypassed value of the block; its bypass is its first argument
+    · -- `a` is a bypassed value of the block: an `SPanchored` (one step) or a nil-check chain
       have hne : rep f a ≠ a := fun h => hrS (by rw [h]; exact haS)
-      obtain ⟨va, hva⟩ := B.sVal a haS
-      have h0 := rep_arg0 hva hne
-      have hm : rep f a ∈ argsF f a := by
-        rw [argsF_of hva]; exact Array.mem_toList_iff.2 (Array.mem_of_getElem? h0)
-      exact (B.out a haS _ hm hrS).1
+      have hu := S.argUse hfv ha
+      by_cases hs : isSPA f a = true
+      · obtain ⟨-, -, hne1, -, -, -, hr1⟩ := use_spa hu hs
+        obtain ⟨va, hva⟩ := B.sVal a haS
+        have h0 := rep1_arg0 hva hne1
+        have hm : rep1 f a ∈ argsF f a := by
+          rw [argsF_of hva]; exact Array.mem_toList_iff.2 (Array.mem_of_getElem? h0)
+        rw [hr1] at hrS ⊢
+        exact (B.out a haS _ hm hrS).1
+      · have hn : isNC f a = true := by
+          cases h : isNC f a
+          · exact absurd (rep_self h (by simpa using hs)) hne
+          · rfl
+        exact chainOutReg B _ a (use_chain hu hn) (Nat.le_refl _) haS hrS
     · exact (B.out y hyS a haf haS).2.2.1
 
 /-! ## The walk -/
