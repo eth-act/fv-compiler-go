@@ -29,6 +29,8 @@ open GoFV.SSA (GoStr Pos PosBase)
 /-- Read-only inputs: the configuration lines and the file's definitions that `linkpcln`
 reads (position bases with their file index, the global inlining tree). -/
 structure AsmCtxt where
+  /-- `ctxt.Pkgpath` (the file's `pkg` line). -/
+  pkgpath : String := ""
   /-- `base.Flag.CompilingRuntime`. -/
   compilingRuntime : Bool := false
   /-- `ctxt.Flag_dynlink`. -/

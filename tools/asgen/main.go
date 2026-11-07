@@ -202,7 +202,7 @@ func main() {
 	writeFile(*out, b.Bytes())
 
 	tab := &asTable{generic: generic, arm64: arm64, archSpecific: archSpecific, baseARM64: baseARM64}
-	l := newLoader(*goroot, "cmd/internal/obj", "cmd/internal/obj/arm64", "internal/abi", "internal/goarch")
+	l := newLoader(*goroot, "cmd/internal/obj", "cmd/internal/obj/arm64", "cmd/internal/objabi", "internal/abi", "internal/goarch")
 	if v, _ := constant.Int64Val(l.intConst("cmd/internal/obj", "ABaseARM64")); int(v) != baseARM64 {
 		log.Fatalf("obj.ABaseARM64 = %d, asgen computed %d", v, baseARM64)
 	}

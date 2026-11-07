@@ -211,3 +211,7 @@ root = "GoFVTest.Arm64Cosim"
 [[lean_exe]]
 name = "arm64-decode"
 root = "GoFVTest.Arm64Decode"
+
+[[lean_exe]]
+name = "asm-parity"
+root = "GoFVTest.AsmParity"
