@@ -3782,11 +3782,12 @@ def pnShapeOK (r : Rule) : Bool :=
   | .op .Phi .., .build [n, q], none => n.op == .Not && q.op == .Phi
   | _, _, _ => false
 
-/-- The `Phi` `v` of `f` that event `ev` turns into a `Not`, its logged definition and the
-logged fresh `Phi`, if it is a `phiSels` rule event of a `pnShapeOK` rule. -/
+/-- The `Phi` `v` of `f` that event `ev` turns into a `Not`, its logged definition (the result's
+root, built at `v`: `defs` is `[v, root, fresh Phi]`) and the logged fresh `Phi`, if it is a
+`phiSels` rule event of a `pnShapeOK` rule. -/
 def pnEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × Value × Value)
   | .rule v i _ defs =>
-    match f.value? v, defs[0]?, defs[1]? with
+    match f.value? v, defs[1]?, defs[2]? with
     | some u, some d, some q =>
       let n := t.psBase u.op
       if u.op == .Phi && n ≤ i && d.id == v && q.id != v then
