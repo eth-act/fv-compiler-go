@@ -32,7 +32,7 @@ structure Cnt where
   argPtrCands : Array (Nat × String) := #[]
   /-- Accepted sections where some swap needs `swapOK`'s `NilPtrsOK` case. -/
   viaNilPtr : Nat := 0
-  /-- Accepted sections where some swap needs a memory through an `LDAR*` (`ldMem`). -/
+  /-- Accepted sections where some swap needs a memory through an `LDAR*` (`ldReach`). -/
   viaLdMem : Nat := 0
   whys : Std.HashMap String Nat := {}
   /-- An example function per rejection reason. -/
@@ -142,7 +142,7 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"schedule: sections {c.secs}, pass errors {c.passErr}, input checked {c.checked} (output not checked {c.outUnchecked}), changed {c.changed}, scheduleCheck accepted {c.accepted} (changed {c.acceptedChanged}), rejected {c.checked - c.accepted}"
   IO.println s!"accepted through swapOK's argPtr case (ArgPtrsOK): {c.viaArgPtr}"
   IO.println s!"accepted through swapOK's NilPtrsOK case: {c.viaNilPtr}"
-  IO.println s!"accepted through a memory of an LDAR* (ldMem): {c.viaLdMem}"
+  IO.println s!"accepted through a memory of an LDAR* (ldReach): {c.viaLdMem}"
   for (_, l) in (c.argPtrCands.qsort (fun a b => a.1 < b.1)).extract 0 5 do
     IO.println s!"  {l}"
   IO.println "outside (first failing condition):"

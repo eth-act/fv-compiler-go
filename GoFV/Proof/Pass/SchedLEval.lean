@@ -26,7 +26,7 @@ The classes of `scheduleCheck` (`GoFV.Opt.ScheduleCheck.cls`) under faulting eva
   changes;
 * a `Select1` of an acquiring load `LDAR*` that evaluated to a memory holds the load's memory
   argument's (`evalValueL_select1_ldar`: `atomicLoad` keeps the memory), what `sameMem`'s
-  `ldMem` steps read.
+  `ldReach` steps read.
 -/
 
 namespace GoFV.Proof.SchedL

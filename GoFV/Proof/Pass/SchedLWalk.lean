@@ -11,7 +11,7 @@ Before the source's panicking value `r` the target runs values the source ran be
 they evaluate), and values `swapOK` lets it run first (the source's `r` cannot be a load or nil
 check whose pointer is a nil check's result, `SP`, `GetG` or the closure pointer, `nnBase`: that
 pointer has no nil base) (a load on `r`'s memory, which may also be the memory of the `LDAR*`
-whose `Select1` `r`'s is, `ldMem_src`, or a nil check on it of `r`'s pointer word or of a
+whose `Select1` `r`'s is, `ldReach_src`, or a nil check on it of `r`'s pointer word or of a
 pointer-shaped parameter piece the source ran before `r`, which reads nil or a pointer that is
 not wild, `ArgPtrsAt`), which evaluate or panic with `nilDeref` of that memory, as `r` does; at
 `r` the target panics as the source.
@@ -99,23 +99,28 @@ theorem ldMem1_spec {pS : Array Nat} {ℓ ℓ' : ID} (h : ldMem1 f pS ℓ = some
     · cases h
   · cases h
 
-/-- **`ldMem` along the source**: the memory the source's frame `H` holds at `ℓ` (when `ℓ` is in
-the block, the source ran it) it holds at `ldMem … ℓ`, which is `ℓ` or the memory argument of an
-`LDAR*` the source ran. -/
-theorem ldMem_src {oS : List ID} {frPS H : Frame} {P : List ID}
+/-- **`ldReach` along the source**: the memory the source's frame `H` holds at `ℓ` (when `ℓ` is in
+the block, the source ran it) it holds at every `ℓ'` that `ldReach` reaches from `ℓ`, which is
+`ℓ` or the memory argument of an `LDAR*` the source ran. -/
+theorem ldReach_src {oS : List ID} {frPS H : Frame} {P : List ID}
     (Sr : Src tabs f md env frPS H P) (hPc : ∀ x ∈ P, ∀ a ∈ argsF f x, a ∈ oS → a ∈ P)
     {m : Mem} :
-    ∀ (k : Nat) (ℓ : ID), (ℓ ∈ oS → ℓ ∈ P) → H.regs[ℓ]? = some (some (.mem m)) →
-      H.regs[ldMem f (srcPos f.valueTab.size oS) k ℓ]? = some (some (.mem m)) ∧
-        (ldMem f (srcPos f.valueTab.size oS) k ℓ = ℓ ∨ ∃ l ∈ P, ∃ vl, f.value? l = some vl ∧
-          vl.args.back? = some (ldMem f (srcPos f.valueTab.size oS) k ℓ))
-  | 0, ℓ, _, h => ⟨h, .inl rfl⟩
-  | k + 1, ℓ, hℓP, h => by
-    unfold ldMem
+    ∀ (k : Nat) (ℓ ℓ' : ID), ldReach f (srcPos f.valueTab.size oS) k ℓ ℓ' = true →
+      (ℓ ∈ oS → ℓ ∈ P) → H.regs[ℓ]? = some (some (.mem m)) →
+      H.regs[ℓ']? = some (some (.mem m)) ∧
+        (ℓ' = ℓ ∨ ∃ l ∈ P, ∃ vl, f.value? l = some vl ∧ vl.args.back? = some ℓ')
+  | 0, ℓ, ℓ', hr, _, h => by
+    simp only [ldReach, beq_iff_eq] at hr; subst hr; exact ⟨h, .inl rfl⟩
+  | k + 1, ℓ, ℓ', hr, hℓP, h => by
+    unfold ldReach at hr
+    by_cases he : ℓ = ℓ'
+    · subst he; exact ⟨h, .inl rfl⟩
+    have he' : (ℓ == ℓ') = false := by simpa using he
+    rw [he', Bool.false_or] at hr
     cases h1 : ldMem1 f (srcPos f.valueTab.size oS) ℓ with
-    | none => exact ⟨h, .inl rfl⟩
-    | some ℓ' =>
-      dsimp only
+    | none => rw [h1] at hr; cases hr
+    | some ℓ'' =>
+      rw [h1] at hr
       obtain ⟨vz, l, vl, hvz, hz, hpz, hza, hvl, hl, hpl, hb⟩ := ldMem1_spec h1
       have hℓS := hℓP (srcPos_pos hpz)
       have hla : l ∈ argsF f ℓ := by rw [argsF_of hvz, hza]; exact List.mem_singleton_self l
@@ -125,14 +130,14 @@ theorem ldMem_src {oS : List ID} {frPS H : Frame} {P : List ID}
       rw [h] at hy; cases hy
       obtain ⟨vl', yl, hvl', hyl, hevl⟩ := Sr.eval l hlP
       rw [hvl] at hvl'; cases hvl'
-      obtain ⟨ℓ'', hb', hH'⟩ := evalValueL_select1_ldar hz hza hl hyl hevl hevz
+      obtain ⟨ℓ3, hb', hH'⟩ := evalValueL_select1_ldar hz hza hl hyl hevl hevz
       rw [hb] at hb'; cases hb'
-      have hℓ'a : ℓ' ∈ argsF f l := by
+      have hℓ''a : ℓ'' ∈ argsF f l := by
         rw [argsF_of hvl]; exact Array.mem_toList_iff.2 (Array.mem_of_getElem? (back_get hb))
-      obtain ⟨hH, hc⟩ := ldMem_src Sr hPc k ℓ' (hPc l hlP ℓ' hℓ'a) hH'
+      obtain ⟨hH, hc⟩ := ldReach_src Sr hPc k ℓ'' ℓ' hr (hPc l hlP ℓ'' hℓ''a) hH'
       refine ⟨hH, .inr ?_⟩
       rcases hc with hc | hc
-      · exact ⟨l, hlP, vl, hvl, by rw [hc]; exact hb⟩
+      · subst hc; exact ⟨l, hlP, vl, hvl, hb⟩
       · exact hc
 
 /-! ## The walk -/
@@ -311,20 +316,24 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
     rcases hsw with ⟨⟨h1, h2⟩, -⟩ | ⟨⟨⟨h1, h2⟩, -⟩, -⟩ <;> exact ⟨h1, h2⟩
   obtain ⟨rfl, ℓx, hℓx, hHℓx⟩ := hld hcr
   have hDo : ∀ a ∈ oT.take j, a ∈ oT := fun a ha => List.mem_of_mem_take ha
-  -- the memory: `y`'s last argument `ℓ` is `r`'s, or the memory argument of the `LDAR*`s whose
-  -- `Select1` `r`'s is (`ldMem`), which holds the same memory
-  unfold sameMem at hsm
-  simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true', hℓx, Option.map_some] at hsm
-  obtain ⟨hlast, hnspa⟩ := hsm
-  generalize hℓdef : ldMem f (srcPos f.valueTab.size (pre ++ r :: post)) f.valueTab.size ℓx = ℓ
-    at hlast
-  have hℓspa : isSPA f ℓ = false := by rw [← hlast] at hnspa; simpa using hnspa
-  have hfℓ : fv.args[fv.args.size - 1]? = some ℓ := back_get hlast.symm
+  -- the memory: `y`'s last argument `ℓ` is `r`'s, or the memory argument of an `LDAR*` whose
+  -- `Select1` `r`'s reaches (`ldReach`), which holds the same memory
+  obtain ⟨ℓ, hfb, hreach, hℓspa⟩ : ∃ ℓ, fv.args.back? = some ℓ ∧
+      ldReach f (srcPos f.valueTab.size (pre ++ r :: post)) f.valueTab.size ℓx ℓ = true ∧
+      isSPA f ℓ = false := by
+    unfold sameMem at hsm
+    rw [hℓx] at hsm
+    cases hfb : fv.args.back? with
+    | none => rw [hfb] at hsm; cases hsm
+    | some ℓ =>
+      rw [hfb] at hsm
+      simp only [Bool.and_eq_true, Bool.not_eq_true'] at hsm
+      exact ⟨ℓ, rfl, hsm.1, hsm.2⟩
+  have hfℓ : fv.args[fv.args.size - 1]? = some ℓ := back_get hfb
   obtain ⟨hgℓ, hgℓm⟩ := argsF_g hgv hrv hfℓ
   have hℓxr : ℓx ∈ argsF f r := by
     rw [argsF_of hvr]; exact Array.mem_toList_iff.2 (Array.mem_of_getElem? (back_get hℓx))
-  obtain ⟨hHℓ, hcase⟩ := ldMem_src Sr hPc f.valueTab.size ℓx (hdoneR ℓx hℓxr) hHℓx
-  rw [hℓdef] at hHℓ hcase
+  obtain ⟨hHℓ, hcase⟩ := ldReach_src Sr hPc f.valueTab.size ℓx ℓ hreach (hdoneR ℓx hℓxr) hHℓx
   have hTℓ : T.regs[rep f ℓ]? = some (some (.mem m)) := by
     have hrepT : rep f ℓ ∈ oT → rep f ℓ ∈ oT.take j := fun hm => topo_before B.tTopo hyj hgℓm hm
     rcases hcase with hc | ⟨l, hlP, vl, hvl, hb⟩

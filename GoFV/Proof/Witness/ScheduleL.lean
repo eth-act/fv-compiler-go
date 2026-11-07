@@ -220,7 +220,7 @@ def clampLM : Func :=
       (some (mkV 27 .ARM64MOVDload 2 none p0 1 #[8, 26] 1))).push
       (some (mkV 28 .ARM64MOVDload 2 none p0 1 #[9, 1] 1)) }
 
-/-- **`swapOK`'s memories through an `LDAR*` (`sameMem`, `ldMem`) are not vacuous**: with the
+/-- **`swapOK`'s memories through an `LDAR*` (`sameMem`, `ldReach`) are not vacuous**: with the
 source order `v1 v8 v9 v10 v25 v26 v27 v28 v22`, the target may run the load `v28` on `v1` before
 the load `v27` on `v26 = Select1 (LDAR v9 v1)`, which holds `v1`'s memory
 (`evalValueL_select1_ldar`); without the source positions (the `Select1` not listed in the block)
@@ -229,7 +229,7 @@ theorem clampLM_ldMem :
     swapOK clampLTabs (Ctx.makeL clampLTabs clampLM).params #[] clampLM
         (srcPos 29 [1, 8, 9, 10, 25, 26, 27, 28, 22]) 27 28 = true ∧
       swapOK clampLTabs (Ctx.makeL clampLTabs clampLM).params #[] clampLM #[] 27 28 = false ∧
-      ldMem clampLM (srcPos 29 [1, 8, 9, 10, 25, 26, 27, 28, 22]) 29 26 = 1 := by
+      ldReach clampLM (srcPos 29 [1, 8, 9, 10, 25, 26, 27, 28, 22]) 29 26 1 = true := by
   decide +kernel
 
 /-- `clampL` plus a chain of two nil checks in `b1`: `v27 = SP`, `v25 = LoweredNilCheck v27 v1`,

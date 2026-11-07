@@ -189,7 +189,7 @@ def relyArgPtrs (tabs : Tables) (f g : Func) : Bool :=
       !swapOKB tabs cS.params cS.tys f (noArgPtrPos tabs cS.params cS.tys f pS) x y
 
 /-- Some pair the target swaps passes `swapOK` only through a memory of an `LDAR*` (`sameMem`'s
-`ldMem` step): it fails with the `Select1`s of `LDAR*`s not listed in the block. -/
+`ldReach` step): it fails with the `Select1`s of `LDAR*`s not listed in the block. -/
 def relyLdMem (tabs : Tables) (f g : Func) : Bool :=
   let cS := Ctx.makeL tabs f
   let sel1Ldar (z : ID) : Bool := match f.value? z with

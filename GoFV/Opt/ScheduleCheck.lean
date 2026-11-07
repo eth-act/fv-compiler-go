@@ -24,7 +24,7 @@ accepts `g` as such a scheduling of `f` (decision (b) of #384, `docs/plans/seman
   pointer is a nil check's result, `SP`, `GetG` or the closure pointer, `nnBase`), or `y` is a
   load (a `faultOp`, including `LDAR*`) and `x` a load or nil check on the same memory (`x`'s
   memory is `y`'s, or the `Select1` of an `LDAR*` of it that the source runs before `x`:
-  `sameMem`, `ldMem`), so that whichever fails first fails with `nilDeref` of that memory, or `y`
+  `sameMem`, `ldReach`), so that whichever fails first fails with `nilDeref` of that memory, or `y`
   is a nil check on that memory of `x`'s base or of a pointer-shaped parameter's register piece
   the source runs before `x` or outside the block (`argPtr`: on the inputs where those read nil
   or a pointer that is not wild, `GoFV.Proof.ArgPtrsOK`, it panics alike or passes) (`swapOKB`),
@@ -215,7 +215,7 @@ def rep (f : Func) (a : ID) : ID := repK f f.valueTab.size a
 (`atomicLoad`). -/
 def ldarOp (op : Op) : Bool := op == .ARM64LDAR || op == .ARM64LDARB || op == .ARM64LDARW
 
-/-- One step of `ldMem`: `ℓ` is the `Select1` of an `LDAR*` `l` with memory argument `ℓ'`, both
+/-- One step of `ldReach`: `ℓ` is the `Select1` of an `LDAR*` `l` with memory argument `ℓ'`, both
 listed in the block (`pS`). -/
 def ldMem1 (f : Func) (pS : Array Nat) (ℓ : ID) : Option ID :=
   match f.value? ℓ with
@@ -231,21 +231,24 @@ def ldMem1 (f : Func) (pS : Array Nat) (ℓ : ID) : Option ID :=
     else none
   | none => none
 
-/-- The memory `ℓ` holds once the block's values before it ran: through `Select1`s of `LDAR*`s
-listed in the block (`ldMem1`, at most `k` steps), the memory the `LDAR*` reads. -/
-def ldMem (f : Func) (pS : Array Nat) : Nat → ID → ID
-  | 0, ℓ => ℓ
-  | k + 1, ℓ =>
-    match ldMem1 f pS ℓ with
-    | some ℓ' => ldMem f pS k ℓ'
-    | none => ℓ
+/-- `ℓ'` is the memory `ℓ` holds once the block's values before it ran: `ℓ` itself, or, through
+`Select1`s of `LDAR*`s listed in the block (`ldMem1`, at most `k` steps), the memory an `LDAR*`
+reads. -/
+def ldReach (f : Func) (pS : Array Nat) : Nat → ID → ID → Bool
+  | 0, ℓ, ℓ' => ℓ == ℓ'
+  | k + 1, ℓ, ℓ' =>
+    ℓ == ℓ' ||
+      match ldMem1 f pS ℓ with
+      | some ℓ'' => ldReach f pS k ℓ'' ℓ'
+      | none => false
 
 /-- `vx`'s memory argument holds `vy`'s once the block's values before `vx` ran: the same value,
-or `vy`'s through `Select1`s of `LDAR*`s (`ldMem`, `pS`: the source positions); `vy`'s is no
+or `vy`'s through `Select1`s of `LDAR*`s (`ldReach`, `pS`: the source positions); `vy`'s is no
 `SPanchored`. -/
 def sameMem (f : Func) (pS : Array Nat) (vx vy : Value) : Bool :=
-  vx.args.back?.map (ldMem f pS f.valueTab.size) == vy.args.back? &&
-    !(vy.args.back?.any (isSPA f))
+  match vx.args.back?, vy.args.back? with
+  | some ℓx, some ℓy => ldReach f pS f.valueTab.size ℓx ℓy && !isSPA f ℓy
+  | _, _ => false
 
 /-- `swapOK` without its `NilPtrsOK` case (`nilPtrSwap`). The source runs `x` before `y`, the
 target `y` before `x` (both may fail). Allowed if `y` evaluates (a parameter's register piece,
