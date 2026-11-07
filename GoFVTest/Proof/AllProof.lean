@@ -745,6 +745,7 @@ import GoFV.Proof.Witness.LowerLoadSym
 import GoFV.Proof.Witness.LowerLocalAddr
 import GoFV.Proof.Witness.LowerMemEq
 import GoFV.Proof.Witness.LowerMove
+import GoFV.Proof.Witness.LowerNarrowArgs
 import GoFV.Proof.Witness.LowerNegOff
 import GoFV.Proof.Witness.LowerPanicConst
 import GoFV.Proof.Witness.LowerProv
