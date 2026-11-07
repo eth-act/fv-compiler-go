@@ -6,8 +6,9 @@ import GoFV.Proof.Rules.Block
 `RuleSet.AllSound s`: every value rule of `s` satisfies `Rule.SoundTop` (`SoundW.lean`:
 `Rule.SoundT` of `DenT.lean`, which a `Rule.Sound` lemma gives for a rule without
 table-evaluated nodes, `Rule.soundT_of_sound`, and `Rule.SoundW` for the `anyTop` rules),
-is a selection of a variadic `Make` (`Rule.MakeSel`) or an unconditional selection of a `Load`
-(`Rule.LoadSel`), both validated per instance, and every block
+is a selection of a variadic `Make` (`Rule.MakeSel`), an unconditional selection of a `Load`
+(`Rule.LoadSel`) or an `IMake` of a `StructMake` (`Rule.IMakeSM`), validated per instance, a
+rule the checked rewrite never applies (`Rule.Drop`), and every block
 rule `BlockRule.Sound` (`Block.lean`). The rewrite passes' theorems (issue #113) take it as the
 hypothesis on their rule set; the proven-only rule sets satisfy it
 (`GoFV/Proof/Rules/Proven.lean`, generated).
@@ -90,11 +91,26 @@ def dropShape (r : Rule) : Bool :=
 the input's definition at each of its events. -/
 def Rule.Drop (r : Rule) : Prop := dropShape r = true
 
+/-- An `IMake` of a `StructMake` whose result is `imakeOfStructMake(v)`, an `IMake` of one of the
+struct's fields (`generic.rules:981`, `dec.rules:102`: a `struct{*T}` put into a direct
+interface). Its events are validated per instance only (`GoFV.Opt.RewriteCheck.imsOK`): an
+interface's data word read at its pointer shape from a struct is `poison` (`Val.retype`), so the
+field refines it. -/
+def imsShape (r : Rule) : Bool :=
+  match r.pat, r.result, r.block with
+  | .op .IMake none _ _ _ _ [_, .op .StructMake _ _ _ _ _ _ _] _,
+    .copy (.call "imakeOfStructMake" _ _), none => true
+  | _, _, _ => false
+
+/-- **The obligation of an `IMake` of a `StructMake`**: the rule has `imsShape`, so each of its
+events is validated by `GoFV.Opt.RewriteCheck.imsOK`. -/
+def Rule.IMakeSM (r : Rule) : Prop := imsShape r = true
+
 /-- What a value rule of a sound rule set satisfies: `Rule.SoundTop` (`Rule.SoundT`, and
 `Rule.SoundW` for the rules the checker accepts at any top type, `anyTop`), `Rule.MakeSel`,
-`Rule.LoadSel` or `Rule.Drop`. -/
+`Rule.LoadSel`, `Rule.Drop` or `Rule.IMakeSM`. -/
 def Rule.Checked (r : Rule) : Prop :=
-  Rule.SoundTop r ∨ Rule.MakeSel r ∨ Rule.LoadSel r ∨ Rule.Drop r
+  Rule.SoundTop r ∨ Rule.MakeSel r ∨ Rule.LoadSel r ∨ Rule.Drop r ∨ Rule.IMakeSM r
 
 theorem Rule.checked_of_soundT {r : Rule} (h : Rule.SoundT r) (ha : anyTop r = false := by rfl) :
     Rule.Checked r :=
@@ -106,6 +122,12 @@ theorem Rule.checked_of_sound {r : Rule} (h : Rule.Sound r) (hp : Rule.pure r = 
 
 theorem Rule.checked_of_soundW {r : Rule} (h : Rule.SoundW r) : Rule.Checked r :=
   .inl (Rule.soundTop_of_soundW h)
+
+theorem Rule.checked_of_drop {r : Rule} (h : Rule.Drop r) : Rule.Checked r :=
+  .inr (.inr (.inr (.inl h)))
+
+theorem Rule.checked_of_ims {r : Rule} (h : Rule.IMakeSM r) : Rule.Checked r :=
+  .inr (.inr (.inr (.inr h)))
 
 /-- Every value rule of `s` satisfies `Rule.Checked`, every block rule `BlockRule.Sound`. -/
 def _root_.GoFV.Rules.RuleSet.AllSound (s : RuleSet) : Prop :=

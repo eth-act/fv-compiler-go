@@ -351,6 +351,22 @@ def structStoreDefs (f0 f : Func) (v : ID) : Array Value :=
     return acc.toArray
   | none => #[]
 
+/-- A rule whose result is `imakeOfStructMake(v)` (`generic.rules:981`, `dec.rules:102`): the
+fresh `IMake` the helper built, which `v` becomes a copy of, is logged after `v` (the validator
+checks the event per instance, `RewriteCheck.imsOK`). -/
+def imsResult (r : Rule) : Bool := r.result matches .copy (.call "imakeOfStructMake" ..)
+
+/-- The definition of the value that `v`, a copy, copies (none if `v` is no copy). -/
+def copySrcDef (f : Func) (v : ID) : Array Value :=
+  match f.value? v with
+  | some x =>
+    if x.op == .Copy then
+      match x.args[0]?.bind f.value? with
+      | some w => #[w]
+      | none => #[]
+    else #[]
+  | none => #[]
+
 /-- Try rule `cr` (index `idx` in its table row) on `v`; true if it fired. `slDefs`: log the
 values a struct-load expansion built (`structLoadDefs`) after `v`; `ssDefs`: those of a
 struct-store split (`structStoreDefs`); `snap`: log the function before the rule's edit as a
@@ -378,6 +394,7 @@ def tryRule (v : ID) (cr : CRule) (idx : Nat) (slDefs : Bool := false) (ssDefs :
       let defs := match f0?, ssDefs with
         | some f0, true => defs ++ structStoreDefs f0 f v
         | _, _ => defs
+      let defs := if imsResult r then defs ++ copySrcDef f v else defs
       if snap then if let some f0 := f0? then logEv fun _ => .snap f0
       logEv fun _ => .rule v idx st.binds defs
     return true

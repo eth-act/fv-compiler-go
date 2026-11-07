@@ -26,14 +26,6 @@ open GoFV.SSA GoFV.Rules
 
 namespace Sccp
 
-/-- `lattice`: `top`, `constant` (the value `lt.val`, with its `Op` and `AuxInt`, which never
-change during the pass) or `bottom`. -/
-inductive Lat where
-  | top
-  | const (v : ID) (op : Op) (auxInt : Int64)
-  | bottom
-  deriving Inhabited, Repr
-
 /-- `lt.tag` (`top < constant < bottom`). -/
 def Lat.tag : Lat → Nat
   | .top => 0 | .const .. => 1 | .bottom => 2
@@ -48,11 +40,6 @@ def Lat.equals : Lat → Lat → Bool
   | .top, .top | .bottom, .bottom => true
   | .const _ o a, .const _ o' a' => o == o' && a == a'
   | _, _ => false
-
-/-- `isConst(v)`. -/
-def isConst : Op → Bool
-  | .Const64 | .Const32 | .Const16 | .Const8 | .ConstBool | .Const32F | .Const64F => true
-  | _ => false
 
 /-- The 1-input ops `visitValue` folds. -/
 def unaryOp : Op → Bool

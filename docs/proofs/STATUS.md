@@ -33,15 +33,19 @@ the semantic phase of their ops (`GoFVTest/Proof/RuleClass.lean`; "Classificatio
 | mem (memory ops) | 52 | 0 | 60 | 112 |
 | call | 9 | 0 | 38 | 47 |
 | float | 22 | 0 | 46 | 68 |
-| ptr (`ConstString`, `Addr`, `NilCheck`, pointer comparisons) | 8 | 0 | 15 | 23 |
-| phi | 0 | 0 | 5 | 5 |
+| ptr (`ConstString`, `Addr`, `NilCheck`, pointer comparisons) | 10 | 0 | 13 | 23 |
+| phi | 4 | 0 | 1 | 5 |
 | block | 3 | 0 | 0 | 3 |
-| all | 1,369 | 31 | 362 | 1,762 |
+| all | 1,375 | 31 | 356 | 1,762 |
 
 *Proven*: a merged lemma (`Rule.Sound`, `Rule.SoundT`, `Rule.SoundW`, `Rule.MakeSel`,
-`Rule.LoadSel`, `Rule.Drop`, `BlockRule.Sound`, `EffectRule.NilElim`/`LoadFwd`/`StructLoad`/
-`StructStore`/`Seg`, `ConstString` frame rules, dec rules); `GoFV/Rules/Proven.lean` is the
-proven-only rule set the theorems are about. Per op family: the "Coverage" table of `rules.md`.
+`Rule.LoadSel`, `Rule.Drop`, `Rule.IMakeSM`, `BlockRule.Sound`, `EffectRule.NilElim`/`LoadFwd`/
+`StructLoad`/`StructStore`/`Seg`/`PhiSel`, `ConstString` frame rules, dec rules);
+`GoFV/Rules/Proven.lean` is the proven-only rule set the theorems are about. Per op family: the
+"Coverage" table of `rules.md`. The constant `Phi`s `generic.rules:782–785` are checked by the
+validator layer `.pc` with sccp's checker (`GoFV.Proof.PhiConst.pc_refines`), the `IMake` of a
+`StructMake` (`generic.rules:981`, `dec.rules:102`) per instance (`RewriteCheck.imsOK`,
+`GoFV.Proof.Pass.Rewrite.IMFacts.step`) (#69, Phase1Tail).
 
 **False under the semantics, with the reason** (31, each marked `-- FALSE r_… #N` in its proof
 module; "Findings" in `rules.md`):
@@ -58,34 +62,46 @@ module; "Findings" in `rules.md`):
 - `generic.rules:1039` (`config.PtrSize == 4`, 1): it builds 32-bit lengths into a 64-bit slice
   shape (`rule-sat` counterexample).
 
-Also false, but counted as open (no marker; they fire, so the firing table lists them):
-`generic.rules:1071`/`:1075` (`Convert` of an integer offset from a converted pointer: integers
-carry no provenance, so the pointer made from `addr(p) + off` need not be in `p`'s allocation,
-#156; the most frequent sole obstacle on full-v6, 235 functions) and `:579` (`Lsh32x64` of
-`And32 (Rsh32x64 x c) d` by `e`, `c < e`: false for `c < 0`, `x = -1`, `d = 1`, `c = -1`,
-`e = 1` gives `2` against `0`).
+Also false, but counted as open (no marker; they fire, so the firing table lists them; sole
+obstacle counts on full-v6, "Findings" in `rules.md` has the counterexamples):
 
-**Open** (362):
+- `generic.rules:1071`/`:1075` (`Convert` of an integer offset from a converted pointer: integers
+  carry no provenance, so the pointer made from `addr(p) + off` need not be in `p`'s allocation,
+  #156; the most frequent sole obstacle on full-v6, 255 functions).
+- `:579` (`Lsh32x64` of `And32 (Rsh32x64 x c) d` by `e`, `c < e`: false for `c < 0`, `x = -1`,
+  `d = 1`, `c = -1`, `e = 1` gives `2` against `0`; 9 functions).
+- `MemEq` → `Eq*` of two `Load`s, `:1560`/`:1568`/`:1576`/`:1584` (with the read-only loads
+  `:1564`/`:1572`/`:1580`/`:1588` they fire on; about 330 functions, in pairs): `memEq` compares
+  the raw bytes, pointer fragments included, but an integer `Load` of a pointer's fragment bytes
+  is `poison`, so `true` becomes `poison`.
+- `:2159` (`Zero` of a `VarDef` of a `Zero` of the same pointer dropped; 48 functions): `VarDef`
+  makes the variable's bytes `poison`, so the second `Zero` is not an identity write in the model.
+- The `CondSelect` folds (about 240 functions on the unmarked alternatives of `:2322–:2393`) and
+  `divmod.rules:136–148` (59) are false as above.
+
+**Open** (356):
 
 - `P1`/`P2` alternatives without a lemma (198): most never fire on the corpus; those that fire
   are in the `fire-full` table of `rules.md` (sole obstacles by rule).
-- `mem` (60) and `ptr` (15): memory and pointer rules inside the model without an effect
+- `mem` (60) and `ptr` (13): memory and pointer rules inside the model without an effect
   obligation proof: `Load` forwardings of other shapes (`:831–:907`), `Move` chains and
-  `Move`/`Zero` of `Store`s (`:1740–:1942`), dropped writes `:919`/`:924`/`:930`/`:937`,
-  `EqPtr`/`NeqPtr` of symbol addresses, locals and their offsets (`:1648–:1676`), `IMake` of a
-  `StructMake` (`:981`), and `ConstString` under `config.PtrSize == 4` (`:1013`, `:1017`; never
-  true for linux/arm64).
+  `Move`/`Zero` of `Store`s (`:1740–:1942`), dropped writes `:919`/`:924`/`:930`/`:937` (open:
+  the `not disjoint` class), `EqPtr`/`NeqPtr` of symbol addresses, locals and their offsets
+  (`:1648–:1676`), and `ConstString` under `config.PtrSize == 4` (`:1013`, `:1017`; never true
+  for linux/arm64).
 - `float` (46): inside the model (`Sem/Float.lean`, the AArch64 instruction of each op with
   RNE): constant folds of `Add/Sub/Mul/Div/Neg{32,64}F`, `Cvt*` of constants,
   `Ceil/Floor/Trunc/Round/RoundToEven/Sqrt` of constants, `OrB`/`Not` of float comparisons.
 - `call` (38): `memequal` folds (`:1395–:1557`; `memequal` has a contract), the `Const32`
   alternatives of the proven call segments, `growslice` lengths at `Const32`
-  (`:2128`/`:2131` alternatives), devirtualisation `:1733`, and **outside the model**: the
-  `runtime.cmpstring` rules `:2267`, `:2271` (no contract in `Env.runtime`) and the race
-  instrumentation cleanup `:2115`, `:2116` (race mode is not modelled).
-- `phi` (5): `:782–:785`, `:1068`; the rule obligation has no `Phi` arm (`applyRewrite`'s own
-  phi elimination is proven, "Phi eliminations" in `rules.md`). `:785` is the second most
-  frequent sole obstacle on full-v6 (185 functions).
+  (`:2128`/`:2131` alternatives), devirtualisation `:1733`, the `runtime.ifaceeq`/`efaceeq`
+  folds `:2287`/`:2279` (with `:1343`, 232 functions in pairs; the integrator approved a runtime
+  contract for them), and **outside the model**: the `runtime.cmpstring` rules `:2267`, `:2271`
+  (no contract in `Env.runtime`) and the race instrumentation cleanup `:2115`, `:2116` (race
+  mode is not modelled).
+- `phi` (1): `:1068` (`Phi` of two `Not`s becomes `Not` of a fresh `Phi`; 47 functions): the
+  target has a `Phi` atom the source lacks, which neither the atom simulation nor sccp's checker
+  relates.
 
 ## Phase 2: the verified pipeline through `trim` (#385, #189)
 
