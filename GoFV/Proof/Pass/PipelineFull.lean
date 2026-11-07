@@ -286,9 +286,9 @@ parameters `k` and read-only symbols `ro`, no nil-page fault of the `schedule` i
 (`NoNilFault`: `runL` and `runLF` of each agree), and their pointer-shaped parameter pieces
 (`ArgPtrsOK`) and checked pointer-shaped values (`NilPtrsOK`) read nil or pointers that are not
 wild (Go-level assumptions). -/
-def PreFull (k : List Nat) (ro : List (String × Alloc)) (nnf : List (Tables × Func)) (env : Env)
-    (args : List Val) (mem : Mem) : Prop :=
-  VPre k ro env args mem ∧
+def PreFull (k : List Nat) (ro : List (String × Alloc)) (eq : List String × List String)
+    (nnf : List (Tables × Func)) (env : Env) (args : List Val) (mem : Mem) : Prop :=
+  VPre k ro eq env args mem ∧
     ∀ x ∈ nnf, NoNilFault x.1 x.2 env args mem ∧ ArgPtrsOK x.1 x.2 env args mem ∧
       NilPtrsOK x.1 x.2 env args mem
 
@@ -298,18 +298,20 @@ variable {env : PassEnv} {f0 : Func} {l0 : Layer}
 input under `PreFull` of its `schedule` inputs, and `wf` means the state passes `check`. -/
 def InvF (env : PassEnv) (f0 : Func) (l0 : Layer) (s : FState) : Prop :=
   (s.st.verified = true → LayerRefines (PreFull (NilCheck.dictParams env.tables f0)
-    (pipelineRo env f0) s.nnf) s.layer s.st.tables s.st.func l0 env.tables f0) ∧
+    (pipelineRo env f0) (pipelineEq env) s.nnf) s.layer s.st.tables s.st.func
+    l0 env.tables f0) ∧
   (s.st.wf = true → check (checkEnv env s.st.tables) s.st.func = .ok ())
 
-theorem PreFull.sub {k : List Nat} {ro : List (String × Alloc)} {n n' : List (Tables × Func)}
-    (hn : ∀ x ∈ n, x ∈ n') {e : Env} {args : List Val} {mem : Mem} (h : PreFull k ro n' e args mem) :
-    PreFull k ro n e args mem :=
+theorem PreFull.sub {k : List Nat} {ro : List (String × Alloc)} {eq : List String × List String}
+    {n n' : List (Tables × Func)} (hn : ∀ x ∈ n, x ∈ n') {e : Env} {args : List Val} {mem : Mem}
+    (h : PreFull k ro eq n' e args mem) : PreFull k ro eq n e args mem :=
   ⟨h.1, fun x hx => h.2 x (hn x hx)⟩
 
 theorem InvF.adopt {s : FState} (h : InvF env f0 l0 s) {p : LPass} {out : PassOut} {wf : Bool}
     {v : Verdict} {nnf : List (Tables × Func)} (hn : ∀ x ∈ s.nnf, x ∈ nnf)
     (hv : v.ok = true → LayerRefines (PreFull (NilCheck.dictParams env.tables f0)
-      (pipelineRo env f0) nnf) p.out out.tables out.func s.layer s.st.tables s.st.func)
+      (pipelineRo env f0) (pipelineEq env) nnf) p.out out.tables out.func
+      s.layer s.st.tables s.st.func)
     (hwf : wf = true → check (checkEnv env out.tables) out.func = .ok ()) :
     InvF env f0 l0 (s.adopt p out wf v nnf) := by
   refine ⟨fun hver => ?_, hwf⟩
@@ -337,7 +339,8 @@ theorem InvF.same {s : FState} (h : InvF env f0 l0 s) {p : LPass} {out : PassOut
 theorem InvF.next {s : FState} (h : InvF env f0 l0 s) {p : LPass} {out : PassOut}
     {bad : Bool → Option String} {nnf : List (Tables × Func)} (hn : ∀ x ∈ s.nnf, x ∈ nnf)
     (hb : ∀ wf, bad wf = none → (wf = true → check (checkEnv env out.tables) out.func = .ok ()) →
-      LayerRefines (PreFull (NilCheck.dictParams env.tables f0) (pipelineRo env f0) nnf) p.out
+      LayerRefines (PreFull (NilCheck.dictParams env.tables f0) (pipelineRo env f0)
+        (pipelineEq env) nnf) p.out
         out.tables out.func s.layer s.st.tables s.st.func) :
     InvF env f0 l0 (s.next env p out bad nnf) := by
   unfold FState.next
@@ -373,8 +376,9 @@ theorem whyNot_none {s : FState} {penv : PassEnv} {rel : LRel} {wfReq : Bool}
           · simpa [hw] using h2
           · simpa [hw] using h3
 
-theorem pre_lrel {k : List Nat} {ro : List (String × Alloc)} {s : FState} (rel : LRel)
-    {e : Env} {args : List Val} {mem : Mem} (h : PreFull k ro (s.nnfAfter rel) e args mem) :
+theorem pre_lrel {k : List Nat} {ro : List (String × Alloc)} {eq : List String × List String}
+    {s : FState} (rel : LRel) {e : Env} {args : List Val} {mem : Mem}
+    (h : PreFull k ro eq (s.nnfAfter rel) e args mem) :
     lrelPre rel s.st.tables s.st.func e args mem := by
   cases rel with
   | lower => exact h.1.1
@@ -420,6 +424,7 @@ theorem runPassL_inv {s s' : FState} {p : LPass} (hp : stepSoundL p) (h : InvF e
         have key : ∀ wf, s.whyNot (s.passEnv env name) rel wfReq guard o wf = none →
             (wf = true → check (checkEnv env o.tables) o.func = .ok ()) →
             LayerRefines (PreFull (NilCheck.dictParams env.tables f0) (pipelineRo env f0)
+              (pipelineEq env)
               (s.nnfAfter rel)) out o.tables o.func s.layer s.st.tables s.st.func := by
           intro wf hw hwf
           obtain ⟨hl, hc, hg⟩ := whyNot_none hw
@@ -457,11 +462,13 @@ theorem runPassesL_inv : ∀ {ps : List LPass} {s s' : FState},
 `verifiedPipelineFull` (from any start pass) returns a `verified` state, its function, run in its
 layer, refines the input `f` run in the layer of the start pass (`startLayer`), on every
 environment and input in `PreFull` (Phase 1's `VPre` with `f`'s dictionary parameters and
-read-only symbols, and no nil-page fault of the `schedule` inputs the result records). -/
+read-only symbols and the pipeline's descriptor symbols, `pipelineEq`, and no nil-page fault of
+the `schedule` inputs the result records). -/
 theorem verifiedPipelineFull_layer {env : PassEnv} {f : Func} {start : Nat}
     {zv : Array (ID × Nat)} {dcl : Nat} {r : FState}
     (h : verifiedPipelineFull env f start zv dcl = .ok r) (hv : r.st.verified = true) :
-    LayerRefines (PreFull (NilCheck.dictParams env.tables f) (pipelineRo env f) r.nnf) r.layer
+    LayerRefines (PreFull (NilCheck.dictParams env.tables f) (pipelineRo env f)
+      (pipelineEq env) r.nnf) r.layer
       r.st.tables r.st.func (startLayer start) env.tables f := by
   unfold verifiedPipelineFull at h
   split at h
@@ -497,7 +504,8 @@ that are not wild. -/
 theorem verifiedPipelineFull_refines {env : PassEnv} {f : Func} {zv : Array (ID × Nat)}
     {dcl : Nat} {r : FState} (h : verifiedPipelineFull env f 0 zv dcl = .ok r)
     (hv : r.fullyVerified = true) {e : Env} {args : List Val} {mem : Mem}
-    (hP : VPre (NilCheck.dictParams env.tables f) (pipelineRo env f) e args mem)
+    (hP : VPre (NilCheck.dictParams env.tables f) (pipelineRo env f)
+      (pipelineEq env) e args mem)
     (hn : ∀ x ∈ r.nnf, NoNilFault x.1 x.2 e args mem)
     (ha : ∀ x ∈ r.nnf, ArgPtrsOK x.1 x.2 e args mem)
     (hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 e args mem) {fuel : Nat}

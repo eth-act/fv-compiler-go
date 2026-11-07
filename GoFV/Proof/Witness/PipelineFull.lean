@@ -292,12 +292,13 @@ theorem pfRunEnv_initAvoids : InitAvoids plRunEnv pfArgs {} := by
       trivial
 
 theorem pfRunEnv_vpre : VPre (GoFV.Opt.NilCheck.dictParams pfEnv.tables pfF)
-    (GoFV.Opt.Verified.pipelineRo pfEnv pfF) plRunEnv pfArgs {} :=
+    (GoFV.Opt.Verified.pipelineRo pfEnv pfF) (GoFV.Opt.Verified.pipelineEq pfEnv)
+    plRunEnv pfArgs {} :=
   ⟨plRunEnv_mono, plRunEnv_frameSafe, pfRunEnv_initAvoids, plRunEnv_allocNonNil,
     by rw [pfF_dict]; exact DictArgs.nil pfArgs, plRunEnv_wbPre, plRunEnv_tempOblivious,
     plRunEnv_memOps,
     by rw [pfF_ro]; exact RoImage.nil (env := plRunEnv) (plRunEnv_keeps Mem.KeepsRo.refl) {},
-    plRunEnv_keeps Mem.KeepsFrame.refl, plRunEnv_allocZero, plRunEnv_growLen⟩
+    plRunEnv_keeps Mem.KeepsFrame.refl, plRunEnv_allocZero, plRunEnv_growLen, plRunEnv_ifaceEq _⟩
 
 /-- **Non-vacuity of `verifiedPipelineFull_refines`**: the verified pipeline from `number lines`
 through `trim` on `isNaN` returns a `fullyVerified` (allocated) state, and for a NaN argument

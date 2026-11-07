@@ -491,17 +491,23 @@ def fixedWhy (tabs : Tables) (ro : List (String × Sem.Alloc)) (f : Func) (u w :
 
 open GoFV.Rules RewriteCheck in
 /-- Which part of `fwdRel`/`check` fails for the forwarded function `f'` of `f` (read-only symbols
-`ro`), if any. -/
-def fwdRelWhy (env : PassEnv) (tabs : Tables) (ro : List (String × Sem.Alloc)) (f f' : Func) :
-    Option String := Id.run do
-  if !atomsXOK f f' then return some "atoms"
+`ro`, descriptor symbols `eq`), if any. -/
+def fwdRelWhy (env : PassEnv) (tabs : Tables) (ro : List (String × Sem.Alloc))
+    (eq : List String × List String) (f f' : Func) : Option String := Id.run do
+  if !atomsXOK f f' true then return some "atoms"
   if !closedOK f' then return some "closed"
   if !fwdRankOK f (fwdRank f) then return some "rank"
   for z in List.range f.valueTab.size do
-    if !fwdRepOK tabs ro f f' z then
+    if !fwdRepOK tabs ro eq f f' z then
       match f.value? z, f'.value? z with
       | some u, some w =>
         if u.op == .Store || u.op == .Zero then return some s!"v{z} drop {dropWhy tabs f f' u w}"
+        if u.op == .StaticLECall then
+          let d := (eqDescW tabs f 8 u.args[0]!).bind (eqSymName? tabs)
+          let ok := fun (b : Bool) => if b then "1" else "0"
+          return some s!"v{z} eqcall: w {w.op.name}/{w.args.size} sig {ok (eqCallSig tabs u)} desc {d.getD "-"} {desc tabs f 3 u.args[0]!} listed {ok (d.any (eqList tabs eq u).contains)} ok {ok (eqCallOK tabs eq f f' u w)}"
+        if u.op == .SelectN then
+          return some s!"v{z} selMR: w {w.op.name}/{w.args.size} of {desc tabs f 1 u.args[0]!}"
         if u.op == .SliceLen then
           let s? := f.value? u.args[0]!
           let c := (s?.map (·.args[0]!)).getD 0
@@ -520,7 +526,7 @@ def fwdRelWhy (env : PassEnv) (tabs : Tables) (ro : List (String × Sem.Alloc)) 
           return some s!"v{z} rep Move->Move dst {cr u.args[0]! w.args[0]!} src {cr u.args[1]! w.args[1]!} mem {cr u.args[2]! w.args[2]!} umem {op u.args[2]!} wmem {op w.args[2]!}"
         else return some s!"v{z} rep {u.op.name}->{w.op.name}"
       | _, _ => return some s!"v{z} rep"
-  if !fwdRel tabs ro f f' then return some "rel"
+  if !fwdRel tabs ro eq f f' then return some (if dcUsesOK tabs eq f f' then "rel" else "dcUses")
   if !fwdRoOK tabs ro f then return some "ro"
   if !checkOK { tabs := tabs, typs := env.typs } f' then return some "check"
   return none
@@ -542,7 +548,8 @@ def layersWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f0 g : Func) :
           some s!"{pre}: dictionary parameters differ between the tables"
         else if !RewriteCheck.layerOK env t tabs f0 L f log f' then some s!"{pre}: check"
         else none
-      | .fwd sel => (fwdRelWhy env tabs (roSyms env.tables f0) f f').map
+      | .fwd sel => (fwdRelWhy env tabs (roPass env.tables env.frontend f0)
+          (eqPass env.tables env.frontend) f f').map
         (s!"fwd{if sel then "₁" else "₂"}({k}): " ++ ·)
       | .sl =>
         if RewriteCheck.layerOK env t tabs f0 L f log f' then none

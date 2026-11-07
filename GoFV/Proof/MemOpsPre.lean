@@ -12,6 +12,17 @@ every such environment: `Env.runtime` and `Env.p1` (which has neither).
 `Env.GrowLen` (issue #69): `runtime.growslice` and `runtime.growsliceNoAlias`, if present, return
 a slice whose length is their integer `newLen` argument (`generic.rules:2128`), as
 `Runtime.growslice` does (`Env.runtime_growLen`).
+
+`Env.IfaceEq eq` (issues #69, #189): `runtime.ifaceeq` on an itab symbol of `eq.1` and
+`runtime.efaceeq` on a type symbol of `eq.2` (the symbols of the pipeline's and the frontend's
+tables whose type the export marks direct-interface and comparable, `RewriteCheck.eqPass`,
+`Verified.pipelineEq`) return whether their data words are the
+same pointer, and the memory they were given (`third_party/go/src/runtime/alg.go`: `efaceeq(t,
+x, y)` returns `true` for a nil `t`, panics if `t.Equal` is nil, returns `x == y` if
+`t.IsDirectIface()`, else `t.Equal(x, y)`; `ifaceeq(tab, x, y)` is it with `t := tab.Type`; a
+comparable type has an `Equal` function, so on these symbols both return `x == y` and write
+nothing). Neither runtime model has them (`Env.runtime_ifaceEq`, `Env.p1_ifaceEq`);
+`Env.ifaceEqDemo` has them (`Env.ifaceEqDemo_ifaceEq`).
 -/
 
 namespace GoFV.SSA.Sem
@@ -105,5 +116,62 @@ theorem Env.p1_growLen : Env.p1.GrowLen := by
 theorem Env.GrowLen.atAct {env : Env} (h : env.GrowLen) (act : Nat) : (env.atAct act).GrowLen :=
   fun name c hn hc => h name c hn (by
     rcases hn with rfl | rfl <;> rwa [Env.atAct_extern_of (by decide +kernel)] at hc)
+
+/-- `runtime.ifaceeq` on (a word pointing at the start of) an itab symbol of `eq.1` and
+`runtime.efaceeq` on a type symbol of `eq.2`, if the environment has them, return the pointer
+equality of their data words (`PtrOps.eqPtr false`, the `EqPtr` the compiler folds the call
+to) and the memory they were given. -/
+def Env.IfaceEq (eq : List String × List String) (env : Env) : Prop :=
+  ∀ name c, env.extern name = some c → ∀ s,
+    (name = "runtime.ifaceeq" ∧ s ∈ eq.1 ∨ name = "runtime.efaceeq" ∧ s ∈ eq.2) →
+    ∀ d x y p q m, d.asPtrWord = some ⟨.global s, 0⟩ → x.asPtrWord = some p →
+      y.asPtrWord = some q → c [d, x, y] none m = .returned [PtrOps.eqPtr false [x, y]] m
+
+/-- An environment without `runtime.ifaceeq` and `runtime.efaceeq` has the contract. -/
+theorem Env.ifaceEq_of_none {env : Env} (h1 : env.extern "runtime.ifaceeq" = none)
+    (h2 : env.extern "runtime.efaceeq" = none) (eq : List String × List String) :
+    env.IfaceEq eq := by
+  intro name c hc s hs
+  rcases hs with ⟨rfl, -⟩ | ⟨rfl, -⟩
+  · rw [h1] at hc; cases hc
+  · rw [h2] at hc; cases hc
+
+theorem Env.runtime_ifaceEq (eq : List String × List String) : Env.runtime.IfaceEq eq :=
+  Env.ifaceEq_of_none rfl rfl eq
+
+theorem Env.p1_ifaceEq (eq : List String × List String) : Env.p1.IfaceEq eq :=
+  Env.ifaceEq_of_none rfl rfl eq
+
+theorem Env.IfaceEq.atAct {eq : List String × List String} {env : Env} (h : env.IfaceEq eq)
+    (act : Nat) : (env.atAct act).IfaceEq eq := fun name c hc s hs =>
+  h name c (by
+    rcases hs with ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> rwa [Env.atAct_extern_of (by decide +kernel)] at hc) s hs
+
+/-- Fewer symbols: a weaker contract. -/
+theorem Env.IfaceEq.sub {eq eq' : List String × List String} {env : Env} (h : env.IfaceEq eq)
+    (h1 : ∀ s ∈ eq'.1, s ∈ eq.1) (h2 : ∀ s ∈ eq'.2, s ∈ eq.2) : env.IfaceEq eq' :=
+  fun name c hc s hs => h name c hc s (hs.imp (fun ⟨a, b⟩ => ⟨a, h1 s b⟩) fun ⟨a, b⟩ => ⟨a, h2 s b⟩)
+
+/-- The `ifaceeq`/`efaceeq` contract of a direct-interface comparable type: the data words'
+pointer equality, the memory unchanged. -/
+def Runtime.ifaceEqDirect : Contract := fun args _ m =>
+  match args with
+  | [_, x, y] => .returned [PtrOps.eqPtr false [x, y]] m
+  | _ => .stuck "ifaceeq: three arguments"
+
+/-- `Env.p1` with `runtime.ifaceeq` and `runtime.efaceeq` (`Runtime.ifaceEqDirect`): the
+non-vacuity witness of `Env.IfaceEq`. -/
+def Env.ifaceEqDemo : Env where
+  extern n := if n = "runtime.ifaceeq" ∨ n = "runtime.efaceeq" then some Runtime.ifaceEqDirect
+    else Env.p1.extern n
+
+/-- **Non-vacuity of `Env.IfaceEq`**: an environment that has both calls satisfies it, for every
+list of symbols. -/
+theorem Env.ifaceEqDemo_ifaceEq (eq : List String × List String) : Env.ifaceEqDemo.IfaceEq eq := by
+  intro name c hc s hs d x y p q m _ _ _
+  have hn : name = "runtime.ifaceeq" ∨ name = "runtime.efaceeq" := hs.imp (·.1) (·.1)
+  simp only [Env.ifaceEqDemo, hn, ↓reduceIte, Option.some.injEq] at hc
+  subst hc
+  rfl
 
 end GoFV.SSA.Sem

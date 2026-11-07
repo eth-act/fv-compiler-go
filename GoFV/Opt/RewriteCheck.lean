@@ -1144,8 +1144,9 @@ combined stores, issue #35, and the forwarding layer's dropped identity writes, 
 same entry, blocks and own aux; every atom of `g` is an atom of `f` with the same fields but the
 arguments and, for a `Store`, the aux; each block evaluates the roots both functions have in
 the same order (`Sem.schedule`), and a root of `f` that is no root of `g` is a `Store` or a
-`Zero` (which never panic). -/
-def atomsXOK (f g : Func) : Bool :=
+`Zero` (which never panic), or with `calls` a `StaticLECall` (the forwarding layer's folded
+`runtime.ifaceeq`/`efaceeq` calls, which return under their contract, `Sem.Env.IfaceEq`). -/
+def atomsXOK (f g : Func) (calls : Bool := false) : Bool :=
   f.entry == g.entry && f.blocks == g.blocks && f.ownAux == g.ownAux &&
   f.blocks.all fun b =>
     match f.block? b, g.block? b with
@@ -1158,7 +1159,8 @@ def atomsXOK (f g : Func) : Bool :=
       | some of, some og =>
         of.toList.filter (fun x => rootB f x && rootB g x) == og.toList.filter (rootB g) &&
           of.toList.all fun x =>
-            !rootB f x || rootB g x || (f.value? x).any fun u => u.op == .Store || u.op == .Zero
+            !rootB f x || rootB g x || (f.value? x).any fun u => u.op == .Store || u.op == .Zero ||
+              (calls && u.op == .StaticLECall)
       | _, _ => false
     | _, _ => false
 
@@ -1977,14 +1979,169 @@ def growOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
       (f.value? s.args[0]!).any fun cv => growV tabs cv && cv.args[1]! == w.args[0]!
   | none => false
 
+/-! ### Folded `runtime.ifaceeq`/`efaceeq` calls (`generic.rules:2279`, `:2287`, `:1343`)
+
+`(StaticLECall {f} itab x y mem) && isSameCall(f, "runtime.ifaceeq") &&
+isDirectAndComparableIface(itab) => (MakeResult (EqPtr x y) mem)` (and `efaceeq` with
+`isDirectAndComparableType`) turns the call root into a term; the `SelectN`s of its result
+become the `EqPtr` and the memory by `(SelectN [n] m:(MakeResult ___)) => m.Args[n]`. The
+validator accepts the fold of a call whose descriptor is, statically, the start of a symbol of
+the precondition's list (`eqPass`: the symbols of the pass's and the frontend's tables whose type
+the export marks direct-interface and comparable), under whose contract (`Sem.Env.IfaceEq`) the
+call returns `x == y` and its memory;
+the selections are checked per instance (`selMROK`). -/
+
+/-- An interface shape whose first word (the itab or type word) has a word shape (`wordTy`): two
+fields, as `Sem.Ty.ofType` lays out an `INTER`. -/
+def ifaceTy : Sem.Ty → Bool
+  | .agg [(_, t0), _] _ => wordTy t0
+  | _ => false
+
+mutual
+/-- The aux of the `Addr` whose global's start the word `a` of `f` holds, statically (at most `n`
+deep): an `Addr`, a `Copy` of such a word, or the `ITab` of such an interface (`eqDescI`), each of
+a word shape (`wordTy`). -/
+def eqDescW (tabs : Tables) (f : Func) : Nat → ID → Option AuxRef
+  | 0, _ => none
+  | n + 1, a =>
+    match f.value? a with
+    | some u =>
+      if !wordTy (tabs.ty u.type) then none
+      else if u.op == .Addr then u.aux
+      else if u.op == .Copy && u.args.size == 1 then eqDescW tabs f n u.args[0]!
+      else if u.op == .ITab && u.args.size == 1 then eqDescI tabs f n u.args[0]!
+      else none
+    | none => none
+/-- `eqDescW` of the first word of the interface `a` of `f`: an `IMake` of such a word or a `Copy`
+of such an interface, each of an interface shape (`ifaceTy`). -/
+def eqDescI (tabs : Tables) (f : Func) : Nat → ID → Option AuxRef
+  | 0, _ => none
+  | n + 1, a =>
+    match f.value? a with
+    | some u =>
+      if !ifaceTy (tabs.ty u.type) then none
+      else if u.op == .IMake && u.args.size == 2 then eqDescW tabs f n u.args[0]!
+      else if u.op == .Copy && u.args.size == 1 then eqDescI tabs f n u.args[0]!
+      else none
+    | none => none
+end
+
+/-- The name of the symbol aux `ax` defines. -/
+def eqSymName? (tabs : Tables) (ax : AuxRef) : Option String :=
+  match tabs.aux? ax with
+  | some { kind := .sym name .., .. } => some name.toStringLossy
+  | _ => none
+
+/-- Aux `ax` is an itab symbol (`itab`, `ifaceeq`'s descriptor) or a type descriptor symbol
+(`efaceeq`'s) whose type the export marks direct-interface and comparable
+(`Rules.isDirectAndComparableIface`/`…Type`: `types.IsDirectIface`, `types.IsComparable`). -/
+def eqSymOK (tabs : Tables) (itab : Bool) (ax : AuxRef) : Bool :=
+  match tabs.aux? ax with
+  | some { kind := .sym _ _ _ _ _ ti ii _ _ _, .. } =>
+    (if itab then ii else ti).any fun t =>
+      (tabs.type? t).any fun d => d.flags.direct && d.flags.comparable
+  | _ => false
+
+/-- The symbols of `tabs` (its `.sym` auxes) whose type the export marks direct-interface and
+comparable (`eqSymOK`): its itab symbols if `itab`, else its type descriptor symbols. -/
+def eqSymsOf (tabs : Tables) (itab : Bool) : List String :=
+  (List.range tabs.auxes.size).filterMap fun n =>
+    if eqSymOK tabs itab n then eqSymName? tabs n else none
+
+/-- The descriptor symbols of `tabs` the precondition `Sem.Env.IfaceEq` may name: its itab
+symbols (`runtime.ifaceeq`'s descriptors) and its type symbols (`runtime.efaceeq`'s) whose types
+are direct-interface and comparable. It does not depend on a function's calls, so a pass that
+resolves a new descriptor chain or takes a symbol from the frontend keeps the list. -/
+def eqSyms (tabs : Tables) : List String × List String :=
+  (eqSymsOf tabs true, eqSymsOf tabs false)
+
+/-- The descriptor symbols the precondition of the rewrite passes on tables `tabs` with the
+frontend tables `fe` names: `eqSyms` of both (passes take new symbols from the frontend, as for
+the read-only symbols, `roPass`). -/
+def eqPass (tabs fe : Tables) : List String × List String :=
+  ((eqSyms tabs).1 ++ (eqSyms fe).1, (eqSyms tabs).2 ++ (eqSyms fe).2)
+
+/-- A call of `runtime.ifaceeq` or `runtime.efaceeq`: a `StaticLECall` with four arguments (the
+descriptor, the two data words, the memory) of type `(bool, mem)`, its ABI's parameters three
+words (`wordTy`) and its one result a register-assigned `bool` (`encodeResults` stores
+nothing). -/
+def eqCallSig (tabs : Tables) (cv : Value) : Bool :=
+  cv.op == .StaticLECall && cv.args.size == 4 &&
+    ((cv.aux.bind tabs.callee?).any fun n => n == "runtime.ifaceeq" || n == "runtime.efaceeq") &&
+    (tabs.ty cv.type matches .tuple [.bool, .mem]) &&
+    (match (((Sem.callABI? tabs cv.aux).map (·.params.toList)).getD []).filter (·.out) with
+     | [o] => (tabs.ty o.type matches .bool) && !o.regs.isEmpty
+     | _ => false) &&
+    (match (((Sem.callABI? tabs cv.aux).map (·.params.toList)).getD []).filter (!·.out) with
+     | [p0, p1, p2] => wordTy (tabs.ty p0.type) && wordTy (tabs.ty p1.type) &&
+         wordTy (tabs.ty p2.type)
+     | _ => false)
+
+/-- The symbols of the list `eq` (`eqPass`) the descriptor of the call `cv` may name: the itab
+symbols for `runtime.ifaceeq`, the type symbols for `runtime.efaceeq`. -/
+def eqList (tabs : Tables) (eq : List String × List String) (cv : Value) : List String :=
+  if cv.aux.bind tabs.callee? == some "runtime.ifaceeq" then eq.1 else eq.2
+
+/-- A call (`eqCallSig`) whose descriptor holds the start of a symbol of its list (`eqDescW`,
+`eqList`). -/
+def eqCallV (tabs : Tables) (eq : List String × List String) (f : Func) (cv : Value) : Bool :=
+  eqCallSig tabs cv &&
+    ((eqDescW tabs f 8 cv.args[0]!).bind (eqSymName? tabs)).any (eqList tabs eq cv).contains
+
+/-- The call `u` of `f` (`eqCallV`) becomes `w = MakeResult q m` in `g` (`generic.rules:2279`,
+`:2287`): `m` its memory argument and `q` a listed `EqPtr x y` of `bool` shape of its data
+arguments, each reached through compatible copies of `f` (`copyReach`). -/
+def eqCallOK (tabs : Tables) (eq : List String × List String) (f g : Func) (u w : Value) : Bool :=
+  eqCallV tabs eq f u && w.op == .MakeResult && w.args.size == 2 &&
+    copyReach tabs f.valueTab f.valueTab.size u.args[3]! w.args[1]! && listedB g w.args[0]! &&
+    match g.value? w.args[0]! with
+    | some q => q.op == .EqPtr && q.args.size == 2 && (tabs.ty q.type matches .bool) &&
+        copyReach tabs f.valueTab f.valueTab.size u.args[1]! q.args[0]! &&
+        copyReach tabs f.valueTab f.valueTab.size u.args[2]! q.args[1]!
+    | none => false
+
+/-- The selection `u = SelectN [i] m` of `f` of a `MakeResult` `m` becomes `w = Copy a` of its
+argument `a` (`generic.rules:1343`): `m`'s type a tuple of one component per argument, the
+`i`-th `u`'s type. -/
+def selMROK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
+  u.op == .SelectN && u.args.size == 1 && decide (0 ≤ u.auxInt.toInt) &&
+    w.op == .Copy && w.args.size == 1 &&
+    match f.value? u.args[0]! with
+    | some m =>
+      m.op == .MakeResult && decide (u.auxInt.toInt.toNat < m.args.size) &&
+        w.args[0]! == m.args[u.auxInt.toInt.toNat]! &&
+        match tabs.ty m.type with
+        | .tuple ts => ts.length == m.args.size &&
+            (ts[u.auxInt.toInt.toNat]?).any (Sem.Ty.beq · (tabs.ty u.type))
+        | _ => false
+    | none => false
+
+/-- The value `a` of `f` is a call `g` folds (`eqCallOK`). -/
+def dcB (tabs : Tables) (eq : List String × List String) (f g : Func) (a : ID) : Bool :=
+  match f.value? a, g.value? a with
+  | some u, some w => eqCallOK tabs eq f g u w
+  | _, _ => false
+
+/-- The calls `g` folds (`dcB`) are read only by a `SelectN [0]` or `[1]` of them, and are no
+control. -/
+def dcUsesOK (tabs : Tables) (eq : List String × List String) (f g : Func) : Bool :=
+  f.valueTab.all (fun o => o.all fun u =>
+    (u.op == .SelectN && u.args.size == 1 && (u.auxInt == 0 || u.auxInt == 1)) ||
+      u.args.all fun a => !dcB tabs eq f g a) &&
+  f.blocks.all fun b => (f.block? b).all fun fb => fb.controls.all fun c => !dcB tabs eq f g c
+
 /-- The new definition `w` in `g` of the `Load` `u` of `f`: `Copy x` of the value `x` it reads
 back (`fwdOK`), a constant of the bits it reads back (`fwdConstOK`), or the value of a fixed load
 from the read-only symbols `ro` (`fixedOK`); or of the memory root `u`, a `Copy` of its memory
 (`dropOK`), or a `Move` from another source (`moveSrcOK`); or of the `SliceLen` `u` of a
-`growslice` result, a `Copy` of its length argument (`growOK`). -/
-def fwdNewOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f g : Func) (u w : Value) : Bool :=
+`growslice` result, a `Copy` of its length argument (`growOK`); or of a folded `ifaceeq`/`efaceeq`
+call `u` with a descriptor symbol of `eq` (`eqCallOK`) or a selection of a `MakeResult`
+(`selMROK`). -/
+def fwdNewOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (eq : List String × List String)
+    (f g : Func) (u w : Value) : Bool :=
   (w.op == .Copy && w.args.size == 1 && fwdOK tabs f u (w.args[0]?.getD 0)) || fwdConstOK tabs f u w ||
-    dropOK tabs f g u w || moveSrcOK tabs f u w || fixedOK tabs ro f u w || growOK tabs f u w
+    dropOK tabs f g u w || moveSrcOK tabs f u w || fixedOK tabs ro f u w || growOK tabs f u w ||
+    eqCallOK tabs eq f g u w || selMROK tabs f u w
 
 /-- The `Load` `u` of `f` reads, at offset `o` (`offp`'s auxint), the bytes a `Move [n] dst src
 mem` copied (`generic.rules:827`): its memory is the `Move`, its pointer `dst + o` (`ptrBase`,
@@ -2049,15 +2206,17 @@ def fwdRankOK (f : Func) (rk : Array Nat) : Bool :=
     | none => true
 
 /-- Value `x` of `f` is unchanged in `g` (but for its use count), or a `Load` got a new definition
-`fwdNewOK` (with the read-only symbols `ro`) or `fwdMoveRep` accepts. -/
-def fwdRepOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f g : Func) (x : ID) : Bool :=
+`fwdNewOK` (with the read-only symbols `ro` and the descriptor symbols `eq`) or `fwdMoveRep`
+accepts. -/
+def fwdRepOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (eq : List String × List String)
+    (f g : Func) (x : ID) : Bool :=
   match f.value? x, g.value? x with
   | none, _ => true
   | some _, none => false
   | some u, some w =>
     w.id == u.id && w.block == u.block && w.type == u.type &&
     ((w.op == u.op && w.auxInt == u.auxInt && w.aux == u.aux && w.args == u.args) ||
-     fwdNewOK tabs ro f g u w || fwdMoveRep tabs f g u w)
+     fwdNewOK tabs ro eq f g u w || fwdMoveRep tabs f g u w)
 
 /-- `g`'s blocks are `f`'s, but for values appended to their lists (the fresh values of a
 forwarding through a `Move`, `fwdMoveRep`). -/
@@ -2067,12 +2226,16 @@ def blocksExtOK (f g : Func) : Bool :=
     | some fb, some gb => gb == { fb with values := gb.values } && fb.values.all (gb.values.contains ·)
     | _, _ => false
 
-/-- `g` is `f` with Loads forwarded (fixed loads from the read-only symbols `ro`) and identity
-writes dropped: the same blocks (`blocksExtOK`) and atoms but the dropped roots (`atomsXOK`),
-every value as `fwdRepOK` says, ranks ordering `f`'s listed values after their arguments. -/
-def fwdRel (tabs : Tables) (ro : List (String × Sem.Alloc)) (f g : Func) : Bool :=
-  atomsXOK f g && closedOK f && closedOK g && blocksExtOK f g &&
-  fwdRankOK f (fwdRank f) && (List.range f.valueTab.size).all (fwdRepOK tabs ro f g ·)
+/-- `g` is `f` with Loads forwarded (fixed loads from the read-only symbols `ro`), identity
+writes dropped and `ifaceeq`/`efaceeq` calls with descriptor symbols of `eq` folded: the same
+blocks (`blocksExtOK`) and atoms but the dropped roots (`atomsXOK`, which may drop calls), every
+value as `fwdRepOK` says, the folded calls read only by selections (`dcUsesOK`), ranks ordering
+`f`'s listed values after their arguments. -/
+def fwdRel (tabs : Tables) (ro : List (String × Sem.Alloc)) (eq : List String × List String)
+    (f g : Func) : Bool :=
+  atomsXOK f g true && closedOK f && closedOK g && blocksExtOK f g &&
+  fwdRankOK f (fwdRank f) && (List.range f.valueTab.size).all (fwdRepOK tabs ro eq f g ·) &&
+  dcUsesOK tabs eq f g
 
 /-- The variable a chain of at most `n` `Store`s binds as a stored value is `y`. -/
 def storesBind (y : Nat) : Nat → Pat → Bool
@@ -2114,7 +2277,9 @@ fixed load `(Load p _) && isFixedLoad(v, s, off) => rewriteFixedLoad(v, s, sb, o
 pointer `p` is `(Addr {s} _)`, through `Convert`, `ITab (IMake …)` and an `OffPtr [off]`
 (`fixedPtrPat`; `generic.rules:2251`–`:2258`; `fixedOK`, which follows them by `wordStep?`); or
 the length of a `growslice` result `(SliceLen (SelectN [0] (StaticLECall _ newLen:(Const64) …)))
-=> newLen` (`:2128`; `growOK`). -/
+=> newLen` (`:2128`; `growOK`); or a folded `ifaceeq`/`efaceeq` call `(StaticLECall {f} d x y mem)
+&& … => (MakeResult (EqPtr x y) mem)` (`:2279`, `:2287`; `eqCallOK`) or a selection of a
+`MakeResult` `(SelectN [n] m:(MakeResult ___)) => m.Args[n]` (`:1343`; `selMROK`). -/
 def fwdShapeOK (r : Rule) : Bool :=
   match r.pat, r.result, r.block with
   | .op .Load none _ _ _ .fixed [_, m] _, .copy (.var y), none => storesBind y 4 m
@@ -2132,23 +2297,32 @@ def fwdShapeOK (r : Rule) : Bool :=
   | .op .SliceLen none _ _ _ .fixed
       [.op .SelectN none _ _ _ .fixed [.op .StaticLECall none _ _ _ _ (_ :: .op .Const64 (some y) .. :: _) _] _] _,
       .copy (.var z), none => y == z
+  | .op .StaticLECall none _ _ _ (.exact 4) [_, _, _, _] _, .build [n0, n1], none =>
+    n0.op == .MakeResult && n1.op == .EqPtr
+  | .op .SelectN none _ _ _ .fixed [.op .MakeResult ..] _, .copy _, none => true
   | _, _, _ => false
 
 /-- The `Load` `v` of `f` that event `ev` forwards (or the `Store`/`Zero` it drops, the `Move`
-whose source it changes, or the `SliceLen` of a `growslice` result), its new definition (a `Copy`, a constant, an `Addr` or a `Move`) and
-the fresh values to put in first (`:827`: the `OffPtr`, then the `Load`), if it is a `loads` rule
-event (`fwdShapeOK`; tried on a `Store` after its `structStores`, `Interp.rewriteValue`). -/
+whose source it changes, the `SliceLen` of a `growslice` result, the call it folds or the
+`SelectN` of a `MakeResult`), its new definition (a `Copy`, a constant, an `Addr`, a `Move` or a
+`MakeResult`) and the fresh values to put in first (`:827`: the `OffPtr`, then the `Load`; a
+folded call: its `EqPtr`, logged after the call's definition twice, `Interp.tryRule`), if it is
+a `loads` rule event (`fwdShapeOK`; tried on a `Store` after its `structStores`,
+`Interp.rewriteValue`). -/
 def fwdEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × Value × List Value)
   | .rule v i _ defs =>
     match f.value? v with
     | some u =>
-      if u.op == .Load || u.op == .Store || u.op == .Zero || u.op == .Move || u.op == .SliceLen then
+      if u.op == .Load || u.op == .Store || u.op == .Zero || u.op == .Move || u.op == .SliceLen ||
+          u.op == .StaticLECall || u.op == .SelectN then
         let n := ((t.values[u.op.ctorIdx]?).map (·.size)).getD 0 +
           if u.op == .Store then t.structStores.size else 0
         if n ≤ i then
           match t.loads[i - n]?, defs.toList with
           | some cr, [w, top, offp] =>
-            if fwdShapeOK cr.rule && w.op == .Copy && w.args.size == 1 && top.op == .Load then
+            if fwdShapeOK cr.rule && w.op == .MakeResult && offp.op == .EqPtr then
+              some (v, w, [offp])
+            else if fwdShapeOK cr.rule && w.op == .Copy && w.args.size == 1 && top.op == .Load then
               some (v, w, [offp, top])
             else none
           | some cr, w :: _ =>
@@ -2185,10 +2359,12 @@ def fwdCopy (f : Func) (v : ID) (w : Value) : Func :=
 /-- The forwarding of the `Load` `u` of `f` to `w` with the fresh values `ds` (`fwdEvent?`) is
 one the validator accepts in `f` alone: `fwdNewOK` (with `f` for the output, so a dropped write
 whose memory was dropped in the same layer is not selected; fixed loads from the read-only
-symbols `ro`), or `fwdMoveOK` of the fresh `[offp, top]` with `w` a `Copy` of `top`. -/
-def fwdEvOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f : Func) (u w : Value) :
-    List Value → Bool
-  | [] => fwdNewOK tabs ro f f u w
+symbols `ro`, folds of calls with descriptor symbols of `eq`), `fwdMoveOK` of the fresh
+`[offp, top]` with `w` a `Copy` of `top`, or `eqCallOK` with the fresh `EqPtr` put in. -/
+def fwdEvOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (eq : List String × List String)
+    (f : Func) (u w : Value) : List Value → Bool
+  | [] => fwdNewOK tabs ro eq f f u w
+  | [q] => eqCallOK tabs eq f (ssPut f q) u w
   | [offp, top] =>
     w.args == #[top.id] && top.args[0]! == offp.id && fwdMoveOK tabs f u top offp
   | _ => false
@@ -2197,21 +2373,23 @@ def fwdEvOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f : Func) (u w : 
 in `f` and not at a value of `late`; its fresh values put in first), any other event kept, but for
 the copy-argument replacements of the forwarded `Load` logged before it (copy elimination on the
 `Load`'s arguments, which the forwarding validated in `f` replaces). -/
-def fwdStep (t : Interp.Table) (tabs : Tables) (ro : List (String × Sem.Alloc)) (sel : Bool)
-    (late : List ID) (f : Func) (p : Func × Array RwEvent) (ev : RwEvent) : Func × Array RwEvent :=
+def fwdStep (t : Interp.Table) (tabs : Tables) (ro : List (String × Sem.Alloc))
+    (eq : List String × List String) (sel : Bool) (late : List ID) (f : Func)
+    (p : Func × Array RwEvent) (ev : RwEvent) : Func × Array RwEvent :=
   match fwdEvent? t f ev with
   | some (v, w, ds) =>
-    if sel && (late.contains v || !(f.value? v).any (fwdEvOK tabs ro f · w ds)) then
+    if sel && (late.contains v || !(f.value? v).any (fwdEvOK tabs ro eq f · w ds)) then
       (p.1, p.2.push ev)
     else (fwdCopy (ds.foldl ssPut p.1) v w, p.2.filter fun | .copyArg z _ _ => z != v | _ => true)
   | none => (p.1, p.2.push ev)
 
 /-- The input with the log's Load-of-Store forwardings applied (with `sel` only those `fwdEvOK`
-holds of, with `f`'s read-only symbols, and none at a value of `late`), and the remaining
-events. -/
+holds of, with `f`'s read-only symbols and the descriptor symbols of `tabs`, and none at a value
+of `late`), and the remaining events. -/
 def fwdPre (t : Interp.Table) (tabs : Tables) (sel : Bool) (late : List ID) (f : Func)
     (log : Array RwEvent) : Func × Array RwEvent :=
-  log.foldl (fwdStep t tabs (if sel then roSyms tabs f else []) sel late f) (f, #[])
+  log.foldl (fwdStep t tabs (if sel then roSyms tabs f else [])
+    (if sel then eqSyms tabs else ([], [])) sel late f) (f, #[])
 
 /-! ## Struct-store splits (issues #151, #17)
 
@@ -3692,15 +3870,17 @@ def RewriteCheck.nilOK (env : PassEnv) (tabs : GoFV.SSA.Tables) (f0 f f' : GoFV.
     NilCheck.dictParams tabs f == NilCheck.dictParams env.tables f0
 
 /-- The layer `L` relates `f` (a layer's input with the log `log`, from the pass's input `f0`)
-and `f'`: `nilOK`, `fwdRel`, `validate` with the expansions it applied (`slTaken`, `ldTaken`),
-`ssRel`, `segRel` with its read-only segments' symbols among the precondition's (`roSegsOK`,
-`roPass`), `psRel` or `pcRel`, and `f'` passes `check`. -/
+and `f'`: `nilOK`, `fwdRel` (with the precondition's read-only symbols, `roPass`, and descriptor
+symbols, `eqPass`), `validate` with the expansions it applied (`slTaken`, `ldTaken`), `ssRel`,
+`segRel` with its read-only segments' symbols among the precondition's (`roSegsOK`, `roPass`),
+`psRel` or `pcRel`, and `f'` passes `check`. -/
 def RewriteCheck.layerOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (tabs : GoFV.SSA.Tables)
     (f0 : GoFV.SSA.Func) :
     RewriteCheck.Layer → GoFV.SSA.Func → Array GoFV.Rules.RwEvent → GoFV.SSA.Func → Bool
   | .nil _, f, _, f' => RewriteCheck.nilOK env tabs f0 f f'
   | .fwd _, f, _, f' =>
-    RewriteCheck.fwdRel tabs (RewriteCheck.roPass env.tables env.frontend f0) f f' &&
+    RewriteCheck.fwdRel tabs (RewriteCheck.roPass env.tables env.frontend f0)
+        (RewriteCheck.eqPass env.tables env.frontend) f f' &&
       RewriteCheck.fwdRoOK tabs (RewriteCheck.roPass env.tables env.frontend f0) f &&
       checkOK { tabs := tabs, typs := env.typs } f'
   | .sl, f, log, f' =>

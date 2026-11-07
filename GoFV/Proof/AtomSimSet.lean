@@ -203,6 +203,56 @@ theorem AtomArgsRefP.toX {tabs : Tables} {f g : Func} {I : SrcInv tabs f}
     (h : AtomArgsRefP I g) : AtomArgsRefX I g :=
   fun b hb gb hgb a ha u hu ht => .inl (h b hb gb hgb a ha u hu ht)
 
+/-- The calls of `f` that `g` drops (roots of `f` in a block's schedule, no roots of `g`; issue
+#69: the forwarding layer's folded `ifaceeq`/`efaceeq` calls) do not panic, in an environment
+`I.E` holds of and from registers satisfying the invariant at their block. -/
+def DropNP {tabs : Tables} {f : Func} (I : SrcInv tabs f) (g : Func) : Prop :=
+  ∀ env m im, I.E env m im → ∀ b fb of, b ∈ f.blocks → f.block? b = some fb →
+    schedule f fb = some of → ∀ x ∈ of.toList, ∀ u, f.value? x = some u →
+      u.op = .StaticLECall → rootP f x = true → rootP g x = false → ∀ fr : Frame,
+        (∀ a, I.P b a (rv fr a)) → ∀ e m', evalValue env (Ctx.make tabs f) fr u ≠ .panic e m'
+
+/-- Without dropped roots (`AtomsOK`) no call is dropped. -/
+theorem AtomsOK.dropNP {tabs : Tables} {f g : Func} (h : AtomsOK f g) (I : SrcInv tabs f) :
+    DropNP I g := by
+  intro _ _ _ _ b fb of hb hfb hof x hx _ _ _ hr hn
+  obtain ⟨fb', gb, hfb', -, hB⟩ := h.block b hb
+  rw [hfb] at hfb'; cases hfb'
+  obtain ⟨of', og, hof', -, hfl⟩ := hB.sched
+  rw [hof] at hof'; cases hof'
+  have : x ∈ of.toList.filter (rootP f) := List.mem_filter.2 ⟨hx, hr⟩
+  rw [hfl] at this
+  rw [(List.mem_filter.1 this).2] at hn
+  cases hn
+
+/-- `atomsXOK` without `calls` drops no call. -/
+theorem atomsXOK_dropNP {tabs : Tables} {f g : Func} (h : atomsXOK f g = true)
+    (I : SrcInv tabs f) : DropNP I g := by
+  intro _ _ _ _ b fb of hb hfb hof x hx u hu hop hr hn
+  unfold atomsXOK at h
+  simp only [Bool.and_eq_true, beq_iff_eq, Array.all_eq_true'] at h
+  obtain ⟨-, hall⟩ := h
+  have h := hall b hb
+  split at h
+  · rename_i fb' gb hfb' _
+    rw [hfb] at hfb'; cases hfb'
+    simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at h
+    obtain ⟨-, hsch⟩ := h
+    split at hsch
+    · rename_i of' og hof' _
+      rw [hof] at hof'; cases hof'
+      simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true, Bool.or_eq_true,
+        Bool.not_eq_true'] at hsch
+      rcases hsch.2 x hx with (h | h) | h
+      · unfold rootB at h; unfold rootP at hr; rw [hr] at h; cases h
+      · unfold rootB at h; unfold rootP at hn; rw [hn] at h; cases h
+      · rw [hu] at h
+        simp only [Option.any_some, Bool.or_eq_true, beq_iff_eq, Bool.and_eq_true,
+          Bool.false_eq_true, false_and, or_false] at h
+        rcases h with h | h <;> rw [hop] at h <;> cases h
+    · cases hsch
+  · cases h
+
 /-- The hypotheses of the atom simulation. -/
 structure Hyp (tabs : Tables) (f g : Func) (ce ce' : CheckEnv) (I : SrcInv tabs f) : Prop where
   wf : WF ce f
@@ -212,6 +262,7 @@ structure Hyp (tabs : Tables) (f g : Func) (ce ce' : CheckEnv) (I : SrcInv tabs 
   ok : AtomsX f g
   args : AtomArgsRefX I g
   ctrls : StepRefsP I g
+  np : DropNP I g
 
 /-! ## Placed values -/
 

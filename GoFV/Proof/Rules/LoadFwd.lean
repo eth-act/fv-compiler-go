@@ -28,7 +28,9 @@ open GoFV.Rules
 through up to three more `Store`s, `(Load _ (Store _ (Const64 [x]) _)) => (Const64F [x'])` and
 its converse, or `(Load (OffPtr [o] _) (Move _ src mem)) => @move.Block (Load (OffPtr [o] src)
 mem)`; or a dropped identity write `(Store _ _ mem) => mem`, `(Zero _ mem) => mem`; or the length
-of a `growslice` result `(SliceLen (SelectN [0] (StaticLECall _ newLen:(Const64) …))) => newLen`
+of a `growslice` result `(SliceLen (SelectN [0] (StaticLECall _ newLen:(Const64) …))) => newLen`;
+or a folded `ifaceeq`/`efaceeq` call `(StaticLECall {f} d x y mem) && … => (MakeResult (EqPtr x
+y) mem)` and a selection of a `MakeResult` `(SelectN [n] m:(MakeResult ___)) => m.Args[n]`
 (`RewriteCheck.fwdShapeOK`); each instance is validated by `RewriteCheck.fwdRel`. -/
 def EffectRule.LoadFwd (r : Rule) : Prop := GoFV.Opt.RewriteCheck.fwdShapeOK r = true
 
@@ -116,6 +118,17 @@ theorem r_generic_2257_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r
 
 /-- `generic.rules:2258`: `(Load (OffPtr [off] (ITab (IMake (Convert (Addr {s} sb) _) _))) _) && isFixedLoad(v, s, off) => rewriteFixedLoad(v, s, sb, off)` -/
 theorem r_generic_2258_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2258 := rfl
+
+/-- `generic.rules:2279`: `(StaticLECall {f} typ_ x y mem) && isSameCall(f, "runtime.efaceeq") && isDirectAndComparableType(typ_) && clobber(v) => (MakeResult (EqPtr x y) mem)` (issues #69, #189: the call's descriptor an `Addr` of a type symbol of the precondition's list, through `ITab (IMake …)` and copies, `RewriteCheck.eqCallOK`; it returns `x == y` under `Sem.Env.IfaceEq`) -/
+theorem r_generic_2279_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2279 := rfl
+
+/-- `generic.rules:2287`: `(StaticLECall {f} itab x y mem) && isSameCall(f, "runtime.ifaceeq") && isDirectAndComparableIface(itab) && clobber(v) => (MakeResult (EqPtr x y) mem)` (the itab symbols; the `ConstNil` and `Phi` descriptors of `isDirectAndComparableIface` are rejected) -/
+theorem r_generic_2287_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2287 := rfl
+
+/-- `generic.rules:1343`: `(SelectN [n] m:(MakeResult ___)) => m.Args[n]` (each instance's tuple
+type checked, `RewriteCheck.selMROK`; a selection of a call folded in the same layer stays a
+selection, `LoadFwd.selDC_den`) -/
+theorem r_generic_1343_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1343 := rfl
 
 /-- Non-vacuity: the Load-from-`Zero` rule `:842` (a `Load` rebuilt through a `Store` over a
 `Zero`) and the `Store` rule `:997` (`(Store dst (ArrayMake1 e) mem) => (Store {e.Type} dst e

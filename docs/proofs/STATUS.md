@@ -30,13 +30,13 @@ the semantic phase of their ops (`GoFVTest/Proof/RuleClass.lean`; "Classificatio
 | --- | --: | --: | --: | --: |
 | P1 (integers, booleans) | 1,212 | 30 | 153 | 1,395 |
 | P2 (pointers, composites, `Load` values, `SelectN`) | 69 | 1 | 39 | 109 |
-| mem (memory ops) | 52 | 0 | 60 | 112 |
-| call | 9 | 0 | 38 | 47 |
+| mem (memory ops) | 53 | 0 | 59 | 112 |
+| call | 11 | 0 | 36 | 47 |
 | float | 22 | 0 | 46 | 68 |
 | ptr (`ConstString`, `Addr`, `NilCheck`, pointer comparisons) | 12 | 0 | 11 | 23 |
 | phi | 4 | 0 | 1 | 5 |
 | block | 3 | 0 | 0 | 3 |
-| all | 1,383 | 31 | 348 | 1,762 |
+| all | 1,386 | 31 | 345 | 1,762 |
 
 *Proven*: a merged lemma (`Rule.Sound`, `Rule.SoundT`, `Rule.SoundW`, `Rule.MakeSel`,
 `Rule.LoadSel`, `Rule.Drop`, `Rule.IMakeSM`, `Rule.AddrCmp`, `BlockRule.Sound`,
@@ -48,8 +48,10 @@ the `IMake` of a `StructMake` (`generic.rules:981`, `dec.rules:102`) per instanc
 (`RewriteCheck.imsOK`, `GoFV.Proof.Pass.Rewrite.IMFacts.step`) (#69, Phase1Tail), the
 comparisons of two symbol addresses (`:1648`, `:1651`) per instance (`RewriteCheck.addrCmpOK`,
 `ACFacts.step`), and the selections of an `IData` (`:982`, `:983`, `:1001`, `dec.rules:103`,
-`:104`, `:127`) as `Rule.Sound` with the interface shape of the `IData` operand (`idataArgOk`)
-(#69, Phase1Tail2).
+`:104`, `:127`) as `Rule.Sound` with the interface shape of the `IData` operand (`idataArgOk`),
+and the `runtime.ifaceeq`/`efaceeq` folds (`:2279`, `:2287`, with `SelectN` of `MakeResult`
+`:1343`) in the forwarding layer under the runtime contract `Env.IfaceEq` (§ Assumptions;
+`RewriteCheck.eqCallOK`, `selMROK`) (#69, Phase1Tail2).
 
 **False under the semantics, with the reason** (31, each marked `-- FALSE r_… #N` in its proof
 module; "Findings" in `rules.md`):
@@ -83,11 +85,11 @@ obstacle counts on full-v6, "Findings" in `rules.md` has the counterexamples):
 - The `CondSelect` folds (about 240 functions on the unmarked alternatives of `:2322–:2393`) and
   `divmod.rules:136–148` (59) are false as above.
 
-**Open** (348):
+**Open** (345):
 
 - `P1`/`P2` alternatives without a lemma (192): most never fire on the corpus; those that fire
   are in the `fire-full` table of `rules.md` (sole obstacles by rule).
-- `mem` (60) and `ptr` (11): memory and pointer rules inside the model without an effect
+- `mem` (59) and `ptr` (11): memory and pointer rules inside the model without an effect
   obligation proof: `Load` forwardings of other shapes (`:831–:907`), `Move` chains and
   `Move`/`Zero` of `Store`s (`:1740–:1942`), dropped writes `:919`/`:924`/`:930`/`:937` (open:
   the `not disjoint` class), the other `EqPtr`/`NeqPtr` of symbol addresses, locals and their
@@ -97,13 +99,11 @@ obstacle counts on full-v6, "Findings" in `rules.md` has the counterexamples):
 - `float` (46): inside the model (`Sem/Float.lean`, the AArch64 instruction of each op with
   RNE): constant folds of `Add/Sub/Mul/Div/Neg{32,64}F`, `Cvt*` of constants,
   `Ceil/Floor/Trunc/Round/RoundToEven/Sqrt` of constants, `OrB`/`Not` of float comparisons.
-- `call` (38): `memequal` folds (`:1395–:1557`; `memequal` has a contract), the `Const32`
+- `call` (36): `memequal` folds (`:1395–:1557`; `memequal` has a contract), the `Const32`
   alternatives of the proven call segments, `growslice` lengths at `Const32`
-  (`:2128`/`:2131` alternatives), devirtualisation `:1733`, the `runtime.ifaceeq`/`efaceeq`
-  folds `:2287`/`:2279` (with `:1343`, 232 functions in pairs; the integrator approved a runtime
-  contract for them), and **outside the model**: the `runtime.cmpstring` rules `:2267`, `:2271`
-  (no contract in `Env.runtime`) and the race instrumentation cleanup `:2115`, `:2116` (race
-  mode is not modelled).
+  (`:2128`/`:2131` alternatives), devirtualisation `:1733`, and **outside the model**: the
+  `runtime.cmpstring` rules `:2267`, `:2271` (no contract in `Env.runtime`) and the race
+  instrumentation cleanup `:2115`, `:2116` (race mode is not modelled).
 - `phi` (1): `:1068` (`Phi` of two `Not`s becomes `Not` of a fresh `Phi`; 47 functions): the
   target has a `Phi` atom the source lacks, which neither the atom simulation nor sccp's checker
   relates.
@@ -239,6 +239,7 @@ witnesses):
 | `env.FrameKeep` (`VPre`) | contracts keep the caller's frame allocations and return no memory | callees do not free their caller's frame | a contract that drops the caller's frame | `Env.runtime_frameKeep`, `Env.p1_frameKeep` |
 | `env.AllocZero` (`VPre`) | malloc-family contracts asked for a positive size return a fresh all-zero heap block (size 0 returns `runtime.zerobase`, about which nothing is claimed) | the allocator's contract | a non-zeroed or aliased allocation | `Env.runtime_allocZero`, `Env.p1_allocZero` |
 | `env.GrowLen` (`VPre`) | `runtime.growslice`/`growsliceNoAlias`, if present, return a slice of their `newLen` argument | the runtime's contract | another length | `Env.runtime_growLen`, `Env.p1_growLen` |
+| `env.IfaceEq eq` (`VPre`, `eq = Verified.pipelineEq env`; `RwPre`, `eq = RewriteCheck.eqPass tabs fe`) | `runtime.ifaceeq` on (a word pointing at the start of) an itab symbol of `eq.1`, and `runtime.efaceeq` on a type symbol of `eq.2`, if present, return `[PtrOps.eqPtr false [x, y]]` (the pointer equality of their data words) and the memory they were given; `eq` holds the itab and type symbols of the input's tables and the frontend's tables whose type the export marks direct-interface and comparable (`types.IsDirectIface`, `types.IsComparable`) | the runtime's code, `third_party/go/src/runtime/alg.go`: `efaceeq(t, x, y)` returns `true` for a nil `t`, panics if `t.Equal` is nil, returns `x == y` if `t.IsDirectIface()`, else `eq(x, y)`; `ifaceeq(tab, x, y)` is it with `t := tab.Type`. A comparable type has an `Equal`, a non-nil symbol is no nil descriptor, so both return `x == y` and write nothing (`generic.rules:2279`/`:2287` fold them so) | an export whose direct/comparable flags disagree with the runtime type's `TFlagDirectIface`/`Equal`, or a runtime that writes memory or panics there | `Env.runtime_ifaceEq`, `Env.p1_ifaceEq` (absent), `Env.ifaceEqDemo_ifaceEq` (present) |
 | `NoNilFault tabs f env args mem` (`r.nnf`) | no run of the `schedule` input faults in the nil page or checks a wild pointer (`runL` and `runLF` agree) | `schedule`'s theorem is stated against `runLF` (memory ops fault), the passes before it against `runL`; this restricts the end-to-end statement to such inputs | — (a restriction, not a claim about Go) | `noNilFault_of_noAct` (witnesses) |
 | `ArgPtrsOK tabs f env args mem` (`r.nnf`) | every pointer-shaped register piece of a parameter (`ArgIntReg` at a `.ptr` shape) reads nil or a pointer that is not wild (`Ptr.wild`: into the nil block but not nil) | Go-level: Go's type system and the garbage collector require a pointer parameter to be nil or valid; `unsafe` code that forges a wild pointer is outside the model. `swapOKB`'s `argPtr` case moves a nil check of such a piece before a fault on the same memory: it panics alike or passes, where a wild pointer would leave it `stuck` | a caller passing a forged pointer (an integer address, or nil plus an offset) as a pointer argument | `argPtrsOK_of_none` (witnesses) |
 | `NilPtrsOK tabs f env args mem` (`r.nnf`, approved on #385) | in every state `runLF` of the `schedule` input reaches (a block entry, after its `Phi`s and any prefix of its order), every pointer-shaped value that a nil check checks reads nil or a pointer that is not wild, once it has a register (`NilRegsOK`) | Go-level, as `ArgPtrsOK`: a Go pointer is nil or points into an allocated object (the `unsafe.Pointer` rules); the runtime throws on a pointer in the nil page (`runtime/stack.go:676`, "invalid pointer found on stack", `0 < p < minLegalPointer`). Only checked pointers: a compiler-made `nil + k` may be computed before the check of its base panics. `nilPtrSwap` moves such a check before a fault on the same memory | a function that loads, converts or receives a forged pointer and nil-checks it (`unsafe` misuse) | `nilPtrsOK_of_none` (witnesses: `clampL_noNilPtr`, `pfF_pipeline`'s `noNilPtrB`) |
