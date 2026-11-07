@@ -314,7 +314,8 @@ rules with a merged `Rule.Sound`, `Rule.SoundT`, `Rule.SoundW`, `Rule.MakeSel`, 
 (block rules), `EffectRule.NilElim` lemma (nil-check eliminations), `EffectRule.LoadFwd` lemma
 (Load-of-Store forwardings), `EffectRule.StructLoad` lemma (struct-load expansions) or
 `EffectRule.StructStore` lemma (struct-store splits) or `EffectRule.Seg` lemma (segment
-rewrites; issue #151) or `EffectRule.PhiSel` lemma (selections of `Phi`s of `SliceMake`s; issue #69,
+rewrites; issue #151) or `EffectRule.PhiSel` lemma (selections of `Phi`s of `SliceMake`s and
+constant `Phi`s, validated per instance; issue #69,
 `docs/proofs/rules.md`), in matching order: the rule sets of the proven-only rewrite passes
 (`GoFV.Opt.optProven`, …; issue #113) and of the decompose builtin rewrite step (issue #17).
 -/
@@ -381,7 +382,7 @@ open GoFV.Rules
 /-- `{low}.rules` restricted to its {n} proven value rules, {nb} proven block rules, {len(nils)}
 nil-check eliminations, {len(loads)} Load-of-Store forwardings, {len(sloads)} struct-load
 expansions, {len(sstores)} struct-store splits, {len(segs)} segment rules and {len(psels)} `Phi`
-selections. -/
+rules validated per instance. -/
 def {low} : RuleSet where
   name := "{low}"
   values := [{body}]

@@ -306,6 +306,7 @@ import GoFV.Proof.Pass.NilSeeds
 import GoFV.Proof.Pass.NilSim
 import GoFV.Proof.Pass.NumberLines
 import GoFV.Proof.Pass.PairL
+import GoFV.Proof.Pass.PhiConst
 import GoFV.Proof.Pass.PhiOpt
 import GoFV.Proof.Pass.PhiOptBlock
 import GoFV.Proof.Pass.PhiOptCore
@@ -763,6 +764,7 @@ import GoFV.Proof.Witness.NilMalloc
 import GoFV.Proof.Witness.NilSel
 import GoFV.Proof.Witness.NotIf
 import GoFV.Proof.Witness.PairL
+import GoFV.Proof.Witness.PhiConst
 import GoFV.Proof.Witness.PhiElim
 import GoFV.Proof.Witness.PhiOpt
 import GoFV.Proof.Witness.PhiTightenL
