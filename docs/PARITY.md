@@ -335,3 +335,21 @@ row):
 Not ported yet: `dwarfgen.Info` (declarations → `dwarf.Var`s, scopes, inlined calls; its
 inputs are not exported) and the package-level abstract functions and fixups
 (`DwarfFixupTable.Finalize`).
+
+`lake exe debug-parity [--jobs N] [--max-report N] [--table FILE] <dir|file>...`
+(`GoFVTest/DebugParity.lean`) checks the Lean port of the optimized `ssa.BuildFuncDebug`
+(`GoFV/Dwarf/Debug.lean`, `docs/PASSES3.md` E1: `PopulateABIInRegArgOps` with the slot
+canonicalizer, the var/slot canonicalisation, `liveness`, `buildLocationLists`, the location
+expressions; `ssagen.StackOffset` as the callback) on the function after `trim` and the exported
+frame after `AllocFrame` (`frame` `out`/`opt` lines). It compares with `prog0`'s `dbg*` lines:
+`EntryID`, `Slots` (name by `.ssa` aux link, type by `String()` and size, offset), `Vars` with
+`VarSlots`, and every nonempty location list (SSA coordinates and expression bytes), exactly.
+`RegOutputParams` (set by `buildssa`) and `GetPC` are not part of it. The IDs of the dead
+`ArgIntReg`/`ArgFloatReg` values `PopulateABIInRegArgOps` synthesizes come from the free list,
+which the export writes sorted after `regalloc`, so they may differ from Go's; they are not
+observable in the result (zero-width, must-be-first values: their entries start at
+`BlockStart`).
+
+Result on quick-v10 (9,297 functions; 57,184 slots, 38,267 vars, 35,652 nonempty location lists
+with 70,867 entries; 1,570 values synthesized in 1,150 functions; 99 s with 6 jobs under load):
+9,297/9,297 (100%), no mismatch class.

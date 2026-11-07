@@ -135,6 +135,16 @@ structure InlDef where
   name : GoStr
   deriving DecidableEq, Inhabited
 
+/-- What `.prog` files add to a position base (v3): `Filename()` (the name positions report,
+`RelFilename`), and the base's own position `Pos()` (`RelFilename()`, `Line()`, `Col()`), which
+`src.Pos.Before`, `RelLine` and `RelCol` read. -/
+structure PosBaseExt where
+  filename : GoStr
+  posFilename : GoStr
+  posLine : Nat
+  posCol : Nat
+  deriving DecidableEq, Inhabited, Repr
+
 /-- A definition line. Definitions are numbered per file and written before their first use. -/
 inductive Def where
   | type (n : Nat) (d : TypeDef)
@@ -142,7 +152,7 @@ inductive Def where
   /-- An `*obj.LSym` by name and ABI. -/
   | sym (n : Nat) (name : GoStr) (abi : Nat)
   /-- A position base; `fileIndex` is `PosBase.FileIndex()` (`none`: not registered). -/
-  | posBase (i : Nat) (b : PosBase) (fileIndex : Option Int)
+  | posBase (i : Nat) (b : PosBase) (fileIndex : Option Int) (ext : PosBaseExt)
   | inl (k : Nat) (d : InlDef)
   deriving DecidableEq, Inhabited
 
@@ -330,6 +340,8 @@ structure Prog0 where
   relocs : Array Reloc
   /-- `LSym.Align` of the symbols the Prog operands reference, where nonzero (v3). -/
   symAlign : Array (Nat × Int)
+  /-- `FuncInfo.Autot`: the type symbols of autos recorded for DWARF (a set, number order). -/
+  autot : Array Nat
   /-- `curfn.DebugInfo` after `genssa` (`none`: not set). -/
   dbg : Option FuncDebug
   warns : Array GoStr
@@ -451,12 +463,50 @@ structure DwFn where
   dwTextCount : Nat
   deriving Inhabited
 
+/-- The facts `dwarfgen.Info` reads of an `*ir.Name` (`dwname` line) besides its definition:
+`Op() == ONAME`, `Used()`, `IsAutoTmp`, `InlFormal()`, `InlLocal()`, `DictIndex`, `FrameOffset()`,
+`IsOutputParamInRegisters()`, `Heapaddr`, `Canonical()` (when not itself), `TypeSymName` of its
+type (`none`: not computed, the type's size is unknown), `IsUntyped()`, kind `TSSA`,
+`CanSSA` (`none`: unknown) and `Pos()`. -/
+structure DwName where
+  name : Nat
+  oname : Bool
+  used : Bool
+  autotmp : Bool
+  inlFormal : Bool
+  inlLocal : Bool
+  dictIndex : Nat
+  frameOffset : Int
+  outregs : Bool
+  heapaddr : Option Nat
+  canonical : Option Nat
+  typeSym : Option GoStr
+  untyped : Bool
+  tssa : Bool
+  canSSA : Option Bool
+  pos : Pos
+  deriving Inhabited, BEq
+
 /-- The dwarf section (v3): `populateDWARF`'s state and the function's DWARF symbols at the
 end of `Compile` (E2). -/
 structure Dwarf where
   defs : Array Def
   /-- `none` when `populateDWARF` did not run. -/
   fn : Option DwFn
+  /-- `dwarfgen.Info`'s inputs besides the frame, `FuncDebug` and Progs: `fn.Dcl`; `Needctxt()`
+  and the closure variables' offsets (`NewClosureStructIter`, with `Heapaddr` entries);
+  `fn.Marks` (position, scope); `fn.Parents`; the signature's parameter names
+  (`RecvParamsResults`, `none` when not a name); the pre-inlining `Inl.Dcl` of the function (if
+  inlined) and of the inlined functions: (function, abstract-function symbol, names); the
+  names' facts. -/
+  dcl : Array Nat
+  needctxt : Bool
+  closure : Array (Nat × Int)
+  marks : Array (Pos × Nat)
+  parents : Array Nat
+  params : Array (Option Nat)
+  precursors : Array (Nat × Nat × Array Nat)
+  names : Array DwName
   /-- Every distinct `dwarf.Var` of the scopes and inlined calls (identity matters:
   `putscope` skips the variables of inlined calls), the scopes' first. -/
   vars : Array DwVar

@@ -47,7 +47,8 @@ def AsmCtxt.ofFile (pf : ProgFile) : Except String AsmCtxt := do
       maymorestack }
   for d in pf.frame.defs ++ pf.genin.defs ++ pf.prog0.defs do
     match d with
-    | .posBase i b fi => c := { c with posBases := c.posBases.insert i (b, fi) }
+    | .posBase i b fi e =>
+      c := { c with posBases := c.posBases.insert i (b, fi), posExt := c.posExt.insert i e }
     | .inl k x => c := { c with inls := c.inls.insert k x }
     | _ => pure ()
   return c

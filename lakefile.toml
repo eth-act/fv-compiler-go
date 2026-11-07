@@ -227,3 +227,7 @@ root = "GoFVTest.GenCheck"
 [[lean_exe]]
 name = "dwarf-parity"
 root = "GoFVTest.DwarfParity"
+
+[[lean_exe]]
+name = "debug-parity"
+root = "GoFVTest.DebugParity"

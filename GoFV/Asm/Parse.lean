@@ -101,6 +101,14 @@ def hexNatW (s : Sl) : Except String Nat := do return (← hex64W s).toNat
 
 /-! ## Lines -/
 
+/-- A quoted string or `?`. -/
+def optStr : F (Option GoStr) := fun c => do
+  let i ← get
+  if i < c.stop && c.data.get! i == 34 then return some (← str c)
+  let wd ← word c
+  if wd.eqStr "?" then return none
+  throw s!"expected a string or ?, got {wd}"
+
 def defTags : List String := ["type", "name", "sym", "posbase", "inl"]
 
 def defLine : L Def := do
@@ -135,7 +143,8 @@ def defLine : L Def := do
     let c ← w intW
     let inl ← w intW
     let fi ← w optIntW
-    return .posBase i { file, line := l, col := c, inl } fi
+    let ext := { filename := ← str, posFilename := ← str, posLine := ← w natW, posCol := ← w natW }
+    return .posBase i { file, line := l, col := c, inl } fi ext
   | some "inl" => line "inl" do
     let k ← w (refW 'i')
     let parent ← w (optRefW 'i')
@@ -313,10 +322,11 @@ def prog0 : L Prog0 := do
   let symAlign ← line "symalign" (w (listW fun s => do
     let ps ← partsW s ':' 2
     return (← refW 'y' ps[0]!, ← intW ps[1]!)))
+  let autot ← line "autot" (w (listW (refW 'y')))
   let dbg ← funcDebug
   let warns ← warnsEnd
-  return { defs, progs, fn, needzero, regArgs, textSize, textAlign, text, relocs, symAlign, dbg,
-           warns }
+  return { defs, progs, fn, needzero, regArgs, textSize, textAlign, text, relocs, symAlign, autot,
+           dbg, warns }
 
 def asm : L Asm := do
   line "asm" (pure ())
@@ -379,6 +389,26 @@ def dwarf : L Dwarf := do
                external := ← w boolW, wrapper := ← w boolW, useBASEntries := ← w boolW,
                dwTextCount := ← w natW })
     else pure none
+  let (dcl, needctxt, closure, marks, parents, params, precursors, names) ← if fn.isSome then do
+      let dcl ← line "dwdcl" (w (listW (refW 'n')))
+      let (needctxt, closure) ← line "dwclosure" do
+        return (← w boolW, ← w (listW fun x => do
+          let ps ← partsW x ':' 2
+          return (← refW 'n' ps[0]!, ← intW ps[1]!)))
+      let marks ← many "dwmark" do return (← w posW, ← w natW)
+      let parents ← line "dwparents" (w (listW natW))
+      let params ← line "dwparams" (w (listW fun x => if isHole x then pure none else some <$> refW 'n' x))
+      let precursors ← many "dwprecursor" do
+        return (← w (refW 'y'), ← w (refW 'y'), ← w (listW (refW 'n')))
+      let names ← many "dwname" do
+        return { name := ← w (refW 'n'), oname := ← w boolW, used := ← w boolW, autotmp := ← w boolW,
+                 inlFormal := ← w boolW, inlLocal := ← w boolW, dictIndex := ← w natW,
+                 frameOffset := ← w intW, outregs := ← w boolW, heapaddr := ← w (optRefW 'n'),
+                 canonical := ← w (optRefW 'n'),
+                 typeSym := ← optStr,
+                 untyped := ← w boolW, tssa := ← w boolW, canSSA := ← w optBoolW, pos := ← w posW }
+      pure (dcl, needctxt, closure, marks, parents, params, precursors, names)
+    else pure (#[], false, #[], #[], #[], #[], #[], #[])
   let mut vars := #[]
   for _ in [0:(← read).lines.size] do
     unless ← tagIs "var" do break
@@ -415,7 +445,8 @@ def dwarf : L Dwarf := do
     else pure none
   let data ← dataLines
   let warns ← warnsEnd
-  return { defs, fn, vars, scopes, inlCalls, dieRefs, dieOffs, data, warns }
+  return { defs, fn, dcl, needctxt, closure, marks, parents, params, precursors, names, vars,
+           scopes, inlCalls, dieRefs, dieOffs, data, warns }
 
 def file : L ProgFile := do
   line "gofv-prog" do

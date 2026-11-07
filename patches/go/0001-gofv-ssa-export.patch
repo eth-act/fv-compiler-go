@@ -1943,7 +1943,7 @@
  type LocalSlotSplitKey struct {
 --- a/src/cmd/compile/internal/ssagen/export_prog_gofv.go
 +++ b/src/cmd/compile/internal/ssagen/export_prog_gofv.go
-@@ -0,0 +1,1041 @@
+@@ -0,0 +1,1189 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -1975,6 +1975,7 @@
 +	"cmd/compile/internal/objw"
 +	"cmd/compile/internal/ssa"
 +	"cmd/compile/internal/typebits"
++	"cmd/compile/internal/typecheck"
 +	"cmd/compile/internal/types"
 +	"cmd/internal/dwarf"
 +	"cmd/internal/obj"
@@ -2365,7 +2366,7 @@
 +		x.posbases[idx] = true
 +		b := base.Ctxt.PosTable.Pos(p).Base()
 +		if b == nil {
-+			fmt.Fprintf(&x.defs, "posbase p%d \"\" 0 0 -1 -1\n", idx)
++			fmt.Fprintf(&x.defs, "posbase p%d \"\" 0 0 -1 -1 \"\" \"\" 0 0\n", idx)
 +		} else {
 +			inl := b.InliningIndex()
 +			if inl >= 0 {
@@ -2376,7 +2377,9 @@
 +				defer func() { recover() }()
 +				fi = strconv.Itoa(b.FileIndex())
 +			}()
-+			fmt.Fprintf(&x.defs, "posbase p%d %s %d %d %d %s\n", idx, gofvQuoteP(b.AbsFilename()), b.Line(), b.Col(), inl, fi)
++			bp := b.Pos()
++			fmt.Fprintf(&x.defs, "posbase p%d %s %d %d %d %s %s %s %d %d\n", idx, gofvQuoteP(b.AbsFilename()), b.Line(),
++				b.Col(), inl, fi, gofvQuoteP(b.Filename()), gofvQuoteP(bp.RelFilename()), bp.Line(), bp.Col())
 +		}
 +	}
 +	stmt := p.IsStmt()
@@ -2587,6 +2590,7 @@
 +		fmt.Fprintf(&x.body, "text %d %d %s %d\n", s.Size, s.Align, gofvHexP(s.P), len(s.R))
 +		x.relocs(s)
 +		x.symAlign(pp)
++		x.autot()
 +		x.funcDebug()
 +	})
 +}
@@ -2619,6 +2623,22 @@
 +		al = append(al, fmt.Sprintf("y%d:%d", k, x.symList[k-1].Align))
 +	}
 +	fmt.Fprintf(&x.body, "symalign %s\n", gofvListP(al))
++}
++
++// autot writes the autot line: the text symbol's FuncInfo.Autot (the type symbols of autos
++// recorded for DWARF), in number order.
++func (x *gofvProgExporter) autot() {
++	var ks []int
++	for t := range x.fn.LSym.Func().Autot {
++		x.sym(t)
++		ks = append(ks, x.syms[t])
++	}
++	slices.Sort(ks)
++	var ss []string
++	for _, k := range ks {
++		ss = append(ss, "y"+strconv.Itoa(k))
++	}
++	fmt.Fprintf(&x.body, "autot %s\n", gofvListP(ss))
 +}
 +
 +// gofvLocEntry renders a location list entry: <sb>:<sv>:<eb>:<ev>:<expr hex>.
@@ -2878,6 +2898,133 @@
 +		v.DeclLine, v.DeclCol, v.InlIndex, v.ChildIndex, gofvBoolP(v.IsInAbstract), v.ClosureOffset, list)
 +}
 +
++// dwarfInputs writes the dw* lines: what dwarfgen.Info reads besides the FuncDebug, the frame
++// and the final Progs (fn.Dcl, the closure layout, scope marks and parents, the signature's
++// parameter names, the pre-inlining declarations of the function and of the inlined functions
++// with their abstract-function symbols, and per name the facts Info reads).
++func (x *gofvProgExporter) dwarfInputs(fs *dwarf.FnState) {
++	fn := x.fn
++	var ns []*ir.Name
++	seen := map[*ir.Name]bool{}
++	add := func(n *ir.Name) {
++		if n != nil && !seen[n] {
++			seen[n] = true
++			ns = append(ns, n)
++		}
++	}
++	var dcl []string
++	for _, n := range fn.Dcl {
++		add(n)
++		dcl = append(dcl, x.name(n))
++	}
++	fmt.Fprintf(&x.body, "dwdcl %s\n", gofvListP(dcl))
++	if fd, ok := fn.DebugInfo.(*ssa.FuncDebug); ok && fd != nil {
++		for _, n := range fd.OptDcl {
++			add(n)
++		}
++		for _, n := range fd.Vars {
++			add(n)
++		}
++		for _, n := range fd.RegOutputParams {
++			add(n)
++		}
++	}
++	var cv []string
++	if fn.Needctxt() {
++		it := typecheck.NewClosureStructIter(fn.ClosureVars)
++		for {
++			n, _, off := it.Next()
++			if n == nil {
++				break
++			}
++			add(n)
++			cv = append(cv, fmt.Sprintf("%s:%d", x.name(n), off))
++			if n.Heapaddr != nil {
++				add(n.Heapaddr)
++				cv = append(cv, fmt.Sprintf("%s:%d", x.name(n.Heapaddr), off))
++			}
++		}
++	}
++	fmt.Fprintf(&x.body, "dwclosure %d %s\n", gofvBoolP(fn.Needctxt()), gofvListP(cv))
++	for _, m := range fn.Marks {
++		fmt.Fprintf(&x.body, "dwmark %s %d\n", x.pos(m.Pos), m.Scope)
++	}
++	var ps []string
++	for _, p := range fn.Parents {
++		ps = append(ps, strconv.Itoa(int(p)))
++	}
++	fmt.Fprintf(&x.body, "dwparents %s\n", gofvListP(ps))
++	var pn []string
++	for _, f := range fn.Type().RecvParamsResults() {
++		if n, ok := f.Nname.(*ir.Name); ok {
++			add(n)
++			pn = append(pn, x.name(n))
++		} else {
++			pn = append(pn, "_")
++		}
++	}
++	fmt.Fprintf(&x.body, "dwparams %s\n", gofvListP(pn))
++	// Pre-inlining declarations: the function's own (when it was inlined somewhere) and those of
++	// every function of the inlining tree nodes the file defines.
++	var fsyms []*obj.LSym
++	if fn.LSym.WasInlined() {
++		fsyms = append(fsyms, fn.LSym)
++	}
++	var inls []int
++	for k := range x.inls {
++		inls = append(inls, k)
++	}
++	slices.Sort(inls)
++	nodes := base.Ctxt.InlTree.GOFVNodes()
++	for _, k := range inls {
++		if k < len(nodes) && nodes[k].Func != nil && !slices.Contains(fsyms, nodes[k].Func) {
++			fsyms = append(fsyms, nodes[k].Func)
++		}
++	}
++	for _, s := range fsyms {
++		pf, _ := base.Ctxt.DwFixups.GetPrecursorFunc(s).(*ir.Func)
++		if pf == nil || pf.Inl == nil {
++			continue
++		}
++		var ds []string
++		for _, n := range pf.Inl.Dcl {
++			add(n)
++			ds = append(ds, x.name(n))
++		}
++		fmt.Fprintf(&x.body, "dwprecursor %s %s %s\n", x.sym(s), x.sym(base.Ctxt.DwFixups.AbsFuncDwarfSym(s)), gofvListP(ds))
++	}
++	// Per name (transitively their Heapaddr and Canonical names).
++	for i := 0; i < len(ns); i++ {
++		n := ns[i]
++		add(n.Heapaddr)
++		add(n.Canonical())
++		ref := func(m *ir.Name) string {
++			if m == nil {
++				return "-"
++			}
++			return x.name(m)
++		}
++		canon := n.Canonical()
++		if canon == n {
++			canon = nil
++		}
++		t := n.Type()
++		tsym, untyped, tssa, canssa := "?", 0, 0, "?"
++		if t != nil {
++			untyped = gofvBoolP(t.IsUntyped())
++			tssa = gofvBoolP(t.Kind() == types.TSSA)
++			if !t.IsUntyped() && gofvDeepKnownP(t) {
++				tsym = gofvQuoteP(types.TypeSymName(t))
++				canssa = strconv.Itoa(gofvBoolP(ssa.CanSSA(t)))
++			}
++		}
++		fmt.Fprintf(&x.body, "dwname %s %d %d %d %d %d %d %d %d %s %s %s %d %d %s %s\n", x.name(n),
++			gofvBoolP(n.Op() == ir.ONAME), gofvBoolP(n.Used()), gofvBoolP(ir.IsAutoTmp(n)), gofvBoolP(n.InlFormal()), gofvBoolP(n.InlLocal()),
++			n.DictIndex, n.FrameOffset(), gofvBoolP(n.IsOutputParamInRegisters()), ref(n.Heapaddr), ref(canon),
++			tsym, untyped, tssa, canssa, x.pos(n.Pos()))
++	}
++}
++
 +// dwdata writes a data line for a DWARF symbol, with child-DIE reference addends written as
 +// they are before Finalize (ReferenceChildDIE may already have added an offset).
 +func (x *gofvProgExporter) dwdata(s *obj.LSym, refs []gofvDIERef) {
@@ -2914,6 +3061,7 @@
 +		fmt.Fprintf(&x.body, "dwfn %s %s %s %s %s %s %s %d %d %d %d\n", x.dwsym(fs.Info), x.dwsym(fs.Loc),
 +			x.dwsym(fs.Ranges), x.dwsym(fs.Absfn), x.sym(d.lines), gofvQuoteP(fs.Name), gofvPosFL(fs.StartPos),
 +			gofvBoolP(fs.External), gofvBoolP(d.wrapper), gofvBoolP(fs.UseBASEntries), base.Ctxt.DwTextCount)
++		x.dwarfInputs(fs)
 +		// Every distinct variable once (by identity: putscope skips the inlined calls'
 +		// variables), the scopes' first.
 +		vix := map[*dwarf.Var]int{}

@@ -144,7 +144,7 @@ def checkFile (maxReport : Nat) (path : System.FilePath) (st : Stats) : IO Stats
     | .ok c => pure c
     | .error e => return st.record maxReport file "error:ctxt" e
   let ctx := (pf.asm.defs ++ pf.dwarf.defs).foldl (init := ctx) fun c d => match d with
-    | .posBase i b fi => { c with posBases := c.posBases.insert i (b, fi) }
+    | .posBase i b fi e => { c with posBases := c.posBases.insert i (b, fi), posExt := c.posExt.insert i e }
     | .inl k x => { c with inls := c.inls.insert k x }
     | _ => c
   let fileLine (p : Pos) : Except String (Int × Int) :=

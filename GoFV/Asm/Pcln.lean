@@ -15,12 +15,9 @@ Ports of the two steps `Flushplist` runs after `span7` (`docs/PASSES3.md` D6, D7
 Positions: a `GoFV.SSA.Pos` is an `src.XPos`; `ctxt.PosTable.Pos(xpos)` is the base of index
 `xpos.index` in `AsmCtxt.posBases` (nil for index 0) with the same `lico`. `getFileIndexAndLine`
 (`line.go:21-27`) gives the base's `FileIndex()` (the export's `<fileindex>`) and
-`Pos.RelLine()` (`src/pos.go:90-97`), `b.Line() + (p.Line() - b.Pos().Line())`. The export does
-not record `b.Pos()`: it is line 1 for file bases (`NewFileBase`, `src/pos.go:203-214`) and for
-inlining copies of them (`NewInliningBase` keeps `pos`), which are the only bases with base line
-and column 1 the compiler makes besides line directives; a base with another line or column
-comes from a `//line` directive (`NewLinePragmaBase`), whose position the export lacks, so
-`relLine` fails on it instead of guessing.
+`Pos.RelLine()` (`src/pos.go:90-97`), `b.Line() + (p.Line() - b.Pos().Line())`, with the base's
+own position `b.Pos()` from the `gofv-prog 3` posbase line (`AsmCtxt.posExt`; line 1 for file
+bases and their inlining copies, the directive's position for `//line` bases).
 -/
 
 namespace GoFV.Asm
@@ -193,21 +190,17 @@ def posBaseOf (xpos : Pos) : AsmM (Option (PosBase × Option Int)) := do
   | some b => return some b
   | none => throw s!"PosTable.Pos: no position base p{xpos.index}"
 
-/-- `src.Pos.RelLine()` (`src/pos.go:90-97`) of a position with base `b` and line `line`, as
-`int32` (`getFileIndexAndLine`'s `int32(pos.RelLine())`). `b.Pos().Line()` is 1 for file bases
-and their inlining copies; the export does not record it for line-directive bases. -/
-def relLine (b : Option PosBase) (line : Nat) : AsmM Int := do
+/-- `src.Pos.RelLine()` (`src/pos.go:90-97`) of a position with base `b` (whose own position
+`b.Pos()` is on line `basePosLine`) and line `line`, as `int32` (`getFileIndexAndLine`'s
+`int32(pos.RelLine())`; the `uint` wrap-around disappears in the truncation). -/
+def relLine (b : Option (PosBase × Nat)) (line : Nat) : AsmM Int := do
   match b with
   | none => return 0
-  | some b =>
+  | some (b, basePosLine) =>
     if b.line == 0 then
       -- base line is unknown => relative line is unknown
       return 0
-    if b.line != 1 || b.col != 1 then
-      throw s!"getFileIndexAndLine: line-directive position base {repr b}: the export lacks \
-        its position (b.Pos().Line())"
-    let basePosLine : Int := 1
-    return int32 (b.line + (line - basePosLine))
+    return int32 (b.line + (line - (basePosLine : Int)))
 
 /-- `ctxt.getFileIndexAndLine(xpos)` (`line.go:21-27`): `pos.FileIndex()` and
 `int32(pos.RelLine())` of `InnermostPos(xpos)`, the zero `Pos` if not known. -/
@@ -219,7 +212,13 @@ def getFileIndexAndLine (xpos : Pos) : AsmM (Int × Int) := do
     | none => pure (-1)
     | some (_, some fi) => pure fi
     | some (_, none) => throw "PosBase has no file index"
-  let l ← relLine (base.map (·.1)) line
+  let ext := (← read).posExt[xpos.index]?
+  let b ← match base with
+    | none => pure none
+    | some (b, _) => match ext with
+      | some e => pure (some (b, e.posLine))
+      | none => throw s!"PosTable.Pos: no position of base p{xpos.index}"
+  let l ← relLine b line
   return (f, l)
 
 /-- `pctofileline` (`pcln.go:142-153`): the file number (`isFile`, Go's non-nil `arg`, which

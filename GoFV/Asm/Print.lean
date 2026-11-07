@@ -53,8 +53,9 @@ def defLine : Def → W Unit
     s "name "; ref 'n' k; sp; q d.sym; sp; s d.cls; sp; optRef 't' d.type; sp; n d.esc; sp
     q d.linkName; sp; n d.linkAbi; sp; optRef 'a' d.aux; nl
   | .sym k name abi => do s "sym "; ref 'y' k; sp; q name; sp; n abi; nl
-  | .posBase k b fi => do
-    s "posbase "; ref 'p' k; sp; q b.file; sp; i b.line; sp; i b.col; sp; i b.inl; sp; optInt fi; nl
+  | .posBase k b fi e => do
+    s "posbase "; ref 'p' k; sp; q b.file; sp; i b.line; sp; i b.col; sp; i b.inl; sp; optInt fi
+    sp; q e.filename; sp; q e.posFilename; sp; n e.posLine; sp; n e.posCol; nl
   | .inl k d => do
     s "inl "; ref 'i' k; sp; optRef 'i' d.parent; sp; pos d.pos; sp; optRef 'y' d.func; sp
     q d.name; nl
@@ -157,6 +158,7 @@ def prog0 (p : Prog0) : W Unit := do
   regArgs p.regArgs
   textSym p.textSize p.textAlign p.text p.relocs
   s "symalign "; list (fun (y, a) => do ref 'y' y; s ":"; i a) p.symAlign; nl
+  s "autot "; list (ref 'y') p.autot; nl
   funcDebug p.dbg
   warnsEnd p.warns
 
@@ -195,6 +197,20 @@ def dwarf (d : Dwarf) : W Unit := do
     s "dwfn "; ref 'y' f.info; sp; optRef 'y' f.loc; sp; ref 'y' f.ranges; sp; optRef 'y' f.absfn
     sp; ref 'y' f.lines; sp; q f.name; sp; i f.startFile; s ":"; n f.startLine; sp
     bool f.external; sp; bool f.wrapper; sp; bool f.useBASEntries; sp; n f.dwTextCount; nl
+  if d.fn.isSome then
+    s "dwdcl "; list (ref 'n') d.dcl; nl
+    s "dwclosure "; bool d.needctxt; sp; list (fun (x, o) => do ref 'n' x; s ":"; i o) d.closure; nl
+    for (p, sc) in d.marks do s "dwmark "; pos p; sp; n sc; nl
+    s "dwparents "; list n d.parents; nl
+    s "dwparams "; list (fun x => match x with | some k => ref 'n' k | none => s "_") d.params; nl
+    for (f, a, ns) in d.precursors do
+      s "dwprecursor "; ref 'y' f; sp; ref 'y' a; sp; list (ref 'n') ns; nl
+    for x in d.names do
+      s "dwname "; ref 'n' x.name; sp; bool x.oname; sp; bool x.used; sp; bool x.autotmp; sp
+      bool x.inlFormal; sp; bool x.inlLocal; sp; n x.dictIndex; sp; i x.frameOffset; sp
+      bool x.outregs; sp; optRef 'n' x.heapaddr; sp; optRef 'n' x.canonical; sp
+      (match x.typeSym with | some t => q t | none => s "?"); sp; bool x.untyped; sp; bool x.tssa
+      sp; optBool x.canSSA; sp; pos x.pos; nl
   for h : k in [0:d.vars.size] do dwVar k d.vars[k]
   for h : k in [0:d.scopes.size] do
     let sc := d.scopes[k]
