@@ -740,6 +740,7 @@ import GoFV.Proof.Witness.LowerPanicConst
 import GoFV.Proof.Witness.LowerProv
 import GoFV.Proof.Witness.LowerPtrCmp
 import GoFV.Proof.Witness.LowerSPAddr
+import GoFV.Proof.Witness.LowerShiftNarrow
 import GoFV.Proof.Witness.LowerShiftOp
 import GoFV.Proof.Witness.LowerStoreFold
 import GoFV.Proof.Witness.LowerStoreIdx
