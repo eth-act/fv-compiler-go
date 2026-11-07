@@ -39,13 +39,17 @@ the semantic phase of their ops (`GoFVTest/Proof/RuleClass.lean`; "Classificatio
 | all | 1,375 | 31 | 356 | 1,762 |
 
 *Proven*: a merged lemma (`Rule.Sound`, `Rule.SoundT`, `Rule.SoundW`, `Rule.MakeSel`,
-`Rule.LoadSel`, `Rule.Drop`, `Rule.IMakeSM`, `BlockRule.Sound`, `EffectRule.NilElim`/`LoadFwd`/
-`StructLoad`/`StructStore`/`Seg`/`PhiSel`, `ConstString` frame rules, dec rules);
-`GoFV/Rules/Proven.lean` is the proven-only rule set the theorems are about. Per op family: the
-"Coverage" table of `rules.md`. The constant `Phi`s `generic.rules:782–785` are checked by the
-validator layer `.pc` with sccp's checker (`GoFV.Proof.PhiConst.pc_refines`), the `IMake` of a
-`StructMake` (`generic.rules:981`, `dec.rules:102`) per instance (`RewriteCheck.imsOK`,
-`GoFV.Proof.Pass.Rewrite.IMFacts.step`) (#69, Phase1Tail).
+`Rule.LoadSel`, `Rule.Drop`, `Rule.IMakeSM`, `Rule.AddrCmp`, `BlockRule.Sound`,
+`EffectRule.NilElim`/`LoadFwd`/`StructLoad`/`StructStore`/`Seg`/`PhiSel`, `ConstString` frame
+rules, dec rules); `GoFV/Rules/Proven.lean` is the proven-only rule set the theorems are about.
+Per op family: the "Coverage" table of `rules.md`. The constant `Phi`s `generic.rules:782–785`
+are checked by the validator layer `.pc` with sccp's checker (`GoFV.Proof.PhiConst.pc_refines`),
+the `IMake` of a `StructMake` (`generic.rules:981`, `dec.rules:102`) per instance
+(`RewriteCheck.imsOK`, `GoFV.Proof.Pass.Rewrite.IMFacts.step`) (#69, Phase1Tail), the
+comparisons of two symbol addresses (`:1648`, `:1651`) per instance (`RewriteCheck.addrCmpOK`,
+`ACFacts.step`), and the selections of an `IData` (`:982`, `:983`, `:1001`, `dec.rules:103`,
+`:104`, `:127`) as `Rule.Sound` with the interface shape of the `IData` operand (`idataArgOk`)
+(#69, Phase1Tail2).
 
 **False under the semantics, with the reason** (31, each marked `-- FALSE r_… #N` in its proof
 module; "Findings" in `rules.md`):
