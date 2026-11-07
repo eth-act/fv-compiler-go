@@ -195,6 +195,22 @@ def argPtr (tabs : Tables) (params : Array (Option AuxRef)) (tys : Array Ty) (f 
   | some vp => argOK tabs params vp && ptrShape (tys[p]?.getD .other)
   | none => false
 
+/-- One step of `schedule`'s bypass of an argument or control `a`: the first argument of an
+`SPanchored` or a nil check. -/
+def rep1 (f : Func) (a : ID) : ID :=
+  match f.value? a with
+  | some v => if v.op == .SPanchored || v.op.nilCheck then (v.args[0]?).getD a else a
+  | none => a
+
+/-- `rep1` repeated until it stops changing `a`, at most `k` times. -/
+def repK (f : Func) : Nat → ID → ID
+  | 0, a => a
+  | k + 1, a => if rep1 f a == a then a else repK f k (rep1 f a)
+
+/-- `schedule`'s bypass of an argument or control `a` (`schedule.go:331-344`): `rep1` while `a`
+is an `SPanchored` or a nil check (at most the size of the value table times). -/
+def rep (f : Func) (a : ID) : ID := repK f f.valueTab.size a
+
 /-- The acquiring loads `LDAR*`: `(value, memory)` with their memory argument's memory
 (`atomicLoad`). -/
 def ldarOp (op : Op) : Bool := op == .ARM64LDAR || op == .ARM64LDARB || op == .ARM64LDARW
@@ -257,17 +273,18 @@ def swapOKB (tabs : Tables) (params : Array (Option AuxRef)) (tys : Array Ty) (f
   | _, _ => false
 
 /-- `swapOK`'s `NilPtrsOK` case: `x` is a `faultOp` or a nil check and `y` a nil check on the same
-memory (`sameMem`) of a pointer-shaped value `q` (`tys`), no nil check or `SPanchored`, that the
-source runs before `x` or that is outside the block (`pS`). On the inputs where every
-pointer-shaped value a nil check checks reads nil or a pointer that is not wild once evaluated
-(`GoFV.Proof.NilPtrsOK`, a Go-level assumption), `y` panics with `nilDeref` of that memory, as
-`x` would, or passes. -/
+memory (`sameMem`) of a value whose bypass `q` (`rep`: the value, or the end of its chain of nil
+checks, which the chain's last check checks) is pointer-shaped (`tys`), no nil check or
+`SPanchored`, and run by the source before `x` or outside the block (`pS`). On the inputs where
+every pointer-shaped value a nil check checks reads nil or a pointer that is not wild once
+evaluated (`GoFV.Proof.NilPtrsOK`, a Go-level assumption), `y` panics with `nilDeref` of that
+memory, as `x` would, or passes. -/
 def nilPtrSwap (tabs : Tables) (tys : Array Ty) (f : Func) (pS : Array Nat) (x y : ID) : Bool :=
   match f.value? x, f.value? y with
   | some vx, some vy =>
     (cls tabs vx == .load || cls tabs vx == .nil) && sameMem f pS vx vy && cls tabs vy == .nil &&
-      (vy.args[0]?.any fun q => ptrShape (tys[q]?.getD .other) && !isNC f q && !isSPA f q &&
-        pS[q]! < pS[x]!)
+      (vy.args[0]?.any fun q => ptrShape (tys[rep f q]?.getD .other) && !isNC f (rep f q) &&
+        !isSPA f (rep f q) && pS[rep f q]! < pS[x]!)
   | _, _ => false
 
 /-- The source runs `x` before `y`, the target `y` before `x` (both may fail): allowed by
@@ -304,22 +321,6 @@ def topoB (f : Func) : List ID → Bool
 
 /-- `x` is a `Phi` of `f`. -/
 def isPhi (f : Func) (x : ID) : Bool := ((f.value? x).map (·.op == .Phi)).getD false
-
-/-- One step of `schedule`'s bypass of an argument or control `a`: the first argument of an
-`SPanchored` or a nil check. -/
-def rep1 (f : Func) (a : ID) : ID :=
-  match f.value? a with
-  | some v => if v.op == .SPanchored || v.op.nilCheck then (v.args[0]?).getD a else a
-  | none => a
-
-/-- `rep1` repeated until it stops changing `a`, at most `k` times. -/
-def repK (f : Func) : Nat → ID → ID
-  | 0, a => a
-  | k + 1, a => if rep1 f a == a then a else repK f k (rep1 f a)
-
-/-- `schedule`'s bypass of an argument or control `a` (`schedule.go:331-344`): `rep1` while `a`
-is an `SPanchored` or a nil check (at most the size of the value table times). -/
-def rep (f : Func) (a : ID) : ID := repK f f.valueTab.size a
 
 /-- A nil check `a` and its pointer `rep1 f a`: they differ, the pointer is a value and no
 `SPanchored`, and it has the check's type or both have word shapes (`tys`: `f`'s `runL`

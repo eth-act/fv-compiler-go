@@ -422,17 +422,17 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
     · obtain ⟨w, hw⟩ := evalValueL_nc_pass (md := md) (env := env) (ctx := Ctx.makeSched tabs g)
         (hrv.op.trans hnc) hgargs hTp ⟨q, hq, hqb⟩ hTℓ
       exact .inr ⟨w, hw, fun h => absurd h hyP⟩
-  · -- `y` is a nil check of a pointer-shaped value `q` that the source ran before `r` or that is
-    -- outside the block: `NilPtrsOK`
+  · -- `y` is a nil check of a value whose bypass `q` is pointer-shaped and that the source ran
+    -- before `r` or that is outside the block: `NilPtrsOK`
     obtain ⟨hnc, hsz2⟩ := cls_nil hnil
-    obtain ⟨q, hq0⟩ : ∃ q, fv.args[0]? = some q := ⟨fv.args[0], by simp [hsz2]⟩
+    obtain ⟨q0, hq0⟩ : ∃ q, fv.args[0]? = some q := ⟨fv.args[0], by simp [hsz2]⟩
     rw [hq0] at hany
     simp only [Option.any_some, Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at hany
     obtain ⟨⟨⟨hsh, hqnc⟩, hqspa⟩, hposr⟩ := hany
-    have hrepq : rep f q = q := rep_self hqnc hqspa
+    generalize hqdef : rep f q0 = q at hsh hqnc hqspa hposr
     have hf1 : fv.args[1]? = some ℓ := by rw [hsz2] at hfℓ; exact hfℓ
-    have hfargs : fv.args = #[q, ℓ] := arr_two hsz2 hq0 hf1
-    have hgargs : gv.args = #[q, rep f ℓ] := by rw [hrv.args, hfargs]; simp [hrepq]
+    have hfargs : fv.args = #[q0, ℓ] := arr_two hsz2 hq0 hf1
+    have hgargs : gv.args = #[q, rep f ℓ] := by rw [hrv.args, hfargs, ← hqdef]; simp
     -- the target's register of `q` is the source's at the panic
     have hTq : T.regs[q]? = H.regs[q]? := by
       by_cases hqS : q ∈ pre ++ r :: post
@@ -442,7 +442,7 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
           rw [List.getElem?_append_left (by omega)] at hk'
           exact List.mem_of_getElem? hk'
         obtain ⟨-, hg0m⟩ := argsF_g hgv hrv hq0
-        rw [hrepq] at hg0m
+        rw [hqdef] at hg0m
         have hqD : q ∈ oT.take j :=
           topo_before B.tTopo hyj hg0m ((B.tMem q).2 ⟨hPS q hqP, hqspa⟩)
         exact I.inP q hqD hqP hqnc
@@ -450,7 +450,21 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
         rw [I.out q hqD, B.agree q hqnc hqspa, Sr.out q (fun h => hqS (hPS q h))]
     obtain ⟨z, hz⟩ := hargsT q (by rw [hgargs]; simp)
     have hNRH : NilRegsOK tabs f H := hNR pre.length H (by rw [List.take_left]; exact hpre)
-    obtain ⟨p, hp, hpw⟩ := hNRH y fv q hfv (by rw [hnc]; rfl) hq0 hsh z (by rw [← hTq]; exact hz)
+    -- the nil check of the source that checks `q`: `y`, or the last of `q0`'s chain
+    have hu := S.argUse hfv hq0
+    have hq0spa : isSPA f q0 = false := by
+      cases h : isSPA f q0
+      · rfl
+      · obtain ⟨-, hsym, -⟩ := (use_rep hu).2.2.1 h
+        simp only [Option.map_some, Option.getD_some, hnc, Bool.and_eq_true] at hsym
+        exact absurd hsym.1 (by decide)
+    obtain ⟨c, vc, hvc, hcnc, hc0⟩ : ∃ c vc, f.value? c = some vc ∧ vc.op.nilCheck = true ∧
+        vc.args[0]? = some q := by
+      cases hn0 : isNC f q0
+      · refine ⟨y, fv, hfv, by rw [hnc]; rfl, ?_⟩
+        rw [hq0, ← hqdef, rep_self hn0 hq0spa]
+      · rw [← hqdef]; exact chain_last _ q0 (use_chain hu hn0) (Nat.le_refl _) hn0
+    obtain ⟨p, hp, hpw⟩ := hNRH c vc q hvc hcnc hc0 hsh z (by rw [← hTq]; exact hz)
     by_cases hpb : p.blk = .nil
     · have hpn : p.isNil = true := by simpa [Ptr.wild, hpb] using hpw
       exact .inl (evalValueL_nc_nil (env := env) (ctx := Ctx.makeSched tabs g) hf

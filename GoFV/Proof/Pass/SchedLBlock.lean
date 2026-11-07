@@ -418,6 +418,22 @@ theorem isNC_of {f : Func} {a : ID} {v : Value} (hv : f.value? a = some v) :
     isNC f a = v.op.nilCheck := by
   unfold isNC; rw [hv]; rfl
 
+/-- The end of a nil-check chain is the pointer of the chain's last check. -/
+theorem chain_last {tys : Array Ty} {f : Func} :
+    ∀ (k : Nat) (a : ID), ncChain tys f k a = true → k ≤ f.valueTab.size → isNC f a = true →
+      ∃ c vc, f.value? c = some vc ∧ vc.op.nilCheck = true ∧ vc.args[0]? = some (rep f a)
+  | 0, a, h, _, _ => by simp [ncChain] at h
+  | k + 1, a, h, hk, hn => by
+    obtain ⟨hs, hrep, hnext, hfix⟩ := chain_cases h hk
+    obtain ⟨hne, -, -⟩ := ncStep_basic hs
+    cases hn' : isNC f (rep1 f a)
+    · cases hva : f.value? a with
+      | none => unfold isNC at hn; rw [hva] at hn; cases hn
+      | some va =>
+        refine ⟨a, va, hva, by rw [← isNC_of hva]; exact hn, ?_⟩
+        rw [hrep, hfix hn']; exact rep1_arg0 hva hne
+    · rw [hrep]; exact chain_last k _ (hnext hn') (by omega) hn'
+
 /-- What a use says of its bypass. -/
 theorem use_rep {tys : Array Ty} {user : Option Value} {k : Nat} {a : ID}
     (hu : useOK tabs tys f user k a = true) :

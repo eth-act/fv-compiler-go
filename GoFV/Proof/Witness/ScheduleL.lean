@@ -192,6 +192,24 @@ theorem clampNP_nilPtr :
         (srcPos 28 [1, 8, 9, 10, 26, 25, 27, 22]) 26 27 = false := by
   decide +kernel
 
+/-- `clampNP` with `v27 = LoweredNilCheck v28 v1` of `v28 = LoweredNilCheck v25 v1`. -/
+def clampNQ : Func :=
+  { clampL with
+    vidLast := 28
+    valueTab := (((clampLValues.push (some (mkV 25 .ARM64MOVDload 2 none p0 1 #[9, 1] 1))).push
+      (some (mkV 26 .ARM64MOVDload 2 none p0 1 #[8, 1] 1))).push
+      (some (mkV 27 .ARM64LoweredNilCheck 0 none p0 1 #[28, 1] 1))).push
+      (some (mkV 28 .ARM64LoweredNilCheck 2 none p0 1 #[25, 1] 1)) }
+
+/-- **`nilPtrSwap` through a chain of nil checks is not vacuous**: the nil check `v27` checks the
+nil check `v28`, whose pointer `v25` (`rep`) the source runs before the load `v26`; the target may
+run `v27` first. -/
+theorem clampNQ_nilPtr :
+    isNC clampNQ 28 = true ∧ rep clampNQ 28 = 25 ∧
+      nilPtrSwap clampLTabs ((Array.replicate 29 Ty.other).set! 25 (.ptr none)) clampNQ
+        (srcPos 29 [1, 8, 9, 10, 25, 28, 26, 27, 22]) 26 27 = true := by
+  decide +kernel
+
 /-- `clampL` plus `v25 = LDAR v9 v1`, `v26 = Select1 v25` (its memory), `v27 = MOVDload v8 v26`
 and `v28 = MOVDload v9 v1` in `b1`. -/
 def clampLM : Func :=
