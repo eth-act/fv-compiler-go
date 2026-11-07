@@ -6,8 +6,10 @@ Description=gofv nightly gate (fv-compiler-go scripts/nightly-gate.sh)
 [Service]
 Type=oneshot
 # The gate's own processes (git, gh, qemu runs of the e2e programs) are capped here; every
-# build/check step runs in its own scripts/memcap.sh scope (8G), all in gofv.slice.
-Slice=gofv.slice
+# build/check step runs in its own scripts/memcap.sh scope, all in gofvgate.slice (not the
+# agents' gofv.slice, whose MemoryHigh throttling would slow the gate; no dash in the name: a
+# dash would make it a child slice of gofv.slice).
+Slice=gofvgate.slice
 MemoryMax=8G
 MemorySwapMax=0
 Nice=10
