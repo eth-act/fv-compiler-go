@@ -116,28 +116,32 @@ obstacle counts on full-v6, "Findings" in `rules.md` has the counterexamples):
 the recorded `schedule` inputs, valid pointer parameters and valid checked pointers (`ArgPtrsOK`,
 `NilPtrsOK`; all assumptions in one table below, § Assumptions)
 (`docs/PASSES2.md` §0; witness `verifiedPipelineFull_witness`).
-Measured with `gofv-ssa-opt --check --verified --jobs 4`: full-v9 on main 06aa0962 (#535:
-nil-check chains and `LDAR*` memories in `schedule`; 96,560 functions, format 5.1, 395 min on a
-heavily loaded machine); quick-v7 on main 51ef75c1 (6 min):
+Measured with `gofv-ssa-opt --check --verified`: full-v9 on main 91883690 (`--jobs 6`, after
+#540 constant `Phi`s and `IMake` of `StructMake`, #558 symbol-address comparisons and `IData`
+selections, #559 `ifaceeq`/`efaceeq` folds; 96,560 functions, format 5.1, 463 min on a heavily
+loaded machine); quick-v7 on main 51ef75c1 (6 min):
 
 | Measure | full-v9 through `rewrite tern` (Phase 1) | full-v9 through `trim` | quick-v7 Phase 1 | quick-v7 through `trim` |
 | --- | --: | --: | --: | --: |
-| Functions fully verified | 92,925 | 77,952 (f4da51ff #530: 75,387; 51ef75c1: 68,915) | 8,885 | 6,383 |
+| Functions fully verified | 93,475 (06aa0962: 92,925) | 78,876 (06aa0962: 77,952; f4da51ff #530: 75,387) | 8,885 | 6,383 |
 | … verified (vacuous: unmodelled op): the input has an op or block kind `run` leaves stuck (`TailLECall*`, `RetJmp`) | 1,576 | 1,568 | 168 | 168 |
-| … relying on `NilPtrsOK` (a `schedule` swap through `nilPtrSwap`) | – | 2,935 (#530: 2,234) | – | – |
-| … and identical to stock after `trim` | 74,348 | 65,752 (#530: 64,435) | 7,233 | 5,699 |
+| … relying on `NilPtrsOK` (a `schedule` swap through `nilPtrSwap`) | – | 2,983 (06aa0962: 2,935) | – | – |
+| … and identical to stock after `trim` | 74,595 (74,348) | 66,331 (65,752) | 7,233 | 5,699 |
 
 Every pass from `lower` to `trim` has a theorem (addressing modes `addressingModes_refinesL`,
 late lower `lateLower_refinesL`, pair `pair_refinesL`, flagalloc `flagalloc_refinesSched`).
 `regalloc` now accepts all 96,560 full-v9 runs (`tabsAgreeModL` takes the new spill autos that
-rejected 21,197 runs before). Of the 14,973 full-v9 functions verified through Phase 1 but not
-through `trim`, the first unverified run is `lower` for 14,470 (checked variant incomplete
-12,362, rejected 2,108), `schedule` (rejected) 378, `late lower` (rejected) 122, `lowered
-deadcode` (rejected) 3 (#530: `schedule` 1,019; 51ef75c1: `schedule` 3,365). The 718 rejected
-`schedule` runs (378 first unverified) are all in deferred classes: a nil check of a
-pointer-shaped value the source computes after the faulting value (483 / 301), of a value that
-is not pointer-shaped (210 / 75), of an `argPtr` piece after it (2 / 2), and `LoweredMove` before
-a load on another memory (18 / 0). `driver-e2e.sh --verified -p 8` (66 min, a717e6db+):
+rejected 21,197 runs before). Of the 14,599 full-v9 functions verified through Phase 1 but not
+through `trim`, the first unverified run is `lower` for 14,068 (checked variant incomplete
+11,805, rejected 2,263), `schedule` (rejected) 389, `late lower` (rejected) 137, `lowered
+deadcode` (rejected) 5 (06aa0962: `schedule` 378; #530: 1,019; 51ef75c1: 3,365). The 718 rejected
+`schedule` runs (389 first unverified) are all in deferred classes: a nil check of a
+pointer-shaped value the source computes after the faulting value (483 / 303), of a value that
+is not pointer-shaped (215 / 77), of an `argPtr` piece after it (2 / 2), and `LoweredMove` before
+a load on another memory (18 / 7). The Phase 1 functions not verified through `rewrite tern`
+(3,085; 06aa0962: 3,635), by first unverified run: opt 1,867, late opt 597, middle opt 370,
+decompose builtin 116, decompose user 59, divmod 47, expand calls 28, opt deadcode 1.
+`driver-e2e.sh --verified -p 8` (66 min, a717e6db+):
 183/183 programs behave as stock, 0 fallbacks, 0 pass errors; 29,590 of 42,899 functions fully
 verified through `trim`.
 
