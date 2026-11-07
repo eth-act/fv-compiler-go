@@ -1,6 +1,8 @@
 import GoFV.SSA.Parse
 import GoFV.SSA.Sem.RunSched
 import GoFV.SSA.Sem.RunLoc
+import GoFV.SSA.Sem.RunFrame
+import GoFV.Asm.Parse
 import GoFV.SSA.Sem.Image
 import GoFV.SSA.Sem.Runtime
 import Std.Data.HashMap
@@ -19,7 +21,11 @@ Three modes (driven by `scripts/sem-difftest.sh`):
   `regalloc` … `trim` with `GoFV.SSA.runLoc`, `docs/plans/semantics2.md` L0/L1/L2), and compare
   each outcome with the native result
   (`<native>`, the output of `tools/semdiff/prog` under `qemu-aarch64-static`, one line
-  `<call> -> <outcome>` per call). Exit status 1 on any disagreement.
+  `<call> -> <outcome>` per call). Exit status 1 on any disagreement. When the function's
+  `.prog` companion (same stem) exists, each call also runs on the last section with
+  `GoFV.SSA.runFrame` (L2f, `docs/plans/semantics3.md` §4.2) under the frame layout of the
+  `.prog` file (`progLayout`), compared with native the same way (`frame` in the summary and
+  in `MISMATCH` lines); a layout `FrameLayout.problems` rejects is printed as `FRAMELAYOUT`.
 - `corpus <n> <seed> <dir>...`: for every export file below the directories whose function's
   parameter and result types the difftest can build and print, run `n` random calls on every
   section and check that every section agrees with section 0 whenever section 0 returns or
@@ -304,6 +310,31 @@ structure Loaded where
   params : Array TypeRef
   results : Array TypeRef
   env : Env
+  /-- The `runFrame` context of the last section, when the export has a `.prog` companion. -/
+  frame : Option FrameCtx := none
+
+/-- The frame layout of a `.prog` file (`semantics3.md` §5, `obj7.go` `preprocess`): `autosize`
+from the asm section's TEXT, `framesize` and the argument size from prog0's TEXT,
+`extrasize = autosize - framesize - 8` (0 when frameless), and the `FrameOffset` of each variable
+of the frame section's `out` lines whose `name` definition links an SSA aux ref. -/
+def progLayout (pf : GoFV.Asm.ProgFile) : FrameLayout :=
+  let autosize := match pf.asm.progs[0]? with
+    | some p => if p.as == .TEXT then p.to.offset else 0
+    | none => 0
+  let text0 := pf.prog0.progs.find? (·.as == .TEXT)
+  let framesize := (text0.map (·.to.offset)).getD 0
+  let argsize := match text0.map (·.to.val) with
+    | some (.textSize n) => n
+    | _ => 0
+  let extrasize := if autosize == 0 then 0 else autosize - framesize - 8
+  let defs := pf.frame.defs ++ pf.genin.defs ++ pf.prog0.defs ++ pf.asm.defs
+  let auxOf : Std.HashMap Nat AuxRef := defs.foldl (fun m d => match d with
+    | .name n nd => match nd.aux with
+      | some a => m.insert n a
+      | none => m
+    | _ => m) {}
+  let offsets := pf.frame.dclOut.toList.filterMap fun e => (auxOf[e.name]?).map (·, e.off)
+  { autosize, extrasize, offsets, size := (autosize + 8 + argsize).toNat }
 
 /-- The first section run as allocated code (`runLoc`, L2): `regalloc` assigns homes. -/
 def locPass : String := "regalloc"
@@ -337,8 +368,19 @@ def load (path : System.FilePath) : IO (Except String Loaded) := do
       match signature t0 f0 with
       | none => return .error s!"{path}: signature outside the difftest's types"
       | some (ps, rs) =>
-        return .ok { sections := secs, modes, locs, params := ps, results := rs,
-                     env := { Env.runtime with globals := globalImage e } }
+        let pp := path.withExtension "prog"
+        let pf? ← if ← pp.pathExists then
+            pure (some (GoFV.Asm.parseProgFile (← IO.FS.readBinFile pp)))
+          else pure none
+        match pf? with
+        | some (.error err) => return .error s!"{pp}: {err}"
+        | _ =>
+          let frame := match pf? with
+            | some (.ok pf) =>
+              (locs.back?.join).map fun lc => ({ lc, lay := progLayout pf } : FrameCtx)
+            | _ => none
+          return .ok { sections := secs, modes, locs, params := ps, results := rs,
+                       env := { Env.runtime with globals := globalImage e }, frame }
 
 /-- Program functions of an export directory, for calls (`Env.withFuncs`): each file's
 function by link symbol name (`<pkg>.<name>`), section 0, and the union of the files' global
@@ -387,8 +429,10 @@ def buildArgs (tabs : Tables) (params : Array TypeRef) (texts : List String) :
     | .error e => throw e
   return (out, mem)
 
-/-- Run a call on section `k` and print the outcome as the native harness does. -/
-def runSection (l : Loaded) (k : Nat) (texts : List String) (fuel : Nat := fuel) : String :=
+/-- Run a call on section `k` with `run` (given the section's context, the arguments and the
+memory) and print the outcome as the native harness does. -/
+def runSectionWith (l : Loaded) (k : Nat) (texts : List String)
+    (run : Ctx → List Val → Mem → Outcome) : String :=
   match l.sections[k]? with
   | none => "stuck: no section"
   | some (_, tabs, _, ctx) =>
@@ -396,9 +440,7 @@ def runSection (l : Loaded) (k : Nat) (texts : List String) (fuel : Nat := fuel)
     | .error e => s!"stuck: bad arguments: {e}"
     | .ok (imgs, mem) =>
       let args := (imgs.zip l.params).toList.map fun (bs, t) => decode bs 0 (tabs.ty t)
-      let out := match l.locs[k]? with
-        | some (some lc) => runCtxLoc l.env lc args mem fuel
-        | _ => runCtxL (l.modes[k]?.getD ⟨false, false⟩) l.env ctx args mem fuel
+      let out := run ctx args mem
       match out with
       | .returned rs m =>
         let rsT := (rs.zip l.results.toList).map fun (v, t) =>
@@ -409,6 +451,19 @@ def runSection (l : Loaded) (k : Nat) (texts : List String) (fuel : Nat := fuel)
       | .panicked e _ => "panicked " ++ e.message
       | .stuck msg => "stuck: " ++ msg
       | .outOfFuel => "outOfFuel"
+
+/-- Run a call on section `k` and print the outcome as the native harness does. -/
+def runSection (l : Loaded) (k : Nat) (texts : List String) (fuel : Nat := fuel) : String :=
+  runSectionWith l k texts fun ctx args mem =>
+    match l.locs[k]? with
+    | some (some lc) => runCtxLoc l.env lc args mem fuel
+    | _ => runCtxL (l.modes[k]?.getD ⟨false, false⟩) l.env ctx args mem fuel
+
+/-- Run a call on the last section with `runFrame` (none without a `.prog` companion). -/
+def runFrameSection (l : Loaded) (texts : List String) (fuel : Nat := fuel) : Option String :=
+  l.frame.map fun fc =>
+    runSectionWith l (l.sections.size - 1) texts fun _ args mem =>
+      runCtxFrame l.env fc args mem fuel
 
 /-! ## Random arguments -/
 
@@ -556,6 +611,15 @@ def runMode (dir : String) (callsFile nativeFile : String) : IO UInt32 := do
   let mut sectionRuns := 0
   let mut bad := 0
   let mut outcomes : Std.HashMap String Nat := {}
+  -- `runFrame` on the last section: runs, of them in functions with a slot home, agreements,
+  -- mismatches, of them where the last section itself mismatches, functions with a layout problem
+  let mut frameRuns := 0
+  let mut frameSlotRuns := 0
+  let mut frameAgree := 0
+  let mut frameBad := 0
+  let mut frameBadBase := 0
+  let mut frameFuncs : Std.HashMap String Bool := {}
+  let mut layoutBad := 0
   for h : i in [0:calls.size] do
     let call := calls[i]
     let toks := call.splitOn "\t"
@@ -566,6 +630,13 @@ def runMode (dir : String) (callsFile nativeFile : String) : IO UInt32 := do
         match ← load (funcPath dir name) with
         | .error e => IO.eprintln e; return 1
         | .ok l => pure { l with env }
+    if !cache.contains name then
+      if let some fc := l.frame then
+        let ps := FrameLayout.problems fc
+        for p in ps do IO.println s!"FRAMELAYOUT {name}: {p}"
+        if !ps.isEmpty then layoutBad := layoutBad + 1
+        frameFuncs := frameFuncs.insert name
+          (fc.lc.homes.any fun o => o matches some (.slot _))
     cache := cache.insert name l
     let want := match native[i]!.splitOn " -> " with
       | [c, o] => if c == call then o else s!"<native line {i} is for {c}>"
@@ -590,11 +661,23 @@ def runMode (dir : String) (callsFile nativeFile : String) : IO UInt32 := do
           allOk' := false
         bad := bad + 1
     if allOk then agreeAll := agreeAll + 1
+    if let some got := runFrameSection l toks.tail then
+      frameRuns := frameRuns + 1
+      if frameFuncs.getD name false then frameSlotRuns := frameSlotRuns + 1
+      if got == want then frameAgree := frameAgree + 1
+      else
+        IO.println s!"MISMATCH {call} frame ({l.sections[last]!.1}): lean {got}, native {want}"
+        frameBad := frameBad + 1
+        if runSection l last toks.tail != want then frameBadBase := frameBadBase + 1
   let kinds := outcomes.toList.map (fun (k, n) => s!"{k} {n}")
   IO.println s!"sem-difftest: {cache.size} functions, {nIn} calls ({", ".intercalate kinds}), \
     {sectionRuns} section runs; native agrees with section 0 on {agree0}, with the last section \
-    on {agreeLast}, with every section on {agreeAll}; {bad} section mismatches"
-  return if bad == 0 && nIn > 0 then 0 else 1
+    on {agreeLast}, with every section on {agreeAll}; {bad} section mismatches; frame runs \
+    (runFrame on the last section): {frameRuns} in {frameFuncs.size} functions ({frameSlotRuns} \
+    in functions with spill slots), native agrees with {frameAgree}, {frameBad} mismatches \
+    ({frameBadBase} where the last section mismatches too), {layoutBad} functions with layout \
+    problems"
+  return if bad == 0 && frameBad == 0 && nIn > 0 then 0 else 1
 
 structure CStats where
   files : Nat := 0
