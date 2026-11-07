@@ -28,7 +28,7 @@ namespace GoFV.Proof.Witness
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Rules
 
 /-- `abiInfo` of `nsel`: three boolean register parameters, one boolean result. -/
-def nsABI : CallABI :=
+def pnotABI : CallABI :=
   { abi := 1, nin := 3, nout := 1, spillOff := 8, spillSize := 8, inRegs := 3, outRegs := 1,
     params := #[{ out := false, index := 0, type := 6, name := some 3, regs := #[0], offset := 0 },
                 { out := false, index := 1, type := 6, name := some 4, regs := #[1], offset := 1 },
@@ -37,7 +37,7 @@ def nsABI : CallABI :=
                   offset := -1 }] }
 
 /-- The definition tables: `bool` (type 6). -/
-def nsTabs : Tables where
+def pnotTabs : Tables where
   types :=
     let t := Array.replicate 36 (none : Option TypeDef)
     let t := t.set! 1 (some (mkT .FUNC (some 8) "func(bool, bool, bool) bool" (.func 0 3 1 #[])))
@@ -46,14 +46,14 @@ def nsTabs : Tables where
     let t := t.set! 31 (some (mkT .SSA none "void"))
     t.set! 35 (some (mkT .RESULTS none "bool,mem" (.results #[6, 29])))
   auxes := #[none,
-    some { fmt := GoStr.ofString "AuxCall{main.nsel}", kind := .call (some 2) (some nsABI) },
+    some { fmt := GoStr.ofString "AuxCall{main.nsel}", kind := .call (some 2) (some pnotABI) },
     some { fmt := GoStr.ofString "main.nsel",
            kind := .sym (GoStr.ofString "main.nsel") 1 "" 0 default none none none #[] none },
     some (paramNameT "b" .PPARAM 6 0), some (paramNameT "x" .PPARAM 6 1),
     some (paramNameT "y" .PPARAM 6 2), some (paramNameT "~r0" .PPARAMOUT 6 0)]
 
 /-- `nsel`, the input of opt. -/
-def nsFunc : Func where
+def pnotFunc : Func where
   entry := 1
   type := 1
   ownAux := some 1
@@ -84,52 +84,52 @@ def nsFunc : Func where
   cache := { lineStarts := some #[] }
 
 /-- The one-rule set `{generic.rules:1068}`, a `Phi` rule validated per instance. -/
-def nsRules : RuleSet where
+def pnotRules : RuleSet where
   name := "generic"
   values := []
   blocks := []
   phiSels := [Generated.Generic.r_generic_1068]
 
-def nsPassEnv : PassEnv :=
-  { azPassEnv with funcName := GoStr.ofString "nsel", typs := slTyps, tables := nsTabs }
+def pnotPassEnv : PassEnv :=
+  { azPassEnv with funcName := GoStr.ofString "nsel", typs := slTyps, tables := pnotTabs }
 
-def nsCheckEnv : CheckEnv := { tabs := nsTabs, typs := slTyps }
+def pnotCheckEnv : CheckEnv := { tabs := pnotTabs, typs := slTyps }
 
 /-- By kernel evaluation: the input passes `check`, and `checkedRewrite` keeps a result in which
 `v7` is `Not v9` and `v9` is `Phi v3 v4`, which passes `check`. -/
-theorem ns_checks :
-    (check nsCheckEnv nsFunc).toBool = true ∧
-    (checkedRewrite (Interp.Table.ofRuleSet nsRules) nsPassEnv nsFunc).toOption.map
+theorem pnot_checks :
+    (check pnotCheckEnv pnotFunc).toBool = true ∧
+    (checkedRewrite (Interp.Table.ofRuleSet pnotRules) pnotPassEnv pnotFunc).toOption.map
       (fun o => ((check { tabs := o.tables, typs := slTyps } o.func).toBool,
         (o.func.value? 7).map (fun v => (v.op, v.args)),
         (o.func.value? 9).map (fun v => (v.op, v.args)))) =
       some (true, some (.Not, #[9]), some (.Phi, #[3, 4])) := by
   decide +kernel
 
-theorem nsRules_allSound : nsRules.AllSound :=
+theorem pnotRules_allSound : pnotRules.AllSound :=
   GoFV.Proof.Rules.RuleSet.allSound_of trivial trivial
 
 /-- **Pass execution witness** for a `Phi` of `Not`s (`RewriteCheck.pnRel`, `PhiNot.pn_refines`):
 on `nsel`, the checked rewrite pass turns `Phi (Not x) (Not y)` into `Not (Phi x y)`, and the
 result refines the input (`checkedRewrite_refines`). -/
 theorem pn_checkedRewrite :
-    ∃ out, checkedRewrite (Interp.Table.ofRuleSet nsRules) nsPassEnv nsFunc = .ok out ∧
+    ∃ out, checkedRewrite (Interp.Table.ofRuleSet pnotRules) pnotPassEnv pnotFunc = .ok out ∧
       (out.func.value? 7).map (fun v => (v.op, v.args)) = some (.Not, #[9]) ∧
       (out.func.value? 9).map (fun v => (v.op, v.args)) = some (.Phi, #[3, 4]) ∧
-      check nsCheckEnv nsFunc = .ok () ∧
+      check pnotCheckEnv pnotFunc = .ok () ∧
       check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
-      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre nsPassEnv.tables nsPassEnv.frontend nsFunc)
-      out.tables out.func nsPassEnv.tables nsFunc := by
-  obtain ⟨h1, h2⟩ := ns_checks
-  cases hc : checkedRewrite (Interp.Table.ofRuleSet nsRules) nsPassEnv nsFunc with
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre pnotPassEnv.tables pnotPassEnv.frontend pnotFunc)
+      out.tables out.func pnotPassEnv.tables pnotFunc := by
+  obtain ⟨h1, h2⟩ := pnot_checks
+  cases hc : checkedRewrite (Interp.Table.ofRuleSet pnotRules) pnotPassEnv pnotFunc with
   | error e => rw [hc] at h2; cases h2
   | ok out =>
     rw [hc] at h2
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h2
     obtain ⟨hg, h3, h4⟩ := h2
     exact ⟨out, rfl, h3, h4, ok_of_toBool h1, ok_of_toBool hg,
-      GoFV.Proof.Pass.Rewrite.checkedRewrite_refines (s := nsRules) (penv := nsPassEnv)
-        (f := nsFunc) (out := out) nsRules_allSound hc (ok_of_toBool h1) (ok_of_toBool hg)⟩
+      GoFV.Proof.Pass.Rewrite.checkedRewrite_refines (s := pnotRules) (penv := pnotPassEnv)
+        (f := pnotFunc) (out := out) pnotRules_allSound hc (ok_of_toBool h1) (ok_of_toBool hg)⟩
 
 /-- The rule of the witness is a `Phi`-of-`Not`s rule: the layer that validates it is
 `pnRel`'s. -/
