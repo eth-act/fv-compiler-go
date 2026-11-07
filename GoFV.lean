@@ -104,6 +104,10 @@ import GoFV.Asm.Asmout
 import GoFV.Asm.Span7
 import GoFV.Asm.Pcln
 import GoFV.Asm.Flush
+import GoFV.Dwarf.Const
+import GoFV.Dwarf.Sym
+import GoFV.Dwarf.Lines
+import GoFV.Dwarf.Die
 import GoFV.Gen.Env
 import GoFV.Gen.Progs
 import GoFV.Gen.State

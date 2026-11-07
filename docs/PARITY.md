@@ -215,7 +215,7 @@ functions), 0 mismatches and 0 pass errors on both; `ssa-roundtrip` has 0 failur
 
 `lake exe gen-parity [--jobs N] [--max-report N] [--table FILE] <dir|file>...`
 (`GoFVTest/GenParity.lean`) checks the Lean port of `AllocFrame` … `defframe` (`GoFV/Gen/*`,
-`docs/PASSES3.md` A1–C6). For every `.prog` file (`gofv-prog 2`) with its `.ssa` file, the
+`docs/PASSES3.md` A1–C6). For every `.prog` file (`gofv-prog 3`) with its `.ssa` file, the
 input is the function after `trim` plus the `.prog` file's `frame` input (`in` lines) and
 `genin` section (`GoFV.Gen.Env.load`); it compares, per function:
 
@@ -273,18 +273,16 @@ tail's `weakenGlobalMapInitRelocs`. It compares with the `asm` section (M), per 
    funcdata slots, `UsedFiles` and the local inlining tree;
 5. **data**: the `$f32.`/`$f64.`/`$i64.` constants `progedit` creates and the jump-table words.
 
-A difference caused outside the port is classed `explained:<class>`: it counts as a match of
-its cut and the function as "exact or explained". There are two such classes (the second,
-`explained:text:sym-align`, is described with the full-v10 result below). The first is
-`explained:text:reloc:pre-flush-markers`. The frontend puts zero-size marker relocations on the
-function's `LSym.R` before assembly (`R_USEIFACE`/`R_USEIFACEMETHOD`/`R_USENAMEDMETHOD` from
-`reflectdata.MarkTypeUsedInInterface`, `MarkUsedIfaceMethod` and `walk`), so they come first in
-the exported `R`; `gofv-prog 2` records `LSym.R` only in the `asm` section, so the port cannot
-reproduce them. The harness requires the stock relocations to be exactly those markers followed
-by the port's relocations. Recording `LSym.R` at the `prog0` cut (a format bump) would remove
-the class.
+Every comparison is exact: since `gofv-prog 3` the port starts from the text symbol's `R` at the
+`prog0` cut (the zero-size marker relocations `R_USEIFACE`/`R_USEIFACEMETHOD`/`R_USENAMEDMETHOD`
+that `walk`, `reflectdata` and the SSA rewrite rules put on the function before `Flushplist`
+appends the assembler's) and from the recorded `LSym.Align` of the operands' symbols
+(`Optab.size` picks the 12-byte `ADRP`+`ADD`+load form for a `C_ADDR` operand whose symbol is
+under-aligned, e.g. a `.stmp_` symbol of alignment 1). Under `gofv-prog 2` the harness had to
+accept these two differences as "explained" (quick-v9: 7,540 of 9,297 functions byte-exact;
+full-v10: 68,260 of 96,634); the acceptance is gone.
 
-Result on quick-v9 (9,297 functions, 570,997 asm Progs, 1,909,776 text bytes; 12 s with 8 jobs):
+Result on quick-v10 (9,297 functions, 570,997 asm Progs, 1,909,776 text bytes; 7 s with 8 jobs):
 
 | cut | functions | match | mismatch | parity |
 | --- | ---: | ---: | ---: | ---: |
@@ -293,23 +291,47 @@ Result on quick-v9 (9,297 functions, 570,997 asm Progs, 1,909,776 text bytes; 12
 | text P/R (D4, D5) | 9297 | 9297 | 0 | 100% |
 | pc tables, funcdata (D7) | 9297 | 9297 | 0 | 100% |
 | constants, jump tables | 9297 | 9297 | 0 | 100% |
-| end to end, exact | 9297 | 7540 | 1757 | 81.10% |
-| end to end, exact or explained | 9297 | 9297 | 0 | 100% |
+| end to end | 9297 | 9297 | 0 | 100% |
 
-The 1,757 inexact functions are all `explained:text:reloc:pre-flush-markers`.
+gen-parity on quick-v10: frame, f.RegArgs, prog0 and end to end 9,297/9,297 (100%).
 
-Result on full-v10 (by path; 96,634 functions, 9,059,979 asm Progs, 30,514,928 text bytes; 49 s
-with 8 jobs): every cut 100% exact or explained; end to end exact 68,260 (70.63%), explained
-28,374: `explained:text:reloc:pre-flush-markers` in all of them, and in 2 also
-`explained:text:sym-align` (`crypto/internal/fips140/check/checktest.init.0` and
-`crypto/internal/fips140/aes/gcm.init.0.func1` load `.stmp_<n>` symbols whose `LSym.Align` is
-below 8, so `Optab.size` picks the 12-byte `ADRP`+`ADD`+load form; `gofv-prog 2` does not record
-the alignment of data symbols, which the port then takes as 0 like other packages' symbols; the
-harness reruns the port with `Align = 1` for the operands that the stock encoding shows to be
-under-aligned and accepts only an exact match). gen-parity on full-v10: frame, f.RegArgs, prog0
-and end to end 96,634/96,634 (100%), 7,044,350 prog0 Progs. Paths that compiled
+Paths that compiled
 linux/arm64 code does not take fail loudly rather than being guessed: `-dynlink`
 (`rewriteToUseGot` needs symbol kinds the export does not record), `MRS`/`MSR` (asmout cases
 35–37), SVE (case 127), a `//line` position base whose own position is not line 1 (pcline needs
-`PosBase.Pos()`, which `gofv-prog 2` does not record). An infinite `JMP` loop (`brloop` gives up)
+`PosBase.Pos()`, which `gofv-prog 3` does not record). An infinite `JMP` loop (`brloop` gives up)
 leaves the typed-nil target `AddrVal.nilTarget`, numbered like the exporter's fresh ID.
+
+## Phase 3: debug information (I5, #551)
+
+`lake exe dwarf-parity [--jobs N] [--max-report N] [--table FILE] <dir|file>...`
+(`GoFVTest/DwarfParity.lean`) checks the Lean ports of the writers of `populateDWARF`
+(`GoFV/Dwarf/*`, `docs/PASSES3.md` E2): the line program `generateDebugLinesSymbol` with
+`putpclcdelta` (`Lines`), and the DIE writer of `cmd/internal/dwarf` (`Die`: `PutAbstractFunc`,
+`PutConcreteFunc`, `PutDefaultFunc`, scopes, variables with `putvarAbbrev`, inlined subroutines,
+DWARF 5 range lists, and `ssa.FuncDebug.PutLocationListDwarf5`), on the records of the
+`gofv-prog 3` `dwarf` section (`dwarf.FnState` before the DIE writer: variables, scopes, inlined
+calls) and `prog0`'s `BuildFuncDebug` lists with their `GetPC` endpoints. Per function it
+compares, byte for byte and relocation for relocation, the debug lines, debug info, location
+list, range list and abstract-function symbols at the end of `Compile` and the child-DIE
+references and offsets for the package's fixups (`dieref`, `dieoff`). DWARF constants are
+generated into `GoFV/Dwarf/Const.lean` by `tools/asgen` (`scripts/gen-asm.sh`). The info
+symbol's leading `R_USETYPE` relocations are `dwarfgen.Info`'s and are taken from the record.
+
+Result on quick-v10 (9,297 functions with DWARF, 2,886,136 DWARF bytes; 3 s with 8 jobs; a
+function without a location list, range list or abstract function counts as a match of that
+row):
+
+| symbol | functions | match | mismatch | parity |
+| --- | ---: | ---: | ---: | ---: |
+| debug lines | 9297 | 9297 | 0 | 100% |
+| debug info | 9297 | 9297 | 0 | 100% |
+| location lists | 9297 | 9297 | 0 | 100% |
+| range lists | 9297 | 9297 | 0 | 100% |
+| abstract function | 9297 | 9297 | 0 | 100% |
+| child-DIE fixups | 9297 | 9297 | 0 | 100% |
+| end to end | 9297 | 9297 | 0 | 100% |
+
+Not ported yet: `dwarfgen.Info` (declarations → `dwarf.Var`s, scopes, inlined calls; its
+inputs are not exported) and the package-level abstract functions and fixups
+(`DwarfFixupTable.Finalize`).
