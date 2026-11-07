@@ -6,10 +6,10 @@
 # introduces the use, with a comment naming the theorem.
 # verifiedPipeline_witness (GoFV/Proof/Witness/Pipeline.lean, #189): the whole verified pipeline on
 # plF; `decide +kernel` gets stuck comparing the pass results' CFG caches (`Func` equality).
-GoFV.Proof.Witness.plF_pipeline._native.native_decide.ax_1_1 1f320ce2d98198174271e0fabc0e82337bc7616fa6320b8bbe729124185d298c
+GoFV.Proof.Witness.plF_pipeline._native.native_decide.ax_1_1 a2fd3a669bd727c862c136b1eea1bd8785db8c46f54094daf7bf4763cb1042b1
 # verifiedPipelineFull_witness (GoFV/Proof/Witness/PipelineFull.lean, #385/#189): the verified
 # pipeline through `trim` on isNaN; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.pfF_pipeline._native.native_decide.ax_1_1 b97ecee1774b83c1d83e9cc49b2f413c59f9d85e95527dc7d5778131c91ba448
+GoFV.Proof.Witness.pfF_pipeline._native.native_decide.ax_1_1 40a7c3e85ae33861bed4d566454827208d83d6af0ade94b4d7a385dc15c7bf94
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
