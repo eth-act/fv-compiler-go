@@ -122,7 +122,7 @@
  		// Ensure we write any pending phases to the html
 --- a/src/cmd/compile/internal/ssa/export_gofv.go
 +++ b/src/cmd/compile/internal/ssa/export_gofv.go
-@@ -0,0 +1,1763 @@
+@@ -0,0 +1,1768 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -1816,6 +1816,7 @@
 +	}
 +	x.f.gofvStem = stem
 +	x.f.gofvHash = fmt.Sprintf("%x", sha256.Sum256(x.out.Bytes()))[:16]
++	x.f.gofvAux = x.aux
 +	fd, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
 +	if err == nil {
 +		_, err = fd.Write(x.out.Bytes())
@@ -1838,6 +1839,10 @@
 +// GOFVExported reports whether f's SSA export file has been written (GOFV_SSA_EXPORT selected
 +// f and ssa.Compile finished).
 +func (f *Func) GOFVExported() bool { return f.gofvStem != "" }
++
++// GOFVAuxNum returns the number of aux value a in f's export file (0 if the file never
++// references it).
++func (f *Func) GOFVAuxNum(a Aux) int { return f.gofvAux[a] }
 +
 +// GOFVWriteCompanion writes data as f's companion file with extension ext (one of
 +// gofvCompanionExts): <stem><ext> next to <stem>.ssa, or <stem>#<h><ext> when the .ssa file
@@ -1888,7 +1893,7 @@
 +}
 --- a/src/cmd/compile/internal/ssa/func.go
 +++ b/src/cmd/compile/internal/ssa/func.go
-@@ -85,6 +85,15 @@
+@@ -85,6 +85,19 @@
  
  	auxmap    auxmap             // map from aux values to opaque ids used by CSE
  	constants map[int64][]*Value // constants cache, keyed by constant value; users must check value's Op and Type
@@ -1901,162 +1906,21 @@
 +	// <gofvStem>.ssa, or <gofvStem>#<gofvHash>.ssa when another function has the same stem
 +	// (export_gofv.go, GOFVWriteCompanion).
 +	gofvStem, gofvHash string
++
++	// gofvAux is the export file's aux numbering, kept once the file is written so that the
++	// Phase 3 exporter can link the frame's names to it (GOFVAuxNum).
++	gofvAux map[Aux]int
  }
  
  type LocalSlotSplitKey struct {
---- a/src/cmd/compile/internal/ssa/rewrite.go
-+++ b/src/cmd/compile/internal/ssa/rewrite.go
-@@ -2221,6 +2221,7 @@
- 
- 		if t.IsPtr() && off == rttype.PtrType.OffsetOf("Elem") {
- 			elemSym := reflectdata.TypeLinksym(t.Elem())
-+			f.gofvNoteElemTypeInfo(elemSym, lsym)
- 			reflectdata.MarkTypeSymUsedInInterface(elemSym, f.fe.Func().Linksym())
- 			v.reset(OpAddr)
- 			v.Aux = symToAux(elemSym)
---- a/src/cmd/compile/internal/ssa/writebarrier.go
-+++ b/src/cmd/compile/internal/ssa/writebarrier.go
-@@ -482,6 +482,7 @@
- 			switch w.Op {
- 			case OpZeroWB:
- 				typ := reflectdata.TypeLinksym(w.Aux.(*types.Type))
-+				f.GOFVNoteTypeInfo(typ, w.Aux.(*types.Type))
- 				// zeroWB(&typ, dst)
- 				taddr := b.NewValue1A(pos, OpAddr, b.Func.Config.Types.Uintptr, typ, sb)
- 				memThen = wbcall(pos, bThen, wbZero, sp, memThen, taddr, dst)
-@@ -498,6 +499,7 @@
- 					}
- 				}
- 				typ := reflectdata.TypeLinksym(w.Aux.(*types.Type))
-+				f.GOFVNoteTypeInfo(typ, w.Aux.(*types.Type))
- 				// moveWB(&typ, dst, src)
- 				taddr := b.NewValue1A(pos, OpAddr, b.Func.Config.Types.Uintptr, typ, sb)
- 				memThen = wbcall(pos, bThen, wbMove, sp, memThen, taddr, dst, src)
-@@ -544,6 +546,7 @@
- 				if buildcfg.Experiment.CgoCheck2 {
- 					// Issue cgo checking code.
- 					typ := reflectdata.TypeLinksym(w.Aux.(*types.Type))
-+					f.GOFVNoteTypeInfo(typ, w.Aux.(*types.Type))
- 					taddr := b.NewValue1A(pos, OpAddr, b.Func.Config.Types.Uintptr, typ, sb)
- 					mem = wbcall(pos, bEnd, cgoCheckMemmove, sp, mem, taddr, dst, src)
- 				}
---- a/src/cmd/compile/internal/ssagen/ssa.go
-+++ b/src/cmd/compile/internal/ssagen/ssa.go
-@@ -921,6 +921,7 @@
- 	// TODO(mdempsky): Make this Fatalf under Unified IR; frontend needs
- 	// to supply RType expressions.
- 	lsym := reflectdata.TypeLinksym(typ)
-+	s.f.GOFVNoteTypeInfo(lsym, typ)
- 	return s.entryNewValue1A(ssa.OpAddr, types.NewPtr(types.Types[types.TUINT8]), lsym, s.sb)
- }
- 
---- a/src/cmd/compile/internal/staticdata/data.go
-+++ b/src/cmd/compile/internal/staticdata/data.go
-@@ -70,9 +70,9 @@
- 	return base64.StdEncoding.EncodeToString(hash[:16])
- }
- 
--// StringSym returns a symbol containing the string s.
--// The symbol contains the string data, not a string header.
--func StringSym(pos src.XPos, s string) (data *obj.LSym) {
-+// StringSymName returns the name of the symbol StringSym returns for s,
-+// without creating it (gofv SSA exporter).
-+func StringSymName(s string) string {
- 	var symname string
- 	if len(s) > 100 {
- 		// Huge strings are hashed to avoid long names in object files.
-@@ -86,8 +86,13 @@
- 		// Small strings get named directly by their contents.
- 		symname = strconv.Quote(s)
- 	}
-+	return stringSymPrefix + symname
-+}
- 
--	symdata := base.Ctxt.Lookup(stringSymPrefix + symname)
-+// StringSym returns a symbol containing the string s.
-+// The symbol contains the string data, not a string header.
-+func StringSym(pos src.XPos, s string) (data *obj.LSym) {
-+	symdata := base.Ctxt.Lookup(StringSymName(s))
- 	if !symdata.OnList() {
- 		off := dstringdata(symdata, 0, s, pos, "string")
- 		objw.Global(symdata, int32(off), obj.DUPOK|obj.RODATA|obj.LOCAL)
---- a/src/cmd/compile/internal/types/size.go
-+++ b/src/cmd/compile/internal/types/size.go
-@@ -651,6 +651,18 @@
- 	return t.align > 0
- }
- 
-+// GOFVSizeKnown reports whether t's size and alignment have been calculated
-+// (gofv SSA exporter; it must not trigger CalcSize).
-+func (t *Type) GOFVSizeKnown() bool {
-+	return t.widthCalculated()
-+}
-+
-+// GOFVPtrCache returns the cached *t object NewPtr(t) returns (nil if none): in the backend
-+// NewPtr creates a fresh object whenever this is nil (gofv SSA exporter).
-+func (t *Type) GOFVPtrCache() *Type {
-+	return t.cache.ptr
-+}
-+
- // when a type's width should be known, we call CheckSize
- // to compute it.  during a declaration like
- //
---- a/src/cmd/compile/internal/ssagen/pgen.go
-+++ b/src/cmd/compile/internal/ssagen/pgen.go
-@@ -125,6 +125,7 @@
- 	s.stkptrsize = 0
- 	s.stkalign = int64(types.RegSize)
- 	fn := s.curfn
-+	gx := gofvProgBegin(f, fn) // gofv Prog exporter (GOFV_SSA_EXPORT); nil unless f is exported
- 
- 	// Mark the PAUTO's unused.
- 	for _, ln := range fn.Dcl {
-@@ -292,6 +293,9 @@
- 
- 	s.stksize = types.RoundUp(s.stksize, s.stkalign)
- 	s.stkptrsize = types.RoundUp(s.stkptrsize, s.stkalign)
-+	if gx != nil {
-+		gx.frame(s, mls)
-+	}
- }
- 
- const maxStackSize = 1 << 30
-@@ -302,6 +306,7 @@
- // worker indicates which of the backend workers is doing the processing.
- func Compile(fn *ir.Func, worker int, profile *pgoir.Profile) {
- 	f := buildssa(fn, worker, inline.IsPgoHotFunc(fn, profile) || inline.HasPgoHotInline(fn))
-+	gx := gofvProgTake(f) // gofv Prog exporter: nil unless f is exported
- 	// Note: check arg size to fix issue 25507.
- 	if f.Frontend().(*ssafn).stksize >= maxStackSize || f.OwnAux.ArgWidth() >= maxStackSize {
- 		largeStackFramesMu.Lock()
-@@ -312,6 +317,9 @@
- 	pp := objw.NewProgs(fn, worker)
- 	defer pp.Free()
- 	genssa(f, pp)
-+	if gx != nil {
-+		gx.prog0(pp)
-+	}
- 	// Check frame size again.
- 	// The check above included only the space needed for local variables.
- 	// After genssa, the space needed includes local variables and the callee arg region.
-@@ -337,6 +345,9 @@
- 
- 	// fieldtrack must be called after pp.Flush. See issue 20014.
- 	fieldtrack(pp.Text.From.Sym, fn.FieldTrack)
-+	if gx != nil {
-+		gx.asm(pp)
-+	}
- }
- 
- // globalMapInitLsyms records the LSym of each map.init.NNN outlined
 --- a/src/cmd/compile/internal/ssagen/export_prog_gofv.go
 +++ b/src/cmd/compile/internal/ssagen/export_prog_gofv.go
-@@ -0,0 +1,607 @@
+@@ -0,0 +1,694 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
 +
-+// gofv Phase 3 exporter (fv-compiler-go, docs/contracts/export.md, section "gofv-prog 1").
++// gofv Phase 3 exporter (fv-compiler-go, docs/contracts/export.md, section "gofv-prog 2").
 +// For every function whose SSA the gofv SSA exporter writes (GOFV_SSA_EXPORT), it writes a
 +// companion file <stem>.prog with the frame layout after AllocFrame, the Prog list after
 +// genssa (before Flush) and the assembled function after Flush (Prog list with PCs, bytes,
@@ -2108,6 +1972,11 @@
 +	nextID   int
 +
 +	dclIn []gofvDcl // fn.Dcl when AllocFrame starts
++
++	// Open-coded defers of buildssa (emitOpenDeferInfo): deferBitsTemp and the closure slots.
++	openDefer      bool
++	openDeferBits  *ir.Name
++	openDeferSlots []*ir.Name
 +}
 +
 +// gofvDcl is a Dcl entry with the name's frame offset and flags at one point.
@@ -2140,7 +2009,7 @@
 +		inls:     map[int]bool{},
 +		ids:      map[*obj.Prog]int{},
 +	}
-+	fmt.Fprintf(&x.out, "gofv-prog 1\npkg %s\nfunc %s %d\n", gofvQuoteP(base.Ctxt.Pkgpath),
++	fmt.Fprintf(&x.out, "gofv-prog 2\npkg %s\nfunc %s %d\n", gofvQuoteP(base.Ctxt.Pkgpath),
 +		gofvQuoteP(f.Name), f.ABISelf.Which())
 +	x.config()
 +	for _, n := range fn.Dcl {
@@ -2180,6 +2049,7 @@
 +	kv("compilingruntime", b(base.Flag.CompilingRuntime))
 +	kv("gendwarfinl", base.Flag.GenDwarfInl)
 +	kv("debugasm", base.Ctxt.Debugasm)
++	kv("mergelocalshash", gofvQuoteP(base.Debug.MergeLocalsHash))
 +}
 +
 +func gofvBoolP(v bool) int {
@@ -2238,6 +2108,8 @@
 +	add(n.NonMergeable(), "nonmergeable")
 +	add(n.AutoTemp(), "autotmp")
 +	add(n.IsOutputParamInRegisters(), "outregs")
++	add(n.Heapaddr != nil, "heapaddr")
++	add(n.IsOutputParamHeapAddr(), "outheapaddr")
 +	return gofvListP(xs)
 +}
 +
@@ -2331,7 +2203,13 @@
 +		sym = n.Sym().Name
 +	}
 +	t := x.typ(n.Type())
-+	fmt.Fprintf(&x.defs, "name n%d %s %s %s\n", k, gofvQuoteP(sym), n.Class, t)
++	ln, labi := gofvLinksymName(n)
++	aux := "-"
++	if a := x.f.GOFVAuxNum(n); a != 0 {
++		aux = "a" + strconv.Itoa(a)
++	}
++	fmt.Fprintf(&x.defs, "name n%d %s %s %s %d %s %d %s\n", k, gofvQuoteP(sym), n.Class, t, n.Esc(),
++		gofvQuoteP(ln), labi, aux)
 +	return "n" + strconv.Itoa(k)
 +}
 +
@@ -2583,11 +2461,84 @@
 +			}
 +		}
 +		fmt.Fprintf(&x.body, "needzero %s\n", gofvListP(nz))
-+		var ra []string
-+		for _, a := range x.f.RegArgs {
-+			ra = append(ra, fmt.Sprintf("%d:%d:%s", a.Reg, a.Offset, x.typ(a.Type)))
++		x.regArgs()
++	})
++}
++
++// regArgs writes the regargs line: f.RegArgs (register, frame offset, type).
++func (x *gofvProgExporter) regArgs() {
++	var ra []string
++	for _, a := range x.f.RegArgs {
++		ra = append(ra, fmt.Sprintf("%d:%d:%s", a.Reg, a.Offset, x.typ(a.Type)))
++	}
++	fmt.Fprintf(&x.body, "regargs %s\n", gofvListP(ra))
++}
++
++// gofvLinksymName is the name and ABI of n.Linksym() (types.Sym.Linksym, base.PkgLinksym,
++// base.Linkname), computed without looking the symbol up (a lookup creates it).
++func gofvLinksymName(n *ir.Name) (string, obj.ABI) {
++	s := n.Sym()
++	if s == nil {
++		return "", obj.ABI0
++	}
++	abi := obj.ABI0
++	if s.Func() {
++		abi = obj.ABIInternal
++	}
++	if s.Linkname != "" {
++		return s.Linkname, abi
++	}
++	if s.Name == "_" {
++		return "_", abi
++	}
++	prefix := s.Pkg.Prefix
++	sep := "."
++	if base.ReservedImports[prefix] {
++		sep = ":"
++	}
++	return prefix + sep + s.Name, abi
++}
++
++// gofvProgNoteOpenDefers records buildssa's open-coded defers (emitOpenDeferInfo: the
++// deferBits temp and the closure slots in defer order) for f's genin section.
++func gofvProgNoteOpenDefers(f *ssa.Func, bits *ir.Name, ds []*openDeferInfo) {
++	gofvProgs.Lock()
++	x := gofvProgs.m[f]
++	gofvProgs.Unlock()
++	if x == nil {
++		return
++	}
++	x.openDefer = true
++	x.openDeferBits = bits
++	for _, d := range ds {
++		x.openDeferSlots = append(x.openDeferSlots, d.closureNode)
++	}
++}
++
++// genin writes the genin section: what genssa reads besides the SSA and the frame (the
++// function's position and defer state, the wrapped function, the open-coded defers,
++// f.RegArgs and the text symbol's FuncInfo header); called by Compile before genssa.
++func (x *gofvProgExporter) genin() {
++	x.section("genin", func() {
++		fn := x.fn
++		fmt.Fprintf(&x.body, "curfn %s %d %d\n", x.pos(fn.Pos()), gofvBoolP(fn.HasDefer()),
++			gofvBoolP(fn.OpenCodedDeferDisallowed()))
++		if w := fn.WrappedFunc; w != nil {
++			ln, abi := gofvLinksymName(w.Nname)
++			fmt.Fprintf(&x.body, "wrapped %s %d\n", gofvQuoteP(ln), abi)
 +		}
-+		fmt.Fprintf(&x.body, "regargs %s\n", gofvListP(ra))
++		if x.openDefer {
++			var cs []string
++			for _, n := range x.openDeferSlots {
++				cs = append(cs, x.name(n))
++			}
++			fmt.Fprintf(&x.body, "opendefer %s %s\n", x.name(x.openDeferBits), gofvListP(cs))
++		}
++		x.regArgs()
++		s := fn.LSym
++		fi := s.Func()
++		fmt.Fprintf(&x.body, "text %s %d %d %d %d %d %x\n", x.sym(s), fi.Args, fi.Locals, fi.FuncID,
++			fi.FuncFlag, fi.StartLine, uint32(s.Attribute))
 +	})
 +}
 +
@@ -2659,6 +2610,179 @@
 +	x.out.WriteString("eof\n")
 +	x.f.GOFVWriteCompanion(".prog", x.out.Bytes())
 +}
+--- a/src/cmd/compile/internal/ssagen/pgen.go
++++ b/src/cmd/compile/internal/ssagen/pgen.go
+@@ -125,6 +125,7 @@
+ 	s.stkptrsize = 0
+ 	s.stkalign = int64(types.RegSize)
+ 	fn := s.curfn
++	gx := gofvProgBegin(f, fn) // gofv Prog exporter (GOFV_SSA_EXPORT); nil unless f is exported
+ 
+ 	// Mark the PAUTO's unused.
+ 	for _, ln := range fn.Dcl {
+@@ -292,6 +293,9 @@
+ 
+ 	s.stksize = types.RoundUp(s.stksize, s.stkalign)
+ 	s.stkptrsize = types.RoundUp(s.stkptrsize, s.stkalign)
++	if gx != nil {
++		gx.frame(s, mls)
++	}
+ }
+ 
+ const maxStackSize = 1 << 30
+@@ -302,6 +306,7 @@
+ // worker indicates which of the backend workers is doing the processing.
+ func Compile(fn *ir.Func, worker int, profile *pgoir.Profile) {
+ 	f := buildssa(fn, worker, inline.IsPgoHotFunc(fn, profile) || inline.HasPgoHotInline(fn))
++	gx := gofvProgTake(f) // gofv Prog exporter: nil unless f is exported
+ 	// Note: check arg size to fix issue 25507.
+ 	if f.Frontend().(*ssafn).stksize >= maxStackSize || f.OwnAux.ArgWidth() >= maxStackSize {
+ 		largeStackFramesMu.Lock()
+@@ -309,9 +314,15 @@
+ 		largeStackFramesMu.Unlock()
+ 		return
+ 	}
++	if gx != nil {
++		gx.genin()
++	}
+ 	pp := objw.NewProgs(fn, worker)
+ 	defer pp.Free()
+ 	genssa(f, pp)
++	if gx != nil {
++		gx.prog0(pp)
++	}
+ 	// Check frame size again.
+ 	// The check above included only the space needed for local variables.
+ 	// After genssa, the space needed includes local variables and the callee arg region.
+@@ -337,6 +348,9 @@
+ 
+ 	// fieldtrack must be called after pp.Flush. See issue 20014.
+ 	fieldtrack(pp.Text.From.Sym, fn.FieldTrack)
++	if gx != nil {
++		gx.asm(pp)
++	}
+ }
+ 
+ // globalMapInitLsyms records the LSym of each map.init.NNN outlined
+--- a/src/cmd/compile/internal/ssagen/ssa.go
++++ b/src/cmd/compile/internal/ssagen/ssa.go
+@@ -596,6 +596,7 @@
+ 
+ 	if len(s.openDefers) != 0 {
+ 		s.emitOpenDeferInfo()
++		gofvProgNoteOpenDefers(s.f, s.deferBitsTemp, s.openDefers) // gofv Prog exporter
+ 	}
+ 
+ 	// Record incoming parameter spill information for morestack calls emitted in the assembler.
+@@ -921,6 +922,7 @@
+ 	// TODO(mdempsky): Make this Fatalf under Unified IR; frontend needs
+ 	// to supply RType expressions.
+ 	lsym := reflectdata.TypeLinksym(typ)
++	s.f.GOFVNoteTypeInfo(lsym, typ)
+ 	return s.entryNewValue1A(ssa.OpAddr, types.NewPtr(types.Types[types.TUINT8]), lsym, s.sb)
+ }
+ 
+--- a/src/cmd/compile/internal/ssa/rewrite.go
++++ b/src/cmd/compile/internal/ssa/rewrite.go
+@@ -2221,6 +2221,7 @@
+ 
+ 		if t.IsPtr() && off == rttype.PtrType.OffsetOf("Elem") {
+ 			elemSym := reflectdata.TypeLinksym(t.Elem())
++			f.gofvNoteElemTypeInfo(elemSym, lsym)
+ 			reflectdata.MarkTypeSymUsedInInterface(elemSym, f.fe.Func().Linksym())
+ 			v.reset(OpAddr)
+ 			v.Aux = symToAux(elemSym)
+--- a/src/cmd/compile/internal/ssa/writebarrier.go
++++ b/src/cmd/compile/internal/ssa/writebarrier.go
+@@ -482,6 +482,7 @@
+ 			switch w.Op {
+ 			case OpZeroWB:
+ 				typ := reflectdata.TypeLinksym(w.Aux.(*types.Type))
++				f.GOFVNoteTypeInfo(typ, w.Aux.(*types.Type))
+ 				// zeroWB(&typ, dst)
+ 				taddr := b.NewValue1A(pos, OpAddr, b.Func.Config.Types.Uintptr, typ, sb)
+ 				memThen = wbcall(pos, bThen, wbZero, sp, memThen, taddr, dst)
+@@ -498,6 +499,7 @@
+ 					}
+ 				}
+ 				typ := reflectdata.TypeLinksym(w.Aux.(*types.Type))
++				f.GOFVNoteTypeInfo(typ, w.Aux.(*types.Type))
+ 				// moveWB(&typ, dst, src)
+ 				taddr := b.NewValue1A(pos, OpAddr, b.Func.Config.Types.Uintptr, typ, sb)
+ 				memThen = wbcall(pos, bThen, wbMove, sp, memThen, taddr, dst, src)
+@@ -544,6 +546,7 @@
+ 				if buildcfg.Experiment.CgoCheck2 {
+ 					// Issue cgo checking code.
+ 					typ := reflectdata.TypeLinksym(w.Aux.(*types.Type))
++					f.GOFVNoteTypeInfo(typ, w.Aux.(*types.Type))
+ 					taddr := b.NewValue1A(pos, OpAddr, b.Func.Config.Types.Uintptr, typ, sb)
+ 					mem = wbcall(pos, bEnd, cgoCheckMemmove, sp, mem, taddr, dst, src)
+ 				}
+--- a/src/cmd/compile/internal/staticdata/data.go
++++ b/src/cmd/compile/internal/staticdata/data.go
+@@ -70,9 +70,9 @@
+ 	return base64.StdEncoding.EncodeToString(hash[:16])
+ }
+ 
+-// StringSym returns a symbol containing the string s.
+-// The symbol contains the string data, not a string header.
+-func StringSym(pos src.XPos, s string) (data *obj.LSym) {
++// StringSymName returns the name of the symbol StringSym returns for s,
++// without creating it (gofv SSA exporter).
++func StringSymName(s string) string {
+ 	var symname string
+ 	if len(s) > 100 {
+ 		// Huge strings are hashed to avoid long names in object files.
+@@ -86,8 +86,13 @@
+ 		// Small strings get named directly by their contents.
+ 		symname = strconv.Quote(s)
+ 	}
++	return stringSymPrefix + symname
++}
+ 
+-	symdata := base.Ctxt.Lookup(stringSymPrefix + symname)
++// StringSym returns a symbol containing the string s.
++// The symbol contains the string data, not a string header.
++func StringSym(pos src.XPos, s string) (data *obj.LSym) {
++	symdata := base.Ctxt.Lookup(StringSymName(s))
+ 	if !symdata.OnList() {
+ 		off := dstringdata(symdata, 0, s, pos, "string")
+ 		objw.Global(symdata, int32(off), obj.DUPOK|obj.RODATA|obj.LOCAL)
+--- a/src/cmd/compile/internal/types/size.go
++++ b/src/cmd/compile/internal/types/size.go
+@@ -651,6 +651,18 @@
+ 	return t.align > 0
+ }
+ 
++// GOFVSizeKnown reports whether t's size and alignment have been calculated
++// (gofv SSA exporter; it must not trigger CalcSize).
++func (t *Type) GOFVSizeKnown() bool {
++	return t.widthCalculated()
++}
++
++// GOFVPtrCache returns the cached *t object NewPtr(t) returns (nil if none): in the backend
++// NewPtr creates a fresh object whenever this is nil (gofv SSA exporter).
++func (t *Type) GOFVPtrCache() *Type {
++	return t.cache.ptr
++}
++
+ // when a type's width should be known, we call CheckSize
+ // to compute it.  during a declaration like
+ //
+--- a/src/cmd/internal/obj/inl.go
++++ b/src/cmd/internal/obj/inl.go
+@@ -101,6 +101,11 @@
+ 	return tree.nodes[inlIndex].Pos
+ }
+ 
++// GOFVNodes returns the nodes of tree in index order (gofv Prog exporter).
++func (tree *InlTree) GOFVNodes() []InlinedCall {
++	return tree.nodes
++}
++
+ func (tree *InlTree) setParentPC(inlIndex int, pc int32) {
+ 	tree.nodes[inlIndex].ParentPC = pc
+ }
 --- a/src/cmd/internal/obj/link.go
 +++ b/src/cmd/internal/obj/link.go
 @@ -828,6 +828,17 @@
@@ -2679,17 +2803,3 @@
  // Record the type symbol for an auto variable so that the linker
  // an emit DWARF type information for the type.
  func (fi *FuncInfo) RecordAutoType(gotype *LSym) {
---- a/src/cmd/internal/obj/inl.go
-+++ b/src/cmd/internal/obj/inl.go
-@@ -101,6 +101,11 @@
- 	return tree.nodes[inlIndex].Pos
- }
- 
-+// GOFVNodes returns the nodes of tree in index order (gofv Prog exporter).
-+func (tree *InlTree) GOFVNodes() []InlinedCall {
-+	return tree.nodes
-+}
-+
- func (tree *InlTree) setParentPC(inlIndex int, pc int32) {
- 	tree.nodes[inlIndex].ParentPC = pc
- }

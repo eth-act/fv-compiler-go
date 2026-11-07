@@ -2,9 +2,9 @@ import GoFV.Asm.Prog
 import GoFV.SSA.Parse
 
 /-!
-# Parser of the `gofv-prog 1` format
+# Parser of the `gofv-prog 2` format
 
-Parses a `.prog` file (`docs/contracts/export.md`, "gofv-prog 1") into a `ProgFile`. Like the
+Parses a `.prog` file (`docs/contracts/export.md`, "gofv-prog 2") into a `ProgFile`. Like the
 `gofv-ssa` parser (`GoFV.SSA.Parse`, whose lexer and word parsers it reuses) it is strict: it
 accepts exactly the canonical text `GoFV.Asm.Print` produces, so `print ∘ parse` is the identity
 on every file it accepts.
@@ -119,7 +119,11 @@ def defLine : L Def := do
     let s ← str
     let cls ← wordStr
     let t ← w (optRefW 't')
-    return .name n { sym := s, cls, type := t }
+    let esc ← w natW
+    let linkName ← str
+    let linkAbi ← w natW
+    let aux ← w (optRefW 'a')
+    return .name n { sym := s, cls, type := t, esc, linkName, linkAbi, aux }
   | some "sym" => line "sym" do
     let n ← w (refW 'y')
     let s ← str
@@ -191,9 +195,12 @@ def relocs (n : Nat) : L (Array Reloc) := do
     out := out.push (← line "reloc" relocLine)
   return out
 
+def textLine : F TextInfo := do
+  return { sym := ← w (refW 'y'), args := ← w intW, locals := ← w intW, funcID := ← w natW,
+           funcFlag := ← w natW, startLine := ← w intW, attr := ← w hexNatW }
+
 def funcInfo : L FuncInfo := do
-  let (sym, args, locals, funcID, funcFlag, startLine, attr) ← line "fn" do
-    return (← w (refW 'y'), ← w intW, ← w intW, ← w natW, ← w natW, ← w intW, ← w hexNatW)
+  let t ← line "fn" textLine
   let spills ← many "spill" do
     return { addr := ← w addrW, reg := ← w intW, reg2 := ← w intW, spill := ← w asW,
              unspill := ← w asW }
@@ -203,7 +210,9 @@ def funcInfo : L FuncInfo := do
     let o := w (optRefW 'y')
     return { gcArgs := ← o, gcLocals := ← o, stackObjects := ← o, openCodedDeferInfo := ← o,
              argInfo := ← o, argLiveInfo := ← o, wrapInfo := ← o }
-  return { sym, args, locals, funcID, funcFlag, startLine, attr, spills, inlMarks, jumpTables, aux }
+  return { sym := t.sym, args := t.args, locals := t.locals, funcID := t.funcID,
+           funcFlag := t.funcFlag, startLine := t.startLine, attr := t.attr, spills, inlMarks,
+           jumpTables, aux }
 
 def dclLine : F DclEntry := do
   return { name := ← w (refW 'n'), off := ← w intW, flags := ← w (flagsW NameFlags.table) }
@@ -219,15 +228,33 @@ def frame : L Frame := do
   let warns ← warnsEnd
   return { defs, dclIn, dclOut, optDcl, merges, stksize, stkptrsize, stkalign, warns }
 
+def regArgsW : F (Array RegArg) := w (listW fun s => do
+  let ps ← partsW s ':' 3
+  return { reg := ← intW ps[0]!, off := ← intW ps[1]!, type := ← optRefW 't' ps[2]! })
+
+def genin : L GenIn := do
+  line "genin" (pure ())
+  let defs ← defs
+  let (fnPos, hasDefer, openDeferDisallowed) ← line "curfn" do
+    return (← w posW, ← w boolW, ← w boolW)
+  let wrapped ← if ← tagIs "wrapped" then
+      some <$> line "wrapped" (do return (← str, ← w natW))
+    else pure none
+  let openDefer ← if ← tagIs "opendefer" then
+      some <$> line "opendefer" (do return (← w (refW 'n'), ← w (listW (refW 'n'))))
+    else pure none
+  let regArgs ← line "regargs" regArgsW
+  let text ← line "text" textLine
+  let warns ← warnsEnd
+  return { defs, fnPos, hasDefer, openDeferDisallowed, wrapped, openDefer, regArgs, text, warns }
+
 def prog0 : L Prog0 := do
   line "prog0" (pure ())
   let defs ← defs
   let progs ← many "p" progLine
   let fn ← funcInfo
   let needzero ← line "needzero" (w (listW (refW 'n')))
-  let regArgs ← line "regargs" (w (listW fun s => do
-    let ps ← partsW s ':' 3
-    return { reg := ← intW ps[0]!, off := ← intW ps[1]!, type := ← optRefW 't' ps[2]! }))
+  let regArgs ← line "regargs" regArgsW
   let warns ← warnsEnd
   return { defs, progs, fn, needzero, regArgs, warns }
 
@@ -267,7 +294,7 @@ def asm : L Asm := do
 def file : L ProgFile := do
   line "gofv-prog" do
     let v ← wordStr
-    if v != "1" then throw s!"unsupported gofv-prog version {v}"
+    if v != "2" then throw s!"unsupported gofv-prog version {v}"
   let pkg ← line "pkg" str
   let (name, abi) ← line "func" do return (← str, ← w natW)
   let config ← many "config" do
@@ -277,15 +304,16 @@ def file : L ProgFile := do
     | #[t] => return (k, t)
     | _ => throw "config: expected one value"
   let frame ← frame
+  let genin ← genin
   let prog0 ← prog0
   let asm ← asm
   line "eof" (pure ())
   if (← get) != (← read).lines.size then throw s!"line {(← get) + 1}: data after eof"
-  return { pkg, name, abi, config, frame, prog0, asm }
+  return { pkg, name, abi, config, frame, genin, prog0, asm }
 
 end Parse
 
-/-- Parses a `gofv-prog 1` file. -/
+/-- Parses a `gofv-prog 2` file. -/
 def parseProgFile (data : ByteArray) : Except String ProgFile := do
   let ls ← GoFV.SSA.Parse.lines data
   match (Parse.file ⟨data, ls⟩).run 0 with
