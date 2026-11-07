@@ -206,7 +206,7 @@ def layersWhy (env : PassEnv) (t : GoFV.Rules.Interp.Table) (f0 : Func) (out : P
   | L :: Ls, f, log =>
     let name := match L with
       | .nil _ => "nil" | .fwd _ => "fwd" | .sl => "sl" | .ss => "ss" | .ld => "ld" | .seg _ => "seg" | .ps => "ps"
-      | .pc => "pc"
+      | .pc => "pc" | .pn => "pn"
     match L.pre t out.tables f log with
     | (f', log') =>
       if RewriteCheck.sameLog log'.toList log.toList then layersWhy env t f0 out Ls f log
