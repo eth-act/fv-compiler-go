@@ -57,8 +57,9 @@ theorem first_ptr_held {x : Val} {t : Ty} (hx : x.hasTy t = true) {a : Val} {as 
     cases fs with
     | nil => simp [Val.hasTy, Val.hasTyList] at hx
     | cons f fs =>
-      simp only [Val.hasTy, List.map_cons, Val.hasTyList, Bool.and_eq_true] at hx
-      exact Ptr.held_of_hasTy hx.1
+      have hx' : Val.hasTyList (Val.ptr p :: as) ((f :: fs).map (·.2)) = true := hx
+      simp only [List.map_cons, Val.hasTyList, Bool.and_eq_true] at hx'
+      exact Ptr.held_of_hasTy hx'.1
   | str =>
     obtain ⟨q, l, h, hq, -⟩ := Val.hasTy_agg_str.1 hx
     cases h; simpa [Val.isPtrWord] using hq

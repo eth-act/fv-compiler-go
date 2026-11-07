@@ -475,7 +475,8 @@ theorem frameVal_ptr_inWindow {ctx : Ctx} {v : Value} {q : Ptr}
   · split at h
     · revert h
       simp only [Option.some.injEq, Val.ofStr]
-      split <;> simp
+      repeat' split
+      all_goals simp
     · cases h
   · cases h
 

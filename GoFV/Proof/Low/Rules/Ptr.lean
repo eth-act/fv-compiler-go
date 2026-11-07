@@ -1,13 +1,14 @@
-import GoFV.Proof.Low.Rules.Tactic
+import GoFV.Proof.Low.Rules.ShiftOp
 import GoFV.Rules.Generated.ARM64
 import GoFV.Proof.Pass.RewriteTermDen
 
 /-!
-# Lowering rule lemmas: pointers (`ARM64.rules:305`, `306`, `308`, `1201`)
+# Lowering rule lemmas: pointers and copies (`ARM64.rules:305`, `306`, `308`, `1184`, `1201`)
 
 `OffPtr` as `ADDconst` (`refines_offPtr`), `Addr {sym}` as `MOVDaddr {sym}` (`refines_addr_movAddr`),
-and `ADDconst [0] x` as `x` at a shape compatible with `x`'s (`refines_addP_zero`, the
-`copyShapeOK` premise: the same shape, or two pointer shapes, `hasTy_copyCompat`).
+and `ADDconst [0] x` and `NEG (NEG x)` as `x` at a shape compatible with `x`'s
+(`refines_addP_zero`, `refines_neg_neg` of `ShiftOp`; the `copyShapeOK` premise: the same shape,
+or two pointer shapes, `hasTy_copyCompat`).
 -/
 
 namespace GoFV.Proof.Low.Rules
@@ -62,5 +63,10 @@ theorem r_ARM64_1201_sound : ArmRule.Checked r_ARM64_1201 := by
   simp only [DV.int.injEq] at hc
   rw [hc]
   exact refines_addP_zero _ _ (hasTy_copyCompat hcs hty)
+
+/-- `ARM64.rules:1184`: `(NEG (NEG x)) => x` -/
+theorem r_ARM64_1184_sound : ArmRule.Checked r_ARM64_1184 := by
+  left; arm_unfold; arm_norm
+  exact refines_neg_neg (armReadW_neg _ ▸ harg.1) _ (hasTy_copyCompat hcs hty)
 
 end GoFV.Proof.Low.Rules

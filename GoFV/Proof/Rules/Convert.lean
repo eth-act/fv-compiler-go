@@ -42,8 +42,8 @@ theorem r_generic_1072_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic
     · simp only [PtrOps.convert, Val.retype]
       exact .int _ _
     · rw [h] at h00
-      simp only [Val.hasTy, Bool.not_eq_eq_eq_not, Bool.not_true] at h00
-      rw [convert_i64_nc h00]
+      simp only [Val.hasTy] at h00
+      rw [convert_i64_nc (Ptr.not_convertible_of_held h00)]
       exact .poison _
   | int w =>
     cases w with

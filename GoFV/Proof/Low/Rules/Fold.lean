@@ -74,8 +74,11 @@ theorem retypeL_global (g : String) (o : BitVec 64) (T : Ty) :
       (PtrOps.ptrRes ⟨.global g, o⟩).retypeL T = .poison := by
   simp only [PtrOps.ptrRes, Ptr.inWindow, Blk.window?, ite_true]
   cases T with
-  | int w => cases w <;> simp [Val.retypeL, Val.widen, Val.retype, Ptr.word, Ptr.convertible]
-  | _ => simp [Val.retypeL, Val.widen, Val.retype, Ptr.word, Ptr.convertible]
+  | int w =>
+    cases w <;> simp [Val.retypeL, Val.widen, Val.retype, Ptr.word, Ptr.convertible, Ptr.inWindow,
+      Blk.window?]
+  | _ => simp [Val.retypeL, Val.widen, Val.retype, Ptr.word, Ptr.convertible, Ptr.inWindow,
+      Blk.window?]
 
 /-- A pointer's word at a shape of at least 64 bits: kept (a word shape) or `poison` (an
 aggregate). -/

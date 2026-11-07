@@ -544,6 +544,9 @@ private theorem refines_neg_res {T T1 : Ty} (hw : lowW T ≤ argWidth T1) (r : B
     rw [retypeL_res_low T (neg_low h2 z r hzk)]
     exact Refines.refl _
 
+private theorem neg_sub' (a b : BitVec 64) : -(a - b) = b - a := by
+  rw [BitVec.neg_sub, BitVec.add_comm, ← BitVec.sub_eq_add_neg]
+
 /-- `NEG (SUB x y)` as `SUB y x` (`ARM64.rules:1183`). Two operands with registers subtract as
 registers, and the negated difference is the swapped one, as far as the low `lowW T` bits go
 (`refines_op1_op2`). A pointer operand has no register: by its shape it is held as a pointer
@@ -565,24 +568,25 @@ theorem refines_neg_sub {T T0 T1 T2 : Ty} (hw : lowW T ≤ argWidth T1) (x y : V
       cases hpa : p.addr? <;> cases hqa : q.addr? <;> simp only [Arm64.sub, hpa, hqa]
       · by_cases hb : p.blk = q.blk
         · simp only [hb, beq_self_eq_true, ite_true]
-          rw [← BitVec.neg_sub]
-          exact refines_neg_res hw _
+          have h := refines_neg_res (T := T) hw (p.off - q.off)
+          rwa [neg_sub'] at h
         · simp only [hb, Ne.symm hb, beq_iff_eq, ite_false]
           exact hpois _
       · by_cases hb : p.blk = q.blk
         · simp only [hb, beq_self_eq_true, ite_true]
-          rw [← BitVec.neg_sub]
-          exact refines_neg_res hw _
+          have h := refines_neg_res (T := T) hw (p.off - q.off)
+          rwa [neg_sub'] at h
         · simp only [hb, Ne.symm hb, beq_iff_eq, ite_false]
           exact hpois _
       · by_cases hb : p.blk = q.blk
         · simp only [hb, beq_self_eq_true, ite_true]
-          rw [← BitVec.neg_sub]
-          exact refines_neg_res hw _
+          have h := refines_neg_res (T := T) hw (p.off - q.off)
+          rwa [neg_sub'] at h
         · simp only [hb, Ne.symm hb, beq_iff_eq, ite_false]
           exact hpois _
-      · rw [← BitVec.neg_sub]
-        exact refines_neg_res hw _
+      · rename_i a b
+        have h := refines_neg_res (T := T) hw (a - b)
+        rwa [neg_sub'] at h
     · -- `SUB p i` moves `p` inside its block: a held pointer or `poison`
       have hs : Arm64.sub T1 [.ptr p, y] = match Arm64.reg y with
           | some k => PtrOps.ptrRes (p.add (-k))
@@ -595,7 +599,8 @@ theorem refines_neg_sub {T T0 T1 T2 : Ty} (hw : lowW T ≤ argWidth T1) (x y : V
         simp only [PtrOps.ptrRes]
         split
         · rename_i hw'
-          have hq : (p.add (-k)).held = true := Ptr.held_of_blk rfl hp hw'
+          have hq : (p.add (-k)).held = true :=
+            Ptr.held_of_blk (p := p) (q := p.add (-k)) rfl hp hw'
           rw [Ptr.word_of_held hq]
           simp only [Arm64.op1, reg_retypeL_held T1 hq, retypeL_poison]
           exact .poison _
@@ -607,12 +612,13 @@ theorem refines_neg_sub {T T0 T1 T2 : Ty} (hw : lowW T ≤ argWidth T1) (x y : V
       have hr : Arm64.reg (.ptr q) = none :=
         ptrReg_none (Ptr.not_convertible_of_held (Ptr.held_of_hasTy hy))
       rw [show Arm64.op2 T1 (· - ·) [x, .ptr q] = .poison by
-        cases Arm64.reg x <;> simp only [Arm64.op2, hr]]
+        cases hxr : Arm64.reg x <;> simp only [Arm64.op2, hxr, hr]]
       exact hpois _
     · have hy' : ∀ q, y ≠ .ptr q := fun q h => hyp ⟨q, h⟩
       rw [sub_nonptr T hy']
       have he : Arm64.op2 T (· - ·) [y, x] = Arm64.op2 T (fun a b => -(a - b)) [x, y] := by
-        cases Arm64.reg x <;> cases Arm64.reg y <;> simp only [Arm64.op2, BitVec.neg_sub]
+        cases hxr : Arm64.reg x <;> cases hyr : Arm64.reg y <;>
+          simp only [Arm64.op2, hxr, hyr, neg_sub']
       rw [he]
       exact refines_op1_op2 (- ·) (· - ·) (fun b b' h => neg_low (lowW_pos T).2 b b' h) hw x y
 
@@ -629,24 +635,19 @@ private theorem retypeL_res_self {T : Ty} {x : Val} (hx : x.hasTy T = true) {v :
       subst hr
       cases w <;> simp [Arm64.res, Val.retypeL, Val.widen, Val.retype, Width.bits]
     | ptr e =>
-      cases w <;> simp only [Val.hasTy] at hx
+      cases w <;> simp [Val.hasTy] at hx
       simp only [Arm64.reg, Option.some.injEq] at hr
       subst hr
       simp [Arm64.res, Val.retypeL, Val.widen, Val.retype, Width.bits]
     | _ => simp [Val.hasTy] at hx
   | bool b =>
-    cases T <;> simp only [Val.hasTy] at hx
+    cases T <;> simp [Val.hasTy] at hx
     simp only [Arm64.reg, Option.some.injEq] at hr
     subst hr
     cases b <;> rfl
   | ptr p =>
-    have : Arm64.reg (.ptr p) = none := by
-      cases T with
-      | int w => cases w <;> simp_all [Val.hasTy, Arm64.reg, ptrReg_none]
-      | ptr _ =>
-        simp only [Val.hasTy] at hx
-        exact ptrReg_none (Ptr.not_convertible_of_held hx)
-      | _ => simp [Val.hasTy] at hx
+    have : Arm64.reg (.ptr p) = none :=
+      ptrReg_none (Ptr.not_convertible_of_held (Ptr.held_of_hasTy hx))
     rw [this] at hr; cases hr
   | _ => cases hr
 
@@ -672,18 +673,14 @@ theorem refines_neg_neg {T T1 : Ty} (hw : lowW T ≤ argWidth T1) (x : Val)
         rw [neg_low h2 z (-v) hzk, BitVec.neg_neg]), retypeL_res_self hx hr]
       exact Refines.refl _
 
-private theorem armReadW_neg (T : Ty) : armReadW .ARM64NEG T 0 = lowW T := by
+/-- `NEG` reads its argument at the low `lowW` bits of its shape. -/
+theorem armReadW_neg (T : Ty) : armReadW .ARM64NEG T 0 = lowW T := by
   cases T <;> rfl
 
 /-- `ARM64.rules:1183`: `(NEG (SUB x y)) => (SUB y x)` -/
 theorem r_ARM64_1183_sound : ArmRule.Checked r_ARM64_1183 := by
   left; arm_unfold; arm_norm
   exact refines_neg_sub (armReadW_neg _ ▸ harg.1) _ _ hty.1 hty.2
-
-/-- `ARM64.rules:1184`: `(NEG (NEG x)) => x` -/
-theorem r_ARM64_1184_sound : ArmRule.Checked r_ARM64_1184 := by
-  left; arm_unfold; arm_norm
-  exact refines_neg_neg (armReadW_neg _ ▸ harg.1) _ (hasTy_copyCompat hcs hty)
 
 /-! ## `ADD` of a sign-masked shifted operand (1635) -/
 
