@@ -360,4 +360,15 @@ theorem addrRef_foldSym {tabs : Tables} {n : AuxRef} {T : Ty}
   · simp only [Option.elim_none, retypeL_poison, Arm64.addr, Arm64.reg] at hy
     cases hy
 
+/-- A `MOVDaddr` is a term unless it is a frame variable's address at offset 0. -/
+theorem termVL_movDaddr {tabs : Tables} {m : Value} (h : m.op = .ARM64MOVDaddr) :
+    termVL tabs m = !(auxIsName tabs m.aux && m.auxInt == 0) := by
+  unfold termVL; rw [h]; rfl
+
+/-- A `MOVDaddr` atom is a frame variable's address at offset 0. -/
+theorem movDaddr_atom {tabs : Tables} {m : Value} (h : m.op = .ARM64MOVDaddr)
+    (ht : termVL tabs m = false) : auxIsName tabs m.aux = true ∧ m.auxInt = 0 := by
+  rw [termVL_movDaddr h] at ht
+  simpa using ht
+
 end GoFV.Proof.Low

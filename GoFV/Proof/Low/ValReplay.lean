@@ -927,17 +927,6 @@ theorem stFoldAddr_cases {f : Func} {x u : Value} (h : stFoldAddr tabs f M x u =
         exact ⟨l, rfl, h15.1, h15.2⟩
     · cases h8
 
-/-- A `MOVDaddr` is a term unless it is a frame variable's address at offset 0. -/
-theorem termVL_movDaddr {m : Value} (h : m.op = .ARM64MOVDaddr) :
-    termVL tabs m = !(GoFV.Opt.LowerTerm.auxIsName tabs m.aux && m.auxInt == 0) := by
-  unfold termVL; rw [h]; rfl
-
-/-- A `MOVDaddr` atom is a frame variable's address at offset 0. -/
-theorem movDaddr_atom {m : Value} (h : m.op = .ARM64MOVDaddr) (ht : termVL tabs m = false) :
-    GoFV.Opt.LowerTerm.auxIsName tabs m.aux = true ∧ m.auxInt = 0 := by
-  rw [termVL_movDaddr h] at ht
-  simpa using ht
-
 /-- No store address is the pointer word of a value moved from `poison`. -/
 theorem addrRef_poison {act act' : Nat} {ax : Option AuxRef} {k k' : Int64} {x z : Val}
     (h : AddrRef tabs act none k x .poison) : AddrRef tabs act' ax k' x z := by
