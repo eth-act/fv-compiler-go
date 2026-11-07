@@ -258,8 +258,9 @@ theorem any_store {o : Option Value} (h : o.any (·.op == .Store) = true) :
   | some a => exact ⟨a, rfl, by simpa using h⟩
 
 /-- What `atomDef` establishes for one new definition: a lowered store on the same arguments at
-offset 0 without aux, a lowered frame address on some of them, or an offset or a symbol's or
-frame variable's address folded into an arm64 store of a `Store` of `f`, or that store indexed. -/
+offset 0 without aux, a lowered frame address on some of them, or an offset or a symbol's or frame
+variable's address folded into an arm64 store of a `Store` of `f`, or that store indexed (a narrow
+store's value read back through a narrowing `Copy`, `stValPick`). -/
 theorem atomDef_one {tabs : Tables} {f : Func} {M : Defs} {v : ID} {defs : List Value} {u : Value}
     (h : atomDef tabs f M v defs = some (u, none)) : ∃ x, M.get? v = some x ∧
       termVL tabs x = false ∧ termVL tabs u = false ∧ u.type = x.type ∧
@@ -272,21 +273,23 @@ theorem atomDef_one {tabs : Tables} {f : Func} {M : Defs} {v : ID} {defs : List 
   unfold atomDef at h
   split at h
   · rename_i x _ u' hx
-    rw [Option.ite_none_right_eq_some] at h
-    obtain ⟨hc, h⟩ := h
-    cases h
-    simp only [Bool.and_eq_true, Bool.or_eq_true] at hc
-    obtain ⟨⟨⟨⟨⟨-, -⟩, ht⟩, ht'⟩, hty⟩, hk⟩ := hc
-    simp only [Bool.not_eq_true'] at ht ht'
-    refine ⟨x, hx, ht, ht', beq_iff_eq.1 hty, ?_⟩
-    rcases hk with ((⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ | ⟨h1, h2⟩) | ⟨h1, h2⟩) | ⟨h1, h2⟩
-    · exact .inl ⟨beq_iff_eq.1 h1, h2, beq_iff_eq.1 h3, beq_iff_eq.1 h4⟩
-    · exact .inr (.inl ⟨beq_iff_eq.1 h1, h2⟩)
-    · refine .inr (.inr (.inl ⟨fun a ha => ?_, h2⟩))
-      simp only [Array.all_eq_true, Array.contains_iff_mem] at h1
-      obtain ⟨i, hi, rfl⟩ := Array.mem_iff_getElem.1 ha
-      exact h1 i hi
-    · exact .inr (.inr (.inr ⟨or_assoc.1 h1, any_store h2⟩))
+    unfold atomDef1 at h
+    split at h
+    · rename_i hc
+      cases h
+      simp only [Bool.and_eq_true, Bool.or_eq_true] at hc
+      obtain ⟨⟨⟨⟨⟨-, -⟩, ht⟩, ht'⟩, hty⟩, hk⟩ := hc
+      simp only [Bool.not_eq_true'] at ht ht'
+      refine ⟨x, hx, ht, ht', beq_iff_eq.1 hty, ?_⟩
+      rcases hk with ((⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ | ⟨h1, h2⟩) | ⟨h1, h2⟩) | ⟨h1, h2⟩
+      · exact .inl ⟨beq_iff_eq.1 h1, h2, beq_iff_eq.1 h3, beq_iff_eq.1 h4⟩
+      · exact .inr (.inl ⟨beq_iff_eq.1 h1, h2⟩)
+      · refine .inr (.inr (.inl ⟨fun a ha => ?_, h2⟩))
+        simp only [Array.all_eq_true, Array.contains_iff_mem] at h1
+        obtain ⟨i, hi, rfl⟩ := Array.mem_iff_getElem.1 ha
+        exact h1 i hi
+      · exact .inr (.inr (.inr ⟨or_assoc.1 h1, any_store h2⟩))
+    · cases h
   · rename_i x _ u' s hx
     rw [Option.ite_none_right_eq_some] at h
     obtain ⟨-, h⟩ := h
@@ -303,9 +306,8 @@ theorem atomDef_two {tabs : Tables} {f : Func} {M : Defs} {v : ID} {defs : List 
   unfold atomDef at h
   split at h
   · rename_i x _ u' hx
-    rw [Option.ite_none_right_eq_some] at h
-    obtain ⟨-, h⟩ := h
-    cases h
+    unfold atomDef1 at h
+    split at h <;> cases h
   · rename_i x _ u' s' hx
     rw [Option.ite_none_right_eq_some] at h
     obtain ⟨hc, h⟩ := h

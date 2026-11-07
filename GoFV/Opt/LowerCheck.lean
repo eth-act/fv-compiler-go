@@ -220,6 +220,178 @@ def setOpDef (tabs : Tables) (M : Defs) (r : Rule) (v : ID) : Option Value :=
     else none
   | _, _ => none
 
+/-! ## Copies -/
+
+/-- A `Copy` of shape `s` of a value of shape `t` is the identity on it (`RewriteCheck.copyCompat`
+at the lowered shapes). -/
+def copyCompatL (s t : Sem.Ty) : Bool := copyCompat s t
+
+/-- `w` is `a`, or reached from `a` through at most `n` compatible `Copy`s (`copyReach` at the
+lowered shapes). -/
+def copyReachL (tabs : Tables) (M : Defs) : Nat → ID → ID → Bool
+  | 0, a, w => a == w
+  | n + 1, a, w =>
+    a == w ||
+    match M.get? a with
+    | some x =>
+      x.op == .Copy && x.args.size == 1 &&
+      (match M.get? x.args[0]! with
+        | some y => copyCompatL (shpL tabs x.type) (shpL tabs y.type)
+        | none => false) &&
+      copyReachL tabs M n x.args[0]! w
+    | none => false
+
+/-- The sign and zero extensions `MOV{B,H,W}{,U}reg` and the low bits of their argument they read
+(`Arm64.ext`). -/
+def extReadW : Op → Option Nat
+  | .ARM64MOVBreg | .ARM64MOVBUreg => some 8
+  | .ARM64MOVHreg | .ARM64MOVHUreg => some 16
+  | .ARM64MOVWreg | .ARM64MOVWUreg => some 32
+  | _ => none
+
+/-- The `W` ops: `Arm64.evalPure` reads each argument as the low 32 bits of its register
+(`Arm64.reg32`: `op1w`, `op2w`, `cmp1w`, `cmp2w`, `flags1w`, `flags2w`). -/
+def w32Op : Op → Bool
+  | .ARM64MULW | .ARM64MNEGW | .ARM64DIVW | .ARM64UDIVW | .ARM64MODW | .ARM64UMODW | .ARM64RORW
+  | .ARM64RORWconst | .ARM64EXTRWconst | .ARM64CLZW | .ARM64RBITW | .ARM64REVW | .ARM64REV16W
+  | .ARM64CMPW | .ARM64CMPWconst | .ARM64CMNW | .ARM64CMNWconst | .ARM64TSTW
+  | .ARM64TSTWconst => true
+  | _ => false
+
+/-- The low bits of argument `i` of `o` that `o` reads, for the ops that read no more: an
+extension its source width (`extReadW`, argument 0), a `W` op 32 of each argument (`w32Op`). -/
+def narrowReadW (o : Op) (i : Nat) : Option Nat :=
+  match extReadW o with
+  | some k => if i == 0 then some k else none
+  | none => if w32Op o then some 32 else none
+
+/-- The value `a` of the replay is a `Copy` at an integer shape of at least `k` and fewer than 64
+bits (lowering a truncation, `(Trunc64to32 x) => x`), whose argument reaches `a'` through at most
+`n` compatible copies: `a'` holds `a`'s low `k` bits. -/
+def truncFromL (tabs : Tables) (M : Defs) (n k : Nat) (a a' : ID) : Bool :=
+  match M.get? a with
+  | some c =>
+    c.op == .Copy && c.args.size == 1 &&
+      (match shpL tabs c.type with
+        | .int w => decide (k ≤ w.bits) && w != .w64
+        | _ => false) &&
+      copyReachL tabs M n c.args[0]! a'
+  | none => false
+
+/-- Argument `i` of the op `o` in the replay is `a`, a narrowing `Copy` that keeps the bits `o`
+reads of it (`narrowReadW`, `truncFromL`), and the output's is `a'`: `o` reads the same bits of
+`a'` (`GoFV.Proof.Low.Val.op1_ext_retypeL`, `GoFV.Proof.Low.Val.w32_mono`). `lower` eliminates
+such a copy inline (in an extension while still generic, in a node a rule builds on it,
+`ruleDefsL`), which the replay cannot follow (`copyReachL`); `finalOKL` accepts the output's
+`a'`. -/
+def truncReachL (tabs : Tables) (M : Defs) (n : Nat) (o : Op) (i : Nat) (a a' : ID) : Bool :=
+  (narrowReadW o i).any fun k => truncFromL tabs M n k a a'
+
+/-- The leading arguments of a lowered call that are no register pieces (`Sem.arm64Op`'s `call`):
+none of `CALLstatic`, the closure's code and context of `CALLclosure`, the code of `CALLinter`. -/
+def callLead : Op → Option Nat
+  | .ARM64CALLstatic => some 0
+  | .ARM64CALLclosure => some 2
+  | .ARM64CALLinter => some 1
+  | _ => none
+
+/-- The input parameters of the ABI of the call `v` (`Sem.arm64Op`'s `call`). -/
+def callIns (tabs : Tables) (v : Value) : List ABIParam :=
+  ((Sem.callABI? tabs v.aux).map (·.params.toList.filter (!·.out))).getD []
+
+/-- The leaf shapes `fitPieces` fits a call's register pieces at, in order (`none`: a piece it
+keeps). -/
+def fitTys (tabs : Tables) : List ABIParam → List (Option Sem.Ty)
+  | [] => []
+  | p :: ps =>
+    if p.regs.isEmpty then fitTys tabs ps
+    else (List.range p.regs.size).map (fun i => (Sem.leaves (tabs.ty p.type))[i]?.map (·.2)) ++
+      fitTys tabs ps
+
+/-- The shape the lowered call `v` fits its argument `i` at (`fitPieces`). -/
+def callFitTy (tabs : Tables) (v : Value) (i : Nat) : Option Sem.Ty :=
+  (callLead v.op).bind fun k => if i < k then none else ((fitTys tabs (callIns tabs v))[i - k]?).join
+
+/-- The width of the value a narrow integer store writes (`MOVBstore`, `MOVHstore`, `MOVWstore`:
+`Arm64.storeBytes` writes the low bytes of its register). -/
+def stValW : Op → Option Sem.Width
+  | .ARM64MOVBstore => some .w8
+  | .ARM64MOVHstore => some .w16
+  | .ARM64MOVWstore => some .w32
+  | _ => none
+
+/-- The width of the value a narrow indexed integer store writes (argument 2; `MOVBstoreidx`,
+`MOVHstoreidx`, `MOVWstoreidx` and the scaled `MOVHstoreidx2`, `MOVWstoreidx4`). -/
+def stIdxValW : Op → Option Sem.Width
+  | .ARM64MOVBstoreidx => some .w8
+  | .ARM64MOVHstoreidx | .ARM64MOVHstoreidx2 => some .w16
+  | .ARM64MOVWstoreidx | .ARM64MOVWstoreidx4 => some .w32
+  | _ => none
+
+/-- The shape a narrow integer store reads its value (argument 1, `stValW`; argument 2 of an
+indexed one, `stIdxValW`) at. -/
+def stFitTy (o : Op) (i : Nat) : Option Sem.Ty :=
+  if i == 1 then (stValW o).map .int else if i == 2 then (stIdxValW o).map .int else none
+
+/-- The shape the atom `v` reads its argument `i` at, for the atoms that read no more of it: a
+lowered call the leaf it fits the register piece at (`callFitTy`, `fitPieces`), a narrow integer
+store its value's width (`stFitTy`). -/
+def atomFitTy (tabs : Tables) (v : Value) (i : Nat) : Option Sem.Ty :=
+  match callLead v.op with
+  | some _ => callFitTy tabs v i
+  | none => stFitTy v.op i
+
+/-- The shape the value `v` reads its argument `i` at, for the values that read no more of it: an
+atom's `atomFitTy`, a `Phi` its own shape, a `MakeResult` its result's (`Val.retypeL` of the
+value's shape). -/
+def argFitTy (tabs : Tables) (v : Value) (i : Nat) : Option Sem.Ty :=
+  if v.op == .Phi then some (shpL tabs v.type)
+  else if v.op == .MakeResult then
+    match shpL tabs v.type with
+    | .tuple ts => ts[i]?
+    | _ => none
+  else atomFitTy tabs v i
+
+/-- Argument `i` of the atom `v` in the replay is `a`, a narrowing `Copy` keeping the bits of the
+integer shape `v` reads the argument at (`argFitTy`, `truncFromL`), and the output's is `a'`: `v`
+reads the same bits (`GoFV.Proof.Low.Val.fitPiece_retypeL`). -/
+def truncFitL (tabs : Tables) (M : Defs) (n : Nat) (v : Value) (i : Nat) (a a' : ID) : Bool :=
+  match argFitTy tabs v i with
+  | some (.int w) => truncFromL tabs M n w.bits a a'
+  | _ => false
+
+/-- The ops whose value at a narrow integer shape `int w` (`w < 64`) is a function of the low `w`
+bits of their first `d` arguments' registers when none is a pointer (`Arm64.evalPure`: `op1`/`op2`
+of a ring or bitwise operation, `ADD`/`SUB`/`addK` on registers, the operands `CSEL` selects),
+with `d` (the others, `CSEL`'s flags, read whole). -/
+def lowOpArgs : Op → Option Nat
+  | .ARM64ADD | .ARM64SUB | .ARM64MUL | .ARM64MNEG | .ARM64AND | .ARM64OR | .ARM64XOR | .ARM64BIC
+  | .ARM64CSEL => some 2
+  | .ARM64ADDconst | .ARM64SUBconst | .ARM64NEG | .ARM64MVN | .ARM64ANDconst | .ARM64ORconst
+  | .ARM64XORconst => some 1
+  | _ => none
+
+/-- The low bits `m` reads of its first `d` arguments (`lowOpArgs`): `m` is at a narrow integer
+shape `int w`, and each of those arguments has a narrow integer shape in `M` (so none is a
+pointer). -/
+def lowShape (tabs : Tables) (M : Defs) (m : Value) : Option Nat :=
+  match shpL tabs m.type, lowOpArgs m.op with
+  | .int w, some d =>
+    if w != .w64 && d ≤ m.args.size && (List.range d).all (fun j =>
+        (M.get? m.args[j]!).any fun y =>
+          match shpL tabs y.type with
+          | .int w' => w' != .w64
+          | _ => false) then some w.bits
+    else none
+  | _, _ => none
+
+/-- Argument `j` of `m` in the replay is `a`, one of the arguments `m` reads the low bits of
+(`lowShape`), a narrowing `Copy` keeping those bits (`truncFromL`), and the output's is `a'`. -/
+def lowReachL (tabs : Tables) (M : Defs) (n : Nat) (m : Value) (j : Nat) (a a' : ID) : Bool :=
+  (lowShape tabs M m).any fun k => decide (j < (lowOpArgs m.op).getD 0) && truncFromL tabs M n k a a'
+
+/-! ## Atom events -/
+
 /-- The atom `u` folds the address `ADDconst [k2] b` of the arm64 store `x` (`x`'s argument 0 in
 `M`, a term at a word shape) into its offset (`(MOV…store [k1] {sym} (ADDconst [k2] ptr) val mem)
 => (MOV…store [k1+int32(k2)] {sym} ptr val mem)`, `ARM64.rules:758-776`), or the address
@@ -300,8 +472,40 @@ def stIdxFold (tabs : Tables) (M : Defs) (x u : Value) : Bool :=
       u.args == #[y.args[0]!, y.args[1]!, x.args[1]!, x.args[2]!]
   | _, _ => false
 
+/-- The position of a narrow integer store's value: 1 (`stValW`), 2 for an indexed one
+(`stIdxValW`). -/
+def stValIx (o : Op) : Option Nat :=
+  if (stValW o).isSome then some 1 else if (stIdxValW o).isSome then some 2 else none
+
+/-- The store `u` a rule event builds at the store `x` (both atoms), with its value (`stValIx`)
+read back as `x`'s (argument 1) where `u` reads it through a narrowing `Copy` that `lower`
+eliminated inline (`(Trunc64to32 x) => x`, a copy argument replacement `copyReachL` cannot
+follow): the source of `x`'s narrowing `Copy` of at least the store's width (`truncFitL` at
+`stFitTy`). The replay keeps the `Copy`; `finalOKL` relates the output's value to it
+(`truncFitL`). -/
+def stValPick (tabs : Tables) (M : Defs) (x u : Value) : Value :=
+  match stValIx u.op with
+  | some k =>
+    if x.args.size == 3 && k < u.args.size && truncFitL tabs M M.size u k x.args[1]! u.args[k]! then
+      { u with args := u.args.set! k x.args[1]! }
+    else u
+  | none => u
+
+/-- `atomDef` for one new definition `u` at the atom `x` at `v`. -/
+def atomDef1 (tabs : Tables) (f : Func) (M : Defs) (v : ID) (x u : Value) :
+    Option (Value × Option Value) :=
+  if x.id == v && u.id == v && !termVL tabs x && !termVL tabs u && u.type == x.type &&
+      (u.args == x.args && memLower tabs x u && u.auxInt == 0 && u.aux == none ||
+        u.args == x.args && bulkLower x u ||
+        u.args.all x.args.contains && addrLower tabs x u ||
+        (stFold tabs M x u || stFoldAddr tabs f M x u || stIdxFold tabs M x u) &&
+          (f.value? v).any (·.op == .Store))
+    then some (u, none)
+  else none
+
 /-- A rule event at the atom `v` replayed as the atom its top result node `u` defines (the log
-lists the reset value, then the nodes, as for any `build`), with `v`'s type:
+lists the reset value, then the nodes, as for any `build`), with `v`'s type, a narrow store's
+value read back through the narrowing `Copy` `lower` eliminated (`stValPick`):
 * a lowered store (`memLower` at offset 0 without aux: `(Store {t} ptr val mem) => (MOVDstore ptr
   val mem)` and the other sizes), on `v`'s arguments;
 * a lowered `Zero` or `Move` (`bulkLower`: `LoweredZero`, `LoweredZeroLoop`, `LoweredMove`,
@@ -315,15 +519,7 @@ The new definitions: `u` and the fresh term, if any. -/
 def atomDef (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value) :
     Option (Value × Option Value) :=
   match M.get? v, defs with
-  | some x, [_, u] =>
-    if x.id == v && u.id == v && !termVL tabs x && !termVL tabs u && u.type == x.type &&
-        (u.args == x.args && memLower tabs x u && u.auxInt == 0 && u.aux == none ||
-          u.args == x.args && bulkLower x u ||
-          u.args.all x.args.contains && addrLower tabs x u ||
-          (stFold tabs M x u || stFoldAddr tabs f M x u || stIdxFold tabs M x u) &&
-            (f.value? v).any (·.op == .Store))
-        then some (u, none)
-    else none
+  | some x, [_, u] => atomDef1 tabs f M v x (stValPick tabs M x u)
   | some x, [_, u, s] =>
     if x.id == v && u.id == v && !termVL tabs x && !termVL tabs u && u.type == x.type &&
         addrLower tabs x u && u.args == #[s.id] && s.id != v && (M.get? s.id).isNone &&
@@ -417,150 +613,6 @@ def spFoldEv (M : Defs) (v : ID) (defs : List Value) : Bool :=
     x.op == .OffPtr && u.id == v && u.op == .ARM64MOVDaddr && u.aux == none && u.args == x.args &&
       x.args.size == 1 && (M.get? x.args[0]!).any (·.op == .SP)
   | _, _ => false
-
-/-! ## Copies -/
-
-/-- A `Copy` of shape `s` of a value of shape `t` is the identity on it (`RewriteCheck.copyCompat`
-at the lowered shapes). -/
-def copyCompatL (s t : Sem.Ty) : Bool := copyCompat s t
-
-/-- `w` is `a`, or reached from `a` through at most `n` compatible `Copy`s (`copyReach` at the
-lowered shapes). -/
-def copyReachL (tabs : Tables) (M : Defs) : Nat → ID → ID → Bool
-  | 0, a, w => a == w
-  | n + 1, a, w =>
-    a == w ||
-    match M.get? a with
-    | some x =>
-      x.op == .Copy && x.args.size == 1 &&
-      (match M.get? x.args[0]! with
-        | some y => copyCompatL (shpL tabs x.type) (shpL tabs y.type)
-        | none => false) &&
-      copyReachL tabs M n x.args[0]! w
-    | none => false
-
-/-- The sign and zero extensions `MOV{B,H,W}{,U}reg` and the low bits of their argument they read
-(`Arm64.ext`). -/
-def extReadW : Op → Option Nat
-  | .ARM64MOVBreg | .ARM64MOVBUreg => some 8
-  | .ARM64MOVHreg | .ARM64MOVHUreg => some 16
-  | .ARM64MOVWreg | .ARM64MOVWUreg => some 32
-  | _ => none
-
-/-- The `W` ops: `Arm64.evalPure` reads each argument as the low 32 bits of its register
-(`Arm64.reg32`: `op1w`, `op2w`, `cmp1w`, `cmp2w`, `flags1w`, `flags2w`). -/
-def w32Op : Op → Bool
-  | .ARM64MULW | .ARM64MNEGW | .ARM64DIVW | .ARM64UDIVW | .ARM64MODW | .ARM64UMODW | .ARM64RORW
-  | .ARM64RORWconst | .ARM64EXTRWconst | .ARM64CLZW | .ARM64RBITW | .ARM64REVW | .ARM64REV16W
-  | .ARM64CMPW | .ARM64CMPWconst | .ARM64CMNW | .ARM64CMNWconst | .ARM64TSTW
-  | .ARM64TSTWconst => true
-  | _ => false
-
-/-- The low bits of argument `i` of `o` that `o` reads, for the ops that read no more: an
-extension its source width (`extReadW`, argument 0), a `W` op 32 of each argument (`w32Op`). -/
-def narrowReadW (o : Op) (i : Nat) : Option Nat :=
-  match extReadW o with
-  | some k => if i == 0 then some k else none
-  | none => if w32Op o then some 32 else none
-
-/-- The value `a` of the replay is a `Copy` at an integer shape of at least `k` and fewer than 64
-bits (lowering a truncation, `(Trunc64to32 x) => x`), whose argument reaches `a'` through at most
-`n` compatible copies: `a'` holds `a`'s low `k` bits. -/
-def truncFromL (tabs : Tables) (M : Defs) (n k : Nat) (a a' : ID) : Bool :=
-  match M.get? a with
-  | some c =>
-    c.op == .Copy && c.args.size == 1 &&
-      (match shpL tabs c.type with
-        | .int w => decide (k ≤ w.bits) && w != .w64
-        | _ => false) &&
-      copyReachL tabs M n c.args[0]! a'
-  | none => false
-
-/-- Argument `i` of the op `o` in the replay is `a`, a narrowing `Copy` that keeps the bits `o`
-reads of it (`narrowReadW`, `truncFromL`), and the output's is `a'`: `o` reads the same bits of
-`a'` (`GoFV.Proof.Low.Val.op1_ext_retypeL`, `GoFV.Proof.Low.Val.w32_mono`). `lower` eliminates
-such a copy inline (in an extension while still generic, in a node a rule builds on it,
-`ruleDefsL`), which the replay cannot follow (`copyReachL`); `finalOKL` accepts the output's
-`a'`. -/
-def truncReachL (tabs : Tables) (M : Defs) (n : Nat) (o : Op) (i : Nat) (a a' : ID) : Bool :=
-  (narrowReadW o i).any fun k => truncFromL tabs M n k a a'
-
-/-- The leading arguments of a lowered call that are no register pieces (`Sem.arm64Op`'s `call`):
-none of `CALLstatic`, the closure's code and context of `CALLclosure`, the code of `CALLinter`. -/
-def callLead : Op → Option Nat
-  | .ARM64CALLstatic => some 0
-  | .ARM64CALLclosure => some 2
-  | .ARM64CALLinter => some 1
-  | _ => none
-
-/-- The input parameters of the ABI of the call `v` (`Sem.arm64Op`'s `call`). -/
-def callIns (tabs : Tables) (v : Value) : List ABIParam :=
-  ((Sem.callABI? tabs v.aux).map (·.params.toList.filter (!·.out))).getD []
-
-/-- The leaf shapes `fitPieces` fits a call's register pieces at, in order (`none`: a piece it
-keeps). -/
-def fitTys (tabs : Tables) : List ABIParam → List (Option Sem.Ty)
-  | [] => []
-  | p :: ps =>
-    if p.regs.isEmpty then fitTys tabs ps
-    else (List.range p.regs.size).map (fun i => (Sem.leaves (tabs.ty p.type))[i]?.map (·.2)) ++
-      fitTys tabs ps
-
-/-- The shape the lowered call `v` fits its argument `i` at (`fitPieces`). -/
-def callFitTy (tabs : Tables) (v : Value) (i : Nat) : Option Sem.Ty :=
-  (callLead v.op).bind fun k => if i < k then none else ((fitTys tabs (callIns tabs v))[i - k]?).join
-
-/-- The shape the atom `v` reads its argument `i` at, for the atoms that read no more of it: a
-lowered call the leaf it fits the register piece at (`callFitTy`, `fitPieces`), a `Phi` its own
-shape, a `MakeResult` its result's (`Val.retypeL` of the value's shape). -/
-def argFitTy (tabs : Tables) (v : Value) (i : Nat) : Option Sem.Ty :=
-  match callLead v.op with
-  | some _ => callFitTy tabs v i
-  | none =>
-    if v.op == .Phi then some (shpL tabs v.type)
-    else if v.op == .MakeResult then
-      match shpL tabs v.type with
-      | .tuple ts => ts[i]?
-      | _ => none
-    else none
-
-/-- Argument `i` of the atom `v` in the replay is `a`, a narrowing `Copy` keeping the bits of the
-integer shape `v` reads the argument at (`argFitTy`, `truncFromL`), and the output's is `a'`: `v`
-reads the same bits (`GoFV.Proof.Low.Val.fitPiece_retypeL`). -/
-def truncFitL (tabs : Tables) (M : Defs) (n : Nat) (v : Value) (i : Nat) (a a' : ID) : Bool :=
-  match argFitTy tabs v i with
-  | some (.int w) => truncFromL tabs M n w.bits a a'
-  | _ => false
-
-/-- The ops whose value at a narrow integer shape `int w` (`w < 64`) is a function of the low `w`
-bits of their first `d` arguments' registers when none is a pointer (`Arm64.evalPure`: `op1`/`op2`
-of a ring or bitwise operation, `ADD`/`SUB`/`addK` on registers, the operands `CSEL` selects),
-with `d` (the others, `CSEL`'s flags, read whole). -/
-def lowOpArgs : Op → Option Nat
-  | .ARM64ADD | .ARM64SUB | .ARM64MUL | .ARM64MNEG | .ARM64AND | .ARM64OR | .ARM64XOR | .ARM64BIC
-  | .ARM64CSEL => some 2
-  | .ARM64ADDconst | .ARM64SUBconst | .ARM64NEG | .ARM64MVN | .ARM64ANDconst | .ARM64ORconst
-  | .ARM64XORconst => some 1
-  | _ => none
-
-/-- The low bits `m` reads of its first `d` arguments (`lowOpArgs`): `m` is at a narrow integer
-shape `int w`, and each of those arguments has a narrow integer shape in `M` (so none is a
-pointer). -/
-def lowShape (tabs : Tables) (M : Defs) (m : Value) : Option Nat :=
-  match shpL tabs m.type, lowOpArgs m.op with
-  | .int w, some d =>
-    if w != .w64 && d ≤ m.args.size && (List.range d).all (fun j =>
-        (M.get? m.args[j]!).any fun y =>
-          match shpL tabs y.type with
-          | .int w' => w' != .w64
-          | _ => false) then some w.bits
-    else none
-  | _, _ => none
-
-/-- Argument `j` of `m` in the replay is `a`, one of the arguments `m` reads the low bits of
-(`lowShape`), a narrowing `Copy` keeping those bits (`truncFromL`), and the output's is `a'`. -/
-def lowReachL (tabs : Tables) (M : Defs) (n : Nat) (m : Value) (j : Nat) (a a' : ID) : Bool :=
-  (lowShape tabs M m).any fun k => decide (j < (lowOpArgs m.op).getD 0) && truncFromL tabs M n k a a'
 
 /-! ## Blocks -/
 

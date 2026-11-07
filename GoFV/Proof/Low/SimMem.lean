@@ -511,6 +511,196 @@ theorem store_lower_eval {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame}
   · exact Res.Rel.bind (resRefines_trans (memRoot_mono ctx u (.cons (Sem.Refines.refl a) hr))
       (st_ref hu hst hfit ha r')) fun x y hxy => .ok (rty_le (fun _ => rfl) ty hxy)
 
+/-! ### A narrow store's value through a narrowing `Copy` (`LowerCheck.stValPick`) -/
+
+/-- The low `n` bytes of `x` are those of `x` modulo `2^(8n)`. -/
+theorem intBytes_mod (n x : Nat) : intBytes n (x % 2 ^ (8 * n)) = intBytes n x := by
+  unfold intBytes
+  apply Array.ext (by simp)
+  intro i h1 h2
+  simp only [Array.getElem_map, List.getElem_toArray, List.getElem_range, Byte.b.injEq]
+  simp only [Array.size_map, List.size_toArray, List.length_range] at h1
+  apply BitVec.eq_of_toNat_eq
+  simp only [BitVec.toNat_ofNat]
+  apply Nat.eq_of_testBit_eq
+  intro j
+  simp only [Nat.testBit_mod_two_pow, Nat.testBit_div_two_pow]
+  by_cases hj : j < 8
+  · have : 8 * i + j < 8 * n := by omega
+    simp [hj, Nat.add_comm j, this]
+  · simp [hj]
+
+/-- An integer fitted to an integer width: its low bits. -/
+theorem fitPiece_int (w w' : Width) (z : BitVec w'.bits) :
+    fitPiece (.int w) (.int w' z) = .int w (z.setWidth w.bits) := by
+  by_cases hww : w' = w
+  · subst hww; simp [fitPiece]
+  · simp only [fitPiece, show (w' == w) = false by simpa using hww, Bool.false_eq_true, ite_false]
+    exact int_retypeL_narrow w' z
+
+/-- A boolean fitted to an integer width: 0 or 1. -/
+theorem fitPiece_bool (w : Width) (b : Bool) :
+    fitPiece (.int w) (.bool b) = .int w (if b then 1 else 0) := by
+  simp only [fitPiece]; exact bool_retypeL_narrow w b
+
+/-- `storeBytes` of a narrow store reads the low bytes of the register: fitting the value to the
+store's width (`fitPiece`) keeps them. -/
+theorem storeBytes_fitPiece {w : Width} (hw : w ≠ .w64) (x : Val) :
+    Arm64.storeBytes w.bytes (fitPiece (.int w) x) = Arm64.storeBytes w.bytes x := by
+  have hn : w.bytes ≤ 8 := by cases w <;> decide
+  have h8 : 8 * w.bytes = w.bits := by cases w <;> rfl
+  have hne8 : w.bytes ≠ 8 := by cases w <;> first | exact absurd rfl hw | decide
+  have hreg : ∀ y : Val, (∀ p, y ≠ .ptr p) → (∀ bs, y ≠ .blob bs) →
+      Arm64.storeBytes w.bytes y = match Arm64.reg y with
+        | some r => intBytes w.bytes r.toNat
+        | none => Array.replicate w.bytes .poison := fun y hp hb => by
+    unfold Arm64.storeBytes
+    split
+    · rename_i h; exact absurd h hne8
+    · exact absurd rfl (hb _)
+    · split <;> simp_all
+  cases x with
+  | int w' z =>
+    rw [fitPiece_int, hreg _ (fun _ h => by cases h) (fun _ h => by cases h),
+      hreg _ (fun _ h => by cases h) (fun _ h => by cases h)]
+    simp only [Arm64.reg]
+    rw [← intBytes_mod, ← intBytes_mod w.bytes (BitVec.toNat _)]
+    simp only [BitVec.toNat_setWidth, h8]
+    have h64 : (2 : Nat) ^ w.bits ∣ 2 ^ 64 := Nat.pow_dvd_pow 2 (by cases w <;> decide)
+    simp only [Nat.mod_mod_of_dvd _ h64, Nat.mod_mod]
+  | bool b =>
+    rw [fitPiece_bool, hreg _ (fun _ h => by cases h) (fun _ h => by cases h),
+      hreg _ (fun _ h => by cases h) (fun _ h => by cases h)]
+    cases b <;> cases w <;> first | exact absurd rfl hw | rfl
+  | _ => rfl
+
+/-- **The bytes a narrow lowered store writes of a value refine those a generic `Store {t}`
+writes of another**, when the two values agree fitted to the store's width (`fitPiece`: a value
+read through a narrowing `Copy` that `lower` eliminated). -/
+theorem encode_le_storeBytes_fit {ty : Ty} {w : Width} (hw : w ≠ .w64)
+    (hfit : StoreFits ty w.bytes) {x x' : Val}
+    (h : Sem.Refines (fitPiece (.int w) x) (fitPiece (.int w) x')) :
+    BytesRefineA (encode ty x) (Arm64.storeBytes w.bytes x') := by
+  have hn : w.bytes ≤ 8 := by cases w <;> decide
+  have hb8 : w.bytes ≠ 8 := by cases w <;> first | exact absurd rfl hw | decide
+  have hfit' : (ty = .bool ∧ w = .w8) ∨ ty = .int w := by
+    rcases hfit with ⟨rfl, h1⟩ | ⟨w0, rfl, h0⟩ | ⟨e, rfl, h8⟩
+    · left; refine ⟨rfl, ?_⟩; cases w <;> first | rfl | exact absurd h1 (by decide)
+    · right; cases w0 <;> cases w <;> first | rfl | exact absurd h0 (by decide)
+    · exact absurd h8 hb8
+  rw [← storeBytes_fitPiece hw x']
+  generalize fitPiece (.int w) x' = F at h
+  have hsz : ty.size = w.bytes := by
+    rcases hfit' with ⟨rfl, rfl⟩ | rfl
+    · rfl
+    · cases w <;> rfl
+  have hpois : encode ty x = Array.replicate ty.size .poison →
+      BytesRefineA (encode ty x) (Arm64.storeBytes w.bytes F) := fun he => by
+    rw [he]; exact BytesRefineA.replicate_poison _ (by rw [storeBytes_size hn, hsz])
+  cases x with
+  | int w'' y =>
+    rw [fitPiece_int] at h
+    cases h
+    rcases hfit' with ⟨rfl, rfl⟩ | rfl
+    · exact hpois rfl
+    · by_cases hww : w'' = w
+      · subst hww
+        rw [BitVec.setWidth_eq]
+        exact encode_le_storeBytes (.inr (.inl ⟨w'', rfl, rfl⟩)) _
+      · exact hpois (by rw [hsz]; simp [encode, show (w'' == w) = false by simpa using hww])
+  | bool b =>
+    rw [fitPiece_bool] at h
+    cases h
+    rcases hfit' with ⟨rfl, rfl⟩ | rfl
+    · have he : ∀ c : Bool, Arm64.storeBytes Width.w8.bytes (.int .w8 (if c then 1 else 0)) =
+          encode .bool (.bool c) := fun c => by
+        rw [show Width.w8.bytes = 1 from rfl]
+        cases c <;> simp [encode, Arm64.storeBytes, Arm64.reg, intBytes] <;> rfl
+      rw [he]; exact BytesRefineA.refl _
+    · exact hpois (by cases w <;> rfl)
+  | blob bs =>
+    cases h with
+    | blob hb =>
+      rename_i bs'
+      have hl := hb.length_eq
+      have he : encode ty (.blob bs) = if bs.length == ty.size then bs.toArray
+          else Array.replicate ty.size .poison := by
+        rcases hfit' with ⟨rfl, rfl⟩ | rfl
+        · rfl
+        · cases w <;> rfl
+      have hs : Arm64.storeBytes w.bytes (.blob bs') = if bs'.length == w.bytes then bs'.toArray
+          else Array.replicate w.bytes .poison := by
+        unfold Arm64.storeBytes; split <;> simp_all
+      rw [he, hs, hsz, hl]
+      split
+      · exact hb
+      · exact BytesRefineA.refl _
+  | _ =>
+    apply hpois
+    rcases hfit' with ⟨rfl, rfl⟩ | rfl
+    all_goals first | rfl | (cases w <;> first | rfl | exact absurd rfl hw)
+
+/-- `st_ref` with the arm64 store writing another value, whose bytes refine those the `Store`
+writes (`encode_le_storeBytes_fit`). -/
+theorem st_ref_fit {env : Env} {ctx ctx' : Ctx} {fr : Frame} {u w : Value} (hu : u.op = .Store)
+    {n : Nat} (hst : StOp w.op n) {ty : Ty} {a a' x x' : Val}
+    (ha : AddrRef ctx'.tabs ctx'.act w.aux w.auxInt a a')
+    (hv : BytesRefineA (encode (auxTy ctx.tabs u.aux) x) (Arm64.storeBytes n x')) (rest : List Val) :
+    Res.Refines (memRoot ctx u (a :: x :: rest)) (evalOpL false env ctx' fr w (a' :: x' :: rest) ty) := by
+  rcases rest with _ | ⟨y, _ | ⟨z, l⟩⟩
+  · unfold memRoot; rw [hu]; exact stuck_ite _
+  · cases y with
+    | mem m =>
+      have hm : memRoot ctx u [a, x, .mem m] = match a.asPtrWord with
+          | some p => writeRes s!"v{u.id}: {u.op.name}" (m.write p (encode (auxTy ctx.tabs u.aux) x))
+          | none => .stuck s!"v{u.id}: {u.op.name}: undefined or ill-typed address" := by
+        unfold memRoot; rw [hu]; rfl
+      rw [hm]
+      cases hp : a.asPtrWord with
+      | none => exact .stuck _ _
+      | some p =>
+        obtain ⟨what, he⟩ := evalOpL_st (env := env) (ctx := ctx') (fr := fr) (ty := ty) (x := x')
+          (m := m) hst (by rw [symAddr_eq_addrAt]; exact ha p hp)
+        rw [he]
+        dsimp only
+        cases hw : m.write p (encode (auxTy ctx.tabs u.aux) x) with
+        | none => exact .stuck _ _
+        | some m1 =>
+          obtain ⟨m2, hw', hm2⟩ := (Mem.Refines.refl m).write hv hw
+          simp only [writeRes, Arm64.storeN, hw']
+          exact .ok (.mem hm2)
+    | _ => unfold memRoot; rw [hu]; exact stuck_ite _
+  · cases x <;> cases y <;> (unfold memRoot; rw [hu]; exact stuck_ite _)
+
+open GoFV.Opt.LowerCheck in
+/-- A narrow integer store (`stValW`) is a plain store of its width's bytes. -/
+theorem stOp_stValW {o : Op} {n : Nat} {w : Width} (hst : StOp o n) (hw : stValW o = some w) :
+    n = w.bytes ∧ w ≠ .w64 := by
+  rcases stValW_some hw with ⟨h, rfl⟩ | ⟨h, rfl⟩ | ⟨h, rfl⟩ <;> rw [h] at hst <;> cases hst <;>
+    exact ⟨rfl, by decide⟩
+
+open GoFV.Opt.LowerCheck in
+/-- **`Store` lowered to a narrow arm64 store reading its value through a narrowing `Copy`**
+(`LowerCheck.stValPick`): on arguments whose address holds the `Store`'s (`AddrRef`), whose values
+agree fitted to the store's width (`fitPiece`) and whose memory is refined, the arm64 store
+refines the generic one. -/
+theorem store_lower_eval_fit {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame}
+    {u w : Value} (hu : u.op = .Store) {n : Nat} (hst : StOp w.op n)
+    (hfit : StoreFits (auxTy ctx.tabs u.aux) n) {wd : Width} (hwd : stValW w.op = some wd)
+    {ty : Ty} (lS : Bool) {a a' x x' : Val} {r r' : List Val}
+    (ha : AddrRef ctx'.tabs ctx'.act w.aux w.auxInt a a')
+    (hx : Sem.Refines (fitPiece (.int wd) x) (fitPiece (.int wd) x')) (hr : RefinesList r r') :
+    Res.Refines ((evalOp env ctx fr u (a :: x :: r) ty).bind fun r => .ok (rty lS ty r))
+      ((evalOpL false env ctx' fr' w (a' :: x' :: r') ty).bind fun r => .ok (rty true ty r)) := by
+  have hS : evalOp env ctx fr u (a :: x :: r) ty = memRoot ctx u (a :: x :: r) := by
+    unfold evalOp; rw [hu]
+  rw [hS]
+  obtain ⟨rfl, hw⟩ := stOp_stValW hst hwd
+  exact Res.Rel.bind (resRefines_trans
+    (memRoot_mono ctx u (.cons (Sem.Refines.refl a) (.cons (Sem.Refines.refl x) hr)))
+    (st_ref_fit hu hst ha (encode_le_storeBytes_fit hw hfit hx) r'))
+    fun x y hxy => .ok (rty_le (fun _ => rfl) ty hxy)
+
 /-- The indexed store refines the generic `Store` on the same value and memory, the indexed
 address (`idxAddr` of the base and the index) holding the `Store`'s (`AddrRef` at offset 0
 without aux). -/
@@ -561,6 +751,66 @@ theorem idx_lower_eval {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame}
   rw [hS]
   exact Res.Rel.bind (resRefines_trans (memRoot_mono ctx u (.cons (Sem.Refines.refl a) hr))
     (stIdx_ref hu hst hfit ha r')) fun x y hxy => .ok (rty_le (fun _ => rfl) ty hxy)
+
+/-- `stIdx_ref` with the indexed store writing another value, whose bytes refine those the
+`Store` writes. -/
+theorem stIdx_ref_fit {env : Env} {ctx ctx' : Ctx} {fr : Frame} {u w : Value} (hu : u.op = .Store)
+    {n s : Nat} (hst : IdxOp w.op n s) {ty : Ty} {a b i x x' : Val}
+    (ha : AddrRef ctx'.tabs ctx'.act none 0 a (idxAddr s b i))
+    (hv : BytesRefineA (encode (auxTy ctx.tabs u.aux) x) (Arm64.storeBytes n x')) (rest : List Val) :
+    Res.Refines (memRoot ctx u (a :: x :: rest))
+      (evalOpL false env ctx' fr w (b :: i :: x' :: rest) ty) := by
+  rcases rest with _ | ⟨y, _ | ⟨z, l⟩⟩
+  · unfold memRoot; rw [hu]; exact stuck_ite _
+  · cases y with
+    | mem m =>
+      have hm : memRoot ctx u [a, x, .mem m] = match a.asPtrWord with
+          | some p => writeRes s!"v{u.id}: {u.op.name}" (m.write p (encode (auxTy ctx.tabs u.aux) x))
+          | none => .stuck s!"v{u.id}: {u.op.name}: undefined or ill-typed address" := by
+        unfold memRoot; rw [hu]; rfl
+      rw [hm]
+      cases hp : a.asPtrWord with
+      | none => exact .stuck _ _
+      | some p =>
+        obtain ⟨what, he⟩ := evalOpL_stIdx (env := env) (ctx := ctx') (fr := fr) (ty := ty) (x := x')
+          (m := m) hst (ha p hp)
+        rw [he]
+        dsimp only
+        cases hw : m.write p (encode (auxTy ctx.tabs u.aux) x) with
+        | none => exact .stuck _ _
+        | some m1 =>
+          obtain ⟨m2, hw', hm2⟩ := (Mem.Refines.refl m).write hv hw
+          simp only [writeRes, Arm64.storeN, hw']
+          exact .ok (.mem hm2)
+    | _ => unfold memRoot; rw [hu]; exact stuck_ite _
+  · cases x <;> cases y <;> (unfold memRoot; rw [hu]; exact stuck_ite _)
+
+open GoFV.Opt.LowerCheck in
+/-- A narrow indexed integer store (`stIdxValW`) stores its width's bytes. -/
+theorem idxOp_stIdxValW {o : Op} {n s : Nat} {w : Width} (hst : IdxOp o n s)
+    (hw : stIdxValW o = some w) : n = w.bytes ∧ w ≠ .w64 := by
+  rcases stIdxValW_some hw with ⟨h, rfl⟩ | ⟨h, rfl⟩ | ⟨h, rfl⟩ | ⟨h, rfl⟩ | ⟨h, rfl⟩ <;>
+    rw [h] at hst <;> cases hst <;> exact ⟨rfl, by decide⟩
+
+open GoFV.Opt.LowerCheck in
+/-- **`Store` lowered to a narrow indexed store reading its value through a narrowing `Copy`**
+(`idx_lower_eval` with the values agreeing fitted to the store's width, `fitPiece`). -/
+theorem idx_lower_eval_fit {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame}
+    {u w : Value} (hu : u.op = .Store) {n s : Nat} (hst : IdxOp w.op n s)
+    (hfit : StoreFits (auxTy ctx.tabs u.aux) n) {wd : Width} (hwd : stIdxValW w.op = some wd)
+    {ty : Ty} (lS : Bool) {a b i x x' : Val} {r r' : List Val}
+    (ha : AddrRef ctx'.tabs ctx'.act none 0 a (idxAddr s b i))
+    (hx : Sem.Refines (fitPiece (.int wd) x) (fitPiece (.int wd) x')) (hr : RefinesList r r') :
+    Res.Refines ((evalOp env ctx fr u (a :: x :: r) ty).bind fun r => .ok (rty lS ty r))
+      ((evalOpL false env ctx' fr' w (b :: i :: x' :: r') ty).bind fun r => .ok (rty true ty r)) := by
+  have hS : evalOp env ctx fr u (a :: x :: r) ty = memRoot ctx u (a :: x :: r) := by
+    unfold evalOp; rw [hu]
+  rw [hS]
+  obtain ⟨rfl, hw⟩ := idxOp_stIdxValW hst hwd
+  exact Res.Rel.bind (resRefines_trans
+    (memRoot_mono ctx u (.cons (Sem.Refines.refl a) (.cons (Sem.Refines.refl x) hr)))
+    (stIdx_ref_fit hu hst ha (encode_le_storeBytes_fit hw hfit hx) r'))
+    fun x y hxy => .ok (rty_le (fun _ => rfl) ty hxy)
 
 /-- `LoweredZero [n]` (and `LoweredZeroLoop`) zeroes `n` bytes at its address (`Arm64.zero`). -/
 theorem evalOpL_zero {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : List Val} {ty : Ty}
@@ -907,7 +1157,7 @@ theorem stArgs_split {tabs : Tables} {act : Nat} {F G : ID → Val} {k : Int64}
   | _ :: _, [], hl, _ => absurd hl (by simp)
 
 /-- `atomPair_eval` for an atom `w` with every argument register related by `ArgRel` of
-`stArg`. -/
+`stArg`, or, for a narrow integer store's value, refined fitted to its width (`stFitTy`). -/
 private theorem atomPair_eval_arg {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
     (hown : f.ownAux = g.ownAux) (hl : f.lowered = true → g.lowered = true) (hgl : g.lowered = true)
     {GS GT : Frame} (hfr : GT = { GS with regs := GT.regs }) {u w : Value}
@@ -917,19 +1167,21 @@ private theorem atomPair_eval_arg {tabs : Tables} {f g : Func} {env : Env} (hE :
     (hty : (Ctx.makeL tabs g).tys[w.id]?.getD .other = (Ctx.makeL tabs f).tys[u.id]?.getD .other)
     (hregS : ∀ a ∈ u.args, Reg GS a) (hregT : ∀ a ∈ w.args, Reg GT a)
     (hargs : ∀ i < u.args.size, ArgRel tabs (Ctx.makeL tabs g).act (stArg u w i)
-      (rv GS u.args[i]!) (rv GT w.args[i]!)) :
+      (rv GS u.args[i]!) (rv GT w.args[i]!) ∨ ∃ t, stFitTy w.op i = some t ∧
+        Sem.Refines (fitPiece t (rv GS u.args[i]!)) (fitPiece t (rv GT w.args[i]!))) :
     Res.Refines (evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) GS u)
       (evalValueL ⟨g.lowered, false⟩ env (Ctx.makeL tabs g) GT w) := by
   obtain ⟨hk', -, -, hid⟩ := atomPair_spec hp
   obtain ⟨hk, hsz⟩ := hk'.resolve_right (by rw [hn, hb, hx]; decide)
   rw [evalValueL_of_regs hregS, evalValueL_of_regs hregT, hty]
-  have hrel : ∀ (i : Nat) a a', u.args.toList[i]? = some a → w.args.toList[i]? = some a' →
+  have hrel : (∀ j, stFitTy w.op j = none) → ∀ (i : Nat) a a', u.args.toList[i]? = some a →
+      w.args.toList[i]? = some a' →
       ArgRel tabs (Ctx.makeL tabs g).act (stArg u w i) (rv GS a) (rv GT a') :=
-    fun i a a' ha ha' => by
+    fun hsv i a a' ha ha' => by
     rw [Array.getElem?_toList] at ha ha'
     obtain ⟨hi, rfl⟩ := Array.getElem?_eq_some_iff.1 ha
     obtain ⟨hi', rfl⟩ := Array.getElem?_eq_some_iff.1 ha'
-    have := hargs i hi
+    have := (hargs i hi).resolve_right (by rintro ⟨t, ht, -⟩; rw [hsv] at ht; cases ht)
     rwa [getElem!_pos u.args i hi, getElem!_pos w.args i hi'] at this
   generalize hty' : (Ctx.makeL tabs f).tys[u.id]?.getD .other = ty
   rcases hk with ⟨hop, hai, hax⟩ | hm | hz
@@ -939,7 +1191,9 @@ private theorem atomPair_eval_arg {tabs : Tables} {f g : Func} {env : Env} (hE :
       rcases bulkLower_op hz with h | h | h | h <;> rw [h] <;> rfl
     have hlist : RefinesList (u.args.toList.map (rv GS)) (w.args.toList.map (rv GT)) :=
       refinesList_idx (by simp [hsz]) fun i a a' ha ha' => by
-        have := hrel i a a' ha ha'
+        have := hrel (fun j => by
+          rcases bulkLower_op hz with h | h | h | h <;> simp [stFitTy, stValW, stIdxValW, h])
+          i a a' ha ha'
         rwa [stArg_none hwst] at this
     rw [evalOpL_generic _ _ _ _ _ _ hgen]
     exact Res.Rel.bind (bulk_lower_eval hz hlist) fun x y hxy => .ok (rty_le hl ty hxy)
@@ -947,20 +1201,70 @@ private theorem atomPair_eval_arg {tabs : Tables} {f g : Func} {env : Env} (hE :
     -- a lowered store
     obtain ⟨-, -, hu, n, hst, hfit⟩ := memLower_cases hm
     rw [hgl, evalOpL_generic _ _ _ _ _ _ hgen]
-    have hsp := stArgs_split (tabs := tabs) (act := (Ctx.makeL tabs g).act) (F := rv GS)
-      (G := rv GT) (k := w.auxInt) (ax := w.aux) (l := u.args.toList) (l' := w.args.toList)
-      (by simp [hsz]) fun i a a' ha ha' => by
-        have := hrel i a a' ha ha'
-        rwa [stArg_store hu (stOp_stSize hst)] at this
-    refine store_lower_eval hu hst (by rw [makeL_tabs]; exact hfit) f.lowered ?_
-    rw [makeL_tabs]; exact hsp
+    have hsi : stIdxValW w.op = none := by
+      generalize w.op = o at hst ⊢; cases hst <;> rfl
+    cases hsv : stValW w.op with
+    | none =>
+      have hsp := stArgs_split (tabs := tabs) (act := (Ctx.makeL tabs g).act) (F := rv GS)
+        (G := rv GT) (k := w.auxInt) (ax := w.aux) (l := u.args.toList) (l' := w.args.toList)
+        (by simp [hsz]) fun i a a' ha ha' => by
+          have := hrel (fun j => by simp [stFitTy, hsv, hsi]) i a a' ha ha'
+          rwa [stArg_store hu (stOp_stSize hst)] at this
+      refine store_lower_eval hu hst (by rw [makeL_tabs]; exact hfit) f.lowered ?_
+      rw [makeL_tabs]; exact hsp
+    | some wd =>
+      -- the value read through a narrowing `Copy` (`stValPick`)
+      have hrelF : ∀ (i : Nat) a a', u.args.toList[i]? = some a → w.args.toList[i]? = some a' →
+          ArgRel tabs (Ctx.makeL tabs g).act (if i = 0 then some (w.auxInt, w.aux) else none)
+            (rv GS a) (rv GT a') ∨
+          (i = 1 ∧ Sem.Refines (fitPiece (.int wd) (rv GS a)) (fitPiece (.int wd) (rv GT a'))) :=
+        fun i a a' ha ha' => by
+        rw [Array.getElem?_toList] at ha ha'
+        obtain ⟨hi, rfl⟩ := Array.getElem?_eq_some_iff.1 ha
+        obtain ⟨hi', rfl⟩ := Array.getElem?_eq_some_iff.1 ha'
+        have := hargs i hi
+        rw [getElem!_pos u.args i hi, getElem!_pos w.args i hi',
+          stArg_store hu (stOp_stSize hst)] at this
+        rcases this with h | ⟨t, ht, h⟩
+        · exact .inl h
+        · obtain ⟨wd', rfl, ⟨rfl, hwd'⟩ | ⟨-, hwd'⟩⟩ := stFitTy_cases ht
+          · rw [hsv] at hwd'; cases hwd'
+            exact .inr ⟨rfl, h⟩
+          · rw [hsi] at hwd'; cases hwd'
+      have hlen : u.args.toList.length = w.args.toList.length := by simp [hsz]
+      have hfit' : StoreFits (auxTy (Ctx.makeL tabs f).tabs u.aux) n := by
+        rw [makeL_tabs]; exact hfit
+      generalize u.args.toList = U at hrelF hlen ⊢
+      generalize w.args.toList = W at hrelF hlen ⊢
+      have h0 : ∀ b c, U[0]? = some b → W[0]? = some c →
+          AddrRef (Ctx.makeL tabs g).tabs (Ctx.makeL tabs g).act w.aux w.auxInt (rv GS b) (rv GT c) :=
+        fun b c hb hc => by
+        rcases hrelF 0 b c hb hc with h | ⟨h, -⟩
+        · rw [makeL_tabs]; simpa [ArgRel] using h
+        · cases h
+      rcases U with _ | ⟨b0, _ | ⟨b1, r⟩⟩ <;> rcases W with _ | ⟨c0, _ | ⟨c1, r'⟩⟩ <;>
+        simp only [List.length_nil, List.length_cons] at hlen <;> try omega
+      · exact store_lower_eval hu hst hfit' f.lowered (.inl ⟨rfl, rfl⟩)
+      · exact store_lower_eval hu hst hfit' f.lowered
+          (.inr ⟨_, _, [], [], rfl, rfl, h0 b0 c0 rfl rfl, .nil⟩)
+      · refine store_lower_eval_fit hu hst hfit' hsv f.lowered (h0 b0 c0 rfl rfl) ?_ ?_
+        · rcases hrelF 1 b1 c1 rfl rfl with h | ⟨-, h⟩
+          · exact fitPiece_mono _ (by simpa [ArgRel] using h)
+          · exact h
+        · refine refinesList_idx (by omega) fun i a a' ha ha' => ?_
+          rcases hrelF (i + 2) a a' (by simpa using ha) (by simpa using ha') with h | ⟨h, -⟩
+          · simpa [ArgRel] using h
+          · omega
   have hwst : stSize w.op = none := by
     rcases hop with hop | hop
     · rw [← hop]; exact stSize_generic hgen
     · exact (renameOp_stSize hop).2
   have hlist : RefinesList (u.args.toList.map (rv GS)) (w.args.toList.map (rv GT)) :=
     refinesList_idx (by simp [hsz]) fun i a a' ha ha' => by
-      have := hrel i a a' ha ha'
+      have := hrel (fun j => by
+        rcases hop with hop | hop
+        · rw [← hop]; exact stFitTy_generic hgen j
+        · exact renameOp_stFitTy hop j) i a a' ha ha'
       rwa [stArg_none hwst] at this
   generalize u.args.toList.map (rv GS) = AS at hlist
   generalize w.args.toList.map (rv GT) = AT at hlist
@@ -1068,8 +1372,9 @@ private theorem atomPair_eval_call {tabs : Tables} {f g : Func} {env : Env} (hE 
 /-- **Corresponding atoms evaluate to refinements.** An atom `w` of `g` (lowered) corresponding to
 the atom `u` of `f` (`atomPair`, `u` generic, not a lowered frame address), in frames of one
 activation whose argument registers are related (`ArgRel` of `stArg`: refined, or a lowered
-store's address at its offset; or, for a lowered call, refined fitted to the leaf the call reads,
-`callFitTy`), at the same shape, evaluates in `g`'s mode to a refinement of `u` in `f`'s mode. -/
+store's address at its offset; or, for a lowered call or a narrow integer store's value, refined
+fitted to the shape the atom reads it at, `atomFitTy`), at the same shape, evaluates in `g`'s mode
+to a refinement of `u` in `f`'s mode. -/
 theorem atomPair_eval {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
     (hown : f.ownAux = g.ownAux) (hl : f.lowered = true → g.lowered = true) (hgl : g.lowered = true)
     {GS GT : Frame} (hfr : GT = { GS with regs := GT.regs }) {u w : Value}
@@ -1080,20 +1385,20 @@ theorem atomPair_eval {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
     (hregS : ∀ a ∈ u.args, Reg GS a) (hregT : ∀ a ∈ w.args, Reg GT a)
     (hargs : ∀ i < u.args.size, ArgRel tabs (Ctx.makeL tabs g).act (stArg u w i)
       (rv GS u.args[i]!) (rv GT w.args[i]!) ∨
-      ∃ t, callFitTy tabs w i = some t ∧
+      ∃ t, atomFitTy tabs w i = some t ∧
         Sem.Refines (fitPiece t (rv GS u.args[i]!)) (fitPiece t (rv GT w.args[i]!))) :
     Res.Refines (evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) GS u)
       (evalValueL ⟨g.lowered, false⟩ env (Ctx.makeL tabs g) GT w) := by
   cases hk : callLead w.op with
   | none =>
-    exact atomPair_eval_arg hE hown hl hgl hfr hp hn hb hx hgen hty hregS hregT fun i hi =>
-      (hargs i hi).resolve_right (by rintro ⟨t, ht, -⟩; simp [callFitTy, hk] at ht)
+    exact atomPair_eval_arg hE hown hl hgl hfr hp hn hb hx hgen hty hregS hregT fun i hi => by
+      simpa [atomFitTy, hk] using hargs i hi
   | some k =>
     have hwst : stSize w.op = none := by
       rcases callLead_some hk with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl
     exact atomPair_eval_call hE hown hl hfr hk hp hn hb hx hgen hty hregS hregT fun i hi => by
       have := hargs i hi
-      rwa [stArg_none hwst] at this
+      rwa [stArg_none hwst, atomFitTy, hk] at this
 
 
 /-! ### Bounds panics with constant operands (`pbLower`) -/
@@ -1245,15 +1550,17 @@ private theorem args4 {xs : Array ID} (h : xs.size = 4) : ∃ a0 a1 a2 a3, xs = 
   match l, h with | [a0, a1, a2, a3], _ => exact ⟨a0, a1, a2, a3, rfl⟩
 
 /-- **A `Store` lowered to an indexed store refines** (`idxLower`): the indexed address of `w`'s
-base and index (`idxAddr` at its scale, `idxScale`) holds `u`'s address, and `w`'s value and
-memory refine `u`'s. -/
+base and index (`idxAddr` at its scale, `idxScale`) holds `u`'s address, `w`'s value refines
+`u`'s (or, for a narrow integer store, refines it fitted to its width, `stIdxValW`) and `w`'s
+memory refines `u`'s. -/
 theorem idx_atom_eval {tabs : Tables} {f g : Func} {env : Env}
     (hgl : g.lowered = true) {GS GT : Frame} {u w : Value} (hx : idxLower tabs u w = true)
     (hty : (Ctx.makeL tabs g).tys[w.id]?.getD .other = (Ctx.makeL tabs f).tys[u.id]?.getD .other)
     (hregS : ∀ a ∈ u.args, Reg GS a) (hregT : ∀ a ∈ w.args, Reg GT a)
     (ha : AddrRef tabs (Ctx.makeL tabs g).act none 0 (rv GS u.args[0]!)
       (idxAddr (idxScale w.op) (rv GT w.args[0]!) (rv GT w.args[1]!)))
-    (hv : Sem.Refines (rv GS u.args[1]!) (rv GT w.args[2]!))
+    (hv : Sem.Refines (rv GS u.args[1]!) (rv GT w.args[2]!) ∨ ∃ wd, stIdxValW w.op = some wd ∧
+      Sem.Refines (fitPiece (.int wd) (rv GS u.args[1]!)) (fitPiece (.int wd) (rv GT w.args[2]!)))
     (hm : Sem.Refines (rv GS u.args[2]!) (rv GT w.args[3]!)) :
     Res.Refines (evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) GS u)
       (evalValueL ⟨g.lowered, false⟩ env (Ctx.makeL tabs g) GT w) := by
@@ -1271,7 +1578,10 @@ theorem idx_atom_eval {tabs : Tables} {f g : Func} {env : Env}
   have ha' : AddrRef (Ctx.makeL tabs g).tabs (Ctx.makeL tabs g).act none 0 (rv GS a0)
       (idxAddr s (rv GT b0) (rv GT b1)) := by
     rw [makeL_tabs]; simpa using ha
-  exact idx_lower_eval hu (idxOp_of hp hn) (by rw [makeL_tabs]; exact fitsB_store hf) f.lowered
-    ha' (.cons (by simpa using hv) (.cons (by simpa using hm) .nil))
+  rcases hv with hv | ⟨wd, hwd, hv⟩
+  · exact idx_lower_eval hu (idxOp_of hp hn) (by rw [makeL_tabs]; exact fitsB_store hf) f.lowered
+      ha' (.cons (by simpa using hv) (.cons (by simpa using hm) .nil))
+  · exact idx_lower_eval_fit hu (idxOp_of hp hn) (by rw [makeL_tabs]; exact fitsB_store hf) hwd
+      f.lowered ha' (by simpa using hv) (.cons (by simpa using hm) .nil)
 
 end GoFV.Proof.Low

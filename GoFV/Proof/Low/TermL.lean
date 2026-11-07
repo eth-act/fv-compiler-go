@@ -269,10 +269,10 @@ theorem addrRef_zero {tabs : Tables} {act : Nat} {x y : Val} (h : Sem.Refines x 
 corresponds to (`atomPair`: the same ID and fields, a renamed op, or a lowered store, whose address
 is related by `AddrRef` at its offset, `stArg`; a bounds panic with constant operands reads the
 kept ones, `argIx`, and its constants are `f`'s, `pbConstOK`), or, for a lowered call's register
-piece or a `Phi`'s argument, refine fitted to the leaf it is read at (`argFitTy`, `ArgTermFitL`),
-unless the atom of `g` reads no argument (`argFree`: a lowered frame address); a `Store` lowered to
-an indexed store (`idxLower`) has its address given by the base and the index (`ArgTermIdxL`), and
-its value and memory refined. -/
+piece, a `Phi`'s argument or a narrow store's value, refine fitted to the leaf it is read at
+(`argFitTy`, `ArgTermFitL`), unless the atom of `g` reads no argument (`argFree`: a lowered frame
+address); a `Store` lowered to an indexed store (`idxLower`) has its address given by the base and
+the index (`ArgTermIdxL`), its value refined (or fitted, as above) and its memory refined. -/
 def AtomArgsRefL (tabs : Tables) (f g : Func) : Prop :=
   ∀ b ∈ g.blocks, ∀ gb, g.block? b = some gb → ∀ a ∈ gb.values, ∀ u, g.value? a = some u →
     termVL tabs u = false →
@@ -285,8 +285,10 @@ def AtomArgsRefL (tabs : Tables) (f g : Func) : Prop :=
         (idxLower tabs u' u = true ∧
           ArgTermIdxL (idxScale u.op) f.lowered f.value? tabs u'.args[0]! g.lowered (listedDefs g)
             tabs u.args[0]! u.args[1]! ∧
-          ArgTermRefL none f.lowered f.value? tabs u'.args[1]! g.lowered (listedDefs g) tabs
-            u.args[2]! ∧
+          (ArgTermRefL none f.lowered f.value? tabs u'.args[1]! g.lowered (listedDefs g) tabs
+            u.args[2]! ∨
+          ∃ t, argFitTy tabs u 2 = some t ∧ ArgTermFitL t f.lowered f.value? tabs u'.args[1]!
+            g.lowered (listedDefs g) tabs u.args[2]!) ∧
           ArgTermRefL none f.lowered f.value? tabs u'.args[2]! g.lowered (listedDefs g) tabs
             u.args[3]!))
 

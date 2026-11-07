@@ -329,45 +329,143 @@ theorem termVL_makeResult {tabs : Tables} {v : Value} (h : v.op = .MakeResult) :
   unfold termVL
   simp only [h, hg, ht, ite_true]
 
-/-- An atom other than a `Phi` reads its arguments at most at a lowered call's fit (`argFitTy`). -/
+/-- An atom other than a `Phi` reads its arguments at most at its `atomFitTy`. -/
 theorem argFitTy_atom {tabs : Tables} {v : Value} {i : Nat} (ht : termVL tabs v = false)
-    (hp : v.op ≠ .Phi) : argFitTy tabs v i = callFitTy tabs v i := by
+    (hp : v.op ≠ .Phi) : argFitTy tabs v i = atomFitTy tabs v i := by
+  have hr : v.op ≠ .MakeResult := fun hr => by rw [termVL_makeResult hr] at ht; cases ht
   unfold argFitTy
+  simp only [show (v.op == .Phi) = false by simpa using hp,
+    show (v.op == .MakeResult) = false by simpa using hr, Bool.false_eq_true, ite_false]
+
+/-- What `stFitTy` says: the value (argument 1) of a narrow integer store, or argument 2 of a
+narrow indexed one, at its width. -/
+theorem stFitTy_cases {o : Op} {i : Nat} {t : Ty} (h : stFitTy o i = some t) :
+    ∃ w, t = .int w ∧ ((i = 1 ∧ stValW o = some w) ∨ (i = 2 ∧ stIdxValW o = some w)) := by
+  unfold stFitTy at h
+  by_cases hi : i = 1
+  · subst hi
+    simp only [beq_self_eq_true, ite_true, Option.map_eq_some_iff] at h
+    obtain ⟨w, hw, rfl⟩ := h
+    exact ⟨w, rfl, .inl ⟨rfl, hw⟩⟩
+  · rw [if_neg (by simpa using hi)] at h
+    by_cases hi2 : i = 2
+    · subst hi2
+      simp only [beq_self_eq_true, ite_true, Option.map_eq_some_iff] at h
+      obtain ⟨w, hw, rfl⟩ := h
+      exact ⟨w, rfl, .inr ⟨rfl, hw⟩⟩
+    · rw [if_neg (by simpa using hi2)] at h; cases h
+
+/-- The narrow integer stores (`stValW`). -/
+theorem stValW_some {o : Op} {w : Width} (h : stValW o = some w) :
+    (o = .ARM64MOVBstore ∧ w = .w8) ∨ (o = .ARM64MOVHstore ∧ w = .w16) ∨
+      (o = .ARM64MOVWstore ∧ w = .w32) := by
+  unfold stValW at h
+  split at h <;> simp_all
+
+/-- The narrow indexed integer stores (`stIdxValW`). -/
+theorem stIdxValW_some {o : Op} {w : Width} (h : stIdxValW o = some w) :
+    (o = .ARM64MOVBstoreidx ∧ w = .w8) ∨ (o = .ARM64MOVHstoreidx ∧ w = .w16) ∨
+      (o = .ARM64MOVHstoreidx2 ∧ w = .w16) ∨ (o = .ARM64MOVWstoreidx ∧ w = .w32) ∨
+      (o = .ARM64MOVWstoreidx4 ∧ w = .w32) := by
+  unfold stIdxValW at h
+  split at h <;> simp_all
+
+/-- The ops `stFitTy` fits an argument of: the narrow integer stores, plain or indexed. -/
+theorem stFitTy_ops {o : Op} {i : Nat} {t : Ty} (h : stFitTy o i = some t) :
+    o = .ARM64MOVBstore ∨ o = .ARM64MOVHstore ∨ o = .ARM64MOVWstore ∨ o = .ARM64MOVBstoreidx ∨
+      o = .ARM64MOVHstoreidx ∨ o = .ARM64MOVHstoreidx2 ∨ o = .ARM64MOVWstoreidx ∨
+      o = .ARM64MOVWstoreidx4 := by
+  obtain ⟨w, -, ⟨-, hw⟩ | ⟨-, hw⟩⟩ := stFitTy_cases h
+  · rcases stValW_some hw with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> simp [h]
+  · rcases stIdxValW_some hw with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> simp [h]
+
+/-- A narrow integer store is no lowered call. -/
+theorem callLead_stValW {o : Op} {w : Width} (h : stValW o = some w) : callLead o = none := by
+  rcases stValW_some h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> rfl
+
+/-- A narrow integer store, plain or indexed, is no lowered call. -/
+theorem callLead_stFitTy {o : Op} {i : Nat} {t : Ty} (h : stFitTy o i = some t) :
+    callLead o = none := by
+  rcases stFitTy_ops h with h | h | h | h | h | h | h | h <;> rw [h] <;> rfl
+
+/-- A generic op fits no argument as a narrow store's value. -/
+theorem stFitTy_generic {o : Op} (h : o.generic = true) (i : Nat) : stFitTy o i = none := by
+  cases hs : stFitTy o i with
+  | none => rfl
+  | some t =>
+    rcases stFitTy_ops hs with h' | h' | h' | h' | h' | h' | h' | h' <;> rw [h'] at h <;> cases h
+
+/-- A renamed atom fits no argument as a narrow store's value. -/
+theorem renameOp_stFitTy {o o' : Op} (h : renameOp o o' = true) (i : Nat) :
+    stFitTy o' i = none := by
+  cases hs : stFitTy o' i with
+  | none => rfl
+  | some t =>
+    exfalso
+    have hs' := (renameOp_stSize h).2
+    unfold renameOp at h
+    simp only [Bool.or_eq_true, beq_iff_eq] at h
+    rcases stFitTy_ops hs with h' | h' | h' | h' | h' | h' | h' | h' <;> subst h' <;>
+      first
+      | exact absurd hs' (by decide)
+      | (rcases h with h | h
+         · unfold callRename at h; split at h <;> simp_all
+         · simp [Arm64.atomicOf] at h)
+
+/-- Where `atomFitTy` comes from: a lowered call (`callFitTy`) or a narrow integer store's value
+(`stFitTy`). -/
+theorem atomFitTy_cases {tabs : Tables} {v : Value} {i : Nat} {t : Ty}
+    (h : atomFitTy tabs v i = some t) :
+    ((callLead v.op).isSome ∧ callFitTy tabs v i = some t) ∨
+      (callLead v.op = none ∧ stFitTy v.op i = some t) := by
+  unfold atomFitTy at h
   cases hk : callLead v.op with
-  | some k => rfl
-  | none =>
-    have hr : v.op ≠ .MakeResult := fun hr => by rw [termVL_makeResult hr] at ht; cases ht
-    simp only [show (v.op == .Phi) = false by simpa using hp,
-      show (v.op == .MakeResult) = false by simpa using hr, Bool.false_eq_true, ite_false]
-    simp [callFitTy, hk]
+  | some k => rw [hk] at h; exact .inl ⟨rfl, h⟩
+  | none => rw [hk] at h; exact .inr ⟨rfl, h⟩
 
 /-- Read at a shape, a piece fitted to it (`fitPiece`) is the piece. -/
 theorem retypeL_fitPiece (t : Ty) (x : Val) : (fitPiece t x).retypeL t = x.retypeL t := by
   unfold fitPiece
   split <;> (try split) <;> simp only [retypeL_idem]
 
-/-- Where `argFitTy` comes from: a lowered call (`callFitTy`), a `Phi` (its shape) or a
-`MakeResult` (its tuple leaf). -/
+/-- Where `argFitTy` comes from: a lowered call (`callFitTy`), a `Phi` (its shape), a
+`MakeResult` (its tuple leaf) or a narrow integer store's value (`stFitTy`). -/
 theorem argFitTy_cases {tabs : Tables} {v : Value} {i : Nat} {t : Ty}
     (h : argFitTy tabs v i = some t) :
     ((callLead v.op).isSome ∧ callFitTy tabs v i = some t) ∨ (v.op = .Phi ∧ t = shpL tabs v.type) ∨
-      (v.op = .MakeResult ∧ ∃ ts, shpL tabs v.type = .tuple ts ∧ ts[i]? = some t) := by
+      (v.op = .MakeResult ∧ ∃ ts, shpL tabs v.type = .tuple ts ∧ ts[i]? = some t) ∨
+      (callLead v.op = none ∧ stFitTy v.op i = some t) := by
   unfold argFitTy at h
-  cases hk : callLead v.op with
-  | some k => rw [hk] at h; exact .inl ⟨rfl, h⟩
-  | none =>
-    rw [hk] at h
-    simp only at h
-    by_cases hp : v.op = .Phi
-    · rw [if_pos (by simp [hp])] at h
-      exact .inr (.inl ⟨hp, (Option.some.inj h).symm⟩)
-    · rw [if_neg (by simp [hp])] at h
-      by_cases hr : v.op = .MakeResult
-      · rw [if_pos (by simp [hr])] at h
-        split at h
-        · rename_i ts hts
-          exact .inr (.inr ⟨hr, ts, hts, h⟩)
-        · cases h
-      · rw [if_neg (by simp [hr])] at h; cases h
+  by_cases hp : v.op = .Phi
+  · rw [if_pos (by simp [hp])] at h
+    exact .inr (.inl ⟨hp, (Option.some.inj h).symm⟩)
+  · rw [if_neg (by simp [hp])] at h
+    by_cases hr : v.op = .MakeResult
+    · rw [if_pos (by simp [hr])] at h
+      split at h
+      · rename_i ts hts
+        exact .inr (.inr (.inl ⟨hr, ts, hts, h⟩))
+      · cases h
+    · rw [if_neg (by simp [hr])] at h
+      rcases atomFitTy_cases h with h | h
+      · exact .inl h
+      · exact .inr (.inr (.inr h))
+
+/-- An integer narrowed to a narrow width `w`: its low `w` bits. -/
+theorem int_retypeL_narrow {w : Width} (v : Width) (x : BitVec v.bits) :
+    (Val.int v x).retypeL (.int w) = .int w (x.setWidth w.bits) := by
+  unfold Val.retypeL Val.widen
+  by_cases hlt : v.bits < w.bits
+  · rw [if_pos hlt]
+    unfold Val.retype
+    rw [if_pos (Nat.le_refl _), BitVec.setWidth_eq]
+  · rw [if_neg hlt]
+    unfold Val.retype
+    rw [if_pos (by omega)]
+
+/-- A boolean at a narrow width: 0 or 1. -/
+theorem bool_retypeL_narrow (w : Width) (b : Bool) :
+    (Val.bool b).retypeL (.int w) = .int w (if b then 1 else 0) := by
+  simp [Val.retypeL, Val.widen, Val.retype]
 
 end GoFV.Proof.Low
