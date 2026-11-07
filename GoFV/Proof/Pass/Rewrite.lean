@@ -9,6 +9,7 @@ import GoFV.Proof.Pass.CopyRelCheck
 import GoFV.Proof.Pass.CopyElim
 import GoFV.Proof.Pass.SegSim
 import GoFV.Proof.Pass.PhiSelSim
+import GoFV.Proof.Pass.PhiConst
 import GoFV.Proof.Checked
 import GoFV.Proof.MemOpsPre
 import GoFV.Proof.RoImage
@@ -125,7 +126,8 @@ theorem RefinesUnder.toRw {tabs₀ fe₀ tabs tabs' : Tables} {f₀ f f' : Func}
 passes' seeds, `Nil.refinesFrom_of_rel`; forwardings: `LoadFwd.fwd_refines`; struct-load
 expansions: the validator and the atom simulation; struct-store splits:
 `StructStore.ss_refines`; segment rewrites: `Seg.seg_refines`; selections of `Phi`s of
-`SliceMake`s: `PhiSel.ps_refines`), and its end is checked. -/
+`SliceMake`s: `PhiSel.ps_refines`; constant `Phi`s: `PhiConst.pc_refines`), and its end is
+checked. -/
 theorem chain_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {tabs : Tables}
     {f0 f g : Func} (hc : LayerChain penv tabs f0 (Interp.Table.ofRuleSet s) f g) {ce : CheckEnv}
     (hf : check ce f = .ok ()) :
@@ -167,6 +169,10 @@ theorem chain_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {tabs : T
     have hf' := checkOK_sound hck
     obtain ⟨ce', hg, R'⟩ := ih hf'
     exact ⟨ce', hg, (RefinesUnder.toRw (PhiSel.ps_refines hf hf' hr)).trans R'⟩
+  | @pc f f' g hr hck _ ih =>
+    have hf' := checkOK_sound hck
+    obtain ⟨ce', hg, R'⟩ := ih hf'
+    exact ⟨ce', hg, (RefinesUnder.toRw (PhiConst.pc_refines hf hf' hr)).trans R'⟩
 
 /-- **Layers without nil-check eliminations and forwardings refine** under monotone contracts
 alone (issue #17, the decompose builtin rewrite step, `RewriteCheck.decLayers`): each layer
@@ -226,6 +232,11 @@ theorem layersOK_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {f0 : 
         simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
         have hf' := checkOK_sound hL.2
         exact (PhiSel.ps_refines hf hf' hL.1).trans
+          (layersOK_refines hs hg Ls hn' hns' f' log' hf' hr)
+      | pc =>
+        simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
+        have hf' := checkOK_sound hL.2
+        exact (PhiConst.pc_refines hf hf' hL.1).trans
           (layersOK_refines hs hg Ls hn' hns' f' log' hf' hr)
 
 /-- **One segment of the log**: what `layersOK` accepts (with a table of the rule set's value and

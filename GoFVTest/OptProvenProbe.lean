@@ -556,6 +556,10 @@ def layersWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f0 g : Func) :
         if RewriteCheck.layerOK env t tabs f0 L f log f' then none
         else if !psRel tabs f f' then some s!"ps({k}): psRel {psWhy tabs f f'}"
         else some s!"ps({k}): check"
+      | .pc =>
+        if RewriteCheck.layerOK env t tabs f0 L f log f' then none
+        else if !pcRel tabs f f' then some s!"pc({k}): pcRel"
+        else some s!"pc({k}): check"
       | .ld =>
         if RewriteCheck.layerOK env t tabs f0 L f log f' then none
         else some s!"ld({k}): {why tabs t f f' (ldTaken t tabs f log)}"
@@ -569,6 +573,7 @@ def layersWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f0 g : Func) :
         | .ss => s!"ss({k})"
         | .seg sel => s!"seg{if sel then "₁" else "₂"}({k})"
         | .ps => s!"ps({k})"
+        | .pc => s!"pc({k})"
         | .ld => s!"ld({k})"
       s!"{pre} → {layersWhy env tabs t f0 g Ls f' log'}"
 

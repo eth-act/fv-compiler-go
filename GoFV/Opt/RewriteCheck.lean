@@ -3282,6 +3282,232 @@ def ldPre (t : Interp.Table) (tabs : Tables) (f : Func) (log : Array RwEvent) :
 def ldTaken (t : Interp.Table) (tabs : Tables) (f : Func) (log : Array RwEvent) : Array RwEvent :=
   (ldRun t tabs f log).taken
 
+end GoFV.Opt.RewriteCheck
+
+/-! ## sccp's checker (issue #32), shared with the constant-`Phi` layer (issue #69)
+
+The Bool checker of `GoFV.Opt.sccpChecked` (`GoFV/Opt/SccpCheck.lean`, which documents it): a
+certificate of constant cells (`Lat`), executable edges and blocks, and `sccpOK`, which relates
+a function to one with some values turned constants of their claimed value. It is here, not in
+`SccpCheck`, because the constant-`Phi` layer of the rewrite validator (`RewriteCheck.pcRel`)
+uses it, and `SccpCheck` imports this module. -/
+
+namespace GoFV.Opt.Sccp
+
+open GoFV.SSA GoFV.Rules
+
+/-- `lattice`: `top`, `constant` (the value `lt.val`, with its `Op` and `AuxInt`, which never
+change during the pass) or `bottom`. -/
+inductive Lat where
+  | top
+  | const (v : ID) (op : Op) (auxInt : Int64)
+  | bottom
+  deriving Inhabited, Repr
+
+/-- `isConst(v)`. -/
+def isConst : Op → Bool
+  | .Const64 | .Const32 | .Const16 | .Const8 | .ConstBool | .Const32F | .Const64F => true
+  | _ => false
+
+/-- An integer or boolean value: `some` of it, else `none`. -/
+def scalar? : Sem.Val → Option Sem.Val
+  | .int w x => some (.int w x)
+  | .bool b => some (.bool b)
+  | _ => none
+
+/-- Equality of integer and boolean values (`false` for any other value). -/
+def scalarEq : Sem.Val → Sem.Val → Bool
+  | .int w x, .int w' x' => w == w' && x.toNat == x'.toNat
+  | .bool b, .bool b' => b == b'
+  | _, _ => false
+
+/-- The value of a constant op at shape `t`. -/
+def constVal (op : Op) (t : Sem.Ty) (ai : Int64) : Sem.Val :=
+  (Sem.evalPure op t ai none []).retype t
+
+/-- The constant `x`'s cell claims: its constant op's value at `x`'s type, if an integer or
+boolean. -/
+def cval (tabs : Tables) (f : Func) (C : Array (Option Lat)) (x : ID) : Option Sem.Val :=
+  match C[x]?.join, f.value? x with
+  | some (.const _ op ai), some v =>
+    if isConst op then scalar? (constVal op (tabs.ty v.type) ai) else none
+  | _, _ => none
+
+/-- `⟨b, i⟩` is an executable edge. -/
+def live (vis : Array Edge) (b : ID) (i : Nat) : Bool := vis.contains ⟨b, i⟩
+
+/-- The terminator of `pb` may take its successor `k`. -/
+def feasible (tabs : Tables) (f : Func) (C : Array (Option Lat)) (pb : Block) (k : Nat) : Bool :=
+  match pb.kind with
+  | .Plain | .First => k == 0
+  | .If =>
+    match pb.controls[0]?.bind (cval tabs f C) with
+    | some (.bool t) => k == if t then 0 else 1
+    | _ => true
+  | .JumpTable =>
+    match pb.controls[0]?.bind (cval tabs f C) with
+    | some (.int _ x) => k == x.toNat
+    | _ => true
+  | _ => true
+
+/-- The executable part is closed under the successors a terminator can take. -/
+def reachOK (tabs : Tables) (f : Func) (C : Array (Option Lat)) (vis : Array Edge)
+    (R : Array Bool) : Bool :=
+  R.getD f.entry false && live vis f.entry 0 &&
+  f.blocks.all fun p =>
+    !R.getD p false || match f.block? p with
+      | some pb => (List.range pb.succs.size).all fun k =>
+          !feasible tabs f C pb k ||
+            (live vis pb.succs[k]!.b pb.succs[k]!.i && R.getD pb.succs[k]!.b false)
+      | none => true
+
+/-- The post-fixpoint condition at value `x`. -/
+def fixOK (tabs : Tables) (f : Func) (C : Array (Option Lat)) (vis : Array Edge) (x : ID) :
+    Bool :=
+  match cval tabs f C x, f.value? x with
+  | some c, some v =>
+    let t := tabs.ty v.type
+    if v.op == .Phi then
+      (List.range v.args.size).all fun i =>
+        !live vis v.block i || match cval tabs f C v.args[i]! with
+          | some c' => scalarEq (c'.retype t) c
+          | none => false
+    else
+      RewriteCheck.termOp v.op &&
+      match v.args.toList.mapM (cval tabs f C) with
+      | some cs => scalarEq ((GoFV.Proof.Rules.opVal tabs v.op t v.auxInt v.aux cs).retype t) c
+      | none => false
+  | _, _ => true
+
+/-- Value `x` of `f` is unchanged in `g` (but for its use count), or became a constant term of
+its claimed value. -/
+def repOK (tabs : Tables) (f g : Func) (C : Array (Option Lat)) (x : ID) : Bool :=
+  match f.value? x, g.value? x with
+  | none, _ => true
+  | some _, none => false
+  | some u, some w =>
+    w.id == u.id && w.block == u.block &&
+    ((w.op == u.op && w.type == u.type && w.auxInt == u.auxInt && w.aux == u.aux &&
+      w.args == u.args) ||
+     (RewriteCheck.termOp w.op && w.args.isEmpty && w.type == u.type &&
+      match cval tabs f C x with
+      | some c => scalarEq ((GoFV.Proof.Rules.opVal tabs w.op (tabs.ty w.type) w.auxInt w.aux []).retype
+          (tabs.ty w.type)) c
+      | none => false))
+
+/-- The successor an `If` or `JumpTable` takes on the constant control `c`. -/
+def pickIdx : BlockKind → Option Sem.Val → Option Nat
+  | .If, some (.bool t) => some (if t then 0 else 1)
+  | .JumpTable, some (.int _ x) => some x.toNat
+  | _, _ => none
+
+/-- An `If` or `JumpTable` with a constant control became, in `h`, a `First` block (no
+controls) whose successor 0 is the one the constant picks, with the same successors. -/
+def firstOK (tabs : Tables) (f : Func) (C : Array (Option Lat)) (fb hb : Block) : Bool :=
+  hb.kind == .First && hb.controls.isEmpty && fb.succs.all (hb.succs.contains ·) &&
+  match pickIdx fb.kind (fb.controls[0]?.bind (cval tabs f C)) with
+  | some k => (fb.succs[k]?).isSome && hb.succs[0]? == fb.succs[k]?
+  | none => false
+
+/-- `h`'s blocks list `f`'s values first, with the same IDs, and the same kinds, successors and
+controls, or an `If`/`JumpTable` turned `First` (`firstOK`). -/
+def blocksOK (tabs : Tables) (f h : Func) (C : Array (Option Lat)) : Bool :=
+  f.blocks.all fun b =>
+    match f.block? b, h.block? b with
+    | some fb, some hb =>
+      fb.id == hb.id && fb.values == hb.values.extract 0 fb.values.size &&
+      ((fb.kind == hb.kind && fb.succs == hb.succs && fb.controls == hb.controls) ||
+        firstOK tabs f C fb hb)
+    | _, _ => false
+
+/-- **The checker** (`f` to the intermediate `h`). -/
+def sccpOK (tabs : Tables) (f h : Func) (C : Array (Option Lat)) (vis : Array Edge)
+    (R : Array Bool) : Bool :=
+  RewriteCheck.atomsOK f h && RewriteCheck.closedOK f && RewriteCheck.closedOK h &&
+  blocksOK tabs f h C && reachOK tabs f C vis R &&
+  (List.range f.valueTab.size).all (fun x => fixOK tabs f C vis x && repOK tabs f h C x)
+
+end GoFV.Opt.Sccp
+
+namespace GoFV.Opt.RewriteCheck
+
+open GoFV.SSA GoFV.Rules GoFV.Proof.Rules
+
+/-! ## Constant `Phi`s as a layer (issue #69)
+
+`generic.rules:782`–`:785` (`(Phi (Const64 [c]) (Const64 [c])) => (Const64 [c])`, the narrower
+widths likewise) match a `Phi`, which `validate` treats as an atom: its value is the argument of
+the edge it was entered along. They are `phiSels` rules, logged after a snapshot (`tryRule`'s
+`snap`), so each is the first event of its segment and its `Phi`'s arguments are the constants in
+the layer's input. `pcPre` turns the `Phi` into the logged constant, and the layer is related to
+its input by sccp's checker (`pcRel`): `Sccp.sccpOK` with the certificate `pcCells` (the turned
+`Phi`s and their constant arguments claim their constants, every edge and block is executable),
+whose simulation (`GoFV.Proof.Sccp`) keeps the fact that a register with a constant cell holds
+`poison` or the constant. -/
+
+/-- A `phiSels` rule that turns a `Phi` into a constant op built in place, without arguments. -/
+def pcShapeOK (r : Rule) : Bool :=
+  match r.pat, r.result, r.block with
+  | .op .Phi .., .build [n], none => Sccp.isConst n.op && n.args.isEmpty && n.ty.isNone
+  | _, _, _ => false
+
+/-- The `Phi` `v` of `f` that event `ev` turns into a constant, and its logged definition, if it
+is a `phiSels` rule event of a constant-`Phi` rule (`pcShapeOK`). -/
+def pcEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × Value)
+  | .rule v i _ defs =>
+    match f.value? v, defs[0]? with
+    | some u, some d =>
+      let n := t.psBase u.op
+      if u.op == .Phi && n ≤ i && d.id == v then
+        match t.phiSels[i - n]? with
+        | some cr => if pcShapeOK cr.rule then some (v, d) else none
+        | none => none
+      else none
+    | _, _ => none
+  | _ => none
+
+/-- The value `v` of `f` becomes the constant `d` (`v.reset(op)`, `v.AuxInt = d.AuxInt`). -/
+def pcApply (f : Func) (v : ID) (d : Value) : Func :=
+  (f.resetValue v d.op).modV v fun x => { x with auxInt := d.auxInt }
+
+/-- One event of `pcPre`: a constant-`Phi` event applied, any other event kept. -/
+def pcStep (t : Interp.Table) (f : Func) (p : Func × Array RwEvent) (ev : RwEvent) :
+    Func × Array RwEvent :=
+  match pcEvent? t f ev with
+  | some (v, d) => (pcApply p.1 v d, p.2)
+  | none => (p.1, p.2.push ev)
+
+/-- The input with the log's constant-`Phi` events applied, and the remaining events. -/
+def pcPre (t : Interp.Table) (f : Func) (log : Array RwEvent) : Func × Array RwEvent :=
+  log.foldl (pcStep t f) (f, #[])
+
+/-- The certificate of a constant-`Phi` layer from `f` to `g`: each `Phi` of `f` that is a
+constant in `g` claims that constant, each constant argument of such a `Phi` its own. -/
+def pcCells (f g : Func) : Array (Option Sccp.Lat) := Id.run do
+  let mut C : Array (Option Sccp.Lat) := Array.replicate f.valueTab.size none
+  for x in [0:f.valueTab.size] do
+    match f.value? x, g.value? x with
+    | some u, some w =>
+      if u.op == .Phi && Sccp.isConst w.op then
+        C := C.set! x (some (.const x w.op w.auxInt))
+        for a in u.args do
+          if let some av := f.value? a then
+            if Sccp.isConst av.op then C := C.set! a (some (.const a av.op av.auxInt))
+    | _, _ => pure ()
+  return C
+
+/-- Every edge of `f` and the entry's edge 0 (sccp's start). -/
+def pcVis (f : Func) : Array Edge :=
+  f.blocks.foldl (init := #[⟨f.entry, 0⟩]) fun acc b =>
+    match f.block? b with
+    | some fb => acc ++ fb.succs
+    | none => acc
+
+/-- **The constant-`Phi` relation**: sccp's checker accepts `g` against `f` with every edge and
+block executable and the certificate `pcCells`. -/
+def pcRel (tabs : Tables) (f g : Func) : Bool :=
+  Sccp.sccpOK tabs f g (pcCells f g) (pcVis f) (Array.replicate f.blockTab.size true)
+
 /-! ## Layers (issue #151)
 
 The log's nil-check eliminations, Load-of-Store forwardings, struct-load expansions,
@@ -3297,7 +3523,8 @@ check's pointer may be a forwarded `Load`, and a segment's `Store`s may be a spl
 /-- A layer: nil-check eliminations (`nilPre`), Load-of-Store forwardings (`fwdPre`; selective ones
 leave the rewrites `fwdLate` names), struct-load expansions (`slPre`), struct-store splits
 (`ssPre`), value-rule `Load` expansions (`ldPre`), segment rewrites (`segPre`; selective ones leave
-those `segLate` names), selections of `Phi`s of `SliceMake`s (`psPre`). -/
+those `segLate` names), selections of `Phi`s of `SliceMake`s (`psPre`), constant `Phi`s
+(`pcPre`). -/
 inductive Layer where
   | nil (sel : Bool)
   | fwd (sel : Bool)
@@ -3306,6 +3533,7 @@ inductive Layer where
   | ld
   | seg (sel : Bool)
   | ps
+  | pc
 
 /-- The input with the layer's events of the log applied, and the remaining events. -/
 def Layer.pre (t : Interp.Table) (tabs : Tables) : Layer → Func → Array RwEvent →
@@ -3317,16 +3545,18 @@ def Layer.pre (t : Interp.Table) (tabs : Tables) : Layer → Func → Array RwEv
   | .ld => ldPre t tabs
   | .seg sel => segPre t sel
   | .ps => psPre t
+  | .pc => pcPre t
 
 /-- The layers of `RewriteCheck.accepts`, in order (a second struct-load layer and a second split
 layer for nested structs; the value-rule `Load` expansions and selections of `Make`s and `Load`s
 before the splits, which store their results; a struct-load layer after the first split layer
 for `Load`s whose memory a split rebased, before the splits of their expansions; a second segment
 layer for segments over another's result; selective forwarding rounds after the segments for
-forwardings through `Move`s whose sources earlier forwardings changed). -/
+forwardings through `Move`s whose sources earlier forwardings changed). A constant `Phi` is the
+first event of its segment, so its layer comes first. -/
 def layers : List Layer :=
-  [.ps, .nil true, .fwd true, .sl, .sl, .ld, .ss, .sl, .ss, .ss, .seg true, .seg false, .fwd true,
-   .fwd true, .fwd true, .fwd true, .sl, .ss, .fwd false, .nil false]
+  [.pc, .ps, .nil true, .fwd true, .sl, .sl, .ld, .ss, .sl, .ss, .ss, .seg true, .seg false,
+   .fwd true, .fwd true, .fwd true, .fwd true, .sl, .ss, .fwd false, .nil false]
 
 /-- The layers of the decompose builtin rewrite step (issue #17): its value-rule `Load`
 expansions, then its splits (twice, for nested structs). -/
@@ -3381,8 +3611,8 @@ def RewriteCheck.nilOK (env : PassEnv) (tabs : GoFV.SSA.Tables) (f0 f f' : GoFV.
 
 /-- The layer `L` relates `f` (a layer's input with the log `log`, from the pass's input `f0`)
 and `f'`: `nilOK`, `fwdRel`, `validate` with the expansions it applied (`slTaken`, `ldTaken`),
-`ssRel`, or `segRel` with its read-only segments' symbols among the precondition's (`roSegsOK`,
-`roPass`), and `f'` passes `check`. -/
+`ssRel`, `segRel` with its read-only segments' symbols among the precondition's (`roSegsOK`,
+`roPass`), `psRel` or `pcRel`, and `f'` passes `check`. -/
 def RewriteCheck.layerOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (tabs : GoFV.SSA.Tables)
     (f0 : GoFV.SSA.Func) :
     RewriteCheck.Layer → GoFV.SSA.Func → Array GoFV.Rules.RwEvent → GoFV.SSA.Func → Bool
@@ -3401,6 +3631,8 @@ def RewriteCheck.layerOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (tabs : G
       checkOK { tabs := tabs, typs := env.typs } f'
   | .ps, f, _, f' =>
     RewriteCheck.psRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
+  | .pc, f, _, f' =>
+    RewriteCheck.pcRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
   | .ld, f, log, f' =>
     RewriteCheck.validate tabs t f f' (RewriteCheck.ldTaken t tabs f log) &&
       checkOK { tabs := tabs, typs := env.typs } f'

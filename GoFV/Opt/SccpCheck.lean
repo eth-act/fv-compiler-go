@@ -26,7 +26,8 @@ The certificate is the final lattice `C` (`latticeCells`), the executable edges 
 (`visitedBlock`). A constant cell of `x` claims that `x`'s value is `poison` or the constant
 `cval x` (its constant op evaluated at `x`'s type, an integer or boolean).
 
-`sccpOK tabs f h C vis R`:
+`sccpOK tabs f h C vis R` (defined in `GoFV/Opt/RewriteCheck.lean`, whose constant-`Phi` layer
+uses it too):
 - the executable part is closed (`reachOK`): the entry and its edge 0 are executable, and every
   successor an executable block can take (by its kind and, for `If`/`JumpTable`, the value of a
   constant control) is an executable edge into an executable block;
@@ -53,124 +54,6 @@ namespace GoFV.Opt
 open GoFV.SSA GoFV.Rules
 
 namespace Sccp
-
-/-- An integer or boolean value: `some` of it, else `none`. -/
-def scalar? : Sem.Val → Option Sem.Val
-  | .int w x => some (.int w x)
-  | .bool b => some (.bool b)
-  | _ => none
-
-/-- Equality of integer and boolean values (`false` for any other value). -/
-def scalarEq : Sem.Val → Sem.Val → Bool
-  | .int w x, .int w' x' => w == w' && x.toNat == x'.toNat
-  | .bool b, .bool b' => b == b'
-  | _, _ => false
-
-/-- The value of a constant op at shape `t`. -/
-def constVal (op : Op) (t : Sem.Ty) (ai : Int64) : Sem.Val :=
-  (Sem.evalPure op t ai none []).retype t
-
-/-- The constant `x`'s cell claims: its constant op's value at `x`'s type, if an integer or
-boolean. -/
-def cval (tabs : Tables) (f : Func) (C : Array (Option Lat)) (x : ID) : Option Sem.Val :=
-  match C[x]?.join, f.value? x with
-  | some (.const _ op ai), some v =>
-    if isConst op then scalar? (constVal op (tabs.ty v.type) ai) else none
-  | _, _ => none
-
-/-- `⟨b, i⟩` is an executable edge. -/
-def live (vis : Array Edge) (b : ID) (i : Nat) : Bool := vis.contains ⟨b, i⟩
-
-/-- The terminator of `pb` may take its successor `k`. -/
-def feasible (tabs : Tables) (f : Func) (C : Array (Option Lat)) (pb : Block) (k : Nat) : Bool :=
-  match pb.kind with
-  | .Plain | .First => k == 0
-  | .If =>
-    match pb.controls[0]?.bind (cval tabs f C) with
-    | some (.bool t) => k == if t then 0 else 1
-    | _ => true
-  | .JumpTable =>
-    match pb.controls[0]?.bind (cval tabs f C) with
-    | some (.int _ x) => k == x.toNat
-    | _ => true
-  | _ => true
-
-/-- The executable part is closed under the successors a terminator can take. -/
-def reachOK (tabs : Tables) (f : Func) (C : Array (Option Lat)) (vis : Array Edge)
-    (R : Array Bool) : Bool :=
-  R.getD f.entry false && live vis f.entry 0 &&
-  f.blocks.all fun p =>
-    !R.getD p false || match f.block? p with
-      | some pb => (List.range pb.succs.size).all fun k =>
-          !feasible tabs f C pb k ||
-            (live vis pb.succs[k]!.b pb.succs[k]!.i && R.getD pb.succs[k]!.b false)
-      | none => true
-
-/-- The post-fixpoint condition at value `x`. -/
-def fixOK (tabs : Tables) (f : Func) (C : Array (Option Lat)) (vis : Array Edge) (x : ID) :
-    Bool :=
-  match cval tabs f C x, f.value? x with
-  | some c, some v =>
-    let t := tabs.ty v.type
-    if v.op == .Phi then
-      (List.range v.args.size).all fun i =>
-        !live vis v.block i || match cval tabs f C v.args[i]! with
-          | some c' => scalarEq (c'.retype t) c
-          | none => false
-    else
-      RewriteCheck.termOp v.op &&
-      match v.args.toList.mapM (cval tabs f C) with
-      | some cs => scalarEq ((GoFV.Proof.Rules.opVal tabs v.op t v.auxInt v.aux cs).retype t) c
-      | none => false
-  | _, _ => true
-
-/-- Value `x` of `f` is unchanged in `g` (but for its use count), or became a constant term of
-its claimed value. -/
-def repOK (tabs : Tables) (f g : Func) (C : Array (Option Lat)) (x : ID) : Bool :=
-  match f.value? x, g.value? x with
-  | none, _ => true
-  | some _, none => false
-  | some u, some w =>
-    w.id == u.id && w.block == u.block &&
-    ((w.op == u.op && w.type == u.type && w.auxInt == u.auxInt && w.aux == u.aux &&
-      w.args == u.args) ||
-     (RewriteCheck.termOp w.op && w.args.isEmpty && w.type == u.type &&
-      match cval tabs f C x with
-      | some c => scalarEq ((GoFV.Proof.Rules.opVal tabs w.op (tabs.ty w.type) w.auxInt w.aux []).retype
-          (tabs.ty w.type)) c
-      | none => false))
-
-/-- The successor an `If` or `JumpTable` takes on the constant control `c`. -/
-def pickIdx : BlockKind → Option Sem.Val → Option Nat
-  | .If, some (.bool t) => some (if t then 0 else 1)
-  | .JumpTable, some (.int _ x) => some x.toNat
-  | _, _ => none
-
-/-- An `If` or `JumpTable` with a constant control became, in `h`, a `First` block (no
-controls) whose successor 0 is the one the constant picks, with the same successors. -/
-def firstOK (tabs : Tables) (f : Func) (C : Array (Option Lat)) (fb hb : Block) : Bool :=
-  hb.kind == .First && hb.controls.isEmpty && fb.succs.all (hb.succs.contains ·) &&
-  match pickIdx fb.kind (fb.controls[0]?.bind (cval tabs f C)) with
-  | some k => (fb.succs[k]?).isSome && hb.succs[0]? == fb.succs[k]?
-  | none => false
-
-/-- `h`'s blocks list `f`'s values first, with the same IDs, and the same kinds, successors and
-controls, or an `If`/`JumpTable` turned `First` (`firstOK`). -/
-def blocksOK (tabs : Tables) (f h : Func) (C : Array (Option Lat)) : Bool :=
-  f.blocks.all fun b =>
-    match f.block? b, h.block? b with
-    | some fb, some hb =>
-      fb.id == hb.id && fb.values == hb.values.extract 0 fb.values.size &&
-      ((fb.kind == hb.kind && fb.succs == hb.succs && fb.controls == hb.controls) ||
-        firstOK tabs f C fb hb)
-    | _, _ => false
-
-/-- **The checker** (`f` to the intermediate `h`). -/
-def sccpOK (tabs : Tables) (f h : Func) (C : Array (Option Lat)) (vis : Array Edge)
-    (R : Array Bool) : Bool :=
-  RewriteCheck.atomsOK f h && RewriteCheck.closedOK f && RewriteCheck.closedOK h &&
-  blocksOK tabs f h C && reachOK tabs f C vis R &&
-  (List.range f.valueTab.size).all (fun x => fixOK tabs f C vis x && repOK tabs f h C x)
 
 /-- `rewireSuccessor` without removing an edge: an `If` or `JumpTable` on constant `ai` becomes
 a `First` block whose successor 0 is the one `rewireSuccessor` keeps. -/

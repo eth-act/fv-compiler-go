@@ -65,6 +65,10 @@ inductive LayerChain (penv : PassEnv) (tabs : Tables) (f0 : Func) (t : Interp.Ta
   | ps {f f' g : Func} : RewriteCheck.psRel tabs f f' = true →
       checkOK { tabs := tabs, typs := penv.typs } f' = true →
       LayerChain penv tabs f0 t f' g → LayerChain penv tabs f0 t f g
+  /-- Constant `Phi`s. -/
+  | pc {f f' g : Func} : RewriteCheck.pcRel tabs f f' = true →
+      checkOK { tabs := tabs, typs := penv.typs } f' = true →
+      LayerChain penv tabs f0 t f' g → LayerChain penv tabs f0 t f g
 
 /-- A chain validated with a table `T` is one with a table of the same value and block rules. -/
 theorem LayerChain.congr {penv : PassEnv} {tabs : Tables} {f0 : Func} {t T : Interp.Table}
@@ -78,6 +82,7 @@ theorem LayerChain.congr {penv : PassEnv} {tabs : Tables} {f0 : Func} {t T : Int
   | ss h hc _ ih => exact .ss h hc ih
   | seg h hr hc _ ih => exact .seg h hr hc ih
   | ps h hc _ ih => exact .ps h hc ih
+  | pc h hc _ ih => exact .pc h hc ih
 
 theorem layersOK_cases {t : Interp.Table} {penv : PassEnv} {f0 : Func} {out : PassOut} :
     ∀ (Ls : List RewriteCheck.Layer) (f : Func) (log : Array RwEvent),
@@ -115,6 +120,9 @@ theorem layersOK_cases {t : Interp.Table} {penv : PassEnv} {f0 : Func} {out : Pa
       | ps =>
         simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
         exact .ps hL.1 hL.2 hc
+      | pc =>
+        simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
+        exact .pc hL.1 hL.2 hc
 
 /-- What an accepted run (`checkedRun`) returns. -/
 theorem checkedRun_cases {t : Interp.Table} {penv : PassEnv} {f : Func} {out : PassOut}
@@ -350,6 +358,35 @@ theorem psPre_none {t : Interp.Table} (h : t.phiSels = #[]) (f : Func) (log : Ar
   rw [← Array.foldl_toList, key]
   simp
 
+/-- A table without `Phi` selections has no constant-`Phi` events. -/
+theorem pcEvent?_none {t : Interp.Table} (h : t.phiSels = #[]) (f : Func) (ev : RwEvent) :
+    RewriteCheck.pcEvent? t f ev = none := by
+  cases ev with
+  | rule v i b d =>
+    simp only [RewriteCheck.pcEvent?, h]
+    split
+    · split
+      · simp
+      · rfl
+    · rfl
+  | _ => rfl
+
+theorem pcPre_none {t : Interp.Table} (h : t.phiSels = #[]) (f : Func) (log : Array RwEvent) :
+    RewriteCheck.pcPre t f log = (f, log) := by
+  have key : ∀ (l : List RwEvent) (acc : Array RwEvent),
+      l.foldl (RewriteCheck.pcStep t f) (f, acc) = (f, acc ++ l.toArray) := by
+    intro l
+    induction l with
+    | nil => intro acc; simp
+    | cons ev l ih =>
+      intro acc
+      rw [List.foldl_cons, RewriteCheck.pcStep, pcEvent?_none h]
+      dsimp only
+      rw [ih]; simp
+  unfold RewriteCheck.pcPre
+  rw [← Array.foldl_toList, key]
+  simp
+
 /-- A table without struct-load expansions (`Interp.Table.structLoads`) has no expansion
 events. -/
 theorem slEvent?_none {t : Interp.Table} (h : t.structLoads = #[]) (tabs : Tables) (f : Func)
@@ -527,6 +564,7 @@ theorem checkedRewrite_cases_noNil {t : Interp.Table} (h0 : t.nilChecks = #[])
             | ld => exact ldPre_none hld log
             | seg sel => exact segPre_none h5 sel f log
             | ps => exact psPre_none h6 f log
+            | pc => exact pcPre_none h6 f log
         · cases h3
 
 theorem validate_parts {tabs : Tables} {t : Interp.Table} {f g : Func} {log : Array RwEvent}
