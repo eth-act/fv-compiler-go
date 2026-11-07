@@ -3,7 +3,7 @@ import GoFV.Rules.Derive
 import GoFV.Rules.Generated.ARM64
 
 /-!
-# Lowering rule lemma: `CondSelect` on a condition (`ARM64.rules:302`)
+# Lowering rule lemmas: `CondSelect` (`ARM64.rules:302`, `303`)
 
 `(CondSelect x y boolval) && flagArg(boolval) != nil => (CSEL [boolval.Op] x y flagArg(boolval))`
 in its derived form (`GoFV.Rules.Derive.flagSplit`): one rule `(CondSelect x y boolval:(cc f)) =>
@@ -12,6 +12,11 @@ the flags `f` (`Arm64.cset`), which `CSEL [cc]` decides alike (`Cond.ofAux` of `
 number); the selected arm moves as its register (`regVal`), which a word or integer shape
 (`topOKL`) reads back as the arm's own reading (`retypeL_regVal`: `Arm64.reg` zero-extends a
 narrow integer, `retypeL` keeps its low bits).
+
+`(CondSelect x y boolval) && flagArg(boolval) == nil => (CSEL [OpARM64NotEqual] x y (TSTWconst
+[1] boolval))` (`303`) is listed as it is: its result reads no field of `boolval`, and the
+obligation holds without its condition (`refines_condSel_tstw`), which the validator's oracle
+answers.
 -/
 
 namespace GoFV.Proof.Low.Rules
@@ -94,5 +99,38 @@ theorem r_ARM64_302_flag_sound : ForallL ArmRule.Checked (flagSplit r_ARM64_302)
     all_goals first
       | exact refines_condSel_csel (.inl ⟨_, rfl⟩) (by rfl) _ _ _ _
       | exact refines_condSel_csel (.inr ⟨_, rfl⟩) (by rfl) _ _ _ _
+
+set_option maxRecDepth 100000 in
+/-- **`CondSelect x y b` as `CSEL [NotEqual] x y (TSTWconst [1] b)`** at a word or integer
+shape: a boolean `b` is the register 1 or 0, whose low bit `TSTWconst [1]` tests (`Z` clear iff
+`b`), and `NotEqual` selects `x` exactly when `Z` is clear; any other `b` makes the source
+`poison`. -/
+theorem refines_condSel_tstw {T : Ty} (hT : (∃ w, T = .int w) ∨ ∃ e, T = .ptr e) (B X Y : Val) :
+    Refines (Val.retypeL T (B.asBool.elim Val.poison fun b => bif b then X else Y))
+      (Val.retypeL T (Arm64.csel T (Int64.ofNat Op.ARM64NotEqual.goNum) none
+        [X, Y, Val.retypeL Ty.flags
+          (Arm64.flags1w (fun x => logicFlags (x &&& Arm64.imm32 (Int64.ofInt 1))) [B])])) := by
+  have hk : Cond.ofAux (Int64.ofNat Op.ARM64NotEqual.goNum) = Cond.ofOp .ARM64NotEqual := rfl
+  cases B with
+  | bool b =>
+    cases b
+    all_goals
+      simp [Arm64.csel, Arm64.condOn, hk, Arm64.flags1w, Val.asBool]
+      split
+      all_goals first
+        | exact retypeL_regVal hT _
+        | (rename_i h; exact absurd h (by decide))
+  | _ => simp [Val.asBool, retypeL_poison]; exact .poison _
+
+set_option maxRecDepth 100000 in
+/-- `ARM64.rules:303`: `(CondSelect x y boolval) && flagArg(boolval) == nil => (CSEL [OpARM64NotEqual] x y (TSTWconst [1] boolval))` -/
+theorem r_ARM64_303_sound : ArmRule.Checked r_ARM64_303 := by
+  left
+  arm_unfold
+  all_goals arm_shape
+  all_goals arm_norm
+  all_goals first
+    | exact refines_condSel_tstw (.inl ⟨_, rfl⟩) _ _ _
+    | exact refines_condSel_tstw (.inr ⟨_, rfl⟩) _ _ _
 
 end GoFV.Proof.Low.Rules
