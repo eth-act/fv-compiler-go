@@ -327,9 +327,10 @@ inlined calls (`==` on the section's `var`, `scope`, `inlcall` records) and `R_U
 relocations with the record; **Info → DIE chain** runs the writers on its records and compares
 every DWARF symbol and the fixups as above.
 
-Result on quick-v10 (9,297 functions with DWARF, 2,886,136 DWARF bytes; 3 s with 8 jobs; a
+Result on quick-v10 (9,297 functions with DWARF, 2,886,136 DWARF bytes; 6 s with 6 jobs; a
 function without a location list, range list or abstract function counts as a match of that
-row):
+row; the corpus takes the heap-dereference lists of conservative variables, the ABI0
+sort-by-offset path of `scopeVariables`, closure offsets and `IsInAbstract` variables):
 
 | symbol | functions | match | mismatch | parity |
 | --- | ---: | ---: | ---: | ---: |
@@ -339,6 +340,8 @@ row):
 | range lists | 9297 | 9297 | 0 | 100% |
 | abstract function | 9297 | 9297 | 0 | 100% |
 | child-DIE fixups | 9297 | 9297 | 0 | 100% |
+| Info records (E2) | 9297 | 9297 | 0 | 100% |
+| Info → DIE chain | 9297 | 9297 | 0 | 100% |
 | end to end | 9297 | 9297 | 0 | 100% |
 
 Not ported yet: the package-level abstract functions and fixups (`DwarfFixupTable.Finalize`).

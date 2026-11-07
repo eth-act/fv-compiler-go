@@ -2,14 +2,15 @@ import GoFV.Asm.Flush
 import GoFV.Asm.Parse
 import GoFV.Dwarf.Lines
 import GoFV.Dwarf.Die
+import GoFV.Dwarf.Info
 
 /-!
-# `dwarf-parity`: Phase 3 I5 parity of a function's DWARF symbols (E2 encoding)
+# `dwarf-parity`: Phase 3 I5 parity of a function's DWARF (E2)
 
 For every `*.prog` file (`gofv-prog 3`, `docs/contracts/export.md`) under the given
 directories whose `dwarf` section has a `dwfn` line (`populateDWARF` ran), runs the ports of
-`populateDWARF`'s writers on the recorded inputs and compares their output, byte for byte, with
-the symbols the section records at the end of `Compile`:
+`populateDWARF`'s steps on the recorded inputs and compares their output with what the section
+records:
 
 1. **lines**: `generateDebugLinesSymbol` (`GoFV.Dwarf.generateDebugLinesSymbol`) on the `asm`
    section's final Prog list, the position bases' file numbers and the text size;
@@ -19,15 +20,21 @@ the symbols the section records at the end of `Compile`:
    records (variables, scopes, inlined calls), the `prog0` section's `BuildFuncDebug` lists
    and `GetPC` (block start of the entry block 0, `FuncEnd` the text size, else the PC after
    assembly of the Prog `dbgpc` names: its `asm` PC, or its `prog0` PC when the assembler
-   dropped it, as `obj.Prog.Pc` keeps it);
+   dropped it, as `obj.Prog.Pc` keeps it). The info symbol starts with the `R_USETYPE`
+   relocations `dwarfgen.Info` adds before the DIEs; these rows take them from the recorded
+   symbol (its leading zero-size `R_USETYPE` relocations at offset 0);
 3. **fixups**: the child-DIE references (`RecordDclReference`) and the abstract function's
-   child DIE offsets (`RecordChildDieOffsets`).
+   child DIE offsets (`RecordChildDieOffsets`);
+4. **Info records (E2)**: `dwarfgen.Info` (`GoFV.Dwarf.info`) on the file: its variables,
+   scopes and inlined calls equal the section's `var`, `scope` and `inlcall` records (`==`), and
+   its `R_USETYPE` relocations the recorded info symbol's leading ones;
+5. **Info → DIE chain**: the DIE writer and the line writer on `info`'s records, with `info`'s
+   `R_USETYPE` relocations as the info symbol's start; every DWARF symbol and the fixups are
+   compared as in 1–3.
 
 Each symbol is compared by kind, size, alignment, attributes, `P` and `R` in order (symbols by
-number: every symbol the writers reference is one of the file's). The info symbol starts with
-the `R_USETYPE` relocations `dwarfgen.Info` adds before the DIEs (E2's variable creation, not
-ported here); they are taken from the recorded symbol: its leading zero-size `R_USETYPE`
-relocations at offset 0.
+number: every symbol the writers reference is one of the file's). "End to end" counts the
+functions on which every row matches.
 
 usage: `lake exe dwarf-parity [--jobs N] [--max-report N] [--table FILE] <dir|file>...`;
 exit status 1 on any mismatch, port error or parse error.
@@ -55,6 +62,10 @@ structure Stats where
   ranges : Nat := 0
   absfn : Nat := 0
   fixups : Nat := 0
+  /-- `dwarfgen.Info`'s records equal the recorded ones. -/
+  e2 : Nat := 0
+  /-- Every DWARF symbol and the fixups match when written from `dwarfgen.Info`'s records. -/
+  chain : Nat := 0
   allMatch : Nat := 0
   bytes : Nat := 0
   classes : Std.HashMap String Nat := {}
@@ -64,7 +75,8 @@ def Stats.merge (a b : Stats) : Stats :=
   { files := a.files + b.files, parseErrors := a.parseErrors + b.parseErrors,
     withDwarf := a.withDwarf + b.withDwarf, lines := a.lines + b.lines, info := a.info + b.info,
     loc := a.loc + b.loc, ranges := a.ranges + b.ranges, absfn := a.absfn + b.absfn,
-    fixups := a.fixups + b.fixups, allMatch := a.allMatch + b.allMatch, bytes := a.bytes + b.bytes,
+    fixups := a.fixups + b.fixups, e2 := a.e2 + b.e2, chain := a.chain + b.chain,
+    allMatch := a.allMatch + b.allMatch, bytes := a.bytes + b.bytes,
     classes := b.classes.fold (fun m k v => m.alter k (some <| ·.getD 0 + v)) a.classes,
     reports := a.reports ++ b.reports }
 
@@ -130,6 +142,132 @@ def getPC (pf : ProgFile) (dbg : Option FuncDebug) (asmPC : Std.HashMap Nat Int)
     | some p => return p.pc
     | none => throw s!"GetPC({b}, {v}): Prog {id} in neither section"
 
+/-! ## `dwarf.Var`, `dwarf.Scope`, `dwarf.InlCall` comparison -/
+
+def listStr : VarList → String
+  | .none => "-"
+  | .var k => s!"v{k}"
+  | .entries es => s!"e[{es.size}]"
+
+def varStr (v : DwVar) : String :=
+  s!"{v.scope} {v.name.quote} tag={v.tag} loclist={v.withLoclist} ret={v.isReturnValue} \
+    inlformal={v.isInlFormal} dict={v.dictIndex} off={v.stackOffset} type={v.type} \
+    {v.declFile.quote}:{v.declLine}:{v.declCol} inl={v.inlIndex} child={v.childIndex} \
+    abstract={v.isInAbstract} closure={v.closureOffset} list={listStr v.list}"
+
+/-- The names of the fields in which two variables differ. -/
+def varDiff (a b : DwVar) : List String :=
+  [("scope", a.scope == b.scope), ("name", a.name == b.name), ("tag", a.tag == b.tag),
+   ("withLoclist", a.withLoclist == b.withLoclist),
+   ("isReturnValue", a.isReturnValue == b.isReturnValue),
+   ("isInlFormal", a.isInlFormal == b.isInlFormal), ("dictIndex", a.dictIndex == b.dictIndex),
+   ("stackOffset", a.stackOffset == b.stackOffset), ("type", a.type == b.type),
+   ("declFile", a.declFile == b.declFile), ("declLine", a.declLine == b.declLine),
+   ("declCol", a.declCol == b.declCol), ("inlIndex", a.inlIndex == b.inlIndex),
+   ("childIndex", a.childIndex == b.childIndex), ("isInAbstract", a.isInAbstract == b.isInAbstract),
+   ("closureOffset", a.closureOffset == b.closureOffset), ("list", a.list == b.list)].filterMap
+    fun (k, ok) => if ok then none else some k
+
+def scopeStr (s : DwScope) : String := s!"parent={s.parent} ranges={s.ranges} vars={s.vars}"
+
+def callStr (c : DwInlCall) : String :=
+  s!"ii={c.inlIndex} call={c.callFile}:{c.callLine} abs={c.absFun} children={c.children} \
+    root={c.root} ranges={c.ranges} vars={c.vars}"
+
+def callDiff (a b : DwInlCall) : List String :=
+  [("inlIndex", a.inlIndex == b.inlIndex), ("callPos", a.callFile == b.callFile && a.callLine == b.callLine),
+   ("absFun", a.absFun == b.absFun), ("children", a.children == b.children),
+   ("root", a.root == b.root), ("ranges", a.ranges == b.ranges), ("vars", a.vars == b.vars)].filterMap
+    fun (k, ok) => if ok then none else some k
+
+/-- The first difference between `dwarfgen.Info`'s records and the recorded ones, as (class,
+message). -/
+def cmpInfo (dw : Dwarf) (stockUseType : Array Reloc) (out : InfoOut) : Option (String × String) := Id.run do
+  if out.useType != stockUseType then
+    return some ("e2:usetype", s!"port {out.useType.map relocStr}, stock {stockUseType.map relocStr}")
+  for k in [0:max out.vars.size dw.vars.size] do
+    match out.vars[k]?, dw.vars[k]? with
+    | some a, some b =>
+      if !(a == b) then
+        return some (s!"e2:var:{(varDiff a b).headD "?"}", s!"var {k}: port {varStr a}, stock {varStr b}")
+    | some a, none => return some ("e2:var:extra", s!"var {k}: port has extra {varStr a}")
+    | none, some b => return some ("e2:var:missing", s!"var {k}: port lacks {varStr b}")
+    | none, none => pure ()
+  for k in [0:max out.scopes.size dw.scopes.size] do
+    match out.scopes[k]?, dw.scopes[k]? with
+    | some a, some b =>
+      if !(a == b) then
+        let f := if a.parent != b.parent then "parent" else if a.ranges != b.ranges then "ranges" else "vars"
+        return some (s!"e2:scope:{f}", s!"scope {k}: port {scopeStr a}, stock {scopeStr b}")
+    | some a, none => return some ("e2:scope:extra", s!"scope {k}: port has extra {scopeStr a}")
+    | none, some b => return some ("e2:scope:missing", s!"scope {k}: port lacks {scopeStr b}")
+    | none, none => pure ()
+  for k in [0:max out.inlCalls.size dw.inlCalls.size] do
+    match out.inlCalls[k]?, dw.inlCalls[k]? with
+    | some a, some b =>
+      if !(a == b) then
+        return some (s!"e2:inlcall:{(callDiff a b).headD "?"}", s!"inlcall {k}: port {callStr a}, stock {callStr b}")
+    | some a, none => return some ("e2:inlcall:extra", s!"inlcall {k}: port has extra {callStr a}")
+    | none, some b => return some ("e2:inlcall:missing", s!"inlcall {k}: port lacks {callStr b}")
+    | none, none => pure ()
+  return none
+
+/-! ## Driver -/
+
+/-- The per-file inputs of the writers. -/
+structure Inputs where
+  pf : ProgFile
+  fn : DwFn
+  ctx : AsmCtxt
+  asmPC : Std.HashMap Nat Int
+
+/-- Runs `putFunc` and `generateDebugLinesSymbol` with `dw` as the `dwarf.FnState` records and
+`useType` as the info symbol's leading relocations. -/
+def runWriters (i : Inputs) (dw : Dwarf) (useType : Array Reloc) : Except String DwSt := do
+  let pf := i.pf
+  let fileLine (p : Pos) : Except String (Int × Int) :=
+    ((getFileIndexAndLine p).run i.ctx |>.run' default)
+  let dbg := pf.prog0.dbg
+  let varList (k : Nat) : Except String (Array LocEntry) :=
+    match dbg.bind fun d => (d.lists.find? (·.1 == k)).map (·.2) with
+    | some l => pure l
+    | none => throw s!"no location list for VarID {k}"
+  let dctx : DieCtx := { dw, fn := i.fn, textSym := pf.asm.fn.sym, textSize := pf.asm.textSize,
+                         varList, getPC := getPC pf dbg i.asmPC }
+  let init : DwSt := { syms := ({} : Std.HashMap Nat DSym).insert i.fn.info { relocs := useType } }
+  let run : DwM Unit := do
+    putFunc dctx
+    generateDebugLinesSymbol pf.asm.fn.sym i.fn.lines pf.asm.progs pf.asm.textSize fileLine
+  let ((), out) ← run.run init
+  return out
+
+/-- Compares the writers' symbols and fixups with the recorded ones: (role, mismatch) per role
+(`none`: match). -/
+def cmpOut (i : Inputs) (out : DwSt) : Array (String × Option String) := Id.run do
+  let fn := i.fn
+  let dw := i.pf.dwarf
+  let roles : List (String × Option Nat) :=
+    [("lines", some fn.lines), ("info", some fn.info), ("loc", fn.loc), ("ranges", some fn.ranges),
+     ("absfn", fn.absfn)]
+  let mut res := #[]
+  for (role, y) in roles do
+    let r : Option String := match y with
+      | none => none
+      | some y => match dw.data.find? (·.sym == y) with
+        | some d => cmpSym fn out d
+        | none => some "no data line"
+    res := res.push (role, r)
+  let refsOk := out.dieRefs == dw.dieRefs
+  let offsOk := out.dieOffs == dw.dieOffs
+  let fix := if refsOk && offsOk then none
+    else some s!"port {out.dieRefs} {out.dieOffs}, stock {dw.dieRefs} {dw.dieOffs}"
+  res := res.push ((if refsOk then "dieoff" else "dieref"), fix)
+  return res
+
+/-- The class of a port error: its first two `:`-separated parts (e.g. `Info: AbsFuncDwarfSym`). -/
+def errClass (pfx e : String) : String :=
+  s!"{pfx}error:{(":".intercalate ((e.splitOn ":").take 2)).take 60}"
+
 def checkFile (maxReport : Nat) (path : System.FilePath) (st : Stats) : IO Stats := do
   let file := path.toString
   let st := { st with files := st.files + 1 }
@@ -147,54 +285,43 @@ def checkFile (maxReport : Nat) (path : System.FilePath) (st : Stats) : IO Stats
     | .posBase i b fi e => { c with posBases := c.posBases.insert i (b, fi), posExt := c.posExt.insert i e }
     | .inl k x => { c with inls := c.inls.insert k x }
     | _ => c
-  let fileLine (p : Pos) : Except String (Int × Int) :=
-    ((getFileIndexAndLine p).run ctx |>.run' default)
-  let asmPC : Std.HashMap Nat Int := pf.asm.progs.foldl (fun m p => m.insert p.id p.pc) {}
-  let dbg := pf.prog0.dbg
-  let varList (k : Nat) : Except String (Array LocEntry) :=
-    match dbg.bind fun d => (d.lists.find? (·.1 == k)).map (·.2) with
-    | some l => pure l
-    | none => throw s!"no location list for VarID {k}"
-  let dctx : DieCtx := { dw := pf.dwarf, fn, textSym := pf.asm.fn.sym, textSize := pf.asm.textSize,
-                         varList, getPC := getPC pf dbg asmPC }
-  -- dwarfgen.Info's R_USETYPE relocations, on the info symbol before the DIEs.
+  let inp : Inputs := { pf, fn, ctx, asmPC := pf.asm.progs.foldl (fun m p => m.insert p.id p.pc) {} }
+  -- dwarfgen.Info's R_USETYPE relocations as recorded: the info symbol's leading ones.
   let stockInfo := pf.dwarf.data.find? (·.sym == fn.info)
-  let useType := ((stockInfo.map (·.relocs)).getD #[]).toList.takeWhile
+  let stockUseType := ((stockInfo.map (·.relocs)).getD #[]).toList.takeWhile
     (fun r => r.type == "R_USETYPE" && r.off == 0 && r.siz == 0) |>.toArray
-  let init : DwSt := { syms := ({} : Std.HashMap Nat DSym).insert fn.info { relocs := useType } }
-  let run : DwM Unit := do
-    putFunc dctx
-    generateDebugLinesSymbol pf.asm.fn.sym fn.lines pf.asm.progs pf.asm.textSize fileLine
-  match run.run init with
-  | .error e => return st.record maxReport file s!"error:{(e.splitOn ":").headD e |>.take 60}" e
-  | .ok ((), out) =>
   let mut st := st
   let mut ok := true
-  let roles : List (String × Option Nat) :=
-    [("lines", some fn.lines), ("info", some fn.info), ("loc", fn.loc), ("ranges", some fn.ranges),
-     ("absfn", fn.absfn)]
-  for (role, y) in roles do
-    let res : Option String := match y with
-      | none => none
-      | some y => match pf.dwarf.data.find? (·.sym == y) with
-        | some d => cmpSym fn out d
-        | none => some "no data line"
-    match res with
-    | none =>
-      st := match role with
-        | "lines" => { st with lines := st.lines + 1 }
-        | "info" => { st with info := st.info + 1 }
-        | "loc" => { st with loc := st.loc + 1 }
-        | "ranges" => { st with ranges := st.ranges + 1 }
-        | _ => { st with absfn := st.absfn + 1 }
-    | some m => st := st.record maxReport file role m; ok := false
-  let refsOk := out.dieRefs == pf.dwarf.dieRefs
-  let offsOk := out.dieOffs == pf.dwarf.dieOffs
-  if refsOk && offsOk then st := { st with fixups := st.fixups + 1 }
-  else
-    ok := false
-    st := st.record maxReport file (if refsOk then "dieoff" else "dieref")
-      s!"port {out.dieRefs} {out.dieOffs}, stock {pf.dwarf.dieRefs} {pf.dwarf.dieOffs}"
+  -- Rows 1-3: the writers on the recorded records.
+  match runWriters inp pf.dwarf stockUseType with
+  | .error e => st := st.record maxReport file (errClass "" e) e; ok := false
+  | .ok out =>
+    for (role, r) in cmpOut inp out do
+      match r with
+      | none =>
+        st := match role with
+          | "lines" => { st with lines := st.lines + 1 }
+          | "info" => { st with info := st.info + 1 }
+          | "loc" => { st with loc := st.loc + 1 }
+          | "ranges" => { st with ranges := st.ranges + 1 }
+          | "absfn" => { st with absfn := st.absfn + 1 }
+          | _ => { st with fixups := st.fixups + 1 }
+      | some m => st := st.record maxReport file role m; ok := false
+  -- Rows 4-5: dwarfgen.Info, then the writers on its records.
+  match info pf with
+  | .error e => st := st.record maxReport file (errClass "e2:" e) e; ok := false
+  | .ok out =>
+    match cmpInfo pf.dwarf stockUseType out with
+    | none => st := { st with e2 := st.e2 + 1 }
+    | some (cls, m) => st := st.record maxReport file cls m; ok := false
+    let dw := { pf.dwarf with vars := out.vars, scopes := out.scopes, inlCalls := out.inlCalls }
+    match runWriters inp dw out.useType with
+    | .error e => st := st.record maxReport file (errClass "chain:" e) e; ok := false
+    | .ok w =>
+      let bad := (cmpOut inp w).filterMap fun (role, r) => r.map (role, ·)
+      match bad[0]? with
+      | none => st := { st with chain := st.chain + 1 }
+      | some (role, m) => st := st.record maxReport file s!"chain:{role}" m; ok := false
   if ok then st := { st with allMatch := st.allMatch + 1 }
   return st
 
@@ -231,7 +358,8 @@ def tableText (st : Stats) (ms : Nat) : String := Id.run do
   let mut out := s!"| symbol | functions | match | mismatch | parity |\n| --- | ---: | ---: | ---: | ---: |\n"
   for (k, m) in [("debug lines", st.lines), ("debug info", st.info), ("location lists", st.loc),
                  ("range lists", st.ranges), ("abstract function", st.absfn),
-                 ("child-DIE fixups", st.fixups), ("end to end", st.allMatch)] do
+                 ("child-DIE fixups", st.fixups), ("Info records (E2)", st.e2),
+                 ("Info → DIE chain", st.chain), ("end to end", st.allMatch)] do
     out := out ++ s!"| {k} | {n} | {m} | {n - m} | {pct m n} |\n"
   out := out ++ s!"\n{st.files} files, {st.withDwarf} with DWARF, {st.bytes} DWARF bytes, \
     {st.parseErrors} parse errors, {ms} ms\n"

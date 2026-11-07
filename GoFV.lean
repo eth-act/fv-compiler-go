@@ -108,6 +108,7 @@ import GoFV.Dwarf.Const
 import GoFV.Dwarf.Sym
 import GoFV.Dwarf.Lines
 import GoFV.Dwarf.Die
+import GoFV.Dwarf.Info
 import GoFV.Gen.Env
 import GoFV.Gen.Progs
 import GoFV.Gen.State
