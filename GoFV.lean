@@ -119,4 +119,5 @@ import GoFV.Gen.Arm64ValueRt
 import GoFV.Gen.Arm64Block
 import GoFV.Gen.Defframe
 import GoFV.Gen.Genssa
+import GoFV.Gen.Check
 import GoFV.Util.Sha256
