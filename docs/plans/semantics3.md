@@ -178,6 +178,19 @@ storage: disjoint ranges for live slots (A2's checker) and non-overlapping lifet
 ones (A1's validator). Pointers into named autos become pointers into `frame a` at an offset;
 `temp` blocks stay unforgeable (Phase 1's `FrameSafe` argument carries over).
 
+**Implemented (I6)** in `GoFV/SSA/Sem/RunFrame.lean`, a reduced form of the plan above. The
+frame block is Phase 1's `outargs act` (Phase 1's `SP`, the machine `SP` after the prologue),
+extended to `autosize + 8 + argsize` bytes. Spill slots become bytes of that block at their
+machine offsets: a `PAUTO` slot at `autosize − extrasize + FrameOffset + off`, a
+`PPARAM`/`PPARAMOUT` slot at `autosize + 8 + FrameOffset + off`. A `StoreReg` encodes the value
+at the slot's type, a `LoadReg` decodes it, and an unwritten slot reads poison. Named autos stay
+Phase 1 blocks; `frameOf` places them in the frame for `ι`. After a call, the frame bytes at
+and above the call area (`callAreaEnd`) are restored, because the callee owns only its call
+frame (Phase 1's `deferreturn` poisons the whole `outargs` block). `FrameLayout.problems` checks
+a layout. In `sem-difftest run`, the last section run under `runFrame`, with the layout from
+the `.prog` file, gives 10,160 runs. Native agrees on 10,157; the other 3 calls already fail on
+every existing section.
+
 ### 4.3 Memory: the injection `ι`
 
 `runFrame` memory is Phase 1's block memory; the machine's is flat. The relation is an
