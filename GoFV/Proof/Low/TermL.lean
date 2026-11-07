@@ -148,6 +148,18 @@ def FrameValsL (tabs : Tables) (act : Nat) (E : ID → Option Value) (ρ' : ID �
   ∀ a w n, E a = some w → w.op = .ARM64MOVDaddr → w.aux = some n → termVL tabs w = false →
     w.args.size = 1 → wordShape (shpL tabs w.type) = true → ρ' a = (framePtr tabs act n).word
 
+/-- What `frameAtomG` says. -/
+theorem frameAtomG_cases {tabs : Tables} {f : Func} {x : ID} {w : Value}
+    (h : frameAtomG tabs f x w = true) : w.op = .ARM64MOVDaddr ∧ termVL tabs w = false ∧
+      w.args.size = 1 ∧ IsTermL tabs f.value? x := by
+  unfold frameAtomG at h
+  simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at h
+  obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := h
+  refine ⟨h1, h2, h3, ?_⟩
+  cases hv : f.value? x with
+  | none => rw [hv] at h4; cases h4
+  | some v => rw [hv] at h4; exact ⟨v, hv, by simpa using h4⟩
+
 /-- `y` in `E` (mode `lowE`) is related by `ArgRel o` to `x` in `D` (mode `lowD`) as a term over
 the atoms, the valuations holding the frame addresses in activation 0 (`FrameVals`, `FrameValsL`;
 `runL` runs a function in activation 0, `Ctx.makeL`, where the integer loads of a frame variable

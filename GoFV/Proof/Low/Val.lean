@@ -943,7 +943,7 @@ theorem frameFinal_cases {tabs : Tables} {f : Func} {M : Defs} {x : ID} {m u : V
         l.aux = u.aux ∧ f.value? a = some v ∧ v.op = .LocalAddr ∧ v.aux = u.aux := by
   unfold frameFinal at h
   simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩ := h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩ := h
   refine ⟨h1, h2, h3, h4, h5, h6, h7, h8, ?_⟩
   cases hfa : frameAddr tabs M x with
   | none => rw [hfa] at h9; cases h9
@@ -957,7 +957,7 @@ theorem frameFinal_cases {tabs : Tables} {f : Func} {M : Defs} {x : ID} {m u : V
     | some v =>
       rw [hfv] at hv
       simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at hv
-      exact ⟨a, l, v, rfl, hl, rfl, hv.1, hv.2⟩
+      exact ⟨a, l, v, rfl, hl, hfv, hv.1, hv.2⟩
 
 theorem finalOKL_facts {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
     (h : finalOKL tabs f g M B = true) : liveOKL tabs g (liveMarksL tabs g) = true ∧
@@ -1471,7 +1471,7 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
       refine .inr ⟨u', hu', hp, hpc, ?_⟩
       have hbf : b ∈ f.blocks := hbl ▸ hb
       have hargsf := (closedOK_facts hcf b hbf fb hfb).2 a haf u' hu'
-      obtain ⟨a'', ha'', -, hrest⟩ := hI.atoms a u' hu' hu't hargsf
+      obtain ⟨a'', ha'', ha''t, hrest⟩ := hI.atoms a u' hu' hu't hargsf
       obtain ⟨-, -, -, -, -, -, -, -, -, -, hvals⟩ := hfacts b hb gb hgb
       obtain ⟨m, w, hm, hw, hwty, hai, hcase⟩ := hvals a ha
         (.inr fun w hw => by rw [hu] at hw; cases hw; exact hat)
@@ -1479,8 +1479,11 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
       subst hma
       have huw : u = w := Option.some.inj (hu.symm.trans hw)
       subst huw
-      rcases hcase with ⟨hop, hax, hszw, hargs⟩ | ⟨hmop, hm3, hpl, ks, hks, hszk, hargs⟩
-      case inr =>
+      rcases hcase with ⟨hop, hax, hszw, hargs⟩ | ⟨hmop, hm3, hpl, ks, hks, hszk, hargs⟩ | hff
+      case inr.inr =>
+        -- a lowered frame address relates to a replayed term, not to `f`'s atom
+        rw [(frameFinal_cases hff).2.2.2.2.1] at ha''t; cases ha''t
+      case inr.inl =>
         -- a bounds panic with constant operands: the kept arguments of the replayed
         -- `LoweredPanicBoundsRR`, which are `f`'s (`argIx`)
         rw [hu'] at hpl
