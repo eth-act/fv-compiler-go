@@ -84,6 +84,20 @@ def memTy : Ty → Bool
   | .mem => true
   | _ => false
 
+/-- A shape whose result `LocState.write` drops when the value has no home: not memory, not a
+tuple, not the flags. -/
+def inertTy : Ty → Bool
+  | .mem | .tuple _ => false
+  | t => !t.isFlags
+
+/-- The shape of a `MakeResult` with arguments `args` whose write changes nothing: a tuple of
+one component per argument, no flags component, and a memory component only where the argument
+is the memory. -/
+def resultsTy (lc : LocCtx) (args : Array ID) : Ty → Bool
+  | .tuple ts => ts.length == args.size &&
+    (ts.zip args.toList).all fun (t, a) => !t.isFlags && (!memTy t || memTy (lc.ty a))
+  | _ => false
+
 /-- The register home of `id`. -/
 def regHome? (lc : LocCtx) (id : ID) : Option Nat :=
   match lc.home id with
@@ -164,10 +178,11 @@ def vkind (lc : LocCtx) (v : Value) : Except String VKind := do
     unless v.args.all (lc.home · == lc.home v.id) do throw s!"v{v.id}: phi argument elsewhere"
     return .none
   | .ARM64ZERO =>
-    unless v.args.size == 0 && regHome? lc v.id == some zeroReg do throw s!"v{v.id}: ZERO home"
+    unless v.args.size == 0 && regHome? lc v.id == some zeroReg && (cls ty).isSome do
+      throw s!"v{v.id}: ZERO home"
     return .none
   | .InlMark =>
-    unless lc.home v.id == none do throw s!"v{v.id}: inline mark home"
+    unless lc.home v.id == none && inertTy ty do throw s!"v{v.id}: inline mark home"
     return .none
   | .Copy =>
     if memTy ty then
@@ -185,6 +200,7 @@ def vkind (lc : LocCtx) (v : Value) : Except String VKind := do
     -- and its non-memory arguments already sit in their (result) registers
     unless lc.home v.id == none || lc.home v.id == some (.results #[]) do
       throw s!"v{v.id}: result home"
+    unless resultsTy lc v.args ty do throw s!"v{v.id}: result shape"
     for a in v.args do
       if memTy (lc.ty a) then
         unless lc.home a == none do throw s!"v{v.id}: memory result"
@@ -328,6 +344,7 @@ def Cx.term (cx : Cx) (b : Block) (j : Nat) (next : Option (ID × Nat)) : Except
     let k ← cx.one j { br with to := ← tgt t }
     unless falls k f do
       let _ ← cx.one k { as := .JMP, to := ← tgt f }
+  unless b.succs.all (cx.lc.ctx.f.blocks.contains ·.b) do throw s!"b{b.id}: successor not laid out"
   match b.kind with
   | .Plain =>
     let some e := b.succs[0]? | throw s!"b{b.id}: no successor"
