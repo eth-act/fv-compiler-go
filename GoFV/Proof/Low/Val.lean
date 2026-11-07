@@ -1138,12 +1138,10 @@ theorem final_denL {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
         fun T ai ax args => by
           simp only [opValL, show Op.OffPtr.generic = true from rfl, ite_true]
           rw [GoFV.Proof.Rules.opVal_pure (by decide)]; rfl
-      have hop2 : ∀ T ai ax args, opValL tabs .ARM64MOVDaddr T ai ax args = movAddr tabs ai ax args :=
-        fun T ai ax args => by simp [opValL]
       rw [denT_succ hm hmt, denT_succ hL hut, hmop, huop, hux, hty', hai', hua,
         toList_of_size_one hm1]
       simp only [List.map_cons, List.map_nil]
-      rw [hop1, hop2]
+      rw [hop1, opValL_movDaddr]
       exact offPtr_sp_le tabs _ _ hsp0 hrec
     case inr.inr.inl =>
       -- a lowered frame address where the replay keeps `ADDconst [0]` of it (`frameFinal`):

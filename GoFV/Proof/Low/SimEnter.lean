@@ -7,11 +7,11 @@ Phase 1's `AtomSimBlock`/`AtomSimEnter`/`AtomSimNoPanic`/`AtomSimPanic` over `ru
 trivial source invariant. `BRel frS frT b i`: the source and target frames at the entry of block
 `b` along edge `i`: the same activation inputs, registers typed in each function's mode, `b` a
 tree block of both dominator trees, every atom of `g` the target holds where `f` has no term
-refined from the source's register, the frame addresses those of activation 0 (`RegsFrame`,
-`RegsFrameL`), and sets `VS`/`VT` with `DenOKL` that contain the values of the strict ancestors
-of `b` and the `Phi` arguments along edge `i`. `enter_ok`: a source block entry without panic is
-matched by the target's, the frames afterwards related (`EndRel`); `enter_panic`: a panicking one
-by a target panic with a refined memory.
+refined from the source's register, the frame addresses and the source's stack pointer those of
+activation 0 (`RegsFrame`, `RegsFrameL`), and sets `VS`/`VT` with `DenOKL` that contain the
+values of the strict ancestors of `b` and the `Phi` arguments along edge `i`. `enter_ok`: a source
+block entry without panic is matched by the target's, the frames afterwards related (`EndRel`);
+`enter_panic`: a panicking one by a target panic with a refined memory.
 -/
 
 namespace GoFV.Proof.Low.Sim
@@ -332,9 +332,10 @@ theorem atomL_out {a : ID} {w : Value} (hp : Placed g a w) (ht : termVL tabs w =
   exact ⟨not_mem_of_placed H.wg hp B.bmT B.hgb hne,
     not_mem_of_placed H.wf hpu B.bmS B.hfb ((atomPair_spec hs).2.2.1 ▸ hne)⟩
 
-/-- **The source's frame addresses after a schedule prefix** `P`, evaluated from the frame after
-the `Phi`s: a `LocalAddr` of `P` evaluates to its address word (`evalValueL_localAddr`), the
-others keep their registers from the block entry (`setPhis` writes only `Phi`s). -/
+/-- **The source's frame addresses and stack pointer after a schedule prefix** `P`, evaluated
+from the frame after the `Phi`s: a `LocalAddr` (`SP`) of `P` evaluates to its address word
+(`evalValueL_localAddr`, `evalValueL_sp`), the others keep their registers from the block entry
+(`setPhis` writes only `Phi`s). -/
 theorem regsFrame_eval {env : Env} {frS G : Frame} {P : List ID} {psS : List (ID × Val)}
     (hfrS : RegsFrame tabs 0 f.value? frS) (hPof : ∀ x ∈ P, x ∈ of.toList)
     (hphi : ∀ z, (z ∉ fb.values ∨ ∃ v, f.value? z = some v ∧ v.op ≠ .Phi) →
@@ -343,17 +344,27 @@ theorem regsFrame_eval {env : Env} {frS G : Frame} {P : List ID} {psS : List (ID
     (hev : ∀ x ∈ P, ∃ u y, f.value? x = some u ∧ G.regs[x]? = some (some y) ∧
       evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) G u = .ok y) :
     RegsFrame tabs 0 f.value? G := by
-  intro a l n y hl hop hax hy
-  by_cases haP : a ∈ P
-  · obtain ⟨u, y', hu, hy', hevu⟩ := hev a haP
-    rw [hl] at hu; cases hu
-    rw [hy] at hy'; cases hy'
-    have h := evalValueL_localAddr hop hax hevu
-    rw [makeL_tabs, makeL_act, (sched_ownL H B a (hPof a haP) l hl).1, tysL_of_value hl,
-      H.shp a l hl, H.glow] at h
-    exact h
-  · rw [hkeep a haP, hphi a (.inr ⟨l, hl, by rw [hop]; decide⟩)] at hy
-    exact hfrS a l n y hl hop hax hy
+  refine ⟨fun a l n y hl hop hax hy => ?_, fun a s y hs hop hy => ?_⟩
+  · by_cases haP : a ∈ P
+    · obtain ⟨u, y', hu, hy', hevu⟩ := hev a haP
+      rw [hl] at hu; cases hu
+      rw [hy] at hy'; cases hy'
+      have h := evalValueL_localAddr hop hax hevu
+      rw [makeL_tabs, makeL_act, (sched_ownL H B a (hPof a haP) l hl).1, tysL_of_value hl,
+        H.shp a l hl, H.glow] at h
+      exact h
+    · rw [hkeep a haP, hphi a (.inr ⟨l, hl, by rw [hop]; decide⟩)] at hy
+      exact hfrS.1 a l n y hl hop hax hy
+  · by_cases haP : a ∈ P
+    · obtain ⟨u, y', hu, hy', hevu⟩ := hev a haP
+      rw [hs] at hu; cases hu
+      rw [hy] at hy'; cases hy'
+      have h := evalValueL_sp hop hevu
+      rw [makeL_act, (sched_ownL H B a (hPof a haP) s hs).1, tysL_of_value hs, H.shp a s hs,
+        H.glow] at h
+      exact h
+    · rw [hkeep a haP, hphi a (.inr ⟨s, hs, by rw [hop]; decide⟩)] at hy
+      exact hfrS.2 a s y hs hop hy
 
 end
 

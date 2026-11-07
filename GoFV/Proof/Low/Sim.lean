@@ -127,9 +127,11 @@ theorem entry_relL {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tab
       treeT := by rw [← hge]; simp [entry_depth H.cg.parents],
       atoms := fun a w _ _ _ y' h => absurd h (hnone a y'),
       framesT := fun a w n y _ _ h => absurd h (hnone a y),
-      frames := fun a l n y _ _ _ h => absurd h (by
+      frames := ⟨fun a l n y _ _ _ h => absurd h (by
         simp only [entryFrame, makeL_f, Array.getElem?_replicate]
-        split <;> simp),
+        split <;> simp), fun a s y _ _ h => absurd h (by
+        simp only [entryFrame, makeL_f, Array.getElem?_replicate]
+        split <;> simp)⟩,
       den := ⟨fun _ => False, fun _ => False, denOKL_empty _ _ _ _, denOKL_empty _ _ _ _,
         fun _ h => h.elim, fun x h => hentry f ce H.wf H.cf x h,
         fun x h => hentry g ce' H.wg H.cg x (hge ▸ h), hphi f ce H.wf _, hge ▸ hphi g ce' H.wg _⟩ }
