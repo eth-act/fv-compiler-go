@@ -16,3 +16,5 @@ Nice=10
 TimeoutStartSec=10h
 Environment=PATH=%h/.elan/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=@GATE_WT@/scripts/nightly-gate.sh
+# A stopped or timed-out run leaves its memcap.sh scopes behind (units of their own); stop them.
+ExecStopPost=-@GATE_WT@/scripts/nightly-gate.sh --stop-scopes

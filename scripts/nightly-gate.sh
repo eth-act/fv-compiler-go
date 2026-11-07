@@ -25,6 +25,9 @@
 #        scripts/nightly-gate.sh --now       run now even if today's gate ran (memory check kept)
 #        scripts/nightly-gate.sh --install   create the gate worktree and install and start the
 #                                            systemd --user timer (gofv-nightly-gate.timer)
+#        scripts/nightly-gate.sh --stop-scopes  stop scopes left in gofvgate.slice by a stopped or
+#                                            timed-out run (the unit's ExecStopPost); no-op while a
+#                                            gate run holds ../gofv-gate.lock
 #        options: --no-post (write the summary only), --force (no memory check)
 #
 # Results: <gate worktree>/tmp/gate/<date>T<time>/ (summary.md, one log per step).
@@ -32,7 +35,7 @@
 set -euo pipefail
 
 main() {
-  local self root main_root parent wt now=0 post=1 force=0 install=0 steps=0
+  local self root main_root parent wt now=0 post=1 force=0 install=0 steps=0 stop_scopes=0
   self=$(readlink -f "$0")
   root=$(cd "$(dirname "$self")/.." && pwd)
   main_root=$(git -C "$root" worktree list --porcelain | sed -n '1s/^worktree //p')
@@ -46,12 +49,17 @@ main() {
       --no-post) post=0; shift ;;
       --force) force=1; shift ;;
       --install) install=1; shift ;;
+      --stop-scopes) stop_scopes=1; shift ;;
       --steps) steps=1; rev=$2; run=$3; shift 3 ;;  # internal: run the steps in this worktree
-      *) sed -n '2,30s/^# \{0,1\}//p' "$self" >&2; exit 2 ;;
+      *) sed -n '2,33s/^# \{0,1\}//p' "$self" >&2; exit 2 ;;
     esac
   done
   export PATH=$HOME/.elan/bin:$HOME/.local/bin:$PATH
 
+  if [ "$stop_scopes" = 1 ]; then
+    gate_stop_scopes "$parent"
+    return
+  fi
   if [ "$steps" = 1 ]; then
     gate_steps "$root" "$parent" "$rev" "$run" "$post"
     return
@@ -107,6 +115,22 @@ gate_worktree() {
   for d in go go-build; do
     if [ -e "$main_root/third_party/$d" ] && [ ! -e "$wt/third_party/$d" ]; then
       ln -s "$main_root/third_party/$d" "$wt/third_party/$d"
+    fi
+  done
+}
+
+# gate_stop_scopes <parent>: when no gate run holds the lock, stop every scope in gofvgate.slice.
+# A stopped or timed-out service leaves its memcap.sh scopes running (they are units of their
+# own); 2026-11-07 a leftover pass-parity kept running after the service stopped. Steps run with
+# the lock fd closed (`9>&-`), so leftovers never hold the lock and the next run is not blocked.
+gate_stop_scopes() {
+  local parent=$1 u
+  exec 9>"$parent/gofv-gate.lock"
+  flock -n 9 || { echo "nightly-gate: a gate run holds the lock; leaving its scopes" >&2; return 0; }
+  for u in $(systemctl --user list-units --type=scope --no-legend --plain | awk '{print $1}'); do
+    if [ "$(systemctl --user show -p Slice --value "$u")" = gofvgate.slice ]; then
+      echo "nightly-gate: stopping leftover $u" >&2
+      systemctl --user stop "$u" || true
     fi
   done
 }
@@ -176,7 +200,7 @@ gate_steps() {
     echo "nightly-gate: $name" >&2
     t0=$(date +%s)
     rc=0
-    "$@" >"$run/$name.log" 2>&1 || rc=$?
+    "$@" >"$run/$name.log" 2>&1 9>&- || rc=$?
     names+=("$name")
     times+=("$(( ($(date +%s) - t0) / 60 ))m")
     if [ "$rc" = 0 ]; then
@@ -197,7 +221,7 @@ gate_steps() {
     echo "nightly-gate: $name (report)" >&2
     t0=$(date +%s)
     rc=0
-    "$@" >"$run/$name.log" 2>&1 || rc=$?
+    "$@" >"$run/$name.log" 2>&1 9>&- || rc=$?
     names+=("$name")
     times+=("$(( ($(date +%s) - t0) / 60 ))m")
     if [ "$rc" = 0 ]; then results+=(report); else results+=("report (exit $rc)"); fi
