@@ -203,21 +203,6 @@ theorem retype_word {t : Ty} (ht : wordTy t = true) {z : Val}
   | ptr e => exact Val.retype_of_hasTy (by rw [Val.hasTy_ptr_eq_i64]; exact hz)
   | _ => simp [wordTy] at ht
 
-/-- `Convert` at a word shape of a 64-bit integer word is one (integer → pointer is the
-identity; a pointer that does not convert to an integer gives `poison`). -/
-theorem convert_word {t : Ty} {z : Val} (hz : z.hasTy (.int .w64) = true) (l : List Val) :
-    (PtrOps.convert t (z :: l)).hasTy (.int .w64) = true := by
-  unfold PtrOps.convert
-  split
-  · rename_i x m he
-    cases he
-    split
-    · rename_i p
-      simp only [Val.hasTy, Bool.not_eq_eq_eq_not, Bool.not_true] at hz
-      simp [hz, Val.hasTy]
-    · exact hz
-  · rfl
-
 /-- A value of a word shape (`wordVal`) denotes a 64-bit integer word at every fuel. -/
 theorem wordVal_den {tabs : Tables} {M : Defs} {ρ : ID → Val} (hT : Term.Typed M.get? tabs ρ)
     {a : ID} (h : wordVal tabs M a = true) (m : Nat) :

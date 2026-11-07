@@ -2592,18 +2592,13 @@ def ssPtrOK (tabs : Tables) (f g : Func) (b dst p : ID) (o : Nat) : Bool :=
   | some _, _ => o == 0 && copyReach tabs f.valueTab f.valueTab.size dst p
   | none, none => false
 
-/-- The `Make` argument `a` of `f` (shape `s`) fits its field's shape `t`: the same shape, both
-pointer shapes (a pointer keeps its value at every pointer shape), or, in a `uintptr` field (an
-interface's itab word), a pointer that is, up to copies, a pointer to a symbol (`Addr`: it has no
-concrete address) or a `Convert` at a word shape (`wordTy`) of a 64-bit integer (integer →
-pointer is the identity), which keep their value at the 64-bit integer shape. -/
-def ssFieldOK (tabs : Tables) (f : Func) (a : ID) (s t : Sem.Ty) : Bool :=
-  Sem.Ty.beq s t || (s matches .ptr _ && t matches .ptr _) ||
-  (Sem.Ty.beq t (.int .w64) && s matches .ptr _ &&
-    (f.value? (copyEnd tabs f.valueTab f.valueTab.size a)).any fun w =>
-      w.op == .Addr ||
-        (w.op == .Convert && wordTy (tabs.ty w.type) &&
-          (w.args[0]?.bind f.value?).any fun x => tabs.ty x.type matches .int .w64))
+/-- A `Make` argument of shape `s` fits its field's shape `t`: the same shape, or two word shapes
+(`wordTy`: a 64-bit integer or a pointer). The two word shapes have the same values
+(`Val.hasTy_ptr_eq_i64`, #290), so a register of one keeps its value at the other: a pointer in
+a pointer field of another element type, or in a `uintptr` field (an interface's itab word of a
+pointer type: a `*uint8` itab, a `Phi` of them), a `uintptr` in a pointer field. -/
+def ssFieldOK (s t : Sem.Ty) : Bool :=
+  Sem.Ty.beq s t || (wordTy s && wordTy t)
 
 /-- Field `k` of the split of `x` (block `b`, pointer `dst`, fields `fs`, `Make` arguments `as`,
 chain `ps` from memory `m0`): the `Make` argument has the field's shape; the pair `(p, s)` is a
@@ -2617,7 +2612,7 @@ def ssLink (tabs : Tables) (f g : Func) (b dst x : ID) (fs : List (Nat × Sem.Ty
     let prev := if k = 0 then m0 else (ps[k - 1]?.map (·.2)).getD 0
     match f.value? a, g.value? s with
     | some av, some sv =>
-      ssFieldOK tabs f a (tabs.ty av.type) t &&
+      ssFieldOK (tabs.ty av.type) t &&
       ((f.value? s).isNone || (s == x && k + 1 == ps.length)) && sv.id == s && sv.op == .Store &&
       sv.block == b && Sem.Ty.beq (tabs.ty sv.type) .mem &&
       sv.args.size == 3 && sv.args[0]! == p && sv.args[2]! == prev &&
