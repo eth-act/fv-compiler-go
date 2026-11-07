@@ -1,7 +1,7 @@
 import GoFV.Proof.Low.Rules.Peep
 
 /-!
-# Lowering rule lemmas: folded operand producers (`ARM64.rules:1017-1018`, `1179-1182`, `1433-1449`)
+# Lowering rule lemmas: folded operand producers (`ARM64.rules:1012-1018`, `1179-1182`, `1433-1449`, `1635`)
 
 Peepholes of lowered code (#385) that fold an operand's producer into its consumer:
 
@@ -21,10 +21,13 @@ Peepholes of lowered code (#385) that fold an operand's producer into its consum
   condition rules out the word shapes, so `a` is no pointer (provenance clause); at most 32 low
   bits are read, which the 32-bit `MADDW` computes, and any other non-word shape is `poison`
   (`refines_op2_mulw`).
+* `(ADD a l:(MUL x y)) && … => (MADD a x y)`, `(SUB a (MUL x y)) => (MSUB a x y)` and the `MNEG`
+  forms (1012-1015): `MADD`/`MSUB` move a pointer `a` by `±x·y` as `ADD`/`SUB` do (`Arm64.madd`,
+  `addP`); a pointer `a` makes the result word-shaped (provenance clause) and the product is read
+  whole, any other `a` adds as a register, low bits as above (`refines_madd`).
 
 False under the semantics (docs/proofs/rules.md, Findings; counterexamples evaluated with
-`#eval`), so not proven: 1012/1013 (`MADD`/`MSUB` read the registers of a global pointer `a`,
-which has none, where `ADD`/`SUB` move it: `a = g + 0`, `x = y = 1`); 1183 (`(NEG (SUB x y)) =>
+`#eval`), so not proven: 1183 (`(NEG (SUB x y)) =>
 (SUB y x)`: `x = 0`, `y` the frame temporary `temp 0 1 + 0`, the source the integer `2^62 + 2^24`,
 the target the pointer); 1184 (`(NEG (NEG x)) => x`, the same `x`); 1197 (`x = heap (2^22) + 0`,
 `y = z = 2^41`: the target's `ADD x z` leaves the window); 1198 (`x = heap 0 + 2^40`, `y = 1`,
@@ -644,6 +647,124 @@ theorem r_ARM64_1635_sound : ArmRule.Checked r_ARM64_1635 := by
     exact refines_add_andSh _ _ hc' (armReadW_addSub .ARM64ADD _ 0 (.inl rfl) ▸ harg.1.1.1)
       harg.2.2 (armReadW_andSh _ 0 ▸ harg.1.2.1.1) (armReadW_andSh _ 1 ▸ harg.1.2.2) _ _ _ hty.2
       hty.1.2
+
+/-! ## `MADD`/`MSUB` (1012-1015) -/
+
+/-- `ADD a (g x y)` or `SUB a (g x y)` (`op`; `s` the sign of the product's register in the sum;
+the product computed at shape `T1`) as `MADD`/`MSUB a x y` (`Arm64.madd`): a pointer `a` has a
+word shape `T0`, so the result has one (`hp`, the validator's provenance clause) and the product
+is read whole: both sides move `a` by the same amount (`addP`); otherwise only the low `lowW T`
+bits of the sum count. -/
+theorem refines_madd {T T0 T1 : Ty} (op : Val → Val → Val) (s : BitVec 64 → BitVec 64)
+    (hop : ∀ p r, op (.ptr p) (.int .w64 r) = PtrOps.ptrRes (p.add (s r)))
+    (hop2 : ∀ a b, (∀ p, a ≠ .ptr p) → (∀ p, b ≠ .ptr p) →
+      op a b = Arm64.op2 T (fun u v => u + s v) [a, b])
+    (hpo : ∀ a, op a .poison = .poison)
+    (hsl : ∀ n, n ≤ 64 → ∀ b b' : BitVec 64, b.setWidth n = b'.setWidth n →
+      (s b).setWidth n = (s b').setWidth n)
+    (g : BitVec 64 → BitVec 64 → BitVec 64) (neg : Bool)
+    (hg : ∀ u v, s (g u v) = if neg then -(u * v) else u * v)
+    (hw : lowW T ≤ argWidth T1) (hp : (!wordShape T0) = true ∨ wordShape T = true)
+    (a x y : Val) (ha : a.hasTy T0 = true) :
+    Refines ((op a ((Arm64.op2 T1 g [x, y]).retypeL T1)).retypeL T)
+      ((Arm64.madd T neg [a, x, y]).retypeL T) := by
+  obtain ⟨h1, h2⟩ := lowW_pos T
+  cases hx : Arm64.reg x with
+  | none =>
+    simp only [Arm64.op2, hx, retypeL_poison, hpo]; exact .poison _
+  | some u =>
+    cases hy : Arm64.reg y with
+    | none =>
+      simp only [Arm64.op2, hx, hy, retypeL_poison, hpo]; exact .poison _
+    | some v =>
+      simp only [Arm64.op2, Arm64.madd, hx, hy, ← hg]
+      by_cases hap : ∃ p, a = .ptr p
+      · obtain ⟨p, rfl⟩ := hap
+        have hT : wordShape T = true := by
+          have := wordShape_of_ptr ha
+          rcases hp with h | h
+          · simp [this] at h
+          · exact h
+        have h64 : 64 ≤ argWidth T1 := lowW_word hT ▸ hw
+        rcases retypeL_res_wide h64 (g u v) with h | h <;> rw [h]
+        · rw [hop]; exact Refines.refl _
+        · rw [hpo, retypeL_poison]; exact .poison _
+      · have ha' : ∀ p, a ≠ .ptr p := fun p h => hap ⟨p, h⟩
+        rw [hop2 _ _ ha' (retypeL_res_nonptr T1 _)]
+        rcases retypeL_res_reg h1 h2 hw (g u v) with h | ⟨z, hz, hzk⟩
+        · rw [h, op2_poison_r, retypeL_poison]; exact .poison _
+        · rw [addP_nonptr T ha']
+          cases hra : Arm64.reg a with
+          | none => simp only [Arm64.op2, hra, retypeL_poison]; exact .poison _
+          | some r =>
+            simp only [Arm64.op2, hra, hz]
+            rw [retypeL_res_low T (show (r + s z).setWidth (lowW T) = (r + s (g u v)).setWidth (lowW T)
+              from by rw [BitVec.setWidth_add _ _ h2, BitVec.setWidth_add _ _ h2, hsl _ h2 _ _ hzk])]
+            exact Refines.refl _
+
+/-- `refines_madd` for `ADD a (g x y)`. -/
+theorem refines_madd_add {T T0 T1 : Ty} (g : BitVec 64 → BitVec 64 → BitVec 64) (neg : Bool)
+    (hg : ∀ u v, g u v = if neg then -(u * v) else u * v)
+    (hw : lowW T ≤ argWidth T1) (hp : (!wordShape T0) = true ∨ wordShape T = true)
+    (a x y : Val) (ha : a.hasTy T0 = true) :
+    Refines ((Arm64.add T [a, (Arm64.op2 T1 g [x, y]).retypeL T1]).retypeL T)
+      ((Arm64.madd T neg [a, x, y]).retypeL T) :=
+  refines_madd (fun a b => Arm64.add T [a, b]) id
+    (fun p r => by simp only [Arm64.add, Arm64.reg, BitVec.setWidth_eq, id])
+    (fun _ _ ha hb => add_nonptr T ha hb) (add_poison_r T) (fun _ _ _ _ h => h) g neg hg hw hp
+    a x y ha
+
+/-- `refines_madd` for `SUB a (g x y)`. -/
+theorem refines_madd_sub {T T0 T1 : Ty} (g : BitVec 64 → BitVec 64 → BitVec 64) (neg : Bool)
+    (hg : ∀ u v, -(g u v) = if neg then -(u * v) else u * v)
+    (hw : lowW T ≤ argWidth T1) (hp : (!wordShape T0) = true ∨ wordShape T = true)
+    (a x y : Val) (ha : a.hasTy T0 = true) :
+    Refines ((Arm64.sub T [a, (Arm64.op2 T1 g [x, y]).retypeL T1]).retypeL T)
+      ((Arm64.madd T neg [a, x, y]).retypeL T) :=
+  refines_madd (fun a b => Arm64.sub T [a, b]) (- ·)
+    (fun p r => by simp only [Arm64.sub, Arm64.reg, BitVec.setWidth_eq])
+    (fun _ _ ha _ => by rw [sub_nonptr T ha]; simp only [BitVec.sub_eq_add_neg])
+    (fun a => by cases a <;> rfl)
+    (fun _ hn _ _ h => by rw [BitVec.setWidth_neg_of_le hn, BitVec.setWidth_neg_of_le hn, h])
+    g neg hg hw hp a x y ha
+
+private theorem retypeL_op2_nonptr (T : Ty) (g : BitVec 64 → BitVec 64 → BitVec 64) (a b : Val)
+    (p : Ptr) : (Arm64.op2 T g [a, b]).retypeL T ≠ .ptr p := by
+  cases ha : Arm64.reg a <;> cases hb : Arm64.reg b <;>
+    simp only [Arm64.op2, ha, hb, retypeL_poison, ne_eq, reduceCtorEq, not_false_eq_true,
+      retypeL_res_nonptr]
+
+/-- `ARM64.rules:1012`: `(ADD a l:(MUL x y)) && l.Uses==1 && clobber(l) => (MADD a x y)` -/
+theorem r_ARM64_1012_sound : ArmRule.Checked r_ARM64_1012 := by
+  left; arm_unfold
+  all_goals arm_norm
+  · exact refines_madd_add _ false (fun _ _ => rfl)
+      (armReadW_addSub .ARM64ADD _ 1 (.inl rfl) ▸ harg.2.1.1) harg.1.2 _ _ _ hty.1
+  · rw [add_comm_nonptr _ (retypeL_op2_nonptr _ _ _ _)]
+    exact refines_madd_add _ false (fun _ _ => rfl)
+      (armReadW_addSub .ARM64ADD _ 0 (.inl rfl) ▸ harg.1.1.1) harg.2.2 _ _ _ hty.2
+
+/-- `ARM64.rules:1013`: `(SUB a l:(MUL x y)) && l.Uses==1 && clobber(l) => (MSUB a x y)` -/
+theorem r_ARM64_1013_sound : ArmRule.Checked r_ARM64_1013 := by
+  left; arm_unfold; arm_norm
+  exact refines_madd_sub _ true (fun _ _ => rfl)
+    (armReadW_addSub .ARM64SUB _ 1 (.inr rfl) ▸ harg.2.1.1) harg.1.2 _ _ _ hty.1
+
+/-- `ARM64.rules:1014`: `(ADD a l:(MNEG x y)) && l.Uses==1 && clobber(l) => (MSUB a x y)` -/
+theorem r_ARM64_1014_sound : ArmRule.Checked r_ARM64_1014 := by
+  left; arm_unfold
+  all_goals arm_norm
+  · exact refines_madd_add _ true (fun _ _ => rfl)
+      (armReadW_addSub .ARM64ADD _ 1 (.inl rfl) ▸ harg.2.1.1) harg.1.2 _ _ _ hty.1
+  · rw [add_comm_nonptr _ (retypeL_op2_nonptr _ _ _ _)]
+    exact refines_madd_add _ true (fun _ _ => rfl)
+      (armReadW_addSub .ARM64ADD _ 0 (.inl rfl) ▸ harg.1.1.1) harg.2.2 _ _ _ hty.2
+
+/-- `ARM64.rules:1015`: `(SUB a l:(MNEG x y)) && l.Uses==1 && clobber(l) => (MADD a x y)` -/
+theorem r_ARM64_1015_sound : ArmRule.Checked r_ARM64_1015 := by
+  left; arm_unfold; arm_norm
+  exact refines_madd_sub _ false (fun _ _ => BitVec.neg_neg)
+    (armReadW_addSub .ARM64SUB _ 1 (.inr rfl) ▸ harg.2.1.1) harg.1.2 _ _ _ hty.1
 
 /-! ## `MADDW`/`MSUBW` -/
 

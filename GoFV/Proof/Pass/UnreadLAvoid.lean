@@ -86,6 +86,15 @@ theorem cmp2_av (f : BitVec 64 → BitVec 64 → BitVec 64 × Flags) (args : Lis
 theorem cmp1w_av (f : BitVec 32 → BitVec 32 × Flags) (args : List Val) :
     Val.Avoids U (Arm64.cmp1w f args) := by unfold Arm64.cmp1w; avL_tac
 
+theorem cmpP_av (f : BitVec 64 → BitVec 64 → BitVec 64 × Flags) (args : List Val) :
+    Val.Avoids U (Arm64.cmpP f args) := by unfold Arm64.cmpP Arm64.zClear; avL_tac
+
+theorem cmpSh_av (f : BitVec 64 → BitVec 64 → BitVec 64 × Flags) (args : List Val) :
+    Val.Avoids U (Arm64.cmpSh f args) := by unfold Arm64.cmpSh Arm64.zClear; avL_tac
+
+theorem cmp1P_av (f : BitVec 64 → BitVec 64 × Flags) (args : List Val) :
+    Val.Avoids U (Arm64.cmp1P f args) := by unfold Arm64.cmp1P Arm64.zClear; avL_tac
+
 theorem cmp2w_av (f : BitVec 32 → BitVec 32 → BitVec 32 × Flags) (args : List Val) :
     Val.Avoids U (Arm64.cmp2w f args) := by unfold Arm64.cmp2w; avL_tac
 
@@ -208,6 +217,27 @@ theorem addP_av (ty : Ty) {a : Val} (h : Val.Avoids U a) (k : BitVec 64) :
   cases a with
   | ptr p => exact ptrRes_avoids (by rw [add_ptr_blk]; exact h)
   | _ => unfold Arm64.addP; avL_tac
+
+theorem madd_av (ty : Ty) (n : Bool) {args : List Val} (h : ∀ z ∈ args, Val.Avoids U z) :
+    Val.Avoids U (Arm64.madd ty n args) := by
+  match args, h with
+  | [a, x, y], h =>
+    unfold Arm64.madd; dsimp only
+    split
+    · exact addP_av _ (h a (by simp)) _
+    · trivial
+  | [], _ | [_], _ | [_, _], _ | _ :: _ :: _ :: _ :: _, _ => unfold Arm64.madd; trivial
+
+theorem csinc_av (ty : Ty) (k : Int64) {args : List Val} (h : ∀ z ∈ args, Val.Avoids U z) :
+    Val.Avoids U (Arm64.csinc ty k args) := by
+  match args, h with
+  | [x, y, f], h =>
+    unfold Arm64.csinc; dsimp only
+    split
+    · exact regVal_av _ (h x (by simp))
+    · exact regVal_av _ (addP_av _ (h y (by simp)) _)
+    · trivial
+  | [], _ | [_], _ | [_, _], _ | _ :: _ :: _ :: _ :: _, _ => unfold Arm64.csinc; trivial
 
 /-- Closes `Val.Avoids U (PtrOps.ptrRes (p.add k))` from a hypothesis `Val.Avoids U (.ptr p)`. -/
 theorem ptrResAdd_av {p : Ptr} (h : Val.Avoids U (.ptr p)) (k : BitVec 64) :

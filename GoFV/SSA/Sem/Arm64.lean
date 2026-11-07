@@ -85,9 +85,9 @@ def evalPure (op : Op) (ty : Ty) (k : Int64) (_aux : Option AuxRef) (args : List
   | .ARM64UMOD => op2 ty urem args
   | .ARM64MODW => op2w ty srem args
   | .ARM64UMODW => op2w ty urem args
-  | .ARM64MADD => op3 ty (fun a x y => a + x * y) args
+  | .ARM64MADD => madd ty false args
   | .ARM64MADDW => op3w ty (fun a x y => a + x * y) args
-  | .ARM64MSUB => op3 ty (fun a x y => a - x * y) args
+  | .ARM64MSUB => madd ty true args
   | .ARM64MSUBW => op3w ty (fun a x y => a - x * y) args
   | .ARM64NEG => op1 ty (- ·) args
   | .ARM64MVN => op1 ty (~~~ ·) args
@@ -186,20 +186,20 @@ def evalPure (op : Op) (ty : Ty) (k : Int64) (_aux : Option AuxRef) (args : List
     | _ => .poison
   | .ARM64CMPW => cmp2w (fun x y => subFlags x y) args
   | .ARM64CMPWconst => cmp1w (fun x => subFlags x (imm32 k)) args
-  | .ARM64CMN => cmp2 (fun x y => addWithCarry x y false) args
-  | .ARM64CMNconst => cmp1 (fun x => addWithCarry x (imm k) false) args
+  | .ARM64CMN => cmpP (fun x y => addWithCarry x y false) args
+  | .ARM64CMNconst => cmp1P (fun x => addWithCarry x (imm k) false) args
   | .ARM64CMNW => cmp2w (fun x y => addWithCarry x y false) args
   | .ARM64CMNWconst => cmp1w (fun x => addWithCarry x (imm32 k) false) args
   | .ARM64TST => flags2 (fun x y => logicFlags (x &&& y)) args
   | .ARM64TSTconst => flags1 (fun x => logicFlags (x &&& imm k)) args
   | .ARM64TSTW => flags2w (fun x y => logicFlags (x &&& y)) args
   | .ARM64TSTWconst => flags1w (fun x => logicFlags (x &&& imm32 k)) args
-  | .ARM64CMPshiftLL => cmp2 (fun x y => subFlags x (shifted .ll k y)) args
-  | .ARM64CMPshiftRL => cmp2 (fun x y => subFlags x (shifted .rl k y)) args
-  | .ARM64CMPshiftRA => cmp2 (fun x y => subFlags x (shifted .ra k y)) args
-  | .ARM64CMNshiftLL => cmp2 (fun x y => addWithCarry x (shifted .ll k y) false) args
-  | .ARM64CMNshiftRL => cmp2 (fun x y => addWithCarry x (shifted .rl k y) false) args
-  | .ARM64CMNshiftRA => cmp2 (fun x y => addWithCarry x (shifted .ra k y) false) args
+  | .ARM64CMPshiftLL => cmpSh (fun x y => subFlags x (shifted .ll k y)) args
+  | .ARM64CMPshiftRL => cmpSh (fun x y => subFlags x (shifted .rl k y)) args
+  | .ARM64CMPshiftRA => cmpSh (fun x y => subFlags x (shifted .ra k y)) args
+  | .ARM64CMNshiftLL => cmpSh (fun x y => addWithCarry x (shifted .ll k y) false) args
+  | .ARM64CMNshiftRL => cmpSh (fun x y => addWithCarry x (shifted .rl k y) false) args
+  | .ARM64CMNshiftRA => cmpSh (fun x y => addWithCarry x (shifted .ra k y) false) args
   | .ARM64TSTshiftLL => flags2 (fun x y => logicFlags (x &&& shifted .ll k y)) args
   | .ARM64TSTshiftRL => flags2 (fun x y => logicFlags (x &&& shifted .rl k y)) args
   | .ARM64TSTshiftRA => flags2 (fun x y => logicFlags (x &&& shifted .ra k y)) args
@@ -220,7 +220,7 @@ def evalPure (op : Op) (ty : Ty) (k : Int64) (_aux : Option AuxRef) (args : List
   -- conditional ops
   | .ARM64CSEL => csel ty k none args
   | .ARM64CSEL0 => csel0 ty k args
-  | .ARM64CSINC => csel ty k (some (· + 1)) args
+  | .ARM64CSINC => csinc ty k args
   | .ARM64CSINV => csel ty k (some (~~~ ·)) args
   | .ARM64CSNEG => csel ty k (some (- ·)) args
   | .ARM64CSETM => csetm ty k args

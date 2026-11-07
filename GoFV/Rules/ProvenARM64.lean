@@ -63,19 +63,20 @@ def b2iNorm (r : Rule) : Rule where
     | res => res
   pos := r.pos
 
-/-- `ARM64.rules` restricted to its 420 proven value rules and 93 proven block rules. -/
+/-- `ARM64.rules` restricted to its 433 proven value rules and 93 proven block rules. -/
 def lower : RuleSet where
   name := "ARM64"
-  values := [(.ARM64ADD, [Generated.ARM64.r_ARM64_970, Generated.ARM64.r_ARM64_1017, Generated.ARM64.r_ARM64_1433, Generated.ARM64.r_ARM64_1434, Generated.ARM64.r_ARM64_1435, Generated.ARM64.r_ARM64_1635]),
+  values := [(.ARM64ADD, [Generated.ARM64.r_ARM64_970, Generated.ARM64.r_ARM64_1012, Generated.ARM64.r_ARM64_1014, Generated.ARM64.r_ARM64_1017, Generated.ARM64.r_ARM64_1433, Generated.ARM64.r_ARM64_1434, Generated.ARM64.r_ARM64_1435, Generated.ARM64.r_ARM64_1635]),
     (.ARM64ADDconst, [Generated.ARM64.r_ARM64_650, Generated.ARM64.r_ARM64_1000, Generated.ARM64.r_ARM64_1201]),
     (.ARM64AND, [Generated.ARM64.r_ARM64_972, Generated.ARM64.r_ARM64_1179, Generated.ARM64.r_ARM64_1439, Generated.ARM64.r_ARM64_1440, Generated.ARM64.r_ARM64_1441, Generated.ARM64.r_ARM64_1442]),
     (.ARM64ANDconst, [Generated.ARM64.r_ARM64_1241, Generated.ARM64.r_ARM64_1242, Generated.ARM64.r_ARM64_1243, Generated.ARM64.r_ARM64_1244]),
     (.ARM64CMNWconst, [Generated.ARM64.r_ARM64_598]),
     (.ARM64CMNconst, [Generated.ARM64.r_ARM64_597]),
-    (.ARM64CMP, [Generated.ARM64.r_ARM64_990, Generated.ARM64.r_ARM64_991, Generated.ARM64.r_ARM64_1003]),
+    (.ARM64CMP, [Generated.ARM64.r_ARM64_990, Generated.ARM64.r_ARM64_991, Generated.ARM64.r_ARM64_1003, Generated.ARM64.r_ARM64_1463, Generated.ARM64.r_ARM64_1464, Generated.ARM64.r_ARM64_1465, Generated.ARM64.r_ARM64_1466, Generated.ARM64.r_ARM64_1467, Generated.ARM64.r_ARM64_1468]),
     (.ARM64CMPW, [Generated.ARM64.r_ARM64_992, Generated.ARM64.r_ARM64_993, Generated.ARM64.r_ARM64_1003_2]),
     (.ARM64CMPWconst, [Generated.ARM64.r_ARM64_598_2]),
-    (.ARM64CSEL, [Generated.ARM64.r_ARM64_1186] ++ Derive.ccSplit Generated.ARM64.r_ARM64_1187 ++ [Generated.ARM64.r_ARM64_1188] ++ Derive.ccSplit Generated.ARM64.r_ARM64_1189 ++ [Generated.ARM64.r_ARM64_1192] ++ Derive.ccSplit Generated.ARM64.r_ARM64_1193 ++ [Generated.ARM64.r_ARM64_1194] ++ Derive.ccSplit Generated.ARM64.r_ARM64_1195 ++ Derive.ccSplit Generated.ARM64.r_ARM64_1352),
+    (.ARM64CMPconst, [Generated.ARM64.r_ARM64_597_2]),
+    (.ARM64CSEL, [Generated.ARM64.r_ARM64_1186] ++ Derive.ccSplit Generated.ARM64.r_ARM64_1187 ++ [Generated.ARM64.r_ARM64_1188] ++ Derive.ccSplit Generated.ARM64.r_ARM64_1189 ++ [Generated.ARM64.r_ARM64_1190] ++ Derive.ccSplit Generated.ARM64.r_ARM64_1191 ++ [Generated.ARM64.r_ARM64_1192] ++ Derive.ccSplit Generated.ARM64.r_ARM64_1193 ++ [Generated.ARM64.r_ARM64_1194] ++ Derive.ccSplit Generated.ARM64.r_ARM64_1195 ++ Derive.ccSplit Generated.ARM64.r_ARM64_1352),
     (.ARM64CSEL0, Derive.ccSplit Generated.ARM64.r_ARM64_1353),
     (.ARM64CSETM, Derive.ccSplit Generated.ARM64.r_ARM64_1354),
     (.ARM64CSINC, Derive.ccSplit Generated.ARM64.r_ARM64_1355),
@@ -133,7 +134,7 @@ def lower : RuleSet where
     (.ARM64SLL, [Generated.ARM64.r_ARM64_983]),
     (.ARM64SRA, [Generated.ARM64.r_ARM64_985]),
     (.ARM64SRL, [Generated.ARM64.r_ARM64_984]),
-    (.ARM64SUB, [Generated.ARM64.r_ARM64_1018, Generated.ARM64.r_ARM64_1436, Generated.ARM64.r_ARM64_1437, Generated.ARM64.r_ARM64_1438]),
+    (.ARM64SUB, [Generated.ARM64.r_ARM64_1013, Generated.ARM64.r_ARM64_1015, Generated.ARM64.r_ARM64_1018, Generated.ARM64.r_ARM64_1436, Generated.ARM64.r_ARM64_1437, Generated.ARM64.r_ARM64_1438]),
     (.ARM64XOR, [Generated.ARM64.r_ARM64_974, Generated.ARM64.r_ARM64_1180, Generated.ARM64.r_ARM64_1447, Generated.ARM64.r_ARM64_1448, Generated.ARM64.r_ARM64_1449]),
     (.ARM64XORconst, [Generated.ARM64.r_ARM64_1251]),
     (.Add16, [Generated.ARM64.r_ARM64_5]),

@@ -546,6 +546,12 @@ theorem cmp2_const {f : BitVec 64 → BitVec 64 → BitVec 64 × Flags} {a : Val
   unfold Arm64.cmp2 Arm64.cmp1
   dsimp only; rw [reg_w64]; cases Arm64.reg a <;> rfl
 
+theorem cmpP_const {f : BitVec 64 → BitVec 64 → BitVec 64 × Flags} {a : Val} {K : BitVec 64} :
+    Arm64.cmpP f [a, .int .w64 K] = Arm64.cmp1P (fun x => f x K) [a] := by
+  cases a with
+  | ptr p => cases hp : Arm64.ptrReg p <;> simp [Arm64.cmpP, Arm64.cmp1P, Arm64.reg, hp]
+  | _ => simp [Arm64.cmpP, Arm64.cmp1P, Arm64.reg]
+
 theorem cmp2w_const {f : BitVec 32 → BitVec 32 → BitVec 32 × Flags} {a : Val} {K : BitVec 64} :
     Arm64.cmp2w f [a, .int .w64 K] = Arm64.cmp1w (fun x => f x (K.setWidth 32)) [a] := by
   unfold Arm64.cmp2w Arm64.cmp1w
@@ -584,7 +590,7 @@ theorem imm_eval {o o' : Op} (h : immOf o = some o') :
   · dsimp only [Arm64.evalPure]; rw [flags2w_const, ← imm32_eq]
   · rfl
   · dsimp only [Arm64.evalPure]; rw [cmp2w_const, ← imm32_eq]
-  · exact cmp2_const
+  · exact cmpP_const
   · dsimp only [Arm64.evalPure]; rw [cmp2w_const, ← imm32_eq]
   · exact adds_const
 

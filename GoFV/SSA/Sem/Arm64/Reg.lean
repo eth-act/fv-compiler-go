@@ -150,6 +150,14 @@ def sub (ty : Ty) : List Val → Val
     | none => .poison
   | args => op2 ty (· - ·) args
 
+/-- `MADD a x y` (`MSUB` if `neg`): `a ± x·y`, with `ADD`'s provenance case of a pointer `a`
+(`addP`: `ADD a (MUL x y)` and `SUB a (MUL x y)` move it by the product's register). -/
+def madd (ty : Ty) (neg : Bool) : List Val → Val
+  | [a, x, y] => match reg x, reg y with
+    | some u, some v => addP ty a (if neg then -(u * v) else u * v)
+    | _, _ => .poison
+  | _ => .poison
+
 /-- The address `base + k` an access reads or writes (`base` a pointer or a pointer word). -/
 def addr (base : Val) (k : BitVec 64) : Option Ptr :=
   match base with
@@ -180,6 +188,43 @@ def cmp (a b : Val) : Val :=
     | .ptr _, b | b, .ptr _ =>
       if (reg b).isSome then .agg [.poison, .bool false, .poison, .poison, .poison] else .poison
     | _, _ => .poison
+
+/-- The flags of a compare of a pointer without a register with an integer: `Z` clear (they are
+never equal, `cmp`), the other bits unknown. -/
+def zClear : Val := .agg [.poison, .bool false, .poison, .poison, .poison]
+
+/-- Flags of a binary 64-bit compare whose operands' sum or difference is `f`'s (`CMN`): on
+registers, else `cmp`'s case of one pointer without a register and one register (`zClear`). -/
+def cmpP (f : BitVec 64 → BitVec 64 → BitVec 64 × Flags) : List Val → Val
+  | [a, b] => match reg a, reg b with
+    | some x, some y => cmpRes (f x y)
+    | _, _ =>
+      match a, b with
+      | .ptr _, .ptr _ => .poison
+      | .ptr _, b | b, .ptr _ => if (reg b).isSome then zClear else .poison
+      | _, _ => .poison
+  | _ => .poison
+
+/-- Flags of a compare of `a` with a function of the register `b` (`CMPshift*`, `CMNshift*`): on
+registers, else `zClear` when `a` is a pointer without a register (`cmp`'s case). -/
+def cmpSh (f : BitVec 64 → BitVec 64 → BitVec 64 × Flags) : List Val → Val
+  | [a, b] => match reg a, reg b with
+    | some x, some y => cmpRes (f x y)
+    | none, some _ => match a with
+      | .ptr _ => zClear
+      | _ => .poison
+    | _, none => .poison
+  | _ => .poison
+
+/-- Flags of a 64-bit compare with an immediate (`CMNconst`): on the register, else `zClear` for
+a pointer without one (`cmp`'s case). -/
+def cmp1P (f : BitVec 64 → BitVec 64 × Flags) : List Val → Val
+  | [a] => match reg a with
+    | some x => cmpRes (f x)
+    | none => match a with
+      | .ptr _ => zClear
+      | _ => .poison
+  | _ => .poison
 
 /-- Flags of a binary 64-bit compare (`CMP`/`CMN` forms; `f` gives the difference and the flags)
 whose operands are registers. -/

@@ -98,7 +98,7 @@ theorem evalPure_ARM64UMODW (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : Ref
 
 theorem evalPure_ARM64MADD (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
     Refines (Arm64.evalPure .ARM64MADD ty k ax as) (Arm64.evalPure .ARM64MADD ty k ax bs) :=
-  op3_mono ty (fun a x y => a + x * y) hr
+  madd_mono ty false hr
 
 theorem evalPure_ARM64MADDW (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
     Refines (Arm64.evalPure .ARM64MADDW ty k ax as) (Arm64.evalPure .ARM64MADDW ty k ax bs) :=
@@ -106,7 +106,7 @@ theorem evalPure_ARM64MADDW (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : Ref
 
 theorem evalPure_ARM64MSUB (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
     Refines (Arm64.evalPure .ARM64MSUB ty k ax as) (Arm64.evalPure .ARM64MSUB ty k ax bs) :=
-  op3_mono ty (fun a x y => a - x * y) hr
+  madd_mono ty true hr
 
 theorem evalPure_ARM64MSUBW (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
     Refines (Arm64.evalPure .ARM64MSUBW ty k ax as) (Arm64.evalPure .ARM64MSUBW ty k ax bs) :=
@@ -467,11 +467,11 @@ theorem evalPure_ARM64CMPWconst (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr :
 
 theorem evalPure_ARM64CMN (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
     Refines (Arm64.evalPure .ARM64CMN ty k ax as) (Arm64.evalPure .ARM64CMN ty k ax bs) :=
-  cmp2_mono (fun x y => addWithCarry x y false) hr
+  cmpP_mono (fun x y => addWithCarry x y false) hr
 
 theorem evalPure_ARM64CMNconst (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
     Refines (Arm64.evalPure .ARM64CMNconst ty k ax as) (Arm64.evalPure .ARM64CMNconst ty k ax bs) :=
-  cmp1_mono (fun x => addWithCarry x (imm k) false) hr
+  cmp1P_mono (fun x => addWithCarry x (imm k) false) hr
 
 theorem evalPure_ARM64CMNW (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
     Refines (Arm64.evalPure .ARM64CMNW ty k ax as) (Arm64.evalPure .ARM64CMNW ty k ax bs) :=
@@ -499,27 +499,27 @@ theorem evalPure_ARM64TSTWconst (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr :
 
 theorem evalPure_ARM64CMPshiftLL (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
     Refines (Arm64.evalPure .ARM64CMPshiftLL ty k ax as) (Arm64.evalPure .ARM64CMPshiftLL ty k ax bs) :=
-  cmp2_mono (fun x y => subFlags x (shifted .ll k y)) hr
+  cmpSh_mono (fun x y => subFlags x (shifted .ll k y)) hr
 
 theorem evalPure_ARM64CMPshiftRL (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
     Refines (Arm64.evalPure .ARM64CMPshiftRL ty k ax as) (Arm64.evalPure .ARM64CMPshiftRL ty k ax bs) :=
-  cmp2_mono (fun x y => subFlags x (shifted .rl k y)) hr
+  cmpSh_mono (fun x y => subFlags x (shifted .rl k y)) hr
 
 theorem evalPure_ARM64CMPshiftRA (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
     Refines (Arm64.evalPure .ARM64CMPshiftRA ty k ax as) (Arm64.evalPure .ARM64CMPshiftRA ty k ax bs) :=
-  cmp2_mono (fun x y => subFlags x (shifted .ra k y)) hr
+  cmpSh_mono (fun x y => subFlags x (shifted .ra k y)) hr
 
 theorem evalPure_ARM64CMNshiftLL (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
     Refines (Arm64.evalPure .ARM64CMNshiftLL ty k ax as) (Arm64.evalPure .ARM64CMNshiftLL ty k ax bs) :=
-  cmp2_mono (fun x y => addWithCarry x (shifted .ll k y) false) hr
+  cmpSh_mono (fun x y => addWithCarry x (shifted .ll k y) false) hr
 
 theorem evalPure_ARM64CMNshiftRL (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
     Refines (Arm64.evalPure .ARM64CMNshiftRL ty k ax as) (Arm64.evalPure .ARM64CMNshiftRL ty k ax bs) :=
-  cmp2_mono (fun x y => addWithCarry x (shifted .rl k y) false) hr
+  cmpSh_mono (fun x y => addWithCarry x (shifted .rl k y) false) hr
 
 theorem evalPure_ARM64CMNshiftRA (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
     Refines (Arm64.evalPure .ARM64CMNshiftRA ty k ax as) (Arm64.evalPure .ARM64CMNshiftRA ty k ax bs) :=
-  cmp2_mono (fun x y => addWithCarry x (shifted .ra k y) false) hr
+  cmpSh_mono (fun x y => addWithCarry x (shifted .ra k y) false) hr
 
 theorem evalPure_ARM64TSTshiftLL (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
     Refines (Arm64.evalPure .ARM64TSTshiftLL ty k ax as) (Arm64.evalPure .ARM64TSTshiftLL ty k ax bs) :=
@@ -559,7 +559,7 @@ theorem evalPure_ARM64CSEL0 (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : Ref
 
 theorem evalPure_ARM64CSINC (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
     Refines (Arm64.evalPure .ARM64CSINC ty k ax as) (Arm64.evalPure .ARM64CSINC ty k ax bs) :=
-  csel_mono ty k (some (· + 1)) hr
+  csinc_mono ty k hr
 
 theorem evalPure_ARM64CSINV (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
     Refines (Arm64.evalPure .ARM64CSINV ty k ax as) (Arm64.evalPure .ARM64CSINV ty k ax bs) :=
