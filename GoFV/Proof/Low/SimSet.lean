@@ -264,7 +264,7 @@ private theorem frameT_of (hfrS : RegsFrame tabs 0 f.value? G)
     obtain ⟨hlo, -, -, hwu, -, -⟩ := addrLower_cases hal
     obtain ⟨y, hy⟩ := (hDS a ha).1
     rw [rv_of hy]
-    rcases hfrS a u n y hpu.1 hlo (hwu.symm.trans hax) hy with h | ⟨h, -⟩
+    rcases hfrS.1 a u n y hpu.1 hlo (hwu.symm.trans hax) hy with h | ⟨h, -⟩
     · rw [h]; exact .poison _
     · rw [h]; exact Sem.Refines.refl _
 

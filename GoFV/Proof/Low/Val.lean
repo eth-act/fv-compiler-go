@@ -962,6 +962,24 @@ theorem frameFinal_cases {tabs : Tables} {f : Func} {M : Defs} {x : ID} {m u : V
       simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at hv
       exact ⟨a, l, v, rfl, hl, hfv, hv.1, hv.2⟩
 
+/-- What `spFinal` says. -/
+theorem spFinal_cases {f : Func} {M : Defs} {x : ID} {m u : Value}
+    (h : spFinal f M x m u = true) :
+    u.id = x ∧ m.op = .OffPtr ∧ u.op = .ARM64MOVDaddr ∧ u.aux = none ∧ u.type = m.type ∧
+      u.auxInt = m.auxInt ∧ m.args.size = 1 ∧ u.args = m.args ∧
+      (∃ s, M.get? m.args[0]! = some s ∧ s.op = .SP) ∧
+      ∃ s, f.value? m.args[0]! = some s ∧ s.op = .SP := by
+  unfold spFinal at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, h10⟩ := h
+  refine ⟨h1, h2, h3, h4, h5, h6, h7, h8, ?_, ?_⟩
+  · cases hs : M.get? m.args[0]! with
+    | none => rw [hs] at h9; cases h9
+    | some s => rw [hs] at h9; exact ⟨s, by simp [hs], by simpa using h9⟩
+  · cases hs : f.value? m.args[0]! with
+    | none => rw [hs] at h10; cases h10
+    | some s => rw [hs] at h10; exact ⟨s, by simp [hs], by simpa using h10⟩
+
 theorem finalOKL_facts {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
     (h : finalOKL tabs f g M B = true) : liveOKL tabs g (liveMarksL tabs g) = true ∧
     ∀ b ∈ g.blocks, ∀ gb, g.block? b = some gb → ∃ st fb, bstateL f B b = some st ∧
@@ -981,7 +999,7 @@ theorem finalOKL_facts {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
          (m.op = .ARM64LoweredPanicBoundsRR ∧ m.args.size = 3 ∧ (f.value? x).any (pbLower · u) ∧
           ∃ ks, pbKeep u.op = some ks ∧ u.args.size = ks.length ∧
             ∀ j (h : j < ks.length), copyReachL tabs M M.size m.args[ks[j]]! u.args[j]! = true) ∨
-         frameFinal tabs f M x m u = true) := by
+         frameFinal tabs f M x m u = true ∨ spFinal f M x m u = true) := by
   unfold finalOKL at h
   simp only [Bool.and_eq_true] at h
   obtain ⟨hlive, h⟩ := h
@@ -1006,7 +1024,7 @@ theorem finalOKL_facts {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
       split at this
       · rename_i m u hm hu
         simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq, bne_iff_ne, ne_eq] at this
-        rcases this with ((this | ⟨ht, hr⟩) | hpb) | hff
+        rcases this with (((this | ⟨ht, hr⟩) | hpb) | hff) | hsp
         · obtain ⟨⟨⟨⟨⟨⟨⟨-, -⟩, hop⟩, hty⟩, hai⟩, hax⟩, hsz⟩, hargs⟩ := this
           refine ⟨m, u, hm, hu, hty, hai, .inl ⟨hop, hax, hsz, fun j h1 h2 => ?_⟩⟩
           have := List.all_eq_true.1 hargs j (List.mem_range.2 h1)
@@ -1029,7 +1047,9 @@ theorem finalOKL_facts {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
             simpa [getElem!_pos u.args j hj'] using this
           · cases hk
         · obtain ⟨-, -, -, -, -, hty, hai, -⟩ := frameFinal_cases hff
-          exact ⟨m, u, hm, hu, hty, hai, .inr (.inr hff)⟩
+          exact ⟨m, u, hm, hu, hty, hai, .inr (.inr (.inl hff))⟩
+        · obtain ⟨-, -, -, -, hty, hai, -⟩ := spFinal_cases hsp
+          exact ⟨m, u, hm, hu, hty, hai, .inr (.inr (.inr hsp))⟩
       · cases this
   · cases this
 
@@ -1040,15 +1060,43 @@ theorem narrowReadW_makeResult (i : Nat) : narrowReadW .MakeResult i = none := b
   have hw : w32Op .MakeResult = false := by decide
   simp [narrowReadW, he, hw]
 
+/-- `OffPtr [k]` of `poison` or the stack pointer's word is refined by `MOVDaddr [k]` without aux
+of a refinement (`spFinal`): both move the stack pointer by `k`, inside the outgoing-arguments
+block's window (`Ptr.ofAddr_add_of_inWindow`), or `OffPtr` gives `poison`. -/
+private theorem offPtr_sp_le (tabs : Tables) (T : Ty) (k : Int64) {a b : Val}
+    (ha : a = .poison ∨ a = (spPtr 0).word) (hab : Sem.Refines a b) :
+    Sem.Refines ((PtrOps.offPtr k [a]).retypeL T) ((movAddr tabs k none [b]).retypeL T) := by
+  rcases ha with rfl | rfl
+  · rw [show PtrOps.offPtr k [.poison] = .poison from rfl, retypeL_poison]; exact .poison _
+  · have hb : b = (spPtr 0).word := asPtrWord_of_refines hab (Ptr.word_asPtrWord _)
+    subst hb
+    have hq : (spPtr 0).convertible = true := by decide
+    obtain ⟨X, hX⟩ : ∃ X, (spPtr 0).addr? = some X := ⟨_, rfl⟩
+    have hw : (spPtr 0).word = .int .w64 X := by unfold Ptr.word; rw [hq, hX]
+    have hoX : Ptr.ofAddr X = spPtr 0 := Ptr.ofAddr_addr hq hX
+    rw [hw]
+    have hl : PtrOps.offPtr k [.int .w64 X] = PtrOps.ptrRes ((spPtr 0).add (BitVec.ofInt 64 k.toInt)) :=
+      PtrOps.wordRes_addr hq hX _
+    have hr : movAddr tabs k none [.int .w64 X] =
+        PtrOps.ptrRes (Ptr.ofAddr (X + BitVec.ofInt 64 k.toInt)) := rfl
+    rw [hl, hr]
+    by_cases hin : ((spPtr 0).add (BitVec.ofInt 64 k.toInt)).inWindow = true
+    · rw [Ptr.ofAddr_add_of_inWindow (by rw [hoX]; exact hin), hoX]
+      exact Sem.Refines.refl _
+    · rw [show PtrOps.ptrRes ((spPtr 0).add (BitVec.ofInt 64 k.toInt)) = .poison by
+        unfold PtrOps.ptrRes; rw [if_neg hin], retypeL_poison]
+      exact .poison _
+
 /-- The replayed definitions refine, in lowered mode, those listed in `g` and read by `g` (up to
 the copies `finalOKL` allows), for valuations related at `g`'s listed atoms and holding the frame
-addresses of activation 0 (`FrameVals` of `f`'s `LocalAddr`s, which `M` keeps as atoms,
-`FrameValsL` of `g`'s lowered frame addresses: `frameFinal`). -/
+addresses and the stack pointer of activation 0 (`FrameVals` of `f`'s `LocalAddr`s, which `M`
+keeps as atoms, `FrameValsL` of `g`'s lowered frame addresses: `frameFinal`; `SPVals` of `f`'s
+`SP`: `spFinal`). -/
 theorem final_denL {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
     (hfin : finalOKL tabs f g M B = true) (hcg : closedOK g = true) {ρ ρ' : ID → Val}
     (hρ : ∀ a u, listedDefs g a = some u → termVL tabs u = false → Sem.Refines (ρ a) (ρ' a))
     (hT : TypedL true M.get? tabs ρ) (hF : FrameVals tabs 0 f.value? ρ)
-    (hFT : FrameValsL tabs 0 (listedDefs g) ρ') :
+    (hS : SPVals tabs 0 f.value? ρ) (hFT : FrameValsL tabs 0 (listedDefs g) ρ') :
     ∀ n x, LM g x → LiveL tabs g x →
       Sem.Refines (denL true M.get? tabs ρ n x) (denL true (listedDefs g) tabs ρ' n x)
   | 0, _, _, _ => .poison _
@@ -1059,8 +1107,43 @@ theorem final_denL {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
     obtain ⟨-, -, -, -, -, -, -, -, -, -, hvals⟩ := hfacts b hb gb hgb
     obtain ⟨m, u, hm, hu, hty, hai, hcase⟩ := hvals x hxv (.inl hr)
     have hL : listedDefs g x = some u := by rw [listedDefs_of_marked hmk, hu]
-    rcases hcase with ⟨hop, hax, hsz, hargs⟩ | ⟨hop, -, -, ks, hks, -, -⟩ | hff
-    case inr.inr =>
+    rcases hcase with ⟨hop, hax, hsz, hargs⟩ | ⟨hop, -, -, ks, hks, -, -⟩ | hff | hsp
+    case inr.inr.inr =>
+      -- the stack pointer moved by an offset where the replay keeps `OffPtr` of it (`spFinal`):
+      -- `OffPtr` of `poison` or the stack pointer's word (`SPVals`), refined by the output's
+      -- `MOVDaddr` of a refinement
+      obtain ⟨-, hmop, huop, hux, hty', hai', hm1, hua, ⟨s, hs, hsop⟩, s', hs', hs'op⟩ :=
+        spFinal_cases hsp
+      have hmt : termVL tabs m = true := by rw [termVL_gen (by decide) hmop]; decide
+      have hut : termVL tabs u = true := by
+        rw [termVL_movDaddr huop, hux]; simp [GoFV.Opt.LowerTerm.auxIsName]
+      have hst : termVL tabs s = false := by rw [termVL_gen (by decide) hsop]; decide
+      have hm0 : m.args[0]! ∈ u.args := by
+        rw [hua, getElem!_pos m.args 0 (by omega)]; exact Array.getElem_mem _
+      have hrec := final_denL hfin hcg hρ hT hF hS hFT n m.args[0]!
+        ((closedOK_facts hcg b hb gb hgb).2 x hxv u hu _ hm0)
+        ((liveOKL_facts hlive) b hb gb hgb |>.2 x hxv u hu (.inr hr) _ hm0)
+      have hsp0 : denL true M.get? tabs ρ n m.args[0]! = .poison ∨
+          denL true M.get? tabs ρ n m.args[0]! = (spPtr 0).word := by
+        cases n with
+        | zero => exact .inl rfl
+        | succ k =>
+          have hnt : ¬ IsTermL tabs M.get? m.args[0]! := fun ⟨w, hw, hw'⟩ => by
+            rw [hs] at hw; cases hw; rw [hst] at hw'; cases hw'
+          rw [denL_succ_atom hnt]
+          rcases hS _ s' hs' hs'op with h | ⟨h, -⟩
+          · exact .inl h
+          · exact .inr h
+      have hop1 : ∀ T ai ax args, opValL tabs .OffPtr T ai ax args = PtrOps.offPtr ai args :=
+        fun T ai ax args => by
+          simp only [opValL, show Op.OffPtr.generic = true from rfl, ite_true]
+          rw [GoFV.Proof.Rules.opVal_pure (by decide)]; rfl
+      rw [denT_succ hm hmt, denT_succ hL hut, hmop, huop, hux, hty', hai', hua,
+        toList_of_size_one hm1]
+      simp only [List.map_cons, List.map_nil]
+      rw [hop1, opValL_movDaddr]
+      exact offPtr_sp_le tabs _ _ hsp0 hrec
+    case inr.inr.inl =>
       -- a lowered frame address where the replay keeps `ADDconst [0]` of it (`frameFinal`):
       -- `poison` or the frame variable's address word, which the output's atom holds
       obtain ⟨-, huop, hut, husz, -, -, -, huw, a, l, v, hfa, hlax, hv, hvop, hvax⟩ :=
@@ -1096,7 +1179,7 @@ theorem final_denL {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
     · rw [denT_succ hm ht, denT_succ hL (htt ▸ ht), hop, hty, hai, hax]
       have hrec : ∀ j (h2 : j < u.args.size), Sem.Refines (denL true M.get? tabs ρ n u.args[j])
           (denL true (listedDefs g) tabs ρ' n u.args[j]) := fun j h2 =>
-        final_denL hfin hcg hρ hT hF hFT n _ (hcl _ (Array.getElem_mem h2))
+        final_denL hfin hcg hρ hT hF hS hFT n _ (hcl _ (Array.getElem_mem h2))
           ((liveOKL_facts hlive) b hb gb hgb |>.2 x hxv u hu (.inr hr) _ (Array.getElem_mem h2))
       -- an argument through a narrowing `Copy`: the copied value narrowed, and refined by the
       -- output's argument
@@ -1329,6 +1412,15 @@ theorem mid_frame {tabs : Tables} {f : Func} {ρ : ID → Val} {act : Nat}
   · exact .inl (by rw [h]; exact retypeL_poison _)
   · exact .inr ⟨by rw [h]; exact word_retypeL (wordShape_cases hw) _, hw⟩
 
+theorem mid_sp {tabs : Tables} {f : Func} {ρ : ID → Val} {act : Nat}
+    (hS : SPVals tabs act f.value? ρ) : SPVals tabs act f.value? (midVal tabs f ρ) := by
+  intro a s hs hop
+  have hst : termVL tabs s = false := by rw [termVL_gen (by decide) hop]; decide
+  simp only [midVal, hs, hst, Bool.false_eq_true, ite_false]
+  rcases hS a s hs hop with h | ⟨h, hw⟩
+  · exact .inl (by rw [h]; exact retypeL_poison _)
+  · exact .inr ⟨by rw [h]; exact word_retypeL (wordShape_cases hw) _, hw⟩
+
 theorem mid_le {tabs : Tables} {f : Func} {ρ : ID → Val}
     (hsh : f.lowered = true ∨ shapesOK tabs f = true) (hT : TypedL f.lowered f.value? tabs ρ) :
     ∀ a, ¬ IsTermL tabs f.value? a → Sem.Refines (ρ a) (midVal tabs f ρ a) := by
@@ -1482,10 +1574,14 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
       subst hma
       have huw : u = w := Option.some.inj (hu.symm.trans hw)
       subst huw
-      rcases hcase with ⟨hop, hax, hszw, hargs⟩ | ⟨hmop, hm3, hpl, ks, hks, hszk, hargs⟩ | hff
-      case inr.inr =>
+      rcases hcase with ⟨hop, hax, hszw, hargs⟩ | ⟨hmop, hm3, hpl, ks, hks, hszk, hargs⟩ | hff | hsp
+      case inr.inr.inl =>
         -- a lowered frame address relates to a replayed term, not to `f`'s atom
         rw [(frameFinal_cases hff).2.2.2.2.1] at ha''t; cases ha''t
+      case inr.inr.inr =>
+        -- the stack pointer moved by an offset is a term, not an atom
+        obtain ⟨-, -, huop, hux, -⟩ := spFinal_cases hsp
+        rw [termVL_movDaddr huop, hux] at hat; simp [GoFV.Opt.LowerTerm.auxIsName] at hat
       case inr.inl =>
         -- a bounds panic with constant operands: the kept arguments of the replayed
         -- `LoweredPanicBoundsRR`, which are `f`'s (`argIx`)
@@ -1514,14 +1610,14 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
         left
         intro n
         obtain ⟨k, hk⟩ := (hrest ks[i] hk').2 n
-        refine ⟨k, fun ρ ρ' hρ hT hT' hF hFT => ?_⟩
+        refine ⟨k, fun ρ ρ' hρ hT hT' hF hS hFT => ?_⟩
         rw [hgl] at hT'
         rw [hgl, getElem!_pos u.args i hi, hix, stArg_of_ne (by rw [hu'op]; decide)]
         have h1 := hk (midVal tabs f ρ) (mid_typed tabs f ρ) (mid_frame hF)
         rw [stArg_of_ne (by rw [hu'op]; decide)] at h1
         exact ArgRel.trans_left (bridge_den hsh hT n _) (h1.trans_right
           ((copyReachL_den (hTM ρ) _ _ _ hcopy k).trans
-            (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) (mid_frame hF) hFT k _ hmark hlv)))
+            (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) (mid_frame hF) (mid_sp hS) hFT k _ hmark hlv)))
       have hcopy : ∀ j (h1 : j < m.args.size) (h2 : j < u.args.size),
           copyReachL tabs M M.size m.args[j] u.args[j] = true ∨
             truncFitL tabs M M.size m j m.args[j] u.args[j] = true := fun j h1 h2 => by
@@ -1555,10 +1651,11 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
           · exact hx
         have hden : ∀ j (h1 : j < m.args.size) (h2 : j < u.args.size), j ≠ 2 → ∀ (k : Nat)
             (ρ ρ' : ID → Val), ValRef ρ ρ' → TypedL true (listedDefs g) tabs ρ' →
-            FrameVals tabs 0 f.value? ρ → FrameValsL tabs 0 (listedDefs g) ρ' →
+            FrameVals tabs 0 f.value? ρ → SPVals tabs 0 f.value? ρ →
+            FrameValsL tabs 0 (listedDefs g) ρ' →
             Sem.Refines (denL true M.get? tabs (midVal tabs f ρ) k m.args[j]!)
               (denL true (listedDefs g) tabs ρ' k u.args[j]!) :=
-            fun j h1 h2 hj k ρ ρ' hρ hT' hF hFT => by
+            fun j h1 h2 hj k ρ ρ' hρ hT' hF hS hFT => by
           rw [getElem!_pos m.args j h1, getElem!_pos u.args j h2]
           have hc := (hcopy j h1 h2).resolve_right fun hfit => by
             obtain ⟨w', -, -, hcf, -⟩ := truncFitL_cases hfit
@@ -1572,7 +1669,7 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
                   cases hio
               · exact hj rfl
           exact (copyReachL_den (hTM ρ) _ _ _ hc k).trans
-            (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) (mid_frame hF) hFT k _
+            (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) (mid_frame hF) (mid_sp hS) hFT k _
               ((closedOK_facts hcg b hb gb hgb).2 a ha u hu u.args[j] (Array.getElem_mem h2))
               ((liveOKL_facts hlive) b hb gb hgb |>.2 a ha u hu (.inl hat) _
                 (Array.getElem_mem h2)))
@@ -1582,26 +1679,26 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
           (liveOKL_facts hlive) b hb gb hgb |>.2 a ha u hu (.inl hat) _ (Array.getElem_mem (by omega))
         refine .inr (.inr ⟨hix, fun n => ?_, ?_, fun n => ?_⟩)
         · obtain ⟨k, hk⟩ := hAd n
-          refine ⟨k, fun ρ ρ' hρ hT hT' hF hFT => ?_⟩
+          refine ⟨k, fun ρ ρ' hρ hT hT' hF hS hFT => ?_⟩
           rw [hgl] at hT'
           rw [hgl, hop]
           have h1 := hk (midVal tabs f ρ) (mid_typed tabs f ρ) (mid_frame hF)
           exact ArgRel.trans_left (o := some (0, none)) (bridge_den hsh hT n _)
             (ArgRel.trans_right (o := some (0, none)) h1 (idxAddr_mono _
-              (hden 0 (by omega) (by omega) (by omega) k ρ ρ' hρ hT' hF hFT)
-              (hden 1 (by omega) (by omega) (by omega) k ρ ρ' hρ hT' hF hFT)))
+              (hden 0 (by omega) (by omega) (by omega) k ρ ρ' hρ hT' hF hS hFT)
+              (hden 1 (by omega) (by omega) (by omega) k ρ ρ' hρ hT' hF hS hFT)))
         · rcases hcopy 2 (by omega) (by omega) with hc2 | hfit2
           · left
             intro n
             obtain ⟨k, hk⟩ := hV 0 (by omega) n
-            refine ⟨k, fun ρ ρ' hρ hT hT' hF hFT => ?_⟩
+            refine ⟨k, fun ρ ρ' hρ hT hT' hF hS hFT => ?_⟩
             rw [hgl] at hT'
             rw [hgl, getElem!_pos u.args 2 (by omega)]
             have h1 := hk (midVal tabs f ρ) (mid_typed tabs f ρ) (mid_frame hF)
             rw [getElem!_pos m.args 2 (by omega)] at h1
             exact ArgRel.trans_left (bridge_den hsh hT n _) (h1.trans_right
               ((copyReachL_den (hTM ρ) _ _ _ hc2 k).trans
-                (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) (mid_frame hF) hFT k _ hmark2
+                (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) (mid_frame hF) (mid_sp hS) hFT k _ hmark2
                   hlv2)))
           · -- the value through a narrowing `Copy` of at least the store's width
             right
@@ -1610,7 +1707,7 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
               rw [← hcf]; unfold argFitTy atomFitTy stFitTy callFitTy callIns; rw [hop, hax, hwty]
             refine ⟨.int w', hcfu, fun n => ?_⟩
             obtain ⟨k, hk⟩ := hV 0 (by omega) n
-            refine ⟨k, fun ρ ρ' hρ hT hT' hF hFT => ?_⟩
+            refine ⟨k, fun ρ ρ' hρ hT hT' hF hS hFT => ?_⟩
             rw [hgl] at hT'
             rw [hgl, getElem!_pos u.args 2 (by omega)]
             have h1 := hk (midVal tabs f ρ) (mid_typed tabs f ρ) (mid_frame hF)
@@ -1627,15 +1724,15 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
             rw [hden2] at h2
             exact (fitPiece_mono _ h2).trans ((fitPiece_retypeL hww hw64 _).trans (fitPiece_mono _
               ((copyReachL_den (hTM ρ) _ _ _ hcr k).trans
-                (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) (mid_frame hF) hFT k _ hmark2
+                (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) (mid_frame hF) (mid_sp hS) hFT k _ hmark2
                   hlv2))))
         · obtain ⟨k, hk⟩ := hV 1 (by omega) n
-          refine ⟨k, fun ρ ρ' hρ hT hT' hF hFT => ?_⟩
+          refine ⟨k, fun ρ ρ' hρ hT hT' hF hS hFT => ?_⟩
           rw [hgl] at hT'
           rw [hgl]
           have h1 := hk (midVal tabs f ρ) (mid_typed tabs f ρ) (mid_frame hF)
           exact ArgRel.trans_left (bridge_den hsh hT n _)
-            (h1.trans_right (hden 3 (by omega) (by omega) (by omega) k ρ ρ' hρ hT' hF hFT))
+            (h1.trans_right (hden 3 (by omega) (by omega) (by omega) k ρ ρ' hρ hT' hF hS hFT))
       have hnpb : pbLower u' u = false := by
         cases hpb : pbLower u' u
         · rfl
@@ -1658,7 +1755,7 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
       · left
         intro n
         obtain ⟨k, hk⟩ := (hrest i hi').2 n
-        refine ⟨k, fun ρ ρ' hρ hT hT' hF hFT => ?_⟩
+        refine ⟨k, fun ρ ρ' hρ hT hT' hF hS hFT => ?_⟩
         rw [hgl] at hT'
         rw [hgl, getElem!_pos u.args i hi]
         have h1 := hk (midVal tabs f ρ) (mid_typed tabs f ρ) (mid_frame hF)
@@ -1666,7 +1763,7 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
           stArg_congr (u := u') (i := i) hop.symm hai.symm hax.symm] at h1
         exact ArgRel.trans_left (bridge_den hsh hT n _) (h1.trans_right
           ((copyReachL_den (hTM ρ) _ _ _ hcopy k).trans
-            (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) (mid_frame hF) hFT k _ hmark hlv)))
+            (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) (mid_frame hF) (mid_sp hS) hFT k _ hmark hlv)))
       · -- an argument through a narrowing `Copy` of the leaf a lowered call, a `Phi` or a narrow
         -- integer store reads it at (a `MakeResult` is no atom)
         obtain ⟨w', c, w, hcf, hc, hcop, hcsz, hsh', hww, hw64, hcr⟩ := truncFitL_cases hcall
@@ -1686,7 +1783,7 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
         right
         refine ⟨.int w', hcfu, fun n => ?_⟩
         obtain ⟨k, hk⟩ := (hrest i hi').2 n
-        refine ⟨k, fun ρ ρ' hρ hT hT' hF hFT => ?_⟩
+        refine ⟨k, fun ρ ρ' hρ hT hT' hF hS hFT => ?_⟩
         rw [hgl] at hT'
         rw [hgl, getElem!_pos u.args i hi]
         have h1 := hk (midVal tabs f ρ) (mid_typed tabs f ρ) (mid_frame hF)
@@ -1703,7 +1800,7 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
         rw [hden] at h2
         exact (fitPiece_mono _ h2).trans ((fitPiece_retypeL hww hw64 _).trans (fitPiece_mono _
           ((copyReachL_den (hTM ρ) _ _ _ hcr k).trans
-            (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) (mid_frame hF) hFT k _ hmark
+            (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) (mid_frame hF) (mid_sp hS) hFT k _ hmark
               hlv))))
     · intro b hb fb gb hfb hgb
       obtain ⟨fb', hfb', hid, -⟩ := hAf b hb gb hgb
@@ -1725,7 +1822,7 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
           · right; rw [getElem!_pos fb.succs 0 hj]
           · left; rw [getElem!_pos fb.succs 1 hj]
       · obtain ⟨m, hm⟩ := hrel n
-        refine ⟨m, fun ρ ρ' hρ hT hT' hF hFT => ?_⟩
+        refine ⟨m, fun ρ ρ' hρ hT hT' hF hS hFT => ?_⟩
         rw [hgl] at hT' ⊢
         refine Res.Rel.trans_next (stepValsL_mono rfl rfl rfl rfl
           (GoFV.Proof.AtomSim.refinesList_map fun c _ => bridge_den hsh hT n c)) ?_
@@ -1736,7 +1833,7 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
         have h1' : k < st.ctrls.size := by simpa using h1
         have h2' : k < gb.controls.size := by simpa using h2
         exact (copyReachL_den (hTM ρ) _ _ _ (hctl k h1' h2') m).trans
-          (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) (mid_frame hF) hFT m _
+          (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) (mid_frame hF) (mid_sp hS) hFT m _
             ((closedOK_facts hcg b hb gb hgb).1 _ (Array.getElem_mem h2'))
             ((liveOKL_facts hlive) b hb gb hgb |>.1 _ (Array.getElem_mem h2')))
   · cases hv
