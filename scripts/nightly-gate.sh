@@ -248,7 +248,7 @@ gate_steps() {
     step parity scripts/parity.sh -o "$run/parity.md" "$corpus"
     step check scripts/memcap.sh .lake/build/bin/gofv-ssa-opt --check --jobs 4 --max-report 20 \
       --table "$run/check.md" "$corpus"
-    report verified timeout "${GATE_VERIFIED_TIMEOUT:-4h}" scripts/memcap.sh \
+    report verified timeout "${GATE_VERIFIED_TIMEOUT:-6h}" scripts/memcap.sh \
       .lake/build/bin/gofv-ssa-opt --check --verified --jobs 4 --max-report 5 \
       --table "$run/verified.md" "$corpus"
   else

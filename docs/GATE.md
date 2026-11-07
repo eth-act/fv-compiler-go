@@ -23,7 +23,7 @@ when the run starts (`readlink -f`), so a corpus switch during the run does not 
 | `parity` | `scripts/parity.sh <full corpus>` | a registered pass mismatches the stock pass, or reports an error |
 | `check` | `gofv-ssa-opt --check --jobs 4 <full corpus>` | the whole pipeline diverges from stock, or a Lean pass fails (docs/DRIVER.md) |
 | `e2e` | driver toolchain, then `scripts/driver-e2e.sh --mode full` | a std archive or a binary differs from stock, a program's output differs, or a function falls back to the stock passes |
-| `verified` (report) | `gofv-ssa-opt --check --verified --jobs 4 <full corpus>` under `timeout $GATE_VERIFIED_TIMEOUT` (default 4h) | never: the verified pipeline's numbers (docs/DRIVER.md, "Verified mode") |
+| `verified` (report) | `gofv-ssa-opt --check --verified --jobs 4 <full corpus>` under `timeout $GATE_VERIFIED_TIMEOUT` (default 6h; 222 min on 2026-11-07 under load) | never: the verified pipeline's numbers (docs/DRIVER.md, "Verified mode") |
 | `e2e-verified` (report) | `scripts/driver-e2e.sh --verified` with the toolchain of `e2e` | never: programs built with the verified pipeline, run against stock |
 
 - `allproof`: every `GoFV/Proof` module must import together with every other (issue #133), so
@@ -138,7 +138,8 @@ issue.
   (`FV_SLICE`); the builds run at 16G under the heavy lock. The gate is kept out of the agents'
   `gofv.slice`: above that slice's `MemoryHigh` every process in it is throttled, which on
   2026-11-07 slowed `ssa-check` from 21 min to more than 5 h.
-- `../gofv-gate.lock` (`flock`) keeps two runs from overlapping.
+- `../gofv-gate.lock` (`flock`) keeps two runs from overlapping. The service's `TimeoutStartSec`
+  is 14h (a whole run took 7 h 5 min on 2026-11-07 under load average ~170).
 
 ## Operating it
 
