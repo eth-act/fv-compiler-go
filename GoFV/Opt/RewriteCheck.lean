@@ -3822,7 +3822,7 @@ def pnOK (tabs : Tables) (f g : Func) (v : ID) : Bool :=
     match w.args[0]? with
     | some p =>
       u.op == .Phi && w.op == .Not && w.args.size == 1 && w.id == v && w.block == u.block &&
-        w.type == u.type && tabs.ty u.type matches .bool && u.block != f.entry &&
+        w.type == u.type && (tabs.ty u.type matches .bool) && u.block != f.entry &&
         (f.value? p).isNone && (g.block? u.block).any (·.values.contains p) &&
         (g.value? p).any fun pv =>
           pv.op == .Phi && pv.id == p && pv.block == u.block && pv.type == u.type &&
@@ -3830,8 +3830,8 @@ def pnOK (tabs : Tables) (f g : Func) (v : ID) : Bool :=
             (pv.args.toList.zip u.args.toList).all fun (c, a) =>
               (f.value? a).any fun av =>
                 av.op == .Not && av.args.size == 1 && av.args[0]? == some c &&
-                  tabs.ty av.type matches .bool &&
-                  (f.value? c).any fun cv => tabs.ty cv.type matches .bool
+                  (tabs.ty av.type matches .bool) &&
+                  (f.value? c).any fun cv => (tabs.ty cv.type matches .bool)
     | none => false
   | _, _ => false
 
