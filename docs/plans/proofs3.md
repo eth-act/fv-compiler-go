@@ -2,7 +2,9 @@
 
 Status: slice G1 of the genssa validator is implemented (`GoFV/Gen/Check.lean`, probe
 `gen-check`) and proven sound (`GoFV/Proof/Gen/G1.lean`: `g1_value`, `g1_term`; §3, §5), with a
-witness on a corpus function (`GoFV/Proof/Witness/GenG1.lean`). Context:
+witness on a corpus function (`GoFV/Proof/Witness/GenG1.lean`). Slice G2 (calls, global
+addresses, spills, `Exit`) is implemented as a validator (`GoFV/Gen/Check2.lean`, §4); its proof
+is open. Context:
 `docs/plans/semantics3.md` (§4 `LocMatch`, §6 hooks, §7 layers), `docs/PASSES3.md` (the steps
 A1–F2), `docs/plans/regalloc-check.md` (the Phase 2 pattern this plan follows: an untrusted port
 with 100% parity, a checker, and a soundness proof of the checker only).
@@ -128,27 +130,56 @@ related by `LocMatch` (`genG1_witness_50`, `genG1_witness_30`).
 
 ## 4. Next slices (G2 …) and their obligations
 
+**Slice G2** (`GoFV/Gen/Check2.lean`, `checkG2 lc ps bstart g`; validator implemented, soundness
+proof open): G1 plus the most frequent blockers of §5 — `CALLstatic` of a symbol with an ABI
+(every argument homed in its `abi.RegIndex` register, the `CALL` target the callee's symbol, the
+`results` home the ABI's result registers), `SelectN` of such a call (no code), `MOVDaddr` of a
+global (`MOVD $sym+off(SB), Rd`), 64-bit spills and reloads (`StoreReg`/`LoadReg`, `MOVD` to/from
+the slot's operand in Go's frame layout) with **checkFrame** for the spill slots (8 bytes,
+aligned, `NAME_AUTO` inside the locals, distinct slots disjoint), `Exit` blocks, and entry values
+after the entry block's spills. Its inputs beyond G1's (`G2In`): the Prog list's symbols and the
+exported frame's slot operands. Obligations of its proof:
+
+- **Calls**: the hook of semantics3 §6 (`liftContract`), `MatchEnv.Extends` for the allocator,
+  registers clobbered by the call (`LocState.clobber` of `CALLstatic`) against the hook's
+  clobbers; `runProg` must run P0's `CALL` form (`TYPE_MEM`, `NAME_EXTERN` target, which
+  `progEffect` leaves stuck today: `ProgCtx.target` reads only `TYPE_BRANCH`) or the proof moves to
+  P1 after `linkpatch`.
+- **Frames and spills**: `framed = true` with the prologue and epilogue validators (C6/D3);
+  `LocMatch.slots` kept by stores (slot windows disjoint from live blocks' windows) and calls (the
+  callee's frame below `SP`); `E.slot k` from the slot's operand (`NAME_AUTO`: `autosize +
+  offset − extrasize`, `NAME_PARAM`: `autosize + offset + 8`).
+- **Addresses of globals**: `ι` of a global is its linked symbol address (`Link.sym`), which
+  `AddrAgree` leaves free.
+
+Later slices:
+
 1. **Narrow and mixed registers**: a forward dataflow table of the width of each register's last
    writer replaces the one-class-per-register rule; `MOVB…/MOVW…` loads and stores, extensions,
    `CMPW`, `ZW`/`NZW`, `TBZ`/`TBNZ`, `CSET`, logical ops.
 2. **Nil checks** (`LoweredNilCheck` = `MOVB (Rp), R27`): `FaultSim` on the nil page.
-3. **Frames and spills**: `checkFrame` (§2), `LoadReg`/`StoreReg`, the prologue and epilogue
-   (C6/D3), `framed = true`.
-4. **Calls**: `CALLstatic` with the hook of semantics3 §6 (`liftContract`), `MatchEnv.Extends`
-   for the allocator, results homes, register pairs.
-5. **Addresses of frame blocks**: replace `AddrAgree`'s frame part by option 2 of semantics3 §4.3
+3. **Register pairs and tuples**: `Select0`/`Select1`, `LDP`/`STP`, interface and closure calls.
+4. **Addresses of frame blocks**: replace `AddrAgree`'s frame part by option 2 of semantics3 §4.3
    (addresses as a parameter of the semantics), needed once a function takes its own frame's
    addresses (`MOVDaddr` of an auto).
 
 ## 5. Results
 
-**Coverage of G1** (`lake exe gen-check --jobs 4 <corpus>/quick-v9`, genssa run on the exported
-frame as in `gen-parity`): 268 of 9,297 functions (2.88%) accepted, 1,500 of 426,323 values; 0
-parse, env or genssa errors. The most frequent reasons functions are outside G1 (functions each
-occurs in): `SelectN` 6,909, call results homes 6,364, `CALLstatic` 6,028, `MOVDaddr` 3,637, stack
-slots 3,298 (`LoadReg`/`StoreReg`), register pairs 3,058, `Exit` blocks 2,631, `LDP`/`STP`,
-registers holding two width classes 1,769, `TBNZ` 1,683, narrow loads (`MOVWUload` 1,440,
-`MOVBUload` 1,419), `NZW` 1,261, `LoweredNilCheck` 1,200: the G2–G4 items of §4.
+**Coverage** (`lake exe gen-check --jobs 4 <corpus>/quick-v9`, genssa run on the exported frame
+as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa errors):
+
+| Slice | Functions accepted | Values in accepted functions |
+| --- | --: | --: |
+| G1 | 268 (2.88%) | 1,500 |
+| G2 | 1,211 (13.02%) | 11,012 |
+
+Before G2, the most frequent reasons functions were outside G1 (functions each occurs in):
+`SelectN` 6,909, call results homes 6,364, `CALLstatic` 6,028, `MOVDaddr` 3,637, stack slots 3,298
+(`LoadReg`/`StoreReg`), register pairs 3,058, `Exit` blocks 2,631. Outside G2: registers holding
+two width classes 4,453, `Select0`/`Select1` and register pairs 3,058, `LDP` 1,922, `STP` 1,765,
+`TBNZ` 1,683, narrow loads (`MOVWUload` 1,440, `MOVBUload` 1,419), `NZW` 1,261, `MOVDaddr` of a
+frame variable 1,261, other results homes (interface and closure calls) 1,215, `LoweredNilCheck`
+1,200: the later slices of §4.
 
 **Proof** (`GoFV/Proof/Gen/`):
 
