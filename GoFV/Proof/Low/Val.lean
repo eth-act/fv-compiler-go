@@ -36,173 +36,14 @@ theorem termVL_congr {tabs : Tables} {u m : Value} (hop : u.op = m.op) (hai : u.
     (hax : u.aux = m.aux) : termVL tabs u = termVL tabs m := by
   unfold termVL; rw [hop, hai, hax]
 
-/-! ## An extension's argument through a narrowing copy (`truncReachL`) -/
-
-/-- The low `k ≤ w` bits of a `w`-bit truncation are the value's. -/
-theorem and_mask_setWidth {n : Nat} (k w : Nat) (hk : k ≤ w) (x : BitVec n) :
-    (x.setWidth w).setWidth 64 &&& Arm64.mask k = x.setWidth 64 &&& Arm64.mask k := by
-  ext i hi
-  simp only [BitVec.getElem_and, BitVec.getElem_setWidth, Arm64.mask, ← BitVec.getLsbD_eq_getElem]
-  simp only [BitVec.getLsbD_and, BitVec.getLsbD_setWidth, BitVec.getLsbD_ofNat,
-    Nat.testBit_two_pow_sub_one]
-  by_cases hik : i < k
-  · have : i < w := by omega
-    simp [this, hik]
-  · simp [hik]
-
-/-- An extension of the low `k ≤ w` bits reads the same bits of a `w`-bit truncation. -/
-theorem ext_setWidth {n : Nat} (s : Bool) (k w : Nat) (hk : k ≤ w) (x : BitVec n) :
-    Arm64.ext s k ((x.setWidth w).setWidth 64) = Arm64.ext s k (x.setWidth 64) := by
-  unfold Arm64.ext Arm64.sext
-  rw [and_mask_setWidth k w hk]
-
-/-- **An extension of the low `k` bits of a register refines through a narrowing to `w ≥ k`
-bits** (`Val.retypeL` at `int w`, `w < 64`: the value's low `w` bits, `poison` for a pointer). -/
-theorem op1_ext_retypeL (s : Bool) (k : Nat) {w : Width} (hk : k ≤ w.bits) (hw : w ≠ .w64)
-    (ty : Ty) (B : Val) :
-    Sem.Refines (Arm64.op1 ty (Arm64.ext s k) [B.retypeL (.int w)])
-      (Arm64.op1 ty (Arm64.ext s k) [B]) := by
-  cases B with
-  | int w' x =>
-    by_cases hlt : w'.bits < w.bits
-    · have : (Val.int w' x).retypeL (.int w) = .int w (x.setWidth w.bits) := by
-        unfold Val.retypeL Val.widen
-        rw [if_pos hlt]
-        unfold Val.retype
-        rw [if_pos (Nat.le_refl _), BitVec.setWidth_eq]
-      rw [this]
-      simp only [Arm64.op1, Arm64.reg]
-      rw [setWidth_setWidth_wide _ _ (by omega)]
-      exact Sem.Refines.refl _
-    · have hle : w.bits ≤ w'.bits := by omega
-      have : (Val.int w' x).retypeL (.int w) = .int w (x.setWidth w.bits) := by
-        unfold Val.retypeL Val.widen
-        rw [if_neg hlt]
-        unfold Val.retype
-        rw [if_pos hle]
-      rw [this]
-      simp only [Arm64.op1, Arm64.reg]
-      rw [ext_setWidth s k w.bits hk]
-      exact Sem.Refines.refl _
-  | bool b =>
-    have : (Val.bool b).retypeL (.int w) = .int w (if b then 1 else 0) := by
-      simp [Val.retypeL, Val.widen, Val.retype]
-    rw [this]
-    cases w <;> cases b <;> first | exact absurd rfl hw | exact Sem.Refines.refl _
-  | ptr p =>
-    have : (Val.ptr p).retypeL (.int w) = .poison := by
-      cases w <;> simp_all [Val.retypeL, Val.widen, Val.retype]
-    rw [this]; exact .poison _
-  | _ => simp [Val.retypeL, Val.widen, Val.retype, Arm64.op1, Arm64.reg]; exact .poison _
-
-theorem extReadW_mem {o : Op} {k : Nat} (h : extReadW o = some k) :
-    (o = .ARM64MOVBreg ∧ k = 8) ∨ (o = .ARM64MOVBUreg ∧ k = 8) ∨ (o = .ARM64MOVHreg ∧ k = 16) ∨
-      (o = .ARM64MOVHUreg ∧ k = 16) ∨ (o = .ARM64MOVWreg ∧ k = 32) ∨ (o = .ARM64MOVWUreg ∧ k = 32) := by
-  unfold extReadW at h
-  split at h <;> simp_all
-
-theorem extReadW_cases {o : Op} {k : Nat} (h : extReadW o = some k) :
-    ∃ s, (∀ ty ai (ax : Option AuxRef) args,
-        Arm64.evalPure o ty ai ax args = Arm64.op1 ty (Arm64.ext s k) args) ∧
-      o.generic = false ∧ (o == .ARM64MOVDaddr) = false ∧ ldOp? o = none ∧
-      (GoFV.Opt.LowerTerm.armTerm o && !GoFV.Opt.LowerTerm.actOp o && !isRoot o) = true := by
-  rcases extReadW_mem h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
-      ⟨rfl, rfl⟩
-  · exact ⟨true, fun _ _ _ _ => rfl, by decide, by decide, by decide, by decide⟩
-  · exact ⟨false, fun _ _ _ _ => rfl, by decide, by decide, by decide, by decide⟩
-  · exact ⟨true, fun _ _ _ _ => rfl, by decide, by decide, by decide, by decide⟩
-  · exact ⟨false, fun _ _ _ _ => rfl, by decide, by decide, by decide, by decide⟩
-  · exact ⟨true, fun _ _ _ _ => rfl, by decide, by decide, by decide, by decide⟩
-  · exact ⟨false, fun _ _ _ _ => rfl, by decide, by decide, by decide, by decide⟩
-
-/-- An extension is a term (`armTerm`), whose `opValL` is `Arm64.ext` of its register. -/
-theorem opValL_ext {o : Op} {k : Nat} (h : extReadW o = some k) :
-    ∃ s, ∀ tabs ty ai ax args, opValL tabs o ty ai ax args = Arm64.op1 ty (Arm64.ext s k) args := by
-  obtain ⟨s, he, hg, hm, hl, -⟩ := extReadW_cases h
-  exact ⟨s, fun tabs ty ai ax args => by
-    simp only [opValL, hg, hm, hl, Bool.false_eq_true, ite_false]; exact he ty ai ax args⟩
-
-theorem termVL_ext {tabs : Tables} {v : Value} {k : Nat} (h : extReadW v.op = some k) :
-    termVL tabs v = true := by
-  obtain ⟨-, -, hg, hm, hl, ht⟩ := extReadW_cases h
-  have hact : GoFV.Opt.LowerTerm.actOp v.op = false := by
-    simp only [Bool.and_eq_true, Bool.not_eq_true'] at ht; exact ht.1.2
-  simp only [termVL, hg, hm, hl, pureActOp_of_act hact, Option.isSome_none, Bool.false_eq_true,
-    ite_false, ht]
-
-theorem w32Op_mem {o : Op} (h : w32Op o = true) :
-    o = .ARM64MULW ∨ o = .ARM64MNEGW ∨ o = .ARM64DIVW ∨ o = .ARM64UDIVW ∨ o = .ARM64MODW ∨
-      o = .ARM64UMODW ∨ o = .ARM64RORW ∨ o = .ARM64RORWconst ∨ o = .ARM64EXTRWconst ∨
-      o = .ARM64CLZW ∨ o = .ARM64RBITW ∨ o = .ARM64REVW ∨ o = .ARM64REV16W ∨ o = .ARM64CMPW ∨
-      o = .ARM64CMPWconst ∨ o = .ARM64CMNW ∨ o = .ARM64CMNWconst ∨ o = .ARM64TSTW ∨
-      o = .ARM64TSTWconst := by
-  unfold w32Op at h
-  split at h <;> simp_all
-
-/-- A `W` op is no extension and a term (`armTerm`) whose `opValL` is `Arm64.evalPure`. -/
-theorem w32Op_cases {o : Op} (h : w32Op o = true) :
-    extReadW o = none ∧ o.generic = false ∧ (o == .ARM64MOVDaddr) = false ∧ ldOp? o = none ∧
-      (GoFV.Opt.LowerTerm.armTerm o && !GoFV.Opt.LowerTerm.actOp o && !isRoot o) = true := by
-  rcases w32Op_mem h with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
-      rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
-    exact ⟨rfl, by decide, by decide, by decide, by decide⟩
-
-theorem opValL_w32 {o : Op} (h : w32Op o = true) (tabs : Tables) (ty : Ty) (ai : Int64)
-    (ax : Option AuxRef) (args : List Val) :
-    opValL tabs o ty ai ax args = Arm64.evalPure o ty ai ax args := by
-  obtain ⟨-, hg, hm, hl, -⟩ := w32Op_cases h
-  simp only [opValL, hg, hm, hl, Bool.false_eq_true, ite_false]
-
-theorem narrowReadW_cases {o : Op} {i k : Nat} (h : narrowReadW o i = some k) :
-    (extReadW o = some k ∧ i = 0) ∨ (w32Op o = true ∧ k = 32) := by
-  unfold narrowReadW at h
-  cases he : extReadW o with
-  | some k' =>
-    rw [he] at h
-    by_cases hi : i = 0
-    · subst hi; cases h; exact .inl ⟨rfl, rfl⟩
-    · simp [hi] at h
-  | none =>
-    rw [he] at h
-    cases hw : w32Op o
-    · simp [hw] at h
-    · simp only [hw, ite_true, Option.some.injEq] at h
-      exact .inr ⟨rfl, h.symm⟩
-
-/-- An op reading narrow bits of an argument (`narrowReadW`) is a term. -/
-theorem termVL_narrow {tabs : Tables} {v : Value} {i k : Nat} (h : narrowReadW v.op i = some k) :
-    termVL tabs v = true := by
-  rcases narrowReadW_cases h with ⟨hk, -⟩ | ⟨hw, -⟩
-  · exact termVL_ext hk
-  · obtain ⟨-, hg, hm, hl, ht⟩ := w32Op_cases hw
-    have hact : GoFV.Opt.LowerTerm.actOp v.op = false := by
-      simp only [Bool.and_eq_true, Bool.not_eq_true'] at ht; exact ht.1.2
-    simp only [termVL, hg, hm, hl, pureActOp_of_act hact, Option.isSome_none, Bool.false_eq_true,
-      ite_false, ht]
-
-/-- What `truncReachL` says. -/
-theorem truncReachL_cases {tabs : Tables} {M : Defs} {n : Nat} {o : Op} {i : Nat} {a a' : ID}
-    (h : truncReachL tabs M n o i a a' = true) :
-    ∃ k c w, narrowReadW o i = some k ∧ M.get? a = some c ∧ c.op = .Copy ∧ c.args.size = 1 ∧
-      shpL tabs c.type = .int w ∧ k ≤ w.bits ∧ w ≠ .w64 ∧
-      copyReachL tabs M n c.args[0]! a' = true := by
-  unfold truncReachL at h
-  simp only [Option.any_eq_true] at h
-  obtain ⟨k, hk, h⟩ := h
-  obtain ⟨c, w, h⟩ := truncFromL_cases h
-  exact ⟨k, c, w, hk, h⟩
-
 /-- What `truncFitL` says. -/
 theorem truncFitL_cases {tabs : Tables} {M : Defs} {n : Nat} {v : Value} {i : Nat} {a a' : ID}
     (h : truncFitL tabs M n v i a a' = true) :
-    ∃ w' c w, argFitTy tabs v i = some (.int w') ∧ M.get? a = some c ∧ c.op = .Copy ∧
-      c.args.size = 1 ∧ shpL tabs c.type = .int w ∧ w'.bits ≤ w.bits ∧ w ≠ .w64 ∧
-      copyReachL tabs M n c.args[0]! a' = true := by
+    ∃ w', argFitTy tabs v i = some (.int w') ∧ truncFromL tabs M n w'.bits a a' = true := by
   unfold truncFitL at h
   split at h
   · rename_i w' hw'
-    obtain ⟨c, w, h⟩ := truncFromL_cases h
-    exact ⟨w', c, w, hw', h⟩
+    exact ⟨w', hw', h⟩
   · cases h
 
 /-- A lowered call (one `callFitTy` fits an argument of) is an atom. -/
@@ -221,127 +62,6 @@ theorem termVL_stFit {tabs : Tables} {v : Value} {i : Nat} {t : Ty}
   rcases stFitTy_ops h with hv | hv | hv | hv | hv | hv | hv | hv <;>
     (rw [termVL_arm (by decide) (by decide) (by decide) (by decide) hv]; decide)
 
-/-! ## A `W` op reads the low 32 bits of each argument -/
-
-/-- `b`'s `W` register is `a`'s wherever `a` has one. -/
-def R32 (a b : Val) : Prop := ∀ x, Arm64.reg32 a = some x → Arm64.reg32 b = some x
-
-/-- `R32` pairwise. -/
-inductive R32List : List Val → List Val → Prop
-  | nil : R32List [] []
-  | cons {a b : Val} {as bs : List Val} : R32 a b → R32List as bs → R32List (a :: as) (b :: bs)
-
-theorem r32List_idx {α β : Type} {F : α → Val} {G : β → Val} :
-    ∀ {l : List α} {m : List β}, l.length = m.length →
-      (∀ j (h1 : j < l.length) (h2 : j < m.length), R32 (F l[j]) (G m[j])) →
-      R32List (l.map F) (m.map G)
-  | [], [], _, _ => .nil
-  | _ :: _, _ :: _, hl, h => .cons (h 0 (by simp) (by simp))
-      (r32List_idx (by simpa using hl) fun j h1 h2 => h (j + 1) (by simpa using h1) (by simpa using h2))
-  | [], _ :: _, hl, _ | _ :: _, [], hl, _ => by simp at hl
-
-section
-variable {as bs : List Val}
-
-theorem op1w_r32 (ty : Ty) (f : BitVec 32 → BitVec 32) :
-    R32List as bs → Sem.Refines (Arm64.op1w ty f as) (Arm64.op1w ty f bs)
-  | .nil => .poison _
-  | .cons (a := a) h .nil => by
-    simp only [Arm64.op1w]
-    cases ha : Arm64.reg32 a with
-    | none => exact .poison _
-    | some x => rw [h x ha]; exact Sem.Refines.refl _
-  | .cons _ (.cons _ _) => .poison _
-
-theorem op2w_r32 (ty : Ty) (f : BitVec 32 → BitVec 32 → BitVec 32) :
-    R32List as bs → Sem.Refines (Arm64.op2w ty f as) (Arm64.op2w ty f bs)
-  | .nil => .poison _
-  | .cons _ .nil => .poison _
-  | .cons (a := a) h (.cons (a := c) h' .nil) => by
-    simp only [Arm64.op2w]
-    cases ha : Arm64.reg32 a with
-    | none => exact .poison _
-    | some x =>
-      cases hc : Arm64.reg32 c with
-      | none => exact .poison _
-      | some y => rw [h x ha, h' y hc]; exact Sem.Refines.refl _
-  | .cons _ (.cons _ (.cons _ _)) => .poison _
-
-theorem cmp1w_r32 (f : BitVec 32 → BitVec 32 × Flags) :
-    R32List as bs → Sem.Refines (Arm64.cmp1w f as) (Arm64.cmp1w f bs)
-  | .nil => .poison _
-  | .cons (a := a) h .nil => by
-    simp only [Arm64.cmp1w]
-    cases ha : Arm64.reg32 a with
-    | none => exact .poison _
-    | some x => rw [h x ha]; exact Sem.Refines.refl _
-  | .cons _ (.cons _ _) => .poison _
-
-theorem cmp2w_r32 (f : BitVec 32 → BitVec 32 → BitVec 32 × Flags) :
-    R32List as bs → Sem.Refines (Arm64.cmp2w f as) (Arm64.cmp2w f bs)
-  | .nil => .poison _
-  | .cons _ .nil => .poison _
-  | .cons (a := a) h (.cons (a := c) h' .nil) => by
-    simp only [Arm64.cmp2w]
-    cases ha : Arm64.reg32 a with
-    | none => exact .poison _
-    | some x =>
-      cases hc : Arm64.reg32 c with
-      | none => exact .poison _
-      | some y => rw [h x ha, h' y hc]; exact Sem.Refines.refl _
-  | .cons _ (.cons _ (.cons _ _)) => .poison _
-
-theorem flags1w_r32 (f : BitVec 32 → Flags) :
-    R32List as bs → Sem.Refines (Arm64.flags1w f as) (Arm64.flags1w f bs)
-  | .nil => .poison _
-  | .cons (a := a) h .nil => by
-    simp only [Arm64.flags1w]
-    cases ha : Arm64.reg32 a with
-    | none => exact .poison _
-    | some x => rw [h x ha]; exact Sem.Refines.refl _
-  | .cons _ (.cons _ _) => .poison _
-
-theorem flags2w_r32 (f : BitVec 32 → BitVec 32 → Flags) :
-    R32List as bs → Sem.Refines (Arm64.flags2w f as) (Arm64.flags2w f bs)
-  | .nil => .poison _
-  | .cons _ .nil => .poison _
-  | .cons (a := a) h (.cons (a := c) h' .nil) => by
-    simp only [Arm64.flags2w]
-    cases ha : Arm64.reg32 a with
-    | none => exact .poison _
-    | some x =>
-      cases hc : Arm64.reg32 c with
-      | none => exact .poison _
-      | some y => rw [h x ha, h' y hc]; exact Sem.Refines.refl _
-  | .cons _ (.cons _ (.cons _ _)) => .poison _
-
-/-- **A `W` op is monotone in the low 32 bits of its arguments' registers.** -/
-theorem w32_mono {o : Op} (ho : w32Op o = true) (ty : Ty) (k : Int64) (ax : Option AuxRef)
-    (h : R32List as bs) : Sem.Refines (Arm64.evalPure o ty k ax as) (Arm64.evalPure o ty k ax bs) := by
-  rcases w32Op_mem ho with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
-      rfl | rfl | rfl | rfl | rfl | rfl | rfl
-  · exact op2w_r32 ty _ h
-  · exact op2w_r32 ty _ h
-  · exact op2w_r32 ty _ h
-  · exact op2w_r32 ty _ h
-  · exact op2w_r32 ty _ h
-  · exact op2w_r32 ty _ h
-  · exact op2w_r32 ty _ h
-  · exact op1w_r32 ty _ h
-  · exact op2w_r32 ty _ h
-  · exact op1w_r32 ty _ h
-  · exact op1w_r32 ty _ h
-  · exact op1w_r32 ty _ h
-  · exact op1w_r32 ty _ h
-  · exact cmp2w_r32 _ h
-  · exact cmp1w_r32 _ h
-  · exact cmp2w_r32 _ h
-  · exact cmp1w_r32 _ h
-  · exact flags2w_r32 _ h
-  · exact flags1w_r32 _ h
-
-end
-
 /-! ## The ops reading the low bits of their arguments at a narrow shape (`lowReachL`) -/
 
 /-- `b` has a register holding `a`'s low `w` bits wherever `a` has one, and neither is a pointer
@@ -358,8 +78,6 @@ def LowFun (w : Nat) (f : BitVec 64 → BitVec 64) : Prop :=
 def LowFun2 (w : Nat) (f : BitVec 64 → BitVec 64 → BitVec 64) : Prop :=
   ∀ x y x' y' : BitVec 64, x.setWidth w = x'.setWidth w → y.setWidth w = y'.setWidth w →
     (f x y).setWidth w = (f x' y').setWidth w
-
-theorem width_bits_le (w : Width) : w.bits ≤ 64 := by cases w <;> decide
 
 section LowFun
 variable {w : Nat} (hw : w ≤ 64)
@@ -405,9 +123,6 @@ theorem lowFun_const {w : Nat} {f : BitVec 64 → BitVec 64 → BitVec 64} (hf :
 theorem res_retypeL_narrow {w : Width} (hw : w ≠ .w64) (r : BitVec 64) :
     (Arm64.res (.int w) r).retypeL (.int w) = .int w (r.setWidth w.bits) := by
   cases w <;> first | exact absurd rfl hw | simp [Arm64.res, Val.retypeL, Val.widen, Val.retype, Width.bits]
-
-theorem refines_poison_retypeL (t : Ty) (v : Val) : Sem.Refines (Val.poison.retypeL t) v := by
-  rw [retypeL_poison]; exact .poison _
 
 section LowOps
 variable {w : Width} (hw : w ≠ .w64)
@@ -681,10 +396,14 @@ theorem opValL_low {o : Op} {d : Nat} (h : lowOpArgs o = some d) (tabs : Tables)
   obtain ⟨hg, hm, hl, -⟩ := lowOp_facts h
   simp only [opValL, hg, hm, hl, Bool.false_eq_true, ite_false]
 
-theorem narrowReadW_low {o : Op} {d : Nat} (h : lowOpArgs o = some d) (i : Nat) :
-    narrowReadW o i = none := by
+theorem narrowReadW_low {o : Op} {d : Nat} (h : lowOpArgs o = some d) (ai : Int64) (i : Nat) :
+    narrowReadW o ai i = none := by
   obtain ⟨-, -, -, he, hw, -⟩ := lowOp_facts h
-  simp [narrowReadW, he, hw]
+  have ht : (o == .ARM64TSTWconst) = false := by
+    cases hb : (o == .ARM64TSTWconst)
+    · rfl
+    · rw [beq_iff_eq.1 hb] at h; cases h
+  simp [narrowReadW, he, hw, ht]
 
 theorem argFitTy_low {tabs : Tables} {v : Value} {d : Nat} (h : lowOpArgs v.op = some d)
     (i : Nat) : argFitTy tabs v i = none := by
@@ -748,28 +467,11 @@ theorem rlow_of_narrow {k : Nat} {a b : Val} {w : Width} (h : a.hasTy (.int w) =
   | ptr p => cases w <;> simp_all [Val.hasTy]
   | _ => simp [Val.hasTy] at h
 
-/-- A value narrowed to a narrow width `w` is a narrow integer, or `poison`. -/
-theorem retypeL_narrow_cases {w : Width} (hw : w ≠ .w64) (X : Val) :
-    X.retypeL (.int w) = .poison ∨ (∃ v x, X = .int v x ∧ X.retypeL (.int w) = .int w (x.setWidth w.bits)) ∨
-      ∃ b, X = .bool b ∧ X.retypeL (.int w) = .int w (if b then 1 else 0) := by
-  cases X with
-  | int v x => exact .inr (.inl ⟨v, x, rfl, int_retypeL_narrow v x⟩)
-  | bool b => exact .inr (.inr ⟨b, rfl, bool_retypeL_narrow w b⟩)
-  | ptr p => left; cases w <;> first | exact absurd rfl hw | simp [Val.retypeL, Val.widen, Val.retype]
-  | _ => left; simp [Val.retypeL, Val.widen, Val.retype]
-
-theorem setWidth_one_low {n m k : Nat} (hm : k ≤ m) (hn : 1 ≤ n) (hm1 : 1 ≤ m) :
-    ((1 : BitVec n).setWidth m).setWidth k = (1 : BitVec m).setWidth k := by
-  ext i hi
-  have h1 : i < m := by omega
-  have h2 : 0 < n := by omega
-  have h3 : 0 < m := by omega
-  simp [BitVec.getElem_setWidth, BitVec.getLsbD_one, h1, h2, h3]
-
-theorem one_setWidth {n k : Nat} (hk : k ≤ n) (h1 : 1 ≤ k) : (1 : BitVec n).setWidth k = 1 := by
-  ext i hi
-  have h2 : 0 < n := by omega
-  simp [BitVec.getElem_setWidth, BitVec.getLsbD_one, BitVec.getElem_one, h2]
+/-- `RLow` of a value refining another: `poison`, or the same register. -/
+theorem rlow_of_le {k : Nat} {a a' b : Val} (h : Sem.Refines a a') (h' : RLow k a' b) :
+    RLow k a b :=
+  ⟨fun p hp => by subst hp; cases h; exact h'.1 p rfl,
+    fun x hx => h'.2 x (Mono.reg_of h hx)⟩
 
 /-- **A narrowing `Copy` keeps the low `k` bits it is at least as wide as** (`lowReachL`). -/
 theorem rlow_retypeL {k : Nat} {w : Width} (hk : k ≤ w.bits) (hw : w ≠ .w64) {X B : Val}
@@ -792,22 +494,6 @@ theorem rlow_retypeL {k : Nat} {w : Width} (hk : k ≤ w.bits) (hw : w ≠ .w64)
     · simp
     · simp only [ite_true]
       exact setWidth_one_low (by omega) h1 (by omega)
-
-/-- Read at a narrow width `w`, a value narrowed to a width `w'` at least `w` is the value read at
-`w` (`MakeResult` reading its result through a narrowing `Copy`, `truncFitL`). -/
-theorem retypeL_narrow_twice {w w' : Width} (hk : w.bits ≤ w'.bits) (hw : w' ≠ .w64) (X : Val) :
-    Sem.Refines ((X.retypeL (.int w')).retypeL (.int w)) (X.retypeL (.int w)) := by
-  rcases retypeL_narrow_cases hw X with he | ⟨v, x, rfl, he⟩ | ⟨b, rfl, he⟩ <;> rw [he]
-  · exact refines_poison_retypeL _ _
-  · rw [int_retypeL_narrow, int_retypeL_narrow, BitVec.setWidth_setWidth_of_le _ hk]
-    exact Sem.Refines.refl _
-  · rw [int_retypeL_narrow, bool_retypeL_narrow]
-    have h1 : 1 ≤ w.bits := by cases w <;> decide
-    cases b
-    · simp; exact Sem.Refines.refl _
-    · simp only [ite_true]
-      rw [one_setWidth hk h1]
-      exact Sem.Refines.refl _
 
 /-- `opValL` of `MakeResult`: the tuple of its arguments. -/
 theorem opValL_makeResult (tabs : Tables) (ty : Ty) (ai : Int64) (ax : Option AuxRef)
@@ -993,7 +679,7 @@ theorem finalOKL_facts {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
         ((u.op = m.op ∧ u.aux = m.aux ∧ u.args.size = m.args.size ∧
           ∀ j (h1 : j < m.args.size) (h2 : j < u.args.size),
             copyReachL tabs M M.size m.args[j] u.args[j] = true ∨
-              truncReachL tabs M M.size m.op j m.args[j] u.args[j] = true ∨
+              truncReachL tabs M M.size m.op m.auxInt j m.args[j] u.args[j] = true ∨
               truncFitL tabs M M.size m j m.args[j] u.args[j] = true ∨
               lowReachL tabs M M.size m j m.args[j] u.args[j] = true) ∨
          (m.op = .ARM64LoweredPanicBoundsRR ∧ m.args.size = 3 ∧ (f.value? x).any (pbLower · u) ∧
@@ -1055,7 +741,7 @@ theorem finalOKL_facts {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
 
 /-! ## The final definitions -/
 
-theorem narrowReadW_makeResult (i : Nat) : narrowReadW .MakeResult i = none := by
+theorem narrowReadW_makeResult (ai : Int64) (i : Nat) : narrowReadW .MakeResult ai i = none := by
   have he : extReadW .MakeResult = none := by decide
   have hw : w32Op .MakeResult = false := by decide
   simp [narrowReadW, he, hw]
@@ -1181,21 +867,14 @@ theorem final_denL {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
           (denL true (listedDefs g) tabs ρ' n u.args[j]) := fun j h2 =>
         final_denL hfin hcg hρ hT hF hS hFT n _ (hcl _ (Array.getElem_mem h2))
           ((liveOKL_facts hlive) b hb gb hgb |>.2 x hxv u hu (.inr hr) _ (Array.getElem_mem h2))
-      -- an argument through a narrowing `Copy`: the copied value narrowed, and refined by the
-      -- output's argument
-      have hnarrow : ∀ j (h1 : j < m.args.size) (h2 : j < u.args.size) {c : Value} {w : Width},
-          M.get? m.args[j] = some c → c.op = .Copy → c.args.size = 1 →
-          shpL tabs c.type = .int w → copyReachL tabs M M.size c.args[0]! u.args[j] = true →
-          denL true M.get? tabs ρ n m.args[j] = .poison ∨ ∃ X,
-            denL true M.get? tabs ρ n m.args[j] = X.retypeL (.int w) ∧
-            Sem.Refines X (denL true (listedDefs g) tabs ρ' n u.args[j]) := by
-        intro j h1 h2 c w hc hcop hcsz hsh hcr
-        cases n with
-        | zero => exact .inl rfl
-        | succ n =>
-          exact .inr ⟨_, copy_den hc hcop hcsz hsh,
-            (denL_fuel_mono true M.get? tabs ρ n (n + 1) _ (by omega)).trans
-              ((copyReachL_den hT _ _ _ hcr (n + 1)).trans (hrec j h2))⟩
+      -- an argument through a narrowing `Copy` (`truncFromL`): the output's argument narrowed
+      have hnarrow : ∀ j (h1 : j < m.args.size) (h2 : j < u.args.size) {k : Nat},
+          truncFromL tabs M M.size k m.args[j] u.args[j] = true → ∃ w : Width, k ≤ w.bits ∧
+            w ≠ .w64 ∧ Sem.Refines (denL true M.get? tabs ρ n m.args[j])
+              ((denL true (listedDefs g) tabs ρ' n u.args[j]).retypeL (.int w)) := by
+        intro j h1 h2 k htf
+        obtain ⟨w, hkw, hw64, hd⟩ := truncFrom_den hT htf
+        exact ⟨w, hkw, hw64, (hd n).trans (retypeL_mono _ (hrec j h2))⟩
       cases hlw : lowShape tabs M m
       case some k =>
         -- an op of `lowOpArgs` at a narrow shape: its data arguments' low bits (`lowReachL`)
@@ -1205,9 +884,9 @@ theorem final_denL {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
               lowReachL tabs M M.size m j m.args[j] u.args[j] = true := fun j h1 h2 => by
           rcases hargs j h1 h2 with h | h | h | h
           · exact .inl h
-          · obtain ⟨k, -, -, hk, -⟩ := truncReachL_cases h
+          · obtain ⟨k, hk, -⟩ := truncReachL_cases h
             rw [narrowReadW_low hd] at hk; cases hk
-          · obtain ⟨_, _, _, hf, -⟩ := truncFitL_cases h
+          · obtain ⟨_, hf, -⟩ := truncFitL_cases h
             rw [argFitTy_low hd] at hf; cases hf
           · exact .inr h
         rw [hsh, opValL_low hd, opValL_low hd]
@@ -1220,11 +899,8 @@ theorem final_denL {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
             rw [getElem!_pos m.args j h1] at hy
             exact rlow_of_narrow (by rw [← hyw]; exact den_hasTyL hT n hy) hw'
               ((copyReachL_den hT _ _ _ hcp n).trans (hrec j h2))
-          · obtain ⟨c, w', hc, hcop, hcsz, hsh', hkw, hw64', hcr⟩ :=
-              truncFromL_cases (lowReachL_cases hlw hlr)
-            rcases hnarrow j h1 h2 hc hcop hcsz hsh' hcr with he | ⟨X, he, hX⟩ <;> rw [he]
-            · exact ⟨fun _ h => (by cases h), fun x hx => (by simp [Arm64.reg] at hx)⟩
-            · exact rlow_retypeL hkw hw64' hX
+          · obtain ⟨w', hkw, hw64', hd'⟩ := hnarrow j h1 h2 (lowReachL_cases hlw hlr)
+            exact rlow_of_le hd' (rlow_retypeL hkw hw64' (Sem.Refines.refl _))
         · rcases hno j h1 h2 with hcp | hlr
           · exact (copyReachL_den hT _ _ _ hcp n).trans (hrec j h2)
           · simp only [lowReachL, hlw, hd, Option.any_some, Option.getD_some, Bool.and_eq_true,
@@ -1242,9 +918,9 @@ theorem final_denL {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
           rcases hargs i h1 h2 with hcp | htr | hfit | hlr
           · have := (copyReachL_den hT _ _ _ hcp n).trans (hrec i h2)
             exact ⟨fun t _ => retypeL_mono t this, fun _ => this⟩
-          · obtain ⟨k, -, -, hk, -⟩ := truncReachL_cases htr
+          · obtain ⟨k, hk, -⟩ := truncReachL_cases htr
             rw [hmr, narrowReadW_makeResult] at hk; cases hk
-          · obtain ⟨w', c, w, hf, hc, hcop, hcsz, hsh', hww, hw64, hcr⟩ := truncFitL_cases hfit
+          · obtain ⟨w', hf, htf⟩ := truncFitL_cases hfit
             have hti : ts[i]? = some (.int w') := by
               rcases argFitTy_cases hf with ⟨hk, -⟩ | ⟨hp, -⟩ | ⟨-, ts', hts', hti⟩ | ⟨-, hst⟩
               · rw [hmr] at hk; cases hk
@@ -1254,9 +930,8 @@ theorem final_denL {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
                   cases h
             refine ⟨fun t ht => ?_, fun h => by rw [hti] at h; cases h⟩
             rw [hti] at ht; cases ht
-            rcases hnarrow i h1 h2 hc hcop hcsz hsh' hcr with he | ⟨X, he, hX⟩ <;> rw [he]
-            · exact refines_poison_retypeL _ _
-            · exact (retypeL_narrow_twice hww hw64 X).trans (retypeL_mono _ hX)
+            obtain ⟨w, hww, hw64, hd'⟩ := hnarrow i h1 h2 htf
+            exact (retypeL_mono _ hd').trans (retypeL_narrow_twice hww hw64 _)
           · rw [lowReachL_none hlw] at hlr; cases hlr
         all_goals
           rw [tuple_retypeL_other (fun _ h => by cases h), tuple_retypeL_other (fun _ h => by cases h)]
@@ -1269,16 +944,18 @@ theorem final_denL {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
         simp only [Array.getElem_toList]
         exact (copyReachL_den hT _ _ _ (hall j (by simpa using h1) (by simpa using h2)) n).trans
           (hrec j (by simpa using h2))
-      · -- an extension or `W` op with an argument a narrowing `Copy` (`truncReachL`); a lowered
-        -- call and a `Phi` are no terms (`termVL_callFit`, `termVL_phi`), and an op without a
-        -- `lowShape` reaches no argument by `lowReachL`
+      · -- an extension, `TSTWconst` or a `W` op with arguments through narrowing copies
+        -- (`truncReachL`, `opValL_narrow_mono`); a lowered call and a `Phi` are no terms
+        -- (`termVL_callFit`, `termVL_phi`), and an op without a `lowShape` reaches no argument by
+        -- `lowReachL`
         replace hargs : ∀ j (h1 : j < m.args.size) (h2 : j < u.args.size),
             copyReachL tabs M M.size m.args[j] u.args[j] = true ∨
-              truncReachL tabs M M.size m.op j m.args[j] u.args[j] = true := fun j h1 h2 => by
+              truncReachL tabs M M.size m.op m.auxInt j m.args[j] u.args[j] = true :=
+            fun j h1 h2 => by
           rcases hargs j h1 h2 with h | h | h | h
           · exact .inl h
           · exact .inr h
-          · obtain ⟨_, _, _, hf, -⟩ := truncFitL_cases h
+          · obtain ⟨_, hf, -⟩ := truncFitL_cases h
             rcases argFitTy_cases hf with ⟨-, hcf⟩ | ⟨hp, -⟩ | ⟨hr, -⟩ | ⟨-, hst⟩
             · rw [termVL_callFit hcf] at ht; cases ht
             · rw [termVL_phi hp] at ht; cases ht
@@ -1287,81 +964,15 @@ theorem final_denL {tabs : Tables} {f g : Func} {M : Defs} {B : BMapL}
           · rw [lowReachL_none hlw] at h; cases h
         simp only [Classical.not_forall] at hall
         obtain ⟨j, h1, h2, hj⟩ := hall
-        obtain ⟨k, c, w, hk, hc, hcop, hcsz, hsh, hkw, hw64, hcr⟩ :=
-          truncReachL_cases ((hargs j h1 h2).resolve_left (by simpa using hj))
-        rcases narrowReadW_cases hk with ⟨hk, -⟩ | ⟨hw, -⟩
-        rotate_left
-        · -- a `W` op: each argument copy-reached or a narrowing `Copy` to 32 bits
-          rw [opValL_w32 hw, opValL_w32 hw]
-          apply w32_mono hw
-          refine r32List_idx (by simp [hsz]) fun i i1 i2 => ?_
-          simp only [Array.length_toList] at i1 i2
-          simp only [Array.getElem_toList]
-          rcases hargs i i1 i2 with hcp | htr
-          · exact fun x hx => Mono.reg32_of ((copyReachL_den hT _ _ _ hcp n).trans (hrec i i2)) hx
-          · obtain ⟨k', c', w', hk', hc', hcop', hcsz', hsh', hkw', hw64', hcr'⟩ :=
-              truncReachL_cases htr
-            have hk32 : k' = 32 := by
-              rcases narrowReadW_cases hk' with ⟨he, -⟩ | ⟨-, h32⟩
-              · rw [(w32Op_cases hw).1] at he; cases he
-              · exact h32
-            subst hk32
-            have hw32 : w' = .w32 := by
-              cases w' <;> first | rfl | exact absurd rfl hw64' | simp [Width.bits] at hkw'
-            subst hw32
-            cases n with
-            | zero => exact fun x hx => by cases hx
-            | succ n =>
-              have hct : termVL tabs c' = true := termVL_of_copy hcop'
-              have hcl1 : c'.args.toList = [c'.args[0]!] := toList_of_size_one hcsz'
-              have hden : denL true M.get? tabs ρ (n + 1) m.args[i] =
-                  (denL true M.get? tabs ρ n c'.args[0]!).retypeL (.int .w32) := by
-                rw [denT_succ hc' hct, hcl1, hcop', hsh']
-                simp only [List.map_cons, List.map_nil, opValL_copy]
-              rw [hden]
-              have hX : Sem.Refines (denL true M.get? tabs ρ n c'.args[0]!)
-                  (denL true (listedDefs g) tabs ρ' (n + 1) u.args[i]) :=
-                (denL_fuel_mono true M.get? tabs ρ n (n + 1) _ (by omega)).trans
-                  ((copyReachL_den hT _ _ _ hcr' (n + 1)).trans (hrec i i2))
-              exact fun x hx => Mono.reg32_of hX (reg32_retypeL_w32 hx)
-        obtain ⟨s, hs⟩ := opValL_ext hk
-        by_cases hsz1 : m.args.size = 1
-        · have hj0 : j = 0 := by omega
-          subst hj0
-          have hl : m.args.toList = [m.args[0]!] := toList_of_size_one hsz1
-          have hl' : u.args.toList = [u.args[0]!] := toList_of_size_one (hsz.trans hsz1)
-          rw [getElem!_pos m.args 0 h1] at hl
-          rw [getElem!_pos u.args 0 h2] at hl'
-          rw [hl, hl']
-          simp only [List.map_cons, List.map_nil]
-          cases n with
-          | zero =>
-            rw [hs, hs]
-            show Sem.Refines (Arm64.op1 _ _ [.poison]) _
-            exact .poison _
-          | succ n =>
-            have hct : termVL tabs c = true := termVL_of_copy hcop
-            have hcl1 : c.args.toList = [c.args[0]!] := toList_of_size_one hcsz
-            have hden : denL true M.get? tabs ρ (n + 1) m.args[0] =
-                (denL true M.get? tabs ρ n c.args[0]!).retypeL (.int w) := by
-              rw [denT_succ hc hct, hcl1, hcop, hsh]
-              simp only [List.map_cons, List.map_nil, opValL_copy]
-            rw [hden]
-            have hX : Sem.Refines (denL true M.get? tabs ρ n c.args[0]!)
-                (denL true (listedDefs g) tabs ρ' (n + 1) u.args[0]) :=
-              (denL_fuel_mono true M.get? tabs ρ n (n + 1) _ (by omega)).trans
-                ((copyReachL_den hT _ _ _ hcr (n + 1)).trans (hrec 0 h2))
-            refine (opValL_mono_term ht _ (.cons (retypeL_mono _ hX) .nil)).trans ?_
-            rw [hs, hs]
-            exact op1_ext_retypeL s k hkw hw64 _ _
-        · rw [hs, hs]
-          have hlen : (m.args.toList.map (denL true M.get? tabs ρ n)).length ≠ 1 := by
-            simpa using hsz1
-          generalize m.args.toList.map (denL true M.get? tabs ρ n) = l at hlen
-          rcases l with _ | ⟨a, _ | ⟨a', l⟩⟩
-          · exact .poison _
-          · exact absurd rfl hlen
-          · exact .poison _
+        obtain ⟨k, hk, -⟩ := truncReachL_cases ((hargs j h1 h2).resolve_left (by simpa using hj))
+        refine opValL_narrow_mono hk _ _ (by simp [hsz]) fun i i1 i2 => ?_
+        simp only [List.length_map, Array.length_toList] at i1 i2
+        simp only [List.getElem_map, Array.getElem_toList]
+        rcases hargs i i1 i2 with hcp | htr
+        · exact .inl ((copyReachL_den hT _ _ _ hcp n).trans (hrec i i2))
+        · obtain ⟨k', hk', htf⟩ := truncReachL_cases htr
+          obtain ⟨w, hkw, hw64, hd'⟩ := hnarrow i i1 i2 htf
+          exact .inr ⟨k', w, hk', hkw, hw64, hd'⟩
     · have hmf : termVL tabs m = false := by simpa using ht
       have h1 : ¬ IsTermL tabs M.get? x := fun ⟨w, hw, hw'⟩ => by
         rw [hm] at hw; cases hw; exact ht hw'
@@ -1623,7 +1234,7 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
             truncFitL tabs M M.size m j m.args[j] u.args[j] = true := fun j h1 h2 => by
         rcases hargs j h1 h2 with h | h | h | h
         · exact .inl h
-        · obtain ⟨k, -, -, hk, -⟩ := truncReachL_cases h
+        · obtain ⟨k, hk, -⟩ := truncReachL_cases h
           rw [← hop] at hk
           rw [termVL_narrow hk] at hat; cases hat
         · exact .inr h
@@ -1658,7 +1269,7 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
             fun j h1 h2 hj k ρ ρ' hρ hT' hF hS hFT => by
           rw [getElem!_pos m.args j h1, getElem!_pos u.args j h2]
           have hc := (hcopy j h1 h2).resolve_right fun hfit => by
-            obtain ⟨w', -, -, hcf, -⟩ := truncFitL_cases hfit
+            obtain ⟨w', hcf, -⟩ := truncFitL_cases hfit
             rcases argFitTy_cases hcf with ⟨hk, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨-, hst⟩
             · obtain ⟨k, hk⟩ := Option.isSome_iff_exists.1 hk
               rcases callLead_some hk with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] at hio <;> cases hio
@@ -1702,7 +1313,7 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
                   hlv2)))
           · -- the value through a narrowing `Copy` of at least the store's width
             right
-            obtain ⟨w', c, w, hcf, hc, hcop, hcsz, hsh', hww, hw64, hcr⟩ := truncFitL_cases hfit2
+            obtain ⟨w', hcf, htf⟩ := truncFitL_cases hfit2
             have hcfu : argFitTy tabs u 2 = some (.int w') := by
               rw [← hcf]; unfold argFitTy atomFitTy stFitTy callFitTy callIns; rw [hop, hax, hwty]
             refine ⟨.int w', hcfu, fun n => ?_⟩
@@ -1713,19 +1324,11 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
             have h1 := hk (midVal tabs f ρ) (mid_typed tabs f ρ) (mid_frame hF)
             rw [getElem!_pos m.args 2 (by omega)] at h1
             have h1' : Sem.Refines _ _ := h1
-            have hct : termVL tabs c = true := termVL_of_copy hcop
-            have hcl1 : c.args.toList = [c.args[0]!] := toList_of_size_one hcsz
-            have hden2 : denL true M.get? tabs (midVal tabs f ρ) (k + 1) m.args[2] =
-                (denL true M.get? tabs (midVal tabs f ρ) k c.args[0]!).retypeL (.int w) := by
-              rw [denT_succ hc hct, hcl1, hcop, hsh']
-              simp only [List.map_cons, List.map_nil, opValL_copy]
-            have h2 := (bridge_den hsh hT n _).trans
-              (h1'.trans (denL_fuel_mono true M.get? tabs _ k (k + 1) _ (by omega)))
-            rw [hden2] at h2
+            obtain ⟨w, hww, hw64, hd⟩ := truncFrom_den (hTM ρ) htf
+            have h2 := (bridge_den hsh hT n _).trans (h1'.trans (hd k))
             exact (fitPiece_mono _ h2).trans ((fitPiece_retypeL hww hw64 _).trans (fitPiece_mono _
-              ((copyReachL_den (hTM ρ) _ _ _ hcr k).trans
-                (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) (mid_frame hF) (mid_sp hS) hFT k _ hmark2
-                  hlv2))))
+              (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) (mid_frame hF) (mid_sp hS) hFT k _
+                hmark2 hlv2)))
         · obtain ⟨k, hk⟩ := hV 1 (by omega) n
           refine ⟨k, fun ρ ρ' hρ hT hT' hF hS hFT => ?_⟩
           rw [hgl] at hT'
@@ -1766,7 +1369,7 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
             (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) (mid_frame hF) (mid_sp hS) hFT k _ hmark hlv)))
       · -- an argument through a narrowing `Copy` of the leaf a lowered call, a `Phi` or a narrow
         -- integer store reads it at (a `MakeResult` is no atom)
-        obtain ⟨w', c, w, hcf, hc, hcop, hcsz, hsh', hww, hw64, hcr⟩ := truncFitL_cases hcall
+        obtain ⟨w', hcf, htf⟩ := truncFitL_cases hcall
         have hcfu : argFitTy tabs u i = some (.int w') := by
           rw [← hcf]; unfold argFitTy atomFitTy stFitTy callFitTy callIns; rw [hop, hax, hwty]
         have hsa : ∀ x : Value, stArg x m i = none := by
@@ -1789,19 +1392,11 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
         have h1 := hk (midVal tabs f ρ) (mid_typed tabs f ρ) (mid_frame hF)
         rw [getElem!_pos m.args i (by omega), hsa] at h1
         have h1' : Sem.Refines _ _ := h1
-        have hct : termVL tabs c = true := termVL_of_copy hcop
-        have hcl1 : c.args.toList = [c.args[0]!] := toList_of_size_one hcsz
-        have hden : denL true M.get? tabs (midVal tabs f ρ) (k + 1) m.args[i] =
-            (denL true M.get? tabs (midVal tabs f ρ) k c.args[0]!).retypeL (.int w) := by
-          rw [denT_succ hc hct, hcl1, hcop, hsh']
-          simp only [List.map_cons, List.map_nil, opValL_copy]
-        have h2 := (bridge_den hsh hT n _).trans
-          (h1'.trans (denL_fuel_mono true M.get? tabs _ k (k + 1) _ (by omega)))
-        rw [hden] at h2
+        obtain ⟨w, hww, hw64, hd⟩ := truncFrom_den (hTM ρ) htf
+        have h2 := (bridge_den hsh hT n _).trans (h1'.trans (hd k))
         exact (fitPiece_mono _ h2).trans ((fitPiece_retypeL hww hw64 _).trans (fitPiece_mono _
-          ((copyReachL_den (hTM ρ) _ _ _ hcr k).trans
-            (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) (mid_frame hF) (mid_sp hS) hFT k _ hmark
-              hlv))))
+          (final_denL hv hcg (mid_le_target hA hρ hT') (hTM ρ) (mid_frame hF) (mid_sp hS) hFT k _ hmark
+            hlv)))
     · intro b hb fb gb hfb hgb
       obtain ⟨fb', hfb', hid, -⟩ := hAf b hb gb hgb
       rw [hfb] at hfb'; obtain rfl := Option.some.inj hfb'

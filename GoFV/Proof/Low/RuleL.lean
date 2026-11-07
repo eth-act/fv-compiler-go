@@ -330,9 +330,10 @@ def argWidth : Ty → Nat
 
 /-- The low bits of argument `i` an arm64 op of shape `ty` reads (`Arm64.reg` zero-extends a
 narrow value, while Go's registers hold full words): low-bit ops (add, subtract, multiply,
-logic, negate, left shift's operand) their result's width, `W` ops 32, sign and zero
-extensions their source width, an integer or indexed load none of its memory argument, every
-other op the whole register. -/
+logic, negate, left shift's operand) their result's width, `CSEL` of its arms likewise (it moves
+the selected arm's register, `regVal`, which `retypeL` reads at the result's low bits), `W` ops
+32, sign and zero extensions their source width, an integer or indexed load none of its memory
+argument, every other op the whole register. -/
 def armReadW (o : Op) (ty : Ty) (i : Nat) : Nat :=
   let w := match ty with
     | .int w => w.bits
@@ -343,6 +344,7 @@ def armReadW (o : Op) (ty : Ty) (i : Nat) : Nat :=
   | .ARM64NEG | .ARM64MVN | .ARM64AND | .ARM64ANDconst | .ARM64OR | .ARM64ORconst | .ARM64XOR
   | .ARM64XORconst | .ARM64BIC | .ARM64EON | .ARM64ORN | .ARM64MADD | .ARM64MSUB => w
   | .ARM64SLL | .ARM64SLLconst => if i == 0 then w else 64
+  | .ARM64CSEL => if i < 2 then w else 64
   | .ARM64MULW | .ARM64MNEGW | .ARM64DIVW | .ARM64UDIVW | .ARM64MODW | .ARM64UMODW
   | .ARM64MADDW | .ARM64MSUBW | .ARM64CMPW | .ARM64CMPWconst | .ARM64CMNW | .ARM64CMNWconst
   | .ARM64TSTW | .ARM64TSTWconst | .ARM64RORW | .ARM64RORWconst | .ARM64EXTRWconst

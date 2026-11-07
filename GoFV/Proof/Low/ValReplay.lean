@@ -495,8 +495,22 @@ theorem copyPut_typedL (hx : M.get? v = some x) (hi : i < x.args.size) {ρ : ID 
     (hT : TypedL true M.get? tabs ρ) : TypedL true (copyPut M v x i src hi).get? tabs ρ :=
   put_typed (x' := { x with args := x.args.set i src hi }) hx rfl rfl hT
 
+/-- The copies `copyStepL` replaces an argument through: a compatible one, or a narrowing `Copy`
+keeping the bits the op reads (`truncReachL`). -/
+abbrev CopyOKL (tabs : Tables) (M : Defs) (x : Value) (i : Nat) (src : ID) (hi : i < x.args.size) :
+    Prop :=
+  copyReachL tabs M M.size x.args[i] src = true ∨
+    truncReachL tabs M M.size x.op x.auxInt i x.args[i] src = true
+
+theorem copyOKL_closed {hi : i < x.args.size} (hr : CopyOKL tabs M x i src hi) {C : ID → Prop}
+    (hC : DefClosed M C) (ha : C x.args[i]) : C src := by
+  rcases hr with hr | hr
+  · exact copyReachL_closed hC _ _ _ hr ha
+  · obtain ⟨k, -, htf⟩ := truncReachL_cases hr
+    exact truncFrom_closed hC htf ha
+
 theorem copyPut_closedL (hx : M.get? v = some x) (hi : i < x.args.size)
-    (hr : copyReachL tabs M M.size x.args[i] src = true) {C : ID → Prop} (hC : DefClosed M C) :
+    (hr : CopyOKL tabs M x i src hi) {C : ID → Prop} (hC : DefClosed M C) :
     DefClosed (copyPut M v x i src hi) C := by
   intro y hy
   obtain ⟨m, hm, hargs⟩ := hC y hy
@@ -506,12 +520,14 @@ theorem copyPut_closedL (hx : M.get? v = some x) (hi : i < x.args.size)
     refine ⟨_, rfl, fun a ha => ?_⟩
     rcases Array.mem_or_eq_of_mem_set (w := hi) ha with ha | rfl
     · exact hargs a ha
-    · exact copyReachL_closed hC _ _ _ hr (hargs _ (Array.getElem_mem hi))
+    · exact copyOKL_closed hr hC (hargs _ (Array.getElem_mem hi))
   · exact ⟨m, hm, hargs⟩
 
-/-- A `copyArg` event refines the denotations of a closed set. -/
+/-- A `copyArg` event refines the denotations of a closed set: through a compatible copy the
+argument is what it copies (`copyReachL_den`); through a narrowing `Copy` the op reads the bits
+it keeps (`truncFrom_den`, `opValL_narrow_mono`). -/
 theorem copyPut_denL (hx : M.get? v = some x) (hi : i < x.args.size)
-    (hr : copyReachL tabs M M.size x.args[i] src = true) {C : ID → Prop} (hC : DefClosed M C)
+    (hr : CopyOKL tabs M x i src hi) {C : ID → Prop} (hC : DefClosed M C)
     {ρ : ID → Val} (hT : TypedL true M.get? tabs ρ) :
     ∀ n y, C y → Sem.Refines (denL true M.get? tabs ρ n y)
       (denL true (copyPut M v x i src hi).get? tabs ρ n y)
@@ -526,16 +542,27 @@ theorem copyPut_denL (hx : M.get? v = some x) (hi : i < x.args.size)
         rw [hx] at hm; cases hm
         have hnew : (copyPut M v x i src hi).get? v = some { x with args := x.args.set i src hi } := by
           rw [copyPut_get]; simp
+        have hsC : C src := copyOKL_closed hr hC (hargs _ (Array.getElem_mem hi))
         rw [denT_succ hx hop, denT_succ hnew hop]
-        apply retypeL_mono; apply opValL_mono_term hop
-        refine refinesList_idx (by simp) fun j h1 h2 => ?_
-        simp only [Array.getElem_toList, Array.getElem_set]
-        split
-        · rename_i hij; subst hij
-          exact (copyReachL_den hT _ _ _ hr n).trans
-            (copyPut_denL hx hi hr hC hT n src (copyReachL_closed hC _ _ _ hr
-              (hargs _ (Array.getElem_mem hi))))
-        · exact copyPut_denL hx hi hr hC hT n _ (hargs _ (Array.getElem_mem _))
+        apply retypeL_mono
+        rcases hr with hrc | hrt
+        · apply opValL_mono_term hop
+          refine refinesList_idx (by simp) fun j h1 h2 => ?_
+          simp only [Array.getElem_toList, Array.getElem_set]
+          split
+          · rename_i hij; subst hij
+            exact (copyReachL_den hT _ _ _ hrc n).trans
+              (copyPut_denL hx hi (.inl hrc) hC hT n src hsC)
+          · exact copyPut_denL hx hi (.inl hrc) hC hT n _ (hargs _ (Array.getElem_mem _))
+        · obtain ⟨k, hk, htf⟩ := truncReachL_cases hrt
+          obtain ⟨w, hkw, hw64, hd⟩ := truncFrom_den hT htf
+          refine opValL_narrow_mono hk _ _ (by simp) fun j h1 h2 => ?_
+          simp only [List.getElem_map, Array.getElem_toList, Array.getElem_set]
+          split
+          · rename_i hij; subst hij
+            exact .inr ⟨k, w, hk, hkw, hw64, (hd n).trans
+              (retypeL_mono _ (copyPut_denL hx hi (.inr hrt) hC hT n src hsC))⟩
+          · exact .inl (copyPut_denL hx hi (.inr hrt) hC hT n _ (hargs _ (Array.getElem_mem _)))
       · have hkeep : (copyPut M v x i src hi).get? y = some m := by
           rw [copyPut_get]; simp [hyv, hm]
         rw [denT_succ hm hop, denT_succ hkeep hop]
@@ -955,7 +982,7 @@ theorem ReplayInvL.fresh {s : Value} {P : Prop} (hI : ReplayInvL tabs D₀ C₀ 
 
 theorem ReplayInvL.copy {v : ID} {x : Value} {i : Nat} {src : ID} (hI : ReplayInvL tabs D₀ C₀ M C)
     (hx : M.get? v = some x) (hi : i < x.args.size)
-    (hr : copyReachL tabs M M.size x.args[i] src = true) :
+    (hr : CopyOKL tabs M x i src hi) :
     ReplayInvL tabs D₀ C₀ (copyPut M v x i src hi) C where
   closed := copyPut_closedL hx hi hr hI.closed
   typed := fun ρ h => copyPut_typedL hx hi (hI.typed ρ h)
@@ -967,6 +994,13 @@ theorem ReplayInvL.copy {v : ID} {x : Value} {i : Nat} {src : ID} (hI : ReplayIn
       fun ρ hρ _ n z hz => copyPut_denL hx hi hr hI.closed hρ n z hz
     by_cases hyv : y = v
     · rw [hyv] at ha'; rw [hx] at ha'; cases ha'
+      -- an atom: its argument is replaced through a compatible copy only (a narrowing one is
+      -- read by a term, `termVL_narrow`)
+      have hrc : copyReachL tabs M M.size x.args[i] src = true := by
+        rcases hr with hr | hr
+        · exact hr
+        · obtain ⟨k, hk, -⟩ := truncReachL_cases hr
+          rw [termVL_narrow hk] at hat; cases hat
       have hnew : ∀ j < x.args.size, C x.args[j]! → C (x.args.set i src hi)[j]! ∧
           ∀ ρ, TypedL true D₀ tabs ρ → FrameVals tabs 0 D₀ ρ → ∀ m,
             Sem.Refines (denL true M.get? tabs ρ m x.args[j]!)
@@ -976,8 +1010,8 @@ theorem ReplayInvL.copy {v : ID} {x : Value} {i : Nat} {src : ID} (hI : ReplayIn
         split
         · rename_i hij; subst hij
           rw [getElem!_pos x.args i hi] at hc ⊢
-          have hsrc := copyReachL_closed hI.closed _ _ _ hr hc
-          exact ⟨hsrc, fun ρ hρ hF m => (copyReachL_den (hI.typed ρ hρ) _ _ _ hr m).trans
+          have hsrc := copyReachL_closed hI.closed _ _ _ hrc hc
+          exact ⟨hsrc, fun ρ hρ hF m => (copyReachL_den (hI.typed ρ hρ) _ _ _ hrc m).trans
             (hstep ρ (hI.typed ρ hρ) hF m src hsrc)⟩
         · exact ⟨hc, fun ρ hρ hF m => hstep ρ (hI.typed ρ hρ) hF m _ hc⟩
       refine ⟨{ x with args := x.args.set i src hi }, by rw [copyPut_get]; simp [hyv], hat, ?_⟩
@@ -1717,6 +1751,36 @@ theorem ReplayInvL.idxFold {v : ID} {x u : Value} (hI : ReplayInvL tabs D₀ C�
   · obtain ⟨m, hm⟩ := hval j hj n
     exact ⟨m, fun ρ hρ hF => by rw [hux j hj, rename_den hx ht ht']; exact hm ρ hρ hF⟩
 
+/-- **`copyStepL` keeps the replay invariants**: an argument replaced as `CopyOKL` allows
+(`ReplayInvL.copy`, `copyPut_denL`), or no change. -/
+theorem copyStepL_inv {f : Func} {B : BMapL} {v : ID} {i : Nat} {src : ID}
+    (hI : ReplayInvL tabs D₀ C₀ M C) (hB : BInvL tabs f D₀ C₀ M C B) :
+    ReplayInvL tabs D₀ C₀ (copyStepL tabs M v i src) C ∧
+      BInvL tabs f D₀ C₀ (copyStepL tabs M v i src) C B := by
+  unfold copyStepL
+  split
+  · rename_i x hx
+    split
+    · rename_i hi
+      split
+      · rename_i hr
+        have hr' : CopyOKL tabs M x i src hi := by simpa only [Bool.or_eq_true] using hr
+        exact ⟨hI.copy hx hi hr', hB.mono (g := id) (fun _ h => h) hI.typed
+          fun ρ hρ _ n y hy => copyPut_denL hx hi hr' hI.closed hρ n y hy⟩
+      · exact ⟨hI, hB⟩
+    · exact ⟨hI, hB⟩
+  · exact ⟨hI, hB⟩
+
+/-- `copyFixL` keeps the replay invariants (`copyStepL_inv`). -/
+theorem copyFixL_inv {f : Func} {B : BMapL} :
+    ∀ (cs : List (ID × Nat × ID)) {M : Defs} {C : ID → Prop}, ReplayInvL tabs D₀ C₀ M C →
+      BInvL tabs f D₀ C₀ M C B →
+      ReplayInvL tabs D₀ C₀ (copyFixL tabs M cs) C ∧ BInvL tabs f D₀ C₀ (copyFixL tabs M cs) C B
+  | [], _, _, hI, hB => ⟨hI, hB⟩
+  | (_, _, _) :: cs, _, _, hI, hB =>
+    let h := copyStepL_inv hI hB
+    copyFixL_inv cs h.1 h.2
+
 end Inv
 
 /-- What `ruleOKL` establishes: the matched value is a term and some commutation choice
@@ -1791,9 +1855,13 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
               rw [hc] at hpat
               injection hpat with hxo
               rw [termVL_mem tabs x hom hxo] at ht; cases ht
-          exact replayL_inv hs hD evs _ M' B B' C h (hI.setOp hx ht ht' htop hsa hso)
-            (hB.mono (g := id) (fun _ h => h) hI.typed fun ρ hρ _ n y _ =>
-              setOp_den hx ht ht' htop hsa hso hρ n y)
+          exact replayL_inv hs hD evs _ M' B B' C h
+            (copyFixL_inv _ (hI.setOp hx ht ht' htop hsa hso)
+              (hB.mono (g := id) (fun _ h => h) hI.typed fun ρ hρ _ n y _ =>
+                setOp_den hx ht ht' htop hsa hso hρ n y)).1
+            (copyFixL_inv _ (hI.setOp hx ht ht' htop hsa hso)
+              (hB.mono (g := id) (fun _ h => h) hI.typed fun ρ hρ _ n y _ =>
+                setOp_den hx ht ht' htop hsa hso hρ n y)).2
         · have ht' := renameOp_dst hren tabs { x with op := o' } rfl
           have hfree : argFree tabs x = true → argFree tabs { x with op := o' } = true :=
             fun hf => absurd (argFree_cases hf).1 (renameOp_src_ne hren)
@@ -1801,11 +1869,13 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
               ArgRel tabs act (stArg a { x with op := o' } i) s t := fun a i act s t h => by
             rw [stArg_none (w := { x with op := o' }) (renameOp_stSize hren).2]
             rwa [stArg_none (renameOp_stSize hren).1] at h
-          exact replayL_inv hs hD evs _ M' B B' C h
-            (hI.atomPut hx ht ht' rfl (fun hv a ha => closed_args hI.closed hx hv a ha)
-              (.inr ⟨rfl, renameOp_idx hren, hfree, hrel⟩))
-            (hB.mono (g := id) (fun _ h => h) hI.typed fun ρ _ _ n y _ => by
-              rw [rename_den hx ht ht']; exact Sem.Refines.refl _)
+          have hI2 := hI.atomPut hx ht ht' rfl (fun hv a ha => closed_args hI.closed hx hv a ha)
+            (.inr ⟨rfl, renameOp_idx hren, hfree, hrel⟩)
+          have hB2 := hB.mono (M' := M.put v { x with op := o' }) (g := id) (fun _ h => h)
+            hI.typed fun ρ _ _ n y _ => by
+              rw [rename_den hx ht ht']; exact Sem.Refines.refl _
+          exact replayL_inv hs hD evs _ M' B B' C h (copyFixL_inv _ hI2 hB2).1
+            (copyFixL_inv _ hI2 hB2).2
       · cases h
     · -- value rules
       rename_i hnot
@@ -1830,9 +1900,11 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
         have hput : ds.foldl (fun M u => M.put u.id u) M = putAll M ds := by
           simp [putAll, Array.foldl_toList]
         rw [hput] at h
-        exact replayL_inv hs hD evs _ M' B B' _ h (hI.rule hsd F)
-          (hB.mono (fun y hy => .inl hy) hI.typed fun ρ hρ _ n y hy =>
-            F.step hsd hI.closed hρ n y hy)
+        have hI2 := hI.rule hsd F
+        have hB2 := hB.mono (M' := putAll M ds) (C' := fun y => C y ∨ (C v ∧ y ∈ defIds ds))
+          (fun y hy => .inl hy) hI.typed fun ρ hρ _ n y hy => F.step hsd hI.closed hρ n y hy
+        exact replayL_inv hs hD evs _ M' B B' _ h (copyFixL_inv _ hI2 hB2).1
+          (copyFixL_inv _ hI2 hB2).2
       · -- a lowered store, a folded store offset or a frame address (`atomDef`)
         split at h
         · rename_i u hdef
@@ -1920,13 +1992,8 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
     · cases h
     rename_i x hx
     split at h
-    · rename_i hi
-      split at h
-      · rename_i hrc
-        exact replayL_inv hs hD evs _ M' B B' C h (hI.copy hx hi hrc)
-          (hB.mono (g := id) (fun _ h => h) hI.typed fun ρ hρ _ n y hy =>
-            copyPut_denL hx hi hrc hI.closed hρ n y hy)
-      · exact replayL_inv hs hD evs M M' B B' C h hI hB
+    · have hc := copyStepL_inv (v := v) (i := i) (src := src) hI hB
+      exact replayL_inv hs hD evs _ M' B B' C h hc.1 hc.2
     · cases h
   | .control b i c :: evs, M, M', B, B', C, h, hI, hB => by
     unfold replayL at h
