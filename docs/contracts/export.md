@@ -714,7 +714,7 @@ shows here.
 | `mergelocals` | `base.Debug.MergeLocals` | 1 |
 | `flagN` | `base.Flag.N` | 0 |
 | `clobberdead`, `clobberdeadreg` | `base.Flag.ClobberDead*` | 0, 0 |
-| `compilingruntime` | `base.Flag.CompilingRuntime` | 1 in package `runtime` (and its internal dependencies), else 0 |
+| `compilingruntime` | `base.Flag.CompilingRuntime` | 1 for the runtime packages (`objabi.LookupPkgSpecial`; in the quick corpus `runtime` and `internal/bytealg`), else 0 |
 | `gendwarfinl` | `base.Flag.GenDwarfInl` | 2 |
 | `debugasm` | `base.Ctxt.Debugasm` (`-S`; must be 0) | 0 |
 
@@ -755,7 +755,8 @@ accepts; `lake exe asm-check <dir>` checks that on a corpus and that no file has
   every `// run` program without build constraints in `test/*.go` and `test/ken/*.go` (one unit
   each; those that do not build are listed as `skip`), and `examples/*/main.go`. Dumps go to
   `../gofv-corpus/<pin12>/plain/<set>/<unit>/…` and `<set>.tar.zst`, outside git; the committed
-  `corpus/manifest.txt` lists every unit with its file count and digest, and the
+  `corpus/manifest.txt` lists every unit with its `.ssa` file count and digest and its `.prog`
+  file count and digest (from quick-v8), the total bytes of each kind (`bytes` line), and the
   `tools/ssastats` table (functions, values, per pass how many functions changed). This is the
   quick corpus, the per-PR parity gate. Each export is a new version directory published by an
   atomic symlink switch (`docs/PARITY.md`, "Corpus versions").
