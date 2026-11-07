@@ -216,6 +216,109 @@ prologue saved it), with every home related as in §4.1. Values that emit nothin
 `Copy` to the same register, …, `docs/PASSES3.md` C2/C3) are stutter steps. Block order
 becomes semantic (fallthrough).
 
+### 4.5 Sketch: the relation `LocMatch` (I6; no proof yet)
+
+The relation of §4.1–4.4 written against the definitions that exist: `runLoc`'s state
+(`GoFV/SSA/Sem/RunLoc.lean`: `LocState` with `regs : Array Val` by Go's dense register number,
+`flags : Val`, `slots : List (SlotKey × Val)` latest first, `mem : Val` holding a Phase 1
+`Mem`) and the machine state of §3 (a) (`GoFV/Arm64/State.lean`: `MState` with `x : Reg → BitVec
+64`, `sp`, `v : Reg → BitVec 128`, `nzcv : Flags`, `pc`, `mem : BitVec 64 → BitVec 8`). It relates
+L2 directly to the machine for one activation, composing the L2 → L2f step (§4.2) into the slot
+clause; once `runFrame` exists the slot clause moves there and `LocMatch` becomes the composition
+of `FrameMatch` (L2/L2f) and a frame-to-flat clause. Lean-style, not checked:
+
+```
+/-- What is fixed for one activation of `f`. -/
+structure MatchEnv where
+  lc    : LocCtx                      -- runLoc's context (homes, types, Tables)
+  ι     : Blk → Option (BitVec 64)    -- §4.3; ι .nil = some 0; frame blocks of this activation ↦ sp + their offset
+  sp    : BitVec 64                   -- SP after the prologue (BodyEntry); 16-aligned
+  slot  : SlotKey → Option Int        -- SP-relative offset of a spill slot: autosize + FrameOffset − extrasize + slot offset (A2, §5)
+  g     : BitVec 64                   -- R28 at entry
+  lr fp : BitVec 64                   -- caller's return address and FP, saved at [sp] and [sp − 8]
+  pcOf  : ID → Nat → BitVec 64        -- linked address of the first word of value i of block b (§4.4)
+
+/-- Go dense register r ↦ machine register: `registers[r].objNum` (RegARM64.lean) minus REG_R0
+for R0–R30 (X index), minus REG_F0 for F0–F31 (V index); ZERO and SP never hold values. -/
+def objX? (r : Nat) : Option Reg
+def objV? (r : Nat) : Option Reg
+
+/-- A value and the register holding it (64-bit container). -/
+def ValRel (ι) : Val → BitVec 64 → Prop
+  | .poison, _        => True                              -- includes runLoc's clobbered registers
+  | .int w x, r       => r.setWidth w.bits = x             -- upper bits: what runLoc's typed reads
+                                                           -- (LoadReg sign, MOVDreg) observe, §4.1
+  | .bool b, r        => r = (if b then 1 else 0)          -- CSET materialises 0/1 in the whole register
+  | .ptr p, r         => ∃ a, ι p.blk = some a ∧ r = a + p.off
+  | _, _              => False                             -- mem, tuples: never in one register
+
+/-- Floats live in V registers as their bits (Phase 1: `.int .w32/.w64` bit patterns). -/
+def FValRel : Val → BitVec 128 → Prop
+  | .poison, _ => True
+  | .int w x, q => q.setWidth w.bits = x
+  | _, _ => False
+
+/-- runLoc's flags value `.agg [n, z, c, v, g]` and NZCV; `g` is not machine state (Flags.lean). -/
+def BitRel : Val → Bool → Prop
+  | .bool b, x => b = x
+  | .poison, _ => True
+  | _, _ => False
+def FlagsRel (f : Val) (m : Flags) : Prop :=
+  ∃ n z c v g, f = .agg [n, z, c, v, g] ∧ BitRel n m.n ∧ BitRel z m.z ∧ BitRel c m.c ∧ BitRel v m.v
+
+/-- Phase 1 bytes and machine bytes under ι (pointer fragments are bytes of the injected address). -/
+def ByteRel (ι) : Byte → BitVec 8 → Prop
+  | .b x, y => x = y
+  | .frag p i, y => ∃ a, ι p.blk = some a ∧ y = (a + p.off).extractLsb' (8 * i) 8
+  | .poison, _ => True
+
+/-- §4.3: every byte of every live block that ι maps equals the machine byte; ι injective on the
+windows of live blocks; nothing is said about machine memory outside them. -/
+def MemInj (ι) (m : Mem) (mm : Memory) : Prop :=
+  (∀ blk a al o, (blk, al) ∈ m.blocks → ι blk = some a → o < al.data.size →
+     ByteRel ι al.data[o] (mm (a + o))) ∧ InjectiveOnLive ι m
+
+structure LocMatch (E : MatchEnv) (s : LocState) (b : ID) (i : Nat) (m : MState) : Prop where
+  regs  : ∀ r v, r ≠ zeroReg → s.regs[r]? = some v →
+            (∀ k, objX? r = some k → ValRel E.ι v (m.x k)) ∧ (∀ k, objV? r = some k → FValRel v (m.v k))
+  flags : FlagsRel s.flags m.nzcv
+  slots : ∀ k v, s.slots.lookup k = some v → ∃ off, E.slot k = some off ∧
+            BytesRel E.ι (encodeAt (E.lc.slotTy k) v) (readBytes m.mem (E.sp + off) (slotSize k))
+  mem   : ∃ mm, s.mem = .mem mm ∧ MemInj E.ι mm m.mem
+  frame : m.sp = E.sp ∧ m.x 29 = E.sp − 8 ∧ m.x 28 = E.g ∧
+          readMem m.mem E.sp 8 = E.lr ∧ readMem m.mem (E.sp − 8) 8 = E.fp
+  pc    : m.pc = E.pcOf b i
+  -- unconstrained: X27 (REGTMP), X18, X30 after the prologue, the dead stack below sp − 8, FPSR
+```
+
+The simulation steps the proofs of I7 need, stated on `GoFV.Arm64.run` over the linked code
+(`code : Code`, the words of the function at their addresses) and the hooks of §6:
+
+```
+-- one value: its words (none for the stutter values of §4.4)
+theorem value_sim (hm : LocMatch E s b i m) (hv : stepLoc env E.lc s (b.values[i]) = .ok s')
+    (hc : CodeOf code E (b, i)) :
+    ∃ n m', runMach H code n m = .ok m' ∧ LocMatch E s' b (i + 1) m'
+-- block end: stepTermLoc's successor is the branch target or the fall-through
+theorem term_sim (hm : LocMatch E s b b.values.size m) (ht : stepTermLoc E.lc s b = .ok (.goto b', s')) … :
+    ∃ n m', runMach H code n m = .ok m' ∧ LocMatch E s' b' 0 m'
+-- faults: a runLoc nil dereference is the machine's nil-page fault (Fault.nilPage), which the
+-- hook of §6 turns into panicked nilDeref
+```
+
+Open points for I7: the `.bool` clause asks for the whole register to be 0 or 1, which is what
+Phase 2's `reg` reads a boolean as; Phase 2's `res` keeps only bit 0 at the `bool` shape, so a
+producer that leaves upper bits (none known; `CSET`, `MOVBU` loads and the logical ops of two
+booleans keep 0/1) would need the clause weakened to bit 0 for values that are only branched on.
+The `.int` clause leaves the upper bits to `runLoc`'s typed reads, as §4.1 says; the proof of
+`value_sim` for `MOVDreg` and narrow loads is where they are pinned down.
+
+At a call, `runLoc`'s `clobber` writes `poison` into the call's clobbered registers, so the
+`regs` clause holds for any values the callee hook leaves there; `slots`, `frame` and `mem`
+(through the callee contract, with ι extended by the allocator hook) carry over. `pcOf` is
+where P0 and M differ: on P0 it is the Prog's ID (`runProg`), on M the linked address after
+`span7`, so the same `LocMatch` serves both layers of §7.
+
 ## 5. ABI and frame layout (linux/arm64, ABIInternal)
 
 Facts the proofs use, all from the pin; ABI0 (assembly functions) is reached only through the
