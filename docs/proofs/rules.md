@@ -2079,11 +2079,16 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
     0`, `x = y = 1`: `ADD` gives the pointer `g + 1`, `MADD` `poison`). Proven
     (`Rules/ShiftOp.lean`, `r_ARM64_1012_sound` … `r_ARM64_1015_sound`) since `MADD`/`MSUB`
     move a pointer `a` as `ADD` does (`Arm64.madd`, `docs/plans/semantics2.md` §3).
-  - `:1183` (`(NEG (SUB x y)) => (SUB y x)`): `x = 0`, `y` the frame temporary `temp 0 1 + 0`
-    (an address but no integer form): the source negates the register difference to the
-    integer `2^62 + 2^24`, the target keeps the pointer `temp 0 1 + 0`.
-  - `:1184` (`(NEG (NEG x)) => x`): `x` that frame temporary: the integer `2^62 + 2^24` against
-    the pointer.
+  - `:1183` (`(NEG (SUB x y)) => (SUB y x)`): `x = heap 0 + 2^40` (outside its window, so no
+    integer form and no register), `y = 1`: `x - 1` re-enters the window and becomes the word
+    `2^41 - 1`, which the source negates; the target's `SUB 1 x` reads `x`'s register
+    (`poison`). Also `y` the frame pointer `local (2^20) 1 + 0`, which has a register
+    (`Arm64.ptrReg`: `Ptr.ofAddr` decodes its address back to it) but does not convert
+    (`Ptr.convertible`: activation below `2^20`), so `retypeL` keeps it a pointer: `SUB x y`
+    reads its register, `SUB y x` moves it by provenance. (The earlier counterexample, `y` the
+    frame temporary `temp 0 1 + 0`, gives `poison` in the source since `ptrReg`.)
+  - `:1184` (`(NEG (NEG x)) => x`): `x` that frame pointer `local (2^20) 1 + 0`: the integer
+    of its address against the pointer.
   - `:1197` (`(SUB x (SUB y z)) => (SUB (ADD <v.Type> x z) y)`): `x` the pointer
     `heap (2^22) + 0` (no integer form), `y = z = 2^41`: the source is `x`, the target's
     `ADD x z` leaves the heap window (`poison`).

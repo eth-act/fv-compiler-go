@@ -291,18 +291,28 @@ def atomicLoadOp : Op → Bool
   | .AtomicLoad8 | .AtomicLoad32 | .AtomicLoad64 | .AtomicLoadPtr => true
   | _ => false
 
+/-- The 64-bit shifts and `Const64`: generic ops whose value is a 64-bit integer whatever their
+type (`divmod.rules` builds `(Rsh64Ux64 <typ.UInt32> …)`, Go types `Const64` at narrower shapes),
+so at a narrower integer shape both they and their arm64 lowering are read at their low bits. -/
+def top64Op : Op → Bool
+  | .Lsh64x8 | .Lsh64x16 | .Lsh64x32 | .Lsh64x64 | .Rsh64x8 | .Rsh64x16 | .Rsh64x32 | .Rsh64x64
+  | .Rsh64Ux8 | .Rsh64Ux16 | .Rsh64Ux32 | .Rsh64Ux64 | .Const64 => true
+  | _ => false
+
 /-- A generic top op produces a value of its type's shape (Phase 1's `RewriteCheck.topOK`: Go types
 these values at their op's width, and a narrow generic op read at a wider shape would be widened by
 `retypeL` where the arm64 op keeps its register), as do `Load` (`loadOp` decodes at the shape) and
 the atomic loads (`atomicLoad`, likewise), `Addr` at a word shape (a `uintptr`-typed `Addr`:
 the symbol's address, which `MOVDaddr` computes alike, `refines_addr_movAddr` at every shape),
 and `CondSelect` at a word or integer shape (an arm, which `CSEL` moves as its register, `regVal`,
-and such a shape reads back as the arm's own reading), and `WB` (`wbOp`, which `LoweredWB`
-computes alike, at every shape); arm64 tops are unconstrained (`retypeL` narrows their 64-bit
-register). -/
+and such a shape reads back as the arm's own reading), the 64-bit shifts and `Const64` at an
+integer shape (`top64Op`: `retypeL` reads both sides' 64-bit integers at their low bits), and `WB`
+(`wbOp`, which `LoweredWB` computes alike, at every shape); arm64 tops are unconstrained
+(`retypeL` narrows their 64-bit register). -/
 def topOKL (o : Op) (ty : Ty) : Bool :=
   !o.generic || o == .Load || atomicLoadOp o || ((o == .Addr || o == .CondSelect) && wordShape ty) ||
-    (o == .CondSelect && ty matches .int _) || o == .WB || GoFV.Opt.RewriteCheck.topOK o ty
+    ((o == .CondSelect || top64Op o) && ty matches .int _) || o == .WB ||
+    GoFV.Opt.RewriteCheck.topOK o ty
 
 /-- `topOKL` of the top op of a pattern (a leaf top: unconstrained). -/
 def Pat.topOKL (ty : Ty) : Pat → Bool
