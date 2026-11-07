@@ -149,30 +149,13 @@ theorem its_makeSelOK :
     GoFV.Proof.Rules.shapeSub (itsTabs.ty 3) (itsTabs.ty 1) = false := by
   decide +kernel
 
-/-- `itsDefs` as a function (one block, no terminator values): the input of a `Store` split. -/
-def itsFunc : Func where
-  entry := 1
-  type := 0
-  ownAux := none
-  vidLast := 7
-  bidLast := 1
-  blocks := #[1]
-  blockTab := #[none, some (mkB 1 .Exit p0 #[] #[] #[] #[1, 2, 3, 4, 5, 6, 7])]
-  valueTab := itsDefs
-  names := #[]
-  namedx := #[]
-  splits := #[]
-  canon := #[]
-  consts := #[]
-  freeValues := []
-  freeBlocks := []
-  cache := { lineStarts := some #[] }
-
-/-- The `Store` split of an `IMake` accepts a `*uint8` itab in the interface's `uintptr` field
-when it is a `Convert` of a `uintptr` (`v5`), not when it is a pointer-typed atom (`v2`). -/
+/-- The `Store` split of an `IMake` accepts a `*uint8` itab (whatever op makes it: a `Convert`, an
+atom, a `Phi`) in the interface's `uintptr` field and a `uintptr` in a pointer field (two word
+shapes), not a `uint8` in the `uintptr` field. -/
 theorem its_ssFieldOK :
-    RewriteCheck.ssFieldOK itsTabs itsFunc 5 (itsTabs.ty 3) (.int .w64) = true ∧
-    RewriteCheck.ssFieldOK itsTabs itsFunc 2 (itsTabs.ty 3) (.int .w64) = false := by
+    RewriteCheck.ssFieldOK (itsTabs.ty 3) (itsTabs.ty 1) = true ∧
+    RewriteCheck.ssFieldOK (itsTabs.ty 1) (itsTabs.ty 3) = true ∧
+    RewriteCheck.ssFieldOK (itsTabs.ty 2) (itsTabs.ty 1) = false := by
   decide +kernel
 
 /-! ## A dropped `(StructMake x) && x.Type.IsPtrShaped() => x` (`dec.rules:120`, issue #17)

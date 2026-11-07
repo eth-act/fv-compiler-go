@@ -269,7 +269,7 @@ def ssSplitWhy (tabs : Tables) (f g : Func) (x : ID) : String :=
                   | none => 0
                 match f.value? a, g.value? s with
                 | some (av : Value), some (sv : Value) =>
-                  if !ssFieldOK tabs f a (tabs.ty av.type) t then
+                  if !ssFieldOK (tabs.ty av.type) t then
                     s!"field type {repr (tabs.ty av.type)} vs {repr t}: {desc tabs f 2 a}"
                   else if !((f.value? s).isNone || (s == x && k + 1 == r.1.length)) then "store not fresh"
                   else if !(sv.op == Op.Store && sv.block == fv.block && sv.args.size == 3) then

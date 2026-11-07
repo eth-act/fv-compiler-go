@@ -33,7 +33,7 @@ value of `f` that `dst` reaches through copies. -/
 structure Link (tabs : Tables) (f g : Func) (b dst x : ID) (ps : List (ID × ID)) (m0 : ID)
     (k o : Nat) (t : Ty) (a p s : ID) (av sv ov : Value) : Prop where
   ha : f.value? a = some av
-  hfield : ssFieldOK tabs f a (tabs.ty av.type) t = true
+  hfield : ssFieldOK (tabs.ty av.type) t = true
   hs : g.value? s = some sv
   hsf : f.value? s = none ∨ (s = x ∧ k + 1 = ps.length)
   hsid : sv.id = s
