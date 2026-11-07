@@ -1067,7 +1067,7 @@ needs a later phase of the semantics.
 | File | Family | Proven | Pending (P1/P2) | False | Not pure | Total |
 | --- | --- | --: | --: | --: | --: | --: |
 | `dec` | ArrayMake | 1 | 0 | 0 | 0 | 1 |
-| `dec` | ArraySelect | 3 | 1 | 0 | 0 | 4 |
+| `dec` | ArraySelect | 4 | 0 | 0 | 0 | 4 |
 | `dec` | ComplexImag | 3 | 0 | 0 | 0 | 3 |
 | `dec` | ComplexReal | 3 | 0 | 0 | 0 | 3 |
 | `dec` | IData | 2 | 0 | 0 | 0 | 2 |
@@ -1082,7 +1082,7 @@ needs a later phase of the semantics.
 | `dec` | StringLen | 2 | 0 | 0 | 0 | 2 |
 | `dec` | StringPtr | 2 | 0 | 0 | 0 | 2 |
 | `dec` | StructMake | 1 | 0 | 0 | 0 | 1 |
-| `dec` | StructSelect | 3 | 2 | 0 | 1 | 5 |
+| `dec` | StructSelect | 5 | 0 | 0 | 1 | 5 |
 | `divisible` | Eq | 16 | 0 | 0 | 0 | 16 |
 | `divisible` | Neq | 16 | 0 | 0 | 0 | 16 |
 | `divmod` | Div | 17 | 6 | 4 | 2 | 29 |
@@ -1090,7 +1090,7 @@ needs a later phase of the semantics.
 | `generic` | AddPtr | 1 | 1 | 0 | 0 | 2 |
 | `generic` | And | 40 | 8 | 0 | 0 | 48 |
 | `generic` | AndB | 36 | 0 | 0 | 0 | 36 |
-| `generic` | ArraySelect | 1 | 1 | 0 | 0 | 2 |
+| `generic` | ArraySelect | 2 | 0 | 0 | 0 | 2 |
 | `generic` | BitLen | 8 | 0 | 0 | 0 | 8 |
 | `generic` | Block | 3 | 0 | 0 | 3 | 3 |
 | `generic` | Ceil | 0 | 0 | 0 | 1 | 1 |
@@ -1107,7 +1107,7 @@ needs a later phase of the semantics.
 | `generic` | Eq | 58 | 0 | 0 | 2 | 58 |
 | `generic` | EqB | 5 | 0 | 0 | 0 | 5 |
 | `generic` | EqInter | 1 | 0 | 0 | 0 | 1 |
-| `generic` | EqPtr | 2 | 7 | 0 | 11 | 20 |
+| `generic` | EqPtr | 3 | 7 | 0 | 11 | 20 |
 | `generic` | EqSlice | 1 | 0 | 0 | 0 | 1 |
 | `generic` | Floor | 0 | 0 | 0 | 1 | 1 |
 | `generic` | IMake | 1 | 1 | 0 | 1 | 2 |
@@ -1127,7 +1127,7 @@ needs a later phase of the semantics.
 | `generic` | Neq | 54 | 0 | 0 | 2 | 54 |
 | `generic` | NeqB | 5 | 0 | 0 | 0 | 5 |
 | `generic` | NeqInter | 1 | 0 | 0 | 0 | 1 |
-| `generic` | NeqPtr | 3 | 6 | 0 | 11 | 20 |
+| `generic` | NeqPtr | 4 | 6 | 0 | 11 | 20 |
 | `generic` | NeqSlice | 1 | 0 | 0 | 0 | 1 |
 | `generic` | NilCheck | 8 | 0 | 0 | 8 | 8 |
 | `generic` | Not | 27 | 2 | 0 | 4 | 33 |
@@ -1155,13 +1155,13 @@ needs a later phase of the semantics.
 | `generic` | Store | 12 | 0 | 0 | 21 | 21 |
 | `generic` | StringLen | 1 | 0 | 0 | 0 | 1 |
 | `generic` | StringPtr | 1 | 0 | 0 | 1 | 1 |
-| `generic` | StructSelect | 1 | 3 | 0 | 1 | 4 |
+| `generic` | StructSelect | 3 | 1 | 0 | 1 | 4 |
 | `generic` | Sub | 68 | 0 | 0 | 2 | 70 |
 | `generic` | Trunc | 32 | 0 | 0 | 1 | 33 |
 | `generic` | Xor | 60 | 4 | 4 | 0 | 68 |
 | `generic` | Zero | 2 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1375 | 198 | 31 | 258 | 1762 |
+| all | | 1383 | 192 | 31 | 258 | 1762 |
 
 <!-- END coverage -->
 

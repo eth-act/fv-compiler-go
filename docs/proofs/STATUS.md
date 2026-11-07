@@ -29,14 +29,14 @@ the semantic phase of their ops (`GoFVTest/Proof/RuleClass.lean`; "Classificatio
 | Class | Proven | False | Open | Total |
 | --- | --: | --: | --: | --: |
 | P1 (integers, booleans) | 1,212 | 30 | 153 | 1,395 |
-| P2 (pointers, composites, `Load` values, `SelectN`) | 63 | 1 | 45 | 109 |
+| P2 (pointers, composites, `Load` values, `SelectN`) | 69 | 1 | 39 | 109 |
 | mem (memory ops) | 52 | 0 | 60 | 112 |
 | call | 9 | 0 | 38 | 47 |
 | float | 22 | 0 | 46 | 68 |
-| ptr (`ConstString`, `Addr`, `NilCheck`, pointer comparisons) | 10 | 0 | 13 | 23 |
+| ptr (`ConstString`, `Addr`, `NilCheck`, pointer comparisons) | 12 | 0 | 11 | 23 |
 | phi | 4 | 0 | 1 | 5 |
 | block | 3 | 0 | 0 | 3 |
-| all | 1,375 | 31 | 356 | 1,762 |
+| all | 1,383 | 31 | 348 | 1,762 |
 
 *Proven*: a merged lemma (`Rule.Sound`, `Rule.SoundT`, `Rule.SoundW`, `Rule.MakeSel`,
 `Rule.LoadSel`, `Rule.Drop`, `Rule.IMakeSM`, `Rule.AddrCmp`, `BlockRule.Sound`,
@@ -83,15 +83,16 @@ obstacle counts on full-v6, "Findings" in `rules.md` has the counterexamples):
 - The `CondSelect` folds (about 240 functions on the unmarked alternatives of `:2322–:2393`) and
   `divmod.rules:136–148` (59) are false as above.
 
-**Open** (356):
+**Open** (348):
 
-- `P1`/`P2` alternatives without a lemma (198): most never fire on the corpus; those that fire
+- `P1`/`P2` alternatives without a lemma (192): most never fire on the corpus; those that fire
   are in the `fire-full` table of `rules.md` (sole obstacles by rule).
-- `mem` (60) and `ptr` (13): memory and pointer rules inside the model without an effect
+- `mem` (60) and `ptr` (11): memory and pointer rules inside the model without an effect
   obligation proof: `Load` forwardings of other shapes (`:831–:907`), `Move` chains and
   `Move`/`Zero` of `Store`s (`:1740–:1942`), dropped writes `:919`/`:924`/`:930`/`:937` (open:
-  the `not disjoint` class), `EqPtr`/`NeqPtr` of symbol addresses, locals and their offsets
-  (`:1648–:1676`), and `ConstString` under `config.PtrSize == 4` (`:1013`, `:1017`; never true
+  the `not disjoint` class), the other `EqPtr`/`NeqPtr` of symbol addresses, locals and their
+  offsets (`:1649–:1676`; `:1648`/`:1651` are proven), and `ConstString` under
+  `config.PtrSize == 4` (`:1013`, `:1017`; never true
   for linux/arm64).
 - `float` (46): inside the model (`Sem/Float.lean`, the AArch64 instruction of each op with
   RNE): constant folds of `Add/Sub/Mul/Div/Neg{32,64}F`, `Cvt*` of constants,
