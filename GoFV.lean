@@ -89,3 +89,6 @@ import GoFV.Proof.Witness.Clamp
 import GoFV.Proof.Witness.Early
 import GoFV.Opt.Sccp
 import GoFV.Opt.SccpReplay
+import GoFV.Asm.Reg
+import GoFV.Asm.OpAsm
+import GoFV.Asm.Abi
