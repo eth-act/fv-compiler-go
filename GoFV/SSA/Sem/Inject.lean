@@ -165,7 +165,10 @@ def pointees (L : Layout) (s : MState) (bs : Array Byte) : List Blk := Id.run do
 
 /-- The Phase 1 memory of the blocks reachable from `roots` (at most `fuel` blocks), with
 `nextHeap` the runtime's: what a runtime entry point sees (§6: the runtime functions the hooks
-model follow pointers from their arguments; blocks they cannot reach keep their bytes). -/
+model follow pointers from their arguments; blocks they cannot reach keep their bytes). Pointers
+are followed out of writable blocks only: a read-only block (type descriptors, string data,
+constants) is read where an argument points, and the runtime functions the hooks model do not
+dereference the pointers stored in it (a type descriptor's element type, …). -/
 def pull (L : Layout) (s : MState) (roots : List Blk) (fuel : Nat := 4096) : Mem := Id.run do
   let mut m : Mem := { nextHeap := L.nextHeap s }
   let mut todo := roots
@@ -178,7 +181,7 @@ def pull (L : Layout) (s : MState) (roots : List Blk) (fuel : Nat := 4096) : Mem
       match L.pullBlock s b with
       | some a =>
         m := m.set b a
-        todo := L.pointees s a.data ++ todo
+        if a.writable then todo := L.pointees s a.data ++ todo
       | none => pure ()
   return m
 

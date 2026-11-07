@@ -332,6 +332,13 @@ def storeRange (s : MState) : Insn → Option (BitVec 64 × Nat)
   | .atomic _ _ _ _ _ _ rn _ => some (s.rXsp rn, 8)
   | _ => none
 
+/-- `s` with its memory `pm` and its register files read into arrays (the same functions;
+`exec` writes registers by closure, which would otherwise nest once per write). -/
+def flatten (s : MState) (pm : PMem) : MState :=
+  let xs : Array (BitVec 64) := (List.range 32).toArray.map fun i => s.x (BitVec.ofNat 5 i)
+  let vs : Array (BitVec 128) := (List.range 32).toArray.map fun i => s.v (BitVec.ofNat 5 i)
+  { s with x := fun i => xs[i.toNat]!, v := fun i => vs[i.toNat]!, mem := memOf pm }
+
 /-- `runMach`'s loop with the memory in `pm`: the outcome, the final memory, the step count. -/
 partial def runLoop (P : Program) (fuel : Nat) (s : MState) (pm : PMem) :
     MOutcome × PMem × Nat := Id.run do
@@ -351,13 +358,13 @@ partial def runLoop (P : Program) (fuel : Nat) (s : MState) (pm : PMem) :
               let x := a + BitVec.ofNat 64 j
               pm' := pm'.insert x.toUInt64 (s'.mem x).toNat.toUInt8
         pm := pm'
-        s := { s' with mem := memOf pm }
+        s := flatten s' pm
       | .error f => return (.ofFault s f, pm, k)
     | none =>
       match rtHook P.rt s with
       | some (.ret s' ws) =>
         for (a, x) in ws do pm := pm.insert a.toUInt64 x.toNat.toUInt8
-        s := { s' with mem := memOf pm }
+        s := flatten s' pm
       | some (.panicked e s' ws) =>
         for (a, x) in ws do pm := pm.insert a.toUInt64 x.toNat.toUInt8
         return (.panicked e { s' with mem := memOf pm }, pm, k)
@@ -508,9 +515,12 @@ def main (args : List String) : IO UInt32 := do
         match entryState P fn params imgs mem with
         | .error e => pure s!"stuck: entry: {e}"
         | .ok (s0, pm) =>
+          let t0 ← IO.monoMsNow
           let (o, _, k) := runLoop P fuel s0 pm
           st := { st with steps := st.steps + k }
           let r := render P fn l params imgs s0 o
+          let t1 ← IO.monoMsNow
+          if t1 - t0 > 2000 then IO.eprintln s!"slow: {t1 - t0} ms, {k} steps: {call}"
           if k ≤ checkSteps then
             let code : Code := fun a => P.code.get? a.toNat
             let o' := runMach P.rt.hooks code RET0 (k + 1) s0
