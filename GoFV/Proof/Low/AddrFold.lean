@@ -271,7 +271,7 @@ theorem addr_framePtr (tabs : Tables) (act : Nat) (n : AuxRef) {k : BitVec 64}
     Arm64.addr (framePtr tabs act n).word k = some ⟨frameBlk tabs act n, k⟩ := by
   have hq : (framePtr tabs act n).add k = ⟨frameBlk tabs act n, k⟩ := by
     simp [framePtr, Ptr.add]
-  rw [addr_word (by simp [framePtr, Ptr.inWindow_zero])
+  rw [addr_word (by simpa [framePtr] using Ptr.inWindow_zero (frameBlk tabs act n))
     (by rw [hq]; exact frame_inWindow tabs act n hk), hq]
 
 /-- **A frame variable's address folded into a store** (`ARM64.rules:881-905`): if the frame

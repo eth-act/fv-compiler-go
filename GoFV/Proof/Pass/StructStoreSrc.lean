@@ -241,8 +241,8 @@ theorem retype_w64_addrVal (T : Ty) (tabs : Tables) (ax : Option AuxRef) :
   unfold GoFV.Proof.Rules.addrVal
   split
   · cases T with
-    | int w => cases w <;> simp [Val.retype, Ptr.word, Ptr.convertible]
-    | ptr e => simp [Val.retype, Ptr.word, Ptr.convertible]
+    | int w => cases w <;> simp [Val.retype, Ptr.word, Ptr.convertible, Ptr.inWindow, Blk.window?]
+    | ptr e => simp [Val.retype, Ptr.word, Ptr.convertible, Ptr.inWindow, Blk.window?]
     | _ => simp [Val.retype]
   · cases T <;> simp [Val.retype]
 

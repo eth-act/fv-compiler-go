@@ -90,10 +90,15 @@ never fail). **The two word shapes** (`.int .w64` and pointers) **have the same 
 retype alike** (#10, #290; `Val.hasTy_ptr_eq_i64`, `Val.retype_ptr_eq_i64`): a 64-bit integer
 keeps its word at a pointer shape (the pointer at its address, §3.3), and a pointer becomes its
 **word** (`Ptr.word`): its concrete address if it converts back to itself (`Ptr.convertible`:
-nil, heap and forgeable frame pointers inside their windows), else the pointer (a global, which
-has no concrete address, e.g. a closure's code pointer loaded as `uintptr`; a frame temporary,
-whose address no integer converts back to). So a register never holds a convertible pointer as
-a pointer: `Val.hasTy (.ptr p) t = !p.convertible` at both word shapes, `decodePtr` of a stored
+exactly the pointers `Ptr.ofAddr` of their address gives back, `Ptr.convertible_iff`; nil, heap
+and forgeable frame pointers inside their windows), else the pointer if it lies inside its
+block's window (a global, which has no concrete address, e.g. a closure's code pointer loaded as
+`uintptr`; a frame temporary, whose address no integer converts back to), else `poison`: a
+pointer outside its window points outside its allocation, which Go's `unsafe.Pointer` rule (3)
+forbids (#385; `docs/plans/semantics2.md` §3, "Pointers outside their window"; every allocation
+is smaller than its window, so one-past-the-end pointers stay defined). So a register never
+holds a convertible or an out-of-window pointer as a pointer: `Val.hasTy (.ptr p) t = p.held`
+(`Ptr.held`: not convertible and inside its window) at both word shapes, `decodePtr` of a stored
 pointer's fragments gives its word, and a word copied between a `uintptr` and a pointer type (an
 itab word that `decompose builtin` passes on as `*itab`, `dec.rules:82`; the round trip
 `unsafe.Pointer(uintptr(p))`, `generic.rules:1072`; a phi elimination's `Copy` between the two)
@@ -155,7 +160,8 @@ Without the window rule a non-nil word could step into the nil window, where the
 and offset (pointers into different allocations are never equal; `Ptr.eq_iff`), so
 `EqPtr (ConstNil) p` is `!IsNonNil p`.
 `Convert` ptr→uintptr is `poison` unless the pointer is `Ptr.convertible` (inside its window,
-its block number small enough for the address encoding, not a frame temporary or global);
+its block number small enough for the address encoding: heap objects below `2^22 - 1`, frames
+of activations below `3·2^20`; not a frame temporary or global);
 then `Ptr.ofAddr` of its address is the pointer again (`Ptr.ofAddr_addr`,
 `GoFV/Proof/PtrAddr.lean`). Since a register holds such a pointer as its address (`Ptr.word`,
 §3.2), `Convert (Convert p)` is `p` itself at either word type, and `generic.rules:1072`

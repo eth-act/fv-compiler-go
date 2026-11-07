@@ -495,7 +495,7 @@ private theorem ev_words {env : Env} {Gr : Frame} (hty : Typed (Ctx.make c.tabs 
 
 /-- **A helper call** of the buffer block. -/
 private theorem t_call (S : Setup c b B rs l) {env : Env} {Gr fr0 : Frame} (hH : HeldGr c rs Gr)
-    (hty : Typed (Ctx.make c.tabs c.f) Gr)
+    (htyG : Typed (Ctx.make c.tabs c.f) Gr)
     {j i : Nat} {x : ID} {w : Value} (hok : c.roleOK b B (segsOf b rs) rs true j x = true)
     (hw : c.g.value? x = some w) (hid : w.id = x) (hρ : c.roleOf rs x = .call i)
     (hcov : WbHelpers env ∧ (∃ M, RunMem Gr rs i M) ∧
@@ -510,7 +510,7 @@ private theorem t_call (S : Setup c b B rs l) {env : Env} {Gr fr0 : Frame} (hH :
   obtain ⟨abi, habi, hps, hlen⟩ := P.abi
   obtain ⟨mm, hmm, hmr⟩ := P.mem
   obtain ⟨s, u, hs, hu, husz, hopu, hdst⟩ := P.src
-  have hWv := ev_words hty hu (hev s hs) (hopu.imp (·.1) (·.1))
+  have hWv := ev_words htyG hu (hev s hs) (hopu.imp (·.1) (·.1))
   have hsz : 3 ≤ w.args.size ∧ w.args.size ≤ 4 := by
     rcases hopu with ⟨-, h⟩ | ⟨-, h, -⟩ <;> omega
   have hargs : w.args.toList = w.args.toList.dropLast ++ [mm] := by
@@ -624,7 +624,7 @@ theorem local_seg (S : Setup c b B rs l) {env : Env} {Gr fr0 : Frame}
 
 /-- **A value of a buffer block.** -/
 theorem local_t (S : Setup c b B rs l) {env : Env} {Gr fr0 : Frame}
-    (hH : HeldGr c rs Gr) (hM : MemsGr Gr) (hty : Typed (Ctx.make c.tabs c.f) Gr)
+    (hH : HeldGr c rs Gr) (hM : MemsGr Gr) (htyG : Typed (Ctx.make c.tabs c.f) Gr)
     {j : Nat} {x : ID} {w : Value} (hx : InT c rs j x) (hw : c.g.value? x = some w)
     (hcov : Cov env c rs Gr x) :
     LocalQ env (Ctx.make c.tabs c.g) fr0 (QR c rs Gr) x := by
@@ -668,7 +668,7 @@ theorem local_t (S : Setup c b B rs l) {env : Env} {Gr fr0 : Frame}
   | tload i =>
     exact local_true hw (by rw [then_op hρ rfl hw]; decide) (fun y => by simp only [QR, hρ])
   | taddr i => exact absurd (roleOK_taddr hok hw hρ).1 (fun h => nomatch h)
-  | call i => exact S.t_call hH hty hok hw hid hρ hcov
+  | call i => exact S.t_call hH htyG hok hw hid hρ hcov
   | seln i =>
     obtain ⟨-, rfl, hop, hargs, hai, hty, ha⟩ := roleOK_seln hok hw hρ
     exact local_seln hw hid hρ hop hargs hai hty ha

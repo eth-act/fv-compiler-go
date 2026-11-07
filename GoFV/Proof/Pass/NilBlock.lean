@@ -473,8 +473,9 @@ theorem frameVal_ptr_inWindow {ctx : Ctx} {v : Value} {q : Ptr}
     · cases h; exact Ptr.inWindow_zero _
     · cases h
   · split at h
-    · simp only [Option.some.injEq] at h
-      unfold Val.ofStr at h; split at h <;> cases h
+    · revert h
+      simp only [Option.some.injEq, Val.ofStr]
+      split <;> simp
     · cases h
   · cases h
 
@@ -913,8 +914,9 @@ omit K in
 theorem safe_global_retype (s : String) (o : BitVec 64) (t : Ty) :
     Safe ((Val.ptr ⟨.global s, o⟩).retype t) := by
   cases t with
-  | int w => cases w <;> simp [Val.retype, Ptr.word, Ptr.convertible, Safe]
-  | _ => simp [Val.retype, Ptr.word, Ptr.convertible, Safe]
+  | int w =>
+    cases w <;> simp [Val.retype, Ptr.word, Ptr.convertible, Ptr.inWindow, Blk.window?, Safe]
+  | _ => simp [Val.retype, Ptr.word, Ptr.convertible, Ptr.inWindow, Blk.window?, Safe]
 
 omit K in
 /-- The data pointer of a non-empty string constant, at any shape of the constant (`poison` if
@@ -935,7 +937,7 @@ theorem safe_str_select (s : String) (x : Val) (t : Ty) :
     | str =>
       simp only [Val.retype, Val.retypePtr]
       unfold Val.ofStr
-      split <;> simp [Comp.select, Ptr.word, Ptr.convertible, Safe]
+      split <;> simp [Comp.select, Ptr.word, Ptr.convertible, Ptr.inWindow, Blk.window?, Safe]
     | _ => simp [Val.retype, Comp.select, Safe]
   · cases t <;> simp [Val.retype, Comp.select, Safe]
 
