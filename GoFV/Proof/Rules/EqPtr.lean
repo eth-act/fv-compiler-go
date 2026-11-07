@@ -164,6 +164,6 @@ theorem inst_r_generic_1689 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_
   refine ⟨⟨fun ae x h => ?_, fun ae b h => ?_⟩, ?_⟩
   · subst h; simp
   · subst h; simp
-  · simp [Val.retype, PtrOps.isNonNil, Ptr.word, Ptr.convertible]
+  · simp [Val.retype, PtrOps.isNonNil, Ptr.word, Ptr.convertible, Ptr.inWindow, Blk.window?]
 
 end GoFV.Proof.Rules
