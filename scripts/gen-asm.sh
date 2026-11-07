@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Regenerate GoFV/Asm/As.lean (the obj.As opcodes of compiled arm64 code, docs/PASSES3.md §1.1)
-# from the pinned Go tree (docs/PINS.md) with tools/asgen.
+# Regenerate GoFV/Asm/{As,Reg,OpAsm,Abi}.lean from the pinned Go tree (docs/PINS.md) with
+# tools/asgen: the obj.As opcodes of compiled arm64 code (docs/PASSES3.md §1.1), the arm64
+# a.out.go constants, opcodeTable[op].asm with the arm64/ssa.go branch tables, and the
+# internal/abi constants.
 #
 # usage: scripts/gen-asm.sh          (go from $GO, default `go` on PATH)
 set -euo pipefail
@@ -12,4 +14,6 @@ export TMPDIR=$root/tmp GOTMPDIR=$root/tmp
 cd "$root/tools/asgen"
 GOFLAGS=-mod=mod GOTOOLCHAIN=local \
   "$root/scripts/memcap.sh" "${GO:-go}" run . -go "$root/third_party/go" \
-  -o "$root/GoFV/Asm/As.lean" -source "${tag:-?} ($rev)"
+  -o "$root/GoFV/Asm/As.lean" -reg "$root/GoFV/Asm/Reg.lean" \
+  -opasm "$root/GoFV/Asm/OpAsm.lean" -oplean "$root/GoFV/SSA/Op.lean" \
+  -abi "$root/GoFV/Asm/Abi.lean" -source "${tag:-?} ($rev)"

@@ -10,7 +10,20 @@
 //   - src/cmd/internal/obj/arm64/anames.go: var Anames (stringer output, indexed from
 //     obj.A_ARCHSPECIFIC).
 //
-// usage: asgen -go <pinned Go root> -o GoFV/Asm/As.lean -source "<version (rev)>"
+// It also generates (each optional):
+//   - -reg GoFV/Asm/Reg.lean (reg.go): the integer constants of cmd/internal/obj/arm64
+//     a.out.go and sysRegEnc.go (registers, SPOP_*, C_*, …) except the opcode block;
+//   - -opasm GoFV/Asm/OpAsm.lean (opasm.go): opcodeTable[op].asm of ssa/opGen.go for every
+//     constructor of -oplean GoFV/SSA/Op.lean, and condBits, blockJump, leJumps, gtJumps of
+//     cmd/compile/internal/arm64/ssa.go;
+//   - -abi GoFV/Asm/Abi.lean (abi.go): the integer constants of internal/abi symtab.go,
+//     bounds.go, stack.go, abi_arm64.go and type.go's TraceArgs*.
+//
+// Constant values come from go/types (load.go: declarations-only type check of the pinned
+// packages for linux/arm64, errors ignored, every emitted value checked to be known).
+//
+// usage: asgen -go <pinned Go root> -o GoFV/Asm/As.lean [-reg …] [-opasm … -oplean …] [-abi …]
+// -source "<version (rev)>"
 package main
 
 import (
@@ -18,6 +31,7 @@ import (
 	"flag"
 	"fmt"
 	"go/ast"
+	"go/constant"
 	"go/parser"
 	"go/token"
 	"log"
@@ -106,9 +120,16 @@ func index(xs []string, x string) int {
 
 func main() {
 	goroot := flag.String("go", "", "pinned Go root")
-	out := flag.String("o", "", "output Lean file")
+	out := flag.String("o", "", "output Lean file (As.lean)")
 	source := flag.String("source", "?", "Go version and revision for the header")
+	regOut := flag.String("reg", "", "output Lean file for the arm64 a.out.go constants (Reg.lean)")
+	opAsmOut := flag.String("opasm", "", "output Lean file for opcodeTable asm and arm64/ssa.go tables (OpAsm.lean)")
+	abiOut := flag.String("abi", "", "output Lean file for the internal/abi constants (Abi.lean)")
+	opLean := flag.String("oplean", "", "GoFV/SSA/Op.lean (constructor names checked by -opasm)")
 	flag.Parse()
+	if *goroot == "" || *out == "" {
+		log.Fatal("usage: asgen -go <Go root> -o <As.lean> [-reg <Reg.lean>] [-opasm <OpAsm.lean> -oplean <Op.lean>] [-abi <Abi.lean>] -source <version>")
+	}
 	objDir := filepath.Join(*goroot, "src/cmd/internal/obj")
 	link := parse(filepath.Join(objDir, "link.go"))
 	portable := constBlock(link, "AXXX")
@@ -172,7 +193,60 @@ func main() {
 	p("def ofName? (s : String) : Option As := byName[s]?\n\n")
 	p("end As\n\ninstance : ToString As := ⟨As.name⟩\n")
 	p("instance : Repr As := ⟨fun a _ => .text (\"GoFV.Asm.As.\" ++ a.name)⟩\n\nend GoFV.Asm\n")
-	if err := os.WriteFile(*out, b.Bytes(), 0o666); err != nil {
+	writeFile(*out, b.Bytes())
+
+	tab := &asTable{generic: generic, arm64: arm64, archSpecific: archSpecific, baseARM64: baseARM64}
+	l := newLoader(*goroot, "cmd/internal/obj", "cmd/internal/obj/arm64", "internal/abi", "internal/goarch")
+	if v, _ := constant.Int64Val(l.intConst("cmd/internal/obj", "ABaseARM64")); int(v) != baseARM64 {
+		log.Fatalf("obj.ABaseARM64 = %d, asgen computed %d", v, baseARM64)
+	}
+	if v, _ := constant.Int64Val(l.intConst("cmd/internal/obj", "A_ARCHSPECIFIC")); int(v) != archSpecific {
+		log.Fatalf("obj.A_ARCHSPECIFIC = %d, asgen computed %d", v, archSpecific)
+	}
+	var regNames map[string]bool
+	if *regOut != "" || *opAsmOut != "" {
+		var reg []byte
+		reg, regNames = genReg(l, *source)
+		if *regOut != "" {
+			writeFile(*regOut, reg)
+		}
+	}
+	if *opAsmOut != "" {
+		if *opLean == "" {
+			log.Fatal("-opasm needs -oplean")
+		}
+		writeFile(*opAsmOut, genOpAsm(l, tab, regNames, *opLean, *source))
+	}
+	if *abiOut != "" {
+		writeFile(*abiOut, genAbi(l, *source))
+	}
+}
+
+func writeFile(path string, data []byte) {
+	if err := os.WriteFile(path, data, 0o666); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// asTable maps Go `obj.As` values to the As.lean constructor names.
+type asTable struct {
+	generic, arm64          []string
+	archSpecific, baseARM64 int
+}
+
+// name is the As constructor of the opcode with Go value v (fatal if v is no opcode).
+func (t *asTable) name(v constant.Value) string {
+	n, ok := constant.Int64Val(v)
+	if !ok {
+		log.Fatalf("opcode value %s is not an int64", v)
+	}
+	if n >= 0 && n < int64(t.archSpecific) {
+		return t.generic[n]
+	}
+	i := n - int64(t.baseARM64+t.archSpecific)
+	if i >= 0 && i < int64(len(t.arm64)) {
+		return t.arm64[i]
+	}
+	log.Fatalf("%d is not an arm64 or portable opcode", n)
+	return ""
 }
