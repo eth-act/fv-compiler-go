@@ -1,5 +1,5 @@
 import GoFV.Proof.Pass.StructLoad
-import GoFV.Proof.Pass.RewriteIMake
+import GoFV.Proof.Pass.RewriteAddrCmp
 import GoFV.Proof.TermStep
 import GoFV.Proof.Rules.Block
 
@@ -445,6 +445,15 @@ theorem replay_inv {tabs : Tables} {s : RuleSet} (hs : s.AllSound)
       · cases h
     rename_i hnims
     split at h
+    · split at h
+      · rename_i hok
+        obtain ⟨u0, u, hd, ⟨F⟩⟩ := acFacts hok
+        rw [hput, hd] at h
+        exact replay_inv hs evs _ M' B B' _ h (hI.addrCmp F)
+          (hB.mono (g := id) (fun _ h => h) hI.typed fun ρ _ n y hy => F.step hI.closed n y hy)
+      · cases h
+    rename_i hnac
+    split at h
     · rename_i hok
       obtain ⟨F⟩ := ruleFacts hok
       rw [hput] at h
@@ -456,7 +465,8 @@ theorem replay_inv {tabs : Tables} {s : RuleSet} (hs : s.AllSound)
         ((ofRuleSet_sound hs hcr).resolve_right fun h' => h'.elim
           (fun h' => by rw [h'.2] at har; cases har)
           (fun h' => h'.elim (fun h' => absurd h' hnls)
-            (fun h' => h'.elim (fun h' => absurd h' hnd) (fun h' => absurd h' hnims))))
+            (fun h' => h'.elim (fun h' => absurd h' hnd)
+              (fun h' => h'.elim (fun h' => absurd h' hnims) (fun h' => absurd h' hnac)))))
       exact replay_inv hs evs _ M' B B' _ h (hI.rule hsd F)
         (hB.mono (fun y hy => .inl hy) hI.typed fun ρ hρ n y hy => F.step hsd hI.closed hρ n y hy)
     · split at h

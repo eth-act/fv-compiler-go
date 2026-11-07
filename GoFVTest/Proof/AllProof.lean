@@ -325,6 +325,7 @@ import GoFV.Proof.Pass.Pipeline
 import GoFV.Proof.Pass.PipelineFull
 import GoFV.Proof.Pass.Prove
 import GoFV.Proof.Pass.Rewrite
+import GoFV.Proof.Pass.RewriteAddrCmp
 import GoFV.Proof.Pass.RewriteCases
 import GoFV.Proof.Pass.RewriteIMake
 import GoFV.Proof.Pass.RewriteLoadSel
@@ -467,6 +468,7 @@ import GoFV.Proof.Rules.Add5
 import GoFV.Proof.Rules.Add6
 import GoFV.Proof.Rules.Add7
 import GoFV.Proof.Rules.AddPtr
+import GoFV.Proof.Rules.AddrCmp
 import GoFV.Proof.Rules.AllSound
 import GoFV.Proof.Rules.And
 import GoFV.Proof.Rules.And2
@@ -527,6 +529,7 @@ import GoFV.Proof.Rules.EqPtr
 import GoFV.Proof.Rules.FloatArith
 import GoFV.Proof.Rules.FloatCmp
 import GoFV.Proof.Rules.FloatRules
+import GoFV.Proof.Rules.IDataSel
 import GoFV.Proof.Rules.IMakeSM
 import GoFV.Proof.Rules.IfaceCmp
 import GoFV.Proof.Rules.IsInBounds
@@ -659,6 +662,7 @@ import GoFV.Proof.WFCheck
 import GoFV.Proof.Witness.AddZero
 import GoFV.Proof.Witness.AddZeroRefines
 import GoFV.Proof.Witness.AddZeroSim
+import GoFV.Proof.Witness.AddrCmp
 import GoFV.Proof.Witness.Atomic
 import GoFV.Proof.Witness.BranchElim
 import GoFV.Proof.Witness.Buffered
@@ -706,6 +710,7 @@ import GoFV.Proof.Witness.FwdMalloc
 import GoFV.Proof.Witness.FwdNew
 import GoFV.Proof.Witness.FwdZeroStr
 import GoFV.Proof.Witness.HasWaitingReaders
+import GoFV.Proof.Witness.IDataSel
 import GoFV.Proof.Witness.IMakeSM
 import GoFV.Proof.Witness.InitF10
 import GoFV.Proof.Witness.KnownBits
