@@ -117,7 +117,7 @@ gate_install() {
   gate_worktree "$main_root" "$wt"
   mkdir -p "$units"
   [ -f "$units/gofv.slice" ] || cp "$wt/scripts/gofv.slice" "$units/gofv.slice"
-  for u in gofv-nightly-gate.service gofv-nightly-gate.timer; do
+  for u in gofvgate.slice gofv-nightly-gate.service gofv-nightly-gate.timer; do
     sed "s|@GATE_WT@|$wt|g" "$wt/scripts/systemd/$u" >"$units/$u"
   done
   systemctl --user daemon-reload
@@ -162,6 +162,8 @@ gate_steps() {
   cd "$root"
   mkdir -p "$run" tmp
   export TMPDIR=$root/tmp GOTMPDIR=$root/tmp
+  # memcap.sh scopes go into the gate's own slice (scripts/systemd/gofvgate.slice)
+  export FV_SLICE=gofvgate.slice
   local pin12 corpus cur
   pin12=$(sed -n 's/^pin=\([0-9a-f]\{12\}\).*/\1/p' scripts/build-go.sh)
   corpus=$(readlink -f "$parent/gofv-corpus/$pin12/full/plain" || true)

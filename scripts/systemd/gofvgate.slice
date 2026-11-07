@@ -1,0 +1,13 @@
+# Installed by `scripts/nightly-gate.sh --install`; docs/GATE.md.
+# The nightly gate's own slice, apart from the agents' gofv.slice: agents may legitimately fill
+# gofv.slice (one 16G job under the heavy lock plus 8G jobs), and above its MemoryHigh every
+# process in it is throttled. On 2026-11-07 that slowed the gate's ssa-check from 21 min to
+# more than 5 h. No MemoryHigh here, so the gate is never throttled; MemoryMax covers its 16G build.
+# The name has no dash on purpose: systemd nests `a-b.slice` under `a.slice`.
+[Unit]
+Description=gofv nightly gate (scripts/nightly-gate.sh and its memcap.sh scopes)
+
+[Slice]
+MemoryAccounting=yes
+MemoryMax=18G
+MemorySwapMax=0

@@ -132,9 +132,12 @@ issue.
   `free -g`) is at least 20G (`GATE_MIN_FREE_GB`).
 - Otherwise the attempt exits, and the next hourly attempt tries again. If the 06:00 attempt
   still lacks the memory, it posts "skipped" on the status issue.
-- `gofv-nightly-gate.service` runs in `gofv.slice` with `MemoryMax=8G`. That cap covers the
-  gate's own processes, including the qemu runs of the e2e programs. Every build and check
-  step runs in its own `scripts/memcap.sh` scope, capped at 8G, also in `gofv.slice`.
+- `gofv-nightly-gate.service` runs in `gofvgate.slice` (`MemoryMax=18G`, no `MemoryHigh`) with
+  `MemoryMax=8G` for the gate's own processes, including the qemu runs of the e2e programs.
+  Every build and check step runs in its own `scripts/memcap.sh` scope in the same slice
+  (`FV_SLICE`); the builds run at 16G under the heavy lock. The gate is kept out of the agents'
+  `gofv.slice`: above that slice's `MemoryHigh` every process in it is throttled, which on
+  2026-11-07 slowed `ssa-check` from 21 min to more than 5 h.
 - `../gofv-gate.lock` (`flock`) keeps two runs from overlapping.
 
 ## Operating it
@@ -148,5 +151,6 @@ systemctl --user list-timers gofv-nightly-gate.timer
 journalctl --user -u gofv-nightly-gate.service
 ```
 
-The unit templates are in `scripts/systemd/`. `--install` fills in the gate worktree path. It
-also copies `scripts/gofv.slice` if `~/.config/systemd/user/gofv.slice` does not exist.
+The unit templates are in `scripts/systemd/`. `--install` fills in the gate worktree path and
+installs `gofvgate.slice` (no dash: `gofv-gate.slice` would be a child of `gofv.slice`). It also copies `scripts/gofv.slice` if
+`~/.config/systemd/user/gofv.slice` does not exist.
