@@ -195,3 +195,7 @@ root = "GoFVTest.StockLowProbe"
 [[lean_exe]]
 name = "flagalloc-probe"
 root = "GoFVTest.FlagAllocProbe"
+
+[[lean_exe]]
+name = "asm-check"
+root = "GoFVTest.AsmCheck"
