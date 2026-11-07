@@ -131,7 +131,7 @@ theorem memsOK_of_tuple {vs : List Val} (h : MemsOK P (.tuple vs)) : ∀ v ∈ v
 
 /-- A pointer's word holds no memory. -/
 theorem word_mems (p : Ptr) : p.word.mems = [] := by
-  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ <;> rw [h] <;> rfl
+  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ | ⟨-, h⟩ <;> rw [h] <;> rfl
 
 theorem decodeInt_mems (w : Width) (bs : Array Byte) : (decodeInt w bs).mems = [] := by
   unfold decodeInt; split

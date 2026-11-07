@@ -66,11 +66,19 @@ theorem add_poison_right (x : Val) : Arm64.add .other [x, .poison] = .poison := 
 theorem add_poison_left (x : Val) : Arm64.add .other [.poison, x] = .poison := by
   cases x <;> rfl
 
-/-- A pointer's word addresses the pointer. -/
-theorem addr_word_zero (p : Ptr) : Arm64.addr p.word 0 = some p := by
-  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨hc, a, ha, h⟩ <;> rw [h]
-  · simp [Arm64.addr, Ptr.add]
-  · simp [Arm64.addr, Arm64.reg, Ptr.ofAddr_addr hc ha]
+/-- A pointer's word addresses the pointer, inside its window. -/
+theorem addr_word_zero {p : Ptr} (hw : p.inWindow = true) : Arm64.addr p.word 0 = some p := by
+  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨hc, a, ha, h⟩ | ⟨h', -⟩
+  · rw [h]; simp [Arm64.addr, Ptr.add]
+  · rw [h]; simp [Arm64.addr, Arm64.reg, Ptr.ofAddr_addr hc ha]
+  · rw [hw] at h'; cases h'
+
+/-- A pointer's word addresses the pointer, or nothing (outside its window). -/
+theorem addr_word_zero_cases (p : Ptr) :
+    Arm64.addr p.word 0 = none ∨ Arm64.addr p.word 0 = some p := by
+  cases hw : p.inWindow
+  · left; rw [Ptr.word_of_not_inWindow hw]; rfl
+  · exact .inr (addr_word_zero hw)
 
 /-- A pointer addresses itself. -/
 theorem addr_ptr_zero (p : Ptr) : Arm64.addr (.ptr p) 0 = some p := by
@@ -82,21 +90,25 @@ theorem addr_retypeL_zero (v : Val) {T : Ty} (hT : 64 ≤ argWidth T) :
   cases T with
   | int w =>
     cases w <;> simp [argWidth, Width.bits] at hT
-    right
     cases v with
     | int w x =>
+      right
       cases w <;> simp [Val.retypeL, Val.widen, Val.retype, Arm64.addr, Arm64.reg, Width.bits]
-    | ptr p => simp only [Val.retypeL, Val.widen, Val.retype, addr_word_zero, addr_ptr_zero]
-    | bool b => cases b <;> simp [Val.retypeL, Val.widen, Val.retype, Arm64.addr, Arm64.reg]
-    | _ => simp [Val.retypeL, Val.widen, Val.retype, Arm64.addr, Arm64.reg]
+    | ptr p =>
+      simp only [Val.retypeL, Val.widen, Val.retype, addr_ptr_zero]
+      exact addr_word_zero_cases p
+    | bool b => right; cases b <;> simp [Val.retypeL, Val.widen, Val.retype, Arm64.addr, Arm64.reg]
+    | _ => right; simp [Val.retypeL, Val.widen, Val.retype, Arm64.addr, Arm64.reg]
   | ptr e =>
-    right
     cases v with
     | int w x =>
+      right
       cases w <;> simp [Val.retypeL, Val.widen, Val.retype, Arm64.addr, Arm64.reg, Width.bits]
-    | ptr p => simp only [Val.retypeL, Val.widen, Val.retype, addr_word_zero, addr_ptr_zero]
-    | bool b => cases b <;> simp [Val.retypeL, Val.widen, Val.retype, Arm64.addr, Arm64.reg]
-    | _ => simp [Val.retypeL, Val.widen, Val.retype, Arm64.addr, Arm64.reg]
+    | ptr p =>
+      simp only [Val.retypeL, Val.widen, Val.retype, addr_ptr_zero]
+      exact addr_word_zero_cases p
+    | bool b => right; cases b <;> simp [Val.retypeL, Val.widen, Val.retype, Arm64.addr, Arm64.reg]
+    | _ => right; simp [Val.retypeL, Val.widen, Val.retype, Arm64.addr, Arm64.reg]
   | agg fs n =>
     left
     cases v with
@@ -114,7 +126,7 @@ theorem addr_add_imm (x : Val) (d : BitVec 64) :
   | ptr p =>
     simp only [Arm64.add, Arm64.reg, BitVec.setWidth_eq, PtrOps.ptrRes]
     split
-    · right; rw [addr_word_zero]; rfl
+    · rename_i hw; right; rw [addr_word_zero hw]; rfl
     · left; rfl
   | _ => right; simp [Arm64.add, Arm64.op2, Arm64.reg, Arm64.res, Arm64.addr]
 

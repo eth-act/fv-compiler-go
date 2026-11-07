@@ -446,7 +446,7 @@ theorem fresh_blockZero (hQ : FreshQ tabs f ρ) {m b : ID} {s q : Value}
   simp only [Tuple.selectN] at hm hp
   have hM : M' = M := retype_mem (by simpa using hm)
   subst hM
-  have hP : p = P := by simpa [Ptr.word_retype_ptr, Ptr.word_asPtrWord] using hp
+  have hP : p = P := (Ptr.word_asPtrWord_of (by simpa [Ptr.word_retype_ptr] using hp)).symm
   subst hP
   exact hz
 

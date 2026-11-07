@@ -213,8 +213,8 @@ theorem convert_word {t : Ty} {z : Val} (hz : z.hasTy (.int .w64) = true) (l : L
     cases he
     split
     · rename_i p
-      simp only [Val.hasTy, Bool.not_eq_eq_eq_not, Bool.not_true] at hz
-      simp [hz, Val.hasTy]
+      simp only [Val.hasTy] at hz
+      simp [Ptr.not_convertible_of_held hz, Val.hasTy]
     · exact hz
   · rfl
 

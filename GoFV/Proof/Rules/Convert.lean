@@ -59,10 +59,10 @@ theorem r_generic_1072_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic
       · simp only [PtrOps.convert, Val.retype]
         exact .int _ _
       · rw [h] at h00
-        simp only [Val.hasTy, Bool.not_eq_eq_eq_not, Bool.not_true] at h00
+        simp only [Val.hasTy] at h00
         have hi : Val.retype (.ptr el) (PtrOps.convert (.ptr el) [.ptr p, e.leaf [1, 0]]) = .ptr p :=
-          Ptr.word_of_not_convertible h00
-        rw [hi, convert_i64_nc h00]
+          Ptr.word_of_held h00
+        rw [hi, convert_i64_nc (Ptr.not_convertible_of_held h00)]
         exact .poison _
     | _ => intro h0; simp at h0
   | _ => intro h0; simp at h0

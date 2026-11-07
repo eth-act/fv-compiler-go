@@ -754,7 +754,7 @@ private theorem offPtr_sp_le (tabs : Tables) (T : Ty) (k : Int64) {a b : Val}
     Sem.Refines ((PtrOps.offPtr k [a]).retypeL T) ((movAddr tabs k none [b]).retypeL T) := by
   rcases ha with rfl | rfl
   · rw [show PtrOps.offPtr k [.poison] = .poison from rfl, retypeL_poison]; exact .poison _
-  · have hb : b = (spPtr 0).word := asPtrWord_of_refines hab (Ptr.word_asPtrWord _)
+  · have hb : b = (spPtr 0).word := asPtrWord_of_refines hab (Ptr.word_asPtrWord rfl)
     subst hb
     have hq : (spPtr 0).convertible = true := by decide
     obtain ⟨X, hX⟩ : ∃ X, (spPtr 0).addr? = some X := ⟨_, rfl⟩

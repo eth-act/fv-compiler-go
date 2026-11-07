@@ -86,7 +86,7 @@ theorem retypeL_word_wide (p : Ptr) {T : Ty} (hT : 64 ≤ argWidth T) :
   | ptr e => exact .inl (word_retypeL (.inr ⟨e, rfl⟩) p)
   | agg fs n =>
     right
-    rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ <;> rw [h] <;> rfl
+    rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ | ⟨-, h⟩ <;> rw [h] <;> rfl
   | _ => simp [argWidth] at hT
 
 /-- `MOVDaddr [k2] {ax} x` (at a shape of at least 64 bits) moved by `k1` as a load address:
@@ -127,7 +127,7 @@ theorem symPtr_movFold (tabs : Tables) {T0 T1 : Ty} {k1 k2 : Int64} (hk1 : offOK
       rcases retypeL_word_wide ⟨frameBlk tabs 0 a, BitVec.ofInt 64 k2.toInt⟩ hT1 with hw | hw <;>
         rw [hw]
       · right; left
-        rw [addr_word (by
+        rw [addr_word (frame_inWindow tabs 0 a (by omega)) (by
           simp only [Ptr.add]
           exact frame_inWindow tabs 0 a (by rw [BitVec.toNat_add]; omega))]
         simp only [Ptr.add, BitVec.add_comm]
@@ -195,7 +195,9 @@ theorem refines_addConst_movAddr (tabs : Tables) {T T1 : Ty} (hT : wordShape T =
     rw [hq]
     simp only [PtrOps.ptrRes, hw2, hw12, ite_true, word_retypeL (wordShape_cases hT1)]
     rcases Ptr.word_cases ⟨frameBlk tabs 0 a, BitVec.ofInt 64 k2.toInt⟩ with
-      ⟨-, h⟩ | ⟨hc, w, hwa, h⟩
+      ⟨-, h⟩ | ⟨hc, w, hwa, h⟩ | ⟨h', -⟩
+    rotate_right
+    · rw [hw2] at h'; cases h'
     · rw [h]
       simp only [Arm64.addP, PtrOps.ptrRes, hw12, ite_true]
       exact Sem.Refines.refl _

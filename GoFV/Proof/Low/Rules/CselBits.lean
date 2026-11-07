@@ -576,7 +576,7 @@ private theorem retypeL_word_wide (p : Ptr) {T : Ty} (hT : 64 ≤ argWidth T) :
     rw [Mono.widen_of_hasTy _ _ (Ptr.word_hasTy_ptr p e), Ptr.word_retype_ptr]
   | agg fs n =>
     right
-    rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ <;> rw [h] <;> rfl
+    rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ | ⟨-, h⟩ <;> rw [h] <;> rfl
   | _ => simp [argWidth] at hT
 
 /-- A pointer at a shape without a whole register (`argWidth < 64`: a narrow integer or a

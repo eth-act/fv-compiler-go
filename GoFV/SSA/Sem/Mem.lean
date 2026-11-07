@@ -61,22 +61,6 @@ end Val
 /-- `p` is the nil pointer (concrete address 0). -/
 def Ptr.isNil (p : Ptr) : Bool := p.blk == .nil && p.off == 0
 
-/-- The address window of a block: offsets below it keep a pointer's concrete address inside
-the block's encoding (`nil` and heap blocks `2^40`, frame blocks `2^24`; globals have no
-addresses). Every allocation is smaller than its window (heap allocations at most
-`Runtime.maxModelAlloc = 2^24`, frame variables below Go's 10 MB stack-variable limit), so
-in-bounds and one-past-the-end pointers stay inside (§3.3). -/
-def Blk.window? : Blk → Option Nat
-  | .nil | .heap _ => some (2 ^ 40)
-  | .local _ _ | .temp _ _ | .outargs _ => some (2 ^ 24)
-  | .global _ | .wbuf => none
-
-/-- `p`'s offset is inside its block's address window. -/
-def Ptr.inWindow (p : Ptr) : Bool :=
-  match p.blk.window? with
-  | some w => decide (p.off.toNat < w)
-  | none => true
-
 /-- An access of block `b` ending at offset `e` stays inside its address window (globals have
 none): the bytes of a valid access are addressed by in-window pointers (`OffPtr` into it is not
 `poison`, issue #151). -/
@@ -86,11 +70,14 @@ def Blk.endsInWindow (b : Blk) (e : Nat) : Bool :=
   | none => true
 
 /-- A pointer as the word a program computes for it by address arithmetic: its concrete address
-when it converts back to itself (`Ptr.convertible`, `Ptr.ofAddr_addr`), else the pointer. -/
+when it converts back to itself (`Ptr.convertible`, `Ptr.ofAddr_addr`), else the pointer if it
+lies inside its window (`Ptr.held`), else `poison`: a pointer outside its window is past the
+end of its allocation (every allocation is smaller than its window, `Blk.window?`), which Go's
+`unsafe.Pointer` rules forbid (`docs/plans/semantics2.md` §3, "Pointers outside their window"). -/
 def Ptr.word (p : Ptr) : Val :=
   match p.convertible, p.addr? with
   | true, some a => .int .w64 a
-  | _, _ => .ptr p
+  | _, _ => if p.inWindow then .ptr p else .poison
 
 /-- Pointer equality (`EqPtr`): the same block and offset (§3.3: pointers of different
 allocations are never equal; a pointer that left its allocation is `poison`). -/

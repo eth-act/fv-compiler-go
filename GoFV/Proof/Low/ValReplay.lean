@@ -1142,7 +1142,9 @@ theorem addConst_frameFold {n : AuxRef} (hn : GoFV.Opt.LowerTerm.auxIsName tabs 
   have hw : ((framePtr tabs 0 n).add (BitVec.ofInt 64 k.toInt)).inWindow = true := by
     rw [← hq]; exact frame_inWindow tabs 0 n (by omega)
   simp only [movAddr, symPtr_name hn, Option.elim, hq, PtrOps.ptrRes, hw, ite_true]
-  rcases Ptr.word_cases (framePtr tabs 0 n) with ⟨-, h⟩ | ⟨hc, a, ha, h⟩
+  rcases Ptr.word_cases (framePtr tabs 0 n) with ⟨-, h⟩ | ⟨hc, a, ha, h⟩ | ⟨h', -⟩
+  rotate_right
+  · rw [show (framePtr tabs 0 n).inWindow = true from Ptr.inWindow_zero _] at h'; cases h'
   · rw [h]
     simp only [Arm64.addP, PtrOps.ptrRes, hw, ite_true]
     exact Sem.Refines.refl _
@@ -1156,7 +1158,8 @@ theorem addConst_frameFold {n : AuxRef} (hn : GoFV.Opt.LowerTerm.auxIsName tabs 
 /-- A value a pointer word refines is `poison` or that word. -/
 theorem refines_word {x : Val} {q : Ptr} (h : Sem.Refines x q.word) :
     x = .poison ∨ x = q.word := by
-  rcases Ptr.word_cases q with ⟨-, hq⟩ | ⟨-, a, -, hq⟩ <;> rw [hq] at h ⊢ <;> cases h <;> simp
+  rcases Ptr.word_cases q with ⟨-, hq⟩ | ⟨-, a, -, hq⟩ | ⟨-, hq⟩ <;> rw [hq] at h ⊢ <;> cases h <;>
+    simp
 
 /-- `ADDconst [0]` (at a word shape) of a frame variable `n`'s address register (`poison` or the
 address word in activation 0) is `poison` or that word. -/

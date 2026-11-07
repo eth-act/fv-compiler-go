@@ -616,9 +616,10 @@ theorem retype_i64_cases (v : Val) :
   | ptr p =>
     have h : (Val.ptr p).retype (.int .w64) = p.word := rfl
     rw [h]
-    rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ <;> rw [h]
+    rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ | ⟨-, h⟩ <;> rw [h]
     · exact .inr (.inr ⟨_, rfl⟩)
     · exact .inr (.inl ⟨_, rfl⟩)
+    · exact .inl rfl
   | _ => exact .inl rfl
 
 /-- **A `growslice` call's register** (`growV`): under `Env.GrowLen`, its evaluation is a tuple

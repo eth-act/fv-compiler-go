@@ -600,7 +600,7 @@ theorem offVal {S T : Frame} {k j : Nat} (hS : SFacts env tabs f F0 S (oS.toList
   have hpt := L.hpty
   generalize tabs.ty ov.type = ty at hpt ⊢
   cases ty <;> simp [isPtrTy] at hpt
-  rw [Option.getD_some, Val.asPtrWord_retype_ptr, PtrOps.offPtr_asPtrWord, hyT, Option.bind_some,
+  rw [Option.getD_some, PtrOps.offPtr_retype_ptr, PtrOps.offPtr_asPtrWord, hyT, Option.bind_some,
     L.hpai, ofInt_ofNat, Ptr.step?, if_pos (inWindow_of_write hMS hlt)]
 
 /-- **A fresh field store** of a split the source evaluated: a memory refining the struct write

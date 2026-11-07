@@ -4,10 +4,10 @@ import GoFV.SSA.Sem.Layout
 # `Val.retype` gives a value of the shape
 
 `Val.retype_hasTy`: `(v.retype t).hasTy t` for every value and shape (#108): a misfit becomes
-`poison`; a pointer becomes its word (`Ptr.word`: its address if it converts back to itself),
-which both word shapes accept (#290). `Val.retype_of_hasTy`: a value of the shape is unchanged;
-so `retype` is idempotent (`Val.retype_idem`). The two word shapes have the same values and
-retype alike (`Val.hasTy_ptr_eq_i64`, `Val.retype_ptr_eq_i64`).
+`poison`; a pointer becomes its word (`Ptr.word`: its address if it converts back to itself,
+`poison` outside its window), which both word shapes accept (#290). `Val.retype_of_hasTy`: a
+value of the shape is unchanged; so `retype` is idempotent (`Val.retype_idem`). The two word
+shapes have the same values and retype alike (`Val.hasTy_ptr_eq_i64`, `Val.retype_ptr_eq_i64`).
 -/
 
 namespace GoFV.SSA.Sem
@@ -20,61 +20,110 @@ theorem Ptr.addr?_isSome_of_convertible {p : Ptr} (h : p.convertible = true) :
   rcases p with ⟨b, off⟩
   cases b <;> simp_all [Ptr.convertible, Ptr.addr?, Blk.base?]
 
-/-- A pointer's word: its address if it converts back to itself, else the pointer (which then
-does not convert). -/
+/-- A pointer that converts to an integer lies inside its window. -/
+theorem Ptr.inWindow_of_convertible {p : Ptr} (h : p.convertible = true) :
+    p.inWindow = true := by
+  rcases p with ⟨b, off⟩
+  cases b <;> simp_all [Ptr.convertible, Ptr.inWindow, Blk.window?]
+
+/-- A pointer at offset 0 lies inside its window (every window is positive). -/
+theorem Ptr.inWindow_zero (b : Blk) : (⟨b, 0⟩ : Ptr).inWindow = true := by
+  cases b <;> rfl
+
+theorem Ptr.held_iff {p : Ptr} : p.held = true ↔ p.convertible = false ∧ p.inWindow = true := by
+  simp [Ptr.held]
+
+/-- A pointer held as a pointer does not convert. -/
+theorem Ptr.not_convertible_of_held {p : Ptr} (h : p.held = true) : p.convertible = false :=
+  (Ptr.held_iff.1 h).1
+
+/-- A pointer held as a pointer lies inside its window. -/
+theorem Ptr.inWindow_of_held {p : Ptr} (h : p.held = true) : p.inWindow = true :=
+  (Ptr.held_iff.1 h).2
+
+/-- A pointer that has some shape is held as a pointer (only the word shapes have pointers). -/
+theorem Ptr.held_of_hasTy {p : Ptr} {t : Ty} (h : (Val.ptr p).hasTy t = true) : p.held = true := by
+  cases t with
+  | int w => cases w <;> simp_all [Val.hasTy]
+  | ptr _ => simpa [Val.hasTy] using h
+  | _ => simp [Val.hasTy] at h
+
+/-- A pointer's word: the pointer if it is held as one (`Ptr.held`), its address if it converts
+back to itself, `poison` outside its window. -/
 theorem Ptr.word_cases (p : Ptr) :
-    (p.convertible = false ∧ p.word = .ptr p) ∨
-      (p.convertible = true ∧ ∃ a, p.addr? = some a ∧ p.word = .int .w64 a) := by
+    (p.held = true ∧ p.word = .ptr p) ∨
+      (p.convertible = true ∧ ∃ a, p.addr? = some a ∧ p.word = .int .w64 a) ∨
+      (p.inWindow = false ∧ p.word = .poison) := by
   cases hc : p.convertible with
-  | false => exact .inl ⟨rfl, by simp [Ptr.word, hc]⟩
+  | false =>
+    cases hw : p.inWindow with
+    | false => exact .inr (.inr ⟨rfl, by simp [Ptr.word, hc, hw]⟩)
+    | true => exact .inl ⟨by simp [Ptr.held, hc, hw], by simp [Ptr.word, hc, hw]⟩
   | true =>
     have hs := Ptr.addr?_isSome_of_convertible hc
     cases ha : p.addr? with
     | none => rw [ha] at hs; cases hs
-    | some a => exact .inr ⟨rfl, a, rfl, by simp [Ptr.word, hc, ha]⟩
+    | some a => exact .inr (.inl ⟨rfl, a, rfl, by simp [Ptr.word, hc, ha]⟩)
 
 /-- A pointer's word is a 64-bit integer or a pointer. -/
 theorem Ptr.word_eq_int {p : Ptr} {w : Width} {y : BitVec w.bits} (h : p.word = .int w y) :
     w = .w64 := by
-  rcases Ptr.word_cases p with ⟨-, h'⟩ | ⟨-, a, -, h'⟩ <;> rw [h'] at h
+  rcases Ptr.word_cases p with ⟨-, h'⟩ | ⟨-, a, -, h'⟩ | ⟨-, h'⟩ <;> rw [h'] at h
   · cases h
   · cases h; rfl
+  · cases h
 
 @[simp] theorem Ptr.word_ne_bool (p : Ptr) (b : Bool) : p.word ≠ .bool b := by
-  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ <;> rw [h] <;> nofun
+  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ | ⟨-, h⟩ <;> rw [h] <;> nofun
 
-@[simp] theorem Ptr.word_ne_poison (p : Ptr) : p.word ≠ .poison := by
-  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ <;> rw [h] <;> nofun
+@[simp] theorem Ptr.word_ne_poison {p : Ptr} (hw : p.inWindow = true) : p.word ≠ .poison := by
+  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ | ⟨h', -⟩
+  · rw [h]; nofun
+  · rw [h]; nofun
+  · rw [hw] at h'; cases h'
 
 @[simp] theorem Ptr.word_ne_mem (p : Ptr) (m : Mem) : p.word ≠ .mem m := by
-  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ <;> rw [h] <;> nofun
+  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ | ⟨-, h⟩ <;> rw [h] <;> nofun
 
 @[simp] theorem Ptr.word_ne_agg (p : Ptr) (vs : List Val) : p.word ≠ .agg vs := by
-  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ <;> rw [h] <;> nofun
+  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ | ⟨-, h⟩ <;> rw [h] <;> nofun
 
 @[simp] theorem Ptr.word_ne_tuple (p : Ptr) (vs : List Val) : p.word ≠ .tuple vs := by
-  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ <;> rw [h] <;> nofun
+  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ | ⟨-, h⟩ <;> rw [h] <;> nofun
 
 /-- The nil pointer's word is address 0. -/
 theorem Ptr.null_word : Ptr.null.word = .int .w64 0 := rfl
 
-theorem Ptr.word_of_not_convertible {p : Ptr} (h : p.convertible = false) : p.word = .ptr p := by
-  simp [Ptr.word, h]
+/-- A pointer held as a pointer is its own word. -/
+theorem Ptr.word_of_held {p : Ptr} (h : p.held = true) : p.word = .ptr p := by
+  obtain ⟨hc, hw⟩ := Ptr.held_iff.1 h
+  simp [Ptr.word, hc, hw]
 
-/-- A pointer's word is a word: a 64-bit integer or a pointer that does not convert. -/
+/-- A pointer outside its window has the word `poison`. -/
+theorem Ptr.word_of_not_inWindow {p : Ptr} (h : p.inWindow = false) : p.word = .poison := by
+  have hc : p.convertible = false := by
+    cases hc : p.convertible
+    · rfl
+    · rw [Ptr.inWindow_of_convertible hc] at h; cases h
+  simp [Ptr.word, hc, h]
+
+/-- A pointer's word is a word: a 64-bit integer, a pointer held as one, or `poison`. -/
 theorem Ptr.isPtrWord_word (p : Ptr) : p.word.isPtrWord = true := by
-  rcases Ptr.word_cases p with ⟨hc, h⟩ | ⟨-, a, -, h⟩
+  rcases Ptr.word_cases p with ⟨hc, h⟩ | ⟨-, a, -, h⟩ | ⟨-, h⟩
   · simp [h, Val.isPtrWord, hc]
+  · simp [h, Val.isPtrWord]
   · simp [h, Val.isPtrWord]
 
 theorem Ptr.word_hasTy_ptr (p : Ptr) (e : Option Nat) : p.word.hasTy (.ptr e) = true := by
-  rcases Ptr.word_cases p with ⟨hc, h⟩ | ⟨-, a, -, h⟩
+  rcases Ptr.word_cases p with ⟨hc, h⟩ | ⟨-, a, -, h⟩ | ⟨-, h⟩
   · simp [h, Val.hasTy, hc]
+  · simp [h, Val.hasTy]
   · simp [h, Val.hasTy]
 
 theorem Ptr.word_hasTy_i64 (p : Ptr) : p.word.hasTy (.int .w64) = true := by
-  rcases Ptr.word_cases p with ⟨hc, h⟩ | ⟨-, a, -, h⟩
+  rcases Ptr.word_cases p with ⟨hc, h⟩ | ⟨-, a, -, h⟩ | ⟨-, h⟩
   · simp [h, Val.hasTy, hc]
+  · simp [h, Val.hasTy]
   · simp [h, Val.hasTy]
 
 theorem Val.retypePtr_eq (e : Option Nat) (v : Val) : v.retypePtr = v.retype (.ptr e) := by
@@ -182,8 +231,8 @@ theorem Val.retypePtr_of_isPtrWord {p : Val} (h : p.isPtrWord = true) :
   cases p with
   | int w x => cases w <;> simp_all [Val.isPtrWord, Val.retypePtr]
   | ptr q =>
-    simp only [Val.isPtrWord, Bool.not_eq_eq_eq_not, Bool.not_true] at h
-    exact Ptr.word_of_not_convertible h
+    simp only [Val.isPtrWord] at h
+    exact Ptr.word_of_held h
   | _ => simp_all [Val.isPtrWord, Val.retypePtr]
 
 theorem Val.ofStr_hasTy_of {p : Val} (hp : p.isPtrWord = true) (l : Val) :
@@ -327,12 +376,12 @@ theorem Val.retype_of_hasTy : ∀ {t : Ty} {v : Val}, v.hasTy t = true → v.ret
   | .int w', .ptr p, h => by
     cases w' with
     | w64 =>
-      simp only [Val.hasTy, Bool.not_eq_eq_eq_not, Bool.not_true] at h
-      exact Ptr.word_of_not_convertible h
+      simp only [Val.hasTy] at h
+      exact Ptr.word_of_held h
     | _ => simp [Val.hasTy] at h
   | .ptr _, .ptr _, h => by
-    simp only [Val.hasTy, Bool.not_eq_eq_eq_not, Bool.not_true] at h
-    exact Ptr.word_of_not_convertible h
+    simp only [Val.hasTy] at h
+    exact Ptr.word_of_held h
   | .bool, .bool _, _ => rfl
   | .mem, .mem _, _ => rfl
   | .tuple ts, .tuple vs, h => by
@@ -411,9 +460,10 @@ theorem Ptr.word_retype_ptr (p : Ptr) (e : Option Nat) : p.word.retype (.ptr e) 
 theorem Ptr.word_retype_i64 (p : Ptr) : p.word.retype (.int .w64) = p.word :=
   Val.retype_of_hasTy (Ptr.word_hasTy_i64 p)
 
-/-- A pointer without a concrete address is its own word. -/
-theorem Ptr.word_of_addr_none {p : Ptr} (h : p.addr? = none) : p.word = .ptr p := by
-  simp [Ptr.word, h]
+/-- A pointer without a concrete address inside its window is its own word. -/
+theorem Ptr.word_of_addr_none {p : Ptr} (h : p.addr? = none) (hw : p.inWindow = true) :
+    p.word = .ptr p := by
+  simp [Ptr.word, h, hw]
 
 
 /-! ## Witnesses -/

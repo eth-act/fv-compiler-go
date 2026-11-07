@@ -795,7 +795,7 @@ theorem move_den {ρ ρ' : ID → Val} (hT : Term.Typed f.value? tabs ρ)
     revert hoty; cases tabs.ty offp.type <;> simp [isPtrTy]
   have hoffw : ((PtrOps.offPtr offp.auxInt [den (listedDefs g) tabs ρ' (m1 + m2) mv.args[1]!]).retype
       (tabs.ty offp.type)).asPtrWord = some (q.add (BitVec.ofNat 64 offp.auxInt.toInt.toNat)) := by
-    rw [he, Val.asPtrWord_retype_ptr, PtrOps.offPtr_asPtrWord, hsrc, Option.bind_some, hc]
+    rw [he, PtrOps.offPtr_retype_ptr, PtrOps.offPtr_asPtrWord, hsrc, Option.bind_some, hc]
     simp only [Ptr.step?, read_inWindow hr (show
       offp.auxInt.toInt.toNat < mv.auxInt.toInt.toNat by omega), ite_true]
   have hmemR : Sem.Refines (.mem m0) (den (listedDefs g) tabs ρ' (m1 + m2 + 1) mv.args[2]!) :=

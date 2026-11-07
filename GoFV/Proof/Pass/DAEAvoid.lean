@@ -88,8 +88,9 @@ theorem bytesPtr?_mem {bs : Array Byte} {p : Ptr} (h : bytesPtr? bs = some p) :
 /-- **A pointer's word avoids every set it points outside of** (`Ptr.word`: an integer avoids
 everything, else the pointer itself). -/
 theorem word_avoids {U : Blk → Prop} {p : Ptr} (h : ¬ U p.blk) : Val.Avoids U p.word := by
-  rcases Ptr.word_cases p with ⟨-, hw⟩ | ⟨-, a, -, hw⟩ <;> rw [hw]
+  rcases Ptr.word_cases p with ⟨-, hw⟩ | ⟨-, a, -, hw⟩ | ⟨-, hw⟩ <;> rw [hw]
   · exact h
+  · trivial
   · trivial
 
 theorem decodeInt_avoids {U : Blk → Prop} {bs : Array Byte} (h : BAv U bs) (w : Width) :
