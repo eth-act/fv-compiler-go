@@ -258,9 +258,10 @@ theorem fwdEvent?_none {t : Interp.Table} (h : t.loads = #[]) (f : Func) (ev : R
 theorem fwdPre_none {t : Interp.Table} (h : t.loads = #[]) (tabs : Tables) (sel : Bool)
     (late : List ID) (f : Func) (log : Array RwEvent) :
     RewriteCheck.fwdPre t tabs sel late f log = (f, log) := by
-  have key : ∀ (ro : List (String × GoFV.SSA.Sem.Alloc)) (l : List RwEvent) (acc : Array RwEvent),
-      l.foldl (RewriteCheck.fwdStep t tabs ro sel late f) (f, acc) = (f, acc ++ l.toArray) := by
-    intro ro l
+  have key : ∀ (ro : List (String × GoFV.SSA.Sem.Alloc)) (eq : List String × List String)
+      (l : List RwEvent) (acc : Array RwEvent),
+      l.foldl (RewriteCheck.fwdStep t tabs ro eq sel late f) (f, acc) = (f, acc ++ l.toArray) := by
+    intro ro eq l
     induction l with
     | nil => intro acc; simp
     | cons ev l ih =>
