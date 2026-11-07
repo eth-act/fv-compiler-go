@@ -1943,7 +1943,7 @@
  type LocalSlotSplitKey struct {
 --- a/src/cmd/compile/internal/ssagen/export_prog_gofv.go
 +++ b/src/cmd/compile/internal/ssagen/export_prog_gofv.go
-@@ -0,0 +1,1027 @@
+@@ -0,0 +1,1041 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -2100,7 +2100,20 @@
 +		gofvDwarf.Lock()
 +		defer gofvDwarf.Unlock()
 +		if d := gofvDwarf.fns[s]; d != nil {
-+			d.fnstate, d.wrapper, d.lines = fnstate, wrapper, lines
++			// A copy: the DIE writer sorts InlVars and marks empty calls in place.
++			fs := *fnstate
++			fs.Scopes = slices.Clone(fnstate.Scopes)
++			for i := range fs.Scopes {
++				fs.Scopes[i].Vars = slices.Clone(fs.Scopes[i].Vars)
++			}
++			fs.InlCalls.Calls = slices.Clone(fnstate.InlCalls.Calls)
++			for i := range fs.InlCalls.Calls {
++				c := &fs.InlCalls.Calls[i]
++				c.Children = slices.Clone(c.Children)
++				c.InlVars = slices.Clone(c.InlVars)
++				c.Ranges = slices.Clone(c.Ranges)
++			}
++			d.fnstate, d.wrapper, d.lines = &fs, wrapper, lines
 +		}
 +	}
 +	obj.GOFVChildDIERef = func(s *obj.LSym, ridx int, tgt *obj.LSym, dclidx int, applied bool, off int64) {
@@ -2880,8 +2893,9 @@
 +	}
 +}
 +
-+// dwarf writes the dwarf section: populateDWARF's state (dwarfgen.Info's scopes, variables
-+// and inlined calls, E2) and the function's DWARF symbols at the end of Compile.
++// dwarf writes the dwarf section: populateDWARF's state before the DIEs are written
++// (dwarfgen.Info's scopes, variables and inlined calls, E2) and the function's DWARF symbols
++// at the end of Compile.
 +func (x *gofvProgExporter) dwarf() {
 +	s := x.fn.LSym
 +	gofvDwarf.Lock()
@@ -3132,17 +3146,23 @@
  //
 --- a/src/cmd/internal/obj/dwarf.go
 +++ b/src/cmd/internal/obj/dwarf.go
-@@ -391,8 +391,22 @@
+@@ -376,6 +376,9 @@
+ 		InlCalls:      inlcalls,
+ 		UseBASEntries: ctxt.UseBASEntries,
  	}
- 	// Fill in the debug lines symbol.
- 	ctxt.generateDebugLinesSymbol(s, lines)
 +	if GOFVPopulateDWARF != nil {
 +		GOFVPopulateDWARF(s, fnstate, s.Wrapper(), lines)
 +	}
+ 	if absfunc != nil {
+ 		err = dwarf.PutAbstractFunc(dwctxt, fnstate)
+ 		if err != nil {
+@@ -393,6 +396,18 @@
+ 	ctxt.generateDebugLinesSymbol(s, lines)
  }
  
 +// gofv Prog exporter hooks (nil unless GOFV_SSA_EXPORT is set). GOFVPopulateDWARF is called
-+// at the end of populateDWARF with the function's DWARF state and its debug-lines symbol.
++// by populateDWARF before the DIEs are written (they sort inlined calls' variables and mark
++// empty calls in place) with the function's DWARF state and its debug-lines symbol.
 +// GOFVChildDIERef is called by ReferenceChildDIE (under the table's lock) with the offset it
 +// added to the relocation's Add (applied false: queued for Finalize). GOFVChildDIEOffsets is
 +// called by RegisterChildDIEOffsets.
@@ -3155,7 +3175,7 @@
  // DwarfIntConst creates a link symbol for an integer constant with the
  // given name, type and value.
  func (ctxt *Link) DwarfIntConst(name, typename string, val int64) {
-@@ -581,6 +595,9 @@
+@@ -581,6 +596,9 @@
  				off := do.offset
  				s.R[ridx].Add += int64(off)
  				found = true
@@ -3165,7 +3185,7 @@
  				break
  			}
  		}
-@@ -589,6 +606,9 @@
+@@ -589,6 +607,9 @@
  		}
  	} else {
  		sf.fixups = append(sf.fixups, relFixup{s, int32(ridx), int32(dclidx)})
@@ -3175,7 +3195,7 @@
  	}
  }
  
-@@ -613,6 +633,9 @@
+@@ -613,6 +634,9 @@
  
  	ft.mu.Lock()
  	defer ft.mu.Unlock()
