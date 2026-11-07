@@ -4,8 +4,8 @@ gofv is a formally verified port of the Go compiler's SSA back end to Lean 4, in
 clifv (eth-act/clifv, a verified CLIF → AArch64 compiler). Phase 1 is the machine-independent
 SSA optimisation pipeline: the passes of `cmd/compile/internal/ssa/compile.go` from
 `number lines` up to, but not including, `lower` (§4, done). Phase 2 is the arm64-specific
-part from `lower` through `regalloc`, `loop rotate` and `trim` (§6). Assembly emission
-(`genssa`) is Phase 3.
+part from `lower` through `regalloc`, `loop rotate` and `trim` (§6). Phase 3 is everything
+after `trim` down to object code: `genssa`, the assembler and the runtime metadata (§7).
 
 ## 0. Ground rules
 
@@ -130,3 +130,49 @@ the Lean result. New in Phase 2:
 Labels `milestone:H1` … `milestone:H8`. Dependencies: H1 → H3, H4, H5 (parity needs the
 sections); H2 → H3, H4, H5, H6; H3–H5 → H8; H6 → H7. H4's `loop rotate` and `trim` start from
 the exported `regalloc` section and do not wait for H5.
+
+## 7. Phase 3: genssa, assembly and object code
+
+Scope: per function on linux/arm64, from the `trim` output to the bytes, relocations and
+metadata in the object file: frame layout (`AllocFrame`, MergeLocals), liveness (stack maps,
+unsafe points, stack objects), `genssa` with `arm64.ssaGenValue`/`ssaGenBlock`, `defframe`,
+`cmd/internal/obj` with `obj/arm64` (`progedit`, `preprocess`, `span7`: literal pools, branch
+veneers, encodings, relocations), unsafe/restartable points, pc tables and funcdata, DWARF. The
+package-level object writer (`NumberSyms`, `WriteObjFile`) and the linker stay stock and
+trusted. Survey: `docs/PASSES3.md` (24 steps A1–F2, inputs/outputs, parity traps, export needs,
+proof difficulty); machine semantics, the relation to `runLoc`, ABI, frame, runtime hooks and
+what is trusted: `docs/plans/semantics3.md`. Tracking issue #546.
+
+Same method once more: export each cut point, exact Lean ports at per-function parity, then
+semantics and proofs, then the driver. New in Phase 3:
+
+- **Forms.** L2f (framed SSA, `runFrame`), P0–P2 (Prog lists before and after `progedit` and
+  `preprocess`, `runProg`: the machine with a Prog as program counter), M (machine words,
+  `runMach`); debug information and the object file have no semantics (parity only).
+- **Machine semantics: option (a) + (c).** Our own ARM64 instruction semantics over the forms
+  the compiler emits, built on Phase 2's `BitVec` definitions and co-simulated under qemu on
+  Go-assembled words; the assembler (`span7`, 8,795 lines) is ported exactly but untrusted and
+  its output is checked by a proven object validator (decode the words, check each Prog's
+  specification), as regalloc is in Phase 2. Agreement with an ASL-derived model (clifv's
+  `FV/Arm`) only after the licence decision (#415): I6b, #555.
+- **Runtime metadata is validated against runtime contracts.** pcsp, stack maps (coverage and
+  validity, needed by stack moves and the GC), unsafe/restartable points (R27 dead where
+  async preemption may stop), `PCDATA_PanicBounds`, morestack spill records. Calls, morestack,
+  stack moves, async preemption, nil faults and panics are hooks with trusted contracts.
+- **Concrete addresses.** The first end-to-end theorem guards against pointer→integer
+  conversions; a parametrised address assignment comes later (semantics3 §4.3).
+
+| Id | Content | Issue |
+| --- | --- | --- |
+| I1 | Export `gofv-prog 1`: after `AllocFrame`, liveness, after `defframe` (Prog list with identities, FuncInfo, `bstart`/`valueToProgAfter`), inside `Flushplist` (after `linkpatch`, `preprocess`, `span7`), pc tables, DWARF symbols; `oplook` coverage histogram; new corpus versions | #547 |
+| I2 | Lean Prog IR (`Prog`, `Addr`, `LSym`, `Reloc`, `FuncInfo`), generated `As`/register constants and `optab`; parser/printer round trip | #548 |
+| I3 | genssa parity: MergeLocals, `AllocFrame`, liveness and metadata symbols, `objw`, the block/value loop, arm64 value/block emission, inline marks, branches, jump tables, `defframe` | #549 |
+| I4 | Assembler parity: `linkpatch`/`progedit`, `preprocess`, `span7` (classes, pools, veneers, encodings, relocations), unsafe points, pc tables and funcdata | #550 |
+| I5 | Debug-info parity: location lists, DWARF variables/scopes/inlined calls/DIEs, line programs | #551 |
+| I6 | Machine semantics: ARM64 subset (`Insn`, `decode`, `exec`), co-simulation, `runFrame`, `runProg`, `runMach` with runtime hooks, ABI/frame predicates, machine difftest (I6b #555: ASL agreement, blocked on #415) | #552 |
+| I7 | Proofs: framing validators, genssa simulation, progedit/preprocess refinements, the object validator and its soundness, metadata validators, the end-to-end theorem through object code | #553 |
+| I8 | Driver through object code: import after `genssa`, then after `Flushplist`, then with Lean DWARF; byte-identical objects; verified mode | #554 |
+
+Labels `milestone:I1` … `milestone:I8`, `phase3`. Dependencies: I1 → I3, I4, I5 (parity needs
+the records); I2 → I3, I4, I5, I6; I4 → I5 (final PCs); I6 → I7; I3 → I8 stage 1, I4 → stage 2,
+I5 → stage 3; I7 → I8's verified mode. Only I6b is blocked on #415.
