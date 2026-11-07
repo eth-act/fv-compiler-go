@@ -203,3 +203,43 @@ functions), 0 mismatches and 0 pass errors on both; `ssa-roundtrip` has 0 failur
 | regalloc | regalloc | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); every function changes (`f.RegAlloc`); full-v6: 96,553/96,553; `PassEnv.dclLen` from the input section's `dcllen` (above): quick-v7 9,297/9,297, full-v9 96,560/96,560 (format 5.1) |
 | loop rotate | loopRotate | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); 1672 functions changed by the pass; `f.loopnest()` (`Func.loopnest`; regalloc left it cached in every input); full-v6: 96,553/96,553 |
 | trim | trim | 9297 | 9297 | 0 | 100% | quick-v5 (format 5); 2780 functions changed by the pass; `flagslive`/`hotness` list blocks of `f.Blocks` only, so a trimmed block's entries go; full-v6: 96,553/96,553 |
+
+## Phase 3: genssa (I3, #549)
+
+`lake exe gen-parity [--jobs N] [--max-report N] [--table FILE] <dir|file>...`
+(`GoFVTest/GenParity.lean`) checks the Lean port of `AllocFrame` … `defframe` (`GoFV/Gen/*`,
+`docs/PASSES3.md` A1–C6). For every `.prog` file (`gofv-prog 2`) with its `.ssa` file, the
+input is the function after `trim` plus the `.prog` file's `frame` input (`in` lines) and
+`genin` section (`GoFV.Gen.Env.load`); it compares, per function:
+
+1. **frame** (A1 MergeLocals, A2 AllocFrame): `allocFrame` against the `frame` section's
+   `out`, `opt`, `merge` and `stack` lines;
+2. **f.RegArgs** (A3): `regArgsOf` against `genin`'s `regargs` (types by `String()`);
+3. **prog0** (B1 liveness, B2 ArgLiveness, B3 ArgInfo/WrapInfo, C1 objw, C2 genssa loop, C3
+   arm64 `ssaGenValue`, C4 `ssaGenBlock`, C5 inline marks/branches/jump tables, C6
+   `defframe`): `genssa`, run on the exported frame, against the `prog0` section — every Prog
+   (stable ID = allocation order, list order, every field, symbols by name and ABI), the
+   `FuncInfo` records (spills, inline marks, jump tables, `funcaux`), `needzero`, the remaining
+   `f.RegArgs`, and the contents (kind, size, alignment, attributes, bytes, relocations) of the
+   metadata symbols (`gclocals·…`, `.stkobj`, `.opendefer`, `.arginfo<abi>`, `.argliveinfo`,
+   `.wrapinfo`) against the `asm` section's `data` lines.
+
+Mismatches are reported with a class (first differing item: `frame:dcl`, `prog:<field>:<as>`,
+`funcinfo:…`, `sym:<part>:<symbol>`, `needzero`, or a port error `<stage>:error:<construct>`).
+
+Result on quick-v9 (9,297 functions, 429,130 prog0 Progs):
+
+| cut | functions | match | mismatch | parity |
+| --- | ---: | ---: | ---: | ---: |
+| frame (A1, A2) | 9297 | 9297 | 0 | 100% |
+| f.RegArgs (A3) | 9297 | 9297 | 0 | 100% |
+| prog0 (B1–C6) | 9297 | 9297 | 0 | 100% |
+| end to end | 9297 | 9297 | 0 | 100% |
+
+No mismatch class remains. Notes: Go's possible map-order nondeterminism in MergeLocals (two
+candidates tying under `nameLess` after eviction, `docs/PASSES3.md` §3) is detected and
+reported as a port error; it never occurs on quick-v9. Only 5 quick functions actually merge
+stack slots, and the open-coded-defer paths occur in 135; the full corpus (needs a v2 export)
+would exercise these more. The #541 `LoweredPanicBoundsCR` behaviour is reproduced.
+Paths that never run for linux/arm64 or the corpus configuration fail loudly instead of being
+approximated: MergeLocals hash bisection (`mergelocalshash` non-empty), `-clobberdead`.

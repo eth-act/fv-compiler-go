@@ -199,3 +199,7 @@ root = "GoFVTest.FlagAllocProbe"
 [[lean_exe]]
 name = "asm-check"
 root = "GoFVTest.AsmCheck"
+
+[[lean_exe]]
+name = "gen-parity"
+root = "GoFVTest.GenParity"
