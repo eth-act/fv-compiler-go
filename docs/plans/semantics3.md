@@ -324,9 +324,9 @@ through the outcome relation of §2.
 | `GoFV/Gen/{MergeLocals,Frame,Liveness,ArgLive,Meta,Progs,Genssa,Arm64Value,Arm64Block,Defframe}.lean` | ports of A1–C7 | I3 |
 | `GoFV/Asm/{Linkpatch,Progedit,Preprocess,Optab,Span,Encode,Unsafe,Pcln}.lean` | ports of D1–D7 (`Optab` generated) | I4 |
 | `GoFV/Debug/{LocLists,Dwarf,Inline,Lines}.lean` | ports of E1–E2 | I5 |
-| `GoFV/Arm64/{State,Insn,Decode,Exec,Run}.lean` | §3 (a) | I6 |
+| `GoFV/Arm64/{State,Insn,Decode,Exec}.lean` | §3 (a); **done** (#552): `MState`, `Insn` (one constructor per encoding class), `decode`, `exec`, `step`, `run` | I6 |
 | `GoFV/SSA/Sem/{RunFrame,RunProg,RunMach,Inject,Hooks}.lean` | §4, §6, §7 | I6 |
-| `GoFVTest/Arm64Cosim/*.lean`, `scripts/arm64-cosim.sh` | co-simulation (shared with H6 c.2) | I6 |
+| `GoFVTest/Arm64Cosim.lean`, `GoFVTest/Arm64Decode.lean`, `tools/arm64cosim`, `scripts/arm64-cosim.sh` | co-simulation under qemu and the decoder round trip on the asm sections; **done** (#552) | I6 |
 | `GoFV/Proof/{Frame,Gen,Asm,ObjCheck,Meta}/*.lean` | §7 | I7 |
 | (blocked on #415) `GoFV/Arm/**`, `GoFV/Proof/ArmAgree/*.lean` | §3 (b) agreement | I6b #555 |
 
@@ -336,6 +336,21 @@ through the outcome relation of §2.
    definitions; `decode`; co-simulation on Go-assembled words.
 2. Memory forms, pairs, pre/post-index, atomics (single core), FP and SIMD forms used by the
    compiler; co-simulation of every form in the I1 histogram.
+
+   Steps 1–2 are done (#552). `scripts/arm64-cosim.sh` runs both checks on the quick corpus:
+   `arm64-decode` cuts each asm section at the Progs' PCs, decodes every word and executes it
+   from random states, comparing with the Prog's effect in Go's operand conventions (relocations
+   applied as the linker would, `R27` free): on quick-v9, 429,386 of 429,386 Progs with code
+   match, pseudo-ops cover no bytes, `WORD`/`DWORD` are their constants and the bytes after the
+   last Prog are zero. `arm64-cosim` runs every distinct word (38,611; branches patched to a
+   landing, memory steered into a window) at least 4 times and every form at least 256 times
+   under `qemu-aarch64-static` (`tools/arm64cosim`) and through `GoFV.Arm64.step`: all 212
+   instruction forms of the corpus' words (the remaining words are `UDF #0` alignment padding,
+   which traps and is never executed, and 3 jump-table data words that decode to nothing), plus
+   20,000 random decodable words (uniform, and corpus words with bits flipped) reaching 229
+   further forms of `decode`'s domain; 287,919 cases, 0 mismatches. The corpus words found a
+   decoder bug (the pair class's `opc` field); the random words found two more no corpus word
+   exercises (the literal class's `opc` field, `SMULH`'s should-be-one `Ra`) and a wrong `CLS`.
 3. `runMach` with hooks (calls, morestack, faults, panics); native difftest of whole corpus
    functions (Lean machine on the stock object's words vs qemu).
 4. `progSpec`, `runProg`; difftest of `runProg` on P0/P1/P2 exports against `runMach`.
