@@ -120,7 +120,7 @@ def splitWhy (tabs : Tables) (f g : Func) (x : ID) : String := Id.run do
         let (p, s) := r.1[k]!
         let some av := f.value? a | return "link: arg"
         let some sv := g.value? s | return "link: store"
-        if !RewriteCheck.ssFieldOK tabs f a (tabs.ty av.type) t then
+        if !RewriteCheck.ssFieldOK (tabs.ty av.type) t then
           let e := (f.value? (RewriteCheck.copyEnd tabs f.valueTab f.valueTab.size a)).map
             fun w => s!"{w.op.name}{(w.args[0]?.bind f.value?).map (fun x => s!"({x.op.name} {repr (tabs.ty x.type)})")}"
           return s!"link: field {repr t} arg {repr (tabs.ty av.type)} {e}"

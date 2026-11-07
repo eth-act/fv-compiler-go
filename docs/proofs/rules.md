@@ -974,8 +974,9 @@ last store. The split relation takes both forms (`RewriteCheck.ssSplit?`: the st
 `Make`, `ssMakeOp`, which evaluates to the aggregate of its arguments; in `g` the split `Store`
 is a `Copy` of the chain's last store, or that store itself; a field's pointer is a fresh
 `OffPtr`, or at offset `0` a value of `f` that `dst` reaches through copies, `ssPtrOK`; a field's
-value fits its field shape when the shapes are equal, both pointer shapes, or it is a symbol's
-`Addr` in a `uintptr` field, the interface's itab word, `ssFieldOK`), and `ssApply` puts in the
+value fits its field shape when the shapes are equal or both are word shapes (a 64-bit integer
+or a pointer, which have the same values, #290: a `*uint8` itab word, a `Phi` of them included,
+in the interface's `uintptr` field), `ssFieldOK`), and `ssApply` puts in the
 logged built values (children first) and redefines the `Store` as logged. The proof is
 `StructStore.ss_refines` with the in-place case: the chain's last store is the source's `Store`,
 whose register is the memory after the component writes (`StructStoreBlock.splitOk`, through
