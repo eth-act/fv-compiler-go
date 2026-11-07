@@ -1097,7 +1097,7 @@ theorem stArgs_split {tabs : Tables} {act : Nat} {F G : ID → Val} {k : Int64}
   | _ :: _, [], hl, _ => absurd hl (by simp)
 
 /-- `atomPair_eval` for an atom `w` with every argument register related by `ArgRel` of
-`stArg`. -/
+`stArg`, or, for a narrow integer store's value, refined fitted to its width (`stFitTy`). -/
 private theorem atomPair_eval_arg {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
     (hown : f.ownAux = g.ownAux) (hl : f.lowered = true → g.lowered = true) (hgl : g.lowered = true)
     {GS GT : Frame} (hfr : GT = { GS with regs := GT.regs }) {u w : Value}
@@ -1107,20 +1107,27 @@ private theorem atomPair_eval_arg {tabs : Tables} {f g : Func} {env : Env} (hE :
     (hty : (Ctx.makeL tabs g).tys[w.id]?.getD .other = (Ctx.makeL tabs f).tys[u.id]?.getD .other)
     (hregS : ∀ a ∈ u.args, Reg GS a) (hregT : ∀ a ∈ w.args, Reg GT a)
     (hargs : ∀ i < u.args.size, ArgRel tabs (Ctx.makeL tabs g).act (stArg u w i)
-      (rv GS u.args[i]!) (rv GT w.args[i]!)) :
+      (rv GS u.args[i]!) (rv GT w.args[i]!) ∨ ∃ t, stFitTy w.op i = some t ∧
+        Sem.Refines (fitPiece t (rv GS u.args[i]!)) (fitPiece t (rv GT w.args[i]!))) :
     Res.Refines (evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) GS u)
       (evalValueL ⟨g.lowered, false⟩ env (Ctx.makeL tabs g) GT w) := by
   obtain ⟨hk', -, -, hid⟩ := atomPair_spec hp
   obtain ⟨hk, hsz⟩ := hk'.resolve_right (by rw [hn, hb, hx]; decide)
   rw [evalValueL_of_regs hregS, evalValueL_of_regs hregT, hty]
-  have hrel : ∀ (i : Nat) a a', u.args.toList[i]? = some a → w.args.toList[i]? = some a' →
+  have hrel : stValW w.op = none → ∀ (i : Nat) a a', u.args.toList[i]? = some a →
+      w.args.toList[i]? = some a' →
       ArgRel tabs (Ctx.makeL tabs g).act (stArg u w i) (rv GS a) (rv GT a') :=
-    fun i a a' ha ha' => by
+    fun hsv i a a' ha ha' => by
     rw [Array.getElem?_toList] at ha ha'
     obtain ⟨hi, rfl⟩ := Array.getElem?_eq_some_iff.1 ha
     obtain ⟨hi', rfl⟩ := Array.getElem?_eq_some_iff.1 ha'
-    have := hargs i hi
+    have := (hargs i hi).resolve_right (by rintro ⟨t, ht, -⟩; simp [stFitTy, hsv] at ht)
     rwa [getElem!_pos u.args i hi, getElem!_pos w.args i hi'] at this
+  have hsvS : stSize w.op = none → stValW w.op = none := fun h => by
+    cases hv : stValW w.op with
+    | none => rfl
+    | some wd =>
+      rcases stValW_some hv with ⟨h', -⟩ | ⟨h', -⟩ | ⟨h', -⟩ <;> rw [h'] at h <;> cases h
   generalize hty' : (Ctx.makeL tabs f).tys[u.id]?.getD .other = ty
   rcases hk with ⟨hop, hai, hax⟩ | hm | hz
   case inr.inr =>
@@ -1129,7 +1136,7 @@ private theorem atomPair_eval_arg {tabs : Tables} {f g : Func} {env : Env} (hE :
       rcases bulkLower_op hz with h | h | h | h <;> rw [h] <;> rfl
     have hlist : RefinesList (u.args.toList.map (rv GS)) (w.args.toList.map (rv GT)) :=
       refinesList_idx (by simp [hsz]) fun i a a' ha ha' => by
-        have := hrel i a a' ha ha'
+        have := hrel (hsvS hwst) i a a' ha ha'
         rwa [stArg_none hwst] at this
     rw [evalOpL_generic _ _ _ _ _ _ hgen]
     exact Res.Rel.bind (bulk_lower_eval hz hlist) fun x y hxy => .ok (rty_le hl ty hxy)
@@ -1137,20 +1144,64 @@ private theorem atomPair_eval_arg {tabs : Tables} {f g : Func} {env : Env} (hE :
     -- a lowered store
     obtain ⟨-, -, hu, n, hst, hfit⟩ := memLower_cases hm
     rw [hgl, evalOpL_generic _ _ _ _ _ _ hgen]
-    have hsp := stArgs_split (tabs := tabs) (act := (Ctx.makeL tabs g).act) (F := rv GS)
-      (G := rv GT) (k := w.auxInt) (ax := w.aux) (l := u.args.toList) (l' := w.args.toList)
-      (by simp [hsz]) fun i a a' ha ha' => by
-        have := hrel i a a' ha ha'
-        rwa [stArg_store hu (stOp_stSize hst)] at this
-    refine store_lower_eval hu hst (by rw [makeL_tabs]; exact hfit) f.lowered ?_
-    rw [makeL_tabs]; exact hsp
+    cases hsv : stValW w.op with
+    | none =>
+      have hsp := stArgs_split (tabs := tabs) (act := (Ctx.makeL tabs g).act) (F := rv GS)
+        (G := rv GT) (k := w.auxInt) (ax := w.aux) (l := u.args.toList) (l' := w.args.toList)
+        (by simp [hsz]) fun i a a' ha ha' => by
+          have := hrel hsv i a a' ha ha'
+          rwa [stArg_store hu (stOp_stSize hst)] at this
+      refine store_lower_eval hu hst (by rw [makeL_tabs]; exact hfit) f.lowered ?_
+      rw [makeL_tabs]; exact hsp
+    | some wd =>
+      -- the value read through a narrowing `Copy` (`stValFit`)
+      have hrelF : ∀ (i : Nat) a a', u.args.toList[i]? = some a → w.args.toList[i]? = some a' →
+          ArgRel tabs (Ctx.makeL tabs g).act (if i = 0 then some (w.auxInt, w.aux) else none)
+            (rv GS a) (rv GT a') ∨
+          (i = 1 ∧ Sem.Refines (fitPiece (.int wd) (rv GS a)) (fitPiece (.int wd) (rv GT a'))) :=
+        fun i a a' ha ha' => by
+        rw [Array.getElem?_toList] at ha ha'
+        obtain ⟨hi, rfl⟩ := Array.getElem?_eq_some_iff.1 ha
+        obtain ⟨hi', rfl⟩ := Array.getElem?_eq_some_iff.1 ha'
+        have := hargs i hi
+        rw [getElem!_pos u.args i hi, getElem!_pos w.args i hi',
+          stArg_store hu (stOp_stSize hst)] at this
+        rcases this with h | ⟨t, ht, h⟩
+        · exact .inl h
+        · obtain ⟨rfl, wd', hwd', rfl⟩ := stFitTy_cases ht
+          rw [hsv] at hwd'; cases hwd'
+          exact .inr ⟨rfl, h⟩
+      have hlen : u.args.toList.length = w.args.toList.length := by simp [hsz]
+      have hfit' : StoreFits (auxTy (Ctx.makeL tabs f).tabs u.aux) n := by
+        rw [makeL_tabs]; exact hfit
+      generalize u.args.toList = U at hrelF hlen ⊢
+      generalize w.args.toList = W at hrelF hlen ⊢
+      have h0 : ∀ b c, U[0]? = some b → W[0]? = some c →
+          AddrRef (Ctx.makeL tabs g).tabs (Ctx.makeL tabs g).act w.aux w.auxInt (rv GS b) (rv GT c) :=
+        fun b c hb hc => by
+        rcases hrelF 0 b c hb hc with h | ⟨h, -⟩
+        · rw [makeL_tabs]; simpa [ArgRel] using h
+        · cases h
+      rcases U with _ | ⟨b0, _ | ⟨b1, r⟩⟩ <;> rcases W with _ | ⟨c0, _ | ⟨c1, r'⟩⟩ <;>
+        simp only [List.length_nil, List.length_cons] at hlen <;> try omega
+      · exact store_lower_eval hu hst hfit' f.lowered (.inl ⟨rfl, rfl⟩)
+      · exact store_lower_eval hu hst hfit' f.lowered
+          (.inr ⟨_, _, [], [], rfl, rfl, h0 b0 c0 rfl rfl, .nil⟩)
+      · refine store_lower_eval_fit hu hst hfit' hsv f.lowered (h0 b0 c0 rfl rfl) ?_ ?_
+        · rcases hrelF 1 b1 c1 rfl rfl with h | ⟨-, h⟩
+          · exact fitPiece_mono _ (by simpa [ArgRel] using h)
+          · exact h
+        · refine refinesList_idx (by omega) fun i a a' ha ha' => ?_
+          rcases hrelF (i + 2) a a' (by simpa using ha) (by simpa using ha') with h | ⟨h, -⟩
+          · simpa [ArgRel] using h
+          · omega
   have hwst : stSize w.op = none := by
     rcases hop with hop | hop
     · rw [← hop]; exact stSize_generic hgen
     · exact (renameOp_stSize hop).2
   have hlist : RefinesList (u.args.toList.map (rv GS)) (w.args.toList.map (rv GT)) :=
     refinesList_idx (by simp [hsz]) fun i a a' ha ha' => by
-      have := hrel i a a' ha ha'
+      have := hrel (hsvS hwst) i a a' ha ha'
       rwa [stArg_none hwst] at this
   generalize u.args.toList.map (rv GS) = AS at hlist
   generalize w.args.toList.map (rv GT) = AT at hlist
@@ -1258,8 +1309,9 @@ private theorem atomPair_eval_call {tabs : Tables} {f g : Func} {env : Env} (hE 
 /-- **Corresponding atoms evaluate to refinements.** An atom `w` of `g` (lowered) corresponding to
 the atom `u` of `f` (`atomPair`, `u` generic, not a lowered frame address), in frames of one
 activation whose argument registers are related (`ArgRel` of `stArg`: refined, or a lowered
-store's address at its offset; or, for a lowered call, refined fitted to the leaf the call reads,
-`callFitTy`), at the same shape, evaluates in `g`'s mode to a refinement of `u` in `f`'s mode. -/
+store's address at its offset; or, for a lowered call or a narrow integer store's value, refined
+fitted to the shape the atom reads it at, `atomFitTy`), at the same shape, evaluates in `g`'s mode
+to a refinement of `u` in `f`'s mode. -/
 theorem atomPair_eval {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
     (hown : f.ownAux = g.ownAux) (hl : f.lowered = true → g.lowered = true) (hgl : g.lowered = true)
     {GS GT : Frame} (hfr : GT = { GS with regs := GT.regs }) {u w : Value}
@@ -1270,20 +1322,20 @@ theorem atomPair_eval {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
     (hregS : ∀ a ∈ u.args, Reg GS a) (hregT : ∀ a ∈ w.args, Reg GT a)
     (hargs : ∀ i < u.args.size, ArgRel tabs (Ctx.makeL tabs g).act (stArg u w i)
       (rv GS u.args[i]!) (rv GT w.args[i]!) ∨
-      ∃ t, callFitTy tabs w i = some t ∧
+      ∃ t, atomFitTy tabs w i = some t ∧
         Sem.Refines (fitPiece t (rv GS u.args[i]!)) (fitPiece t (rv GT w.args[i]!))) :
     Res.Refines (evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) GS u)
       (evalValueL ⟨g.lowered, false⟩ env (Ctx.makeL tabs g) GT w) := by
   cases hk : callLead w.op with
   | none =>
-    exact atomPair_eval_arg hE hown hl hgl hfr hp hn hb hx hgen hty hregS hregT fun i hi =>
-      (hargs i hi).resolve_right (by rintro ⟨t, ht, -⟩; simp [callFitTy, hk] at ht)
+    exact atomPair_eval_arg hE hown hl hgl hfr hp hn hb hx hgen hty hregS hregT fun i hi => by
+      simpa [atomFitTy, hk] using hargs i hi
   | some k =>
     have hwst : stSize w.op = none := by
       rcases callLead_some hk with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl
     exact atomPair_eval_call hE hown hl hfr hk hp hn hb hx hgen hty hregS hregT fun i hi => by
       have := hargs i hi
-      rwa [stArg_none hwst] at this
+      rwa [stArg_none hwst, atomFitTy, hk] at this
 
 
 /-! ### Bounds panics with constant operands (`pbLower`) -/

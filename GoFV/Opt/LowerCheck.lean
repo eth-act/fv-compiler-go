@@ -314,7 +314,7 @@ def callFitTy (tabs : Tables) (v : Value) (i : Nat) : Option Sem.Ty :=
 
 /-- The width of the value a narrow integer store writes (`MOVBstore`, `MOVHstore`, `MOVWstore`:
 `Arm64.storeBytes` writes the low bytes of its register). -/
-def stValW : Op → Option Width
+def stValW : Op → Option Sem.Width
   | .ARM64MOVBstore => some .w8
   | .ARM64MOVHstore => some .w16
   | .ARM64MOVWstore => some .w32
