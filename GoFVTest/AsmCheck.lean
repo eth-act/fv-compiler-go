@@ -4,7 +4,7 @@ import GoFV.Asm.Print
 /-!
 # `asm-check`
 
-Parses every `*.prog` file (`gofv-prog 1`, `docs/contracts/export.md`) under the given
+Parses every `*.prog` file (`gofv-prog 2`, `docs/contracts/export.md`) under the given
 directories (or files) and checks that printing the result reproduces the file byte for byte,
 and that the exporter wrote no `warn` line. With `--hist FILE`, also writes the `oplook`
 histogram of the assembled Progs (asm section, `Optab ≠ 0`): one line per distinct
@@ -63,7 +63,7 @@ def checkFile (path : System.FilePath) (hist : Bool) (st : Stats) : IO Stats := 
       let orig := String.fromUTF8? data |>.getD "<not UTF-8>"
       IO.eprintln s!"FAIL {path}: printed text differs at {firstDiff orig out}"
       st := { st with failed := st.failed + 1 }
-    let ws := f.frame.warns ++ f.prog0.warns ++ f.asm.warns
+    let ws := f.frame.warns ++ f.genin.warns ++ f.prog0.warns ++ f.asm.warns
     if !ws.isEmpty then
       IO.eprintln s!"WARN {path}: {ws.toList.map (·.toStringLossy)}"
       st := { st with warned := st.warned + 1 }

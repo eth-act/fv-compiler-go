@@ -2,10 +2,10 @@ import GoFV.Asm.As
 import GoFV.SSA.Export
 
 /-!
-# Prog IR and the `gofv-prog 1` file
+# Prog IR and the `gofv-prog 2` file
 
 Lean mirrors of `cmd/internal/obj`'s `Addr`, `Prog`, `Reloc`, the `FuncInfo` fields and the
-frame layout, as the Phase 3 export writes them (`docs/contracts/export.md`, "gofv-prog 1";
+frame layout, as the Phase 3 export writes them (`docs/contracts/export.md`, "gofv-prog 2";
 `docs/PASSES3.md` §1.1, §2). Every field is kept, defaults included: `checkaddr` and `aclass`
 branch on them. Register fields are obj register numbers (`int16`, `REG_R0 = 8192`, arrangement
 and extension encodings included; `GoFV.SSA.ARM64.Register.objNum` maps dense SSA registers to
@@ -109,11 +109,18 @@ structure TypeDef where
   str : GoStr
   deriving DecidableEq, Inhabited
 
-/-- `name` definition: an `*ir.Name` of `Dcl`. `cls` is `ir.Class.String()`. -/
+/-- `name` definition: an `*ir.Name` of `Dcl`. `cls` is `ir.Class.String()`, `esc` is `n.Esc()`
+(0 `EscUnknown`, 1 `EscNone`, 2 `EscHeap`, 3 `EscNever`), `linkName`/`linkAbi` the symbol
+`n.Linksym()` resolves to (computed without a lookup), and `aux` the number of the same object in
+the companion `.ssa` file's aux table (`none`: the `.ssa` file never references it). -/
 structure NameDef where
   sym : GoStr
   cls : String
   type : Option Nat
+  esc : Nat
+  linkName : GoStr
+  linkAbi : Nat
+  aux : Option Nat
   deriving DecidableEq, Inhabited
 
 /-- `inl` definition: node of the global inlining tree. -/
@@ -144,6 +151,10 @@ structure NameFlags where
   nonmergeable : Bool := false
   autotmp : Bool := false
   outregs : Bool := false
+  /-- `n.Heapaddr != nil`. -/
+  heapaddr : Bool := false
+  /-- `n.IsOutputParamHeapAddr()`. -/
+  outheapaddr : Bool := false
   deriving DecidableEq, Inhabited
 
 namespace NameFlags
@@ -154,7 +165,9 @@ def table : List (String × (NameFlags → Bool) × (NameFlags → NameFlags)) :
   ("opendeferslot", (·.opendeferslot), ({ · with opendeferslot := true })),
   ("nonmergeable", (·.nonmergeable), ({ · with nonmergeable := true })),
   ("autotmp", (·.autotmp), ({ · with autotmp := true })),
-  ("outregs", (·.outregs), ({ · with outregs := true }))]
+  ("outregs", (·.outregs), ({ · with outregs := true })),
+  ("heapaddr", (·.heapaddr), ({ · with heapaddr := true })),
+  ("outheapaddr", (·.outheapaddr), ({ · with outheapaddr := true }))]
 end NameFlags
 
 /-- A `Dcl` entry: the name, its `FrameOffset` and flags at that point. -/
@@ -226,6 +239,39 @@ structure RegArg where
   type : Option Nat
   deriving DecidableEq, Inhabited
 
+/-- The text symbol's `FuncInfo` header (`fn` line fields other than the records). -/
+structure TextInfo where
+  sym : Nat
+  args : Int
+  locals : Int
+  funcID : Nat
+  funcFlag : Nat
+  startLine : Int
+  attr : Nat
+  deriving DecidableEq, Inhabited
+
+/-- The genin section: what `genssa` reads besides the SSA and the frame, recorded when
+`ssagen.Compile` calls it (after `buildssa`). -/
+structure GenIn where
+  defs : Array Def
+  /-- `curfn.Pos()`. -/
+  fnPos : Pos
+  /-- `curfn.HasDefer()`. -/
+  hasDefer : Bool
+  /-- `curfn.OpenCodedDeferDisallowed()`. -/
+  openDeferDisallowed : Bool
+  /-- The symbol `curfn.WrappedFunc.Linksym()` resolves to: name and ABI. -/
+  wrapped : Option (GoStr × Nat)
+  /-- Open-coded defers (`emitOpenDeferInfo`): `deferBitsTemp` and the closure slots in defer
+  order. -/
+  openDefer : Option (Nat × Array Nat)
+  /-- `f.RegArgs` when `genssa` starts. -/
+  regArgs : Array RegArg
+  /-- The text symbol's `FuncInfo` header when `genssa` starts (set by `InitTextSym`). -/
+  text : TextInfo
+  warns : Array GoStr
+  deriving Inhabited
+
 /-- The prog0 section: the Prog list after `genssa` (after `defframe`, before `Flush`; P0). -/
 structure Prog0 where
   defs : Array Def
@@ -296,13 +342,14 @@ structure Asm where
   warns : Array GoStr
   deriving Inhabited
 
-/-- A `gofv-prog 1` file. -/
+/-- A `gofv-prog 2` file. -/
 structure ProgFile where
   pkg : GoStr
   name : GoStr
   abi : Nat
   config : Array (String × Token)
   frame : Frame
+  genin : GenIn
   prog0 : Prog0
   asm : Asm
   deriving Inhabited

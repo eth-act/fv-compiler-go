@@ -1,4 +1,4 @@
-# Contract: per-pass SSA export (`gofv-ssa` v5.1) and Phase 3 export (`gofv-prog 1`)
+# Contract: per-pass SSA export (`gofv-ssa` v5.1) and Phase 3 export (`gofv-prog 2`)
 
 Owner: Exporter (issue #4; format 5: #379). Consumers: LeanIR (parser/printer, #21), RulesExport
 (#22), every pass port (G4, H*). Changing the format bumps the version in the first line and is
@@ -11,9 +11,10 @@ block kinds, the cached loop nest, `flagslive`/`hotness`/`fstate`/`regalloc`/`te
 one line per section, `dcllen` (section "Format 5.1"). The parser reads v2–v5 files too.
 
 Phase 3 (#546, I1 #547) adds a second format in a separate file next to each `.ssa` file: the
-`gofv-prog 1` record (`<name>,<abi>.prog`) with the frame layout, the Prog list after `genssa`
-and the assembled function (section "Phase 3: `gofv-prog 1`" below). It leaves the `.ssa`
-files byte-identical.
+`gofv-prog` record (`<name>,<abi>.prog`) with the frame layout, the inputs `genssa` reads, the
+Prog list after `genssa` and the assembled function (section "Phase 3: `gofv-prog 2`" below).
+It leaves the `.ssa` files byte-identical. Version 2 (#549, I3) adds what the `genssa` port
+reads besides the SSA (section "Version 2").
 
 The patched `go1.27.3` compiler (`patches/go/*.patch`, built by `scripts/build-go.sh` into
 `third_party/go-build`) writes, for each selected function, the complete SSA state the passes
@@ -546,11 +547,12 @@ one of them must raise it on #4.
   `fe.Func().SetWBPos`, `StringData` creating the data symbol, warnings): they do not change
   the SSA of this or any other function.
 
-## Phase 3: `gofv-prog 1`
+## Phase 3: `gofv-prog 2`
 
-Owner: Phase3IO (I1 #547; tracking #546; `docs/PASSES3.md` §2). Consumers: `GoFV.Asm`
-(`GoFV/Asm/{As,Prog,Parse,Print}.lean`, I2 #548), the `asm-check` round trip, the I3/I4 parity
-checks. A change bumps the version on the first line and is announced on #546.
+Owner: Phase3IO (I1 #547; tracking #546; `docs/PASSES3.md` §2); version 2: Phase3Gen (I3 #549).
+Consumers: `GoFV.Asm` (`GoFV/Asm/{As,Prog,Parse,Print}.lean`, I2 #548), the `asm-check` round
+trip, the I3 port's input (`GoFV.Gen.Env`) and the `gen-parity` check, I4. A change bumps the
+version on the first line and is announced on #546. The parser reads only the current version.
 
 For every function whose `.ssa` file the exporter writes (same selection, `GOFV_SSA_EXPORT`,
 `GOFV_SSA_PKG`, `GOFV_SSA_FUNC`), the patched compiler writes a companion file with the same
@@ -559,7 +561,8 @@ stem and the extension `.prog`: `<name>,<abi>.prog` next to `<name>,<abi>.ssa`, 
 the `.ssa` file's contents, so the pair stays together; a `.prog` written before a later
 function of the same stem appeared is renamed with its `.ssa` file). Functions that
 `ssagen.Compile` rejects for their frame size (`>= 1<<30`) have a `.ssa` file and no `.prog`
-file. The exporter (`ssagen/export_prog_gofv.go`, hooks in `ssagen/pgen.go`, accessors
+file. The exporter (`ssagen/export_prog_gofv.go`, hooks in `ssagen/pgen.go` and, for the
+open-coded defers, `ssagen/ssa.go` `buildssa`; accessors
 `FuncInfo.GOFVSpills`, `InlMark.GOFVMark`, `InlTree.GOFVNodes` in `cmd/internal/obj`) only reads
 compiler state: it creates no symbol, computes no type size (types whose size or whose inline
 parts' sizes are not calculated are written with `?`), and never sets `Debugasm` (`-S` disables
@@ -570,6 +573,7 @@ Prog reuse and sorts `LSym.R` in place, `docs/PASSES3.md` §2), so the object co
 | section | written | form (`docs/PASSES3.md` §0) |
 | --- | --- | --- |
 | `frame` | when `AllocFrame` ends (input recorded when it starts) | L2 → L2f (A1, A2) |
+| `genin` | in `ssagen.Compile`, after `buildssa` and the first frame-size check, before `objw.NewProgs` and `genssa` | genssa's frontend inputs |
 | `prog0` | after `genssa` returns (after `defframe`), before the frame-size check and `Flush` | P0 |
 | `asm` | at the end of `ssagen.Compile`: after `Flush` (`Flushplist`: `linkpatch`, `progedit`, `preprocess`, `span7`, `linkpcln`, `populateDWARF`), `weakenGlobalMapInitRelocs` and `fieldtrack` | M |
 
@@ -581,7 +585,7 @@ per byte, `-` when empty; `<hexnum>`: a number without leading zeros).
 ### File layout
 
 ```
-gofv-prog 1
+gofv-prog 2
 pkg "<base.Ctxt.Pkgpath>"
 func "<f.Name>" <abi>
 config <key> <value>                  (one line per key; table below)
@@ -593,6 +597,15 @@ opt <n> <off> <flags>                 (FuncDebug.OptDcl: the unused tail AllocFr
 merge <leader n> <followers n,…>      (MergeLocals partitions, leaders in Dcl order)
 stack <stksize> <stkptrsize> <stkalign>
 warn "<text>"                         (zero or more)
+end
+genin
+<definitions>
+curfn <pos> <hasdefer 0|1> <opendeferdisallowed 0|1>
+wrapped "<name>" <abi>                (when curfn.WrappedFunc != nil)
+opendefer <deferBitsTemp n> <closure slots n,…>   (when buildssa emitted open-coded defer info)
+regargs <reg>:<offset>:<t>,…          (f.RegArgs when genssa starts)
+text <y> <Args> <Locals> <FuncID> <FuncFlag> <StartLine> <attr hexnum>   (the text symbol's FuncInfo header)
+warn "<text>"
 end
 prog0
 <definitions>
@@ -644,12 +657,19 @@ references.
   it is not calculated. Types are numbered by the definition text (identical text, one number):
   the frame and liveness steps read only these facts, and backend type objects are not
   reproducible by pointer (see "Definitions (tables)").
-- `name n<k> "<Sym().Name>" <class> t<type>`: an `*ir.Name` (`ir.Class.String()`: `PAUTO`,
-  `PPARAM`, `PPARAMOUT`), numbered by identity. Its frame offset and flags are written per cut
-  (`in`/`out`/`opt` lines): `off` is `FrameOffset()` (for parameters the ABI offset, for an
-  open-defer slot before `AllocFrame` its defer index); `flags` from `used`, `addrtaken`,
-  `needzero`, `opendeferslot`, `nonmergeable`, `autotmp`, `outregs`
-  (`IsOutputParamInRegisters`), in that order.
+- `name n<k> "<Sym().Name>" <class> t<type> <esc> "<linkname>" <linkabi> <a<aux>|->`: an
+  `*ir.Name` (`ir.Class.String()`: `PAUTO`, `PPARAM`, `PPARAMOUT`), numbered by identity;
+  `esc` is `n.Esc()` (0 `EscUnknown`, 1 `EscNone`, 2 `EscHeap`, 3 `EscNever`); `linkname` and
+  `linkabi` are the name and ABI of the symbol `n.Linksym()` resolves to (`Sym.Linkname`, else
+  `Pkg.Prefix` + `.` (`:` for the reserved `go`/`type` prefixes) + `Sym.Name`; ABIInternal for
+  function symbols), computed without a lookup; `a<aux>` is the number of the same object in the
+  companion `.ssa` file's aux table (`-` when that file never references it), which links the
+  frame's names to the SSA's (names are not unique by symbol, class and type: inlined copies).
+  Its frame offset and flags are written per cut (`in`/`out`/`opt` lines): `off` is
+  `FrameOffset()` (for parameters the ABI offset, for an open-defer slot before `AllocFrame` its
+  defer index); `flags` from `used`, `addrtaken`, `needzero`, `opendeferslot`, `nonmergeable`,
+  `autotmp`, `outregs` (`IsOutputParamInRegisters`), `heapaddr` (`Heapaddr != nil`),
+  `outheapaddr` (`IsOutputParamHeapAddr`), in that order.
 - `sym y<k> "<name>" <abi>`: an `*obj.LSym`, numbered by identity (`LSym.ABI()`). Contents are
   written only in `data` lines (below) and the `text` line.
 - `posbase p<index> "<abs filename>" <line> <col> <inl> <fileindex>`: as in `.ssa` files plus
@@ -717,6 +737,27 @@ shows here.
 | `compilingruntime` | `base.Flag.CompilingRuntime` | 1 for the runtime packages (`objabi.LookupPkgSpecial`; in the quick corpus `runtime` and `internal/bytealg`), else 0 |
 | `gendwarfinl` | `base.Flag.GenDwarfInl` | 2 |
 | `debugasm` | `base.Ctxt.Debugasm` (`-S`; must be 0) | 0 |
+| `mergelocalshash` (v2) | `base.Debug.MergeLocalsHash` (MergeLocals' hash bisection selector) | `""` |
+
+### Version 2
+
+Version 2 (#549) records what the I3 port (`GoFV.Gen`, `docs/PASSES3.md` A1–C6) reads besides
+the SSA after `trim` and the frame's `Dcl`, so that the port's input is the `.ssa` file plus the
+`frame` input and `genin` sections:
+
+- the `name` line's `esc`, `linkname`/`linkabi` and the `.ssa` aux link, and the `heapaddr`,
+  `outheapaddr` flags (liveness reads `Esc`, `Heapaddr`, `IsOutputParamHeapAddr`; `AddAux`
+  writes `n.Linksym()`);
+- the `genin` section: `curfn.Pos()` (the `TEXT` position, the frameless-leaf `NOP`),
+  `HasDefer()` and `OpenCodedDeferDisallowed()` (liveness), the symbol of `WrappedFunc`
+  (`emitWrappedFuncInfo`), `buildssa`'s open-coded defers (`emitOpenDeferInfo`: the
+  `deferBitsTemp` and closure slot names, recorded by a hook right after it), `f.RegArgs`
+  (its `buildssa` result, consumed by the first `ArgIntReg` in `genssa`) and the text
+  symbol's `FuncInfo` header (set by `InitTextSym`);
+- `config mergelocalshash`.
+
+Everything else in the file is as in version 1; the `.ssa` files are unchanged (quick-v9 has
+the same `.ssa` files as quick-v8).
 
 ### Determinism
 

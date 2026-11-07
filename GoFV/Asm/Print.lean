@@ -2,9 +2,9 @@ import GoFV.Asm.Prog
 import GoFV.SSA.Print
 
 /-!
-# Printer of the `gofv-prog 1` format
+# Printer of the `gofv-prog 2` format
 
-Writes a `ProgFile` back as canonical `.prog` text (`docs/contracts/export.md`, "gofv-prog 1"),
+Writes a `ProgFile` back as canonical `.prog` text (`docs/contracts/export.md`, "gofv-prog 2"),
 the inverse of `GoFV.Asm.parseProgFile`. Reuses the `gofv-ssa` printer's primitives.
 -/
 
@@ -48,7 +48,9 @@ def defLine : Def → W Unit
     | some b => bytes b
     | none => s "?"
     sp; q d.str; nl
-  | .name k d => do s "name "; ref 'n' k; sp; q d.sym; sp; s d.cls; sp; optRef 't' d.type; nl
+  | .name k d => do
+    s "name "; ref 'n' k; sp; q d.sym; sp; s d.cls; sp; optRef 't' d.type; sp; n d.esc; sp
+    q d.linkName; sp; n d.linkAbi; sp; optRef 'a' d.aux; nl
   | .sym k name abi => do s "sym "; ref 'y' k; sp; q name; sp; n abi; nl
   | .posBase k b fi => do
     s "posbase "; ref 'p' k; sp; q b.file; sp; i b.line; sp; i b.col; sp; i b.inl; sp; optInt fi; nl
@@ -69,9 +71,14 @@ def prog (p : Prog) : W Unit := do
 def reloc (r : Reloc) : W Unit := do
   s "reloc "; i r.off; sp; n r.siz; sp; s r.type; sp; i r.add; sp; optRef 'y' r.sym; nl
 
+def textLine (t : TextInfo) : W Unit := do
+  ref 'y' t.sym; sp; i t.args; sp; i t.locals; sp; n t.funcID; sp; n t.funcFlag; sp
+  i t.startLine; sp; hexNat t.attr; nl
+
 def funcInfo (f : FuncInfo) : W Unit := do
-  s "fn "; ref 'y' f.sym; sp; i f.args; sp; i f.locals; sp; n f.funcID; sp; n f.funcFlag; sp
-  i f.startLine; sp; hexNat f.attr; nl
+  s "fn "
+  textLine { sym := f.sym, args := f.args, locals := f.locals, funcID := f.funcID,
+             funcFlag := f.funcFlag, startLine := f.startLine, attr := f.attr }
   for x in f.spills do
     s "spill "; addr x.addr; sp; i x.reg; sp; i x.reg2; sp; s x.spill.name; sp
     s x.unspill.name; nl
@@ -95,13 +102,27 @@ def frame (f : Frame) : W Unit := do
   s "stack "; i f.stksize; sp; i f.stkptrsize; sp; i f.stkalign; nl
   warnsEnd f.warns
 
+def regArgs (rs : Array RegArg) : W Unit := do
+  s "regargs "; list (fun r => do i r.reg; s ":"; i r.off; s ":"; optRef 't' r.type) rs; nl
+
+def genin (g : GenIn) : W Unit := do
+  s "genin\n"
+  for d in g.defs do defLine d
+  s "curfn "; pos g.fnPos; sp; bool g.hasDefer; sp; bool g.openDeferDisallowed; nl
+  if let some (name, abi) := g.wrapped then s "wrapped "; q name; sp; n abi; nl
+  if let some (bits, slots) := g.openDefer then
+    s "opendefer "; ref 'n' bits; sp; list (ref 'n') slots; nl
+  regArgs g.regArgs
+  s "text "; textLine g.text
+  warnsEnd g.warns
+
 def prog0 (p : Prog0) : W Unit := do
   s "prog0\n"
   for d in p.defs do defLine d
   for x in p.progs do prog x
   funcInfo p.fn
   s "needzero "; list (ref 'n') p.needzero; nl
-  s "regargs "; list (fun r => do i r.reg; s ":"; i r.off; s ":"; optRef 't' r.type) p.regArgs; nl
+  regArgs p.regArgs
   warnsEnd p.warns
 
 def asm (a : Asm) : W Unit := do
@@ -126,17 +147,18 @@ def asm (a : Asm) : W Unit := do
   warnsEnd a.warns
 
 def file (f : ProgFile) : W Unit := do
-  s "gofv-prog 1\npkg "; q f.pkg; nl
+  s "gofv-prog 2\npkg "; q f.pkg; nl
   s "func "; q f.name; sp; n f.abi; nl
   for (k, v) in f.config do s "config "; s k; sp; token v; nl
   frame f.frame
+  genin f.genin
   prog0 f.prog0
   asm f.asm
   s "eof\n"
 
 end Print
 
-/-- The canonical `gofv-prog 1` text of `f`. -/
+/-- The canonical `gofv-prog 2` text of `f`. -/
 def printProgFile (f : ProgFile) : String := (Print.file f).run "" |>.2
 
 end GoFV.Asm
