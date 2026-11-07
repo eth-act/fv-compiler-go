@@ -50,6 +50,10 @@ inductive AddrVal where
   | none
   /-- A branch target (`*obj.Prog`), by Prog ID. -/
   | target (id : Nat)
+  /-- The typed-nil `*obj.Prog` of `To.SetTarget(nil)` (`linkpatch` when `brloop` gives up on
+  an infinite `JMP` chain): `Val != nil` but `Target() == nil`. The exporter writes it as a fresh
+  Prog ID with a `warn` line, so it never appears in a parsed file. -/
+  | nilTarget
   /-- `TYPE_TEXTSIZE`'s argument size (`int32`). -/
   | textSize (n : Int)
   /-- A `TYPE_FCONST` `float64`, as raw bits. -/

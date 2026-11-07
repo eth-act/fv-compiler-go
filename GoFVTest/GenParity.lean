@@ -72,7 +72,7 @@ def canonAddr (sym : Nat → SymKey) (a : Addr) : CAddr :=
 def caddrStr (c : CAddr) : String :=
   let a := c.a
   let v := match a.val with
-    | .none => "-" | .target t => s!"@{t}" | .textSize n => s!"i{n}"
+    | .none => "-" | .target t => s!"@{t}" | .nilTarget => "@?" | .textSize n => s!"i{n}"
     | .float b => s!"f{b}" | .str _ => "s…"
   s!"{a.type.name}/{a.reg}/{a.index}/{a.scale}/{a.name.name}/{a.cls}/{a.offset}/{symStr c.sym}/{v}"
 

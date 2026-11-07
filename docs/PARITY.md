@@ -120,6 +120,13 @@ and later switches delete versions retired more than 24 hours ago. Long runs tha
 a switch should read a version directory (`readlink -f ../gofv-corpus/<pin12>/plain`) instead
 of the published name.
 
+Disk: `--check-determinism` compares the second export set by set and deletes each set after its
+comparison, so it never holds two full copies; `--link-from <version>` (e.g. `full-v9`) replaces
+every dump whose sha256 equals the same path in that version by a hard link and records the
+counts in the manifest's `link` lines (full-v10: only the cmd corpus's own `cmd/compile` and
+`cmd/internal/obj` functions, which change with the exporter patch, cost new space, #547).
+`--switch … --keep-retired` publishes without deleting old versions.
+
 Format changes: export with `--no-switch` (the new version is written but not published), merge
 the PR whose parser reads the new format, then publish with
 `scripts/export-corpus.sh --switch quick-v<N>` (and `full-v<N>`). Every switch is announced to
@@ -243,3 +250,66 @@ stack slots, and the open-coded-defer paths occur in 135; the full corpus (needs
 would exercise these more. The #541 `LoweredPanicBoundsCR` behaviour is reproduced.
 Paths that never run for linux/arm64 or the corpus configuration fail loudly instead of being
 approximated: MergeLocals hash bisection (`mergelocalshash` non-empty), `-clobberdead`.
+
+## Phase 3: assembler (I4, #550)
+
+`lake exe asm-parity [--jobs N] [--max-report N] [--table FILE] <dir|file>...`
+(`GoFVTest/AsmParity.lean`) checks the Lean port of `Flushplist` (`GoFV/Asm/*`,
+`docs/PASSES3.md` D1–D7): `GoFV.Asm.flush` runs, on the `prog0` section of a `.prog` file
+(P0), `linkpatch` with `progedit` and `preprocess` (`Obj7`), `span7` with `oplook`/`aclass`
+(`Aclass`), literal pools and long-branch veneers (`Span7`), the `asmout` cases (`Asmout`,
+`AsmoutA`, `AsmoutB`, helpers `Asm7Ops`; optab in `buildop`'s sorted order generated into
+`Optab.lean` by `tools/asgen`), `MarkUnsafePoints` and `linkpcln` (`Pcln`), and the `Compile`
+tail's `weakenGlobalMapInitRelocs`. It compares with the `asm` section (M), per function:
+
+1. **Prog list**: every Prog in order with every field (`Pc`, `Spadj`, `Isize`, `Optab`, `Pool`,
+   operands with cached classes, `Mark`, positions; Progs the assembler adds are numbered in
+   list order from one past the largest `prog0` ID, as the exporter numbers them);
+2. **FuncInfo**: `Args`, `Locals`, `FuncFlag`, attributes (`NOFRAME`, `NOSPLIT`, `LEAF` set by
+   `preprocess`), spills, inline marks, jump tables, funcaux symbols;
+3. **text**: `Size`, `Align`, the bytes of `P` (a mismatch names the stock Prog and its asmout
+   case) and `R` in append order;
+4. **pc tables**: the contents of pcsp, pcfile, pcline, pcinline and every pcdata table, the
+   funcdata slots, `UsedFiles` and the local inlining tree;
+5. **data**: the `$f32.`/`$f64.`/`$i64.` constants `progedit` creates and the jump-table words.
+
+A difference caused outside the port is classed `explained:<class>`: it counts as a match of
+its cut and the function as "exact or explained". There are two such classes (the second,
+`explained:text:sym-align`, is described with the full-v10 result below). The first is
+`explained:text:reloc:pre-flush-markers`. The frontend puts zero-size marker relocations on the
+function's `LSym.R` before assembly (`R_USEIFACE`/`R_USEIFACEMETHOD`/`R_USENAMEDMETHOD` from
+`reflectdata.MarkTypeUsedInInterface`, `MarkUsedIfaceMethod` and `walk`), so they come first in
+the exported `R`; `gofv-prog 2` records `LSym.R` only in the `asm` section, so the port cannot
+reproduce them. The harness requires the stock relocations to be exactly those markers followed
+by the port's relocations. Recording `LSym.R` at the `prog0` cut (a format bump) would remove
+the class.
+
+Result on quick-v9 (9,297 functions, 570,997 asm Progs, 1,909,776 text bytes; 12 s with 8 jobs):
+
+| cut | functions | match | mismatch | parity |
+| --- | ---: | ---: | ---: | ---: |
+| Prog list (D2–D6) | 9297 | 9297 | 0 | 100% |
+| FuncInfo | 9297 | 9297 | 0 | 100% |
+| text P/R (D4, D5) | 9297 | 9297 | 0 | 100% |
+| pc tables, funcdata (D7) | 9297 | 9297 | 0 | 100% |
+| constants, jump tables | 9297 | 9297 | 0 | 100% |
+| end to end, exact | 9297 | 7540 | 1757 | 81.10% |
+| end to end, exact or explained | 9297 | 9297 | 0 | 100% |
+
+The 1,757 inexact functions are all `explained:text:reloc:pre-flush-markers`.
+
+Result on full-v10 (by path; 96,634 functions, 9,059,979 asm Progs, 30,514,928 text bytes; 49 s
+with 8 jobs): every cut 100% exact or explained; end to end exact 68,260 (70.63%), explained
+28,374: `explained:text:reloc:pre-flush-markers` in all of them, and in 2 also
+`explained:text:sym-align` (`crypto/internal/fips140/check/checktest.init.0` and
+`crypto/internal/fips140/aes/gcm.init.0.func1` load `.stmp_<n>` symbols whose `LSym.Align` is
+below 8, so `Optab.size` picks the 12-byte `ADRP`+`ADD`+load form; `gofv-prog 2` does not record
+the alignment of data symbols, which the port then takes as 0 like other packages' symbols; the
+harness reruns the port with `Align = 1` for the operands that the stock encoding shows to be
+under-aligned and accepts only an exact match). gen-parity on full-v10: frame, f.RegArgs, prog0
+and end to end 96,634/96,634 (100%), 7,044,350 prog0 Progs. Paths that compiled
+linux/arm64 code does not take fail loudly rather than being guessed: `-dynlink`
+(`rewriteToUseGot` needs symbol kinds the export does not record), `MRS`/`MSR` (asmout cases
+35–37), SVE (case 127), a `//line` position base whose own position is not line 1 (pcline needs
+`PosBase.Pos()`, which `gofv-prog 2` does not record). An infinite `JMP` loop (`brloop` gives up)
+leaves the typed-nil target `AddrVal.nilTarget`, numbered like the exporter's fresh ID.

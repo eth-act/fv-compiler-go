@@ -551,7 +551,8 @@ one of them must raise it on #4.
 
 Owner: Phase3IO (I1 #547; tracking #546; `docs/PASSES3.md` §2); version 2: Phase3Gen (I3 #549).
 Consumers: `GoFV.Asm` (`GoFV/Asm/{As,Prog,Parse,Print}.lean`, I2 #548), the `asm-check` round
-trip, the I3 port's input (`GoFV.Gen.Env`) and the `gen-parity` check, I4. A change bumps the
+trip, the I3 port's input (`GoFV.Gen.Env`) and the `gen-parity` check, and the I4 port
+(`GoFV.Asm.flush`, input `prog0`, checked against `asm` by `asm-parity`, `docs/PARITY.md`). A change bumps the
 version on the first line and is announced on #546. The parser reads only the current version.
 
 For every function whose `.ssa` file the exporter writes (same selection, `GOFV_SSA_EXPORT`,
@@ -794,6 +795,13 @@ arrangement/extension bits, `SPOP_*` conditions, `C_*` operand classes), `GoFV/A
 `blockJump`, `leJumps`, `gtJumps` of `compile/internal/arm64/ssa.go`) and `GoFV/Asm/Abi.lean`
 (`GoFV.Asm.Abi`: the runtime-metadata constants of `internal/abi`: `PCDATA_*`, `FUNCDATA_*`,
 unsafe-point values, `FuncID`/`FuncFlag`, the bounds-check codes and limits, `TraceArgs*`).
+For I4 it generates `GoFV/Asm/Optab.lean` (`GoFV.Asm.ARM64`: the integer constants of
+`arm64/asm7.go`, `optab` in the order `buildop` leaves it — `slices.SortFunc` with `ocmp`, run
+by the generator after it checks that its `slices` sort is the pinned tree's, so `Prog.Optab = k`
+is `optab[k - 1]` —, `oprange` from `buildop`'s loop and `switch`, the LSE atomic opcode maps and
+the special-operand tables) and `GoFV/Asm/ObjConst.lean` (`GoFV.Asm.Obj`: the integer constants
+of `cmd/internal/obj/link.go`, e.g. the `Attr*` bits, and the `objabi` relocation types with
+`relocTypeNum`).
 
 ## Building and the corpus
 

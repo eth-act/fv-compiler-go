@@ -17,12 +17,16 @@
 //     constructor of -oplean GoFV/SSA/Op.lean, and condBits, blockJump, leJumps, gtJumps of
 //     cmd/compile/internal/arm64/ssa.go;
 //   - -abi GoFV/Asm/Abi.lean (abi.go): the integer constants of internal/abi symtab.go,
-//     bounds.go, stack.go, abi_arm64.go and type.go's TraceArgs*.
+//     bounds.go, stack.go, abi_arm64.go and type.go's TraceArgs*;
+//   - -optab GoFV/Asm/Optab.lean (optab.go): the integer constants of arm64/asm7.go, optab in
+//     buildop's sorted order, oprange, and the LSE atomic opcode maps;
+//   - -obj GoFV/Asm/ObjConst.lean (optab.go): the integer constants of cmd/internal/obj
+//     link.go (symbol attributes, ABIs, …) except the opcode block.
 //
 // Constant values come from go/types (load.go: declarations-only type check of the pinned
 // packages for linux/arm64, errors ignored, every emitted value checked to be known).
 //
-// usage: asgen -go <pinned Go root> -o GoFV/Asm/As.lean [-reg …] [-opasm … -oplean …] [-abi …]
+// usage: asgen -go <pinned Go root> -o GoFV/Asm/As.lean [-reg …] [-opasm … -oplean …] [-abi …] [-optab …] [-obj …]
 // -source "<version (rev)>"
 package main
 
@@ -125,6 +129,8 @@ func main() {
 	regOut := flag.String("reg", "", "output Lean file for the arm64 a.out.go constants (Reg.lean)")
 	opAsmOut := flag.String("opasm", "", "output Lean file for opcodeTable asm and arm64/ssa.go tables (OpAsm.lean)")
 	abiOut := flag.String("abi", "", "output Lean file for the internal/abi constants (Abi.lean)")
+	optabOut := flag.String("optab", "", "output Lean file for the asm7.go tables (Optab.lean; needs the a.out.go names)")
+	objOut := flag.String("obj", "", "output Lean file for the cmd/internal/obj link.go constants (ObjConst.lean)")
 	opLean := flag.String("oplean", "", "GoFV/SSA/Op.lean (constructor names checked by -opasm)")
 	flag.Parse()
 	if *goroot == "" || *out == "" {
@@ -196,7 +202,7 @@ func main() {
 	writeFile(*out, b.Bytes())
 
 	tab := &asTable{generic: generic, arm64: arm64, archSpecific: archSpecific, baseARM64: baseARM64}
-	l := newLoader(*goroot, "cmd/internal/obj", "cmd/internal/obj/arm64", "internal/abi", "internal/goarch")
+	l := newLoader(*goroot, "cmd/internal/obj", "cmd/internal/obj/arm64", "cmd/internal/objabi", "internal/abi", "internal/goarch")
 	if v, _ := constant.Int64Val(l.intConst("cmd/internal/obj", "ABaseARM64")); int(v) != baseARM64 {
 		log.Fatalf("obj.ABaseARM64 = %d, asgen computed %d", v, baseARM64)
 	}
@@ -204,7 +210,7 @@ func main() {
 		log.Fatalf("obj.A_ARCHSPECIFIC = %d, asgen computed %d", v, archSpecific)
 	}
 	var regNames map[string]bool
-	if *regOut != "" || *opAsmOut != "" {
+	if *regOut != "" || *opAsmOut != "" || *optabOut != "" {
 		var reg []byte
 		reg, regNames = genReg(l, *source)
 		if *regOut != "" {
@@ -216,6 +222,12 @@ func main() {
 			log.Fatal("-opasm needs -oplean")
 		}
 		writeFile(*opAsmOut, genOpAsm(l, tab, regNames, *opLean, *source))
+	}
+	if *optabOut != "" {
+		writeFile(*optabOut, genOptab(l, tab, regNames, *goroot, *source))
+	}
+	if *objOut != "" {
+		writeFile(*objOut, genObj(l, *source))
 	}
 	if *abiOut != "" {
 		writeFile(*abiOut, genAbi(l, *source))
