@@ -473,6 +473,34 @@ def psWhy (tabs : Tables) (f g : Func) : String := Id.run do
   return "?"
 
 open GoFV.Rules RewriteCheck in
+/-- Why `pnRel f g` fails (diagnostics). -/
+def pnWhy (tabs : Tables) (f g : Func) : String := Id.run do
+  if DomCert.cfgView g != DomCert.cfgView f then return "cfg"
+  if g.ownAux != f.ownAux then return "ownAux"
+  if g.valueTab.size < f.valueTab.size then return "size"
+  for z in List.range g.valueTab.size do
+    match f.value? z, g.value? z with
+    | none, none => pure ()
+    | some fv, some gv =>
+      if !(ssSame fv gv || pnOK tabs f g z) then
+        return s!"v{z}: {fv.op.name}->{gv.op.name}; f: {desc tabs f 3 z}; g: {desc tabs g 3 z}"
+    | none, some _ => if !pnFresh tabs f g z then return s!"v{z}: not a fresh Phi"
+    | some _, none => return s!"v{z} dropped"
+  for b in f.blocks do
+    match f.block? b, g.block? b with
+    | some fb, some gb =>
+      if !(gb.kind == fb.kind && gb.controls == fb.controls) then return s!"b{b} block"
+      if gb.values.toList.filter (fun z => (f.value? z).isSome) != fb.values.toList then
+        return s!"b{b} values"
+      match Sem.schedule f fb, Sem.schedule g gb with
+      | some of, some og =>
+        if og.toList.filter (fun z => !pnOK tabs f g z) != of.toList then
+          return s!"b{b} schedule f={of} g={og}"
+      | _, _ => return s!"b{b} no schedule"
+    | _, _ => return s!"b{b} missing"
+  return "?"
+
+open GoFV.Rules RewriteCheck in
 /-- Why `fixedOK` rejects the fixed load `u` → `w` (issue #69). -/
 def fixedWhy (tabs : Tables) (ro : List (String × Sem.Alloc)) (f : Func) (u w : Value) : String :=
   let b := (ptrBase tabs f 8 u.args[0]!).1
@@ -567,6 +595,10 @@ def layersWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f0 g : Func) :
         if RewriteCheck.layerOK env t tabs f0 L f log f' then none
         else if !pcRel tabs f f' then some s!"pc({k}): pcRel"
         else some s!"pc({k}): check"
+      | .pn =>
+        if RewriteCheck.layerOK env t tabs f0 L f log f' then none
+        else if !pnRel tabs f f' then some s!"pn({k}): pnRel {pnWhy tabs f f'}"
+        else some s!"pn({k}): check"
       | .ld =>
         if RewriteCheck.layerOK env t tabs f0 L f log f' then none
         else some s!"ld({k}): {why tabs t f f' (ldTaken t tabs f log)}"
@@ -581,6 +613,7 @@ def layersWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f0 g : Func) :
         | .seg sel => s!"seg{if sel then "₁" else "₂"}({k})"
         | .ps => s!"ps({k})"
         | .pc => s!"pc({k})"
+        | .pn => s!"pn({k})"
         | .ld => s!"ld({k})"
       s!"{pre} → {layersWhy env tabs t f0 g Ls f' log'}"
 
