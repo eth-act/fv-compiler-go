@@ -1210,7 +1210,7 @@ needs a later phase of the semantics.
 | `generic` | RoundToEven | 0 | 0 | 0 | 1 | 1 |
 | `generic` | Rsh | 120 | 20 | 0 | 0 | 140 |
 | `generic` | Select | 0 | 3 | 0 | 0 | 3 |
-| `generic` | SelectN | 3 | 0 | 0 | 15 | 15 |
+| `generic` | SelectN | 4 | 0 | 0 | 15 | 15 |
 | `generic` | SignExt | 15 | 0 | 0 | 0 | 15 |
 | `generic` | SliceCap | 4 | 1 | 0 | 1 | 5 |
 | `generic` | SliceLen | 4 | 1 | 0 | 3 | 6 |
@@ -1219,7 +1219,7 @@ needs a later phase of the semantics.
 | `generic` | Slicemask | 2 | 2 | 0 | 0 | 4 |
 | `generic` | Sqrt | 0 | 0 | 0 | 1 | 1 |
 | `generic` | StaticCall | 0 | 0 | 0 | 1 | 1 |
-| `generic` | StaticLECall | 0 | 0 | 0 | 24 | 24 |
+| `generic` | StaticLECall | 2 | 0 | 0 | 24 | 24 |
 | `generic` | Store | 12 | 0 | 0 | 21 | 21 |
 | `generic` | StringLen | 1 | 0 | 0 | 0 | 1 |
 | `generic` | StringPtr | 1 | 0 | 0 | 1 | 1 |
@@ -1229,7 +1229,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 60 | 4 | 4 | 0 | 68 |
 | `generic` | Zero | 2 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1383 | 192 | 31 | 258 | 1762 |
+| all | | 1386 | 192 | 31 | 258 | 1762 |
 
 <!-- END coverage -->
 
