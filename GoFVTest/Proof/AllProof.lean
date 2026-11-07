@@ -326,6 +326,7 @@ import GoFV.Proof.Pass.PipelineFull
 import GoFV.Proof.Pass.Prove
 import GoFV.Proof.Pass.Rewrite
 import GoFV.Proof.Pass.RewriteCases
+import GoFV.Proof.Pass.RewriteIMake
 import GoFV.Proof.Pass.RewriteLoadSel
 import GoFV.Proof.Pass.RewriteMakeSel
 import GoFV.Proof.Pass.RewriteTerm
@@ -526,6 +527,7 @@ import GoFV.Proof.Rules.EqPtr
 import GoFV.Proof.Rules.FloatArith
 import GoFV.Proof.Rules.FloatCmp
 import GoFV.Proof.Rules.FloatRules
+import GoFV.Proof.Rules.IMakeSM
 import GoFV.Proof.Rules.IfaceCmp
 import GoFV.Proof.Rules.IsInBounds
 import GoFV.Proof.Rules.IsSliceInBounds
@@ -704,6 +706,7 @@ import GoFV.Proof.Witness.FwdMalloc
 import GoFV.Proof.Witness.FwdNew
 import GoFV.Proof.Witness.FwdZeroStr
 import GoFV.Proof.Witness.HasWaitingReaders
+import GoFV.Proof.Witness.IMakeSM
 import GoFV.Proof.Witness.InitF10
 import GoFV.Proof.Witness.KnownBits
 import GoFV.Proof.Witness.LateLowerL

@@ -107,7 +107,8 @@ def proven():
 
 def proven_kinds():
     """Short rule name -> (proof module, obligation), from `theorem <name>_sound : <obligation>`
-    (`Rule.Sound`, `Rule.SoundT`, `Rule.SoundW`, `Rule.MakeSel`, `Rule.LoadSel`, `Rule.Drop`, `BlockRule.Sound`, `EffectRule.NilElim`,
+    (`Rule.Sound`, `Rule.SoundT`, `Rule.SoundW`, `Rule.MakeSel`, `Rule.LoadSel`, `Rule.Drop`, `Rule.IMakeSM`, `BlockRule.Sound`,
+    `EffectRule.NilElim`,
     `EffectRule.LoadFwd`, `EffectRule.StructLoad`, `EffectRule.StructStore`, `EffectRule.Seg`,
     `EffectRule.PhiSel`)."""
     out = {}
@@ -309,7 +310,7 @@ def proven_sets():
 # Proven-only rule sets
 
 The rule sets of `opt`, decompose builtin (`dec`), `divisible` and `divmod` restricted to the
-rules with a merged `Rule.Sound`, `Rule.SoundT`, `Rule.SoundW`, `Rule.MakeSel`, `Rule.LoadSel` or `Rule.Drop` lemma (value rules),
+rules with a merged `Rule.Sound`, `Rule.SoundT`, `Rule.SoundW`, `Rule.MakeSel`, `Rule.LoadSel`, `Rule.Drop` or `Rule.IMakeSM` lemma (value rules),
 `BlockRule.Sound` lemma
 (block rules), `EffectRule.NilElim` lemma (nil-check eliminations), `EffectRule.LoadFwd` lemma
 (Load-of-Store forwardings), `EffectRule.StructLoad` lemma (struct-load expansions) or
@@ -410,7 +411,9 @@ def {low} : RuleSet where
                 if k == "Rule.LoadSel":
                     return f".inr (.inr (.inl {r}_sound))"
                 if k == "Rule.Drop":
-                    return f".inr (.inr (.inr {r}_sound))"
+                    return f"Rule.checked_of_drop {r}_sound"
+                if k == "Rule.IMakeSM":
+                    return f"Rule.checked_of_ims {r}_sound"
                 return f"{r}_sound"
             proofs = ",\n    ".join(
                 "⟨" + ", ".join(pf(r) for r in rs) + ", trivial⟩" for _, rs in groups)

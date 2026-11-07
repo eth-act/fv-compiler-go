@@ -8,7 +8,7 @@ import GoFV.Rules.Generated.Divmod
 # Proven-only rule sets
 
 The rule sets of `opt`, decompose builtin (`dec`), `divisible` and `divmod` restricted to the
-rules with a merged `Rule.Sound`, `Rule.SoundT`, `Rule.SoundW`, `Rule.MakeSel`, `Rule.LoadSel` or `Rule.Drop` lemma (value rules),
+rules with a merged `Rule.Sound`, `Rule.SoundT`, `Rule.SoundW`, `Rule.MakeSel`, `Rule.LoadSel`, `Rule.Drop` or `Rule.IMakeSM` lemma (value rules),
 `BlockRule.Sound` lemma
 (block rules), `EffectRule.NilElim` lemma (nil-check eliminations), `EffectRule.LoadFwd` lemma
 (Load-of-Store forwardings), `EffectRule.StructLoad` lemma (struct-load expansions) or
@@ -23,7 +23,7 @@ namespace GoFV.Rules.Proven
 
 open GoFV.Rules
 
-/-- `generic.rules` restricted to its 1220 proven value rules, 3 proven block rules, 9
+/-- `generic.rules` restricted to its 1221 proven value rules, 3 proven block rules, 9
 nil-check eliminations, 27 Load-of-Store forwardings, 1 struct-load
 expansions, 2 struct-store splits, 15 segment rules and 6 `Phi`
 rules validated per instance. -/
@@ -73,6 +73,7 @@ def generic : RuleSet where
     (.EqInter, [Generated.Generic.r_generic_790]),
     (.EqPtr, [Generated.Generic.r_generic_1646, Generated.Generic.r_generic_1683]),
     (.EqSlice, [Generated.Generic.r_generic_792]),
+    (.IMake, [Generated.Generic.r_generic_981]),
     (.IsInBounds, [Generated.Generic.r_generic_240, Generated.Generic.r_generic_242, Generated.Generic.r_generic_243, Generated.Generic.r_generic_247, Generated.Generic.r_generic_250, Generated.Generic.r_generic_252, Generated.Generic.r_generic_253, Generated.Generic.r_generic_255, Generated.Generic.r_generic_260, Generated.Generic.r_generic_264, Generated.Generic.r_generic_267]),
     (.IsNonNil, [Generated.Generic.r_generic_1687, Generated.Generic.r_generic_1689]),
     (.IsSliceInBounds, [Generated.Generic.r_generic_271, Generated.Generic.r_generic_273, Generated.Generic.r_generic_275, Generated.Generic.r_generic_277, Generated.Generic.r_generic_278]),
@@ -227,7 +228,7 @@ def generic : RuleSet where
   segs := [Generated.Generic.r_generic_1743, Generated.Generic.r_generic_1978, Generated.Generic.r_generic_1992, Generated.Generic.r_generic_2011, Generated.Generic.r_generic_2035, Generated.Generic.r_generic_2049, Generated.Generic.r_generic_2064, Generated.Generic.r_generic_2084, Generated.Generic.r_generic_2109, Generated.Generic.r_generic_1638, Generated.Generic.r_generic_1721, Generated.Generic.r_generic_1730, Generated.Generic.r_generic_1833, Generated.Generic.r_generic_1844, Generated.Generic.r_generic_1857]
   phiSels := [Generated.Generic.r_generic_782, Generated.Generic.r_generic_783, Generated.Generic.r_generic_784, Generated.Generic.r_generic_785, Generated.Generic.r_generic_1050, Generated.Generic.r_generic_1049]
 
-/-- `dec.rules` restricted to its 34 proven value rules, 0 proven block rules, 0
+/-- `dec.rules` restricted to its 35 proven value rules, 0 proven block rules, 0
 nil-check eliminations, 0 Load-of-Store forwardings, 0 struct-load
 expansions, 7 struct-store splits, 0 segment rules and 0 `Phi`
 rules validated per instance. -/
@@ -238,6 +239,7 @@ def dec : RuleSet where
     (.ComplexImag, [Generated.Dec.r_dec_14, Generated.Dec.r_dec_159, Generated.Dec.r_dec_164]),
     (.ComplexReal, [Generated.Dec.r_dec_13, Generated.Dec.r_dec_158, Generated.Dec.r_dec_163]),
     (.IData, [Generated.Dec.r_dec_83, Generated.Dec.r_dec_146]),
+    (.IMake, [Generated.Dec.r_dec_102]),
     (.ITab, [Generated.Dec.r_dec_82, Generated.Dec.r_dec_144]),
     (.Load, [Generated.Dec.r_dec_16, Generated.Dec.r_dec_28, Generated.Dec.r_dec_45, Generated.Dec.r_dec_63, Generated.Dec.r_dec_87]),
     (.SliceCap, [Generated.Dec.r_dec_60, Generated.Dec.r_dec_154]),

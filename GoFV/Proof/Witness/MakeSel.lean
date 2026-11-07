@@ -267,7 +267,7 @@ theorem drp_checks :
 /-- The rule set is sound (`:120` is `Rule.Drop`, `:115` `Rule.Sound`). -/
 theorem drpRules_allSound : drpRules.AllSound :=
   GoFV.Proof.Rules.RuleSet.allSound_of
-    ⟨⟨.inr (.inr (.inr GoFV.Proof.Rules.r_dec_120_sound)), trivial⟩,
+    ⟨⟨GoFV.Proof.Rules.Rule.checked_of_drop GoFV.Proof.Rules.r_dec_120_sound, trivial⟩,
       ⟨GoFV.Proof.Rules.Rule.checked_of_sound GoFV.Proof.Rules.r_dec_115_sound rfl, trivial⟩,
       trivial⟩ trivial
 

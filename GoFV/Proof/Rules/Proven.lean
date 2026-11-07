@@ -53,6 +53,7 @@ import GoFV.Proof.Rules.EqB
 import GoFV.Proof.Rules.EqPtr
 import GoFV.Proof.Rules.FloatArith
 import GoFV.Proof.Rules.FloatRules
+import GoFV.Proof.Rules.IMakeSM
 import GoFV.Proof.Rules.IfaceCmp
 import GoFV.Proof.Rules.IsInBounds
 import GoFV.Proof.Rules.IsSliceInBounds
@@ -204,6 +205,7 @@ theorem generic_allSound : Proven.generic.AllSound :=
     ⟨Rule.checked_of_sound r_generic_790_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_generic_1646_sound rfl, Rule.checked_of_sound r_generic_1683_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_generic_792_sound rfl, trivial⟩,
+    ⟨Rule.checked_of_ims r_generic_981_sound, trivial⟩,
     ⟨Rule.checked_of_sound r_generic_240_sound rfl, Rule.checked_of_sound r_generic_242_sound rfl, Rule.checked_of_sound r_generic_243_sound rfl, Rule.checked_of_sound r_generic_247_sound rfl, Rule.checked_of_sound r_generic_250_sound rfl, Rule.checked_of_sound r_generic_252_sound rfl, Rule.checked_of_sound r_generic_253_sound rfl, Rule.checked_of_sound r_generic_255_sound rfl, Rule.checked_of_sound r_generic_260_sound rfl, Rule.checked_of_sound r_generic_264_sound rfl, Rule.checked_of_sound r_generic_267_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_generic_1687_sound rfl, Rule.checked_of_soundT r_generic_1689_sound, trivial⟩,
     ⟨Rule.checked_of_sound r_generic_271_sound rfl, Rule.checked_of_sound r_generic_273_sound rfl, Rule.checked_of_sound r_generic_275_sound rfl, Rule.checked_of_sound r_generic_277_sound rfl, Rule.checked_of_sound r_generic_278_sound rfl, trivial⟩,
@@ -359,11 +361,12 @@ set_option maxRecDepth 4096 in
 theorem dec_allSound : Proven.dec.AllSound :=
   RuleSet.allSound_of (by
     simp only [Proven.dec, ForallL]
-    exact ⟨⟨.inr (.inr (.inr r_dec_119_sound)), trivial⟩,
+    exact ⟨⟨Rule.checked_of_drop r_dec_119_sound, trivial⟩,
     ⟨Rule.checked_of_sound r_dec_116_sound rfl, Rule.checked_of_sound r_dec_126_sound rfl, .inr (.inr (.inl r_dec_132_sound)), trivial⟩,
     ⟨Rule.checked_of_sound r_dec_14_sound rfl, Rule.checked_of_sound r_dec_159_sound rfl, Rule.checked_of_sound r_dec_164_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_dec_13_sound rfl, Rule.checked_of_sound r_dec_158_sound rfl, Rule.checked_of_sound r_dec_163_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_dec_83_sound rfl, Rule.checked_of_sound r_dec_146_sound rfl, trivial⟩,
+    ⟨Rule.checked_of_ims r_dec_102_sound, trivial⟩,
     ⟨Rule.checked_of_sound r_dec_82_sound rfl, Rule.checked_of_sound r_dec_144_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_dec_16_sound rfl, Rule.checked_of_sound r_dec_28_sound rfl, Rule.checked_of_sound r_dec_45_sound rfl, Rule.checked_of_sound r_dec_63_sound rfl, Rule.checked_of_sound r_dec_87_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_dec_60_sound rfl, Rule.checked_of_sound r_dec_154_sound rfl, trivial⟩,
@@ -372,7 +375,7 @@ theorem dec_allSound : Proven.dec.AllSound :=
     ⟨Rule.checked_of_sound r_dec_61_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_dec_43_sound rfl, Rule.checked_of_sound r_dec_136_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_dec_42_sound rfl, Rule.checked_of_sound r_dec_135_sound rfl, trivial⟩,
-    ⟨.inr (.inr (.inr r_dec_120_sound)), trivial⟩,
+    ⟨Rule.checked_of_drop r_dec_120_sound, trivial⟩,
     ⟨.inr (.inl r_dec_106_sound), Rule.checked_of_sound r_dec_115_sound rfl, .inr (.inr (.inl r_dec_141_sound)), trivial⟩, trivial⟩)
     (by simp [Proven.dec, ForallL])
 

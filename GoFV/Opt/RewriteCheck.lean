@@ -946,11 +946,46 @@ def loadSelOK (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Bool :=
     | _, _ => false
   | _, _ => false
 
+/-! ## An `IMake` of a `StructMake` (issue #69)
+
+`(IMake _typ (StructMake ___)) => imakeOfStructMake(v)` (`generic.rules:981`, `dec.rules:102`;
+`GoFV.Proof.Rules.imsShape`) makes `v` a copy of a fresh `IMake _typ a`, `a` the struct's first
+field of non-zero size (`Interp.tryRule` logs the fresh value after `v`). Under the semantics an
+interface's data word read at its pointer shape from a struct value is `poison` (`Val.retype`
+keeps an aggregate only at an aggregate shape), so any field refines it; each instance is
+validated (`imsOK`), and only so: the `StructMake` has an aggregate shape, `v`'s shape is an
+interface's (two fields, the second a word, `imsTy`), and the fresh `IMake` has `v`'s type, its
+first argument and an argument of the `StructMake`. -/
+
+/-- An interface shape: two fields, the second (the data word) a pointer or a 64-bit integer. -/
+def imsTy : Sem.Ty → Bool
+  | .agg [_, (_, t)] _ => isPtrTy t || isInt64Ty t
+  | _ => false
+
+/-- The event `(v, [u0, w])` puts a struct into an interface as one of its fields (above). -/
+def imsOK (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Bool :=
+  match M.get? v, defs with
+  | some x, [u0, w] =>
+    match x.args.toList, w.args.toList with
+    | [t, s], [t', a] =>
+      match M.get? s with
+      | some y =>
+        x.op == .IMake && y.op == .StructMake && (tabs.ty y.type matches .agg ..) &&
+          imsTy (tabs.ty x.type) &&
+          u0.id == v && u0.op == .Copy && u0.args == #[w.id] && u0.type == x.type &&
+          u0.auxInt == 0 && u0.aux == none &&
+          (M.get? w.id).isNone && w.op == .IMake && w.type == x.type && t' == t &&
+          y.args.contains a && (M.get? a).isSome
+      | none => false
+    | _, _ => false
+  | _, _ => false
+
 /-- Replay the log on the definitions `M` and the terminators `B`, starting from `f`'s; `none`
 if an event is not validated. An event of a dropped rule (`dropShape`) and a copy-argument
 replacement the copies of `M` do not justify are skipped: `M` keeps its definition, and
 `finalOK` accepts the output only where that value is no longer read (issue #17). A selection of
-a `Make` (`makeSelOK`) is accepted from any rule. With `lax` (`validate`), an event of a table
+a `Make` (`makeSelOK`) is accepted from any rule; a selection of a `Load` (`loadSelOK`) and an
+`IMake` of a `StructMake` (`imsOK`) only per instance. With `lax` (`validate`), an event of a table
 rule that is not validated is skipped the same way (keeping a definition is always sound;
 `finalOK` decides): a selection of a dropped `Make` whose argument Go's `copyOf` retyped, issue
 #17. The `ld` layer replays strictly, to take only validated events. -/
@@ -972,6 +1007,10 @@ def replay (tabs : Tables) (t : Interp.Table) (f : Func) (lax : Bool) :
         else if dropShape cr.rule then replay tabs t f lax M B evs
         else if loadSelShape cr.rule then
           if loadSelOK tabs M v defs.toList then
+            replay tabs t f lax (defs.foldl (fun M u => M.put u.id u) M) B evs
+          else none
+        else if imsShape cr.rule then
+          if imsOK tabs M v defs.toList then
             replay tabs t f lax (defs.foldl (fun M u => M.put u.id u) M) B evs
           else none
         else if ruleOK tabs M cr.rule v defs.toList then
