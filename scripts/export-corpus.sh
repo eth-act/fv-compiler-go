@@ -226,51 +226,44 @@ export_all() {
 }
 
 # link_set <dest> <set>: with --link-from, replace every *.ssa / *.prog file of <dest>/<set>
-# whose sha256 equals that of the same path under $link_from/plain by a hard link to it, and
-# append "<kind> linked|different|new <n>" counts to <dest>/link.<set>.
+# whose sha256 equals that of the same path under $link_from/plain by a hard link to it (files
+# of different sizes differ without hashing), and append "<kind> linked <n> different <n> new
+# <n>" to <dest>/link.<set>.
 link_set() {
-  local dest=$1 set=$2 src ours theirs e
+  local dest=$1 set=$2
   [ -n "$link_from" ] || return 0
-  src=$base/$link_from/plain/$set
   : >"$dest/link.$set"
   [ -d "$dest/$set" ] || return 0
-  for e in ssa prog; do
-    ours=$(mktemp "$root/tmp/link-ours.XXXXXX")
-    theirs=$(mktemp "$root/tmp/link-theirs.XXXXXX")
-    (cd "$dest/$set" && find . -type f -name "*.$e" -print0 | xargs -0 -r -P 8 -n 512 sha256sum -z) >"$ours"
-    if [ -d "$src" ]; then
-      (cd "$dest/$set" && find . -type f -name "*.$e" -print0 \
-         | (cd "$src" && xargs -0 -r -P 8 -n 512 sha256sum -z 2>/dev/null)) >"$theirs" || true
-    fi
-    # ours/theirs: NUL-terminated "<sha256>  <path>" records; link the equal pairs.
-    python3 - "$ours" "$theirs" "$dest/$set" "$src" "$e" "$dest/link.$set" <<'PY'
-import os, sys
-ours, theirs, dst, src, ext, log = sys.argv[1:]
-def recs(path):
-    out = {}
+  python3 - "$dest/$set" "$base/$link_from/plain/$set" "$dest/link.$set" <<'PY'
+import hashlib, os, sys
+from concurrent.futures import ThreadPoolExecutor
+dst, src, log = sys.argv[1:]
+def digest(path):
+    h = hashlib.sha256()
     with open(path, 'rb') as f:
-        for r in f.read().split(b'\0'):
-            if r:
-                out[r[66:].decode('utf-8', 'surrogateescape')] = r[:64]
-    return out
-o, t = recs(ours), recs(theirs)
-linked = different = new = 0
-for rel, d in o.items():
-    if rel not in t:
-        new += 1
-    elif t[rel] != d:
-        different += 1
-    else:
-        a, b = os.path.join(src, rel), os.path.join(dst, rel)
-        tmp = b + '.link'
-        os.link(a, tmp)
-        os.replace(tmp, b)
-        linked += 1
-with open(log, 'a') as f:
-    f.write(f"{ext} linked {linked} different {different} new {new}\n")
+        for b in iter(lambda: f.read(1 << 20), b''):
+            h.update(b)
+    return h.digest()
+def check(rel):
+    a, b = os.path.join(src, rel), os.path.join(dst, rel)
+    try:
+        sa = os.stat(a)
+    except FileNotFoundError:
+        return 'new'
+    if sa.st_size != os.stat(b).st_size or digest(a) != digest(b):
+        return 'different'
+    tmp = b + '.gofvlink'
+    os.link(a, tmp)
+    os.replace(tmp, b)
+    return 'linked'
+for ext in ('ssa', 'prog'):
+    rels = [os.path.relpath(os.path.join(d, f), dst)
+            for d, _, fs in os.walk(dst) for f in fs if f.endswith('.' + ext)]
+    with ThreadPoolExecutor(8) as ex:
+        res = list(ex.map(check, rels))
+    with open(log, 'a') as f:
+        f.write(f"{ext} linked {res.count('linked')} different {res.count('different')} new {res.count('new')}\n")
 PY
-    rm -f "$ours" "$theirs"
-  done
 }
 
 # Per-set hooks: the first export links; the second export (--check-determinism) links, then
