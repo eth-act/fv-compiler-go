@@ -853,7 +853,9 @@ def trace (path : String) (k : Nat) (texts : List String) : IO UInt32 := do
       | .panic e _ => IO.println s!"  panicked {e.message}"; return 0
   return 0
 
-def main (args : List String) : IO UInt32 := do
+/-- The `sem-difftest` command line (`GoFVTest/SemDiffMain.lean` is the executable root: a module
+defining `main` cannot be imported with the others, `scripts/axioms-audit.sh`). -/
+def run (args : List String) : IO UInt32 := do
   match args with
   | "gen" :: dir :: n :: seed :: names =>
     gen dir n.toNat! seed.toNat! names
