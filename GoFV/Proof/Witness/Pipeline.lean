@@ -212,7 +212,7 @@ theorem plRunEnv_wbPre : WB.WbPre plRunEnv [] {} := by
     split at hc <;> cases hc <;> trivial
 
 theorem plRunEnv_vpre : VPre (GoFV.Opt.NilCheck.dictParams plEnv.tables plF)
-    (GoFV.Opt.Verified.pipelineRo plEnv plF) (GoFV.Opt.RewriteCheck.eqSyms plEnv.tables plF)
+    (GoFV.Opt.Verified.pipelineRo plEnv plF) (GoFV.Opt.Verified.pipelineEq plEnv)
     plRunEnv [] {} :=
   ⟨plRunEnv_mono, plRunEnv_frameSafe, plRunEnv_initAvoids, plRunEnv_allocNonNil,
     by rw [plF_dict]; exact DictArgs.nil [], plRunEnv_wbPre, plRunEnv_tempOblivious, plRunEnv_memOps,

@@ -103,8 +103,8 @@ theorem RefinesFrom.frameSafe_toV
 
 theorem RefinesFrom.rw_toV {fe : Tables} (hk : NilCheck.dictParams tabs f = k)
     (hro : ∀ e ∈ RewriteCheck.roPass tabs fe f, e ∈ ro)
-    (heq : (∀ s ∈ (RewriteCheck.eqSyms tabs f).1, s ∈ eq.1) ∧
-      ∀ s ∈ (RewriteCheck.eqSyms tabs f).2, s ∈ eq.2)
+    (heq : (∀ s ∈ (RewriteCheck.eqPass tabs fe).1, s ∈ eq.1) ∧
+      ∀ s ∈ (RewriteCheck.eqPass tabs fe).2, s ∈ eq.2)
     (h : RefinesFrom (Pass.Rewrite.RwPre tabs fe f) tabs' f' tabs f) :
     VRefines k ro eq tabs' f' tabs f :=
   RefinesFrom.mono (fun _ _ _ hp =>
@@ -134,8 +134,8 @@ def relHolds : Rel → Tables → Tables → Func → Tables → Func → Prop
 /-- Each pass relation implies the pipeline's, for an input with dictionary parameters `k`. -/
 theorem relHolds_toV {fe : Tables} (hk : NilCheck.dictParams tabs f = k)
     (hro : ∀ e ∈ RewriteCheck.roPass tabs fe f, e ∈ ro)
-    (heq : (∀ s ∈ (RewriteCheck.eqSyms tabs f).1, s ∈ eq.1) ∧
-      ∀ s ∈ (RewriteCheck.eqSyms tabs f).2, s ∈ eq.2) :
+    (heq : (∀ s ∈ (RewriteCheck.eqPass tabs fe).1, s ∈ eq.1) ∧
+      ∀ s ∈ (RewriteCheck.eqPass tabs fe).2, s ∈ eq.2) :
     {r : Rel} → relHolds r fe tabs' f' tabs f → VRefines k ro eq tabs' f' tabs f
   | .refines, h => Refines.toV h
   | .mono, h => RefinesUnder.toV h
@@ -238,13 +238,13 @@ theorem stockPasses_sound : ∀ p ∈ stockPasses.toList, stepSound p.step := by
 
 /-- The invariant of the pipeline's states from input `f0`: a verified state refines the
 input, `wf` means the state passes `check`, and the state records the input's dictionary
-parameters, read-only symbols and descriptor symbols. -/
+parameters, read-only symbols and the pipeline's descriptor symbols. -/
 def Inv (env : PassEnv) (f0 : Func) (st : VState) : Prop :=
   (st.verified = true → VRefines (NilCheck.dictParams env.tables f0)
-    (pipelineRo env f0) (RewriteCheck.eqSyms env.tables f0) st.tables st.func env.tables f0) ∧
+    (pipelineRo env f0) (pipelineEq env) st.tables st.func env.tables f0) ∧
   (st.wf = true → check (checkEnv env st.tables) st.func = .ok ()) ∧
   st.dict = NilCheck.dictParams env.tables f0 ∧ st.ro = pipelineRo env f0 ∧
-  st.eq = RewriteCheck.eqSyms env.tables f0
+  st.eq = pipelineEq env
 
 private theorem ok_of_toBool {ε : Type} {e : Except ε Unit} (h : e.toBool = true) : e = .ok () := by
   revert h; cases e <;> simp [Except.toBool]
@@ -271,7 +271,7 @@ theorem Inv.skip {st : VState} (h : Inv env f0 st) (name why : String) :
 theorem Inv.adopt {st : VState} (h : Inv env f0 st) {name : String} {out : PassOut} {wf : Bool}
     {v : Verdict}
     (hv : v.ok = true → VRefines (NilCheck.dictParams env.tables f0)
-      (pipelineRo env f0) (RewriteCheck.eqSyms env.tables f0) out.tables out.func st.tables
+      (pipelineRo env f0) (pipelineEq env) out.tables out.func st.tables
       st.func)
     (hwf : wf = true → check (checkEnv env out.tables) out.func = .ok ()) :
     Inv env f0 (st.adopt name out wf v) := by
@@ -283,7 +283,7 @@ theorem Inv.continue {st : VState} (h : Inv env f0 st) {p : StockPass} {out : Pa
     {claim : Option String}
     (hc : claim = none → check (checkEnv env out.tables) out.func = .ok () →
       VRefines (NilCheck.dictParams env.tables f0) (pipelineRo env f0)
-        (RewriteCheck.eqSyms env.tables f0) out.tables out.func st.tables st.func) :
+        (pipelineEq env) out.tables out.func st.tables st.func) :
     Inv env f0 (st.continue env p out claim) := by
   unfold VState.continue
   by_cases hs : st.same out = true
@@ -327,16 +327,20 @@ theorem roPass_sub {st : VState} (h : Inv env f0 st)
   · exact (h.2.2.2.1 ▸ ro_sub hro) e he
   · exact List.mem_append.2 (.inl (List.mem_append.2 (.inl (List.mem_append.2 (.inr he)))))
 
-/-- The rewrite passes' descriptor symbols on a state are the pipeline input's (checked by
-`runPass`). -/
-theorem eqSyms_sub {st : VState} (h : Inv env f0 st)
-    (heq : ((RewriteCheck.eqSyms st.tables st.func).1.all st.eq.1.contains &&
-      (RewriteCheck.eqSyms st.tables st.func).2.all st.eq.2.contains) = true) :
-    (∀ s ∈ (RewriteCheck.eqSyms st.tables st.func).1, s ∈ (RewriteCheck.eqSyms env.tables f0).1) ∧
-      ∀ s ∈ (RewriteCheck.eqSyms st.tables st.func).2, s ∈ (RewriteCheck.eqSyms env.tables f0).2 := by
+/-- The rewrite passes' descriptor symbols on a state are pinned by the pipeline's precondition:
+the state's tables' (checked by `runPass`) and the frontend's (`pipelineEq` has them all). -/
+theorem eqPass_sub {st : VState} (h : Inv env f0 st)
+    (heq : ((RewriteCheck.eqSyms st.tables).1.all st.eq.1.contains &&
+      (RewriteCheck.eqSyms st.tables).2.all st.eq.2.contains) = true) (name : String) :
+    (∀ s ∈ (RewriteCheck.eqPass st.tables (st.passEnv env name).frontend).1,
+        s ∈ (pipelineEq env).1) ∧
+      ∀ s ∈ (RewriteCheck.eqPass st.tables (st.passEnv env name).frontend).2,
+        s ∈ (pipelineEq env).2 := by
   rw [Bool.and_eq_true, List.all_eq_true, List.all_eq_true, h.2.2.2.2] at heq
-  exact ⟨fun s hs => List.contains_iff_mem.1 (heq.1 s hs),
-    fun s hs => List.contains_iff_mem.1 (heq.2 s hs)⟩
+  simp only [pipelineEq, RewriteCheck.eqPass, VState.passEnv, List.mem_append] at heq ⊢
+  refine ⟨fun s hs => hs.elim (fun hs => ?_) .inr, fun s hs => hs.elim (fun hs => ?_) .inr⟩
+  · exact List.mem_append.1 (List.contains_iff_mem.1 (heq.1 s hs))
+  · exact List.mem_append.1 (List.contains_iff_mem.1 (heq.2 s hs))
 
 theorem runPass_inv {st st' : VState} {p : StockPass} (hp : stepSound p.step) (h : Inv env f0 st)
     (hr : runPass env st p = .ok st') : Inv env f0 st' := by
@@ -378,13 +382,13 @@ theorem runPass_inv {st st' : VState} {p : StockPass} (hp : stepSound p.step) (h
               by_cases hro : (RewriteCheck.roSyms st.tables st.func).all st.ro.contains = true
               · exact hro
               · simp_all
-            have heq : ((RewriteCheck.eqSyms st.tables st.func).1.all st.eq.1.contains &&
-                (RewriteCheck.eqSyms st.tables st.func).2.all st.eq.2.contains) = true := by
-              by_cases heq : ((RewriteCheck.eqSyms st.tables st.func).1.all st.eq.1.contains &&
-                  (RewriteCheck.eqSyms st.tables st.func).2.all st.eq.2.contains) = true
+            have heq : ((RewriteCheck.eqSyms st.tables).1.all st.eq.1.contains &&
+                (RewriteCheck.eqSyms st.tables).2.all st.eq.2.contains) = true := by
+              by_cases heq : ((RewriteCheck.eqSyms st.tables).1.all st.eq.1.contains &&
+                  (RewriteCheck.eqSyms st.tables).2.all st.eq.2.contains) = true
               · exact heq
               · simp_all
-            exact relHolds_toV (hd.trans h.2.2.1) (roPass_sub h hro name) (eqSyms_sub h heq)
+            exact relHolds_toV (hd.trans h.2.2.1) (roPass_sub h hro name) (eqPass_sub h heq name)
               (hp _ _ _ _ _ hrun (h.2.1 hwf) hg hgd)
           | some fp =>
             simp only at hr
@@ -407,13 +411,13 @@ theorem runPass_inv {st st' : VState} {p : StockPass} (hp : stepSound p.step) (h
                   by_cases hro : (RewriteCheck.roSyms st.tables st.func).all st.ro.contains = true
                   · exact hro
                   · simp_all
-                have heq : ((RewriteCheck.eqSyms st.tables st.func).1.all st.eq.1.contains &&
-                    (RewriteCheck.eqSyms st.tables st.func).2.all st.eq.2.contains) = true := by
-                  by_cases heq : ((RewriteCheck.eqSyms st.tables st.func).1.all st.eq.1.contains &&
-                      (RewriteCheck.eqSyms st.tables st.func).2.all st.eq.2.contains) = true
+                have heq : ((RewriteCheck.eqSyms st.tables).1.all st.eq.1.contains &&
+                    (RewriteCheck.eqSyms st.tables).2.all st.eq.2.contains) = true := by
+                  by_cases heq : ((RewriteCheck.eqSyms st.tables).1.all st.eq.1.contains &&
+                      (RewriteCheck.eqSyms st.tables).2.all st.eq.2.contains) = true
                   · exact heq
                   · simp_all
-                exact relHolds_toV (hd.trans h.2.2.1) (roPass_sub h hro name) (eqSyms_sub h heq)
+                exact relHolds_toV (hd.trans h.2.2.1) (roPass_sub h hro name) (eqPass_sub h heq name)
                   (hp _ _ _ _ _ hrun (h.2.1 hwf) hg hgd)
               · cases hr; exact h.continue (fun hn => by cases hn)
 
@@ -431,11 +435,12 @@ theorem runPasses_inv : ∀ {ps : List StockPass} {st st' : VState},
 /-- **The verified pipeline refines its input**: when `verifiedPipeline` (from any start pass)
 returns a `verified` state, its function (with its tables) refines the input `f` (with the
 environment's tables) on every environment and input in `VPre` (with `f`'s dictionary
-parameters, read-only symbols and descriptor symbols). -/
+parameters and read-only symbols, and the descriptor symbols of the environment's tables and
+frontend tables, `pipelineEq`). -/
 theorem verifiedPipeline_refines {env : PassEnv} {f : Func} {start : Nat} {zv : Array (ID × Nat)}
     {r : VState} (h : verifiedPipeline env f start zv = .ok r) (hv : r.verified = true) :
     VRefines (NilCheck.dictParams env.tables f) (pipelineRo env f)
-      (RewriteCheck.eqSyms env.tables f) r.tables r.func env.tables f :=
+      (pipelineEq env) r.tables r.func env.tables f :=
   (runPasses_inv (fun p hp => stockPasses_sound p (List.mem_of_mem_drop hp)) (Inv.init zv) h).1 hv
 
 end GoFV.Proof.Pipeline

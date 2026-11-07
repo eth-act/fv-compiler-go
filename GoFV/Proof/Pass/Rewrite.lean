@@ -81,14 +81,14 @@ argument's pointer address disjoint bytes, `RewriteCheck.disjointB`, issue #69),
 `runtime.growslice` contracts that return a slice of the requested length (`Env.GrowLen`: for
 the lengths of their results, `generic.rules:2128`, issue #69), and `runtime.ifaceeq`/`efaceeq`
 contracts that return the pointer equality of their data words on the descriptor symbols of
-`f`'s calls whose types are direct-interface and comparable (`Env.IfaceEq` of
-`RewriteCheck.eqSyms`: for the folds `generic.rules:2279`/`:2287`, issues #69, #189). It depends
-on `f` only through its dictionary parameters (`Opt.NilCheck.dictParams`), its read-only symbols
-(`RewriteCheck.roSyms`) and its descriptor symbols (`RewriteCheck.eqSyms`). -/
+`tabs` and `fe` whose types are direct-interface and comparable (`Env.IfaceEq` of
+`RewriteCheck.eqPass`: for the folds `generic.rules:2279`/`:2287`, issues #69, #189). It depends
+on `f` only through its dictionary parameters (`Opt.NilCheck.dictParams`) and its read-only
+symbols (`RewriteCheck.roSyms`). -/
 def RwPre (tabs fe : Tables) (f : Func) (env : Env) (args : List Val) (mem : Mem) : Prop :=
   env.Mono ∧ NilPre tabs f env args mem ∧ env.MemOps ∧ env.AllocZero ∧
     RoImage (RewriteCheck.roPass tabs fe f) env mem ∧ InitAvoids env args mem ∧ env.GrowLen ∧
-    env.IfaceEq (RewriteCheck.eqSyms tabs f)
+    env.IfaceEq (RewriteCheck.eqPass tabs fe)
 
 /-- The byte is no fragment of a pointer into a frame temporary. -/
 def byteNoTemp : Byte → Bool

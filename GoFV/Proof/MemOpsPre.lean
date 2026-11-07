@@ -14,8 +14,9 @@ a slice whose length is their integer `newLen` argument (`generic.rules:2128`), 
 `Runtime.growslice` does (`Env.runtime_growLen`).
 
 `Env.IfaceEq eq` (issues #69, #189): `runtime.ifaceeq` on an itab symbol of `eq.1` and
-`runtime.efaceeq` on a type symbol of `eq.2` (the symbols whose type the export marks
-direct-interface and comparable, `RewriteCheck.eqSyms`) return whether their data words are the
+`runtime.efaceeq` on a type symbol of `eq.2` (the symbols of the pipeline's and the frontend's
+tables whose type the export marks direct-interface and comparable, `RewriteCheck.eqPass`,
+`Verified.pipelineEq`) return whether their data words are the
 same pointer, and the memory they were given (`third_party/go/src/runtime/alg.go`: `efaceeq(t,
 x, y)` returns `true` for a nil `t`, panics if `t.Equal` is nil, returns `x == y` if
 `t.IsDirectIface()`, else `t.Equal(x, y)`; `ifaceeq(tab, x, y)` is it with `t := tab.Type`; a

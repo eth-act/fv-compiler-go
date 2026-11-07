@@ -439,6 +439,71 @@ symbol's block, where the memory's read is the allocation's (`read_congr_find`,
 `load_congr_read`): `fixed_den`. Witness: `ff_checkedRewrite`/`ff_rwPre`
 (`Witness/FwdFixed.lean`: a relocation to `main.T` at offset 8 of a 16-byte `.dict.` symbol).
 
+**Folded `ifaceeq`/`efaceeq` calls** (`:2279`, `:2287`, `:1343`, issues #69, #189):
+`(StaticLECall {f} typ x y mem) && isSameCall(f, "runtime.efaceeq") &&
+isDirectAndComparableType(typ) && clobber(v) => (MakeResult (EqPtr x y) mem)` and its
+`runtime.ifaceeq` form with `isDirectAndComparableIface(itab)` turn a call root into a term;
+`(SelectN [n] m:(MakeResult ___)) => m.Args[n]` then makes its selections the `EqPtr` and the
+memory. All three are forwardings (`fwdShapeOK`; `Interp.rewriteValue` tries `loads` on a
+`StaticLECall` and a `SelectN` after their rows, `GoFV/Rules/Interp.lean`). `fwdNewOK` accepts
+`eqCallOK tabs eq f g u w`: `u` is a call `eqCallSig` accepts (`runtime.ifaceeq` or
+`runtime.efaceeq` with four arguments, of type `(bool, mem)`, its ABI three word-shaped
+parameters, `wordTy`, and one register-assigned `bool` result, so `encodeResults` writes nothing)
+whose descriptor is, statically, the start of a symbol (`eqDescW`/`eqDescI`, eight deep: an
+`Addr`, through word `Copy`s, `ITab`s and interface-shaped `IMake`s and `Copy`s; a `ConstNil`
+descriptor or a `Phi` of `IMake`s, which `isDirectAndComparableIface` also accepts, is rejected)
+named in the list `eq` (`eqList`: `eq.1` for `ifaceeq`, `eq.2` for `efaceeq`); `w` is `MakeResult
+q m`, `m` reached from `u`'s memory through compatible copies (`copyReach`) and `q` a listed
+`EqPtr` of `bool` shape of the data arguments (`fwdEvent?` takes the event `[v, v, q]` and
+`fwdStep` puts `q` in first). `selMROK` accepts `SelectN [i] m → Copy a` for `m` a `MakeResult`
+whose tuple type has one component per argument, the `i`-th the selection's type, and `a` its
+`i`-th argument. `dcUsesOK` (in `fwdRel`) requires that a folded call is read only by `SelectN
+[0]`/`[1]` and is no control, and `atomsXOK` (with `calls`) lets the folded call drop out of the
+roots. The list is the pass's: `eq = RewriteCheck.eqPass tabs fe` (`layerOK .fwd`,
+`LayerChain.fwd`; the selective layer selects with `eqSyms tabs`), the `.sym` auxes of the pass
+input's tables and of the frontend's whose itab type (`itabInfo`, `eq.1`) or type (`typeInfo`,
+`eq.2`) the export marks direct-interface and comparable (`eqSymOK`: `flags.direct &&
+flags.comparable`, `types.IsDirectIface`, `types.IsComparable`). It does not depend on the
+function's calls, so a pass that resolves a descriptor chain (`ITab (Phi …)` to `ITab (IMake
+(Addr {itab}) _)`) or takes a symbol from the frontend keeps the pipeline's list
+(`Verified.pipelineEq env = eqPass env.tables env.frontend`; `runPass` skips a proven pass on a
+state whose tables have a descriptor symbol outside it, "descriptor symbols changed").
+
+The contract: `Env.IfaceEq eq` (in `RwPre` and `VPre`; `GoFV/Proof/MemOpsPre.lean`, the
+Assumptions row of `STATUS.md`): `runtime.ifaceeq` on a word pointing at the start of a symbol of
+`eq.1` and `runtime.efaceeq` on one of `eq.2`, if the environment has them, return `[PtrOps.eqPtr
+false [x, y]]` for pointer-word data words `x`, `y` and the memory they were given. That is what
+`third_party/go/src/runtime/alg.go` computes: `efaceeq(t, x, y)` returns `true` for a nil `t`,
+panics if `t.Equal` is nil, returns `x == y` if `t.IsDirectIface()`, else `t.Equal(x, y)`; the
+descriptor is a symbol (not nil) and a comparable type has an `Equal`, so on these symbols it
+returns `x == y`; `ifaceeq(tab, x, y)` is it with `t := tab.Type`. Neither runtime model has the
+calls (`Env.runtime_ifaceEq`, `Env.p1_ifaceEq`: vacuous); `Env.ifaceEqDemo` (`Env.p1` with both,
+`Runtime.ifaceEqDirect`) satisfies it for every list (`Env.ifaceEqDemo_ifaceEq`). Proof
+(`GoFV/Proof/Pass/LoadFwdInv.lean`, `LoadFwd.lean`): `fwdInv` has `P = ConstReg ∧ DescReg`
+(descriptor-chain registers hold the start of their symbol, `desc_den`, `descReg_term`), `E … ∧
+env.IfaceEq eq` and `R = growR ∧ eqR`; `eq_eval` (`rstep` of a call `eqCallV` accepts: its
+register is `poison` or the tuple of `eqPtr` of its data words and its memory, through
+`encodeResults`/`poisonBelow`) and `eq_noPanic`. The atom simulation lets a dropped root be a
+`StaticLECall` under the new hypothesis `DropNP` (a dropped call does not panic on registers
+satisfying the invariant; a field of `AtomSim.Hyp`, an argument of
+`atomSimXE_refines`/`atomSimX_refines`, used by `enter_panic`; memcombine supplies it by
+`atomsXOK_dropNP`, the `atomsOK` path by `AtomsOK.dropNP`). `fwd_den` excludes folded calls
+(`dcB … x = false`); `selMR_den` (`:1343`) and `selDC_den` (an unchanged `SelectN` of a folded call
+refines the target `MakeResult`'s component) cover the selections. `LoadFwd.fwd_refines`'
+precondition gets `env.IfaceEq eq`. Witness: `ie_checkedRewrite`/`ie_rwPre`/`ie_eqPass`
+(`Witness/IfaceEq.lean`: `StaticLECall {runtime.ifaceeq} (ITab (IMake (Addr
+{go:itab.*int,error}) p)) x y mem` becomes `MakeResult (EqPtr x y) mem` and the function returns
+the `EqPtr`; `RwPre` on `Env.ifaceEqDemo`). Corpus (full-v9, the 3,210 functions whose export
+names `runtime.ifaceeq` or `runtime.efaceeq`): the full passes fold 391 `ifaceeq` and 10
+`efaceeq` calls (812 selections, `rule-fire-probe`); 2,984 functions reach stock in every
+rewrite section under the checked proven-only passes, 2,998 under the unchecked ones
+(`opt-proven-probe`); of the 14 the validator blocks, 9 fold a call whose descriptor is the
+`ITab` of a `ConstInterface` or of a `Phi` of a `ConstInterface` and an `IMake` (a nil itab, on
+which `ifaceeq` returns `true`: `EqPtr x y` is that only by Go's invariant that a nil interface's
+data word is nil, which no contract here states), the other 5 are forwarding disjointness,
+segment and atom failures. The verified pipeline (`gofv-ssa-opt --check --verified`) skips no run
+of them for "descriptor symbols changed" or "read-only symbols changed".
+
 Not done: `:2159` (`Zero` over `VarDef (Zero …)` → the `VarDef`): `Sem` poisons the variable's
 block at a `VarDef`, so when the zeroed bytes are that variable's (Go's use), dropping the second
 `Zero` leaves `poison` where the source has zeros.
@@ -691,7 +756,10 @@ eliminated nil check's pointer may be a forwarded `Load` (`generic.rules:1367` a
 only after the forwarding layers). The selective forwarding rounds after the segments order
 forwardings that build on each other: a `Load` through a `Move` (`:827`) reads the source that
 an earlier `:2146` gave the `Move` (`fwdMoveOK` looks the `Move` up in the layer's input), and a
-`Move`'s source changes along a chain of `Move`s (`moveSrcOK` looks the inner `Move` up there).
+`Move`'s source changes along a chain of `Move`s (`moveSrcOK` looks the inner `Move` up there),
+and a selection of a folded `ifaceeq`/`efaceeq` call (`:1343`, `selMROK`) is taken only in a round
+whose input already has the call as a `MakeResult` (the fold, `:2279`/`:2287`, in an earlier
+round); if no round orders them so, the forwarding tier is rejected (`checkedRewrite`'s fallback).
 The selective layers also keep the pass's order where a later event matched what an earlier one
 built (issue #69). A selective forwarding layer leaves a rewrite of a value that a segment
 event logged before it has on its memory chain (`segMemChain`, 8 deep below the anchor), or that

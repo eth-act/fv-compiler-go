@@ -712,6 +712,7 @@ import GoFV.Proof.Witness.FwdZeroStr
 import GoFV.Proof.Witness.HasWaitingReaders
 import GoFV.Proof.Witness.IDataSel
 import GoFV.Proof.Witness.IMakeSM
+import GoFV.Proof.Witness.IfaceEq
 import GoFV.Proof.Witness.InitF10
 import GoFV.Proof.Witness.KnownBits
 import GoFV.Proof.Witness.LateLowerL

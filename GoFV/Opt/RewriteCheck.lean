@@ -1986,8 +1986,9 @@ isDirectAndComparableIface(itab) => (MakeResult (EqPtr x y) mem)` (and `efaceeq`
 `isDirectAndComparableType`) turns the call root into a term; the `SelectN`s of its result
 become the `EqPtr` and the memory by `(SelectN [n] m:(MakeResult ___)) => m.Args[n]`. The
 validator accepts the fold of a call whose descriptor is, statically, the start of a symbol of
-the precondition's list (`eqSyms`: those whose type the export marks direct-interface and
-comparable), under whose contract (`Sem.Env.IfaceEq`) the call returns `x == y` and its memory;
+the precondition's list (`eqPass`: the symbols of the pass's and the frontend's tables whose type
+the export marks direct-interface and comparable), under whose contract (`Sem.Env.IfaceEq`) the
+call returns `x == y` and its memory;
 the selections are checked per instance (`selMROK`). -/
 
 /-- An interface shape whose first word (the itab or type word) has a word shape (`wordTy`): two
@@ -2041,21 +2042,24 @@ def eqSymOK (tabs : Tables) (itab : Bool) (ax : AuxRef) : Bool :=
       (tabs.type? t).any fun d => d.flags.direct && d.flags.comparable
   | _ => false
 
-/-- The descriptor symbols of `f`'s calls of `callee` (`eqDescW`, of an itab symbol if `itab`,
-else of a type symbol) whose type the export marks direct-interface and comparable
-(`eqSymOK`). -/
-def eqSymsOf (tabs : Tables) (f : Func) (callee : String) (itab : Bool) : List String :=
-  f.valueTab.toList.filterMap fun o => o.bind fun cv =>
-    if cv.op == .StaticLECall && cv.args.size == 4 && cv.aux.bind tabs.callee? == some callee then
-      (eqDescW tabs f 8 cv.args[0]!).bind fun ax =>
-        if eqSymOK tabs itab ax then eqSymName? tabs ax else none
-    else none
+/-- The symbols of `tabs` (its `.sym` auxes) whose type the export marks direct-interface and
+comparable (`eqSymOK`): its itab symbols if `itab`, else its type descriptor symbols. -/
+def eqSymsOf (tabs : Tables) (itab : Bool) : List String :=
+  (List.range tabs.auxes.size).filterMap fun n =>
+    if eqSymOK tabs itab n then eqSymName? tabs n else none
 
-/-- The symbols the precondition `Sem.Env.IfaceEq` of the rewrite passes on `f` names: the itab
-symbols of `f`'s `runtime.ifaceeq` calls and the type symbols of its `runtime.efaceeq` calls whose
-types are direct-interface and comparable. -/
-def eqSyms (tabs : Tables) (f : Func) : List String × List String :=
-  (eqSymsOf tabs f "runtime.ifaceeq" true, eqSymsOf tabs f "runtime.efaceeq" false)
+/-- The descriptor symbols of `tabs` the precondition `Sem.Env.IfaceEq` may name: its itab
+symbols (`runtime.ifaceeq`'s descriptors) and its type symbols (`runtime.efaceeq`'s) whose types
+are direct-interface and comparable. It does not depend on a function's calls, so a pass that
+resolves a new descriptor chain or takes a symbol from the frontend keeps the list. -/
+def eqSyms (tabs : Tables) : List String × List String :=
+  (eqSymsOf tabs true, eqSymsOf tabs false)
+
+/-- The descriptor symbols the precondition of the rewrite passes on tables `tabs` with the
+frontend tables `fe` names: `eqSyms` of both (passes take new symbols from the frontend, as for
+the read-only symbols, `roPass`). -/
+def eqPass (tabs fe : Tables) : List String × List String :=
+  ((eqSyms tabs).1 ++ (eqSyms fe).1, (eqSyms tabs).2 ++ (eqSyms fe).2)
 
 /-- A call of `runtime.ifaceeq` or `runtime.efaceeq`: a `StaticLECall` with four arguments (the
 descriptor, the two data words, the memory) of type `(bool, mem)`, its ABI's parameters three
@@ -2073,7 +2077,7 @@ def eqCallSig (tabs : Tables) (cv : Value) : Bool :=
          wordTy (tabs.ty p2.type)
      | _ => false)
 
-/-- The symbols of the list `eq` (`eqSyms`) the descriptor of the call `cv` may name: the itab
+/-- The symbols of the list `eq` (`eqPass`) the descriptor of the call `cv` may name: the itab
 symbols for `runtime.ifaceeq`, the type symbols for `runtime.efaceeq`. -/
 def eqList (tabs : Tables) (eq : List String × List String) (cv : Value) : List String :=
   if cv.aux.bind tabs.callee? == some "runtime.ifaceeq" then eq.1 else eq.2
@@ -2380,12 +2384,12 @@ def fwdStep (t : Interp.Table) (tabs : Tables) (ro : List (String × Sem.Alloc))
   | none => (p.1, p.2.push ev)
 
 /-- The input with the log's Load-of-Store forwardings applied (with `sel` only those `fwdEvOK`
-holds of, with `f`'s read-only and descriptor symbols, and none at a value of `late`), and the
-remaining events. -/
+holds of, with `f`'s read-only symbols and the descriptor symbols of `tabs`, and none at a value
+of `late`), and the remaining events. -/
 def fwdPre (t : Interp.Table) (tabs : Tables) (sel : Bool) (late : List ID) (f : Func)
     (log : Array RwEvent) : Func × Array RwEvent :=
   log.foldl (fwdStep t tabs (if sel then roSyms tabs f else [])
-    (if sel then eqSyms tabs f else ([], [])) sel late f) (f, #[])
+    (if sel then eqSyms tabs else ([], [])) sel late f) (f, #[])
 
 /-! ## Struct-store splits (issues #151, #17)
 
@@ -3867,7 +3871,7 @@ def RewriteCheck.nilOK (env : PassEnv) (tabs : GoFV.SSA.Tables) (f0 f f' : GoFV.
 
 /-- The layer `L` relates `f` (a layer's input with the log `log`, from the pass's input `f0`)
 and `f'`: `nilOK`, `fwdRel` (with the precondition's read-only symbols, `roPass`, and descriptor
-symbols, `eqSyms`), `validate` with the expansions it applied (`slTaken`, `ldTaken`), `ssRel`,
+symbols, `eqPass`), `validate` with the expansions it applied (`slTaken`, `ldTaken`), `ssRel`,
 `segRel` with its read-only segments' symbols among the precondition's (`roSegsOK`, `roPass`),
 `psRel` or `pcRel`, and `f'` passes `check`. -/
 def RewriteCheck.layerOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (tabs : GoFV.SSA.Tables)
@@ -3876,7 +3880,7 @@ def RewriteCheck.layerOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (tabs : G
   | .nil _, f, _, f' => RewriteCheck.nilOK env tabs f0 f f'
   | .fwd _, f, _, f' =>
     RewriteCheck.fwdRel tabs (RewriteCheck.roPass env.tables env.frontend f0)
-        (RewriteCheck.eqSyms env.tables f0) f f' &&
+        (RewriteCheck.eqPass env.tables env.frontend) f f' &&
       RewriteCheck.fwdRoOK tabs (RewriteCheck.roPass env.tables env.frontend f0) f &&
       checkOK { tabs := tabs, typs := env.typs } f'
   | .sl, f, log, f' =>

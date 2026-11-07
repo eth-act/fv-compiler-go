@@ -56,8 +56,9 @@ and once on each changed result, never inside a pass). Per pass run it records a
   the function can observe of them (`tabsAgree`; `Refines.refl`, any pass);
 - `skipped why`: an optional proven pass whose input is outside its theorem (`why`: the input
   fails `check`, the guard rejects it, its dictionary parameters, `NilCheck.dictParams`,
-  differ from the pipeline input's, or it names read-only symbols, `RewriteCheck.roSyms`, or
-  `ifaceeq`/`efaceeq` descriptor symbols, `RewriteCheck.eqSyms`, the pipeline input does not)
+  differ from the pipeline input's, or it names read-only symbols, `RewriteCheck.roSyms`, or its
+  tables have `ifaceeq`/`efaceeq` descriptor symbols, `RewriteCheck.eqSyms`, the pipeline's
+  precondition does not name, `pipelineEq`)
   or whose output fails `check`: its result is dropped and the input kept (the identity is a
   refinement);
 - `unverified why`: a stock port that changed the function, or a required proven pass in one of
@@ -90,8 +91,8 @@ inductive Rel where
   (`NilCheck.dictParams tabs f`), the runtime's `memclrNoHeapPointers`/`memmove` contracts, if
   present (`Env.MemOps`), the read-only symbols `RewriteCheck.roPass tabs fe f` holding their
   exported bytes (`RoImage`), inputs that hold no pointer into a frame temporary
-  (`InitAvoids`), and `ifaceeq`/`efaceeq` contracts on `f`'s descriptor symbols
-  (`Env.IfaceEq` of `RewriteCheck.eqSyms tabs f`). -/
+  (`InitAvoids`), and `ifaceeq`/`efaceeq` contracts on the descriptor symbols of `tabs` and `fe`
+  (`Env.IfaceEq` of `RewriteCheck.eqPass tabs fe`). -/
   | rw
   /-- `RefinesFrom WbPre` (writebarrier): the memory with the global image has a defined,
   read-only write-barrier flag and no write-barrier buffer, and the contracts keep that. -/
@@ -303,8 +304,8 @@ structure VState where
   symbols are among them. -/
   ro : List (String × Sem.Alloc) := []
   /-- The `runtime.ifaceeq`/`efaceeq` descriptor symbols the pipeline's precondition names
-  (`RewriteCheck.eqSyms` of the input). A proven `rw` step runs only on states whose descriptor
-  symbols are among them. -/
+  (`pipelineEq`): those of the input's tables and the frontend's. A proven `rw` step runs only on
+  states whose tables' descriptor symbols are among them. -/
   eq : List String × List String := ([], [])
   /-- One verdict per pass run. -/
   log : Array (String × Verdict) := #[]
@@ -320,6 +321,12 @@ def pipelineRo (env : PassEnv) (f : Func) : List (String × Sem.Alloc) :=
   RewriteCheck.roSyms env.tables f ++ RewriteCheck.roAll env.frontend ++
     RewriteCheck.roStrs env.tables ++ RewriteCheck.roStrs env.frontend
 
+/-- The `runtime.ifaceeq`/`efaceeq` descriptor symbols the pipeline's precondition `Env.IfaceEq`
+names: those of the environment's tables and of its frontend tables (`RewriteCheck.eqPass`), so
+a pass that resolves a descriptor or takes a symbol from the frontend keeps them. -/
+def pipelineEq (env : PassEnv) : List String × List String :=
+  RewriteCheck.eqPass env.tables env.frontend
+
 /-- The initial state: `f` with the environment's tables and the input section's `zvar`. -/
 def VState.init (env : PassEnv) (f : Func) (zv : Array (ID × Nat) := #[]) : VState :=
   { func := f, tables := env.tables, wf := (check (checkEnv env env.tables) f).toBool
@@ -327,7 +334,7 @@ def VState.init (env : PassEnv) (f : Func) (zv : Array (ID × Nat) := #[]) : VSt
     nextClass := zv.foldl (fun n (_, c) => max n (c + 1)) 1
     dict := NilCheck.dictParams env.tables f
     ro := pipelineRo env f
-    eq := RewriteCheck.eqSyms env.tables f }
+    eq := pipelineEq env }
 
 /-- The environment of stock pass `name` on state `st`. -/
 def VState.passEnv (st : VState) (env : PassEnv) (name : String) : PassEnv :=
@@ -392,8 +399,8 @@ def runPass (env : PassEnv) (st : VState) (p : StockPass) : Except VError VState
           some "dictionary parameters changed"
         else if !(RewriteCheck.roSyms st.tables st.func).all st.ro.contains then
           some "read-only symbols changed"
-        else if !((RewriteCheck.eqSyms st.tables st.func).1.all st.eq.1.contains &&
-            (RewriteCheck.eqSyms st.tables st.func).2.all st.eq.2.contains) then
+        else if !((RewriteCheck.eqSyms st.tables).1.all st.eq.1.contains &&
+            (RewriteCheck.eqSyms st.tables).2.all st.eq.2.contains) then
           some "descriptor symbols changed"
         else none
       match why, p.required with

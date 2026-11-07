@@ -292,7 +292,7 @@ theorem pfRunEnv_initAvoids : InitAvoids plRunEnv pfArgs {} := by
       trivial
 
 theorem pfRunEnv_vpre : VPre (GoFV.Opt.NilCheck.dictParams pfEnv.tables pfF)
-    (GoFV.Opt.Verified.pipelineRo pfEnv pfF) (GoFV.Opt.RewriteCheck.eqSyms pfEnv.tables pfF)
+    (GoFV.Opt.Verified.pipelineRo pfEnv pfF) (GoFV.Opt.Verified.pipelineEq pfEnv)
     plRunEnv pfArgs {} :=
   ⟨plRunEnv_mono, plRunEnv_frameSafe, pfRunEnv_initAvoids, plRunEnv_allocNonNil,
     by rw [pfF_dict]; exact DictArgs.nil pfArgs, plRunEnv_wbPre, plRunEnv_tempOblivious,
