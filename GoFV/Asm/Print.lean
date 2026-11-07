@@ -22,6 +22,7 @@ def hexNat (x : Nat) : W Unit := s (String.ofList (Nat.toDigits 16 x))
 def val : AddrVal → W Unit
   | .none => s "-"
   | .target id => ref '@' id
+  | .nilTarget => s "@?"
   | .textSize k => do s "i"; i k
   | .float b => do s "f"; hexNat b.toNat
   | .str b => do s "s"; hex (some b)

@@ -78,10 +78,12 @@ structure AsmSt where
   /-- `ctxt7.pool.start`, `pool.size` (`uint32`). -/
   poolStart : Nat := 0
   poolSize : Nat := 0
-  /-- The text symbol's `P`, `R` and `Size`. -/
+  /-- The text symbol's `P`, `R`, `Size` and `Align` (`Align` is raised by `PCALIGN`, else
+  stays as the input has it). -/
   textP : ByteArray := .empty
   textR : Array Reloc := #[]
   textSize : Int := 0
+  textAlign : Int := 0
   /-- `FuncInfo.Pcln`. -/
   pcln : Pcln := ⟨none, none, none, none, #[], #[]⟩
   /-- `Pcln.UsedFiles` (ascending when compared). -/
