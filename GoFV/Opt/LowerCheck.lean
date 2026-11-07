@@ -845,10 +845,18 @@ Neither is a root (`Sem.isRoot`): the schedule check of `atomsOKL` already requi
 atom only `f` has, and the simulation (`GoFV.Proof.Low.Sim.atomsOKL_spec`) needs nothing else. -/
 def dropAtomL (op : Op) : Bool := GoFV.Opt.RewriteCheck.dropAtom op || op == .Invalid
 
-/-- `RewriteCheck.atomsOK` with `atomPair` (and `pbConstOK`): the same entry, blocks and own aux; every atom of `g`
-corresponds to an atom of `f`, the atoms only `f` has are droppable (`dropAtomL`), and each block
-evaluates `f`'s roots, atoms of `g`, in the same order (`Sem.schedule`; `g` may evaluate a lowered
-`Zero` or `Move`, which is not a root of lowered SSA, earlier). -/
+/-- The atom `w` of `g` at `x` is a lowered frame address (`MOVDaddr {n}` at offset 0, an atom by
+`termVL`) where `f` has a term: `lower` folded the term `ADDconst [0]` (`OffPtr [0]`, `306`) of a
+frame variable's address into it (`650` at offset 0, `addrFoldEv`; `finalOKL` relates the two,
+`frameFinal`). It reads no argument (its address is `n`'s, `Sem.symAddr`) and is no root. -/
+def frameAtomG (tabs : Tables) (f : Func) (x : ID) (w : Value) : Bool :=
+  w.op == .ARM64MOVDaddr && !termVL tabs w && w.args.size == 1 && (f.value? x).any (termVL tabs ·)
+
+/-- `RewriteCheck.atomsOK` with `atomPair` (and `pbConstOK`): the same entry, blocks and own aux;
+every atom of `g` corresponds to an atom of `f` or is a lowered frame address where `f` has a term
+(`frameAtomG`), the atoms only `f` has are droppable (`dropAtomL`), and each block evaluates `f`'s
+roots, atoms of `g`, in the same order (`Sem.schedule`; `g` may evaluate a lowered `Zero` or
+`Move`, which is not a root of lowered SSA, earlier). -/
 def atomsOKL (tabs : Tables) (f g : Func) : Bool :=
   f.entry == g.entry && f.blocks == g.blocks && f.ownAux == g.ownAux &&
   f.blocks.all fun b =>
@@ -857,9 +865,9 @@ def atomsOKL (tabs : Tables) (f g : Func) : Bool :=
       fb.id == gb.id &&
       let af := atomsOfL tabs f fb
       let ag := atomsOfL tabs g gb
-      ag.all (fun x => af.contains x && match f.value? x, g.value? x with
+      ag.all (fun x => (af.contains x && match f.value? x, g.value? x with
         | some u, some w => atomPair tabs u w && pbConstOK tabs f u w
-        | _, _ => false) &&
+        | _, _ => false) || (g.value? x).any (frameAtomG tabs f x)) &&
       af.all (fun x => ag.contains x || (f.value? x).any (dropAtomL ·.op)) &&
       match Sem.schedule f fb, Sem.schedule g gb with
       | some of, some og =>
@@ -910,11 +918,21 @@ def pbFinal (tabs : Tables) (f : Func) (M : Defs) (n : Nat) (x : ID) (m u : Valu
         (ks.zip u.args.toList).all fun (k, a') => copyReachL tabs M n m.args[k]! a'
     | none => false
 
+/-- The output's lowered frame address `u` at `x` (`frameAtomG`, at a word shape) is the replayed
+term `m` at `x`: `ADDconst [0]` at `u`'s type of the lowered frame address of `f`'s `LocalAddr`
+with `u`'s aux (`frameAddr`; `650` at offset 0 replayed as no change, `addrFoldEv`). -/
+def frameFinal (tabs : Tables) (f : Func) (M : Defs) (x : ID) (m u : Value) : Bool :=
+  u.id == x && u.op == .ARM64MOVDaddr && !termVL tabs u && u.args.size == 1 && termVL tabs m &&
+    u.type == m.type && u.auxInt == m.auxInt && wordShape (shpL tabs u.type) &&
+    (frameAddr tabs M x).any fun (a, l) => l.aux == u.aux &&
+      (f.value? a).any fun v => v.op == .LocalAddr && v.aux == u.aux
+
 /-- Every value listed in `g` has its replayed definition up to copies in its arguments (an
 extension's or `W` op's argument also up to a narrowing `Copy`, `truncReachL`; a bounds panic with
-constant operands its replayed `LoweredPanicBoundsRR`'s, `pbFinal`), or is a term `g` does not read; every
-block of `g` its replayed terminator (kind, auxint, successors as the replay swapped them, controls
-up to copies). -/
+constant operands its replayed `LoweredPanicBoundsRR`'s, `pbFinal`; a lowered frame address the
+replayed `ADDconst [0]` of it, `frameFinal`), or is a term `g` does not read; every block of `g`
+its replayed terminator (kind, auxint, successors as the replay swapped them, controls up to
+copies). -/
 def finalOKL (tabs : Tables) (f g : Func) (M : Defs) (B : BMapL) : Bool :=
   let n := M.size
   let L := liveMarksL tabs g
@@ -937,7 +955,8 @@ def finalOKL (tabs : Tables) (f g : Func) (M : Defs) (B : BMapL) : Bool :=
                 truncReachL tabs M n m.op j m.args[j]! u.args[j]! ||
                 truncFitL tabs M n m j m.args[j]! u.args[j]! ||
                 lowReachL tabs M n m j m.args[j]! u.args[j]!) ||
-          (termVL tabs u && L[x]? != some true) || pbFinal tabs f M n x m u
+          (termVL tabs u && L[x]? != some true) || pbFinal tabs f M n x m u ||
+            frameFinal tabs f M x m u
         | _, _ => false
     | _, _, _ => false
 
