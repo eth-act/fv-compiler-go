@@ -1,9 +1,8 @@
 # Plan: the Phase 3 proofs (I7, #553)
 
-Status: plan. Slice G1 of the genssa validator is implemented (`GoFV/Gen/Check.lean`, probe
-`gen-check`, §5); its soundness proof is in progress (`GoFV/Proof/Gen/*`, §3: the `runProg`
-steps, the ID layout, the step lemmas of every G1 Prog shape except the branches, the register
-relation and `LocMatch` under register writes are proven; the rest is listed in §5). Context:
+Status: slice G1 of the genssa validator is implemented (`GoFV/Gen/Check.lean`, probe
+`gen-check`) and proven sound (`GoFV/Proof/Gen/G1.lean`: `g1_value`, `g1_term`; §3, §5), with a
+witness on a corpus function (`GoFV/Proof/Witness/GenG1.lean`). Context:
 `docs/plans/semantics3.md` (§4 `LocMatch`, §6 hooks, §7 layers), `docs/PASSES3.md` (the steps
 A1–F2), `docs/plans/regalloc-check.md` (the Phase 2 pattern this plan follows: an untrusted port
 with 100% parity, a checker, and a soundness proof of the checker only).
@@ -60,18 +59,21 @@ templates (slice with calls) and the metadata validators.
 **Validator** (`GoFV/Gen/Check.lean`, `checkG1 lc ps bstart : Except String PcTab`). Input: `lc
 = LocCtx.make tabs f` for the function `f` after `trim` (`runLoc`'s context), `ps` genssa's P0
 Prog list in list order, `bstart` the Prog ID where each block starts (genssa's
-`GenState.bstart`). Accepted functions: see the module doc — values `Phi` (same home), `ZERO`,
-`InlMark`, `MakeResult` (results in their registers), `Copy`, `MOVDconst`, `ADD`, `SUB`,
-`ADDconst`, `SUBconst`, `CMP`, `CMPconst`, `MOVDload`, `MOVDstore` (no symbol), the entry values
-(`InitMem`, `SP`, `SB`, `ArgIntReg`, `ArgFloatReg`) at the head of the entry block; blocks
-`Plain`, `Ret`, the ten flags branches and `Z`/`NZ`; no stack slot, register pair or temporary;
-each register holds values of one width class; destinations not `g`, `R29`, `R30`. The output
-table gives `pcOf b i` = the address of the first Prog of value `i` of block `b` under
+`GenState.bstart`). Accepted functions: see the module doc — values `Phi` (same home), `ZERO`
+(at a register shape), `InlMark` (no home, a shape `write` drops), `MakeResult` (results in their
+registers; its shape a tuple of one component per argument with memory only where the argument
+is the memory, so its write changes nothing), `Copy`, `MOVDconst`, `ADD`, `SUB`, `ADDconst`,
+`SUBconst`, `CMP`, `CMPconst`, `MOVDload`, `MOVDstore` (no symbol), the entry values (`InitMem`,
+`SP`, `SB`, `ArgIntReg`, `ArgFloatReg`) at the head of the entry block; blocks `Plain`, `Ret`, the
+ten flags branches and `Z`/`NZ`, every successor laid out; no stack slot, register pair or
+temporary; each register holds values of one width class; destinations not `g`, `R29`, `R30`. The
+output table gives `pcOf b i` = the address of the first Prog of value `i` of block `b` under
 `Link.byId`.
 
-**Statement** (`GoFV/Proof/Gen/G1.lean`). Premises on the activation (`G1Env`):
+**Statement** (`GoFV/Proof/Gen/G1.lean`). Premises on the activation (`G1Env lc L ps ret tab E`):
 
-- `E.lc = lc`, `E.pcOf = pcOfTab L ps tab`, `L = Link.byId sym text autosize extrasize ps`,
+- `E.lc = lc`, `L = Link.byId L.sym L.text L.autosize L.extrasize ps.toList`,
+  `E.pcOf = pcOfTab L.text ps.toList tab` (`pcAt`: the address of the Prog at an index of `ps`),
   `ret` not a Prog address;
 - `AddrAgree E.ι`: `ι` maps every block with a Phase 1 address (`Blk.base?`: nil, heap, frame
   blocks) to that address. This is semantics3 §4.3's decision for heap blocks; for frame blocks it
@@ -80,42 +82,47 @@ table gives `pcOf b i` = the address of the first Prog of value `i` of block `b`
 - `E.framed = false`: G1's functions have no frame (no call, no slot), so `LocMatch` pins `X29`
   and `X30` to the caller's FP and LR.
 
-Invariant on `runLoc` states (`G1Inv lc s`): no stack slot is live (`s.slots = []`), and every
-register other than `ZERO` holds poison or a value of its width class (an integer of that width,
-a 64-bit word or a pointer for class 64, a boolean for class 1). It holds after the entry values
-(the arguments are written at their shapes) and every G1 step keeps it.
+Invariant on `runLoc` states (`G1Inv lc s`): no stack slot is live (`s.slots = []`), every
+register other than `ZERO` holds a value of its width class (`Fits (regCls lc r)`: poison, an
+integer of that width, a pointer for class 64, a boolean for class 1), and the memory's block keys
+are distinct (`KeysNodup`: a store changes the machine bytes of its block's window, and a second
+entry with the same key would keep the old bytes). G1's steps keep it.
 
-Per-step premises (`G1Pre`), the dynamic restrictions of the slice, each Go-level (a Go program
-satisfies them) and each the place where a later slice must do better:
+Per-step premises (`G1Pre lc s v`, `G1TermPre lc s blk`), the dynamic restrictions of the slice,
+each Go-level (a Go program satisfies them) and each the place where a later slice must do better:
 
 - a `CMP`/`CMPconst` argument and a `Z`/`NZ` control do not read as a pointer without an integer
-  form (a global or out-of-window pointer: Phase 2's `cmp` compares those by offset within one
-  block, the machine by address, and the carry and overflow flags can differ when the block's
-  addresses straddle `2^63`);
+  form (`NoBarePtr`: `Arm64.ptrReg p` defined; a global or out-of-window pointer: Phase 2's `cmp`
+  compares those by offset within one block, the machine by address, and the carry and overflow
+  flags can differ when the block's addresses straddle `2^63`);
 - a `MOVDload` reads 8 valid bytes (Phase 1's load of an invalid access is `poison` without a
   fault, while the machine's address could wrap into the nil page; Go programs do not perform
   invalid loads).
 
-Theorems:
+Theorems (no `sorry`; axioms `propext`, `Classical.choice`, `Quot.sound`):
 
 ```
 theorem g1_value (hc : checkG1 lc ps bstart = .ok tab) (hE : G1Env lc L ps ret tab E)
-    (hb : lc.ctx.f.block? bid = some blk) (hi : blk.values[i]? = some id)
-    (hv : lc.ctx.f.value? id = some v) (hen : entryOp v.op = false)
-    (hm : LocMatch E s bid i m) (hinv : G1Inv lc s) (hpre : G1Pre lc s v)
-    (hs : stepLoc env lc s v = .ok s') :
+    (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
+    (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
+    (hen : entryOp v.op = false) (hm : LocMatch E s bid i m) (hinv : G1Inv lc s)
+    (hpre : G1Pre lc s v) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H L ps.toList ret m m' ∧ LocMatch E s' bid (i + 1) m' ∧ G1Inv lc s'
 
-theorem g1_term (hc …) (hE …) (hb …) (hm : LocMatch E s bid blk.values.size m)
+theorem g1_term (hc …) (hE …) (hbid …) (hb …) (hm : LocMatch E s bid blk.values.size m)
     (hinv : G1Inv lc s) (hpre : G1TermPre lc s blk)
     (ht : stepTermLoc lc s blk = .ok (.goto e, s')) :
-    ∃ m', PStar H L ps.toList ret m m' ∧ LocMatch E s' e.b 0 m' ∧ G1Inv lc s'
+    ∃ m', PStar H L ps.toList ret m m' ∧ LocMatch E s' e.b 0 m' ∧ G1Inv lc s' ∧
+      e.b ∈ lc.ctx.f.blocks.toList
 ```
 
-**Witness** (`GoFV/Proof/Witness/GenG1.lean`): a quick-v9 function's `.ssa` and `.prog` files
-embedded verbatim, parsed, run through `Env.load` and `genssa`, and accepted by `checkG1`
-(compiled evaluation, `native_decide`, as `verifiedPipeline_witness`); an activation satisfying
-`G1Env` for it, so both theorems apply to a corpus function.
+**Witness** (`GoFV/Proof/Witness/GenG1.lean`): `test/copy/main/clamp,1.ssa` and `.prog` of
+quick-v9 embedded verbatim, parsed, run through `Env.load` and `genssa` (`load`, as `gen-check`)
+and accepted by `checkG1` (compiled evaluation, `native_decide` `clamp_facts`, allowlisted with
+its pin); on a frameless activation with `G1Env` (`g1Env`) and the state after the entry values
+(`locMatch0`, `g1Inv0`), `g1_value` on the compare `CMPconst [40]` and `g1_term` on the `GT` block
+give machine runs to `b3` for `x = 50` (fall-through) and to `b2` for `x = 30` (`BLE` taken)
+related by `LocMatch` (`genG1_witness_50`, `genG1_witness_30`).
 
 **Coverage** (`lake exe gen-check`, quick-v9, 9,297 functions): see §5.
 
@@ -143,21 +150,25 @@ slots 3,298 (`LoadReg`/`StoreReg`), register pairs 3,058, `Exit` blocks 2,631, `
 registers holding two width classes 1,769, `TBNZ` 1,683, narrow loads (`MOVWUload` 1,440,
 `MOVBUload` 1,419), `NZW` 1,261, `LoweredNilCheck` 1,200: the G2–G4 items of §4.
 
-**Proof state** (`GoFV/Proof/Gen/`, branch `agent/phase3proof`, no `sorry`):
+**Proof** (`GoFV/Proof/Gen/`):
 
 - `Basic.lean`: `PStep`/`PStar`, `PStar.runProg`; `Link.byId` with distinct IDs below `2^32`:
   `off_byId`, `addr_byId`, `nextAddr_byId`, `progAt?_byId`.
-- `Progs.lean`: `progStep` of every G1 shape with symbolic registers and offsets: no-ops (pseudo-ops,
-  `HINT $0`), `MOVD Rs, Rd`, `MOVD $k, Rd`, `ADD`/`SUB` register and constant, `CMP`, `MOVD`
-  load and store (outside the nil page); `addSub_add`, `addSub_sub`, `addSub_flags`.
-- `Rel.lean`: `AddrAgree`, `Fits`, `valRel_word`, `valRel_i64`, `valRel_retypeL`, `fits_retypeL`,
-  `objX?_inj`, `objOf?_dest`, `locMatch_setReg`.
-- `Loc.lean`: `read_reg`, `read_mem`, `read_flags`, `write_reg`, `write_flags`, `write_mem`,
-  `clobber_none`.
-
-Still to do for `g1_value`/`g1_term`: the branch steps (`Bcc`, `JMP`, `CBZ`/`CBNZ`) and the
-`Cond.onVal`/`holds` agreement under `FlagsRel`; the value lemmas of `Arm64.add`/`sub`/`cmp`
-under `AddrAgree` and `Fits`; `stepLoc` per op (the `evalOpL` dispatch, `clobber_none` per op);
-`MemInj` byte lemmas under `AddrAgree`, load (`decodeInt` against `readMem`) and store (`Mem.write`
-against `writeMem`, which also needs distinct block keys in `G1Inv`); what `checkG1` accepted
-(`Cx.values`/`Cx.term`/`homeOK` specs); the assembly of the two theorems; the witness.
+- `Progs.lean`, `Branch.lean`: `progStep` of every G1 shape with symbolic registers and offsets:
+  no-ops (pseudo-ops, `HINT $0`), `MOVD Rs, Rd`, `MOVD $k, Rd`, `ADD`/`SUB` register and constant,
+  `CMP`, `MOVD` load and store (outside the nil page), `B<cond>`, `JMP`, `CBZ`/`CBNZ`;
+  `onVal_holds` (a condition defined on flags related to `NZCV` is the machine's
+  `ConditionHolds`), `condBr_spec`/`zeroBr_spec` (the opcodes of each block kind).
+- `Rel.lean`, `Value.lean`: `AddrAgree`, `Fits`, `valRel_retypeL`, `locMatch_setReg`; `Lo` (a
+  register result and the machine word on the low bits of a class) and the value lemmas of
+  `Arm64.add`/`sub`/`addK`/`res`/`cmp`/`isZero` under `AddrAgree`.
+- `Mem.lean`: under `AddrAgree` every byte of a live block is `ByteRel` (`memInj_byteRel`); the
+  address of an access (`addr_rel`), the 8-byte load (`lo_load`) and store (`memInj_store`, which
+  keeps `MemInj` with no pointer words and `KeysNodup`).
+- `Spec.lean`: what `checkG1` accepted (`checkG1_spec`, `Cx.blocks_spec`, `Cx.values_spec`,
+  `Cx.term_spec`, `vkind_spec` with the per-op facts `VK`).
+- `Loc.lean`, `Step.lean`: `stepLoc` per op (`stepLoc_pure`, `stepLoc_copy`,
+  `stepLoc_makeResult`, `stepLoc_load`, `stepLoc_store`, …).
+- `G1.lean`: the steps on the ID layout (`pstar_noops`, `pstar_oneAt`), one lemma per value kind
+  (`op_none`, `op_reg`, `op_flags`, `op_mem`, `value_core`), the terminators (`fall_path`,
+  `two_path`), `g1_value`, `g1_term`.

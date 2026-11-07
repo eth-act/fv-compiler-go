@@ -18,8 +18,10 @@ its terminator. It accepts a function when
   its own class;
 * the entry block starts with the values that emit nothing and set up the activation
   (`entryOp`: `InitMem`, `SP`, `SB`, `ArgIntReg`, `ArgFloatReg`), and no other value is one;
-* every other value is a `Phi` whose arguments share its home, `ZERO` in `ZERO`, `InlMark`
-  (one `HINT` or `NOP`, or nothing), `MakeResult` with its results in their result registers, a
+* every other value is a `Phi` whose arguments share its home, `ZERO` in `ZERO` at a register
+  shape, `InlMark` (one `HINT` or `NOP`, or nothing; no home and a shape `LocState.write` drops,
+  `inertTy`), `MakeResult` with its results in their result registers and a shape whose write
+  changes nothing (`resultsTy`), a
   `Copy` (of memory, a register copy that emits nothing, or `MOVD Rs, Rd`), or `MOVDconst`
   (`MOVD $k, Rd`), `ADD`, `SUB` (`OP Rm, Rn, Rd`), `ADDconst`, `SUBconst` (`OP $k, Rn, Rd`),
   `CMP` (`CMP Rm, Rn`), `CMPconst` (`CMP $k, Rn`), `MOVDload` (`MOVD off(Rn), Rd`) or
@@ -30,11 +32,11 @@ its terminator. It accepts a function when
   (`RET`), a two-way flags branch (`EQ`, `NE`, `LT`, `LE`, `GT`, `GE`, `ULT`, `ULE`, `UGT`,
   `UGE`) or a register test (`Z`, `NZ`: `CBZ`, `CBNZ` on a 64-bit or boolean register) emitted as
   `ssaGenBlock` does: a conditional branch (the condition or its inverse) and the fall-through
-  to the next block's start, or a conditional branch and a `JMP`;
+  to the next block's start, or a conditional branch and a `JMP`; every successor is laid out;
 * destination registers are neither `g` (`R28`), `R29` nor `R30`; Prog IDs are distinct and
   below `2^32`.
 
-`GoFV/Proof/Gen/G1.lean` proves what an accepted function satisfies.
+`GoFV/Proof/Gen/G1.lean` proves what an accepted function satisfies (`g1_value`, `g1_term`).
 -/
 
 namespace GoFV.Gen.Check

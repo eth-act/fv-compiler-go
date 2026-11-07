@@ -144,6 +144,19 @@ decompose builtin 116, decompose user 59, divmod 47, expand calls 28, opt deadco
 183/183 programs behave as stock, 0 fallbacks, 0 pass errors; 29,590 of 42,899 functions fully
 verified through `trim`.
 
+## Phase 3: genssa, slice G1 (I7, #553)
+
+`GoFV.Proof.Gen.g1_value`, `GoFV.Proof.Gen.g1_term` (`GoFV/Proof/Gen/G1.lean`): when the genssa
+validator's slice G1 (`checkG1`) accepts a function, every non-entry value and every terminator
+that goes to a successor, run by `runLoc` from a state related by `LocMatch` to a machine state,
+is matched by `runProg` steps of genssa's P0 Progs to a state related before the next value or
+the successor's first value. Premises (`docs/plans/proofs3.md` §3): `G1Env` (the PC table, `ret`
+no Prog address, `ι` puts every block with a Phase 1 address there, no frame), `G1Inv` (no slot,
+registers hold values of their width class, distinct memory block keys) and the per-step
+`G1Pre`/`G1TermPre` (compare arguments and `Z`/`NZ` controls are not pointers without an integer
+form, a load reads 8 valid bytes). Witness `genG1_witness_50`/`_30` (`clamp`, both theorems).
+Coverage on quick-v9 (`lake exe gen-check`): 268 of 9,297 functions (2.88%).
+
 ## Per-pass fragment coverage (verified pipeline, full-v6)
 
 Runs per pass of `gofv-ssa-opt --check --verified` (96,553 functions, each pass run once per function). *Proven*: the theorem's variant ran and changed the function; *identity*: same function (or tables the function cannot tell apart); *skipped*: an optional pass outside its fragment (the input is kept); *unverified*: a required pass outside its fragment, or a checked rewrite pass whose result differs from stock (`checked variant incomplete`: an unproven rule fired or the validator rejected; the stock result is kept). Every Phase 1 pass has a theorem; `insert resched checks`, `cpufeatures` and `rewrite tern` never run for linux/arm64.
