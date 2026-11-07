@@ -605,7 +605,7 @@ private theorem refines_regVal_addP {T T1 : Ty} (h : lowW T ≤ argWidth T1) (a 
       · rcases retypeL_word_wide (p.add 1) h64 with h' | h' <;> rw [h']
         · exact Refines.refl _
         · rw [hP, retypeL_poison]; exact .poison _
-      · rcases Ptr.word_cases (p.add 1) with ⟨-, h'⟩ | ⟨-, x, -, h'⟩ <;> rw [h']
+      · rcases Ptr.word_cases (p.add 1) with ⟨-, h'⟩ | ⟨-, x, -, h'⟩ | ⟨-, h'⟩ <;> rw [h']
         · rw [retypeL_ptr_narrow h h64, hP, retypeL_poison]; exact .poison _
         · have hw : Arm64.regVal T (.int .w64 x) = Arm64.res T x := by
             simp [Arm64.regVal, Arm64.reg]
@@ -616,6 +616,7 @@ private theorem refines_regVal_addP {T T1 : Ty} (h : lowW T ≤ argWidth T1) (a 
               simp [Val.retypeL, Val.widen, Val.retype]
             rw [this, hP, retypeL_poison]; exact .poison _
           | _ => exact refines_regVal_res h x
+        · rw [retypeL_poison, hP, retypeL_poison]; exact .poison _
     · rw [retypeL_poison]; exact Refines.refl _
   · have hA : ∀ T', Arm64.addP T' a 1 = match Arm64.reg a with
         | some x => Arm64.res T' (x + 1)

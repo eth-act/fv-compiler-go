@@ -721,20 +721,23 @@ theorem wordTy_cases {t : Ty} (h : wordTy t = true) : t = .int .w64 ∨ ∃ e, t
   | ptr e => exact .inr ⟨e, rfl⟩
   | _ => cases h
 
-/-- A value retyped at a word shape (`wordTy`) keeps its pointer word. -/
-theorem asPtrWord_retype_word {t : Ty} (ht : wordTy t = true) (v : Val) :
-    (v.retype t).asPtrWord = v.asPtrWord := by
+/-- A value retyped at a word shape (`wordTy`) keeps a pointer word inside its window. -/
+theorem asPtrWord_retype_word_of {t : Ty} (ht : wordTy t = true) {v : Val} {q : Ptr}
+    (hq : q.inWindow = true) (h : v.asPtrWord = some q) : (v.retype t).asPtrWord = some q := by
   rcases wordTy_cases ht with rfl | ⟨e, rfl⟩
   · cases v with
     | int w x =>
       cases w
-      · rfl
-      · rfl
-      · rfl
-      · rw [retype_i64]
-    | ptr p => exact Ptr.word_asPtrWord p
-    | _ => rfl
-  · exact Val.asPtrWord_retype_ptr e v
+      · cases h
+      · cases h
+      · cases h
+      · rw [retype_i64]; exact h
+    | ptr p =>
+      simp only [Val.asPtrWord, Option.some.injEq] at h; subst h
+      exact Ptr.word_asPtrWord hq
+    | _ => cases h
+  · refine (Val.asPtrWord_retype_ptr e fun p hp => ?_).trans h
+    subst hp; simp only [Val.asPtrWord, Option.some.injEq] at h; subst h; exact hq
 
 /-- A value whose retype at a word shape holds no `poison` is a pointer word. -/
 theorem asPtrWord_of_retype_word {t : Ty} (ht : wordTy t = true) {v : Val}
@@ -748,6 +751,32 @@ theorem asPtrWord_of_retype_word {t : Ty} (ht : wordTy t = true) {v : Val}
     | int w x => cases w <;> first | exact ⟨_, rfl⟩ | cases h
     | ptr p => exact ⟨p, rfl⟩
     | _ => cases h
+
+/-- A value whose retype at a word shape holds no `poison` keeps its pointer word (a pointer
+outside its window would retype to `poison`). -/
+theorem asPtrWord_retype_word_np {t : Ty} (ht : wordTy t = true) {v : Val}
+    (h : (v.retype t).hasPoison = false) : (v.retype t).asPtrWord = v.asPtrWord := by
+  obtain ⟨p, hp⟩ := asPtrWord_of_retype_word ht h
+  rw [hp]
+  cases hw : p.inWindow
+  · exfalso
+    cases v with
+    | ptr p' =>
+      simp only [Val.asPtrWord, Option.some.injEq] at hp; subst hp
+      rcases wordTy_cases ht with rfl | ⟨e, rfl⟩
+      · have he : (Val.ptr p').retype (.int .w64) = p'.word := rfl
+        rw [he, Ptr.word_of_not_inWindow hw] at h; cases h
+      · have he : (Val.ptr p').retype (.ptr e) = p'.word := rfl
+        rw [he, Ptr.word_of_not_inWindow hw] at h; cases h
+    | int w x =>
+      cases w
+      · cases hp
+      · cases hp
+      · cases hp
+      · simp only [Val.asPtrWord, Option.some.injEq] at hp; subst hp
+        rw [Ptr.ofAddr_inWindow] at hw; cases hw
+    | _ => cases hp
+  · exact asPtrWord_retype_word_of ht hw hp
 
 theorem ifaceTy_cases {t : Ty} (h : ifaceTy t = true) :
     ∃ o0 t0 o1 t1 sz, t = .agg [(o0, t0), (o1, t1)] sz ∧ wordTy t0 = true := by
@@ -843,9 +872,8 @@ theorem descReg_term {x : ID} {v : Value} (hv : f.value? x = some v) {ρ : ID �
     by_cases h1 : v.op = .Addr
     · simp only [h1, beq_self_eq_true, ite_true] at hW
       right
-      rw [asPtrWord_retype_word hw, h1, GoFV.Proof.Rules.opVal_addr, hW,
-        addrVal_of_eqSymName hs]
-      rfl
+      rw [h1, GoFV.Proof.Rules.opVal_addr, hW, addrVal_of_eqSymName hs]
+      exact asPtrWord_retype_word_of hw (Ptr.inWindow_zero _) rfl
     simp only [show (v.op == .Addr) = false from beq_eq_false_iff_ne.2 h1, Bool.false_eq_true,
       ite_false] at hW
     by_cases h2 : v.op = .Copy ∧ v.args.size = 1
@@ -855,7 +883,7 @@ theorem descReg_term {x : ID} {v : Value} (hv : f.value? x = some v) {ρ : ID �
         GoFV.Proof.Rules.opVal_pure (op := Op.Copy) rfl, evalPure_copy]
       rcases hR with h | h
       · rw [h]; exact .inl (AtomSim.retype_poison _)
-      · exact .inr (by rw [asPtrWord_retype_word hw, h])
+      · exact .inr (asPtrWord_retype_word_of hw (Ptr.inWindow_zero _) h)
     have h2' : (v.op == .Copy && v.args.size == 1) = false := by
       simpa [Bool.and_eq_true, beq_iff_eq] using h2
     simp only [h2', Bool.false_eq_true, ite_false] at hW
@@ -870,7 +898,7 @@ theorem descReg_term {x : ID} {v : Value} (hv : f.value? x = some v) {ρ : ID �
         show DescW s (w.retype _)
         rcases hw' with h' | h'
         · rw [h']; exact .inl (AtomSim.retype_poison _)
-        · exact .inr (by rw [asPtrWord_retype_word hw, h'])
+        · exact .inr (asPtrWord_retype_word_of hw (Ptr.inWindow_zero _) h')
     have h3' : (v.op == .ITab && v.args.size == 1) = false := by
       simpa [Bool.and_eq_true, beq_iff_eq] using h3
     simp only [h3', Bool.false_eq_true, ite_false] at hW
@@ -894,7 +922,7 @@ theorem descReg_term {x : ID} {v : Value} (hv : f.value? x = some v) {ρ : ID �
       refine .inr ⟨_, _, rfl, ?_⟩
       rcases hR with h | h
       · rw [h]; exact .inl (AtomSim.retype_poison _)
-      · exact .inr (by rw [asPtrWord_retype_word hw0, h])
+      · exact .inr (asPtrWord_retype_word_of hw0 (Ptr.inWindow_zero _) h)
     have h1' : (v.op == .IMake && v.args.size == 2) = false := by
       simpa [Bool.and_eq_true, beq_iff_eq] using h1
     simp only [h1', Bool.false_eq_true, ite_false] at hI
@@ -911,7 +939,7 @@ theorem descReg_term {x : ID} {v : Value} (hv : f.value? x = some v) {ρ : ID �
         · refine .inr ⟨_, _, rfl, ?_⟩
           rcases hw' with h'' | h''
           · rw [h'']; exact .inl (AtomSim.retype_poison _)
-          · exact .inr (by rw [asPtrWord_retype_word hw0, h''])
+          · exact .inr (asPtrWord_retype_word_of hw0 (Ptr.inWindow_zero _) h'')
     have h2' : (v.op == .Copy && v.args.size == 1) = false := by
       simpa [Bool.and_eq_true, beq_iff_eq] using h2
     simp only [h2', Bool.false_eq_true, ite_false] at hI
@@ -943,28 +971,28 @@ theorem desc_den {ρ : ID → Val} {s : String} : ∀ (n : Nat) (a : ID) (ax : A
       simp only [hw, Bool.not_true, Bool.false_eq_true, ite_false] at hW
       by_cases h1 : v.op = .Addr
       · simp only [h1, beq_self_eq_true, ite_true] at hW
-        rw [den_succ_term hv (by rw [h1]; decide), asPtrWord_retype_word hw, h1,
+        rw [den_succ_term hv (by rw [h1]; decide), h1,
           GoFV.Proof.Rules.opVal_addr, hW, addrVal_of_eqSymName hs]
-        rfl
+        exact asPtrWord_retype_word_of hw (Ptr.inWindow_zero _) rfl
       simp only [show (v.op == .Addr) = false from beq_eq_false_iff_ne.2 h1, Bool.false_eq_true,
         ite_false] at hW
       by_cases h2 : v.op = .Copy ∧ v.args.size = 1
       · simp only [h2, beq_self_eq_true, Bool.and_self, ite_true] at hW
-        rw [den_succ_term hv (by rw [h2.1]; decide), asPtrWord_retype_word hw, toList_one h2.2,
+        rw [den_succ_term hv (by rw [h2.1]; decide), toList_one h2.2,
           List.map_cons, List.map_nil, h2.1, GoFV.Proof.Rules.opVal_pure (op := Op.Copy) rfl,
           evalPure_copy]
-        exact (IH _).1 hW k (by omega)
+        exact asPtrWord_retype_word_of hw (Ptr.inWindow_zero _) ((IH _).1 hW k (by omega))
       have h2' : (v.op == .Copy && v.args.size == 1) = false := by
         simpa [Bool.and_eq_true, beq_iff_eq] using h2
       simp only [h2', Bool.false_eq_true, ite_false] at hW
       by_cases h3 : v.op = .ITab ∧ v.args.size = 1
       · simp only [h3, beq_self_eq_true, Bool.and_self, ite_true] at hW
-        rw [den_succ_term hv (by rw [h3.1]; decide), asPtrWord_retype_word hw, toList_one h3.2,
+        rw [den_succ_term hv (by rw [h3.1]; decide), toList_one h3.2,
           List.map_cons, List.map_nil, h3.1, GoFV.Proof.Rules.opVal_pure (op := Op.ITab) rfl,
           evalPure_itab]
         obtain ⟨w, w1, h, hw'⟩ := (IH _).2 hW k (by omega)
         rw [h]
-        exact hw'
+        exact asPtrWord_retype_word_of hw (Ptr.inWindow_zero _) hw'
       have h3' : (v.op == .ITab && v.args.size == 1) = false := by
         simpa [Bool.and_eq_true, beq_iff_eq] using h3
       simp only [h3', Bool.false_eq_true, ite_false] at hW
@@ -986,7 +1014,7 @@ theorem desc_den {ρ : ID → Val} {s : String} : ∀ (n : Nat) (a : ID) (ax : A
         rw [den_succ_term hv (by rw [h1.1]; decide), toList_two h1.2, List.map_cons,
           List.map_cons, List.map_nil, h1.1, GoFV.Proof.Rules.opVal_pure (op := Op.IMake) rfl,
           evalPure_imake, hty]
-        exact ⟨_, _, rfl, by rw [asPtrWord_retype_word hw0]; exact (IH _).1 hI k (by omega)⟩
+        exact ⟨_, _, rfl, asPtrWord_retype_word_of hw0 (Ptr.inWindow_zero _) ((IH _).1 hI k (by omega))⟩
       have h1' : (v.op == .IMake && v.args.size == 2) = false := by
         simpa [Bool.and_eq_true, beq_iff_eq] using h1
       simp only [h1', Bool.false_eq_true, ite_false] at hI
@@ -996,7 +1024,7 @@ theorem desc_den {ρ : ID → Val} {s : String} : ∀ (n : Nat) (a : ID) (ax : A
           List.map_nil, h2.1, GoFV.Proof.Rules.opVal_pure (op := Op.Copy) rfl, evalPure_copy, hty]
         obtain ⟨w, w1, h, hw'⟩ := (IH _).2 hI k (by omega)
         rw [h]
-        exact ⟨_, _, rfl, by rw [asPtrWord_retype_word hw0]; exact hw'⟩
+        exact ⟨_, _, rfl, asPtrWord_retype_word_of hw0 (Ptr.inWindow_zero _) hw'⟩
       have h2' : (v.op == .Copy && v.args.size == 1) = false := by
         simpa [Bool.and_eq_true, beq_iff_eq] using h2
       simp only [h2', Bool.false_eq_true, ite_false] at hI
@@ -1167,14 +1195,16 @@ theorem eq_eval {eq : List String × List String} {env : Env} (hI : env.IfaceEq 
     Option.some.injEq] at hlast
   simp only [List.map_cons, List.map_nil, List.getElem?_cons_zero, Option.getD_some] at hd
   rw [(hI.atAct (Ctx.make tabs f).act) n c' hc s hn' _ _ _ p q _
-    (by rw [asPtrWord_retype_word hw0]; exact hd) (by rw [asPtrWord_retype_word hw1, hp])
-    (by rw [asPtrWord_retype_word hw2, hq])] at hret
+    (asPtrWord_retype_word_of hw0 (Ptr.inWindow_zero _) hd)
+    (by rw [asPtrWord_retype_word_np hw1 hp1, hp]) (by rw [asPtrWord_retype_word_np hw2 hp2, hq])] at hret
   cases hret
   have hb : PtrOps.eqPtr false [(rv fr a1).retype (tabs.ty p1.type), (rv fr a2).retype (tabs.ty p2.type)] =
       .bool (p.eq q) := by
     first
-      | (simp only [PtrOps.eqPtr, asPtrWord_retype_word hw1, asPtrWord_retype_word hw2, hp, hq]; done)
-      | (simp only [PtrOps.eqPtr, asPtrWord_retype_word hw1, asPtrWord_retype_word hw2, hp, hq]
+      | (simp only [PtrOps.eqPtr, asPtrWord_retype_word_np hw1 hp1, asPtrWord_retype_word_np hw2 hp2,
+          hp, hq]; done)
+      | (simp only [PtrOps.eqPtr, asPtrWord_retype_word_np hw1 hp1, asPtrWord_retype_word_np hw2 hp2,
+          hp, hq]
          cases p.eq q <;> rfl)
   rw [hb] at henc ⊢
   simp only [retypeResults, hoty] at henc ⊢
@@ -1232,8 +1262,8 @@ theorem eq_noPanic {eq : List String × List String} {env : Env} (hI : env.Iface
     · rw [h, AtomSim.retype_poison] at hp0; cases hp0
     · exact h
   rw [(hI.atAct (Ctx.make tabs f).act) n c' hc s hn' _ _ _ p q _
-    (by rw [asPtrWord_retype_word hw0]; exact hdw) (by rw [asPtrWord_retype_word hw1, hp])
-    (by rw [asPtrWord_retype_word hw2, hq])] at hpan
+    (asPtrWord_retype_word_of hw0 (Ptr.inWindow_zero _) hdw)
+    (by rw [asPtrWord_retype_word_np hw1 hp1, hp]) (by rw [asPtrWord_retype_word_np hw2 hp2, hq])] at hpan
   cases hpan
 
 /-- Setting the `Phi`s keeps the registers of fresh malloc calls. -/
