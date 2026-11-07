@@ -13,7 +13,8 @@ Slice=gofvgate.slice
 MemoryMax=8G
 MemorySwapMax=0
 Nice=10
-TimeoutStartSec=10h
+# 2026-11-07 the steps took 7 h 5 min under load (verified alone 222 min)
+TimeoutStartSec=14h
 Environment=PATH=%h/.elan/bin:%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 ExecStart=@GATE_WT@/scripts/nightly-gate.sh
 # A stopped or timed-out run leaves its memcap.sh scopes behind (units of their own); stop them.
