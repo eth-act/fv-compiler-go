@@ -782,5 +782,3 @@ def main (args : List String) : IO UInt32 := do
     return 2
 
 end GoFVTest.SemDiff
-
-def main (args : List String) : IO UInt32 := GoFVTest.SemDiff.main args

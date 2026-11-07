@@ -33,7 +33,7 @@ root = "GoFVTest.AnalysisDiff"
 
 [[lean_exe]]
 name = "sem-difftest"
-root = "GoFVTest.SemDiff"
+root = "GoFVTest.SemDiffMain"
 
 [[lean_exe]]
 name = "ssa-check"
