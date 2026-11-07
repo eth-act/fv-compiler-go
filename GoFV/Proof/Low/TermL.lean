@@ -140,6 +140,16 @@ def FrameVals (tabs : Tables) (act : Nat) (D : ID → Option Value) (ρ : ID →
   ∀ a l n, D a = some l → l.op = .LocalAddr → l.aux = some n →
     ρ a = .poison ∨ (ρ a = (framePtr tabs act n).word ∧ wordShape (shpL tabs l.type) = true)
 
+/-- The stack pointer of activation `act` (`Sem.evalOp` of `SP`: the outgoing-arguments block at
+offset 0). -/
+def spPtr (act : Nat) : Ptr := ⟨.outargs act, 0⟩
+
+/-- The atoms of `D` that are the stack pointer (`SP`) hold, under `ρ`, the stack pointer of
+activation `act` as a word at a word shape, or `poison` (as `runL`'s registers do, `SP` shaped). -/
+def SPVals (tabs : Tables) (act : Nat) (D : ID → Option Value) (ρ : ID → Val) : Prop :=
+  ∀ a s, D a = some s → s.op = .SP →
+    ρ a = .poison ∨ (ρ a = (spPtr act).word ∧ wordShape (shpL tabs s.type) = true)
+
 /-- The atoms of `E` that are lowered frame addresses (`MOVDaddr {n}` with one argument, an atom by
 `termVL`: a name at offset 0) hold, under `ρ'`, the address of `n` in activation `act` as a word at
 a word shape (`Sem.symAddr` of a frame variable, whatever the argument; `runL`'s registers do,
@@ -161,14 +171,14 @@ theorem frameAtomG_cases {tabs : Tables} {f : Func} {x : ID} {w : Value}
   | some v => rw [hv] at h4; exact ⟨v, hv, by simpa using h4⟩
 
 /-- `y` in `E` (mode `lowE`) is related by `ArgRel o` to `x` in `D` (mode `lowD`) as a term over
-the atoms, the valuations holding the frame addresses in activation 0 (`FrameVals`, `FrameValsL`;
-`runL` runs a function in activation 0, `Ctx.makeL`, where the integer loads of a frame variable
-read, `ldVal`). -/
+the atoms, the valuations holding the frame addresses and the source's stack pointer in
+activation 0 (`FrameVals`, `FrameValsL`, `SPVals`; `runL` runs a function in activation 0,
+`Ctx.makeL`, where the integer loads of a frame variable read, `ldVal`). -/
 def ArgTermRefL (o : Option (Int64 × Option AuxRef)) (lowD : Bool) (D : ID → Option Value)
     (tabs : Tables) (x : ID) (lowE : Bool) (E : ID → Option Value) (tabs' : Tables) (y : ID) :
     Prop :=
   ∀ n, ∃ m, ∀ ρ ρ', ValRef ρ ρ' → TypedL lowD D tabs ρ → TypedL lowE E tabs' ρ' →
-    FrameVals tabs 0 D ρ → FrameValsL tabs' 0 E ρ' →
+    FrameVals tabs 0 D ρ → SPVals tabs 0 D ρ → FrameValsL tabs' 0 E ρ' →
       ArgRel tabs 0 o (denL lowD D tabs ρ n x) (denL lowE E tabs' ρ' m y)
 
 /-- `fitPiece t` is monotone. -/
@@ -215,7 +225,7 @@ a refinement of `x` in `D` so fitted, as terms over the atoms (as `ArgTermRefL`)
 def ArgTermFitL (t : Ty) (lowD : Bool) (D : ID → Option Value) (tabs : Tables) (x : ID)
     (lowE : Bool) (E : ID → Option Value) (tabs' : Tables) (y : ID) : Prop :=
   ∀ n, ∃ m, ∀ ρ ρ', ValRef ρ ρ' → TypedL lowD D tabs ρ → TypedL lowE E tabs' ρ' →
-    FrameVals tabs 0 D ρ → FrameValsL tabs' 0 E ρ' →
+    FrameVals tabs 0 D ρ → SPVals tabs 0 D ρ → FrameValsL tabs' 0 E ρ' →
       Sem.Refines (fitPiece t (denL lowD D tabs ρ n x)) (fitPiece t (denL lowE E tabs' ρ' m y))
 
 /-- The base `y` and the index `z` in `E` give at the scale `s` (`idxAddr`, an indexed store's
@@ -224,8 +234,9 @@ over the atoms (as `ArgTermRefL`). -/
 def ArgTermIdxL (s : Nat) (lowD : Bool) (D : ID → Option Value) (tabs : Tables) (x : ID)
     (lowE : Bool) (E : ID → Option Value) (tabs' : Tables) (y z : ID) : Prop :=
   ∀ n, ∃ m, ∀ ρ ρ', ValRef ρ ρ' → TypedL lowD D tabs ρ → TypedL lowE E tabs' ρ' →
-    FrameVals tabs 0 D ρ → FrameValsL tabs' 0 E ρ' → AddrRef tabs 0 none 0 (denL lowD D tabs ρ n x)
-      (idxAddr s (denL lowE E tabs' ρ' m y) (denL lowE E tabs' ρ' m z))
+    FrameVals tabs 0 D ρ → SPVals tabs 0 D ρ → FrameValsL tabs' 0 E ρ' →
+      AddrRef tabs 0 none 0 (denL lowD D tabs ρ n x)
+        (idxAddr s (denL lowE E tabs' ρ' m y) (denL lowE E tabs' ρ' m z))
 
 /-- A refinement whose source is a pointer word is that word. -/
 theorem asPtrWord_of_refines {x y : Val} {p : Ptr} (h : Sem.Refines x y)
@@ -330,14 +341,15 @@ def stepValsL (b : Block) (cs : List Val) : Res Next :=
   else stepVals b cs
 
 /-- The terminator of every block of `g`, as a function of its controls' terms over the atoms
-(the frame addresses those of activation 0, `FrameVals`, `FrameValsL`), refines that of `f`'s
+(the frame addresses and the stack pointer those of activation 0, `FrameVals`, `FrameValsL`,
+`SPVals`), refines that of `f`'s
 block, and the successors of `f`'s block are successors of `g`'s. -/
 def TermStepRefL (tabs : Tables) (f g : Func) : Prop :=
   ∀ b ∈ g.blocks, ∀ fb gb, f.block? b = some fb → g.block? b = some gb →
     (∀ e ∈ fb.succs, e ∈ gb.succs) ∧
     ∀ n, ∃ m, ∀ ρ ρ', ValRef ρ ρ' → TypedL f.lowered f.value? tabs ρ →
       TypedL g.lowered (listedDefs g) tabs ρ' → FrameVals tabs 0 f.value? ρ →
-      FrameValsL tabs 0 (listedDefs g) ρ' →
+      SPVals tabs 0 f.value? ρ → FrameValsL tabs 0 (listedDefs g) ρ' →
       Res.Rel Next.Refines (stepValsL fb (fb.controls.toList.map (denL f.lowered f.value? tabs ρ n)))
         (stepValsL gb (gb.controls.toList.map (denL g.lowered (listedDefs g) tabs ρ' m)))
 

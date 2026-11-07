@@ -927,12 +927,20 @@ def frameFinal (tabs : Tables) (f : Func) (M : Defs) (x : ID) (m u : Value) : Bo
     (frameAddr tabs M x).any fun (a, l) => l.aux == u.aux &&
       (f.value? a).any fun v => v.op == .LocalAddr && v.aux == u.aux
 
+/-- The output's `MOVDaddr [off] sp` at `x` (no aux: a term, the stack pointer moved by `off`) is
+the replayed `OffPtr [off] sp` of `f`'s `SP` (`305` replayed as no change, `spFoldEv`): the same
+type, offset and argument. -/
+def spFinal (f : Func) (M : Defs) (x : ID) (m u : Value) : Bool :=
+  u.id == x && m.op == .OffPtr && u.op == .ARM64MOVDaddr && u.aux == none && u.type == m.type &&
+    u.auxInt == m.auxInt && m.args.size == 1 && u.args == m.args &&
+    (M.get? m.args[0]!).any (·.op == .SP) && (f.value? m.args[0]!).any (·.op == .SP)
+
 /-- Every value listed in `g` has its replayed definition up to copies in its arguments (an
 extension's or `W` op's argument also up to a narrowing `Copy`, `truncReachL`; a bounds panic with
 constant operands its replayed `LoweredPanicBoundsRR`'s, `pbFinal`; a lowered frame address the
-replayed `ADDconst [0]` of it, `frameFinal`), or is a term `g` does not read; every block of `g`
-its replayed terminator (kind, auxint, successors as the replay swapped them, controls up to
-copies). -/
+replayed `ADDconst [0]` of it, `frameFinal`; the stack pointer moved by an offset the replayed
+`OffPtr` of it, `spFinal`), or is a term `g` does not read; every block of `g` its replayed
+terminator (kind, auxint, successors as the replay swapped them, controls up to copies). -/
 def finalOKL (tabs : Tables) (f g : Func) (M : Defs) (B : BMapL) : Bool :=
   let n := M.size
   let L := liveMarksL tabs g
@@ -956,7 +964,7 @@ def finalOKL (tabs : Tables) (f g : Func) (M : Defs) (B : BMapL) : Bool :=
                 truncFitL tabs M n m j m.args[j]! u.args[j]! ||
                 lowReachL tabs M n m j m.args[j]! u.args[j]!) ||
           (termVL tabs u && L[x]? != some true) || pbFinal tabs f M n x m u ||
-            frameFinal tabs f M x m u
+            frameFinal tabs f M x m u || spFinal f M x m u
         | _, _ => false
     | _, _, _ => false
 
