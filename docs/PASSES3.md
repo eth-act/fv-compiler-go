@@ -628,7 +628,9 @@ pools are unreachable, veneers preserve the branch. **L / L** (validator).
 estimated at 250–400 entries and 55–70 cases (**[INFERENCE]**, from the emitter's shapes; the
 I1 `oplook` histogram on the corpus replaces the estimate). The generated SVE tables
 (`inst_gen.go`, `encoding_gen.go`, `goops_gen.go`, case 127) are unreachable from compiled code
-(no SVE ops in the arm64 back end) **[INFERENCE]**.
+(no SVE ops in the arm64 back end) **[INFERENCE]**. Measured (I4, #550): the sorted table has 548 entries; the
+quick corpus uses 194 of them and 58 `asmout` cases (0–9, 12, 14–18, 20–25, 27, 29–32, 39, 40,
+43–47, 51–56, 58, 59, 62, 64–68, 74–77, 83, 85, 87, 88, 91, 98, 99).
 
 ### D5 span7: encoding and relocations
 
