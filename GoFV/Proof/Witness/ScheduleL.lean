@@ -192,4 +192,68 @@ theorem clampNP_nilPtr :
         (srcPos 28 [1, 8, 9, 10, 26, 25, 27, 22]) 26 27 = false := by
   decide +kernel
 
+/-- `clampL` plus a chain of two nil checks in `b1`: `v27 = SP`, `v25 = LoweredNilCheck v27 v1`,
+`v26 = LoweredNilCheck v25 v1` and `v28 = MOVDreg v26`. -/
+def clampCh : Func :=
+  { clampL with
+    vidLast := 28
+    valueTab :=
+      let t := clampLValues.set! 1 (some (mkV 1 .InitMem 28 none p0 5 #[] 1))
+      (((t.push (some (mkV 25 .ARM64LoweredNilCheck 15 none p0 1 #[27, 1] 1))).push
+        (some (mkV 26 .ARM64LoweredNilCheck 15 none p0 1 #[25, 1] 1))).push
+        (some (mkV 27 .SP 15 none p0 1 #[] 1))).push
+        (some (mkV 28 .ARM64MOVDreg 15 none p0 0 #[26] 1))
+    blockTab := clampLBlocks.set! 1 (some (mkB 1 .ARM64GT (pos 2 22 7 0) #[22]
+      #[⟨3, 0⟩, ⟨2, 0⟩] #[] #[1, 8, 9, 10, 27, 25, 26, 28, 22])) }
+
+theorem clampCh_check : (check clampLCheckEnv clampCh).toBool = true := by decide +kernel
+
+/-- `schedule` accepts `clampCh`: `v28` takes the end of the chain, `v27`, and `scheduleCheck`
+holds. -/
+theorem clampCh_schedule_facts :
+    ((schedulePass clampSchedPassEnv clampCh).toOption.map fun o =>
+      decide (scheduleCheck clampLTabs clampCh o.func = true ∧
+        (o.func.value? 28).map (·.args) = some #[27])) = some true := by
+  decide +kernel
+
+/-- `runLF` of `clampCh` returns `clamp(5, 0, 10) = 5` (the nil checks of `SP` pass). -/
+theorem clampCh_runLF : returnsInt (runLF Env.p1 clampLTabs clampCh (clampArgs 5) {} 3) 5 = true := by
+  decide +kernel
+
+/-- `clampCh` has no pointer-shaped register piece of a parameter. -/
+theorem clampCh_noArgPtr :
+    (List.range clampCh.valueTab.size).all
+      (fun x => !argPtr clampLTabs (Ctx.makeL clampLTabs clampCh).params
+        (Ctx.makeL clampLTabs clampCh).tys clampCh x) = true := by
+  decide +kernel
+
+/-- No nil check of `clampCh` checks a pointer-shaped value (`SP` is a `uintptr`). -/
+theorem clampCh_noNilPtr :
+    clampCh.valueTab.all (fun o => o.all fun v => !v.op.nilCheck ||
+      (v.args[0]?.all fun q => !ptrShape ((Ctx.makeL clampLTabs clampCh).tys[q]?.getD .other))) =
+      true := by
+  decide +kernel
+
+/-- **The multi-step bypass (`rep`, `ncChain`) is not vacuous**: in `clampCh` the nil check `v26`
+checks the nil check `v25` (one step of `rep1` ends at a nil check, which a one-step bypass
+rejects), `rep` follows the chain to `SP` (`v27`), `schedule` rewires `v28` to it and
+`scheduleCheck` accepts; the output's `runSched` returns `clamp(5, 0, 10) = 5`. -/
+theorem schedule_chain_witness :
+    rep1 clampCh 26 = 25 ∧ isNC clampCh 25 = true ∧ rep clampCh 26 = 27 ∧
+      ∃ out, schedulePass clampSchedPassEnv clampCh = .ok out ∧
+        scheduleCheck clampLTabs clampCh out.func = true ∧
+        (out.func.value? 28).map (·.args) = some #[27] ∧
+        ∃ fuel m, runSched Env.p1 out.tables out.func (clampArgs 5) {} fuel = .returned [.i64 5] m := by
+  refine ⟨by decide +kernel, by decide +kernel, by decide +kernel, ?_⟩
+  obtain ⟨out, hp, hv, ha⟩ := ok_of_toOption
+    (P := fun o => scheduleCheck clampLTabs clampCh o.func = true ∧
+      (o.func.value? 28).map (·.args) = some #[27])
+    clampCh_schedule_facts
+  refine ⟨out, hp, hv, ha, ?_⟩
+  obtain ⟨m, hm⟩ := returnsInt_iff.1 clampCh_runLF
+  exact (schedule_refinesSchedLF (penv := clampSchedPassEnv) hp (ok_of_toBool clampCh_check)
+    hv).returned_int
+    ⟨argPtrsOK_of_none clampCh_noArgPtr Env.p1 (clampArgs 5) {},
+      nilPtrsOK_of_none clampCh_noNilPtr Env.p1 (clampArgs 5) {}⟩ hm
+
 end GoFV.Proof.Witness

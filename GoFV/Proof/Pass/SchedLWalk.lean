@@ -156,7 +156,7 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
           rw [hvq] at hvq'; cases hvq'
           rcases hc with hqnc | hop | ⟨hop, hw⟩
           · have hu := S.argUse hvr hq0
-            obtain ⟨-, hne, -, -, -, hsh⟩ := nc_shape hu hqnc
+            obtain ⟨hne, hsh⟩ := nc_step1 hu hqnc
             exact (ncNonNil hvq (B.sOwn q hqS vq hvq) hqnc ⟨y, hy, hevq⟩ Sr.typed hsh hne a
               hHp).not_nilBase
           · rw [hHp] at hy; cases hy
@@ -303,12 +303,7 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
       exact hpok.1.1
     have hpnc : isNC f p = false := by rw [isNC_of hvp, hpop]; rfl
     have hpspa : isSPA f p = false := by rw [isSPA_of hvp, hpop]; rfl
-    have hrepp : rep f p = p := by
-      unfold rep
-      rw [hvp]
-      dsimp only
-      rw [hpop]
-      rfl
+    have hrepp : rep f p = p := rep_self hpnc hpspa
     have hf1 : fv.args[1]? = some ℓ := by rw [hsz2] at hfℓ; exact hfℓ
     have hfargs : fv.args = #[p, ℓ] := arr_two hsz2 hp0 hf1
     have hgargs : gv.args = #[p, rep f ℓ] := by rw [hrv.args, hfargs]; simp [hrepp]

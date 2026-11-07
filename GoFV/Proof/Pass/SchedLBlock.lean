@@ -692,6 +692,25 @@ theorem stepT (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : List ID
   · exact h
   · rw [isNC_of hfv, h] at hn; cases hn
 
+/-- A chain of nil checks of the block whose end is outside it: the end has a register at the
+block's entry. -/
+theorem chainOutReg {oS oT : List ID} {frPS frPT : Frame} (B : BStep tabs f g md oS oT frPS frPT) :
+    ∀ (n : Nat) (a : ID), ncChain (Ctx.makeL tabs f).tys f n a = true → n ≤ f.valueTab.size →
+      a ∈ oS → rep f a ∉ oS → ∃ z, frPS.regs[rep f a]? = some (some z)
+  | 0, a, h, _, _, _ => by simp [ncChain] at h
+  | n + 1, a, h, hk, haS, hrS => by
+    obtain ⟨hs, hra, hnext, hfix⟩ := chain_cases h hk
+    obtain ⟨hne, -, -⟩ := ncStep_basic hs
+    obtain ⟨va, hva⟩ := B.sVal a haS
+    have hpa : rep1 f a ∈ argsF f a := by
+      rw [argsF_of hva]; exact Array.mem_toList_iff.2 (Array.mem_of_getElem? (rep1_arg0 hva hne))
+    rw [hra] at hrS ⊢
+    by_cases hpS : rep1 f a ∈ oS
+    · cases hpn : isNC f (rep1 f a)
+      · rw [hfix hpn] at hrS; exact absurd hpS hrS
+      · exact chainOutReg B n _ (hnext hpn) (by omega) hpS hrS
+    · exact (B.out a haS _ hpa hpS).2.2.1
+
 /-- **Every argument of a target value has a register** once the values before it ran. -/
 theorem targs (S : SchedRel tabs f g) {oS oT : List ID} {frPS frPT H T : Frame} {P : List ID}
     (B : BStep tabs f g md oS oT frPS frPT) {j : Nat} (I : Inv f frPT H T P (oT.take j))
@@ -716,13 +735,22 @@ theorem targs (S : SchedRel tabs f g) {oS oT : List ID} {frPS frPT H T : Frame} 
     have haf : a ∈ argsF f y := by
       rw [argsF_of hfv]; exact Array.mem_toList_iff.2 (Array.mem_of_getElem? ha)
     by_cases haS : a ∈ oS
-    · -- `a` is a bypassed value of the block; its bypass is its first argument
+    · -- `a` is a bypassed value of the block: an `SPanchored` (one step) or a nil-check chain
       have hne : rep f a ≠ a := fun h => hrS (by rw [h]; exact haS)
-      obtain ⟨va, hva⟩ := B.sVal a haS
-      have h0 := rep_arg0 hva hne
-      have hm : rep f a ∈ argsF f a := by
-        rw [argsF_of hva]; exact Array.mem_toList_iff.2 (Array.mem_of_getElem? h0)
-      exact (B.out a haS _ hm hrS).1
+      have hu := S.argUse hfv ha
+      by_cases hs : isSPA f a = true
+      · obtain ⟨-, -, hne1, -, -, -, hr1⟩ := use_spa hu hs
+        obtain ⟨va, hva⟩ := B.sVal a haS
+        have h0 := rep1_arg0 hva hne1
+        have hm : rep1 f a ∈ argsF f a := by
+          rw [argsF_of hva]; exact Array.mem_toList_iff.2 (Array.mem_of_getElem? h0)
+        rw [hr1] at hrS ⊢
+        exact (B.out a haS _ hm hrS).1
+      · have hn : isNC f a = true := by
+          cases h : isNC f a
+          · exact absurd (rep_self h (by simpa using hs)) hne
+          · rfl
+        exact chainOutReg B _ a (use_chain hu hn) (Nat.le_refl _) haS hrS
     · exact (B.out y hyS a haf haS).2.2.1
 
 /-! ## The walk -/

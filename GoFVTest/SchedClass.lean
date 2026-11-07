@@ -31,7 +31,18 @@ def why (tabs : Tables) (f g : Func) : String := Id.run do
     if !valueOK f g id then
       match f.value? id, g.value? id with
       | some fv, some gv =>
-        if gv.args != fv.args.map (rep f) then return s!"value args {fv.op.name}"
+        if gv.args != fv.args.map (rep f) then
+          -- the first argument `g` does not bypass as `rep` does, and what `f` has there
+          let d := match (List.range fv.args.size).find? (fun k =>
+              gv.args[k]? != fv.args[k]?.map (rep f)) with
+            | some k =>
+              let a := fv.args[k]!
+              let c := if isSPA f a then "SPanchored"
+                else if isNC f a then (if isNC f (rep1 f a) then "chain" else "nil check")
+                else "plain"
+              s!" (arg {k}: {c})"
+            | none => " (arity)"
+          return s!"value args {fv.op.name}{d}"
         if !(fv.op.nilCheck || gv.type == fv.type) then return s!"value type {fv.op.name}"
         return s!"value other {fv.op.name}"
       | _, _ => return "value presence"
@@ -51,10 +62,17 @@ def why (tabs : Tables) (f g : Func) : String := Id.run do
         for k in List.range u.args.size do
           let a := u.args[k]!
           if !useOK tabs tys f (some u) k a then
-            let p := rep f a
-            if isSPA f a then return s!"use of SPanchored by {u.op.name} (arg {k}, rep {opName tabs f p})"
-            if isNC f p then return "use: nil check chain"
-            return s!"use: nil check type ({repr (tys[a]?.getD .other)} vs {repr (tys[p]?.getD .other)})"
+            if isSPA f a then
+              return s!"use of SPanchored by {u.op.name} (arg {k}, rep {opName tabs f (rep1 f a)})"
+            -- the first step of the nil-check chain that fails `ncStep`
+            let mut c := a
+            for _ in List.range f.valueTab.size do
+              if !ncStep tys f c then break
+              c := rep1 f c
+            let p := rep1 f c
+            if p == c then return s!"use: nil check without pointer ({opName tabs f c})"
+            if isSPA f p then return "use: nil check of an SPanchored"
+            return s!"use: nil check type ({repr (tys[c]?.getD .other)} vs {repr (tys[p]?.getD .other)})"
     return "uses (control)"
   let cS := Ctx.makeL tabs f
   let sS := cS.sched

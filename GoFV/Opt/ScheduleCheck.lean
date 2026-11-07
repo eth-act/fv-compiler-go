@@ -13,9 +13,10 @@ accepts `g` as such a scheduling of `f` (decision (b) of #384, `docs/plans/seman
   successors and predecessors; each block lists a permutation of `f`'s values minus the
   `SPanchored`s, which `g` drops and nothing in `f` uses; every value keeps its op, aux, auxint,
   block and type (a nil check may change its type), and its arguments and the block controls are
-  `f`'s with a nil check replaced by its pointer (`rep`, one step: the pointer is no nil check or
-  `SPanchored` and has the check's lowered shape); entry, `OwnAux`, value and block tables'
-  sizes and `Func.lowered` are kept.
+  `f`'s with a chain of nil checks replaced by the pointer at its end (`rep`, which iterates
+  `rep1` as `schedule.go:331-344` loops: each check's pointer is a value, no `SPanchored`, of the
+  check's lowered shape, `ncChain`) and an `SPanchored` by its first argument; entry, `OwnAux`,
+  value and block tables' sizes and `Func.lowered` are kept.
 * **Order** (`orderOK`): `runSched`'s order of `g`'s block (`schedOrder`) exists, and the values
   that may fail keep `runL`'s order (`kahn`, `Sem.schedule`) of `f`'s block: if the target runs
   `y` before `x` and the source runs `x` before `y`, `y` is a parameter's register piece (it
