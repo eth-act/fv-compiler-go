@@ -25,7 +25,10 @@ A function is an end-to-end match when all five match. Each mismatch is reported
 (the first differing item) and counted per class. A difference whose cause is outside the port
 is classed `explained:<class>`, counts as a match of its cut, and the function as an
 end-to-end match "with explained differences" (separate row); the classes are documented in
-`docs/PARITY.md` ("Assembler parity"). The only one: `explained:text:reloc:pre-flush-markers`,
+`docs/PARITY.md` ("Phase 3: assembler"). `explained:text:sym-align`: the stock encoding shows a
+symbol's `LSym.Align` below the access size of a `C_ADDR` load/store, which the export does not
+record; the port is rerun with `Align = 1` for those symbols and must then match exactly.
+`explained:text:reloc:pre-flush-markers`:
 the frontend's zero-size marker relocations (`R_USEIFACE`, `R_USEIFACEMETHOD`,
 `R_USENAMEDMETHOD`, `R_USEGENERICIFACEMETHOD`) that are on `LSym.R` before `Flushplist` and that
 the export's `prog0` section does not record; the assembler's relocations must follow them
