@@ -23,7 +23,9 @@ document (`docs/proofs/lower-next.md`).
 Usage: `lower-probe [--jobs N] [--next-md FILE] [--dump FILE] <dir|file>...`. With
 `LOWER_PROBE_LEAVES=l1,l2,…` it also prints one `LEAF line classes file` row per instance of a rule
 on those `ARM64.rules` lines: per leaf of the pattern, its definition's op (`*` if an atom) or `N`
-at a non-word shape (`leafStatsL`).
+at a non-word shape (`leafStatsL`). With `LOWER_PROBE_DIFF` it prints one `DIFF class file` row per
+function whose checked lower is not at stock, with the first difference from stock of the checked
+lower, of `lower` with the generated table (`orig`) and with the ceiling table (`ceil`).
 -/
 
 open GoFV.SSA GoFV.Opt GoFV.Rules
@@ -434,19 +436,31 @@ def checkFile (path : System.FilePath) (S : St) : IO St := do
     let tbl := if full then ceilTable else lowerProvenTable
     let mut same := false
     let fc := GoFV.Opt.FmaContract.contractAll e.sections[k-1]!.func
+    let mut diff := ""
     match GoFV.Opt.LowerCheck.checkedLowerWith tbl env fc with
     | .ok co =>
-      if (GoFVTest.Parity.compare prev co tables s).isNone then
+      match GoFVTest.Parity.compare prev co tables s with
+      | none =>
         same := true
         S := { S with checkedSame := S.checkedSame + 1
                       checkedProven := if co.func == e.sections[k-1]!.func then S.checkedProven else S.checkedProven + 1 }
-    | .error _ => pure ()
+      | some m => diff := m
+    | .error m => diff := s!"rejected: {m}"
     -- the proven table's first rejection
     let pwhy := match rewriteRun tbl true true env fc with
       | .ok (o2, _, log2) => whyL o2.tables tbl fc o2.func log2
       | .error _ => "error"
     if !same && (← IO.getEnv "LOWER_PROBE_MISS").isSome then
       IO.println s!"MISS\t{pwhy}\t{path}"
+    if !same && (← IO.getEnv "LOWER_PROBE_DIFF").isSome then
+      let orig := Interp.Table.ofRuleSet GoFV.Rules.Generated.ARM64.ruleSet
+      let od := match rewriteRun orig true true env fc with
+        | .ok (o, _, _) => (GoFVTest.Parity.compare prev o tables s).getD "same"
+        | .error m => s!"error {m}"
+      let cd := match rewriteRun ceilTable true true env fc with
+        | .ok (o, _, _) => (GoFVTest.Parity.compare prev o tables s).getD "same"
+        | .error m => s!"error {m}"
+      IO.println s!"DIFF\t{whyClass pwhy}\t{path}\n  checked: {diff.take 600}\n  orig: {od.take 300}\n  ceil: {cd.take 300}"
     match rewriteRun ceilTable true true env e.sections[k-1]!.func with
     | .ok (out, _, log) =>
       let w := whyL out.tables ceilTable e.sections[k-1]!.func out.func log

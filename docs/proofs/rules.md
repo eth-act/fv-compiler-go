@@ -2152,6 +2152,17 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
     condition (as for 1342-1345); they are provable split by `cc` on the integer conditions
     (`GoFV.Rules.Derive.ccSplit`, `r_ARM64_1352_cc_sound` … `r_ARM64_1357_cc_sound`).
 
+- **`CondSelect` of a boolean that is no condition** (#385; `GoFV/Proof/Low/Rules/CondSel.lean`).
+  `Derive.flagSplit` split every rule whose condition named `flagArg`, so `:303`
+  (`(CondSelect x y boolval) && flagArg(boolval) == nil => (CSEL [OpARM64NotEqual] x y
+  (TSTWconst [1] boolval))`) became twenty forms on `boolval:(cc f)` whose condition `f == nil`
+  never held: the checked lower (and the probe's ceiling table) left such a `CondSelect`
+  unlowered where stock has `CSEL`. This was the whole of the 270 full-v9 functions the
+  validator accepted with only proven rules fired but that differed from stock (269 reach stock).
+  `flagSplit` now splits only a conjunct `flagArg(b) != nil` (`Expr.flagNe?`), and `:303` is
+  proven as it is (`r_ARM64_303_sound`, `refines_condSel_tstw`: the obligation holds without the
+  condition, which the validator's oracle answers; witness `lcb_lower`).
+
 - **Compares with a pointer** (#385; module docs of `GoFV/Proof/Low/Rules/CmpNeg.lean` and
   `Invert.lean`). `CMP` compares a pointer without a concrete address with an integer as unequal
   (`Arm64.cmp`, `Z` clear). While `CMN` and `CMPshift*` read registers only (`Arm64.cmp1`/`cmp2`),

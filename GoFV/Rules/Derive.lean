@@ -47,29 +47,13 @@ def isFlagArg (k : Nat) : Expr → Bool
   | .call "flagArg" [.var x] _ => x == k
   | _ => false
 
-mutual
-/-- The variable `k` of the first `flagArg(var k)` in `e`. -/
-def Expr.flagVar? : Expr → Option Nat
-  | .call f as _ => if f == "flagArg" then
-      match as with
-      | [.var k] => some k
-      | _ => Expr.flagVars? as
-    else Expr.flagVars? as
-  | .field x _ _ => Expr.flagVar? x
-  | .method x _ as _ => (Expr.flagVar? x).orElse fun _ => Expr.flagVars? as
-  | .builtin _ as _ => Expr.flagVars? as
-  | .conv _ x => Expr.flagVar? x
-  | .assert _ x => Expr.flagVar? x
-  | .unop _ x _ => Expr.flagVar? x
-  | .binop _ x y _ => (Expr.flagVar? x).orElse fun _ => Expr.flagVar? y
-  | .index x i _ => (Expr.flagVar? x).orElse fun _ => Expr.flagVar? i
-  | .deref x _ => Expr.flagVar? x
+/-- The variable `k` of a conjunct `flagArg(var k) != nil` of a condition (through `&&`). A rule
+asking `flagArg(b) == nil` (`ARM64.rules:303`) is not split: its result reads no field of `b`,
+and it rewrites the booleans that are not a condition op. -/
+def Expr.flagNe? : Expr → Option Nat
+  | .binop .ne (.call "flagArg" [.var k] _) (.lit _ .nil) _ => some k
+  | .binop .land x y _ => (Expr.flagNe? x).orElse fun _ => Expr.flagNe? y
   | _ => none
-/-- `Expr.flagVar?` of the first expression that has one. -/
-def Expr.flagVars? : List Expr → Option Nat
-  | [] => none
-  | e :: es => (Expr.flagVar? e).orElse fun _ => Expr.flagVars? es
-end
 
 mutual
 /-- `e` with `b.Op` the op `cc`, `flagArg(b)` the variable `f` and `flagArg(b) != nil` true
@@ -144,7 +128,7 @@ def flagAt (r : Rule) (k : Nat) (cc : Op) : Rule :=
 /-- `r` as one rule per condition op if its condition asks `flagArg(b) != nil`, else itself
 (module doc). -/
 def flagSplit (r : Rule) : List Rule :=
-  match r.cond.bind Expr.flagVar? with
+  match r.cond.bind Expr.flagNe? with
   | some k => condOps.map (flagAt r k)
   | none => [r]
 
