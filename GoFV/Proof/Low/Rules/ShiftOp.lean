@@ -1,7 +1,7 @@
 import GoFV.Proof.Low.Rules.Peep
 
 /-!
-# Lowering rule lemmas: folded operand producers (`ARM64.rules:1012-1018`, `1179-1182`, `1433-1449`, `1635`)
+# Lowering rule lemmas: folded operand producers (`ARM64.rules:1012-1018`, `1179-1184`, `1433-1449`, `1635`)
 
 Peepholes of lowered code (#385) that fold an operand's producer into its consumer:
 
@@ -25,6 +25,12 @@ Peepholes of lowered code (#385) that fold an operand's producer into its consum
   forms (1012-1015): `MADD`/`MSUB` move a pointer `a` by `±x·y` as `ADD`/`SUB` do (`Arm64.madd`,
   `addP`); a pointer `a` makes the result word-shaped (provenance clause) and the product is read
   whole, any other `a` adds as a register, low bits as above (`refines_madd`).
+* `(NEG (SUB x y)) => (SUB y x)` (1183) and `(NEG (NEG x)) => x` (1184): registers negate and
+  subtract as words, low bits as above (`refines_op1_op2`). A pointer at a word shape is held as
+  a pointer (`Ptr.held`: it does not convert, and it lies inside its window, since Phase 1 makes
+  a pointer outside it `poison`, #385), has no register (`Ptr.convertible` is the `Ptr.ofAddr`
+  round trip), and neither has any pointer `SUB` moves it to inside its window
+  (`Ptr.held_of_blk`), so `NEG` of it is `poison` (`refines_neg_sub`, `refines_neg_neg`).
 
 False under the semantics (docs/proofs/rules.md, Findings; counterexamples evaluated with
 `#eval`), so not proven: 1197 (`x = heap (2^22) + 0`, `y = z = 2^41`: the target's `ADD x z`
@@ -510,14 +516,6 @@ private theorem ptrReg_none {p : Ptr} (h : p.convertible = false) : Arm64.ptrReg
     · rfl
   · rfl
 
-/-- A pointer of some shape is held as a pointer. -/
-private theorem held_of_hasTy {p : Ptr} {T0 : Ty} (h : (Val.ptr p).hasTy T0 = true) :
-    p.held = true := by
-  cases T0 with
-  | int w => cases w <;> simp_all [Val.hasTy]
-  | ptr _ => simpa [Val.hasTy] using h
-  | _ => simp [Val.hasTy] at h
-
 /-- A pointer held as a pointer, read at any shape, has no register. -/
 private theorem reg_retypeL_held (T : Ty) {q : Ptr} (hq : q.held = true) :
     Arm64.reg ((Val.ptr q).retypeL T) = none := by
@@ -561,7 +559,7 @@ theorem refines_neg_sub {T T0 T1 T2 : Ty} (hw : lowW T ≤ argWidth T1) (x y : V
     exact .poison _
   by_cases hxp : ∃ p, x = .ptr p
   · obtain ⟨p, rfl⟩ := hxp
-    have hp := held_of_hasTy hx
+    have hp := Ptr.held_of_hasTy hx
     by_cases hyp : ∃ q, y = .ptr q
     · obtain ⟨q, rfl⟩ := hyp
       cases hpa : p.addr? <;> cases hqa : q.addr? <;> simp only [Arm64.sub, hpa, hqa]
@@ -607,7 +605,7 @@ theorem refines_neg_sub {T T0 T1 T2 : Ty} (hw : lowW T ≤ argWidth T1) (x y : V
     by_cases hyp : ∃ q, y = .ptr q
     · obtain ⟨q, rfl⟩ := hyp
       have hr : Arm64.reg (.ptr q) = none :=
-        ptrReg_none (Ptr.not_convertible_of_held (held_of_hasTy hy))
+        ptrReg_none (Ptr.not_convertible_of_held (Ptr.held_of_hasTy hy))
       rw [show Arm64.op2 T1 (· - ·) [x, .ptr q] = .poison by
         cases Arm64.reg x <;> simp only [Arm64.op2, hr]]
       exact hpois _
@@ -673,6 +671,19 @@ theorem refines_neg_neg {T T1 : Ty} (hw : lowW T ≤ argWidth T1) (x : Val)
       rw [retypeL_res_low T (show (-z).setWidth (lowW T) = v.setWidth (lowW T) by
         rw [neg_low h2 z (-v) hzk, BitVec.neg_neg]), retypeL_res_self hx hr]
       exact Refines.refl _
+
+private theorem armReadW_neg (T : Ty) : armReadW .ARM64NEG T 0 = lowW T := by
+  cases T <;> rfl
+
+/-- `ARM64.rules:1183`: `(NEG (SUB x y)) => (SUB y x)` -/
+theorem r_ARM64_1183_sound : ArmRule.Checked r_ARM64_1183 := by
+  left; arm_unfold; arm_norm
+  exact refines_neg_sub (armReadW_neg _ ▸ harg.1) _ _ hty.1 hty.2
+
+/-- `ARM64.rules:1184`: `(NEG (NEG x)) => x` -/
+theorem r_ARM64_1184_sound : ArmRule.Checked r_ARM64_1184 := by
+  left; arm_unfold; arm_norm
+  exact refines_neg_neg (armReadW_neg _ ▸ harg.1) _ (hasTy_copyCompat hcs hty)
 
 /-! ## `ADD` of a sign-masked shifted operand (1635) -/
 

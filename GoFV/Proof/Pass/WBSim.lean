@@ -250,10 +250,11 @@ theorem chain_ok (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK
     · obtain ⟨u'', z, hu'', -, hev⟩ := hoe y' hy'B ⟨y, hy, u, hu, hp, hy'⟩ u' hu' hp'
       rw [hu'] at hu''; cases hu''
       exact evalValue_args_def (fun msg h => by rw [hev] at h; cases h) a ha'
+  have hty : Typed (Ctx.make c.tabs c.f) G := typed_enter hwf S.hb S.hB hA.sizeS hA.typed hen
   have hG : GrOK c B rs G frS := S.grOK hall hA hGf hsinv hGo
     (fun _ a ha y _ hl => by
       obtain ⟨u, hu⟩ := hvx a ha
-      exact hP a ha u hu (S.lazy_nonphi ha hl hu)) hO
+      exact hP a ha u hu (S.lazy_nonphi ha hl hu)) hO hty
   have hdef : ∀ a ∈ B.values, ∃ y, G.regs[a]? = some (some y) := fun a ha => by
     obtain ⟨u, hu⟩ := hvx a ha
     by_cases hp : u.op = .Phi
@@ -299,7 +300,7 @@ theorem chain_ok (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK
     obtain ⟨hD, -, -⟩ := dinv_enter hwf hcf S.hb S.hB hA.sizeS (pre_strict hcf hA.pre) hen
     refine ⟨.inr ⟨b, B, S.hb, S.hB, (pre_tree hwf hcf hA.pre).2, by cases e; exact he, hD⟩,
       by rw [hGs, hA.sizeS], hRT.size, fr_trans hRT.fr hGf, fun a hh => hfin a hh, hsinv,
-      fun _ => S.lazy_after hA hRT, fun hent => ?_, hA.wbh⟩
+      fun _ => S.lazy_after hA hRT, fun hent => ?_, hA.wbh, hty⟩
     exfalso
     obtain ⟨j, hj⟩ := Array.mem_iff_getElem?.1 he
     obtain ⟨-, E, hE', hpe⟩ := hwf.succLink b B ⟨S.hb, S.hB⟩ j e hj
@@ -410,7 +411,8 @@ theorem refines_of_glob {c : WBCheck.Ctx} {ce ce' : CheckEnv} (hGl : Glob c ce c
         { entryFrame env (Ctx.make c.tabs c.f) args mem with
           regs := Array.replicate c.g.valueTab.size none } c.f.entry 0 := by
       refine ⟨.inl rfl, by simp [entryFrame, Ctx.make], by simp, rfl, fun a hh => ?_,
-        sinv_entry memOK_set hpre.1, fun h => absurd rfl h, fun _ a y h => ?_, hpre.2.2⟩
+        sinv_entry memOK_set hpre.1, fun h => absurd rfl h, fun _ a y h => ?_, hpre.2.2,
+        typed_replicate _ _ _ rfl⟩
       · obtain ⟨h1, h2⟩ := held_lt hGl hh
         simp only [entryFrame, Ctx.make, Array.getElem?_replicate, h1, h2, ↓reduceIte]
       · simp only [entryFrame, Array.getElem?_replicate] at h

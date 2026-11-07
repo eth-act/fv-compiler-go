@@ -269,15 +269,20 @@ theorem retype_temp_avoids (U : Blk → Prop) {t : Ty} (ht : ∀ e, t ≠ .ptr e
   | ptr e => exact absurd rfl (ht e)
   | _ => trivial
 
-/-- At a word shape a pointer into a temporary stays itself (it has no integer form). -/
+/-- At a word shape a pointer into a temporary stays itself (it has no integer form) or is
+`poison` (outside its window). -/
 theorem retype_word_shape {t : Ty} (ht : (∃ e, t = .ptr e) ∨ t = .int .w64) {z : Val} {n : Nat}
     (h : z = .poison ∨ ∃ off, z = .ptr ⟨.temp 0 n, off⟩) :
     z.retype t = .poison ∨ ∃ off, z.retype t = .ptr ⟨.temp 0 n, off⟩ := by
   rcases h with rfl | ⟨off, rfl⟩
   · exact .inl (by cases t <;> rfl)
-  · rcases ht with ⟨e, rfl⟩ | rfl
-    · exact .inr ⟨off, rfl⟩
-    · exact .inr ⟨off, rfl⟩
+  · have hw : (Val.ptr ⟨.temp 0 n, off⟩).retype t = Ptr.word ⟨.temp 0 n, off⟩ := by
+      rcases ht with ⟨e, rfl⟩ | rfl <;> rfl
+    rw [hw]
+    rcases Ptr.word_cases ⟨.temp 0 n, off⟩ with ⟨-, h⟩ | ⟨hc, -⟩ | ⟨-, h⟩
+    · exact .inr ⟨off, h⟩
+    · simp [Ptr.convertible] at hc
+    · exact .inl h
 
 theorem ptrRes_temp {n : Nat} (p : Ptr) (hp : p.blk = .temp 0 n) :
     PtrOps.ptrRes p = .poison ∨ ∃ off, PtrOps.ptrRes p = .ptr ⟨.temp 0 n, off⟩ := by
@@ -286,7 +291,8 @@ theorem ptrRes_temp {n : Nat} (p : Ptr) (hp : p.blk = .temp 0 n) :
   subst hp
   unfold PtrOps.ptrRes
   split
-  · exact .inr ⟨off, rfl⟩
+  · rename_i hw
+    exact .inr ⟨off, Ptr.word_of_held (Ptr.held_iff.2 ⟨rfl, hw⟩)⟩
   · exact .inl rfl
 
 /-- A pointer op on a tainted argument 0 points into the same temporary. -/

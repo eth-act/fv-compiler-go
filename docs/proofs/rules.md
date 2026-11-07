@@ -2185,23 +2185,27 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
     0`, `x = y = 1`: `ADD` gives the pointer `g + 1`, `MADD` `poison`). Proven
     (`Rules/ShiftOp.lean`, `r_ARM64_1012_sound` … `r_ARM64_1015_sound`) since `MADD`/`MSUB`
     move a pointer `a` as `ADD` does (`Arm64.madd`, `docs/plans/semantics2.md` §3).
-  - `:1183` (`(NEG (SUB x y)) => (SUB y x)`): `x = heap 0 + 2^40` (outside its window, so no
-    integer form and no register), `y = 1`: `x - 1` re-enters the window and becomes the word
-    `2^41 - 1`, which the source negates; the target's `SUB 1 x` reads `x`'s register
-    (`poison`). Also `y` the frame pointer `local (2^20) 1 + 0`, which has a register
-    (`Arm64.ptrReg`: `Ptr.ofAddr` decodes its address back to it) but does not convert
-    (`Ptr.convertible`: activation below `2^20`), so `retypeL` keeps it a pointer: `SUB x y`
-    reads its register, `SUB y x` moves it by provenance. (The earlier counterexample, `y` the
-    frame temporary `temp 0 1 + 0`, gives `poison` in the source since `ptrReg`.)
-  - `:1184` (`(NEG (NEG x)) => x`): `x` that frame pointer `local (2^20) 1 + 0`: the integer
-    of its address against the pointer.
+  - `:1183` (`(NEG (SUB x y)) => (SUB y x)`) and `:1184` (`(NEG (NEG x)) => x`) were false on
+    two model artifacts: a pointer outside its window kept as a value (`x = heap 0 + 2^40`, `y =
+    1`: `x - 1` re-entered the window and became the word `2^41 - 1`, which the source negated,
+    while the target's `SUB 1 x` read `x`'s register, `poison`), and a pointer with a register
+    that did not convert (the frame pointer `local (2^20) 1 + 0`: `Ptr.ofAddr` decodes its
+    address back to it, but `Ptr.convertible` asked for an activation below `2^20`, so `SUB x y`
+    and `NEG (NEG x)` read its register where `SUB y x` and `x` keep the pointer). Proven
+    (`Rules/ShiftOp.lean`, `r_ARM64_1183_sound`, `r_ARM64_1184_sound`) since Phase 1 removes
+    both (#385, `docs/plans/semantics2.md` §3, "Pointers outside their window"): `Ptr.word` of
+    a pointer outside its window is `poison` (Go deems such a pointer invalid, `unsafe.Pointer`
+    rule (3)), and `Ptr.convertible` is exactly the `Ptr.ofAddr` round trip
+    (`Ptr.convertible_iff`). So a pointer at a word shape (`Ptr.held`) has no register, and
+    neither has any pointer `SUB` moves it to inside its window (`Ptr.held_of_blk`): `NEG` of it
+    is `poison` on both sides (`refines_neg_sub`, `refines_neg_neg`).
   - `:1197` (`(SUB x (SUB y z)) => (SUB (ADD <v.Type> x z) y)`): `x` the pointer
     `heap (2^22) + 0` (no integer form), `y = z = 2^41`: the source is `x`, the target's
     `ADD x z` leaves the heap window (`poison`).
-  - `:1198` (`(SUB (SUB x y) z) => (SUB x (ADD <y.Type> y z))`): `x = heap 0 + 2^40` (outside
-    its window, so no integer form), `y = 1`, `z = 2^40`: `x - 1` re-enters the window and
-    becomes the word `2^41 - 1`, from which `SUB` takes `z` as integers (`2^40 - 1`); the
-    target's `x - (2^40 + 1)` leaves the window (`poison`).
+  - `:1198` (`(SUB (SUB x y) z) => (SUB x (ADD <y.Type> y z))`): `x = y` the frame temporary
+    `temp 0 1 + 0` (no integer form), `z = 2^24`: the source subtracts the two pointers by
+    offset (`0`) and then `z`, the target's `ADD y z` leaves the frame window (`poison`). (The
+    earlier counterexample, `x = heap 0 + 2^40`, is no value since #385's window rule.)
   The shifted-operand forms `:1433`–`:1438` (`(ADD x0 x1:(SLLconst [c] y)) && … => (ADDshiftLL
   x0 y [c])`, …) were false under the earlier provenance clause of `Pat.argsOKLs` (only
   pointer-typed arguments forced a word-shaped result: at an `int32` `ADD`, a `uintptr` `x0`

@@ -194,11 +194,11 @@ theorem wordRes_hasTy {t : Ty} (ht : GoFV.Proof.Rules.isPtrTy t = true) (x k : B
   obtain ⟨_, rfl⟩ := eq_of_isPtrTy ht
   unfold PtrOps.wordRes; split <;> rfl
 
-/-- A value of a 64-bit integer shape is `poison`, a 64-bit integer or a pointer that does not
-convert to an integer. -/
+/-- A value of a 64-bit integer shape is `poison`, a 64-bit integer or a pointer held as a
+pointer (`Ptr.held`). -/
 theorem of_hasTy_int64 {t : Ty} (ht : GoFV.Proof.Rules.isInt64Ty t = true) {a : Val}
     (ha : a.hasTy t = true) :
-    a = .poison ∨ (∃ x, a = .int .w64 x) ∨ ∃ p, a = .ptr p ∧ p.convertible = false := by
+    a = .poison ∨ (∃ x, a = .int .w64 x) ∨ ∃ p, a = .ptr p ∧ p.held = true := by
   rw [eq_of_isInt64Ty ht] at ha
   cases a with
   | poison => exact .inl rfl

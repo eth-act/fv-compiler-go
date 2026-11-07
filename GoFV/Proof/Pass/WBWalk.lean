@@ -6,7 +6,8 @@ import GoFV.Proof.SimIH
 
 The target runs the chain of block `b` segment by segment against a reference frame `Gr` of the
 source (`GrOK`: `Gr`'s memories are `MemOK`, held registers agree with `QR`, held values
-outside `B` that `B` reads have registers). `Regs k F`: at the entry of segment `k`, the target
+outside `B` that `B` reads have registers, its registers are typed). `Regs k F`: at the entry of
+segment `k`, the target
 frame `F` holds `QR`-registers for everything available there (`Avail`) and the registers
 outside the chain of the target's frame `frT` at the block's entry; `Phis k F e`: the segment's
 `Phi`s read `QR`-registers along edge `e`.
@@ -27,6 +28,7 @@ structure GrOK (c : WBCheck.Ctx) (B : Block) (rs : List Run) (Gr fr0 : Frame) : 
   held : HeldGr c rs Gr
   mems : MemsGr Gr
   out : OutDef c B Gr
+  typed : Typed (Ctx.make c.tabs c.f) Gr
 
 /-- The target frame `F` at the entry of segment `k` (see the module doc). -/
 structure Regs (c : WBCheck.Ctx) (b : ID) (B : Block) (rs : List Run) (Gr fr0 frT : Frame)
@@ -189,7 +191,7 @@ theorem seg_step (S : Setup c b B rs l) {env : Env} {Gr fr0 frT : Frame}
       (fun x hx v hxv hp => absurd hp (S.t_nophi hr ((hv x).2 hx) hxv))
       (Avail c b B rs Gr (k + 1)) hR'.avail
       (fun a ha hm => S.avail_not_t hr ha ((hv a).2 hm))
-      (fun x hx v hxv _ => S.local_t hG.held hG.mems ⟨r, hr, (hv x).2 hx⟩ hxv
+      (fun x hx v hxv _ => S.local_t hG.held hG.mems hG.typed ⟨r, hr, (hv x).2 hx⟩ hxv
         (hcov x (.inr ⟨r, hr, (hv x).2 hx⟩)))
       (fun x hx v hxv _ a ha hna =>
         S.args_t hG.out hr ((hv x).2 hx) hxv ha (fun hm => hna ((hv a).1 hm)))

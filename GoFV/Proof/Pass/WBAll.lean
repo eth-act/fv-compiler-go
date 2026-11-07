@@ -462,8 +462,10 @@ private theorem memHeld (S : Setup c b B rs l) {j : Nat} {r : Run} (hr : rs[j]? 
   obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, h, -⟩ := runOK_spec (S.run hr)
   exact h
 
-/-- A source `Zero`/`Move` the source evaluated: its address arguments hold words. -/
-private theorem ev_words {env : Env} {Gr : Frame} {s : ID} {u : Value}
+/-- A source `Zero`/`Move` the source evaluated in a typed frame: its address arguments hold
+words. -/
+private theorem ev_words {env : Env} {Gr : Frame} (hty : Typed (Ctx.make c.tabs c.f) Gr)
+    {s : ID} {u : Value}
     (hu : c.f.value? s = some u) (hev : Ev env c Gr s) (hop : u.op = .Zero ∨ u.op = .Move) :
     ∀ k, k + 1 < u.args.size → ∀ a, u.args[k]? = some a →
       ∃ y, Gr.regs[a]? = some (some y) ∧ WordV y := by
@@ -473,6 +475,7 @@ private theorem ev_words {env : Env} {Gr : Frame} {s : ID} {u : Value}
   intro k hk a ha
   obtain ⟨z, hz, hreg⟩ := regsAre_get hL (k := k) (a := a) (by simpa using ha)
   refine ⟨z, hreg, ?_⟩
+  have hzt := hty.hasTy hreg
   rcases hop with hop | hop
   · rw [DAE.evalOp_memRoot (.inr (.inl hop))] at hop0
     obtain ⟨a', p, M, M', rfl, hp, -, -⟩ := zero_inv hop hop0
@@ -480,18 +483,19 @@ private theorem ev_words {env : Env} {Gr : Frame} {s : ID} {u : Value}
     simp only [List.length_cons, List.length_nil, Array.length_toList] at hl
     obtain rfl : k = 0 := by omega
     cases hz
-    exact wordV_of_asPtrWord hp
+    exact wordV_of_asPtrWord hp hzt
   · rw [DAE.evalOp_memRoot (.inr (.inr (.inl hop)))] at hop0
     obtain ⟨a', b', d, s', bs, M, M', rfl, hd, hs, -, -, -⟩ := move_inv hop hop0
     have hl := regsAre_length hL
     simp only [List.length_cons, List.length_nil, Array.length_toList] at hl
     rcases k with _ | _ | k
-    · cases hz; exact wordV_of_asPtrWord hd
-    · cases hz; exact wordV_of_asPtrWord hs
+    · cases hz; exact wordV_of_asPtrWord hd hzt
+    · cases hz; exact wordV_of_asPtrWord hs hzt
     · omega
 
 /-- **A helper call** of the buffer block. -/
 private theorem t_call (S : Setup c b B rs l) {env : Env} {Gr fr0 : Frame} (hH : HeldGr c rs Gr)
+    (hty : Typed (Ctx.make c.tabs c.f) Gr)
     {j i : Nat} {x : ID} {w : Value} (hok : c.roleOK b B (segsOf b rs) rs true j x = true)
     (hw : c.g.value? x = some w) (hid : w.id = x) (hρ : c.roleOf rs x = .call i)
     (hcov : WbHelpers env ∧ (∃ M, RunMem Gr rs i M) ∧
@@ -506,7 +510,7 @@ private theorem t_call (S : Setup c b B rs l) {env : Env} {Gr fr0 : Frame} (hH :
   obtain ⟨abi, habi, hps, hlen⟩ := P.abi
   obtain ⟨mm, hmm, hmr⟩ := P.mem
   obtain ⟨s, u, hs, hu, husz, hopu, hdst⟩ := P.src
-  have hWv := ev_words hu (hev s hs) (hopu.imp (·.1) (·.1))
+  have hWv := ev_words hty hu (hev s hs) (hopu.imp (·.1) (·.1))
   have hsz : 3 ≤ w.args.size ∧ w.args.size ≤ 4 := by
     rcases hopu with ⟨-, h⟩ | ⟨-, h, -⟩ <;> omega
   have hargs : w.args.toList = w.args.toList.dropLast ++ [mm] := by
@@ -535,7 +539,7 @@ private theorem t_call (S : Setup c b B rs l) {env : Env} {Gr fr0 : Frame} (hH :
     · rw [← hwk] at hq
       simp only [QR, P.typ] at hq
       obtain ⟨_, rfl⟩ := hq
-      trivial
+      exact Ptr.inWindow_zero _
     · rcases hdst with ⟨he, hav⟩ | ⟨hnc, hnr⟩
       · rw [← hwk, he] at hq
         obtain ⟨y, hy, hwy⟩ := hWv 0 (by omega) u.args[0]! (by
@@ -620,7 +624,7 @@ theorem local_seg (S : Setup c b B rs l) {env : Env} {Gr fr0 : Frame}
 
 /-- **A value of a buffer block.** -/
 theorem local_t (S : Setup c b B rs l) {env : Env} {Gr fr0 : Frame}
-    (hH : HeldGr c rs Gr) (hM : MemsGr Gr)
+    (hH : HeldGr c rs Gr) (hM : MemsGr Gr) (hty : Typed (Ctx.make c.tabs c.f) Gr)
     {j : Nat} {x : ID} {w : Value} (hx : InT c rs j x) (hw : c.g.value? x = some w)
     (hcov : Cov env c rs Gr x) :
     LocalQ env (Ctx.make c.tabs c.g) fr0 (QR c rs Gr) x := by
@@ -664,7 +668,7 @@ theorem local_t (S : Setup c b B rs l) {env : Env} {Gr fr0 : Frame}
   | tload i =>
     exact local_true hw (by rw [then_op hρ rfl hw]; decide) (fun y => by simp only [QR, hρ])
   | taddr i => exact absurd (roleOK_taddr hok hw hρ).1 (fun h => nomatch h)
-  | call i => exact S.t_call hH hok hw hid hρ hcov
+  | call i => exact S.t_call hH hty hok hw hid hρ hcov
   | seln i =>
     obtain ⟨-, rfl, hop, hargs, hai, hty, ha⟩ := roleOK_seln hok hw hρ
     exact local_seln hw hid hρ hop hargs hai hty ha
