@@ -7,7 +7,7 @@ import Std.Data.HashMap.Basic
 
 The input of the ports of `AllocFrame` … `defframe` (`docs/PASSES3.md` A1–C7, I3 #549): the
 function after `trim` (the last section of its `gofv-ssa` file, with the file's definition
-tables) and what the companion `gofv-prog 2` file records about the frontend at the two cut
+tables) and what the companion `gofv-prog 3` file records about the frontend at the two cut
 points before `genssa`: `Dcl` when `AllocFrame` starts (`frame` section, `in` lines, with the
 names' type facts) and the `genin` section (`curfn.Pos()`, defer state, the wrapped function,
 the open-coded defer slots, `f.RegArgs`, the text symbol's `FuncInfo` header). The outputs
@@ -77,7 +77,7 @@ structure Env where
   f : Func
   /-- The definition tables of the whole `.ssa` file plus its `frontend` block. -/
   tabs : Tables
-  /-- The `.prog` file's `config` lines (`docs/contracts/export.md`, "gofv-prog 2"). -/
+  /-- The `.prog` file's `config` lines (`docs/contracts/export.md`, "gofv-prog 3"). -/
   progConfig : Array (String × Token)
   /-- `Dcl` names by `.prog` number (`none`: not a name number). -/
   names : Array (Option NameInfo)

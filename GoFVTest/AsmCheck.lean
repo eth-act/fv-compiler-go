@@ -4,7 +4,7 @@ import GoFV.Asm.Print
 /-!
 # `asm-check`
 
-Parses every `*.prog` file (`gofv-prog 2`, `docs/contracts/export.md`) under the given
+Parses every `*.prog` file (`gofv-prog 3`, `docs/contracts/export.md`) under the given
 directories (or files) and checks that printing the result reproduces the file byte for byte,
 and that the exporter wrote no `warn` line. With `--hist FILE`, also writes the `oplook`
 histogram of the assembled Progs (asm section, `Optab ≠ 0`): one line per distinct

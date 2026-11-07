@@ -2,9 +2,9 @@ import GoFV.Asm.Prog
 import GoFV.SSA.Parse
 
 /-!
-# Parser of the `gofv-prog 2` format
+# Parser of the `gofv-prog 3` format
 
-Parses a `.prog` file (`docs/contracts/export.md`, "gofv-prog 2") into a `ProgFile`. Like the
+Parses a `.prog` file (`docs/contracts/export.md`, "gofv-prog 3") into a `ProgFile`. Like the
 `gofv-ssa` parser (`GoFV.SSA.Parse`, whose lexer and word parsers it reuses) it is strict: it
 accepts exactly the canonical text `GoFV.Asm.Print` produces, so `print ∘ parse` is the identity
 on every file it accepts.
@@ -195,6 +195,15 @@ def relocs (n : Nat) : L (Array Reloc) := do
     out := out.push (← line "reloc" relocLine)
   return out
 
+def dataLines : L (Array SymData) := do
+  let mut data := #[]
+  for _ in [0:(← read).lines.size] do
+    unless ← tagIs "data" do break
+    let (sym, kind, size, align, attr, bytes, nr) ← line "data" do
+      return (← w (refW 'y'), ← wordStr, ← w intW, ← w intW, ← w hexNatW, ← w bytesW, ← w natW)
+    data := data.push { sym, kind, size, align, attr, data := bytes, relocs := ← relocs nr }
+  return data
+
 def textLine : F TextInfo := do
   return { sym := ← w (refW 'y'), args := ← w intW, locals := ← w intW, funcID := ← w natW,
            funcFlag := ← w natW, startLine := ← w intW, attr := ← w hexNatW }
@@ -248,6 +257,51 @@ def genin : L GenIn := do
   let warns ← warnsEnd
   return { defs, fnPos, hasDefer, openDeferDisallowed, wrapped, openDefer, regArgs, text, warns }
 
+/-- `text <size> <align> <bytes> <nrelocs>` and its `reloc` lines: the text symbol's `Size`,
+`Align`, `P`, `R`. -/
+def textSym : L (Int × Int × ByteArray × Array Reloc) := do
+  let (size, align, bytes, nr) ← line "text" do
+    return (← w intW, ← w intW, ← w bytesW, ← w natW)
+  return (size, align, bytes, ← relocs nr)
+
+/-- `<sb>:<sv>:<eb>:<ev>:<expr hex|->`. -/
+def locEntryW (s : Sl) : Except String LocEntry := do
+  let ps ← partsW s ':' 5
+  return { startBlock := ← intW ps[0]!, startValue := ← intW ps[1]!, endBlock := ← intW ps[2]!,
+           endValue := ← intW ps[3]!, expr := ((← hexW ps[4]!).getD .empty) }
+
+/-- `<a>:<b>` integer pairs, comma list. -/
+def pairsW (s : Sl) : Except String (Array (Int × Int)) := listW (fun x => do
+  let ps ← partsW x ':' 2
+  return (← intW ps[0]!, ← intW ps[1]!)) s
+
+/-- The `dbg*` lines of `prog0`: `BuildFuncDebug`'s result. -/
+def funcDebug : L (Option FuncDebug) := do
+  let entry ← line "dbgentry" (w fun x => if x.isDash then pure none else some <$> intW x)
+  let some entry := entry | return none
+  let mut slots := #[]
+  for _ in [0:(← read).lines.size] do
+    unless ← tagIs "dbgslot" do break
+    let k := slots.size
+    slots := slots.push (← line "dbgslot" do
+      let i ← w natW
+      if i != k then throw s!"dbgslot index {i}, expected {k}"
+      return (← w (refW 'n'), ← w (optRefW 't'), ← w intW))
+  let mut vars := #[]
+  for _ in [0:(← read).lines.size] do
+    unless ← tagIs "dbgvar" do break
+    let k := vars.size
+    vars := vars.push (← line "dbgvar" do
+      let i ← w natW
+      if i != k then throw s!"dbgvar index {i}, expected {k}"
+      return (← w (refW 'n'), ← w (listW natW)))
+  let lists ← many "dbgloc" do return (← w natW, ← w (listW locEntryW))
+  let regOutputParams ← line "dbgregout" (w (listW (refW 'n')))
+  let pcs ← line "dbgpc" (w (listW fun x => do
+    let ps ← partsW x ':' 3
+    return (← intW ps[0]!, ← intW ps[1]!, ← natW ps[2]!)))
+  return some { entry, slots, vars, lists, regOutputParams, pcs }
+
 def prog0 : L Prog0 := do
   line "prog0" (pure ())
   let defs ← defs
@@ -255,17 +309,21 @@ def prog0 : L Prog0 := do
   let fn ← funcInfo
   let needzero ← line "needzero" (w (listW (refW 'n')))
   let regArgs ← line "regargs" regArgsW
+  let (textSize, textAlign, text, relocs) ← textSym
+  let symAlign ← line "symalign" (w (listW fun s => do
+    let ps ← partsW s ':' 2
+    return (← refW 'y' ps[0]!, ← intW ps[1]!)))
+  let dbg ← funcDebug
   let warns ← warnsEnd
-  return { defs, progs, fn, needzero, regArgs, warns }
+  return { defs, progs, fn, needzero, regArgs, textSize, textAlign, text, relocs, symAlign, dbg,
+           warns }
 
 def asm : L Asm := do
   line "asm" (pure ())
   let defs ← defs
   let progs ← many "p" progLine
   let fn ← funcInfo
-  let (textSize, textAlign, text, nr) ← line "text" do
-    return (← w intW, ← w intW, ← w bytesW, ← w natW)
-  let textRelocs ← relocs nr
+  let (textSize, textAlign, text, textRelocs) ← textSym
   let pcln ← line "pcln" do
     let o := w (optRefW 'y')
     return { pcsp := ← o, pcfile := ← o, pcline := ← o, pcinline := ← o,
@@ -280,21 +338,82 @@ def asm : L Asm := do
       if i != k then throw s!"inltree index {i}, expected {k}"
       return { parent := ← w intW, pos := ← w posW, func := ← w (optRefW 'y'), name := ← str,
                parentPC := ← w intW })
-  let mut data := #[]
-  for _ in [0:(← read).lines.size] do
-    unless ← tagIs "data" do break
-    let (sym, kind, size, align, attr, bytes, nr) ← line "data" do
-      return (← w (refW 'y'), ← wordStr, ← w intW, ← w intW, ← w hexNatW, ← w bytesW, ← w natW)
-    data := data.push { sym, kind, size, align, attr, data := bytes, relocs := ← relocs nr }
+  let data ← dataLines
   let warns ← warnsEnd
   return { defs, progs, fn, textSize, textAlign, text, relocs := textRelocs, pcln, usedFiles,
            inlTree, data,
            warns }
 
+/-- `<FileIndex>:<RelLine>`. -/
+def fileLineW (s : Sl) : Except String (Int × Nat) := do
+  let ps ← partsW s ':' 2
+  return (← intW ps[0]!, ← natW ps[1]!)
+
+/-- A `var` line's location list: `-`, `v<VarID>` or `e<entries>`. -/
+def varListW (s : Sl) : Except String VarList := do
+  if s.isDash then return .none
+  if s.size > 0 && s.get 0 == 'v'.toUInt8 then return .var (← natW (s.drop 1))
+  if s.size > 0 && s.get 0 == 'e'.toUInt8 then return .entries (← listW locEntryW (s.drop 1))
+  throw s!"bad location list {s}"
+
+def dwVarLine : F DwVar := do
+  return { scope := ← w intW, name := ← str, tag := ← w natW, withLoclist := ← w boolW,
+           isReturnValue := ← w boolW, isInlFormal := ← w boolW, dictIndex := ← w natW,
+           stackOffset := ← w intW, type := ← w (optRefW 'y'), declFile := ← str,
+           declLine := ← w natW, declCol := ← w natW, inlIndex := ← w intW,
+           childIndex := ← w intW, isInAbstract := ← w boolW, closureOffset := ← w intW,
+           list := ← w varListW }
+
+def dwarf : L Dwarf := do
+  line "dwarf" (pure ())
+  let defs ← defs
+  let fn ← if ← tagIs "dwfn" then some <$> line "dwfn" (do
+      let info ← w (refW 'y')
+      let loc ← w (optRefW 'y')
+      let ranges ← w (refW 'y')
+      let absfn ← w (optRefW 'y')
+      let lines ← w (refW 'y')
+      let name ← str
+      let (startFile, startLine) ← w fileLineW
+      return { info, loc, ranges, absfn, lines, name, startFile, startLine,
+               external := ← w boolW, wrapper := ← w boolW, useBASEntries := ← w boolW,
+               dwTextCount := ← w natW })
+    else pure none
+  let mut scopes := #[]
+  for _ in [0:(← read).lines.size] do
+    unless ← tagIs "scope" do break
+    let k := scopes.size
+    let (parent, ranges) ← line "scope" do
+      let i ← w natW
+      if i != k then throw s!"scope index {i}, expected {k}"
+      return (← w intW, ← w pairsW)
+    scopes := scopes.push { parent, ranges, vars := ← many "var" dwVarLine }
+  let mut inlCalls := #[]
+  for _ in [0:(← read).lines.size] do
+    unless ← tagIs "inlcall" do break
+    let k := inlCalls.size
+    let c ← line "inlcall" do
+      let i ← w natW
+      if i != k then throw s!"inlcall index {i}, expected {k}"
+      let inlIndex ← w intW
+      let (callFile, callLine) ← w fileLineW
+      return ({ inlIndex, callFile, callLine, absFun := ← w (optRefW 'y'),
+                children := ← w (listW natW), root := ← w boolW, ranges := ← w pairsW,
+                vars := #[] } : DwInlCall)
+    inlCalls := inlCalls.push { c with vars := ← many "var" dwVarLine }
+  let dieRefs ← many "dieref" do
+    return (← w (refW 'y'), ← w natW, ← w (refW 'y'), ← w intW)
+  let dieOffs ← if ← tagIs "dieoff" then some <$> line "dieoff" (do
+      return (← w (refW 'y'), ← w pairsW))
+    else pure none
+  let data ← dataLines
+  let warns ← warnsEnd
+  return { defs, fn, scopes, inlCalls, dieRefs, dieOffs, data, warns }
+
 def file : L ProgFile := do
   line "gofv-prog" do
     let v ← wordStr
-    if v != "2" then throw s!"unsupported gofv-prog version {v}"
+    if v != "3" then throw s!"unsupported gofv-prog version {v}"
   let pkg ← line "pkg" str
   let (name, abi) ← line "func" do return (← str, ← w natW)
   let config ← many "config" do
@@ -307,13 +426,14 @@ def file : L ProgFile := do
   let genin ← genin
   let prog0 ← prog0
   let asm ← asm
+  let dwarf ← dwarf
   line "eof" (pure ())
   if (← get) != (← read).lines.size then throw s!"line {(← get) + 1}: data after eof"
-  return { pkg, name, abi, config, frame, genin, prog0, asm }
+  return { pkg, name, abi, config, frame, genin, prog0, asm, dwarf }
 
 end Parse
 
-/-- Parses a `gofv-prog 2` file. -/
+/-- Parses a `gofv-prog 3` file. -/
 def parseProgFile (data : ByteArray) : Except String ProgFile := do
   let ls ← GoFV.SSA.Parse.lines data
   match (Parse.file ⟨data, ls⟩).run 0 with

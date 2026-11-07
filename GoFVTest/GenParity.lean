@@ -6,7 +6,7 @@ import GoFV.SSA.Parse
 /-!
 # `gen-parity`: Phase 3 I3 parity (`AllocFrame` … `defframe`)
 
-For every `*.prog` file (`gofv-prog 2`, `docs/contracts/export.md`) under the given directories
+For every `*.prog` file (`gofv-prog 3`, `docs/contracts/export.md`) under the given directories
 with its companion `.ssa` file (same stem), runs the Lean ports on the function after `trim` and
 the recorded frontend inputs (`GoFV.Gen.Env.load`) and compares, per function:
 

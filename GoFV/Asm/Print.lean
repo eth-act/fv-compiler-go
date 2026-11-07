@@ -2,9 +2,9 @@ import GoFV.Asm.Prog
 import GoFV.SSA.Print
 
 /-!
-# Printer of the `gofv-prog 2` format
+# Printer of the `gofv-prog 3` format
 
-Writes a `ProgFile` back as canonical `.prog` text (`docs/contracts/export.md`, "gofv-prog 2"),
+Writes a `ProgFile` back as canonical `.prog` text (`docs/contracts/export.md`, "gofv-prog 3"),
 the inverse of `GoFV.Asm.parseProgFile`. Reuses the `gofv-ssa` printer's primitives.
 -/
 
@@ -72,6 +72,12 @@ def prog (p : Prog) : W Unit := do
 def reloc (r : Reloc) : W Unit := do
   s "reloc "; i r.off; sp; n r.siz; sp; s r.type; sp; i r.add; sp; optRef 'y' r.sym; nl
 
+def dataLines (ds : Array SymData) : W Unit := do
+  for d in ds do
+    s "data "; ref 'y' d.sym; sp; s d.kind; sp; i d.size; sp; i d.align; sp; hexNat d.attr; sp
+    bytes d.data; sp; n d.relocs.size; nl
+    for r in d.relocs do reloc r
+
 def textLine (t : TextInfo) : W Unit := do
   ref 'y' t.sym; sp; i t.args; sp; i t.locals; sp; n t.funcID; sp; n t.funcFlag; sp
   i t.startLine; sp; hexNat t.attr; nl
@@ -117,6 +123,31 @@ def genin (g : GenIn) : W Unit := do
   s "text "; textLine g.text
   warnsEnd g.warns
 
+/-- `text <size> <align> <bytes> <nrelocs>` and its `reloc` lines. -/
+def textSym (size align : Int) (p : ByteArray) (rs : Array Reloc) : W Unit := do
+  s "text "; i size; sp; i align; sp; bytes p; sp; n rs.size; nl
+  for r in rs do reloc r
+
+def locEntry (e : LocEntry) : W Unit := do
+  i e.startBlock; s ":"; i e.startValue; s ":"; i e.endBlock; s ":"; i e.endValue; s ":"
+  bytes e.expr
+
+def pairs (ps : Array (Int × Int)) : W Unit := list (fun (a, b) => do i a; s ":"; i b) ps
+
+def funcDebug : Option FuncDebug → W Unit
+  | none => s "dbgentry -\n"
+  | some d => do
+    s "dbgentry "; i d.entry; nl
+    for h : k in [0:d.slots.size] do
+      let (nm, t, off) := d.slots[k]
+      s "dbgslot "; n k; sp; ref 'n' nm; sp; optRef 't' t; sp; i off; nl
+    for h : k in [0:d.vars.size] do
+      let (nm, sl) := d.vars[k]
+      s "dbgvar "; n k; sp; ref 'n' nm; sp; list n sl; nl
+    for (k, es) in d.lists do s "dbgloc "; n k; sp; list locEntry es; nl
+    s "dbgregout "; list (ref 'n') d.regOutputParams; nl
+    s "dbgpc "; list (fun (b, v, id) => do i b; s ":"; i v; s ":"; n id) d.pcs; nl
+
 def prog0 (p : Prog0) : W Unit := do
   s "prog0\n"
   for d in p.defs do defLine d
@@ -124,6 +155,9 @@ def prog0 (p : Prog0) : W Unit := do
   funcInfo p.fn
   s "needzero "; list (ref 'n') p.needzero; nl
   regArgs p.regArgs
+  textSym p.textSize p.textAlign p.text p.relocs
+  s "symalign "; list (fun (y, a) => do ref 'y' y; s ":"; i a) p.symAlign; nl
+  funcDebug p.dbg
   warnsEnd p.warns
 
 def asm (a : Asm) : W Unit := do
@@ -131,8 +165,7 @@ def asm (a : Asm) : W Unit := do
   for d in a.defs do defLine d
   for x in a.progs do prog x
   funcInfo a.fn
-  s "text "; i a.textSize; sp; i a.textAlign; sp; bytes a.text; sp; n a.relocs.size; nl
-  for r in a.relocs do reloc r
+  textSym a.textSize a.textAlign a.text a.relocs
   let c := a.pcln
   s "pcln "; optRef 'y' c.pcsp; sp; optRef 'y' c.pcfile; sp; optRef 'y' c.pcline; sp
   optRef 'y' c.pcinline; sp; list symHole c.pcdata; sp; list symHole c.funcdata; nl
@@ -141,25 +174,56 @@ def asm (a : Asm) : W Unit := do
     let x := a.inlTree[k]
     s "inltree "; n k; sp; i x.parent; sp; pos x.pos; sp; optRef 'y' x.func; sp; q x.name; sp
     i x.parentPC; nl
-  for d in a.data do
-    s "data "; ref 'y' d.sym; sp; s d.kind; sp; i d.size; sp; i d.align; sp; hexNat d.attr; sp
-    bytes d.data; sp; n d.relocs.size; nl
-    for r in d.relocs do reloc r
+  dataLines a.data
   warnsEnd a.warns
 
+def dwVar (v : DwVar) : W Unit := do
+  s "var "; i v.scope; sp; q v.name; sp; n v.tag; sp; bool v.withLoclist; sp
+  bool v.isReturnValue; sp; bool v.isInlFormal; sp; n v.dictIndex; sp; i v.stackOffset; sp
+  optRef 'y' v.type; sp; q v.declFile; sp; n v.declLine; sp; n v.declCol; sp; i v.inlIndex; sp
+  i v.childIndex; sp; bool v.isInAbstract; sp; i v.closureOffset; sp
+  match v.list with
+  | .none => s "-"
+  | .var k => do s "v"; n k
+  | .entries es => do s "e"; list locEntry es
+  nl
+
+def dwarf (d : Dwarf) : W Unit := do
+  s "dwarf\n"
+  for x in d.defs do defLine x
+  if let some f := d.fn then
+    s "dwfn "; ref 'y' f.info; sp; optRef 'y' f.loc; sp; ref 'y' f.ranges; sp; optRef 'y' f.absfn
+    sp; ref 'y' f.lines; sp; q f.name; sp; i f.startFile; s ":"; n f.startLine; sp
+    bool f.external; sp; bool f.wrapper; sp; bool f.useBASEntries; sp; n f.dwTextCount; nl
+  for h : k in [0:d.scopes.size] do
+    let sc := d.scopes[k]
+    s "scope "; n k; sp; i sc.parent; sp; pairs sc.ranges; nl
+    for v in sc.vars do dwVar v
+  for h : k in [0:d.inlCalls.size] do
+    let c := d.inlCalls[k]
+    s "inlcall "; n k; sp; i c.inlIndex; sp; i c.callFile; s ":"; n c.callLine; sp
+    optRef 'y' c.absFun; sp; list n c.children; sp; bool c.root; sp; pairs c.ranges; nl
+    for v in c.vars do dwVar v
+  for (y, ridx, tgt, dcl) in d.dieRefs do
+    s "dieref "; ref 'y' y; sp; n ridx; sp; ref 'y' tgt; sp; i dcl; nl
+  if let some (y, offs) := d.dieOffs then s "dieoff "; ref 'y' y; sp; pairs offs; nl
+  dataLines d.data
+  warnsEnd d.warns
+
 def file (f : ProgFile) : W Unit := do
-  s "gofv-prog 2\npkg "; q f.pkg; nl
+  s "gofv-prog 3\npkg "; q f.pkg; nl
   s "func "; q f.name; sp; n f.abi; nl
   for (k, v) in f.config do s "config "; s k; sp; token v; nl
   frame f.frame
   genin f.genin
   prog0 f.prog0
   asm f.asm
+  dwarf f.dwarf
   s "eof\n"
 
 end Print
 
-/-- The canonical `gofv-prog 2` text of `f`. -/
+/-- The canonical `gofv-prog 3` text of `f`. -/
 def printProgFile (f : ProgFile) : String := (Print.file f).run "" |>.2
 
 end GoFV.Asm
