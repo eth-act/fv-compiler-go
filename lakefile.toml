@@ -215,3 +215,7 @@ root = "GoFVTest.Arm64Decode"
 [[lean_exe]]
 name = "asm-parity"
 root = "GoFVTest.AsmParity"
+
+[[lean_exe]]
+name = "mach-difftest"
+root = "GoFVTest.MachDiff"
