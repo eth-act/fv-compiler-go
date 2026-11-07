@@ -121,6 +121,52 @@ private theorem callOp_static {env : Env} {ctx : Ctx} {v : Value} {argv : List V
       · cases h
   · cases h
 
+/-- A `StaticLECall` panics only when its contract does: on the arguments retyped at the ABI's
+parameters, without `poison`, and the memory argument. -/
+private theorem callOp_static_panic {env : Env} {ctx : Ctx} {v : Value} {argv : List Val}
+    {e : Panic} {m0 : Mem} (hop : v.op = .StaticLECall) (h : callOp env ctx v argv = .panic e m0) :
+    ∃ name c m, v.aux.bind ctx.tabs.callee? = some name ∧
+      (env.atAct ctx.act).extern name = some c ∧ argv.getLast? = some (.mem m) ∧
+      (retypeResults ctx.tabs ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []).filter
+        (!·.out)) argv.dropLast).any Val.hasPoison = false ∧
+      c (retypeResults ctx.tabs ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []).filter
+        (!·.out)) argv.dropLast) none (m.poisonBelow (.outargs ctx.act) (callFrame ctx.tabs v.aux
+        ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []).filter (!·.out))
+        (!env.noSpill name))) = .panicked e m0 := by
+  unfold callOp at h
+  simp only [callTarget, hop, nilClosure_none] at h
+  have hb : (Op.StaticLECall == Op.StaticCall || Op.StaticLECall == Op.ClosureCall ||
+      Op.StaticLECall == Op.InterCall) = false := by decide
+  simp only [Res.ofOption, bind, Res.bind, pure, hb, Bool.false_eq_true, ite_false,
+    Option.map_none, Option.getD_none, Bool.or_false] at h
+  split at h
+  · next m hm =>
+    split at h
+    · cases h
+    next hpz =>
+    split at h
+    · cases h
+    cases hname : v.aux.bind ctx.tabs.callee? with
+    | none => rw [hname] at h; cases h
+    | some name =>
+    rw [hname] at h
+    simp only at h
+    cases hc : (env.atAct ctx.act).extern name with
+    | none => rw [hc] at h; cases h
+    | some c =>
+      rw [hc] at h
+      simp only at h
+      split at h
+      · split at h
+        all_goals (try cases h)
+        rename_i heq
+        split at heq <;> cases heq
+      · next e' m' hp =>
+        cases h
+        exact ⟨name, c, m, rfl, hc, hm, by simpa using hpz, hp⟩
+      · cases h
+  · cases h
+
 /-- `Mem.write` keeps the other blocks. -/
 theorem write_find_ne {m m' : Mem} {q : Ptr} {bs : Array Byte} (hw : m.write q bs = some m')
     {b : Blk} (hb : q.blk ≠ b) : m'.find? b = m.find? b := by
@@ -666,6 +712,529 @@ theorem grow_eval {env : Env} (hG : env.GrowLen) {fr : Frame} {c : ID} {cv : Val
         · exact .inr ⟨p'', L, cap'', hA, rfl⟩
   · exact absurd (by rw [hA]) (hnptr q)
 
+/-! ### Folded `ifaceeq`/`efaceeq` calls (`generic.rules:2279`, `:2287`) -/
+
+theorem wordTy_cases {t : Ty} (h : wordTy t = true) : t = .int .w64 ∨ ∃ e, t = .ptr e := by
+  cases t with
+  | int w => cases w <;> first | exact .inl rfl | cases h
+  | ptr e => exact .inr ⟨e, rfl⟩
+  | _ => cases h
+
+/-- A value retyped at a word shape (`wordTy`) keeps its pointer word. -/
+theorem asPtrWord_retype_word {t : Ty} (ht : wordTy t = true) (v : Val) :
+    (v.retype t).asPtrWord = v.asPtrWord := by
+  rcases wordTy_cases ht with rfl | ⟨e, rfl⟩
+  · cases v with
+    | int w x =>
+      cases w
+      · rfl
+      · rfl
+      · rfl
+      · rw [retype_i64]
+    | ptr p => exact Ptr.word_asPtrWord p
+    | _ => rfl
+  · exact Val.asPtrWord_retype_ptr e v
+
+/-- A value whose retype at a word shape holds no `poison` is a pointer word. -/
+theorem asPtrWord_of_retype_word {t : Ty} (ht : wordTy t = true) {v : Val}
+    (h : (v.retype t).hasPoison = false) : ∃ p, v.asPtrWord = some p := by
+  rcases wordTy_cases ht with rfl | ⟨e, rfl⟩
+  · cases v with
+    | int w x => cases w <;> first | exact ⟨_, rfl⟩ | cases h
+    | ptr p => exact ⟨p, rfl⟩
+    | _ => cases h
+  · cases v with
+    | int w x => cases w <;> first | exact ⟨_, rfl⟩ | cases h
+    | ptr p => exact ⟨p, rfl⟩
+    | _ => cases h
+
+theorem ifaceTy_cases {t : Ty} (h : ifaceTy t = true) :
+    ∃ o0 t0 o1 t1 sz, t = .agg [(o0, t0), (o1, t1)] sz ∧ wordTy t0 = true := by
+  unfold ifaceTy at h
+  split at h
+  · exact ⟨_, _, _, _, _, rfl, h⟩
+  · cases h
+
+/-- An aggregate retyped at an interface shape: `poison`, or its two components retyped. -/
+theorem retype_iface (o0 o1 sz : Nat) (t0 t1 : Ty) (w : Val) (rest : List Val) :
+    (Val.agg (w :: rest)).retype (.agg [(o0, t0), (o1, t1)] sz) = .poison ∨
+      ∃ w1 : Val, (Val.agg (w :: rest)).retype (.agg [(o0, t0), (o1, t1)] sz) =
+        .agg [w.retype t0, w1.retype t1] := by
+  match rest with
+  | [] => exact .inl rfl
+  | [w1] => exact .inr ⟨w1, rfl⟩
+  | _ :: _ :: _ => exact .inl rfl
+
+/-- The `Addr` of a symbol `eqSymName?` names is the start of its global. -/
+theorem addrVal_of_eqSymName {ax : AuxRef} {s : String} (h : eqSymName? tabs ax = some s) :
+    GoFV.Proof.Rules.addrVal tabs (some ax) = .ptr ⟨.global s, 0⟩ := by
+  unfold eqSymName? at h
+  simp only [GoFV.Proof.Rules.addrVal, Option.bind_some]
+  split at h
+  · simp only [Option.some.injEq] at h; subst h; simp_all
+  · cases h
+
+private theorem evalPure_itab (ty : Ty) (ai : Int64) (ax : Option AuxRef) (args : List Val) :
+    evalPure .ITab ty ai ax args = Comp.select 0 args := rfl
+
+private theorem evalPure_imake (ty : Ty) (ai : Int64) (ax : Option AuxRef) (args : List Val) :
+    evalPure .IMake ty ai ax args = Comp.make args := rfl
+
+/-- The ops of a descriptor chain (`eqDescW`, `eqDescI`) are term nodes. -/
+theorem eqDesc_term {n : Nat} {a : ID} {ax : AuxRef}
+    (h : eqDescW tabs f n a = some ax ∨ eqDescI tabs f n a = some ax) :
+    ∃ u, f.value? a = some u ∧ termOp u.op = true := by
+  cases n with
+  | zero => rcases h with h | h <;> simp [eqDescW, eqDescI] at h
+  | succ n =>
+    cases hu : f.value? a with
+    | none => rcases h with h | h <;> simp [eqDescW, eqDescI, hu] at h
+    | some u =>
+      refine ⟨u, rfl, ?_⟩
+      by_cases h1 : u.op = .Addr; · rw [h1]; decide
+      by_cases h2 : u.op = .Copy; · rw [h2]; decide
+      by_cases h3 : u.op = .ITab; · rw [h3]; decide
+      by_cases h4 : u.op = .IMake; · rw [h4]; decide
+      rcases h with h | h <;> simp [eqDescW, eqDescI, hu, h1, h2, h3, h4] at h
+
+/-- A word of a descriptor chain (`eqDescW`) of symbol `s`. -/
+def DescW (s : String) (y : Val) : Prop := y = .poison ∨ y.asPtrWord = some ⟨.global s, 0⟩
+
+/-- An interface of a descriptor chain (`eqDescI`) of symbol `s`. -/
+def DescI (s : String) (y : Val) : Prop :=
+  y = .poison ∨ ∃ w rest, y = .agg (w :: rest) ∧ DescW s w
+
+/-- The register `y` of value `a` of `f`: `DescW` if `a` is a word, `DescI` if an interface,
+of a descriptor chain whose `Addr` names `s`. -/
+def DescReg (tabs : Tables) (f : Func) (a : ID) (y : Val) : Prop :=
+  (∀ n ax s, eqDescW tabs f n a = some ax → eqSymName? tabs ax = some s → DescW s y) ∧
+  (∀ n ax s, eqDescI tabs f n a = some ax → eqSymName? tabs ax = some s → DescI s y)
+
+theorem descReg_poison (a : ID) : DescReg tabs f a .poison :=
+  ⟨fun _ _ _ _ _ => .inl rfl, fun _ _ _ _ _ => .inl rfl⟩
+
+/-- The registers of values that are no term nodes: `DescReg`, vacuously. -/
+theorem descReg_atom {a : ID} {u : Value} (hu : f.value? a = some u) (ht : termOp u.op = false)
+    (y : Val) : DescReg tabs f a y := by
+  refine ⟨fun n ax s h _ => ?_, fun n ax s h _ => ?_⟩ <;>
+  · obtain ⟨u', hu', ht'⟩ := eqDesc_term (by first | exact .inl h | exact .inr h)
+    rw [hu] at hu'; cases hu'; rw [ht] at ht'; cases ht'
+
+/-- One step of a descriptor chain on registers: a term node of a chain on arguments whose
+registers are `DescReg` is. -/
+theorem descReg_term {x : ID} {v : Value} (hv : f.value? x = some v) {ρ : ID → Val}
+    (hargs : ∀ a ∈ v.args, DescReg tabs f a (ρ a)) :
+    DescReg tabs f x ((GoFV.Proof.Rules.opVal tabs v.op (tabs.ty v.type) v.auxInt v.aux
+      (v.args.toList.map ρ)).retype (tabs.ty v.type)) := by
+  have hmem : ∀ i, i < v.args.size → v.args[i]! ∈ v.args := fun i hi => by
+    rw [getElem!_pos v.args i hi]; exact Array.getElem_mem _
+  constructor
+  · intro n ax s hW hs
+    cases n with
+    | zero => simp [eqDescW] at hW
+    | succ n =>
+    simp only [eqDescW, hv] at hW
+    have hw : wordTy (tabs.ty v.type) = true := by
+      cases h : wordTy (tabs.ty v.type)
+      · simp [h] at hW
+      · rfl
+    simp only [hw, Bool.not_true, Bool.false_eq_true, ite_false] at hW
+    by_cases h1 : v.op = .Addr
+    · simp only [h1, beq_self_eq_true, ite_true] at hW
+      right
+      rw [asPtrWord_retype_word hw, h1, GoFV.Proof.Rules.opVal_addr, hW,
+        addrVal_of_eqSymName hs]
+      rfl
+    simp only [show (v.op == .Addr) = false from beq_eq_false_iff_ne.2 h1, Bool.false_eq_true,
+      ite_false] at hW
+    by_cases h2 : v.op = .Copy ∧ v.args.size = 1
+    · simp only [h2, beq_self_eq_true, Bool.and_self, ite_true] at hW
+      have hR := (hargs _ (hmem 0 (by omega))).1 n ax s hW hs
+      rw [toList_one h2.2, List.map_cons, List.map_nil, h2.1,
+        GoFV.Proof.Rules.opVal_pure (op := Op.Copy) rfl, evalPure_copy]
+      rcases hR with h | h
+      · rw [h]; exact .inl (AtomSim.retype_poison _)
+      · exact .inr (by rw [asPtrWord_retype_word hw, h])
+    have h2' : (v.op == .Copy && v.args.size == 1) = false := by
+      simpa [Bool.and_eq_true, beq_iff_eq] using h2
+    simp only [h2', Bool.false_eq_true, ite_false] at hW
+    by_cases h3 : v.op = .ITab ∧ v.args.size = 1
+    · simp only [h3, beq_self_eq_true, Bool.and_self, ite_true] at hW
+      have hR := (hargs _ (hmem 0 (by omega))).2 n ax s hW hs
+      rw [toList_one h3.2, List.map_cons, List.map_nil, h3.1,
+        GoFV.Proof.Rules.opVal_pure (op := Op.ITab) rfl, evalPure_itab]
+      rcases hR with h | ⟨w, rest, h, hw'⟩
+      · rw [h]; exact .inl (AtomSim.retype_poison _)
+      · rw [h]
+        show DescW s (w.retype _)
+        rcases hw' with h' | h'
+        · rw [h']; exact .inl (AtomSim.retype_poison _)
+        · exact .inr (by rw [asPtrWord_retype_word hw, h'])
+    have h3' : (v.op == .ITab && v.args.size == 1) = false := by
+      simpa [Bool.and_eq_true, beq_iff_eq] using h3
+    simp only [h3', Bool.false_eq_true, ite_false] at hW
+    cases hW
+  · intro n ax s hI hs
+    cases n with
+    | zero => simp [eqDescI] at hI
+    | succ n =>
+    simp only [eqDescI, hv] at hI
+    have hi : ifaceTy (tabs.ty v.type) = true := by
+      cases h : ifaceTy (tabs.ty v.type)
+      · simp [h] at hI
+      · rfl
+    simp only [hi, Bool.not_true, Bool.false_eq_true, ite_false] at hI
+    obtain ⟨o0, t0, o1, t1, sz, hty, hw0⟩ := ifaceTy_cases hi
+    by_cases h1 : v.op = .IMake ∧ v.args.size = 2
+    · simp only [h1, beq_self_eq_true, Bool.and_self, ite_true] at hI
+      have hR := (hargs _ (hmem 0 (by omega))).1 n ax s hI hs
+      rw [toList_two h1.2, List.map_cons, List.map_cons, List.map_nil, h1.1,
+        GoFV.Proof.Rules.opVal_pure (op := Op.IMake) rfl, evalPure_imake, hty]
+      refine .inr ⟨_, _, rfl, ?_⟩
+      rcases hR with h | h
+      · rw [h]; exact .inl (AtomSim.retype_poison _)
+      · exact .inr (by rw [asPtrWord_retype_word hw0, h])
+    have h1' : (v.op == .IMake && v.args.size == 2) = false := by
+      simpa [Bool.and_eq_true, beq_iff_eq] using h1
+    simp only [h1', Bool.false_eq_true, ite_false] at hI
+    by_cases h2 : v.op = .Copy ∧ v.args.size = 1
+    · simp only [h2, beq_self_eq_true, Bool.and_self, ite_true] at hI
+      have hR := (hargs _ (hmem 0 (by omega))).2 n ax s hI hs
+      rw [toList_one h2.2, List.map_cons, List.map_nil, h2.1,
+        GoFV.Proof.Rules.opVal_pure (op := Op.Copy) rfl, evalPure_copy, hty]
+      rcases hR with h | ⟨w, rest, h, hw'⟩
+      · rw [h]; exact .inl (AtomSim.retype_poison _)
+      · rw [h]
+        rcases retype_iface o0 o1 sz t0 t1 w rest with h' | ⟨w1, h'⟩ <;> rw [h']
+        · exact .inl rfl
+        · refine .inr ⟨_, _, rfl, ?_⟩
+          rcases hw' with h'' | h''
+          · rw [h'']; exact .inl (AtomSim.retype_poison _)
+          · exact .inr (by rw [asPtrWord_retype_word hw0, h''])
+    have h2' : (v.op == .Copy && v.args.size == 1) = false := by
+      simpa [Bool.and_eq_true, beq_iff_eq] using h2
+    simp only [h2', Bool.false_eq_true, ite_false] at hI
+    cases hI
+
+/-- **A descriptor chain as a term** (`eqDescW`/`eqDescI`, at most `n` deep, its `Addr` naming
+`s`): past the fuel `n` its word is the start of `s`'s global (an interface: a pair whose first
+component is), whatever the atoms. -/
+theorem desc_den {ρ : ID → Val} {s : String} : ∀ (n : Nat) (a : ID) (ax : AuxRef),
+    eqSymName? tabs ax = some s →
+    (eqDescW tabs f n a = some ax → ∀ k, n ≤ k →
+      (den f.value? tabs ρ k a).asPtrWord = some ⟨.global s, 0⟩) ∧
+    (eqDescI tabs f n a = some ax → ∀ k, n ≤ k → ∃ w w1,
+      den f.value? tabs ρ k a = .agg [w, w1] ∧ w.asPtrWord = some ⟨.global s, 0⟩)
+  | 0, a, ax, _ => ⟨fun h => by simp [eqDescW] at h, fun h => by simp [eqDescI] at h⟩
+  | n + 1, a, ax, hs => by
+    have IH := fun b => desc_den (ρ := ρ) n b ax hs
+    constructor
+    · intro hW k hk
+      obtain ⟨k, rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+      cases hv : f.value? a with
+      | none => simp [eqDescW, hv] at hW
+      | some v =>
+      simp only [eqDescW, hv] at hW
+      have hw : wordTy (tabs.ty v.type) = true := by
+        cases h : wordTy (tabs.ty v.type)
+        · simp [h] at hW
+        · rfl
+      simp only [hw, Bool.not_true, Bool.false_eq_true, ite_false] at hW
+      by_cases h1 : v.op = .Addr
+      · simp only [h1, beq_self_eq_true, ite_true] at hW
+        rw [den_succ_term hv (by rw [h1]; decide), asPtrWord_retype_word hw, h1,
+          GoFV.Proof.Rules.opVal_addr, hW, addrVal_of_eqSymName hs]
+        rfl
+      simp only [show (v.op == .Addr) = false from beq_eq_false_iff_ne.2 h1, Bool.false_eq_true,
+        ite_false] at hW
+      by_cases h2 : v.op = .Copy ∧ v.args.size = 1
+      · simp only [h2, beq_self_eq_true, Bool.and_self, ite_true] at hW
+        rw [den_succ_term hv (by rw [h2.1]; decide), asPtrWord_retype_word hw, toList_one h2.2,
+          List.map_cons, List.map_nil, h2.1, GoFV.Proof.Rules.opVal_pure (op := Op.Copy) rfl,
+          evalPure_copy]
+        exact (IH _).1 hW k (by omega)
+      have h2' : (v.op == .Copy && v.args.size == 1) = false := by
+        simpa [Bool.and_eq_true, beq_iff_eq] using h2
+      simp only [h2', Bool.false_eq_true, ite_false] at hW
+      by_cases h3 : v.op = .ITab ∧ v.args.size = 1
+      · simp only [h3, beq_self_eq_true, Bool.and_self, ite_true] at hW
+        rw [den_succ_term hv (by rw [h3.1]; decide), asPtrWord_retype_word hw, toList_one h3.2,
+          List.map_cons, List.map_nil, h3.1, GoFV.Proof.Rules.opVal_pure (op := Op.ITab) rfl,
+          evalPure_itab]
+        obtain ⟨w, w1, h, hw'⟩ := (IH _).2 hW k (by omega)
+        rw [h]
+        exact hw'
+      have h3' : (v.op == .ITab && v.args.size == 1) = false := by
+        simpa [Bool.and_eq_true, beq_iff_eq] using h3
+      simp only [h3', Bool.false_eq_true, ite_false] at hW
+      cases hW
+    · intro hI k hk
+      obtain ⟨k, rfl⟩ : ∃ k', k = k' + 1 := ⟨k - 1, by omega⟩
+      cases hv : f.value? a with
+      | none => simp [eqDescI, hv] at hI
+      | some v =>
+      simp only [eqDescI, hv] at hI
+      have hi : ifaceTy (tabs.ty v.type) = true := by
+        cases h : ifaceTy (tabs.ty v.type)
+        · simp [h] at hI
+        · rfl
+      simp only [hi, Bool.not_true, Bool.false_eq_true, ite_false] at hI
+      obtain ⟨o0, t0, o1, t1, sz, hty, hw0⟩ := ifaceTy_cases hi
+      by_cases h1 : v.op = .IMake ∧ v.args.size = 2
+      · simp only [h1, beq_self_eq_true, Bool.and_self, ite_true] at hI
+        rw [den_succ_term hv (by rw [h1.1]; decide), toList_two h1.2, List.map_cons,
+          List.map_cons, List.map_nil, h1.1, GoFV.Proof.Rules.opVal_pure (op := Op.IMake) rfl,
+          evalPure_imake, hty]
+        exact ⟨_, _, rfl, by rw [asPtrWord_retype_word hw0]; exact (IH _).1 hI k (by omega)⟩
+      have h1' : (v.op == .IMake && v.args.size == 2) = false := by
+        simpa [Bool.and_eq_true, beq_iff_eq] using h1
+      simp only [h1', Bool.false_eq_true, ite_false] at hI
+      by_cases h2 : v.op = .Copy ∧ v.args.size = 1
+      · simp only [h2, beq_self_eq_true, Bool.and_self, ite_true] at hI
+        rw [den_succ_term hv (by rw [h2.1]; decide), toList_one h2.2, List.map_cons,
+          List.map_nil, h2.1, GoFV.Proof.Rules.opVal_pure (op := Op.Copy) rfl, evalPure_copy, hty]
+        obtain ⟨w, w1, h, hw'⟩ := (IH _).2 hI k (by omega)
+        rw [h]
+        exact ⟨_, _, rfl, by rw [asPtrWord_retype_word hw0]; exact hw'⟩
+      have h2' : (v.op == .Copy && v.args.size == 1) = false := by
+        simpa [Bool.and_eq_true, beq_iff_eq] using h2
+      simp only [h2', Bool.false_eq_true, ite_false] at hI
+      cases hI
+
+theorem tuple_bm_of_matches {t : Ty} (h : (t matches .tuple [.bool, .mem]) = true) :
+    t = .tuple [.bool, .mem] := by
+  split at h
+  · rfl
+  · cases h
+
+theorem bool_of_matches {t : Ty} (h : (t matches .bool) = true) : t = .bool := by
+  split at h
+  · rfl
+  · cases h
+
+theorem eqCallSig_spec {cv : Value} (h : eqCallSig tabs cv = true) :
+    cv.op = .StaticLECall ∧ cv.args.size = 4 ∧
+    (∃ n, cv.aux.bind tabs.callee? = some n ∧ (n = "runtime.ifaceeq" ∨ n = "runtime.efaceeq")) ∧
+    tabs.ty cv.type = .tuple [.bool, .mem] ∧
+    (∃ o, (((callABI? tabs cv.aux).map (·.params.toList)).getD []).filter (·.out) = [o] ∧
+      tabs.ty o.type = .bool ∧ o.regs.isEmpty = false) ∧
+    (∃ p0 p1 p2, (((callABI? tabs cv.aux).map (·.params.toList)).getD []).filter (!·.out) =
+      [p0, p1, p2] ∧ wordTy (tabs.ty p0.type) = true ∧ wordTy (tabs.ty p1.type) = true ∧
+      wordTy (tabs.ty p2.type) = true) := by
+  unfold eqCallSig at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨⟨⟨⟨hop, hsz⟩, hn⟩, hty⟩, hout⟩, hin⟩ := h
+  refine ⟨hop, hsz, ?_, tuple_bm_of_matches hty, ?_, ?_⟩
+  · cases hc : cv.aux.bind tabs.callee? with
+    | none => rw [hc] at hn; cases hn
+    | some n =>
+      rw [hc] at hn
+      simp only [Option.any_some, Bool.or_eq_true, beq_iff_eq] at hn
+      exact ⟨n, rfl, hn⟩
+  · generalize ((((callABI? tabs cv.aux).map (·.params.toList)).getD []).filter (·.out)) = L
+      at hout ⊢
+    rcases L with _ | ⟨o, _ | ⟨o', L⟩⟩
+    · cases hout
+    · simp only [Bool.and_eq_true, Bool.not_eq_true'] at hout
+      exact ⟨o, rfl, bool_of_matches hout.1, hout.2⟩
+    · cases hout
+  · generalize ((((callABI? tabs cv.aux).map (·.params.toList)).getD []).filter (!·.out)) = L
+      at hin ⊢
+    rcases L with _ | ⟨p0, _ | ⟨p1, _ | ⟨p2, _ | ⟨p3, L⟩⟩⟩⟩
+    · cases hin
+    · cases hin
+    · cases hin
+    · simp only [Bool.and_eq_true] at hin
+      exact ⟨p0, p1, p2, rfl, hin.1.1, hin.1.2, hin.2⟩
+    · cases hin
+
+theorem eqCallV_spec {eq : List String × List String} {cv : Value}
+    (h : eqCallV tabs eq f cv = true) :
+    eqCallSig tabs cv = true ∧ ∃ ax s, eqDescW tabs f 8 cv.args[0]! = some ax ∧
+      eqSymName? tabs ax = some s ∧ s ∈ eqList tabs eq cv := by
+  unfold eqCallV at h
+  simp only [Bool.and_eq_true] at h
+  refine ⟨h.1, ?_⟩
+  have h2 := h.2
+  cases hd : eqDescW tabs f 8 cv.args[0]! with
+  | none => rw [hd] at h2; cases h2
+  | some ax =>
+    rw [hd] at h2
+    cases hs : eqSymName? tabs ax with
+    | none => simp [hs] at h2
+    | some s =>
+      simp only [Option.bind_some, hs, Option.any_some, List.contains_iff_mem] at h2
+      exact ⟨ax, s, rfl, hs, h2⟩
+
+theorem eqCallOK_spec {eq : List String × List String} {g : Func} {u w : Value}
+    (h : eqCallOK tabs eq f g u w = true) :
+    eqCallV tabs eq f u = true ∧ w.op = .MakeResult ∧ w.args.size = 2 ∧
+      copyReach tabs f.valueTab f.valueTab.size u.args[3]! w.args[1]! = true ∧
+      listedB g w.args[0]! = true ∧
+      ∃ q, g.value? w.args[0]! = some q ∧ q.op = .EqPtr ∧ q.args.size = 2 ∧
+        tabs.ty q.type = .bool ∧
+        copyReach tabs f.valueTab f.valueTab.size u.args[1]! q.args[0]! = true ∧
+        copyReach tabs f.valueTab f.valueTab.size u.args[2]! q.args[1]! = true := by
+  unfold eqCallOK at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨⟨⟨⟨hv, hop⟩, hsz⟩, hm⟩, hl⟩, hq⟩ := h
+  refine ⟨hv, hop, hsz, hm, hl, ?_⟩
+  cases hqv : g.value? w.args[0]! with
+  | none => rw [hqv] at hq; cases hq
+  | some q =>
+    rw [hqv] at hq
+    simp only [Bool.and_eq_true, beq_iff_eq] at hq
+    obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩ := hq
+    exact ⟨q, rfl, h1, h2, bool_of_matches h3, h4, h5⟩
+
+/-- The list a call's descriptor symbol is in names the call's callee. -/
+theorem eqList_mem {eq : List String × List String} {cv : Value} {n s : String}
+    (hn : cv.aux.bind tabs.callee? = some n)
+    (hn2 : n = "runtime.ifaceeq" ∨ n = "runtime.efaceeq") (hs : s ∈ eqList tabs eq cv) :
+    n = "runtime.ifaceeq" ∧ s ∈ eq.1 ∨ n = "runtime.efaceeq" ∧ s ∈ eq.2 := by
+  unfold eqList at hs
+  rw [hn] at hs
+  rcases hn2 with rfl | rfl
+  · exact .inl ⟨rfl, by simpa using hs⟩
+  · have hne : (some "runtime.efaceeq" == some "runtime.ifaceeq") = false := by decide
+    rw [hne] at hs
+    exact .inr ⟨rfl, by simpa using hs⟩
+
+/-- The register `y` of a folded call (`eqCallSig`) on its arguments' values `argv`: the tuple of
+the pointer equality of its data words, a memory refined by its memory argument, and the result
+addresses. -/
+def EqRes (argv : List Val) (y : Val) : Prop :=
+  ∃ M M' addrs p q, argv[3]? = some (.mem M) ∧ Mem.Refines M' M ∧
+    (argv[1]?.getD Val.poison).asPtrWord = some p ∧ (argv[2]?.getD Val.poison).asPtrWord = some q ∧
+    y = .tuple [.bool (p.eq q), .mem M', addrs]
+
+/-- The forwarding layer's relation of a folded call (`eqCallSig`) to its arguments (issue #69):
+if its descriptor points at the start of a symbol of its list (`eqList`), its register is
+`EqRes` (`Sem.Env.IfaceEq`). -/
+def eqR (tabs : Tables) (eq : List String × List String) (v : Value) (argv : List Val) (y : Val) :
+    Prop :=
+  eqCallSig tabs v = true → ∀ s, s ∈ eqList tabs eq v →
+    (argv[0]?.getD Val.poison).asPtrWord = some ⟨.global s, 0⟩ → EqRes argv y
+
+/-- **A folded call's register** (`eqCallSig`): under `Env.IfaceEq`, a call whose descriptor
+points at the start of a symbol of its list returns the pointer equality of its data words (the
+contract gets them retyped at the ABI's word shapes, which keep the words, and not `poison`) and
+the memory it was given (its argument with the outgoing-arguments area poisoned, which the
+argument refines), and `encodeResults` stores nothing for its register `bool` result. -/
+theorem eq_eval {eq : List String × List String} {env : Env} (hI : env.IfaceEq eq) {fr : Frame}
+    {c : ID} {cv : Value} (hcv : f.value? c = some cv) (hid : cv.id = c) {y : Val}
+    (hev : evalValue env (Ctx.make tabs f) fr cv = .ok y) :
+    eqR tabs eq cv (cv.args.toList.map (rv fr)) y := by
+  intro hsig s hs hd
+  obtain ⟨hop, hsz, ⟨n, hn, hn2⟩, hty, ⟨o, hos, hoty, horeg⟩, ⟨p0, p1, p2, hins, hw0, hw1, hw2⟩⟩ :=
+    eqCallSig_spec hsig
+  have hn' := eqList_mem hn hn2 hs
+  obtain ⟨vs, hvs⟩ := argVals_of_eval (env := env) (ctx := Ctx.make tabs f) (fr := fr) (v := cv)
+    (by rw [hev]; nofun)
+  rw [evalValue_of_argVals hvs] at hev
+  have htys : (Ctx.make tabs f).tys[cv.id]?.getD .other = .tuple [.bool, .mem] := by
+    rw [hid, tys_of_value hcv]; simpa using hty
+  rw [htys] at hev
+  obtain ⟨r, hr, rfl⟩ := bind_ok hev
+  have hco : evalOp env (Ctx.make tabs f) fr cv vs (.tuple [.bool, .mem]) =
+      callOp env (Ctx.make tabs f) cv vs := by simp only [evalOp, hop]
+  rw [hco] at hr
+  obtain ⟨name, c', m, rs, m', ps, m'', addrs, hname, hc, hlast, hnp, hret, henc, rfl⟩ :=
+    callOp_static hop hr
+  have hvs' := argVals_rv hvs
+  subst hvs'
+  have hctx : (Ctx.make tabs f).tabs = tabs := rfl
+  simp only [hctx] at hnp hret hname henc ⊢
+  rw [hn] at hname
+  cases hname
+  obtain ⟨a0, a1, a2, a3, hl⟩ : ∃ a0 a1 a2 a3, cv.args.toList = [a0, a1, a2, a3] := by
+    have hlen : cv.args.toList.length = 4 := by simpa using hsz
+    generalize cv.args.toList = L at hlen ⊢
+    match L, hlen with
+    | [a0, a1, a2, a3], _ => exact ⟨a0, a1, a2, a3, rfl⟩
+  rw [hins, hl] at hnp hret
+  rw [hl] at hlast hd
+  rw [hos] at henc
+  simp only [hos, hl]
+  simp only [List.map_cons, List.map_nil, List.dropLast_cons_cons, List.dropLast_singleton,
+    retypeResults] at hnp hret
+  simp only [List.any_cons, List.any_nil, Bool.or_false, Bool.or_eq_false_iff] at hnp
+  obtain ⟨hp0, hp1, hp2⟩ := hnp
+  obtain ⟨p, hp⟩ := asPtrWord_of_retype_word hw1 hp1
+  obtain ⟨q, hq⟩ := asPtrWord_of_retype_word hw2 hp2
+  simp only [List.map_cons, List.map_nil, List.getLast?_cons_cons, List.getLast?_singleton,
+    Option.some.injEq] at hlast
+  simp only [List.map_cons, List.map_nil, List.getElem?_cons_zero, Option.getD_some] at hd
+  rw [(hI.atAct (Ctx.make tabs f).act) n c' hc s hn' _ _ _ p q _
+    (by rw [asPtrWord_retype_word hw0]; exact hd) (by rw [asPtrWord_retype_word hw1, hp])
+    (by rw [asPtrWord_retype_word hw2, hq])] at hret
+  cases hret
+  have hb : PtrOps.eqPtr false [(rv fr a1).retype (tabs.ty p1.type), (rv fr a2).retype (tabs.ty p2.type)] =
+      .bool (p.eq q) := by
+    first
+      | (simp only [PtrOps.eqPtr, asPtrWord_retype_word hw1, asPtrWord_retype_word hw2, hp, hq]; done)
+      | (simp only [PtrOps.eqPtr, asPtrWord_retype_word hw1, asPtrWord_retype_word hw2, hp, hq]
+         cases p.eq q <;> rfl)
+  rw [hb] at henc ⊢
+  simp only [retypeResults, hoty] at henc ⊢
+  simp only [encodeResults, horeg, Bool.false_eq_true, ite_false, bind, Option.bind,
+    pure, List.append_nil, Option.some.injEq, Prod.mk.injEq] at henc
+  obtain ⟨-, rfl⟩ := henc
+  exact ⟨m, _, addrs, p, q, by simp [hlast], GoFV.Proof.Seg.poisonBelow_refines _ _ _,
+    by simpa using hp, by simpa using hq, rfl⟩
+
+/-- **A folded call does not panic** under `Env.IfaceEq` when its descriptor's register is
+`poison` (the call is stuck) or points at the start of a symbol of its list (`DescW`, which
+`DescReg` gives the descriptor chain): its contract returns. -/
+theorem eq_noPanic {eq : List String × List String} {env : Env} (hI : env.IfaceEq eq)
+    {fr : Frame} {cv : Value} (hsig : eqCallSig tabs cv = true) {s : String}
+    (hs : s ∈ eqList tabs eq cv) (hd : DescW s (rv fr cv.args[0]!)) (e : Panic) (m0 : Mem) :
+    evalValue env (Ctx.make tabs f) fr cv ≠ .panic e m0 := by
+  intro hev
+  obtain ⟨hop, hsz, ⟨n, hn, hn2⟩, -, -, ⟨p0, p1, p2, hins, hw0, hw1, hw2⟩⟩ := eqCallSig_spec hsig
+  have hn' := eqList_mem hn hn2 hs
+  obtain ⟨vs, hvs⟩ := argVals_of_eval (env := env) (ctx := Ctx.make tabs f) (fr := fr) (v := cv)
+    (by rw [hev]; nofun)
+  rw [evalValue_of_argVals hvs] at hev
+  have hco : evalOp env (Ctx.make tabs f) fr cv vs ((Ctx.make tabs f).tys[cv.id]?.getD .other) =
+      callOp env (Ctx.make tabs f) cv vs := by simp only [evalOp, hop]
+  rw [hco] at hev
+  have hr : callOp env (Ctx.make tabs f) cv vs = .panic e m0 := by
+    cases h : callOp env (Ctx.make tabs f) cv vs <;> rw [h] at hev <;> cases hev <;> rfl
+  obtain ⟨name, c', M, hname, hc, -, hnp, hpan⟩ := callOp_static_panic hop hr
+  have hvs' := argVals_rv hvs
+  subst hvs'
+  have hctx : (Ctx.make tabs f).tabs = tabs := rfl
+  rw [hctx] at hnp hpan hname
+  rw [hn] at hname
+  cases hname
+  obtain ⟨a0, a1, a2, a3, hl⟩ : ∃ a0 a1 a2 a3, cv.args.toList = [a0, a1, a2, a3] := by
+    have hlen : cv.args.toList.length = 4 := by simpa using hsz
+    generalize cv.args.toList = L at hlen ⊢
+    match L, hlen with
+    | [a0, a1, a2, a3], _ => exact ⟨a0, a1, a2, a3, rfl⟩
+  have ha0 : cv.args[0]! = a0 := by
+    have : cv.args.toList[0]? = some a0 := by rw [hl]; rfl
+    rw [Array.getElem?_toList] at this
+    rw [getElem!_pos cv.args 0 (by omega)]
+    exact Option.some.inj ((Array.getElem?_eq_getElem (by omega)).symm.trans this)
+  rw [ha0] at hd
+  rw [hins, hl] at hnp hpan
+  simp only [List.map_cons, List.map_nil, List.dropLast_cons_cons, List.dropLast_singleton,
+    retypeResults] at hnp hpan
+  simp only [List.any_cons, List.any_nil, Bool.or_false, Bool.or_eq_false_iff] at hnp
+  obtain ⟨hp0, hp1, hp2⟩ := hnp
+  obtain ⟨p, hp⟩ := asPtrWord_of_retype_word hw1 hp1
+  obtain ⟨q, hq⟩ := asPtrWord_of_retype_word hw2 hp2
+  have hdw : (rv fr a0).asPtrWord = some ⟨.global s, 0⟩ := by
+    rcases hd with h | h
+    · rw [h, AtomSim.retype_poison] at hp0; cases hp0
+    · exact h
+  rw [(hI.atAct (Ctx.make tabs f).act) n c' hc s hn' _ _ _ p q _
+    (by rw [asPtrWord_retype_word hw0]; exact hdw) (by rw [asPtrWord_retype_word hw1, hp])
+    (by rw [asPtrWord_retype_word hw2, hq])] at hpan
+  cases hpan
+
 /-- Setting the `Phi`s keeps the registers of fresh malloc calls. -/
 theorem fresh_phis {fr : Frame} {bb : Block} {i : Nat} {ps : List (ID × Val)}
     (hps : bb.values.toList.filterMapM (phiStep (Ctx.make tabs f) fr i) = .ok ps) {c : ID}
@@ -736,23 +1305,31 @@ theorem argPtr_phis {fr : Frame} {bb : Block} {i : Nat} {ps : List (ID × Val)}
   unfold rv
   rw [setPhis_not_mem ps fr.regs c hnm]
 
+/-- The forwarding layer's relation of atoms to their arguments (`SrcInv.R`): `growslice` calls
+(`growR`) and folded `ifaceeq`/`efaceeq` calls (`eqR`). -/
+def fwdR (tabs : Tables) (eq : List String × List String) (v : Value) (argv : List Val)
+    (y : Val) : Prop :=
+  growR tabs v argv y ∧ eqR tabs eq v argv y
+
 /-- **The forwarding layer's source invariant** (issue #69): constants' and `Addr`s' registers
-hold their values (`ConstReg`), fresh malloc calls' registers their zeroed blocks, memories the
-read-only symbols `ro` and argument pointers no pointer into a frame temporary (`FwdQ`), under
-`Env.AllocZero`, `Env.KeepsRo` and `Env.GrowLen` from an initial memory with the symbols and
+hold their values (`ConstReg`) and descriptor chains' registers their symbol's start
+(`DescReg`), fresh malloc calls' registers their zeroed blocks, memories the read-only symbols
+`ro` and argument pointers no pointer into a frame temporary (`FwdQ`), under `Env.AllocZero`,
+`Env.KeepsRo`, `Env.GrowLen` and `Env.IfaceEq eq` from an initial memory with the symbols and
 argument images without such pointers; `growslice` calls' registers slices of their length
-argument (`growR`, `grow_eval`). -/
-def fwdInv (tabs : Tables) (ro : List (String × Alloc)) (f : Func)
-    (hro : fwdRoOK tabs ro f = true) : SrcInv tabs f where
-  P _ a y := ConstReg tabs f a y
+argument (`growR`, `grow_eval`), folded calls' registers the equality of their data words
+(`eqR`, `eq_eval`). -/
+def fwdInv (tabs : Tables) (ro : List (String × Alloc)) (eq : List String × List String)
+    (f : Func) (hro : fwdRoOK tabs ro f = true) : SrcInv tabs f where
+  P _ a y := ConstReg tabs f a y ∧ DescReg tabs f a y
   L _ _ := True
   Q _ ρ := FwdQ tabs ro f ρ
   E env m im := env.AllocZero ∧ env.KeepsRo ∧ RoMem ro m ∧
-    (∀ img ∈ im, GoFV.Proof.DAE.BAv Temp0 img) ∧ env.GrowLen
-  R := growR tabs
-  start := ⟨trivial, fun _ _ _ _ _ => .inl rfl⟩
+    (∀ img ∈ im, GoFV.Proof.DAE.BAv Temp0 img) ∧ env.GrowLen ∧ env.IfaceEq eq
+  R := fwdR tabs eq
+  start := ⟨trivial, fun a => ⟨fun _ _ _ _ => .inl rfl, descReg_poison a⟩⟩
   qstart := ⟨fun _ _ => .inl rfl, fun _ _ => MemInv.memsOK_poison, argAv_poison tabs f⟩
-  poisonAtom _ _ _ _ _ _ _ := .inl rfl
+  poisonAtom _ a _ := ⟨fun _ _ _ _ => .inl rfl, descReg_poison a⟩
   qpois _ ρ ρ' hQ h := by
     refine ⟨fun c hc => ?_, fun hm a => ?_, argAv_pois hQ.2.2 h⟩
     · rcases h c with h | h <;> rw [h]
@@ -763,7 +1340,8 @@ def fwdInv (tabs : Tables) (ro : List (String × Alloc)) (f : Func)
       · exact MemInv.memsOK_poison
   edge _ _ _ fr _ _ _ _ hinv hq _ _ _ _ _ _ := by
     refine ⟨trivial, hinv, ?_, ?_⟩
-    · intro _ _ _ _ v hv hph _ _ v' hv' ht _
+    · intro _ _ _ _ v hv hph _ _
+      refine ⟨fun v' hv' ht _ => ?_, descReg_atom hv (by rw [hph]; rfl) _⟩
       rw [hv] at hv'; cases hv'; rw [hph] at ht; cases ht
     · intro _ ps _ hps
       refine ⟨fun c hc => ?_, fun hm => memsOK_rv (MemInv.setPhis_mems ps fr.regs
@@ -778,7 +1356,8 @@ def fwdInv (tabs : Tables) (ro : List (String × Alloc)) (f : Func)
       · have := hq.2.1 hm a
         rwa [rv_of hz] at this
       · rw [argPtr_phis hps hc]; exact hq.2.2 n c hc
-  term _ _ _ x _ v hv _ ρ _ v' hv' _ hsz := by
+  term _ _ _ x _ v hv _ ρ hargs := by
+    refine ⟨fun v' hv' _ hsz => ?_, descReg_term hv fun a ha => (hargs a ha).2⟩
     rw [hv] at hv'
     cases hv'
     right
@@ -786,21 +1365,23 @@ def fwdInv (tabs : Tables) (ro : List (String × Alloc)) (f : Func)
     · rw [List.eq_nil_of_length_eq_zero (by simpa using hsz : v.args.toList.length = 0)]
       rfl
     · simp only [hop, GoFV.Proof.Rules.opVal_addr]
-  atom _ _ _ _ _ v hv ht _ _ v' hv' ht' _ := by
-    rw [hv] at hv'; cases hv'; rw [ht] at ht'; cases ht'
+  atom _ _ _ _ _ v hv ht _ y :=
+    ⟨fun v' hv' ht' _ => (by rw [hv] at hv'; cases hv'; rw [ht] at ht'; cases ht'),
+      descReg_atom hv ht _⟩
   qstep _ _ hb hbb x hx v hv hid _ _ fr hE y he hinv hq := by
     refine ⟨fun c hc => ?_, fun hm a => ?_, argAv_set hE.2.2.2.1 hv he hq.2.2⟩
     · rw [rv_set]
       split
       · next h =>
         obtain ⟨rfl, -⟩ := h
-        exact fresh_eval hE.1 hc hv hid hro hinv hq.2.1 he
+        exact fresh_eval hE.1 hc hv hid hro (fun a => (hinv a).1) hq.2.1 he
       · exact hq.1 c hc
     · rw [rv_set]
       split
       · exact ro_step hE.2.1 hm hb hbb hx hv hid hE.2.2.1 (hq.2.1 hm) he
       · exact hq.2.1 hm a
-  rstep _ _ hv hid _ _ _ _ hE _ he hgv := grow_eval hE.2.2.2.2 hv hid hgv he
+  rstep _ _ hv hid _ _ _ _ hE _ he :=
+    ⟨fun hgv => grow_eval hE.2.2.2.2.1 hv hid hgv he, eq_eval hE.2.2.2.2.2 hv hid he⟩
 
 end
 

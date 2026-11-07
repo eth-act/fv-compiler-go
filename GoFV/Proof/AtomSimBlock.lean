@@ -61,7 +61,7 @@ structure BlockData (f g : Func) (b : ID) (fb gb : Block) (of og : Array ID) : P
   sT : schedule g gb = some og
   fl : of.toList.filter (fun x => rootP f x && rootP g x) = og.toList.filter (rootP g)
   drop : ∀ x ∈ of.toList, rootP f x = true → rootP g x = false →
-    ∃ u, f.value? x = some u ∧ (u.op = .Store ∨ u.op = .Zero)
+    ∃ u, f.value? x = some u ∧ (u.op = .Store ∨ u.op = .Zero ∨ u.op = .StaticLECall)
   ndS : of.toList.Nodup
   tpS : TopoRem (argsF f) of.toList
   mS : ∀ x, x ∈ of.toList ↔ x ∈ fb.values ∧ ∃ v, f.value? x = some v ∧ v.op ≠ .Phi

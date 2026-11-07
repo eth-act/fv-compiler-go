@@ -42,9 +42,10 @@ inductive LayerChain (penv : PassEnv) (tabs : Tables) (f0 : Func) (t : Interp.Ta
   /-- Nil-check eliminations. -/
   | nil {f f' g : Func} : RewriteCheck.nilOK penv tabs f0 f f' = true →
       LayerChain penv tabs f0 t f' g → LayerChain penv tabs f0 t f g
-  /-- Load-of-Store forwardings. -/
+  /-- Load-of-Store forwardings (and folded `ifaceeq`/`efaceeq` calls). -/
   | fwd {f f' g : Func} :
-      RewriteCheck.fwdRel tabs (RewriteCheck.roPass penv.tables penv.frontend f0) f f' = true →
+      RewriteCheck.fwdRel tabs (RewriteCheck.roPass penv.tables penv.frontend f0)
+        (RewriteCheck.eqSyms penv.tables f0) f f' = true →
       RewriteCheck.fwdRoOK tabs (RewriteCheck.roPass penv.tables penv.frontend f0) f = true →
       checkOK { tabs := tabs, typs := penv.typs } f' = true →
       LayerChain penv tabs f0 t f' g → LayerChain penv tabs f0 t f g

@@ -60,7 +60,7 @@ theorem mc_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (hf : check 
         obtain ⟨gb', hgb', hk, hs, hid, -⟩ :=
           KnownBits.blocksOK_facts K.blocks (K.blocks_eq ▸ hb) hfb
         rw [hgb] at hgb'; cases hgb'
-        exact ⟨hk.symm, hs.symm, hid.symm⟩) _)
+        exact ⟨hk.symm, hs.symm, hid.symm⟩) _) (atomsXOK_dropNP K.atoms _)
 
 /-- **memcombine (validated) refines its input.** -/
 theorem memcombine_refines {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : CheckEnv}

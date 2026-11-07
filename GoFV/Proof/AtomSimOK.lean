@@ -13,9 +13,11 @@ roots in the same sequence.
 `AtomsX` (issue #35), what the atom simulation assumes: `AtomsOK`, except that a `Store` of `g`
 may have another aux than the one of `f` (`SameAtomX`: a combined store, whose evaluation the
 simulation takes from `AtomArgsRefX`) and a root of `f` that is no root of `g` is a `Store` or a
-`Zero` (which never panic; issue #151: the forwarding layer's dropped identity writes); the
-schedules list the roots both functions have in the same sequence. `AtomsOK.toX`;
-`atomsXOK_spec`: `RewriteCheck.atomsXOK` decides it.
+`Zero` (which never panic; issue #151: the forwarding layer's dropped identity writes) or a
+`StaticLECall` (the forwarding layer's folded `ifaceeq`/`efaceeq` calls, issue #69; the
+simulation takes that it does not panic from `DropNP`); the schedules list the roots both
+functions have in the same sequence. `AtomsOK.toX`; `atomsXOK_spec`: `RewriteCheck.atomsXOK`
+decides it.
 -/
 
 namespace GoFV.Proof.AtomSim
@@ -107,7 +109,7 @@ structure BlockAtomsX (f g : Func) (fb gb : Block) : Prop where
   sched : ∃ of og, schedule f fb = some of ∧ schedule g gb = some og ∧
     of.toList.filter (fun x => rootP f x && rootP g x) = og.toList.filter (rootP g) ∧
     ∀ x ∈ of.toList, rootP f x = true → rootP g x = false →
-      ∃ u, f.value? x = some u ∧ (u.op = .Store ∨ u.op = .Zero)
+      ∃ u, f.value? x = some u ∧ (u.op = .Store ∨ u.op = .Zero ∨ u.op = .StaticLECall)
 
 /-- What the atom simulation assumes of the atoms. -/
 structure AtomsX (f g : Func) : Prop where
@@ -141,7 +143,7 @@ theorem AtomsOK.toX {f g : Func} (h : AtomsOK f g) : AtomsX f g := by
   obtain ⟨fb, gb, hfb, hgb, hB⟩ := h.block b hb
   exact ⟨fb, gb, hfb, hgb, hB.toX⟩
 
-theorem atomsXOK_spec {f g : Func} (h : atomsXOK f g = true) : AtomsX f g := by
+theorem atomsXOK_spec {f g : Func} {calls : Bool} (h : atomsXOK f g calls = true) : AtomsX f g := by
   unfold atomsXOK at h
   simp only [Bool.and_eq_true, beq_iff_eq, Array.all_eq_true'] at h
   obtain ⟨⟨⟨he, hb⟩, ho⟩, hall⟩ := h
@@ -178,8 +180,8 @@ theorem atomsXOK_spec {f g : Func} (h : atomsXOK f g = true) : AtomsX f g := by
           | none => rw [hu] at h; cases h
           | some u =>
             rw [hu] at h
-            simp only [Option.any_some, Bool.or_eq_true, beq_iff_eq] at h
-            exact ⟨u, rfl, h⟩
+            simp only [Option.any_some, Bool.or_eq_true, beq_iff_eq, Bool.and_eq_true] at h
+            exact ⟨u, rfl, h.elim (fun h => h.elim .inl (.inr ∘ .inl)) fun h => .inr (.inr h.2)⟩
       · cases hsch
   · cases h
 

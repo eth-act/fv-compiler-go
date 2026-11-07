@@ -8,7 +8,8 @@ prefix `pre`), the target panics alike with a refined memory: it evaluates the p
 schedule before `r` (its roots are those of `pre` that are roots of `g`, its `Arg`s precede
 every root of the source schedule by `PureFirst`, other atoms never get stuck), then `r` on
 refined arguments. A root of `f` that is no root of `g` is a `Store` or a `Zero`, which do not
-panic, so `r` is a root of both.
+panic, or a call that does not panic from registers satisfying the invariant (`DropNP`), so `r`
+is a root of both.
 -/
 
 namespace GoFV.Proof.AtomSim
@@ -81,12 +82,22 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv
   have hrp : prio ur.op ≠ 0 := prio_panicking (evalValue_panic_op hevr)
   have hrof : r ∈ of.toList := by rw [hof]; simp
   have hrS : rootP f r = true := by simp [rootP, hur, isRoot_of_prio hrp]
+  -- the source's invariant after the prefix
+  obtain ⟨hinvG, hqG⟩ := inv_evalAll (I := I) B.bmS B.hfb
+    (fr := { frS with regs := setPhis psS frS.regs }) hEI
+    (fun x hx => sched_own H B x (by rw [hof]; exact List.mem_append_left _ hx))
+      hpre (inv_phis B.hfb B.vS hpsS R.szS R.inv R.phis) (R.qinv fb psS B.hfb hpsS)
   have hrG : rootP g r = true := by
     cases hg : rootP g r
     · obtain ⟨u, hu, hst⟩ := B.drop r hrof hrS hg
       rw [hur] at hu; cases hu
-      have := evalValue_panic_op hevr
-      rcases hst with hst | hst <;> rw [hst] at this <;> rcases this with h | h <;> cases h
+      rcases hst with hst | hst | hst
+      · have := evalValue_panic_op hevr
+        rw [hst] at this; rcases this with h | h <;> cases h
+      · have := evalValue_panic_op hevr
+        rw [hst] at this; rcases this with h | h <;> cases h
+      · exact absurd hevr (H.np env _ _ hEI b fb of B.bmS B.hfb B.sS r hrof ur hur hst hrS hg G
+          hinvG e m)
     · rfl
   have hrog : r ∈ og.toList ∧ rootP g r = true := by
     have : r ∈ of.toList.filter (fun x => rootP f x && rootP g x) :=
@@ -133,10 +144,6 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv
     (by rw [pS1, R.szS]) htyPS hpre
   have hRG := src_eval_rdefs H B R.treeS (P := pre) (Q := r :: post) hof hS1 hR1 hEI
     (by rw [pS1, R.szS]) htyPS hpre
-  obtain ⟨hinvG, hqG⟩ := inv_evalAll (I := I) B.bmS B.hfb
-    (fr := { frS with regs := setPhis psS frS.regs }) hEI
-    (fun x hx => sched_own H B x (by rw [hof]; exact List.mem_append_left _ hx))
-      hpre (inv_phis B.hfb B.vS hpsS R.szS R.inv R.phis) (R.qinv fb psS B.hfb hpsS)
   have hfrT : { frT with regs := setPhis psT frT.regs } =
       { G with regs := ({ frT with regs := setPhis psT frT.regs } : Frame).regs } :=
     frame_trans (frame_trans rfl R.fr) (frame_symm (frame_trans g1 rfl))

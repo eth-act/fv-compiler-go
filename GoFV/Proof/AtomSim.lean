@@ -203,17 +203,18 @@ theorem entry_rel {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv t
       qinv := hq,
       pre := .inl (hphi f ce H.wf _) }
 
-/-- **The atom simulation**, generalised (issue #35): changed and dropped stores, under
-contracts and from entry memories the invariant's predicate holds of (issue #69). -/
+/-- **The atom simulation**, generalised (issue #35): changed and dropped stores (and dropped
+calls that do not panic, `DropNP`), under contracts and from entry memories the invariant's
+predicate holds of (issue #69). -/
 theorem atomSimXE_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
     (hA : AtomsX f g) (I : SrcInv tabs f)
-    (h1 : AtomArgsRefX I g) (h2 : StepRefsP I g) :
+    (h1 : AtomArgsRefX I g) (h2 : StepRefsP I g) (hNP : DropNP I g) :
     RefinesFrom (fun env args mem =>
       env.Mono ∧ I.E env (entryFrame env (Ctx.make tabs f) args mem).mem0
         (entryFrame env (Ctx.make tabs f) args mem).images) tabs g tabs f := by
   have H : Hyp tabs f g ce ce' I := ⟨check_wf hf, check_wf hg, certOK_of_check (check_domCert hf),
-    certOK_of_check (check_domCert hg), hA, h1, h2⟩
+    certOK_of_check (check_domCert hg), hA, h1, h2, hNP⟩
   intro env args mem ⟨hE, hEI⟩ fuel hd
   refine ⟨fuel, ?_⟩
   have hc := ctx_eq (tabs := tabs) H.ok.ownAux
@@ -251,9 +252,10 @@ invariant whose predicate always holds. -/
 theorem atomSimX_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
     (hA : AtomsX f g) (I : SrcInv tabs f)
-    (h1 : AtomArgsRefX I g) (h2 : StepRefsP I g) (hI : ∀ env m im, I.E env m im := by intros; trivial) :
+    (h1 : AtomArgsRefX I g) (h2 : StepRefsP I g) (hNP : DropNP I g)
+    (hI : ∀ env m im, I.E env m im := by intros; trivial) :
     RefinesUnder Env.Mono tabs g tabs f :=
-  fun env hE args mem => atomSimXE_refines hf hg hA I h1 h2 env args mem ⟨hE, hI _ _ _⟩
+  fun env hE args mem => atomSimXE_refines hf hg hA I h1 h2 hNP env args mem ⟨hE, hI _ _ _⟩
 
 /-- **The atom simulation** under a source-side invariant. -/
 theorem atomSimInv_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
@@ -261,7 +263,7 @@ theorem atomSimInv_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     (hA : RewriteCheck.atomsOK f g = true) (I : SrcInv tabs f)
     (h1 : AtomArgsRefP I g) (h2 : StepRefsP I g) (hI : ∀ env m im, I.E env m im := by intros; trivial) :
     RefinesUnder Env.Mono tabs g tabs f :=
-  atomSimX_refines hf hg (atomsOK_spec hA).toX I h1.toX h2 hI
+  atomSimX_refines hf hg (atomsOK_spec hA).toX I h1.toX h2 ((atomsOK_spec hA).dropNP I) hI
 
 /-- **The atom simulation.** -/
 theorem atomSim_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}

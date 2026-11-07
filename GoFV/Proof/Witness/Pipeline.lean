@@ -159,6 +159,14 @@ theorem plRunEnv_growLen : plRunEnv.GrowLen := fun name c hn hc => by
   · next hn' => rcases hn' with rfl | rfl <;> exact absurd hn (by decide)
   · exact Env.p1_growLen name c hn hc
 
+theorem plRunEnv_ifaceEq (eq : List String × List String) : plRunEnv.IfaceEq eq :=
+  fun name c hc s hs => by
+    simp only [plRunEnv, withWbHelpers] at hc
+    split at hc
+    · next hn' =>
+      rcases hn' with rfl | rfl <;> rcases hs with ⟨h, -⟩ | ⟨h, -⟩ <;> exact absurd h (by decide)
+    · exact Env.p1_ifaceEq eq name c hc s hs
+
 /-! ## Certificates -/
 
 /-- The pipeline returns a verified state without `v8` (compiled evaluation). -/
@@ -204,11 +212,12 @@ theorem plRunEnv_wbPre : WB.WbPre plRunEnv [] {} := by
     split at hc <;> cases hc <;> trivial
 
 theorem plRunEnv_vpre : VPre (GoFV.Opt.NilCheck.dictParams plEnv.tables plF)
-    (GoFV.Opt.Verified.pipelineRo plEnv plF) plRunEnv [] {} :=
+    (GoFV.Opt.Verified.pipelineRo plEnv plF) (GoFV.Opt.RewriteCheck.eqSyms plEnv.tables plF)
+    plRunEnv [] {} :=
   ⟨plRunEnv_mono, plRunEnv_frameSafe, plRunEnv_initAvoids, plRunEnv_allocNonNil,
     by rw [plF_dict]; exact DictArgs.nil [], plRunEnv_wbPre, plRunEnv_tempOblivious, plRunEnv_memOps,
     by rw [plF_ro]; exact RoImage.nil (env := plRunEnv) (plRunEnv_keeps Mem.KeepsRo.refl) {},
-    plRunEnv_keeps Mem.KeepsFrame.refl, plRunEnv_allocZero, plRunEnv_growLen⟩
+    plRunEnv_keeps Mem.KeepsFrame.refl, plRunEnv_allocZero, plRunEnv_growLen, plRunEnv_ifaceEq _⟩
 
 /-! ## The witness -/
 
