@@ -17,7 +17,7 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Gen.Check
 
 variable {env : Env} {lc : LocCtx} {s s' : LocState} {v : Value}
 
-private theorem stepLoc_ok_eval (hne : v.op ≠ .Phi) (h1 : v.op ≠ .LoadReg) (h2 : v.op ≠ .StoreReg)
+theorem stepLoc_ok_eval (hne : v.op ≠ .Phi) (h1 : v.op ≠ .LoadReg) (h2 : v.op ≠ .StoreReg)
     (h3 : v.op ≠ .ARM64MOVDreg) (h4 : v.op ≠ .ARM64MOVDnop)
     (h : stepLoc env lc s v = .ok s') :
     ∃ argv r, v.args.toList.mapM (s.read lc) = .ok argv ∧
@@ -44,7 +44,7 @@ private theorem stepLoc_ok_eval (hne : v.op ≠ .Phi) (h1 : v.op ≠ .LoadReg) (
       · cases h
       · cases h
 
-private theorem stepLoc_noclobber (hl : lc.ctx.f.lowered = true) (ht : (lc.temps[v.id]?).join = none)
+theorem stepLoc_noclobber (hl : lc.ctx.f.lowered = true) (ht : (lc.temps[v.id]?).join = none)
     (hne : v.op ≠ .Phi) (h1 : v.op ≠ .LoadReg) (h2 : v.op ≠ .StoreReg)
     (h3 : v.op ≠ .ARM64MOVDreg) (h4 : v.op ≠ .ARM64MOVDnop)
     (hc : v.op.regInfo.clobbers.isEmpty = true) (hc0 : v.op.regInfo.clobbersArg0 = false)

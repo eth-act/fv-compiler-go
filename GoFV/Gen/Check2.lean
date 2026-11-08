@@ -13,27 +13,27 @@ G1 accepts and
 * `CALLstatic` of a function symbol with an ABI: one `CALL` whose target (`TYPE_MEM`,
   `NAME_EXTERN`) is the callee's symbol; every input parameter in registers, each register
   argument homed in its `abi.RegIndex` register (`abiReg`), the memory last; the call's `results`
-  home lists the result registers of the ABI;
-* `SelectN [i]` of such a call: the memory (no home), or result `i` homed in the call's result
-  register `i`; no code;
-* `MOVDaddr` of a global (`SB` argument, a symbol aux): `MOVD $sym+off(SB), Rd` with the global's
-  symbol;
-* `StoreReg`/`LoadReg` of a 64-bit register to/from an 8-byte spill slot: `MOVD Rs, off(RSP)` /
-  `MOVD off(RSP), Rd` with the slot's operand from the frame layout (`NAME_AUTO`: the locals,
-  `NAME_PARAM`: the spill area of a register argument);
+  home lists the result registers of the ABI; its shape is one register shape per result register
+  then the memory (`callTy`), and every value homed in a result register has that result's class
+  (`resultReg`);
+* `SelectN [i]` of such a call: the memory (the last component, no home), or result `i` homed in
+  the call's result register `i` at a shape of its class; no code;
+* `MOVDaddr` of a global (`SB` argument, a symbol aux) into a 64-bit register:
+  `MOVD $sym+off(SB), Rd` with the global's symbol;
+* `StoreReg`/`LoadReg` of a 64-bit register to/from an 8-byte spill slot (both values of a 64-bit
+  shape): `MOVD Rs, off(RSP)` / `MOVD off(RSP), Rd` with the slot's operand from the frame layout
+  (`NAME_AUTO`: the locals, `NAME_PARAM`: the spill area of a register argument);
 * `Exit` blocks (a call that does not return; `runLoc` is `stuck` past it): no-ops up to the next
   block's start;
 * the entry values may follow spills (`StoreReg`, which change neither a register nor the
   memory) at the head of the entry block.
 
 **checkFrame** (proofs3 §2, the spill-slot part): every slot used as a home has an operand in the
-frame layout, 8 bytes, 8-aligned, `NAME_AUTO` slots inside the locals (`[-stksize, 0)`),
-`NAME_PARAM` slots at non-negative offsets, and distinct slots at distinct operands (so they are
-disjoint).
+frame layout, 8 bytes (in the layout and at its `runLoc` shape), 8-aligned, `NAME_AUTO` slots
+inside the locals (`[-stksize, 0)`), `NAME_PARAM` slots at non-negative offsets, and distinct slots
+at distinct operands (so they are disjoint).
 
-The soundness proof of G2 (calls through the runtime hooks of semantics3 §6 and `MatchEnv.Extends`,
-`framed = true` with the prologue and epilogue validators, `LocMatch.slots` preservation) is the
-next step of proofs3 §4.
+`GoFV/Proof/Gen/G2.lean` proves what an accepted function satisfies (`g2_value`, `g2_term`).
 -/
 
 namespace GoFV.Gen.Check
@@ -107,6 +107,22 @@ def callRegs (abi : CallABI) : Except String (List Nat × List Nat) := do
     if p.regs.isEmpty then throw "stack result"
   return (ins.flatMap (·.regs.toList.map abiReg), outs.flatMap (·.regs.toList.map abiReg))
 
+/-- The component shapes of a tuple shape. -/
+def tupleTys : Ty → List Ty
+  | .tuple ts => ts
+  | _ => []
+
+/-- The shape of a static call whose results are in `n` registers: `n` register shapes (`cls`)
+then the memory. -/
+def callTy (n : Nat) : Ty → Bool
+  | .tuple ts => ts.length == n + 1 && (ts.getLast?.map memTy) == some true &&
+      ts.dropLast.all fun t => (cls t).isSome
+  | _ => false
+
+/-- Result register `r` of shape `t`: every value homed in `r` has the class of `t`. -/
+def resultReg (lc : LocCtx) (t : Ty) (r : Nat) : Bool :=
+  (cls t).isSome && (regCls lc r == none || regCls lc r == cls t)
+
 /-- What `v` emits in G2, or why it is outside the slice. -/
 def vkind2 (lc : LocCtx) (g : G2In) (v : Value) : Except String VKind2 := do
   let ty := lc.ty v.id
@@ -117,15 +133,18 @@ def vkind2 (lc : LocCtx) (g : G2In) (v : Value) : Except String VKind2 := do
     let (ins, outs) ← callRegs cabi
     let some m := v.args.back? | throw s!"v{v.id}: call without memory"
     unless memTy (lc.ty m) && lc.home m == none do throw s!"v{v.id}: call memory"
+    unless (ins ++ outs).all (· < 16) do throw s!"v{v.id}: floating-point argument or result"
     let rargs := v.args.toList.dropLast
     unless rargs.length == ins.length do throw s!"v{v.id}: call arguments"
-    for (a, r) in rargs.zip ins do
-      unless regHome? lc a == some r do throw s!"v{v.id}: argument v{a} not in register {r}"
+    unless (rargs.zip ins).all (fun (a, r) => regHome? lc a == some r) do
+      throw s!"v{v.id}: an argument not in its ABI register"
     match lc.home v.id with
     | some (.results rs) =>
       unless rs.toList == outs.map some do throw s!"v{v.id}: result registers"
     | none => unless outs.isEmpty do throw s!"v{v.id}: result registers"
     | _ => throw s!"v{v.id}: call home"
+    unless callTy outs.length ty && ((tupleTys ty).zip outs).all (fun (t, r) => resultReg lc t r) do
+      throw s!"v{v.id}: call result shapes"
     let target (a : Addr) : Bool :=
       a.type == .MEM && a.name == .EXTERN && a.reg == 0 && a.index == 0 && a.offset == 0 &&
         match a.sym with
@@ -136,13 +155,19 @@ def vkind2 (lc : LocCtx) (g : G2In) (v : Value) : Except String VKind2 := do
     let some c := v.args[0]? | throw s!"v{v.id}: select shape"
     let some u := lc.ctx.f.value? c | throw s!"v{v.id}: select of v{c}"
     unless v.args.size == 1 && u.op == .ARM64CALLstatic do throw s!"v{v.id}: select of {u.op.name}"
+    let ts := tupleTys (lc.ty c)
+    unless callTy (ts.length - 1) (lc.ty c) && 0 ≤ v.auxInt.toInt do
+      throw s!"v{v.id}: select of a call shape"
+    let i := v.auxInt.toInt.toNat
     if memTy ty then
-      unless lc.home v.id == none do throw s!"v{v.id}: memory select home"
+      unless lc.home v.id == none && i + 1 == ts.length do throw s!"v{v.id}: memory select"
       return .none
     let some r := regHome? lc v.id | throw s!"v{v.id}: select home"
+    unless r < 16 && i + 1 < ts.length && (ts[i]?.bind cls) == cls ty do
+      throw s!"v{v.id}: select shape"
     match lc.home c with
     | some (.results rs) =>
-      unless rs[v.auxInt.toInt.toNat]? == some (some r) do throw s!"v{v.id}: select register"
+      unless rs[i]? == some (some r) do throw s!"v{v.id}: select register"
     | _ => throw s!"v{v.id}: select home"
     return .none
   | .ARM64MOVDaddr =>
@@ -151,7 +176,8 @@ def vkind2 (lc : LocCtx) (g : G2In) (v : Value) : Except String VKind2 := do
       throw s!"v{v.id}: address of a frame variable"
     let some x := v.aux | throw s!"v{v.id}: address without symbol"
     let some (name, abi) := symOf? lc.ctx.tabs x | throw s!"v{v.id}: address of a non-global"
-    let (_, rd) ← resObj lc v
+    let (c, rd) ← resObj lc v
+    unless c == 64 do throw s!"v{v.id}: address shape"
     let src (a : Addr) : Bool :=
       a.type == .ADDR && a.name == .EXTERN && a.reg == 0 && a.index == 0 &&
         a.offset == v.auxInt.toInt &&
@@ -161,19 +187,19 @@ def vkind2 (lc : LocCtx) (g : G2In) (v : Value) : Except String VKind2 := do
     return .prog ⟨plain .MOVD src (· == regA rd), "MOVD $sym"⟩
   | .StoreReg =>
     let some k := slotHome? lc v.id | throw s!"v{v.id}: store home"
-    let some (cls, off) := g.slotOp k | throw s!"v{v.id}: slot without frame offset"
-    unless v.args.size == 1 do throw s!"v{v.id}: store shape"
+    let some (cls', off) := g.slotOp k | throw s!"v{v.id}: slot without frame offset"
+    unless v.args.size == 1 && cls ty == some 64 do throw s!"v{v.id}: store shape"
     let (c, rs) ← argObj lc v 0
     unless c == 64 do throw s!"v{v.id}: narrow spill"
-    return .prog ⟨plain .MOVD (· == regA rs) (slotA · cls off), "MOVD spill"⟩
+    return .prog ⟨plain .MOVD (· == regA rs) (slotA · cls' off), "MOVD spill"⟩
   | .LoadReg =>
     let some a := v.args[0]? | throw s!"v{v.id}: load shape"
     let some k := slotHome? lc a | throw s!"v{v.id}: reload of v{a} without slot"
-    let some (cls, off) := g.slotOp k | throw s!"v{v.id}: slot without frame offset"
-    unless v.args.size == 1 do throw s!"v{v.id}: load shape"
+    let some (cls', off) := g.slotOp k | throw s!"v{v.id}: slot without frame offset"
+    unless v.args.size == 1 && cls (lc.ty a) == some 64 do throw s!"v{v.id}: load shape"
     let (c, rd) ← resObj lc v
     unless c == 64 do throw s!"v{v.id}: narrow reload"
-    return .prog ⟨plain .MOVD (slotA · cls off) (· == regA rd), "MOVD reload"⟩
+    return .prog ⟨plain .MOVD (slotA · cls' off) (· == regA rd), "MOVD reload"⟩
   | _ =>
     match ← vkind lc v with
     | .entry => return .entry
@@ -190,21 +216,27 @@ def homeOK2 (lc : LocCtx) (i : Nat) : Bool :=
       (lc.ctx.f.value? i).map (·.op) == some .ARM64CALLstatic
   | _ => homeOK lc i
 
-/-- checkFrame for the spill slots used as homes (module doc). -/
+/-- The spill slots used as homes. -/
+def homeSlots (lc : LocCtx) : List SlotKey := (List.range lc.homes.size).filterMap (slotHome? lc)
+
+/-- A spill slot G2 handles: its operand in Go's frame layout, 8 bytes (in the frame layout and
+at its `runLoc` shape), 8-aligned, `NAME_AUTO` inside the locals, `NAME_PARAM` at a non-negative
+offset. -/
+def slotOK (lc : LocCtx) (g : G2In) (k : SlotKey) : Bool :=
+  typeSize? lc.ctx.tabs k.type == some 8 && (lc.slotTy k).size == 8 &&
+    match g.slotOp k with
+    | some (.AUTO, off) => off % 8 == 0 && -g.stksize ≤ off && off + 8 ≤ 0
+    | some (.PARAM, off) => off % 8 == 0 && 0 ≤ off
+    | _ => false
+
+/-- checkFrame for the spill slots used as homes (module doc): each `slotOK`, and distinct slots
+at distinct operands. -/
 def checkFrame (lc : LocCtx) (g : G2In) : Except String Unit := do
-  let ks := (List.range lc.homes.size).filterMap (slotHome? lc)
-  let mut seen : List (SlotKey × AddrName × Int) := []
-  for k in ks do
-    let some (cls, off) := g.slotOp k | throw s!"slot n{k.name}+{k.off}: no frame offset"
-    unless typeSize? lc.ctx.tabs k.type == some 8 do throw s!"slot n{k.name}+{k.off}: size"
-    unless off % 8 == 0 do throw s!"slot n{k.name}+{k.off}: alignment"
-    match cls with
-    | .AUTO => unless -g.stksize ≤ off && off + 8 ≤ 0 do throw s!"slot n{k.name}+{k.off}: outside the locals"
-    | .PARAM => unless 0 ≤ off do throw s!"slot n{k.name}+{k.off}: parameter offset"
-    | _ => throw s!"slot n{k.name}+{k.off}: name class"
-    for (k', cls', off') in seen do
-      if k' != k && cls' == cls && off' == off then throw s!"slot n{k.name}+{k.off}: overlaps"
-    seen := (k, cls, off) :: seen
+  let ks := homeSlots lc
+  if let some k := ks.find? (!slotOK lc g ·) then
+    throw s!"slot n{k.name}+{k.off}: frame operand, size or alignment"
+  unless ks.all fun k => ks.all fun k' => k' == k || g.slotOp k' != g.slotOp k do
+    throw "two slots at one frame operand"
 
 /-- The context of the check. -/
 structure Cx2 where

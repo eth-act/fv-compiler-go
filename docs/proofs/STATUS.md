@@ -157,6 +157,23 @@ registers hold values of their width class, distinct memory block keys) and the 
 form, a load reads 8 valid bytes). Witness `genG1_witness_50`/`_30` (`clamp`, both theorems).
 Coverage on quick-v9 (`lake exe gen-check`): 268 of 9,297 functions (2.88%).
 
+## Phase 3: genssa, slice G2 (I7, #553)
+
+`GoFV.Proof.Gen.g2_value`, `GoFV.Proof.Gen.g2_term` (`GoFV/Proof/Gen/G2.lean`): when slice G2
+(`checkG2`: G1 plus static calls and their results, addresses of globals, 64-bit spills and
+reloads at their frame operands, `Exit` blocks) accepts a function, every non-entry value and
+every terminator that goes to a successor is matched by `runProg` steps of genssa's P0 Progs
+(P0's `CALL sym(SB)` goes to the symbol, `runProg_callMem_witness`) to a state related before the
+next value or the successor's first value. Values may grow the injection (`E.Extends E'`, at a
+call) and keep `G2Env`. Premises (`docs/plans/proofs3.md` §4): `G2Env` (G1's, plus a frame when the
+function calls, globals at their symbols under `ι`, the callees' symbols outside the Progs, each
+home slot at its frame operand, the frame layout `FrameOK`), `G2Inv` (G1's register classes and
+block keys, the live blocks away from the saved `LR`/`FP` and the slots, every live slot a 64-bit
+value of a home slot), `G1Pre`/`G1TermPre`, and at a static call the trusted callee contract
+`CallOK` (§ Assumptions). Witnesses `genG2_value_witness` (`testInts`: a spill, a call, its
+memory, a reload) and `genG2_term_witness_50`/`_30` (`clamp`: a G1 value and a branch).
+Coverage on quick-v10 (`lake exe gen-check`): 1,171 of 9,297 functions (12.59%), 10,665 values.
+
 ## Per-pass fragment coverage (verified pipeline, full-v6)
 
 Runs per pass of `gofv-ssa-opt --check --verified` (96,553 functions, each pass run once per function). *Proven*: the theorem's variant ran and changed the function; *identity*: same function (or tables the function cannot tell apart); *skipped*: an optional pass outside its fragment (the input is kept); *unverified*: a required pass outside its fragment, or a checked rewrite pass whose result differs from stock (`checked variant incomplete`: an unproven rule fired or the validator rejected; the stock result is kept). Every Phase 1 pass has a theorem; `insert resched checks`, `cpufeatures` and `rewrite tern` never run for linux/arm64.
@@ -265,6 +282,7 @@ witnesses):
 | hook `panicBoundsHook` (`runtime.panicBounds`) | panics with `.bounds kind x y` decoded from the caller's `PCDATA_PanicBounds` at `X30 − 1` (`pcvalue`, `abi.BoundsDecode`), `x`/`y` from `R0`–`R15` or constants | `runtime/panic.go:211-236` `panicBounds64`, `internal/abi` `BoundsDecode` | a runtime whose decoding differs | trusted |
 | `runMach` nil page (`GoFV/SSA/Sem/RunMach.lean`) | a load or store in `[0, 4096)` is `panicked nilDeref`; no other address faults | the kernel leaves the nil page unmapped; SIGSEGV there becomes `sigpanic` → `panicmem` | an access fault outside the nil page that the code relies on | trusted |
 | `GoFV.Arm64` single core | exclusive stores always succeed, barriers advance the PC | one goroutine, one core, as Phase 2 §8 | a multi-threaded observation | trusted |
+| `CallOK`/`CallSpec` (Phase 3 G2, `GoFV/Proof/Gen/G2.lean`, premise of `g2_value` at each static call) | from the state at the callee's symbol (the caller's but for `X30`, the return address), with the call's arguments in their ABI registers and the memory injected, the hook `H.call` returns to `X30` with `SP`, `R28`, `R29` and the frame (saved `LR`/`FP`, spill slots: `StkAt`) kept, `runLoc`'s memory after the call injected by an extension of `ι` that keeps the live blocks away from the frame, and `runLoc`'s results in the ABI result registers | the callee's Phase 1 contract lifted through ABIInternal (semantics3 §6, the `liftContract` row above); Go's calling convention keeps `R28`/`R29`/`SP` and the caller's frame | a callee that writes the caller's frame or spill slots, returns elsewhere, or whose results differ from `runLoc`'s | trusted; the witness `genG2_value_witness` discharges it for a callee that returns at once |
 | not modelled by the hooks | the defer machinery (`deferproc*`, `deferreturn`, `gorecover`), runtime entry points called through function values, asynchronous preemption, the collector: a run reaching them is `stuck` | sound: a stuck run carries no obligation | — (a restriction) | — |
 
 Not assumed, by decision: disjointness of parameter slots from the other frame slots (the

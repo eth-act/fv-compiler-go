@@ -31,11 +31,11 @@ private theorem extract_extract (V : BitVec n) (j k : Nat) (h : j < k) :
   simp only [this, decide_true, Bool.true_and]
   congr 1; omega
 
-private theorem addr_off (a o : BitVec 64) (j : Nat) :
+theorem addr_off (a o : BitVec 64) (j : Nat) :
     a + BitVec.ofNat 64 (o.toNat + j) = a + o + BitVec.ofNat 64 j := by
   rw [BitVec.add_assoc, ← BitVec.ofNat_add_ofNat, BitVec.ofNat_toNat, BitVec.setWidth_eq]
 
-private theorem addr_succ (A : BitVec 64) (j : Nat) :
+theorem addr_succ (A : BitVec 64) (j : Nat) :
     A + 1 + BitVec.ofNat 64 j = A + BitVec.ofNat 64 (j + 1) := by
   rw [BitVec.add_assoc]; congr 1
   apply BitVec.eq_of_toNat_eq; simp [BitVec.toNat_add]; omega
@@ -45,7 +45,7 @@ private theorem readMem_succ_toNat (mm : Memory) (A : BitVec 64) (k : Nat) :
   simp only [readMem, BitVec.toNat_cast, BitVec.toNat_append]
   rw [← Nat.shiftLeft_add_eq_or_of_lt (mm A).isLt, Nat.shiftLeft_eq]
 
-private theorem readMem_byte (mm : Memory) : ∀ (k : Nat) (A : BitVec 64) (j : Nat), j < k →
+theorem readMem_byte (mm : Memory) : ∀ (k : Nat) (A : BitVec 64) (j : Nat), j < k →
     (readMem mm A k).toNat / 256 ^ j % 256 = (mm (A + BitVec.ofNat 64 j)).toNat
   | 0, _, _, h => absurd h (Nat.not_lt_zero _)
   | k + 1, A, 0, _ => by
@@ -58,7 +58,7 @@ private theorem readMem_byte (mm : Memory) : ∀ (k : Nat) (A : BitVec 64) (j : 
       show ((readMem mm (A + 1) k).toNat * 256 + (mm A).toNat) / 256 = (readMem mm (A + 1) k).toNat
         by omega, readMem_byte mm k (A + 1) j (by omega), addr_succ]
 
-private theorem readMem_of_bytes (mm : Memory) : ∀ (k : Nat) (A : BitVec 64) (n : Nat), n < 256 ^ k →
+theorem readMem_of_bytes (mm : Memory) : ∀ (k : Nat) (A : BitVec 64) (n : Nat), n < 256 ^ k →
     (∀ j, j < k → (mm (A + BitVec.ofNat 64 j)).toNat = n / 256 ^ j % 256) →
     (readMem mm A k).toNat = n
   | 0, _, n, hn, _ => by simp only [Nat.pow_zero] at hn; rw [show n = 0 by omega]; rfl
@@ -71,7 +71,7 @@ private theorem readMem_of_bytes (mm : Memory) : ∀ (k : Nat) (A : BitVec 64) (
     · intro j hj
       rw [addr_succ, h (j + 1) (by omega), Nat.pow_succ', Nat.div_div_eq_div_mul]
 
-private theorem writeMem_other : ∀ (k : Nat) (mm : Memory) (A : BitVec 64) (V : BitVec (8 * k))
+theorem writeMem_other : ∀ (k : Nat) (mm : Memory) (A : BitVec 64) (V : BitVec (8 * k))
     (y : BitVec 64), (∀ j, j < k → y ≠ A + BitVec.ofNat 64 j) → writeMem mm A k V y = mm y
   | 0, _, _, _, _, _ => rfl
   | k + 1, mm, A, V, y, h => by
@@ -81,7 +81,7 @@ private theorem writeMem_other : ∀ (k : Nat) (mm : Memory) (A : BitVec 64) (V 
     simp only [BitVec.add_zero] at this
     simp only [this, ↓reduceIte]
 
-private theorem writeMem_at : ∀ (k : Nat) (mm : Memory) (A : BitVec 64) (V : BitVec (8 * k))
+theorem writeMem_at : ∀ (k : Nat) (mm : Memory) (A : BitVec 64) (V : BitVec (8 * k))
     (j : Nat), j < k → k ≤ 8 → writeMem mm A k V (A + BitVec.ofNat 64 j) = V.extractLsb' (8 * j) 8
   | 0, _, _, _, _, h, _ => absurd h (Nat.not_lt_zero _)
   | k + 1, mm, A, V, 0, _, hk => by
@@ -422,13 +422,18 @@ private theorem nodup_unique : ∀ {l : List (Blk × Alloc)} {k : Blk} {v w : Al
     · exact nodup_unique hn.2 hv' hw'
 
 /-- An 8-byte store of a 64-bit or boolean register content related to `Xs` keeps `MemInj` with
-the machine's `writeMem` of `Xs`, and the keys distinct. -/
+the machine's `writeMem` of `Xs`, and the keys distinct; the blocks keep their sizes, and the
+machine bytes change only in the 8 bytes of the access, inside the window of its block. -/
 theorem memInj_store (hA : AddrAgree ι) {m m' : Mem} {mm : Memory} (h : MemInj ι m mm)
     (hk : KeysNodup m) {p : Ptr} {a : BitVec 64} {x : Val} {Xs : BitVec 64}
     (ha : ι p.blk = some a) (hx : ValRel ι x Xs) (hf : Fits 64 x ∨ Fits 1 x)
     (hw : m.write p (Arm64.storeBytes 8 x) = some m') :
     MemInj ι m' (writeMem mm (a + p.off) 8 (BitVec.ofNat (8 * 8) (Xs.toNat % 2 ^ (8 * 8)))) ∧
-      KeysNodup m' := by
+      KeysNodup m' ∧
+      (∀ b al2, (b, al2) ∈ m'.blocks → ∃ al1, (b, al1) ∈ m.blocks ∧ al1.data.size = al2.data.size) ∧
+      ∃ al, (p.blk, al) ∈ m.blocks ∧ p.off.toNat + 8 ≤ al.data.size ∧
+        ∀ y : BitVec 64, (∀ j, j < 8 → y.toNat ≠ a.toNat + p.off.toNat + j) →
+          writeMem mm (a + p.off) 8 (BitVec.ofNat (8 * 8) (Xs.toNat % 2 ^ (8 * 8))) y = mm y := by
   obtain ⟨hsz, hbyte⟩ := storeBytes_rel hA hx hf
   generalize Arm64.storeBytes 8 x = bsW at hsz hbyte hw
   unfold Mem.write at hw
@@ -504,7 +509,7 @@ theorem memInj_store (hA : AddrAgree ι) {m m' : Mem} {mm : Memory} (h : MemInj 
       intro j hj he
       apply hy j hj
       rw [he]; simp [BitVec.toNat_add]; omega
-    refine ⟨⟨h.nil, ?_, ?_, ⟨fun _ _ => False, ?_⟩⟩, hk'⟩
+    refine ⟨⟨h.nil, ?_, ?_, ⟨fun _ _ => False, ?_⟩⟩, hk', hback, al, hmem, hoff, hout⟩
     · intro b al2 hb
       obtain ⟨al1, hb1, hs⟩ := hback b al2 hb
       rw [← hs]; exact h.mapped b al1 hb1
