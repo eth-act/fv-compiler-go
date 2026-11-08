@@ -127,6 +127,10 @@ GoFV.Proof.Witness.GenG20.g20_facts._native.native_decide.ax_1_1 df4ec62b7e59b89
 # `runLoc` runs its `MOVWUload` of `q.nextIndex` and `MOVDreg` to the 64-bit `0xffff_fffe`, and the
 # upper-bit table before the `MOVDreg` names `R3`; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.GenG21.g21_facts._native.native_decide.ax_1_1 80b354baa714dc55db1be9205acca9da3e04ed520c7a61e11fd24e5ec842a83c
+# genG22_value_witness (GoFV/Proof/Witness/GenG22.lean, #553): `checkG22` accepts `runtime.Version`
+# and `checkG21` does not (parsed, `Env.load`, `genssa`), and `runLoc` runs its `LDP` of
+# `runtime.buildVersion` to `R1 = 7`; compiled evaluation, as plF_pipeline.
+GoFV.Proof.Witness.GenG22.g22_facts._native.native_decide.ax_1_1 45abad70391f673ed2b2b093cf7536a10256ff5e94b2660fe8ad07977865aca8
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:

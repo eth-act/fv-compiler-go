@@ -482,6 +482,17 @@ zero extension, then `MOVD R3, R4`, after which `runLoc`'s `R4` holds the 64-bit
 `0xffff_fffe` and the machine's `X4` is `0x0000_0000_ffff_fffe`). Coverage on quick-v10
 (`lake exe gen-check`): 4,342 of 9,297 functions (46.70%), 89,745 values.
 
+## Phase 3: genssa, slice G22 (I7, #553)
+
+`GoFV.Proof.Gen.g22_value`, `GoFV.Proof.Gen.g22_term`, `GoFV.Proof.Gen.g22_nilPanic`,
+`GoFV.Proof.Gen.g22_boundsPanic` (`GoFV/Proof/Gen/G22.lean`): when slice G22 (`checkG22`: G21 with
+`LDP sym+off(SB), (Ra, Rb)` and `STP (Rx, Ry), sym+off(SB)`, pair loads and stores of a global)
+accepts a function, they are `g21_value`'s, `g21_term`'s, `g21_nilPanic`'s and
+`g21_boundsPanic`'s statements under the same premises. No new trusted premise. Witness
+`genG22_value_witness` (`runtime.Version`, which G21 rejects: `LDP runtime.buildVersion(SB), (R0,
+R1)` with `buildVersion = (nil, 7)`, after which `runLoc`'s `R1` and the machine's `X1` hold 7).
+Coverage on quick-v10 (`lake exe gen-check`): 4,472 of 9,297 functions (48.10%), 98,947 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g12_obj_value`, `g12_obj_term` (`GoFV/Proof/Obj/G12.lean`): `g12_value`/`g12_term`

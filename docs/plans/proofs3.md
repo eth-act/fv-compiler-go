@@ -600,6 +600,18 @@ that `UOK` says is the extension `movdLoc` writes (`lo_movd`); `vk21_step` and `
 G20's. Of the 27 functions `MOVDreg` alone kept out of G20, the 14 whose every `MOVDreg` follows
 its load directly are in G21 (4,342 functions); the other 13 need §8's register-frame lemmas.
 
+**Slice G22: pair loads and stores of globals** (`GoFV/Gen/Check22.lean`, `checkG22 lc ps bstart
+g`, returning G4's tables; proven sound, `g22_value`, `g22_term`, `g22_nilPanic`,
+`g22_boundsPanic`): G21 with `LDP` and `STP` whose aux names a global and whose address argument
+is `SB` (`globPair`, `globPairKind`, `VK22`), with G4's operand conditions. Genssa emits `LDP
+sym+off(SB), (Ra, Rb)` and `STP (Rx, Ry), sym+off(SB)` (`ssagen.AddAux`); every `pair load shape`
+rejection after G21 was one (748 `LDP`s of globals in 347 functions, 124 with no other blocker).
+The proof (`G22.lean`): `runLoc`'s `pairAddr` names the global's block at the offset and 8 bytes
+above (`pairAddr_glob`), the machine accesses the linked symbol address plus the offset and 8
+bytes above (`progStep_globLdp`, `progStep_globStp`), where `G2Env.glob` injects the block; the
+rest is G4's pair load and store at that address (`g22_ldp`, `g22_stp`). No new trusted premise.
+G22 accepts 4,472 functions.
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -611,7 +623,9 @@ reason in parentheses):
    a parameter of the semantics); slots of other sizes (`slot … frame operand, size or alignment`,
    717).
 3. **Other values**: the acquire loads `LDAR`/`LDARW` (383, 277); `SP` after the entry values
-   (71); `MOVDnop` 750 (91) and `MOVDreg` (27 sole) are done in G20 and G21 but for those that do
+   (93 sole after G22); the flags to a register `Equal`/`NotEqual`/`Less*`/`Greater*` (`CSET`;
+   332 (95) for `Equal`, 196 functions with only these) and `CSEL`/`CSEL0` (324 (41), 285 (55));
+   `MOVDnop` 750 (91) and `MOVDreg` (27 sole) are done in G20 and G21 but for those that do
    not follow their load directly (220 `MOVDnop`s; 3 functions with no other blocker, and 13
    with only `MOVDreg`), which need §8's register-frame lemmas. Bounds panics
    (`LoweredPanicBoundsRR` 616 (68), `RC` 332 (46), `CR` 76 (33), `CC` 170 (22)) are done in G19
@@ -645,6 +659,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G19 | 4,221 (45.40%) | 85,558 |
 | G20 | 4,328 (46.55%) | 89,297 |
 | G21 | 4,342 (46.70%) | 89,745 |
+| G22 | 4,472 (48.10%) | 98,947 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -783,6 +798,10 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `movRegKind_spec`).
 - `G21.lean`: `g21_mov`, `vk21_step`, `g21_value`, `vk21_nil`, `g21_nilPanic`, `g21_boundsPanic`,
   `g21_term`.
+- `Spec22.lean`: what `checkG22` accepted (`checkG22_spec`, `vkind22_spec` with `VK22`,
+  `globPair_spec`, `globPairKind_spec`).
+- `G22.lean`: `progStep_globLdp`, `progStep_globStp`, `pairAddr_glob`, `g22_ldp`, `g22_stp`,
+  `vk22_step`, `g22_value`, `vk22_nil`, `g22_nilPanic`, `g22_boundsPanic`, `g22_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -837,8 +856,11 @@ $PCDATA_PanicBounds, $350` and `CALL runtime.panicBounds(SB)` under a hook that 
 `-2`, matched by the machine), `GenG21.lean` (`(*queueOnePass).next` of std/regexp, which G20
 rejects: `g21_value` on `MOVWU 52(R0), R3` with `q.nextIndex = 0xffff_fffe`, after which `UOK`
 makes `X3` its zero extension, and on `MOVDreg`, `MOVD R3, R4`, after which `runLoc`'s `R4` holds
-the 64-bit integer `0xffff_fffe` and the machine's `X4` is `0x0000_0000_ffff_fffe`). Each decides
-its inputs by compiled evaluation (`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
+the 64-bit integer `0xffff_fffe` and the machine's `X4` is `0x0000_0000_ffff_fffe`),
+`GenG22.lean` (`runtime.Version`, which G21 rejects: `g22_value` on `LDP
+runtime.buildVersion(SB), (R0, R1)` with `buildVersion = (nil, 7)`, after which `runLoc`'s `R1`
+and the machine's `X1` hold 7). Each decides its inputs by compiled evaluation (`native_decide`,
+pinned in `scripts/axioms-allowlist.txt`).
 
 ## 6. Future work: recursion through function values
 
@@ -1077,6 +1099,11 @@ on quick-v10 after G21, that would add only 3 functions that have no other block
 `LDP`+`Select`s, a `MOVDload`, a `Copy`) and 13 that have only `MOVDreg`: the other `MOVDnop`s sit
 in functions with further blockers.
 
+**Deferred** (after G22, #553): carrying the table across values. It is worth about 16 functions
+(the 3 and 13 above) and needs a register-frame conclusion in every slice's value lemma, so the
+slices that remove other blockers (§4's list) come first; this plan is kept for when they have
+freed more of the 220 `MOVDnop`s.
+
 - **The obstacle.** `MOVDnop x` emits no code. `runLoc` gives it the full 64-bit register:
   `movdLoc` takes the zero or sign extension of `x`'s low bits, as `LocCtx.signOf` decides from
   `x`'s producer. `LocMatch` only relates the low `w` bits of a narrow integer.
@@ -1118,8 +1145,9 @@ reason in parentheses):
 - `ADDshiftLL`: 678 (57); `lo_add` with `shifted`; done in G16 (§4);
 - bounds panics `LoweredPanicBounds*`: 616 (40+); a `CALL runtime.panicBounds*` hook that
   panics, as `g7_nilPanic`; done in G19 (§4), but for #541's constant indices outside `0..31`;
-- `TSTconst`, `Equal`/`NotEqual`, `CSEL`: 52, 49/32, 38+25 sole; flags producers and readers
-  as G1's `CMP`/`B<cond>`.
+- `TSTconst`, `Equal`/`NotEqual`, `CSEL`: 110 (53), 332/294 (95/44), 324+285 (41+55) after G22;
+  flags producers and readers as G1's `CMP`/`B<cond>`;
+- `LDP`/`STP` of globals: 347 (124); G4's pair accesses at G3's global address; done in G22 (§4).
 
 ## 9. Whole functions and the end-to-end statement
 
