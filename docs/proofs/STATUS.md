@@ -189,6 +189,20 @@ or `G1TermPre`, and at a static call `CallOK`. Witnesses `genG3_witness_clear`/`
 (`pallocSum.start`, which G2 rejects: the bit test `TBNZ [63]` both ways, then `ANDconst`).
 Coverage on quick-v10 (`lake exe gen-check`): 1,611 of 9,297 functions (17.32%), 17,270 values.
 
+## Phase 3: genssa, slice G4 (I7, #553)
+
+`GoFV.Proof.Gen.g4_value`, `GoFV.Proof.Gen.g4_term` (`GoFV/Proof/Gen/G4.lean`): when slice G4
+(`checkG4`: G3 with the pair load `LDP` into a register pair, the pair store `STP` of two 64-bit
+registers, both through a 64-bit register, and `Select0`/`Select1` of an `LDP` in its component's
+register) accepts a function, every non-entry value and every terminator that goes to a successor
+is matched by `runProg` steps of genssa's P0 Progs to a state related before the next value or the
+successor's first value, with the registers at the classes the table gives there. Premises
+(`docs/plans/proofs3.md` §4): G3's, with `G4Pre` (`G3Pre`, and a pair load reads valid bytes at
+both of its addresses) for values. Witnesses `genG4_value_witness` (`(*errorString).Error`, which
+G3 rejects: `LDP (R0), (R0, R1)` and its two selects) and `genG4_term_witness` (`pallocSum.start`:
+`TBNZ [63]`). Coverage on quick-v10 (`lake exe gen-check`): 1,832 of 9,297 functions (19.70%),
+21,243 values.
+
 ## Per-pass fragment coverage (verified pipeline, full-v6)
 
 Runs per pass of `gofv-ssa-opt --check --verified` (96,553 functions, each pass run once per function). *Proven*: the theorem's variant ran and changed the function; *identity*: same function (or tables the function cannot tell apart); *skipped*: an optional pass outside its fragment (the input is kept); *unverified*: a required pass outside its fragment, or a checked rewrite pass whose result differs from stock (`checked variant incomplete`: an unproven rule fired or the validator rejected; the stock result is kept). Every Phase 1 pass has a theorem; `insert resched checks`, `cpufeatures` and `rewrite tern` never run for linux/arm64.

@@ -1,11 +1,12 @@
 # Plan: the Phase 3 proofs (I7, #553)
 
-Status: slices G1, G2 and G3 of the genssa validator are implemented (`GoFV/Gen/Check.lean`,
-`GoFV/Gen/Check2.lean`, `GoFV/Gen/Check3.lean`, probe `gen-check`) and proven sound
-(`GoFV/Proof/Gen/G1.lean`: `g1_value`, `g1_term`; `GoFV/Proof/Gen/G2.lean`: `g2_value`, `g2_term`;
-`GoFV/Proof/Gen/G3.lean`: `g3_value`, `g3_term`; §3–§5), with witnesses on corpus functions
-(`GoFV/Proof/Witness/GenG1.lean`, `GenG2.lean`, `GenG3.lean`). G2 and G3 rest on the trusted
-callee contract `CallOK` (§4, `docs/proofs/STATUS.md` Assumptions). Context:
+Status: slices G1–G4 of the genssa validator are implemented (`GoFV/Gen/Check.lean`,
+`GoFV/Gen/Check2.lean`, `GoFV/Gen/Check3.lean`, `GoFV/Gen/Check4.lean`, probe `gen-check`) and
+proven sound (`GoFV/Proof/Gen/G1.lean`: `g1_value`, `g1_term`; `GoFV/Proof/Gen/G2.lean`: `g2_value`,
+`g2_term`; `GoFV/Proof/Gen/G3.lean`: `g3_value`, `g3_term`; `GoFV/Proof/Gen/G4.lean`: `g4_value`,
+`g4_term`; §3–§5), with witnesses on corpus functions (`GoFV/Proof/Witness/GenG1.lean`,
+`GenG2.lean`, `GenG3.lean`, `GenG4.lean`). G2–G4 rest on the trusted callee contract `CallOK` (§4,
+`docs/proofs/STATUS.md` Assumptions). Context:
 `docs/plans/semantics3.md` (§4 `LocMatch`, §6 hooks, §7 layers), `docs/PASSES3.md` (the steps
 A1–F2), `docs/plans/regalloc-check.md` (the Phase 2 pattern this plan follows: an untrusted port
 with 100% parity, a checker, and a soundness proof of the checker only).
@@ -129,7 +130,7 @@ related by `LocMatch` (`genG1_witness_50`, `genG1_witness_30`).
 
 **Coverage** (`lake exe gen-check`, quick-v10, 9,297 functions): see §5.
 
-## 4. Slices G2 and G3, and the next slices
+## 4. Slices G2–G4, and the next slices
 
 **Slice G2** (`GoFV/Gen/Check2.lean`, `checkG2 lc ps bstart g`; proven sound, `g2_value`,
 `g2_term`): G1 plus the most frequent blockers of §5 — `CALLstatic` of a symbol with an ABI
@@ -204,20 +205,42 @@ stores booleans). The narrow ALU ops, compares and tests relate on the low bits 
 `g3_store`, `g3_ext`, `g3_aluK`, `g3_ubfx`, `g3_cmpw`, `g3_cmpwK`, `g3_sb`) and the register and
 bit tests (`term_test`).
 
-Later slices, by how many functions each blocker occurs in outside G2 (quick-v10, §5):
+**Slice G4: register pairs** (`GoFV/Gen/Check4.lean`, `checkG4 lc ps bstart g`, returning G3's
+tables; proven sound, `g4_value`, `g4_term`):
 
-1. **G3: widths** (above; was the largest blocker: registers holding two width classes in 4,453
-   functions).
-2. **G4: register pairs and tuples**: `Select0`/`Select1` and `pair` homes (3,058), `LDP` (1,922),
-   `STP` (1,765), call results outside `R0`–`R15` or of float shapes (call result shapes 1,121),
-   interface and closure calls (results homes 1,215, `CALLinter` 764, `CALLclosure` 359, with
-   `LoweredGetClosurePtr` 660).
-3. **Nil checks** (`LoweredNilCheck` = `MOVB (Rp), R27`, 1,200; the sole blocker in 120):
-   `FaultSim` on the nil page.
-4. **Addresses of frame blocks** (`MOVDaddr` of an auto, 1,261; `VarDef` 1,020, `LoweredZero`
-   540): replace `AddrAgree`'s frame part by option 2 of semantics3 §4.3 (addresses as a parameter
-   of the semantics).
-5. **Write barriers** (`LoweredWB` 951, `WBend` 967): the `wbHook` of semantics3 §6.
+- **Values** beyond G3's (`vkind4`, `VK4`): the pair load `LDP [off] a mem` homed in a register
+  pair `(Ra, Rb)` of two distinct registers G1 may write, each component of an integer class of at
+  least 8 bits, through a 64-bit register without symbol (emitted `LDP off(Rn), (Ra, Rb)`,
+  `pairA`: `TYPE_REGREG`); the pair store `STP [off] a x y mem` of two 64-bit registers (`STP (Rx,
+  Ry), off(Rn)`); `Select0`/`Select1` of an `LDP` of two classed components, homed in the register
+  of its component (no code).
+- **Classes**: `kStep` treats a pair home as a call's `results` (each register takes its
+  component's class), `kReads` adds the register a `Select0`/`Select1` reads. Pair homes are
+  accepted (`homeOK4`).
+
+How the proof discharges G4's obligations: the invariant is G3's (`G3Inv`); the per-value premise
+`G4Pre` adds to `G3Pre` that a pair load read valid bytes at both of its addresses (`pairAddr`).
+G3's values go through `vk3_step` (the body of `g3_value` after the validator's facts, shared by
+both theorems). `Step4.lean` gives `stepLoc` of `LDP` (`ldPair 8`: two `loadN` at `pairAddr`),
+`STP` (`stPair 8`: two writes in order, both succeeded) and the selects; `Progs4.lean` gives
+`progStep` of `LDP` (both loads read before either register is written, as on the machine, so a
+base register that is also `Ra` is sound) and `STP` (the stores applied in order). `pairAddr`'s
+second address is the offset plus 8 (`ofInt_add8`, both modulo `2^64`). `g4_ldp` writes the two
+registers by `finish_reg` twice (`write_pair`, `kpair_kStep`), `g4_stp` stores twice
+(`memInj_storeN`, the frame kept by `SepFrom` across both), `g4_sel` reads the pair's register
+(`read_pair`, `ksel4_of_reads`) and changes nothing on the machine.
+
+Later slices, by how many functions each blocker occurs in outside G3 (quick-v10, §5):
+
+1. **Addresses of frame blocks**, with the pair and single accesses of frame variables (`MOVDaddr`
+   of an auto 1,261, accesses of a frame variable 1,145, most of the remaining `pair store shape`
+   918 and `pair load shape` 561; `VarDef` 1,020, `LoweredZero` 540): replace `AddrAgree`'s frame
+   part by option 2 of semantics3 §4.3 (addresses as a parameter of the semantics).
+2. **Nil checks** (`LoweredNilCheck` = `MOVB (Rp), R27`, 1,200): `FaultSim` on the nil page.
+3. **Write barriers** (`LoweredWB` 951, `WBend` 967): the `wbHook` of semantics3 §6.
+4. **Interface and closure calls** (results homes 1,215, `CALLinter` 764, `CALLclosure` 359, with
+   `LoweredGetClosurePtr` 660) and call results outside `R0`–`R15` or of float shapes (call result
+   shapes 1,121).
 
 ## 5. Results
 
@@ -229,6 +252,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G1 | 268 (2.88%) | 1,500 |
 | G2 | 1,171 (12.59%) | 10,665 |
 | G3 | 1,611 (17.32%) | 17,270 |
+| G4 | 1,832 (19.70%) | 21,243 |
 
 (On quick-v9, before the G2 validator was tightened for the proof — call arguments and results in
 `R0`–`R15`, `SelectN`'s component class, 64-bit `MOVDaddr` and spill shapes — G2 accepted 1,211.)
@@ -242,7 +266,7 @@ two width classes 4,453, `Select0`/`Select1` and register pairs 3,058, `LDP` 1,9
 slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGetClosurePtr` 104,
 `SB` after the entry values 64, two width classes 50.
 
-**Proof** (`GoFV/Proof/Gen/`; G1's modules, then G2's, then G3's):
+**Proof** (`GoFV/Proof/Gen/`; G1's modules, then G2's, G3's and G4's):
 
 - `Basic.lean`: `PStep`/`PStar`, `PStar.runProg`; `Link.byId` with distinct IDs below `2^32`:
   `off_byId`, `addr_byId`, `nextAddr_byId`, `progAt?_byId`.
@@ -280,11 +304,20 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   flags and branch relations on the low bits of the classes; `stepLoc` of the new ops.
 - `G3.lean`: `G3Inv`, `G3Pre`; the class table as `KRead`/`KNext`/`KCall`; one lemma per G3 value
   kind (`g3_load`, `g3_store`, `g3_ext`, `g3_aluK`, `g3_ubfx`, `g3_cmpw`, `g3_cmpwK`, `g3_sb`),
-  `term_test`, `g3_value`, `g3_term`.
+  `term_test`, `vk3_step` (one value of G3's kinds from the validator's facts), `g3_value`,
+  `g3_term`.
+- `Spec4.lean`: what `checkG4` accepted (`checkG4_spec`, `vkind4_spec` with the per-op facts `VK4`,
+  `pairTys_spec`).
+- `Step4.lean`, `Progs4.lean`: `stepLoc` of `LDP`, `STP`, `Select0`/`Select1`; `progStep` of
+  `LDP off(Rn), (Ra, Rb)` and `STP (Rx, Ry), off(Rn)`.
+- `G4.lean`: `G4Pre`; `pairAddr_noAux`, `write_pair`, `read_pair`, `kpair_kStep`,
+  `ksel4_of_reads`; `g4_ldp`, `g4_stp`, `g4_sel`, `g4_value`, `g4_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
 callee that returns at once; `clamp`: `g2_value` on a G1 value and `g2_term`), `GenG3.lean`
 (`pallocSum.start`, which G2 rejects: `g3_term` on the bit test `TBNZ [63]` both ways and
-`g3_value` on `ANDconst`). Each decides its inputs by compiled evaluation (`native_decide`, pinned
-in `scripts/axioms-allowlist.txt`).
+`g3_value` on `ANDconst`), `GenG4.lean` (`(*errorString).Error`, which G3 rejects: `g4_value` on
+the pair load `LDP (R0), (R0, R1)` from a global's 16 bytes and its `Select1`/`Select0`;
+`pallocSum.start`: `g4_term` on `TBNZ [63]`). Each decides its inputs by compiled evaluation
+(`native_decide`, pinned in `scripts/axioms-allowlist.txt`).

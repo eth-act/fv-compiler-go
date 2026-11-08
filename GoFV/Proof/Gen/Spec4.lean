@@ -52,11 +52,14 @@ inductive VK4 (lc : LocCtx) (g : G2In) (v : Value) : VKind2 → Prop
       lc.home v.id = none → argObj lc v 0 = .ok (64, rn) → argObj lc v 1 = .ok (64, rx) →
       argObj lc v 2 = .ok (64, ry) → memArg lc v 3 = .ok () →
       VK4 lc g v (.prog (.ofShape { as := .STP, from_ := pairA rx ry, to := memA rn v.auxInt.toInt }))
-  /-- `Select0`/`Select1` of an `LDP`, homed in the register of its component: no code. -/
+  /-- `Select0`/`Select1` of an `LDP` (of two components with classes), homed in the register of
+  its component, a register G1 may write: no code. -/
   | sel {c : ID} {u : Value} {ra rb i r : Nat} :
       (v.op = .Select0 ∧ i = 0 ∧ r = ra ∨ v.op = .Select1 ∧ i = 1 ∧ r = rb) →
       v.args.size = 1 → v.args[0]? = some c → lc.ctx.f.value? c = some u → u.op = .ARM64LDP →
+      pairTys (lc.ty c) = true →
       lc.home c = some (.pair (some ra) (some rb)) → lc.home v.id = some (.reg r) →
+      r ≠ zeroReg → destOK r = true → (objOf? r).isSome = true →
       (cls (lc.ty v.id)).isSome = true → ((tupleTys (lc.ty c))[i]?.bind cls) = cls (lc.ty v.id) →
       VK4 lc g v .none
 
@@ -125,13 +128,16 @@ theorem vkind4_spec {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : vkin
       next u hu =>
         obtain ⟨hs, h⟩ := ex_guard h
         simp only [Bool.and_eq_true, beq_iff_eq] at hs
+        obtain ⟨⟨hs1, hs2⟩, hs3⟩ := hs
         split at h
         next ra rb hph =>
           obtain ⟨hw, h⟩ := ex_guard h
-          simp only [Bool.and_eq_true, beq_iff_eq, hop, ↓reduceIte] at hw
+          simp only [Bool.and_eq_true, beq_iff_eq, bne_iff_ne, ne_eq, hop, ↓reduceIte] at hw
+          obtain ⟨⟨⟨⟨⟨hw1, hw2⟩, hw3⟩, hw4⟩, hw5⟩, hw6⟩ := hw
           simp only [ex_pure, Except.ok.injEq] at h
           subst h
-          exact VK4.sel (.inl ⟨hop, rfl, rfl⟩) hs.1 hc hu hs.2 (pairHome?_eq hph) hw.1.1 hw.1.2 hw.2
+          exact VK4.sel (.inl ⟨hop, rfl, rfl⟩) hs1 hc hu hs2 hs3 (pairHome?_eq hph) hw1 hw2 hw3 hw4
+            hw5 hw6
         next => simp [ex_throw] at h
       next => simp [ex_throw] at h
     next => simp [ex_throw] at h
@@ -142,13 +148,17 @@ theorem vkind4_spec {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : vkin
       next u hu =>
         obtain ⟨hs, h⟩ := ex_guard h
         simp only [Bool.and_eq_true, beq_iff_eq] at hs
+        obtain ⟨⟨hs1, hs2⟩, hs3⟩ := hs
         split at h
         next ra rb hph =>
           obtain ⟨hw, h⟩ := ex_guard h
-          simp only [Bool.and_eq_true, beq_iff_eq, hop, reduceCtorEq, ↓reduceIte] at hw
+          simp only [Bool.and_eq_true, beq_iff_eq, bne_iff_ne, ne_eq, hop, reduceCtorEq,
+            ↓reduceIte] at hw
+          obtain ⟨⟨⟨⟨⟨hw1, hw2⟩, hw3⟩, hw4⟩, hw5⟩, hw6⟩ := hw
           simp only [ex_pure, Except.ok.injEq] at h
           subst h
-          exact VK4.sel (.inr ⟨hop, rfl, rfl⟩) hs.1 hc hu hs.2 (pairHome?_eq hph) hw.1.1 hw.1.2 hw.2
+          exact VK4.sel (.inr ⟨hop, rfl, rfl⟩) hs1 hc hu hs2 hs3 (pairHome?_eq hph) hw1 hw2 hw3 hw4
+            hw5 hw6
         next => simp [ex_throw] at h
       next => simp [ex_throw] at h
     next => simp [ex_throw] at h

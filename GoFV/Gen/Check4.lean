@@ -15,7 +15,8 @@ PC table and class table; the class table follows a pair home as a call's `resul
   component of an integer class of at least 8 bits;
 * `STP [off] a x y mem`: the pair store `STP (Rx, Ry), off(Rn)` of two 64-bit registers to an
   address in a 64-bit register (no symbol);
-* `Select0`/`Select1` of an `LDP`, homed in the register of its component (no code).
+* `Select0`/`Select1` of an `LDP` (of two components with classes), homed in the register of its
+  component, a register G1 may write (no code).
 
 `GoFV/Proof/Gen/G4.lean` proves what an accepted function satisfies (`g4_value`, `g4_term`).
 -/
@@ -68,12 +69,13 @@ def vkind4 (lc : LocCtx) (g : G2In) (v : Value) : Except String VKind2 := do
   | .Select0 | .Select1 =>
     let some c := v.args[0]? | throw s!"v{v.id}: select shape"
     let some u := lc.ctx.f.value? c | throw s!"v{v.id}: select of v{c}"
-    unless v.args.size == 1 && u.op == .ARM64LDP do throw s!"v{v.id}: select of {u.op.name}"
+    unless v.args.size == 1 && u.op == .ARM64LDP && pairTys (lc.ty c) do
+      throw s!"v{v.id}: select of {u.op.name}"
     let some (ra, rb) := pairHome? lc c | throw s!"v{v.id}: select of a pair without registers"
     let i := if v.op == .Select0 then 0 else 1
     let r := if v.op == .Select0 then ra else rb
-    unless lc.home v.id == some (.reg r) && (cls (lc.ty v.id)).isSome &&
-        ((tupleTys (lc.ty c))[i]?.bind cls) == cls (lc.ty v.id) do
+    unless lc.home v.id == some (.reg r) && r != zeroReg && destOK r && (objOf? r).isSome &&
+        (cls (lc.ty v.id)).isSome && ((tupleTys (lc.ty c))[i]?.bind cls) == cls (lc.ty v.id) do
       throw s!"v{v.id}: select home"
     return .none
   | _ => vkind3 lc g v
