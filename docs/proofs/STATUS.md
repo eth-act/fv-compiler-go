@@ -151,10 +151,12 @@ validator's slice G1 (`checkG1`) accepts a function, every non-entry value and e
 that goes to a successor, run by `runLoc` from a state related by `LocMatch` to a machine state,
 is matched by `runProg` steps of genssa's P0 Progs to a state related before the next value or
 the successor's first value. Premises (`docs/plans/proofs3.md` §3): `G1Env` (the PC table, `ret`
-no Prog address, `ι` puts every block with a Phase 1 address there, no frame), `G1Inv` (no slot,
-registers hold values of their width class, distinct memory block keys) and the per-step
-`G1Pre`/`G1TermPre` (compare arguments and `Z`/`NZ` controls are not pointers without an integer
-form, a load reads 8 valid bytes). Witness `genG1_witness_50`/`_30` (`clamp`, both theorems).
+no Prog address, `ι` puts every block with a Phase 1 address there but frame temporaries
+`Blk.temp`, no frame), `G1Inv` (no slot, registers hold values of their width class, distinct
+memory block keys) and the per-step `G1Pre`/`G1TermPre` (compare arguments and `Z`/`NZ` controls
+are not pointers without an integer form, a load reads 8 valid bytes, the pointer operands of a
+subtraction are in one block or in no frame temporaries: `SubPre`, added with G6). Witness
+`genG1_witness_50`/`_30` (`clamp`, both theorems).
 Coverage on quick-v9 (`lake exe gen-check`): 268 of 9,297 functions (2.88%).
 
 ## Phase 3: genssa, slice G2 (I7, #553)
@@ -184,8 +186,9 @@ function, every non-entry value and every terminator that goes to a successor is
 `runProg` steps of genssa's P0 Progs to a state related before the next value or the successor's
 first value, with the registers at the classes the table gives there. Premises
 (`docs/plans/proofs3.md` §4): `G2Env`, `G3Inv` (G2's with the class map `kAt lc kt b blk i` in
-place of `regCls`), `G3Pre` (G1's compare premise; a load reads valid bytes, a boolean load 0 or 1)
-or `G1TermPre`, and at a static call `CallOK`. Witnesses `genG3_witness_clear`/`_set`
+place of `regCls`), `G3Pre` (G1's compare and subtraction premises; a load reads valid bytes, a
+boolean load 0 or 1) or `G1TermPre`, and at a static call `CallOK`. Witnesses
+`genG3_witness_clear`/`_set`
 (`pallocSum.start`, which G2 rejects: the bit test `TBNZ [63]` both ways, then `ANDconst`).
 Coverage on quick-v10 (`lake exe gen-check`): 1,611 of 9,297 functions (17.32%), 17,270 values.
 
@@ -214,8 +217,24 @@ successor's first value, with the registers at the classes the table gives there
 premise. Witnesses `genG5_value_witness` (`g` of `test/stackobj`, which G4 rejects: a spill, a
 static call, its memory and `KeepAlive` of the spilled argument) and `genG5_term_witness`
 (`pallocSum.start`: `TBNZ [63]`). Coverage on quick-v10 (`lake exe gen-check`): 1,833 of 9,297
-functions (19.71%), 21,252 values. The G6 validator (`checkG6`, frame variables: 2,022 functions,
-21.74%) is not proven yet (`docs/plans/proofs3.md` §4).
+functions (19.71%), 21,252 values.
+
+## Phase 3: genssa, slice G6 (I7, #553)
+
+`GoFV.Proof.Gen.g6_value`, `GoFV.Proof.Gen.g6_term` (`GoFV/Proof/Gen/G6.lean`): when slice G6
+(`checkG6`: G5 with the accesses of frame variables of `NAME_AUTO` operands whose address the
+function never converts to an integer — `Blk.temp`: `MOVDaddr` of one, G3's loads and stores and
+G4's `LDP`/`STP` at its frame operand — their windows checked disjoint inside the locals and away
+from the home slots) accepts a function, every non-entry value and every terminator that goes to
+a successor is matched by `runProg` steps of genssa's P0 Progs to a state related before the next
+value or the successor's first value, with the registers at the classes the table gives there.
+Premises (`docs/plans/proofs3.md` §4): `G6Env` (`G2Env`, and `VarsAt`: each accessed variable's
+block of the current activation at `SP + frameOff` under `ι`, which `AddrAgree` allows since it
+leaves frame temporaries free), `G3Inv`, `G4Pre` (with `SubPre`) or `G1TermPre`, `CallOK`.
+Witnesses `genG6_value_witness` (`SChan.Send` of `test/closedchan`, which G5 rejects: the store
+`MOVD R1, -8(RSP)` and the address `MOVD $-8(RSP), R1` of a frame temporary) and
+`genG6_term_witness` (`pallocSum.start`: `TBNZ [63]`). Coverage on quick-v10 (`lake exe
+gen-check`): 1,946 of 9,297 functions (20.93%), 24,819 values.
 
 ## Per-pass fragment coverage (verified pipeline, full-v6)
 

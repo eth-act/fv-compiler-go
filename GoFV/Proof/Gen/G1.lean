@@ -15,10 +15,11 @@ before the successor's first value.
 
 The activation (`G1Env`): the PC of value `i` of block `b` is the address of the Prog at index
 `tab[b][i]` (`pcOfTab`), `ret` is no Prog's address, `ι` puts every block with a Phase 1 address
-there (`AddrAgree`), and the function has no frame. The invariant (`G1Inv`): no stack slot,
-every register holds a value of its width class, the memory's block keys are distinct. The
-per-step premises (`G1Pre`, `G1TermPre`): the arguments of a compare and the control of a
-register test are not pointers without an integer form, and a load reads 8 valid bytes.
+but the frame temporaries there (`AddrAgree`), and the function has no frame. The invariant
+(`G1Inv`): no stack slot, every register holds a value of its width class, the memory's block keys
+are distinct. The per-step premises (`G1Pre`, `G1TermPre`): the arguments of a compare and the
+control of a register test are not pointers without an integer form, a load reads 8 valid bytes,
+and the pointer operands of a subtraction are in one block or in no frame temporaries (`SubPre`).
 -/
 
 namespace GoFV.Proof.Gen
