@@ -318,6 +318,18 @@ def Cx.one (cx : Cx) (j : Nat) (sh : Shape) : Except String Nat := do
   unless sh.ok p do throw s!"Prog {p.id}: {p.as.name}, expected {sh.as.name}"
   return k + 1
 
+/-- A branch of shape `br` to `t` from index `j`, then the fall-through to `f` (laid out next,
+`next`) or a `JMP` to `f` (`Cx.term`'s two-way case). -/
+def Cx.two (cx : Cx) (j : Nat) (next : Option (ID × Nat)) (br : Shape) (t f : ID) :
+    Except String Unit := do
+  let falls (k : Nat) (s : ID) : Bool := next == some (s, k)
+  let tgt (s : ID) : Except String Addr := do
+    let some id := cx.bstart s | throw s!"b{s}: no start"
+    return brA id
+  let k ← cx.one j { br with to := ← tgt t }
+  unless falls k f do
+    let _ ← cx.one k { as := .JMP, to := ← tgt f }
+
 /-- The values of a block from index `j`: the start index of each and the index after them.
 `head`: no other value came before in the entry block. -/
 def Cx.values (cx : Cx) (entry : Bool) : List ID → Nat → Bool → Except String (List Nat × Nat)

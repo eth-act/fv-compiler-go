@@ -510,20 +510,9 @@ structure TermOK (cx : Cx) (b : Block) (j : Nat) (next : Option (ID × Nat)) : P
         (TwoAt cx next j { as := asm, from_ := regA o } e0.b e1.b ∨
           TwoAt cx next j { as := inv, from_ := regA o } e1.b e0.b)))
 
-/-- `two` of `Cx.term`. -/
-private def twoE (cx : Cx) (j : Nat) (next : Option (ID × Nat)) (br : Shape) (t f : ID) :
-    Except String Unit := do
-  let falls (k : Nat) (s : ID) : Bool := next == some (s, k)
-  let tgt (s : ID) : Except String Addr := do
-    let some id := cx.bstart s | throw s!"b{s}: no start"
-    return brA id
-  let k ← cx.one j { br with to := ← tgt t }
-  unless falls k f do
-    let _ ← cx.one k { as := .JMP, to := ← tgt f }
-
-private theorem twoE_spec {cx : Cx} {j : Nat} {next : Option (ID × Nat)} {br : Shape} {t f : ID}
-    (h : twoE cx j next br t f = .ok ()) : TwoAt cx next j br t f := by
-  unfold twoE at h
+theorem Cx.two_spec {cx : Cx} {j : Nat} {next : Option (ID × Nat)} {br : Shape} {t f : ID}
+    (h : cx.two j next br t f = .ok ()) : TwoAt cx next j br t f := by
+  unfold Cx.two at h
   obtain ⟨a, ha, h⟩ := ex_bind_eq_ok h
   obtain ⟨tid, htid, rfl⟩ : ∃ tid, cx.bstart t = some tid ∧ a = brA tid := by
     simp only at ha
@@ -601,10 +590,10 @@ theorem Cx.term_spec {cx : Cx} {b : Block} {j : Nat} {next : Option (ID × Nat)}
             simp only at h
             split at h
             next heq =>
-              exact Or.inl (twoE_spec (cx := cx) (j := j) (next := next) (br := { as := asm })
+              exact Or.inl (Cx.two_spec (cx := cx) (j := j) (next := next) (br := { as := asm })
                 (t := e0.b) (f := e1.b) heq)
             next =>
-              exact Or.inr (twoE_spec (cx := cx) (j := j) (next := next) (br := { as := inv })
+              exact Or.inr (Cx.two_spec (cx := cx) (j := j) (next := next) (br := { as := inv })
                 (t := e1.b) (f := e0.b) h)
           next asm inv hcb hzb =>
             split at h
@@ -621,10 +610,10 @@ theorem Cx.term_spec {cx : Cx} {b : Block} {j : Nat} {next : Option (ID × Nat)}
                 simp only at h
                 split at h
                 next heq =>
-                  exact Or.inl (twoE_spec (cx := cx) (j := j) (next := next)
+                  exact Or.inl (Cx.two_spec (cx := cx) (j := j) (next := next)
                     (br := { as := asm, from_ := regA o }) (t := e0.b) (f := e1.b) heq)
                 next =>
-                  exact Or.inr (twoE_spec (cx := cx) (j := j) (next := next)
+                  exact Or.inr (Cx.two_spec (cx := cx) (j := j) (next := next)
                     (br := { as := inv, from_ := regA o }) (t := e1.b) (f := e0.b) h)
               next => exact (ex_throw_bind h).elim
             next => exact (ex_throw_bind h).elim

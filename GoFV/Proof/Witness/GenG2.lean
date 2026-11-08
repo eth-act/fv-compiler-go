@@ -2045,13 +2045,13 @@ theorem g2Env (hc : checkG2 lc ps bs g = .ok tab) : G2Env lc g L ps 0 tab E wher
   link := rfl
   pcOf := rfl
   retOut := by
-    obtain ⟨-, -, -, -, -, -, -, -, hlt, -, -⟩ := checkG2_spec hc
+    obtain ⟨-, -, -, -, -, -, -, -, -, -, hlt, -, -⟩ := checkG2_spec hc
     intro p hp
     exact prog_addr_ne (hlt p hp) hp (by simp) (by simp)
   addr := addrAgree
   glob := fun _ _ _ _ => rfl
   syms := by
-    obtain ⟨-, -, -, -, -, -, -, -, hlt, -, -⟩ := checkG2_spec hc
+    obtain ⟨-, -, -, -, -, -, -, -, -, -, hlt, -, -⟩ := checkG2_spec hc
     intro y
     have hs : L.sym y = symA := rfl
     rw [hs]
@@ -2213,13 +2213,13 @@ theorem g2EnvC (hc : checkG2 GenG1.lc GenG1.ps GenG1.bs gc = .ok GenG1.tab)
   link := rfl
   pcOf := rfl
   retOut := by
-    obtain ⟨-, -, -, -, -, -, -, -, hlt, -, -⟩ := checkG2_spec hc
+    obtain ⟨-, -, -, -, -, -, -, -, -, -, hlt, -, -⟩ := checkG2_spec hc
     intro p hp
     exact prog_addr_ne (hlt p hp) hp (by simp) (by simp)
   addr := addrAgree
   glob := fun _ _ _ _ => rfl
   syms := by
-    obtain ⟨-, -, -, -, -, -, -, -, hlt, -, -⟩ := checkG2_spec hc
+    obtain ⟨-, -, -, -, -, -, -, -, -, -, hlt, -, -⟩ := checkG2_spec hc
     intro y
     have hs : Lc.sym y = symA := rfl
     rw [hs]

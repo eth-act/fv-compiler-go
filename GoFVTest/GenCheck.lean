@@ -1,5 +1,5 @@
 import GoFV.Gen.Genssa
-import GoFV.Gen.Check2
+import GoFV.Gen.Check3
 import GoFV.Asm.Parse
 import GoFV.SSA.Parse
 
@@ -7,11 +7,11 @@ import GoFV.SSA.Parse
 # `gen-check`: coverage of the genssa validator (`docs/plans/proofs3.md` §3, §4)
 
 For every `*.prog` file under the given directories with its companion `.ssa` file, runs
-`GoFV.Gen.genssa` (on the exported frame, as `gen-parity`) and the validators of slice G1
-(`GoFV.Gen.Check.checkG1`) and slice G2 (`GoFV.Gen.Check.checkG2`, with the Prog list's symbols
-and the exported frame's slot operands) on its P0 output and the function after `trim`, and counts
-the accepted functions. Rejections by G2 are grouped by their reason with value and block numbers
-removed.
+`GoFV.Gen.genssa` (on the exported frame, as `gen-parity`) and the validators of slices G1
+(`GoFV.Gen.Check.checkG1`), G2 (`GoFV.Gen.Check.checkG2`, with the Prog list's symbols and the
+exported frame's slot operands) and G3 (`GoFV.Gen.Check.checkG3`, G2's inputs) on its P0 output
+and the function after `trim`, and counts the accepted functions. Rejections by the last slice
+are grouped by their reason with value and block numbers removed.
 
 usage: `lake exe gen-check [--jobs N] [--table FILE] <dir|file>...`
 -/
@@ -26,10 +26,12 @@ structure Stats where
   files : Nat := 0
   accepted : Nat := 0
   accepted2 : Nat := 0
+  accepted3 : Nat := 0
   errors : Nat := 0
   values : Nat := 0
   acceptedValues : Nat := 0
   acceptedValues2 : Nat := 0
+  acceptedValues3 : Nat := 0
   /-- Functions by the set of reasons that reject them (sole reason: one-element set). -/
   sole : Std.HashMap String Nat := {}
   /-- Functions each reason occurs in. -/
@@ -41,9 +43,10 @@ def mergeMap (a b : Std.HashMap String Nat) : Std.HashMap String Nat :=
 
 def Stats.merge (a b : Stats) : Stats :=
   { files := a.files + b.files, accepted := a.accepted + b.accepted,
-    accepted2 := a.accepted2 + b.accepted2, errors := a.errors + b.errors,
+    accepted2 := a.accepted2 + b.accepted2, accepted3 := a.accepted3 + b.accepted3, errors := a.errors + b.errors,
     values := a.values + b.values, acceptedValues := a.acceptedValues + b.acceptedValues,
     acceptedValues2 := a.acceptedValues2 + b.acceptedValues2,
+    acceptedValues3 := a.acceptedValues3 + b.acceptedValues3,
     sole := mergeMap a.sole b.sole, occurs := mergeMap a.occurs b.occurs,
     accept := a.accept ++ b.accept }
 
@@ -69,38 +72,27 @@ def Stats.reject (st : Stats) (msgs : List String) : Stats :=
     | _ => st.sole.insert s!"({ks.length} reasons)" (st.sole.getD s!"({ks.length} reasons)" 0 + 1)
   { st with occurs, sole }
 
-/-- Every reason the G2 validator could give for `lc` (homes, values, block kinds, the frame;
+/-- Every reason the G3 validator could give for `lc` (homes, values, block kinds, the frame;
 then the run itself). -/
-def reasons2 (lc : GoFV.SSA.Sem.LocCtx) (ps : Array Prog) (bstart : GoFV.SSA.ID → Option Nat)
+def reasons3 (lc : GoFV.SSA.Sem.LocCtx) (ps : Array Prog) (bstart : GoFV.SSA.ID → Option Nat)
     (g : Check.G2In) : List String := Id.run do
   let mut rs : List String := []
   unless lc.ctx.f.lowered do rs := "not lowered" :: rs
-  let mut classes : Std.HashMap Nat Nat := {}
   for h : i in [0:lc.homes.size] do
-    match lc.homes[i] with
-    | some (.reg r) =>
-      if r == GoFV.SSA.Sem.zeroReg then continue
-      match Check.cls (lc.ty i) with
-      | none => rs := s!"v{i}: register value of shape {repr (lc.ty i)}" :: rs
-      | some c =>
-        match classes[r]? with
-        | some c' => if c != c' then rs := s!"v{i}: register {r} holds classes {c'} and {c}" :: rs
-        | none => classes := classes.insert r c
-    | some _ => unless Check.homeOK2 lc i do rs := Check.homeErr lc i :: rs
-    | none => pure ()
+    unless Check.homeOK3 lc i do rs := Check.homeErr lc i :: rs
   for bid in lc.ctx.f.blocks do
     let some b := lc.ctx.f.block? bid | continue
     for id in b.values do
       let some v := lc.ctx.f.value? id | continue
-      match Check.vkind2 lc g v with
+      match Check.vkind3 lc g v with
       | .error e => rs := e :: rs
       | .ok _ => pure ()
-    if Check.condBr b.kind == none && Check.zeroBr b.kind == none && b.kind != .Plain &&
-        b.kind != .Ret && b.kind != .Exit then
+    if Check.condBr b.kind == none && Check.zeroBr b.kind == none && Check.testBr b.kind == none &&
+        b.kind != .Plain && b.kind != .Ret && b.kind != .Exit then
       rs := s!"b{bid}: block kind {b.kind.name}" :: rs
   if let .error e := Check.checkFrame lc g then rs := e :: rs
   if rs.isEmpty then
-    match Check.checkG2 lc ps bstart g with
+    match Check.checkG3 lc ps bstart g with
     | .error e => rs := [e]
     | .ok _ => pure ()
   return rs
@@ -148,12 +140,15 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
   let g : Check.G2In :=
     { syms := out.st.syms, slotOp := slotOpOf env (Ctx.ofFrame env fr).offsets,
       stksize := fr.stksize }
-  match Check.checkG2 lc ps bstart g with
+  let st := match Check.checkG2 lc ps bstart g with
+    | .ok _ => { st with accepted2 := st.accepted2 + 1, acceptedValues2 := st.acceptedValues2 + nv }
+    | .error _ => st
+  match Check.checkG3 lc ps bstart g with
   | .ok _ =>
-    return { st with accepted2 := st.accepted2 + 1, acceptedValues2 := st.acceptedValues2 + nv,
+    return { st with accepted3 := st.accepted3 + 1, acceptedValues3 := st.acceptedValues3 + nv,
                      accept := st.accept.push path.toString }
   | .error msg =>
-    let rs := reasons2 lc ps bstart g
+    let rs := reasons3 lc ps bstart g
     return st.reject (if rs.isEmpty then [msg] else rs)
 
 def progFiles (p : System.FilePath) : IO (Array System.FilePath) := do
@@ -190,6 +185,7 @@ def main (args : List String) : IO UInt32 := do
   let mut out := s!"| functions | slice | accepted | share | values | in accepted functions |\n| ---: | --- | ---: | ---: | ---: | ---: |\n"
   out := out ++ s!"| {st.files} | G1 | {st.accepted} | {pct st.accepted st.files} | {st.values} | {st.acceptedValues} |\n"
   out := out ++ s!"| {st.files} | G2 | {st.accepted2} | {pct st.accepted2 st.files} | {st.values} | {st.acceptedValues2} |\n"
+  out := out ++ s!"| {st.files} | G3 | {st.accepted3} | {pct st.accepted3 st.files} | {st.values} | {st.acceptedValues3} |\n"
   out := out ++ s!"\n{st.errors} parse, env or genssa errors\n"
   let sorted (m : Std.HashMap String Nat) :=
     m.toArray.qsort fun a b => a.2 > b.2 || (a.2 == b.2 && a.1 < b.1)
@@ -197,7 +193,7 @@ def main (args : List String) : IO UInt32 := do
   for (k, c) in (sorted st.sole).toList.take 60 do out := out ++ s!"| `{k}` | {c} |\n"
   out := out ++ "\n| reason | functions it occurs in |\n| --- | ---: |\n"
   for (k, c) in (sorted st.occurs).toList.take 80 do out := out ++ s!"| `{k}` | {c} |\n"
-  out := out ++ "\naccepted (G2):\n"
+  out := out ++ "\naccepted (G3):\n"
   for a in st.accept.qsort (· < ·) do out := out ++ s!"- {a}\n"
   IO.println out
   if let some f := table then IO.FS.writeFile f out
