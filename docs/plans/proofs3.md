@@ -1,10 +1,10 @@
 # Plan: the Phase 3 proofs (I7, #553)
 
-Status: slice G1 of the genssa validator is implemented (`GoFV/Gen/Check.lean`, probe
-`gen-check`) and proven sound (`GoFV/Proof/Gen/G1.lean`: `g1_value`, `g1_term`; §3, §5), with a
-witness on a corpus function (`GoFV/Proof/Witness/GenG1.lean`). Slice G2 (calls, global
-addresses, spills, `Exit`) is implemented as a validator (`GoFV/Gen/Check2.lean`, §4); its proof
-is open. Context:
+Status: slices G1 and G2 of the genssa validator are implemented (`GoFV/Gen/Check.lean`,
+`GoFV/Gen/Check2.lean`, probe `gen-check`) and proven sound (`GoFV/Proof/Gen/G1.lean`: `g1_value`,
+`g1_term`; `GoFV/Proof/Gen/G2.lean`: `g2_value`, `g2_term`; §3–§5), with witnesses on corpus
+functions (`GoFV/Proof/Witness/GenG1.lean`, `GenG2.lean`). G2 rests on the trusted callee
+contract `CallOK` (§4, `docs/proofs/STATUS.md` Assumptions). Context:
 `docs/plans/semantics3.md` (§4 `LocMatch`, §6 hooks, §7 layers), `docs/PASSES3.md` (the steps
 A1–F2), `docs/plans/regalloc-check.md` (the Phase 2 pattern this plan follows: an untrusted port
 with 100% parity, a checker, and a soundness proof of the checker only).
@@ -126,62 +126,97 @@ its pin); on a frameless activation with `G1Env` (`g1Env`) and the state after t
 give machine runs to `b3` for `x = 50` (fall-through) and to `b2` for `x = 30` (`BLE` taken)
 related by `LocMatch` (`genG1_witness_50`, `genG1_witness_30`).
 
-**Coverage** (`lake exe gen-check`, quick-v9, 9,297 functions): see §5.
+**Coverage** (`lake exe gen-check`, quick-v10, 9,297 functions): see §5.
 
-## 4. Next slices (G2 …) and their obligations
+## 4. Slice G2 and the next slices
 
-**Slice G2** (`GoFV/Gen/Check2.lean`, `checkG2 lc ps bstart g`; validator implemented, soundness
-proof open): G1 plus the most frequent blockers of §5 — `CALLstatic` of a symbol with an ABI
-(every argument homed in its `abi.RegIndex` register, the `CALL` target the callee's symbol, the
-`results` home the ABI's result registers), `SelectN` of such a call (no code), `MOVDaddr` of a
-global (`MOVD $sym+off(SB), Rd`), 64-bit spills and reloads (`StoreReg`/`LoadReg`, `MOVD` to/from
-the slot's operand in Go's frame layout) with **checkFrame** for the spill slots (8 bytes,
-aligned, `NAME_AUTO` inside the locals, distinct slots disjoint), `Exit` blocks, and entry values
-after the entry block's spills. Its inputs beyond G1's (`G2In`): the Prog list's symbols and the
-exported frame's slot operands. Obligations of its proof:
+**Slice G2** (`GoFV/Gen/Check2.lean`, `checkG2 lc ps bstart g`; proven sound, `g2_value`,
+`g2_term`): G1 plus the most frequent blockers of §5 — `CALLstatic` of a symbol with an ABI
+(every argument homed in its integer `abi.RegIndex` register `R0`–`R15`, the `CALL` target the
+callee's symbol, the `results` home the ABI's result registers, each result's shape of the class
+of its register: `callTy`, `resultReg`), `SelectN` of such a call (no code; the memory, or result
+`i` homed in the call's result register `i` below `R16`), `MOVDaddr` of a global
+(`MOVD $sym+off(SB), Rd`, 64-bit destination), 64-bit spills and reloads (`StoreReg`/`LoadReg`,
+`MOVD` to/from the slot's operand in Go's frame layout) with **checkFrame** for the home slots
+(`slotOK`: 8 bytes, aligned, `NAME_AUTO` inside the locals or `NAME_PARAM`; distinct home slots at
+distinct operands), `Exit` blocks, and entry values after the entry block's spills. Its inputs
+beyond G1's (`G2In`): the Prog list's symbols and the exported frame's slot operands.
 
-- **Calls**: the hook of semantics3 §6 (`liftContract`), `MatchEnv.Extends` for the allocator,
-  registers clobbered by the call (`LocState.clobber` of `CALLstatic`) against the hook's
-  clobbers; `runProg` must run P0's `CALL` form (`TYPE_MEM`, `NAME_EXTERN` target, which
-  `progEffect` leaves stuck today: `ProgCtx.target` reads only `TYPE_BRANCH`) or the proof moves to
-  P1 after `linkpatch`.
-- **Frames and spills**: `framed = true` with the prologue and epilogue validators (C6/D3);
-  `LocMatch.slots` kept by stores (slot windows disjoint from live blocks' windows) and calls (the
-  callee's frame below `SP`); `E.slot k` from the slot's operand (`NAME_AUTO`: `autosize +
-  offset − extrasize`, `NAME_PARAM`: `autosize + offset + 8`).
-- **Addresses of globals**: `ι` of a global is its linked symbol address (`Link.sym`), which
-  `AddrAgree` leaves free.
+How the proof discharges G2's obligations:
 
-Later slices:
+- **P0's `CALL`**: `runProg` runs P0's form. In `progEffect`, `CALL sym(SB)` (`TYPE_MEM`,
+  `NAME_EXTERN`/`STATIC`) goes to `L.sym n + off`, the target progedit's `TYPE_BRANCH` rewrite
+  gives (`GoFV/SSA/Sem/RunProg.lean`, witness `runProg_callMem_witness`); the step lemma is
+  `progStep_callSym` (`X30` the fall-through, the PC the symbol). The symbol has no Prog, so the
+  next step is the hook (`PStep.hook`; `G2Env.syms`: no Prog and not `ret` at a symbol).
+- **The callee**: the trusted contract `CallOK`/`CallSpec` (semantics3 §6, the hook lifting the
+  callee's Phase 1 contract through ABIInternal), taken as a premise of `g2_value` at each call:
+  from the state at the callee's symbol with the arguments in their ABI registers and the memory
+  injected, the hook returns to `X30` with `SP`, `R28`, `R29` and the frame (`StkAt`: the saved
+  `LR`/`FP` words and the spill slots) kept, `runLoc`'s memory after the call injected by an
+  extension of `ι` (`MatchEnv.Extends`), and `runLoc`'s results in the result registers.
+  `g2_call` proves the rest: the arguments read from their homes (`arg_rel`), the registers after
+  `LocState.clobber` of `CALLstatic` (all but `R29`, `ZERO`, `SP` and those past the F registers
+  are `poison`: `call_keeps`, by `decide` on the clobber mask), the results written by
+  `writeParts` (`write_call`, `writeParts_call`), the flags `poison`, the slots and the frame under
+  the larger injection (`stk_slots_frame`).
+- **Frames and spills**: `framed = true` when the function calls (`G2Env.calls`); the frame
+  layout `FrameOK` (`SP` above the nil page, each home slot above the saved `LR` without wrapping
+  around); each home slot at its operand (`G2Env.slot`, `frameOff`: `NAME_AUTO` at `autosize +
+  offset − extrasize`, `NAME_PARAM` at `autosize + offset + 8`); the live blocks away from `StkAt`
+  (`CoreInv … (StkAt E)`), so a store of G1 keeps the slots and the frame (`stk_keeps`) and a spill
+  keeps the live blocks and the other slots (`slot_apart`, from `checkFrame`).
+- **Addresses of globals**: `G2Env.glob`, `ι` of a global is its linked symbol address
+  (`Link.sym`), which `AddrAgree` leaves free.
 
-1. **Narrow and mixed registers**: a forward dataflow table of the width of each register's last
-   writer replaces the one-class-per-register rule; `MOVB…/MOVW…` loads and stores, extensions,
-   `CMPW`, `ZW`/`NZW`, `TBZ`/`TBNZ`, `CSET`, logical ops.
-2. **Nil checks** (`LoweredNilCheck` = `MOVB (Rp), R27`): `FaultSim` on the nil page.
-3. **Register pairs and tuples**: `Select0`/`Select1`, `LDP`/`STP`, interface and closure calls.
-4. **Addresses of frame blocks**: replace `AddrAgree`'s frame part by option 2 of semantics3 §4.3
-   (addresses as a parameter of the semantics), needed once a function takes its own frame's
-   addresses (`MOVDaddr` of an auto).
+The prologue and epilogue (C6/D3) are not part of `g2_value`/`g2_term`: they start from a state at
+the body entry (`E.sp` after the prologue).
+
+Later slices, by how many functions each blocker occurs in outside G2 (quick-v10, §5):
+
+1. **G3: widths.** Registers holding two width classes (4,453 functions, the largest blocker and
+   the sole one in 50), narrow loads and stores (load/store shapes 1,680/1,675, `MOVWUload` 1,440,
+   `MOVBUload` 1,419, `MOVBstore` 763, `MOVWstore` 599, `MOVWload` 549, `MOVHUload` 205), 32-bit
+   tests and compares (`TBNZ` 1,683, `NZW` 1,261, `CMPWconst` 810, `CMPW` 561, `ZW` 347, `TBZ`
+   297), extensions and narrow ALU ops (`MOVBUreg` 422, `MOVWUreg` 217, `ANDconst` 670, `SRLconst`
+   433, `SLLconst` 258, `UBFX` 236). One infrastructure: a forward dataflow table of the width
+   class of each register's last writer replaces the one-class-per-register rule (`regCls`,
+   `homeOK`), with `Lo`/`ValRel` at narrow classes (`Value.lean`) and the narrow `MOVB…/MOVH…/MOVW…`
+   step lemmas (`Mem.lean`'s 8-byte load and store generalised to 1/2/4 bytes).
+2. **G4: register pairs and tuples**: `Select0`/`Select1` and `pair` homes (3,058), `LDP` (1,922),
+   `STP` (1,765), call results outside `R0`–`R15` or of float shapes (call result shapes 1,121),
+   interface and closure calls (results homes 1,215, `CALLinter` 764, `CALLclosure` 359, with
+   `LoweredGetClosurePtr` 660).
+3. **Nil checks** (`LoweredNilCheck` = `MOVB (Rp), R27`, 1,200; the sole blocker in 120):
+   `FaultSim` on the nil page.
+4. **Addresses of frame blocks** (`MOVDaddr` of an auto, 1,261; `VarDef` 1,020, `LoweredZero`
+   540): replace `AddrAgree`'s frame part by option 2 of semantics3 §4.3 (addresses as a parameter
+   of the semantics).
+5. **Write barriers** (`LoweredWB` 951, `WBend` 967): the `wbHook` of semantics3 §6.
 
 ## 5. Results
 
-**Coverage** (`lake exe gen-check --jobs 4 <corpus>/quick-v9`, genssa run on the exported frame
+**Coverage** (`lake exe gen-check --jobs 4 <corpus>/quick-v10`, genssa run on the exported frame
 as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa errors):
 
 | Slice | Functions accepted | Values in accepted functions |
 | --- | --: | --: |
 | G1 | 268 (2.88%) | 1,500 |
-| G2 | 1,211 (13.02%) | 11,012 |
+| G2 | 1,171 (12.59%) | 10,665 |
 
+(On quick-v9, before the G2 validator was tightened for the proof — call arguments and results in
+`R0`–`R15`, `SelectN`'s component class, 64-bit `MOVDaddr` and spill shapes — G2 accepted 1,211.)
 Before G2, the most frequent reasons functions were outside G1 (functions each occurs in):
 `SelectN` 6,909, call results homes 6,364, `CALLstatic` 6,028, `MOVDaddr` 3,637, stack slots 3,298
 (`LoadReg`/`StoreReg`), register pairs 3,058, `Exit` blocks 2,631. Outside G2: registers holding
 two width classes 4,453, `Select0`/`Select1` and register pairs 3,058, `LDP` 1,922, `STP` 1,765,
-`TBNZ` 1,683, narrow loads (`MOVWUload` 1,440, `MOVBUload` 1,419), `NZW` 1,261, `MOVDaddr` of a
-frame variable 1,261, other results homes (interface and closure calls) 1,215, `LoweredNilCheck`
-1,200: the later slices of §4.
+`TBNZ` 1,683, load and store shapes 1,680 and 1,675, narrow loads (`MOVWUload` 1,440,
+`MOVBUload` 1,419), `NZW` 1,261, `MOVDaddr` of a frame variable 1,261, other results homes
+(interface and closure calls) 1,215, `LoweredNilCheck` 1,200, call result shapes 1,121: the later
+slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGetClosurePtr` 104,
+`SB` after the entry values 64, two width classes 50.
 
-**Proof** (`GoFV/Proof/Gen/`):
+**Proof** (`GoFV/Proof/Gen/`; G1's modules, then G2's):
 
 - `Basic.lean`: `PStep`/`PStar`, `PStar.runProg`; `Link.byId` with distinct IDs below `2^32`:
   `off_byId`, `addr_byId`, `nextAddr_byId`, `progAt?_byId`.
@@ -203,3 +238,15 @@ frame variable 1,261, other results homes (interface and closure calls) 1,215, `
 - `G1.lean`: the steps on the ID layout (`pstar_noops`, `pstar_oneAt`), one lemma per value kind
   (`op_none`, `op_reg`, `op_flags`, `op_mem`, `value_core`), the terminators (`fall_path`,
   `two_path`), `g1_value`, `g1_term`.
+- `Spec2.lean`: what `checkG2` accepted (`checkG2_spec`, `Cx2.blocks_spec`, `Cx2.values_spec`,
+  `Cx2.term_spec`, `checkFrame_spec`, `vkind2_spec` with the per-op facts `VK2`).
+- `Progs2.lean`: `progStep` of the slot store and load (`frameOff`), `MOVD $sym(SB), Rd` and P0's
+  `CALL sym(SB)`.
+- `Stack.lean`: `StkAt`, `FrameOK`, `stk_slots_frame`, `stk_keeps`, `memInj_congr`, `valRel_mono`.
+- `G2.lean`: `G2Env`, `G2Inv`, `CallSpec`/`CallOK`; one lemma per G2 value kind (`g2_g1`,
+  `g2_spill`, `g2_reload`, `g2_addr`, `g2_selMem`, `g2_selReg`, `g2_call`), `g2_value`, `g2_term`.
+
+**Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
+`GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
+callee that returns at once; `clamp`: `g2_value` on a G1 value and `g2_term`). Both decide their
+inputs by compiled evaluation (`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
