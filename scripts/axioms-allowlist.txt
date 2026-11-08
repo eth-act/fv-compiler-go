@@ -135,6 +135,11 @@ GoFV.Proof.Witness.GenG22.g22_facts._native.native_decide.ax_1_1 45abad70391f673
 # `bytes.shouldUseASCIISet` and `checkG22` does not (parsed, `Env.load`, `genssa`), and `runLoc`
 # runs its `CMPconst` and `GreaterThan` to `R0 = true`; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.GenG23.g23_facts._native.native_decide.ax_1_1 cf247ce900c1fde274f5006653f23fce6f1adabe163dead6150b6ce325e8864c
+# genG24_value_witness (GoFV/Proof/Witness/GenG24.lean, #553): `checkG24` accepts
+# `(*SChan).Recv` of test/closedchan and `checkG23` does not (parsed, `Env.load`, `genssa`), and
+# `runLoc` runs its `SP` to the Go register `SP` holding `2^62`; compiled evaluation, as
+# plF_pipeline.
+GoFV.Proof.Witness.GenG24.g24_facts._native.native_decide.ax_1_1 9ffefe179bf311f89d89284557444a71dd4b538ba3e0b1d9289378cf15143fd1
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
