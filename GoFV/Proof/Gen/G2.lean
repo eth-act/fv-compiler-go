@@ -889,14 +889,16 @@ theorem g2_selMem (F : Facts lc sym text az ez psA.toList ret E) (hhome2 : ∀ i
   obtain ⟨x, hx, rfl⟩ := stepLoc_selectN hl htemp hop (arr1 hsz1 hc0) hs
   rw [hread] at hx
   cases hx
-  have hi : v.auxInt.toInt.toNat = ts'.length := by simp at hidx; omega
-  rw [selectN_retypeL (by simp [hlen]) hpos (by rw [hi]; simp) (by rw [hi]; exact hmemc)]
+  have hi : v.auxInt.toInt.toNat = ts'.length := by
+    simp only [List.length_append, List.length_cons, List.length_nil] at hidx; omega
+  rw [selectN_retypeL (t := .mem) (by simp [hlen]) hpos
+    (by rw [hi, List.getElem?_append_right (Nat.le_refl _)]; simp) (by rw [hi]; exact hmemc)]
   obtain ⟨mm, hmm, -⟩ := hm.mem
   rw [write_mem hnone hmt, memTy_eq hmt, hmm]
   have hs' : ({ s with mem := Val.retypeL .mem (Val.retypeL .mem (.mem mm)) } : LocState) = s := by
     cases s; simp_all; rfl
   rw [hs']
-  exact ⟨m, .refl, locMatch_pc hm (by rw [hj', hj, hvs, hm.pc]), hinv⟩
+  exact ⟨m, .refl, locMatch_pc hm (by rw [hj', hvs, ← hj]; exact hm.pc.symm), hinv⟩
 
 /-- `SelectN [i]` of a call's result `i` in its result register changes nothing on the machine. -/
 theorem g2_selReg (F : Facts lc sym text az ez psA.toList ret E) (hhome2 : ∀ i, homeOK2 lc i = true)
@@ -920,7 +922,8 @@ theorem g2_selReg (F : Facts lc sym text az ez psA.toList ret E) (hhome2 : ∀ i
   obtain ⟨x, hx, rfl⟩ := stepLoc_selectN hl htemp hop (arr1 hsz1 hc0) hs
   rw [hread] at hx
   cases hx
-  have hi' : v.auxInt.toInt.toNat < ts'.length := by simp at hlt; omega
+  have hi' : v.auxInt.toInt.toNat < ts'.length := by
+    simp only [List.length_append, List.length_cons, List.length_nil] at hlt; omega
   obtain ⟨t, ht'⟩ : ∃ t, ts'[v.auxInt.toInt.toNat]? = some t :=
     ⟨ts'[v.auxInt.toInt.toNat], by simp [hi']⟩
   have ht : (ts' ++ [Ty.mem])[v.auxInt.toInt.toNat]? = some t := by
@@ -928,7 +931,7 @@ theorem g2_selReg (F : Facts lc sym text az ez psA.toList ret E) (hhome2 : ∀ i
   obtain ⟨c0, hc0t⟩ : ∃ c0, cls t = some c0 :=
     Option.isSome_iff_exists.1 (hcls t (List.mem_of_getElem? ht'))
   have hcv : cls (lc.ty v.id) = some c0 := by rw [← hcl, ht]; exact hc0t
-  have hxs := hcomp _ t r ht' (by simp [hhc, Location.regList, hrs])
+  have hxs := hcomp _ t r ht' (by simpa [hhc, Location.regList] using hrs)
   rw [selectN_retypeL (by simp [hlen]) hpos ht hxs, write_reg hvh hcv]
   have hrz : r ≠ zeroReg := by unfold zeroReg; omega
   have hrel : ValRel E.ι (((s.reg t r).retypeL t).retypeL (lc.ty v.id)) (m.rX (BitVec.ofNat 5 r)) := by
