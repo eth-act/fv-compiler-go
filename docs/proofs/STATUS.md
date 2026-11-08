@@ -410,6 +410,18 @@ Witness `genG17_value_witness` (`runtime.getm`, which G16 rejects: `GetG` with `
 goroutine in `X28`). Coverage on quick-v10 (`lake exe gen-check`): 3,962 of 9,297 functions
 (42.61%), 75,809 values.
 
+## Phase 3: genssa, slice G18 (I7, #553)
+
+`GoFV.Proof.Gen.g18_value`, `GoFV.Proof.Gen.g18_term`, `GoFV.Proof.Gen.g18_nilPanic`
+(`GoFV/Proof/Gen/G18.lean`): when slice G18 (`checkG18`: G17 with the integer register-index stores
+`MOV{D,W,H,B}storeidx` and `MOVHstoreidx2`/`MOVWstoreidx4`/`MOVDstoreidx8`, emitted
+`MOV… Rs, (Rp)(Ri<<sh)`) accepts a function, they are `g17_value`'s, `g17_term`'s and
+`g17_nilPanic`'s statements, under the same premises (a successful store wrote valid bytes, as
+G3's). Witness `genG18_value_witness` (`setpf` of test/ken_array, which G17 rejects:
+`MOVD R1, (R0)(R1<<3)` on the start of an 8-byte `heap 1` and the index 0, after which the 8
+machine bytes at its address are 0). Coverage on quick-v10 (`lake exe gen-check`): 4,052 of 9,297
+functions (43.58%), 80,626 values.
+
 ## Per-pass fragment coverage (verified pipeline, full-v6)
 
 Runs per pass of `gofv-ssa-opt --check --verified` (96,553 functions, each pass run once per function). *Proven*: the theorem's variant ran and changed the function; *identity*: same function (or tables the function cannot tell apart); *skipped*: an optional pass outside its fragment (the input is kept); *unverified*: a required pass outside its fragment, or a checked rewrite pass whose result differs from stock (`checked variant incomplete`: an unproven rule fired or the validator rejected; the stock result is kept). Every Phase 1 pass has a theorem; `insert resched checks`, `cpufeatures` and `rewrite tern` never run for linux/arm64.
