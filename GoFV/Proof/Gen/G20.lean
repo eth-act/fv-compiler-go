@@ -232,7 +232,7 @@ theorem narrowLd?_spec {lc : LocCtx} {v : Value} {n : Nat} {sg : Bool}
     NarrowOp v.op ∧
       ((∃ as, loadOp? v.op = some (as, n, sg) ∧ as ≠ .MOVD ∧
         (v.aux = none ∨ (v.args[0]?.bind lc.ctx.f.value?).map (·.op) = some .SB)) ∨
-       (∃ as sh, loadIdxOp? v.op = some (as, n, sh, sg) ∧ as ≠ .MOVD)) := by
+       (∃ as sh, loadOp? v.op = none ∧ loadIdxOp? v.op = some (as, n, sh, sg) ∧ as ≠ .MOVD)) := by
   cases hl : loadOp? v.op with
   | some t =>
     obtain ⟨as, n', sg'⟩ := t
@@ -270,7 +270,7 @@ theorem narrowLd?_spec {lc : LocCtx} {v : Value} {n : Nat} {sg : Bool}
         simp only [Option.some.injEq, Prod.mk.injEq] at h
         obtain ⟨rfl, rfl⟩ := h
         have has' : as ≠ .MOVD := by simpa using has
-        refine ⟨?_, .inr ⟨as, sh, rfl, has'⟩⟩
+        refine ⟨?_, .inr ⟨as, sh, rfl, rfl, has'⟩⟩
         rcases loadIdxOp?_op hi with ⟨h1, h2, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ |
           ⟨h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ | ⟨h1, h2, -⟩
         · exact absurd h2 has'
@@ -311,7 +311,9 @@ theorem NarrowOp.stIdx {o : Op} (h : NarrowOp o) : storeIdxOp? o = none :=
 
 /-- A narrow load is in G3 (`VK3`) or is a register-index load of G14, by its kind of G13. -/
 theorem vk13_narrow {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK13 lc g v kd)
-    (hn : NarrowOp v.op) (hfv : ∀ x off, ¬ FrameVarOK lc g v x off) : VK3 lc g v kd := by
+    (hn : NarrowOp v.op)
+    (hfv : ∀ x off kd', FrameVarOK lc g v x off → VKVar lc v off kd' → False) :
+    VK3 lc g v kd := by
   have ne : ∀ o : Op, loadOp? o = none → loadIdxOp? o = none → v.op ≠ o := fun o h1 h2 =>
     hn.ne h1 h2
   cases h with
@@ -340,7 +342,7 @@ theorem vk13_narrow {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK13
   | nil hop => exact absurd hop (ne _ rfl rfl)
   | g6 _ h =>
   cases h with
-  | var hfv' => exact absurd hfv' (hfv _ _)
+  | var hfv' hvv => exact (hfv _ _ _ hfv' hvv).elim
   | g5 h =>
   cases h with
   | mark hop => rw [hn.mark] at hop; cases hop
@@ -354,7 +356,8 @@ theorem vk13_narrow {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK13
 
 /-- A narrow load of G19's kinds is in G3 (`VK3`) or is a register-index load of G14. -/
 theorem vk19_narrow {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK19 lc g v kd)
-    (hn : NarrowOp v.op) (hfv : ∀ x off, ¬ FrameVarOK lc g v x off) :
+    (hn : NarrowOp v.op)
+    (hfv : ∀ x off kd', FrameVarOK lc g v x off → VKVar lc v off kd' → False) :
     VK3 lc g v kd ∨ ∃ (as : As) (n sh : Nat) (sg : Bool) (c : Nat) (rn ri rd : Int),
       loadIdxOp? v.op = some (as, n, sh, sg) ∧ v.args.size = 3 ∧ argObj lc v 0 = .ok (64, rn) ∧
       argObj lc v 1 = .ok (64, ri) ∧ memArg lc v 2 = .ok () ∧ resObj lc v = .ok (c, rd) ∧
@@ -381,5 +384,374 @@ theorem vk19_narrow {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK19
   | idx hop hsz3 hao hio hma hro hc =>
     exact .inr ⟨_, _, _, _, _, _, _, _, hop, hsz3, hao, hio, hma, hro, hc, rfl⟩
   | g13 h => exact .inl (vk13_narrow h hn hfv)
+
+/-! ## Register-index loads are no other kind of G3 -/
+
+theorem load_noIdx {o : Op} {t : As × Nat × Bool} (h : loadOp? o = some t) : loadIdxOp? o = none := by
+  obtain ⟨as, n, sg⟩ := t
+  rcases loadOp?_op h with ⟨h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ <;>
+    (rw [h1]; rfl)
+
+theorem idx_ne {o o' : Op} {t : As × Nat × Nat × Bool} (h : loadIdxOp? o = some t)
+    (h' : loadIdxOp? o' = none) : o ≠ o' := by
+  rintro rfl; rw [h'] at h; cases h
+
+theorem idx_cases {o : Op} {t : As × Nat × Nat × Bool} {P : Op → Prop} (h : loadIdxOp? o = some t)
+    (h1 : P .ARM64MOVDloadidx) (h2 : P .ARM64MOVWloadidx) (h3 : P .ARM64MOVWUloadidx)
+    (h4 : P .ARM64MOVHloadidx) (h5 : P .ARM64MOVHUloadidx) (h6 : P .ARM64MOVBloadidx)
+    (h7 : P .ARM64MOVBUloadidx) (h8 : P .ARM64MOVHloadidx2) (h9 : P .ARM64MOVHUloadidx2)
+    (h10 : P .ARM64MOVWloadidx4) (h11 : P .ARM64MOVWUloadidx4) (h12 : P .ARM64MOVDloadidx8) :
+    P o := by
+  obtain ⟨as, n, sh, sg⟩ := t
+  rcases loadIdxOp?_op h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ |
+    ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> assumption
+
+theorem idx_store {o : Op} {t : As × Nat × Nat × Bool} (h : loadIdxOp? o = some t) :
+    storeOp? o = none :=
+  idx_cases (P := fun o => storeOp? o = none) h rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+
+theorem idx_ext {o : Op} {t : As × Nat × Nat × Bool} (h : loadIdxOp? o = some t) :
+    extOp? o = none :=
+  idx_cases (P := fun o => extOp? o = none) h rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+
+theorem NarrowOp.store {o : Op} (h : NarrowOp o) : storeOp? o = none :=
+  narrow_cases (P := fun o => storeOp? o = none) h rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+    rfl rfl rfl rfl rfl
+
+theorem NarrowOp.ext {o : Op} (h : NarrowOp o) : extOp? o = none :=
+  narrow_cases (P := fun o => extOp? o = none) h rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl rfl
+    rfl rfl rfl rfl rfl
+
+/-- A register-index load is no value of G3's kinds (`VK3`). -/
+theorem vk3_idx_false {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK3 lc g v kd)
+    (hl : loadOp? v.op = none) {t : As × Nat × Nat × Bool} (hi : loadIdxOp? v.op = some t) :
+    False := by
+  have ne : ∀ o : Op, loadIdxOp? o = none → v.op ≠ o := fun o h' => idx_ne hi h'
+  cases h with
+  | g2 hops _ h2 =>
+    rcases hops with - | ⟨hmd | hms, -⟩
+    · cases h2 with
+      | g1 _ _ _ _ _ h1 =>
+        cases h1 with
+        | phi hop => exact ne _ rfl hop
+        | zero hop => exact ne _ rfl hop
+        | inl hop => exact ne _ rfl hop
+        | copyMem hop => exact ne _ rfl hop
+        | copySame hop => exact ne _ rfl hop
+        | copyMov hop => exact ne _ rfl hop
+        | result hop => exact ne _ rfl hop
+        | movConst hop => exact ne _ rfl hop
+        | alu hop => rcases hop with ⟨hop, -⟩ | ⟨hop, -⟩ <;> exact ne _ rfl hop
+        | aluK hop => rcases hop with ⟨hop, -⟩ | ⟨hop, -⟩ <;> exact ne _ rfl hop
+        | cmp hop => exact ne _ rfl hop
+        | cmpK hop => exact ne _ rfl hop
+        | load hop => exact ne _ rfl hop
+        | store hop => exact ne _ rfl hop
+      | call hop => exact ne _ rfl hop
+      | selMem hop => exact ne _ rfl hop
+      | selReg hop => exact ne _ rfl hop
+      | addr hop => exact ne _ rfl hop
+      | spill hop => exact ne _ rfl hop
+      | reload hop => exact ne _ rfl hop
+    · exact ne _ rfl hmd
+    · exact ne _ rfl hms
+  | load hop => rw [hl] at hop; cases hop
+  | store hop => rw [idx_store hi] at hop; cases hop
+  | sb hop => exact ne _ rfl hop
+  | ext hop => rw [idx_ext hi] at hop; cases hop
+  | aluK hop => rcases hop with ⟨hop, -⟩ | ⟨hop, -⟩ | ⟨hop, -⟩ <;> exact ne _ rfl hop
+  | ubfx hop => exact ne _ rfl hop
+  | cmpw hop => exact ne _ rfl hop
+  | cmpwK hop => exact ne _ rfl hop
+
+/-- What `uEntry` gave. -/
+theorem uEntry_spec {lc : LocCtx} {v : Value} {r c : Nat} {sg : Bool}
+    (h : uEntry lc v = some (r, c, sg)) :
+    ∃ n, narrowLd? lc v = some (n, sg) ∧ regHome? lc v.id = some r ∧ cls (lc.ty v.id) = some c ∧
+      (c = 8 ∨ c = 16 ∨ c = 32) ∧ 8 * n ≤ c := by
+  unfold uEntry at h
+  split at h
+  · rename_i n sg' r' c' hn hr hc
+    split at h
+    · rename_i hcc
+      simp only [Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl, rfl⟩ := h
+      simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, decide_eq_true_eq] at hcc
+      refine ⟨n, hn, hr, hc, ?_, hcc.2⟩
+      rcases hcc.1 with (h | h) | h <;> simp [h]
+    · cases h
+  · cases h
+
+/-! ## The theorems -/
+
+/-- **G20, values.** `g19_value`'s statement over `checkG20`, with the same premises, carrying the
+upper-bit invariant `UOK` of the table `uAt` from value `i` to value `i + 1`. -/
+theorem g20_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
+    {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab} {E : MatchEnv}
+    {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s s' : LocState} {m : MState}
+    (hc : checkG20 lc ps bstart g = .ok (tab, kt)) (hE : G10Env lc g L ps ret tab E)
+    (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
+    (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
+    (hen : entryOp3 v.op = false) (hm : LocMatch E s bid i m)
+    (hinv : G3Inv E lc (kAt lc kt bid blk i) s) (hu : UOK m (uAt lc blk i))
+    (hpre : G14Pre lc s v)
+    (hcall : CallOK H E g L lc s s' v m) (hcallz : CallOKZ H E g L lc s s' v m)
+    (hicall : ICallOK H E L ret lc s s' v m)
+    (hwb : WbOK H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
+    (hs : stepLoc env lc s v = .ok s') :
+    ∃ E' m', E.Extends E' ∧ G10Env lc g L ps ret tab E' ∧ PStar H L ps.toList ret m m' ∧
+      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' ∧
+      UOK m' (uAt lc blk (i + 1)) := by
+  have hE0 := hE
+  obtain ⟨⟨⟨⟨-, hlink, hpcOf, hret, hA, hglob, -, -, -, -, -⟩, -⟩, -⟩, -⟩ := hE
+  obtain ⟨sym, text, az, ez, hL⟩ : ∃ sym text az ez, L = Link.byId sym text az ez ps.toList :=
+    ⟨_, _, _, _, hlink⟩
+  have htext : L.text = text := by rw [hL]; rfl
+  rw [htext] at hpcOf
+  subst hL
+  obtain ⟨c, rfl, rfl, -, rfl, hvk, -, hl, hhome, hcf, hk, hlt, hnd, hblocks, -, hnop⟩ :=
+    checkG20_spec hc
+  obtain ⟨b, j, js, e, next, hb', -, hvals, -, -, hrow⟩ := Cx2.blocks_spec hblocks bid hbid
+  rw [hb] at hb'
+  cases hb'
+  obtain ⟨-, -, hstep⟩ := Cx2.values_spec hvals
+  obtain ⟨hi', hid⟩ := Array.getElem?_eq_some_iff.1 hi
+  obtain ⟨v', kd, hv', hkd, hvs⟩ := hstep i (by simpa using hi')
+  have hid' : blk.values.toList[i] = id := by simpa using hid
+  rw [hid', hv] at hv'
+  cases hv'
+  rw [hvk] at hkd
+  obtain ⟨htemp, hVK⟩ := vkind20_spec hkd hen
+  have hj : E.pcOf bid i = pcAt text c.cx.ps.toList ((js ++ [e]).getD i 0) := by
+    rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some]
+  have hj' : E.pcOf bid (i + 1) = pcAt text c.cx.ps.toList ((js ++ [e]).getD (i + 1) 0) := by
+    rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some]
+  have hreads := ((checkK_spec hk).2 bid hbid blk hb).1 i id v hi hv
+  have F : Facts c.cx.lc sym text az ez c.cx.ps.toList ret E :=
+    ⟨hl, clsReg_of_home10 hhome, hnd, hlt, hret, hA⟩
+  have hu1 : uAt c.cx.lc blk (i + 1) = uEntry c.cx.lc v := by simp [uAt, hi, hv]
+  rw [kAt_succ hi hv, hu1]
+  cases hVK with
+  | nop hop hsz hx hvr hd hz hxr hcv hcx =>
+    obtain ⟨r', c', hr', hc', hu0⟩ := nopOK_spec hnop hbid hb hi hv hop hx
+    rw [hxr] at hr'
+    cases hr'
+    rw [hu0] at hu
+    have hvh := regHome?_eq.1 hvr
+    have hxh := regHome?_eq.1 hxr
+    obtain ⟨cv, hcv', hcv8⟩ : ∃ cv, cls (c.cx.lc.ty v.id) = some cv ∧ 8 ≤ cv := by
+      rcases hcv with h | h | h | h <;> exact ⟨_, h, by omega⟩
+    have hcc : c' = 8 ∨ c' = 16 ∨ c' = 32 := by
+      rcases hcx with h | h | h <;> (rw [hc'] at h; cases h; simp)
+    obtain ⟨m', h1, h2, h3, h4⟩ := g20_nop (H := H) F hm hinv.core hinv.slots
+      (kread_of_reads hreads) (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz hx hvh
+      hd hz hxh hcv' hcv8 hc' hcc hvs htemp hs hu
+    have hne : uEntry c.cx.lc v = none := by
+      have : narrowLd? c.cx.lc v = none := by unfold narrowLd?; rw [hop]; rfl
+      simp only [uEntry, this]
+    exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE0, h1, h2, ⟨h3, h4⟩, by rw [hne]; trivial⟩
+  | g19 _ hVK19 =>
+    cases hue : uEntry c.cx.lc v with
+    | none =>
+      obtain ⟨E', m', h1, h2, h3, h4, h5⟩ := vk19_step hE0 F hhome hcf hv hVK19 hvs htemp hj hj'
+        hreads hm hinv hpre hcall hcallz hicall hwb hclo hgetg hs
+      exact ⟨E', m', h1, h2, h3, h4, h5, trivial⟩
+    | some u =>
+      obtain ⟨r, cc, sg⟩ := u
+      obtain ⟨n, hnl, hvr, -, hcc, hnc⟩ := uEntry_spec hue
+      obtain ⟨hN, hld⟩ := narrowLd?_spec hnl
+      have hvh := regHome?_eq.1 hvr
+      -- the machine register a narrow load wrote is the extension of its low bits
+      have huok : ∀ (m' : MState) (rd : Int) (c0 kd : Nat) (Y : BitVec (8 * n)), 1 ≤ n →
+          resObj c.cx.lc v = .ok (c0, rd) → rd = GoFV.Asm.ARM64.REG_R0 + kd →
+          m'.x = (m.wX (BitVec.ofNat 5 kd)
+            (if sg then ProgOp.sextTo64 n (Y.setWidth 64) else Y.setWidth 64)).x →
+          UOK m' (some (r, cc, sg)) := by
+        intro m' rd c0 kd Y hn1 hro hrd hx' k hk hobj
+        obtain ⟨r0, hvh0, -, hor0, -⟩ := resObj_spec hro
+        rw [hvh] at hvh0
+        cases hvh0
+        obtain ⟨k0, hk0, hrd0, hk0'⟩ := objOf?_some hor0
+        rw [hrd] at hrd0
+        have hkk0 : kd = k0 := by omega
+        subst hkk0
+        rcases hk0' with ⟨hzr, -⟩ | ⟨-, hobj0⟩
+        · rw [hzr] at hobj; cases hobj
+        · rw [hobj] at hobj0
+          have hkk := ofNat5_inj (by omega) (by omega) (Option.some.inj hobj0)
+          subst hkk
+          rw [hx', wX_x_self hk]
+          exact extOK_load sg hn1 hnc (by omega) Y
+      have hvar : ∀ x off kd', FrameVarOK c.cx.lc c.g v x off → VKVar c.cx.lc v off kd' → False := by
+        intro x off kd' hf hvv
+        rcases hld with ⟨as, hl3, has, hax | hsb⟩ | ⟨as, sh, hl0, hli, has⟩
+        · rw [hf.aux] at hax; cases hax
+        · have hsp := hf.sp
+          unfold spArg at hsp
+          cases ha : v.args[0]? with
+          | none => rw [ha] at hsp; cases hsp
+          | some a =>
+            rw [ha] at hsp hsb
+            dsimp only at hsp
+            simp only [Option.bind_some] at hsb
+            rw [hsb] at hsp
+            exact absurd hsp (by decide)
+        · cases hvv with
+          | addr hop => exact idx_ne hli rfl hop
+          | load hop => rw [hl0] at hop; cases hop
+          | store hop => rw [idx_store hli] at hop; cases hop
+          | ldp hop => exact idx_ne hli rfl hop
+          | stp hop => exact idx_ne hli rfl hop
+      rcases hld with ⟨as, hl3, has, -⟩ | ⟨as, sh, hl0, hli, has⟩
+      · rcases vk19_narrow hVK19 hN hvar with h3 | ⟨_, _, _, _, _, _, _, _, hli, -⟩
+        · cases h3 with
+          | load hop _ hsz2 hacc hma hro hcw hpat =>
+            rw [hl3] at hop
+            cases hop
+            obtain ⟨m', h1, h2, h3, h4, kd, Y, hrd, hx'⟩ := g3_loadW (H := H) F
+              (fun y name abi h => hglob y name abi h) hm hinv.core hinv.slots
+              (kread_of_reads hreads) (knext_kStep fun _ => (hs_res hro).noRegs) hpre.1.1.1.1 hj hj'
+              hl3 hsz2 hacc hma hro hcw hpat hvs htemp hs
+            have hn1 : 1 ≤ n := by rcases (loadOp?_bytes hl3).1 with h | h | h | h <;> omega
+            exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE0, h1, h2, ⟨h3, h4⟩,
+              huok m' _ _ kd Y hn1 hro hrd hx'⟩
+          | g2 hops =>
+            rcases hops with ⟨hl0, -⟩ | ⟨hmd | hms, -⟩
+            · rw [hl3] at hl0; cases hl0
+            · rw [hmd] at hl3; cases hl3; exact absurd rfl has
+            · exact absurd hms (hN.ne rfl rfl)
+          | store hop => rw [hN.store] at hop; cases hop
+          | sb hop => exact absurd hop (hN.ne rfl rfl)
+          | ext hop => rw [hN.ext] at hop; cases hop
+          | aluK hop =>
+            rcases hop with ⟨hop, -⟩ | ⟨hop, -⟩ | ⟨hop, -⟩ <;> exact absurd hop (hN.ne rfl rfl)
+          | ubfx hop => exact absurd hop (hN.ne rfl rfl)
+          | cmpw hop => exact absurd hop (hN.ne rfl rfl)
+          | cmpwK hop => exact absurd hop (hN.ne rfl rfl)
+        · rw [load_noIdx hl3] at hli; cases hli
+      · rcases vk19_narrow hVK19 hN hvar with h3 |
+          ⟨as', n', sh', sg', c', rn, ri, rd, hli', hsz3, hao, hio, hma, hro, hcw, rfl⟩
+        · exact (vk3_idx_false h3 hl0 hli).elim
+        · rw [hli] at hli'
+          cases hli'
+          obtain ⟨m', h1, h2, h3, h4, kd, Y, hrd, hx'⟩ := g14_idxW (H := H) F hm hinv.core
+            hinv.slots (kread_of_reads hreads) (knext_kStep fun _ => (hs_res hro).noRegs) hpre.2
+            hj hj' hli hsz3 hao hio hma hro hcw hvs htemp hs
+          have hn1 : 1 ≤ n := by
+            rcases (loadIdxOp?_facts hli).2.1 with h | h | h | h <;> omega
+          exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE0, h1, h2, ⟨h3, h4⟩,
+            huok m' _ _ kd Y hn1 hro hrd hx'⟩
+
+/-- A nil check of G20's kinds is G7's. -/
+theorem vk20_nil {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK20 lc g v kd)
+    (hop : v.op = .ARM64LoweredNilCheck) : VK7 lc g v kd := by
+  cases h with
+  | g19 _ h => exact vk19_nil h hop
+  | nop hop' => rw [hop] at hop'; cases hop'
+
+/-- **G20, nil panics.** `g19_nilPanic`'s statement over `checkG20`. -/
+theorem g20_nilPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+    {ps : Array Prog} {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab}
+    {E : MatchEnv} {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState}
+    {m : MState} {e : Panic} {mm' : Mem}
+    (hc : checkG20 lc ps bstart g = .ok (tab, kt)) (hE : G10Env lc g L ps ret tab E)
+    (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
+    (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
+    (hop : v.op = .ARM64LoweredNilCheck) (hm : LocMatch E s bid i m)
+    (hinv : G3Inv E lc (kAt lc kt bid blk i) s) (hs : stepLoc env lc s v = .panic e mm') :
+    e = .nilDeref ∧ ∃ m', PStar H L ps.toList ret m m' ∧ PPanics H L ps.toList ret m' e := by
+  obtain ⟨⟨⟨⟨-, hlink, hpcOf, hret, hA, -, -, -, -, -, -⟩, -⟩, -⟩, -⟩ := hE
+  obtain ⟨sym, text, az, ez, hL⟩ : ∃ sym text az ez, L = Link.byId sym text az ez ps.toList :=
+    ⟨_, _, _, _, hlink⟩
+  have htext : L.text = text := by rw [hL]; rfl
+  rw [htext] at hpcOf
+  subst hL
+  obtain ⟨c, rfl, rfl, -, rfl, hvk, -, hl, hhome, -, hk, hlt, hnd, hblocks, -, -⟩ :=
+    checkG20_spec hc
+  obtain ⟨b, j, js, e', next, hb', -, hvals, -, -, hrow⟩ := Cx2.blocks_spec hblocks bid hbid
+  rw [hb] at hb'
+  cases hb'
+  obtain ⟨-, -, hstep⟩ := Cx2.values_spec hvals
+  obtain ⟨hi', hid⟩ := Array.getElem?_eq_some_iff.1 hi
+  obtain ⟨v', kd, hv', hkd, hvs⟩ := hstep i (by simpa using hi')
+  have hid' : blk.values.toList[i] = id := by simpa using hid
+  rw [hid', hv] at hv'
+  cases hv'
+  rw [hvk] at hkd
+  obtain ⟨-, hVK⟩ := vkind20_spec hkd (by rw [hop]; rfl)
+  have hj : E.pcOf bid i = pcAt text c.cx.ps.toList ((js ++ [e']).getD i 0) := by
+    rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some]
+  have hreads := ((checkK_spec hk).2 bid hbid blk hb).1 i id v hi hv
+  have F : Facts c.cx.lc sym text az ez c.cx.ps.toList ret E :=
+    ⟨hl, clsReg_of_home10 hhome, hnd, hlt, hret, hA⟩
+  cases vk20_nil hVK hop with
+  | g6 hne _ => exact absurd hop hne
+  | nil _ hsz2 _ _ hao hma =>
+    exact g7_nilFault (H := H) F hm hinv.core (kread_of_reads hreads) hj hop hsz2 hao hma hvs hs
+
+/-- **G20, bounds panics.** `g19_boundsPanic`'s statement over `checkG20`, under `BoundsOK`. -/
+theorem g20_boundsPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+    {ps : Array Prog} {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab}
+    {E : MatchEnv} {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState}
+    {m : MState} {e : Panic} {mm' : Mem}
+    (hc : checkG20 lc ps bstart g = .ok (tab, kt)) (hE : G10Env lc g L ps ret tab E)
+    (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
+    (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
+    (hop : pbOp v.op = true) (hm : LocMatch E s bid i m)
+    (hinv : G3Inv E lc (kAt lc kt bid blk i) s) (hbok : BoundsOK H g L ps.toList)
+    (hs : stepLoc env lc s v = .panic e mm') :
+    ∃ e' m', BoundsAgree e e' ∧ PStar H L ps.toList ret m m' ∧ PPanics H L ps.toList ret m' e' := by
+  obtain ⟨⟨⟨⟨-, hlink, hpcOf, hret, hA, -, hsyms, -, -, -, -⟩, -⟩, -⟩, -⟩ := hE
+  obtain ⟨sym, text, az, ez, hL⟩ : ∃ sym text az ez, L = Link.byId sym text az ez ps.toList :=
+    ⟨_, _, _, _, hlink⟩
+  have htext : L.text = text := by rw [hL]; rfl
+  rw [htext] at hpcOf
+  subst hL
+  obtain ⟨c, rfl, rfl, -, rfl, hvk, -, hl, hhome, -, hk, hlt, hnd, hblocks, hpb, -⟩ :=
+    checkG20_spec hc
+  obtain ⟨b, j, js, e', next, hb', -, hvals, -, -, hrow⟩ := Cx2.blocks_spec hblocks bid hbid
+  rw [hb] at hb'
+  cases hb'
+  obtain ⟨-, -, hstep⟩ := Cx2.values_spec hvals
+  obtain ⟨hi', hid⟩ := Array.getElem?_eq_some_iff.1 hi
+  obtain ⟨v', kd, hv', hkd, hvs⟩ := hstep i (by simpa using hi')
+  have hid' : blk.values.toList[i] = id := by simpa using hid
+  rw [hid', hv] at hv'
+  cases hv'
+  rw [hvk] at hkd
+  have hen : entryOp3 v.op = false := by
+    rcases pbOp_cases hop with h | h | h | h <;> rw [h] <;> rfl
+  obtain ⟨-, hVK⟩ := vkind20_spec hkd hen
+  have hj : E.pcOf bid i = pcAt text c.cx.ps.toList ((js ++ [e']).getD i 0) := by
+    rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some]
+  have hreads := ((checkK_spec hk).2 bid hbid blk hb).1 i id v hi hv
+  have F : Facts c.cx.lc sym text az ez c.cx.ps.toList ret E :=
+    ⟨hl, clsReg_of_home10 hhome, hnd, hlt, hret, hA⟩
+  cases hVK with
+  | nop hop' => rw [hop'] at hop; cases hop
+  | g19 _ hVK19 =>
+    exact vk19_boundsPanic F hsyms hpb hrow hb hi hv hVK19 hvs hj hreads hop hm hinv hbok hs
+
+/-- **G20, terminators.** `g19_term`'s statement over `checkG20`. -/
+theorem g20_term {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
+    {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab} {E : MatchEnv}
+    {bid : ID} {blk : Block} {e : Edge} {s s' : LocState} {m : MState}
+    (hc : checkG20 lc ps bstart g = .ok (tab, kt)) (hE : G10Env lc g L ps ret tab E)
+    (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
+    (hm : LocMatch E s bid blk.values.size m)
+    (hinv : G3Inv E lc (kAt lc kt bid blk blk.values.size) s) (hpre : G1TermPre lc s blk)
+    (ht : stepTermLoc lc s blk = .ok (.goto e, s')) :
+    ∃ m', PStar H L ps.toList ret m m' ∧ LocMatch E s' e.b 0 m' ∧ G3Inv E lc (kt.at e.b) s' ∧
+      e.b ∈ lc.ctx.f.blocks.toList := by
+  obtain ⟨⟨⟨⟨-, hlink, hpcOf, hret, hA, -, -, -, -, -, -⟩, -⟩, -⟩, -⟩ := hE
+  obtain ⟨sym, text, az, ez, hL⟩ : ∃ sym text az ez, L = Link.byId sym text az ez ps.toList :=
+    ⟨_, _, _, _, hlink⟩
+  have htext : L.text = text := by rw [hL]; rfl
+  rw [htext] at hpcOf
+  subst hL
+  obtain ⟨c, rfl, rfl, -, rfl, -, htm, hl, hhome, -, hk, hlt, hnd, hblocks, -, -⟩ :=
+    checkG20_spec hc
+  exact termK_step hpcOf ⟨hl, clsReg_of_home10 hhome, hnd, hlt, hret, hA⟩ htm hk hblocks hbid hb
+    hm hinv hpre ht
 
 end GoFV.Proof.Gen
