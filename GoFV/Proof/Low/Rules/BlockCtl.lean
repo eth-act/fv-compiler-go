@@ -298,4 +298,9 @@ theorem r_ARM64_560_5_sound : BlockRuleL.Sound r_ARM64_560_5 := by arm_tstw2
 /-- `ARM64.rules:560`: `(NE (CMPWconst [0] z:(AND x y)) yes no) && z.Uses == 1 => (NE (TSTW x y) yes no)` -/
 theorem r_ARM64_560_6_sound : BlockRuleL.Sound r_ARM64_560_6 := by arm_tstw2
 
+/-- `ARM64.rules:478`: `(JumpTable idx) => (JUMPTABLE {makeJumpTableSym(b)} idx (MOVDaddr
+<typ.Uintptr> {makeJumpTableSym(b)} (SB)))`, a rule on a `JumpTable`, whose events the validator
+checks by their effect (`GoFV.Opt.LowerCheck.jumpOKL`). -/
+theorem r_ARM64_478_sound : BlockRuleL.Checked r_ARM64_478 := .inr rfl
+
 end GoFV.Proof.Low.Rules

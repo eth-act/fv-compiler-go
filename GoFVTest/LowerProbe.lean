@@ -64,7 +64,7 @@ def firedKeys (t : Interp.Table) (f : Func) (log : Array RwEvent) : Array String
             | .copy _ => M := M.put v { x with op := .Copy }
             | _ => pure ()
           else M := defs.foldl (fun M u => M.put u.id u) M
-    | .blockRule b i _ =>
+    | .blockRule b i _ _ =>
       let k := (K.get? b).getD (((f.block? b).map (·.kind)).getD .Plain)
       match ((t.blocks[k.ctorIdx]?).bind (·[i]?) : Option BlockRule) with
       | none => out := out.push s!"? block {k.name}"
@@ -230,13 +230,22 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
         else return "control idx"
     | .phielim .. => return "phielim"
     | .snap .. => return "snap"
-    | .blockRule b i nc =>
+    | .blockRule b i nc defs =>
       match bstateL f B b with
       | none => return "blockRule missing"
       | some st =>
         match ((t.blocks[st.kind.ctorIdx]?).bind (·[i]?) : Option BlockRule) with
         | none => return "no block rule"
         | some br =>
+          if st.kind == .JumpTable then
+            match jumpOKL tabs M st nc defs.toList with
+            | some (st', us) =>
+              M := us.foldl (fun M u => M.put u.id u) M
+              B := (b, st') :: B
+            | none => return s!"blockRule {blockKey br} jump"
+          else if ((f.block? b).map (·.succs.size)) != some 2 then
+            return s!"blockRule {blockKey br} succs"
+          else
           match blockOKL tabs M br st nc with
           | some (st', us) =>
             M := us.foldl (fun M u => M.put u.id u) M

@@ -571,14 +571,15 @@ def ArmRule.SetOp (r : Rule) : Prop :=
     (∀ tabs (v : Value), v.op = o → termVL tabs v = true) ∧
     (∀ tabs (v : Value), v.op = o' → termVL tabs v = true) ∧ SetOpSoundT o o'
 
-/-- The calls, tail calls, nil checks, the closure pointer and the bounds panic `renameOp`
-relates (`panicBounds` on both sides for the bounds panic). -/
+/-- The calls, tail calls, nil checks, the closure pointer, the caller's stack pointer and the
+bounds panic `renameOp` relates (`panicBounds` on both sides for the bounds panic). -/
 def callRename : Op → Op → Bool
   | .NilCheck, .ARM64LoweredNilCheck => true
   | .StaticCall, .ARM64CALLstatic => true
   | .ClosureCall, .ARM64CALLclosure => true
   | .InterCall, .ARM64CALLinter => true
   | .GetClosurePtr, .ARM64LoweredGetClosurePtr => true
+  | .GetCallerSP, .ARM64LoweredGetCallerSP => true
   | .TailCall, .ARM64CALLtail => true
   | .TailCallInter, .ARM64CALLtailinter => true
   | .PanicBounds, .ARM64LoweredPanicBoundsRR => true
@@ -883,6 +884,12 @@ def BlockRuleL.Sound (br : BlockRule) : Prop :=
           | k, [(.build [n], _)] => brVal k ai' (nodeDenL tabs e pat' ev or σ .other [n] 1 0)
           | _, _ => none) = some (b != br.swapSuccs)
 
+/-- A block rule of a lowering rule set the checked `lower` may fire: a sound rule on a
+conditional kind, or a rule on a `JumpTable`, whose events the validator checks by their effect
+alone (`GoFV.Opt.LowerCheck.jumpOKL`), so the rule carries no obligation of its own. -/
+def BlockRuleL.Checked (br : BlockRule) : Prop :=
+  BlockRuleL.Sound br ∨ br.kind = .JumpTable
+
 /-! ## Rule sets -/
 
 /-- The bounds-panic atoms a rule folds a constant operand of (`ARM64.rules:513-516`). -/
@@ -906,11 +913,11 @@ ellipsis rule on terms, an atom rename, or a rule on a memory or frame atom. -/
 def ArmRule.Checked (r : Rule) : Prop :=
   ArmRule.Sound r ∨ ArmRule.SetOp r ∨ ArmRule.Rename r ∨ ArmRule.Mem r
 
-/-- Every value rule of `s` is `ArmRule.Checked`, every block rule `BlockRuleL.Sound`, and `s`
+/-- Every value rule of `s` is `ArmRule.Checked`, every block rule `BlockRuleL.Checked`, and `s`
 has no rules in the per-instance tables (`nilChecks` … `phiSels`, Phase 1's generic layers). -/
 def ArmRuleSet.AllSound (s : RuleSet) : Prop :=
   ForallL (fun (p : SSA.Op × List Rule) => ForallL ArmRule.Checked p.2) s.values ∧
-  ForallL (fun (p : SSA.BlockKind × List BlockRule) => ForallL BlockRuleL.Sound p.2) s.blocks ∧
+  ForallL (fun (p : SSA.BlockKind × List BlockRule) => ForallL BlockRuleL.Checked p.2) s.blocks ∧
   s.nilChecks = [] ∧ s.loads = [] ∧ s.structLoads = [] ∧ s.structStores = [] ∧ s.segs = [] ∧
   s.phiSels = []
 

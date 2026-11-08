@@ -860,4 +860,89 @@ theorem BInvL.block {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C�
       rw [succ_ok (e := e) (by rw [hT]; exact he2)]
       exact .ok (.goto _)
 
+/-- A block-rule event `blockOKL` validates keeps the block's kind as the rule's. -/
+theorem blockOKL_kind {tabs : Tables} {M : Defs} {br : BlockRule} {st st' : BStateL}
+    {nc : Array ID} {us : List Value} (h : blockOKL tabs M br st nc = some (st', us)) :
+    st.kind = br.kind := by
+  obtain ⟨F⟩ := blockFactsL h
+  exact F.hkind
+
+/-! ## Jump tables -/
+
+/-- An integer's 64-bit register holds its value. -/
+theorem toNat_setWidth64 {w : Width} (x : BitVec w.bits) : (x.setWidth 64).toNat = x.toNat := by
+  rw [BitVec.toNat_setWidth]
+  apply Nat.mod_eq_of_lt
+  have := x.isLt
+  cases w <;> simp only [Width.bits] at this ⊢ <;> omega
+
+/-- `JUMPTABLE` on a refining first control (and any other) takes the edge `JumpTable` takes on
+its integer control, or the `JumpTable` is stuck. -/
+theorem jump_stepL {S T : Block} (hS : S.kind = .JumpTable) (hT : T.kind = .ARM64JUMPTABLE)
+    (hs : T.succs = S.succs) (hid : T.id = S.id) {x x' : Val} (hx : Sem.Refines x x') (y : Val) :
+    Res.Rel Next.Refines (stepValsL S [x]) (stepValsL T [x', y]) := by
+  have hsucc : ∀ k, Sem.succ T k = Sem.succ S k := fun k => by unfold Sem.succ; rw [hs, hid]
+  have hna : S.kind.isArm64 = false := by rw [hS]; rfl
+  have ha : T.kind.isArm64 = true := by rw [hT]; rfl
+  unfold stepValsL
+  rw [if_neg (by rw [hna]; decide), if_pos ha]
+  unfold stepVals
+  rw [hS, hT]
+  simp only [ctlV, List.getElem?_cons_zero, res_ok_bind]
+  cases hx with
+  | int w v =>
+    simp only [Arm64.reg, hsucc, toNat_setWidth64]
+    exact succ_refl S _
+  | _ => exact .stuck _ _
+
+/-- What `jumpOKL` establishes about a jump-table event. -/
+theorem jumpOKL_facts {tabs : Tables} {M : Defs} {st st' : BStateL} {nc : Array ID}
+    {defs us : List Value} (h : jumpOKL tabs M st nc defs = some (st', us)) :
+    ∃ c ma sb, st.ctrls.toList = [c] ∧ nc.toList = [c, ma.id] ∧ st.swapped = false ∧
+      st' = { kind := .ARM64JUMPTABLE, ctrls := nc, auxInt := st.auxInt, swapped := false } ∧
+      us = [sb, ma] ∧ termVL tabs ma = true ∧ termVL tabs sb = true ∧ ma.args = #[sb.id] ∧
+      sb.args = #[] ∧ sb.id ≠ ma.id ∧ M.get? ma.id = none ∧ M.get? sb.id = none := by
+  unfold jumpOKL at h
+  split at h
+  · next _ _ _ c c' a ma sb hc hnc =>
+    split at h
+    · next hif =>
+      simp only [Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl⟩ := h
+      simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq, bne_iff_ne, ne_eq,
+        Option.isNone_iff_eq_none, Array.isEmpty_iff] at hif
+      obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hsw, hcc⟩, hma⟩, -⟩, hmt⟩, hargs⟩, -⟩, hst⟩, hsba⟩, hne⟩, hfa⟩, hfs⟩ := hif
+      subst hcc hma
+      exact ⟨_, ma, sb, hc, hnc, hsw, rfl, rfl, hmt, hst, hargs, hsba, hne, hfa, hfs⟩
+    · cases h
+  · cases h
+
+/-- **A jump-table event** (`jumpOKL`) keeps `BInvL`, along a step `M → M'` that keeps the
+denotations of `C ⊆ C'` and defines the values it adds (`us`) in `C'`. -/
+theorem BInvL.jump {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C₀ : ID → Prop}
+    {M M' : Defs} {C C' : ID → Prop} {B : BMapL} (h : BInvL tabs f D₀ C₀ M C B)
+    (hty : ∀ ρ, TypedL true D₀ tabs ρ → TypedL true M.get? tabs ρ)
+    (hsub : ∀ y, C y → C' y)
+    (hden : ∀ ρ n y, C y → denL true M'.get? tabs ρ n y = denL true M.get? tabs ρ n y)
+    {b : ID} {st st' : BStateL} (hst : bstateL f B b = some st) (hk : st.kind = .JumpTable)
+    {nc : Array ID} {defs us : List Value} (hok : jumpOKL tabs M st nc defs = some (st', us))
+    (hus : ∀ u ∈ us, C' u.id) :
+    BInvL tabs f D₀ C₀ M' C' ((b, st') :: B) := by
+  obtain ⟨c, ma, sb, hc, hnc, hsw, rfl, rfl, -⟩ := jumpOKL_facts hok
+  have hcm : c ∈ st.ctrls := by rw [← Array.mem_toList_iff, hc]; exact List.mem_singleton_self _
+  refine h.retargetStep hsub hty hden hst fun fb _ _ hctls =>
+    ⟨fun h => (by cases h), fun a ha => ?_, fun m => ⟨m, fun ρ _ => ?_⟩⟩
+  · rw [← Array.mem_toList_iff, hnc] at ha
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at ha
+    rcases ha with rfl | rfl
+    · exact hsub _ (hctls _ hcm)
+    · exact hus _ (by simp)
+  · rw [hc, hnc]
+    simp only [List.map_cons, List.map_nil]
+    rw [hden ρ m c (hctls _ hcm)]
+    refine jump_stepL (S := stBlockL fb st) (T := stBlockL fb
+      { kind := .ARM64JUMPTABLE, ctrls := nc, auxInt := st.auxInt, swapped := false })
+      hk rfl ?_ rfl (Sem.Refines.refl _) _
+    simp [stBlockL, hsw]
+
 end GoFV.Proof.Low.Val

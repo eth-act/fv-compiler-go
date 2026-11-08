@@ -1079,7 +1079,7 @@ def replay (tabs : Tables) (t : Interp.Table) (f : Func) (lax : Bool) :
       else none
   | _, _, .phielim .. :: _ => none
   | _, _, .snap .. :: _ => none
-  | M, B, .blockRule b i nc :: evs =>
+  | M, B, .blockRule b i nc _ :: evs =>
     match bstate f B b with
     | none => none
     | some st =>
@@ -4008,7 +4008,7 @@ def RewriteCheck.evSame : GoFV.Rules.RwEvent → GoFV.Rules.RwEvent → Bool
   | .copyArg v i s, .copyArg v' i' s' => v == v' && i == i' && s == s'
   | .control b i c, .control b' i' c' => b == b' && i == i' && c == c'
   | .phielim v _ _, .phielim v' _ _ => v == v'
-  | .blockRule b i _, .blockRule b' i' _ => b == b' && i == i'
+  | .blockRule b i _ _, .blockRule b' i' _ _ => b == b' && i == i'
   | .snap _, .snap _ => true
   | _, _ => false
 

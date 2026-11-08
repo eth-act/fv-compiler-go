@@ -6,7 +6,7 @@ import GoFV.Rules.Derive
 # The proven-only `ARM64.rules` rule set (issue #385)
 
 `ARM64.rules` restricted to the rules with a merged lowered obligation (`ArmRule.Sound`,
-`ArmRule.SetOp`, `ArmRule.Rename`, `BlockRuleL.Sound`; `GoFV/Proof/Low/ProvenARM64.lean`), in
+`ArmRule.SetOp`, `ArmRule.Rename`, `BlockRuleL.Checked`; `GoFV/Proof/Low/ProvenARM64.lean`), in
 matching order: the rule set of the checked `lower` (`GoFV.Opt.lowerChecked`). A rule on a
 condition's op and flags (`flagArg`) is listed split by the condition op
 (`GoFV.Rules.Derive.flagSplit`), which rewrites the same instances; a rule on `arm64Invert` or
@@ -63,7 +63,7 @@ def b2iNorm (r : Rule) : Rule where
     | res => res
   pos := r.pos
 
-/-- `ARM64.rules` restricted to its 493 proven value rules and 93 proven block rules. -/
+/-- `ARM64.rules` restricted to its 494 proven value rules and 94 proven block rules. -/
 def lower : RuleSet where
   name := "ARM64"
   values := [(.ARM64ADD, [Generated.ARM64.r_ARM64_970, Generated.ARM64.r_ARM64_1012, Generated.ARM64.r_ARM64_1014, Generated.ARM64.r_ARM64_1017, Generated.ARM64.r_ARM64_1433, Generated.ARM64.r_ARM64_1434, Generated.ARM64.r_ARM64_1435, Generated.ARM64.r_ARM64_1635]),
@@ -217,6 +217,7 @@ def lower : RuleSet where
     (.Eq8, [Generated.ARM64.r_ARM64_239]),
     (.EqB, [Generated.ARM64.r_ARM64_135]),
     (.EqPtr, [Generated.ARM64.r_ARM64_243]),
+    (.GetCallerSP, [Generated.ARM64.r_ARM64_456]),
     (.GetClosurePtr, [Generated.ARM64.r_ARM64_455]),
     (.Hmul64, [Generated.ARM64.r_ARM64_15]),
     (.Hmul64u, [Generated.ARM64.r_ARM64_16]),
@@ -347,6 +348,7 @@ def lower : RuleSet where
     (.ARM64GE, [Generated.ARM64.r_ARM64_558_2, Generated.ARM64.r_ARM64_559_2, Generated.ARM64.r_ARM64_560_2, Generated.ARM64.r_ARM64_561_2, Generated.ARM64.r_ARM64_644, Generated.ARM64.r_ARM64_645, Generated.ARM64.r_ARM64_1335]),
     (.ARM64GT, [Generated.ARM64.r_ARM64_558_3, Generated.ARM64.r_ARM64_559_3, Generated.ARM64.r_ARM64_560_3, Generated.ARM64.r_ARM64_561_3, Generated.ARM64.r_ARM64_1333]),
     (.If, [Generated.ARM64.r_ARM64_461, Generated.ARM64.r_ARM64_462, Generated.ARM64.r_ARM64_463, Generated.ARM64.r_ARM64_464, Generated.ARM64.r_ARM64_465, Generated.ARM64.r_ARM64_466, Generated.ARM64.r_ARM64_467, Generated.ARM64.r_ARM64_468, Generated.ARM64.r_ARM64_469, Generated.ARM64.r_ARM64_470, Generated.ARM64.r_ARM64_471, Generated.ARM64.r_ARM64_472, Generated.ARM64.r_ARM64_473, Generated.ARM64.r_ARM64_474, Generated.ARM64.r_ARM64_476]),
+    (.JumpTable, [Generated.ARM64.r_ARM64_478]),
     (.ARM64LE, [Generated.ARM64.r_ARM64_558_4, Generated.ARM64.r_ARM64_559_4, Generated.ARM64.r_ARM64_560_4, Generated.ARM64.r_ARM64_561_4, Generated.ARM64.r_ARM64_1334]),
     (.ARM64LT, [Generated.ARM64.r_ARM64_558_5, Generated.ARM64.r_ARM64_559_5, Generated.ARM64.r_ARM64_560_5, Generated.ARM64.r_ARM64_561_5, Generated.ARM64.r_ARM64_646, Generated.ARM64.r_ARM64_647, Generated.ARM64.r_ARM64_1332]),
     (.ARM64NE, [Generated.ARM64.r_ARM64_558_6, Generated.ARM64.r_ARM64_559_6, Generated.ARM64.r_ARM64_560_6, Generated.ARM64.r_ARM64_561_6, Generated.ARM64.r_ARM64_600_2, Generated.ARM64.r_ARM64_601_2, Generated.ARM64.r_ARM64_622, Generated.ARM64.r_ARM64_624, Generated.ARM64.r_ARM64_1341]),

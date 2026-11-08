@@ -127,7 +127,7 @@ def why (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) : 
         else return s!"control b{b} {i}: no control"
     | .phielim .. => return "phielim"
     | .snap .. => return "snap"
-    | .blockRule b i nc =>
+    | .blockRule b i nc _ =>
       match bstate f B b with
       | none => return s!"blockRule at missing b{b}"
       | some st =>

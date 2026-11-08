@@ -824,6 +824,7 @@ import GoFV.Proof.Witness.LowerBlockTB
 import GoFV.Proof.Witness.LowerBlockTT
 import GoFV.Proof.Witness.LowerBlockZW
 import GoFV.Proof.Witness.LowerCallTrunc
+import GoFV.Proof.Witness.LowerCallerSP
 import GoFV.Proof.Witness.LowerCondSel
 import GoFV.Proof.Witness.LowerCondSelBool
 import GoFV.Proof.Witness.LowerConstFold
@@ -832,6 +833,7 @@ import GoFV.Proof.Witness.LowerCopyPtr
 import GoFV.Proof.Witness.LowerCvtMask
 import GoFV.Proof.Witness.LowerFrameAtom
 import GoFV.Proof.Witness.LowerInvert
+import GoFV.Proof.Witness.LowerJumpTable
 import GoFV.Proof.Witness.LowerLoadFold
 import GoFV.Proof.Witness.LowerLoadIdx
 import GoFV.Proof.Witness.LowerLoadStore

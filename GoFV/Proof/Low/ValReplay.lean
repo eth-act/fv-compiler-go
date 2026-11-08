@@ -56,11 +56,11 @@ theorem ofRuleSetL_checked {s : RuleSet} (hs : ArmRuleSet.AllSound s) {k i : Nat
       obtain ⟨r, hr, rfl⟩ := hm
       exact forallL_mem (forallL_mem hs.1 p hp) r hr
 
-/-- Every block rule of the table of a sound lowering rule set is `BlockRuleL.Sound`. -/
+/-- Every block rule of the table of a sound lowering rule set is `BlockRuleL.Checked`. -/
 theorem ofRuleSetL_blockSound {s : RuleSet} (hs : ArmRuleSet.AllSound s) {k i : Nat}
     {br : BlockRule}
     (h : ((GoFV.Rules.Interp.Table.ofRuleSet s).blocks[k]?).bind (·[i]?) = some br) :
-    BlockRuleL.Sound br := by
+    BlockRuleL.Checked br := by
   cases hk : (GoFV.Rules.Interp.Table.ofRuleSet s).blocks[k]? with
   | none => rw [hk] at h; cases h
   | some row =>
@@ -2012,11 +2012,38 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
     · cases h
   | .phielim .. :: _, M, M', B, B', C, h, _, _ => by simp [replayL] at h
   | .snap .. :: _, M, M', B, B', C, h, _, _ => by simp [replayL] at h
-  | .blockRule b i nc :: evs, M, M', B, B', C, h, hI, hB => by
+  | .blockRule b i nc defs :: evs, M, M', B, B', C, h, hI, hB => by
     unfold replayL at h
     split at h
     · cases h
     rename_i st hst
+    split at h
+    · -- a jump table: two fresh terms
+      rename_i hjt
+      split at h
+      · cases h
+      rename_i st' us hok
+      have hjt' : st.kind = .JumpTable := by simpa using hjt
+      obtain ⟨c, ma, sb, -, -, -, -, rfl, hmt, hst', hmaa, hsba, hne, hfa, hfs⟩ :=
+        jumpOKL_facts hok
+      simp only [List.foldl_cons, List.foldl_nil] at h
+      have hI1 := hI.fresh (P := True) hfs hst' (fun _ a ha => by rw [hsba] at ha; simp at ha)
+      have hfa' : (M.put sb.id sb).get? ma.id = none := by
+        rw [get?_put]; simp [Ne.symm hne, hfa]
+      have hI2 := hI1.fresh (P := True) hfa' hmt (fun _ a ha => by
+        rw [hmaa] at ha
+        simp only [List.mem_toArray, List.mem_singleton] at ha
+        exact .inr ⟨trivial, ha⟩)
+      exact replayL_inv hs hD evs _ M' _ B' _ h hI2
+        (hB.jump hI.typed (fun _ h => .inl (.inl h))
+          (fun _ n y hy => (denL_put_fresh hfa' hI1.closed n y (.inl hy)).trans
+            (denL_put_fresh hfs hI.closed n y hy)) hst hjt' hok
+          (fun u hu => by
+            simp only [List.mem_cons, List.not_mem_nil, or_false] at hu
+            rcases hu with rfl | rfl
+            · exact .inl (.inr ⟨trivial, rfl⟩)
+            · exact .inr ⟨trivial, rfl⟩))
+    rename_i hjt
     split at h
     · cases h
     rename_i h2
@@ -2027,7 +2054,8 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
     split at h
     · cases h
     rename_i st' us hok
-    have hsd := ofRuleSetL_blockSound hs hbr
+    have hsd : BlockRuleL.Sound br := (ofRuleSetL_blockSound hs hbr).resolve_right fun hk => by
+      rw [← blockOKL_kind hok] at hk; simp [hk] at hjt
     rcases blockOKL_us hI.closed hok with rfl | ⟨u, rfl, hk, ht, hcl⟩
     · exact replayL_inv hs hD evs M M' _ B' C h hI
         (hB.block hI.closed hI.typed (fun _ h => h) (fun _ _ _ _ => rfl) hst h2' hsd hok

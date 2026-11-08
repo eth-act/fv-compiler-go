@@ -13,6 +13,7 @@ argument registers:
   refined by `retypeL`, at the same shape);
 * `NilCheck` → `LoweredNilCheck`: `arm64Op` runs `memRoot` of the generic op;
 * `GetClosurePtr` → `LoweredGetClosurePtr`: both read the frame's closure;
+* `GetCallerSP` → `LoweredGetCallerSP`: both are the activation's `frameVal`;
 * the calls `StaticCall`/`ClosureCall`/`InterCall` → `CALLstatic`/`CALLclosure`/`CALLinter`:
   `arm64Op` runs `callOp` of the generic op on the register pieces fitted to their leaves
   (`fitPieces`). A piece `fitPiece` changes is one whose `encode` at its leaf is all `poison`
@@ -429,6 +430,7 @@ theorem renameOp_cases {a b : Op} (h : renameOp a b = true) :
     (a = .NilCheck ∧ b = .ARM64LoweredNilCheck) ∨ (a = .StaticCall ∧ b = .ARM64CALLstatic) ∨
       (a = .ClosureCall ∧ b = .ARM64CALLclosure) ∨ (a = .InterCall ∧ b = .ARM64CALLinter) ∨
       (a = .GetClosurePtr ∧ b = .ARM64LoweredGetClosurePtr) ∨
+      (a = .GetCallerSP ∧ b = .ARM64LoweredGetCallerSP) ∨
       (a = .TailCall ∧ b = .ARM64CALLtail) ∨ (a = .TailCallInter ∧ b = .ARM64CALLtailinter) ∨
       (a = .PanicBounds ∧ b = .ARM64LoweredPanicBoundsRR) ∨ Arm64.atomicOf b = some a := by
   unfold renameOp at h
@@ -436,7 +438,7 @@ theorem renameOp_cases {a b : Op} (h : renameOp a b = true) :
   rcases h with h | h
   · unfold callRename at h
     split at h <;> simp_all
-  · exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr h)))))))
+  · exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr h))))))))
 
 /-- A root `atomicRoot` does not model (a tail call) is `stuck`. -/
 theorem atomicRoot_tail {v : Value} (hv : v.op = .TailCall ∨ v.op = .TailCallInter)
@@ -559,7 +561,7 @@ theorem evalOpL_rename {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : 
     {o : Op} (h : renameOp o w.op = true) :
     (∃ k, PostCall o k ∧ evalOpL false env ctx fr w argv ty =
         callOp env ctx { w with op := o } (fitArgs ctx.tabs { w with op := o } k argv)) ∨
-      ((o = .NilCheck ∨ o = .GetClosurePtr ∨ o = .PanicBounds) ∧
+      ((o = .NilCheck ∨ o = .GetClosurePtr ∨ o = .GetCallerSP ∨ o = .PanicBounds) ∧
         evalOpL false env ctx fr w argv ty = evalOp env ctx fr { w with op := o } argv ty) ∨
       ((o = .TailCall ∨ o = .TailCallInter) ∧
         ∃ msg, evalOp env ctx fr { w with op := o } argv ty = .stuck msg) ∨
@@ -568,7 +570,7 @@ theorem evalOpL_rename {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : 
         evalOp env ctx fr { w with op := o } argv ty = atomicRoot { w with op := o } argv) := by
   have h0 : nilFaults false ctx w argv = none := rfl
   rcases renameOp_cases h with ⟨rfl, hw⟩ | ⟨rfl, hw⟩ | ⟨rfl, hw⟩ | ⟨rfl, hw⟩ | ⟨rfl, hw⟩ |
-    ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, hw⟩ | hat
+    ⟨rfl, hw⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, hw⟩ | hat
   · refine .inr (.inl ⟨.inl rfl, ?_⟩)
     have hg : Op.ARM64LoweredNilCheck.generic = false := by decide
     unfold evalOpL
@@ -621,6 +623,17 @@ theorem evalOpL_rename {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : 
     rw [hw]
     unfold evalOp
     rfl
+  · refine .inr (.inl ⟨.inr (.inr (.inl rfl)), ?_⟩)
+    have hg : Op.ARM64LoweredGetCallerSP.generic = false := by decide
+    unfold evalOpL
+    rw [hw]
+    simp only [hg, Bool.false_eq_true, ite_false]
+    unfold arm64Op
+    rw [h0]
+    dsimp only
+    rw [hw]
+    unfold evalOp
+    rfl
   · refine .inr (.inr (.inl ⟨.inl rfl, ?_⟩))
     have : evalOp env ctx fr { w with op := .TailCall } argv ty =
         atomicRoot { w with op := .TailCall } argv := rfl
@@ -629,7 +642,7 @@ theorem evalOpL_rename {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : 
     have : evalOp env ctx fr { w with op := .TailCallInter } argv ty =
         atomicRoot { w with op := .TailCallInter } argv := rfl
     rw [this]; exact atomicRoot_tail (.inr rfl) argv
-  · refine .inr (.inl ⟨.inr (.inr rfl), ?_⟩)
+  · refine .inr (.inl ⟨.inr (.inr (.inr rfl)), ?_⟩)
     have hg : Op.ARM64LoweredPanicBoundsRR.generic = false := by decide
     unfold evalOpL
     rw [hw]
@@ -654,7 +667,7 @@ theorem evalOpL_callLead {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv 
       callOp env ctx { w with op := o } (fitArgs ctx.tabs { w with op := o } k argv) := by
   have hpc : PostCall o k := by
     rcases callLead_some hk with ⟨hw, rfl⟩ | ⟨hw, rfl⟩ | ⟨hw, rfl⟩ <;> rw [hw] at h <;>
-      rcases renameOp_cases h with h | h | h | h | h | h | h | h | h <;>
+      rcases renameOp_cases h with h | h | h | h | h | h | h | h | h | h <;>
       first
         | (obtain ⟨rfl, -⟩ := h; simp [PostCall]; done)
         | (obtain ⟨-, h2⟩ := h; simp at h2; done)
@@ -666,7 +679,7 @@ theorem evalOpL_callLead {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv 
       rcases hk' with ⟨h1, rfl⟩ | ⟨h1, rfl⟩ | ⟨h1, rfl⟩ <;>
         rcases hpc with ⟨h2, rfl⟩ | ⟨h2, rfl⟩ | ⟨h2, rfl⟩ <;> simp_all
     rw [he, this]
-  · rcases hpc with ⟨h2, -⟩ | ⟨h2, -⟩ | ⟨h2, -⟩ <;> rcases ho with h1 | h1 | h1 <;> simp_all
+  · rcases hpc with ⟨h2, -⟩ | ⟨h2, -⟩ | ⟨h2, -⟩ <;> rcases ho with h1 | h1 | h1 | h1 <;> simp_all
   · rcases hpc with ⟨h2, -⟩ | ⟨h2, -⟩ | ⟨h2, -⟩ <;> rcases ho with h1 | h1 <;> simp_all
   · rcases callLead_some hk with ⟨hw, -⟩ | ⟨hw, -⟩ | ⟨hw, -⟩ <;> rw [hw] at hat <;> cases hat
 

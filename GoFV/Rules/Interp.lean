@@ -586,8 +586,10 @@ def tryBlockRule (b : ID) (r : BlockRule) (idx : Nat) : RwM Bool := do
     applyBlockResult sc r b
     modify fun s => { s with fired := s.fired + 1 }
     if (← get).log.isSome then
-      let ctrls := (← blk b).controls
-      logEv fun _ => .blockRule b idx ctrls
+      let blk1 ← blk b
+      let f ← getF
+      let defs := (blk1.values.extract blk0.values.size blk1.values.size).filterMap f.value?
+      logEv fun _ => .blockRule b idx blk1.controls defs
     return true
 
 /-- `rewriteBlock<file>(b)`. -/

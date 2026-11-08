@@ -191,6 +191,7 @@ theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
       ⟨r_ARM64_239_sound, trivial⟩,
       ⟨r_ARM64_135_sound, trivial⟩,
       ⟨r_ARM64_243_sound, trivial⟩,
+      ⟨r_ARM64_456_sound, trivial⟩,
       ⟨r_ARM64_455_sound, trivial⟩,
       ⟨r_ARM64_15_sound, trivial⟩,
       ⟨r_ARM64_16_sound, trivial⟩,
@@ -318,18 +319,19 @@ theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
       ⟨r_ARM64_200_sound, trivial⟩,
       ⟨r_ARM64_202_sound, trivial⟩, trivial⟩
   · simp only [ProvenARM64.lower, ForallL, ForallL.append_iff]
-    exact ⟨⟨r_ARM64_558_sound, r_ARM64_559_sound, r_ARM64_560_sound, r_ARM64_561_sound, r_ARM64_600_sound, r_ARM64_601_sound, r_ARM64_621_sound, r_ARM64_623_sound, r_ARM64_1340_sound, trivial⟩,
-      ⟨r_ARM64_558_2_sound, r_ARM64_559_2_sound, r_ARM64_560_2_sound, r_ARM64_561_2_sound, r_ARM64_644_sound, r_ARM64_645_sound, r_ARM64_1335_sound, trivial⟩,
-      ⟨r_ARM64_558_3_sound, r_ARM64_559_3_sound, r_ARM64_560_3_sound, r_ARM64_561_3_sound, r_ARM64_1333_sound, trivial⟩,
-      ⟨r_ARM64_461_sound, r_ARM64_462_sound, r_ARM64_463_sound, r_ARM64_464_sound, r_ARM64_465_sound, r_ARM64_466_sound, r_ARM64_467_sound, r_ARM64_468_sound, r_ARM64_469_sound, r_ARM64_470_sound, r_ARM64_471_sound, r_ARM64_472_sound, r_ARM64_473_sound, r_ARM64_474_sound, r_ARM64_476_sound, trivial⟩,
-      ⟨r_ARM64_558_4_sound, r_ARM64_559_4_sound, r_ARM64_560_4_sound, r_ARM64_561_4_sound, r_ARM64_1334_sound, trivial⟩,
-      ⟨r_ARM64_558_5_sound, r_ARM64_559_5_sound, r_ARM64_560_5_sound, r_ARM64_561_5_sound, r_ARM64_646_sound, r_ARM64_647_sound, r_ARM64_1332_sound, trivial⟩,
-      ⟨r_ARM64_558_6_sound, r_ARM64_559_6_sound, r_ARM64_560_6_sound, r_ARM64_561_6_sound, r_ARM64_600_2_sound, r_ARM64_601_2_sound, r_ARM64_622_sound, r_ARM64_624_sound, r_ARM64_1341_sound, trivial⟩,
-      ⟨r_ARM64_526_sound, r_ARM64_527_sound, r_ARM64_528_sound, r_ARM64_529_sound, r_ARM64_530_sound, r_ARM64_531_sound, r_ARM64_532_sound, r_ARM64_533_sound, r_ARM64_534_sound, r_ARM64_535_sound, r_ARM64_536_sound, r_ARM64_537_sound, r_ARM64_538_sound, r_ARM64_539_sound, trivial⟩,
-      ⟨r_ARM64_541_sound, r_ARM64_542_sound, r_ARM64_543_sound, r_ARM64_544_sound, r_ARM64_545_sound, r_ARM64_546_sound, r_ARM64_547_sound, r_ARM64_548_sound, r_ARM64_549_sound, r_ARM64_550_sound, r_ARM64_551_sound, r_ARM64_552_sound, r_ARM64_553_sound, r_ARM64_554_sound, trivial⟩,
-      ⟨r_ARM64_1339_sound, trivial⟩,
-      ⟨r_ARM64_603_sound, r_ARM64_604_sound, r_ARM64_1337_sound, trivial⟩,
-      ⟨r_ARM64_603_2_sound, r_ARM64_604_2_sound, r_ARM64_1338_sound, trivial⟩,
-      ⟨r_ARM64_1336_sound, trivial⟩, trivial⟩
+    exact ⟨⟨.inl r_ARM64_558_sound, .inl r_ARM64_559_sound, .inl r_ARM64_560_sound, .inl r_ARM64_561_sound, .inl r_ARM64_600_sound, .inl r_ARM64_601_sound, .inl r_ARM64_621_sound, .inl r_ARM64_623_sound, .inl r_ARM64_1340_sound, trivial⟩,
+      ⟨.inl r_ARM64_558_2_sound, .inl r_ARM64_559_2_sound, .inl r_ARM64_560_2_sound, .inl r_ARM64_561_2_sound, .inl r_ARM64_644_sound, .inl r_ARM64_645_sound, .inl r_ARM64_1335_sound, trivial⟩,
+      ⟨.inl r_ARM64_558_3_sound, .inl r_ARM64_559_3_sound, .inl r_ARM64_560_3_sound, .inl r_ARM64_561_3_sound, .inl r_ARM64_1333_sound, trivial⟩,
+      ⟨.inl r_ARM64_461_sound, .inl r_ARM64_462_sound, .inl r_ARM64_463_sound, .inl r_ARM64_464_sound, .inl r_ARM64_465_sound, .inl r_ARM64_466_sound, .inl r_ARM64_467_sound, .inl r_ARM64_468_sound, .inl r_ARM64_469_sound, .inl r_ARM64_470_sound, .inl r_ARM64_471_sound, .inl r_ARM64_472_sound, .inl r_ARM64_473_sound, .inl r_ARM64_474_sound, .inl r_ARM64_476_sound, trivial⟩,
+      ⟨r_ARM64_478_sound, trivial⟩,
+      ⟨.inl r_ARM64_558_4_sound, .inl r_ARM64_559_4_sound, .inl r_ARM64_560_4_sound, .inl r_ARM64_561_4_sound, .inl r_ARM64_1334_sound, trivial⟩,
+      ⟨.inl r_ARM64_558_5_sound, .inl r_ARM64_559_5_sound, .inl r_ARM64_560_5_sound, .inl r_ARM64_561_5_sound, .inl r_ARM64_646_sound, .inl r_ARM64_647_sound, .inl r_ARM64_1332_sound, trivial⟩,
+      ⟨.inl r_ARM64_558_6_sound, .inl r_ARM64_559_6_sound, .inl r_ARM64_560_6_sound, .inl r_ARM64_561_6_sound, .inl r_ARM64_600_2_sound, .inl r_ARM64_601_2_sound, .inl r_ARM64_622_sound, .inl r_ARM64_624_sound, .inl r_ARM64_1341_sound, trivial⟩,
+      ⟨.inl r_ARM64_526_sound, .inl r_ARM64_527_sound, .inl r_ARM64_528_sound, .inl r_ARM64_529_sound, .inl r_ARM64_530_sound, .inl r_ARM64_531_sound, .inl r_ARM64_532_sound, .inl r_ARM64_533_sound, .inl r_ARM64_534_sound, .inl r_ARM64_535_sound, .inl r_ARM64_536_sound, .inl r_ARM64_537_sound, .inl r_ARM64_538_sound, .inl r_ARM64_539_sound, trivial⟩,
+      ⟨.inl r_ARM64_541_sound, .inl r_ARM64_542_sound, .inl r_ARM64_543_sound, .inl r_ARM64_544_sound, .inl r_ARM64_545_sound, .inl r_ARM64_546_sound, .inl r_ARM64_547_sound, .inl r_ARM64_548_sound, .inl r_ARM64_549_sound, .inl r_ARM64_550_sound, .inl r_ARM64_551_sound, .inl r_ARM64_552_sound, .inl r_ARM64_553_sound, .inl r_ARM64_554_sound, trivial⟩,
+      ⟨.inl r_ARM64_1339_sound, trivial⟩,
+      ⟨.inl r_ARM64_603_sound, .inl r_ARM64_604_sound, .inl r_ARM64_1337_sound, trivial⟩,
+      ⟨.inl r_ARM64_603_2_sound, .inl r_ARM64_604_2_sound, .inl r_ARM64_1338_sound, trivial⟩,
+      ⟨.inl r_ARM64_1336_sound, trivial⟩, trivial⟩
 
 end GoFV.Proof.Low

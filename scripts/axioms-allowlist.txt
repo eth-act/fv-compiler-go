@@ -6,10 +6,10 @@
 # introduces the use, with a comment naming the theorem.
 # verifiedPipeline_witness (GoFV/Proof/Witness/Pipeline.lean, #189): the whole verified pipeline on
 # plF; `decide +kernel` gets stuck comparing the pass results' CFG caches (`Func` equality).
-GoFV.Proof.Witness.plF_pipeline._native.native_decide.ax_1_1 54dcb21896c30fab4771995608303d60aed5117ea74d16667a6fe962896a585e
+GoFV.Proof.Witness.plF_pipeline._native.native_decide.ax_1_1 9100088239371aab63d1c946d532a0ad0b4f27fba653b3652fb0ddfd08a33ad3
 # verifiedPipelineFull_witness (GoFV/Proof/Witness/PipelineFull.lean, #385/#189): the verified
 # pipeline through `trim` on isNaN; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.pfF_pipeline._native.native_decide.ax_1_1 53bc71b37395ae7354cc2981d2a550be59b2c092d78683cda3b6ea3d6be0f0b1
+GoFV.Proof.Witness.pfF_pipeline._native.native_decide.ax_1_1 862d8210bc7859831b6d0a65ffe31d5b4734a1a487d710ac9386864d35cfcf0f
 # The pins of the GenG1–GenG11 entries below updated for #554 (`genssa` fills `GenState.progAfter`).
 # genG1_witness_50/_30 (GoFV/Proof/Witness/GenG1.lean, #553): `checkG1` accepts `clamp` (parsed,
 # `Env.load`, `genssa`) and `runLoc` runs its compare and branch; compiled evaluation, as plF_pipeline.
@@ -87,7 +87,7 @@ GoFV.Proof.Witness.ObjWhole.start_facts._native.native_decide.ax_1_1 bd97ab21038
 # verified_mach_witness (GoFV/Proof/Witness/ObjEndToEnd.lean, #553): `pallocSum.start` from its
 # generic SSA through the verified pipeline to genssa's Progs and the linked words; compiled
 # evaluation, as plF_pipeline.
-GoFV.Proof.Witness.ObjEndToEnd.e2e_facts._native.native_decide.ax_1_1 18820af43b12fcad713105c81a14ea4109c7d079bafd7b42744d89ca9e4c26c9
+GoFV.Proof.Witness.ObjEndToEnd.e2e_facts._native.native_decide.ax_1_1 1c2cdc2c17f5fa93c0109045a3dfa8606a52878a13a073414b57e2abc0fffaf3
 # genG13_value_witness (GoFV/Proof/Witness/GenG13.lean, #553): `checkG13` accepts
 # `runtime.(*pageBits).clearAll` and `checkG12` does not (parsed, `Env.load`, `genssa`), `runLoc`
 # runs the zeroing `LoweredZero [64]` to 64 zero bytes; compiled evaluation, as plF_pipeline.
