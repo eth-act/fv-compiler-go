@@ -180,7 +180,8 @@ private theorem exT_awc_neg {w : Nat} (hw : 0 < w) (x y : BitVec w) (h0 : y ≠ 
     generalize 2 ^ (w - 1) = H at *
     rw [hN] at hlt ⊢
     split <;> split <;> omega
-  have hs : x.toInt + (-y).toInt + ((0 : Nat) : Int) = x.toInt + (~~~y).toInt + ((1 : Nat) : Int) := by
+  have hs :
+      x.toInt + (-y).toInt + ((0 : Nat) : Int) = x.toInt + (~~~y).toInt + ((1 : Nat) : Int) := by
     omega
   simp only [GoFV.SSA.Sem.addWithCarry, Bool.false_eq_true, ↓reduceIte, Nat.add_zero, hu, hs]
 
@@ -234,18 +235,22 @@ theorem Ex.eval_congr {c c' : Ctx} (hsym : c.sym = c'.sym) (hsp : c.s.sp = c'.s.
   | ld n a ih => intro he; simp only [Ex.eval]; rw [ih he, hmem]
   | add a b iha ihb =>
     intro he; simp only [Ex.eval]
-    rw [iha (fun r h => he r (by simp [Ex.reads, h])), ihb (fun r h => he r (by simp [Ex.reads, h]))]
+    rw [iha (fun r h => he r (by simp [Ex.reads, h])),
+      ihb (fun r h => he r (by simp [Ex.reads, h]))]
   | addSub sf sub a b iha ihb =>
     intro he; simp only [Ex.eval]
-    rw [iha (fun r h => he r (by simp [Ex.reads, h])), ihb (fun r h => he r (by simp [Ex.reads, h]))]
+    rw [iha (fun r h => he r (by simp [Ex.reads, h])),
+      ihb (fun r h => he r (by simp [Ex.reads, h]))]
   | logical sf opc a b iha ihb =>
     intro he; simp only [Ex.eval]
-    rw [iha (fun r h => he r (by simp [Ex.reads, h])), ihb (fun r h => he r (by simp [Ex.reads, h]))]
+    rw [iha (fun r h => he r (by simp [Ex.reads, h])),
+      ihb (fun r h => he r (by simp [Ex.reads, h]))]
   | shift sf kd amt a ih => intro he; simp only [Ex.eval]; rw [ih he]
   | ext opt sh a ih => intro he; simp only [Ex.eval]; rw [ih he]
   | bfm sf opc immr imms a b iha ihb =>
     intro he; simp only [Ex.eval]
-    rw [iha (fun r h => he r (by simp [Ex.reads, h])), ihb (fun r h => he r (by simp [Ex.reads, h]))]
+    rw [iha (fun r h => he r (by simp [Ex.reads, h])),
+      ihb (fun r h => he r (by simp [Ex.reads, h]))]
   | lo32 a ih => intro he; simp only [Ex.eval]; rw [ih he]
   | sext n a ih => intro he; simp only [Ex.eval]; rw [ih he]
   | page a ih => intro he; simp only [Ex.eval]; rw [ih he]
