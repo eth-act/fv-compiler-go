@@ -279,7 +279,7 @@ theorem loweredVPasses_sound : ∀ p ∈ loweredVPasses.toList, stepSoundL p := 
 
 /-- The table's passes are `compile.go`'s from `lower` to `trim`, in order. -/
 theorem loweredVPasses_names : loweredVPasses.map (·.name) = loweredPasses := by
-  decide +kernel
+  simp [loweredVPasses, loweredPasses]
 
 /-! ## The pipeline -/
 

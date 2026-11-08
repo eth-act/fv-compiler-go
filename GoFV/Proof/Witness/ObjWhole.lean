@@ -208,7 +208,8 @@ def lcFacts (env : Env) (lc : LocCtx) : Bool :=
 
 theorem addrAgree : AddrAgree ι := by
   intro b n a hb ha _
-  cases b <;> simp [ι, Blk.base?] at ha hb <;> (try subst hb) <;> (try subst ha) <;> rfl
+  cases b <;> simp [ι, Blk.base?, Blk.fixedBase?] at ha hb <;> (try subst hb) <;> (try subst ha) <;>
+    first | rfl | (obtain ⟨_, rfl, rfl⟩ := ha; rfl)
 
 theorem memInj : MemInj ι memI mm where
   nil := rfl
