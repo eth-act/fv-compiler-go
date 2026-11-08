@@ -295,7 +295,7 @@ theorem Inv.continue {st : VState} (h : Inv env f0 st) {p : StockPass} {out : Pa
     · rw [hf, ht]; exact Refines.toV (Refines.refl _ _)
     · rw [hf, ht]; exact h.2.1 hw
   · simp only [hs, ↓reduceIte, Bool.false_eq_true]
-    have hwf := @ok_of_toBool _ (check (checkEnv env out.tables) out.func)
+    have hwf := ok_of_toBool (e := check (checkEnv env out.tables) out.func)
     by_cases ht : (decide (out.func = st.func) && tabsAgree st.tables out.tables st.func) = true
     · simp only [ht, ↓reduceIte]
       simp only [Bool.and_eq_true, decide_eq_true_eq] at ht
