@@ -86,9 +86,10 @@ theorem mstep_word {o : Nat} {w : BitVec 32} {i : Insn} {tm tm' : MState}
   · rw [hpc, hc]; simp
   · simp [step, hpc, hc, hd, he]
 
-/-- What the state after words with effect `σ` and control `mc`, the last at `ol`, satisfies. -/
+/-- What the state after words with effect `σ` and control `mc`, the last at `ol`, satisfies
+(`X30` as `σ` says unless `mc` is a call). -/
 def WordsPost (c : Ctx) (base : BitVec 64) (ol : Nat) (σ : Sym) (mc : MCtl) (tm : MState) : Prop :=
-  HoldsCore c σ tm ∧ (∀ y a, mc ≠ .call y a → tm.x 30 = (σ.getX 30).eval c) ∧
+  HoldsCore c σ tm ∧ ((∀ y a, mc ≠ .call y a) → tm.x 30 = (σ.getX 30).eval c) ∧
     CtlPc c base ol mc tm
 
 theorem at_succ (base : BitVec 64) (o k : Nat) :
@@ -98,8 +99,10 @@ theorem at_succ (base : BitVec 64) (o k : Nat) :
 theorem at_nat (base : BitVec 64) (o : Nat) : base + BitVec.ofNat 64 o = at_ base (o : Int) := by
   simp [at_]
 
-/-- The target of a relocation, as `symUnit` writes it. -/
-def relTgt (y : Nat) (r : Reloc) : Ex := Ex.mkAdd (.sym y) (.k (BitVec.ofInt 64 r.add))
+/-- `at_succ` with the offset in any form. -/
+private theorem at_close (base : BitVec 64) (o k : Nat) (j : Int) (hj : j = ((o + k : Nat) : Int)) :
+    base + BitVec.ofNat 64 o + BitVec.ofNat 64 k = at_ base j := by
+  subst hj; exact at_succ base o k
 
 theorem callLink?_eq {i : Insn} {link : Bool} (h : callLink? i = some link) : i = .b link 0 := by
   cases i <;> simp [callLink?] at h
@@ -122,6 +125,20 @@ theorem ldstLo?_eq {i : Insn} {rd : Reg} {sc : Nat} {q : BitVec 2 × BitVec 2 ×
   cases mode <;> simp at h
   obtain ⟨⟨rfl, rfl, rfl, hsc⟩, rfl⟩ := h; exact ⟨rfl, hsc⟩
 
+private theorem wd_bind_ok {ε α β : Type} {x : Except ε α} {g : α → Except ε β} {b : β}
+    (h : (x >>= g) = .ok b) : ∃ a, x = .ok a ∧ g a = .ok b := by
+  cases x with
+  | error e => cases h
+  | ok a => exact ⟨a, rfl, h⟩
+
+/-- A `throw` is not `.ok` (stated over a variable message, so the kernel never unfolds it). -/
+private theorem wd_throw {ε α : Type} {e : ε} {b : α} (h : (throw e : Except ε α) = .ok b) :
+    False := nomatch h
+
+private theorem wd_ok3 {ε α β γ : Type} {a a' : α} {b b' : β} {c c' : γ}
+    (h : (pure (a, b, c) : Except ε (α × β × γ)) = .ok (a', b', c')) : a = a' ∧ b = b' ∧ c = c' := by
+  cases h; exact ⟨rfl, rfl, rfl⟩
+
 /-- What `symUnit` accepted. -/
 theorem symUnit_inv {n o : Nat} {σ σ' : Sym} {mc : MCtl} {used : Nat}
     (h : symUnit t rs n o σ = .ok (σ', mc, used)) :
@@ -137,13 +154,15 @@ theorem symUnit_inv {n o : Nat} {σ σ' : Sym} {mc : MCtl} {used : Nat}
         (∃ size opc rt, ldstScale r.type = some size.toNat ∧ i2 = .ldst size false opc (.uimm 0) rd rt ∧
           symAccess (σ.wX rd.toNat (.page (relTgt y r))) size opc rt.toNat (relTgt y r) = .ok σ')))) := by
   unfold symUnit at h
-  by_cases h1 : (o + 4 > t.size || o % 4 != 0) = true
-  · simp [h1] at h
-  have h1' : o + 4 ≤ t.size ∧ o % 4 = 0 := by simp at h1; omega
+  by_cases h1 : (decide (o + 4 > t.size) || o % 4 != 0) = true
+  · simp only [h1, ↓reduceIte] at h; exact (wd_throw h).elim
   simp only [h1, Bool.false_eq_true, ↓reduceIte] at h
+  have h1' : o + 4 ≤ t.size ∧ o % 4 = 0 := by
+    simp only [Bool.or_eq_true, decide_eq_true_eq, bne_iff_ne, ne_eq, not_or, Decidable.not_not] at h1
+    omega
   refine ⟨h1'.1, h1'.2, ?_⟩
   cases hd : decode (wordAt t o) with
-  | none => simp [hd] at h
+  | none => simp only [hd] at h; exact (wd_throw h).elim
   | some i =>
   simp only [hd] at h
   refine ⟨i, rfl, ?_⟩
@@ -151,77 +170,77 @@ theorem symUnit_inv {n o : Nat} {σ σ' : Sym} {mc : MCtl} {used : Nat}
   | none =>
     simp only [hr] at h
     by_cases hc : (!(covering rs o).isEmpty) = true
-    · simp [hc] at h
-    · simp only [hc, Bool.false_eq_true, ↓reduceIte] at h
-      cases hs : symInsn i o σ with
-      | error e => simp [hs, bind, Except.bind] at h
-      | ok q =>
-        simp [hs, bind, Except.bind, pure, Except.pure] at h
-        obtain ⟨rfl, rfl, rfl⟩ := h
-        left
-        exact ⟨rfl, by simpa using hc, rfl, rfl⟩
+    · simp only [hc, ↓reduceIte] at h; exact (wd_throw h).elim
+    simp only [hc, Bool.false_eq_true, ↓reduceIte] at h
+    obtain ⟨⟨σa, ca⟩, hs, h⟩ := wd_bind_ok h
+    obtain ⟨rfl, rfl, rfl⟩ := wd_ok3 h
+    left
+    refine ⟨rfl, ?_, hs, rfl⟩
+    simpa using hc
   | some r =>
-    simp only [hr] at h
-    cases hy : r.sym with
-    | none => simp [hy] at h
-    | some y =>
-    simp only [hy] at h
-    right
-    by_cases hcall : isCallReloc r.type = true
-    · simp only [hcall, ↓reduceIte] at h
-      left
-      cases hl : callLink? i with
-      | none => simp [hl] at h
-      | some link =>
-        simp [hl, pure, Except.pure] at h
-        obtain ⟨rfl, rfl, rfl⟩ := h
-        exact ⟨r, y, link, rfl, hy, hcall, callLink?_eq hl, rfl, rfl, rfl⟩
-    · right
-      simp only [hcall, Bool.false_eq_true, ↓reduceIte] at h
-      by_cases h2 : (n = 0 || o + 8 > t.size) = true
-      · simp [h2] at h
-      simp only [h2, Bool.false_eq_true, ↓reduceIte] at h
-      have h2' : o + 8 ≤ t.size := by simp at h2; omega
-      by_cases h3 : (covering rs (o + 4) != [r]) = true
-      · simp [h3] at h
-      simp only [h3, Bool.false_eq_true, ↓reduceIte] at h
-      have h3' : covering rs (o + 4) = [r] := by simpa using h3
-      cases ha : adrpRd? i with
-      | none => simp [ha] at h
-      | some rd =>
-      simp only [ha] at h
-      obtain ⟨rfl, hrd⟩ := adrpRd?_eq ha
-      cases hd2 : decode (wordAt t (o + 4)) with
-      | none => simp [hd2] at h
-      | some i2 =>
-      simp only [hd2] at h
-      refine ⟨r, y, rd, i2, rfl, hy, by simpa using hcall, h2', h3', rfl, hrd, rfl, ?_⟩
-      by_cases hty : (r.type == "R_ADDRARM64") = true
-      · simp only [hty, ↓reduceIte] at h
-        cases hl : addLo? rd i2 with
-        | none => simp [hl] at h
-        | some rd2 =>
-          simp [hl, pure, Except.pure] at h
-          obtain ⟨rfl, rfl, rfl⟩ := h
-          exact ⟨rfl, rfl, Or.inl ⟨by simpa using hty, rd2, addLo?_eq hl, rfl⟩⟩
-      · simp only [hty, Bool.false_eq_true, ↓reduceIte] at h
-        cases hsc : ldstScale r.type with
-        | none => simp [hsc] at h
-        | some sc =>
-        simp only [hsc] at h
-        cases hl : ldstLo? rd sc i2 with
-        | none => simp [hl] at h
-        | some q =>
-        obtain ⟨size, opc, rt⟩ := q
-        simp only [hl] at h
-        obtain ⟨rfl, hsz⟩ := ldstLo?_eq hl
-        cases hac : symAccess (σ.wX rd.toNat (.page (relTgt y r))) size opc rt.toNat (relTgt y r) with
-        | error e => simp [relTgt] at hac; simp [hac, bind, Except.bind] at h
-        | ok σa =>
-          simp [relTgt] at hac
-          simp [hac, bind, Except.bind, pure, Except.pure] at h
-          obtain ⟨rfl, rfl, rfl⟩ := h
-          exact ⟨rfl, rfl, Or.inr ⟨size, opc, rt, by rw [hsz], rfl, by simpa [relTgt] using hac⟩⟩
+  simp only [hr] at h
+  unfold symUnitRel at h
+  cases hy : r.sym with
+  | none => simp only [hy] at h; exact (wd_throw h).elim
+  | some y =>
+  simp only [hy] at h
+  right
+  by_cases hcall : isCallReloc r.type = true
+  · simp only [hcall, ↓reduceIte] at h
+    left
+    cases hl : callLink? i with
+    | none => simp only [hl] at h; exact (wd_throw h).elim
+    | some link =>
+      simp only [hl] at h
+      obtain ⟨rfl, rfl, rfl⟩ := wd_ok3 h
+      exact ⟨r, y, link, rfl, hy, hcall, callLink?_eq hl, rfl, rfl, rfl⟩
+  right
+  simp only [hcall, Bool.false_eq_true, ↓reduceIte] at h
+  unfold symPair at h
+  by_cases h2 : (decide (n = 0) || decide (o + 8 > t.size)) = true
+  · simp only [h2, ↓reduceIte] at h; exact (wd_throw h).elim
+  simp only [h2, Bool.false_eq_true, ↓reduceIte] at h
+  have h2' : o + 8 ≤ t.size := by
+    simp only [Bool.or_eq_true, decide_eq_true_eq, not_or] at h2; omega
+  by_cases h3 : (covering rs (o + 4) != [r]) = true
+  · simp only [h3, ↓reduceIte] at h; exact (wd_throw h).elim
+  simp only [h3, Bool.false_eq_true, ↓reduceIte] at h
+  have h3' : covering rs (o + 4) = [r] := by simpa using h3
+  cases ha : adrpRd? i with
+  | none => simp only [ha] at h; exact (wd_throw h).elim
+  | some rd =>
+  simp only [ha] at h
+  obtain ⟨rfl, hrd⟩ := adrpRd?_eq ha
+  cases hd2 : decode (wordAt t (o + 4)) with
+  | none => rw [hd2] at h; unfold symPairAt at h; exact (wd_throw h).elim
+  | some i2 =>
+  rw [hd2] at h; unfold symPairAt at h
+  refine ⟨r, y, rd, i2, rfl, hy, by simpa using hcall, h2', h3', rfl, hrd, rfl, ?_⟩
+  unfold symPair2 at h
+  by_cases hty : (r.type == "R_ADDRARM64") = true
+  · simp only [hty, ↓reduceIte] at h
+    cases hl : addLo? rd i2 with
+    | none => simp only [hl] at h; exact (wd_throw h).elim
+    | some rd2 =>
+      simp only [hl] at h
+      obtain ⟨rfl, rfl, rfl⟩ := wd_ok3 h
+      exact ⟨rfl, rfl, Or.inl ⟨by simpa using hty, rd2, addLo?_eq hl, rfl⟩⟩
+  simp only [hty, Bool.false_eq_true, ↓reduceIte] at h
+  unfold symLdst at h
+  cases hsc : ldstScale r.type with
+  | none => simp only [hsc] at h; exact (wd_throw h).elim
+  | some sc =>
+  simp only [hsc] at h
+  cases hl : ldstLo? rd sc i2 with
+  | none => simp only [hl] at h; exact (wd_throw h).elim
+  | some q =>
+  obtain ⟨size, opc, rt⟩ := q
+  simp only [hl] at h
+  obtain ⟨rfl, hsz⟩ := ldstLo?_eq hl
+  obtain ⟨σa, hac, h⟩ := wd_bind_ok h
+  obtain ⟨rfl, rfl, rfl⟩ := wd_ok3 h
+  exact ⟨rfl, rfl, Or.inr ⟨size, opc, rt, by rw [hsz], rfl, hac⟩⟩
+
 
 theorem symUnit_le {n o : Nat} {σ σ' : Sym} {mc : MCtl} {used : Nat}
     (h : symUnit t rs n o σ = .ok (σ', mc, used)) : SymLe σ σ' := by
@@ -229,7 +248,7 @@ theorem symUnit_le {n o : Nat} {σ σ' : Sym} {mc : MCtl} {used : Nat}
   rcases hcase with ⟨-, -, hsi, -⟩ | ⟨r, y, link, -, -, -, -, rfl, -, -⟩ |
     ⟨r, y, rd, i2, -, -, -, -, -, -, -, -, -, -, ⟨-, rd2, -, rfl⟩ | ⟨size, opc, rt, -, -, ha⟩⟩
   · exact symInsn_le hsi
-  · exact SymLe.refl σ
+  · exact SymLe.refl _
   · exact (SymLe.of_wX σ _ _).wXsp _ _
   · exact (SymLe.of_wX σ _ _).trans (symAccess_le ha)
 
@@ -262,8 +281,10 @@ theorem holdsCore_wX30 {c : Ctx} {σ : Sym} {tm : MState} (h : HoldsCore c σ tm
   refine ⟨fun r hr => ?_, ?_, hsp, hfl, hv, hmem⟩
   · have : (BitVec.ofNat 5 r : Reg) ≠ 30 := by
       intro he; have := congrArg BitVec.toNat he; simp at this; omega
-    simp [MState.wX, this, hx r hr]
-  · simp [MState.wX, h31]
+    have h30 : ¬ BitVec.ofNat 5 r = 30#5 := this
+    simp [MState.wX, hx r hr, h30]
+  · simp only [MState.wX, show ¬ ((30 : Reg) = 31) by decide, ↓reduceIte]
+    exact h31
 
 /-- One unit (`symUnit`) runs as it says. -/
 theorem symUnit_sound (hlink : linkCode base sym t rs = .ok code) (hsz : t.size ≤ 2 ^ 64)
@@ -280,7 +301,7 @@ theorem symUnit_sound (hlink : linkCode base sym t rs = .ok code) (hsz : t.size 
     subst hw
     obtain ⟨tm', hex, hH', hctl⟩ := symInsn_sound hsi hH hpc hnil
     refine ⟨tm', mstar_single (mstep_word hcw hd hex hpc hret), hH'.toHoldsCore,
-      fun _ _ _ => hH'.x30, ?_⟩
+      fun _ => hH'.x30, ?_⟩
     simpa using hctl
   · -- `BL`/`B` of `R_CALLARM64`
     obtain ⟨hcov, hoff, hsiz⟩ := relocAt_spec hr
@@ -292,14 +313,14 @@ theorem symUnit_sound (hlink : linkCode base sym t rs = .ok code) (hsz : t.size 
     have hpcrel : tm.pcRel imm26 = sym y + BitVec.ofInt 64 r.add := by
       simp only [MState.pcRel, hpc]; exact htgt
     cases link
-    · refine ⟨⟨hH.x, hH.x31, hH.sp, hH.nzcv, hH.v, hH.mem⟩, fun _ _ _ => hH.x30, ?_⟩
+    · refine ⟨⟨hH.x, hH.x31, hH.sp, hH.nzcv, hH.v, hH.mem⟩, fun _ => hH.x30, ?_⟩
       simp only [CtlPc, Bool.false_eq_true, ↓reduceIte]
       rw [hpcrel, hsym]
-    · refine ⟨holdsCore_wX30 hH.toHoldsCore _ _, fun y' a' hne => absurd rfl hne, ?_⟩
+    · refine ⟨holdsCore_wX30 hH.toHoldsCore _ _, fun hne => absurd rfl (hne y r.add), ?_⟩
       simp only [CtlPc, ↓reduceIte]
       refine ⟨by rw [hpcrel, hsym], ?_⟩
-      simp only [MState.wX, show (30 : Reg) ≠ 31 by decide, ↓reduceIte, hpc, at_succ]
-      simp
+      simp only [MState.wX, show (30 : Reg) ≠ 31 by decide, ↓reduceIte, hpc]
+      exact at_close base o 4 _ (by omega)
   · -- the relocated pairs
     obtain ⟨hcov, hoff, hsiz⟩ := relocAt_spec hr
     obtain ⟨q1, hq1, rfl⟩ := linkWord_one hlw hcov
@@ -319,8 +340,10 @@ theorem symUnit_sound (hlink : linkCode base sym t rs = .ok code) (hsz : t.size 
         simp only [Ex.eval, hev, hpc]; exact hpage.symm
       rw [hv] at h1
       exact h1.pc _
-    set tm1 := (tm.wX rd ((tm.pc &&& ~~~(0xFFF : BitVec 64)) + (imm.signExtend 64 <<< 12))).next
-      with htm1
+    obtain ⟨tm1, htm1⟩ : ∃ tm1, tm1 =
+        (tm.wX rd ((tm.pc &&& ~~~(0xFFF : BitVec 64)) + (imm.signExtend 64 <<< 12))).next :=
+      ⟨_, rfl⟩
+    rw [← htm1] at hH1 hex1
     have hpc1 : tm1.pc = base + BitVec.ofNat 64 (o + 4) := by
       simp only [htm1, MState.next, MState.wX]
       split <;> simp [hpc, BitVec.add_assoc, BitVec.ofNat_add]
@@ -347,9 +370,9 @@ theorem symUnit_sound (hlink : linkCode base sym t rs = .ok code) (hsz : t.size 
       have hH2 := hH1.wXsp_sym rd2.isLt (relTgt y r)
       rw [hrd2, hev] at hH2
       refine ⟨_, mstar_trans (mstar_single hs1) (mstar_single (mstep_word hcw2 hd2' hex2 hpc1 hret)),
-        (hH2.pc _).toHoldsCore, fun _ _ _ => (hH2.pc _).x30, ?_⟩
+        (hH2.pc _).toHoldsCore, fun _ => (hH2.pc _).x30, ?_⟩
       simp only [CtlPc, MState.next, MState.wXsp]
-      split <;> simp [hpc1, at_, BitVec.add_assoc, BitVec.ofNat_add] <;> omega
+      split <;> (show tm1.pc + 4 = _; rw [hpc1]; exact at_close base (o + 4) 4 _ (by omega))
     · obtain ⟨imm12, hd2', hlo⟩ := decode_ldstLo hd2 hsc hoff hy hq2 hsiz
       have haddr : (tm1.amode (.uimm imm12) rd (bytesOf size)).1 = (relTgt y r).eval c := by
         simp only [MState.amode, hrx1, hev, bytesOf]; exact hlo
@@ -358,11 +381,9 @@ theorem symUnit_sound (hlink : linkCode base sym t rs = .ok code) (hsz : t.size 
       rw [hrt] at hex2
       have hex2' : exec (.ldst size false opc (.uimm imm12) rd rt) tm1 = .ok tm2 := hex2
       refine ⟨tm2, mstar_trans (mstar_single hs1) (mstar_single (mstep_word hcw2 hd2' hex2' hpc1 hret)),
-        hH2.toHoldsCore, fun _ _ _ => hH2.x30, ?_⟩
-      simp only [CtlPc, hpc2, hpc1, at_]
-      simp [BitVec.add_assoc, BitVec.ofNat_add]
-
-
+        hH2.toHoldsCore, fun _ => hH2.x30, ?_⟩
+      rw [CtlPc, hpc2, hpc1]
+      exact at_close base (o + 4) 4 _ (by omega)
 
 /-- `symWords` only adds loads and stores. -/
 theorem symWords_le : ∀ (n o : Nat) (σ σ' : Sym) (mc : MCtl),
@@ -443,7 +464,7 @@ theorem symWords_sound (hlink : linkCode base sym t rs = .ok code) (hsz : t.size
         have hle2 := symWords_le n' (o + 4) σ1 σ' mc h
         obtain ⟨tm1, hs1, hc1, hx1, hp1⟩ :=
           symUnit_sound hlink hsz hret hu hsym hH hpc (hnil.mono hle2)
-        have hH1 : Holds c σ1 tm1 := ⟨hc1, hx1 0 0 (by simp)⟩
+        have hH1 : Holds c σ1 tm1 := ⟨hc1, hx1 (fun _ _ h => nomatch h)⟩
         have hpc1 : tm1.pc = base + BitVec.ofNat 64 (o + 4) := by
           simp only [CtlPc] at hp1; rw [hp1, at_nat]; congr 1
         obtain ⟨tm2, hs2, hp2⟩ := ih n' (by omega) (o + 4) σ1 σ' mc c tm1 h hsym hH1 hpc1 hnil
@@ -467,7 +488,7 @@ theorem symWords_sound (hlink : linkCode base sym t rs = .ok code) (hsz : t.size
         have hle2 := symWords_le m' (o + 8) σ1 σ' mc h
         obtain ⟨tm1, hs1, hc1, hx1, hp1⟩ :=
           symUnit_sound hlink hsz hret hu hsym hH hpc (hnil.mono hle2)
-        have hH1 : Holds c σ1 tm1 := ⟨hc1, hx1 0 0 (by simp)⟩
+        have hH1 : Holds c σ1 tm1 := ⟨hc1, hx1 (fun _ _ h => nomatch h)⟩
         have hpc1 : tm1.pc = base + BitVec.ofNat 64 (o + 8) := by
           simp only [CtlPc] at hp1; rw [hp1, at_nat]; congr 1
         obtain ⟨tm2, hs2, hp2⟩ := ih m' (by omega) (o + 8) σ1 σ' mc c tm1 h hsym hH1 hpc1 hnil

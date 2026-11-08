@@ -310,40 +310,86 @@ def ldstLo? (rd : Reg) (sc : Nat) : Insn → Option (BitVec 2 × BitVec 2 × Reg
     if !vec ∧ imm12 = 0 ∧ rn = rd ∧ size.toNat = sc then some (size, opc, rt) else none
   | _ => none
 
+/-- The target of a relocation `r` against symbol `y`: `y + r.add`. -/
+def relTgt (y : Nat) (r : Reloc) : Ex := Ex.mkAdd (.sym y) (.k (BitVec.ofInt 64 r.add))
+
+/-! `symUnit` is split into small definitions without early returns, `let`s or `do` join points
+(`symLdst`, `symPair2`, `symPairAt`, `symPair`, `symUnitRel`), so that the proofs about it
+(`symUnit_inv`) reduce one small match at a time. -/
+
+/-- The access of an `R_ARM64_PCREL_LDST*` pair (`ADRP rd` then `i2`). -/
+def symLdst (σ : Sym) (y : Nat) (r : Reloc) (rd : Reg) (i2 : Insn) :
+    Except String (Sym × MCtl × Nat) :=
+  match ldstScale r.type with
+  | none => throw s!"relocation {r.type}"
+  | some sc =>
+    match ldstLo? rd sc i2 with
+    | none => throw "PCREL_LDST: access"
+    | some (size, opc, rt) => do
+      let σ2 ← symAccess (σ.wX rd.toNat (.page (relTgt y r))) size opc rt.toNat (relTgt y r)
+      pure (σ2, .fall, 2)
+
+/-- The second word `i2` of a relocated pair (`ADRP rd` first). -/
+def symPair2 (σ : Sym) (y : Nat) (r : Reloc) (rd : Reg) (i2 : Insn) :
+    Except String (Sym × MCtl × Nat) :=
+  if r.type == "R_ADDRARM64" then
+    match addLo? rd i2 with
+    | none => throw "R_ADDRARM64: not ADRP + ADD"
+    | some rd2 => pure ((σ.wX rd.toNat (.page (relTgt y r))).wXsp rd2.toNat (relTgt y r), .fall, 2)
+  else symLdst σ y r rd i2
+
+/-- The second word `d` (decoded) of a relocated pair (`ADRP rd` first). The decoding is an
+argument, not a `match` scrutinee, so that unfolding this does not expose `decode` to the
+kernel. -/
+def symPairAt (d : Option Insn) (σ : Sym) (y : Nat) (r : Reloc) (rd : Reg) :
+    Except String (Sym × MCtl × Nat) :=
+  match d with
+  | none => throw "undecodable word"
+  | some i2 => symPair2 σ y r rd i2
+
+/-- A relocated pair at `o` (relocation `r` against `y`, first word `i`). -/
+def symPair (t : ByteArray) (rs : List Reloc) (n o : Nat) (σ : Sym) (y : Nat) (r : Reloc)
+    (i : Insn) : Except String (Sym × MCtl × Nat) :=
+  if n = 0 || o + 8 > t.size then throw "relocated pair cut"
+  else if covering rs (o + 4) != [r] then throw s!"word at {o + 4} patched by several relocations"
+  else
+    match adrpRd? i with
+    | none => throw s!"relocation {r.type} not on ADRP"
+    | some rd => symPairAt (decode (wordAt t (o + 4))) σ y r rd
+
+/-- `symUnit` at a relocated word `i` (relocation `r`): a `BL`/`B` of `R_CALLARM64`, or the
+relocated pair. -/
+def symUnitRel (t : ByteArray) (rs : List Reloc) (n o : Nat) (σ : Sym) (i : Insn) (r : Reloc) :
+    Except String (Sym × MCtl × Nat) :=
+  match r.sym with
+  | none => throw "relocation without symbol"
+  | some y =>
+    if isCallReloc r.type then
+      match callLink? i with
+      | none => throw "R_CALLARM64 not on a B or BL with a zero offset"
+      | some link => pure (σ, if link then .call y r.add else .jmpSym y r.add, 1)
+    else symPair t rs n o σ y r i
+
 /-- The first unit of the words `[o, o + 4 (n + 1))` executed symbolically from `σ`: one word,
 or the two words of a relocated pair (`R_ADDRARM64`: `ADRP` + `ADD`, the target in the `ADD`'s
 destination, its page in the `ADRP`'s; `R_ARM64_PCREL_LDST*`: `ADRP` + load/store, the access
-at the target), or a `BL`/`B` of `R_CALLARM64`, as linked; the relocated fields must be zero. The
-effect, the control and the number of words. -/
+at the target), or a `BL`/`B` of `R_CALLARM64`, as linked (`symUnitRel`); the relocated fields
+must be zero. The effect, the control and the number of words. -/
 def symUnit (t : ByteArray) (rs : List Reloc) (n o : Nat) (σ : Sym) :
-    Except String (Sym × MCtl × Nat) := do
+    Except String (Sym × MCtl × Nat) :=
   if o + 4 > t.size || o % 4 != 0 then throw s!"word at {o} past the text or unaligned"
-  let w := wordAt t o
-  let some i := decode w | throw s!"undecodable word {w.toHex} at {o}"
-  match relocAt rs o with
-  | none =>
-    if !(covering rs o).isEmpty then throw s!"word at {o} patched by several relocations"
-    let (σ, c) ← symInsn i o σ
-    pure (σ, c, 1)
-  | some r =>
-    let some y := r.sym | throw "relocation without symbol"
-    let tgt := Ex.mkAdd (.sym y) (.k (BitVec.ofInt 64 r.add))
-    if isCallReloc r.type then
-      let some link := callLink? i | throw "R_CALLARM64 not on a B or BL with a zero offset"
-      pure (σ, if link then .call y r.add else .jmpSym y r.add, 1)
-    else if n = 0 || o + 8 > t.size then throw "relocated pair cut"
-    else if covering rs (o + 4) != [r] then throw s!"word at {o + 4} patched by several relocations"
-    else
-      let some rd := adrpRd? i | throw s!"relocation {r.type} not on ADRP"
-      let some i2 := decode (wordAt t (o + 4)) | throw "undecodable word"
-      let σ1 := σ.wX rd.toNat (.page tgt)
-      if r.type == "R_ADDRARM64" then
-        let some rd2 := addLo? rd i2 | throw "R_ADDRARM64: not ADRP + ADD"
-        pure (σ1.wXsp rd2.toNat tgt, .fall, 2)
-      else
-        let some sc := ldstScale r.type | throw s!"relocation {r.type}"
-        let some (size, opc, rt) := ldstLo? rd sc i2 | throw "PCREL_LDST: access"
-        pure (← symAccess σ1 size opc rt.toNat tgt, .fall, 2)
+  else
+    let w := wordAt t o
+    match decode w with
+    | none => throw s!"undecodable word {w.toHex} at {o}"
+    | some i =>
+      match relocAt rs o with
+      | none =>
+        if !(covering rs o).isEmpty then throw s!"word at {o} patched by several relocations"
+        else do
+          let (σ, c) ← symInsn i o σ
+          pure (σ, c, 1)
+      | some r => symUnitRel t rs n o σ i r
 
 /-- The words `[o, o + 4 n)` executed symbolically from `σ`, unit by unit (`symUnit`), every
 unit but the last falling through. -/
