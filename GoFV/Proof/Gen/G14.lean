@@ -239,8 +239,9 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
   {ret : BitVec 64} {E : MatchEnv} {lc : LocCtx} {s s' : LocState} {b : ID} {i : Nat}
   {m : MState} {env : Env} {v : Value} {j j' : Nat} {K K' : Nat → Option Nat}
 
-/-- A register-index load `MOV… (Rp)(Ri<<sh), Rd` of `n` valid bytes. -/
-theorem g14_idx (F : Facts lc sym text az ez psA.toList ret E)
+/-- `g14_idx` with the registers of the machine after the load: the zero or sign extension of the
+`n` loaded bytes written to `X[kd]`, `rd = R0 + kd`. -/
+theorem g14_idxW (F : Facts lc sym text az ez psA.toList ret E)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K') (hpre : IdxPre lc s v)
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
@@ -252,7 +253,10 @@ theorem g14_idx (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j ⟨plain as (· == idxA rn ri sh) (· == regA rd), as.name⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧
+      ∃ (kd : Nat) (Y : BitVec (8 * n)), rd = GoFV.Asm.ARM64.REG_R0 + kd ∧
+        m'.x = (m.wX (BitVec.ofNat 5 kd)
+          (if sg then ProgOp.sextTo64 n (Y.setWidth 64) else Y.setWidth 64)).x := by
   have hl := F.lowered
   have hA := F.addr
   obtain ⟨hnp, hn, hsg, hsh, hmov⟩ := loadIdxOp?_facts hop
@@ -297,9 +301,9 @@ theorem g14_idx (F : Facts lc sym text az ez psA.toList ret E)
     (Or.inr (by rw [hrd]; rfl))
   have haeq' : m.rX (BitVec.ofNat 5 kn) + m.rX (BitVec.ofNat 5 ki) <<< sh = a + p.off := by
     simpa using haeq
-  refine (op_reg2 (H := H) F hm hinv hj hj' hvs hd hkd hor (hval a hpa') (fits_retypeL hcv _)
+  refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor (hval a hpa') (fits_retypeL hcv _)
     (knext_set hK hnp hvh hcv) (fun k0 hk0 hok => ?_)).imp
-    fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, kd, _, rfl, h4⟩
   obtain ⟨has, hf, -, ht', -, -, -⟩ := plain_spec hok
   simp only [beq_iff_eq] at hf ht'
   have hma' : (ProgCtx.mk (Link.byId sym text az ez psA.toList)
@@ -309,6 +313,23 @@ theorem g14_idx (F : Facts lc sym text az ez psA.toList ret E)
     exact congrArg (fun z => Except.ok (z, none)) haeq'
   rw [progStep_loadAt hkd (nextAddr_pcAt F.nodup hk0) (by rw [has]; exact hmov)
     (by rw [hf]; rfl) hma' ht' hnil, wX_pc]
+
+/-- A register-index load `MOV… (Rp)(Ri<<sh), Rd` of `n` valid bytes. -/
+theorem g14_idx (F : Facts lc sym text az ez psA.toList ret E)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hR : KRead lc v K) (hK : KNext lc v K K') (hpre : IdxPre lc s v)
+    (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
+    {as : As} {n sh : Nat} {sg : Bool} {c : Nat} {rn ri rd : Int}
+    (hop : loadIdxOp? v.op = some (as, n, sh, sg)) (hsz3 : v.args.size = 3)
+    (hao : argObj lc v 0 = .ok (64, rn)) (hio : argObj lc v 1 = .ok (64, ri))
+    (hma : memArg lc v 2 = .ok ()) (hro : resObj lc v = .ok (c, rd))
+    (hc : 8 ≤ c ∨ c = 1 ∧ n = 1 ∧ sg = false)
+    (hvs : OneAt2 psA j ⟨plain as (· == idxA rn ri sh) (· == regA rd), as.name⟩ j')
+    (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
+    ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' :=
+  (g14_idxW (H := H) F hm hinv hsi hR hK hpre hj hj' hop hsz3 hao hio hma hro hc hvs htemp
+    hs).imp fun _ h => ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1⟩
 
 end Cases
 

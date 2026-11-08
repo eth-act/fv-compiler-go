@@ -11,15 +11,17 @@ instruction that wrote it extended its low bits so; `LocMatch` relates only the 
 narrow integer.
 
 **The upper-bit table.** `uAt lc blk i` names what the machine register written by the value
-before value `i` holds above its low bits (`uEntry`): after a narrow load (`MOV{B,H,W}{,U}load`
-of an address in a register or a global, as G3; `MOV{B,H,W}{,U}loadidx*`, as G14) homed in
-register `r` with a result of class `c ∈ {8, 16, 32}`, `r` holds the zero or sign extension of
-its low `c` bits, as the load's signedness says. Every other value, and a block's start, leaves
-nothing known.
+before value `i` holds above its low bits (`uEntry`): after a narrow load of `n` bytes
+(`MOV{B,H,W}{,U}load` of an address in a register or a global, as G3; `MOV{B,H,W}{,U}loadidx*`, as
+G14) homed in register `r` with a result of class `c ∈ {8, 16, 32}`, `c ≥ 8n`, `r` holds the zero
+or sign extension of its low `c` bits, as the load's signedness says. Every other value, and a
+block's start, leaves nothing known. (A table that carries entries across values that keep the
+register, `docs/plans/proofs3.md` §8, needs every slice's value lemma to say which registers it
+keeps; on quick-v10, 1,300 of the 1,520 `MOVDnop`s follow their load directly.)
 
 G20 accepts `MOVDnop x` with no temporary, `x` its only argument, homed in `x`'s register (one
-G1 may write) at class 64, `x` of class 8, 16 or 32, no code (`nopKind`), when the table before
-it names `x`'s register at `x`'s class with the signedness `signOf` gives `x` (`nopOK`).
+G1 may write) at an integer class, `x` of class 8, 16 or 32, no code (`nopKind`), when the table
+before it names `x`'s register at `x`'s class with the signedness `signOf` gives `x` (`nopOK`).
 
 `GoFV/Proof/Gen/G20.lean` proves what an accepted function satisfies.
 -/
@@ -28,25 +30,27 @@ namespace GoFV.Gen.Check
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Asm
 
-/-- The narrow loads G3 and G14 run, with their signedness: an address in a register or a global
-(`loadOp?`, not `MOVD`; no frame variable), or a register-index load (`loadIdxOp?`, not `MOVD`). -/
-def narrowSg? (lc : LocCtx) (v : Value) : Option Bool :=
+/-- The narrow loads G3 and G14 run, with their bytes and signedness: an address in a register or
+a global (`loadOp?`, not `MOVD`; no frame variable), or a register-index load (`loadIdxOp?`, not
+`MOVD`). -/
+def narrowLd? (lc : LocCtx) (v : Value) : Option (Nat × Bool) :=
   match loadOp? v.op, loadIdxOp? v.op with
-  | some (as, _, sg), _ =>
+  | some (as, n, sg), _ =>
     if as == .MOVD then none
     else match v.aux with
-      | none => some sg
+      | none => some (n, sg)
       | some _ =>
-        if (v.args[0]?.bind lc.ctx.f.value?).map (·.op) == some .SB then some sg else none
-  | none, some (as, _, _, sg) => if as == .MOVD then none else some sg
+        if (v.args[0]?.bind lc.ctx.f.value?).map (·.op) == some .SB then some (n, sg) else none
+  | none, some (as, n, _, sg) => if as == .MOVD then none else some (n, sg)
   | none, none => none
 
 /-- What the register written by `v` holds above its low bits: `(r, c, sg)` when `v` is a narrow
-load homed in register `r` at class `c ∈ {8, 16, 32}` and `r` holds the sign (`sg`) or zero
-extension of its low `c` bits. -/
+load of `n` bytes homed in register `r` at class `c ∈ {8, 16, 32}`, `8n ≤ c`, and `r` holds the
+sign (`sg`) or zero extension of its low `c` bits. -/
 def uEntry (lc : LocCtx) (v : Value) : Option (Nat × Nat × Bool) :=
-  match narrowSg? lc v, regHome? lc v.id, cls (lc.ty v.id) with
-  | some sg, some r, some c => if c == 8 || c == 16 || c == 32 then some (r, c, sg) else none
+  match narrowLd? lc v, regHome? lc v.id, cls (lc.ty v.id) with
+  | some (n, sg), some r, some c =>
+    if (c == 8 || c == 16 || c == 32) && 8 * n ≤ c then some (r, c, sg) else none
   | _, _, _ => none
 
 /-- The upper-bit table before value `i` of block `blk`: the entry of value `i - 1`. -/
