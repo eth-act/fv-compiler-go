@@ -41,6 +41,7 @@ import GoFV.Proof.Gen.Basic
 import GoFV.Proof.Gen.Branch
 import GoFV.Proof.Gen.G1
 import GoFV.Proof.Gen.G10
+import GoFV.Proof.Gen.G11
 import GoFV.Proof.Gen.G2
 import GoFV.Proof.Gen.G3
 import GoFV.Proof.Gen.G4
@@ -60,6 +61,7 @@ import GoFV.Proof.Gen.Progs7
 import GoFV.Proof.Gen.Rel
 import GoFV.Proof.Gen.Spec
 import GoFV.Proof.Gen.Spec10
+import GoFV.Proof.Gen.Spec11
 import GoFV.Proof.Gen.Spec2
 import GoFV.Proof.Gen.Spec3
 import GoFV.Proof.Gen.Spec4
@@ -751,6 +753,7 @@ import GoFV.Proof.Witness.FwdNew
 import GoFV.Proof.Witness.FwdZeroStr
 import GoFV.Proof.Witness.GenG1
 import GoFV.Proof.Witness.GenG10
+import GoFV.Proof.Witness.GenG11
 import GoFV.Proof.Witness.GenG2
 import GoFV.Proof.Witness.GenG3
 import GoFV.Proof.Witness.GenG4

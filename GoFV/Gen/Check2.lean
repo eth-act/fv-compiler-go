@@ -263,8 +263,9 @@ def Cx2.values (c : Cx2) (entry : Bool) : List ID → Nat → Bool → Except St
         pure j
       | .none => pure j
       | .prog pat => c.one j pat
-    -- a spill changes neither a register nor the memory: entry values may follow it
-    let head := head && (entryOp v.op || v.op == .StoreReg)
+    -- a spill changes neither a register nor the memory, and the closure context is no code (`R26`
+    -- holds it from the entry on): entry values may follow them
+    let head := head && (entryOp v.op || v.op == .StoreReg || v.op == .ARM64LoweredGetClosurePtr)
     let (js, e) ← c.values entry ids k head
     return (j :: js, e)
 
