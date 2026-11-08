@@ -2,16 +2,18 @@ import GoFV.Proof.Low.Rules.Kit
 import GoFV.Rules.Generated.ARM64
 
 /-!
-# Lowering rule lemmas: ellipsis rules on integer ops (`ARM64.rules:5-50`, `191-211`)
+# Lowering rule lemmas: ellipsis rules on integer ops (`ARM64.rules:5-50`, `108-110`, `191-211`)
 
 `ArmRule.SetOp` of `(o ...) => (o' ...)` with `o` a generic integer op and `o'` its arm64 op
 (`Copy` for the truncations): 64-bit arithmetic, `Mul32`/`MULW`, the bitwise ops and the zero
 and 64-bit sign extensions compute the zero-extended register of the generic result, sound at
 every shape (`setOpSound_int1`, `setOpSound_int2`); narrow arithmetic, the narrow sign
 extensions and the truncations agree on the low bits, at the op's own shape (`setOpSound_top1`,
-`setOpSound_top2`, the `topOKL` premise). `(AddPtr ...) => (ADD ...)` is sound on a 64-bit
-integer index (`SetOpSoundT`, which the validator checks, `setArgsOK`): `AddPtr` sign-extends its
-index, `ADD` reads the register.
+`setOpSound_top2`, the `topOKL` premise). The byte swaps compute the zero-extended register too:
+`REV`/`REVW` reverse the bytes as `Bswap64`/`Bswap32`, `REV16W` of a zero-extended halfword
+swaps its two bytes as `Bswap16` (`rev16_setWidth`, `bswap16_eq`). `(AddPtr ...) => (ADD ...)`
+is sound on a 64-bit integer index (`SetOpSoundT`, which the validator checks, `setArgsOK`):
+`AddPtr` sign-extends its index, `ADD` reads the register.
 -/
 
 namespace GoFV.Proof.Low.Rules
@@ -168,6 +170,56 @@ private theorem s_SignExt16to64_ARM64MOVHreg : SetOpSound .SignExt16to64 .ARM64M
 
 private theorem s_SignExt32to64_ARM64MOVWreg : SetOpSound .SignExt32to64 .ARM64MOVWreg :=
   setOpSound_int1 .w32 .w64 (·.signExtend 64) (fun _ _ _ _ _ => rfl) (by arm_reg)
+
+private theorem s_Bswap64_ARM64REV : SetOpSound .Bswap64 .ARM64REV :=
+  setOpSound_int1 .w64 .w64 (fun x => BitVec.ofNat 64 (Int.bswapNat 8 x.toNat))
+    (fun _ _ _ _ _ => rfl) (by arm_reg <;> rfl)
+
+private theorem s_Bswap32_ARM64REVW : SetOpSound .Bswap32 .ARM64REVW :=
+  setOpSound_int1 .w32 .w32 (fun x => BitVec.ofNat 32 (Int.bswapNat 4 x.toNat))
+    (fun _ _ _ _ _ => rfl) (by arm_reg <;> rfl)
+
+/-- `Bswap16` of `x`: its two bytes swapped. -/
+theorem bswap16_eq (x : BitVec 16) :
+    BitVec.ofNat 16 (Int.bswapNat 2 x.toNat) = (x <<< 8) + (x >>> 8) := by
+  apply BitVec.eq_of_toNat_eq
+  simp only [Int.bswapNat, BitVec.toNat_ofNat, BitVec.toNat_add, BitVec.toNat_shiftLeft,
+    BitVec.toNat_ushiftRight, Nat.shiftLeft_eq, Nat.shiftRight_eq_div_pow, Nat.pow_zero,
+    Nat.mul_one, Nat.add_zero, show (2 : Nat) ^ 8 = 256 from rfl, show (2 : Nat) ^ 16 = 65536 from rfl]
+  have h1 := x.isLt
+  have h2 : x.toNat / 256 < 256 := by omega
+  have h3 : x.toNat * 256 % 65536 = x.toNat % 256 * 256 := by omega
+  rw [Nat.mod_eq_of_lt h2, h3]
+
+private theorem shl8_add_shr8 (x : BitVec 16) : (x <<< 8) + (x >>> 8) = (x <<< 8) ||| (x >>> 8) := by
+  apply BitVec.add_eq_or_of_and_eq_zero
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  simp only [BitVec.getLsbD_and, BitVec.getLsbD_shiftLeft, BitVec.getLsbD_ushiftRight,
+    BitVec.getLsbD_zero]
+  by_cases h : i < 8
+  · simp [h]
+  · simp [h, BitVec.getLsbD_of_ge x (8 + i) (by omega)]
+
+/-- `REV16W` of a zero-extended halfword: its two bytes swapped, zero-extended. -/
+theorem rev16_setWidth (x : BitVec 16) :
+    Arm64.rev16 (x.setWidth 32) = ((x <<< 8) + (x >>> 8)).setWidth 32 := by
+  rw [shl8_add_shr8]
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  simp only [Arm64.rev16, BitVec.getLsbD_or, BitVec.getLsbD_and, BitVec.getLsbD_ushiftRight,
+    BitVec.getLsbD_shiftLeft, BitVec.getLsbD_setWidth, BitVec.getLsbD_ofNat]
+  iterate 32 (rcases i with _ | i; · simp (config := { decide := true }))
+  omega
+
+private theorem s_Bswap16_ARM64REV16W : SetOpSound .Bswap16 .ARM64REV16W :=
+  setOpSound_int1 .w16 .w16 (fun x => BitVec.ofNat 16 (Int.bswapNat 2 x.toNat))
+    (fun _ _ _ _ _ => rfl) (by
+      intro tabs ty ai ax x
+      show Arm64.op1w ty Arm64.rev16 [.int .w16 x] = _
+      simp only [Arm64.op1w, Arm64.reg32, Arm64.reg, Arm64.res32, Option.map]
+      rw [BitVec.setWidth_setWidth_of_le _ (by decide), rev16_setWidth, bswap16_eq]
+      congr 1)
 
 /-- `ARM64.rules:5`: `(Add16 ...) => (ADD ...)` -/
 theorem r_ARM64_5_sound : ArmRule.Checked r_ARM64_5 :=
@@ -487,5 +539,20 @@ theorem r_ARM64_210_sound : ArmRule.Checked r_ARM64_210 :=
 theorem r_ARM64_211_sound : ArmRule.Checked r_ARM64_211 :=
   checked_setOp .SignExt32to64 .ARM64MOVWreg rfl rfl rfl rfl (termVL_generic _ rfl rfl) (termVL_arm _ rfl rfl rfl)
     s_SignExt32to64_ARM64MOVWreg
+
+/-- `ARM64.rules:108`: `(Bswap64 ...) => (REV ...)` -/
+theorem r_ARM64_108_sound : ArmRule.Checked r_ARM64_108 :=
+  checked_setOp .Bswap64 .ARM64REV rfl rfl rfl rfl (termVL_generic _ rfl rfl) (termVL_arm _ rfl rfl rfl)
+    s_Bswap64_ARM64REV
+
+/-- `ARM64.rules:109`: `(Bswap32 ...) => (REVW ...)` -/
+theorem r_ARM64_109_sound : ArmRule.Checked r_ARM64_109 :=
+  checked_setOp .Bswap32 .ARM64REVW rfl rfl rfl rfl (termVL_generic _ rfl rfl) (termVL_arm _ rfl rfl rfl)
+    s_Bswap32_ARM64REVW
+
+/-- `ARM64.rules:110`: `(Bswap16 ...) => (REV16W ...)` -/
+theorem r_ARM64_110_sound : ArmRule.Checked r_ARM64_110 :=
+  checked_setOp .Bswap16 .ARM64REV16W rfl rfl rfl rfl (termVL_generic _ rfl rfl)
+    (termVL_arm _ rfl rfl rfl) s_Bswap16_ARM64REV16W
 
 end GoFV.Proof.Low.Rules
