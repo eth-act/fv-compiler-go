@@ -593,11 +593,12 @@ theorem obj_star {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab : Tab
     (hE : ObjEnv ps spills o tab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map tab ps L base))
     (hs : PStar H L ps.toList (endP L.text ps.toList) s s')
-    (hR : ObjRel (ObjEnv.map tab ps L base) s t) (hI : ObjInv L ps.toList s) :
+    (hR : ObjRel (ObjEnv.map tab ps L base) s t)
+    (hI : ObjInv L ps.toList s ∨ s.pc = endP L.text ps.toList) :
     ∃ t', MStar H code retM t t' ∧ ObjRel (ObjEnv.map tab ps L base) s' t' ∧
       (ObjInv L ps.toList s' ∨ s'.pc = endP L.text ps.toList) := by
   induction hs with
-  | refl => exact ⟨t, .refl, hR, Or.inl hI⟩
+  | refl => exact ⟨t, .refl, hR, hI⟩
   | tail _ hst ih =>
     obtain ⟨t1, h1, hR1, hI1⟩ := ih
     have hpc : _ := match hst with
