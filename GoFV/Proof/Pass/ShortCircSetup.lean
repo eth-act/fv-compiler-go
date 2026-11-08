@@ -4,6 +4,8 @@ import GoFV.Proof.DomRel
 import GoFV.Proof.Checked
 import GoFV.Proof.Avail
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Checked `shortcircuitBlock`: the setting and the checker's facts
 

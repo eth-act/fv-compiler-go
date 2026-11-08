@@ -2,6 +2,8 @@ import GoFV.Proof.Regalloc.Loc
 import GoFV.Proof.EvalL
 import GoFV.Proof.Pass.CopyFragL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Regalloc checker soundness: the simulation relation (`docs/plans/regalloc-check.md` §5)
 

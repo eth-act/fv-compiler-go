@@ -1,6 +1,8 @@
 import Lean
 import GoFV.Proof.Low.Rules.Kit
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Tactics for the lowering rule lemmas (issue #385)
 

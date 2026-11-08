@@ -1,5 +1,7 @@
 import GoFV.Proof.Gen.Rel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The values of slice G1's ops against the machine's words (`docs/plans/proofs3.md` §3)
 

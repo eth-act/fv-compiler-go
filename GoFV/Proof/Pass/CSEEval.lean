@@ -3,6 +3,8 @@ import GoFV.Proof.Pass.CSEComm
 import GoFV.Proof.Eval
 import GoFV.Proof.Frame
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # cse: evaluating related values
 

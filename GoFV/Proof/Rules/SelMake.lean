@@ -3,6 +3,8 @@ import GoFV.Proof.Rules.NonVacuous
 import GoFV.Rules.Generated.Generic.Values01
 import GoFV.Rules.Generated.Generic.Values12
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: generic selections of a `Make`
 

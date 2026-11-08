@@ -4,6 +4,8 @@ import GoFV.Proof.Pass.SegCall
 import GoFV.Proof.Pass.StructStoreMem
 import GoFV.Proof.Pass.LoadFwdMem
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Segments: a `Move` of stores over a zeroed region (issue #69)
 

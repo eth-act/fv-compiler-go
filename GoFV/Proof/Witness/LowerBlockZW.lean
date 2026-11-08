@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerCopyArgs
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower` testing a truncation against zero: `nzw` (hand-written, issue #385)
 

@@ -1,5 +1,7 @@
 import GoFV.Proof.Sim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Evaluation against a reference frame, with free values
 

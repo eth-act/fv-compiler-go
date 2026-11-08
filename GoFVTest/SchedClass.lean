@@ -1,5 +1,7 @@
 import GoFV.Opt.ScheduleCheck
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Why `scheduleCheck` rejects a scheduling (`schedl-probe`, `gofv-ssa-opt --verified`)
 

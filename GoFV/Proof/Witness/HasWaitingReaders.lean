@@ -1,6 +1,8 @@
 import GoFV.Proof.Witness.InitF10
 import GoFV.Opt.ExpandCallsCheck
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function: `syscall_hasWaitingReaders` of `sync` at `expand calls`
 

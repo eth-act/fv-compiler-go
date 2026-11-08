@@ -1,6 +1,8 @@
 import GoFV.Rules.Helpers.Magic
 import GoFV.Proof.Rules.Tactic
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The `divisible` helpers: inverses and trailing zeros (#69)
 

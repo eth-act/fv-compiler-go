@@ -2,6 +2,8 @@ import GoFV.SSA.Parse
 import GoFV.SSA.Check
 import GoFV.Opt.LoweredCSECheck
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `csel-probe`: does the lowered cse checker accept cse's results?
 

@@ -1,5 +1,7 @@
 import GoFV.Proof.Low.Rules.Cmp
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowering rule lemmas: shifts (`ARM64.rules:152-179`)
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Witness.LoadFwd
 import GoFV.Proof.Rules.StructLoad
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for struct-load expansions: `loadField` (hand-written, issue #151)
 

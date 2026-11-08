@@ -1,6 +1,8 @@
 import GoFV.Proof.DomCert
 import GoFV.Proof.Pass.CopyFrag
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # What copyelim changes: the static relation `CopyRel`
 

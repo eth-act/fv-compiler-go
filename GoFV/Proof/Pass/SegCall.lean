@@ -4,6 +4,8 @@ import GoFV.Proof.MemRefine
 import GoFV.Proof.ABI
 import GoFV.Proof.Pass.DSEMem
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # A `memclrNoHeapPointers`/`memmove` call ⊑ the plain `Zero`/`Move` write (#151)
 

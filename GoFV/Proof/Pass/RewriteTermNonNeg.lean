@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.RewriteTermDen
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `isNonNegative` on the definitions (issue #69)
 

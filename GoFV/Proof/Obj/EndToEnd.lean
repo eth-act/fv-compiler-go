@@ -1,6 +1,8 @@
 import GoFV.Proof.Obj.Whole
 import GoFV.Proof.Pass.PipelineFull
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Generic SSA to machine words (`docs/plans/proofs3.md` §1)
 

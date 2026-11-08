@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.DeadEdgeJ
 import GoFV.Proof.Pass.CopyElimSim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # deadcode's input fragment
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G17
 import GoFV.Proof.Gen.Spec18
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of the genssa validator's slice G18: register-index stores (`docs/plans/proofs3.md` §4)
 

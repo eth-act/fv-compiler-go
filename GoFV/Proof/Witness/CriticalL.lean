@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.CriticalL
 import GoFV.Proof.Witness.DeadcodeL
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: critical on lowered code
 

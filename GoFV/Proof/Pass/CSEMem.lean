@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.CSEMemChain
 import GoFV.Proof.WF
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # cse's memory skips are sound
 

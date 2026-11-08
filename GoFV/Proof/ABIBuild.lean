@@ -1,6 +1,8 @@
 import GoFV.Proof.FinishMono
 import GoFV.Proof.Retype
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Register pieces of ABI values: shapes, Make-trees and selector chains (#28)
 

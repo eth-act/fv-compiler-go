@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.PhiOpt
 import GoFV.Proof.Witness.TraceFP
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: phiopt on `tracefpunwindoff`
 

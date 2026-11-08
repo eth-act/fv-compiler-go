@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.Clamp
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness runs: defer and recover (P5, `docs/plans/semantics.md` §9.7)
 

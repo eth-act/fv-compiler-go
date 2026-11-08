@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.DeadRel
 import GoFV.Opt.Deadcode
 import GoFV.Proof.Pass.DeadLive
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # deadcode after copyelim: the static relation
 

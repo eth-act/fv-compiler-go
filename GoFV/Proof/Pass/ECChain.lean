@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.ECDefs
 import GoFV.Proof.Pass.ECShape
 import GoFV.Proof.ABI
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `expand calls`: the register pieces of a converted call's or `MakeResult`'s arguments (#28)
 

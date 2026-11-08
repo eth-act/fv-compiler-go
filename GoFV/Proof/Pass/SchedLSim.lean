@@ -4,6 +4,8 @@ import GoFV.Proof.AvailL
 import GoFV.Proof.Pass.CopyElimL
 import GoFV.Proof.CheckFacts
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `schedule` refines its input: `runSched` of the output against `runLF` of the input
 

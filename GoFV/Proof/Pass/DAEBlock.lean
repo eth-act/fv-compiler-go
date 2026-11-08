@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.DAEBlockBase
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dead auto elim: one block's evaluation
 

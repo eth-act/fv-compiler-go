@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.WBNpOrder
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # writebarrier: the source facts of the chain's values (issue #36)
 

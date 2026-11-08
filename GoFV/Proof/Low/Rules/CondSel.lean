@@ -2,6 +2,8 @@ import GoFV.Proof.Low.Rules.Tactic
 import GoFV.Rules.Derive
 import GoFV.Rules.Generated.ARM64
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowering rule lemmas: `CondSelect` (`ARM64.rules:302`, `303`)
 

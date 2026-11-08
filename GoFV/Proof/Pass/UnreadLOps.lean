@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.UnreadLSrc
 import GoFV.Proof.EvalOpLDispatch
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # elim unread autos on `runL`: the kept memory ops on related memories
 

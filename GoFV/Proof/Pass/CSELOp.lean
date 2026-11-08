@@ -4,6 +4,8 @@ import GoFV.Proof.EvalL
 import GoFV.Opt.LoweredCSECheck
 import GoFV.Proof.EvalOpLDispatch
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # lowered cse: facts about `evalOpL` at single ops
 

@@ -1,5 +1,7 @@
 import GoFV.SSA.Sem.Run
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # cse: commutative ops ignore the order of their first two arguments
 

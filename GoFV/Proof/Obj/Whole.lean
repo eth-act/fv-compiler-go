@@ -2,6 +2,8 @@ import GoFV.Proof.Obj.G12
 import GoFV.Proof.Obj.Frame
 import GoFV.Proof.CongLoc
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Whole functions: `runLoc` → `runMach` across blocks (`docs/plans/proofs3.md` §1, §7)
 

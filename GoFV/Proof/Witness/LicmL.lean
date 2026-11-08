@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.LicmL
 import GoFV.Proof.Witness.TightenL
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: loop invariant on a lowered loop
 

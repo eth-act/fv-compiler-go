@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.ShortCircSetup
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Checked `shortcircuitBlock`: the per-block checks as propositions
 

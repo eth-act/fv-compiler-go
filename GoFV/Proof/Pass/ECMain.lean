@@ -3,6 +3,8 @@ import GoFV.Proof.Pass.ECStruct
 import GoFV.Proof.Pass.ECObl
 import GoFV.Proof.TabsAgree
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `expand calls` refines its input (issue #28)
 

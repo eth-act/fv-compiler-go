@@ -2,6 +2,8 @@ import GoFV.Proof.Rules.Tactic
 import GoFV.Rules.Generated.Generic.Values05
 import GoFV.Rules.Generated.Generic.Values06
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: `Lsh` rules (part 5)
 

@@ -1,5 +1,7 @@
 import GoFV.SSA.Sem.Mem
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Byte and memory refinement (`docs/plans/semantics.md` §3.5)
 

@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.DAESrc
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dead auto elim: one value in source and target
 

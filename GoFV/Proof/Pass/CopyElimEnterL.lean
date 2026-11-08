@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.CopyElimBlockL
 import GoFV.Proof.Pass.CopyElimEnter
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # copyelim on `runL`: the target's evaluation of a block
 

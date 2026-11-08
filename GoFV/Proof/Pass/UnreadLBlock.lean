@@ -3,6 +3,8 @@ import GoFV.Proof.AvailL
 import GoFV.Proof.SimL
 import GoFV.Proof.EvalOpLDispatch
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # elim unread autos on `runL`: one block's evaluation
 

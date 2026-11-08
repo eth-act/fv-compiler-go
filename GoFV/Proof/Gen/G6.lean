@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G5
 import GoFV.Proof.Gen.Spec6
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of the genssa validator's slice G6: frame variables (`docs/plans/proofs3.md` §4)
 

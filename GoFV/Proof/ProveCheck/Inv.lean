@@ -2,6 +2,8 @@ import GoFV.Proof.ProveCheck.Spec
 import GoFV.Proof.AtomSimSet
 import GoFV.Proof.Merge
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The source-side invariant of prove's validator (issue #24)
 

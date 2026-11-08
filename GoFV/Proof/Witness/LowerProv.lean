@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerCvtMask
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness functions for `lower` on the provenance cases of `MADD`, `CSINC`, `CMPshift*` and `CMN`: `mad`, `csi`, `csh`, `cng` (hand-written, issue #385)
 

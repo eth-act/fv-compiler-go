@@ -1,5 +1,7 @@
 import GoFV.Proof.Refine
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `run` ignores positions, use counts, branch predictions and caches
 

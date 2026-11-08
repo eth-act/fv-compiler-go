@@ -66,6 +66,10 @@ namespace GoFV.SSA.Sem
 
 open GoFV.SSA
 
+section
+
+variable [Addrs]
+
 /-- The frame layout of one function (`docs/plans/semantics3.md` §5). -/
 structure FrameLayout where
   /-- The asm section's TEXT frame size (`obj7.go`: `framesize + 8 + extrasize`; 0: frameless). -/
@@ -334,7 +338,11 @@ def FrameLayout.problems (fc : FrameCtx) : List String := Id.run do
       | none => pure ()
   return out.reverse
 
+end
+
 /-! ## Witnesses -/
+
+open scoped Fixed
 
 /-- A layout: a 64-byte frame (`extrasize` 8), variable `a5` a `PAUTO` at `FrameOffset` −16. -/
 private def exLay : FrameLayout := { autosize := 64, extrasize := 8, offsets := [(5, -16)], size := 96 }
@@ -370,7 +378,7 @@ namespace GoFV.SSA
 /-- `GoFV.SSA.runFrame`: the outcome of running allocated `f` (L2f: `runLoc` with the slots as
 bytes of the frame laid out by `lay`) on `args` from memory `mem` with at most `fuel` block
 entries. -/
-def runFrame (env : Sem.Env) (tabs : Tables) (f : Func) (lay : Sem.FrameLayout)
+def runFrame [Sem.Addrs] (env : Sem.Env) (tabs : Tables) (f : Func) (lay : Sem.FrameLayout)
     (args : List Sem.Val) (mem : Sem.Mem) (fuel : Nat) : Sem.Outcome :=
   Sem.runCtxFrame env (Sem.FrameCtx.make tabs f lay) args mem fuel
 

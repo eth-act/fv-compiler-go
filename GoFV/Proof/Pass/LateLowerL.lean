@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.LateLowerVal
 import GoFV.Proof.Low.TabsAgreeL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `late lower` refines its input (issue #385)
 

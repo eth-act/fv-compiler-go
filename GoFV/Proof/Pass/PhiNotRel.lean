@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.PhiSelRel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `Phi`s of `Not`s: the relation (issue #69)
 

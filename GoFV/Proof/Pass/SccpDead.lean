@@ -1,6 +1,8 @@
 import GoFV.Opt.SccpCheck
 import GoFV.Proof.Pass.DeadSim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # sccp's removed edges: `deadOK` gives deadcode's `DeadRel` (issue #32)
 

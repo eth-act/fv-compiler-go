@@ -2,6 +2,8 @@ import GoFV.Opt.RewriteCheck
 import GoFV.Rules.Generated.Generic
 import GoFV.Rules.Generated.Dec
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Struct-store split rules (issues #151, #17)
 

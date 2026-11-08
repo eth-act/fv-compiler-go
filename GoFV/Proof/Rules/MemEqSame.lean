@@ -3,6 +3,8 @@ import GoFV.Proof.PtrAddr
 import GoFV.Rules.Generated.Generic.Values06
 import GoFV.Rules.Generated.Generic.Values08
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: `MemEq` of the same pointer (`generic.rules:1592`) or of length 0 (`:1590`),
 `NeqPtr` of a pointer and an offset of it (`generic.rules:1680`)

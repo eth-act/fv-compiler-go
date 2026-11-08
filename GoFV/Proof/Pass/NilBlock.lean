@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.NilSeeds
 import GoFV.Proof.PtrAddr
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # nilcheckelim: one block's evaluation
 

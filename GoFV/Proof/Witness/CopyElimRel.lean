@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.CopyElimLoop
 import GoFV.Proof.Witness.Clamp
 import GoFV.Proof.Witness.Util
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: `copyelim_rel` on `clamp`
 

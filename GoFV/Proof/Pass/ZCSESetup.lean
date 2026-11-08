@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.ZCSERel
 import GoFV.Proof.Pass.CopyElimSim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # zcse: what the simulation uses
 

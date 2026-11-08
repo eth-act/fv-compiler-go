@@ -3,6 +3,8 @@ import GoFV.SSA.Check
 import GoFV.Opt.Critical
 import GoFV.Proof.Pass.CriticalL
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `lake exe critical-probe <dir>...`: critical's checker on the corpus
 

@@ -2,6 +2,8 @@ import GoFV.Proof.WF
 import GoFV.SSA.Live
 import Std.Tactic.Do
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of `reachableBlocks`
 

@@ -2,6 +2,8 @@ import GoFV.Proof.Low.Rules.Peep
 import GoFV.Proof.Low.Rules.Invert
 import GoFV.Proof.Low.ArmMonoRetype
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowering rule lemmas: bit lengths, conditional selects, `TST` conditions, booleans, division (`ARM64.rules:15-35`, `104-106`, `135-137`, `187`, `271`, `564-570`, `1186-1195`)
 

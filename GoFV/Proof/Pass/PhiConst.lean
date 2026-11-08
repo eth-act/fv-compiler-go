@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.SccpTerm
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Constant `Phi`s refine (issue #69)
 

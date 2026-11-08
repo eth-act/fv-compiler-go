@@ -1,6 +1,8 @@
 import GoFV.Arm64.Exec
 import GoFV.SSA.Sem.Val
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `runMach`: the machine with runtime hooks (`docs/plans/semantics3.md` §3, §5, §6)
 

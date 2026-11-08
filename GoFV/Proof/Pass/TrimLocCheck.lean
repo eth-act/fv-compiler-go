@@ -1,5 +1,7 @@
 import GoFV.Proof.SimLocSign
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `trimRelB`: the decided relation of `trim`'s input and output over `runLoc`
 

@@ -2,6 +2,8 @@ import GoFV.Proof.Rules.Tactic
 import GoFV.Proof.Rules.NonVacuous
 import GoFV.Rules.Generated.Generic.Values12
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `Slicemask` of a constant (`generic.rules:768–771`)
 

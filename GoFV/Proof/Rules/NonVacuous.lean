@@ -16,6 +16,8 @@ import GoFV.Rules.Generated.Generic.Values13
 import GoFV.Rules.Generated.Generic.Values14
 import GoFV.Rules.Generated.Divisible.Values00
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Non-vacuity of `Rule.Sound` (`docs/proofs/rules.md`, "Non-vacuity")
 

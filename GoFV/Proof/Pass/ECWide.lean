@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.ECStackRes
 import GoFV.Proof.Pass.StructStoreMem
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `expand calls`: wide call results stored to memory, the memory (issue #28)
 

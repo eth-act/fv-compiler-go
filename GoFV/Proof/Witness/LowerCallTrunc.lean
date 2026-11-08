@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerTrunc
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower` passing a truncation to a call: `tcl` (hand-written, issue #385)
 

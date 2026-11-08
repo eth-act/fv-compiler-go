@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.DSEStep
 import GoFV.Proof.Pass.CSEBlock
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dse: one block's evaluation, the setting
 

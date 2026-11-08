@@ -1,6 +1,8 @@
 import GoFV.Proof.Witness.LowerCondSel
 import GoFV.Proof.Witness.TraceFP
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness functions for `lower` on pointer compares: `pnn`, `peq` (hand-written, issue #385)
 

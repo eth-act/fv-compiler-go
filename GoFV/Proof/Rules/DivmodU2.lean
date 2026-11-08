@@ -1,5 +1,7 @@
 import GoFV.Proof.Rules.DivmodUMagic2
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Unsigned magic division with `umagic(c).m` in the condition (`divmod.rules:171`, `:180`, `:206`)
 

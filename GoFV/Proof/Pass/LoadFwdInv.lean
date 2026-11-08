@@ -4,6 +4,8 @@ import GoFV.Proof.Pass.NilSeeds
 import GoFV.Proof.AtomSimEnter
 import GoFV.Proof.RoImage
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The forwarding layer's source invariant (issue #69)
 

@@ -2,6 +2,8 @@ import GoFV.Proof.Rules.IsInBounds
 import GoFV.Proof.Rules.NonVacuous
 import GoFV.Rules.Generated.Generic.Values04
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: `IsSliceInBounds` rules
 

@@ -1,6 +1,8 @@
 import GoFV.SSA.Sem.Ptr
 import GoFV.Proof.ValRefine
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # cse's memory skips: reads after disjoint writes
 

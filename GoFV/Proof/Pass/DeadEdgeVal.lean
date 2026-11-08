@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.DeadEdge
 import GoFV.Proof.Pass.CopyElimEdit
 import GoFV.Opt.Deadcode
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Removing one edge: the `Phi` arguments
 

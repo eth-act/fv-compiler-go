@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerStoreSym
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness functions for `lower` folding a global's or a frame variable's address, or an offset of
 the stack pointer, into a load: `gld`, `fra`, `fr0`, `spo` (hand-written, issue #385)

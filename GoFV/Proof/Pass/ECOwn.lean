@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.ECWide
 import GoFV.Proof.Pass.ECSlots
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `expand calls`: the function's own results (issue #28)
 

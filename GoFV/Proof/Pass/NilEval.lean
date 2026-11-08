@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.NilRel
 import GoFV.Proof.Pass.CSEBlock
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # nilcheckelim: evaluating the changed values
 

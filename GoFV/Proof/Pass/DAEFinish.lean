@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.DAEBlock
 import GoFV.Proof.Sim
 import GoFV.Proof.Refine
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dead auto elim: lock-step simulation with memories equal outside `U`
 

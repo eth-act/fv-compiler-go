@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.ECCall
 import GoFV.Proof.Pass.ECArgSel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `expand calls`: stack-assigned call results (issue #28)
 

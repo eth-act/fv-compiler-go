@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.DSE
 import GoFV.Proof.Witness.DSECert
 import GoFV.Proof.Witness.Util
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: dse on `f10` of `test/initialize`
 

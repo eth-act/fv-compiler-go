@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.CopyElimChase
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `phielimSweep` and `phielim` keep `Inv`
 

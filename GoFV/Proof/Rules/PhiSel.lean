@@ -1,6 +1,8 @@
 import GoFV.Opt.RewriteCheck
 import GoFV.Rules.Generated.Generic
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `Phi` rules validated per instance: selections of `Phi`s of `SliceMake`s, constant `Phi`s and
 `Phi`s of `Not`s (issue #69)

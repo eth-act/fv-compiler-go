@@ -2,6 +2,8 @@ import GoFV.Proof.Obj.Words
 import GoFV.Proof.Obj.Spec
 import GoFV.Proof.Gen.Mem
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The prologue and the epilogue (`checkPrologue`, `retOK`; `docs/plans/proofs3.md` §2, row C6/D3)
 

@@ -3,6 +3,8 @@ import GoFV.Proof.Rules.Den
 import GoFV.Proof.Retype
 import GoFV.Proof.PtrAddr
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lemmas of the rule-lemma tactics (`GoFV/Proof/Rules/Tactic.lean`)
 

@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.MemCombineList
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # memcombine: descriptions, loads and ops (issue #35)
 

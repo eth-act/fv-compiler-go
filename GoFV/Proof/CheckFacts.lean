@@ -1,5 +1,7 @@
 import GoFV.Proof.WF
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `check` establishes `WF`
 

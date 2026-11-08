@@ -23,6 +23,8 @@ import GoFV.Proof.Pass.WBSim
 import GoFV.Proof.TabsAgree
 import GoFV.Proof.Pass.Decompose
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The verified generic pipeline refines its input (issue #189)
 

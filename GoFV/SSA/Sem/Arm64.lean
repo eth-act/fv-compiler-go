@@ -2,6 +2,8 @@ import GoFV.SSA.Sem.Arm64.Int
 import GoFV.SSA.Sem.Arm64.Float
 import GoFV.SSA.Sem.Arm64.Mem
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `Arm64.evalPure`: the pure arm64 ops of lowered SSA (`docs/plans/semantics2.md` §3–§4)
 

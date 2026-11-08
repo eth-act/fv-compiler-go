@@ -5,6 +5,8 @@ import GoFV.Proof.Mixed
 import GoFV.Proof.SimIH
 import GoFV.Proof.Speculate
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # fuseBlockPlain: the setting of one checked rewrite
 

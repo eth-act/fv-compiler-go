@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerAtomic
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower` on an atomic read-modify-write: `aad` (hand-written, issue #385)
 

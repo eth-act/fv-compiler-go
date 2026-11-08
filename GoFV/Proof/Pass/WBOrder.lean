@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.WBStart
 import GoFV.Proof.OrderRank
 import GoFV.Proof.Merge
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # writebarrier: where the source panics (issue #36)
 

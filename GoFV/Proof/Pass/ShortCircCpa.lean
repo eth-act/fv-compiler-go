@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.ShortCircCpaSim
 import GoFV.Proof.Pass.ZCSE
 import GoFV.Opt.ShortCircuit
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # short circuit, step 1 (`constPhiArgs`), checked: refinement
 

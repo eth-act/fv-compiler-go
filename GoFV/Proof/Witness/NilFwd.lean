@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.NilMalloc
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for a nil check of a forwarded `Load` (issue #151)
 

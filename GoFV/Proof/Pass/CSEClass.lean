@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.CSEEval
 import GoFV.Proof.Pass.CSEOp
 import GoFV.Proof.Pass.CSEMem
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # cse: a representative holds its value
 

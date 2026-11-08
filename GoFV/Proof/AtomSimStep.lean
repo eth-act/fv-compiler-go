@@ -2,6 +2,8 @@ import GoFV.Proof.AtomSimRef
 import GoFV.Proof.AtomSimOK
 import GoFV.Proof.PhiMono
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # One value or terminator of the atom simulation (issue #113)
 

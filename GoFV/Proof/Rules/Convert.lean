@@ -2,6 +2,8 @@ import GoFV.Proof.Rules.Tactic
 import GoFV.Proof.Rules.NonVacuous
 import GoFV.Proof.PtrAddr
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: `Convert` round trips (`generic.rules:1072`, issue #290)
 

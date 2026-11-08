@@ -3,6 +3,8 @@ import GoFVTest.Parity.Compare
 import GoFV.SSA.Parse
 import GoFV.Opt.TabsAgreeMod
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `tabs-agree-probe`
 

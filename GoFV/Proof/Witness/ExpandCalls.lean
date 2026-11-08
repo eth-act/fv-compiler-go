@@ -6,6 +6,8 @@ import GoFV.Proof.Witness.UuidNew
 import GoFV.Proof.PtrAddr
 import GoFV.Proof.Witness.Util
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witnesses: expand calls on `sumOf[int]` and `syscall_hasWaitingReaders`
 

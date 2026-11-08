@@ -4,6 +4,8 @@ import GoFV.Rules.Generated.Generic.Values03
 import GoFV.Rules.Generated.Generic.Values07
 import GoFV.Rules.Generated.Generic.Values08
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: interface and slice comparisons (`generic.rules:790–793`)
 

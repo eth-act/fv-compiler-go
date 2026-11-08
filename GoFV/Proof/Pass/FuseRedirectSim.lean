@@ -6,6 +6,8 @@ import GoFV.Proof.SimIH
 import GoFV.Proof.AtomSimSet
 import GoFV.Proof.Pass.DeadEnter
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # One checked redirect refines
 

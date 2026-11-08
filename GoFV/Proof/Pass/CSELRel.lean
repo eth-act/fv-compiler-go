@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.CSERel
 import GoFV.Proof.Pass.CSELOp
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # lowered cse's output relation
 

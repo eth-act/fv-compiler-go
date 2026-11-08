@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.CopyElimEdit
 import Std.Tactic.Do
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `chase`, `copySource` and `copyelimValue` under `Inv`
 

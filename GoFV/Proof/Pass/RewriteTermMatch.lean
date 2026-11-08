@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.RewriteTermDen
 import GoFV.Proof.Rules.Comm
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Pattern matches of the rewrite validator (issue #113)
 

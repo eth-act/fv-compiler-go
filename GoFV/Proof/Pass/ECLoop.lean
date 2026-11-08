@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.ECRel
 import GoFV.Proof.AtomSimLoop
 import GoFV.Proof.Pass.CSEOp
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The target's schedule against a source reference frame (issue #28)
 

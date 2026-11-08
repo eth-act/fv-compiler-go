@@ -1,5 +1,7 @@
 import GoFV.SSA.Sem.RunLoc
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # What `LocCtx.signOf` reads of a function
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.FusePlainSetup
 import GoFV.Proof.Merge
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # fuseBlockPlain: the fused block
 

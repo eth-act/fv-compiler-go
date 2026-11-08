@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.DeadEdgeWalk
 import GoFV.Proof.Pass.DeadReach
 import GoFV.Proof.Pass.DeadRel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # deadcode's edge removal: well-formedness and `DeadRel`
 

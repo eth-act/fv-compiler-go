@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.CopyElimSched
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # copyelim keeps the roots' order (#96)
 

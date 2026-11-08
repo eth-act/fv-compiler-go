@@ -1,6 +1,8 @@
 import GoFV.Proof.Low.Rules.LoadStore
 import GoFV.Proof.Low.AddrFold
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowering rule lemmas: offsets folded into loads (`ARM64.rules:658-676`) and stores (`758-776`),
 symbols and frame variables folded into stores (`881-905`), indexed stores (`786-791`, `806-808`)

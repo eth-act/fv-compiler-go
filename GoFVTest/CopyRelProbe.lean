@@ -5,6 +5,8 @@ import GoFV.SSA.Sem.Run
 import GoFV.Proof.Pass.CopyFrag
 import Std.Data.HashSet
 
+open scoped GoFV.SSA.Sem.Fixed
+
 open GoFV.SSA GoFV.Opt GoFV.SSA.DomCert
 deriving instance BEq for GoFV.SSA.Sem.Ty
 

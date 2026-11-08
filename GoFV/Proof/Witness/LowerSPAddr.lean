@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerStoreSym
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower` on the stack pointer moved by an offset: `osp` (hand-written, issue #385)
 

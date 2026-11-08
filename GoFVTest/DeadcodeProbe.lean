@@ -3,6 +3,8 @@ import GoFV.SSA.Check
 import GoFV.Opt.Deadcode
 import GoFV.Proof.Pass.DeadcodePass
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `lake exe deadcode-probe <dir>...`: deadcode's fragment on the corpus
 

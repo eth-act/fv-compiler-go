@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.TightenL
 import GoFV.Proof.Witness.LowCong
 import GoFV.Proof.Witness.CopyElim
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: tighten on lowered `clamp`
 

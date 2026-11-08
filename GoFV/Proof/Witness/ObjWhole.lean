@@ -2,6 +2,8 @@ import GoFV.Proof.Obj.Whole
 import GoFV.Proof.Witness.ObjG7
 import GoFV.Proof.Witness.Pipeline
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: a whole function down to the machine words (`obj_whole_ret`)
 

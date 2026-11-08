@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.ShortCircCpaWF
 import GoFV.Proof.Pass.ZCSESetup
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # short circuit, step 1: the result and its intermediate are extensions; zcse's relation
 

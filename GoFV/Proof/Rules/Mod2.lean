@@ -1,6 +1,8 @@
 import GoFV.Proof.Rules.Tactic
 import GoFV.Rules.Generated.Generic.Values06
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: `Mod` rules (part 2)
 

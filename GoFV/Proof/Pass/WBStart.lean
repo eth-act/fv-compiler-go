@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.WBWalk
 import GoFV.Proof.DomCert
 import GoFV.Proof.MemInv
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # writebarrier: the simulation relation and the start of a chain (issue #36)
 

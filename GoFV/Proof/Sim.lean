@@ -1,6 +1,8 @@
 import GoFV.Proof.Frame
 import GoFV.Proof.Refine
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lock-step simulation
 

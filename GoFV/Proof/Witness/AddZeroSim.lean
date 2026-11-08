@@ -1,6 +1,8 @@
 import GoFV.Proof.Witness.AddZero
 import GoFV.Proof.AtomSim
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness of the atom simulation: `addZero` through `checkedRewrite`
 

@@ -1,5 +1,7 @@
 import GoFV.Proof.Rules.Tactic
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Non-negative operands (`isNonNegative`, `generic.rules:610`, `:611`, `:1138`; #69)
 

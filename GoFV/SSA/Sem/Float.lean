@@ -1,6 +1,8 @@
 import GoFV.SSA.Sem.Int
 import GoFV.SSA.Sem.Float.Convert
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Float ops (`docs/plans/semantics.md` §4.6, phase P4)
 

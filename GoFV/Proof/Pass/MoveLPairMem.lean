@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.MemCombineBytes
 import GoFV.SSA.Sem.RunL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Disjoint writes commute (`pair`'s reversed adjacent stores)
 

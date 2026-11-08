@@ -4,6 +4,8 @@ import GoFV.Proof.Pass.CopyRelCheck
 import GoFV.Proof.Pass.CopyElim
 import GoFV.Proof.Witness.Util
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # sccp refines its input (issue #32)
 

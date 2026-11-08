@@ -1,6 +1,8 @@
 import GoFV.Proof.Rules.Attr
 import GoFV.Proof.Rules.Den
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `Helper.ofName` at the helper names of the rules
 

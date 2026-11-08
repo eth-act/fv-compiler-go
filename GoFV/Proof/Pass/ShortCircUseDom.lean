@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.ShortCircPres
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Checked `shortcircuitBlock`: the result's uses are dominated
 

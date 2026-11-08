@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.ECTree
 import GoFV.Proof.AtomSimOK
 import GoFV.Proof.Pass.CSEMemChain
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The obligations of parameters and call results (issue #28)
 

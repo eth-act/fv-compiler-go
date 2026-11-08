@@ -3,6 +3,8 @@ import GoFV.Proof.Pass.DeadSimL
 import GoFV.Proof.Pass.DeadFactsL
 import GoFV.Proof.Pass.CopyElimL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # deadcode refines its input under `runL` (the lowered instances)
 

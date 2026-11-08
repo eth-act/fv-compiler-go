@@ -1,5 +1,7 @@
 import GoFV.Proof.CheckFacts
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # What the dominator certificate gives
 

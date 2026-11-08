@@ -1,5 +1,7 @@
 import GoFV.Proof.Rules.DivmodSBV
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Signed division by a power of two (`divmod.rules:21-33`, #69)
 

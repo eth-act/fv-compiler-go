@@ -1,6 +1,8 @@
 import GoFV.SSA.Sem.Run
 import GoFV.Proof.Order
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Evaluating a block's values: `evalAll` basics
 

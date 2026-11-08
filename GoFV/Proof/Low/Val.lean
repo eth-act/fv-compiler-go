@@ -1,5 +1,7 @@
 import GoFV.Proof.Low.ValReplay
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of the lowering validator at the term level (issue #385)
 

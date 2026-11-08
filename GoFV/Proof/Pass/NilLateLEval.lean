@@ -2,6 +2,8 @@ import GoFV.Opt.NilLateCheck
 import GoFV.Proof.EvalL
 import GoFV.Proof.EvalOpLDispatch
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `late nilcheck` under `runSched`: the values
 

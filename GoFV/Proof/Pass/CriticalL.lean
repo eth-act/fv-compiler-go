@@ -5,6 +5,8 @@ import GoFV.Proof.CongL
 import GoFV.Proof.CheckFacts
 import GoFV.Opt.Critical
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # critical refines its input (`runL`, checked)
 

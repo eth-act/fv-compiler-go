@@ -1,5 +1,7 @@
 import GoFV.Proof.Rules.Block
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Sound rule sets
 

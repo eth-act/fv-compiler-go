@@ -4,6 +4,8 @@ import GoFV.Opt.FlagAlloc
 import GoFV.Proof.Pass.FlagAllocLCheck
 import GoFVTest.Parity.Compare
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `lake exe flagalloc-probe [--jobs N] <dir|file>...`: the flagalloc validator on the corpus
 

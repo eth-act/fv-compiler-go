@@ -3,6 +3,8 @@ import GoFV.Proof.Low.ArmMono
 import GoFV.Proof.AtomSimDen
 import GoFV.Proof.EvalOpLDispatch
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Basic facts about `denL` (issue #385)
 

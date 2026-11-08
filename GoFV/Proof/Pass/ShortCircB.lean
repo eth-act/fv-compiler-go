@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.ShortCircOut
 import GoFV.Proof.Pass.ZCSEEval
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Checked `shortcircuitBlock`: the source's path through `b`
 

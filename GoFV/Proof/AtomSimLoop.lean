@@ -1,5 +1,7 @@
 import GoFV.Proof.AtomSimSet
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The target's schedule against a source reference frame (issue #113)
 

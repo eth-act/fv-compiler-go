@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.FuseCmpTarget
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # fuseComparisons keeps well-formedness and use dominance
 

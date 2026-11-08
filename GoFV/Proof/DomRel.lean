@@ -1,6 +1,8 @@
 import GoFV.Proof.DomCert
 import GoFV.Proof.WFCheck
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Abstract dominance (`DomRel`) and path dominance (`SDom`)
 

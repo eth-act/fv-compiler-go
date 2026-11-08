@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G16
 import GoFV.Proof.Witness.GenG15
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G16 of the genssa validator on `spanSetSpinePointer.lookup`
 

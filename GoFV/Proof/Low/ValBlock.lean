@@ -1,5 +1,7 @@
 import GoFV.Proof.Low.ValStep
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Replaying lowered terminators (issue #385)
 

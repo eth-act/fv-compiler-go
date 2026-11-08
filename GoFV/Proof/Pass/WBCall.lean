@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.WBLocal
 import GoFV.Proof.Pass.SegCall
 import GoFV.Proof.Pass.ECCall
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # writebarrier: the write-barrier helper calls (issue #36)
 

@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.ECRel
 import GoFV.Proof.Retype
 import GoFV.Proof.AtomicSim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The shapes of the source's registers (issue #28)
 

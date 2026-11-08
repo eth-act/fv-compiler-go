@@ -1,5 +1,7 @@
 import GoFV.Opt.RewriteCheck
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # What a checked rewrite pass returns (issue #113)
 

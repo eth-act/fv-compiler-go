@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.NilLateLRel
 import GoFV.Proof.Speculate
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `late nilcheck` under `runSched`: a block's values
 

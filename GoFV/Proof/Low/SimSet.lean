@@ -1,6 +1,8 @@
 import GoFV.Proof.Low.SimMem
 import GoFV.Proof.Pass.RewriteTermDen
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Hypotheses, atoms and the target's schedule of the lowered atom simulation (issue #385)
 

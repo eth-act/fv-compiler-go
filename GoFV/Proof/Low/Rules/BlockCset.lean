@@ -1,6 +1,8 @@
 import GoFV.Proof.Low.Rules.Tactic
 import GoFV.Rules.Generated.ARM64.Blocks
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowering block rule lemmas: conditional blocks on a `CSET` (`ARM64.rules:461-554`)
 

@@ -6,6 +6,8 @@ kernel.
 -/
 import GoFV.SSA.Sem.Pure
 
+open scoped GoFV.SSA.Sem.Fixed
+
 namespace GoFVTest.FloatWitness
 open GoFV.IEEE
 

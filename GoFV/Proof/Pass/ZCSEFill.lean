@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.ZCSEEval
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # zcse: the target's frame
 

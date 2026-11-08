@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.BranchElimTarget
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # branchelim: the merged block evaluates as the source's path through the diamond
 

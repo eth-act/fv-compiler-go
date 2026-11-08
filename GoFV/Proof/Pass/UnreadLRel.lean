@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.DAE
 import GoFV.Proof.RetypeL
 import GoFV.Opt.ElimUnreadAutos
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # elim unread autos on `runL`: the checker and its relation
 

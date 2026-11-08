@@ -1,5 +1,7 @@
 import GoFV.Proof.Low.Rules.Peep
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowering rule lemmas: extensions and masks of constants and masks (`ARM64.rules:1241-1260`)
 

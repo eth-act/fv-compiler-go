@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerStoreSym
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower` folding an extension of a constant: `zxc` (hand-written, issue #385)
 

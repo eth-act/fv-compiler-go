@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.FuseLatePass
 import GoFV.Proof.Witness.Max3
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: late fuse redirects `a < 5` past `a < 10`
 

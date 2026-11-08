@@ -1,5 +1,7 @@
 import GoFV.Proof.Gen.Rel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `runLoc` on the values of slice G1 (`docs/plans/proofs3.md` §3)
 

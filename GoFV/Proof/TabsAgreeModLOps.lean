@@ -4,6 +4,8 @@ import GoFV.Proof.RunLFCases
 import GoFV.Proof.Pass.NilLateLEval
 import GoFV.Opt.TabsAgreeModL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Running a scheduled function in tables with extra frame temporaries: the arm64 memory ops
 

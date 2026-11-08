@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.ECShape
 import GoFV.Proof.ABI
 import GoFV.Proof.ValRefine
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Evaluating the Make-trees of `expand calls` (issue #28)
 

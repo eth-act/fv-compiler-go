@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.WBPanicFacts
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # writebarrier: a block entry that panics (issue #36)
 

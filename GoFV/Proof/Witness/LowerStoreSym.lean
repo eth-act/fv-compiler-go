@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerLocalAddr
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness functions for `lower` folding a frame variable's or a global's address into a store:
 `lad`, `gst` (hand-written, issue #385)

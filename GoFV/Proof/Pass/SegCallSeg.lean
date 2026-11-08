@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.SegSound
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Segments: the call segments (issue #151)
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.FrameL
 import GoFV.Proof.Avail
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `Val.retypeL` is idempotent; registers of a lowered run are typed
 

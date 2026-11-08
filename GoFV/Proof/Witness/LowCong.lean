@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.LowCong
 import GoFV.Proof.Witness.ClampL
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witnesses: `checkLower`, `likelyadjust`, `layout`, `addressing modes` on lowered `clamp`
 

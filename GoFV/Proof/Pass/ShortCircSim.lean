@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.ShortCircB
 import GoFV.Proof.SimIH
 import GoFV.Proof.Pass.ShortCircUseDom
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Checked `shortcircuitBlock` refines
 

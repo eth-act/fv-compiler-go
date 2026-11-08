@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.Progs
 import GoFV.Arm64.Exec
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The branches of slice G1 (`docs/plans/proofs3.md` §3)
 

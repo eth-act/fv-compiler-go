@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.DAERel
 import GoFV.Proof.Eval
 import GoFV.Proof.Pass.CSEEval
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dead auto elim: the source's invariant
 

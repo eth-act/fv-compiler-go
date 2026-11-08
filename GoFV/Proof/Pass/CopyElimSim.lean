@@ -3,6 +3,8 @@ import GoFV.Proof.Avail
 import GoFV.Proof.Sim
 import GoFV.Proof.Order
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # copyelim: from the static relation to the refinement
 

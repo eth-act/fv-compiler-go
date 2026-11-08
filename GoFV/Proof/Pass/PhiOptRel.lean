@@ -1,6 +1,8 @@
 import GoFV.Opt.PhiOptCheck
 import GoFV.Proof.WF
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # phiopt's output relation
 

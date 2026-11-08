@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.NumberLines
 import GoFV.Proof.Pass.Identity
 import GoFV.Proof.Witness.Clamp
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witnesses: `number lines`, `check bce`, `softfloat` on `clamp`
 

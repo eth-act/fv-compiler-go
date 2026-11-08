@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.MemCombineStore
 import GoFV.Proof.TabsAgree
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # memcombine refines its input (issue #35)
 

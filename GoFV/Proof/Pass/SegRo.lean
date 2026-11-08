@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.SegRel
 import GoFV.Proof.Pass.LoadFwdPtr
 import GoFV.Proof.RoImage
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Segments: a `Move` from a read-only zero symbol (issue #151)
 

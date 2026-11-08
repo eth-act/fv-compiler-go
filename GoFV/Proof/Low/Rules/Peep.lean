@@ -1,6 +1,8 @@
 import GoFV.Proof.Low.Rules.Cmp
 import GoFV.Proof.Low.ArmMonoFam
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowering rule lemmas: constant operands and compares with zero (`ARM64.rules:600-601`, `970-1000`)
 

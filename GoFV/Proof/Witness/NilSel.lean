@@ -2,6 +2,8 @@ import GoFV.Proof.Witness.NilGetG
 import GoFV.Proof.Witness.ConstString
 import GoFV.Proof.Rules.DecMakeSel
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness functions for the `StringPtr`/`StructSelect` seeds of `safePtr` (hand-written, issue #151)
 

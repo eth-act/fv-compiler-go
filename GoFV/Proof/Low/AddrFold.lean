@@ -1,6 +1,8 @@
 import GoFV.Proof.Low.DenL
 import GoFV.Proof.PtrAddr
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Folding an `ADDconst` offset or a symbol's address into an address (issue #385)
 

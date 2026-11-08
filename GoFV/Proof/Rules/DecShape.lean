@@ -2,6 +2,8 @@ import GoFV.Proof.Rules.Den
 import GoFV.Proof.Retype
 import GoFV.Proof.ValRefine
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Shapes of composites: selections of `Make`s (issue #17)
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Rules.ConstString
 import GoFV.Rules.Generated.Generic.Values05
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemma: a `Load` of a one-element array (`generic.rules:994`)
 

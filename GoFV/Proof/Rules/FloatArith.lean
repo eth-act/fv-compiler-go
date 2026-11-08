@@ -3,6 +3,8 @@ import GoFV.Proof.Rules.NonVacuous
 import GoFV.Rules.Generated.Generic.Values07
 import GoFV.Rules.Generated.Generic.Values02
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Float arithmetic rules (`docs/proofs/rules.md`, #69)
 

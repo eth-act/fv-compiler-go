@@ -1,5 +1,7 @@
 import GoFV.Proof.Rules.SoundW
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The obligation of a block rule (issue #151, `docs/proofs/rules.md`)
 

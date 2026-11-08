@@ -1,6 +1,8 @@
 import GoFV.Proof.Rules.Tactic
 import GoFV.Proof.Rules.AttrCond
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `rule_unfold_getd`: `rule_unfold` with the condition's `Option.getD` kept folded
 

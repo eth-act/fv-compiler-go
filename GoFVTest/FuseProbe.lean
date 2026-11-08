@@ -7,6 +7,8 @@ import GoFV.Opt.Fuse.BranchRedirectCheck
 import GoFV.Opt.ShortCircuit
 import GoFV.Opt.SpecSafe
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `lake exe fuse-probe <dir>...`: the checked fuse steps on the corpus
 

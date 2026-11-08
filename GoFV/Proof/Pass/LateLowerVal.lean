@@ -1,6 +1,8 @@
 import GoFV.Opt.LateLowerCheck
 import GoFV.Proof.FrameL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `late lower`'s rewrites, value by value (issue #385)
 

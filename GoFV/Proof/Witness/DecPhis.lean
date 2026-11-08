@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.DecPhiSim
 import GoFV.Proof.Witness.FormatBool
 import GoFV.Proof.Witness.Util
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: decompose's phi splitting on `strconv.FormatBool`
 

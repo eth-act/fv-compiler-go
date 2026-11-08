@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.CopyElimSweep
 import GoFV.Proof.Pass.CopyElimRel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # copyelim's control step and the final relation
 

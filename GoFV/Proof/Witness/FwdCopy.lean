@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LoadFwd
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness functions for forwarding through copies, constant `PtrIndex`es and constants (issue #151)
 

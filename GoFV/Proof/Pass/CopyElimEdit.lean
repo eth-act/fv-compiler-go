@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.CopyElimInv
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The three edits keep `Inv`
 

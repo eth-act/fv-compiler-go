@@ -7,6 +7,8 @@ import GoFV.SSA.Parse
 import GoFVTest.SchedClass
 import GoFV.SSA.Print
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `gofv-ssa-opt`
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G2
 import GoFV.Proof.Witness.GenG1
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G2 of the genssa validator on `testInts` and `clamp`
 

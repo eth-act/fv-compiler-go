@@ -4,6 +4,8 @@ import GoFV.Proof.AvailL
 import GoFV.Proof.RefineSched
 import GoFV.Proof.Agree
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `late nilcheck` refines under `runSched`: the simulation
 

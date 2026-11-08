@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerLoadStore
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower` folding an offset into a load: `ldo` (hand-written, issue #385)
 

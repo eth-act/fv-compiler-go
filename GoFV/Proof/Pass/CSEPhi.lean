@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.CSEBlockSpec
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # cse: a block's `Phi`s
 

@@ -1,5 +1,7 @@
 import GoFV.Proof.Low.Rules.Peep
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowering rule lemmas: folded operand producers (`ARM64.rules:1012-1018`, `1179-1184`, `1433-1449`, `1635`)
 

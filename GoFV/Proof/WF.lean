@@ -1,5 +1,7 @@
 import GoFV.SSA.Check
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Well-formedness facts (`docs/contracts/check.md`, "Facts the pass proofs need")
 

@@ -1,5 +1,7 @@
 import GoFV.Opt.Fuse.PlainCheck
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # fuseBlockPlain: what the rewrite leaves unchanged
 

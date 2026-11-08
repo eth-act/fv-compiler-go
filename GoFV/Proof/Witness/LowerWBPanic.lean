@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerStoreSym
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower` on a write barrier and a bounds panic: `wbp` (hand-written, issue #385)
 

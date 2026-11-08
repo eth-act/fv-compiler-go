@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.StructStoreEval
 import GoFV.Proof.Pass.DSESim
 import GoFV.Proof.AtomSim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Struct-store splits refine their input (issue #151)
 

@@ -4,6 +4,8 @@ import GoFV.Proof.Pass.ECChain
 import GoFV.Proof.Pass.ECIdent
 import GoFV.Proof.Merge
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Decompose's phi splitting: components and the checker's facts (issue #17)
 

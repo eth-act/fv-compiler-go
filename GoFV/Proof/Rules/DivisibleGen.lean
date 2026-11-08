@@ -3,6 +3,8 @@ import GoFV.Proof.Rules.NonVacuous
 import GoFV.Rules.Generated.Generic.Values03
 import GoFV.Rules.Generated.Generic.Values07
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `generic.rules`: comparisons with a product by an odd constant, `Mod` widened (#69)
 

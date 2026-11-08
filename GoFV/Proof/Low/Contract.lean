@@ -1,6 +1,8 @@
 import GoFV.Proof.Low.RuleL
 import GoFV.Opt.FmaContract
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The contraction relation (decision on #384, issue #385)
 

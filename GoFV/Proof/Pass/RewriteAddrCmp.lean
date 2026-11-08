@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.RewriteIMake
 import GoFV.Proof.PtrAddr
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Replaying a comparison of symbol addresses (issue #69)
 

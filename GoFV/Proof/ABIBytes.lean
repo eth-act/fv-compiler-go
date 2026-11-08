@@ -1,5 +1,7 @@
 import GoFV.Proof.ABIBuild
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Byte facts for the ABI round trip (#28)
 

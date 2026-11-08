@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerTrunc
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower` on a 64-bit shift typed narrower: `nts` (hand-written, issue #385)
 

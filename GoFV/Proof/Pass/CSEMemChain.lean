@@ -3,6 +3,8 @@ import GoFV.Proof.Eval
 import GoFV.Proof.PtrAddr
 import GoFV.Opt.CSEMem
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # cse's memory skips: where the pointers of an `OffPtr` chain point
 

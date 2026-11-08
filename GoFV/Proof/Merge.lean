@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.DeadRel
 import GoFV.Proof.Mixed
 import GoFV.Proof.Checked
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Shared lemmas for passes that merge blocks (branchelim, fuse)
 

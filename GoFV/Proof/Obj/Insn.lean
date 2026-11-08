@@ -1,5 +1,7 @@
 import GoFV.Proof.Obj.Ex
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `symInsn` is the symbolic `exec` (`GoFV/Asm/CheckObjSym.lean`)
 

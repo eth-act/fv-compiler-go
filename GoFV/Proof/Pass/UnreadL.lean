@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.UnreadLSim
 import GoFV.Proof.CheckFacts
 import GoFV.Proof.DomCert
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # elim unread autos refines its input under `runL`
 

@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.DSESim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dse refines its input
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Witness.LowerAdd
 import GoFV.Proof.Witness.NotIf
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower` on a `CondSelect` of a boolean argument: `bsel` (hand-written, issue #385)
 

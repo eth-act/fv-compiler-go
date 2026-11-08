@@ -23,6 +23,8 @@ import GoFV.Proof.Pass.TrimLoc
 import GoFV.Proof.Regalloc.Sound
 import GoFV.Proof.TabsAgreeModL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The verified pipeline through `trim` refines its input (issues #385, #189)
 

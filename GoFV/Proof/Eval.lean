@@ -1,6 +1,8 @@
 import GoFV.Proof.Frame
 import GoFV.Proof.Retype
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Facts about one value's evaluation
 

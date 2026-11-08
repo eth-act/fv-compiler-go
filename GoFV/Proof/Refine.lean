@@ -1,6 +1,8 @@
 import GoFV.SSA.Sem.Run
 import GoFV.Proof.FinishMono
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Refinement of functions (`docs/PLAN.md` §1)
 

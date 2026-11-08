@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.LoadFwdInv
 import GoFV.Proof.Pass.RewriteTerm
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Fixed loads from read-only symbols (issue #69)
 

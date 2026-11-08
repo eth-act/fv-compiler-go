@@ -3,6 +3,8 @@ import GoFV.Proof.Gen.Spec4
 import GoFV.Proof.Gen.Step4
 import GoFV.Proof.Gen.Progs4
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of the genssa validator's slice G4: register pairs (`docs/plans/proofs3.md` §4)
 

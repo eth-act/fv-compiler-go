@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.FuseRedirectSim
 import GoFV.Proof.Pass.FuseLoop
 import GoFV.Proof.Pass.DeadEdge
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The checked `fuseBranchRedirect` refines its input
 

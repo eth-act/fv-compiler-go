@@ -3,6 +3,8 @@ import GoFV.Proof.Witness.Clamp
 import GoFV.Proof.Witness.InitF10
 import GoFV.Proof.Witness.Util
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: writebarrier on `runtime/pprof.runtime_setProfLabel`
 

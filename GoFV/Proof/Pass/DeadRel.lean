@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.CopyElim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Removing unreachable blocks and dead values: the static relation `DeadRel`
 

@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.PhiConst
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `Phi`s of `Not`s: `nsel` (hand-written, issue #69)
 

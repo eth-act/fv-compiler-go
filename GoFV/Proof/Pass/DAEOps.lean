@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.DAEVal
 import GoFV.Proof.Pass.DSEVal
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dead auto elim: the ops of `memOps` on related last arguments
 

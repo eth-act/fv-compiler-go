@@ -5,6 +5,8 @@ import GoFV.Proof.Pass.StructStoreSim
 import GoFV.Proof.Pass.SegRo
 import GoFV.Proof.Pass.SegMove
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Segment rewrites refine their input (issue #151)
 

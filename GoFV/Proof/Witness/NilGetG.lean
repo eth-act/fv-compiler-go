@@ -1,6 +1,8 @@
 import GoFV.Proof.Witness.LoadFwd
 import GoFV.Proof.Rules.NilElim
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for the `GetG` nil-check elimination: `curg` (hand-written, issue #151)
 

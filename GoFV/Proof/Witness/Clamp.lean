@@ -1,5 +1,7 @@
 import GoFV.SSA.Sem.Run
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function: `clamp` from the corpus
 

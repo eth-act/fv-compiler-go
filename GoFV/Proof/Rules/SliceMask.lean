@@ -1,6 +1,8 @@
 import GoFV.Proof.Rules.ConstString
 import GoFV.Proof.Rules.SelMake
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemma: the masked slice pointer (`generic.rules:1053`)
 

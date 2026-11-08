@@ -2,6 +2,8 @@ import GoFV.Proof.Obj.EndToEnd
 import GoFV.Proof.Witness.ObjWhole
 import GoFV.Proof.Witness.PipelineFull
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: generic SSA to machine words (`verified_mach_ret`)
 

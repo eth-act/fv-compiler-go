@@ -2,6 +2,8 @@ import GoFV.Proof.Gen.G1
 import GoFV.Proof.Gen.Step4
 import GoFV.Gen.Check5
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `stepLoc` on the memory markers of slice G5 (`docs/plans/proofs3.md` §4)
 

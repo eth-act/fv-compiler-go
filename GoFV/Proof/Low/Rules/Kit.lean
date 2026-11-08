@@ -2,6 +2,8 @@ import GoFV.Proof.Low.RuleL
 import GoFV.Proof.Rules.Tactic
 import GoFV.Proof.Low.Rules.Attr
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lemma kit for the lowering rule lemmas (issue #385)
 

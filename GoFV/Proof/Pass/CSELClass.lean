@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.CSELRel
 import GoFV.Proof.Pass.CSEClass
 import GoFV.Proof.RetypeL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # lowered cse: a representative holds its value
 

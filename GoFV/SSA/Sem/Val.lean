@@ -80,28 +80,95 @@ def Ptr.inWindow (p : Ptr) : Bool :=
   | some w => decide (p.off.toNat < w)
   | none => true
 
+/-- `p + k` (offset mod 2^64). -/
+def Ptr.add (p : Ptr) (k : BitVec 64) : Ptr := { p with off := p.off + k }
+
+/-! ## Concrete addresses, a parameter of the semantics -/
+
+/-- The base addresses of #156, the instance `Addrs.fixed`: `nil` at 0, heap objects at
+`(n + 1)·2^40`, the frame objects of activation `a` from `2^62` (its outgoing-arguments area at
+`2^62 + a·2^42`, its variable `k` at `+ k·2^24`). Globals and the write-barrier buffer have
+none. -/
+def Blk.fixedBase? : Blk → Option Nat
+  | .nil => some 0
+  | .heap n => some ((n + 1) * 2 ^ 40)
+  | .local a k | .temp a k => some (2 ^ 62 + a * 2 ^ 42 + k * 2 ^ 24)
+  | .outargs a => some (2 ^ 62 + a * 2 ^ 42)
+  | .global _ | .wbuf => none
+
+/-- The decoding of #156, the instance `Addrs.fixed`: the inverse of `Blk.fixedBase?` on the
+encodings of heap and frame blocks; any other address points into no allocation (`Blk.nil`). -/
+def Ptr.fixedOfAddr (x : BitVec 64) : Ptr :=
+  let n := x.toNat
+  if n < 2 ^ 40 then ⟨.nil, x⟩
+  else if n < 2 ^ 62 then ⟨.heap (n / 2 ^ 40 - 1), BitVec.ofNat 64 (n % 2 ^ 40)⟩
+  else
+    let r := n - 2 ^ 62
+    let a := r / 2 ^ 42
+    let k := (r % 2 ^ 42) / 2 ^ 24
+    let off := BitVec.ofNat 64 (r % 2 ^ 24)
+    if k == 0 then ⟨.outargs a, off⟩ else ⟨.local a k, off⟩
+
+/-- **Concrete addresses** (`docs/plans/proofs3.md` §8, option 2), a parameter of the semantics
+(instance-implicit; every theorem holds for every instance): where each block sits (`baseOf`),
+the pointer an integer word reads as (`decode`), and the caller's `SP` of an activation
+(`GetCallerSP`). The nil page and the heap are fixed below `2^62` (the runtime's allocator puts
+`heap n` at `(n + 1)·2^40`; `decode_low`), the addresses from `2^62` up decode to frame blocks
+other than frame temporaries (`decode_high`), the frame blocks' bases are free. Every address
+decodes to a pointer inside its window (`decode_inWindow`) whose address it is (`decode_addr`),
+and pointer arithmetic inside a window is integer arithmetic on the address (`decode_add`): the
+windows of decoded blocks tile the address space. A frame block need not be decoded at all: then
+no integer converts to it (`Ptr.convertible`), as for a frame temporary. `Addrs.fixed`
+(`Sem/Addrs.lean`) is the assignment of #156. -/
+class Addrs where
+  /-- The base address of a block. -/
+  baseOf : Blk → Option Nat
+  /-- The pointer at a concrete address. -/
+  decode : BitVec 64 → Ptr
+  /-- `GetCallerSP` of activation `act`: its caller's `SP`. -/
+  callerSP : Nat → BitVec 64
+  baseOf_nil : baseOf .nil = some 0
+  baseOf_heap : ∀ n, baseOf (.heap n) = some ((n + 1) * 2 ^ 40)
+  baseOf_global : ∀ s, baseOf (.global s) = none
+  baseOf_wbuf : baseOf .wbuf = none
+  decode_low : ∀ x : BitVec 64, x.toNat < 2 ^ 62 → decode x = Ptr.fixedOfAddr x
+  decode_high : ∀ x : BitVec 64, 2 ^ 62 ≤ x.toNat →
+    ∃ a, (decode x).blk = .outargs a ∨ ∃ k, (decode x).blk = .local a k
+  decode_addr : ∀ x : BitVec 64,
+    (baseOf (decode x).blk).map (fun b => BitVec.ofNat 64 b + (decode x).off) = some x
+  decode_inWindow : ∀ x : BitVec 64, (decode x).inWindow = true
+  decode_add : ∀ x k : BitVec 64, ((decode x).add k).inWindow = true →
+    decode (x + k) = (decode x).add k
+
+/-- The base address of a block, for `Convert` (ptr ↔ uintptr) and pointer comparison
+(`Addrs.baseOf`; globals have none). -/
+def Blk.base? [Addrs] (b : Blk) : Option Nat := Addrs.baseOf b
+
+/-- The concrete address of a pointer (`none` for globals). -/
+def Ptr.addr? [Addrs] (p : Ptr) : Option (BitVec 64) :=
+  p.blk.base?.map fun b => BitVec.ofNat 64 b + p.off
+
+/-- The pointer at a concrete address (`Addrs.decode`): the inverse of `Ptr.addr?` on the
+decoded blocks; nil-page addresses point into no allocation (`Blk.nil`). -/
+def Ptr.ofAddr [Addrs] (x : BitVec 64) : Ptr := Addrs.decode x
+
 /-- `p` converts to an integer and back to itself: `Ptr.ofAddr` of its concrete address is `p`
-(`Ptr.ofAddr_addr`; conversely every pointer `Ptr.ofAddr` gives converts,
-`Ptr.convertible_ofAddr`, so this is exactly the round trip, `Ptr.convertible_iff`). That is:
-inside its window, its block's number small enough for the address encoding (heap objects
-below `2^22 - 1`; frames of the activations below `3·2^20`, whose addresses end below `2^64`),
-and not a frame temporary (whose address the program never takes) or a global (no concrete
-address). -/
-def Ptr.convertible (p : Ptr) : Bool :=
-  match p.blk with
-  | .nil => decide (p.off.toNat < 2 ^ 40)
-  | .heap n => decide (n + 1 < 2 ^ 22) && decide (p.off.toNat < 2 ^ 40)
-  | .local a k => decide (0 < k) && decide (k < 2 ^ 18) && decide (a < 3 * 2 ^ 20) &&
-      decide (p.off.toNat < 2 ^ 24)
-  | .outargs a => decide (a < 3 * 2 ^ 20) && decide (p.off.toNat < 2 ^ 24)
-  | .temp _ _ | .global _ | .wbuf => false
+(the round trip; `Ptr.convertible_ofAddr`: every pointer `Ptr.ofAddr` gives converts). Such a
+pointer lies inside its window and is no frame temporary or global. Under `Addrs.fixed` that is:
+inside its window, its block's number small enough for the address encoding (heap objects below
+`2^22 - 1`; frames of the activations below `3·2^20`, whose addresses end below `2^64`), and not a
+frame temporary (`Ptr.convertible_fixed`). -/
+def Ptr.convertible [Addrs] (p : Ptr) : Bool :=
+  match p.addr? with
+  | some x => Ptr.ofAddr x == p
+  | none => false
 
 /-- `p` is held as a pointer at the word shapes (`Ptr.word`, `Val.hasTy`): it has no integer
-form (`Ptr.convertible`: a global, a frame temporary, a block outside the address encoding) and
+form (`Ptr.convertible`: a global, a frame temporary, a block the addresses do not decode to) and
 lies inside its block's window. A pointer outside its window is past the end of its allocation
 (every allocation is smaller than its window, `Blk.window?`), which Go's `unsafe.Pointer` rules
 forbid; it is no value (`Ptr.word` is `poison`). -/
-def Ptr.held (p : Ptr) : Bool := !p.convertible && p.inWindow
+def Ptr.held [Addrs] (p : Ptr) : Bool := !p.convertible && p.inWindow
 
 /-- A byte of memory: a concrete byte, byte `i` of a stored pointer, or poison (§3.4). -/
 inductive Byte where
@@ -320,7 +387,7 @@ namespace Val
 that concrete address, §3.3), a pointer held as a pointer (`Ptr.held`: one that does not
 convert to an integer, inside its window; a convertible one is held as its address,
 `Ptr.word`) or `poison`. -/
-def isPtrWord : Val → Bool
+def isPtrWord [Addrs] : Val → Bool
   | .ptr p => p.held
   | .int .w64 _ | .poison => true
   | _ => false

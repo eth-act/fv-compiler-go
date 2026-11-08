@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.LoopRotateLoc
 import GoFV.Proof.Witness.ClampL
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: `loop rotate` under `runLoc`
 

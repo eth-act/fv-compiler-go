@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.DecPhis
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # The witnesses of `decPhis_refines` are the phi stage's outputs
 

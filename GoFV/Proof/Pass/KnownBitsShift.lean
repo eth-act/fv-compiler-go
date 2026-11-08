@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.KnownBitsDomain
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of known bits' shift transfer functions (issue #26)
 

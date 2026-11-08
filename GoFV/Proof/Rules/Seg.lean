@@ -1,6 +1,8 @@
 import GoFV.Opt.RewriteCheck
 import GoFV.Rules.Generated.Generic
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Segment rules (issue #151)
 

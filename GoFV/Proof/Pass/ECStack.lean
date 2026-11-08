@@ -5,6 +5,8 @@ import GoFV.Proof.Pass.MemCombineBytes
 import GoFV.Proof.MemRefine
 import GoFV.Proof.Pass.ECTree
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `expand calls`: stack-assigned call arguments (issue #28)
 

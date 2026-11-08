@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.Progs3
 import GoFV.Gen.Check4
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The Progs of slice G4 under `runProg` (`docs/plans/proofs3.md` §4)
 

@@ -3,6 +3,8 @@ import GoFV.Proof.Low.Rules.Tactic
 import GoFV.Proof.PtrAddr
 import GoFV.Rules.Generated.ARM64
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowering rule lemmas: integer and pointer comparisons (`ARM64.rules:239-293`, `450-452`)
 

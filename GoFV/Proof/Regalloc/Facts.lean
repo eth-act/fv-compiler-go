@@ -1,5 +1,7 @@
 import GoFV.Proof.Regalloc.Ops
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Regalloc checker soundness: the contexts, frame constants and facts
 

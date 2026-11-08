@@ -946,3 +946,5 @@ import GoFV.Proof.Witness.UuidNew
 import GoFV.Proof.Witness.WFCheck
 import GoFV.Proof.Witness.WriteBarrier
 import GoFV.Proof.Witness.ZCSE
+
+open scoped GoFV.SSA.Sem.Fixed

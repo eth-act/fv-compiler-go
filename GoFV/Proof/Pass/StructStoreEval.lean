@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.StructStoreBlock
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Struct-store splits: one block's evaluation (issue #151)
 

@@ -11,12 +11,7 @@ offset mod 2^64; `Convert` and pointer comparison use the concrete addresses of 
 
 namespace GoFV.SSA.Sem
 
-namespace Ptr
-
-/-- `p + k` (offset mod 2^64). -/
-def add (p : Ptr) (k : BitVec 64) : Ptr := { p with off := p.off + k }
-
-end Ptr
+variable [Addrs]
 
 /-- A 64-bit integer of any width, sign-extended (an index or offset argument). -/
 def asOffset : Val → Option (BitVec 64)

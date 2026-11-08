@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.KnownBitsShift
 import GoFV.Proof.AtomSim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The source-side invariant of known bits (issue #26)
 

@@ -3,6 +3,8 @@ import GoFV.Proof.Witness.GenG2
 import GoFV.Asm.Flush
 import GoFV.Asm.Parse
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: the prologue and the epilogue of `testInts` (`obj_entry`, `obj_exit`)
 

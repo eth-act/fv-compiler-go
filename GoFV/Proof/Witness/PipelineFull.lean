@@ -3,6 +3,8 @@ import GoFV.Proof.Witness.Pipeline
 import GoFV.Proof.Witness.TraceFP
 import GoFV.Proof.RunLFCases
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: the verified pipeline through `trim` on `isNaN`
 

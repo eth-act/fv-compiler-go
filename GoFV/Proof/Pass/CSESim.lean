@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.CSEPhi
 import GoFV.Proof.Pass.CopyElim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # cse refines its input (given one block's evaluation)
 

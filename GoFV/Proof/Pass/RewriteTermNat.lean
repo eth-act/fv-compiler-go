@@ -4,6 +4,8 @@ import GoFV.Proof.Pass.RewriteTermDen
 import GoFV.Proof.Rules.DecShape
 import GoFV.Proof.Rules.ArgShapeProc
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `natShape`: the op's raw result has the value's shape (issue #113)
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Rules.AllSound
 import GoFV.Rules.Generated.Dec.Values00
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Unconditional selections of a `Load` (issue #17)
 

@@ -1,5 +1,7 @@
 import GoFV.Proof.Rules.Tactic
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Commutative patterns
 

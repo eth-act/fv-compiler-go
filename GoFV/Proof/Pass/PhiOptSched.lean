@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.PhiOptForm
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # phiopt: the target block's schedule
 

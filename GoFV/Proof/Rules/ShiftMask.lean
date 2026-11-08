@@ -1,6 +1,8 @@
 import GoFV.Proof.Rules.ConstString
 import GoFV.Rules.Generated.Generic.Values05
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: a masked right shift shifted back left (`generic.rules:574`)
 

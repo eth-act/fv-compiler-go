@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.Prove
 import GoFV.Proof.Witness.AddZero
 import GoFV.Proof.Witness.Util
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness of `proveChecked_refines`: a dominated bounds check (hand-written)
 

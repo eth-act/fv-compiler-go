@@ -4,6 +4,8 @@ import GoFV.Proof.ABIBytes
 import GoFV.Opt.RewriteCheck
 import GoFV.Proof.Pass.StructLoadMem
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Load-of-Store forwarding: a read after a write (issue #151)
 

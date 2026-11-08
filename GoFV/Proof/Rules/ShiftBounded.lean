@@ -6,6 +6,8 @@ import GoFV.Rules.Generated.Generic.Values06
 import GoFV.Rules.Generated.Generic.Values10
 import GoFV.Rules.Generated.Generic.Values11
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: the bounded-shift rules `generic.rules:1188–1198`
 

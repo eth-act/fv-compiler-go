@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.FuseIfPres
 import GoFV.Proof.Pass.FusePlainSim
 import GoFV.Proof.SimIH
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # One checked `fuseBlockIf` rewrite refines
 

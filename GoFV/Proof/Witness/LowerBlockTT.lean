@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerCondSel
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower` on a bit test: `tbt` (hand-written, issue #385)
 

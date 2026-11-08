@@ -2,6 +2,8 @@ import GoFV.SSA.Parse
 import GoFV.SSA.Check
 import GoFV.Opt.WriteBarrierCheck
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `wb-probe`: what writebarrier's checker accepts (issue #36)
 

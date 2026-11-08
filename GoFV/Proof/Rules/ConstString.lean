@@ -8,6 +8,8 @@ import GoFV.Proof.Retype
 import GoFV.Rules.Generated.Generic.Values02
 import GoFV.Rules.Generated.Generic.Values12
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: constant strings and string data symbols (`generic.rules:1011`, `:1015`, `:1022`)
 

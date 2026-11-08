@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.SchedLEval
 import GoFV.Proof.FrameL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # What `scheduleCheck` checks, as propositions
 

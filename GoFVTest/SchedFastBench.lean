@@ -1,6 +1,8 @@
 import GoFV.SSA.Parse
 import GoFV.Opt.SchedFast
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `sched-fast-bench`: `schedFast` against `Sem.schedule`
 

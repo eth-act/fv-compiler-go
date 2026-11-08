@@ -5,6 +5,8 @@ import GoFV.Proof.Witness.DeadcodeL
 import GoFV.Proof.Witness.Util
 import GoFV.Proof.RunLFCases
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: `schedule` on lowered `clamp`
 

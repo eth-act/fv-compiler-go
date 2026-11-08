@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.DeadEdgeWF
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # deadcode's real edge removal against the one keeping `Phi`s
 

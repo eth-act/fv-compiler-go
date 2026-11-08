@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.SegSound
 import GoFV.Proof.PtrAddr
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Segments: chains of stores over a zeroed region (issue #151)
 

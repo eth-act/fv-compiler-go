@@ -4,6 +4,8 @@ import GoFV.Proof.Witness.CopyElim
 import GoFV.Proof.Witness.Util
 import Std.Data.String.ToInt
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: lowered cse on lowered `clamp` with a repeated compare
 

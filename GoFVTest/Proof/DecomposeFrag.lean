@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.Decompose
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # The decompose witnesses and the passes' fragments
 

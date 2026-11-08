@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.NilEval
 import GoFV.Proof.NilPre
 import GoFV.Proof.Eval
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # nilcheckelim's checker: the rewrite passes' seeds (issue #151)
 

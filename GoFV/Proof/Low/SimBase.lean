@@ -3,6 +3,8 @@ import GoFV.Proof.SimL
 import GoFV.Proof.EvalL
 import GoFV.Proof.AtomSim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Frames of `runL` for the lowered atom simulation (issue #385)
 

@@ -1,5 +1,7 @@
 import GoFV.Proof.Obj.Basic
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # What `checkObj` accepted (`GoFV/Asm/CheckObj.lean`)
 

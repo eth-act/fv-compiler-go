@@ -2,6 +2,8 @@ import GoFV.Proof.Gen.G6
 import GoFV.Proof.Gen.Spec7
 import GoFV.Proof.Gen.Progs7
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of the genssa validator's slice G7: nil checks (`docs/plans/proofs3.md` §4)
 

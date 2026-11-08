@@ -1,6 +1,8 @@
 import GoFV.SSA.Parse
 import GoFV.Opt.RegallocCheck
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `lake exe regalloc-probe [--jobs N] [--max-report K] <dir|file>...`: the regalloc checker on
 Go's output

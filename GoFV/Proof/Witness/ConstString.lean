@@ -2,6 +2,8 @@ import GoFV.Proof.Witness.AddZero
 import GoFV.Proof.Pass.Rewrite
 import GoFV.Proof.Rules.ConstString
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for frame-value rules: `hi` (hand-written, issue #151)
 

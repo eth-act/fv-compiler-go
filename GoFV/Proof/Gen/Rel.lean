@@ -3,6 +3,8 @@ import GoFV.SSA.Sem.FrameSafe
 import GoFV.Proof.PtrAddr
 import GoFV.Gen.Check
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Values and registers under `LocMatch` in slice G1 (`docs/plans/proofs3.md` §3)
 

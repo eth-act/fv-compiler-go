@@ -5,6 +5,8 @@ import GoFV.Rules.Generated.Generic.Values03
 import GoFV.Rules.Generated.Generic.Values04
 import GoFV.Rules.Generated.Generic.Values08
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: `EqPtr`/`NeqPtr` against `ConstNil`
 

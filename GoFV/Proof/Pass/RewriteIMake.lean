@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.RewriteLoadSel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Replaying an `IMake` of a `StructMake` (issue #69)
 

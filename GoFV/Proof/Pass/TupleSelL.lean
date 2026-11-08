@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.MoveL
 import GoFV.Opt.TupleSelectors
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `tighten tuple selectors` refines its input on `runL` (issue #395, #385)
 

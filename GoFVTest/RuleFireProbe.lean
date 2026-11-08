@@ -2,6 +2,8 @@ import GoFVTest.Parity.Compare
 import GoFV.SSA.Parse
 import GoFV.Opt.Opt
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `rule-fire-probe`: which unproven rules keep the proven-only passes from stock (#69, #113)
 

@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.WBPanic
 import GoFV.Proof.CheckFacts
 import GoFV.Proof.TabsAgree
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # writebarrier refines its input (issue #36)
 

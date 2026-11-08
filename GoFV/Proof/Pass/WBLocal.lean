@@ -10,6 +10,8 @@ import GoFV.Proof.Pass.DAESrc
 import GoFV.Proof.AtomSimOK
 import GoFV.SSA.Sem.Runtime
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # writebarrier: one value of a chain (issue #36)
 

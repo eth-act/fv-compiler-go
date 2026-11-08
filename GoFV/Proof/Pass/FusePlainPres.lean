@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.FusePlainRel
 import GoFV.Proof.DomRel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # fuseBlockPlain keeps well-formedness and use dominance
 

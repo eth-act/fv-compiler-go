@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.DSEVal
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dse: one value's step
 

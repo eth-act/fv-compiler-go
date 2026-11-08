@@ -2,6 +2,8 @@ import GoFV.Proof.ProveCheck.DecideSound
 import GoFV.Proof.DomCert
 import GoFV.Proof.Avail
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The path facts, declaratively (issue #24)
 

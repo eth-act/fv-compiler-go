@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.UnreadL
 import GoFV.Proof.Witness.DAE
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: elim unread autos on lowered `math.NaN`
 

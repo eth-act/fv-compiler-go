@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.FuseCmpTarget
 import GoFV.Proof.Pass.FusePlainSim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # One checked comparison fusion refines
 

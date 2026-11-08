@@ -1,5 +1,7 @@
 import GoFV.Proof.Rules.DivisibleU
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `divisible.rules`: unsigned divisibility, the `Neq` forms (#69)
 

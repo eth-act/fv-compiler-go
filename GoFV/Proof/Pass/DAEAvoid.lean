@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.DAEMem
 import GoFV.Opt.DeadAutosCheck
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dead auto elim: values and memories without pointers into `U`
 

@@ -1,6 +1,8 @@
 import GoFV.Opt.SchedFast
 import GoFV.Proof.Sched
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `schedFast` satisfies `schedule`'s specification
 

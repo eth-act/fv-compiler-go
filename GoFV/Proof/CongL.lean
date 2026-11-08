@@ -4,6 +4,8 @@ import GoFV.SSA.Analysis.CfgCache
 import GoFV.SSA.Alloc
 import GoFV.Proof.EvalOpLDispatch
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `runL` ignores block order, positions, predictions, caches and the lowered-pass state
 

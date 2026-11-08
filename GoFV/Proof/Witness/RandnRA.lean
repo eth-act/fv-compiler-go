@@ -1,6 +1,8 @@
 import GoFV.Proof.Regalloc.Sound
 import GoFV.Proof.Witness.ClampL
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function: `runtime.randn` before and after `regalloc` (a spill around a call)
 

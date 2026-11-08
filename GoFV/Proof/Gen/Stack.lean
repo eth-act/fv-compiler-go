@@ -1,5 +1,7 @@
 import GoFV.Proof.Gen.G1
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The frame under `LocMatch` (`docs/plans/proofs3.md` §4)
 

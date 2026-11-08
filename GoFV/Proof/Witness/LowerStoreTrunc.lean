@@ -1,6 +1,8 @@
 import GoFV.Proof.Witness.LowerTrunc
 import GoFV.Proof.Witness.LowerStoreIdx
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness functions for `lower` storing a truncation: `stw`, `sxw` (hand-written, issue #385)
 

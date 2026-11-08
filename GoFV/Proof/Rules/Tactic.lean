@@ -3,6 +3,8 @@ import GoFV.Proof.Rules.Lemmas
 import GoFV.Proof.Rules.Names
 import GoFV.Proof.Rules.ArgShapeProc
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Tactics for the rule lemmas (`docs/proofs/rules.md`, "Proof method")
 

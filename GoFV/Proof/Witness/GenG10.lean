@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G10
 import GoFV.Proof.Witness.GenG2
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G10 of the genssa validator on `sync.Locker.Lock`
 

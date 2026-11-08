@@ -2,6 +2,8 @@ import GoFV.Proof.Rules.TacticRange
 import GoFV.Proof.Rules.TacticCond
 import GoFV.Rules.Generated.Generic.Values01
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Single-bit equality tests (`generic.rules:369`, `:372`)
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.UnreadLOps
 import GoFV.Proof.RetypeL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # elim unread autos on `runL`: one value in source and target
 

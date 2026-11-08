@@ -4,6 +4,8 @@ import GoFV.Proof.AtomSimStep
 import GoFV.Proof.AtomSimOK
 import GoFV.Proof.CheckFacts
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Decompose's phi splitting refines its input (issue #17)
 

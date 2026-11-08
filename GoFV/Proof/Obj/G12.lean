@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G12
 import GoFV.Proof.Obj.G7
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `runLoc` → `runMach` on slice G12 (`docs/plans/proofs3.md` §1, §7)
 

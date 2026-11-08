@@ -3,6 +3,8 @@ import GoFV.Proof.Pass.FuseCmp
 import GoFV.Proof.Pass.FusePlain
 import GoFV.Opt.Fuse
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # early fuse refines its input
 

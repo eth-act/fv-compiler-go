@@ -1,6 +1,8 @@
 import GoFV.SSA.Sem.Arm64.Reg
 import GoFV.SSA.Sem.Float
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # arm64 floating-point ops (`docs/plans/semantics2.md` §4 (c.1), §2.1)
 

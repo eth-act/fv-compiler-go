@@ -4,6 +4,8 @@ import GoFV.Opt.CheckLower
 import GoFV.Opt.Layout
 import GoFV.Opt.LikelyAdjust
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowered passes that `runL` cannot see (#385)
 
