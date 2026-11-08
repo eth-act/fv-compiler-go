@@ -1,11 +1,13 @@
 # Plan: the Phase 3 proofs (I7, #553)
 
-Status: slices G1–G4 of the genssa validator are implemented (`GoFV/Gen/Check.lean`,
-`GoFV/Gen/Check2.lean`, `GoFV/Gen/Check3.lean`, `GoFV/Gen/Check4.lean`, probe `gen-check`) and
-proven sound (`GoFV/Proof/Gen/G1.lean`: `g1_value`, `g1_term`; `GoFV/Proof/Gen/G2.lean`: `g2_value`,
-`g2_term`; `GoFV/Proof/Gen/G3.lean`: `g3_value`, `g3_term`; `GoFV/Proof/Gen/G4.lean`: `g4_value`,
-`g4_term`; §3–§5), with witnesses on corpus functions (`GoFV/Proof/Witness/GenG1.lean`,
-`GenG2.lean`, `GenG3.lean`, `GenG4.lean`). G2–G4 rest on the trusted callee contract `CallOK` (§4,
+Status: slices G1–G5 of the genssa validator are implemented (`GoFV/Gen/Check.lean`,
+`GoFV/Gen/Check2.lean`, `GoFV/Gen/Check3.lean`, `GoFV/Gen/Check4.lean`, `GoFV/Gen/Check5.lean`,
+probe `gen-check`) and proven sound (`GoFV/Proof/Gen/G1.lean`: `g1_value`, `g1_term`;
+`GoFV/Proof/Gen/G2.lean`: `g2_value`, `g2_term`; `GoFV/Proof/Gen/G3.lean`: `g3_value`, `g3_term`;
+`GoFV/Proof/Gen/G4.lean`: `g4_value`, `g4_term`; `GoFV/Proof/Gen/G5.lean`: `g5_value`, `g5_term`;
+§3–§5), with witnesses on corpus functions (`GoFV/Proof/Witness/GenG1.lean`, `GenG2.lean`,
+`GenG3.lean`, `GenG4.lean`, `GenG5.lean`). Slice G6 (frame variables, `GoFV/Gen/Check6.lean`) is
+implemented and not yet proven (§4). G2–G5 rest on the trusted callee contract `CallOK` (§4,
 `docs/proofs/STATUS.md` Assumptions). Context:
 `docs/plans/semantics3.md` (§4 `LocMatch`, §6 hooks, §7 layers), `docs/PASSES3.md` (the steps
 A1–F2), `docs/plans/regalloc-check.md` (the Phase 2 pattern this plan follows: an untrusted port
@@ -130,7 +132,7 @@ related by `LocMatch` (`genG1_witness_50`, `genG1_witness_30`).
 
 **Coverage** (`lake exe gen-check`, quick-v10, 9,297 functions): see §5.
 
-## 4. Slices G2–G4, and the next slices
+## 4. Slices G2–G6, and the next slices
 
 **Slice G2** (`GoFV/Gen/Check2.lean`, `checkG2 lc ps bstart g`; proven sound, `g2_value`,
 `g2_term`): G1 plus the most frequent blockers of §5 — `CALLstatic` of a symbol with an ABI
@@ -230,12 +232,56 @@ registers by `finish_reg` twice (`write_pair`, `kpair_kStep`), `g4_stp` stores t
 (`memInj_storeN`, the frame kept by `SepFrom` across both), `g4_sel` reads the pair's register
 (`read_pair`, `ksel4_of_reads`) and changes nothing on the machine.
 
+**Slice G5: memory markers** (`GoFV/Gen/Check5.lean`, `checkG5 lc ps bstart g`, returning G4's
+tables; proven sound, `g5_value`, `g5_term`): G4 plus the memory ops genssa emits no code for, each
+of the memory shape with no home, its memory argument last (`markOp?`, `VK5.mark`): `VarDef {x}`
+(Phase 1 poisons `x`'s block, `Mem.poisonBlock`), `VarLive` and `KeepAlive` (the memory unchanged)
+and `WBend` (the write-barrier buffer freed, `Mem.free .wbuf`).
+
+How the proof discharges G5's obligations: the activation, the invariant and the premises are G4's
+(`G2Env`, `G3Inv`, `G4Pre`); G4's values go through `vk4_step` (the body of `g4_value`, shared), the
+terminators through `termK_step` (the body of `g3_term`, shared by `g3_term`, `g4_term` and
+`g5_term`). `Step5.lean` gives `stepLoc` of a marker (`stepLoc_mark`: the memory stays, is
+`poisonBlock b` or `free .wbuf`). A marker changes no machine state (`g5_mark`, `m' = m`): the new
+memory has a subset of the old blocks with their sizes and each byte unchanged or poison
+(`MemSub`: `memSub_poison`, `memSub_free`, which also keep the keys distinct), so `MemInj` holds
+with no pointer words (`memInj_sub`, through `memInj_byteRel` under `AddrAgree`) and `SepFrom`
+holds (`sepFrom_sub`).
+
+**Slice G6: frame variables** (`GoFV/Gen/Check6.lean`, `checkG6 lc ps bstart g`; implemented, not
+yet proven): G5 plus the accesses of frame variables, whose address argument is `SP` and whose
+operand is the variable's slot in Go's frame layout (`varOp g x = g.slotOp (varKey x)`, `NAME_AUTO`
+or `NAME_PARAM` at `FrameOffset + off`, `slotA`): `MOVDaddr {x}` into a 64-bit register
+(`MOVD $off'(RSP), Rd`), G3's loads and stores, G4's `LDP`/`STP`.
+
+Why G6 is not proven yet: `AddrAgree` puts every block with a Phase 1 address (`Blk.base?`; frame
+blocks from `2^62`) at that address, while on the machine a frame variable lives at `SP` plus its
+frame offset. The design ("frames take the guard", semantics3 §4.3):
+
+1. Accept only frame variables whose block is `Blk.temp` (`Tables.forgeable x = false`: a `PAUTO`
+   whose address is never converted to an integer). `Ptr.ofAddr` never returns a `temp` block
+   (`Ptr.ofAddr_ne_temp`) and `Ptr.word` of a `temp` pointer is the pointer, so no integer is the
+   Phase 1 address of such a variable.
+2. Drop `temp` blocks from `AddrAgree`: its only consumer, `ptrRel_addr`, is applied to
+   convertible pointers (`Ptr.word`, `Arm64.reg`) and to `Ptr.ofAddr` results, never to a `temp`
+   block, so G1–G5 keep their proofs with one more fact per call site.
+3. An activation fact (`G6Env`): each accepted variable's block of the current activation at
+   `E.sp + frameOff L nc off`. The validator checks what makes `MemInj` and `SepFrom (StkAt E)`
+   satisfiable at the entry: the variables' windows (their sizes from `Ctx.locals`) inside the
+   frame, pairwise disjoint (merged locals share an offset) and away from the home slots and the
+   saved `LR`/`FP`.
+4. The value lemmas: `symAddr` of a frame access is the variable's block (the `SP` argument is
+   ignored); the machine address is `RSP + frameOff + off` (`frameOff` is linear in the offset);
+   `MOVDaddr` gives `ptrRes ⟨temp, off⟩`, a pointer related by `PtrRel`; loads and stores reuse
+   `lo_loadN`/`memInj_storeN` at the variable's injected address; `progStep` of the `slotA`
+   shapes of every width, of `LDP`/`STP` and of `MOVD $off(RSP), Rd`.
+
 Later slices, by how many functions each blocker occurs in outside G3 (quick-v10, §5):
 
 1. **Addresses of frame blocks**, with the pair and single accesses of frame variables (`MOVDaddr`
    of an auto 1,261, accesses of a frame variable 1,145, most of the remaining `pair store shape`
-   918 and `pair load shape` 561; `VarDef` 1,020, `LoweredZero` 540): replace `AddrAgree`'s frame
-   part by option 2 of semantics3 §4.3 (addresses as a parameter of the semantics).
+   918 and `pair load shape` 561; `VarDef` 1,020, `LoweredZero` 540): the G6 validator accepts
+   them (above); its proof follows the design above.
 2. **Nil checks** (`LoweredNilCheck` = `MOVB (Rp), R27`, 1,200): `FaultSim` on the nil page.
 3. **Write barriers** (`LoweredWB` 951, `WBend` 967): the `wbHook` of semantics3 §6.
 4. **Interface and closure calls** (results homes 1,215, `CALLinter` 764, `CALLclosure` 359, with
@@ -253,6 +299,8 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G2 | 1,171 (12.59%) | 10,665 |
 | G3 | 1,611 (17.32%) | 17,270 |
 | G4 | 1,832 (19.70%) | 21,243 |
+| G5 | 1,833 (19.71%) | 21,252 |
+| G6 (validator, not proven) | 2,022 (21.74%) | 25,749 |
 
 (On quick-v9, before the G2 validator was tightened for the proof — call arguments and results in
 `R0`–`R15`, `SelectN`'s component class, 64-bit `MOVDaddr` and spill shapes — G2 accepted 1,211.)
@@ -266,7 +314,7 @@ two width classes 4,453, `Select0`/`Select1` and register pairs 3,058, `LDP` 1,9
 slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGetClosurePtr` 104,
 `SB` after the entry values 64, two width classes 50.
 
-**Proof** (`GoFV/Proof/Gen/`; G1's modules, then G2's, G3's and G4's):
+**Proof** (`GoFV/Proof/Gen/`; G1's modules, then G2's, G3's, G4's and G5's):
 
 - `Basic.lean`: `PStep`/`PStar`, `PStar.runProg`; `Link.byId` with distinct IDs below `2^32`:
   `off_byId`, `addr_byId`, `nextAddr_byId`, `progAt?_byId`.
@@ -311,7 +359,11 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
 - `Step4.lean`, `Progs4.lean`: `stepLoc` of `LDP`, `STP`, `Select0`/`Select1`; `progStep` of
   `LDP off(Rn), (Ra, Rb)` and `STP (Rx, Ry), off(Rn)`.
 - `G4.lean`: `G4Pre`; `pairAddr_noAux`, `write_pair`, `read_pair`, `kpair_kStep`,
-  `ksel4_of_reads`; `g4_ldp`, `g4_stp`, `g4_sel`, `g4_value`, `g4_term`.
+  `ksel4_of_reads`; `g4_ldp`, `g4_stp`, `g4_sel`, `vk4_step`, `g4_value`, `g4_term`.
+- `Spec5.lean`, `Step5.lean`: what `checkG5` accepted (`checkG5_spec`, `vkind5_spec` with `VK5`);
+  `stepLoc` of the markers (`stepLoc_mark`).
+- `G5.lean`: `MemSub`, `memInj_sub`, `sepFrom_sub`, `memSub_poison`, `memSub_free`; `g5_mark`,
+  `g5_value`, `g5_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -319,5 +371,7 @@ callee that returns at once; `clamp`: `g2_value` on a G1 value and `g2_term`), `
 (`pallocSum.start`, which G2 rejects: `g3_term` on the bit test `TBNZ [63]` both ways and
 `g3_value` on `ANDconst`), `GenG4.lean` (`(*errorString).Error`, which G3 rejects: `g4_value` on
 the pair load `LDP (R0), (R0, R1)` from a global's 16 bytes and its `Select1`/`Select0`;
-`pallocSum.start`: `g4_term` on `TBNZ [63]`). Each decides its inputs by compiled evaluation
-(`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
+`pallocSum.start`: `g4_term` on `TBNZ [63]`), `GenG5.lean` (`g` of `test/stackobj`, which G4
+rejects: `g5_value` on a spill, a static call, its memory and the marker `KeepAlive` of the
+spilled argument; `pallocSum.start`: `g5_term` on `TBNZ [63]`). Each decides its inputs by
+compiled evaluation (`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
