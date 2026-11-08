@@ -48,7 +48,7 @@ def TgtOK (offs : List (Nat × Nat)) (id : Nat) (q : Int) : Prop :=
   ∃ o, offOf offs id = some o ∧ (o : Int) = q
 
 /-- What `sameCtl` accepts. -/
-def CtlMatch (offs : List (Nat × Nat)) (pr : Sym) : MCtl → PCtl → Prop
+def CtlMatch (offs : List (Nat × Nat)) (_pr : Sym) : MCtl → PCtl → Prop
   | .fall, .fall => True
   | .jmp q, .jmp id => TgtOK offs id q
   | .cond fl c q, .cond c' id => fl = .init ∧ c = c' ∧ TgtOK offs id q
@@ -56,7 +56,6 @@ def CtlMatch (offs : List (Nat × Nat)) (pr : Sym) : MCtl → PCtl → Prop
     sf = sf' ∧ nz = nz' ∧ a = a' ∧ a'.regsOK = true ∧ TgtOK offs id q
   | .tbz nz b a q, .tbz nz' b' a' id =>
     nz = nz' ∧ b = b' ∧ a = a' ∧ a'.regsOK = true ∧ TgtOK offs id q
-  | .reg a, .reg a' => a = .x 30 ∧ a' = .x 30 ∧ pr.getX 30 = .x 30
   | .call n add, .call n' add' => n = n' ∧ add = add' ∧ add = 0
   | _, _ => False
 
@@ -79,23 +78,21 @@ theorem sameCtl_spec {offs : List (Nat × Nat)} {m : MCtl} {p : PCtl} {pr : Sym}
       exact ⟨o, ho, h⟩
     · cases h
   case cbz.cbz =>
-    obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4, h5⟩, h⟩ := h
-    refine ⟨h1, h2, h3, h4, h5, ?_⟩
+    obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h⟩ := h
+    refine ⟨h1, h2, h3, h4, ?_⟩
     split at h
     · rename_i o ho
       simp at h
       exact ⟨o, ho, h⟩
     · cases h
   case tbz.tbz =>
-    obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4, h5⟩, h⟩ := h
-    refine ⟨h1, h2, h3, h4, h5, ?_⟩
+    obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h⟩ := h
+    refine ⟨h1, h2, h3, h4, ?_⟩
     split at h
     · rename_i o ho
       simp at h
       exact ⟨o, ho, h⟩
     · cases h
-  case reg.reg =>
-    exact ⟨h.1.1, h.1.2, h.2⟩
   case call.call =>
     exact ⟨h.1.1, h.1.2, h.2⟩
 
@@ -315,10 +312,10 @@ theorem checkStackCheck_spec {t : ByteArray} {rs : List Reloc} {az : Int} {o gOf
     · cases h
 
 theorem checkPrologue_spec {t : ByteArray} {rs : List Reloc} {az : Int} {body : Nat}
-    {check : Option (Nat × Nat)} (h : checkPrologue t rs az body = .ok check) :
+    {check : Option (Nat × Nat × Nat)} (h : checkPrologue t rs az body = .ok check) :
     (az = 0 ∧ body = 0 ∧ check = none) ∨
     (az ≠ 0 ∧ ∃ fo σ,
-      ((check = none ∧ fo = 0) ∨ ∃ ce tail gOff, check = some (ce, tail) ∧ fo = ce ∧
+      ((check = none ∧ fo = 0) ∨ ∃ ce tail gOff, check = some (ce, tail, gOff) ∧ fo = ce ∧
         (gOff = 16 ∨ gOff = 24) ∧ checkStackCheck t rs az 0 gOff = .ok (ce, tail)) ∧
       fo < body ∧ (body - fo) % 4 = 0 ∧ symWords t rs ((body - fo) / 4) fo {} = .ok (σ, .fall) ∧
       frameOK az σ = .ok ()) := by
@@ -336,10 +333,10 @@ theorem checkPrologue_spec {t : ByteArray} {rs : List Reloc} {az : Int} {body : 
       have hg' : gOff = 16 ∨ gOff = 24 := by
         split at hg <;> (try split at hg) <;> simp at hg <;> omega
       cases hc : checkStackCheck t rs az 0 gOff with
-      | error e => simp [hc, Functor.map, Except.map] at h
+      | error e => simp [hc] at h
       | ok r =>
         obtain ⟨ce, tail⟩ := r
-        simp [hc, Functor.map, Except.map] at h
+        simp [hc] at h
         obtain ⟨hw, h⟩ := h
         split at h
         · cases h
@@ -416,19 +413,19 @@ private theorem spec_starts {L n body : Nat} {v : Array (Option Nat)} (hv0 : v[0
       simp at hlen hhd ⊢
       omega
 
-theorem checkObj_spec {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab : Tab}
 private theorem spec_all {ps : Array Prog}
     (h : ((ps.toList.map (·.id)).all fun x => decide (x < 2 ^ 32)) = true) :
     ∀ p ∈ ps.toList, p.id < 2 ^ 32 := by
   intro p hp
   simpa using List.all_eq_true.1 h p.id (List.mem_map_of_mem hp)
 
+theorem checkObj_spec {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab : Tab}
     (h : checkObj ps spills o = .ok tab) :
     ∃ text body, ps[0]? = some text ∧ text.as = .TEXT ∧ (ps.toList.map (·.id)).Nodup ∧
       (∀ p ∈ ps.toList, p.id < 2 ^ 32) ∧ 2 ≤ ps.size ∧ tab.offs.size = ps.size ∧
       tab.offs[0]? = some body ∧ tab.offs[1]? = some body ∧ tab.leaf = leafOf ps ∧
       checkPrologue o.text o.relocs.toList tab.autosize body = .ok tab.check ∧
-      (∀ ce tail, tab.check = some (ce, tail) → tab.endOff = tail) ∧
+      (∀ ce tail gOff, tab.check = some (ce, tail, gOff) → tab.endOff = tail) ∧
       checkBody o.text o.relocs.toList ((ps.toList.zip tab.offs.toList).map fun (p, s) => (p.id, s))
         tab.autosize tab.extrasize tab.leaf (ps.toList.drop 1) (tab.offs.toList.drop 1)
         tab.endOff = .ok () := by
@@ -476,14 +473,16 @@ private theorem spec_all {ps : Array Prog}
               · cases h
                 refine ⟨text, _, rfl, by simpa using hT, hND, spec_all hall, by omega, e1, e2,
                   e3, rfl, hchk, ?_, hbody⟩
-                intro ce tail hc
+                intro ce tail gOff hc
                 simp at hc
-                obtain ⟨rfl, rfl⟩ := hc
+                obtain ⟨rfl, rfl, rfl⟩ := hc
                 rfl
             · cases h
               refine ⟨text, _, rfl, by simpa using hT, hND, spec_all hall, by omega, e1, e2,
                 e3, rfl, hchk, ?_, hbody⟩
-              intro ce tail hc
-              cases hc
+              intro ce' tail' gOff' hc
+              first
+              | (rename_i hnm; exact (hnm _ _ _ hc).elim)
+              | cases hc
 
 end GoFV.Proof.Obj

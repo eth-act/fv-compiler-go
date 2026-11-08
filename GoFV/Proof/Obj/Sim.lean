@@ -88,6 +88,129 @@ def ObjEnv.map (tab : Tab) (ps : Array Prog) (L : Link) (base : BitVec 64) :
     BitVec 64 → BitVec 64 :=
   objMap ps.toList tab.offs.toList tab.endOff L.text base
 
+/-! ## The address map -/
+
+section Addr
+
+variable {text0 base : BitVec 64} {ps : List Prog} {offs : List Nat} {e : Nat}
+
+theorem objMap_at (hnd : (ps.map (·.id)).Nodup) (hlt : ∀ p ∈ ps, p.id < 2 ^ 32)
+    (hlen : offs.length = ps.length) {k : Nat} (hk : k < ps.length) :
+    objMap ps offs e text0 base (addrP text0 ps[k].id) =
+      base + BitVec.ofNat 64 (offs[k]'(by omega)) := by
+  unfold objMap
+  have hfind : (ps.zip offs).find? (fun po => addrP text0 po.1.id == addrP text0 ps[k].id) =
+      some (ps[k], offs[k]'(by omega)) := by
+    rw [List.find?_eq_some_iff_getElem]
+    refine ⟨by simp, k, by simp [hlen], by simp, fun j hj => ?_⟩
+    have hjk : j < ps.length := by omega
+    simp only [List.getElem_zip, beq_iff_eq, Bool.not_eq_eq_eq_not, Bool.not_true,
+      decide_eq_false_iff_not]
+    intro h
+    have hj' := hlt _ (List.getElem_mem hjk)
+    have hk' := hlt _ (List.getElem_mem hk)
+    exact GoFV.Proof.Gen.id_ne_of_nodup hnd hjk hk (by omega)
+      (GoFV.Proof.Gen.addr_inj (by omega) (by omega) h)
+  rw [hfind]
+
+theorem objMap_none {a : BitVec 64} (ha : ¬ IsProgAddr text0 ps a) :
+    (ps.zip offs).find? (fun po => addrP text0 po.1.id == a) = none := by
+  rw [List.find?_eq_none]
+  intro x hx h
+  apply ha
+  exact ⟨x.1, List.of_mem_zip hx |>.1, by simpa using h⟩
+
+theorem not_isProgAddr_end (hlt : ∀ p ∈ ps, p.id < 2 ^ 32) :
+    ¬ IsProgAddr text0 ps (endP text0 ps) := by
+  rintro ⟨p, hp, h⟩
+  have hm := GoFV.Proof.Gen.maxId_lt (by decide) hlt
+  have hle := GoFV.Proof.Gen.le_maxId hp
+  have := GoFV.Proof.Gen.addr_inj (text := text0) (i := p.id) (k := maxId ps + 1)
+    (by have := hlt p hp; omega) (by omega) h
+  omega
+
+theorem objMap_end (hlt : ∀ p ∈ ps, p.id < 2 ^ 32) :
+    objMap ps offs e text0 base (endP text0 ps) = base + BitVec.ofNat 64 e := by
+  unfold objMap
+  rw [objMap_none (not_isProgAddr_end hlt)]
+  simp
+
+theorem objMap_fix {a : BitVec 64} (ha : ¬ IsProgAddr text0 ps a) (he : a ≠ endP text0 ps) :
+    objMap ps offs e text0 base a = a := by
+  unfold objMap
+  rw [objMap_none ha]
+  simp [he]
+
+end Addr
+
+/-! ## Evaluation in related states -/
+
+theorem Ex.regsOK_reads {e : Ex} (h : e.regsOK = true) {r : Nat} (hr : e.reads r = true) :
+    r < 31 ∧ r ≠ 27 ∧ r ≠ 30 := by
+  induction e with
+  | x q => simp [Ex.regsOK, Ex.reads] at h hr; omega
+  | sp | k | sym => simp [Ex.reads] at hr
+  | ld _ a ih | shift _ _ _ a ih | ext _ _ a ih | lo32 a ih | sext _ a ih | page a ih =>
+    exact ih (by simpa [Ex.regsOK] using h) (by simpa [Ex.reads] using hr)
+  | add a b iha ihb | addSub _ _ a b iha ihb | logical _ _ a b iha ihb | bfm _ _ _ _ a b iha ihb =>
+    simp only [Ex.regsOK, Bool.and_eq_true] at h
+    simp only [Ex.reads, Bool.or_eq_true] at hr
+    rcases hr with hr | hr
+    · exact iha h.1 hr
+    · exact ihb h.2 hr
+
+theorem reg_ne_of {r : Nat} (hr : r < 31) (h27 : r ≠ 27) (h30 : r ≠ 30) :
+    (BitVec.ofNat 5 r : Reg) ≠ 27 ∧ (BitVec.ofNat 5 r : Reg) ≠ 30 := by
+  constructor <;> intro h <;> have := congrArg BitVec.toNat h <;> simp at this <;> omega
+
+theorem eval_rel {f : BitVec 64 → BitVec 64} {s t : MState} (hR : ObjRel f s t)
+    (sym : Nat → BitVec 64) {e : Ex} (he : e.regsOK = true) :
+    e.eval ⟨t, sym⟩ = e.eval ⟨s, sym⟩ := by
+  refine Ex.eval_congr rfl hR.sp hR.mem e fun r hr => ?_
+  obtain ⟨h31, h27, h30⟩ := Ex.regsOK_reads he hr
+  obtain ⟨h27', h30'⟩ := reg_ne_of h31 h27 h30
+  exact hR.x _ h27' h30'
+
+theorem fl_eval_rel {f : BitVec 64 → BitVec 64} {s t : MState} (hR : ObjRel f s t)
+    (sym : Nat → BitVec 64) {fl : Fl} (hfl : fl.regsOK = true) :
+    fl.eval ⟨t, sym⟩ = fl.eval ⟨s, sym⟩ := by
+  refine Fl.eval_congr rfl hR.sp hR.mem hR.nzcv fl fun r hr => ?_
+  have hok : ∃ a b, (r ∈ [r] ∧ (a.reads r = true ∨ b.reads r = true)) ∧ a.regsOK = true ∧
+      b.regsOK = true := by
+    cases fl with
+    | init => simp [Fl.reads] at hr
+    | addSub _ _ a b =>
+      simp only [Fl.reads, Bool.or_eq_true] at hr; simp only [Fl.regsOK, Bool.and_eq_true] at hfl
+      exact ⟨a, b, ⟨by simp, hr⟩, hfl⟩
+    | ands _ a b =>
+      simp only [Fl.reads, Bool.or_eq_true] at hr; simp only [Fl.regsOK, Bool.and_eq_true] at hfl
+      exact ⟨a, b, ⟨by simp, hr⟩, hfl⟩
+  obtain ⟨a, b, ⟨-, hr'⟩, ha, hb⟩ := hok
+  obtain ⟨h31, h27, h30⟩ := hr'.elim (Ex.regsOK_reads ha) (Ex.regsOK_reads hb)
+  obtain ⟨h27', h30'⟩ := reg_ne_of h31 h27 h30
+  exact hR.x _ h27' h30'
+
+theorem storesMem_rel {f : BitVec 64 → BitVec 64} {s t : MState} (hR : ObjRel f s t)
+    (sym : Nat → BitVec 64) :
+    ∀ (st : List (Ex × Nat × Ex)) (m : Memory),
+      (∀ x ∈ st, x.1.regsOK = true ∧ x.2.2.regsOK = true) →
+      storesMem ⟨t, sym⟩ st m = storesMem ⟨s, sym⟩ st m
+  | [], _, _ => rfl
+  | (a, n, v) :: st, m, h => by
+    have ha := (h (a, n, v) (by simp)).1
+    have hv := (h (a, n, v) (by simp)).2
+    simp only [storesMem, eval_rel hR sym ha, eval_rel hR sym hv]
+    exact storesMem_rel hR sym st _ fun x hx => h x (by simp [hx])
+
+theorem holds_init (c : Ctx) : Holds c {} c.s where
+  x _ _ := by simp [Sym.getX, Ex.eval]
+  x31 := rfl
+  sp := rfl
+  nzcv := rfl
+  v := rfl
+  mem := rfl
+  x30 := by simp [Sym.getX, Ex.eval]
+
 theorem obj_step {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab : Tab} {L : Link}
     {base : BitVec 64} {code : Code} {retM : BitVec 64} {H : Hooks} {s s' t : MState}
     (hE : ObjEnv ps spills o tab L base code retM)
