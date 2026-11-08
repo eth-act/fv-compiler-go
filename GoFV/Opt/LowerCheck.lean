@@ -750,6 +750,25 @@ def blockOKL (tabs : Tables) (M : Defs) (br : BlockRule) (st : BStateL) (nc : Ar
     else none
   | _, _ => none
 
+/-- A jump-table event (`ARM64.rules:478`, `(JumpTable idx) => (JUMPTABLE {sym} idx (MOVDaddr
+{sym} (SB)))`) on the replayed terminator `st` of a `JumpTable` block (one control `c`, not
+swapped): the new controls are `c` and the address `a` of the table, a fresh `MOVDaddr` term on a
+fresh `SB` term (`defs`: the values the rule built). `JUMPTABLE` takes the successor its first
+control's register selects, as `JumpTable` does on that integer (`Sem.stepTermL`), and reads no
+other control, so the event needs no rule obligation (`BlockRuleL.Checked`). The new terminator
+keeps the auxint; the replay adds the two terms. -/
+def jumpOKL (tabs : Tables) (M : Defs) (st : BStateL) (nc : Array ID) (defs : List Value) :
+    Option (BStateL × List Value) :=
+  match st.ctrls.toList, nc.toList, defs with
+  | [c], [c', a], [ma, sb] =>
+    if !st.swapped && c' == c && ma.id == a && ma.op == .ARM64MOVDaddr && termVL tabs ma &&
+        ma.args == #[sb.id] && sb.op == .SB && termVL tabs sb && sb.args.isEmpty && sb.id != a &&
+        (M.get? a).isNone && (M.get? sb.id).isNone then
+      some ({ kind := .ARM64JUMPTABLE, ctrls := nc, auxInt := st.auxInt, swapped := false },
+        [sb, ma])
+    else none
+  | _, _, _ => none
+
 /-! ## Replay -/
 
 /-- Argument `i` of the replayed `v` replaced by `src` if the copies of `M` justify it: `src` is
@@ -835,10 +854,15 @@ def replayL (tabs : Tables) (t : Interp.Table) (f : Func) :
       else none
   | _, _, .phielim .. :: _ => none
   | _, _, .snap .. :: _ => none
-  | M, B, .blockRule b i nc :: evs =>
+  | M, B, .blockRule b i nc defs :: evs =>
     match bstateL f B b with
     | none => none
     | some st =>
+      if st.kind == .JumpTable then
+        match jumpOKL tabs M st nc defs.toList with
+        | none => none
+        | some (st', us) => replayL tabs t f (us.foldl (fun M u => M.put u.id u) M) ((b, st') :: B) evs
+      else
       if ((f.block? b).map (·.succs.size)) != some 2 then none else
       match (t.blocks[st.kind.ctorIdx]?).bind (·[i]?) with
       | none => none

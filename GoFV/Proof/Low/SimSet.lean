@@ -208,7 +208,7 @@ theorem addrLower_of_argFree {x : ID} {u w : Value} (hu : f.value? x = some u)
       rw [hop, (argFree_cases hf).1] at hg; exact absurd hg (by decide)
     · have hw' := (argFree_cases hf).1
       rcases renameOp_cases hop with ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ |
-          ⟨-, h2⟩ | ⟨-, h2⟩ | h9 <;> first
+          ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | h9 <;> first
         | (rw [h2] at hw'; cases hw')
         | exact (atomicOf_facts h9).2.2.2.2.2.2.2.2.1 hw'
     · obtain ⟨-, -, -, n, hs, -⟩ := memLower_cases hm
@@ -498,8 +498,10 @@ theorem evalOpL_safeL {env : Env} {ctx : Ctx} {fr : Frame} {u w : Value} {argv :
       ⟨k, hk, -⟩ | ⟨ho, he⟩ | ⟨ho, -⟩ | ⟨hat, -⟩
     · rcases hk with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] at hr' <;> exact absurd hr' (by decide)
     · rw [he]
-      rcases ho with ho | ho | ho
+      rcases ho with ho | ho | ho | ho
       · rw [ho] at hr'; exact absurd hr' (by decide)
+      · exact evalOp_safe (v := { w with op := u.op }) (by rw [ho]; decide)
+          (by rw [ho]; decide) (by rw [ho]; decide)
       · exact evalOp_safe (v := { w with op := u.op }) (by rw [ho]; decide)
           (by rw [ho]; decide) (by rw [ho]; decide)
       · rw [ho] at hr'; exact absurd hr' (by decide)

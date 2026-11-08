@@ -68,8 +68,9 @@ inductive RwEvent where
   function just before (the validator splits the log there, issue #69). -/
   | phielim (v : ID) («def» : Value) (pre : Func)
   /-- Block rule `rule` (its index in `b`'s kind row of the table) fired at `b`; `ctrls`: the
-  block's controls after it. -/
-  | blockRule (b : ID) (rule : Nat) (ctrls : Array ID)
+  block's controls after it; `defs`: the values its new controls built (appended to `b`), in the
+  order built. -/
+  | blockRule (b : ID) (rule : Nat) (ctrls : Array ID) (defs : Array Value)
   /-- `pre`: the function just before a `phiSels` rule fires (the validator splits the log
   there, so that the selection becomes a copy at its log position, issue #69). -/
   | snap (pre : Func)

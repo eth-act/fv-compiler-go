@@ -6,7 +6,8 @@
                                # `r_ARM64_*_sound` theorems of GoFV/Proof/Low/Rules/*.lean
 
 A value rule is proven by a theorem `r_ARM64_<n>_sound : ArmRule.Checked r_ARM64_<n>`, a block
-rule by `r_ARM64_<n>_sound : BlockRuleL.Sound r_ARM64_<n>`. A rule whose expressions call Go's
+rule by `r_ARM64_<n>_sound : BlockRuleL.Sound r_ARM64_<n>` (listed as `.inl` of it, the rule set
+asking `BlockRuleL.Checked`) or `BlockRuleL.Checked r_ARM64_<n>`. A rule whose expressions call Go's
 `b2i` (which Phase 1's rule denotation `evalE` names `bool2int`; `GoFV.Rules.Eval` evaluates both
 alike) is proven in its normalised form by `r_ARM64_<n>_b2i_sound : ArmRule.Checked (b2iNorm
 r_ARM64_<n>)`, and the rule set lists `b2iNorm r_ARM64_<n>` (`b2iNorm` is emitted into the rule
@@ -32,8 +33,9 @@ OUT_PROOF = ROOT / "GoFV/Proof/Low/ProvenARM64.lean"
 
 
 def proven():
-    vals, blocks, norm, split, mods = set(), set(), set(), {}, []
-    pat = re.compile(r"^theorem (r_ARM64_\w+)_sound : (ArmRule\.Checked|BlockRuleL\.Sound) ", re.M)
+    vals, blocks, bsound, norm, split, mods = set(), set(), set(), set(), {}, []
+    pat = re.compile(r"^theorem (r_ARM64_\w+)_sound : "
+                     r"(ArmRule\.Checked|BlockRuleL\.Sound|BlockRuleL\.Checked) ", re.M)
     npat = re.compile(r"^theorem (r_ARM64_\w+)_b2i_sound : ArmRule\.Checked \(b2iNorm (r_ARM64_\w+)\)",
                       re.M)
     spat = re.compile(r"^theorem (r_ARM64_\w+)_(flag|cc)_sound : ForallL ArmRule\.Checked "
@@ -47,13 +49,15 @@ def proven():
             mods.append("GoFV.Proof.Low.Rules." + f.stem)
         for name, kind in found:
             (vals if kind == "ArmRule.Checked" else blocks).add(name)
+            if kind == "BlockRuleL.Sound":
+                bsound.add(name)
         for name, r in nfound:
             assert name == r, (name, r)
             norm.add(name)
         for name, kind, fn, r in sfound:
             assert name == r and fn == kind + "Split", (name, kind, fn, r)
             split[name] = kind
-    return vals, blocks, norm, split, mods
+    return vals, blocks, bsound, norm, split, mods
 
 
 def lists(kind):
@@ -74,7 +78,7 @@ def order():
 
 
 def main():
-    pv, pb, pn, pf, mods = proven()
+    pv, pb, pbs, pn, pf, mods = proven()
     ops, bls = lists("ops"), lists("blocks")
     vord, bord = order()
     values = [(op, [r for r in ops[l] if r in pv or r in pn or r in pf]) for op, l in vord]
@@ -120,7 +124,7 @@ import GoFV.Rules.Derive
 # The proven-only `ARM64.rules` rule set (issue #385)
 
 `ARM64.rules` restricted to the rules with a merged lowered obligation (`ArmRule.Sound`,
-`ArmRule.SetOp`, `ArmRule.Rename`, `BlockRuleL.Sound`; `GoFV/Proof/Low/ProvenARM64.lean`), in
+`ArmRule.SetOp`, `ArmRule.Rename`, `BlockRuleL.Checked`; `GoFV/Proof/Low/ProvenARM64.lean`), in
 matching order: the rule set of the checked `lower` (`GoFV.Opt.lowerChecked`). A rule on a
 condition's op and flags (`flagArg`) is listed split by the condition op
 (`GoFV.Rules.Derive.flagSplit`), which rewrites the same instances; a rule on `arm64Invert` or
@@ -186,10 +190,15 @@ def lower : RuleSet where
 end GoFV.Rules.ProvenARM64
 """)
 
+    def ruleProof(r):
+        if r in pn:
+            return r + "_b2i_sound"
+        return (".inl " if r in pbs else "") + r + "_sound"
+
     def segProof(kind, x):
         if kind != "plain":
             return x + "_" + kind + "_sound"
-        return "⟨" + ", ".join(r + ("_b2i_sound" if r in pn else "_sound") for r in x) + ", trivial⟩"
+        return "⟨" + ", ".join(ruleProof(r) for r in x) + ", trivial⟩"
 
     def opProof(rs):
         # `l₁ ++ l₂ ++ l₃` parses as `(l₁ ++ l₂) ++ l₃`, which `ForallL.append_iff` splits into

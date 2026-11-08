@@ -1030,7 +1030,7 @@ theorem atomPair_phi {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true
   rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h | h, -⟩ | h | h | h
   · rw [h]
   · rcases renameOp_cases h with ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ |
-        ⟨h1, h2⟩ | ⟨h1, h2⟩ | h9 <;> first
+        ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | h9 <;> first
       | (rw [h1, h2]; decide)
       | (obtain ⟨-, -, -, -, -, -, h1, h2, -⟩ := atomicOf_facts h9
          exact ⟨fun h' => absurd h' h2, fun h' => absurd h' h1⟩)
@@ -1053,7 +1053,7 @@ theorem atomPair_isRoot {tabs : Tables} {u w : Value} (h : atomPair tabs u w = t
   · exact .inl (by rw [h])
   · left
     rcases renameOp_cases h with ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ |
-        ⟨h1, h2⟩ | ⟨h1, h2⟩ | h9 <;> first
+        ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | h9 <;> first
       | (rw [h1, h2]; decide)
       | (obtain ⟨-, -, -, -, h1, h2, -⟩ := atomicOf_facts h9
          rw [h1, h2])

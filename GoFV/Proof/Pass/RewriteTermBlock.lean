@@ -500,7 +500,7 @@ theorem replay_inv {tabs : Tables} {s : RuleSet} (hs : s.AllSound)
     · cases h
   | .phielim .. :: _, M, M', B, B', C, h, _, _ => by simp [replay] at h
   | .snap .. :: _, M, M', B, B', C, h, _, _ => by simp [replay] at h
-  | .blockRule b i nc :: evs, M, M', B, B', C, h, hI, hB => by
+  | .blockRule b i nc _ :: evs, M, M', B, B', C, h, hI, hB => by
     unfold replay at h
     split at h
     · cases h

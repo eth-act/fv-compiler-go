@@ -94,6 +94,10 @@ theorem r_ARM64_449_sound : ArmRule.Checked r_ARM64_449 :=
 theorem r_ARM64_455_sound : ArmRule.Checked r_ARM64_455 :=
   checked_rename .GetClosurePtr .ARM64LoweredGetClosurePtr rfl rfl rfl rfl rfl
 
+/-- `ARM64.rules:456`: `(GetCallerSP ...) => (LoweredGetCallerSP ...)` -/
+theorem r_ARM64_456_sound : ArmRule.Checked r_ARM64_456 :=
+  checked_rename .GetCallerSP .ARM64LoweredGetCallerSP rfl rfl rfl rfl rfl
+
 /-- A generic term op `o` lowered to an activation op `o'` that `Sem.arm64Op` runs as its
 `Arm64.evalPure` (`pureActOp`) with the same value: an atomic load and its acquiring load (both
 `atomicLoad`), `MemEq` and `LoweredMemEq` (both `memEq`). -/

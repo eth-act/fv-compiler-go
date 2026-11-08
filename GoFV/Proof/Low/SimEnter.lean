@@ -592,7 +592,7 @@ theorem atomPair_op_of_generic {tabs : Tables} {u w : Value} (h : atomPair tabs 
   · exact h
   · exfalso
     rcases renameOp_cases h with ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ |
-        ⟨-, h2⟩ | ⟨-, h2⟩ | h9 <;> first
+        ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | h9 <;> first
       | (rw [h2] at hg; exact absurd hg (by decide))
       | (rw [(atomicOf_facts h9).2.1] at hg; cases hg)
   · exfalso

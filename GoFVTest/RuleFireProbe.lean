@@ -88,7 +88,7 @@ def firedKeys (t : Interp.Table) (f : Func) (log : Array RwEvent) : Array String
       if let some x := M.get? v then
         if h : i < x.args.size then M := M.put v { x with args := x.args.set i src }
     | .phielim v d _ => M := M.put v d
-    | .blockRule b i _ =>
+    | .blockRule b i _ _ =>
       let k? := (kinds.get? b).orElse fun _ => (f.block? b).map (·.kind)
       if let some k := k? then
         if let some r := (t.blocks[k.ctorIdx]?).bind (·[i]?) then
