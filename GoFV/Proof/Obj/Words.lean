@@ -86,12 +86,6 @@ theorem mstep_word {o : Nat} {w : BitVec 32} {i : Insn} {tm tm' : MState}
   · rw [hpc, hc]; simp
   · simp [step, hpc, hc, hd, he]
 
-/-- What the state after words with effect `σ` and control `mc`, the last at `ol`, satisfies
-(`X30` as `σ` says unless `mc` is a call). -/
-def WordsPost (c : Ctx) (base : BitVec 64) (ol : Nat) (σ : Sym) (mc : MCtl) (tm : MState) : Prop :=
-  HoldsCore c σ tm ∧ ((∀ y a, mc ≠ .call y a) → tm.x 30 = (σ.getX 30).eval c) ∧
-    CtlPc c base ol mc tm
-
 theorem at_succ (base : BitVec 64) (o k : Nat) :
     base + BitVec.ofNat 64 o + BitVec.ofNat 64 k = at_ base ((o + k : Nat) : Int) := by
   simp only [at_, BitVec.ofInt_natCast, BitVec.add_assoc, BitVec.ofNat_add]
@@ -275,17 +269,6 @@ theorem relocAt_spec {o : Nat} {r : Reloc} (h : relocAt rs o = some r) :
     · simp [ho] at h
   · cases h
 
-theorem holdsCore_wX30 {c : Ctx} {σ : Sym} {tm : MState} (h : HoldsCore c σ tm) (v q : BitVec 64) :
-    HoldsCore c σ { tm.wX 30 v with pc := q } := by
-  obtain ⟨hx, h31, hsp, hfl, hv, hmem⟩ := h
-  refine ⟨fun r hr => ?_, ?_, hsp, hfl, hv, hmem⟩
-  · have : (BitVec.ofNat 5 r : Reg) ≠ 30 := by
-      intro he; have := congrArg BitVec.toNat he; simp at this; omega
-    have h30 : ¬ BitVec.ofNat 5 r = 30#5 := this
-    simp [MState.wX, hx r hr, h30]
-  · simp only [MState.wX, show ¬ ((30 : Reg) = 31) by decide, ↓reduceIte]
-    exact h31
-
 /-- One unit (`symUnit`) runs as it says. -/
 theorem symUnit_sound (hlink : linkCode base sym t rs = .ok code) (hsz : t.size ≤ 2 ^ 64)
     (hret : code retM = none) {n o : Nat} {σ σ' : Sym} {mc : MCtl} {used : Nat} {c : Ctx}
@@ -299,9 +282,8 @@ theorem symUnit_sound (hlink : linkCode base sym t rs = .ok code) (hsz : t.size 
   · -- a plain word
     have hw := linkWord_plain hlw hcov
     subst hw
-    obtain ⟨tm', hex, hH', hctl⟩ := symInsn_sound hsi hH hpc hnil
-    refine ⟨tm', mstar_single (mstep_word hcw hd hex hpc hret), hH'.toHoldsCore,
-      fun _ => hH'.x30, ?_⟩
+    obtain ⟨tm', hex, hH', hx30, hctl⟩ := symInsn_sound hsi hH hpc hnil
+    refine ⟨tm', mstar_single (mstep_word hcw hd hex hpc hret), hH', hx30, ?_⟩
     simpa using hctl
   · -- `BL`/`B` of `R_CALLARM64`
     obtain ⟨hcov, hoff, hsiz⟩ := relocAt_spec hr
@@ -316,7 +298,7 @@ theorem symUnit_sound (hlink : linkCode base sym t rs = .ok code) (hsz : t.size 
     · refine ⟨⟨hH.x, hH.x31, hH.sp, hH.nzcv, hH.v, hH.mem⟩, fun _ => hH.x30, ?_⟩
       simp only [CtlPc, Bool.false_eq_true, ↓reduceIte]
       rw [hpcrel, hsym]
-    · refine ⟨holdsCore_wX30 hH.toHoldsCore _ _, fun hne => absurd rfl (hne y r.add), ?_⟩
+    · refine ⟨holdsCore_wX30 hH.toHoldsCore _ _, fun hne => by simp [MCtl.links] at hne, ?_⟩
       simp only [CtlPc, ↓reduceIte]
       refine ⟨by rw [hpcrel, hsym], ?_⟩
       simp only [MState.wX, show (30 : Reg) ≠ 31 by decide, ↓reduceIte, hpc]
@@ -464,7 +446,7 @@ theorem symWords_sound (hlink : linkCode base sym t rs = .ok code) (hsz : t.size
         have hle2 := symWords_le n' (o + 4) σ1 σ' mc h
         obtain ⟨tm1, hs1, hc1, hx1, hp1⟩ :=
           symUnit_sound hlink hsz hret hu hsym hH hpc (hnil.mono hle2)
-        have hH1 : Holds c σ1 tm1 := ⟨hc1, hx1 (fun _ _ h => nomatch h)⟩
+        have hH1 : Holds c σ1 tm1 := ⟨hc1, hx1 rfl⟩
         have hpc1 : tm1.pc = base + BitVec.ofNat 64 (o + 4) := by
           simp only [CtlPc] at hp1; rw [hp1, at_nat]; congr 1
         obtain ⟨tm2, hs2, hp2⟩ := ih n' (by omega) (o + 4) σ1 σ' mc c tm1 h hsym hH1 hpc1 hnil
@@ -488,7 +470,7 @@ theorem symWords_sound (hlink : linkCode base sym t rs = .ok code) (hsz : t.size
         have hle2 := symWords_le m' (o + 8) σ1 σ' mc h
         obtain ⟨tm1, hs1, hc1, hx1, hp1⟩ :=
           symUnit_sound hlink hsz hret hu hsym hH hpc (hnil.mono hle2)
-        have hH1 : Holds c σ1 tm1 := ⟨hc1, hx1 (fun _ _ h => nomatch h)⟩
+        have hH1 : Holds c σ1 tm1 := ⟨hc1, hx1 rfl⟩
         have hpc1 : tm1.pc = base + BitVec.ofNat 64 (o + 8) := by
           simp only [CtlPc] at hp1; rw [hp1, at_nat]; congr 1
         obtain ⟨tm2, hs2, hp2⟩ := ih m' (by omega) (o + 8) σ1 σ' mc c tm1 h hsym hH1 hpc1 hnil

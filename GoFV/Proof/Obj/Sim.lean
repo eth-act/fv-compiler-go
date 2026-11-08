@@ -88,6 +88,22 @@ def ObjEnv.map (tab : Tab) (ps : Array Prog) (L : Link) (base : BitVec 64) :
     BitVec 64 → BitVec 64 :=
   objMap ps.toList tab.offs.toList tab.endOff L.text base
 
+/-- At a `CALL (Rn)` (`isICall`), the register holds a symbol's address: the step goes to a
+linked function entry (a function value's code pointer, an itab's `fun` entry; trusted per run,
+`docs/plans/proofs3.md` §6, §7). -/
+def ICallOut (L : Link) (ps : List Prog) (s : MState) : Prop :=
+  ∀ p s', progAt? L ps s.pc = some p → isICall p = true → progStep L p s = .ok s' →
+    ∃ y, s'.pc = L.sym y
+
+/-- A list without `CALL (Rn)` meets `ICallOut` everywhere. -/
+theorem iCallOut_of_none {L : Link} {ps : List Prog} (h : ∀ p ∈ ps, isICall p = false)
+    (s : MState) : ICallOut L ps s := by
+  intro p s' hp hi _
+  unfold progAt? at hp
+  have := h p (List.mem_of_find?_eq_some hp)
+  rw [hi] at this
+  cases this
+
 /-! ## The address map -/
 
 section Addr
@@ -150,14 +166,23 @@ theorem Ex.regsOK_reads {e : Ex} (h : e.regsOK = true) {r : Nat} (hr : e.reads r
   induction e with
   | x q => simp [Ex.regsOK, Ex.reads] at h hr; omega
   | sp | k | sym => simp [Ex.reads] at hr
-  | ld _ a ih | shift _ _ _ a ih | ext _ _ a ih | lo32 a ih | sext _ a ih | page a ih =>
+  | ld _ a ih | shift _ _ _ a ih | ext _ _ a ih | lo32 a ih | sext _ a ih | page a ih
+  | dp1 _ _ a ih =>
     exact ih (by simpa [Ex.regsOK] using h) (by simpa [Ex.reads] using hr)
-  | add a b iha ihb | addSub _ _ a b iha ihb | logical _ _ a b iha ihb | bfm _ _ _ _ a b iha ihb =>
+  | add a b iha ihb | addSub _ _ a b iha ihb | logical _ _ a b iha ihb | bfm _ _ _ _ a b iha ihb
+  | csel _ _ _ _ a b iha ihb =>
     simp only [Ex.regsOK, Bool.and_eq_true] at h
     simp only [Ex.reads, Bool.or_eq_true] at hr
     rcases hr with hr | hr
     · exact iha h.1 hr
     · exact ihb h.2 hr
+  | dp3 _ _ _ a b d iha ihb ihd =>
+    simp only [Ex.regsOK, Bool.and_eq_true] at h
+    simp only [Ex.reads, Bool.or_eq_true] at hr
+    rcases hr with (hr | hr) | hr
+    · exact iha h.1.1 hr
+    · exact ihb h.1.2 hr
+    · exact ihd h.2 hr
 
 theorem reg_ne_of {r : Nat} (hr : r < 31) (h27 : r ≠ 27) (h30 : r ≠ 30) :
     (BitVec.ofNat 5 r : Reg) ≠ 27 ∧ (BitVec.ofNat 5 r : Reg) ≠ 30 := by
@@ -166,7 +191,7 @@ theorem reg_ne_of {r : Nat} (hr : r < 31) (h27 : r ≠ 27) (h30 : r ≠ 30) :
 theorem eval_rel {f : BitVec 64 → BitVec 64} {s t : MState} (hR : ObjRel f s t)
     (sym : Nat → BitVec 64) {e : Ex} (he : e.regsOK = true) :
     e.eval ⟨t, sym⟩ = e.eval ⟨s, sym⟩ := by
-  refine Ex.eval_congr (c := ⟨t, sym⟩) (c' := ⟨s, sym⟩) rfl hR.sp hR.mem e fun r hr => ?_
+  refine Ex.eval_congr (c := ⟨t, sym⟩) (c' := ⟨s, sym⟩) rfl hR.sp hR.mem hR.nzcv e fun r hr => ?_
   obtain ⟨h31, h27, h30⟩ := Ex.regsOK_reads he hr
   obtain ⟨h27', h30'⟩ := reg_ne_of h31 h27 h30
   exact hR.x _ h27' h30'
@@ -254,7 +279,7 @@ private theorem readsTmp_false {σ : Sym} (h : σ.readsTmp = false) :
 private theorem noNil_rel {f : BitVec 64 → BitVec 64} {sym : Nat → BitVec 64} {pσ mσ : Sym}
     {s t : MState} (hR : ObjRel f s t) (hse : sameEffect mσ pσ = .ok ())
     (hn : NoNil ⟨s, sym⟩ pσ) : NoNil ⟨t, sym⟩ mσ := by
-  obtain ⟨-, -, -, -, -, hst, hld, hrt⟩ := sameEffect_spec hse
+  obtain ⟨-, -, -, -, -, hst, hld, hrt, -⟩ := sameEffect_spec hse
   obtain ⟨-, -, -, hldok, hstok⟩ := readsTmp_false hrt
   refine ⟨fun a n hx => ?_, fun a n v hx => ?_⟩
   · have hx' := hld _ hx
@@ -271,7 +296,7 @@ private theorem obj_core {f : BitVec 64 → BitVec 64} {sym : Nat → BitVec 64}
     (hm : HoldsCore ⟨t, sym⟩ mσ t') (hp : HoldsCore ⟨s, sym⟩ pσ s') :
     (∀ k : Reg, k ≠ 27 → k ≠ 30 → t'.x k = s'.x k) ∧ t'.sp = s'.sp ∧ t'.v = s'.v ∧
       t'.nzcv = s'.nzcv ∧ t'.mem = s'.mem := by
-  obtain ⟨hregs, -, -, hsp, hfl, hst, -, hrt⟩ := sameEffect_spec hse
+  obtain ⟨hregs, -, -, hsp, hfl, hst, -, hrt, -⟩ := sameEffect_spec hse
   obtain ⟨hxok, hspok, hflok, -, hstok⟩ := readsTmp_false hrt
   refine ⟨fun k h27 h30 => ?_, ?_, ?_, ?_, ?_⟩
   · have hk : k = BitVec.ofNat 5 k.toNat := by simp
@@ -327,15 +352,16 @@ private theorem obj_ctl {L : Link} {ps : List Prog} {f : BitVec 64 → BitVec 64
     {mc : MCtl} {ol : Nat} {s s' t t' : MState}
     (hR : ObjRel f s t) (hcm : CtlMatch offs pσ mc pc) (hpp : PcP L p pσ s pc s')
     (hmp : CtlPc ⟨t, L.sym⟩ base ol mc t')
-    (hx30 : (∀ y a, mc ≠ .call y a) → t'.x 30 = (mσ.getX 30).eval ⟨t, L.sym⟩)
+    (hx30 : mc.links = false → t'.x 30 = (mσ.getX 30).eval ⟨t, L.sym⟩)
     (h30m : mσ.getX 30 = .x 30) (h30p : pσ.getX 30 = .x 30)
     (hnext : L.nextAddr p.id = some next) (hfn : f next = at_ base (ol + 4))
     (hinvn : IsProgAddr L.text ps next ∨ next = endP L.text ps)
     (htgt : ∀ id q a, TgtOK offs id q → L.addr id = some a →
       f a = at_ base q ∧ IsProgAddr L.text ps a)
-    (hsym : ∀ y, f (L.sym y) = L.sym y) :
+    (hsym : ∀ y, f (L.sym y) = L.sym y)
+    (hic : isICall p = true → ∃ y, s'.pc = L.sym y) :
     t'.x 30 = f (s'.x 30) ∧ t'.pc = f s'.pc ∧ (ObjInv L ps s' ∨ s'.pc = endP L.text ps) := by
-  have keep : (∀ y a, mc ≠ .call y a) → s'.x 30 = (pσ.getX 30).eval ⟨s, L.sym⟩ →
+  have keep : mc.links = false → s'.x 30 = (pσ.getX 30).eval ⟨s, L.sym⟩ →
       t'.x 30 = f (s'.x 30) := by
     intro hne hs30
     rw [hx30 hne, h30m, hs30, h30p]
@@ -346,13 +372,13 @@ private theorem obj_ctl {L : Link} {ps : List Prog} {f : BitVec 64 → BitVec 64
     simp only [CtlPc] at hmp
     obtain ⟨h1, h2⟩ := hpp
     rw [hnext, Option.some.injEq] at h1
-    refine ⟨keep (fun _ _ h => by cases h) h2, by rw [hmp, ← h1, hfn], inv_of h1.symm hinvn⟩
+    refine ⟨keep rfl h2, by rw [hmp, ← h1, hfn], inv_of h1.symm hinvn⟩
   case jmp.jmp q id =>
     simp only [PcP] at hpp
     simp only [CtlPc] at hmp
     obtain ⟨h1, h2⟩ := hpp
     obtain ⟨ha, hpa⟩ := htgt _ _ _ hcm h1
-    exact ⟨keep (fun _ _ h => by cases h) h2, by rw [hmp, ha], Or.inl (Or.inl hpa)⟩
+    exact ⟨keep rfl h2, by rw [hmp, ha], Or.inl (Or.inl hpa)⟩
   case cond.cond fl c q c' id =>
     obtain ⟨rfl, rfl, hT⟩ := hcm
     simp only [PcP] at hpp
@@ -360,7 +386,7 @@ private theorem obj_ctl {L : Link} {ps : List Prog} {f : BitVec 64 → BitVec 64
     obtain ⟨⟨next', tgt, h1, h2, h3⟩, h4⟩ := hpp
     rw [hnext, Option.some.injEq] at h1
     subst h1
-    exact ⟨keep (fun _ _ h => by cases h) h4,
+    exact ⟨keep rfl h4,
       obj_pc_ite h3 hmp (Iff.of_eq (congrArg (fun z => (condOf c).holds z = true) hR.nzcv))
         (htgt _ _ _ hT h2) hfn hinvn⟩
   case cbz.cbz sf nz a q sf' nz' a' id =>
@@ -370,7 +396,7 @@ private theorem obj_ctl {L : Link} {ps : List Prog} {f : BitVec 64 → BitVec 64
     obtain ⟨⟨next', tgt, h1, h2, h3⟩, h4⟩ := hpp
     rw [hnext, Option.some.injEq] at h1
     subst h1
-    exact ⟨keep (fun _ _ h => by cases h) h4,
+    exact ⟨keep rfl h4,
       obj_pc_ite h3 hmp (by rw [eval_rel hR L.sym hok]) (htgt _ _ _ hT h2) hfn hinvn⟩
   case tbz.tbz nz b a q nz' b' a' id =>
     obtain ⟨rfl, rfl, rfl, hok, hT⟩ := hcm
@@ -379,7 +405,7 @@ private theorem obj_ctl {L : Link} {ps : List Prog} {f : BitVec 64 → BitVec 64
     obtain ⟨⟨next', tgt, h1, h2, h3⟩, h4⟩ := hpp
     rw [hnext, Option.some.injEq] at h1
     subst h1
-    exact ⟨keep (fun _ _ h => by cases h) h4,
+    exact ⟨keep rfl h4,
       obj_pc_ite h3 hmp (by rw [eval_rel hR L.sym hok]) (htgt _ _ _ hT h2) hfn hinvn⟩
   case call.call n add n' add' =>
     obtain ⟨rfl, rfl, rfl⟩ := hcm
@@ -391,6 +417,18 @@ private theorem obj_ctl {L : Link} {ps : List Prog} {f : BitVec 64 → BitVec 64
     have h0 : ∀ x : BitVec 64, x + BitVec.ofInt 64 0 = x := fun x => by simp
     rw [h0] at h1 h3
     refine ⟨by rw [h4, ← h2, hfn], by rw [h3, h1, hsym], Or.inl (Or.inr ⟨⟨n, h1⟩, ?_⟩)⟩
+    rw [← h2]
+    exact hinvn
+  case callReg.callReg a a' =>
+    obtain ⟨rfl, hok⟩ := hcm
+    simp only [PcP] at hpp
+    simp only [CtlPc] at hmp
+    obtain ⟨h1, h2, hi⟩ := hpp
+    obtain ⟨h3, h4⟩ := hmp
+    obtain ⟨y, hy⟩ := hic hi
+    rw [hnext, Option.some.injEq] at h2
+    refine ⟨by rw [h4, ← h2, hfn], by rw [h3, eval_rel hR L.sym hok, ← h1, hy, hsym],
+      Or.inl (Or.inr ⟨⟨y, hy⟩, ?_⟩)⟩
     rw [← h2]
     exact hinvn
 
@@ -422,7 +460,7 @@ private theorem obj_words {L : Link} {ps : List Prog} {f : BitVec 64 → BitVec 
     (hinvn : IsProgAddr L.text ps next ∨ next = endP L.text ps)
     (htgt : ∀ id q a, TgtOK offs id q → L.addr id = some a →
       f a = at_ base q ∧ IsProgAddr L.text ps a)
-    (hsym : ∀ y, f (L.sym y) = L.sym y) :
+    (hsym : ∀ y, f (L.sym y) = L.sym y) (hic : isICall p = true → ∃ y, s'.pc = L.sym y) :
     ∃ t', MStar H code retM t t' ∧ ObjRel f s' t' ∧ (ObjInv L ps s' ∨ s'.pc = endP L.text ps) := by
   obtain ⟨n, hn⟩ : ∃ n, (e - o) / 4 = n + 1 := ⟨(e - o) / 4 - 1, by omega⟩
   rw [hn] at hms
@@ -436,7 +474,7 @@ private theorem obj_words {L : Link} {ps : List Prog} {f : BitVec 64 → BitVec 
     congr 1
     omega
   obtain ⟨h30, hpc, hinv⟩ := obj_ctl hR (sameCtl_spec hsc) hpp hctl hx30 h30m h30p hnext hfn'
-    hinvn htgt hsym
+    hinvn htgt hsym hic
   exact ⟨t', hst, ⟨hx, h30, hsp, hv, hfl, hmem, hpc⟩, hinv⟩
 
 /-- P0's `RET` does not step (its meaning is the epilogue's). -/
@@ -524,7 +562,8 @@ theorem obj_step {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab : Tab
     (hE : ObjEnv ps spills o tab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map tab ps L base))
     (hs : PStep H L ps.toList (endP L.text ps.toList) s s')
-    (hR : ObjRel (ObjEnv.map tab ps L base) s t) (hI : ObjInv L ps.toList s) :
+    (hR : ObjRel (ObjEnv.map tab ps L base) s t) (hI : ObjInv L ps.toList s)
+    (hO : ICallOut L ps.toList s) :
     ∃ t', MStar H code retM t t' ∧ ObjRel (ObjEnv.map tab ps L base) s' t' ∧
       (ObjInv L ps.toList s' ∨ s'.pc = endP L.text ps.toList) := by
   obtain ⟨text0, body, h0, hT, hnd, hlt, hsz2, hofs, hb0, hb1, -, -, -, hbody⟩ :=
@@ -548,6 +587,7 @@ theorem obj_step {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab : Tab
       · rw [htpc]; exact (hE.syms y).1
   | prog hpc hp hstep =>
     rename_i p
+    have hp0 := hp
     rw [hlink] at hp
     obtain ⟨hmem, hspc⟩ := progAt?_mem hp
     obtain ⟨k, hk, rfl⟩ := List.getElem_of_mem hmem
@@ -581,7 +621,7 @@ theorem obj_step {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab : Tab
       · exact absurd hstep (progStep_end hend)
       · refine obj_words hE.linked hE.size hE.ret (by rw [hlink]; rfl) (by rw [hlink]; rfl) hsk
           hoe
-          h4 hps hms hse hsc hstep hR htpc hnext hfn hinvn ?_ hsym
+          h4 hps hms hse hsc hstep hR htpc hnext hfn hinvn ?_ hsym (fun hi => hO _ _ hp0 hi hstep)
         rintro id q a ⟨o', ho, rfl⟩ ha
         obtain ⟨j, hj, rfl, rfl⟩ := offOf_zip hlen ho
         rw [hlink, GoFV.Proof.Gen.addr_byId (List.getElem_mem hj), Option.some_inj] at ha
@@ -594,18 +634,19 @@ theorem obj_star {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab : Tab
     (hH : HookMap H L ps.toList (ObjEnv.map tab ps L base))
     (hs : PStar H L ps.toList (endP L.text ps.toList) s s')
     (hR : ObjRel (ObjEnv.map tab ps L base) s t)
-    (hI : ObjInv L ps.toList s ∨ s.pc = endP L.text ps.toList) :
+    (hI : ObjInv L ps.toList s ∨ s.pc = endP L.text ps.toList)
+    (hO : ∀ u, PStar H L ps.toList (endP L.text ps.toList) s u → ICallOut L ps.toList u) :
     ∃ t', MStar H code retM t t' ∧ ObjRel (ObjEnv.map tab ps L base) s' t' ∧
       (ObjInv L ps.toList s' ∨ s'.pc = endP L.text ps.toList) := by
   induction hs with
   | refl => exact ⟨t, .refl, hR, hI⟩
-  | tail _ hst ih =>
+  | tail hpre hst ih =>
     obtain ⟨t1, h1, hR1, hI1⟩ := ih
     have hpc : _ := match hst with
       | .prog h _ _ => h
       | .hook h _ _ => h
     have hI1' : ObjInv L ps.toList _ := hI1.resolve_right hpc
-    obtain ⟨t2, h2, hR2, hI2⟩ := obj_step hE hH hst hR1 hI1'
+    obtain ⟨t2, h2, hR2, hI2⟩ := obj_step hE hH hst hR1 hI1' (hO _ hpre)
     exact ⟨t2, mstar_trans h1 h2, hR2, hI2⟩
 
 end GoFV.Proof.Obj

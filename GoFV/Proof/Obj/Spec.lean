@@ -32,16 +32,17 @@ private theorem spec_find_none {p : Nat → Bool} {l : List Nat}
 theorem sameEffect_spec {m p : Sym} (h : sameEffect m p = .ok ()) :
     (∀ r ∈ cmpRegs, m.getX r = p.getX r) ∧ m.getX 30 = .x 30 ∧ p.getX 30 = .x 30 ∧
     m.sp = p.sp ∧ m.fl = p.fl ∧ m.stores = p.stores ∧ (∀ x ∈ m.loads, x ∈ p.loads) ∧
-    p.readsTmp = false := by
+    p.readsTmp = false ∧ (∀ x ∈ p.loads, x ∈ m.loads) := by
   unfold sameEffect at h
   simp only [bind, Except.bind, pure, Except.pure, spec_throw] at h
   split at h
   · cases h
   · rename_i hf
     simp at h
-    obtain ⟨⟨h1, h2⟩, h3, h4, h5, h6, h7⟩ := h
+    obtain ⟨⟨h1, h2⟩, h3, h4, h5, h6, h8, h7⟩ := h
     have hn := spec_find_none hf
-    exact ⟨fun r hr => by simpa using hn r hr, h1, h2, h3, h4, h5, fun x hx => h6 x.1 x.2 hx, h7⟩
+    exact ⟨fun r hr => by simpa using hn r hr, h1, h2, h3, h4, h5, fun x hx => h6 x.1 x.2 hx, h7,
+      fun x hx => h8 x.1 x.2 hx⟩
 
 /-- A branch to Prog `id` reaches offset `q`. -/
 def TgtOK (offs : List (Nat × Nat)) (id : Nat) (q : Int) : Prop :=
@@ -57,6 +58,7 @@ def CtlMatch (offs : List (Nat × Nat)) (_pr : Sym) : MCtl → PCtl → Prop
   | .tbz nz b a q, .tbz nz' b' a' id =>
     nz = nz' ∧ b = b' ∧ a = a' ∧ a'.regsOK = true ∧ TgtOK offs id q
   | .call n add, .call n' add' => n = n' ∧ add = add' ∧ add = 0
+  | .callReg a, .callReg a' => a = a' ∧ a'.regsOK = true
   | _, _ => False
 
 theorem sameCtl_spec {offs : List (Nat × Nat)} {m : MCtl} {p : PCtl} {pr : Sym}
@@ -95,6 +97,8 @@ theorem sameCtl_spec {offs : List (Nat × Nat)} {m : MCtl} {p : PCtl} {pr : Sym}
     · cases h
   case call.call =>
     exact ⟨h.1.1, h.1.2, h.2⟩
+  case callReg.callReg =>
+    exact ⟨h.1, h.2⟩
 
 theorem checkProg_spec {t : ByteArray} {rs : List Reloc} {offs : List (Nat × Nat)} {az ez : Int}
     {p : Prog} {o e : Nat} (h : checkProg t rs offs az ez p o e = .ok ()) :

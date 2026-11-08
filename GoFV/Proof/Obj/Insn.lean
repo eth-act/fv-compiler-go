@@ -109,6 +109,17 @@ theorem Holds.pc {c : Ctx} {σ : Sym} {t : MState} (h : Holds c σ t) (q : BitVe
   { x := h.x, x31 := h.x31, sp := h.sp, nzcv := h.nzcv, v := h.v, mem := h.mem
     x30 := h.x30 }
 
+theorem holdsCore_wX30 {c : Ctx} {σ : Sym} {tm : MState} (h : HoldsCore c σ tm) (v q : BitVec 64) :
+    HoldsCore c σ { tm.wX 30 v with pc := q } := by
+  obtain ⟨hx, h31, hsp, hfl, hv, hmem⟩ := h
+  refine ⟨fun r hr => ?_, ?_, hsp, hfl, hv, hmem⟩
+  · have : (BitVec.ofNat 5 r : Reg) ≠ 30 := by
+      intro he; have := congrArg BitVec.toNat he; simp at this; omega
+    have h30 : ¬ BitVec.ofNat 5 r = 30#5 := this
+    simp [MState.wX, hx r hr, h30]
+  · simp only [MState.wX, show ¬ ((30 : Reg) = 31) by decide, ↓reduceIte]
+    exact h31
+
 private theorem insn_rX {c : Ctx} {σ : Sym} {t : MState} (hH : Holds c σ t) (r : Reg) :
     (σ.rX r.toNat).eval c = t.rX r := by
   rw [hH.rX_eval r.isLt, insn_ofNat_toNat]
@@ -394,14 +405,21 @@ private theorem insn_tbz {nz : Bool} {b : BitVec 6} {imm14 : BitVec 14} {rt : Re
 
 private theorem insn_br {kind : BrKind} {rn : Reg}
     {o : Nat} {σ σ' : Sym} {mc : MCtl} {c : Ctx} {t : MState} {base : BitVec 64}
-    (h : symInsn (.br kind rn) o σ = .ok (σ', mc)) (hH : Holds c σ t) :
-    ∃ t', exec (.br kind rn) t = .ok t' ∧ Holds c σ' t' ∧ CtlPc c base o mc t' := by
+    (h : symInsn (.br kind rn) o σ = .ok (σ', mc)) (hH : Holds c σ t)
+    (hpc : t.pc = base + BitVec.ofNat 64 o) :
+    ∃ t', exec (.br kind rn) t = .ok t' ∧ WordsPost c base o σ' mc t' := by
   cases kind
   · cases h
-    exact ⟨_, rfl, hH.pc _, (insn_rX hH rn).symm⟩
+    exact ⟨_, rfl, (hH.pc _).toHoldsCore, fun _ => (hH.pc _).x30, (insn_rX hH rn).symm⟩
   · cases h
+    have ex : exec (.br .blr rn) t = .ok { t.wX 30 (t.pc + 4) with pc := t.rX rn } := rfl
+    refine ⟨_, ex, holdsCore_wX30 hH.toHoldsCore _ _, fun h => by simp [MCtl.links] at h,
+      ⟨(insn_rX hH rn).symm, ?_⟩⟩
+    show (t.wX 30 (t.pc + 4)).x 30 = _
+    simp only [MState.wX, show (30 : Reg) ≠ 31 by decide, ↓reduceIte, hpc]
+    exact (insn_at_fall base o).symm
   · cases h
-    exact ⟨_, rfl, hH.pc _, (insn_rX hH rn).symm⟩
+    exact ⟨_, rfl, (hH.pc _).toHoldsCore, fun _ => (hH.pc _).x30, (insn_rX hH rn).symm⟩
 
 private theorem insn_nop {o : Nat} {σ σ' : Sym} {mc : MCtl} {c : Ctx} {t : MState}
     {base : BitVec 64} (h : symInsn .nop o σ = .ok (σ', mc)) (hH : Holds c σ t)
@@ -701,29 +719,117 @@ private theorem insn_pair {opc : BitVec 2} {vec : Bool} {mode : BitVec 2} {ld : 
           (readMem t.mem A2 n)).wXsp rn W).next = _
         rw [e1, e2]
 
+/-! ### Conditional select, data processing, ordered accesses -/
+
+private theorem insn_condSel {sf op op2 : Bool} {rm : Reg} {cond : BitVec 4} {rn rd : Reg}
+    {o : Nat} {σ σ' : Sym} {mc : MCtl} {c : Ctx} {t : MState} {base : BitVec 64}
+    (h : symInsn (.condSel sf op op2 rm cond rn rd) o σ = .ok (σ', mc)) (hH : Holds c σ t)
+    (hpc : t.pc = base + BitVec.ofNat 64 o) :
+    ∃ t', exec (.condSel sf op op2 rm cond rn rd) t = .ok t' ∧ Holds c σ' t' ∧
+      CtlPc c base o mc t' := by
+  have hh : symCsel σ sf op op2 rm cond rn rd = .ok (σ', mc) := h
+  unfold symCsel at hh
+  split at hh
+  · rename_i hfl
+    cases hh
+    have hfl' : t.nzcv = c.s.nzcv := by rw [hH.nzcv, hfl]; rfl
+    exact ⟨_, rfl, insn_fall hpc (insn_holds_wX hH rd (by
+      simp only [Ex.eval, insn_rX hH, cselVal, MState.holds, hfl'])) (insn_wX_pc _ _ _)⟩
+  · cases hh
+
+private theorem insn_dp1 {sf : Bool} {opc : BitVec 3} {rn rd : Reg}
+    {o : Nat} {σ σ' : Sym} {mc : MCtl} {c : Ctx} {t : MState} {base : BitVec 64}
+    (h : symInsn (.dp1 sf opc rn rd) o σ = .ok (σ', mc)) (hH : Holds c σ t)
+    (hpc : t.pc = base + BitVec.ofNat 64 o) :
+    ∃ t', exec (.dp1 sf opc rn rd) t = .ok t' ∧ Holds c σ' t' ∧ CtlPc c base o mc t' := by
+  cases h
+  exact ⟨_, rfl, insn_fall hpc (insn_holds_wX hH rd (by simp only [Ex.eval, insn_rX hH]))
+    (insn_wX_pc _ _ _)⟩
+
+private theorem insn_dp3 {sf : Bool} {op31 : BitVec 3} {o0 : Bool} {rm ra rn rd : Reg}
+    {o : Nat} {σ σ' : Sym} {mc : MCtl} {c : Ctx} {t : MState} {base : BitVec 64}
+    (h : symInsn (.dp3 sf op31 o0 rm ra rn rd) o σ = .ok (σ', mc)) (hH : Holds c σ t)
+    (hpc : t.pc = base + BitVec.ofNat 64 o) :
+    ∃ t', exec (.dp3 sf op31 o0 rm ra rn rd) t = .ok t' ∧ Holds c σ' t' ∧
+      CtlPc c base o mc t' := by
+  cases h
+  exact ⟨_, rfl, insn_fall hpc (insn_holds_wX hH rd (by simp only [Ex.eval_mkDp3, insn_rX hH]))
+    (insn_wX_pc _ _ _)⟩
+
+private theorem insn_excl {size : BitVec 2} {o2 ld o0 : Bool} {rs rn rt : Reg}
+    {o : Nat} {σ σ' : Sym} {mc : MCtl} {c : Ctx} {t : MState} {base : BitVec 64}
+    (h : symInsn (.ldstExcl size o2 ld o0 rs rn rt) o σ = .ok (σ', mc)) (hH : Holds c σ t)
+    (hpc : t.pc = base + BitVec.ofNat 64 o) (hnil : NoNil c σ') :
+    ∃ t', exec (.ldstExcl size o2 ld o0 rs rn rt) t = .ok t' ∧ Holds c σ' t' ∧
+      CtlPc c base o mc t' := by
+  show ∃ t', execExcl t size o2 ld rs rn rt = .ok t' ∧ _
+  have hh : symExcl σ size o2 ld rn rt = .ok (σ', mc) := h
+  have ha := insn_rXsp hH rn
+  unfold symExcl at hh
+  unfold execExcl
+  cases ld
+  · cases o2
+    · cases hh
+    · simp only [Bool.false_eq_true, ↓reduceIte] at hh ⊢
+      cases hh
+      have hna : nilPage (t.rXsp rn) = false := by
+        rw [← ha]; exact hnil.2 _ (bytesOf size) (σ.rX rt.toNat) (by simp [Sym.store])
+      have hst := insn_holds_store hH (σ.rXsp rn.toNat) (bytesOf size) (v := σ.rX rt.toNat)
+        (val := (t.rX rt).setWidth (8 * bytesOf size)) (by rw [insn_rX hH])
+      rw [ha] at hst
+      refine ⟨_, ?_, insn_fall hpc hst rfl⟩
+      simp only [store, bytesOf, hna, Bool.false_eq_true, ↓reduceIte, bind, Except.bind, pure,
+        Except.pure]
+  · simp only [↓reduceIte] at hh ⊢
+    unfold Sym.load at hh
+    cases hs : σ.stores.isEmpty
+    · simp only [hs, Bool.false_eq_true, ↓reduceIte] at hh; cases hh
+    · simp only [hs, ↓reduceIte, pure, Except.pure] at hh
+      cases hh
+      have hs' : σ.stores = [] := List.isEmpty_iff.mp hs
+      have hna : nilPage (t.rXsp rn) = false := by
+        rw [← ha]; exact hnil.1 _ (bytesOf size) (by simp)
+      have hmem : t.mem = c.s.mem := by rw [hH.mem, hs']; rfl
+      have hW := insn_holds_wX (insn_holds_loads hH ((σ.rXsp rn.toNat, bytesOf size) :: σ.loads))
+        rt (v := Ex.ld (bytesOf size) (σ.rXsp rn.toNat))
+        (val := (readMem t.mem (t.rXsp rn) (2 ^ size.toNat)).setWidth 64)
+        (by simp only [Ex.eval, ha, hmem]; rfl)
+      refine ⟨_, ?_, insn_fall hpc hW (insn_wX_pc _ _ _)⟩
+      simp only [load, hna, Bool.false_eq_true, ↓reduceIte, bind, Except.bind, pure, Except.pure]
+
 /-! ## `symInsn_sound` -/
+
+private theorem insn_post {i : Insn} {o : Nat} {σ' : Sym} {mc : MCtl} {c : Ctx} {t : MState}
+    {base : BitVec 64} (h : ∃ t', exec i t = .ok t' ∧ Holds c σ' t' ∧ CtlPc c base o mc t') :
+    ∃ t', exec i t = .ok t' ∧ WordsPost c base o σ' mc t' :=
+  let ⟨t', he, hH, hc⟩ := h
+  ⟨t', he, hH.toHoldsCore, fun _ => hH.x30, hc⟩
 
 theorem symInsn_sound {i : Insn} {o : Nat} {σ σ' : Sym} {mc : MCtl} {c : Ctx} {t : MState}
     {base : BitVec 64} (h : symInsn i o σ = .ok (σ', mc)) (hH : Holds c σ t)
     (hpc : t.pc = base + BitVec.ofNat 64 o) (hnil : NoNil c σ') :
-    ∃ t', exec i t = .ok t' ∧ Holds c σ' t' ∧ CtlPc c base o mc t' := by
+    ∃ t', exec i t = .ok t' ∧ WordsPost c base o σ' mc t' := by
   cases i with
-  | addSubImm => exact insn_addSubImm h hH hpc
-  | logImm => exact insn_logImm h hH hpc
-  | movWide => exact insn_movWide h hH hpc
-  | bitfield => exact insn_bitfield h hH hpc
-  | b => exact insn_b h hH hpc
-  | bcond => exact insn_bcond h hH hpc
-  | cbz => exact insn_cbz h hH hpc
-  | tbz => exact insn_tbz h hH hpc
-  | br => exact insn_br h hH
-  | nop => exact insn_nop h hH hpc
-  | barrier => exact insn_barrier h hH hpc
-  | logShift => exact insn_logShift h hH hpc
-  | addSubShift => exact insn_addSubShift h hH hpc
-  | addSubExt => exact insn_addSubExt h hH hpc
-  | ldst => exact insn_ldst h hH hpc hnil
-  | ldstPair => exact insn_pair h hH hpc hnil
+  | addSubImm => exact insn_post (insn_addSubImm h hH hpc)
+  | logImm => exact insn_post (insn_logImm h hH hpc)
+  | movWide => exact insn_post (insn_movWide h hH hpc)
+  | bitfield => exact insn_post (insn_bitfield h hH hpc)
+  | b => exact insn_post (insn_b h hH hpc)
+  | bcond => exact insn_post (insn_bcond h hH hpc)
+  | cbz => exact insn_post (insn_cbz h hH hpc)
+  | tbz => exact insn_post (insn_tbz h hH hpc)
+  | br => exact insn_br h hH hpc
+  | nop => exact insn_post (insn_nop h hH hpc)
+  | barrier => exact insn_post (insn_barrier h hH hpc)
+  | logShift => exact insn_post (insn_logShift h hH hpc)
+  | addSubShift => exact insn_post (insn_addSubShift h hH hpc)
+  | addSubExt => exact insn_post (insn_addSubExt h hH hpc)
+  | ldst => exact insn_post (insn_ldst h hH hpc hnil)
+  | ldstPair => exact insn_post (insn_pair h hH hpc hnil)
+  | condSel => exact insn_post (insn_condSel h hH hpc)
+  | dp1 => exact insn_post (insn_dp1 h hH hpc)
+  | dp3 => exact insn_post (insn_dp3 h hH hpc)
+  | ldstExcl => exact insn_post (insn_excl h hH hpc hnil)
   | _ => cases h
 
 /-! ## `symInsn` only adds loads and stores -/
@@ -783,6 +889,24 @@ theorem symInsn_mono {i : Insn} {o : Nat} {σ σ' : Sym} {mc : MCtl}
   | cbz => cases h; insn_mono_tac
   | tbz => cases h; insn_mono_tac
   | br kind => cases kind <;> cases h <;> insn_mono_tac
+  | condSel sf op op2 rm cond rn rd =>
+    have hh : symCsel σ sf op op2 rm cond rn rd = .ok (σ', mc) := h
+    unfold symCsel at hh
+    split at hh
+    · cases hh; insn_mono_tac
+    · cases hh
+  | dp1 => cases h; insn_mono_tac
+  | dp3 => cases h; insn_mono_tac
+  | ldstExcl size o2 ld o0 rs rn rt =>
+    have hh : symExcl σ size o2 ld rn rt = .ok (σ', mc) := h
+    unfold symExcl Sym.load at hh
+    cases ld
+    · cases o2
+      · cases hh
+      · simp only [Bool.false_eq_true, ↓reduceIte] at hh; cases hh; insn_mono_tac
+    · cases hs : σ.stores.isEmpty
+      · simp only [hs, Bool.false_eq_true, ↓reduceIte] at hh; cases hh
+      · simp only [hs, ↓reduceIte, pure, Except.pure] at hh; cases hh; insn_mono_tac
   | nop => cases h; insn_mono_tac
   | barrier => cases h; insn_mono_tac
   | logShift sf opc shift n =>
@@ -828,5 +952,274 @@ theorem symInsn_mono {i : Insn} {o : Nat} {σ σ' : Sym} {mc : MCtl}
         cases h
         insn_mono_tac
   | _ => cases h
+
+/-! ## A word whose symbolic access is in the nil page faults -/
+
+/-- `NoNil` reads only the loads and stores. -/
+theorem NoNil.of_same {c : Ctx} {σ σ' : Sym} (hl : σ'.loads = σ.loads) (hs : σ'.stores = σ.stores)
+    (h : NoNil c σ) : NoNil c σ' := by
+  unfold NoNil at *
+  rw [hl, hs]
+  exact h
+
+/-- The classes `symInsn` gives loads or stores. -/
+private def insnMem : Insn → Bool
+  | .ldst .. | .ldstPair .. | .ldstExcl .. => true
+  | _ => false
+
+local macro "insn_same_tac" : tactic =>
+  `(tactic| exact ⟨by (try split) <;> simp [Sym.store], by (try split) <;> simp [Sym.store]⟩)
+
+private theorem symInsn_noMem {i : Insn} {o : Nat} {σ σ' : Sym} {mc : MCtl}
+    (h : symInsn i o σ = .ok (σ', mc)) (hi : insnMem i = false) :
+    σ'.loads = σ.loads ∧ σ'.stores = σ.stores := by
+  cases i with
+  | addSubImm sf sub setf => cases setf <;> cases h <;> insn_same_tac
+  | logImm sf opc n immr imms =>
+    delta symInsn at h
+    dsimp only at h
+    split at h
+    · cases h
+    · split at h <;> cases h <;> insn_same_tac
+  | movWide =>
+    delta symInsn at h
+    dsimp only at h
+    split at h
+    · cases h
+      insn_same_tac
+    · cases h
+      insn_same_tac
+    · split at h
+      · cases h
+        insn_same_tac
+      · cases h
+  | bitfield => cases h; insn_same_tac
+  | b link => cases link <;> cases h; insn_same_tac
+  | bcond => cases h; insn_same_tac
+  | cbz => cases h; insn_same_tac
+  | tbz => cases h; insn_same_tac
+  | br kind => cases kind <;> cases h <;> insn_same_tac
+  | condSel sf op op2 rm cond rn rd =>
+    have hh : symCsel σ sf op op2 rm cond rn rd = .ok (σ', mc) := h
+    unfold symCsel at hh
+    split at hh
+    · cases hh; insn_same_tac
+    · cases hh
+  | dp1 => cases h; insn_same_tac
+  | dp3 => cases h; insn_same_tac
+  | nop => cases h; insn_same_tac
+  | barrier => cases h; insn_same_tac
+  | logShift sf opc shift n =>
+    cases n
+    · rcases opc with ⟨⟨_ | _ | _ | _ | k, hk⟩⟩
+      all_goals first
+        | (cases h; insn_same_tac)
+        | exact absurd hk (by omega)
+    · cases h
+  | addSubShift sf sub setf => cases setf <;> cases h <;> insn_same_tac
+  | addSubExt sf sub setf => cases setf <;> cases h <;> insn_same_tac
+  | ldst | ldstPair | ldstExcl => cases hi
+  | _ => cases h
+
+/-- The single access of `symAccess` at `a`, in the nil page: `execLdSt` faults. -/
+private theorem insn_access_fault {σ σ1 : Sym} {c : Ctx} {t : MState} {size opc : BitVec 2}
+    {rt : Nat} {a : Ex} {mode : AMode} {rn : Reg} {wbv : Option (BitVec 64)}
+    (h : symAccess σ size opc rt a = .ok σ1)
+    (hA : t.amode mode rn (bytesOf size) = (a.eval c, wbv)) (hN : NoNil c σ)
+    (hbad : ¬ NoNil c σ1) :
+    ∃ x, execLdSt t size false opc mode rn (BitVec.ofNat 5 rt) = .error (.nilPage x) := by
+  have hA' : t.amode mode rn (accessBytes size false opc) = (a.eval c, wbv) := hA
+  unfold symAccess Sym.load at h
+  unfold execLdSt
+  simp only [hA', Bool.not_false, Bool.true_and, Bool.false_eq_true, ↓reduceIte]
+  cases hp : (size = 3 && opc = 2)
+  · rw [hp] at h
+    simp only [Bool.false_eq_true, ↓reduceIte]
+    cases ho : (opc != 0)
+    · rw [ho] at h
+      cases h
+      cases hna : nilPage (a.eval c)
+      · exfalso
+        apply hbad
+        refine ⟨fun a' n' hl => hN.1 a' n' (by simpa [Sym.store] using hl), fun a' n' v' hs => ?_⟩
+        simp only [Sym.store, List.mem_append, List.mem_singleton, Prod.mk.injEq] at hs
+        rcases hs with hs | ⟨rfl, -, -⟩
+        · exact hN.2 _ _ _ hs
+        · exact hna
+      · refine ⟨a.eval c, ?_⟩
+        simp only [Bool.false_eq_true, ↓reduceIte, store, hna, bind, Except.bind]
+    · rw [ho] at h
+      cases hs : σ.stores.isEmpty
+      · rw [hs] at h
+        cases h
+      · rw [hs] at h
+        cases h
+        cases hna : nilPage (a.eval c)
+        · exfalso
+          apply hbad
+          refine ⟨fun a' n' hl => ?_, fun a' n' v' hs' => hN.2 a' n' v' (by simpa using hs')⟩
+          simp only [insn_wX_loads, List.mem_cons, Prod.mk.injEq] at hl
+          rcases hl with ⟨rfl, -⟩ | hl
+          · exact hna
+          · exact hN.1 _ _ hl
+        · refine ⟨a.eval c, ?_⟩
+          simp only [↓reduceIte, load, hna, bind, Except.bind]
+  · rw [hp] at h
+    cases h
+
+private theorem insn_ldst_fault {size : BitVec 2} {opc : BitVec 2} {mode : AMode}
+    {rn rt : Reg} {o : Nat} {σ σ' : Sym} {mc : MCtl} {c : Ctx} {t : MState}
+    (h : symInsn (.ldst size false opc mode rn rt) o σ = .ok (σ', mc)) (hH : Holds c σ t)
+    (hN : NoNil c σ) (hbad : ¬ NoNil c σ') :
+    ∃ x, exec (.ldst size false opc mode rn rt) t = .error (.nilPage x) := by
+  have hA := insn_amode hH mode rn (bytesOf size)
+  delta symInsn at h
+  dsimp only at h
+  generalize amodeSym σ mode rn.toNat (bytesOf size) = pr at h hA
+  obtain ⟨a, wb⟩ := pr
+  dsimp only at h
+  cases hs : symAccess σ size opc rt.toNat a with
+  | error e =>
+    rw [hs] at h
+    cases h
+  | ok σ1 =>
+    rw [hs] at h
+    have hbad1 : ¬ NoNil c σ1 := by
+      cases wb <;> cases h
+      · exact hbad
+      · exact fun h1 => hbad (NoNil.of_same (by simp) (by simp) h1)
+    obtain ⟨x, hx⟩ := insn_access_fault hs hA hN hbad1
+    rw [insn_ofNat_toNat] at hx
+    exact ⟨x, hx⟩
+
+private theorem insn_pair_fault {opc : BitVec 2} {mode : BitVec 2} {ld : Bool}
+    {imm7 : BitVec 7} {rt2 rn rt : Reg} {o : Nat} {σ σ' : Sym} {mc : MCtl} {c : Ctx} {t : MState}
+    (h : symInsn (.ldstPair opc false mode ld imm7 rt2 rn rt) o σ = .ok (σ', mc))
+    (hH : Holds c σ t) (hN : NoNil c σ) (hbad : ¬ NoNil c σ') :
+    ∃ x, exec (.ldstPair opc false mode ld imm7 rt2 rn rt) t = .error (.nilPage x) := by
+  delta symInsn at h
+  dsimp only at h
+  show ∃ x, execPair t opc false mode ld imm7 rt2 rn rt = .error (.nilPage x)
+  unfold execPair
+  simp only [Bool.false_eq_true, ↓reduceIte, Bool.not_false, Bool.true_and, decide_eq_true_eq]
+    at h ⊢
+  generalize (if opc.getLsbD 1 = true then 8 else 4) = n at h ⊢
+  generalize hae : (if mode = 1 then σ.rXsp rn.toNat
+    else Ex.mkAdd (σ.rXsp rn.toNat) (.k (imm7.signExtend 64 * BitVec.ofNat 64 n))) = a at h
+  have haA : a.eval c =
+      (if mode = 1 then t.rXsp rn else t.rXsp rn + imm7.signExtend 64 * BitVec.ofNat 64 n) := by
+    rw [← hae]
+    split <;> simp only [Ex.eval_mkAdd, insn_rXsp hH] <;> rfl
+  generalize (if mode = 1 then t.rXsp rn
+    else t.rXsp rn + imm7.signExtend 64 * BitVec.ofNat 64 n) = A at haA ⊢
+  have ha2 : (Ex.mkAdd a (.k (BitVec.ofNat 64 n))).eval c = A + BitVec.ofNat 64 n := by
+    rw [Ex.eval_mkAdd, haA]
+    rfl
+  generalize Ex.mkAdd a (.k (BitVec.ofNat 64 n)) = a2 at h ha2
+  generalize A + BitVec.ofNat 64 n = A2 at ha2 ⊢
+  generalize (if opc = 1 then (2 : BitVec 2) else 1) = lopc at h ⊢
+  generalize Ex.mkAdd (σ.rXsp rn.toNat) (.k (imm7.signExtend 64 * BitVec.ofNat 64 n)) = w at h
+  clear hae
+  have hwb : ∀ X : Sym, ¬ NoNil c (if mode = 2 then X else X.wXsp rn.toNat w) → ¬ NoNil c X :=
+    fun X hX hn => hX (by
+      split
+      · exact hn
+      · exact NoNil.of_same (by simp) (by simp) hn)
+  cases ld
+  · cases h
+    have hb := hwb _ hbad
+    by_cases h1 : nilPage A = true
+    · refine ⟨A, ?_⟩
+      simp only [store, h1, Bool.false_eq_true, ↓reduceIte, bind, Except.bind]
+    by_cases h2 : nilPage A2 = true
+    · refine ⟨A2, ?_⟩
+      simp only [store, h1, h2, Bool.false_eq_true, ↓reduceIte, bind, Except.bind]
+    exfalso
+    apply hb
+    refine ⟨fun a' n' hl => hN.1 a' n' (by simpa [Sym.store] using hl), fun a' n' v' hs => ?_⟩
+    simp only [Sym.store, List.mem_append, List.mem_singleton, Prod.mk.injEq] at hs
+    rcases hs with (hs | ⟨rfl, -, -⟩) | ⟨rfl, -, -⟩
+    · exact hN.2 _ _ _ hs
+    · rw [haA]; simpa using h1
+    · rw [ha2]; simpa using h2
+  · rcases σ with ⟨sx, ssp, sfl, sloads, sstores⟩
+    cases sstores with
+    | cons p l => cases h
+    | nil =>
+      cases h
+      have hb := hwb _ hbad
+      by_cases h1 : nilPage A = true
+      · refine ⟨A, ?_⟩
+        simp only [load, h1, Bool.false_eq_true, ↓reduceIte, bind, Except.bind]
+      by_cases h2 : nilPage A2 = true
+      · refine ⟨A2, ?_⟩
+        simp only [load, h1, h2, Bool.false_eq_true, ↓reduceIte, bind, Except.bind]
+      exfalso
+      apply hb
+      refine ⟨fun a' n' hl => ?_, fun a' n' v' hs => by simp at hs⟩
+      simp only [insn_wX_loads, List.mem_cons, Prod.mk.injEq] at hl
+      rcases hl with ⟨rfl, -⟩ | ⟨rfl, -⟩ | hl
+      · rw [ha2]; simpa using h2
+      · rw [haA]; simpa using h1
+      · exact hN.1 _ _ hl
+
+private theorem insn_excl_fault {size : BitVec 2} {o2 ld o0 : Bool} {rs rn rt : Reg}
+    {o : Nat} {σ σ' : Sym} {mc : MCtl} {c : Ctx} {t : MState}
+    (h : symInsn (.ldstExcl size o2 ld o0 rs rn rt) o σ = .ok (σ', mc)) (hH : Holds c σ t)
+    (hN : NoNil c σ) (hbad : ¬ NoNil c σ') :
+    ∃ x, exec (.ldstExcl size o2 ld o0 rs rn rt) t = .error (.nilPage x) := by
+  show ∃ x, execExcl t size o2 ld rs rn rt = _
+  have hh : symExcl σ size o2 ld rn rt = .ok (σ', mc) := h
+  have ha := insn_rXsp hH rn
+  unfold symExcl at hh
+  unfold execExcl
+  refine ⟨t.rXsp rn, ?_⟩
+  cases ld
+  · cases o2
+    · cases hh
+    · simp only [Bool.false_eq_true, ↓reduceIte] at hh ⊢
+      cases hh
+      cases hna : nilPage (t.rXsp rn)
+      · exfalso
+        apply hbad
+        refine ⟨fun a' n' hl => hN.1 a' n' (by simpa [Sym.store] using hl), fun a' n' v' hs => ?_⟩
+        simp only [Sym.store, List.mem_append, List.mem_singleton, Prod.mk.injEq] at hs
+        rcases hs with hs | ⟨rfl, -, -⟩
+        · exact hN.2 _ _ _ hs
+        · rw [ha]; exact hna
+      · simp only [store, hna, ↓reduceIte, bind, Except.bind]
+  · simp only [↓reduceIte] at hh ⊢
+    unfold Sym.load at hh
+    cases hs : σ.stores.isEmpty
+    · simp only [hs, Bool.false_eq_true, ↓reduceIte] at hh; cases hh
+    · simp only [hs, ↓reduceIte, pure, Except.pure] at hh
+      cases hh
+      cases hna : nilPage (t.rXsp rn)
+      · exfalso
+        apply hbad
+        refine ⟨fun a' n' hl => ?_, fun a' n' v' hs' => hN.2 a' n' v' (by simpa using hs')⟩
+        simp only [insn_wX_loads, List.mem_cons, Prod.mk.injEq] at hl
+        rcases hl with ⟨rfl, -⟩ | hl
+        · rw [ha]; exact hna
+        · exact hN.1 _ _ hl
+      · simp only [load, hna, ↓reduceIte, bind, Except.bind]
+
+/-- A word whose symbolic effect adds an access in the nil page (none before it) faults there. -/
+theorem symInsn_fault {i : Insn} {o : Nat} {σ σ' : Sym} {mc : MCtl} {c : Ctx} {t : MState}
+    (h : symInsn i o σ = .ok (σ', mc)) (hH : Holds c σ t) (hN : NoNil c σ)
+    (hbad : ¬ NoNil c σ') : ∃ x, exec i t = .error (.nilPage x) := by
+  cases hm : insnMem i
+  · obtain ⟨hl, hs⟩ := symInsn_noMem h hm
+    exact absurd (NoNil.of_same hl hs hN) hbad
+  cases i <;> simp only [insnMem, Bool.false_eq_true] at hm
+  case ldst size vec opc mode rn rt =>
+    cases vec
+    · exact insn_ldst_fault h hH hN hbad
+    · cases h
+  case ldstPair opc vec mode ld imm7 rt2 rn rt =>
+    cases vec
+    · exact insn_pair_fault h hH hN hbad
+    · cases h
+  case ldstExcl => exact insn_excl_fault h hH hN hbad
 
 end GoFV.Proof.Obj

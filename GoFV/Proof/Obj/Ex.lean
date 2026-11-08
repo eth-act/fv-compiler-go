@@ -164,6 +164,28 @@ theorem Ex.eval_mkSext (c : Ctx) (n : Nat) (a : Ex) : (Ex.mkSext n a).eval c = s
   unfold Ex.mkSext
   split <;> rfl
 
+private theorem exT_opndK_trunc (c : Ctx) (sf : Bool) (a : Ex) :
+    ProgOp.trunc sf ((Ex.opndK sf a).eval c) = ProgOp.trunc sf (a.eval c) := by
+  rw [← exT_opnd_trunc c sf a]
+  unfold Ex.opndK
+  split
+  · rename_i v hv; rw [hv]; simp only [Ex.eval, exT_trunc_trunc]
+  · rfl
+
+theorem dp3_trunc (sf o0 : Bool) (a x y : BitVec 64) :
+    dp3Op sf 0 o0 (ProgOp.trunc sf a) (ProgOp.trunc sf x) (ProgOp.trunc sf y) = dp3Op sf 0 o0 a x y := by
+  cases sf <;> simp [dp3Op, sized, ProgOp.trunc, BitVec.setWidth_setWidth_of_le]
+
+theorem Ex.eval_mkDp3 (c : Ctx) (sf : Bool) (op31 : BitVec 3) (o0 : Bool) (a x y : Ex) :
+    (Ex.mkDp3 sf op31 o0 a x y).eval c = dp3Op sf op31 o0 (a.eval c) (x.eval c) (y.eval c) := by
+  unfold Ex.mkDp3
+  split
+  · rename_i h
+    subst h
+    simp only [Ex.eval]
+    rw [← dp3_trunc, exT_opndK_trunc, exT_opndK_trunc, exT_opndK_trunc, dp3_trunc]
+  · rfl
+
 private theorem exT_awc_neg {w : Nat} (hw : 0 < w) (x y : BitVec w) (h0 : y ≠ 0)
     (hm : y ≠ BitVec.intMin w) :
     (GoFV.SSA.Sem.addWithCarry x (-y) false).2 = (GoFV.SSA.Sem.addWithCarry x (~~~y) true).2 := by
@@ -220,10 +242,10 @@ theorem Fl.eval_mkAnds (c : Ctx) (sf : Bool) (a b : Ex) :
     (Fl.mkAnds sf a b).eval c = (logical sf 3 (a.eval c) (b.eval c)).2 := by
   simp only [Fl.mkAnds, Fl.eval, exT_logical_opnd]
 
-/-- An `Ex` evaluates alike in two contexts with the same symbols, `SP` and memory that agree
-on the registers it reads. -/
+/-- An `Ex` evaluates alike in two contexts with the same symbols, `SP`, flags and memory that
+agree on the registers it reads. -/
 theorem Ex.eval_congr {c c' : Ctx} (hsym : c.sym = c'.sym) (hsp : c.s.sp = c'.s.sp)
-    (hmem : c.s.mem = c'.s.mem) :
+    (hmem : c.s.mem = c'.s.mem) (hfl : c.s.nzcv = c'.s.nzcv) :
     ∀ e : Ex, (∀ r, e.reads r = true → c.s.x (BitVec.ofNat 5 r) = c'.s.x (BitVec.ofNat 5 r)) →
       e.eval c = e.eval c' := by
   intro e
@@ -254,6 +276,16 @@ theorem Ex.eval_congr {c c' : Ctx} (hsym : c.sym = c'.sym) (hsp : c.s.sp = c'.s.
   | lo32 a ih => intro he; simp only [Ex.eval]; rw [ih he]
   | sext n a ih => intro he; simp only [Ex.eval]; rw [ih he]
   | page a ih => intro he; simp only [Ex.eval]; rw [ih he]
+  | dp1 sf opc a ih => intro he; simp only [Ex.eval]; rw [ih he]
+  | dp3 sf op31 o0 a b d iha ihb ihd =>
+    intro he; simp only [Ex.eval]
+    rw [iha (fun r h => he r (by simp [Ex.reads, h])),
+      ihb (fun r h => he r (by simp [Ex.reads, h])),
+      ihd (fun r h => he r (by simp [Ex.reads, h]))]
+  | csel sf op op2 cc a b iha ihb =>
+    intro he; simp only [Ex.eval]
+    rw [iha (fun r h => he r (by simp [Ex.reads, h])),
+      ihb (fun r h => he r (by simp [Ex.reads, h])), hfl]
 
 /-- `Fl.eval_congr`, with the flags before the Prog equal. -/
 theorem Fl.eval_congr {c c' : Ctx} (hsym : c.sym = c'.sym) (hsp : c.s.sp = c'.s.sp)
@@ -265,11 +297,11 @@ theorem Fl.eval_congr {c c' : Ctx} (hsym : c.sym = c'.sym) (hsp : c.s.sp = c'.s.
   | init => exact hfl
   | addSub sf sub a b =>
     simp only [Fl.eval]
-    rw [Ex.eval_congr hsym hsp hmem a (fun r h => hf r (by simp [Fl.reads, h])),
-      Ex.eval_congr hsym hsp hmem b (fun r h => hf r (by simp [Fl.reads, h]))]
+    rw [Ex.eval_congr hsym hsp hmem hfl a (fun r h => hf r (by simp [Fl.reads, h])),
+      Ex.eval_congr hsym hsp hmem hfl b (fun r h => hf r (by simp [Fl.reads, h]))]
   | ands sf a b =>
     simp only [Fl.eval]
-    rw [Ex.eval_congr hsym hsp hmem a (fun r h => hf r (by simp [Fl.reads, h])),
-      Ex.eval_congr hsym hsp hmem b (fun r h => hf r (by simp [Fl.reads, h]))]
+    rw [Ex.eval_congr hsym hsp hmem hfl a (fun r h => hf r (by simp [Fl.reads, h])),
+      Ex.eval_congr hsym hsp hmem hfl b (fun r h => hf r (by simp [Fl.reads, h]))]
 
 end GoFV.Proof.Obj

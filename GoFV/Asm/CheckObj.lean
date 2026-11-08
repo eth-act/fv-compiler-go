@@ -184,23 +184,29 @@ def cselP (op : String) (sf : Bool) (p : Prog) : Except String (Sym × PCtl) := 
       pure (Ex.csel sf (op == "CSINV" || op == "CSNEG") (op == "CSINC" || op == "CSNEG") c n m)
   return (← wP {} p.to.reg r, .fall)
 
-/-- The acquire loads `LDAR*`/`LDAXR*` and the release stores `STLR*`: a plain access at the
-operand's address. -/
-def exclP (az ez : Int) (p : Prog) : Except String (Sym × PCtl) := do
-  let name := p.as.name
-  if startsS name "STLR" then
-    if p.to.type != .MEM then throw s!"{name} operand"
-    let (a, _) ← memP az ez p.scond p.to
-    let x ← xP p.from_.reg
-    return (({} : Sym).store a (suffixBytes (dropS name 4)) x, .fall)
-  let n := suffixBytes (if startsS name "LDAR" then dropS name 4 else dropS name 5)
-  if p.from_.type != .MEM then throw s!"{name} operand"
-  let (a, _) ← memP az ez p.scond p.from_
-  return (← wP { loads := [(a, n)] } p.to.reg (.ld n a), .fall)
+/-- The acquire loads `LDAR*` and the release stores `STLR*`: whether a load, and the bytes. -/
+def exclOp (name : String) : Option (Bool × Nat) :=
+  match name with
+  | "LDAR" => some (true, 8) | "LDARW" => some (true, 4) | "LDARH" => some (true, 2)
+  | "LDARB" => some (true, 1) | "STLR" => some (false, 8) | "STLRW" => some (false, 4)
+  | "STLRH" => some (false, 2) | "STLRB" => some (false, 1)
+  | _ => none
+
+/-- An acquire load or release store (`exclOp`): a plain access of `n` bytes at the operand's
+address. -/
+def exclP (az ez : Int) (ld : Bool) (n : Nat) (p : Prog) : Except String (Sym × PCtl) := do
+  if ld then
+    if p.from_.type != .MEM then throw "acquire load operand"
+    let (a, _) ← memP az ez p.scond p.from_
+    return (← wP { loads := [(a, n)] } p.to.reg (.ld n a), .fall)
+  if p.to.type != .MEM then throw "release store operand"
+  let (a, _) ← memP az ez p.scond p.to
+  return (({} : Sym).store a n (← xP p.from_.reg), .fall)
 
 /-- The symbolic effect of a P0 Prog with code (`progEffect`) and its control, for the opcodes
-the validator models. `az`, `ez`: the frame (`Link.autosize`, `Link.extrasize`). -/
-def progSym (az ez : Int) (p : Prog) : Except String (Sym × PCtl) := do
+the validator models (`progSym` adds the opcode check of the control). `az`, `ez`: the frame
+(`Link.autosize`, `Link.extrasize`). -/
+def progSymCore (az ez : Int) (p : Prog) : Except String (Sym × PCtl) := do
   let name := p.as.name
   let σ : Sym := {}
   let rn : Int := if p.reg != 0 then p.reg else p.to.reg
@@ -305,8 +311,8 @@ def progSym (az ez : Int) (p : Prog) : Except String (Sym × PCtl) := do
     return ← dp1P op sf p
   if let some (op, sf) := baseOf name ["CSEL", "CSINC", "CSINV", "CSNEG", "CSET", "CSETM"] then
     return ← cselP op sf p
-  if startsS name "LDAR" || startsS name "LDAXR" || startsS name "STLR" then
-    return ← exclP az ez p
+  if let some (ld, n) := exclOp name then
+    return ← exclP az ez ld n p
   match name with
   | "HINT" => if p.from_.offset == 0 then return (σ, .fall) else throw "HINT"
   | "JMP" =>
@@ -332,6 +338,20 @@ def progSym (az ez : Int) (p : Prog) : Except String (Sym × PCtl) := do
     let r := if p.to.type == .NONE then REG_R0 + 30 else p.to.reg
     return (σ, .reg (← xP r))
   | _ => throw s!"opcode not modelled: {name}"
+
+/-- Calls come from `CALL`, register jumps from `RET`. -/
+def ctlOp (p : Prog) : PCtl → Except String Unit
+  | .call .. | .callReg _ => if p.as == .CALL then pure () else throw "call control"
+  | .reg _ => if p.as == .RET then pure () else throw "register jump control"
+  | _ => pure ()
+
+/-- `progSymCore`, its control checked against the opcode (`ctlOp`). -/
+def progSym (az ez : Int) (p : Prog) : Except String (Sym × PCtl) :=
+  match progSymCore az ez p with
+  | .ok (σ, c) => match ctlOp p c with
+    | .ok () => .ok (σ, c)
+    | .error e => .error e
+  | .error e => .error e
 
 /-! ## The machine side -/
 
