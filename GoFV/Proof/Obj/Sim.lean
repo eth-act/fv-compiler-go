@@ -327,7 +327,7 @@ private theorem obj_ctl {L : Link} {ps : List Prog} {f : BitVec 64 → BitVec 64
     {mc : MCtl} {ol : Nat} {s s' t t' : MState}
     (hR : ObjRel f s t) (hcm : CtlMatch offs pσ mc pc) (hpp : PcP L p pσ s pc s')
     (hmp : CtlPc ⟨t, L.sym⟩ base ol mc t')
-    (hx30 : ∀ y a, mc ≠ .call y a → t'.x 30 = (mσ.getX 30).eval ⟨t, L.sym⟩)
+    (hx30 : (∀ y a, mc ≠ .call y a) → t'.x 30 = (mσ.getX 30).eval ⟨t, L.sym⟩)
     (h30m : mσ.getX 30 = .x 30) (h30p : pσ.getX 30 = .x 30)
     (hnext : L.nextAddr p.id = some next) (hfn : f next = at_ base (ol + 4))
     (hinvn : IsProgAddr L.text ps next ∨ next = endP L.text ps)
@@ -338,7 +338,7 @@ private theorem obj_ctl {L : Link} {ps : List Prog} {f : BitVec 64 → BitVec 64
   have keep : (∀ y a, mc ≠ .call y a) → s'.x 30 = (pσ.getX 30).eval ⟨s, L.sym⟩ →
       t'.x 30 = f (s'.x 30) := by
     intro hne hs30
-    rw [hx30 0 0 (hne 0 0), h30m, hs30, h30p]
+    rw [hx30 hne, h30m, hs30, h30p]
     exact hR.x30
   cases mc <;> cases pc <;> simp only [CtlMatch] at hcm
   case fall.fall =>

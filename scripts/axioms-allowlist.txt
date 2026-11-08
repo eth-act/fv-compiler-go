@@ -52,7 +52,15 @@ GoFV.Proof.Witness.GenG8.g8_facts._native.native_decide.ax_1_1 029b115294e9bb9d1
 # accepts `testInts` of test/makeslice (parsed, `flush`, as obj-check) framed with a stack check,
 # `linkCode` links it, the stack check passes from the entry state; compiled evaluation, as
 # plF_pipeline.
-GoFV.Proof.Witness.ObjFrame.obj_facts._native.native_decide.ax_1_1 805b04e2527ebe8c51d7e48efe4d57176d391d4c17f0c784dad82ff2352a5c3c
+GoFV.Proof.Witness.ObjFrame.obj_facts._native.native_decide.ax_1_1 4882136a44ddf41e9870b53e5e28093a0e0cec945bb5308d63e1081e641805ac
+# objG7_value_witness, objG7_term_witness (GoFV/Proof/Witness/ObjG7.lean, #553): `checkObj` accepts
+# `(*A).g` of test/method and `pallocSum.start` of std/runtime (parsed, `flush`, as obj-check;
+# genssa's P0 Progs) frameless, `linkCode` links them at 0x20000, the return address and the
+# symbols have no code and are neither Prog addresses nor `endP`, the related machine state starts
+# at the base; `checkG7` accepts `pallocSum.start` with GenG3's tables; compiled evaluation, as
+# plF_pipeline.
+GoFV.Proof.Witness.ObjG7.g_obj_facts._native.native_decide.ax_1_1 0cda8aa6cad6e3a45dd9700c7dcf181791e27f617276aa3d09fa3afd7df04e7f
+GoFV.Proof.Witness.ObjG7.start_obj_facts._native.native_decide.ax_1_1 58d3ca012abc1df20656a5b6a564cea6316d8f1e64d8defc3ba97d9141315583
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
