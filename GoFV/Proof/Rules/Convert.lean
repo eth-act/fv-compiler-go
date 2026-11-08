@@ -2,8 +2,6 @@ import GoFV.Proof.Rules.Tactic
 import GoFV.Proof.Rules.NonVacuous
 import GoFV.Proof.PtrAddr
 
-variable [GoFV.SSA.Sem.Addrs]
-
 /-!
 # Rule lemmas: `Convert` round trips (`generic.rules:1072`, issue #290)
 
@@ -18,6 +16,10 @@ pointer → integer `Convert` turns into `poison`.
 namespace GoFV.Proof.Rules
 
 open GoFV.SSA.Sem
+
+section
+
+variable [GoFV.SSA.Sem.Addrs]
 
 /-- A pointer that does not convert to an integer converts to `poison`. -/
 private theorem convert_i64_nc {p : Ptr} (hc : p.convertible = false) (m : Val) :
@@ -68,6 +70,10 @@ theorem r_generic_1072_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic
         exact .poison _
     | _ => intro h0; simp at h0
   | _ => intro h0; simp at h0
+
+end
+
+open scoped GoFV.SSA.Sem.Fixed
 
 /-- `generic.rules:1072` at `uintptr` on an integer `x = 2^40 + 8` (the heap pointer
 `⟨heap 0, 8⟩` in between): the matched value is `x` again. -/

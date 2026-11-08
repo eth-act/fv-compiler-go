@@ -90,7 +90,8 @@ elab "arm_unfold" : tactic => do
 elab "arm_shape" : tactic => withMainContext do
   let some h := (← getLCtx).findFromUserName? `htop | throwError "arm_shape: no htop"
   let some (_, lhs, _) := (← instantiateMVars h.type).eq? | throwError "arm_shape: htop"
-  let t ← Term.exprToSyntax (lhs.getArg! 1)
+  -- `topOKL [Addrs] op T`: the shape is the last argument
+  let t ← Term.exprToSyntax lhs.getAppArgs.back!
   let T := mkIdent `T
   let htop := mkIdent `htop
   evalTactic (← `(tactic| (

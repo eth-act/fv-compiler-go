@@ -3,8 +3,6 @@ import GoFV.Proof.Rules.NonVacuous
 import GoFV.Rules.Generated.Generic.Values01
 import GoFV.Rules.Generated.Generic.Values12
 
-variable [GoFV.SSA.Sem.Addrs]
-
 /-!
 # Rule lemmas: generic selections of a `Make`
 
@@ -27,6 +25,10 @@ The selections of selections `:1035–1038` (`(SliceLen (SliceMake _ (SliceLen x
 namespace GoFV.Proof.Rules
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Rules
+
+section
+
+variable [GoFV.SSA.Sem.Addrs]
 
 /-- `generic.rules:992`: `(ArraySelect (ArrayMake1 x)) => x` -/
 theorem r_generic_992_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_992 := by
@@ -186,6 +188,10 @@ theorem r_generic_1038_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic
   rw [int64_of_makeArgOk h2 (.inr rfl)] at hk hty ⊢
   rw [hx] at hlt
   exact refines_retype_len (select_slice_len hlt.2.2 1 (.inl rfl)) hk hty
+
+end
+
+open scoped GoFV.SSA.Sem.Fixed
 
 /-! ## Non-vacuity -/
 

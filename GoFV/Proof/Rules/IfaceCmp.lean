@@ -4,8 +4,6 @@ import GoFV.Rules.Generated.Generic.Values03
 import GoFV.Rules.Generated.Generic.Values07
 import GoFV.Rules.Generated.Generic.Values08
 
-variable [GoFV.SSA.Sem.Addrs]
-
 /-!
 # Rule lemmas: interface and slice comparisons (`generic.rules:790–793`)
 
@@ -24,6 +22,10 @@ a struct operand whose first word is a pointer with an address would become that
 namespace GoFV.Proof.Rules
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Rules
+
+section
+
+variable [GoFV.SSA.Sem.Addrs]
 
 /-- `EqInter`/`EqSlice` (and their negations) compare the first words as `EqPtr` of the
 retyped first components when retyping keeps every word's pointer (`hx`, `hy`). -/
@@ -122,6 +124,10 @@ theorem r_generic_793_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_
       fun p hp => Ptr.inWindow_of_held (first_ptr_held hlt.1 he p hp))
     (fun a as he _ => Val.asPtrWord_retype_ptr _
       fun p hp => Ptr.inWindow_of_held (first_ptr_held hlt.2 he p hp)) hty
+
+end
+
+open scoped GoFV.SSA.Sem.Fixed
 
 /-! Non-vacuity (`rule-sat` draws no aggregate leaves): instances at the interface shape (two
 itab words, equal for `:790`, different for `:791`) and at the shape of `[]int64` (the same and
