@@ -55,8 +55,8 @@ def uAt (lc : LocCtx) (blk : Block) (i : Nat) : Option (Nat × Nat × Bool) :=
   | 0 => none
   | i + 1 => ((blk.values[i]?).bind lc.ctx.f.value?).bind (uEntry lc)
 
-/-- `MOVDnop x`: no temporary, one argument, homed in `x`'s register (one G1 may write) at class
-64, `x` of class 8, 16 or 32; no code. -/
+/-- `MOVDnop x`: no temporary, one argument, homed in `x`'s register (one G1 may write) at an
+integer class, `x` of class 8, 16 or 32; no code. -/
 def nopKind (lc : LocCtx) (v : Value) : Except String VKind2 := do
   unless (lc.temps[v.id]?).join == none do throw s!"v{v.id}: temporary register"
   let some x := v.args[0]? | throw s!"v{v.id}: MOVDnop shape"
@@ -64,7 +64,9 @@ def nopKind (lc : LocCtx) (v : Value) : Except String VKind2 := do
   let some r := regHome? lc v.id | throw s!"v{v.id}: MOVDnop shape"
   unless destOK r && r != zeroReg && regHome? lc x == some r do
     throw s!"v{v.id}: MOVDnop shape"
-  unless cls (lc.ty v.id) == some 64 do throw s!"v{v.id}: MOVDnop shape"
+  let cv := cls (lc.ty v.id)
+  unless cv == some 8 || cv == some 16 || cv == some 32 || cv == some 64 do
+    throw s!"v{v.id}: MOVDnop shape"
   let c := cls (lc.ty x)
   unless c == some 8 || c == some 16 || c == some 32 do throw s!"v{v.id}: MOVDnop widths"
   return .none
