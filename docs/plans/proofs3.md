@@ -668,6 +668,7 @@ errors):
 | 9,297 | 5,533 (59.51%) | 157,472 of 429,130 |
 | G7 slice: 2,109 | 2,108 (99.95%) | |
 | G8 slice: 2,323 | 2,322 (99.95%) | |
+| G9 slice: 2,551 | 2,550 (99.96%) | 51,122 of 51,143 |
 
 The one slice function that is rejected is `init.func47` of `test/nilptr2`: its `LDP` is
 assembled with a literal-pool load (`LDR literal`), which is not modelled. The most frequent
