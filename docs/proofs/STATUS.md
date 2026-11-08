@@ -318,6 +318,37 @@ and the value in one register of class 64, the memory last; no code) accepts a f
 (`runtime.subtractb`, which G11 rejects: `uintptr(unsafe.Pointer(p))` of a pointer 16 bytes into
 the heap object `heap 1`, `R0` then holding its Phase 1 address `2^41 + 16`, the machine word).
 Coverage on quick-v10 (`lake exe gen-check`): 3,679 of 9,297 functions (39.57%), 64,013 values.
+## Phase 3: the assembler, `checkObj` (I7, #553)
+
+`GoFV.Proof.Obj.obj_star` (`GoFV/Proof/Obj/Sim.lean`): when `checkObj` (`GoFV/Asm/CheckObj.lean`,
+proofs3 §7) accepts a function's P0 Progs against the assembler's text and relocations, and the
+linker model (`linkCode`) places the text at `base` (`ObjEnv`), every `runProg` run of the Progs
+(`PStar` under `Link.byId` with the validated frame) is matched by a `runMach` run of the linked
+words (`MStar`). The relation `ObjRel f` holds between the two: registers but `X27`/`X30` equal,
+`X30` and the PC through the address map `f` (a P0 Prog's address ↦ its words), `SP`, `V`, flags
+and memory equal.
+
+The pieces:
+- `obj_step`;
+- `progSym_sound` (`Prog.lean`: one lemma per Prog family: shifts, ADD-type, compares, `NEG`,
+  bitfield extracts, moves/loads/stores/constants/addresses, pairs, branches, `CALL`);
+- `symWords_sound` (`Words.lean`, over `symInsn_sound` in `Insn.lean` and the relocated pairs in
+  `Link.lean`);
+- the validator's checks as propositions (`Spec.lean`).
+
+The prologue and epilogue templates are `obj_entry` (stack check passing, frame built:
+`BodyEntry`) and `obj_exit` (frame popped, return through the saved `LR`) (`Frame.lean`).
+`g7_obj_value`/`g7_obj_term` (`GoFV/Proof/Obj/G7.lean`) compose `g7_value`/`g7_term` with
+`obj_star`: the first statements from `runLoc` to the machine words. They rest on the trusted
+premise `HookMap` (below).
+
+Witnesses:
+- `objFrame_entry_witness`, `objFrame_exit_witness` (`testInts`, framed with a stack check);
+- `objG7_value_witness` (`(*A).g`'s nil check, down to the linked words);
+- `objG7_term_witness` (`pallocSum.start`'s `TBNZ`).
+
+Coverage on quick-v10 (`lake exe obj-check`): 5,533 of 9,297 functions (59.51%); 2,550 of
+G9's 2,551.
 
 ## Per-pass fragment coverage (verified pipeline, full-v6)
 
@@ -443,6 +474,7 @@ witnesses):
 | `WbOK`/`WbSpec` (Phase 3 G8, `GoFV/Proof/Gen/G8.lean`, premise of `g8_value` to `g12_value` at each write-barrier request `LoweredWB [n]`) | from the state at `runtime.gcWriteBarrier<n>`'s symbol (the caller's but for `X30`), with the memory injected, the hook `H.call` returns to `X30` with `SP`, the memory and every register but `X25` and `X27` kept, `X25` the address of the buffer under an extension of `ι` that maps the block `wbuf` there and injects `runLoc`'s memory with a fresh `8n`-byte buffer (`Mem.wbAlloc`), the live blocks away from the frame | the hook `wbHook` (row above): `runtime/asm_arm64.s` `gcWriteBarrier` returns `8n` bytes of the per-P buffer in `R25`, clobbering only `R27` and the flags; the layout puts the buffer (`RtInfo.wbuf`) apart from the live blocks and the stack | a buffer that overlaps a live block or the frame, or a flush that changes other registers or memory | trusted; the witness `genG8_value_witness` discharges it for a hook that is `wbHook` with the buffer at `2^41` |
 | `ICallOK` (Phase 3 G10, `GoFV/Proof/Gen/G10.lean`, premise of `g10_value` to `g12_value` at each interface or closure call `CALLinter`/`CALLclosure`) | from every state that is the caller's but for `X30`, with the PC the content of the code register `Rn` (related to `runLoc`'s code pointer), the register arguments in their ABI registers and, at a closure call, `R26` holding the closure context: that address is no Prog address of the caller and not its return address, and the hook there satisfies `CallSpec` (the static callee's contract, the `CallOK` row above) | Go's internal ABI: the code pointer of a method (an itab's `fun` entry) or of a closure (its first word) is the entry of a function linked outside the caller's code, which the hook runs by its Phase 1 contract (`callTarget` names the callee by the code pointer); a closure call passes its context in `R26` (abi-internal.md: the closure context pointer register) | a code pointer into the caller's own code (a recursive call through a function value, which the hook model does not run; lifting this needs the function-level callee contract of `docs/plans/proofs3.md` §6), or a callee that breaks `CallSpec` | trusted; the witness `genG10_value_witness` discharges it for a callee that returns at once at a global function's address |
 | `CloOK` (Phase 3 G11, `GoFV/Proof/Gen/G11.lean`, premise of `g11_value` and `g12_value` at `LoweredGetClosurePtr`) | at `LoweredGetClosurePtr`, which `checkG11` places in the entry block after the register arguments only (`cloFirst`; no code but the prologue runs before it), `X26` holds the activation's closure context (`fr.closure`, `poison` outside a closure call), a 64-bit word | Go's internal ABI passes the closure context in `R26` (abi-internal.md; semantics3 §5); the prologue does not write `R26` and its `morestack` path saves and restores the context (`runtime.morestack`, `gobuf.ctxt`); the register arguments emit no code | a caller that enters a closure without its context in `R26`, or a prologue that clobbers `R26` | trusted; the witness `genG11_value_witness` discharges it for a closure context that is a pointer to a global at `2^40` |
+| `HookMap` (Phase 3 `checkObj`, `GoFV/Proof/Obj/Sim.lean`, premise of `obj_step`/`obj_star` and `g7_obj_value`/`g7_obj_term`) | a hook (callee, runtime entry) that returns from a P0 state at a symbol, after a call whose return address is a Prog or the end, also returns from every `ObjRel`-related machine state, to a related state at a Prog or the end: it treats the return address `X30` only as an address to return to (P0's ID layout and the machine's byte layout differ only there) and does not read `X27` | the callee's code is outside the function and cannot observe where the caller's words are, except through `X30`, which it only returns to (`RET`); Go code does not read `R27` (REGTMP) across a call | a callee that reads or stores its return address as data (tracebacks, `runtime.Callers`), or reads `X27` | trusted; `hookMap_retLR` discharges it for callees that return through `X30` and change nothing else (the witnesses' `GenG2.H0`) |
 | not modelled by the hooks | the defer machinery (`deferproc*`, `deferreturn`, `gorecover`), runtime entry points called through function values, asynchronous preemption, the collector: a run reaching them is `stuck` | sound: a stuck run carries no obligation | — (a restriction) | — |
 
 Not assumed, by decision: disjointness of parameter slots from the other frame slots (the
