@@ -149,7 +149,7 @@ related by `LocMatch` (`genG1_witness_50`, `genG1_witness_30`).
 
 **Coverage** (`lake exe gen-check`, quick-v10, 9,297 functions): see §5.
 
-## 4. Slices G2–G13, and the next slices
+## 4. Slices G2–G14, and the next slices
 
 **Slice G2** (`GoFV/Gen/Check2.lean`, `checkG2 lc ps bstart g`; proven sound, `g2_value`,
 `g2_term`): G1 plus the most frequent blockers of §5 — `CALLstatic` of a symbol with an ABI
@@ -439,21 +439,47 @@ How the proof discharges G13's obligations (`G13.lean`):
   (`write_inside`), so away from the frame (`SepFrom`): the saved words and the spill slots keep
   their bytes (`g13_zero`). G12's values go through `vk12_step`.
 
-Later slices, by how many functions outside G13 each blocker occurs in (quick-v10, §5; sole
+**Slice G14: register-index loads** (`GoFV/Gen/Check14.lean`, `checkG14 lc ps bstart g`,
+returning G4's tables; proven sound, `g14_value`, `g14_term`, `g14_nilPanic`): G13 with the integer
+register-index loads `MOV{D,W,WU,H,HU,B,BU}loadidx ptr idx mem` and the scaled
+`MOV{H,HU}loadidx2`, `MOV{W,WU}loadidx4`, `MOVDloadidx8` (`vkind14`, `VK14.idx`, `loadIdxOp?`: the
+opcode, `n` bytes, the index shift `sh`, the sign): no temporary, `ptr` and `idx` in registers of
+class 64, the memory last, the destination as a load's (`vkind3`). Genssa emits one load from
+`genIndexedOperand`'s operand (`ssa.go:155`): base `Rp`, index `Ri` unscaled or shifted,
+`REG_LSL ||| sh <<< 5 ||| (Ri & 31)`, which `idxA` writes as the sum `REG_LSL + 32·sh + k` for
+`Ri = REG_R0 + k`. Every register-index load of quick-v10 is accepted.
+
+How the proof discharges G14's obligations (`G14.lean`):
+
+- **`runLoc`** runs Phase 1's `Arm64.loadIdx` on the arguments read from their homes
+  (`stepLoc_loadIdx`; a pure op, no nil check): the `n` bytes at the address of `idxSum`, `ADD`
+  of `ptr` and `idx · 2^sh` with `ADD`'s pointer cases, `poison` when there is none
+  (`loadIdx_eq`). The new per-value premise `G14Pre` adds to `G13Pre` that the access reads valid
+  bytes, and a boolean destination 0 or 1 (`IdxPre`, as `G3Pre` asks of a plain load).
+- **The machine**: `ProgCtx.mem` decodes `idxA` as `X[p] + (X[i] <<< sh)` (`ctx_mem_idx`), and the
+  load is G3's at that address (`progStep_loadAt`, `Progs3.lean`, now public). Both registers are
+  related to the arguments at class 64, so the sum is related to `idxSum` as an `ADD` result
+  (`lo_idxSum`: `lo_add`; a scaled index register is the integer itself, `reg_low`, and
+  `k · 2^sh = k <<< sh`, `mul_twoPow_eq_shl`), hence to the machine word (`lo64_rel`); a valid
+  access's address is the injected address of its bytes, outside the nil page (`addr_rel`), and the
+  loaded register is G3's (`lo_loadN`, `valRel_loadBool`; `g14_idx`). G13's values go through
+  `vk13_step`.
+
+Later slices, by how many functions outside G14 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
-1. **Register-index loads**: `MOVDloadidx8` 482 (53, counted with `MOVDloadidx`), `MOVBUloadidx`
-   353.
+1. **Register-index stores** `MOVDstoreidx8` 245 (39, counted with `MOVDstoreidx`),
+   `MOVBstoreidx` 187 (23): G14's addresses with G3's stores.
 2. **Calls** with stack arguments (`stack argument` 317 (10)) or floating-point arguments or
    results.
 3. **Frame variables beyond G6**: parameters and results (`NAME_PARAM`, `Blk.local`: `frame
-   variable operand class`, 294 (87)) and variables whose address is converted to an integer
+   variable operand class`, 294 (89)) and variables whose address is converted to an integer
    (`frame variable with an integer address`, 197 (11)): option 2 of semantics3 §4.3 (addresses as
    a parameter of the semantics); slots of other sizes (`slot … frame operand, size or alignment`,
    717).
-4. **Other values**: `MOVDnop` 750 (58), `ADDshiftLL` 678 (55), bounds panics
-   (`LoweredPanicBoundsRR` 616 (26)), `GetG` 430 (89), the acquire loads `LDAR`/`LDARW` (383,
-   277); `SP` after the entry values (59). `MOVDnop x` emits no code but `runLoc` gives it the
+4. **Other values**: `MOVDnop` 750 (85), `ADDshiftLL` 678 (57), bounds panics
+   (`LoweredPanicBoundsRR` 616 (40)), `GetG` 430 (89), the acquire loads `LDAR`/`LDARW` (383,
+   277); `SP` after the entry values (61). `MOVDnop x` emits no code but `runLoc` gives it the
    upper bits of `x`'s register (`movdLoc`: the zero or sign extension of the narrow value that
    produced `x`; each of its 1,520 uses in the trimmed functions of quick-v10 widens its argument,
    1,431 of them a narrow load), while `LocMatch` relates a narrow integer to the low bits of its
@@ -480,6 +506,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G11 | 3,514 (37.79%) | 59,565 |
 | G12 | 3,679 (39.57%) | 64,013 |
 | G13 | 3,755 (40.38%) | 69,470 |
+| G14 | 3,815 (41.03%) | 71,548 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -582,6 +609,11 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
 - `G13.lean`: `stepLoc_zero`, `zeroStore`/`zeroMem` (`zeroMem_cov`, `zeroMem_out`),
   `progStep_zero`, `zero_run`, `ZeroPre`, `G13Pre`, `g13_zero`, `vk13_step`, `g13_value`,
   `g13_nilPanic`, `g13_term`.
+- `Spec14.lean`: what `checkG14` accepted (`checkG14_spec`, `vkind14_spec` with `VK14`,
+  `idxKind_spec`); `Progs3.lean`: `progStep_loadAt` (a load at any memory operand's address).
+- `G14.lean`: `loadIdxOp?_op`, `loadIdxOp?_facts`, `stepLoc_loadIdx`, `idxSum`, `loadIdx_eq`,
+  `mul_twoPow_eq_shl`, `lo_idxSum`, `lo64_rel`, `IdxPre`, `G14Pre`, `ctx_mem_idx`, `g14_idx`,
+  `vk14_step`, `g14_value`, `g14_nilPanic`, `g14_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -612,9 +644,11 @@ G11 rejects: `g12_value` on `uintptr(unsafe.Pointer(p))` of a pointer 16 bytes i
 `heap 1`, injected at its Phase 1 address `2^41`, so `R0` holds the integer `2^41 + 16` that is the
 machine word), `GenG13.lean` (`(*pageBits).clearAll`, which G12 rejects: `g13_value` on
 `LoweredZero [64]`, the four `STP (ZR, ZR)` off `R0`, of the heap object `heap 1` holding 64 bytes
-7 at `2^41`, after which `runLoc`'s memory holds 64 zero bytes there and so do the machine's).
-Each decides its inputs by compiled evaluation (`native_decide`, pinned in
-`scripts/axioms-allowlist.txt`).
+7 at `2^41`, after which `runLoc`'s memory holds 64 zero bytes there and so do the machine's),
+`GenG14.lean` (`runtime.argv_index`, which G13 rejects: `g14_value` on `MOVDloadidx8`, `MOVD
+(R0)(R1<<3), R0` with `R0` the start of `heap 1` at `2^41` and `R1` 2, loading the word 7 at
+offset 16, after which `X0` is 7). Each decides its inputs by compiled evaluation
+(`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
 
 ## 6. Future work: recursion through function values
 
