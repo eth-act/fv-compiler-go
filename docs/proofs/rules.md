@@ -166,15 +166,16 @@ def BlockRule.Sound (br : BlockRule) : Prop := ∃ cr, BlockRule.ctrlRule br = s
 Other block-rule shapes (more controls, other kinds, aux fields) have no control rule and cannot
 be proven under this obligation; there are none in the four rule files.
 
-**Validator.** A block-rule event now logs the rule index and the new controls
-(`RwEvent.blockRule b i ctrls`). `RewriteCheck.replay` keeps the replayed terminator of every
-block the log touched (`BState`: kind, controls, successors swapped or not; `bstate`): a
-`control b i c` event (copy elimination of a control) replaces control `i` when `c` is reached
-through compatible copies; a block-rule event is accepted when the block has two successors and
-is an `If` on one boolean-shaped control `c`, and the control rule fires at `c` as a value rule
-(`ruleOK`) with the definitions the new controls determine (`ctrlDefs`: `c` redefined in place as
-`Not nc`, `Copy nc` or the constant). `finalOK` checks every block of the output against its
-replayed terminator (kind, successors in the replayed order, controls up to copies);
+**Validator.** A block-rule event now logs the rule index, the new controls and the values the
+new controls built (`RwEvent.blockRule b i ctrls defs`). `RewriteCheck.replay` keeps the replayed
+terminator of every block the log touched (`BState`: kind, controls, successors swapped or not;
+`bstate`): a `control b i c` event (copy elimination of a control) replaces control `i` when `c`
+is reached through compatible copies; a block-rule event is accepted when the block has two
+successors and is an `If` on one boolean-shaped control `c`, and the control rule fires at `c` as
+a value rule (`ruleOK`) with the definitions the new controls determine (`ctrlDefs`: `c`
+redefined in place as `Not nc`, `Copy nc` or the constant). `finalOK` checks every block of the
+output against its replayed terminator (kind, successors in the replayed order, controls up to
+copies);
 `atomsOK` no longer compares kinds, successors and controls.
 
 **Theorem.** The atom simulation's premise on terminators is no longer "same kind and
@@ -2223,6 +2224,19 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   plus the byte swaps `:108`–`:110` (`Rules/SetOpInt.lean`, `rev16_setWidth`); witnesses
   `bfx_lower`, `bfm_lower`, `bsw_lower`. Not proven: `:1720`, `:1752`, `:1760` (fired on no
   full-v9 function; `1752`/`1760` need `1<<uint(width)-1` in the denotation).
+
+- **The jump table and the caller's stack pointer** (#385). `(JumpTable idx) => (JUMPTABLE
+  {makeJumpTableSym(b)} idx (MOVDaddr <typ.Uintptr> {makeJumpTableSym(b)} (SB)))` (`:478`) has
+  no conditional kind, two new controls, a block aux and the function's own symbol in its result,
+  so `BlockRuleL.Sound` cannot state it. The validator checks its events by their effect
+  (`LowerCheck.jumpOKL`): the old block a `JumpTable` on one control `c`, not swapped; the new
+  controls `c` and a fresh `MOVDaddr` term on a fresh `SB` term, the values the event logs
+  (`RwEvent.blockRule`'s `defs`, as built), which the replay adds. `JUMPTABLE` takes the
+  successor of its first control's register (`Arm64.reg`, the integer zero-extended) and reads no
+  other control, so it takes `JumpTable`'s edge (`ValBlock.jump_stepL`, `BInvL.jump`). A rule on
+  a `JumpTable` therefore carries no obligation (`BlockRuleL.Checked`, the rule set's block
+  obligation). `(GetCallerSP ...) => (LoweredGetCallerSP ...)` (`:456`) is an atom rename
+  (`callRename`): both read the activation's `frameVal`. Witnesses `jtb_lower`, `gcs_lower`.
 
 - **Compares with a pointer** (#385; module docs of `GoFV/Proof/Low/Rules/CmpNeg.lean` and
   `Invert.lean`). `CMP` compares a pointer without a concrete address with an integer as unequal
