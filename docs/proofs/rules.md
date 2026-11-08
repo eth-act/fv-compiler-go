@@ -2211,6 +2211,19 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   proven as it is (`r_ARM64_303_sound`, `refines_condSel_tstw`: the obligation holds without the
   condition, which the validator's oracle answers; witness `lcb_lower`).
 
+- **Bit-field auxints out of Go's range** (#385; `GoFV/Proof/Low/Rules/Bitfield.lean`). The
+  bit-field peepholes (`:1641`–`:1765`) build `armBFAuxInt(lsb, width)` from the auxints they
+  match (`SLLconst [lc]`, `UBFX [bfc]`'s `bfc.lsb()`/`bfc.width()`), which Go panics on out of
+  range and which the rule denotation leaves to the oracle there (`callH`). The semantics reads
+  any auxint (`Arm64.amt`, `Arm64.bf`), so without a bound on the matched auxints the rules are
+  unprovable: an `SRLconst [rc]` with `rc ≥ 64` makes `armBFAuxInt(rc, 32-rc)` the oracle's.
+  The validator checks that every op of a matched pattern has its auxint in the range Go builds
+  (`Pat.rangeL`, `auxRangeL`: shifts in `[0, 64)`, bit fields `bfOK`), and `ArmRule.Sound1`
+  takes it as a premise (`hrng`). Proven with it: 54 rules (`1641`–`1765`, `1853`–`1855`),
+  plus the byte swaps `:108`–`:110` (`Rules/SetOpInt.lean`, `rev16_setWidth`); witnesses
+  `bfx_lower`, `bfm_lower`, `bsw_lower`. Not proven: `:1720`, `:1752`, `:1760` (fired on no
+  full-v9 function; `1752`/`1760` need `1<<uint(width)-1` in the denotation).
+
 - **Compares with a pointer** (#385; module docs of `GoFV/Proof/Low/Rules/CmpNeg.lean` and
   `Invert.lean`). `CMP` compares a pointer without a concrete address with an integer as unequal
   (`Arm64.cmp`, `Z` clear). While `CMN` and `CMPshift*` read registers only (`Arm64.cmp1`/`cmp2`),
