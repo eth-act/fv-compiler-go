@@ -288,6 +288,28 @@ def ldstScale (ty : String) : Option Nat :=
   | "R_ARM64_PCREL_LDST32" => some 2 | "R_ARM64_PCREL_LDST64" => some 3
   | _ => none
 
+/-- A `B`/`BL` with a zero offset field (an `R_CALLARM64` target): whether it links. -/
+def callLink? : Insn → Option Bool
+  | .b link imm26 => if imm26 = 0 then some link else none
+  | _ => none
+
+/-- An `ADRP` with a zero offset field to a register: the register. -/
+def adrpRd? : Insn → Option Reg
+  | .adr page imm rd => if page ∧ imm = 0 ∧ rd ≠ 31 then some rd else none
+  | _ => none
+
+/-- `ADD rd2, rd, #0` (64-bit, no flags, unshifted): `rd2`. -/
+def addLo? (rd : Reg) : Insn → Option Reg
+  | .addSubImm sf sub setf sh imm12 rn rd2 =>
+    if sf ∧ !sub ∧ !setf ∧ !sh ∧ imm12 = 0 ∧ rn = rd then some rd2 else none
+  | _ => none
+
+/-- An integer load/store `[rd, #0]` of `2^sc` bytes: its `size`, `opc` and `rt`. -/
+def ldstLo? (rd : Reg) (sc : Nat) : Insn → Option (BitVec 2 × BitVec 2 × Reg)
+  | .ldst size vec opc (.uimm imm12) rn rt =>
+    if !vec ∧ imm12 = 0 ∧ rn = rd ∧ size.toNat = sc then some (size, opc, rt) else none
+  | _ => none
+
 /-- The first unit of the words `[o, o + 4 (n + 1))` executed symbolically from `σ`: one word,
 or the two words of a relocated pair (`R_ADDRARM64`: `ADRP` + `ADD`, the target in the `ADD`'s
 destination, its page in the `ADRP`'s; `R_ARM64_PCREL_LDST*`: `ADRP` + load/store, the access
@@ -295,7 +317,7 @@ at the target), or a `BL`/`B` of `R_CALLARM64`, as linked; the relocated fields 
 effect, the control and the number of words. -/
 def symUnit (t : ByteArray) (rs : List Reloc) (n o : Nat) (σ : Sym) :
     Except String (Sym × MCtl × Nat) := do
-  if o + 4 > t.size then throw s!"word at {o} past the text"
+  if o + 4 > t.size || o % 4 != 0 then throw s!"word at {o} past the text or unaligned"
   let w := wordAt t o
   let some i := decode w | throw s!"undecodable word {w.toHex} at {o}"
   match relocAt rs o with
@@ -307,28 +329,21 @@ def symUnit (t : ByteArray) (rs : List Reloc) (n o : Nat) (σ : Sym) :
     let some y := r.sym | throw "relocation without symbol"
     let tgt := Ex.mkAdd (.sym y) (.k (BitVec.ofInt 64 r.add))
     if isCallReloc r.type then
-      match i with
-      | .b true 0 => pure (σ, .call y r.add, 1)
-      | .b false 0 => pure (σ, .jmpSym y r.add, 1)
-      | _ => throw "R_CALLARM64 not on a B or BL"
+      let some link := callLink? i | throw "R_CALLARM64 not on a B or BL with a zero offset"
+      pure (σ, if link then .call y r.add else .jmpSym y r.add, 1)
     else if n = 0 || o + 8 > t.size then throw "relocated pair cut"
     else if covering rs (o + 4) != [r] then throw s!"word at {o + 4} patched by several relocations"
-    else match i, decode (wordAt t (o + 4)) with
-      | .adr true 0 rd, some i2 =>
-        let σ1 := σ.wX rd.toNat (.page tgt)
-        if r.type == "R_ADDRARM64" then
-          match i2 with
-          | .addSubImm true false false false 0 rn rd2 =>
-            if rn != rd then throw "R_ADDRARM64: ADD of another register" else
-            pure (σ1.wXsp rd2.toNat tgt, .fall, 2)
-          | _ => throw "R_ADDRARM64: not ADRP + ADD"
-        else match ldstScale r.type, i2 with
-          | some sc, .ldst size false opc (.uimm 0) rn rt =>
-            if rn != rd then throw "PCREL_LDST: access through another register" else
-            if size.toNat != sc then throw "PCREL_LDST: size" else do
-            pure (← symAccess σ1 size opc rt.toNat tgt, .fall, 2)
-          | _, _ => throw s!"relocation {r.type}"
-      | _, _ => throw s!"relocation {r.type} not on ADRP"
+    else
+      let some rd := adrpRd? i | throw s!"relocation {r.type} not on ADRP"
+      let some i2 := decode (wordAt t (o + 4)) | throw "undecodable word"
+      let σ1 := σ.wX rd.toNat (.page tgt)
+      if r.type == "R_ADDRARM64" then
+        let some rd2 := addLo? rd i2 | throw "R_ADDRARM64: not ADRP + ADD"
+        pure (σ1.wXsp rd2.toNat tgt, .fall, 2)
+      else
+        let some sc := ldstScale r.type | throw s!"relocation {r.type}"
+        let some (size, opc, rt) := ldstLo? rd sc i2 | throw "PCREL_LDST: access"
+        pure (← symAccess σ1 size opc rt.toNat tgt, .fall, 2)
 
 /-- The words `[o, o + 4 n)` executed symbolically from `σ`, unit by unit (`symUnit`), every
 unit but the last falling through. -/
@@ -360,8 +375,8 @@ def Sym.readsTmp (σ : Sym) : Bool :=
 
 /-- The machine effect `m` matches the Prog effect `p` (the module doc). -/
 def sameEffect (m p : Sym) : Except String Unit := do
-  for r in cmpRegs do
-    if m.getX r != p.getX r then throw s!"R{r}: machine {(m.getX r).str}, Prog {(p.getX r).str}"
+  if let some r := cmpRegs.find? (fun r => m.getX r != p.getX r) then
+    throw s!"R{r}: machine {(m.getX r).str}, Prog {(p.getX r).str}"
   if m.getX 30 != .x 30 || p.getX 30 != .x 30 then throw "R30 written"
   if m.sp != p.sp then throw "SP"
   if m.fl != p.fl then throw s!"flags: machine {repr m.fl}, Prog {repr p.fl}"
@@ -417,8 +432,8 @@ def frameOK (az : Int) (σ : Sym) : Except String Unit := do
   let fp' := Ex.mkAdd .sp (.k (BitVec.ofInt 64 (-az - 8)))
   if σ.sp != sp' then throw "prologue: SP"
   if σ.getX 29 != fp' then throw "prologue: R29"
-  for r in cmpRegs do
-    if r != 29 && r != 20 && σ.getX r != .x r then throw s!"prologue: R{r} written"
+  if let some r := cmpRegs.find? (fun r => r != 29 && r != 20 && σ.getX r != .x r) then
+    throw s!"prologue: R{r} written"
   if σ.getX 30 != .x 30 then throw "prologue: R30 written"
   let st := [(sp', 8, Ex.x 30), (fp', 8, Ex.x 29)]
   if σ.stores != st && σ.stores != st.reverse then throw "prologue: stores"
@@ -436,8 +451,8 @@ def retOK (az : Int) (leaf : Bool) (σ : Sym) (c back : MCtl) : Except String Un
   let lr := if leaf then Ex.x 30 else .ld 8 .sp
   if σ.getX 29 != fp then throw "epilogue: R29"
   if σ.getX 30 != lr then throw "epilogue: R30"
-  for r in cmpRegs do
-    if r != 29 && σ.getX r != .x r then throw s!"epilogue: R{r} written"
+  if let some r := cmpRegs.find? (fun r => r != 29 && σ.getX r != .x r) then
+    throw s!"epilogue: R{r} written"
   if σ.fl != .init then throw "epilogue: flags"
   if !σ.stores.isEmpty then throw "epilogue: stores"
   if c != back then throw "epilogue: return"
@@ -458,8 +473,8 @@ def checkStackCheck (t : ByteArray) (rs : List Reloc) (az : Int) (o : Nat) (gOff
   | .cond fl 9 q =>
     if fl != .addSub true true lim g then throw s!"stack check: flags {repr fl}" else
     if σ.stores != [] then throw "stack check: stores" else
-    for r in cmpRegs do
-      if r != 16 && r != 17 && σ.getX r != .x r then throw s!"stack check: R{r}"
+    if let some r := cmpRegs.find? (fun r => r != 16 && r != 17 && σ.getX r != .x r) then
+      throw s!"stack check: R{r}"
     if q < 0 then throw "stack check: tail" else
     pure (o + 4 * n, q.toNat)
   | _ => throw "stack check: not a BLS"
@@ -516,6 +531,66 @@ def checkTail (t : ByteArray) (rs : List Reloc) (spills : List Spill) (check o :
     if σ2.getX r != want then throw s!"tail: R{r} after the call: {(σ2.getX r).str}, want {want.str}"
   pure o2
 
+/-- The prologue `[0, body)` of a function with frame size `az`: nothing if frameless, else the
+stack check (when the first word loads `stackguard0`, or `stackguard1` in a C function) and the
+frame (`frameOK`). Returns the stack check's end and the morestack tail's offset. -/
+def checkPrologue (t : ByteArray) (rs : List Reloc) (az : Int) (body : Nat) :
+    Except String (Option (Nat × Nat)) := do
+  if az == 0 then
+    if body != 0 then throw "frameless function with a prologue"
+    return none
+  -- `MOVD 16(g), R16` (`24(g)` in a C function's prologue, `stackguard1`)
+  let gOff? : Option Nat := match decode (wordAt t 0) with
+    | some (.ldst 3 false 1 (.uimm 2) 28 16) => some 16
+    | some (.ldst 3 false 1 (.uimm 3) 28 16) => some 24
+    | _ => none
+  let check ← match (if body ≥ 12 then gOff? else none) with
+    | some gOff => some <$> checkStackCheck t rs az 0 gOff
+    | none => pure none
+  let fo := match check with
+    | some (ce, _) => ce
+    | none => 0
+  if body ≤ fo || (body - fo) % 4 != 0 then throw "prologue: no frame words"
+  let (σ, c) ← symWords t rs ((body - fo) / 4) fo {}
+  if c != .fall then throw "prologue: branch"
+  frameOK az σ
+  return check
+
+/-- One body Prog `p` against its words `[s, e)`: a P0 `RET` (without operand, or of a symbol)
+against the epilogue (`retOK`), any other Prog by `checkProg`. -/
+def checkOne (t : ByteArray) (rs : List Reloc) (offs : List (Nat × Nat)) (az ez : Int)
+    (leaf : Bool) (p : Prog) (s e : Nat) : Except String Unit :=
+  if p.as == .RET && (p.to.type == .NONE || p.to.sym.isSome) then
+    if e ≤ s || (e - s) % 4 != 0 then throw s!"Prog {p.id} RET: no epilogue" else
+    match symWords t rs ((e - s) / 4) s {} with
+    | .error msg => throw s!"Prog {p.id} RET: {msg}"
+    | .ok (σ, c) =>
+      let back := match p.to.sym with
+        | some y => MCtl.jmpSym y p.to.offset
+        | none => .reg (if az == 0 || leaf then .x 30 else .ld 8 .sp)
+      match retOK az leaf σ c back with
+      | .ok () => pure ()
+      | .error msg => throw s!"Prog {p.id} RET: {msg}"
+  else
+    match checkProg t rs offs az ez p s e with
+    | .ok () => pure ()
+    | .error msg => throw s!"Prog {p.id} {p.as.name}: {msg}"
+
+/-- The body Progs in list order with their offsets (`ss`; the last one's words end at
+`lastEnd`). -/
+def checkBody (t : ByteArray) (rs : List Reloc) (offs : List (Nat × Nat)) (az ez : Int)
+    (leaf : Bool) : List Prog → List Nat → Nat → Except String Unit
+  | p :: ps, s :: ss, lastEnd => do
+    checkOne t rs offs az ez leaf p s (ss.headD lastEnd)
+    checkBody t rs offs az ez leaf ps ss lastEnd
+  | _, _, _ => pure ()
+
+/-- Each Prog's offset: its PC in the assembled list, or (no PC: `TEXT`, an `END` placeholder)
+the next Prog's, `lastEnd` after the last. -/
+def startsOf (lastEnd : Nat) : List (Option Nat) → List Nat
+  | [] => []
+  | o :: os => let rest := startsOf lastEnd os; o.getD (rest.headD lastEnd) :: rest
+
 /-- What `checkObj` returns: the machine offset of each P0 Prog (aligned with the list; `TEXT`
 at the body's start), the offset the last Prog falls through to, the frame, and the prologue's
 stack check (its end and the morestack tail's offset) if any. -/
@@ -566,25 +641,7 @@ def checkObj (ps : Array Prog) (spills : Array Spill) (o : ObjIn) : Except Strin
       if ps[k].as == .END then pcsOpt := pcsOpt.push none
       else throw s!"P0 Prog {ps[k].id} ({ps[k].as.name}) not in the assembled list"
   let body := ((pcsOpt.toList.drop 1).findSome? id).getD 0
-  -- prologue
-  let mut check : Option (Nat × Nat) := none
-  if az == 0 then
-    if body != 0 then throw "frameless function with a prologue"
-  else
-    let mut fo := 0
-    -- `MOVD 16(g), R16` (`24(g)` in a C function's prologue, `stackguard1`)
-    let gOff? : Option Nat := match decode (wordAt t 0) with
-      | some (.ldst 3 false 1 (.uimm 2) 28 16) => some 16
-      | some (.ldst 3 false 1 (.uimm 3) 28 16) => some 24
-      | _ => none
-    if let some gOff := (if body ≥ 12 then gOff? else none) then
-      let (ce, tail) ← checkStackCheck t rs az 0 gOff
-      check := some (ce, tail)
-      fo := ce
-    if body ≤ fo || (body - fo) % 4 != 0 then throw "prologue: no frame words"
-    let (σ, c) ← symWords t rs ((body - fo) / 4) fo {}
-    if c != .fall then throw "prologue: branch"
-    frameOK az σ
+  let check ← checkPrologue t rs az body
   -- the end of the last Prog's words
   let firstPool := (o.progs.find? fun p => p.as == .WORD || p.as == .DWORD).map (·.pc.toNat)
   let rec trimZero : Nat → Nat
@@ -596,32 +653,12 @@ def checkObj (ps : Array Prog) (spills : Array Spill) (o : ObjIn) : Except Strin
   let lastEnd := match check with
     | some (_, tail) => tail
     | none => codeEnd
-  let mut starts : Array Nat := Array.replicate ps.size lastEnd
-  let mut nxt := lastEnd
-  for h : j in [0:ps.size] do
-    let k := ps.size - 1 - j
-    if let some (some pc) := pcsOpt[k]? then nxt := pc
-    starts := starts.set! k nxt
-  let offs := (ps.toList.zip starts.toList).map fun (p, s) => (p.id, s)
-  for h : k in [1:ps.size] do
-    let p := ps[k]
-    let s := starts[k]!
-    let e := if k + 1 < ps.size then starts[k + 1]! else lastEnd
-    if p.as == .RET && (p.to.type == .NONE || p.to.sym.isSome) then
-      if e ≤ s || (e - s) % 4 != 0 then throw "RET: no epilogue"
-      let (σ, c) ← symWords t rs ((e - s) / 4) s {}
-      let back := match p.to.sym with
-        | some y => MCtl.jmpSym y p.to.offset
-        | none => .reg (if az == 0 || leaf then .x 30 else .ld 8 .sp)
-      match retOK az leaf σ c back with
-      | .ok () => pure ()
-      | .error msg => throw s!"Prog {p.id} RET: {msg}"
-    else
-      match checkProg t rs offs az ez p s e with
-      | .ok () => pure ()
-      | .error msg => throw s!"Prog {p.id} {p.as.name}: {msg}"
+  let starts := startsOf lastEnd pcsOpt.toList
+  if starts.length != ps.size || starts.headD 0 != body then throw "internal: PC table"
+  let offs := (ps.toList.zip starts).map fun (p, s) => (p.id, s)
+  checkBody t rs offs az ez leaf (ps.toList.drop 1) (starts.drop 1) lastEnd
   if let some (_, tail) := check then
     let _ ← checkTail t rs spills.toList 0 tail
-  return { offs := starts, endOff := lastEnd, autosize := az, extrasize := ez, leaf, check }
+  return { offs := starts.toArray, endOff := lastEnd, autosize := az, extrasize := ez, leaf, check }
 
 end GoFV.Asm.CheckObj
