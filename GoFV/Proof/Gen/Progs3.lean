@@ -194,8 +194,9 @@ theorem progStep_loadAt {n kd : Nat} {sg : Bool} {a : BitVec 64} (hkd : kd < 32)
   · simp only [effWd, h, ↓reduceIte, Eff.apply, List.foldr]
     rfl
 
-/-- A store of the low `n` bytes of `X ks` at `a` outside the nil page. -/
-private theorem step_store {n ks : Nat} {sg : Bool} {a : BitVec 64} (hks : ks < 32)
+/-- A store of the low `n` bytes of `X ks` at `a` outside the nil page (a store at any memory
+operand's address). -/
+theorem progStep_storeAt {n ks : Nat} {sg : Bool} {a : BitVec 64} (hks : ks < 32)
     (hn : L.nextAddr p.id = some next) (hm : ProgOp.movMem p.as.name = some (n, sg, false))
     (hf : p.from_ = regA (REG_R0 + ks)) (ht : p.to.type = .MEM)
     (hma : (ProgCtx.mk L s p).mem p.to = .ok (a, none)) (hnil : nilPage a = false) :
@@ -247,7 +248,7 @@ theorem progStep_storeN {kn ks n : Nat} {sg : Bool} {off : Int} (hkn : kn < 32) 
   have hma : (ProgCtx.mk L s p).mem p.to =
       .ok (s.rX (BitVec.ofNat 5 kn) + BitVec.ofInt 64 off, none) := by
     rw [ht]; exact ctx_mem_reg hkn hsc
-  exact step_store hks hn hm hf (by rw [ht]; rfl) hma hnil
+  exact progStep_storeAt hks hn hm hf (by rw [ht]; rfl) hma hnil
 
 /-- `MOV{D,B,H,W} Rs, sym+off(SB)` (a global operand: `globA_eq`), the address outside the nil
 page. -/
@@ -260,7 +261,7 @@ theorem progStep_globStore {ks n y : Nat} {sg : Bool} {off : Int} (hks : ks < 32
       mem := writeMem s.mem (L.sym y + BitVec.ofInt 64 off) n
         (BitVec.ofNat (8 * n) ((s.rX (BitVec.ofNat 5 ks)).toNat % 2 ^ (8 * n))),
       pc := next } :=
-  step_store hks hn hm hf ht1 (ctx_mem_glob ht1 ht2 ht3 ht4) hnil
+  progStep_storeAt hks hn hm hf ht1 (ctx_mem_glob ht1 ht2 ht3 ht4) hnil
 
 /-- `MOV{D,B,BU,H,HU,W,WU} off(RSP), Rd` at a frame operand (`slotA`, `NAME_AUTO` or `NAME_PARAM`,
 at `SP + frameOff`), the address outside the nil page. -/
@@ -286,7 +287,7 @@ theorem progStep_slotStoreN {ks n : Nat} {sg : Bool} {nc : AddrName} {off : Int}
       mem := writeMem s.mem (s.sp + BitVec.ofInt 64 (frameOff L nc off)) n
         (BitVec.ofNat (8 * n) ((s.rX (BitVec.ofNat 5 ks)).toNat % 2 ^ (8 * n))),
       pc := next } :=
-  step_store hks hn hm hf (slotA_eq ht).1 (ctx_mem_slot ht hnc) hnil
+  progStep_storeAt hks hn hm hf (slotA_eq ht).1 (ctx_mem_slot ht hnc) hnil
 
 /-- The extensions `MOV{B,BU,H,HU,W,WU} Rn, Rd` (any `movMem` opcode of the general registers;
 `MOVD` is the move): the low `n` bytes of `X kn`, sign- or zero-extended. -/
