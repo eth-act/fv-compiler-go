@@ -97,10 +97,10 @@ section Step
 
 variable {env : Env} {lc : LocCtx} {s s' : LocState} {v : Value}
 
-/-- `MOVDnop x` writes `movdLoc` of `x`'s value to its home. -/
+/-- `MOVDnop x` and `MOVDreg x` write `movdLoc` of `x`'s value to their home. -/
 theorem stepLoc_nop (hl : lc.ctx.f.lowered = true) (ht : (lc.temps[v.id]?).join = none)
-    (hop : v.op = .ARM64MOVDnop) {x : ID} (hsz : v.args.size = 1) (hx : v.args[0]? = some x)
-    (h : stepLoc env lc s v = .ok s') :
+    (hop : v.op = .ARM64MOVDnop ∨ v.op = .ARM64MOVDreg) {x : ID} (hsz : v.args.size = 1)
+    (hx : v.args[0]? = some x) (h : stepLoc env lc s v = .ok s') :
     ∃ a, s.read lc x = .ok a ∧
       s' = s.write lc v.id ((movdLoc lc v [a] (lc.ty v.id)).retypeL (lc.ty v.id)) := by
   have hargs : v.args.toList = [x] := by
@@ -110,20 +110,22 @@ theorem stepLoc_nop (hl : lc.ctx.f.lowered = true) (ht : (lc.temps[v.id]?).join 
     · simpa using hx
     · simp only [Array.getElem?_toList, List.getElem?_cons_succ, List.getElem?_nil]
       exact Array.getElem?_eq_none (by omega)
+  have hphi : (v.op == Op.Phi) = false := by rcases hop with hop | hop <;> rw [hop] <;> rfl
   unfold stepLoc at h
-  simp only [show (v.op == Op.Phi) = false by rw [hop]; rfl, Bool.false_eq_true, ↓reduceIte,
-    hargs] at h
+  simp only [hphi, Bool.false_eq_true, ↓reduceIte, hargs] at h
   rw [show [x].mapM (s.read lc) = (s.read lc x).bind fun y => .ok [y] from rfl] at h
   cases hr : s.read lc x with
   | panic e mm => rw [hr] at h; cases h
   | stuck msg => rw [hr] at h; cases h
   | ok a =>
     rw [hr] at h
-    simp only [Res.bind, bind, hop] at h
-    cases h
-    refine ⟨a, rfl, ?_⟩
-    rw [clobber_none (by rw [hop]; rfl) (by rw [hop]; rfl) (by rw [hop]; rfl) ht (by rw [hop]; rfl),
-      lmode_retype hl]
+    rcases hop with hop | hop
+    all_goals
+      simp only [Res.bind, bind, hop] at h
+      cases h
+      refine ⟨a, rfl, ?_⟩
+      rw [clobber_none (by rw [hop]; rfl) (by rw [hop]; rfl) (by rw [hop]; rfl) ht
+        (by rw [hop]; rfl), lmode_retype hl]
 
 end Step
 
@@ -171,13 +173,14 @@ theorem objX?_dest {r : Nat} (hr : r < 26) : ∃ k, k < 31 ∧ objX? r = some (B
   · exact ⟨r, by omega, by simp [h18]⟩
   · exact ⟨r + 1, by omega, by simp [h18, hr]⟩
 
-/-- `MOVDnop x` homed in `x`'s register `r`: no code; `runLoc` writes the extension of `x` that
-`signOf` names, which is the machine register when the upper-bit table names `r` (`UOK`). -/
+/-- `MOVDnop x` (or `MOVDreg x`) homed in `x`'s register `r`: no code; `runLoc` writes the
+extension of `x` that `signOf` names, which is the machine register when the upper-bit table names
+`r` (`UOK`). -/
 theorem g20_nop (F : Facts lc sym text az ez psA.toList ret E)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
-    {x r c cv : Nat} (hop : v.op = .ARM64MOVDnop) (hsz : v.args.size = 1)
+    {x r c cv : Nat} (hop : v.op = .ARM64MOVDnop ∨ v.op = .ARM64MOVDreg) (hsz : v.args.size = 1)
     (hx : v.args[0]? = some x) (hvh : lc.home v.id = some (.reg r)) (hd : destOK r = true)
     (hz : r ≠ zeroReg) (hxh : lc.home x = some (.reg r)) (hcv : cls (lc.ty v.id) = some cv)
     (hcv8 : 8 ≤ cv) (hcx : cls (lc.ty x) = some c) (hc : c = 8 ∨ c = 16 ∨ c = 32)
@@ -187,7 +190,7 @@ theorem g20_nop (F : Facts lc sym text az ez psA.toList ret E)
       LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
   have hl := F.lowered
   have hA := F.addr
-  have hnp : v.op ≠ .Phi := by rw [hop]; nofun
+  have hnp : v.op ≠ .Phi := by rcases hop with hop | hop <;> rw [hop] <;> nofun
   have hr26 : r < 26 := by
     simp only [destOK, Bool.or_eq_true, beq_iff_eq, decide_eq_true_eq] at hd
     rcases hd with h | h
@@ -484,74 +487,54 @@ theorem uEntry_spec {lc : LocCtx} {v : Value} {r c : Nat} {sg : Bool}
 
 /-! ## The theorems -/
 
-/-- **G20, values.** `g19_value`'s statement over `checkG20`, with the same premises, carrying the
-upper-bit invariant `UOK` of the table `uAt` from value `i` to value `i + 1`. -/
-theorem g20_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
-    {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab} {E : MatchEnv}
-    {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s s' : LocState} {m : MState}
-    (hc : checkG20 lc ps bstart g = .ok (tab, kt)) (hE : G10Env lc g L ps ret tab E)
-    (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
-    (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
-    (hen : entryOp3 v.op = false) (hm : LocMatch E s bid i m)
-    (hinv : G3Inv E lc (kAt lc kt bid blk i) s) (hu : UOK m (uAt lc blk i))
+/-- One value of G20's kinds: `vk19_step`'s statement, carrying the upper-bit invariant `UOK` from
+the table's entry for the argument of a `MOVDnop` or `MOVDreg` (`hu`) to the entry `uEntry` of the
+value. -/
+theorem vk20_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat → BitVec 64}
+    {text : BitVec 64} {az ez : Int} {ps : Array Prog} {ret : BitVec 64} {tab : PcTab}
+    {E : MatchEnv} {bid : ID} {i j j' : Nat} {id : ID} {v : Value} {s s' : LocState}
+    {m : MState} {K : KMap} {kd : VKind2}
+    (hE : G10Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E)
+    (F : Facts lc sym text az ez ps.toList ret E) (hhome : ∀ i, homeOK10 lc i = true)
+    (hcf : checkFrame lc g = .ok ()) (hv : lc.ctx.f.value? id = some v) (hVK : VK20 lc g v kd)
+    (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
+    (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
+    (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
+    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s)
+    (hu : ∀ x, (v.op = .ARM64MOVDnop ∨ v.op = .ARM64MOVDreg) → v.args[0]? = some x →
+      ∃ r c, regHome? lc x = some r ∧ cls (lc.ty x) = some c ∧
+        UOK m (some (r, c, lc.signOf lc.ctx.f.valueTab.size x)))
     (hpre : G14Pre lc s v)
-    (hcall : CallOK H E g L lc s s' v m) (hcallz : CallOKZ H E g L lc s s' v m)
-    (hicall : ICallOK H E L ret lc s s' v m)
-    (hwb : WbOK H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
-    (hs : stepLoc env lc s v = .ok s') :
-    ∃ E' m', E.Extends E' ∧ G10Env lc g L ps ret tab E' ∧ PStar H L ps.toList ret m m' ∧
-      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' ∧
-      UOK m' (uAt lc blk (i + 1)) := by
+    (hcall : CallOK H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
+    (hcallz : CallOKZ H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
+    (hicall : ICallOK H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
+    (hwb : WbOK H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
+    (hgetg : GetGOK E v) (hs : stepLoc env lc s v = .ok s') :
+    ∃ E' m', E.Extends E' ∧ G10Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
+      PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
+      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' ∧ UOK m' (uEntry lc v) := by
   have hE0 := hE
-  obtain ⟨⟨⟨⟨-, hlink, hpcOf, hret, hA, hglob, -, -, -, -, -⟩, -⟩, -⟩, -⟩ := hE
-  obtain ⟨sym, text, az, ez, hL⟩ : ∃ sym text az ez, L = Link.byId sym text az ez ps.toList :=
-    ⟨_, _, _, _, hlink⟩
-  have htext : L.text = text := by rw [hL]; rfl
-  rw [htext] at hpcOf
-  subst hL
-  obtain ⟨c, rfl, rfl, -, rfl, hvk, -, hl, hhome, hcf, hk, hlt, hnd, hblocks, -, hnop⟩ :=
-    checkG20_spec hc
-  obtain ⟨b, j, js, e, next, hb', -, hvals, -, -, hrow⟩ := Cx2.blocks_spec hblocks bid hbid
-  rw [hb] at hb'
-  cases hb'
-  obtain ⟨-, -, hstep⟩ := Cx2.values_spec hvals
-  obtain ⟨hi', hid⟩ := Array.getElem?_eq_some_iff.1 hi
-  obtain ⟨v', kd, hv', hkd, hvs⟩ := hstep i (by simpa using hi')
-  have hid' : blk.values.toList[i] = id := by simpa using hid
-  rw [hid', hv] at hv'
-  cases hv'
-  rw [hvk] at hkd
-  obtain ⟨htemp, hVK⟩ := vkind20_spec hkd hen
-  have hj : E.pcOf bid i = pcAt text c.cx.ps.toList ((js ++ [e]).getD i 0) := by
-    rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some]
-  have hj' : E.pcOf bid (i + 1) = pcAt text c.cx.ps.toList ((js ++ [e]).getD (i + 1) 0) := by
-    rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some]
-  have hreads := ((checkK_spec hk).2 bid hbid blk hb).1 i id v hi hv
-  have F : Facts c.cx.lc sym text az ez c.cx.ps.toList ret E :=
-    ⟨hl, clsReg_of_home10 hhome, hnd, hlt, hret, hA⟩
-  have hu1 : uAt c.cx.lc blk (i + 1) = uEntry c.cx.lc v := by simp [uAt, hi, hv]
-  rw [kAt_succ hi hv, hu1]
+  obtain ⟨⟨⟨⟨-, -, -, -, -, hglob, -, -, -, -, -⟩, -⟩, -⟩, -⟩ := hE
   cases hVK with
   | nop hop hsz hx hvr hd hz hxr hcv hcx =>
-    obtain ⟨r', c', hr', hc', hu0⟩ := nopOK_spec hnop hbid hb hi hv hop hx
+    obtain ⟨r', c', hr', hc', hu0⟩ := hu _ (.inl hop) hx
     rw [hxr] at hr'
     cases hr'
-    rw [hu0] at hu
     have hvh := regHome?_eq.1 hvr
     have hxh := regHome?_eq.1 hxr
-    obtain ⟨cv, hcv', hcv8⟩ : ∃ cv, cls (c.cx.lc.ty v.id) = some cv ∧ 8 ≤ cv := by
+    obtain ⟨cv, hcv', hcv8⟩ : ∃ cv, cls (lc.ty v.id) = some cv ∧ 8 ≤ cv := by
       rcases hcv with h | h | h | h <;> exact ⟨_, h, by omega⟩
     have hcc : c' = 8 ∨ c' = 16 ∨ c' = 32 := by
       rcases hcx with h | h | h <;> (rw [hc'] at h; cases h; simp)
     obtain ⟨m', h1, h2, h3, h4⟩ := g20_nop (H := H) F hm hinv.core hinv.slots
-      (kread_of_reads hreads) (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz hx hvh
-      hd hz hxh hcv' hcv8 hc' hcc hvs htemp hs hu
-    have hne : uEntry c.cx.lc v = none := by
-      have : narrowLd? c.cx.lc v = none := by unfold narrowLd?; rw [hop]; rfl
+      (kread_of_reads hreads) (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' (.inl hop) hsz hx
+      hvh hd hz hxh hcv' hcv8 hc' hcc hvs htemp hs hu0
+    have hne : uEntry lc v = none := by
+      have : narrowLd? lc v = none := by unfold narrowLd?; rw [hop]; rfl
       simp only [uEntry, this]
     exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE0, h1, h2, ⟨h3, h4⟩, by rw [hne]; trivial⟩
   | g19 _ hVK19 =>
-    cases hue : uEntry c.cx.lc v with
+    cases hue : uEntry lc v with
     | none =>
       obtain ⟨E', m', h1, h2, h3, h4, h5⟩ := vk19_step hE0 F hhome hcf hv hVK19 hvs htemp hj hj'
         hreads hm hinv hpre hcall hcallz hicall hwb hclo hgetg hs
@@ -563,7 +546,7 @@ theorem g20_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
       have hvh := regHome?_eq.1 hvr
       -- the machine register a narrow load wrote is the extension of its low bits
       have huok : ∀ (m' : MState) (rd : Int) (c0 kd : Nat) (Y : BitVec (8 * n)), 1 ≤ n →
-          resObj c.cx.lc v = .ok (c0, rd) → rd = GoFV.Asm.ARM64.REG_R0 + kd →
+          resObj lc v = .ok (c0, rd) → rd = GoFV.Asm.ARM64.REG_R0 + kd →
           m'.x = (m.wX (BitVec.ofNat 5 kd)
             (if sg then ProgOp.sextTo64 n (Y.setWidth 64) else Y.setWidth 64)).x →
           UOK m' (some (r, cc, sg)) := by
@@ -582,7 +565,7 @@ theorem g20_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
           subst hkk
           rw [hx', wX_x_self hk]
           exact extOK_load sg hn1 hnc (by omega) Y
-      have hvar : ∀ x off kd', FrameVarOK c.cx.lc c.g v x off → VKVar c.cx.lc v off kd' → False := by
+      have hvar : ∀ x off kd', FrameVarOK lc g v x off → VKVar lc v off kd' → False := by
         intro x off kd' hf hvv
         rcases hld with ⟨as, hl3, has, hax | hsb⟩ | ⟨as, sh, hl0, hli, has⟩
         · rw [hf.aux] at hax; cases hax
@@ -641,6 +624,59 @@ theorem g20_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
             rcases (loadIdxOp?_facts hli).2.1 with h | h | h | h <;> omega
           exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE0, h1, h2, ⟨h3, h4⟩,
             huok m' _ _ kd Y hn1 hro hrd hx'⟩
+
+/-- **G20, values.** `g19_value`'s statement over `checkG20`, with the same premises, carrying the
+upper-bit invariant `UOK` of the table `uAt` from value `i` to value `i + 1`. -/
+theorem g20_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
+    {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab} {E : MatchEnv}
+    {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s s' : LocState} {m : MState}
+    (hc : checkG20 lc ps bstart g = .ok (tab, kt)) (hE : G10Env lc g L ps ret tab E)
+    (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
+    (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
+    (hen : entryOp3 v.op = false) (hm : LocMatch E s bid i m)
+    (hinv : G3Inv E lc (kAt lc kt bid blk i) s) (hu : UOK m (uAt lc blk i))
+    (hpre : G14Pre lc s v)
+    (hcall : CallOK H E g L lc s s' v m) (hcallz : CallOKZ H E g L lc s s' v m)
+    (hicall : ICallOK H E L ret lc s s' v m)
+    (hwb : WbOK H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
+    (hs : stepLoc env lc s v = .ok s') :
+    ∃ E' m', E.Extends E' ∧ G10Env lc g L ps ret tab E' ∧ PStar H L ps.toList ret m m' ∧
+      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' ∧
+      UOK m' (uAt lc blk (i + 1)) := by
+  have hE0 := hE
+  obtain ⟨⟨⟨⟨-, hlink, hpcOf, hret, hA, -, -, -, -, -, -⟩, -⟩, -⟩, -⟩ := hE
+  obtain ⟨sym, text, az, ez, hL⟩ : ∃ sym text az ez, L = Link.byId sym text az ez ps.toList :=
+    ⟨_, _, _, _, hlink⟩
+  have htext : L.text = text := by rw [hL]; rfl
+  rw [htext] at hpcOf
+  subst hL
+  obtain ⟨c, rfl, rfl, -, rfl, hvk, -, hl, hhome, hcf, hk, hlt, hnd, hblocks, -, hmovd⟩ :=
+    checkG20_spec hc
+  obtain ⟨b, j, js, e, next, hb', -, hvals, -, -, hrow⟩ := Cx2.blocks_spec hblocks bid hbid
+  rw [hb] at hb'
+  cases hb'
+  obtain ⟨-, -, hstep⟩ := Cx2.values_spec hvals
+  obtain ⟨hi', hid⟩ := Array.getElem?_eq_some_iff.1 hi
+  obtain ⟨v', kd, hv', hkd, hvs⟩ := hstep i (by simpa using hi')
+  have hid' : blk.values.toList[i] = id := by simpa using hid
+  rw [hid', hv] at hv'
+  cases hv'
+  rw [hvk] at hkd
+  obtain ⟨htemp, hVK⟩ := vkind20_spec hkd hen
+  have hj : E.pcOf bid i = pcAt text c.cx.ps.toList ((js ++ [e]).getD i 0) := by
+    rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some]
+  have hj' : E.pcOf bid (i + 1) = pcAt text c.cx.ps.toList ((js ++ [e]).getD (i + 1) 0) := by
+    rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some]
+  have hreads := ((checkK_spec hk).2 bid hbid blk hb).1 i id v hi hv
+  have F : Facts c.cx.lc sym text az ez c.cx.ps.toList ret E :=
+    ⟨hl, clsReg_of_home10 hhome, hnd, hlt, hret, hA⟩
+  have hu1 : uAt c.cx.lc blk (i + 1) = uEntry c.cx.lc v := by simp [uAt, hi, hv]
+  rw [kAt_succ hi hv, hu1]
+  exact vk20_step hE0 F hhome hcf hv hVK hvs htemp hj hj' hreads hm hinv
+    (fun x hop hx => by
+      obtain ⟨r, c', hr, hc', hu0⟩ := movdOK_spec hmovd hbid hb hi hv hop hx
+      exact ⟨r, c', hr, hc', hu0 ▸ hu⟩)
+    hpre hcall hcallz hicall hwb hclo hgetg hs
 
 /-- A nil check of G20's kinds is G7's. -/
 theorem vk20_nil {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK20 lc g v kd)

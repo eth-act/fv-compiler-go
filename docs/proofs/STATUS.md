@@ -469,6 +469,19 @@ rejects: `MOVW runtime.numCPUStartup(SB), R0` with `numCPUStartup = -2`, after w
 integer `-2`, matched by the machine). Coverage on quick-v10 (`lake exe gen-check`): 4,328 of
 9,297 functions (46.55%), 89,297 values.
 
+## Phase 3: genssa, slice G21 (I7, #553)
+
+`GoFV.Proof.Gen.g21_value`, `GoFV.Proof.Gen.g21_term`, `GoFV.Proof.Gen.g21_nilPanic`,
+`GoFV.Proof.Gen.g21_boundsPanic` (`GoFV/Proof/Gen/G21.lean`): when slice G21 (`checkG21`: G20 with
+`MOVDreg x`, emitted as `Copy` (`MOVD Rx, Rv`, or nothing in one register), when G20's upper-bit
+table names `x`'s register before it, `movdOK`) accepts a function, they are `g20_value`'s,
+`g20_term`'s, `g20_nilPanic`'s and `g20_boundsPanic`'s statements under the same premises. No new
+trusted premise. Witness `genG21_value_witness` (`(*queueOnePass).next` of std/regexp, which G20
+rejects: `MOVWU 52(R0), R3` of `q.nextIndex = 0xffff_fffe`, after which the machine's `X3` is its
+zero extension, then `MOVD R3, R4`, after which `runLoc`'s `R4` holds the 64-bit integer
+`0xffff_fffe` and the machine's `X4` is `0x0000_0000_ffff_fffe`). Coverage on quick-v10
+(`lake exe gen-check`): 4,342 of 9,297 functions (46.70%), 89,745 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g12_obj_value`, `g12_obj_term` (`GoFV/Proof/Obj/G12.lean`): `g12_value`/`g12_term`
