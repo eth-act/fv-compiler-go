@@ -452,6 +452,23 @@ so the runtime reports the index 0 or 1; `runtime.markrootSpans`, `recover2.test
 panics with `.bounds 16 9 5`, as `runLoc`). Coverage on quick-v10 (`lake exe gen-check`): 4,221 of
 9,297 functions (45.40%), 85,558 values.
 
+## Phase 3: genssa, slice G20 (I7, #553)
+
+`GoFV.Proof.Gen.g20_value`, `GoFV.Proof.Gen.g20_term`, `GoFV.Proof.Gen.g20_nilPanic`,
+`GoFV.Proof.Gen.g20_boundsPanic` (`GoFV/Proof/Gen/G20.lean`): when slice G20 (`checkG20`: G19 with
+`MOVDnop x`, which emits no code, when the upper-bit table `uAt` before it says `x`'s register
+holds the zero or sign extension of `x`'s low bits that `signOf x` names; an entry comes only from
+a narrow load (`MOV{B,H,W}{,U}load` of a register address or a global,
+`MOV{B,H,W}{,U}loadidx*`) directly before) accepts a function, they are `g19_value`'s,
+`g19_term`'s, `g19_nilPanic`'s and `g19_boundsPanic`'s statements under the same premises, and
+`g20_value` also takes the upper-bit invariant `UOK m (uAt lc blk i)` (the machine's `X` register
+of the table's entry is the extension of its low bits, `ExtOK`) and concludes `UOK m' (uAt lc blk
+(i + 1))`. No new trusted premise. Witness `genG20_value_witness` (`runtime.NumCPU`, which G19
+rejects: `MOVW runtime.numCPUStartup(SB), R0` with `numCPUStartup = -2`, after which the machine's
+`X0` is `0xffff_ffff_ffff_fffe`, and then `MOVDnop`, after which `runLoc`'s `R0` holds the 64-bit
+integer `-2`, matched by the machine). Coverage on quick-v10 (`lake exe gen-check`): 4,328 of
+9,297 functions (46.55%), 89,297 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g12_obj_value`, `g12_obj_term` (`GoFV/Proof/Obj/G12.lean`): `g12_value`/`g12_term`

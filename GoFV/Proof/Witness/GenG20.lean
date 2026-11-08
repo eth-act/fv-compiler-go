@@ -6,21 +6,21 @@ import GoFV.Proof.Witness.GenG19
 
 `std/std/runtime/NumCPU,1.ssa` and `…,1.prog` of the corpus
 `gofv-corpus/2aae1000ea1d/quick-v10/plain`, embedded verbatim (`fSsa`, `fProg`): `NumCPU`
-(`runtime/debug.go`), `return int(ncpu)` with `ncpu int32` a global.
+(`runtime/debug.go`), `return int(numCPUStartup)` with `numCPUStartup int32` a global.
 
 `checkG19` rejects it (`v8 = MOVDnop`); `checkG20` accepts it with the PC table `tab` and the class
-table `kt`. Block `b1`: `v7 = MOVWload {ncpu} v3 v1` (`MOVW runtime.ncpu(SB), R0`, the sign
-extension of the 4 bytes) and `v8 = MOVDnop v7` (no code, in `R0`), whose upper-bit table entry
-`uAt lc blk1 3 = (R0, 32, signed)` comes from `v7`.
+table `kt`. Block `b1`: `v7 = MOVWload {numCPUStartup} v3 v1` (`MOVW runtime.numCPUStartup(SB),
+R0`, the sign extension of the 4 bytes) and `v8 = MOVDnop v7` (no code, in `R0`), whose upper-bit
+table entry `uAt lc blk1 3 = (R0, 32, signed)` comes from `v7`.
 
 By compiled evaluation (`native_decide`, listed in `scripts/axioms-allowlist.txt`; `g20_facts`),
-`stepLoc` runs `v7` and `v8` from a state whose memory holds `ncpu = -2` (`memG`, the bytes
-`fe ff ff ff`): `R0` then holds the 64-bit integer `-2` (`0xffff_ffff_ffff_fffe`), the sign
-extension that `signOf v7` names. On a framed activation with `G10Env` (as `GenG18`'s, the globals at
-`symA`) and the machine memory holding those bytes at `symA` (`MG`), `g20_value` runs the load
-`MOVW runtime.ncpu(SB), R0`, which gives the upper-bit invariant `UOK` for `R0`, and then `MOVDnop`,
-with no code: the machine's `X0` is `0xffff_ffff_ffff_fffe` (`genG20_value_witness`), which a zero
-extension (`0x0000_0000_ffff_fffe`) would not be.
+`stepLoc` runs `v7` and `v8` from a state whose memory holds `numCPUStartup = -2` (`memG`, the
+bytes `fe ff ff ff`): `R0` then holds the 32-bit and then the 64-bit integer `-2`
+(`0xffff_ffff_ffff_fffe`), the sign extension that `signOf v7` names. On a framed activation with
+`G10Env` (as `GenG18`'s, the globals at `symA`) and the machine memory holding those bytes at
+`symA` (`MG`), `g20_value` runs the load, whose upper-bit invariant `UOK` makes the machine's `X0`
+`0xffff_ffff_ffff_fffe`, which a zero extension (`0x0000_0000_ffff_fffe`) would not be, and then
+`MOVDnop`, with no code, on that invariant (`genG20_value_witness`).
 -/
 
 namespace GoFV.Proof.Witness.GenG20
@@ -1532,16 +1532,16 @@ def E : MatchEnv :=
   { lc, ι := GenG12.ι, sp := GenG2.sp0, slot := fun _ => none, g := 0x9000, lr := 0, fp := 0,
     framed := true, pcOf := pcOfTab GenG2.text ps.toList tab }
 
-/-- The global `runtime.ncpu` (`int32`). -/
-def pG : Ptr := ⟨.global "runtime.ncpu", 0⟩
+/-- The global `runtime.numCPUStartup` (`int32`). -/
+def pG : Ptr := ⟨.global "runtime.numCPUStartup", 0⟩
 
-/-- The bytes of `ncpu = -2`, little-endian. -/
+/-- The bytes of `numCPUStartup = -2`, little-endian. -/
 def bytesG : Array Byte := #[.b 0xfe, .b 0xff, .b 0xff, .b 0xff]
 
-/-- The Phase 1 memory: the global `runtime.ncpu` holding `-2`. -/
-def memG : Mem := { blocks := #[(.global "runtime.ncpu", { data := bytesG })] }
+/-- The Phase 1 memory: the global `runtime.numCPUStartup` holding `-2`. -/
+def memG : Mem := { blocks := #[(.global "runtime.numCPUStartup", { data := bytesG })] }
 
-/-- The machine memory: the bytes of `ncpu` at `symA`, 0 elsewhere. -/
+/-- The machine memory: the bytes of `numCPUStartup` at `symA`, 0 elsewhere. -/
 def MG : Memory := fun y =>
   if (y - GenG2.symA).toNat < 4 then (if (y - GenG2.symA).toNat = 0 then 0xfe else 0xff) else 0
 
@@ -1578,12 +1578,27 @@ theorem isM2_spec {o : Option Val} (h : isM2 o = true) : o = some (.int .w64 m2w
   · rw [of_decide_eq_true h]
   · cases h
 
+/-- `-2` as a 32-bit word, the loaded bytes. -/
+def m2l : BitVec 32 := 0xfffffffe
+
+/-- The register holds the 32-bit integer `m2l`. -/
+def isM2l : Option Val → Bool
+  | some (.int .w32 x) => decide (x = m2l)
+  | _ => false
+
+theorem isM2l_spec {o : Option Val} (h : isM2l o = true) : o = some (.int .w32 m2l) := by
+  unfold isM2l at h
+  split at h
+  · rw [of_decide_eq_true h]
+  · cases h
+
 /-- What compiled evaluation checks on `NumCPU`: `checkG20` accepts it with `tab` and `kt` and
 `checkG19` does not; it accesses no frame variable and has no home slot; `b1` holds `v7`
 (`MOVWload` of a global, not a boolean) at index 2 and `v8` (`MOVDnop`) at index 3, with nothing
-in the upper-bit table before `v7`; `v7`'s address is `ncpu` and `memG` reads 4 bytes there;
-`stepLoc` runs `v7` and `v8` from `s0` to `R0 = -2` as a 64-bit integer; and that word is no
-pointer. -/
+in the upper-bit table before `v7`; `v7`'s address is `numCPUStartup` and `memG` reads 4 bytes
+there; `stepLoc` runs `v7` from `s0` to `R0 = -2` as a 32-bit integer and then `v8` to `R0 = -2`
+as a 64-bit integer; and the upper-bit table before `v8` says `R0` is sign-extended from 32 bits.
+-/
 def gFacts : Bool :=
   (checkG20 lc ps bs g).toOption == some (tab, kt) && (checkG19 lc ps bs g).toOption.isNone &&
     (accessedVars lc).isEmpty && (homeSlots lc).isEmpty &&
@@ -1594,9 +1609,9 @@ def gFacts : Bool :=
     (val 7).aux.isSome && decide (symAddr lc.ctx (val 7) .poison = some pG) &&
     (memG.read pG 4).isSome && notBool (lc.ty (val 7).id) &&
     GenG1.okThen (stepLoc GenG2.env lc s0 (val 7)) (fun s1 =>
-      GenG1.okThen (stepLoc GenG2.env lc s1 (val 8)) fun s2 =>
+      isM2l s1.regs[0]? && GenG1.okThen (stepLoc GenG2.env lc s1 (val 8)) fun s2 =>
         isM2 s2.regs[0]?) &&
-    decide ((Ptr.ofAddr m2w).blk = .nil)
+    uAt lc blk1 3 == some (0, 32, true)
 
 theorem g20_facts : gFacts = true := by
   native_decide
@@ -1611,16 +1626,16 @@ theorem facts :
       (val 7).aux.isSome = true ∧ symAddr lc.ctx (val 7) .poison = some pG ∧
       (memG.read pG 4).isSome = true ∧ lc.ty (val 7).id ≠ .bool ∧
       GenG1.okThen (stepLoc GenG2.env lc s0 (val 7)) (fun s1 =>
-        GenG1.okThen (stepLoc GenG2.env lc s1 (val 8)) fun s2 =>
+        isM2l s1.regs[0]? && GenG1.okThen (stepLoc GenG2.env lc s1 (val 8)) fun s2 =>
           isM2 s2.regs[0]?) = true ∧
-      (Ptr.ofAddr m2w).blk = .nil := by
+      uAt lc blk1 3 = some (0, 32, true) := by
   have hf := g20_facts
   simp only [gFacts, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem,
     decide_eq_true_eq] at hf
   obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hres, -⟩, hav⟩, hsl⟩, hm1⟩, hb1s⟩, hv7s⟩, hv8s⟩, hi2⟩, hi3⟩, hop7⟩,
-    hop8⟩, hu⟩, hax⟩, hsym⟩, hrd⟩, hty⟩, hrun⟩, hnil⟩ := hf
+    hop8⟩, hu⟩, hax⟩, hsym⟩, hrd⟩, hty⟩, hrun⟩, hu3⟩ := hf
   refine ⟨?_, hav, hsl, hm1, ?_, ?_, ?_, hi2, hi3, hop7, hop8, hu, hax, hsym, hrd,
-    notBool_spec hty, hrun, hnil⟩
+    notBool_spec hty, hrun, hu3⟩
   · revert hres; cases checkG20 lc ps bs g <;> simp [Except.toOption]
   · obtain ⟨b, hb⟩ := Option.isSome_iff_exists.1 hb1s
     simp [blk1, hb]
@@ -1661,10 +1676,10 @@ theorem g20Env (hc : checkG20 lc ps bs g = .ok (tab, kt)) (hav : (accessedVars l
   icalls := fun h => by cases h
 
 theorem memG_blocks {b : Blk} {al : Alloc} (h : (b, al) ∈ memG.blocks) :
-    b = .global "runtime.ncpu" ∧ al = { data := bytesG } := by
+    b = .global "runtime.numCPUStartup" ∧ al = { data := bytesG } := by
   simpa [memG] using h
 
-/-- `memG` injected into `MG` by `ι`: `ncpu`'s bytes at `symA`. -/
+/-- `memG` injected into `MG` by `ι`: `numCPUStartup`'s bytes at `symA`. -/
 theorem memInjG : MemInj GenG12.ι memG MG where
   nil := rfl
   mapped := by
@@ -1730,8 +1745,15 @@ theorem g20Inv0 {K : KMap} : G3Inv E lc K s0 where
     trivial
   slots := by intro k v h; simp [s0] at h
 
-/-- The per-value premises of `v7`, the global load: its address is `ncpu`, where `memG` reads 4
-bytes; it is no compare, subtraction, pair load, nil check, zeroing or register-index load. -/
+/-- With an aux, `symAddr` ignores the base (generic in `ctx`, so the kernel does not evaluate
+`lc`'s tables). -/
+private theorem symAddr_base {ctx : Ctx} {v : Value} {n : AuxRef} (h : v.aux = some n)
+    (x y : Val) : symAddr ctx v x = symAddr ctx v y := by
+  unfold symAddr; rw [h]
+
+/-- The per-value premises of `v7`, the global load: its address is `numCPUStartup`, where `memG`
+reads 4 bytes; it is no compare, subtraction, pair load, nil check, zeroing or register-index
+load. -/
 theorem pre7 (hop : (val 7).op = .ARM64MOVWload) (hax : (val 7).aux.isSome = true)
     (hsym : symAddr lc.ctx (val 7) .poison = some pG) (hrd : (memG.read pG 4).isSome = true)
     (hty : lc.ty (val 7).id ≠ .bool) : G14Pre lc s0 (val 7) := by
@@ -1739,9 +1761,7 @@ theorem pre7 (hop : (val 7).op = .ARM64MOVWload) (hax : (val 7).aux.isSome = tru
   have hsymx : ∀ x, symAddr lc.ctx (val 7) x = some pG := by
     intro x
     obtain ⟨n, hn⟩ := Option.isSome_iff_exists.1 hax
-    rw [← hsym]
-    unfold symAddr
-    rw [hn]
+    exact (symAddr_base hn x .poison).trans hsym
   obtain ⟨bs, hbs⟩ := Option.isSome_iff_exists.1 hrd
   refine ⟨⟨⟨⟨⟨?_, ?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩
   · intro h; rcases h with h | h <;> exact absurd h (hne _ (by decide))
@@ -1768,19 +1788,26 @@ theorem pre8 {s : LocState} (hop : (val 8).op = .ARM64MOVDnop) : G14Pre lc s (va
   · intro h; exact absurd h (hne _ (by decide))
   · intro _ _ _ _ hl; rw [hop] at hl; cases hl
 
-/-- **G20 on `NumCPU`**: from the state before `v7` with `ncpu = -2` (`memG`, at `symA` in `MG`),
-`g20_value` runs the sign-extending load `MOVW runtime.ncpu(SB), R0` (`v7`), which establishes the
-upper-bit invariant for `R0`, and then `MOVDnop` (`v8`, no code): `runLoc`'s `R0` holds the 64-bit
-integer `-2` and the machine state, related to it before `v9` under an activation extending `E`,
-has `X0 = 0xffff_ffff_ffff_fffe`, the sign extension of the loaded word. -/
+/-- **G20 on `NumCPU`**: from the state before `v7` with `numCPUStartup = -2` (`memG`, at `symA`
+in `MG`), `g20_value` runs the sign-extending load `MOVW runtime.numCPUStartup(SB), R0` (`v7`):
+`runLoc`'s `R0` holds the 32-bit integer `-2`, and the upper-bit invariant `UOK` it establishes
+for `R0` makes the machine's `X0` the whole sign extension `0xffff_ffff_ffff_fffe` (a zero
+extension, `0x0000_0000_ffff_fffe`, would have the same low bits); then `g20_value` runs `MOVDnop`
+(`v8`, no code) on that invariant: `runLoc`'s `R0` holds the 64-bit integer `-2`, and the machine
+state, related to it before `v9` under an activation extending `E`, matches it (`LocMatch`; the
+word is in the window of a frame block, so `ValRel` allows that block's injected address too). -/
 theorem genG20_value_witness :
-    ∃ s1 s2 E' m', stepLoc GenG2.env lc s0 (val 7) = .ok s1 ∧
-      stepLoc GenG2.env lc s1 (val 8) = .ok s2 ∧ s2.regs[0]? = some (.int .w64 m2w) ∧
-      E.Extends E' ∧ G10Env lc g L ps 0 tab E' ∧ PStar GenG2.H0 L ps.toList 0 m0 m' ∧
-      LocMatch E' s2 1 4 m' ∧ m'.x 0 = m2w := by
+    ∃ s1 s2 E1 m1 E2 m2, stepLoc GenG2.env lc s0 (val 7) = .ok s1 ∧
+      s1.regs[0]? = some (.int .w32 m2l) ∧ stepLoc GenG2.env lc s1 (val 8) = .ok s2 ∧
+      s2.regs[0]? = some (.int .w64 m2w) ∧ E.Extends E1 ∧ E1.Extends E2 ∧
+      G10Env lc g L ps 0 tab E2 ∧ PStar GenG2.H0 L ps.toList 0 m0 m1 ∧ LocMatch E1 s1 1 3 m1 ∧
+      m1.x 0 = m2w ∧ PStar GenG2.H0 L ps.toList 0 m1 m2 ∧ LocMatch E2 s2 1 4 m2 := by
   obtain ⟨hc, hav, hsl, hm1, hb, hv7, hv8, hi2, hi3, hop7, hop8, hu, hax, hsym, hrd, hty, hrun,
-    hnil⟩ := facts
+    hu3⟩ := facts
   obtain ⟨s1, hs1, h2⟩ := GenG1.okThen_spec hrun
+  rw [Bool.and_eq_true] at h2
+  obtain ⟨hr1, h2⟩ := h2
+  have hr1' : s1.regs[0]? = some (.int .w32 m2l) := isM2l_spec hr1
   obtain ⟨s2, hs2, hr0⟩ := GenG1.okThen_spec h2
   have hr0' : s2.regs[0]? = some (.int .w64 m2w) := isM2_spec hr0
   have hE := g20Env hc hav hsl
@@ -1795,16 +1822,20 @@ theorem genG20_value_witness :
     (GenG10.icallOK_ne (by rw [hop7]; rfl))
     (fun h => absurd h (hne7 _ (by decide))) (fun h => absurd h (hne7 _ (by decide)))
     (fun h => absurd h (hne7 _ (by decide))) hs1
+  have hext : ExtOK (m1.x 0) 32 true := by
+    rw [hu3] at hu1
+    exact hu1 0 (by decide) rfl
+  have hlo : (m1.x 0).setWidth 32 = m2l := (hm1'.regs 0 _ hr1').1 0 rfl
+  have hx0 : m1.x 0 = m2w := by
+    simp only [ExtOK, ↓reduceIte] at hext
+    rw [hext, hlo]
+    decide
   obtain ⟨E2, m2, hx2, hE2, hp2, hm2', -, -⟩ := g20_value (H := GenG2.H0) (env := GenG2.env)
     hc hE1 hm1 hb hi3 hv8 (by rw [hop8]; rfl) hm1' hinv1 hu1 (pre8 hop8)
     (fun h => absurd h (hne8 _ (by decide))) (fun h => absurd h (hne8 _ (by decide)))
     (GenG10.icallOK_ne (by rw [hop8]; rfl))
     (fun h => absurd h (hne8 _ (by decide))) (fun h => absurd h (hne8 _ (by decide)))
     (fun h => absurd h (hne8 _ (by decide))) hs2
-  refine ⟨s1, s2, E2, m2, hs1, hs2, hr0', MatchEnv.Extends.trans hx1 hx2, hE2, hp1.trans hp2,
-    hm2', ?_⟩
-  rcases (hm2'.regs 0 _ hr0').1 0 rfl with h | ⟨hn, -⟩
-  · exact h
-  · exact absurd hnil hn
+  exact ⟨s1, s2, E1, m1, E2, m2, hs1, hr1', hs2, hr0', hx1, hx2, hE2, hp1, hm1', hx0, hp2, hm2'⟩
 
 end GoFV.Proof.Witness.GenG20
