@@ -232,7 +232,7 @@ theorem frameOK_spec {az : Int} {σ : Sym} (h : frameOK az σ = .ok ()) :
     σ.sp = Ex.mkAdd .sp (.k (BitVec.ofInt 64 (-az))) ∧
     σ.getX 29 = Ex.mkAdd .sp (.k (BitVec.ofInt 64 (-az - 8))) ∧
     (∀ r ∈ cmpRegs, r ≠ 29 → r ≠ 20 → σ.getX r = .x r) ∧ σ.getX 30 = .x 30 ∧
-    (σ.stores = frameStores az ∨ σ.stores = (frameStores az).reverse) := by
+    (σ.stores = frameStores az ∨ σ.stores = (frameStores az).reverse) ∧ σ.loads = [] := by
   unfold frameOK at h
   simp [bind, Except.bind, pure, Except.pure] at h
   obtain ⟨h1, h2, h⟩ := h
@@ -241,8 +241,8 @@ theorem frameOK_spec {az : Int} {σ : Sym} (h : frameOK az σ = .ok ()) :
   · rename_i hf
     have hn := spec_find_none hf
     simp at h
-    obtain ⟨h3, h4⟩ := h
-    refine ⟨h1, h2, fun r hr h29 h20 => by simpa [h29, h20] using hn r hr, h3, ?_⟩
+    obtain ⟨h3, h4, h5⟩ := h
+    refine ⟨h1, h2, fun r hr h29 h20 => by simpa [h29, h20] using hn r hr, h3, ?_, h5⟩
     simp only [frameStores, List.reverse_cons, List.reverse_nil, List.nil_append,
       List.cons_append]
     by_cases e : σ.stores = [(Ex.mkAdd .sp (.k (BitVec.ofInt 64 (-az))), 8, Ex.x 30),
@@ -257,7 +257,8 @@ theorem retOK_spec {az : Int} {leaf : Bool} {σ : Sym} {c back : MCtl}
       σ.getX 29 = (if leaf then Ex.mkAdd .sp (.k (BitVec.ofInt 64 (az - 8)))
         else .ld 8 (Ex.mkAdd .sp (.k (BitVec.ofInt 64 (-8))))) ∧
       σ.getX 30 = (if leaf then Ex.x 30 else .ld 8 .sp) ∧
-      (∀ r ∈ cmpRegs, r ≠ 29 → σ.getX r = .x r) ∧ σ.fl = .init ∧ σ.stores = [] ∧ c = back) := by
+      (∀ r ∈ cmpRegs, r ≠ 29 → σ.getX r = .x r) ∧ σ.fl = .init ∧ σ.stores = [] ∧ c = back ∧
+      ∀ x ∈ σ.loads, x = (Ex.mkAdd .sp (.k (BitVec.ofInt 64 (-8))), 8) ∨ x = (Ex.sp, 8)) := by
   unfold retOK at h
   simp [bind, Except.bind, pure, Except.pure] at h
   split at h
@@ -273,9 +274,12 @@ theorem retOK_spec {az : Int} {leaf : Bool} {σ : Sym} {c back : MCtl}
       have hn := spec_find_none hf
       simp at h
       refine Or.inr ⟨haz, h1, ?_, h3, fun r hr h29 => by simpa [h29] using hn r hr, h.1, h.2.1,
-        h.2.2⟩
-      rw [h2]
-      simp
+        h.2.2.2, fun ⟨a, b⟩ hx => ?_⟩
+      · rw [h2]
+        simp
+      · rcases h.2.2.1 a b hx with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+        · exact Or.inl (by simp)
+        · exact Or.inr rfl
 
 theorem checkStackCheck_spec {t : ByteArray} {rs : List Reloc} {az : Int} {o gOff ce tail : Nat}
     (h : checkStackCheck t rs az o gOff = .ok (ce, tail)) :
@@ -284,7 +288,8 @@ theorem checkStackCheck_spec {t : ByteArray} {rs : List Reloc} {az : Int} {o gOf
         .ok (σ, .cond (.addSub true true
           (if az ≤ 128 then Ex.sp else Ex.mkAdd .sp (.k (BitVec.ofInt 64 (-(az - 128)))))
           (.ld 8 (Ex.mkAdd (.x 28) (.k (BitVec.ofNat 64 gOff))))) 9 (tail : Int)) ∧
-      ce = o + 4 * (if az ≤ 128 then 3 else 4) ∧ σ.stores = [] ∧
+      ce = o + 4 * (if az ≤ 128 then 3 else 4) ∧ σ.stores = [] ∧ σ.sp = .sp ∧ σ.getX 30 = .x 30 ∧
+      σ.loads = [(Ex.mkAdd (.x 28) (.k (BitVec.ofNat 64 gOff)), 8)] ∧
       (∀ r ∈ cmpRegs, r ≠ 16 → r ≠ 17 → σ.getX r = .x r) := by
   unfold checkStackCheck at h
   simp [bind, Except.bind, pure, Except.pure] at h
@@ -298,7 +303,7 @@ theorem checkStackCheck_spec {t : ByteArray} {rs : List Reloc} {az : Int} {o gOf
     split at h
     · rename_i fl q
       simp at h
-      obtain ⟨hfl, hst, h⟩ := h
+      obtain ⟨hfl, hst, hsp, hx30, hld, h⟩ := h
       split at h
       · cases h
       · rename_i hf
@@ -306,7 +311,8 @@ theorem checkStackCheck_spec {t : ByteArray} {rs : List Reloc} {az : Int} {o gOf
         simp at h
         obtain ⟨hq, hce, htl⟩ := h
         subst hfl
-        refine ⟨σ, ?_, hce.symm, hst, fun r hr h16 h17 => by simpa [h16, h17] using hn r hr⟩
+        refine ⟨σ, ?_, hce.symm, hst, hsp, hx30, hld,
+          fun r hr h16 h17 => by simpa [h16, h17] using hn r hr⟩
         rw [hv, ← htl, Int.toNat_of_nonneg (by omega)]
         rfl
     · cases h
