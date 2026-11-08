@@ -153,7 +153,7 @@ private def PRel (L : Link) (s : MState) (e : Eff) : PCtl → Prop
   | .tbz nz b a id => ∃ t, L.addr id = some t ∧
       e.pc = if (a.eval ⟨s, L.sym⟩).getLsbD b == nz then some t else none
   | .reg a => e.pc = some (a.eval ⟨s, L.sym⟩)
-  | .call _ _ => False
+  | .call _ _ | .callReg _ => False
 
 /-! ## Opcode names -/
 
@@ -423,7 +423,9 @@ private theorem pg_ofInt_toNat {off : Int} (h : ¬ off < 0) :
 private def Out (L : Link) (p : Prog) (s : MState) (e : Eff) (σ : Sym) (pc : PCtl) : Prop :=
   (ERel ⟨s, L.sym⟩ e σ ∧ PRel L s e pc) ∨
   (∃ n add f, pc = .call n add ∧ σ = {} ∧ L.nextAddr p.id = some f ∧
-    e = { x := [(30, f)], pc := some (L.sym n + BitVec.ofInt 64 add) })
+    e = { x := [(30, f)], pc := some (L.sym n + BitVec.ofInt 64 add) }) ∨
+  (∃ a f, pc = .callReg a ∧ σ = {} ∧ isICall p = true ∧ L.nextAddr p.id = some f ∧
+    e = { x := [(30, f)], pc := some (a.eval ⟨s, L.sym⟩) })
 
 section fam
 variable {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl} {L : Link} {s : MState} {e : Eff}
@@ -458,7 +460,7 @@ private theorem shiftBfm_ok {op : String} {sf : Bool} {k : Nat} {x r : Ex}
 /-- Constant shifts: the bitfield move `shiftBfm`. -/
 private theorem fam_shift {op : String} {sf : Bool}
     (hb : ProgOp.baseOf p.as.name ["LSL", "LSR", "ASR"] = some (op, sf))
-    (h : progSym az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) :
+    (h : progSymCore az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) :
     Out L p s e σ pc := by
   obtain ⟨hop, -⟩ := baseOf_some hb
   have hbin := shift_pre hb
@@ -466,7 +468,7 @@ private theorem fam_shift {op : String} {sf : Bool}
     have key : ∀ op ∈ ["LSL", "LSR", "ASR"], ["LSL", "LSR", "ASR", "ROR"].contains op = true := by
       decide
     exact key op hop
-  unfold progSym at h
+  unfold progSymCore at h
   simp only [hb] at h
   unfold progEffect at he
   simp only [hbin, ProgCtx.rn] at he
@@ -506,7 +508,7 @@ private theorem fam_add {op : String} {sf : Bool}
     (hb1 : ProgOp.baseOf p.as.name ["LSL", "LSR", "ASR"] = none)
     (hb : ProgOp.baseOf p.as.name ["ADD", "SUB", "AND", "ORR", "EOR", "ADDS", "SUBS", "ANDS"] =
       some (op, sf))
-    (h : progSym az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) :
+    (h : progSymCore az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) :
     Out L p s e σ pc := by
   obtain ⟨hop, -⟩ := baseOf_some hb
   have hbin := add_pre hb
@@ -514,7 +516,7 @@ private theorem fam_add {op : String} {sf : Bool}
     have key : ∀ op ∈ ["ADD", "SUB", "AND", "ORR", "EOR", "ADDS", "SUBS", "ANDS"],
         ["LSL", "LSR", "ASR", "ROR"].contains op = false := by decide
     exact key op hop
-  unfold progSym at h
+  unfold progSymCore at h
   simp only [hb1, hb] at h
   unfold progEffect at he
   simp only [hbin, ProgCtx.rn] at he
@@ -549,11 +551,11 @@ private theorem fam_cmp {op : String} {sf : Bool}
     (hb1 : ProgOp.baseOf p.as.name ["LSL", "LSR", "ASR"] = none)
     (hb2 : ProgOp.baseOf p.as.name ["ADD", "SUB", "AND", "ORR", "EOR", "ADDS", "SUBS", "ANDS"] = none)
     (hb : ProgOp.baseOf p.as.name ["CMP", "CMN", "TST"] = some (op, sf))
-    (h : progSym az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) :
+    (h : progSymCore az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) :
     Out L p s e σ pc := by
   obtain ⟨hop, -⟩ := baseOf_some hb
   have hbin := cmp_pre hb
-  unfold progSym at h
+  unfold progSymCore at h
   simp only [hb1, hb2, hb] at h
   unfold progEffect at he
   simp only [hbin, hb] at he
@@ -585,10 +587,10 @@ private theorem fam_neg {op : String} {sf : Bool}
     (hb2 : ProgOp.baseOf p.as.name ["ADD", "SUB", "AND", "ORR", "EOR", "ADDS", "SUBS", "ANDS"] = none)
     (hb3 : ProgOp.baseOf p.as.name ["CMP", "CMN", "TST"] = none)
     (hb : ProgOp.baseOf p.as.name ["NEG"] = some (op, sf))
-    (h : progSym az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) :
+    (h : progSymCore az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) :
     Out L p s e σ pc := by
   obtain ⟨rfl, hbin, hneg⟩ := neg_pre hb
-  unfold progSym at h
+  unfold progSymCore at h
   simp only [hb1, hb2, hb3, hb] at h
   unfold progEffect at he
   simp only [hbin, hb3, hneg] at he
@@ -627,11 +629,11 @@ private theorem fam_ubfx {op : String} {sf : Bool}
     (hb3 : ProgOp.baseOf p.as.name ["CMP", "CMN", "TST"] = none)
     (hb4 : ProgOp.baseOf p.as.name ["NEG"] = none)
     (hb : ProgOp.baseOf p.as.name ["UBFX", "SBFX", "UBFIZ"] = some (op, sf))
-    (h : progSym az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) :
+    (h : progSymCore az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) :
     Out L p s e σ pc := by
   obtain ⟨hop, -⟩ := baseOf_some hb
   obtain ⟨p1, p2, p3, p4, p5⟩ := ubfx_pre hb
-  unfold progSym at h
+  unfold progSymCore at h
   simp only [hb1, hb2, hb3, hb4, hb] at h
   unfold progEffect at he
   simp only [p1, hb3, p2, p3, p4, p5, ProgCtx.rest] at he
@@ -727,10 +729,10 @@ private theorem fam_mov {n : Nat} {sg fp : Bool}
     (hb4 : ProgOp.baseOf p.as.name ["NEG"] = none)
     (hb5 : ProgOp.baseOf p.as.name ["UBFX", "SBFX", "UBFIZ"] = none)
     (hm : ProgOp.movMem p.as.name = some (n, sg, fp))
-    (h : progSym az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e)
+    (h : progSymCore az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e)
     (haz : L.autosize = az) (hez : L.extrasize = ez) :
     Out L p s e σ pc := by
-  unfold progSym at h
+  unfold progSymCore at h
   simp only [hb1, hb2, hb3, hb4, hb5, hm] at h
   cases fp
   case true => simp only [↓reduceIte] at h; cases h
@@ -839,10 +841,10 @@ private theorem fam_pair {ld : Bool} {n : Nat} {sg fp : Bool}
     (hb5 : ProgOp.baseOf p.as.name ["UBFX", "SBFX", "UBFIZ"] = none)
     (hm0 : ProgOp.movMem p.as.name = none)
     (hp : ProgOp.pairOp p.as.name = some (ld, n, sg, fp))
-    (h : progSym az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e)
+    (h : progSymCore az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e)
     (haz : L.autosize = az) (hez : L.extrasize = ez) :
     Out L p s e σ pc := by
-  unfold progSym at h
+  unfold progSymCore at h
   simp only [hb1, hb2, hb3, hb4, hb5, hm0, hp] at h
   cases fp
   case true => simp only [↓reduceIte] at h; cases h
@@ -931,9 +933,9 @@ private theorem fam_bcond {k : Nat}
     (hb5 : ProgOp.baseOf p.as.name ["UBFX", "SBFX", "UBFIZ"] = none)
     (hm0 : ProgOp.movMem p.as.name = none) (hp0 : ProgOp.pairOp p.as.name = none)
     (hc : ProgOp.bcond p.as.name = some k)
-    (h : progSym az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) :
+    (h : progSymCore az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) :
     Out L p s e σ pc := by
-  unfold progSym at h
+  unfold progSymCore at h
   simp only [hb1, hb2, hb3, hb4, hb5, hm0, hp0, hc] at h
   obtain ⟨id, hid, h⟩ := pg_bind_ok h
   obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj h)
@@ -1010,6 +1012,336 @@ private theorem fall_ok {L : Link} {s : MState} {p : Prog} {f : BitVec 64}
 private theorem wX_30 (f : BitVec 64) : ({} : Eff).wX (REG_R0 + 30) f = .ok { x := [(30, f)] } := by
   rfl
 
+/-! ### Multiplies, data processing (1 source), conditional selects, ordered accesses -/
+
+private theorem mul_pre {name op : String} {sf : Bool}
+    (hb : ProgOp.baseOf name ["MUL", "MNEG", "MADD", "MSUB", "UMULH", "SMULH"] = some (op, sf)) :
+    (op ∈ ["MUL", "MNEG", "UMULH", "SMULH"] ∧ ProgOp.baseOf name ProgOp.binNames = some (op, sf)) ∨
+    (op ∈ ["MADD", "MSUB"] ∧ ProgOp.baseOf name ProgOp.binNames = none ∧
+      ProgOp.baseOf name ["CMP", "CMN", "TST"] = none ∧
+      ProgOp.baseOf name ["NEG", "NEGS", "MVN", "NGC", "NGCS"] = none ∧
+      ProgOp.baseOf name ["CLZ", "RBIT", "REV", "REV16", "REV32"] = none ∧
+      ProgOp.baseOf name ["MADD", "MSUB"] = some (op, sf)) := by
+  obtain ⟨hop, rfl⟩ := baseOf_some hb
+  have key : ∀ op ∈ ["MUL", "MNEG", "MADD", "MSUB", "UMULH", "SMULH"], ∀ sf : Bool,
+      (op ∈ ["MUL", "MNEG", "UMULH", "SMULH"] ∧
+        ProgOp.baseOf (if sf then op else op ++ "W") ProgOp.binNames = some (op, sf)) ∨
+      (op ∈ ["MADD", "MSUB"] ∧ ProgOp.baseOf (if sf then op else op ++ "W") ProgOp.binNames = none ∧
+        ProgOp.baseOf (if sf then op else op ++ "W") ["CMP", "CMN", "TST"] = none ∧
+        ProgOp.baseOf (if sf then op else op ++ "W") ["NEG", "NEGS", "MVN", "NGC", "NGCS"] = none ∧
+        ProgOp.baseOf (if sf then op else op ++ "W") ["CLZ", "RBIT", "REV", "REV16", "REV32"] = none ∧
+        ProgOp.baseOf (if sf then op else op ++ "W") ["MADD", "MSUB"] = some (op, sf)) := by
+    decide
+  exact key op hop sf
+
+private theorem mul_val (sf : Bool) (x y : BitVec 64) :
+    (sized sf fun _ e => e (ProgOp.trunc sf x) * e (ProgOp.trunc sf y)) = dp3Op sf 0 false 0 x y := by
+  cases sf <;> simp [dp3Op, sized, ProgOp.trunc, BitVec.setWidth_setWidth_of_le]
+
+private theorem mneg_val (sf : Bool) (x y : BitVec 64) :
+    (sized sf fun _ e => -(e (ProgOp.trunc sf x) * e (ProgOp.trunc sf y))) =
+      dp3Op sf 0 true 0 x y := by
+  cases sf <;> simp [dp3Op, sized, ProgOp.trunc, BitVec.setWidth_setWidth_of_le]
+
+/-- `MUL`/`MNEG`/`UMULH`/`SMULH` (`binOp`). -/
+private theorem fam_mulb {op : String} {sf : Bool} (hop : op ∈ ["MUL", "MNEG", "UMULH", "SMULH"])
+    (hbin : ProgOp.baseOf p.as.name ProgOp.binNames = some (op, sf))
+    (hm : mulP op sf p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) : Out L p s e σ pc := by
+  have hnsh : ["LSL", "LSR", "ASR", "ROR"].contains op = false := by
+    have key : ∀ op ∈ ["MUL", "MNEG", "UMULH", "SMULH"],
+        ["LSL", "LSR", "ASR", "ROR"].contains op = false := by decide
+    exact key op hop
+  unfold progEffect at he
+  simp only [hbin, ProgCtx.rn, hnsh, Bool.and_false, Bool.false_eq_true, ↓reduceIte] at he
+  unfold mulP at hm
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hop
+  rcases hop with rfl | rfl | rfl | rfl
+  · simp (config := { decide := true }) only [bind_assoc, pure_bind] at hm
+    obtain ⟨x, hx, hm⟩ := pg_bind_ok hm
+    obtain ⟨y, hy, hm⟩ := pg_bind_ok hm
+    obtain ⟨σ1, hσ1, hm⟩ := pg_bind_ok hm
+    obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj hm)
+    simp (config := { decide := true }) only [src_reg hx, srcP_eval hy, pg_ok_bind, ProgOp.binOp] at he
+    obtain ⟨e1, he1, he⟩ := pg_bind_ok he
+    obtain rfl := pg_ok_inj he
+    obtain ⟨hR, -, -, hfl, hpc⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he1
+      (by rw [Ex.eval_mkDp3]; exact mul_val sf _ _)
+    exact .inl ⟨⟨hR.x, hR.xlt, hR.sp, by rw [hfl]; rfl, hR.v, hR.loads, hR.stores⟩, hpc⟩
+  · simp (config := { decide := true }) only [bind_assoc, pure_bind] at hm
+    obtain ⟨x, hx, hm⟩ := pg_bind_ok hm
+    obtain ⟨y, hy, hm⟩ := pg_bind_ok hm
+    obtain ⟨σ1, hσ1, hm⟩ := pg_bind_ok hm
+    obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj hm)
+    simp (config := { decide := true }) only [src_reg hx, srcP_eval hy, pg_ok_bind, ProgOp.binOp] at he
+    obtain ⟨e1, he1, he⟩ := pg_bind_ok he
+    obtain rfl := pg_ok_inj he
+    obtain ⟨hR, -, -, hfl, hpc⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he1
+      (by rw [Ex.eval_mkDp3]; exact mneg_val sf _ _)
+    exact .inl ⟨⟨hR.x, hR.xlt, hR.sp, by rw [hfl]; rfl, hR.v, hR.loads, hR.stores⟩, hpc⟩
+  all_goals
+    cases sf
+    · simp (config := { decide := true }) only [Bool.not_false, ↓reduceIte] at hm
+      obtain ⟨r, hr, -⟩ := pg_bind_ok hm
+      cases hr
+    simp (config := { decide := true }) only [Bool.not_true, Bool.false_eq_true, ↓reduceIte,
+      bind_assoc, pure_bind] at hm
+    obtain ⟨x, hx, hm⟩ := pg_bind_ok hm
+    obtain ⟨y, hy, hm⟩ := pg_bind_ok hm
+    obtain ⟨σ1, hσ1, hm⟩ := pg_bind_ok hm
+    obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj hm)
+    simp (config := { decide := true }) only [src_reg hx, srcP_eval hy, pg_ok_bind, ProgOp.binOp] at he
+    obtain ⟨e1, he1, he⟩ := pg_bind_ok he
+    obtain rfl := pg_ok_inj he
+    obtain ⟨hR, -, -, hfl, hpc⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he1
+      (by rw [Ex.eval_mkDp3]; rfl)
+    exact .inl ⟨⟨hR.x, hR.xlt, hR.sp, by rw [hfl]; rfl, hR.v, hR.loads, hR.stores⟩, hpc⟩
+
+/-- `MADD`/`MSUB` (and `W`). -/
+private theorem fam_madd {op : String} {sf : Bool} (hop : op ∈ ["MADD", "MSUB"])
+    (q1 : ProgOp.baseOf p.as.name ProgOp.binNames = none)
+    (q2 : ProgOp.baseOf p.as.name ["CMP", "CMN", "TST"] = none)
+    (q3 : ProgOp.baseOf p.as.name ["NEG", "NEGS", "MVN", "NGC", "NGCS"] = none)
+    (q4 : ProgOp.baseOf p.as.name ["CLZ", "RBIT", "REV", "REV16", "REV32"] = none)
+    (q5 : ProgOp.baseOf p.as.name ["MADD", "MSUB"] = some (op, sf))
+    (hm : mulP op sf p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) : Out L p s e σ pc := by
+  unfold progEffect at he
+  simp only [q1, q2, q3, q4, q5, ProgCtx.rest] at he
+  unfold mulP restP at hm
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hop
+  cases hrest : p.rest[0]? with
+  | none =>
+    rcases hop with rfl | rfl <;>
+    · simp (config := { decide := true }) only [hrest, bind_assoc, pure_bind] at hm
+      obtain ⟨m, -, hm⟩ := pg_bind_ok hm
+      obtain ⟨a, -, hm⟩ := pg_bind_ok hm
+      obtain ⟨q, hq, -⟩ := pg_bind_ok hm
+      cases hq
+  | some q =>
+    simp only [hrest, pg_pure, pg_ok_bind] at he
+    rcases hop with rfl | rfl <;>
+    · simp (config := { decide := true }) only [hrest, bind_assoc, pure_bind] at hm
+      obtain ⟨m, hmx, hm⟩ := pg_bind_ok hm
+      obtain ⟨a, hax, hm⟩ := pg_bind_ok hm
+      obtain ⟨n, hnx, hm⟩ := pg_bind_ok hm
+      obtain ⟨σ1, hσ1, hm⟩ := pg_bind_ok hm
+      obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj hm)
+      simp only [(xP_eval hmx).1, (xP_eval hax).1, (xP_eval hnx).1, pg_ok_bind] at he
+      obtain ⟨hR, -, -, -, hpc⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he (by rw [Ex.eval_mkDp3])
+      exact .inl ⟨hR, hpc⟩
+
+private theorem dp1_pre {name op : String} {sf : Bool}
+    (hb : ProgOp.baseOf name ["CLZ", "RBIT", "REV", "REV16", "REV32"] = some (op, sf)) :
+    ProgOp.baseOf name ProgOp.binNames = none ∧ ProgOp.baseOf name ["CMP", "CMN", "TST"] = none ∧
+      ProgOp.baseOf name ["NEG", "NEGS", "MVN", "NGC", "NGCS"] = none := by
+  obtain ⟨hop, rfl⟩ := baseOf_some hb
+  have key : ∀ op ∈ ["CLZ", "RBIT", "REV", "REV16", "REV32"], ∀ sf : Bool,
+      ProgOp.baseOf (if sf then op else op ++ "W") ProgOp.binNames = none ∧
+      ProgOp.baseOf (if sf then op else op ++ "W") ["CMP", "CMN", "TST"] = none ∧
+      ProgOp.baseOf (if sf then op else op ++ "W") ["NEG", "NEGS", "MVN", "NGC", "NGCS"] = none := by
+    decide
+  exact key op hop sf
+
+/-- `CLZ`/`RBIT`/`REV`/`REV16`/`REV32` (and `W`). -/
+private theorem fam_dp1 {op : String} {sf : Bool}
+    (hb : ProgOp.baseOf p.as.name ["CLZ", "RBIT", "REV", "REV16", "REV32"] = some (op, sf))
+    (hm : dp1P op sf p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) : Out L p s e σ pc := by
+  obtain ⟨hop, -⟩ := baseOf_some hb
+  obtain ⟨q1, q2, q3⟩ := dp1_pre hb
+  unfold progEffect at he
+  simp only [q1, q2, q3, hb] at he
+  unfold dp1P at hm
+  obtain ⟨x, hx, hm⟩ := pg_bind_ok hm
+  obtain ⟨σ1, hσ1, hm⟩ := pg_bind_ok hm
+  obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj hm)
+  rw [(xP_eval hx).1, pg_ok_bind] at he
+  obtain ⟨hR, -, -, -, hpc⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he (by
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hop
+    rcases hop with rfl | rfl | rfl | rfl | rfl <;> rfl)
+  exact .inl ⟨hR, hpc⟩
+
+private theorem csel_pre {name op : String} {sf : Bool}
+    (hb : ProgOp.baseOf name ["CSEL", "CSINC", "CSINV", "CSNEG", "CSET", "CSETM"] = some (op, sf)) :
+    ProgOp.baseOf name ProgOp.binNames = none ∧ ProgOp.baseOf name ["CMP", "CMN", "TST"] = none ∧
+    ProgOp.baseOf name ["NEG", "NEGS", "MVN", "NGC", "NGCS"] = none ∧
+    ProgOp.baseOf name ["CLZ", "RBIT", "REV", "REV16", "REV32"] = none ∧
+    ProgOp.baseOf name ["MADD", "MSUB"] = none ∧
+    ProgOp.baseOf name ["UBFX", "SBFX", "UBFIZ", "SBFIZ", "BFI", "BFXIL"] = none ∧
+    ProgOp.baseOf name ["EXTR"] = none ∧
+    ((op ∈ ["CSEL", "CSINC", "CSINV", "CSNEG"] ∧
+      ProgOp.baseOf name ["CSEL", "CSINC", "CSINV", "CSNEG"] = some (op, sf)) ∨
+     (op ∈ ["CSET", "CSETM"] ∧ ProgOp.baseOf name ["CSEL", "CSINC", "CSINV", "CSNEG"] = none ∧
+      ProgOp.baseOf name ["CSET", "CSETM"] = some (op, sf))) := by
+  obtain ⟨hop, rfl⟩ := baseOf_some hb
+  have key : ∀ op ∈ ["CSEL", "CSINC", "CSINV", "CSNEG", "CSET", "CSETM"], ∀ sf : Bool,
+      ProgOp.baseOf (if sf then op else op ++ "W") ProgOp.binNames = none ∧
+      ProgOp.baseOf (if sf then op else op ++ "W") ["CMP", "CMN", "TST"] = none ∧
+      ProgOp.baseOf (if sf then op else op ++ "W") ["NEG", "NEGS", "MVN", "NGC", "NGCS"] = none ∧
+      ProgOp.baseOf (if sf then op else op ++ "W") ["CLZ", "RBIT", "REV", "REV16", "REV32"] = none ∧
+      ProgOp.baseOf (if sf then op else op ++ "W") ["MADD", "MSUB"] = none ∧
+      ProgOp.baseOf (if sf then op else op ++ "W") ["UBFX", "SBFX", "UBFIZ", "SBFIZ", "BFI", "BFXIL"] =
+        none ∧
+      ProgOp.baseOf (if sf then op else op ++ "W") ["EXTR"] = none ∧
+      ((op ∈ ["CSEL", "CSINC", "CSINV", "CSNEG"] ∧
+        ProgOp.baseOf (if sf then op else op ++ "W") ["CSEL", "CSINC", "CSINV", "CSNEG"] = some (op, sf)) ∨
+       (op ∈ ["CSET", "CSETM"] ∧
+        ProgOp.baseOf (if sf then op else op ++ "W") ["CSEL", "CSINC", "CSINV", "CSNEG"] = none ∧
+        ProgOp.baseOf (if sf then op else op ++ "W") ["CSET", "CSETM"] = some (op, sf))) := by
+    decide
+  exact key op hop sf
+
+/-- Inverting the low bit of a condition other than `AL`/`NV` negates it. -/
+private theorem holds_inv {c : BitVec 4} (hc : c.toNat < 14) (f : GoFV.SSA.Sem.Flags) :
+    (condOf (c ^^^ 1)).holds f = !(condOf c).holds f := by
+  have key : ∀ k : Fin 16, k.val < 14 → ∀ n z cf v : Bool,
+      (condOf (BitVec.ofFin k ^^^ 1)).holds ⟨n, z, cf, v⟩ =
+        !(condOf (BitVec.ofFin k)).holds ⟨n, z, cf, v⟩ := by decide
+  obtain ⟨n, z, cf, v⟩ := f
+  exact key c.toFin hc n z cf v
+
+private theorem csel_v (sf h : Bool) (n m : BitVec 64) :
+    (if h then ProgOp.trunc sf n else ProgOp.trunc sf m) = cselVal sf false false h n m := by
+  cases h <;> cases sf <;> simp [cselVal, sized, ProgOp.trunc]
+
+private theorem csinc_v (sf h : Bool) (n m : BitVec 64) :
+    (if h then ProgOp.trunc sf n else ProgOp.trunc sf (ProgOp.trunc sf m + 1)) =
+      cselVal sf false true h n m := by
+  cases h <;> cases sf <;> simp [cselVal, sized, ProgOp.trunc] <;> bv_omega
+
+private theorem csinv_v (sf h : Bool) (n m : BitVec 64) :
+    (if h then ProgOp.trunc sf n else ProgOp.trunc sf (~~~(ProgOp.trunc sf m))) =
+      cselVal sf true false h n m := by
+  cases h <;> cases sf <;> simp [cselVal, sized, ProgOp.trunc] <;> bv_omega
+
+private theorem csneg_v (sf h : Bool) (n m : BitVec 64) :
+    (if h then ProgOp.trunc sf n else ProgOp.trunc sf (-(ProgOp.trunc sf m))) =
+      cselVal sf true true h n m := by
+  cases h <;> cases sf <;> simp [cselVal, sized, ProgOp.trunc] <;> bv_omega
+
+private theorem cset_v (sf h : Bool) :
+    (if h then (1 : BitVec 64) else 0) = cselVal sf false true (!h) 0 0 := by
+  cases h <;> cases sf <;> decide
+
+private theorem csetm_v (sf h : Bool) :
+    (if h then ProgOp.trunc sf (-1) else 0) = cselVal sf true false (!h) 0 0 := by
+  cases h <;> cases sf <;> decide
+
+/-- The register write of a conditional select. -/
+private theorem csel_tail {r : Ex} {val : BitVec 64} {σ1 : Sym}
+    (hσ1 : wP {} p.to.reg r = .ok σ1) (he : ({} : Eff).wX p.to.reg val = .ok e)
+    (hv : val = r.eval ⟨s, L.sym⟩) : Out L p s e σ1 .fall := by
+  obtain ⟨hR, -, -, -, hpc⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he hv
+  exact .inl ⟨hR, hpc⟩
+
+/-- `CSEL`/`CSINC`/`CSINV`/`CSNEG`/`CSET`/`CSETM` (and `W`). -/
+private theorem fam_csel {op : String} {sf : Bool}
+    (hb : ProgOp.baseOf p.as.name ["CSEL", "CSINC", "CSINV", "CSNEG", "CSET", "CSETM"] = some (op, sf))
+    (hm : cselP op sf p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) : Out L p s e σ pc := by
+  obtain ⟨q1, q2, q3, q4, q5, q6, q7, hsel⟩ := csel_pre hb
+  unfold progEffect at he
+  simp only [q1, q2, q3, q4, q5, q6, q7] at he
+  unfold cselP restP at hm
+  obtain ⟨cc, hcc, hm⟩ := pg_bind_ok hm
+  rcases hsel with ⟨hop, hs⟩ | ⟨hop, hs0, hs⟩
+  · simp only [hs, hcc, pg_ok_bind, ProgCtx.rest] at he
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hop
+    cases hrest : p.rest[0]? with
+    | none =>
+      rcases hop with rfl | rfl | rfl | rfl <;>
+      · simp (config := { decide := true }) only [hrest, bind_assoc, pure_bind] at hm
+        obtain ⟨n, -, hm⟩ := pg_bind_ok hm
+        obtain ⟨q, hq, -⟩ := pg_bind_ok hm
+        cases hq
+    | some q =>
+      simp only [hrest, pg_pure, pg_ok_bind] at he
+      rcases hop with rfl | rfl | rfl | rfl <;>
+        simp (config := { decide := true }) only [hrest, bind_assoc, pure_bind] at hm <;>
+        obtain ⟨n, hnx, hm⟩ := pg_bind_ok hm <;>
+        obtain ⟨m, hmx, hm⟩ := pg_bind_ok hm <;>
+        obtain ⟨σ1, hσ1, hm⟩ := pg_bind_ok hm <;>
+        obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj hm) <;>
+        simp only [(xP_eval hnx).1, (xP_eval hmx).1, pg_ok_bind] at he
+      · exact csel_tail hσ1 he (by simp only [Ex.eval]; exact csel_v sf _ _ _)
+      · exact csel_tail hσ1 he (by simp only [Ex.eval]; exact csinc_v sf _ _ _)
+      · exact csel_tail hσ1 he (by simp only [Ex.eval]; exact csinv_v sf _ _ _)
+      · exact csel_tail hσ1 he (by simp only [Ex.eval]; exact csneg_v sf _ _ _)
+  · simp only [hs0, hs, hcc, pg_ok_bind] at he
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hop
+    by_cases h14 : cc.toNat ≥ 14
+    · rcases hop with rfl | rfl <;>
+      · simp (config := { decide := true }) only [h14, ↓reduceIte] at hm
+        obtain ⟨r, hr, -⟩ := pg_bind_ok hm
+        cases hr
+    have hinv := holds_inv (c := cc) (by omega)
+    rcases hop with rfl | rfl <;>
+      simp (config := { decide := true }) only [h14, ↓reduceIte, bind_assoc, pure_bind] at hm <;>
+      obtain ⟨σ1, hσ1, hm⟩ := pg_bind_ok hm <;>
+      obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj hm)
+    · have e1 : ("CSET" == "CSETM") = false := by decide
+      exact csel_tail hσ1 he (by
+        simp only [Ex.eval, beq_self_eq_true, e1, ↓reduceIte]; rw [hinv]; exact cset_v sf _)
+    · have e1 : ("CSETM" == "CSET") = false := by decide
+      exact csel_tail hσ1 he (by
+        simp only [Ex.eval, beq_self_eq_true, e1, Bool.false_eq_true, ↓reduceIte]; rw [hinv]
+        exact csetm_v sf _)
+
+private theorem excl_names {name : String} {ld : Bool} {n : Nat} (h : exclOp name = some (ld, n)) :
+    (name = "LDAR" ∧ ld = true ∧ n = 8) ∨ (name = "LDARW" ∧ ld = true ∧ n = 4) ∨
+    (name = "LDARH" ∧ ld = true ∧ n = 2) ∨ (name = "LDARB" ∧ ld = true ∧ n = 1) ∨
+    (name = "STLR" ∧ ld = false ∧ n = 8) ∨ (name = "STLRW" ∧ ld = false ∧ n = 4) ∨
+    (name = "STLRH" ∧ ld = false ∧ n = 2) ∨ (name = "STLRB" ∧ ld = false ∧ n = 1) := by
+  unfold exclOp at h
+  split at h <;> cases h <;> simp
+
+set_option hygiene false in
+/-- A load `exclP` accepts (`hm`), `progEffect` reduced to its `LDAR` branch (`he`). -/
+local macro "excl_ld_tac" : tactic => `(tactic| (
+  simp only [↓reduceIte] at hm
+  by_cases hf : p.from_.type = .MEM
+  case neg => simp only [bne_iff_ne, ne_eq, hf, not_false_eq_true, ↓reduceIte] at hm; cases hm
+  simp only [hf, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte] at hm
+  obtain ⟨⟨a, wb⟩, hma, hm⟩ := pg_bind_ok hm
+  obtain ⟨σ1, hσ1, hm⟩ := pg_bind_ok hm
+  obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj hm)
+  rw [memP_eval hma hf haz hez, pg_ok_bind] at he
+  obtain ⟨hR, -, -, -, hpc⟩ := wP_rel (erel_ld (erel_init ⟨s, L.sym⟩) a _) hσ1 he rfl
+  exact .inl ⟨hR, hpc⟩))
+
+set_option hygiene false in
+/-- A store `exclP` accepts (`hm`), `progEffect` reduced to its `STLR` branch (`he`). -/
+local macro "excl_st_tac" : tactic => `(tactic| (
+  simp only [Bool.false_eq_true, ↓reduceIte] at hm
+  by_cases ht : p.to.type = .MEM
+  case neg => simp only [bne_iff_ne, ne_eq, ht, not_false_eq_true, ↓reduceIte] at hm; cases hm
+  simp only [ht, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte] at hm
+  obtain ⟨⟨a, wb⟩, hma, hm⟩ := pg_bind_ok hm
+  obtain ⟨x, hx, hm⟩ := pg_bind_ok hm
+  obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj hm)
+  rw [memP_eval hma ht haz hez, pg_ok_bind] at he
+  simp only [(xP_eval hx).1, pg_ok_bind, pg_pure] at he
+  obtain rfl := pg_ok_inj he
+  exact .inl ⟨⟨rfl, by simp [Sym.store], rfl, rfl, rfl, rfl, by simp [Sym.store]⟩, rfl⟩))
+
+/-- `LDAR*`/`STLR*` (`exclOp`). -/
+private theorem fam_excl {az ez : Int} {ld : Bool} {n : Nat} (haz : L.autosize = az)
+    (hez : L.extrasize = ez) (hx : exclOp p.as.name = some (ld, n))
+    (hm : exclP az ez ld n p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) :
+    Out L p s e σ pc := by
+  unfold progEffect at he
+  unfold exclP at hm
+  rcases excl_names hx with ⟨hn, rfl, rfl⟩ | ⟨hn, rfl, rfl⟩ | ⟨hn, rfl, rfl⟩ | ⟨hn, rfl, rfl⟩ |
+      ⟨hn, rfl, rfl⟩ | ⟨hn, rfl, rfl⟩ | ⟨hn, rfl, rfl⟩ | ⟨hn, rfl, rfl⟩
+  all_goals
+    simp (config := { decide := true }) only [hn, ProgOp.baseOf, ProgOp.movMem, ProgOp.pairOp,
+      ProgOp.suffixBytes, ↓reduceIte] at he
+  · excl_ld_tac
+  · excl_ld_tac
+  · excl_ld_tac
+  · excl_ld_tac
+  · excl_st_tac
+  · excl_st_tac
+  · excl_st_tac
+  · excl_st_tac
+
 /-- The opcodes `progSym` matches by name. -/
 private theorem fam_rest
     (hb1 : ProgOp.baseOf p.as.name ["LSL", "LSR", "ASR"] = none)
@@ -1019,10 +1351,14 @@ private theorem fam_rest
     (hb5 : ProgOp.baseOf p.as.name ["UBFX", "SBFX", "UBFIZ"] = none)
     (hm0 : ProgOp.movMem p.as.name = none) (hp0 : ProgOp.pairOp p.as.name = none)
     (hc0 : ProgOp.bcond p.as.name = none)
-    (h : progSym az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) :
+    (hmul : ProgOp.baseOf p.as.name ["MUL", "MNEG", "MADD", "MSUB", "UMULH", "SMULH"] = none)
+    (hdp1 : ProgOp.baseOf p.as.name ["CLZ", "RBIT", "REV", "REV16", "REV32"] = none)
+    (hcsel : ProgOp.baseOf p.as.name ["CSEL", "CSINC", "CSINV", "CSNEG", "CSET", "CSETM"] = none)
+    (hex : exclOp p.as.name = none)
+    (h : progSymCore az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) :
     Out L p s e σ pc := by
-  unfold progSym at h
-  simp only [hb1, hb2, hb3, hb4, hb5, hm0, hp0, hc0] at h
+  unfold progSymCore at h
+  simp only [hb1, hb2, hb3, hb4, hb5, hm0, hp0, hc0, hmul, hdp1, hcsel, hex] at h
   split at h
   · next _ hn =>
     by_cases h0 : (p.from_.offset == 0) = true
@@ -1104,10 +1440,28 @@ private theorem fam_rest
         obtain ⟨f, hf, he⟩ := pg_bind_ok he
         rw [wX_30, pg_ok_bind] at he
         obtain rfl := pg_ok_inj he
-        exact .inr ⟨n, p.to.offset, f, rfl, rfl, fall_ok hf, rfl⟩
+        exact .inr (.inl ⟨n, p.to.offset, f, rfl, rfl, fall_ok hf, rfl⟩)
     · simp only [hm, Bool.false_eq_true, ↓reduceIte] at h
       by_cases hb : (p.to.type == AddrType.BRANCH) = true
-      case neg => simp only [hb, Bool.false_eq_true, ↓reduceIte] at h; cases h
+      case neg =>
+        simp only [hb, Bool.false_eq_true, ↓reduceIte] at h
+        simp only [hb, hm, Bool.false_eq_true, ↓reduceIte] at he
+        obtain ⟨a, hx, h⟩ := pg_bind_ok h
+        obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj h)
+        rw [(xP_eval hx).1, pg_ok_bind] at he
+        obtain ⟨f, hf, he⟩ := pg_bind_ok he
+        rw [wX_30, pg_ok_bind] at he
+        obtain rfl := pg_ok_inj he
+        refine .inr (.inr ⟨a, f, rfl, rfl, ?_, fall_ok hf, rfl⟩)
+        have hbF : (p.to.type == AddrType.BRANCH) = false := by simpa using hb
+        have hmF : (p.to.type == AddrType.MEM &&
+            (p.to.name == AddrName.EXTERN || p.to.name == AddrName.STATIC)) = false := by
+          simpa using hm
+        show (p.as.name == "CALL" && !(p.to.type == AddrType.BRANCH) &&
+          !(p.to.type == AddrType.MEM &&
+            (p.to.name == AddrName.EXTERN || p.to.name == AddrName.STATIC))) = true
+        rw [hn, hbF, hmF]
+        rfl
       simp only [hb, ↓reduceIte] at h he
       split at h
       · cases h
@@ -1117,7 +1471,7 @@ private theorem fam_rest
         obtain ⟨f, hf, he⟩ := pg_bind_ok he
         rw [wX_30, pg_ok_bind] at he
         obtain rfl := pg_ok_inj he
-        exact .inr ⟨n, p.to.offset, f, rfl, rfl, fall_ok hf, rfl⟩
+        exact .inr (.inl ⟨n, p.to.offset, f, rfl, rfl, fall_ok hf, rfl⟩)
       · cases h
   · next _ hn =>
     obtain ⟨a, hx, h⟩ := pg_bind_ok h
@@ -1137,7 +1491,7 @@ private theorem fam_rest
   · cases h
 
 private theorem dispatch {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl} {L : Link} {s : MState}
-    {e : Eff} (h : progSym az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e)
+    {e : Eff} (h : progSymCore az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e)
     (haz : L.autosize = az) (hez : L.extrasize = ez) : Out L p s e σ pc := by
   cases hb1 : ProgOp.baseOf p.as.name ["LSL", "LSR", "ASR"] with
   | some r => obtain ⟨op, sf⟩ := r; exact fam_shift hb1 h he
@@ -1162,9 +1516,64 @@ private theorem dispatch {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl} {L : Li
   | none =>
   cases hc : ProgOp.bcond p.as.name with
   | some k => exact fam_bcond hb1 hb2 hb3 hb4 hb5 hm hp hc h he
-  | none => exact fam_rest hb1 hb2 hb3 hb4 hb5 hm hp hc h he
+  | none =>
+  have h0 := h
+  unfold progSymCore at h
+  simp only [hb1, hb2, hb3, hb4, hb5, hm, hp, hc] at h
+  cases hmul : ProgOp.baseOf p.as.name ["MUL", "MNEG", "MADD", "MSUB", "UMULH", "SMULH"] with
+  | some r =>
+    obtain ⟨op, sf⟩ := r
+    simp only [hmul] at h
+    rcases mul_pre hmul with ⟨hop, hbin⟩ | ⟨hop, q1, q2, q3, q4, q5⟩
+    · exact fam_mulb hop hbin h he
+    · exact fam_madd hop q1 q2 q3 q4 q5 h he
+  | none =>
+  cases hdp1 : ProgOp.baseOf p.as.name ["CLZ", "RBIT", "REV", "REV16", "REV32"] with
+  | some r =>
+    obtain ⟨op, sf⟩ := r
+    simp only [hmul, hdp1] at h
+    exact fam_dp1 hdp1 h he
+  | none =>
+  cases hcsel : ProgOp.baseOf p.as.name ["CSEL", "CSINC", "CSINV", "CSNEG", "CSET", "CSETM"] with
+  | some r =>
+    obtain ⟨op, sf⟩ := r
+    simp only [hmul, hdp1, hcsel] at h
+    exact fam_csel hcsel h he
+  | none =>
+  cases hex : exclOp p.as.name with
+  | some r =>
+    obtain ⟨ld, n⟩ := r
+    simp only [hmul, hdp1, hcsel, hex] at h
+    exact fam_excl haz hez hex h he
+  | none =>
+  exact fam_rest hb1 hb2 hb3 hb4 hb5 hm hp hc hmul hdp1 hcsel hex h0 he
 
 end fam
+
+/-- What `progSym` adds to `progSymCore`: the control's opcode check. -/
+theorem progSym_core {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl}
+    (h : progSym az ez p = .ok (σ, pc)) : progSymCore az ez p = .ok (σ, pc) ∧ ctlOp p pc = .ok () := by
+  unfold progSym at h
+  split at h
+  · rename_i σ' c' hc
+    split at h
+    · rename_i hok
+      cases h
+      exact ⟨hc, hok⟩
+    · cases h
+  · cases h
+
+/-- Calls (direct and through a register) come from `CALL`, register jumps from `RET`. -/
+theorem progSym_ctl {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl}
+    (h : progSym az ez p = .ok (σ, pc)) :
+    (∀ n add, pc = .call n add → p.as = .CALL) ∧ (∀ a, pc = .callReg a → p.as = .CALL) ∧
+      (∀ a, pc = .reg a → p.as = .RET) := by
+  have hc := (progSym_core h).2
+  refine ⟨fun n add hp => ?_, fun a hp => ?_, fun a hp => ?_⟩ <;> subst hp <;>
+    simp only [ctlOp] at hc <;> split at hc <;>
+    first
+    | (rename_i h'; simpa using h')
+    | cases hc
 
 theorem progSym_sound {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl} {L : Link} {s s' : MState}
     (h : progSym az ez p = .ok (σ, pc)) (haz : L.autosize = az) (hez : L.extrasize = ez)
@@ -1185,7 +1594,8 @@ theorem progSym_sound {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl} {L : Link}
   | none =>
   simp only [hnil] at hs
   obtain rfl := pg_ok_inj hs
-  rcases dispatch h he haz hez with ⟨hR, hP⟩ | ⟨n, add, f, rfl, rfl, hf, rfl⟩
+  rcases dispatch (progSym_core h).1 he haz hez with ⟨hR, hP⟩ | ⟨n, add, f, rfl, rfl, hf, rfl⟩ |
+    ⟨a, f, rfl, rfl, hic, hf, rfl⟩
   · obtain ⟨hN, hH, h30, hpc⟩ := erel_apply (next := next) hR hnil
     refine ⟨hN, hH, ?_⟩
     cases pc with
@@ -1211,6 +1621,7 @@ theorem progSym_sound {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl} {L : Link}
       simp only [PRel] at hP
       exact ⟨by rw [hpc, hP]; rfl, h30⟩
     | call n add => exact hP.elim
+    | callReg a => exact hP.elim
   · have hR : ERel ⟨s, L.sym⟩ { x := [(30, f)], pc := some (L.sym n + BitVec.ofInt 64 add) }
         { x := [(30, .k f)] } :=
       ⟨rfl, by simp, rfl, rfl, rfl, rfl, rfl⟩
@@ -1221,5 +1632,56 @@ theorem progSym_sound {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl} {L : Link}
       have : (r == 30) = false := by simp only [beq_eq_false_iff_ne, ne_eq]; omega
       simp only [Sym.getX, List.lookup, this]
     · rw [h30]; exact hf
+  · have hR : ERel ⟨s, L.sym⟩ { x := [(30, f)], pc := some (a.eval ⟨s, L.sym⟩) }
+        { x := [(30, .k f)] } :=
+      ⟨rfl, by simp, rfl, rfl, rfl, rfl, rfl⟩
+    obtain ⟨-, hH, h30, hpc⟩ := erel_apply (next := next) hR hnil
+    refine ⟨⟨fun _ _ h => by simp at h, fun _ _ _ h => by simp at h⟩,
+      ⟨fun r hr => ?_, hH.x31, hH.sp, hH.nzcv, hH.v, hH.mem⟩, ⟨by rw [hpc]; rfl, ?_, hic⟩⟩
+    · rw [hH.x r hr]
+      have : (r == 30) = false := by simp only [beq_eq_false_iff_ne, ne_eq]; omega
+      simp only [Sym.getX, List.lookup, this]
+    · rw [h30]; exact hf
+
+/-- A Prog `progSym` describes whose step faults in the nil page has a symbolic access there. -/
+theorem progSym_fault {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl} {L : Link} {s : MState}
+    {a : BitVec 64} (h : progSym az ez p = .ok (σ, pc)) (haz : L.autosize = az)
+    (hez : L.extrasize = ez) (hs : progStep L p s = .error (.nilPage a)) :
+    ¬ NoNil ⟨s, L.sym⟩ σ := by
+  intro hN
+  unfold progStep at hs
+  cases hn : L.nextAddr p.id with
+  | none => rw [hn] at hs; cases hs
+  | some next =>
+  rw [hn] at hs
+  cases hsk : p.isSkip
+  case true => simp only [hsk, ↓reduceIte] at hs; cases hs
+  simp only [hsk, Bool.false_eq_true, ↓reduceIte] at hs
+  cases he : progEffect ⟨L, s, p⟩ with
+  | error msg => rw [he] at hs; cases hs
+  | ok e =>
+  rw [he] at hs
+  cases hnil : e.nilAccess? with
+  | none => simp only [hnil] at hs; cases hs
+  | some a' =>
+  have hnil' := hnil
+  unfold Eff.nilAccess? at hnil'
+  have hfound := List.find?_some hnil'
+  have hmem := List.mem_of_find?_eq_some hnil'
+  rcases dispatch (progSym_core h).1 he haz hez with ⟨hR, -⟩ | ⟨n, add, f, -, -, -, rfl⟩ |
+    ⟨b, f, -, -, -, -, rfl⟩
+  · rw [hR.loads, hR.stores] at hmem
+    simp only [List.mem_append, List.map_map, List.mem_map, Function.comp_def] at hmem
+    rcases hmem with ⟨⟨x, n⟩, hx, rfl⟩ | ⟨⟨x, n, v⟩, hx, rfl⟩
+    · have := hN.1 x n hx
+      simp only at hfound
+      rw [this] at hfound
+      cases hfound
+    · have := hN.2 x n v hx
+      simp only at hfound
+      rw [this] at hfound
+      cases hfound
+  · simp at hmem
+  · simp at hmem
 
 end GoFV.Proof.Obj

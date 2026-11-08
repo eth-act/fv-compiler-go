@@ -70,13 +70,14 @@ theorem g7_obj_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     (hcall : CallOK H E g L lc s s' v m) (hs : stepLoc env lc s v = .ok s')
     (hO : ObjEnv ps spills o otab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
-    (hR : ObjRel (ObjEnv.map otab ps L base) m t) :
+    (hR : ObjRel (ObjEnv.map otab ps L base) m t)
+    (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
     ∃ E' m' t', E.Extends E' ∧ G6Env lc g L ps (endP L.text ps.toList) tab E' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' ∧
       MStar H code retM t t' ∧ ObjRel (ObjEnv.map otab ps L base) m' t' := by
   obtain ⟨E', m', hx, hE', hp, hlm, hinv'⟩ :=
     g7_value hc hE hbid hb hi hv hen hm hinv hpre hcall hs
-  obtain ⟨t', ht, hR', -⟩ := obj_star hO hH hp hR (locMatch_inv hE.env hm)
+  obtain ⟨t', ht, hR', -⟩ := obj_star hO hH hp hR (locMatch_inv hE.env hm) hic
   exact ⟨E', m', t', hx, hE', hlm, hinv', ht, hR'⟩
 
 /-- **A terminator of slice G7 that goes to a block, down to the machine words.** -/
@@ -93,12 +94,13 @@ theorem g7_obj_term {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array 
     (ht : stepTermLoc lc s blk = .ok (.goto e, s'))
     (hO : ObjEnv ps spills o otab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
-    (hR : ObjRel (ObjEnv.map otab ps L base) m t) :
+    (hR : ObjRel (ObjEnv.map otab ps L base) m t)
+    (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
     ∃ m' t', LocMatch E s' e.b 0 m' ∧ G3Inv E lc (kt.at e.b) s' ∧
       e.b ∈ lc.ctx.f.blocks.toList ∧
       MStar H code retM t t' ∧ ObjRel (ObjEnv.map otab ps L base) m' t' := by
   obtain ⟨m', hp, hlm, hinv', hmem⟩ := g7_term (H := H) hc hE hbid hb hm hinv hpre ht
-  obtain ⟨t', htm, hR', -⟩ := obj_star hO hH hp hR (locMatch_inv hE.env hm)
+  obtain ⟨t', htm, hR', -⟩ := obj_star hO hH hp hR (locMatch_inv hE.env hm) hic
   exact ⟨m', t', hlm, hinv', hmem, htm, hR'⟩
 
 end GoFV.Proof.Obj

@@ -57,7 +57,23 @@ inductive Ex where
   | sext (n : Nat) (a : Ex)
   /-- `a &&& ~~~0xFFF` (`ADRP`'s page). -/
   | page (a : Ex)
+  /-- `dp1Op sf opc a` (`CLZ`, `RBIT`, `REV`, …). -/
+  | dp1 (sf : Bool) (opc : BitVec 3) (a : Ex)
+  /-- `dp3Op sf op31 o0 a x y` (`MADD`/`MSUB`, `UMULH`, `SMULH`). -/
+  | dp3 (sf : Bool) (op31 : BitVec 3) (o0 : Bool) (a x y : Ex)
+  /-- `cselVal sf op op2 h a b`, `h` whether condition `c` holds on the flags before the Prog
+  (`CSEL`, `CSINC`, `CSINV`, `CSNEG`). -/
+  | csel (sf op op2 : Bool) (c : BitVec 4) (a b : Ex)
   deriving DecidableEq, Repr, Inhabited
+
+/-- The value of a conditional select (`condSel`): `x` at the datasize if `h`, else `y`
+inverted (`op`) and incremented (`op2`) at the datasize. -/
+def cselVal (sf op op2 h : Bool) (x y : BitVec 64) : BitVec 64 :=
+  if h then sized sf fun _ e => e x
+  else sized sf fun _ e =>
+    let y := e y
+    let y := if op then ~~~y else y
+    if op2 then y + 1 else y
 
 /-- What an `Ex` is evaluated against: the state before the Prog and the symbol addresses. -/
 structure Ctx where
@@ -82,6 +98,9 @@ def eval (c : Ctx) : Ex → BitVec 64
   | .lo32 a => ProgOp.trunc false (eval c a)
   | .sext n a => GoFV.SSA.Sem.Arm64.sext n (eval c a)
   | .page a => eval c a &&& ~~~(0xFFF : BitVec 64)
+  | .dp1 sf opc a => dp1Op sf opc (eval c a)
+  | .dp3 sf op31 o0 a b d => dp3Op sf op31 o0 (eval c a) (eval c b) (eval c d)
+  | .csel sf op op2 cc a b => cselVal sf op op2 ((condOf cc).holds c.s.nzcv) (eval c a) (eval c b)
 
 /-- A short rendering for rejection messages. -/
 def str : Ex → String
@@ -99,21 +118,30 @@ def str : Ex → String
   | .lo32 a => s!"lo32({str a})"
   | .sext n a => s!"sext{n}({str a})"
   | .page a => s!"page({str a})"
+  | .dp1 sf opc a => s!"dp1_{opc.toNat}{if sf then "" else "W"}({str a})"
+  | .dp3 sf op31 o0 a b d =>
+    s!"dp3_{op31.toNat}{if o0 then "S" else "A"}{if sf then "" else "W"}({str a},{str b},{str d})"
+  | .csel sf op op2 cc a b =>
+    s!"csel{if op then "I" else ""}{if op2 then "+" else ""}{if sf then "" else "W"}_{cc.toNat}({str a},{str b})"
 
 /-- Whether the value reads general register `r` of the state before the Prog. -/
 def reads (r : Nat) : Ex → Bool
   | .x q => q == r
   | .sp | .k _ | .sym _ => false
-  | .ld _ a | .shift _ _ _ a | .ext _ _ a | .lo32 a | .sext _ a | .page a => reads r a
-  | .add a b | .addSub _ _ a b | .logical _ _ a b | .bfm _ _ _ _ a b => reads r a || reads r b
+  | .ld _ a | .shift _ _ _ a | .ext _ _ a | .lo32 a | .sext _ a | .page a | .dp1 _ _ a => reads r a
+  | .add a b | .addSub _ _ a b | .logical _ _ a b | .bfm _ _ _ _ a b | .csel _ _ _ _ a b =>
+    reads r a || reads r b
+  | .dp3 _ _ _ a b d => reads r a || reads r b || reads r d
 
 /-- Whether every register the value reads is one of `X0`–`X30` but `X27` (the assembler's
 scratch) and `X30` (the link register): the registers a P0 state and its machine state agree on. -/
 def regsOK : Ex → Bool
   | .x r => r < 31 && r != 27 && r != 30
   | .sp | .k _ | .sym _ => true
-  | .ld _ a | .shift _ _ _ a | .ext _ _ a | .lo32 a | .sext _ a | .page a => regsOK a
-  | .add a b | .addSub _ _ a b | .logical _ _ a b | .bfm _ _ _ _ a b => regsOK a && regsOK b
+  | .ld _ a | .shift _ _ _ a | .ext _ _ a | .lo32 a | .sext _ a | .page a | .dp1 _ _ a => regsOK a
+  | .add a b | .addSub _ _ a b | .logical _ _ a b | .bfm _ _ _ _ a b | .csel _ _ _ _ a b =>
+    regsOK a && regsOK b
+  | .dp3 _ _ _ a b d => regsOK a && regsOK b && regsOK d
 
 /-! ### Smart constructors (constant folding and the canonical forms) -/
 
@@ -188,6 +216,18 @@ def mkSext (n : Nat) (a : Ex) : Ex :=
   match a with
   | .k v => .k (GoFV.SSA.Sem.Arm64.sext n v)
   | a => .sext n a
+
+/-- An operand of a `MADD`-type operation at the datasize `sf`: `opnd`, and a constant
+truncated to it. -/
+def opndK (sf : Bool) (a : Ex) : Ex :=
+  match opnd sf a with
+  | .k v => .k (ProgOp.trunc sf v)
+  | a => a
+
+/-- `dp3Op sf op31 o0 a x y`; the `MADD`/`MSUB` form (`op31` 0) reads its operands at the
+datasize. -/
+def mkDp3 (sf : Bool) (op31 : BitVec 3) (o0 : Bool) (a x y : Ex) : Ex :=
+  if op31 = 0 then .dp3 sf 0 o0 (opndK sf a) (opndK sf x) (opndK sf y) else .dp3 sf op31 o0 a x y
 
 end Ex
 
@@ -297,7 +337,14 @@ inductive MCtl where
   | call (n : Nat) (add : Int)
   /-- `B` with an `R_CALLARM64` relocation (a tail call): to symbol `n` plus `add`. -/
   | jmpSym (n : Nat) (add : Int)
+  /-- `BLR` to a register's value, `X30` the next word. -/
+  | callReg (a : Ex)
   deriving DecidableEq, Repr, Inhabited
+
+/-- Whether the control writes `X30` (a call). -/
+def MCtl.links : MCtl → Bool
+  | .call .. | .callReg _ => true
+  | _ => false
 
 /-- The word offset of a PC-relative branch immediate (`pcRel`). -/
 def relOff {k : Nat} (o : Nat) (imm : BitVec k) : Int := o + 4 * imm.toInt
@@ -336,6 +383,23 @@ def symAccess (σ : Sym) (size : BitVec 2) (opc : BitVec 2) (rt : Nat) (a : Ex) 
     pure (σ.wX rt (loadVal opc n v))
   else pure (σ.store a n (σ.rX rt))
 
+/-- The symbolic `execExcl` (`LDAR*`/`LDAXR*`, and the ordered store `STLR*`; an exclusive
+store, which writes its status register, is not modelled). -/
+def symExcl (σ : Sym) (size : BitVec 2) (o2 ld : Bool) (rn rt : Reg) : Except String (Sym × MCtl) :=
+  if ld then
+    match σ.load (σ.rXsp rn.toNat) (bytesOf size) with
+    | .ok (σ1, v) => pure (σ1.wX rt.toNat v, .fall)
+    | .error e => throw e
+  else if o2 then pure (σ.store (σ.rXsp rn.toNat) (bytesOf size) (σ.rX rt.toNat), .fall)
+  else throw "store exclusive"
+
+/-- The symbolic `condSel`: the condition on the flags before the Prog. -/
+def symCsel (σ : Sym) (sf op op2 : Bool) (rm : Reg) (cond : BitVec 4) (rn rd : Reg) :
+    Except String (Sym × MCtl) :=
+  if σ.fl = .init then
+    pure (σ.wX rd.toNat (.csel sf op op2 cond (σ.rX rn.toNat) (σ.rX rm.toNat)), .fall)
+  else throw "conditional select on flags set by the words"
+
 /-- The symbolic `exec` of one instruction at offset `o` (a word whose fields no relocation
 patches). -/
 def symInsn (i : Insn) (o : Nat) (σ : Sym) : Except String (Sym × MCtl) :=
@@ -373,7 +437,12 @@ def symInsn (i : Insn) (o : Nat) (σ : Sym) : Except String (Sym × MCtl) :=
   | .cbz sf nz imm19 rt => pure (σ, .cbz sf nz (σ.rX rt.toNat) (relOff o imm19))
   | .tbz nz b imm14 rt => pure (σ, .tbz nz b.toNat (σ.rX rt.toNat) (relOff o imm14))
   | .br kind rn =>
-    if kind = .blr then throw "BLR" else pure (σ, .reg (σ.rX rn.toNat))
+    if kind = .blr then pure (σ, .callReg (σ.rX rn.toNat)) else pure (σ, .reg (σ.rX rn.toNat))
+  | .condSel sf op op2 rm cond rn rd => symCsel σ sf op op2 rm cond rn rd
+  | .dp1 sf opc rn rd => pure (σ.wX rd.toNat (.dp1 sf opc (σ.rX rn.toNat)), .fall)
+  | .dp3 sf op31 o0 rm ra rn rd =>
+    pure (σ.wX rd.toNat (Ex.mkDp3 sf op31 o0 (σ.rX ra.toNat) (σ.rX rn.toNat) (σ.rX rm.toNat)), .fall)
+  | .ldstExcl size o2 ld _ _ rn rt => symExcl σ size o2 ld rn rt
   | .nop | .barrier .. => pure (σ, .fall)
   | .logShift sf opc shift n rm imm6 rn rd =>
     let y := Ex.mkShift sf shift imm6.toNat (σ.rX rm.toNat)

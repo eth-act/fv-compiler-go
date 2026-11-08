@@ -824,22 +824,27 @@ errors):
 
 | Functions | Accepted | P0 Progs in accepted functions |
 | --: | --: | --: |
-| 9,297 | 5,533 (59.51%) | 157,472 of 429,130 |
+| 9,297 | 7,741 (83.26%) | 277,986 of 429,130 |
 | G7 slice: 2,109 | 2,108 (99.95%) | |
 | G8 slice: 2,323 | 2,322 (99.95%) | |
 | G9 slice: 2,551 | 2,550 (99.96%) | 51,122 of 51,143 |
 
+(Before the opcodes below: 5,533, 59.51%, 157,472 Progs.) Modelled since: the conditional selects
+`CSEL`/`CSINC`/`CSINV`/`CSNEG` (`condSel` on the flags before the Prog; `Ex.csel`) and
+`CSET`/`CSETM` (`CSINC`/`CSINV` of `ZR` on the inverted condition, not `AL`/`NV`); `MUL`/`MNEG`/
+`MADD`/`MSUB` (and `W`) and `UMULH`/`SMULH` (`dp3`; `Ex.mkDp3` reads the `MADD` forms' operands at
+the datasize); `CLZ`/`RBIT`/`REV`/`REV16`/`REV32` (`dp1`); the acquire loads `LDAR`/`LDARW`/`LDARH`/
+`LDARB` and the release stores `STLR*` (`exclOp`; `execExcl`'s plain access); and `CALL (Rn)` as
+`BLR` (`MCtl.callReg`/`PCtl.callReg`, matched register to register). `progSym` also checks that
+calls come from `CALL` and register jumps from `RET` (`ctlOp`), and `sameEffect` that every load of
+the Prog is a load of the words (the converse of the earlier check, for `obj_panic`).
+
 The one slice function that is rejected is `init.func47` of `test/nilptr2`: its `LDP` is
 assembled with a literal-pool load (`LDR literal`), which is not modelled. The most frequent
-reasons outside the slices (functions each occurs in) are:
-- indirect `CALL` 936;
-- `CSET` 463;
-- the acquire loads `LDAR`/`LDARW`/`LDARB` 296/188/54;
-- `CSEL` 224;
-- SIMD&FP moves (`FMOVD` 156, `FLDPQ` 83);
-- `LSL` by a register 133;
-- `MUL` 78;
-- the atomics (`LDADDAL*`, `CASAL*`, `STLR*`).
+reasons now (functions each occurs in): `FLDPQ` 179, `LSL` by a register 173, `FMOVD` 168,
+`LDADDALW` 87, `CASALW` 81, `CASALD` 75, `LSR` by a register 67, `LDADDALD` 63, morestack tail
+spill registers 59, `FCMPD` 48, `GETCALLERPC` 44, `UDIV` 41, `JMP` to a register 37, `MVN` 37,
+`FMOVS` 36, `SCVTFD` 34, `FMOVQ` 30, `UDIVW` 28, `FLDPD` 26, `SDIVW` 20, `UMULL` 18, `SDIV` 17.
 
 **Proof** (`GoFV/Proof/Obj/`):
 
@@ -851,13 +856,22 @@ reasons outside the slices (functions each occurs in) are:
 - `Prog.lean`: `progSym_sound`. A successful `progStep` of a Prog `progSym` describes performs
   no access in the nil page and ends where the symbolic effect and control say. There is one
   lemma per family (shifts, ADD-type, compares, `NEG`, bitfield extracts, moves, loads, stores,
-  constants, addresses, pairs, `B.cond`, `JMP`, `CBZ`, `TBZ`, `CALL`).
+  constants, addresses, pairs, `B.cond`, `JMP`, `CBZ`, `TBZ`, `CALL` and `CALL (Rn)`, `MUL`-type,
+  `MADD`-type, `CLZ`-type, conditional selects, `LDAR`/`STLR`). `progSym_ctl`: calls come from
+  `CALL`, register jumps from `RET`. `progSym_fault`: a step that faults in the nil page has a
+  symbolic access there. String opcodes in the families are reduced by `decide` on concrete
+  names; unifying a lemma against an unreduced `"CSET" == "CSET"` hung elaboration (normalise
+  with `beq_self_eq_true` first).
 - `Spec.lean`: the validator's checks as propositions (`checkObj_spec`, …).
 - `Sim.lean`: `ObjRel f` (registers but `X27`/`X30` equal; `X30` and the PC through `f`, which
   maps a P0 Prog's address to `base +` its offset and the end to `base + endOff`; `SP`, `V`,
   flags, memory equal), `ObjEnv` (accepted, `Link.byId` with the validated frame, linked code),
   `obj_step` and `obj_star`. Every `PStar` run of P0 to `endP` is matched by `MStar` of the
-  words, under the trusted `HookMap` (hooks treat related states alike; STATUS Assumptions).
+  words, under the trusted `HookMap` (hooks treat related states alike) and `ICallOut` (at a
+  `CALL (Rn)` the register holds a symbol's address, so the callee is outside the code; a run
+  premise of `obj_star`; `iCallOut_of_none` for lists without it); STATUS Assumptions.
+  `obj_panic`: a `PPanics` state is matched by machine steps to an `MPanics` state (a word that
+  faults: `symInsn_fault`, `symWords_fault`; or a hook that panics, `HookPanicMap`).
 - `Frame.lean`: `obj_entry` (from `MachEntry`, when the stack check passes, the prologue builds
   `BodyEntry`) and `obj_exit` (the epilogue at a P0 `RET` pops the frame and returns through the
   saved `LR`).

@@ -56,6 +56,8 @@ inductive PCtl where
   | tbz (nz : Bool) (b : Nat) (a : Ex) (id : Nat)
   | reg (a : Ex)
   | call (n : Nat) (add : Int)
+  /-- `CALL (Rn)`: to the register's value. -/
+  | callReg (a : Ex)
   deriving DecidableEq, Repr, Inhabited
 
 /-- A general register operand (`ProgCtx.x`): `RSP` is `SP`, `ZR` reads zero. -/
@@ -133,9 +135,78 @@ def shiftBfm (op : String) (sf : Bool) (k : Nat) (x : Ex) : Except String Ex :=
   | "ASR" => pure (Ex.mkBfm sf 0 (BitVec.ofNat 6 k) (BitVec.ofNat 6 (w - 1)) (.k 0) x)
   | _ => throw s!"constant {op}"
 
+/-- The `RestArgs` operand `i`. -/
+def restP (p : Prog) (i : Nat) : Except String Addr :=
+  match p.rest[i]? with
+  | some (_, a) => pure a
+  | none => throw "missing RestArgs operand"
+
+/-- `MUL`/`MNEG`/`MADD`/`MSUB` (and `W`), `UMULH`, `SMULH`: the data-processing (3 source) form
+the assembler encodes them as (`MUL` is `MADD` with `ZR` as the addend). -/
+def mulP (op : String) (sf : Bool) (p : Prog) : Except String (Sym × PCtl) := do
+  let rn : Int := if p.reg != 0 then p.reg else p.to.reg
+  let r ← match op with
+    | "MADD" | "MSUB" => do
+      let m ← xP p.from_.reg
+      let a ← xP p.reg
+      let n ← xP (← restP p 0).reg
+      pure (Ex.mkDp3 sf 0 (op == "MSUB") a n m)
+    | "UMULH" | "SMULH" =>
+      if !sf then throw s!"{op}W" else do
+      let x ← xP rn
+      let y ← srcP true p.from_
+      pure (Ex.mkDp3 true (if op == "UMULH" then 6 else 2) false (.k 0) x y)
+    | _ => do
+      let x ← xP rn
+      let y ← srcP sf p.from_
+      pure (Ex.mkDp3 sf 0 (op == "MNEG") (.k 0) x y)
+  return (← wP {} p.to.reg r, .fall)
+
+/-- `CLZ`/`RBIT`/`REV`/`REV16`/`REV32` (and `W`): data-processing (1 source). -/
+def dp1P (op : String) (sf : Bool) (p : Prog) : Except String (Sym × PCtl) := do
+  let opc : BitVec 3 := match op with
+    | "RBIT" => 0 | "REV16" => 1 | "REV32" => 2 | "REV" => if sf then 3 else 2 | _ => 4
+  let x ← xP p.from_.reg
+  return (← wP {} p.to.reg (.dp1 sf opc x), .fall)
+
+/-- `CSEL`/`CSINC`/`CSINV`/`CSNEG` (and `W`): the conditional select on the flags before the
+Prog; `CSET`/`CSETM` as the assembler encodes them, `CSINC`/`CSINV` of `ZR` on the inverted
+condition (not `AL`/`NV`, whose inversion is not their negation). -/
+def cselP (op : String) (sf : Bool) (p : Prog) : Except String (Sym × PCtl) := do
+  let c ← condOfSpecial p.from_
+  let r ← match op with
+    | "CSET" | "CSETM" =>
+      if c.toNat ≥ 14 then throw s!"{op} on AL/NV" else
+      pure (Ex.csel sf (op == "CSETM") (op == "CSET") (c ^^^ 1) (.k 0) (.k 0))
+    | _ => do
+      let n ← xP p.reg
+      let m ← xP (← restP p 0).reg
+      pure (Ex.csel sf (op == "CSINV" || op == "CSNEG") (op == "CSINC" || op == "CSNEG") c n m)
+  return (← wP {} p.to.reg r, .fall)
+
+/-- The acquire loads `LDAR*` and the release stores `STLR*`: whether a load, and the bytes. -/
+def exclOp (name : String) : Option (Bool × Nat) :=
+  match name with
+  | "LDAR" => some (true, 8) | "LDARW" => some (true, 4) | "LDARH" => some (true, 2)
+  | "LDARB" => some (true, 1) | "STLR" => some (false, 8) | "STLRW" => some (false, 4)
+  | "STLRH" => some (false, 2) | "STLRB" => some (false, 1)
+  | _ => none
+
+/-- An acquire load or release store (`exclOp`): a plain access of `n` bytes at the operand's
+address. -/
+def exclP (az ez : Int) (ld : Bool) (n : Nat) (p : Prog) : Except String (Sym × PCtl) := do
+  if ld then
+    if p.from_.type != .MEM then throw "acquire load operand"
+    let (a, _) ← memP az ez p.scond p.from_
+    return (← wP { loads := [(a, n)] } p.to.reg (.ld n a), .fall)
+  if p.to.type != .MEM then throw "release store operand"
+  let (a, _) ← memP az ez p.scond p.to
+  return (({} : Sym).store a n (← xP p.from_.reg), .fall)
+
 /-- The symbolic effect of a P0 Prog with code (`progEffect`) and its control, for the opcodes
-the validator models. `az`, `ez`: the frame (`Link.autosize`, `Link.extrasize`). -/
-def progSym (az ez : Int) (p : Prog) : Except String (Sym × PCtl) := do
+the validator models (`progSym` adds the opcode check of the control). `az`, `ez`: the frame
+(`Link.autosize`, `Link.extrasize`). -/
+def progSymCore (az ez : Int) (p : Prog) : Except String (Sym × PCtl) := do
   let name := p.as.name
   let σ : Sym := {}
   let rn : Int := if p.reg != 0 then p.reg else p.to.reg
@@ -234,6 +305,14 @@ def progSym (az ez : Int) (p : Prog) : Except String (Sym × PCtl) := do
     return ((σ.store a n (← xP regs.reg)).store a2 n (← xP regs.offset), .fall)
   if let some c := bcond name then
     return (σ, .cond (BitVec.ofNat 4 c) (← targetP p.to))
+  if let some (op, sf) := baseOf name ["MUL", "MNEG", "MADD", "MSUB", "UMULH", "SMULH"] then
+    return ← mulP op sf p
+  if let some (op, sf) := baseOf name ["CLZ", "RBIT", "REV", "REV16", "REV32"] then
+    return ← dp1P op sf p
+  if let some (op, sf) := baseOf name ["CSEL", "CSINC", "CSINV", "CSNEG", "CSET", "CSETM"] then
+    return ← cselP op sf p
+  if let some (ld, n) := exclOp name then
+    return ← exclP az ez ld n p
   match name with
   | "HINT" => if p.from_.offset == 0 then return (σ, .fall) else throw "HINT"
   | "JMP" =>
@@ -254,11 +333,25 @@ def progSym (az ez : Int) (p : Prog) : Except String (Sym × PCtl) := do
       | .target _, _ => throw "call to a Prog"
       | _, some n => return (σ, .call n p.to.offset)
       | _, none => throw "call to a Prog"
-    throw "indirect CALL"
+    return (σ, .callReg (← xP p.to.reg))
   | "RET" =>
     let r := if p.to.type == .NONE then REG_R0 + 30 else p.to.reg
     return (σ, .reg (← xP r))
   | _ => throw s!"opcode not modelled: {name}"
+
+/-- Calls come from `CALL`, register jumps from `RET`. -/
+def ctlOp (p : Prog) : PCtl → Except String Unit
+  | .call .. | .callReg _ => if p.as == .CALL then pure () else throw "call control"
+  | .reg _ => if p.as == .RET then pure () else throw "register jump control"
+  | _ => pure ()
+
+/-- `progSymCore`, its control checked against the opcode (`ctlOp`). -/
+def progSym (az ez : Int) (p : Prog) : Except String (Sym × PCtl) :=
+  match progSymCore az ez p with
+  | .ok (σ, c) => match ctlOp p c with
+    | .ok () => .ok (σ, c)
+    | .error e => .error e
+  | .error e => .error e
 
 /-! ## The machine side -/
 
@@ -430,6 +523,7 @@ def sameEffect (m p : Sym) : Except String Unit := do
     let f (l : List (Ex × Nat × Ex)) := l.map fun (a, n, v) => s!"[{a.str}]{n}={v.str}"
     throw s!"stores: machine {f m.stores}, Prog {f p.stores}"
   unless m.loads.all (p.loads.contains ·) do throw "a machine load the Prog does not perform"
+  unless p.loads.all (m.loads.contains ·) do throw "a Prog load the machine does not perform"
   if p.readsTmp then throw "the Prog reads R27 or R30"
 
 /-- The offset of a P0 Prog, by ID (`Tab.offs` aligned with the list). -/
@@ -454,6 +548,7 @@ def sameCtl (offs : List (Nat × Nat)) (m : MCtl) (p : PCtl) (_pr : Sym) : Excep
     if nz != nz' || b != b' || a != a' || ctlReads a' then throw "TBZ" else tgt id q
   | .call n add, .call n' add' =>
     if n != n' || add != add' || add != 0 then throw "call target" else pure ()
+  | .callReg a, .callReg a' => if a != a' || ctlReads a' then throw "call register" else pure ()
   | _, _ => throw s!"control: machine {repr m}, Prog {repr p}"
 
 /-- One P0 Prog against its words `[o, e)`. -/

@@ -61,6 +61,18 @@ def CtlPc (c : Ctx) (base : BitVec 64) (o : Nat) : MCtl → MState → Prop
   | .reg a, t => t.pc = a.eval c
   | .call n add, t => t.pc = c.sym n + BitVec.ofInt 64 add ∧ t.x 30 = at_ base (o + 4)
   | .jmpSym n add, t => t.pc = c.sym n + BitVec.ofInt 64 add
+  | .callReg a, t => t.pc = a.eval c ∧ t.x 30 = at_ base (o + 4)
+
+/-- What the state after words with effect `σ` and control `mc`, the last at `ol`, satisfies
+(`X30` as `σ` says unless `mc` is a call). -/
+def WordsPost (c : Ctx) (base : BitVec 64) (ol : Nat) (σ : Sym) (mc : MCtl) (tm : MState) : Prop :=
+  HoldsCore c σ tm ∧ (mc.links = false → tm.x 30 = (σ.getX 30).eval c) ∧ CtlPc c base ol mc tm
+
+/-- A `CALL (Rn)`: a call whose target is not a symbol operand (`progEffect` jumps to the
+register's value). -/
+def isICall (p : Prog) : Bool :=
+  p.as.name == "CALL" && p.to.type != .BRANCH &&
+    !(p.to.type == .MEM && (p.to.name == .EXTERN || p.to.name == .STATIC))
 
 /-- Where the control `pc` of `progSym` takes the Prog-level step `s → s'` of `p` under `L`. -/
 def PcP (L : Link) (p : Prog) (σ : Sym) (s : MState) : PCtl → MState → Prop
@@ -77,5 +89,7 @@ def PcP (L : Link) (p : Prog) (σ : Sym) (s : MState) : PCtl → MState → Prop
       s'.x 30 = (σ.getX 30).eval ⟨s, L.sym⟩
   | .reg a, s' => s'.pc = a.eval ⟨s, L.sym⟩ ∧ s'.x 30 = (σ.getX 30).eval ⟨s, L.sym⟩
   | .call n add, s' => s'.pc = L.sym n + BitVec.ofInt 64 add ∧ L.nextAddr p.id = some (s'.x 30)
+  | .callReg a, s' => s'.pc = a.eval ⟨s, L.sym⟩ ∧ L.nextAddr p.id = some (s'.x 30) ∧
+      isICall p = true
 
 end GoFV.Proof.Obj

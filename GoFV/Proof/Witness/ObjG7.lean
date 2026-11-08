@@ -138,6 +138,15 @@ theorem g6Env_endP {lc : LocCtx} {g : G2In} {ps : Array Prog} {tab : PcTab} {E :
       (endP GenG2.text ps.toList) tab E :=
   ⟨g2Env_endP h.env (retOut_endP hlt) (fun _ => hend), h.vars⟩
 
+/-- No `CALL (Rn)` in the list. -/
+def noICall (ps : Array Prog) : Bool := ps.toList.all fun p => !isICall p
+
+theorem noICall_spec {ps : Array Prog} (h : noICall ps = true) (L : Link) (s : MState) :
+    ICallOut L ps.toList s :=
+  iCallOut_of_none (fun p hp => by
+    simp only [noICall, List.all_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at h
+    exact h p hp) s
+
 /-! ## `(*A).g`: a value -/
 
 def gObjIn : Except String (Array Spill × ObjIn) := objOf GenG7.gProg
@@ -164,8 +173,9 @@ def gMap : BitVec 64 → BitVec 64 := ObjEnv.map gTab GenG7.ps GenG7.L base
 /-- The machine state related to `GenG7.m0 GenG2.symA` (before `v6`). -/
 def gT0 : MState := relInit gMap (GenG7.m0 GenG2.symA)
 
-/-- What compiled evaluation checks on `(*A).g`: `envFacts`, and the machine starts at `base`. -/
-def gObjFacts : Bool := envFacts GenG7.ps gSpills gObj && gT0.pc == base
+/-- What compiled evaluation checks on `(*A).g`: `envFacts`, no `CALL (Rn)`, and the machine
+starts at `base`. -/
+def gObjFacts : Bool := envFacts GenG7.ps gSpills gObj && noICall GenG7.ps && gT0.pc == base
 
 theorem g_obj_facts : gObjFacts = true := by
   native_decide
@@ -181,7 +191,7 @@ theorem objG7_value_witness :
       MStar GenG2.H0 gCode retM gT0 t1 ∧ ObjRel gMap m1 t1 := by
   have hf := g_obj_facts
   simp only [gObjFacts, Bool.and_eq_true, beq_iff_eq] at hf
-  obtain ⟨hef, hpc⟩ := hf
+  obtain ⟨⟨hef, hni⟩, hpc⟩ := hf
   obtain ⟨hO, hend⟩ := envFacts_spec hef
   obtain ⟨hc, hav, hsl, hnc, hm2, hb, hv, hi2, hop, harg, hk0, hread, hrun, -⟩ := GenG7.facts
   obtain ⟨s1, hs1, -⟩ := GenG1.okThen_spec hrun
@@ -211,7 +221,7 @@ theorem objG7_value_witness :
     hc hE hm2 hb hi2 hv (by rw [hop]; rfl)
     (GenG7.locMatch0 GenG4.ptrS GenG2.symA ⟨GenG2.symA, rfl, by decide⟩)
     (GenG7.g7Inv0 _ hk0) hpre (GenG2.callOK_ne (by rw [hop]; nofun)) hs1 hO
-    (hookMap_retLR fun _ => rfl) (objRel_relInit _ _)
+    (hookMap_retLR fun _ => rfl) (objRel_relInit _ _) (fun u _ => noICall_spec hni _ u)
   exact ⟨hpc, s1, E', m1, t1, hs1, hx, hlm, hinv, hst, hR⟩
 
 /-! ## `pallocSum.start`: a terminator -/
@@ -242,11 +252,12 @@ def startMap : BitVec 64 → BitVec 64 := ObjEnv.map startTab GenG3.ps GenG3.L b
 def startT0 : MState := relInit startMap (GenG3.m0 7)
 
 /-- What compiled evaluation checks on `pallocSum.start`: `checkG7` accepts it with `GenG3`'s
-tables, it accesses no frame variable, `envFacts`, and the machine starts at `base`. -/
+tables, it accesses no frame variable, `envFacts`, no `CALL (Rn)`, and the machine starts at
+`base`. -/
 def startObjFacts : Bool :=
   (checkG7 GenG3.lc GenG3.ps GenG3.bs GenG3.g).toOption == some (GenG3.tab, GenG3.kt) &&
     (accessedVars GenG3.lc).isEmpty && envFacts GenG3.ps startSpills startObj &&
-    startT0.pc == base
+    noICall GenG3.ps && startT0.pc == base
 
 theorem start_obj_facts : startObjFacts = true := by
   native_decide
@@ -261,7 +272,7 @@ theorem objG7_term_witness :
       MStar GenG2.H0 startCode retM startT0 t1 ∧ ObjRel startMap m1 t1 := by
   have hf := start_obj_facts
   simp only [startObjFacts, Bool.and_eq_true, beq_iff_eq] at hf
-  obtain ⟨⟨⟨hres7, hnv⟩, hef⟩, hpc⟩ := hf
+  obtain ⟨⟨⟨⟨hres7, hnv⟩, hef⟩, hni⟩, hpc⟩ := hf
   obtain ⟨hO, hend⟩ := envFacts_spec hef
   have hc7 : checkG7 GenG3.lc GenG3.ps GenG3.bs GenG3.g = .ok (GenG3.tab, GenG3.kt) := by
     revert hres7; cases checkG7 GenG3.lc GenG3.ps GenG3.bs GenG3.g <;> simp [Except.toOption]
@@ -288,7 +299,7 @@ theorem objG7_term_witness :
   obtain ⟨m1, t1, hlm, hinv, -, hst, hR⟩ := g7_obj_term (H := GenG2.H0) hc7 hE hm1 hb1
     (GenG3.locMatch0 7) (GenG3.g3Inv0 7 (by rw [hsz]; exact hk0))
     (fun hz => by rw [hkind] at hz; rcases hz with h | h <;> cases h) hs1 hO
-    (hookMap_retLR fun _ => rfl) (objRel_relInit _ _)
+    (hookMap_retLR fun _ => rfl) (objRel_relInit _ _) (fun u _ => noICall_spec hni _ u)
   exact ⟨hpc, s1, e, m1, t1, hs1, het, het ▸ hlm, het ▸ hinv, hst, hR⟩
 
 end GoFV.Proof.Witness.ObjG7

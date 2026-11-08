@@ -220,7 +220,7 @@ private theorem check_run (hlink : linkCode base sym t rs = .ok code) (hsz : t.s
       simpa [Ex.eval, Ex.eval_mkAdd, e] using hpass
   simp only [CtlPc, hls, Bool.false_eq_true, ↓reduceIte] at hctl
   have h30 : tm.x 30 = s0.x 30 := by
-    rw [hx (fun _ _ h => by cases h), hx30]
+    rw [hx rfl, hx30]
     rfl
   refine ⟨tm, hrun, ?_, ?_, fun k h16 h17 h27 => ?_, hcore.v, ?_⟩
   · rw [hctl, hce]
@@ -280,7 +280,7 @@ private theorem frame_run (hlink : linkCode base sym t rs = .ok code) (hsz : t.s
     ⟨sA, sym⟩ sA hw rfl (fr_holds_init _) hpc hnil
   have hs1 : s1.sp = sA.sp - BitVec.ofNat 64 az.toNat := by rw [hcore.sp, hsp', h1]
   have h30 : s1.x 30 = sA.x 30 := by
-    rw [hx (fun _ _ h => by cases h), hx30]
+    rw [hx rfl, hx30]
     rfl
   obtain ⟨hw1, hw2, hout⟩ := fr_frame_mem (s1 := s1) hst h1 h2 hcore.mem
   refine ⟨s1, hrun, ?_, hs1, by rw [hs1]; exact hw1, by rw [hs1]; exact hw2, ?_,
@@ -435,7 +435,7 @@ theorem obj_exit {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab : Tab
     obtain ⟨t', hrun, hcore, hx, hctl⟩ := symWords_sound (H := H) hlink hsz hret n _ {} {} _
       ⟨t, sym⟩ t hw rfl (fr_holds_init _) hpc ⟨fun _ _ h => by simp at h, fun _ _ _ h => by simp at h⟩
     have h30 : t'.x 30 = t.x 30 := by
-      rw [hx (fun _ _ h => by cases h)]
+      rw [hx rfl]
       rfl
     simp only [CtlPc, haz, beq_self_eq_true, Bool.true_or, ↓reduceIte] at hctl
     refine ⟨t', hrun, ?_, ?_, ?_, ?_, fun r h27 _ _ => fr_reg hcore h27 (Or.inr h30)
@@ -463,7 +463,7 @@ theorem obj_exit {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab : Tab
         omega
     obtain ⟨t', hrun, hcore, hx, hctl⟩ := symWords_sound (H := H) hlink hsz hret n _ {} σ _
       ⟨t, sym⟩ t hw rfl (fr_holds_init _) hpc hnil
-    have h30 := hx (fun _ _ h => by cases h)
+    have h30 := hx rfl
     have h29' : t'.x 29 = (σ.getX 29).eval ⟨t, sym⟩ := hcore.x 29 (by omega)
     simp only [CtlPc] at hctl
     rw [h30'] at h30
