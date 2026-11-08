@@ -219,3 +219,7 @@ root = "GoFVTest.AsmParity"
 [[lean_exe]]
 name = "mach-difftest"
 root = "GoFVTest.MachDiff"
+
+[[lean_exe]]
+name = "gen-check"
+root = "GoFVTest.GenCheck"

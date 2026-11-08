@@ -37,6 +37,16 @@ import GoFV.Proof.FinishMono
 import GoFV.Proof.Frame
 import GoFV.Proof.FrameKeep
 import GoFV.Proof.FrameL
+import GoFV.Proof.Gen.Basic
+import GoFV.Proof.Gen.Branch
+import GoFV.Proof.Gen.G1
+import GoFV.Proof.Gen.Loc
+import GoFV.Proof.Gen.Mem
+import GoFV.Proof.Gen.Progs
+import GoFV.Proof.Gen.Rel
+import GoFV.Proof.Gen.Spec
+import GoFV.Proof.Gen.Step
+import GoFV.Proof.Gen.Value
 import GoFV.Proof.Low.AddrFold
 import GoFV.Proof.Low.ArmMono
 import GoFV.Proof.Low.ArmMonoFam
@@ -711,6 +721,7 @@ import GoFV.Proof.Witness.FwdGrow
 import GoFV.Proof.Witness.FwdMalloc
 import GoFV.Proof.Witness.FwdNew
 import GoFV.Proof.Witness.FwdZeroStr
+import GoFV.Proof.Witness.GenG1
 import GoFV.Proof.Witness.HasWaitingReaders
 import GoFV.Proof.Witness.IDataSel
 import GoFV.Proof.Witness.IMakeSM
