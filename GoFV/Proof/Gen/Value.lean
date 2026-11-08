@@ -208,12 +208,14 @@ private theorem lo_ptrRes (hA : AddrAgree ι) {c : Nat} {p : Ptr} {k X Y : BitVe
         have := ptrRel_addr hA hp hpa (notTemp_of_convertible (p := p.add k) hcv)
         subst this
         exact sw_add hc rfl hk
-    · show c < 64 ∨ PtrRel ι (p.add k) (X + Y)
-      rcases hY with h | rfl
-      · exact Or.inl h
-      · right
-        obtain ⟨b, hb, rfl⟩ := hp
-        exact ⟨b, hb, BitVec.add_assoc _ _ _⟩
+    · split
+      · show c < 64 ∨ PtrRel ι (p.add k) (X + Y)
+        rcases hY with h | rfl
+        · exact Or.inl h
+        · right
+          obtain ⟨b, hb, rfl⟩ := hp
+          exact ⟨b, hb, BitVec.add_assoc _ _ _⟩
+      · trivial
   · trivial
 
 private theorem add_ptr_ptr {t : Ty} {p q : Ptr} :

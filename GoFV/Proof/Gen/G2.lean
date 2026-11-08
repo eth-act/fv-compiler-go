@@ -680,7 +680,7 @@ theorem vstep_v2 {ps : Array Prog} {kd : VKind} {j j' : Nat} (h : VStep2 ps kd.v
   cases kd <;> exact h
 
 theorem fits_word (p : Ptr) : Fits 64 p.word := by
-  unfold Ptr.word; split <;> rfl
+  unfold Ptr.word; split <;> (try split) <;> first | rfl | trivial
 
 /-- A `callTy` tuple: the register shapes, then the memory. -/
 theorem callTy_split {n : Nat} {ts : List Ty} (h : callTy n (.tuple ts) = true) :
