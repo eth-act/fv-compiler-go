@@ -390,7 +390,7 @@ def sameEffect (m p : Sym) : Except String Unit := do
 def offOf (ids : List (Nat × Nat)) (id : Nat) : Option Nat := ids.lookup id
 
 /-- The machine control `m` matches the Prog control `p` (branch offsets through `offs`). -/
-def sameCtl (offs : List (Nat × Nat)) (m : MCtl) (p : PCtl) (pr : Sym) : Except String Unit := do
+def sameCtl (offs : List (Nat × Nat)) (m : MCtl) (p : PCtl) (_pr : Sym) : Except String Unit := do
   let tgt (id : Nat) (q : Int) : Except String Unit :=
     match offOf offs id with
     | some o => if (o : Int) == q then pure () else throw s!"branch to {q}, target Prog at {o}"
@@ -406,8 +406,6 @@ def sameCtl (offs : List (Nat × Nat)) (m : MCtl) (p : PCtl) (pr : Sym) : Except
     if sf != sf' || nz != nz' || a != a' || ctlReads a' then throw "CBZ" else tgt id q
   | .tbz nz b a q, .tbz nz' b' a' id =>
     if nz != nz' || b != b' || a != a' || ctlReads a' then throw "TBZ" else tgt id q
-  | .reg a, .reg a' => if a != .x 30 || a' != .x 30 then throw "return register" else
-    if pr.getX 30 != .x 30 then throw "return after writing R30" else pure ()
   | .call n add, .call n' add' =>
     if n != n' || add != add' || add != 0 then throw "call target" else pure ()
   | _, _ => throw s!"control: machine {repr m}, Prog {repr p}"
@@ -535,7 +533,7 @@ def checkTail (t : ByteArray) (rs : List Reloc) (spills : List Spill) (check o :
 stack check (when the first word loads `stackguard0`, or `stackguard1` in a C function) and the
 frame (`frameOK`). Returns the stack check's end and the morestack tail's offset. -/
 def checkPrologue (t : ByteArray) (rs : List Reloc) (az : Int) (body : Nat) :
-    Except String (Option (Nat × Nat)) := do
+    Except String (Option (Nat × Nat × Nat)) := do
   if az == 0 then
     if body != 0 then throw "frameless function with a prologue"
     return none
@@ -545,10 +543,12 @@ def checkPrologue (t : ByteArray) (rs : List Reloc) (az : Int) (body : Nat) :
     | some (.ldst 3 false 1 (.uimm 3) 28 16) => some 24
     | _ => none
   let check ← match (if body ≥ 12 then gOff? else none) with
-    | some gOff => some <$> checkStackCheck t rs az 0 gOff
+    | some gOff => do
+      let (ce, tail) ← checkStackCheck t rs az 0 gOff
+      pure (some (ce, tail, gOff))
     | none => pure none
   let fo := match check with
-    | some (ce, _) => ce
+    | some (ce, _, _) => ce
     | none => 0
   if body ≤ fo || (body - fo) % 4 != 0 then throw "prologue: no frame words"
   let (σ, c) ← symWords t rs ((body - fo) / 4) fo {}
@@ -600,7 +600,8 @@ structure Tab where
   autosize : Int
   extrasize : Int
   leaf : Bool
-  check : Option (Nat × Nat)
+  /-- The stack check: its end, the morestack tail's offset, the `g` offset it reads. -/
+  check : Option (Nat × Nat × Nat)
   deriving Repr, Inhabited
 
 /-- The assembled function: text bytes, relocations, and the assembler's final Prog list (a hint
@@ -651,13 +652,13 @@ def checkObj (ps : Array Prog) (spills : Array Spill) (o : ObjIn) : Except Strin
     | some q => q
     | none => 4 * trimZero (t.size / 4)
   let lastEnd := match check with
-    | some (_, tail) => tail
+    | some (_, tail, _) => tail
     | none => codeEnd
   let starts := startsOf lastEnd pcsOpt.toList
   if starts.length != ps.size || starts.headD 0 != body then throw "internal: PC table"
   let offs := (ps.toList.zip starts).map fun (p, s) => (p.id, s)
   checkBody t rs offs az ez leaf (ps.toList.drop 1) (starts.drop 1) lastEnd
-  if let some (_, tail) := check then
+  if let some (_, tail, _) := check then
     let _ ← checkTail t rs spills.toList 0 tail
   return { offs := starts.toArray, endOff := lastEnd, autosize := az, extrasize := ez, leaf, check }
 

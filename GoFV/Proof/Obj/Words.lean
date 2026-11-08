@@ -301,7 +301,66 @@ theorem symUnit_sound (hlink : linkCode base sym t rs = .ok code) (hsz : t.size 
       simp only [MState.wX, show (30 : Reg) ≠ 31 by decide, ↓reduceIte, hpc, at_succ]
       simp
   · -- the relocated pairs
-    sorry
+    obtain ⟨hcov, hoff, hsiz⟩ := relocAt_spec hr
+    obtain ⟨q1, hq1, rfl⟩ := linkWord_one hlw hcov
+    obtain ⟨imm, hd1', hpage⟩ := decode_adrp hd hcall hoff hy hq1 hsiz
+    have hex1 : exec (.adr true imm rd) tm =
+        .ok ((tm.wX rd ((tm.pc &&& ~~~(0xFFF : BitVec 64)) + (imm.signExtend 64 <<< 12))).next) := rfl
+    have hev : (relTgt y r).eval c = sym y + BitVec.ofInt 64 r.add := by
+      simp [relTgt, Ex.eval_mkAdd, Ex.eval, hsym]
+    have hrdlt : rd.toNat < 32 := rd.isLt
+    have hrdofs : (BitVec.ofNat 5 rd.toNat : Reg) = rd := by simp
+    have hH1 : Holds c (σ.wX rd.toNat (.page (relTgt y r)))
+        ((tm.wX rd ((tm.pc &&& ~~~(0xFFF : BitVec 64)) + (imm.signExtend 64 <<< 12))).next) := by
+      have h1 := hH.wX_sym hrdlt (.page (relTgt y r))
+      rw [hrdofs] at h1
+      have hv : (Ex.page (relTgt y r)).eval c =
+          (tm.pc &&& ~~~(0xFFF : BitVec 64)) + (imm.signExtend 64 <<< 12) := by
+        simp only [Ex.eval, hev, hpc]; exact hpage.symm
+      rw [hv] at h1
+      exact h1.pc _
+    set tm1 := (tm.wX rd ((tm.pc &&& ~~~(0xFFF : BitVec 64)) + (imm.signExtend 64 <<< 12))).next
+      with htm1
+    have hpc1 : tm1.pc = base + BitVec.ofNat 64 (o + 4) := by
+      simp only [htm1, MState.next, MState.wX]
+      split <;> simp [hpc, BitVec.add_assoc, BitVec.ofNat_add]
+    have hrx1 : tm1.rXsp rd = (sym y + BitVec.ofInt 64 r.add) &&& ~~~(0xFFF : BitVec 64) := by
+      simp only [htm1, MState.next, MState.rXsp, MState.wX, hrd, ↓reduceIte]
+      rw [hpc]; exact hpage
+    obtain ⟨w2, hlw2, hcw2⟩ := linkCode_at hlink (o := o + 4) (by omega) (by omega) hsz
+    obtain ⟨q2, hq2, rfl⟩ := linkWord_one hlw2 hcov4
+    have hs1 : MStep H code retM tm tm1 := mstep_word hcw hd1' hex1 hpc hret
+    rcases hpair with ⟨hty, rd2, rfl, rfl⟩ | ⟨size, opc, rt, hsc, rfl, ha⟩
+    · obtain ⟨imm12, hd2', hlo⟩ := decode_addLo hd2 hty hoff hy hq2 hsiz
+      have hex2 : exec (.addSubImm true false false false imm12 rd rd2) tm1 =
+          .ok ((tm1.wXsp rd2 (sym y + BitVec.ofInt 64 r.add)).next) := by
+        have hadd : (addSub true false (tm1.rXsp rd) (imm12.setWidth 64 <<< 0)).1 =
+            sym y + BitVec.ofInt 64 r.add := by
+          rw [hrx1]
+          have : ∀ x z : BitVec 64, (addSub true false x z).1 = x + z := by
+            intro x z; apply BitVec.eq_of_toNat_eq
+            simp [addSub, sizedF, GoFV.SSA.Sem.addWithCarry, BitVec.toNat_add]
+          rw [this]; simpa using hlo
+        simp only [exec, MState.addSubResult, Bool.false_eq_true, ↓reduceIte, hadd]
+        rfl
+      have hrd2 : (BitVec.ofNat 5 rd2.toNat : Reg) = rd2 := by simp
+      have hH2 := hH1.wXsp_sym rd2.isLt (relTgt y r)
+      rw [hrd2, hev] at hH2
+      refine ⟨_, mstar_trans (mstar_single hs1) (mstar_single (mstep_word hcw2 hd2' hex2 hpc1 hret)),
+        (hH2.pc _).toHoldsCore, fun _ _ _ => (hH2.pc _).x30, ?_⟩
+      simp only [CtlPc, MState.next, MState.wXsp]
+      split <;> simp [hpc1, at_, BitVec.add_assoc, BitVec.ofNat_add] <;> omega
+    · obtain ⟨imm12, hd2', hlo⟩ := decode_ldstLo hd2 hsc hoff hy hq2 hsiz
+      have haddr : (tm1.amode (.uimm imm12) rd (bytesOf size)).1 = (relTgt y r).eval c := by
+        simp only [MState.amode, hrx1, hev, bytesOf]; exact hlo
+      obtain ⟨tm2, hex2, hH2, hpc2⟩ := symAccess_exec ha hH1 rt.isLt haddr rfl hnil
+      have hrt : (BitVec.ofNat 5 rt.toNat : Reg) = rt := by simp
+      rw [hrt] at hex2
+      have hex2' : exec (.ldst size false opc (.uimm imm12) rd rt) tm1 = .ok tm2 := hex2
+      refine ⟨tm2, mstar_trans (mstar_single hs1) (mstar_single (mstep_word hcw2 hd2' hex2' hpc1 hret)),
+        hH2.toHoldsCore, fun _ _ _ => hH2.x30, ?_⟩
+      simp only [CtlPc, hpc2, hpc1, at_]
+      simp [BitVec.add_assoc, BitVec.ofNat_add]
 
 
 
