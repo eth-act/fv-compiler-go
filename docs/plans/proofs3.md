@@ -465,13 +465,25 @@ How the proof discharges G14's obligations (`G14.lean`):
   loaded register is G3's (`lo_loadN`, `valRel_loadBool`; `g14_idx`). G13's values go through
   `vk13_step`.
 
-Later slices, by how many functions outside G14 each blocker occurs in (quick-v10, §5; sole
+**Slice G15: zero-sized stack arguments** (`GoFV/Gen/Check15.lean`, `checkG15 lc ps bstart g`,
+returning G4's tables; proven sound, `g15_value`, `g15_term`, `g15_nilPanic`): G14 with the static
+calls whose ABI assigns inputs of size 0 to the stack (`zeroStack`: no register piece, no byte in
+the outgoing area, such as an empty-struct receiver). `callRegs` rejects every stack input;
+`checkG15` checks a static call as G9 does on the ABI without its zero-sized stack inputs
+(`callRegsZ`, `callKind15`, `VK15.call`). Genssa emits no store for them. The proof is
+`g2_call`'s, which now factors through `g2_callAt` (the callee contract for one call, `CallAt`,
+whatever check gave its registers); the contract at such a call is the trusted premise `CallOKZ`
+(`CallOK` with `callRegsZ` in place of `callRegs`; STATUS Assumptions). Of the 317 functions with
+a stack argument, 9 have zero-sized ones only; the other 308 store nonempty arguments to the
+outgoing area and wait for option 2 (§8).
+
+Later slices, by how many functions outside G15 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
 1. **Register-index stores** `MOVDstoreidx8` 245 (39, counted with `MOVDstoreidx`),
    `MOVBstoreidx` 187 (23): G14's addresses with G3's stores.
-2. **Calls** with stack arguments (`stack argument` 317 (10)) or floating-point arguments or
-   results.
+2. **Calls** with nonempty stack arguments (`stack argument` 308 (10); §8) or floating-point
+   arguments or results.
 3. **Frame variables beyond G6**: parameters and results (`NAME_PARAM`, `Blk.local`: `frame
    variable operand class`, 294 (89)) and variables whose address is converted to an integer
    (`frame variable with an integer address`, 197 (11)): option 2 of semantics3 §4.3 (addresses as
@@ -507,6 +519,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G12 | 3,679 (39.57%) | 64,013 |
 | G13 | 3,755 (40.38%) | 69,470 |
 | G14 | 3,815 (41.03%) | 71,548 |
+| G15 | 3,824 (41.13%) | 71,645 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -614,6 +627,9 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
 - `G14.lean`: `loadIdxOp?_op`, `loadIdxOp?_facts`, `stepLoc_loadIdx`, `idxSum`, `loadIdx_eq`,
   `mul_twoPow_eq_shl`, `lo_idxSum`, `lo64_rel`, `IdxPre`, `G14Pre`, `ctx_mem_idx`, `g14_idx`,
   `vk14_step`, `g14_value`, `g14_nilPanic`, `g14_term`.
+- `Spec15.lean`: what `checkG15` accepted (`checkG15_spec`, `vkind15_spec` with `VK15`,
+  `callKind15_spec`); `G2.lean`: `CallAt`, `g2_callAt` (`g2_call` through it).
+- `G15.lean`: `CallOKZ`, `vk15_step`, `g15_value`, `g15_nilPanic`, `g15_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -647,8 +663,10 @@ machine word), `GenG13.lean` (`(*pageBits).clearAll`, which G12 rejects: `g13_va
 7 at `2^41`, after which `runLoc`'s memory holds 64 zero bytes there and so do the machine's),
 `GenG14.lean` (`runtime.argv_index`, which G13 rejects: `g14_value` on `MOVDloadidx8`, `MOVD
 (R0)(R1<<3), R0` with `R0` the start of `heap 1` at `2^41` and `R1` 2, loading the word 7 at
-offset 16, after which `X0` is 7). Each decides its inputs by compiled evaluation
-(`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
+offset 16, after which `X0` is 7), `GenG15.lean` (`(*T3).M` of `test/recover`, which G14 rejects:
+`g15_value` on `CALL main.T3.M(SB)`, whose empty-struct receiver the ABI assigns to the stack, with
+a callee hook that returns at once, which satisfies `CallOKZ`: `callOKZ0`). Each decides its inputs
+by compiled evaluation (`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
 
 ## 6. Future work: recursion through function values
 
@@ -779,3 +797,133 @@ Witnesses: `Witness/ObjFrame.lean` (`testInts`, framed, with the small stack che
 and `obj_exit`) and `Witness/ObjG7.lean` (`(*A).g`: `g7_obj_value` on its nil check;
 `pallocSum.start`: `g7_obj_term` on `TBNZ [63]`). Each decides `checkObj` and `linkCode` by
 compiled evaluation (pinned).
+
+## 8. Plans: frame addresses (option 2), nonempty stack arguments, frame parameters, `MOVDnop`
+
+Status after G15 (quick-v10). These blockers occur in many functions and are the sole reason in
+few:
+
+| Blocker | Occurs in | Sole reason in |
+| --- | --: | --: |
+| `stack argument` | 308 | 10 |
+| `frame variable operand class` | 294 | 89 |
+| `frame variable with an integer address` | 197 | 11 |
+| `MOVDnop` | 750 | 85 |
+
+**Why stack arguments and parameters wait for option 2 (semantics3 §4.3).**
+
+- Phase 1 gives `outargs a` (the value `SP`) and `local a k` (every `PPARAM`/`PPARAMOUT`:
+  `frameBlk`, `Tables.forgeable`) fixed addresses (`Blk.base?`, from `2^62`). Both are
+  `Ptr.convertible`, so `OffPtr [off] SP` and `&param` become integer words (`ptrRes` →
+  `Ptr.word`).
+- `AddrAgree` pins every non-`temp` block to its Phase 1 address. That is what lets integer
+  arithmetic on words (`lo_add`) relate register to register. The machine, however, puts these
+  blocks at `SP + frameOff`, so no `MatchEnv` injects them there.
+- Exempting them as `temp` is unsound while their words exist.
+- The `outargs` window starts at offset 0, which overlaps the saved `LR` word that
+  `StkAt`/`SepFrom` protect. Arguments start at offset 8: `ABIParam.offset` includes the fixed
+  frame word.
+
+**Option 2: design.**
+
+1. **Parameter.** `AddrMap := Blk → Option Nat` with admissibility:
+   - `nil ↦ 0`;
+   - heap blocks keep `(n+1)·2^40`;
+   - frame blocks (`local`, `outargs`, `temp`) are anywhere outside the nil page and the heap
+     range, without wrap, injective on the windows of live blocks;
+   - a decoder `ofAddr : BitVec 64 → Ptr` that inverts the assignment on in-window addresses and
+     gives `nil` elsewhere.
+
+   It is a field of `Env`, read by:
+   - `Ptr.addr?`, `Ptr.ofAddr`, `Ptr.word`, `Ptr.convertible`, `Val.asPtrWord`, `ptrRes`,
+     `wordRes`, `offPtr`;
+   - the `Arm64` ops `add`, `sub`, `addP`, `addr` and the pointer compares.
+
+   The default `Env.addr` is today's `Blk.base?`, so executables (`gofv-ssa-opt`, `gen-check`)
+   do not change.
+2. **Statements that change.**
+   - Every Phase 1/2 theorem quantified over `env` holds for every admissible `env.addr`.
+     Statements keep their shape; lemmas that unfold `Blk.base?`/`Ptr.ofAddr` take admissibility
+     instead. This touches 45 modules / 225 sites: `SSA/Sem` 15, `Proof/Pass` 26, `Opt` 17,
+     `Proof/Rules` + `Proof/Low` 13, `Proof` 10, `Proof/Gen` 7.
+   - Phase 3: `AddrAgree ι` becomes `∀ b, env.addr b = ι b` for blocks with an address. This
+     covers the frame blocks, so `NotTemp` drops out.
+   - `MatchEnv` instantiates `env.addr` with `SP + frameOff` for this activation's `local`,
+     `outargs` and `temp`, and `CallSpec` extends it for the callee's frame.
+   - `g*_value` gain no premise; their `env` is the instantiated one.
+3. **Migration order.**
+   1. `SSA/Sem` definitions and their round-trip lemmas (`ofAddr_addr`, `addr_ofAddr`, window
+      facts) under admissibility.
+   2. The Phase 1 pass proofs in dependency order (`Proof/Pass`, then `Proof/Rules`/`Low`).
+   3. Phase 2 (`TabsAgree*`, `MemInv`, `DeferRel`).
+   4. Phase 3 `Rel`/`Value`/`Mem` (`AddrAgree` → equality with `env.addr`), then G1–G15
+      unchanged above `Rel`.
+
+   Each step builds on its own: steps 1–3 keep `env.addr := Blk.base?` at every use until step 4
+   instantiates it.
+4. **Slices it unlocks.**
+   - **G16+, stack arguments.**
+     - `SP` as a no-code value outside the entry prefix.
+     - SP-relative stores and pair stores at the checked outgoing offsets, the injection
+       `outargs ↦ SP` with a poison prefix `[0, 8)` exempted from `SepFrom`.
+     - `CallSpec` relating the stack arguments by `MemInj`; the callee's `decodeArgs` reads them
+       there.
+     - Expected: the 10 sole functions, and up to 308 together with other slices.
+   - **Frame parameters and results.**
+     - `frameVar?` for `.PARAM` operands, and `varWin` in the caller's argument area.
+     - Disjointness from `PARAM` home slots, with a checked entry-store prefix materialising
+       register parameters whose address is taken (`XChan.Send`: `MOVD R1, x+8(FP)`).
+     - Expected: 89 sole, 294 occurs. Integer addresses add 11 sole and 197 occurs.
+5. **Interaction with the 1183/1184 experiment** (`agent/p2p1183`). It redefines
+   `Ptr.convertible` as the `ofAddr` round trip (with `a < 3·2^20`), makes `Ptr.word` poison
+   outside the window, and adds `Ptr.held` to `hasTy`. Option 2 should start from it once it
+   lands:
+   - "convertible = round trip" is exactly the property admissibility must provide, so
+     convertibility becomes a consequence of `env.addr` rather than a second fixed table;
+   - starting before it lands would make both refactors edit the same definitions (`Ptr.word`,
+     `Ptr.convertible`, `asPtrWord`) and their 26 `Proof/Pass` users.
+
+**Plan for `MOVDnop`, which needs no option 2.**
+
+- **The obstacle.** `MOVDnop x` emits no code. `runLoc` gives it the full 64-bit register:
+  `movdLoc` takes the zero or sign extension of `x`'s low bits, as `LocCtx.signOf` decides from
+  `x`'s producer. `LocMatch` only relates the low `w` bits of a narrow integer.
+- **The upper-bit table.** Add a dataflow table beside the class table: `UTab`, per block, each
+  register ↦ `zext w | sext w | ⊤`. Its `uStep` follows `kStep`:
+  - narrow loads `MOV{B,H,W}Uload` and their idx forms give `zext`, and `MOV{B,H,W}load` give
+    `sext`; the extensions `MOV*reg` likewise;
+  - `LoadReg` of a narrow type gives `sext`/`zext` by its signedness (`loadByType`);
+  - 32-bit ops (`*W`) give `zext 32` only for 32-bit results;
+  - `CSET` and the boolean producers give `zext 1`;
+  - `Copy` and `MOVDreg` copy their argument's entry;
+  - calls, `SelectN` of calls, and every other writer give `⊤`;
+  - a value that writes no register keeps the table.
+
+  The meet at block entries goes as `kFlow`. `checkU` requires, at each `MOVDnop`/`MOVDreg x`,
+  that `x`'s register entry is the extension `signOf x` names at `x`'s width.
+- **The invariant.** `UInv E K U s m`: every register `r ≠ ZERO` with `U r = zext w`/`sext w` and
+  `s.regs[r] = .int w x` (`w < 64`) has `m.x r = x.zeroExtend 64`/`x.signExtend 64`. It becomes
+  part of `G3Inv`.
+- **Register-frame lemmas.** Each value lemma of G1–G15 gains the conclusion that every X
+  register other than the value's home register(s) and the op's clobbers is unchanged:
+  `∀ k, k ∉ writes v → m'.x k = m.x k`. For the code-emitting ones this follows from the Prog
+  lemmas: `progStep_*` writes only `wX kd`. For calls, `CallSpec` only keeps `R28`/`R29`, and
+  `UInv` is reset to `⊤` there. The no-code values keep `m`. Every slice's `vkN_step` then
+  carries `UInv` across: unchanged registers keep it, and the written register gets the entry
+  its producer's lemma establishes. The narrow-load lemmas (`lo_loadN`) already compute the
+  exact zero/sign extension, and `op_reg2`'s `val` is that word.
+- **The slice.** `MOVDnop x` is `stepLoc` = `movdLoc`, with no Prog. Its proof is
+  `UInv` → `ValRel` of the 64-bit result. Expected: 85 sole, 750 occurs. `MOVDreg` (310 occurs)
+  is the same with a `MOVD` Prog.
+
+**Other slices that need no option 2.** Each is listed with the functions it occurs in (sole
+reason in parentheses):
+
+- register-index stores, `MOVDstoreidx8`/`MOVBstoreidx`: 245/187 (39/23); G14's addresses with
+  G3's stores;
+- `GetG`: 430 (89); `R28` = `E.g`, already in `FrameRel`;
+- `ADDshiftLL`: 678 (57); `lo_add` with `shifted`;
+- bounds panics `LoweredPanicBounds*`: 616 (40+); a `CALL runtime.panicBounds*` hook that
+  panics, as `g7_nilPanic`;
+- `TSTconst`, `Equal`/`NotEqual`, `CSEL`: 52, 49/32, 38+25 sole; flags producers and readers
+  as G1's `CMP`/`B<cond>`.
