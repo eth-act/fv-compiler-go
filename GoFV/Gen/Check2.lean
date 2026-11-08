@@ -74,11 +74,13 @@ structure Pat where
 
 def Pat.ofShape (sh : Shape) : Pat := ⟨sh.ok, sh.as.name⟩
 
-/-- What a value emits in G2. -/
+/-- What a value emits in G2 (`progs`: several Progs in order, each after no-ops; slice G13's
+`LoweredZero`). -/
 inductive VKind2 where
   | entry
   | none
   | prog (p : Pat)
+  | progs (ps : List Pat)
 
 /-- A memory operand off `RSP` with the given name class and offset (the symbol, which
 `NAME_AUTO`/`NAME_PARAM` addressing ignores, unconstrained). -/
@@ -253,6 +255,14 @@ def Cx2.one (c : Cx2) (j : Nat) (pat : Pat) : Except String Nat := do
   unless pat.ok p do throw s!"Prog {p.id}: {p.as.name}, expected {pat.what}"
   return k + 1
 
+/-- Progs matching `pats` in order, each after no-ops from the index after the previous one: the
+index after the last. -/
+def Cx2.many (c : Cx2) : Nat → List Pat → Except String Nat
+  | j, [] => return j
+  | j, pat :: pats => do
+    let k ← c.one j pat
+    c.many k pats
+
 def Cx2.values (c : Cx2) (entry : Bool) : List ID → Nat → Bool → Except String (List Nat × Nat)
   | [], j, _ => return ([], j)
   | id :: ids, j, head => do
@@ -263,6 +273,7 @@ def Cx2.values (c : Cx2) (entry : Bool) : List ID → Nat → Bool → Except St
         pure j
       | .none => pure j
       | .prog pat => c.one j pat
+      | .progs pats => c.many j pats
     -- a spill changes neither a register nor the memory, and the closure context is no code (`R26`
     -- holds it from the entry on): entry values may follow them
     let head := head && (entryOp v.op || v.op == .StoreReg || v.op == .ARM64LoweredGetClosurePtr)

@@ -37,11 +37,27 @@ theorem Cx2.one_spec {c : Cx2} {j j' : Nat} {pat : Pat} (h : c.one j pat = .ok j
     obtain ⟨h1, h2⟩ := skipFrom_spec c.cx.ps c.cx.ps.size j
     exact ⟨_, h1, rfl, hk, hk' ▸ hs, h2⟩
 
+/-- From index `j`, Progs matching `pats` in order, each after no-ops; `j'` after the last. -/
+def ManyAt2 (ps : Array Prog) : Nat → List Pat → Nat → Prop
+  | j, [], j' => j' = j
+  | j, pat :: pats, j' => ∃ k, OneAt2 ps j pat k ∧ ManyAt2 ps k pats j'
+
+theorem Cx2.many_spec {c : Cx2} : ∀ {j j' : Nat} {pats : List Pat}, c.many j pats = .ok j' →
+    ManyAt2 c.cx.ps j pats j'
+  | j, j', [], h => by
+    simp only [Cx2.many, ex_pure, Except.ok.injEq] at h
+    exact h.symm
+  | j, j', pat :: pats, h => by
+    simp only [Cx2.many] at h
+    obtain ⟨k, hk, h⟩ := ex_bind_eq_ok h
+    exact ⟨k, Cx2.one_spec hk, Cx2.many_spec h⟩
+
 /-- The Progs between the start index of a value and the next. -/
 def VStep2 (ps : Array Prog) : VKind2 → Nat → Nat → Prop
   | .entry, j, j' => j' = j
   | .none, j, j' => j' = j
   | .prog pat, j, j' => OneAt2 ps j pat j'
+  | .progs pats, j, j' => ManyAt2 ps j pats j'
 
 theorem Cx2.values_spec {c : Cx2} {entry : Bool} :
     ∀ {ids : List ID} {j : Nat} {head : Bool} {js : List Nat} {e : Nat},
@@ -95,6 +111,9 @@ theorem Cx2.values_spec {c : Cx2} {entry : Bool} :
       | prog pat =>
         obtain ⟨k, hkk, h⟩ := ex_bind_eq_ok h
         exact fin k _ (Cx2.one_spec hkk) h
+      | progs pats =>
+        obtain ⟨k, hkk, h⟩ := ex_bind_eq_ok h
+        exact fin k _ (Cx2.many_spec hkk) h
 
 /-! ## Values -/
 
