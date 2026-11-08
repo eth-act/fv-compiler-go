@@ -95,7 +95,8 @@ theorem kctl_of {lc : LocCtx} {b : Block} {K : KMap}
 
 /-- The class table follows a value that writes at most its register home (`kStep`). -/
 theorem knext_kStep {lc : LocCtx} {v : Value} {K : KMap}
-    (hres : v.op ≠ .Phi → ∀ rs, lc.home v.id = some (.results rs) → rs = #[]) :
+    (hres : v.op ≠ .Phi → (∀ rs, lc.home v.id = some (.results rs) → rs = #[]) ∧
+      ∀ a b, lc.home v.id ≠ some (.pair a b)) :
     KNext lc v K.get (kStep lc K v).get := by
   intro r c hr hc
   rw [kStep_get] at hc
@@ -128,7 +129,7 @@ theorem knext_kStep {lc : LocCtx} {v : Value} {K : KMap}
           exact hc
       | results rs =>
         simp only [hh] at hc
-        rw [hres hop rs hh] at hc
+        rw [(hres hop).1 rs hh] at hc
         simp only [Array.toList_empty, List.zip_nil_right, kResults] at hc
         rw [if_neg (fun h => by cases h.2)]
         exact hc
@@ -136,10 +137,7 @@ theorem knext_kStep {lc : LocCtx} {v : Value} {K : KMap}
         simp only [hh] at hc
         rw [if_neg (fun h => by cases h.2)]
         exact hc
-      | pair a b =>
-        simp only [hh] at hc
-        rw [if_neg (fun h => by cases h.2)]
-        exact hc
+      | pair a b => exact absurd hh ((hres hop).2 a b)
 
 private theorem zip_some_filterMap : ∀ (ts : List Ty) (outs : List Nat),
     outs.length ≤ ts.length → ((ts.zip (outs.map some)).filterMap (·.2)) = outs
@@ -836,119 +834,119 @@ theorem callTy_len {n : Nat} {t : Ty} (h : callTy n t = true) : n ≤ (tupleTys 
     omega
   | _ => simp [callTy] at h
 
-/-- A value of G1 has no `results` home with registers. -/
+/-- The home of value `id` is none, a register, a slot or the empty `results` home: the value
+writes no register but its own (`knext_kStep`). -/
+def HomeSimple (lc : LocCtx) (id : ID) : Prop :=
+  ∀ l, lc.home id = some l → (∃ r, l = .reg r) ∨ (∃ k, l = .slot k) ∨ l = .results #[]
+
+theorem HomeSimple.noRegs {lc : LocCtx} {id : ID} (h : HomeSimple lc id) :
+    (∀ rs, lc.home id = some (.results rs) → rs = #[]) ∧ ∀ a b, lc.home id ≠ some (.pair a b) := by
+  refine ⟨fun rs hrs => ?_, fun a b hab => ?_⟩
+  · rcases h _ hrs with ⟨r, h⟩ | ⟨k, h⟩ | h <;> cases h
+    rfl
+  · rcases h _ hab with ⟨r, h⟩ | ⟨k, h⟩ | h <;> cases h
+
+theorem hs_none {lc : LocCtx} {id : ID} (hh : lc.home id = none) : HomeSimple lc id :=
+  fun l hl => by rw [hh] at hl; cases hl
+
+theorem hs_reg {lc : LocCtx} {id r : ID} (hh : lc.home id = some (.reg r)) : HomeSimple lc id :=
+  fun l hl => by rw [hh] at hl; cases hl; exact .inl ⟨r, rfl⟩
+
+theorem hs_slot {lc : LocCtx} {id : ID} {k : SlotKey} (hh : lc.home id = some (.slot k)) :
+    HomeSimple lc id :=
+  fun l hl => by rw [hh] at hl; cases hl; exact .inr (.inl ⟨k, rfl⟩)
+
+theorem hs_res {lc : LocCtx} {v : Value} {c : Nat} {o : Int} (hro : resObj lc v = .ok (c, o)) :
+    HomeSimple lc v.id := by
+  obtain ⟨r, hvh, -⟩ := resObj_spec hro
+  exact hs_reg hvh
+
+/-- A value of G1 other than a `Phi` writes no register but its own. -/
 theorem vk_noRes {lc : LocCtx} {v : Value} {kd : VKind} (h : VK lc v kd) (hnp : v.op ≠ .Phi) :
-    ∀ rs, lc.home v.id = some (.results rs) → rs = #[] := by
-  intro rs hrs
-  have hreg : ∀ {c : Nat} {o : Int}, resObj lc v = .ok (c, o) → False := fun hro => by
-    obtain ⟨r, hvh, -⟩ := resObj_spec hro
-    rw [hvh] at hrs; cases hrs
+    HomeSimple lc v.id := by
   cases h with
   | phi hop _ => exact absurd hop hnp
-  | zero _ _ hh _ => rw [hh] at hrs; cases hrs
-  | inl _ hh _ => rw [hh] at hrs; cases hrs
-  | copyMem _ _ _ _ hh => rw [hh] at hrs; cases hrs
-  | copySame _ _ _ _ hro => exact (hreg hro).elim
-  | copyMov _ _ _ _ hro _ => exact (hreg hro).elim
+  | zero _ _ hh _ => exact hs_reg hh
+  | inl _ hh _ => exact hs_none hh
+  | copyMem _ _ _ _ hh => exact hs_none hh
+  | copySame _ _ _ _ hro => exact hs_res hro
+  | copyMov _ _ _ _ hro _ => exact hs_res hro
   | result _ hh _ _ _ =>
-    rcases hh with hh | hh <;> rw [hh] at hrs <;> cases hrs
-    rfl
-  | movConst _ _ hro _ => exact (hreg hro).elim
-  | alu _ _ _ _ hro _ _ _ => exact (hreg hro).elim
-  | aluK _ _ _ hro _ _ => exact (hreg hro).elim
-  | cmp _ _ _ hh _ _ => rw [hh] at hrs; cases hrs
-  | cmpK _ _ _ hh _ => rw [hh] at hrs; cases hrs
-  | load _ _ _ _ _ hro _ => exact (hreg hro).elim
-  | store _ _ _ _ hh _ _ _ _ => rw [hh] at hrs; cases hrs
+    rcases hh with hh | hh
+    · exact hs_none hh
+    · exact fun l hl => by rw [hh] at hl; cases hl; exact .inr (.inr rfl)
+  | movConst _ _ hro _ => exact hs_res hro
+  | alu _ _ _ _ hro _ _ _ => exact hs_res hro
+  | aluK _ _ _ hro _ _ => exact hs_res hro
+  | cmp _ _ _ hh _ _ => exact hs_none hh
+  | cmpK _ _ _ hh _ => exact hs_none hh
+  | load _ _ _ _ _ hro _ => exact hs_res hro
+  | store _ _ _ _ hh _ _ _ _ => exact hs_none hh
 
-/-- A value of G3 other than a call has no `results` home with registers. -/
+/-- A value of G3 other than a call or a `Phi` writes no register but its own. -/
 theorem vk3_noRes {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK3 lc g v kd)
-    (hnc : v.op ≠ .ARM64CALLstatic) (hnp : v.op ≠ .Phi) :
-    ∀ rs, lc.home v.id = some (.results rs) → rs = #[] := by
-  intro rs hrs
-  have hreg : ∀ {c : Nat} {o : Int}, resObj lc v = .ok (c, o) → False := fun hro => by
-    obtain ⟨r, hvh, -⟩ := resObj_spec hro
-    rw [hvh] at hrs; cases hrs
+    (hnc : v.op ≠ .ARM64CALLstatic) (hnp : v.op ≠ .Phi) : HomeSimple lc v.id := by
   cases h with
   | g2 _ _ h2 =>
     cases h2 with
-    | g1 _ _ _ _ _ h1 => exact vk_noRes h1 hnp rs hrs
+    | g1 _ _ _ _ _ h1 => exact vk_noRes h1 hnp
     | call hop => exact absurd hop hnc
-    | selMem _ _ _ _ _ _ _ _ _ hh _ => rw [hh] at hrs; cases hrs
-    | selReg _ _ _ _ _ _ _ _ _ hh => rw [hh] at hrs; cases hrs
-    | addr _ _ _ _ _ _ hro _ => exact (hreg hro).elim
-    | spill _ hh => rw [hh] at hrs; cases hrs
-    | reload _ _ _ _ _ _ hro _ => exact (hreg hro).elim
-  | load _ _ _ _ _ hro => exact (hreg hro).elim
-  | store _ _ _ _ hh => rw [hh] at hrs; cases hrs
-  | sb _ _ _ hh => rcases hh with hh | hh <;> rw [hh] at hrs <;> cases hrs
-  | ext _ _ _ hro => exact (hreg hro).elim
-  | aluK _ _ _ hro => exact (hreg hro).elim
-  | ubfx _ _ _ _ _ hro => exact (hreg hro).elim
-  | cmpw _ _ _ hh => rw [hh] at hrs; cases hrs
-  | cmpwK _ _ _ hh => rw [hh] at hrs; cases hrs
+    | selMem _ _ _ _ _ _ _ _ _ hh _ => exact hs_none hh
+    | selReg _ _ _ _ _ _ _ _ _ hh => exact hs_reg hh
+    | addr _ _ _ _ _ _ hro _ => exact hs_res hro
+    | spill _ hh => exact hs_slot hh
+    | reload _ _ _ _ _ _ hro _ => exact hs_res hro
+  | load _ _ _ _ _ hro => exact hs_res hro
+  | store _ _ _ _ hh => exact hs_none hh
+  | sb _ _ _ hh =>
+    rcases hh with hh | hh
+    · exact hs_none hh
+    · exact hs_reg hh
+  | ext _ _ _ hro => exact hs_res hro
+  | aluK _ _ _ hro => exact hs_res hro
+  | ubfx _ _ _ _ _ hro => exact hs_res hro
+  | cmpw _ _ _ hh => exact hs_none hh
+  | cmpwK _ _ _ hh => exact hs_none hh
 
 /-! ## The theorems -/
 
-/-- **G3, values.** A value (not an entry value) of a function `checkG3` accepted with the class
-table `kt`, run by `runLoc` from a state related by `LocMatch` to a machine state whose registers
-hold values of the classes the table gives before the value (`G3Inv` at `kAt … i`), is matched by
-`runProg` steps of genssa's P0 Progs to a state related before the next value, with the registers
-at the classes before the next value, under an activation `E'` that extends `E`'s injection (by
-the callee's, at a call) and is again a `G2Env`. At a static call the callee's behaviour is the
-trusted contract `CallOK`. -/
-theorem g3_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
-    {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab} {E : MatchEnv}
-    {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s s' : LocState} {m : MState}
-    (hc : checkG3 lc ps bstart g = .ok (tab, kt)) (hE : G2Env lc g L ps ret tab E)
-    (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
-    (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
-    (hen : entryOp3 v.op = false) (hm : LocMatch E s bid i m)
-    (hinv : G3Inv E lc (kAt lc kt bid blk i) s) (hpre : G3Pre lc s v)
-    (hcall : CallOK H E g L lc s s' v m) (hs : stepLoc env lc s v = .ok s') :
-    ∃ E' m', E.Extends E' ∧ G2Env lc g L ps ret tab E' ∧ PStar H L ps.toList ret m m' ∧
-      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' := by
+/-- One value of G3's kinds (`VK3`) emitted at the Progs from `j` to `j'`, run from a state at the
+class map `K` that gives every register the value reads its class (`kReads`): matched by `runProg`
+steps to a state related before the next value, at the class map after it (`kStep`), under an
+activation `E'` that extends `E`'s injection (by the callee's, at a call). `g3_value` and G4's
+`g4_value` (`G4.lean`) apply it to the values of their slices. -/
+theorem vk3_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat → BitVec 64}
+    {text : BitVec 64} {az ez : Int} {ps : Array Prog} {ret : BitVec 64} {tab : PcTab}
+    {E : MatchEnv} {bid : ID} {i j j' : Nat} {id : ID} {v : Value} {s s' : LocState}
+    {m : MState} {K : KMap} {kd : VKind2}
+    (hE : G2Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E)
+    (F : Facts lc sym text az ez ps.toList ret E)
+    (hns : ∀ c u, lc.ctx.f.value? c = some u → u.op = .ARM64CALLstatic →
+      ∀ k, lc.home c ≠ some (.slot k))
+    (hcf : checkFrame lc g = .ok ()) (hv : lc.ctx.f.value? id = some v) (hVK : VK3 lc g v kd)
+    (hvs : VStep2 ps kd j j')
+    (htemp : (lc.temps[v.id]?).join = none)
+    (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
+    (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
+    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s) (hpre : G3Pre lc s v)
+    (hcall : CallOK H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
+    (hs : stepLoc env lc s v = .ok s') :
+    ∃ E' m', E.Extends E' ∧ G2Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
+      PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
+      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' := by
   have hE0 := hE
-  obtain ⟨hlcE, hlink, hpcOf, hret, hA, hglob, hsyms, hcalls, hslot, hextra, hF⟩ := hE
-  obtain ⟨sym, text, az, ez, hL⟩ : ∃ sym text az ez, L = Link.byId sym text az ez ps.toList :=
-    ⟨_, _, _, _, hlink⟩
-  have htext : L.text = text := by rw [hL]; rfl
-  rw [htext] at hpcOf
-  subst hL
-  obtain ⟨c, rfl, rfl, -, rfl, hvk, -, hl, hhome3, hcf, hk, hlt, hnd, hblocks⟩ := checkG3_spec hc
-  obtain ⟨b, j, js, e, next, hb', -, hvals, -, -, hrow⟩ := Cx2.blocks_spec hblocks bid hbid
-  rw [hb] at hb'
-  cases hb'
-  obtain ⟨-, -, hstep⟩ := Cx2.values_spec hvals
-  obtain ⟨hi', hid⟩ := Array.getElem?_eq_some_iff.1 hi
-  obtain ⟨v', kd, hv', hkd, hvs⟩ := hstep i (by simpa using hi')
-  have hid' : blk.values.toList[i] = id := by simpa using hid
-  rw [hid', hv] at hv'
-  cases hv'
-  rw [hvk] at hkd
-  obtain ⟨htemp, hVK⟩ := vkind3_spec hkd hen
-  have F : Facts c.cx.lc sym text az ez c.cx.ps.toList ret E :=
-    ⟨hl, clsReg_of_home3 hhome3, hnd, hlt, hret, hA⟩
-  have hj : E.pcOf bid i = pcAt text c.cx.ps.toList ((js ++ [e]).getD i 0) := by
-    rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some]
-  have hj' : E.pcOf bid (i + 1) = pcAt text c.cx.ps.toList ((js ++ [e]).getD (i + 1) 0) := by
-    rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some]
+  obtain ⟨hlcE, -, -, -, -, hglob, hsyms, hcalls, hslot, hextra, hF⟩ := hE
   have hsz := slot_sizes hlcE hcf hinv.slots
-  have hreads := ((checkK_spec hk).2 bid hbid blk hb).1 i id v hi hv
   have hR := kread_of_reads hreads
-  rw [kAt_succ hi hv]
-  have same : ∀ m', PStar H (Link.byId sym text az ez c.cx.ps.toList) c.cx.ps.toList ret m m' ∧
-      LocMatch E s' bid (i + 1) m' ∧
-      CoreInv E.ι (StkAt E) (kStep c.cx.lc (kAt c.cx.lc kt bid blk i) v).get s' ∧
-      SlotInv c.cx.lc s' →
-      ∃ E' m', E.Extends E' ∧ G2Env c.cx.lc c.g (Link.byId sym text az ez c.cx.ps.toList) c.cx.ps
-        ret tab E' ∧ PStar H (Link.byId sym text az ez c.cx.ps.toList) c.cx.ps.toList ret m m' ∧
-        LocMatch E' s' bid (i + 1) m' ∧
-        G3Inv E' c.cx.lc (kStep c.cx.lc (kAt c.cx.lc kt bid blk i) v) s' :=
+  have same : ∀ m', PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
+      LocMatch E s' bid (i + 1) m' ∧ CoreInv E.ι (StkAt E) (kStep lc K v).get s' ∧
+      SlotInv lc s' →
+      ∃ E' m', E.Extends E' ∧ G2Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
+        PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
+        LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' :=
     fun m' ⟨h1, h2, h3, h4⟩ => ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE0, h1, h2, ⟨h3, h4⟩⟩
-  have hK : v.op ≠ .ARM64CALLstatic → KNext c.cx.lc v (kAt c.cx.lc kt bid blk i).get
-      (kStep c.cx.lc (kAt c.cx.lc kt bid blk i) v).get :=
-    fun hnc => knext_kStep (vk3_noRes hVK hnc)
+  have hK : v.op ≠ .ARM64CALLstatic → KNext lc v K.get (kStep lc K v).get :=
+    fun hnc => knext_kStep fun hnp => (vk3_noRes hVK hnc hnp).noRegs
   cases hVK with
   | g2 hops hnodup hVK2 =>
     cases hVK2 with
@@ -974,12 +972,12 @@ theorem g3_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps
       exact ⟨_, m', ⟨rfl, hext'⟩, hE0.extend hext' hA', hstar, hlm, ⟨hcore', hsl'⟩⟩
     | selMem hop hsz1 hc0 hu hcop hts hct hpos hmt hnone hidx =>
       obtain ⟨m', h⟩ := g2_selMem (H := H) F hm hinv.core hinv.slots
-        (hK (by rw [hop]; nofun)) hj hj' hop hsz1 hc0 hu (call_not_slot3 hhome3 hu hcop) hts hct
+        (hK (by rw [hop]; nofun)) hj hj' hop hsz1 hc0 hu (hns _ _ hu hcop) hts hct
         hpos hmt hnone hidx hvs htemp hs
       exact same m' h
     | selReg hop hsz1 hc0 hu hcop hts hct hpos _ hvh hr16 hlt' hcl hhc hrs =>
       obtain ⟨m', h⟩ := g2_selReg (H := H) F hm hinv.core hinv.slots
-        (hK (by rw [hop]; nofun)) hj hj' hop hsz1 hc0 hu (call_not_slot3 hhome3 hu hcop) hts hct
+        (hK (by rw [hop]; nofun)) hj hj' hop hsz1 hc0 hu (hns _ _ hu hcop) hts hct
         hpos hvh hr16 (fun c0 hc0' => ksel_of_reads hreads hop hc0 hts hhc hrs (hcl.trans hc0'))
         hlt' hcl hhc hrs hvs htemp hs
       exact same m' h
@@ -1035,6 +1033,54 @@ theorem g3_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps
     obtain ⟨m', h⟩ := g3_cmpwK (H := H) F hm hinv.core hinv.slots hR (hK (by rw [hop]; nofun)) hj
       hj' hop hsz1 hfl hhn hao hca hvs htemp hs
     exact same m' h
+
+/-- **G3, values.** A value (not an entry value) of a function `checkG3` accepted with the class
+table `kt`, run by `runLoc` from a state related by `LocMatch` to a machine state whose registers
+hold values of the classes the table gives before the value (`G3Inv` at `kAt … i`), is matched by
+`runProg` steps of genssa's P0 Progs to a state related before the next value, with the registers
+at the classes before the next value, under an activation `E'` that extends `E`'s injection (by
+the callee's, at a call) and is again a `G2Env`. At a static call the callee's behaviour is the
+trusted contract `CallOK`. -/
+theorem g3_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
+    {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab} {E : MatchEnv}
+    {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s s' : LocState} {m : MState}
+    (hc : checkG3 lc ps bstart g = .ok (tab, kt)) (hE : G2Env lc g L ps ret tab E)
+    (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
+    (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
+    (hen : entryOp3 v.op = false) (hm : LocMatch E s bid i m)
+    (hinv : G3Inv E lc (kAt lc kt bid blk i) s) (hpre : G3Pre lc s v)
+    (hcall : CallOK H E g L lc s s' v m) (hs : stepLoc env lc s v = .ok s') :
+    ∃ E' m', E.Extends E' ∧ G2Env lc g L ps ret tab E' ∧ PStar H L ps.toList ret m m' ∧
+      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' := by
+  have hE0 := hE
+  obtain ⟨-, hlink, hpcOf, hret, hA, -, -, -, -, -, -⟩ := hE
+  obtain ⟨sym, text, az, ez, hL⟩ : ∃ sym text az ez, L = Link.byId sym text az ez ps.toList :=
+    ⟨_, _, _, _, hlink⟩
+  have htext : L.text = text := by rw [hL]; rfl
+  rw [htext] at hpcOf
+  subst hL
+  obtain ⟨c, rfl, rfl, -, rfl, hvk, -, hl, hhome3, hcf, hk, hlt, hnd, hblocks⟩ := checkG3_spec hc
+  obtain ⟨b, j, js, e, next, hb', -, hvals, -, -, hrow⟩ := Cx2.blocks_spec hblocks bid hbid
+  rw [hb] at hb'
+  cases hb'
+  obtain ⟨-, -, hstep⟩ := Cx2.values_spec hvals
+  obtain ⟨hi', hid⟩ := Array.getElem?_eq_some_iff.1 hi
+  obtain ⟨v', kd, hv', hkd, hvs⟩ := hstep i (by simpa using hi')
+  have hid' : blk.values.toList[i] = id := by simpa using hid
+  rw [hid', hv] at hv'
+  cases hv'
+  rw [hvk] at hkd
+  obtain ⟨htemp, hVK⟩ := vkind3_spec hkd hen
+  have F : Facts c.cx.lc sym text az ez c.cx.ps.toList ret E :=
+    ⟨hl, clsReg_of_home3 hhome3, hnd, hlt, hret, hA⟩
+  have hj : E.pcOf bid i = pcAt text c.cx.ps.toList ((js ++ [e]).getD i 0) := by
+    rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some]
+  have hj' : E.pcOf bid (i + 1) = pcAt text c.cx.ps.toList ((js ++ [e]).getD (i + 1) 0) := by
+    rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some]
+  have hreads := ((checkK_spec hk).2 bid hbid blk hb).1 i id v hi hv
+  rw [kAt_succ hi hv]
+  exact vk3_step hE0 F (fun _ _ hu hcop => call_not_slot3 hhome3 hu hcop) hcf hv hVK hvs htemp hj
+    hj' hreads hm hinv hpre hcall hs
 
 /-- **G3, terminators.** A terminator of a function `checkG3` accepted with the class table `kt`
 that goes to a successor, from a state whose registers hold the classes of the block's end, is

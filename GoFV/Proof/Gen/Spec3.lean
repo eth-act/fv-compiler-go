@@ -508,8 +508,8 @@ theorem kResults_get_of_mem : ∀ {K : KMap} {rs : List (Ty × Option Nat)} {t :
     · exact kResults_get_of_mem hnd he hr
 
 /-- The class map after `v`: unchanged by a `Phi`; else the class of `v` in its register home
-(not `ZERO`, inside the map), the results of a `results` home (`kResults`), and nothing
-otherwise. -/
+(not `ZERO`, inside the map), the results of a `results` or `pair` home (`kResults`), and
+nothing otherwise. -/
 theorem kStep_get {lc : LocCtx} {K : KMap} {v : Value} {r : Nat} :
     (kStep lc K v).get r =
       if v.op = .Phi then K.get r else
@@ -517,6 +517,7 @@ theorem kStep_get {lc : LocCtx} {K : KMap} {v : Value} {r : Nat} :
       | some (.reg r0) =>
         if r0 ≠ zeroReg ∧ r = r0 ∧ r0 < K.size then cls (lc.ty v.id) else K.get r
       | some (.results rs) => (kResults K ((tupleTys (lc.ty v.id)).zip rs.toList)).get r
+      | some (.pair a b) => (kResults K ((tupleTys (lc.ty v.id)).zip [a, b])).get r
       | _ => K.get r := by
   unfold kStep
   by_cases hp : v.op = .Phi
@@ -535,15 +536,17 @@ theorem kStep_get {lc : LocCtx} {K : KMap} {v : Value} {r : Nat} :
 theorem kStep_phi {lc : LocCtx} {K : KMap} {v : Value} (h : v.op = .Phi) : kStep lc K v = K := by
   simp [kStep, h]
 
-/-- A value without register or `results` home writes no register. -/
+/-- A value without register, `results` or `pair` home writes no register. -/
 theorem kStep_none {lc : LocCtx} {K : KMap} {v : Value} (hr : ∀ r, lc.home v.id ≠ some (.reg r))
-    (hrs : ∀ rs, lc.home v.id ≠ some (.results rs)) : kStep lc K v = K := by
+    (hrs : ∀ rs, lc.home v.id ≠ some (.results rs)) (hp : ∀ a b, lc.home v.id ≠ some (.pair a b)) :
+    kStep lc K v = K := by
   unfold kStep
   split
   · rfl
   · split
     next r0 hh => exact absurd hh (hr r0)
     next rs hh => exact absurd hh (hrs rs)
+    next a b hh => exact absurd hh (hp a b)
     next => rfl
 
 /-- One step keeps the size of the class map. -/
@@ -555,6 +558,7 @@ theorem kStep_size {lc : LocCtx} {K : KMap} {v : Value} : (kStep lc K v).size = 
     · split
       · rfl
       · exact Array.size_setIfInBounds
+    · exact kResults_size
     · exact kResults_size
     · rfl
 
