@@ -62,12 +62,13 @@ def kResults (K : KMap) : List (Ty × Option Nat) → KMap
   | (_, none) :: rest => kResults K rest
 
 /-- The class map after `v`: the class of its register home, or of each result register of a
-call; a `Phi` writes nothing. -/
+call or register of a pair; a `Phi` writes nothing. -/
 def kStep (lc : LocCtx) (K : KMap) (v : Value) : KMap :=
   if v.op == .Phi then K else
   match lc.home v.id with
   | some (.reg r) => if r == zeroReg then K else K.setIfInBounds r (cls (lc.ty v.id))
   | some (.results rs) => kResults K ((tupleTys (lc.ty v.id)).zip rs.toList)
+  | some (.pair a b) => kResults K ((tupleTys (lc.ty v.id)).zip [a, b])
   | _ => K
 
 /-- The class map after the values `ids`. -/
@@ -83,7 +84,8 @@ def kArg (lc : LocCtx) (a : ID) : Option (Nat × Nat) :=
   | _, _ => none
 
 /-- The registers `v` reads and the class it reads each at: its register arguments (a `Phi`
-reads none: its arguments share its home), and the result register a `SelectN` reads. -/
+reads none: its arguments share its home), and the result register a `SelectN` reads, or the
+register of a pair a `Select0`/`Select1` reads. -/
 def kReads (lc : LocCtx) (v : Value) : List (Nat × Nat) :=
   if v.op == .Phi then [] else
   let sel : List (Nat × Nat) := if v.op == .SelectN then
@@ -92,6 +94,16 @@ def kReads (lc : LocCtx) (v : Value) : List (Nat × Nat) :=
         | some (.results rs) =>
           let i := v.auxInt.toInt.toNat
           match (rs[i]?).join, ((tupleTys (lc.ty c))[i]?).bind cls with
+          | some r, some k => [(r, k)]
+          | _, _ => []
+        | _ => []
+      | none => []
+    else if v.op == .Select0 || v.op == .Select1 then
+      match v.args[0]? with
+      | some c => match lc.home c with
+        | some (.pair a b) =>
+          let i := if v.op == .Select0 then 0 else 1
+          match ([a, b][i]?).join, ((tupleTys (lc.ty c))[i]?).bind cls with
           | some r, some k => [(r, k)]
           | _, _ => []
         | _ => []

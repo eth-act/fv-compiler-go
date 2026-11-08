@@ -95,7 +95,8 @@ theorem kctl_of {lc : LocCtx} {b : Block} {K : KMap}
 
 /-- The class table follows a value that writes at most its register home (`kStep`). -/
 theorem knext_kStep {lc : LocCtx} {v : Value} {K : KMap}
-    (hres : v.op ≠ .Phi → ∀ rs, lc.home v.id = some (.results rs) → rs = #[]) :
+    (hres : v.op ≠ .Phi → (∀ rs, lc.home v.id = some (.results rs) → rs = #[]) ∧
+      ∀ a b, lc.home v.id ≠ some (.pair a b)) :
     KNext lc v K.get (kStep lc K v).get := by
   intro r c hr hc
   rw [kStep_get] at hc
@@ -128,7 +129,7 @@ theorem knext_kStep {lc : LocCtx} {v : Value} {K : KMap}
           exact hc
       | results rs =>
         simp only [hh] at hc
-        rw [hres hop rs hh] at hc
+        rw [(hres hop).1 rs hh] at hc
         simp only [Array.toList_empty, List.zip_nil_right, kResults] at hc
         rw [if_neg (fun h => by cases h.2)]
         exact hc
@@ -136,10 +137,7 @@ theorem knext_kStep {lc : LocCtx} {v : Value} {K : KMap}
         simp only [hh] at hc
         rw [if_neg (fun h => by cases h.2)]
         exact hc
-      | pair a b =>
-        simp only [hh] at hc
-        rw [if_neg (fun h => by cases h.2)]
-        exact hc
+      | pair a b => exact absurd hh ((hres hop).2 a b)
 
 private theorem zip_some_filterMap : ∀ (ts : List Ty) (outs : List Nat),
     outs.length ≤ ts.length → ((ts.zip (outs.map some)).filterMap (·.2)) = outs
@@ -836,57 +834,79 @@ theorem callTy_len {n : Nat} {t : Ty} (h : callTy n t = true) : n ≤ (tupleTys 
     omega
   | _ => simp [callTy] at h
 
-/-- A value of G1 has no `results` home with registers. -/
+/-- The home of value `id` is none, a register, a slot or the empty `results` home: the value
+writes no register but its own (`knext_kStep`). -/
+def HomeSimple (lc : LocCtx) (id : ID) : Prop :=
+  ∀ l, lc.home id = some l → (∃ r, l = .reg r) ∨ (∃ k, l = .slot k) ∨ l = .results #[]
+
+theorem HomeSimple.noRegs {lc : LocCtx} {id : ID} (h : HomeSimple lc id) :
+    (∀ rs, lc.home id = some (.results rs) → rs = #[]) ∧ ∀ a b, lc.home id ≠ some (.pair a b) := by
+  refine ⟨fun rs hrs => ?_, fun a b hab => ?_⟩
+  · rcases h _ hrs with ⟨r, h⟩ | ⟨k, h⟩ | h <;> cases h
+    rfl
+  · rcases h _ hab with ⟨r, h⟩ | ⟨k, h⟩ | h <;> cases h
+
+theorem hs_none {lc : LocCtx} {id : ID} (hh : lc.home id = none) : HomeSimple lc id :=
+  fun l hl => by rw [hh] at hl; cases hl
+
+theorem hs_reg {lc : LocCtx} {id r : ID} (hh : lc.home id = some (.reg r)) : HomeSimple lc id :=
+  fun l hl => by rw [hh] at hl; cases hl; exact .inl ⟨r, rfl⟩
+
+theorem hs_slot {lc : LocCtx} {id : ID} {k : SlotKey} (hh : lc.home id = some (.slot k)) :
+    HomeSimple lc id :=
+  fun l hl => by rw [hh] at hl; cases hl; exact .inr (.inl ⟨k, rfl⟩)
+
+theorem hs_res {lc : LocCtx} {v : Value} {c : Nat} {o : Int} (hro : resObj lc v = .ok (c, o)) :
+    HomeSimple lc v.id := by
+  obtain ⟨r, hvh, -⟩ := resObj_spec hro
+  exact hs_reg hvh
+
+/-- A value of G1 other than a `Phi` writes no register but its own. -/
 theorem vk_noRes {lc : LocCtx} {v : Value} {kd : VKind} (h : VK lc v kd) (hnp : v.op ≠ .Phi) :
-    ∀ rs, lc.home v.id = some (.results rs) → rs = #[] := by
-  intro rs hrs
-  have hreg : ∀ {c : Nat} {o : Int}, resObj lc v = .ok (c, o) → False := fun hro => by
-    obtain ⟨r, hvh, -⟩ := resObj_spec hro
-    rw [hvh] at hrs; cases hrs
+    HomeSimple lc v.id := by
   cases h with
   | phi hop _ => exact absurd hop hnp
-  | zero _ _ hh _ => rw [hh] at hrs; cases hrs
-  | inl _ hh _ => rw [hh] at hrs; cases hrs
-  | copyMem _ _ _ _ hh => rw [hh] at hrs; cases hrs
-  | copySame _ _ _ _ hro => exact (hreg hro).elim
-  | copyMov _ _ _ _ hro _ => exact (hreg hro).elim
+  | zero _ _ hh _ => exact hs_reg hh
+  | inl _ hh _ => exact hs_none hh
+  | copyMem _ _ _ _ hh => exact hs_none hh
+  | copySame _ _ _ _ hro => exact hs_res hro
+  | copyMov _ _ _ _ hro _ => exact hs_res hro
   | result _ hh _ _ _ =>
-    rcases hh with hh | hh <;> rw [hh] at hrs <;> cases hrs
-    rfl
-  | movConst _ _ hro _ => exact (hreg hro).elim
-  | alu _ _ _ _ hro _ _ _ => exact (hreg hro).elim
-  | aluK _ _ _ hro _ _ => exact (hreg hro).elim
-  | cmp _ _ _ hh _ _ => rw [hh] at hrs; cases hrs
-  | cmpK _ _ _ hh _ => rw [hh] at hrs; cases hrs
-  | load _ _ _ _ _ hro _ => exact (hreg hro).elim
-  | store _ _ _ _ hh _ _ _ _ => rw [hh] at hrs; cases hrs
+    rcases hh with hh | hh
+    · exact hs_none hh
+    · exact fun l hl => by rw [hh] at hl; cases hl; exact .inr (.inr rfl)
+  | movConst _ _ hro _ => exact hs_res hro
+  | alu _ _ _ _ hro _ _ _ => exact hs_res hro
+  | aluK _ _ _ hro _ _ => exact hs_res hro
+  | cmp _ _ _ hh _ _ => exact hs_none hh
+  | cmpK _ _ _ hh _ => exact hs_none hh
+  | load _ _ _ _ _ hro _ => exact hs_res hro
+  | store _ _ _ _ hh _ _ _ _ => exact hs_none hh
 
-/-- A value of G3 other than a call has no `results` home with registers. -/
+/-- A value of G3 other than a call or a `Phi` writes no register but its own. -/
 theorem vk3_noRes {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK3 lc g v kd)
-    (hnc : v.op ≠ .ARM64CALLstatic) (hnp : v.op ≠ .Phi) :
-    ∀ rs, lc.home v.id = some (.results rs) → rs = #[] := by
-  intro rs hrs
-  have hreg : ∀ {c : Nat} {o : Int}, resObj lc v = .ok (c, o) → False := fun hro => by
-    obtain ⟨r, hvh, -⟩ := resObj_spec hro
-    rw [hvh] at hrs; cases hrs
+    (hnc : v.op ≠ .ARM64CALLstatic) (hnp : v.op ≠ .Phi) : HomeSimple lc v.id := by
   cases h with
   | g2 _ _ h2 =>
     cases h2 with
-    | g1 _ _ _ _ _ h1 => exact vk_noRes h1 hnp rs hrs
+    | g1 _ _ _ _ _ h1 => exact vk_noRes h1 hnp
     | call hop => exact absurd hop hnc
-    | selMem _ _ _ _ _ _ _ _ _ hh _ => rw [hh] at hrs; cases hrs
-    | selReg _ _ _ _ _ _ _ _ _ hh => rw [hh] at hrs; cases hrs
-    | addr _ _ _ _ _ _ hro _ => exact (hreg hro).elim
-    | spill _ hh => rw [hh] at hrs; cases hrs
-    | reload _ _ _ _ _ _ hro _ => exact (hreg hro).elim
-  | load _ _ _ _ _ hro => exact (hreg hro).elim
-  | store _ _ _ _ hh => rw [hh] at hrs; cases hrs
-  | sb _ _ _ hh => rcases hh with hh | hh <;> rw [hh] at hrs <;> cases hrs
-  | ext _ _ _ hro => exact (hreg hro).elim
-  | aluK _ _ _ hro => exact (hreg hro).elim
-  | ubfx _ _ _ _ _ hro => exact (hreg hro).elim
-  | cmpw _ _ _ hh => rw [hh] at hrs; cases hrs
-  | cmpwK _ _ _ hh => rw [hh] at hrs; cases hrs
+    | selMem _ _ _ _ _ _ _ _ _ hh _ => exact hs_none hh
+    | selReg _ _ _ _ _ _ _ _ _ hh => exact hs_reg hh
+    | addr _ _ _ _ _ _ hro _ => exact hs_res hro
+    | spill _ hh => exact hs_slot hh
+    | reload _ _ _ _ _ _ hro _ => exact hs_res hro
+  | load _ _ _ _ _ hro => exact hs_res hro
+  | store _ _ _ _ hh => exact hs_none hh
+  | sb _ _ _ hh =>
+    rcases hh with hh | hh
+    · exact hs_none hh
+    · exact hs_reg hh
+  | ext _ _ _ hro => exact hs_res hro
+  | aluK _ _ _ hro => exact hs_res hro
+  | ubfx _ _ _ _ _ hro => exact hs_res hro
+  | cmpw _ _ _ hh => exact hs_none hh
+  | cmpwK _ _ _ hh => exact hs_none hh
 
 /-! ## The theorems -/
 
@@ -948,7 +968,7 @@ theorem g3_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps
     fun m' ⟨h1, h2, h3, h4⟩ => ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE0, h1, h2, ⟨h3, h4⟩⟩
   have hK : v.op ≠ .ARM64CALLstatic → KNext c.cx.lc v (kAt c.cx.lc kt bid blk i).get
       (kStep c.cx.lc (kAt c.cx.lc kt bid blk i) v).get :=
-    fun hnc => knext_kStep (vk3_noRes hVK hnc)
+    fun hnc => knext_kStep fun hnp => (vk3_noRes hVK hnc hnp).noRegs
   cases hVK with
   | g2 hops hnodup hVK2 =>
     cases hVK2 with

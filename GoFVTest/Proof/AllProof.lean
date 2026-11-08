@@ -52,6 +52,7 @@ import GoFV.Proof.Gen.Rel
 import GoFV.Proof.Gen.Spec
 import GoFV.Proof.Gen.Spec2
 import GoFV.Proof.Gen.Spec3
+import GoFV.Proof.Gen.Spec4
 import GoFV.Proof.Gen.Stack
 import GoFV.Proof.Gen.Step
 import GoFV.Proof.Gen.Step3
