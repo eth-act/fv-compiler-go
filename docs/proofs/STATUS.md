@@ -128,6 +128,11 @@ main 51ef75c1 (6 min):
 | … relying on `NilPtrsOK` (a `schedule` swap through `nilPtrSwap`) | – | 3,014 (91883690: 2,983) | – | – |
 | … and identical to stock after `trim` | 74,651 (74,595) | 66,546 (66,331) | 7,233 | 5,699 |
 
+The pointer window rule and `ARM64.rules:1183`/`1184` (#385, § Assumptions), measured against
+main fa54a58a with `--jobs 4`: full-v9 through `rewrite tern` 93,475 on both, through `trim`
+79,148 → 80,392 (identical to stock 66,495 → 67,041; only `lower`'s proven runs change, 80,718 →
+82,086), checked lower at stock (`lower-probe`) 83,523 → 84,876 with no function lost.
+
 Every pass from `lower` to `trim` has a theorem (addressing modes `addressingModes_refinesL`,
 late lower `lateLower_refinesL`, pair `pair_refinesL`, flagalloc `flagalloc_refinesSched`).
 `regalloc` now accepts all 96,560 full-v9 runs (`tabsAgreeModL` takes the new spill autos that
