@@ -98,14 +98,21 @@ def Keeps (E : MatchEnv) (P : BitVec 64 → Prop) (s : LocState) (m : MState) : 
 /-- A register content that is not a pointer without an integer form. -/
 def NoBarePtr (x : Val) : Prop := ∀ p, x = .ptr p → (Arm64.ptrReg p).isSome = true
 
+/-- A subtraction's pointer operands are in one block or in no frame temporaries (`SubOK`). -/
+def SubPre (lc : LocCtx) (s : LocState) (v : Value) : Prop :=
+  v.op = .ARM64SUB → ∀ a b x y, v.args[0]? = some a → v.args[1]? = some b →
+    s.read lc a = .ok x → s.read lc b = .ok y → SubOK x y
+
 /-- The per-value premises: compare arguments are not pointers without an integer form, a load
-reads 8 valid bytes. -/
+reads 8 valid bytes, the pointer operands of a subtraction are in one block or in no frame
+temporaries (`SubOK`). -/
 def G1Pre (lc : LocCtx) (s : LocState) (v : Value) : Prop :=
   ((v.op = .ARM64CMP ∨ v.op = .ARM64CMPconst) →
     ∀ a ∈ v.args.toList, ∀ x, s.read lc a = .ok x → NoBarePtr x) ∧
   (v.op = .ARM64MOVDload → ∀ a x, v.args[0]? = some a → s.read lc a = .ok x →
     ∃ p mm bs, Arm64.addr x (BitVec.ofInt 64 v.auxInt.toInt) = some p ∧ s.mem = .mem mm ∧
-      mm.read p 8 = some bs)
+      mm.read p 8 = some bs) ∧
+  SubPre lc s v
 
 /-- The per-terminator premise: the control of a register test is not a pointer without an
 integer form. -/
@@ -806,7 +813,8 @@ theorem value_core {env : Env} (F : Facts lc sym text az ez psA.toList ret E)
           Arm64.sub (lc.ty v.id) [x, y] := by rw [hop]; rfl
       rw [he]
       exact op_reg F hm hinv hj hj' hvs hd hkd hor
-        (valRel_retypeL_lo hA hcv ht (lo_sub hA hxv hyv hxf hyf h8 hca hcb ht))
+        (valRel_retypeL_lo hA hcv ht
+          (lo_sub hA hxv hyv hxf hyf h8 hca hcb ht (hpre.2.2 hop a0 a1 x y ha0 ha1 hx hy)))
         (fits_retypeL hcv _) hKL (fun k hk hok => by
           obtain ⟨has, hf, hr, ht', -⟩ := Shape.ok_eq hok
           rw [progStep_aluReg hkn hkm hkd (nextAddr_pcAt F.nodup hk) (Or.inr has) hf hr ht', wX_pc]
@@ -909,7 +917,7 @@ theorem value_core {env : Env} (F : Facts lc sym text az ez psA.toList ret E)
       (read_mem hl hah1 hamt hmm) hs
     rw [hx] at hx'
     cases hx'
-    obtain ⟨p, mm2, bs, haddr, hmm2, hrd⟩ := hpre.2 hop a0 x ha0 hx
+    obtain ⟨p, mm2, bs, haddr, hmm2, hrd⟩ := hpre.2.1 hop a0 x ha0 hx
     rw [hmm] at hmm2
     cases hmm2
     obtain ⟨a, hpa, haeq, hnil⟩ := addr_rel hA hMI hxv hxf haddr (by decide : 0 < 8)

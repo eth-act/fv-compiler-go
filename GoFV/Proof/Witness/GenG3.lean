@@ -2124,7 +2124,7 @@ theorem genG3_witness (x : BitVec 64) (t : ID) (hf : startFacts x t = true) :
   obtain ⟨s2, hs2, -⟩ := GenG1.okThen_spec (by simpa using hrun)
   have hen : entryOp3 v19.op = false := by rw [hop]; rfl
   have hpre : G3Pre lc s1 v19 := by
-    refine ⟨fun h => ?_, fun as n sg hl => ?_⟩
+    refine ⟨fun h => ?_, fun as n sg hl => ?_, fun h => by rw [hop] at h; cases h⟩
     · rcases h with h | h <;> rw [hop] at h <;> cases h
     · rw [hop] at hl; simp [loadOp?, narrowLoad?] at hl
   have hinv1' : G3Inv E lc (kAt lc kt 2 blk2 0) s1 := by rw [kAt_zero, ← het]; exact hinv1

@@ -193,9 +193,9 @@ private theorem lo_decode (hA : AddrAgree ι) {mm : Memory} {A : BitVec 64} {bs 
       show Lo ι 64 q.word _
       unfold Ptr.word
       split
-      · rename_i ad _ had
+      · rename_i ad hc had
         show ad.setWidth 64 = _
-        rw [ptrRel_addr hA hp had]
+        rw [ptrRel_addr hA hp had (notTemp_of_convertible hc)]
       · exact Or.inr hp
 
 private theorem find?_mem {m : Mem} {b : Blk} {al : Alloc} (h : m.find? b = some al) :
@@ -262,7 +262,7 @@ theorem memInj_byteRel (hA : AddrAgree ι) {m : Mem} {mm : Memory} (h : MemInj �
           · simp [hnil] at hq
           · simpa [hnil] using hq
         subst hq'
-        have hw := ptrRel_addr hA hrel (Ptr.addr?_ofAddr _)
+        have hw := ptrRel_addr hA hrel (Ptr.addr?_ofAddr _) (notTemp_ofAddr _)
         rw [bytesNat?_eq] at hn
         obtain ⟨h1, h2⟩ := bnat_some _ n hn
         have hlen : (al.data.extract o (o + 8)).toList.length = 8 := by simp; omega
@@ -319,7 +319,7 @@ theorem addr_rel (hA : AddrAgree ι) {m : Mem} {mm : Memory} (h : MemInj ι m mm
       | some nb =>
         rw [hb] at hd
         simp only [Option.map_some, Option.some.injEq] at hd
-        rw [hA _ _ _ hb ha, hd]
+        rw [hA _ _ _ hb ha (notTemp_ofAddr _), hd]
     | bool => simp [Fits] at hf
     | poison => simp [Arm64.addr, Arm64.reg] at hp
     | _ => simp [Fits] at hf

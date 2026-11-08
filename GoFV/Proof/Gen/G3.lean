@@ -33,23 +33,24 @@ structure G3Inv (E : MatchEnv) (lc : LocCtx) (K : KMap) (s : LocState) : Prop wh
   core : CoreInv E.ι (StkAt E) K.get s
   slots : SlotInv lc s
 
-/-- The per-value premises of G3: G1's for compares; a load of `n` bytes reads valid bytes at its
-address (`symAddr`: the register's address plus the offset, or the global), and a boolean load
-reads 0 or 1 (Go stores booleans so). -/
+/-- The per-value premises of G3: G1's for compares and subtractions; a load of `n` bytes reads
+valid bytes at its address (`symAddr`: the register's address plus the offset, or the global),
+and a boolean load reads 0 or 1 (Go stores booleans so). -/
 def G3Pre (lc : LocCtx) (s : LocState) (v : Value) : Prop :=
   ((v.op = .ARM64CMP ∨ v.op = .ARM64CMPconst) →
     ∀ a ∈ v.args.toList, ∀ x, s.read lc a = .ok x → NoBarePtr x) ∧
   (∀ as n sg, loadOp? v.op = some (as, n, sg) → ∀ a x, v.args[0]? = some a →
     s.read lc a = .ok x → ∃ p mm bs, symAddr lc.ctx v x = some p ∧ s.mem = .mem mm ∧
       mm.read p n = some bs ∧
-      (lc.ty v.id = .bool → ∀ y, mm.load (.int .w8) p = .int .w8 y → y.toNat < 2))
+      (lc.ty v.id = .bool → ∀ y, mm.load (.int .w8) p = .int .w8 y → y.toNat < 2)) ∧
+  SubPre lc s v
 
 /-- G3's premises give G1's for a value whose `MOVDload` has no symbol. -/
 theorem G3Pre.g1 {lc : LocCtx} {s : LocState} {v : Value} (h : G3Pre lc s v)
     (haux : v.op = .ARM64MOVDload → v.aux = none) : G1Pre lc s v := by
-  refine ⟨h.1, fun hop a x ha hx => ?_⟩
+  refine ⟨h.1, fun hop a x ha hx => ?_, h.2.2⟩
   have hl : loadOp? v.op = some (.MOVD, 8, false) := by simp [loadOp?, hop]
-  obtain ⟨p, mm, bs, hp, hmm, hr, -⟩ := h.2 _ _ _ hl a x ha hx
+  obtain ⟨p, mm, bs, hp, hmm, hr, -⟩ := h.2.1 _ _ _ hl a x ha hx
   refine ⟨p, mm, bs, ?_, hmm, hr⟩
   rw [← hp]
   unfold symAddr
@@ -267,7 +268,7 @@ theorem g3_load (F : Facts lc sym text az ez psA.toList ret E)
   obtain ⟨mm, hmm, hMI⟩ := hm.mem
   obtain ⟨x, hx, rfl⟩ := stepLoc_loadN hl htemp hop (arr2 hsz2 ha0 ha1)
     (read_mem hl hah1 hamt hmm) hs
-  obtain ⟨p, mm2, bs, hsym, hmm2, hrd, h01⟩ := hpre.2 _ _ _ hop a0 x ha0 hx
+  obtain ⟨p, mm2, bs, hsym, hmm2, hrd, h01⟩ := hpre.2.1 _ _ _ hop a0 x ha0 hx
   rw [hmm] at hmm2
   cases hmm2
   rw [write_reg hvh hcv, hsym]

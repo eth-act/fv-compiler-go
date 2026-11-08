@@ -61,6 +61,10 @@ private theorem ptrReg_some {p : Ptr} {a : BitVec 64} (h : Arm64.ptrReg p = some
     · cases h
   · cases h
 
+private theorem ptrReg_notTemp {p : Ptr} {a : BitVec 64} (h : Arm64.ptrReg p = some a) :
+    NotTemp p.blk := by
+  rw [← (ptrReg_some h).2]; exact notTemp_ofAddr a
+
 private theorem ptr_or (x : Val) : (∃ p, x = .ptr p) ∨ ∀ p, x ≠ .ptr p := by
   cases x <;> simp
 
@@ -166,7 +170,7 @@ theorem reg_low (hA : AddrAgree ι) {c : Nat} {x : Val} {X x' : BitVec 64} (hx :
     have hx' : X = if b then 1 else 0 := hx
     rw [hx', hr']
   | ptr p =>
-    have := ptrRel_addr hA hx (ptrReg_some hr).1
+    have := ptrRel_addr hA hx (ptrReg_some hr).1 (ptrReg_notTemp hr)
     subst this
     rfl
   | _ => cases hr
@@ -193,7 +197,7 @@ private theorem lo_ptrRes (hA : AddrAgree ι) {c : Nat} {p : Ptr} {k X Y : BitVe
   split
   · unfold Ptr.word
     split
-    · rename_i a _ ha
+    · rename_i a hcv ha
       rw [Ptr.addr?_add] at ha
       cases hpa : p.addr? with
       | none => rw [hpa] at ha; cases ha
@@ -201,7 +205,7 @@ private theorem lo_ptrRes (hA : AddrAgree ι) {c : Nat} {p : Ptr} {k X Y : BitVe
         rw [hpa] at ha
         have ha' : a0 + k = a := Option.some.inj ha
         subst ha'
-        have := ptrRel_addr hA hp hpa
+        have := ptrRel_addr hA hp hpa (notTemp_of_convertible (p := p.add k) hcv)
         subst this
         exact sw_add hc rfl hk
     · show c < 64 ∨ PtrRel ι (p.add k) (X + Y)
@@ -286,10 +290,15 @@ private theorem sub_nonptr {t : Ty} {x y : Val} (hx : ∀ q, x ≠ .ptr q) :
     Arm64.sub t [x, y] = Arm64.op2 t (· - ·) [x, y] := by
   cases x <;> first | exact absurd rfl (hx _) | rfl | (cases y <;> rfl)
 
+/-- The operands of a `SUB` that are both pointers point into one block or into no frame
+temporaries (whose Phase 1 addresses the machine does not use). -/
+def SubOK (x y : Val) : Prop :=
+  ∀ p q, x = .ptr p → y = .ptr q → p.blk = q.blk ∨ (NotTemp p.blk ∧ NotTemp q.blk)
+
 /-- `SUB`. -/
 theorem lo_sub (hA : AddrAgree ι) {t : Ty} {x y : Val} {X Y : BitVec 64} {c ca cb : Nat}
     (hx : ValRel ι x X) (hy : ValRel ι y Y) (hfx : Fits ca x) (hfy : Fits cb y)
-    (h8 : 8 ≤ c) (hca : c ≤ ca) (hcb : c ≤ cb) (ht : t ≠ .bool) :
+    (h8 : 8 ≤ c) (hca : c ≤ ca) (hcb : c ≤ cb) (ht : t ≠ .bool) (hsub : SubOK x y) :
     Lo ι c (Arm64.sub t [x, y]) (X - Y) := by
   rcases ptr_or x with ⟨p, rfl⟩ | hxp
   · have hc : c ≤ 64 := by have : ca = 64 := hfx; omega
@@ -300,12 +309,29 @@ theorem lo_sub (hA : AddrAgree ι) {t : Ty} {x y : Val} {X Y : BitVec 64} {c ca 
       rw [hxy]
       split
       · rename_i a b hpa hqa
-        have := ptrRel_addr hA hx hpa
-        subst this
-        have := ptrRel_addr hA hy hqa
-        subst this
-        rw [res_int ht]
-        exact (rfl : (X - Y).setWidth c = (X - Y).setWidth c)
+        rcases hsub p q rfl rfl with hb | ⟨hnp, hnq⟩
+        · have hab : a - b = X - Y := by
+            obtain ⟨a', ha', rfl⟩ := hx
+            obtain ⟨a'', ha'', rfl⟩ := hy
+            rw [← hb, ha'] at ha''
+            cases ha''
+            unfold Ptr.addr? at hpa hqa
+            rw [← hb] at hqa
+            cases hn : p.blk.base? with
+            | none => rw [hn] at hpa; cases hpa
+            | some n =>
+              rw [hn] at hpa hqa
+              simp only [Option.map_some, Option.some.injEq] at hpa hqa
+              subst hpa; subst hqa
+              bv_omega
+          rw [res_int ht, hab]
+          exact (rfl : (X - Y).setWidth c = (X - Y).setWidth c)
+        · have := ptrRel_addr hA hx hpa hnp
+          subst this
+          have := ptrRel_addr hA hy hqa hnq
+          subst this
+          rw [res_int ht]
+          exact (rfl : (X - Y).setWidth c = (X - Y).setWidth c)
       · split
         · rename_i hb
           have hb' : p.blk = q.blk := beq_iff_eq.mp hb
@@ -396,7 +422,7 @@ private theorem reg_or_poison (hA : AddrAgree ι) {x : Val} {X : BitVec 64} (hx 
   | ptr p =>
     right
     obtain ⟨a, ha⟩ := Option.isSome_iff_exists.mp (hp p rfl)
-    have := ptrRel_addr hA hx (ptrReg_some ha).1
+    have := ptrRel_addr hA hx (ptrReg_some ha).1 (ptrReg_notTemp ha)
     subst this
     exact ha
   | bool b => exact absurd (show (64 : Nat) = 1 from hf) (by decide)
@@ -477,7 +503,7 @@ theorem isZero_eq (hA : AddrAgree ι) {x : Val} {X : BitVec 64} {z : Bool} (hx :
   | ptr p =>
     obtain ⟨a, ha⟩ := Option.isSome_iff_exists.mp (hp p rfl)
     obtain ⟨hpa, hpo⟩ := ptrReg_some ha
-    have := ptrRel_addr hA hx hpa
+    have := ptrRel_addr hA hx hpa (ptrReg_notTemp ha)
     subst this
     have h' : p.isNil = z := Option.some.inj h
     subst h'

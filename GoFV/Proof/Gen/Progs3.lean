@@ -261,6 +261,32 @@ theorem progStep_globStore {ks n y : Nat} {sg : Bool} {off : Int} (hks : ks < 32
       pc := next } :=
   step_store hks hn hm hf ht1 (ctx_mem_glob ht1 ht2 ht3 ht4) hnil
 
+/-- `MOV{D,B,BU,H,HU,W,WU} off(RSP), Rd` at a frame operand (`slotA`, `NAME_AUTO` or `NAME_PARAM`,
+at `SP + frameOff`), the address outside the nil page. -/
+theorem progStep_slotLoadN {kd n : Nat} {sg : Bool} {nc : AddrName} {off : Int} (hkd : kd < 32)
+    (hn : L.nextAddr p.id = some next) (hm : ProgOp.movMem p.as.name = some (n, sg, false))
+    (hf : slotA p.from_ nc off = true) (hnc : nc = .AUTO ∨ nc = .PARAM)
+    (ht : p.to = regA (REG_R0 + kd))
+    (hnil : nilPage (s.sp + BitVec.ofInt 64 (frameOff L nc off)) = false) :
+    progStep L p s = .ok { s.wX (BitVec.ofNat 5 kd)
+      (if sg then ProgOp.sextTo64 n
+          ((readMem s.mem (s.sp + BitVec.ofInt 64 (frameOff L nc off)) n).setWidth 64)
+       else (readMem s.mem (s.sp + BitVec.ofInt 64 (frameOff L nc off)) n).setWidth 64) with
+        pc := next } :=
+  step_load hkd hn hm (slotA_eq hf).1 (ctx_mem_slot hf hnc) ht hnil
+
+/-- `MOV{D,B,H,W} Rs, off(RSP)` at a frame operand, the address outside the nil page. -/
+theorem progStep_slotStoreN {ks n : Nat} {sg : Bool} {nc : AddrName} {off : Int} (hks : ks < 32)
+    (hn : L.nextAddr p.id = some next) (hm : ProgOp.movMem p.as.name = some (n, sg, false))
+    (hf : p.from_ = regA (REG_R0 + ks)) (ht : slotA p.to nc off = true)
+    (hnc : nc = .AUTO ∨ nc = .PARAM)
+    (hnil : nilPage (s.sp + BitVec.ofInt 64 (frameOff L nc off)) = false) :
+    progStep L p s = .ok { s with
+      mem := writeMem s.mem (s.sp + BitVec.ofInt 64 (frameOff L nc off)) n
+        (BitVec.ofNat (8 * n) ((s.rX (BitVec.ofNat 5 ks)).toNat % 2 ^ (8 * n))),
+      pc := next } :=
+  step_store hks hn hm hf (slotA_eq ht).1 (ctx_mem_slot ht hnc) hnil
+
 /-- The extensions `MOV{B,BU,H,HU,W,WU} Rn, Rd` (any `movMem` opcode of the general registers;
 `MOVD` is the move): the low `n` bytes of `X kn`, sign- or zero-extended. -/
 theorem progStep_ext {kn kd n : Nat} {sg : Bool} (hkn : kn < 32) (hkd : kd < 32)

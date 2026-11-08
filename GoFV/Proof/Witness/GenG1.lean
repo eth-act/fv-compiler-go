@@ -1878,7 +1878,7 @@ def m0 (x : BitVec 64) : MState :=
     pc := E.pcOf 1 2, mem := fun _ => 0 }
 
 theorem addrAgree : AddrAgree ι := by
-  intro b n a hb ha
+  intro b n a hb ha _
   cases b <;> simp [ι] at ha
   simp [Blk.base?] at hb
   subst hb; subst ha; rfl
@@ -1966,7 +1966,8 @@ theorem genG1_witness (H : Hooks) (x : BitVec 64) (t : ID) (hf : clampFacts x t 
   have hE := g1Env hc
   have hen : entryOp v7.op = false := by rw [hop]; rfl
   have hpre : G1Pre lc (s0 x) v7 := by
-    refine ⟨fun _ a ha y hy p hp => ?_, fun h => by rw [hop] at h; cases h⟩
+    refine ⟨fun _ a ha y hy p hp => ?_, (fun h => by rw [hop] at h; cases h),
+      (fun h => by rw [hop] at h; cases h)⟩
     have := hargs a ha
     rw [hy, hp] at this
     cases this

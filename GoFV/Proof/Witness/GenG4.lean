@@ -1856,11 +1856,12 @@ theorem g4Inv0 {K : KMap} (h0 : K.get 0 = some 64) : G3Inv E lc K s0 where
     · cases hv
   slots := by intro k v h; simp [s0] at h
 
-/-- The per-value premises of a value that is no compare, load or pair load. -/
+/-- The per-value premises of a value that is no compare, load, pair load or subtraction. -/
 theorem g4Pre_of {v : Value} (h1 : v.op ≠ .ARM64CMP) (h2 : v.op ≠ .ARM64CMPconst)
-    (h3 : loadOp? v.op = none) (h4 : v.op ≠ .ARM64LDP) (s : LocState) : G4Pre lc s v :=
-  ⟨⟨fun h => by rcases h with h | h <;> contradiction, fun _ _ _ hl => by rw [h3] at hl; cases hl⟩,
-    fun h => absurd h h4⟩
+    (h3 : loadOp? v.op = none) (h4 : v.op ≠ .ARM64LDP) (h5 : v.op ≠ .ARM64SUB) (s : LocState) :
+    G4Pre lc s v :=
+  ⟨⟨fun h => by rcases h with h | h <;> contradiction,
+    (fun _ _ _ hl => by rw [h3] at hl; cases hl), fun h => absurd h h5⟩, fun h => absurd h h4⟩
 
 /-- **G4 on `(*errorString).Error`**: from the state after the entry values (`e` in `R0`), the
 pair load `v15` (`LDP (R0), (R0, R1)`) and its components `v14` (`R1`) and `v13` (`R0`) are matched
@@ -1893,7 +1894,8 @@ theorem genG4_value_witness :
   obtain ⟨x0, hx0, hpq⟩ := GenG1.okThen_spec hpair
   have hpre15 : G4Pre lc s0 (val 15) := by
     refine ⟨⟨fun h => (by rcases h with h | h <;> rw [hop15] at h <;> cases h),
-      fun _ _ _ hl => (by rw [hop15] at hl; simp [loadOp?, narrowLoad?] at hl)⟩,
+      fun _ _ _ hl => (by rw [hop15] at hl; simp [loadOp?, narrowLoad?] at hl),
+      fun h => by rw [hop15] at h; cases h⟩,
       fun _ a x ha hx => ?_⟩
     rw [harg] at ha
     cases ha
@@ -1909,12 +1911,12 @@ theorem genG4_value_witness :
   obtain ⟨E2, m2, hx2, hE2, hp2, hm2', hinv2⟩ := g4_value (H := GenG2.H0) hc hE1 hm1 hb hi3
     (hval 14 hv14s) (by rw [hop14]; rfl) hm1' hinv1
     (g4Pre_of (by rw [hop14]; decide) (by rw [hop14]; decide)
-      (by rw [hop14]; simp [loadOp?, narrowLoad?]) (by rw [hop14]; decide) _)
+      (by rw [hop14]; simp [loadOp?, narrowLoad?]) (by rw [hop14]; decide) (by rw [hop14]; decide) _)
     (GenG2.callOK_ne (by rw [hop14]; decide)) hs2
   obtain ⟨E3, m3, hx3, hE3, hp3, hm3', hinv3⟩ := g4_value (H := GenG2.H0) hc hE2 hm1 hb hi4
     (hval 13 hv13s) (by rw [hop13]; rfl) hm2' hinv2
     (g4Pre_of (by rw [hop13]; decide) (by rw [hop13]; decide)
-      (by rw [hop13]; simp [loadOp?, narrowLoad?]) (by rw [hop13]; decide) _)
+      (by rw [hop13]; simp [loadOp?, narrowLoad?]) (by rw [hop13]; decide) (by rw [hop13]; decide) _)
     (GenG2.callOK_ne (by rw [hop13]; decide)) hs3
   exact ⟨s1, s2, s3, E3, m3, hs1, hs2, hs3,
     MatchEnv.Extends.trans (MatchEnv.Extends.trans hx1 hx2) hx3, hE3,
