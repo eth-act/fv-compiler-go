@@ -1983,9 +1983,35 @@ def tiFacts (x : BitVec 64) : Bool :=
         GenG1.okThen (stepLoc env lc s2 (val 7)) fun s3 =>
           GenG1.okThen (stepLoc env lc s3 (val 3)) fun _ => true
 
-/-- `testInts` from the state after `v5` with `n = 7`. -/
-theorem g2_facts : tiFacts 7 = true := by
+/-- `checkG2`'s input for `clamp` (`GoFV/Proof/Witness/GenG1.lean`). -/
+def gc : G2In :=
+  match load GenG1.clampSsa GenG1.clampProg with
+  | .ok x => x.2.2.2
+  | .error _ => { syms := #[], slotOp := fun _ => none, stksize := 0 }
+
+/-- No static call in the function of `lc`. -/
+def noCalls (lc : LocCtx) : Bool :=
+  lc.ctx.f.valueTab.all fun o => o.all (·.op != .ARM64CALLstatic)
+
+/-- What compiled evaluation checks on `clamp` for G2: `checkG2` accepts it with G1's table, it
+has no home slot and no static call. -/
+def clampG2Facts : Bool :=
+  (checkG2 GenG1.lc GenG1.ps GenG1.bs gc).toOption == some GenG1.tab &&
+    (homeSlots GenG1.lc).isEmpty && noCalls GenG1.lc
+
+/-- `testInts` from the state after `v5` with `n = 7`; `clamp` under `checkG2`. -/
+theorem g2_facts : (tiFacts 7 && clampG2Facts) = true := by
   native_decide
+
+theorem ti_facts : tiFacts 7 = true := by
+  have h := g2_facts
+  simp only [Bool.and_eq_true] at h
+  exact h.1
+
+theorem clamp_g2_facts : clampG2Facts = true := by
+  have h := g2_facts
+  simp only [Bool.and_eq_true] at h
+  exact h.2
 
 theorem addrAgree : AddrAgree ι := by
   intro b n a hb ha
@@ -2004,11 +2030,12 @@ theorem keys0 : KeysNodup mem0 := by simp [KeysNodup, mem0]
 theorem sep0 {ι' : Blk → Option (BitVec 64)} {P : BitVec 64 → Prop} : SepFrom ι' P mem0 := by
   intro b al a h; simp [mem0] at h
 
-theorem prog_addr_ne {p : GoFV.Asm.Prog} (hid : p.id < 2 ^ 32) (hp : p ∈ ps.toList) {a : BitVec 64}
+theorem prog_addr_ne {qs : List GoFV.Asm.Prog} {az ez : Int} {p : GoFV.Asm.Prog}
+    (hid : p.id < 2 ^ 32) (hp : p ∈ qs) {a : BitVec 64}
     (ha : a.toNat < 0x10000 ∨ 0x10000 + 4 * 2 ^ 32 ≤ a.toNat) (ha' : a.toNat < 2 ^ 64) :
-    L.addr p.id ≠ some a := by
+    (Link.byId (fun _ => symA) text az ez qs).addr p.id ≠ some a := by
   intro h
-  rw [L, addr_byId hp] at h
+  rw [addr_byId hp] at h
   have := congrArg BitVec.toNat (Option.some.inj h)
   simp [text, BitVec.toNat_add] at this
   omega
@@ -2035,7 +2062,7 @@ theorem g2Env (hc : checkG2 lc ps bs g = .ok tab) : G2Env lc g L ps 0 tab E wher
   extra := by decide
   frame := by
     refine ⟨by decide, by decide, fun k off hk => ?_⟩
-    have hf := g2_facts
+    have hf := ti_facts
     simp only [tiFacts, Bool.and_eq_true] at hf
     have hfit := hf.1.1.2
     simp only [E] at hk
@@ -2108,8 +2135,9 @@ theorem callOK0 {E' : MatchEnv} (hA : AddrAgree E'.ι) (hnil : E'.ι .nil = some
     fun _ _ => rfl, hm', memInj0 hnil _, keys0, sep0, fun r hr => by cases hr⟩
 
 /-- An op other than a static call: `CallOK` holds vacuously. -/
-theorem callOK_ne {E' : MatchEnv} {s s' : LocState} {v : Value} {m : MState}
-    (h : v.op ≠ .ARM64CALLstatic) : CallOK H0 E' g L lc s s' v m := fun hop => absurd hop h
+theorem callOK_ne {g' : G2In} {L' : Link} {lc' : LocCtx} {E' : MatchEnv} {s s' : LocState}
+    {v : Value} {m : MState} (h : v.op ≠ .ARM64CALLstatic) : CallOK H0 E' g' L' lc' s s' v m :=
+  fun hop => absurd hop h
 
 /-- **G2 on `testInts`**: from the state after `v5`, the spill `v2`, the call `v6`, its memory
 `v7` and the reload `v3` are matched by a machine run of the Progs to a state related before
@@ -2119,7 +2147,7 @@ theorem genG2_value_witness :
       stepLoc env lc s1 (val 6) = .ok s2 ∧ stepLoc env lc s2 (val 7) = .ok s3 ∧
       stepLoc env lc s3 (val 3) = .ok s4 ∧ E.Extends E' ∧ G2Env lc g L ps 0 tab E' ∧
       PStar H0 L ps.toList 0 (m0 7) m4 ∧ LocMatch E' s4 1 6 m4 := by
-  have hf := g2_facts
+  have hf := ti_facts
   simp only [tiFacts, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem] at hf
   obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hck, hmem⟩, hbs⟩, hv2s⟩, hv6s⟩, hv7s⟩, hv3s⟩, hi1⟩, hi3⟩, hi4⟩, hi5⟩,
     hop2⟩, hop6⟩, hop7⟩, hop3⟩, hno⟩, -⟩, hcls⟩, hrun⟩ := hf
@@ -2169,5 +2197,138 @@ theorem genG2_value_witness :
   exact ⟨s1, s2, s3, s4, E4, m4, hs1, hs2, hs3, hs4,
     MatchEnv.Extends.trans (MatchEnv.Extends.trans (MatchEnv.Extends.trans hx1 hx2) hx3) hx4,
     hE4, ((hp1.trans hp2).trans hp3).trans hp4, hm4⟩
+
+/-! ## `clamp`: `g2_term` -/
+
+/-- `clamp`'s layout: as `GenG1.L`, every symbol at `symA`. -/
+def Lc : Link := Link.byId (fun _ => symA) text 0 0 GenG1.ps.toList
+
+/-- `clamp`'s frameless activation (`GenG1.E`) with the globals at their symbols. -/
+def Ec : MatchEnv := { GenG1.E with ι }
+
+theorem g2EnvC (hc : checkG2 GenG1.lc GenG1.ps GenG1.bs gc = .ok GenG1.tab)
+    (hsl : (homeSlots GenG1.lc).isEmpty = true) (hnc : noCalls GenG1.lc = true) :
+    G2Env GenG1.lc gc Lc GenG1.ps 0 GenG1.tab Ec where
+  lcEq := rfl
+  link := rfl
+  pcOf := rfl
+  retOut := by
+    obtain ⟨-, -, -, -, -, -, -, -, hlt, -, -⟩ := checkG2_spec hc
+    intro p hp
+    exact prog_addr_ne (hlt p hp) hp (by simp) (by simp)
+  addr := addrAgree
+  glob := fun _ _ _ _ => rfl
+  syms := by
+    obtain ⟨-, -, -, -, -, -, -, -, hlt, -, -⟩ := checkG2_spec hc
+    intro y
+    have hs : Lc.sym y = symA := rfl
+    rw [hs]
+    refine ⟨by decide, fun p hp => ?_⟩
+    exact prog_addr_ne (hlt p hp) hp (Or.inr (by decide)) (by decide)
+  calls := fun _ id v hv hop => by
+    have h1 : GenG1.lc.ctx.f.valueTab[id]? = some (some v) := by
+      have hv' : (GenG1.lc.ctx.f.valueTab[id]?).join = some v := hv
+      cases h : GenG1.lc.ctx.f.valueTab[id]? with
+      | none => rw [h] at hv'; cases hv'
+      | some o => rw [h] at hv'; cases o <;> simp_all
+    have h2 := (Array.all_eq_true_iff_forall_mem.1 hnc) _ (Array.mem_of_getElem? h1)
+    simp [hop] at h2
+  slot := fun k hk => by simp [List.isEmpty_iff.1 hsl] at hk
+  extra := by decide
+  frame := ⟨by decide, by decide, fun k off h => by cases h⟩
+
+theorem locMatchC (x : BitVec 64) : LocMatch Ec (GenG1.s0 x) 1 2 (GenG1.m0 x) where
+  regs := by
+    intro r v hv
+    simp only [GenG1.s0, Array.getElem?_ofFn] at hv
+    split at hv
+    · simp only [Option.some.injEq] at hv
+      refine ⟨fun k hk => ?_, fun k hk => ?_⟩
+      · split at hv
+        · subst hv
+          rename_i h0
+          subst h0
+          simp only [objX?] at hk
+          cases hk
+          exact Or.inl rfl
+        · subst hv; trivial
+      · split at hv
+        · rename_i h0; subst h0; simp [objV?] at hk
+        · subst hv; trivial
+    · cases hv
+  flags := trivial
+  slots := by intro k v h; simp [GenG1.s0] at h
+  mem := ⟨GenG1.mem0, rfl, memInj0 rfl _⟩
+  frame := ⟨rfl, rfl, (fun h => by cases h), fun _ => ⟨rfl, rfl⟩⟩
+  pc := rfl
+
+theorem g2InvC (x : BitVec 64) (h0 : regCls GenG1.lc 0 = some 64) :
+    G2Inv Ec GenG1.lc (GenG1.s0 x) where
+  core := by
+    refine ⟨fun r v c hr hv hc => ?_, GenG1.mem0, rfl, keys0, sep0⟩
+    simp only [GenG1.s0, Array.getElem?_ofFn] at hv
+    split at hv
+    · simp only [Option.some.injEq] at hv
+      split at hv
+      · rename_i h0'
+        subst hv; subst h0'
+        rw [h0] at hc; cases hc; rfl
+      · subst hv; trivial
+    · cases hv
+  slots := by intro k v h; simp [GenG1.s0] at h
+
+/-- **G2 on `clamp`**: from the state after the entry values, `g2_value` on the compare `v7` and
+`g2_term` on the terminator of `b1` give a machine run of the Progs to a state related before the
+first value of the block `runLoc` goes to. -/
+theorem genG2_term_witness (x : BitVec 64) (t : ID) (hf : GenG1.clampFacts x t = true) :
+    ∃ s1 s2 e E' m2, stepLoc default GenG1.lc (GenG1.s0 x) GenG1.v7 = .ok s1 ∧
+      stepTermLoc GenG1.lc s1 GenG1.blk1 = .ok (.goto e, s2) ∧ e.b = t ∧ Ec.Extends E' ∧
+      PStar H0 Lc GenG1.ps.toList 0 (GenG1.m0 x) m2 ∧ LocMatch E' s2 t 0 m2 := by
+  simp only [GenG1.clampFacts, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem,
+    List.all_eq_true] at hf
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, hmem⟩, hbs⟩, hvs⟩, hv2⟩, hsz⟩, hkind⟩, hop⟩, hcls⟩, hargs⟩, hrun⟩ := hf
+  have hg := clamp_g2_facts
+  simp only [clampG2Facts, Bool.and_eq_true, beq_iff_eq] at hg
+  obtain ⟨⟨hck, hsl⟩, hnc⟩ := hg
+  have hc : checkG2 GenG1.lc GenG1.ps GenG1.bs gc = .ok GenG1.tab := by
+    revert hck; cases checkG2 GenG1.lc GenG1.ps GenG1.bs gc <;> simp [Except.toOption]
+  have hb : GenG1.lc.ctx.f.block? 1 = some GenG1.blk1 := by
+    obtain ⟨b, hb⟩ := Option.isSome_iff_exists.1 hbs
+    simp [GenG1.blk1, hb]
+  have hv : GenG1.lc.ctx.f.value? 7 = some GenG1.v7 := by
+    obtain ⟨v, hv⟩ := Option.isSome_iff_exists.1 hvs
+    simp [GenG1.v7, hv]
+  have hE := g2EnvC hc hsl hnc
+  have hen : entryOp GenG1.v7.op = false := by rw [hop]; rfl
+  have hpre : G1Pre GenG1.lc (GenG1.s0 x) GenG1.v7 := by
+    refine ⟨fun _ a ha y hy p hp => ?_, fun h => by rw [hop] at h; cases h⟩
+    have := hargs a ha
+    rw [hy, hp] at this
+    cases this
+  obtain ⟨s1, hs1, hrun⟩ := GenG1.okThen_spec hrun
+  obtain ⟨⟨n, s2⟩, hs2, hrun⟩ := GenG1.okThen_spec hrun
+  obtain ⟨e, rfl, het⟩ := GenG1.gotoIs_spec hrun
+  obtain ⟨E1, m1, hx1, hE1, hp1, hm1, hinv1⟩ := g2_value (H := H0) hc hE hmem hb hv2 hv hen
+    (locMatchC x) (g2InvC x hcls) hpre (callOK_ne (by rw [hop]; decide)) hs1
+  have hm1' : LocMatch E1 s1 1 GenG1.blk1.values.size m1 := by rw [hsz]; exact hm1
+  obtain ⟨m2, hp2, hm2, -, -⟩ := g2_term (H := H0) hc hE1 hmem hb hm1' hinv1
+    (fun hz => by rw [hkind] at hz; rcases hz with h | h <;> cases h) hs2
+  exact ⟨s1, s2, e, E1, m2, hs1, hs2, het, hx1, hp1.trans hp2, het ▸ hm2⟩
+
+theorem genG2_term_witness_50 :
+    ∃ s1 s2 e E' m2, stepLoc default GenG1.lc (GenG1.s0 50) GenG1.v7 = .ok s1 ∧
+      stepTermLoc GenG1.lc s1 GenG1.blk1 = .ok (.goto e, s2) ∧ e.b = 3 ∧ Ec.Extends E' ∧
+      PStar H0 Lc GenG1.ps.toList 0 (GenG1.m0 50) m2 ∧ LocMatch E' s2 3 0 m2 := by
+  have h := GenG1.clamp_facts
+  simp only [Bool.and_eq_true] at h
+  exact genG2_term_witness 50 3 h.1
+
+theorem genG2_term_witness_30 :
+    ∃ s1 s2 e E' m2, stepLoc default GenG1.lc (GenG1.s0 30) GenG1.v7 = .ok s1 ∧
+      stepTermLoc GenG1.lc s1 GenG1.blk1 = .ok (.goto e, s2) ∧ e.b = 2 ∧ Ec.Extends E' ∧
+      PStar H0 Lc GenG1.ps.toList 0 (GenG1.m0 30) m2 ∧ LocMatch E' s2 2 0 m2 := by
+  have h := GenG1.clamp_facts
+  simp only [Bool.and_eq_true] at h
+  exact genG2_term_witness 30 2 h.2
 
 end GoFV.Proof.Witness.GenG2
