@@ -612,6 +612,17 @@ bytes above (`progStep_globLdp`, `progStep_globStp`), where `G2Env.glob` injects
 rest is G4's pair load and store at that address (`g22_ldp`, `g22_stp`). No new trusted premise.
 G22 accepts 4,472 functions.
 
+**Slice G23: flags to a register** (`GoFV/Gen/Check23.lean`, `checkG23 lc ps bstart g`, returning
+G4's tables; proven sound, `g23_value`, `g23_term`, `g23_nilPanic`, `g23_boundsPanic`): G22 with
+the comparison pseudo-ops `Equal`, `NotEqual`, `LessThan`, …, `GreaterEqualU` and their
+floating-point and `Noov` forms (`Cond.ofOp`; `csetKind`, `VK23`): no temporary, one argument of
+the flags shape with no home, a boolean result in a register G1 may write. Genssa emits `CSET cond,
+Rd` with `cond` the `SPECIAL` operand `condBits` names. The proof (`G23.lean`): `runLoc` runs
+`Arm64.cset`, the boolean the condition gives on the flags register (`stepLoc_cset`); the machine
+writes 1 or 0 by `ConditionHolds` on `NZCV` (`progStep_cset`), for the same condition (`cset_cond`,
+decided per op); `FlagsRel` makes the two agree (`onVal_holds`, `valRel_cset`, `g23_cset`). No new
+trusted premise. G23 accepts 4,624 functions.
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -623,8 +634,8 @@ reason in parentheses):
    a parameter of the semantics); slots of other sizes (`slot … frame operand, size or alignment`,
    717).
 3. **Other values**: the acquire loads `LDAR`/`LDARW` (383, 277); `SP` after the entry values
-   (93 sole after G22); the flags to a register `Equal`/`NotEqual`/`Less*`/`Greater*` (`CSET`;
-   332 (95) for `Equal`, 196 functions with only these) and `CSEL`/`CSEL0` (324 (41), 285 (55));
+   (103 sole after G23); `CSEL`/`CSEL0` (324 (41), 285 (55)), `TSTconst` (110 (53)), `LoweredMemEq`
+   (123 (71)), `ANDshiftRA` (239 (58));
    `MOVDnop` 750 (91) and `MOVDreg` (27 sole) are done in G20 and G21 but for those that do
    not follow their load directly (220 `MOVDnop`s; 3 functions with no other blocker, and 13
    with only `MOVDreg`), which need §8's register-frame lemmas. Bounds panics
@@ -660,6 +671,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G20 | 4,328 (46.55%) | 89,297 |
 | G21 | 4,342 (46.70%) | 89,745 |
 | G22 | 4,472 (48.10%) | 98,947 |
+| G23 | 4,624 (49.73%) | 101,638 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -802,6 +814,11 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `globPair_spec`, `globPairKind_spec`).
 - `G22.lean`: `progStep_globLdp`, `progStep_globStp`, `pairAddr_glob`, `g22_ldp`, `g22_stp`,
   `vk22_step`, `g22_value`, `vk22_nil`, `g22_nilPanic`, `g22_boundsPanic`, `g22_term`.
+- `Spec23.lean`: what `checkG23` accepted (`checkG23_spec`, `vkind23_spec` with `VK23`,
+  `csetKind_spec`).
+- `G23.lean`: `csetOps`, `csetOps_of`, `cset_cond`, `stepLoc_cset`, `narrowLd?_cset`,
+  `progStep_cset`, `valRel_cset`, `g23_cset`, `vk23_step`, `g23_value`, `vk23_nil`,
+  `g23_nilPanic`, `g23_boundsPanic`, `g23_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -859,8 +876,10 @@ makes `X3` its zero extension, and on `MOVDreg`, `MOVD R3, R4`, after which `run
 the 64-bit integer `0xffff_fffe` and the machine's `X4` is `0x0000_0000_ffff_fffe`),
 `GenG22.lean` (`runtime.Version`, which G21 rejects: `g22_value` on `LDP
 runtime.buildVersion(SB), (R0, R1)` with `buildVersion = (nil, 7)`, after which `runLoc`'s `R1`
-and the machine's `X1` hold 7). Each decides its inputs by compiled evaluation (`native_decide`,
-pinned in `scripts/axioms-allowlist.txt`).
+and the machine's `X1` hold 7), `GenG23.lean` (`bytes.shouldUseASCIISet`, which G22 rejects:
+`g23_value` on `CMP $8, R0` with `len(chars) = 10` and on `GreaterThan`, `CSET GT, R0`, after
+which `runLoc`'s `R0` holds `true` and the machine's `X0` is 1). Each decides its inputs by compiled
+evaluation (`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
 
 ## 6. Future work: recursion through function values
 
@@ -1099,10 +1118,14 @@ on quick-v10 after G21, that would add only 3 functions that have no other block
 `LDP`+`Select`s, a `MOVDload`, a `Copy`) and 13 that have only `MOVDreg`: the other `MOVDnop`s sit
 in functions with further blockers.
 
-**Deferred** (after G22, #553): carrying the table across values. It is worth about 16 functions
+**Deferred** (after G22, #553): carrying the table across values. It was worth about 16 functions
 (the 3 and 13 above) and needs a register-frame conclusion in every slice's value lemma, so the
 slices that remove other blockers (§4's list) come first; this plan is kept for when they have
-freed more of the 220 `MOVDnop`s.
+freed more of the 220 `MOVDnop`s. After G23, 46 functions have `upper bits unknown` as their only
+reason; in 24 of them every such `MOVDnop`/`MOVDreg` follows its load in the same block with only
+narrow loads, `MOVDnop`s and `MOVDreg`s between (each writes at most its own register, which
+`g3_loadW`, `g14_idxW`, `g20_nop` and `op_reg2W` already state), so a table of several entries
+carried across just those values would take them; the other 22 need the cross-block table.
 
 - **The obstacle.** `MOVDnop x` emits no code. `runLoc` gives it the full 64-bit register:
   `movdLoc` takes the zero or sign extension of `x`'s low bits, as `LocCtx.signOf` decides from
@@ -1145,8 +1168,9 @@ reason in parentheses):
 - `ADDshiftLL`: 678 (57); `lo_add` with `shifted`; done in G16 (§4);
 - bounds panics `LoweredPanicBounds*`: 616 (40+); a `CALL runtime.panicBounds*` hook that
   panics, as `g7_nilPanic`; done in G19 (§4), but for #541's constant indices outside `0..31`;
-- `TSTconst`, `Equal`/`NotEqual`, `CSEL`: 110 (53), 332/294 (95/44), 324+285 (41+55) after G22;
-  flags producers and readers as G1's `CMP`/`B<cond>`;
+- `TSTconst`, `CSEL`: 110 (53), 324+285 (41+55) after G23; flags producers and readers as G1's
+  `CMP`/`B<cond>`;
+- `Equal`/`NotEqual`/`Less*`/`Greater*`: 332/294 (95/44); `CSET`; done in G23 (§4);
 - `LDP`/`STP` of globals: 347 (124); G4's pair accesses at G3's global address; done in G22 (§4).
 
 ## 9. Whole functions and the end-to-end statement
