@@ -135,6 +135,17 @@ import GoFV.Proof.MemRefine
 import GoFV.Proof.Merge
 import GoFV.Proof.Mixed
 import GoFV.Proof.NilPre
+import GoFV.Proof.Obj.Basic
+import GoFV.Proof.Obj.Bitfield
+import GoFV.Proof.Obj.Ex
+import GoFV.Proof.Obj.Frame
+import GoFV.Proof.Obj.G7
+import GoFV.Proof.Obj.Insn
+import GoFV.Proof.Obj.Link
+import GoFV.Proof.Obj.Prog
+import GoFV.Proof.Obj.Sim
+import GoFV.Proof.Obj.Spec
+import GoFV.Proof.Obj.Words
 import GoFV.Proof.Order
 import GoFV.Proof.OrderRank
 import GoFV.Proof.Pass.BranchElimNormal
@@ -830,6 +841,8 @@ import GoFV.Proof.Witness.NilLateL
 import GoFV.Proof.Witness.NilMalloc
 import GoFV.Proof.Witness.NilSel
 import GoFV.Proof.Witness.NotIf
+import GoFV.Proof.Witness.ObjFrame
+import GoFV.Proof.Witness.ObjG7
 import GoFV.Proof.Witness.PairL
 import GoFV.Proof.Witness.PhiConst
 import GoFV.Proof.Witness.PhiElim

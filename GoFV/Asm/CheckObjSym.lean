@@ -14,8 +14,8 @@ assembler's scratch, ignored) mean equal effects on every state.
 `Shift.apply` through `sized`, `extendReg`, `bitfieldMove`, `sext`, loads), so the two sides
 meet syntactically. Smart constructors (`Ex.add`, `Ex.mkAddSub`, …) fold constants and pick
 one form for the identities the encodings need (`ORR Rd, ZR, Rm` is `Rm`, `ADD`/`SUB` of a
-constant is `+`, …); `Ex.eval` gives the meaning, which each smart constructor must preserve
-(`docs/plans/proofs3.md` §7).
+constant is `+`, …); `Ex.eval` gives the meaning, and each smart constructor is proven to
+preserve it (`GoFV/Proof/Obj/`).
 
 `symInsn` is the machine side: the symbolic `exec` of one decoded instruction at a known offset
 of the function, with its control outcome (`MCtl`: fall through, branch to an offset, …).

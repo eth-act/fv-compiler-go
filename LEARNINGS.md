@@ -841,3 +841,11 @@ above. The rest applies as rules; move an entry up once measured in gofv.
   sources, not binaries). A driver-e2e run used the old back end for an hour. **Fix:** unset
   `GOOS GOARCH` (the e2e exports them) before `--compile`; `strings …/linux_amd64/compile | grep`
   for a new message confirms the rebuild.
+- **Kernel blow-up on a `match` over `decode (wordAt t o)`** (#553, `symUnit_inv` in
+  `GoFV/Proof/Obj/Words.lean`): elaboration was cheap, but kernel checking took >13 GB and
+  1,000 s. This happens whenever a proof step reduces a `match` whose body still contains
+  `decode (wordAt …)`, the big decoder applied to an opaque word. Bisecting with `sorry` hid
+  it, because an unused hypothesis is dropped before the kernel sees it.
+  **Fix:** write the definition without `do` join points (plain if/else) and split it into small
+  defs that take the decoded word as an argument (`symPairAt … (decode …)`). Then prove with `rw`
+  and small `simp only` steps. Peak memory went from >13 GB to 0.8 GB.

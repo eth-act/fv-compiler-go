@@ -65,6 +65,19 @@ GoFV.Proof.Witness.GenG11.g11_facts._native.native_decide.ax_1_1 2bdbfac8b47afba
 # `runtime.subtractb` and `checkG11` does not (parsed, `Env.load`, `genssa`), `runLoc` runs the
 # pointer conversion `Convert`; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.GenG12.g12_facts._native.native_decide.ax_1_1 006c738e358699fcb657172346ef99576626e7ae472454fc77985f9b013cf8d0
+# objFrame_entry_witness, objFrame_exit_witness (GoFV/Proof/Witness/ObjFrame.lean, #553): `checkObj`
+# accepts `testInts` of test/makeslice (parsed, `flush`, as obj-check) framed with a stack check,
+# `linkCode` links it, the stack check passes from the entry state; compiled evaluation, as
+# plF_pipeline.
+GoFV.Proof.Witness.ObjFrame.obj_facts._native.native_decide.ax_1_1 555eb6f93dc8e594797987999bc74cfb6cb5c9c0c111d519c833a67d62818e59
+# objG7_value_witness, objG7_term_witness (GoFV/Proof/Witness/ObjG7.lean, #553): `checkObj` accepts
+# `(*A).g` of test/method and `pallocSum.start` of std/runtime (parsed, `flush`, as obj-check;
+# genssa's P0 Progs) frameless, `linkCode` links them at 0x20000, the return address and the
+# symbols have no code and are neither Prog addresses nor `endP`, the related machine state starts
+# at the base; `checkG7` accepts `pallocSum.start` with GenG3's tables; compiled evaluation, as
+# plF_pipeline.
+GoFV.Proof.Witness.ObjG7.g_obj_facts._native.native_decide.ax_1_1 803ce7f4d5388c2808fd4afcbdee8059660922ed1655b2a873f1e1398f4329e4
+GoFV.Proof.Witness.ObjG7.start_obj_facts._native.native_decide.ax_1_1 246f1041de9b5e915239823edcf13c804d4c2cec9b95e57de88f9be5dcb1d206
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:

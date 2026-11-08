@@ -15,8 +15,9 @@ G2–G12 rest on the trusted callee contract `CallOK`, G8–G12 also on the writ
 contract `WbOK`, G10–G12 also on the indirect callee contract `ICallOK`, G11 and G12 also on the
 closure context premise `CloOK` (§4, `docs/proofs/STATUS.md` Assumptions); §6 lists future work
 on these premises.
-The assembler validator `checkObj` (P0 against the assembled words, D2–D5) is implemented, with
-the probe `obj-check` (§7); its soundness proof is not merged yet.
+The assembler validator `checkObj` (P0 against the assembled words, D2–D5, probe `obj-check`) is
+implemented and proven sound (`GoFV/Proof/Obj/`: `obj_star`, the templates `obj_entry`/`obj_exit`;
+`g7_obj_value`/`g7_obj_term` compose it with G7: `runLoc` to the machine words; §7).
 Context:
 `docs/plans/semantics3.md` (§4 `LocMatch`, §6 hooks, §7 layers), `docs/PASSES3.md` (the steps
 A1–F2), `docs/plans/regalloc-check.md` (the Phase 2 pattern this plan follows: an untrusted port
@@ -681,3 +682,31 @@ reasons outside the slices (functions each occurs in) are:
 - `LSL` by a register 133;
 - `MUL` 78;
 - the atomics (`LDADDAL*`, `CASAL*`, `STLR*`).
+
+**Proof** (`GoFV/Proof/Obj/`):
+
+- `Ex.lean`, `Bitfield.lean`: the smart constructors keep `eval`; the bitfield moves that the
+  assembler encodes shifts, extracts and extensions as are P0's operations.
+- `Insn.lean`, `Link.lean`, `Words.lean`: `symInsn_sound` (one decoded word); the linker
+  model's relocated pairs and calls (`decode_adrp`, `decode_addLo`, `decode_ldstLo`,
+  `decode_call`); `symWords_sound` (the words run as `symWords` says, one `MStep` each).
+- `Prog.lean`: `progSym_sound`. A successful `progStep` of a Prog `progSym` describes performs
+  no access in the nil page and ends where the symbolic effect and control say. There is one
+  lemma per family (shifts, ADD-type, compares, `NEG`, bitfield extracts, moves, loads, stores,
+  constants, addresses, pairs, `B.cond`, `JMP`, `CBZ`, `TBZ`, `CALL`).
+- `Spec.lean`: the validator's checks as propositions (`checkObj_spec`, …).
+- `Sim.lean`: `ObjRel f` (registers but `X27`/`X30` equal; `X30` and the PC through `f`, which
+  maps a P0 Prog's address to `base +` its offset and the end to `base + endOff`; `SP`, `V`,
+  flags, memory equal), `ObjEnv` (accepted, `Link.byId` with the validated frame, linked code),
+  `obj_step` and `obj_star`. Every `PStar` run of P0 to `endP` is matched by `MStar` of the
+  words, under the trusted `HookMap` (hooks treat related states alike; STATUS Assumptions).
+- `Frame.lean`: `obj_entry` (from `MachEntry`, when the stack check passes, the prologue builds
+  `BodyEntry`) and `obj_exit` (the epilogue at a P0 `RET` pops the frame and returns through the
+  saved `LR`).
+- `G7.lean`: `g7_obj_value`, `g7_obj_term`. `g7_value`/`g7_term` with P0's return address
+  `endP`, composed with `obj_star`, take a `runLoc` step to machine steps of the linked words.
+
+Witnesses: `Witness/ObjFrame.lean` (`testInts`, framed, with the small stack check: `obj_entry`
+and `obj_exit`) and `Witness/ObjG7.lean` (`(*A).g`: `g7_obj_value` on its nil check;
+`pallocSum.start`: `g7_obj_term` on `TBNZ [63]`). Each decides `checkObj` and `linkCode` by
+compiled evaluation (pinned).
