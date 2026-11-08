@@ -1,15 +1,16 @@
 # Plan: the Phase 3 proofs (I7, #553)
 
-Status: slices G1–G8 of the genssa validator are implemented (`GoFV/Gen/Check.lean`,
-`GoFV/Gen/Check2.lean`, …, `GoFV/Gen/Check8.lean`, probe `gen-check`) and proven sound
+Status: slices G1–G9 of the genssa validator are implemented (`GoFV/Gen/Check.lean`,
+`GoFV/Gen/Check2.lean`, …, `GoFV/Gen/Check9.lean`, probe `gen-check`) and proven sound
 (`GoFV/Proof/Gen/G1.lean`: `g1_value`, `g1_term`; `GoFV/Proof/Gen/G2.lean`: `g2_value`, `g2_term`;
 `GoFV/Proof/Gen/G3.lean`: `g3_value`, `g3_term`; `GoFV/Proof/Gen/G4.lean`: `g4_value`, `g4_term`;
 `GoFV/Proof/Gen/G5.lean`: `g5_value`, `g5_term`; `GoFV/Proof/Gen/G6.lean`: `g6_value`, `g6_term`;
 `GoFV/Proof/Gen/G7.lean`: `g7_value`, `g7_term`, `g7_nilPanic`; `GoFV/Proof/Gen/G8.lean`:
-`g8_value`, `g8_term`, `g8_nilPanic`; §3–§5), with witnesses on corpus functions
-(`GoFV/Proof/Witness/GenG1.lean`, …, `GenG8.lean`).
-G2–G8 rest on the trusted callee contract `CallOK`, G8 also on the write-barrier hook contract
-`WbOK` (§4, `docs/proofs/STATUS.md` Assumptions).
+`g8_value`, `g8_term`, `g8_nilPanic`; `GoFV/Proof/Gen/G9.lean`: `g9_value`, `g9_term`,
+`g9_nilPanic`; §3–§5), with witnesses on corpus functions (`GoFV/Proof/Witness/GenG1.lean`, …,
+`GenG9.lean`).
+G2–G9 rest on the trusted callee contract `CallOK`, G8 and G9 also on the write-barrier hook
+contract `WbOK` (§4, `docs/proofs/STATUS.md` Assumptions).
 Context:
 `docs/plans/semantics3.md` (§4 `LocMatch`, §6 hooks, §7 layers), `docs/PASSES3.md` (the steps
 A1–F2), `docs/plans/regalloc-check.md` (the Phase 2 pattern this plan follows: an untrusted port
@@ -142,7 +143,7 @@ related by `LocMatch` (`genG1_witness_50`, `genG1_witness_30`).
 
 **Coverage** (`lake exe gen-check`, quick-v10, 9,297 functions): see §5.
 
-## 4. Slices G2–G8, and the next slices
+## 4. Slices G2–G9, and the next slices
 
 **Slice G2** (`GoFV/Gen/Check2.lean`, `checkG2 lc ps bstart g`; proven sound, `g2_value`,
 `g2_term`): G1 plus the most frequent blockers of §5 — `CALLstatic` of a symbol with an ABI
@@ -340,20 +341,30 @@ How the proof discharges G8's obligations (`G8.lean`):
 - **The selections** (`g8_sel0`, `g8_sel1`): `Select0` rereads `R25` (`read_wb`, the class from
   `kReads`: `ksel8_of_reads`); `Select1` writes the memory it reads (no change, `op_none`).
 
-Later slices, by how many functions outside G8 each blocker occurs in (quick-v10, §5; sole reason
+**Slice G9: call results** (`GoFV/Gen/Check9.lean`, `checkG9 lc ps bstart g`, returning G4's
+tables; proven sound, `g9_value`, `g9_term`, `g9_nilPanic`): G8 with G2's static-call check
+(`vkind2`) relaxed (`vkind9`, `VK9.call`): the result registers need no longer hold one class in
+the whole function (G2's `resultReg`, from `regCls`); they are distinct (`outs.Nodup`, G3's) and
+the results have register shapes (`callTy`). The emitted Prog is `CALL sym(SB)` (`callPat`).
+
+How the proof discharges G9's obligations (`G9.lean`): `g2_call` never used `resultReg`; it needs
+of the class map after the call only `KCall`, which the class table gives for distinct result
+registers (`kcall_kStep`). G8's other values go through `vk8_step`.
+
+Later slices, by how many functions outside G9 each blocker occurs in (quick-v10, §5; sole reason
 in parentheses):
 
 1. **Interface and closure calls** (results homes 1,215, `CALLinter` 764, `CALLclosure` 359,
-   `LoweredGetClosurePtr` 660 (284)) and call results outside `R0`–`R15` or of float shapes (call
-   result shapes 1,121 (242)).
+   `LoweredGetClosurePtr` 660 (316)); calls with stack arguments (`stack argument` 311) or
+   floating-point arguments or results (125).
 2. **Frame variables beyond G6**: parameters and results (`NAME_PARAM`, `Blk.local`: `frame
-   variable operand class`, 294 (79)) and variables whose address is converted to an integer
+   variable operand class`, 294 (85)) and variables whose address is converted to an integer
    (`frame variable with an integer address`, 197): option 2 of semantics3 §4.3 (addresses as a
-   parameter of the semantics); `LoweredZero` 540 (55); slots of other sizes (`slot … frame
+   parameter of the semantics); `LoweredZero` 540 (64); slots of other sizes (`slot … frame
    operand, size or alignment`, 717).
-3. **Other values**: `Convert` 938 (141), `MOVDnop` 750, `ADDshiftLL` 678, the register-index
+3. **Other values**: `Convert` 938 (154), `MOVDnop` 750 (47), `ADDshiftLL` 678, the register-index
    loads (`MOVDloadidx8` 482, `MOVBUloadidx` 353), bounds panics (`LoweredPanicBoundsRR` 616),
-   `GetG` 430 (51), the acquire loads `LDAR`/`LDARW` (383, 277).
+   `GetG` 430 (57), the acquire loads `LDAR`/`LDARW` (383, 277).
 
 ## 5. Results
 
@@ -370,6 +381,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G6 | 1,946 (20.93%) | 24,819 |
 | G7 | 2,109 (22.68%) | 26,795 |
 | G8 | 2,323 (24.98%) | 39,922 |
+| G9 | 2,551 (27.43%) | 44,756 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -450,6 +462,9 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
 - `G8.lean`: `WbSpec`, `WbOK`, `G8Env`; `clobber_wb`, `wb_keeps`, `clobberMask_wb`, `setReg_get`,
   `stepLoc_wb`, `read_wb`, `objX?_kept`, `objV?_kept`, `kwb_kStep`, `ksel8_of_reads`; `g8_wb`,
   `g8_sel0`, `g8_sel1`, `vk8_step`, `g8_value`, `g8_nilPanic`, `g8_term`.
+- `Spec9.lean`: what `checkG9` accepted (`checkG9_spec`, `vkind9_spec` with `VK9`,
+  `callPat_spec`).
+- `G9.lean`: `vk9_step`, `g9_value`, `g9_nilPanic`, `g9_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -467,5 +482,8 @@ which G6 rejects: `g7_value` on the receiver's nil check `MOVB (R0), R27` with t
 pointing to a global, `g7_nilPanic` with a nil receiver, where `runProg` panics with `nilDeref`),
 `GenG8.lean` (`sync_runtime_registerPoolCleanup` of std/runtime, which G7 rejects: `g8_value` on
 the request `LoweredWB [2]` (`CALL runtime.gcWriteBarrier2(SB)`), its `Select0` and `Select1`,
-under a hook that is `wbHook` with the buffer at `2^41`, which satisfies `WbOK`). Each decides its
-inputs by compiled evaluation (`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
+under a hook that is `wbHook` with the buffer at `2^41`, which satisfies `WbOK`), `GenG9.lean`
+(`runtime.fint64to32`, which G8 rejects (`R0` holds its 64-bit argument and its call's 32-bit
+result): `g9_value` on the static call `CALL runtime.fintto32(SB)` with a callee that returns 7 in
+`R0` (`CallOK`: `callOKc`), its result and its memory). Each decides its inputs by compiled
+evaluation (`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
