@@ -140,6 +140,10 @@ GoFV.Proof.Witness.GenG23.g23_facts._native.native_decide.ax_1_1 cf247ce900c1fde
 # `runLoc` runs its `SP` to the Go register `SP` holding `2^62`; compiled evaluation, as
 # plF_pipeline.
 GoFV.Proof.Witness.GenG24.g24_facts._native.native_decide.ax_1_1 9ffefe179bf311f89d89284557444a71dd4b538ba3e0b1d9289378cf15143fd1
+# genG25_value_witness (GoFV/Proof/Witness/GenG25.lean, #553): `checkG25` accepts the struct
+# wrapper of `reflect.flag.ro` and `checkG24` does not (parsed, `Env.load`, `genssa`), and `runLoc`
+# runs its `CSEL0` (`NotEqual`) to `R0 = 32`; compiled evaluation, as plF_pipeline.
+GoFV.Proof.Witness.GenG25.g25_facts._native.native_decide.ax_1_1 b911566b83b68588115f0e467cdd6b40883d0f8d811b5dfdd5c71b2ad91c2071
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:

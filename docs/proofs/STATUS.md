@@ -517,6 +517,17 @@ rejects: `SP` at the head of the receiving block, after which `runLoc`'s Go regi
 `SP`'s value and the related machine state is at the same PC). Coverage on quick-v10 (`lake exe
 gen-check`): 4,718 of 9,297 functions (50.74%), 106,958 values.
 
+## Phase 3: genssa, slice G25 (I7, #553)
+
+`GoFV.Proof.Gen.g25_value`, `GoFV.Proof.Gen.g25_term`, `GoFV.Proof.Gen.g25_nilPanic`,
+`GoFV.Proof.Gen.g25_boundsPanic` (`GoFV/Proof/Gen/G25.lean`): when slice G25 (`checkG25`: G24 with
+the conditional selects `CSEL`/`CSEL0` and the bit tests `TSTconst`/`TSTWconst`) accepts a
+function, they are `g24_value`'s, `g24_term`'s, `g24_nilPanic`'s and `g24_boundsPanic`'s
+statements under the same premises. No new trusted premise. Witness `genG25_value_witness` (the
+struct wrapper of `reflect.flag.ro`, which G24 rejects: `CSEL NE, R1, ZR, R0` with `R1 = 32` after
+`CMP $0` on 32, after which `runLoc`'s `R0` holds 32 and the machine's `X0` is 32). Coverage on
+quick-v10 (`lake exe gen-check`): 4,925 of 9,297 functions (52.97%), 111,247 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g12_obj_value`, `g12_obj_term` (`GoFV/Proof/Obj/G12.lean`): `g12_value`/`g12_term`
