@@ -12,7 +12,8 @@ GoFV.Proof.Witness.plF_pipeline._native.native_decide.ax_1_1 3b2789fb0d87588261b
 GoFV.Proof.Witness.pfF_pipeline._native.native_decide.ax_1_1 18d7bd508db333b075201bb1c63b8c05d91468597ee1c0202b36da07bafce926
 # genG1_witness_50/_30 (GoFV/Proof/Witness/GenG1.lean, #553): `checkG1` accepts `clamp` (parsed,
 # `Env.load`, `genssa`) and `runLoc` runs its compare and branch; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG1.clamp_facts._native.native_decide.ax_1_1 60f55a6e16caa263324ede5ff9b5b923be3c751b7ec47cb873a41e6bf10b2dd0
+# Pin updated for the embedded gofv-prog 3 file (quick-v10, #550).
+GoFV.Proof.Witness.GenG1.clamp_facts._native.native_decide.ax_1_1 37869d6db4ec9275e267f5fd322b5a1ae75c09d5a97c486b1867900ead21a79f
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
