@@ -347,6 +347,18 @@ Runs per pass of `gofv-ssa-opt --check --verified` (96,553 functions, each pass 
 
 Functions by first unverified run (3,635 of 96,553): opt 2,392, late opt 607, middle opt 389, decompose builtin 113, decompose user 59, divmod 47, expand calls 27, opt deadcode 1. Skipped runs keep the input, so they cost no verification, only stock identity (functions by first difference from stock: nilcheckelim 11,147, prove 5,576 (its own result differs, `proveChecked`), generic cse 1,107, early phielim and copyelim 660, dead auto elim 245, memcombine 154, dse 32, the rest 12). The deadcode/copyelim fragment failures are mostly zero-size values (`emptyFrag`: `empty Load empty` 447, `empty StructSelect empty` 178).
 
+The `decompose user` runs that are unverified (59 on full-v9) are not in `decompose-probe`'s count
+of stock inputs outside `decUserFrag` (0 of 96,560): the probe checks the stock section before the
+pass, `--verified` the verified pipeline's state. When `early phielim and copyelim` and `early
+deadcode` are skipped (outside their fragments, mostly zero-size values), that state still holds
+the values the stock passes removed. `decompose-probe` now also runs the pipeline's earlier passes
+(`Verified.runPasses`) and checks `decUserFrag` on their result: on full-v9 (main 91883690) 96,495
+of 96,560 are in the fragment; the 65 others all follow both early skips, 60 with a dead `Unknown`
+value outside `tabsAgreeMod`'s covered ops (`tamOpOK`) and 5 with a `Phi` split whose argument shape
+differs from the `Phi`'s (`decPhiCheck`: "new Phi: arg shape ≠ phi shape"). Both classes are in
+`--verified`'s 59 (checked on samples); the probe starts from the section-0 tables, without the
+driver's added type rounds.
+
 ## Remaining validator classes (functions whose only obstacle is the rewrite validator, 105)
 
 `BLOCKED` lines of `opt-proven-probe` (every rewrite section at stock under the proven-only
