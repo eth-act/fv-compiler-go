@@ -424,7 +424,8 @@ def checkProg (t : ByteArray) (rs : List Reloc) (offs : List (Nat × Nat)) (az e
 /-! ## Prologue, epilogue, morestack tail -/
 
 /-- The frame's specification after the prologue: `SP` lowered by `autosize`, the caller's `LR`
-at `0(SP)` and `FP` at `-8(SP)`, `R29 = SP - 8`. The large-frame form also writes `R20`. -/
+at `0(SP)` and `FP` at `-8(SP)`, `R29 = SP - 8`, no loads. The large-frame form also writes
+`R20`. -/
 def frameOK (az : Int) (σ : Sym) : Except String Unit := do
   let sp' := Ex.mkAdd .sp (.k (BitVec.ofInt 64 (-az)))
   let fp' := Ex.mkAdd .sp (.k (BitVec.ofInt 64 (-az - 8)))
@@ -435,10 +436,11 @@ def frameOK (az : Int) (σ : Sym) : Except String Unit := do
   if σ.getX 30 != .x 30 then throw "prologue: R30 written"
   let st := [(sp', 8, Ex.x 30), (fp', 8, Ex.x 29)]
   if σ.stores != st && σ.stores != st.reverse then throw "prologue: stores"
+  if !σ.loads.isEmpty then throw "prologue: loads"
 
 /-- The epilogue's specification: `R29` restored (a leaf recomputes it, `SP + autosize - 8`,
 others reload it from `-8(SP)`), `R30` reloaded from `0(SP)` unless a leaf, `SP` raised by
-`autosize`, a return through `R30`. -/
+`autosize`, no load but these reloads, a return through `R30`. -/
 def retOK (az : Int) (leaf : Bool) (σ : Sym) (c back : MCtl) : Except String Unit := do
   if az == 0 then
     if σ != {} then throw "frameless epilogue: effect" else
@@ -453,12 +455,14 @@ def retOK (az : Int) (leaf : Bool) (σ : Sym) (c back : MCtl) : Except String Un
     throw s!"epilogue: R{r} written"
   if σ.fl != .init then throw "epilogue: flags"
   if !σ.stores.isEmpty then throw "epilogue: stores"
+  let reloads := [(Ex.mkAdd .sp (.k (BitVec.ofInt 64 (-8))), 8), (Ex.sp, 8)]
+  unless σ.loads.all (reloads.contains ·) do throw "epilogue: loads"
   if c != back then throw "epilogue: return"
 
 /-- The stack check: `[0, e)` ends in the `BLS` to the morestack tail (and, for big frames, a
 `BLO` there before it); returns the tail's offset and the check's specification is met:
 the limit `SP` (small frames) or `SP - (framesize - StackSmall)` compared unsigned with
-`stackguard0` (`16(g)`). -/
+`stackguard0` (`16(g)`), loaded by the only load; `SP` and `R30` unchanged. -/
 def checkStackCheck (t : ByteArray) (rs : List Reloc) (az : Int) (o : Nat) (gOff : Nat) :
     Except String (Nat × Nat) := do
   let g : Ex := .ld 8 (Ex.mkAdd (.x 28) (.k (BitVec.ofNat 64 gOff)))
@@ -471,6 +475,10 @@ def checkStackCheck (t : ByteArray) (rs : List Reloc) (az : Int) (o : Nat) (gOff
   | .cond fl 9 q =>
     if fl != .addSub true true lim g then throw s!"stack check: flags {repr fl}" else
     if σ.stores != [] then throw "stack check: stores" else
+    if σ.sp != .sp then throw "stack check: SP" else
+    if σ.getX 30 != .x 30 then throw "stack check: R30" else
+    if σ.loads != [(Ex.mkAdd (.x 28) (.k (BitVec.ofNat 64 gOff)), 8)] then
+      throw "stack check: loads" else
     if let some r := cmpRegs.find? (fun r => r != 16 && r != 17 && σ.getX r != .x r) then
       throw s!"stack check: R{r}"
     if q < 0 then throw "stack check: tail" else
