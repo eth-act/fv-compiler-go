@@ -238,10 +238,13 @@ def checkFrame (lc : LocCtx) (g : G2In) : Except String Unit := do
   unless ks.all fun k => ks.all fun k' => k' == k || g.slotOp k' != g.slotOp k do
     throw "two slots at one frame operand"
 
-/-- The context of the check. -/
+/-- The context of the check: G1's, the inputs of G2, and the checks of a value and of a
+terminator (G2's, or a later slice's). -/
 structure Cx2 where
   cx : Cx
   g : G2In
+  vk : Value → Except String VKind2
+  tm : Block → Nat → Option (ID × Nat) → Except String Unit
 
 /-- One Prog matching `pat` after no-ops from `j`: the index after it. -/
 def Cx2.one (c : Cx2) (j : Nat) (pat : Pat) : Except String Nat := do
@@ -254,7 +257,7 @@ def Cx2.values (c : Cx2) (entry : Bool) : List ID → Nat → Bool → Except St
   | [], j, _ => return ([], j)
   | id :: ids, j, head => do
     let some v := c.cx.lc.ctx.f.value? id | throw s!"v{id} is not in the function"
-    let k ← match ← vkind2 c.cx.lc c.g v with
+    let k ← match ← c.vk v with
       | .entry =>
         unless entry && head do throw s!"v{id}: {v.op.name} after the entry values"
         pure j
@@ -266,13 +269,13 @@ def Cx2.values (c : Cx2) (entry : Bool) : List ID → Nat → Bool → Except St
     return (j :: js, e)
 
 /-- The terminator: G1's kinds, and `Exit` (no-ops up to the next block's start). -/
-def Cx2.term (c : Cx2) (b : Block) (j : Nat) (next : Option (ID × Nat)) : Except String Unit := do
+def Cx.termG2 (cx : Cx) (b : Block) (j : Nat) (next : Option (ID × Nat)) : Except String Unit := do
   if b.kind == .Exit then
     unless b.succs.isEmpty do throw s!"b{b.id}: exit shape"
     if let some (_, k) := next then
-      unless j ≤ k && ((List.range (k - j)).all fun i => (c.cx.ps[j + i]?.map noop) == some true) do
+      unless j ≤ k && ((List.range (k - j)).all fun i => (cx.ps[j + i]?.map noop) == some true) do
         throw s!"b{b.id}: code after exit"
-  else c.cx.term b j next
+  else cx.term b j next
 
 def Cx2.blocks (c : Cx2) : List ID → Except String PcTab
   | [] => return []
@@ -283,7 +286,7 @@ def Cx2.blocks (c : Cx2) : List ID → Except String PcTab
     let next ← match rest.head? with
       | some n => pure (some (n, ← c.cx.startIdx n))
       | none => pure none
-    c.term b e next
+    c.tm b e next
     let tab ← c.blocks rest
     return (bid, js ++ [e]) :: tab
 
@@ -292,7 +295,8 @@ def checkG2 (lc : LocCtx) (ps : Array Prog) (bstart : ID → Option Nat) (g : G2
     Except String PcTab := do
   unless lc.ctx.f.lowered do throw "not lowered"
   let idx := (ps.toList.zipIdx).foldl (fun m (p, i) => m.insert p.id i) {}
-  let c : Cx2 := { cx := { lc, ps, idx, bstart }, g }
+  let cx : Cx := { lc, ps, idx, bstart }
+  let c : Cx2 := { cx, g, vk := vkind2 lc g, tm := cx.termG2 }
   let tab ← c.blocks lc.ctx.f.blocks.toList
   if let some i := (List.range lc.homes.size).find? (!homeOK2 lc ·) then throw (homeErr lc i)
   checkFrame lc g

@@ -1,10 +1,11 @@
 # Plan: the Phase 3 proofs (I7, #553)
 
-Status: slices G1 and G2 of the genssa validator are implemented (`GoFV/Gen/Check.lean`,
-`GoFV/Gen/Check2.lean`, probe `gen-check`) and proven sound (`GoFV/Proof/Gen/G1.lean`: `g1_value`,
-`g1_term`; `GoFV/Proof/Gen/G2.lean`: `g2_value`, `g2_term`; §3–§5), with witnesses on corpus
-functions (`GoFV/Proof/Witness/GenG1.lean`, `GenG2.lean`). G2 rests on the trusted callee
-contract `CallOK` (§4, `docs/proofs/STATUS.md` Assumptions). Context:
+Status: slices G1, G2 and G3 of the genssa validator are implemented (`GoFV/Gen/Check.lean`,
+`GoFV/Gen/Check2.lean`, `GoFV/Gen/Check3.lean`, probe `gen-check`) and proven sound
+(`GoFV/Proof/Gen/G1.lean`: `g1_value`, `g1_term`; `GoFV/Proof/Gen/G2.lean`: `g2_value`, `g2_term`;
+`GoFV/Proof/Gen/G3.lean`: `g3_value`, `g3_term`; §3–§5), with witnesses on corpus functions
+(`GoFV/Proof/Witness/GenG1.lean`, `GenG2.lean`, `GenG3.lean`). G2 and G3 rest on the trusted
+callee contract `CallOK` (§4, `docs/proofs/STATUS.md` Assumptions). Context:
 `docs/plans/semantics3.md` (§4 `LocMatch`, §6 hooks, §7 layers), `docs/PASSES3.md` (the steps
 A1–F2), `docs/plans/regalloc-check.md` (the Phase 2 pattern this plan follows: an untrusted port
 with 100% parity, a checker, and a soundness proof of the checker only).
@@ -128,7 +129,7 @@ related by `LocMatch` (`genG1_witness_50`, `genG1_witness_30`).
 
 **Coverage** (`lake exe gen-check`, quick-v10, 9,297 functions): see §5.
 
-## 4. Slice G2 and the next slices
+## 4. Slices G2 and G3, and the next slices
 
 **Slice G2** (`GoFV/Gen/Check2.lean`, `checkG2 lc ps bstart g`; proven sound, `g2_value`,
 `g2_term`): G1 plus the most frequent blockers of §5 — `CALLstatic` of a symbol with an ABI
@@ -172,17 +173,41 @@ How the proof discharges G2's obligations:
 The prologue and epilogue (C6/D3) are not part of `g2_value`/`g2_term`: they start from a state at
 the body entry (`E.sp` after the prologue).
 
+**Slice G3: widths** (`GoFV/Gen/Check3.lean`, `checkG3 lc ps bstart g`, returning G2's PC table
+and the class table; proven sound, `g3_value`, `g3_term`):
+
+- **Classes by dataflow.** G1 and G2 let each register hold values of one class (`regCls`). G3
+  tracks the class of each register's last writer (`kStep`: a register home sets its register, a
+  static call each result register, a `Phi` nothing), forward from the entry block (`kFlow`, a
+  meet at joins); `checkK` checks the table it returns: every register a value reads holds the
+  class it is read at (`kReads`: register arguments, the call result a `SelectN` reads, the
+  control of a register test), and each successor's start is implied by its predecessor's end
+  (`kLe`). Static calls must have distinct result registers.
+- **Values** beyond G2's (`vkind3`, `VK3`): the loads `MOV{D,B,BU,H,HU,W,WU}load` and stores
+  `MOV{D,B,H,W}store` through a 64-bit register or of a global (`sym+off(SB)`, `AccessOK`),
+  boolean `MOVBU` loads; the extensions `MOV{B,BU,H,HU,W,WU}reg`; `AND`/`LSL`/`LSR $k`; `UBFX`;
+  `CMPW`/`CMPWconst`; `SB` of a register shape anywhere (no code).
+- **Blocks** beyond G2's (`Cx.termG3`, `TermOK3`): `ZW`/`NZW` (`CBZW`/`CBNZW`) on a register of at
+  least 32 bits or a boolean, `TBZ`/`TBNZ` on a register holding the tested bit or a boolean.
+
+How the proof discharges G3's obligations: the invariant `G3Inv E lc K s` is G2's with the class
+map `K` of the table before the value (`kAt lc kt b blk i`, `kAt_succ`) instead of `regCls`, so
+G1's and G2's value lemmas (`value_core`, `g2_*`) are generic in the class map (`KRead`, `KNext`,
+`KCall`) and G3 instantiates them (`kread_of_reads`, `knext_kStep`, `kcall_kStep`,
+`ksel_of_reads`); at a terminator the end's map implies the successor's (`checkK_spec`,
+`CoreInv.mono`). Narrow accesses: `MemN.lean` generalises `Mem.lean`'s 8-byte load and store to
+`n ∈ {1, 2, 4, 8}` bytes (`lo_loadN`, `valRel_loadBool`, `memInj_storeN`, `access_nil`); the
+per-value premise `G3Pre` asks that a load read valid bytes (and a boolean byte 0 or 1, as Go
+stores booleans). The narrow ALU ops, compares and tests relate on the low bits of the classes
+(`Value3.lean`: `valRel_ext`, `valRel_andK`, `valRel_lslK`, `valRel_lsrK`, `valRel_ubfx`,
+`flagsRel_cmpw`, `taken_zw`, `taken_tbz`, …). One lemma per G3 value kind (`g3_load`,
+`g3_store`, `g3_ext`, `g3_aluK`, `g3_ubfx`, `g3_cmpw`, `g3_cmpwK`, `g3_sb`) and the register and
+bit tests (`term_test`).
+
 Later slices, by how many functions each blocker occurs in outside G2 (quick-v10, §5):
 
-1. **G3: widths.** Registers holding two width classes (4,453 functions, the largest blocker and
-   the sole one in 50), narrow loads and stores (load/store shapes 1,680/1,675, `MOVWUload` 1,440,
-   `MOVBUload` 1,419, `MOVBstore` 763, `MOVWstore` 599, `MOVWload` 549, `MOVHUload` 205), 32-bit
-   tests and compares (`TBNZ` 1,683, `NZW` 1,261, `CMPWconst` 810, `CMPW` 561, `ZW` 347, `TBZ`
-   297), extensions and narrow ALU ops (`MOVBUreg` 422, `MOVWUreg` 217, `ANDconst` 670, `SRLconst`
-   433, `SLLconst` 258, `UBFX` 236). One infrastructure: a forward dataflow table of the width
-   class of each register's last writer replaces the one-class-per-register rule (`regCls`,
-   `homeOK`), with `Lo`/`ValRel` at narrow classes (`Value.lean`) and the narrow `MOVB…/MOVH…/MOVW…`
-   step lemmas (`Mem.lean`'s 8-byte load and store generalised to 1/2/4 bytes).
+1. **G3: widths** (above; was the largest blocker: registers holding two width classes in 4,453
+   functions).
 2. **G4: register pairs and tuples**: `Select0`/`Select1` and `pair` homes (3,058), `LDP` (1,922),
    `STP` (1,765), call results outside `R0`–`R15` or of float shapes (call result shapes 1,121),
    interface and closure calls (results homes 1,215, `CALLinter` 764, `CALLclosure` 359, with
@@ -203,6 +228,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | --- | --: | --: |
 | G1 | 268 (2.88%) | 1,500 |
 | G2 | 1,171 (12.59%) | 10,665 |
+| G3 | 1,611 (17.32%) | 17,270 |
 
 (On quick-v9, before the G2 validator was tightened for the proof — call arguments and results in
 `R0`–`R15`, `SelectN`'s component class, 64-bit `MOVDaddr` and spill shapes — G2 accepted 1,211.)
@@ -216,7 +242,7 @@ two width classes 4,453, `Select0`/`Select1` and register pairs 3,058, `LDP` 1,9
 slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGetClosurePtr` 104,
 `SB` after the entry values 64, two width classes 50.
 
-**Proof** (`GoFV/Proof/Gen/`; G1's modules, then G2's):
+**Proof** (`GoFV/Proof/Gen/`; G1's modules, then G2's, then G3's):
 
 - `Basic.lean`: `PStep`/`PStar`, `PStar.runProg`; `Link.byId` with distinct IDs below `2^32`:
   `off_byId`, `addr_byId`, `nextAddr_byId`, `progAt?_byId`.
@@ -245,8 +271,20 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
 - `Stack.lean`: `StkAt`, `FrameOK`, `stk_slots_frame`, `stk_keeps`, `memInj_congr`, `valRel_mono`.
 - `G2.lean`: `G2Env`, `G2Inv`, `CallSpec`/`CallOK`; one lemma per G2 value kind (`g2_g1`,
   `g2_spill`, `g2_reload`, `g2_addr`, `g2_selMem`, `g2_selReg`, `g2_call`), `g2_value`, `g2_term`.
+- `Spec3.lean`: what `checkG3` accepted (`checkG3_spec`, `vkind3_spec` with the per-op facts
+  `VK3`, `AccessOK`, `Cx.termG3_spec`/`TermOK3`, `checkK_spec`) and the class-map algebra
+  (`kStep_get`, `kResults_get_of_mem`, `kAt_zero`, `kAt_succ`).
+- `MemN.lean`, `Progs3.lean`, `Value3.lean`, `Step3.lean`: the `n`-byte load and store under
+  `MemInj`; `progStep` of every G3 shape (`MOV…` loads and stores through a register or of a
+  global, extensions, `AND`/`LSL`/`LSR`, `UBFX`, `CMPW`, `CBZW`/`CBNZW`, `TBZ`/`TBNZ`); the value,
+  flags and branch relations on the low bits of the classes; `stepLoc` of the new ops.
+- `G3.lean`: `G3Inv`, `G3Pre`; the class table as `KRead`/`KNext`/`KCall`; one lemma per G3 value
+  kind (`g3_load`, `g3_store`, `g3_ext`, `g3_aluK`, `g3_ubfx`, `g3_cmpw`, `g3_cmpwK`, `g3_sb`),
+  `term_test`, `g3_value`, `g3_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
-callee that returns at once; `clamp`: `g2_value` on a G1 value and `g2_term`). Both decide their
-inputs by compiled evaluation (`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
+callee that returns at once; `clamp`: `g2_value` on a G1 value and `g2_term`), `GenG3.lean`
+(`pallocSum.start`, which G2 rejects: `g3_term` on the bit test `TBNZ [63]` both ways and
+`g3_value` on `ANDconst`). Each decides its inputs by compiled evaluation (`native_decide`, pinned
+in `scripts/axioms-allowlist.txt`).

@@ -48,7 +48,7 @@ theorem Cx2.values_spec {c : Cx2} {entry : Bool} :
       c.values entry ids j head = .ok (js, e) →
       js.length = ids.length ∧ (js ++ [e]).getD 0 0 = j ∧
       ∀ i (hi : i < ids.length), ∃ v kd, c.cx.lc.ctx.f.value? ids[i] = some v ∧
-        vkind2 c.cx.lc c.g v = .ok kd ∧
+        c.vk v = .ok kd ∧
         VStep2 c.cx.ps kd ((js ++ [e]).getD i 0) ((js ++ [e]).getD (i + 1) 0) := by
   intro ids
   induction ids with
@@ -70,7 +70,7 @@ theorem Cx2.values_spec {c : Cx2} {entry : Bool} :
             Except.ok (js, e) →
           js.length = (id :: ids).length ∧ (js ++ [e]).getD 0 0 = j ∧
           ∀ i (hi : i < (id :: ids).length), ∃ v kd, c.cx.lc.ctx.f.value? (id :: ids)[i] = some v ∧
-            vkind2 c.cx.lc c.g v = .ok kd ∧
+            c.vk v = .ok kd ∧
             VStep2 c.cx.ps kd ((js ++ [e]).getD i 0) ((js ++ [e]).getD (i + 1) 0) := by
         intro k head' hstep h
         obtain ⟨⟨js', e'⟩, hrest, h⟩ := ex_bind_eq_ok h
@@ -340,11 +340,11 @@ theorem vkind2_spec {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : vkin
 
 /-! ## Terminators, blocks, the frame and the whole check -/
 
-/-- What `Cx2.term` accepted: an `Exit` block without successors, or G1's terminators. -/
-theorem Cx2.term_spec {c : Cx2} {b : Block} {j : Nat} {next : Option (ID × Nat)}
-    (h : c.term b j next = .ok ()) :
-    (b.kind = .Exit ∧ b.succs = #[]) ∨ (b.kind ≠ .Exit ∧ TermOK c.cx b j next) := by
-  unfold Cx2.term at h
+/-- What `Cx.termG2` accepted: an `Exit` block without successors, or G1's terminators. -/
+theorem Cx.termG2_spec {cx : Cx} {b : Block} {j : Nat} {next : Option (ID × Nat)}
+    (h : cx.termG2 b j next = .ok ()) :
+    (b.kind = .Exit ∧ b.succs = #[]) ∨ (b.kind ≠ .Exit ∧ TermOK cx b j next) := by
+  unfold Cx.termG2 at h
   split at h
   next hk =>
     obtain ⟨hs, -⟩ := ex_guard h
@@ -354,7 +354,7 @@ theorem Cx2.term_spec {c : Cx2} {b : Block} {j : Nat} {next : Option (ID × Nat)
 theorem Cx2.blocks_spec {c : Cx2} : ∀ {bids : List ID} {tab : PcTab}, c.blocks bids = .ok tab →
     ∀ bid ∈ bids, ∃ b j js e next, c.cx.lc.ctx.f.block? bid = some b ∧ c.cx.startIdx bid = .ok j ∧
       c.values (bid == c.cx.lc.ctx.f.entry) b.values.toList j true = .ok (js, e) ∧
-      ((b.kind = .Exit ∧ b.succs = #[]) ∨ (b.kind ≠ .Exit ∧ TermOK c.cx b e next)) ∧
+      c.tm b e next = .ok () ∧
       (∀ n k, next = some (n, k) → c.cx.startIdx n = .ok k) ∧
       tab.lookup bid = some (js ++ [e]) := by
   intro bids
@@ -370,7 +370,7 @@ theorem Cx2.blocks_spec {c : Cx2} : ∀ {bids : List ID} {tab : PcTab}, c.blocks
       obtain ⟨j, hj, h⟩ := ex_bind_eq_ok h
       obtain ⟨⟨js, e⟩, hv, h⟩ := ex_bind_eq_ok h
       obtain ⟨next, hn, h⟩ : ∃ next, (∀ n k, next = some (n, k) → c.cx.startIdx n = .ok k) ∧
-          (do c.term b e next; let tab ← c.blocks rest; pure ((bid0, js ++ [e]) :: tab)) =
+          (do c.tm b e next; let tab ← c.blocks rest; pure ((bid0, js ++ [e]) :: tab)) =
             Except.ok tab := by
         split at h
         next n _ =>
@@ -386,7 +386,7 @@ theorem Cx2.blocks_spec {c : Cx2} : ∀ {bids : List ID} {tab : PcTab}, c.blocks
       subst h
       by_cases hbe : bid = bid0
       · subst hbe
-        exact ⟨b, j, js, e, next, hb, hj, hv, Cx2.term_spec ht, hn, by simp [List.lookup]⟩
+        exact ⟨b, j, js, e, next, hb, hj, hv, ht, hn, by simp [List.lookup]⟩
       · have hmem : bid ∈ rest := by
           cases hbid with
           | head => exact absurd rfl hbe
@@ -427,6 +427,7 @@ theorem checkFrame_spec {lc : LocCtx} {g : G2In} (h : checkFrame lc g = .ok ()) 
 theorem checkG2_spec {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}
     {tab : PcTab} (h : checkG2 lc ps bstart g = .ok tab) :
     ∃ c : Cx2, c.cx.lc = lc ∧ c.cx.ps = ps ∧ c.cx.bstart = bstart ∧ c.g = g ∧
+      c.vk = vkind2 lc g ∧ c.tm = c.cx.termG2 ∧
       lc.ctx.f.lowered = true ∧ (∀ i, homeOK2 lc i = true) ∧ checkFrame lc g = .ok () ∧
       (∀ p ∈ ps.toList, p.id < 2 ^ 32) ∧ (ps.toList.map (·.id)).Nodup ∧
       c.blocks lc.ctx.f.blocks.toList = .ok tab := by
@@ -444,7 +445,7 @@ theorem checkG2_spec {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat
     simp only [ex_pure, Except.ok.injEq] at h
     subst h
     simp only [Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at hids
-    refine ⟨_, rfl, rfl, rfl, rfl, hl, fun i => ?_, hfr,
+    refine ⟨_, rfl, rfl, rfl, rfl, rfl, rfl, hl, fun i => ?_, hfr,
       fun p hp => hids.1 _ (List.mem_map_of_mem hp), hids.2, hb⟩
     by_cases hi : i < lc.homes.size
     · have := List.find?_eq_none.mp hf i (List.mem_range.mpr hi)
