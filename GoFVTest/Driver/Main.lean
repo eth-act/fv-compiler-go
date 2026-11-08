@@ -1,4 +1,5 @@
 import GoFVTest.Driver.Back
+import GoFVTest.Driver.E2E
 import GoFVTest.Driver.FragWhy
 import GoFVTest.Driver.Pipeline
 import GoFVTest.Parity.Compare
@@ -28,6 +29,12 @@ The Lean pipeline (`number lines` through `trim`) as a program (`docs/DRIVER.md`
   compares the state after every pass with the stock section of that pass, as the importer
   compares (a new symbol by name and ABI, map lines as sets; the chain's `dcllen` with the
   section's); `--strict` compares as `pass-parity`.
+- `gofv-ssa-opt --check --verified --e2e [--whole-file-env] [--jobs N] [--table FILE]
+  [--accepted FILE] <dir|file>...`: end-to-end coverage (`GoFVTest.Driver.E2E`): per `.ssa` file
+  with its companion `.prog` file, the verified pipeline as `--check --verified` runs it, then on
+  a fully verified result genssa, `checkG18`, `Flushplist` and `checkObj` on the pipeline's own
+  output; counts the functions `GoFV.Proof.Obj.verified_mach_ret` applies to. `--accepted FILE`
+  writes the accepted files.
 -/
 
 open GoFV.SSA GoFV.Opt GoFVTest.Parity
@@ -423,6 +430,10 @@ structure Opts where
   back : Bool := false
   /-- `--back-check`: the back end on the corpus against the stock results. -/
   backCheck : Bool := false
+  /-- `--e2e` (with `--check --verified`): end-to-end coverage (`GoFVTest.Driver.E2E`). -/
+  e2e : Bool := false
+  /-- `--accepted FILE` (with `--e2e`): write the end-to-end accepted files. -/
+  accepted : Option String := none
   paths : Array String := #[]
 
 partial def parseArgs : List String → Opts → Except String Opts
@@ -447,6 +458,8 @@ partial def parseArgs : List String → Opts → Except String Opts
   | "--profile" :: rest, o => parseArgs rest { o with profile := true }
   | "--back" :: rest, o => parseArgs rest { o with back := true }
   | "--back-check" :: rest, o => parseArgs rest { o with backCheck := true }
+  | "--e2e" :: rest, o => parseArgs rest { o with e2e := true }
+  | "--accepted" :: p :: rest, o => parseArgs rest { o with accepted := some p }
   | a :: rest, o =>
     if a.startsWith "--" then throw s!"unknown option {a}"
     else parseArgs rest { o with paths := o.paths.push a }
@@ -456,6 +469,7 @@ def usage : String :=
    gofv-ssa-opt --verified [--from <pass>] [--vstats FILE] [--profile] <in.ssa>\n       gofv-ssa-opt --list\n       \
    gofv-ssa-opt --check [--mixed] [--whole-file-env] [--strict] [--jobs N] [--max-report N] [--table FILE] <dir|file>...\n       \
    gofv-ssa-opt --check --verified [--whole-file-env] [--jobs N] [--max-report N] [--table FILE] [--vstats FILE] <dir|file>...\n       \
+   gofv-ssa-opt --check --verified --e2e [--whole-file-env] [--jobs N] [--table FILE] [--accepted FILE] <dir|file>...\n       \
    gofv-ssa-opt --back <in>\n       \
    gofv-ssa-opt --back-check [--jobs N] [--max-report N] [--table FILE] <dir|file>..."
 
@@ -1063,6 +1077,64 @@ def runVerifiedCheck (o : Opts) : IO UInt32 := do
     IO.FS.writeFile p (String.join ((st.rows.qsort (· < ·)).toList.map (· ++ "\n")))
   return if st.parseErrors > 0 || st.files == 0 then 1 else 0
 
+/-- One `.ssa` file of `--e2e` (with its companion `.prog` file): the back end on the stock
+`trim` function, and on a fully verified pipeline's output (`E2E.back`). -/
+def e2eFile (wholeFile : Bool) (path : System.FilePath) (st : E2E.Stats) : IO E2E.Stats := do
+  let st := { st with files := st.files + 1 }
+  let progPath := path.withExtension "prog"
+  unless ← progPath.pathExists do
+    IO.eprintln s!"PARSE ERROR {path}: no {progPath}"
+    return { st with parseErrors := st.parseErrors + 1 }
+  let data ← IO.FS.readBinFile path
+  let progData ← IO.FS.readBinFile progPath
+  let parsed := do
+    let (e, x) ← parseExportExt data
+    let pf ← GoFV.Asm.parseProgFile progData
+    let r ← verifiedExport wholeFile e x
+    return (e, Back.inputView pf, r)
+  match parsed with
+  | .error m =>
+    IO.eprintln s!"PARSE ERROR {path}: {m}"
+    return { st with parseErrors := st.parseErrors + 1 }
+  | .ok (e, pin, r) =>
+    let file := path.toString
+    let stockF := ((e.sections.back?).map (·.func)).getD default
+    let st := st.addStock file (E2E.back e pin e.frontendTables stockF)
+    match r with
+    | .error _ => return { st with passErrors := st.passErrors + 1 }
+    | .ok r =>
+      if !r.st.fullyVerified then return st
+      return st.addFull file r.same (E2E.back e pin r.st.st.tables r.st.st.func)
+
+/-- `--check --verified --e2e`: end-to-end coverage (exit 1 only for parse errors or no files). -/
+def runE2E (o : Opts) : IO UInt32 := do
+  let t0 ← IO.monoMsNow
+  let mut files := #[]
+  for p in o.paths do files := files ++ (← ssaFiles p)
+  let next ← IO.mkRef 0
+  let tasks ← (List.range o.jobs).toArray.mapM fun _ => IO.asTask (prio := .dedicated) do
+    let mut st : E2E.Stats := {}
+    for _ in [0:files.size] do
+      let i ← next.modifyGet fun i => (i, i + 1)
+      let some file := files[i]? | break
+      let t0 ← IO.monoMsNow
+      st ← e2eFile o.wholeFile file st
+      let ms := (← IO.monoMsNow) - t0
+      if ms ≥ 60000 then IO.eprintln s!"SLOW {ms / 1000} s: {file}"
+    return st
+  let mut st : E2E.Stats := {}
+  for t in tasks do
+    match ← IO.wait t with
+    | .ok s => st := st.merge s
+    | .error e => IO.eprintln s!"worker failed: {e}"; return 2
+  let ms := (← IO.monoMsNow) - t0
+  let text := st.text ms
+  IO.print text
+  if let some p := o.table then IO.FS.writeFile p text
+  if let some p := o.accepted then
+    IO.FS.writeFile p (String.join ((st.accept.qsort (· < ·)).toList.map (· ++ "\n")))
+  return if st.parseErrors > 0 || st.files == 0 then 1 else 0
+
 def main (args : List String) : IO UInt32 := do
   let o ← match parseArgs args {} with
     | .ok o => pure o
@@ -1073,6 +1145,7 @@ def main (args : List String) : IO UInt32 := do
     return 0
   if o.check then
     if o.paths.isEmpty then IO.eprintln usage; return 2
+    if o.verified && o.e2e then return ← runE2E o
     if o.verified then return ← runVerifiedCheck o
     return ← runCheck o
   if o.backCheck then
