@@ -447,6 +447,94 @@ theorem readParts_call : ∀ (ts : List Ty) (rs : List (Option Nat)) (s : LocSta
         · simp at hr
         · simpa using hr
 
+/-! ### What a static call writes -/
+
+theorem call_noArg0 : Op.ARM64CALLstatic.regInfo.clobbersArg0 = false := by decide
+
+theorem call_noArg1 : Op.ARM64CALLstatic.regInfo.clobbersArg1 = false := by decide
+
+theorem call_mask_ne : Op.ARM64CALLstatic.regInfo.clobbers.isEmpty = false := by decide
+
+theorem call_flags : Op.ARM64CALLstatic.clobberFlags = true := by decide
+
+private theorem call_keeps64 : ∀ i, i < 64 → Op.ARM64CALLstatic.regInfo.clobbers.hasReg i = false →
+    i = 27 ∨ i = 29 ∨ i = 30 ∨ i = 63 := by decide
+
+/-- The registers a static call keeps: `R29`, `ZERO`, `SP` and those past the F registers. -/
+theorem call_keeps {i : Nat} (h : Op.ARM64CALLstatic.regInfo.clobbers.hasReg i = false) :
+    i = 27 ∨ i = 29 ∨ i = 30 ∨ 63 ≤ i := by
+  by_cases hi : i < 64
+  · rcases call_keeps64 i hi h with h | h | h | h
+    · exact Or.inl h
+    · exact Or.inr (Or.inl h)
+    · exact Or.inr (Or.inr (Or.inl h))
+    · exact Or.inr (Or.inr (Or.inr (by omega)))
+  · exact Or.inr (Or.inr (Or.inr (by omega)))
+
+theorem clobber_call (hop : v.op = .ARM64CALLstatic) (ht : (lc.temps[v.id]?).join = none) :
+    s.clobber lc v = { s.clobberMask Op.ARM64CALLstatic.regInfo.clobbers with flags := .poison } := by
+  unfold LocState.clobber
+  simp only [hop, call_noArg0, call_noArg1, ht, call_flags, Bool.not_false, Bool.not_true,
+    Bool.false_eq_true, ↓reduceIte]
+
+/-- A register after a static call's clobbers: `poison`, or kept and one the call keeps. -/
+theorem clobber_call_reg (hop : v.op = .ARM64CALLstatic) (ht : (lc.temps[v.id]?).join = none)
+    {r : Nat} {x : Val} (h : (s.clobber lc v).regs[r]? = some x) :
+    x = .poison ∨ (s.regs[r]? = some x ∧ (r = 27 ∨ r = 29 ∨ r = 30 ∨ 63 ≤ r)) := by
+  rw [clobber_call hop ht] at h
+  simp only [LocState.clobberMask, call_mask_ne, Bool.false_eq_true, ↓reduceIte,
+    Array.getElem?_mapIdx] at h
+  cases hr : s.regs[r]? with
+  | none => rw [hr] at h; cases h
+  | some y =>
+    rw [hr] at h
+    simp only [Option.map_some, Option.some.injEq] at h
+    by_cases hm : Op.ARM64CALLstatic.regInfo.clobbers.hasReg r = true
+    · left; rw [if_pos hm] at h; exact h.symm
+    · right
+      rw [if_neg hm] at h
+      exact ⟨by rw [h], call_keeps (by simpa using hm)⟩
+
+theorem clobber_call_slots (hop : v.op = .ARM64CALLstatic) (ht : (lc.temps[v.id]?).join = none) :
+    (s.clobber lc v).slots = s.slots := by
+  rw [clobber_call hop ht]
+  simp only [LocState.clobberMask, call_mask_ne, Bool.false_eq_true, ↓reduceIte]
+
+theorem clobber_call_flags (hop : v.op = .ARM64CALLstatic) (ht : (lc.temps[v.id]?).join = none) :
+    (s.clobber lc v).flags = .poison := by
+  rw [clobber_call hop ht]
+
+/-- A call's result written to its home: the components to the result registers, the memory
+last. -/
+theorem write_call {outs : List Nat} {ts' : List Ty} {x : Val}
+    (hty : lc.ty v.id = .tuple (ts' ++ [.mem]))
+    (hres : lc.home v.id = some (.results (outs.map some).toArray) ∨
+      (lc.home v.id = none ∧ outs = [])) :
+    s.write lc v.id x =
+      s.writeParts (ts' ++ [.mem]) (x.partsOf (ts' ++ [Ty.mem]).length) (outs.map some) := by
+  unfold LocState.write
+  rcases hres with h | ⟨h, rfl⟩
+  · simp only [h, hty, Option.map_some, Option.getD_some, Location.regList, List.toList_toArray]
+  · simp only [h, hty, Option.map_none, Option.getD_none, List.map_nil]
+
+/-- One element chosen per list element. -/
+theorem list_choose {α β : Type} {P : α → β → Prop} :
+    ∀ l : List α, (∀ a ∈ l, ∃ b, P a b) →
+      ∃ bs : List β, bs.length = l.length ∧
+        ∀ (j : Nat) a b, l[j]? = some a → bs[j]? = some b → P a b
+  | [], _ => ⟨[], rfl, fun j a b _ h => by simp at h⟩
+  | a :: l, h => by
+    obtain ⟨b, hb⟩ := h a (by simp)
+    obtain ⟨bs, hlen, hbs⟩ := list_choose l (fun a' ha' => h a' (by simp [ha']))
+    refine ⟨b :: bs, by simp [hlen], fun j a' b' ha hb' => ?_⟩
+    cases j with
+    | zero =>
+      simp only [List.getElem?_cons_zero, Option.some.injEq] at ha hb'
+      subst ha; subst hb'; exact hb
+    | succ j =>
+      simp only [List.getElem?_cons_succ] at ha hb'
+      exact hbs j a' b' ha hb'
+
 end Loc
 
 /-! ## The machine side -/
@@ -949,6 +1037,182 @@ theorem g2_selReg (F : Facts lc sym text az ez psA.toList ret E) (hhome2 : ∀ i
     (by omega : r < 32) (objOf?_low hr16) hrel (fits_retypeL hcv _) (b' := b) (i' := i + 1)
   rw [wX_rX_self, hj', hvs, ← hj, ← hm.pc] at hlm
   exact ⟨m, .refl, hlm, hinv', hinv.slots⟩
+
+theorem reg5_ne30 {r : Nat} (hr : r < 16) : (BitVec.ofNat 5 r : Reg) ≠ 30 := by
+  intro h; have := congrArg BitVec.toNat h; simp at this; omega
+
+/-- A static call: the arguments in their ABI registers, `CALL sym(SB)` with the return address in
+`X30`, the callee by the trusted contract (`CallOK`), the results in the result registers. The
+injection grows by the callee's. -/
+theorem g2_call (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E) (hlc : E.lc = lc)
+    (hcf : checkFrame lc g = .ok ()) (hframed : E.framed = true)
+    (hsyms : ∀ y, (Link.byId sym text az ez psA.toList).sym y ≠ ret ∧ ∀ p ∈ psA.toList,
+      (Link.byId sym text az ez psA.toList).addr p.id ≠ some ((Link.byId sym text az ez psA.toList).sym y))
+    (hm : LocMatch E s b i m) (hinv : G2Inv E lc s)
+    (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
+    {name : GoStr} {abi : Nat} {cabi : CallABI} {ins outs : List Nat} {pat : Pat}
+    (hop : v.op = .ARM64CALLstatic) (hcall : callOf? lc.ctx.tabs v.aux = some (name, abi, cabi))
+    (hcr : callRegs cabi = .ok (ins, outs)) (h16 : ∀ r ∈ ins ++ outs, r < 16)
+    (hlen : v.args.toList.dropLast.length = ins.length)
+    (hargs : ∀ a r, (a, r) ∈ v.args.toList.dropLast.zip ins → lc.home a = some (.reg r))
+    (hres : lc.home v.id = some (.results (outs.map some).toArray) ∨
+      (lc.home v.id = none ∧ outs = []))
+    (hct : callTy outs.length (lc.ty v.id) = true)
+    (hrr : ∀ t r, (t, r) ∈ (tupleTys (lc.ty v.id)).zip outs → resultReg lc t r = true)
+    (hpat : ∀ p, pat.ok p = true → p.as = .CALL ∧ p.from_ = {} ∧ p.reg = 0 ∧ p.scond = 0 ∧
+      p.rest.isEmpty = true ∧ p.regTo2 = 0 ∧ p.to.type = .MEM ∧ p.to.name = .EXTERN ∧
+      p.to.offset = 0 ∧ ∃ y, p.to.sym = some y ∧ g.syms[y]? = some (name, abi))
+    (hvs : OneAt2 psA j pat j') (htemp : (lc.temps[v.id]?).join = none)
+    (hs : stepLoc env lc s v = .ok s')
+    (hok : CallOK H E g (Link.byId sym text az ez psA.toList) lc s s' v m) :
+    ∃ ι', (∀ b a, E.ι b = some a → ι' b = some a) ∧ AddrAgree ι' ∧ ∃ m',
+      PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
+      LocMatch { E with ι := ι' } s' b (i + 1) m' ∧ G2Inv { E with ι := ι' } lc s' := by
+  have hl := F.lowered
+  have hA := F.addr
+  -- the result's shape and `runLoc`'s state after the call
+  obtain ⟨ts, hty⟩ : ∃ ts, lc.ty v.id = .tuple ts := by
+    cases h : lc.ty v.id with
+    | tuple ts => exact ⟨ts, rfl⟩
+    | _ => rw [h] at hct; simp [callTy] at hct
+  rw [hty] at hct hrr
+  obtain ⟨ts', rfl, hts'len, hcls⟩ := callTy_split hct
+  obtain ⟨r0, hs'⟩ := stepLoc_call hl hop hs
+  rw [write_call hty hres, hty] at hs'
+  have hsl' : s'.slots = s.slots := by
+    rw [hs', writeParts_slots, clobber_call_slots hop htemp]
+  have hfl' : s'.flags = .poison := by
+    rw [hs', writeParts_flags _ _ _ _ (fun t ht => by
+      rcases List.mem_append.1 ht with ht | ht
+      · exact cls_notFlags (hcls t ht)
+      · simp at ht; subst ht; rfl), clobber_call_flags hop htemp]
+  -- the machine: no-ops, then the `CALL`
+  obtain ⟨k, rfl, hk, hokp, hstar⟩ := pstar_oneAt2 (H := H) F.nodup F.lt F.ret hvs m
+  rw [pc_eta hm hj] at hstar
+  obtain ⟨has, -, -, -, -, -, ht1, ht2, ht3, y, hy1, hy⟩ := hpat _ hokp
+  let m₁ : MState :=
+    { m with x := (fun q => if q = 30 then pcAt text psA.toList (k + 1) else m.x q),
+             pc := (Link.byId sym text az ez psA.toList).sym y }
+  have hm1x : ∀ q, q ≠ 30 → m₁.x q = m.x q := fun q hq => by
+    show (if q = 30 then _ else m.x q) = m.x q
+    exact if_neg hq
+  have hcstep : progStep (Link.byId sym text az ez psA.toList) psA.toList[k]
+      { m with pc := pcAt text psA.toList k } = .ok m₁ := by
+    rw [progStep_callSym (nextAddr_pcAt F.nodup hk) has ht1 ht2 ht3 hy1, wX_pc]
+    simp only [MState.wX, show ¬ ((30 : Reg) = 31) by decide, ↓reduceIte]
+    rfl
+  -- the arguments, read from their ABI registers
+  have hargs' : ∀ a ∈ v.args.toList.dropLast, ∃ x, s.read lc a = .ok x ∧
+      ∀ r, lc.home a = some (.reg r) → RegRel E.ι x m₁ r := by
+    intro a ha
+    obtain ⟨j0, hj0, rfl⟩ := List.getElem_of_mem ha
+    have hjin : j0 < ins.length := hlen ▸ hj0
+    have hz : (v.args.toList.dropLast[j0], ins[j0]) ∈ v.args.toList.dropLast.zip ins :=
+      List.mem_of_getElem? (List.getElem?_zip_eq_some.2 ⟨List.getElem?_eq_getElem hj0,
+        List.getElem?_eq_getElem hjin⟩)
+    have hh := hargs _ _ hz
+    have hr16 := h16 _ (List.mem_append_left _ (List.getElem_mem hjin))
+    have hrz : ins[j0] ≠ zeroReg := by unfold zeroReg; omega
+    obtain ⟨c, hc⟩ : ∃ c, cls (lc.ty v.args.toList.dropLast[j0]) = some c := by
+      have := F.home _ _ hh
+      simp only [homeOK, hh, Bool.or_eq_true, Bool.and_eq_true] at this
+      rcases this with h | h
+      · exact absurd (beq_iff_eq.1 h) hrz
+      · exact Option.isSome_iff_exists.1 h.1
+    obtain ⟨x, hx, hxv, -⟩ := arg_rel hA hl F.home hm hinv.core hh hc
+      (Or.inr ⟨by omega, objX?_low hr16⟩)
+    refine ⟨x, hx, fun r hr => ?_⟩
+    rw [hh] at hr
+    cases hr
+    refine ⟨fun q hq => ?_, fun q hq => by rw [objV?_low (by omega)] at hq; cases hq⟩
+    rw [objX?_low hr16] at hq
+    cases hq
+    rw [rX_lt (by omega)] at hxv
+    rw [hm1x _ (reg5_ne30 hr16)]
+    exact hxv
+  obtain ⟨args, hal, hargsP⟩ := list_choose _ hargs'
+  obtain ⟨mm, hmm, hMI⟩ := hm.mem
+  obtain ⟨mm0, hmm0, hkn, hsep⟩ := hinv.core.mem
+  rw [hmm] at hmm0
+  cases hmm0
+  obtain ⟨ι', m', mm', hcallH, hext, hA', hpc', hsp', h28, h29, hstk, hmem', hMI', hkn', hsep',
+      hregs'⟩ := hok hop name abi cabi ins outs y args mm m₁ hcall hcr hy hal
+    (fun j a x ha hx => (hargsP j a x ha hx).1) hmm rfl rfl rfl rfl rfl hm1x
+    (by rw [hal, hlen])
+    (fun j r x hr hx => by
+      have hjl : j < v.args.toList.dropLast.length := by
+        rw [← hal]; exact (List.getElem?_eq_some_iff.1 hx).1
+      have ha := List.getElem?_eq_getElem hjl
+      exact (hargsP j _ x ha hx).2 r
+        (hargs _ _ (List.mem_of_getElem? (List.getElem?_zip_eq_some.2 ⟨ha, hr⟩))))
+    hMI hkn hsep
+  have hstep2 : PStep H (Link.byId sym text az ez psA.toList) psA.toList ret m₁ m' :=
+    .hook (hsyms y).1 (progAt?_none (hsyms y).2) hcallH
+  have hstar' := (hstar.tail (pstep_at F.nodup F.lt F.ret hk rfl hcstep)).tail hstep2
+  -- the registers after the call
+  have hregs : ∀ r x, s'.regs[r]? = some x → r ∉ outs →
+      x = .poison ∨ (s.regs[r]? = some x ∧ (r = 27 ∨ r = 29 ∨ r = 30 ∨ 63 ≤ r)) := by
+    intro r x h hro
+    rw [hs'] at h
+    rcases writeParts_call ts' _ outs _ hcls hts'len r x h with h1 | ⟨j, t, -, ho, -⟩
+    · exact clobber_call_reg hop htemp h1
+    · exact absurd (List.mem_of_getElem? ho) hro
+  have hfits : ∀ r x c, r ≠ zeroReg → s'.regs[r]? = some x → regCls lc r = some c → Fits c x := by
+    intro r x c hrz h hc
+    have h' := h
+    rw [hs'] at h'
+    rcases writeParts_call ts' _ outs _ hcls hts'len r x h' with h1 | ⟨j, t, ht, ho, hx⟩
+    · rcases clobber_call_reg hop htemp h1 with rfl | ⟨h2, -⟩
+      · trivial
+      · exact hinv.core.regs r x c hrz h2 hc
+    · have hjt : j < ts'.length := (List.getElem?_eq_some_iff.1 ht).1
+      have ht2 : (ts' ++ [Ty.mem])[j]? = some t := by rw [List.getElem?_append_left hjt]; exact ht
+      obtain ⟨c0, hc0⟩ := Option.isSome_iff_exists.1 (hcls t (List.mem_of_getElem? ht))
+      have hrr' := hrr t r (List.mem_of_getElem? (List.getElem?_zip_eq_some.2 ⟨ht2, ho⟩))
+      simp only [resultReg, hc, hc0, Option.isSome_some, Bool.true_and, Bool.or_eq_true,
+        beq_iff_eq, reduceCtorEq, false_or, Option.some.injEq] at hrr'
+      subst hrr'
+      exact fits_tuple_get ht2 hc0 hx
+  -- the frame and the slots under the larger injection
+  obtain ⟨hslots', hframe'⟩ := stk_slots_frame (E' := { E with ι := ι' }) (m' := m') hm hF
+    (slot_sizes hlc hcf hinv) rfl hext (fun q hq => hstk q hq) hsp'
+    (h28.trans (hm1x 28 (by decide))) (h29.trans (hm1x 29 (by decide)))
+    (fun hf => by rw [hframed] at hf; cases hf)
+  refine ⟨ι', hext, hA', m', hstar', ⟨fun r x h => ?_, by rw [hfl']; trivial,
+    by rw [hsl']; exact hslots', ⟨mm', hmem', hMI'⟩, hframe', ?_⟩,
+    ⟨⟨hfits, mm', hmem', hkn', hsep'⟩, by rw [hsl']; exact hinv.slots⟩⟩
+  · by_cases hro : r ∈ outs
+    · exact hregs' r hro x h
+    · rcases hregs r x h hro with rfl | ⟨h2, hr⟩
+      · exact ⟨fun _ _ => trivial, fun _ _ => trivial⟩
+      · obtain ⟨hx1, -⟩ := hm.regs r x h2
+        refine ⟨fun q hq => ?_, fun q hq => ?_⟩
+        · rcases hr with rfl | rfl | rfl | hr
+          · have hq' : q = 29 := by simp [objX?] at hq; exact hq.symm
+            subst hq'
+            rw [h29, hm1x 29 (by decide)]
+            exact valRel_mono hext (hx1 29 (by simp [objX?]))
+          · simp [objX?] at hq
+          · simp [objX?] at hq
+          · simp only [objX?] at hq
+            split at hq
+            · omega
+            · split at hq
+              · omega
+              · split at hq
+                · omega
+                · cases hq
+        · rcases hr with rfl | rfl | rfl | hr
+          · simp [objV?] at hq
+          · simp [objV?] at hq
+          · simp [objV?] at hq
+          · simp only [objV?] at hq
+            split at hq
+            · omega
+            · cases hq
+  · show m'.pc = E.pcOf b (i + 1)
+    rw [hpc', hj']
+    simp [m₁]
 
 end Cases
 
