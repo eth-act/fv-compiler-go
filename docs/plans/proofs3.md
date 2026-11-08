@@ -341,19 +341,19 @@ How the proof discharges G8's obligations (`G8.lean`):
   `kReads`: `ksel8_of_reads`); `Select1` writes the memory it reads (no change, `op_none`).
 
 Later slices, by how many functions outside G8 each blocker occurs in (quick-v10, §5; sole reason
-in parentheses; counts outside G7, to be refreshed from a G8 `gen-check` run):
+in parentheses):
 
 1. **Interface and closure calls** (results homes 1,215, `CALLinter` 764, `CALLclosure` 359,
-   `LoweredGetClosurePtr` 660 (257)) and call results outside `R0`–`R15` or of float shapes (call
-   result shapes 1,121 (239)).
+   `LoweredGetClosurePtr` 660 (284)) and call results outside `R0`–`R15` or of float shapes (call
+   result shapes 1,121 (242)).
 2. **Frame variables beyond G6**: parameters and results (`NAME_PARAM`, `Blk.local`: `frame
-   variable operand class`, 294 (73)) and variables whose address is converted to an integer
+   variable operand class`, 294 (79)) and variables whose address is converted to an integer
    (`frame variable with an integer address`, 197): option 2 of semantics3 §4.3 (addresses as a
-   parameter of the semantics); `LoweredZero` 540 (51); slots of other sizes (`slot … frame
+   parameter of the semantics); `LoweredZero` 540 (55); slots of other sizes (`slot … frame
    operand, size or alignment`, 717).
-3. **Other values**: `Convert` 938 (104), `MOVDnop` 750 (35), `ADDshiftLL` 678, the register-index
+3. **Other values**: `Convert` 938 (141), `MOVDnop` 750, `ADDshiftLL` 678, the register-index
    loads (`MOVDloadidx8` 482, `MOVBUloadidx` 353), bounds panics (`LoweredPanicBoundsRR` 616),
-   `GetG` 430 (46), the acquire loads `LDAR`/`LDARW` (383, 277).
+   `GetG` 430 (51), the acquire loads `LDAR`/`LDARW` (383, 277).
 
 ## 5. Results
 
