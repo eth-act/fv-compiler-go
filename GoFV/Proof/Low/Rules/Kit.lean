@@ -544,33 +544,39 @@ theorem checked_rename {r : Rule} (o o' : Op) (hp : ellipsisOn o r.pat = true)
 /-- A rule on a store (`ArmRule.Mem`). -/
 theorem checked_store {r : Rule} {n ty ai ax ar args c}
     (hp : r.pat = .op .Store n ty ai ax ar args c) : ArmRule.Checked r :=
-  .inr (.inr (.inr ⟨.Store, n, ty, ai, ax, ar, args, c, hp, .inl rfl⟩))
+  .inr (.inr (.inr (.inl ⟨.Store, n, ty, ai, ax, ar, args, c, hp, .inl rfl⟩)))
 
 /-- A rule on a frame address (`ArmRule.Mem`). -/
 theorem checked_localAddr {r : Rule} {n ty ai ax ar args c}
     (hp : r.pat = .op .LocalAddr n ty ai ax ar args c) : ArmRule.Checked r :=
-  .inr (.inr (.inr ⟨.LocalAddr, n, ty, ai, ax, ar, args, c, hp, .inr (.inl rfl)⟩))
+  .inr (.inr (.inr (.inl ⟨.LocalAddr, n, ty, ai, ax, ar, args, c, hp, .inr (.inl rfl)⟩)))
 
 /-- A rule on an arm64 store (`ArmRule.Mem`). -/
 theorem checked_armStore {r : Rule} {o n ty ai ax ar args c}
     (hp : r.pat = .op o n ty ai ax ar args c) (ho : (stSize o).isSome = true) :
     ArmRule.Checked r :=
-  .inr (.inr (.inr ⟨o, n, ty, ai, ax, ar, args, c, hp, .inr (.inr (.inl ho))⟩))
+  .inr (.inr (.inr (.inl ⟨o, n, ty, ai, ax, ar, args, c, hp, .inr (.inr (.inl ho))⟩)))
 
 /-- A rule on a lowered bounds panic (`ArmRule.Mem`, `pbAtom`). -/
 theorem checked_pb {r : Rule} {o n ty ai ax ar args c}
     (hp : r.pat = .op o n ty ai ax ar args c) (ho : pbAtom o = true) :
     ArmRule.Checked r :=
-  .inr (.inr (.inr ⟨o, n, ty, ai, ax, ar, args, c, hp, .inr (.inr (.inr (.inl ho)))⟩))
+  .inr (.inr (.inr (.inl ⟨o, n, ty, ai, ax, ar, args, c, hp, .inr (.inr (.inr (.inl ho)))⟩)))
 
 /-- A rule on a `Zero` (`ArmRule.Mem`). -/
 theorem checked_zero {r : Rule} {n ty ai ax ar args c}
     (hp : r.pat = .op .Zero n ty ai ax ar args c) : ArmRule.Checked r :=
-  .inr (.inr (.inr ⟨.Zero, n, ty, ai, ax, ar, args, c, hp, .inr (.inr (.inr (.inr (.inl rfl))))⟩))
+  .inr (.inr (.inr (.inl
+    ⟨.Zero, n, ty, ai, ax, ar, args, c, hp, .inr (.inr (.inr (.inr (.inl rfl))))⟩)))
 
 /-- A rule on a `Move` (`ArmRule.Mem`). -/
 theorem checked_move {r : Rule} {n ty ai ax ar args c}
     (hp : r.pat = .op .Move n ty ai ax ar args c) : ArmRule.Checked r :=
-  .inr (.inr (.inr ⟨.Move, n, ty, ai, ax, ar, args, c, hp, .inr (.inr (.inr (.inr (.inr rfl))))⟩))
+  .inr (.inr (.inr (.inl
+    ⟨.Move, n, ty, ai, ax, ar, args, c, hp, .inr (.inr (.inr (.inr (.inr rfl))))⟩)))
+
+/-- A strength-reduced multiplication by a constant (`ArmRule.Mul`). -/
+theorem checked_mul {r : Rule} (h : GoFV.Rules.Interp.mulResult r = true) : ArmRule.Checked r :=
+  .inr (.inr (.inr (.inr h)))
 
 end GoFV.Proof.Low.Rules

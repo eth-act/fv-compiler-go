@@ -908,10 +908,17 @@ def ArmRule.Mem (r : Rule) : Prop :=
   ∃ o n ty ai ax ar args c, r.pat = .op o n ty ai ax ar args c ∧
     (o = .Store ∨ o = .LocalAddr ∨ (stSize o).isSome ∨ pbAtom o ∨ o = .Zero ∨ o = .Move)
 
+/-- A rule whose result is `mulStrengthReduce{,32}(v, x, c)` (`ARM64.rules:1043`, `1044`): the
+validator checks its events by their effect alone (`GoFV.Opt.LowerCheck.mulOKL`: the values the
+helper built compute the product in the bits `v` keeps), so the rule carries no obligation of its
+own. -/
+def ArmRule.Mul (r : Rule) : Prop := GoFV.Rules.Interp.mulResult r = true
+
 /-- A value rule of a lowering rule set the checked `lower` may fire: a sound rule, a sound
-ellipsis rule on terms, an atom rename, or a rule on a memory or frame atom. -/
+ellipsis rule on terms, an atom rename, a rule on a memory or frame atom, or a strength-reduced
+multiplication. -/
 def ArmRule.Checked (r : Rule) : Prop :=
-  ArmRule.Sound r ∨ ArmRule.SetOp r ∨ ArmRule.Rename r ∨ ArmRule.Mem r
+  ArmRule.Sound r ∨ ArmRule.SetOp r ∨ ArmRule.Rename r ∨ ArmRule.Mem r ∨ ArmRule.Mul r
 
 /-- Every value rule of `s` is `ArmRule.Checked`, every block rule `BlockRuleL.Checked`, and `s`
 has no rules in the per-instance tables (`nilChecks` … `phiSels`, Phase 1's generic layers). -/

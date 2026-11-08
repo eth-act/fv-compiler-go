@@ -641,6 +641,73 @@ def spFoldEv (M : Defs) (v : ID) (defs : List Value) : Bool :=
       x.args.size == 1 && (M.get? x.args[0]!).any (·.op == .SP)
   | _, _ => false
 
+/-! ## Multiplications by a constant (`ARM64.rules:1043`, `1044`) -/
+
+/-- The register map of an op `mulStrengthReduce` builds (`GoFV.Rules.Arm64.buildCombo`) on its
+arguments' registers, as `Arm64.evalPure` computes it (`none` for another op or arity). Each is
+linear: on multiples of one register it is the multiple by its value on the multipliers. -/
+def comboFn (o : Op) (k : Int64) : List (BitVec 64) → Option (BitVec 64)
+  | [a, b] => match o with
+    | .ARM64ADD => some (a + b)
+    | .ARM64SUB => some (a - b)
+    | .ARM64ADDshiftLL => some (a + Sem.Arm64.shifted .ll k b)
+    | .ARM64SUBshiftLL => some (a + -Sem.Arm64.shifted .ll k b)
+    | _ => none
+  | [a] => match o with
+    | .ARM64NEG => some (-a)
+    | .ARM64SLLconst => some (Sem.Arm64.shifted .ll k a)
+    | .ARM64NEGshiftLL => some (-Sem.Arm64.shifted .ll k a)
+    | _ => none
+  | _ => none
+
+/-- The multiplier of `a`'s register the value `w` computes from the definitions `bs`, within `n`
+steps: 1 at `a`, `comboFn` of its arguments' multipliers at a value of `bs`. -/
+def mulCoef (bs : List Value) (a : ID) : Nat → ID → Option (BitVec 64)
+  | 0, _ => none
+  | n + 1, w =>
+    if w == a then some 1 else
+    match bs.find? (·.id == w) with
+    | some u => (u.args.toList.mapM fun y => mulCoef bs a n y).bind (comboFn u.op u.auxInt)
+    | none => none
+
+/-- `mulOKL` with the multiplication's operand `a` and constant `k`. -/
+def mulOKL1 (tabs : Tables) (M : Defs) (x : Value) (a k : ID) (defs : List Value) :
+    Option (List Value) :=
+  match shpL tabs x.type, M.get? k, defs with
+  | .int w, some kd, u :: rest =>
+    let bs := rest.filter fun b => (M.get? b.id).isNone
+    let ids := bs.map (·.id)
+    if kd.op == .ARM64MOVDconst && termVL tabs kd && kd.args.isEmpty &&
+        decide (w.bits ≤ argWidth (shpL tabs kd.type)) &&
+        (x.op == .ARM64MUL || x.op == .ARM64MULW && decide (w.bits ≤ 32)) &&
+        u.id == x.id && u.op == .Copy && u.type == x.type && u.auxInt == 0 && u.aux == none &&
+        ids.Nodup && !ids.contains x.id &&
+        bs.all (fun b => termVL tabs b && b.type == x.type &&
+          b.args.all fun y => y == a || ids.contains y) &&
+        (match u.args.toList with
+          | [m] => ids.contains m && (mulCoef bs a bs.length m).any fun c =>
+              c.setWidth w.bits == (Sem.Arm64.imm kd.auxInt).setWidth w.bits
+          | _ => false)
+    then some (u :: bs) else none
+  | _, _, _ => none
+
+/-- A rule event at `v` whose result is `mulStrengthReduce{,32}(v, x, c)` (`ARM64.rules:1043`,
+`1044`; `GoFV.Rules.Interp.mulResult`), checked by its effect: `v` is a term `MUL` or `MULW` (at
+most 32 bits wide) at an integer shape of an operand `a` and a `MOVDconst [c]` term `k` (either
+order) whose shape holds the bits `v` keeps, and becomes a `Copy` of a fresh value `m`; the fresh
+values `bs` the event logged (`Interp.mulDefs`; the logged definitions `M` has are skipped) are
+terms of `v`'s type, each a linear combination (`comboFn`) of `a` and values of `bs`, and `m` is
+`c` times `a` in the bits `v` keeps (`mulCoef`). The replay adds `v`'s `Copy` and `bs`. -/
+def mulOKL (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Option (List Value) :=
+  match M.get? v with
+  | some x =>
+    if x.id == v && termVL tabs x && x.args.size == 2 then
+      match mulOKL1 tabs M x x.args[0]! x.args[1]! defs with
+      | some ds => some ds
+      | none => mulOKL1 tabs M x x.args[1]! x.args[0]! defs
+    else none
+  | none => none
+
 /-! ## Blocks -/
 
 /-- The replayed terminator of a block: kind, controls, auxint, successors swapped. -/
@@ -822,6 +889,11 @@ def replayL (tabs : Tables) (t : Interp.Table) (f : Func) :
             replayL tabs t f (copyFixL tabs (M.put v x') (argCopies [x'] (defs.toList.take 1))) B evs
           | none => none
         | _ =>
+          if Interp.mulResult cr.rule then
+            match mulOKL tabs M v defs.toList with
+            | some ds => replayL tabs t f (ds.foldl (fun M u => M.put u.id u) M) B evs
+            | none => none
+          else
           match ruleOKL tabs M cr.rule v defs.toList with
           | some ds =>
             replayL tabs t f (copyFixL tabs (ds.foldl (fun M u => M.put u.id u) M)
