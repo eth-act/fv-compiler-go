@@ -508,20 +508,36 @@ premise `GetGOK` asks that `ι` put `runtime.g` there (a property of the injecti
 which `destOK` excludes). G16's values go through `vk16_step`; a nil check of G17's kinds is
 G7's (`vk16_nil`, `vk17_nil`), so later slices extend `g17_nilPanic` by one case each.
 
-Later slices, by how many functions outside G17 each blocker occurs in (quick-v10, §5; sole
+**Slice G18: register-index stores** (`GoFV/Gen/Check18.lean`, `checkG18 lc ps bstart g`,
+returning G4's tables; proven sound, `g18_value`, `g18_term`, `g18_nilPanic`): G17 with the integer
+register-index stores `MOV{D,W,H,B}storeidx ptr idx val mem` and the scaled `MOVHstoreidx2`,
+`MOVWstoreidx4`, `MOVDstoreidx8` (`storeIdxOp?`, `stIdxKind`, `VK18.stIdx`): no temporary, the
+memory shape and no home, `ptr` and `idx` in registers of class 64, `val` in a register as a
+store's (`8n` bits, or a boolean byte), the memory last; one store to `idxA` (`(Rp)(Ri<<sh)`).
+Every integer register-index store of quick-v10 is accepted.
+
+How the proof discharges G18's obligations (`G18.lean`): `runLoc` runs `arm64Op`'s `stIdx`, the
+`n`-byte store of `val` at the address of G14's `idxSum` (`stepLoc_storeIdx`, from a four-argument
+`storeIdx_core`); it is `stuck` when there is no address or the write is invalid, so a successful
+step wrote valid bytes and there is no new premise. The address is related to the machine's
+`X[p] + (X[i] <<< sh)` as G14's (`lo_idxSum`, `lo64_rel`, `addr_rel`, `ctx_mem_idx`), and the write
+keeps `MemInj`, `SepFrom` and the frame as G3's stores (`memInj_storeN`, `op_mem2`,
+`progStep_storeAt`; `g18_stIdx`). G17's values go through `vk17_step`; nil checks through
+`vk18_nil`.
+
+Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
-1. **Register-index stores** `MOVDstoreidx8` 245 (39, counted with `MOVDstoreidx`),
-   `MOVBstoreidx` 187 (23): G14's addresses with G3's stores.
-2. **Calls** with nonempty stack arguments (`stack argument` 308 (10); §8) or floating-point
-   arguments or results.
-3. **Frame variables beyond G6**: parameters and results (`NAME_PARAM`, `Blk.local`: `frame
-   variable operand class`, 294 (89)) and variables whose address is converted to an integer
-   (`frame variable with an integer address`, 197 (11)): option 2 of semantics3 §4.3 (addresses as
+1. **Calls** with nonempty stack arguments (`stack argument` 308; §8) or floating-point
+   arguments or results (153 (33)).
+2. **Frame variables beyond G6**: parameters and results (`NAME_PARAM`, `Blk.local`: `frame
+   variable operand class`, 294 (90)) and variables whose address is converted to an integer
+   (`frame variable with an integer address`, 197 (12)): option 2 of semantics3 §4.3 (addresses as
    a parameter of the semantics); slots of other sizes (`slot … frame operand, size or alignment`,
    717).
-4. **Other values**: `MOVDnop` 750 (90), bounds panics (`LoweredPanicBoundsRR` 616 (50)), the
-   acquire loads `LDAR`/`LDARW` (383, 277); `SP` after the entry values (69).
+3. **Other values**: `MOVDnop` 750 (91), bounds panics (`LoweredPanicBoundsRR` 616 (68), `RC` 332
+   (46), `CR` 76 (33), `CC` 170 (22)), the acquire loads `LDAR`/`LDARW` (383, 277); `SP` after the
+   entry values (71).
    `MOVDnop x` emits no code but `runLoc` gives it the
    upper bits of `x`'s register (`movdLoc`: the zero or sign extension of the narrow value that
    produced `x`; each of its 1,520 uses in the trimmed functions of quick-v10 widens its argument,
@@ -553,6 +569,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G15 | 3,824 (41.13%) | 71,645 |
 | G16 | 3,874 (41.66%) | 73,708 |
 | G17 | 3,962 (42.61%) | 75,809 |
+| G18 | 4,052 (43.58%) | 80,626 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -671,6 +688,10 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `getGKind_spec`).
 - `G17.lean`: `GetGOK`, `stepLoc_getG`, `locMatch_setReg_keep`, `g17_getG`, `vk17_step`,
   `vk16_nil`, `vk17_nil`, `g17_value`, `g17_nilPanic`, `g17_term`.
+- `Spec18.lean`: what `checkG18` accepted (`checkG18_spec`, `vkind18_spec` with `VK18`,
+  `stIdxKind_spec`); `Progs3.lean`: `progStep_storeAt` (public).
+- `G18.lean`: `storeIdxOp?_op`, `storeIdxOp?_facts`, `stepLoc_storeIdx`, `g18_stIdx`, `vk18_step`,
+  `vk18_nil`, `g18_value`, `g18_nilPanic`, `g18_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -711,8 +732,11 @@ a callee hook that returns at once, which satisfies `CallOKZ`: `callOKZ0`), `Gen
 `ADD R1<<3, R0, R0` with `R0` the start of `heap 1` at `2^41` and `R1` 2, after which `R0` holds
 the integer `2^41 + 16` and so does `X0`), `GenG17.lean` (`runtime.getm`, which G16 rejects:
 `g17_value` on `GetG` with an injection putting `runtime.g` at the goroutine in `X28`, which
-satisfies `GetGOK`, after which the `g` register holds the pointer to `runtime.g`). Each decides
-its inputs
+satisfies `GetGOK`, after which the `g` register holds the pointer to `runtime.g`), `GenG18.lean`
+(`setpf` of `test/ken_array`, which G17 rejects: `g18_value` on `MOVDstoreidx8`, `MOVD R1,
+(R0)(R1<<3)` with `R0` the start of an 8-byte `heap 1` holding 7s at `2^41` and `R1` 0, after
+which `runLoc`'s memory holds the word 0 there and the machine's 8 bytes at `2^41` are 0). Each
+decides its inputs
 by compiled evaluation (`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
 
 ## 6. Future work: recursion through function values
@@ -967,7 +991,7 @@ few:
 reason in parentheses):
 
 - register-index stores, `MOVDstoreidx8`/`MOVBstoreidx`: 245/187 (39/23); G14's addresses with
-  G3's stores;
+  G3's stores; done in G18 (§4);
 - `GetG`: 430 (89); `R28` = `E.g`, already in `FrameRel`; done in G17 (§4);
 - `ADDshiftLL`: 678 (57); `lo_add` with `shifted`; done in G16 (§4);
 - bounds panics `LoweredPanicBounds*`: 616 (40+); a `CALL runtime.panicBounds*` hook that

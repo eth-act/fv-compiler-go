@@ -98,6 +98,10 @@ GoFV.Proof.Witness.GenG16.g16_facts._native.native_decide.ax_1_1 dcefc68eb770162
 # and `checkG16` does not (parsed, `Env.load`, `genssa`), `runLoc` runs its `GetG`; compiled
 # evaluation, as plF_pipeline.
 GoFV.Proof.Witness.GenG17.g17_facts._native.native_decide.ax_1_1 0d5a99d7e6241c45c6a2a24c8706e7a7df1aff8548aaa8e1570728d170962c49
+# genG18_value_witness (GoFV/Proof/Witness/GenG18.lean, #553): `checkG18` accepts `setpf` of
+# test/ken_array and `checkG17` does not (parsed, `Env.load`, `genssa`), `runLoc` runs its
+# register-index store `MOVDstoreidx8`; compiled evaluation, as plF_pipeline.
+GoFV.Proof.Witness.GenG18.g18_facts._native.native_decide.ax_1_1 0000000000000000000000000000000000000000000000000000000000000000
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
