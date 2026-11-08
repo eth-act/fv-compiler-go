@@ -272,7 +272,7 @@ private theorem intBytes_relN {Y Xs : BitVec 64} {n j : Nat} (hj : j < n)
 
 /-- The bytes of an `n`-byte store (`1, 2, 4, 8`) of a register content of class `c ≥ 8n` (or a
 boolean) related to `Xs` are related to the bytes of the machine's store of `Xs`. -/
-private theorem storeBytes_relN (hA : AddrAgree ι) {n c : Nat} {x : Val} {Xs : BitVec 64}
+theorem storeBytes_relN (hA : AddrAgree ι) {n c : Nat} {x : Val} {Xs : BitVec 64}
     (hn : n = 1 ∨ n = 2 ∨ n = 4 ∨ n = 8) (hx : ValRel ι x Xs) (hf : Fits c x)
     (hc : 8 * n ≤ c ∨ c = 1) : (Arm64.storeBytes n x).size = n ∧ ∀ j, j < n →
       ByteRel ι (Arm64.storeBytes n x)[j]!

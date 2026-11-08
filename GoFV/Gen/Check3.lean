@@ -30,7 +30,8 @@ implied by the one at the end of each predecessor (`kLe`). A register clobbered 
   argument; `SRLconst` (`LSR $k, Rn, Rd`) of a 64-bit argument; `UBFX` (`UBFX $lsb, Rn, $w, Rd`)
   of an argument holding the extracted bits;
 * `CMPW` (`CMPW Rm, Rn`) and `CMPWconst` (`CMPW $k, Rn`) of arguments of at least 32 bits;
-* `SB` anywhere (no code; it holds no machine register), not only at the entry block's head.
+* `SB` of a register shape anywhere (no code; it holds no machine register), not only at the entry
+  block's head.
 
 **Blocks** beyond G2's: `ZW`/`NZW` (`CBZW`/`CBNZW` of a register of at least 32 bits or a
 boolean) and `TBZ`/`TBNZ` (`TBZ $k, Rn` of a register holding bit `k`, or a boolean), emitted as
@@ -263,7 +264,8 @@ def vkind3 (lc : LocCtx) (g : G2In) (v : Value) : Except String VKind2 := do
     return .prog ⟨plain as (· == regA rs) dst, as.name⟩
   if v.op == .SB then
     -- `SB` holds no machine register: no code anywhere in the function
-    unless v.args.size == 0 && (lc.home v.id == none || lc.home v.id == some (.reg sbReg)) do
+    unless v.args.size == 0 && (cls (lc.ty v.id)).isSome &&
+        (lc.home v.id == none || lc.home v.id == some (.reg sbReg)) do
       throw s!"v{v.id}: SB home"
     return .none
   if let some (as, w, _) := extOp? v.op then

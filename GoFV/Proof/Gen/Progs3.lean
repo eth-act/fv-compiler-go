@@ -348,22 +348,6 @@ theorem progStep_lsrK {kn kd : Nat} {k : Int} (hkn : kn < 32) (hkd : kd < 32) (h
     (by by_cases h : kd = 31 <;> simp [effWd, h, Eff.nilAccess?]), wd_apply hkd]
   simp (config := { decide := true }) only [ProgOp.binOp, dp2Op_lsr, ofInt_toNat_mod hk]
 
-/-- The facts `ubfxOK` fixes. -/
-theorem ubfxOK_eq {lsb width rn rd : Int} {p : Prog} (h : ubfxOK lsb width rn rd p = true) :
-    p.as = .UBFX ∧ p.from_ = constA lsb ∧ p.reg = rn ∧ p.to = regA rd ∧
-      ∃ x, p.rest = #[(x, constA width)] := by
-  unfold ubfxOK at h
-  repeat rw [Bool.and_eq_true] at h
-  obtain ⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, -⟩, -⟩, h7⟩ := h
-  refine ⟨beq_iff_eq.mp h1, beq_iff_eq.mp h2, beq_iff_eq.mp h3, beq_iff_eq.mp h4, ?_⟩
-  generalize hr : p.rest = r at h7
-  obtain ⟨l⟩ := r
-  rcases l with _ | ⟨⟨x, a⟩, _ | ⟨_, _⟩⟩
-  · exact absurd h7 Bool.false_ne_true
-  · have h7' : (a == constA width) = true := h7
-    exact ⟨x, by rw [beq_iff_eq.mp h7']⟩
-  · exact absurd h7 Bool.false_ne_true
-
 /-- `UBFX` of a bitfield auxint `lsb · 256 + width` (`width < 256`, the auxint below `2 ^ 63`). -/
 theorem ubfx_ofNat {lsb width : Nat} (hw : width < 256) (hk : lsb * 256 + width < 2 ^ 63)
     (x : BitVec 64) :
@@ -374,15 +358,16 @@ theorem ubfx_ofNat {lsb width : Nat} (hw : width < 256) (hk : lsb * 256 + width 
   simp only [GoFV.SSA.Sem.Arm64.ubfx, GoFV.SSA.Sem.Arm64.bf, h, Int.toNat_natCast]
   congr 2 <;> omega
 
-/-- `UBFX $lsb, Rn, $width, Rd` (`ubfxOK`; `0 ≤ width < 256`, the auxint
+/-- `UBFX $lsb, Rn, $width, Rd` (the operands `ubfxOK` fixes; `0 ≤ width < 256`, the auxint
 `lsb · 256 + width` below `2 ^ 63`): bits `lsb …` of `X kn`, `width` of them. -/
-theorem progStep_ubfx {kn kd : Nat} {lsb width : Int} (hkn : kn < 32) (hkd : kd < 32)
+theorem progStep_ubfx {kn kd x : Nat} {lsb width : Int} (hkn : kn < 32) (hkd : kd < 32)
     (hw0 : 0 ≤ width) (hw : width < 256) (hlw : lsb * 256 + width < 2 ^ 63)
-    (hn : L.nextAddr p.id = some next) (hu : ubfxOK lsb width (REG_R0 + kn) (REG_R0 + kd) p = true) :
+    (hn : L.nextAddr p.id = some next) (has : p.as = .UBFX) (hf : p.from_ = constA lsb)
+    (hr : p.reg = REG_R0 + kn) (ht : p.to = regA (REG_R0 + kd))
+    (hrest : p.rest = #[(x, constA width)]) :
     progStep L p s = .ok { s.wX (BitVec.ofNat 5 kd)
       ((s.rX (BitVec.ofNat 5 kn) >>> lsb.toNat) &&& GoFV.SSA.Sem.Arm64.mask width.toNat) with
         pc := next } := by
-  obtain ⟨has, hf, hr, ht, x, hrest⟩ := ubfxOK_eq hu
   have hname : As.name .UBFX = "UBFX" := rfl
   have hrest0 : (ProgCtx.mk L s p).rest 0 = .ok (constA width) := by
     simp [ProgCtx.rest, hrest]

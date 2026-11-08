@@ -146,8 +146,8 @@ inductive VK3 (lc : LocCtx) (g : G2In) (v : Value) : VKind2 → Prop
       (∀ p, pat.ok p = true → p.as = as ∧ p.from_ = regA rs ∧ p.reg = 0 ∧ dst p.to ∧
         p.scond = 0 ∧ p.rest.isEmpty = true ∧ p.regTo2 = 0) →
       VK3 lc g v (.prog pat)
-  /-- `SB`: no code, no machine register. -/
-  | sb : v.op = .SB → v.args.size = 0 →
+  /-- `SB`: no code, no machine register, a register shape. -/
+  | sb : v.op = .SB → v.args.size = 0 → (cls (lc.ty v.id)).isSome = true →
       (lc.home v.id = none ∨ lc.home v.id = some (.reg sbReg)) → VK3 lc g v .none
   /-- The extension `MOV… Rn, Rd` of the low `w` bits (sign extension `sg`): an argument of at
   least `w` bits or a boolean, a result of at least 8 bits. -/
@@ -255,7 +255,7 @@ theorem vkind3_spec {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : vkin
         obtain ⟨hc, h⟩ := ex_guard h
         cases h
         simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hsb hc
-        exact VK3.sb hsb hc.1 hc.2
+        exact VK3.sb hsb hc.1.1 hc.1.2 hc.2
       next hsb =>
         have hsb' : v.op ≠ .SB := by simpa using hsb
         split at h
