@@ -296,11 +296,14 @@ the export is deterministic under `--check-determinism`):
 
 gen-parity on quick-v10: frame, f.RegArgs, prog0 and end to end 9,297/9,297 (100%).
 
+Result on full-v11 (96,674 functions, 9,069,751 asm Progs, 30,550,496 text bytes; deterministic
+under `--check-determinism`): every row 96,674/96,674 (100%). gen-parity on full-v11: frame,
+f.RegArgs, prog0 (7,052,918 Progs) and end to end 96,674/96,674 (100%).
+
 Paths that compiled
 linux/arm64 code does not take fail loudly rather than being guessed: `-dynlink`
 (`rewriteToUseGot` needs symbol kinds the export does not record), `MRS`/`MSR` (asmout cases
-35–37), SVE (case 127), a `//line` position base whose own position is not line 1 (pcline needs
-`PosBase.Pos()`, which `gofv-prog 3` does not record). An infinite `JMP` loop (`brloop` gives up)
+35–37), SVE (case 127). An infinite `JMP` loop (`brloop` gives up)
 leaves the typed-nil target `AddrVal.nilTarget`, numbered like the exporter's fresh ID.
 
 ## Phase 3: debug information (I5, #551)
@@ -345,6 +348,9 @@ sort-by-offset path of `scopeVariables`, closure offsets and `IsInAbstract` vari
 | Info → DIE chain | 9297 | 9297 | 0 | 100% |
 | end to end | 9297 | 9297 | 0 | 100% |
 
+Result on full-v11 (96,674 functions with DWARF, 49,841,529 DWARF bytes; 88 s with 6 jobs): every
+row 96,674/96,674 (100%).
+
 Not ported yet: the package-level abstract functions and fixups (`DwarfFixupTable.Finalize`).
 
 `lake exe debug-parity [--jobs N] [--max-report N] [--table FILE] <dir|file>...`
@@ -364,3 +370,7 @@ observable in the result (zero-width, must-be-first values: their entries start 
 Result on quick-v10 (9,297 functions; 57,184 slots, 38,267 vars, 35,652 nonempty location lists
 with 70,867 entries; 1,570 values synthesized in 1,150 functions; 99 s with 6 jobs under load):
 9,297/9,297 (100%), no mismatch class.
+
+Result on full-v11 (96,674 functions; 1,025,639 slots, 618,778 vars, 578,586 nonempty location
+lists with 1,373,182 entries; 29,744 values synthesized in 19,392 functions): 96,674/96,674
+(100%), no mismatch class.
