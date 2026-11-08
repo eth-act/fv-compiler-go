@@ -754,7 +754,7 @@ private theorem fam_mov {n : Nat} {sg fp : Bool}
       obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj h)
       obtain ⟨hR, -, -, -, hpc⟩ := wP_rel (erel_ld (erel_init ⟨s, L.sym⟩) a n) hσ2 he (hv a)
       exact .inl ⟨hR, hpc⟩
-    · simp only [Option.map, pg_ok_bind] at h he
+    · simp only [Option.map] at h he
       obtain ⟨σ1, hσ1, h⟩ := pg_bind_ok h
       obtain ⟨σ2, hσ2, h⟩ := pg_bind_ok h
       obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj h)
@@ -771,10 +771,10 @@ private theorem fam_mov {n : Nat} {sg fp : Bool}
     · simp only [Option.map, pg_pure, pg_ok_bind] at h he
       obtain ⟨x, hx, h⟩ := pg_bind_ok h
       obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj h)
-      simp only [(xP_eval hx).1, pg_ok_bind, pg_pure] at he
+      simp only [(xP_eval hx).1, pg_ok_bind] at he
       obtain rfl := pg_ok_inj he
       exact .inl ⟨⟨rfl, by simp [Sym.store], rfl, rfl, rfl, rfl, by simp [Sym.store]⟩, rfl⟩
-    · simp only [Option.map, pg_ok_bind] at h he
+    · simp only [Option.map] at h he
       obtain ⟨σ1, hσ1, h⟩ := pg_bind_ok h
       obtain ⟨x, hx, h⟩ := pg_bind_ok h
       obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj h)
@@ -790,7 +790,7 @@ private theorem fam_mov {n : Nat} {sg fp : Bool}
     obtain ⟨σ1, hσ1, h⟩ := pg_bind_ok h
     obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj h)
     have hx' := xP_eval (L := L) (s := s) (p := p) hx
-    simp only [hf, ht, hx'.2.2, wP_fp hσ1, hx'.1, pg_ok_bind, bind_pure] at he
+    simp only [hf, ht, hx'.2.2, wP_fp hσ1, hx'.1, pg_ok_bind] at he
     obtain ⟨hR, -, -, -, hpc⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he (by
       rcases hn with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
         ⟨rfl, rfl⟩ <;>
@@ -805,7 +805,7 @@ private theorem fam_mov {n : Nat} {sg fp : Bool}
     exact .inl ⟨hR, hpc⟩
   · -- constant
     next hf ht =>
-    simp only [hf, ht, bind_pure] at he
+    simp only [hf, ht] at he
     obtain ⟨σ1, hσ1, h⟩ := pg_bind_ok h
     obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj h)
     obtain ⟨hR, -, -, -, hpc⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he rfl
@@ -818,7 +818,7 @@ private theorem fam_mov {n : Nat} {sg fp : Bool}
     obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj h)
     rw [← memP_type hf] at hma
     rw [memP_eval hma rfl haz hez, pg_ok_bind] at he
-    simp only [bind_pure] at he
+    simp only at he
     obtain ⟨hR, -, -, -, hpc⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he rfl
     exact .inl ⟨hR, hpc⟩
   · cases h
@@ -864,11 +864,11 @@ private theorem fam_pair {ld : Bool} {n : Nat} {sg fp : Bool}
       obtain ⟨x1, hx1, h⟩ := pg_bind_ok h
       obtain ⟨x2, hx2, h⟩ := pg_bind_ok h
       obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj h)
-      simp only [(xP_eval hx1).1, (xP_eval hx2).1, pg_ok_bind, pg_pure] at he
+      simp only [(xP_eval hx1).1, (xP_eval hx2).1, pg_ok_bind] at he
       obtain rfl := pg_ok_inj he
       exact .inl ⟨⟨rfl, by simp [Sym.store], rfl, rfl, rfl, rfl,
         by simp [Sym.store, Ex.eval_mkAdd, Ex.eval]⟩, rfl⟩
-    · simp only [Option.map, pg_ok_bind] at h he
+    · simp only [Option.map] at h he
       obtain ⟨σ1, hσ1, h⟩ := pg_bind_ok h
       obtain ⟨x1, hx1, h⟩ := pg_bind_ok h
       obtain ⟨x2, hx2, h⟩ := pg_bind_ok h
@@ -901,7 +901,7 @@ private theorem fam_pair {ld : Bool} {n : Nat} {sg fp : Bool}
       rw [Ex.eval_mkAdd] at h2
       exact h2
     rcases wb with _ | ⟨r0, b⟩
-    · simp only [Option.map, pg_pure, pg_ok_bind, bind_pure] at h he
+    · simp only [Option.map, pg_pure, pg_ok_bind] at h he
       obtain ⟨σ3, hσ3, h⟩ := pg_bind_ok h
       obtain ⟨σ4, hσ4, h⟩ := pg_bind_ok h
       obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj h)
@@ -910,7 +910,7 @@ private theorem fam_pair {ld : Bool} {n : Nat} {sg fp : Bool}
         (pair_val L s p n sg a)
       obtain ⟨hR, -, -, -, hpc⟩ := wP_rel hR3 hσ4 he hv2
       exact .inl ⟨hR, hpc.trans hpc3⟩
-    · simp only [Option.map, pg_ok_bind, bind_pure] at h he
+    · simp only [Option.map] at h he
       obtain ⟨σ1, hσ1, h⟩ := pg_bind_ok h
       obtain ⟨σ3, hσ3, h⟩ := pg_bind_ok h
       obtain ⟨σ4, hσ4, h⟩ := pg_bind_ok h
@@ -1036,7 +1036,7 @@ private theorem fam_rest
     exact .inl ⟨erel_init _, rfl⟩
   · next _ hn =>
     by_cases hb : p.to.type = .BRANCH
-    case neg => simp only [hb, beq_iff_eq, Bool.false_eq_true, ↓reduceIte] at h; cases h
+    case neg => simp only [hb, beq_iff_eq, ↓reduceIte] at h; cases h
     simp only [hb, beq_self_eq_true, ↓reduceIte] at h
     obtain ⟨id, hid, h⟩ := pg_bind_ok h
     obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj h)
@@ -1165,8 +1165,6 @@ private theorem dispatch {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl} {L : Li
   | none => exact fam_rest hb1 hb2 hb3 hb4 hb5 hm hp hc h he
 
 end fam
-
-
 
 theorem progSym_sound {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl} {L : Link} {s s' : MState}
     (h : progSym az ez p = .ok (σ, pc)) (haz : L.autosize = az) (hez : L.extrasize = ez)
