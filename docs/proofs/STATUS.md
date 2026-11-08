@@ -504,6 +504,19 @@ statements under the same premises. No new trusted premise. Witness `genG23_valu
 R0`, after which `runLoc`'s `R0` holds `true` and the machine's `X0` is 1). Coverage on quick-v10
 (`lake exe gen-check`): 4,624 of 9,297 functions (49.73%), 101,638 values.
 
+## Phase 3: genssa, slice G24 (I7, #553)
+
+`GoFV.Proof.Gen.g24_value`, `GoFV.Proof.Gen.g24_term`, `GoFV.Proof.Gen.g24_nilPanic`,
+`GoFV.Proof.Gen.g24_boundsPanic` (`GoFV/Proof/Gen/G24.lean`): when slice G24 (`checkG24`: G23 with
+`SP` after the entry values, run as a value without code, as `SB` in G3) accepts a function, they
+are `g23_value`'s, `g23_term`'s, `g23_nilPanic`'s and `g23_boundsPanic`'s statements under the same
+premises, but for `g24_value`'s activation-value premise `entryOp24 v.op = false` (G3's
+activation values but `SP`), which `entryOp3 v.op = false` implies (`entryOp24_of_3`). No new
+trusted premise. Witness `genG24_value_witness` (`(*SChan).Recv` of `test/closedchan`, which G23
+rejects: `SP` at the head of the receiving block, after which `runLoc`'s Go register `SP` holds
+`SP`'s value and the related machine state is at the same PC). Coverage on quick-v10 (`lake exe
+gen-check`): 4,718 of 9,297 functions (50.74%), 106,958 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g12_obj_value`, `g12_obj_term` (`GoFV/Proof/Obj/G12.lean`): `g12_value`/`g12_term`

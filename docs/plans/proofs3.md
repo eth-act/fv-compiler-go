@@ -623,6 +623,19 @@ writes 1 or 0 by `ConditionHolds` on `NZCV` (`progStep_cset`), for the same cond
 decided per op); `FlagsRel` makes the two agree (`onVal_holds`, `valRel_cset`, `g23_cset`). No new
 trusted premise. G23 accepts 4,624 functions.
 
+**Slice G24: `SP` anywhere** (`GoFV/Gen/Check24.lean`, `checkG24 lc ps bstart g`, returning G4's
+tables; proven sound, `g24_value`, `g24_term`, `g24_nilPanic`, `g24_boundsPanic`): G23 with `SP`
+after the entry values (`vkind24`, `VK24`), where the register allocator rematerializes it next to
+its users (in a later block, or after code in the entry block). Up to G23, `SP` is an activation
+value (`entryOp3`), which only the entry block's head may hold. G24 runs it as a value without
+code anywhere, as G3 runs `SB`: no temporary, no argument, a register shape, no home or the home
+`SP` (`spReg`, 30), which has no X or V register (`objX? 30 = none`), so `LocMatch` does not
+relate it. Its users are the accesses of frame variables (G6), whose `symAddr` ignores the base.
+`g24_value`'s premise that `v` is no activation value becomes `entryOp24` (G3's but `SP`), which
+`entryOp3` implies (`entryOp24_of_3`). The proof (`G24.lean`): `runLoc` writes `SP`'s value to its
+home (`stepLoc_sp`); no code runs and the machine state stays related (`g24_sp`, as `g3_sb`). No
+new trusted premise. G24 accepts 4,718 functions.
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -633,9 +646,9 @@ reason in parentheses):
    (`frame variable with an integer address`, 197 (12)): option 2 of semantics3 §4.3 (addresses as
    a parameter of the semantics); slots of other sizes (`slot … frame operand, size or alignment`,
    717).
-3. **Other values**: the acquire loads `LDAR`/`LDARW` (383, 277); `SP` after the entry values
-   (103 sole after G23); `CSEL`/`CSEL0` (324 (41), 285 (55)), `TSTconst` (110 (53)), `LoweredMemEq`
-   (123 (71)), `ANDshiftRA` (239 (58));
+3. **Other values**: the acquire loads `LDAR`/`LDARW` (383, 277); `CSEL`/`CSEL0` (324 (41), 285
+   (55) after G24), `TSTconst` (110 (53)), `LoweredMemEq` (123 (71)), `ANDshiftRA` (239 (58)),
+   `InitMem` after the entry values (21 sole);
    `MOVDnop` 750 (91) and `MOVDreg` (27 sole) are done in G20 and G21 but for those that do
    not follow their load directly (220 `MOVDnop`s; 3 functions with no other blocker, and 13
    with only `MOVDreg`), which need §8's register-frame lemmas. Bounds panics
@@ -672,6 +685,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G21 | 4,342 (46.70%) | 89,745 |
 | G22 | 4,472 (48.10%) | 98,947 |
 | G23 | 4,624 (49.73%) | 101,638 |
+| G24 | 4,718 (50.74%) | 106,958 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -819,6 +833,10 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
 - `G23.lean`: `csetOps`, `csetOps_of`, `cset_cond`, `stepLoc_cset`, `narrowLd?_cset`,
   `progStep_cset`, `valRel_cset`, `g23_cset`, `vk23_step`, `g23_value`, `vk23_nil`,
   `g23_nilPanic`, `g23_boundsPanic`, `g23_term`.
+- `Spec24.lean`: what `checkG24` accepted (`checkG24_spec`, `vkind24_spec` with `VK24`,
+  `entryOp3_of_24`, `entryOp24_of_3`).
+- `G24.lean`: `stepLoc_sp`, `g24_sp`, `vk24_step`, `g24_value`, `vk24_nil`, `g24_nilPanic`,
+  `g24_boundsPanic`, `g24_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -878,8 +896,11 @@ the 64-bit integer `0xffff_fffe` and the machine's `X4` is `0x0000_0000_ffff_fff
 runtime.buildVersion(SB), (R0, R1)` with `buildVersion = (nil, 7)`, after which `runLoc`'s `R1`
 and the machine's `X1` hold 7), `GenG23.lean` (`bytes.shouldUseASCIISet`, which G22 rejects:
 `g23_value` on `CMP $8, R0` with `len(chars) = 10` and on `GreaterThan`, `CSET GT, R0`, after
-which `runLoc`'s `R0` holds `true` and the machine's `X0` is 1). Each decides its inputs by compiled
-evaluation (`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
+which `runLoc`'s `R0` holds `true` and the machine's `X0` is 1), `GenG24.lean` (`(*SChan).Recv` of
+`test/closedchan`, which G23 rejects: `g24_value` on `SP` at the head of the receiving block, after
+which `runLoc`'s Go register `SP` holds `SP`'s value and the related machine state is at the same
+PC). Each decides its inputs by compiled evaluation (`native_decide`, pinned in
+`scripts/axioms-allowlist.txt`).
 
 ## 6. Future work: recursion through function values
 
