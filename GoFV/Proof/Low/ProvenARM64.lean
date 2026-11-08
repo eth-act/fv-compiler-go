@@ -17,6 +17,7 @@ import GoFV.Proof.Low.Rules.Fold
 import GoFV.Proof.Low.Rules.Invert
 import GoFV.Proof.Low.Rules.LoadIdx
 import GoFV.Proof.Low.Rules.LoadStore
+import GoFV.Proof.Low.Rules.Mul
 import GoFV.Proof.Low.Rules.Peep
 import GoFV.Proof.Low.Rules.Ptr
 import GoFV.Proof.Low.Rules.Rename
@@ -102,6 +103,8 @@ theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
       ⟨r_ARM64_744_sound, trivial⟩,
       ⟨r_ARM64_1258_sound, r_ARM64_1643_sound, r_ARM64_1659_sound, trivial⟩,
       ⟨r_ARM64_764_sound, r_ARM64_787_sound, r_ARM64_807_sound, r_ARM64_889_sound, trivial⟩,
+      ⟨r_ARM64_1043_sound, trivial⟩,
+      ⟨r_ARM64_1044_sound, trivial⟩,
       ⟨r_ARM64_1182_sound, trivial⟩,
       ⟨r_ARM64_1183_sound, r_ARM64_1184_sound, trivial⟩,
       ⟨r_ARM64_564_6_sound, r_ARM64_566_6_sound, r_ARM64_568_6_sound, r_ARM64_570_6_sound, r_ARM64_1375_sound, trivial⟩,

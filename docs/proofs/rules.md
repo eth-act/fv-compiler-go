@@ -2238,6 +2238,27 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   obligation). `(GetCallerSP ...) => (LoweredGetCallerSP ...)` (`:456`) is an atom rename
   (`callRename`): both read the activation's `frameVal`. Witnesses `jtb_lower`, `gcs_lower`.
 
+- **Multiplications by a constant, strength-reduced** (#385). `(MUL x (MOVDconst [c])) &&
+  canMulStrengthReduce(config, c) => {mulStrengthReduce(v, x, c)}` (`:1043`) and its `MULW` form
+  (`:1044`, `v.Type.Size() <= 4`) build one or two of `Config.mulRecipes`' linear combinations of
+  `x` (`ADD`, `SUB`, `NEG`, `SLLconst`, `ADDshiftLL`, `SUBshiftLL`, `NEGshiftLL`;
+  `Arm64.buildCombo`) and make `v` a `Copy` of the last; the helper's result is no pattern node,
+  so `ArmRule.Sound` cannot state the rules. `Interp.tryRule` logs the values the helper built
+  after `v` (`Interp.mulDefs`), and the validator checks the event by its effect
+  (`LowerCheck.mulOKL`): `v` a `MUL`, or a `MULW` at most 32 bits wide, at an integer shape, of an
+  operand `a` and a `MOVDconst [c]` term (either order) whose shape holds those bits; the fresh
+  logged values terms of `v`'s type whose arguments are `a` or each other; `v`'s `Copy` of one of
+  them, `m`, whose multiplier of `a` (`mulCoef`: 1 at `a`, `comboFn` of the arguments'
+  multipliers, each op's map on registers) is `c` in those bits. The replay adds the fresh values
+  and the `Copy`. The proof (`ValMul.lean`, `mul_step`, `ReplayInvL.mul`): each op is linear and
+  reads its arguments' low bits only (`comboFn_lin`), so each built value is the integer whose
+  bits are its multiplier times `a`'s register (`combo_val`, `mul_claim`), as `MUL`'s product
+  is (`mul_src`); a pointer `a` is held as a pointer (its shape, F1+F2 of
+  `docs/plans/semantics2.md` §3), has no register, and the product is `poison`. The rules carry no
+  obligation (`ArmRule.Mul`). Witness `mul10_step` (the validator on `x * 10`, `ADDshiftLL [2]`
+  then `SLLconst [1]`; the whole `lowerChecked` run is not kernel-evaluable, as Go's recipe
+  table takes 195,075 hash-map insertions).
+
 - **Compares with a pointer** (#385; module docs of `GoFV/Proof/Low/Rules/CmpNeg.lean` and
   `Invert.lean`). `CMP` compares a pointer without a concrete address with an integer as unequal
   (`Arm64.cmp`, `Z` clear). While `CMN` and `CMPshift*` read registers only (`Arm64.cmp1`/`cmp2`),
@@ -2287,6 +2308,17 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   holding `heap 0 + (2^64 - 1)` plus the `int32`-truncated shift `512` re-enters the window,
   while `ADDshiftLL` adds the whole `2^40 + 512`); with the clause on every word-shaped argument
   they are proven.
+
+- **`Move [8]` → `MOVDstore dst (MOVDload src mem) mem`** (`ARM64.rules:396`; #385; model
+  limit, not a Go bug): false under the semantics. `Move` copies bytes as they are, while the
+  integer load `MOVDload` decodes its 8 bytes at the word shape (`Arm64.loadN 8`, `Mem.load`):
+  bytes that mix defined and `poison` ones (a struct's padding) or fragments of different values
+  decode as `poison`, and the store then writes 8 `poison` bytes. Counterexample: `src` holds a
+  4-byte integer followed by 4 bytes of padding; a later 4-byte load of `dst` reads the integer in
+  the source and `poison` in the target. Loading such bytes as a blob instead would break the
+  monotonicity of loads under memory refinement (`Refines` has no case from a blob to an
+  integer), so a proof needs a semantics decision on loads of mixed bytes; the load semantics is
+  unchanged. 100 functions on full-v9 need only this rule (`lower-next.md`).
 
 - **`MemEq` → `Eq*` of two `Load`s** (`generic.rules:1560`, `:1568`, `:1576`, `:1584`;
   Phase1Tail, #69): false under the semantics, not a Go bug. `memEq` (`Sem/Ptr.lean`) reads the

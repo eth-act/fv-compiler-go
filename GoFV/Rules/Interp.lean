@@ -367,6 +367,20 @@ def copySrcDef (f : Func) (v : ID) : Array Value :=
     else #[]
   | none => #[]
 
+/-- A rule whose result is `mulStrengthReduce{,32}(v, x, c)` (`ARM64.rules:1043`, `1044`): the
+values the helper built (`v` becomes a copy of the last) are logged after `v` (the validator
+checks the event by its effect, `LowerCheck.mulOKL`). -/
+def mulResult (r : Rule) : Bool :=
+  (r.result matches .copy (.call "mulStrengthReduce" ..)) ||
+    (r.result matches .copy (.call "mulStrengthReduce32" ..))
+
+/-- The value `v` (a copy) copies and the definitions of its arguments: the values
+`mulStrengthReduce` built (with the multiplied value's definition where it is an argument). -/
+def mulDefs (f : Func) (v : ID) : Array Value :=
+  match copySrcDef f v with
+  | #[m] => #[m] ++ (m.args.toList.eraseDups.filterMap f.value?).toArray
+  | _ => #[]
+
 /-- Try rule `cr` (index `idx` in its table row) on `v`; true if it fired. `slDefs`: log the
 values a struct-load expansion built (`structLoadDefs`) after `v`; `ssDefs`: those of a
 struct-store split (`structStoreDefs`); `snap`: log the function before the rule's edit as a
@@ -395,6 +409,7 @@ def tryRule (v : ID) (cr : CRule) (idx : Nat) (slDefs : Bool := false) (ssDefs :
         | some f0, true => defs ++ structStoreDefs f0 f v
         | _, _ => defs
       let defs := if imsResult r then defs ++ copySrcDef f v else defs
+      let defs := if mulResult r then defs ++ mulDefs f v else defs
       if snap then if let some f0 := f0? then logEv fun _ => .snap f0
       logEv fun _ => .rule v idx st.binds defs
     return true

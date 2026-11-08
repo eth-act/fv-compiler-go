@@ -1,5 +1,6 @@
 import GoFV.Proof.Low.ValBlock
 import GoFV.Proof.Low.AddrFold
+import GoFV.Proof.Low.ValMul
 
 /-!
 # Replaying the lowering log refines the denotations (issue #385)
@@ -1784,6 +1785,51 @@ theorem copyFixL_inv {f : Func} {B : BMapL} :
     let h := copyStepL_inv hI hB
     copyFixL_inv cs h.1 h.2
 
+/-- **A strength-reduced multiplication** (`mulOKL`): `v` becomes a `Copy` of fresh terms the
+event built; the step refines every denotation of `C` (`mul_step`), and `ReplayInvL` carries
+over to `C` and, if `C` holds `v`, the event's definitions. -/
+theorem ReplayInvL.mul {v : ID} {defs ds : List Value} (hI : ReplayInvL tabs D₀ C₀ M C)
+    (h : mulOKL tabs M v defs = some ds) :
+    ReplayInvL tabs D₀ C₀ (putAll M ds) (fun y => C y ∨ (C v ∧ y ∈ defIds ds)) := by
+  obtain ⟨⟨x, hx, hxt⟩, hkeep, hids, hnew⟩ := mul_frame h
+  have hnew' : ∀ y, C v → y ∈ defIds ds → ∃ m, (putAll M ds).get? y = some m ∧
+      ∀ a ∈ m.args, C a ∨ (C v ∧ a ∈ defIds ds) := by
+    intro y hv hy
+    obtain ⟨u, hu, -, hargs⟩ := hnew y hy
+    refine ⟨u, hu, fun a ha => ?_⟩
+    rcases hargs a ha with ⟨x', hx', ha'⟩ | ha'
+    · rw [hx] at hx'; cases hx'; exact .inl (closed_args hI.closed hx hv a ha')
+    · exact .inr ⟨hv, ha'⟩
+  refine { closed := ?_, typed := ?_, atoms := ?_ }
+  · intro y hy
+    rcases hy with hy | ⟨hv, hy⟩
+    · by_cases hd : y ∈ defIds ds
+      · obtain ⟨m, hm, -⟩ := hI.closed y hy
+        rcases hids y hd with rfl | h
+        · exact hnew' _ hy hd
+        · rw [hm] at h; cases h
+      · obtain ⟨m, hm, hargs⟩ := hI.closed y hy
+        exact ⟨m, by rw [hkeep y hd, hm], fun a ha => .inl (hargs a ha)⟩
+    · exact hnew' y hv hy
+  · intro ρ hρ a ha hsome
+    by_cases hd : a ∈ defIds ds
+    · obtain ⟨u, hu, ht, -⟩ := hnew a hd
+      exact absurd ⟨u, hu, ht⟩ ha
+    · have he := hkeep a hd
+      have hshape : shapeL true (putAll M ds).get? tabs a = shapeL true M.get? tabs a := by
+        simp [shapeL, he]
+      rw [hshape]
+      exact hI.typed ρ hρ a (fun ⟨u, hu, ht⟩ => ha ⟨u, by rw [he]; exact hu, ht⟩) (he ▸ hsome)
+  · intro y a hy ha hargs
+    obtain ⟨a', ha', hat, hrest⟩ := hI.atoms y a hy ha hargs
+    have hd : y ∉ defIds ds := fun hd => by
+      rcases hids y hd with rfl | h
+      · rw [hx] at ha'; cases ha'; rw [hxt] at hat; cases hat
+      · rw [ha'] at h; cases h
+    exact ⟨a', by rw [hkeep y hd, ha'], hat, hrest.imp id fun hr =>
+      hr.step (g := fun n => n * ds.length) (fun _ h => .inl h) hI.typed
+        fun ρ hρ _ n z hz => mul_step h hI.closed hρ n z hz⟩
+
 end Inv
 
 /-- What `ruleOKL` establishes: the matched value is a term and some commutation choice
@@ -1843,7 +1889,7 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
         rcases hk with ⟨ht, ht', htop, hsa⟩ | ⟨hren, ht⟩
         · have hso : SetOpSoundT x.op o' := by
             rcases hck with hsd | ⟨o, o3, he3, hr3, -, -, -, -, hso⟩ | ⟨o, o3, he3, hr3, -, -, hren⟩ |
-                ⟨om, n, pty, pai, pax, par, pargs, pc, hpat, hom⟩
+                ⟨om, n, pty, pai, pax, par, pargs, pc, hpat, hom⟩ | hm
             · exact absurd hsd (not_sound_of_ellipsis he)
             · obtain ⟨c, hc⟩ := ellipsisOn_eq he
               obtain ⟨c', hc'⟩ := ellipsisOn_eq he3
@@ -1858,6 +1904,7 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
               rw [hc] at hpat
               injection hpat with hxo
               rw [termVL_mem tabs x hom hxo] at ht; cases ht
+            · simp [ArmRule.Mul, GoFV.Rules.Interp.mulResult, hres] at hm
           exact replayL_inv hs hD evs _ M' B B' C h
             (copyFixL_inv _ (hI.setOp hx ht ht' htop hsa hso)
               (hB.mono (g := id) (fun _ h => h) hI.typed fun ρ hρ _ n y _ =>
@@ -1883,11 +1930,24 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
     · -- value rules
       rename_i hnot
       split at h
+      · -- a strength-reduced multiplication (`mulOKL`)
+        split at h
+        · rename_i ds hok
+          have hput : ds.foldl (fun M u => M.put u.id u) M = putAll M ds := by
+            simp [putAll, Array.foldl_toList]
+          rw [hput] at h
+          exact replayL_inv hs hD evs _ M' B B' _ h (hI.mul hok)
+            (hB.mono (M' := putAll M ds) (C' := fun y => C y ∨ (C v ∧ y ∈ defIds ds))
+              (g := fun n => n * ds.length) (fun y hy => .inl hy) hI.typed
+              fun ρ hρ _ n y hy => mul_step hok hI.closed hρ n y hy)
+        · cases h
+      rename_i hmul
+      split at h
       · rename_i ds hok
         obtain ⟨sw, hsw, ⟨F⟩⟩ := ruleOKL_facts hok
         have hsd : ArmRule.Sound1 (Rule.swapC cr.rule sw) := by
           rcases hck with hsd | ⟨o, o3, -, hr3, -⟩ | ⟨o, o3, -, hr3, -⟩ |
-              ⟨om, n, pty, pai, pax, par, pargs, pc, hpat, hom⟩
+              ⟨om, n, pty, pai, pax, par, pargs, pc, hpat, hom⟩ | hm
           · exact hsd sw hsw
           · exact absurd hr3 (hnot o3)
           · exact absurd hr3 (hnot o3)
@@ -1900,6 +1960,7 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
             injection hp' with ho
             obtain ⟨-, x', hx', hop, ht', -⟩ := hm
             rw [termVL_mem tabs x' hom (hop.trans ho)] at ht'; cases ht'
+          · exact (hmul hm).elim
         have hput : ds.foldl (fun M u => M.put u.id u) M = putAll M ds := by
           simp [putAll, Array.foldl_toList]
         rw [hput] at h
