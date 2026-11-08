@@ -494,26 +494,28 @@ own output (function and tables) genssa's P0 Progs are accepted by `checkG18` ag
 (`allocFrame`), Progs and object are the ports' own; from the stock `.prog` file only the driver
 input view is read (definitions, config, `Dcl` at `AllocFrame`'s start, `genin`). The stock
 column runs the same back end on the stock `trim` function of every function (its `checkG18`
-count equals `gen-check`'s G18 count). Commit 1549ccc0, `--jobs 4` under `scripts/memcap.sh`.
+count equals `gen-check`'s G18 count). Main 8c5b1472 plus PR #606, `--jobs 4` under
+`scripts/memcap.sh`.
 
-| quick-v10 (9,297 functions, 6 min 42 s) | pipeline output | share | stock `trim` |
+| quick-v10 (9,297 functions, 9 min 43 s) | pipeline output | share | stock `trim` |
 | --- | ---: | ---: | ---: |
-| fully verified (Phase 2, through `trim`) | 7,254 | 78.02% | - |
-| … genssa and `Flushplist` ran | 7,000 | 75.29% | 9,297 |
+| fully verified (Phase 2, through `trim`) | 7,398 | 79.57% | - |
+| … genssa and `Flushplist` ran | 7,114 | 76.51% | 9,297 |
 | … ∧ `checkG18` | 3,775 | 40.60% | 4,052 |
 | … ∧ `checkG18` ∧ `retRegsOK` | 3,418 | 36.76% | 3,627 |
-| … ∧ `checkObj` | 6,455 | 69.43% | 7,741 |
+| … ∧ `checkObj` | 6,567 | 70.63% | 7,741 |
 | **… ∧ `checkG18` ∧ `retRegsOK` ∧ `checkObj` (end to end)** | **3,418** | **36.76%** | 3,626 |
 | … end to end, pipeline output identical to stock after `trim` | 3,005 | 32.32% | - |
 
 `pallocSum.start` (the witness `verified_mach_witness`) is among the accepted. Top reasons among
-the fully verified: back-end errors `genssa: aux a# is not a Dcl name` (254: the pipeline's output
-uses an auto the stock `Dcl` of the `.prog` input view does not list); `checkG18`: `not lowered`
-(240, only generic ops), `frame variable off another base` (229), `op MOVDnop` (220), `store
-shape` (174), `op LDAR` (167), `op CALLtail` (164), `SP after the entry values` (140);
-`retRegsOK`: a `Ret` block's results not in their ABI registers (357); `checkObj`: `FLDPQ`
-(SIMD&FP, 109), unmodelled atomics `LDADDAL`/`CASAL`/`SWPAL`/`LDORAL` (≈250 together), `tail:
-spill register` (58), `MVN` (21), shifts by a register (38), divisions (≈40).
+the fully verified: back-end errors `genssa: aux a# is not a Dcl name` (284: the pipeline's output
+uses an auto that the stock `Dcl` of the `.prog` input view does not list; the example checked,
+`(*HashTrieMap[…]).expand`, differs from stock from `late nilcheck` on);
+`checkG18`: `not lowered` (240, only generic ops), `op MOVDnop` (232), `frame variable off
+another base` (229), `store shape` (181), `op LDAR` (170), `op CALLtail` (164), `SP after the
+entry values` (140); `retRegsOK`: a `Ret` block's results not in their ABI registers (357);
+`checkObj`: `FLDPQ` (SIMD&FP, 110), unmodelled atomics `LDADDAL`/`CASAL`/`SWPAL`/`LDORAL` (≈250
+together), `tail: spill register` (58), `MVN` (21), shifts by a register (38), divisions (≈40).
 
 ## Per-pass fragment coverage (verified pipeline, full-v6)
 
