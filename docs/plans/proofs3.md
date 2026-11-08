@@ -797,3 +797,133 @@ Witnesses: `Witness/ObjFrame.lean` (`testInts`, framed, with the small stack che
 and `obj_exit`) and `Witness/ObjG7.lean` (`(*A).g`: `g7_obj_value` on its nil check;
 `pallocSum.start`: `g7_obj_term` on `TBNZ [63]`). Each decides `checkObj` and `linkCode` by
 compiled evaluation (pinned).
+
+## 8. Plans: frame addresses (option 2), nonempty stack arguments, frame parameters, `MOVDnop`
+
+Status after G15 (quick-v10). These blockers occur in many functions and are the sole reason in
+few:
+
+| Blocker | Occurs in | Sole reason in |
+| --- | --: | --: |
+| `stack argument` | 308 | 10 |
+| `frame variable operand class` | 294 | 89 |
+| `frame variable with an integer address` | 197 | 11 |
+| `MOVDnop` | 750 | 85 |
+
+**Why stack arguments and parameters wait for option 2 (semantics3 §4.3).**
+
+- Phase 1 gives `outargs a` (the value `SP`) and `local a k` (every `PPARAM`/`PPARAMOUT`:
+  `frameBlk`, `Tables.forgeable`) fixed addresses (`Blk.base?`, from `2^62`). Both are
+  `Ptr.convertible`, so `OffPtr [off] SP` and `&param` become integer words (`ptrRes` →
+  `Ptr.word`).
+- `AddrAgree` pins every non-`temp` block to its Phase 1 address. That is what lets integer
+  arithmetic on words (`lo_add`) relate register to register. The machine, however, puts these
+  blocks at `SP + frameOff`, so no `MatchEnv` injects them there.
+- Exempting them as `temp` is unsound while their words exist.
+- The `outargs` window starts at offset 0, which overlaps the saved `LR` word that
+  `StkAt`/`SepFrom` protect. Arguments start at offset 8: `ABIParam.offset` includes the fixed
+  frame word.
+
+**Option 2: design.**
+
+1. **Parameter.** `AddrMap := Blk → Option Nat` with admissibility:
+   - `nil ↦ 0`;
+   - heap blocks keep `(n+1)·2^40`;
+   - frame blocks (`local`, `outargs`, `temp`) are anywhere outside the nil page and the heap
+     range, without wrap, injective on the windows of live blocks;
+   - a decoder `ofAddr : BitVec 64 → Ptr` that inverts the assignment on in-window addresses and
+     gives `nil` elsewhere.
+
+   It is a field of `Env`, read by:
+   - `Ptr.addr?`, `Ptr.ofAddr`, `Ptr.word`, `Ptr.convertible`, `Val.asPtrWord`, `ptrRes`,
+     `wordRes`, `offPtr`;
+   - the `Arm64` ops `add`, `sub`, `addP`, `addr` and the pointer compares.
+
+   The default `Env.addr` is today's `Blk.base?`, so executables (`gofv-ssa-opt`, `gen-check`)
+   do not change.
+2. **Statements that change.**
+   - Every Phase 1/2 theorem quantified over `env` holds for every admissible `env.addr`.
+     Statements keep their shape; lemmas that unfold `Blk.base?`/`Ptr.ofAddr` take admissibility
+     instead. This touches 45 modules / 225 sites: `SSA/Sem` 15, `Proof/Pass` 26, `Opt` 17,
+     `Proof/Rules` + `Proof/Low` 13, `Proof` 10, `Proof/Gen` 7.
+   - Phase 3: `AddrAgree ι` becomes `∀ b, env.addr b = ι b` for blocks with an address. This
+     covers the frame blocks, so `NotTemp` drops out.
+   - `MatchEnv` instantiates `env.addr` with `SP + frameOff` for this activation's `local`,
+     `outargs` and `temp`, and `CallSpec` extends it for the callee's frame.
+   - `g*_value` gain no premise; their `env` is the instantiated one.
+3. **Migration order.**
+   1. `SSA/Sem` definitions and their round-trip lemmas (`ofAddr_addr`, `addr_ofAddr`, window
+      facts) under admissibility.
+   2. The Phase 1 pass proofs in dependency order (`Proof/Pass`, then `Proof/Rules`/`Low`).
+   3. Phase 2 (`TabsAgree*`, `MemInv`, `DeferRel`).
+   4. Phase 3 `Rel`/`Value`/`Mem` (`AddrAgree` → equality with `env.addr`), then G1–G15
+      unchanged above `Rel`.
+
+   Each step builds on its own: steps 1–3 keep `env.addr := Blk.base?` at every use until step 4
+   instantiates it.
+4. **Slices it unlocks.**
+   - **G16+, stack arguments.**
+     - `SP` as a no-code value outside the entry prefix.
+     - SP-relative stores and pair stores at the checked outgoing offsets, the injection
+       `outargs ↦ SP` with a poison prefix `[0, 8)` exempted from `SepFrom`.
+     - `CallSpec` relating the stack arguments by `MemInj`; the callee's `decodeArgs` reads them
+       there.
+     - Expected: the 10 sole functions, and up to 308 together with other slices.
+   - **Frame parameters and results.**
+     - `frameVar?` for `.PARAM` operands, and `varWin` in the caller's argument area.
+     - Disjointness from `PARAM` home slots, with a checked entry-store prefix materialising
+       register parameters whose address is taken (`XChan.Send`: `MOVD R1, x+8(FP)`).
+     - Expected: 89 sole, 294 occurs. Integer addresses add 11 sole and 197 occurs.
+5. **Interaction with the 1183/1184 experiment** (`agent/p2p1183`). It redefines
+   `Ptr.convertible` as the `ofAddr` round trip (with `a < 3·2^20`), makes `Ptr.word` poison
+   outside the window, and adds `Ptr.held` to `hasTy`. Option 2 should start from it once it
+   lands:
+   - "convertible = round trip" is exactly the property admissibility must provide, so
+     convertibility becomes a consequence of `env.addr` rather than a second fixed table;
+   - starting before it lands would make both refactors edit the same definitions (`Ptr.word`,
+     `Ptr.convertible`, `asPtrWord`) and their 26 `Proof/Pass` users.
+
+**Plan for `MOVDnop`, which needs no option 2.**
+
+- **The obstacle.** `MOVDnop x` emits no code. `runLoc` gives it the full 64-bit register:
+  `movdLoc` takes the zero or sign extension of `x`'s low bits, as `LocCtx.signOf` decides from
+  `x`'s producer. `LocMatch` only relates the low `w` bits of a narrow integer.
+- **The upper-bit table.** Add a dataflow table beside the class table: `UTab`, per block, each
+  register ↦ `zext w | sext w | ⊤`. Its `uStep` follows `kStep`:
+  - narrow loads `MOV{B,H,W}Uload` and their idx forms give `zext`, and `MOV{B,H,W}load` give
+    `sext`; the extensions `MOV*reg` likewise;
+  - `LoadReg` of a narrow type gives `sext`/`zext` by its signedness (`loadByType`);
+  - 32-bit ops (`*W`) give `zext 32` only for 32-bit results;
+  - `CSET` and the boolean producers give `zext 1`;
+  - `Copy` and `MOVDreg` copy their argument's entry;
+  - calls, `SelectN` of calls, and every other writer give `⊤`;
+  - a value that writes no register keeps the table.
+
+  The meet at block entries goes as `kFlow`. `checkU` requires, at each `MOVDnop`/`MOVDreg x`,
+  that `x`'s register entry is the extension `signOf x` names at `x`'s width.
+- **The invariant.** `UInv E K U s m`: every register `r ≠ ZERO` with `U r = zext w`/`sext w` and
+  `s.regs[r] = .int w x` (`w < 64`) has `m.x r = x.zeroExtend 64`/`x.signExtend 64`. It becomes
+  part of `G3Inv`.
+- **Register-frame lemmas.** Each value lemma of G1–G15 gains the conclusion that every X
+  register other than the value's home register(s) and the op's clobbers is unchanged:
+  `∀ k, k ∉ writes v → m'.x k = m.x k`. For the code-emitting ones this follows from the Prog
+  lemmas: `progStep_*` writes only `wX kd`. For calls, `CallSpec` only keeps `R28`/`R29`, and
+  `UInv` is reset to `⊤` there. The no-code values keep `m`. Every slice's `vkN_step` then
+  carries `UInv` across: unchanged registers keep it, and the written register gets the entry
+  its producer's lemma establishes. The narrow-load lemmas (`lo_loadN`) already compute the
+  exact zero/sign extension, and `op_reg2`'s `val` is that word.
+- **The slice.** `MOVDnop x` is `stepLoc` = `movdLoc`, with no Prog. Its proof is
+  `UInv` → `ValRel` of the 64-bit result. Expected: 85 sole, 750 occurs. `MOVDreg` (310 occurs)
+  is the same with a `MOVD` Prog.
+
+**Other slices that need no option 2.** Each is listed with the functions it occurs in (sole
+reason in parentheses):
+
+- register-index stores, `MOVDstoreidx8`/`MOVBstoreidx`: 245/187 (39/23); G14's addresses with
+  G3's stores;
+- `GetG`: 430 (89); `R28` = `E.g`, already in `FrameRel`;
+- `ADDshiftLL`: 678 (57); `lo_add` with `shifted`;
+- bounds panics `LoweredPanicBounds*`: 616 (40+); a `CALL runtime.panicBounds*` hook that
+  panics, as `g7_nilPanic`;
+- `TSTconst`, `Equal`/`NotEqual`, `CSEL`: 52, 49/32, 38+25 sole; flags producers and readers
+  as G1's `CMP`/`B<cond>`.
