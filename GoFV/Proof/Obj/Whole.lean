@@ -169,7 +169,10 @@ theorem stepTermL_goto_mem {fr : GoFV.SSA.Sem.Frame} {b : Block} {e : Edge}
       | (simp only [bind, Res.bind] at h
          split at h <;> try cases h
          dsimp only at h
-         split at h <;> first | exact succ_mem h | cases h | (split at h <;> first | cases h | (split at h <;> cases h)))
+         split at h <;> first
+           | exact succ_mem h
+           | cases h
+           | (split at h <;> first | cases h | (split at h <;> cases h)))
 
 /-- A reachable state is in the start block after the start, or in a block an edge goes to. -/
 theorem lreach_cases {env : Env} {lc : LocCtx} {b0 : ID} {i0 : Nat} {s0 : LocState} {b : ID}
@@ -487,7 +490,7 @@ theorem sim_ret (hc : checkG12 lc ps bstart g = .ok (tab, kt))
     have hpa : pcAt L.text ps.toList k = addrP L.text ps.toList[k].id := by
       simp [pcAt, hk3, addrP]
     rw [hpa, objMap_at hnd hlt hlen' hk2]
-    simp [getElem!_def, hk3, hofs]
+    simp [hk3, hofs]
   have hsp1 : t1.sp = E.sp := by rw [hR1.sp]; exact hm.frame.1
   obtain ⟨t2, ht2, hpc2, -, hsp2, h292, hx2, hv2, hm2, -⟩ :=
     obj_exit (H := H) hO.check hO.linked hO.size hO.ret hk3 (by simpa using hras)
@@ -500,18 +503,18 @@ theorem sim_ret (hc : checkG12 lc ps bstart g = .ok (tab, kt))
     rw [hpc2]
     rcases hlf with h0 | hnl
     · have hfr0 : E.framed = false := by rw [hEE'.framed, h0]; rfl
-      rw [if_pos (Or.inl h0), hR1.x30]
+      rw [ite_eq_left_of_eq_true _ _ (eq_true (Or.inl h0)), hR1.x30]
       show ObjEnv.map otab ps L base (m.x 30) = s0.x 30
       rw [(hm.frame.2.2.2 hfr0).2, hEE'.lr]
       exact objMap_fix hEE'.lrOut.1 hEE'.lrOut.2
     · by_cases h0 : otab.autosize = 0
       · have hfr0 : E.framed = false := by rw [hEE'.framed, h0]; rfl
-        rw [if_pos (Or.inl h0), hR1.x30]
+        rw [ite_eq_left_of_eq_true _ _ (eq_true (Or.inl h0)), hR1.x30]
         show ObjEnv.map otab ps L base (m.x 30) = s0.x 30
         rw [(hm.frame.2.2.2 hfr0).2, hEE'.lr]
         exact objMap_fix hEE'.lrOut.1 hEE'.lrOut.2
       · have hfr1 : E.framed = true := by rw [hEE'.framed]; simp [h0]
-        rw [if_neg (by simp [h0, hnl]), hsp1, word_rel hR1]
+        rw [ite_eq_right_of_eq_false _ _ (eq_false (by simp [h0, hnl])), hsp1, word_rel hR1]
         show m.word E.sp = s0.x 30
         rw [(hm.frame.2.2.1 hfr1).2.1, hEE'.lr]
   · rw [hsp2, hsp1, hEE'.sp]
@@ -520,10 +523,11 @@ theorem sim_ret (hc : checkG12 lc ps bstart g = .ok (tab, kt))
   · rw [h292]
     by_cases h0 : otab.autosize = 0
     · have hfr0 : E.framed = false := by rw [hEE'.framed, h0]; rfl
-      rw [if_pos h0, hx1 29 (by decide) (by decide), (hm.frame.2.2.2 hfr0).1, hEE'.fp]
+      rw [ite_eq_left_of_eq_true _ _ (eq_true h0), hx1 29 (by decide) (by decide), (hm.frame.2.2.2 hfr0).1, hEE'.fp]
     · have hfr1 : E.framed = true := by rw [hEE'.framed]; simp [h0]
       have hnl : otab.leaf = false := hlf.resolve_left h0
-      rw [if_neg h0, hnl, if_neg (by decide), hsp1, word_rel hR1]
+      rw [ite_eq_right_of_eq_false _ _ (eq_false h0), hnl,
+        ite_eq_right_of_eq_false _ _ (eq_false (by decide)), hsp1, word_rel hR1]
       show m.word (E.sp - 8) = s0.x 29
       rw [(hm.frame.2.2.1 hfr1).2.2, hEE'.fp]
   · intro r v hv
@@ -726,7 +730,8 @@ theorem sim_entry (hO : ObjEnv ps spills o otab L base code retM)
         rw [h64] at hwin
         simp only [BitVec.toNat_add, BitVec.toNat_ofNat, h64]
         omega
-      refine Nat.le_of_not_lt fun hlt => hsep bk al a hb ha (a + BitVec.ofNat 64 i) (Or.inl ⟨hfr1, ?_⟩) ⟨by omega, by omega⟩
+      refine Nat.le_of_not_lt fun hlt =>
+        hsep bk al a hb ha (a + BitVec.ofNat 64 i) (Or.inl ⟨hfr1, ?_⟩) ⟨by omega, by omega⟩
       rw [hsp1] at hlt
       exact stk_window hfr.lo hfr.hi hlt
     · show s1.x 28 = E0.g

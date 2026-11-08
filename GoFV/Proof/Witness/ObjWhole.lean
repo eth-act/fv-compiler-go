@@ -162,7 +162,8 @@ def wholeFacts : Bool :=
   (checkG12 lc ps GenG3.bs GenG3.g).toOption == some (GenG3.tab, GenG3.kt) &&
     (accessedVars lc).isEmpty && (homeSlots lc).isEmpty && GenG2.noCalls lc && noWbICall lc &&
     ObjG7.envFacts ps ObjG7.startSpills ObjG7.startObj && ObjG7.startTab.check.isNone &&
-    ps.toList.all (fun p => addrP GenG2.text p.id != 0x40) && (0x40 : BitVec 64) != endP GenG2.text ps.toList &&
+    ps.toList.all (fun p => addrP GenG2.text p.id != 0x40) &&
+    (0x40 : BitVec 64) != endP GenG2.text ps.toList &&
     lc.ctx.f.entry == 1 && lc.ctx.f.blocks.toList.contains 1 && (lc.ctx.f.block? 1).isSome &&
     GenG3.blk1.values.size == 2 &&
     GenG1.okThen (enterListLoc default lc sInit (GenG3.blk1.values.toList.take 2)) sIIs &&
@@ -214,7 +215,8 @@ theorem memInj : MemInj ι memI mm where
       match i, hi with
       | 0, _ | 1, _ | 2, _ | 3, _ | 4, _ | 5, _ | 6, _ | 7, _ => trivial
 
-theorem sep (hk : (memI.blocks.toList.map (·.1)).Nodup) : KeysNodup memI ∧ SepFrom ι (StkAt E0) memI := by
+theorem sep (hk : (memI.blocks.toList.map (·.1)).Nodup) :
+    KeysNodup memI ∧ SepFrom ι (StkAt E0) memI := by
   refine ⟨hk, fun b al a _ _ y hy => ?_⟩
   rcases hy with ⟨h, -⟩ | ⟨k, off, h, -⟩ <;> cases h
 
@@ -310,7 +312,8 @@ theorem objWhole_ret_witness :
           refine ⟨fun q hq => ?_, fun q hq => by simp [objV?] at hq⟩
           simp only [objX?] at hq
           cases hq
-          exact ⟨fun h => by rcases h with h | h | h | h <;> exact absurd h (by decide), Or.inl (by decide)⟩
+          exact ⟨fun h => by rcases h with h | h | h | h <;> exact absurd h (by decide),
+            Or.inl (by decide)⟩
         · rw [(hregs r v hv).2 h0]
           exact ⟨fun _ _ => ⟨fun _ => rfl, trivial⟩, fun _ _ => trivial⟩
       flags := hflags
