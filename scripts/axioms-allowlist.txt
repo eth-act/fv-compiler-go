@@ -79,6 +79,15 @@ GoFV.Proof.Witness.ObjFrame.obj_facts._native.native_decide.ax_1_1 5d1f479df5891
 # plF_pipeline.
 GoFV.Proof.Witness.ObjG7.g_obj_facts._native.native_decide.ax_1_1 706f28c25800f352ec6ac6b9a63d8031beb7599940ae54870476fdf7a7111bd1
 GoFV.Proof.Witness.ObjG7.start_obj_facts._native.native_decide.ax_1_1 4733a435ca49c200ba34ad4bfbce2d1148979b971e53a86d5fc10ea963685e15
+# objWhole_ret_witness (GoFV/Proof/Witness/ObjWhole.lean, #553): `checkObj`, `linkCode` and the
+# machine-side facts of `pallocSum.start` (no `CALL (Rn)`), and `lcFacts` plus the returning run
+# of `runLoc` on p = 7 in plRunEnv; compiled evaluation, as plF_pipeline.
+GoFV.Proof.Witness.ObjWhole.obj_facts._native.native_decide.ax_1_1 67335114e2d2563421024fef3e0c1bfd72f14d144013fa86bbd31c7296d4e7fb
+GoFV.Proof.Witness.ObjWhole.start_facts._native.native_decide.ax_1_1 fb112a883cb912d7d480eae02c8e5654b969110e6278d05c170f1a3f3400e079
+# verified_mach_witness (GoFV/Proof/Witness/ObjEndToEnd.lean, #553): `pallocSum.start` from its
+# generic SSA through the verified pipeline to genssa's Progs and the linked words; compiled
+# evaluation, as plF_pipeline.
+GoFV.Proof.Witness.ObjEndToEnd.e2e_facts._native.native_decide.ax_1_1 b6fc5d09a5b5255bb6b3f42d1c2fc0b8027f2d8048a48c850964d5a4d92618fa
 # genG13_value_witness (GoFV/Proof/Witness/GenG13.lean, #553): `checkG13` accepts
 # `runtime.(*pageBits).clearAll` and `checkG12` does not (parsed, `Env.load`, `genssa`), `runLoc`
 # runs the zeroing `LoweredZero [64]` to 64 zero bytes; compiled evaluation, as plF_pipeline.
