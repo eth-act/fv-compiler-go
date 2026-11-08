@@ -82,6 +82,10 @@ GoFV.Proof.Witness.ObjG7.start_obj_facts._native.native_decide.ax_1_1 de961be7e4
 # `runtime.(*pageBits).clearAll` and `checkG12` does not (parsed, `Env.load`, `genssa`), `runLoc`
 # runs the zeroing `LoweredZero [64]` to 64 zero bytes; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.GenG13.g13_facts._native.native_decide.ax_1_1 b1102a0d8b08b4e2b5b8b898e2fb43e80ff61c15c400741f607f403484ab54db
+# genG14_value_witness (GoFV/Proof/Witness/GenG14.lean, #553): `checkG14` accepts
+# `runtime.argv_index` and `checkG13` does not (parsed, `Env.load`, `genssa`), `runLoc` runs the
+# register-index load `MOVDloadidx8`; compiled evaluation, as plF_pipeline.
+GoFV.Proof.Witness.GenG14.g14_facts._native.native_decide.ax_1_1 290bdf1dad157a6170c435f7d7ed98c1303c7258cba23ad87535b2d5e0e708e5
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:

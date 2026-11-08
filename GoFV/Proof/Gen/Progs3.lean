@@ -174,8 +174,9 @@ private theorem eff_ext {c : ProgCtx} {n kn kd : Nat} {sg : Bool} (hkn : kn < 32
 
 variable {L : Link} {p : Prog} {s : MState} {next : BitVec 64}
 
-/-- A load of `n` bytes at `a` outside the nil page into `X kd`. -/
-private theorem step_load {n kd : Nat} {sg : Bool} {a : BitVec 64} (hkd : kd < 32)
+/-- A load of `n` bytes at `a` outside the nil page into `X kd`, whatever the memory operand that
+denotes `a` (`progStep_loadN`, `progStep_globLoad`, slot reloads, G14's register-index loads). -/
+theorem progStep_loadAt {n kd : Nat} {sg : Bool} {a : BitVec 64} (hkd : kd < 32)
     (hn : L.nextAddr p.id = some next) (hm : ProgOp.movMem p.as.name = some (n, sg, false))
     (hf : p.from_.type = .MEM) (hma : (ProgCtx.mk L s p).mem p.from_ = .ok (a, none))
     (ht : p.to = regA (REG_R0 + kd)) (hnil : nilPage a = false) :
@@ -219,7 +220,7 @@ theorem progStep_loadN {kn kd n : Nat} {sg : Bool} {off : Int} (hkn : kn < 32) (
   have hma : (ProgCtx.mk L s p).mem p.from_ =
       .ok (s.rX (BitVec.ofNat 5 kn) + BitVec.ofInt 64 off, none) := by
     rw [hf]; exact ctx_mem_reg hkn hsc
-  exact step_load hkd hn hm (by rw [hf]; rfl) hma ht hnil
+  exact progStep_loadAt hkd hn hm (by rw [hf]; rfl) hma ht hnil
 
 /-- `MOV{D,B,BU,H,HU,W,WU} sym+off(SB), Rd` (a global operand: `globA_eq`), the address outside
 the nil page. -/
@@ -231,7 +232,7 @@ theorem progStep_globLoad {kd n y : Nat} {sg : Bool} {off : Int} (hkd : kd < 32)
     progStep L p s = .ok { s.wX (BitVec.ofNat 5 kd)
       (if sg then ProgOp.sextTo64 n ((readMem s.mem (L.sym y + BitVec.ofInt 64 off) n).setWidth 64)
        else (readMem s.mem (L.sym y + BitVec.ofInt 64 off) n).setWidth 64) with pc := next } :=
-  step_load hkd hn hm hf1 (ctx_mem_glob hf1 hf2 hf3 hf4) ht hnil
+  progStep_loadAt hkd hn hm hf1 (ctx_mem_glob hf1 hf2 hf3 hf4) ht hnil
 
 /-- `MOV{D,B,H,W} Rs, off(Rn)` (any `movMem` opcode of the general registers), the address
 outside the nil page: the low `n` bytes of `X ks`. -/
@@ -273,7 +274,7 @@ theorem progStep_slotLoadN {kd n : Nat} {sg : Bool} {nc : AddrName} {off : Int} 
           ((readMem s.mem (s.sp + BitVec.ofInt 64 (frameOff L nc off)) n).setWidth 64)
        else (readMem s.mem (s.sp + BitVec.ofInt 64 (frameOff L nc off)) n).setWidth 64) with
         pc := next } :=
-  step_load hkd hn hm (slotA_eq hf).1 (ctx_mem_slot hf hnc) ht hnil
+  progStep_loadAt hkd hn hm (slotA_eq hf).1 (ctx_mem_slot hf hnc) ht hnil
 
 /-- `MOV{D,B,H,W} Rs, off(RSP)` at a frame operand, the address outside the nil page. -/
 theorem progStep_slotStoreN {ks n : Nat} {sg : Bool} {nc : AddrName} {off : Int} (hks : ks < 32)

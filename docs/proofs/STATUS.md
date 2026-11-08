@@ -364,6 +364,21 @@ address succeeds). Witness `genG13_value_witness` (`(*pageBits).clearAll`, which
 machine bytes there are 0). Coverage on quick-v10 (`lake exe gen-check`): 3,755 of 9,297 functions
 (40.38%), 69,470 values.
 
+## Phase 3: genssa, slice G14 (I7, #553)
+
+`GoFV.Proof.Gen.g14_value`, `GoFV.Proof.Gen.g14_term`, `GoFV.Proof.Gen.g14_nilPanic`
+(`GoFV/Proof/Gen/G14.lean`): when slice G14 (`checkG14`: G13 with the integer register-index loads
+`MOV{D,W,WU,H,HU,B,BU}loadidx`, `MOV{H,HU}loadidx2`, `MOV{W,WU}loadidx4`, `MOVDloadidx8`, base and
+index in registers of class 64; genssa's one load from `(Rp)(Ri)` or `(Rp)(Ri<<sh)`) accepts a
+function, they are `g13_value`'s, `g13_term`'s and `g13_nilPanic`'s statements (under `G10Env`,
+with `CallOK`, `ICallOK`, `WbOK` and `CloOK`); `g14_value`'s per-value premise `G14Pre` adds to
+`G13Pre` that a register-index load reads valid bytes (`IdxPre`: Phase 1's `Mem.read` of the `n`
+bytes at the address of `ptr + idx · 2^sh` succeeds, and a boolean destination is 0 or 1).
+Witness `genG14_value_witness` (`runtime.argv_index`, which G13 rejects: `MOVD (R0)(R1<<3), R0`
+with `R0` the start of the heap object `heap 1` at `2^41` and `R1` 2, after which `X0` holds the
+word 7 stored at offset 16). Coverage on quick-v10 (`lake exe gen-check`): 3,815 of 9,297
+functions (41.03%), 71,548 values.
+
 ## Per-pass fragment coverage (verified pipeline, full-v6)
 
 Runs per pass of `gofv-ssa-opt --check --verified` (96,553 functions, each pass run once per function). *Proven*: the theorem's variant ran and changed the function; *identity*: same function (or tables the function cannot tell apart); *skipped*: an optional pass outside its fragment (the input is kept); *unverified*: a required pass outside its fragment, or a checked rewrite pass whose result differs from stock (`checked variant incomplete`: an unproven rule fired or the validator rejected; the stock result is kept). Every Phase 1 pass has a theorem; `insert resched checks`, `cpufeatures` and `rewrite tern` never run for linux/arm64.
