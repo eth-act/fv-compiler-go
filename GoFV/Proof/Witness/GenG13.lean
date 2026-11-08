@@ -1845,4 +1845,293 @@ def g : G2In :=
   | .ok x => x.2.2.2
   | .error _ => { syms := #[], slotOp := fun _ => none, stksize := 0 }
 
+/-- The PC table `checkG13` gives (block `b4`: `v27`'s first `STP` after the no-op Progs from 5,
+then `RET`). -/
+def tab : PcTab := [(4, [5, 5, 5, 11, 11])]
+
+/-- The class table `checkG13` gives: nothing known at the entry `b4`. -/
+def kt : KTab := [(4, KMap.bot)]
+
+def blk4 : Block := (lc.ctx.f.block? 4).getD default
+
+def val (n : ID) : Value := (lc.ctx.f.value? n).getD default
+
+/-- P0's layout: the Prog with ID `n` at `0x10000 + 4n`, a 16-byte frame, every symbol at
+`symA`. -/
+def L : Link := Link.byId (fun _ => GenG2.symA) GenG2.text 16 8 ps.toList
+
+/-- `ι`: as `GenG12.ι`, the heap object `heap 1` at `2^41`. -/
+def ι : Blk → Option (BitVec 64) := GenG12.ι
+
+/-- The machine address of `heap 1`. -/
+def A : BitVec 64 := 0x20000000000
+
+/-- A framed activation (`SP = 0x7fff0000`, `g = 0x9000`, saved `LR` and `FP` 0) with the globals
+at `symA`, `heap 1` at `2^41` and the PC table of `checkG13`. -/
+def E : MatchEnv :=
+  { lc, ι, sp := GenG2.sp0, slot := fun _ => none, g := 0x9000, lr := 0, fp := 0,
+    framed := true, pcOf := pcOfTab GenG2.text ps.toList tab }
+
+/-- The argument `b`: the start of the heap object `heap 1`. -/
+def pB : Ptr := ⟨.heap 1, 0⟩
+
+/-- The Phase 1 memory before `v27`: `heap 1` a writable block of 64 bytes 7. -/
+def mem7 : Mem := { blocks := #[(.heap 1, { data := Array.replicate 64 (.b 7) })], nextHeap := 2 }
+
+/-- The Phase 1 memory after `v27`: `heap 1` holds 64 zero bytes. -/
+def memZ : Mem := { blocks := #[(.heap 1, { data := Array.replicate 64 (.b 0) })], nextHeap := 2 }
+
+/-- The machine memory before `v27`: the 64 bytes 7 of `heap 1` at `A`, 0 elsewhere. -/
+def M7 : Memory := fun y => if (y - A).toNat < 64 then 7 else 0
+
+/-- The `runLoc` state after the entry values: `b` in `R0`, every other register `poison`, the
+memory `mem7`. -/
+def s0 : LocState :=
+  { fr := { regs := Array.replicate 32 none, args := [], mem0 := mem7 },
+    regs := Array.ofFn (n := 64) fun i => if i.val = 0 then .ptr pB else .poison,
+    flags := .poison, slots := [], mem := .mem mem7 }
+
+/-- The machine before `v27`: `X0` the address `A` of `b`, the activation's `g` and `FP`, the PC
+of `v27`, the memory `M7`. -/
+def m0 : MState :=
+  { x := fun k => if k = 0 then A else if k = 28 then 0x9000
+      else if k = 29 then GenG2.sp0 - 8 else 0,
+    sp := GenG2.sp0, v := fun _ => 0, nzcv := ⟨false, false, false, false⟩,
+    pc := E.pcOf 4 2, mem := M7 }
+
+/-- A register content addressing `pB` (`R0` reads as the Phase 1 address of `pB`). -/
+def isPB (x : Val) : Bool := Arm64.addr x 0 == some pB
+
+theorem isPB_spec {x : Val} (h : isPB x = true) : Arm64.addr x 0 = some pB := by
+  simpa [isPB] using h
+
+/-- The memory is `memZ`. -/
+def memIsZ (s : LocState) : Bool :=
+  match s.mem with
+  | .mem mm => decide (mm = memZ)
+  | _ => false
+
+theorem memIsZ_spec {s : LocState} (h : memIsZ s = true) : s.mem = .mem memZ := by
+  unfold memIsZ at h
+  split at h
+  · rename_i mm hmm
+    rw [hmm, of_decide_eq_true h]
+  · cases h
+
+/-- What compiled evaluation checks on `clearAll`: `checkG13` accepts it with `tab` and `kt` and
+`checkG12` does not; it accesses no frame variable and has no home slot; `b4` holds `v27` at
+index 2, a `LoweredZero [64]` of `v5`, and `R0` has class 64 before it; `v5` reads in `s0` as an
+address of `pB`; writing 64 zero bytes at `pB` in `mem7` gives `memZ`; `stepLoc` runs `v27` from `s0` to the
+memory `memZ`; and no 8 bytes of `memZ`'s block encode a pointer. -/
+def gFacts : Bool :=
+  (checkG13 lc ps bs g).toOption == some (tab, kt) && (checkG12 lc ps bs g).toOption.isNone &&
+    (accessedVars lc).isEmpty && (homeSlots lc).isEmpty &&
+    lc.ctx.f.blocks.toList.contains 4 && (lc.ctx.f.block? 4).isSome &&
+    (lc.ctx.f.value? 27).isSome && blk4.values[2]? == some 27 &&
+    (val 27).op == .ARM64LoweredZero && (val 27).args[0]? == some 5 &&
+    (val 27).auxInt.toInt.toNat == 64 && (kAt lc kt 4 blk4 2).get 0 == some 64 &&
+    GenG1.okThen (s0.read lc 5) isPB &&
+    decide (mem7.write pB (Array.replicate 64 (.b 0)) = some memZ) &&
+    GenG1.okThen (stepLoc GenG2.env lc s0 (val 27)) memIsZ &&
+    (List.range 64).all fun o => ptrWordAt? (Array.replicate 64 (.b 0)) o == none
+
+theorem g13_facts : gFacts = true := by
+  native_decide
+
+/-- The facts of `g13_facts` as hypotheses. -/
+theorem facts :
+    checkG13 lc ps bs g = .ok (tab, kt) ∧ (accessedVars lc).isEmpty = true ∧
+      (homeSlots lc).isEmpty = true ∧ 4 ∈ lc.ctx.f.blocks.toList ∧
+      lc.ctx.f.block? 4 = some blk4 ∧ lc.ctx.f.value? 27 = some (val 27) ∧
+      blk4.values[2]? = some 27 ∧ (val 27).op = .ARM64LoweredZero ∧ (val 27).args[0]? = some 5 ∧
+      (val 27).auxInt.toInt.toNat = 64 ∧ (kAt lc kt 4 blk4 2).get 0 = some 64 ∧
+      GenG1.okThen (s0.read lc 5) isPB = true ∧
+      mem7.write pB (Array.replicate 64 (.b 0)) = some memZ ∧
+      GenG1.okThen (stepLoc GenG2.env lc s0 (val 27)) memIsZ = true ∧
+      ∀ o, o < 64 → ptrWordAt? (Array.replicate 64 (.b 0)) o = none := by
+  have hf := g13_facts
+  simp only [gFacts, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem, decide_eq_true_eq,
+    List.all_eq_true, List.mem_range] at hf
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hres, -⟩, hav⟩, hsl⟩, hm4⟩, hb4s⟩, hv27⟩, hi2⟩, hop⟩, ha0⟩, hn⟩, hk0⟩,
+    hrd⟩, hwr⟩, hrun⟩, hpw⟩ := hf
+  refine ⟨?_, hav, hsl, hm4, ?_, ?_, hi2, hop, ha0, hn, hk0, hrd, hwr, hrun, hpw⟩
+  · revert hres; cases checkG13 lc ps bs g <;> simp [Except.toOption]
+  · obtain ⟨b, hb⟩ := Option.isSome_iff_exists.1 hb4s
+    simp [blk4, hb]
+  · obtain ⟨v, hv⟩ := Option.isSome_iff_exists.1 hv27
+    simp [val, hv]
+
+theorem g13Env (hc : checkG13 lc ps bs g = .ok (tab, kt)) (hav : (accessedVars lc).isEmpty = true)
+    (hsl : (homeSlots lc).isEmpty = true) : G10Env lc g L ps 0 tab E where
+  env := {
+    env := {
+      env := {
+        lcEq := rfl
+        link := rfl
+        pcOf := rfl
+        retOut := by
+          obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hlt, -, -⟩ := checkG13_spec hc
+          intro p hp
+          exact GenG2.prog_addr_ne (hlt p hp) hp (by simp) (by simp)
+        addr := GenG12.addrAgree
+        glob := fun _ _ _ _ => rfl
+        syms := by
+          obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hlt, -, -⟩ := checkG13_spec hc
+          intro y
+          have hs : L.sym y = GenG2.symA := rfl
+          rw [hs]
+          refine ⟨by decide, fun p hp => ?_⟩
+          exact GenG2.prog_addr_ne (hlt p hp) hp (Or.inr (by decide)) (by decide)
+        calls := fun h => by cases h
+        slot := fun k hk => by simp [List.isEmpty_iff.1 hsl] at hk
+        extra := by decide
+        frame := ⟨by decide, by decide, fun k off h => by cases h⟩ }
+      vars := by
+        intro x hx
+        simp [List.isEmpty_iff.1 hav] at hx }
+    wbs := fun h => by cases h }
+  icalls := fun h => by cases h
+
+theorem mem7_blocks {b : Blk} {al : Alloc} (h : (b, al) ∈ mem7.blocks) :
+    b = .heap 1 ∧ al = { data := Array.replicate 64 (.b 7) } := by
+  simpa [mem7] using h
+
+/-- `mem7` injected into `M7` by `ι`: `heap 1`'s bytes 7 at `A`. -/
+theorem memInj7 : MemInj ι mem7 M7 where
+  nil := rfl
+  mapped := by
+    intro b al h
+    obtain ⟨rfl, rfl⟩ := mem7_blocks h
+    exact ⟨A, rfl, fun _ => by decide, by simp [A]⟩
+  inj := by
+    intro b al b' al' a a' h h' hne
+    obtain ⟨rfl, -⟩ := mem7_blocks h
+    obtain ⟨rfl, -⟩ := mem7_blocks h'
+    exact absurd rfl hne
+  bytes := by
+    refine ⟨fun _ _ => False, fun b al a h ha => ?_⟩
+    obtain ⟨rfl, rfl⟩ := mem7_blocks h
+    have ha' : a = A := by simp [ι, GenG12.ι] at ha; exact ha.symm
+    subst ha'
+    refine ⟨fun o h => h.elim, fun o _ h => h.elim, fun i hi _ => ?_⟩
+    simp only [Array.size_replicate] at hi
+    have hd : (A + BitVec.ofNat 64 i - A).toNat = i := by
+      rw [BitVec.add_comm, BitVec.add_sub_cancel, BitVec.toNat_ofNat]
+      omega
+    simp [ByteRel, M7, hd, hi]
+
+theorem keys7 : KeysNodup mem7 := by simp [KeysNodup, mem7]
+
+theorem sep7 : SepFrom ι (StkAt E) mem7 := by
+  intro b al a h ha y hy
+  obtain ⟨rfl, rfl⟩ := mem7_blocks h
+  have ha' : a = A := by simp [ι, GenG12.ι] at ha; exact ha.symm
+  subst ha'
+  rcases hy with ⟨-, -, h2⟩ | ⟨k, off, hk, -⟩
+  · have hsp : E.sp.toNat = 0x7fff0000 := rfl
+    have hA : A.toNat = 0x20000000000 := rfl
+    rw [hsp] at h2
+    simp only [hA, Array.size_replicate]
+    omega
+  · cases hk
+
+theorem locMatch0 : LocMatch E s0 4 2 m0 where
+  regs := by
+    intro r v hv
+    simp only [s0, Array.getElem?_ofFn] at hv
+    split at hv
+    · simp only [Option.some.injEq] at hv
+      refine ⟨fun k hk => ?_, fun k hk => ?_⟩
+      · split at hv
+        · subst hv
+          rename_i h0
+          subst h0
+          simp only [objX?] at hk
+          cases hk
+          exact ⟨A, rfl, by decide⟩
+        · subst hv; trivial
+      · split at hv
+        · rename_i h0; subst h0; simp [objV?] at hk
+        · subst hv; trivial
+    · cases hv
+  flags := trivial
+  slots := by intro k v h; simp [s0] at h
+  mem := ⟨mem7, rfl, memInj7⟩
+  frame := ⟨rfl, rfl, fun _ => ⟨rfl, by simp only [MState.word, readMem, m0, M7, E, A]; decide,
+    by simp only [MState.word, readMem, m0, M7, E, A]; decide⟩,
+    fun h => by cases h⟩
+  pc := rfl
+
+theorem g13Inv0 (h0 : (kAt lc kt 4 blk4 2).get 0 = some 64) :
+    G3Inv E lc (kAt lc kt 4 blk4 2) s0 where
+  core := by
+    refine ⟨fun r v c hr hv hc => ?_, mem7, rfl, keys7, sep7⟩
+    simp only [s0, Array.getElem?_ofFn] at hv
+    split at hv
+    · simp only [Option.some.injEq] at hv
+      split at hv
+      · rename_i h0'
+        subst hv; subst h0'
+        rw [h0] at hc; cases hc; rfl
+      · subst hv; trivial
+    · cases hv
+  slots := by intro k v h; simp [s0] at h
+
+theorem g7Pre_of {v : Value} (h1 : v.op ≠ .ARM64CMP) (h2 : v.op ≠ .ARM64CMPconst)
+    (h3 : loadOp? v.op = none) (h4 : v.op ≠ .ARM64LDP) (h5 : v.op ≠ .ARM64SUB)
+    (h6 : v.op ≠ .ARM64LoweredNilCheck) (s : LocState) : G7Pre lc s v :=
+  ⟨⟨⟨fun h => by rcases h with h | h <;> contradiction,
+    (fun _ _ _ hl => by rw [h3] at hl; cases hl), fun h => absurd h h5⟩, fun h => absurd h h4⟩,
+    fun h => absurd h h6⟩
+
+/-- `v27` zeroes the 64 bytes of `heap 1`, a valid write in `mem7`. -/
+theorem zeroPre0 (ha0 : (val 27).args[0]? = some 5) (hn : (val 27).auxInt.toInt.toNat = 64)
+    (hrd : GenG1.okThen (s0.read lc 5) isPB = true)
+    (hwr : mem7.write pB (Array.replicate 64 (.b 0)) = some memZ) : ZeroPre lc s0 (val 27) := by
+  intro _ a x ha hx
+  rw [ha0] at ha
+  cases ha
+  obtain ⟨y, hy, hpb⟩ := GenG1.okThen_spec hrd
+  rw [hx] at hy
+  cases hy
+  rw [hn]
+  exact ⟨pB, mem7, memZ, isPB_spec hpb, rfl, hwr⟩
+
+/-- **G13 on `clearAll`**: from the state after the entry values with `b` (`pB`) in `R0` and
+`heap 1` 64 bytes 7 (`mem7`, at `A` in `M7`), `g13_value` runs the zeroing `v27` (the four
+`STP (ZR, ZR)`) and gives the state before `v29`, with the memory `memZ` related to the machine's
+under an activation that extends `E` and is a `G10Env`: the 64 machine bytes at `A` are then 0. -/
+theorem genG13_value_witness :
+    ∃ s1 E' m1, stepLoc GenG2.env lc s0 (val 27) = .ok s1 ∧ s1.mem = .mem memZ ∧
+      E.Extends E' ∧ G10Env lc g L ps 0 tab E' ∧ PStar GenG2.H0 L ps.toList 0 m0 m1 ∧
+      LocMatch E' s1 4 3 m1 ∧ G3Inv E' lc (kAt lc kt 4 blk4 3) s1 ∧
+      ∀ i, i < 64 → m1.mem (A + BitVec.ofNat 64 i) = 0 := by
+  obtain ⟨hc, hav, hsl, hm4, hb, hv27, hi2, hop, ha0, hn, hk0, hrd, hwr, hrun, hpw⟩ := facts
+  obtain ⟨s1, hs1, hz⟩ := GenG1.okThen_spec hrun
+  have hE := g13Env hc hav hsl
+  have hne : ∀ o : Op, o ≠ .ARM64LoweredZero → (val 27).op ≠ o :=
+    fun o h h' => h (h'.symm.trans hop)
+  obtain ⟨E1, m1, hx1, hE1, hp1, hm1', hinv1⟩ := g13_value (H := GenG2.H0) (env := GenG2.env) hc
+    hE hm4 hb hi2 hv27 (by rw [hop]; rfl) locMatch0 (g13Inv0 hk0)
+    ⟨g7Pre_of (hne _ (by decide)) (hne _ (by decide)) (by rw [hop]; simp [loadOp?, narrowLoad?])
+      (hne _ (by decide)) (hne _ (by decide)) (hne _ (by decide)) _, zeroPre0 ha0 hn hrd hwr⟩
+    (fun h => absurd h (hne _ (by decide))) (GenG10.icallOK_ne (by rw [hop]; rfl))
+    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide))) hs1
+  refine ⟨s1, E1, m1, hs1, memIsZ_spec hz, hx1, hE1, hp1, hm1', hinv1, fun i hi => ?_⟩
+  obtain ⟨mm, hmm, hMI⟩ := hm1'.mem
+  rw [memIsZ_spec hz] at hmm
+  cases hmm
+  obtain ⟨W, hW⟩ := hMI.bytes
+  have hA : E1.ι (.heap 1) = some A := hx1.2 _ _ rfl
+  obtain ⟨hw, -, hby⟩ := hW (.heap 1) { data := Array.replicate 64 (.b 0) } A (by simp [memZ]) hA
+  have hnw : ∀ o, ¬ W (.heap 1) o := by
+    intro o ho
+    obtain ⟨p, hp, -⟩ := hw o ho
+    by_cases ho64 : o < 64
+    · rw [hpw o ho64] at hp; cases hp
+    · simp [ptrWordAt?] at hp; omega
+  have := hby i (by simpa using hi) (fun o ho => absurd ho (hnw o))
+  simp only [Array.getElem_replicate, ByteRel] at this
+  exact this.symm
+
 end GoFV.Proof.Witness.GenG13

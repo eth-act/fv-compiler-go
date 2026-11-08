@@ -149,7 +149,7 @@ related by `LocMatch` (`genG1_witness_50`, `genG1_witness_30`).
 
 **Coverage** (`lake exe gen-check`, quick-v10, 9,297 functions): see §5.
 
-## 4. Slices G2–G12, and the next slices
+## 4. Slices G2–G13, and the next slices
 
 **Slice G2** (`GoFV/Gen/Check2.lean`, `checkG2 lc ps bstart g`; proven sound, `g2_value`,
 `g2_term`): G1 plus the most frequent blockers of §5 — `CALLstatic` of a symbol with an ABI
@@ -415,25 +415,50 @@ pointer converted to `uintptr` is its Phase 1 address when it has one and is con
 takes the value's shape as a register read does (`valRel_retypeL`). G11's values go through
 `vk11_step`. No new premise.
 
-Later slices, by how many functions outside G12 each blocker occurs in (quick-v10, §5; sole
+**Slice G13: zeroing** (`GoFV/Gen/Check13.lean`, `checkG13 lc ps bstart g`, returning G4's
+tables; proven sound, `g13_value`, `g13_term`, `g13_nilPanic`): G12 with `LoweredZero [n] p mem`
+(`vkind13`, `VK13.zero`; `n ≥ 16`, larger blocks are `LoweredZeroLoop`'s): no temporary, `p` in a
+register of class 64, the memory last, a memory with no home; genssa's `zeroTail` stores
+(`ssa.go:1503-1523`): an `STP (ZR, ZR), off(Rp)` per 16 bytes, then of the `r = n mod 16` bytes
+left an `MOVD ZR, off(Rp)` of 8 when `r > 8` and an `MOVD ZR` of the last 8 bytes (overlapping the
+previous store) when bytes remain (`zeroOffs`, `zeroPat`). `checkG13` decides per value that the
+stores lie inside the `n` bytes and cover each of them (`zeroCovers`). A value now emits several
+Progs in order, each after no-ops (`VKind2.progs`, `Cx2.many`, `ManyAt2`); G2–G12 never do.
+
+How the proof discharges G13's obligations (`G13.lean`):
+
+- **`runLoc`** writes `n` zero bytes at `p`'s address (`Arm64.zero`, `stepLoc_zero`), `poison`
+  when the write is invalid. The new per-value premise `G13Pre` adds to `G7Pre` that the write is
+  valid (`ZeroPre`: Go zeroes memory it owns, as `G4Pre` and `NilPre` ask a load or a nil check to
+  touch valid bytes).
+- **The machine** runs the stores in order (`zero_run`, `progStep_zero`): every byte a store covers
+  is 0 (`zeroMem_cov`), every other byte unchanged (`zeroMem_out`). By `zeroCovers` the bytes at the
+  write's injected address are exactly the `n` zeros `runLoc` wrote and every other byte is the old
+  one, which keeps `MemInj` (`memInj_writeAny`, `MemN.lean`: `memInj_write` for any machine memory
+  that holds the written bytes and agrees elsewhere). The zeroed bytes lie inside a live block
+  (`write_inside`), so away from the frame (`SepFrom`): the saved words and the spill slots keep
+  their bytes (`g13_zero`). G12's values go through `vk12_step`.
+
+Later slices, by how many functions outside G13 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
-1. **Calls** with stack arguments (`stack argument` 317 (10)) or floating-point arguments or
+1. **Register-index loads**: `MOVDloadidx8` 482 (53, counted with `MOVDloadidx`), `MOVBUloadidx`
+   353.
+2. **Calls** with stack arguments (`stack argument` 317 (10)) or floating-point arguments or
    results.
-2. **Frame variables beyond G6**: parameters and results (`NAME_PARAM`, `Blk.local`: `frame
+3. **Frame variables beyond G6**: parameters and results (`NAME_PARAM`, `Blk.local`: `frame
    variable operand class`, 294 (87)) and variables whose address is converted to an integer
-   (`frame variable with an integer address`): option 2 of semantics3 §4.3 (addresses as a
-   parameter of the semantics); `LoweredZero` 540 (95); slots of other sizes (`slot … frame
-   operand, size or alignment`, 717).
-3. **Other values**: `MOVDnop` 750 (55), `ADDshiftLL` 678, the register-index loads
-   (`MOVDloadidx8` 482 (48), `MOVBUloadidx` 353), bounds panics (`LoweredPanicBoundsRR` 616 (26)),
-   `GetG` 430 (89), the acquire loads `LDAR`/`LDARW` (383, 277); `SP` after the entry values (40).
-   `MOVDnop x` emits no code but `runLoc` gives it the upper bits of `x`'s register (`movdLoc`:
-   the zero or sign extension of the narrow value that produced `x`; each of its 1,520 uses in the
-   trimmed functions of quick-v10 widens its argument, 1,431 of them a narrow load), while
-   `LocMatch` relates a narrow integer to the low bits of its register only. Its slice needs an
-   invariant on the upper bits of the registers that narrow loads write and that the values
-   between the load and the `MOVDnop` keep.
+   (`frame variable with an integer address`, 197 (11)): option 2 of semantics3 §4.3 (addresses as
+   a parameter of the semantics); slots of other sizes (`slot … frame operand, size or alignment`,
+   717).
+4. **Other values**: `MOVDnop` 750 (58), `ADDshiftLL` 678 (55), bounds panics
+   (`LoweredPanicBoundsRR` 616 (26)), `GetG` 430 (89), the acquire loads `LDAR`/`LDARW` (383,
+   277); `SP` after the entry values (59). `MOVDnop x` emits no code but `runLoc` gives it the
+   upper bits of `x`'s register (`movdLoc`: the zero or sign extension of the narrow value that
+   produced `x`; each of its 1,520 uses in the trimmed functions of quick-v10 widens its argument,
+   1,431 of them a narrow load), while `LocMatch` relates a narrow integer to the low bits of its
+   register only. Its slice needs an invariant on the upper bits of the registers that narrow
+   loads write and that the values between the load and the `MOVDnop` keep.
 
 ## 5. Results
 
@@ -454,6 +479,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G10 | 3,149 (33.87%) | 52,418 |
 | G11 | 3,514 (37.79%) | 59,565 |
 | G12 | 3,679 (39.57%) | 64,013 |
+| G13 | 3,755 (40.38%) | 69,470 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -550,6 +576,12 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `convKind_spec`).
 - `G12.lean`: `stepLoc_conv`, `valRel_convert`, `g12_conv`, `vk12_step`, `g12_value`,
   `g12_nilPanic`, `g12_term`.
+- `Spec13.lean`: what `checkG13` accepted (`checkG13_spec`, `vkind13_spec` with `VK13`,
+  `zeroKind_spec`, `zeroCovers_spec`); `Spec2.lean`: `Cx2.many_spec` with `ManyAt2`.
+- `MemN.lean`: `memInj_writeAny`, `write_inside`.
+- `G13.lean`: `stepLoc_zero`, `zeroStore`/`zeroMem` (`zeroMem_cov`, `zeroMem_out`),
+  `progStep_zero`, `zero_run`, `ZeroPre`, `G13Pre`, `g13_zero`, `vk13_step`, `g13_value`,
+  `g13_nilPanic`, `g13_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -578,7 +610,10 @@ the closure pointer `LoweredGetClosurePtr` from the entry of a closure call whos
 pointer to a global, is in `X26` (`CloOK`: `cloOK0`)), `GenG12.lean` (`runtime.subtractb`, which
 G11 rejects: `g12_value` on `uintptr(unsafe.Pointer(p))` of a pointer 16 bytes into the heap object
 `heap 1`, injected at its Phase 1 address `2^41`, so `R0` holds the integer `2^41 + 16` that is the
-machine word). Each decides its inputs by compiled evaluation (`native_decide`, pinned in
+machine word), `GenG13.lean` (`(*pageBits).clearAll`, which G12 rejects: `g13_value` on
+`LoweredZero [64]`, the four `STP (ZR, ZR)` off `R0`, of the heap object `heap 1` holding 64 bytes
+7 at `2^41`, after which `runLoc`'s memory holds 64 zero bytes there and so do the machine's).
+Each decides its inputs by compiled evaluation (`native_decide`, pinned in
 `scripts/axioms-allowlist.txt`).
 
 ## 6. Future work: recursion through function values
