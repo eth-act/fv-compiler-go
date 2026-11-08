@@ -76,7 +76,7 @@ obstacle counts on full-v6, "Findings" in `rules.md` has the counterexamples):
 - `generic.rules:1071`/`:1075` (`Convert` of an integer offset from a converted pointer: integers
   carry no provenance, so the pointer made from `addr(p) + off` need not be in `p`'s allocation,
   #156; the most frequent sole obstacle on full-v6, 255 functions).
-- `:579` (`Lsh32x64` of `And32 (Rsh32x64 x c) d` by `e`, `c < e`: false for `c < 0`, `x = -1`,
+- `:579` (#542, a Go bug, upstream golang/go#82763; `Lsh32x64` of `And32 (Rsh32x64 x c) d` by `e`, `c < e`: false for `c < 0`, `x = -1`,
   `d = 1`, `c = -1`, `e = 1` gives `2` against `0`; 9 functions).
 - `MemEq` → `Eq*` of two `Load`s, `:1560`/`:1568`/`:1576`/`:1584` (with the read-only loads
   `:1564`/`:1572`/`:1580`/`:1588` they fire on; about 330 functions, in pairs): `memEq` compares

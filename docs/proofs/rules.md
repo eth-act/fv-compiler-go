@@ -2025,6 +2025,32 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   types"), NONE 54; all 1056 proven rules SAT (its oracles answer every atom with a
   boolean, so they are `BoolTyped`).
 
+- `lake exe arm-sat [--trials=N] [--debug] [<file>:<line>…]` (`GoFVTest/Proof/ArmSat.lean`) does
+  the same for `ARM64.rules` and `ARM64latelower.rules`: value rules against `ArmRule.Sound1`,
+  ellipsis rules against `SetOpSoundT` (same arguments, the op's natural shape), block rules on
+  one control against `BlockRuleL.Sound` (a bound block auxint `[t]` gets a random bit number).
+  Its denotation extends `opValL` by the memory ops `runL` evaluates with the activation
+  (`arm64Op`'s loads, stores, pair and indexed stores, without symbols) and Phase 1's
+  `Zero`/`Move`, so memory rules are checked on a random memory of two heap blocks (results
+  compared with `Mem.Refines`); leaves are integers, booleans, flags, float bit patterns (NaNs of
+  both kinds and signs), pointers as their address words and memories by their consumer;
+  `armBFAuxInt`, the bit-field accessors, the `flagConstant` methods and the other arm64 helpers
+  are evaluated as `GoFV.Rules.Eval` does (a helper panic in a result auxint is a `CEX`). Not
+  modelled: symbols (`{sym}`, `symIsRO`), typed `Store {t}`/`Load <t>` conditions, calls,
+  atomics, nil checks, SIMD. Its `CEX`es include the documented model limits (narrow operands of
+  the `Lsh*` ellipsis rules, `InvertFlags`, pointer provenance) and artefacts of random node types
+  that Go never builds; the Go bugs it found are listed in "Findings". Last run (`--trials=3000`,
+  on main 8d1b56e): value rules SAT 1005, CEX 97, ORACLE 7, NONE 70; ellipsis rules SAT 109,
+  CEX 15 (the `Lsh*` and `Ctz{8,16}NonZero` renames onto a wider op, and an `AddPtr` with a
+  narrow index), NONE 42 and SKIP 5 (atomics, calls, nil checks and the other renames
+  `ArmRule.Rename`/`ArmRule.Mem` cover); block rules SAT 194, CEX 12 (#579, #580 and the float
+  `InvertFlags` rules), NONE 15 (`If` of an arm64 condition, whose control is a register, not a
+  boolean), SKIP 1 (`JumpTable`). The 70 value rules without an instance need symbols (15), typed
+  `Store {t}`/`Load <t>` (11), calls, arguments or bounds panics (8), the producer of a
+  `MOVDreg` (5), barriers, prefetches or SIMD (4), the index of an indexed store held by its
+  constant operand (5), or specific bit-field constants (22; `ARMSAT_RELAX=1`, which waives the
+  register-width premise, finds instances of 5 of them).
+
 `Comm.lean` has `sub16_not_comm` (the commutativity obligation is not trivial).
 
 ## Findings
@@ -2249,6 +2275,23 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   identity write: at `dst1 = dst2 = LocalAddr {x}` of an 8-byte `x`, a later `Load` of `x` reads
   `0` in the source and `poison` in the target. Go relies on the `VarDef` not clobbering the
   zeroed bytes. 48 functions on full-v6 as a sole obstacle.
+
+- **Go bugs found by `lake exe arm-sat`** (`GoFVTest/Proof/ArmSat.lean`, "Non-vacuity"; each
+  confirmed by a program under `qemu-aarch64-static`, `upstream-candidate`):
+  - **#543**, `ARM64.rules:1608–1613` (`EXTRWconst` from `(ADD|OR|XOR)shiftLL <32-bit> [c] (UBFX
+    [bfc] x) x2`): the condition evaluates `armBFAuxInt(32-c, c)`, which panics at `c = 0`; a
+    shift count that only `sccp` proves 0 crashes the arm64 compiler.
+  - **#579**, `ARM64.rules:1310–1320`, `:1370–1371` (`LTnoov`/`LEnoov`/`GTnoov`/`GEnoov` and
+    `LessThanNoov`/`GreaterEqualNoov` of a `FlagConstant`): `flagConstant.ltNoov` and its
+    siblings (`rewrite.go:2383–2394`) are `lt() && !V` etc., while the instructions are `MI`,
+    `MI || EQ`, `PL && NE`, `PL`; they differ when the addition overflows. `BlockRuleL.Sound` is
+    false for them under `Arm64.taken`.
+  - **#580**, `ARM64.rules:1346–1349`, `:1388–1389` (a `noov` condition of `InvertFlags`): the
+    sign of `x - y` is not the negated sign of `y - x` when the difference is `MinInt`; reached
+    through `(LT (CMPconst [0] (MSUB a x y))) => (LTnoov (CMP a (MUL x y)))` and the `CMP`
+    canonicalization `:1003`.
+  The `:1342–1345` float `InvertFlags` block rules are also false under the semantics (model
+  limit, "`InvertFlags` rules outside the ghost-bit semantics").
 
 ## Narrow result types
 

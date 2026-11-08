@@ -231,3 +231,7 @@ root = "GoFVTest.DwarfParity"
 [[lean_exe]]
 name = "debug-parity"
 root = "GoFVTest.DebugParity"
+
+[[lean_exe]]
+name = "arm-sat"
+root = "GoFVTest.Proof.ArmSat"
