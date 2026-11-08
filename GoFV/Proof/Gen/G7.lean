@@ -385,7 +385,7 @@ theorem vk7_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat →
     {E : MatchEnv} {bid : ID} {i j j' : Nat} {id : ID} {v : Value} {s s' : LocState}
     {m : MState} {K : KMap} {kd : VKind2}
     (hE : G6Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E)
-    (F : Facts lc sym text az ez ps.toList ret E) (hhome4 : ∀ i, homeOK4 lc i = true)
+    (F : Facts lc sym text az ez ps.toList ret E) (hns : CallsNotSlot lc)
     (hcf : checkFrame lc g = .ok ()) (hv : lc.ctx.f.value? id = some v) (hVK : VK7 lc g v kd)
     (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
@@ -398,7 +398,7 @@ theorem vk7_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat →
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' := by
   cases hVK with
   | g6 _ hVK6 =>
-    exact vk6_step hE F hhome4 hcf hv hVK6 hvs htemp hj hj' hreads hm hinv hpre.1 hcall hs
+    exact vk6_step hE F hns hcf hv hVK6 hvs htemp hj hj' hreads hm hinv hpre.1 hcall hs
   | nil hop hsz2 hhn hdt hao hma =>
     obtain ⟨m', h1, h2, h3, h4⟩ := g7_nil (H := H) F hm hinv.core hinv.slots
       (kread_of_reads hreads) (knext_kStep fun _ => (hs_none hhn).noRegs) hpre.2 hj hj' hop hsz2
@@ -448,7 +448,8 @@ theorem g7_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps
   have F : Facts c.cx.lc sym text az ez c.cx.ps.toList ret E :=
     ⟨hl, clsReg_of_home4 hhome4, hnd, hlt, hret, hA⟩
   rw [kAt_succ hi hv]
-  exact vk7_step hE0 F hhome4 hcf hv hVK hvs htemp hj hj' hreads hm hinv hpre hcall hs
+  exact vk7_step hE0 F (call_not_slot4 hhome4) hcf hv hVK hvs htemp hj hj' hreads hm hinv hpre
+    hcall hs
 
 /-- **G7, nil panics.** A nil check of a function `checkG7` accepted whose `runLoc` step panics
 (its pointer is nil) panics with `nilDeref`, and so does `runProg`: its steps reach the check's

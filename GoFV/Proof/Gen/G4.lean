@@ -383,11 +383,14 @@ theorem clsReg_of_home4 {lc : LocCtx} (h : ∀ i, homeOK4 lc i = true) :
   simp only [homeOK3, hh, Bool.or_eq_true, beq_iff_eq, hr, false_or] at this
   exact this
 
+/-- No static call is homed in a slot: what the value steps of G3 and later slices need of the
+homes (`vk3_step`), beyond the register homes' classes (`Facts`). -/
+def CallsNotSlot (lc : LocCtx) : Prop :=
+  ∀ c u, lc.ctx.f.value? c = some u → u.op = .ARM64CALLstatic → ∀ k, lc.home c ≠ some (.slot k)
+
 /-- A call's home is no slot (`homeOK4`). -/
-theorem call_not_slot4 {lc : LocCtx} {c : ID} {u : Value} (h : ∀ i, homeOK4 lc i = true)
-    (hu : lc.ctx.f.value? c = some u) (hcop : u.op = .ARM64CALLstatic) :
-    ∀ k, lc.home c ≠ some (.slot k) := by
-  intro k hk
+theorem call_not_slot4 {lc : LocCtx} (h : ∀ i, homeOK4 lc i = true) : CallsNotSlot lc := by
+  intro c u hu hcop k hk
   have := homeOK3_of_4 (h c) (fun a b hab => by rw [hk] at hab; cases hab)
   simp [homeOK3, homeOK2, hk, hu, hcop] at this
 
@@ -402,7 +405,7 @@ theorem vk4_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat →
     {E : MatchEnv} {bid : ID} {i j j' : Nat} {id : ID} {v : Value} {s s' : LocState}
     {m : MState} {K : KMap} {kd : VKind2}
     (hE : G2Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E)
-    (F : Facts lc sym text az ez ps.toList ret E) (hhome4 : ∀ i, homeOK4 lc i = true)
+    (F : Facts lc sym text az ez ps.toList ret E) (hns : CallsNotSlot lc)
     (hcf : checkFrame lc g = .ok ()) (hv : lc.ctx.f.value? id = some v) (hVK : VK4 lc g v kd)
     (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
@@ -426,7 +429,7 @@ theorem vk4_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat →
     fun m' ⟨h1, h2, h3, h4⟩ => ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE0, h1, h2, ⟨h3, h4⟩⟩
   cases hVK with
   | g3 _ _ _ _ hVK3 =>
-    exact vk3_step hE0 F (fun _ _ hu hcop => call_not_slot4 hhome4 hu hcop) hcf hv hVK3 hvs htemp
+    exact vk3_step hE0 F hns hcf hv hVK3 hvs htemp
       hj hj' hreads hm hinv hpre.1 hcall hs
   | ldp hop hsz2 hax hty h0 h1 h80 h81 hao hma hh hne hza hzb hda hdb hoa hob =>
     obtain ⟨m', h⟩ := g4_ldp (H := H) F hm hinv.core hinv.slots hR
@@ -487,7 +490,8 @@ theorem g4_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps
     rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some]
   have hreads := ((checkK_spec hk).2 bid hbid blk hb).1 i id v hi hv
   rw [kAt_succ hi hv]
-  exact vk4_step hE0 ⟨hl, clsReg_of_home4 hhome4, hnd, hlt, hret, hA⟩ hhome4 hcf hv hVK hvs htemp
+  exact vk4_step hE0 ⟨hl, clsReg_of_home4 hhome4, hnd, hlt, hret, hA⟩ (call_not_slot4 hhome4) hcf
+    hv hVK hvs htemp
     hj hj' hreads hm hinv hpre hcall hs
 
 /-- **G4, terminators.** A terminator of a function `checkG4` accepted with the class table `kt`

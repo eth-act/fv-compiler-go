@@ -1,16 +1,17 @@
 # Plan: the Phase 3 proofs (I7, #553)
 
-Status: slices G1–G9 of the genssa validator are implemented (`GoFV/Gen/Check.lean`,
-`GoFV/Gen/Check2.lean`, …, `GoFV/Gen/Check9.lean`, probe `gen-check`) and proven sound
+Status: slices G1–G10 of the genssa validator are implemented (`GoFV/Gen/Check.lean`,
+`GoFV/Gen/Check2.lean`, …, `GoFV/Gen/Check10.lean`, probe `gen-check`) and proven sound
 (`GoFV/Proof/Gen/G1.lean`: `g1_value`, `g1_term`; `GoFV/Proof/Gen/G2.lean`: `g2_value`, `g2_term`;
 `GoFV/Proof/Gen/G3.lean`: `g3_value`, `g3_term`; `GoFV/Proof/Gen/G4.lean`: `g4_value`, `g4_term`;
 `GoFV/Proof/Gen/G5.lean`: `g5_value`, `g5_term`; `GoFV/Proof/Gen/G6.lean`: `g6_value`, `g6_term`;
 `GoFV/Proof/Gen/G7.lean`: `g7_value`, `g7_term`, `g7_nilPanic`; `GoFV/Proof/Gen/G8.lean`:
 `g8_value`, `g8_term`, `g8_nilPanic`; `GoFV/Proof/Gen/G9.lean`: `g9_value`, `g9_term`,
-`g9_nilPanic`; §3–§5), with witnesses on corpus functions (`GoFV/Proof/Witness/GenG1.lean`, …,
-`GenG9.lean`).
-G2–G9 rest on the trusted callee contract `CallOK`, G8 and G9 also on the write-barrier hook
-contract `WbOK` (§4, `docs/proofs/STATUS.md` Assumptions).
+`g9_nilPanic`; `GoFV/Proof/Gen/G10.lean`: `g10_value`, `g10_term`, `g10_nilPanic`; §3–§5), with
+witnesses on corpus functions (`GoFV/Proof/Witness/GenG1.lean`, …, `GenG10.lean`).
+G2–G10 rest on the trusted callee contract `CallOK`, G8–G10 also on the write-barrier hook
+contract `WbOK`, G10 also on the indirect callee contract `ICallOK` (§4, `docs/proofs/STATUS.md`
+Assumptions).
 Context:
 `docs/plans/semantics3.md` (§4 `LocMatch`, §6 hooks, §7 layers), `docs/PASSES3.md` (the steps
 A1–F2), `docs/plans/regalloc-check.md` (the Phase 2 pattern this plan follows: an untrusted port
@@ -143,7 +144,7 @@ related by `LocMatch` (`genG1_witness_50`, `genG1_witness_30`).
 
 **Coverage** (`lake exe gen-check`, quick-v10, 9,297 functions): see §5.
 
-## 4. Slices G2–G9, and the next slices
+## 4. Slices G2–G10, and the next slices
 
 **Slice G2** (`GoFV/Gen/Check2.lean`, `checkG2 lc ps bstart g`; proven sound, `g2_value`,
 `g2_term`): G1 plus the most frequent blockers of §5 — `CALLstatic` of a symbol with an ABI
@@ -351,20 +352,49 @@ How the proof discharges G9's obligations (`G9.lean`): `g2_call` never used `res
 of the class map after the call only `KCall`, which the class table gives for distinct result
 registers (`kcall_kStep`). G8's other values go through `vk8_step`.
 
-Later slices, by how many functions outside G9 each blocker occurs in (quick-v10, §5; sole reason
-in parentheses):
+**Slice G10: interface and closure calls** (`GoFV/Gen/Check10.lean`, `checkG10 lc ps bstart g`,
+returning G4's tables; proven sound, `g10_value`, `g10_term`, `g10_nilPanic`): G9 with
+`ssa.go`'s indirect calls (`vkind10`, `VK10`):
 
-1. **Interface and closure calls** (results homes 1,215, `CALLinter` 764, `CALLclosure` 359,
-   `LoweredGetClosurePtr` 660 (316)); calls with stack arguments (`stack argument` 311) or
-   floating-point arguments or results (125).
+- `CALLinter code args… mem` and `CALLclosure code ctx args… mem` (`icallLead`: 1 or 2 leading
+  arguments that are no register pieces): the code pointer in a register `Rn` (`R0`–`R26`) at a
+  register shape, the closure context in `R26` (`ctxReg`, Go register 25: the context register
+  of Go's internal ABI), the remaining register arguments in their ABI registers and the results
+  in distinct ABI result registers `R0`–`R15` at register shapes then the memory, as a static call
+  (`icallErr`); `CALL (Rn)` (`TYPE_MEM`, `NAME_NONE`, register `Rn`: `State.Call` without an
+  `AuxCall` symbol; `icallPat`);
+- `SelectN` of such a call: G2's selects of a static call (`selKind`);
+- their `results` homes (`homeOK10`).
+
+How the proof discharges G10's obligations (`G10.lean`):
+
+- **`runLoc`'s call** (`stepLoc_icall`, `clobber_icall`): the same writes as a static call's (the
+  ops clobber the same registers and the flags, `icall_regInfo`), whatever callee `callOp` runs.
+- **The machine** (`g10_icall`): `CALL (Rn)` puts the return address in `X30` and the content of
+  `Rn` in the PC (`progStep_callReg`); `Rn` is no `X30` (`objX?_ne30`). The code register is
+  related to `runLoc`'s code pointer and `R26` to the closure context (`arg_rel` under the class
+  table); the callee is the trusted contract `ICallOK` (STATUS Assumptions): the code register's
+  address is no Prog of the caller and not its return address, and the hook there satisfies
+  `CallSpec`, the static callee's contract. The rest is `g2_call`'s argument: the results in the
+  result registers, the kept registers, the frame and the slots under the larger injection.
+- **The selects** go through `g2_selMem`/`g2_selReg`, which need of the call only that its home is
+  no slot (`icallNotSlot10`). `G10Env` adds to `G8Env` that a frameless function has no indirect
+  call. G9's values go through `vk9_step`, which now takes what it used of the homes
+  (`CallsNotSlot`: no static call homed in a slot) instead of `homeOK4` for every value.
+
+Later slices, by how many functions outside G10 each blocker occurs in (quick-v10, §5; sole
+reason in parentheses):
+
+1. **The closure context** `LoweredGetClosurePtr` 660 (366): `R26` holds the context at entry.
+   Calls with stack arguments (`stack argument` 317) or floating-point arguments or results.
 2. **Frame variables beyond G6**: parameters and results (`NAME_PARAM`, `Blk.local`: `frame
    variable operand class`, 294 (85)) and variables whose address is converted to an integer
-   (`frame variable with an integer address`, 197): option 2 of semantics3 §4.3 (addresses as a
-   parameter of the semantics); `LoweredZero` 540 (64); slots of other sizes (`slot … frame
+   (`frame variable with an integer address`): option 2 of semantics3 §4.3 (addresses as a
+   parameter of the semantics); `LoweredZero` 540 (65); slots of other sizes (`slot … frame
    operand, size or alignment`, 717).
-3. **Other values**: `Convert` 938 (154), `MOVDnop` 750 (47), `ADDshiftLL` 678, the register-index
+3. **Other values**: `Convert` 938 (165), `MOVDnop` 750 (47), `ADDshiftLL` 678, the register-index
    loads (`MOVDloadidx8` 482, `MOVBUloadidx` 353), bounds panics (`LoweredPanicBoundsRR` 616),
-   `GetG` 430 (57), the acquire loads `LDAR`/`LDARW` (383, 277).
+   `GetG` 430 (59), the acquire loads `LDAR`/`LDARW` (383, 277).
 
 ## 5. Results
 
@@ -382,6 +412,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G7 | 2,109 (22.68%) | 26,795 |
 | G8 | 2,323 (24.98%) | 39,922 |
 | G9 | 2,551 (27.43%) | 44,756 |
+| G10 | 3,149 (33.87%) | 52,418 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -465,6 +496,11 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
 - `Spec9.lean`: what `checkG9` accepted (`checkG9_spec`, `vkind9_spec` with `VK9`,
   `callPat_spec`).
 - `G9.lean`: `vk9_step`, `g9_value`, `g9_nilPanic`, `g9_term`.
+- `Spec10.lean`: what `checkG10` accepted (`checkG10_spec`, `vkind10_spec` with `VK10`,
+  `icallKind_spec`, `icallErr_spec`, `selKind_spec`, `icallPat_spec`, `homeOK4_of_10`).
+- `G10.lean`: `ICallOK`, `G10Env`; `stepLoc_icall`, `icall_regInfo`, `clobber_icall`,
+  `clobber_icall_reg`, `progStep_callReg`, `objX?_ne30`; `g10_icall`, `clsReg_of_home10`,
+  `callsNotSlot10`, `icallNotSlot10`, `vk10_step`, `g10_value`, `g10_nilPanic`, `g10_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -485,5 +521,8 @@ the request `LoweredWB [2]` (`CALL runtime.gcWriteBarrier2(SB)`), its `Select0` 
 under a hook that is `wbHook` with the buffer at `2^41`, which satisfies `WbOK`), `GenG9.lean`
 (`runtime.fint64to32`, which G8 rejects (`R0` holds its 64-bit argument and its call's 32-bit
 result): `g9_value` on the static call `CALL runtime.fintto32(SB)` with a callee that returns 7 in
-`R0` (`CallOK`: `callOKc`), its result and its memory). Each decides its inputs by compiled
-evaluation (`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
+`R0` (`CallOK`: `callOKc`), its result and its memory), `GenG10.lean` (`sync.Locker.Lock`, which
+G9 rejects: `g10_value` on the interface call `CALL (R2)` through the code pointer of a global
+function, with a callee hook at that address that returns at once (`ICallOK`: `icallOKc`), and
+its memory). Each decides its inputs by compiled evaluation (`native_decide`, pinned in
+`scripts/axioms-allowlist.txt`).

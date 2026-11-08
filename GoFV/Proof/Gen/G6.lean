@@ -489,7 +489,7 @@ theorem vk6_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat →
     {E : MatchEnv} {bid : ID} {i j j' : Nat} {id : ID} {v : Value} {s s' : LocState}
     {m : MState} {K : KMap} {kd : VKind2}
     (hE : G6Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E)
-    (F : Facts lc sym text az ez ps.toList ret E) (hhome4 : ∀ i, homeOK4 lc i = true)
+    (F : Facts lc sym text az ez ps.toList ret E) (hns : CallsNotSlot lc)
     (hcf : checkFrame lc g = .ok ()) (hv : lc.ctx.f.value? id = some v) (hVK : VK6 lc g v kd)
     (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
@@ -515,7 +515,7 @@ theorem vk6_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat →
   cases hVK with
   | g5 hVK5 =>
     obtain ⟨E', m', hx, hE', h⟩ :=
-      vk5_step hE0 F hhome4 hcf hv hVK5 hvs htemp hj hj' hreads hm hinv hpre hcall hs
+      vk5_step hE0 F hns hcf hv hVK5 hvs htemp hj hj' hreads hm hinv hpre hcall hs
     exact ⟨E', m', hx, ⟨hE', hvars.extend hx⟩, h⟩
   | var hfv hVar =>
     have hι := var_addr hfv hv hvars
@@ -597,7 +597,8 @@ theorem g6_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps
   have F : Facts c.cx.lc sym text az ez c.cx.ps.toList ret E :=
     ⟨hl, clsReg_of_home4 hhome4, hnd, hlt, hret, hA⟩
   rw [kAt_succ hi hv]
-  exact vk6_step hE0 F hhome4 hcf hv hVK hvs htemp hj hj' hreads hm hinv hpre hcall hs
+  exact vk6_step hE0 F (call_not_slot4 hhome4) hcf hv hVK hvs htemp hj hj' hreads hm hinv hpre
+    hcall hs
 
 /-- **G6, terminators.** A terminator of a function `checkG6` accepted with the class table `kt`
 that goes to a successor, from a state whose registers hold the classes of the block's end, is
