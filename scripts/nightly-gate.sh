@@ -11,9 +11,13 @@
 #   parity    scripts/parity.sh on the full corpus
 #   check     whole-pipeline gofv-ssa-opt --check on the full corpus
 #   e2e       driver toolchain (rebuilt when patches/go changed) + scripts/driver-e2e.sh --mode full
-# and two reports that never turn the gate red (issue #189):
+# and reports that never turn the gate red (issues #189, #554):
 #   verified      gofv-ssa-opt --check --verified on the full corpus (verified pipeline vs stock)
+#   gen-parity, asm-parity, dwarf-parity  the Phase 3 ports on the full corpus (docs/PARITY.md)
+#   back-check    gofv-ssa-opt --back-check on the full corpus: the driver's back end (AllocFrame
+#                 through the DWARF writers, chained) vs stock
 #   e2e-verified  scripts/driver-e2e.sh --verified (programs built with the verified pipeline)
+#   e2e-full3     scripts/driver-e2e.sh --mode full3 (Lean through trim and the Lean back end)
 # then append the result to the "Nightly gate" status issue (label nightly-gate; created if
 # missing) and, when red, open an issue (label gate-red) for the first failing step, or comment on
 # the open one for that step.
@@ -228,7 +232,8 @@ gate_steps() {
     return 0
   }
 
-  step build gate_lake GoFV GoFVTest gofv-ssa-opt pass-parity ssa-check
+  step build gate_lake GoFV GoFVTest gofv-ssa-opt pass-parity ssa-check gen-parity asm-parity \
+    dwarf-parity
   [ "${results[-1]}" = pass ] || built=0
   step allproof gate_allproof
   step no-sorry python3 scripts/no-sorry.py
@@ -241,7 +246,9 @@ gate_steps() {
     skip axioms "build failed"
   fi
   if [ -z "$corpus" ] || [ ! -d "$corpus" ]; then
-    for s in ssa-check parity check; do skip "$s" "no full corpus"; done
+    for s in ssa-check parity check verified gen-parity asm-parity dwarf-parity back-check; do
+      skip "$s" "no full corpus"
+    done
     [ -n "$first" ] || first=corpus
   elif [ "$built" = 1 ]; then
     step ssa-check scripts/memcap.sh .lake/build/bin/ssa-check "$corpus"
@@ -251,20 +258,34 @@ gate_steps() {
     report verified timeout "${GATE_VERIFIED_TIMEOUT:-6h}" scripts/memcap.sh \
       .lake/build/bin/gofv-ssa-opt --check --verified --jobs 4 --max-report 5 \
       --table "$run/verified.md" "$corpus"
+    local p
+    for p in gen-parity asm-parity dwarf-parity; do
+      report "$p" timeout "${GATE_PHASE3_TIMEOUT:-2h}" scripts/memcap.sh .lake/build/bin/"$p" \
+        --jobs 4 --max-report 5 --table "$run/$p.md" "$corpus"
+    done
+    report back-check timeout "${GATE_PHASE3_TIMEOUT:-2h}" scripts/memcap.sh \
+      .lake/build/bin/gofv-ssa-opt --back-check --jobs 4 --max-report 5 --table "$run/back-check.md" \
+      "$corpus"
   else
-    for s in ssa-check parity check verified; do skip "$s" "build failed"; done
+    for s in ssa-check parity check verified gen-parity asm-parity dwarf-parity back-check; do
+      skip "$s" "build failed"
+    done
   fi
   if [ "$built" = 1 ]; then
     step e2e gate_e2e "$run"
     if [ -x tmp/go-driver/bin/go ]; then
       report e2e-verified env GOFV_DRIVER_GO="$PWD/tmp/go-driver" scripts/driver-e2e.sh --verified \
         --out "$run/e2e-verified"
+      report e2e-full3 env GOFV_DRIVER_GO="$PWD/tmp/go-driver" scripts/driver-e2e.sh --mode full3 \
+        --out "$run/e2e-full3"
     else
       skip e2e-verified "no driver toolchain"
+      skip e2e-full3 "no driver toolchain"
     fi
   else
     skip e2e "build failed"
     skip e2e-verified "build failed"
+    skip e2e-full3 "build failed"
   fi
 
   local verdict=GREEN
@@ -327,7 +348,7 @@ gate_e2e() {
 
 # gate_details <run>: the numbers of each step, from its outputs.
 gate_details() {
-  local run=$1
+  local run=$1 p
   echo "<details><summary>details</summary>"
   echo
   if [ -f "$run/axioms/summary.txt" ]; then
@@ -356,6 +377,16 @@ gate_details() {
   fi
   if [ -f "$run/e2e-verified/report.md" ]; then
     echo "**e2e (verified, report)**"; echo; grep -v '^#' "$run/e2e-verified/report.md" | grep -v '^$' | sed 's/^/    /'; echo
+  fi
+  for p in gen-parity asm-parity dwarf-parity back-check; do
+    if [ -f "$run/$p.md" ]; then
+      echo "**$p** (report)"; echo; sed 's/^/    /' "$run/$p.md"; echo
+    elif [ -f "$run/$p.log" ]; then
+      echo "**$p** (report)"; echo; tail -n 5 "$run/$p.log" | sed 's/^/    /'; echo
+    fi
+  done
+  if [ -f "$run/e2e-full3/report.md" ]; then
+    echo "**e2e (full3, report)**"; echo; grep -v '^#' "$run/e2e-full3/report.md" | grep -v '^$' | sed 's/^/    /'; echo
   fi
   if [ -f "$run/e2e-full/report.md" ]; then
     echo "**e2e (full)**"; echo; grep -v '^#' "$run/e2e-full/report.md" | grep -v '^$' | sed 's/^/    /'; echo

@@ -103,7 +103,8 @@ uses `BuildFuncDebugNoOptimized` for ABIInternal functions (`ssagen/ssa.go:7347-
 emitted code refines `runLoc` of the `trim` output (semantics3 §2), so the end-to-end statement
 becomes "the machine code refines `run` of the ssagen output". The driver already imports the
 `trim` output into the compiler byte-identically (H8, `docs/DRIVER.md`); Phase 3's driver hook
-(I8) moves the import point to after `genssa` and then to after `Flushplist`.
+(I8, mode `full3`, `docs/DRIVER.md` "The back end") runs the chained ports of A1–E2 and installs
+their result after `Flushplist`.
 
 ## 1. Shared infrastructure new in Phase 3
 

@@ -16,50 +16,21 @@
  		f.pass = &p
  		phaseName = p.name
  		if f.Log() {
-@@ -167,6 +171,10 @@
+@@ -167,6 +171,11 @@
  		fmt.Print(buf.String())
  	}
  
 +	if drv != nil {
 +		drv.finish()
++		drv.keepForBack()
 +	}
 +
  	// Squash error printing defer
  	phaseName = ""
  }
---- a/src/cmd/compile/internal/ssagen/ssa.go
-+++ b/src/cmd/compile/internal/ssagen/ssa.go
-@@ -7995,6 +7995,12 @@
- }
- 
- // SplitSlot returns a slot representing the data of parent starting at offset.
-+// GOFVDclLen and GOFVDclTruncate let the gofv driver undo the autos SplitSlot made for an
-+// import it abandons.
-+func (e *ssafn) GOFVDclLen() int { return len(e.curfn.Dcl) }
-+
-+func (e *ssafn) GOFVDclTruncate(n int) { e.curfn.Dcl = e.curfn.Dcl[:n] }
-+
- func (e *ssafn) SplitSlot(parent *ssa.LocalSlot, suffix string, offset int64, t *types.Type) ssa.LocalSlot {
- 	node := parent.N
- 
---- a/src/cmd/internal/src/xpos.go
-+++ b/src/cmd/internal/src/xpos.go
-@@ -18,6 +18,12 @@
- // NoXPos is a valid unknown position.
- var NoXPos XPos
- 
-+// GOFVXPos returns the XPos with position base index index and raw line/column/statement
-+// bits (gofv driver: importing SSA positions).
-+func GOFVXPos(index int32, bits uint32) XPos {
-+	return XPos{index, lico(bits)}
-+}
-+
- // IsKnown reports whether the position p is known.
- // XPos.IsKnown() matches Pos.IsKnown() for corresponding
- // positions.
 --- a/src/cmd/compile/internal/ssa/driver_gofv.go
 +++ b/src/cmd/compile/internal/ssa/driver_gofv.go
-@@ -0,0 +1,2324 @@
+@@ -0,0 +1,2378 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -76,8 +47,10 @@
 +// FlagsLiveAtEnd, Hotness, scheduled/laidout, the AuxCall register caches) is set. Every import
 +// is checked by exporting the imported function again and comparing it with the Lean output
 +// byte for byte; on any error, unported pass or mismatch f is left (or restored) as it was and
-+// the stock passes run. genssa then continues as after the stock passes. See docs/DRIVER.md in
-+// the gofv repository.
++// the stock passes run. genssa then continues as after the stock passes. In mode full3 the
++// function after trim is also kept for the back end (ssagen/driver_back_gofv.go), which runs
++// the Lean ports of genssa, the assembler and the DWARF writers after Flushplist and installs
++// their result. See docs/DRIVER.md in the gofv repository.
 +
 +import (
 +	"bytes"
@@ -102,6 +75,7 @@
 +type gofvDriverSettings struct {
 +	path  string
 +	mixed bool
++	back  bool // mode full3: the back end runs too (ssagen/driver_back_gofv.go)
 +	pkg   *regexp.Regexp
 +	fn    *regexp.Regexp
 +	stats string
@@ -120,8 +94,10 @@
 +	case "", "full":
 +	case "mixed":
 +		s.mixed = true
++	case "full3":
++		s.back = true
 +	default:
-+		base.Fatalf("GOFV_SSA_DRIVER_MODE=%q: want full or mixed", m)
++		base.Fatalf("GOFV_SSA_DRIVER_MODE=%q: want full, mixed or full3", m)
 +	}
 +	if p := os.Getenv("GOFV_SSA_DRIVER_PKG"); p != "" {
 +		s.pkg = regexp.MustCompile(p)
@@ -408,11 +384,21 @@
 +	for _, e := range d.events {
 +		line += "\t" + e
 +	}
-+	fd, err := os.OpenFile(d.set.stats, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o666)
++	GOFVAppendStats(line)
++}
++
++// GOFVAppendStats appends line to GOFV_SSA_DRIVER_STATS (if set) in one write, atomic across
++// the concurrent compiles.
++func GOFVAppendStats(line string) {
++	set := gofvDriverOnce()
++	if set == nil || set.stats == "" {
++		return
++	}
++	fd, err := os.OpenFile(set.stats, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o666)
 +	if err != nil {
 +		base.Fatalf("gofv driver: %v", err)
 +	}
-+	_, err = fd.Write([]byte(line + "\n")) // one write: atomic append across compiles
++	_, err = fd.Write([]byte(line + "\n"))
 +	if cerr := fd.Close(); err == nil {
 +		err = cerr
 +	}
@@ -420,6 +406,45 @@
 +		base.Fatalf("gofv driver: %v", err)
 +	}
 +}
++
++// keepForBack keeps, in mode full3, the function after trim for the back end: a gofv-ssa file
++// with one section "trim" (f.gofvBack), and its aux numbering, to which the Phase 3 exporter
++// links the names of the driver input file (GOFVAuxNum). Called once the pass loop is done.
++func (d *gofvDriver) keepForBack() {
++	if !d.set.back {
++		return
++	}
++	x := gofvNewExporter(d.f, &gofvSettings{})
++	x.section("trim")
++	x.tail()
++	d.f.gofvBack = x.out.Bytes()
++	d.f.gofvAux = x.aux
++}
++
++// GOFVBack returns the function after trim kept for the back end (mode full3), nil
++// otherwise.
++func (f *Func) GOFVBack() []byte { return f.gofvBack }
++
++// GOFVBackEnv reports whether the environment selects the driver's mode full3; the Phase 3
++// exporter installs its DWARF hooks at init when it does.
++func GOFVBackEnv() bool {
++	return os.Getenv("GOFV_SSA_DRIVER") != "" && os.Getenv("GOFV_SSA_DRIVER_MODE") == "full3"
++}
++
++// GOFVDriverPath returns the path of gofv-ssa-opt and GOFV_SSA_DRIVER_DUMP.
++func GOFVDriverPath() (path, dump string) {
++	set := gofvDriverOnce()
++	if set == nil {
++		return "", ""
++	}
++	return set.path, set.dump
++}
++
++// GOFVFileName is the file name the exporter and the driver's dumps give a function name.
++func GOFVFileName(s string) string { return gofvFileName(s) }
++
++// GOFVTokens splits a line of gofv-ssa-opt's output into tokens, decoding strings.
++func GOFVTokens(s string) ([]string, error) { return gofvTokens(s) }
 +
 +// ---------------------------------------------------------------------------------------
 +// Reading gofv-ssa-opt's output.
@@ -2384,3 +2409,790 @@
 +	}
 +	return "?"
 +}
+--- a/src/cmd/compile/internal/ssa/func.go
++++ b/src/cmd/compile/internal/ssa/func.go
+@@ -98,6 +98,10 @@
+ 	// gofvAux is the export file's aux numbering, kept once the file is written so that the
+ 	// Phase 3 exporter can link the frame's names to it (GOFVAuxNum).
+ 	gofvAux map[Aux]int
++
++	// gofvBack is the function after trim as a gofv-ssa file (section "trim"), kept by the
++	// gofv driver in mode full3 for its back end (ssagen/driver_back_gofv.go, GOFVBack).
++	gofvBack []byte
+ }
+ 
+ type LocalSlotSplitKey struct {
+--- a/src/cmd/compile/internal/ssagen/driver_back_gofv.go
++++ b/src/cmd/compile/internal/ssagen/driver_back_gofv.go
+@@ -0,0 +1,679 @@
++// Copyright 2026 The gofv Authors. All rights reserved.
++// Use of this source code is governed by a BSD-style
++// license that can be found in the LICENSE file.
++
++package ssagen
++
++// gofv driver back end (GOFV_SSA_DRIVER_MODE=full3; docs/DRIVER.md in the gofv repository).
++// After Flushplist, the function after trim (kept by the ssa driver, ssa.Func.GOFVBack) and
++// the inputs of its .prog file (the Phase 3 exporter's file restricted to definitions and
++// inputs, "gofv-prog 3 in") go to gofv-ssa-opt --back, which runs the Lean ports of
++// AllocFrame, genssa, BuildFuncDebug, Flushplist, dwarfgen.Info and the DWARF writers. Its
++// result is installed into the function's own symbols: the text symbol's P, R and Size, the
++// pc-value tables, the funcdata list, the metadata symbols only this function writes
++// (StackObjects, OpenCodedDeferInfo, ArgInfo, ArgLiveInfo, jump tables) and the DWARF
++// symbols. Everything else the result states (the FuncInfo header, funcaux, UsedFiles, the
++// local inlining tree, shared symbols such as gclocals·… and constants, the child-DIE fixups)
++// is checked against the compiler's state. Check: the compiler's state after the install,
++// rendered with the result's symbol numbers, must equal the result byte for byte; otherwise
++// every installed field is restored. Stock genssa and Flushplist still run before: they make
++// the symbols, frame offsets and package-level DWARF records the rest of the compile uses.
++
++import (
++	"bytes"
++	"encoding/hex"
++	"fmt"
++	"os"
++	"os/exec"
++	"path/filepath"
++	"slices"
++	"strconv"
++	"strings"
++	"sync"
++
++	"cmd/compile/internal/base"
++	"cmd/compile/internal/ssa"
++	"cmd/internal/obj"
++	"cmd/internal/objabi"
++)
++
++// gofvInputKeep lists, per section of a .prog file, the tags of the lines the driver input
++// file keeps besides the definitions (gofvDefTags): the inputs of the steps the back end
++// runs, none of their results.
++var gofvInputKeep = map[string]map[string]bool{
++	"frame": {"in": true},
++	"genin": {"curfn": true, "wrapped": true, "opendefer": true, "regargs": true, "text": true},
++	"prog0": {"text": true, "reloc": true, "symalign": true, "autot": true, "dbgregout": true},
++	"asm":   {},
++	"dwarf": {"dwfn": true, "dwdcl": true, "dwclosure": true, "dwmark": true, "dwparents": true,
++		"dwparams": true, "dwprecursor": true, "dwinlfn": true, "dwinldcl": true, "dwname": true},
++}
++
++var gofvDefTags = map[string]bool{"type": true, "name": true, "sym": true, "posbase": true, "inl": true}
++
++// gofvProgInput returns the driver input file of a .prog file: header "gofv-prog 3 in", the
++// header lines, and per section its definitions and the lines gofvInputKeep lists.
++func gofvProgInput(full []byte) []byte {
++	var b bytes.Buffer
++	sec := ""
++	first := true
++	for l := range strings.SplitAfterSeq(string(full), "\n") {
++		if l == "" {
++			continue
++		}
++		line := strings.TrimSuffix(l, "\n")
++		if first {
++			first = false
++			b.WriteString(line + " in\n")
++			continue
++		}
++		tag, _, _ := strings.Cut(line, " ")
++		switch {
++		case sec == "" && line == tag && gofvInputKeep[tag] != nil:
++			sec = tag
++		case sec != "" && line == "end":
++			sec = ""
++		case sec == "":
++		case gofvDefTags[tag] || gofvInputKeep[sec][tag]:
++		default:
++			continue
++		}
++		b.WriteString(l)
++	}
++	return b.Bytes()
++}
++
++// gofvRelocTypes maps RelocType.String() to the type.
++var gofvRelocTypes = sync.OnceValue(func() map[string]objabi.RelocType {
++	m := map[string]objabi.RelocType{}
++	for t := 1; t < 1<<10; t++ {
++		s := objabi.RelocType(t).String()
++		if !strings.HasPrefix(s, "RelocType(") {
++			m[s] = objabi.RelocType(t)
++		}
++	}
++	return m
++})
++
++func gofvRelocType(s string) (objabi.RelocType, error) {
++	if t, ok := gofvRelocTypes()[s]; ok {
++		return t, nil
++	}
++	if n, ok := strings.CutPrefix(s, "RelocType("); ok && strings.HasSuffix(n, ")") {
++		v, err := strconv.ParseInt(strings.TrimSuffix(n, ")"), 10, 16)
++		if err == nil {
++			return objabi.RelocType(v), nil
++		}
++	}
++	return 0, fmt.Errorf("unknown relocation type %q", s)
++}
++
++type gofvBackReloc struct {
++	off  int64
++	siz  uint64
++	typ  objabi.RelocType
++	add  int64
++	sym  int // 0: none
++}
++
++type gofvBackData struct {
++	k      int
++	size   int64
++	p      []byte
++	relocs []gofvBackReloc
++	dwarf  bool // after the dwsyms line
++}
++
++// gofvBackResult is the parsed output of gofv-ssa-opt --back.
++type gofvBackResult struct {
++	body     string // the lines after the status line
++	symKs    []int
++	symName  map[int]string
++	symABI   map[int]int
++	textSize int64
++	textP    []byte
++	textR    []gofvBackReloc
++	pcln     [4]int
++	pcdata   []int
++	funcdata []int
++	data     []gofvBackData
++	dwsyms   *[5]int // info, loc, ranges, absfn, lines
++}
++
++func gofvBackRef(tok string, hole bool) (int, error) {
++	if tok == "-" || hole && tok == "_" {
++		return 0, nil
++	}
++	n, ok := strings.CutPrefix(tok, "y")
++	if !ok {
++		return 0, fmt.Errorf("bad symbol reference %q", tok)
++	}
++	return strconv.Atoi(n)
++}
++
++func gofvBackRefs(tok string) ([]int, error) {
++	if tok == "-" {
++		return nil, nil
++	}
++	var ks []int
++	for _, t := range strings.Split(tok, ",") {
++		k, err := gofvBackRef(t, true)
++		if err != nil {
++			return nil, err
++		}
++		ks = append(ks, k)
++	}
++	return ks, nil
++}
++
++func gofvBackHex(tok string) ([]byte, error) {
++	if tok == "-" {
++		return nil, nil
++	}
++	return hex.DecodeString(tok)
++}
++
++// gofvParseBack parses gofv-ssa-opt --back's output. A status other than ok is an error
++// with kind "status".
++func gofvParseBack(out []byte) (res *gofvBackResult, kind string, err error) {
++	text := string(out)
++	status, body, _ := strings.Cut(text, "\n")
++	st, err := ssa.GOFVTokens(status)
++	if err != nil || len(st) < 2 || st[0] != "status" {
++		return nil, "parse", fmt.Errorf("bad status line %q", status)
++	}
++	if st[1] != "ok" {
++		msg := strings.Join(st[1:], ": ")
++		return nil, "status", fmt.Errorf("%s", msg)
++	}
++	if !strings.HasSuffix(body, "eof\n") {
++		return nil, "parse", fmt.Errorf("no eof line")
++	}
++	r := &gofvBackResult{body: body, symName: map[int]string{}, symABI: map[int]int{}}
++	lines := strings.Split(strings.TrimSuffix(body, "eof\n"), "\n")
++	lines = lines[:len(lines)-1] // the empty string after the last newline
++	relocs := func(i *int, n int) ([]gofvBackReloc, error) {
++		var rs []gofvBackReloc
++		for range n {
++			*i++
++			if *i >= len(lines) {
++				return nil, fmt.Errorf("missing reloc line")
++			}
++			t := strings.Split(lines[*i], " ")
++			if len(t) != 6 || t[0] != "reloc" {
++				return nil, fmt.Errorf("bad reloc line %q", lines[*i])
++			}
++			off, e1 := strconv.ParseInt(t[1], 10, 64)
++			siz, e2 := strconv.ParseUint(t[2], 10, 8)
++			typ, e3 := gofvRelocType(t[3])
++			add, e4 := strconv.ParseInt(t[4], 10, 64)
++			sym, e5 := gofvBackRef(t[5], false)
++			if err := cmpOr(e1, e2, e3, e4, e5); err != nil {
++				return nil, fmt.Errorf("reloc line %q: %v", lines[*i], err)
++			}
++			rs = append(rs, gofvBackReloc{off, siz, typ, add, sym})
++		}
++		return rs, nil
++	}
++	inDwarf := false
++	for i := 0; i < len(lines); i++ {
++		l := lines[i]
++		tag, _, _ := strings.Cut(l, " ")
++		var err error
++		switch tag {
++		case "sym":
++			var t []string
++			if t, err = ssa.GOFVTokens(l); err == nil && len(t) == 4 {
++				var k, abi int
++				k, err = gofvBackRef(t[1], false)
++				if err == nil {
++					abi, err = strconv.Atoi(t[3])
++				}
++				r.symKs = append(r.symKs, k)
++				r.symName[k], r.symABI[k] = t[2], abi
++			} else if err == nil {
++				err = fmt.Errorf("bad sym line")
++			}
++		case "text":
++			t := strings.Split(l, " ")
++			if len(t) != 5 {
++				err = fmt.Errorf("bad text line")
++				break
++			}
++			var n int
++			r.textSize, err = strconv.ParseInt(t[1], 10, 64)
++			if err == nil {
++				r.textP, err = gofvBackHex(t[3])
++			}
++			if err == nil {
++				n, err = strconv.Atoi(t[4])
++			}
++			if err == nil {
++				r.textR, err = relocs(&i, n)
++			}
++		case "data":
++			t := strings.Split(l, " ")
++			if len(t) != 8 {
++				err = fmt.Errorf("bad data line")
++				break
++			}
++			d := gofvBackData{dwarf: inDwarf}
++			var n int
++			d.k, err = gofvBackRef(t[1], false)
++			if err == nil {
++				d.size, err = strconv.ParseInt(t[3], 10, 64)
++			}
++			if err == nil {
++				d.p, err = gofvBackHex(t[6])
++			}
++			if err == nil {
++				n, err = strconv.Atoi(t[7])
++			}
++			if err == nil {
++				d.relocs, err = relocs(&i, n)
++			}
++			r.data = append(r.data, d)
++		case "pcln":
++			t := strings.Split(l, " ")
++			if len(t) != 7 {
++				err = fmt.Errorf("bad pcln line")
++				break
++			}
++			for j := range 4 {
++				if err == nil {
++					r.pcln[j], err = gofvBackRef(t[1+j], false)
++				}
++			}
++			if err == nil {
++				r.pcdata, err = gofvBackRefs(t[5])
++			}
++			if err == nil {
++				r.funcdata, err = gofvBackRefs(t[6])
++			}
++		case "dwsyms":
++			t := strings.Split(l, " ")
++			if len(t) != 6 {
++				err = fmt.Errorf("bad dwsyms line")
++				break
++			}
++			var ks [5]int
++			for j := range 5 {
++				if err == nil {
++					ks[j], err = gofvBackRef(t[1+j], false)
++				}
++			}
++			r.dwsyms = &ks
++			inDwarf = true
++		case "fn", "funcaux", "usedfiles", "inltree", "dieref", "dieoff":
++			// checked by rendering
++		default:
++			err = fmt.Errorf("unknown line")
++		}
++		if err != nil {
++			return nil, "parse", fmt.Errorf("line %d %q: %v", i+2, firstWords(l), err)
++		}
++	}
++	return r, "", nil
++}
++
++func cmpOr(errs ...error) error {
++	for _, e := range errs {
++		if e != nil {
++			return e
++		}
++	}
++	return nil
++}
++
++func firstWords(l string) string {
++	if len(l) > 80 {
++		return l[:80] + "…"
++	}
++	return l
++}
++
++// gofvBackSaved is the state of a symbol before the install.
++type gofvBackSaved struct {
++	s    *obj.LSym
++	p    []byte
++	r    []obj.Reloc
++	size int64
++}
++
++// gofvBackInstall resolves, installs and checks res (see the file comment). On error the
++// compiler's state is as before.
++func gofvBackInstall(x *gofvProgExporter, res *gofvBackResult) (kind string, err error) {
++	text := x.fn.LSym
++	fi := text.Func()
++	pc := &fi.Pcln
++	// Resolution: anonymous symbols by role, named ones by name and ABI among the symbols of
++	// the function's .prog file.
++	role := map[int]*obj.LSym{}
++	setRole := func(k int, s *obj.LSym, what string) error {
++		if k == 0 {
++			return nil
++		}
++		if s == nil {
++			return fmt.Errorf("the result has %s y%d, the compiler none", what, k)
++		}
++		if prev, ok := role[k]; ok && prev != s {
++			return fmt.Errorf("y%d has two roles", k)
++		}
++		role[k] = s
++		return nil
++	}
++	for j, s := range []*obj.LSym{pc.Pcsp, pc.Pcfile, pc.Pcline, pc.Pcinline} {
++		if err := setRole(res.pcln[j], s, "pc table"); err != nil {
++			return "resolve", err
++		}
++	}
++	if len(res.pcdata) != len(pc.Pcdata) {
++		return "resolve", fmt.Errorf("%d pcdata tables, the compiler has %d", len(res.pcdata), len(pc.Pcdata))
++	}
++	for j, k := range res.pcdata {
++		if err := setRole(k, pc.Pcdata[j], "pcdata table"); err != nil {
++			return "resolve", err
++		}
++	}
++	var dwRoles [5]*obj.LSym // info, loc, ranges, absfn, lines
++	if x.dw != nil && x.dw.fnstate != nil {
++		fs := x.dw.fnstate
++		dwRoles[0], _ = fs.Info.(*obj.LSym)
++		dwRoles[1], _ = fs.Loc.(*obj.LSym)
++		dwRoles[2], _ = fs.Ranges.(*obj.LSym)
++		dwRoles[3], _ = fs.Absfn.(*obj.LSym)
++		dwRoles[4] = x.dw.lines
++	}
++	if res.dwsyms != nil {
++		for j, k := range res.dwsyms {
++			if err := setRole(k, dwRoles[j], "DWARF symbol"); err != nil {
++				return "resolve", err
++			}
++		}
++	}
++	type key struct {
++		name string
++		abi  int
++	}
++	byName := map[key]*obj.LSym{}
++	for _, s := range x.symList {
++		if s.Name != "" {
++			if _, dup := byName[key{s.Name, int(s.ABI())}]; !dup {
++				byName[key{s.Name, int(s.ABI())}] = s
++			}
++		}
++	}
++	syms := map[int]*obj.LSym{}
++	rev := map[*obj.LSym]int{}
++	for _, k := range res.symKs {
++		s := role[k]
++		if s == nil {
++			name := res.symName[k]
++			if name == "" {
++				return "resolve", fmt.Errorf("anonymous symbol y%d has no role", k)
++			}
++			if s = byName[key{name, res.symABI[k]}]; s == nil {
++				return "resolve", fmt.Errorf("symbol %q<%d> is not the compiler's", name, res.symABI[k])
++			}
++		}
++		syms[k] = s
++		if _, ok := rev[s]; !ok {
++			rev[s] = k
++		}
++	}
++	symOf := func(k int) (*obj.LSym, error) {
++		if k == 0 {
++			return nil, nil
++		}
++		if s := syms[k]; s != nil {
++			return s, nil
++		}
++		return nil, fmt.Errorf("y%d has no sym line", k)
++	}
++	// Child-DIE offsets ReferenceChildDIE added to relocations right away (the result and
++	// the exporter write the relocations without them).
++	sub := func(s *obj.LSym) map[int]int64 {
++		m := map[int]int64{}
++		for _, r := range x.dwRefs[s] {
++			m[r.ridx] += r.off
++		}
++		return m
++	}
++	toRelocs := func(s *obj.LSym, rs []gofvBackReloc) ([]obj.Reloc, error) {
++		adj := sub(s)
++		out := make([]obj.Reloc, 0, len(rs))
++		for i, r := range rs {
++			t, err := symOf(r.sym)
++			if err != nil {
++				return nil, err
++			}
++			out = append(out, obj.Reloc{Off: int32(r.off), Siz: uint8(r.siz), Type: r.typ, Add: r.add + adj[i], Sym: t})
++		}
++		return out, nil
++	}
++	// The symbols only this function writes.
++	own := map[*obj.LSym]bool{text: true}
++	for _, s := range role {
++		own[s] = true
++	}
++	for _, s := range []*obj.LSym{fi.StackObjects, fi.OpenCodedDeferInfo, fi.ArgInfo, fi.ArgLiveInfo} {
++		if s != nil {
++			own[s] = true
++		}
++	}
++	for _, jt := range fi.JumpTables {
++		own[jt.Sym] = true
++	}
++	// Install.
++	var saved []gofvBackSaved
++	oldFuncdata := pc.Funcdata
++	restore := func() {
++		for i := len(saved) - 1; i >= 0; i-- {
++			v := saved[i]
++			v.s.P, v.s.R, v.s.Size = v.p, v.r, v.size
++		}
++		pc.Funcdata = oldFuncdata
++	}
++	install := func(s *obj.LSym, size int64, p []byte, rs []gofvBackReloc) error {
++		r, err := toRelocs(s, rs)
++		if err != nil {
++			return err
++		}
++		saved = append(saved, gofvBackSaved{s, s.P, s.R, s.Size})
++		s.P, s.R, s.Size = p, r, size
++		return nil
++	}
++	if err := install(text, res.textSize, res.textP, res.textR); err != nil {
++		restore()
++		return "resolve", err
++	}
++	for _, d := range res.data {
++		s, err := symOf(d.k)
++		if err == nil && s == nil {
++			err = fmt.Errorf("data line without symbol")
++		}
++		if err == nil && own[s] {
++			err = install(s, d.size, d.p, d.relocs)
++		}
++		if err != nil {
++			restore()
++			return "resolve", err
++		}
++	}
++	fd := make([]*obj.LSym, len(res.funcdata))
++	for j, k := range res.funcdata {
++		s, err := symOf(k)
++		if err != nil {
++			restore()
++			return "resolve", err
++		}
++		fd[j] = s
++	}
++	pc.Funcdata = fd
++	// Check.
++	if want := gofvBackRender(x, res, syms, rev, dwRoles); want != res.body {
++		restore()
++		return "check", fmt.Errorf("%s", gofvBackFirstDiff(res.body, want))
++	}
++	return "", nil
++}
++
++// gofvBackRender renders the compiler's state in the result's form: the result's sym lines
++// and data lines in its order, with its symbol numbers (rev).
++func gofvBackRender(x *gofvProgExporter, res *gofvBackResult, syms map[int]*obj.LSym, rev map[*obj.LSym]int,
++	dw [5]*obj.LSym) string {
++	text := x.fn.LSym
++	fi := text.Func()
++	pc := &fi.Pcln
++	var w strings.Builder
++	y := func(s *obj.LSym) string {
++		if s == nil {
++			return "-"
++		}
++		if k, ok := rev[s]; ok {
++			return "y" + strconv.Itoa(k)
++		}
++		return "y?" + gofvQuoteP(s.Name)
++	}
++	hole := func(s *obj.LSym) string {
++		if s == nil {
++			return "_"
++		}
++		return y(s)
++	}
++	relocs := func(s *obj.LSym, adj map[int]int64) {
++		for i, r := range s.R {
++			fmt.Fprintf(&w, "reloc %d %d %s %d %s\n", r.Off, r.Siz, r.Type, r.Add-adj[i], y(r.Sym))
++		}
++	}
++	data := func(s *obj.LSym, adj map[int]int64) {
++		fmt.Fprintf(&w, "data %s %s %d %d %x %s %d\n", y(s), s.Type, s.Size, s.Align, uint32(s.Attribute),
++			gofvHexP(s.P), len(s.R))
++		relocs(s, adj)
++	}
++	for _, k := range res.symKs {
++		s := syms[k]
++		fmt.Fprintf(&w, "sym y%d %s %d\n", k, gofvQuoteP(s.Name), s.ABI())
++	}
++	fmt.Fprintf(&w, "fn %s %d %d %d %d %d %x\n", y(text), fi.Args, fi.Locals, fi.FuncID, fi.FuncFlag,
++		fi.StartLine, uint32(text.Attribute))
++	fmt.Fprintf(&w, "funcaux %s %s %s %s %s %s %s\n", y(fi.GCArgs), y(fi.GCLocals), y(fi.StackObjects),
++		y(fi.OpenCodedDeferInfo), y(fi.ArgInfo), y(fi.ArgLiveInfo), y(fi.WrapInfo))
++	fmt.Fprintf(&w, "text %d %d %s %d\n", text.Size, text.Align, gofvHexP(text.P), len(text.R))
++	relocs(text, nil)
++	var pd, fd []string
++	for _, d := range pc.Pcdata {
++		pd = append(pd, hole(d))
++	}
++	for _, d := range pc.Funcdata {
++		fd = append(fd, hole(d))
++	}
++	fmt.Fprintf(&w, "pcln %s %s %s %s %s %s\n", y(pc.Pcsp), y(pc.Pcfile), y(pc.Pcline), y(pc.Pcinline),
++		gofvListP(pd), gofvListP(fd))
++	var files []int
++	for k := range pc.UsedFiles {
++		files = append(files, int(k))
++	}
++	slices.Sort(files)
++	var fs []string
++	for _, k := range files {
++		fs = append(fs, strconv.Itoa(k))
++	}
++	fmt.Fprintf(&w, "usedfiles %s\n", gofvListP(fs))
++	for i, c := range pc.InlTree.GOFVNodes() {
++		fmt.Fprintf(&w, "inltree %d %d %s %s %s %d\n", i, c.Parent, x.pos(c.Pos), y(c.Func), gofvQuoteP(c.Name), c.ParentPC)
++	}
++	for _, d := range res.data {
++		if !d.dwarf {
++			data(syms[d.k], nil)
++		}
++	}
++	if dw[0] != nil {
++		fmt.Fprintf(&w, "dwsyms %s %s %s %s %s\n", y(dw[0]), y(dw[1]), y(dw[2]), y(dw[3]), y(dw[4]))
++		for _, ds := range []*obj.LSym{dw[0], dw[1], dw[2], dw[4], dw[3]} {
++			if ds == nil {
++				continue
++			}
++			for _, r := range x.dwRefs[ds] {
++				fmt.Fprintf(&w, "dieref %s %d %s %d\n", y(ds), r.ridx, y(r.tgt), r.dclidx)
++			}
++		}
++		if dw[3] != nil {
++			fmt.Fprintf(&w, "dieoff %s %s\n", y(dw[3]), gofvListP(x.dwOffs))
++		}
++		for _, d := range res.data {
++			if d.dwarf {
++				s := syms[d.k]
++				adj := map[int]int64{}
++				for _, r := range x.dwRefs[s] {
++					adj[r.ridx] += r.off
++				}
++				data(s, adj)
++			}
++		}
++	}
++	w.WriteString("eof\n")
++	return w.String()
++}
++
++// gofvBackFirstDiff describes the first line where the result and the rendering differ.
++func gofvBackFirstDiff(got, want string) string {
++	a := strings.Split(got, "\n")
++	b := strings.Split(want, "\n")
++	for i := range max(len(a), len(b)) {
++		var la, lb string
++		if i < len(a) {
++			la = a[i]
++		}
++		if i < len(b) {
++			lb = b[i]
++		}
++		if la != lb {
++			return fmt.Sprintf("line %d: result %q, compiler %q", i+2, firstWords(la), firstWords(lb))
++		}
++	}
++	return "no difference"
++}
++
++// gofvBackImport runs the back end on x's function and installs its result; one line per
++// function goes to GOFV_SSA_DRIVER_STATS: "<pkg>" "<func>" <abi> back=lean|stock and, for
++// stock, the event (exec, parse, status, resolve or check) with its detail.
++func gofvBackImport(x *gofvProgExporter) {
++	f := x.f
++	path, dump := ssa.GOFVDriverPath()
++	in := slices.Concat(f.GOFVBack(), gofvProgInput(x.out.Bytes()))
++	cmd := exec.Command(path, "--back", "/dev/stdin")
++	cmd.Stdin = bytes.NewReader(in)
++	var stderr bytes.Buffer
++	cmd.Stderr = &stderr
++	out, err := cmd.Output()
++	if dump != "" {
++		stem := filepath.Join(dump, filepath.FromSlash(base.Ctxt.Pkgpath),
++			fmt.Sprintf("%s,%d.back", ssa.GOFVFileName(f.Name), f.ABISelf.Which()))
++		if os.MkdirAll(filepath.Dir(stem), 0o777) == nil {
++			os.WriteFile(stem+".in", in, 0o666)
++			os.WriteFile(stem+".out", out, 0o666)
++		}
++	}
++	var kind string
++	if err != nil {
++		kind = "exec"
++		err = fmt.Errorf("%v: %s", err, strings.TrimSpace(stderr.String()))
++	} else {
++		var res *gofvBackResult
++		if res, kind, err = gofvParseBack(out); err == nil {
++			kind, err = gofvBackInstall(x, res)
++		}
++	}
++	line := fmt.Sprintf("%s\t%s\t%d\t", strconv.Quote(base.Ctxt.Pkgpath), strconv.Quote(f.Name), f.ABISelf.Which())
++	if err == nil {
++		line += "back=lean"
++	} else {
++		msg := err.Error()
++		if len(msg) > 400 {
++			msg = msg[:400] + "…"
++		}
++		line += "back=stock\t" + kind + " " + strconv.Quote(msg)
++	}
++	ssa.GOFVAppendStats(line)
++}
+--- a/src/cmd/compile/internal/ssagen/export_prog_gofv.go
++++ b/src/cmd/compile/internal/ssagen/export_prog_gofv.go
+@@ -62,6 +62,11 @@
+ 	openDefer      bool
+ 	openDeferBits  *ir.Name
+ 	openDeferSlots []*ir.Name
++
++	// What dwarf recorded, for the driver's back end (mode full3, driver_back_gofv.go).
++	dw     *gofvDwarfFn
++	dwRefs map[*obj.LSym][]gofvDIERef
++	dwOffs []string
+ }
+ 
+ // gofvDcl is a Dcl entry with the name's frame offset and flags at one point.
+@@ -80,7 +85,7 @@
+ // gofvProgBegin starts the .prog file of f when f's SSA was exported; called when AllocFrame
+ // starts. It returns nil otherwise.
+ func gofvProgBegin(f *ssa.Func, fn *ir.Func) *gofvProgExporter {
+-	if !f.GOFVExported() {
++	if !f.GOFVExported() && f.GOFVBack() == nil {
+ 		return nil
+ 	}
+ 	x := &gofvProgExporter{
+@@ -148,7 +153,7 @@
+ 	offs: map[*obj.LSym][]string{}}
+ 
+ func init() {
+-	if os.Getenv("GOFV_SSA_EXPORT") == "" {
++	if os.Getenv("GOFV_SSA_EXPORT") == "" && !ssa.GOFVBackEnv() {
+ 		return
+ 	}
+ 	obj.GOFVPopulateDWARF = func(s *obj.LSym, fnstate *dwarf.FnState, wrapper bool, lines *obj.LSym) {
+@@ -902,6 +907,9 @@
+ 	})
+ 	x.dwarf()
+ 	x.out.WriteString("eof\n")
++	if x.f.GOFVBack() != nil {
++		return // the driver's back end reads x.out (driver_back_gofv.go)
++	}
+ 	x.f.GOFVWriteCompanion(".prog", x.out.Bytes())
+ }
+ 
+@@ -1224,6 +1232,7 @@
+ 			delete(gofvDwarf.offs, absfn)
+ 		}
+ 		gofvDwarf.Unlock()
++		x.dw, x.dwRefs, x.dwOffs = d, refs, offs // for the driver's back end (driver_back_gofv.go)
+ 		for _, ds := range syms {
+ 			for _, r := range refs[ds] {
+ 				fmt.Fprintf(&x.body, "dieref %s %d %s %d\n", x.sym(ds), r.ridx, x.sym(r.tgt), r.dclidx)
+--- a/src/cmd/compile/internal/ssagen/pgen.go
++++ b/src/cmd/compile/internal/ssagen/pgen.go
+@@ -350,6 +350,9 @@
+ 	fieldtrack(pp.Text.From.Sym, fn.FieldTrack)
+ 	if gx != nil {
+ 		gx.asm(pp)
++		if f.GOFVBack() != nil {
++			gofvBackImport(gx) // gofv driver, mode full3: the Lean back end (driver_back_gofv.go)
++		}
+ 	}
+ }
+ 
+--- a/src/cmd/compile/internal/ssagen/ssa.go
++++ b/src/cmd/compile/internal/ssagen/ssa.go
+@@ -7996,6 +7996,12 @@
+ }
+ 
+ // SplitSlot returns a slot representing the data of parent starting at offset.
++// GOFVDclLen and GOFVDclTruncate let the gofv driver undo the autos SplitSlot made for an
++// import it abandons.
++func (e *ssafn) GOFVDclLen() int { return len(e.curfn.Dcl) }
++
++func (e *ssafn) GOFVDclTruncate(n int) { e.curfn.Dcl = e.curfn.Dcl[:n] }
++
+ func (e *ssafn) SplitSlot(parent *ssa.LocalSlot, suffix string, offset int64, t *types.Type) ssa.LocalSlot {
+ 	node := parent.N
+ 
+--- a/src/cmd/internal/src/xpos.go
++++ b/src/cmd/internal/src/xpos.go
+@@ -18,6 +18,12 @@
+ // NoXPos is a valid unknown position.
+ var NoXPos XPos
+ 
++// GOFVXPos returns the XPos with position base index index and raw line/column/statement
++// bits (gofv driver: importing SSA positions).
++func GOFVXPos(index int32, bits uint32) XPos {
++	return XPos{index, lico(bits)}
++}
++
+ // IsKnown reports whether the position p is known.
+ // XPos.IsKnown() matches Pos.IsKnown() for corresponding
+ // positions.

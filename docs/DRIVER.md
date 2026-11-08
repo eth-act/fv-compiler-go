@@ -1,14 +1,18 @@
 # Driver: the Lean pipeline inside `cmd/compile`
 
-Milestone G7 (issue #12), extended through `trim` by H8 (#386). The patched compiler can run the
-Lean pipeline in place of every pass of `ssa.Compile` (`number lines` through `trim`, including
-`regalloc`), per function, import the allocated function and continue with the stock `genssa`.
+Milestone G7 (issue #12), extended through `trim` by H8 (#386) and through object code by I8
+(#554). The patched compiler can run the Lean pipeline in place of every pass of `ssa.Compile`
+(`number lines` through `trim`, including `regalloc`), per function, import the allocated
+function and continue with the stock `genssa`; in mode `full3` it also runs the Lean ports of
+`AllocFrame`, `genssa`, `Flushplist` and the DWARF writers and installs their result (the back
+end, below).
 
 ## Pieces
 
 | Piece | Where |
 | --- | --- |
 | Pipeline runner `gofv-ssa-opt` | `GoFVTest/Driver/{Pipeline,Main}.lean`, `lake build gofv-ssa-opt` |
+| Back end (`--back`, `--back-check`) | `GoFVTest/Driver/Back.lean` |
 | Import into Go, driver hook | `patches/go/0002-gofv-driver.patch` (on top of 0001, the exporter) |
 | End-to-end checks | `scripts/driver-e2e.sh` |
 
@@ -32,6 +36,8 @@ gofv-ssa-opt --verified [--from <pass>] [--vstats FILE] [--profile] <in.ssa>
 gofv-ssa-opt --list
 gofv-ssa-opt --check [--mixed] [--whole-file-env] [--strict] [--jobs N] [--max-report N] [--table FILE] <dir|file>...
 gofv-ssa-opt --check --verified [--whole-file-env] [--jobs N] [--max-report N] [--table FILE] <dir|file>...
+gofv-ssa-opt --back <in>
+gofv-ssa-opt --back-check [--jobs N] [--max-report N] [--table FILE] <dir|file>...
 ```
 
 - Driver mode reads a `gofv-ssa` file whose first section is the function (section `start`),
@@ -46,6 +52,7 @@ gofv-ssa-opt --check --verified [--whole-file-env] [--jobs N] [--max-report N] [
 - `--list` prints `ported|unported "<name>"` per stock pass (all of `ssa.Compile`'s); the compiler
   reads it once.
 - `--check` is whole-pipeline parity over stock export files (below).
+- `--back` and `--back-check`: the back end (below).
 
 ### The import (`patches/go/0002-gofv-driver.patch`)
 
@@ -148,11 +155,74 @@ a higher number by key in the cut tables (#119).
 | `GOFV_SSA_DRIVER=<path>` | enable; path of `gofv-ssa-opt` |
 | `GOFV_SSA_DRIVER_MODE=full` (default) | one segment from `number lines` through `trim`; only a complete pipeline (`status ok`) is imported, anything else runs all stock passes |
 | `GOFV_SSA_DRIVER_MODE=mixed` | every maximal run of ported passes is a segment (`--partial`): the state before an unported or failing pass is imported, the stock compiler runs that pass, and the next ported pass starts a new segment |
+| `GOFV_SSA_DRIVER_MODE=full3` | `full`, then the back end for every function (below) |
 | `GOFV_SSA_DRIVER_PKG`, `GOFV_SSA_DRIVER_FUNC` | regexps selecting packages / `<pkgpath>.<f.Name>` (default all) |
-| `GOFV_SSA_DRIVER_STATS=<file>` | append one line per function: `"<pkg>" "<func>" <abi> lean=<n> stock=<n>` and one field per event (`unported "<pass>"`, `error "<pass>: <msg>"`, `import "<reason>"`, `exec`, `parse`), tab-separated |
-| `GOFV_SSA_DRIVER_DUMP=<dir>` | write each run's input and output (debugging) |
+| `GOFV_SSA_DRIVER_STATS=<file>` | append one line per function: `"<pkg>" "<func>" <abi> lean=<n> stock=<n>` and one field per event (`unported "<pass>"`, `error "<pass>: <msg>"`, `import "<reason>"`, `exec`, `parse`), tab-separated; in mode `full3` one more line per function for the back end: `"<pkg>" "<func>" <abi> back=lean`, or `back=stock` and the event (`exec`, `parse`, `status`, `resolve`, `check`) with its detail |
+| `GOFV_SSA_DRIVER_DUMP=<dir>` | write each run's input and output (debugging; the back end's as `<func>,<abi>.back.in`/`.out`) |
 
 Do not combine with `GOFV_SSA_EXPORT` (its sections are written only after stock passes).
+
+## The back end (mode `full3`, issue #554)
+
+In mode `full3` the Lean ports of Phase 3 (`docs/PASSES3.md`) produce the function's object
+code. Where the compiler splices them in: after `Flushplist` and the `Compile` tail, at the end
+of `ssagen.Compile`. Stock `AllocFrame`, `genssa` and `Flushplist` (with `populateDWARF`) still
+run first: they create the symbols (`gclocals·…`, `$f64.…`, type and DWARF symbols), set the
+frame offsets, register the package-level DWARF records (`DwFixups`, abstract functions) and
+free the Prog list, which the rest of the compile relies on. The Lean result then replaces what
+they wrote into the function's own symbols.
+
+1. **Input.** At the end of `ssa.Compile` the driver exports the function after `trim` (the
+   imported Lean result, or stock's after a fallback) as a `gofv-ssa` file with one section
+   `trim` (`keepForBack`); the Phase 3 exporter of 0001 links its names to that file's aux
+   numbers and records the `.prog` file in memory (`frame` at `AllocFrame`, `genin`, `prog0`,
+   `asm` and `dwarf` at the end of `Compile`). The driver input file (`gofv-prog 3 in`,
+   `gofvProgInput`) is that file without any result: every section keeps its definitions
+   (types, names, symbols, position bases, inlining nodes) and only the input lines — `frame`'s
+   `in` lines, `genin`, `prog0`'s text symbol before `Flushplist` (the marker relocations),
+   `symalign`, `autot` and `dbgregout`, `dwarf`'s `dwfn` and `dw*` lines.
+   `GoFV.Asm.parseProgInput` reads it; `GoFVTest.Driver.Back.inputView` is the same view of a
+   full `.prog` file.
+2. **Lean.** `gofv-ssa-opt --back /dev/stdin` reads both files (one stream; the second starts
+   at its header line) and runs `GoFVTest.Driver.Back.chain`, every step on the previous one's
+   result: `allocFrame`, `genssa` on that frame (it records `valueToProgAfter`,
+   `GenState.progAfter`), `buildFuncDebug` on that frame, `flush` on `genssa`'s Prog list,
+   `info`, `putFunc` and `generateDebugLinesSymbol` with `GetPC` from the block starts,
+   `progAfter` and the assembled PCs. Two recorded inputs are results of `AllocFrame`
+   (`populateDWARF` reads them after it): `dwdcl` (the truncated `Dcl`) and the frame offsets
+   and `used` flags of the `dwname` facts; the chain takes them from its own frame. `symalign`
+   (`LSym.Align` of the operands' symbols) is recorded for the symbols stock's Progs reference.
+   Symbols keep the input file's numbers; symbols `genssa` or the assembler create get new
+   ones. The output is `status ok`, a `sym` line per referenced symbol, then the text symbol's
+   `fn` header and `funcaux`, `text` with its `reloc` lines, `pcln`, `usedfiles`, `inltree`,
+   a `data` line (with relocations) per symbol whose contents the ports wrote (pc-value
+   tables, metadata symbols, constants, jump tables) and, when `populateDWARF` ran, `dwsyms`
+   (info, loc, ranges, abstract function, lines), the child-DIE fixups (`dieref`, `dieoff`)
+   and the DWARF symbols' `data` lines, in the `.prog` syntax; or
+   `status error "<stage>" "<msg>"`.
+3. **Install** (`ssagen/driver_back_gofv.go`). Anonymous symbols resolve by role (pc-value
+   tables from `pcln`, DWARF symbols from `dwsyms` and `populateDWARF`'s state), named ones by
+   name and ABI among the symbols of the function's `.prog` file; a symbol the compiler does
+   not have is an error. Installed: the text symbol's `P`, `R` and `Size`, the funcdata list,
+   and `P`, `R`, `Size` of the symbols only this function writes — pc-value tables,
+   `StackObjects`, `OpenCodedDeferInfo`, `ArgInfo`, `ArgLiveInfo`, jump tables and the DWARF
+   symbols (relocations that `ReferenceChildDIE` adjusted right away get the same offsets;
+   the deferred ones are patched by `DwarfFixupTable.Finalize` as for stock).
+4. **Check.** The compiler's state after the install, rendered with the result's symbol
+   numbers in the result's order, must equal the result byte for byte. This checks the
+   install and everything not installed against the compiler: the `FuncInfo` header (`Args`,
+   `Locals`, `FuncFlag`, the attributes `preprocess` sets), funcaux, `UsedFiles`, the local
+   inlining tree, the contents of shared symbols (`gclocals·…`, `.wrapinfo`, constants) and
+   the child-DIE fixups. On any error the installed fields are restored (stock's result stays)
+   and the stats line says `back=stock` with the event.
+
+A corrupted result reaches the object file: with a wrapper that changes one hex digit of the
+`text` line, the `strconv` archive differed from stock while every function said `back=lean`.
+
+`gofv-ssa-opt --back-check <dir|file>...` runs the chain on the input view of every `.prog`
+file of a corpus (with its `.ssa` file, whose last section is `trim`) and compares its result,
+with symbols by name or role, with the file's stock `asm` section, metadata symbols and
+`dwarf` section; the nightly gate runs it on the full corpus (`docs/GATE.md`).
 
 ## Verified mode (`--verified`, issues #189, #385)
 
