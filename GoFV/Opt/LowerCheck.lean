@@ -35,7 +35,8 @@ input `f`, and the output `g` must have the replayed definitions. The difference
   store, a `Zero`, a `Move` or a frame address, or folding an `ADDconst` offset (`stFold`) or a
   global symbol's or frame variable's `MOVDaddr` (`stFoldAddr`) into an arm64 store, or indexing
   an arm64 store at offset 0 without aux whose address is `ADD p i` or `ADDshiftLL [k] p i`
-  (`stIdxFold`), is replayed as its new definitions (`atomDef`); a rule event folding a lowered
+  (`stIdxFold`), or scaling such an indexed store's index `SLLconst [k] i` (`stIdxScale`), is
+  replayed as its new definitions (`atomDef`); a rule event folding a lowered
   frame address into an integer load (a term) or into an `ADDconst` is replayed as the folded term
   (`frameFold`); one folding
   `ADDconst [0]` into the lowered frame address it reads (`650` at offset 0, whose result is an
@@ -503,6 +504,21 @@ def stIdxFold (tabs : Tables) (M : Defs) (x u : Value) : Bool :=
       u.args == #[y.args[0]!, y.args[1]!, x.args[1]!, x.args[2]!]
   | _, _ => false
 
+/-- The atom `u` scales the index of the indexed store `x` at the scale 1 (no offset or aux) whose
+index (`x`'s argument 1 in `M`) is the term `SLLconst [k] idx` at a word shape (`(MOVDstoreidx ptr
+(SLLconst [3] idx) val mem) => (MOVDstoreidx8 ptr idx val mem)`, `ARM64.rules:809`; `MOVWstoreidx`
+by `[2]` to `MOVWstoreidx4`, `810`): `u` indexes the arm64 store `x` indexes (`idxStore`) at the
+scale `2^k` (`idxShift`), with `x`'s type, no offset or aux, and the arguments `ptr idx val mem`. -/
+def stIdxScale (tabs : Tables) (M : Defs) (x u : Value) : Bool :=
+  u.type == x.type && x.auxInt == 0 && x.aux == none && u.auxInt == 0 && u.aux == none &&
+  x.args.size == 4 &&
+  match idxStore x.op, idxStore u.op, M.get? x.args[1]! with
+  | some (o, 1), some (o', s), some y =>
+    o' == o && termVL tabs y && y.op == .ARM64SLLconst && y.args.size == 1 &&
+      wordShape (shpL tabs y.type) && idxShift y.auxInt == some s &&
+      u.args == #[x.args[0]!, y.args[0]!, x.args[2]!, x.args[3]!]
+  | _, _, _ => false
+
 /-- The position of a narrow integer store's value: 1 (`stValW`), 2 for an indexed one
 (`stIdxValW`). -/
 def stValIx (o : Op) : Option Nat :=
@@ -530,7 +546,8 @@ def atomDef1 (tabs : Tables) (f : Func) (M : Defs) (v : ID) (x u : Value) :
         u.args == x.args && bulkLower x u ||
         u.args.all x.args.contains && addrLower tabs x u ||
         (stFold tabs M x u || stFoldAddr tabs f M x u || stIdxFold tabs M x u) &&
-          (f.value? v).any (·.op == .Store))
+          (f.value? v).any (·.op == .Store) ||
+        stIdxScale tabs M x u && (f.value? v).any fun a => a.op == .Store && a.args.size == 3)
     then some (u, none)
   else none
 
@@ -542,7 +559,8 @@ value read back through the narrowing `Copy` `lower` eliminated (`stValPick`):
 * a lowered `Zero` or `Move` (`bulkLower`: `LoweredZero`, `LoweredZeroLoop`, `LoweredMove`,
   `LoweredMoveLoop`), on `v`'s arguments;
 * an offset folded into an arm64 store lowering a `Store` of `f` (`stFold`), or a global symbol's
-  or frame variable's address (`stFoldAddr`), or the store indexed (`stIdxFold`);
+  or frame variable's address (`stFoldAddr`), or the store indexed (`stIdxFold`), or the index of
+  such an indexed store scaled (`stIdxScale`);
 * a lowered frame address (`addrLower`): `(LocalAddr {sym} base _) => (MOVDaddr {sym} base)` on
   some of `v`'s arguments, or `(MOVDaddr {sym} (SPanchored base mem))`, whose second node `s` is a
   fresh term on some of `v`'s arguments (`u` reads no argument, `argFree`).

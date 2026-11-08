@@ -846,6 +846,7 @@ import GoFV.Proof.Witness.LowCong
 import GoFV.Proof.Witness.LowerAdd
 import GoFV.Proof.Witness.LowerAddConst
 import GoFV.Proof.Witness.LowerAtomic
+import GoFV.Proof.Witness.LowerAtomicPtr
 import GoFV.Proof.Witness.LowerAtomicRmw
 import GoFV.Proof.Witness.LowerBitLen
 import GoFV.Proof.Witness.LowerBitfield
@@ -882,6 +883,7 @@ import GoFV.Proof.Witness.LowerShiftNarrow
 import GoFV.Proof.Witness.LowerShiftOp
 import GoFV.Proof.Witness.LowerStoreFold
 import GoFV.Proof.Witness.LowerStoreIdx
+import GoFV.Proof.Witness.LowerStoreIdxScale
 import GoFV.Proof.Witness.LowerStoreSym
 import GoFV.Proof.Witness.LowerStoreTrunc
 import GoFV.Proof.Witness.LowerTrunc

@@ -63,7 +63,7 @@ def b2iNorm (r : Rule) : Rule where
     | res => res
   pos := r.pos
 
-/-- `ARM64.rules` restricted to its 496 proven value rules and 94 proven block rules. -/
+/-- `ARM64.rules` restricted to its 499 proven value rules and 94 proven block rules. -/
 def lower : RuleSet where
   name := "ARM64"
   values := [(.ARM64ADD, [Generated.ARM64.r_ARM64_970, Generated.ARM64.r_ARM64_1012, Generated.ARM64.r_ARM64_1014, Generated.ARM64.r_ARM64_1017, Generated.ARM64.r_ARM64_1433, Generated.ARM64.r_ARM64_1434, Generated.ARM64.r_ARM64_1435, Generated.ARM64.r_ARM64_1635]),
@@ -110,6 +110,7 @@ def lower : RuleSet where
     (.ARM64MOVDloadidx8, [Generated.ARM64.r_ARM64_742]),
     (.ARM64MOVDreg, [Generated.ARM64.r_ARM64_1260]),
     (.ARM64MOVDstore, [Generated.ARM64.r_ARM64_767, Generated.ARM64.r_ARM64_786, Generated.ARM64.r_ARM64_806, Generated.ARM64.r_ARM64_893]),
+    (.ARM64MOVDstoreidx, [Generated.ARM64.r_ARM64_809]),
     (.ARM64MOVHUload, [Generated.ARM64.r_ARM64_667, Generated.ARM64.r_ARM64_698, Generated.ARM64.r_ARM64_728, Generated.ARM64.r_ARM64_844]),
     (.ARM64MOVHUloadidx, [Generated.ARM64.r_ARM64_711, Generated.ARM64.r_ARM64_712, Generated.ARM64.r_ARM64_734, Generated.ARM64.r_ARM64_736, Generated.ARM64.r_ARM64_741]),
     (.ARM64MOVHUloadidx2, [Generated.ARM64.r_ARM64_745]),
@@ -128,6 +129,7 @@ def lower : RuleSet where
     (.ARM64MOVWloadidx4, [Generated.ARM64.r_ARM64_744]),
     (.ARM64MOVWreg, [Generated.ARM64.r_ARM64_1258, Generated.ARM64.r_ARM64_1643, Generated.ARM64.r_ARM64_1659]),
     (.ARM64MOVWstore, [Generated.ARM64.r_ARM64_764, Generated.ARM64.r_ARM64_787, Generated.ARM64.r_ARM64_807, Generated.ARM64.r_ARM64_889]),
+    (.ARM64MOVWstoreidx, [Generated.ARM64.r_ARM64_810]),
     (.ARM64MUL, [Generated.ARM64.r_ARM64_1043]),
     (.ARM64MULW, [Generated.ARM64.r_ARM64_1044]),
     (.ARM64MVN, [Generated.ARM64.r_ARM64_1182]),
@@ -189,6 +191,7 @@ def lower : RuleSet where
     (.AtomicStore32, [Generated.ARM64.r_ARM64_488]),
     (.AtomicStore64, [Generated.ARM64.r_ARM64_489]),
     (.AtomicStore8, [Generated.ARM64.r_ARM64_487]),
+    (.AtomicStorePtrNoWB, [Generated.ARM64.r_ARM64_490]),
     (.BitLen16, [Generated.ARM64.r_ARM64_106]),
     (.BitLen32, [Generated.ARM64.r_ARM64_105]),
     (.BitLen64, [Generated.ARM64.r_ARM64_104]),

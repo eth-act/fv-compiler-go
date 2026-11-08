@@ -404,13 +404,13 @@ theorem renameOp_stFitTy {o o' : Op} (h : renameOp o o' = true) (i : Nat) :
     exfalso
     have hs' := (renameOp_stSize h).2
     unfold renameOp at h
-    simp only [Bool.or_eq_true, beq_iff_eq] at h
+    simp only [Bool.or_eq_true] at h
     rcases stFitTy_ops hs with h' | h' | h' | h' | h' | h' | h' | h' <;> subst h' <;>
       first
       | exact absurd hs' (by decide)
       | (rcases h with h | h
          · unfold callRename at h; split at h <;> simp_all
-         · simp [Arm64.atomicOf] at h)
+         · simp [atomicRen, Arm64.atomicOf] at h)
 
 /-- Where `atomFitTy` comes from: a lowered call (`callFitTy`) or a narrow integer store's value
 (`stFitTy`). -/

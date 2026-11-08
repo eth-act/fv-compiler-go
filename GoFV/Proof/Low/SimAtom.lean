@@ -432,9 +432,9 @@ theorem renameOp_cases {a b : Op} (h : renameOp a b = true) :
       (a = .GetClosurePtr ∧ b = .ARM64LoweredGetClosurePtr) ∨
       (a = .GetCallerSP ∧ b = .ARM64LoweredGetCallerSP) ∨
       (a = .TailCall ∧ b = .ARM64CALLtail) ∨ (a = .TailCallInter ∧ b = .ARM64CALLtailinter) ∨
-      (a = .PanicBounds ∧ b = .ARM64LoweredPanicBoundsRR) ∨ Arm64.atomicOf b = some a := by
+      (a = .PanicBounds ∧ b = .ARM64LoweredPanicBoundsRR) ∨ atomicRen a b = true := by
   unfold renameOp at h
-  simp only [Bool.or_eq_true, beq_iff_eq] at h
+  simp only [Bool.or_eq_true] at h
   rcases h with h | h
   · unfold callRename at h
     split at h <;> simp_all
@@ -554,9 +554,79 @@ theorem evalOpL_atomic {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : 
        rw [hb]
        rfl)
 
+/-- `encode` at a pointer and at a 64-bit integer agree. -/
+theorem encode_ptr_w64 (x : Val) : encode (.ptr none) x = encode (.int .w64) x := by
+  cases x with
+  | int w k => cases w <;> simp [encode, Ty.size, Width.bytes, Width.bits]
+  | _ => simp [encode, Ty.size, Width.bytes, Width.bits]
+
+/-- **`AtomicStorePtrNoWB` as `AtomicStore64`** (`ARM64.rules:490`, `STLR`): both store the same
+bytes (`encode_ptr_w64`) at an 8-aligned location and return the memory. -/
+theorem atomicRoot_ptrStore (w : Value) (argv : List Val) :
+    Res.Refines (atomicRoot { w with op := .AtomicStorePtrNoWB } argv)
+      (atomicRoot { w with op := .AtomicStore64 } argv) := by
+  have hb : ({ w with op := Op.AtomicStorePtrNoWB } : Value).op ≠ .PubBarrier :=
+    show Op.AtomicStorePtrNoWB ≠ .PubBarrier by decide
+  have hp : ¬ (({ w with op := Op.AtomicStorePtrNoWB } : Value).op = .PrefetchCache ∨
+      ({ w with op := Op.AtomicStorePtrNoWB } : Value).op = .PrefetchCacheStreamed) :=
+    show ¬ (Op.AtomicStorePtrNoWB = .PrefetchCache ∨ Op.AtomicStorePtrNoWB = .PrefetchCacheStreamed)
+      by decide
+  unfold atomicRoot
+  split
+  · unfold Atomic.barrier; split
+    · rw [if_neg hb]; exact .stuck _ _
+    · exact .stuck _ _
+  · unfold Atomic.prefetch; split
+    · rw [if_neg hp]; exact .stuck _ _
+    · exact .stuck _ _
+  · next a x m =>
+    cases m with
+    | mem m =>
+      simp only [Atomic.rmwRoot, Atomic.info?]
+      cases a.asPtrWord with
+      | none => exact .stuck _ _
+      | some p =>
+        dsimp only
+        unfold Atomic.rmw
+        simp only [Atomic.step, encode_ptr_w64,
+          show (Ty.ptr none).size = (Ty.int .w64).size from rfl]
+        split
+        · split
+          · exact Res.Refines.refl _
+          · exact .stuck _ _
+        · exact .stuck _ _
+    | _ => exact .stuck _ _
+  · unfold Atomic.casRoot; split
+    · simp only [Atomic.casWidth?]
+      split
+      · next h => cases h
+      · exact .stuck _ _
+    · exact .stuck _ _
+  · exact .stuck _ _
+
+/-- An arm64 atomic of a generic atomic (`atomicRen`) refines it: on its operands fitted to the
+location (`atomicRoot_fit`), and `STLR` of `AtomicStorePtrNoWB` as `AtomicStore64`
+(`atomicRoot_ptrStore`). -/
+theorem evalOpL_atomicRen {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : List Val}
+    {ty : Ty} {o : Op} (h : atomicRen o w.op = true) :
+    Res.Refines (evalOp env ctx fr { w with op := o } argv ty) (evalOpL false env ctx fr w argv ty) := by
+  unfold atomicRen at h
+  simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at h
+  rcases h with h | ⟨rfl, hw⟩
+  · obtain ⟨he, ht⟩ := evalOpL_atomic (env := env) (ctx := ctx) (fr := fr) (argv := argv) (ty := ty) h
+    rw [he, ht]
+    exact atomicRoot_fit { w with op := o } argv
+  · obtain ⟨he, -⟩ := evalOpL_atomic (env := env) (ctx := ctx) (fr := fr) (argv := argv) (ty := ty)
+      (o := .AtomicStore64) (by rw [hw]; rfl)
+    have ht : evalOp env ctx fr { w with op := .AtomicStorePtrNoWB } argv ty =
+        atomicRoot { w with op := .AtomicStorePtrNoWB } argv := rfl
+    rw [he, ht]
+    exact resRefines_trans (atomicRoot_ptrStore w argv)
+      (atomicRoot_fit { w with op := .AtomicStore64 } argv)
+
 /-- A renamed atom evaluates as the generic op it renames (`arm64Op`), on fitted pieces for a
-call; the generic tail calls are `stuck` (`atomicRoot`); an arm64 atomic is its generic atomic on
-its operands fitted to the location (`evalOpL_atomic`). -/
+call; the generic tail calls are `stuck` (`atomicRoot`); an arm64 atomic refines the generic
+atomic (`evalOpL_atomicRen`). -/
 theorem evalOpL_rename {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : List Val} {ty : Ty}
     {o : Op} (h : renameOp o w.op = true) :
     (∃ k, PostCall o k ∧ evalOpL false env ctx fr w argv ty =
@@ -565,9 +635,8 @@ theorem evalOpL_rename {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : 
         evalOpL false env ctx fr w argv ty = evalOp env ctx fr { w with op := o } argv ty) ∨
       ((o = .TailCall ∨ o = .TailCallInter) ∧
         ∃ msg, evalOp env ctx fr { w with op := o } argv ty = .stuck msg) ∨
-      (Arm64.atomicOf w.op = some o ∧
-        evalOpL false env ctx fr w argv ty = atomicRoot { w with op := o } (atomicArgs o argv) ∧
-        evalOp env ctx fr { w with op := o } argv ty = atomicRoot { w with op := o } argv) := by
+      (atomicRen o w.op = true ∧
+        Res.Refines (evalOp env ctx fr { w with op := o } argv ty) (evalOpL false env ctx fr w argv ty)) := by
   have h0 : nilFaults false ctx w argv = none := rfl
   rcases renameOp_cases h with ⟨rfl, hw⟩ | ⟨rfl, hw⟩ | ⟨rfl, hw⟩ | ⟨rfl, hw⟩ | ⟨rfl, hw⟩ |
     ⟨rfl, hw⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, hw⟩ | hat
@@ -653,7 +722,7 @@ theorem evalOpL_rename {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv : 
     rw [hw]
     unfold evalOp
     rfl
-  · exact .inr (.inr (.inr ⟨hat, evalOpL_atomic hat⟩))
+  · exact .inr (.inr (.inr ⟨hat, evalOpL_atomicRen hat⟩))
 
 /-- A call of a post-`expand calls` generic op evaluates by `callOp`. -/
 theorem evalOp_postCall {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val}
@@ -671,7 +740,7 @@ theorem evalOpL_callLead {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv 
       first
         | (obtain ⟨rfl, -⟩ := h; simp [PostCall]; done)
         | (obtain ⟨-, h2⟩ := h; simp at h2; done)
-        | (cases h; done)
+        | (simp [atomicRen, Arm64.atomicOf] at h; done)
   rcases evalOpL_rename (env := env) (ctx := ctx) (fr := fr) (argv := argv) (ty := ty) h with
     ⟨k', hk', he⟩ | ⟨ho, -⟩ | ⟨ho, -⟩ | ⟨hat, -⟩
   · refine ⟨hpc, ?_⟩
@@ -681,6 +750,7 @@ theorem evalOpL_callLead {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {argv 
     rw [he, this]
   · rcases hpc with ⟨h2, -⟩ | ⟨h2, -⟩ | ⟨h2, -⟩ <;> rcases ho with h1 | h1 | h1 | h1 <;> simp_all
   · rcases hpc with ⟨h2, -⟩ | ⟨h2, -⟩ | ⟨h2, -⟩ <;> rcases ho with h1 | h1 <;> simp_all
-  · rcases callLead_some hk with ⟨hw, -⟩ | ⟨hw, -⟩ | ⟨hw, -⟩ <;> rw [hw] at hat <;> cases hat
+  · rcases callLead_some hk with ⟨hw, -⟩ | ⟨hw, -⟩ | ⟨hw, -⟩ <;> rw [hw] at hat <;>
+      simp [atomicRen, Arm64.atomicOf] at hat
 
 end GoFV.Proof.Low.Sim

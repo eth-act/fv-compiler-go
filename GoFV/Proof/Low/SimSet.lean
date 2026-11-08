@@ -210,7 +210,7 @@ theorem addrLower_of_argFree {x : ID} {u w : Value} (hu : f.value? x = some u)
       rcases renameOp_cases hop with ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ |
           ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | h9 <;> first
         | (rw [h2] at hw'; cases hw')
-        | exact (atomicOf_facts h9).2.2.2.2.2.2.2.2.1 hw'
+        | exact (atomicRen_facts h9).2.2.2.2.2.2.2.2.1 hw'
     · obtain ⟨-, -, -, n, hs, -⟩ := memLower_cases hm
       rw [(argFree_cases hf).1] at hs; cases hs
     · have hzw := bulkLower_op hz
@@ -506,7 +506,7 @@ theorem evalOpL_safeL {env : Env} {ctx : Ctx} {fr : Frame} {u w : Value} {argv :
           (by rw [ho]; decide) (by rw [ho]; decide)
       · rw [ho] at hr'; exact absurd hr' (by decide)
     · rcases ho with ho | ho <;> rw [ho] at hr' <;> exact absurd hr' (by decide)
-    · have := (atomicOf_facts hat).2.2.2.2.2.1
+    · have := (atomicRen_facts hat).2.2.2.2.2.1
       rw [hr] at this; cases this
   · obtain ⟨-, -, hu, -⟩ := memLower_cases hm
     rw [hu] at hr'; exact absurd hr' (by decide)

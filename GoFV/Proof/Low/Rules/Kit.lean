@@ -555,7 +555,13 @@ theorem checked_localAddr {r : Rule} {n ty ai ax ar args c}
 theorem checked_armStore {r : Rule} {o n ty ai ax ar args c}
     (hp : r.pat = .op o n ty ai ax ar args c) (ho : (stSize o).isSome = true) :
     ArmRule.Checked r :=
-  .inr (.inr (.inr (.inl ⟨o, n, ty, ai, ax, ar, args, c, hp, .inr (.inr (.inl ho))⟩)))
+  .inr (.inr (.inr (.inl ⟨o, n, ty, ai, ax, ar, args, c, hp, .inr (.inr (.inl (.inl ho)))⟩)))
+
+/-- A rule on an indexed arm64 store (`ArmRule.Mem`, `idxStore`). -/
+theorem checked_idxStore {r : Rule} {o n ty ai ax ar args c}
+    (hp : r.pat = .op o n ty ai ax ar args c) (ho : (idxStore o).isSome = true) :
+    ArmRule.Checked r :=
+  .inr (.inr (.inr (.inl ⟨o, n, ty, ai, ax, ar, args, c, hp, .inr (.inr (.inl (.inr ho)))⟩)))
 
 /-- A rule on a lowered bounds panic (`ArmRule.Mem`, `pbAtom`). -/
 theorem checked_pb {r : Rule} {o n ty ai ax ar args c}

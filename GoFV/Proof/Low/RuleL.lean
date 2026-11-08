@@ -585,12 +585,19 @@ def callRename : Op → Op → Bool
   | .PanicBounds, .ARM64LoweredPanicBoundsRR => true
   | _, _ => false
 
+/-- An arm64 atomic of the generic atomic it is (`Arm64.atomicOf`, `ARM64.rules:487-504`), or
+`STLR` of `AtomicStorePtrNoWB` (`490`): `STLR` runs as `AtomicStore64`, which stores what
+`AtomicStorePtrNoWB` stores (`encode` at a pointer and at a 64-bit integer agree;
+`GoFV.Proof.Low.Sim.atomicRoot_ptrStore`). -/
+def atomicRen (o o' : Op) : Bool :=
+  Arm64.atomicOf o' == some o || o == .AtomicStorePtrNoWB && o' == .ARM64STLR
+
 /-- The atom ellipsis rules the atom simulation relates by itself (`GoFV.Opt.LowerCheck.atomPair`):
 the input atom and its renamed output have the same arguments and fields, and the output's
 evaluation refines the input's (`GoFV.Proof.Low.atomPair_eval`): `callRename`'s, and an arm64
-atomic of the generic atomic it is (`Arm64.atomicOf`, `ARM64.rules:487-504`; `Sem.arm64Op` runs
-it as that atomic on its operands fitted to the location, `Sem.atomicArgs`). -/
-def renameOp (o o' : Op) : Bool := callRename o o' || Arm64.atomicOf o' == some o
+atomic of a generic atomic (`atomicRen`; `Sem.arm64Op` runs it as the generic atomic
+`Arm64.atomicOf` gives on its operands fitted to the location, `Sem.atomicArgs`). -/
+def renameOp (o o' : Op) : Bool := callRename o o' || atomicRen o o'
 
 /-- An ellipsis rule without a condition renaming an atom (`renameOp`). -/
 def ArmRule.Rename (r : Rule) : Prop :=
@@ -777,15 +784,26 @@ theorem atomicOf_facts {o o' : Op} (h : Arm64.atomicOf o' = some o) :
   unfold Arm64.atomicOf at h
   split at h <;> first | (cases h; done) | (cases h; decide)
 
+/-- `atomicRen`'s ops: `atomicOf_facts`'. -/
+theorem atomicRen_facts {o o' : Op} (h : atomicRen o o' = true) :
+    o.generic = true ∧ o'.generic = false ∧ stSize o = none ∧ stSize o' = none ∧
+      isRoot o = true ∧ isRoot o' = true ∧ o ≠ .Phi ∧ o' ≠ .Phi ∧ o' ≠ .ARM64MOVDaddr ∧
+      ((Atomic.info? o).isSome || (Atomic.casWidth? o).isSome) = true := by
+  unfold atomicRen at h
+  simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at h
+  rcases h with h | ⟨rfl, rfl⟩
+  · exact atomicOf_facts h
+  · decide
+
 /-- Renamed atoms are no arm64 stores. -/
 theorem renameOp_stSize {o o' : Op} (h : renameOp o o' = true) :
     stSize o = none ∧ stSize o' = none := by
   unfold renameOp at h
-  simp only [Bool.or_eq_true, beq_iff_eq] at h
+  simp only [Bool.or_eq_true] at h
   rcases h with h | h
   · unfold callRename at h
     split at h <;> first | (cases h; done) | exact ⟨rfl, rfl⟩
-  · obtain ⟨-, -, h1, h2, -⟩ := atomicOf_facts h
+  · obtain ⟨-, -, h1, h2, -⟩ := atomicRen_facts h
     exact ⟨h1, h2⟩
 
 /-- Generic ops are no arm64 stores. -/
@@ -898,15 +916,17 @@ def pbAtom : Op → Bool
   | _ => false
 
 /-- A rule on a memory or frame atom (`(Store {t} ptr val mem)`, `(LocalAddr {sym} base mem)`, an
-arm64 store `stSize` knows, a `Zero` or a `Move`) or on a lowered bounds panic (`pbAtom`): the
-validator accepts its events only as a lowered store, `Zero` or `Move`, a folded store offset or a
-frame address it pairs with the atom itself (`GoFV.Opt.LowerCheck.atomDef`, `memLower`,
-`bulkLower`, `stFold`, `addrLower`), or as a constant folded into a bounds panic, which the replay
-keeps as the renamed atom (`GoFV.Opt.LowerCheck.pbFoldEv`; `finalOKL` and `atomsOKL` relate the
-result, `pbLower`), so the rule carries no obligation of its own. -/
+arm64 store `stSize` knows or an indexed one, `idxStore`, a `Zero` or a `Move`) or on a lowered
+bounds panic (`pbAtom`): the validator accepts its events only as a lowered store, `Zero` or
+`Move`, a folded store offset, a scaled store index or a frame address it pairs with the atom
+itself (`GoFV.Opt.LowerCheck.atomDef`, `memLower`, `bulkLower`, `stFold`, `stIdxScale`,
+`addrLower`), or as a constant folded into a bounds panic, which the replay keeps as the renamed
+atom (`GoFV.Opt.LowerCheck.pbFoldEv`; `finalOKL` and `atomsOKL` relate the result, `pbLower`), so
+the rule carries no obligation of its own. -/
 def ArmRule.Mem (r : Rule) : Prop :=
   ∃ o n ty ai ax ar args c, r.pat = .op o n ty ai ax ar args c ∧
-    (o = .Store ∨ o = .LocalAddr ∨ (stSize o).isSome ∨ pbAtom o ∨ o = .Zero ∨ o = .Move)
+    (o = .Store ∨ o = .LocalAddr ∨ ((stSize o).isSome ∨ (idxStore o).isSome) ∨ pbAtom o ∨
+      o = .Zero ∨ o = .Move)
 
 /-- A rule whose result is `mulStrengthReduce{,32}(v, x, c)` (`ARM64.rules:1043`, `1044`): the
 validator checks its events by their effect alone (`GoFV.Opt.LowerCheck.mulOKL`: the values the
