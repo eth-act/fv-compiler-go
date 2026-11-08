@@ -235,3 +235,7 @@ root = "GoFVTest.DebugParity"
 [[lean_exe]]
 name = "arm-sat"
 root = "GoFVTest.Proof.ArmSat"
+
+[[lean_exe]]
+name = "obj-check"
+root = "GoFVTest.ObjCheck"
