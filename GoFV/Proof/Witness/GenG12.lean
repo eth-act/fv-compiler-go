@@ -1892,7 +1892,7 @@ theorem addrAgree : AddrAgree ι := by
   cases b with
   | nil => simp [ι] at ha; simp [Blk.base?] at hb; subst hb; subst ha; rfl
   | heap k =>
-    simp only [Blk.base?, Option.some.injEq] at hb
+    simp only [Blk.base?_heap, Option.some.injEq] at hb
     subst hb
     unfold ι at ha
     split at ha <;> first | cases ha | skip

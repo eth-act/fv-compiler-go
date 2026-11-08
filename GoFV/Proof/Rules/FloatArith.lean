@@ -3,8 +3,6 @@ import GoFV.Proof.Rules.NonVacuous
 import GoFV.Rules.Generated.Generic.Values07
 import GoFV.Rules.Generated.Generic.Values02
 
-variable [GoFV.SSA.Sem.Addrs]
-
 /-!
 # Float arithmetic rules (`docs/proofs/rules.md`, #69)
 
@@ -26,6 +24,8 @@ multiplication). NaNs, infinities and zeros again agree case by case.
 
 namespace GoFV.Proof.Rules.FloatArith
 open GoFV.IEEE
+
+variable [GoFV.SSA.Sem.Addrs]
 
 theorem log2_mul_pow (m k : Nat) (hm : m ≠ 0) : (m * 2 ^ k).log2 = m.log2 + k := by
   induction k with
@@ -286,6 +286,10 @@ namespace GoFV.Proof.Rules
 
 open GoFV.SSA GoFV.SSA.Sem
 
+section
+
+variable [GoFV.SSA.Sem.Addrs]
+
 /-- `generic.rules:1328`: `(Mul64F x (Const64F [2])) => (Add64F x x)` -/
 theorem r_generic_1328_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1328 := by
   rule_unfold
@@ -296,15 +300,6 @@ theorem r_generic_1328_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic
     rw [h1, FOps.const64, hc]; rfl
   rw [hk, FloatArith.fops_mul_two64] at hty ⊢
   exact refines_retype_of_hasTy hty
-
-/-- `generic.rules:1328` at `x = 1.0` (`rule-sat`'s random auxints miss the literal `2.0`). -/
-theorem inst_r_generic_1328 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1328
-    (PEnv.ofLists [([0], .i64 0x3FF0000000000000)] [] (.int .w64) [([1], 0x4000000000000000)])
-    (Oracle.const true) := by
-  simp [GoFV.Rules.Generated.Generic.r_generic_1328]
-  rule_eval
-  intro h
-  simp only [FOps.mul, FOps.bin, int2, Val.asInt, ↓reduceDIte, reduceCtorEq] at h
 
 /-- `generic.rules:1331`: `(Div64F x (Const64F <t> [c])) && reciprocalExact64(c) =>
 (Mul64F x (Const64F <t> [1/c]))` -/
@@ -328,6 +323,19 @@ theorem r_generic_1331_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic
   rw [hk1, hdm] at hty
   rw [hk, hk1, hdm]
   exact refines_retype_of_hasTy hty
+
+end
+
+open scoped GoFV.SSA.Sem.Fixed
+
+/-- `generic.rules:1328` at `x = 1.0` (`rule-sat`'s random auxints miss the literal `2.0`). -/
+theorem inst_r_generic_1328 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1328
+    (PEnv.ofLists [([0], .i64 0x3FF0000000000000)] [] (.int .w64) [([1], 0x4000000000000000)])
+    (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_1328]
+  rule_eval
+  intro h
+  simp only [FOps.mul, FOps.bin, int2, Val.asInt, ↓reduceDIte, reduceCtorEq] at h
 
 /-- `generic.rules:1331` at `x = 1.0`, `c = 2.0`. -/
 theorem inst_r_generic_1331 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1331
