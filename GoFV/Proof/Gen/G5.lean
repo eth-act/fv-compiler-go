@@ -171,6 +171,32 @@ end Cases
 
 /-! ## The theorems -/
 
+/-- One value of G5's kinds (`VK5`) emitted at the Progs from `j` to `j'`: `vk4_step`'s statement
+for G5's values. `g5_value` and the later slices apply it to their values of G5's kinds. -/
+theorem vk5_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat → BitVec 64}
+    {text : BitVec 64} {az ez : Int} {ps : Array Prog} {ret : BitVec 64} {tab : PcTab}
+    {E : MatchEnv} {bid : ID} {i j j' : Nat} {id : ID} {v : Value} {s s' : LocState}
+    {m : MState} {K : KMap} {kd : VKind2}
+    (hE : G2Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E)
+    (F : Facts lc sym text az ez ps.toList ret E) (hhome4 : ∀ i, homeOK4 lc i = true)
+    (hcf : checkFrame lc g = .ok ()) (hv : lc.ctx.f.value? id = some v) (hVK : VK5 lc g v kd)
+    (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
+    (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
+    (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
+    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s) (hpre : G4Pre lc s v)
+    (hcall : CallOK H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
+    (hs : stepLoc env lc s v = .ok s') :
+    ∃ E' m', E.Extends E' ∧ G2Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
+      PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
+      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' := by
+  cases hVK with
+  | g4 _ hVK4 =>
+    exact vk4_step hE F hhome4 hcf hv hVK4 hvs htemp hj hj' hreads hm hinv hpre hcall hs
+  | mark hop hsz hmt hhn hma =>
+    obtain ⟨m', h1, h2, h3, h4⟩ := g5_mark (H := H) F hm hinv.core hinv.slots
+      (knext_kStep fun _ => (hs_none hhn).noRegs) hj hj' hop hsz hmt hhn hma hvs htemp hs
+    exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩⟩
+
 /-- **G5, values.** A value (not an entry value) of a function `checkG5` accepted with the class
 table `kt`, run by `runLoc` from a state related by `LocMatch` to a machine state whose registers
 hold values of the classes the table gives before the value (`G3Inv` at `kAt … i`), is matched by
@@ -216,13 +242,7 @@ theorem g5_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps
   have F : Facts c.cx.lc sym text az ez c.cx.ps.toList ret E :=
     ⟨hl, clsReg_of_home4 hhome4, hnd, hlt, hret, hA⟩
   rw [kAt_succ hi hv]
-  cases hVK with
-  | g4 _ hVK4 =>
-    exact vk4_step hE0 F hhome4 hcf hv hVK4 hvs htemp hj hj' hreads hm hinv hpre hcall hs
-  | mark hop hsz hmt hhn hma =>
-    obtain ⟨m', h1, h2, h3, h4⟩ := g5_mark (H := H) F hm hinv.core hinv.slots
-      (knext_kStep fun _ => (hs_none hhn).noRegs) hj hj' hop hsz hmt hhn hma hvs htemp hs
-    exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE0, h1, h2, ⟨h3, h4⟩⟩
+  exact vk5_step hE0 F hhome4 hcf hv hVK hvs htemp hj hj' hreads hm hinv hpre hcall hs
 
 /-- **G5, terminators.** A terminator of a function `checkG5` accepted with the class table `kt`
 that goes to a successor, from a state whose registers hold the classes of the block's end, is

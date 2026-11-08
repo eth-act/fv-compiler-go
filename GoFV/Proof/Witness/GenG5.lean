@@ -2050,11 +2050,12 @@ theorem callOK0 {E' : MatchEnv} (hA : AddrAgree E'.ι) (hnil : E'.ι .nil = some
   exact ⟨E'.ι, { m₁ with pc := m₁.x 30 }, GenG2.mem0, rfl, fun _ _ h => h, hA, rfl, rfl, rfl, rfl,
     fun _ _ => rfl, hm', GenG2.memInj0 hnil _, GenG2.keys0, GenG2.sep0, fun r hr => by cases hr⟩
 
-/-- The per-value premises of a value that is no compare, load or pair load. -/
+/-- The per-value premises of a value that is no compare, load, pair load or subtraction. -/
 theorem g5Pre_of {v : Value} (h1 : v.op ≠ .ARM64CMP) (h2 : v.op ≠ .ARM64CMPconst)
-    (h3 : loadOp? v.op = none) (h4 : v.op ≠ .ARM64LDP) (s : LocState) : G4Pre lc s v :=
-  ⟨⟨fun h => by rcases h with h | h <;> contradiction, fun _ _ _ hl => by rw [h3] at hl; cases hl⟩,
-    fun h => absurd h h4⟩
+    (h3 : loadOp? v.op = none) (h4 : v.op ≠ .ARM64LDP) (h5 : v.op ≠ .ARM64SUB) (s : LocState) :
+    G4Pre lc s v :=
+  ⟨⟨fun h => by rcases h with h | h <;> contradiction,
+    (fun _ _ _ hl => by rw [h3] at hl; cases hl), fun h => absurd h h5⟩, fun h => absurd h h4⟩
 
 /-- **G5 on `g`**: from the state after `v5` (`R0 = 7`), the spill `v2`, the call `v6`, its memory
 `v7` and the marker `v11` (`KeepAlive`) are matched by a machine run of the Progs to a state related
@@ -2088,7 +2089,7 @@ theorem genG5_value_witness :
   obtain ⟨E1, m1, hx1, hE1, hp1, hm1, hinv1⟩ := g5_value (H := GenG2.H0) hc hE hmem hb hi1
     (hval 2 hv2s) (by rw [hop2]; rfl) (locMatch0 7) (g5Inv0 7 hk0)
     (g5Pre_of (by rw [hop2]; decide) (by rw [hop2]; decide)
-      (by rw [hop2]; simp [loadOp?, narrowLoad?]) (by rw [hop2]; decide) _)
+      (by rw [hop2]; simp [loadOp?, narrowLoad?]) (by rw [hop2]; decide) (by rw [hop2]; decide) _)
     (GenG2.callOK_ne (by rw [hop2]; decide)) hs1
   have hidx : ((tab.lookup 1).getD []).getD 3 0 = ((tab.lookup 1).getD []).getD 2 0 := by decide
   have hm1' : LocMatch E1 s1 1 3 m1 := by
@@ -2102,17 +2103,18 @@ theorem genG5_value_witness :
   obtain ⟨E2, m2, hx2, hE2, hp2, hm2', hinv2⟩ := g5_value (H := GenG2.H0) hc hE1 hmem hb hi3
     (hval 6 hv6s) (by rw [hop6]; rfl) hm1' hinv1'
     (g5Pre_of (by rw [hop6]; decide) (by rw [hop6]; decide)
-      (by rw [hop6]; simp [loadOp?, narrowLoad?]) (by rw [hop6]; decide) _)
+      (by rw [hop6]; simp [loadOp?, narrowLoad?]) (by rw [hop6]; decide) (by rw [hop6]; decide) _)
     (callOK0 hA1 (hx1.2 _ _ rfl) hm2 hno) hs2
   obtain ⟨E3, m3, hx3, hE3, hp3, hm3, hinv3⟩ := g5_value (H := GenG2.H0) hc hE2 hmem hb hi4
     (hval 7 hv7s) (by rw [hop7]; rfl) hm2' hinv2
     (g5Pre_of (by rw [hop7]; decide) (by rw [hop7]; decide)
-      (by rw [hop7]; simp [loadOp?, narrowLoad?]) (by rw [hop7]; decide) _)
+      (by rw [hop7]; simp [loadOp?, narrowLoad?]) (by rw [hop7]; decide) (by rw [hop7]; decide) _)
     (GenG2.callOK_ne (by rw [hop7]; decide)) hs3
   obtain ⟨E4, m4, hx4, hE4, hp4, hm4, hinv4⟩ := g5_value (H := GenG2.H0) hc hE3 hmem hb hi5
     (hval 11 hv11s) (by rw [hop11]; rfl) hm3 hinv3
     (g5Pre_of (by rw [hop11]; decide) (by rw [hop11]; decide)
-      (by rw [hop11]; simp [loadOp?, narrowLoad?]) (by rw [hop11]; decide) _)
+      (by rw [hop11]; simp [loadOp?, narrowLoad?]) (by rw [hop11]; decide)
+      (by rw [hop11]; decide) _)
     (GenG2.callOK_ne (by rw [hop11]; decide)) hs4
   exact ⟨s1, s2, s3, s4, E4, m4, hs1, hs2, hs3, hs4,
     MatchEnv.Extends.trans (MatchEnv.Extends.trans (MatchEnv.Extends.trans hx1 hx2) hx3) hx4,

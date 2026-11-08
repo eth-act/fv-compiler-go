@@ -228,6 +228,11 @@ the follow-up for frames. Globals have no Phase 1 address and sit at their linke
 Stack moves (§6) change `ι` on frame blocks in the middle of a run; a `uintptr` taken earlier
 is then stale on the machine, which Go permits and Phase 1 does not model, one more reason for
 the guard on frames.
+Slice G6 of the genssa proof (`docs/plans/proofs3.md` §4) realises the guard: the proof's
+`AddrAgree` puts every block with a Phase 1 address at it except the frame temporaries
+(`Blk.temp`, variables whose address the function never converts, to which no integer converts
+back), and the activation puts the current function's accessed frame temporaries at `SP` plus
+their frame offsets.
 
 **Executable `ι`** (`GoFV/SSA/Sem/Inject.lean`, I6). A `Layout` of windows (globals, code
 symbols, runtime entry points, the top of the stack) and the heap rule above; the allocator

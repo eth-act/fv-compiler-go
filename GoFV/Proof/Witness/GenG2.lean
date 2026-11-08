@@ -2014,7 +2014,7 @@ theorem clamp_g2_facts : clampG2Facts = true := by
   exact h.2
 
 theorem addrAgree : AddrAgree ι := by
-  intro b n a hb ha
+  intro b n a hb ha _
   cases b <;> simp [ι] at ha <;> simp [Blk.base?] at hb
   subst hb; subst ha; rfl
 
@@ -2162,8 +2162,8 @@ theorem genG2_value_witness :
     simp [val, hv]
   have hE := g2Env hc
   have hpre : ∀ v : Value, v.op ≠ .ARM64CMP → v.op ≠ .ARM64CMPconst → v.op ≠ .ARM64MOVDload →
-      ∀ s, G1Pre lc s v := fun v h1 h2 h3 s =>
-    ⟨fun h => by rcases h with h | h <;> contradiction, fun h => absurd h h3⟩
+      v.op ≠ .ARM64SUB → ∀ s, G1Pre lc s v := fun v h1 h2 h3 h4 s =>
+    ⟨fun h => by rcases h with h | h <;> contradiction, fun h => absurd h h3, fun h => absurd h h4⟩
   obtain ⟨s1, hs1, hrun⟩ := GenG1.okThen_spec hrun
   obtain ⟨s2, hs2, hrun⟩ := GenG1.okThen_spec hrun
   simp only [Bool.and_eq_true] at hrun
@@ -2172,7 +2172,8 @@ theorem genG2_value_witness :
   obtain ⟨s4, hs4, -⟩ := GenG1.okThen_spec hrun
   obtain ⟨E1, m1, hx1, hE1, hp1, hm1, hinv1⟩ := g2_value (H := H0) hc hE hmem hb hi1 (hval 2 hv2s)
     (by rw [hop2]; rfl) (locMatch0 7) (g2Inv0 7 hcls)
-    (hpre _ (by rw [hop2]; decide) (by rw [hop2]; decide) (by rw [hop2]; decide) _)
+    (hpre _ (by rw [hop2]; decide) (by rw [hop2]; decide) (by rw [hop2]; decide)
+      (by rw [hop2]; decide) _)
     (callOK_ne (by rw [hop2]; decide)) hs1
   have hidx : ((tab.lookup 1).getD []).getD 3 0 = ((tab.lookup 1).getD []).getD 2 0 := by decide
   have hm1' : LocMatch E1 s1 1 3 m1 := by
@@ -2184,15 +2185,18 @@ theorem genG2_value_witness :
   have hA1 := hE1.addr
   obtain ⟨E2, m2, hx2, hE2, hp2, hm2', hinv2⟩ := g2_value (H := H0) hc hE1 hmem hb hi3
     (hval 6 hv6s) (by rw [hop6]; rfl) hm1' hinv1
-    (hpre _ (by rw [hop6]; decide) (by rw [hop6]; decide) (by rw [hop6]; decide) _)
+    (hpre _ (by rw [hop6]; decide) (by rw [hop6]; decide) (by rw [hop6]; decide)
+      (by rw [hop6]; decide) _)
     (callOK0 hA1 (hx1.2 _ _ rfl) hm2 hno) hs2
   obtain ⟨E3, m3, hx3, hE3, hp3, hm3, hinv3⟩ := g2_value (H := H0) hc hE2 hmem hb hi4
     (hval 7 hv7s) (by rw [hop7]; rfl) hm2' hinv2
-    (hpre _ (by rw [hop7]; decide) (by rw [hop7]; decide) (by rw [hop7]; decide) _)
+    (hpre _ (by rw [hop7]; decide) (by rw [hop7]; decide) (by rw [hop7]; decide)
+      (by rw [hop7]; decide) _)
     (callOK_ne (by rw [hop7]; decide)) hs3
   obtain ⟨E4, m4, hx4, hE4, hp4, hm4, -⟩ := g2_value (H := H0) hc hE3 hmem hb hi5
     (hval 3 hv3s) (by rw [hop3]; rfl) hm3 hinv3
-    (hpre _ (by rw [hop3]; decide) (by rw [hop3]; decide) (by rw [hop3]; decide) _)
+    (hpre _ (by rw [hop3]; decide) (by rw [hop3]; decide) (by rw [hop3]; decide)
+      (by rw [hop3]; decide) _)
     (callOK_ne (by rw [hop3]; decide)) hs4
   exact ⟨s1, s2, s3, s4, E4, m4, hs1, hs2, hs3, hs4,
     MatchEnv.Extends.trans (MatchEnv.Extends.trans (MatchEnv.Extends.trans hx1 hx2) hx3) hx4,
@@ -2301,7 +2305,8 @@ theorem genG2_term_witness (x : BitVec 64) (t : ID) (hf : GenG1.clampFacts x t =
   have hE := g2EnvC hc hsl hnc
   have hen : entryOp GenG1.v7.op = false := by rw [hop]; rfl
   have hpre : G1Pre GenG1.lc (GenG1.s0 x) GenG1.v7 := by
-    refine ⟨fun _ a ha y hy p hp => ?_, fun h => by rw [hop] at h; cases h⟩
+    refine ⟨fun _ a ha y hy p hp => ?_, (fun h => by rw [hop] at h; cases h),
+      (fun h => by rw [hop] at h; cases h)⟩
     have := hargs a ha
     rw [hy, hp] at this
     cases this

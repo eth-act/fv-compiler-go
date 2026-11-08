@@ -105,6 +105,26 @@ theorem progStep_movAddr {kd : Nat} {y : Nat} {off : Int} (hkd : kd < 32)
   rw [progStep_eq hn (by simp [Prog.isSkip, has]) he
     (by by_cases h : kd = 31 <;> simp [effWd, h, Eff.nilAccess?]), wd_apply hkd]
 
+/-- The address of a frame operand: `MOVD $off(RSP), Rd` (`TYPE_ADDR`, `NAME_AUTO` or
+`NAME_PARAM`), `SP + frameOff`. -/
+theorem progStep_slotAddr {kd : Nat} {nc : AddrName} {off : Int} (hkd : kd < 32)
+    (hn : L.nextAddr p.id = some next) (has : p.as = .MOVD) (hf1 : p.from_.type = .ADDR)
+    (hf : slotA { p.from_ with type := .MEM } nc off = true) (hnc : nc = .AUTO ∨ nc = .PARAM)
+    (ht : p.to = regA (REG_R0 + kd)) :
+    progStep L p s = .ok { s.wX (BitVec.ofNat 5 kd) (s.sp + BitVec.ofInt 64 (frameOff L nc off)) with
+      pc := next } := by
+  have hname : As.name .MOVD = "MOVD" := rfl
+  have hm : (ProgCtx.mk L s p).mem { p.from_ with type := .MEM } =
+      .ok (s.sp + BitVec.ofInt 64 (frameOff L nc off), none) := ctx_mem_slot hf hnc
+  have he : progEffect ⟨L, s, p⟩ =
+      .ok (effWd {} kd (s.sp + BitVec.ofInt 64 (frameOff L nc off))) := by
+    unfold progEffect
+    simp (config := { decide := true }) only [has, hname, hf1, ht, regA, ProgOp.baseOf,
+      ↓reduceIte, ProgOp.movMem, hm]
+    exact eff_wX_dest hkd
+  rw [progStep_eq hn (by simp [Prog.isSkip, has]) he
+    (by by_cases h : kd = 31 <;> simp [effWd, h, Eff.nilAccess?]), wd_apply hkd]
+
 /-- P0's static call `CALL sym(SB)`: `X30` the fall-through, the PC the symbol. -/
 theorem progStep_callSym {y : Nat} (hn : L.nextAddr p.id = some next) (has : p.as = .CALL)
     (ht1 : p.to.type = .MEM) (ht2 : p.to.name = .EXTERN) (ht3 : p.to.offset = 0)

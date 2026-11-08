@@ -1,15 +1,18 @@
 import GoFV.SSA.Sem.LocMatch
+import GoFV.SSA.Sem.FrameSafe
 import GoFV.Proof.PtrAddr
 import GoFV.Gen.Check
 
 /-!
 # Values and registers under `LocMatch` in slice G1 (`docs/plans/proofs3.md` §3)
 
-`AddrAgree ι`: the injection puts every block that has a Phase 1 address (`Blk.base?`) at that
-address. Then a pointer's injected address is its Phase 1 address, so the second disjunct of
-`ValRel` at `.int .w64` collapses to the first, `Ptr.word` relates like the pointer, and Phase 2's
-register arithmetic on pointer words (`Arm64.reg` reads a convertible pointer as its address) is
-the machine's.
+`AddrAgree ι`: the injection puts every block that has a Phase 1 address (`Blk.base?`) and that an
+integer can convert back to (every block but a frame temporary `Blk.temp`, `Ptr.ofAddr_ne_temp`)
+at that address. Then a convertible pointer's injected address is its Phase 1 address, so the
+second disjunct of `ValRel` at `.int .w64` collapses to the first, `Ptr.word` relates like the
+pointer, and Phase 2's register arithmetic on pointer words (`Arm64.reg` reads a convertible
+pointer as its address) is the machine's. A frame temporary may sit anywhere (slice G6 puts the
+current activation's at their frame operands): no integer is its address.
 
 `Fits c v`: a register content of width class `c` (`GoFV.Gen.Check.cls`). Reading it at a shape
 of class `c` (`Val.retypeL`) keeps `ValRel` (`valRel_retypeL`); a narrower content read at a wider
@@ -21,9 +24,19 @@ namespace GoFV.Proof.Gen
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Gen.Check
 
-/-- Every block with a Phase 1 address sits at that address. -/
+/-- The block is no frame temporary. -/
+def NotTemp (b : Blk) : Prop := ∀ a n, b ≠ .temp a n
+
+/-- Every block with a Phase 1 address other than a frame temporary sits at that address. -/
 def AddrAgree (ι : Blk → Option (BitVec 64)) : Prop :=
-  ∀ b n a, b.base? = some n → ι b = some a → a = BitVec.ofNat 64 n
+  ∀ b n a, b.base? = some n → ι b = some a → NotTemp b → a = BitVec.ofNat 64 n
+
+theorem notTemp_ofAddr (x : BitVec 64) : NotTemp (Ptr.ofAddr x).blk :=
+  fun a n => Ptr.ofAddr_ne_temp x a n
+
+theorem notTemp_of_convertible {p : Ptr} (h : p.convertible = true) : NotTemp p.blk := by
+  intro a n hb
+  simp [Ptr.convertible, hb] at h
 
 /-- A register content of width class `c`. -/
 def Fits (c : Nat) : Val → Prop
@@ -35,9 +48,10 @@ def Fits (c : Nat) : Val → Prop
 
 variable {ι : Blk → Option (BitVec 64)}
 
-/-- The injected address of a pointer with a Phase 1 address is that address. -/
+/-- The injected address of a pointer with a Phase 1 address, not into a frame temporary, is that
+address. -/
 theorem ptrRel_addr (hA : AddrAgree ι) {p : Ptr} {r a : BitVec 64} (h : PtrRel ι p r)
-    (ha : p.addr? = some a) : r = a := by
+    (ha : p.addr? = some a) (ht : NotTemp p.blk) : r = a := by
   obtain ⟨base, hb, rfl⟩ := h
   unfold Ptr.addr? at ha
   cases hn : p.blk.base? with
@@ -45,15 +59,15 @@ theorem ptrRel_addr (hA : AddrAgree ι) {p : Ptr} {r a : BitVec 64} (h : PtrRel 
   | some n =>
     rw [hn] at ha
     cases ha
-    rw [hA _ _ _ hn hb]
+    rw [hA _ _ _ hn hb ht]
 
 /-- `Ptr.word` relates like the pointer. -/
 theorem valRel_word (hA : AddrAgree ι) {p : Ptr} {r : BitVec 64} (h : PtrRel ι p r) :
     ValRel ι p.word r := by
   unfold Ptr.word
   split
-  · rename_i a _ ha
-    exact Or.inl (ptrRel_addr hA h ha)
+  · rename_i a hc ha
+    exact Or.inl (ptrRel_addr hA h ha (notTemp_of_convertible hc))
   · exact h
 
 /-- Under `AddrAgree`, a 64-bit integer relates to exactly its own word. -/
@@ -61,7 +75,7 @@ theorem valRel_i64 (hA : AddrAgree ι) {x r : BitVec 64} (h : ValRel ι (.int .w
     r = x := by
   rcases h with h | ⟨_, h⟩
   · exact h
-  · exact ptrRel_addr hA h (Ptr.addr?_ofAddr x)
+  · exact ptrRel_addr hA h (Ptr.addr?_ofAddr x) (notTemp_ofAddr x)
 
 /-- A register content read at a shape of its class keeps its relation. -/
 theorem valRel_retypeL (hA : AddrAgree ι) {c : Nat} {t : Ty} {v : Val} {r : BitVec 64}
