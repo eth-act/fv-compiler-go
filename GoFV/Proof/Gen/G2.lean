@@ -1216,4 +1216,155 @@ theorem g2_call (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E) 
 
 end Cases
 
+/-! ## The theorems -/
+
+theorem stepTermL_exit {fr : GoFV.SSA.Sem.Frame} {b : Block} {n : Next} (hk : b.kind = .Exit)
+    (h : stepTermL fr b = .ok n) : False := by
+  unfold stepTermL stepTerm at h
+  simp [hk, BlockKind.isArm64] at h
+
+/-- Every block of slice G2 starts at the index its `startIdx` gives, where `pcOf` points. -/
+theorem start_of_mem2 {c : Cx2} {tab : PcTab} {text : BitVec 64} {E : MatchEnv}
+    (hblocks : c.blocks c.cx.lc.ctx.f.blocks.toList = .ok tab)
+    (hpcOf : E.pcOf = pcOfTab text c.cx.ps.toList tab) : Starts c.cx text E := by
+  intro n hn
+  obtain ⟨b, j, js, e, next, -, hj, hvals, -, -, hrow⟩ := Cx2.blocks_spec hblocks n hn
+  obtain ⟨-, h0, -⟩ := Cx2.values_spec hvals
+  exact ⟨j, hj, by rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some, h0]⟩
+
+/-- `G2Env` under a larger injection that keeps Phase 1's addresses. -/
+theorem G2Env.extend {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog} {ret : BitVec 64}
+    {tab : PcTab} {E : MatchEnv} (hE : G2Env lc g L ps ret tab E) {ι' : Blk → Option (BitVec 64)}
+    (hext : ∀ b a, E.ι b = some a → ι' b = some a) (hA : AddrAgree ι') :
+    G2Env lc g L ps ret tab { E with ι := ι' } where
+  lcEq := hE.lcEq
+  link := hE.link
+  pcOf := hE.pcOf
+  retOut := hE.retOut
+  addr := hA
+  glob := fun y name abi h => hext _ _ (hE.glob y name abi h)
+  syms := hE.syms
+  calls := hE.calls
+  slot := hE.slot
+  extra := hE.extra
+  frame := ⟨hE.frame.lo, hE.frame.hi, hE.frame.slot⟩
+
+/-- **G2, values.** A value (not an entry value) of a function `checkG2` accepted, run by `runLoc`
+from a state related by `LocMatch` to a machine state, is matched by `runProg` steps of genssa's
+P0 Progs to a state related before the next value, under an activation `E'` that extends `E`'s
+injection (by the callee's, at a call) and is again a `G2Env`. At a static call the callee's
+behaviour is the trusted contract `CallOK`. -/
+theorem g2_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
+    {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {E : MatchEnv} {bid : ID}
+    {blk : Block} {i : Nat} {id : ID} {v : Value} {s s' : LocState} {m : MState}
+    (hc : checkG2 lc ps bstart g = .ok tab) (hE : G2Env lc g L ps ret tab E)
+    (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
+    (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
+    (hen : entryOp v.op = false) (hm : LocMatch E s bid i m) (hinv : G2Inv E lc s)
+    (hpre : G1Pre lc s v) (hcall : CallOK H E g L lc s s' v m)
+    (hs : stepLoc env lc s v = .ok s') :
+    ∃ E' m', E.Extends E' ∧ G2Env lc g L ps ret tab E' ∧ PStar H L ps.toList ret m m' ∧
+      LocMatch E' s' bid (i + 1) m' ∧ G2Inv E' lc s' := by
+  have hE0 := hE
+  obtain ⟨hlcE, hlink, hpcOf, hret, hA, hglob, hsyms, hcalls, hslot, hextra, hF⟩ := hE
+  obtain ⟨sym, text, az, ez, hL⟩ : ∃ sym text az ez, L = Link.byId sym text az ez ps.toList :=
+    ⟨_, _, _, _, hlink⟩
+  have htext : L.text = text := by rw [hL]; rfl
+  rw [htext] at hpcOf
+  subst hL
+  obtain ⟨c, rfl, rfl, -, rfl, hl, hhome2, hcf, hlt, hnd, hblocks⟩ := checkG2_spec hc
+  obtain ⟨b, j, js, e, next, hb', -, hvals, -, -, hrow⟩ := Cx2.blocks_spec hblocks bid hbid
+  rw [hb] at hb'
+  cases hb'
+  obtain ⟨-, -, hstep⟩ := Cx2.values_spec hvals
+  obtain ⟨hi', hid⟩ := Array.getElem?_eq_some_iff.1 hi
+  obtain ⟨v', kd, hv', hkd, hvs⟩ := hstep i (by simpa using hi')
+  have hid' : blk.values.toList[i] = id := by simpa using hid
+  rw [hid', hv] at hv'
+  cases hv'
+  obtain ⟨htemp, hVK⟩ := vkind2_spec hkd hen
+  have F : Facts c.cx.lc sym text az ez c.cx.ps.toList ret E :=
+    ⟨hl, homeOK_of_2 hhome2, hnd, hlt, hret, hA⟩
+  have hj : E.pcOf bid i = pcAt text c.cx.ps.toList ((js ++ [e]).getD i 0) := by
+    rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some]
+  have hj' : E.pcOf bid (i + 1) = pcAt text c.cx.ps.toList ((js ++ [e]).getD (i + 1) 0) := by
+    rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some]
+  have hsz := slot_sizes hlcE hcf hinv
+  have same : ∀ m', PStar H (Link.byId sym text az ez c.cx.ps.toList) c.cx.ps.toList ret m m' ∧
+      LocMatch E s' bid (i + 1) m' ∧ G2Inv E c.cx.lc s' →
+      ∃ E' m', E.Extends E' ∧ G2Env c.cx.lc c.g (Link.byId sym text az ez c.cx.ps.toList) c.cx.ps
+        ret tab E' ∧ PStar H (Link.byId sym text az ez c.cx.ps.toList) c.cx.ps.toList ret m m' ∧
+        LocMatch E' s' bid (i + 1) m' ∧ G2Inv E' c.cx.lc s' :=
+    fun m' ⟨h1, h2, h3⟩ => ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE0, h1, h2, h3⟩
+  cases hVK with
+  | g1 _ _ _ _ _ hvk =>
+    obtain ⟨m', h⟩ := g2_g1 (H := H) F hF hsz hm hinv hj hj' hvs hvk htemp hpre hs
+    exact same m' h
+  | call hop hcall' hcr _ _ _ h16 hlen hargs hres hct hrr hpat =>
+    have hframed : E.framed = true := by
+      cases hfr : E.framed
+      · exact absurd hop (hcalls hfr id v hv)
+      · rfl
+    obtain ⟨ι', hext', hA', m', hstar, hlm, hinv'⟩ := g2_call (H := H) F hF hlcE hcf hframed hsyms
+      hm hinv hj hj' hop hcall' hcr h16 hlen hargs hres hct hrr hpat hvs htemp hs hcall
+    exact ⟨_, m', ⟨rfl, hext'⟩, hE0.extend hext' hA', hstar, hlm, hinv'⟩
+  | selMem hop hsz1 hc0 hu hcop hts hct hpos hmt hnone hidx =>
+    obtain ⟨m', h⟩ := g2_selMem (H := H) F hhome2 hm hinv hj hj' hop hsz1 hc0 hu hcop hts hct hpos
+      hmt hnone hidx hvs htemp hs
+    exact same m' h
+  | selReg hop hsz1 hc0 hu hcop hts hct hpos _ hvh hr16 hlt' hcl hhc hrs =>
+    obtain ⟨m', h⟩ := g2_selReg (H := H) F hhome2 hm hinv hj hj' hop hsz1 hc0 hu hcop hts hct hpos
+      hvh hr16 hlt' hcl hhc hrs hvs htemp hs
+    exact same m' h
+  | addr hop hsz1 ha0 _ hx hsym hro hpat =>
+    obtain ⟨m', h⟩ := g2_addr (H := H) F (fun y name abi h => hglob y name abi h) hm hinv hj hj'
+      hop hsz1 ha0 hx hsym hro hpat hvs htemp hs
+    exact same m' h
+  | spill hop hh hso hsz1 hcv hao hpat =>
+    obtain ⟨m', h⟩ := g2_spill (H := H) F hF hlcE hcf hslot hextra hm hinv hj hj' hop hh hso hsz1
+      hcv hao hpat hvs htemp hs
+    exact same m' h
+  | reload hop hsz1 ha0 hah hso hca hro hpat =>
+    obtain ⟨m', h⟩ := g2_reload (H := H) F hF hlcE hcf hslot hm hinv hj hj' hop hsz1 ha0 hah hso
+      hca hro hpat hvs htemp hs
+    exact same m' h
+
+/-- **G2, terminators.** A terminator of a function `checkG2` accepted that goes to a successor is
+matched by `runProg` steps to a state related before the successor's first value (an `Exit`
+block never goes to one). -/
+theorem g2_term {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
+    {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {E : MatchEnv} {bid : ID}
+    {blk : Block} {e : Edge} {s s' : LocState} {m : MState}
+    (hc : checkG2 lc ps bstart g = .ok tab) (hE : G2Env lc g L ps ret tab E)
+    (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
+    (hm : LocMatch E s bid blk.values.size m) (hinv : G2Inv E lc s) (hpre : G1TermPre lc s blk)
+    (ht : stepTermLoc lc s blk = .ok (.goto e, s')) :
+    ∃ m', PStar H L ps.toList ret m m' ∧ LocMatch E s' e.b 0 m' ∧ G2Inv E lc s' ∧
+      e.b ∈ lc.ctx.f.blocks.toList := by
+  obtain ⟨-, hlink, hpcOf, hret, hA, -, -, -, -, -, -⟩ := hE
+  obtain ⟨sym, text, az, ez, hL⟩ : ∃ sym text az ez, L = Link.byId sym text az ez ps.toList :=
+    ⟨_, _, _, _, hlink⟩
+  have htext : L.text = text := by rw [hL]; rfl
+  rw [htext] at hpcOf
+  subst hL
+  obtain ⟨c, rfl, rfl, -, rfl, hl, hhome2, -, hlt, hnd, hblocks⟩ := checkG2_spec hc
+  obtain ⟨b, j, js, e', next, hb', -, hvals, hterm, hnext, hrow⟩ :=
+    Cx2.blocks_spec hblocks bid hbid
+  rw [hb] at hb'
+  cases hb'
+  rcases hterm with ⟨hk, -⟩ | ⟨-, hterm⟩
+  · obtain ⟨R, -, hn⟩ := stepTermLoc_gen ht
+    exact (stepTermL_exit hk hn).elim
+  obtain ⟨hlen, -, -⟩ := Cx2.values_spec hvals
+  have F : Facts c.cx.lc sym text az ez c.cx.ps.toList ret E :=
+    ⟨hl, homeOK_of_2 hhome2, hnd, hlt, hret, hA⟩
+  have hpcT : E.pcOf bid blk.values.size = pcAt text c.cx.ps.toList e' := by
+    rw [hpcOf]
+    simp only [pcOfTab, hrow, Option.getD_some]
+    rw [List.getD_eq_getElem?_getD, List.getElem?_append_right (by simp [hlen])]
+    simp [hlen]
+  obtain ⟨m', hstar, hlm, ⟨R, rfl⟩, hmem⟩ := term_core (H := H) F (start_of_mem2 hblocks hpcOf)
+    hterm hnext hpcT hm hinv.core hpre ht
+  exact ⟨m', hstar, hlm, ⟨core_fr hinv.core, hinv.slots⟩, hmem⟩
+
 end GoFV.Proof.Gen
