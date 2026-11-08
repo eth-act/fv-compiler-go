@@ -174,11 +174,11 @@ theorem verified_mach_witness :
       cases GoFV.SSA.run plRunEnv penv.tables f0 ObjWhole.args {} 5 <;> simp [isRetG]
     have hd : (GoFV.SSA.run plRunEnv penv.tables f0 ObjWhole.args {} 5).Defined := by
       rw [hrun0]; trivial
-    obtain ⟨hO, hH, hME, hroom, hg, hpass, hlf, -, hEE, hpc, -, -⟩ := ObjWhole.obj_premises
+    obtain ⟨hO, hH, hME, hroom, hg, hpass, hlf, -, hEE, hpc, -, -, hic⟩ := ObjWhole.obj_premises
     obtain ⟨hc, hE, hb1, hbm, hk, hentry, sI, hsI, hent, hinv, hP⟩ := ObjWhole.lc_premises hlcf
     rw [← hentry] at hpc
     exact ⟨r, rfl, hv, ⟨rs0, m0, hrun0⟩,
-      verified_mach_ret hpe hv hvpre hnn hap hnp hd rfl hc hO hH hME hroom hg hpass hlf hE
+      verified_mach_ret hpe hv hvpre hnn hap hnp hd rfl hc hO hH hic hME hroom hg hpass hlf hE
         (hEE _) hb1 hbm hk hsI hent hinv (hpc _) hP⟩
 
 end GoFV.Proof.Witness.ObjEndToEnd

@@ -175,7 +175,7 @@ def symsOut : Bool :=
     x.1.toStringLossy != "main.g" && x.1.toStringLossy != "runtime.writeBarrier"
 
 /-- What compiled evaluation checks of the machine side: `checkObj` accepts with no frame and no
-stack check, the linked code, the return address `0x40` is no P0 address, the P0 address of `v19`
+stack check, the linked code, no `CALL (Rn)`, the return address `0x40` is no P0 address, the P0 address of `v19`
 … of the entry's value 2 maps to the body's start, and `memI`'s keys are distinct. -/
 def objFacts : Bool :=
   ObjG7.envFacts ps ObjG7.startSpills ObjG7.startObj && ObjG7.startTab.check.isNone &&
@@ -183,7 +183,7 @@ def objFacts : Bool :=
     (0x40 : BitVec 64) != endP GenG2.text ps.toList &&
     ObjEnv.map ObjG7.startTab ps L ObjG7.base (pcOfTab GenG2.text ps.toList GenG3.tab 1 2) ==
       ObjG7.base + BitVec.ofNat 64 (ObjG7.startTab.offs[0]!) &&
-    decide ((memI.blocks.toList.map (·.1)).Nodup) && symsOut
+    decide ((memI.blocks.toList.map (·.1)).Nodup) && symsOut && ObjG7.noICall ps
 
 theorem obj_facts : objFacts = true := by
   native_decide
@@ -314,11 +314,11 @@ theorem obj_premises :
     (∀ lc, EntryEnv (E0 lc) L ps.toList ObjG7.startTab.autosize s0) ∧
     (∀ lc, ObjEnv.map ObjG7.startTab ps L ObjG7.base ((E0 lc).pcOf 1 2) =
       ObjG7.base + BitVec.ofNat 64 (ObjG7.startTab.offs[0]!)) ∧
-    (memI.blocks.toList.map (·.1)).Nodup ∧ symsOut = true := by
+    (memI.blocks.toList.map (·.1)).Nodup ∧ symsOut = true ∧ (∀ u, ICallOut L ps.toList u) := by
   have hf := obj_facts
   simp only [objFacts, Bool.and_eq_true, beq_iff_eq, bne_iff_ne, ne_eq, List.all_eq_true,
     decide_eq_true_eq] at hf
-  obtain ⟨⟨⟨⟨⟨⟨hef, hchk⟩, hnp⟩, hnend⟩, hpc⟩, hkeys⟩, hso⟩ := hf
+  obtain ⟨⟨⟨⟨⟨⟨⟨hef, hchk⟩, hnp⟩, hnend⟩, hpc⟩, hkeys⟩, hso⟩, hni⟩ := hf
   obtain ⟨hO, hend⟩ := ObjG7.envFacts_spec hef
   have hfacts := hef
   simp only [ObjG7.envFacts, Bool.and_eq_true, beq_iff_eq] at hfacts
@@ -329,7 +329,7 @@ theorem obj_premises :
       gOutside := by decide, fp := by decide },
     (by rw [haz]; decide), (by decide),
     (fun _ _ _ h => by rw [Option.isNone_iff_eq_none.1 hchk] at h; cases h),
-    Or.inl haz, hend, fun lc => ?_, fun _ => hpc, hkeys, hso⟩
+    Or.inl haz, hend, fun lc => ?_, fun _ => hpc, hkeys, hso, ObjG7.noICall_spec hni L⟩
   exact
     { sp := by rw [haz]; show (0x7fff0000 : BitVec 64) + BitVec.ofInt 64 0 = 0x7fff0000; decide
       g := rfl
@@ -353,7 +353,7 @@ theorem lc_premises {env : Env} {lc : LocCtx} (hf : lcFacts env lc = true) :
       EntryMatch (E0 lc) sI s0 ∧
       G3Inv (E0 lc) lc (kAt lc GenG3.kt lc.ctx.f.entry (blkOf lc) 2) sI ∧
       RunPre env GenG2.H0 lc GenG3.g L (endP L.text ps.toList) (E0 lc) lc.ctx.f.entry 2 sI := by
-  obtain ⟨-, -, -, -, -, -, -, hend, -, -, hkeys, hso⟩ := obj_premises
+  obtain ⟨-, -, -, -, -, -, -, hend, -, -, hkeys, hso, -⟩ := obj_premises
   simp only [lcFacts, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem] at hf
   obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hres, hav⟩, hsl⟩, hnc⟩, hwi⟩, hentry⟩, hbm⟩, hbs⟩, hsz⟩, hpre⟩, hk0⟩,
     hsim⟩ := hf
@@ -404,10 +404,10 @@ theorem whole_of {env : Env} {lc : LocCtx} (hf : lcFacts env lc = true) {fuel : 
     ∃ E bF blkF sF sF' t' n, (E0 lc).Extends E ∧
       runMach GenG2.H0 ObjG7.startCode 0x40 n s0 = .returned t' ∧ ExitRel E sF s0 t' ∧
       lc.ctx.f.block? bF = some blkF ∧ stepTermLoc lc sF blkF = .ok (.ret rs mm, sF') := by
-  obtain ⟨hO, hH, hME, hroom, hg, hpass, hlf, -, hEE, hpc, -, -⟩ := obj_premises
+  obtain ⟨hO, hH, hME, hroom, hg, hpass, hlf, -, hEE, hpc, -, -, hic⟩ := obj_premises
   obtain ⟨hc, hE, hb1, hbm, hk, hentry, sI, hsI, hent, hinv, hP⟩ := lc_premises hf
   rw [← hentry] at hpc
-  exact obj_whole_ret hc hO hH hME hroom hg hpass hlf hE (hEE lc) hb1 hbm hk hsI hent hinv
+  exact obj_whole_ret hc hO hH hic hME hroom hg hpass hlf hE (hEE lc) hb1 hbm hk hsI hent hinv
     (hpc lc) hP hrun
 
 /-- `lcFacts` of `pallocSum.start` (`GenG3.lc`), and its run from `runLoc`'s first state on

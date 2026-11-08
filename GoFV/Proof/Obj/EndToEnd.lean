@@ -56,6 +56,7 @@ theorem verified_mach_ret
     (hc : checkG12 lc ps bstart g = .ok (tab, kt))
     (hO : ObjEnv ps spills o otab L base code (s0.x 30))
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
+    (hic : ∀ u, ICallOut L ps.toList u)
     (hME : MachEntry code base room s0) (hroom : otab.autosize + 8 ≤ room)
     (hg : (s0.x 28).toNat + 32 ≤ 2 ^ 64)
     (hpass : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
@@ -88,7 +89,7 @@ theorem verified_mach_ret
   have heq := runLoc_eq (env := e) (mem := mem) (fuel := fuel') hargs
   subst hlc
   refine ⟨fuel', href, _, rfl, heq, finish_defined (heq ▸ hd'), fun rs mm hraw => ?_⟩
-  exact obj_whole_ret hc hO hH hME hroom hg hpass hlf hE hEE hbE hbm hk hpre hent hinv hpc hRP
+  exact obj_whole_ret hc hO hH hic hME hroom hg hpass hlf hE hEE hbE hbm hk hpre hent hinv hpc hRP
     hraw
 
 end GoFV.Proof.Obj
