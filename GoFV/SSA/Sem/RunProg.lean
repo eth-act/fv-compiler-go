@@ -35,7 +35,10 @@ is cut at them (a basic block). Under the ID layout every Prog occupies its own 
 pseudo-ops are skips (`Prog.isSkip`: PC to the fall-through, nothing else).
 Branch targets are Prog IDs (`L.off`), calls and jumps to symbols go to `L.sym` (P0/P1's static
 call `CALL sym(SB)`, a `TYPE_MEM` operand, as the `CALL sym` `progedit` makes of it); a CALL
-writes the fall-through address to `X30`.
+writes the fall-through address to `X30`. P0/P1's `RET` (without operand, or of a symbol: a tail
+call) is unspecified (stuck):
+it returns through the frame that only `preprocess` makes explicit, and its meaning, the
+epilogue, is stated on the machine (`checkObj`, `GoFV/Proof/Obj/`); P2's `RET (Rn)` jumps to `Rn`.
 
 A run (`runProg`) **returns** when the PC is `ret` (before any Prog there); at a PC with no
 Prog — the target of a `CALL` leaving the list, a jump out of it, the end — it consults
@@ -678,8 +681,11 @@ def progEffect (c : ProgCtx) : Except String Eff := do
     let e ← e.wX (REG_R0 + 30) (← c.fall)
     return { e with pc := some t }
   | "RET" =>
-    let r := if p.to.type == .NONE then REG_R0 + 30 else p.to.reg
-    return { e with pc := some (← c.x r) }
+    -- P0/P1's `RET` (no operand, as `genssa` emits it, or a symbol: a tail call) leaves a frame
+    -- that only `preprocess` makes explicit: its meaning is the epilogue's, stated on the
+    -- machine (`checkObj`'s epilogue, `GoFV/Proof/Obj/`). P2's `RET (Rn)` jumps to `Rn`.
+    if p.to.type == .NONE || p.to.sym.isSome then throw "P0 RET: the epilogue's (machine level)"
+    return { e with pc := some (← c.x p.to.reg) }
   | "NOP" | "HINT" | "DMB" | "PRFM" => return e
   | "VCNT" => return ← e.wV p.to.reg ((GoFV.SSA.Sem.Arm64.vcnt ((← c.v p.from_.reg).setWidth 64)).setWidth 128)
   | "VUADDLV" =>
@@ -792,8 +798,11 @@ def mkProg (id : Nat) (as : As) (from_ to : Addr) (reg : Int := 0) : Prog :=
 /-- `MOVD $5, R0`. -/
 def wMov : Prog := mkProg 0 .MOVD { type := .CONST, offset := 5 } { type := .REG, reg := REG_R0 }
 
-/-- `RET`. -/
-def wRet : Prog := mkProg 1 .RET {} {}
+/-- `RET (R30)`: P2's return (P0's `RET` without operand is the epilogue's, unspecified here). -/
+def wRet : Prog := mkProg 1 .RET {} { type := .MEM, reg := REG_R0 + 30 }
+
+/-- P0's `RET` without operand. -/
+def wRet0 : Prog := mkProg 1 .RET {} {}
 
 /-- `MOVD (R1), R2`. -/
 def wLoad : Prog := mkProg 2 .MOVD { type := .MEM, reg := REG_R0 + 1 } { type := .REG, reg := REG_R0 + 2 }
@@ -831,6 +840,13 @@ theorem runProg_witness :
     (match runProg Hooks.none (wLink [wMov, wRet]) [wMov, wRet] 0x2000 3
         { MState.const 0x2000 0x100000 0x1000 with x := fun _ => 0x2000 } with
       | .returned s => s.x 0 == 5 && s.pc == 0x2000
+      | _ => false) = true := by decide
+
+/-- P0's `RET` without operand is stuck: its meaning is the epilogue's, on the machine. -/
+theorem runProg_ret0_witness :
+    (match runProg Hooks.none (wLink [wMov, wRet0]) [wMov, wRet0] 0x2000 3
+        { MState.const 0x2000 0x100000 0x1000 with x := fun _ => 0x2000 } with
+      | .stuck _ => true
       | _ => false) = true := by decide
 
 /-- A load through `X1 = 8` is in the nil page: `panicked .nilDeref`. -/
