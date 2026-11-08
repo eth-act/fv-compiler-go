@@ -22,7 +22,13 @@ GoFV.Proof.Witness.GenG2.g2_facts._native.native_decide.ax_1_1 562e2c6c911523d09
 # genG3_witness_clear/_set (GoFV/Proof/Witness/GenG3.lean, #553): `checkG3` accepts
 # `pallocSum.start` and `checkG2` does not (parsed, `Env.load`, `genssa`), `runLoc` runs its bit
 # test both ways and its `ANDconst`; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG3.g3_facts._native.native_decide.ax_1_1 b37ef943aab5ef719e3d140a229ea5d9533d828a61f6bae94c9a6b6baf3a7d7c
+# Pin updated for the G4 branch (#553: `kStep` follows pair homes).
+GoFV.Proof.Witness.GenG3.g3_facts._native.native_decide.ax_1_1 1223ee71264a0516102734109881fd7d2efe8ef65bf37e9b4d0e3024ce97ede0
+# genG4_value_witness, genG4_term_witness (GoFV/Proof/Witness/GenG4.lean, #553): `checkG4` accepts
+# `(*errorString).Error` and `checkG3` does not (parsed, `Env.load`, `genssa`), `runLoc` runs its
+# pair load and both selects, the pair load reads valid bytes; `checkG4` accepts `pallocSum.start`
+# with G3's tables; compiled evaluation, as plF_pipeline.
+GoFV.Proof.Witness.GenG4.g4_facts._native.native_decide.ax_1_1 ae5d4addd3fb5f10717ed9099ecdc590f9e4bd4dc3086dda87b432c631691f50
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
