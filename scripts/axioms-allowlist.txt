@@ -48,6 +48,10 @@ GoFV.Proof.Witness.GenG7.g7_facts._native.native_decide.ax_1_1 2e048d5bc15ed07aa
 # `genssa`), `runLoc` runs the write-barrier request and both selects; compiled evaluation, as
 # plF_pipeline.
 GoFV.Proof.Witness.GenG8.g8_facts._native.native_decide.ax_1_1 029b115294e9bb9d16738ed860ddf950b4b14f6f1b645f6bd7ee5cb8095e2fe6
+# genG9_value_witness (GoFV/Proof/Witness/GenG9.lean, #553): `checkG9` accepts
+# `runtime.fint64to32` and `checkG8` does not (parsed, `Env.load`, `genssa`), `runLoc` runs the
+# static call, its result and its memory; compiled evaluation, as plF_pipeline.
+GoFV.Proof.Witness.GenG9.g9_facts._native.native_decide.ax_1_1 0000000000000000000000000000000000000000000000000000000000000000
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
