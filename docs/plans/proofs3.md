@@ -1118,10 +1118,14 @@ on quick-v10 after G21, that would add only 3 functions that have no other block
 `LDP`+`Select`s, a `MOVDload`, a `Copy`) and 13 that have only `MOVDreg`: the other `MOVDnop`s sit
 in functions with further blockers.
 
-**Deferred** (after G22, #553): carrying the table across values. It is worth about 16 functions
+**Deferred** (after G22, #553): carrying the table across values. It was worth about 16 functions
 (the 3 and 13 above) and needs a register-frame conclusion in every slice's value lemma, so the
 slices that remove other blockers (§4's list) come first; this plan is kept for when they have
-freed more of the 220 `MOVDnop`s.
+freed more of the 220 `MOVDnop`s. After G23, 46 functions have `upper bits unknown` as their only
+reason; in 24 of them every such `MOVDnop`/`MOVDreg` follows its load in the same block with only
+narrow loads, `MOVDnop`s and `MOVDreg`s between (each writes at most its own register, which
+`g3_loadW`, `g14_idxW`, `g20_nop` and `op_reg2W` already state), so a table of several entries
+carried across just those values would take them; the other 22 need the cross-block table.
 
 - **The obstacle.** `MOVDnop x` emits no code. `runLoc` gives it the full 64-bit register:
   `movdLoc` takes the zero or sign extension of `x`'s low bits, as `LocCtx.signOf` decides from
