@@ -350,8 +350,8 @@ theorem addrRef_foldSym {tabs : Tables} {n : AuxRef} {T : Ty}
     simp only [hd]
     simp only [Option.elim_some, PtrOps.ptrRes, Ptr.inWindow, Blk.window?, ite_true,
       word_retypeL hw] at hy
-    simp only [Ptr.word, Ptr.convertible, Ptr.inWindow, Blk.window?, ite_true, Arm64.addr, Ptr.add,
-      Option.some.injEq] at hy
+    simp only [Ptr.word, Ptr.convertible, Ptr.addr?, Blk.base?_global, Option.map_none,
+      Ptr.inWindow, Blk.window?, ite_true, Arm64.addr, Ptr.add, Option.some.injEq] at hy
     rw [← hy, hk, BitVec.ofInt_add, BitVec.add_comm]
   · rename_i hd
     simp only [hd]

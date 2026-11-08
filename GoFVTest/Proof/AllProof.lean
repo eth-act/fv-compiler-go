@@ -175,6 +175,7 @@ import GoFV.Proof.NilPre
 import GoFV.Proof.Obj.Basic
 import GoFV.Proof.Obj.Bitfield
 import GoFV.Proof.Obj.EndToEnd
+import GoFV.Proof.Obj.EndToEndFixed
 import GoFV.Proof.Obj.Ex
 import GoFV.Proof.Obj.Frame
 import GoFV.Proof.Obj.G12
@@ -946,5 +947,3 @@ import GoFV.Proof.Witness.UuidNew
 import GoFV.Proof.Witness.WFCheck
 import GoFV.Proof.Witness.WriteBarrier
 import GoFV.Proof.Witness.ZCSE
-
-open scoped GoFV.SSA.Sem.Fixed

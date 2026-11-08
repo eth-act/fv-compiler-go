@@ -144,7 +144,9 @@ theorem ofAddr_adj (y : BitVec 64) {w : Nat} (hw : w < 2 ^ 22) :
     | some n =>
       rw [hn] at h1 h2
       simp only [Option.map_some, Option.some.injEq] at h1 h2
-      rw [← h1] at h2
+      generalize (Ptr.ofAddr (y + BitVec.ofNat 64 w)).off = c at h2 ⊢
+      generalize (Ptr.ofAddr y).off = b at h1 h2 ⊢
+      subst h1
       bv_omega
   · exact .inl hb
 

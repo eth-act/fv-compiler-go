@@ -1,7 +1,5 @@
 import GoFV.Proof.Pass.SegSound
 
-variable [GoFV.SSA.Sem.Addrs]
-
 /-!
 # Segments: the call segments (issue #151)
 
@@ -38,6 +36,10 @@ namespace GoFV.Proof.Seg
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.RewriteCheck GoFV.Opt.MemCall
 open GoFV.Proof.CSE.Mem (Avail)
 open GoFV.Proof.AtomSim (Reg rv evalValue_of_regs regs_of_ok regs_of_panic rv_of)
+
+section
+
+variable [GoFV.SSA.Sem.Addrs]
 
 /-! ## The checks -/
 
@@ -484,6 +486,10 @@ theorem callSeg_sound {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D N
     ⟨d, s, n, m, hca, hs, hn, hgop, hga, hcs, hd, hsp⟩⟩ := callSeg_spec h
   · exact memclr_sound hE hfv hgv hgid hty hop hfa hai hcv hca hs hn hgop hga hcs hp
   · exact memmove_sound hE hfv hgv hgid hty hop hfa hai hcv hca hs hn hgop hga hcs hd hsp
+
+end
+
+open scoped GoFV.SSA.Sem.Fixed
 
 /-! ## Non-vacuity -/
 

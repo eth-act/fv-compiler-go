@@ -563,7 +563,7 @@ theorem isZero_eq (hA : AddrAgree ι) {x : Val} {X : BitVec 64} {z : Bool} (hx :
     cases hn : p.isNil
     · have hX : X ≠ 0 := by
         rintro rfl
-        rw [← hpo] at hn
+        rw [← hpo, Ptr.ofAddr_small (x := 0) (by decide)] at hn
         exact absurd hn (by decide)
       have : (X == 0) = false := beq_eq_false_iff_ne.mpr hX
       rw [this]

@@ -294,7 +294,7 @@ theorem ptrRes_temp {n : Nat} (p : Ptr) (hp : p.blk = .temp 0 n) :
   unfold PtrOps.ptrRes
   split
   · rename_i hw
-    exact .inr ⟨off, Ptr.word_of_held (Ptr.held_iff.2 ⟨rfl, hw⟩)⟩
+    exact .inr ⟨off, Ptr.word_of_held (Ptr.held_iff.2 ⟨Ptr.convertible_temp 0 n off, hw⟩)⟩
   · exact .inl rfl
 
 /-- A pointer op on a tainted argument 0 points into the same temporary. -/

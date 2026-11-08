@@ -7,8 +7,6 @@ import GoFV.Opt.TabsAgree
 import GoFV.Opt.MemTy
 import Std.Data.HashMap.Lemmas
 
-variable [GoFV.SSA.Sem.Addrs]
-
 /-!
 # The checker of `expand calls` (`ECCheck.ecCheck`, issue #28)
 

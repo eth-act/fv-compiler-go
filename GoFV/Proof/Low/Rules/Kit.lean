@@ -292,7 +292,9 @@ theorem refines_addr_movAddr (T : Ty) (tabs : Tables) (ax : Option AuxRef) (base
     · cases k with
       | sym name =>
         have : PtrOps.ptrRes ⟨.global name.toStringLossy, BitVec.ofInt 64 (0 : Int64).toInt⟩ =
-            .ptr ⟨.global name.toStringLossy, 0⟩ := rfl
+            .ptr ⟨.global name.toStringLossy, 0⟩ := by
+          rw [show BitVec.ofInt 64 (0 : Int64).toInt = 0 from rfl]
+          simp [PtrOps.ptrRes, Ptr.word, Ptr.inWindow, Blk.window?]
         simp only [Option.elim, this]
         exact Refines.refl _
       | _ => rw [retypeL_poison]; exact .poison _

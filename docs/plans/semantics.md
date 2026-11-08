@@ -447,10 +447,12 @@ a `Ptr.convertible` pointer, else the pointer), because after `expand calls` Go 
 `OffPtr [off] SP` of the `uintptr` `SP` (`rewriteSelectOrArg`'s `offsetFrom(SP,
 OffsetOfResult)`), an integer word: both forms then agree on the value. Every reader of a
 pointer-shaped value reads it through `Val.asPtrWord`, and the word reads back as the slot
-itself (`Ptr.word_asPtrWord`; `Ptr.word_outargs`: an outgoing-arguments area always has a
-concrete address, and for an activation below `2^20` and an offset inside the `2^24` window
-`Ptr.ofAddr` of the word is exactly `⟨outargs act, off⟩`). A tuple has the shape of its type
-when its first components do (`Val.hasTyPre`). `MakeResult` builds the `Ret` control (§7).
+itself (`Ptr.word_asPtrWord`). Under `Addrs.fixed` an outgoing-arguments area has a concrete
+address, and for an offset inside the `2^24` window `Ptr.ofAddr` of the word is exactly
+`⟨outargs act, off⟩` (`expandCalls_slotWord_witness`); an assignment that does not decode the
+area (the machine's, `proofs3.md` §8) keeps the slot as a held pointer. A tuple has the shape
+of its type when its first components do (`Val.hasTyPre`). `MakeResult` builds the `Ret`
+control (§7).
 
 ### 4.9 Pseudo and out-of-phase ops
 `Copy` identity; `Phi` §3.6; `Convert` §3.3 (memory argument only orders it). `InlMark` no

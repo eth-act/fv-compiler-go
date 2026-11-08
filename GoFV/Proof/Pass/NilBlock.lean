@@ -918,8 +918,9 @@ theorem safe_global_retype (s : String) (o : BitVec 64) (t : Ty) :
     Safe ((Val.ptr ⟨.global s, o⟩).retype t) := by
   cases t with
   | int w =>
-    cases w <;> simp [Val.retype, Ptr.word, Ptr.convertible, Ptr.inWindow, Blk.window?, Safe]
-  | _ => simp [Val.retype, Ptr.word, Ptr.convertible, Ptr.inWindow, Blk.window?, Safe]
+    cases w <;> simp [Val.retype, Ptr.word, Ptr.convertible, Ptr.addr?, Ptr.inWindow, Blk.window?,
+      Safe]
+  | _ => simp [Val.retype, Ptr.word, Ptr.convertible, Ptr.addr?, Ptr.inWindow, Blk.window?, Safe]
 
 omit K in
 /-- The data pointer of a non-empty string constant, at any shape of the constant (`poison` if
@@ -940,7 +941,8 @@ theorem safe_str_select (s : String) (x : Val) (t : Ty) :
     | str =>
       simp only [Val.retype, Val.retypePtr]
       unfold Val.ofStr
-      split <;> simp [Comp.select, Ptr.word, Ptr.convertible, Ptr.inWindow, Blk.window?, Safe]
+      split <;> simp [Comp.select, Ptr.word, Ptr.convertible, Ptr.addr?, Ptr.inWindow, Blk.window?,
+        Safe]
     | _ => simp [Val.retype, Comp.select, Safe]
   · cases t <;> simp [Val.retype, Comp.select, Safe]
 

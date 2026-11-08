@@ -42,6 +42,14 @@ def RunMem (Gr : Frame) (rs : List Run) (j : Nat) (M : Mem) : Prop :=
 /-- The flag's address. -/
 def flagPtr : Ptr := ⟨flagBlk, 0⟩
 
+/-- The flag's address is held as a pointer (a global has no address). -/
+private theorem word_flagPtr : flagPtr.word = .ptr flagPtr := by
+  simp [flagPtr, flagBlk, Ptr.word, Ptr.addr?, Ptr.inWindow, Blk.window?]
+
+/-- A buffer pointer is held as a pointer (the buffer has no address). -/
+private theorem word_wbuf (o : BitVec 64) : (⟨.wbuf, o⟩ : Ptr).word = .ptr ⟨.wbuf, o⟩ := by
+  simp [Ptr.word, Ptr.addr?, Ptr.inWindow, Blk.window?]
+
 /-- A memory of the buffer block after a helper call: `M` with a buffer, or `M` itself. -/
 def BufW (M : Mem) (m : Mem) : Prop := (∃ n, Buf M n m) ∨ m = M
 
@@ -187,7 +195,7 @@ theorem local_wbaddr {env : Env} {tabs : Tables} {g : Func} {c : WBCheck.Ctx} {r
     · exact ⟨_, ‹_›⟩
     · cases hty
   rw [he]
-  rfl
+  exact congrArg Res.ok word_flagPtr
 
 /-- **`Const32 [0]`.** -/
 theorem local_const0 {env : Env} {tabs : Tables} {g : Func} {c : WBCheck.Ctx} {rs : List Run}
@@ -756,7 +764,7 @@ theorem local_wb {env : Env} {tabs : Tables} {g : Func} {c : WBCheck.Ctx} {rs : 
     rw [this]
     show Res.ok ((wbOp w.auxInt [.mem m0]).retype (.tuple [.ptr e, .mem])) = _
     simp only [wbOp]
-    rfl
+    exact congrArg Res.ok (by simp [Val.retype, Val.retypePre, word_wbuf])
   · simp only [QR, hrole]
     exact ⟨r, M, _, hr, hM0, rfl, by rw [← hn]; exact hB⟩
 
@@ -781,7 +789,7 @@ theorem local_sel {env : Env} {tabs : Tables} {g : Func} {c : WBCheck.Ctx} {rs :
     refine ⟨.ptr ⟨.wbuf, 0⟩, ?_, by simp only [QR, hrole]⟩
     rw [stepV_eq hw, evalValue_of (L := [_]) (by rw [hargs]; exact ⟨hz, trivial⟩),
       tys_get hw hid, he, DAE.evalOp_pureOp (.inr (.inl hop)), hop]
-    rfl
+    exact congrArg Res.ok (word_wbuf 0)
   · refine ⟨.mem m, ?_, ?_⟩
     · rw [stepV_eq hw, evalValue_of (L := [_]) (by rw [hargs]; exact ⟨hz, trivial⟩),
         tys_get hw hid, hty, DAE.evalOp_pureOp (.inr (.inr (.inl hop))), hop]
@@ -819,7 +827,7 @@ theorem local_off {env : Env} {tabs : Tables} {g : Func} {c : WBCheck.Ctx} {rs :
     have h0' : (0 : BitVec 64) + BitVec.ofNat 64 (8 * k) = BitVec.ofNat 64 (8 * k) := by
       simp
     rw [h0']
-    rfl
+    exact congrArg Res.ok (by rw [word_wbuf]; exact word_wbuf _)
   · simp only [QR, hrole]
     exact ⟨r, k, hr, hkn, rfl⟩
 

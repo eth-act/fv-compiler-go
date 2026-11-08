@@ -346,12 +346,13 @@ theorem rawT_frameTop {tabs : Tables} {e : GoFV.Proof.Rules.PEnv} {o : Op} {nm :
   · rw [GoFV.Proof.Rules.opVal_addr]
     obtain ⟨el, he⟩ := eq_of_isPtrTy hp
     rw [he]; unfold GoFV.Proof.Rules.addrVal
-    split <;> rfl
+    split <;> simp [Val.hasTy, Ptr.held, Ptr.inWindow, Blk.window?]
   · rw [GoFV.Proof.Rules.opVal_constString, tyEq_sound hp]
     unfold GoFV.Proof.Rules.strVal
     split
     · rename_i s d _
-      exact Val.ofStr_hasTy_of (by split <;> rfl) _
+      exact Val.ofStr_hasTy_of (by
+        split <;> simp [Val.hasTy, Val.isPtrWord, Ptr.held, Ptr.inWindow, Blk.window?]) _
     · rfl
 
 /-- **`topOK`**: the raw value of a pattern whose top op `topOK` accepts has the top type's

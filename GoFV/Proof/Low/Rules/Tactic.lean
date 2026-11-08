@@ -36,7 +36,7 @@ commutation choice, unfolded (module doc). -/
 elab "arm_unfold" : tactic => do
   let goal ← getMainGoal
   let ty ← instantiateMVars (← goal.getType)
-  let some r := ty.getAppArgs[0]? | throwError "arm_unfold: goal is not `ArmRule.Sound r`"
+  let some r := ty.getAppArgs.back? | throwError "arm_unfold: goal is not `ArmRule.Sound r`"
   let some rn := r.getAppFn.constName? | throwError "arm_unfold: rule is not a constant"
   let rid := mkIdent rn
   let n ← withTransparency .all <| reduce
@@ -111,7 +111,7 @@ old block takes edge `b`). -/
 elab "arm_bunfold" : tactic => do
   let goal ← getMainGoal
   let ty ← instantiateMVars (← goal.getType)
-  let some r := ty.getAppArgs[0]? | throwError "arm_bunfold: goal is not `BlockRuleL.Sound br`"
+  let some r := ty.getAppArgs.back? | throwError "arm_bunfold: goal is not `BlockRuleL.Sound br`"
   let some rn := r.constName? | throwError "arm_bunfold: rule is not a constant"
   let rid := mkIdent rn
   let nk ← withTransparency .all <| whnf (mkApp (mkConst ``GoFV.Rules.BlockRule.newKind) r)

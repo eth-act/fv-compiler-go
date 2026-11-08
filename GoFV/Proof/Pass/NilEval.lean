@@ -89,7 +89,7 @@ def Safe : Val → Prop
   | .int .w64 x => (Ptr.ofAddr x).blk ≠ .nil
   | _ => True
 
-theorem ofAddr_zero : (Ptr.ofAddr 0).blk = .nil := by decide
+theorem ofAddr_zero : (Ptr.ofAddr 0).blk = .nil := by rw [Ptr.ofAddr_small (x := 0) (by decide)]
 
 theorem nn_of_safe {q : Val} (hq : Safe q) (hs : (∃ p, q = .ptr p) ∨ ∃ x, q = .int .w64 x) :
     NN q := by

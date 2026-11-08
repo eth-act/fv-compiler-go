@@ -29,7 +29,7 @@ set_option hygiene false in
 condition does not call `isNonNegative`). -/
 elab "rule_auto_w" : tactic => do
   let ty ← instantiateMVars (← getMainTarget)
-  let some r := ty.getAppArgs[0]? | throwError "rule_auto_w: goal is not `Rule.SoundWP r`"
+  let some r := ty.getAppArgs.back? | throwError "rule_auto_w: goal is not `Rule.SoundWP r`"
   let some rn := r.constName? | throwError "rule_auto_w: rule is not a constant"
   let rid := mkIdent rn
   evalTactic (← `(tactic| (

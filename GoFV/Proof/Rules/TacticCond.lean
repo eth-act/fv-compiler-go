@@ -127,7 +127,7 @@ elab "rule_cond_bool_getd" : tactic => withMainContext do
 elab "rule_unfold_getd" : tactic => do
   let goal ← getMainGoal
   let ty ← instantiateMVars (← goal.getType)
-  let some r := ty.getAppArgs[0]? | throwError "rule_unfold_getd: goal is not `Rule.Sound r`"
+  let some r := ty.getAppArgs.back? | throwError "rule_unfold_getd: goal is not `Rule.Sound r`"
   let some rn := r.constName? | throwError "rule_unfold_getd: rule is not a constant"
   let rid := mkIdent rn
   let e := mkIdent `e

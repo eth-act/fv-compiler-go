@@ -1,8 +1,6 @@
 import GoFV.SSA.Sem.Pure
 import GoFV.Opt.RewriteCheck
 
-variable [GoFV.SSA.Sem.Addrs]
-
 /-!
 # prove's validator: value ranges over terms (issue #24)
 
