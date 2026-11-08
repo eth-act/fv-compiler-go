@@ -670,6 +670,23 @@ successor, and no value is a nil check or bounds panic (`nl_ops`). The statement
 also needs a Phase-1-mode result mapping at `Ret`. G26 accepts 5,172 functions. The 7 rejected
 for having no arm64 op have a `Convert` or a `Plain` block.
 
+**Slice G27: shifted logic ops** (`GoFV/Gen/Check27.lean`, `checkG27 lc ps bstart g`, returning
+G4's tables; proven sound, `g27_value`, `g27_term`, `g27_nilPanic`, `g27_boundsPanic`): G26 with
+`ANDshiftXX`, `ORshiftXX`, `XORshiftXX` and `BICshiftXX [k] x y` (`XX` one of `LL`, `RL`, `RA`:
+`x op (y SHIFT k)`). genssa emits one `AND`/`ORR`/`EOR`/`BIC Rm SHIFT k, Rn, Rd` (`genshift`), whose
+source operand is `makeshift`'s `TYPE_SHIFT` with offset `(Rm & 31) << 16 | typ << 22 | k << 10`
+(`shiftA`). G27 accepts such a value with no temporary, two register arguments, a result of at
+least 8 bits no wider than `x`, and `0 ≤ k < 64`; `y` must be at least as wide as the result for
+`LL`, and of class 64 for `RL` and `RA`, whose result reads `y`'s upper bits. The proof
+(`G27.lean`): `runLoc` computes `Arm64.opSh` of the shift kind (`shK`) and the bitwise op (`logF`)
+(`stepLoc_logSh`); the machine reads `X[m]` shifted by the same `Shift.apply` (`ctx_src_shift`)
+and writes `X[n] op (X[m] SHIFT k)` (`progStep_logSh`). A bitwise op's low bits depend only on its
+operands' low bits (`logF_low`), and so do a left shift's (`shl_low`); a class-64 register equals
+its machine word, so the result is related on its class (`lo_logSh`, `g27_logSh`). On a function
+with no arm64 op, `checkG27` is `checkG26` (`checkG26_of_27`). The statements are G26's over
+`checkG27`, with the same premises. No new trusted premise. G27 accepts 5,261 functions; in 26
+others a shifted logic op fails the width rule (`shifted logic widths`).
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -680,9 +697,8 @@ reason in parentheses):
    (`frame variable with an integer address`, 197 (12)): option 2 of semantics3 §4.3 (addresses as
    a parameter of the semantics); slots of other sizes (`slot … frame operand, size or alignment`,
    717).
-3. **Other values**: the acquire loads `LDAR`/`LDARW` (383, 277); `ANDshiftRA` (78 sole after
-   G26), `LoweredMemEq` (72 sole), `STLR` (47 sole), `CSINC` (26 sole), `InitMem` after the entry
-   values (21 sole);
+3. **Other values**: the acquire loads `LDAR`/`LDARW` (383, 277); `LoweredMemEq` (80 sole after
+   G27), `STLR` (48 sole), `CSINC` (28 sole), `InitMem` after the entry values (25 sole);
    `MOVDnop` 750 (91) and `MOVDreg` (27 sole) are done in G20 and G21 but for those that do
    not follow their load directly (220 `MOVDnop`s; 3 functions with no other blocker, and 13
    with only `MOVDreg`), which need §8's register-frame lemmas. Bounds panics
@@ -722,6 +738,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G24 | 4,718 (50.74%) | 106,958 |
 | G25 | 4,925 (52.97%) | 111,247 |
 | G26 | 5,172 (55.63%) | 111,802 |
+| G27 | 5,261 (56.58%) | 117,659 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -885,6 +902,12 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `read_regP`, `read_memP`, `stepLoc_noclobberP`, `stepLoc_copyP`, `stepLoc_makeResultP`,
   `retypePre_zip`, `write_result_noopP`, `arg_relP`, `op_regN`, `nl_core`, `nl_homes`,
   `narrowLd?_nl`, `nl_ops`, `g26_value`, `g26_nilPanic`, `g26_boundsPanic`, `g26_term`.
+- `Spec27.lean`: what `checkG27` accepted (`VK27`, `logShKind_spec`, `vkind27_spec`,
+  `checkG26_of_27`, `checkG27_spec`).
+- `G27.lean`: `shK`, `logF`, `logSh?_some`, `logSh?_typ`, `evalOpL_logSh`, `logSh_noclobber`,
+  `narrowLd?_logSh`, `stepLoc_logSh`, `shiftOf_shK`, `ctx_src_shift`, `logical_orr`,
+  `logical_eor`, `binOp_logF`, `progStep_logSh`, `logF_low`, `shl_low`, `lo_logSh`, `g27_logSh`,
+  `vk27_step`, `g27_value`, `vk27_nil`, `g27_nilPanic`, `g27_boundsPanic`, `g27_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -952,8 +975,10 @@ rejects: `g25_value` on `CSEL NE, R1, ZR, R0` with `R1 = 32` and the flags of `C
 after which `runLoc`'s `R0` holds 32 and the machine's `X0` is 32), `GenG26.lean` (`main.func1` of
 examples/generics, which holds no arm64 op and which G25 rejects: `g26_value` on its `Copy`,
 `MOVD R2, R0`, in Phase 1's mode with `x = 7` in `R2`, after which `runLoc`'s `R0` holds 7 and the
-machine's `X0` is 7). Each decides its inputs by compiled evaluation (`native_decide`, pinned in
-`scripts/axioms-allowlist.txt`).
+machine's `X0` is 7), `GenG27.lean` (`regexp.newLazyFlag`, which G26 rejects: `g27_value` on
+`ORR R2<<32, R1, R0` with `uint32(r2) = 2` in `R1` and `r1 = 1` in `R2`, after which `runLoc`'s
+`R0` holds `0x100000002` and the machine's `X0` is `0x100000002`). Each decides its inputs by
+compiled evaluation (`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
 
 ## 6. Future work: recursion through function values
 
