@@ -61,6 +61,10 @@ GoFV.Proof.Witness.GenG10.g10_facts._native.native_decide.ax_1_1 172feee09c7505c
 # of examples/closures and `checkG10` does not (parsed, `Env.load`, `genssa`), `runLoc` runs the
 # closure pointer `LoweredGetClosurePtr`; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.GenG11.g11_facts._native.native_decide.ax_1_1 2bdbfac8b47afbad66f9b6e980e9d7797e74014486a67077d6bfe5665884b56a
+# genG12_value_witness (GoFV/Proof/Witness/GenG12.lean, #553): `checkG12` accepts
+# `runtime.subtractb` and `checkG11` does not (parsed, `Env.load`, `genssa`), `runLoc` runs the
+# pointer conversion `Convert`; compiled evaluation, as plF_pipeline.
+GoFV.Proof.Witness.GenG12.g12_facts._native.native_decide.ax_1_1 006c738e358699fcb657172346ef99576626e7ae472454fc77985f9b013cf8d0
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
