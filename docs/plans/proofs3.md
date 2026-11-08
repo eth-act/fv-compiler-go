@@ -1,12 +1,13 @@
 # Plan: the Phase 3 proofs (I7, #553)
 
-Status: slices G1–G6 of the genssa validator are implemented (`GoFV/Gen/Check.lean`,
-`GoFV/Gen/Check2.lean`, …, `GoFV/Gen/Check6.lean`, probe `gen-check`) and proven sound
+Status: slices G1–G7 of the genssa validator are implemented (`GoFV/Gen/Check.lean`,
+`GoFV/Gen/Check2.lean`, …, `GoFV/Gen/Check7.lean`, probe `gen-check`) and proven sound
 (`GoFV/Proof/Gen/G1.lean`: `g1_value`, `g1_term`; `GoFV/Proof/Gen/G2.lean`: `g2_value`, `g2_term`;
 `GoFV/Proof/Gen/G3.lean`: `g3_value`, `g3_term`; `GoFV/Proof/Gen/G4.lean`: `g4_value`, `g4_term`;
 `GoFV/Proof/Gen/G5.lean`: `g5_value`, `g5_term`; `GoFV/Proof/Gen/G6.lean`: `g6_value`, `g6_term`;
-§3–§5), with witnesses on corpus functions (`GoFV/Proof/Witness/GenG1.lean`, …, `GenG6.lean`).
-G2–G6 rest on the trusted callee contract `CallOK` (§4, `docs/proofs/STATUS.md` Assumptions).
+`GoFV/Proof/Gen/G7.lean`: `g7_value`, `g7_term`, `g7_nilPanic`; §3–§5), with witnesses on corpus
+functions (`GoFV/Proof/Witness/GenG1.lean`, …, `GenG7.lean`).
+G2–G7 rest on the trusted callee contract `CallOK` (§4, `docs/proofs/STATUS.md` Assumptions).
 Context:
 `docs/plans/semantics3.md` (§4 `LocMatch`, §6 hooks, §7 layers), `docs/PASSES3.md` (the steps
 A1–F2), `docs/plans/regalloc-check.md` (the Phase 2 pattern this plan follows: an untrusted port
@@ -139,7 +140,7 @@ related by `LocMatch` (`genG1_witness_50`, `genG1_witness_30`).
 
 **Coverage** (`lake exe gen-check`, quick-v10, 9,297 functions): see §5.
 
-## 4. Slices G2–G6, and the next slices
+## 4. Slices G2–G7, and the next slices
 
 **Slice G2** (`GoFV/Gen/Check2.lean`, `checkG2 lc ps bstart g`; proven sound, `g2_value`,
 `g2_term`): G1 plus the most frequent blockers of §5 — `CALLstatic` of a symbol with an ABI
@@ -289,18 +290,45 @@ How the proof discharges G6's obligations ("frames take the guard", semantics3 �
   `progStep_slotStoreN`), `LDP`/`STP` at a frame operand (`progStep_slotLdp`, `progStep_slotStp`)
   and `MOVD $off(RSP), Rd` (`progStep_slotAddr`). G5's values go through `vk5_step`.
 
-Later slices, by how many functions outside G6 each blocker occurs in (quick-v10, §5):
+**Slice G7: nil checks** (`GoFV/Gen/Check7.lean`, `checkG7 lc ps bstart g`, returning G4's tables;
+proven sound, `g7_value`, `g7_term`, `g7_nilPanic`): G6 plus `LoweredNilCheck p mem`
+(`VK7.nil`): no home and a shape `LocState.write` drops (`dropTy`; lowering gives the check the
+`void` shape), `p` in a 64-bit register `Rp`, the memory last; genssa emits `MOVB (Rp), R27`
+(`nilShape`, a one-byte load into `REGTMP`).
 
-1. **Frame variables beyond G6**: parameters and results (`NAME_PARAM`, `Blk.local`: `frame
-   variable operand class`, 294, 73 as the sole reason) and variables whose address is converted
-   to an integer (`frame variable with an integer address`, 197): option 2 of semantics3 §4.3
-   (addresses as a parameter of the semantics); `LoweredZero` 540; slots of other sizes
-   (`slot … frame operand, size or alignment`, 717).
-2. **Nil checks** (`LoweredNilCheck` = `MOVB (Rp), R27`, 1,200): `FaultSim` on the nil page.
-3. **Write barriers** (`LoweredWB` 951, `WBend` 967): the `wbHook` of semantics3 §6.
-4. **Interface and closure calls** (results homes 1,215, `CALLinter` 764, `CALLclosure` 359, with
-   `LoweredGetClosurePtr` 660) and call results outside `R0`–`R15` or of float shapes (call result
-   shapes 1,121).
+How the proof discharges G7's obligations (`G7.lean`, `Progs7.lean`):
+
+- **`runLoc`'s nil check** (`stepLoc_nilCheck`, `stepLoc_nilCheck_panic`): `arm64Op` panics with
+  `nilDeref` when the pointer's base is nil (`nilFaults`, `nilFaults_nilCheck`), is `stuck` on a
+  wild pointer (`wildNil`) and otherwise runs `memRoot`'s `NilCheck`, which panics on a pointer
+  into the nil block and else returns the pointer (`evalOpL_nilCheck_ok`,
+  `evalOpL_nilCheck_panic`). A successful check changes nothing (`write_drop`); a panicking one
+  has the nil pointer as its argument.
+- **No panic** (`g7_nil`): the per-value premise `G7Pre` adds to `G4Pre` that a nil-checked
+  pointer outside the nil block points to a byte of a live block (`NilPre`; Go nil-checks pointers
+  that are nil or point into an object), so the machine address is outside the nil page
+  (`addr_rel`) and the `MOVB` loads (`progStep_nilCheck`, `progStep_loadN` into `X27`); `X27` is no
+  Go register (`objX?_ne27`), so `LocMatch` holds with only the PC moved (`locMatch_tmp`).
+- **Panic** (`g7_nilFault`, `g7_nilPanic`): the nil pointer, as a pointer or as the integer 0, is
+  the machine word 0 (`nil_word`, from `MemInj.nil`); the `MOVB` at it faults
+  (`progStep_nilCheck_nil`), which is `runProg`'s panic `nilDeref` (`PPanics`, the counterpart of
+  `runMach`'s `MPanics`; `PPanics.runProg`), the panic `runLoc` takes.
+
+Later slices, by how many functions outside G7 each blocker occurs in (quick-v10, §5; sole reason
+in parentheses):
+
+1. **Write barriers** (`LoweredWB` and its select, 951): the `wbHook` of semantics3 §6.
+2. **Interface and closure calls** (results homes 1,215, `CALLinter` 764, `CALLclosure` 359,
+   `LoweredGetClosurePtr` 660 (257)) and call results outside `R0`–`R15` or of float shapes (call
+   result shapes 1,121 (239)).
+3. **Frame variables beyond G6**: parameters and results (`NAME_PARAM`, `Blk.local`: `frame
+   variable operand class`, 294 (73)) and variables whose address is converted to an integer
+   (`frame variable with an integer address`, 197): option 2 of semantics3 §4.3 (addresses as a
+   parameter of the semantics); `LoweredZero` 540 (51); slots of other sizes (`slot … frame
+   operand, size or alignment`, 717).
+4. **Other values**: `Convert` 938 (104), `MOVDnop` 750 (35), `ADDshiftLL` 678, the register-index
+   loads (`MOVDloadidx8` 482, `MOVBUloadidx` 353), bounds panics (`LoweredPanicBoundsRR` 616),
+   `GetG` 430 (46), the acquire loads `LDAR`/`LDARW` (383, 277).
 
 ## 5. Results
 
@@ -315,6 +343,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G4 | 1,832 (19.70%) | 21,243 |
 | G5 | 1,833 (19.71%) | 21,252 |
 | G6 | 1,946 (20.93%) | 24,819 |
+| G7 | 2,109 (22.68%) | 26,795 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -385,6 +414,12 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `VKVar`, `plain_spec`).
 - `G6.lean`: `VarsAt`, `G6Env`, `symAddr_var`, `pairAddr_var`, `var_addr`, `stepLoc_addrVar`;
   `g6_addr`, `g6_load`, `g6_store`, `g6_ldp`, `g6_stp`, `vk6_step`, `g6_value`, `g6_term`.
+- `Spec7.lean`: what `checkG7` accepted (`checkG7_spec`, `vkind7_spec` with `VK7`).
+- `Progs7.lean`: `PPanics`, `PPanics.runProg`; `progEffect_nilCheck`, `progStep_nilCheck`,
+  `progStep_nilCheck_nil` (`MOVB (Rn), R27` outside and in the nil page).
+- `G7.lean`: `objX?_ne27`, `locMatch_tmp`; `nilFaults_nilCheck`, `evalOpL_nilCheck_ok`,
+  `evalOpL_nilCheck_panic`, `stepLoc_nilCheck`, `stepLoc_nilCheck_panic`, `write_drop`; `NilPre`,
+  `G7Pre`, `nil_word`; `g7_nil`, `g7_nilFault`, `vk7_step`, `g7_value`, `g7_nilPanic`, `g7_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -397,5 +432,8 @@ rejects: `g5_value` on a spill, a static call, its memory and the marker `KeepAl
 spilled argument; `pallocSum.start`: `g5_term` on `TBNZ [63]`), `GenG6.lean` (`SChan.Send` of
 `test/closedchan`, which G5 rejects: `g6_value` on the store of an argument to a frame temporary
 (`MOVD R1, -8(RSP)`) and its address (`MOVD $-8(RSP), R1`), the variable at `SP + 16` under the
-injection; `pallocSum.start`: `g6_term` on `TBNZ [63]`). Each decides its inputs by compiled
-evaluation (`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
+injection; `pallocSum.start`: `g6_term` on `TBNZ [63]`), `GenG7.lean` (`(*A).g` of `test/method`,
+which G6 rejects: `g7_value` on the receiver's nil check `MOVB (R0), R27` with the receiver
+pointing to a global, `g7_nilPanic` with a nil receiver, where `runProg` panics with `nilDeref`).
+Each decides its inputs by compiled evaluation (`native_decide`, pinned in
+`scripts/axioms-allowlist.txt`).
