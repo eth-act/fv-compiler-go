@@ -697,7 +697,7 @@ def check (r : Rule) (or : Oracle) (i : Inst) (relax : Bool := false) : Option (
     typedB e [] r.pat && Pat.argsOK e.ty [] r.pat && (memTop r.pat || selTop r.pat || Pat.topOKL (e.ty []) r.pat) &&
     (relax || memTop r.pat || argsOKLr r.loc e.ty r.pat) && copyShapeB ev e r.result &&
     resFitsL (e.ty []) r.result &&
-    Pat.addrOKL e.ty e.aux e.auxInt [] r.pat &&
+    Pat.addrOKL e.ty e.aux e.auxInt [] r.pat && Pat.rangeL e.auxInt [] r.pat &&
     !(match raw with | .poison => true | _ => false)
   if ok then
     let res := resDenX e r.pat ev or σ (e.ty []) r.result
@@ -717,7 +717,7 @@ def whyNot (r : Rule) (or : Oracle) (i : Inst) : List String :=
    ("cond", condB ev r.cond), ("typed", typedB e [] r.pat), ("argsOK", Pat.argsOK e.ty [] r.pat),
    ("topOKL", memTop r.pat || selTop r.pat || Pat.topOKL (e.ty []) r.pat), ("argsOKL", memTop r.pat || argsOKLr r.loc e.ty r.pat),
    ("copyShape", copyShapeB ev e r.result), ("resFits", resFitsL (e.ty []) r.result),
-   ("addrOKL", Pat.addrOKL e.ty e.aux e.auxInt [] r.pat),
+   ("addrOKL", Pat.addrOKL e.ty e.aux e.auxInt [] r.pat), ("rangeL", Pat.rangeL e.auxInt [] r.pat),
    ("raw " ++ raw.render, !(match raw with | .poison => true | _ => false))].filterMap
     fun (n, b) => if b then none else some n
 

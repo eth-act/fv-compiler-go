@@ -171,7 +171,8 @@ def ruleOK1 (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (x : Value) (defs : L
       | some c => match ev c with | .bool true => true | _ => false
       | none => true) &&
     Pat.argsOK e.ty [] r.pat && Pat.topOKL (e.ty []) r.pat && argsOKLr r.loc e.ty r.pat &&
-    resFitsL (e.ty []) r.result && Pat.addrOKL e.ty e.aux e.auxInt [] r.pat && leavesOK M I [] r.pat &&
+    resFitsL (e.ty []) r.result && Pat.addrOKL e.ty e.aux e.auxInt [] r.pat &&
+    Pat.rangeL e.auxInt [] r.pat && leavesOK M I [] r.pat &&
     resultOKL tabs M e r.pat ev or σ I r x defs
 
 /-- The built definitions of a `build` event with the arguments the rule gives its nodes (`argID`

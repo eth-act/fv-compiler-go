@@ -842,7 +842,7 @@ theorem RuleFactsL.top (hs : ArmRule.Sound1 r)
   have hargs : GoFV.Proof.Rules.Pat.argsOK e'.ty [] r.pat = true := F.hargs
   have htopok : Pat.topOKL (e'.ty []) r.pat = true := F.htop
   have hsound := fun hcs => hs.2 tabs e' (stOrL tabs r defs) hbt hwf hcons hcond htyped hargs
-    htopok F.hargsL hcs F.hfit F.hadr
+    htopok F.hargsL hcs F.hfit F.hadr F.hrng
   -- lower bound
   have hlow : Sem.Refines (denL true M.get? tabs ρ (n + 1) v)
       ((Pat.rawL tabs e' r.pat).retypeL (e'.ty [])) := by

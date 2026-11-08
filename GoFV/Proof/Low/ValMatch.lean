@@ -25,6 +25,7 @@ open GoFV.Proof.Rules (Path PEnv DV)
 theorem auxIntDVL_flat (aty : AuxType) (i : Int64) : (auxIntDVL aty i).flat = true := by
   unfold auxIntDVL; split
   · unfold ccDV; split <;> rfl
+  · rfl
   · exact auxIntDV_flat _ _
 
 /-- `denL` in lowered mode at a term node. -/

@@ -189,10 +189,12 @@ def ccDV (i : Int64) : DV :=
   | none => .other
 
 /-- `auxIntDV` for lowered ops: a `CCop` auxint (`CSEL [cc]`) is an op (`ccDV`), so a rule can
-test and rewrite `cc`. -/
+test and rewrite `cc`; an `ARM64BitField` auxint (`UBFX [bfc]`) is its integer
+(`Interp.auxIntVal`), whose `lsb()` and `width()` a rule reads (`methodE`). -/
 def auxIntDVL (aty : AuxType) (i : Int64) : DV :=
   match aty with
   | .CCop => ccDV i
+  | .ARM64BitField => .int i.toInt
   | _ => auxIntDV aty i
 
 mutual
@@ -480,6 +482,35 @@ def Pat.addrOKLs (ty : Path → Ty) (ax : Path → Option AuxRef) (ai : Path →
   | q :: qs => Pat.addrOKL ty ax ai (i :: p) q && Pat.addrOKLs ty ax ai p (i + 1) qs
 end
 
+/-- A bit field `width | lsb<<8` (`arm64BitField`): `lsb ≤ 63`, `1 ≤ width` and
+`lsb + width ≤ 64`, as `armBFAuxInt` builds every one (it panics otherwise). -/
+def bfOK (k : Int64) : Bool :=
+  decide (0 ≤ k.toInt) && decide (k.toInt / 256 ≤ 63) && decide (1 ≤ k.toInt % 256) &&
+    decide (k.toInt / 256 + k.toInt % 256 ≤ 64)
+
+/-- The auxint of an arm64 op in the range Go builds it in: a constant shift amount below 64
+(`SLLconst`, `SRLconst`, `SRAconst`; Go's rules mask or bound every one), a bit field (`bfOK`:
+`UBFX`, `UBFIZ`, `SBFX`, `SBFIZ`, `BFI`, `BFXIL`). The semantics reads any auxint
+(`Arm64.amt`, `Arm64.bf`); Go's helpers on them (`armBFAuxInt`, `bfc.lsb()`) agree with it in
+these ranges. -/
+def auxRangeL (o : Op) (k : Int64) : Bool :=
+  if o == .ARM64SLLconst || o == .ARM64SRLconst || o == .ARM64SRAconst then
+    decide (0 ≤ k.toInt) && decide (k.toInt < 64)
+  else if o == .ARM64UBFX || o == .ARM64UBFIZ || o == .ARM64SBFX || o == .ARM64SBFIZ ||
+      o == .ARM64BFI || o == .ARM64BFXIL then bfOK k
+  else true
+
+mutual
+/-- Every op node of the pattern has its auxint in range (`auxRangeL`). -/
+def Pat.rangeL (ai : Path → Int64) (p : Path) : Pat → Bool
+  | .op o _ _ _ _ _ args _ => auxRangeL o (ai p) && Pat.rangeLs ai p 0 args
+  | _ => true
+/-- `Pat.rangeL` of the arguments `i, i+1, …` of the node at `p`. -/
+def Pat.rangeLs (ai : Path → Int64) (p : Path) (i : Nat) : List Pat → Bool
+  | [] => true
+  | q :: qs => Pat.rangeL ai (i :: p) q && Pat.rangeLs ai p (i + 1) qs
+end
+
 /-- **The obligation of one swapped form of a value rule** (module doc). -/
 def ArmRule.Sound1 (r : Rule) : Prop :=
   Pat.arityOk r.pat = true ∧
@@ -496,6 +527,7 @@ def ArmRule.Sound1 (r : Rule) : Prop :=
     copyShapeOK ev e r.result →
     resFitsL (e.ty []) r.result = true →
     Pat.addrOKL e.ty e.aux e.auxInt [] r.pat = true →
+    Pat.rangeL e.auxInt [] r.pat = true →
     Refines ((Pat.rawL tabs e r.pat).retypeL (e.ty []))
       (resDenL tabs e r.pat ev or σ (e.ty []) r.result)
 
