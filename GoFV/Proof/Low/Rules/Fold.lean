@@ -78,13 +78,13 @@ at a word shape, `poison` at the others. -/
 theorem retypeL_global (g : String) (o : BitVec 64) (T : Ty) :
     (PtrOps.ptrRes ⟨.global g, o⟩).retypeL T = .ptr ⟨.global g, o⟩ ∨
       (PtrOps.ptrRes ⟨.global g, o⟩).retypeL T = .poison := by
-  simp only [PtrOps.ptrRes, Ptr.inWindow, Blk.window?, ite_true]
+  have hw : (⟨.global g, o⟩ : Ptr).word = .ptr ⟨.global g, o⟩ := by
+    simp [Ptr.word, Ptr.addr?, Ptr.inWindow, Blk.window?]
+  have hi : (⟨.global g, o⟩ : Ptr).inWindow = true := by simp [Ptr.inWindow, Blk.window?]
+  rw [PtrOps.ptrRes, if_pos hi, hw]
   cases T with
-  | int w =>
-    cases w <;> simp [Val.retypeL, Val.widen, Val.retype, Ptr.word, Ptr.convertible, Ptr.inWindow,
-      Blk.window?]
-  | _ => simp [Val.retypeL, Val.widen, Val.retype, Ptr.word, Ptr.convertible, Ptr.inWindow,
-      Blk.window?]
+  | int w => cases w <;> simp [Val.retypeL, Val.widen, Val.retype, hw]
+  | _ => simp [Val.retypeL, Val.widen, Val.retype, hw]
 
 /-- A pointer's word at a shape of at least 64 bits: kept (a word shape) or `poison` (an
 aggregate). -/

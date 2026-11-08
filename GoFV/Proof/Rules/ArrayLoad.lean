@@ -1,8 +1,6 @@
 import GoFV.Proof.Rules.ConstString
 import GoFV.Rules.Generated.Generic.Values05
 
-variable [GoFV.SSA.Sem.Addrs]
-
 /-!
 # Rule lemma: a `Load` of a one-element array (`generic.rules:994`)
 
@@ -17,6 +15,10 @@ one-field aggregate of the field load (`load_one`; issue #69).
 namespace GoFV.Proof.Rules
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Rules
+
+section
+
+variable [GoFV.SSA.Sem.Addrs]
 
 /-- A load of an aggregate of one field that fills it is `poison` or that field's load. -/
 theorem load_one (m : Mem) (p : Ptr) (f : Ty) :
@@ -76,6 +78,10 @@ theorem r_generic_994_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generic
       · rfl
     rw [hl]
     exact .poison _
+
+end
+
+open scoped GoFV.SSA.Sem.Fixed
 
 /-! ## Non-vacuity (`rule-sat` draws no tables) -/
 

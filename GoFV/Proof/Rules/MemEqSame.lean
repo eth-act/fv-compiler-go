@@ -3,8 +3,6 @@ import GoFV.Proof.PtrAddr
 import GoFV.Rules.Generated.Generic.Values06
 import GoFV.Rules.Generated.Generic.Values08
 
-variable [GoFV.SSA.Sem.Addrs]
-
 /-!
 # Rule lemmas: `MemEq` of the same pointer (`generic.rules:1592`) or of length 0 (`:1590`),
 `NeqPtr` of a pointer and an offset of it (`generic.rules:1680`)
@@ -30,6 +28,10 @@ back to itself (a frame temporary) would differ from its own address.
 namespace GoFV.Proof.Rules
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Rules
+
+section
+
+variable [GoFV.SSA.Sem.Addrs]
 
 theorem memEq_self (x n m : Val) :
     memEq [x, x, n, m] = .poison ∨ memEq [x, x, n, m] = .bool true := by
@@ -193,6 +195,10 @@ theorem r_generic_1680_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generi
       exact Refines.poison _
   · simp only [PtrOps.addPtr, asOffset, hr0, PtrOps.eqPtr, Val.asPtrWord]
     exact Refines.poison _
+
+end
+
+open scoped GoFV.SSA.Sem.Fixed
 
 /-! ## Non-vacuity (`rule-sat` draws no tables) -/
 

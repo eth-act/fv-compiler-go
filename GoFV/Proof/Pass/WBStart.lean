@@ -100,7 +100,8 @@ theorem eval_wbaddr {env : Env} {tabs : Tables} {f : Func} {fr : Frame} {u : Val
     · exact ⟨_, ‹_›⟩
     · cases hty
   rw [he]
-  rfl
+  simp [Val.retype, Val.retypePre, Ptr.word, flagPtr, flagBlk, Ptr.addr?, Ptr.inWindow,
+    Blk.window?]
 
 /-- The source's evaluation of a kept `Const32 [0]`. -/
 theorem eval_const0 {env : Env} {tabs : Tables} {f : Func} {fr : Frame} {u : Value} {y : Val}

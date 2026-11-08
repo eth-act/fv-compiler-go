@@ -473,7 +473,8 @@ theorem cmp_z_ptr {a b : Val} {p q : Ptr} (ha : a.asPtrWord = some p)
 
 /-- `Z` of `CMPconst [0] p`: whether `p` is nil. -/
 theorem cmp_z_ptr_zero (p : Ptr) : Cond.eq.onVal (Arm64.cmp (.ptr p) (.int .w64 0)) = some p.isNil := by
-  have hz : (Val.int .w64 (0 : BitVec 64)).asPtrWord = some Ptr.null := rfl
+  have hz : (Val.int .w64 (0 : BitVec 64)).asPtrWord = some Ptr.null := by
+    simp [Val.asPtrWord, Ptr.ofAddr_small, Ptr.null]
   rw [cmp_z_ptr rfl hz]
   obtain ⟨b, o⟩ := p
   simp [Ptr.eq, Ptr.isNil, Ptr.null]
