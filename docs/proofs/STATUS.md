@@ -428,6 +428,56 @@ G3's). Witness `genG18_value_witness` (`setpf` of test/ken_array, which G17 reje
 machine bytes at its address are 0). Coverage on quick-v10 (`lake exe gen-check`): 4,052 of 9,297
 functions (43.58%), 80,626 values.
 
+## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
+
+`GoFV.Proof.Obj.g12_obj_value`, `g12_obj_term` (`GoFV/Proof/Obj/G12.lean`): `g12_value`/`g12_term`
+composed with `obj_star`, as `g7_obj_value`/`g7_obj_term` for G7.
+
+`GoFV.Proof.Obj.obj_whole_ret` (`GoFV/Proof/Obj/Whole.lean`): when `checkG12` and `checkObj` accept a
+function, the machine starts at its entry (`MachEntry`, return address `s0.x 30`) and the stack
+check passes, a run of `runLoc`'s body (`runLoopLoc` from the state `s` at the entry block) whose
+first `k` values (the entry values) lead to a state `sI` related to the entry machine state
+(`EntryMatch`: the argument registers, no flags or slots, the memory injected; `EntryEnv`: the
+frame, `g`, the caller's `LR`/`FP`) and whose every later step meets its premises (`RunPre`, at
+the states `runLoc` reaches from `sI`: `G7Pre`, `G1TermPre`, no entry value, and the trusted
+`CallOK`, `ICallOK`, `WbOK`, `CloOK`), and that returns, is matched by `runMach` of the linked
+words that returns to `s0.x 30` in a state `ExitRel`-related to the state before the returning
+terminator: `MachRet s0` (`SP`, `g`, `R29` as at entry), every register value of that state in
+its register (but `X29`, `X30`), its memory injected. The pieces: the prologue (`sim_entry`, over
+`obj_entry`), each value (`sim_value`, over `g12_obj_value`), each terminator (`sim_goto`, over
+`g12_obj_term`), the return (`sim_ret`: the `RET` after no-ops, `termG3_ret`, and `obj_exit`), the
+run by induction on the fuel (`sim_from_ret`). `runPre_simple`: `RunPre` holds of a function
+whose ops from the start on are simple (`simpleFrom`: no compare, load, pair load, subtraction,
+nil check, call, write barrier, closure pointer or register test, no edge back to the entry).
+
+`GoFV.Proof.Obj.verified_mach_ret` (`GoFV/Proof/Obj/EndToEnd.lean`): `verifiedPipelineFull_refines`
+composed with `obj_whole_ret`. For `f` through the verified pipeline (`fullyVerified`) and its
+output's genssa Progs and assembled words accepted by `checkG12` and `checkObj`, on every input of
+`VPre` with the pipeline's premises (`hn`, `ha`, `hnp`) on which `run` of `f` returns or panics, a
+`runLoc` of the output refines it (`OutcomeRefines`), `runLoc` is `finish` of its body's defined
+outcome (`runLoc_eq`, `finish_defined`), and when the body returns, `runMach` of the linked words
+returns to the caller in a state related to it (`obj_whole_ret`'s conclusion). Every premise is
+in the statement; the trusted ones are in the table below (`HookMap`, `CallOK`, `ICallOK`,
+`WbOK`, `CloOK`, the caller's side `MachEntry`/stack check/`EntryMatch`/`EntryEnv`).
+
+Witnesses:
+- `objWhole_ret_witness` (`GoFV/Proof/Witness/ObjWhole.lean`): `pallocSum.start` on `p = 7` in
+  `plRunEnv`, from `runLoc`'s first state (`locInit`) to `runMach` returning to the caller's
+  `0x40`; it runs `sim_entry`, `sim_goto` (the `TBNZ`), `sim_value` (`ANDconst`, `MakeResult`)
+  and `sim_ret`.
+- `verified_mach_witness` (`GoFV/Proof/Witness/ObjEndToEnd.lean`): the same function from its
+  generic SSA (the export's first section, the whole-file pass environment of
+  `gofv-ssa-opt --verified`) through the verified pipeline (`fullyVerified`), with every premise
+  of `verified_mach_ret` discharged.
+
+Not yet covered (#553): runs that panic (`obj_panic`, the carry of `PPanics` to `MPanics`, and the
+non-nil-check panics: calls whose callee panics), framed leaves (`autosize ≠ 0` and no `CALL`:
+the epilogue returns through `X30`, which needs `X30` kept across the body; premise
+`autosize = 0 ∨ ¬leaf`), the morestack path of the prologue (premise: the stack check passes),
+and the relation of the returned values and memory (`rs`, `mm`) to the ABI result registers
+(`ExitRel` relates the state before the terminator, whose `MakeResult` reads them from their
+homes).
+
 ## Per-pass fragment coverage (verified pipeline, full-v6)
 
 Runs per pass of `gofv-ssa-opt --check --verified` (96,553 functions, each pass run once per function). *Proven*: the theorem's variant ran and changed the function; *identity*: same function (or tables the function cannot tell apart); *skipped*: an optional pass outside its fragment (the input is kept); *unverified*: a required pass outside its fragment, or a checked rewrite pass whose result differs from stock (`checked variant incomplete`: an unproven rule fired or the validator rejected; the stock result is kept). Every Phase 1 pass has a theorem; `insert resched checks`, `cpufeatures` and `rewrite tern` never run for linux/arm64.
@@ -554,9 +604,12 @@ witnesses):
 | `ICallOK` (Phase 3 G10, `GoFV/Proof/Gen/G10.lean`, premise of `g10_value` and every later slice's `gN_value` at each interface or closure call `CALLinter`/`CALLclosure`) | from every state that is the caller's but for `X30`, with the PC the content of the code register `Rn` (related to `runLoc`'s code pointer), the register arguments in their ABI registers and, at a closure call, `R26` holding the closure context: that address is no Prog address of the caller and not its return address, and the hook there satisfies `CallSpec` (the static callee's contract, the `CallOK` row above) | Go's internal ABI: the code pointer of a method (an itab's `fun` entry) or of a closure (its first word) is the entry of a function linked outside the caller's code, which the hook runs by its Phase 1 contract (`callTarget` names the callee by the code pointer); a closure call passes its context in `R26` (abi-internal.md: the closure context pointer register) | a code pointer into the caller's own code (a recursive call through a function value, which the hook model does not run; lifting this needs the function-level callee contract of `docs/plans/proofs3.md` §6), or a callee that breaks `CallSpec` | trusted; the witness `genG10_value_witness` discharges it for a callee that returns at once at a global function's address |
 | `CloOK` (Phase 3 G11, `GoFV/Proof/Gen/G11.lean`, premise of `g11_value` and every later slice's `gN_value` at `LoweredGetClosurePtr`) | at `LoweredGetClosurePtr`, which `checkG11` places in the entry block after the register arguments only (`cloFirst`; no code but the prologue runs before it), `X26` holds the activation's closure context (`fr.closure`, `poison` outside a closure call), a 64-bit word | Go's internal ABI passes the closure context in `R26` (abi-internal.md; semantics3 §5); the prologue does not write `R26` and its `morestack` path saves and restores the context (`runtime.morestack`, `gobuf.ctxt`); the register arguments emit no code | a caller that enters a closure without its context in `R26`, or a prologue that clobbers `R26` | trusted; the witness `genG11_value_witness` discharges it for a closure context that is a pointer to a global at `2^40` |
 | `GetGOK` (Phase 3 G17, `GoFV/Proof/Gen/G17.lean`, premise of `g17_value` at `GetG`) | the injection `ι` maps Phase 1's opaque global `runtime.g` (`GetG`'s result, `Sem/Pure.lean`) to the activation's goroutine `E.g`, which `LocMatch`'s frame clause puts in `X28`; `E.Extends` keeps it, so it is a property of the activation's first injection | Phase 1 models the goroutine as an opaque allocation of the environment, never nil (semantics2 §5); on arm64 the goroutine pointer lives in `R28` (`g`), which Go code does not write outside the runtime's `g` switches | a `runtime.g` symbol referenced as a global (then `G2Env.glob` puts it at its link address), or code that switches `g` | a choice of `ι`, not of external code; the witness `genG17_value_witness` takes `ι` with `runtime.g` at `X28` |
-| `HookMap` (Phase 3 `checkObj`, `GoFV/Proof/Obj/Sim.lean`, premise of `obj_step`/`obj_star` and `g7_obj_value`/`g7_obj_term`) | a hook (callee, runtime entry) that returns from a P0 state at a symbol, after a call whose return address is a Prog or the end, also returns from every `ObjRel`-related machine state, to a related state at a Prog or the end: it treats the return address `X30` only as an address to return to (P0's ID layout and the machine's byte layout differ only there) and does not read `X27` | the callee's code is outside the function and cannot observe where the caller's words are, except through `X30`, which it only returns to (`RET`); Go code does not read `R27` (REGTMP) across a call | a callee that reads or stores its return address as data (tracebacks, `runtime.Callers`), or reads `X27` | trusted; `hookMap_retLR` discharges it for callees that return through `X30` and change nothing else (the witnesses' `GenG2.H0`) |
+| `HookMap` (Phase 3 `checkObj`, `GoFV/Proof/Obj/Sim.lean`, premise of `obj_step`/`obj_star`, `g7_obj_value`/`g7_obj_term`, `g12_obj_value`/`g12_obj_term`, `obj_whole_ret` and `verified_mach_ret`) | a hook (callee, runtime entry) that returns from a P0 state at a symbol, after a call whose return address is a Prog or the end, also returns from every `ObjRel`-related machine state, to a related state at a Prog or the end: it treats the return address `X30` only as an address to return to (P0's ID layout and the machine's byte layout differ only there) and does not read `X27` | the callee's code is outside the function and cannot observe where the caller's words are, except through `X30`, which it only returns to (`RET`); Go code does not read `R27` (REGTMP) across a call | a callee that reads or stores its return address as data (tracebacks, `runtime.Callers`), or reads `X27` | trusted; `hookMap_retLR` discharges it for callees that return through `X30` and change nothing else (the witnesses' `GenG2.H0`) |
 | `HookPanicMap` (Phase 3 `checkObj`, `Sim.lean`, premise of `obj_panic`) | a hook that panics from a P0 state at a symbol (after a call) panics with the same panic from every `ObjRel`-related machine state | as `HookMap` | as `HookMap` | trusted |
 | `ICallOut` (Phase 3 `checkObj`, `Sim.lean`, run premise of `obj_star` (and `obj_step` at the state), `g7_obj_value`/`g7_obj_term`) | at a `CALL (Rn)` on the P0 run, the register holds a linked symbol's address (a function value's code word, an itab's `fun` entry is a function entry) | Go's function values and itabs point to function entries (data relocations `R_ADDR`, proofs3 §6) | a function value pointing into the caller's own words or to a non-entry address | trusted per run; `iCallOut_of_none` discharges it for a list without `CALL (Rn)` (the ObjG7 witnesses) |
+| `MachEntry`, stack check passing (Phase 3, `GoFV/SSA/Sem/RunMach.lean`, `GoFV/Proof/Obj/Frame.lean`; premises of `obj_whole_ret`, `verified_mach_ret`) | the call: PC at the entry, `SP` 16-aligned with room for the frame, `X30` outside the code, `g` above the nil page, `R29 = SP − 8`; `stackguard0` lets the stack check pass (`CheckPasses`) | the caller's side of the ABI (`obj7.go`); the morestack path (`morestackHook`) is not composed yet | a caller that enters with a misaligned `SP` or a return address in the callee's code | `objWhole_ret_witness`, `verified_mach_witness` |
+| `EntryMatch`, `EntryEnv` (Phase 3, `GoFV/Proof/Obj/Whole.lean`; premises of `obj_whole_ret`, `verified_mach_ret`) | after the entry values, `runLoc`'s registers (the arguments) are in the entry machine state's registers (none in `R16`, `R17`, `R20`, `R29`), no flags or slots, its memory injected by `ι`; the activation's `SP`, `g`, `LR`, `FP`, `framed` are the entry state's (after the prologue's frame) and the return address is no P0 address | the caller's side of ABIInternal: register arguments in `abi.RegIndex` registers; the caller's memory is the callee's | a caller that passes arguments elsewhere | `objWhole_ret_witness`, `verified_mach_witness` |
+| `RunPre` (Phase 3, `GoFV/Proof/Obj/Whole.lean`; premise of `obj_whole_ret`, `verified_mach_ret`) | at every state `runLoc` reaches: the slices' per-step premises `G7Pre`/`G1TermPre` (not trusted: facts of the run, e.g. a load reads valid bytes), no entry value after the entry, and the trusted `CallOK`, `ICallOK`, `WbOK`, `CloOK` (rows above) | as the rows above | as the rows above | `runPre_simple` (functions of simple ops), `objWhole_ret_witness` |
 | not modelled by the hooks | the defer machinery (`deferproc*`, `deferreturn`, `gorecover`), runtime entry points called through function values, asynchronous preemption, the collector: a run reaching them is `stuck` | sound: a stuck run carries no obligation | — (a restriction) | — |
 
 Not assumed, by decision: disjointness of parameter slots from the other frame slots (the

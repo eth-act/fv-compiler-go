@@ -139,7 +139,7 @@ def simpleFrom (f : Func) (b0 : ID) (i0 : Nat) : Bool :=
             | some v => simpleOp v.op
             | none => true
 
-theorem succ_mem {b : Block} {k : Nat} {e : Edge} (h : succ b k = .ok (.goto e)) :
+theorem succ_goto_mem {b : Block} {k : Nat} {e : Edge} (h : succ b k = .ok (.goto e)) :
     e ∈ b.succs.toList := by
   unfold succ Res.ofOption at h
   split at h
@@ -160,17 +160,17 @@ theorem stepTermL_goto_mem {fr : GoFV.SSA.Sem.Frame} {b : Block} {e : Edge}
       simp only [bind, Res.bind] at h
       split at h <;> try cases h
       dsimp only at h
-      split at h <;> first | exact succ_mem h | cases h
+      split at h <;> first | exact succ_goto_mem h | cases h
   · unfold stepTerm at h
     split at h
     all_goals first
-      | exact succ_mem h
+      | exact succ_goto_mem h
       | cases h
       | (simp only [bind, Res.bind] at h
          split at h <;> try cases h
          dsimp only at h
          split at h <;> first
-           | exact succ_mem h
+           | exact succ_goto_mem h
            | cases h
            | (split at h <;> first | cases h | (split at h <;> cases h)))
 
