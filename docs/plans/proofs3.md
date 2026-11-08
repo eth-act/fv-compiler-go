@@ -477,7 +477,23 @@ whatever check gave its registers); the contract at such a call is the trusted p
 a stack argument, 9 have zero-sized ones only; the other 308 store nonempty arguments to the
 outgoing area and wait for option 2 (§8).
 
-Later slices, by how many functions outside G15 each blocker occurs in (quick-v10, §5; sole
+**Slice G16: shifted adds** (`GoFV/Gen/Check16.lean`, `checkG16 lc ps bstart g`, returning G4's
+tables; proven sound, `g16_value`, `g16_term`, `g16_nilPanic`): G15 with `ADDshiftLL [k] x y`
+(`addShKind`, `VK16.addSh`), accepted as G1 accepts `ADD`: no temporary, both arguments and the
+result in registers, the result of at least 8 bits and no wider than either argument, `0 ≤ k <
+64`. Genssa emits `ADD Rm<<k, Rn, Rd` (`genshift`, `ssa.go:141`), the source operand `makeshift`'s
+`TYPE_SHIFT` with offset `(Rm & 31) << 16 | SHIFT_LL | k << 10` (`shiftLLA`). Every
+`ADDshiftLL` of quick-v10 is accepted.
+
+How the proof discharges G16's obligations (`G16.lean`): `runLoc` runs Phase 1's `Arm64.addSh …
+.ll k`, `addP` of `x` and `y`'s register shifted left by `k` (`stepLoc_addSh`); the machine's
+shifted operand reads `X[m] <<< k` (`ctx_src_shiftLL`), so the `ADD` writes `X[n] + (X[m] <<< k)`
+(`progStep_addShiftLL`). A left shift keeps agreement on the low bits (`sw_shl`), so the sum is
+related on the low bits of the result's class, with `ADD`'s pointer case (`Value.lean`: `lo_addP`,
+`addP` of an addend related on the low bits; `lo_addSh`; `g16_addSh`). G15's values go through
+`vk15_step`. No new premise.
+
+Later slices, by how many functions outside G16 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
 1. **Register-index stores** `MOVDstoreidx8` 245 (39, counted with `MOVDstoreidx`),
@@ -489,9 +505,9 @@ reason in parentheses):
    (`frame variable with an integer address`, 197 (11)): option 2 of semantics3 §4.3 (addresses as
    a parameter of the semantics); slots of other sizes (`slot … frame operand, size or alignment`,
    717).
-4. **Other values**: `MOVDnop` 750 (85), `ADDshiftLL` 678 (57), bounds panics
-   (`LoweredPanicBoundsRR` 616 (40)), `GetG` 430 (89), the acquire loads `LDAR`/`LDARW` (383,
-   277); `SP` after the entry values (61). `MOVDnop x` emits no code but `runLoc` gives it the
+4. **Other values**: `MOVDnop` 750 (87), bounds panics (`LoweredPanicBoundsRR` 616 (50)), `GetG`
+   430 (89), the acquire loads `LDAR`/`LDARW` (383, 277); `SP` after the entry values (68).
+   `MOVDnop x` emits no code but `runLoc` gives it the
    upper bits of `x`'s register (`movdLoc`: the zero or sign extension of the narrow value that
    produced `x`; each of its 1,520 uses in the trimmed functions of quick-v10 widens its argument,
    1,431 of them a narrow load), while `LocMatch` relates a narrow integer to the low bits of its
@@ -520,6 +536,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G13 | 3,755 (40.38%) | 69,470 |
 | G14 | 3,815 (41.03%) | 71,548 |
 | G15 | 3,824 (41.13%) | 71,645 |
+| G16 | 3,874 (41.66%) | 73,708 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -630,6 +647,10 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
 - `Spec15.lean`: what `checkG15` accepted (`checkG15_spec`, `vkind15_spec` with `VK15`,
   `callKind15_spec`); `G2.lean`: `CallAt`, `g2_callAt` (`g2_call` through it).
 - `G15.lean`: `CallOKZ`, `vk15_step`, `g15_value`, `g15_nilPanic`, `g15_term`.
+- `Spec16.lean`: what `checkG16` accepted (`checkG16_spec`, `vkind16_spec` with `VK16`,
+  `addShKind_spec`); `Value.lean`: `lo_addP`, `lo_addSh`.
+- `G16.lean`: `stepLoc_addSh`, `ctx_src_shiftLL`, `progStep_addShiftLL`, `g16_addSh`, `vk16_step`,
+  `g16_value`, `g16_nilPanic`, `g16_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -665,7 +686,10 @@ machine word), `GenG13.lean` (`(*pageBits).clearAll`, which G12 rejects: `g13_va
 (R0)(R1<<3), R0` with `R0` the start of `heap 1` at `2^41` and `R1` 2, loading the word 7 at
 offset 16, after which `X0` is 7), `GenG15.lean` (`(*T3).M` of `test/recover`, which G14 rejects:
 `g15_value` on `CALL main.T3.M(SB)`, whose empty-struct receiver the ABI assigns to the stack, with
-a callee hook that returns at once, which satisfies `CallOKZ`: `callOKZ0`). Each decides its inputs
+a callee hook that returns at once, which satisfies `CallOKZ`: `callOKZ0`), `GenG16.lean`
+(`spanSetSpinePointer.lookup` of std/runtime, which G15 rejects: `g16_value` on `ADDshiftLL [3]`,
+`ADD R1<<3, R0, R0` with `R0` the start of `heap 1` at `2^41` and `R1` 2, after which `R0` holds
+the integer `2^41 + 16` and so does `X0`). Each decides its inputs
 by compiled evaluation (`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
 
 ## 6. Future work: recursion through function values
@@ -922,7 +946,7 @@ reason in parentheses):
 - register-index stores, `MOVDstoreidx8`/`MOVBstoreidx`: 245/187 (39/23); G14's addresses with
   G3's stores;
 - `GetG`: 430 (89); `R28` = `E.g`, already in `FrameRel`;
-- `ADDshiftLL`: 678 (57); `lo_add` with `shifted`;
+- `ADDshiftLL`: 678 (57); `lo_add` with `shifted`; done in G16 (§4);
 - bounds panics `LoweredPanicBounds*`: 616 (40+); a `CALL runtime.panicBounds*` hook that
   panics, as `g7_nilPanic`;
 - `TSTconst`, `Equal`/`NotEqual`, `CSEL`: 52, 49/32, 38+25 sole; flags producers and readers
