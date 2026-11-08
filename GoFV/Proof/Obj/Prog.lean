@@ -1643,4 +1643,45 @@ theorem progSym_sound {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl} {L : Link}
       simp only [Sym.getX, List.lookup, this]
     · rw [h30]; exact hf
 
+/-- A Prog `progSym` describes whose step faults in the nil page has a symbolic access there. -/
+theorem progSym_fault {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl} {L : Link} {s : MState}
+    {a : BitVec 64} (h : progSym az ez p = .ok (σ, pc)) (haz : L.autosize = az)
+    (hez : L.extrasize = ez) (hs : progStep L p s = .error (.nilPage a)) :
+    ¬ NoNil ⟨s, L.sym⟩ σ := by
+  intro hN
+  unfold progStep at hs
+  cases hn : L.nextAddr p.id with
+  | none => rw [hn] at hs; cases hs
+  | some next =>
+  rw [hn] at hs
+  cases hsk : p.isSkip
+  case true => simp only [hsk, ↓reduceIte] at hs; cases hs
+  simp only [hsk, Bool.false_eq_true, ↓reduceIte] at hs
+  cases he : progEffect ⟨L, s, p⟩ with
+  | error msg => rw [he] at hs; cases hs
+  | ok e =>
+  rw [he] at hs
+  cases hnil : e.nilAccess? with
+  | none => simp only [hnil] at hs; cases hs
+  | some a' =>
+  have hnil' := hnil
+  unfold Eff.nilAccess? at hnil'
+  have hfound := List.find?_some hnil'
+  have hmem := List.mem_of_find?_eq_some hnil'
+  rcases dispatch (progSym_core h).1 he haz hez with ⟨hR, -⟩ | ⟨n, add, f, -, -, -, rfl⟩ |
+    ⟨b, f, -, -, -, -, rfl⟩
+  · rw [hR.loads, hR.stores] at hmem
+    simp only [List.mem_append, List.map_map, List.mem_map, Function.comp_def] at hmem
+    rcases hmem with ⟨⟨x, n⟩, hx, rfl⟩ | ⟨⟨x, n, v⟩, hx, rfl⟩
+    · have := hN.1 x n hx
+      simp only at hfound
+      rw [this] at hfound
+      cases hfound
+    · have := hN.2 x n v hx
+      simp only at hfound
+      rw [this] at hfound
+      cases hfound
+  · simp at hmem
+  · simp at hmem
+
 end GoFV.Proof.Obj

@@ -863,6 +863,7 @@ import GoFV.Proof.Witness.NilSel
 import GoFV.Proof.Witness.NotIf
 import GoFV.Proof.Witness.ObjFrame
 import GoFV.Proof.Witness.ObjG7
+import GoFV.Proof.Witness.ObjOps
 import GoFV.Proof.Witness.PairL
 import GoFV.Proof.Witness.PhiConst
 import GoFV.Proof.Witness.PhiElim

@@ -849,3 +849,12 @@ above. The rest applies as rules; move an entry up once measured in gofv.
   **Fix:** write the definition without `do` join points (plain if/else) and split it into small
   defs that take the decoded word as an argument (`symPairAt … (decode …)`). Then prove with `rw`
   and small `simp only` steps. Peak memory went from >13 GB to 0.8 GB.
+- **Elaboration hang on unreduced string `==` in a unification** (#553, `fam_csel` in
+  `GoFV/Proof/Obj/Prog.lean`): `exact cset_v sf _` against a goal still containing
+  `if ("CSET" == "CSET") = true then 1 else …` (from `progEffect`'s `op == "CSET"` after `rfl` on
+  `op`) did not finish in 40 min (no heartbeat error); the whole module had built in 17 s
+  without that step. `first | exact a | exact b` over such goals is as bad: every failing
+  alternative is an expensive defeq. **Fix:** normalise the string tests first
+  (`simp only [beq_self_eq_true, e1]` with `e1 : ("CSET" == "CSETM") = false := by decide`), one
+  explicit lemma per opcode instead of `first`. Bisect with truncated copies of the module run
+  by `lake env lean` under `timeout` (lean prints nothing until it finishes).

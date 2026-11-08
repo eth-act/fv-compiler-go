@@ -2,6 +2,7 @@ import GoFV.Proof.Obj.Words
 import GoFV.Proof.Obj.Prog
 import GoFV.Proof.Obj.Spec
 import GoFV.Proof.Gen.Basic
+import GoFV.Proof.Gen.Progs7
 
 /-!
 # `runProg` of P0 is matched by `runMach` of the linked words (`docs/plans/proofs3.md` §6)
@@ -24,7 +25,7 @@ namespace GoFV.Proof.Obj
 
 open GoFV.Arm64 GoFV.Asm GoFV.Asm.CheckObj
 open GoFV.SSA.Sem (MStep MStar)
-open GoFV.Proof.Gen (PStep PStar maxId)
+open GoFV.Proof.Gen (PStep PStar maxId PPanics)
 
 /-! ## Addresses -/
 
@@ -69,6 +70,14 @@ def HookMap (H : Hooks) (L : Link) (ps : List Prog) (f : BitVec 64 → BitVec 64
     (IsProgAddr L.text ps (s.x 30) ∨ s.x 30 = endP L.text ps) → H.call s = some (.ret s') →
     ∃ t', H.call t = some (.ret t') ∧ ObjRel f s' t' ∧
       (IsProgAddr L.text ps s'.pc ∨ s'.pc = endP L.text ps)
+
+/-- The runtime hooks panic alike from related states: a hook that panics from a P0 state at a
+symbol (after a call) panics with the same panic from every related machine state (trusted, as
+`HookMap`). -/
+def HookPanicMap (H : Hooks) (L : Link) (ps : List Prog) (f : BitVec 64 → BitVec 64) : Prop :=
+  ∀ s t e s', ObjRel f s t → (∃ y, s.pc = L.sym y) →
+    (IsProgAddr L.text ps (s.x 30) ∨ s.x 30 = endP L.text ps) →
+    H.call s = some (.panicked e s') → ∃ t', H.call t = some (.panicked e t')
 
 /-- What the simulation of one function rests on: the validator accepted, the P0 layout is
 `Link.byId` with the validated frame, the code is the linked text, the return address and the
@@ -477,35 +486,47 @@ private theorem obj_words {L : Link} {ps : List Prog} {f : BitVec 64 → BitVec 
     hinvn htgt hsym hic
   exact ⟨t', hst, ⟨hx, h30, hsp, hv, hfl, hmem, hpc⟩, hinv⟩
 
-/-- P0's `RET` does not step (its meaning is the epilogue's). -/
-private theorem progStep_ret0 {L : Link} {p : Prog} {s s' : MState} (h : isRet0 p = true) :
-    progStep L p s ≠ .ok s' := by
+/-- A non-skip Prog whose effect has no meaning neither steps nor faults in the nil page. -/
+private theorem progStep_err {L : Link} {p : Prog} {s : MState} {msg : String}
+    (hsk : p.isSkip = false) (he : progEffect ⟨L, s, p⟩ = .error msg) :
+    (∀ s', progStep L p s ≠ .ok s') ∧ ∀ a, progStep L p s ≠ .error (.nilPage a) := by
+  refine ⟨fun s' => ?_, fun a => ?_⟩ <;> unfold progStep <;> split
+  · simp
+  · simp [hsk, he]
+  · simp
+  · simp [hsk, he]
+
+/-- P0's `RET` has no `progEffect` (its meaning is the epilogue's). -/
+private theorem ret0_effect {L : Link} {p : Prog} {s : MState} (h : isRet0 p = true) :
+    p.isSkip = false ∧ progEffect ⟨L, s, p⟩ = .error "P0 RET: the epilogue's (machine level)" := by
   simp only [isRet0, Bool.and_eq_true, beq_iff_eq] at h
   obtain ⟨has, hto⟩ := h
   have hname : As.name .RET = "RET" := rfl
-  have he : progEffect ⟨L, s, p⟩ = .error "P0 RET: the epilogue's (machine level)" := by
-    unfold progEffect
-    simp (config := { decide := true }) only [has, hname, ProgOp.baseOf, ↓reduceIte,
-      ProgOp.movMem, ProgOp.pairOp, ProgOp.rmw, ProgOp.bcond, ProgOp.startsS, hto]
-    rfl
-  unfold progStep
-  split
-  · simp
-  · simp [Prog.isSkip, has, he]
+  refine ⟨by simp [Prog.isSkip, has], ?_⟩
+  unfold progEffect
+  simp (config := { decide := true }) only [has, hname, ProgOp.baseOf, ↓reduceIte,
+    ProgOp.movMem, ProgOp.pairOp, ProgOp.rmw, ProgOp.bcond, ProgOp.startsS, hto]
+  rfl
+
+/-- An `END` placeholder has no `progEffect`. -/
+private theorem end_effect {L : Link} {p : Prog} {s : MState} (has : p.as = .END) :
+    p.isSkip = false ∧ progEffect ⟨L, s, p⟩ = .error "opcode not specified" := by
+  have hname : As.name .END = "END" := rfl
+  refine ⟨by simp [Prog.isSkip, has], ?_⟩
+  unfold progEffect
+  simp (config := { decide := true }) only [has, hname, ProgOp.baseOf, ↓reduceIte,
+    ProgOp.movMem, ProgOp.pairOp, ProgOp.rmw, ProgOp.bcond, ProgOp.startsS]
+  rfl
+
+/-- P0's `RET` does not step (its meaning is the epilogue's). -/
+private theorem progStep_ret0 {L : Link} {p : Prog} {s s' : MState} (h : isRet0 p = true) :
+    progStep L p s ≠ .ok s' :=
+  (progStep_err (ret0_effect (L := L) (s := s) h).1 (ret0_effect h).2).1 s'
 
 /-- An `END` placeholder does not step. -/
 private theorem progStep_end {L : Link} {p : Prog} {s s' : MState} (has : p.as = .END) :
-    progStep L p s ≠ .ok s' := by
-  have hname : As.name .END = "END" := rfl
-  have he : progEffect ⟨L, s, p⟩ = .error "opcode not specified" := by
-    unfold progEffect
-    simp (config := { decide := true }) only [has, hname, ProgOp.baseOf, ↓reduceIte,
-      ProgOp.movMem, ProgOp.pairOp, ProgOp.rmw, ProgOp.bcond, ProgOp.startsS]
-    rfl
-  unfold progStep
-  split
-  · simp
-  · simp [Prog.isSkip, has, he]
+    progStep L p s ≠ .ok s' :=
+  (progStep_err (end_effect (L := L) (s := s) has).1 (end_effect has).2).1 s'
 
 private theorem progAt?_mem {sym : Nat → BitVec 64} {text : BitVec 64} {a x : Int}
     {ps : List Prog} {pc : BitVec 64} {p : Prog}
@@ -648,5 +669,98 @@ theorem obj_star {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab : Tab
     have hI1' : ObjInv L ps.toList _ := hI1.resolve_right hpc
     obtain ⟨t2, h2, hR2, hI2⟩ := obj_step hE hH hst hR1 hI1' (hO _ hpre)
     exact ⟨t2, mstar_trans h1 h2, hR2, hI2⟩
+
+/-! ## Panics -/
+
+/-- The Prog performs no access in the nil page if the machine words do not (`sameEffect`'s
+converse load check and equal stores). -/
+private theorem noNil_back {f : BitVec 64 → BitVec 64} {sym : Nat → BitVec 64} {pσ mσ : Sym}
+    {s t : MState} (hR : ObjRel f s t) (hse : sameEffect mσ pσ = .ok ())
+    (hn : NoNil ⟨t, sym⟩ mσ) : NoNil ⟨s, sym⟩ pσ := by
+  obtain ⟨-, -, -, -, -, hst, -, hrt, hld'⟩ := sameEffect_spec hse
+  obtain ⟨-, -, -, hldok, hstok⟩ := readsTmp_false hrt
+  refine ⟨fun a n hx => ?_, fun a n v hx => ?_⟩
+  · rw [← eval_rel hR sym (hldok _ hx)]
+    exact hn.1 a n (hld' _ hx)
+  · rw [← eval_rel hR sym (hstok _ hx).1]
+    exact hn.2 a n v (by rw [hst]; exact hx)
+
+/-- A Prog with words whose step faults in the nil page: the words run to a faulting word. -/
+private theorem obj_words_fault {L : Link} {f : BitVec 64 → BitVec 64}
+    {t0 : ByteArray} {rs : List Reloc} {az ez : Int}
+    {base : BitVec 64} {code : Code} {retM : BitVec 64} {H : Hooks} {p : Prog} {o e : Nat}
+    {pσ mσ : Sym} {pc : PCtl} {mc : MCtl} {s t : MState} {a : BitVec 64}
+    (hlink : linkCode base L.sym t0 rs = .ok code) (hsz : t0.size ≤ 2 ^ 64)
+    (hret : code retM = none) (haz : L.autosize = az) (hez : L.extrasize = ez)
+    (hoe : o < e) (h4 : (e - o) % 4 = 0)
+    (hps : progSym az ez p = .ok (pσ, pc)) (hms : symWords t0 rs ((e - o) / 4) o {} = .ok (mσ, mc))
+    (hse : sameEffect mσ pσ = .ok ()) (hs : progStep L p s = .error (.nilPage a))
+    (hR : ObjRel f s t) (htpc : t.pc = base + BitVec.ofNat 64 o) :
+    ∃ t', MStar H code retM t t' ∧ WordFault code retM t' := by
+  obtain ⟨n, hn⟩ : ∃ n, (e - o) / 4 = n + 1 := ⟨(e - o) / 4 - 1, by omega⟩
+  rw [hn] at hms
+  have hbad := progSym_fault hps haz hez hs
+  exact symWords_fault (H := H) hlink hsz hret n o {} mσ mc ⟨t, L.sym⟩ t hms rfl (holds_init _)
+    htpc ⟨fun _ _ h => by simp at h, fun _ _ _ h => by simp at h⟩
+    (fun h => hbad (noNil_back hR hse h))
+
+/-- **A P0 panic is a machine panic**: from related states, a Prog whose access is in the nil
+page is matched by machine steps to a word that faults there, and a hook that panics (after a
+call) panics alike from the related machine state (`HookPanicMap`). -/
+theorem obj_panic {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab : Tab} {L : Link}
+    {base : BitVec 64} {code : Code} {retM : BitVec 64} {H : Hooks} {s t : MState}
+    {pe : GoFV.SSA.Sem.Panic}
+    (hE : ObjEnv ps spills o tab L base code retM)
+    (hP : HookPanicMap H L ps.toList (ObjEnv.map tab ps L base))
+    (hR : ObjRel (ObjEnv.map tab ps L base) s t) (hI : ObjInv L ps.toList s)
+    (hp : PPanics H L ps.toList (endP L.text ps.toList) s pe) :
+    ∃ t', MStar H code retM t t' ∧ GoFV.SSA.Sem.MPanics H code retM t' pe := by
+  obtain ⟨text0, body, h0, hT, hnd, hlt, hsz2, hofs, hb0, hb1, -, -, -, hbody⟩ :=
+    checkObj_spec hE.check
+  have hlink := hE.link
+  have hlen : tab.offs.toList.length = ps.toList.length := by simp [hofs]
+  have hsym : ∀ y, ObjEnv.map tab ps L base (L.sym y) = L.sym y := fun y =>
+    objMap_fix (hE.syms y).2.2.1 (hE.syms y).2.2.2
+  obtain ⟨-, ⟨p, a, hp', hstep, rfl⟩ | ⟨hnone, s', hcall⟩⟩ := hp
+  · rw [hlink] at hp'
+    obtain ⟨hmem, hspc⟩ := progAt?_mem hp'
+    obtain ⟨k, hk, rfl⟩ := List.getElem_of_mem hmem
+    have htpc : t.pc = base + BitVec.ofNat 64 (tab.offs.toList[k]'(by omega)) := by
+      rw [hR.pc, hspc]
+      exact objMap_at hnd hlt hlen hk
+    obtain ⟨next, hnext, -, -⟩ := next_map (sym := L.sym) (text := L.text) (base := base)
+      (a := tab.autosize) (x := tab.extrasize) (e := tab.endOff) hnd hlt hlen hk
+    rw [← hlink] at hnext
+    have hskip : ∀ {q : Prog}, q.isSkip = true → L.nextAddr q.id = some next →
+        progStep L q s ≠ .error (.nilPage a) := fun hsk hq h => by
+      simp [progStep, hq, hsk] at h
+    rcases Nat.eq_zero_or_pos k with rfl | hk1
+    · have hp0 : ps.toList[0] = text0 := by
+        rw [Array.getElem?_eq_some_iff] at h0
+        obtain ⟨_, h0⟩ := h0
+        simpa using h0
+      exact absurd hstep (hskip (by rw [hp0]; simp [Prog.isSkip, hT]) hnext)
+    · have hone := body_at hbody hlen hk1 hk
+      rcases checkOne_spec hone with ⟨hret0, -⟩ | ⟨-, hcp⟩
+      · exact absurd hstep
+          ((progStep_err (ret0_effect (L := L) (s := s) hret0).1 (ret0_effect hret0).2).2 a)
+      rcases checkProg_spec hcp with ⟨hsk | hend, -⟩ |
+          ⟨-, -, hoe, h4, pσ, pc, mσ, mc, hps, hms, hse, -⟩
+      · exact absurd hstep (hskip hsk hnext)
+      · exact absurd hstep
+          ((progStep_err (end_effect (L := L) (s := s) hend).1 (end_effect hend).2).2 a)
+      · obtain ⟨t', hrun, hpc', hc', a', hst'⟩ := obj_words_fault (H := H) hE.linked hE.size
+          hE.ret (by rw [hlink]; rfl) (by rw [hlink]; rfl) hoe h4 hps hms hse hstep hR htpc
+        exact ⟨t', hrun, hpc', .inl ⟨hc', a', hst', rfl⟩⟩
+  · rcases hI with hpa | ⟨⟨y, hy⟩, h30⟩
+    · exfalso
+      rw [hlink] at hnone
+      obtain ⟨p, hp⟩ := progAt?_some hnd hlt hpa
+      rw [hp] at hnone
+      cases hnone
+    · obtain ⟨t', hcall'⟩ := hP s t pe s' hR ⟨y, hy⟩ h30 hcall
+      have htpc : t.pc = L.sym y := by rw [hR.pc, hy, hsym]
+      exact ⟨t, .refl, by rw [htpc]; exact (hE.syms y).2.1,
+        .inr ⟨by rw [htpc]; exact (hE.syms y).1, t', hcall'⟩⟩
 
 end GoFV.Proof.Obj

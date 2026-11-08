@@ -1022,7 +1022,7 @@ private theorem symInsn_noMem {i : Insn} {o : Nat} {σ σ' : Sym} {mc : MCtl}
   | _ => cases h
 
 /-- The single access of `symAccess` at `a`, in the nil page: `execLdSt` faults. -/
-private theorem insn_access_fault {σ σ1 : Sym} {c : Ctx} {t : MState} {size opc : BitVec 2}
+theorem symAccess_fault {σ σ1 : Sym} {c : Ctx} {t : MState} {size opc : BitVec 2}
     {rt : Nat} {a : Ex} {mode : AMode} {rn : Reg} {wbv : Option (BitVec 64)}
     (h : symAccess σ size opc rt a = .ok σ1)
     (hA : t.amode mode rn (bytesOf size) = (a.eval c, wbv)) (hN : NoNil c σ)
@@ -1088,7 +1088,7 @@ private theorem insn_ldst_fault {size : BitVec 2} {opc : BitVec 2} {mode : AMode
       cases wb <;> cases h
       · exact hbad
       · exact fun h1 => hbad (NoNil.of_same (by simp) (by simp) h1)
-    obtain ⟨x, hx⟩ := insn_access_fault hs hA hN hbad1
+    obtain ⟨x, hx⟩ := symAccess_fault hs hA hN hbad1
     rw [insn_ofNat_toNat] at hx
     exact ⟨x, hx⟩
 
