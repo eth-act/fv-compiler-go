@@ -320,18 +320,18 @@ theorem storeBytes_relN (hA : AddrAgree ι) {n c : Nat} {x : Val} {Xs : BitVec 6
       | poison => cases hr
       | _ => exact absurd hf id
 
-/-- A write of `0 < n ≤ 8` bytes, each related to the corresponding byte of the machine's `V`,
-keeps `MemInj` with the machine's `writeMem` of `V` (`memInj_storeN`'s conclusion). -/
-private theorem memInj_write (hA : AddrAgree ι) {m m' : Mem} {mm : Memory} (h : MemInj ι m mm)
+/-- A write of `n > 0` bytes `bsW` keeps `MemInj` with any machine memory `M` whose bytes at the
+write's injected address are related to `bsW` and which agrees with `mm` elsewhere; the keys stay
+distinct, the blocks keep their sizes, and the write lies inside its live block. -/
+theorem memInj_writeAny (hA : AddrAgree ι) {m m' : Mem} {mm M : Memory} (h : MemInj ι m mm)
     (hk : KeysNodup m) {p : Ptr} {a : BitVec 64} {n : Nat} {bsW : Array Byte}
-    {V : BitVec (8 * n)} (hn0 : 0 < n) (hn : n ≤ 8) (ha : ι p.blk = some a) (hsz : bsW.size = n)
-    (hbyte : ∀ j, j < n → ByteRel ι bsW[j]! (V.extractLsb' (8 * j) 8))
+    (hn0 : 0 < n) (ha : ι p.blk = some a) (hsz : bsW.size = n)
+    (hbyt : ∀ j, j < n → ByteRel ι bsW[j]! (M (a + p.off + BitVec.ofNat 64 j)))
+    (hM : ∀ y : BitVec 64, (∀ j, j < n → y.toNat ≠ a.toNat + p.off.toNat + j) → M y = mm y)
     (hw : m.write p bsW = some m') :
-    MemInj ι m' (writeMem mm (a + p.off) n V) ∧ KeysNodup m' ∧
+    MemInj ι m' M ∧ KeysNodup m' ∧
       (∀ b al2, (b, al2) ∈ m'.blocks → ∃ al1, (b, al1) ∈ m.blocks ∧ al1.data.size = al2.data.size) ∧
-      ∃ al, (p.blk, al) ∈ m.blocks ∧ p.off.toNat + n ≤ al.data.size ∧
-        ∀ y : BitVec 64, (∀ j, j < n → y.toNat ≠ a.toNat + p.off.toNat + j) →
-          writeMem mm (a + p.off) n V y = mm y := by
+      ∃ al, (p.blk, al) ∈ m.blocks ∧ p.off.toNat + n ≤ al.data.size := by
   unfold Mem.write at hw
   have hne : bsW.isEmpty = false := by
     rw [Array.isEmpty_eq_false_iff, ← Array.size_pos_iff, hsz]; exact hn0
@@ -396,14 +396,7 @@ private theorem memInj_write (hA : AddrAgree ι) {m m' : Mem} {mm : Memory} (h :
       rcases hcases b al2 hb with ⟨rfl, rfl⟩ | ⟨-, hb⟩
       · exact ⟨al, hmem, hDsz.symm⟩
       · exact ⟨al2, hb, rfl⟩
-    have hout : ∀ y : BitVec 64, (∀ j, j < n → y.toNat ≠ a.toNat + p.off.toNat + j) →
-        writeMem mm (a + p.off) n V y = mm y := by
-      intro y hy
-      apply writeMem_other
-      intro j hj he
-      apply hy j hj
-      rw [he]; simp [BitVec.toNat_add]; omega
-    refine ⟨⟨h.nil, ?_, ?_, ⟨fun _ _ => False, ?_⟩⟩, hk', hback, al, hmem, hoff, hout⟩
+    refine ⟨⟨h.nil, ?_, ?_, ⟨fun _ _ => False, ?_⟩⟩, hk', hback, al, hmem, hoff⟩
     · intro b al2 hb
       obtain ⟨al1, hb1, hs⟩ := hback b al2 hb
       rw [← hs]; exact h.mapped b al1 hb1
@@ -422,20 +415,67 @@ private theorem memInj_write (hA : AddrAgree ι) {m m' : Mem} {mm : Memory} (h :
         by_cases hin : p.off.toNat ≤ i ∧ i < p.off.toNat + n
         · rw [ite_eq_left hin] at hg
           rw [Option.some.inj hg, show a + BitVec.ofNat 64 i =
-              a + p.off + BitVec.ofNat 64 (i - p.off.toNat) by rw [← addr_off, Nat.add_sub_cancel' hin.1],
-            writeMem_at n mm _ V _ (by omega) hn]
-          exact hbyte _ (by omega)
+              a + p.off + BitVec.ofNat 64 (i - p.off.toNat) by rw [← addr_off, Nat.add_sub_cancel' hin.1]]
+          exact hbyt _ (by omega)
         · rw [ite_eq_right hin, Array.getElem?_eq_getElem hiD] at hg
-          rw [Option.some.inj hg, hout _ ?_]
+          rw [Option.some.inj hg, hM _ ?_]
           · exact memInj_byteRel hA h hmem ha hiD
           · intro j hj; simp [BitVec.toNat_add]; omega
       · obtain ⟨a2', h2', -, hhi2⟩ := h.mapped _ _ hb
         obtain rfl : a2 = a2' := Option.some.inj (hι.symm.trans h2')
         have := h.inj b al2 p.blk al a2 a hb hmem hne hι ha
-        rw [hout _ ?_]
+        rw [hM _ ?_]
         · exact memInj_byteRel hA h hb hι hi
         · intro j hj; simp [BitVec.toNat_add]; omega
   · cases hw
+
+/-- A successful write of `n > 0` bytes lies inside a live block. -/
+theorem write_inside {m m' : Mem} {p : Ptr} {bs : Array Byte} (hw : m.write p bs = some m')
+    (hn0 : 0 < bs.size) : ∃ al, (p.blk, al) ∈ m.blocks ∧ p.off.toNat + bs.size ≤ al.data.size := by
+  unfold Mem.write at hw
+  have hne : bs.isEmpty = false := by
+    rw [Array.isEmpty_eq_false_iff, ← Array.size_pos_iff]; exact hn0
+  simp only [hne, Bool.false_eq_true, ↓reduceIte] at hw
+  cases hfa : m.find? p.blk with
+  | none => simp [hfa] at hw
+  | some al =>
+    simp only [hfa, Option.bind_eq_bind, Option.bind_some] at hw
+    split at hw
+    · rename_i hc
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+      exact ⟨al, find?_mem hfa, hc.1.1.2⟩
+    · cases hw
+
+/-- A write of `0 < n ≤ 8` bytes, each related to the corresponding byte of the machine's `V`,
+keeps `MemInj` with the machine's `writeMem` of `V` (`memInj_storeN`'s conclusion). -/
+private theorem memInj_write (hA : AddrAgree ι) {m m' : Mem} {mm : Memory} (h : MemInj ι m mm)
+    (hk : KeysNodup m) {p : Ptr} {a : BitVec 64} {n : Nat} {bsW : Array Byte}
+    {V : BitVec (8 * n)} (hn0 : 0 < n) (hn : n ≤ 8) (ha : ι p.blk = some a) (hsz : bsW.size = n)
+    (hbyte : ∀ j, j < n → ByteRel ι bsW[j]! (V.extractLsb' (8 * j) 8))
+    (hw : m.write p bsW = some m') :
+    MemInj ι m' (writeMem mm (a + p.off) n V) ∧ KeysNodup m' ∧
+      (∀ b al2, (b, al2) ∈ m'.blocks → ∃ al1, (b, al1) ∈ m.blocks ∧ al1.data.size = al2.data.size) ∧
+      ∃ al, (p.blk, al) ∈ m.blocks ∧ p.off.toNat + n ≤ al.data.size ∧
+        ∀ y : BitVec 64, (∀ j, j < n → y.toNat ≠ a.toNat + p.off.toNat + j) →
+          writeMem mm (a + p.off) n V y = mm y := by
+  have hout : ∀ al, (p.blk, al) ∈ m.blocks → p.off.toNat + n ≤ al.data.size →
+      ∀ y : BitVec 64, (∀ j, j < n → y.toNat ≠ a.toNat + p.off.toNat + j) →
+        writeMem mm (a + p.off) n V y = mm y := by
+    intro al hmem hoff y hy
+    obtain ⟨a0, ha0, -, hhi⟩ := h.mapped _ _ hmem
+    obtain rfl : a = a0 := Option.some.inj (ha.symm.trans ha0)
+    apply writeMem_other
+    intro j hj he
+    apply hy j hj
+    rw [he]; simp [BitVec.toNat_add]; omega
+  obtain ⟨al, hmem, hoff⟩ := write_inside hw (by rw [hsz]; exact hn0)
+  rw [hsz] at hoff
+  obtain ⟨h1, h2, h3, -⟩ := memInj_writeAny hA h hk hn0 ha hsz
+    (fun j hj => by
+      rw [writeMem_at n mm _ V _ hj hn]
+      exact hbyte j hj)
+    (hout al hmem hoff) hw
+  exact ⟨h1, h2, h3, al, hmem, hoff, hout al hmem hoff⟩
 
 /-- An `n`-byte store (`1, 2, 4, 8`) of a register content of class `c` related to `Xs`, with
 `8n ≤ c` or a boolean (`c = 1`), keeps `MemInj` with the machine's `writeMem` of the low `n`
