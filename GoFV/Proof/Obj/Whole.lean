@@ -193,6 +193,31 @@ theorem lreach_cases {env : Env} {lc : LocCtx} {b0 : ID} {i0 : Nat} {s0 : LocSta
     obtain ⟨R, -, hn⟩ := stepTermLoc_gen ht
     exact Or.inr ⟨_, _, _, hb, stepTermL_goto_mem hn, rfl⟩
 
+/-- A run whose first step panics reaches no state but its start. -/
+theorem lreach_of_panicAt {env : Env} {lc : LocCtx} {b0 : ID} {i0 : Nat} {s0 : LocState}
+    {blk : Block} {id : ID} {v : Value} {e : Panic} {mm : Mem}
+    (hb : lc.ctx.f.block? b0 = some blk) (hi : blk.values[i0]? = some id)
+    (hv : lc.ctx.f.value? id = some v) (hs : stepLoc env lc s0 v = .panic e mm) {b : ID}
+    {i : Nat} {s : LocState} (h : LReach env lc b0 i0 s0 b i s) : b = b0 ∧ i = i0 ∧ s = s0 := by
+  induction h with
+  | refl => exact ⟨rfl, rfl, rfl⟩
+  | val _ hb' hi' hv' hs' ih =>
+    obtain ⟨rfl, rfl, rfl⟩ := ih
+    rw [hb] at hb'
+    cases hb'
+    rw [hi] at hi'
+    cases hi'
+    rw [hv] at hv'
+    cases hv'
+    rw [hs] at hs'
+    cases hs'
+  | term _ hb' _ ih =>
+    obtain ⟨rfl, hsz, rfl⟩ := ih
+    rw [hb] at hb'
+    cases hb'
+    rw [← hsz] at hi
+    simp at hi
+
 theorem g14Pre_simple {lc : LocCtx} {v : Value} (h : simpleOp v.op = true) (s : LocState) :
     G14Pre lc s v := by
   simp only [simpleOp, Bool.and_eq_true, bne_iff_ne, ne_eq, Option.isNone_iff_eq_none,
