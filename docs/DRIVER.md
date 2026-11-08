@@ -200,10 +200,11 @@ they wrote into the function's own symbols.
    (info, loc, ranges, abstract function, lines), the child-DIE fixups (`dieref`, `dieoff`)
    and the DWARF symbols' `data` lines, in the `.prog` syntax; or
    `status error "<stage>" "<msg>"`.
-3. **Install** (`ssagen/driver_back_gofv.go`). Anonymous symbols resolve by role (pc-value
-   tables from `pcln`, DWARF symbols from `dwsyms` and `populateDWARF`'s state), named ones by
-   name and ABI among the symbols of the function's `.prog` file; a symbol the compiler does
-   not have is an error. Installed: the text symbol's `P`, `R` and `Size`, the funcdata list,
+3. **Install** (`ssagen/driver_back_gofv.go`). Symbols of the input file resolve by their
+   number there (the exporter's table, anonymous ones included, e.g. the method-name symbols
+   of `R_USENAMEDMETHOD` marker relocations; the DWARF symbols of `dwsyms` must be
+   `populateDWARF`'s), new ones by role (the pc-value tables of `pcln`); any other new symbol
+   is an error. Installed: the text symbol's `P`, `R` and `Size`, the funcdata list,
    and `P`, `R`, `Size` of the symbols only this function writes — pc-value tables,
    `StackObjects`, `OpenCodedDeferInfo`, `ArgInfo`, `ArgLiveInfo`, jump tables and the DWARF
    symbols (relocations that `ReferenceChildDIE` adjusted right away get the same offsets;

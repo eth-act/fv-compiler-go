@@ -2424,7 +2424,7 @@
  type LocalSlotSplitKey struct {
 --- a/src/cmd/compile/internal/ssagen/driver_back_gofv.go
 +++ b/src/cmd/compile/internal/ssagen/driver_back_gofv.go
-@@ -0,0 +1,679 @@
+@@ -0,0 +1,672 @@
 +// Copyright 2026 The gofv Authors. All rights reserved.
 +// Use of this source code is governed by a BSD-style
 +// license that can be found in the LICENSE file.
@@ -2773,8 +2773,8 @@
 +	text := x.fn.LSym
 +	fi := text.Func()
 +	pc := &fi.Pcln
-+	// Resolution: anonymous symbols by role, named ones by name and ABI among the symbols of
-+	// the function's .prog file.
++	// Resolution: the input file's symbols by their number there (x.symList), the new ones
++	// (pc-value tables) by role.
 +	role := map[int]*obj.LSym{}
 +	setRole := func(k int, s *obj.LSym, what string) error {
 +		if k == 0 {
@@ -2818,30 +2818,23 @@
 +			}
 +		}
 +	}
-+	type key struct {
-+		name string
-+		abi  int
-+	}
-+	byName := map[key]*obj.LSym{}
-+	for _, s := range x.symList {
-+		if s.Name != "" {
-+			if _, dup := byName[key{s.Name, int(s.ABI())}]; !dup {
-+				byName[key{s.Name, int(s.ABI())}] = s
-+			}
-+		}
-+	}
 +	syms := map[int]*obj.LSym{}
 +	rev := map[*obj.LSym]int{}
 +	for _, k := range res.symKs {
-+		s := role[k]
-+		if s == nil {
-+			name := res.symName[k]
-+			if name == "" {
-+				return "resolve", fmt.Errorf("anonymous symbol y%d has no role", k)
++		var s *obj.LSym
++		switch {
++		case k >= 1 && k <= len(x.symList):
++			// A symbol of the input file keeps its number there.
++			s = x.symList[k-1]
++			if r := role[k]; r != nil && r != s {
++				return "resolve", fmt.Errorf("y%d: its role is not the input file's symbol", k)
 +			}
-+			if s = byName[key{name, res.symABI[k]}]; s == nil {
-+				return "resolve", fmt.Errorf("symbol %q<%d> is not the compiler's", name, res.symABI[k])
-+			}
++		case role[k] != nil:
++			s = role[k]
++		default:
++			// The ports intern named symbols by name, so a new number is a symbol the input
++			// file, and so the compiler's records of this function, do not have.
++			return "resolve", fmt.Errorf("new symbol y%d %q<%d> has no role", k, res.symName[k], res.symABI[k])
 +		}
 +		syms[k] = s
 +		if _, ok := rev[s]; !ok {
