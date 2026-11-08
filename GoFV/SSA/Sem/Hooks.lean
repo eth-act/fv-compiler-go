@@ -15,7 +15,7 @@ the machine:
 | any entry point with a Phase 1 contract (`Env.runtime`: allocation, `memmove`, `memequal`, `concatstring*`, `convT*`, `growslice`, `panicdivide`, `panicshift`, `gopanic`, …) | `liftContract`: the Go-typed arguments read from their ABI registers and stack slots (`ABIParam.regs`: `abi.RegIndex`, integer `R0`–`R15` then floating `F0`–`F15`; stack slots at `SP + offset`, the offsets including arm64's fixed frame word), the memory pulled back through `ι` from the blocks the arguments reach (`Layout.pull`), the contract run, its memory pushed forward (`Layout.pushWrites`, new heap blocks recorded in the allocator table), every register a call clobbers (`R0`–`R17`, `R19`–`R27`, `V0`–`V31`) and the flags overwritten with garbage (`clobber`), the results written to their ABI locations, and the PC set to `X30`; a contract that panics is `panicked` with the contract's `Panic` |
 | `runtime.morestack`, `runtime.morestack_noctxt` (prologue slow path) | `newstack` grows the stack in place (`δ = 0`: nothing moves): `stackguard0` (`16(g)`) lowered by `growBy` bytes, no lower than `stack.lo` (`0(g)`) + `StackGuard`; `gogo` resumes after the `BL` with `X30` = the `R3` the prologue saved, `SP`, `R26`, `R28`, `R29` as at the call; every other register and the flags garbage. Stuck when the stack cannot grow |
 | `runtime.gcWriteBarrier<n>` | Phase 1's `WbPre` buffer: `R25` = the address of `8n` buffer bytes (`Layout`'s `wbuf`), `R27` and the flags garbage, other registers preserved |
-| `runtime.panicBounds` | `panicBounds64` (`runtime/panic.go:211-236`): the caller's `PCDATA_PanicBounds` value at `X30 - 1` (`pcvalue`), `abi.BoundsDecode`, `x`/`y` from `R0`–`R15` or constants: `panicked (.bounds kind x y)` with `kind` the `ssa.BoundsKind` (`2·code`, `+1` when unsigned) |
+| `runtime.panicBounds` | `panicBounds64` (`runtime/panic.go:211-236`): the caller's `PCDATA_PanicBounds` value at `X30 - 1` (`pcvalue`), `abi.BoundsDecode`, `x`/`y` from `R0`–`R15` or constants: `panicked (.bounds kind x y)` with `kind` the `ssa.BoundsKind` (`2·code`, `+1` when unsigned; 16 for `BoundsConvert`) (`boundsPanic`) |
 
 A load or store in the nil page is handled by `runMach` itself (`sigpanic`: `panicked nilDeref`).
 Not modelled (no hook: such a call is `stuck`): the defer machinery (`deferproc*`,
@@ -241,6 +241,16 @@ def boundsDecode (v : Nat) : Nat × Bool × Bool × Bool × Nat × Nat :=
   let y := if yReg then c % 16 else c % 32
   (code, signed, xReg, yReg, x, y)
 
+/-- The panic of `panicBounds64` for the `PCDATA_PanicBounds` value `v` with the registers of `s`:
+`abi.BoundsDecode`, `x`/`y` from `R0`–`R15` or constants, the `ssa.BoundsKind` of the code and
+the signedness (`2·code`, `+1` when unsigned; `BoundsConvert`, code 8, is kind 16). -/
+def boundsPanic (v : Nat) (s : MState) : Panic :=
+  let (code, signed, xReg, yReg, xv, yv) := boundsDecode v
+  let reg (r : Nat) := s.x (BitVec.ofNat 5 r)
+  let x : Int := if xReg then (if signed then (reg xv).toInt else (reg xv).toNat) else xv
+  let y : Int := if yReg then (reg yv).toInt else yv
+  .bounds (if code = 8 then 16 else 2 * code + (if signed then 0 else 1)) x y
+
 /-- `runtime.panicBounds` (module comment). -/
 def panicBoundsHook (R : RtInfo) (s : MState) : HookRes :=
   let pc := s.x 30
@@ -251,11 +261,7 @@ def panicBoundsHook (R : RtInfo) (s : MState) : HookRes :=
     | none => .stuck "panicBounds: no PCDATA_PanicBounds"
     | some v =>
       if v < 0 then .stuck "panicBounds: no PCDATA_PanicBounds" else
-      let (code, signed, xReg, yReg, xv, yv) := boundsDecode v.toNat
-      let reg (r : Nat) := s.x (BitVec.ofNat 5 r)
-      let x : Int := if xReg then (if signed then (reg xv).toInt else (reg xv).toNat) else xv
-      let y : Int := if yReg then (reg yv).toInt else yv
-      .panicked (.bounds (2 * code + (if signed then 0 else 1)) x y) s #[]
+      .panicked (boundsPanic v.toNat s) s #[]
 
 /-- The hook of runtime entry point `name` called from the state `s`. -/
 def rtHookNamed (R : RtInfo) (name : String) (s : MState) : HookRes :=
