@@ -1,6 +1,7 @@
 import GoFVTest.Driver.Back
 import GoFVTest.GenIn
 import GoFV.Gen.Check18
+import GoFV.Gen.Results
 import GoFV.Asm.CheckObj
 
 /-!
@@ -8,15 +9,17 @@ import GoFV.Asm.CheckObj
 
 `GoFV.Proof.Obj.verified_mach_ret` applies to a function when the verified pipeline is
 `fullyVerified`, `checkG18` accepts genssa's P0 Progs against the pipeline's own output
-(`LocCtx.make` of its tables and function), and `checkObj` accepts the assembler's output on
-those same Progs. `back` runs this back end on a function after `trim` and its tables:
+(`LocCtx.make` of its tables and function) with class tables `kt`, `retRegsOK` holds of them
+(every `Ret` block returns its results in their ABI registers), and `checkObj` accepts the
+assembler's output on those same Progs. `back` runs this back end on a function after `trim`
+and its tables:
 
 - `Env.load` on the export with its last (`trim`) section's function replaced by the given one
   (homes and temporary registers from its `f.low`), and the given tables;
 - the frame layout (`allocFrame`) and `genssa` on it, its Progs in the input file's symbol
   numbers (`Back.genP0`, as the driver's back end `Back.chain`);
 - `checkG18` with G2's inputs of that frame (the symbols by the file's numbers,
-  `GenCheck.slotOpOf`, the frame size);
+  `GenCheck.slotOpOf`, the frame size), and `retRegsOK` on its class tables;
 - `Flushplist` (`GoFV.Asm.flush`) on the file with those Progs (`GenP0.progFile`) and `checkObj`
   on the same Progs, their register-argument spills and the port's text, relocations and Progs.
 
@@ -35,15 +38,23 @@ namespace GoFVTest.Driver.E2E
 open GoFV.SSA (ExportFile Tables Func GoStr)
 open GoFV.SSA.Sem (LocCtx)
 open GoFV.Asm GoFV.Asm.CheckObj
-open GoFV.Gen.Check (checkG18 G2In)
+open GoFV.Gen.Check (checkG18 G2In retRegsOK ownOutRegs)
 open GoFVTest.Driver.Back (genP0 GenP0 inputView)
 open GoFVTest.GenCheck (slotOpOf classOf)
 
+/-- The validators' verdicts on one function (`none`: accepted). -/
+structure Res where
+  g18 : Option String
+  /-- `retRegsOK`'s rejection (`none` also when `checkG18` rejects: not run). -/
+  ret : Option String
+  obj : Option String
+
+/-- Accepted by all three: `verified_mach_ret`'s back-end premises hold. -/
+def Res.all (r : Res) : Bool := r.g18.isNone && r.ret.isNone && r.obj.isNone
+
 /-- The back end on `f` (tables `tabs`) as the function after `trim` of the export `e`, with the
-driver input file `pin`: a load or port error, or the rejections of `checkG18` and `checkObj`
-(`none`: accepted). -/
-def back (e : ExportFile) (pin : ProgFile) (tabs : Tables) (f : Func) :
-    Except String (Option String × Option String) := do
+driver input file `pin`: a load or port error, or the validators' verdicts. -/
+def back (e : ExportFile) (pin : ProgFile) (tabs : Tables) (f : Func) : Except String Res := do
   let some sec := e.sections.back? | throw "env: no section"
   let e := { e with sections := e.sections.pop.push { sec with func := f } }
   let env ← (GoFV.Gen.Env.load e pin).mapError (s!"env: {·}")
@@ -57,15 +68,19 @@ def back (e : ExportFile) (pin : ProgFile) (tabs : Tables) (f : Func) :
     { syms, slotOp := slotOpOf env (GoFV.Gen.Ctx.ofFrame env g.fr).offsets,
       stksize := g.fr.stksize }
   let bstart := fun b => (g.gout.st.bstart[b]?).join
-  let r18 := match checkG18 (LocCtx.make tabs f) ps bstart gin with
-    | .ok _ => none
-    | .error m => some m
+  let lc := LocCtx.make tabs f
+  let (g18, ret) := match checkG18 lc ps bstart gin with
+    | .ok (_, kt) =>
+      (none, if retRegsOK lc kt then none
+        else if (ownOutRegs lc).isNone then some "a result on the stack"
+        else some "a Ret block's results not in their ABI registers")
+    | .error m => (some m, none)
   let fo ← (flush pf).mapError (s!"Flushplist: {·}")
   let o : ObjIn := { text := fo.st.textP, relocs := fo.st.textR, progs := fo.progs }
-  let rObj := match checkObj ps pf.prog0.fn.spills o with
+  let obj := match checkObj ps pf.prog0.fn.spills o with
     | .ok _ => none
     | .error m => some m
-  return (r18, rObj)
+  return { g18, ret, obj }
 
 /-- Reasons by class (numbers replaced): count and an example (`file: message`). -/
 abbrev Why := Std.HashMap String (Nat × String)
@@ -78,6 +93,43 @@ def Why.note (w : Why) (msg ex : String) : Why :=
 def Why.merge (a b : Why) : Why :=
   b.fold (fun m k (n, ex) => let (c, x) := m.getD k (0, ex); m.insert k (c + n, x)) a
 
+/-- Counts of `back`'s verdicts. -/
+structure Counts where
+  ran : Nat := 0
+  g18 : Nat := 0
+  /-- `checkG18` ∧ `retRegsOK`. -/
+  ret : Nat := 0
+  obj : Nat := 0
+  /-- `checkG18` ∧ `checkObj`. -/
+  g18obj : Nat := 0
+  /-- `checkG18` ∧ `retRegsOK` ∧ `checkObj`. -/
+  all : Nat := 0
+  errWhy : Why := {}
+  g18Why : Why := {}
+  retWhy : Why := {}
+  objWhy : Why := {}
+
+def Counts.merge (a b : Counts) : Counts :=
+  { ran := a.ran + b.ran, g18 := a.g18 + b.g18, ret := a.ret + b.ret, obj := a.obj + b.obj,
+    g18obj := a.g18obj + b.g18obj, all := a.all + b.all, errWhy := a.errWhy.merge b.errWhy,
+    g18Why := a.g18Why.merge b.g18Why, retWhy := a.retWhy.merge b.retWhy,
+    objWhy := a.objWhy.merge b.objWhy }
+
+def Counts.add (c : Counts) (path : String) (res : Except String Res) : Counts :=
+  let ex (m : String) := s!"{path}: {m}"
+  match res with
+  | .error m => { c with errWhy := c.errWhy.note m (ex m) }
+  | .ok r =>
+    let one (b : Bool) := if b then 1 else 0
+    let c := { c with ran := c.ran + 1, g18 := c.g18 + one r.g18.isNone,
+                      ret := c.ret + one (r.g18.isNone && r.ret.isNone),
+                      obj := c.obj + one r.obj.isNone,
+                      g18obj := c.g18obj + one (r.g18.isNone && r.obj.isNone),
+                      all := c.all + one r.all }
+    let c := match r.g18 with | some m => { c with g18Why := c.g18Why.note m (ex m) } | none => c
+    let c := match r.ret with | some m => { c with retWhy := c.retWhy.note m (ex m) } | none => c
+    match r.obj with | some m => { c with objWhy := c.objWhy.note m (ex m) } | none => c
+
 structure Stats where
   files : Nat := 0
   /-- Unparsable `.ssa` or `.prog` files, missing `.prog` files, no `dcllen`. -/
@@ -88,70 +140,38 @@ structure Stats where
   full : Nat := 0
   /-- … and the pipeline's output identical to stock after `trim` (`VFile.same`). -/
   fullSame : Nat := 0
-  /-- … back end ran (no load or port error). -/
-  ran : Nat := 0
-  /-- … `checkG18` accepts. -/
-  g18 : Nat := 0
-  /-- … `checkObj` accepts. -/
-  obj : Nat := 0
-  /-- … both: `verified_mach_ret` applies. -/
-  e2e : Nat := 0
-  e2eSame : Nat := 0
-  errWhy : Why := {}
-  g18Why : Why := {}
-  objWhy : Why := {}
-  /-- The cross-check on the stock `trim` function (every parsed function). -/
+  /-- `back` on the pipeline's output of the fully verified functions. -/
+  ours : Counts := {}
+  /-- End to end, and the pipeline's output identical to stock. -/
+  allSame : Nat := 0
+  /-- The cross-check: `back` on the stock `trim` function (every parsed function). -/
   stockFns : Nat := 0
-  stockRan : Nat := 0
-  stock18 : Nat := 0
-  stockObj : Nat := 0
-  stockBoth : Nat := 0
-  stockErrWhy : Why := {}
+  stock : Counts := {}
   /-- The end-to-end accepted files. -/
   accept : Array String := #[]
 
 def Stats.merge (a b : Stats) : Stats :=
   { files := a.files + b.files, parseErrors := a.parseErrors + b.parseErrors,
     passErrors := a.passErrors + b.passErrors, full := a.full + b.full,
-    fullSame := a.fullSame + b.fullSame, ran := a.ran + b.ran, g18 := a.g18 + b.g18,
-    obj := a.obj + b.obj, e2e := a.e2e + b.e2e, e2eSame := a.e2eSame + b.e2eSame,
-    errWhy := a.errWhy.merge b.errWhy, g18Why := a.g18Why.merge b.g18Why,
-    objWhy := a.objWhy.merge b.objWhy, stockFns := a.stockFns + b.stockFns,
-    stockRan := a.stockRan + b.stockRan, stock18 := a.stock18 + b.stock18,
-    stockObj := a.stockObj + b.stockObj, stockBoth := a.stockBoth + b.stockBoth,
-    stockErrWhy := a.stockErrWhy.merge b.stockErrWhy, accept := a.accept ++ b.accept }
+    fullSame := a.fullSame + b.fullSame, ours := a.ours.merge b.ours,
+    allSame := a.allSame + b.allSame, stockFns := a.stockFns + b.stockFns,
+    stock := a.stock.merge b.stock, accept := a.accept ++ b.accept }
 
 /-- Records the cross-check on the stock `trim` function. -/
-def Stats.addStock (st : Stats) (path : String)
-    (res : Except String (Option String × Option String)) : Stats :=
-  let st := { st with stockFns := st.stockFns + 1 }
-  match res with
-  | .error m => { st with stockErrWhy := st.stockErrWhy.note m s!"{path}: {m}" }
-  | .ok (r18, rObj) =>
-    { st with stockRan := st.stockRan + 1,
-              stock18 := st.stock18 + (if r18.isNone then 1 else 0),
-              stockObj := st.stockObj + (if rObj.isNone then 1 else 0),
-              stockBoth := st.stockBoth + (if r18.isNone && rObj.isNone then 1 else 0) }
+def Stats.addStock (st : Stats) (path : String) (res : Except String Res) : Stats :=
+  { st with stockFns := st.stockFns + 1, stock := st.stock.add path res }
 
 /-- Records a fully verified function (`same`: its output is identical to stock) and `back` on
 the pipeline's output. -/
-def Stats.addFull (st : Stats) (path : String) (same : Bool)
-    (res : Except String (Option String × Option String)) : Stats :=
-  let st := { st with full := st.full + 1, fullSame := st.fullSame + (if same then 1 else 0) }
+def Stats.addFull (st : Stats) (path : String) (same : Bool) (res : Except String Res) : Stats :=
+  let st := { st with full := st.full + 1, fullSame := st.fullSame + (if same then 1 else 0),
+                      ours := st.ours.add path res }
   match res with
-  | .error m => { st with errWhy := st.errWhy.note m s!"{path}: {m}" }
-  | .ok (r18, rObj) =>
-    let st := { st with ran := st.ran + 1 }
-    let st := match r18 with
-      | none => { st with g18 := st.g18 + 1 }
-      | some m => { st with g18Why := st.g18Why.note m s!"{path}: {m}" }
-    let st := match rObj with
-      | none => { st with obj := st.obj + 1 }
-      | some m => { st with objWhy := st.objWhy.note m s!"{path}: {m}" }
-    if r18.isNone && rObj.isNone then
-      { st with e2e := st.e2e + 1, e2eSame := st.e2eSame + (if same then 1 else 0),
-                accept := st.accept.push path }
+  | .ok r =>
+    if r.all then
+      { st with allSame := st.allSame + (if same then 1 else 0), accept := st.accept.push path }
     else st
+  | .error _ => st
 
 def pct (a b : Nat) : String :=
   if b == 0 then "-" else
@@ -168,25 +188,34 @@ def whyTable (title : String) (w : Why) (top : Nat) : String := Id.run do
 
 /-- The report. -/
 def Stats.text (st : Stats) (ms : Nat) : String := Id.run do
-  let fns := st.files - st.parseErrors
+  let o := st.ours
+  let s := st.stock
+  let row (name : String) (a b : Option Nat) : String :=
+    let cell (x : Option Nat) := match x with
+      | some n => s!"{n} | {pct n st.files}"
+      | none => "- | -"
+    s!"| {name} | {cell a} | {cell b} |\n"
   let mut out := s!"files: {st.files}, parse errors: {st.parseErrors}, pass errors: \
     {st.passErrors}, wall: {ms / 1000} s\n\n"
-  out := out ++ "| functions | count | share of files |\n| --- | ---: | ---: |\n"
-  out := out ++ s!"| files | {st.files} | |\n"
-  out := out ++ s!"| fully verified (Phase 2, through `trim`) | {st.full} | {pct st.full st.files} |\n"
-  out := out ++ s!"| … genssa and `Flushplist` ran on the pipeline's output | {st.ran} | {pct st.ran st.files} |\n"
-  out := out ++ s!"| … ∧ `checkG18` | {st.g18} | {pct st.g18 st.files} |\n"
-  out := out ++ s!"| … ∧ `checkObj` | {st.obj} | {pct st.obj st.files} |\n"
-  out := out ++ s!"| **… ∧ `checkG18` ∧ `checkObj` (end to end, `verified_mach_ret`)** | **{st.e2e}** | **{pct st.e2e st.files}** |\n"
-  out := out ++ s!"| … end to end, pipeline output identical to stock after `trim` | {st.e2eSame} | {pct st.e2eSame st.files} |\n"
-  out := out ++ s!"| fully verified, pipeline output identical to stock | {st.fullSame} | {pct st.fullSame st.files} |\n"
-  out := out ++ s!"\nCross-check, the same back end on the stock `trim` function (whole-file tables), \
-    {st.stockFns} functions: ran {st.stockRan}, `checkG18` {st.stock18} ({pct st.stock18 fns}), \
-    `checkObj` {st.stockObj} ({pct st.stockObj fns}), both {st.stockBoth} ({pct st.stockBoth fns}).\n"
-  out := out ++ whyTable "Back-end errors among the fully verified:" st.errWhy 30
-  out := out ++ whyTable "`checkG18` rejections among the fully verified (first reason):" st.g18Why 40
-  out := out ++ whyTable "`checkObj` rejections among the fully verified:" st.objWhy 40
-  out := out ++ whyTable "Back-end errors on the stock `trim` function:" st.stockErrWhy 20
+  out := out ++ "| functions | pipeline output | share | stock `trim` (cross-check) | share |\n\
+    | --- | ---: | ---: | ---: | ---: |\n"
+  out := out ++ row "fully verified (Phase 2, through `trim`)" (some st.full) none
+  out := out ++ row "… genssa and `Flushplist` ran" (some o.ran) (some s.ran)
+  out := out ++ row "… ∧ `checkG18`" (some o.g18) (some s.g18)
+  out := out ++ row "… ∧ `checkG18` ∧ `retRegsOK`" (some o.ret) (some s.ret)
+  out := out ++ row "… ∧ `checkObj`" (some o.obj) (some s.obj)
+  out := out ++ row "… ∧ `checkG18` ∧ `checkObj`" (some o.g18obj) (some s.g18obj)
+  out := out ++ row "**… ∧ `checkG18` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach_ret`)**"
+    (some o.all) (some s.all)
+  out := out ++ row "… end to end, pipeline output identical to stock after `trim`" (some st.allSame) none
+  out := out ++ row "fully verified, pipeline output identical to stock" (some st.fullSame) none
+  out := out ++ s!"\nThe stock column runs the same back end on the stock `trim` function with the \
+    whole file's tables, on all {st.stockFns} parsed functions (not only the fully verified).\n"
+  out := out ++ whyTable "Back-end errors among the fully verified:" o.errWhy 30
+  out := out ++ whyTable "`checkG18` rejections among the fully verified (first reason):" o.g18Why 40
+  out := out ++ whyTable "`retRegsOK` rejections among the fully verified accepted by `checkG18`:" o.retWhy 10
+  out := out ++ whyTable "`checkObj` rejections among the fully verified:" o.objWhy 40
+  out := out ++ whyTable "Back-end errors on the stock `trim` function:" s.errWhy 20
   return out
 
 end GoFVTest.Driver.E2E

@@ -32,9 +32,9 @@ The Lean pipeline (`number lines` through `trim`) as a program (`docs/DRIVER.md`
 - `gofv-ssa-opt --check --verified --e2e [--whole-file-env] [--jobs N] [--table FILE]
   [--accepted FILE] <dir|file>...`: end-to-end coverage (`GoFVTest.Driver.E2E`): per `.ssa` file
   with its companion `.prog` file, the verified pipeline as `--check --verified` runs it, then on
-  a fully verified result genssa, `checkG18`, `Flushplist` and `checkObj` on the pipeline's own
-  output; counts the functions `GoFV.Proof.Obj.verified_mach_ret` applies to. `--accepted FILE`
-  writes the accepted files.
+  a fully verified result genssa, `checkG18` with `retRegsOK`, `Flushplist` and `checkObj` on the
+  pipeline's own output; counts the functions `GoFV.Proof.Obj.verified_mach_ret` applies to.
+  `--accepted FILE` writes the accepted files.
 -/
 
 open GoFV.SSA GoFV.Opt GoFVTest.Parity
