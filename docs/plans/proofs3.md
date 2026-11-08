@@ -1,18 +1,20 @@
 # Plan: the Phase 3 proofs (I7, #553)
 
-Status: slices G1–G11 of the genssa validator are implemented (`GoFV/Gen/Check.lean`,
-`GoFV/Gen/Check2.lean`, …, `GoFV/Gen/Check11.lean`, probe `gen-check`) and proven sound
+Status: slices G1–G12 of the genssa validator are implemented (`GoFV/Gen/Check.lean`,
+`GoFV/Gen/Check2.lean`, …, `GoFV/Gen/Check12.lean`, probe `gen-check`) and proven sound
 (`GoFV/Proof/Gen/G1.lean`: `g1_value`, `g1_term`; `GoFV/Proof/Gen/G2.lean`: `g2_value`, `g2_term`;
 `GoFV/Proof/Gen/G3.lean`: `g3_value`, `g3_term`; `GoFV/Proof/Gen/G4.lean`: `g4_value`, `g4_term`;
 `GoFV/Proof/Gen/G5.lean`: `g5_value`, `g5_term`; `GoFV/Proof/Gen/G6.lean`: `g6_value`, `g6_term`;
 `GoFV/Proof/Gen/G7.lean`: `g7_value`, `g7_term`, `g7_nilPanic`; `GoFV/Proof/Gen/G8.lean`:
 `g8_value`, `g8_term`, `g8_nilPanic`; `GoFV/Proof/Gen/G9.lean`: `g9_value`, `g9_term`,
 `g9_nilPanic`; `GoFV/Proof/Gen/G10.lean`: `g10_value`, `g10_term`, `g10_nilPanic`;
-`GoFV/Proof/Gen/G11.lean`: `g11_value`, `g11_term`, `g11_nilPanic`; §3–§5), with witnesses on
-corpus functions (`GoFV/Proof/Witness/GenG1.lean`, …, `GenG11.lean`).
-G2–G11 rest on the trusted callee contract `CallOK`, G8–G11 also on the write-barrier hook
-contract `WbOK`, G10 and G11 also on the indirect callee contract `ICallOK`, G11 also on the
-closure context premise `CloOK` (§4, `docs/proofs/STATUS.md` Assumptions).
+`GoFV/Proof/Gen/G11.lean`: `g11_value`, `g11_term`, `g11_nilPanic`; `GoFV/Proof/Gen/G12.lean`:
+`g12_value`, `g12_term`, `g12_nilPanic`; §3–§5), with witnesses on corpus functions
+(`GoFV/Proof/Witness/GenG1.lean`, …, `GenG12.lean`).
+G2–G12 rest on the trusted callee contract `CallOK`, G8–G12 also on the write-barrier hook
+contract `WbOK`, G10–G12 also on the indirect callee contract `ICallOK`, G11 and G12 also on the
+closure context premise `CloOK` (§4, `docs/proofs/STATUS.md` Assumptions); §6 lists future work
+on these premises.
 Context:
 `docs/plans/semantics3.md` (§4 `LocMatch`, §6 hooks, §7 layers), `docs/PASSES3.md` (the steps
 A1–F2), `docs/plans/regalloc-check.md` (the Phase 2 pattern this plan follows: an untrusted port
@@ -145,7 +147,7 @@ related by `LocMatch` (`genG1_witness_50`, `genG1_witness_30`).
 
 **Coverage** (`lake exe gen-check`, quick-v10, 9,297 functions): see §5.
 
-## 4. Slices G2–G11, and the next slices
+## 4. Slices G2–G12, and the next slices
 
 **Slice G2** (`GoFV/Gen/Check2.lean`, `checkG2 lc ps bstart g`; proven sound, `g2_value`,
 `g2_term`): G1 plus the most frequent blockers of §5 — `CALLstatic` of a symbol with an ABI
@@ -396,19 +398,40 @@ context by the trusted premise `CloOK` (STATUS Assumptions: Go's internal ABI pa
 and no code but the prologue runs before the value), a 64-bit word, so `R26` is related at its
 class (`g11_clo`). The activation is G10's (`G10Env`); G10's values go through `vk10_step`.
 
-Later slices, by how many functions outside G11 each blocker occurs in (quick-v10, §5; sole
+**Slice G12: pointer conversions** (`GoFV/Gen/Check12.lean`, `checkG12 lc ps bstart g`, returning
+G4's tables; proven sound, `g12_value`, `g12_term`, `g12_nilPanic`): G11 with `Convert x mem`
+(`vkind12`, `VK12.conv`; `unsafe.Pointer(u)`, `uintptr(p)`): no temporary, `x` and the value
+homed in one register G1 may write (`argObj`, `resObj` with the same obj register), both of
+class 64, the memory last; no code (genssa's `OpConvert` case checks the shared register).
+
+How the proof discharges G12's obligations (`G12.lean`): `runLoc` runs Phase 1's
+`PtrOps.convert` on the arguments read from their homes and writes it at the value's shape
+(`stepLoc_conv`). The machine does not move and the register keeps its word (`valRel_convert`): a
+pointer converted to `uintptr` is its Phase 1 address when it has one and is convertible, else
+`poison`; a convertible pointer is no frame temporary (`notTemp_of_convertible`), so under
+`AddrAgree` its injected address is that address (`ptrRel_addr`); anything else is unchanged and
+takes the value's shape as a register read does (`valRel_retypeL`). G11's values go through
+`vk11_step`. No new premise.
+
+Later slices, by how many functions outside G12 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
-1. **Calls** with stack arguments (`stack argument` 317 (8)) or floating-point arguments or results.
+1. **Calls** with stack arguments (`stack argument` 317 (10)) or floating-point arguments or
+   results.
 2. **Frame variables beyond G6**: parameters and results (`NAME_PARAM`, `Blk.local`: `frame
-   variable operand class`, 294 (85)) and variables whose address is converted to an integer
+   variable operand class`, 294 (87)) and variables whose address is converted to an integer
    (`frame variable with an integer address`): option 2 of semantics3 §4.3 (addresses as a
-   parameter of the semantics); `LoweredZero` 540 (76); slots of other sizes (`slot … frame
+   parameter of the semantics); `LoweredZero` 540 (95); slots of other sizes (`slot … frame
    operand, size or alignment`, 717).
-3. **Other values**: `Convert` 938 (171), `MOVDnop` 750 (52), `ADDshiftLL` 678, the register-index
-   loads (`MOVDloadidx8` 482 (45), `MOVBUloadidx` 353), bounds panics (`LoweredPanicBoundsRR` 616
-   (26)), `GetG` 430 (64), the acquire loads `LDAR`/`LDARW` (383, 277); `SP` after the entry values
-   (35).
+3. **Other values**: `MOVDnop` 750 (55), `ADDshiftLL` 678, the register-index loads
+   (`MOVDloadidx8` 482 (48), `MOVBUloadidx` 353), bounds panics (`LoweredPanicBoundsRR` 616 (26)),
+   `GetG` 430 (89), the acquire loads `LDAR`/`LDARW` (383, 277); `SP` after the entry values (40).
+   `MOVDnop x` emits no code but `runLoc` gives it the upper bits of `x`'s register (`movdLoc`:
+   the zero or sign extension of the narrow value that produced `x`; each of its 1,520 uses in the
+   trimmed functions of quick-v10 widens its argument, 1,431 of them a narrow load), while
+   `LocMatch` relates a narrow integer to the low bits of its register only. Its slice needs an
+   invariant on the upper bits of the registers that narrow loads write and that the values
+   between the load and the `MOVDnop` keep.
 
 ## 5. Results
 
@@ -428,6 +451,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G9 | 2,551 (27.43%) | 44,756 |
 | G10 | 3,149 (33.87%) | 52,418 |
 | G11 | 3,514 (37.79%) | 59,565 |
+| G12 | 3,679 (39.57%) | 64,013 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -520,6 +544,10 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `cloKind_spec`).
 - `G11.lean`: `CloOK`; `stepLoc_clo`, `g11_clo`, `vk11_step`, `g11_value`, `g11_nilPanic`,
   `g11_term`.
+- `Spec12.lean`: what `checkG12` accepted (`checkG12_spec`, `vkind12_spec` with `VK12`,
+  `convKind_spec`).
+- `G12.lean`: `stepLoc_conv`, `valRel_convert`, `g12_conv`, `vk12_step`, `g12_value`,
+  `g12_nilPanic`, `g12_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -545,5 +573,54 @@ G9 rejects: `g10_value` on the interface call `CALL (R2)` through the code point
 function, with a callee hook at that address that returns at once (`ICallOK`: `icallOKc`), and
 its memory), `GenG11.lean` (`adder.func1` of `examples/closures`, which G10 rejects: `g11_value` on
 the closure pointer `LoweredGetClosurePtr` from the entry of a closure call whose context, a
-pointer to a global, is in `X26` (`CloOK`: `cloOK0`)). Each decides its inputs by compiled
-evaluation (`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
+pointer to a global, is in `X26` (`CloOK`: `cloOK0`)), `GenG12.lean` (`runtime.subtractb`, which
+G11 rejects: `g12_value` on `uintptr(unsafe.Pointer(p))` of a pointer 16 bytes into the heap object
+`heap 1`, injected at its Phase 1 address `2^41`, so `R0` holds the integer `2^41 + 16` that is the
+machine word). Each decides its inputs by compiled evaluation (`native_decide`, pinned in
+`scripts/axioms-allowlist.txt`).
+
+## 6. Future work: recursion through function values
+
+`ICallOK` (G10) asks that the address in an interface or closure call's code register be no Prog
+address of the caller: `runProg` runs one function's Prog list (`Link.byId … ps`) and hands every
+other address to the hook `H.call`, whose contract `CallSpec` stands for the callee. A call
+through a function value back into the caller's own code — `f := func(n int) int { … f(n-1) … }`,
+a method that calls itself through an interface — breaks the premise, so `g10_value` to
+`g12_value` say nothing about such a run (sound, but incomplete). `G2Env.syms` excludes direct
+self-calls the same way. Lifting the restriction needs the callee's contract to be proven per
+function instead of trusted per call:
+
+1. **One image for the program.** `runProg`/`runMach` run the linked program: the Progs of every
+   Go function at their linked addresses (the P0 lists composed by the linker's layout; `Link`
+   over the image), hooks only for code outside it (runtime assembly such as
+   `gcWriteBarrier<n>`, `morestack`, the runtime entry points of semantics3 §6).
+2. **A function contract indexed by call depth.** Phase 1 runs a call through the environment
+   (`Env.extern`, `callOp`); for the whole program, the environment `envₙ` runs each callee's own
+   `runLoc` under `envₙ₋₁`, and `env₀` makes every call `stuck`. `FunSpec n f`: for every run of
+   `runLoc` on `f` under `envₙ` that returns (or panics) with outcome `o`, and every machine state
+   at `f`'s entry related to that activation (`MachEntry`: arguments in their ABI registers under
+   `ι`, the return address in `X30`, room for the frame, the closure context in `R26`), the image
+   runs to the return address in a state that `CallSpec` describes for `o` (results in the ABI
+   result registers, `SP`/`R28`/`R29` and the caller's frame kept, the memory injected by an
+   extension of `ι`), or panics as `o` does. `CallSpec` becomes the conclusion of `FunSpec`
+   instead of a premise.
+3. **Per function:** `MachRefines` for `f` (§1: the value and terminator theorems composed along
+   a run, with the entry and exit of C6/D3) proven under `∀ g, FunSpec n g` for the functions of
+   the image gives `FunSpec (n + 1) f`. At a call (`CALL sym(SB)` or `CALL (Rn)`) under
+   `envₙ₊₁`, `runLoc`'s callee outcome is a run of the callee under `envₙ`, so `FunSpec n g`
+   applies for every callee `g` the code pointer enters — `g = f` (recursion through a function
+   value, or a direct self-call) and mutually recursive functions included. The step lemma at a
+   call relates the state at the `CALL` to the state at the return address through the callee's
+   whole run (a `PStar` over the image) instead of one `PStep.hook`.
+4. **Induction on `n`** gives `∀ n f, FunSpec n f` for every function of the image at once (the
+   base case is the per-function theorem with no callee: under `env₀` a run that reaches a call is
+   `stuck` and carries no obligation). A returning or panicking run of the program is one under
+   some `envₙ`, so every `CallOK`/`ICallOK` premise whose callee is in the image is discharged.
+   What stays trusted: the hooks' contracts for code outside the image (`WbOK`, the runtime entry
+   points), and that an indirect call's code word (a funcval's first word, an itab's `fun` entry)
+   is the linked entry of the function Phase 1's `callTarget` names — a fact about the program's
+   data relocations (`R_ADDR`) that a validator of the linked data, as D2's `checkEdit` is for the
+   code, can check.
+
+The contract is partial, as the refinement of §1 is: a run that neither returns nor panics is no
+outcome to match.
