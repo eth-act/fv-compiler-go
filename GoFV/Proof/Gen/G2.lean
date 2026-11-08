@@ -51,8 +51,9 @@ structure G2Env (lc : LocCtx) (g : G2In) (L : Link) (ps : Array Prog) (ret : Bit
   syms : ∀ y, L.sym y ≠ ret ∧ ∀ p ∈ ps.toList, L.addr p.id ≠ some (L.sym y)
   /-- A function that calls has a frame. -/
   calls : E.framed = false → ∀ id v, lc.ctx.f.value? id = some v → v.op ≠ .ARM64CALLstatic
-  /-- Each spill slot at its frame operand. -/
-  slot : ∀ k nc off, g.slotOp k = some (nc, off) → E.slot k = some (frameOff L nc off)
+  /-- Each home slot at its frame operand. -/
+  slot : ∀ k ∈ homeSlots lc, ∀ nc off, g.slotOp k = some (nc, off) →
+    E.slot k = some (frameOff L nc off)
   extra : 0 ≤ L.extrasize
   frame : FrameOK E
 
@@ -592,7 +593,8 @@ end Machine
 /-- Two distinct home slots lie 8 bytes apart. -/
 theorem slot_apart {lc : LocCtx} {g : G2In} {L : Link} {E : MatchEnv}
     (hcf : checkFrame lc g = .ok ())
-    (hslot : ∀ k nc off, g.slotOp k = some (nc, off) → E.slot k = some (frameOff L nc off))
+    (hslot : ∀ k ∈ homeSlots lc, ∀ nc off, g.slotOp k = some (nc, off) →
+      E.slot k = some (frameOff L nc off))
     (hext : 0 ≤ L.extrasize) {k k' : SlotKey} (hk : k ∈ homeSlots lc) (hk' : k' ∈ homeSlots lc)
     (hne : k ≠ k') {o o' : Int} (ho : E.slot k = some o) (ho' : E.slot k' = some o') :
     o + 8 ≤ o' ∨ o' + 8 ≤ o := by
@@ -608,8 +610,8 @@ theorem slot_apart {lc : LocCtx} {g : G2In} {L : Link} {E : MatchEnv}
     cases h : g.slotOp k' with
     | none => simp [slotOK, h] at h2
     | some p => exact ⟨p, rfl⟩
-  rw [hslot k nc off hs] at ho
-  rw [hslot k' nc' off' hs'] at ho'
+  rw [hslot k hk nc off hs] at ho
+  rw [hslot k' hk' nc' off' hs'] at ho'
   cases ho; cases ho'
   rw [hs, hs'] at hd
   simp only [slotOK, hs, hs', Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h1 h2
@@ -715,7 +717,7 @@ theorem g2_g1 (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
 /-- A reload of a 64-bit value from its slot. -/
 theorem g2_reload (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E) (hlc : E.lc = lc)
     (hcf : checkFrame lc g = .ok ())
-    (hslot : ∀ k nc off, g.slotOp k = some (nc, off) →
+    (hslot : ∀ k ∈ homeSlots lc, ∀ nc off, g.slotOp k = some (nc, off) →
       E.slot k = some (frameOff (Link.byId sym text az ez psA.toList) nc off))
     (hm : LocMatch E s b i m) (hinv : G2Inv E lc s)
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
@@ -741,7 +743,7 @@ theorem g2_reload (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
   obtain ⟨h8, nc', off', hso', hnc⟩ := home_slot hcf hah
   rw [hso] at hso'
   cases hso'
-  have hsl := hslot k nc off hso
+  have hsl := hslot k (mem_homeSlots hah) nc off hso
   obtain ⟨ho8, hohi⟩ := hF.slot k _ hsl
   have hsp : m.sp = E.sp := hm.frame.1
   -- the slot's machine word
@@ -814,7 +816,7 @@ theorem g2_addr (F : Facts lc sym text az ez psA.toList ret E)
 /-- A spill of a 64-bit value to its slot. -/
 theorem g2_spill (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E) (hlc : E.lc = lc)
     (hcf : checkFrame lc g = .ok ())
-    (hslot : ∀ k nc off, g.slotOp k = some (nc, off) →
+    (hslot : ∀ k ∈ homeSlots lc, ∀ nc off, g.slotOp k = some (nc, off) →
       E.slot k = some (frameOff (Link.byId sym text az ez psA.toList) nc off))
     (hext : 0 ≤ (Link.byId sym text az ez psA.toList).extrasize)
     (hm : LocMatch E s b i m) (hinv : G2Inv E lc s)
@@ -840,7 +842,7 @@ theorem g2_spill (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
   obtain ⟨h8, nc', off', hso', hnc⟩ := home_slot hcf hh
   rw [hso] at hso'
   cases hso'
-  have hsl := hslot k nc off hso
+  have hsl := hslot k (mem_homeSlots hh) nc off hso
   generalize ho : frameOff (Link.byId sym text az ez psA.toList) nc off = o at hsl
   obtain ⟨ho8, hohi⟩ := hF.slot k o hsl
   have hsp : m.sp = E.sp := hm.frame.1
@@ -1248,6 +1250,13 @@ theorem G2Env.extend {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog} {ret 
   slot := hE.slot
   extra := hE.extra
   frame := ⟨hE.frame.lo, hE.frame.hi, hE.frame.slot⟩
+
+theorem MatchEnv.Extends.trans {E E1 E2 : MatchEnv} (h1 : E.Extends E1) (h2 : E1.Extends E2) :
+    E.Extends E2 := by
+  obtain ⟨h1e, h1i⟩ := h1
+  obtain ⟨h2e, h2i⟩ := h2
+  refine ⟨?_, fun b a h => h2i b a (h1i b a h)⟩
+  rw [h2e, h1e]
 
 /-- **G2, values.** A value (not an entry value) of a function `checkG2` accepted, run by `runLoc`
 from a state related by `LocMatch` to a machine state, is matched by `runProg` steps of genssa's
