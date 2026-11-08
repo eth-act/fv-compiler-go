@@ -214,7 +214,7 @@ def progSym (az ez : Int) (p : Prog) : Except String (Sym × PCtl) := do
       let k := BitVec.ofInt 64 p.from_.offset
       return (← wP σ p.to.reg (.k (maskN n k)), .fall)
     | .ADDR, .REG =>
-      let (a, _) ← memP az ez 0 p.from_
+      let (a, _) ← memP az ez p.scond p.from_
       return (← wP σ p.to.reg a, .fall)
     | t, u => throw s!"{name} operands {t.name},{u.name}"
   if let some (ld, n, signed, fp) := pairOp name then
@@ -242,16 +242,18 @@ def progSym (az ez : Int) (p : Prog) : Except String (Sym × PCtl) := do
   | "CBZ" | "CBNZ" | "CBZW" | "CBNZW" =>
     return (σ, .cbz (!endsS name "W") (!startsS name "CBZ") (← xP p.from_.reg) (← targetP p.to))
   | "TBZ" | "TBNZ" =>
-    return (σ, .tbz (name == "TBNZ") (p.from_.offset.toNat % 64) (← xP p.reg) (← targetP p.to))
+    if p.from_.offset < 0 || p.from_.offset ≥ 64 then throw "TBZ bit"
+    return (σ, .tbz (name == "TBNZ") p.from_.offset.toNat (← xP p.reg) (← targetP p.to))
   | "CALL" =>
     if p.to.type == .MEM && (p.to.name == .EXTERN || p.to.name == .STATIC) then
       match p.to.sym with
       | some n => return (σ, .call n p.to.offset)
       | none => throw "symbol-less call target"
     if p.to.type == .BRANCH then
-      match p.to.sym with
-      | some n => return (σ, .call n p.to.offset)
-      | none => throw "call to a Prog"
+      match p.to.val, p.to.sym with
+      | .target _, _ => throw "call to a Prog"
+      | _, some n => return (σ, .call n p.to.offset)
+      | _, none => throw "call to a Prog"
     throw "indirect CALL"
   | "RET" =>
     let r := if p.to.type == .NONE then REG_R0 + 30 else p.to.reg
