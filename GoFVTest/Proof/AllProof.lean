@@ -58,6 +58,7 @@ import GoFV.Proof.Gen.G23
 import GoFV.Proof.Gen.G24
 import GoFV.Proof.Gen.G25
 import GoFV.Proof.Gen.G26
+import GoFV.Proof.Gen.G27
 import GoFV.Proof.Gen.G3
 import GoFV.Proof.Gen.G4
 import GoFV.Proof.Gen.G5
@@ -93,6 +94,7 @@ import GoFV.Proof.Gen.Spec23
 import GoFV.Proof.Gen.Spec24
 import GoFV.Proof.Gen.Spec25
 import GoFV.Proof.Gen.Spec26
+import GoFV.Proof.Gen.Spec27
 import GoFV.Proof.Gen.Spec3
 import GoFV.Proof.Gen.Spec4
 import GoFV.Proof.Gen.Spec5
@@ -817,6 +819,7 @@ import GoFV.Proof.Witness.GenG23
 import GoFV.Proof.Witness.GenG24
 import GoFV.Proof.Witness.GenG25
 import GoFV.Proof.Witness.GenG26
+import GoFV.Proof.Witness.GenG27
 import GoFV.Proof.Witness.GenG3
 import GoFV.Proof.Witness.GenG4
 import GoFV.Proof.Witness.GenG5

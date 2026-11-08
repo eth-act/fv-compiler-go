@@ -540,6 +540,18 @@ arm64 op and which G25 rejects: its `Copy`, `MOVD R2, R0`, with `x = 7`, after w
 holds 7 and the machine's `X0` is 7). Coverage on quick-v10 (`lake exe gen-check`): 5,172 of 9,297
 functions (55.63%), 111,802 values.
 
+## Phase 3: genssa, slice G27 (I7, #553)
+
+`GoFV.Proof.Gen.g27_value`, `GoFV.Proof.Gen.g27_term`, `GoFV.Proof.Gen.g27_nilPanic`,
+`GoFV.Proof.Gen.g27_boundsPanic` (`GoFV/Proof/Gen/G27.lean`): when slice G27 (`checkG27`: G26 with
+the shifted logic ops `AND`/`ORR`/`EOR`/`BIC Rm SHIFT k, Rn, Rd`, `SHIFT` one of `LSL`, `LSR`,
+`ASR`) accepts a function, they are `g26_value`'s, `g26_term`'s, `g26_nilPanic`'s and
+`g26_boundsPanic`'s statements under the same premises. No new trusted premise. Witness
+`genG27_value_witness` (`regexp.newLazyFlag`, which G26 rejects: `ORR R2<<32, R1, R0` with
+`uint32(r2) = 2` in `R1` and `r1 = 1` in `R2`, after which `runLoc`'s `R0` holds `0x100000002` and
+the machine's `X0` is `0x100000002`). Coverage on quick-v10 (`lake exe gen-check`): 5,261 of 9,297
+functions (56.58%), 117,659 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g12_obj_value`, `g12_obj_term` (`GoFV/Proof/Obj/G12.lean`): `g12_value`/`g12_term`
