@@ -108,6 +108,9 @@ structure GenState where
   branches : Array Branch := #[]
   jumpTables : Array ID := #[]
   bstart : Array (Option Nat) := #[]
+  /-- `valueToProgAfter` (`ssa.go:7174`, location lists): per value, `pp.Next` after its code
+  (the Prog the value is visible at; `FuncDebug.GetPC` reads its `Pc` after assembly). -/
+  progAfter : Std.HashMap ID Nat := {}
   maxarg : Int := 0
   lineRunStart : Option Nat := none
   /-- `s.livenessMap` and `s.partLiveArgs` (set by `liveness.Compute`). -/

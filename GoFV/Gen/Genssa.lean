@@ -24,8 +24,9 @@ resolution with statement relaxing (`Block.FirstPossibleStmtValue`, `ssa/numberl
 jump tables, and `defframe`.
 
 Not ported (never active for linux/arm64 in the corpus): PGO hot-block alignment
-(`base.Debug.AlignHot` is `amd64`/`386` only), the print/HTML/dump paths and location lists
-(`BuildFuncDebug` allocates no Prog and changes none).
+(`base.Debug.AlignHot` is `amd64`/`386` only), the print/HTML/dump paths and the call of
+`BuildFuncDebug` (it allocates no Prog and changes none; `GoFV.Dwarf.buildFuncDebug` is its
+port). The `valueToProgAfter` table its `GetPC` callback reads is kept (`GenState.progAfter`).
 -/
 
 namespace GoFV.Gen
@@ -173,6 +174,7 @@ def body (openDeferInfo : Option Nat) (argLiveBlockMap argLiveValueMap : Std.Has
         if idx != argLiveIdx then
           argLiveIdx := idx
           argLivePCDATA idx
+      modify fun s => { s with progAfter := s.progAfter.insert v.id s.next }
     -- Empty infinite loop: a hardware NOP so that debuggers are less confused.
     let mut bpos := b.pos
     if start == (← get).next && b.succs.size == 1 && b.succs[0]!.b == b.id then

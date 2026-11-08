@@ -235,10 +235,15 @@ def funcInfo : L FuncInfo := do
 def dclLine : F DclEntry := do
   return { name := ← w (refW 'n'), off := ← w intW, flags := ← w (flagsW NameFlags.table) }
 
-def frame : L Frame := do
+/-- The `frame` section; with `inp` (a driver input file, `parseProgInput`) only its
+definitions and `in` lines. -/
+def frame (inp : Bool) : L Frame := do
   line "frame" (pure ())
   let defs ← defs
   let dclIn ← many "in" dclLine
+  if inp then
+    return { defs, dclIn, dclOut := #[], optDcl := #[], merges := #[], stksize := 0,
+             stkptrsize := 0, stkalign := 0, warns := ← warnsEnd }
   let dclOut ← many "out" dclLine
   let optDcl ← many "opt" dclLine
   let merges ← many "merge" do return (← w (refW 'n'), ← w (listW (refW 'n')))
@@ -311,26 +316,40 @@ def funcDebug : L (Option FuncDebug) := do
     return (← intW ps[0]!, ← intW ps[1]!, ← natW ps[2]!)))
   return some { entry, slots, vars, lists, regOutputParams, pcs }
 
-def prog0 : L Prog0 := do
+/-- The `prog0` section; with `inp` only its definitions, the text symbol before `Flushplist`,
+`symalign`, `autot` and `dbgregout` (`RegOutputParams`, set by `buildssa`), which gives a
+`FuncDebug` with no other content. -/
+def prog0 (inp : Bool) : L Prog0 := do
   line "prog0" (pure ())
   let defs ← defs
-  let progs ← many "p" progLine
-  let fn ← funcInfo
-  let needzero ← line "needzero" (w (listW (refW 'n')))
-  let regArgs ← line "regargs" regArgsW
+  let (progs, fn, needzero, regArgs) ← if inp then pure (#[], default, #[], #[]) else do
+    let progs ← many "p" progLine
+    let fn ← funcInfo
+    let needzero ← line "needzero" (w (listW (refW 'n')))
+    let regArgs ← line "regargs" regArgsW
+    pure (progs, fn, needzero, regArgs)
   let (textSize, textAlign, text, relocs) ← textSym
   let symAlign ← line "symalign" (w (listW fun s => do
     let ps ← partsW s ':' 2
     return (← refW 'y' ps[0]!, ← intW ps[1]!)))
   let autot ← line "autot" (w (listW (refW 'y')))
-  let dbg ← funcDebug
+  let dbg ← if !inp then funcDebug
+    else if ← tagIs "dbgregout" then do
+      let regOutputParams ← line "dbgregout" (w (listW (refW 'n')))
+      pure (some { entry := 0, slots := #[], vars := #[], lists := #[], regOutputParams, pcs := #[] })
+    else pure none
   let warns ← warnsEnd
   return { defs, progs, fn, needzero, regArgs, textSize, textAlign, text, relocs, symAlign, autot,
            dbg, warns }
 
-def asm : L Asm := do
+/-- The `asm` section; with `inp` only its definitions. -/
+def asm (inp : Bool) : L Asm := do
   line "asm" (pure ())
   let defs ← defs
+  if inp then
+    return { defs, progs := #[], fn := default, textSize := 0, textAlign := 0, text := .empty,
+             relocs := #[], pcln := ⟨none, none, none, none, #[], #[]⟩, usedFiles := #[],
+             inlTree := #[], data := #[], warns := ← warnsEnd }
   let progs ← many "p" progLine
   let fn ← funcInfo
   let (textSize, textAlign, text, textRelocs) ← textSym
@@ -453,10 +472,14 @@ def dwarf : L Dwarf := do
   return { defs, fn, dcl, needctxt, closure, marks, parents, params, precursors, inlFns, inlDcls,
            names, vars, scopes, inlCalls, dieRefs, dieOffs, data, warns }
 
-def file : L ProgFile := do
+/-- A `gofv-prog 3` file; with `inp` a driver input file (`gofv-prog 3 in`). -/
+def file (inp : Bool) : L ProgFile := do
   line "gofv-prog" do
     let v ← wordStr
     if v != "3" then throw s!"unsupported gofv-prog version {v}"
+    if inp then
+      let m ← wordStr
+      if m != "in" then throw s!"expected a driver input file (gofv-prog 3 in), got {m}"
   let pkg ← line "pkg" str
   let (name, abi) ← line "func" do return (← str, ← w natW)
   let config ← many "config" do
@@ -465,10 +488,10 @@ def file : L ProgFile := do
     match v with
     | #[t] => return (k, t)
     | _ => throw "config: expected one value"
-  let frame ← frame
+  let frame ← frame inp
   let genin ← genin
-  let prog0 ← prog0
-  let asm ← asm
+  let prog0 ← prog0 inp
+  let asm ← asm inp
   let dwarf ← dwarf
   line "eof" (pure ())
   if (← get) != (← read).lines.size then throw s!"line {(← get) + 1}: data after eof"
@@ -479,7 +502,19 @@ end Parse
 /-- Parses a `gofv-prog 3` file. -/
 def parseProgFile (data : ByteArray) : Except String ProgFile := do
   let ls ← GoFV.SSA.Parse.lines data
-  match (Parse.file ⟨data, ls⟩).run 0 with
+  match (Parse.file false ⟨data, ls⟩).run 0 with
+  | .ok f _ => pure f
+  | .error e _ => throw e
+
+/-- Parses a driver input file (`gofv-prog 3 in`, `docs/DRIVER.md`, mode `full3`): a `.prog`
+file without what `AllocFrame`, `genssa`, `BuildFuncDebug`, `Flushplist` and `populateDWARF`
+compute. Its sections keep their definitions (types, names, symbols, position bases, inlining
+nodes) and the inputs: `frame`'s `in` lines, all of `genin`, `prog0`'s text symbol before
+`Flushplist` with `symalign`, `autot` and `dbgregout`, and `dwarf`'s `dwfn` and `dw*` lines.
+The fields of the missing lines are empty (`FuncDebug.entry` 0). -/
+def parseProgInput (data : ByteArray) : Except String ProgFile := do
+  let ls ← GoFV.SSA.Parse.lines data
+  match (Parse.file true ⟨data, ls⟩).run 0 with
   | .ok f _ => pure f
   | .error e _ => throw e
 

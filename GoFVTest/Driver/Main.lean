@@ -1,3 +1,4 @@
+import GoFVTest.Driver.Back
 import GoFVTest.Driver.FragWhy
 import GoFVTest.Driver.Pipeline
 import GoFVTest.Parity.Compare
@@ -418,6 +419,10 @@ structure Opts where
   vstats : Option String := none
   /-- `--profile` (driver mode with `--verified`): time the pipeline's pieces (stderr). -/
   profile : Bool := false
+  /-- `--back`: the back end (`AllocFrame` … `populateDWARF`, `GoFVTest.Driver.Back`). -/
+  back : Bool := false
+  /-- `--back-check`: the back end on the corpus against the stock results. -/
+  backCheck : Bool := false
   paths : Array String := #[]
 
 partial def parseArgs : List String → Opts → Except String Opts
@@ -440,6 +445,8 @@ partial def parseArgs : List String → Opts → Except String Opts
   | "--verified" :: rest, o => parseArgs rest { o with verified := true }
   | "--vstats" :: p :: rest, o => parseArgs rest { o with vstats := some p }
   | "--profile" :: rest, o => parseArgs rest { o with profile := true }
+  | "--back" :: rest, o => parseArgs rest { o with back := true }
+  | "--back-check" :: rest, o => parseArgs rest { o with backCheck := true }
   | a :: rest, o =>
     if a.startsWith "--" then throw s!"unknown option {a}"
     else parseArgs rest { o with paths := o.paths.push a }
@@ -448,7 +455,9 @@ def usage : String :=
   "usage: gofv-ssa-opt [--from <pass>] [--to <pass>] [--partial] <in.ssa>\n       \
    gofv-ssa-opt --verified [--from <pass>] [--vstats FILE] [--profile] <in.ssa>\n       gofv-ssa-opt --list\n       \
    gofv-ssa-opt --check [--mixed] [--whole-file-env] [--strict] [--jobs N] [--max-report N] [--table FILE] <dir|file>...\n       \
-   gofv-ssa-opt --check --verified [--whole-file-env] [--jobs N] [--max-report N] [--table FILE] <dir|file>..."
+   gofv-ssa-opt --check --verified [--whole-file-env] [--jobs N] [--max-report N] [--table FILE] <dir|file>...\n       \
+   gofv-ssa-opt --back <in>\n       \
+   gofv-ssa-opt --back-check [--jobs N] [--max-report N] [--table FILE] <dir|file>..."
 
 def runCheck (o : Opts) : IO UInt32 := do
   let t0 ← IO.monoMsNow
@@ -1057,7 +1066,15 @@ def main (args : List String) : IO UInt32 := do
     if o.paths.isEmpty then IO.eprintln usage; return 2
     if o.verified then return ← runVerifiedCheck o
     return ← runCheck o
+  if o.backCheck then
+    if o.paths.isEmpty then IO.eprintln usage; return 2
+    return ← Back.runBackCheck o.jobs o.maxReport o.table o.paths
   let #[path] := o.paths | IO.eprintln usage; return 2
+  if o.back then
+    let data ← IO.FS.readBinFile path
+    let out ← IO.lazyPure fun _ => Back.runBack data
+    (← IO.getStdout).putStr out
+    return 0
   let start ← match o.start with
     | none => pure 0
     | some p => match pipelineIndex? p with

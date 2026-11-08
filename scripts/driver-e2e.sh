@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # End-to-end checks of the gofv driver (docs/DRIVER.md, issue #12): build std and the corpus
 # programs for linux/arm64 with the driver toolchain twice — stock (no GOFV_SSA_DRIVER) and
-# with the Lean pipeline through trim (GOFV_SSA_DRIVER=gofv-ssa-opt) — compare the package archives and
+# with the Lean pipeline through trim (GOFV_SSA_DRIVER=gofv-ssa-opt; in mode full3 also the Lean
+# back end, genssa through the DWARF writers, issue #554) — compare the package archives and
 # linked binaries byte for byte, run every test program of both builds under
 # qemu-aarch64-static and compare their output and exit status, and summarise the driver's
-# per-function statistics (GOFV_SSA_DRIVER_STATS).
+# per-function statistics (GOFV_SSA_DRIVER_STATS) and the two builds' wall times.
 #
-# usage: scripts/driver-e2e.sh [--mode full|mixed] [--verified] [--sets std,test,examples]
+# usage: scripts/driver-e2e.sh [--mode full|mixed|full3] [--verified] [--sets std,test,examples]
 #                              [--out DIR] [-p N] [--report-only]
 #
 #   --mode   GOFV_SSA_DRIVER_MODE (default full)
@@ -20,7 +21,8 @@
 #
 # Exit status 1 (report line "- result: FAIL") when a std archive or a program binary differs
 # from stock, a driver build failed, a program's output or exit status differs, a function fell
-# back to the stock passes, or nothing was compared; 0 otherwise ("- result: PASS"). With
+# back to the stock passes (or, in mode full3, to the stock back end), or nothing was compared;
+# 0 otherwise ("- result: PASS"). With
 # --verified, only a failed driver build, a differing program output or exit status, a fallback
 # (the importer rejected the verified pipeline's output), or nothing compared fail.
 #
@@ -41,7 +43,7 @@ while [ $# -gt 0 ]; do
     --out) out=$2; shift 2 ;;
     -p) par=$2; shift 2 ;;
     --report-only) reportOnly=1; shift ;;
-    *) echo "usage: $0 [--mode full|mixed] [--verified] [--sets std,test,examples] [--out DIR] [-p N] [--report-only]" >&2; exit 2 ;;
+    *) echo "usage: $0 [--mode full|mixed|full3] [--verified] [--sets std,test,examples] [--out DIR] [-p N] [--report-only]" >&2; exit 2 ;;
   esac
 done
 if [ "$verified" = 1 ] && [ "$mode" != full ]; then
@@ -120,9 +122,13 @@ build() {
 
 if [ "$reportOnly" = 0 ]; then
   echo "driver-e2e: stock build" >&2
+  t0=$SECONDS
   build stock
+  echo "stock $((SECONDS - t0))" >"$out/times"
   echo "driver-e2e: driver build (mode $label)" >&2
+  t0=$SECONDS
   build lean
+  echo "lean $((SECONDS - t0))" >>"$out/times"
 fi
 
 report=$out/report.md
@@ -154,11 +160,15 @@ report=$out/report.md
     done <"$out/stock/progs"
     echo "- programs: $nb built; binaries byte-identical: $nsame; run under qemu: $nrun; same output and exit status as stock: $npass"
   fi
+  if [ -f "$out/times" ]; then
+    awk '{t[$1] = $2} END {printf "- build wall time (std and programs, go build -p '"$par"'): stock %d s, driver %d s\n", t["stock"], t["lean"]}' "$out/times"
+  fi
   if [ -f "$out/lean/stats.txt" ]; then
     echo
     echo "## driver statistics (GOFV_SSA_DRIVER_STATS)"
     echo
     awk -F '\t' '
+      $4 ~ /^back=/ { next }
       { n++
         lean = $4; sub("lean=", "", lean); stock = $5; sub("stock=", "", stock)
         if (stock == 0 && lean > 0) full++
@@ -181,6 +191,20 @@ report=$out/report.md
         print "- events by kind (and pass):"
         for (k in r) printf "  - %s: %d\n", k, r[k]
       }' "$out/lean/stats.txt"
+    if grep -q $'\tback=' "$out/lean/stats.txt"; then
+      awk -F '\t' '
+        $4 !~ /^back=/ { next }
+        { n++
+          if ($4 == "back=lean") lean++
+          else { stock++; k = $5; sub(/ .*/, "", k); r[k]++ }
+        }
+        END {
+          printf "- back end (frame, genssa, assembler, DWARF), functions: %d\n", n
+          printf "- back end by Lean: %d\n", lean
+          printf "- back end by the stock compiler (fallback): %d\n", stock
+          for (k in r) printf "  - %s: %d\n", k, r[k]
+        }' "$out/lean/stats.txt"
+    fi
   fi
   if [ -f "$out/lean/vstats.txt" ]; then
     echo
@@ -212,7 +236,7 @@ if [ "$verified" = 1 ]; then
 else
   grep -qE '^  - (differs: |.*: (driver build failed|binary differs|output differs)$)' "$report" && fail=1
 fi
-grep -qE '^- all passes by the stock compiler \(fallback\): [1-9]' "$report" && fail=1
+grep -qE '^- (all passes by the stock compiler|back end by the stock compiler) \(fallback\): [1-9]' "$report" && fail=1
 grep -qE '^- (std package archives byte-identical: [0-9]+ / [1-9]|programs: [1-9])' "$report" || fail=1
 if [ "$fail" = 0 ]; then echo "- result: PASS" >>"$report"; else echo "- result: FAIL" >>"$report"; fi
 cat "$report"
