@@ -666,10 +666,11 @@ def comboFn (o : Op) (k : Int64) : List (BitVec 64) → Option (BitVec 64)
 
 /-- The multiplier of `a`'s register the value `w` computes from the definitions `bs`, within `n`
 steps: 1 at `a`, `comboFn` of its arguments' multipliers at a value of `bs`. -/
-def mulCoef (bs : List Value) (a : ID) : Nat → ID → Option (BitVec 64)
-  | 0, _ => none
-  | n + 1, w =>
-    if w == a then some 1 else
+def mulCoef (bs : List Value) (a : ID) (n : Nat) (w : ID) : Option (BitVec 64) :=
+  if w == a then some 1 else
+  match n with
+  | 0 => none
+  | n + 1 =>
     match bs.find? (·.id == w) with
     | some u => (u.args.toList.mapM fun y => mulCoef bs a n y).bind (comboFn u.op u.auxInt)
     | none => none

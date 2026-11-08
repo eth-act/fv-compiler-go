@@ -132,6 +132,7 @@ import GoFV.Proof.Low.Rules.Invert
 import GoFV.Proof.Low.Rules.Kit
 import GoFV.Proof.Low.Rules.LoadIdx
 import GoFV.Proof.Low.Rules.LoadStore
+import GoFV.Proof.Low.Rules.Mul
 import GoFV.Proof.Low.Rules.Peep
 import GoFV.Proof.Low.Rules.Ptr
 import GoFV.Proof.Low.Rules.Rename
@@ -151,6 +152,7 @@ import GoFV.Proof.Low.TermL
 import GoFV.Proof.Low.Val
 import GoFV.Proof.Low.ValBlock
 import GoFV.Proof.Low.ValMatch
+import GoFV.Proof.Low.ValMul
 import GoFV.Proof.Low.ValReplay
 import GoFV.Proof.Low.ValRule
 import GoFV.Proof.Low.ValStep
@@ -856,6 +858,7 @@ import GoFV.Proof.Witness.LowerLoadSym
 import GoFV.Proof.Witness.LowerLocalAddr
 import GoFV.Proof.Witness.LowerMemEq
 import GoFV.Proof.Witness.LowerMove
+import GoFV.Proof.Witness.LowerMul
 import GoFV.Proof.Witness.LowerNarrowArgs
 import GoFV.Proof.Witness.LowerNeg
 import GoFV.Proof.Witness.LowerNegOff

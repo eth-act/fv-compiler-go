@@ -367,6 +367,16 @@ theorem mulCoef_succ {bs : List Value} {a : ID} {j : Nat} {y : ID} {c : BitVec 6
       | some cs => rw [hm] at h; exact ⟨cs, mapM_forall₂ hm, h⟩
     · cases h
 
+/-- With no steps left, `mulCoef` only gives `a`'s multiplier 1. -/
+theorem mulCoef_zero {bs : List Value} {a : ID} {y : ID} {c : BitVec 64}
+    (h : mulCoef bs a 0 y = some c) : y = a ∧ c = 1 := by
+  rw [mulCoef] at h
+  by_cases hya : y = a
+  · subst hya
+    simp only [beq_self_eq_true, ite_true, Option.some.injEq] at h
+    exact ⟨rfl, h.symm⟩
+  · simp [hya] at h
+
 /-- A non-`poison` value without provenance is refined only by itself. -/
 private theorem refines_eq_of_reg {X Y : Val} (h : Sem.Refines X Y) {r : BitVec 64}
     (hr : Arm64.reg X = some r) : Y = X := by
@@ -382,7 +392,11 @@ theorem mul_claim {tabs : Tables} {M' : Defs} {bs : List Value} {a : ID} {w : Wi
     ∀ j y c, mulCoef bs a j y = some c →
       LinV w.bits r c (denL true M'.get? tabs ρ (B + j) y) ∧
       (y = a ∨ denL true M'.get? tabs ρ (B + j) y = .int w ((c * r).setWidth w.bits))
-  | 0, y, c, h => by simp [mulCoef] at h
+  | 0, y, c, h => by
+    obtain ⟨rfl, rfl⟩ := mulCoef_zero h
+    refine ⟨?_, .inl rfl⟩
+    rw [hXa]
+    exact ⟨hXp, r, hXr, by simp⟩
   | j + 1, y, c, h => by
     rcases mulCoef_succ h with ⟨rfl, rfl⟩ | ⟨-, u, hu, rfl, cs, hcs, hc⟩
     · refine ⟨?_, .inl rfl⟩
