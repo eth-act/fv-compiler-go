@@ -283,7 +283,7 @@ theorem retype_word_shape {t : Ty} (ht : (∃ e, t = .ptr e) ∨ t = .int .w64) 
     rw [hw]
     rcases Ptr.word_cases ⟨.temp 0 n, off⟩ with ⟨-, h⟩ | ⟨hc, -⟩ | ⟨-, h⟩
     · exact .inr ⟨off, h⟩
-    · simp [Ptr.convertible] at hc
+    · simp at hc
     · exact .inl h
 
 theorem ptrRes_temp {n : Nat} (p : Ptr) (hp : p.blk = .temp 0 n) :

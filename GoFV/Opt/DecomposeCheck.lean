@@ -4,6 +4,8 @@ import GoFV.Opt.RewriteCheck
 import GoFV.Rules.Proven
 import GoFV.Proof.Cong
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # decompose user, decompose builtin: the checked fragment (issue #17)
 

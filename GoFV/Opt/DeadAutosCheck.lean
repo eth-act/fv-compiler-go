@@ -2,6 +2,8 @@ import GoFV.Opt.ElimDeadAutos
 import GoFV.Opt.DeadStoreCheck
 import GoFV.Opt.NilCheckRel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dead auto elim's checker
 

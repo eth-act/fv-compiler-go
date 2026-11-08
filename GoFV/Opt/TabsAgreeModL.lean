@@ -1,6 +1,8 @@
 import GoFV.Opt.TabsAgreeMod
 import GoFV.Proof.Pass.UnreadLRel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Extended tables with extra frame temporaries, for a scheduled function (`tabsAgreeModL`)
 

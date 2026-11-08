@@ -38,9 +38,10 @@ def reduceAtOp (e : Lean.Expr) : MetaM (Option Lean.Expr) := do
   return some (← whnfCore e')
 
 /-- `evalPure op …` at a constructor `op`: its family's definition. -/
-dsimproc reduceEvalPure (evalPure _ _ _ _ _) := fun e => do
-  unless e.isAppOfArity ``GoFV.SSA.Sem.evalPure 5 do return .continue
-  unless (e.getArg! 0).isConst do return .continue
+dsimproc reduceEvalPure (@evalPure ..) := fun e => do
+  -- the op is the first of the five explicit arguments (after the address assignment `Addrs`)
+  unless e.isAppOf ``GoFV.SSA.Sem.evalPure && 5 ≤ e.getAppNumArgs do return .continue
+  unless (e.getArg! (e.getAppNumArgs - 5)).isConst do return .continue
   match ← reduceAtOp e with
   | some e' => return .done e'
   | none => return .continue
@@ -309,10 +310,10 @@ def splitCandidate? (e : Lean.Expr) : Option Lean.Expr :=
     (t.isAppOfArity ``GoFV.SSA.Sem.Val.asNat 1 && (t.getArg! 0).isAppOfArity ``PEnv.leaf 2) ||
     (t.isAppOfArity ``tyOtherInt 2 && !(t.getArg! 0).hasLooseBVars) ||
     (t.isAppOfArity ``ite 5 && !(t.getArg! 1).hasLooseBVars)) <|>
-  ((e.find? fun t => t.isAppOfArity ``GoFV.SSA.Sem.Val.hasTy 2 &&
-      (t.getArg! 0).isAppOfArity ``PEnv.leaf 2 &&
-      (t.getArg! 1).isAppOfArity ``GoFV.SSA.Sem.Ty.int 1 && !t.hasLooseBVars).map fun t =>
-    mkApp2 (mkConst ``GoFV.SSA.Sem.Val.asInt) ((t.getArg! 1).getArg! 0) (t.getArg! 0))
+  ((e.find? fun t => t.isAppOfArity ``GoFV.SSA.Sem.Val.hasTy 3 &&
+      (t.getArg! 1).isAppOfArity ``PEnv.leaf 2 &&
+      (t.getArg! 2).isAppOfArity ``GoFV.SSA.Sem.Ty.int 1 && !t.hasLooseBVars).map fun t =>
+    mkApp2 (mkConst ``GoFV.SSA.Sem.Val.asInt) ((t.getArg! 2).getArg! 0) (t.getArg! 1))
 
 /-- Case split on a disjunction among the hypotheses (the checker's `Bool` auxints, `||` in
 conditions), then `rule_norm`. -/
@@ -365,8 +366,8 @@ elab_rules : tactic | `(tactic| rule_split1) => withMainContext do
       let isSplitEq := match ty.eq? with
         | some (_, lhs, rhs) => (splitCandidate? lhs).isSome && !(rhs.find? (fun t =>
             t.isAppOfArity ``PEnv.leaf 2)).isSome &&
-            !(lhs.isAppOfArity ``GoFV.SSA.Sem.Val.hasTy 2 &&
-              (lhs.getArg! 0).isAppOfArity ``PEnv.leaf 2)
+            !(lhs.isAppOfArity ``GoFV.SSA.Sem.Val.hasTy 3 &&
+              (lhs.getArg! 1).isAppOfArity ``PEnv.leaf 2)
         | none => false
       unless isSplitEq do
         cand := splitCandidate? ty

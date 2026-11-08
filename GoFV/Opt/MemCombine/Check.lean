@@ -3,6 +3,8 @@ import GoFV.Opt.MemCombine.Sym
 import GoFV.Opt.KnownBitsCheck
 import GoFV.Opt.TabsAgree
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # memcombine's checker (issue #35)
 

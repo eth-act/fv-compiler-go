@@ -1,6 +1,8 @@
 import GoFV.Proof.Low.RuleL
 import GoFV.Opt.Lower
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Validating `lower` / `late lower` against their log (issue #385)
 

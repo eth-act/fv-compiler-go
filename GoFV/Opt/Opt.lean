@@ -5,6 +5,8 @@ import GoFV.Rules.Generated.Divmod
 import GoFV.Rules.Proven
 import GoFV.Opt.RewriteCheck
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # opt, middle opt, late opt, divisible, divmod (`opt.go`)
 

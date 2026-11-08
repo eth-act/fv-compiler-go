@@ -1,6 +1,8 @@
 import GoFV.SSA.DomCert
 import GoFV.Proof.Pass.CopyFrag
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `Phi`s turned copies: the checker of copyelim's relation
 

@@ -568,7 +568,7 @@ theorem isZero_eq (hA : AddrAgree ι) {x : Val} {X : BitVec 64} {z : Bool} (hx :
       have : (X == 0) = false := beq_eq_false_iff_ne.mpr hX
       rw [this]
     · simp only [Ptr.isNil, Bool.and_eq_true, beq_iff_eq] at hn
-      simp only [Ptr.addr?, hn.1, hn.2, Blk.base?, Option.map_some, Option.some.injEq] at hpa
+      simp only [Ptr.addr?, hn.1, hn.2, Blk.base?_nil, Option.map_some, Option.some.injEq] at hpa
       subst hpa
       decide
   | _ => cases h

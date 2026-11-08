@@ -3,6 +3,8 @@ import GoFV.Opt.Checked
 import GoFV.Opt.TabsAgree
 import GoFV.Opt.RewriteCheck
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # writebarrier, validated (issue #36)
 

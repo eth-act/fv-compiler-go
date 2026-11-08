@@ -2,6 +2,8 @@ import GoFV.Opt.Fuse.Plain
 import GoFV.Opt.Checked
 import GoFV.Opt.SchedFast
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # fuseBlockPlain, checked in place
 

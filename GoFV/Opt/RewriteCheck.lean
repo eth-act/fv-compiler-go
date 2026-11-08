@@ -10,6 +10,8 @@ import GoFV.Opt.MemTy
 import GoFV.Opt.ExpandCallsCheck
 import GoFV.SSA.Sem.Image
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Validating a rewrite pass (`applyRewrite`) against its log (issue #113)
 

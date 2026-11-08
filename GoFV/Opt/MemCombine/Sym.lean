@@ -1,5 +1,7 @@
 import GoFV.Opt.RewriteCheck
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # memcombine's checker: values as symbolic bytes (issue #35)
 

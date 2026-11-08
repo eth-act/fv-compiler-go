@@ -1,5 +1,7 @@
 import GoFV.Gen.Check10
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The genssa validator, slice G11: the closure context (`docs/plans/proofs3.md` §4)
 

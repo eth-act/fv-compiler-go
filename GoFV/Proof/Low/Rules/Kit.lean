@@ -39,10 +39,11 @@ theorem opValL_gen {o : Op} (hg : o.generic = true) (hf : frameOp o = false)
   simp only [opValL, hg, ite_true, opVal_pure hf]
 
 /-- `Arm64.evalPure op …` at a constructor `op`: its family's definition. -/
-dsimproc reduceArmEvalPure (Arm64.evalPure _ _ _ _ _) := fun e => do
-  -- `Arm64.evalPure` has an implicit universe-polymorphic `AuxRef` argument first
-  unless e.isAppOfArity ``GoFV.SSA.Sem.Arm64.evalPure 6 do return .continue
-  unless (e.getArg! 1).isConst do return .continue
+dsimproc reduceArmEvalPure (@Arm64.evalPure ..) := fun e => do
+  -- the op is the first of the five explicit arguments (before them: the implicit `AuxRef`
+  -- universe argument and the address assignment `Addrs`)
+  unless e.isAppOf ``GoFV.SSA.Sem.Arm64.evalPure && 5 ≤ e.getAppNumArgs do return .continue
+  unless (e.getArg! (e.getAppNumArgs - 5)).isConst do return .continue
   match ← reduceAtOp e with
   | some e' => return .done e'
   | none => return .continue

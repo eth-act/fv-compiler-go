@@ -1,6 +1,8 @@
 import GoFV.Opt.ExpandCallsCheck
 import GoFV.Opt.Decompose
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The checker of decompose's phi splitting (`DecPhiCheck.decPhiCheck`, issue #17)
 

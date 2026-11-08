@@ -1,6 +1,8 @@
 import GoFV.SSA.Sem.RunSched
 import GoFV.Opt.SpecSafe
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The `schedule` validator (`scheduleCheck`, #385, #407)
 

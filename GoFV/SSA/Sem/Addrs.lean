@@ -289,6 +289,8 @@ variable [Addrs]
 
 @[simp] theorem Blk.base?_wbuf : Blk.base? .wbuf = none := Addrs.baseOf_wbuf
 
+attribute [simp] Addrs.baseOf_nil Addrs.baseOf_heap Addrs.baseOf_global Addrs.baseOf_wbuf
+
 /-- Only globals and the write-barrier buffer have no address. -/
 theorem Blk.base?_eq_none {b : Blk} (h : Blk.base? b = none) : (∃ s, b = .global s) ∨ b = .wbuf :=
   Addrs.baseOf_none b h
@@ -354,6 +356,20 @@ theorem Ptr.convertible_eq_fixed {p : Ptr} (hb : p.blk = .nil ∨ ∃ n, p.blk =
 @[simp] theorem Ptr.convertible_wbuf (o : BitVec 64) : (⟨.wbuf, o⟩ : Ptr).convertible = false := by
   simp [Ptr.convertible, Ptr.addr?]
 
+/-- **No integer converts to a `temp` block** (#156's decoding below `2^62`, `decode_high` above). -/
+theorem Ptr.ofAddr_ne_temp (x : BitVec 64) (a n : Nat) : (Ptr.ofAddr x).blk ≠ .temp a n := by
+  intro h
+  by_cases hx : x.toNat < 2 ^ 62
+  · rw [Ptr.ofAddr_low hx] at h
+    revert h
+    unfold Ptr.fixedOfAddr
+    by_cases h1 : x.toNat < 2 ^ 40
+    · simp [h1]
+    · simp only [h1, hx, ite_false, ite_true]; nofun
+  · obtain ⟨a', h' | ⟨k, h'⟩⟩ := Addrs.decode_high x (by omega) <;>
+      · simp only [Ptr.ofAddr] at h
+        rw [h'] at h; cases h
+
 /-- No integer converts to a frame temporary (its addresses decode to other blocks). -/
 @[simp] theorem Ptr.convertible_temp (a n : Nat) (o : BitVec 64) :
     (⟨.temp a n, o⟩ : Ptr).convertible = false := by
@@ -362,18 +378,7 @@ theorem Ptr.convertible_eq_fixed {p : Ptr} (hb : p.blk = .nil ∨ ∃ n, p.blk =
   · rename_i x _
     rw [beq_eq_false_iff_ne]
     intro h
-    by_cases hx : x.toNat < 2 ^ 62
-    · have := congrArg Ptr.blk h
-      rw [Ptr.ofAddr_low hx] at this
-      revert this
-      unfold Ptr.fixedOfAddr
-      by_cases h1 : x.toNat < 2 ^ 40
-      · simp [h1]
-      · simp only [h1, hx, ite_false, ite_true]; nofun
-    · obtain ⟨a', h' | ⟨k, h'⟩⟩ := Addrs.decode_high x (by omega) <;>
-        · have := congrArg Ptr.blk h
-          simp only [Ptr.ofAddr] at this
-          rw [h'] at this; cases this
+    exact Ptr.ofAddr_ne_temp x a n (congrArg Ptr.blk h)
   · rfl
 
 end

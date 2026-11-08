@@ -2,6 +2,8 @@ import GoFV.Opt.ProveCheck.Decide
 import GoFV.Opt.Prove.Pass
 import GoFV.SSA.DomCert
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # prove's validator: assumptions, per-rewrite checks, the checked pass (issue #24)
 

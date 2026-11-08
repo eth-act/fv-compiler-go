@@ -66,7 +66,10 @@ theorem ptrV_add (p : Ptr) (k : BitVec 64) : ptrV (p.add k) = (ptrV p).add k := 
 
 theorem ptrV_of_addr {p : Ptr} {a : BitVec 64} (h : p.addr? = some a) : ptrV p = .conc a := by
   obtain ⟨b, o⟩ := p
-  cases b <;> first | simp [Ptr.addr?] at h | simp [ptrV, h]
+  cases b with
+  | global s => simp [Ptr.addr?] at h
+  | wbuf => simp [Ptr.addr?] at h
+  | _ => simp [ptrV, h]
 
 theorem addr_ofAddr (x : BitVec 64) : (Ptr.ofAddr x).addr? = some x := Addrs.decode_addr x
 
@@ -121,9 +124,11 @@ theorem retype_keep_offPtr {t : Ty} (h : CSE.keepsPtr t = true) (k : Int64) (vs 
 
 theorem retype_global {t : Ty} (h : CSE.keepsGlobal t = true) (s : String) (o : BitVec 64) :
     (Val.ptr ⟨.global s, o⟩).retype t = .ptr ⟨.global s, o⟩ := by
+  have hw : (⟨.global s, o⟩ : Ptr).word = .ptr ⟨.global s, o⟩ :=
+    Ptr.word_of_addr_none (by simp [Ptr.addr?]) rfl
   cases t with
-  | int w => cases w <;> first | rfl | cases h
-  | _ => first | rfl | cases h
+  | int w => cases w <;> first | exact hw | cases h
+  | _ => first | exact hw | cases h
 
 theorem vaddr_offPtr (k : Int64) (v : Val) :
     vaddr (PtrOps.offPtr k [v]) = none ∨

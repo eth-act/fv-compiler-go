@@ -1,6 +1,8 @@
 import GoFV.SSA.Sem.Run
 import GoFV.Opt.Speculate
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Ops that are safe to execute speculatively, for the semantics
 

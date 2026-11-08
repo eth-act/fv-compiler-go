@@ -1,6 +1,8 @@
 import GoFV.Opt.Opt
 import GoFV.SSA.Edges
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # sccp (`sccp.go`)
 

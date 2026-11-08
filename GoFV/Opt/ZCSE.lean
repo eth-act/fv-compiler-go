@@ -4,6 +4,8 @@ import GoFV.SSA.DomCert
 import GoFV.SSA.Sem.Run
 import Std.Data.TreeMap
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # zero arg cse (`zcse.go`)
 

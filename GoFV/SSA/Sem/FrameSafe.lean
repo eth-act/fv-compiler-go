@@ -100,10 +100,6 @@ def InitAvoids (env : Env) (args : List Val) (mem : Mem) : Prop :=
     mem.find? (.temp a n) = none ∧
     ∀ g ∈ env.globals, ∀ x ∈ g.2.data.toList, Byte.Avoids (· = .temp a n) x
 
-/-- **No integer converts to a `temp` block.** -/
-theorem Ptr.ofAddr_ne_temp (x : BitVec 64) (a n : Nat) : (Ptr.ofAddr x).blk ≠ .temp a n :=
-  Addrs.decode_temp x a n
-
 theorem frameBlk_temp {tabs : Tables} {n : AuxRef} (h : tabs.forgeable n = false) (act : Nat) :
     frameBlk tabs act n = .temp act n := by
   unfold frameBlk; rw [h]; rfl

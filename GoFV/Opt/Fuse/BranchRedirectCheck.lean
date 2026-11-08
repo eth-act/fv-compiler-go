@@ -2,6 +2,8 @@ import GoFV.Opt.Fuse.BranchRedirect
 import GoFV.Opt.Fuse.ComparisonsCheck
 import GoFV.Opt.ProveCheck.Decide
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # fuseBranchRedirect, checked
 

@@ -1,5 +1,7 @@
 import GoFV.Gen.Check4
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The genssa validator, slice G5: memory markers (`docs/plans/proofs3.md` §4)
 

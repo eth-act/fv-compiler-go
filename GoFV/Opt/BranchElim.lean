@@ -6,6 +6,8 @@ import GoFV.Opt.NumberLines
 import GoFV.SSA.TypePred
 import GoFV.SSA.Analysis.CfgCache
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # branchelim (`branchelim.go`)
 
