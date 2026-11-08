@@ -530,6 +530,33 @@ keeps `MemInj`, `SepFrom` and the frame as G3's stores (`memInj_storeN`, `op_mem
 `progStep_storeAt`; `g18_stIdx`). G17's values go through `vk17_step`; nil checks through
 `vk18_nil`.
 
+**Slice G19: bounds panics** (`GoFV/Gen/Check19.lean`, `checkG19 lc ps bstart g`, returning G4's
+tables; proven sound, `g19_value`, `g19_term`, `g19_nilPanic`, `g19_boundsPanic`): G18 with
+`LoweredPanicBounds{RR,RC,CR,CC} [kind] … mem` (`pbOp`, `pbKind`, `VK19.pb`): no temporary, the
+memory shape and no home, register operands of class 64 in `R0`–`R15`, the memory last. Genssa
+(`ssa.go:1752-1835`) moves a constant outside `0..31` into `R0` or `R1` (`MOVD $c, Rk`), then emits
+`PCDATA $PCDATA_PanicBounds, $c` with `c` the `abi.BoundsEncode` of the kind's code, its
+signedness and the operands (`pbEnc`), then `CALL runtime.panicBounds(SB)` (`pbPats`, `pbInfo`);
+`pbOK` checks that the `PCDATA_PanicBounds` in force at that `CALL` (`pbData`) is `c`. A `CR` whose
+constant index is outside `0..31` is rejected (#541: genssa, as Go, moves it without marking it in
+the encoding, so the runtime reports the index 0 or 1; 2 functions of quick-v10). Every other
+bounds panic of quick-v10 is accepted.
+
+How the proof discharges G19's obligations (`G19.lean`): `runLoc` runs Phase 1's `panicBounds`
+(`stepLoc_pb_panic`), which never steps to a state (`stepLoc_pb_ne_ok`), so `g19_value`,
+`g19_term` and `g19_nilPanic` are G18's with one more impossible case and no new premise. The new
+theorem `g19_boundsPanic` runs the `MOVD`s (`pstar_pbMovs`), the `PCDATA` no-op and the `CALL`
+(`progStep_callSym`) to the symbol of `runtime.panicBounds` with `X30` the return address; there
+the premise `BoundsOK` (the hook panics with `boundsPanic` of the `PCDATA_PanicBounds` value in
+force at that `CALL`; STATUS Assumptions) gives the machine's panic. `boundsDecode_pbEnc` inverts
+the encoding, a register operand of class 64 is its machine word (`pb_reg`), a moved constant the
+word `MOVD` wrote, an encoded constant itself; `boundsPanic_agree` gives `BoundsAgree`: the same
+panic, or, for a constant index of a signed kind `k` (the encoding records signedness only for a
+register index), the unsigned kind `k + 1` of the same nonnegative index, which Go reports with
+the same message. `Hooks.lean`'s `boundsPanic` (factored out of `panicBoundsHook`) maps
+`BoundsConvert` (code 8) to kind 16, `ssa.BoundsConvert` (`cmd/compile/internal/ssa/op.go`:
+`BoundsIndex` = 0 … `BoundsConvert` = 16, `BoundsKindCount` = 17).
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -540,9 +567,9 @@ reason in parentheses):
    (`frame variable with an integer address`, 197 (12)): option 2 of semantics3 §4.3 (addresses as
    a parameter of the semantics); slots of other sizes (`slot … frame operand, size or alignment`,
    717).
-3. **Other values**: `MOVDnop` 750 (91), bounds panics (`LoweredPanicBoundsRR` 616 (68), `RC` 332
-   (46), `CR` 76 (33), `CC` 170 (22)), the acquire loads `LDAR`/`LDARW` (383, 277); `SP` after the
-   entry values (71).
+3. **Other values**: `MOVDnop` 750 (91), the acquire loads `LDAR`/`LDARW` (383, 277); `SP` after
+   the entry values (71). Bounds panics (`LoweredPanicBoundsRR` 616 (68), `RC` 332 (46), `CR` 76
+   (33), `CC` 170 (22)) are done in G19 but for #541's 2 functions.
    `MOVDnop x` emits no code but `runLoc` gives it the
    upper bits of `x`'s register (`movdLoc`: the zero or sign extension of the narrow value that
    produced `x`; each of its 1,520 uses in the trimmed functions of quick-v10 widens its argument,
@@ -575,6 +602,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G16 | 3,874 (41.66%) | 73,708 |
 | G17 | 3,962 (42.61%) | 75,809 |
 | G18 | 4,052 (43.58%) | 80,626 |
+| G19 | 4,221 (45.40%) | 85,558 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -697,6 +725,11 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `stIdxKind_spec`); `Progs3.lean`: `progStep_storeAt` (public).
 - `G18.lean`: `storeIdxOp?_op`, `storeIdxOp?_facts`, `stepLoc_storeIdx`, `g18_stIdx`, `vk18_step`,
   `vk18_nil`, `g18_value`, `g18_nilPanic`, `g18_term`.
+- `Spec19.lean`: what `checkG19` accepted (`checkG19_spec`, `vkind19_spec` with `VK19`,
+  `pbKind_spec`, `pbInfo_spec`, `pbOK_spec`); `Hooks.lean`: `boundsPanic`.
+- `G19.lean`: `BoundsOK`, `BoundsAgree`, `boundsDecode_pbEnc`, `boundsPanic_agree`,
+  `stepLoc_pb_panic`, `stepLoc_pb_ne_ok`, `pstar_pbMovs`, `pb_reg`, `pb_phase1`, `vk19_step`,
+  `vk19_nil`, `g19_value`, `g19_nilPanic`, `g19_boundsPanic`, `g19_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -740,8 +773,12 @@ the integer `2^41 + 16` and so does `X0`), `GenG17.lean` (`runtime.getm`, which 
 satisfies `GetGOK`, after which the `g` register holds the pointer to `runtime.g`), `GenG18.lean`
 (`setpf` of `test/ken_array`, which G17 rejects: `g18_value` on `MOVDstoreidx8`, `MOVD R1,
 (R0)(R1<<3)` with `R0` the start of an 8-byte `heap 1` holding 7s at `2^41` and `R1` 0, after
-which `runLoc`'s memory holds the word 0 there and the machine's 8 bytes at `2^41` are 0). Each
-decides its inputs
+which `runLoc`'s memory holds the word 0 there and the machine's 8 bytes at `2^41` are 0),
+`GenG19.lean` (`main.func1` of `test/convert4`, which G18 rejects: `g19_boundsPanic` on
+`LoweredPanicBoundsCR [16] {9}`, `[9]byte(s)` with `len(s) = 5` in `R0`: `PCDATA
+$PCDATA_PanicBounds, $350` and `CALL runtime.panicBounds(SB)` under a hook that panics with
+`boundsPanic 350`, which satisfies `BoundsOK` (`boundsOK_of`), after which `runProg` panics with
+`.bounds 16 9 5`, as `runLoc`). Each decides its inputs
 by compiled evaluation (`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
 
 ## 6. Future work: recursion through function values
@@ -1014,7 +1051,7 @@ reason in parentheses):
 - `GetG`: 430 (89); `R28` = `E.g`, already in `FrameRel`; done in G17 (§4);
 - `ADDshiftLL`: 678 (57); `lo_add` with `shifted`; done in G16 (§4);
 - bounds panics `LoweredPanicBounds*`: 616 (40+); a `CALL runtime.panicBounds*` hook that
-  panics, as `g7_nilPanic`;
+  panics, as `g7_nilPanic`; done in G19 (§4), but for #541's constant indices outside `0..31`;
 - `TSTconst`, `Equal`/`NotEqual`, `CSEL`: 52, 49/32, 38+25 sole; flags producers and readers
   as G1's `CMP`/`B<cond>`.
 
