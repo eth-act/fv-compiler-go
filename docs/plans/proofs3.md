@@ -15,6 +15,8 @@ G2–G12 rest on the trusted callee contract `CallOK`, G8–G12 also on the writ
 contract `WbOK`, G10–G12 also on the indirect callee contract `ICallOK`, G11 and G12 also on the
 closure context premise `CloOK` (§4, `docs/proofs/STATUS.md` Assumptions); §6 lists future work
 on these premises.
+The assembler validator `checkObj` (P0 against the assembled words, D2–D5) is implemented, with
+the probe `obj-check` (§7); its soundness proof is not merged yet.
 Context:
 `docs/plans/semantics3.md` (§4 `LocMatch`, §6 hooks, §7 layers), `docs/PASSES3.md` (the steps
 A1–F2), `docs/plans/regalloc-check.md` (the Phase 2 pattern this plan follows: an untrusted port
@@ -58,8 +60,7 @@ shapes.
 | A1 merge locals, A2 frame layout (`MergeLocals`, `AllocFrame`), spill slots | L2 → frame | **validator** `checkFrame tabs f lay` (extends `FrameLayout.problems`): every spill slot and named auto at `autosize − extrasize + FrameOffset`, in the frame, aligned; slots live at the same time (from the allocated function's slot lifetimes) disjoint; merged autos with disjoint lifetimes; nothing overlaps the saved LR/FP words or the outgoing area | the ports are imperative (interval construction, sort); the property is a disjointness fact | `checkFrame … = .ok () → FrameOK E` with `E.slot k = some (slotOff lay k)` and the disjointness facts `LocMatch.slots` preservation needs at `StoreReg`, `LoadReg` and calls |
 | C2–C5 genssa: value emission (C3 families), blocks (C4), branch resolution (C5) | L2 → P0 | **validator** `checkGen lc ps bstart` (`GoFV/Gen/Check.lean`), slice by slice: one Prog template per op family, block shapes of `ssaGenBlock`, the fall-through layout; returns the `pcOf` table | ~1,700 lines of port over `GenM`; the templates are what the families emit, so the validator is complete on every family it covers | `checkGen … = .ok tab → GenEnv E tab → (value step) LocMatch E s b i m → stepLoc env lc s v = .ok s' → ∃ m', PStar H L ps ret m m' ∧ LocMatch E s' b (i+1) m'`, the same for terminators (`.goto e`: `LocMatch E s' e.b 0 m'`) and faults (`PPanics`); §3 is the first slice |
 | C6 defframe, D3 prologue/epilogue | entry/exit | **validator** on the fixed templates (zeroing ranges from `Needzero`, `STP`/`SUB` prologue of `autosize`, stack check, `RET` epilogue) | short fixed shapes parametrised by `autosize`, the stack-check class and the zeroed ranges | entry: `MachEntry code entry room s₀ → ∃ m, PStar … s₀ m ∧ LocMatch E s_entry entry k m` (after the entry values, `k` = their number); exit: `LocMatch` at a `Ret` block's `RET` → `MachRet s₀ m'` with the results in their ABI registers |
-| D2 linkpatch/progedit, D3 preprocess | P0 → P1 → P2 | **validator** `checkEdit ps0 ps2`: a Prog map (ID → IDs) where every Prog is unchanged except the documented rewrites (constant symbols, `$0 → ZR`, jump chains, `RET` → epilogue, the frame step → prologue, morestack slow path) | the rewrites are local; a per-Prog map makes the simulation one-to-many and lock-step | `checkEdit … = true → ∀ s s', PStar H L0 ps0 ret s s' → related t → ∃ t', PStar H L2 ps2 ret t t' ∧ related t'` (the relation: same registers/memory, PC through the map, R27 free) |
-| D4/D5 span7: classes, sizes, pools, veneers, encoding | P2 → M | **validator** `checkObj L ps2 code`: each Prog's words decode (`GoFV.Arm64.decode`) to the instructions `insnOf p` predicts, literal-pool words hold their constants, branch offsets reach their targets; one lemma per encoding family proves `exec (insnOf p)` meets `progSpec p` symbolically in registers and offsets | `asmout` alone is 111 cases and ~4,000 lines; decoding is already trusted and co-simulated (`arm64-cosim`), and `arm64-decode` already checks every Prog of quick-v9 (429,386/429,386) and every basic block (122,770/122,770) as a test | `checkObj … = true → PStar H L ps2 ret s s' → ∃ n, MStar H code ret s s'` on the same state (P2's `Link.ofProgs` addresses are M's), and `PPanics → MPanics` |
+| D2 linkpatch/progedit, D3 preprocess, D4/D5 span7 (classes, sizes, pools, veneers, encoding) | P0 → M | **validator** `checkObj ps spills obj` (`GoFV/Asm/CheckObj.lean`, §7; probe `obj-check`): the P0 Progs against the assembled words directly, without P1/P2 in between. Each Prog's words are decoded (`GoFV.Arm64.decode`) and executed symbolically (`symWords`; relocated pairs and calls as the linker patches them, `CheckObjLink.lean`), and compared with the Prog's symbolic effect (`progSym`, which mirrors `progEffect`): every register but `X27`, `SP`, the flags, the stores in order, loads only the Prog's, branch offsets at the target Prog's words. The prologue (stack check, frame), the epilogue at P0's `RET` and the morestack tail are checked as templates | `asmout` alone is 111 cases and ~4,000 lines; decoding is already trusted and co-simulated (`arm64-cosim`), and `arm64-decode` already checks every Prog of quick-v9 (429,386/429,386) and every basic block (122,770/122,770) as a test; comparing P0 with the words skips `checkEdit`, because the rewrites of D2/D3 (constant symbols, `$0 → ZR`, jump chains, `RET` → epilogue) all meet the same symbolic effect | `checkObj … = .ok tab → ObjEnv … → PStar H L ps (endP) s s' → ObjRel f s t → ∃ t', MStar H code retM t t' ∧ ObjRel f s' t'` (`ObjRel`: registers but `X27`/`X30` equal, `X30` and the PC through the address map `f`: P0 Prog address ↦ its words), and the templates `obj_entry`/`obj_exit` |
 | D6 unsafe/restartable points, D7 pc tables (pcsp, pcdata incl. `PanicBounds`), B1 stack maps | metadata | **validators** that decode each table (`pcValue`) and compare with the value recomputed from the Progs (SP delta per PC from the `spadj` of P2, the PCDATA Prog in force, liveness at each safe point: coverage and validity) | the encoders are bit-level (varints, deltas); recomputing and comparing is simple and complete | `checkPcsp ps2 tab = true → ∀ pc, pcValue tab pc = spDelta ps2 pc`, similarly for each PCDATA; these discharge the premises of the hooks (`panicBoundsHook` reads `PCDATA_PanicBounds`; morestack and tracebacks read pcsp) |
 | B2, B3, E1–E2, F1–F2 | — | none (tracebacks, debug info, object writer) | not observable by `runMach` (semantics3 §6: trusted, not modelled) | — |
 
@@ -624,3 +625,59 @@ function instead of trusted per call:
 
 The contract is partial, as the refinement of §1 is: a run that neither returns nor panics is no
 outcome to match.
+
+## 7. `checkObj`: P0 against the assembled words (D2–D5)
+
+`checkObj ps spills obj` (`GoFV/Asm/CheckObj.lean`, symbolic states in `CheckObjSym.lean`, the
+linker model in `CheckObjLink.lean`) checks the assembler's output `obj` (text bytes, relocations,
+and the assembler's final Prog list, used only as a hint for each Prog's PC) against the P0 list
+`ps` that `runProg` runs under `Link.byId`. It recomputes none of the assembler's choices
+(`progedit`, `preprocess`, `span7`).
+
+- **Layout.** Each P0 Prog owns the words from its PC to the next P0 Prog's PC; every word is
+  checked. Pseudo-ops own none.
+- **Per Prog.** The words are decoded and executed symbolically (`symWords`). The two words of
+  `R_ADDRARM64` and `R_ARM64_PCREL_LDST*` and the `BL` of `R_CALLARM64` run as linked. The result
+  is compared with the Prog's own symbolic effect (`progSym`):
+  - every general register but `X27` (the scratch) and `X30` (calls only);
+  - `SP`, the flags, and the stores in order;
+  - every machine load must be one the Prog performs;
+  - the Prog must not read `X27`/`X30`;
+  - branches go to the target Prog's offset, and calls go to the same symbol with addend 0.
+- **Templates.**
+  - The prologue (`checkPrologue`): the stack check, which loads `stackguard0` (`16(g)`) and
+    compares it with `SP` or `SP − (autosize − 128)`, with `BLS` to the morestack tail; then the
+    frame (`frameOK`: `SP − autosize`, the caller's `LR` at `0(SP)` and `FP` at `−8(SP)`,
+    `R29 = SP − 8`, no load).
+  - The epilogue at a P0 `RET` (`retOK`).
+  - The morestack tail (`checkTail`: the register-argument spills, the call, the reloads, the jump
+    back).
+- **Out of scope.** Words after the tail (literal pools, padding) are never executed by the
+  checked ranges.
+
+P0's `RET` (without operand, or of a symbol) is stuck in `runProg`, because its meaning is the
+epilogue, stated on the machine. `arm64-decode` on quick-v10 after this change: 429,386/429,386
+Progs and 122,770/122,770 blocks match.
+
+**Coverage** (`lake exe obj-check --jobs 8 [--accept <gen-check table>] <corpus>/quick-v10`; the
+assembler port `GoFV.Asm.flush` on each `prog0` section, as `asm-parity`; 0 parse or port
+errors):
+
+| Functions | Accepted | P0 Progs in accepted functions |
+| --: | --: | --: |
+| 9,297 | 5,533 (59.51%) | 157,472 of 429,130 |
+| G7 slice: 2,109 | 2,108 (99.95%) | |
+| G8 slice: 2,323 | 2,322 (99.95%) | |
+| G9 slice: 2,551 | 2,550 (99.96%) | 51,122 of 51,143 |
+
+The one slice function that is rejected is `init.func47` of `test/nilptr2`: its `LDP` is
+assembled with a literal-pool load (`LDR literal`), which is not modelled. The most frequent
+reasons outside the slices (functions each occurs in) are:
+- indirect `CALL` 936;
+- `CSET` 463;
+- the acquire loads `LDAR`/`LDARW`/`LDARB` 296/188/54;
+- `CSEL` 224;
+- SIMD&FP moves (`FMOVD` 156, `FLDPQ` 83);
+- `LSL` by a register 133;
+- `MUL` 78;
+- the atomics (`LDADDAL*`, `CASAL*`, `STLR*`).
