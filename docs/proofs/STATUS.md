@@ -528,6 +528,18 @@ struct wrapper of `reflect.flag.ro`, which G24 rejects: `CSEL NE, R1, ZR, R0` wi
 `CMP $0` on 32, after which `runLoc`'s `R0` holds 32 and the machine's `X0` is 32). Coverage on
 quick-v10 (`lake exe gen-check`): 4,925 of 9,297 functions (52.97%), 111,247 values.
 
+## Phase 3: genssa, slice G26 (I7, #553)
+
+`GoFV.Proof.Gen.g26_value`, `GoFV.Proof.Gen.g26_term`, `GoFV.Proof.Gen.g26_nilPanic`,
+`GoFV.Proof.Gen.g26_boundsPanic` (`GoFV/Proof/Gen/G26.lean`): when slice G26 (`checkG26`: G25 on a
+function with an arm64 op; on one without, which `runLoc` runs in Phase 1's mode, G1's
+`MakeResult`, `InlMark` and `Copy` in `Ret` blocks) accepts a function, they are `g25_value`'s,
+`g25_term`'s, `g25_nilPanic`'s and `g25_boundsPanic`'s statements under the same premises. No new
+trusted premise. Witness `genG26_value_witness` (`main.func1` of examples/generics, which holds no
+arm64 op and which G25 rejects: its `Copy`, `MOVD R2, R0`, with `x = 7`, after which `runLoc`'s `R0`
+holds 7 and the machine's `X0` is 7). Coverage on quick-v10 (`lake exe gen-check`): 5,172 of 9,297
+functions (55.63%), 111,802 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g12_obj_value`, `g12_obj_term` (`GoFV/Proof/Obj/G12.lean`): `g12_value`/`g12_term`
