@@ -2,10 +2,10 @@ import GoFV.Asm.As
 import GoFV.SSA.Export
 
 /-!
-# Prog IR and the `gofv-prog 2` file
+# Prog IR and the `gofv-prog 3` file
 
 Lean mirrors of `cmd/internal/obj`'s `Addr`, `Prog`, `Reloc`, the `FuncInfo` fields and the
-frame layout, as the Phase 3 export writes them (`docs/contracts/export.md`, "gofv-prog 2";
+frame layout, as the Phase 3 export writes them (`docs/contracts/export.md`, "gofv-prog 3";
 `docs/PASSES3.md` §1.1, §2). Every field is kept, defaults included: `checkaddr` and `aclass`
 branch on them. Register fields are obj register numbers (`int16`, `REG_R0 = 8192`, arrangement
 and extension encodings included; `GoFV.SSA.ARM64.Register.objNum` maps dense SSA registers to
@@ -135,6 +135,16 @@ structure InlDef where
   name : GoStr
   deriving DecidableEq, Inhabited
 
+/-- What `.prog` files add to a position base (v3): `Filename()` (the name positions report,
+`RelFilename`), and the base's own position `Pos()` (`RelFilename()`, `Line()`, `Col()`), which
+`src.Pos.Before`, `RelLine` and `RelCol` read. -/
+structure PosBaseExt where
+  filename : GoStr
+  posFilename : GoStr
+  posLine : Nat
+  posCol : Nat
+  deriving DecidableEq, Inhabited, Repr
+
 /-- A definition line. Definitions are numbered per file and written before their first use. -/
 inductive Def where
   | type (n : Nat) (d : TypeDef)
@@ -142,7 +152,7 @@ inductive Def where
   /-- An `*obj.LSym` by name and ABI. -/
   | sym (n : Nat) (name : GoStr) (abi : Nat)
   /-- A position base; `fileIndex` is `PosBase.FileIndex()` (`none`: not registered). -/
-  | posBase (i : Nat) (b : PosBase) (fileIndex : Option Int)
+  | posBase (i : Nat) (b : PosBase) (fileIndex : Option Int) (ext : PosBaseExt)
   | inl (k : Nat) (d : InlDef)
   deriving DecidableEq, Inhabited
 
@@ -276,15 +286,33 @@ structure GenIn where
   warns : Array GoStr
   deriving Inhabited
 
-/-- The prog0 section: the Prog list after `genssa` (after `defframe`, before `Flush`; P0). -/
-structure Prog0 where
-  defs : Array Def
-  progs : Array Prog
-  fn : FuncInfo
-  /-- `Dcl` names with `Needzero` after liveness. -/
-  needzero : Array Nat
-  regArgs : Array RegArg
-  warns : Array GoStr
+/-- `ssa.LocListEntry`: a location list entry in SSA coordinates (`BlockStart` = -10000,
+`BlockEnd` = -20000, `FuncEnd` = -30000 as value IDs) and its DWARF location expression. -/
+structure LocEntry where
+  startBlock : Int
+  startValue : Int
+  endBlock : Int
+  endValue : Int
+  expr : ByteArray
+  deriving Inhabited
+
+instance : BEq LocEntry where
+  beq a b := a.startBlock == b.startBlock && a.startValue == b.startValue &&
+    a.endBlock == b.endBlock && a.endValue == b.endValue && a.expr.data == b.expr.data
+
+/-- `ssa.FuncDebug` after `BuildFuncDebug` (E1, `dbg*` lines of `prog0`, v3). -/
+structure FuncDebug where
+  entry : Int
+  /-- `Slots` by `SlotID`: name, type, offset. -/
+  slots : Array (Nat × Option Nat × Int)
+  /-- `Vars` by `VarID` with `VarSlots`. -/
+  vars : Array (Nat × Array Nat)
+  /-- The nonempty `LocationLists`: (`VarID`, entries). -/
+  lists : Array (Nat × Array LocEntry)
+  regOutputParams : Array Nat
+  /-- `GetPC` at the cut for the list endpoints it resolves through a Prog (every endpoint
+  but `FuncEnd` and the entry block's `BlockStart`): (block, value, Prog ID). -/
+  pcs : Array (Int × Int × Nat)
   deriving Inhabited
 
 /-- `obj.Reloc`; `type` is `objabi.RelocType.String()`. -/
@@ -295,6 +323,29 @@ structure Reloc where
   add : Int
   sym : Option Nat
   deriving DecidableEq, Inhabited
+
+/-- The prog0 section: the Prog list after `genssa` (after `defframe`, before `Flush`; P0). -/
+structure Prog0 where
+  defs : Array Def
+  progs : Array Prog
+  fn : FuncInfo
+  /-- `Dcl` names with `Needzero` after liveness. -/
+  needzero : Array Nat
+  regArgs : Array RegArg
+  /-- The text symbol's `Size`, `Align`, `P` and `R` at the cut (v3; `R` holds the marker
+  relocations the frontend and the SSA passes added). -/
+  textSize : Int
+  textAlign : Int
+  text : ByteArray
+  relocs : Array Reloc
+  /-- `LSym.Align` of the symbols the Prog operands reference, where nonzero (v3). -/
+  symAlign : Array (Nat × Int)
+  /-- `FuncInfo.Autot`: the type symbols of autos recorded for DWARF (a set, number order). -/
+  autot : Array Nat
+  /-- `curfn.DebugInfo` after `genssa` (`none`: not set). -/
+  dbg : Option FuncDebug
+  warns : Array GoStr
+  deriving Inhabited
 
 /-- Contents of a data symbol (`data` line): kind (`objabi.SymKind.String()`), size, alignment,
 raw attributes, bytes, relocations. -/
@@ -346,7 +397,147 @@ structure Asm where
   warns : Array GoStr
   deriving Inhabited
 
-/-- A `gofv-prog 2` file. -/
+/-- The location list of a `dwarf.Var`: none, the `FuncDebug` variable's, or one `dwarfgen`
+built (the heap-dereference list of a conservative variable). -/
+inductive VarList where
+  | none
+  | var (k : Nat)
+  | entries (es : Array LocEntry)
+  deriving Inhabited, BEq
+
+/-- `dwarf.Var` (`var` line). -/
+structure DwVar where
+  scope : Int
+  name : GoStr
+  tag : Nat
+  withLoclist : Bool
+  isReturnValue : Bool
+  isInlFormal : Bool
+  dictIndex : Nat
+  stackOffset : Int
+  type : Option Nat
+  declFile : GoStr
+  declLine : Nat
+  declCol : Nat
+  inlIndex : Int
+  childIndex : Int
+  isInAbstract : Bool
+  closureOffset : Int
+  list : VarList
+  deriving Inhabited, BEq
+
+/-- `dwarf.Scope`; its variables by index into `Dwarf.vars`. -/
+structure DwScope where
+  parent : Int
+  ranges : Array (Int × Int)
+  vars : Array Nat
+  deriving Inhabited, BEq
+
+/-- `dwarf.InlCall`; `CallPos` as (`FileIndex()`, `RelLine()`); its variables by index into
+`Dwarf.vars`. -/
+structure DwInlCall where
+  inlIndex : Int
+  callFile : Int
+  callLine : Nat
+  absFun : Option Nat
+  children : Array Nat
+  root : Bool
+  ranges : Array (Int × Int)
+  vars : Array Nat
+  deriving Inhabited, BEq
+
+/-- `populateDWARF`'s `dwarf.FnState` (`dwfn` line): the DWARF symbols, the name, `StartPos`
+as (`FileIndex()`, `RelLine()`), `External`, `s.Wrapper()`, `UseBASEntries`, `DwTextCount`. -/
+structure DwFn where
+  info : Nat
+  loc : Option Nat
+  ranges : Nat
+  absfn : Option Nat
+  lines : Nat
+  name : GoStr
+  startFile : Int
+  startLine : Nat
+  external : Bool
+  wrapper : Bool
+  useBASEntries : Bool
+  dwTextCount : Nat
+  deriving Inhabited
+
+/-- The facts `dwarfgen.Info` reads of one of the function's own `*ir.Name`s (`dwname` line)
+besides its definition: `Op() == ONAME`, `Used()`, `IsAutoTmp`, `InlFormal()`, `InlLocal()`,
+`DictIndex`, `FrameOffset()`, `IsOutputParamInRegisters()`, `Heapaddr`, the position of
+`Canonical()` (when not itself: a captured variable's declaration in the enclosing function),
+`TypeSymName` of its type (`none`: not exported, the name is not one `Info` may make a variable
+of or the type's size is unknown), `IsUntyped()`, kind `TSSA`, `CanSSA` (`none` likewise) and
+`Pos()`. -/
+structure DwName where
+  name : Nat
+  oname : Bool
+  used : Bool
+  autotmp : Bool
+  inlFormal : Bool
+  inlLocal : Bool
+  dictIndex : Nat
+  frameOffset : Int
+  outregs : Bool
+  heapaddr : Option Nat
+  canonicalPos : Option Pos
+  typeSym : Option GoStr
+  untyped : Bool
+  tssa : Bool
+  canSSA : Option Bool
+  pos : Pos
+  deriving Inhabited, BEq
+
+/-- A pre-inlining declaration of an inlined function (`dwinldcl` line): the function symbol,
+`Sym().Name`, `Type().IsUntyped()` and `Pos()`, what `preInliningDcls` and
+`makePreinlineDclMap` read of it. -/
+structure DwInlDcl where
+  fn : Nat
+  sym : GoStr
+  untyped : Bool
+  pos : Pos
+  deriving Inhabited, BEq
+
+/-- The dwarf section (v3): `populateDWARF`'s state and the function's DWARF symbols at the
+end of `Compile` (E2). -/
+structure Dwarf where
+  defs : Array Def
+  /-- `none` when `populateDWARF` did not run. -/
+  fn : Option DwFn
+  /-- `dwarfgen.Info`'s inputs besides the frame, `FuncDebug` and Progs: `fn.Dcl`; `Needctxt()`
+  and the closure variables' offsets (`NewClosureStructIter`, with `Heapaddr` entries);
+  `fn.Marks` (position, scope); `fn.Parents`; the signature's parameter names
+  (`RecvParamsResults`, `none` when not a name); the function's own pre-inlining `Inl.Dcl` when
+  it was inlined: (function, abstract-function symbol, names); the other inlined functions
+  (function, abstract-function symbol) and their pre-inlining declarations; the own names'
+  facts. -/
+  dcl : Array Nat
+  needctxt : Bool
+  closure : Array (Nat × Int)
+  marks : Array (Pos × Nat)
+  parents : Array Nat
+  params : Array (Option Nat)
+  precursors : Array (Nat × Nat × Array Nat)
+  inlFns : Array (Nat × Nat)
+  inlDcls : Array DwInlDcl
+  names : Array DwName
+  /-- Every distinct `dwarf.Var` of the scopes and inlined calls (identity matters:
+  `putscope` skips the variables of inlined calls), the scopes' first. -/
+  vars : Array DwVar
+  scopes : Array DwScope
+  inlCalls : Array DwInlCall
+  /-- Child-DIE references (`ReferenceChildDIE`): symbol, relocation index, abstract function,
+  declaration index; the relocations' `Add` are written before any child offset is added. -/
+  dieRefs : Array (Nat × Nat × Nat × Int)
+  /-- `RegisterChildDIEOffsets` of the abstract function: (`ChildIndex`, offset). -/
+  dieOffs : Option (Nat × Array (Int × Int))
+  /-- info, loc, ranges, debug lines, abstract function (those that exist). -/
+  data : Array SymData
+  warns : Array GoStr
+  deriving Inhabited
+
+/-- A `gofv-prog 3` file. -/
 structure ProgFile where
   pkg : GoStr
   name : GoStr
@@ -356,6 +547,7 @@ structure ProgFile where
   genin : GenIn
   prog0 : Prog0
   asm : Asm
+  dwarf : Dwarf
   deriving Inhabited
 
 end GoFV.Asm

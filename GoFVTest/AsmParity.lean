@@ -4,8 +4,9 @@ import GoFV.Asm.Parse
 /-!
 # `asm-parity`: Phase 3 I4 parity (`Flushplist`: linkpatch … linkpcln)
 
-For every `*.prog` file (`gofv-prog 2`, `docs/contracts/export.md`) under the given directories,
-runs `GoFV.Asm.flush` on the `prog0` section (P0) and compares the result with the `asm`
+For every `*.prog` file (`gofv-prog 3`, `docs/contracts/export.md`) under the given directories,
+runs `GoFV.Asm.flush` on the `prog0` section (P0, with the text symbol's marker relocations and
+the operands' symbol alignments) and compares the result with the `asm`
 section (M), per function:
 
 1. **progs**: the final Prog list (ID, order and every field: `Pc`, `Spadj`, `Isize`, `Optab`,
@@ -14,25 +15,15 @@ section (M), per function:
 2. **funcinfo**: the text symbol's `FuncInfo` (`Args`, `Locals`, `FuncID`, `FuncFlag`,
    `StartLine`, attributes, spills, inline marks, jump tables, funcaux symbols);
 3. **text**: `Size`, `Align`, `P` (the first differing word is reported with the Prog at its PC)
-   and `R` in append order;
+   and `R` in append order (the `prog0` relocations, then the assembler's);
 4. **pcln**: the contents of pcsp, pcfile, pcline, pcinline and of every pcdata slot (the
    symbols are anonymous), the funcdata slots (symbols by name), `UsedFiles` and the local
    inlining tree;
 5. **data**: the contents of the symbols the assembler writes besides the text and pc-value
    tables: `$`-constants (by name) and jump tables.
 
-A function is an end-to-end match when all five match. Each mismatch is reported with a class
-(the first differing item) and counted per class. A difference whose cause is outside the port
-is classed `explained:<class>`, counts as a match of its cut, and the function as an
-end-to-end match "with explained differences" (separate row); the classes are documented in
-`docs/PARITY.md` ("Phase 3: assembler"). `explained:text:sym-align`: the stock encoding shows a
-symbol's `LSym.Align` below the access size of a `C_ADDR` load/store, which the export does not
-record; the port is rerun with `Align = 1` for those symbols and must then match exactly.
-`explained:text:reloc:pre-flush-markers`:
-the frontend's zero-size marker relocations (`R_USEIFACE`, `R_USEIFACEMETHOD`,
-`R_USENAMEDMETHOD`, `R_USEGENERICIFACEMETHOD`) that are on `LSym.R` before `Flushplist` and that
-the export's `prog0` section does not record; the assembler's relocations must follow them
-exactly.
+A function is an end-to-end match when all five match, byte for byte. Each mismatch is
+reported with a class (the first differing item) and counted per class.
 
 usage: `lake exe asm-parity [--jobs N] [--max-report N] [--table FILE] <dir|file>...`; exit status
 1 on any mismatch, port error or parse error.
@@ -155,8 +146,6 @@ structure Stats where
   pclnMatch : Nat := 0
   dataMatch : Nat := 0
   allMatch : Nat := 0
-  /-- End-to-end matches with only explained differences. -/
-  explainedMatch : Nat := 0
   progs : Nat := 0
   textBytes : Nat := 0
   classes : Std.HashMap String Nat := {}
@@ -168,7 +157,6 @@ def Stats.merge (a b : Stats) : Stats :=
     progsMatch := a.progsMatch + b.progsMatch, fnMatch := a.fnMatch + b.fnMatch,
     textMatch := a.textMatch + b.textMatch, pclnMatch := a.pclnMatch + b.pclnMatch,
     dataMatch := a.dataMatch + b.dataMatch, allMatch := a.allMatch + b.allMatch,
-    explainedMatch := a.explainedMatch + b.explainedMatch,
     progs := a.progs + b.progs, textBytes := a.textBytes + b.textBytes,
     classes := b.classes.fold (fun m k v => m.alter k (some <| ·.getD 0 + v)) a.classes,
     reports := a.reports ++ b.reports,
@@ -245,11 +233,6 @@ def Cmp.fn (c : Cmp) : Option (String × String) := Id.run do
     return some ("fn:funcaux", s!"port {(auxes a.aux c.ours).map symStr}, stock {(auxes b.aux c.stock).map symStr}")
   return none
 
-/-- Relocation types the frontend puts on a function's `LSym.R` before assembly. -/
-def preFlushMarker (t : String) : Bool :=
-  t == "R_USEIFACE" || t == "R_USEIFACEMETHOD" || t == "R_USENAMEDMETHOD" ||
-  t == "R_USEGENERICIFACEMETHOD"
-
 /-- The first differing 4-byte word of two byte arrays. -/
 def firstDiff (a b : ByteArray) : Option Nat := Id.run do
   for k in [0:max a.size b.size] do
@@ -277,18 +260,7 @@ def Cmp.text (c : Cmp) : Option (String × String) := Id.run do
   let ours := s.textR.map (rel c.ours)
   let stock := x.relocs.map (rel c.stock)
   let fmt := fun ((o, s, t, a, y) : Int × Nat × String × Int × SymKey) => s!"{o} {s} {t} {a} {symStr y}"
-  match cmpArr "text:reloc" fmt (· == ·) ours stock with
-  | none => none
-  | some r =>
-    -- The frontend's marker relocations (`reflectdata.MarkTypeUsedInInterface`,
-    -- `MarkUsedIfaceMethod`, `walk` for `MethodByName`) are on `LSym.R` before `Flushplist`
-    -- appends the assembler's, and `prog0` does not record `LSym.R`.
-    let k := stock.size - ours.size
-    if stock.size ≥ ours.size && stock.extract k stock.size == ours &&
-        (stock.extract 0 k).all fun (_, siz, t, _, _) => siz == 0 && preFlushMarker t then
-      some ("explained:text:reloc:pre-flush-markers", s!"{k} marker relocations before the \
-        assembler's: {(stock.extract 0 k).toList.map fmt}")
-    else some r
+  cmpArr "text:reloc" fmt (· == ·) ours stock
 
 def Cmp.dataOf (c : Cmp) (ours : Bool) (y : Option Nat) : Option CData :=
   y.bind fun k =>
@@ -335,24 +307,6 @@ def Cmp.data (c : Cmp) : Option (String × String) := Id.run do
         {(dx.map cdataStr).getD "none"}, stock {(dy.map cdataStr).getD "none"}")
   return none
 
-/-- Symbols whose `LSym.Align` the stock encoding shows to be below the access size: operands
-of `C_ADDR` loads/stores (`movesize` 0–3) at an aligned offset that the stock assembled to 12
-bytes (the next Prog's PC). -/
-def addrAlignHints (pf : ProgFile) : Std.HashMap Nat Int := Id.run do
-  let ps := pf.asm.progs
-  let mut m := {}
-  for h : i in [0:ps.size] do
-    let p := ps[i]
-    let some o := optabAt? p.optab | continue
-    let sz := movesize p.as
-    if sz < 0 || sz > 3 then continue
-    let some q := ps[i + 1]? | continue
-    if q.pc - p.pc != 12 then continue
-    for (cls, a) in [(o.a1, p.from_), (o.a4, p.to)] do
-      if cls == ARM64.C_ADDR.toNat && a.offset % (2 ^ sz.toNat : Nat) == 0 then
-        if let some y := a.sym then m := m.insert y 1
-  return m
-
 /-! ## Driver -/
 
 def checkFile (maxReport : Nat) (path : System.FilePath) (st : Stats) : IO Stats := do
@@ -369,35 +323,12 @@ def checkFile (maxReport : Nat) (path : System.FilePath) (st : Stats) : IO Stats
   | .error msg => return st.record maxReport file (errClass msg) msg
   | .ok out =>
   let fsyms := fileSyms pf
-  let cmps (out : FlushOut) : Array (Option (String × String)) :=
-    let c : Cmp := { ours := fun k => out.st.syms[k]?, stock := fun k => fsyms[k]?, out, pf }
-    #[c.progs, c.fn, c.text, c.pcln, c.data]
-  let real (rs : Array (Option (String × String))) : Bool :=
-    rs.any fun r => match r with | some (cls, _) => !cls.startsWith "explained:" | none => false
-  let mut rs := cmps out
-  -- Unrecorded symbol alignment: rerun with `LSym.Align = 1` for the symbols of `C_ADDR`
-  -- loads/stores whose stock encoding is the 12-byte form although their offset is aligned
-  -- (`Optab.size`, `asm7.go:1107-1140`), and accept only an exact match.
-  if real rs then
-    let al := addrAlignHints pf
-    if !al.isEmpty then
-      if let .ok out2 := flush pf al then
-        let rs2 := cmps out2
-        if !real rs2 then
-          let syms := al.toList.map fun (k, _) => symStr fsyms[k]?
-          rs := rs2.push (some ("explained:text:sym-align", s!"with Align 1 for {syms}"))
+  let c : Cmp := { ours := fun k => out.st.syms[k]?, stock := fun k => fsyms[k]?, out, pf }
+  let rs := #[c.progs, c.fn, c.text, c.pcln, c.data]
   let mut st := st
   let mut ok := true
-  let mut exact := true
   for h : sel in [0:rs.size] do
-    let get := rs[sel]
-    let mut res := get
-    if let some (cls, m) := get then
-      if cls.startsWith "explained:" then
-        st := st.record maxReport file cls m
-        exact := false
-        res := none
-    match res with
+    match rs[sel] with
     | none =>
       st := match sel with
         | 0 => { st with progsMatch := st.progsMatch + 1 }
@@ -407,9 +338,7 @@ def checkFile (maxReport : Nat) (path : System.FilePath) (st : Stats) : IO Stats
         | 4 => { st with dataMatch := st.dataMatch + 1 }
         | _ => st
     | some (cls, m) => st := st.record maxReport file cls m; ok := false
-  if ok then
-    st := if exact then { st with allMatch := st.allMatch + 1 }
-      else { st with explainedMatch := st.explainedMatch + 1 }
+  if ok then st := { st with allMatch := st.allMatch + 1 }
   return st
 
 def progFiles (p : System.FilePath) : IO (Array System.FilePath) := do
@@ -445,8 +374,7 @@ def tableText (st : Stats) (ms : Nat) : String := Id.run do
   let mut out := s!"| cut | functions | match | mismatch | parity |\n| --- | ---: | ---: | ---: | ---: |\n"
   for (k, m) in [("Prog list (D2–D6)", st.progsMatch), ("FuncInfo", st.fnMatch),
                  ("text P/R (D4, D5)", st.textMatch), ("pc tables, funcdata (D7)", st.pclnMatch),
-                 ("constants, jump tables", st.dataMatch), ("end to end, exact", st.allMatch),
-                 ("end to end, exact or explained", st.allMatch + st.explainedMatch)] do
+                 ("constants, jump tables", st.dataMatch), ("end to end", st.allMatch)] do
     out := out ++ s!"| {k} | {n} | {m} | {n - m} | {pct m n} |\n"
   out := out ++ s!"\n{st.progs} asm Progs, {st.textBytes} text bytes, {st.parseErrors} parse errors, {ms} ms\n"
   let cls := st.classes.toArray.qsort fun a b => a.2 > b.2 || (a.2 == b.2 && a.1 < b.1)
@@ -481,7 +409,7 @@ def main (args : List String) : IO UInt32 := do
   let t := tableText st ms
   IO.println t
   if let some f := o.table then IO.FS.writeFile f t
-  return if st.files > 0 && st.allMatch + st.explainedMatch == st.files && st.parseErrors == 0
+  return if st.files > 0 && st.allMatch == st.files && st.parseErrors == 0
     then 0 else 1
 
 end GoFVTest.AsmParity

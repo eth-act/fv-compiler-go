@@ -41,6 +41,8 @@ structure AsmCtxt where
   maymorestack : String := ""
   /-- Position bases by `XPos` index: the base and `FileIndex()` (`none`: not registered). -/
   posBases : Std.HashMap Nat (PosBase × Option Int) := {}
+  /-- The bases' `Filename()` and own position (`PosBase.Pos()`) by `XPos` index. -/
+  posExt : Std.HashMap Nat PosBaseExt := {}
   /-- Nodes of the global inlining tree (`base.Ctxt.InlTree`) by index. -/
   inls : Std.HashMap Nat InlDef := {}
   deriving Inhabited

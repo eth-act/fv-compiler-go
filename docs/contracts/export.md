@@ -1,4 +1,4 @@
-# Contract: per-pass SSA export (`gofv-ssa` v5.1) and Phase 3 export (`gofv-prog 2`)
+# Contract: per-pass SSA export (`gofv-ssa` v5.1) and Phase 3 export (`gofv-prog 3`)
 
 Owner: Exporter (issue #4; format 5: #379). Consumers: LeanIR (parser/printer, #21), RulesExport
 (#22), every pass port (G4, H*). Changing the format bumps the version in the first line and is
@@ -12,9 +12,11 @@ one line per section, `dcllen` (section "Format 5.1"). The parser reads v2–v5 
 
 Phase 3 (#546, I1 #547) adds a second format in a separate file next to each `.ssa` file: the
 `gofv-prog` record (`<name>,<abi>.prog`) with the frame layout, the inputs `genssa` reads, the
-Prog list after `genssa` and the assembled function (section "Phase 3: `gofv-prog 2`" below).
+Prog list after `genssa` and the assembled function (section "Phase 3: `gofv-prog 3`" below).
 It leaves the `.ssa` files byte-identical. Version 2 (#549, I3) adds what the `genssa` port
-reads besides the SSA (section "Version 2").
+reads besides the SSA (section "Version 2"). Version 3 (#550, #551) adds the text symbol's
+relocations and the operands' symbol alignments at the `prog0` cut, `BuildFuncDebug`'s result
+and the `dwarf` section (section "Version 3").
 
 The patched `go1.27.3` compiler (`patches/go/*.patch`, built by `scripts/build-go.sh` into
 `third_party/go-build`) writes, for each selected function, the complete SSA state the passes
@@ -547,12 +549,14 @@ one of them must raise it on #4.
   `fe.Func().SetWBPos`, `StringData` creating the data symbol, warnings): they do not change
   the SSA of this or any other function.
 
-## Phase 3: `gofv-prog 2`
+## Phase 3: `gofv-prog 3`
 
-Owner: Phase3IO (I1 #547; tracking #546; `docs/PASSES3.md` §2); version 2: Phase3Gen (I3 #549).
+Owner: Phase3IO (I1 #547; tracking #546; `docs/PASSES3.md` §2); version 2: Phase3Gen (I3 #549);
+version 3: Phase3Asm2 (I4 #550, I5 #551).
 Consumers: `GoFV.Asm` (`GoFV/Asm/{As,Prog,Parse,Print}.lean`, I2 #548), the `asm-check` round
 trip, the I3 port's input (`GoFV.Gen.Env`) and the `gen-parity` check, and the I4 port
-(`GoFV.Asm.flush`, input `prog0`, checked against `asm` by `asm-parity`, `docs/PARITY.md`). A change bumps the
+(`GoFV.Asm.flush`, input `prog0`, checked against `asm` by `asm-parity`, `docs/PARITY.md`) and
+the I5 ports (`GoFV.Dwarf`, checked against `dwarf` by `dwarf-parity`). A change bumps the
 version on the first line and is announced on #546. The parser reads only the current version.
 
 For every function whose `.ssa` file the exporter writes (same selection, `GOFV_SSA_EXPORT`,
@@ -577,6 +581,7 @@ Prog reuse and sorts `LSym.R` in place, `docs/PASSES3.md` §2), so the object co
 | `genin` | in `ssagen.Compile`, after `buildssa` and the first frame-size check, before `objw.NewProgs` and `genssa` | genssa's frontend inputs |
 | `prog0` | after `genssa` returns (after `defframe`), before the frame-size check and `Flush` | P0 |
 | `asm` | at the end of `ssagen.Compile`: after `Flush` (`Flushplist`: `linkpatch`, `progedit`, `preprocess`, `span7`, `linkpcln`, `populateDWARF`), `weakenGlobalMapInitRelocs` and `fieldtrack` | M |
+| `dwarf` | `populateDWARF`'s state when `dwarfgen.Info` has returned, before the DIE writer runs (v3); its symbols at the end of `ssagen.Compile` | D |
 
 The lexical format is the one above ("Lexical format"): strings, decimal integers, `-` for none
 and empty lists, comma lists, positions `p<index>:<line>:<col>:<stmt>:<xlogue>`. Additionally:
@@ -586,7 +591,7 @@ per byte, `-` when empty; `<hexnum>`: a number without leading zeros).
 ### File layout
 
 ```
-gofv-prog 2
+gofv-prog 3
 pkg "<base.Ctxt.Pkgpath>"
 func "<f.Name>" <abi>
 config <key> <value>                  (one line per key; table below)
@@ -614,6 +619,16 @@ p …                                   (the Prog list from pp.Text along Link, 
 <funcinfo>
 needzero <n,…>                        (Dcl names with Needzero after liveness, Dcl order)
 regargs <reg>:<offset>:<t>,…          (f.RegArgs: obj register, frame offset, type)
+text <size> <align> <bytes> <nrelocs> (v3: LSym.Size, Align, P, R of the text symbol at the cut)
+reloc …                               (nrelocs lines: the frontend's and the SSA passes' markers)
+symalign <y>:<align>,…                (v3: LSym.Align of the Prog operands' symbols, nonzero ones)
+autot <y,…>                           (v3: FuncInfo.Autot, the autos' type symbols recorded for DWARF)
+dbgentry <EntryID>|-                  (v3: BuildFuncDebug's result, section "DWARF" below)
+dbgslot <k> <n> <t> <off>
+dbgvar <k> <n> <slot,…>
+dbgloc <VarID> <entry,…>
+dbgregout <n,…>
+dbgpc <b>:<v>:<id>,…
 warn "<text>"
 end
 asm
@@ -626,6 +641,26 @@ pcln <pcsp y> <pcfile y> <pcline y> <pcinline y> <pcdata y|_,…> <funcdata y|_,
 usedfiles <i,…>                       (Pcln.UsedFiles, ascending)
 inltree <i> <parent> <pos> <func y|-> "<name>" <parentpc>   (Pcln.InlTree, the local tree, i = 0, 1, …)
 data <y> <kind> <size> <align> <attr hexnum> <bytes> <nrelocs>   (zero or more; reloc lines follow)
+warn "<text>"
+end
+dwarf                                 (v3; section "DWARF" below)
+<definitions>
+dwfn …                                (when populateDWARF ran; then the dwarfgen.Info inputs:)
+dwdcl …
+dwclosure …
+dwmark …
+dwparents …
+dwparams …
+dwprecursor …
+dwinlfn …
+dwinldcl …
+dwname …
+var …
+scope …
+inlcall …
+dieref …
+dieoff …
+data …
 warn "<text>"
 end
 eof
@@ -673,8 +708,12 @@ references.
   `outheapaddr` (`IsOutputParamHeapAddr`), in that order.
 - `sym y<k> "<name>" <abi>`: an `*obj.LSym`, numbered by identity (`LSym.ABI()`). Contents are
   written only in `data` lines (below) and the `text` line.
-- `posbase p<index> "<abs filename>" <line> <col> <inl> <fileindex>`: as in `.ssa` files plus
-  `FileIndex()` (the file number `pcfile` uses; `?` if the base is not registered).
+- `posbase p<index> "<abs filename>" <line> <col> <inl> <fileindex> "<filename>" "<pos filename>"
+  <pos line> <pos col>`: as in `.ssa` files plus `FileIndex()` (the file number `pcfile` uses; `?`
+  if the base is not registered) and (v3) `Filename()` (what `RelFilename` reports) and the
+  base's own position `Pos()`: `RelFilename()`, `Line()`, `Col()` (`src.Pos.Before` compares
+  `Pos().RelFilename()`; `RelLine`/`RelCol` subtract `Pos().Line()`/`Col()`; a `//line` base's
+  position is the directive's).
 - `inl i<k> <parent i|-> <pos> <func y|-> "<name>"`: node `k` of the global inlining tree
   (`base.Ctxt.InlTree`: parent, call position, inlined function, bare name), defined with its
   parents before the first `posbase` whose `inl` is `k`.
@@ -721,6 +760,80 @@ words, as they are when the function's `Compile` ends: shared, content-addressed
 only later, per package, by `addGCLocals` (`gc/obj.go`), so `Sxxx 0` is what a funcdata symbol
 shows here.
 
+### DWARF (v3: `dbg*` lines of `prog0`, the `dwarf` section)
+
+`BuildFuncDebug` (E1, `ssa/debug.go`) runs inside `genssa`; its result, `curfn.DebugInfo`
+(`ssa.FuncDebug`), is in `prog0` (`dbgentry -` and no other `dbg` line when it is not set):
+
+- `dbgentry <EntryID>`; `dbgslot <k> <n> <t> <off>`: `Slots[k]` (`N`, `Type`, `Off`; the
+  splitting is in the `.ssa` file's slot table); `dbgvar <k> <n> <slot,…>`: `Vars[k]` and
+  `VarSlots[k]`; `dbgloc <VarID> <entry,…>`: every nonempty `LocationLists[VarID]`, an entry
+  `<StartBlock>:<StartValue>:<EndBlock>:<EndValue>:<Expr hex|->` (SSA coordinates; the value
+  IDs `BlockStart` -10000, `BlockEnd` -20000, `FuncEnd` -30000); `dbgregout <n,…>`:
+  `RegOutputParams`;
+- `dbgpc <b>:<v>:<id>,…`: `GetPC(b, v)` at the cut for every list endpoint but `FuncEnd` and the
+  entry block's `BlockStart`. `Prog.Pc` is still the Prog's number there, so this is the ID of
+  the Prog whose final `Pc` the endpoint takes (`bstart`, `valueToProgAfter`); a Prog the
+  assembler drops (the trailing `AEND`) keeps that number as its `Pc`.
+
+The `dwarf` section has `populateDWARF`'s `dwarf.FnState` as `dwarfgen.Info` (E2) leaves it,
+recorded by a hook before `PutAbstractFunc`/`PutConcreteFunc`/`PutDefaultFunc` run (they sort
+inlined calls' variables and mark empty calls in place), and the function's DWARF symbols at the
+end of `Compile`. It is empty when `populateDWARF` did not run.
+
+- `dwfn <info y> <loc y|-> <ranges y> <absfn y|-> <lines y> "<Name>" <file>:<line> <External>
+  <wrapper> <UseBASEntries> <DwTextCount>`: the symbols (`dwarfSym`), `TrimInlineHash(s.Name)`,
+  `StartPos` as `FileIndex()`:`RelLine()`, `!s.Static()`, `s.Wrapper()`,
+  `ctxt.UseBASEntries`, `ctxt.DwTextCount` (the `R_DWTXTADDR_U*` size depends on it).
+- `dwarfgen.Info`'s inputs besides the frame, `prog0` (`autot`, `dbg*`, the text relocations)
+  and the final Progs, written at the end of `Compile` (the facts are fixed by then; `Info` has
+  computed the type sizes it needs). They read only state the function owns: other functions
+  are compiled concurrently, and their backends write their names' facts (`Used`,
+  `FrameOffset`, `Heapaddr`, `IsOutputParamInRegisters`, `Class`), so reading them makes the
+  export nondeterministic. `dwdcl <n,…>` (`fn.Dcl`); `dwclosure <Needctxt()>
+  <n>:<offset>,…` (the closure variables' offsets, `NewClosureStructIter`, with their `Heapaddr`
+  names at the same offsets); `dwmark <pos> <scope>` (`fn.Marks`); `dwparents <scope,…>`
+  (`fn.Parents`); `dwparams <n|_,…>` (`fn.Type().RecvParamsResults()` names, `_` when not an
+  `*ir.Name`); `dwprecursor <fn y> <absfn y> <n,…>` (the precursor's `Inl.Dcl` of the function
+  itself when it was inlined, with `AbsFuncDwarfSym`); `dwinlfn <fn y> <absfn y>` for every
+  other function of the file's inlining nodes, then `dwinldcl <fn y> "<Sym().Name>"
+  <IsUntyped> <Pos>` for each name of its precursor's `Inl.Dcl`, in order (all `preInliningDcls`
+  and `makePreinlineDclMap` read of them); `dwname <n> <ONAME> <Used> <IsAutoTmp> <InlFormal>
+  <InlLocal> <DictIndex> <FrameOffset> <IsOutputParamInRegisters> <Heapaddr n|-> <canonical
+  pos|-> "<TypeSymName>"|? <IsUntyped> <TSSA> <CanSSA|?> <Pos>` for every name of `fn.Dcl`,
+  the closure variables, the parameters, the function's own `dwprecursor` names, `OptDcl`,
+  `Vars`, `RegOutputParams` and their `Heapaddr` names. `<canonical pos>` is
+  `Canonical().Pos()` when `Canonical()` is another name (a captured variable's declaration in
+  the enclosing function, `declPos`). `TypeSymName` and `CanSSA` are written only for names
+  `Info` may make a variable of (`shouldEmitDwarfVar`, or an `OptDcl` name) whose type's size
+  is computed, `?` otherwise.
+- `var <k> <Scope> "<Name>" <Tag> <WithLoclist> <IsReturnValue> <IsInlFormal> <DictIndex>
+  <StackOffset> <Type y|-> "<DeclFile>" <DeclLine> <DeclCol> <InlIndex> <ChildIndex>
+  <IsInAbstract> <ClosureOffset> <list>`: every distinct `*dwarf.Var` of the scopes and inlined
+  calls once (`k` = 0, 1, …, the scopes' first; identity matters: `putscope` skips the inlined
+  calls' variables); `list` is `-` (`PutLocationList` nil), `v<VarID>` (the closure writes
+  `LocationLists[VarID]`) or `e<entry,…>` (a list `dwarfgen` built itself, the heap
+  dereference of a conservative variable), recorded by a hook in `dwarfgen`.
+- `scope <k> <Parent> <ranges> <vars k,…>`, `inlcall <k> <InlIndex> <file>:<line> <AbsFunSym
+  y|-> <Children,…> <Root> <ranges> <vars k,…>`: `Scopes` and `InlCalls.Calls` in order;
+  `ranges` is `<Start>:<End>,…` (`-` when empty), `CallPos` as `FileIndex()`:`RelLine()`.
+- `dieref <y> <reloc index> <tgt y> <dclidx>`: every `ReferenceChildDIE` on the function's
+  DWARF symbols (relocation of `y` refers to child `dclidx` of the abstract function `tgt`).
+  `ReferenceChildDIE` adds the child's offset to the relocation's `Add` right away when the
+  target's offsets are already registered, which depends on which function finished first; the
+  `data` lines therefore write those `Add`s without it (the value before any fixup), and
+  `DwarfFixupTable.Finalize` adds the offsets later for the package.
+- `dieoff <absfn y> <ChildIndex>:<offset>,…`: `RegisterChildDIEOffsets` of the abstract
+  function written by this function.
+- `data` lines (format as in `asm`) for the info, loc, ranges, line and abstract-function
+  symbols that exist, at the end of `Compile`. The info symbol starts with `dwarfgen.Info`'s
+  `R_USETYPE` relocations.
+
+Not recorded: `BuildFuncDebug`'s fresh-value allocation (the IDs of the `ArgIntReg`/`ArgFloatReg`
+values `PopulateABIInRegArgOps` adds come from the free list, which the `.ssa` file sorts; they
+only index `valueNames` and their list entries start at `BlockStart`, so the lists do not
+depend on them).
+
 ### Configuration (`config` lines)
 
 | key | source | corpus value |
@@ -760,6 +873,19 @@ the SSA after `trim` and the frame's `Dcl`, so that the port's input is the `.ss
 Everything else in the file is as in version 1; the `.ssa` files are unchanged (quick-v9 has
 the same `.ssa` files as quick-v8).
 
+### Version 3
+
+Version 3 (#550, #551) records what the I4 port needed beyond version 2 to be byte-exact and the
+I5 cut points: the text symbol's `Size`, `Align`, `P` and `R` at the `prog0` cut (`R` holds the
+zero-size marker relocations, `R_USEIFACE`, `R_USEIFACEMETHOD`, `R_USENAMEDMETHOD`, that walk,
+`reflectdata` and the SSA rewrite rules put on the function before `Flushplist` appends the
+assembler's), `symalign` (`Optab.size` reads `LSym.Align` of a `C_ADDR` operand's symbol, e.g. a
+`.stmp_` symbol of alignment 1), the position bases' `Filename()` and `Pos()`, `autot`, the
+`dbg*` lines and the `dwarf` section (hooks
+`obj.GOFVPopulateDWARF`, `GOFVChildDIERef`, `GOFVChildDIEOffsets` in `obj/dwarf.go` and
+`ssa.GOFVDwarfVarList` in `dwarfgen`, nil unless `GOFV_SSA_EXPORT` is set). The `.ssa` files are
+unchanged.
+
 ### Determinism
 
 The `.prog` files are byte-identical across exports (`scripts/export-corpus.sh
@@ -774,8 +900,10 @@ inside `Flushplist` (after `linkpatch`/`progedit` and after `preprocess`, before
 strips the packed `extrasize`); MergeLocals' candidates, evictions and intervals; liveness's
 `Map.Vals`/`UnsafeVals`/`UnsafeBlocks`/`DeferReturn`, the partially live arguments and the
 argument-liveness maps (their results are in the PCDATA Progs, `needzero`, the `defframe`
-spills and the metadata symbols); `bstart` and `valueToProgAfter`; DWARF (E1, E2) and the
-package-level writer (F1, F2). They are added with a version bump when I3–I5 need them.
+spills and the metadata symbols); `bstart` and `valueToProgAfter` (beyond the location list endpoints, `dbgpc`); the package-level
+DWARF (abstract functions of inlined functions of other packages, `DwarfFixupTable.Finalize`)
+and the package-level writer (F1, F2). They are added with a
+version bump when I3–I5 need them.
 
 ### Reading it in Lean
 

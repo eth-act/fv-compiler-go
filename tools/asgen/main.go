@@ -21,12 +21,14 @@
 //   - -optab GoFV/Asm/Optab.lean (optab.go): the integer constants of arm64/asm7.go, optab in
 //     buildop's sorted order, oprange, and the LSE atomic opcode maps;
 //   - -obj GoFV/Asm/ObjConst.lean (optab.go): the integer constants of cmd/internal/obj
-//     link.go (symbol attributes, ABIs, …) except the opcode block.
+//     link.go (symbol attributes, ABIs, …) except the opcode block;
+//   - -dwarf GoFV/Dwarf/Const.lean (dwarf.go): the DW_TAG/AT/FORM/CLS/OP/LLE/RLE/INL/LNS/LNE
+//     and DW_ABRV constants of cmd/internal/dwarf dwarf_defs.go and dwarf.go.
 //
 // Constant values come from go/types (load.go: declarations-only type check of the pinned
 // packages for linux/arm64, errors ignored, every emitted value checked to be known).
 //
-// usage: asgen -go <pinned Go root> -o GoFV/Asm/As.lean [-reg …] [-opasm … -oplean …] [-abi …] [-optab …] [-obj …]
+// usage: asgen -go <pinned Go root> -o GoFV/Asm/As.lean [-reg …] [-opasm … -oplean …] [-abi …] [-optab …] [-obj …] [-dwarf …]
 // -source "<version (rev)>"
 package main
 
@@ -131,6 +133,7 @@ func main() {
 	abiOut := flag.String("abi", "", "output Lean file for the internal/abi constants (Abi.lean)")
 	optabOut := flag.String("optab", "", "output Lean file for the asm7.go tables (Optab.lean; needs the a.out.go names)")
 	objOut := flag.String("obj", "", "output Lean file for the cmd/internal/obj link.go constants (ObjConst.lean)")
+	dwarfOut := flag.String("dwarf", "", "output Lean file for the cmd/internal/dwarf constants (Const.lean)")
 	opLean := flag.String("oplean", "", "GoFV/SSA/Op.lean (constructor names checked by -opasm)")
 	flag.Parse()
 	if *goroot == "" || *out == "" {
@@ -231,6 +234,9 @@ func main() {
 	}
 	if *abiOut != "" {
 		writeFile(*abiOut, genAbi(l, *source))
+	}
+	if *dwarfOut != "" {
+		writeFile(*dwarfOut, genDwarf(l, *source))
 	}
 }
 

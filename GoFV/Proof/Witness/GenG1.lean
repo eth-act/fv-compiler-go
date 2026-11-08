@@ -6,8 +6,9 @@ import GoFV.SSA.Parse
 /-!
 # Non-vacuity witness: slice G1 of the genssa validator on `clamp`
 
-`test/copy/main/clamp,1.ssa` and `test/copy/main/clamp,1.prog` of the corpus
-`gofv-corpus/2aae1000ea1d/quick-v9/plain`, embedded verbatim (`clampSsa`, `clampProg`):
+`test/copy/main/clamp,1.ssa` of the corpus `gofv-corpus/2aae1000ea1d/quick-v9/plain` and
+`test/copy/main/clamp,1.prog` of `quick-v10` (`gofv-prog 3`; the `.ssa` file is unchanged there),
+embedded verbatim (`clampSsa`, `clampProg`):
 
 ```go
 func clamp(x int) int {
@@ -1611,8 +1612,8 @@ typeorder t4,t8,t5,t9,t6,t10,t7,t11,t2,t14,t15,t25,t26,t12,t13,t3,t17,t18,t19,t2
 eof
 "#
 
-/-- `test/copy/main/clamp,1.prog` (quick-v9). -/
-def clampProg : String := r#"gofv-prog 2
+/-- `test/copy/main/clamp,1.prog` (quick-v10). -/
+def clampProg : String := r#"gofv-prog 3
 pkg "main"
 func "clamp" 1
 config arch arm64
@@ -1643,7 +1644,7 @@ opt n2 0 outregs
 stack 0 0 8
 end
 genin
-posbase p2 "./copy.go" 1 1 -1 1
+posbase p2 "./copy.go" 1 1 -1 1 "./copy.go" "./copy.go" 1 1
 sym y1 "main.clamp" 1
 curfn p2:89:6:0:0 0 0
 regargs 8192:0:t1
@@ -1670,6 +1671,15 @@ spill MEM/8383/0/0/NONE/0/8/-/- 8192 0 MOVD MOVD
 funcaux y2 y2 - - y3 y4 -
 needzero -
 regargs -
+text 0 0 - 0
+symalign y2:4,y3:1,y4:1
+autot -
+dbgentry 1
+dbgslot 0 n1 t1 0
+dbgvar 0 n1 0
+dbgloc 0 1:-10000:3:5:50
+dbgregout n2
+dbgpc 3:5:9
 end
 asm
 sym y5 "" 0
@@ -1708,6 +1718,42 @@ data y9 SRODATA 3 1 28000 020800 0
 data y10 SRODATA 3 1 28000 040800 0
 data y11 SRODATA 8 1 28000 b601020202040400 0
 data y12 SRODATA 3 1 28000 000800 0
+end
+dwarf
+sym y13 "" 0
+sym y14 "" 0
+sym y15 "" 0
+sym y16 "go:info.main.clamp$abstract" 0
+sym y17 "" 0
+sym y18 "go:info.int" 0
+sym y19 "type:int" 0
+dwfn y13 y14 y15 y16 y17 "main.clamp" 1:89 1 0 1 22
+dwdcl n1
+dwclosure 0 -
+dwparents -
+dwparams n1,n2
+dwprecursor y1 y16 n1,n2
+dwname n1 1 1 0 0 0 0 0 0 - - "int" 0 0 1 p2:89:12:0:0
+dwname n2 1 0 0 0 0 0 0 1 - - "int" 0 0 1 p2:89:19:0:0
+var 0 0 "n" 5 1 0 0 0 8 y18 "./copy.go" 89 12 0 0 1 0 v0
+var 1 0 "~r0" 5 1 1 0 0 0 y18 "./copy.go" 89 19 0 1 0 0 -
+scope 0 0 - 0,1
+dieref y13 3 y16 0
+dieoff y16 0:15
+data y13 SDWARFFCN 31 0 0 06000000000020019c2900000000000000002e7e7230000159000000000000 6
+reloc 0 0 R_USETYPE 0 y19
+reloc 1 4 R_DWARFSECREF 0 y16
+reloc 5 1 R_DWTXTADDR_U1 0 y1
+reloc 10 4 R_DWARFSECREF 0 y16
+reloc 14 4 R_DWARFSECREF 0 y14
+reloc 25 4 R_DWARFSECREF 0 y18
+data y14 SDWARFLOC 8 0 0 010004000c015000 1
+reloc 1 1 R_DWTXTADDR_U1 0 y1
+data y15 SDWARFRANGE 0 0 0 - 0
+data y17 SDWARFLINES 30 0 0 0009020000000000000000040203d4001406370638063706390210000101 1
+reloc 3 8 R_ADDR 0 y1
+data y16 SDWARFABSFCN 24 0 1 056d61696e2e636c616d7000015901226e00000000000000 1
+reloc 19 4 R_DWARFSECREF 0 y18
 end
 eof
 "#

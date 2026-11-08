@@ -6,7 +6,7 @@ import Std.Data.HashSet
 /-!
 # `Flushplist` for one compiled function (`plist.go:24-178`; `docs/PASSES3.md` D1)
 
-`flush` runs the I4 ports on the `prog0` section of a `gofv-prog 2` file (P0, the Prog list
+`flush` runs the I4 ports on the `prog0` section of a `gofv-prog 3` file (P0, the Prog list
 after `genssa`/`defframe`) in `Flushplist`'s order: the list is cut at `TEXT` with every `AEND`
 dropped, then `linkpatch` with `progedit` and `preprocess` (`GoFV.Asm.Obj7`), `span7`
 (`GoFV.Asm.Span7`), `MarkUnsafePoints` with `isUnsafePoint`/`isRestartable` (which `span7`
@@ -47,15 +47,18 @@ def AsmCtxt.ofFile (pf : ProgFile) : Except String AsmCtxt := do
       maymorestack }
   for d in pf.frame.defs ++ pf.genin.defs ++ pf.prog0.defs do
     match d with
-    | .posBase i b fi => c := { c with posBases := c.posBases.insert i (b, fi) }
+    | .posBase i b fi e =>
+      c := { c with posBases := c.posBases.insert i (b, fi), posExt := c.posExt.insert i e }
     | .inl k x => c := { c with inls := c.inls.insert k x }
     | _ => pure ()
   return c
 
 /-- The state `Flushplist` starts from: the `prog0` Progs by ID, linked in list order from
-`TEXT` without the `AEND` placeholders, the symbols of the sections before `asm`, and the text
-symbol's `FuncInfo`. Jump-table symbols start as `makeJumpTableSym` leaves them (`Sxxx`,
-`AttrStatic`, `ssa/rewrite.go:2486-2491`). -/
+`TEXT` without the `AEND` placeholders, the symbols of the sections before `asm`, the text
+symbol's `FuncInfo`, `Size`, `Align`, `P` and `R` (the frontend's and the SSA passes' marker
+relocations, which the assembler's follow) and the recorded `LSym.Align` of the operands'
+symbols. Jump-table symbols start as `makeJumpTableSym` leaves them (`Sxxx`, `AttrStatic`,
+`ssa/rewrite.go:2486-2491`). -/
 def AsmSt.ofProg0 (pf : ProgFile) : Except String AsmSt := do
   let ps := pf.prog0.progs
   let some text := ps[0]? | throw "prog0: empty Prog list"
@@ -90,8 +93,11 @@ def AsmSt.ofProg0 (pf : ProgFile) : Except String AsmSt := do
     symData := symData.insert y
       { sym := y, kind := "Sxxx", size := 0, align := 0, attr := Obj.AttrStatic.toNat,
         data := .empty, relocs := #[] }
+  let p0 := pf.prog0
   return { progs, link, text := text.id, firstNew := maxId + 1, syms, symIdx, symData,
-           fn := pf.prog0.fn }
+           fn := p0.fn, textP := p0.text, textR := p0.relocs, textSize := p0.textSize,
+           textAlign := p0.textAlign,
+           symAlign := p0.symAlign.foldl (fun m (y, a) => m.insert y a) {} }
 
 /-- `weakenGlobalMapInitRelocs` (`ssagen/pgen.go:331-336,359-378`): in the package init
 function (`AttrPkgInit`; `-d=wrapglobalmapctl` is not set in the corpus), every relocation to
@@ -182,13 +188,10 @@ structure FlushOut where
   fn : FuncInfo
   deriving Inhabited
 
-/-- `Flushplist` on the function of a `.prog` file, from its `prog0` section. `symAlign` gives
-`LSym.Align` of input symbols (by number) that the export does not record (default: unknown,
-0, as for symbols of other packages). -/
-def flush (pf : ProgFile) (symAlign : Std.HashMap Nat Int := {}) : Except String FlushOut := do
+/-- `Flushplist` on the function of a `.prog` file, from its `prog0` section. -/
+def flush (pf : ProgFile) : Except String FlushOut := do
   let ctx ← AsmCtxt.ofFile pf
   let st ← AsmSt.ofProg0 pf
-  let st := { st with symAlign := symAlign }
   let ((), st) ← (flushSteps.run ctx).run st
   let (progs, fn) := renumber st
   return { st, progs, fn }
