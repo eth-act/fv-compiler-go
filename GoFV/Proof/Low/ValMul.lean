@@ -22,8 +22,14 @@ there, as the product is.
 
 namespace GoFV.Proof.Low.Val
 
-open GoFV.SSA GoFV.SSA.Sem GoFV.Rules GoFV.Opt.LowerCheck GoFV.Proof.Low
+open GoFV.SSA GoFV.SSA.Sem GoFV.Rules GoFV.Opt.RewriteCheck GoFV.Opt.LowerCheck GoFV.Proof.Low
 open GoFV.Proof.Pass.Rewrite (putAll get?_putAll_not get?_putAll_mem get?_put defIds DefClosed)
+
+/-- Two lists related elementwise. -/
+inductive Forall2 {α β : Type} (R : α → β → Prop) : List α → List β → Prop where
+  | nil : Forall2 R [] []
+  | cons {a : α} {b : β} {l : List α} {l' : List β} : R a b → Forall2 R l l' →
+      Forall2 R (a :: l) (b :: l')
 
 /-! ## The linear combinations on registers -/
 
@@ -52,30 +58,48 @@ private theorem neg_low {n : Nat} (hn : n ≤ 64) {a a' : BitVec 64}
 private theorem sub_mul' (a b r : BitVec 64) : a * r - b * r = (a - b) * r := by
   rw [BitVec.sub_eq_add_neg, BitVec.sub_eq_add_neg, BitVec.add_mul, BitVec.neg_mul]
 
+/-- The combinations on two arguments. -/
+theorem comboFn_two {o : Op} {k : Int64} {a b c : BitVec 64} (h : comboFn o k [a, b] = some c) :
+    (o = .ARM64ADD ∧ c = a + b) ∨ (o = .ARM64SUB ∧ c = a - b) ∨
+      (o = .ARM64ADDshiftLL ∧ c = a + Arm64.shifted .ll k b) ∨
+      (o = .ARM64SUBshiftLL ∧ c = a + -Arm64.shifted .ll k b) := by
+  simp only [comboFn] at h
+  split at h <;> simp_all
+
+/-- The combinations on one argument. -/
+theorem comboFn_one {o : Op} {k : Int64} {a c : BitVec 64} (h : comboFn o k [a] = some c) :
+    (o = .ARM64NEG ∧ c = -a) ∨ (o = .ARM64SLLconst ∧ c = Arm64.shifted .ll k a) ∨
+      (o = .ARM64NEGshiftLL ∧ c = -Arm64.shifted .ll k a) := by
+  simp only [comboFn] at h
+  split at h <;> simp_all
+
 /-- **The combinations are linear and read their arguments' low bits only**: on registers equal
 in their low `n` bits to multiples of `r` by the multipliers `cs`, `comboFn` is the multiple of
 `r` by its value on `cs` there. -/
 theorem comboFn_lin {n : Nat} (hn : n ≤ 64) {o : Op} {k : Int64} {cs zs : List (BitVec 64)}
     {c : BitVec 64} (r : BitVec 64) (h : comboFn o k cs = some c)
-    (hz : List.Forall₂ (fun z c => z.setWidth n = (c * r).setWidth n) zs cs) :
+    (hz : Forall2 (fun z c => z.setWidth n = (c * r).setWidth n) zs cs) :
     ∃ z, comboFn o k zs = some z ∧ z.setWidth n = (c * r).setWidth n := by
   match zs, cs, hz with
   | [z1, z2], [a, b], .cons h1 (.cons h2 .nil) =>
-    unfold comboFn at h ⊢
-    split at h <;> simp only [Option.some.injEq, reduceCtorEq] at h <;> subst h <;>
-      refine ⟨_, rfl, ?_⟩
-    · rw [add_low hn h1 h2, BitVec.add_mul]
-    · rw [BitVec.sub_eq_add_neg, add_low hn h1 (neg_low hn h2), ← BitVec.sub_eq_add_neg, sub_mul']
-    · rw [add_low hn h1 (shifted_low hn k h2), shifted_mul, BitVec.add_mul]
-    · rw [add_low hn h1 (neg_low hn (shifted_low hn k h2)), shifted_mul, ← BitVec.neg_mul,
+    rcases comboFn_two h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    · refine ⟨z1 + z2, rfl, ?_⟩
+      rw [add_low hn h1 h2, BitVec.add_mul]
+    · refine ⟨z1 - z2, rfl, ?_⟩
+      rw [BitVec.sub_eq_add_neg, add_low hn h1 (neg_low hn h2), ← BitVec.sub_eq_add_neg, sub_mul']
+    · refine ⟨z1 + Arm64.shifted .ll k z2, rfl, ?_⟩
+      rw [add_low hn h1 (shifted_low hn k h2), shifted_mul, BitVec.add_mul]
+    · refine ⟨z1 + -Arm64.shifted .ll k z2, rfl, ?_⟩
+      rw [add_low hn h1 (neg_low hn (shifted_low hn k h2)), shifted_mul, ← BitVec.neg_mul,
         BitVec.add_mul]
   | [z1], [a], .cons h1 .nil =>
-    unfold comboFn at h ⊢
-    split at h <;> simp only [Option.some.injEq, reduceCtorEq] at h <;> subst h <;>
-      refine ⟨_, rfl, ?_⟩
-    · rw [neg_low hn h1, BitVec.neg_mul]
-    · rw [shifted_low hn k h1, shifted_mul]
-    · rw [neg_low hn (shifted_low hn k h1), shifted_mul, BitVec.neg_mul]
+    rcases comboFn_one h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+    · refine ⟨-z1, rfl, ?_⟩
+      rw [neg_low hn h1, BitVec.neg_mul]
+    · refine ⟨Arm64.shifted .ll k z1, rfl, ?_⟩
+      rw [shifted_low hn k h1, shifted_mul]
+    · refine ⟨-Arm64.shifted .ll k z1, rfl, ?_⟩
+      rw [neg_low hn (shifted_low hn k h1), shifted_mul, BitVec.neg_mul]
   | [], [], .nil => simp [comboFn] at h
   | _ :: _ :: _ :: _, _ :: _ :: _ :: _, .cons _ (.cons _ (.cons _ _)) => simp [comboFn] at h
 
@@ -83,8 +107,10 @@ theorem comboFn_lin {n : Nat} (hn : n ≤ 64) {o : Op} {k : Int64} {cs zs : List
 
 theorem bits_le64 (w : Width) : w.bits ≤ 64 := by cases w <;> decide
 
+theorem bits_pos (w : Width) : 1 ≤ w.bits := by cases w <;> decide
+
 /-- `V` is a value without provenance whose register is `c` times `r` in its low `n` bits. -/
-def LinV (n : Nat) (r c : BitVec 64) (V : Val) : Prop :=
+abbrev LinV (n : Nat) (r c : BitVec 64) (V : Val) : Prop :=
   (∀ p, V ≠ .ptr p) ∧ ∃ z, Arm64.reg V = some z ∧ z.setWidth n = (c * r).setWidth n
 
 /-- A 64-bit register result at an integer shape is its low bits. -/
@@ -99,7 +125,7 @@ theorem retypeL_int_self (w : Width) (y : BitVec w.bits) :
 
 theorem LinV.of_int {w : Width} {r c : BitVec 64} :
     LinV w.bits r c (.int w ((c * r).setWidth w.bits)) := by
-  refine ⟨fun p h => by cases h, _, rfl, ?_⟩
+  refine ⟨(fun p h => nomatch h), _, rfl, ?_⟩
   rw [BitVec.setWidth_setWidth_of_le _ (bits_le64 w), BitVec.setWidth_eq]
 
 /-- The pure arm64 ops other than loads and `MOVDaddr` evaluate as `Arm64.evalPure`. -/
@@ -128,45 +154,36 @@ private theorem addP_np (T : Ty) {a : Val} (ha : ∀ p, a ≠ .ptr p) (k : BitVe
 integer shape: the integer whose bits are the multiple of `r` by its multiplier. -/
 theorem combo_val {tabs : Tables} {w : Width} {o : Op} {k : Int64} {ax : Option AuxRef}
     {cs : List (BitVec 64)} {c r : BitVec 64} (h : comboFn o k cs = some c) {Vs : List Val}
-    (hV : List.Forall₂ (fun V c => LinV w.bits r c V) Vs cs) :
+    (hV : Forall2 (fun V c => LinV w.bits r c V) Vs cs) :
     (opValL tabs o (.int w) k ax Vs).retypeL (.int w) = .int w ((c * r).setWidth w.bits) := by
   have hn := bits_le64 w
   match Vs, cs, hV with
   | [V1, V2], [a, b], .cons ⟨hp1, z1, hr1, hl1⟩ (.cons ⟨hp2, z2, hr2, hl2⟩ .nil) =>
     obtain ⟨z, hz, hzl⟩ := comboFn_lin hn r h (.cons hl1 (.cons hl2 .nil))
-    have hev : Arm64.evalPure o (.int w) k ax [V1, V2] = Arm64.res (.int w) z := by
-      unfold comboFn at hz
-      split at hz <;> simp only [Option.some.injEq, reduceCtorEq] at hz <;> subst hz
-      · show Arm64.add _ [V1, V2] = _
-        rw [add_np _ hp1 hp2]; simp only [Arm64.op2, hr1, hr2]
-      · show Arm64.sub _ [V1, V2] = _
-        rw [sub_np _ hp1]; simp only [Arm64.op2, hr1, hr2, BitVec.sub_eq_add_neg]
-      · show Arm64.addSh _ .ll k [V1, V2] = _
-        simp only [Arm64.addSh, hr2, addP_np _ hp1, hr1]
-      · show Arm64.subSh _ .ll k [V1, V2] = _
-        simp only [Arm64.subSh, hr2, addP_np _ hp1, hr1]
-    have hpure : ∀ o', comboFn o' k [a, b] = some c → o' = o → o'.generic = false ∧
-        (o' == .ARM64MOVDaddr) = false ∧ ldOp? o' = none := by
-      intro o' h' _
-      unfold comboFn at h'
-      split at h' <;> simp only [reduceCtorEq] at h' <;> exact ⟨rfl, rfl, rfl⟩
-    obtain ⟨hg, hm, hl⟩ := hpure o h rfl
-    rw [opValL_evalPure hg hm hl, hev, retypeL_res_int, hzl]
+    rw [← hzl, ← retypeL_res_int]
+    rcases comboFn_two h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ <;>
+      simp only [comboFn, Option.some.injEq] at hz <;> subst hz <;>
+      rw [opValL_evalPure (by decide) (by decide) (by decide)] <;> congr 1
+    · show Arm64.add _ [V1, V2] = _
+      rw [add_np _ hp1 hp2]; simp only [Arm64.op2, hr1, hr2]
+    · show Arm64.sub _ [V1, V2] = _
+      rw [sub_np _ hp1]; simp only [Arm64.op2, hr1, hr2]
+    · show Arm64.addSh _ .ll k [V1, V2] = _
+      simp only [Arm64.addSh, hr2, addP_np _ hp1, hr1]
+    · show Arm64.subSh _ .ll k [V1, V2] = _
+      simp only [Arm64.subSh, hr2, addP_np _ hp1, hr1]
   | [V1], [a], .cons ⟨hp1, z1, hr1, hl1⟩ .nil =>
     obtain ⟨z, hz, hzl⟩ := comboFn_lin hn r h (.cons hl1 .nil)
-    have hev : Arm64.evalPure o (.int w) k ax [V1] = Arm64.res (.int w) z := by
-      unfold comboFn at hz
-      split at hz <;> simp only [Option.some.injEq, reduceCtorEq] at hz <;> subst hz
-      · show Arm64.op1 _ (- ·) [V1] = _
-        simp only [Arm64.op1, hr1]
-      · show Arm64.op1 _ (Arm64.Shift.apply .ll · (Arm64.amt k)) [V1] = _
-        simp only [Arm64.op1, hr1]; rfl
-      · show Arm64.op1 _ (fun x => -(Arm64.shifted .ll k x)) [V1] = _
-        simp only [Arm64.op1, hr1]
-    have hpure : o.generic = false ∧ (o == .ARM64MOVDaddr) = false ∧ ldOp? o = none := by
-      unfold comboFn at h
-      split at h <;> simp only [reduceCtorEq] at h <;> exact ⟨rfl, rfl, rfl⟩
-    rw [opValL_evalPure hpure.1 hpure.2.1 hpure.2.2, hev, retypeL_res_int, hzl]
+    rw [← hzl, ← retypeL_res_int]
+    rcases comboFn_one h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ <;>
+      simp only [comboFn, Option.some.injEq] at hz <;> subst hz <;>
+      rw [opValL_evalPure (by decide) (by decide) (by decide)] <;> congr 1
+    · show Arm64.op1 _ (- ·) [V1] = _
+      simp only [Arm64.op1, hr1]
+    · show Arm64.op1 _ (Arm64.Shift.apply .ll · (Arm64.amt k)) [V1] = _
+      simp only [Arm64.op1, hr1, Arm64.shifted]
+    · show Arm64.op1 _ (fun x => -(Arm64.shifted .ll k x)) [V1] = _
+      simp only [Arm64.op1, hr1]
   | [], [], .nil => simp [comboFn] at h
   | _ :: _ :: _ :: _, _ :: _ :: _ :: _, .cons _ (.cons _ (.cons _ _)) => simp [comboFn] at h
 
@@ -187,7 +204,7 @@ theorem reg_ptr_none {T : Ty} {p : Ptr} (h : (Val.ptr p).hasTy T = true) :
 
 /-- A constant register read at a shape holding at least `n` low bits: `poison`, or a register
 with the constant's low `n` bits. -/
-private theorem res_reg_low {T : Ty} {n : Nat} (hn' : n ≤ 64) (h : n ≤ argWidth T)
+private theorem res_reg_low {T : Ty} {n : Nat} (hn : 1 ≤ n) (hn' : n ≤ 64) (h : n ≤ argWidth T)
     (k : BitVec 64) : (Arm64.res T k).retypeL T = .poison ∨
       ∃ y, Arm64.reg ((Arm64.res T k).retypeL T) = some y ∧ y.setWidth n = k.setWidth n := by
   cases T with
@@ -199,14 +216,10 @@ private theorem res_reg_low {T : Ty} {n : Nat} (hn' : n ≤ 64) (h : n ≤ argWi
       simp [Arm64.res, Val.retypeL, Val.widen, Val.retype, Width.bits,
         BitVec.setWidth_setWidth_of_le _ h]
   | bool =>
+    right
     simp only [argWidth] at h
-    by_cases h0 : n = 0
-    · subst h0; right
-      cases hb : k.getLsbD 0 <;>
-        exact ⟨_, rfl, by apply BitVec.eq_of_getLsbD_eq; intro i hi; omega⟩
     have : n = 1 := by omega
     subst this
-    right
     refine ⟨_, rfl, ?_⟩
     apply BitVec.eq_of_getLsbD_eq
     intro i hi
@@ -216,7 +229,25 @@ private theorem res_reg_low {T : Ty} {n : Nat} (hn' : n ≤ 64) (h : n ≤ argWi
       simpa using hb
   | ptr e => right; exact ⟨k, rfl, rfl⟩
   | agg fs m => left; rfl
-  | _ => simp [argWidth] at h; right; refine ⟨k, ?_, ?_⟩ <;> first | omega | rfl
+  | _ => simp [argWidth] at h; omega
+
+private theorem op2_some {T : Ty} {f : BitVec 64 → BitVec 64 → BitVec 64} {a b : Val}
+    {x y : BitVec 64} (ha : Arm64.reg a = some x) (hb : Arm64.reg b = some y) :
+    Arm64.op2 T f [a, b] = Arm64.res T (f x y) := by
+  simp only [Arm64.op2, ha, hb]
+
+private theorem op2_poison {T : Ty} {f : BitVec 64 → BitVec 64 → BitVec 64} {a b : Val}
+    (h : Arm64.reg a = none ∨ Arm64.reg b = none) : Arm64.op2 T f [a, b] = .poison := by
+  cases ha : Arm64.reg a <;> cases hb : Arm64.reg b <;> simp_all [Arm64.op2]
+
+private theorem op2w_some {T : Ty} {f : BitVec 32 → BitVec 32 → BitVec 32} {a b : Val}
+    {x y : BitVec 64} (ha : Arm64.reg a = some x) (hb : Arm64.reg b = some y) :
+    Arm64.op2w T f [a, b] = Arm64.res32 T (f (x.setWidth 32) (y.setWidth 32)) := by
+  simp only [Arm64.op2w, Arm64.reg32, ha, hb, Option.map_some]
+
+private theorem op2w_poison {T : Ty} {f : BitVec 32 → BitVec 32 → BitVec 32} {a b : Val}
+    (h : Arm64.reg a = none ∨ Arm64.reg b = none) : Arm64.op2w T f [a, b] = .poison := by
+  cases ha : Arm64.reg a <;> cases hb : Arm64.reg b <;> simp_all [Arm64.op2w, Arm64.reg32]
 
 /-- **The source product**: `MUL` (or `MULW` at most 32 bits wide) at an integer shape of `X`
 and a constant `c` read at a shape holding the shape's bits, in either order, is `poison` or, for
@@ -238,62 +269,64 @@ theorem mul_src {tabs : Tables} {w : Width} {o : Op}
       y.setWidth w.bits = c.setWidth w.bits := by
     rcases hK with rfl | rfl
     · exact .inl rfl
-    · rcases res_reg_low hn hw c with h | h
+    · rcases res_reg_low (bits_pos w) hn hw c with h | h
       · rw [h]; exact .inl rfl
       · exact .inr h
   -- the operand's register
   have hXr : Arm64.reg X = none ∨ ((∀ p, X ≠ .ptr p) ∧ ∃ r, Arm64.reg X = some r) := by
-    cases X with
-    | ptr p => exact .inl (reg_ptr_none hX)
-    | _ =>
-      cases h : Arm64.reg _ with
+    by_cases hp : ∃ p, X = .ptr p
+    · obtain ⟨p, rfl⟩ := hp
+      exact .inl (reg_ptr_none hX)
+    · cases h : Arm64.reg X with
       | none => exact .inl rfl
-      | some r => exact .inr ⟨fun p hp => by cases hp, r, rfl⟩
+      | some r => exact .inr ⟨fun p hp' => hp ⟨p, hp'⟩, r, rfl⟩
+  -- `MUL`/`MULW` of the two registers, in either order
+  have hev : ∀ x y : BitVec 64, Arm64.reg X = some x → Arm64.reg K = some y →
+      (Arm64.evalPure o (.int w) ai ax Vs).retypeL (.int w) =
+        .int w ((x * y).setWidth w.bits) := by
+    intro x y hx hy
+    rcases ho with rfl | ⟨rfl, h32⟩
+    · rcases hVs with rfl | rfl
+      · show (Arm64.op2 _ _ [X, K]).retypeL _ = _
+        rw [op2_some hx hy, retypeL_res_int]
+      · show (Arm64.op2 _ _ [K, X]).retypeL _ = _
+        rw [op2_some hy hx, retypeL_res_int, BitVec.mul_comm y x]
+    · have hlow : ∀ a b : BitVec 64,
+          ((a.setWidth 32 * b.setWidth 32).setWidth 64).setWidth w.bits =
+            (a * b).setWidth w.bits := fun a b => by
+        rw [BitVec.setWidth_setWidth_of_le _ (by omega), BitVec.setWidth_mul _ _ h32,
+          BitVec.setWidth_setWidth_of_le _ h32, BitVec.setWidth_setWidth_of_le _ h32,
+          ← BitVec.setWidth_mul _ _ hn]
+      rcases hVs with rfl | rfl
+      · show (Arm64.op2w _ _ [X, K]).retypeL _ = _
+        rw [op2w_some hx hy, Arm64.res32, retypeL_res_int, hlow]
+      · show (Arm64.op2w _ _ [K, X]).retypeL _ = _
+        rw [op2w_some hy hx, Arm64.res32, retypeL_res_int, hlow, BitVec.mul_comm y x]
+  have hpois : Arm64.reg X = none ∨ Arm64.reg K = none →
+      (Arm64.evalPure o (.int w) ai ax Vs).retypeL (.int w) = .poison := by
+    intro hn'
+    rcases ho with rfl | ⟨rfl, -⟩ <;> rcases hVs with rfl | rfl
+    · show (Arm64.op2 _ _ [X, K]).retypeL _ = _
+      rw [op2_poison hn', retypeL_poison]
+    · show (Arm64.op2 _ _ [K, X]).retypeL _ = _
+      rw [op2_poison hn'.symm, retypeL_poison]
+    · show (Arm64.op2w _ _ [X, K]).retypeL _ = _
+      rw [op2w_poison hn', retypeL_poison]
+    · show (Arm64.op2w _ _ [K, X]).retypeL _ = _
+      rw [op2w_poison hn'.symm, retypeL_poison]
   rcases hXr with hXn | ⟨hXp, r, hXr⟩
-  · left
-    rcases ho with rfl | ⟨rfl, -⟩ <;> rcases hVs with rfl | rfl <;>
-      first
-      | (show (Arm64.op2 _ _ _).retypeL _ = _
-         simp only [Arm64.op2, hXn]; split <;> simp_all [retypeL_poison])
-      | (show (Arm64.op2w _ _ _).retypeL _ = _
-         simp only [Arm64.op2w, Arm64.reg32, hXn]; split <;> simp_all [retypeL_poison])
+  · exact .inl (hpois (.inl hXn))
   rcases hKr with hKn | ⟨y, hKy, hyl⟩
-  · left
-    rcases ho with rfl | ⟨rfl, -⟩ <;> rcases hVs with rfl | rfl <;>
-      first
-      | (show (Arm64.op2 _ _ _).retypeL _ = _
-         simp only [Arm64.op2, hKn]; split <;> simp_all [retypeL_poison])
-      | (show (Arm64.op2w _ _ _).retypeL _ = _
-         simp only [Arm64.op2w, Arm64.reg32, hKn]; split <;> simp_all [retypeL_poison])
+  · exact .inl (hpois (.inr hKn))
   right
   refine ⟨hXp, r, hXr, ?_⟩
-  have hcr : (c * r).setWidth w.bits = (y * r).setWidth w.bits := by
-    rw [BitVec.setWidth_mul _ _ hn, BitVec.setWidth_mul _ _ hn, hyl]
-  rw [hcr]
-  rcases ho with rfl | ⟨rfl, h32⟩
-  · rcases hVs with rfl | rfl
-    · show (Arm64.op2 _ _ [X, K]).retypeL _ = _
-      simp only [Arm64.op2, hXr, hKy, retypeL_res_int, BitVec.mul_comm r]
-    · show (Arm64.op2 _ _ [K, X]).retypeL _ = _
-      simp only [Arm64.op2, hXr, hKy, retypeL_res_int]
-  · have hlow : ∀ a b : BitVec 64,
-        (((a.setWidth 32) * (b.setWidth 32)).setWidth 64).setWidth w.bits =
-          (a * b).setWidth w.bits := fun a b => by
-      rw [BitVec.setWidth_setWidth_of_le _ (by omega), BitVec.setWidth_mul _ _ h32,
-        BitVec.setWidth_setWidth_of_le _ h32, BitVec.setWidth_setWidth_of_le _ h32,
-        ← BitVec.setWidth_mul _ _ hn]
-    rcases hVs with rfl | rfl
-    · show (Arm64.op2w _ _ [X, K]).retypeL _ = _
-      simp only [Arm64.op2w, Arm64.reg32, hXr, hKy, Option.map_some, Arm64.res32,
-        retypeL_res_int, hlow, BitVec.mul_comm r]
-    · show (Arm64.op2w _ _ [K, X]).retypeL _ = _
-      simp only [Arm64.op2w, Arm64.reg32, hXr, hKy, Option.map_some, Arm64.res32,
-        retypeL_res_int, hlow]
+  rw [hev r y hXr hKy, BitVec.setWidth_mul _ _ hn, BitVec.setWidth_mul _ _ hn, hyl,
+    BitVec.mul_comm (c.setWidth w.bits)]
 
 /-! ## The event -/
 
 private theorem mapM_forall₂ {α β : Type} {f : α → Option β} :
-    ∀ {l : List α} {l' : List β}, l.mapM f = some l' → List.Forall₂ (fun a b => f a = some b) l l'
+    ∀ {l : List α} {l' : List β}, l.mapM f = some l' → Forall2 (fun a b => f a = some b) l l'
   | [], l', h => by simp only [List.mapM_nil, pure, Option.some.injEq] at h; subst h; exact .nil
   | a :: l, l', h => by
     cases ha : f a with
@@ -309,7 +342,7 @@ private theorem mapM_forall₂ {α β : Type} {f : α → Option β} :
 
 private theorem forall₂_map {α β γ : Type} {R : α → β → Prop} {S : γ → β → Prop} {f : α → γ}
     (hRS : ∀ a b, R a b → S (f a) b) :
-    ∀ {l : List α} {l' : List β}, List.Forall₂ R l l' → List.Forall₂ S (l.map f) l'
+    ∀ {l : List α} {l' : List β}, Forall2 R l l' → Forall2 S (l.map f) l'
   | [], [], .nil => .nil
   | _ :: _, _ :: _, .cons h t => .cons (hRS _ _ h) (forall₂_map hRS t)
 
@@ -317,7 +350,7 @@ private theorem forall₂_map {α β γ : Type} {R : α → β → Prop} {S : γ
 arguments' multipliers. -/
 theorem mulCoef_succ {bs : List Value} {a : ID} {j : Nat} {y : ID} {c : BitVec 64}
     (h : mulCoef bs a (j + 1) y = some c) : (y = a ∧ c = 1) ∨ (y ≠ a ∧ ∃ u ∈ bs, u.id = y ∧
-      ∃ cs, List.Forall₂ (fun z c => mulCoef bs a j z = some c) u.args.toList cs ∧
+      ∃ cs, Forall2 (fun z c => mulCoef bs a j z = some c) u.args.toList cs ∧
         comboFn u.op u.auxInt cs = some c) := by
   rw [mulCoef] at h
   by_cases hya : y = a
@@ -354,7 +387,7 @@ theorem mul_claim {tabs : Tables} {M' : Defs} {bs : List Value} {a : ID} {w : Wi
     rcases mulCoef_succ h with ⟨rfl, rfl⟩ | ⟨-, u, hu, rfl, cs, hcs, hc⟩
     · refine ⟨?_, .inl rfl⟩
       rw [hXa]
-      exact ⟨hXp, r, hXr, by rw [BitVec.one_mul]⟩
+      exact ⟨hXp, r, hXr, by simp⟩
     · obtain ⟨hget, ht, hshp⟩ := hbs u hu
       have hval : denL true M'.get? tabs ρ (B + (j + 1)) u.id =
           .int w ((c * r).setWidth w.bits) := by
@@ -393,6 +426,31 @@ theorem mulOKL_facts {tabs : Tables} {M : Defs} {v : ID} {defs ds : List Value}
     · cases h
   · cases h
 
+/-- What `mulCond` checks. -/
+theorem mulCond_facts {tabs : Tables} {x : Value} {a : ID} {kd : Value} {w : Width} {u : Value}
+    {m : ID} {bs : List Value} (hc : mulCond tabs x a kd w u m bs = true) :
+    kd.op = .ARM64MOVDconst ∧ termVL tabs kd = true ∧ kd.args.isEmpty = true ∧
+      w.bits ≤ argWidth (shpL tabs kd.type) ∧
+      (x.op = .ARM64MUL ∨ (x.op = .ARM64MULW ∧ w.bits ≤ 32)) ∧
+      u.id = x.id ∧ u.op = .Copy ∧ u.type = x.type ∧ (bs.map (·.id)).Nodup ∧
+      x.id ∉ bs.map (·.id) ∧
+      (∀ b ∈ bs, termVL tabs b = true ∧ b.type = x.type ∧
+        ∀ y ∈ b.args, y = a ∨ y ∈ bs.map (·.id)) ∧
+      m ∈ bs.map (·.id) ∧ ∃ cm, mulCoef bs a bs.length m = some cm ∧
+        cm.setWidth w.bits = (Arm64.imm kd.auxInt).setWidth w.bits := by
+  simp only [mulCond, Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true, decide_eq_true_eq,
+    List.all_eq_true, List.contains_iff_mem, Option.any_eq_true, and_assoc] at hc
+  obtain ⟨hop, ht, hemp, hw, hx, hid, hcop, hty, -, -, hnd, hnv, hall, hmem, cm, hcm, hcml⟩ := hc
+  refine ⟨hop, ht, hemp, hw, ?_, hid, hcop, hty, hnd, by simpa using hnv, fun b hb => ?_, hmem,
+    cm, hcm, hcml⟩
+  · rcases hx with h | ⟨h1, h2⟩
+    · exact .inl h
+    · exact .inr ⟨h1, h2⟩
+  · obtain ⟨hbt, hbty, hba⟩ := hall b hb
+    refine ⟨hbt, hbty, fun y hy => ?_⟩
+    have := Array.all_eq_true_iff_forall_mem.1 hba y hy
+    simpa [List.contains_iff_mem] using this
+
 /-- What `mulOKL1` establishes. -/
 theorem mulOKL1_facts {tabs : Tables} {M : Defs} {x : Value} {a k : ID} {defs ds : List Value}
     (h : mulOKL1 tabs M x a k defs = some ds) :
@@ -408,34 +466,21 @@ theorem mulOKL1_facts {tabs : Tables} {M : Defs} {x : Value} {a k : ID} {defs ds
       cm.setWidth w.bits = (Arm64.imm kd.auxInt).setWidth w.bits := by
   unfold mulOKL1 at h
   split at h
-  · rename_i w kd u rest hT hk _
+  · rename_i w kd u rest hT hk
     split at h
-    · rename_i hc
-      simp only [Option.some.injEq] at h
-      subst h
-      simp only [Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true, decide_eq_true_eq,
-        Bool.not_eq_true', List.all_eq_true, List.contains_iff_mem] at hc
-      obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hop, ht⟩, hemp⟩, hw⟩, hx⟩, hid⟩, hcop⟩, hty⟩, -⟩, -⟩, hnd⟩, hnv⟩,
-        hall⟩, hm⟩ := hc
-      split at hm
-      · rename_i m hum
-        simp only [Bool.and_eq_true, List.contains_iff_mem, Option.any_eq_true, beq_iff_eq] at hm
-        obtain ⟨hmem, cm, hcm, hcml⟩ := hm
-        refine ⟨w, kd, u, _, m, cm, hT, hk, hop, ht, hemp, hw, ?_, rfl, hid, hcop, hty, hum, hnd,
-          ?_, ?_, ?_, hmem, hcm, hcml⟩
-        · rcases hx with h | ⟨h1, h2⟩
-          · exact .inl h
-          · exact .inr ⟨h1, h2⟩
-        · simpa using hnv
-        · intro b hb
-          simp only [List.mem_filter, Option.isNone_iff_eq_none] at hb
-          exact hb.2
-        · intro b hb
-          obtain ⟨⟨hbt, hbty⟩, hba⟩ := hall b hb
-          refine ⟨hbt, hbty, fun y hy => ?_⟩
-          have := hba y (Array.mem_toList_iff.2 hy)
-          simpa [List.contains_iff_mem] using this
-      · cases hm
+    · rename_i m hum
+      dsimp only at h
+      split at h
+      · rename_i hc
+        simp only [Option.some.injEq] at h
+        subst h
+        obtain ⟨hop, ht, hemp, hw, hx, hid, hcop, hty, hnd, hnv, hall, hmem, cm, hcm, hcml⟩ :=
+          mulCond_facts hc
+        refine ⟨w, kd, u, _, m, cm, hT, hk, hop, ht, hemp, hw, hx, rfl, hid, hcop, hty, hum, hnd,
+          hnv, fun b hb => ?_, hall, hmem, hcm, hcml⟩
+        simp only [List.mem_filter, Option.isNone_iff_eq_none] at hb
+        exact hb.2
+      · cases h
     · cases h
   · cases h
 
@@ -515,7 +560,7 @@ theorem mul_step (h : mulOKL tabs M v defs = some ds) {C : ID → Prop} (hC : De
     · rw [hyv] at hy ⊢
       obtain ⟨x0, hx0, hxa⟩ := hC _ hy
       rw [hx] at hx0; cases hx0
-      have hmemA : a ∈ x0.args := by
+      have hmemA : a ∈ x.args := by
         rw [← Array.mem_toList_iff]; rcases hargs with h | h <;> simp [h]
       have ha : C a := hxa a hmemA
       obtain ⟨ya, hya, -⟩ := hC a ha
@@ -532,8 +577,8 @@ theorem mul_step (h : mulOKL tabs M v defs = some ds) {C : ID → Prop} (hC : De
           rw [denT_succ hk hkt, opValL_evalPure hg hmd hl, hkop]
           rfl
       rw [denT_succ hx hxt, hshp]
-      rcases mul_src (tabs := tabs) (ai := x0.auxInt) (ax := x0.aux) hop hX hkw hKv
-          (Vs := x0.args.toList.map (denL true M.get? tabs ρ n))
+      rcases mul_src (tabs := tabs) (ai := x.auxInt) (ax := x.aux) hop hX hkw hKv
+          (Vs := x.args.toList.map (denL true M.get? tabs ρ n))
           (by rcases hargs with h | h <;> simp [h]) with hp | ⟨hXp, r, hXr, hval⟩
       · rw [hp]; exact .poison _
       rw [hval]

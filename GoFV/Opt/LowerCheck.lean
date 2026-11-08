@@ -19,6 +19,10 @@ input `f`, and the output `g` must have the replayed definitions. The difference
 * an ellipsis rule `(o ...) => (o' ...)` (`setOp`) is replayed as the op change: on a term whose
   new op is a term (`ArmRule.SetOp`), its `setArgW64` arguments (`AddPtr`'s index) values at a
   64-bit integer shape (`setArgsOK`), or on an atom renamed by `renameOp` (`ArmRule.Rename`);
+* a rule event of a strength-reduced multiplication by a constant (`ARM64.rules:1043`, `1044`,
+  `Interp.mulResult`) is checked by its effect (`mulOKL`): the fresh values it built are linear
+  combinations of the operand whose multiplier is the constant in the bits the `MUL` keeps
+  (`mulCoef`); the replay adds them and the `MUL` as their `Copy`;
 * a block rule event is checked by `blockOKL` against `BlockRuleL.Sound`: one control matched by
   the rule's control pattern, the block's auxint (tracked in `BStateL`) as the rule asks, the new
   control a rule variable or a node built on them, which the replay defines at its fresh value
@@ -670,25 +674,33 @@ def mulCoef (bs : List Value) (a : ID) : Nat → ID → Option (BitVec 64)
     | some u => (u.args.toList.mapM fun y => mulCoef bs a n y).bind (comboFn u.op u.auxInt)
     | none => none
 
-/-- `mulOKL` with the multiplication's operand `a` and constant `k`. -/
+/-- The checks of `mulOKL` on `x` (the multiplication), its operand `a`, the constant's
+definition `kd`, the integer shape's width `w`, `x`'s new definition `u` (a `Copy` of `m`) and the
+fresh values `bs`. -/
+def mulCond (tabs : Tables) (x : Value) (a : ID) (kd : Value) (w : Sem.Width) (u : Value) (m : ID)
+    (bs : List Value) : Bool :=
+  let ids := bs.map (·.id)
+  kd.op == .ARM64MOVDconst && termVL tabs kd && kd.args.isEmpty &&
+    decide (w.bits ≤ argWidth (shpL tabs kd.type)) &&
+    (x.op == .ARM64MUL || x.op == .ARM64MULW && decide (w.bits ≤ 32)) &&
+    u.id == x.id && u.op == .Copy && u.type == x.type && u.auxInt == 0 && u.aux == none &&
+    ids.Nodup && !ids.contains x.id &&
+    bs.all (fun b => termVL tabs b && b.type == x.type &&
+      b.args.all fun y => y == a || ids.contains y) &&
+    ids.contains m && (mulCoef bs a bs.length m).any fun c =>
+      c.setWidth w.bits == (Sem.Arm64.imm kd.auxInt).setWidth w.bits
+
+/-- `mulOKL` with the multiplication's operand `a` and constant `k`: the fresh values are the
+logged definitions after `x`'s that `M` lacks. -/
 def mulOKL1 (tabs : Tables) (M : Defs) (x : Value) (a k : ID) (defs : List Value) :
     Option (List Value) :=
   match shpL tabs x.type, M.get? k, defs with
   | .int w, some kd, u :: rest =>
-    let bs := rest.filter fun b => (M.get? b.id).isNone
-    let ids := bs.map (·.id)
-    if kd.op == .ARM64MOVDconst && termVL tabs kd && kd.args.isEmpty &&
-        decide (w.bits ≤ argWidth (shpL tabs kd.type)) &&
-        (x.op == .ARM64MUL || x.op == .ARM64MULW && decide (w.bits ≤ 32)) &&
-        u.id == x.id && u.op == .Copy && u.type == x.type && u.auxInt == 0 && u.aux == none &&
-        ids.Nodup && !ids.contains x.id &&
-        bs.all (fun b => termVL tabs b && b.type == x.type &&
-          b.args.all fun y => y == a || ids.contains y) &&
-        (match u.args.toList with
-          | [m] => ids.contains m && (mulCoef bs a bs.length m).any fun c =>
-              c.setWidth w.bits == (Sem.Arm64.imm kd.auxInt).setWidth w.bits
-          | _ => false)
-    then some (u :: bs) else none
+    match u.args.toList with
+    | [m] =>
+      let bs := rest.filter fun b => (M.get? b.id).isNone
+      if mulCond tabs x a kd w u m bs then some (u :: bs) else none
+    | _ => none
   | _, _, _ => none
 
 /-- A rule event at `v` whose result is `mulStrengthReduce{,32}(v, x, c)` (`ARM64.rules:1043`,
