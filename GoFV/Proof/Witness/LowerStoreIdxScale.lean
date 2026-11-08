@@ -9,7 +9,7 @@ with the `Store` `v6` listed before the `AddPtr` `v4` it stores at. `lower` then
 then `v6` to `MOVDstoreidx v2 v8 v5 v1` (`ARM64.rules:786`), and only then `v6` to `MOVDstoreidx8
 v2 v3 v5 v1`: `(MOVDstoreidx ptr (SLLconst [3] idx) val mem) => (MOVDstoreidx8 ptr idx val mem)`
 (`809`), which the validator replays by `stIdxScale` (`sts_scale` checks that event on the
-replayed definitions) and `GoFV.Proof.Low.Val.ReplayInvL.idxScale` proves. By `lower_refines`
+replayed definitions) and `GoFV.Proof.Low.Val.ReplayInvL.scaleIdx` proves. By `lower_refines`
 every returning or panicking `run` of `sts` is, up to refinement, a `runL` of the result; on a
 16-byte heap block and the index 1 both store 5 at offset 8 and return 5.
 -/

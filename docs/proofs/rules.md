@@ -2259,6 +2259,24 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   then `SLLconst [1]`; the whole `lowerChecked` run is not kernel-evaluable, as Go's recipe
   table takes 195,075 hash-map insertions).
 
+- **An indexed store's index scaled** (#385). `(MOVDstoreidx ptr (SLLconst [3] idx) val mem) =>
+  (MOVDstoreidx8 ptr idx val mem)` (`:809`) and `MOVWstoreidx` by `[2]` to `MOVWstoreidx4`
+  (`:810`) rewrite an indexed store, an atom: the rules are `ArmRule.Mem` (`checked_idxStore`;
+  `ArmRule.Mem` now also admits the `idxStore` ops). The validator replays the event as the scaled
+  store (`LowerCheck.stIdxScale`, an `atomDef` case): the old store is at the scale 1 without
+  offset or aux, its index a word-shaped `SLLconst [k]` term with `idxShift k` the new scale, and
+  its source a `Store` on three arguments. `ReplayInvL.scaleIdx` keeps `IdxRefL`: the indexed
+  address at the scale 1 of `SLLconst [k] r` is refined by the one at the scale `2^k` of `r`
+  (`sll_idxAddr`). Witness `sts_lower` (`sti` with the `Store` before its address, so `786` fires
+  before `806` can, then `809`).
+
+- **`AtomicStorePtrNoWB` → `STLR`** (`:490`, #385). `STLR` runs as `AtomicStore64`
+  (`Arm64.atomicOf`), not as the pointer store, so the rename is admitted by `atomicRen` (part of
+  `renameOp`, `ArmRule.Rename`): `encode` at a pointer and at a 64-bit integer agree on every value
+  (`encode_ptr_w64`), so both stores write the same bytes at the same 8-aligned location and
+  return the memory (`atomicRoot_ptrStore`; `evalOpL_atomicRen` composes it with
+  `atomicRoot_fit`). Witness `asp_lower`.
+
 - **Compares with a pointer** (#385; module docs of `GoFV/Proof/Low/Rules/CmpNeg.lean` and
   `Invert.lean`). `CMP` compares a pointer without a concrete address with an integer as unequal
   (`Arm64.cmp`, `Z` clear). While `CMN` and `CMPshift*` read registers only (`Arm64.cmp1`/`cmp2`),

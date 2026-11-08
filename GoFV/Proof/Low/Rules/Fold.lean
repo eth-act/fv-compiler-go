@@ -25,7 +25,7 @@ indexed store as the store's new definition (`LowerCheck.stIdxFold`), whose inde
 => (MOVDstoreidx8 ptr idx val mem)` (`809`, and `MOVWstoreidx` by `[2]`, `810`) rewrite such an
 indexed store, an atom too (`checked_idxStore`): the validator replays the scaled store
 (`LowerCheck.stIdxScale`), whose indexed address refines the old one
-(`GoFV.Proof.Low.Val.ReplayInvL.idxScale`).
+(`GoFV.Proof.Low.Val.ReplayInvL.scaleIdx`).
 -/
 
 namespace GoFV.Proof.Low.Rules

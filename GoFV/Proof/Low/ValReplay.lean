@@ -1841,7 +1841,7 @@ store at the scale 1 of a `Store` of `D₀` (three arguments) whose index (argum
 `SLLconst [k] r` (a term at a word shape) in `M` becomes the indexed store at the scale `2^k` on
 `r`, whose indexed address refines the old one (`sll_idxAddr`); value and memory stay
 (`IdxRefL`). -/
-theorem ReplayInvL.idxScale {v : ID} {x u : Value} (hI : ReplayInvL tabs D₀ C₀ M C)
+theorem ReplayInvL.scaleIdx {v : ID} {x u : Value} (hI : ReplayInvL tabs D₀ C₀ M C)
     (hx : M.get? v = some x) (ht : termVL tabs x = false) (ht' : termVL tabs u = false)
     (hsc : stIdxScale tabs M x u = true)
     (hsrc : ∀ a, D₀ v = some a → a.op = .Store ∧ a.args.size = 3) :
@@ -1902,7 +1902,7 @@ theorem ReplayInvL.idxScale {v : ID} {x u : Value} (hI : ReplayInvL tabs D₀ C�
     rw [hsc1] at hm
     rw [hscs, e0, e1]
     rcases m with _ | m
-    · refine ⟨0, fun ρ hρ hF => addrRef_poison ?_⟩
+    · refine ⟨0, fun ρ hρ hF => addrRef_poison (act := 0) (k := 0) ?_⟩
       have h1 := hm ρ hρ hF
       rwa [show denL true M.get? tabs ρ 0 x.args[1]! = .poison from rfl, idxAddr_one_poison] at h1
     refine ⟨m + 1, fun ρ hρ hF => ?_⟩
@@ -2182,7 +2182,7 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
               (hI.idxFold hx0 ht ht' hfold fun a' ha' => by
                 rw [hD, ha] at ha'; cases ha'; exact hS) hB'
           · exact replayL_inv hs hD evs _ M' B B' C h
-              (hI.idxScale hx0 ht ht' hsc fun a' ha' => by
+              (hI.scaleIdx hx0 ht ht' hsc fun a' ha' => by
                 rw [hD, ha] at ha'; cases ha'; exact ⟨hS, hS3⟩) hB'
         · rename_i u s hdef
           obtain ⟨x0, hx0, ht, ht', hty, hal, hua, hsv, hsn, hst, hsa⟩ := atomDef_two hdef
