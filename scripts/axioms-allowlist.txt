@@ -69,15 +69,16 @@ GoFV.Proof.Witness.GenG12.g12_facts._native.native_decide.ax_1_1 fb37b4749226d2d
 # accepts `testInts` of test/makeslice (parsed, `flush`, as obj-check) framed with a stack check,
 # `linkCode` links it, the stack check passes from the entry state; compiled evaluation, as
 # plF_pipeline.
-GoFV.Proof.Witness.ObjFrame.obj_facts._native.native_decide.ax_1_1 555eb6f93dc8e594797987999bc74cfb6cb5c9c0c111d519c833a67d62818e59
+GoFV.Proof.Witness.ObjFrame.obj_facts._native.native_decide.ax_1_1 5d1f479df5891f174ee791cf2b6097534d5b2d649af135ba4998cbd4ec9c8c17
+# Pins of ObjFrame/ObjG7 updated for #553 objops (checkObj's new opcodes; `noICall` in the facts).
 # objG7_value_witness, objG7_term_witness (GoFV/Proof/Witness/ObjG7.lean, #553): `checkObj` accepts
 # `(*A).g` of test/method and `pallocSum.start` of std/runtime (parsed, `flush`, as obj-check;
 # genssa's P0 Progs) frameless, `linkCode` links them at 0x20000, the return address and the
 # symbols have no code and are neither Prog addresses nor `endP`, the related machine state starts
 # at the base; `checkG7` accepts `pallocSum.start` with GenG3's tables; compiled evaluation, as
 # plF_pipeline.
-GoFV.Proof.Witness.ObjG7.g_obj_facts._native.native_decide.ax_1_1 803ce7f4d5388c2808fd4afcbdee8059660922ed1655b2a873f1e1398f4329e4
-GoFV.Proof.Witness.ObjG7.start_obj_facts._native.native_decide.ax_1_1 de961be7e4c4d08d86db4ea3b416017a2861a42eb711743e6ad130a56b53a06f
+GoFV.Proof.Witness.ObjG7.g_obj_facts._native.native_decide.ax_1_1 706f28c25800f352ec6ac6b9a63d8031beb7599940ae54870476fdf7a7111bd1
+GoFV.Proof.Witness.ObjG7.start_obj_facts._native.native_decide.ax_1_1 4733a435ca49c200ba34ad4bfbce2d1148979b971e53a86d5fc10ea963685e15
 # genG13_value_witness (GoFV/Proof/Witness/GenG13.lean, #553): `checkG13` accepts
 # `runtime.(*pageBits).clearAll` and `checkG12` does not (parsed, `Env.load`, `genssa`), `runLoc`
 # runs the zeroing `LoweredZero [64]` to 64 zero bytes; compiled evaluation, as plF_pipeline.
