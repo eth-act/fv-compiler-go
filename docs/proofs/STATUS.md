@@ -34,9 +34,9 @@ the semantic phase of their ops (`GoFVTest/Proof/RuleClass.lean`; "Classificatio
 | call | 11 | 0 | 36 | 47 |
 | float | 22 | 0 | 46 | 68 |
 | ptr (`ConstString`, `Addr`, `NilCheck`, pointer comparisons) | 12 | 0 | 11 | 23 |
-| phi | 4 | 0 | 1 | 5 |
+| phi | 5 | 0 | 0 | 5 |
 | block | 3 | 0 | 0 | 3 |
-| all | 1,386 | 31 | 345 | 1,762 |
+| all | 1,387 | 31 | 344 | 1,762 |
 
 *Proven*: a merged lemma (`Rule.Sound`, `Rule.SoundT`, `Rule.SoundW`, `Rule.MakeSel`,
 `Rule.LoadSel`, `Rule.Drop`, `Rule.IMakeSM`, `Rule.AddrCmp`, `BlockRule.Sound`,
@@ -51,7 +51,9 @@ comparisons of two symbol addresses (`:1648`, `:1651`) per instance (`RewriteChe
 `:104`, `:127`) as `Rule.Sound` with the interface shape of the `IData` operand (`idataArgOk`),
 and the `runtime.ifaceeq`/`efaceeq` folds (`:2279`, `:2287`, with `SelectN` of `MakeResult`
 `:1343`) in the forwarding layer under the runtime contract `Env.IfaceEq` (§ Assumptions;
-`RewriteCheck.eqCallOK`, `selMROK`) (#69, Phase1Tail2).
+`RewriteCheck.eqCallOK`, `selMROK`) (#69, Phase1Tail2), and the `Phi` of two `Not`s
+(`generic.rules:1068`, turned `Not` of a fresh `Phi`) by the validator layer `.pn`
+(`RewriteCheck.pnRel`, `GoFV.Proof.PhiNot.pn_refines`) (#69, Phase1Tail4).
 
 **False under the semantics, with the reason** (31, each marked `-- FALSE r_… #N` in its proof
 module; "Findings" in `rules.md`):
@@ -85,7 +87,7 @@ obstacle counts on full-v6, "Findings" in `rules.md` has the counterexamples):
 - The `CondSelect` folds (about 240 functions on the unmarked alternatives of `:2322–:2393`) and
   `divmod.rules:136–148` (59) are false as above.
 
-**Open** (345):
+**Open** (344):
 
 - `P1`/`P2` alternatives without a lemma (192): most never fire on the corpus; those that fire
   are in the `fire-full` table of `rules.md` (sole obstacles by rule).
@@ -104,9 +106,6 @@ obstacle counts on full-v6, "Findings" in `rules.md` has the counterexamples):
   (`:2128`/`:2131` alternatives), devirtualisation `:1733`, and **outside the model**: the
   `runtime.cmpstring` rules `:2267`, `:2271` (no contract in `Env.runtime`) and the race
   instrumentation cleanup `:2115`, `:2116` (race mode is not modelled).
-- `phi` (1): `:1068` (`Phi` of two `Not`s becomes `Not` of a fresh `Phi`; 47 functions): the
-  target has a `Phi` atom the source lacks, which neither the atom simulation nor sccp's checker
-  relates.
 
 ## Phase 2: the verified pipeline through `trim` (#385, #189)
 

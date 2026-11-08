@@ -3763,6 +3763,109 @@ block executable and the certificate `pcCells`. -/
 def pcRel (tabs : Tables) (f g : Func) : Bool :=
   Sccp.sccpOK tabs f g (pcCells f g) (pcVis f) (Array.replicate f.blockTab.size true)
 
+/-! ## `Phi`s of `Not`s as a layer (issue #69)
+
+`generic.rules:1068` (`(Phi <t> nx:(Not x) ny:(Not y)) && nx.Uses == 1 && ny.Uses == 1 =>
+(Not (Phi <t> x y))`) turns a `Phi` into the `Not` of a fresh `Phi` of the `Not`s' arguments; the
+target has a `Phi` atom the source lacks, which `validate` does not relate. It is a `phiSels`
+rule, logged after a snapshot, so each instance is the first event of its segment. `pnPre` puts
+the fresh `Phi` in and redefines the `Phi` as the logged `Not`, and the layer is related to its
+input by `pnRel`, whose simulation (`GoFV.Proof.PhiNot.pn_refines`) keeps, from the `Phi`'s
+block entry until the target evaluates the `Not`, the fact that the source's `Phi` is refined by
+the `Not` of the fresh `Phi`: entered along edge `j`, the source's `Phi` takes the register of
+its argument `Not x_j`, which lemma (D) re-evaluates from `x_j`'s register, and the fresh `Phi`
+takes `x_j`'s. -/
+
+/-- A `phiSels` rule that turns a `Phi` into a `Not` of a fresh `Phi`. -/
+def pnShapeOK (r : Rule) : Bool :=
+  match r.pat, r.result, r.block with
+  | .op .Phi .., .build [n, q], none => n.op == .Not && q.op == .Phi
+  | _, _, _ => false
+
+/-- The `Phi` `v` of `f` that event `ev` turns into a `Not`, its logged definition (the result's
+root, built at `v`: `defs` is `[v, root, fresh Phi]`) and the logged fresh `Phi`, if it is a
+`phiSels` rule event of a `pnShapeOK` rule. -/
+def pnEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × Value × Value)
+  | .rule v i _ defs =>
+    match f.value? v, defs[1]?, defs[2]? with
+    | some u, some d, some q =>
+      let n := t.psBase u.op
+      if u.op == .Phi && n ≤ i && d.id == v && q.id != v then
+        match t.phiSels[i - n]? with
+        | some cr => if pnShapeOK cr.rule then some (v, d, q) else none
+        | none => none
+      else none
+    | _, _, _ => none
+  | _ => none
+
+/-- The `Phi` `v` of `f` becomes the logged `Not` `d` of the fresh `Phi` `q`, which is put in
+first (`v.reset(OpNot)`, `v0 := b.NewValue0(OpPhi)`, `v0.AddArg2(x, y)`, `v.AddArg(v0)`). -/
+def pnApply (f : Func) (v : ID) (d q : Value) : Func := fwdCopy (ssPut f q) v d
+
+/-- One event of `pnPre`: a `Phi`-of-`Not`s event applied, any other event kept. -/
+def pnStep (t : Interp.Table) (f : Func) (p : Func × Array RwEvent) (ev : RwEvent) :
+    Func × Array RwEvent :=
+  match pnEvent? t f ev with
+  | some (v, d, q) => (pnApply p.1 v d q, p.2)
+  | none => (p.1, p.2.push ev)
+
+/-- The input with the log's `Phi`-of-`Not`s events applied, and the remaining events. -/
+def pnPre (t : Interp.Table) (f : Func) (log : Array RwEvent) : Func × Array RwEvent :=
+  log.foldl (pnStep t f) (f, #[])
+
+/-- The `Phi` `v` of `f` (of a `bool` shape, in a block other than the entry) is `Not p` in `g`
+(same type and block): `p` is not a value of `f`, and in `g` a `Phi` of `v`'s type listed in
+`v`'s block whose argument `j` is the argument `x_j` of `v`'s argument `j`, a `Not`, both of a
+`bool` shape. -/
+def pnOK (tabs : Tables) (f g : Func) (v : ID) : Bool :=
+  match f.value? v, g.value? v with
+  | some u, some w =>
+    match w.args[0]? with
+    | some p =>
+      u.op == .Phi && w.op == .Not && w.args.size == 1 && w.id == v && w.block == u.block &&
+        w.type == u.type && (tabs.ty u.type matches .bool) && u.block != f.entry &&
+        (f.value? p).isNone && (g.block? u.block).any (·.values.contains p) &&
+        (g.value? p).any fun pv =>
+          pv.op == .Phi && pv.id == p && pv.block == u.block && pv.type == u.type &&
+            pv.args.size == u.args.size &&
+            (pv.args.toList.zip u.args.toList).all fun (c, a) =>
+              (f.value? a).any fun av =>
+                av.op == .Not && av.args.size == 1 && av.args[0]? == some c &&
+                  (tabs.ty av.type matches .bool) &&
+                  (f.value? c).any fun cv => (tabs.ty cv.type matches .bool)
+    | none => false
+  | _, _ => false
+
+/-- `z` is the fresh `Phi` of a `pnOK` value listed in `z`'s block of `g`. -/
+def pnFresh (tabs : Tables) (f g : Func) (z : ID) : Bool :=
+  match g.value? z with
+  | some zv => (g.block? zv.block).any fun gb => gb.values.any fun v =>
+      pnOK tabs f g v && (g.value? v).any (·.args[0]? == some z)
+  | none => false
+
+/-- **The `Phi`-of-`Not`s relation**: `g` is `f` with `Phi`s turned `Not`s of fresh `Phi`s
+(`pnOK`): the same control-flow graph and own aux; every other value of `f` kept but for its use
+count, every value `f` lacks such a fresh `Phi`; per block the same kind and controls, the
+source's values in the same order with only fresh `Phi`s added, and the source's schedule the
+target's without the turned `Phi`s. -/
+def pnRel (tabs : Tables) (f g : Func) : Bool :=
+  DomCert.cfgView g == DomCert.cfgView f && g.ownAux == f.ownAux &&
+    decide (f.valueTab.size ≤ g.valueTab.size) &&
+    (List.range g.valueTab.size).all (fun z => match f.value? z, g.value? z with
+      | none, none => true
+      | some fv, some gv => ssSame fv gv || pnOK tabs f g z
+      | none, some _ => pnFresh tabs f g z
+      | some _, none => false) &&
+    f.blocks.all fun b => match f.block? b, g.block? b with
+      | some fb, some gb =>
+        gb.kind == fb.kind && gb.controls == fb.controls &&
+          gb.values.toList.filter (fun z => (f.value? z).isSome) == fb.values.toList &&
+          gb.values.all (fun z => (f.value? z).isSome || pnFresh tabs f g z) &&
+          (match Sem.schedule f fb, Sem.schedule g gb with
+            | some of, some og => og.toList.filter (fun z => !pnOK tabs f g z) == of.toList
+            | _, _ => false)
+      | _, _ => false
+
 /-! ## Layers (issue #151)
 
 The log's nil-check eliminations, Load-of-Store forwardings, struct-load expansions,
@@ -3779,7 +3882,7 @@ check's pointer may be a forwarded `Load`, and a segment's `Store`s may be a spl
 leave the rewrites `fwdLate` names), struct-load expansions (`slPre`), struct-store splits
 (`ssPre`), value-rule `Load` expansions (`ldPre`), segment rewrites (`segPre`; selective ones leave
 those `segLate` names), selections of `Phi`s of `SliceMake`s (`psPre`), constant `Phi`s
-(`pcPre`). -/
+(`pcPre`), `Phi`s of `Not`s (`pnPre`). -/
 inductive Layer where
   | nil (sel : Bool)
   | fwd (sel : Bool)
@@ -3789,6 +3892,7 @@ inductive Layer where
   | seg (sel : Bool)
   | ps
   | pc
+  | pn
 
 /-- The input with the layer's events of the log applied, and the remaining events. -/
 def Layer.pre (t : Interp.Table) (tabs : Tables) : Layer → Func → Array RwEvent →
@@ -3801,16 +3905,17 @@ def Layer.pre (t : Interp.Table) (tabs : Tables) : Layer → Func → Array RwEv
   | .seg sel => segPre t sel
   | .ps => psPre t
   | .pc => pcPre t
+  | .pn => pnPre t
 
 /-- The layers of `RewriteCheck.accepts`, in order (a second struct-load layer and a second split
 layer for nested structs; the value-rule `Load` expansions and selections of `Make`s and `Load`s
 before the splits, which store their results; a struct-load layer after the first split layer
 for `Load`s whose memory a split rebased, before the splits of their expansions; a second segment
 layer for segments over another's result; selective forwarding rounds after the segments for
-forwardings through `Move`s whose sources earlier forwardings changed). A constant `Phi` is the
-first event of its segment, so its layer comes first. -/
+forwardings through `Move`s whose sources earlier forwardings changed). A constant `Phi` and a
+`Phi` of `Not`s are the first event of their segment, so their layers come first. -/
 def layers : List Layer :=
-  [.pc, .ps, .nil true, .fwd true, .sl, .sl, .ld, .ss, .sl, .ss, .ss, .seg true, .seg false,
+  [.pc, .pn, .ps, .nil true, .fwd true, .sl, .sl, .ld, .ss, .sl, .ss, .ss, .seg true, .seg false,
    .fwd true, .fwd true, .fwd true, .fwd true, .sl, .ss, .fwd false, .nil false]
 
 /-- The layers of the decompose builtin rewrite step (issue #17): its value-rule `Load`
@@ -3868,7 +3973,7 @@ def RewriteCheck.nilOK (env : PassEnv) (tabs : GoFV.SSA.Tables) (f0 f f' : GoFV.
 and `f'`: `nilOK`, `fwdRel` (with the precondition's read-only symbols, `roPass`, and descriptor
 symbols, `eqPass`), `validate` with the expansions it applied (`slTaken`, `ldTaken`), `ssRel`,
 `segRel` with its read-only segments' symbols among the precondition's (`roSegsOK`, `roPass`),
-`psRel` or `pcRel`, and `f'` passes `check`. -/
+`psRel`, `pcRel` or `pnRel`, and `f'` passes `check`. -/
 def RewriteCheck.layerOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (tabs : GoFV.SSA.Tables)
     (f0 : GoFV.SSA.Func) :
     RewriteCheck.Layer → GoFV.SSA.Func → Array GoFV.Rules.RwEvent → GoFV.SSA.Func → Bool
@@ -3890,6 +3995,8 @@ def RewriteCheck.layerOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (tabs : G
     RewriteCheck.psRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
   | .pc, f, _, f' =>
     RewriteCheck.pcRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
+  | .pn, f, _, f' =>
+    RewriteCheck.pnRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
   | .ld, f, log, f' =>
     RewriteCheck.validate tabs t f f' (RewriteCheck.ldTaken t tabs f log) &&
       checkOK { tabs := tabs, typs := env.typs } f'

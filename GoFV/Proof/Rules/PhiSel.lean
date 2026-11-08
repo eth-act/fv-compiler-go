@@ -2,8 +2,8 @@ import GoFV.Opt.RewriteCheck
 import GoFV.Rules.Generated.Generic
 
 /-!
-# `Phi` rules validated per instance: selections of `Phi`s of `SliceMake`s and constant `Phi`s
-(issue #69)
+# `Phi` rules validated per instance: selections of `Phi`s of `SliceMake`s, constant `Phi`s and
+`Phi`s of `Not`s (issue #69)
 
 `generic.rules:1049` (`(SliceLen (Phi (SliceMake _ x _) (SliceMake _ x _))) => x`) and `:1050`
 (the capacity) match through a `Phi`, which the term validator treats as an atom (its value is
@@ -18,8 +18,14 @@ widths likewise) turn a `Phi` itself into a constant; the checked rewrite relate
 by sccp's checker (`GoFV.Opt.RewriteCheck.pcRel`: every argument of the `Phi` is a constant of the
 value it becomes; refinement: `GoFV.Proof.PhiConst.pc_refines`).
 
+`generic.rules:1068` (`(Phi <t> nx:(Not x) ny:(Not y)) && nx.Uses == 1 && ny.Uses == 1 =>
+(Not (Phi <t> x y))`) turns a `Phi` into the `Not` of a fresh `Phi`; the checked rewrite relates
+each instance by `GoFV.Opt.RewriteCheck.pnRel` (the fresh `Phi`'s argument `j` is the argument of
+the `Phi`'s argument `j`, a `Not`, all of a `bool` shape; refinement:
+`GoFV.Proof.PhiNot.pn_refines`).
+
 The rule-level obligation `EffectRule.PhiSel` is the shape that makes one of these per-instance
-checks apply (`RewriteCheck.psShapeOK` or `RewriteCheck.pcShapeOK`).
+checks apply (`RewriteCheck.psShapeOK`, `RewriteCheck.pcShapeOK` or `RewriteCheck.pnShapeOK`).
 -/
 
 namespace GoFV.Proof.Rules
@@ -27,11 +33,13 @@ namespace GoFV.Proof.Rules
 open GoFV.Rules
 
 /-- **The obligation of a `Phi` rule validated per instance**: a `SliceLen`/`SliceCap` of a `Phi`
-with a copy result (`RewriteCheck.psShapeOK`), each instance validated by `RewriteCheck.psRel`, or
-a `Phi` turned a constant (`RewriteCheck.pcShapeOK`), each instance validated by
-`RewriteCheck.pcRel`. -/
+with a copy result (`RewriteCheck.psShapeOK`), each instance validated by `RewriteCheck.psRel`, a
+`Phi` turned a constant (`RewriteCheck.pcShapeOK`), each instance validated by
+`RewriteCheck.pcRel`, or a `Phi` turned a `Not` of a fresh `Phi` (`RewriteCheck.pnShapeOK`), each
+instance validated by `RewriteCheck.pnRel`. -/
 def EffectRule.PhiSel (r : Rule) : Prop :=
-  (GoFV.Opt.RewriteCheck.psShapeOK r || GoFV.Opt.RewriteCheck.pcShapeOK r) = true
+  (GoFV.Opt.RewriteCheck.psShapeOK r || GoFV.Opt.RewriteCheck.pcShapeOK r ||
+    GoFV.Opt.RewriteCheck.pnShapeOK r) = true
 
 /-- `generic.rules:1049`: `(SliceLen (Phi (SliceMake _ x _) (SliceMake _ x _))) => x` -/
 theorem r_generic_1049_sound : EffectRule.PhiSel GoFV.Rules.Generated.Generic.r_generic_1049 :=
@@ -57,12 +65,13 @@ theorem r_generic_784_sound : EffectRule.PhiSel GoFV.Rules.Generated.Generic.r_g
 theorem r_generic_785_sound : EffectRule.PhiSel GoFV.Rules.Generated.Generic.r_generic_785 :=
   rfl
 
-/-- The shape is not vacuous: `generic.rules:1031` (a `SliceLen` of a `SliceMake`) is no `Phi`
-selection, and `generic.rules:1068` (a `Phi` of `Not`s turned `Not (Phi …)`) no constant `Phi`. -/
-example : ¬ EffectRule.PhiSel GoFV.Rules.Generated.Generic.r_generic_1031 := by
-  unfold EffectRule.PhiSel; decide
+/-- `generic.rules:1068`: `(Phi <t> nx:(Not x) ny:(Not y)) && nx.Uses == 1 && ny.Uses == 1 => (Not (Phi <t> x y))` -/
+theorem r_generic_1068_sound : EffectRule.PhiSel GoFV.Rules.Generated.Generic.r_generic_1068 :=
+  rfl
 
-example : ¬ EffectRule.PhiSel GoFV.Rules.Generated.Generic.r_generic_1068 := by
+/-- The shape is not vacuous: `generic.rules:1031` (a `SliceLen` of a `SliceMake`) is no `Phi`
+rule. -/
+example : ¬ EffectRule.PhiSel GoFV.Rules.Generated.Generic.r_generic_1031 := by
   unfold EffectRule.PhiSel; decide
 
 end GoFV.Proof.Rules
