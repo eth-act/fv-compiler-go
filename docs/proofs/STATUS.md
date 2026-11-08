@@ -203,6 +203,20 @@ G3 rejects: `LDP (R0), (R0, R1)` and its two selects) and `genG4_term_witness` (
 `TBNZ [63]`). Coverage on quick-v10 (`lake exe gen-check`): 1,832 of 9,297 functions (19.70%),
 21,243 values.
 
+## Phase 3: genssa, slice G5 (I7, #553)
+
+`GoFV.Proof.Gen.g5_value`, `GoFV.Proof.Gen.g5_term` (`GoFV/Proof/Gen/G5.lean`): when slice G5
+(`checkG5`: G4 with the memory markers `VarDef`, `VarLive`, `KeepAlive` and `WBend`, which emit no
+code) accepts a function, every non-entry value and every terminator that goes to a successor is
+matched by `runProg` steps of genssa's P0 Progs to a state related before the next value or the
+successor's first value, with the registers at the classes the table gives there. Premises
+(`docs/plans/proofs3.md` §4): G4's (`G2Env`, `G3Inv`, `G4Pre` or `G1TermPre`, `CallOK`); no new
+premise. Witnesses `genG5_value_witness` (`g` of `test/stackobj`, which G4 rejects: a spill, a
+static call, its memory and `KeepAlive` of the spilled argument) and `genG5_term_witness`
+(`pallocSum.start`: `TBNZ [63]`). Coverage on quick-v10 (`lake exe gen-check`): 1,833 of 9,297
+functions (19.71%), 21,252 values. The G6 validator (`checkG6`, frame variables: 2,022 functions,
+21.74%) is not proven yet (`docs/plans/proofs3.md` §4).
+
 ## Per-pass fragment coverage (verified pipeline, full-v6)
 
 Runs per pass of `gofv-ssa-opt --check --verified` (96,553 functions, each pass run once per function). *Proven*: the theorem's variant ran and changed the function; *identity*: same function (or tables the function cannot tell apart); *skipped*: an optional pass outside its fragment (the input is kept); *unverified*: a required pass outside its fragment, or a checked rewrite pass whose result differs from stock (`checked variant incomplete`: an unproven rule fired or the validator rejected; the stock result is kept). Every Phase 1 pass has a theorem; `insert resched checks`, `cpufeatures` and `rewrite tern` never run for linux/arm64.

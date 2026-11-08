@@ -43,6 +43,7 @@ import GoFV.Proof.Gen.G1
 import GoFV.Proof.Gen.G2
 import GoFV.Proof.Gen.G3
 import GoFV.Proof.Gen.G4
+import GoFV.Proof.Gen.G5
 import GoFV.Proof.Gen.Loc
 import GoFV.Proof.Gen.Mem
 import GoFV.Proof.Gen.MemN
@@ -55,10 +56,12 @@ import GoFV.Proof.Gen.Spec
 import GoFV.Proof.Gen.Spec2
 import GoFV.Proof.Gen.Spec3
 import GoFV.Proof.Gen.Spec4
+import GoFV.Proof.Gen.Spec5
 import GoFV.Proof.Gen.Stack
 import GoFV.Proof.Gen.Step
 import GoFV.Proof.Gen.Step3
 import GoFV.Proof.Gen.Step4
+import GoFV.Proof.Gen.Step5
 import GoFV.Proof.Gen.Value
 import GoFV.Proof.Gen.Value3
 import GoFV.Proof.Low.AddrFold
@@ -739,6 +742,7 @@ import GoFV.Proof.Witness.GenG1
 import GoFV.Proof.Witness.GenG2
 import GoFV.Proof.Witness.GenG3
 import GoFV.Proof.Witness.GenG4
+import GoFV.Proof.Witness.GenG5
 import GoFV.Proof.Witness.HasWaitingReaders
 import GoFV.Proof.Witness.IDataSel
 import GoFV.Proof.Witness.IMakeSM

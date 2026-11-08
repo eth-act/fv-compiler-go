@@ -1082,35 +1082,30 @@ theorem g3_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps
   exact vk3_step hE0 F (fun _ _ hu hcop => call_not_slot3 hhome3 hu hcop) hcf hv hVK hvs htemp hj
     hj' hreads hm hinv hpre hcall hs
 
-/-- **G3, terminators.** A terminator of a function `checkG3` accepted with the class table `kt`
-that goes to a successor, from a state whose registers hold the classes of the block's end, is
-matched by `runProg` steps to a state related before the successor's first value, with the
-registers at the classes of the successor's start (`kt.at`); an `Exit` block never goes to one. -/
-theorem g3_term {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
-    {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab} {E : MatchEnv}
-    {bid : ID} {blk : Block} {e : Edge} {s s' : LocState} {m : MState}
-    (hc : checkG3 lc ps bstart g = .ok (tab, kt)) (hE : G2Env lc g L ps ret tab E)
-    (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
+/-- A terminator of a function whose blocks `c.blocks` accepted with G3's terminator check
+(`Cx.termG3`) and whose class table `kt` passes `checkK`, from a state whose registers hold the
+classes of the block's end: matched by `runProg` steps to a state related before the successor's
+first value, with the registers at the successor's classes. `g3_term` and the later slices'
+terminator theorems apply it to their validator's facts. -/
+theorem termK_step {H : Hooks} {c : Cx2} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int}
+    {ret : BitVec 64} {tab : PcTab} {kt : KTab} {E : MatchEnv} {bid : ID} {blk : Block}
+    {e : Edge} {s s' : LocState} {m : MState}
+    (hpcOf : E.pcOf = pcOfTab text c.cx.ps.toList tab)
+    (F : Facts c.cx.lc sym text az ez c.cx.ps.toList ret E) (htm : c.tm = c.cx.termG3)
+    (hk : checkK c.cx.lc kt = .ok ()) (hblocks : c.blocks c.cx.lc.ctx.f.blocks.toList = .ok tab)
+    (hbid : bid ∈ c.cx.lc.ctx.f.blocks.toList) (hb : c.cx.lc.ctx.f.block? bid = some blk)
     (hm : LocMatch E s bid blk.values.size m)
-    (hinv : G3Inv E lc (kAt lc kt bid blk blk.values.size) s) (hpre : G1TermPre lc s blk)
-    (ht : stepTermLoc lc s blk = .ok (.goto e, s')) :
-    ∃ m', PStar H L ps.toList ret m m' ∧ LocMatch E s' e.b 0 m' ∧ G3Inv E lc (kt.at e.b) s' ∧
-      e.b ∈ lc.ctx.f.blocks.toList := by
-  obtain ⟨-, hlink, hpcOf, hret, hA, -, -, -, -, -, -⟩ := hE
-  obtain ⟨sym, text, az, ez, hL⟩ : ∃ sym text az ez, L = Link.byId sym text az ez ps.toList :=
-    ⟨_, _, _, _, hlink⟩
-  have htext : L.text = text := by rw [hL]; rfl
-  rw [htext] at hpcOf
-  subst hL
-  obtain ⟨c, rfl, rfl, -, rfl, -, htm, hl, hhome3, -, hk, hlt, hnd, hblocks⟩ := checkG3_spec hc
+    (hinv : G3Inv E c.cx.lc (kAt c.cx.lc kt bid blk blk.values.size) s)
+    (hpre : G1TermPre c.cx.lc s blk) (ht : stepTermLoc c.cx.lc s blk = .ok (.goto e, s')) :
+    ∃ m', PStar H (Link.byId sym text az ez c.cx.ps.toList) c.cx.ps.toList ret m m' ∧
+      LocMatch E s' e.b 0 m' ∧ G3Inv E c.cx.lc (kt.at e.b) s' ∧
+      e.b ∈ c.cx.lc.ctx.f.blocks.toList := by
   obtain ⟨b, j, js, e', next, hb', -, hvals, hterm, hnext, hrow⟩ :=
     Cx2.blocks_spec hblocks bid hbid
   rw [hb] at hb'
   cases hb'
   rw [htm] at hterm
   obtain ⟨hlen, -, -⟩ := Cx2.values_spec hvals
-  have F : Facts c.cx.lc sym text az ez c.cx.ps.toList ret E :=
-    ⟨hl, clsReg_of_home3 hhome3, hnd, hlt, hret, hA⟩
   have hpcT : E.pcOf bid blk.values.size = pcAt text c.cx.ps.toList e' := by
     rw [hpcOf]
     simp only [pcOfTab, hrow, Option.getD_some]
@@ -1135,5 +1130,29 @@ theorem g3_term {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog
       exact (stepTermL_exit hk' hn).elim
     exact fin _ (term_core (H := H) F hst hterm hnext hpcT hm hinv.core hK hpre ht).choose_spec
   · exact fin _ (term_test (H := H) F hst hbr hterm hnext hpcT hm hinv.core hK ht).choose_spec
+
+/-- **G3, terminators.** A terminator of a function `checkG3` accepted with the class table `kt`
+that goes to a successor, from a state whose registers hold the classes of the block's end, is
+matched by `runProg` steps to a state related before the successor's first value, with the
+registers at the classes of the successor's start (`kt.at`); an `Exit` block never goes to one. -/
+theorem g3_term {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
+    {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab} {E : MatchEnv}
+    {bid : ID} {blk : Block} {e : Edge} {s s' : LocState} {m : MState}
+    (hc : checkG3 lc ps bstart g = .ok (tab, kt)) (hE : G2Env lc g L ps ret tab E)
+    (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
+    (hm : LocMatch E s bid blk.values.size m)
+    (hinv : G3Inv E lc (kAt lc kt bid blk blk.values.size) s) (hpre : G1TermPre lc s blk)
+    (ht : stepTermLoc lc s blk = .ok (.goto e, s')) :
+    ∃ m', PStar H L ps.toList ret m m' ∧ LocMatch E s' e.b 0 m' ∧ G3Inv E lc (kt.at e.b) s' ∧
+      e.b ∈ lc.ctx.f.blocks.toList := by
+  obtain ⟨-, hlink, hpcOf, hret, hA, -, -, -, -, -, -⟩ := hE
+  obtain ⟨sym, text, az, ez, hL⟩ : ∃ sym text az ez, L = Link.byId sym text az ez ps.toList :=
+    ⟨_, _, _, _, hlink⟩
+  have htext : L.text = text := by rw [hL]; rfl
+  rw [htext] at hpcOf
+  subst hL
+  obtain ⟨c, rfl, rfl, -, rfl, -, htm, hl, hhome3, -, hk, hlt, hnd, hblocks⟩ := checkG3_spec hc
+  exact termK_step hpcOf ⟨hl, clsReg_of_home3 hhome3, hnd, hlt, hret, hA⟩ htm hk hblocks hbid hb
+    hm hinv hpre ht
 
 end GoFV.Proof.Gen

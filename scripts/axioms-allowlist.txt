@@ -29,6 +29,11 @@ GoFV.Proof.Witness.GenG3.g3_facts._native.native_decide.ax_1_1 1223ee71264a05161
 # pair load and both selects, the pair load reads valid bytes; `checkG4` accepts `pallocSum.start`
 # with G3's tables; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.GenG4.g4_facts._native.native_decide.ax_1_1 ae5d4addd3fb5f10717ed9099ecdc590f9e4bd4dc3086dda87b432c631691f50
+# genG5_value_witness, genG5_term_witness (GoFV/Proof/Witness/GenG5.lean, #553): `checkG5` accepts
+# `g` of test/stackobj and `checkG4` does not (parsed, `Env.load`, `genssa`), `runLoc` runs a spill,
+# a call, its memory and the marker `KeepAlive`; `checkG5` accepts `pallocSum.start` with G3's
+# tables; compiled evaluation, as plF_pipeline.
+GoFV.Proof.Witness.GenG5.g5_facts._native.native_decide.ax_1_1 a3be8ea393f44233edcef9003f245c729dd29866e57d96fbaf8ce30e37c04306
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
