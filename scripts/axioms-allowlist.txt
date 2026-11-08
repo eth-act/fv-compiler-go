@@ -122,6 +122,11 @@ GoFV.Proof.Witness.GenG19.g19_facts._native.native_decide.ax_1_1 c64993a66b09a93
 # `runtime.numCPUStartup` and `MOVDnop` to the 64-bit `-2`, and the upper-bit table before the
 # `MOVDnop` names `R0`; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.GenG20.g20_facts._native.native_decide.ax_1_1 c0d50368e2589983cc61ea53201fb4da1e326602fae0fe7b46fdf71f2e509b0c
+# genG21_value_witness (GoFV/Proof/Witness/GenG21.lean, #553): `checkG21` accepts
+# `(*queueOnePass).next` of std/regexp and `checkG20` does not (parsed, `Env.load`, `genssa`),
+# `runLoc` runs its `MOVWUload` of `q.nextIndex` and `MOVDreg` to the 64-bit `0xffff_fffe`, and the
+# upper-bit table before the `MOVDreg` names `R3`; compiled evaluation, as plF_pipeline.
+GoFV.Proof.Witness.GenG21.g21_facts._native.native_decide.ax_1_1 0000000000000000000000000000000000000000000000000000000000000000
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:

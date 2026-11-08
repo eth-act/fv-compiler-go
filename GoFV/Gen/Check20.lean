@@ -21,7 +21,8 @@ keeps; on quick-v10, 1,300 of the 1,520 `MOVDnop`s follow their load directly.)
 
 G20 accepts `MOVDnop x` with no temporary, `x` its only argument, homed in `x`'s register (one
 G1 may write) at an integer class, `x` of class 8, 16 or 32, no code (`nopKind`), when the table
-before it names `x`'s register at `x`'s class with the signedness `signOf` gives `x` (`nopOK`).
+before it names `x`'s register at `x`'s class with the signedness `signOf` gives `x` (`movdOK`,
+which slice G21 also applies to `MOVDreg x`).
 
 `GoFV/Proof/Gen/G20.lean` proves what an accepted function satisfies.
 -/
@@ -79,14 +80,15 @@ def nopKind (lc : LocCtx) (v : Value) : Except String VKind2 := do
 def vkind20 (lc : LocCtx) (g : G2In) (v : Value) : Except String VKind2 :=
   if v.op == .ARM64MOVDnop then nopKind lc v else vkind19 lc g v
 
-/-- Every `MOVDnop x` finds `x`'s register, class and `signOf` in the upper-bit table before it. -/
-def nopOK (lc : LocCtx) : Bool :=
+/-- Every `MOVDnop x` and `MOVDreg x` (`runLoc`'s `movdLoc`) finds `x`'s register, class and
+`signOf` in the upper-bit table before it. -/
+def movdOK (lc : LocCtx) : Bool :=
   lc.ctx.f.blocks.toList.all fun bid =>
     match lc.ctx.f.block? bid with
     | none => true
     | some b => (List.range b.values.size).all fun i =>
       match (b.values[i]?).bind lc.ctx.f.value? with
-      | some v => v.op != .ARM64MOVDnop || match v.args[0]? with
+      | some v => (v.op != .ARM64MOVDnop && v.op != .ARM64MOVDreg) || match v.args[0]? with
         | some x => match regHome? lc x, cls (lc.ty x) with
           | some r, some c =>
             uAt lc b i == some (r, c, lc.signOf lc.ctx.f.valueTab.size x)
@@ -103,7 +105,7 @@ def checkG20 (lc : LocCtx) (ps : Array Prog) (bstart : ID → Option Nat) (g : G
   let c : Cx2 := { cx, g, vk := vkind20 lc g, tm := cx.termG3 }
   let tab ← c.blocks lc.ctx.f.blocks.toList
   unless pbOK lc ps.toList tab do throw "bounds panic PCDATA"
-  unless nopOK lc do throw "MOVDnop: upper bits unknown"
+  unless movdOK lc do throw "MOVDnop: upper bits unknown"
   if let some i := (List.range lc.homes.size).find? (!homeOK10 lc ·) then throw (homeErr lc i)
   unless cloFirst lc do throw "LoweredGetClosurePtr after code"
   checkFrame lc g

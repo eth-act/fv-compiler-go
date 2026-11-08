@@ -7,7 +7,7 @@ import GoFV.Proof.Gen.Spec19
 `checkG20 lc ps bstart g = .ok (tab, kt)` unfolded into the facts the soundness proof
 (`GoFV/Proof/Gen/G20.lean`) uses (`checkG20_spec`): G19's (`Spec19.lean`) with G20's value check
 (`vkind20_spec`, `VK20`: G19's values and `MOVDnop`), and the upper-bit table at each `MOVDnop`
-(`nopOK_spec`).
+and `MOVDreg` (`movdOK_spec`).
 -/
 
 namespace GoFV.Gen.Check
@@ -66,21 +66,23 @@ theorem vkind20_spec {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2}
     obtain ⟨ht, h19⟩ := vkind19_spec h hen
     exact ⟨ht, .g19 hop h19⟩
 
-/-- What `nopOK` checked: before a `MOVDnop x` at index `i` of block `bid`, the upper-bit table
-names `x`'s register at `x`'s class with the signedness `signOf` gives `x`. -/
-theorem nopOK_spec {lc : LocCtx} (h : nopOK lc = true) {bid : ID}
+/-- What `movdOK` checked: before a `MOVDnop x` or `MOVDreg x` at index `i` of block `bid`, the
+upper-bit table names `x`'s register at `x`'s class with the signedness `signOf` gives `x`. -/
+theorem movdOK_spec {lc : LocCtx} (h : movdOK lc = true) {bid : ID}
     (hbid : bid ∈ lc.ctx.f.blocks.toList) {b : Block} (hb : lc.ctx.f.block? bid = some b)
     {i : Nat} {id : ID} (hi : b.values[i]? = some id) {v : Value}
-    (hv : lc.ctx.f.value? id = some v) (hop : v.op = .ARM64MOVDnop) {x : ID}
-    (hx : v.args[0]? = some x) :
+    (hv : lc.ctx.f.value? id = some v) (hop : v.op = .ARM64MOVDnop ∨ v.op = .ARM64MOVDreg)
+    {x : ID} (hx : v.args[0]? = some x) :
     ∃ r c, regHome? lc x = some r ∧ cls (lc.ty x) = some c ∧
       uAt lc b i = some (r, c, lc.signOf lc.ctx.f.valueTab.size x) := by
-  unfold nopOK at h
+  unfold movdOK at h
   have := List.all_eq_true.1 h _ hbid
   simp only [hb] at this
   have hi' : i < b.values.size := (Array.getElem?_eq_some_iff.1 hi).1
   have := List.all_eq_true.1 this i (List.mem_range.2 hi')
-  simp only [hi, Option.bind_some, hv, hop, bne_self_eq_false, Bool.false_or, hx] at this
+  have hne : (v.op != .ARM64MOVDnop && v.op != .ARM64MOVDreg) = false := by
+    rcases hop with h | h <;> rw [h] <;> rfl
+  simp only [hi, Option.bind_some, hv, hne, Bool.false_or, hx] at this
   revert this
   cases hr : regHome? lc x with
   | none => simp
@@ -91,7 +93,7 @@ theorem nopOK_spec {lc : LocCtx} (h : nopOK lc = true) {bid : ID}
       intro hu
       exact ⟨r, c, rfl, rfl, by simpa using hu⟩
 
-/-- What `checkG20` accepted: G19's facts with G20's value check, and `nopOK`. -/
+/-- What `checkG20` accepted: G19's facts with G20's value check, and `movdOK`. -/
 theorem checkG20_spec {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}
     {tab : PcTab} {kt : KTab} (h : checkG20 lc ps bstart g = .ok (tab, kt)) :
     ∃ c : Cx2, c.cx.lc = lc ∧ c.cx.ps = ps ∧ c.cx.bstart = bstart ∧ c.g = g ∧
@@ -99,7 +101,7 @@ theorem checkG20_spec {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Na
       lc.ctx.f.lowered = true ∧ (∀ i, homeOK10 lc i = true) ∧ checkFrame lc g = .ok () ∧
       checkK lc kt = .ok () ∧ (∀ p ∈ ps.toList, p.id < 2 ^ 32) ∧ (ps.toList.map (·.id)).Nodup ∧
       c.blocks lc.ctx.f.blocks.toList = .ok tab ∧ pbOK lc ps.toList tab = true ∧
-      nopOK lc = true := by
+      movdOK lc = true := by
   unfold checkG20 at h
   obtain ⟨hl, h⟩ := ex_guard h
   obtain ⟨tab', hb, h⟩ := ex_bind_eq_ok h
