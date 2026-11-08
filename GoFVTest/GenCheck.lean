@@ -1,5 +1,5 @@
 import GoFV.Gen.Genssa
-import GoFV.Gen.Check6
+import GoFV.Gen.Check7
 import GoFV.Asm.Parse
 import GoFV.SSA.Parse
 
@@ -10,7 +10,8 @@ For every `*.prog` file under the given directories with its companion `.ssa` fi
 `GoFV.Gen.genssa` (on the exported frame, as `gen-parity`) and the validators of slices G1
 (`GoFV.Gen.Check.checkG1`), G2 (`GoFV.Gen.Check.checkG2`, with the Prog list's symbols and the
 exported frame's slot operands), G3 (`GoFV.Gen.Check.checkG3`), G4 (`GoFV.Gen.Check.checkG4`), G5
-(`GoFV.Gen.Check.checkG5`) and G6 (`GoFV.Gen.Check.checkG6`), all four with G2's inputs, on its P0
+(`GoFV.Gen.Check.checkG5`), G6 (`GoFV.Gen.Check.checkG6`) and G7 (`GoFV.Gen.Check.checkG7`), all
+with G2's inputs, on its P0
 output and the function after `trim`, and counts the accepted functions. Rejections by the last
 slice are grouped by their reason with value and block numbers removed.
 
@@ -31,6 +32,7 @@ structure Stats where
   accepted4 : Nat := 0
   accepted5 : Nat := 0
   accepted6 : Nat := 0
+  accepted7 : Nat := 0
   errors : Nat := 0
   values : Nat := 0
   acceptedValues : Nat := 0
@@ -39,6 +41,7 @@ structure Stats where
   acceptedValues4 : Nat := 0
   acceptedValues5 : Nat := 0
   acceptedValues6 : Nat := 0
+  acceptedValues7 : Nat := 0
   /-- Functions by the set of reasons that reject them (sole reason: one-element set). -/
   sole : Std.HashMap String Nat := {}
   /-- Functions each reason occurs in. -/
@@ -52,7 +55,7 @@ def Stats.merge (a b : Stats) : Stats :=
   { files := a.files + b.files, accepted := a.accepted + b.accepted,
     accepted2 := a.accepted2 + b.accepted2, accepted3 := a.accepted3 + b.accepted3,
     accepted4 := a.accepted4 + b.accepted4, accepted5 := a.accepted5 + b.accepted5,
-    accepted6 := a.accepted6 + b.accepted6,
+    accepted6 := a.accepted6 + b.accepted6, accepted7 := a.accepted7 + b.accepted7,
     errors := a.errors + b.errors,
     values := a.values + b.values, acceptedValues := a.acceptedValues + b.acceptedValues,
     acceptedValues2 := a.acceptedValues2 + b.acceptedValues2,
@@ -60,6 +63,7 @@ def Stats.merge (a b : Stats) : Stats :=
     acceptedValues4 := a.acceptedValues4 + b.acceptedValues4,
     acceptedValues5 := a.acceptedValues5 + b.acceptedValues5,
     acceptedValues6 := a.acceptedValues6 + b.acceptedValues6,
+    acceptedValues7 := a.acceptedValues7 + b.acceptedValues7,
     sole := mergeMap a.sole b.sole, occurs := mergeMap a.occurs b.occurs,
     accept := a.accept ++ b.accept }
 
@@ -85,9 +89,9 @@ def Stats.reject (st : Stats) (msgs : List String) : Stats :=
     | _ => st.sole.insert s!"({ks.length} reasons)" (st.sole.getD s!"({ks.length} reasons)" 0 + 1)
   { st with occurs, sole }
 
-/-- Every reason the G6 validator could give for `lc` (homes, values, block kinds, the frame;
+/-- Every reason the G7 validator could give for `lc` (homes, values, block kinds, the frame;
 then the run itself). -/
-def reasons6 (lc : GoFV.SSA.Sem.LocCtx) (ps : Array Prog) (bstart : GoFV.SSA.ID → Option Nat)
+def reasons7 (lc : GoFV.SSA.Sem.LocCtx) (ps : Array Prog) (bstart : GoFV.SSA.ID → Option Nat)
     (g : Check.G2In) : List String := Id.run do
   let mut rs : List String := []
   unless lc.ctx.f.lowered do rs := "not lowered" :: rs
@@ -97,7 +101,7 @@ def reasons6 (lc : GoFV.SSA.Sem.LocCtx) (ps : Array Prog) (bstart : GoFV.SSA.ID 
     let some b := lc.ctx.f.block? bid | continue
     for id in b.values do
       let some v := lc.ctx.f.value? id | continue
-      match Check.vkind6 lc g v with
+      match Check.vkind7 lc g v with
       | .error e => rs := e :: rs
       | .ok _ => pure ()
     if Check.condBr b.kind == none && Check.zeroBr b.kind == none && Check.testBr b.kind == none &&
@@ -105,7 +109,7 @@ def reasons6 (lc : GoFV.SSA.Sem.LocCtx) (ps : Array Prog) (bstart : GoFV.SSA.ID 
       rs := s!"b{bid}: block kind {b.kind.name}" :: rs
   if let .error e := Check.checkFrame lc g then rs := e :: rs
   if rs.isEmpty then
-    match Check.checkG6 lc ps bstart g with
+    match Check.checkG7 lc ps bstart g with
     | .error e => rs := [e]
     | .ok _ => pure ()
   return rs
@@ -167,13 +171,17 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
   let st := if ok5 then
       { st with accepted5 := st.accepted5 + 1, acceptedValues5 := st.acceptedValues5 + nv }
     else st
-  match Check.checkG6 lc ps bstart g with
+  let ok6 := (Check.checkG6 lc ps bstart g).toOption.isSome
+  let st := if ok6 then
+      { st with accepted6 := st.accepted6 + 1, acceptedValues6 := st.acceptedValues6 + nv }
+    else st
+  match Check.checkG7 lc ps bstart g with
   | .ok _ =>
-    let tag := if ok4 then "" else if ok5 then " (G5)" else " (G6)"
-    return { st with accepted6 := st.accepted6 + 1, acceptedValues6 := st.acceptedValues6 + nv,
+    let tag := if ok4 then "" else if ok5 then " (G5)" else if ok6 then " (G6)" else " (G7)"
+    return { st with accepted7 := st.accepted7 + 1, acceptedValues7 := st.acceptedValues7 + nv,
                      accept := st.accept.push s!"{path}{tag}" }
   | .error msg =>
-    let rs := reasons6 lc ps bstart g
+    let rs := reasons7 lc ps bstart g
     return st.reject (if rs.isEmpty then [msg] else rs)
 
 def progFiles (p : System.FilePath) : IO (Array System.FilePath) := do
@@ -214,6 +222,7 @@ def main (args : List String) : IO UInt32 := do
   out := out ++ s!"| {st.files} | G4 | {st.accepted4} | {pct st.accepted4 st.files} | {st.values} | {st.acceptedValues4} |\n"
   out := out ++ s!"| {st.files} | G5 | {st.accepted5} | {pct st.accepted5 st.files} | {st.values} | {st.acceptedValues5} |\n"
   out := out ++ s!"| {st.files} | G6 | {st.accepted6} | {pct st.accepted6 st.files} | {st.values} | {st.acceptedValues6} |\n"
+  out := out ++ s!"| {st.files} | G7 | {st.accepted7} | {pct st.accepted7 st.files} | {st.values} | {st.acceptedValues7} |\n"
   out := out ++ s!"\n{st.errors} parse, env or genssa errors\n"
   let sorted (m : Std.HashMap String Nat) :=
     m.toArray.qsort fun a b => a.2 > b.2 || (a.2 == b.2 && a.1 < b.1)
@@ -221,7 +230,7 @@ def main (args : List String) : IO UInt32 := do
   for (k, c) in (sorted st.sole).toList.take 60 do out := out ++ s!"| `{k}` | {c} |\n"
   out := out ++ "\n| reason | functions it occurs in |\n| --- | ---: |\n"
   for (k, c) in (sorted st.occurs).toList.take 80 do out := out ++ s!"| `{k}` | {c} |\n"
-  out := out ++ "\naccepted (G6; the first slice that accepts a function past G4 in parentheses):\n"
+  out := out ++ "\naccepted (G7; the first slice that accepts a function past G4 in parentheses):\n"
   for a in st.accept.qsort (· < ·) do out := out ++ s!"- {a}\n"
   IO.println out
   if let some f := table then IO.FS.writeFile f out

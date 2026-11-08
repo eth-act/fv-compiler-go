@@ -236,6 +236,22 @@ Witnesses `genG6_value_witness` (`SChan.Send` of `test/closedchan`, which G5 rej
 `genG6_term_witness` (`pallocSum.start`: `TBNZ [63]`). Coverage on quick-v10 (`lake exe
 gen-check`): 1,946 of 9,297 functions (20.93%), 24,819 values.
 
+## Phase 3: genssa, slice G7 (I7, #553)
+
+`GoFV.Proof.Gen.g7_value`, `GoFV.Proof.Gen.g7_term`, `GoFV.Proof.Gen.g7_nilPanic`
+(`GoFV/Proof/Gen/G7.lean`): when slice G7 (`checkG7`: G6 with the nil checks `LoweredNilCheck p
+mem`, no home, `p` in a 64-bit register `Rp`, emitted `MOVB (Rp), R27`) accepts a function,
+`g7_value` and `g7_term` are `g6_value`'s and `g6_term`'s statements (a nil check that does not
+panic changes only `X27`, which `LocMatch` leaves free, and the PC), and a nil check whose
+`runLoc` step panics panics with `nilDeref`, and `runProg` steps reach its `MOVB`, which faults in
+the nil page: `PPanics` (`GoFV/Proof/Gen/Progs7.lean`, `runProg`'s panic as `MPanics` is
+`runMach`'s; `PPanics.runProg`). Premises (`docs/plans/proofs3.md` §4): G6's, with `G7Pre`
+(`G4Pre`, and `NilPre`: a nil-checked pointer outside the nil block points to a byte of a live
+block) for values. Witnesses `genG7_value_witness` and `genG7_panic_witness` (`(*A).g` of
+`test/method`, which G6 rejects: the receiver's nil check, on a pointer to a global and on nil,
+where `runProg` panics). Coverage on quick-v10 (`lake exe gen-check`): 2,109 of 9,297 functions
+(22.68%), 26,795 values.
+
 ## Per-pass fragment coverage (verified pipeline, full-v6)
 
 Runs per pass of `gofv-ssa-opt --check --verified` (96,553 functions, each pass run once per function). *Proven*: the theorem's variant ran and changed the function; *identity*: same function (or tables the function cannot tell apart); *skipped*: an optional pass outside its fragment (the input is kept); *unverified*: a required pass outside its fragment, or a checked rewrite pass whose result differs from stock (`checked variant incomplete`: an unproven rule fired or the validator rejected; the stock result is kept). Every Phase 1 pass has a theorem; `insert resched checks`, `cpufeatures` and `rewrite tern` never run for linux/arm64.
