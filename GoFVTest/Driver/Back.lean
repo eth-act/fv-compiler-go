@@ -143,23 +143,65 @@ def getPC (f : GoFV.SSA.Func) (gst : GoFV.Gen.GenState) (entry : ID) (asmPC : St
   let some id := gst.progAfter[v]? | throw s!"GetPC({b}, {v}): no valueToProgAfter"
   pcOf id
 
-/-- Runs the chain on the function after `trim` (`e`) and a driver input file (`pin`). -/
-def chain (e : ExportFile) (pin : ProgFile) : Except String BackOut := do
-  let env ← (GoFV.Gen.Env.load e pin).mapError (s!"env: {·}")
+/-- The chain's frame and genssa (A1–C6) with genssa's symbol numbers mapped to the input file's:
+`tab` holds the file's symbols and the new ones, `gmap[k]` is the file number of genssa's `k`. -/
+structure GenP0 where
+  fr : GoFV.Gen.FrameOut
+  gout : GoFV.Gen.GenOut
+  tab : SymTab
+  gmap : Array Nat
+
+/-- The file number of genssa's symbol `k`. -/
+def GenP0.gm (g : GenP0) (k : Nat) : Nat := g.gmap[k]?.getD k
+
+/-- The frame layout (`allocFrame`) and `genssa` on it for a loaded environment and the driver
+input file (`pin`) it was loaded with; symbols numbered as `chain` does. -/
+def genP0 (env : GoFV.Gen.Env) (pin : ProgFile) : Except String GenP0 := do
   -- A1, A2: the frame.
   let fr ← (GoFV.Gen.allocFrame env).mapError (s!"frame: {·}")
   -- B1-C6: genssa on that frame.
   let gout ← (GoFV.Gen.genssa env fr).mapError (s!"genssa: {·}")
-  let gst := gout.st
   -- Symbols: genssa's numbers to the file's.
-  let defs := allDefs pin
-  let mut tab := SymTab.ofDefs defs
+  let mut tab := SymTab.ofDefs (allDefs pin)
   let mut gmap : Array Nat := #[]
-  for (nm, abi) in gst.syms do
+  for (nm, abi) in gout.st.syms do
     let (t, k) := tab.intern nm abi
     tab := t
     gmap := gmap.push k
-  let gm : Nat → Nat := fun k => gmap[k]?.getD k
+  return { fr, gout, tab, gmap }
+
+/-- The file `Flushplist` reads: `pin` with the chain's frame and its P0 section (genssa's
+Progs, function info and `needzero`, in the file's symbol numbers; the debug info `dbg`). -/
+def GenP0.progFile (g : GenP0) (pin : ProgFile) (dbg : Option FuncDebug) : ProgFile :=
+  let gst := g.gout.st
+  let gm := g.gm
+  let progs := g.gout.order.filterMap fun id => (gst.progs[id]?).map (Prog.mapSym gm)
+  let t := pin.genin.text
+  let fn0 : FuncInfo :=
+    { sym := t.sym, args := t.args, locals := t.locals, funcID := t.funcID, funcFlag := t.funcFlag,
+      startLine := t.startLine, attr := t.attr,
+      spills := gst.spills.map fun x => { x with addr := Addr.mapSym gm x.addr },
+      inlMarks := gst.inlMarks, jumpTables := gst.jumpTableSyms.map fun (y, ts) => (gm y, ts),
+      aux := FuncAux.mapSym gm gst.aux }
+  let p0 : Prog0 :=
+    { pin.prog0 with defs := allDefs pin ++ g.tab.newDefs, progs, fn := fn0,
+                     needzero := gst.dcl.filterMap fun d => if d.flags.needzero then some d.name else none,
+                     regArgs := #[], dbg }
+  let fr := g.fr
+  let frame : Frame :=
+    { pin.frame with dclOut := fr.dcl, optDcl := fr.optDcl, merges := fr.merges,
+                     stksize := fr.stksize, stkptrsize := fr.stkptrsize, stkalign := fr.stkalign }
+  { pin with frame, prog0 := p0 }
+
+/-- Runs the chain on the function after `trim` (`e`) and a driver input file (`pin`). -/
+def chain (e : ExportFile) (pin : ProgFile) : Except String BackOut := do
+  let env ← (GoFV.Gen.Env.load e pin).mapError (s!"env: {·}")
+  let g ← genP0 env pin
+  let fr := g.fr
+  let gst := g.gout.st
+  let tab := g.tab
+  let gm := g.gm
+  let defs := allDefs pin
   -- E1: BuildFuncDebug on the frame (`Flag_locationlists`; DebugInfo set by buildssa).
   let auxToN : Std.HashMap Nat Nat := defs.foldl (init := {}) fun m d => match d with
     | .name k nd => match nd.aux with
@@ -183,22 +225,7 @@ def chain (e : ExportFile) (pin : ProgFile) : Except String BackOut := do
       pure (some { d with entry := (o.entry : Int), slots, vars, lists, pcs := #[] } : Option FuncDebug)
     | _, _ => pure none
   -- P0: the prog0 section of the chain's file.
-  let progs := gout.order.filterMap fun id => (gst.progs[id]?).map (Prog.mapSym gm)
-  let t := pin.genin.text
-  let fn0 : FuncInfo :=
-    { sym := t.sym, args := t.args, locals := t.locals, funcID := t.funcID, funcFlag := t.funcFlag,
-      startLine := t.startLine, attr := t.attr,
-      spills := gst.spills.map fun x => { x with addr := Addr.mapSym gm x.addr },
-      inlMarks := gst.inlMarks, jumpTables := gst.jumpTableSyms.map fun (y, ts) => (gm y, ts),
-      aux := FuncAux.mapSym gm gst.aux }
-  let p0 : Prog0 :=
-    { pin.prog0 with defs := defs ++ tab.newDefs, progs, fn := fn0,
-                     needzero := gst.dcl.filterMap fun d => if d.flags.needzero then some d.name else none,
-                     regArgs := #[], dbg }
-  let frame : Frame :=
-    { pin.frame with dclOut := fr.dcl, optDcl := fr.optDcl, merges := fr.merges,
-                     stksize := fr.stksize, stkptrsize := fr.stkptrsize, stkalign := fr.stkalign }
-  let pf1 : ProgFile := { pin with frame, prog0 := p0 }
+  let pf1 := g.progFile pin dbg
   -- D1-D7: Flushplist.
   let fo ← (flush pf1).mapError (s!"Flushplist: {·}")
   let st := fo.st

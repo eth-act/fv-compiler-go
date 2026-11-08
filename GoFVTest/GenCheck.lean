@@ -2,6 +2,7 @@ import GoFV.Gen.Genssa
 import GoFV.Gen.Check18
 import GoFV.Asm.Parse
 import GoFV.SSA.Parse
+import GoFVTest.GenIn
 
 /-!
 # `gen-check`: coverage of the genssa validator (`docs/plans/proofs3.md` §3, §4)
@@ -109,19 +110,6 @@ def Stats.merge (a b : Stats) : Stats :=
     sole := mergeMap a.sole b.sole, occurs := mergeMap a.occurs b.occurs,
     accept := a.accept ++ b.accept }
 
-/-- The reason with `v<n>`, `b<n>` and other numbers replaced. -/
-def classOf (msg : String) : String := Id.run do
-  let mut out := ""
-  let mut prevDigit := false
-  for c in msg.toList do
-    if c.isDigit then
-      unless prevDigit do out := out.push '#'
-      prevDigit := true
-    else
-      out := out.push c
-      prevDigit := false
-  return out
-
 /-- Record a rejected function with its reasons. -/
 def Stats.reject (st : Stats) (msgs : List String) : Stats :=
   let ks := (msgs.map classOf).eraseDups
@@ -155,17 +143,6 @@ def reasons18 (lc : GoFV.SSA.Sem.LocCtx) (ps : Array Prog) (bstart : GoFV.SSA.ID
     | .error e => rs := [e]
     | .ok _ => pure ()
   return rs
-
-/-- Go's frame layout of slot `k`: the name class and operand offset (`AddrAuto`). -/
-def slotOpOf (env : Env) (offs : Array (Option Int)) (k : GoFV.SSA.SlotKey) :
-    Option (AddrName × Int) := do
-  let n ← env.nameOfAux? k.name
-  let off ← (offs[n]?).join
-  let x ← (env.name n).toOption
-  let outregs := (env.inFlags[n]?).any (·.outregs)
-  let cls := if x.cls == "PPARAM" || (x.cls == "PPARAMOUT" && !outregs) then AddrName.PARAM
-    else .AUTO
-  return (cls, off + k.off)
 
 def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
   let st := { st with files := st.files + 1 }

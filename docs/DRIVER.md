@@ -36,6 +36,7 @@ gofv-ssa-opt --verified [--from <pass>] [--vstats FILE] [--profile] <in.ssa>
 gofv-ssa-opt --list
 gofv-ssa-opt --check [--mixed] [--whole-file-env] [--strict] [--jobs N] [--max-report N] [--table FILE] <dir|file>...
 gofv-ssa-opt --check --verified [--whole-file-env] [--jobs N] [--max-report N] [--table FILE] <dir|file>...
+gofv-ssa-opt --check --verified --e2e [--whole-file-env] [--jobs N] [--table FILE] [--accepted FILE] <dir|file>...
 gofv-ssa-opt --back <in>
 gofv-ssa-opt --back-check [--jobs N] [--max-report N] [--table FILE] <dir|file>...
 ```
@@ -294,6 +295,23 @@ rejected `schedule` runs (`SchedClass.schedClass`: the classes of the pairs `swa
 class, first unverified from `lower` on / all. It exits 1 only for parse errors or no input. The
 nightly gate runs
 it on the full corpus, and `driver-e2e.sh --verified`, as reports (`docs/GATE.md`).
+
+`gofv-ssa-opt --check --verified --e2e <dir|file>...` counts the functions the end-to-end theorem
+`GoFV.Proof.Obj.verified_mach_ret` applies to (`GoFVTest/Driver/E2E.lean`): per `.ssa` file with
+its companion `.prog` file, the verified pipeline as above; on a `fullyVerified` result, the back
+end on the pipeline's own output (function and tables): `Env.load` with the `trim` section's
+function replaced (homes and temporaries from its `f.low`), `allocFrame`, `genssa` with its
+Progs in the file's symbol numbers (as `chain`), `checkG18` against `LocCtx.make` of the
+pipeline's tables and function and `retRegsOK` on its class tables (every `Ret` returns its
+results in their ABI registers), `Flushplist` on those Progs and `checkObj` on the same Progs.
+From the `.prog` file it reads only the input view (`inputView`: definitions, config, `Dcl` at
+`AllocFrame`'s start, `genin`), no stock result. It prints the fully verified functions, those
+the back end ran on, those `checkG18`, `retRegsOK`, `checkObj` and all three accept (the
+end-to-end count), the end-to-end ones whose pipeline output equals stock, the top back-end
+errors and rejection reasons (numbers replaced by `#`), and as a cross-check the same back end on
+the stock `trim` function (whole-file tables; its `checkG18` count is `gen-check`'s G18 count).
+`--accepted FILE` writes the end-to-end accepted files. Exit 1 only for parse errors (including
+a missing `.prog`) or no input.
 
 `gofv-ssa-opt --verified --profile <in.ssa>` prints to stderr where the verified pipeline spends
 its time on one function (ms): `verifiedPipeline` through `rewrite tern`, then per pass from
