@@ -48,6 +48,11 @@ GoFV.Proof.Witness.GenG7.g7_facts._native.native_decide.ax_1_1 2e048d5bc15ed07aa
 # `genssa`), `runLoc` runs the write-barrier request and both selects; compiled evaluation, as
 # plF_pipeline.
 GoFV.Proof.Witness.GenG8.g8_facts._native.native_decide.ax_1_1 029b115294e9bb9d16738ed860ddf950b4b14f6f1b645f6bd7ee5cb8095e2fe6
+# objFrame_entry_witness, objFrame_exit_witness (GoFV/Proof/Witness/ObjFrame.lean, #553): `checkObj`
+# accepts `testInts` of test/makeslice (parsed, `flush`, as obj-check) framed with a stack check,
+# `linkCode` links it, the stack check passes from the entry state; compiled evaluation, as
+# plF_pipeline.
+GoFV.Proof.Witness.ObjFrame.obj_facts._native.native_decide.ax_1_1 805b04e2527ebe8c51d7e48efe4d57176d391d4c17f0c784dad82ff2352a5c3c
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
