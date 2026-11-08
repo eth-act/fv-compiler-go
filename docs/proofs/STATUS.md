@@ -483,6 +483,38 @@ and the relation of the returned values and memory (`rs`, `mm`) to the ABI resul
 (`ExitRel` relates the state before the terminator, whose `MakeResult` reads them from their
 homes).
 
+### End-to-end coverage (`gofv-ssa-opt --check --verified --e2e`)
+
+The functions `verified_mach_ret`'s function-level premises hold of, in the form the theorem takes
+with `checkG18` and `retRegsOK` (#553, `agent/objwide`): the verified pipeline is `fullyVerified`
+(as `--check --verified` runs it: driver export environment, type rounds), and on the pipeline's
+own output (function and tables) genssa's P0 Progs are accepted by `checkG18` against
+`LocCtx.make r.st.tables r.st.func`, `retRegsOK` holds of its class tables, and `checkObj` accepts
+`Flushplist`'s output on those same Progs (`GoFVTest/Driver/E2E.lean`, `docs/DRIVER.md`). Frame
+(`allocFrame`), Progs and object are the ports' own; from the stock `.prog` file only the driver
+input view is read (definitions, config, `Dcl` at `AllocFrame`'s start, `genin`). The stock
+column runs the same back end on the stock `trim` function of every function (its `checkG18`
+count equals `gen-check`'s G18 count). Commit 1549ccc0, `--jobs 4` under `scripts/memcap.sh`.
+
+| quick-v10 (9,297 functions, 6 min 42 s) | pipeline output | share | stock `trim` |
+| --- | ---: | ---: | ---: |
+| fully verified (Phase 2, through `trim`) | 7,254 | 78.02% | - |
+| … genssa and `Flushplist` ran | 7,000 | 75.29% | 9,297 |
+| … ∧ `checkG18` | 3,775 | 40.60% | 4,052 |
+| … ∧ `checkG18` ∧ `retRegsOK` | 3,418 | 36.76% | 3,627 |
+| … ∧ `checkObj` | 6,455 | 69.43% | 7,741 |
+| **… ∧ `checkG18` ∧ `retRegsOK` ∧ `checkObj` (end to end)** | **3,418** | **36.76%** | 3,626 |
+| … end to end, pipeline output identical to stock after `trim` | 3,005 | 32.32% | - |
+
+`pallocSum.start` (the witness `verified_mach_witness`) is among the accepted. Top reasons among
+the fully verified: back-end errors `genssa: aux a# is not a Dcl name` (254: the pipeline's output
+uses an auto the stock `Dcl` of the `.prog` input view does not list); `checkG18`: `not lowered`
+(240, only generic ops), `frame variable off another base` (229), `op MOVDnop` (220), `store
+shape` (174), `op LDAR` (167), `op CALLtail` (164), `SP after the entry values` (140);
+`retRegsOK`: a `Ret` block's results not in their ABI registers (357); `checkObj`: `FLDPQ`
+(SIMD&FP, 109), unmodelled atomics `LDADDAL`/`CASAL`/`SWPAL`/`LDORAL` (≈250 together), `tail:
+spill register` (58), `MVN` (21), shifts by a register (38), divisions (≈40).
+
 ## Per-pass fragment coverage (verified pipeline, full-v6)
 
 Runs per pass of `gofv-ssa-opt --check --verified` (96,553 functions, each pass run once per function). *Proven*: the theorem's variant ran and changed the function; *identity*: same function (or tables the function cannot tell apart); *skipped*: an optional pass outside its fragment (the input is kept); *unverified*: a required pass outside its fragment, or a checked rewrite pass whose result differs from stock (`checked variant incomplete`: an unproven rule fired or the validator rejected; the stock result is kept). Every Phase 1 pass has a theorem; `insert resched checks`, `cpufeatures` and `rewrite tern` never run for linux/arm64.
