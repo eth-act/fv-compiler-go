@@ -2069,9 +2069,221 @@ def g : G2In :=
   | .ok x => x.2.2.2
   | .error _ => { syms := #[], slotOp := fun _ => none, stksize := 0 }
 
-#eval match checkG25 lc ps bs g with
-  | .ok (t, k) => s!"{t} {k.map fun (b, m) => (b, (List.range 64).filterMap fun r => (m.get r).map (r, ·))}"
-  | .error e => e
-#eval ((lc.ctx.f.block? 1).map (·.values.toList), (accessedVars lc).isEmpty, (homeSlots lc).isEmpty)
+/-- The PC table `checkG25` gives (`b1`: one entry per value `v17`, `v1`, `v11`, `v9`, `v18`,
+`v12`, `v14`, `v16`, then the `RET`). -/
+def tab : PcTab := [(1, [7, 7, 7, 10, 10, 12, 13, 14, 14])]
+
+/-- The class table `checkG25` gives (nothing known at the entry). -/
+def kt : KTab := (match checkG25 lc ps bs g with
+  | .ok (_, k) => k
+  | .error _ => [])
+
+def blk1 : Block := (lc.ctx.f.block? 1).getD default
+
+def val (n : ID) : Value := (lc.ctx.f.value? n).getD default
+
+/-- P0's layout: the Prog with ID `n` at `0x10000 + 4n`, a 16-byte frame, every symbol at
+`symA`. -/
+def L : Link := Link.byId (fun _ => GenG2.symA) GenG2.text 16 8 ps.toList
+
+/-- A framed activation (`SP = 0x7fff0000`, `g = 0x9000`, saved `LR` and `FP` 0) with the globals
+at `symA` and the PC table of `checkG25`. -/
+def E : MatchEnv :=
+  { lc, ι := GenG12.ι, sp := GenG2.sp0, slot := fun _ => none, g := 0x9000, lr := 0, fp := 0,
+    framed := true, pcOf := pcOfTab GenG2.text ps.toList tab }
+
+/-- The empty memory. -/
+def mem0 : Mem := {}
+
+/-- The flags of `CMP $0, R1` on `f & flagRO = 32` (`Flags.toValSub`: `N`, `Z`, `V` clear, `C`
+set, `g` the sign of `-32`). -/
+def fl0 : Val := .agg [.bool false, .bool false, .bool true, .bool false, .bool true]
+
+/-- The `runLoc` state before `v14`: `flagStickyRO = 32` in `R1`, the flags `fl0`, every other
+register `poison`. -/
+def s0 : LocState :=
+  { fr := { regs := Array.replicate 32 none, args := [], mem0 := mem0 },
+    regs := Array.ofFn (n := 64) fun i => if i.val = 1 then .int .w64 32 else .poison,
+    flags := fl0, slots := [], mem := .mem mem0 }
+
+/-- The machine before `v14`: `X1 = 32`, `NZCV` the flags of `fl0`, the activation's `g` and
+`FP`, the PC of `v14`, a zero memory. -/
+def m0 : MState :=
+  { x := fun k => if k = 1 then 32 else if k = 28 then 0x9000 else if k = 29 then GenG2.sp0 - 8
+      else 0,
+    sp := GenG2.sp0, v := fun _ => 0, nzcv := ⟨false, false, true, false⟩,
+    pc := E.pcOf 1 6, mem := fun _ => 0 }
+
+/-- A read that gives no pointer. -/
+def noPtr (r : Res Val) : Bool :=
+  match r with
+  | .ok (.ptr _) => false
+  | _ => true
+
+/-- The register holds the 64-bit integer 32. -/
+def is32 : Option Val → Bool
+  | some (.int .w64 x) => x == 32
+  | _ => false
+
+theorem is32_spec {o : Option Val} (h : is32 o = true) : o = some (.int .w64 32) := by
+  unfold is32 at h
+  split at h
+  · rw [beq_iff_eq] at h; rw [h]
+  · cases h
+
+/-- What compiled evaluation checks on the method: `checkG25` accepts it with `tab` and `kt` and
+`checkG24` does not; it accesses no frame variable and has no home slot; `b1` holds `v14`
+(`CSEL0`, whose arguments read no pointer in `s0`) at index 6, `R1` has class 64 before `v14` and
+nothing is in the upper-bit table there; `stepLoc` runs `v14` from `s0` to `R0 = 32`. -/
+def gFacts : Bool :=
+  (checkG25 lc ps bs g).toOption == some (tab, kt) && (checkG24 lc ps bs g).toOption.isNone &&
+    (accessedVars lc).isEmpty && (homeSlots lc).isEmpty &&
+    lc.ctx.f.blocks.toList.contains 1 && (lc.ctx.f.block? 1).isSome &&
+    (lc.ctx.f.value? 14).isSome && blk1.values[6]? == some 14 && (val 14).op == .ARM64CSEL0 &&
+    (val 14).args.toList.all (fun a => noPtr (s0.read lc a)) &&
+    (kAt lc kt 1 blk1 6).get 1 == some 64 && uAt lc blk1 6 == none &&
+    GenG1.okThen (stepLoc GenG2.env lc s0 (val 14)) fun s1 => is32 s1.regs[0]?
+
+theorem g25_facts : gFacts = true := by
+  native_decide
+
+/-- The facts of `g25_facts` as hypotheses. -/
+theorem facts :
+    checkG25 lc ps bs g = .ok (tab, kt) ∧ (accessedVars lc).isEmpty = true ∧
+      (homeSlots lc).isEmpty = true ∧ 1 ∈ lc.ctx.f.blocks.toList ∧
+      lc.ctx.f.block? 1 = some blk1 ∧ lc.ctx.f.value? 14 = some (val 14) ∧
+      blk1.values[6]? = some 14 ∧ (val 14).op = .ARM64CSEL0 ∧
+      (∀ a ∈ (val 14).args.toList, noPtr (s0.read lc a) = true) ∧
+      (kAt lc kt 1 blk1 6).get 1 = some 64 ∧ uAt lc blk1 6 = none ∧
+      GenG1.okThen (stepLoc GenG2.env lc s0 (val 14)) (fun s1 => is32 s1.regs[0]?) = true := by
+  have hf := g25_facts
+  simp only [gFacts, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem, List.all_eq_true] at hf
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hres, -⟩, hav⟩, hsl⟩, hm1⟩, hb1s⟩, hv14s⟩, hi6⟩, hop⟩, hargs⟩, hk1⟩, hu⟩,
+    hrun⟩ := hf
+  refine ⟨?_, hav, hsl, hm1, ?_, ?_, hi6, hop, hargs, hk1, hu, hrun⟩
+  · revert hres; cases checkG25 lc ps bs g <;> simp [Except.toOption]
+  · obtain ⟨b, hb⟩ := Option.isSome_iff_exists.1 hb1s
+    simp [blk1, hb]
+  · obtain ⟨v, hv⟩ := Option.isSome_iff_exists.1 hv14s
+    simp [val, hv]
+
+theorem g25Env (hc : checkG25 lc ps bs g = .ok (tab, kt)) (hav : (accessedVars lc).isEmpty = true)
+    (hsl : (homeSlots lc).isEmpty = true) : G10Env lc g L ps 0 tab E where
+  env := {
+    env := {
+      env := {
+        lcEq := rfl
+        link := rfl
+        pcOf := rfl
+        retOut := by
+          obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hlt, -, -, -, -⟩ := checkG25_spec hc
+          intro p hp
+          exact GenG2.prog_addr_ne (hlt p hp) hp (by simp) (by simp)
+        addr := GenG12.addrAgree
+        glob := fun _ _ _ _ => rfl
+        syms := by
+          obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hlt, -, -, -, -⟩ := checkG25_spec hc
+          intro y
+          have hs : L.sym y = GenG2.symA := rfl
+          rw [hs]
+          refine ⟨by decide, fun p hp => ?_⟩
+          exact GenG2.prog_addr_ne (hlt p hp) hp (Or.inr (by decide)) (by decide)
+        calls := fun h => by cases h
+        slot := fun k hk => by simp [List.isEmpty_iff.1 hsl] at hk
+        extra := by decide
+        frame := ⟨by decide, by decide, fun k off h => by cases h⟩ }
+      vars := by
+        intro x hx
+        simp [List.isEmpty_iff.1 hav] at hx }
+    wbs := fun h => by cases h }
+  icalls := fun h => by cases h
+
+theorem memInj0 (mm : Memory) : MemInj GenG12.ι mem0 mm where
+  nil := rfl
+  mapped := by intro b al h; simp [mem0] at h
+  inj := by intro b al b' al' a a' h; simp [mem0] at h
+  bytes := ⟨fun _ _ => False, by intro b al a h; simp [mem0] at h⟩
+
+theorem s0_regs {r : Nat} {x : Val} (h : s0.regs[r]? = some x) :
+    (r = 1 ∧ x = .int .w64 32) ∨ x = .poison := by
+  simp only [s0, Array.getElem?_ofFn] at h
+  split at h
+  · simp only [Option.some.injEq] at h
+    split at h
+    · rename_i h1; exact Or.inl ⟨h1, h.symm⟩
+    · exact Or.inr h.symm
+  · cases h
+
+theorem locMatch0 : LocMatch E s0 1 6 m0 where
+  regs := by
+    intro r v hv
+    rcases s0_regs hv with ⟨rfl, rfl⟩ | rfl
+    · refine ⟨fun k hk => ?_, fun k hk => by simp [objV?] at hk⟩
+      simp only [objX?] at hk
+      cases hk
+      exact Or.inl rfl
+    · exact ⟨fun _ _ => trivial, fun _ _ => trivial⟩
+  flags := ⟨rfl, rfl, rfl, rfl⟩
+  slots := by intro k v h; simp [s0] at h
+  mem := ⟨mem0, rfl, memInj0 _⟩
+  frame := ⟨rfl, rfl, fun _ => ⟨rfl, by simp only [MState.word, readMem, m0, E]; decide,
+    by simp only [MState.word, readMem, m0, E]; decide⟩,
+    fun h => by cases h⟩
+  pc := rfl
+
+theorem g25Inv0 (h1 : (kAt lc kt 1 blk1 6).get 1 = some 64) :
+    G3Inv E lc (kAt lc kt 1 blk1 6) s0 where
+  core := by
+    refine ⟨fun r v c hr hv hc => ?_, mem0, rfl, by simp [KeysNodup, mem0],
+      fun b al a h => by simp [mem0] at h⟩
+    rcases s0_regs hv with ⟨rfl, rfl⟩ | rfl
+    · rw [h1] at hc; cases hc; rfl
+    · trivial
+  slots := by intro k v h; simp [s0] at h
+
+/-- The per-value premises of `v14`, the `CSEL0`: its arguments read no pointer; it is no load,
+subtraction, pair load, nil check, zeroing or register-index load. -/
+theorem pre14 (hop : (val 14).op = .ARM64CSEL0)
+    (hargs : ∀ a ∈ (val 14).args.toList, noPtr (s0.read lc a) = true) :
+    G14Pre lc s0 (val 14) := by
+  have hne : ∀ o : Op, o ≠ .ARM64CSEL0 → (val 14).op ≠ o := fun o h h' => h (h'.symm.trans hop)
+  refine ⟨⟨⟨⟨⟨?_, ?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩
+  · intro _ a ha x hx p hp
+    have := hargs a ha
+    rw [hx, hp] at this
+    cases this
+  · intro _ _ _ hl; rw [hop] at hl; cases hl
+  · intro h; exact absurd h (hne _ (by decide))
+  · intro h; exact absurd h (hne _ (by decide))
+  · intro h; exact absurd h (hne _ (by decide))
+  · intro h; exact absurd h (hne _ (by decide))
+  · intro _ _ _ _ hl; rw [hop] at hl; cases hl
+
+/-- **G25 on the struct wrapper of `reflect.flag.ro`**: from the state before `v14` with
+`flagStickyRO = 32` in `R1` (`X1 = 32`) and the flags of `CMP $0, R1` on `f & flagRO = 32`
+(`NZCV = 0b0010`, `NE`), `g25_value` runs `CSEL NE, R1, ZR, R0` (`v14`): `runLoc`'s `R0` holds 32
+and the machine state, related to it before `v16` under an activation extending `E`, has
+`X0 = 32`. -/
+theorem genG25_value_witness :
+    ∃ s1 E1 m1, stepLoc GenG2.env lc s0 (val 14) = .ok s1 ∧ s1.regs[0]? = some (.int .w64 32) ∧
+      E.Extends E1 ∧ G10Env lc g L ps 0 tab E1 ∧ PStar GenG2.H0 L ps.toList 0 m0 m1 ∧
+      LocMatch E1 s1 1 7 m1 ∧ m1.x 0 = 32 := by
+  obtain ⟨hc, hav, hsl, hm1, hb, hv14, hi6, hop, hargs, hk1, hu, hrun⟩ := facts
+  obtain ⟨s1, hs1, hr1⟩ := GenG1.okThen_spec hrun
+  have hr1' := is32_spec hr1
+  have hE := g25Env hc hav hsl
+  have hne : ∀ o : Op, o ≠ .ARM64CSEL0 → (val 14).op ≠ o := fun o h h' => h (h'.symm.trans hop)
+  obtain ⟨E1, m1, hx1, hE1, hp1, hm1', -, -⟩ := g25_value (H := GenG2.H0) (env := GenG2.env)
+    hc hE hm1 hb hi6 hv14 (by rw [hop]; rfl) locMatch0 (g25Inv0 hk1) (by rw [hu]; trivial)
+    (pre14 hop hargs)
+    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
+    (GenG10.icallOK_ne (by rw [hop]; rfl))
+    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
+    (fun h => absurd h (hne _ (by decide))) hs1
+  have hA : AddrAgree E1.ι := by
+    obtain ⟨⟨⟨⟨-, -, -, -, hA, -, -, -, -, -, -⟩, -⟩, -⟩, -⟩ := hE1
+    exact hA
+  exact ⟨s1, E1, m1, hs1, hr1', hx1, hE1, hp1, hm1',
+    valRel_i64 hA ((hm1'.regs 0 _ hr1').1 0 rfl)⟩
 
 end GoFV.Proof.Witness.GenG25

@@ -636,6 +636,21 @@ relate it. Its users are the accesses of frame variables (G6), whose `symAddr` i
 home (`stepLoc_sp`); no code runs and the machine state stays related (`g24_sp`, as `g3_sb`). No
 new trusted premise. G24 accepts 4,718 functions.
 
+**Slice G25: conditional selects and bit tests** (`GoFV/Gen/Check25.lean`, `checkG25 lc ps bstart
+g`, returning G4's tables; proven sound, `g25_value`, `g25_term`, `g25_nilPanic`,
+`g25_boundsPanic`): G24 with `CSEL [cc] x y f` and `CSEL0 [cc] x f` (`CSEL cond, Rx, Ry|ZR, Rd`,
+`cselKind`) and `TSTconst [k] x`/`TSTWconst [k] x` (`TST`/`TSTW $k, Rn`, `tstKind`; `VK25`). A
+select has no temporary, an auxint naming a condition (`ccOp?`, `Cond.ofOp`; `cond` is
+`condBits`), the flags argument last with no home, and register arguments of classes at least the
+result's class `c ≥ 8`. A bit test has no temporary, a flags result with no home, and its
+argument's class covers the test's datasize or `0 ≤ k < 2^class` (`tstOK`: `k` then reads none of
+the unknown upper bits). The proof (`G25.lean`): the machine step (`progStep_csel`,
+`progStep_tst`, `progStep_tstw`) picks `Rx` or `Ry`/`ZR` by `ConditionHolds` on `NZCV`, which
+`FlagsRel` makes agree with `runLoc`'s `condOn` (G23's `cset_cond`/`onVal_holds`; `valRel_csel`,
+`valRel_csel0` via `lo_regVal`), and the bit tests' `ANDS` flags are `logicFlags` of the low bits
+(`flagsRel_tst`, `flagsRel_tstw` via `and_low`, `tst_mask`). The statements are G24's over
+`checkG25`, with the same premises. No new trusted premise. G25 accepts 4,925 functions.
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -646,9 +661,9 @@ reason in parentheses):
    (`frame variable with an integer address`, 197 (12)): option 2 of semantics3 §4.3 (addresses as
    a parameter of the semantics); slots of other sizes (`slot … frame operand, size or alignment`,
    717).
-3. **Other values**: the acquire loads `LDAR`/`LDARW` (383, 277); `CSEL`/`CSEL0` (324 (41), 285
-   (55) after G24), `TSTconst` (110 (53)), `LoweredMemEq` (123 (71)), `ANDshiftRA` (239 (58)),
-   `InitMem` after the entry values (21 sole);
+3. **Other values**: the acquire loads `LDAR`/`LDARW` (383, 277); `ANDshiftRA` (78 sole after
+   G25), `LoweredMemEq` (72 sole), `STLR` (47 sole), `CSINC` (26 sole), `InitMem` after the entry
+   values (21 sole);
    `MOVDnop` 750 (91) and `MOVDreg` (27 sole) are done in G20 and G21 but for those that do
    not follow their load directly (220 `MOVDnop`s; 3 functions with no other blocker, and 13
    with only `MOVDreg`), which need §8's register-frame lemmas. Bounds panics
@@ -686,6 +701,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G22 | 4,472 (48.10%) | 98,947 |
 | G23 | 4,624 (49.73%) | 101,638 |
 | G24 | 4,718 (50.74%) | 106,958 |
+| G25 | 4,925 (52.97%) | 111,247 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -837,6 +853,12 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `entryOp3_of_24`, `entryOp24_of_3`).
 - `G24.lean`: `stepLoc_sp`, `g24_sp`, `vk24_step`, `g24_value`, `vk24_nil`, `g24_nilPanic`,
   `g24_boundsPanic`, `g24_term`.
+- `Spec25.lean`: what `checkG25` accepted (`checkG25_spec`, `vkind25_spec` with `VK25`,
+  `cselKind_spec`, `tstKind_spec`).
+- `G25.lean`: `ccOp?_ofAux`, `cselOK_spec`, `stepLoc_g25`, `narrowLd?_g25`, `logical_flags`,
+  `logical_flags32`, `progStep_tst`, `progStep_tstw`, `progStep_csel`, `lo_regVal`, `valRel_csel`,
+  `valRel_csel0`, `flagsRel_tst`, `flagsRel_tstw`, `g25_csel`, `g25_csel0`, `g25_tst`, `g25_tstw`,
+  `vk25_step`, `g25_value`, `vk25_nil`, `g25_nilPanic`, `g25_boundsPanic`, `g25_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -899,8 +921,10 @@ and the machine's `X1` hold 7), `GenG23.lean` (`bytes.shouldUseASCIISet`, which 
 which `runLoc`'s `R0` holds `true` and the machine's `X0` is 1), `GenG24.lean` (`(*SChan).Recv` of
 `test/closedchan`, which G23 rejects: `g24_value` on `SP` at the head of the receiving block, after
 which `runLoc`'s Go register `SP` holds `SP`'s value and the related machine state is at the same
-PC). Each decides its inputs by compiled evaluation (`native_decide`, pinned in
-`scripts/axioms-allowlist.txt`).
+PC), `GenG25.lean` (the struct wrapper of `reflect.flag.ro` in `encoding/binary`, which G24
+rejects: `g25_value` on `CSEL NE, R1, ZR, R0` with `R1 = 32` and the flags of `CMP $0` on 32,
+after which `runLoc`'s `R0` holds 32 and the machine's `X0` is 32). Each decides its inputs by
+compiled evaluation (`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
 
 ## 6. Future work: recursion through function values
 
