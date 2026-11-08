@@ -55,10 +55,12 @@ import GoFV.Proof.Gen.Spec
 import GoFV.Proof.Gen.Spec2
 import GoFV.Proof.Gen.Spec3
 import GoFV.Proof.Gen.Spec4
+import GoFV.Proof.Gen.Spec5
 import GoFV.Proof.Gen.Stack
 import GoFV.Proof.Gen.Step
 import GoFV.Proof.Gen.Step3
 import GoFV.Proof.Gen.Step4
+import GoFV.Proof.Gen.Step5
 import GoFV.Proof.Gen.Value
 import GoFV.Proof.Gen.Value3
 import GoFV.Proof.Low.AddrFold
