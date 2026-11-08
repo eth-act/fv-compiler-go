@@ -263,7 +263,8 @@ the resulting cast hits "deep recursion" on conditions with several helper calls
 elab "rule_unfold" : tactic => do
   let goal ← getMainGoal
   let ty ← instantiateMVars (← goal.getType)
-  let some r := ty.getAppArgs[0]? | throwError "rule_unfold: goal is not `Rule.Sound r`"
+  -- `Rule.Sound [Addrs] r`: the rule is the last argument
+  let some r := ty.getAppArgs.back? | throwError "rule_unfold: goal is not `Rule.Sound r`"
   let some rn := r.constName? | throwError "rule_unfold: rule is not a constant"
   let rid := mkIdent rn
   let e := mkIdent `e
