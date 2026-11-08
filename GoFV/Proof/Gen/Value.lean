@@ -378,6 +378,55 @@ theorem lo_addK (hA : AddrAgree ι) {t : Ty} {x : Val} {X k : BitVec 64} {c ca :
       rw [res_int ht]
       exact sw_add hc ha rfl
 
+private theorem sw_shl {c : Nat} (hc : c ≤ 64) {y Y : BitVec 64}
+    (hy : y.setWidth c = Y.setWidth c) (n : Nat) : (y <<< n).setWidth c = (Y <<< n).setWidth c := by
+  rw [BitVec.shiftLeft_eq_mul_twoPow y, BitVec.shiftLeft_eq_mul_twoPow Y, BitVec.setWidth_mul _ _ hc,
+    BitVec.setWidth_mul _ _ hc, hy]
+
+/-- `addP` of a register and an addend `k` agreeing with `K` on the low `c` bits (all of them if
+the register holds a pointer of a 64-bit result). -/
+theorem lo_addP (hA : AddrAgree ι) {t : Ty} {x : Val} {X k K : BitVec 64} {c ca : Nat}
+    (hx : ValRel ι x X) (hfx : Fits ca x) (hc : c ≤ 64) (hca : c ≤ ca) (ht : t ≠ .bool)
+    (hk : k.setWidth c = K.setWidth c) (hK : c < 64 ∨ k = K) :
+    Lo ι c (Arm64.addP t x k) (X + K) := by
+  rcases ptr_or x with ⟨p, rfl⟩ | hxp
+  · exact lo_ptrRes hA hx hc hk hK
+  · have hx' : Arm64.addP t x k = match Arm64.reg x with
+        | some a => Arm64.res t (a + k)
+        | none => .poison := by
+      cases x <;> first | exact absurd rfl (hxp _) | rfl
+    rw [hx']
+    cases hr : Arm64.reg x with
+    | none => trivial
+    | some a =>
+      obtain ⟨-, ha, -⟩ := reg_info hA hx hfx hca hr
+      show Lo ι c (Arm64.res t (a + k)) (X + K)
+      rw [res_int ht]
+      exact sw_add hc ha hk
+
+/-- `ADDshiftLL [k]` (`addSh … .ll k`): arguments of classes `ca`, `cb` at least the result's
+class `c`, a shift by `amt k < 64`. -/
+theorem lo_addSh (hA : AddrAgree ι) {t : Ty} {x y : Val} {X Y : BitVec 64} {c ca cb : Nat}
+    (hx : ValRel ι x X) (hy : ValRel ι y Y) (hfx : Fits ca x) (hfy : Fits cb y) (hc : c ≤ 64)
+    (hca : c ≤ ca) (hcb : c ≤ cb) (ht : t ≠ .bool) {k : Int64} (hk : Arm64.amt k < 64) :
+    Lo ι c (Arm64.addSh t .ll k [x, y]) (X + Y <<< Arm64.amt k) := by
+  have he : Arm64.addSh t .ll k [x, y] = match Arm64.reg y with
+      | some b => Arm64.addP t x (Arm64.shifted .ll k b)
+      | none => .poison := rfl
+  rw [he]
+  cases hr : Arm64.reg y with
+  | none => trivial
+  | some b =>
+    obtain ⟨-, hb, hY⟩ := reg_info hA hy hfy hcb hr
+    have hs : Arm64.shifted .ll k b = b <<< Arm64.amt k := by
+      simp only [Arm64.shifted, Arm64.Shift.apply, Nat.mod_eq_of_lt hk]
+    show Lo ι c (Arm64.addP t x (Arm64.shifted .ll k b)) _
+    rw [hs]
+    refine lo_addP hA hx hfx hc hca ht (sw_shl hc hb _) ?_
+    rcases hY with h | rfl
+    · exact Or.inl h
+    · exact Or.inr rfl
+
 /-- A constant of a register shape (a boolean constant is 0 or 1). -/
 theorem valRel_res_const {t : Ty} {c : Nat} {K : BitVec 64} (hc : cls t = some c)
     (hb : c = 1 → K = 0 ∨ K = 1) : ValRel ι ((Arm64.res t K).retypeL t) K := by

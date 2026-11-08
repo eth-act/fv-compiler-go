@@ -390,6 +390,16 @@ accepts a function, they are `g14_value`'s, `g14_term`'s and `g14_nilPanic`'s st
 with its empty-struct receiver on the stack, a callee hook returning at once). Coverage on
 quick-v10 (`lake exe gen-check`): 3,824 of 9,297 functions (41.13%), 71,645 values.
 
+## Phase 3: genssa, slice G16 (I7, #553)
+
+`GoFV.Proof.Gen.g16_value`, `GoFV.Proof.Gen.g16_term`, `GoFV.Proof.Gen.g16_nilPanic`
+(`GoFV/Proof/Gen/G16.lean`): when slice G16 (`checkG16`: G15 with the shifted add `ADDshiftLL`,
+emitted `ADD Rm<<k, Rn, Rd`) accepts a function, they are `g15_value`'s, `g15_term`'s and
+`g15_nilPanic`'s statements, under the same premises. Witness `genG16_value_witness`
+(`spanSetSpinePointer.lookup` of std/runtime, which G15 rejects: `ADD R1<<3, R0, R0` on the start
+of `heap 1` and the index 2, after which `X0` holds `2^41 + 16`). Coverage on quick-v10 (`lake exe
+gen-check`): 3,874 of 9,297 functions (41.66%), 73,708 values.
+
 ## Per-pass fragment coverage (verified pipeline, full-v6)
 
 Runs per pass of `gofv-ssa-opt --check --verified` (96,553 functions, each pass run once per function). *Proven*: the theorem's variant ran and changed the function; *identity*: same function (or tables the function cannot tell apart); *skipped*: an optional pass outside its fragment (the input is kept); *unverified*: a required pass outside its fragment, or a checked rewrite pass whose result differs from stock (`checked variant incomplete`: an unproven rule fired or the validator rejected; the stock result is kept). Every Phase 1 pass has a theorem; `insert resched checks`, `cpufeatures` and `rewrite tern` never run for linux/arm64.
