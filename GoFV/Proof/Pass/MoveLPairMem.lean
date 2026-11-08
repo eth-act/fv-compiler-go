@@ -128,83 +128,24 @@ private theorem off_add (k : Int64) (w : Nat) :
     Int64.toBitVec_add]
   rfl
 
-private theorem mod24_add {r w : Nat} (hb1 : r / 2 ^ 42 = (r + w) / 2 ^ 42)
-    (hb2 : r % 2 ^ 42 / 2 ^ 24 = (r + w) % 2 ^ 42 / 2 ^ 24) :
-    (r + w) % 2 ^ 24 = r % 2 ^ 24 + w := by
-  have d1 := Nat.div_add_mod r (2 ^ 42)
-  have d2 := Nat.div_add_mod (r + w) (2 ^ 42)
-  have d3 := Nat.div_add_mod (r % 2 ^ 42) (2 ^ 24)
-  have d4 := Nat.div_add_mod ((r + w) % 2 ^ 42) (2 ^ 24)
-  have m3 := Nat.mod_lt (r % 2 ^ 42) (show 2 ^ 24 > 0 by decide)
-  have m4 := Nat.mod_lt ((r + w) % 2 ^ 42) (show 2 ^ 24 > 0 by decide)
-  have e3 : r % 2 ^ 42 % 2 ^ 24 = r % 2 ^ 24 := Nat.mod_mod_of_dvd r (by decide)
-  have e4 : (r + w) % 2 ^ 42 % 2 ^ 24 = (r + w) % 2 ^ 24 := Nat.mod_mod_of_dvd (r + w) (by decide)
-  rw [e3] at d3 m3
-  rw [e4] at d4 m4
-  omega
-
-private theorem mod40_add {n w : Nat} (hb : n / 2 ^ 40 - 1 = (n + w) / 2 ^ 40 - 1)
-    (h : 2 ^ 40 ≤ n) : (n + w) % 2 ^ 40 = n % 2 ^ 40 + w := by
-  have d1 := Nat.div_add_mod n (2 ^ 40)
-  have d2 := Nat.div_add_mod (n + w) (2 ^ 40)
-  have m1 := Nat.mod_lt n (show 2 ^ 40 > 0 by decide)
-  have m2 := Nat.mod_lt (n + w) (show 2 ^ 40 > 0 by decide)
-  omega
-
-private theorem ofNat_add_of_lt {x w : Nat} (hx : x + w < 2 ^ 64) :
-    BitVec.ofNat 64 (x + w) = BitVec.ofNat 64 x + BitVec.ofNat 64 w := by
-  apply BitVec.eq_of_toNat_eq
-  simp only [BitVec.toNat_add, BitVec.toNat_ofNat]
-  rw [Nat.mod_eq_of_lt hx, Nat.mod_eq_of_lt (a := x) (by omega),
-    Nat.mod_eq_of_lt (a := w) (by omega), Nat.mod_eq_of_lt hx]
-
 /-- The pointers at two concrete addresses `w` apart are in different blocks or `w` bytes apart
-(`Ptr.ofAddr`: a block's window holds no address `w` beyond it). -/
+(both have their address, `Ptr.addr?_ofAddr`). -/
 theorem ofAddr_adj (y : BitVec 64) {w : Nat} (hw : w < 2 ^ 22) :
     (Ptr.ofAddr y).blk ≠ (Ptr.ofAddr (y + BitVec.ofNat 64 w)).blk ∨
       (Ptr.ofAddr (y + BitVec.ofNat 64 w)).off = (Ptr.ofAddr y).off + BitVec.ofNat 64 w := by
   by_cases hb : (Ptr.ofAddr y).blk = (Ptr.ofAddr (y + BitVec.ofNat 64 w)).blk
   · refine .inr ?_
-    have hy := y.isLt
-    have e : (y + BitVec.ofNat 64 w).toNat = (y.toNat + w) % 2 ^ 64 := by
-      rw [BitVec.toNat_add, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (a := w) (by omega)]
-    unfold Ptr.ofAddr at hb ⊢
-    dsimp only at hb ⊢
-    rw [e] at hb ⊢
-    generalize y.toNat = n at hb hy ⊢
-    by_cases nw : n + w < 2 ^ 64
-    · rw [Nat.mod_eq_of_lt nw] at hb ⊢
-      by_cases a1 : n + w < 2 ^ 40
-      · simp only [a1, show n < 2 ^ 40 by omega, ite_true]
-      by_cases a2 : n < 2 ^ 40
-      · simp only [a1, a2, ite_true, ite_false] at hb
-        by_cases a3 : n + w < 2 ^ 62
-        · simp only [a3, ite_true] at hb; cases hb
-        · simp only [a3, ite_false] at hb; split at hb <;> cases hb
-      by_cases a3 : n + w < 2 ^ 62
-      · simp only [a1, a2, a3, show n < 2 ^ 62 by omega, ite_true, ite_false, Blk.heap.injEq]
-          at hb ⊢
-        rw [mod40_add hb (by omega), ofNat_add_of_lt (by omega)]
-      by_cases a4 : n < 2 ^ 62
-      · simp only [a1, a2, a3, a4, ite_true, ite_false] at hb
-        split at hb <;> cases hb
-      simp only [a1, a2, a3, a4, ite_false] at hb ⊢
-      have er : n + w - 2 ^ 62 = n - 2 ^ 62 + w := by omega
-      rw [er] at hb ⊢
-      generalize n - 2 ^ 62 = r at hb ⊢
-      split at hb <;> rename_i c1 <;> split at hb <;> rename_i c2 <;>
-        simp only [Blk.outargs.injEq, Blk.local.injEq, reduceCtorEq] at hb <;>
-        simp only [c1, c2, ite_true, Bool.false_eq_true, ite_false]
-      · have h2 : r % 2 ^ 42 / 2 ^ 24 = (r + w) % 2 ^ 42 / 2 ^ 24 := by
-          simp only [beq_iff_eq] at c1 c2; omega
-        rw [mod24_add hb h2, ofNat_add_of_lt (by omega)]
-      · rw [mod24_add hb.1 hb.2, ofNat_add_of_lt (by omega)]
-    · exfalso
-      have e2 : (n + w) % 2 ^ 64 = n + w - 2 ^ 64 := by omega
-      rw [e2] at hb
-      simp only [show ¬n < 2 ^ 40 by omega, show ¬n < 2 ^ 62 by omega,
-        show n + w - 2 ^ 64 < 2 ^ 40 by omega, ite_true, ite_false] at hb
-      split at hb <;> cases hb
+    have h1 := Ptr.addr?_ofAddr y
+    have h2 := Ptr.addr?_ofAddr (y + BitVec.ofNat 64 w)
+    unfold Ptr.addr? at h1 h2
+    rw [← hb] at h2
+    cases hn : (Ptr.ofAddr y).blk.base? with
+    | none => rw [hn] at h1; cases h1
+    | some n =>
+      rw [hn] at h1 h2
+      simp only [Option.map_some, Option.some.injEq] at h1 h2
+      rw [← h1] at h2
+      bv_omega
   · exact .inl hb
 
 /-- **Adjacent `symAddr`s**: the addresses at offsets `k` and `k + w` of one base are in

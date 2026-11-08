@@ -56,17 +56,11 @@ theorem nilFault_of_isNil {b : Ptr} (h : b.isNil = true) : b.nilFault = true := 
   simp [Ptr.nilFault, h.1, h.2, minZeroPage]
 
 /-- A concrete address in the nil block is that address. -/
-theorem ofAddr_nil {x : BitVec 64} (h : (Ptr.ofAddr x).blk = .nil) : Ptr.ofAddr x = ⟨.nil, x⟩ := by
-  by_cases hx : x.toNat < 2 ^ 40
-  · simp [Ptr.ofAddr, hx]
-  · exfalso
-    by_cases hy : x.toNat < 2 ^ 62
-    · simp [Ptr.ofAddr, hx, hy] at h
-    · simp only [Ptr.ofAddr, hx, hy, ↓reduceIte] at h
-      split at h <;> simp at h
+theorem ofAddr_nil {x : BitVec 64} (h : (Ptr.ofAddr x).blk = .nil) : Ptr.ofAddr x = ⟨.nil, x⟩ :=
+  Ptr.ofAddr_eq_nil h
 
-theorem ofAddr_small {x : BitVec 64} (h : x.toNat < 2 ^ 40) : Ptr.ofAddr x = ⟨.nil, x⟩ := by
-  simp [Ptr.ofAddr, h]
+theorem ofAddr_small {x : BitVec 64} (h : x.toNat < 2 ^ 40) : Ptr.ofAddr x = ⟨.nil, x⟩ :=
+  Ptr.ofAddr_small h
 
 /-- An access at offset `k < minZeroPage` from a nil base faults. -/
 theorem addr_nilFault {a : Val} {b : Ptr} {k : BitVec 64} (h : Arm64.addr a 0 = some b)

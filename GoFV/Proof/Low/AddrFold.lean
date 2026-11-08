@@ -47,11 +47,16 @@ is outside the block's window, the second inside. -/
 theorem conv_window {p q : Ptr} (hb : q.blk = p.blk) (hp : p.convertible = false)
     (hq : q.convertible = true) :
     ∃ w, p.blk.window? = some w ∧ 2 ^ 24 ≤ w ∧ w ≤ p.off.toNat ∧ q.off.toNat < w := by
+  have hqw := Ptr.inWindow_of_convertible hq
+  have hpw : p.inWindow = false := by
+    cases h : p.inWindow
+    · rfl
+    · rw [Ptr.convertible_eq_of_blk (p := q) (q := p) hb.symm hqw h, hq] at hp; cases hp
   obtain ⟨bq, oq⟩ := q
   obtain ⟨bp, op⟩ := p
   simp only at hb
   subst hb
-  cases bq <;> simp_all [Ptr.convertible, Blk.window?] <;> omega
+  cases bq <;> simp_all [Ptr.inWindow, Blk.window?] <;> omega
 
 /-- An offset at or above a window `w ≥ 2^24` moved by `k2 < 2^23` below `w` (it wrapped) stays
 below `w` when moved further by `k1 < 2^23`. -/

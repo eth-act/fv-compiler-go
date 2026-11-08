@@ -56,37 +56,24 @@ def vaddr : Val → Option VAddr
 
 theorem ptrV_add (p : Ptr) (k : BitVec 64) : ptrV (p.add k) = (ptrV p).add k := by
   obtain ⟨b, o⟩ := p
-  cases b <;> simp [ptrV, Ptr.add, Ptr.addr?, VAddr.add, Blk.base?, BitVec.add_assoc]
+  cases hb : Blk.base? b with
+  | none =>
+    rcases Blk.base?_eq_none hb with ⟨s, rfl⟩ | rfl <;> simp [ptrV, Ptr.add, VAddr.add]
+  | some n =>
+    have h1 : ∀ o', (⟨b, o'⟩ : Ptr).addr? = some (BitVec.ofNat 64 n + o') := by
+      intro o'; simp [Ptr.addr?, hb]
+    cases b <;> simp_all [ptrV, Ptr.add, VAddr.add, BitVec.add_assoc]
 
 theorem ptrV_of_addr {p : Ptr} {a : BitVec 64} (h : p.addr? = some a) : ptrV p = .conc a := by
   obtain ⟨b, o⟩ := p
-  cases b <;> simp_all [ptrV, Ptr.addr?, Blk.base?]
+  cases b <;> first | simp [Ptr.addr?] at h | simp [ptrV, h]
 
-theorem ofNat_add_eq {x : BitVec 64} {base r : Nat} (h : base + r = x.toNat) :
-    BitVec.ofNat 64 base + BitVec.ofNat 64 r = x := by
-  rw [BitVec.ofNat_add_ofNat, h, BitVec.ofNat_toNat, BitVec.setWidth_eq]
-
-theorem addr_ofAddr (x : BitVec 64) : (Ptr.ofAddr x).addr? = some x := by
-  have hx : x.toNat < 18446744073709551616 := x.isLt
-  unfold Ptr.ofAddr
-  dsimp only
-  split
-  · simp [Ptr.addr?, Blk.base?]
-  · split
-    · simp only [Ptr.addr?, Blk.base?, Option.map_some, Option.some.injEq]
-      apply ofNat_add_eq
-      omega
-    · split <;> simp only [Ptr.addr?, Blk.base?, Option.map_some, Option.some.injEq] <;>
-        apply ofNat_add_eq <;> simp only [beq_iff_eq] at * <;> omega
+theorem addr_ofAddr (x : BitVec 64) : (Ptr.ofAddr x).addr? = some x := Addrs.decode_addr x
 
 theorem ofAddr_not_global (x : BitVec 64) (s : String) : (Ptr.ofAddr x).blk ≠ .global s := by
-  unfold Ptr.ofAddr
-  dsimp only
-  split
-  · nofun
-  · split
-    · nofun
-    · split <;> nofun
+  intro h
+  have := addr_ofAddr x
+  simp [Ptr.addr?, h] at this
 
 theorem ptrV_ofAddr (x : BitVec 64) : ptrV (Ptr.ofAddr x) = .conc x := ptrV_of_addr (addr_ofAddr x)
 
@@ -233,8 +220,15 @@ theorem rel_same {pv qv : Val} {P Q : Ptr} {bv : Val} {kp kq : Int}
       simp only
       bv_omega
   | conc a =>
-    cases pb <;> simp only [ptrV, VAddr.add, reduceCtorEq, VAddr.conc.injEq, Ptr.addr?,
-      Blk.base?, Option.map_some, Option.getD_some] at hp hq <;> simp only <;> bv_omega
+    cases hn : Blk.base? pb with
+    | none =>
+      rcases Blk.base?_eq_none hn with ⟨s, rfl⟩ | rfl <;>
+        simp only [ptrV, VAddr.add, reduceCtorEq] at hp
+    | some n =>
+      have h1 : ∀ o', (⟨pb, o'⟩ : Ptr).addr? = some (BitVec.ofNat 64 n + o') := by
+        intro o'; simp [Ptr.addr?, hn]
+      cases pb <;> simp only [ptrV, VAddr.add, reduceCtorEq, VAddr.conc.injEq, h1,
+        Option.getD_some] at hp hq <;> simp only <;> bv_omega
 
 /-! ## Evaluation of the chain's values -/
 

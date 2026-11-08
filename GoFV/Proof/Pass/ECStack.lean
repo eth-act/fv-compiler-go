@@ -414,27 +414,14 @@ theorem ecs_offPtr_ptr {ai : Int64} {k : Nat} (hai : ai.toInt = k) (hk : k < 2 ^
   simp only [PtrOps.ptrRes]
   rw [if_pos (ecs_ptr_inWindow hk)]
 
-/-- `OffPtr [k]` of the area's start as a `uintptr`, read as a pointer: an integer word addressing
-slot `k` (§3.3). -/
+/-- `OffPtr [k]` of the area's start as a `uintptr`, read as a pointer: slot `k` (a word, §3.3,
+whatever the address assignment). -/
 theorem ecs_offPtr_int {ai : Int64} {k : Nat} (hai : ai.toInt = k) (hk : k < 2 ^ 24) (e : Option Nat) :
     ((PtrOps.offPtr ai [(Val.ptr (ecsSlot 0)).retype (.int .w64)]).retype (.ptr e)).asPtrWord =
       some (ecsSlot k) := by
-  have h1 : (Val.ptr (ecsSlot 0)).retype (.int .w64) =
-      .int .w64 (BitVec.ofNat 64 (2 ^ 62 + 0 * 2 ^ 42) + BitVec.ofNat 64 0) := rfl
-  have hA : Ptr.ofAddr (BitVec.ofNat 64 (2 ^ 62 + 0 * 2 ^ 42) + BitVec.ofNat 64 0) = ecsSlot 0 :=
-    Ptr.ofAddr_addr (p := ecsSlot 0) (by decide) rfl
-  have hs : (ecsSlot 0).add (BitVec.ofNat 64 k) = ecsSlot k := by
-    simp only [Ptr.add, ecsSlot]
-    rw [show BitVec.ofNat 64 0 + BitVec.ofNat 64 k = BitVec.ofNat 64 k by simp]
-  have hw : ((Ptr.ofAddr (BitVec.ofNat 64 (2 ^ 62 + 0 * 2 ^ 42) + BitVec.ofNat 64 0)).add
-      (BitVec.ofNat 64 k)).inWindow = true := by
-    rw [hA, hs]; exact ecs_ptr_inWindow hk
-  rw [h1]
-  simp only [PtrOps.offPtr, hai, BitVec.ofInt_natCast]
-  unfold PtrOps.wordRes
-  rw [if_pos hw]
-  show (Val.int .w64 _).asPtrWord = _
-  simp only [Val.asPtrWord, Ptr.ofAddr_add_of_inWindow hw, hA, hs]
+  have h1 : (Val.ptr (ecsSlot 0)).retype (.int .w64) = (ecsSlot 0).word := rfl
+  rw [h1, PtrOps.offPtr_word ai (ecs_ptr_inWindow (by decide)), ecs_offPtr_ptr hai hk,
+    Ptr.word_retype_ptr, Ptr.word_asPtrWord (ecs_ptr_inWindow hk)]
 
 /-- `Store`'s write (`memRoot`). -/
 theorem ecs_store_inv {ctx : Ctx} {u : Value} {argv : List Val} {y : Val} (hu : u.op = .Store)

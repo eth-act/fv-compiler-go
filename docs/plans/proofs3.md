@@ -1256,10 +1256,11 @@ few:
      - `MoveLPairMem.ofAddr_adj`, `CSEMemChain.addr_ofAddr`, `NilLateLEval.ofAddr_nil`,
        `G7.ofAddr_off_nil`;
      - `Ptr.convertible_add` and `Ptr.convertible_eq_of_blk` now follow from `decode_add`.
-   - Phase 3: `AddrAgree [Addrs] ι` pins only the **decoded** blocks: for all `x`,
-     `ι (ofAddr x).blk = (ofAddr x).blk.base?`. `NotTemp` drops out, since `decode_high` and
-     `decode_low` exclude `temp`. At `Addrs.fixed` this premise is weaker than today's, so the
-     old results follow.
+   - Phase 3: `AddrAgree ι` keeps its text, and `Blk.base?` now reads the instance. Every
+     non-`temp` block with an address sits at its address. A narrower version that pinned only
+     decoded blocks would have strengthened `SubOK`, a premise of `verified_mach_ret`, at
+     `Addrs.fixed`, so it is not used. The machine instance satisfies `AddrAgree` because its
+     bases for the running frame are `SP + frameOff` themselves.
    - No checker changes: none reads the assignment, and the build enforces that.
 3. **Migration and staging.** The class sits at the root of the import graph, so one PR: the
    specialisation lemma, `SSA/Sem`, `Proof/PtrAddr`/`Retype`, the Phase 1 passes and rules,

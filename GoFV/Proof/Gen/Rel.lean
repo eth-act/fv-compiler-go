@@ -8,13 +8,15 @@ variable [GoFV.SSA.Sem.Addrs]
 /-!
 # Values and registers under `LocMatch` in slice G1 (`docs/plans/proofs3.md` §3)
 
-`AddrAgree ι`: the injection puts every block that has a Phase 1 address (`Blk.base?`) and that an
-integer can convert back to (every block but a frame temporary `Blk.temp`, `Ptr.ofAddr_ne_temp`)
-at that address. Then a convertible pointer's injected address is its Phase 1 address, so the
-second disjunct of `ValRel` at `.int .w64` collapses to the first, `Ptr.word` relates like the
+`AddrAgree ι`: the injection puts every block that has an address (`Blk.base?`, under the address
+assignment `Addrs`) other than a frame temporary at that address. Every block an integer converts
+back to is one (`Ptr.ofAddr_ne_temp`), so a convertible pointer's injected address is its address,
+the second disjunct of `ValRel` at `.int .w64` collapses to the first, `Ptr.word` relates like the
 pointer, and Phase 2's register arithmetic on pointer words (`Arm64.reg` reads a convertible
 pointer as its address) is the machine's. A frame temporary may sit anywhere (slice G6 puts the
-current activation's at their frame operands): no integer is its address.
+current activation's at their frame operands): no integer is its address. An assignment that
+puts the running activation's frame at the machine's `SP + frameOff` (`docs/plans/proofs3.md`
+§8) makes the injection agree on those blocks too.
 
 `Fits c v`: a register content of width class `c` (`GoFV.Gen.Check.cls`). Reading it at a shape
 of class `c` (`Val.retypeL`) keeps `ValRel` (`valRel_retypeL`); a narrower content read at a wider
@@ -29,7 +31,7 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Gen.Check
 /-- The block is no frame temporary. -/
 def NotTemp (b : Blk) : Prop := ∀ a n, b ≠ .temp a n
 
-/-- Every block with a Phase 1 address other than a frame temporary sits at that address. -/
+/-- Every block with an address other than a frame temporary sits at that address. -/
 def AddrAgree (ι : Blk → Option (BitVec 64)) : Prop :=
   ∀ b n a, b.base? = some n → ι b = some a → NotTemp b → a = BitVec.ofNat 64 n
 
@@ -38,7 +40,9 @@ theorem notTemp_ofAddr (x : BitVec 64) : NotTemp (Ptr.ofAddr x).blk :=
 
 theorem notTemp_of_convertible {p : Ptr} (h : p.convertible = true) : NotTemp p.blk := by
   intro a n hb
-  simp [Ptr.convertible, hb] at h
+  obtain ⟨b, o⟩ := p
+  simp only at hb; subst hb
+  simp at h
 
 /-- A register content of width class `c`. -/
 def Fits (c : Nat) : Val → Prop

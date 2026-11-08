@@ -131,6 +131,7 @@ class Addrs where
   baseOf_heap : ∀ n, baseOf (.heap n) = some ((n + 1) * 2 ^ 40)
   baseOf_global : ∀ s, baseOf (.global s) = none
   baseOf_wbuf : baseOf .wbuf = none
+  baseOf_none : ∀ b, baseOf b = none → (∃ s, b = .global s) ∨ b = .wbuf
   decode_low : ∀ x : BitVec 64, x.toNat < 2 ^ 62 → decode x = Ptr.fixedOfAddr x
   decode_high : ∀ x : BitVec 64, 2 ^ 62 ≤ x.toNat →
     ∃ a, (decode x).blk = .outargs a ∨ ∃ k, (decode x).blk = .local a k

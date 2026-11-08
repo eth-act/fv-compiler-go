@@ -1427,18 +1427,14 @@ theorem null_eq (p : Ptr) : Ptr.null.eq p = p.isNil := by
 
 /-- `Ptr.ofAddr` gives the nil pointer exactly at address 0. -/
 theorem ofAddr_isNil (x : BitVec 64) : (Ptr.ofAddr x).isNil = (x == 0) := by
-  have hx := x.isLt
-  by_cases h1 : x.toNat < 2 ^ 40
-  · simp [Ptr.ofAddr, h1, Ptr.isNil]
-  have hne : (x == 0) = false := by
-    simp only [beq_eq_false_iff_ne, ne_eq]
-    intro h; subst h; simp at h1
-  rw [hne]
-  by_cases h2 : x.toNat < 2 ^ 62
-  · simp [Ptr.ofAddr, h1, h2, Ptr.isNil]
-  · unfold Ptr.ofAddr
-    simp only [h1, h2, ↓reduceIte]
-    split <;> simp [Ptr.isNil]
+  by_cases hb : (Ptr.ofAddr x).blk = .nil
+  · rw [Ptr.ofAddr_eq_nil hb]; simp [Ptr.isNil]
+  · have hne : (x == 0) = false := by
+      simp only [beq_eq_false_iff_ne, ne_eq]
+      intro h; subst h
+      exact hb (by rw [Ptr.ofAddr_small (by decide)])
+    rw [hne]
+    simp [Ptr.isNil, hb]
 
 /-- A value of a pointer-word shape (a pointer or a 64-bit integer) is `poison`, a 64-bit
 integer or a pointer. -/

@@ -126,6 +126,7 @@ the caller's `SP` of activation `a` at the end of its frame region. -/
   baseOf_heap _ := rfl
   baseOf_global _ := rfl
   baseOf_wbuf := rfl
+  baseOf_none b h := by cases b <;> simp_all [Blk.fixedBase?]
   decode_low _ _ := rfl
   decode_addr := Ptr.fixedOfAddr_addr
   decode_inWindow := Ptr.fixedOfAddr_inWindow
@@ -288,6 +289,10 @@ variable [Addrs]
 
 @[simp] theorem Blk.base?_wbuf : Blk.base? .wbuf = none := Addrs.baseOf_wbuf
 
+/-- Only globals and the write-barrier buffer have no address. -/
+theorem Blk.base?_eq_none {b : Blk} (h : Blk.base? b = none) : (∃ s, b = .global s) ∨ b = .wbuf :=
+  Addrs.baseOf_none b h
+
 /-- Below `2^62` the decoding is #156's (`Addrs.decode_low`). -/
 theorem Ptr.ofAddr_low {x : BitVec 64} (h : x.toNat < 2 ^ 62) :
     Ptr.ofAddr x = Ptr.fixedOfAddr x :=
@@ -296,6 +301,16 @@ theorem Ptr.ofAddr_low {x : BitVec 64} (h : x.toNat < 2 ^ 62) :
 /-- A nil-page address is the nil block at that offset. -/
 theorem Ptr.ofAddr_small {x : BitVec 64} (h : x.toNat < 2 ^ 40) : Ptr.ofAddr x = ⟨.nil, x⟩ := by
   rw [Ptr.ofAddr_low (by omega)]; simp [Ptr.fixedOfAddr, h]
+
+/-- An address decoded into the nil block is the nil block at that address (`nil` sits at 0). -/
+theorem Ptr.ofAddr_eq_nil {x : BitVec 64} (h : (Ptr.ofAddr x).blk = .nil) :
+    Ptr.ofAddr x = ⟨.nil, x⟩ := by
+  have ha : (Ptr.ofAddr x).addr? = some x := Addrs.decode_addr x
+  generalize Ptr.ofAddr x = p at h ha ⊢
+  obtain ⟨b, o⟩ := p
+  simp only at h; subst h
+  simp [Ptr.addr?] at ha
+  simp [ha]
 
 /-- The nil block and heap blocks convert exactly as under `Addrs.fixed`: their bases are fixed,
 and so is the decoding of their addresses (#156's below `2^62`, a frame block from there up). -/
