@@ -6,10 +6,10 @@
 # introduces the use, with a comment naming the theorem.
 # verifiedPipeline_witness (GoFV/Proof/Witness/Pipeline.lean, #189): the whole verified pipeline on
 # plF; `decide +kernel` gets stuck comparing the pass results' CFG caches (`Func` equality).
-GoFV.Proof.Witness.plF_pipeline._native.native_decide.ax_1_1 3b2789fb0d87588261b1cbddb09d410fe2423d9a84f214e1c2775c3902a8dacc
+GoFV.Proof.Witness.plF_pipeline._native.native_decide.ax_1_1 997f29bc86df59828a8a6e08ae8b4fa2709971ca333795a88feb6361b7487475
 # verifiedPipelineFull_witness (GoFV/Proof/Witness/PipelineFull.lean, #385/#189): the verified
 # pipeline through `trim` on isNaN; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.pfF_pipeline._native.native_decide.ax_1_1 18d7bd508db333b075201bb1c63b8c05d91468597ee1c0202b36da07bafce926
+GoFV.Proof.Witness.pfF_pipeline._native.native_decide.ax_1_1 359db31fe5bde6103370d3769f6551573f579c3ce23d8f486581b694a0a2ec27
 # The pins of the GenG1–GenG11 entries below updated for #554 (`genssa` fills `GenState.progAfter`).
 # genG1_witness_50/_30 (GoFV/Proof/Witness/GenG1.lean, #553): `checkG1` accepts `clamp` (parsed,
 # `Env.load`, `genssa`) and `runLoc` runs its compare and branch; compiled evaluation, as plF_pipeline.

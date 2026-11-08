@@ -7,7 +7,8 @@ import GoFV.Proof.Low.Rules.Kit
 `arm_unfold` reduces `ArmRule.Sound r` (`r` a constant) to one goal per commutation choice of
 its pattern (`Rule.swapC`): the semantic statement of the swapped pattern and the result, with
 the hypotheses `hbt` (`Oracle.BoolTyped`), `hwf`, `hc`, `hcond`, `hty`, `hat`, `htop` as Phase 1's
-`rule_unfold` names them (`GoFV/Proof/Rules/Tactic.lean`), the condition's oracle atoms
+`rule_unfold` names them (`GoFV/Proof/Rules/Tactic.lean`), then `harg`, `hcs`, `hfit`, `hadr` and
+`hrng` (`Pat.rangeL`, the auxint ranges), the condition's oracle atoms
 replaced by booleans (`rule_oracle_bool`, `rule_cond_bool`).
 
 `arm_shape` splits the shape of the matched value when the top op is generic: `topOKL` (`htop`)
@@ -63,7 +64,7 @@ elab "arm_unfold" : tactic => do
       rule_unfold_ds, rule_helper, rule_unfold_s]
     intro $(mkIdent `hwf):ident $(mkIdent `hc):ident $(mkIdent `hcond):ident
       $(mkIdent `hty):ident $(mkIdent `hat):ident $(mkIdent `htop):ident $(mkIdent `harg):ident
-      $(mkIdent `hcs):ident $(mkIdent `hfit):ident $(mkIdent `hadr):ident
+      $(mkIdent `hcs):ident $(mkIdent `hfit):ident $(mkIdent `hadr):ident $(mkIdent `hrng):ident
     arm_argsL
     (try simp (config := { decide := true }) only [Pat.argsOKL, Pat.argsOKLs, Pat.argsOKLn,
       Pat.argsOKLns, Pat.isOpL, Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq, and_true,

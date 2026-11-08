@@ -98,6 +98,7 @@ import GoFV.Proof.Low.Lower
 import GoFV.Proof.Low.ProvenARM64
 import GoFV.Proof.Low.RuleL
 import GoFV.Proof.Low.Rules.Attr
+import GoFV.Proof.Low.Rules.Bitfield
 import GoFV.Proof.Low.Rules.BlockCset
 import GoFV.Proof.Low.Rules.BlockCtl
 import GoFV.Proof.Low.Rules.BlockFlags
@@ -806,6 +807,7 @@ import GoFV.Proof.Witness.LowerAddConst
 import GoFV.Proof.Witness.LowerAtomic
 import GoFV.Proof.Witness.LowerAtomicRmw
 import GoFV.Proof.Witness.LowerBitLen
+import GoFV.Proof.Witness.LowerBitfield
 import GoFV.Proof.Witness.LowerBlockTB
 import GoFV.Proof.Witness.LowerBlockTT
 import GoFV.Proof.Witness.LowerBlockZW

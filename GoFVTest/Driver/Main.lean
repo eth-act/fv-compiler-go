@@ -455,7 +455,7 @@ def usage : String :=
   "usage: gofv-ssa-opt [--from <pass>] [--to <pass>] [--partial] <in.ssa>\n       \
    gofv-ssa-opt --verified [--from <pass>] [--vstats FILE] [--profile] <in.ssa>\n       gofv-ssa-opt --list\n       \
    gofv-ssa-opt --check [--mixed] [--whole-file-env] [--strict] [--jobs N] [--max-report N] [--table FILE] <dir|file>...\n       \
-   gofv-ssa-opt --check --verified [--whole-file-env] [--jobs N] [--max-report N] [--table FILE] <dir|file>...\n       \
+   gofv-ssa-opt --check --verified [--whole-file-env] [--jobs N] [--max-report N] [--table FILE] [--vstats FILE] <dir|file>...\n       \
    gofv-ssa-opt --back <in>\n       \
    gofv-ssa-opt --back-check [--jobs N] [--max-report N] [--table FILE] <dir|file>..."
 
@@ -866,6 +866,9 @@ structure VStats where
   schedFirst : Std.HashMap String Nat := {}
   /-- All rejected `schedule` runs, by `SchedClass.schedClass`. -/
   schedAll : Std.HashMap String Nat := {}
+  /-- `--vstats` rows: the file, `vstatsFields`, then `low=` the unverified runs from `lower` on
+  (`pass: verdict`, `;`-separated). -/
+  rows : Array String := #[]
 
 def VStats.merge (a b : VStats) : VStats :=
   let mm (x y : Std.HashMap String Nat) := y.fold (fun m k n => bumpMap m k n) x
@@ -883,7 +886,8 @@ def VStats.merge (a b : VStats) : VStats :=
     fragFirst := mm a.fragFirst b.fragFirst, fragOnly := mm a.fragOnly b.fragOnly
     raFirst := mm a.raFirst b.raFirst, raAll := mm a.raAll b.raAll
     nilRelyFull := a.nilRelyFull + b.nilRelyFull
-    schedFirst := mm a.schedFirst b.schedFirst, schedAll := mm a.schedAll b.schedAll }
+    schedFirst := mm a.schedFirst b.schedFirst, schedAll := mm a.schedAll b.schedAll
+    rows := a.rows ++ b.rows }
 
 def verifiedFile (wholeFile : Bool) (maxReport : Nat) (path : System.FilePath) (st : VStats) :
     IO VStats := do
@@ -928,6 +932,9 @@ def verifiedFile (wholeFile : Bool) (maxReport : Nat) (path : System.FilePath) (
         st := { st with vacuousFull := st.vacuousFull + 1
                         vacuousByFull := stuck.foldl (fun m k => bumpMap m k) st.vacuousByFull }
     if full && r.nilRely then st := { st with nilRelyFull := st.nilRelyFull + 1 }
+    let low := (log.toList.filter fun (q, v) => !isGen q && !v.ok).map fun (q, v) => s!"{q}: {v}"
+    let row := s!"{path}\t{vstatsFields r.st}\tlow={"; ".intercalate low}"
+    st := { st with rows := st.rows.push row }
     if let some (p, v) := firstUnverified? r.st.st then
       st := { st with firstUnverified := bumpMap st.firstUnverified s!"{p}: {v}" }
     else if !full then
@@ -1052,6 +1059,8 @@ def runVerifiedCheck (o : Opts) : IO UInt32 := do
   let text := verifiedText st ms
   IO.print text
   if let some p := o.table then IO.FS.writeFile p text
+  if let some p := o.vstats then
+    IO.FS.writeFile p (String.join ((st.rows.qsort (· < ·)).toList.map (· ++ "\n")))
   return if st.parseErrors > 0 || st.files == 0 then 1 else 0
 
 def main (args : List String) : IO UInt32 := do

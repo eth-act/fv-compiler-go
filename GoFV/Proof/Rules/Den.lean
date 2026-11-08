@@ -341,7 +341,20 @@ inductive Helper where
   | umagicOK (w : Nat) | smagicOK | udivisibleOK (w : Nat)
   | umagic (w : Nat) | smagic (w : Nat) | udivisible (w : Nat) | sdivisible (w : Nat)
   | reciprocalExact64 | reciprocalExact32
+  | armBFAuxInt | bfMask | bfWidth
   deriving DecidableEq, Repr
+
+/-- The width `k` of the arm64 bit-field mask `mask >> rshift` (`isARM64BFMask`,
+`arm64BFWidth`): `int64(uint64(mask) >> uint64(rshift))` is `2^k - 1` with `1 ≤ k ≤ 62`, which
+Go's `isPowerOfTwo(shiftedMask+1)` (an `int64`) and `shiftedMask != 0` ask; `nto` of it is `k`.
+`none` for any other mask (where `arm64BFWidth` panics on a zero mask, and is the oracle's on the
+others, which `isARM64BFMask` rejects). -/
+def bfMaskW (mask rshift : Int) : Option Nat :=
+  if 0 ≤ rshift ∧ rshift < 64 then
+    let n := (mask.emod (2 ^ 64)).toNat / 2 ^ rshift.toNat
+    let k := Nat.log2 (n + 1)
+    if n ≠ 0 ∧ n + 1 = 2 ^ k ∧ k ≤ 62 then some k else none
+  else none
 
 /-- `reciprocalExact64`/`reciprocalExact32` on the encoding `b` of a float with `E` exponent and
 `F` fraction bits: a power of two whose reciprocal is a normal number (fraction 0, biased
@@ -389,6 +402,9 @@ def Helper.ofName : String → Option Helper
   | "sdivisible32" => some (.sdivisible 32) | "sdivisible64" => some (.sdivisible 64)
   | "reciprocalExact32" => some .reciprocalExact32
   | "reciprocalExact64" => some .reciprocalExact64
+  | "armBFAuxInt" => some .armBFAuxInt
+  | "isARM64BFMask" => some .bfMask
+  | "arm64BFWidth" => some .bfWidth
   | _ => none
 
 /-- A helper applied to evaluated arguments with their Go types (`GoFV.Rules.Eval.call`);
@@ -431,6 +447,16 @@ def callH (e : PEnv) : Helper → List (DV × GoTy) → Option DV
   | .sdivisible w, [(.int c, _)] => sdivDV (Magic.sdivisible w c)
   | .reciprocalExact64, [(.f64 x, _)] => some (.bool (reciprocalExactB 11 52 x.toNat))
   | .reciprocalExact32, [(.f32 x, _)] => some (.bool (reciprocalExactB 8 23 x.toNat))
+  | .armBFAuxInt, [(.int l, _), (.int w, _)] =>
+    if 0 ≤ l ∧ l ≤ 63 ∧ 1 ≤ w ∧ l + w ≤ 64 then some (.int (w + l * 256)) else none
+  | .bfMask, [(.int l, _), (.int m, _), (.int r, _)] =>
+    match bfMaskW m r with
+    | some k => some (.bool (decide ((k : Int) + l < 64)))
+    | none => some (.bool false)
+  | .bfWidth, [(.int m, _), (.int r, _)] =>
+    match bfMaskW m r with
+    | some k => some (.int k)
+    | none => none
   | _, _ => none
 
 /-- Field selection on modelled values. -/
@@ -511,7 +537,8 @@ pointer, `Val.hasTy_ptr_eq_i64`: `.ptr none`), is the element type known by its 
 only, the record with the one attribute `PtrTo` (`t.Elem().PtrTo()` is `.ptr el`); `t.Elem()` of an
 aggregate of one field at offset 0 is that field's shape (`Sem.tyOf` of a one-element array
 `[1]T`: `T`'s shape); the kind predicates by `kindE`. The method name is matched first, so that
-a method of an unknown type shape is still `none`. -/
+a method of an unknown type shape is still `none`. An `arm64BitField` (an integer) has `lsb()`,
+`int64(uint64(bfc) >> 8)`, and `width()`, `int64(bfc) & 0xff`. -/
 def methodE (dy : DV) (n : String) (args : List Expr) : Option DV :=
   match n, args with
   | "Size", [] => match dy with
@@ -527,6 +554,12 @@ def methodE (dy : DV) (n : String) (args : List Expr) : Option DV :=
     | _ => none
   | "PtrTo", [] => match dy with
     | .strct fs => strctField fs "PtrTo"
+    | _ => none
+  | "lsb", [] => match dy with
+    | .int i => some (.int ((i.emod (2 ^ 64)).toNat / 256 : Nat))
+    | _ => none
+  | "width", [] => match dy with
+    | .int i => some (.int (i.emod 256))
     | _ => none
   | "IsPtrShaped", [] => kindDV .ptrShaped dy
   | "IsString", [] => kindDV .string dy

@@ -375,6 +375,7 @@ theorem evalE_good {P : Val → Path → Prop} (vtys : List GoFV.Rules.GoTy) (or
       · cases hd
     all_goals first
       | cases hd
+      | (split at hd <;> (try (cases hd; done)) <;> cases hd <;> exact good_of_flat rfl)
       | (unfold GoFV.Proof.Rules.kindDV at hd
          split at hd
          · simp only [Option.map_eq_some_iff] at hd; obtain ⟨_, _, rfl⟩ := hd; exact good_of_flat rfl
