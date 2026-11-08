@@ -1,4 +1,5 @@
-import GoFV.Proof.Obj.G18
+import GoFV.Proof.Obj.CallPanic
+import GoFV.Proof.Pass.DeadRelL
 import GoFV.Proof.Obj.Results
 import GoFV.Proof.Obj.Frame
 import GoFV.Proof.CongLoc
@@ -835,6 +836,252 @@ theorem obj_whole_ret (hc : checkG18 lc ps bstart g = .ok (tab, kt))
       sim_from_ret hc hO hH hic hEE hlf hrok houts hP n _ blkE k sI t1 .refl hbE hk hS hrun
     obtain ⟨n', hn'⟩ := mstar_returned (mstar_trans ht1 ht') hX.pc
     exact ⟨E, t', n', hx, hn', hX, hRes⟩
+
+/-! ## Panics -/
+
+/-- **The panic premise of the run** at every state it reaches from `(b0, i0, s0)`: a value
+whose step panics is a nil check, or a static call whose callee panics as the trusted contract
+`CallPanicOK` says at every `LocMatch`ed machine state of an activation extending `E0`. -/
+def RunPanicPre (env : Env) (H : Hooks) (lc : LocCtx) (g : G2In) (L : Link) (E0 : MatchEnv)
+    (b0 : ID) (i0 : Nat) (s0 : LocState) : Prop :=
+  ∀ b i s blk, LReach env lc b0 i0 s0 b i s → lc.ctx.f.block? b = some blk →
+    ∀ id v e mm, blk.values[i]? = some id → lc.ctx.f.value? id = some v →
+      stepLoc env lc s v = .panic e mm →
+      v.op = .ARM64LoweredNilCheck ∨
+        (v.op = .ARM64CALLstatic ∧ ∀ E m, E0.Extends E → LocMatch E s b i m →
+          CallPanicOK H E g L lc s v m e)
+
+theorem mapM_loop_ne_panic {α β : Type} {f : α → Res β} (hf : ∀ a e m, f a ≠ .panic e m) :
+    ∀ (l : List α) (acc : List β) e m, List.mapM.loop f l acc ≠ .panic e m
+  | [], acc, e, m => by simp [List.mapM.loop, pure]
+  | a :: l, acc, e, m => by
+    simp only [List.mapM.loop]
+    cases h : f a with
+    | ok x => simp only [bind, Res.bind]; exact mapM_loop_ne_panic hf l (x :: acc) e m
+    | panic e' m' => exact absurd h (hf a e' m')
+    | stuck msg => simp [bind, Res.bind]
+
+/-- `LocState.control` does not panic. -/
+theorem control_noPanic {lc : LocCtx} {s : LocState} {c : ID} {e : Panic} {m : Mem} :
+    s.control lc c ≠ .panic e m := by
+  have hm : ∀ (l : List ID) e' m', l.mapM (s.read lc) ≠ .panic e' m' := fun l e' m' => by
+    unfold List.mapM
+    exact mapM_loop_ne_panic (fun _ _ _ => read_noPanic) l [] e' m'
+  unfold LocState.control
+  split
+  · rename_i v _
+    split
+    · cases h : v.args.toList.mapM (s.read lc) with
+      | ok xs => simp [bind, Res.bind, pure]
+      | panic e' m' => exact absurd h (hm _ e' m')
+      | stuck msg => simp [bind, Res.bind]
+    · exact read_noPanic
+  · nofun
+
+theorem forIn_res_ne_panic {α β : Type} {f : α → β → Res (ForInStep β)}
+    (hf : ∀ a b e m, f a b ≠ .panic e m) :
+    ∀ (l : List α) (b : β) e m, forIn l b f ≠ .panic e m
+  | [], b, e, m => by simp [pure]
+  | a :: l, b, e, m => by
+    rw [List.forIn_cons]
+    cases h : f a b with
+    | ok r =>
+      cases r with
+      | done b' => simp [bind, Res.bind, pure]
+      | yield b' => simp only [bind, Res.bind]; exact forIn_res_ne_panic hf l b' e m
+    | panic e' m' => exact absurd h (hf a b e' m')
+    | stuck msg => simp [bind, Res.bind]
+
+/-- A terminator does not panic under `runLoc`. -/
+theorem stepTermLoc_ne_panic {lc : LocCtx} {s : LocState} {blk : Block} {e : Panic} {m : Mem} :
+    stepTermLoc lc s blk ≠ .panic e m := by
+  intro h
+  unfold stepTermLoc at h
+  dsimp only at h
+  rw [← Array.forIn_toList] at h
+  simp only [bind, Res.bind] at h
+  split at h
+  · dsimp only at h
+    split at h
+    · cases h
+    · rename_i hn
+      exact GoFV.Proof.Dead.stepTermL_not_panic hn
+    · cases h
+  · rename_i hf
+    refine forIn_res_ne_panic (fun c regs e' m' hc => ?_) _ _ _ _ hf
+    split at hc
+    · cases hc
+    · rename_i hx
+      exact control_noPanic hx
+    · cases hc
+  · cases h
+
+/-- One value whose step panics: a nil check or a static call whose callee panics, matched by
+machine steps to a state that panics alike. -/
+theorem sim_valuePanic (hc : checkG18 lc ps bstart g = .ok (tab, kt))
+    (hO : ObjEnv ps spills o otab L base code retM)
+    (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
+    (hHP : HookPanicMap H L ps.toList (ObjEnv.map otab ps L base))
+    (hic : ∀ u, ICallOut L ps.toList u)
+    {b : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState} {e : Panic} {mm : Mem}
+    {t : MState} (hb : lc.ctx.f.block? b = some blk) (hi : blk.values[i]? = some id)
+    (hv : lc.ctx.f.value? id = some v) (hs : stepLoc env lc s v = .panic e mm)
+    (hS : SimAt lc g L ps tab kt E0 otab base b blk i s t)
+    (hpp : v.op = .ARM64LoweredNilCheck ∨
+      (v.op = .ARM64CALLstatic ∧ ∀ E m, E0.Extends E → LocMatch E s b i m →
+        CallPanicOK H E g L lc s v m e)) :
+    ∃ t', MStar H code retM t t' ∧ MPanics H code retM t' e := by
+  obtain ⟨E, m, hx, hE, hm, hinv, hR, hbid⟩ := hS
+  rcases hpp with hop | ⟨hop, hok⟩
+  · obtain ⟨-, t', ht, hp⟩ := g18_obj_nilPanic hc hE hbid hb hi hv hop hm hinv hs hO hH hHP hR
+      (fun u _ => hic u)
+    exact ⟨t', ht, hp⟩
+  · exact g18_obj_callPanic hc hE hbid hb hi hv hop hm hinv (hok E m hx hm) hO hH hHP hR
+      (fun u _ => hic u)
+
+/-- The values of a block from value `i` on, which panic. -/
+theorem sim_valuesPanic (hc : checkG18 lc ps bstart g = .ok (tab, kt))
+    (hO : ObjEnv ps spills o otab L base code retM)
+    (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
+    (hHP : HookPanicMap H L ps.toList (ObjEnv.map otab ps L base))
+    (hic : ∀ u, ICallOut L ps.toList u)
+    {b0 : ID} {i0 : Nat} {s0 : LocState}
+    (hP : RunPre env H lc g L (endP L.text ps.toList) E0 b0 i0 s0)
+    (hPP : RunPanicPre env H lc g L E0 b0 i0 s0) {e : Panic} {mm : Mem}
+    {b : ID} {blk : Block} (hb : lc.ctx.f.block? b = some blk) :
+    ∀ (n i : Nat) (s : LocState) (t : MState), i + n = blk.values.size →
+      LReach env lc b0 i0 s0 b i s → SimAt lc g L ps tab kt E0 otab base b blk i s t →
+      enterListLoc env lc s (blk.values.toList.drop i) = .panic e mm →
+      ∃ t', MStar H code retM t t' ∧ MPanics H code retM t' e
+  | 0, i, s, t, hn, hr, hS, hl => by
+    have hd : blk.values.toList.drop i = [] := List.drop_eq_nil_of_le (by simp; omega)
+    rw [hd] at hl
+    cases hl
+  | n + 1, i, s, t, hn, hr, hS, hl => by
+    have hlt : i < blk.values.toList.length := by simp; omega
+    rw [List.drop_eq_getElem_cons hlt] at hl
+    simp only [enterListLoc] at hl
+    have hi : blk.values[i]? = some blk.values.toList[i] := by simp
+    generalize blk.values.toList[i] = id at hl hi
+    cases hv : lc.ctx.f.value? id with
+    | none => rw [hv] at hl; cases hl
+    | some v =>
+      rw [hv] at hl
+      simp only at hl
+      cases hs : stepLoc env lc s v with
+      | panic e' mm' =>
+        rw [hs] at hl
+        cases hl
+        exact sim_valuePanic hc hO hH hHP hic hb hi hv hs hS (hPP b i s blk hr hb id v _ _ hi hv hs)
+      | stuck msg => rw [hs] at hl; cases hl
+      | ok s1 =>
+        rw [hs] at hl
+        obtain ⟨hen, hpre, hok⟩ := (hP b i s blk hr hb).1 id v hi hv
+        obtain ⟨t1, ht1, hS1⟩ := sim_value hc hO hH hic hb hi hv hs hS hen hpre (hok s1 hs)
+        obtain ⟨t', ht', hp⟩ := sim_valuesPanic hc hO hH hHP hic hP hPP hb n (i + 1) s1 t1
+          (by omega) (.val hr hb hi hv hs) hS1 hl
+        exact ⟨t', mstar_trans ht1 ht', hp⟩
+
+/-- **A panicking run.** From related states before value `i` of block `b`, a run that panics
+with `e` is matched by a machine run to a state that panics with `e` (`MPanics`). -/
+theorem sim_from_panic (hc : checkG18 lc ps bstart g = .ok (tab, kt))
+    (hO : ObjEnv ps spills o otab L base code retM)
+    (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
+    (hHP : HookPanicMap H L ps.toList (ObjEnv.map otab ps L base))
+    (hic : ∀ u, ICallOut L ps.toList u)
+    {b0 : ID} {i0 : Nat} {sI : LocState}
+    (hP : RunPre env H lc g L (endP L.text ps.toList) E0 b0 i0 sI)
+    (hPP : RunPanicPre env H lc g L E0 b0 i0 sI) {e : Panic} {mm : Mem} :
+    ∀ (fuel : Nat) (b : ID) (blk : Block) (i : Nat) (s : LocState) (t : MState),
+      LReach env lc b0 i0 sI b i s → lc.ctx.f.block? b = some blk → i ≤ blk.values.size →
+      SimAt lc g L ps tab kt E0 otab base b blk i s t →
+      runFromLoc env lc fuel s b i = .panicked e mm →
+      ∃ t', MStar H code retM t t' ∧ MPanics H code retM t' e := by
+  intro fuel
+  induction fuel with
+  | zero => ?_
+  | succ n ih => ?_
+  all_goals
+    intro b blk i s t hr hb hi hS hrun
+    simp only [runFromLoc, hb] at hrun
+    cases hl : enterListLoc env lc s (blk.values.toList.drop i) with
+    | panic e' mm' =>
+      rw [hl] at hrun
+      simp only [Outcome.panicked.injEq] at hrun
+      obtain ⟨rfl, rfl⟩ := hrun
+      exact sim_valuesPanic hc hO hH hHP hic hP hPP hb (blk.values.size - i) i s t (by omega) hr
+        hS hl
+    | stuck msg => rw [hl] at hrun; cases hrun
+    | ok s1 =>
+      rw [hl] at hrun
+      simp only at hrun
+      obtain ⟨hr1, t1, ht1, hS1⟩ :=
+        sim_values hc hO hH hic hP hb (blk.values.size - i) i s s1 t (by omega) hr hS hl
+      cases hst : stepTermLoc lc s1 blk with
+      | panic e' mm' => exact absurd hst stepTermLoc_ne_panic
+      | stuck msg => rw [hst] at hrun; cases hrun
+      | ok r =>
+        obtain ⟨nx, s2⟩ := r
+        rw [hst] at hrun
+        cases nx with
+        | ret rs' mm' => cases hrun
+        | goto e2 =>
+          simp only at hrun
+          first
+          | (simp [runLoopLoc] at hrun; done)
+          | (rw [runLoopLoc_succ] at hrun
+             cases hb2 : lc.ctx.f.block? e2.b with
+             | none => simp [runFromLoc, hb2] at hrun
+             | some blk2 =>
+               have hpre := ((hP b blk.values.size s1 blk hr1 hb).2 rfl)
+               obtain ⟨t2, ht2, hS2⟩ := sim_goto (blk' := blk2) hc hO hH hic hb hst hS1 hpre
+               obtain ⟨t3, ht3, hp⟩ :=
+                 ih e2.b blk2 0 s2 t2 (.term hr1 hb hst) hb2 (Nat.zero_le _) hS2 hrun
+               exact ⟨t3, mstar_trans ht1 (mstar_trans ht2 ht3), hp⟩)
+
+/-- A run of the machine to a state that panics panics. -/
+theorem mstar_panicked {s0 t : MState} {e : Panic} (h : MStar H code retM s0 t)
+    (hp : MPanics H code retM t e) : ∃ n t', runMach H code retM n s0 = .panicked e t' := by
+  obtain ⟨n, hn⟩ := h.runMach
+  obtain ⟨t', ht'⟩ := hp.runMach 0
+  exact ⟨n + 1, t', by rw [hn 1, ht']⟩
+
+/-- **A whole function of slice G18, panicking, down to the machine words.** `obj_whole_ret`'s
+premises on the entry and the steps (`RunPre`), the trusted `HookPanicMap`, and the panic premise
+`RunPanicPre` (the run's panics come from nil checks and from static calls whose callee panics,
+`CallPanicOK`): if the run of `runLoc` panics with `e`, `runMach` panics with `e` (the nil-page
+fault of the nil check's `MOVB`, `sigpanic`; or the callee's hook). -/
+theorem obj_whole_panic (hc : checkG18 lc ps bstart g = .ok (tab, kt))
+    {room : Nat} {s0 : MState} (hO : ObjEnv ps spills o otab L base code (s0.x 30))
+    (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
+    (hHP : HookPanicMap H L ps.toList (ObjEnv.map otab ps L base))
+    (hic : ∀ u, ICallOut L ps.toList u)
+    (hME : MachEntry code base room s0) (hroom : otab.autosize + 8 ≤ room)
+    (hg : (s0.x 28).toNat + 32 ≤ 2 ^ 64)
+    (hpass : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
+      CheckPasses otab.autosize gOff s0)
+    (hE : G10Env lc g L ps (endP L.text ps.toList) tab E0)
+    (hEE : EntryEnv E0 L ps.toList otab.autosize s0)
+    {s sI : LocState} {blkE : Block} {k : Nat}
+    (hbE : lc.ctx.f.block? lc.ctx.f.entry = some blkE)
+    (hbm : lc.ctx.f.entry ∈ lc.ctx.f.blocks.toList) (hk : k ≤ blkE.values.size)
+    (hpre : enterListLoc env lc s (blkE.values.toList.take k) = .ok sI)
+    (hent : EntryMatch E0 sI s0) (hinv : G3Inv E0 lc (kAt lc kt lc.ctx.f.entry blkE k) sI)
+    (hpc : ObjEnv.map otab ps L base (E0.pcOf lc.ctx.f.entry k) =
+      base + BitVec.ofNat 64 (otab.offs[0]!))
+    (hP : RunPre env H lc g L (endP L.text ps.toList) E0 lc.ctx.f.entry k sI)
+    (hPP : RunPanicPre env H lc g L E0 lc.ctx.f.entry k sI)
+    {fuel : Nat} {e : Panic} {mm : Mem}
+    (hrun : runLoopLoc env lc fuel s lc.ctx.f.entry = .panicked e mm) :
+    ∃ n t', runMach H code (s0.x 30) n s0 = .panicked e t' := by
+  cases fuel with
+  | zero => simp [runLoopLoc] at hrun
+  | succ n =>
+    rw [runLoopLoc_entry hbE hpre] at hrun
+    obtain ⟨t1, ht1, hS⟩ := sim_entry (H := H) hO hME hroom hg hpass hE hEE hent hinv hbm hpc
+    obtain ⟨t', ht', hp⟩ :=
+      sim_from_panic hc hO hH hHP hic hP hPP n _ blkE k sI t1 .refl hbE hk hS hrun
+    exact mstar_panicked (mstar_trans ht1 ht') hp
 
 end Sim
 

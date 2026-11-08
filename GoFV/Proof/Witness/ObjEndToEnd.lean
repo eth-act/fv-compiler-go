@@ -3,17 +3,18 @@ import GoFV.Proof.Witness.ObjWhole
 import GoFV.Proof.Witness.PipelineFull
 
 /-!
-# Non-vacuity witness: generic SSA to machine words (`verified_mach_ret`)
+# Non-vacuity witness: generic SSA to machine words (`verified_mach`)
 
 `pallocSum.start` of `std/runtime` from its first export section (the input of `number lines`,
 `GenG3.startSsa`), in the pass environment `gofv-ssa-opt --verified` builds for it (`baseEnv`, the
 whole-file environment), through `verifiedPipelineFull` (`fullyVerified`) to the allocated
-function; genssa's Progs (`GenG3.ps`) are accepted by `checkG12` against the pipeline's output
-(`ObjWhole.lcFacts`) and the assembler's words by `checkObj` (`ObjWhole.obj_premises`). On the
-argument `p = 7` in the Phase 1 test environment `plRunEnv` (`VPre` as for `isNaN` in
-`PipelineFull.lean`), the generic `run` returns; `verified_mach_ret` gives the `runLoc` that
-refines it, its body's outcome, and the machine run that returns to the caller with it. By
-compiled evaluation (`native_decide`, listed in `scripts/axioms-allowlist.txt`; `e2e_facts`): the
+function; genssa's Progs (`GenG3.ps`) are accepted by `checkG18` and its return by `retRegsOK`
+against the pipeline's output (`ObjWhole.lcFacts`), and the assembler's words by `checkObj`
+(`ObjWhole.obj_premises`). On the argument `p = 7` in the Phase 1 test environment `plRunEnv`
+(`VPre` as for `isNaN` in `PipelineFull.lean`), the generic `run` returns; `verified_mach`
+gives the `runLoc` that refines it, its body's outcome, and the machine run that returns to the
+caller with it, the result in the ABI's result register `X0`. By compiled evaluation
+(`native_decide`, listed in `scripts/axioms-allowlist.txt`; `e2e_facts`): the
 export parses, the pipeline is `fullyVerified` with `schedule` inputs free of memory ops,
 pointer-shaped parameter pieces and checked pointers, `lcFacts` holds of its output, the generic
 `run` returns, and the input has no dictionary parameter and no read-only symbol.
@@ -116,11 +117,12 @@ theorem initAvoids : InitAvoids plRunEnv ObjWhole.args {} := by
       rw [hx]
       trivial
 
-/-- **Non-vacuity of `verified_mach_ret`**: on `pallocSum.start` with `p = 7`, the verified
-pipeline returns a `fullyVerified` state, the generic `run` returns, and `verified_mach_ret`
-applies with every premise discharged: a `runLoc` of the allocated function refines the `run`, it
-is `finish` of its body's defined outcome, and when the body returns, `runMach` of the linked
-words from the function's entry returns to the caller's `0x40` in a related state (`ExitRel`). -/
+/-- **Non-vacuity of `verified_mach`**: on `pallocSum.start` with `p = 7`, the verified pipeline
+returns a `fullyVerified` state, the generic `run` returns, and `verified_mach` applies with every
+premise discharged: a `runLoc` of the allocated function refines the `run`, it is `finish` of its
+body's defined outcome, and when the body returns, `runMach` of the linked words from the
+function's entry returns to the caller's `0x40` (`MachRet`) with the results in `X0`
+(`ResultRel`). (Its panic branch is exercised by `ObjPanic.objWhole_panic_witness`.) -/
 theorem verified_mach_witness :
     ∃ r, verifiedPipelineFull penv f0 0 sec0.zvar dcl = .ok r ∧ r.fullyVerified = true ∧
       (∃ rs m, GoFV.SSA.run plRunEnv penv.tables f0 ObjWhole.args {} 5 = .returned rs m) ∧
@@ -135,12 +137,9 @@ theorem verified_mach_witness :
               (LocCtx.make r.st.tables r.st.func).ctx.act raw ∧
           raw.Defined ∧
           ∀ rs mm, raw = .returned rs mm →
-            ∃ E bF blkF sF sF' t' n, (ObjWhole.E0 (LocCtx.make r.st.tables r.st.func)).Extends E ∧
+            ∃ E t' n, (ObjWhole.E0 (LocCtx.make r.st.tables r.st.func)).Extends E ∧
               runMach GenG2.H0 ObjG7.startCode (ObjWhole.s0.x 30) n ObjWhole.s0 = .returned t' ∧
-              ExitRel E sF ObjWhole.s0 t' ∧
-              (LocCtx.make r.st.tables r.st.func).ctx.f.block? bF = some blkF ∧
-              stepTermLoc (LocCtx.make r.st.tables r.st.func) sF blkF =
-                .ok (.ret rs mm, sF') := by
+              MachRet ObjWhole.s0 t' ∧ ResultRel E [0] rs mm t' := by
   have hf := e2e_facts
   simp only [e2eFacts, Bool.and_eq_true, beq_iff_eq, List.isEmpty_iff] at hf
   obtain ⟨⟨⟨hp, hrun⟩, hdict⟩, hro⟩ := hf
@@ -175,10 +174,12 @@ theorem verified_mach_witness :
     have hd : (GoFV.SSA.run plRunEnv penv.tables f0 ObjWhole.args {} 5).Defined := by
       rw [hrun0]; trivial
     obtain ⟨hO, hH, hME, hroom, hg, hpass, hlf, -, hEE, hpc, -, -, hic⟩ := ObjWhole.obj_premises
-    obtain ⟨hc, hE, hb1, hbm, hk, hentry, sI, hsI, hent, hinv, hP⟩ := ObjWhole.lc_premises hlcf
+    obtain ⟨hc, hrok, houts, hE, hb1, hbm, hk, hentry, sI, hsI, hent, hinv, hP⟩ :=
+      ObjWhole.lc_premises hlcf
     rw [← hentry] at hpc
-    exact ⟨r, rfl, hv, ⟨rs0, m0, hrun0⟩,
-      verified_mach_ret hpe hv hvpre hnn hap hnp hd rfl hc hO hH hic hME hroom hg hpass hlf hE
-        (hEE _) hb1 hbm hk hsI hent hinv (hpc _) hP⟩
+    obtain ⟨fuel', href, raw, hraw, hfin, hdef, hret, -⟩ :=
+      verified_mach hpe hv hvpre hnn hap hnp hd rfl hc hO hH hic hrok houts hME hroom hg hpass
+        hlf hE (hEE _) hb1 hbm hk hsI hent hinv (hpc _) hP
+    exact ⟨r, rfl, hv, ⟨rs0, m0, hrun0⟩, fuel', href, raw, hraw, hfin, hdef, hret⟩
 
 end GoFV.Proof.Witness.ObjEndToEnd
