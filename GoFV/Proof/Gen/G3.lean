@@ -237,8 +237,9 @@ theorem cls_bool {t : Ty} (h : cls t = some 1) : t = .bool := by
   | bool => rfl
   | _ => simp [Gen.Check.cls] at h
 
-/-- A load of `n` bytes, through a 64-bit register (`off(Rn)`) or of a global (`sym+off(SB)`). -/
-theorem g3_load (F : Facts lc sym text az ez psA.toList ret E)
+/-- `g3_load` with the registers of the machine after the load: the zero or sign extension of
+the `n` loaded bytes written to `X[kd]`, `rd = R0 + kd`. -/
+theorem g3_loadW (F : Facts lc sym text az ez psA.toList ret E)
     (hglob : ∀ y name abi, g.syms[y]? = some (name, abi) →
       E.ι (.global name.toStringLossy) = some (sym y))
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
@@ -253,7 +254,10 @@ theorem g3_load (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j pat j') (htemp : (lc.temps[v.id]?).join = none)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧
+      ∃ (kd : Nat) (Y : BitVec (8 * n)), rd = GoFV.Asm.ARM64.REG_R0 + kd ∧
+        m'.x = (m.wX (BitVec.ofNat 5 kd)
+          (if sg then ProgOp.sextTo64 n (Y.setWidth 64) else Y.setWidth 64)).x := by
   have hl := F.lowered
   have hA := F.addr
   have hnp := loadOp?_ne_phi hop
@@ -299,9 +303,9 @@ theorem g3_load (F : Facts lc sym text az ez psA.toList ret E)
       rw [← hsym]; unfold symAddr; rw [haux]
     obtain ⟨a, hpa, haeq, hnil⟩ := addr_rel hA hMI hxv hxf haddr (by omega : 0 < n)
       (Or.inr (by rw [hrd]; rfl))
-    refine (op_reg2 (H := H) F hm hinv hj hj' hvs hd hkd hor (hval a hpa) (fits_retypeL hcv _)
+    refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor (hval a hpa) (fits_retypeL hcv _)
       (knext_set hK hnp hvh hcv) (fun k0 hk0 hok => ?_)).imp
-      fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
+      fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, kd, _, rfl, h4⟩
     obtain ⟨has, hf, -, ht', hsc, -, -⟩ := hpat _ hok
     have haeq' : ({ m with pc := pcAt text psA.toList k0 } : MState).rX (BitVec.ofNat 5 kn) +
         BitVec.ofInt 64 v.auxInt.toInt = a + p.off := haeq
@@ -318,15 +322,35 @@ theorem g3_load (F : Facts lc sym text az ez psA.toList ret E)
     obtain ⟨-, ⟨-, -, -, -, -, y, -, hy⟩, -⟩ := hpat _ hok0
     have hpa := hglob y name abi hy
     obtain ⟨hnil, -⟩ := access_nil hMI hpa (by omega : 0 < n) (Or.inr (by rw [hrd]; rfl))
-    refine (op_reg2 (H := H) F hm hinv hj hj' hvs hd hkd hor (hval _ hpa) (fits_retypeL hcv _)
+    refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor (hval _ hpa) (fits_retypeL hcv _)
       (knext_set hK hnp hvh hcv) (fun k1 hk1 hok => ?_)).imp
-      fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
+      fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, kd, _, rfl, h4⟩
     obtain ⟨has, ⟨hf1, hf2, -, -, hf5, y', hy1, hy'⟩, -, ht', -, -, -⟩ := hpat _ hok
     have hyy : sym y' = sym y :=
       Option.some.inj ((hglob y' name abi hy').symm.trans hpa)
     have hL : (Link.byId sym text az ez psA.toList).sym y' = sym y := hyy
     rw [progStep_globLoad hkd (nextAddr_pcAt F.nodup hk1) (by rw [has]; exact hmov) hf1 hf2 hf5
       hy1 ht' (by rw [hL]; exact hnil), hL, wX_pc]
+
+/-- A load of `n` bytes, through a 64-bit register (`off(Rn)`) or of a global (`sym+off(SB)`). -/
+theorem g3_load (F : Facts lc sym text az ez psA.toList ret E)
+    (hglob : ∀ y name abi, g.syms[y]? = some (name, abi) →
+      E.ι (.global name.toStringLossy) = some (sym y))
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hR : KRead lc v K) (hK : KNext lc v K K') (hpre : G3Pre lc s v)
+    (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
+    {as : As} {n : Nat} {sg : Bool} {c : Nat} {rd : Int} {src : Addr → Prop} {pat : Pat}
+    (hop : loadOp? v.op = some (as, n, sg)) (hsz2 : v.args.size = 2) (hacc : AccessOK lc g v src)
+    (hma : memArg lc v 1 = .ok ()) (hro : resObj lc v = .ok (c, rd))
+    (hc : 8 ≤ c ∨ c = 1 ∧ n = 1 ∧ sg = false)
+    (hpat : ∀ p, pat.ok p = true → p.as = as ∧ src p.from_ ∧ p.reg = 0 ∧ p.to = regA rd ∧
+      p.scond = 0 ∧ p.rest.isEmpty = true ∧ p.regTo2 = 0)
+    (hvs : OneAt2 psA j pat j') (htemp : (lc.temps[v.id]?).join = none)
+    (hs : stepLoc env lc s v = .ok s') :
+    ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' :=
+  (g3_loadW (H := H) F hglob hm hinv hsi hR hK hpre hj hj' hop hsz2 hacc hma hro hc hpat hvs
+    htemp hs).imp fun _ h => ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1⟩
 
 /-- A store of `n` bytes, through a 64-bit register (`off(Rn)`) or to a global (`sym+off(SB)`). -/
 theorem g3_store (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)

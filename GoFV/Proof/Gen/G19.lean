@@ -711,6 +711,87 @@ theorem g19_nilPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   | nil _ hsz2 _ _ hao hma =>
     exact g7_nilFault (H := H) F hm hinv.core (kread_of_reads hreads) hj hop hsz2 hao hma hvs hs
 
+/-- A bounds panic of G19's kinds (`VK19`) at value `i` of block `bid`, whose PC table row is
+`row`: `g19_boundsPanic`'s conclusion, from the facts of an accepted function (`g19_boundsPanic`,
+G20's `g20_boundsPanic`). -/
+theorem vk19_boundsPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In}
+    {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} {ps : Array Prog} {ret : BitVec 64}
+    {tab : PcTab} {E : MatchEnv} {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value}
+    {s : LocState} {m : MState} {e : Panic} {mm' : Mem} {K : KMap} {kd : VKind2} {row : List Nat}
+    (F : Facts lc sym text az ez ps.toList ret E)
+    (hsyms : ∀ y, (Link.byId sym text az ez ps.toList).sym y ≠ ret ∧
+      ∀ p ∈ ps.toList, (Link.byId sym text az ez ps.toList).addr p.id ≠
+        some ((Link.byId sym text az ez ps.toList).sym y))
+    (hpb : pbOK lc ps.toList tab = true) (hrow : tab.lookup bid = some row)
+    (hb : lc.ctx.f.block? bid = some blk) (hi : blk.values[i]? = some id)
+    (hv : lc.ctx.f.value? id = some v) (hVK : VK19 lc g v kd)
+    (hvs : VStep2 ps kd (row.getD i 0) (row.getD (i + 1) 0))
+    (hj : E.pcOf bid i = pcAt text ps.toList (row.getD i 0))
+    (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
+    (hop : pbOp v.op = true) (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s)
+    (hbok : BoundsOK H g (Link.byId sym text az ez ps.toList) ps.toList)
+    (hs : stepLoc env lc s v = .panic e mm') :
+    ∃ e' m', BoundsAgree e e' ∧ PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
+      PPanics H (Link.byId sym text az ez ps.toList) ps.toList ret m' e' := by
+  have hA := F.addr
+  have hl := F.lowered
+  cases hVK with
+  | g18 hn _ => rw [hop] at hn; cases hn
+  | @pb cc mvs _ _ _ hinfo =>
+    obtain ⟨k, xr, yr, xv, yv, X, Y, hk16, hxv, hyv, hcenc, rfl, hX, hY, hmv⟩ :=
+      pb_phase1 hA hl hm hinv.core (kread_of_reads hreads) hop hinfo hs
+    -- the `MOVD`s, then the `CALL`
+    have hvs' : ManyAt2 ps (row.getD i 0)
+        (mvs.map (fun km => pbMov km.1 km.2) ++ [pbCall g]) (row.getD (i + 1) 0) := hvs
+    obtain ⟨j₁, hmany, hstar1⟩ := pstar_pbMovs (H := H) F mvs hmv m hvs'
+    rw [pc_eta hm hj] at hstar1
+    obtain ⟨k0, hone, hk0⟩ := hmany
+    obtain ⟨kc, rfl, hkc, hokc, hstar2⟩ :=
+      pstar_oneAt2 (H := H) F.nodup F.lt F.ret hone (movRegs m mvs)
+    have hokc' : (Pat.mk (plain .CALL (fun a : Addr => a == {}) (pbTarget g)) "CALL").ok
+        ps.toList[kc] = true := hokc
+    obtain ⟨has, -, -, ht, -, -, -⟩ := plain_spec hokc'
+    simp only [pbTarget, Bool.and_eq_true, beq_iff_eq] at ht
+    obtain ⟨⟨⟨⟨⟨ht1, ht2⟩, -⟩, -⟩, ht3⟩, ht4⟩ := ht
+    cases hy : ps.toList[kc].to.sym with
+    | none => rw [hy] at ht4; cases ht4
+    | some y =>
+      rw [hy] at ht4
+      have hy' : g.syms[y]? = some pbSym := by simpa using ht4
+      obtain ⟨m₁, hm₁⟩ : ∃ m₁ : MState, m₁ = { ({ movRegs m mvs with
+          pc := pcAt text ps.toList kc } : MState).wX 30 (pcAt text ps.toList (kc + 1)) with
+          pc := (Link.byId sym text az ez ps.toList).sym y } := ⟨_, rfl⟩
+      have hcstep := progStep_callSym (L := Link.byId sym text az ez ps.toList)
+        (s := { movRegs m mvs with pc := pcAt text ps.toList kc })
+        (nextAddr_pcAt F.nodup hkc) has ht1 ht2 ht3 hy
+      rw [← hm₁] at hcstep
+      have hstar := pstar_trans hstar1 (hstar2.tail (pstep_at F.nodup F.lt F.ret hkc rfl hcstep))
+      -- the `PCDATA_PanicBounds` in force at the `CALL`
+      have hdata : pbData ps.toList kc = some (constA cc) := by
+        have := pbOK_spec hpb hrow hb hi hv hop hinfo
+        simp only [ManyAt2] at hk0
+        rw [hk0] at this
+        simpa using this
+      have hpc1 : m₁.pc = (Link.byId sym text az ez ps.toList).sym y := by rw [hm₁]
+      have hx30 : m₁.x 30 = pcAt text ps.toList (kc + 1) := by
+        rw [hm₁]; simp [MState.wX]
+      obtain ⟨s', hcall⟩ := hbok kc hkc y cc _ m₁ hy hy' hdata (nextAddr_pcAt F.nodup hkc) hpc1 hx30
+      refine ⟨boundsPanic cc m₁, m₁, ?_, hstar, ?_⟩
+      · have hm1 : ∀ q, q < 16 → m₁.x (BitVec.ofNat 5 q) = (movRegs m mvs).x (BitVec.ofNat 5 q) :=
+          fun q hq => by rw [hm₁]; exact wX30_x (by omega) _
+        subst hcenc
+        refine boundsPanic_agree hk16 hxv hyv m₁ ?_ ?_
+        · cases xr
+          · simpa using hX
+          · simp only [↓reduceIte] at hX hxv ⊢
+            rw [hX, hm1 xv hxv]
+        · cases yr
+          · simpa using hY
+          · simp only [↓reduceIte] at hY hyv ⊢
+            rw [hY, hm1 yv hyv]
+      · exact ⟨by rw [hpc1]; exact (hsyms y).1,
+          .inr ⟨by rw [hpc1]; exact progAt?_none (hsyms y).2, s', hcall⟩⟩
+
 /-- **G19, bounds panics.** A bounds panic of an accepted function that `runLoc` runs to a panic
 `e` from a state related to `m` is matched by `runProg` steps of genssa's P0 Progs (the `MOVD`s of
 its moved constants and `CALL runtime.panicBounds(SB)`) to a state where `runProg` panics with
@@ -753,62 +834,7 @@ theorem g19_boundsPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Li
   have hreads := ((checkK_spec hk).2 bid hbid blk hb).1 i id v hi hv
   have F : Facts c.cx.lc sym text az ez c.cx.ps.toList ret E :=
     ⟨hl, clsReg_of_home10 hhome, hnd, hlt, hret, hA⟩
-  cases hVK with
-  | g18 hn _ => rw [hop] at hn; cases hn
-  | @pb cc mvs _ _ _ hinfo =>
-    obtain ⟨k, xr, yr, xv, yv, X, Y, hk16, hxv, hyv, hcenc, rfl, hX, hY, hmv⟩ :=
-      pb_phase1 hA hl hm hinv.core (kread_of_reads hreads) hop hinfo hs
-    -- the `MOVD`s, then the `CALL`
-    have hvs' : ManyAt2 c.cx.ps ((js ++ [e']).getD i 0)
-        (mvs.map (fun km => pbMov km.1 km.2) ++ [pbCall c.g]) ((js ++ [e']).getD (i + 1) 0) := hvs
-    obtain ⟨j₁, hmany, hstar1⟩ := pstar_pbMovs (H := H) F mvs hmv m hvs'
-    rw [pc_eta hm hj] at hstar1
-    obtain ⟨k0, hone, hk0⟩ := hmany
-    obtain ⟨kc, rfl, hkc, hokc, hstar2⟩ :=
-      pstar_oneAt2 (H := H) F.nodup F.lt F.ret hone (movRegs m mvs)
-    have hokc' : (Pat.mk (plain .CALL (fun a : Addr => a == {}) (pbTarget c.g)) "CALL").ok
-        c.cx.ps.toList[kc] = true := hokc
-    obtain ⟨has, -, -, ht, -, -, -⟩ := plain_spec hokc'
-    simp only [pbTarget, Bool.and_eq_true, beq_iff_eq] at ht
-    obtain ⟨⟨⟨⟨⟨ht1, ht2⟩, -⟩, -⟩, ht3⟩, ht4⟩ := ht
-    cases hy : c.cx.ps.toList[kc].to.sym with
-    | none => rw [hy] at ht4; cases ht4
-    | some y =>
-      rw [hy] at ht4
-      have hy' : c.g.syms[y]? = some pbSym := by simpa using ht4
-      obtain ⟨m₁, hm₁⟩ : ∃ m₁ : MState, m₁ = { ({ movRegs m mvs with
-          pc := pcAt text c.cx.ps.toList kc } : MState).wX 30 (pcAt text c.cx.ps.toList (kc + 1)) with
-          pc := (Link.byId sym text az ez c.cx.ps.toList).sym y } := ⟨_, rfl⟩
-      have hcstep := progStep_callSym (L := Link.byId sym text az ez c.cx.ps.toList)
-        (s := { movRegs m mvs with pc := pcAt text c.cx.ps.toList kc })
-        (nextAddr_pcAt F.nodup hkc) has ht1 ht2 ht3 hy
-      rw [← hm₁] at hcstep
-      have hstar := pstar_trans hstar1 (hstar2.tail (pstep_at F.nodup F.lt F.ret hkc rfl hcstep))
-      -- the `PCDATA_PanicBounds` in force at the `CALL`
-      have hdata : pbData c.cx.ps.toList kc = some (constA cc) := by
-        have := pbOK_spec hpb hrow hb hi hv hop hinfo
-        simp only [ManyAt2] at hk0
-        rw [hk0] at this
-        simpa using this
-      have hpc1 : m₁.pc = (Link.byId sym text az ez c.cx.ps.toList).sym y := by rw [hm₁]
-      have hx30 : m₁.x 30 = pcAt text c.cx.ps.toList (kc + 1) := by
-        rw [hm₁]; simp [MState.wX]
-      obtain ⟨s', hcall⟩ := hbok kc hkc y cc _ m₁ hy hy' hdata (nextAddr_pcAt F.nodup hkc) hpc1 hx30
-      refine ⟨boundsPanic cc m₁, m₁, ?_, hstar, ?_⟩
-      · have hm1 : ∀ q, q < 16 → m₁.x (BitVec.ofNat 5 q) = (movRegs m mvs).x (BitVec.ofNat 5 q) :=
-          fun q hq => by rw [hm₁]; exact wX30_x (by omega) _
-        subst hcenc
-        refine boundsPanic_agree hk16 hxv hyv m₁ ?_ ?_
-        · cases xr
-          · simpa using hX
-          · simp only [↓reduceIte] at hX hxv ⊢
-            rw [hX, hm1 xv hxv]
-        · cases yr
-          · simpa using hY
-          · simp only [↓reduceIte] at hY hyv ⊢
-            rw [hY, hm1 yv hyv]
-      · exact ⟨by rw [hpc1]; exact (hsyms y).1,
-          .inr ⟨by rw [hpc1]; exact progAt?_none (hsyms y).2, s', hcall⟩⟩
+  exact vk19_boundsPanic F hsyms hpb hrow hb hi hv hVK hvs hj hreads hop hm hinv hbok hs
 
 /-- **G19, terminators.** `g18_term`'s statement over `checkG19`. -/
 theorem g19_term {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}

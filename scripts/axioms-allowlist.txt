@@ -117,6 +117,11 @@ GoFV.Proof.Witness.GenG18.g18_facts._native.native_decide.ax_1_1 5a0a29e822d4f21
 # panic `LoweredPanicBoundsCR` to `.bounds 16 9 5`, and the only `PCDATA_PanicBounds` value at a
 # `CALL runtime.panicBounds` is 350; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.GenG19.g19_facts._native.native_decide.ax_1_1 c64993a66b09a932a9841627547c8f40fb06f7881ad7bfd7d9013cb159c163f1
+# genG20_value_witness (GoFV/Proof/Witness/GenG20.lean, #553): `checkG20` accepts `runtime.NumCPU`
+# and `checkG19` does not (parsed, `Env.load`, `genssa`), `runLoc` runs its `MOVWload` of
+# `runtime.numCPUStartup` and `MOVDnop` to the 64-bit `-2`, and the upper-bit table before the
+# `MOVDnop` names `R0`; compiled evaluation, as plF_pipeline.
+GoFV.Proof.Witness.GenG20.g20_facts._native.native_decide.ax_1_1 c0d50368e2589983cc61ea53201fb4da1e326602fae0fe7b46fdf71f2e509b0c
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:

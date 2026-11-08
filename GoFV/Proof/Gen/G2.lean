@@ -569,6 +569,29 @@ theorem pstar_oneAt2 (hnd : (psA.toList.map (·.id)).Nodup) (hlt : ∀ p ∈ psA
   exact pstar_noops hnd hlt hret hjk (by simp; omega)
     (fun l hl h1 h2 => by simpa using hno l (by simpa using hl) h1 h2) m
 
+/-- `op_reg2` with the registers of the machine after the Prog: the write of `val` to `X[kd]`. -/
+theorem op_reg2W {P : BitVec 64 → Prop} {K K' : Nat → Option Nat}
+    (F : Facts lc sym text az ez psA.toList ret E)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι P K s) {j j' : Nat}
+    (hj : E.pcOf b i = pcAt text psA.toList j)
+    (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j') {pat : Pat} (hone : OneAt2 psA j pat j')
+    {r c kd : Nat} {x : Val} {val : BitVec 64} (hd : destOK r = true)
+    (hkd : kd < 32) (hrk : objOf? r = some (GoFV.Asm.ARM64.REG_R0 + kd))
+    (hx : ValRel E.ι x val) (hfx : Fits c x) (hKL : KLe K' (kSet K r (some c)))
+    (hstep : ∀ k (hk : k < psA.toList.length), pat.ok psA.toList[k] = true →
+      progStep (Link.byId sym text az ez psA.toList) psA.toList[k]
+          { m with pc := pcAt text psA.toList k } =
+        .ok { m.wX (BitVec.ofNat 5 kd) val with pc := pcAt text psA.toList (k + 1) }) :
+    ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
+      LocMatch E (s.setReg r x) b (i + 1) m' ∧ CoreInv E.ι P K' (s.setReg r x) ∧
+      m'.x = (m.wX (BitVec.ofNat 5 kd) val).x := by
+  obtain ⟨k, rfl, hk, hok, hstar⟩ := pstar_oneAt2 (H := H) F.nodup F.lt F.ret hone m
+  rw [pc_eta hm hj] at hstar
+  obtain ⟨hlm, hinv'⟩ := finish_reg hm hinv hd hkd hrk hx hfx (b' := b) (i' := i + 1)
+  rw [hj'] at hlm
+  exact ⟨_, hstar.tail (pstep_at F.nodup F.lt F.ret hk rfl (hstep k hk hok)), hlm,
+    hinv'.mono hKL, rfl⟩
+
 /-- A value whose one Prog writes its register (G1's `op_reg` for a G2 pattern). -/
 theorem op_reg2 {P : BitVec 64 → Prop} {K K' : Nat → Option Nat}
     (F : Facts lc sym text az ez psA.toList ret E)
@@ -583,13 +606,8 @@ theorem op_reg2 {P : BitVec 64 → Prop} {K K' : Nat → Option Nat}
           { m with pc := pcAt text psA.toList k } =
         .ok { m.wX (BitVec.ofNat 5 kd) val with pc := pcAt text psA.toList (k + 1) }) :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E (s.setReg r x) b (i + 1) m' ∧ CoreInv E.ι P K' (s.setReg r x) := by
-  obtain ⟨k, rfl, hk, hok, hstar⟩ := pstar_oneAt2 (H := H) F.nodup F.lt F.ret hone m
-  rw [pc_eta hm hj] at hstar
-  obtain ⟨hlm, hinv'⟩ := finish_reg hm hinv hd hkd hrk hx hfx (b' := b) (i' := i + 1)
-  rw [hj'] at hlm
-  exact ⟨_, hstar.tail (pstep_at F.nodup F.lt F.ret hk rfl (hstep k hk hok)), hlm,
-    hinv'.mono hKL⟩
+      LocMatch E (s.setReg r x) b (i + 1) m' ∧ CoreInv E.ι P K' (s.setReg r x) :=
+  (op_reg2W F hm hinv hj hj' hone hd hkd hrk hx hfx hKL hstep).imp fun _ h => ⟨h.1, h.2.1, h.2.2.1⟩
 
 theorem progAt?_none {L : Link} {ps : List Prog} {pc : BitVec 64}
     (h : ∀ p ∈ ps, L.addr p.id ≠ some pc) : progAt? L ps pc = none := by

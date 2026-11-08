@@ -557,6 +557,33 @@ the same message. `Hooks.lean`'s `boundsPanic` (factored out of `panicBoundsHook
 `BoundsConvert` (code 8) to kind 16, `ssa.BoundsConvert` (`cmd/compile/internal/ssa/op.go`:
 `BoundsIndex` = 0 … `BoundsConvert` = 16, `BoundsKindCount` = 17).
 
+**Slice G20: `MOVDnop` after its narrow load** (`GoFV/Gen/Check20.lean`, `checkG20 lc ps bstart
+g`, returning G4's tables; proven sound, `g20_value`, `g20_term`, `g20_nilPanic`,
+`g20_boundsPanic`): G19 with `MOVDnop x` (`nopKind`, `VK20`): no temporary, `x` its only
+argument, homed in `x`'s register (one G1 may write) at an integer class, `x` of class 8, 16 or
+32, no code. `runLoc` runs it as `movdLoc`, the 64-bit zero or sign extension of `x`'s low bits
+that `LocCtx.signOf` names from `x`'s producer; the machine register holds that word only if the
+instruction that wrote it extended so. The upper-bit table `uAt lc blk i` is the entry `uEntry`
+of the value before `i`: after a narrow load of `n` bytes (`narrowLd?`: `MOV{B,H,W}{,U}load` of a
+register address or a global, as G3; `MOV{B,H,W}{,U}loadidx*`, as G14) homed in register `r` at
+class `c ∈ {8, 16, 32}`, `8n ≤ c`, `(r, c, sg)` with the load's signedness; nothing after any
+other value or at a block's start. `nopOK` requires each `MOVDnop x` to find `(x`'s register,
+`x`'s class, `signOf x)` there. This is narrower than §8's dataflow table, which needs every slice
+to say which registers it keeps: on quick-v10, 1,300 of the 1,520 `MOVDnop`s follow their load
+directly, and 607 of the 750 functions with a `MOVDnop` have only such ones.
+
+How the proof discharges G20's obligations (`G20.lean`): `UOK m (r, c, sg)` says the machine's
+`X` register of `r` is the extension of its low `c` bits (`ExtOK`). The narrow loads establish it:
+`g3_loadW` and `g14_idxW` (beside `g3_load` and `g14_idx`, on `op_reg2W`) expose the register file
+the load writes, the extension of the `n` loaded bytes (`extOK_load`, `sext_bit`). `vk13_narrow`,
+`vk19_narrow` and `vk3_idx_false` peel the narrow loads out of G19's cases, and `uEntry_spec`
+names them. `g20_value` has `g19_value`'s statement with the premise `UOK m (uAt lc blk i)` and
+the conclusion `UOK m' (uAt lc blk (i + 1))`; every value other than a narrow load concludes
+`UOK m' none`, which is `True`. For `MOVDnop` (`stepLoc_nop`, `g20_nop`) the machine does not
+move: `nopOK_spec` puts `x`'s entry in the table before it, so the register is the extension of
+its low bits, which `LocMatch` relates to `x`, and `lo_movd` gives `ValRel` of `movdLoc`'s
+64-bit result. G19's bounds-panic core is shared as `vk19_boundsPanic`. No new trusted premise.
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -567,15 +594,11 @@ reason in parentheses):
    (`frame variable with an integer address`, 197 (12)): option 2 of semantics3 §4.3 (addresses as
    a parameter of the semantics); slots of other sizes (`slot … frame operand, size or alignment`,
    717).
-3. **Other values**: `MOVDnop` 750 (91), the acquire loads `LDAR`/`LDARW` (383, 277); `SP` after
-   the entry values (71). Bounds panics (`LoweredPanicBoundsRR` 616 (68), `RC` 332 (46), `CR` 76
-   (33), `CC` 170 (22)) are done in G19 but for #541's 2 functions.
-   `MOVDnop x` emits no code but `runLoc` gives it the
-   upper bits of `x`'s register (`movdLoc`: the zero or sign extension of the narrow value that
-   produced `x`; each of its 1,520 uses in the trimmed functions of quick-v10 widens its argument,
-   1,431 of them a narrow load), while `LocMatch` relates a narrow integer to the low bits of its
-   register only. Its slice needs an invariant on the upper bits of the registers that narrow
-   loads write and that the values between the load and the `MOVDnop` keep.
+3. **Other values**: the acquire loads `LDAR`/`LDARW` (383, 277); `SP` after the entry values
+   (71); `MOVDnop` 750 (91) is done in G20 but for the 220 that do not follow their load directly,
+   which need §8's register-frame lemmas, as does `MOVDreg` (27 sole, with a `MOVD`). Bounds panics
+   (`LoweredPanicBoundsRR` 616 (68), `RC` 332 (46), `CR` 76 (33), `CC` 170 (22)) are done in G19
+   but for #541's 2 functions.
 
 ## 5. Results
 
@@ -603,6 +626,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G17 | 3,962 (42.61%) | 75,809 |
 | G18 | 4,052 (43.58%) | 80,626 |
 | G19 | 4,221 (45.40%) | 85,558 |
+| G20 | 4,328 (46.55%) | 89,297 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -730,6 +754,13 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
 - `G19.lean`: `BoundsOK`, `BoundsAgree`, `boundsDecode_pbEnc`, `boundsPanic_agree`,
   `stepLoc_pb_panic`, `stepLoc_pb_ne_ok`, `pstar_pbMovs`, `pb_reg`, `pb_phase1`, `vk19_step`,
   `vk19_nil`, `g19_value`, `g19_nilPanic`, `g19_boundsPanic`, `g19_term`.
+- `Spec20.lean`: what `checkG20` accepted (`checkG20_spec`, `vkind20_spec` with `VK20`,
+  `nopKind_spec`, `nopOK_spec`); `G2.lean`: `op_reg2W`; `G3.lean`: `g3_loadW`; `G14.lean`:
+  `g14_idxW`.
+- `G20.lean`: `ExtOK`, `UOK`, `sext_bit`, `extOK_load`, `stepLoc_nop`, `lo_movd`, `g20_nop`,
+  `NarrowOp`, `narrowLd?_spec`, `vk13_narrow`, `vk19_narrow`, `vk3_idx_false`, `uEntry_spec`,
+  `g20_value`, `vk20_nil`, `g20_nilPanic`, `g20_boundsPanic`, `g20_term`; `G19.lean`:
+  `vk19_boundsPanic`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -778,7 +809,10 @@ which `runLoc`'s memory holds the word 0 there and the machine's 8 bytes at `2^4
 `LoweredPanicBoundsCR [16] {9}`, `[9]byte(s)` with `len(s) = 5` in `R0`: `PCDATA
 $PCDATA_PanicBounds, $350` and `CALL runtime.panicBounds(SB)` under a hook that panics with
 `boundsPanic 350`, which satisfies `BoundsOK` (`boundsOK_of`), after which `runProg` panics with
-`.bounds 16 9 5`, as `runLoc`). Each decides its inputs
+`.bounds 16 9 5`, as `runLoc`), `GenG20.lean` (`runtime.NumCPU`, which G19 rejects: `g20_value` on
+`MOVW runtime.numCPUStartup(SB), R0` with `numCPUStartup = -2`, after which `UOK` makes `X0`
+`0xffff_ffff_ffff_fffe`, and on `MOVDnop`, after which `runLoc`'s `R0` holds the 64-bit integer
+`-2`, matched by the machine). Each decides its inputs
 by compiled evaluation (`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
 
 ## 6. Future work: recursion through function values
@@ -1010,7 +1044,10 @@ few:
    - starting before it lands would make both refactors edit the same definitions (`Ptr.word`,
      `Ptr.convertible`, `asPtrWord`) and their 26 `Proof/Pass` users.
 
-**Plan for `MOVDnop`, which needs no option 2.**
+**Plan for `MOVDnop`, which needs no option 2.** G20 (§4) is the first step: its table `uAt` has
+an entry only directly after a narrow load, so no slice has to say which registers it keeps
+(1,300 of 1,520 `MOVDnop`s). The table below and the register-frame lemmas carry entries across
+values that keep the register, for the other 220 and for `MOVDreg`.
 
 - **The obstacle.** `MOVDnop x` emits no code. `runLoc` gives it the full 64-bit register:
   `movdLoc` takes the zero or sign extension of `x`'s low bits, as `LocCtx.signOf` decides from
@@ -1040,8 +1077,9 @@ few:
   its producer's lemma establishes. The narrow-load lemmas (`lo_loadN`) already compute the
   exact zero/sign extension, and `op_reg2`'s `val` is that word.
 - **The slice.** `MOVDnop x` is `stepLoc` = `movdLoc`, with no Prog. Its proof is
-  `UInv` → `ValRel` of the 64-bit result. Expected: 85 sole, 750 occurs. `MOVDreg` (310 occurs)
-  is the same with a `MOVD` Prog.
+  `UInv` → `ValRel` of the 64-bit result (`lo_movd`, `g20_nop` in G20). Expected: 85 sole, 750
+  occurs; G20 accepts 4,328 functions with its narrower table. `MOVDreg` (310 occurs) is the same
+  with a `MOVD` Prog.
 
 **Other slices that need no option 2.** Each is listed with the functions it occurs in (sole
 reason in parentheses):
