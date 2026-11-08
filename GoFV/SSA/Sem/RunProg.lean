@@ -33,8 +33,9 @@ there, falling through elsewhere). Zero-size Progs (P2: `TEXT`, `PCDATA`, `FUNCD
 executed, so a PC with only zero-size Progs of the list is a PC with no Prog, also when the list
 is cut at them (a basic block). Under the ID layout every Prog occupies its own address and the
 pseudo-ops are skips (`Prog.isSkip`: PC to the fall-through, nothing else).
-Branch targets are Prog IDs (`L.off`), calls and jumps to symbols go to `L.sym`; a CALL writes
-the fall-through address to `X30`.
+Branch targets are Prog IDs (`L.off`), calls and jumps to symbols go to `L.sym` (P0/P1's static
+call `CALL sym(SB)`, a `TYPE_MEM` operand, as the `CALL sym` `progedit` makes of it); a CALL
+writes the fall-through address to `X30`.
 
 A run (`runProg`) **returns** when the PC is `ret` (before any Prog there); at a PC with no
 Prog — the target of a `CALL` leaving the list, a jump out of it, the end — it consults
@@ -666,7 +667,14 @@ def progEffect (c : ProgCtx) : Except String Eff := do
     let t ← c.target p.to
     return if b == (name == "TBNZ") then { e with pc := some t } else e
   | "CALL" =>
-    let t ← if p.to.type == .BRANCH then c.target p.to else c.x p.to.reg
+    -- P0/P1 `CALL sym(SB)` (`TYPE_MEM`, `NAME_EXTERN`/`NAME_STATIC`, as `genssa` emits a static
+    -- call) is the `CALL sym` (`TYPE_BRANCH`) that `progedit` rewrites it to
+    let t ← if p.to.type == .BRANCH then c.target p.to
+      else if p.to.type == .MEM && (p.to.name == .EXTERN || p.to.name == .STATIC) then
+        match p.to.sym with
+        | some n => pure (c.L.sym n + BitVec.ofInt 64 p.to.offset)
+        | none => throw "symbol-less call target"
+      else c.x p.to.reg
     let e ← e.wX (REG_R0 + 30) (← c.fall)
     return { e with pc := some t }
   | "RET" =>
@@ -793,6 +801,9 @@ def wLoad : Prog := mkProg 2 .MOVD { type := .MEM, reg := REG_R0 + 1 } { type :=
 /-- `CALL y7`. -/
 def wCall : Prog := mkProg 3 .CALL {} { type := .BRANCH, sym := some 7 }
 
+/-- `CALL y7(SB)`: P0's form of a static call (`TYPE_MEM`, `NAME_EXTERN`). -/
+def wCallMem : Prog := mkProg 5 .CALL {} { type := .MEM, name := .EXTERN, sym := some 7 }
+
 /-- `PCDATA` (a skip). -/
 def wPcdata : Prog := mkProg 4 .PCDATA { type := .CONST } { type := .CONST }
 
@@ -833,6 +844,13 @@ returns. -/
 theorem runProg_call_witness :
     (match runProg ⟨fun s => if s.pc = 0x8070 then some (.ret { s with pc := s.x 30 }) else none⟩
         (wLink [wCall, wRet]) [wCall, wRet] 0x1004 3 (MState.const 0 0x100000 0x100C) with
+      | .returned s => s.pc == 0x1004 && s.x 30 == 0x1004
+      | _ => false) = true := by decide
+
+/-- P0's `CALL y7(SB)` goes to `y7` like `CALL y7`. -/
+theorem runProg_callMem_witness :
+    (match runProg ⟨fun s => if s.pc = 0x8070 then some (.ret { s with pc := s.x 30 }) else none⟩
+        (wLink [wCallMem, wRet]) [wCallMem, wRet] 0x1004 3 (MState.const 0 0x100000 0x1014) with
       | .returned s => s.pc == 0x1004 && s.x 30 == 0x1004
       | _ => false) = true := by decide
 

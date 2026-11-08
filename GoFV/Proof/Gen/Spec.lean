@@ -17,18 +17,18 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Asm
 
 /-! ## `Except` helpers -/
 
-private theorem ex_pure {α : Type} (x : α) : (pure x : Except String α) = .ok x := rfl
-private theorem ex_throw {α : Type} (s : String) : (throw s : Except String α) = .error s := rfl
-private theorem ex_bind_error {α β : Type} (e : String) (f : α → Except String β) :
+theorem ex_pure {α : Type} (x : α) : (pure x : Except String α) = .ok x := rfl
+theorem ex_throw {α : Type} (s : String) : (throw s : Except String α) = .error s := rfl
+theorem ex_bind_error {α β : Type} (e : String) (f : α → Except String β) :
     (Except.error e >>= f) = .error e := rfl
 
-private theorem ex_bind_eq_ok {α β : Type} {x : Except String α} {f : α → Except String β} {b : β}
+theorem ex_bind_eq_ok {α β : Type} {x : Except String α} {f : α → Except String β} {b : β}
     (h : (x >>= f) = .ok b) : ∃ a, x = .ok a ∧ f a = .ok b := by
   cases x with
   | error e => simp only [ex_bind_error, reduceCtorEq] at h
   | ok a => exact ⟨a, rfl, h⟩
 
-private theorem ex_guard {α β : Type} {c : Prop} [Decidable c] {A : Except String α} {s : String}
+theorem ex_guard {α β : Type} {c : Prop} [Decidable c] {A : Except String α} {s : String}
     {f : β → Except String α} {x : α}
     (h : (if c then A else (throw s >>= f)) = .ok x) : c ∧ A = .ok x := by
   split at h
@@ -59,7 +59,7 @@ private theorem forIn_yield {α : Type} {l : List α} {f : α → PUnit → Exce
         | head => exact hb
         | tail _ ha => exact ih h a ha
 
-private theorem ex_throw_bind {α β : Type} {s : String} {f : α → Except String β} {b : β}
+theorem ex_throw_bind {α β : Type} {s : String} {f : α → Except String β} {b : β}
     (h : (throw s >>= f) = .ok b) : False := by
   simp only [ex_throw, ex_bind_error, reduceCtorEq] at h
 
@@ -73,7 +73,7 @@ private theorem arr_two {α : Type} {xs : Array α} {e0 e1 : α} (hs : xs.size =
   rcases xs with ⟨l⟩
   rcases l with _ | ⟨a, _ | ⟨a', _ | ⟨a'', l⟩⟩⟩ <;> simp_all
 
-private theorem skipFrom_spec (ps : Array Prog) : ∀ (fuel j : Nat), j ≤ skipFrom ps j fuel ∧
+theorem skipFrom_spec (ps : Array Prog) : ∀ (fuel j : Nat), j ≤ skipFrom ps j fuel ∧
     ∀ l (hl : l < ps.size), j ≤ l → l < skipFrom ps j fuel → noop ps[l] = true
   | 0, j => ⟨Nat.le_refl _, fun l _ h1 h2 => absurd h2 (by simp only [skipFrom]; omega)⟩
   | fuel + 1, j => by
