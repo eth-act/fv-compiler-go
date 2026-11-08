@@ -351,6 +351,18 @@ and the corpus programs built for linux/arm64 by `scripts/driver-e2e.sh`). H8, e
   loaded machine). `--check --verified --jobs 4`: quick-v7 8,885 / 6,383 (through `rewrite tern` /
   through `trim`), full-v9 the table in `docs/PASSES2.md` §0.
 
+- Back end (I8, #554; quick-v10 corpus, export `gofv-prog 3`): `gofv-ssa-opt --back-check`
+  (the chain on the input view, against stock): 9,297/9,297 functions match (105 s,
+  `--jobs 6`). `driver-e2e.sh --mode full3 -p 8`: 372/372 std archives byte-identical; 183
+  programs: 183 binaries byte-identical, 183 with the same output and exit status under qemu;
+  44,358 functions through Lean from `number lines` to `trim` and 44,346 through the Lean back
+  end (the rest stop at `Compile`'s large-frame check), 0 fallbacks in either: PASS. Wall time
+  on a loaded machine (load average 100–600): stock build 40 s, driver build 82 min (two
+  `gofv-ssa-opt` runs per function). `test/gcgort.go`'s driver build was killed once (SIGKILL,
+  no compiler error; its largest back-end process uses 34 MB); built again alone with the same
+  settings it was byte-identical with its 228 functions through the back end, and the report
+  was completed with `--report-only`.
+
 State of the known gaps:
 
 - Type-object identity for `zero arg cse` (#101): the pipeline tracks `*types.Type` object

@@ -835,3 +835,9 @@ above. The rest applies as rules; move an entry up once measured in gofv.
   (a sysroot of symlinks whose `bin/lean` waits for one of N flock slots; Lake 4.34.1 has no job
   limit of its own). It causes no rebuilds (traces use the githash). Measured: 6 × 3 s `lean` runs
   at 2 slots took 11 s.
+- **`scripts/build-go.sh --compile` with `GOOS`/`GOARCH` exported builds the wrong compiler**
+  (#554): `go install cmd/compile` then writes `pkg/tool/linux_arm64/compile` and leaves the host
+  `pkg/tool/linux_amd64/compile` stale, while `check-toolchain.sh` still passes (it compares
+  sources, not binaries). A driver-e2e run used the old back end for an hour. **Fix:** unset
+  `GOOS GOARCH` (the e2e exports them) before `--compile`; `strings …/linux_amd64/compile | grep`
+  for a new message confirms the rebuild.

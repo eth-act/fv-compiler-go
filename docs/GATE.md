@@ -14,7 +14,7 @@ when the run starts (`readlink -f`), so a corpus switch during the run does not 
 
 | step | command | red when |
 | --- | --- | --- |
-| `build` | `lake build GoFV GoFVTest gofv-ssa-opt pass-parity ssa-check` | any module or executable fails |
+| `build` | `lake build GoFV GoFVTest gofv-ssa-opt pass-parity ssa-check gen-parity asm-parity dwarf-parity` | any module or executable fails |
 | `allproof` | `scripts/gen-allproof.sh` if `--check` says the file is stale, then `lake build GoFVTest.Proof.AllProof` | two proof modules declare the same name |
 | `no-sorry` | `scripts/no-sorry.py` | `sorry` or `admit` appears in a tracked `.lean` file, outside comments and strings |
 | `reverts` | `scripts/scan-history-reverts.sh 80` | a recent squash merge deleted a file added by one of the 8 commits before it, or set a file back to its state before the previous commit that touched it (#191 undid #190); acknowledge a known incident in `scripts/reverts-ack.txt` with its restore issue, or an intended revert (`check-reverts.sh --allow`) with its PR |
@@ -25,6 +25,9 @@ when the run starts (`readlink -f`), so a corpus switch during the run does not 
 | `e2e` | driver toolchain, then `scripts/driver-e2e.sh --mode full` | a std archive or a binary differs from stock, a program's output differs, or a function falls back to the stock passes |
 | `verified` (report) | `gofv-ssa-opt --check --verified --jobs 4 <full corpus>` under `timeout $GATE_VERIFIED_TIMEOUT` (default 6h; 222 min on 2026-11-07 under load) | never: the verified pipeline's numbers (docs/DRIVER.md, "Verified mode") |
 | `e2e-verified` (report) | `scripts/driver-e2e.sh --verified` with the toolchain of `e2e` | never: programs built with the verified pipeline, run against stock |
+| `gen-parity`, `asm-parity`, `dwarf-parity` (reports) | each tool with `--jobs 4` on the full corpus (docs/PARITY.md, Phase 3), under `timeout $GATE_PHASE3_TIMEOUT` (default 2h) | never: the Phase 3 ports against stock |
+| `back-check` (report) | `gofv-ssa-opt --back-check --jobs 4 <full corpus>` under the same timeout | never: the driver's back end (`AllocFrame` through the DWARF writers, chained) against stock (docs/DRIVER.md, "The back end") |
+| `e2e-full3` (report) | `scripts/driver-e2e.sh --mode full3` with the toolchain of `e2e` | never: std and programs built with the Lean pipeline and the Lean back end, against stock (82 min on 2026-11-08 under load) |
 
 - `allproof`: every `GoFV/Proof` module must import together with every other (issue #133), so
   that any proof, and the axioms audit, can use all of them. `GoFVTest/Proof/AllProof.lean`
