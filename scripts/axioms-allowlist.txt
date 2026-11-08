@@ -144,6 +144,10 @@ GoFV.Proof.Witness.GenG24.g24_facts._native.native_decide.ax_1_1 9ffefe179bf311f
 # wrapper of `reflect.flag.ro` and `checkG24` does not (parsed, `Env.load`, `genssa`), and `runLoc`
 # runs its `CSEL0` (`NotEqual`) to `R0 = 32`; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.GenG25.g25_facts._native.native_decide.ax_1_1 b911566b83b68588115f0e467cdd6b40883d0f8d811b5dfdd5c71b2ad91c2071
+# genG26_value_witness (GoFV/Proof/Witness/GenG26.lean, #553): `main.func1` of examples/generics
+# holds no arm64 op, `checkG26` accepts it and `checkG25` does not (parsed, `Env.load`, `genssa`),
+# and `runLoc` runs its `Copy` to `R0 = 7`; compiled evaluation, as plF_pipeline.
+GoFV.Proof.Witness.GenG26.g26_facts._native.native_decide.ax_1_1 0000000000000000000000000000000000000000000000000000000000000000
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:

@@ -651,6 +651,25 @@ the unknown upper bits). The proof (`G25.lean`): the machine step (`progStep_cse
 (`flagsRel_tst`, `flagsRel_tstw` via `and_low`, `tst_mask`). The statements are G24's over
 `checkG25`, with the same premises. No new trusted premise. G25 accepts 4,925 functions.
 
+**Slice G26: functions with no arm64 op** (`GoFV/Gen/Check26.lean`, `checkG26 lc ps bstart g`,
+returning G4's tables; proven sound, `g26_value`, `g26_term`, `g26_nilPanic`, `g26_boundsPanic`):
+G25 on a function that holds an arm64 op or block kind (`Func.lowered`), and `checkNL` on one that
+holds none. G1–G25 reject such a function (`not lowered`: 254 on quick-v10 after G25), although it
+went through `lower`. All 254 are empty bodies (209: `InitMem`, `MakeResult`, `Ret`) or return
+their register arguments (`ArgIntReg`), possibly after a `Copy` (10), `Convert` (6) or `InlMark`
+(1); one has a `Plain` block. `runLoc` runs them in Phase 1's mode: values are read with
+`Val.retype`, not as registers (`Val.retypeL`), and every G-slice lemma assumes `lowered`.
+`checkNL` is G25's check with the value check `vkindNL` (G1's `MakeResult`, `InlMark` and `Copy`;
+the activation values as before) and `Ret` blocks only (`allRet`). The proof (`G26.lean`): at a
+register's shape, `Val.retype` is `Val.retypeL`'s value or `poison` (`retype_cases`), so reads stay
+related and of their class (`valRel_retype`, `fits_retype`, `arg_relP`). `InlMark` and
+`MakeResult` change nothing (`write_result_noopP`). `Copy` writes its argument through a `MOVD` or
+within one register (`stepLoc_copyP`, `op_regN`, `nl_core`). A `Ret` block goes to no
+successor, and no value is a nil check or bounds panic (`nl_ops`). The statements are G25's over
+`checkG26`, with the same premises. No new trusted premise. Composing a whole function from them
+also needs a Phase-1-mode result mapping at `Ret`. G26 accepts 5,172 functions. The 7 rejected
+for having no arm64 op have a `Convert` or a `Plain` block.
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -662,7 +681,7 @@ reason in parentheses):
    a parameter of the semantics); slots of other sizes (`slot … frame operand, size or alignment`,
    717).
 3. **Other values**: the acquire loads `LDAR`/`LDARW` (383, 277); `ANDshiftRA` (78 sole after
-   G25), `LoweredMemEq` (72 sole), `STLR` (47 sole), `CSINC` (26 sole), `InitMem` after the entry
+   G26), `LoweredMemEq` (72 sole), `STLR` (47 sole), `CSINC` (26 sole), `InitMem` after the entry
    values (21 sole);
    `MOVDnop` 750 (91) and `MOVDreg` (27 sole) are done in G20 and G21 but for those that do
    not follow their load directly (220 `MOVDnop`s; 3 functions with no other blocker, and 13
@@ -702,6 +721,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G23 | 4,624 (49.73%) | 101,638 |
 | G24 | 4,718 (50.74%) | 106,958 |
 | G25 | 4,925 (52.97%) | 111,247 |
+| G26 | 5,172 (55.63%) | 111,802 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -859,6 +879,12 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `logical_flags32`, `progStep_tst`, `progStep_tstw`, `progStep_csel`, `lo_regVal`, `valRel_csel`,
   `valRel_csel0`, `flagsRel_tst`, `flagsRel_tstw`, `g25_csel`, `g25_csel0`, `g25_tst`, `g25_tstw`,
   `vk25_step`, `g25_value`, `vk25_nil`, `g25_nilPanic`, `g25_boundsPanic`, `g25_term`.
+- `Spec26.lean`: what `checkG26` accepted (`checkG26_lowered`, `checkG26_nl`, `vkindNL_spec`,
+  `allRet_spec`, `checkNL_spec`).
+- `G26.lean`: `lmode_retypeP`, `retype_cases`, `retype_poison`, `valRel_retype`, `fits_retype`,
+  `read_regP`, `read_memP`, `stepLoc_noclobberP`, `stepLoc_copyP`, `stepLoc_makeResultP`,
+  `retypePre_zip`, `write_result_noopP`, `arg_relP`, `op_regN`, `nl_core`, `nl_homes`,
+  `narrowLd?_nl`, `nl_ops`, `g26_value`, `g26_nilPanic`, `g26_boundsPanic`, `g26_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -923,8 +949,11 @@ which `runLoc`'s `R0` holds `true` and the machine's `X0` is 1), `GenG24.lean` (
 which `runLoc`'s Go register `SP` holds `SP`'s value and the related machine state is at the same
 PC), `GenG25.lean` (the struct wrapper of `reflect.flag.ro` in `encoding/binary`, which G24
 rejects: `g25_value` on `CSEL NE, R1, ZR, R0` with `R1 = 32` and the flags of `CMP $0` on 32,
-after which `runLoc`'s `R0` holds 32 and the machine's `X0` is 32). Each decides its inputs by
-compiled evaluation (`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
+after which `runLoc`'s `R0` holds 32 and the machine's `X0` is 32), `GenG26.lean` (`main.func1` of
+examples/generics, which holds no arm64 op and which G25 rejects: `g26_value` on its `Copy`,
+`MOVD R2, R0`, in Phase 1's mode with `x = 7` in `R2`, after which `runLoc`'s `R0` holds 7 and the
+machine's `X0` is 7). Each decides its inputs by compiled evaluation (`native_decide`, pinned in
+`scripts/axioms-allowlist.txt`).
 
 ## 6. Future work: recursion through function values
 
