@@ -38,10 +38,12 @@ theorem locMatch_inv {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog} {ret 
     {tab : PcTab} {E : MatchEnv} {s : LocState} {b : ID} {i : Nat} {m : MState}
     (hE : G2Env lc g L ps ret tab E) (hm : LocMatch E s b i m) :
     ObjInv L ps.toList m ∨ m.pc = endP L.text ps.toList := by
-  rw [hm.pc, hE.pcOf]
+  have hpc : m.pc = pcAt L.text ps.toList (((tab.lookup b).getD []).getD i 0) := by
+    rw [hm.pc, hE.pcOf]
+    rfl
   rcases pcAt_inv L.text ps.toList (((tab.lookup b).getD []).getD i 0) with h | h
-  · exact Or.inl (Or.inl h)
-  · exact Or.inr h
+  · exact Or.inl (Or.inl (by rw [hpc]; exact h))
+  · exact Or.inr (hpc.trans h)
 
 /-- Callees that return through `X30` and change nothing else treat related states alike. -/
 theorem hookMap_retLR {H : Hooks} {L : Link} {ps : List Prog} {f : BitVec 64 → BitVec 64}
