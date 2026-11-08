@@ -3,6 +3,7 @@ import GoFVTest.Parity.Compare
 import GoFV.SSA.Parse
 import GoFV.Opt.DecomposeCheck
 import GoFV.Opt.TabsAgree
+import GoFV.Opt.Verified
 
 /-!
 # `decompose-probe`
@@ -14,6 +15,13 @@ with the input's (`tabsAgree`), and how many sections split no phi. For `decompo
 the pass output itself (`decPhiCheck out.tables f out.func`); for `decompose builtin` how many
 sections the dec rules change after the phi stage. Rejections print the first failing
 condition.
+
+The stock section before `decompose user` is not always what `gofv-ssa-opt --verified` gives
+`decompose user`: a skipped optional pass (`early phielim and copyelim` and `early deadcode`
+outside their fragments) leaves its input, so the verified pipeline's input can still hold the
+copies and dead values the stock passes removed. For `decompose user` the probe also runs the
+verified pipeline's earlier passes (`Verified.runPasses`) on the file's first section and counts
+whether `decUserFrag` accepts their result, the input `--verified` checks.
 
 usage: `decompose-probe [--jobs N] <dir|file>...`
 -/
@@ -93,6 +101,10 @@ structure Counts where
   passErrors : Nat := 0
   /-- In the proof's fragment (`decUserOK`/`decBuiltinOK` of the pass output). -/
   frag : Nat := 0
+  /-- `decompose user`: sections whose file the verified pipeline runs up to the pass. -/
+  pipe : Nat := 0
+  /-- … whose verified-pipeline input passes `check` and is in `decUserFrag`. -/
+  pipeFrag : Nat := 0
   deriving Inhabited
 
 /-- Why value `x` of `f` is not a split in `g` (`RewriteCheck.ssSplit?`), by class. -/
@@ -309,7 +321,42 @@ def Counts.add (a b : Counts) : Counts :=
   { sections := a.sections + b.sections, stageErrors := a.stageErrors + b.stageErrors
     unchanged := a.unchanged + b.unchanged, ok := a.ok + b.ok, rejected := a.rejected + b.rejected
     tabsFail := a.tabsFail + b.tabsFail, outOk := a.outOk + b.outOk
-    passErrors := a.passErrors + b.passErrors, frag := a.frag + b.frag }
+    passErrors := a.passErrors + b.passErrors, frag := a.frag + b.frag, pipe := a.pipe + b.pipe
+    pipeFrag := a.pipeFrag + b.pipeFrag }
+
+/-- The verified pipeline's state before `decompose user` on the export's first section (its
+earlier passes as `Verified.runPasses` runs them), and the environment it runs `decompose user`
+in. -/
+def pipeInput (base : PassEnv) (e : ExportFile) : Option (PassEnv × Verified.VState) := do
+  let s0 ← e.sections[0]?
+  let k ← passIndex? "decompose user"
+  let env := { base with tables := ({} : Tables).addAll s0.defs }
+  match Verified.runPasses env (stockPasses.toList.take k) (Verified.VState.init env s0.func s0.zvar) with
+  | .ok st => some (st.passEnv env "decompose user", st)
+  | .error _ => none
+
+/-- The skipped runs before `decompose user`. -/
+def pipeSkips (st : Verified.VState) : String :=
+  let s := st.log.toList.filterMap fun (p, v) => match v with
+    | .skipped w => some s!"{p} skipped ({w})"
+    | _ => none
+  if s.isEmpty then "no skipped run" else ", ".intercalate s
+
+/-- Why the verified pipeline's input `st` is outside `decUserFrag`. -/
+def pipeWhy (env : PassEnv) (st : Verified.VState) : String :=
+  if !st.wf then "input fails check" else
+  match Decompose.decomposeUserPass env st.func with
+  | .error _ => "?"
+  | .ok out =>
+    if !tabsAgreeMod env.tables out.tables st.func then
+      let bad := st.func.valueTab.toList.filterMap fun o =>
+        o.bind fun fv => if tamOpOK env.tables st.func fv then none else some fv
+      match bad.head? with
+      | some fv =>
+        let args := fv.args.toList.map fun a => ((st.func.value? a).map (·.op.name)).getD "?"
+        s!"tabsAgreeMod: tamOpOK {fv.op.name}({", ".intercalate args})"
+      | none => "tabsAgreeMod: tables"
+    else why out.tables st.func out.func
 
 structure Stats where
   files : Nat := 0
@@ -398,6 +445,12 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
             if Decompose.decUserOK env f out then c := { c with frag := 1 }
             else if !tabsAgreeMod env.tables out.tables f then
               st := st.addWhy s!"{name} (fragment): tabsAgreeMod" s!"{path} section {k}"
+          if let some (penv, ps) := pipeInput base e then
+            c := { c with pipe := 1 }
+            if ps.wf && Decompose.decUserFrag penv ps.func then c := { c with pipeFrag := 1 }
+            else
+              st := st.addWhy s!"{name} (verified pipeline input, {pipeSkips ps}): {pipeWhy penv ps}"
+                s!"{path} section {k}"
       st := if builtin then { st with builtin := st.builtin.add c } else { st with user := st.user.add c }
     return st
 
@@ -415,7 +468,9 @@ partial def parseArgs : List String → Nat × Array String → Nat × Array Str
 def report (name extra : String) (c : Counts) : String :=
   s!"{name}: sections {c.sections}, stage errors {c.stageErrors}, no phi split {c.unchanged}, " ++
     s!"accepted {c.ok}, rejected {c.rejected}, tabsAgree fails {c.tabsFail}, {extra} {c.outOk}, " ++
-    s!"pass errors {c.passErrors}, in the proof's fragment (pass output checked) {c.frag}"
+    s!"pass errors {c.passErrors}, in the proof's fragment (pass output checked) {c.frag}" ++
+    (if c.pipe == 0 then "" else
+      s!", verified pipeline input in the fragment {c.pipeFrag} / {c.pipe}")
 
 def main (args : List String) : IO UInt32 := do
   let (jobs, paths) := parseArgs args (1, #[])

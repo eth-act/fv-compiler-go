@@ -115,31 +115,33 @@ obstacle counts on full-v6, "Findings" in `rules.md` has the counterexamples):
 the recorded `schedule` inputs, valid pointer parameters and valid checked pointers (`ArgPtrsOK`,
 `NilPtrsOK`; all assumptions in one table below, § Assumptions)
 (`docs/PASSES2.md` §0; witness `verifiedPipelineFull_witness`).
-Measured with `gofv-ssa-opt --check --verified`: full-v9 on main 91883690 (`--jobs 6`, after
+Measured with `gofv-ssa-opt --check --verified`: full-v9 on main 3b3d4ba0 (`--jobs 6`, after
 #540 constant `Phi`s and `IMake` of `StructMake`, #558 symbol-address comparisons and `IData`
-selections, #559 `ifaceeq`/`efaceeq` folds; 96,560 functions, format 5.1, 463 min on a heavily
-loaded machine); quick-v7 on main 51ef75c1 (6 min):
+selections, #559 `ifaceeq`/`efaceeq` folds, #572 struct-store fields of either word shape, #573
+`Phi`s of `Not`s; 96,560 functions, format 5.1, 628 min on a heavily loaded machine); quick-v7 on
+main 51ef75c1 (6 min):
 
 | Measure | full-v9 through `rewrite tern` (Phase 1) | full-v9 through `trim` | quick-v7 Phase 1 | quick-v7 through `trim` |
 | --- | --: | --: | --: | --: |
-| Functions fully verified | 93,475 (06aa0962: 92,925) | 78,876 (06aa0962: 77,952; f4da51ff #530: 75,387) | 8,885 | 6,383 |
+| Functions fully verified | 93,571 (91883690: 93,475; 06aa0962: 92,925) | 79,216 (91883690: 78,876; 06aa0962: 77,952) | 8,885 | 6,383 |
 | … verified (vacuous: unmodelled op): the input has an op or block kind `run` leaves stuck (`TailLECall*`, `RetJmp`) | 1,576 | 1,568 | 168 | 168 |
-| … relying on `NilPtrsOK` (a `schedule` swap through `nilPtrSwap`) | – | 2,983 (06aa0962: 2,935) | – | – |
-| … and identical to stock after `trim` | 74,595 (74,348) | 66,331 (65,752) | 7,233 | 5,699 |
+| … relying on `NilPtrsOK` (a `schedule` swap through `nilPtrSwap`) | – | 3,014 (91883690: 2,983) | – | – |
+| … and identical to stock after `trim` | 74,651 (74,595) | 66,546 (66,331) | 7,233 | 5,699 |
 
 Every pass from `lower` to `trim` has a theorem (addressing modes `addressingModes_refinesL`,
 late lower `lateLower_refinesL`, pair `pair_refinesL`, flagalloc `flagalloc_refinesSched`).
 `regalloc` now accepts all 96,560 full-v9 runs (`tabsAgreeModL` takes the new spill autos that
-rejected 21,197 runs before). Of the 14,599 full-v9 functions verified through Phase 1 but not
-through `trim`, the first unverified run is `lower` for 14,068 (checked variant incomplete
-11,805, rejected 2,263), `schedule` (rejected) 389, `late lower` (rejected) 137, `lowered
-deadcode` (rejected) 5 (06aa0962: `schedule` 378; #530: 1,019; 51ef75c1: 3,365). The 718 rejected
-`schedule` runs (389 first unverified) are all in deferred classes: a nil check of a
-pointer-shaped value the source computes after the faulting value (483 / 303), of a value that
-is not pointer-shaped (215 / 77), of an `argPtr` piece after it (2 / 2), and `LoweredMove` before
-a load on another memory (18 / 7). The Phase 1 functions not verified through `rewrite tern`
-(3,085; 06aa0962: 3,635), by first unverified run: opt 1,867, late opt 597, middle opt 370,
-decompose builtin 116, decompose user 59, divmod 47, expand calls 28, opt deadcode 1.
+rejected 21,197 runs before). Of the 14,355 full-v9 functions verified through Phase 1 but not
+through `trim` (91883690: 14,599), the first unverified run is `lower` for 13,805 (checked variant
+incomplete 11,481, rejected 2,324), `schedule` (rejected) 393, `late lower` (rejected) 152,
+`lowered deadcode` (rejected) 5 (91883690: `schedule` 389; #530: 1,019; 51ef75c1: 3,365). On
+91883690 the 718 rejected `schedule` runs (389 first unverified) were all in deferred classes: a
+nil check of a pointer-shaped value the source computes after the faulting value (483 / 303), of
+a value that is not pointer-shaped (215 / 77), of an `argPtr` piece after it (2 / 2), and
+`LoweredMove` before a load on another memory (18 / 7). The Phase 1 functions not verified
+through `rewrite tern` (2,989; 91883690: 3,085), by first unverified run: opt 1,804, late opt
+635, middle opt 373, divmod 47, decompose builtin 42 (116), decompose user 59, expand calls 28,
+opt deadcode 1.
 `driver-e2e.sh --verified -p 8` (66 min, a717e6db+):
 183/183 programs behave as stock, 0 fallbacks, 0 pass errors; 29,590 of 42,899 functions fully
 verified through `trim`.
@@ -346,6 +348,18 @@ Runs per pass of `gofv-ssa-opt --check --verified` (96,553 functions, each pass 
 | writebarrier | 18,252 | 78,301 | 0 | 0 | `wbGuard` (required) |
 
 Functions by first unverified run (3,635 of 96,553): opt 2,392, late opt 607, middle opt 389, decompose builtin 113, decompose user 59, divmod 47, expand calls 27, opt deadcode 1. Skipped runs keep the input, so they cost no verification, only stock identity (functions by first difference from stock: nilcheckelim 11,147, prove 5,576 (its own result differs, `proveChecked`), generic cse 1,107, early phielim and copyelim 660, dead auto elim 245, memcombine 154, dse 32, the rest 12). The deadcode/copyelim fragment failures are mostly zero-size values (`emptyFrag`: `empty Load empty` 447, `empty StructSelect empty` 178).
+
+The `decompose user` runs that are unverified (59 on full-v9) are not in `decompose-probe`'s count
+of stock inputs outside `decUserFrag` (0 of 96,560): the probe checks the stock section before the
+pass, `--verified` the verified pipeline's state. When `early phielim and copyelim` and `early
+deadcode` are skipped (outside their fragments, mostly zero-size values), that state still holds
+the values the stock passes removed. `decompose-probe` now also runs the pipeline's earlier passes
+(`Verified.runPasses`) and checks `decUserFrag` on their result: on full-v9 (main 91883690) 96,495
+of 96,560 are in the fragment; the 65 others all follow both early skips, 60 with a dead `Unknown`
+value outside `tabsAgreeMod`'s covered ops (`tamOpOK`) and 5 with a `Phi` split whose argument shape
+differs from the `Phi`'s (`decPhiCheck`: "new Phi: arg shape ≠ phi shape"). Both classes are in
+`--verified`'s 59 (checked on samples); the probe starts from the section-0 tables, without the
+driver's added type rounds.
 
 ## Remaining validator classes (functions whose only obstacle is the rewrite validator, 105)
 
