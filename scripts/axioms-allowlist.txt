@@ -86,6 +86,10 @@ GoFV.Proof.Witness.GenG13.g13_facts._native.native_decide.ax_1_1 b1102a0d8b08b4e
 # `runtime.argv_index` and `checkG13` does not (parsed, `Env.load`, `genssa`), `runLoc` runs the
 # register-index load `MOVDloadidx8`; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.GenG14.g14_facts._native.native_decide.ax_1_1 290bdf1dad157a6170c435f7d7ed98c1303c7258cba23ad87535b2d5e0e708e5
+# genG15_value_witness (GoFV/Proof/Witness/GenG15.lean, #553): `checkG15` accepts `(*T3).M` of
+# test/recover and `checkG14` does not (parsed, `Env.load`, `genssa`), `runLoc` runs its static
+# call with a zero-sized stack argument; compiled evaluation, as plF_pipeline.
+GoFV.Proof.Witness.GenG15.g15_facts._native.native_decide.ax_1_1 0000000000000000000000000000000000000000000000000000000000000000
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:

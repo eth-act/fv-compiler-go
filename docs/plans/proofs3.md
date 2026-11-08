@@ -465,13 +465,25 @@ How the proof discharges G14's obligations (`G14.lean`):
   loaded register is G3's (`lo_loadN`, `valRel_loadBool`; `g14_idx`). G13's values go through
   `vk13_step`.
 
-Later slices, by how many functions outside G14 each blocker occurs in (quick-v10, §5; sole
+**Slice G15: zero-sized stack arguments** (`GoFV/Gen/Check15.lean`, `checkG15 lc ps bstart g`,
+returning G4's tables; proven sound, `g15_value`, `g15_term`, `g15_nilPanic`): G14 with the static
+calls whose ABI assigns inputs of size 0 to the stack (`zeroStack`: no register piece, no byte in
+the outgoing area, such as an empty-struct receiver). `callRegs` rejects every stack input;
+`checkG15` checks a static call as G9 does on the ABI without its zero-sized stack inputs
+(`callRegsZ`, `callKind15`, `VK15.call`). Genssa emits no store for them. The proof is
+`g2_call`'s, which now factors through `g2_callAt` (the callee contract for one call, `CallAt`,
+whatever check gave its registers); the contract at such a call is the trusted premise `CallOKZ`
+(`CallOK` with `callRegsZ` in place of `callRegs`; STATUS Assumptions). Of the 317 functions with
+a stack argument, 9 have zero-sized ones only; the other 308 store nonempty arguments to the
+outgoing area and wait for option 2 (§8).
+
+Later slices, by how many functions outside G15 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
 1. **Register-index stores** `MOVDstoreidx8` 245 (39, counted with `MOVDstoreidx`),
    `MOVBstoreidx` 187 (23): G14's addresses with G3's stores.
-2. **Calls** with stack arguments (`stack argument` 317 (10)) or floating-point arguments or
-   results.
+2. **Calls** with nonempty stack arguments (`stack argument` 308 (10); §8) or floating-point
+   arguments or results.
 3. **Frame variables beyond G6**: parameters and results (`NAME_PARAM`, `Blk.local`: `frame
    variable operand class`, 294 (89)) and variables whose address is converted to an integer
    (`frame variable with an integer address`, 197 (11)): option 2 of semantics3 §4.3 (addresses as
@@ -507,6 +519,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G12 | 3,679 (39.57%) | 64,013 |
 | G13 | 3,755 (40.38%) | 69,470 |
 | G14 | 3,815 (41.03%) | 71,548 |
+| G15 | 3,824 (41.13%) | 71,645 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -614,6 +627,9 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
 - `G14.lean`: `loadIdxOp?_op`, `loadIdxOp?_facts`, `stepLoc_loadIdx`, `idxSum`, `loadIdx_eq`,
   `mul_twoPow_eq_shl`, `lo_idxSum`, `lo64_rel`, `IdxPre`, `G14Pre`, `ctx_mem_idx`, `g14_idx`,
   `vk14_step`, `g14_value`, `g14_nilPanic`, `g14_term`.
+- `Spec15.lean`: what `checkG15` accepted (`checkG15_spec`, `vkind15_spec` with `VK15`,
+  `callKind15_spec`); `G2.lean`: `CallAt`, `g2_callAt` (`g2_call` through it).
+- `G15.lean`: `CallOKZ`, `vk15_step`, `g15_value`, `g15_nilPanic`, `g15_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -647,8 +663,10 @@ machine word), `GenG13.lean` (`(*pageBits).clearAll`, which G12 rejects: `g13_va
 7 at `2^41`, after which `runLoc`'s memory holds 64 zero bytes there and so do the machine's),
 `GenG14.lean` (`runtime.argv_index`, which G13 rejects: `g14_value` on `MOVDloadidx8`, `MOVD
 (R0)(R1<<3), R0` with `R0` the start of `heap 1` at `2^41` and `R1` 2, loading the word 7 at
-offset 16, after which `X0` is 7). Each decides its inputs by compiled evaluation
-(`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
+offset 16, after which `X0` is 7), `GenG15.lean` (`(*T3).M` of `test/recover`, which G14 rejects:
+`g15_value` on `CALL main.T3.M(SB)`, whose empty-struct receiver the ABI assigns to the stack, with
+a callee hook that returns at once, which satisfies `CallOKZ`: `callOKZ0`). Each decides its inputs
+by compiled evaluation (`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
 
 ## 6. Future work: recursion through function values
 
