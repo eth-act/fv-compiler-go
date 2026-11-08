@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerBlockTB
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower` on a jump table: `jtb` (hand-written, issue #385)
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G20
 import GoFV.Proof.Gen.Spec21
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of the genssa validator's slice G21: `MOVDreg` after its narrow load
 (`docs/plans/proofs3.md` §4, §8)

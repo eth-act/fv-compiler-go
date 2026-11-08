@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G21
 import GoFV.Proof.Witness.GenG20
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G21 of the genssa validator on `(*queueOnePass).next` (std/regexp)
 
