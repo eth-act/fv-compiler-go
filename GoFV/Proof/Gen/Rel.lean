@@ -68,7 +68,9 @@ theorem valRel_word (hA : AddrAgree ι) {p : Ptr} {r : BitVec 64} (h : PtrRel ι
   split
   · rename_i a hc ha
     exact Or.inl (ptrRel_addr hA h ha (notTemp_of_convertible hc))
-  · exact h
+  · split
+    · exact h
+    · trivial
 
 /-- Under `AddrAgree`, a 64-bit integer relates to exactly its own word. -/
 theorem valRel_i64 (hA : AddrAgree ι) {x r : BitVec 64} (h : ValRel ι (.int .w64 x) r) :
@@ -130,7 +132,7 @@ theorem fits_retypeL {c : Nat} {t : Ty} (hc : cls t = some c) (v : Val) : Fits c
     | ptr p =>
       simp only [Val.retypeL, Val.widen]
       cases w' <;> simp only [Val.retype] <;> try trivial
-      unfold Ptr.word; split <;> rfl
+      unfold Ptr.word; split <;> (try split) <;> first | rfl | trivial
     | _ => simp only [Val.retypeL, Val.widen, Val.retype] <;> trivial
   | ptr e =>
     simp only [cls, Option.some.injEq] at hc
@@ -140,7 +142,9 @@ theorem fits_retypeL {c : Nat} {t : Ty} (hc : cls t = some c) (v : Val) : Fits c
       simp only [Val.retypeL, Val.widen]
       cases w <;> simp only [Val.retype, ↓reduceIte] <;> first | rfl | trivial | decide
     | bool b => simp only [Val.retypeL, Val.widen, Val.retype]; rfl
-    | ptr p => simp only [Val.retypeL, Val.widen, Val.retype]; unfold Ptr.word; split <;> rfl
+    | ptr p =>
+      simp only [Val.retypeL, Val.widen, Val.retype]; unfold Ptr.word
+      split <;> (try split) <;> first | rfl | trivial
     | _ => simp only [Val.retypeL, Val.widen, Val.retype] <;> trivial
   | bool =>
     simp only [cls, Option.some.injEq] at hc

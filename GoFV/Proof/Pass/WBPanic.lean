@@ -411,7 +411,7 @@ theorem panic_nc (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK
         have hxt : x ∈ vals c.g r0.sp.t := (hvT x).2 hxT
         have hok := S.tOK hr0 hxt
         have hpx := hpureT x hx
-        refine S.local_t SP.grOK.held SP.grOK.mems ⟨r0, hr0, hxt⟩ hw
+        refine S.local_t SP.grOK.held SP.grOK.mems SP.grOK.typed ⟨r0, hr0, hxt⟩ hw
           (S.cov_intro SP.ev hPcl SP.outEv hA.wbh (fun _ hK' _ =>
             (S.held_t ⟨r0, hr0, hxt⟩ (by simp [Ctx.held, hK'])).elim) ?_ ?_)
         · rintro j' hρ r'' -

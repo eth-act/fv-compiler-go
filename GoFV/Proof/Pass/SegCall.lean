@@ -238,7 +238,7 @@ theorem decodeArgs_reg {tabs : Tables} {act : Nat} {m : Mem} {p : ABIParam} {ps 
   simp [decodeArgs, Array.isEmpty, hr]
   cases decodeArgs tabs act m ps pieces <;> rfl
 
-theorem ofPieces_ptr (o : Option Nat) {P : Ptr} (hc : P.convertible = false) :
+theorem ofPieces_ptr (o : Option Nat) {P : Ptr} (hc : P.held = true) :
     ofPieces (.ptr o) [.ptr P] = .ptr P := by
   rw [ABI.ofPieces_eq_build rfl (by
     show ABI.List.Forall₂ _ _ [(0, _)]; exact .cons (by simp [Val.hasTy, hc]) .nil)]; rfl

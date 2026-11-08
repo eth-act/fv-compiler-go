@@ -7,7 +7,8 @@ import GoFV.Proof.Pass.ECCall
 
 `runtime.wbZero(typ, dst)`/`runtime.wbMove(typ, dst, src)` in a run's buffer block: on an
 environment whose helpers are the runtime's and do not spill (`WbHelpers`), a call with words in
-its `uintptr` registers (a pointer or a 64-bit integer, `WordV`: `decodeArgs` gives no `poison`)
+its `uintptr` registers (a pointer inside its window or a 64-bit integer, `WordV`: `decodeArgs`
+gives no `poison`)
 returns the memory it is given (`callOp_wb`: `Runtime.wbHelper`, and a no-spill callee with
 register arguments only owns no part of the caller's outgoing-arguments area, `callFrame … false
 = 0`). The local steps: the type address `Addr {type:T} SB` (`local_taddr`), the call
@@ -18,15 +19,18 @@ namespace GoFV.Proof.WB
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Opt.WBCheck GoFV.Proof
 
-/-- A value a helper takes in a `uintptr` register: a pointer or a 64-bit integer. -/
+/-- A value a helper takes in a `uintptr` register: a pointer inside its window (`Ptr.word` of
+one outside is `poison`) or a 64-bit integer. -/
 def WordV : Val → Prop
-  | .ptr _ => True
+  | .ptr q => q.inWindow = true
   | .int .w64 _ => True
   | _ => False
 
-theorem wordV_of_asPtrWord {a : Val} {p : Ptr} (h : a.asPtrWord = some p) : WordV a := by
+/-- An address argument of some shape (as every register of a typed frame has) is a word. -/
+theorem wordV_of_asPtrWord {a : Val} {p : Ptr} {t : Ty} (h : a.asPtrWord = some p)
+    (ht : a.hasTy t = true) : WordV a := by
   cases a with
-  | ptr q => trivial
+  | ptr q => exact Ptr.inWindow_of_held (Ptr.held_of_hasTy ht)
   | int w x => cases w <;> simp_all [Val.asPtrWord, WordV]
   | _ => simp [Val.asPtrWord] at h
 
@@ -35,7 +39,10 @@ theorem ofPieces_word {z : Val} (h : WordV z) : (ofPieces (.int .w64) [z]).hasPo
   | ptr q =>
     rw [EC.ecc_ofPieces_ptr]
     show q.word.hasPoison = false
-    rcases Ptr.word_cases q with ⟨-, hw⟩ | ⟨-, a, -, hw⟩ <;> rw [hw] <;> rfl
+    rcases Ptr.word_cases q with ⟨-, hw⟩ | ⟨-, a, -, hw⟩ | ⟨hw, -⟩
+    · rw [hw]; rfl
+    · rw [hw]; rfl
+    · simp only [WordV] at h; rw [h] at hw; cases hw
   | int w x =>
     cases w <;> simp only [WordV] at h
     rw [Seg.ofPieces_int]; rfl

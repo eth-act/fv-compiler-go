@@ -447,12 +447,38 @@ theorem evalOp_pure {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : Lis
   rfl
 
 omit K in
-/-- A pointer into an allocation is non-nil as its word. -/
-theorem nn_word {q : Ptr} (h : q.blk ≠ .nil) : NN q.word := by
-  rcases Ptr.word_cases q with ⟨-, hw⟩ | ⟨hc, a, ha, hw⟩ <;> rw [hw]
-  · exact h
-  · show (Ptr.ofAddr a).blk ≠ .nil
+/-- A pointer into an allocation, inside its window, is non-nil as its word. -/
+theorem nn_word {q : Ptr} (h : q.blk ≠ .nil) (hq : q.inWindow = true) : NN q.word := by
+  rcases Ptr.word_cases q with ⟨-, hw⟩ | ⟨hc, a, ha, hw⟩ | ⟨h', -⟩
+  · rw [hw]; exact h
+  · rw [hw]
+    show (Ptr.ofAddr a).blk ≠ .nil
     rw [Ptr.ofAddr_addr hc ha]; exact h
+  · rw [hq] at h'; cases h'
+
+omit K in
+/-- A pointer `frameVal` gives is at offset 0, inside its window. -/
+theorem frameVal_ptr_inWindow {ctx : Ctx} {v : Value} {q : Ptr}
+    (h : frameVal ctx v = some (.ptr q)) : q.inWindow = true := by
+  unfold frameVal at h
+  split at h
+  · cases h; exact Ptr.inWindow_zero _
+  · cases h
+  · cases hx : v.aux with
+    | none => simp [hx] at h
+    | some n =>
+      simp only [hx, Option.map_some, Option.some.injEq, Val.ptr.injEq] at h
+      subst h; exact Ptr.inWindow_zero _
+  · split at h
+    · cases h; exact Ptr.inWindow_zero _
+    · cases h
+  · split at h
+    · revert h
+      simp only [Option.some.injEq, Val.ofStr]
+      repeat' split
+      all_goals simp
+    · cases h
+  · cases h
 
 omit K in
 /-- A non-nil value is `Safe`. -/
@@ -521,7 +547,7 @@ theorem nnSeed_reg {S : Frame} {k : Nat} (hS : SFacts env tabs f F0 S (oS.toList
   obtain ⟨hr1, hr2, hr3, hr4, hr5, hr6⟩ := hnr
   rw [evalOp_tail hr1 hr2 hr3 hr4 hr5 hr6, hq] at hr
   cases hr
-  rcases hw with ⟨e, he⟩ | he <;> rw [he] <;> exact nn_word hqn
+  rcases hw with ⟨e, he⟩ | he <;> rw [he] <;> exact nn_word hqn (frameVal_ptr_inWindow hq)
 
 omit K in
 theorem isNonNil_nn {q : Val} (h : NN q) : PtrOps.isNonNil [q] = .bool true := by
@@ -889,8 +915,9 @@ omit K in
 theorem safe_global_retype (s : String) (o : BitVec 64) (t : Ty) :
     Safe ((Val.ptr ⟨.global s, o⟩).retype t) := by
   cases t with
-  | int w => cases w <;> simp [Val.retype, Ptr.word, Ptr.convertible, Safe]
-  | _ => simp [Val.retype, Ptr.word, Ptr.convertible, Safe]
+  | int w =>
+    cases w <;> simp [Val.retype, Ptr.word, Ptr.convertible, Ptr.inWindow, Blk.window?, Safe]
+  | _ => simp [Val.retype, Ptr.word, Ptr.convertible, Ptr.inWindow, Blk.window?, Safe]
 
 omit K in
 /-- The data pointer of a non-empty string constant, at any shape of the constant (`poison` if
@@ -911,7 +938,7 @@ theorem safe_str_select (s : String) (x : Val) (t : Ty) :
     | str =>
       simp only [Val.retype, Val.retypePtr]
       unfold Val.ofStr
-      split <;> simp [Comp.select, Ptr.word, Ptr.convertible, Safe]
+      split <;> simp [Comp.select, Ptr.word, Ptr.convertible, Ptr.inWindow, Blk.window?, Safe]
     | _ => simp [Val.retype, Comp.select, Safe]
   · cases t <;> simp [Val.retype, Comp.select, Safe]
 

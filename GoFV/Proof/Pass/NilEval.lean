@@ -118,10 +118,11 @@ theorem nilCheck_ok_safe {ctx : Ctx} {n : Value} {argv : List Val} {r : Val}
 /-- A pointer into an allocation is `Safe` as its word (`Ptr.word`: its address reads back as
 the pointer). -/
 theorem safe_word {q : Ptr} (h : q.blk ≠ .nil) : Safe q.word := by
-  rcases Ptr.word_cases q with ⟨-, hw⟩ | ⟨hc, a, ha, hw⟩ <;> rw [hw]
+  rcases Ptr.word_cases q with ⟨-, hw⟩ | ⟨hc, a, ha, hw⟩ | ⟨-, hw⟩ <;> rw [hw]
   · exact h
   · show (Ptr.ofAddr a).blk ≠ .nil
     rw [Ptr.ofAddr_addr hc ha]; exact h
+  · trivial
 
 /-- `Safe` survives taking a pointer shape. -/
 theorem safe_retype_ptr {v : Val} (e : Option Nat) (h : Safe v) : Safe (v.retype (.ptr e)) := by

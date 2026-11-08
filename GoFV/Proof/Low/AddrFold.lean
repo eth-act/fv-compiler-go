@@ -34,8 +34,10 @@ open GoFV.Opt.LowerTerm (auxIsName)
 theorem ptr_hasTy_conv {p : Ptr} {T : Ty} (h : (Val.ptr p).hasTy T = true) :
     p.convertible = false := by
   cases T with
-  | int w => cases w <;> simp_all [Val.hasTy]
-  | ptr e => simpa [Val.hasTy] using h
+  | int w =>
+    cases w <;> simp only [Val.hasTy, reduceCtorEq] at h
+    exact Ptr.not_convertible_of_held h
+  | ptr e => exact Ptr.not_convertible_of_held (by simpa [Val.hasTy] using h)
   | _ => simp [Val.hasTy] at h
 
 /-- Two pointers of one block, the first without an integer form, the second with one: the first
@@ -85,7 +87,7 @@ theorem addr_fold {T0 T1 : Ty} {x : Val} (hx : x.hasTy T0 = true) (hT1 : 64 ≤ 
     | ptr p =>
       simp only [Arm64.addP, PtrOps.ptrRes]
       split
-      · rcases Ptr.word_cases (p.add k2) with ⟨-, h⟩ | ⟨-, a, -, h⟩ <;> rw [h] <;> rfl
+      · rcases Ptr.word_cases (p.add k2) with ⟨-, h⟩ | ⟨-, a, -, h⟩ | ⟨-, h⟩ <;> rw [h] <;> rfl
       · rfl
     | _ =>
       simp only [Arm64.addP]
@@ -98,7 +100,9 @@ theorem addr_fold {T0 T1 : Ty} {x : Val} (hx : x.hasTy T0 = true) (hT1 : 64 ≤ 
     · rename_i hwin
       rw [word_retypeL hw]
       right
-      rcases Ptr.word_cases (p.add k2) with ⟨-, h⟩ | ⟨hc, a, ha, h⟩
+      rcases Ptr.word_cases (p.add k2) with ⟨-, h⟩ | ⟨hc, a, ha, h⟩ | ⟨h', -⟩
+      rotate_right
+      · rw [hwin] at h'; cases h'
       · rw [h]
         simp only [Arm64.addr, Option.some.injEq, Ptr.add, Ptr.mk.injEq, true_and]
         rw [BitVec.add_assoc, BitVec.add_comm k2 k1]
@@ -168,13 +172,16 @@ theorem addr_movFold {T0 T1 : Ty} {x : Val} (hx : x.hasTy T0 = true) (hT1 : 64 �
     | none => rfl
     | some r =>
       simp only [Option.map_some, Option.elim, PtrOps.ptrRes, Ptr.ofAddr_inWindow, ite_true]
-      rcases Ptr.word_cases (Ptr.ofAddr (r + k2)) with ⟨-, h⟩ | ⟨-, a, -, h⟩ <;> rw [h] <;> rfl
+      rcases Ptr.word_cases (Ptr.ofAddr (r + k2)) with ⟨-, h⟩ | ⟨-, a, -, h⟩ | ⟨-, h⟩ <;> rw [h] <;> rfl
   cases Arm64.reg x with
   | none => left; simp only [Option.map_none, Option.elim, retypeL_poison]; rfl
   | some r =>
     simp only [Option.map_some, Option.elim, PtrOps.ptrRes, Ptr.ofAddr_inWindow, ite_true,
       word_retypeL hw]
-    rcases Ptr.word_cases (Ptr.ofAddr (r + k2)) with ⟨-, h⟩ | ⟨-, a, ha', h⟩ <;> rw [h]
+    rcases Ptr.word_cases (Ptr.ofAddr (r + k2)) with ⟨-, h⟩ | ⟨-, a, ha', h⟩ | ⟨h', -⟩
+    rotate_right
+    · rw [Ptr.ofAddr_inWindow] at h'; cases h'
+    all_goals rw [h]
     · simp only [Arm64.addr]
       by_cases hin : ((Ptr.ofAddr (r + k2)).add k1).inWindow = true
       · right; left
@@ -240,15 +247,16 @@ theorem addrAt_name {tabs : Tables} {act : Nat} {n : AuxRef} (hn : auxIsName tab
   · cases hn
 
 /-- A pointer's word moved by an offset that keeps it inside its block's window addresses the
-moved pointer (`Ptr.ofAddr_add_of_inWindow`). -/
-theorem addr_word {p : Ptr} {k : BitVec 64} (hw : (p.add k).inWindow = true) :
-    Arm64.addr p.word k = some (p.add k) := by
-  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨hc, a, ha, h⟩
+moved pointer (`Ptr.ofAddr_add_of_inWindow`), for a pointer inside its window. -/
+theorem addr_word {p : Ptr} {k : BitVec 64} (hp : p.inWindow = true)
+    (hw : (p.add k).inWindow = true) : Arm64.addr p.word k = some (p.add k) := by
+  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨hc, a, ha, h⟩ | ⟨h', -⟩
   · rw [h]; rfl
   · rw [h]
     simp only [Arm64.addr, Arm64.reg, BitVec.setWidth_eq, Option.map_some, Option.some.injEq]
     have he : Ptr.ofAddr a = p := Ptr.ofAddr_addr hc ha
     rw [Ptr.ofAddr_add_of_inWindow (by rw [he]; exact hw), he]
+  · rw [hp] at h'; cases h'
 
 /-- A frame block's offsets below `2^24` are inside its window. -/
 theorem frame_inWindow (tabs : Tables) (act : Nat) (n : AuxRef) {k : BitVec 64}
@@ -263,7 +271,8 @@ theorem addr_framePtr (tabs : Tables) (act : Nat) (n : AuxRef) {k : BitVec 64}
     Arm64.addr (framePtr tabs act n).word k = some ⟨frameBlk tabs act n, k⟩ := by
   have hq : (framePtr tabs act n).add k = ⟨frameBlk tabs act n, k⟩ := by
     simp [framePtr, Ptr.add]
-  rw [addr_word (by rw [hq]; exact frame_inWindow tabs act n hk), hq]
+  rw [addr_word (by simpa [framePtr] using Ptr.inWindow_zero (frameBlk tabs act n))
+    (by rw [hq]; exact frame_inWindow tabs act n hk), hq]
 
 /-- **A frame variable's address folded into a store** (`ARM64.rules:881-905`): if the frame
 address `y` (`poison` or the variable's address word, `FrameVals`) moved by `k1` is the pointer
@@ -334,7 +343,8 @@ theorem addrRef_foldSym {tabs : Tables} {n : AuxRef} {T : Ty}
     simp only [hd]
     simp only [Option.elim_some, PtrOps.ptrRes, Ptr.inWindow, Blk.window?, ite_true,
       word_retypeL hw] at hy
-    simp only [Ptr.word, Ptr.convertible, Arm64.addr, Ptr.add, Option.some.injEq] at hy
+    simp only [Ptr.word, Ptr.convertible, Ptr.inWindow, Blk.window?, ite_true, Arm64.addr, Ptr.add,
+      Option.some.injEq] at hy
     rw [← hy, hk, BitVec.ofInt_add, BitVec.add_comm]
   · rename_i hd
     simp only [hd]
@@ -352,7 +362,7 @@ theorem addrRef_foldSym {tabs : Tables} {n : AuxRef} {T : Ty}
         split at hwin <;> simp only [Ptr.inWindow, Blk.window?, decide_eq_true_eq] at hwin <;> omega
       have hsum : (BitVec.ofInt 64 k2.toInt + BitVec.ofInt 64 k1.toInt).toNat < 2 ^ 24 := by
         rw [← BitVec.ofInt_add, BitVec.toNat_ofInt]; omega
-      rw [addr_word (by simp only [Ptr.add]; exact frame_inWindow tabs 0 _ hsum)] at hy
+      rw [addr_word hwin (by simp only [Ptr.add]; exact frame_inWindow tabs 0 _ hsum)] at hy
       simp only [Ptr.add, Option.some.injEq] at hy
       rw [← hy, hk, BitVec.ofInt_add, BitVec.add_comm]
     · simp only [retypeL_poison, Arm64.addr, Arm64.reg] at hy

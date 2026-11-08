@@ -191,7 +191,7 @@ theorem splitP_sound {m : Nat} : ∀ (N n : Nat) (p : ID)
             at hp'
           change ((PtrOps.offPtr v.auxInt [den D tabs ρ n v.args[0]!]).retype _).asPtrWord = _
             at hp'
-          rw [Val.asPtrWord_retype_ptr, PtrOps.offPtr_asPtrWord] at hp'
+          rw [PtrOps.offPtr_retype_ptr, PtrOps.offPtr_asPtrWord] at hp'
           obtain ⟨Q', h0, hQ⟩ := Option.bind_eq_some_iff.1 hp'
           have hQ := step?_add_eq hQ
           -- the argument is pointer-typed (else `splitP` stops at it, which is not)
@@ -217,7 +217,7 @@ theorem splitP_sound {m : Nat} : ∀ (N n : Nat) (p : ID)
               at hp'
             change ((PtrOps.addPtr [den D tabs ρ n v.args[0]!, den D tabs ρ n v.args[1]!]).retype
               _).asPtrWord = _ at hp'
-            rw [Val.asPtrWord_retype_ptr, PtrOps.addPtr_asPtrWord] at hp'
+            rw [PtrOps.addPtr_retype_ptr, PtrOps.addPtr_asPtrWord] at hp'
             obtain ⟨Q', h0, hp''⟩ := Option.bind_eq_some_iff.1 hp'
             obtain ⟨K, hk, hQ⟩ := Option.bind_eq_some_iff.1 hp''
             have hQ := step?_add_eq hQ

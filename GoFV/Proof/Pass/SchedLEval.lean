@@ -858,18 +858,18 @@ theorem evalValueL_argOK {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v : 
 
 /-! ## Pointers outside the nil block -/
 
-/-- A pointer outside the nil block is one at a word shape. -/
+/-- A pointer outside the nil block, inside its window, is one at a word shape. -/
 theorem nonNil_retype_ptr (md : LMode) {t : Ty} (ht : wordShape t = true) {p : Ptr}
-    (hp : p.blk ≠ .nil) : NonNil (md.retype t (.ptr p)) := by
+    (hp : p.blk ≠ .nil) (hw : p.inWindow = true) : NonNil (md.retype t (.ptr p)) := by
   refine ⟨p, ?_, hp⟩
   unfold wordShape at ht
   split at ht
   · cases md with
     | mk low faulting =>
-      cases low <;> simp [LMode.retype, Val.retypeL, Val.widen, Val.retype, Ptr.word_asPtrWord]
+      cases low <;> simp [LMode.retype, Val.retypeL, Val.widen, Val.retype, Ptr.word_asPtrWord hw]
   · cases md with
     | mk low faulting =>
-      cases low <;> simp [LMode.retype, Val.retypeL, Val.widen, Val.retype, Ptr.word_asPtrWord]
+      cases low <;> simp [LMode.retype, Val.retypeL, Val.widen, Val.retype, Ptr.word_asPtrWord hw]
   · cases ht
 
 /-- **`SP` and `GetG` hold pointers outside the nil block** at a word shape: the
@@ -886,12 +886,12 @@ theorem evalValueL_spg {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v : Va
         .ok (.ptr ⟨.outargs ctx.act, 0⟩) := by
       unfold evalOp; rw [hop]; simp only [frameVal, hop]; rfl
     rw [he] at h; cases h
-    exact nonNil_retype_ptr md hw (by simp)
+    exact nonNil_retype_ptr md hw (by simp) (Ptr.inWindow_zero _)
   · have he : evalOp env ctx fr v argv (ctx.tys[v.id]?.getD .other) =
         .ok (.ptr ⟨.global "runtime.g", 0⟩) := by
       unfold evalOp; rw [hop]; simp only [frameVal, hop]; rfl
     rw [he] at h; cases h
-    exact nonNil_retype_ptr md hw (by simp)
+    exact nonNil_retype_ptr md hw (by simp) (Ptr.inWindow_zero _)
 
 /-- **Without a closure context** (a run of the function itself: `entryFrame` sets none),
 `GetClosurePtr` is `poison`, which has no nil base. -/
@@ -1034,7 +1034,9 @@ theorem evalValueL_vc {md : LMode} {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame}
 /-! ## `Select1` of an acquiring load -/
 
 theorem word_ne_mem (p : Ptr) (m : Mem) : p.word ≠ .mem m := by
-  unfold Ptr.word; split <;> nofun
+  unfold Ptr.word; split
+  · nofun
+  · split <;> nofun
 
 theorem Val.retype_eq_mem {t : Ty} {v : Val} {m : Mem} (h : v.retype t = .mem m) : v = .mem m := by
   unfold Val.retype at h

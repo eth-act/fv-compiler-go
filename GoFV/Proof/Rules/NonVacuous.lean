@@ -346,7 +346,8 @@ theorem inst_r_generic_970 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_97
     (Oracle.const true) := by
   simp [GoFV.Rules.Generated.Generic.r_generic_970]
   rule_eval
-  simp [PtrOps.ptrIndex, asOffset, PtrOps.ptrRes, Ptr.add, Ptr.inWindow, Blk.window?]
+  simp [PtrOps.ptrIndex, asOffset, PtrOps.ptrRes, Ptr.add, Ptr.inWindow, Blk.window?, Ptr.word,
+    Ptr.convertible]
 
 /-- `generic.rules:126`: `(AddPtr <t> x (Const64 [c])) => (OffPtr <t> x [c])` at a global pointer,
 `c = 24`. -/
@@ -355,7 +356,8 @@ theorem inst_r_generic_126 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_12
     (Oracle.const true) := by
   simp [GoFV.Rules.Generated.Generic.r_generic_126]
   rule_eval
-  simp [PtrOps.addPtr, asOffset, PtrOps.ptrRes, Ptr.add, Ptr.inWindow, Blk.window?]
+  simp [PtrOps.addPtr, asOffset, PtrOps.ptrRes, Ptr.add, Ptr.inWindow, Blk.window?, Ptr.word,
+    Ptr.convertible]
 
 /-- `generic.rules:1057`: `(ConstInterface) => (IMake (ConstNil <typ.Uintptr>) (ConstNil
 <typ.BytePtr>))` at the interface shape (`uintptr`, `*uint8`). -/

@@ -580,7 +580,8 @@ theorem ecs_addr {env : Env} {tabs : Tables} {f g : Func} {T : Frame} {E L : ID 
     · next e' he' =>
       rw [he']
       rw [show Val.retype (.ptr e') (.ptr (ecsSlot 0)) = (ecsSlot 0).word from rfl,
-        PtrOps.offPtr_word, ecs_offPtr_ptr hai' hk, Ptr.word_retype_ptr, Ptr.word_asPtrWord]
+        PtrOps.offPtr_word _ (ecs_ptr_inWindow (k := 0) (by decide)), ecs_offPtr_ptr hai' hk,
+        Ptr.word_retype_ptr, Ptr.word_asPtrWord (ecs_ptr_inWindow hk)]
     · next he' =>
       rw [he']
       exact ecs_offPtr_int hai' hk e

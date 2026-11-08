@@ -225,10 +225,44 @@ what the hardware computes on the pointer's address, as the `ADD`/`SUB` cases do
 With registers on every operand each op is unchanged. sem-difftest (native and the quick-v7
 corpus) is unchanged by these cases. Still false (`docs/proofs/rules.md`, Findings): `(SUB x (SUB
 y z)) => (SUB (ADD x z) y)` and `(SUB (SUB x y) z) => (SUB x (ADD y z))` (`1197`, `1198`), whose
-target moves a pointer through an intermediate outside its window, and `(NEG (SUB x y)) => (SUB y
-x)` (`1183`): a pointer with a register that does not convert (`Ptr.ofAddr` of an address at or
-above `2^63`, a frame of activation `2^20` or more) is read as its register by `SUB x y` and
-`NEG`, which give an integer, where the target's `SUB y x` moves the pointer.
+target moves a pointer through an intermediate outside its window. `(NEG (SUB x y)) => (SUB y x)`
+and `(NEG (NEG x)) => x` (`1183`, `1184`) are proven since the window rule below.
+
+**Pointers outside their window (#385, a Phase 1 change).** Each block with addresses has a
+window (`Blk.window?`: `2^40` for nil and heap blocks, `2^24` for frame blocks; globals have
+none), and Phase 1 already made pointer arithmetic that leaves it `poison` (`PtrOps.ptrRes`,
+§3.3 of `semantics.md`). Two definitions now follow that rule through:
+
+- *F1.* A pointer outside its window is no value: `Ptr.word` of it is `poison`, so `Val.retype`
+  at the word shapes (`int64`, `uintptr`, pointers) and every ABI decode (`ofPieces`) give
+  `poison`, and `Val.hasTy`/`Val.isPtrWord` at those shapes hold only pointers held as pointers
+  (`Ptr.held`: no integer form, inside the window).
+- *F2.* `Ptr.convertible` is exactly the round trip through the address encoding: `p` converts
+  iff `Ptr.ofAddr` of its concrete address is `p` (`Ptr.convertible_iff`,
+  `Ptr.convertible_ofAddr`). The only definitional change is the frame bound: frames of
+  activations below `3·2^20` (was `2^20`), all of whose addresses end below `2^64`. Such a
+  pointer already had a register (`Arm64.ptrReg`) and an address `Ptr.ofAddr` decodes back to
+  it; it is now held as that address, as every other pointer with a register is.
+
+The new `poison` cases are exactly pointers Go deems invalid. Rule (3) of
+[`unsafe.Pointer`](https://pkg.go.dev/unsafe#Pointer) ("Conversion of a Pointer to a uintptr and
+back, with arithmetic") requires that "the result must continue to point into the original
+allocated object", and safe Go has no pointer arithmetic at all. A pointer outside its window
+points outside its allocation, because every allocation is smaller than its window and starts
+at offset 0 of its block: heap allocations are at most `Runtime.maxModelAlloc = 2^24 < 2^40`
+bytes, and frame variables, each in a block of its own, are below Go's 10 MB stack-variable
+limit (`ir.MaxStackVarSize`) `< 2^24`. So every in-bounds pointer and every one-past-the-end
+pointer (offset equal to the allocation's size) stays inside the window and defined; F1 is
+more defined than Go here, which deems one-past-the-end pointers invalid too. Phase 1 never
+computes an out-of-window pointer on its own: `ptrRes` (`OffPtr`, `AddPtr`, `PtrIndex`) already
+gives `poison` for one, `Ptr.ofAddr` only yields in-window pointers, and allocations start at
+offset 0. The one edge case is a frame slot (a parameter, result or outgoing argument area)
+larger than `2^24`: its bytes beyond the window were already inaccessible (`Mem.read`/`write`
+require `Blk.endsInWindow`), and F1 now also makes its one-past-the-end pointer `poison`; Go's
+stack-variable limit keeps such slots out of compiled frames in practice. F2 makes no value
+`poison`. With F1 and F2, a pointer at a word shape has no register and neither has any pointer
+an in-window move gives (`Ptr.held_of_blk`), which `1183`/`1184` need
+(`GoFV/Proof/Low/Rules/ShiftOp.lean`, `refines_neg_sub`, `refines_neg_neg`).
 
 **Pair accesses (#156, #385).** A pair load or store (`LDP`, `LDPW`, `LDPSW`, `FLDP{S,D,Q}`,
 `STP`, `STPW`, `FSTP{S,D,Q}`) of `n`-byte elements addresses element `i` as the single access

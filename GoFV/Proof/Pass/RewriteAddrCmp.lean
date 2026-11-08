@@ -78,12 +78,17 @@ theorem addrSymOf_spec {tabs : Tables} {M : Defs} {a : ID} {n : String}
     next => cases h
   next => cases h
 
-/-- A pointer retyped at any shape is read as that pointer or as no pointer word. -/
+/-- A pointer retyped at any shape is read as that pointer or as no pointer word (`poison`
+outside its window). -/
 theorem ptr_retype_word (t : Ty) (p : Ptr) :
     ((Val.ptr p).retype t).asPtrWord = none ∨ ((Val.ptr p).retype t).asPtrWord = some p := by
+  have hw : p.word.asPtrWord = none ∨ p.word.asPtrWord = some p := by
+    cases h : p.inWindow
+    · exact .inl (by rw [Ptr.word_of_not_inWindow h]; rfl)
+    · exact .inr (Ptr.word_asPtrWord h)
   cases t with
-  | int w => cases w <;> first | exact .inr (Ptr.word_asPtrWord p) | exact .inl rfl
-  | ptr _ => exact .inr (Ptr.word_asPtrWord p)
+  | int w => cases w <;> first | exact hw | exact .inl rfl
+  | ptr _ => exact hw
   | _ => exact .inl rfl
 
 /-- The comparison of two global pointers at offset 0 is the comparison of their names. -/

@@ -255,7 +255,7 @@ theorem offPtr_reg_of (H : Avail env tabs f S A)
   generalize tabs.ty opv.type = ty
   intro hty hqv
   cases ty <;> simp [isPtrTy] at hty
-  rw [Val.asPtrWord_retype_ptr, PtrOps.offPtr_asPtrWord, hpv, Option.bind_some, hai,
+  rw [PtrOps.offPtr_retype_ptr, PtrOps.offPtr_asPtrWord, hpv, Option.bind_some, hai,
     BitVec.ofInt_natCast, Ptr.step?] at hqv
   split at hqv
   · exact (Option.some.inj hqv).symm

@@ -233,6 +233,7 @@ theorem termOp_make {op : Op} (h : ssMakeOp op = true) : termOp op = true := by
 theorem make_ne_phi {op : Op} (h : ssMakeOp op = true) : op ≠ .Phi := by
   rcases ssMakeOp_cases h with rfl | rfl | rfl | rfl | rfl | rfl <;> decide
 
+
 theorem copyReach_copyEnd (M : Defs) : ∀ (n : Nat) (a : ID),
     copyReach tabs M n a (copyEnd tabs M n a) = true
   | 0, a => by simp [copyReach, copyEnd]

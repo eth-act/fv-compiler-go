@@ -8,8 +8,10 @@ import GoFV.Proof.Witness.TraceFP
 register argument `v2`, returned by `v4 = MakeResult v3 v1`). The checked lower fires `(IsNonNil
 ptr) => (NotEqual (CMPconst [0] ptr))` (`ARM64.rules:450`): `v3` becomes `NotEqual v5` of a fresh
 `v5 = CMPconst [0] v2`. On the heap pointer `heap 0 + 0` both return `true`; on the nil word 0
-both return `false`; on `heap 0 + (2^64 - 2^40)`, a non-nil pointer whose address is 0, both
+both return `false`; on the global pointer `g + 0`, a non-nil pointer without an address, both
 return `true` (it has no register, `Arm64.ptrReg`, so `CMPconst [0]` compares it by provenance).
+(A pointer outside its window, such as `heap 0 + (2^64 - 2^40)` whose address would be 0, is no
+value since #385: `poison` as an argument.)
 
 `peq(p, q *int) bool { return p == q }`: `v4 = EqPtr v2 v3`. The checked lower fires `(EqPtr x y)
 => (Equal (CMP x y))` (`243`, a fresh `v6 = CMP v2 v3`), then `(CMP x y) && canonLessThan(x,y) =>
@@ -93,8 +95,8 @@ def pcPassEnv : PassEnv :=
 /-- The heap pointer `heap 0 + 0` (address `2^40`). -/
 def pcHeap : Ptr := ⟨.heap 0, 0⟩
 
-/-- `heap 0 + (2^64 - 2^40)`: not nil, address 0. -/
-def pcWrap : Ptr := ⟨.heap 0, BitVec.ofNat 64 (2 ^ 64 - 2 ^ 40)⟩
+/-- The global pointer `g + 0`: not nil, no address. -/
+def pcGlob : Ptr := ⟨.global "g", 0⟩
 
 theorem pnn_generic : pnnFunc.lowered = false := by decide +kernel
 
@@ -108,18 +110,18 @@ theorem peq_noFma : GoFV.Opt.FmaContract.contractAll peqFunc = peqFunc := by dec
 
 /-- By kernel evaluation: the checked lower keeps a lowered result whose `v3` is `NotEqual v5` and
 `v5` `CMPconst [0] v2`, and `pnn` returns `true` on `heap 0 + 0`, `false` on the word 0 and `true`
-on `heap 0 + (2^64 - 2^40)` under `run` of the input and `runL` of the result. -/
+on `g + 0` under `run` of the input and `runL` of the result. -/
 theorem pnn_checks :
     (lowerChecked pcPassEnv pnnFunc).toOption.map (fun o =>
       ((o.func.value? 3).map (fun v => (v.op, v.args)),
         (o.func.value? 5).map (fun v => (v.op, v.auxInt, v.args)), o.func.lowered,
         returnsBool (runL Env.p1 o.tables o.func [.ptr pcHeap, .int .w64 0] {} 1) true,
         returnsBool (runL Env.p1 o.tables o.func [.int .w64 0, .int .w64 0] {} 1) false,
-        returnsBool (runL Env.p1 o.tables o.func [.ptr pcWrap, .int .w64 0] {} 1) true)) =
+        returnsBool (runL Env.p1 o.tables o.func [.ptr pcGlob, .int .w64 0] {} 1) true)) =
       some (some (.ARM64NotEqual, #[5]), some (.ARM64CMPconst, 0, #[2]), true, true, true, true) ∧
     returnsBool (run Env.p1 pcTabs pnnFunc [.ptr pcHeap, .int .w64 0] {} 1) true = true ∧
     returnsBool (run Env.p1 pcTabs pnnFunc [.int .w64 0, .int .w64 0] {} 1) false = true ∧
-    returnsBool (run Env.p1 pcTabs pnnFunc [.ptr pcWrap, .int .w64 0] {} 1) true = true := by
+    returnsBool (run Env.p1 pcTabs pnnFunc [.ptr pcGlob, .int .w64 0] {} 1) true = true := by
   decide +kernel
 
 /-- **Pass execution witness** for `lower_refines` (`lower_refines_run`) on `IsNonNil`

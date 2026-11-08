@@ -196,7 +196,9 @@ private theorem lo_decode (hA : AddrAgree ι) {mm : Memory} {A : BitVec 64} {bs 
       · rename_i ad hc had
         show ad.setWidth 64 = _
         rw [ptrRel_addr hA hp had (notTemp_of_convertible hc)]
-      · exact Or.inr hp
+      · split
+        · exact Or.inr hp
+        · trivial
 
 private theorem find?_mem {m : Mem} {b : Blk} {al : Alloc} (h : m.find? b = some al) :
     (b, al) ∈ m.blocks := by

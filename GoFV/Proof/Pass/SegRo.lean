@@ -134,8 +134,8 @@ theorem retype_global_asPtrWord {n : String} {t : Ty} {Q : Ptr}
     (h : ((Val.ptr ⟨.global n, 0⟩).retype t).asPtrWord = some Q) : Q = ⟨.global n, 0⟩ := by
   cases t with
   | int w => cases w <;> simp_all [Val.retype, Val.asPtrWord, Ptr.word, Ptr.convertible, Ptr.addr?,
-      Blk.base?]
-  | _ => simp_all [Val.retype, Val.asPtrWord, Ptr.word, Ptr.convertible]
+      Blk.base?, Ptr.inWindow, Blk.window?]
+  | _ => simp_all [Val.retype, Val.asPtrWord, Ptr.word, Ptr.convertible, Ptr.inWindow, Blk.window?]
 
 /-- A `Move` that returns read its source and wrote the bytes at its destination (both
 pointer words). -/

@@ -336,7 +336,20 @@ theorem grOK_panic (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.block
   have hsinv : SInv MemOK Gpre := sinv_evalAll memOK_pred hE hwf S.memTy
     (fun x hx => ⟨b, S.hb, by rw [vals_of S.hB]; exact ((omem x).1 (hpo x hx)).1⟩)
     (sinv_phis hA.sinv hps) hpre
-  refine S.grOK hall hA hGf hsinv hGo ?_ ?_
+  have hty : Typed (Ctx.make c.tabs c.f) Gpre := by
+    obtain ⟨hPs, hall', hkeep, hphi⟩ := phis_spec hnd hps
+    have htP : Typed (Ctx.make c.tabs c.f) { frS with regs := setPhis ps frS.regs } :=
+      typed_phis (blk := B) (i := i) hA.typed hPs hkeep hphi hall'
+    have ond' := ond
+    have otopo' := otopo
+    rw [hsplit] at ond' otopo'
+    obtain ⟨-, -, e3, e4⟩ := evalAll_spec (List.nodup_append.1 ond').1
+      (by exact topoRem_prefix otopo') ((setPhis_size ps frS.regs).trans hA.sizeS) hpre
+    refine typed_evalAll htP (fun x hx v hv => ?_) e3 e4
+    obtain ⟨v', hv', hvid⟩ := hown x ((omem x).1 (hpo x hx)).1
+    change c.f.value? x = some v at hv
+    rw [hv] at hv'; cases hv'; exact hvid
+  refine S.grOK hall hA hGf hsinv hGo ?_ ?_ hty
   · intro hb a haB y hy _
     by_cases hap : a ∈ pre
     · obtain ⟨v, y', hv, hy', hev⟩ := hGv a hap
