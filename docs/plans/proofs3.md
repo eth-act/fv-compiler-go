@@ -493,7 +493,22 @@ related on the low bits of the result's class, with `ADD`'s pointer case (`Value
 `addP` of an addend related on the low bits; `lo_addSh`; `g16_addSh`). G15's values go through
 `vk15_step`. No new premise.
 
-Later slices, by how many functions outside G16 each blocker occurs in (quick-v10, §5; sole
+**Slice G17: the goroutine** (`GoFV/Gen/Check17.lean`, `checkG17 lc ps bstart g`, returning G4's
+tables; proven sound, `g17_value`, `g17_term`, `g17_nilPanic`): G16 with `GetG mem` (`getGKind`,
+`VK17.getG`): no temporary, the memory its only argument, homed in the `g` register (`gReg`, Go
+register 26, `R28`; regalloc's `hasGReg` case) at a 64-bit shape; no code (`ssagen`'s
+`OpGetG`). Every `GetG` of quick-v10 is accepted.
+
+How the proof discharges G17's obligations (`G17.lean`): `runLoc` runs Phase 1's `evalPure`, the
+pointer to the start of the opaque global `runtime.g` (`stepLoc_getG`), and writes it to `g`. The
+machine does not move; `X28` holds the activation's goroutine `E.g` (`FrameRel`), and the new
+premise `GetGOK` asks that `ι` put `runtime.g` there (a property of the injection, kept by
+`E.Extends`; STATUS Assumptions), so the pointer is related to `X28` and `LocMatch` holds with only
+`runLoc`'s register written (`locMatch_setReg_keep`, `g17_getG`; `finish_reg` would write `X28`,
+which `destOK` excludes). G16's values go through `vk16_step`; a nil check of G17's kinds is
+G7's (`vk16_nil`, `vk17_nil`), so later slices extend `g17_nilPanic` by one case each.
+
+Later slices, by how many functions outside G17 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
 1. **Register-index stores** `MOVDstoreidx8` 245 (39, counted with `MOVDstoreidx`),
@@ -505,8 +520,8 @@ reason in parentheses):
    (`frame variable with an integer address`, 197 (11)): option 2 of semantics3 §4.3 (addresses as
    a parameter of the semantics); slots of other sizes (`slot … frame operand, size or alignment`,
    717).
-4. **Other values**: `MOVDnop` 750 (87), bounds panics (`LoweredPanicBoundsRR` 616 (50)), `GetG`
-   430 (89), the acquire loads `LDAR`/`LDARW` (383, 277); `SP` after the entry values (68).
+4. **Other values**: `MOVDnop` 750 (90), bounds panics (`LoweredPanicBoundsRR` 616 (50)), the
+   acquire loads `LDAR`/`LDARW` (383, 277); `SP` after the entry values (69).
    `MOVDnop x` emits no code but `runLoc` gives it the
    upper bits of `x`'s register (`movdLoc`: the zero or sign extension of the narrow value that
    produced `x`; each of its 1,520 uses in the trimmed functions of quick-v10 widens its argument,
@@ -537,6 +552,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G14 | 3,815 (41.03%) | 71,548 |
 | G15 | 3,824 (41.13%) | 71,645 |
 | G16 | 3,874 (41.66%) | 73,708 |
+| G17 | 3,962 (42.61%) | 75,809 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -651,6 +667,10 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `addShKind_spec`); `Value.lean`: `lo_addP`, `lo_addSh`.
 - `G16.lean`: `stepLoc_addSh`, `ctx_src_shiftLL`, `progStep_addShiftLL`, `g16_addSh`, `vk16_step`,
   `g16_value`, `g16_nilPanic`, `g16_term`.
+- `Spec17.lean`: what `checkG17` accepted (`checkG17_spec`, `vkind17_spec` with `VK17`,
+  `getGKind_spec`).
+- `G17.lean`: `GetGOK`, `stepLoc_getG`, `locMatch_setReg_keep`, `g17_getG`, `vk17_step`,
+  `vk16_nil`, `vk17_nil`, `g17_value`, `g17_nilPanic`, `g17_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -689,7 +709,10 @@ offset 16, after which `X0` is 7), `GenG15.lean` (`(*T3).M` of `test/recover`, w
 a callee hook that returns at once, which satisfies `CallOKZ`: `callOKZ0`), `GenG16.lean`
 (`spanSetSpinePointer.lookup` of std/runtime, which G15 rejects: `g16_value` on `ADDshiftLL [3]`,
 `ADD R1<<3, R0, R0` with `R0` the start of `heap 1` at `2^41` and `R1` 2, after which `R0` holds
-the integer `2^41 + 16` and so does `X0`). Each decides its inputs
+the integer `2^41 + 16` and so does `X0`), `GenG17.lean` (`runtime.getm`, which G16 rejects:
+`g17_value` on `GetG` with an injection putting `runtime.g` at the goroutine in `X28`, which
+satisfies `GetGOK`, after which the `g` register holds the pointer to `runtime.g`). Each decides
+its inputs
 by compiled evaluation (`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
 
 ## 6. Future work: recursion through function values
@@ -945,7 +968,7 @@ reason in parentheses):
 
 - register-index stores, `MOVDstoreidx8`/`MOVBstoreidx`: 245/187 (39/23); G14's addresses with
   G3's stores;
-- `GetG`: 430 (89); `R28` = `E.g`, already in `FrameRel`;
+- `GetG`: 430 (89); `R28` = `E.g`, already in `FrameRel`; done in G17 (§4);
 - `ADDshiftLL`: 678 (57); `lo_add` with `shifted`; done in G16 (§4);
 - bounds panics `LoweredPanicBounds*`: 616 (40+); a `CALL runtime.panicBounds*` hook that
   panics, as `g7_nilPanic`;

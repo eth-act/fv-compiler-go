@@ -94,6 +94,10 @@ GoFV.Proof.Witness.GenG15.g15_facts._native.native_decide.ax_1_1 a36c32707e3c445
 # `spanSetSpinePointer.lookup` of std/runtime and `checkG15` does not (parsed, `Env.load`,
 # `genssa`), `runLoc` runs its shifted add `ADDshiftLL [3]`; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.GenG16.g16_facts._native.native_decide.ax_1_1 dcefc68eb77016293a57241167942d4c8fc2005bb3cd9a819429627238d0484a
+# genG17_value_witness (GoFV/Proof/Witness/GenG17.lean, #553): `checkG17` accepts `runtime.getm`
+# and `checkG16` does not (parsed, `Env.load`, `genssa`), `runLoc` runs its `GetG`; compiled
+# evaluation, as plF_pipeline.
+GoFV.Proof.Witness.GenG17.g17_facts._native.native_decide.ax_1_1 0000000000000000000000000000000000000000000000000000000000000000
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
