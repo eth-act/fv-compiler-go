@@ -252,6 +252,22 @@ block) for values. Witnesses `genG7_value_witness` and `genG7_panic_witness` (`(
 where `runProg` panics). Coverage on quick-v10 (`lake exe gen-check`): 2,109 of 9,297 functions
 (22.68%), 26,795 values.
 
+## Phase 3: genssa, slice G8 (I7, #553)
+
+`GoFV.Proof.Gen.g8_value`, `GoFV.Proof.Gen.g8_term`, `GoFV.Proof.Gen.g8_nilPanic`
+(`GoFV/Proof/Gen/G8.lean`): when slice G8 (`checkG8`: G7 with the write-barrier requests
+`LoweredWB [n] mem`, `1 ≤ n ≤ 8`, homed in `(R25, -)`, emitted `CALL runtime.gcWriteBarrier<n>(SB)`,
+and their `Select0` in `R25` and `Select1`, no code) accepts a function, `g8_value`, `g8_term` and
+`g8_nilPanic` are `g7_value`'s, `g7_term`'s and `g7_nilPanic`'s statements under the activation
+`G8Env` (`G6Env`, and a function with a write barrier has a frame: the `CALL` overwrites `X30`).
+Premises (`docs/plans/proofs3.md` §4): G7's, and at a write barrier the trusted hook contract
+`WbOK` (§ Assumptions): the request's `runLoc` step (`wbOp`: a fresh buffer block, the op's
+clobbers) is matched by the `CALL` and the hook, the injection extended by the buffer. Witness
+`genG8_value_witness` (`sync_runtime_registerPoolCleanup` of std/runtime, which G7 rejects: the
+request `LoweredWB [2]`, its `Select0` and `Select1`, under a hook that is `wbHook` with the buffer
+at `2^41`). Coverage on quick-v10 (`lake exe gen-check`): 2,323 of 9,297 functions (24.98%),
+39,922 values.
+
 ## Per-pass fragment coverage (verified pipeline, full-v6)
 
 Runs per pass of `gofv-ssa-opt --check --verified` (96,553 functions, each pass run once per function). *Proven*: the theorem's variant ran and changed the function; *identity*: same function (or tables the function cannot tell apart); *skipped*: an optional pass outside its fragment (the input is kept); *unverified*: a required pass outside its fragment, or a checked rewrite pass whose result differs from stock (`checked variant incomplete`: an unproven rule fired or the validator rejected; the stock result is kept). Every Phase 1 pass has a theorem; `insert resched checks`, `cpufeatures` and `rewrite tern` never run for linux/arm64.
@@ -361,6 +377,7 @@ witnesses):
 | `runMach` nil page (`GoFV/SSA/Sem/RunMach.lean`) | a load or store in `[0, 4096)` is `panicked nilDeref`; no other address faults | the kernel leaves the nil page unmapped; SIGSEGV there becomes `sigpanic` → `panicmem` | an access fault outside the nil page that the code relies on | trusted |
 | `GoFV.Arm64` single core | exclusive stores always succeed, barriers advance the PC | one goroutine, one core, as Phase 2 §8 | a multi-threaded observation | trusted |
 | `CallOK`/`CallSpec` (Phase 3 G2 and G3, `GoFV/Proof/Gen/G2.lean`, premise of `g2_value` and `g3_value` at each static call) | from the state at the callee's symbol (the caller's but for `X30`, the return address), with the call's arguments in their ABI registers and the memory injected, the hook `H.call` returns to `X30` with `SP`, `R28`, `R29` and the frame (saved `LR`/`FP`, spill slots: `StkAt`) kept, `runLoc`'s memory after the call injected by an extension of `ι` that keeps the live blocks away from the frame, and `runLoc`'s results in the ABI result registers | the callee's Phase 1 contract lifted through ABIInternal (semantics3 §6, the `liftContract` row above); Go's calling convention keeps `R28`/`R29`/`SP` and the caller's frame | a callee that writes the caller's frame or spill slots, returns elsewhere, or whose results differ from `runLoc`'s | trusted; the witness `genG2_value_witness` discharges it for a callee that returns at once |
+| `WbOK`/`WbSpec` (Phase 3 G8, `GoFV/Proof/Gen/G8.lean`, premise of `g8_value` at each write-barrier request `LoweredWB [n]`) | from the state at `runtime.gcWriteBarrier<n>`'s symbol (the caller's but for `X30`), with the memory injected, the hook `H.call` returns to `X30` with `SP`, the memory and every register but `X25` and `X27` kept, `X25` the address of the buffer under an extension of `ι` that maps the block `wbuf` there and injects `runLoc`'s memory with a fresh `8n`-byte buffer (`Mem.wbAlloc`), the live blocks away from the frame | the hook `wbHook` (row above): `runtime/asm_arm64.s` `gcWriteBarrier` returns `8n` bytes of the per-P buffer in `R25`, clobbering only `R27` and the flags; the layout puts the buffer (`RtInfo.wbuf`) apart from the live blocks and the stack | a buffer that overlaps a live block or the frame, or a flush that changes other registers or memory | trusted; the witness `genG8_value_witness` discharges it for a hook that is `wbHook` with the buffer at `2^41` |
 | not modelled by the hooks | the defer machinery (`deferproc*`, `deferreturn`, `gorecover`), runtime entry points called through function values, asynchronous preemption, the collector: a run reaching them is `stuck` | sound: a stuck run carries no obligation | — (a restriction) | — |
 
 Not assumed, by decision: disjointness of parameter slots from the other frame slots (the
