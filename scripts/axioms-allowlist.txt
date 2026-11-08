@@ -43,6 +43,11 @@ GoFV.Proof.Witness.GenG6.g6_facts._native.native_decide.ax_1_1 aa1901f1f6b8e4a33
 # `(*A).g` of test/method and `checkG6` does not (parsed, `Env.load`, `genssa`), `runLoc` runs the
 # nil check on a pointer to a global and panics on nil; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.GenG7.g7_facts._native.native_decide.ax_1_1 2e048d5bc15ed07aaadb9be1c604f3818e2236be77474c27afc078eb98b6fd9f
+# genG8_value_witness (GoFV/Proof/Witness/GenG8.lean, #553): `checkG8` accepts
+# `sync_runtime_registerPoolCleanup` of std/runtime and `checkG7` does not (parsed, `Env.load`,
+# `genssa`), `runLoc` runs the write-barrier request and both selects; compiled evaluation, as
+# plF_pipeline.
+GoFV.Proof.Witness.GenG8.g8_facts._native.native_decide.ax_1_1 029b115294e9bb9d16738ed860ddf950b4b14f6f1b645f6bd7ee5cb8095e2fe6
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
