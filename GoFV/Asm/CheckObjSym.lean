@@ -107,6 +107,14 @@ def reads (r : Nat) : Ex → Bool
   | .ld _ a | .shift _ _ _ a | .ext _ _ a | .lo32 a | .sext _ a | .page a => reads r a
   | .add a b | .addSub _ _ a b | .logical _ _ a b | .bfm _ _ _ _ a b => reads r a || reads r b
 
+/-- Whether every register the value reads is one of `X0`–`X30` but `X27` (the assembler's
+scratch) and `X30` (the link register): the registers a P0 state and its machine state agree on. -/
+def regsOK : Ex → Bool
+  | .x r => r < 31 && r != 27 && r != 30
+  | .sp | .k _ | .sym _ => true
+  | .ld _ a | .shift _ _ _ a | .ext _ _ a | .lo32 a | .sext _ a | .page a => regsOK a
+  | .add a b | .addSub _ _ a b | .logical _ _ a b | .bfm _ _ _ _ a b => regsOK a && regsOK b
+
 /-! ### Smart constructors (constant folding and the canonical forms) -/
 
 /-- `a + b`, constants folded and collected on the right. -/
@@ -205,6 +213,11 @@ def eval (c : Ctx) : Fl → Flags
 def reads (r : Nat) : Fl → Bool
   | .init => false
   | .addSub _ _ a b | .ands _ a b => a.reads r || b.reads r
+
+/-- `Ex.regsOK` of the operands. -/
+def regsOK : Fl → Bool
+  | .init => true
+  | .addSub _ _ a b | .ands _ a b => a.regsOK && b.regsOK
 
 /-- `SUBS` of a nonzero constant `y` sets the flags `ADDS` of `-y` does (`CMP $-c` is encoded
 as `CMN $c`); the canonical form is the `ADDS`. -/

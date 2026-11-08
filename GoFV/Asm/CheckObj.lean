@@ -367,10 +367,10 @@ def symWords (t : ByteArray) (rs : List Reloc) : Nat → Nat → Sym → Except 
 /-- The registers compared: all general registers but `X27` (REGTMP) and `X30`. -/
 def cmpRegs : List Nat := (List.range 31).filter fun r => r != 27 && r != 30
 
-/-- Whether any value of a P0 effect reads `X27` or `X30`. -/
+/-- Whether a value of a P0 effect reads `X27`, `X30` or no general register (`Ex.regsOK`). -/
 def Sym.readsTmp (σ : Sym) : Bool :=
-  let rd (e : Ex) := e.reads 27 || e.reads 30
-  σ.x.any (rd ·.2) || rd σ.sp || σ.fl.reads 27 || σ.fl.reads 30 ||
+  let rd (e : Ex) := !e.regsOK
+  σ.x.any (rd ·.2) || rd σ.sp || !σ.fl.regsOK ||
     σ.loads.any (rd ·.1) || σ.stores.any fun (a, _, v) => rd a || rd v
 
 /-- The machine effect `m` matches the Prog effect `p` (the module doc). -/
@@ -395,7 +395,7 @@ def sameCtl (offs : List (Nat × Nat)) (m : MCtl) (p : PCtl) (_pr : Sym) : Excep
     match offOf offs id with
     | some o => if (o : Int) == q then pure () else throw s!"branch to {q}, target Prog at {o}"
     | none => throw "branch target not a P0 Prog"
-  let ctlReads (e : Ex) : Bool := e.reads 27 || e.reads 30
+  let ctlReads (e : Ex) : Bool := !e.regsOK
   match m, p with
   | .fall, .fall => pure ()
   | .jmp q, .jmp id => tgt id q
