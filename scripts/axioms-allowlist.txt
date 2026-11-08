@@ -131,6 +131,10 @@ GoFV.Proof.Witness.GenG21.g21_facts._native.native_decide.ax_1_1 80b354baa714dc5
 # and `checkG21` does not (parsed, `Env.load`, `genssa`), and `runLoc` runs its `LDP` of
 # `runtime.buildVersion` to `R1 = 7`; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.GenG22.g22_facts._native.native_decide.ax_1_1 45abad70391f673ed2b2b093cf7536a10256ff5e94b2660fe8ad07977865aca8
+# genG23_value_witness (GoFV/Proof/Witness/GenG23.lean, #553): `checkG23` accepts
+# `bytes.shouldUseASCIISet` and `checkG22` does not (parsed, `Env.load`, `genssa`), and `runLoc`
+# runs its `CMPconst` and `GreaterThan` to `R0 = true`; compiled evaluation, as plF_pipeline.
+GoFV.Proof.Witness.GenG23.g23_facts._native.native_decide.ax_1_1 0000000000000000000000000000000000000000000000000000000000000000
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:

@@ -493,6 +493,17 @@ accepts a function, they are `g21_value`'s, `g21_term`'s, `g21_nilPanic`'s and
 R1)` with `buildVersion = (nil, 7)`, after which `runLoc`'s `R1` and the machine's `X1` hold 7).
 Coverage on quick-v10 (`lake exe gen-check`): 4,472 of 9,297 functions (48.10%), 98,947 values.
 
+## Phase 3: genssa, slice G23 (I7, #553)
+
+`GoFV.Proof.Gen.g23_value`, `GoFV.Proof.Gen.g23_term`, `GoFV.Proof.Gen.g23_nilPanic`,
+`GoFV.Proof.Gen.g23_boundsPanic` (`GoFV/Proof/Gen/G23.lean`): when slice G23 (`checkG23`: G22 with
+the comparison pseudo-ops `Equal`, `NotEqual`, `LessThan`, …, as `CSET cond, Rd`) accepts a
+function, they are `g22_value`'s, `g22_term`'s, `g22_nilPanic`'s and `g22_boundsPanic`'s
+statements under the same premises. No new trusted premise. Witness `genG23_value_witness`
+(`bytes.shouldUseASCIISet`, which G22 rejects: `CMP $8, R0` with `len(chars) = 10`, then `CSET GT,
+R0`, after which `runLoc`'s `R0` holds `true` and the machine's `X0` is 1). Coverage on quick-v10
+(`lake exe gen-check`): 4,624 of 9,297 functions (49.73%), 101,638 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g12_obj_value`, `g12_obj_term` (`GoFV/Proof/Obj/G12.lean`): `g12_value`/`g12_term`
