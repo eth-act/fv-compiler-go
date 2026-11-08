@@ -321,7 +321,7 @@ theorem structLoad_ref {fs : List (Nat × Ty)} {n : Nat} (hl : layoutsOK n fs = 
               rw [ofInt_toInt_ofNat]
               unfold PtrOps.ptrRes
               rw [if_pos hwin]
-            exact ⟨_, hq, Ptr.word_retype_ptr _ e, Ptr.word_asPtrWord _⟩
+            exact ⟨_, hq, Ptr.word_retype_ptr _ e, Ptr.word_asPtrWord hwin⟩
         obtain ⟨Q, hQ, hQr, hQp⟩ := hq
         unfold fieldVal at he
         rw [he, hQ, hQr]

@@ -46,6 +46,7 @@ structure SimAt (env : Env) (c : WBCheck.Ctx) (frS frT : Frame) (b : ID) (i : Na
   lazy : b ≠ c.f.entry → LazyRegs c frT
   entry : b = c.f.entry → ∀ (a : ID) (y : Val), frS.regs[a]? ≠ some (some y)
   wbh : WbHelpers env
+  typed : Typed (Ctx.make c.tabs c.f) frS
 
 theorem pre_tree {ce : CheckEnv} {c : WBCheck.Ctx} (hwf : WF ce c.f) (hc : CertOK c.f)
     {env : Env} {fr : Frame} {b : ID} {i : Nat} (h : Pre env c fr b i) :
@@ -307,8 +308,8 @@ theorem grOK (S : Setup c b B rs l) (hall : ∀ b' ∈ c.f.blocks, c.blockOK b' 
     (hout : ∀ a, a ∉ B.values → Gr.regs[a]? = frS.regs[a]?)
     (hev : b = c.f.entry → ∀ a ∈ B.values, ∀ y, Gr.regs[a]? = some (some y) →
       (c.isWbaddr a = true ∨ c.isConst0 a = true) → Ev env c Gr a)
-    (hO : OutDef c B Gr) : GrOK c B rs Gr frS := by
-  refine ⟨hfr, ?_, fun a M h => (hsinv.2 a _ h).mem, hO⟩
+    (hO : OutDef c B Gr) (hty : Typed (Ctx.make c.tabs c.f) Gr) : GrOK c B rs Gr frS := by
+  refine ⟨hfr, ?_, fun a M h => (hsinv.2 a _ h).mem, hO, hty⟩
   intro a z y hh hq hy
   rcases role_of_held (rs := rs) hh with hρ | hρ | hρ
   · simp only [QR, hρ] at hq

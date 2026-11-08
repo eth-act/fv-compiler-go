@@ -60,7 +60,7 @@ theorem retype_ptr_eq {q P : Ptr} {t : Ty} (h : (Val.ptr q).retype t = .ptr P) :
     | int w => cases w <;> first | exact h | simp [Val.retype] at h
     | ptr e => exact h
     | _ => simp [Val.retype] at h
-  rcases Ptr.word_cases q with ⟨-, h'⟩ | ⟨-, a, -, h'⟩ <;> rw [h'] at hw <;> cases hw
+  rcases Ptr.word_cases q with ⟨-, h'⟩ | ⟨-, a, -, h'⟩ | ⟨-, h'⟩ <;> rw [h'] at hw <;> cases hw
   rfl
 
 /-- Retyping at pointer shapes forgets the element size. -/
@@ -116,7 +116,7 @@ theorem retypeFields_getD : ∀ {fs : List (Nat × Ty)} {vs vs' : List Val},
   | _ :: _, [], _, h, _ => by simp [Val.retypeFields] at h
 
 theorem word_ne_agg (p : Ptr) (vs : List Val) : p.word ≠ .agg vs := by
-  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ <;> rw [h] <;> simp
+  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ | ⟨-, h⟩ <;> rw [h] <;> simp
 
 /-- Only a composite retypes to a composite, componentwise. -/
 theorem retype_eq_agg {v : Val} {t : Ty} {vs' : List Val} (h : v.retype t = .agg vs') :
@@ -186,10 +186,12 @@ theorem asPtrWord_of_retype {v : Val} {t : Ty} {p : Ptr} (h : (v.retype t).asPtr
     v.asPtrWord = some p := by
   have hty := Val.retype_hasTy t v
   cases t with
-  | ptr e => rwa [Val.asPtrWord_retype_ptr] at h
+  | ptr e => exact Val.asPtrWord_of_retype_ptr h
   | int w =>
     cases w with
-    | w64 => rwa [← Val.retype_ptr_eq_i64 v none, Val.asPtrWord_retype_ptr] at h
+    | w64 =>
+      rw [← Val.retype_ptr_eq_i64 v none] at h
+      exact Val.asPtrWord_of_retype_ptr h
     | _ =>
       generalize v.retype _ = r at h hty
       cases r with
@@ -298,7 +300,7 @@ theorem ptrIndex_den {a : ID} {u : Value} (hu : f.value? a = some u) (hop : u.op
   have hK : (den f.value? tabs ρ (max k 4 + 1) a).asPtrWord = some p :=
     (den_fuel_mono f.value? tabs ρ k (max k 4 + 1) a (by omega)).asPtrWord h
   rw [den_succ_term hu ht, toList_two hsz, List.map_cons, List.map_cons, List.map_nil,
-    GoFV.Proof.Rules.opVal_pure hfo, hop, evalPure_ptrIndex, hty, Val.asPtrWord_retype_ptr,
+    GoFV.Proof.Rules.opVal_pure hfo, hop, evalPure_ptrIndex, hty, PtrOps.ptrIndex_retype_ptr,
     PtrOps.ptrIndex_asPtrWord,
     termConst_den 4 _ _ (constIdx_spec hci) (max k 4) (Nat.le_max_right _ _)] at hK
   cases hq : (den f.value? tabs ρ (max k 4) u.args[0]!).asPtrWord with
@@ -333,7 +335,9 @@ theorem wordStep_den {a c : ID} {u : Value} (hu : f.value? a = some u)
     have ht : termOp u.op = true := by rw [hop]; rfl
     have hfo : GoFV.Proof.Rules.frameOp u.op = false := by rw [hop]; rfl
     rw [den_succ_term hu ht, toList_two hsz, List.map_cons, List.map_cons, List.map_nil,
-      GoFV.Proof.Rules.opVal_pure hfo, he, Val.asPtrWord_retype_ptr, hop] at h
+      GoFV.Proof.Rules.opVal_pure hfo, he] at h
+    replace h := asPtrWord_of_retype h
+    rw [hop] at h
     exact ⟨k, h⟩
   · split at hs
     · rename_i hc
@@ -350,7 +354,9 @@ theorem wordStep_den {a c : ID} {u : Value} (hu : f.value? a = some u)
           have ht : termOp u.op = true := by rw [hop]; rfl
           have hfo : GoFV.Proof.Rules.frameOp u.op = false := by rw [hop]; rfl
           rw [den_succ_term hu ht, toList_one hsz, List.map_cons, List.map_nil,
-            GoFV.Proof.Rules.opVal_pure hfo, he, Val.asPtrWord_retype_ptr, hop] at h
+            GoFV.Proof.Rules.opVal_pure hfo, he] at h
+          replace h := asPtrWord_of_retype h
+          rw [hop] at h
           change (Comp.select 0 [den f.value? tabs ρ k u.args[0]!]).asPtrWord = some p at h
           cases k with
           | zero => simp [den, Comp.select, Val.asPtrWord] at h
@@ -401,7 +407,8 @@ theorem ptrStep_den {a c : ID} {o : BitVec 64} (hs : ptrStep? tabs f a = some (c
     | succ k =>
     refine ⟨k, ?_⟩
     rw [den_succ_term hu ht, toList_one hsz, List.map_cons, List.map_nil,
-      GoFV.Proof.Rules.opVal_pure hfo, he, Val.asPtrWord_retype_ptr] at h
+      GoFV.Proof.Rules.opVal_pure hfo, he] at h
+    replace h := asPtrWord_of_retype h
     rcases hop with hop | hop
     · rw [hop, evalPure_offPtr, PtrOps.offPtr_asPtrWord] at h
       cases hq : (den f.value? tabs ρ k u.args[0]!).asPtrWord with
@@ -486,24 +493,17 @@ theorem baseBlk_den (hM : MemAtoms f.value? tabs ρ) {a : ID} {B : Blk}
       | some n =>
         rw [hax] at hB; cases hB
         have hsh : shape f.value? tabs a = .ptr e := by simp [shape, hu, he]
-        rw [hρ, hax, hsh, Val.asPtrWord_retype_ptr] at h
+        rw [hρ, hax, hsh] at h
+        replace h := asPtrWord_of_retype h
         simp only [Option.map_some, Option.getD_some, Val.asPtrWord, Option.some.injEq] at h
         exact h.symm
     · split at hB
       · rename_i _ hd
         simp only [Bool.and_eq_true, beq_iff_eq] at hd
         obtain ⟨hd, hpt⟩ := hd
-        have hr : ∀ x : Val, (x.retype (tabs.ty u.type)).asPtrWord = x.asPtrWord := by
-          intro x
-          unfold wordTy at hpt
-          split at hpt
-          · rename_i heq
-            rw [heq, ← Val.retype_ptr_eq_i64 x none, Val.asPtrWord_retype_ptr]
-          · rename_i e heq
-            rw [heq, Val.asPtrWord_retype_ptr]
-          · cases hpt
         have ht : termOp u.op = true := by rw [hd]; rfl
-        rw [den_succ_term hu ht, hd, GoFV.Proof.Rules.opVal_addr, hr] at h
+        rw [den_succ_term hu ht, hd, GoFV.Proof.Rules.opVal_addr] at h
+        replace h := asPtrWord_of_retype h
         unfold GoFV.Proof.Rules.addrVal at h
         split at hB
         · rename_i name _ _ _ hax
@@ -627,9 +627,11 @@ theorem baseSame_den (hM : MemAtoms f.value? tabs ρ) :
       | zero => simp [den, Val.asPtrWord] at hb
       | succ k' =>
       rw [den_succ_term hu ht, hargs hsu, List.map_cons, List.map_cons, List.map_nil,
-        GoFV.Proof.Rules.opVal_pure hfo, he, Val.asPtrWord_retype_ptr] at ha
+        GoFV.Proof.Rules.opVal_pure hfo, he] at ha
+      replace ha := asPtrWord_of_retype ha
       rw [den_succ_term hw (hop' ▸ ht), hargs hsw, List.map_cons, List.map_cons, List.map_nil,
-        GoFV.Proof.Rules.opVal_pure (hop' ▸ hfo), hwe, Val.asPtrWord_retype_ptr] at hb
+        GoFV.Proof.Rules.opVal_pure (hop' ▸ hfo), hwe] at hb
+      replace hb := asPtrWord_of_retype hb
       obtain ⟨pa, oa, hpa, hoa, hia⟩ := evalPure_ptrArith hop ha
       obtain ⟨pb, ob, hpb, hob, -⟩ := evalPure_ptrArith (hop' ▸ hop) hb
       have hab : pa = pb := by

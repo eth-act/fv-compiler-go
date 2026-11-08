@@ -620,6 +620,18 @@ Besides `VPre`, the theorems rest on the semantics itself (`GoFV.SSA.Sem`, its d
 `Classical.choice`, `Quot.sound` and the `_native` axioms of `scripts/axioms-allowlist.txt`
 (`scripts/axioms-audit.sh`); no `sorry`.
 
+Semantic choices that make values `poison` where Go deems the program invalid are listed with
+their justification in the semantics documents. The latest (#385): a pointer outside its
+block's address window is no value (`Ptr.word` is `poison`, `Val.hasTy` at the word shapes holds
+only `Ptr.held` pointers), and `Ptr.convertible` is exactly the `Ptr.ofAddr` round trip. The new
+`poison` cases are exactly pointers outside their allocation, which rule (3) of
+[`unsafe.Pointer`](https://pkg.go.dev/unsafe#Pointer) forbids ("the result must continue to
+point into the original allocated object"); in-bounds and one-past-the-end pointers stay
+defined, since every allocation is smaller than its window (heap allocations at most `2^24 <
+2^40` bytes, frame variables below Go's 10 MB stack-variable limit `< 2^24`;
+`docs/plans/semantics2.md` §3, "Pointers outside their window"). It makes `ARM64.rules:1183`
+and `1184` provable.
+
 ## Commands
 
 - Fully verified: `scripts/memcap.sh lake exe gofv-ssa-opt --check --verified --jobs 6

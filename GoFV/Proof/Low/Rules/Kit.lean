@@ -344,9 +344,7 @@ theorem refines_addP_zero (T : Ty) (v : Val) (h : v.hasTy T = true) :
   | poison =>
     rw [show Arm64.addP T .poison 0 = .poison from rfl, retypeL_poison]; exact .poison _
   | ptr q =>
-    have hc : q.convertible = false := by
-      cases T <;> (try (rename_i w; cases w)) <;> simp_all [Val.hasTy]
-    have hw : q.word = .ptr q := by simp [Ptr.word, hc]
+    have hw : q.word = .ptr q := Ptr.word_of_held (Ptr.held_of_hasTy h)
     have hq : ({ blk := q.blk, off := q.off } : Ptr) = q := rfl
     simp only [Arm64.addP, PtrOps.ptrRes, Ptr.add, hz, hq]
     split

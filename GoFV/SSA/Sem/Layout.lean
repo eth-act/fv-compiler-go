@@ -91,7 +91,8 @@ def _root_.GoFV.SSA.Tables.ty (tabs : Tables) (t : TypeRef) : Ty := tyOf tabs 32
 
 /-- `Val.retype` at a pointer shape (`Val.retype_ptr`): the string and slice pointers. A 64-bit
 integer keeps its word (§3.3: the pointer at that concrete address, `Val.asPtrWord`); a pointer
-becomes its word (`Ptr.word`: its address if it converts back to itself). -/
+becomes its word (`Ptr.word`: its address if it converts back to itself, `poison` outside its
+window). -/
 def Val.retypePtr : Val → Val
   | .int .w64 a => .int .w64 a
   | .ptr p => p.word
@@ -111,7 +112,8 @@ wider type would expose undefined high bits and is `poison`. The two word shapes
 and pointers) retype alike (§3.2, #290): a 64-bit integer keeps its word, and a pointer becomes
 its word (`Ptr.word`): its concrete address if it converts back to itself
 (`Ptr.convertible`), else the pointer (a global, which has no concrete address, a frame
-temporary, whose address no integer converts back to). So every register holds a pointer that
+temporary, whose address no integer converts back to), or `poison` for a pointer outside its
+block's window (past the end of its allocation, `Ptr.held`). So every register holds a pointer that
 has an integer form in that form, pointer consumers read it as the pointer at that address
 (`Val.asPtrWord`), and a word copied between a `uintptr` and a pointer type (an itab word after
 `decompose builtin`, `Convert`, a phi elimination's `Copy`) is unchanged. Composites are retyped
@@ -150,8 +152,8 @@ end
 
 mutual
 /-- `v` has shape `t` (`poison` has every shape; the two word shapes have the same values: a
-64-bit integer and a pointer that does not convert to an integer, `Val.retype`; a string or
-slice has valid lengths, `Val.strOK`/`Val.sliceOK`). -/
+64-bit integer and a pointer held as a pointer, `Ptr.held`, `Val.retype`; a string or slice has
+valid lengths, `Val.strOK`/`Val.sliceOK`). -/
 def Val.hasTy : Val → Ty → Bool
   | .poison, _ => true
   | .int w _, .int w' => w == w'
@@ -160,10 +162,10 @@ def Val.hasTy : Val → Ty → Bool
   | .tuple vs, .tuple ts => Val.hasTyPre vs ts
   -- a word: a 64-bit integer (a pointer that converts to an integer is held as its address,
   -- `Ptr.word`; a `uintptr` copied to a pointer type; concrete bytes loaded at a pointer type,
-  -- §3.3) or a pointer without an integer form (a global, a frame temporary)
-  | .ptr p, .ptr _ => !p.convertible
+  -- §3.3) or a pointer without an integer form inside its window (a global, a frame temporary)
+  | .ptr p, .ptr _ => p.held
   | .int .w64 _, .ptr _ => true
-  | .ptr p, .int .w64 => !p.convertible
+  | .ptr p, .int .w64 => p.held
   | .agg vs, .agg fs _ => Val.hasTyList vs (fs.map (·.2))
   | .agg vs, .str => Val.strOK vs && vs.head?.all Val.isPtrWord
   | .agg vs, .slice _ => Val.sliceOK vs && vs.head?.all Val.isPtrWord

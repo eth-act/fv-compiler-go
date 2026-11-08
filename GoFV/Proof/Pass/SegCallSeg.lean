@@ -200,8 +200,9 @@ private theorem ptrW_of_typed {ctx : Ctx} {S : Frame} (hT : Proof.Typed ctx S) {
   | poison => rfl
   | ptr P =>
     have hw : P.word = .ptr P := h
-    rcases Ptr.word_cases P with ⟨hc, -⟩ | ⟨-, a, -, h'⟩
+    rcases Ptr.word_cases P with ⟨hc, -⟩ | ⟨-, a, -, h'⟩ | ⟨-, h'⟩
     · simp [PtrW, Val.isPtrWord, hc]
+    · rw [h'] at hw; cases hw
     · rw [h'] at hw; cases hw
   | int w x => cases w <;> first | rfl | cases h
   | _ => cases h

@@ -440,7 +440,7 @@ theorem ecw_addr {env : Env} {tabs : Tables} {f g : Func} {T : Frame} {E L : ID 
     rw [rv_of hya, hv]
     split at hsh
     · next e he =>
-      rw [he, Val.asPtrWord_retype_ptr, PtrOps.offPtr_asPtrWord, hp, Option.bind_some]
+      rw [he, PtrOps.offPtr_retype_ptr, PtrOps.offPtr_asPtrWord, hp, Option.bind_some]
       simp only [hai, BitVec.ofInt_natCast]
     · cases hsh
 

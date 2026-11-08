@@ -177,7 +177,8 @@ theorem r_generic_1680_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generi
     exact Refines.poison _
   · simp only [PtrOps.addPtr, asOffset, PtrOps.ptrRes] at hty ⊢
     by_cases hw : (p.add (BitVec.signExtend 64 x)).inWindow = true
-    · simp only [hw, ↓reduceIte, Ptr.word_retype_ptr, PtrOps.eqPtr, Ptr.word_asPtrWord] at hty ⊢
+    · simp only [hw, ↓reduceIte, Ptr.word_retype_ptr, PtrOps.eqPtr, Ptr.word_asPtrWord hw]
+        at hty ⊢
       simp only [Val.asPtrWord, ptr_add_eq_self, PtrOps.isNonNil] at hty ⊢
       have hx : ((BitVec.signExtend 64 x == 0) != true) = (x != 0) := by
         have h64 : BitVec.signExtend 64 x = x := BitVec.signExtend_eq x

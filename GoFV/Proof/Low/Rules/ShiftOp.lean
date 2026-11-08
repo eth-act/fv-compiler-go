@@ -1,7 +1,7 @@
 import GoFV.Proof.Low.Rules.Peep
 
 /-!
-# Lowering rule lemmas: folded operand producers (`ARM64.rules:1012-1018`, `1179-1182`, `1433-1449`, `1635`)
+# Lowering rule lemmas: folded operand producers (`ARM64.rules:1012-1018`, `1179-1184`, `1433-1449`, `1635`)
 
 Peepholes of lowered code (#385) that fold an operand's producer into its consumer:
 
@@ -25,13 +25,17 @@ Peepholes of lowered code (#385) that fold an operand's producer into its consum
   forms (1012-1015): `MADD`/`MSUB` move a pointer `a` by `±x·y` as `ADD`/`SUB` do (`Arm64.madd`,
   `addP`); a pointer `a` makes the result word-shaped (provenance clause) and the product is read
   whole, any other `a` adds as a register, low bits as above (`refines_madd`).
+* `(NEG (SUB x y)) => (SUB y x)` (1183) and `(NEG (NEG x)) => x` (1184): registers negate and
+  subtract as words, low bits as above (`refines_op1_op2`). A pointer at a word shape is held as
+  a pointer (`Ptr.held`: it does not convert, and it lies inside its window, since Phase 1 makes
+  a pointer outside it `poison`, #385), has no register (`Ptr.convertible` is the `Ptr.ofAddr`
+  round trip), and neither has any pointer `SUB` moves it to inside its window
+  (`Ptr.held_of_blk`), so `NEG` of it is `poison` (`refines_neg_sub`, `refines_neg_neg`).
 
 False under the semantics (docs/proofs/rules.md, Findings; counterexamples evaluated with
-`#eval`), so not proven: 1183 (`(NEG (SUB x y)) =>
-(SUB y x)`: `x = 0`, `y` the frame temporary `temp 0 1 + 0`, the source the integer `2^62 + 2^24`,
-the target the pointer); 1184 (`(NEG (NEG x)) => x`, the same `x`); 1197 (`x = heap (2^22) + 0`,
-`y = z = 2^41`: the target's `ADD x z` leaves the window); 1198 (`x = heap 0 + 2^40`, `y = 1`,
-`z = 2^40`: `x - 1` becomes an integer word, the target's `x - (2^40 + 1)` leaves the window).
+`#eval`), so not proven: 1197 (`x = heap (2^22) + 0`, `y = z = 2^41`: the target's `ADD x z`
+leaves the window); 1198 (`x = y = temp 0 1 + 0`, `z = 2^24`: the target's `x - (y + z)` moves
+`x` through an intermediate outside its window).
 Not provable: 1701/1703 (`UBFX [armBFAuxInt(…)]`): `armBFAuxInt` is not a modelled helper
 (`Helper.ofName`), so the result's auxint is the oracle's.
 -/
@@ -499,6 +503,184 @@ theorem r_ARM64_1438_sound : ArmRule.Checked r_ARM64_1438 := by
   left; arm_unfold; arm_norm
   exact refines_subSh .ra _ (armReadW_addSub .ARM64SUB _ 1 (.inr rfl) ▸ harg.2.1.1) harg.1.2
     _ _ hty.1
+
+/-! ## `NEG` of `SUB` and of `NEG` (1183, 1184) -/
+
+/-- A pointer that does not convert has no register (`Ptr.convertible_ofAddr`: every pointer
+`Ptr.ofAddr` gives converts). -/
+private theorem ptrReg_none {p : Ptr} (h : p.convertible = false) : Arm64.ptrReg p = none := by
+  unfold Arm64.ptrReg
+  split
+  · split
+    · rename_i he; rw [← he, Ptr.convertible_ofAddr] at h; cases h
+    · rfl
+  · rfl
+
+/-- A pointer held as a pointer, read at any shape, has no register. -/
+private theorem reg_retypeL_held (T : Ty) {q : Ptr} (hq : q.held = true) :
+    Arm64.reg ((Val.ptr q).retypeL T) = none := by
+  have hr : Arm64.reg (.ptr q) = none := ptrReg_none (Ptr.not_convertible_of_held hq)
+  cases T with
+  | int w =>
+    cases w <;> simp only [Val.retypeL, Val.widen, Val.retype, Ptr.word_of_held hq, hr] <;> rfl
+  | ptr _ => simp only [Val.retypeL, Val.widen, Val.retype, Ptr.word_of_held hq, hr]
+  | _ => rfl
+
+private theorem neg_low {n : Nat} (hn : n ≤ 64) (b b' : BitVec 64)
+    (h : b.setWidth n = b'.setWidth n) : (-b).setWidth n = (-b').setWidth n := by
+  rw [BitVec.setWidth_neg_of_le hn, BitVec.setWidth_neg_of_le hn, h]
+
+/-- `NEG` of a register result (computed at shape `T1`, read back there): the negated register,
+as far as the low `lowW T` bits go. -/
+private theorem refines_neg_res {T T1 : Ty} (hw : lowW T ≤ argWidth T1) (r : BitVec 64) :
+    Refines ((Arm64.op1 T (- ·) [(Arm64.res T1 r).retypeL T1]).retypeL T)
+      ((Arm64.res T (-r)).retypeL T) := by
+  obtain ⟨h1, h2⟩ := lowW_pos T
+  rcases retypeL_res_reg h1 h2 hw r with e | ⟨z, hz, hzk⟩
+  · rw [e]
+    simp only [Arm64.op1, show Arm64.reg .poison = none from rfl, retypeL_poison]
+    exact .poison _
+  · simp only [Arm64.op1, hz]
+    rw [retypeL_res_low T (neg_low h2 z r hzk)]
+    exact Refines.refl _
+
+private theorem neg_sub' (a b : BitVec 64) : -(a - b) = b - a := by
+  rw [BitVec.neg_sub, BitVec.add_comm, ← BitVec.sub_eq_add_neg]
+
+/-- `NEG (SUB x y)` as `SUB y x` (`ARM64.rules:1183`). Two operands with registers subtract as
+registers, and the negated difference is the swapped one, as far as the low `lowW T` bits go
+(`refines_op1_op2`). A pointer operand has no register: by its shape it is held as a pointer
+(`Ptr.held`: it does not convert and lies inside its window, F1+F2 of #385), and so is every
+pointer `SUB` moves it to inside its window (`Ptr.held_of_blk`), so `NEG` of it is `poison`.
+Two pointers subtract by address or, in one block, by offset, symmetrically. -/
+theorem refines_neg_sub {T T0 T1 T2 : Ty} (hw : lowW T ≤ argWidth T1) (x y : Val)
+    (hx : x.hasTy T0 = true) (hy : y.hasTy T2 = true) :
+    Refines ((Arm64.op1 T (- ·) [(Arm64.sub T1 [x, y]).retypeL T1]).retypeL T)
+      ((Arm64.sub T [y, x]).retypeL T) := by
+  have hpois : ∀ v, Refines ((Arm64.op1 T (- ·) [Val.retypeL T1 .poison]).retypeL T) v := fun v => by
+    simp only [retypeL_poison, Arm64.op1, show Arm64.reg .poison = none from rfl]
+    exact .poison _
+  by_cases hxp : ∃ p, x = .ptr p
+  · obtain ⟨p, rfl⟩ := hxp
+    have hp := Ptr.held_of_hasTy hx
+    by_cases hyp : ∃ q, y = .ptr q
+    · obtain ⟨q, rfl⟩ := hyp
+      cases hpa : p.addr? <;> cases hqa : q.addr? <;> simp only [Arm64.sub, hpa, hqa]
+      · by_cases hb : p.blk = q.blk
+        · simp only [hb, beq_self_eq_true, ite_true]
+          have h := refines_neg_res (T := T) hw (p.off - q.off)
+          rwa [neg_sub'] at h
+        · simp only [hb, Ne.symm hb, beq_iff_eq, ite_false]
+          exact hpois _
+      · by_cases hb : p.blk = q.blk
+        · simp only [hb, beq_self_eq_true, ite_true]
+          have h := refines_neg_res (T := T) hw (p.off - q.off)
+          rwa [neg_sub'] at h
+        · simp only [hb, Ne.symm hb, beq_iff_eq, ite_false]
+          exact hpois _
+      · by_cases hb : p.blk = q.blk
+        · simp only [hb, beq_self_eq_true, ite_true]
+          have h := refines_neg_res (T := T) hw (p.off - q.off)
+          rwa [neg_sub'] at h
+        · simp only [hb, Ne.symm hb, beq_iff_eq, ite_false]
+          exact hpois _
+      · rename_i a b
+        have h := refines_neg_res (T := T) hw (a - b)
+        rwa [neg_sub'] at h
+    · -- `SUB p i` moves `p` inside its block: a held pointer or `poison`
+      have hs : Arm64.sub T1 [.ptr p, y] = match Arm64.reg y with
+          | some k => PtrOps.ptrRes (p.add (-k))
+          | none => .poison := by
+        cases y <;> first | rfl | exact absurd ⟨_, rfl⟩ hyp
+      rw [hs]
+      cases Arm64.reg y with
+      | none => exact hpois _
+      | some k =>
+        simp only [PtrOps.ptrRes]
+        split
+        · rename_i hw'
+          have hq : (p.add (-k)).held = true :=
+            Ptr.held_of_blk (p := p) (q := p.add (-k)) rfl hp hw'
+          rw [Ptr.word_of_held hq]
+          simp only [Arm64.op1, reg_retypeL_held T1 hq, retypeL_poison]
+          exact .poison _
+        · exact hpois _
+  · have hx' : ∀ p, x ≠ .ptr p := fun p h => hxp ⟨p, h⟩
+    rw [sub_nonptr T1 hx']
+    by_cases hyp : ∃ q, y = .ptr q
+    · obtain ⟨q, rfl⟩ := hyp
+      have hr : Arm64.reg (.ptr q) = none :=
+        ptrReg_none (Ptr.not_convertible_of_held (Ptr.held_of_hasTy hy))
+      rw [show Arm64.op2 T1 (· - ·) [x, .ptr q] = .poison by
+        cases hxr : Arm64.reg x <;> simp only [Arm64.op2, hxr, hr]]
+      exact hpois _
+    · have hy' : ∀ q, y ≠ .ptr q := fun q h => hyp ⟨q, h⟩
+      rw [sub_nonptr T hy']
+      have he : Arm64.op2 T (· - ·) [y, x] = Arm64.op2 T (fun a b => -(a - b)) [x, y] := by
+        cases hxr : Arm64.reg x <;> cases hyr : Arm64.reg y <;>
+          simp only [Arm64.op2, hxr, hyr, neg_sub']
+      rw [he]
+      exact refines_op1_op2 (- ·) (· - ·) (fun b b' h => neg_low (lowW_pos T).2 b b' h) hw x y
+
+/-- A register read back at the shape of the value it holds is the value. -/
+private theorem retypeL_res_self {T : Ty} {x : Val} (hx : x.hasTy T = true) {v : BitVec 64}
+    (hr : Arm64.reg x = some v) : (Arm64.res T v).retypeL T = x := by
+  cases x with
+  | int w a =>
+    cases T with
+    | int w' =>
+      simp only [Val.hasTy, beq_iff_eq] at hx
+      subst hx
+      simp only [Arm64.reg, Option.some.injEq] at hr
+      subst hr
+      cases w <;> simp [Arm64.res, Val.retypeL, Val.widen, Val.retype, Width.bits]
+    | ptr e =>
+      cases w <;> simp [Val.hasTy] at hx
+      simp only [Arm64.reg, Option.some.injEq] at hr
+      subst hr
+      simp [Arm64.res, Val.retypeL, Val.widen, Val.retype, Width.bits]
+    | _ => simp [Val.hasTy] at hx
+  | bool b =>
+    cases T <;> simp [Val.hasTy] at hx
+    simp only [Arm64.reg, Option.some.injEq] at hr
+    subst hr
+    cases b <;> rfl
+  | ptr p =>
+    have : Arm64.reg (.ptr p) = none :=
+      ptrReg_none (Ptr.not_convertible_of_held (Ptr.held_of_hasTy hx))
+    rw [this] at hr; cases hr
+  | _ => cases hr
+
+/-- `NEG (NEG x)` as `x` (`ARM64.rules:1184`) at a shape of `x` (`hT`): a register negated twice
+is itself, as far as the low `lowW T` bits go, and read back at `x`'s shape it is `x`; a pointer
+`x` is held as a pointer (its shape), has no register, and `NEG` of it is `poison`. -/
+theorem refines_neg_neg {T T1 : Ty} (hw : lowW T ≤ argWidth T1) (x : Val)
+    (hx : x.hasTy T = true) :
+    Refines ((Arm64.op1 T (- ·) [(Arm64.op1 T1 (- ·) [x]).retypeL T1]).retypeL T) x := by
+  obtain ⟨h1, h2⟩ := lowW_pos T
+  cases hr : Arm64.reg x with
+  | none =>
+    simp only [Arm64.op1, hr, retypeL_poison, show Arm64.reg .poison = none from rfl]
+    exact .poison _
+  | some v =>
+    simp only [Arm64.op1, hr]
+    rcases retypeL_res_reg h1 h2 hw (-v) with e | ⟨z, hz, hzk⟩
+    · rw [e]
+      simp only [show Arm64.reg .poison = none from rfl, retypeL_poison]
+      exact .poison _
+    · simp only [hz]
+      rw [retypeL_res_low T (show (-z).setWidth (lowW T) = v.setWidth (lowW T) by
+        rw [neg_low h2 z (-v) hzk, BitVec.neg_neg]), retypeL_res_self hx hr]
+      exact Refines.refl _
+
+/-- `NEG` reads its argument at the low `lowW` bits of its shape. -/
+theorem armReadW_neg (T : Ty) : armReadW .ARM64NEG T 0 = lowW T := by
+  cases T <;> rfl
+
+/-- `ARM64.rules:1183`: `(NEG (SUB x y)) => (SUB y x)` -/
+theorem r_ARM64_1183_sound : ArmRule.Checked r_ARM64_1183 := by
+  left; arm_unfold; arm_norm
+  exact refines_neg_sub (armReadW_neg _ ▸ harg.1) _ _ hty.1 hty.2
 
 /-! ## `ADD` of a sign-masked shifted operand (1635) -/
 

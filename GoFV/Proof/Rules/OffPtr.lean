@@ -69,8 +69,8 @@ theorem r_generic_965_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_
     have : p.add (BitVec.ofInt 64 0) = p := by simp [Ptr.add]
     rw [this]
     rw [hl] at hlt
-    have hcv : p.convertible = false := by simpa [Val.hasTy] using hlt
+    have hcv : p.held = true := by simpa [Val.hasTy] using hlt
     have h := ptrRes_refines p
-    rwa [Ptr.word_of_not_convertible hcv] at h
+    rwa [Ptr.word_of_held hcv] at h
 
 end GoFV.Proof.Rules

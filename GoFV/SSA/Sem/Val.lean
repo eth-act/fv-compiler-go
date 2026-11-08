@@ -64,17 +64,44 @@ structure Ptr where
 /-- The nil pointer. -/
 def Ptr.null : Ptr := ⟨.nil, 0⟩
 
-/-- `p` converts to an integer and back to itself (`Ptr.ofAddr_addr`): inside its window, its
-block's number small enough for the address encoding, and not a frame temporary (whose address
-the program never takes) or a global (no concrete address). -/
+/-- The address window of a block: offsets below it keep a pointer's concrete address inside
+the block's encoding (`nil` and heap blocks `2^40`, frame blocks `2^24`; globals have no
+addresses). Every allocation is smaller than its window (heap allocations at most
+`Runtime.maxModelAlloc = 2^24`, frame variables below Go's 10 MB stack-variable limit), so
+in-bounds and one-past-the-end pointers stay inside (§3.3). -/
+def Blk.window? : Blk → Option Nat
+  | .nil | .heap _ => some (2 ^ 40)
+  | .local _ _ | .temp _ _ | .outargs _ => some (2 ^ 24)
+  | .global _ | .wbuf => none
+
+/-- `p`'s offset is inside its block's address window. -/
+def Ptr.inWindow (p : Ptr) : Bool :=
+  match p.blk.window? with
+  | some w => decide (p.off.toNat < w)
+  | none => true
+
+/-- `p` converts to an integer and back to itself: `Ptr.ofAddr` of its concrete address is `p`
+(`Ptr.ofAddr_addr`; conversely every pointer `Ptr.ofAddr` gives converts,
+`Ptr.convertible_ofAddr`, so this is exactly the round trip, `Ptr.convertible_iff`). That is:
+inside its window, its block's number small enough for the address encoding (heap objects
+below `2^22 - 1`; frames of the activations below `3·2^20`, whose addresses end below `2^64`),
+and not a frame temporary (whose address the program never takes) or a global (no concrete
+address). -/
 def Ptr.convertible (p : Ptr) : Bool :=
   match p.blk with
   | .nil => decide (p.off.toNat < 2 ^ 40)
   | .heap n => decide (n + 1 < 2 ^ 22) && decide (p.off.toNat < 2 ^ 40)
-  | .local a k => decide (0 < k) && decide (k < 2 ^ 18) && decide (a < 2 ^ 20) &&
+  | .local a k => decide (0 < k) && decide (k < 2 ^ 18) && decide (a < 3 * 2 ^ 20) &&
       decide (p.off.toNat < 2 ^ 24)
-  | .outargs a => decide (a < 2 ^ 20) && decide (p.off.toNat < 2 ^ 24)
+  | .outargs a => decide (a < 3 * 2 ^ 20) && decide (p.off.toNat < 2 ^ 24)
   | .temp _ _ | .global _ | .wbuf => false
+
+/-- `p` is held as a pointer at the word shapes (`Ptr.word`, `Val.hasTy`): it has no integer
+form (`Ptr.convertible`: a global, a frame temporary, a block outside the address encoding) and
+lies inside its block's window. A pointer outside its window is past the end of its allocation
+(every allocation is smaller than its window, `Blk.window?`), which Go's `unsafe.Pointer` rules
+forbid; it is no value (`Ptr.word` is `poison`). -/
+def Ptr.held (p : Ptr) : Bool := !p.convertible && p.inWindow
 
 /-- A byte of memory: a concrete byte, byte `i` of a stored pointer, or poison (§3.4). -/
 inductive Byte where
@@ -290,10 +317,11 @@ inductive Ty where
 namespace Val
 
 /-- A value of the pointer shape (`Val.hasTy _ (.ptr _)`): a 64-bit integer (the pointer at
-that concrete address, §3.3), a pointer that does not convert to an integer (a convertible one
-is held as its address, `Ptr.word`) or `poison`. -/
+that concrete address, §3.3), a pointer held as a pointer (`Ptr.held`: one that does not
+convert to an integer, inside its window; a convertible one is held as its address,
+`Ptr.word`) or `poison`. -/
 def isPtrWord : Val → Bool
-  | .ptr p => !p.convertible
+  | .ptr p => p.held
   | .int .w64 _ | .poison => true
   | _ => false
 

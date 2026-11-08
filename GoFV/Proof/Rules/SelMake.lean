@@ -118,9 +118,9 @@ theorem refines_retype_ptr {L s : Val} {T : Ty} {e : Option Nat} (hs : s.isPtrWo
   cases s with
   | poison => rw [eq_poison_of_refines h]; exact .poison _
   | ptr P =>
-    have hc : P.convertible = false := by simpa [Val.isPtrWord] using hs
+    have hc : P.held = true := by simpa [Val.isPtrWord] using hs
     have h' : Refines L (.ptr P) := by
-      simpa [Val.retype, Ptr.word_of_not_convertible hc] using h
+      simpa [Val.retype, Ptr.word_of_held hc] using h
     cases h' with
     | poison => exact .poison _
     | ptr => exact refines_retype_of_hasTy hty

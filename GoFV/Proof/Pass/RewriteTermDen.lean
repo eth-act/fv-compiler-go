@@ -203,6 +203,7 @@ theorem retype_word {t : Ty} (ht : wordTy t = true) {z : Val}
   | ptr e => exact Val.retype_of_hasTy (by rw [Val.hasTy_ptr_eq_i64]; exact hz)
   | _ => simp [wordTy] at ht
 
+
 /-- A value of a word shape (`wordVal`) denotes a 64-bit integer word at every fuel. -/
 theorem wordVal_den {tabs : Tables} {M : Defs} {ρ : ID → Val} (hT : Term.Typed M.get? tabs ρ)
     {a : ID} (h : wordVal tabs M a = true) (m : Nat) :

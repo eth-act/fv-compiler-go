@@ -113,14 +113,22 @@ theorem convert_asPtrWord (t : Ty) (p : Ptr) (m : Val) {x : BitVec 64}
 
 /-- **`Ptr.word` reads back as the pointer** wherever a pointer is read (`Val.asPtrWord`): the
 concrete address of a convertible pointer converts back to it (`Ptr.ofAddr_addr`), any other
-pointer stays a pointer. -/
-theorem Ptr.word_asPtrWord (p : Ptr) : p.word.asPtrWord = some p := by
+pointer inside its window stays a pointer. -/
+theorem Ptr.word_asPtrWord {p : Ptr} (hw : p.inWindow = true) : p.word.asPtrWord = some p := by
   unfold Ptr.word
   cases hc : p.convertible <;> cases ha : p.addr?
-  · rfl
-  · rfl
-  · rfl
+  · simp [hw, Val.asPtrWord]
+  · simp [hw, Val.asPtrWord]
+  · simp [hw, Val.asPtrWord]
   · simp only [Val.asPtrWord, Ptr.ofAddr_addr hc ha]
+
+/-- A pointer's word reads, if at all, as the pointer. -/
+theorem Ptr.word_asPtrWord_of {p q : Ptr} (h : p.word.asPtrWord = some q) : q = p := by
+  rcases Ptr.word_cases p with ⟨hc, e⟩ | ⟨hc, a, ha, e⟩ | ⟨-, e⟩ <;> rw [e] at h
+  · cases h; rfl
+  · simp only [Val.asPtrWord, Option.some.injEq] at h
+    rw [← h, Ptr.ofAddr_addr hc ha]
+  · cases h
 
 /-- **A slot of an outgoing-arguments area is an integer word** (`SelectNAddr`'s result,
 `Tuple.selectNAddr`): the area of every activation numbered below `2^20` has a concrete address
@@ -131,7 +139,7 @@ theorem Ptr.word_outargs {act : Nat} {off : BitVec 64} (ha : act < 2 ^ 20)
     ∃ x, (⟨.outargs act, off⟩ : Ptr).word = .int .w64 x ∧
       Ptr.ofAddr x = ⟨.outargs act, off⟩ := by
   have hc : (⟨.outargs act, off⟩ : Ptr).convertible = true := by
-    simp only [Ptr.convertible, Bool.and_eq_true, decide_eq_true_eq]; exact ⟨ha, ho⟩
+    simp only [Ptr.convertible, Bool.and_eq_true, decide_eq_true_eq]; exact ⟨by omega, ho⟩
   refine ⟨BitVec.ofNat 64 (2 ^ 62 + act * 2 ^ 42) + off, ?_, Ptr.ofAddr_addr hc rfl⟩
   unfold Ptr.word
   rw [hc]
@@ -196,6 +204,22 @@ theorem Ptr.ofAddr_inWindow (x : BitVec 64) : (Ptr.ofAddr x).inWindow = true := 
   · simp only [Ptr.inWindow, Blk.window?, decide_eq_true_eq, BitVec.toNat_ofNat]; omega
   split <;> (simp only [Ptr.inWindow, Blk.window?, decide_eq_true_eq, BitVec.toNat_ofNat]; omega)
 
+/-- **The pointer at an address converts** (back to that address, `Ptr.addr?_ofAddr`): its block
+is inside the address encoding (a heap object below `2^22 - 1`, a frame of an activation below
+`3·2^20`, which is every address from `2^62` up to `2^64`). -/
+theorem Ptr.convertible_ofAddr (x : BitVec 64) : (Ptr.ofAddr x).convertible = true := by
+  have hx := x.isLt
+  unfold Ptr.ofAddr; dsimp only
+  split
+  · simp only [Ptr.convertible, decide_eq_true_eq]; assumption
+  split
+  · simp only [Ptr.convertible, Bool.and_eq_true, decide_eq_true_eq, BitVec.toNat_ofNat]; omega
+  split
+  · simp only [Ptr.convertible, Bool.and_eq_true, decide_eq_true_eq, BitVec.toNat_ofNat]; omega
+  · rename_i hk
+    simp only [beq_iff_eq] at hk
+    simp only [Ptr.convertible, Bool.and_eq_true, decide_eq_true_eq, BitVec.toNat_ofNat]; omega
+
 /-- Adding nothing to an integer word keeps it. -/
 theorem PtrOps.wordRes_zero (x : BitVec 64) : PtrOps.wordRes x 0 = .int .w64 x := by
   have e : (Ptr.ofAddr x).add 0 = Ptr.ofAddr x := by simp [Ptr.add]
@@ -241,31 +265,42 @@ theorem PtrOps.wordRes_addr {p : Ptr} {a : BitVec 64} (hc : p.convertible = true
   · rename_i hw; rw [Ptr.word_add hc ha hw]
   · rfl
 
-/-- **Pointer arithmetic does not tell a pointer from its word** (`Ptr.word`, #290). -/
-theorem PtrOps.offPtr_word (ai : Int64) (p : Ptr) :
+/-- **Pointer arithmetic does not tell a pointer inside its window from its word** (`Ptr.word`,
+#290). -/
+theorem PtrOps.offPtr_word (ai : Int64) {p : Ptr} (hw : p.inWindow = true) :
     PtrOps.offPtr ai [p.word] = PtrOps.offPtr ai [.ptr p] := by
-  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨hc, a, ha, h⟩ <;> rw [h]
-  exact PtrOps.wordRes_addr hc ha _
+  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨hc, a, ha, h⟩ | ⟨h', -⟩
+  · rw [h]
+  · rw [h]; exact PtrOps.wordRes_addr hc ha _
+  · rw [hw] at h'; cases h'
 
-theorem PtrOps.addPtr_word (p : Ptr) (i : Val) :
+theorem PtrOps.addPtr_word {p : Ptr} (hw : p.inWindow = true) (i : Val) :
     PtrOps.addPtr [p.word, i] = PtrOps.addPtr [.ptr p, i] := by
-  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨hc, a, ha, h⟩ <;> rw [h]
-  simp only [PtrOps.addPtr]
-  split
-  · exact PtrOps.wordRes_addr hc ha _
-  · rfl
+  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨hc, a, ha, h⟩ | ⟨h', -⟩
+  · rw [h]
+  · rw [h]
+    simp only [PtrOps.addPtr]
+    split
+    · exact PtrOps.wordRes_addr hc ha _
+    · rfl
+  · rw [hw] at h'; cases h'
 
-theorem PtrOps.ptrIndex_word (el : Option Nat) (p : Ptr) (i : Val) :
+theorem PtrOps.ptrIndex_word (el : Option Nat) {p : Ptr} (hw : p.inWindow = true) (i : Val) :
     PtrOps.ptrIndex el [p.word, i] = PtrOps.ptrIndex el [.ptr p, i] := by
-  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨hc, a, ha, h⟩ <;> rw [h]
-  simp only [PtrOps.ptrIndex]
-  split
-  · exact PtrOps.wordRes_addr hc ha _
-  · rfl
+  rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨hc, a, ha, h⟩ | ⟨h', -⟩
+  · rw [h]
+  · rw [h]
+    simp only [PtrOps.ptrIndex]
+    split
+    · exact PtrOps.wordRes_addr hc ha _
+    · rfl
+  · rw [hw] at h'; cases h'
 
-/-- A `Load` reads its address through `Val.asPtrWord`: a pointer and its word load alike. -/
-theorem loadOp_word (t : Ty) (p : Ptr) (m : Val) : loadOp t [p.word, m] = loadOp t [.ptr p, m] := by
-  cases m <;> simp only [loadOp] <;> rw [Ptr.word_asPtrWord] <;> rfl
+/-- A `Load` reads its address through `Val.asPtrWord`: a pointer inside its window and its word
+load alike. -/
+theorem loadOp_word (t : Ty) {p : Ptr} (hw : p.inWindow = true) (m : Val) :
+    loadOp t [p.word, m] = loadOp t [.ptr p, m] := by
+  cases m <;> simp only [loadOp] <;> rw [Ptr.word_asPtrWord hw] <;> rfl
 
 theorem Ptr.eq_iff (p q : Ptr) : p.eq q = true ↔ p = q := by
   obtain ⟨b, o⟩ := p; obtain ⟨b', o'⟩ := q
@@ -298,6 +333,37 @@ theorem Ptr.addr?_ofAddr (x : BitVec 64) : (Ptr.ofAddr x).addr? = some x := by
         rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
         omega
 
+/-- **`Ptr.convertible` is exactly the round trip** (F2, #385): a pointer converts iff it has a
+concrete address and is the pointer `Ptr.ofAddr` gives back at it. So a pointer has a lowered
+register (`Arm64.ptrReg`) iff it converts. -/
+theorem Ptr.convertible_iff (p : Ptr) :
+    p.convertible = true ↔ ∃ x, p.addr? = some x ∧ Ptr.ofAddr x = p := by
+  constructor
+  · intro hc
+    have hs := Ptr.addr?_isSome_of_convertible hc
+    cases ha : p.addr? with
+    | none => rw [ha] at hs; cases hs
+    | some x => exact ⟨x, rfl, Ptr.ofAddr_addr hc ha⟩
+  · rintro ⟨x, -, rfl⟩
+    exact Ptr.convertible_ofAddr x
+
+/-- Inside its window, whether a pointer converts depends only on its block (`Ptr.convertible` is
+the block's encoding condition and the window). -/
+theorem Ptr.convertible_eq_of_blk {p q : Ptr} (hb : q.blk = p.blk) (hp : p.inWindow = true)
+    (hq : q.inWindow = true) : q.convertible = p.convertible := by
+  obtain ⟨b, o⟩ := p
+  obtain ⟨b', o'⟩ := q
+  simp only at hb
+  subst hb
+  cases b' <;> simp_all [Ptr.convertible, Ptr.inWindow, Blk.window?]
+
+/-- A pointer of a block whose pointers are held as pointers, inside its window, is held too
+(F1+F2, #385: not converting is a property of the block). -/
+theorem Ptr.held_of_blk {p q : Ptr} (hb : q.blk = p.blk) (hp : p.held = true)
+    (hq : q.inWindow = true) : q.held = true := by
+  obtain ⟨hc, hw⟩ := Ptr.held_iff.1 hp
+  exact Ptr.held_iff.2 ⟨(Ptr.convertible_eq_of_blk hb hw hq).trans hc, hq⟩
+
 /-- Distinct addresses are distinct pointers (`Ptr.addr?_ofAddr`). -/
 theorem Ptr.ofAddr_eq_ofAddr (x y : BitVec 64) :
     (Ptr.ofAddr x).eq (Ptr.ofAddr y) = (x == y) := by
@@ -318,7 +384,7 @@ def Ptr.step? (p : Ptr) (k : BitVec 64) : Option Ptr :=
 theorem PtrOps.ptrRes_asPtrWord (p : Ptr) (k : BitVec 64) :
     (PtrOps.ptrRes (p.add k)).asPtrWord = p.step? k := by
   unfold PtrOps.ptrRes Ptr.step?; split
-  · exact Ptr.word_asPtrWord _
+  · rename_i hw; exact Ptr.word_asPtrWord hw
   · rfl
 
 theorem PtrOps.wordRes_asPtrWord (x k : BitVec 64) :
@@ -371,12 +437,70 @@ theorem PtrOps.ptrIndex_asPtrWord (el : Option Nat) (x i : Val) :
   | .int .w8 _ | .int .w16 _ | .int .w32 _ | .bool _ | .mem _ | .tuple _ | .agg _ | .blob _
   | .empty | .poison => rfl
 
-/-- Retyping at a pointer shape keeps the pointer a word reads as. -/
-theorem Val.asPtrWord_retype_ptr (e : Option Nat) (v : Val) :
+/-- Retyping at a pointer shape keeps the pointer a word reads as, unless it is a pointer
+outside its window (whose word is `poison`). -/
+theorem Val.asPtrWord_retype_ptr (e : Option Nat) {v : Val}
+    (hv : ∀ p, v = .ptr p → p.inWindow = true) :
     (v.retype (.ptr e)).asPtrWord = v.asPtrWord := by
   cases v with
   | int w x => cases w <;> rfl
-  | ptr p => exact Ptr.word_asPtrWord p
+  | ptr p => exact Ptr.word_asPtrWord (hv p rfl)
   | _ => rfl
+
+/-- A value whose retype at a pointer shape reads as a pointer reads as that pointer. -/
+theorem Val.asPtrWord_of_retype_ptr {e : Option Nat} {v : Val} {q : Ptr}
+    (h : (v.retype (.ptr e)).asPtrWord = some q) : v.asPtrWord = some q := by
+  cases v with
+  | int w x => cases w <;> first | exact h | cases h
+  | ptr p =>
+    show some p = some q
+    rw [Ptr.word_asPtrWord_of h]
+  | _ => cases h
+
+/-- `PtrOps.ptrRes` gives a value of every pointer shape (a word or `poison`). -/
+theorem PtrOps.ptrRes_retype_ptr (e : Option Nat) (p : Ptr) :
+    (PtrOps.ptrRes p).retype (.ptr e) = PtrOps.ptrRes p := by
+  unfold PtrOps.ptrRes; split
+  · exact Ptr.word_retype_ptr p e
+  · rfl
+
+theorem PtrOps.wordRes_retype_ptr (e : Option Nat) (x k : BitVec 64) :
+    (PtrOps.wordRes x k).retype (.ptr e) = PtrOps.wordRes x k := by
+  unfold PtrOps.wordRes; split <;> rfl
+
+/-- The result of `OffPtr` has every pointer shape. -/
+theorem PtrOps.offPtr_retype_ptr (e : Option Nat) (ai : Int64) (xs : List Val) :
+    (PtrOps.offPtr ai xs).retype (.ptr e) = PtrOps.offPtr ai xs := by
+  unfold PtrOps.offPtr
+  split
+  · exact PtrOps.ptrRes_retype_ptr e _
+  · exact PtrOps.wordRes_retype_ptr e _ _
+  · rfl
+
+/-- The result of `AddPtr` has every pointer shape. -/
+theorem PtrOps.addPtr_retype_ptr (e : Option Nat) (xs : List Val) :
+    (PtrOps.addPtr xs).retype (.ptr e) = PtrOps.addPtr xs := by
+  unfold PtrOps.addPtr
+  split
+  · split
+    · exact PtrOps.ptrRes_retype_ptr e _
+    · rfl
+  · split
+    · exact PtrOps.wordRes_retype_ptr e _ _
+    · rfl
+  · rfl
+
+/-- The result of `PtrIndex` has every pointer shape. -/
+theorem PtrOps.ptrIndex_retype_ptr (e el : Option Nat) (xs : List Val) :
+    (PtrOps.ptrIndex el xs).retype (.ptr e) = PtrOps.ptrIndex el xs := by
+  unfold PtrOps.ptrIndex
+  split
+  · split
+    · exact PtrOps.ptrRes_retype_ptr e _
+    · rfl
+  · split
+    · exact PtrOps.wordRes_retype_ptr e _ _
+    · rfl
+  · rfl
 
 end GoFV.SSA.Sem

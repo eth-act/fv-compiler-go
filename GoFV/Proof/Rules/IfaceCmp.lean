@@ -10,11 +10,12 @@ import GoFV.Rules.Generated.Generic.Values08
 `(EqInter x y) => (EqPtr (ITab x) (ITab y))`, `(EqSlice x y) => (EqPtr (SlicePtr x) (SlicePtr
 y))` and their negations. `EqInter`/`EqSlice` compare the first words of two aggregates as
 pointer words (`PtrOps.eqFirst`); the result compares the same words after `ITab`'s `uintptr`
-or `SlicePtr`'s `*byte` retype (`eqFirst_refines`). A retype to a pointer shape keeps a word's
-pointer (`asPtrWord_retype_ptr`); a retype to the 64-bit integer shape keeps a word of that
-shape (an integer or a pointer without a concrete address), and `argShapeOk` gives the itab word
-of an `EqInter` operand that shape (`ifaceArgOk`, `first_hasTy_int64`). Without it a struct
-operand whose first word is a pointer with an address would become that address, and
+or `SlicePtr`'s `*byte` retype (`eqFirst_refines`). A retype to a pointer shape keeps the pointer
+of a word inside its window (`Val.asPtrWord_retype_ptr`), which every pointer of an operand's
+first word is (it has a shape, `first_ptr_held`); a retype to the 64-bit integer shape keeps a
+word of that shape (an integer or a pointer without a concrete address), and `argShapeOk` gives
+the itab word of an `EqInter` operand that shape (`ifaceArgOk`, `first_hasTy_int64`). Without it
+a struct operand whose first word is a pointer with an address would become that address, and
 `Ptr.ofAddr` of it is a different pointer unless the pointer is `Ptr.convertible`.
 -/
 
@@ -46,12 +47,26 @@ theorem eqFirst_refines (neg : Bool) (t T : Ty) (x y : Val)
     · exact Refines.poison _
   · exact Refines.poison _
 
-theorem asPtrWord_retype_ptr (el : Option Nat) (a : Val) (h : a.asPtrWord.isSome) :
-    (a.retype (.ptr el)).asPtrWord = a.asPtrWord := by
-  cases a with
-  | ptr p => exact Ptr.word_asPtrWord p
-  | int w x => cases w <;> first | rfl | simp [Val.asPtrWord] at h
-  | _ => simp [Val.asPtrWord] at h
+/-- A pointer that is the first component of a value of some shape is held as a pointer. -/
+theorem first_ptr_held {x : Val} {t : Ty} (hx : x.hasTy t = true) {a : Val} {as : List Val}
+    (he : x = .agg (a :: as)) : ∀ p, a = .ptr p → p.held = true := by
+  rintro p rfl
+  subst he
+  cases t with
+  | agg fs n =>
+    cases fs with
+    | nil => simp [Val.hasTy, Val.hasTyList] at hx
+    | cons f fs =>
+      have hx' : Val.hasTyList (Val.ptr p :: as) ((f :: fs).map (·.2)) = true := hx
+      simp only [List.map_cons, Val.hasTyList, Bool.and_eq_true] at hx'
+      exact Ptr.held_of_hasTy hx'.1
+  | str =>
+    obtain ⟨q, l, h, hq, -⟩ := Val.hasTy_agg_str.1 hx
+    cases h; simpa [Val.isPtrWord] using hq
+  | slice e =>
+    obtain ⟨q, l, c, h, hq, -⟩ := Val.hasTy_agg_slice.1 hx
+    cases h; simpa [Val.isPtrWord] using hq
+  | _ => simp [Val.hasTy] at hx
 
 theorem asPtrWord_retype_int64 (a : Val) (h : a.hasTy (.int .w64) = true) :
     (a.retype (.int .w64)).asPtrWord = a.asPtrWord := by
@@ -91,14 +106,20 @@ theorem r_generic_791_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_
 /-- `generic.rules:792`: `(EqSlice x y) => (EqPtr (SlicePtr x) (SlicePtr y))` -/
 theorem r_generic_792_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_792 := by
   rule_unfold
-  exact eqFirst_refines _ _ _ _ _ (fun a _ _ h => asPtrWord_retype_ptr _ a h)
-    (fun a _ _ h => asPtrWord_retype_ptr _ a h) hty
+  exact eqFirst_refines _ _ _ _ _
+    (fun a as he _ => Val.asPtrWord_retype_ptr _
+      fun p hp => Ptr.inWindow_of_held (first_ptr_held hlt.1 he p hp))
+    (fun a as he _ => Val.asPtrWord_retype_ptr _
+      fun p hp => Ptr.inWindow_of_held (first_ptr_held hlt.2 he p hp)) hty
 
 /-- `generic.rules:793`: `(NeqSlice x y) => (NeqPtr (SlicePtr x) (SlicePtr y))` -/
 theorem r_generic_793_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_793 := by
   rule_unfold
-  exact eqFirst_refines _ _ _ _ _ (fun a _ _ h => asPtrWord_retype_ptr _ a h)
-    (fun a _ _ h => asPtrWord_retype_ptr _ a h) hty
+  exact eqFirst_refines _ _ _ _ _
+    (fun a as he _ => Val.asPtrWord_retype_ptr _
+      fun p hp => Ptr.inWindow_of_held (first_ptr_held hlt.1 he p hp))
+    (fun a as he _ => Val.asPtrWord_retype_ptr _
+      fun p hp => Ptr.inWindow_of_held (first_ptr_held hlt.2 he p hp)) hty
 
 /-! Non-vacuity (`rule-sat` draws no aggregate leaves): instances at the interface shape (two
 itab words, equal for `:790`, different for `:791`) and at the shape of `[]int64` (the same and

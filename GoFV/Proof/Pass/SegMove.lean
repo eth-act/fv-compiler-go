@@ -187,7 +187,7 @@ theorem offPtr_eval {env : Env} {tabs : Tables} {g : Func} {fr : Frame} {q d : I
   cases ty <;> simp [isPtrTy] at hty
   have hai : BitVec.ofInt 64 qv.auxInt.toInt = BitVec.ofNat 64 qv.auxInt.toInt.toNat := by
     rw [← Int.toNat_of_nonneg h0]; simp
-  rw [Option.getD_some, Val.asPtrWord_retype_ptr, PtrOps.offPtr_asPtrWord, hD, Option.bind_some,
+  rw [Option.getD_some, PtrOps.offPtr_retype_ptr, PtrOps.offPtr_asPtrWord, hD, Option.bind_some,
     hai, Ptr.step?, ite_eq_left hin]
 
 /-! ## The validator's facts -/
@@ -465,7 +465,7 @@ theorem offFrom_reg (H : Avail env tabs f S A) (hT : Proof.Typed (Ctx.make tabs 
       generalize tabs.ty v.type = ty
       intro hty hq
       cases ty <;> simp [isPtrTy] at hty
-      rw [Val.asPtrWord_retype_ptr, PtrOps.offPtr_asPtrWord] at hq
+      rw [PtrOps.offPtr_retype_ptr, PtrOps.offPtr_asPtrWord] at hq
       obtain ⟨C, hC, hCQ⟩ := Option.bind_eq_some_iff.1 hq
       have hCQ : C.add (BitVec.ofInt 64 v.auxInt.toInt) = Q := by
         unfold Ptr.step? at hCQ; split at hCQ <;> cases hCQ; rfl

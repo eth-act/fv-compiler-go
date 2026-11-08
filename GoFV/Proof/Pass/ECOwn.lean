@@ -1049,10 +1049,10 @@ theorem ecr_selfHeld {env : Env} {tabs : Tables} {f g : Func} {frS : Frame} {u :
       (shapeOf (typeShapes tabs) f e.2)).hasPoison
   · right
     obtain ⟨p, bs, hpw, hrd⟩ := ecs_deref_read hmta hpo'
-    rw [Ptr.word_asPtrWord] at hpw; cases hpw
+    rw [Ptr.word_asPtrWord (Ptr.inWindow_zero _)] at hpw; cases hpw
     rw [ecT_eqE_size heq] at hrd
     exact ⟨bs, hrd, ecs_move_arg (Mem.Refines.refl m) hmov heq hmt (Sem.Refines.refl _)
-      (Ptr.word_asPtrWord _) hrd⟩
+      (Ptr.word_asPtrWord (Ptr.inWindow_zero _)) hrd⟩
   · exact .inl hpo'
 
 /-- The values whose source registers the `MakeResult` obligation needs to hold their
@@ -1290,7 +1290,8 @@ theorem obl_result_imk {tabs : Tables} {f g : Func} {x : ID} {u w : Value}
           obtain ⟨-, -, n', hn', hfg, -⟩ := ecr_resSlotOK (hown.slot e.1 hpo (by simpa using hps))
           rw [hpn] at hn'; cases hn'
           have hbase := ecr_localAddr hNC hL hla hfg (ecr_base_EL hNC hL haddr hEa)
-          have hP' := ecw_ptr_eq (ecw_addr hNC hL haddr (by rw [hbase]; exact Ptr.word_asPtrWord _) hEa)
+          have hP' := ecw_ptr_eq (ecw_addr hNC hL haddr
+            (by rw [hbase]; exact Ptr.word_asPtrWord (Ptr.inWindow_zero _)) hEa)
             (hpt z (List.mem_of_getElem? hk) zw hzw)
           rw [hP', hsv', ecw_encode_eqE haux]
       rw [← hlist, hWT] at hWT'
@@ -1437,7 +1438,8 @@ theorem ecr_storeObl {tabs : Tables} {f g : Func} {x z : ID} {u w : Value} {HT :
   have hbase := ecr_localAddr hNC hL hla hfg (ecr_base_EL hNC hL haddr hEa)
   have ha : (rv T wz.args[0]!).asPtrWord =
       some ((⟨.local 0 n, 0⟩ : Ptr).add (BitVec.ofNat 64 o)) := by
-    rcases ecw_addr hNC hL haddr (by rw [hbase]; exact Ptr.word_asPtrWord _) hEa with h | h
+    rcases ecw_addr hNC hL haddr (by rw [hbase]; exact Ptr.word_asPtrWord (Ptr.inWindow_zero _))
+      hEa with h | h
     · exact h
     · rw [h]; unfold Ptr.step?; rw [if_pos hwin]
   -- the write

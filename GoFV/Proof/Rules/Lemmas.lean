@@ -1356,7 +1356,7 @@ theorem val_of_hasTy_int64 {a : Val} (h : a.hasTy (.int .w64) = true) :
   cases a with
   | poison => exact .inl rfl
   | int w x => cases w <;> first | exact .inr (.inl ⟨x, rfl⟩) | simp [Val.hasTy] at h
-  | ptr p => exact .inr (.inr ⟨p, rfl, by simpa [Val.hasTy] using h⟩)
+  | ptr p => exact .inr (.inr ⟨p, rfl, Ptr.not_convertible_of_held (by simpa [Val.hasTy] using h)⟩)
   | _ => simp [Val.hasTy] at h
 
 theorem ptr_add_add (p : Ptr) (a b : BitVec 64) : (p.add a).add b = p.add (a + b) := by
@@ -1384,7 +1384,7 @@ theorem offPtr_ptrRes (k : Int64) (q : Ptr) :
     PtrOps.offPtr k [PtrOps.ptrRes q] =
       if q.inWindow then PtrOps.ptrRes (q.add (BitVec.ofInt 64 k.toInt)) else .poison := by
   by_cases h : q.inWindow = true
-  · rw [if_pos h, show PtrOps.ptrRes q = q.word from if_pos h, PtrOps.offPtr_word]; rfl
+  · rw [if_pos h, show PtrOps.ptrRes q = q.word from if_pos h, PtrOps.offPtr_word _ h]; rfl
   · rw [if_neg h, show PtrOps.ptrRes q = .poison from if_neg h]; rfl
 
 /-- Two steps of pointer arithmetic refine one step by the sum (the intermediate pointer may
@@ -1455,8 +1455,8 @@ theorem null_word {t : Ty} (ht : (∃ el, t = .ptr el) ∨ t = .int .w64) :
     ((Val.i64 0).retype t).asPtrWord = some Ptr.null := by
   rw [show Val.i64 0 = Ptr.null.word from Ptr.null_word.symm]
   rcases ht with ⟨el, rfl⟩ | rfl
-  · rw [Ptr.word_retype_ptr, Ptr.word_asPtrWord]
-  · rw [Ptr.word_retype_i64, Ptr.word_asPtrWord]
+  · rw [Ptr.word_retype_ptr, Ptr.word_asPtrWord rfl]
+  · rw [Ptr.word_retype_i64, Ptr.word_asPtrWord rfl]
 
 theorem not_beq_bne {α : Type} [BEq α] (a b : α) : (!(a == b)) = (a != b) := rfl
 

@@ -67,7 +67,7 @@ theorem idata_select_ne_agg {x : Val} {t : Ty} (hx : x.hasTy t = true)
 theorem retype_ne_agg {v : Val} (hv : ∀ vs, v ≠ .agg vs) (t : Ty) (ws : List Val) :
     v.retype t ≠ .agg ws := by
   have hw : ∀ p : Ptr, p.word ≠ .agg ws := fun p h => by
-    unfold Ptr.word at h; split at h <;> cases h
+    unfold Ptr.word at h; split at h <;> (try split at h) <;> cases h
   intro h
   unfold Val.retype at h
   split at h

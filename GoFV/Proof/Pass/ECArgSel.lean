@@ -449,9 +449,8 @@ theorem ecA_regShape {rt lt : Ty} {a : Val} (h : regShapeOK rt lt = true) (ha : 
     · cases a with
       | poison => rfl
       | ptr q =>
-        have hc : q.convertible = false := by simpa [Val.hasTy] using ha
-        exact (congrArg (Val.retype _) (Ptr.word_of_not_convertible hc)).trans
-          (Ptr.word_of_not_convertible hc)
+        have hc : q.held = true := by simpa [Val.hasTy] using ha
+        exact (congrArg (Val.retype _) (Ptr.word_of_held hc)).trans (Ptr.word_of_held hc)
       | int w x => cases w <;> first | rfl | simp [Val.hasTy] at ha
       | _ => simp [Val.hasTy] at ha
     · cases a with
@@ -462,9 +461,8 @@ theorem ecA_regShape {rt lt : Ty} {a : Val} (h : regShapeOK rt lt = true) (ha : 
         show Val.retype (.int .w64) (.int .w64 x) = _
         simp [Val.retype, BitVec.setWidth_eq]
       | ptr q =>
-        have hc : q.convertible = false := by simpa [Val.hasTy] using ha
-        exact (congrArg (Val.retype _) (Ptr.word_of_not_convertible hc)).trans
-          (Ptr.word_of_not_convertible hc)
+        have hc : q.held = true := by simpa [Val.hasTy] using ha
+        exact (congrArg (Val.retype _) (Ptr.word_of_held hc)).trans (Ptr.word_of_held hc)
       | _ => simp [Val.hasTy] at ha
     · cases h
 
