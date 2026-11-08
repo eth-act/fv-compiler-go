@@ -313,6 +313,16 @@ def amodeSym (σ : Sym) (mode : AMode) (rn : Nat) (n : Nat) : Ex × Option Ex :=
   | .reg rm option sc =>
     (Ex.mkAdd base (Ex.mkExt option (if sc then Nat.log2 n else 0) (σ.rX rm.toNat)), none)
 
+/-- The symbolic integer single-register access of `ldst` at address `a` (no write-back). -/
+def symAccess (σ : Sym) (size : BitVec 2) (opc : BitVec 2) (rt : Nat) (a : Ex) :
+    Except String Sym := do
+  let n := bytesOf size
+  if size = 3 && opc = 2 then throw "PRFM"
+  if opc != 0 then
+    let (σ, v) ← σ.load a n
+    pure (σ.wX rt (loadVal opc n v))
+  else pure (σ.store a n (σ.rX rt))
+
 /-- The symbolic `exec` of one instruction at offset `o` (a word whose fields no relocation
 patches). -/
 def symInsn (i : Insn) (o : Nat) (σ : Sym) : Except String (Sym × MCtl) :=
@@ -373,13 +383,8 @@ def symInsn (i : Insn) (o : Nat) (σ : Sym) : Except String (Sym × MCtl) :=
     else pure (σ.wXsp rd.toNat r, .fall)
   | .ldst size vec opc mode rn rt => do
     if vec then throw "SIMD&FP load/store"
-    if size = 3 && opc = 2 then throw "PRFM"
-    let n := bytesOf size
-    let (a, wb) := amodeSym σ mode rn.toNat n
-    let σ ← if opc != 0 then do
-        let (σ, v) ← σ.load a n
-        pure (σ.wX rt.toNat (loadVal opc n v))
-      else pure (σ.store a n (σ.rX rt.toNat))
+    let (a, wb) := amodeSym σ mode rn.toNat (bytesOf size)
+    let σ ← symAccess σ size opc rt.toNat a
     let σ := match wb with
       | some b => σ.wXsp rn.toNat b
       | none => σ

@@ -214,7 +214,7 @@ def progSym (az ez : Int) (p : Prog) : Except String (Sym × PCtl) := do
       let k := BitVec.ofInt 64 p.from_.offset
       return (← wP σ p.to.reg (.k (maskN n k)), .fall)
     | .ADDR, .REG =>
-      let (a, _) ← memP az ez 0 p.from_
+      let (a, _) ← memP az ez p.scond p.from_
       return (← wP σ p.to.reg a, .fall)
     | t, u => throw s!"{name} operands {t.name},{u.name}"
   if let some (ld, n, signed, fp) := pairOp name then
@@ -242,16 +242,18 @@ def progSym (az ez : Int) (p : Prog) : Except String (Sym × PCtl) := do
   | "CBZ" | "CBNZ" | "CBZW" | "CBNZW" =>
     return (σ, .cbz (!endsS name "W") (!startsS name "CBZ") (← xP p.from_.reg) (← targetP p.to))
   | "TBZ" | "TBNZ" =>
-    return (σ, .tbz (name == "TBNZ") (p.from_.offset.toNat % 64) (← xP p.reg) (← targetP p.to))
+    if p.from_.offset < 0 || p.from_.offset ≥ 64 then throw "TBZ bit"
+    return (σ, .tbz (name == "TBNZ") p.from_.offset.toNat (← xP p.reg) (← targetP p.to))
   | "CALL" =>
     if p.to.type == .MEM && (p.to.name == .EXTERN || p.to.name == .STATIC) then
       match p.to.sym with
       | some n => return (σ, .call n p.to.offset)
       | none => throw "symbol-less call target"
     if p.to.type == .BRANCH then
-      match p.to.sym with
-      | some n => return (σ, .call n p.to.offset)
-      | none => throw "call to a Prog"
+      match p.to.val, p.to.sym with
+      | .target _, _ => throw "call to a Prog"
+      | _, some n => return (σ, .call n p.to.offset)
+      | _, none => throw "call to a Prog"
     throw "indirect CALL"
   | "RET" =>
     let r := if p.to.type == .NONE then REG_R0 + 30 else p.to.reg
@@ -286,59 +288,54 @@ def ldstScale (ty : String) : Option Nat :=
   | "R_ARM64_PCREL_LDST32" => some 2 | "R_ARM64_PCREL_LDST64" => some 3
   | _ => none
 
-/-- The symbolic integer access of `ldst` at address `a` (no write-back). -/
-def symAccess (σ : Sym) (size : BitVec 2) (opc : BitVec 2) (rt : Nat) (a : Ex) :
-    Except String Sym := do
-  let n := bytesOf size
-  if size = 3 && opc = 2 then throw "PRFM"
-  if opc != 0 then
-    let (σ, v) ← σ.load a n
-    pure (σ.wX rt (loadVal opc n v))
-  else pure (σ.store a n (σ.rX rt))
+/-- The first unit of the words `[o, o + 4 (n + 1))` executed symbolically from `σ`: one word,
+or the two words of a relocated pair (`R_ADDRARM64`: `ADRP` + `ADD`, the target in the `ADD`'s
+destination, its page in the `ADRP`'s; `R_ARM64_PCREL_LDST*`: `ADRP` + load/store, the access
+at the target), or a `BL`/`B` of `R_CALLARM64`, as linked; the relocated fields must be zero. The
+effect, the control and the number of words. -/
+def symUnit (t : ByteArray) (rs : List Reloc) (n o : Nat) (σ : Sym) :
+    Except String (Sym × MCtl × Nat) := do
+  if o + 4 > t.size then throw s!"word at {o} past the text"
+  let w := wordAt t o
+  let some i := decode w | throw s!"undecodable word {w.toHex} at {o}"
+  match relocAt rs o with
+  | none =>
+    if !(covering rs o).isEmpty then throw s!"word at {o} patched by several relocations"
+    let (σ, c) ← symInsn i o σ
+    pure (σ, c, 1)
+  | some r =>
+    let some y := r.sym | throw "relocation without symbol"
+    let tgt := Ex.mkAdd (.sym y) (.k (BitVec.ofInt 64 r.add))
+    if isCallReloc r.type then
+      match i with
+      | .b true 0 => pure (σ, .call y r.add, 1)
+      | .b false 0 => pure (σ, .jmpSym y r.add, 1)
+      | _ => throw "R_CALLARM64 not on a B or BL"
+    else if n = 0 || o + 8 > t.size then throw "relocated pair cut"
+    else if covering rs (o + 4) != [r] then throw s!"word at {o + 4} patched by several relocations"
+    else match i, decode (wordAt t (o + 4)) with
+      | .adr true 0 rd, some i2 =>
+        let σ1 := σ.wX rd.toNat (.page tgt)
+        if r.type == "R_ADDRARM64" then
+          match i2 with
+          | .addSubImm true false false false 0 rn rd2 =>
+            if rn != rd then throw "R_ADDRARM64: ADD of another register" else
+            pure (σ1.wXsp rd2.toNat tgt, .fall, 2)
+          | _ => throw "R_ADDRARM64: not ADRP + ADD"
+        else match ldstScale r.type, i2 with
+          | some sc, .ldst size false opc (.uimm 0) rn rt =>
+            if rn != rd then throw "PCREL_LDST: access through another register" else
+            if size.toNat != sc then throw "PCREL_LDST: size" else do
+            pure (← symAccess σ1 size opc rt.toNat tgt, .fall, 2)
+          | _, _ => throw s!"relocation {r.type}"
+      | _, _ => throw s!"relocation {r.type} not on ADRP"
 
-/-- The words `[o, o + 4 n)` executed symbolically from `σ`, every word but the last falling
-through; relocated words as linked: `BL` of `R_CALLARM64`, `ADRP` + `ADD` of `R_ADDRARM64`
-(the target in the `ADD`'s destination, its page in the `ADRP`'s), `ADRP` + load/store of
-`R_ARM64_PCREL_LDST*` (the access at the target). The relocated fields must be zero. -/
+/-- The words `[o, o + 4 n)` executed symbolically from `σ`, unit by unit (`symUnit`), every
+unit but the last falling through. -/
 def symWords (t : ByteArray) (rs : List Reloc) : Nat → Nat → Sym → Except String (Sym × MCtl)
   | 0, _, σ => pure (σ, .fall)
   | n + 1, o, σ => do
-    if o + 4 > t.size then throw s!"word at {o} past the text"
-    let w := wordAt t o
-    let some i := decode w | throw s!"undecodable word {w.toHex} at {o}"
-    let step : Except String (Sym × MCtl × Nat) :=
-      match relocAt rs o with
-      | none => do
-        if !(covering rs o).isEmpty then throw s!"word at {o} patched by several relocations"
-        let (σ, c) ← symInsn i o σ
-        pure (σ, c, 1)
-      | some r => do
-        let some y := r.sym | throw "relocation without symbol"
-        let tgt := Ex.mkAdd (.sym y) (.k (BitVec.ofInt 64 r.add))
-        if isCallReloc r.type then
-          match i with
-          | .b true 0 => pure (σ, .call y r.add, 1)
-          | .b false 0 => pure (σ, .jmpSym y r.add, 1)
-          | _ => throw "R_CALLARM64 not on a B or BL"
-        else if n = 0 || o + 8 > t.size then throw "relocated pair cut"
-        else if covering rs (o + 4) != [r] then throw s!"word at {o + 4} patched by several relocations"
-        else match i, decode (wordAt t (o + 4)) with
-          | .adr true 0 rd, some i2 =>
-            let σ1 := σ.wX rd.toNat (.page tgt)
-            if r.type == "R_ADDRARM64" then
-              match i2 with
-              | .addSubImm true false false false 0 rn rd2 =>
-                if rn != rd then throw "R_ADDRARM64: ADD of another register" else
-                pure (σ1.wXsp rd2.toNat tgt, .fall, 2)
-              | _ => throw "R_ADDRARM64: not ADRP + ADD"
-            else match ldstScale r.type, i2 with
-              | some sc, .ldst size false opc (.uimm 0) rn rt =>
-                if rn != rd then throw "PCREL_LDST: access through another register" else
-                if size.toNat != sc then throw "PCREL_LDST: size" else do
-                pure (← symAccess σ1 size opc rt.toNat tgt, .fall, 2)
-              | _, _ => throw s!"relocation {r.type}"
-          | _, _ => throw s!"relocation {r.type} not on ADRP"
-    let (σ, c, used) ← step
+    let (σ, c, used) ← symUnit t rs n o σ
     if used = 2 then
       match n with
       | 0 => throw "relocated pair cut"
