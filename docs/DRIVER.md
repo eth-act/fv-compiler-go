@@ -353,7 +353,8 @@ and the corpus programs built for linux/arm64 by `scripts/driver-e2e.sh`). H8, e
 
 - Back end (I8, #554; quick-v10 corpus, export `gofv-prog 3`): `gofv-ssa-opt --back-check`
   (the chain on the input view, against stock): 9,297/9,297 functions match (105 s,
-  `--jobs 6`). `driver-e2e.sh --mode full3 -p 8`: 372/372 std archives byte-identical; 183
+  `--jobs 6`); full-v11: 96,674/96,674 (5.5 min, `--jobs 4`, load ~30). `driver-e2e.sh --mode
+  full3 -p 8`: 372/372 std archives byte-identical; 183
   programs: 183 binaries byte-identical, 183 with the same output and exit status under qemu;
   44,358 functions through Lean from `number lines` to `trim` and 44,346 through the Lean back
   end (the rest stop at `Compile`'s large-frame check), 0 fallbacks in either: PASS. Wall time

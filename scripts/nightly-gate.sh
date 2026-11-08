@@ -17,7 +17,9 @@
 #   back-check    gofv-ssa-opt --back-check on the full corpus: the driver's back end (AllocFrame
 #                 through the DWARF writers, chained) vs stock
 #   e2e-verified  scripts/driver-e2e.sh --verified (programs built with the verified pipeline)
-#   e2e-full3     scripts/driver-e2e.sh --mode full3 (Lean through trim and the Lean back end)
+#   e2e-full3     scripts/driver-e2e.sh --mode full3 (Lean through trim and the Lean back end);
+#                 weekly, on runs started on weekday $GATE_FULL3_WEEKDAY (1-7, default 7 = Sunday;
+#                 `any`: every run)
 # then append the result to the "Nightly gate" status issue (label nightly-gate; created if
 # missing) and, when red, open an issue (label gate-red) for the first failing step, or comment on
 # the open one for that step.
@@ -260,10 +262,10 @@ gate_steps() {
       --table "$run/verified.md" "$corpus"
     local p
     for p in gen-parity asm-parity dwarf-parity; do
-      report "$p" timeout "${GATE_PHASE3_TIMEOUT:-2h}" scripts/memcap.sh .lake/build/bin/"$p" \
+      report "$p" timeout "${GATE_PHASE3_TIMEOUT:-1h}" scripts/memcap.sh .lake/build/bin/"$p" \
         --jobs 4 --max-report 5 --table "$run/$p.md" "$corpus"
     done
-    report back-check timeout "${GATE_PHASE3_TIMEOUT:-2h}" scripts/memcap.sh \
+    report back-check timeout "${GATE_PHASE3_TIMEOUT:-1h}" scripts/memcap.sh \
       .lake/build/bin/gofv-ssa-opt --back-check --jobs 4 --max-report 5 --table "$run/back-check.md" \
       "$corpus"
   else
@@ -276,8 +278,14 @@ gate_steps() {
     if [ -x tmp/go-driver/bin/go ]; then
       report e2e-verified env GOFV_DRIVER_GO="$PWD/tmp/go-driver" scripts/driver-e2e.sh --verified \
         --out "$run/e2e-verified"
-      report e2e-full3 env GOFV_DRIVER_GO="$PWD/tmp/go-driver" scripts/driver-e2e.sh --mode full3 \
-        --out "$run/e2e-full3"
+      # weekly (docs/GATE.md, budget): on the weekday of the run's start, Sunday by default
+      local day=${GATE_FULL3_WEEKDAY:-7}
+      if [ "$day" = any ] || [ "$(date -d "$(basename "$run" | cut -c1-10)" +%u)" = "$day" ]; then
+        report e2e-full3 timeout "${GATE_FULL3_TIMEOUT:-4h}" env GOFV_DRIVER_GO="$PWD/tmp/go-driver" \
+          scripts/driver-e2e.sh --mode full3 --out "$run/e2e-full3"
+      else
+        skip e2e-full3 "weekly, weekday $day"
+      fi
     else
       skip e2e-verified "no driver toolchain"
       skip e2e-full3 "no driver toolchain"
