@@ -916,6 +916,7 @@ import GoFV.Proof.Witness.LowerLoadIdx
 import GoFV.Proof.Witness.LowerLoadStore
 import GoFV.Proof.Witness.LowerLoadSym
 import GoFV.Proof.Witness.LowerLocalAddr
+import GoFV.Proof.Witness.LowerLsh
 import GoFV.Proof.Witness.LowerMask
 import GoFV.Proof.Witness.LowerMemEq
 import GoFV.Proof.Witness.LowerMove

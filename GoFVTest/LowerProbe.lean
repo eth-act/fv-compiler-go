@@ -37,11 +37,12 @@ def key (r : Rule) : String := s!"{r.loc.file}:{r.loc.line} {r.op.name}"
 def blockKey (r : BlockRule) : String := s!"{r.loc.file}:{r.loc.line} block {r.kind.name}"
 
 /-- `lowerTable` with the rules the proven set lists in a derived form (`Derive.flagSplit`, which
-rewrites the same instances) in that form: the table of the validator's ceiling. -/
+rewrites the same instances; `Derive.lshSplit`, a narrow left shift's rename followed by the
+64-bit shift's rules on the narrow one) in that form: the table of the validator's ceiling. -/
 def ceilTable : Interp.Table :=
   Interp.Table.ofRuleSet { GoFV.Rules.Generated.ARM64.ruleSet with
     values := GoFV.Rules.Generated.ARM64.ruleSet.values.map fun (o, rs) =>
-      (o, rs.flatMap GoFV.Rules.Derive.flagSplit) }
+      (o, rs.flatMap fun r => (GoFV.Rules.Derive.flagSplit r).flatMap GoFV.Rules.Derive.lshSplit) }
 
 /-- The keys of the rules a log fires, replaying ops and block kinds only. -/
 def firedKeys (t : Interp.Table) (f : Func) (log : Array RwEvent) : Array String := Id.run do

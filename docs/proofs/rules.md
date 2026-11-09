@@ -2157,8 +2157,8 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   not Go bugs; the checked lower leaves them out of `GoFV.Rules.ProvenARM64`):
   - `:148`–`:150` (the ellipsis rules `(Lsh{8,16,32}x<a> ...) => (Lsh64x<a> ...)`): the
     rename keeps the narrow operand, and Phase 1's `Lsh64x<a>` asks for a 64-bit one: on the
-    `int8` value 1 shifted by 0, `Lsh8x64` gives 1 and `Lsh64x64` `poison`. A proof needs
-    `Lsh64x<a>` to read its operand's low 64 bits at any integer width.
+    `int8` value 1 shifted by 0, `Lsh8x64` gives 1 and `Lsh64x64` `poison`. They stay false; the
+    checked lower handles them in the validator (option B on #385, "Narrow left shifts" below).
   - `:970` (`(ADD x (MOVDconst <t> [c])) && !t.IsPtr() => (ADDconst [c] x)`) was false as
     the validator stood (PR #481): an `ADD <int32>` whose first argument is a pointer without
     an integer form at the `int64` shape and whose `int32` constant has high bits; the
@@ -2306,6 +2306,23 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   shape is the integer shape of its size. So both are scalar load terms (`ldOp?`), read no bits of
   their memory argument (`armReadW`), and the existing load lemmas prove the rules. Witness
   `fld_lower`.
+
+- **Narrow left shifts** (`:148`–`:150` with `:152`, `:169`–`:171`, #385, option B;
+  `Rules/Shift.lean`, `GoFV.Rules.Derive.lshSplit`, `GoFV.Opt.LowerCheck.lshRule`). The renames
+  `(Lsh32x<a> ...) => (Lsh64x<a> ...)` are false (Findings), but `lower` always lowers the renamed
+  value in the same run, by `152` (`SLL`), `169`/`170` (`CSEL` of `SLL`) or `171` (the amount
+  zero-extended, then `170`/`152`). The validator replays the rename as no change (`lshRenEv`, its
+  log entry holds `v`'s new definition alone) and checks the next rule at `v`, which `lower` takes
+  from the `Lsh64x<a>` row, in its form on the narrow shift: the rule of the narrow op's row with
+  that location (`lshRule`), with a built `Lsh64x32` (`171`) read as the narrow shift
+  (`lshDefs`). The rule set lists those forms after each rename (`lshSplit`; `lower` never fires
+  them, the rename matches first), and they hold under the current semantics: `SLL` reads the
+  narrow operand's register, its zero extension, whose shift keeps the narrow shift in its low
+  bits at every amount (`shl_setWidth`, `refines_shlB_narrow`, `refines_shlCsel_narrow`,
+  `refines_shlZ_narrow`). The renames are `ArmRule.Lsh`, which carries no obligation. Another
+  rule reading the renamed value sees the narrow op and does not match, and a value still renamed
+  at the end differs from the output in `finalOKL`; both reject. No change to `Sem` or
+  `Refines`. Witness `lsh_lower`.
 
 - **Compares with a pointer** (#385; module docs of `GoFV/Proof/Low/Rules/CmpNeg.lean` and
   `Invert.lean`). `CMP` compares a pointer without a concrete address with an integer as unequal

@@ -1,5 +1,6 @@
 import GoFV.Opt.RewriteCheck
 import GoFV.Opt.LowerTerm
+import GoFV.Rules.Derive
 
 /-!
 # The obligation of an `ARM64.rules` / `ARM64latelower.rules` rule (issue #385)
@@ -939,11 +940,21 @@ helper built compute the product in the bits `v` keeps), so the rule carries no 
 own. -/
 def ArmRule.Mul (r : Rule) : Prop := GoFV.Rules.Interp.mulResult r = true
 
+/-- A narrow left shift renamed to the 64-bit one (`(Lsh32x<a> ...) => (Lsh64x<a> ...)`,
+`ARM64.rules:148-150`, `GoFV.Rules.Derive.lshWide`). It is false as an ellipsis rule (`Lsh64x<a>`
+asks for a 64-bit operand), so the validator replays its event as no change and checks the rules
+`lower` then fires on the renamed value in their form on the narrow shift, which the rule set
+lists after the rename (`GoFV.Rules.Derive.lshSplit`, `GoFV.Opt.LowerCheck.lshRule`); the rule
+carries no obligation of its own. -/
+def ArmRule.Lsh (r : Rule) : Prop :=
+  ∃ o o', ellipsisOn o r.pat = true ∧ r.result = .setOp o' ∧ GoFV.Rules.Derive.lshWide o = some o'
+
 /-- A value rule of a lowering rule set the checked `lower` may fire: a sound rule, a sound
-ellipsis rule on terms, an atom rename, a rule on a memory or frame atom, or a strength-reduced
-multiplication. -/
+ellipsis rule on terms, an atom rename, a rule on a memory or frame atom, a strength-reduced
+multiplication, or a narrow left shift's rename. -/
 def ArmRule.Checked (r : Rule) : Prop :=
-  ArmRule.Sound r ∨ ArmRule.SetOp r ∨ ArmRule.Rename r ∨ ArmRule.Mem r ∨ ArmRule.Mul r
+  ArmRule.Sound r ∨ ArmRule.SetOp r ∨ ArmRule.Rename r ∨ ArmRule.Mem r ∨ ArmRule.Mul r ∨
+    ArmRule.Lsh r
 
 /-- Every value rule of `s` is `ArmRule.Checked`, every block rule `BlockRuleL.Checked`, and `s`
 has no rules in the per-instance tables (`nilChecks` … `phiSels`, Phase 1's generic layers). -/

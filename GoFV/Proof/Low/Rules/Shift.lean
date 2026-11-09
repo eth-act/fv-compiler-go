@@ -1,7 +1,8 @@
 import GoFV.Proof.Low.Rules.Cmp
+import GoFV.Rules.Derive
 
 /-!
-# Lowering rule lemmas: shifts (`ARM64.rules:152-179`)
+# Lowering rule lemmas: shifts (`ARM64.rules:148-179`)
 
 * `(Lsh64x<a> x y) && shiftIsBounded(v) => (SLL x y)` and the `SRA`/`SRL` forms (152, 159, 166):
   a bounded shift's amount is below 64, so the register shift's amount modulo 64 is the amount
@@ -24,15 +25,21 @@ The 64-bit shift rules (152, 159, 166, 169-179) hold at every integer shape of t
 <typ.UInt32> …)`): Phase 1's shift and the arm64 register are 64-bit integers, which `retypeL`
 reads at the shape's low bits on both sides (`retypeL_int64`).
 
-Not proven: the ellipsis rules `(Lsh{8,16,32}x<a> ...) => (Lsh64x<a> ...)` (148-150) are false
-under Phase 1's semantics (`Lsh64x<a>` asks for a 64-bit operand: on the `int8` value 1 shifted by
-0, `Lsh8x64` gives 1 and `Lsh64x64` `poison`).
+The ellipsis rules `(Lsh{8,16,32}x<a> ...) => (Lsh64x<a> ...)` (148-150) are false under Phase
+1's semantics (`Lsh64x<a>` asks for a 64-bit operand: on the `int8` value 1 shifted by 0,
+`Lsh8x64` gives 1 and `Lsh64x64` `poison`). They are `ArmRule.Lsh` (`checked_lsh`): the validator
+replays the rename as no change and checks the rule `lower` then fires on the renamed value in
+its form on the narrow shift (`GoFV.Rules.Derive.lshSplit`). Those forms hold
+(`r_ARM64_148_3_lsh_sound` …): `SLL` and the `CSEL` select read the narrow operand's register,
+its zero extension, whose shift keeps the narrow shift in its low bits at every amount
+(`shl_setWidth`; `refines_shlB_narrow`, `refines_shlCsel_narrow`), and `171` zero-extends the
+amount as before (`refines_shlZ_narrow`).
 -/
 
 namespace GoFV.Proof.Low.Rules
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Rules GoFV.Proof.Rules GoFV.Proof.Low
-open GoFV.Rules.Generated.ARM64
+open GoFV.Rules.Generated.ARM64 GoFV.Rules.Derive
 
 private theorem toNat_setWidth_of_le {n m : Nat} (s : BitVec n) (h : n ≤ m) :
     (s.setWidth m).toNat = s.toNat := by
@@ -777,5 +784,271 @@ theorem r_ARM64_178_sound : ArmRule.Checked r_ARM64_178 := by
     exact refines_sraCsel .w32 _ (by decide) _ hk _ (fun B => Val.retypeL Ty.flags
       (Arm64.cmp1w (fun x => Arm64.subFlags x (Arm64.imm32 (Int64.ofInt 64))) [B])) lo_cmp32
       reg_regVal_w32 rfl _ _
+
+/-! ## Narrow left shifts renamed to 64-bit ones (`ARM64.rules:148-150`, `lshSplit`) -/
+
+/-- The low `w` bits of a zero-extended `w`-bit value shifted left are the narrow shift, at every
+amount. -/
+theorem shl_setWidth {w : Nat} (h : w ≤ 64) (x : BitVec w) (n : Nat) :
+    ((x.setWidth 64) <<< n).setWidth w = x <<< n := by
+  apply BitVec.eq_of_toNat_eq
+  have hx : x.toNat < 2 ^ 64 := Nat.lt_of_lt_of_le x.isLt (Nat.pow_le_pow_right (by decide) h)
+  simp only [BitVec.toNat_setWidth, BitVec.toNat_shiftLeft, Nat.mod_eq_of_lt hx]
+  exact Nat.mod_mod_of_dvd _ (Nat.pow_dvd_pow 2 h)
+
+/-- A bounded narrow left shift (`w`-bit value, auxint 1) as `SLL`: the amount is below `w`, so
+modulo 64 it is the amount, and the low `w` bits of the register shift are the narrow shift
+(`ARM64.rules:152` on the narrow shift). -/
+theorem refines_shlB_narrow (wx a : Width) (k : Int64) (hk : k = 1) (A B : Val) :
+    Refines (Val.retypeL (.int wx) ((Val.asInt wx A).elim Val.poison fun x =>
+        (Val.asInt a B).elim Val.poison fun s =>
+        if (k == 1 && decide (wx.bits ≤ s.toNat)) = true then Val.poison
+        else Val.int wx (x <<< s.toNat)))
+      (Val.retypeL (.int wx) (Arm64.op2 (.int wx) (fun x y => x <<< (y.toNat % 64)) [A, B])) := by
+  subst hk
+  rcases asInt_cases wx A with ha | ⟨x, rfl⟩
+  · simp only [ha, Option.elim, retypeL_poison]; exact .poison _
+  rcases asInt_cases a B with hb | ⟨s, rfl⟩
+  · simp only [hb, Val.asInt_int, Option.elim, retypeL_poison]; exact .poison _
+  simp only [Val.asInt_int, Option.elim]
+  by_cases hs : wx.bits ≤ s.toNat
+  · simp only [hs, decide_true, Bool.and_true, beq_self_eq_true, ite_true, retypeL_poison]
+    exact .poison _
+  · have e : (s.setWidth 64).toNat % 64 = s.toNat := by
+      have := width_le64 wx
+      rw [toNat_setWidth_of_le s (width_le64 a)]; omega
+    simp only [hs, decide_false, Bool.and_false, Bool.false_eq_true, ite_false, Arm64.op2,
+      Arm64.reg, e, retypeL_res_int, retypeL_int_self, shl_setWidth (width_le64 wx)]
+    exact Refines.refl _
+
+/-- An unbounded narrow left shift (auxint 0) as `CSEL [LessThanU] (SLL x y) 0 (CMP… [64] y)`
+(`ARM64.rules:169/170` on the narrow shift; `G`: the compare's flags, `LO` iff `y < 64`): below
+64 the low `w` bits of the register shift are the narrow shift, from 64 on both are 0. -/
+theorem refines_shlCsel_narrow (wx a : Width) (ha : a.bits ≤ 64) (k : Int64) (hk : k = 0)
+    (G : Val → Val)
+    (hG : ∀ s : BitVec a.bits, Cond.lo.onVal (G (.int a s)) = some (decide (s.toNat < 64)))
+    (A B : Val) :
+    Refines (Val.retypeL (.int wx) ((Val.asInt wx A).elim Val.poison fun x =>
+        (Val.asInt a B).elim Val.poison fun s =>
+        if (k == 1 && decide (wx.bits ≤ s.toNat)) = true then Val.poison
+        else Val.int wx (x <<< s.toNat)))
+      (Val.retypeL (.int wx) (Arm64.csel (.int wx) (Int64.ofNat Op.ARM64LessThanU.goNum) none
+        [Val.retypeL (.int wx) (Arm64.op2 (.int wx) (fun x y => x <<< (y.toNat % 64)) [A, B]),
+          Val.retypeL (.int wx) (Val.i64 (BitVec.ofInt 64 0)), G B])) := by
+  subst hk
+  rcases asInt_cases wx A with h | ⟨x, rfl⟩
+  · simp only [h, Option.elim, retypeL_poison]; exact .poison _
+  rcases asInt_cases a B with h | ⟨s, rfl⟩
+  · simp only [h, Val.asInt_int, Option.elim, retypeL_poison]; exact .poison _
+  have hs : (s.setWidth 64).toNat = s.toNat := toNat_setWidth_of_le s ha
+  have hb : ∀ v : BitVec wx.bits, (v.setWidth 64).setWidth wx.bits = v := fun v => by
+    rw [BitVec.setWidth_setWidth_of_le _ (width_le64 wx), BitVec.setWidth_eq]
+  have h01 : ((0 : Int64) == 1) = false := by decide
+  simp only [Val.asInt_int, Option.elim, Arm64.csel, Arm64.condOn, ofAux_lessThanU,
+    Option.bind_some, hG, Arm64.op2, Arm64.reg, retypeL_res_int, Val.i64,
+    retypeL_int64, h01, Bool.false_and, Bool.false_eq_true, ite_false]
+  by_cases h64 : s.toNat < 64
+  · simp only [h64, decide_true, Arm64.regVal, Arm64.reg, Arm64.res, hs, Nat.mod_eq_of_lt h64,
+      retypeL_int64, hb, shl_setWidth (width_le64 wx), retypeL_int_self]
+    exact Refines.refl _
+  · have h0 : BitVec.ofInt 64 0 = 0 := by decide
+    have hz : x <<< s.toNat = 0 := by
+      apply BitVec.eq_of_toNat_eq
+      simp only [BitVec.toNat_shiftLeft]
+      rw [Nat.shiftLeft_eq, Nat.mul_mod, show 2 ^ s.toNat % 2 ^ wx.bits = 0 from
+        Nat.mod_eq_zero_of_dvd (Nat.pow_dvd_pow 2 (by have := width_le64 wx; omega))]
+      simp
+    simp only [h64, decide_false, Arm64.regVal, Arm64.reg, Arm64.res,
+      retypeL_int64, hb, h0, hz, retypeL_int_self]
+    have hz0 : (0 : BitVec 64).setWidth wx.bits = 0 := by apply BitVec.eq_of_toNat_eq; simp
+    rw [hz0]
+    exact Refines.refl _
+
+/-- An unbounded narrow left shift by an 8- or 16-bit amount as the same shift by its
+zero-extension to 32 bits (`ARM64.rules:171` on the narrow shift). -/
+theorem refines_shlZ_narrow (wx a : Width) (ha : a.bits ≤ 32) (k : Int64) (hk : k = 0)
+    (A B : Val) :
+    Refines (Val.retypeL (.int wx) ((Val.asInt wx A).elim Val.poison fun x =>
+        (Val.asInt a B).elim Val.poison fun s =>
+        if (k == 1 && decide (wx.bits ≤ s.toNat)) = true then Val.poison
+        else Val.int wx (x <<< s.toNat)))
+      (Val.retypeL (.int wx) ((Val.asInt wx A).elim Val.poison fun x =>
+        (Val.asInt .w32 (Val.retypeL (.int .w32) ((Val.asInt a B).elim Val.poison fun x =>
+          Val.int .w32 (BitVec.setWidth 32 x)))).elim Val.poison fun s =>
+        if ((if ¬k = 0 then (1 : Int64) else 0) == 1 && decide (wx.bits ≤ s.toNat)) = true then
+          Val.poison
+        else Val.int wx (x <<< s.toNat))) := by
+  subst hk
+  rcases asInt_cases wx A with ha' | ⟨x, rfl⟩
+  · simp only [ha', Option.elim, retypeL_poison]; exact .poison _
+  rcases asInt_cases a B with hb | ⟨s, rfl⟩
+  · simp only [hb, Val.asInt_int, Option.elim, retypeL_poison]; exact .poison _
+  have e : (s.setWidth 32).toNat = s.toNat := toNat_setWidth_of_le s ha
+  simp (config := { decide := true }) only [Val.asInt_int, Option.elim, retypeL_int_self, e,
+    ite_false]
+  exact Refines.refl _
+
+/-- `ARM64.rules:152` on the narrow `o` (`lshDerive`). -/
+def lsh152 (o : Op) : Rule where
+  loc := ⟨"ARM64", 152⟩
+  op := o
+  vars := [⟨"t", .type, (.named "*types.Type")⟩, ⟨"x", .value, (.named "*Value")⟩,
+    ⟨"y", .value, (.named "*Value")⟩]
+  pat := (.op o none (.bind 0) .any .any .fixed [(.bind 1), (.bind 2)] false)
+  cond := (some (.call "shiftIsBounded" [(.rsv .v)] .bool))
+  block := none
+  result := .build
+    [{ op := .ARM64SLL, ty := (some (.var 0)), auxInt := none, aux := none, args := [.var 1, .var 2] }]
+  pos := []
+
+/-- `ARM64.rules:169`/`170` on the narrow `o` (`lshDerive`): the compare `cmp [64] y`
+(`CMPconst`, auxint `ai` an `int64`, or `CMPWconst`, an `int32`). -/
+def lshCsel (line : Nat) (o cmp : Op) (ai : Expr) : Rule where
+  loc := ⟨"ARM64", line⟩
+  op := o
+  vars := [⟨"t", .type, (.named "*types.Type")⟩, ⟨"x", .value, (.named "*Value")⟩,
+    ⟨"y", .value, (.named "*Value")⟩]
+  pat := (.op o none (.bind 0) .any .any .fixed [(.bind 1), (.bind 2)] false)
+  cond := (some (.unop .not (.call "shiftIsBounded" [(.rsv .v)] .bool) .bool))
+  block := none
+  result := .build
+    [{ op := .ARM64CSEL, ty := none, auxInt := (some (.op .ARM64LessThanU)), aux := none,
+       args := [.node 1, .node 2, .node 3] },
+     { op := .ARM64SLL, ty := (some (.var 0)), auxInt := none, aux := none, args := [.var 1, .var 2] },
+     { op := .Const64, ty := (some (.var 0)), auxInt := (some (.lit .int64 (.int 0))), aux := none,
+       args := [] },
+     { op := cmp, ty := (some (.glob "types.TypeFlags" (.named "*types.Type"))),
+       auxInt := (some ai), aux := none, args := [.var 2] }]
+  pos := []
+
+/-- `ARM64.rules:171` on the narrow `o`: the shift `o'` of `o`'s width by the zero extension `ze`
+of the amount to 32 bits. -/
+def lsh171 (o o' ze : Op) : Rule where
+  loc := ⟨"ARM64", 171⟩
+  op := o
+  vars := [⟨"t", .type, (.named "*types.Type")⟩, ⟨"bounded", .auxInt, .bool⟩,
+    ⟨"x", .value, (.named "*Value")⟩, ⟨"y", .value, (.named "*Value")⟩]
+  pat := (.op o none (.bind 0) (.bind 1) .any .fixed [(.bind 2), (.bind 3)] false)
+  cond := (some (.unop .not (.call "shiftIsBounded" [(.rsv .v)] .bool) .bool))
+  block := none
+  result := .build
+    [{ op := o', ty := (some (.var 0)), auxInt := (some (.var 1)), aux := none,
+       args := [.var 2, .node 1] },
+     { op := ze, ty := (some (.field (.rsv .typ) "UInt32" (.named "*types.Type"))), auxInt := none,
+       aux := none, args := [.var 3] }]
+  pos := []
+
+set_option maxRecDepth 100000
+
+set_option hygiene false in
+/-- The obligation of a derived rule of `lshSplit`. -/
+macro "lsh_derived" : tactic => `(tactic| (
+  arm_unfold
+  all_goals arm_shape
+  all_goals arm_norm
+  all_goals first
+    | (rcases hwf with h | h
+       exact absurd h hcond
+       exact refines_shlB_narrow _ _ _ h _ _)
+    | (have hk : e.auxInt [] = 0 := by simpa using hcond
+       first
+         | exact refines_shlCsel_narrow _ .w64 (by decide) _ hk
+             (fun B => Val.retypeL Ty.flags (Arm64.cmp B (Val.int .w64 (BitVec.ofInt 64 64))))
+             (lo_cmp64 .w64 (by decide)) _ _
+         | exact refines_shlCsel_narrow _ .w32 (by decide) _ hk
+             (fun B => Val.retypeL Ty.flags (Arm64.cmp1w
+               (fun x => Arm64.subFlags x (Arm64.imm32 (Int64.ofInt 64))) [B])) lo_cmp32 _ _
+         | exact refines_shlZ_narrow _ .w16 (by decide) _ hk _ _
+         | exact refines_shlZ_narrow _ .w8 (by decide) _ hk _ _)))
+
+/-- `ARM64.rules:148`: `(Lsh32x64 ...) => (Lsh64x64 ...)` with `152` and `169` on `Lsh32x64`
+(`lshSplit`) -/
+theorem r_ARM64_148_3_lsh_sound : ForallL ArmRule.Checked (lshSplit r_ARM64_148_3) := by
+  rw [show lshSplit r_ARM64_148_3 =
+    [r_ARM64_148_3, lsh152 .Lsh32x64,
+      lshCsel 169 .Lsh32x64 .ARM64CMPconst (.lit .int64 (.int 64))] from rfl]
+  exact ⟨checked_lsh rfl rfl rfl, .inl (by lsh_derived), .inl (by lsh_derived), trivial⟩
+
+/-- `ARM64.rules:148`: `(Lsh32x32 ...) => (Lsh64x32 ...)` with `152` and `170` on `Lsh32x32`
+(`lshSplit`) -/
+theorem r_ARM64_148_2_lsh_sound : ForallL ArmRule.Checked (lshSplit r_ARM64_148_2) := by
+  rw [show lshSplit r_ARM64_148_2 =
+    [r_ARM64_148_2, lsh152 .Lsh32x32,
+      lshCsel 170 .Lsh32x32 .ARM64CMPWconst (.lit .int32 (.int 64))] from rfl]
+  exact ⟨checked_lsh rfl rfl rfl, .inl (by lsh_derived), .inl (by lsh_derived), trivial⟩
+
+/-- `ARM64.rules:148`: `(Lsh32x16 ...) => (Lsh64x16 ...)` with `152` and `171` on `Lsh32x16`
+(`lshSplit`) -/
+theorem r_ARM64_148_lsh_sound : ForallL ArmRule.Checked (lshSplit r_ARM64_148) := by
+  rw [show lshSplit r_ARM64_148 =
+    [r_ARM64_148, lsh152 .Lsh32x16, lsh171 .Lsh32x16 .Lsh32x32 .ZeroExt16to32] from rfl]
+  exact ⟨checked_lsh rfl rfl rfl, .inl (by lsh_derived), .inl (by lsh_derived), trivial⟩
+
+/-- `ARM64.rules:148`: `(Lsh32x8 ...) => (Lsh64x8 ...)` with `152` and `171` on `Lsh32x8`
+(`lshSplit`) -/
+theorem r_ARM64_148_4_lsh_sound : ForallL ArmRule.Checked (lshSplit r_ARM64_148_4) := by
+  rw [show lshSplit r_ARM64_148_4 =
+    [r_ARM64_148_4, lsh152 .Lsh32x8, lsh171 .Lsh32x8 .Lsh32x32 .ZeroExt8to32] from rfl]
+  exact ⟨checked_lsh rfl rfl rfl, .inl (by lsh_derived), .inl (by lsh_derived), trivial⟩
+
+/-- `ARM64.rules:149`: `(Lsh16x64 ...) => (Lsh64x64 ...)` with `152` and `169` on `Lsh16x64`
+(`lshSplit`) -/
+theorem r_ARM64_149_3_lsh_sound : ForallL ArmRule.Checked (lshSplit r_ARM64_149_3) := by
+  rw [show lshSplit r_ARM64_149_3 =
+    [r_ARM64_149_3, lsh152 .Lsh16x64,
+      lshCsel 169 .Lsh16x64 .ARM64CMPconst (.lit .int64 (.int 64))] from rfl]
+  exact ⟨checked_lsh rfl rfl rfl, .inl (by lsh_derived), .inl (by lsh_derived), trivial⟩
+
+/-- `ARM64.rules:149`: `(Lsh16x32 ...) => (Lsh64x32 ...)` with `152` and `170` on `Lsh16x32`
+(`lshSplit`) -/
+theorem r_ARM64_149_2_lsh_sound : ForallL ArmRule.Checked (lshSplit r_ARM64_149_2) := by
+  rw [show lshSplit r_ARM64_149_2 =
+    [r_ARM64_149_2, lsh152 .Lsh16x32,
+      lshCsel 170 .Lsh16x32 .ARM64CMPWconst (.lit .int32 (.int 64))] from rfl]
+  exact ⟨checked_lsh rfl rfl rfl, .inl (by lsh_derived), .inl (by lsh_derived), trivial⟩
+
+/-- `ARM64.rules:149`: `(Lsh16x16 ...) => (Lsh64x16 ...)` with `152` and `171` on `Lsh16x16`
+(`lshSplit`) -/
+theorem r_ARM64_149_lsh_sound : ForallL ArmRule.Checked (lshSplit r_ARM64_149) := by
+  rw [show lshSplit r_ARM64_149 =
+    [r_ARM64_149, lsh152 .Lsh16x16, lsh171 .Lsh16x16 .Lsh16x32 .ZeroExt16to32] from rfl]
+  exact ⟨checked_lsh rfl rfl rfl, .inl (by lsh_derived), .inl (by lsh_derived), trivial⟩
+
+/-- `ARM64.rules:149`: `(Lsh16x8 ...) => (Lsh64x8 ...)` with `152` and `171` on `Lsh16x8`
+(`lshSplit`) -/
+theorem r_ARM64_149_4_lsh_sound : ForallL ArmRule.Checked (lshSplit r_ARM64_149_4) := by
+  rw [show lshSplit r_ARM64_149_4 =
+    [r_ARM64_149_4, lsh152 .Lsh16x8, lsh171 .Lsh16x8 .Lsh16x32 .ZeroExt8to32] from rfl]
+  exact ⟨checked_lsh rfl rfl rfl, .inl (by lsh_derived), .inl (by lsh_derived), trivial⟩
+
+/-- `ARM64.rules:150`: `(Lsh8x64 ...) => (Lsh64x64 ...)` with `152` and `169` on `Lsh8x64`
+(`lshSplit`) -/
+theorem r_ARM64_150_3_lsh_sound : ForallL ArmRule.Checked (lshSplit r_ARM64_150_3) := by
+  rw [show lshSplit r_ARM64_150_3 =
+    [r_ARM64_150_3, lsh152 .Lsh8x64,
+      lshCsel 169 .Lsh8x64 .ARM64CMPconst (.lit .int64 (.int 64))] from rfl]
+  exact ⟨checked_lsh rfl rfl rfl, .inl (by lsh_derived), .inl (by lsh_derived), trivial⟩
+
+/-- `ARM64.rules:150`: `(Lsh8x32 ...) => (Lsh64x32 ...)` with `152` and `170` on `Lsh8x32`
+(`lshSplit`) -/
+theorem r_ARM64_150_2_lsh_sound : ForallL ArmRule.Checked (lshSplit r_ARM64_150_2) := by
+  rw [show lshSplit r_ARM64_150_2 =
+    [r_ARM64_150_2, lsh152 .Lsh8x32,
+      lshCsel 170 .Lsh8x32 .ARM64CMPWconst (.lit .int32 (.int 64))] from rfl]
+  exact ⟨checked_lsh rfl rfl rfl, .inl (by lsh_derived), .inl (by lsh_derived), trivial⟩
+
+/-- `ARM64.rules:150`: `(Lsh8x16 ...) => (Lsh64x16 ...)` with `152` and `171` on `Lsh8x16`
+(`lshSplit`) -/
+theorem r_ARM64_150_lsh_sound : ForallL ArmRule.Checked (lshSplit r_ARM64_150) := by
+  rw [show lshSplit r_ARM64_150 =
+    [r_ARM64_150, lsh152 .Lsh8x16, lsh171 .Lsh8x16 .Lsh8x32 .ZeroExt16to32] from rfl]
+  exact ⟨checked_lsh rfl rfl rfl, .inl (by lsh_derived), .inl (by lsh_derived), trivial⟩
+
+/-- `ARM64.rules:150`: `(Lsh8x8 ...) => (Lsh64x8 ...)` with `152` and `171` on `Lsh8x8`
+(`lshSplit`) -/
+theorem r_ARM64_150_4_lsh_sound : ForallL ArmRule.Checked (lshSplit r_ARM64_150_4) := by
+  rw [show lshSplit r_ARM64_150_4 =
+    [r_ARM64_150_4, lsh152 .Lsh8x8, lsh171 .Lsh8x8 .Lsh8x32 .ZeroExt8to32] from rfl]
+  exact ⟨checked_lsh rfl rfl rfl, .inl (by lsh_derived), .inl (by lsh_derived), trivial⟩
 
 end GoFV.Proof.Low.Rules

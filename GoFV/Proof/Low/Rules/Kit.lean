@@ -583,6 +583,12 @@ theorem checked_move {r : Rule} {n ty ai ax ar args c}
 
 /-- A strength-reduced multiplication by a constant (`ArmRule.Mul`). -/
 theorem checked_mul {r : Rule} (h : GoFV.Rules.Interp.mulResult r = true) : ArmRule.Checked r :=
-  .inr (.inr (.inr (.inr h)))
+  .inr (.inr (.inr (.inr (.inl h))))
+
+/-- A narrow left shift's rename `(Lsh32x<a> ...) => (Lsh64x<a> ...)` (`ArmRule.Lsh`). -/
+theorem checked_lsh {r : Rule} {o o' : Op} {c : Bool}
+    (hp : r.pat = .op o none .any .any .any .ellipsis [] c) (hr : r.result = .setOp o')
+    (hw : GoFV.Rules.Derive.lshWide o = some o') : ArmRule.Checked r :=
+  .inr (.inr (.inr (.inr (.inr ⟨o, o', by rw [hp]; simp [ellipsisOn], hr, hw⟩))))
 
 end GoFV.Proof.Low.Rules
