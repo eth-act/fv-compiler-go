@@ -21,7 +21,11 @@ store (`LowerCheck.stFoldAddr`; `GoFV.Proof.Low.addrRef_foldSym`, `addrRef_foldF
 `(MOV…store [off] {sym} (ADD ptr idx) val mem) && off == 0 && sym == nil => (MOV…storeidx ptr idx
 val mem)` (and `ADDshiftLL [k]` to the scaled `MOV…storeidx{2,4,8}`): the validator replays the
 indexed store as the store's new definition (`LowerCheck.stIdxFold`), whose indexed address is the
-`ADD`'s (`GoFV.Proof.Low.Val.ReplayInvL.idxFold`).
+`ADD`'s (`GoFV.Proof.Low.Val.ReplayInvL.idxFold`). `(MOVDstoreidx ptr (SLLconst [3] idx) val mem)
+=> (MOVDstoreidx8 ptr idx val mem)` (`809`, and `MOVWstoreidx` by `[2]`, `810`) rewrite such an
+indexed store, an atom too (`checked_idxStore`): the validator replays the scaled store
+(`LowerCheck.stIdxScale`), whose indexed address refines the old one
+(`GoFV.Proof.Low.Val.ReplayInvL.scaleIdx`).
 -/
 
 namespace GoFV.Proof.Low.Rules
@@ -326,6 +330,12 @@ theorem r_ARM64_807_sound : ArmRule.Checked r_ARM64_807 := checked_armStore rfl 
 
 /-- `ARM64.rules:808`: `(MOVHstore [off] {sym} (ADDshiftLL [1] ptr idx) val mem) && off == 0 && sym == nil => (MOVHstoreidx2 ptr idx val mem)` -/
 theorem r_ARM64_808_sound : ArmRule.Checked r_ARM64_808 := checked_armStore rfl rfl
+
+/-- `ARM64.rules:809`: `(MOVDstoreidx ptr (SLLconst [3] idx) val mem) => (MOVDstoreidx8 ptr idx val mem)` -/
+theorem r_ARM64_809_sound : ArmRule.Checked r_ARM64_809 := checked_idxStore rfl rfl
+
+/-- `ARM64.rules:810`: `(MOVWstoreidx ptr (SLLconst [2] idx) val mem) => (MOVWstoreidx4 ptr idx val mem)` -/
+theorem r_ARM64_810_sound : ArmRule.Checked r_ARM64_810 := checked_idxStore rfl rfl
 
 /-- `ARM64.rules:650`: `(ADDconst [off1] (MOVDaddr [off2] {sym} ptr)) && is32Bit(off1+int64(off2)) => (MOVDaddr [int32(off1)+off2] {sym} ptr)` -/
 theorem r_ARM64_650_sound : ArmRule.Checked r_ARM64_650 := by

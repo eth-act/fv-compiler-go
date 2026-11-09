@@ -594,7 +594,7 @@ theorem atomPair_op_of_generic {tabs : Tables} {u w : Value} (h : atomPair tabs 
     rcases renameOp_cases h with ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ |
         ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | h9 <;> first
       | (rw [h2] at hg; exact absurd hg (by decide))
-      | (rw [(atomicOf_facts h9).2.1] at hg; cases hg)
+      | (rw [(atomicRen_facts h9).2.1] at hg; cases hg)
   · exfalso
     obtain ⟨-, -, -, n, hs, -⟩ := memLower_cases h
     generalize w.op = o at hs hg; cases hs <;> exact absurd hg (by decide)

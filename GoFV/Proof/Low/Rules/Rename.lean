@@ -2,11 +2,12 @@ import GoFV.Proof.Low.Rules.Kit
 import GoFV.Rules.Generated.ARM64
 
 /-!
-# Lowering rule lemmas: atom renames, atomics and `MemEq` (`ARM64.rules:376-377`, `438-439`, `442-458`, `482-489`, `492-504`, `507`, `512-516`)
+# Lowering rule lemmas: atom renames, atomics and `MemEq` (`ARM64.rules:376-377`, `438-439`, `442-458`, `482-490`, `492-504`, `507`, `512-516`)
 
 `ArmRule.Rename` of the ellipsis rules renaming an atom (`renameOp`): calls, tail calls, nil
-checks, the closure pointer, the bounds panic and the atomics (`Arm64.atomicOf`: an arm64 atomic
-runs as the generic atomic it is on its operands fitted to the location, `Sem.atomicArgs`); the
+checks, the closure pointer, the bounds panic and the atomics (`atomicRen`: an arm64 atomic
+runs as the generic atomic it is on its operands fitted to the location, `Sem.atomicArgs`, and
+`STLR` stores what `AtomicStorePtrNoWB` stores); the
 rules folding a constant operand into a lowered bounds panic (`ArmRule.Mem`, `pbAtom`) and
 lowering a `Zero` to `LoweredZero` or `LoweredZeroLoop` or a `Move` to `LoweredMove` or
 `LoweredMoveLoop` (`ArmRule.Mem`).
@@ -148,6 +149,12 @@ theorem r_ARM64_488_sound : ArmRule.Checked r_ARM64_488 :=
 /-- `ARM64.rules:489`: `(AtomicStore64 ...) => (STLR ...)` -/
 theorem r_ARM64_489_sound : ArmRule.Checked r_ARM64_489 :=
   checked_rename .AtomicStore64 .ARM64STLR rfl rfl rfl rfl rfl
+
+/-- `ARM64.rules:490`: `(AtomicStorePtrNoWB ...) => (STLR ...)` (`atomicRen`: `STLR` runs as
+`AtomicStore64`, which stores a pointer as `AtomicStorePtrNoWB` does,
+`GoFV.Proof.Low.Sim.atomicRoot_ptrStore`) -/
+theorem r_ARM64_490_sound : ArmRule.Checked r_ARM64_490 :=
+  checked_rename .AtomicStorePtrNoWB .ARM64STLR rfl rfl rfl rfl rfl
 
 /-- `ARM64.rules:492`: `(AtomicExchange(8|32|64) ...) => (LoweredAtomicExchange(8|32|64) ...)` -/
 theorem r_ARM64_492_sound : ArmRule.Checked r_ARM64_492 :=

@@ -1032,7 +1032,7 @@ theorem atomPair_phi {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true
   · rcases renameOp_cases h with ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ |
         ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | h9 <;> first
       | (rw [h1, h2]; decide)
-      | (obtain ⟨-, -, -, -, -, -, h1, h2, -⟩ := atomicOf_facts h9
+      | (obtain ⟨-, -, -, -, -, -, h1, h2, -⟩ := atomicRen_facts h9
          exact ⟨fun h' => absurd h' h2, fun h' => absurd h' h1⟩)
   · obtain ⟨h1, h2, -⟩ := memLower_ops h
     exact ⟨fun h' => absurd h' h2, fun h' => absurd h' h1⟩
@@ -1055,7 +1055,7 @@ theorem atomPair_isRoot {tabs : Tables} {u w : Value} (h : atomPair tabs u w = t
     rcases renameOp_cases h with ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ |
         ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | h9 <;> first
       | (rw [h1, h2]; decide)
-      | (obtain ⟨-, -, -, -, h1, h2, -⟩ := atomicOf_facts h9
+      | (obtain ⟨-, -, -, -, h1, h2, -⟩ := atomicRen_facts h9
          rw [h1, h2])
   · exact .inl (memLower_ops h).2.2
   · exact .inr h
@@ -1289,7 +1289,7 @@ private theorem atomPair_eval_arg {tabs : Tables} {f g : Func} {env : Env} (hE :
       rw [evalOpL_generic _ _ _ _ _ _ (hop ▸ hgen)]
       exact hmono
     · rcases evalOpL_rename (env := env) (ctx := Ctx.makeL tabs g) (fr := GT) (argv := AT) (ty := ty)
-          hop with ⟨k, hk, he⟩ | ⟨-, he⟩ | ⟨-, msg, he⟩ | ⟨-, he, ht⟩
+          hop with ⟨k, hk, he⟩ | ⟨-, he⟩ | ⟨-, msg, he⟩ | ⟨-, href⟩
       · rw [he]
         have ht : evalOp env (Ctx.makeL tabs g) GT { w with op := u.op } AT ty =
             callOp env (Ctx.makeL tabs g) { w with op := u.op } AT := evalOp_postCall hk
@@ -1298,8 +1298,7 @@ private theorem atomPair_eval_arg {tabs : Tables} {f g : Func} {env : Env} (hE :
         exact resRefines_trans hmono hfit
       · rw [he]; exact hmono
       · rw [he] at hmono; exact resRefines_trans hmono (.stuck msg _)
-      · rw [he]; rw [ht] at hmono
-        exact resRefines_trans hmono (atomicRoot_fit { w with op := u.op } AT)
+      · exact resRefines_trans hmono href
   exact Res.Rel.bind hev fun x y hxy => .ok (rty_le hl ty hxy)
 
 /-- `atomPair_eval` for a lowered call `w` (`callLead`): each argument register refines, or
