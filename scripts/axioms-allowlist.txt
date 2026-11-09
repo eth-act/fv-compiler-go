@@ -257,6 +257,10 @@ GoFV.Proof.Witness.GenG42.g42_facts._native.native_decide.ax_1_1 b0e1dfcd2fbecec
 # `b2`); its clean blocks are closed backwards and `(b2, 1)`, `(b2, 2)` are clean; `runLoc` runs
 # `v1`; compiled evaluation.
 GoFV.Proof.Witness.GenG43.g43_facts._native.native_decide.ax_1_1 56d41e45503e751d5f6c8b8c072b56f389e5a6ab12372137278f15dc85ffdde9
+# genG44_witness (GoFV/Proof/Witness/GenG44.lean, #553): `checkG44` accepts `math.Float64frombits`
+# and `checkG43` does not (`FMOVDgpfp` `v12` into `F0`); `runLoc` runs `v12` to `F0 = 1.0`'s bits;
+# compiled evaluation.
+GoFV.Proof.Witness.GenG44.g44_facts._native.native_decide.ax_1_1 9caaf09c63393684d4062f31e32f93436479d3bee421d7363a7d59cdbb528cf0
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:

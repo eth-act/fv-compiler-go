@@ -993,6 +993,29 @@ discharges with these lemmas). In the 13 functions G40 left, the stores and call
 `InitMem` in its block, in blocks reached only through it, or in blocks that end in a panic.
 G43 accepts 6,622 functions (+13 over G42).
 
+**Slice G44: floating-point moves, loads and stores** (`GoFV/Gen/Check44.lean`,
+`checkG44 lc ps bstart g`; proven sound, `g44_value`, `g44_initMem`, `g44_term`, `g44_nilPanic`,
+`g44_boundsPanic`, `GoFV/Proof/Gen/G44.lean`; machine side `GoFV/Proof/Gen/FMove.lean`): stage (a)
+of the float slice. G43 with the values that move a float's bit pattern (`.int .w32`/`.int .w64`,
+`fTy`) through the V registers (`objV?`, obj register `REG_F0 + k`): `Copy` between `F` registers
+(`FMOVS`/`FMOVD Fs, Fd` or nothing), `FMOVSload`/`FMOVDload` and `FMOVSstore`/`FMOVDstore` at G3's
+accesses, `FMOVSgpfp`/`FMOVDgpfp` (`Rn → Fd`, an X register of at least the result's class),
+`FMOVSfpgp`/`FMOVDfpgp` (`Fn → Rd`) and `FMOVSconst`/`FMOVDconst` (`FMOVS`/`FMOVD $c, Fd`, the
+`FCONST` bits of `auxInt`; `FMOVS` rounds them to single precision as Phase 1's `Const32F`).
+`LocMatch` already relates a V register to the low bits of its value (`FValRel`); the new pieces are
+`locMatch_setRegV`/`op_regV` (a V register write), `arg_relV` (a float argument read at its shape),
+`fvalRel_of_valRel`/`valRel_of_fvalRel` (between the X and V relations, under `AddrAgree`), and the
+`progStep` lemmas of the `FMOV` forms. New run premise `FLoadPre` (`G44Pre := G41Pre ∧ FLoadPre`): a
+float load reads valid bytes (G3's clause for `loadOp?`), and what it reads at its float shape is no
+pointer without an integer form (`Ptr.word` of a global or a frame temporary; a pointer has no V
+register form under `FValRel`). No trusted premise. Witness `genG44_witness`
+(`math.Float64frombits`: `FMOVD R0, F0` of `1.0`'s bits). G44 accepts 6,652 functions (+30 over
+G43). Five more need only `FMOVDloadidx8`/`FMOVDstoreidx8` (`sort.Float64Slice.Swap`, …).
+Stage (b), float arithmetic and compares (`FADD`…`FDIV`, `FMADD` under the 12 `useFMA` shapes, which
+`lower` refines only up to `Contract`, semantics2 §2.1; `FCMP` and the `FLT`/`FLE`/… blocks), and
+stage (c), calls with float arguments or results (the `< 16` ABI-register check of Check2/9/10/15),
+follow.
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -1062,6 +1085,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G41 | 6,570 (70.66%) | 192,225 |
 | G42 | 6,609 (71.08%) | 194,759 |
 | G43 | 6,622 (71.22%) | 195,711 |
+| G44 | 6,652 (71.54%) | 196,069 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1329,6 +1353,18 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
 - `G43.lean`: `memInit_stepLoc_keep`, `cleanAt_zero`, `memInit_clean_step`, `memInit_clean_term`,
   `g43L_value`, `g43L_initMem`, `g43L_nilPanic`, `g43L_boundsPanic`, `g43L_term`, `g43_value`,
   `g43_initMem`, `g43_nilPanic`, `g43_boundsPanic`, `g43_term`.
+- `Spec44.lean`: what `checkG44` accepted (`fobjOf?_some`, `fargObj_spec`, `fresObj_spec`,
+  `fTy_spec`, `VK44`, `fkind44_spec`, `vkind44_spec`, `vkind44_initMem`, `checkG33_of_44L`,
+  `checkG44L_spec`, `checkG44_spec`).
+- `FMove.lean`: `maskN_low`, `fpIdx?_f0`, `progStep_fmovVV`, `progStep_fmovXV`, `progStep_fmovVX`,
+  `progStep_fconst`, `progStep_floadAt`, `progStep_fstoreAt`, `objV?_some`, `objV?_inj`,
+  `locMatch_setRegV`, `fvalRel_retypeL`, `fval_cases`, `fvalRel_low`, `valRel_of_fvalRel`,
+  `fvalRel_of_valRel`, `op_regV`, `arg_relV`.
+- `G44.lean`: `FLoadPre`, `G44Pre`, `stepLoc_pureF`, `stepLoc_fload`, `stepLoc_fstore`,
+  `fvalRel_gpfp`, `lo_fmovVX`, `fvalRel_fconst`, `g44_fcopy`, `g44_fcopyNone`, `g44_gpfp`,
+  `g44_fpgp`, `g44_fconst`, `g44_fload`, `g44_fstore`, `uStep35_fcopy`, `uStep35_f44`,
+  `vk44_step`, `vk44_nil`, `vk44_pb`, `g44L_value` … `g44L_term`, `g44_value`, `g44_initMem`,
+  `g44_nilPanic`, `g44_boundsPanic`, `g44_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a

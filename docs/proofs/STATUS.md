@@ -788,6 +788,17 @@ the state unchanged), without G40's `memPure`. `MemInit` is no trusted premise: 
 rejects). Coverage on quick-v10 (`lake exe gen-check`): 6,622 of 9,297 functions (71.22%), 195,711
 values.
 
+## Phase 3: genssa, slice G44, float moves (I7, #553)
+
+`GoFV.Proof.Gen.g44_value`, `g44_initMem`, `g44_term`, `g44_nilPanic`, `g44_boundsPanic`
+(`GoFV/Proof/Gen/G44.lean`): when slice G44 (`checkG44`: G43 with float values in the V registers:
+`Copy` between `F` registers, `FMOVS`/`FMOVDload` and `store`, `FMOVS`/`FMOVDgpfp`, `fpgp` and
+`const`) accepts a function, they are G43's statements, `g44_value` under `G44Pre := G41Pre ∧
+FLoadPre`. `FLoadPre` is a run premise (no trusted hook): a float load reads valid bytes, and they
+are no pointer without an integer form at the float's shape. Witness: `genG44_witness`
+(`math.Float64frombits`, `FMOVD R0, F0`, which G43 rejects). Coverage on quick-v10 (`lake exe
+gen-check`): 6,652 of 9,297 functions (71.54%), 196,069 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g42_obj_value`, `g42_obj_term`, `g42_obj_nilPanic`, `g42_obj_boundsPanic`
