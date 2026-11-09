@@ -902,8 +902,8 @@ private theorem insn_fcvtInt {sf : Bool} {ft rmode : BitVec 2} {opc : BitVec 3} 
     cases hs
     refine ⟨_, rfl, insn_fall hpc (insn_holds_wV hH rd ?_) rfl⟩
     by_cases hf : ft = 0
-    · simp only [hf, ↓reduceIte, VEx.eval, insn_rX hH]
-    · simp only [hf, ↓reduceIte, VEx.eval, insn_rX hH, BitVec.setWidth_eq]
+    · simp only [hf, ↓reduceIte, VEx.eval_mkOfX, insn_rX hH]
+    · simp only [hf, ↓reduceIte, VEx.eval_mkOfX, insn_rX hH, BitVec.setWidth_eq]
   · next h1 h2 =>
     obtain rfl : rmode = 0 := BitVec.eq_of_toNat_eq (h1.trans rfl)
     obtain rfl : opc = 2 := BitVec.eq_of_toNat_eq (h2.trans rfl)
