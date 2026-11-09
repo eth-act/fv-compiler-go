@@ -2,6 +2,8 @@ import GoFV.Proof.Low.SimBase
 import GoFV.Proof.PtrAddr
 import GoFV.Proof.Pass.MemCombineBytes
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # A 128-bit store lowering a `Move` refines it (issue #385)
 

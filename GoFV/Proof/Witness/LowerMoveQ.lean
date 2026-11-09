@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerStoreSym
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower` on `Move [32]` and `Move [16]`: `mvq` (hand-written, issue #385)
 

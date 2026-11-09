@@ -1,6 +1,8 @@
 import GoFV.Proof.Low.Rules.Kit
 import GoFV.Rules.Generated.ARM64
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowering rule lemmas: `Move [16]`/`Move [32]` to 128-bit stores (`ARM64.rules:418`, `426`, `779`, `782`, `909`, `913`)
 

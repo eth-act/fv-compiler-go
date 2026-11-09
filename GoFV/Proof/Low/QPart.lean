@@ -2,6 +2,8 @@ import GoFV.Proof.Low.DenL
 import GoFV.Proof.Pass.MemCombineBytes
 import GoFV.Proof.PtrAddr
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The 16-byte halves a `Move` copies, read by 128-bit loads (issue #385)
 
