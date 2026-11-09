@@ -617,28 +617,30 @@ def moveSel (tabs : Tables) (M : Defs) (v : ID) (o : Op) (p s : Value) : Bool :=
   s.op == o && s.args == #[p.id] && s.auxInt == 0 && s.aux == none && s.id != v &&
     (M.get? s.id).isNone && termVL tabs s && Sem.Ty.beq (shpL tabs s.type) (.blob 16)
 
-/-- A rule event at the `Move [16]` or `Move [32]` `x` at `v` lowering it to a 128-bit copy
-(`ARM64.rules:418`, `426`; `moveQOp`), replayed as its new definitions: the 128-bit store `u` at
-`v` (`x`'s type, offset 0, no aux) on `x`'s destination and memory, whose values are fresh load
-terms of `x`'s source and memory (`moveLd`) at their lowered shapes: an `FMOVQload` (a `Vec128`)
-for `FMOVQstore`, `Select0` and `Select1` (`moveSel`) of one `FLDPQ` (a pair of `Vec128`s) for
-`FSTPQ`. -/
-def moveDef (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Option (List Value) :=
+/-- A rule event at the `Move [16]` or `Move [32]` `x` at `v` (a `Move` in `f`) lowering it to a
+128-bit copy (`ARM64.rules:418`, `426`; `moveQOp`), replayed as its new definitions: the 128-bit
+store `u` at `v` (`x`'s type, offset 0, no aux) on `x`'s destination and memory, whose values are
+fresh load terms of `x`'s source and memory (`moveLd`) at their lowered shapes: an `FMOVQload` (a
+`Vec128`) for `FMOVQstore`, `Select0` and `Select1` (`moveSel`) of one `FLDPQ` (a pair of
+`Vec128`s) for `FSTPQ`. The result is `u` and the fresh terms, each after those it reads. -/
+def moveDef (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value) :
+    Option (Value × List Value) :=
   match M.get? v, defs with
   | some x, _ :: u :: rest =>
     if x.id == v && u.id == v && x.op == .Move && x.args.size == 3 && !termVL tabs x &&
         !termVL tabs u && u.type == x.type && u.auxInt == 0 && u.aux == none &&
-        (rest.map (·.id)).Nodup then
+        (rest.map (·.id)).Nodup && (f.value? v).any (·.op == .Move) then
       match moveQOp x.auxInt, rest with
-      | some (.ARM64FMOVQstore, _), [l] =>
-        if u.op == .ARM64FMOVQstore && l.op == .ARM64FMOVQload && moveLd tabs M v x l &&
+      | some (o, _), [l] =>
+        if o == .ARM64FMOVQstore && u.op == o && l.op == .ARM64FMOVQload && moveLd tabs M v x l &&
             Sem.Ty.beq (shpL tabs l.type) (.blob 16) &&
-            u.args == #[x.args[0]!, l.id, x.args[2]!] then some (u :: rest) else none
-      | some (.ARM64FSTPQ, _), [s0, p, s1] =>
-        if u.op == .ARM64FSTPQ && p.op == .ARM64FLDPQ && moveLd tabs M v x p &&
+            u.args == #[x.args[0]!, l.id, x.args[2]!] then some (u, [l]) else none
+      | some (o, _), [s0, p, s1] =>
+        if o == .ARM64FSTPQ && u.op == o && p.op == .ARM64FLDPQ && moveLd tabs M v x p &&
             Sem.Ty.beq (shpL tabs p.type) (.tuple [.blob 16, .blob 16]) &&
             moveSel tabs M v .Select0 p s0 && moveSel tabs M v .Select1 p s1 &&
-            u.args == #[x.args[0]!, s0.id, s1.id, x.args[2]!] then some (u :: rest) else none
+            u.args == #[x.args[0]!, s0.id, s1.id, x.args[2]!] then some (u, [p, s0, s1])
+        else none
       | _, _ => none
     else none
   | _, _ => none
@@ -1042,8 +1044,9 @@ def replayL (tabs : Tables) (t : Interp.Table) (f : Func) :
             | some (u, none) => replayL tabs t f (M.put v u) B evs
             | some (u, some s) => replayL tabs t f ((M.put s.id s).put v u) B evs
             | none =>
-              match moveDef tabs M v defs.toList with
-              | some ds => replayL tabs t f (ds.foldl (fun M u => M.put u.id u) M) B evs
+              match moveDef tabs f M v defs.toList with
+              | some (u, ts) =>
+                replayL tabs t f ((ts.foldl (fun M s => M.put s.id s) M).put v u) B evs
               | none =>
               match frameFold tabs f M v defs.toList with
               | some u => replayL tabs t f (M.put v u) B evs
