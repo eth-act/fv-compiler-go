@@ -934,30 +934,35 @@ declarations, then the autos the pipeline created). From the stock `.prog` file 
 input view is read (definitions, config, `Dcl` at `AllocFrame`'s start, `genin`). The stock
 column runs the same back end on the stock `trim` function of every function.
 
-| quick-v10 (9,297 functions, 5 min 16 s; `agent/obj10` on main c6b7546a (G42), `--jobs 2`) | pipeline output | share | stock `trim` |
+| quick-v10 (9,297 functions, 6 min 19 s; `agent/obj11` on main c3414814 (G44), `--jobs 2`) | pipeline output | share | stock `trim` |
 | --- | ---: | ---: | ---: |
-| fully verified (Phase 2, through `trim`) | 7,770 | 83.57% | - |
-| … genssa and `Flushplist` ran | 7,770 | 83.57% | 9,297 |
-| … ∧ `checkG42` | 6,021 | 64.76% | 6,609 |
-| … ∧ `checkG42` ∧ `retRegsOK` | 6,021 | 64.76% | 6,609 |
-| … ∧ `checkObj` | 7,052 | 75.85% | 7,741 |
-| **… ∧ `checkG42` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach`)** | **5,950** | **63.99%** | 6,414 |
-| … end to end, pipeline output identical to stock after `trim` | 5,048 | 54.29% | - |
+| fully verified (Phase 2, through `trim`) | 7,834 | 84.26% | - |
+| … genssa and `Flushplist` ran | 7,834 | 84.26% | 9,297 |
+| … ∧ `checkG44` | 6,058 | 65.16% | 6,652 |
+| … ∧ `checkG44` ∧ `retRegsOK` | 6,058 | 65.16% | 6,630 |
+| … ∧ `checkObj` | 7,067 | 76.01% | 7,741 |
+| **… ∧ `checkG44` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach`)** | **5,970** | **64.21%** | 6,426 |
+| … end to end, pipeline output identical to stock after `trim` | 5,066 | 54.49% | - |
 
 The composition on G34 (#632) accepted 5,424 (58.34%), framed leaves excluded; on G37 with framed
 leaves 5,538 (59.56%); on G38 (the acquire loads) the probe counted 5,802 (62.40%); on G39 (the
 homes of removed values, #642) 5,853 (62.95%); on G40 (`InitMem` after the entry values, main
 be69adb9) 5,874 (63.18%). On G41 (`CMNconst`, `CMPshift{LL,RL}`, main e24a029b, whose float loads,
-#643, add 71 fully verified functions) it counted 5,931 (63.79%), and G42 (`ANDconst` widening a
-narrow argument) adds 19. `ownFrame` gives the stock
-`stksize`/`stkptrsize` on all 6,543 fully verified functions whose output is identical to stock.
+#643, add 71 fully verified functions) it counted 5,931 (63.79%), G42 (`ANDconst` widening a
+narrow argument) adds 19 (5,950), and G43 (`InitMem` at clean positions, main 71de6125) 7 (5,957).
+On G44 (float moves, loads and stores) the count on main 833350fe stays 5,957: `checkObj` does not
+model the `FMOVD`/`FMOVS` forms G44 accepts yet (SIMD&FP, 43 functions among the fully verified),
+and on the stock column `retRegsOK` rejects 22 of the functions `checkG44` accepts. Main
+c3414814 (#649, narrow left shifts in `lower`) adds 64 fully verified functions and 13 end to end
+(5,970). `ownFrame` gives the stock
+`stksize`/`stkptrsize` on all 6,578 fully verified functions whose output is identical to stock.
 `pallocSum.start` (the witness `verified_mach_witness`) is among the accepted. Top reasons among
-the fully verified: `checkG42`: `store shape` (312), `frame variable off another base` (229), `op
-CALLtail` (164), `argument v# in register #` (151), `frame variable with an integer address`
-(138), `frame variable operand class` (134), `op LoweredAtomicAdd#Variant` (96), `op
-LoweredAtomicCas#Variant` (92); `retRegsOK`: none; `checkObj`: `FLDPQ` (SIMD&FP, 121), unmodelled
-atomics `LDADDAL`/`CASAL` (≈245 together), `tail: spill register` (58), `FMOVD` (SIMD&FP, 39),
-`LSL` by a register (39).
+the fully verified: `checkG44`: `store shape` (326), `frame variable off another base` (229), `op
+CALLtail` (164), `argument v# in register #` (163), `frame variable with an integer address`
+(138), `frame variable operand class` (134), `op LoweredAtomicAdd#Variant` (97), `op
+LoweredAtomicCas#Variant` (92), `floating-point argument or result` (64); `retRegsOK`: none;
+`checkObj`: `FLDPQ` (SIMD&FP, 121), `LSL` by a register (83), unmodelled atomics
+`LDADDAL`/`CASAL` (≈247 together), `tail: spill register` (58), `FMOVD` (SIMD&FP, 39).
 
 The full-v11 table below is the previous measurement (G18 probe, stock locals, main 8c5b1472 plus
 PR #606); it is re-measured on the composition on G34.
