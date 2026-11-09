@@ -6,6 +6,8 @@
 # introduces the use, with a comment naming the theorem.
 # Option 2 (#553/#385, the address assignment as the class `Addrs`): every `*_facts` and
 # `*_pipeline` pin below moved, each statement now naming `Addrs.fixed`.
+# G46 (#553): `condBr` gained the float block kinds, so every pin whose statement reaches the
+# genssa validator moved again (re-taken from the audit).
 # verifiedPipeline_witness (GoFV/Proof/Witness/Pipeline.lean, #189): the whole verified pipeline on
 # plF; `decide +kernel` gets stuck comparing the pass results' CFG caches (`Func` equality).
 GoFV.Proof.Witness.plF_pipeline._native.native_decide.ax_1_1 0151a53b6067e0fdd75e947a33b9446337d0319c48949a29b9c4fef4e34fb615
@@ -16,57 +18,57 @@ GoFV.Proof.Witness.pfF_pipeline._native.native_decide.ax_1_1 130bed3f9ecae7fc2ba
 # genG1_witness_50/_30 (GoFV/Proof/Witness/GenG1.lean, #553): `checkG1` accepts `clamp` (parsed,
 # `Env.load`, `genssa`) and `runLoc` runs its compare and branch; compiled evaluation, as plF_pipeline.
 # Pin updated for the embedded gofv-prog 3 file (quick-v10, #550).
-GoFV.Proof.Witness.GenG1.clamp_facts._native.native_decide.ax_1_1 17896e39549118edf4b72366c504f55bfe7f8cf1e3bd7f6a9e46bc672862a8f3
+GoFV.Proof.Witness.GenG1.clamp_facts._native.native_decide.ax_1_1 c0df837cc9aff4d3f5b0c8190f95a0b133b54a41947b0158917e8b44ae51152a
 # genG2_value_witness, genG2_term_witness_50/_30 (GoFV/Proof/Witness/GenG2.lean, #553): `checkG2`
 # accepts `testInts` (parsed, `Env.load`, `genssa`) and `runLoc` runs a spill, a call, its memory
 # and a reload; `checkG2` accepts `clamp`; compiled evaluation, as plF_pipeline.
 # Pin updated for the G3 branch (#553: `Cx2` takes the value and terminator checks).
-GoFV.Proof.Witness.GenG2.g2_facts._native.native_decide.ax_1_1 3aaa67b8f4523276d6af5b646d160786f3a65dce3f38596c81deda9170b45622
+GoFV.Proof.Witness.GenG2.g2_facts._native.native_decide.ax_1_1 227d5f8c30f75900df27020275ec59d699bb3ac1f8778aace0fa250b30cbd8a3
 # genG3_witness_clear/_set (GoFV/Proof/Witness/GenG3.lean, #553): `checkG3` accepts
 # `pallocSum.start` and `checkG2` does not (parsed, `Env.load`, `genssa`), `runLoc` runs its bit
 # test both ways and its `ANDconst`; compiled evaluation, as plF_pipeline.
 # Pin updated for the G4 branch (#553: `kStep` follows pair homes).
-GoFV.Proof.Witness.GenG3.g3_facts._native.native_decide.ax_1_1 efc4b1cf272d0ccb34eda2d6df80a8c357125c32b74cb6295320b11a4ed0a221
+GoFV.Proof.Witness.GenG3.g3_facts._native.native_decide.ax_1_1 be88b974416c55561c51c632d6d9797263d6550ac65b78f62e17a8d9a618c978
 # genG4_value_witness, genG4_term_witness (GoFV/Proof/Witness/GenG4.lean, #553): `checkG4` accepts
 # `(*errorString).Error` and `checkG3` does not (parsed, `Env.load`, `genssa`), `runLoc` runs its
 # pair load and both selects, the pair load reads valid bytes; `checkG4` accepts `pallocSum.start`
 # with G3's tables; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG4.g4_facts._native.native_decide.ax_1_1 348235130e5283082d229b6038ced12d9e941e2e9879fd799a85e3228f880d7f
+GoFV.Proof.Witness.GenG4.g4_facts._native.native_decide.ax_1_1 7b9aa9b467b292a1d70045bf5d35e8325b5bb031bc0cf3c6c06756852510cf58
 # genG5_value_witness, genG5_term_witness (GoFV/Proof/Witness/GenG5.lean, #553): `checkG5` accepts
 # `g` of test/stackobj and `checkG4` does not (parsed, `Env.load`, `genssa`), `runLoc` runs a spill,
 # a call, its memory and the marker `KeepAlive`; `checkG5` accepts `pallocSum.start` with G3's
 # tables; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG5.g5_facts._native.native_decide.ax_1_1 ed7a5e7fbd0c800e7d878aa359e6eae67150a3ebe409abc4a99af44256e78235
+GoFV.Proof.Witness.GenG5.g5_facts._native.native_decide.ax_1_1 282cca8716f9dd9fe176b5613dc6eddd25d47dc1d927689e2845bd708eea9091
 # genG6_value_witness, genG6_term_witness (GoFV/Proof/Witness/GenG6.lean, #553): `checkG6` accepts
 # `SChan.Send` of test/closedchan and `checkG5` does not (parsed, `Env.load`, `genssa`), `runLoc`
 # runs the store to a frame temporary and its address; `checkG6` accepts `pallocSum.start` with
 # G3's tables and no frame variable; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG6.g6_facts._native.native_decide.ax_1_1 3a08fc7d9d9040a0e40d01282ac988f8afdb8b3e2f7e49eff3980e08f6470f85
+GoFV.Proof.Witness.GenG6.g6_facts._native.native_decide.ax_1_1 008d69042df63f6d87f01207b89500d5c43aaf85e56e12201259213b6890033d
 # genG7_value_witness, genG7_panic_witness (GoFV/Proof/Witness/GenG7.lean, #553): `checkG7` accepts
 # `(*A).g` of test/method and `checkG6` does not (parsed, `Env.load`, `genssa`), `runLoc` runs the
 # nil check on a pointer to a global and panics on nil; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG7.g7_facts._native.native_decide.ax_1_1 550dd9a6c124d479717cfc5239e349b83c1b91107b85b016e4197c64144538b3
+GoFV.Proof.Witness.GenG7.g7_facts._native.native_decide.ax_1_1 d2d9404e59fea9883f0629a876d8ed5ec026bc9d24efdb99e3287d5627be4047
 # genG8_value_witness (GoFV/Proof/Witness/GenG8.lean, #553): `checkG8` accepts
 # `sync_runtime_registerPoolCleanup` of std/runtime and `checkG7` does not (parsed, `Env.load`,
 # `genssa`), `runLoc` runs the write-barrier request and both selects; compiled evaluation, as
 # plF_pipeline.
-GoFV.Proof.Witness.GenG8.g8_facts._native.native_decide.ax_1_1 7229e1c92446b642cb20648163bacd7074d1864095c9ad2f10c20127a20a5a37
+GoFV.Proof.Witness.GenG8.g8_facts._native.native_decide.ax_1_1 92d8d22b3166fe450fb4a26722a0e8538f911ceeb940ff139903a6287ecc1b71
 # genG9_value_witness (GoFV/Proof/Witness/GenG9.lean, #553): `checkG9` accepts
 # `runtime.fint64to32` and `checkG8` does not (parsed, `Env.load`, `genssa`), `runLoc` runs the
 # static call, its result and its memory; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG9.g9_facts._native.native_decide.ax_1_1 aba934715a93481361162b0f1a2ff1f0a51129d20e4aa4bc724b894696d3e5e3
+GoFV.Proof.Witness.GenG9.g9_facts._native.native_decide.ax_1_1 fbcb440d7d9700e53c5393ed58f57b40170e06250e1d79cac2587a1a2a23617f
 # genG10_value_witness (GoFV/Proof/Witness/GenG10.lean, #553): `checkG10` accepts
 # `sync.Locker.Lock` and `checkG9` does not (parsed, `Env.load`, `genssa`), `runLoc` runs the
 # interface call and its memory; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG10.g10_facts._native.native_decide.ax_1_1 1dd1fb13834e82766c7339435c9b144ca86583119723e007f958e019ea0f5335
+GoFV.Proof.Witness.GenG10.g10_facts._native.native_decide.ax_1_1 f621088e9201c31e113b586c8fa1a7bf05b1bd39cc6444da320be695b6a0e0be
 # genG11_value_witness (GoFV/Proof/Witness/GenG11.lean, #553): `checkG11` accepts `adder.func1`
 # of examples/closures and `checkG10` does not (parsed, `Env.load`, `genssa`), `runLoc` runs the
 # closure pointer `LoweredGetClosurePtr`; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG11.g11_facts._native.native_decide.ax_1_1 2044077406a6312ccd39969b957ca1c1b3b3d7214a823ef5c4853fb19099e36d
+GoFV.Proof.Witness.GenG11.g11_facts._native.native_decide.ax_1_1 0a204eec4c62443defc853920366858610a478e43172263e0adbc9e8238fecc1
 # genG12_value_witness (GoFV/Proof/Witness/GenG12.lean, #553): `checkG12` accepts
 # `runtime.subtractb` and `checkG11` does not (parsed, `Env.load`, `genssa`), `runLoc` runs the
 # pointer conversion `Convert`; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG12.g12_facts._native.native_decide.ax_1_1 319f78ca8109ce0a528c4cc1d9271e2b7c40697e3a1e00e34fd3c5af27a9113a
+GoFV.Proof.Witness.GenG12.g12_facts._native.native_decide.ax_1_1 2dbfec438646e2139927fa9316aa0a2ad1e6204ac410f8920d26fbd71b9185db
 # objFrame_entry_witness, objFrame_morestack_witness, objFrame_exit_witness
 # (GoFV/Proof/Witness/ObjFrame.lean, #553): `checkObj` accepts `testInts` of test/makeslice (parsed,
 # `flush`, as obj-check) framed with a stack check, `linkCode` links it, the stack check passes from
@@ -82,7 +84,7 @@ GoFV.Proof.Witness.ObjFrame.obj_facts._native.native_decide.ax_1_1 28bbd66cfb6ad
 # at the base; `checkG7` accepts `pallocSum.start` with GenG3's tables; compiled evaluation, as
 # plF_pipeline.
 GoFV.Proof.Witness.ObjG7.g_obj_facts._native.native_decide.ax_1_1 e51909374d7da0c250cd8db94975f23d823edfd80c1701adf201050c9de921f9
-GoFV.Proof.Witness.ObjG7.start_obj_facts._native.native_decide.ax_1_1 9f4924749db1a8ee57fd1abf71848a0968c58ad934fa0147847b6fbd31f63dbd
+GoFV.Proof.Witness.ObjG7.start_obj_facts._native.native_decide.ax_1_1 2343cf3eebb5201f968b36eb9b0a83d34f0b53b5f8e538e9f06aee491ebec810
 # objStarLeaf_witness (GoFV/Proof/Witness/ObjG7.lean, #553): `(*A).g` is a leaf (`leafOf`) and the
 # caller's 0x40 is neither a Prog address nor `endP`; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.ObjG7.g_leaf_facts._native.native_decide.ax_1_1 3a064efdfc296a60658a603e4831d0c7e1795f0f26040c4b24454f29ead1ec67
@@ -90,189 +92,189 @@ GoFV.Proof.Witness.ObjG7.g_leaf_facts._native.native_decide.ax_1_1 3a064efdfc296
 # machine-side facts of `pallocSum.start` (no `CALL (Rn)`), and `lcFacts` plus the returning run
 # of `runLoc` on p = 7 in plRunEnv; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.ObjWhole.obj_facts._native.native_decide.ax_1_1 0780ba8878336c974ffcb880fe764a74a49a59c25f006fad91d3ab8b001f1183
-GoFV.Proof.Witness.ObjWhole.start_facts._native.native_decide.ax_1_1 0ce0e16829de86a52a84fa7178922585e2e30dee9eebd645ce3157ce2a934489
+GoFV.Proof.Witness.ObjWhole.start_facts._native.native_decide.ax_1_1 59939345bf817557e269fac17e4aae7f3e123a1ccb15e0cda95ad8612c592f7b
 # verified_mach_witness (GoFV/Proof/Witness/ObjEndToEnd.lean, #553): `pallocSum.start` from its
 # generic SSA through the verified pipeline to genssa's Progs (`refsLive` of the output, `lcFacts`,
 # `checkG44L`, on `liveCtx` of it) and the linked words; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.ObjEndToEnd.e2e_facts._native.native_decide.ax_1_1 1b5d6dbfba93318402ce4a6feca455c1b1b682105b69dc8bed733c85842ae374
+GoFV.Proof.Witness.ObjEndToEnd.e2e_facts._native.native_decide.ax_1_1 e244a230b3f8eedc1b3a002074fbaed0ffc2b4393f8ba93c765058f7a6eabf49
 # objWholeNL_ret_witness (GoFV/Proof/Witness/ObjWholeNL.lean, #553): `checkObj`, `linkCode` and the
 # machine-side facts of `runtime.gclinkptr.ptr` (no arm64 op), and `lcFacts` plus the returning
 # run of `runLoc` in Phase 1's mode; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.ObjWholeNL.nl_obj_facts._native.native_decide.ax_1_1 c4c8b58ad810fdf8a63e7a23bc82e07b167aeeecdad60f98b17ec59adb0fbd1a
-GoFV.Proof.Witness.ObjWholeNL.nl_lc_facts._native.native_decide.ax_1_1 815943434d58990282938c7d83de7976f786d9b86be23972da51a70d7e2b48f5
+GoFV.Proof.Witness.ObjWholeNL.nl_lc_facts._native.native_decide.ax_1_1 18c02cac15b273e357a9237a782ac47791899e2f3ae2e406aa5cf0cfe1ddea52
 # objWhole_panic_witness, g44_callPanic_witness (GoFV/Proof/Witness/ObjPanic.lean, #553): `checkObj`,
 # `linkCode` and the machine-side facts of `(*A).g`, `lcFacts` with the nil check's panic from
 # `runLoc`'s first state on a nil receiver; `checkG44L` on `fint64to32` and its call's panic in
 # `envP`; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.ObjPanic.panic_obj_facts._native.native_decide.ax_1_1 bd0260b986ba294616a555842c6a83937e266ad685c3c0f2bdf0e80b488f234f
-GoFV.Proof.Witness.ObjPanic.panic_lc_facts._native.native_decide.ax_1_1 d9efe0f74b27db1d317d69d873a273b582d8727264304948db5e81e0d82befde
-GoFV.Proof.Witness.ObjPanic.callPanic_facts._native.native_decide.ax_1_1 88cafcee40cbf444e30126958ac6104a6cb17e09486e12d021f64cc02886eb35
+GoFV.Proof.Witness.ObjPanic.panic_lc_facts._native.native_decide.ax_1_1 b8aac39eab3027081adcd26513f7048698eef8b3ac7f782f7ec138e8c16f3427
+GoFV.Proof.Witness.ObjPanic.callPanic_facts._native.native_decide.ax_1_1 4aff7cbe46e07127a8b618d9b7529def0126fa9354e04d6162ac934f183d5c0b
 # g44_icallPanic_witness, g44_storePanic_witness (GoFV/Proof/Witness/ObjPanic.lean, #553): `checkG44L`
 # on `Locker.Lock` and its interface call's panic in `envP`; `checkG44L` on `(*queueOnePass).next`
 # with `checkG21`'s tables and the nil-page panic of its `MOVWstore` from a nil `q`; compiled
 # evaluation, as plF_pipeline.
-GoFV.Proof.Witness.ObjPanic.icallPanic_facts._native.native_decide.ax_1_1 d78851f70a4652931572a9bc82d8d2c940c829fa34f879fb2c712ea1f57f0923
-GoFV.Proof.Witness.ObjPanic.storePanic_facts._native.native_decide.ax_1_1 1695a1d9c83e5ffa733bdd07547bc951f82d4c873b9e88181528c331aa68b777
+GoFV.Proof.Witness.ObjPanic.icallPanic_facts._native.native_decide.ax_1_1 2a4c7581ca680f11c9e7ee940f19d29e5423dd5e3d486dc2ac4609c2aa73a933
+GoFV.Proof.Witness.ObjPanic.storePanic_facts._native.native_decide.ax_1_1 0c1aedbff83cafdf1582602ad328e687729508a7f907d50a6713fca4574eb984
 # g44_loadPanic_witness (GoFV/Proof/Witness/ObjPanic.lean, #553): `(*queueOnePass).next`'s `v13` is
 # `MOVWUload` and panics with `nilDeref` from a nil `q`; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.ObjPanic.loadPanic_facts._native.native_decide.ax_1_1 e718ad58aa494db820996af47639089bdb50b5ae560c989518f9d69f0c156ed4
 # g44_ldarPanic_witness (GoFV/Proof/Witness/ObjPanic.lean, #553): `checkG44L` accepts
 # `sync/atomic.LoadInt64` with `checkG38`'s tables, and its `v8` (`LDAR`) panics with `nilDeref`
 # from a nil `addr`; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.ObjPanic.ldarPanic_facts._native.native_decide.ax_1_1 afcc58360dfd721705cf1e83f91066173c29b0952d0ab0b1745d95f38c01ec6e
+GoFV.Proof.Witness.ObjPanic.ldarPanic_facts._native.native_decide.ax_1_1 dc1515916e33ed55c849bc6fcfe7ea660b6c1546b56e210a567dff5a8c50a845
 # genG13_value_witness (GoFV/Proof/Witness/GenG13.lean, #553): `checkG13` accepts
 # `runtime.(*pageBits).clearAll` and `checkG12` does not (parsed, `Env.load`, `genssa`), `runLoc`
 # runs the zeroing `LoweredZero [64]` to 64 zero bytes; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG13.g13_facts._native.native_decide.ax_1_1 23ae28cbce49ae038d3a52c8f3f560bbd7756d319e44477d5da820f5a6b3ce1b
+GoFV.Proof.Witness.GenG13.g13_facts._native.native_decide.ax_1_1 7e0f14cba505377dee6185c836ca04feede9ed99af28930dfb2605a04a20cc70
 # genG14_value_witness (GoFV/Proof/Witness/GenG14.lean, #553): `checkG14` accepts
 # `runtime.argv_index` and `checkG13` does not (parsed, `Env.load`, `genssa`), `runLoc` runs the
 # register-index load `MOVDloadidx8`; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG14.g14_facts._native.native_decide.ax_1_1 5e187c00eefe339c5f8276457a390f1236660975ba1bd8d37ff5028150caed5d
+GoFV.Proof.Witness.GenG14.g14_facts._native.native_decide.ax_1_1 12e4338d77aaff11e49331deb88bf5313b1b61d89a781c60131d18a0d0ea33bf
 # genG15_value_witness (GoFV/Proof/Witness/GenG15.lean, #553): `checkG15` accepts `(*T3).M` of
 # test/recover and `checkG14` does not (parsed, `Env.load`, `genssa`), `runLoc` runs its static
 # call with a zero-sized stack argument; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG15.g15_facts._native.native_decide.ax_1_1 6acf8683d22b34cc691fbecd1d05eb93d343991a2cc85a15f0ab2540249a66e1
+GoFV.Proof.Witness.GenG15.g15_facts._native.native_decide.ax_1_1 2de6331b83af80bc10d4701d2e3e6bdffb620a2d01bc485ac4958b475e98648a
 # genG16_value_witness (GoFV/Proof/Witness/GenG16.lean, #553): `checkG16` accepts
 # `spanSetSpinePointer.lookup` of std/runtime and `checkG15` does not (parsed, `Env.load`,
 # `genssa`), `runLoc` runs its shifted add `ADDshiftLL [3]`; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG16.g16_facts._native.native_decide.ax_1_1 caa042a0f50dc0244c2166aa8d24431203fa27c41f1519ecc0ea7c43da2e757d
+GoFV.Proof.Witness.GenG16.g16_facts._native.native_decide.ax_1_1 db6e1ee3ec3717d2edd50bfc1075817cdc4ceae8330436acb4517365e208c5e2
 # genG17_value_witness (GoFV/Proof/Witness/GenG17.lean, #553): `checkG17` accepts `runtime.getm`
 # and `checkG16` does not (parsed, `Env.load`, `genssa`), `runLoc` runs its `GetG`; compiled
 # evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG17.g17_facts._native.native_decide.ax_1_1 f991099c1630a09aa03d5f427a9721e9c86ef33d5e03fb352dbcff337dd1a404
+GoFV.Proof.Witness.GenG17.g17_facts._native.native_decide.ax_1_1 b911f95cf3db03fcb1be2893109c3acd9a040eb90211992ac8fe3d660791e5a3
 # genG18_value_witness (GoFV/Proof/Witness/GenG18.lean, #553): `checkG18` accepts `setpf` of
 # test/ken_array and `checkG17` does not (parsed, `Env.load`, `genssa`), `runLoc` runs its
 # register-index store `MOVDstoreidx8`; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG18.g18_facts._native.native_decide.ax_1_1 c473f2621f3562076fb5eabb0f75bc3523260c4783e7d03f36fdf6a1b1f30d5a
+GoFV.Proof.Witness.GenG18.g18_facts._native.native_decide.ax_1_1 9f2fbfab5f3040e85aecc55177eb30a82c2914b122ab1af118da734c97d02ccc
 # genG19_boundsPanic_witness (GoFV/Proof/Witness/GenG19.lean, #553): `checkG19` accepts `main.func1`
 # of test/convert4 and `checkG18` does not (parsed, `Env.load`, `genssa`), `runLoc` runs its bounds
 # panic `LoweredPanicBoundsCR` to `.bounds 16 9 5`, and the only `PCDATA_PanicBounds` value at a
 # `CALL runtime.panicBounds` is 350; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG19.g19_facts._native.native_decide.ax_1_1 b28a9bcc1e1a51971f2ef33817531702b1ac8ab503108153523d90ef3cb24aea
+GoFV.Proof.Witness.GenG19.g19_facts._native.native_decide.ax_1_1 02923c9cab5f1ccc3990e42755129b298298e3488a94c8686b33ef45b19fc633
 # genG20_value_witness (GoFV/Proof/Witness/GenG20.lean, #553): `checkG20` accepts `runtime.NumCPU`
 # and `checkG19` does not (parsed, `Env.load`, `genssa`), `runLoc` runs its `MOVWload` of
 # `runtime.numCPUStartup` and `MOVDnop` to the 64-bit `-2`, and the upper-bit table before the
 # `MOVDnop` names `R0`; compiled evaluation, as plF_pipeline. Re-pinned for #553 G21 (`movdOK`).
-GoFV.Proof.Witness.GenG20.g20_facts._native.native_decide.ax_1_1 55b41ebaf6c73d78888f59b2c1314c539b018e9f7e25737c7274ba5eb0f907b4
+GoFV.Proof.Witness.GenG20.g20_facts._native.native_decide.ax_1_1 4ac2696ef8361dc52d66669a09e7903dcb33cbd96069be4a8e2238d48527d213
 # genG21_value_witness (GoFV/Proof/Witness/GenG21.lean, #553): `checkG21` accepts
 # `(*queueOnePass).next` of std/regexp and `checkG20` does not (parsed, `Env.load`, `genssa`),
 # `runLoc` runs its `MOVWUload` of `q.nextIndex` and `MOVDreg` to the 64-bit `0xffff_fffe`, and the
 # upper-bit table before the `MOVDreg` names `R3`; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG21.g21_facts._native.native_decide.ax_1_1 a9264af1248e55434f88b39dbb093a6465da1bb02c4f9be2b015e72c636a4e52
+GoFV.Proof.Witness.GenG21.g21_facts._native.native_decide.ax_1_1 9d99795f40b28b9fc8d79f58b2f6cfc8af813977c7baccc92756c668e436213e
 # genG22_value_witness (GoFV/Proof/Witness/GenG22.lean, #553): `checkG22` accepts `runtime.Version`
 # and `checkG21` does not (parsed, `Env.load`, `genssa`), and `runLoc` runs its `LDP` of
 # `runtime.buildVersion` to `R1 = 7`; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG22.g22_facts._native.native_decide.ax_1_1 8990e78588e1a3495cccb623f46d5ab1e2be28774bba1507faa8f8f64981257e
+GoFV.Proof.Witness.GenG22.g22_facts._native.native_decide.ax_1_1 bf389d022ae5ee1f6c385a1ba6238025be73e62026653b27f7c551d14f2bdd18
 # genG23_value_witness (GoFV/Proof/Witness/GenG23.lean, #553): `checkG23` accepts
 # `bytes.shouldUseASCIISet` and `checkG22` does not (parsed, `Env.load`, `genssa`), and `runLoc`
 # runs its `CMPconst` and `GreaterThan` to `R0 = true`; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG23.g23_facts._native.native_decide.ax_1_1 fa01990f206f01e71906f0cfd30f2f17b50310e794e7fc343faecc98b7d23f63
+GoFV.Proof.Witness.GenG23.g23_facts._native.native_decide.ax_1_1 7e8e55ba46785f531e79b46a4860a0a8ccf707c463f1bc29a0922f172edf0dc4
 # genG24_value_witness (GoFV/Proof/Witness/GenG24.lean, #553): `checkG24` accepts
 # `(*SChan).Recv` of test/closedchan and `checkG23` does not (parsed, `Env.load`, `genssa`), and
 # `runLoc` runs its `SP` to the Go register `SP` holding `2^62`; compiled evaluation, as
 # plF_pipeline.
-GoFV.Proof.Witness.GenG24.g24_facts._native.native_decide.ax_1_1 a63e2bc9b215339580e21e69f777d0a7578c796cb13eeae9c7e8277b64264f59
+GoFV.Proof.Witness.GenG24.g24_facts._native.native_decide.ax_1_1 93a540ec02625c5e33062722947092fba96e2d075a8041f6d051c4749fb6cc0c
 # genG25_value_witness (GoFV/Proof/Witness/GenG25.lean, #553): `checkG25` accepts the struct
 # wrapper of `reflect.flag.ro` and `checkG24` does not (parsed, `Env.load`, `genssa`), and `runLoc`
 # runs its `CSEL0` (`NotEqual`) to `R0 = 32`; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG25.g25_facts._native.native_decide.ax_1_1 d27a4674d43b60136c4189279e89a6864ed21400a2d11129accb63c1000fae1b
+GoFV.Proof.Witness.GenG25.g25_facts._native.native_decide.ax_1_1 3fa08b3f3c280797f1ca6d0165539d76398ce44bd76a27a7401243c9f5389120
 # genG26_value_witness (GoFV/Proof/Witness/GenG26.lean, #553): `main.func1` of examples/generics
 # holds no arm64 op, `checkG26` accepts it and `checkG25` does not (parsed, `Env.load`, `genssa`),
 # and `runLoc` runs its `Copy` to `R0 = 7`; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG26.g26_facts._native.native_decide.ax_1_1 ca1725f4d5b8b341bf31c9c9aee39d0a78010f092f2d1ea4b3c9c3c597310fec
+GoFV.Proof.Witness.GenG26.g26_facts._native.native_decide.ax_1_1 6a8937f1bec61e4c76ee4ee168584ac3630c204e6eb0e281d56e213d951dbdbc
 # genG27_value_witness (GoFV/Proof/Witness/GenG27.lean, #553): `checkG27` accepts
 # `regexp.newLazyFlag` and `checkG26` does not (parsed, `Env.load`, `genssa`), and `runLoc` runs its
 # `ORshiftLL [32]` to `R0 = 0x100000002`; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG27.g27_facts._native.native_decide.ax_1_1 1f84c71de506940e72698873b1233bb44026343870eafb79199755b4760d674f
+GoFV.Proof.Witness.GenG27.g27_facts._native.native_decide.ax_1_1 c8d4b7716a500d2dcb6827848cb58038e457214a0b3a95753d1a0951d0b0179b
 # genG28_value_witness (GoFV/Proof/Witness/GenG28.lean, #553): `checkG28` accepts
 # `runtime.envKeyEqual` and `checkG27` does not (parsed, `Env.load`, `genssa`), `memEq` of the
 # arguments `runLoc` reads is `true`, the machine bytes compare equal, and `runLoc` runs its
 # `LoweredMemEq` to `R0 = true`; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG28.g28_facts._native.native_decide.ax_1_1 283337182cfd4e7975dbcdcaa870f9798b31089e63783d5f36eabdb0e7cd2aae
+GoFV.Proof.Witness.GenG28.g28_facts._native.native_decide.ax_1_1 899e2dc21caa2972b1d1d0a57111d4f1df21dda8addeb792697c2cbb59263e1a
 # genG29_value_witness (GoFV/Proof/Witness/GenG29.lean, #553): `checkG29` accepts `.eq.M1K1M2`
 # (test/genmeth1) and `checkG28` does not (parsed, `Env.load`, `genssa`), the upper-bit tables
 # `uAt` and `uL` before and after its `MOVDnop` `v33`, and `runLoc` runs `v33` to
 # `R1 = 0xbeef`; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG29.g29_facts._native.native_decide.ax_1_1 c9bb2af9e7a042a697d93e866af59953987e41b972d96ba84f6184825da0fb81
+GoFV.Proof.Witness.GenG29.g29_facts._native.native_decide.ax_1_1 c280358dbc1e446e3fc79930c5eb1c52333bd709bd81838fcd478dde9db55093
 # genG30_value_witness (GoFV/Proof/Witness/GenG30.lean, #553): `checkG30` accepts
 # `runtime.gclinkptr.ptr` and `checkG29` does not (parsed, `Env.load`, `genssa`), and `runLoc`
 # runs its `Convert` to `R0 = 0x1234`; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG30.g30_facts._native.native_decide.ax_1_1 08e04e1a1bdf0cf21d62c0bb6573da1043b29e6c16b71e7b41e2ef05cdd78f4a
+GoFV.Proof.Witness.GenG30.g30_facts._native.native_decide.ax_1_1 34bbb6ab4cb1a90c1a54cb340d3cadc210a3badd5271f5743e962fdf2a435c6d
 # genG32_bin_witness, genG32_binK_witness (GoFV/Proof/Witness/GenG32.lean, #553): `checkG32` accepts
 # test/armimm `or64` and `runtime.funpack64`, `checkG30` does not; `runLoc` runs their `OR`/`ORconst`;
 # compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG32.g32_facts._native.native_decide.ax_1_1 55ef7f5400f957d1dd7e72fb7e683c9f43e25754453d4ba7dbfe0d66c628e25f
+GoFV.Proof.Witness.GenG32.g32_facts._native.native_decide.ax_1_1 938a5dacff20ec4782fb36550b45c10d9525a757102355ae661091f75dc2aeb3
 # genG32_un_witness, genG32_stlr_witness (GoFV/Proof/Witness/GenG32b.lean, #553): `checkG32` accepts
 # `(*atomicOffAddr).StoreMarked`; `runLoc` runs its `NEG` and `STLR`; compiled evaluation.
-GoFV.Proof.Witness.GenG32b.g32b_facts._native.native_decide.ax_1_1 fc71ed0312af5a0cb0985ce1c56105895e9ca4db6227f9d08c273350251e4fac
+GoFV.Proof.Witness.GenG32b.g32b_facts._native.native_decide.ax_1_1 80564d4d702b00504457eda2c34d3925be42be4735530f89bea23088d9d545c0
 # genG32_csinc_witness (GoFV/Proof/Witness/GenG32c.lean, #553): `checkG32` accepts `countGeneric`;
 # `runLoc` runs its `CSINC`; compiled evaluation.
-GoFV.Proof.Witness.GenG32c.g32c_facts._native.native_decide.ax_1_1 e46e4788566b6a1b213163c8ed7d2151bb6af866f358a3692b2133c18c9cfaed
+GoFV.Proof.Witness.GenG32c.g32c_facts._native.native_decide.ax_1_1 aec247437760af69360dd83a7f56d6ba83e01f487effc884bf47aa614659f67c
 # genG31_value_witness, genG31_term_witness (GoFV/Proof/Witness/GenG31.lean, #553): `checkG31`
 # accepts `runtime.(*hexdumper).close` and `checkG32` does not, with G31's tables `uIn`/`uL31`;
 # `runLoc` runs its `MOVDreg` `v22` and `b1`'s `NZW`; compiled evaluation.
-GoFV.Proof.Witness.GenG31.g31_facts._native.native_decide.ax_1_1 1ab097cb07fe01f8be127307e7c5bb3b3ade1d082b8555b23ce334e4e7a5a45d
+GoFV.Proof.Witness.GenG31.g31_facts._native.native_decide.ax_1_1 1d2201719eeaa023517f95c324e59a4fb08863b967c1a0b39b77635fb4503645
 # genG33_un_witness, genG33_sra_witness (GoFV/Proof/Witness/GenG33.lean, #553): `checkG33` accepts
 # `math/bits.ReverseBytes` and `internal/bytealg.Cutover` and `checkG31` does not; `runLoc` runs
 # their `REV` and `SRAconst`; compiled evaluation.
-GoFV.Proof.Witness.GenG33.g33_facts._native.native_decide.ax_1_1 8d39c9e45c663c63ddfe8b75531f97e04dcb85f052a7fda1d83b073d32d66d6b
+GoFV.Proof.Witness.GenG33.g33_facts._native.native_decide.ax_1_1 55151dcbae7b863f7d7266c36665b2292c0d5c017d90f628d1a6a47d46237143
 # genG33_ubfiz_witness, genG33_cmnw_witness (GoFV/Proof/Witness/GenG33b.lean, #553): `checkG33`
 # accepts `runtime.(*mspan).pinnerBitSize` and `runtime.(*_func).isInlined` and `checkG31` does not;
 # `runLoc` runs their `UBFIZ` and `CMNWconst`; compiled evaluation.
-GoFV.Proof.Witness.GenG33b.g33b_facts._native.native_decide.ax_1_1 74283a3de1f8891120d5a051b6e07956cd229ba7311a40fc8377a406b44babc1
+GoFV.Proof.Witness.GenG33b.g33b_facts._native.native_decide.ax_1_1 10704b337920d3a816fc4aefaa5ed2ccda0d5356c74525c7ebea6b9da4f41da1
 # genG34_witness (GoFV/Proof/Witness/GenG34.lean, #553): `checkG34` accepts test/atomicload `f` and
 # `checkG33` does not, with G31's and G34's tables `uL31`/`uL34` around its `MOVBreg` `v11`;
 # `runLoc` runs `v11`; compiled evaluation.
-GoFV.Proof.Witness.GenG34.g34_facts._native.native_decide.ax_1_1 13e1a40864cb7975b667647a003765b242cf3df7bd81425702577ffab171393b
+GoFV.Proof.Witness.GenG34.g34_facts._native.native_decide.ax_1_1 c13ff4c9b7392b0c9d856138b366a6272eb3d5560c14e655275166b39cdb3938
 # genG35_witness (GoFV/Proof/Witness/GenG35.lean, #553): `checkG35` accepts
 # `regexp/syntax.(*InstOp).String` and `checkG34` does not, with G35's table `uL35` across its
 # `LDP` and `Select1`; `runLoc` runs `v4 = Select1 v44`; compiled evaluation.
-GoFV.Proof.Witness.GenG35.g35_facts._native.native_decide.ax_1_1 41285866024a8a69a7b9b9f918f051bce0e1097e28c6b89445af4571e2a9140f
+GoFV.Proof.Witness.GenG35.g35_facts._native.native_decide.ax_1_1 da9707d29a834395b251c7e98cef65b1cfd61f232bd024d0073629f4eeaa4843
 # genG36_witness (GoFV/Proof/Witness/GenG36.lean, #553): `checkG36` accepts
 # `encoding/hex.DecodedLen` and `checkG35` does not; `runLoc` runs its `ADDshiftRL` `v7`; compiled
 # evaluation.
-GoFV.Proof.Witness.GenG36.g36_facts._native.native_decide.ax_1_1 97f8f3a40ba9417c84eca2f73018d6db3eecc3c2b5bc94df26ede7aaf2a6ea24
+GoFV.Proof.Witness.GenG36.g36_facts._native.native_decide.ax_1_1 a02384ec28d03340132de287eeb68c451d19f2ae1bf04ff330d2038c4052adc1
 # genG37_witness (GoFV/Proof/Witness/GenG37.lean, #553): `checkG37` accepts `math/bits.Reverse`
 # and `checkG36` does not; `runLoc` runs its `RBIT` `v9`; compiled evaluation.
-GoFV.Proof.Witness.GenG37.g37_facts._native.native_decide.ax_1_1 8ff734f62be63d147edcc6aac24ace2c86d368fa0ec509645cfa1d7c409e7d73
+GoFV.Proof.Witness.GenG37.g37_facts._native.native_decide.ax_1_1 9c183810b50349254e876453f489fb91cae80b44050d835708374dc86414c6d3
 # genG38_witness (GoFV/Proof/Witness/GenG38.lean, #553): `checkG38` accepts `sync/atomic.LoadInt64`
 # and `checkG37` does not; `runLoc` runs its `LDAR` `v8`; compiled evaluation.
-GoFV.Proof.Witness.GenG38.g38_facts._native.native_decide.ax_1_1 8ff19fe42dd308ca25836b4ebe2fbb8a3629adee8b753b1488ba35ea5581a60e
+GoFV.Proof.Witness.GenG38.g38_facts._native.native_decide.ax_1_1 d1faf2e67a651010e4768d6d75b003c9cace5bb05d6f8fbbcb1d12b357e59f01
 # genG39_witness (GoFV/Proof/Witness/GenG39.lean, #553): `checkG39` accepts `strings.HasSuffix`
 # and `checkG38` does not (the home of the removed `v47`); `runLoc` runs its `ADD` `v34`; compiled
 # evaluation.
-GoFV.Proof.Witness.GenG39.g39_facts._native.native_decide.ax_1_1 d2ffc1eeee49aeea6937bcfd6e75c6f59f5a397de2888568b1a57b16fcb8165f
+GoFV.Proof.Witness.GenG39.g39_facts._native.native_decide.ax_1_1 5da40ccc0af64e84ebc76af77a2e56cf8460471d2e9c5f395d1af7a01d588249
 # genG40_witness (GoFV/Proof/Witness/GenG40.lean, #553): `checkG40` accepts
 # `unicode/utf16.IsSurrogate` and `checkG39` does not (`InitMem` in `b2`); `runLoc` runs its
 # `InitMem` `v1`; compiled evaluation.
-GoFV.Proof.Witness.GenG40.g40_facts._native.native_decide.ax_1_1 eecf11ea95464eb9b2558c2b08226b7e012fc537b03e59c94760c61f3b515290
+GoFV.Proof.Witness.GenG40.g40_facts._native.native_decide.ax_1_1 14a98efd2ef675a9d4adef30181ff80fdc896d47acb9b6b8393115bfde63e810
 # genG41_witness (GoFV/Proof/Witness/GenG41.lean, #553): `checkG41` accepts
 # `runtime.traceNextGen` and `checkG40` does not (`CMNconst` `v5`); `runLoc` runs `v5` to flags
 # with `Z` set, and reading `v6` from the state gives an integer (`CmpPre`); compiled evaluation.
-GoFV.Proof.Witness.GenG41.g41_facts._native.native_decide.ax_1_1 514ffac0ec005dfcddd25451bf4137c219c965a2be4cc66b4f47f64841136139
+GoFV.Proof.Witness.GenG41.g41_facts._native.native_decide.ax_1_1 50732a9588801684395ccc565f31f175af193034a3e2d9eb980c8d528975f35e
 # genG42_witness (GoFV/Proof/Witness/GenG42.lean, #553): `checkG42` accepts
 # `unicode/utf8.RuneStart` and `checkG41` does not (`ANDconst [192]` `v4` of a byte at type
 # `uint32`); `runLoc` runs `v4` to `R1 = 0xc0`; compiled evaluation.
-GoFV.Proof.Witness.GenG42.g42_facts._native.native_decide.ax_1_1 b0e147006b8886bf9f69fbbd1ac65a0f4bc8f309d9bcfcf8a02ef9fbe5e0cda0
+GoFV.Proof.Witness.GenG42.g42_facts._native.native_decide.ax_1_1 645be0df444f6ea66c60da126c84aa9ad40e57ed26a73aaa0107fcbea51b219e
 # genG43_witness (GoFV/Proof/Witness/GenG43.lean, #553): `checkG43` accepts
 # `runtime.(*debugLogWriter).varint` and `checkG42` does not (`InitMem` `v1` before a call in
 # `b2`); its clean blocks are closed backwards and `(b2, 1)`, `(b2, 2)` are clean; `runLoc` runs
 # `v1`; compiled evaluation.
-GoFV.Proof.Witness.GenG43.g43_facts._native.native_decide.ax_1_1 43cf3951648adda14676a0a2088393619aea7df6efb315a6c662bdc967a59c08
+GoFV.Proof.Witness.GenG43.g43_facts._native.native_decide.ax_1_1 f86fb22767b6826bf82abb559bc09c5064297bac927bc818a8354b426b680b80
 # genG44_witness (GoFV/Proof/Witness/GenG44.lean, #553): `checkG44` accepts `math.Float64frombits`
 # and `checkG43` does not (`FMOVDgpfp` `v12` into `F0`); `runLoc` runs `v12` to `F0 = 1.0`'s bits;
 # compiled evaluation.
-GoFV.Proof.Witness.GenG44.g44_facts._native.native_decide.ax_1_1 e46d0ad334d524b1001ca92adea057ca9d72a73421df3d28270a8eacd10b3a3e
+GoFV.Proof.Witness.GenG44.g44_facts._native.native_decide.ax_1_1 bc08c984fec468841001178713bb1984690f4984dfc71983926d49d48066bf5b
 
 # genG45_witness (GoFV/Proof/Witness/GenG45.lean, #553): `checkG45` accepts `sort.Float64Slice.Swap`
 # and `checkG44` does not (`FMOVDloadidx8` `v17` into `F0`); `runLoc` runs `v17` to `F0 = 1.5`'s
 # bits; compiled evaluation.
-GoFV.Proof.Witness.GenG45.g45_facts._native.native_decide.ax_1_1 954bd6bef08a04c6be3ea1cc6e0e71960f7b09a6048dd28817b134eda888c0e5
+GoFV.Proof.Witness.GenG45.g45_facts._native.native_decide.ax_1_1 000bbeff868ed8afb056641d8ddd8bdd2580e2ed76fdf1db8cd120f5c63841e0
 
 # genG46_witness (GoFV/Proof/Witness/GenG46.lean, #553): `checkG46` accepts `sq.area` (examples/ifaces)
 # and `checkG45` does not (`FMULD` `v10` into `F0`); `runLoc` runs `v10` to `F0 = 2.25`'s bits;
 # compiled evaluation.
-GoFV.Proof.Witness.GenG46.g46_facts._native.native_decide.ax_1_1 0000000000000000000000000000000000000000000000000000000000000000
+GoFV.Proof.Witness.GenG46.g46_facts._native.native_decide.ax_1_1 9f9b979ef9d439d3c2312519c100a6c2da4fe4062f3f314af523df34137ea929
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
