@@ -1512,7 +1512,11 @@ the machine state.
   register's at the `Ret`; `runLoc` retypes the arguments to the components (`Val.retypeL` in the
   lowered mode, `Val.retype` in Phase 1's), which keeps the register relation
   (`valRel_retypeL_le`, `lmode_valRel_le`). `expand calls` types the components as the results'
-  register types (`abi.RegisterTypes`), e.g. a `uintptr` itab word for an `*itab` result.
+  register types (`abi.RegisterTypes`), e.g. a `uintptr` itab word for an `*itab` result. A
+  result the ABI puts on the stack, or a zero-sized one, has no register (`ownOutRegs` skips it)
+  and no `MakeResult` argument: `expand calls` (`rewriteFuncResults`) stores it to its
+  `PPARAMOUT` variable, whose bytes `goResults` reads from the memory at the return; that memory
+  is `mm`, which `ResultRel` injects into the machine's.
 - **Run** (`sim_from_ret`, induction on the fuel), **function** (`obj_whole_ret`): `runLoopLoc`
   from `runLoc`'s state at the entry block, the first `k` values run to `sI` (`runLoopLoc_entry`);
   a run that returns `(rs, mm)` is matched by `runMach` returning to `s0.x 30` (`mstar_returned`)
@@ -1560,7 +1564,6 @@ section, in the whole-file environment of `gofv-ssa-opt --verified`) through
 `runPre_simple`.
 
 **Next.** Panics of the other kinds (register-index loads and stores; write barriers, `memequal`);
-results on the stack (the
-`retRegsOK` class `a result on the stack`); framed leaves (`X30` across the body); the morestack
+framed leaves (`X30` across the body); the morestack
 path of the prologue (`morestackHook`) as a covered path instead of the premise that the stack
 check passes.

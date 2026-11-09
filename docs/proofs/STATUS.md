@@ -670,9 +670,11 @@ states `runLoc` reaches from `sI`: at a value whose step succeeds `G14Pre`, `Get
 trusted `CallOK`, `CallOKZ`, `ICallOK`, `WbOK`, `CloOK`, `MemEqOK`; `G1TermPre`; no entry value
 (`entryOp24`)), and that returns
 `(rs, mm)`, is matched by `runMach` of the linked words that returns to `s0.x 30` in a state `t'`
-with `MachRet s0 t'` (`SP`, `g`, `R29` as at entry) and `ResultRel E outs rs mm t'`
-(`GoFV/Proof/Obj/Results.lean`): `rs` in the function's ABI result registers `outs`
-(`ownOutRegs`), `mm` injected. `retRegsOK` (`GoFV/Gen/Results.lean`): every `Ret` block's control
+with `MachRet s0 t'` (`SP`, `g`, `R29` as at entry) and `ResultRel E (ownOutRegs lc) rs mm t'`
+(`GoFV/Proof/Obj/Results.lean`): `rs` in the function's ABI result registers (`ownOutRegs`: those
+of its register-assigned results), `mm` injected; a result the ABI puts on the stack (or a
+zero-sized one) is no `MakeResult` argument: `expand calls` stores it to its `PPARAMOUT` variable,
+which is in `mm`. `retRegsOK` (`GoFV/Gen/Results.lean`): every `Ret` block's control
 is a `MakeResult` whose tuple has one component per argument, the last the memory, each result
 homed in its ABI register at a class no wider than the register's (`ret_results`, in both of
 `runLoc`'s modes: `valRel_retypeL_le` for lowered functions, `lmode_valRel_le` for those with no
@@ -726,9 +728,8 @@ Witnesses:
 
 Not yet covered (#553): framed leaves (`autosize ≠ 0` and no `CALL`: the epilogue returns through
 `X30`, which needs `X30` kept across the body; premise `autosize = 0 ∨ ¬leaf`), the morestack path
-of the prologue (premise: the stack check passes), results on the stack (`retRegsOK` asks for
-register results), and panics other than nil checks, loads, stores, bounds checks and calls
-(register-index loads and stores; write barriers; `memequal`).
+of the prologue (premise: the stack check passes), and panics other than nil checks, loads,
+stores, bounds checks and calls (register-index loads and stores; write barriers; `memequal`).
 
 ### End-to-end coverage (`gofv-ssa-opt --check --verified --e2e`)
 

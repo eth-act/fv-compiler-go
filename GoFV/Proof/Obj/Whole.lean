@@ -485,12 +485,10 @@ theorem word_rel {f : BitVec 64 → BitVec 64} {m t : MState} (hR : ObjRel f m t
   simp only [MState.word, hR.mem]
 
 /-- `retRegsOK` checks every block of the function. -/
-theorem retRegsOK_block {lc : LocCtx} {kt : KTab} {outs : List Nat} (h : retRegsOK lc kt = true)
-    (houts : ownOutRegs lc = some outs) {b : ID} {blk : Block}
-    (hbid : b ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? b = some blk) :
-    retBlockOK lc kt outs b blk = true := by
+theorem retRegsOK_block {lc : LocCtx} {kt : KTab} (h : retRegsOK lc kt = true) {b : ID}
+    {blk : Block} (hbid : b ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? b = some blk) :
+    retBlockOK lc kt (ownOutRegs lc) b blk = true := by
   unfold retRegsOK at h
-  rw [houts] at h
   have := List.all_eq_true.1 h b hbid
   rwa [hb] at this
 
@@ -522,12 +520,12 @@ theorem sim_ret (hc : checkG30 lc ps bstart g = .ok (tab, kt))
     (hic : ∀ u, ICallOut L ps.toList u)
     {s0 : MState} (hEE : EntryEnv E0 L ps.toList otab.autosize s0)
     (hlf : otab.autosize = 0 ∨ otab.leaf = false)
-    {outs : List Nat} (hrok : retRegsOK lc kt = true) (houts : ownOutRegs lc = some outs)
+    (hrok : retRegsOK lc kt = true)
     {b : ID} {blk : Block} {s s' : LocState} {rs : List Val} {mm : Mem} {t : MState}
     (hb : lc.ctx.f.block? b = some blk) (ht : stepTermLoc lc s blk = .ok (.ret rs mm, s'))
     (hS : SimAt lc g L ps tab kt E0 otab base b blk blk.values.size s t) :
     ∃ E t', E0.Extends E ∧ MStar H code retM t t' ∧ ExitRel E s s0 t' ∧
-      ResultRel E outs rs mm t' := by
+      ResultRel E (ownOutRegs lc) rs mm t' := by
   obtain ⟨E, m, hx, hE, hm, hinv, -, hR, hbid⟩ := hS
   have hEE' := hEE.extend hx
   obtain ⟨R, -, hn⟩ := stepTermLoc_gen ht
@@ -536,7 +534,7 @@ theorem sim_ret (hc : checkG30 lc ps bstart g = .ok (tab, kt))
   have hinvm := locMatch_inv hE2 hm
   obtain ⟨-, hlink, hpcOf, hret, hA, -, -, -, -, -, hfr⟩ := hE2
   obtain ⟨c, hlc, hps, htm, hlt, hnd, hblocks⟩ := checkG30_cx hc
-  have hRes := ret_results hA hm hinv.core (retRegsOK_block hrok houts hbid hb) hk ht
+  have hRes := ret_results hA hm hinv.core (retRegsOK_block hrok hbid hb) hk ht
   obtain ⟨b', j, js, e, next, hb', -, hvals, hterm, -, hrow⟩ := Cx2.blocks_spec hblocks b hbid
   rw [hlc] at hb'
   rw [hb] at hb'
@@ -638,7 +636,7 @@ theorem sim_from_ret (hc : checkG30 lc ps bstart g = .ok (tab, kt))
     (hic : ∀ u, ICallOut L ps.toList u)
     {s0 : MState} (hEE : EntryEnv E0 L ps.toList otab.autosize s0)
     (hlf : otab.autosize = 0 ∨ otab.leaf = false)
-    {outs : List Nat} (hrok : retRegsOK lc kt = true) (houts : ownOutRegs lc = some outs)
+    (hrok : retRegsOK lc kt = true)
     {b0 : ID} {i0 : Nat} {sI : LocState}
     (hP : RunPre env H lc g L (endP L.text ps.toList) E0 b0 i0 sI) {rs : List Val} {mm : Mem} :
     ∀ (fuel : Nat) (b : ID) (blk : Block) (i : Nat) (s : LocState) (t : MState),
@@ -646,7 +644,7 @@ theorem sim_from_ret (hc : checkG30 lc ps bstart g = .ok (tab, kt))
       SimAt lc g L ps tab kt E0 otab base b blk i s t →
       runFromLoc env lc fuel s b i = .returned rs mm →
       ∃ E t', E0.Extends E ∧ MStar H code retM t t' ∧ MachRet s0 t' ∧
-        ResultRel E outs rs mm t' := by
+        ResultRel E (ownOutRegs lc) rs mm t' := by
   intro fuel
   induction fuel with
   | zero => ?_
@@ -672,7 +670,7 @@ theorem sim_from_ret (hc : checkG30 lc ps bstart g = .ok (tab, kt))
         | ret rs' mm' =>
           simp only [Outcome.returned.injEq] at hrun
           obtain ⟨rfl, rfl⟩ := hrun
-          obtain ⟨E, t2, hx, ht2, hX, hRes⟩ := sim_ret hc hO hH hic hEE hlf hrok houts hb hst hS1
+          obtain ⟨E, t2, hx, ht2, hX, hRes⟩ := sim_ret hc hO hH hic hEE hlf hrok hb hst hS1
           exact ⟨E, t2, hx, mstar_trans ht1 ht2, hX.ret, hRes⟩
         | goto e =>
           simp only at hrun
@@ -852,13 +850,13 @@ theorem mstar_returned {s0 t : MState} (h : MStar H code retM s0 t) (hpc : t.pc 
 their registers, the memory injected, the frame; no upper-bit fact is carried into the body,
 `uL … k = []`); every later step meets its premises (`RunPre`). If it returns `(rs, mm)`,
 `runMach` returns to `s0.x 30` with the caller's `SP`, `g` and frame pointer (`MachRet s0`), the
-results `rs` in the function's ABI result registers `outs` (`ownOutRegs`) and the memory `mm`
-injected (`ResultRel`). -/
+results `rs` in the function's ABI result registers (`ownOutRegs`; a result on the stack is in
+its `PPARAMOUT` variable in `mm`) and the memory `mm` injected (`ResultRel`). -/
 theorem obj_whole_ret (hc : checkG30 lc ps bstart g = .ok (tab, kt))
     {room : Nat} {s0 : MState} (hO : ObjEnv ps spills o otab L base code (s0.x 30))
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hic : ∀ u, ICallOut L ps.toList u)
-    {outs : List Nat} (hrok : retRegsOK lc kt = true) (houts : ownOutRegs lc = some outs)
+    (hrok : retRegsOK lc kt = true)
     (hME : MachEntry code base room s0) (hroom : otab.autosize + 8 ≤ room)
     (hg : (s0.x 28).toNat + 32 ≤ 2 ^ 64)
     (hpass : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
@@ -878,14 +876,14 @@ theorem obj_whole_ret (hc : checkG30 lc ps bstart g = .ok (tab, kt))
     {fuel : Nat} {rs : List Val} {mm : Mem}
     (hrun : runLoopLoc env lc fuel s lc.ctx.f.entry = .returned rs mm) :
     ∃ E t' n, E0.Extends E ∧ runMach H code (s0.x 30) n s0 = .returned t' ∧ MachRet s0 t' ∧
-      ResultRel E outs rs mm t' := by
+      ResultRel E (ownOutRegs lc) rs mm t' := by
   cases fuel with
   | zero => simp [runLoopLoc] at hrun
   | succ n =>
     rw [runLoopLoc_entry hbE hpre] at hrun
     obtain ⟨t1, ht1, hS⟩ := sim_entry (H := H) hO hME hroom hg hpass hE hEE hent hinv huE hbm hpc
     obtain ⟨E, t', hx, ht', hX, hRes⟩ :=
-      sim_from_ret hc hO hH hic hEE hlf hrok houts hP n _ blkE k sI t1 .refl hbE hk hS hrun
+      sim_from_ret hc hO hH hic hEE hlf hrok hP n _ blkE k sI t1 .refl hbE hk hS hrun
     obtain ⟨n', hn'⟩ := mstar_returned (mstar_trans ht1 ht') hX.pc
     exact ⟨E, t', n', hx, hn', hX, hRes⟩
 
