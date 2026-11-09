@@ -722,6 +722,9 @@ def idxLower (tabs : Tables) (u w : Value) : Bool :=
 def moveQOp (n : Int64) : Option (Op × Nat) :=
   if n == 16 then some (.ARM64FMOVQstore, 3) else if n == 32 then some (.ARM64FSTPQ, 4) else none
 
+/-- The 128-bit stores a `Move` lowers to (`moveQOp`). -/
+def qStore (o : Op) : Bool := o == .ARM64FMOVQstore || o == .ARM64FSTPQ
+
 /-- The atom `w` lowers the `Move [n]` `u` (three arguments) to the 128-bit store `moveQOp n`, at
 a small non-negative offset (`offOK`: 0 as lowered, or a folded `ADDconst` offset,
 `ARM64.rules:779`, `782`) and an aux `Sem.symAddr` reads (`stAux`: none, or a symbol or frame
