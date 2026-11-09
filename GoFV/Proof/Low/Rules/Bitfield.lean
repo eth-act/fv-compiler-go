@@ -1,7 +1,7 @@
 import GoFV.Proof.Low.Rules.ConstFold
 
 /-!
-# Lowering rule lemmas: bit-field peepholes (`ARM64.rules:1397-1399`, `1641-1765`, `1853-1855`)
+# Lowering rule lemmas: bit-field peepholes (`ARM64.rules:1397-1399`, `1617-1618`, `1641-1765`, `1853-1855`)
 
 `UBFX`/`UBFIZ`/`SBFX`/`SBFIZ` of an `ARM64BitField` auxint `width | lsb<<8` (`Arm64.bf`) built by
 `armBFAuxInt`, which the rule denotation computes in range and leaves to the oracle otherwise
@@ -17,6 +17,12 @@ mask condition `isARM64BFMask(…)` names the mask's width (`bfMaskW`, `bf_mask`
 `(MOV{W,H,B}reg <t> (ANDconst x [c])) && uint64(c) & M == 0 => (ANDconst <t> x [c])` (1397-1399,
 `M` the bits from the sign bit of the extension up): the extension reads the `ANDconst`'s low
 bits, whose sign bit and above are clear (`bf_and_zero`), so it keeps them (`bf_ext_and`).
+`(SRLconst [c] (SLLconst [c] x)) && 0 < c && c < 64 => (ANDconst [1<<uint(64-c)-1] x)` and
+`(SLLconst [c] (SRLconst [c] x)) … => (ANDconst [^(1<<uint(c)-1)] x)` (1617, 1618): the shift pair
+clears the high (low) `c` bits. The rule builds its mask in `int64` arithmetic (`1<<(64-c)` is
+`-2^63` at `c = 1`, `^` the complement), and the auxint reads it modulo `2^64` (`bf_ofInt_congr`),
+so its bits are those of `2^n - 1` (`bf_getLsbD_lowMask`) or of their complement
+(`bf_getLsbD_highMask`).
 -/
 
 namespace GoFV.Proof.Low.Rules.Bitfield
@@ -51,6 +57,44 @@ private theorem bf_ofInt {l w : Int} (h0 : 0 ≤ l) (h1 : l ≤ 63) (h2 : 1 ≤ 
 private theorem bf_getLsbD_mask (w i : Nat) :
     (Arm64.mask w).getLsbD i = (decide (i < 64) && decide (i < w)) := by
   simp only [Arm64.mask, BitVec.getLsbD_ofNat, Nat.testBit_two_pow_sub_one]
+
+/-- `BitVec.ofInt 64` reads its argument modulo `2^64`. -/
+private theorem bf_ofInt_congr {a b : Int}
+    (h : a % ((2 ^ 64 : Nat) : Int) = b % ((2 ^ 64 : Nat) : Int)) :
+    BitVec.ofInt 64 a = BitVec.ofInt 64 b := by
+  apply BitVec.eq_of_toNat_eq
+  simp only [BitVec.toNat_ofInt]
+  exact congrArg Int.toNat h
+
+/-- The low mask `1<<n - 1` as the rules build it (`int64` arithmetic, then the auxint). -/
+private theorem bf_getLsbD_lowMask (n i : Nat) :
+    (BitVec.ofInt 64 (Int64.ofInt (wrapInt 64 true (wrapInt 64 true (2 ^ n) - 1))).toInt).getLsbD i =
+      (decide (i < 64) && decide (i < n)) := by
+  have hc : (((2 ^ n - 1 : Nat) : Int)) = (2 : Int) ^ n - 1 := by
+    rw [Int.natCast_sub Nat.one_le_two_pow, Int.natCast_pow]; rfl
+  rw [bf_ofInt_congr (b := ((2 ^ n - 1 : Nat) : Int)), BitVec.ofInt_natCast, BitVec.getLsbD_ofNat,
+    Nat.testBit_two_pow_sub_one]
+  simp only [Int64.toInt_ofInt, wrapInt, ite_true, Int64.size, Int.bmod_emod]
+  rw [hc, Int.sub_emod, Int.bmod_emod, ← Int.sub_emod]
+
+/-- The high mask `^(1<<n - 1)` as the rules build it. -/
+private theorem bf_getLsbD_highMask (n i : Nat) :
+    (BitVec.ofInt 64 (Int64.ofInt
+      (wrapInt 64 true (-wrapInt 64 true (wrapInt 64 true (2 ^ n) - 1) - 1))).toInt).getLsbD i =
+      (decide (i < 64) && !decide (i < n)) := by
+  have hc : Int.negSucc (2 ^ n - 1) = -((2 : Int) ^ n - 1) - 1 := by
+    rw [Int.negSucc_eq, Int.natCast_sub Nat.one_le_two_pow, Int.natCast_pow]
+    have h2 : ((2 : Nat) : Int) = 2 := rfl
+    rw [h2]; omega
+  rw [bf_ofInt_congr (b := Int.negSucc (2 ^ n - 1)), BitVec.ofInt_negSucc_eq_not_ofNat,
+    BitVec.getLsbD_not, BitVec.getLsbD_ofNat, Nat.testBit_two_pow_sub_one]
+  · by_cases h : i < 64 <;> simp [h]
+  simp only [Int64.toInt_ofInt, wrapInt, ite_true, Int64.size, Int.bmod_emod]
+  rw [hc]
+  generalize ((2 : Int) ^ n) = p
+  simp only [Int.bmod_def]
+  repeat' split
+  all_goals omega
 
 private theorem bf_getLsbD_sext {w : Nat} (i : Nat) (x : BitVec 64) (h1 : 1 ≤ w) (h2 : w ≤ 64) :
     (Arm64.sext w x).getLsbD i =
@@ -344,6 +388,28 @@ macro "bf_mask " m:term:max r:term:max : tactic => `(tactic| (
   bf_prep))
 
 /-! ## Rules -/
+
+/-- `ARM64.rules:1617`: `(SRLconst [c] (SLLconst [c] x)) && 0 < c && c < 64 => (ANDconst [1<<uint(64-c)-1] x)` -/
+theorem r_ARM64_1617_sound : ArmRule.Checked r_ARM64_1617 := by
+  left; arm_unfold; arm_norm; bf_prep
+  simp only [DV.int.injEq] at hc
+  have hw : wrapInt 64 false (64 - (e.auxInt []).toInt) = 64 - (e.auxInt []).toInt := by
+    simp only [wrapInt, Bool.false_eq_true, ite_false, bf_emod]; omega
+  have h1 : ¬ (64 - (e.auxInt []).toInt < 0) := by omega
+  have h2 : ¬ ((64 - (e.auxInt []).toInt).toNat ≥ 64) := by omega
+  simp only [hw, goShl, h1, h2, ite_false, Int.one_mul]
+  bf_in64; bf_bits [bf_getLsbD_lowMask]
+
+/-- `ARM64.rules:1618`: `(SLLconst [c] (SRLconst [c] x)) && 0 < c && c < 64 => (ANDconst [^(1<<uint(c)-1)] x)` -/
+theorem r_ARM64_1618_sound : ArmRule.Checked r_ARM64_1618 := by
+  left; arm_unfold; arm_norm; bf_prep
+  simp only [DV.int.injEq] at hc
+  have hw : wrapInt 64 false (e.auxInt []).toInt = (e.auxInt []).toInt := by
+    simp only [wrapInt, Bool.false_eq_true, ite_false, bf_emod]; omega
+  have h1 : ¬ ((e.auxInt []).toInt < 0) := by omega
+  have h2 : ¬ ((e.auxInt []).toInt.toNat ≥ 64) := by omega
+  simp only [hw, goShl, h1, h2, ite_false, Int.one_mul]
+  bf_insll; bf_bits [bf_getLsbD_highMask]
 
 /-- `ARM64.rules:1641`: `(SRAconst [rc] (SLLconst [lc] x)) && lc > rc => (SBFIZ [armBFAuxInt(lc-rc, 64-lc)] x)` -/
 theorem r_ARM64_1641_sound : ArmRule.Checked r_ARM64_1641 := by

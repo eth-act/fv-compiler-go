@@ -2288,6 +2288,16 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   sign extensions of a mask `:1397`–`:1399` and the bit test `:556` read registers only.
   Witnesses `pkf_lower`, `tbx_lower`.
 
+- **Shift-pair masks** (`:1617`, `:1618`, #385; `Rules/Bitfield.lean`). `(SRLconst [c] (SLLconst
+  [c] x)) && 0 < c && c < 64 => (ANDconst [1<<uint(64-c)-1] x)` and `(SLLconst [c] (SRLconst [c]
+  x)) … => (ANDconst [^(1<<uint(c)-1)] x)` clear the high (low) `c` bits of a register. The rule
+  builds its mask in `int64` arithmetic, which wraps (`1<<63` is `-2^63`, the complement is
+  negative), and the auxint is that `int64`; `BitVec.ofInt 64` reads it modulo `2^64`
+  (`bf_ofInt_congr`), so the mask's bits are those of `2^n - 1` (`bf_getLsbD_lowMask`) or of
+  their complement (`bf_getLsbD_highMask`), and the shift pair is the `AND` bit by bit
+  (`bf_bits`). No validator change: the instances were already admitted with the rules assumed.
+  Witness `msk_lower`.
+
 - **Compares with a pointer** (#385; module docs of `GoFV/Proof/Low/Rules/CmpNeg.lean` and
   `Invert.lean`). `CMP` compares a pointer without a concrete address with an integer as unequal
   (`Arm64.cmp`, `Z` clear). While `CMN` and `CMPshift*` read registers only (`Arm64.cmp1`/`cmp2`),
