@@ -2,6 +2,8 @@ import GoFV.Proof.Gen.G45
 import GoFV.Proof.Gen.FArith
 import GoFV.Proof.Gen.Spec46
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Slice G46 of the genssa validator: float arithmetic, conversions and compares
 (`docs/plans/proofs3.md` §4, float stage (b))

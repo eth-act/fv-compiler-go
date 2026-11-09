@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G46
 import GoFV.Proof.Witness.GenG45
 
+open scoped GoFV.SSA.Sem.Fixed
+
 namespace GoFV.Proof.Witness.GenG46
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Gen.Check GoFV.Arm64 GoFV.Proof.Gen

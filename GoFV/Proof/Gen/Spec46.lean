@@ -1,6 +1,8 @@
 import GoFV.Gen.Check46
 import GoFV.Proof.Gen.Spec45
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # What `checkG46` accepted (`GoFV/Gen/Check46.lean`)
 

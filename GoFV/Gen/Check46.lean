@@ -1,5 +1,7 @@
 import GoFV.Gen.Check45
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The genssa validator, slice G46: float arithmetic, conversions and compares
 (`docs/plans/proofs3.md` §4, float stage (b))

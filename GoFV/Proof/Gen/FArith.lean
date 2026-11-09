@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G44
 import GoFV.Gen.Check46
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Float arithmetic, conversions and compares (`docs/plans/proofs3.md` §4, float stage (b))
 
