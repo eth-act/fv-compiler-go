@@ -130,9 +130,9 @@ theorem LinV.of_int {w : Width} {r c : BitVec 64} :
 
 /-- The pure arm64 ops other than loads and `MOVDaddr` evaluate as `Arm64.evalPure`. -/
 theorem opValL_evalPure {o : Op} (hg : o.generic = false) (hm : (o == .ARM64MOVDaddr) = false)
-    (hl : ldOp? o = none) (tabs : Tables) (ty : Ty) (ai : Int64) (ax : Option AuxRef)
+    (hl : ldAny o = false) (tabs : Tables) (ty : Ty) (ai : Int64) (ax : Option AuxRef)
     (args : List Val) : opValL tabs o ty ai ax args = Arm64.evalPure o ty ai ax args := by
-  simp only [opValL, hg, hm, hl, Bool.false_eq_true, ite_false]
+  simp only [opValL, hg, hm, (ldAny_false hl).1, (ldAny_false hl).2, Bool.false_eq_true, ite_false]
 
 private theorem add_np (T : Ty) {a b : Val} (ha : ∀ p, a ≠ .ptr p) (hb : ∀ p, b ≠ .ptr p) :
     Arm64.add T [a, b] = Arm64.op2 T (· + ·) [a, b] := by
@@ -261,7 +261,7 @@ theorem mul_src {tabs : Tables} {w : Width} {o : Op}
       ((∀ p, X ≠ .ptr p) ∧ ∃ r, Arm64.reg X = some r ∧
         (opValL tabs o (.int w) ai ax Vs).retypeL (.int w) = .int w ((c * r).setWidth w.bits)) := by
   have hn := bits_le64 w
-  have hpure : o.generic = false ∧ (o == .ARM64MOVDaddr) = false ∧ ldOp? o = none := by
+  have hpure : o.generic = false ∧ (o == .ARM64MOVDaddr) = false ∧ ldAny o = false := by
     rcases ho with rfl | ⟨rfl, -⟩ <;> exact ⟨rfl, rfl, rfl⟩
   rw [opValL_evalPure hpure.1 hpure.2.1 hpure.2.2]
   -- the constant's register
@@ -587,7 +587,7 @@ theorem mul_step (h : mulOKL tabs M v defs = some ds) {C : ID → Prop} (hC : De
           right
           have hg : kd.op.generic = false := by rw [hkop]; rfl
           have hmd : (kd.op == .ARM64MOVDaddr) = false := by rw [hkop]; rfl
-          have hl : ldOp? kd.op = none := by rw [hkop]; rfl
+          have hl : ldAny kd.op = false := by rw [hkop]; rfl
           rw [denT_succ hk hkt, opValL_evalPure hg hmd hl, hkop]
           rfl
       rw [denT_succ hx hxt, hshp]

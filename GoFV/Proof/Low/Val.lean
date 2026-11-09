@@ -378,7 +378,7 @@ theorem lowOp_mono {o : Op} {d : Nat} (ho : lowOpArgs o = some d) {w : Width} (h
       (fun _ _ h => op1_low hw (lowFun_const (lowFun2_xor _) _) h) hlow
 
 theorem lowOp_facts {o : Op} {d : Nat} (h : lowOpArgs o = some d) :
-    o.generic = false ∧ (o == .ARM64MOVDaddr) = false ∧ ldOp? o = none ∧ extReadW o = none ∧
+    o.generic = false ∧ (o == .ARM64MOVDaddr) = false ∧ ldAny o = false ∧ extReadW o = none ∧
       w32Op o = false ∧ callLead o = none ∧ o ≠ .Phi ∧ o ≠ .MakeResult := by
   rcases lowOpArgs_cases h with ⟨h | h | h | h | h | h | h | h, -⟩ | ⟨h, -⟩ |
       ⟨h | h | h | h | h | h | h, -⟩ <;> subst h <;> decide
@@ -394,7 +394,7 @@ theorem opValL_low {o : Op} {d : Nat} (h : lowOpArgs o = some d) (tabs : Tables)
     (ai : Int64) (ax : Option AuxRef) (args : List Val) :
     opValL tabs o ty ai ax args = Arm64.evalPure o ty ai ax args := by
   obtain ⟨hg, hm, hl, -⟩ := lowOp_facts h
-  simp only [opValL, hg, hm, hl, Bool.false_eq_true, ite_false]
+  simp only [opValL, hg, hm, (ldAny_false hl).1, (ldAny_false hl).2, Bool.false_eq_true, ite_false]
 
 theorem narrowReadW_low {o : Op} {d : Nat} (h : lowOpArgs o = some d) (ai : Int64) (i : Nat) :
     narrowReadW o ai i = none := by

@@ -111,10 +111,10 @@ theorem termVL_gen {tabs : Tables} {v : Value} {o : Op} (hg : o.generic = true) 
   unfold termVL; rw [hv]; simp only [hg, ite_true]
 
 theorem termVL_arm {tabs : Tables} {v : Value} {o : Op} (hg : o.generic = false)
-    (hm : (o == .ARM64MOVDaddr) = false) (hl : ldOp? o = none)
+    (hm : (o == .ARM64MOVDaddr) = false) (hl : ldAny o = false)
     (hd : GoFV.Opt.LowerTerm.pureActOp o = false) (hv : v.op = o) :
     termVL tabs v = (GoFV.Opt.LowerTerm.armTerm o && !GoFV.Opt.LowerTerm.actOp o && !isRoot o) := by
-  unfold termVL; rw [hv]; simp only [hg, hm, hl, hd, Option.isSome_none, Bool.false_eq_true, ite_false]
+  unfold termVL; rw [hv]; simp only [hg, hm, hl, hd, Bool.false_eq_true, ite_false]
 
 theorem renameOp_src {o o' : Op} (h : renameOp o o' = true) (tabs : Tables) (v : Value)
     (hv : v.op = o) : termVL tabs v = false := by

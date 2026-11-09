@@ -110,7 +110,7 @@ private theorem setOpSound_pureAct {o o' : Op} (hg : o.generic = true) (hf : fra
   have hg' : o'.generic = false := by rcases pureActOp_cases hd with rfl | rfl | rfl | rfl <;> rfl
   have hm : (o' == .ARM64MOVDaddr) = false := by
     rcases pureActOp_cases hd with rfl | rfl | rfl | rfl <;> rfl
-  rw [opValL_gen hg hf, opValL_arm hg' hm (ldOp?_of_pureAct hd), he]
+  rw [opValL_gen hg hf, opValL_arm hg' hm (ldAny_of_pureAct hd), he]
   exact Refines.refl _
 
 /-- `ARM64.rules:482`: `(AtomicLoad8 ...) => (LDARB ...)` -/
