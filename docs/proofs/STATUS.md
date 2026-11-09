@@ -772,6 +772,22 @@ rejects: from `b = 0xc5` with ones above the low byte of `X0`, the low 32 bits o
 `X1` are `0xc0`). Coverage on quick-v10 (`lake exe gen-check`): 6,609 of 9,297 functions
 (71.08%), 194,759 values.
 
+## Phase 3: genssa, slice G43 (I7, #553)
+
+`GoFV.Proof.Gen.g43_value`, `g43_term`, `g43_nilPanic`, `g43_boundsPanic`
+(`GoFV/Proof/Gen/G43.lean`): when slice G43 (`checkG43`: G42 with `InitMem` at clean positions
+also in a function that calls or stores) accepts a function, they are `g42_value`'s, `g42_term`'s,
+`g42_nilPanic`'s and `g42_boundsPanic`'s statements. `GoFV.Proof.Gen.g43_initMem`: `InitMem` from a
+state holding the activation's initial memory (`MemInit`) has `g42_value`'s conclusion (no code,
+the state unchanged), without G40's `memPure`. `MemInit` is no trusted premise: the check accepts
+`InitMem` only at clean positions (`cleanAt`: a block of `cleanBlocks`, closed backwards by
+`cleanOK`, with the values before it keeping the memory; `GoFV.Gen.Check.vkind43_initMem`,
+`initMemClean_spec`), and the run carries `cleanAt → MemInit` from its first state
+(`GoFV.Proof.Gen.memInit_clean_step`, `memInit_clean_term`). Witness: `genG43_witness`
+(`runtime.(*debugLogWriter).varint`, `InitMem` in the return block before a call, which G42
+rejects). Coverage on quick-v10 (`lake exe gen-check`): 6,622 of 9,297 functions (71.22%), 195,711
+values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g38_obj_value`, `g38_obj_term`, `g38_obj_nilPanic`, `g38_obj_boundsPanic`
