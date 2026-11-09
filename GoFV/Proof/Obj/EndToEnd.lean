@@ -6,7 +6,7 @@ import GoFV.Proof.Pass.PipelineFull
 
 `verifiedPipelineFull_refines` (Phase 2: every returning or panicking `run` of the generic SSA
 input is refined by a `runLoc` of `trim`'s output) composed with `obj_whole_ret` (Phase 3: a
-returning `runLoc` body of a function `checkG33`, `retRegsOK` and `checkObj` accept is matched by
+returning `runLoc` body of a function `checkG34`, `retRegsOK` and `checkObj` accept is matched by
 `runMach` of the linked words, with the results in their ABI registers) and `obj_whole_panic` (a
 panicking body by a panicking `runMach`). `runLoc` is `finish` of its body `runLoopLoc`
 (`runLoc_eq`), whose outcome is returned or panicked when `runLoc`'s is (`finish_defined`).
@@ -30,7 +30,7 @@ theorem runLoc_args {env : Env} {tabs : Tables} {f : Func} {args : List Val} {me
 
 /-- **Generic SSA to machine words.** `f` goes through the verified pipeline (`fullyVerified`)
 to the allocated function `r.st.func` (tables `r.st.tables`); genssa's P0 Progs `ps` of it are
-accepted by `checkG33`, its returns by `retRegsOK` (the register results in their ABI registers,
+accepted by `checkG34`, its returns by `retRegsOK` (the register results in their ABI registers,
 `ownOutRegs`), and the assembler's output `o` by `checkObj` (`ObjEnv`: linked at `base` to
 `code`, the caller's return address `s0.x 30`). On every input of Phase 1's `VPre` with the
 pipeline's premises, a `run` of `f` that returns or panics is refined by a `runLoc` of
@@ -62,7 +62,7 @@ theorem verified_mach
     {H : Hooks} {g : G2In} {L : Link} {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab}
     {kt : KTab} {E0 : MatchEnv} {spills : Array Spill} {o : ObjIn} {otab : Tab}
     {base : BitVec 64} {code : Code} {room : Nat} {s0 : MState}
-    (hc : checkG33 lc ps bstart g = .ok (tab, kt))
+    (hc : checkG34 lc ps bstart g = .ok (tab, kt))
     (hO : ObjEnv ps spills o otab L base code (s0.x 30))
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hic : ∀ u, ICallOut L ps.toList u)
@@ -79,7 +79,7 @@ theorem verified_mach
     (hbm : lc.ctx.f.entry ∈ lc.ctx.f.blocks.toList) (hk : k ≤ blkE.values.size)
     (hpre : enterListLoc e lc (locInit e lc args mem) (blkE.values.toList.take k) = .ok sI)
     (hent : EntryMatch E0 sI s0) (hinv : G3Inv E0 lc (kAt lc kt lc.ctx.f.entry blkE k) sI)
-    (huE : uL31 lc [] blkE k = [])
+    (huE : uL34 lc [] blkE k = [])
     (hpc : ObjEnv.map otab ps L base (E0.pcOf lc.ctx.f.entry k) =
       base + BitVec.ofNat 64 (otab.offs[0]!))
     (hRP : RunPre e H lc g L (endP L.text ps.toList) E0 lc.ctx.f.entry k sI) :

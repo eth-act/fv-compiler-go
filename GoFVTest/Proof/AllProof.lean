@@ -190,7 +190,7 @@ import GoFV.Proof.Obj.CallPanic
 import GoFV.Proof.Obj.EndToEnd
 import GoFV.Proof.Obj.Ex
 import GoFV.Proof.Obj.Frame
-import GoFV.Proof.Obj.G33
+import GoFV.Proof.Obj.G34
 import GoFV.Proof.Obj.G7
 import GoFV.Proof.Obj.Insn
 import GoFV.Proof.Obj.Link

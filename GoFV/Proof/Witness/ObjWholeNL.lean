@@ -4,7 +4,7 @@ import GoFV.Proof.Witness.GenG30
 /-!
 # Non-vacuity witness: a function with no arm64 op down to the machine words (`obj_whole_ret`)
 
-`runtime.gclinkptr.ptr` (`GenG30`: `checkG33` accepts it, a function with no arm64 op that
+`runtime.gclinkptr.ptr` (`GenG30`: `checkG34` accepts it, a function with no arm64 op that
 `runLoc` runs in Phase 1's mode; `checkObj` accepts its assembled words, a frameless leaf without
 a stack check):
 
@@ -173,7 +173,7 @@ def objFacts : Bool :=
 theorem nl_obj_facts : objFacts = true := by
   native_decide
 
-/-- What compiled evaluation checks of `runLoc` on `gclinkptr.ptr`: no arm64 op; `checkG33`
+/-- What compiled evaluation checks of `runLoc` on `gclinkptr.ptr`: no arm64 op; `checkG34`
 accepts it with `GenG30`'s tables and `retRegsOK` its return (the result in `R0`); no frame
 variable, home slot, static or indirect call, write barrier or `LoweredMemEq`; the entry is `b1`,
 with four values, the first two running from `runLoc`'s first state on `p = 0x1234` to
@@ -181,7 +181,7 @@ with four values, the first two running from `runLoc`'s first state on `p = 0x12
 simple ops from there on; the whole run returns `0x1234`. -/
 def lcFacts (lc : LocCtx) : Bool :=
   !lc.ctx.f.lowered &&
-    (checkG33 lc ps GenG30.bs GenG30.g).toOption == some (GenG30.tab, GenG30.kt) &&
+    (checkG34 lc ps GenG30.bs GenG30.g).toOption == some (GenG30.tab, GenG30.kt) &&
     retRegsOK lc GenG30.kt && ownOutRegs lc == [0] &&
     (accessedVars lc).isEmpty && (homeSlots lc).isEmpty && GenG2.noCalls lc && noWbICall lc &&
     lc.ctx.f.entry == 1 && lc.ctx.f.blocks.toList.contains 1 && (lc.ctx.f.block? 1).isSome &&
@@ -189,7 +189,7 @@ def lcFacts (lc : LocCtx) : Bool :=
     GenG1.okThen (enterListLoc GoFV.Proof.Witness.plRunEnv lc
       (locInit GoFV.Proof.Witness.plRunEnv lc args {}) ((blkOf lc).values.toList.take 2)) sIIs &&
     (kAt lc GenG30.kt 1 (blkOf lc) 2).get 0 == some 64 && simpleFrom lc.ctx.f 1 2 &&
-    noMemEq lc && (uL31 lc [] (blkOf lc) 2).isEmpty &&
+    noMemEq lc && (uL34 lc [] (blkOf lc) 2).isEmpty &&
     isRetP (runLoopLoc GoFV.Proof.Witness.plRunEnv lc 4
       (locInit GoFV.Proof.Witness.plRunEnv lc args {}) lc.ctx.f.entry)
 
@@ -245,12 +245,12 @@ theorem sep {lc : LocCtx} (hk : (memI.blocks.toList.map (·.1)).Nodup) :
   rcases hy with ⟨h, -⟩ | ⟨k, off, h, -⟩ <;> cases h
 
 theorem g28Env {lc : LocCtx}
-    (hc : checkG33 lc ps GenG30.bs GenG30.g = .ok (GenG30.tab, GenG30.kt))
+    (hc : checkG34 lc ps GenG30.bs GenG30.g = .ok (GenG30.tab, GenG30.kt))
     (hav : (accessedVars lc).isEmpty = true) (hsl : (homeSlots lc).isEmpty = true)
     (hnc : GenG2.noCalls lc = true) (hwi : noWbICall lc = true) (hme : noMemEq lc = true)
     (hend : GenG2.symA ≠ endP GenG2.text ps.toList) (hso : symsOut = true) :
     G28Env lc GenG30.g L ps (endP L.text ps.toList) GenG30.tab (E0 lc) := by
-  obtain ⟨-, -, -, -, hlt, -, -⟩ := checkG33_cx hc
+  obtain ⟨-, -, -, -, hlt, -, -⟩ := checkG34_cx hc
   have h2 : G2Env lc GenG30.g L ps 0 GenG30.tab (E0 lc) :=
     { lcEq := rfl
       link := rfl
@@ -335,8 +335,8 @@ theorem objWholeNL_ret_witness :
     Bool.not_eq_true'] at hlf
   obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hl, hres⟩, hrok⟩, houts⟩, hav⟩, hsl⟩, hnc⟩, hwi⟩, hentry⟩, hbm⟩, hbs⟩,
     hsz⟩, hpre⟩, hk0⟩, hsim⟩, hme⟩, hu⟩, hrunP⟩ := hlf
-  have hc : checkG33 GenG30.lc ps GenG30.bs GenG30.g = .ok (GenG30.tab, GenG30.kt) := by
-    revert hres; cases checkG33 GenG30.lc ps GenG30.bs GenG30.g <;> simp [Except.toOption]
+  have hc : checkG34 GenG30.lc ps GenG30.bs GenG30.g = .ok (GenG30.tab, GenG30.kt) := by
+    revert hres; cases checkG34 GenG30.lc ps GenG30.bs GenG30.g <;> simp [Except.toOption]
   have hb1 : GenG30.lc.ctx.f.block? 1 = some (blkOf GenG30.lc) := by
     obtain ⟨b, hb⟩ := Option.isSome_iff_exists.1 hbs
     simp [blkOf, hb]

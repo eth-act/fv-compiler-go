@@ -1,27 +1,27 @@
-import GoFV.Proof.Gen.G33
+import GoFV.Proof.Gen.G34
 import GoFV.Proof.Obj.G7
 
 /-!
-# `runLoc` → `runMach` on slice G33 (`docs/plans/proofs3.md` §1, §7, §9)
+# `runLoc` → `runMach` on slice G34 (`docs/plans/proofs3.md` §1, §7, §9)
 
-`g7_obj_value`/`g7_obj_term`'s composition for the latest merged slice: `g33_value`/`g33_term`/
-`g33_nilPanic`/`g33_boundsPanic` (`runLoc` → `runProg` on P0 under `G28Env` with P0's return
+`g7_obj_value`/`g7_obj_term`'s composition for the latest merged slice: `g34_value`/`g34_term`/
+`g34_nilPanic`/`g34_boundsPanic` (`runLoc` → `runProg` on P0 under `G28Env` with P0's return
 address `endP`) with `obj_star` and `obj_panic` (`runProg` on P0 → `runMach` on the linked
 words).
 
-* `g33_obj_value`: a value step (not an entry value) of a function that `checkG33` and `checkObj`
-  both accept, from a `LocMatch`ed state `m` (its X registers meeting G31's upper-bit table
-  `uL31`, started from the block's `uIn`, `UOKL`) whose machine state `t` is `ObjRel`-related to
-  it, is matched by machine steps of the linked code to a state related to a `LocMatch`ed `m'`
-  after the value.
-* `g33_obj_term`: the same for a terminator that goes to the next block, whose start `uIn` the
+* `g34_obj_value`: a value step (not an entry value) of a function that `checkG34` and `checkObj`
+  both accept, from a `LocMatch`ed state `m` (its X registers meeting G34's upper-bit table
+  `uL34`, started from the block's `uIn34`, `UOKL`) whose machine state `t` is `ObjRel`-related
+  to it, is matched by machine steps of the linked code to a state related to a `LocMatch`ed
+  `m'` after the value.
+* `g34_obj_term`: the same for a terminator that goes to the next block, whose start `uIn34` the
   state meets.
-* `g33_obj_nilPanic`: a nil check that panics is matched by machine steps to a state that panics
+* `g34_obj_nilPanic`: a nil check that panics is matched by machine steps to a state that panics
   with `nilDeref` (`MPanics`).
-* `g33_obj_boundsPanic`: a bounds check that panics is matched by machine steps to a state that
+* `g34_obj_boundsPanic`: a bounds check that panics is matched by machine steps to a state that
   panics with a panic `BoundsAgree`ing with it.
 
-The premises are `g33_value`'s (`G14Pre`, `GetGOK`, the trusted contracts `CallOK`, `CallOKZ`,
+The premises are `g34_value`'s (`G14Pre`, `GetGOK`, the trusted contracts `CallOK`, `CallOKZ`,
 `ICallOK`, `WbOK`, `CloOK`, `MemEqOK`) and `obj_star`'s (`ObjEnv`, the trusted `HookMap`); a panic
 also `obj_panic`'s (the trusted `HookPanicMap`), a bounds panic the trusted `BoundsOK`.
 -/
@@ -31,18 +31,24 @@ namespace GoFV.Proof.Obj
 open GoFV.SSA GoFV.SSA.Sem GoFV.Gen.Check GoFV.Arm64 GoFV.Asm GoFV.Asm.CheckObj
 open GoFV.Proof.Gen
 
-/-- **A value step of slice G33, down to the machine words.** -/
-theorem g33_obj_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+/-- On a function with no arm64 op, G34 is `checkNL30`. -/
+theorem checkNL30_of_34 {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}
+    {r : Except String (PcTab × KTab)} (hl : lc.ctx.f.lowered = false)
+    (h : checkG34 lc ps bstart g = r) : checkNL30 lc ps bstart g = r :=
+  checkG31_nl hl (checkG31_of_33 hl (checkG33_of_34 hl h))
+
+/-- **A value step of slice G34, down to the machine words.** -/
+theorem g34_obj_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s s' : LocState} {m : MState}
     {spills : Array Spill} {o : ObjIn} {otab : Tab} {base : BitVec 64} {code : Code}
     {retM : BitVec 64} {t : MState}
-    (hc : checkG33 lc ps bstart g = .ok (tab, kt))
+    (hc : checkG34 lc ps bstart g = .ok (tab, kt))
     (hE : G28Env lc g L ps (endP L.text ps.toList) tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
     (hen : entryOp24 v.op = false) (hm : LocMatch E s bid i m)
-    (hinv : G3Inv E lc (kAt lc kt bid blk i) s) (hu : UOKL m (uL31 lc (uIn lc bid) blk i))
+    (hinv : G3Inv E lc (kAt lc kt bid blk i) s) (hu : UOKL m (uL34 lc (uIn34 lc bid) blk i))
     (hpre : G14Pre lc s v)
     (hcall : CallOK H E g L lc s s' v m) (hcallz : CallOKZ H E g L lc s s' v m)
     (hicall : ICallOK H E L (endP L.text ps.toList) lc s s' v m)
@@ -54,47 +60,47 @@ theorem g33_obj_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link
     (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
     ∃ E' m' t', E.Extends E' ∧ G28Env lc g L ps (endP L.text ps.toList) tab E' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' ∧
-      UOKL m' (uL31 lc (uIn lc bid) blk (i + 1)) ∧
+      UOKL m' (uL34 lc (uIn34 lc bid) blk (i + 1)) ∧
       MStar H code retM t t' ∧ ObjRel (ObjEnv.map otab ps L base) m' t' := by
   obtain ⟨E', m', hx, hE', hp, hlm, hinv', hu'⟩ :=
-    g33_value hc hE hbid hb hi hv hen hm hinv hu hpre hcall hcallz hicall hwb hclo hgetg hmeq hs
+    g34_value hc hE hbid hb hi hv hen hm hinv hu hpre hcall hcallz hicall hwb hclo hgetg hmeq hs
   obtain ⟨t', ht, hR', -⟩ := obj_star hO hH hp hR (locMatch_inv hE.env.env.env.env hm) hic
   exact ⟨E', m', t', hx, hE', hlm, hinv', hu', ht, hR'⟩
 
-/-- **A terminator of slice G33 that goes to a block, down to the machine words.** -/
-theorem g33_obj_term {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
+/-- **A terminator of slice G34 that goes to a block, down to the machine words.** -/
+theorem g34_obj_term {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
     {bstart : ID → Option Nat} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {e : Edge} {s s' : LocState} {m : MState}
     {spills : Array Spill} {o : ObjIn} {otab : Tab} {base : BitVec 64} {code : Code}
     {retM : BitVec 64} {t : MState}
-    (hc : checkG33 lc ps bstart g = .ok (tab, kt))
+    (hc : checkG34 lc ps bstart g = .ok (tab, kt))
     (hE : G28Env lc g L ps (endP L.text ps.toList) tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hm : LocMatch E s bid blk.values.size m)
     (hinv : G3Inv E lc (kAt lc kt bid blk blk.values.size) s) (hpre : G1TermPre lc s blk)
-    (hu : UOKL m (uL31 lc (uIn lc bid) blk blk.values.size))
+    (hu : UOKL m (uL34 lc (uIn34 lc bid) blk blk.values.size))
     (ht : stepTermLoc lc s blk = .ok (.goto e, s'))
     (hO : ObjEnv ps spills o otab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hR : ObjRel (ObjEnv.map otab ps L base) m t)
     (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
     ∃ m' t', LocMatch E s' e.b 0 m' ∧ G3Inv E lc (kt.at e.b) s' ∧
-      e.b ∈ lc.ctx.f.blocks.toList ∧ UOKL m' (uIn lc e.b) ∧
+      e.b ∈ lc.ctx.f.blocks.toList ∧ UOKL m' (uIn34 lc e.b) ∧
       MStar H code retM t t' ∧ ObjRel (ObjEnv.map otab ps L base) m' t' := by
-  obtain ⟨m', hp, hlm, hinv', hmem, hu'⟩ := g33_term (H := H) hc hE hbid hb hm hinv hpre hu ht
+  obtain ⟨m', hp, hlm, hinv', hmem, hu'⟩ := g34_term (H := H) hc hE hbid hb hm hinv hpre hu ht
   obtain ⟨t', htm, hR', -⟩ := obj_star hO hH hp hR (locMatch_inv hE.env.env.env.env hm) hic
   exact ⟨m', t', hlm, hinv', hmem, hu', htm, hR'⟩
 
-/-- **A nil check of slice G33 that panics, down to the machine words**: machine steps of the
+/-- **A nil check of slice G34 that panics, down to the machine words**: machine steps of the
 linked code to a state that panics with `runLoc`'s panic `nilDeref` (the `MOVB` at the nil page,
 `MPanics`). -/
-theorem g33_obj_nilPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+theorem g34_obj_nilPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState} {m : MState}
     {e : Panic} {mm' : Mem}
     {spills : Array Spill} {o : ObjIn} {otab : Tab} {base : BitVec 64} {code : Code}
     {retM : BitVec 64} {t : MState}
-    (hc : checkG33 lc ps bstart g = .ok (tab, kt))
+    (hc : checkG34 lc ps bstart g = .ok (tab, kt))
     (hE : G28Env lc g L ps (endP L.text ps.toList) tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
@@ -106,22 +112,22 @@ theorem g33_obj_nilPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : L
     (hR : ObjRel (ObjEnv.map otab ps L base) m t)
     (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
     e = .nilDeref ∧ ∃ t', MStar H code retM t t' ∧ MPanics H code retM t' e := by
-  obtain ⟨he, m', hp, hpp⟩ := g33_nilPanic (H := H) hc hE hbid hb hi hv hop hm hinv hs
+  obtain ⟨he, m', hp, hpp⟩ := g34_nilPanic (H := H) hc hE hbid hb hi hv hop hm hinv hs
   obtain ⟨t1, ht1, hR1, hI1⟩ := obj_star hO hH hp hR (locMatch_inv hE.env.env.env.env hm) hic
   have hI : ObjInv L ps.toList m' := hI1.resolve_right hpp.1
   obtain ⟨t2, ht2, hpan⟩ := obj_panic hO hHP hR1 hI hpp
   exact ⟨he, t2, mstar_trans ht1 ht2, hpan⟩
 
-/-- **A bounds check of slice G33 that panics, down to the machine words**: machine steps of the
+/-- **A bounds check of slice G34 that panics, down to the machine words**: machine steps of the
 linked code to a state that panics with the runtime's bounds panic (`BoundsOK`), which
 `BoundsAgree`s with `runLoc`'s. -/
-theorem g33_obj_boundsPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+theorem g34_obj_boundsPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState} {m : MState}
     {e : Panic} {mm' : Mem}
     {spills : Array Spill} {o : ObjIn} {otab : Tab} {base : BitVec 64} {code : Code}
     {retM : BitVec 64} {t : MState}
-    (hc : checkG33 lc ps bstart g = .ok (tab, kt))
+    (hc : checkG34 lc ps bstart g = .ok (tab, kt))
     (hE : G28Env lc g L ps (endP L.text ps.toList) tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
@@ -135,7 +141,7 @@ theorem g33_obj_boundsPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L 
     (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
     ∃ e', BoundsAgree e e' ∧ ∃ t', MStar H code retM t t' ∧ MPanics H code retM t' e' := by
   obtain ⟨e', m', he, hp, hpp⟩ :=
-    g33_boundsPanic (H := H) hc hE hbid hb hi hv hop hm hinv hbok hs
+    g34_boundsPanic (H := H) hc hE hbid hb hi hv hop hm hinv hbok hs
   obtain ⟨t1, ht1, hR1, hI1⟩ := obj_star hO hH hp hR (locMatch_inv hE.env.env.env.env hm) hic
   have hI : ObjInv L ps.toList m' := hI1.resolve_right hpp.1
   obtain ⟨t2, ht2, hpan⟩ := obj_panic hO hHP hR1 hI hpp

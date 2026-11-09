@@ -8,7 +8,7 @@ import GoFV.Proof.Witness.PipelineFull
 `pallocSum.start` of `std/runtime` from its first export section (the input of `number lines`,
 `GenG3.startSsa`), in the pass environment `gofv-ssa-opt --verified` builds for it (`baseEnv`, the
 whole-file environment), through `verifiedPipelineFull` (`fullyVerified`) to the allocated
-function; genssa's Progs (`GenG3.ps`) are accepted by `checkG33` and its return by `retRegsOK`
+function; genssa's Progs (`GenG3.ps`) are accepted by `checkG34` and its return by `retRegsOK`
 against the pipeline's output (`ObjWhole.lcFacts`), and the assembler's words by `checkObj`
 (`ObjWhole.obj_premises`). On the argument `p = 7` in the Phase 1 test environment `plRunEnv`
 (`VPre` as for `isNaN` in `PipelineFull.lean`), the generic `run` returns; `verified_mach`
