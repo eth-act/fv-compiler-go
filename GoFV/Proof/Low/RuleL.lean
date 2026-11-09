@@ -921,6 +921,19 @@ theorem renameOp_qStore {o o' : Op} (h : renameOp o o' = true) :
       · unfold atomicRen at h
         rcases qStore_cases hq with rfl | rfl <;> simp at h <;> cases h
 
+/-- What `moveQLower` says about the ops: a `Move` with three arguments and a 128-bit store. -/
+theorem moveQLower_qStore {tabs : Tables} {u w : Value} (h : moveQLower tabs u w = true) :
+    u.op = .Move ∧ u.args.size = 3 ∧ qStore w.op = true := by
+  unfold moveQLower moveQOp at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨⟨⟨hu, h3⟩, -⟩, -⟩, h⟩ := h
+  refine ⟨hu, h3, ?_⟩
+  split at h
+  · simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at h; rw [h.1]; rfl
+  · split at h
+    · simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at h; rw [h.1]; rfl
+    · simp at h
+
 /-- Generic ops are no arm64 stores. -/
 theorem stSize_generic {o : Op} (h : o.generic = true) : stSize o = none := by
   unfold stSize

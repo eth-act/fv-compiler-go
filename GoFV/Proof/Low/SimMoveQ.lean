@@ -126,7 +126,7 @@ private theorem symAddr_add {ctx : Ctx} {v : Value} {a : Val} {P : Ptr} {n : Nat
 
 /-- `moveQLower`: a `Move [16]` lowered to `FMOVQstore` (three arguments) or a `Move [32]` to
 `FSTPQ` (four). -/
-private theorem moveQLower_cases {tabs : Tables} {u w : Value} (h : moveQLower tabs u w = true) :
+theorem moveQLower_cases {tabs : Tables} {u w : Value} (h : moveQLower tabs u w = true) :
     u.op = .Move ∧ ((u.auxInt = 16 ∧ w.op = .ARM64FMOVQstore ∧ w.args.size = 3) ∨
       (u.auxInt = 32 ∧ w.op = .ARM64FSTPQ ∧ w.args.size = 4)) := by
   unfold moveQLower moveQOp at h

@@ -146,7 +146,10 @@ theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
       · exact absurd huph (addrLower_ops hal).1) hnpb (by
       cases hix : idxLower tabs u w
       · rfl
-      · exact absurd huph (idxLower_ops hix).1)
+      · exact absurd huph (idxLower_ops hix).1) (by
+      cases hq : moveQLower tabs u w
+      · rfl
+      · exact absurd huph (moveQLower_ops hq).1)
     have hzf : z ∈ fb.values := by
       obtain ⟨-, -, blk, hblk', hzv⟩ := hpu
       rw [hblk, hwb, B.hfb] at hblk'; cases hblk'; exact hzv
@@ -590,7 +593,7 @@ theorem arg_beforeL {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
 /-- A corresponding atom of a generic op of `g` has the same op in `f`. -/
 theorem atomPair_op_of_generic {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true)
     (hg : w.op.generic = true) : u.op = w.op := by
-  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h | h, -⟩ | h | h | h
+  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h | h, -⟩ | h | h | h | h
   · exact h
   · exfalso
     rcases renameOp_cases h with ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ |
@@ -610,6 +613,8 @@ theorem atomPair_op_of_generic {tabs : Tables} {u w : Value} (h : atomPair tabs 
   · exfalso
     obtain ⟨-, -, -, -, -, p, s, -, hp, -⟩ := idxLower_cases h
     rw [(idxStore_facts hp).1] at hg; cases hg
+  · exfalso
+    obtain ⟨-, hw | hw, -⟩ := (Sim.moveQLower_cases h).2 <;> rw [hw.1] at hg <;> cases hg
 
 /-- **A panicking block entry.** -/
 theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')

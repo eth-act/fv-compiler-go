@@ -1473,6 +1473,31 @@ theorem set!_zero_eq {xs : Array ID} (h : 0 < xs.size) (b : ID) : xs.set! 0 b = 
 theorem argMem {xs : Array ID} {i : Nat} (h : i < xs.size) : xs[i]! ∈ xs := by
   rw [getElem!_pos xs i h]; exact Array.getElem_mem h
 
+/-- A `Move` paired with a 128-bit store: the store lowers it (`moveQLower`). -/
+theorem atomPair_moveQ {u w : Value} (h : atomPair tabs u w = true) (hu : u.op = .Move)
+    (hw : qStore w.op = true) : moveQLower tabs u w = true := by
+  unfold atomPair at h
+  simp only [Bool.and_eq_true, Bool.or_eq_true] at h
+  obtain ⟨⟨⟨h1, -⟩, -⟩, -⟩ := h
+  rcases h1 with ((⟨(⟨⟨h1 | h1, -⟩, -⟩ | h1) | h1, -⟩ | h1) | h1) | h1 | h1 | h1
+  · rw [← beq_iff_eq.1 h1, hu] at hw; cases hw
+  · rw [(renameOp_qStore h1).2] at hw; cases hw
+  · rw [memLower_op h1] at hu; cases hu
+  · rcases bulkLower_op h1 with h | h | h | h <;> rw [h] at hw <;> cases hw
+  · unfold addrLower at h1; simp only [Bool.and_eq_true, beq_iff_eq] at h1
+    rw [h1.1.1.1.1.1] at hu; cases hu
+  · unfold pbLower at h1; simp only [Bool.and_eq_true, beq_iff_eq] at h1
+    rw [h1.1.1.1] at hu; cases hu
+  · unfold idxLower at h1; simp only [Bool.and_eq_true, beq_iff_eq] at h1
+    rw [h1.1.1.1.1.1] at hu; cases hu
+  · exact h1
+
+/-- A 128-bit store fits no argument (`argFitTy`). -/
+theorem argFitTy_qStore {v : Value} (h : qStore v.op = true) (i : Nat) :
+    argFitTy tabs v i = none := by
+  rcases qStore_cases h with h | h <;>
+    simp [argFitTy, atomFitTy, stFitTy, callLead, stValW, stIdxValW, h]
+
 /-- What `qFold` says: the 128-bit store `x` with its address (argument 0) replaced by `b`, its
 offset and aux moved as `stFold` and `stFoldAddr` move a store's (`addrStep_off`,
 `addrStep_sym`, `addrStep_frame`). -/
