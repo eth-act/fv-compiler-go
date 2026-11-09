@@ -455,6 +455,7 @@ private theorem vals_exist (hfr : RegsFrame tabs 0 D FS) : ∃ ρ ρ' : ID → V
           rty lowT (shapeL lowT E tabs a) (ρ a) else ρ a)
         by_cases h3 : ¬ IsTermL tabs E a ∧ (E a).isSome
         · rw [if_pos h3]
+          by_cases h2 : VS a ∧ ¬ IsTermL tabs D a
           · have hρa : ρ a = rv FS a := if_pos h2
             rw [hρa]
             have hnv : ¬ VT a := fun hv => h1 ⟨hv, h3.1⟩
