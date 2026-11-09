@@ -825,6 +825,19 @@ accepted: Phase 1 negates the other multiplicand than the machine (a NaN's sign 
 `genG46_witness` (`sq.area`, `FMULD F0, F0, F0` of `1.5`, which G45 rejects). Coverage on
 quick-v10 (`lake exe gen-check`): 6,775 of 9,297 functions (72.87%), 202,352 values.
 
+## Phase 3: genssa, slice G47, calls with float arguments or results (I7, #553)
+
+`GoFV.Proof.Gen.g47_value`, `g47_initMem`, `g47_term`, `g47_nilPanic`, `g47_boundsPanic`
+(`GoFV/Proof/Gen/G47.lean`): when slice G47 (`checkG47`: G46 with the static, interface and
+closure calls whose ABI registers are in `R0`–`R15` or `F0`–`F15`, an argument or result in an `F`
+register at a float shape, and the selects of such a call's results in `F` registers) accepts a
+function, they are G46's statements, `g47_value` under G46's `G46Pre`. No new premise, trusted or
+not: the callee contracts `CallOKZ` and `ICallOK` already relate the V registers (`CallSpec`,
+`RegRel`); `g2_callAt` and `g10_icall` take ABI registers in `F0`–`F15`, read from their V
+registers. Witness: `genG47_witness` (`math.Sin`, `CALL math.sin(SB)` with `x = 1.5` in `F0`,
+which G46 rejects, and a callee that returns its argument). Coverage on quick-v10 (`lake exe
+gen-check`): 6,856 of 9,297 functions (73.74%), 204,468 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g46_obj_value`, `g46_obj_term`, `g46_obj_nilPanic`, `g46_obj_boundsPanic`

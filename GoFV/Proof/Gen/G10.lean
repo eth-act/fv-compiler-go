@@ -163,9 +163,9 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
   {m : MState} {env : Env} {v : Value} {j j' : Nat} {K K' : Nat → Option Nat}
 
 /-- An interface or closure call: the code pointer in `Rn`, the closure context in `R26`, the
-register arguments in their ABI registers, `CALL (Rn)` with the return address in `X30`, the
-callee by the trusted contract (`ICallOK`), the results in the result registers. The injection
-grows by the callee's. -/
+register arguments in their ABI registers (`R0`–`R15`, or `F0`–`F15` read from their V registers,
+`hV`), `CALL (Rn)` with the return address in `X30`, the callee by the trusted contract
+(`ICallOK`), the results in the result registers. The injection grows by the callee's. -/
 theorem g10_icall (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E) (hlc : E.lc = lc)
     (hcf : checkFrame lc g = .ok ()) (hframed : E.framed = true)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
@@ -173,13 +173,15 @@ theorem g10_icall (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {n : Nat} {cabi : CallABI} {ins outs : List Nat} {a0 rc : Nat} {o : Int}
     (hn : icallLead v.op = some n) (hcabi : callABI? lc.ctx.tabs v.aux = some cabi)
-    (hcr : callRegs cabi = .ok (ins, outs)) (h16 : ∀ r ∈ ins ++ outs, r < 16)
+    (hcr : callRegs cabi = .ok (ins, outs)) (h16 : ∀ r ∈ ins ++ outs, r < 16 ∨ (31 ≤ r ∧ r < 47))
     (ha0 : v.args[0]? = some a0) (hrc : lc.home a0 = some (.reg rc)) (hrc26 : rc < 26)
     (hcl0 : (cls (lc.ty a0)).isSome = true) (ho : objOf? rc = some o)
     (hctx : n = 2 → ∃ a1, v.args[1]? = some a1 ∧ lc.home a1 = some (.reg ctxReg) ∧
       (cls (lc.ty a1)).isSome = true)
     (hlen : (v.args.toList.drop n).dropLast.length = ins.length)
     (hargs : ∀ a r, (a, r) ∈ (v.args.toList.drop n).dropLast.zip ins → lc.home a = some (.reg r))
+    (hV : ∀ a r, (a, r) ∈ (v.args.toList.drop n).dropLast.zip ins → 31 ≤ r →
+      ∃ x, s.read lc a = .ok x ∧ ∀ k, objV? r = some k → FValRel x (m.v k))
     (hres : lc.home v.id = some (.results (outs.map some).toArray) ∨
       (lc.home v.id = none ∧ outs = []))
     (hct : callTy outs.length (lc.ty v.id) = true)
@@ -266,7 +268,8 @@ theorem g10_icall (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
     rw [hm1x _ (by decide)]
     rw [rX_lt (by decide)] at hx1v
     exact hx1v
-  -- the register arguments, read from their ABI registers
+  -- the register arguments, read from their ABI registers (an X register, or a V register by
+  -- `hV`)
   have hargs' : ∀ a ∈ (v.args.toList.drop n).dropLast, ∃ x, s.read lc a = .ok x ∧
       ∀ r, lc.home a = some (.reg r) → RegRel E.ι x m₁ r := by
     intro a ha
@@ -277,7 +280,14 @@ theorem g10_icall (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
       List.mem_of_getElem? (List.getElem?_zip_eq_some.2 ⟨List.getElem?_eq_getElem hj0,
         List.getElem?_eq_getElem hjin⟩)
     have hh := hargs _ _ hz
-    have hr16 := h16 _ (List.mem_append_left _ (List.getElem_mem hjin))
+    by_cases hr31 : 31 ≤ ins[j0]
+    · obtain ⟨x, hx, hxv⟩ := hV _ _ hz hr31
+      refine ⟨x, hx, fun r hr => ?_⟩
+      rw [hh] at hr
+      cases hr
+      exact ⟨fun q hq => (by rw [objX?_high hr31] at hq; cases hq), fun q hq => hxv q hq⟩
+    have hr16 : ins[j0] < 16 := by
+      rcases h16 _ (List.mem_append_left _ (List.getElem_mem hjin)) with h | h <;> omega
     have hrz' : ins[j0] ≠ zeroReg := by unfold zeroReg; omega
     obtain ⟨c, hc⟩ : ∃ c, cls (lc.ty (v.args.toList.drop n).dropLast[j0]) = some c :=
       Option.isSome_iff_exists.1 (F.clsReg _ _ hh hrz')
@@ -458,8 +468,10 @@ theorem vk10_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
       · rw [hE.icalls hfr id v hv] at hn; cases hn
       · rfl
     obtain ⟨ι', hext', hA', m', hstar, hlm, hcore', hsl'⟩ := g10_icall (H := H) (g := g) F hF hlcE
-      hcf hframed hm hinv.core hinv.slots (kread_of_reads hreads) hj hj' hn hcabi hcr h16 ha0 hrc
-      hrc26 hcl0 ho hctx hlen hargs hres hct
+      hcf hframed hm hinv.core hinv.slots (kread_of_reads hreads) hj hj' hn hcabi hcr
+      (fun r hr => .inl (h16 r hr)) ha0 hrc hrc26 hcl0 ho hctx hlen hargs
+      (fun _ r har hr => absurd (h16 r (List.mem_append_left _ (List.of_mem_zip har).2))
+        (by omega)) hres hct
       (kcall_kStep (icall_notPhi hn) hres hnd (callTy_len hct)) hvs htemp hs hicall
     have hx : E.Extends { E with ι := ι' } := ⟨rfl, hext'⟩
     exact ⟨_, m', hx, hE10.extend hx (hE.env.extend hx (hE0.extend hext' hA')), hstar, hlm,

@@ -1060,14 +1060,31 @@ lowered function are `lower`'s contractions (Phase 2's `Contract`, the 12 `useFM
 relates the machine's fused instruction to Phase 1's fused op, not to the separate multiply and
 add. Witness `genG46_witness` (`sq.area`: `FMULD F0, F0, F0` of `1.5`, `V0` then holds `2.25`'s
 bits). G46 accepts 6,775 functions (+118 over G45).
-Stage (c), calls with float arguments or results (the `< 16` ABI-register check of Check2/9/10/15),
-follows.
+
+**Slice G47: calls with float arguments or results** (`GoFV/Gen/Check47.lean`,
+`checkG47 lc ps bstart g`; proven sound, `g47_value`, `g47_initMem`, `g47_term`, `g47_nilPanic`,
+`g47_boundsPanic`, `GoFV/Proof/Gen/G47.lean`): stage (c) of the float slice. G46 with the calls
+whose ABI registers include `F0`–`F15` (Go registers 31–46, `abiReg`), which G9, G10 and G15
+rejected (`floating-point argument or result`, the `< 16` check): a static call as G15 checks it
+(`callKind47`, on `callRegsZ`), an interface or closure call as G10 checks it (`icallKind47`), each
+with its ABI registers in `R0`–`R15` or `F0`–`F15` (`abiRegOK`) and an argument or result in an
+`F` register at a float shape (`fTy`, `fArgsOK`/`fOutsOK`), and `SelectN [i]` of such a call homed
+in its `F` result register `i` at a float shape (`selKind47`; selects in `R0`–`R15` stay G2's and
+G10's). Nothing new is trusted: the callee contracts `CallOKZ` and `ICallOK` state `CallSpec`,
+whose `RegRel` relates every ABI register, X or V, to its value. G2's `g2_callAt` and G10's
+`g10_icall` now take ABI registers below 16 or in 31–46 and, for an argument in an `F` register,
+its read value related to the V register (`hV`; `argsV` discharges it by `arg_relV`); the kept and
+clobbered registers and the class table are unchanged. The select is G2's with the V register
+(`g47_selF`: `LocMatch`'s V clause, `fvalRel_retypeL` at the select's shape, `locMatch_setRegV`).
+No new premise: `g47_value` takes G46's `G46Pre`. Witness `genG47_witness` (`math.Sin`: `CALL
+math.sin(SB)` with `x = 1.5` in `F0` and a callee that returns its argument; `V0` then holds `1.5`'s
+bits). G47 accepts 6,856 functions (+81 over G46).
 
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
-1. **Calls** with nonempty stack arguments (`stack argument` 308; §8) or floating-point
-   arguments or results (153 (33)).
+1. **Calls** with nonempty stack arguments (`stack argument` 308; §8). Floating-point arguments
+   or results (153 (33)) are done in G47.
 2. **Frame variables beyond G6**: parameters and results (`NAME_PARAM`, `Blk.local`: `frame
    variable operand class`, 294 (113 after G41)) and variables whose address is converted to an
    integer (`frame variable with an integer address`, 197 (50)): option 2 of semantics3 §4.3
@@ -1135,6 +1152,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G44 | 6,652 (71.54%) | 196,069 |
 | G45 | 6,657 (71.60%) | 196,234 |
 | G46 | 6,775 (72.87%) | 202,352 |
+| G47 | 6,856 (73.74%) | 204,468 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1432,6 +1450,12 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `g46_fbin`, `g46_fun`, `g46_cvtf`, `g46_fcvtz`, `g46_fcmp`, `g46_fcmp0`, `fmaPat_ok`,
   `g46_fma`, `uStep35_f46`, `vk46_step`, `vk46_nil`, `vk46_pb`, `g46L_value` … `g46L_term`,
   `g46_value`, `g46_initMem`, `g46_nilPanic`, `g46_boundsPanic`, `g46_term`.
+- `Spec47.lean`: what `checkG47` accepted (`VK47`, `abiRegOK_spec`, `fArgsOK_spec`,
+  `callKind47_spec`, `icallErr47_spec`, `icallKind47_spec`, `selKind47_spec`, `fcall47_spec`,
+  `vkind47_spec`, `vkind47_initMem`, `checkG33_of_47L`, `checkG47L_spec`, `checkG47_spec`).
+- `G47.lean`: `argsV`, `g47_selF`, `uStep35_call47`, `vk47_ops`, `vk47_step`, `vk47_nil`,
+  `vk47_pb`, `g47L_value` … `g47L_term`, `g47_value`, `g47_initMem`, `g47_nilPanic`,
+  `g47_boundsPanic`, `g47_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
