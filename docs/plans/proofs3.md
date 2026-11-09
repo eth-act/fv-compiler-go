@@ -896,6 +896,26 @@ factors' low bits (`lo_madd37`, with `ADD`'s pointer case); the machine computes
 argument's class (`lo_sbfx37`, `progStep_sbfx37`). The G37 ops empty the upper-bit table
 (`uStep35_alu37`). G37 accepts 6,099 functions (+132 over G36).
 
+**Slice G38: the acquire loads** (`GoFV/Gen/Check38.lean`, `checkG38 lc ps bstart g`, returning
+G4's tables; proven sound, `g38_value`, `g38_term`, `g38_nilPanic`, `g38_boundsPanic`): G37 with,
+in a function with an arm64 op, `LDAR`, `LDARW`, `LDARB p mem` (`LDAR`/`LDARW`/`LDARB (Rn), Rd`,
+`ldar?`, offset 0, no symbol) of an address of 64 bits, a tuple of a component of class `8n` (an
+integer of `n` bytes, or a pointer for `n = 8`) and the memory, homed in `(Rd;-)` with `Rd` a
+register G1 may write and no temporary; `Select0` of one, homed in its register, and `Select1`,
+the memory without a home, both without code (`VK38`). The statements are G37's over `checkG38`,
+with G35's table; `g38_value`'s per-value premise `G38Pre` adds to `G14Pre` that an acquire load
+reads valid bytes (`LdarPre`: Phase 1's `Mem.read` of its `n` bytes at the address in its register
+succeeds), a run premise as G3's for the loads. No new trusted premise. The proof (`G38.lean`):
+`runLoc` runs an acquire load as Phase 1's `atomicLoad` (`stepLoc_ldar`), the value at the
+component's shape (`poison` if not naturally aligned) and the memory unchanged, which it writes to
+`Rd` and the state's memory (`write_ldar`); at the component's shape that value is G3's `n`-byte
+load (`ldar_val`; a pointer and a 64-bit integer decode 8 bytes alike, `decodePtr_eq`), related to
+the zero extension of the `n` bytes the machine's `LDAR*` loads (`valRel_ldar`, `progStep_ldar`).
+A component reads the tuple from `(Rd;-)` (`read_ldar`): `Select0` is `Rd`, which the machine
+already holds (`g38_sel0`), `Select1` the memory (`g38_sel1`). The G38 values empty the upper-bit
+table (`uStep35_ldar`, `uStep35_selLdar`). G38 accepts 6,380 functions (+281 over G37). An acquire
+load whose step faults (`nilFaults`) is not yet among the composition's `memFaultOp`.
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -906,14 +926,14 @@ reason in parentheses):
    (`frame variable with an integer address`, 197 (12)): option 2 of semantics3 §4.3 (addresses as
    a parameter of the semantics); slots of other sizes (`slot … frame operand, size or alignment`,
    717).
-3. **Other values**: the acquire loads `LDAR`/`LDARW` (383, 277); `InitMem` after the entry values
-   (35 sole after G37), `CMNconst` (33), `CMPshiftRL` (29) and `CMPshiftLL` (14) (a new premise,
-   G36), `LoweredGetCallerPC` (26), `shift or mask widths` (31: narrow arguments of right shifts),
-   `REV#W widths` (6: `REVW`/`REV16W` of narrow arguments); `MOVDnop` 750 (91) and `MOVDreg` (27
-   sole) are done in G20, G21, G29, G31, G34 and G35 but for 7 functions with no other blocker
-   after G37, whose tables need stores, `Convert` or `Copy` to keep or copy their entries (§4,
-   G35). Bounds panics (`LoweredPanicBoundsRR` 616 (68), `RC` 332 (46), `CR` 76 (33), `CC` 170
-   (22)) are done in G19 but for #541's 2 functions.
+3. **Other values**: `InitMem` after the entry values (35 sole after G38), `CMNconst` (36),
+   `CMPshiftRL` (32) and `CMPshiftLL` (14) (a new premise, G36), `LoweredGetCallerPC` (26),
+   `shift or mask widths` (32: narrow arguments of right shifts), `REV#W widths` (6:
+   `REVW`/`REV16W` of narrow arguments); the acquire loads are done in G38; `MOVDnop` 750 (91) and
+   `MOVDreg` (27 sole) are done in G20, G21, G29, G31, G34 and G35 but for 8 functions with no
+   other blocker after G38, whose tables need stores, `Convert` or `Copy` to keep or copy their
+   entries (§4, G35). Bounds panics (`LoweredPanicBoundsRR` 616 (68), `RC` 332 (46), `CR` 76
+   (33), `CC` 170 (22)) are done in G19 but for #541's 2 functions.
 
 ## 5. Results
 
@@ -959,6 +979,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G35 | 5,838 (62.79%) | 152,883 |
 | G36 | 5,967 (64.18%) | 159,085 |
 | G37 | 6,099 (65.60%) | 165,436 |
+| G38 | 6,380 (68.62%) | 177,277 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1192,6 +1213,13 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `progStep_bin37`, `progStep_un37`, `progStep_madd37`, `progStep_sbfx37`, `lo_bin37`, `lo_un37`,
   `lo_madd37`, `lo_sbfx37`, `g37_bin`, `g37_un`, `g37_madd`, `g37_sbfx`, `vk37_step`, `g37_value`,
   `vk37_nil`, `g37_nilPanic`, `g37_boundsPanic`, `g37_term`.
+- `Spec38.lean`: what `checkG38` accepted (`VK38`, `ldarHome?_some`, `ldarTy_spec`,
+  `ldarSelTy_spec`, `ldarKind_spec`, `selLdarKind_spec`, `vkind38_spec`, `checkG33_of_38`,
+  `checkG38_spec`).
+- `G38.lean`: `LdarPre`, `G38Pre`, `ldar?_some`, `ldar_ne`, `uStep35_ldar`, `uStep35_selLdar`,
+  `stepLoc_ldar`, `write_ldar`, `read_ldar`, `asPtrWord_of_addr`, `decodePtr_eq`, `ldar_val`,
+  `valRel_ldar`, `progStep_ldar`, `kldar_kStep`, `ksel38_of_reads`, `g38_ldar`, `g38_sel0`,
+  `g38_sel1`, `vk38_step`, `g38_value`, `vk38_nil`, `g38_nilPanic`, `g38_boundsPanic`, `g38_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -1306,7 +1334,9 @@ whole `X2 = 0x2a`), `GenG36.lean` (`encoding/hex.DecodedLen`, `x / 2`, which G35
 `g36_value` on `v7 = ADDshiftRL [63] v6 v6`, `ADD R0>>63, R0, R1`, from `x = -7`, after which the
 machine's `X1 = -6`), `GenG37.lean` (`math/bits.Reverse`, which G36 rejects: `g37_value` on
 `v9 = RBIT v6`, `RBIT R0, R0`, from `x = 0x0f`, after which the machine's
-`X0 = 0xf000000000000000`).
+`X0 = 0xf000000000000000`), `GenG38.lean` (`sync/atomic.LoadInt64`, which G37 rejects:
+`g38_value` on `v8 = LDAR v6 v1`, `LDAR (R0), R0`, from `addr` the pointer to the word 7 of
+`GenG14`'s `heap 1`, `LdarPre` holding, after which the machine's `X0 = 7`).
 Each decides its inputs by compiled evaluation (`native_decide`, pinned in
 `scripts/axioms-allowlist.txt`).
 

@@ -701,6 +701,20 @@ premises. No new trusted premise. Witness: `genG37_witness` (`RBIT R0, R0` in `m
 which G36 rejects: from `x = 0x0f`, the machine's `X0 = 0xf000000000000000`). Coverage on quick-v10
 (`lake exe gen-check`): 6,099 of 9,297 functions (65.60%), 165,436 values.
 
+## Phase 3: genssa, slice G38 (I7, #553)
+
+`GoFV.Proof.Gen.g38_value`, `GoFV.Proof.Gen.g38_term`, `GoFV.Proof.Gen.g38_nilPanic`,
+`GoFV.Proof.Gen.g38_boundsPanic` (`GoFV/Proof/Gen/G38.lean`): when slice G38 (`checkG38`: G37 with
+the acquire loads `LDAR`, `LDARW`, `LDARB` (`LDAR* (Rn), Rd`, homed in `(Rd;-)`) and their
+`Select0` (in `Rd`) and `Select1` (the memory), both without code) accepts a function, they are
+`g37_value`'s, `g37_term`'s, `g37_nilPanic`'s and `g37_boundsPanic`'s statements; `g38_value`'s
+per-value premise `G38Pre` adds to `G14Pre` the run premise `LdarPre` (an acquire load reads valid
+bytes: Phase 1's `Mem.read` of its `n` bytes at the address in its register succeeds; a property
+of the run, as G3's for the loads, not a trusted hook). No new trusted premise. Witness:
+`genG38_witness` (`LDAR (R0), R0` in `sync/atomic.LoadInt64`, which G37 rejects: `LdarPre` holds
+for the pointer to the word 7 of a heap object, and the machine's `X0 = 7`). Coverage on quick-v10
+(`lake exe gen-check`): 6,380 of 9,297 functions (68.62%), 177,277 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g34_obj_value`, `g34_obj_term`, `g34_obj_nilPanic`, `g34_obj_boundsPanic`
