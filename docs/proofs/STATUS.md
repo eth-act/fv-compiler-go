@@ -715,6 +715,20 @@ of the run, as G3's for the loads, not a trusted hook). No new trusted premise. 
 for the pointer to the word 7 of a heap object, and the machine's `X0 = 7`). Coverage on quick-v10
 (`lake exe gen-check`): 6,380 of 9,297 functions (68.62%), 177,277 values.
 
+## Phase 3: genssa, slice G39 (I7, #553)
+
+`GoFV.Proof.Gen.g39_value`, `GoFV.Proof.Gen.g39_term`, `GoFV.Proof.Gen.g39_nilPanic`,
+`GoFV.Proof.Gen.g39_boundsPanic` (`GoFV/Proof/Gen/G39.lean`): when slice G39 (`checkG39 lc`:
+`refsLive lc`, every value of the function at an ID that is a value of the function and its
+arguments values of the function, then `checkG38` on `liveCtx lc`, `lc` without the homes that
+`regalloc` recorded for values `trim` removed) accepts a function, they are `g38_value`'s,
+`g38_term`'s, `g38_nilPanic`'s and `g38_boundsPanic`'s statements on `liveCtx lc`.
+`GoFV.Proof.Gen.runLoopLoc_live`, `runCtxLoc_live`, `runLoc_live`: under `refsLive`, `runLoc`
+runs alike under `lc` and `liveCtx lc`. No new premise. Witness: `genG39_witness`
+(`strings.HasSuffix`, which G38 rejects for the home `R0` of the removed `v47`: `ADD R3, R1, R4`
+runs alike under both contexts, and the machine's `X4 = 7`). Coverage on quick-v10
+(`lake exe gen-check`): 6,447 of 9,297 functions (69.34%), 182,395 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g34_obj_value`, `g34_obj_term`, `g34_obj_nilPanic`, `g34_obj_boundsPanic`

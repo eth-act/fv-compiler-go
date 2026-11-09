@@ -916,6 +916,19 @@ already holds (`g38_sel0`), `Select1` the memory (`g38_sel1`). The G38 values em
 table (`uStep35_ldar`, `uStep35_selLdar`). G38 accepts 6,380 functions (+281 over G37). An acquire
 load whose step faults (`nilFaults`) is not yet among the composition's `memFaultOp`.
 
+**Slice G39: the homes of removed values** (`GoFV/Gen/Check39.lean`, `checkG39 lc ps bstart g`,
+returning G4's tables; proven sound, `g39_value`, `g39_term`, `g39_nilPanic`, `g39_boundsPanic`):
+`regalloc` records a home for every value it allocated, and the export keeps the homes of the
+values `trim` removes afterwards (the `Phi`s of a block it merges), of shape `Ty.other`, which
+G1's `homeOK` rejects. `checkG39` checks `refsLive lc` (every value of the function is at an ID
+that is a value of the function, and so are its arguments), then is `checkG38` on `liveCtx lc`,
+`lc` with the homes of the IDs that are no value of the function dropped. The statements are
+G38's on `liveCtx lc`; no new premise. The proof (`G39.lean`): `runLoc` reads homes only of the
+values it runs, their arguments, the blocks' controls and the arguments of a `MakeResult` control,
+all values of the function under `refsLive`, so it runs alike under `lc` and `liveCtx lc`
+(`stepLoc_live`, `enterListLoc_live`, `stepTermLoc_live`, `runLoopLoc_live`, `runCtxLoc_live`,
+`runLoc_live`: `runLoc` is `runCtxLoc` on `liveCtx`). G39 accepts 6,447 functions (+67 over G38).
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -926,12 +939,13 @@ reason in parentheses):
    (`frame variable with an integer address`, 197 (12)): option 2 of semantics3 §4.3 (addresses as
    a parameter of the semantics); slots of other sizes (`slot … frame operand, size or alignment`,
    717).
-3. **Other values**: `InitMem` after the entry values (35 sole after G38), `CMNconst` (36),
-   `CMPshiftRL` (32) and `CMPshiftLL` (14) (a new premise, G36), `LoweredGetCallerPC` (26),
-   `shift or mask widths` (32: narrow arguments of right shifts), `REV#W widths` (6:
-   `REVW`/`REV16W` of narrow arguments); the acquire loads are done in G38; `MOVDnop` 750 (91) and
+3. **Other values**: `InitMem` after the entry values (38 sole after G39), `CMNconst` (40),
+   `CMPshiftRL` (36) and `CMPshiftLL` (17) (a new premise, G36), `LoweredGetCallerPC` (26),
+   `shift or mask widths` (37: narrow arguments of right shifts), `REV#W widths` (6:
+   `REVW`/`REV16W` of narrow arguments); the acquire loads are done in G38, the homes of removed
+   values in G39; `MOVDnop` 750 (91) and
    `MOVDreg` (27 sole) are done in G20, G21, G29, G31, G34 and G35 but for 8 functions with no
-   other blocker after G38, whose tables need stores, `Convert` or `Copy` to keep or copy their
+   other blocker after G39, whose tables need stores, `Convert` or `Copy` to keep or copy their
    entries (§4, G35). Bounds panics (`LoweredPanicBoundsRR` 616 (68), `RC` 332 (46), `CR` 76
    (33), `CC` 170 (22)) are done in G19 but for #541's 2 functions.
 
@@ -980,6 +994,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G36 | 5,967 (64.18%) | 159,085 |
 | G37 | 6,099 (65.60%) | 165,436 |
 | G38 | 6,380 (68.62%) | 177,277 |
+| G39 | 6,447 (69.34%) | 182,395 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1220,6 +1235,10 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `stepLoc_ldar`, `write_ldar`, `read_ldar`, `asPtrWord_of_addr`, `decodePtr_eq`, `ldar_val`,
   `valRel_ldar`, `progStep_ldar`, `kldar_kStep`, `ksel38_of_reads`, `g38_ldar`, `g38_sel0`,
   `g38_sel1`, `vk38_step`, `g38_value`, `vk38_nil`, `g38_nilPanic`, `g38_boundsPanic`, `g38_term`.
+- `G39.lean`: `checkG39_spec`, `refsLive_spec`, `liveCtx_ctx`, `liveCtx_temps`, `liveCtx_ty`,
+  `home_live`, `read_live`, `write_live`, `clobber_live`, `signOf_live`, `movdLoc_live`,
+  `stepLoc_live`, `enterListLoc_live`, `control_live`, `stepTermLoc_live`, `runLoopLoc_live`,
+  `runCtxLoc_live`, `runLoc_live`, `g39_value`, `g39_nilPanic`, `g39_boundsPanic`, `g39_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -1336,7 +1355,10 @@ machine's `X1 = -6`), `GenG37.lean` (`math/bits.Reverse`, which G36 rejects: `g3
 `v9 = RBIT v6`, `RBIT R0, R0`, from `x = 0x0f`, after which the machine's
 `X0 = 0xf000000000000000`), `GenG38.lean` (`sync/atomic.LoadInt64`, which G37 rejects:
 `g38_value` on `v8 = LDAR v6 v1`, `LDAR (R0), R0`, from `addr` the pointer to the word 7 of
-`GenG14`'s `heap 1`, `LdarPre` holding, after which the machine's `X0 = 7`).
+`GenG14`'s `heap 1`, `LdarPre` holding, after which the machine's `X0 = 7`), `GenG39.lean`
+(`strings.HasSuffix`, which G38 rejects for the home `R0` of the removed `v47`: `v34 = ADD v17 v26`
+runs alike under `lc0` and `liveCtx lc0`, and `g39_value` runs `ADD R3, R1, R4` from `len(s) = 5`,
+`len(suffix) = 2`, after which the machine's `X4 = 7`).
 Each decides its inputs by compiled evaluation (`native_decide`, pinned in
 `scripts/axioms-allowlist.txt`).
 
