@@ -51,10 +51,10 @@ theorem conv_window {p q : Ptr} (hb : q.blk = p.blk) (hp : p.convertible = false
   subst hb
   cases bq <;> simp_all [Ptr.convertible, Blk.window?] <;> omega
 
-/-- An offset at or above a window `w ≥ 2^24` moved by `k2 < 2^23` below `w` (it wrapped) stays
-below `w` when moved further by `k1 < 2^23`. -/
+/-- An offset at or above a window `w ≥ 2^24` moved by `k2` below `w` (it wrapped) stays below
+`w` when moved further by `k1`, for `k1 + k2 < 2^24`. -/
 theorem off_fold {o k1 k2 : BitVec 64} {w : Nat} (hw : 2 ^ 24 ≤ w) (hp : w ≤ o.toNat)
-    (hq : (o + k2).toNat < w) (h1 : k1.toNat < 2 ^ 23) (h2 : k2.toNat < 2 ^ 23) :
+    (hq : (o + k2).toNat < w) (h12 : k1.toNat + k2.toNat < 2 ^ 24) :
     (o + k2 + k1).toNat < w := by
   have ho := o.isLt
   simp only [BitVec.toNat_add] at hq ⊢
@@ -69,10 +69,10 @@ theorem word_retypeL {T : Ty} (hT : T = .int .w64 ∨ ∃ e, T = .ptr e) (q : Pt
   · rw [Mono.widen_of_hasTy _ _ (Ptr.word_hasTy_ptr q e), Ptr.word_retype_ptr]
 
 /-- **The folded address.** The address of `ADDconst [k2] x` (at a shape of at least 64 bits)
-moved by `k1` is undefined or `x` moved by `k1 + k2`, for `k1`, `k2` below `2^23` and `x` a
-register value. -/
-theorem addr_fold {T0 T1 : Ty} {x : Val} (hx : x.hasTy T0 = true) (hT1 : 64 ≤ argWidth T1)
-    {k1 k2 : BitVec 64} (h1 : k1.toNat < 2 ^ 23) (h2 : k2.toNat < 2 ^ 23) :
+moved by `k1` is undefined or `x` moved by `k1 + k2`, for `k1 + k2 < 2^24` and `x` a register
+value. -/
+theorem addr_fold_sum {T0 T1 : Ty} {x : Val} (hx : x.hasTy T0 = true) (hT1 : 64 ≤ argWidth T1)
+    {k1 k2 : BitVec 64} (h12 : k1.toNat + k2.toNat < 2 ^ 24) :
     Arm64.addr ((Arm64.addP T1 x k2).retypeL T1) k1 = none ∨
       Arm64.addr ((Arm64.addP T1 x k2).retypeL T1) k1 = Arm64.addr x (k1 + k2) := by
   obtain ⟨fs, n, rfl⟩ | hw : (∃ fs n, T1 = .agg fs n) ∨ (T1 = .int .w64 ∨ ∃ e, T1 = .ptr e) := by
@@ -114,7 +114,7 @@ theorem addr_fold {T0 T1 : Ty} {x : Val} (hx : x.hasTy T0 = true) (hT1 : 64 ≤ 
           rw [hq]
           simp only [Ptr.add] at hqw
           simp only [Ptr.inWindow, Ptr.add, hwp]
-          exact decide_eq_true (off_fold hw24 hpw hqw h1 h2)
+          exact decide_eq_true (off_fold hw24 hpw hqw h12)
         rw [Ptr.ofAddr_add_of_inWindow hin, hq]
         simp only [Ptr.add, Ptr.mk.injEq, true_and]
         rw [BitVec.add_assoc, BitVec.add_comm k2 k1]
@@ -136,14 +136,21 @@ theorem addr_fold {T0 T1 : Ty} {x : Val} (hx : x.hasTy T0 = true) (hT1 : 64 ≤ 
         simp only [Arm64.addr, hy, Option.map_none, Val.retypeL]
         rfl
 
+/-- `addr_fold` for `k1`, `k2` below `2^23`. -/
+theorem addr_fold {T0 T1 : Ty} {x : Val} (hx : x.hasTy T0 = true) (hT1 : 64 ≤ argWidth T1)
+    {k1 k2 : BitVec 64} (h1 : k1.toNat < 2 ^ 23) (h2 : k2.toNat < 2 ^ 23) :
+    Arm64.addr ((Arm64.addP T1 x k2).retypeL T1) k1 = none ∨
+      Arm64.addr ((Arm64.addP T1 x k2).retypeL T1) k1 = Arm64.addr x (k1 + k2) :=
+  addr_fold_sum hx hT1 (by omega)
+
 /-- **The folded address of a `MOVDaddr` base without aux.** The address of `MOVDaddr [k2] x` (at
 a shape of at least 64 bits) moved by `k1` is undefined, `x` moved by `k1 + k2`, or outside its
-block's window, for `k1`, `k2` below `2^23` and `x` a register value: a pointer base is
-`ADDconst`'s case (`addr_fold`); an integer base `r` addresses `Ptr.ofAddr (r + k2)`, whose word
-is the integer `r + k2` if it converts back, else the pointer, which moved by `k1` inside its
-window is `Ptr.ofAddr (r + k2 + k1)` (`Ptr.ofAddr_add_of_inWindow`). -/
+block's window, for `k1 + k2 < 2^24` and `x` a register value: a pointer base is `ADDconst`'s
+case (`addr_fold_sum`); an integer base `r` addresses `Ptr.ofAddr (r + k2)`, whose word is the
+integer `r + k2` if it converts back, else the pointer, which moved by `k1` inside its window is
+`Ptr.ofAddr (r + k2 + k1)` (`Ptr.ofAddr_add_of_inWindow`). -/
 theorem addr_movFold {T0 T1 : Ty} {x : Val} (hx : x.hasTy T0 = true) (hT1 : 64 ≤ argWidth T1)
-    {k1 k2 : BitVec 64} (h1 : k1.toNat < 2 ^ 23) (h2 : k2.toNat < 2 ^ 23) :
+    {k1 k2 : BitVec 64} (h12 : k1.toNat + k2.toNat < 2 ^ 24) :
     Arm64.addr (((Arm64.addr x k2).elim .poison PtrOps.ptrRes).retypeL T1) k1 = none ∨
       Arm64.addr (((Arm64.addr x k2).elim .poison PtrOps.ptrRes).retypeL T1) k1 =
         Arm64.addr x (k1 + k2) ∨
@@ -151,7 +158,7 @@ theorem addr_movFold {T0 T1 : Ty} {x : Val} (hx : x.hasTy T0 = true) (hT1 : 64 �
         q.inWindow = false := by
   by_cases hp : ∃ p, x = .ptr p
   · obtain ⟨p, rfl⟩ := hp
-    have h := addr_fold (x := .ptr p) hx hT1 h1 h2
+    have h := addr_fold_sum (x := .ptr p) hx hT1 h12
     simp only [Arm64.addP] at h
     simp only [Arm64.addr, Option.elim]
     rcases h with h | h
@@ -200,6 +207,13 @@ theorem offOK_toNat {k : Int64} (h : offOK k = true) :
   simp only [offOK, Bool.and_eq_true, decide_eq_true_eq] at h
   refine ⟨?_, h⟩
   rw [BitVec.toNat_ofInt]
+  omega
+
+/-- Two small non-negative offsets as register immediates sum below `2^24`. -/
+theorem offOK_sum {k1 k2 : Int64} (h1 : offOK k1 = true) (h2 : offOK k2 = true) :
+    (BitVec.ofInt 64 k1.toInt).toNat + (BitVec.ofInt 64 k2.toInt).toNat < 2 ^ 24 := by
+  have := (offOK_toNat h1).1
+  have := (offOK_toNat h2).1
   omega
 
 /-- `opValL` of `ADDconst [k]` on one argument: `Arm64.addP` by the immediate. -/
@@ -298,32 +312,39 @@ theorem wordShape_cases {T : Ty} (hT : wordShape T = true) : T = .int .w64 ∨ �
   | ptr e => exact .inr ⟨e, rfl⟩
   | _ => simp [wordShape] at hT
 
+/-- A read outside its block's window reads nothing. -/
+theorem read_outWindow {q : Ptr} (hq : q.inWindow = false) (m : Mem) {k : Nat} (hk : 0 < k) :
+    m.read q k = none := by
+  unfold Mem.read
+  have hk0 : (k == 0) = false := by simp; omega
+  simp only [hk0, Bool.false_eq_true, ite_false]
+  cases hf : m.find? q.blk with
+  | none => rfl
+  | some a =>
+    simp only [Option.bind_eq_bind, Option.bind_some]
+    split
+    · rename_i hc
+      obtain ⟨-, -, he⟩ := hc
+      simp only [Ptr.inWindow] at hq
+      simp only [Blk.endsInWindow] at he
+      split at hq <;> simp_all <;> omega
+    · rfl
+
 /-- A load outside its block's window reads `poison`. -/
 theorem loadN_outWindow {q : Ptr} (hq : q.inWindow = false) (ty : Ty) (n : Nat) (s : Bool)
     (m : Mem) : Arm64.loadN ty n s m q = .poison := by
-  have hr : ∀ k, 0 < k → m.read q k = none := by
-    intro k hk
-    unfold Mem.read
-    have hk0 : (k == 0) = false := by simp; omega
-    simp only [hk0, Bool.false_eq_true, ite_false]
-    cases hf : m.find? q.blk with
-    | none => rfl
-    | some a =>
-      simp only [Option.bind_eq_bind, Option.bind_some]
-      split
-      · rename_i hc
-        obtain ⟨-, -, he⟩ := hc
-        simp only [Ptr.inWindow] at hq
-        simp only [Blk.endsInWindow] at he
-        split at hq <;> simp_all <;> omega
-      · rfl
   have hs : ∀ w : Width, 0 < (Ty.int w).size := by intro w; cases w <;> decide
   unfold Arm64.loadN
   split
-  · simp only [Mem.load, hr _ (hs .w64)]
+  · simp only [Mem.load, read_outWindow hq m (hs .w64)]
   · split
-    · simp only [Mem.load, hr _ (hs _)]
+    · simp only [Mem.load, read_outWindow hq m (hs _)]
     · rfl
+
+/-- A 128-bit load outside its block's window reads `poison`. -/
+theorem load16_outWindow {q : Ptr} (hq : q.inWindow = false) (m : Mem) :
+    Arm64.load16 m q = .poison := by
+  simp only [Arm64.load16, read_outWindow hq m (by decide : 0 < 16)]
 
 /-- **A global symbol's or frame variable's address term folded into a store**
 (`ARM64.rules:881-905`): if `MOVDaddr [k2] {n} b` (at a word shape; a frame variable's in
