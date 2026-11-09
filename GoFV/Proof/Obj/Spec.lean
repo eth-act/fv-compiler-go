@@ -5,8 +5,9 @@ import GoFV.Proof.Obj.Basic
 
 The executable validator's checks as propositions: `sameEffect_spec`, `sameCtl_spec`
 (`CtlMatch`), `checkProg_spec`, `checkOne_spec`, `checkBody_spec`, the templates
-(`frameOK_spec`, `retOK_spec`, `checkStackCheck_spec`, `checkPrologue_spec`), the offset table
-(`startsOf_*`, `offOf_zip`) and `checkObj_spec`.
+(`frameOK_spec`, `retOK_spec`, `checkStackCheck_spec`, `checkPrologue_spec`, the morestack tail's
+`tailPlan_spec` and `checkTail_spec`), the offset table (`startsOf_*`, `offOf_zip`),
+`checkObj_spec` and `checkObj_tail`.
 -/
 
 namespace GoFV.Proof.Obj
@@ -494,5 +495,100 @@ theorem checkObj_spec {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab 
               first
               | (rename_i hnm; exact (hnm _ _ _ hc).elim)
               | cases hc
+
+/-! ## The morestack tail -/
+
+theorem tailPlan_spec {spills : List Spill} {sl : List TailSlot} (h : tailPlan spills = .ok sl) :
+    slotsApart sl = true ∧ ∀ s ∈ sl, s.reg < 16 ∧ 0 < s.n ∧ s.n ≤ 8 := by
+  unfold tailPlan at h
+  simp only [bind, Except.bind, pure, Except.pure, spec_throw] at h
+  split at h
+  · cases h
+  · simp at h
+    obtain ⟨h1, h2, h3, rfl⟩ := h
+    exact ⟨h3, fun s hs => ⟨h1 s hs, by have := h2 s hs; omega, (h2 s hs).2⟩⟩
+
+theorem checkTail_spec {t : ByteArray} {rs : List Reloc} {spills : List Spill} {check o e : Nat}
+    (h : checkTail t rs spills check o = .ok e) :
+    ∃ sl, tailPlan spills = .ok sl ∧ ∃ o1 σ1 n add,
+      symUntil t rs ((t.size - o) / 4) o {} = .ok (o1, σ1, .call n add) ∧
+      σ1.stores = sl.map TailSlot.store ∧ σ1.sp = .sp ∧ σ1.loads = [] ∧
+      (∀ r ∈ cmpRegs, σ1.getX r = if r = 3 then .x 30 else .x r) ∧
+      ∃ o2 σ2, symUntil t rs ((t.size - o) / 4) o1 {} = .ok (o2, σ2, .jmp check) ∧
+        σ2.stores = [] ∧ σ2.sp = .sp ∧ σ2.getX 30 = .x 30 ∧
+        (∀ x ∈ σ2.loads, ∃ s ∈ sl, s.addr = x.1 ∧ s.n = x.2) ∧
+        ∀ r ∈ cmpRegs, σ2.getX r = ((reloadOf sl r).map TailSlot.reload).getD (.x r) := by
+  unfold checkTail at h
+  simp only [bind, Except.bind, pure, Except.pure, spec_throw] at h
+  split at h
+  · cases h
+  rename_i sl hsl
+  split at h
+  · cases h
+  rename_i v1 hv1
+  obtain ⟨o1, σ1, c1⟩ := v1
+  dsimp only at h
+  split at h
+  · rename_i n add
+    simp at h
+    obtain ⟨hst, hsp, hld, h⟩ := h
+    split at h
+    · cases h
+    rename_i hf1
+    have hn1 := spec_find_none hf1
+    split at h
+    · cases h
+    rename_i v2 hv2
+    obtain ⟨o2, σ2, c2⟩ := v2
+    simp at h
+    obtain ⟨rfl, hst2, hsp2, h30, hld2, h⟩ := h
+    split at h
+    · cases h
+    rename_i hf2
+    have hn2 := spec_find_none hf2
+    refine ⟨sl, hsl, o1, σ1, n, add, hv1, hst, hsp, hld, fun r hr => by simpa using hn1 r hr,
+      o2, σ2, hv2, hst2, hsp2, h30, fun x hx => ?_, fun r hr => by simpa using hn2 r hr⟩
+    obtain ⟨s, hs, h1, h2⟩ := hld2 x.1 x.2 hx
+    exact ⟨s, hs, h1, h2⟩
+  · cases h
+
+/-- `checkObj` checked the morestack tail of the stack check. -/
+theorem checkObj_tail {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab : Tab}
+    (h : checkObj ps spills o = .ok tab) :
+    ∀ ce tail gOff, tab.check = some (ce, tail, gOff) →
+      ∃ e, checkTail o.text o.relocs.toList spills.toList 0 tail = .ok e := by
+  unfold checkObj at h
+  cases h0 : ps[0]? with
+  | none =>
+    rw [h0] at h
+    cases h
+  | some text =>
+    rw [h0] at h
+    simp only [bind, Except.bind, pure, Except.pure, spec_throw, spec_ite_ok, spec_ite_ok'] at h
+    obtain ⟨-, -, -, -, h⟩ := h
+    split at h
+    case h_2 => cases h
+    split at h
+    · cases h
+    split at h
+    · cases h
+    rw [spec_ite_ok] at h
+    obtain ⟨-, h⟩ := h
+    split at h
+    · cases h
+    split at h
+    · split at h
+      · cases h
+      · rename_i e he
+        cases h
+        intro ce tail gOff hc
+        simp at hc
+        obtain ⟨-, rfl, -⟩ := hc
+        exact ⟨e, he⟩
+    · cases h
+      intro ce' tail' gOff' hc
+      first
+      | (rename_i hnm; exact (hnm _ _ _ hc).elim)
+      | cases hc
 
 end GoFV.Proof.Obj

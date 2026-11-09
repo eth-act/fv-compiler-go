@@ -173,13 +173,15 @@ theorem verified_mach_witness :
       cases GoFV.SSA.run plRunEnv penv.tables f0 ObjWhole.args {} 5 <;> simp [isRetG]
     have hd : (GoFV.SSA.run plRunEnv penv.tables f0 ObjWhole.args {} 5).Defined := by
       rw [hrun0]; trivial
-    obtain ⟨hO, hH, hME, hroom, hg, hpass, hlf, -, hEE, hpc, -, -, hic⟩ := ObjWhole.obj_premises
+    obtain ⟨hO, hH, hME, hroom, hg, hnone, hlf, -, hEE, hpc, -, -, hic⟩ := ObjWhole.obj_premises
     obtain ⟨hc, hrok, houts, hE, hb1, hbm, hk, hentry, hu, sI, hsI, hent, hinv, hP⟩ :=
       ObjWhole.lc_premises hlcf
     rw [← hentry] at hpc
     obtain ⟨fuel', href, raw, hraw, hfin, hdef, hret, -⟩ :=
-      verified_mach hpe hv hvpre hnn hap hnp hd rfl hc hO hH hic hrok hME hroom hg hpass
-        hlf hE (hEE _) hb1 hbm hk hsI hent hinv hu (hpc _) hP
+      verified_mach hpe hv hvpre hnn hap hnp hd rfl hc hO hH hic hrok hME hroom hg
+        (fun _ _ _ h => by rw [hnone] at h; cases h) (fun _ _ _ h => by rw [hnone] at h; cases h)
+        hlf hE (hEE _) hb1 hbm hk hsI hent (fun _ _ _ h => by rw [hnone] at h; cases h) hinv hu
+        (hpc _) hP
     rw [houts] at hret
     exact ⟨r, rfl, hv, ⟨rs0, m0, hrun0⟩, fuel', href, raw, hraw, hfin, hdef, hret⟩
 

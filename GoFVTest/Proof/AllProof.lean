@@ -195,6 +195,8 @@ import GoFV.Proof.Obj.G7
 import GoFV.Proof.Obj.Insn
 import GoFV.Proof.Obj.Link
 import GoFV.Proof.Obj.MemPanic
+import GoFV.Proof.Obj.Morestack
+import GoFV.Proof.Obj.MorestackHook
 import GoFV.Proof.Obj.Prog
 import GoFV.Proof.Obj.Results
 import GoFV.Proof.Obj.Sim

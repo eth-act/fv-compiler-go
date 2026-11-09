@@ -626,56 +626,120 @@ def checkStackCheck (t : ByteArray) (rs : List Reloc) (az : Int) (o : Nat) (gOff
     pure (o + 4 * n, q.toNat)
   | _ => throw "stack check: not a BLS"
 
+/-- The number of words of the unit at `o` (`symUnit`): two for a relocated pair. -/
+def unitLen (rs : List Reloc) (o : Nat) : Nat :=
+  match relocAt rs o with
+  | some r => if isCallReloc r.type then 1 else 2
+  | none => 1
+
 /-- The words `[o, e)` up to and including the first one whose control is not a fall-through
 (searching at most `fuel` words): its offset after, the effect and the control. -/
 def symUntil (t : ByteArray) (rs : List Reloc) : Nat → Nat → Sym → Except String (Nat × Sym × MCtl)
   | 0, _, _ => throw "no branch"
   | fuel + 1, o, σ => do
-    let used := match relocAt rs o with
-      | some r => if isCallReloc r.type then 1 else 2
-      | none => 1
+    let used := unitLen rs o
     let (σ', c) ← symWords t rs used o σ
     if c == .fall then symUntil t rs fuel (o + 4 * used) σ' else pure (o + 4 * used, σ', c)
 
+/-- One register-argument spill of the morestack tail (`tailPlan`): general register `reg`
+stored in its `n` low bytes at `off(SP)` (`SP` at the entry: the frame is not yet allocated),
+reloaded sign-extended if `sg`. -/
+structure TailSlot where
+  reg : Nat
+  n : Nat
+  off : Nat
+  sg : Bool
+  deriving DecidableEq, Repr, Inhabited
+
+/-- The slot's address, `off(SP)`. -/
+def TailSlot.addr (s : TailSlot) : Ex := Ex.mkAdd .sp (.k (BitVec.ofNat 64 s.off))
+
+/-- The slot's spill. -/
+def TailSlot.store (s : TailSlot) : Ex × Nat × Ex := (s.addr, s.n, .x s.reg)
+
+/-- The slot's reload. -/
+def TailSlot.reload (s : TailSlot) : Ex :=
+  if s.sg then Ex.mkSext (8 * s.n) (.ld s.n s.addr) else .ld s.n s.addr
+
+/-- The slot register `r` is reloaded from: its last spill. -/
+def reloadOf (sl : List TailSlot) (r : Nat) : Option TailSlot := sl.reverse.find? (·.reg == r)
+
+/-- Whether the slots' byte ranges are pairwise disjoint. -/
+def slotsApart : List TailSlot → Bool
+  | [] => true
+  | s :: ss => ss.all (fun s' => s.off + s.n ≤ s'.off || s'.off + s'.n ≤ s.off) && slotsApart ss
+
+/-- The slots of one spill: a register (`MOVx`) or a pair (`STP`) at `off(RSP)`, the frame not
+yet allocated. -/
+def spillSlots (sp : Spill) : Except String (List TailSlot) := do
+  let a := sp.addr
+  let named := match a.name with
+    | .NONE => true
+    | _ => false
+  if a.type != .MEM || !named || a.reg != REG_RSP || a.index != 0 || a.offset < 0 then
+    throw "tail: spill address"
+  let off := a.offset.toNat
+  let some r := gpIdx? sp.reg | throw "tail: spill register"
+  match movMem sp.spill.name, pairOp sp.spill.name with
+  | some (n, _, false), _ =>
+    let some (n', sg, false) := movMem sp.unspill.name | throw s!"tail: unspill {sp.unspill.name}"
+    if n' != n then throw "tail: unspill size"
+    pure [⟨r, n, off, sg⟩]
+  | _, some (false, n, false, false) =>
+    let some r2 := gpIdx? sp.reg2 | throw "tail: spill register"
+    pure [⟨r, n, off, false⟩, ⟨r2, n, off + n, false⟩]
+  | _, _ => throw s!"tail: spill {sp.spill.name}"
+
+/-- The slots of the spills, in order. -/
+def tailSlots : List Spill → Except String (List TailSlot)
+  | [] => pure []
+  | sp :: rest => do
+    let here ← spillSlots sp
+    let more ← tailSlots rest
+    pure (here ++ more)
+
+/-- The morestack tail's spills (`FuncInfo.spills`) as slots, in order: argument registers
+`R0`–`R15`, `1`–`8` bytes each, disjoint byte ranges. -/
+def tailPlan (spills : List Spill) : Except String (List TailSlot) := do
+  let sl ← tailSlots spills
+  if sl.any (·.reg ≥ 16) then throw "tail: spill register"
+  if sl.any (fun s => s.n == 0 || s.n > 8) then throw "tail: spill size"
+  if !slotsApart sl then throw "tail: spill slots overlap"
+  pure sl
+
+/-- The call of the morestack tail at `o` (`checkTail`): its symbol and addend. -/
+def tailCall (t : ByteArray) (rs : List Reloc) (o : Nat) : Option (Nat × Int) :=
+  match symUntil t rs ((t.size - o) / 4) o {} with
+  | .ok (_, _, .call n add) => some (n, add)
+  | _ => none
+
 /-- The morestack tail at `o` (`stacksplit`): the spills of `FuncInfo.spills` at their entry
-addresses (`SP + offset + 8`, the frame not yet allocated), `MOVD R30, R3`, the call, the
-reloads and the jump back to the stack check at `check`. Returns the tail's end. -/
+addresses (`tailPlan`), `MOVD R30, R3`, the call, the reloads and the jump back to the stack
+check at `check`. Before the call `SP` is kept and nothing is loaded; after it `SP` and `R30`
+are kept, nothing is stored and the only loads are of the slots. Returns the tail's end. -/
 def checkTail (t : ByteArray) (rs : List Reloc) (spills : List Spill) (check o : Nat) :
     Except String Nat := do
-  let mut st : List (Ex × Nat × Ex) := []
-  let mut rl : List (Nat × Ex) := []
-  for sp in spills do
-    -- at entry: no frame yet
-    let (a, wb) ← memP 0 0 0 sp.addr
-    if wb.isSome then throw "tail: spill with write-back"
-    let some r := gpIdx? sp.reg | throw "tail: spill register"
-    match movMem sp.spill.name, pairOp sp.spill.name with
-    | some (n, _, false), _ =>
-      let some (n', sg, false) := movMem sp.unspill.name | throw s!"tail: unspill {sp.unspill.name}"
-      if n' != n then throw "tail: unspill size"
-      st := st ++ [(a, n, Ex.x r)]
-      rl := (r, if sg then Ex.mkSext (8 * n) (.ld n a) else .ld n a) :: rl
-    | _, some (false, n, false, false) =>
-      let some r2 := gpIdx? sp.reg2 | throw "tail: spill register"
-      let a2 := Ex.mkAdd a (.k (BitVec.ofNat 64 n))
-      st := st ++ [(a, n, Ex.x r), (a2, n, Ex.x r2)]
-      rl := (r2, Ex.ld n a2) :: (r, Ex.ld n a) :: rl
-    | _, _ => throw s!"tail: spill {sp.spill.name}"
+  let sl ← tailPlan spills
   let budget := (t.size - o) / 4
   let (o1, σ1, c1) ← symUntil t rs budget o {}
   match c1 with
   | .call _ _ => pure ()
   | _ => throw "tail: no call"
-  if σ1.stores != st then throw "tail: spills"
-  for r in cmpRegs do
-    let want := if r == 3 then Ex.x 30 else Ex.x r
-    if σ1.getX r != want then throw s!"tail: R{r} before the call"
+  if σ1.stores != sl.map TailSlot.store then throw "tail: spills"
+  if σ1.sp != .sp then throw "tail: SP before the call"
+  if !σ1.loads.isEmpty then throw "tail: loads before the call"
+  if let some r := cmpRegs.find? (fun r => σ1.getX r != if r == 3 then Ex.x 30 else Ex.x r) then
+    throw s!"tail: R{r} before the call"
   let (o2, σ2, c2) ← symUntil t rs budget o1 {}
   if c2 != .jmp check then throw "tail: not a jump back to the stack check"
   if !σ2.stores.isEmpty then throw "tail: stores after the call"
-  for r in cmpRegs do
-    let want := (rl.lookup r).getD (Ex.x r)
-    if σ2.getX r != want then throw s!"tail: R{r} after the call: {(σ2.getX r).str}, want {want.str}"
+  if σ2.sp != .sp then throw "tail: SP after the call"
+  if σ2.getX 30 != .x 30 then throw "tail: R30 after the call"
+  unless σ2.loads.all (fun x => sl.any fun s => s.addr == x.1 && s.n == x.2) do
+    throw "tail: loads after the call"
+  let want := fun r => ((reloadOf sl r).map TailSlot.reload).getD (Ex.x r)
+  if let some r := cmpRegs.find? (fun r => σ2.getX r != want r) then
+    throw s!"tail: R{r} after the call: {(σ2.getX r).str}, want {(want r).str}"
   pure o2
 
 /-- The prologue `[0, body)` of a function with frame size `az`: nothing if frameless, else the

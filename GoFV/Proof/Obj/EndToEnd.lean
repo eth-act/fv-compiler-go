@@ -44,10 +44,12 @@ loads and stores that fault in the nil page, bounds checks and static, interface
 whose callee panics by the trusted `CallPanicOK`, `ICallPanicOK`), `runMach` panics with `pe` or,
 for a bounds check, with the runtime's report of the same failure (`BoundsAgree`).
 
-Premises of the machine side: those of `obj_whole_ret` (trusted: `HookMap`, and in `RunPre` the
-callee contracts `CallOK`, `CallOKZ`, `ICallOK`, `WbOK`, `CloOK`, `MemEqOK`; the caller's side:
-`MachEntry`, the stack check passing, `EntryMatch`/`EntryEnv` of the arguments, memory and frame
-at the entry). -/
+Premises of the machine side: those of `obj_whole_ret` (trusted: `HookMap`, `runtime.morestack`'s
+contract `MorestackOK` at the morestack tail's call, and in `RunPre` the callee contracts
+`CallOK`, `CallOKZ`, `ICallOK`, `WbOK`, `CloOK`, `MemEqOK`; the caller's side: `MachEntry`,
+`EntryMatch`/`EntryEnv` of the arguments, memory and frame at the entry, and for a function with
+a stack check the spill slots apart from `g` (`TailSep`) and the entry values surviving the
+morestack tail (`MoreEntry`)). -/
 theorem verified_mach
     {penv : PassEnv} {f : Func} {zv : Array (ID × Nat)} {dcl : Nat} {r : FState}
     (hpipe : verifiedPipelineFull penv f 0 zv dcl = .ok r) (hv : r.fullyVerified = true)
@@ -69,8 +71,10 @@ theorem verified_mach
     (hrok : retRegsOK lc kt = true)
     (hME : MachEntry code base room s0) (hroom : otab.autosize + 8 ≤ room)
     (hg : (s0.x 28).toNat + 32 ≤ 2 ^ 64)
-    (hpass : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
-      CheckPasses otab.autosize gOff s0)
+    (hms : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) → ∀ n add,
+      tailCall o.text o.relocs.toList tail = some (n, add) →
+      MorestackOK H code (s0.x 30) (L.sym n + BitVec.ofInt 64 add) otab.autosize gOff s0)
+    (hsep : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) → TailSep spills.toList s0)
     (hlf : otab.autosize = 0 ∨ otab.leaf = false)
     (hE : G28Env lc g L ps (endP L.text ps.toList) tab E0)
     (hEE : EntryEnv E0 L ps.toList otab.autosize s0)
@@ -78,7 +82,10 @@ theorem verified_mach
     (hbE : lc.ctx.f.block? lc.ctx.f.entry = some blkE)
     (hbm : lc.ctx.f.entry ∈ lc.ctx.f.blocks.toList) (hk : k ≤ blkE.values.size)
     (hpre : enterListLoc e lc (locInit e lc args mem) (blkE.values.toList.take k) = .ok sI)
-    (hent : EntryMatch E0 sI s0) (hinv : G3Inv E0 lc (kAt lc kt lc.ctx.f.entry blkE k) sI)
+    (hent : EntryMatch E0 sI s0)
+    (hmore : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
+      MoreEntry E0 spills.toList gOff sI s0)
+    (hinv : G3Inv E0 lc (kAt lc kt lc.ctx.f.entry blkE k) sI)
     (huE : uL34 lc [] blkE k = [])
     (hpc : ObjEnv.map otab ps L base (E0.pcOf lc.ctx.f.entry k) =
       base + BitVec.ofNat 64 (otab.offs[0]!))
@@ -103,9 +110,9 @@ theorem verified_mach
   subst hlc
   refine ⟨fuel', href, _, rfl, heq, finish_defined (heq ▸ hd'), fun rs mm hraw => ?_,
     fun pe mm hraw hHP hbok hPP => ?_⟩
-  · exact obj_whole_ret hc hO hH hic hrok hME hroom hg hpass hlf hE hEE hbE hbm hk hpre hent
-      hinv huE hpc hRP hraw
-  · exact obj_whole_panic hc hO hH hHP hbok hic hME hroom hg hpass hE hEE hbE hbm hk hpre hent hinv
-      huE hpc hRP hPP hraw
+  · exact obj_whole_ret hc hO hH hic hrok hME hroom hg hms hsep hlf hE hEE hbE hbm hk hpre hent
+      hmore hinv huE hpc hRP hraw
+  · exact obj_whole_panic hc hO hH hHP hbok hic hME hroom hg hms hsep hE hEE hbE hbm hk hpre hent
+      hmore hinv huE hpc hRP hPP hraw
 
 end GoFV.Proof.Obj

@@ -706,6 +706,66 @@ structure EntryMatch (E : MatchEnv) (s : LocState) (s0 : MState) : Prop where
   slots : s.slots = []
   mem : ∃ mm, s.mem = .mem mm ∧ MemInj E.ι mm s0.mem
 
+/-- The caller's side of the morestack path (`sim_entry`, a function whose stack check reads
+`gOff(g)` and whose morestack tail spills `spills`) for the run's first state `s` and the entry
+state `s0`: every register holding a value but `R26` (the closure context, which
+`runtime.morestack` keeps) is reloaded by the tail from a slot the value fits (`ValFits`), no
+vector register holds one (the hook clobbers them), and the live blocks of `s`'s memory lie apart
+from the slots and the guard word. -/
+structure MoreEntry (E : MatchEnv) (spills : List Spill) (gOff : Nat) (s : LocState) (s0 : MState) :
+    Prop where
+  regs : ∀ r v, s.regs[r]? = some v → v ≠ .poison →
+    (∀ q, objX? r = some q → q = 26 ∨ ∀ sl, tailPlan spills = .ok sl →
+      ∃ sq, reloadOf sl q.toNat = some sq ∧ ValFits v sq.n) ∧
+    ∀ q, objV? r = some q → False
+  sep : ∀ mm, s.mem = .mem mm → ∀ sl, tailPlan spills = .ok sl →
+    SepFrom E.ι (fun y => InSlots sl s0.sp y ∨ InWord (s0.x 28 + BitVec.ofNat 64 gOff) y) mm
+
+/-- `EntryMatch` survives the morestack path. -/
+theorem EntryMatch.more {E : MatchEnv} {spills : List Spill} {gOff : Nat} {sl : List TailSlot}
+    {s : LocState} {s0 s0' : MState} (h : EntryMatch E s s0) (hm : MoreEntry E spills gOff s s0)
+    (hpl : tailPlan spills = .ok sl) (hst : MoreStep sl gOff s0 s0') : EntryMatch E s s0' := by
+  obtain ⟨-, hslot⟩ := tailPlan_spec hpl
+  refine ⟨fun r v hv => ?_, h.flags, h.slots, ?_⟩
+  · obtain ⟨hX, hV⟩ := h.regs r v hv
+    by_cases hp : v = .poison
+    · subst hp
+      exact ⟨fun q hq => ⟨(hX q hq).1, trivial⟩, fun q hq => trivial⟩
+    obtain ⟨hmX, hmV⟩ := hm.regs r v hv hp
+    refine ⟨fun q hq => ⟨(hX q hq).1, ?_⟩, fun q hq => (hmV q hq).elim⟩
+    rcases hmX q hq with rfl | hfit
+    · rw [hst.x26]
+      exact (hX 26 hq).2
+    · obtain ⟨sq, hsq, hf⟩ := hfit sl hpl
+      have hn := hslot sq (reloadOf_mem hsq).1
+      rcases hst.regs q sq hsq with e | e
+      · rw [e]
+        exact (hX q hq).2
+      · rw [e]
+        exact valRel_reloadVal sq.sg hn.2.1 hn.2.2 (hX q hq).2 hf
+  · obtain ⟨mm, hmm, hinj⟩ := h.mem
+    refine ⟨mm, hmm, memInj_congr hinj fun b al a hb ha i hi => ?_⟩
+    obtain ⟨a', ha', -, hwin⟩ := hinj.mapped b al hb
+    rw [ha] at ha'
+    cases ha'
+    have hy : (a + BitVec.ofNat 64 i).toNat = a.toNat + i := by
+      have h64 : (2 : Nat) ^ 64 = 18446744073709551616 := rfl
+      rw [h64] at hwin
+      simp only [BitVec.toNat_add, BitVec.toNat_ofNat, h64]
+      omega
+    have hsep := hm.sep mm hmm sl hpl b al a hb ha (a + BitVec.ofNat 64 i)
+    rw [hy] at hsep
+    exact hst.mem _ (fun hin => hsep (Or.inl hin) ⟨by omega, by omega⟩)
+      (fun hin => hsep (Or.inr hin) ⟨by omega, by omega⟩)
+
+/-- `EntryEnv` survives the morestack path. -/
+theorem EntryEnv.more {E : MatchEnv} {L : Link} {ps : List Prog} {az : Int}
+    {check : Option (Nat × Nat × Nat)} {spills : List Spill} {s0 s0' : MState}
+    (h : EntryEnv E L ps az s0) (hm : MoreRel check spills s0 s0') : EntryEnv E L ps az s0' := by
+  obtain ⟨-, hsp, -, h28, h29, h30⟩ := hm.keep
+  exact ⟨by rw [hsp]; exact h.sp, by rw [h28]; exact h.g, by rw [h30]; exact h.lr,
+    by rw [h29]; exact h.fp, by rw [h29, hsp]; exact h.fp0, h.framed, by rw [h30]; exact h.lrOut⟩
+
 @[simp] private theorem wh_throw {ε α : Type} (e : ε) : (throw e : Except ε α) = .error e := rfl
 
 @[simp] private theorem wh_ite_ok {ε α : Type} {c : Prop} [Decidable c] {e : ε}
@@ -752,28 +812,39 @@ theorem stk_window {sp y : BitVec 64} (hlo : 4096 + 8 ≤ sp.toNat) (hhi : sp.to
   rw [h64] at hhi
   bv_omega
 
-/-- **The entry.** From the machine state `s0` at the function's entry (`MachEntry`), when the
-stack check passes, the prologue (`obj_entry`) runs to a state related (`SimAt`) to the run's
-first state `sI` before value `k` of block `b`, whose P0 address maps to the body's start. -/
+/-- **The entry.** From the machine state `s0` at the function's entry (`MachEntry`), the prologue
+(`obj_entry`: the stack check, looping through the morestack tail under `MorestackOK` and
+`TailSep` until it passes, then the frame) runs to a state related (`SimAt`) to the run's first
+state `sI` before value `k` of block `b`, whose P0 address maps to the body's start; on the
+morestack path `sI`'s values survive the tail (`MoreEntry`). -/
 theorem sim_entry (hO : ObjEnv ps spills o otab L base code retM)
     {room : Nat} {s0 : MState} (hME : MachEntry code base room s0)
     (hroom : otab.autosize + 8 ≤ room) (hg : (s0.x 28).toNat + 32 ≤ 2 ^ 64)
-    (hpass : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
-      CheckPasses otab.autosize gOff s0)
+    (hms : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) → ∀ n add,
+      tailCall o.text o.relocs.toList tail = some (n, add) →
+      MorestackOK H code retM (L.sym n + BitVec.ofInt 64 add) otab.autosize gOff s0)
+    (hsep : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) → TailSep spills.toList s0)
     (hE : G28Env lc g L ps (endP L.text ps.toList) tab E0)
     (hEE : EntryEnv E0 L ps.toList otab.autosize s0)
     {sI : LocState} {b : ID} {blk : Block} {k : Nat} (hent : EntryMatch E0 sI s0)
+    (hmore : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
+      MoreEntry E0 spills.toList gOff sI s0)
     (hinv : G3Inv E0 lc (kAt lc kt b blk k) sI) (huE : uL34 lc (uIn34 lc b) blk k = [])
     (hbm : b ∈ lc.ctx.f.blocks.toList)
     (hpc : ObjEnv.map otab ps L base (E0.pcOf b k) = base + BitVec.ofNat 64 (otab.offs[0]!)) :
     ∃ t, MStar H code retM s0 t ∧ SimAt lc g L ps tab kt E0 otab base b blk k sI t := by
-  obtain ⟨s1, h1, hbody, hpc1, hx1, hv1, hm1⟩ :=
-    obj_entry (H := H) hO.check hO.linked hO.size hO.ret hME hroom hg hpass
+  obtain ⟨s0', s1, hmr, h1, hbody, hpc1, hx1, hv1, hm1⟩ :=
+    obj_entry (H := H) hO.check hO.linked hO.size hO.ret hME hroom hg hms hsep
+  replace hent : EntryMatch E0 sI s0' := by
+    rcases hmr with rfl | ⟨ce, tail, gOff, sl, hck, hpl, hst⟩
+    · exact hent
+    · exact hent.more (hmore ce tail gOff hck) hpl hst
+  replace hEE := hEE.more hmr
   have haz := wh_az_nonneg hO.check
   have hfr := hE.env.env.env.env.frame
-  have hsp0 : E0.sp = s0.sp - BitVec.ofInt 64 otab.autosize := by
+  have hsp0 : E0.sp = s0'.sp - BitVec.ofInt 64 otab.autosize := by
     rw [← hEE.sp, BitVec.add_sub_cancel]
-  have h30 : s1.x 30 = s0.x 30 := hx1 30 (by decide) (by decide) (by decide) (by decide)
+  have h30 : s1.x 30 = s0'.x 30 := hx1 30 (by decide) (by decide) (by decide) (by decide)
     (by decide)
   refine ⟨s1, h1, E0, { s1 with pc := E0.pcOf b k }, ⟨rfl, fun _ _ h => h⟩, hE, ?_, hinv,
     (by rw [huE]; intro _ he; cases he),
@@ -851,7 +922,9 @@ theorem mstar_returned {s0 t : MState} (h : MStar H code retM s0 t) (hpc : t.pc 
 
 /-- **A whole function of slice G34, returning, down to the machine words.** `checkG34` and
 `checkObj` accept the function and `retRegsOK` its returns; the machine starts at its entry
-(`MachEntry`, the return address `s0.x 30`) and the stack check passes. The run of `runLoc`
+(`MachEntry`, the return address `s0.x 30`); a stack check that fails loops through the
+morestack tail (`runtime.morestack`'s contract `MorestackOK`, the slots apart from `g`,
+`TailSep`, and `sI`'s values surviving the tail, `MoreEntry`). The run of `runLoc`
 (`runLoopLoc`, from the state `s` at the entry block) first runs `k` values of the entry block
 (the entry values) to `sI`, which is related to `s0` (`EntryMatch`, `EntryEnv`: the arguments in
 their registers, the memory injected, the frame; no upper-bit fact is carried into the body:
@@ -867,8 +940,10 @@ theorem obj_whole_ret (hc : checkG34 lc ps bstart g = .ok (tab, kt))
     (hrok : retRegsOK lc kt = true)
     (hME : MachEntry code base room s0) (hroom : otab.autosize + 8 ≤ room)
     (hg : (s0.x 28).toNat + 32 ≤ 2 ^ 64)
-    (hpass : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
-      CheckPasses otab.autosize gOff s0)
+    (hms : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) → ∀ n add,
+      tailCall o.text o.relocs.toList tail = some (n, add) →
+      MorestackOK H code (s0.x 30) (L.sym n + BitVec.ofInt 64 add) otab.autosize gOff s0)
+    (hsep : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) → TailSep spills.toList s0)
     (hlf : otab.autosize = 0 ∨ otab.leaf = false)
     (hE : G28Env lc g L ps (endP L.text ps.toList) tab E0)
     (hEE : EntryEnv E0 L ps.toList otab.autosize s0)
@@ -876,7 +951,10 @@ theorem obj_whole_ret (hc : checkG34 lc ps bstart g = .ok (tab, kt))
     (hbE : lc.ctx.f.block? lc.ctx.f.entry = some blkE)
     (hbm : lc.ctx.f.entry ∈ lc.ctx.f.blocks.toList) (hk : k ≤ blkE.values.size)
     (hpre : enterListLoc env lc s (blkE.values.toList.take k) = .ok sI)
-    (hent : EntryMatch E0 sI s0) (hinv : G3Inv E0 lc (kAt lc kt lc.ctx.f.entry blkE k) sI)
+    (hent : EntryMatch E0 sI s0)
+    (hmore : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
+      MoreEntry E0 spills.toList gOff sI s0)
+    (hinv : G3Inv E0 lc (kAt lc kt lc.ctx.f.entry blkE k) sI)
     (huE : uL34 lc [] blkE k = [])
     (hpc : ObjEnv.map otab ps L base (E0.pcOf lc.ctx.f.entry k) =
       base + BitVec.ofNat 64 (otab.offs[0]!))
@@ -889,7 +967,7 @@ theorem obj_whole_ret (hc : checkG34 lc ps bstart g = .ok (tab, kt))
   | zero => simp [runLoopLoc] at hrun
   | succ n =>
     rw [runLoopLoc_entry hbE hpre] at hrun
-    obtain ⟨t1, ht1, hS⟩ := sim_entry (H := H) hO hME hroom hg hpass hE hEE hent hinv
+    obtain ⟨t1, ht1, hS⟩ := sim_entry (H := H) hO hME hroom hg hms hsep hE hEE hent hmore hinv
       (by rw [checkG34_uIn_entry hc]; exact huE) hbm hpc
     obtain ⟨E, t', hx, ht', hX, hRes⟩ :=
       sim_from_ret hc hO hH hic hEE hlf hrok hP n _ blkE k sI t1 .refl hbE hk hS hrun
@@ -1144,15 +1222,20 @@ theorem obj_whole_panic (hc : checkG34 lc ps bstart g = .ok (tab, kt))
     (hic : ∀ u, ICallOut L ps.toList u)
     (hME : MachEntry code base room s0) (hroom : otab.autosize + 8 ≤ room)
     (hg : (s0.x 28).toNat + 32 ≤ 2 ^ 64)
-    (hpass : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
-      CheckPasses otab.autosize gOff s0)
+    (hms : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) → ∀ n add,
+      tailCall o.text o.relocs.toList tail = some (n, add) →
+      MorestackOK H code (s0.x 30) (L.sym n + BitVec.ofInt 64 add) otab.autosize gOff s0)
+    (hsep : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) → TailSep spills.toList s0)
     (hE : G28Env lc g L ps (endP L.text ps.toList) tab E0)
     (hEE : EntryEnv E0 L ps.toList otab.autosize s0)
     {s sI : LocState} {blkE : Block} {k : Nat}
     (hbE : lc.ctx.f.block? lc.ctx.f.entry = some blkE)
     (hbm : lc.ctx.f.entry ∈ lc.ctx.f.blocks.toList) (hk : k ≤ blkE.values.size)
     (hpre : enterListLoc env lc s (blkE.values.toList.take k) = .ok sI)
-    (hent : EntryMatch E0 sI s0) (hinv : G3Inv E0 lc (kAt lc kt lc.ctx.f.entry blkE k) sI)
+    (hent : EntryMatch E0 sI s0)
+    (hmore : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
+      MoreEntry E0 spills.toList gOff sI s0)
+    (hinv : G3Inv E0 lc (kAt lc kt lc.ctx.f.entry blkE k) sI)
     (huE : uL34 lc [] blkE k = [])
     (hpc : ObjEnv.map otab ps L base (E0.pcOf lc.ctx.f.entry k) =
       base + BitVec.ofNat 64 (otab.offs[0]!))
@@ -1165,7 +1248,7 @@ theorem obj_whole_panic (hc : checkG34 lc ps bstart g = .ok (tab, kt))
   | zero => simp [runLoopLoc] at hrun
   | succ n =>
     rw [runLoopLoc_entry hbE hpre] at hrun
-    obtain ⟨t1, ht1, hS⟩ := sim_entry (H := H) hO hME hroom hg hpass hE hEE hent hinv
+    obtain ⟨t1, ht1, hS⟩ := sim_entry (H := H) hO hME hroom hg hms hsep hE hEE hent hmore hinv
       (by rw [checkG34_uIn_entry hc]; exact huE) hbm hpc
     obtain ⟨e', he, t', ht', hp⟩ :=
       sim_from_panic hc hO hH hHP hbok hic hP hPP n _ blkE k sI t1 .refl hbE hk hS hrun

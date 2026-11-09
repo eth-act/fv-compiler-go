@@ -1281,7 +1281,10 @@ and the assembler's final Prog list, used only as a hint for each Prog's PC) aga
     `R29 = SP − 8`, no load).
   - The epilogue at a P0 `RET` (`retOK`).
   - The morestack tail (`checkTail`: the register-argument spills, the call, the reloads, the jump
-    back).
+    back). The spills are planned by `tailPlan` (`off(RSP)` of argument registers `R0`–`R15`,
+    `1`–`8` bytes, disjoint slots); before the call `SP` is kept and nothing loaded, after it `SP`
+    and `R30` are kept, nothing stored and only slots loaded (what the proof needs; on quick-v10
+    obj-check accepts the same 7,741 functions).
 - **Out of scope.** Words after the tail (literal pools, padding) are never executed by the
   checked ranges.
 
@@ -1343,14 +1346,24 @@ spill registers 59, `FCMPD` 48, `GETCALLERPC` 44, `UDIV` 41, `JMP` to a register
   premise of `obj_star`; `iCallOut_of_none` for lists without it); STATUS Assumptions.
   `obj_panic`: a `PPanics` state is matched by machine steps to an `MPanics` state (a word that
   faults: `symInsn_fault`, `symWords_fault`; or a hook that panics, `HookPanicMap`).
-- `Frame.lean`: `obj_entry` (from `MachEntry`, when the stack check passes, the prologue builds
-  `BodyEntry`) and `obj_exit` (the epilogue at a P0 `RET` pops the frame and returns through the
-  saved `LR`).
+- `Morestack.lean`: `symUntil_sound` (the chunks of `symUntil`, from `symWords_sound`),
+  `stackCheck_run` (the stack check to its end when it passes, to the tail when it fails),
+  `checkTail_spec`/`tailPlan_spec`/`checkObj_tail` (`Spec.lean`), the trusted contract
+  `MorestackOK` of `runtime.morestack` at the tail's call (`tailCall`), and `more_loop`: round
+  trips through the tail (the spills `storesMem_slot`, the hook, the reloads `reloadVal`) by
+  induction on the guard, which the hook lowers, until the check passes (`MoreStep`).
+- `MorestackHook.lean`: `morestackHook_ok`: the runtime model `morestackHook` (at
+  `runtime.morestack`/`morestack_noctxt` of `RtInfo.hooks`) meets `MorestackOK` for a check of
+  `stackguard0` when the stack can grow (`growBy > 0`, `stack.lo + StackGuard` below the limit).
+- `Frame.lean`: `obj_entry` (from `MachEntry`, the stack check through the morestack path
+  (`MoreRel`), then the frame `BodyEntry`) and `obj_exit` (the epilogue at a P0 `RET` pops the
+  frame and returns through the saved `LR`).
 - `G7.lean`: `g7_obj_value`, `g7_obj_term`. `g7_value`/`g7_term` with P0's return address
   `endP`, composed with `obj_star`, take a `runLoc` step to machine steps of the linked words.
 
 Witnesses: `Witness/ObjFrame.lean` (`testInts`, framed, with the small stack check: `obj_entry`
-and `obj_exit`) and `Witness/ObjG7.lean` (`(*A).g`: `g7_obj_value` on its nil check;
+and `obj_exit`; `objFrame_morestack_witness` enters with a failing check and a hook that clears
+the guard) and `Witness/ObjG7.lean` (`(*A).g`: `g7_obj_value` on its nil check;
 `pallocSum.start`: `g7_obj_term` on `TBNZ [63]`). Each decides `checkObj` and `linkCode` by
 compiled evaluation (pinned).
 
@@ -1518,11 +1531,19 @@ state `m` `LocMatch`ed to `runLoc`'s state under an activation `E` extending the
 blk i)`: `g34_value` carries it from value to value, `g34_term` hands the successor's start
 `uIn34 lc e.b` on, `uEdgesOK34`), and `ObjRel`-related to the machine state.
 
-- **Entry** (`sim_entry`). From `MachEntry s0` with the stack check passing, `obj_entry` builds
-  the frame (`BodyEntry`). The P0 state is the machine's with the PC of the entry block's value
+- **Entry** (`sim_entry`). From `MachEntry s0`, `obj_entry` runs the stack check, looping through
+  the morestack tail while it fails (`more_loop`, under the trusted `MorestackOK` and the caller's
+  `TailSep`), to a state `s0'` (`MoreRel`), and builds the frame (`BodyEntry`). On the morestack
+  path `s0'` is `s0` but for the reloaded registers (a narrow reload zero- or sign-extends the
+  slot's low bytes: `ValRel` of a narrow integer reads only them, a boolean is 0/1 either way,
+  `valRel_reloadVal`), the other registers but `R26`, `R28`–`R30`, the vector registers, the slots
+  and the guard word; the caller-side premise `MoreEntry` (every live register but `R26` reloaded
+  from a slot it fits, `ValFits`; no live vector register; the live blocks apart from the slots and
+  the guard word) carries `EntryMatch E0 sI s0` to `s0'` (`EntryMatch.more`, `EntryEnv.more`). The
+  P0 state is the machine's with the PC of the entry block's value
   `k`, the first after the entry values (`InitMem`, `SP`, `ArgIntReg`, `ArgFloatReg`, which emit
   nothing and are not `g*_value`'s). Its `LocMatch` with the state `sI` after them follows from
-  `EntryMatch E0 sI s0` and `EntryEnv E0 … s0`: the argument registers, no flags or slots, the
+  `EntryMatch E0 sI s0'` and `EntryEnv E0 … s0'`: the argument registers, no flags or slots, the
   memory injected (the prologue writes only the saved `LR`/`FP` words, outside the live blocks by
   `G3Inv`'s `SepFrom`), the frame; `uL34 lc [] … k = []` (no upper-bit fact on entry; the entry
   block's start `uIn34` is empty, `checkG34_uIn_entry`). The premise
@@ -1600,6 +1621,4 @@ section, in the whole-file environment of `gofv-ssa-opt --verified`) through
 `runPre_simple`.
 
 **Next.** Panics of the other kinds (register-index loads and stores; write barriers, `memequal`);
-framed leaves (`X30` across the body); the morestack
-path of the prologue (`morestackHook`) as a covered path instead of the premise that the stack
-check passes.
+framed leaves (`X30` across the body).
