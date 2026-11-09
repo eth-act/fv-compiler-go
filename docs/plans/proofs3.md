@@ -734,6 +734,31 @@ register needs no code (`nl_conv`). G30 accepts 5,367 functions. The one functio
 block (test/decl `main`) is also blocked by `InitMem after the entry values`, so G30 leaves
 `Plain` blocks out.
 
+**Slice G32: simple ops** (`GoFV/Gen/Check32.lean`, `checkG32 lc ps bstart g`, returning G4's
+tables; proven sound, `g32_value`, `g32_term`, `g32_nilPanic`, `g32_boundsPanic`): G30 with, in a
+function with an arm64 op, the register ops `MUL`, `MNEG`, `AND`, `OR`, `XOR`, `BIC`, `EON`,
+`ORN x y` (`op Rm, Rn, Rd`, `bin32?`), the constant ops `ORconst`, `XORconst [k] x` (`ORR`/`EOR $k,
+Rn, Rd`, `binK32?`), the unary ops `NEG`, `MVN x` (`op Rm, Rd`, `un32?`), `CSINC [cc] x y f`
+(`CSINC cond, Rx, Ry, Rd`, `csincOK`) and the store-release ops `STLR`, `STLRW`, `STLRB p x mem`
+(`STLR{,W,B} Rx, (Rp)`, `stlr?`; `VK32`). An ALU op has no temporary and register arguments of
+classes at least the result's class `c ≥ 8`; `AND`, `OR`, `XOR` of two booleans and `XORconst
+[1]` of a boolean (Go's `!`) are accepted at class 1. `CSINC` is G25's `CSEL` with `y + 1`. A
+store-release has no symbol, offset 0, a 64-bit address register and a value register of exactly
+the access's width: `runLoc` runs it as the generic `AtomicStore{64,32,8}` (`Atomic.rmw` of
+`fitPiece`), whose bytes are then the register's low bytes. The statements are G30's over
+`checkG32`, with the same premises. No new trusted premise. The proof (`G32.lean`): `runLoc` runs
+the ALU ops as `Arm64.op2`/`op1` of a word function (`binF`, `binKF`, `unF`; `stepLoc_alu32`,
+`evalPure_bin32`, …), which the machine computes on the registers (`progStep_bin32`,
+`progStep_binK32`, `progStep_un32`); each function's low `c` bits depend only on its operands' low
+`c` bits (`binF_low`, `binKF_low`, `unF_low`, `lo_bin32`, …), and on 0/1 registers the boolean ops
+give 0/1 (`valRel_binBool`, `valRel_xorBool`). `CSINC`'s `y + 1` is `Arm64.addP`'s, as
+`ADDconst`'s (`regVal_addP`, `valRel_csinc`, `progStep_csinc`). A store-release is the generic
+store of `fitPiece` of the value at its `asPtrWord` address (`stepLoc_stlr`), the same bytes as
+G3's `n`-byte store when the value has the access's width (`encode_storeBytes`, `addr_asPtrWord`),
+and the machine stores the register's low `n` bytes (`progStep_stlr`), so G3's store argument
+applies (`g32_stlr`). The G32 ops empty the upper-bit table (`uStepL`), as every value outside
+G29's does. G32 accepts 5,678 functions (+311 over G30).
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -744,11 +769,11 @@ reason in parentheses):
    (`frame variable with an integer address`, 197 (12)): option 2 of semantics3 §4.3 (addresses as
    a parameter of the semantics); slots of other sizes (`slot … frame operand, size or alignment`,
    717).
-3. **Other values**: the acquire loads `LDAR`/`LDARW` (383, 277); `STLR` (48 sole after G28),
-   `CSINC` (28 sole), `InitMem` after the entry values (25 sole);
-   `MOVDnop` 750 (91) and `MOVDreg` (27 sole) are done in G20, G21 and G29 but for those whose
-   load is in another block (46 functions with no other blocker), which need the table across
-   blocks (§8). Bounds panics
+3. **Other values**: the acquire loads `LDAR`/`LDARW` (383, 277); `InitMem` after the entry values
+   (32 sole after G32), `UBFIZ` (31), `LoweredGetCallerPC`, `REV` (24 each), `CLZ`, `CMNconst`,
+   `SRAconst` (21 each); `MOVDnop` 750 (91) and `MOVDreg` (27 sole) are done in G20, G21 and G29
+   but for those whose load is in another block (51 functions with no other blocker after G32),
+   which need the table across blocks (§8). Bounds panics
    (`LoweredPanicBoundsRR` 616 (68), `RC` 332 (46), `CR` 76 (33), `CC` 170 (22)) are done in G19
    but for #541's 2 functions.
 
@@ -789,6 +814,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G28 | 5,332 (57.35%) | 120,012 |
 | G29 | 5,361 (57.66%) | 121,036 |
 | G30 | 5,367 (57.72%) | 121,060 |
+| G32 | 5,678 (61.07%) | 143,647 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -974,6 +1000,16 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `checkNL30_spec`).
 - `G30.lean`: `stepLoc_convP`, `nl_conv`, `nl30_ops`, `g30_value`, `g30_nilPanic`,
   `g30_boundsPanic`, `g30_term`.
+- `Spec32.lean`: what `checkG32` accepted (`VK32`, `bin32Kind_spec`, `binK32Kind_spec`,
+  `un32Kind_spec`, `csincKind_spec`, `stlrKind_spec`, `vkind32_spec`, `checkG30_of_32`,
+  `checkG32_spec`).
+- `G32.lean`: `binF`, `binKF`, `unF`, `AluOp32`, `stepLoc_alu32`, `evalPure_bin32`,
+  `evalPure_binK32`, `evalPure_un32`, `progStep_bin32`, `progStep_binK32`, `progStep_un32`,
+  `progStep_csinc`, `binF_low`, `binKF_low`, `unF_low`, `lo_bin32`, `lo_binK32`, `lo_un32`,
+  `valRel_binBool`, `valRel_xorBool`, `valRel_csinc`, `stepLoc_stlr`, `encode_storeBytes`,
+  `addr_asPtrWord`, `progStep_stlr`, `g32_bin`, `g32_binK`, `g32_un`, `g32_csinc`, `g32_stlr`,
+  `vk32_step`, `vk32_stepU`, `g32_value`, `vk32_nil`, `g32_nilPanic`, `g32_boundsPanic`,
+  `g32_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -1054,7 +1090,17 @@ zero-extended from 16 bits, `runLoc`'s `R1` then holds the 32-bit `0xbeef` and t
 `v33` gives the whole `X1 = 0xbeef`), `GenG30.lean` (`runtime.gclinkptr.ptr`, which holds no arm64
 op and which G29 rejects: `g30_value` on its `Convert` in `R0`, no code, in Phase 1's mode with
 `p = 0x1234` in `R0`, after which `runLoc`'s `R0` holds `0x1234` and the machine's `X0` is
-`0x1234`).
+`0x1234`), `GenG32.lean` (`or64` of test/armimm and `runtime.funpack64`, which G30 rejects:
+`g32_value` on `v9 = OR v6 v3`, `ORR R1, R0, R0`, with `0x1234` and `0xaa00dd55000066`, after
+which the machine's `X0` is their `OR`, and on `v56 = ORconst [1 << 52] v17`, `ORR
+$0x10000000000000, R1, R1`, with the mantissa `0x123456789abcd`, after which `X1` has bit 52 set),
+`GenG32b.lean` (`runtime.(*atomicOffAddr).StoreMarked`: `g32_value` on `v13 = NEG v7`, `NEG R1,
+R1`, from `0xffffffeeddccbbab`, after which `X1 = 0x1122334455`, and on `v17 = STLR v6 v13 v1`,
+`STLR R1, (R0)`, with `R0` pointing to an 8-byte heap block injected at `2^41`, after which
+`runLoc`'s memory holds the word's bytes and the machine's 8 bytes at `2^41` read
+`0x1122334455`), `GenG32c.lean` (`internal/bytealg.countGeneric`: `g32_value` on `v32 = CSINC
+[NotEqual] v31 v31 v40`, `CSINC NE, R4, R4, R4`, with the flags of an equal `CMPW` and `R4 = 5`,
+after which the machine's `X4 = 6`).
 Each decides its inputs by compiled evaluation (`native_decide`, pinned in
 `scripts/axioms-allowlist.txt`).
 

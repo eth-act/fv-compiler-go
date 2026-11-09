@@ -20,8 +20,8 @@ on registers holding 0 or 1 they give 0 or 1.
 A select's flags argument is last, with no home, and its auxint names a condition (as G25's
 `CSEL`). A store-release has no symbol and offset 0, a 64-bit address register, and a value
 register of exactly the access's width (`runLoc` stores it as the generic `AtomicStore{8,32,64}`,
-whose encoding of a value of another class differs from the machine's bytes); its result is the
-memory, with no home.
+whose bytes are then the register's low bytes, as the machine's); its result is the memory, with
+no home.
 
 On a function with no arm64 op, `checkG32` is `checkG30`'s `checkNL30`.
 `GoFV/Proof/Gen/G32.lean` proves what an accepted function satisfies.

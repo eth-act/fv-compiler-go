@@ -592,6 +592,23 @@ Phase 1's mode with `p = 0x1234` in `R0`, after which `runLoc`'s `R0` holds `0x1
 machine's `X0` is `0x1234`). Coverage on quick-v10 (`lake exe gen-check`): 5,367 of 9,297
 functions (57.72%), 121,060 values.
 
+## Phase 3: genssa, slice G32 (I7, #553)
+
+`GoFV.Proof.Gen.g32_value`, `GoFV.Proof.Gen.g32_term`, `GoFV.Proof.Gen.g32_nilPanic`,
+`GoFV.Proof.Gen.g32_boundsPanic` (`GoFV/Proof/Gen/G32.lean`): when slice G32 (`checkG32`: G30 with
+the register ops `MUL`, `MNEG`, `AND`, `OR`, `XOR`, `BIC`, `EON`, `ORN`, the constant ops `ORconst`,
+`XORconst`, the unary ops `NEG`, `MVN`, `CSINC`, and the store-release ops `STLR`, `STLRW`, `STLRB`
+with a value of exactly the access's width) accepts a function, they are `g30_value`'s,
+`g30_term`'s, `g30_nilPanic`'s and `g30_boundsPanic`'s statements under the same premises. No new
+trusted premise. Witnesses: `genG32_bin_witness` (`OR` in test/armimm `or64`: `ORR R1, R0, R0`,
+the machine's `X0` the `OR` of `0x1234` and `0xaa00dd55000066`), `genG32_binK_witness` (`ORconst
+[1 << 52]` in `runtime.funpack64`, `X1` the mantissa with bit 52 set), `genG32_un_witness` (`NEG` in
+`runtime.(*atomicOffAddr).StoreMarked`, `X1 = 0x1122334455`), `genG32_stlr_witness` (its `STLR R1,
+(R0)` into a heap block at `2^41`, whose 8 machine bytes then read `0x1122334455`),
+`genG32_csinc_witness` (`CSINC NE, R4, R4, R4` in `internal/bytealg.countGeneric` with equal
+flags, `X4` from 5 to 6). Coverage on quick-v10 (`lake exe gen-check`): 5,678 of 9,297 functions
+(61.07%), 143,647 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g12_obj_value`, `g12_obj_term` (`GoFV/Proof/Obj/G12.lean`): `g12_value`/`g12_term`
