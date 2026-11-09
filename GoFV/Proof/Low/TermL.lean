@@ -246,6 +246,15 @@ def ArgTermIdxL (s : Nat) (lowD : Bool) (D : ID → Option Value) (tabs : Tables
       AddrRef tabs 0 none 0 (denL lowD D tabs ρ n x)
         (idxAddr s (denL lowE E tabs' ρ' m y) (denL lowE E tabs' ρ' m z))
 
+/-- `y` in `E` holds a refinement of the 16-byte half `i` a `Move` copies from the source `s` in
+the memory `m` of `D` (`qPart`), as terms over the atoms (as `ArgTermRefL`). -/
+def ArgTermQL (i : Nat) (lowD : Bool) (D : ID → Option Value) (tabs : Tables) (s m : ID)
+    (lowE : Bool) (E : ID → Option Value) (tabs' : Tables) (y : ID) : Prop :=
+  ∀ n, ∃ k, ∀ ρ ρ', ValRef ρ ρ' → TypedL lowD D tabs ρ → TypedL lowE E tabs' ρ' →
+    FrameVals tabs 0 D ρ → SPVals tabs 0 D ρ → FrameValsL tabs' 0 E ρ' →
+      Sem.Refines (qPart i (denL lowD D tabs ρ n s) (denL lowD D tabs ρ n m))
+        (denL lowE E tabs' ρ' k y)
+
 /-- A refinement whose source is a pointer word is that word. -/
 theorem asPtrWord_of_refines {x y : Val} {p : Ptr} (h : Sem.Refines x y)
     (hp : x.asPtrWord = some p) : y = x := by
@@ -312,13 +321,16 @@ kept ones, `argIx`, and its constants are `f`'s, `pbConstOK`), or, for a lowered
 piece, a `Phi`'s argument or a narrow store's value, refine fitted to the leaf it is read at
 (`argFitTy`, `ArgTermFitL`), unless the atom of `g` reads no argument (`argFree`: a lowered frame
 address); a `Store` lowered to an indexed store (`idxLower`) has its address given by the base and
-the index (`ArgTermIdxL`), its value refined (or fitted, as above) and its memory refined. A lowered
+the index (`ArgTermIdxL`), its value refined (or fitted, as above) and its memory refined; a `Move`
+lowered to a 128-bit store (`moveQLower`) has its address related at the store's offset and aux,
+its values refining the halves the `Move` copies (`ArgTermQL`) and its memory refined. A lowered
 frame address where `f` has a term (`frameAtomG`) corresponds to no atom and reads no argument. -/
 def AtomArgsRefL (tabs : Tables) (f g : Func) : Prop :=
   ∀ b ∈ g.blocks, ∀ gb, g.block? b = some gb → ∀ a ∈ gb.values, ∀ u, g.value? a = some u →
     termVL tabs u = false → frameAtomG tabs f a u = true ∨
     ∃ u', f.value? a = some u' ∧ atomPair tabs u' u = true ∧ pbConstOK tabs f u' u = true ∧
-      (argFree tabs u = true ∨ (idxLower tabs u' u = false ∧ ∀ i < u.args.size, ArgTermRefL
+      (argFree tabs u = true ∨ (idxLower tabs u' u = false ∧ moveQLower tabs u' u = false ∧
+        ∀ i < u.args.size, ArgTermRefL
         (stArg u' u i) f.lowered f.value? tabs u'.args[argIx u' u i]! g.lowered (listedDefs g) tabs
           u.args[i]! ∨
         ∃ t, argFitTy tabs u i = some t ∧ ArgTermFitL t
@@ -331,7 +343,14 @@ def AtomArgsRefL (tabs : Tables) (f g : Func) : Prop :=
           ∃ t, argFitTy tabs u 2 = some t ∧ ArgTermFitL t f.lowered f.value? tabs u'.args[1]!
             g.lowered (listedDefs g) tabs u.args[2]!) ∧
           ArgTermRefL none f.lowered f.value? tabs u'.args[2]! g.lowered (listedDefs g) tabs
-            u.args[3]!))
+            u.args[3]!) ∨
+        (moveQLower tabs u' u = true ∧
+          ArgTermRefL (some (u.auxInt, u.aux)) f.lowered f.value? tabs u'.args[0]! g.lowered
+            (listedDefs g) tabs u.args[0]! ∧
+          (∀ i, i + 2 < u.args.size → ArgTermQL i f.lowered f.value? tabs u'.args[1]! u'.args[2]!
+            g.lowered (listedDefs g) tabs u.args[i + 1]!) ∧
+          ArgTermRefL none f.lowered f.value? tabs u'.args[2]! g.lowered (listedDefs g) tabs
+            u.args[u.args.size - 1]!))
 
 /-- The terminator of `b` (`Sem.stepTermL`) on the control values `cs`. -/
 def stepValsL (b : Block) (cs : List Val) : Res Next :=

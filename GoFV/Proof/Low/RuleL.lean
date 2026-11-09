@@ -726,6 +726,19 @@ def moveQOp (n : Int64) : Option (Op × Nat) :=
 /-- The 128-bit stores a `Move` lowers to (`moveQOp`). -/
 def qStore (o : Op) : Bool := o == .ARM64FMOVQstore || o == .ARM64FSTPQ
 
+theorem qStore_cases {o : Op} (h : qStore o = true) : o = .ARM64FMOVQstore ∨ o = .ARM64FSTPQ := by
+  simpa [qStore] using h
+
+/-- The 128-bit stores are neither scalar nor indexed arm64 stores. -/
+theorem qStore_st {o : Op} (h : qStore o = true) : stSize o = none ∧ idxStore o = none := by
+  rcases qStore_cases h with rfl | rfl <;> exact ⟨rfl, rfl⟩
+
+/-- No scalar arm64 store is a 128-bit one. -/
+theorem qStore_of_st {o : Op} (h : (stSize o).isSome = true) : qStore o = false := by
+  cases hq : qStore o
+  · rfl
+  · rw [(qStore_st hq).1] at h; cases h
+
 /-- The atom `w` lowers the `Move [n]` `u` (three arguments) to the 128-bit store `moveQOp n`, at
 a small non-negative offset (`offOK`: 0 as lowered, or a folded `ADDconst` offset,
 `ARM64.rules:779`, `782`) and an aux `Sem.symAddr` reads (`stAux`: none, or a symbol or frame
@@ -886,6 +899,24 @@ theorem renameOp_stSize {o o' : Op} (h : renameOp o o' = true) :
   · obtain ⟨-, -, h1, h2, -⟩ := atomicRen_facts h
     exact ⟨h1, h2⟩
 
+/-- Renamed atoms are no 128-bit stores. -/
+theorem renameOp_qStore {o o' : Op} (h : renameOp o o' = true) :
+    qStore o = false ∧ qStore o' = false := by
+  unfold renameOp at h
+  simp only [Bool.or_eq_true] at h
+  rcases h with h | h
+  · unfold callRename at h
+    split at h <;> first | (cases h; done) | exact ⟨rfl, rfl⟩
+  · have hg := (atomicRen_facts h).1
+    refine ⟨?_, ?_⟩
+    · cases hq : qStore o
+      · rfl
+      · rcases qStore_cases hq with rfl | rfl <;> cases hg
+    · cases hq : qStore o'
+      · rfl
+      · unfold atomicRen at h
+        rcases qStore_cases hq with rfl | rfl <;> simp at h <;> cases h
+
 /-- Generic ops are no arm64 stores. -/
 theorem stSize_generic {o : Op} (h : o.generic = true) : stSize o = none := by
   unfold stSize
@@ -996,17 +1027,18 @@ def pbAtom : Op → Bool
   | _ => false
 
 /-- A rule on a memory or frame atom (`(Store {t} ptr val mem)`, `(LocalAddr {sym} base mem)`, an
-arm64 store `stSize` knows or an indexed one, `idxStore`, a `Zero` or a `Move`) or on a lowered
-bounds panic (`pbAtom`): the validator accepts its events only as a lowered store, `Zero` or
-`Move`, a folded store offset, a scaled store index or a frame address it pairs with the atom
-itself (`GoFV.Opt.LowerCheck.atomDef`, `memLower`, `bulkLower`, `stFold`, `stIdxScale`,
-`addrLower`), or as a constant folded into a bounds panic, which the replay keeps as the renamed
-atom (`GoFV.Opt.LowerCheck.pbFoldEv`; `finalOKL` and `atomsOKL` relate the result, `pbLower`), so
-the rule carries no obligation of its own. -/
+arm64 store `stSize` knows or an indexed one, `idxStore`, a `Zero`, a `Move` or a 128-bit store
+lowering a `Move`, `qStore`) or on a lowered bounds panic (`pbAtom`): the validator accepts its
+events only as a lowered store, `Zero` or `Move`, a folded store offset, a scaled store index or a
+frame address it pairs with the atom itself (`GoFV.Opt.LowerCheck.atomDef`, `memLower`,
+`bulkLower`, `stFold`, `qFold`, `stIdxScale`, `addrLower`, `moveDef`), or as a constant folded
+into a bounds panic, which the replay keeps as the renamed atom (`GoFV.Opt.LowerCheck.pbFoldEv`;
+`finalOKL` and `atomsOKL` relate the result, `pbLower`), so the rule carries no obligation of its
+own. -/
 def ArmRule.Mem (r : Rule) : Prop :=
   ∃ o n ty ai ax ar args c, r.pat = .op o n ty ai ax ar args c ∧
     (o = .Store ∨ o = .LocalAddr ∨ ((stSize o).isSome ∨ (idxStore o).isSome) ∨ pbAtom o ∨
-      o = .Zero ∨ o = .Move)
+      o = .Zero ∨ o = .Move ∨ qStore o)
 
 /-- A rule whose result is `mulStrengthReduce{,32}(v, x, c)` (`ARM64.rules:1043`, `1044`): the
 validator checks its events by their effect alone (`GoFV.Opt.LowerCheck.mulOKL`: the values the
