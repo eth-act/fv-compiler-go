@@ -759,6 +759,19 @@ premise. Witness: `genG41_witness` (`CMN $1, R0` in `runtime.traceNextGen`, whic
 machine's `Z` is set). Coverage on quick-v10 (`lake exe gen-check`): 6,570 of 9,297 functions
 (70.66%), 192,225 values.
 
+## Phase 3: genssa, slice G42 (I7, #553)
+
+`GoFV.Proof.Gen.g42_value`, `g42_initMem`, `g42_term`, `g42_nilPanic`, `g42_boundsPanic`
+(`GoFV/Proof/Gen/G42.lean`): when slice G42 (`checkG42`: G41 with `ANDconst [k] x` whose result
+class exceeds the class `ca` of `x` when `0 ≤ k < 2^ca`, `AND $k, Rn, Rd`) accepts a function, they
+are `g41_value`'s, `g41_initMem`'s, `g41_term`'s, `g41_nilPanic`'s and `g41_boundsPanic`'s
+statements, with G41's per-value premise `G41Pre`. No new premise: the mask clears every bit of
+`x`'s register above the known low `ca` bits (`GoFV.Proof.Gen.lo_andW`). Witness: `genG42_witness`
+(`AND $192, R0, R1` in `unicode/utf8.RuneStart`, the byte `b` masked at type `uint32`, which G41
+rejects: from `b = 0xc5` with ones above the low byte of `X0`, the low 32 bits of the machine's
+`X1` are `0xc0`). Coverage on quick-v10 (`lake exe gen-check`): 6,609 of 9,297 functions
+(71.08%), 194,759 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g38_obj_value`, `g38_obj_term`, `g38_obj_nilPanic`, `g38_obj_boundsPanic`
