@@ -1,5 +1,7 @@
 import GoFV.Gen.Check24
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The genssa validator, slice G25: conditional selects and bit tests (`docs/plans/proofs3.md` §4)
 

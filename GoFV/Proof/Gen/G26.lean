@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G25
 import GoFV.Proof.Gen.Spec26
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of the genssa validator's slice G26: functions with no arm64 op
 (`docs/plans/proofs3.md` §4)

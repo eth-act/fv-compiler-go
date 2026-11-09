@@ -2,6 +2,8 @@ import GoFV.Proof.Gen.G28
 import GoFV.Proof.Witness.GenG13
 import GoFV.Proof.Witness.GenG27
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G28 of the genssa validator on `runtime.envKeyEqual`
 

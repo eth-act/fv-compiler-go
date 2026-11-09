@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G27
 import GoFV.Proof.Witness.GenG26
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G27 of the genssa validator on `regexp.newLazyFlag`
 

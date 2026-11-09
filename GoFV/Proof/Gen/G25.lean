@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G24
 import GoFV.Proof.Gen.Spec25
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of the genssa validator's slice G25: conditional selects and bit tests
 (`docs/plans/proofs3.md` §4)
