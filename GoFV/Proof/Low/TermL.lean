@@ -397,10 +397,11 @@ lowered to two 128-bit stores (`moveQ2Lower`) has the outer one's address the de
 its offset `q2Off` (`ArgTermShL`), its values refining the parts the `Move` copies there
 (`ArgTermQAtL`), and its memory a listed inner store (`moveQ2In`, a memory) related to the `Move`
 as a 128-bit store lowering it. A lowered frame address where `f` has a term (`frameAtomG`)
-corresponds to no atom and reads no argument. -/
+corresponds to no atom and reads no argument. An atom where `f` has no value (the inner store of
+two 128-bit stores, `compOKL`) is not constrained here: the outer store's relation covers it. -/
 def AtomArgsRefL (tabs : Tables) (f g : Func) : Prop :=
   ∀ b ∈ g.blocks, ∀ gb, g.block? b = some gb → ∀ a ∈ gb.values, ∀ u, g.value? a = some u →
-    termVL tabs u = false → frameAtomG tabs f a u = true ∨
+    termVL tabs u = false → (f.value? a).isSome = true → frameAtomG tabs f a u = true ∨
     ∃ u', f.value? a = some u' ∧ atomPair tabs u' u = true ∧ pbConstOK tabs f u' u = true ∧
       (argFree tabs u = true ∨ (idxLower tabs u' u = false ∧ moveQLower tabs u' u = false ∧
         moveQ2Lower u' u = false ∧

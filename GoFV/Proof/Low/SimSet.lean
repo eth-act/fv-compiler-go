@@ -345,7 +345,8 @@ theorem atom_ref (hfrS : RegsFrame tabs 0 f.value? G) (hfrT : RegsFrameL tabs 0 
       Res.Refines (evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) G u)
         (evalValueL ⟨g.lowered, false⟩ env (Ctx.makeL tabs g) T w)) := by
   obtain ⟨hw, hbm, blk, hblk, hx⟩ := hpw
-  obtain ⟨u', hu', hpair, hpc, hTR⟩ := (H.args w.block hbm blk hblk x hx w hw ht).resolve_left
+  obtain ⟨u', hu', hpair, hpc, hTR⟩ := (H.args w.block hbm blk hblk x hx w hw ht
+    (by rw [hu]; rfl)).resolve_left
     fun hfa => by
       obtain ⟨v, hv, hvt⟩ := (frameAtomG_cases hfa).2.2.2
       rw [hu] at hv; cases hv; rw [hut] at hvt; cases hvt
