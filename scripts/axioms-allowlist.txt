@@ -281,6 +281,11 @@ GoFV.Proof.Witness.GenG46.g46_facts._native.native_decide.ax_1_1 9f9b979ef9d439d
 # with a callee that returns its argument to `F0 = 1.5`'s bits; compiled evaluation.
 GoFV.Proof.Witness.GenG47.g47_facts._native.native_decide.ax_1_1 e1730f780b7af49e9c8d244e8b8826ae377a40682a7e48077e7145c86538634a
 
+# genG50_witness (GoFV/Proof/Witness/GenG50.lean, #553): `checkG50` accepts `runtime.c128equal`
+# and `checkG47` does not (`FLDPD (R0), (F0, F1)` `v25`); `runLoc` runs `v25` on `1.5 + 2.5i` to
+# `F0 = 1.5`, `F1 = 2.5`'s bits; compiled evaluation.
+GoFV.Proof.Witness.GenG50.g50_facts._native.native_decide.ax_1_1 c3e46b92e5deca2c6cae27dbd5a7e264130e6df779edabbd4ff45dde9a9683dd
+
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
 # test code only: the parity runner's pointer-equality fast path (GoFVTest/Parity/Compare.lean).
