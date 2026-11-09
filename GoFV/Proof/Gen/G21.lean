@@ -26,7 +26,7 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
   {m : MState} {env : Env} {v : Value} {j j' : Nat} {K K' : Nat → Option Nat}
 
 /-- `MOVDreg x` with `x` in another register: `MOVD Rx, Rv` copies `x`'s register, which the
-upper-bit table names, so it holds the extension `runLoc` writes. -/
+upper-bit table names, so it holds the extension `runLoc` writes. The machine writes only `Rv`. -/
 theorem g21_mov (F : Facts lc sym text az ez psA.toList ret E)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
@@ -40,7 +40,9 @@ theorem g21_mov (F : Facts lc sym text az ez psA.toList ret E)
     (hu : ∀ x, v.args[0]? = some x → ∃ r c, regHome? lc x = some r ∧ cls (lc.ty x) = some c ∧
       UOK m (some (r, c, lc.signOf lc.ctx.f.valueTab.size x))) :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧
+      ∃ ka kd : Nat, ra = ARM64.REG_R0 + ka ∧ rd = ARM64.REG_R0 + kd ∧ ka < 31 ∧
+        m'.x = (m.wX (BitVec.ofNat 5 kd) (m.x (BitVec.ofNat 5 ka))).x := by
   have hl := F.lowered
   have hA := F.addr
   have hnp : v.op ≠ .Phi := by rw [hop]; nofun
@@ -69,7 +71,7 @@ theorem g21_mov (F : Facts lc sym text az ez psA.toList ret E)
   have hrel := valRel_retypeL_lo hA hcv hbool (hlo.mono (cls_le hcv))
   refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor2 hrel (fits_retypeL hcv _)
     (knext_set hK hnp hvh hcv) (fun k hk hok => ?_)).imp
-    fun m' ⟨h1, h2, h3, _⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, ka, kd, rfl, rfl, hka31, h4⟩
   obtain ⟨has, hf, -, ht, -⟩ := Shape.ok_eq hok
   rw [progStep_movReg hka hkd (nextAddr_pcAt F.nodup hk) has hf ht, wX_pc, rX_lt hka31]
 
@@ -122,7 +124,7 @@ theorem vk21_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     cases hr'
     rw [hcx] at hc'
     cases hc'
-    obtain ⟨m', h1, h2, h3, h4⟩ := g20_nop (H := H) F hm hinv.core hinv.slots
+    obtain ⟨m', h1, h2, h3, h4, -⟩ := g20_nop (H := H) F hm hinv.core hinv.slots
       (kread_of_reads hreads) (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' (.inr hop) hsz
       hx0 hvh hd hz' hxh hcv (by omega) hcx hca hvs htemp hs hu0
     exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩, trivial⟩
@@ -132,7 +134,7 @@ theorem vk21_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
       simp only [uEntry, this]
     rw [hue]
     obtain ⟨r2, hvh, -, -, -⟩ := resObj_spec hro
-    obtain ⟨m', h1, h2, h3, h4⟩ := g21_mov (H := H) F hm hinv.core hinv.slots
+    obtain ⟨m', h1, h2, h3, h4, -⟩ := g21_mov (H := H) F hm hinv.core hinv.slots
       (kread_of_reads hreads) (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj'
       hop hsz hao hro hz hca hcd hvs htemp hs (fun x hx => hu x (.inr hop) hx)
     exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩, trivial⟩
