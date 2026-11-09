@@ -1774,7 +1774,7 @@ errors):
 
 | Functions | Accepted | P0 Progs in accepted functions |
 | --: | --: | --: |
-| 9,297 | 7,920 (85.18%) | 284,662 of 429,130 |
+| 9,297 | 8,464 (91.04%) | 331,064 of 429,130 |
 | G7 slice: 2,109 | 2,108 (99.95%) | |
 | G8 slice: 2,323 | 2,322 (99.95%) | |
 | G9 slice: 2,551 | 2,550 (99.96%) | 51,122 of 51,143 |
@@ -1801,6 +1801,31 @@ form per value (`VEx.mkOfX`: `FMOV ZR, Fd` is the constant 0). Most frequent rea
 `FSTPQ` 179 (`Q` stores), `LSL` by a register 176, `FMOVD` from the literal pool 126, `LDADDALW`
 87, `CASALW` 81, morestack tail spill registers 79, `CASALD` 76, `LSR` by a register 69,
 `LDADDALD` 65, `GETCALLERPC` 44, `UDIV` 41, `JMP` to a register 37, `MVN` 37.
+
+**`Q` stores** (8,263 → 8,464; was 7,920 → 8,263 for the variable shifts, divisions, `REM`/`UREM`
+and `BIC`/`ORN`/`EON`/`MVN`): `STR Q`/`STP Q` (`symVAccess`, `symVPair`) and `FMOVQ` stores/`FSTPQ`
+(`fmovP`, `fpairP`) store `vStoreEx` of the register, `Ex.vq r` for 16 bytes (its 64-bit `eval`
+the low half). `storesMem` (`HoldsCore.mem`) and `progSym`'s relation to `progEffect` (`ERel`)
+write the low `8 n` bits of `Ex.eval128` (`vq r` all of `V r`, any other value zero-extended);
+`Ex.eval128_setWidth` reduces it to `eval` for at most 8 bytes, which the integer stores and the
+templates use. `exec` (`store`, `storeVal`) and `progEffect` (`Eff.apply`) both write a `Q`
+register as one 16-byte little-endian `writeMem` with one nil-page check, so the store stays one
+entry: two 8-byte entries would add the second half's address to `NoNil`, which neither side
+checks (it differs from the first's near the top of the address space). Witnesses
+`objOps_stpq_witness`, `objOps_strq_witness`, `objOps_eval128_witness`. Most frequent reasons
+now: `FMOVD` 133 and `FMOVS` 30 of a constant that is not an `FMOV` immediate (`PCREL_LDST:
+access`), `CASALW` 90, `LDADDALW` 89, morestack tail spill registers 80, `CASALD` 79, `LDADDALD`
+66, `GETCALLERPC` 44, `JMP` to a register 38, `DMB` 26, `UMULL` 19, `LDORALB` 17.
+
+The float constants are not a literal pool in the text: `progedit` rewrites `FMOVD $c, Fd` (not an
+`FMOV` immediate) to a load of the read-only data symbol `$f64.<bits>` (`$f32.` for `FMOVS`), which
+the assembler encodes as `ADRP` + `LDR D`/`S` with `R_ARM64_PCREL_LDST64`/`32` (e.g. `math.Ilogb`:
+`reloc 20 8 R_ARM64_PCREL_LDST64 0 y10`, `y10 = "$f64.7fefffffffffffff"`). The machine reads the
+symbol's bytes from `MState.mem` (`exec`'s `load`; `Code` is fetch-only), P0's `FCONST` is the
+constant itself, and nothing in `ObjEnv` or `ObjRel` says that memory at `L.sym y` holds the
+bits named by the symbol in every state of the run, nor that it is outside the nil page. Modelling
+it needs that premise as a run invariant of `obj_star` (rodata never stored to), discharged by the
+composition from the SSA memory model.
 
 **Proof** (`GoFV/Proof/Obj/`):
 

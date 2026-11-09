@@ -365,13 +365,17 @@ Witnesses:
 - `objG7_value_witness` (`(*A).g`'s nil check, down to the linked words);
 - `objG7_term_witness` (`pallocSum.start`'s `TBNZ`);
 - `objOps_csel_witness`, `objOps_blr_witness`, `objOps_fault_witness`, `objOps_ctl_witness`
-  (`GoFV/Proof/Witness/ObjOps.lean`: `CSET` as `CSINC`, `BLR`, a faulting `LDAR`, `CALL (R2)`).
+  (`GoFV/Proof/Witness/ObjOps.lean`: `CSET` as `CSINC`, `BLR`, a faulting `LDAR`, `CALL (R2)`);
+  `objOps_stpq_witness`, `objOps_strq_witness` (`STP Q1, Q2, [SP, #32]` and `STR Q3, [SP, #16]`
+  through `symInsn_sound`: the memory after holds all 128 bits of each register; `FSTPQ`/`FMOVQ`
+  have the same effect), `objOps_eval128_witness`.
 
-Coverage on quick-v10 (`lake exe obj-check`): 7,920 of 9,297 functions (85.18%; 284,662 of
+Coverage on quick-v10 (`lake exe obj-check`): 8,464 of 9,297 functions (91.04%; 331,064 of
 429,130 P0 Progs in accepted functions), with `CSEL`/`CSINC`/`CSINV`/`CSNEG`/`CSET`/`CSETM`,
-`MUL`/`MNEG`/`MADD`/`MSUB`/`UMULH`/`SMULH`, `CLZ`/`RBIT`/`REV*`, `LDAR*`/`STLR*`, `CALL (Rn)` and
-the SIMD&FP forms Go emits (below; was 7,741, 83.26%, before them, and 5,533, 59.51%, before the
-opcodes above).
+`MUL`/`MNEG`/`MADD`/`MSUB`/`UMULH`/`SMULH`, `CLZ`/`RBIT`/`REV*`, `LDAR*`/`STLR*`, `CALL (Rn)`, the
+variable shifts, divisions, `REM`/`UREM`, `BIC`/`ORN`/`EON`/`MVN` and the SIMD&FP forms Go emits
+(below; was 8,263, 88.87%, before the `Q` stores, 7,920, 85.18%, before the integer operations
+after `MUL`, 7,741, 83.26%, before SIMD&FP, and 5,533, 59.51%, before the opcodes above).
 
 **SIMD&FP.** `Sym` carries the vector registers written (`Sym.v`, 128-bit values `VEx` over the
 state before the Prog: `.v r`, constants, `.ofX` of a general register, loads `.ld n a`, `fp1Op`,
@@ -381,15 +385,24 @@ register and of an `S`/`D` store) and `FCVTZS`/`FCVTZU` (`Ex.fcvtz`), and the fl
 (`Fl.fcmp`). `HoldsCore.v` states the machine's vector registers as `Sym.evalV`, `sameEffect`
 compares `V0`–`V31`, and the templates (prologue, epilogue, stack check) write none. Modelled on
 both sides (`symInsn` for `exec`, `progSym` for `progEffect`, soundness `symInsn_sound` and
-`progSym_sound` per family): `FMOVS`/`FMOVD`/`FMOVQ` loads (every address form, write-back),
-`FMOVS`/`FMOVD` stores, moves between vector registers, from and to a general register (`FMOV ZR`
-is the constant 0, `VEx.mkOfX`) and of an encodable constant (`FMOV $c`, `fmovImm`); `FLDPS`/
-`FLDPD`/`FLDPQ`, `FSTPS`/`FSTPD`; `FADD`/`FSUB`/`FMUL`/`FDIV`/`FMAX`/`FMIN`/`FNMUL`, `FNEG`/`FABS`/
+`progSym_sound` per family): `FMOVS`/`FMOVD`/`FMOVQ` loads (every address form, write-back) and
+stores, moves between vector registers, from and to a general register (`FMOV ZR` is the constant
+0, `VEx.mkOfX`) and of an encodable constant (`FMOV $c`, `fmovImm`); `FLDPS`/`FLDPD`/`FLDPQ`,
+`FSTPS`/`FSTPD`/`FSTPQ`; `FADD`/`FSUB`/`FMUL`/`FDIV`/`FMAX`/`FMIN`/`FNMUL`, `FNEG`/`FABS`/
 `FSQRT`/`FRINT*`, `FCVTSD`/`FCVTDS`, `FMADD`/`FMSUB`/`FNMADD`/`FNMSUB`, `FCMP`/`FCMPE` (also with
-`$(0.0)`), `FCSEL`, `FCVTZS`/`FCVTZU` and `SCVTF`/`UCVTF` (`S`/`D`, `W`/`X`). Not modelled: `Q`
-stores (`FSTPQ` 179 functions, `FMOVQ` stores 31; a store value is 64 bits), a float constant
-from the literal pool (`FMOV{D,S}` through `R_ARM64_PCREL_LDST*`, 126 and 27: the pool's bytes
-are not in the P0 semantics), `VCNT`/`VUADDLV` (9).
+`$(0.0)`), `FCSEL`, `FCVTZS`/`FCVTZU` and `SCVTF`/`UCVTF` (`S`/`D`, `W`/`X`). A store's value is
+`vStoreEx` of the register: its `S`/`D` part (`Ex.vlo`) or, for a `Q` store, the whole register
+(`Ex.vq`, whose 64-bit `eval` is the low half); `storesMem` and the P0 relation write the low `8 n`
+bits of `Ex.eval128` (128 bits: `vq r` all of `V r`, any other value zero-extended;
+`Ex.eval128_setWidth`: the same as `eval` for at most 8 bytes). Both `exec` and `progEffect` write
+a `Q` register's 16 bytes little-endian at one address with one nil-page check, so a `Q` store is
+one 16-byte entry, not two 8-byte ones (`NoNil` would then also require the second half's address
+outside the nil page, which neither side checks). Not modelled: a float constant that is not an
+`FMOV` immediate (`FMOVD` 133 functions, `FMOVS` 30, `PCREL_LDST: access`): `progedit` loads it
+from a read-only data symbol `$f64.<bits>`/`$f32.<bits>` (`ADRP` + `LDR D`/`S` with
+`R_ARM64_PCREL_LDST64`/`32`, e.g. `math.Ilogb`), not from the text; the machine reads that
+symbol's bytes from `MState.mem`, which neither `ObjEnv` nor `ObjRel` relates to the constant
+(P0's `FCONST` is the constant itself); `VCNT` (12 functions).
 
 ## Phase 3: genssa, slice G13 (I7, #553)
 
