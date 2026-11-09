@@ -39,10 +39,9 @@ which is `finish` of its body `runLoopLoc` from `locInit`; when the body returns
 caller's `SP`, `g` and frame pointer (`MachRet`), `rs` in the result registers and `mm` injected
 into the memory (`ResultRel`); when the body panics with `pe` and the panic premises hold (the
 trusted `HookPanicMap` and `BoundsOK`, and `RunPanicPre`: the run's panics come from nil checks,
-bounds checks and static, interface or closure calls whose callee panics by the trusted
-`CallPanicOK`, `ICallPanicOK`), `runMach`
-panics with `pe` or, for a bounds check, with the runtime's report of the same failure
-(`BoundsAgree`).
+stores that fault in the nil page, bounds checks and static, interface or closure calls whose
+callee panics by the trusted `CallPanicOK`, `ICallPanicOK`), `runMach` panics with `pe` or, for
+a bounds check, with the runtime's report of the same failure (`BoundsAgree`).
 
 Premises of the machine side: those of `obj_whole_ret` (trusted: `HookMap`, and in `RunPre` the
 callee contracts `CallOK`, `CallOKZ`, `ICallOK`, `WbOK`, `CloOK`, `MemEqOK`; the caller's side:
