@@ -344,8 +344,7 @@ theorem obj_premises :
     HookMap GenG2.H0 L ps.toList (ObjEnv.map ObjG7.startTab ps L ObjG7.base) ∧
     MachEntry ObjG7.startCode ObjG7.base 8 s0 ∧ ObjG7.startTab.autosize + 8 ≤ 8 ∧
     (s0.x 28).toNat + 32 ≤ 2 ^ 64 ∧
-    (∀ ce tail gOff, ObjG7.startTab.check = some (ce, tail, gOff) →
-      CheckPasses ObjG7.startTab.autosize gOff s0) ∧
+    ObjG7.startTab.check = none ∧
     (ObjG7.startTab.autosize = 0 ∨ ObjG7.startTab.leaf = false) ∧
     GenG2.symA ≠ endP GenG2.text ps.toList ∧
     (∀ lc, EntryEnv (E0 lc) L ps.toList ObjG7.startTab.autosize s0) ∧
@@ -365,7 +364,7 @@ theorem obj_premises :
     { pc := rfl, spAlign := by decide, room := by decide, lrOutside := hr40,
       gOutside := by decide, fp := by decide },
     (by rw [haz]; decide), (by decide),
-    (fun _ _ _ h => by rw [Option.isNone_iff_eq_none.1 hchk] at h; cases h),
+    Option.isNone_iff_eq_none.1 hchk,
     Or.inl haz, hend, fun lc => ?_, fun _ => hpc, hkeys, hso, ObjG7.noICall_spec hni L⟩
   exact
     { sp := by rw [haz]; show (0x7fff0000 : BitVec 64) + BitVec.ofInt 64 0 = 0x7fff0000; decide
@@ -443,11 +442,13 @@ theorem whole_of {env : Env} {lc : LocCtx} (hf : lcFacts env lc = true) {fuel : 
     ∃ E t' n, (E0 lc).Extends E ∧
       runMach GenG2.H0 ObjG7.startCode 0x40 n s0 = .returned t' ∧ MachRet s0 t' ∧
       ResultRel E [0] rs mm t' := by
-  obtain ⟨hO, hH, hME, hroom, hg, hpass, hlf, -, hEE, hpc, -, -, hic⟩ := obj_premises
+  obtain ⟨hO, hH, hME, hroom, hg, hnone, hlf, -, hEE, hpc, -, -, hic⟩ := obj_premises
   obtain ⟨hc, hrok, houts, hE, hb1, hbm, hk, hentry, hu, sI, hsI, hent, hinv, hP⟩ := lc_premises hf
   rw [← hentry] at hpc
-  have h := obj_whole_ret hc hO hH hic hrok hME hroom hg hpass hlf hE (hEE lc) hb1 hbm hk hsI
-    hent hinv hu (hpc lc) hP hrun
+  have h := obj_whole_ret hc hO hH hic hrok hME hroom hg
+    (fun _ _ _ h => by rw [hnone] at h; cases h) (fun _ _ _ h => by rw [hnone] at h; cases h)
+    hlf hE (hEE lc) hb1 hbm hk hsI hent (fun _ _ _ h => by rw [hnone] at h; cases h) hinv hu
+    (hpc lc) hP hrun
   rwa [houts] at h
 
 /-- The machine word of the 64-bit integer `7` is `7`. -/

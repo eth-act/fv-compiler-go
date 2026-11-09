@@ -1,16 +1,18 @@
-import GoFV.Proof.Obj.Words
-import GoFV.Proof.Obj.Spec
-import GoFV.Proof.Gen.Mem
+import GoFV.Proof.Obj.Morestack
 
 /-!
 # The prologue and the epilogue (`checkPrologue`, `retOK`; `docs/plans/proofs3.md` §2, row C6/D3)
 
-`obj_entry`: from a call of the function (`MachEntry` at `base`), when the stack check passes
-(`CheckPasses`: the limit above `stackguard0`), the prologue runs to the body's first offset. A
-frameless function has no prologue (the state is the entry's); a framed one reaches a state
-with the frame of `BodyEntry` (`SP` lowered by `autosize`, the caller's `LR` and `FP` saved,
-`R29 = SP − 8`); registers but the stack check's (`R16`, `R17`), the large-frame scratch `R20`,
-`R27` and `R29` are unchanged, and memory outside the two saved words.
+`obj_entry`: from a call of the function (`MachEntry` at `base`), the prologue runs to the body's
+first offset. A frameless function has no prologue (the state is the entry's); a framed one with
+a stack check first loops through the morestack tail until the check passes (`more_loop`, under
+`runtime.morestack`'s contract `MorestackOK` and the slots' separation `TailSep`), reaching a
+state `s0'` at the entry related to the entry state by `MoreRel` (`s0` itself, or `s0` with the
+spilled registers reloaded, the others but `R26`, `R28`–`R30` clobbered, the slots and the guard
+word written); then it reaches a state with the frame of `BodyEntry` over `s0'` (`SP` lowered by
+`autosize`, the caller's `LR` and `FP` saved, `R29 = SP − 8`); registers but the stack check's
+(`R16`, `R17`), the large-frame scratch `R20`, `R27` and `R29` are `s0'`'s, and memory outside the
+two saved words.
 
 `obj_exit`: from a state at the offset of a P0 `RET` (without operand), the epilogue pops the
 frame (`SP` raised by `autosize`), restores `R29` (a leaf recomputes it, others reload it from
@@ -18,19 +20,13 @@ frame (`SP` raised by `autosize`), restores `R29` (a leaf recomputes it, others 
 
 Both run the template's words by `symWords_sound` from the empty effect and read the final
 state off `HoldsCore`; the validator's facts are `checkStackCheck_spec`, `frameOK_spec`,
-`checkPrologue_spec`, `checkBody_spec`, `checkOne_spec` and `retOK_spec`.
+`checkPrologue_spec`, `checkTail_spec`, `checkBody_spec`, `checkOne_spec` and `retOK_spec`.
 -/
 
 namespace GoFV.Proof.Obj
 
 open GoFV.Arm64 GoFV.Asm GoFV.Asm.CheckObj
 open GoFV.SSA.Sem (MStar)
-
-/-- The stack check with frame size `az` reading `gOff(g)` passes from `s`: the limit (`SP`,
-or `SP − (az − StackSmall)` above `StackSmall`) is above the guard, unsigned. -/
-def CheckPasses (az : Int) (gOff : Nat) (s : MState) : Prop :=
-  (readMem s.mem (s.x 28 + BitVec.ofNat 64 gOff) 8).toNat <
-    (if az ≤ 128 then s.sp else s.sp + BitVec.ofInt 64 (-(az - 128))).toNat
 
 /-! ## Registers, memory, arithmetic -/
 
@@ -151,87 +147,18 @@ private theorem fr_neg8 (s : BitVec 64) {az : Int} (h : 0 ≤ az) :
     s + BitVec.ofInt 64 (-az - 8) = s - BitVec.ofNat 64 az.toNat - 8 := by
   rw [Int.sub_eq_add_neg, BitVec.ofInt_add, ← BitVec.add_assoc, fr_neg s h, fr_m8]
 
-private theorem fr_ls {x y : BitVec 64} (h : y.toNat < x.toNat) :
-    GoFV.SSA.Sem.Cond.holds (condOf 9) (addSub true true x y).2 = false := by
-  rw [show condOf 9 = .ls from rfl]
-  have hy := y.isLt
-  have h64 : (2 : Nat) ^ 64 = 18446744073709551616 := rfl
-  rw [h64] at hy
-  simp only [GoFV.SSA.Sem.Cond.holds, GoFV.SSA.Sem.Cond.eval, addSub, sizedF, ↓reduceIte,
-    GoFV.SSA.Sem.addWithCarry, BitVec.setWidth_eq]
-  simp
-  refine ⟨by omega, fun e => ?_⟩
-  have := congrArg BitVec.toNat e
-  simp at this
-  omega
-
 private theorem fr_at {base : BitVec 64} {o n e : Nat} (h : o + 4 * n + 4 = e) :
     at_ base ((o + 4 * n : Nat) + 4) = base + BitVec.ofNat 64 e := by
   rw [at_nat]
   congr 1
   omega
 
-/-! ## The stack check and the frame -/
+/-! ## The frame -/
 
 section Run
 
 variable {base : BitVec 64} {sym : Nat → BitVec 64} {t : ByteArray} {rs : List Reloc}
   {code : Code} {H : Hooks} {retM : BitVec 64}
-
-/-- The stack check, when it passes, falls through to its end with `SP`, the vector registers,
-the memory and every register but `R16`, `R17` and `R27` unchanged. -/
-private theorem check_run (hlink : linkCode base sym t rs = .ok code) (hsz : t.size ≤ 2 ^ 64)
-    (hret : code retM = none) {az : Int} {gOff ce tail : Nat} {s0 : MState}
-    (hc : checkStackCheck t rs az 0 gOff = .ok (ce, tail)) (hpc : s0.pc = base)
-    (hg0 : 4096 ≤ (s0.x 28).toNat) (hg1 : (s0.x 28).toNat + 32 ≤ 2 ^ 64) (hgo : gOff ≤ 24)
-    (hpass : CheckPasses az gOff s0) :
-    ∃ sA, MStar H code retM s0 sA ∧ sA.pc = base + BitVec.ofNat 64 ce ∧ sA.sp = s0.sp ∧
-      (∀ k : Reg, k ≠ 16 → k ≠ 17 → k ≠ 27 → sA.x k = s0.x k) ∧ sA.v = s0.v ∧
-      sA.mem = s0.mem := by
-  obtain ⟨-, σ, hw, hce, hst, hsp, hx30, hld, hregs⟩ := checkStackCheck_spec hc
-  obtain ⟨n, hn⟩ : ∃ n, (if az ≤ 128 then 3 else 4) = n + 1 := by
-    split
-    · exact ⟨2, rfl⟩
-    · exact ⟨3, rfl⟩
-  rw [hn] at hw hce
-  have hnil : NoNil ⟨s0, sym⟩ σ := by
-    refine ⟨fun a m ham => ?_, fun a m v hv => by simp [hst] at hv⟩
-    rw [hld] at ham
-    simp only [List.mem_singleton, Prod.mk.injEq] at ham
-    obtain ⟨rfl, rfl⟩ := ham
-    have h64 : (2 : Nat) ^ 64 = 18446744073709551616 := rfl
-    simp only [Ex.eval_mkAdd, Ex.eval, nilPage, decide_eq_false_iff_not, Nat.not_lt]
-    show 4096 ≤ (s0.x 28 + BitVec.ofNat 64 gOff).toNat
-    simp only [BitVec.toNat_add, BitVec.toNat_ofNat, h64] at hg1 ⊢
-    omega
-  obtain ⟨tm, hrun, hcore, hx, hctl⟩ := symWords_sound (H := H) hlink hsz hret n 0 {} σ _
-    ⟨s0, sym⟩ s0 hw rfl (fr_holds_init _) (by simp [hpc]) hnil
-  have hls : GoFV.SSA.Sem.Cond.holds (condOf 9) (Fl.eval ⟨s0, sym⟩ (.addSub true true
-      (if az ≤ 128 then Ex.sp else Ex.mkAdd .sp (.k (BitVec.ofInt 64 (-(az - 128)))))
-      (.ld 8 (Ex.mkAdd (.x 28) (.k (BitVec.ofNat 64 gOff)))))) = false := by
-    simp only [Fl.eval]
-    apply fr_ls
-    unfold CheckPasses at hpass
-    have e : ∀ m : BitVec (8 * 8), (m.setWidth 64).toNat = m.toNat := fun m => by simp
-    by_cases ha : az ≤ 128
-    · simp only [ha, ↓reduceIte] at hpass ⊢
-      simpa [Ex.eval, Ex.eval_mkAdd, e] using hpass
-    · simp only [ha, ↓reduceIte] at hpass ⊢
-      simpa [Ex.eval, Ex.eval_mkAdd, e] using hpass
-  simp only [CtlPc, hls, Bool.false_eq_true, ↓reduceIte] at hctl
-  have h30 : tm.x 30 = s0.x 30 := by
-    rw [hx rfl, hx30]
-    rfl
-  refine ⟨tm, hrun, ?_, ?_, fun k h16 h17 h27 => ?_, hcore.v, ?_⟩
-  · rw [hctl, hce]
-    exact fr_at (by omega)
-  · rw [hcore.sp, hsp]
-    rfl
-  · refine fr_reg hcore h27 (Or.inr h30) fun hk hm => hregs _ hm ?_ ?_
-    · bv_omega
-    · bv_omega
-  · rw [hcore.mem, hst]
-    rfl
 
 /-- The frame words: `SP` lowered by `az`, the `LR` and `FP` of `sA` saved at `0(SP)` and
 `-8(SP)`, `R29 = SP - 8`; every register but `R20`, `R27` and `R29`, the vector registers and the
@@ -342,6 +269,13 @@ private theorem fr_az_nonneg {ps : Array Prog} {spills : Array Spill} {o : ObjIn
 
 /-! ## The prologue -/
 
+/-- **The prologue.** From the entry `s0`, the machine reaches the state `s0'` at the entry whose
+stack check passes (`MoreRel`: `s0`, or `s0` after round trips through the morestack tail, under
+`runtime.morestack`'s contract `MorestackOK` at the tail's call and the slots' separation
+`TailSep`; both premises only for a function with a stack check), then the body's first offset
+in a state `s1` with the frame of `BodyEntry` over `s0'` (`s1 = s0'` if frameless), registers but
+`R16`, `R17`, `R20`, `R27`, `R29`, the vector registers and the memory outside the frame's two
+words as in `s0'`. -/
 theorem obj_entry {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab : Tab}
     {base : BitVec 64} {sym : Nat → BitVec 64} {code : Code} {H : Hooks} {retM : BitVec 64}
     {room : Nat} {s0 : MState}
@@ -349,34 +283,49 @@ theorem obj_entry {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab : Ta
     (hsz : o.text.size ≤ 2 ^ 64) (hret : code retM = none)
     (hE : MachEntry code base room s0) (hroom : tab.autosize + 8 ≤ room)
     (hg : (s0.x 28).toNat + 32 ≤ 2 ^ 64)
-    (hpass : ∀ ce tail gOff, tab.check = some (ce, tail, gOff) → CheckPasses tab.autosize gOff s0) :
-    ∃ s1, MStar H code retM s0 s1 ∧
-      (if tab.autosize = 0 then s1 = s0 else BodyEntry tab.autosize.toNat s0 s1) ∧
+    (hms : ∀ ce tail gOff, tab.check = some (ce, tail, gOff) → ∀ n add,
+      tailCall o.text o.relocs.toList tail = some (n, add) →
+      MorestackOK H code retM (sym n + BitVec.ofInt 64 add) tab.autosize gOff s0)
+    (hsep : ∀ ce tail gOff, tab.check = some (ce, tail, gOff) → TailSep spills.toList s0) :
+    ∃ s0' s1, MoreRel tab.check spills.toList s0 s0' ∧ MStar H code retM s0 s1 ∧
+      (if tab.autosize = 0 then s1 = s0' else BodyEntry tab.autosize.toNat s0' s1) ∧
       s1.pc = base + BitVec.ofNat 64 (tab.offs[0]!) ∧
-      (∀ k : Reg, k ≠ 16 → k ≠ 17 → k ≠ 20 → k ≠ 27 → k ≠ 29 → s1.x k = s0.x k) ∧
-      s1.v = s0.v ∧ (∀ a, 16 ≤ (a - (s1.sp - 8)).toNat → s1.mem a = s0.mem a) := by
+      (∀ k : Reg, k ≠ 16 → k ≠ 17 → k ≠ 20 → k ≠ 27 → k ≠ 29 → s1.x k = s0'.x k) ∧
+      s1.v = s0'.v ∧ (∀ a, 16 ≤ (a - (s1.sp - 8)).toNat → s1.mem a = s0'.mem a) := by
   obtain ⟨-, body, -, -, -, -, -, -, h0, -, -, hpro, -, -⟩ := checkObj_spec hc
   have haz0 := fr_az_nonneg hc
   have hoff : tab.offs[0]! = body := by simp [getElem!_def, h0]
   rw [hoff]
   rcases checkPrologue_spec hpro with ⟨haz, rfl, -⟩ | ⟨haz, fo, σ, hchk, hfo, hmod, hw, hf⟩
-  · refine ⟨s0, .refl, by simp [haz], by simp [hE.pc], fun _ _ _ _ _ _ => rfl, rfl,
+  · refine ⟨s0, s0, Or.inl rfl, .refl, by simp [haz], by simp [hE.pc], fun _ _ _ _ _ _ => rfl, rfl,
       fun _ _ => rfl⟩
-  -- the state at the frame words
-  obtain ⟨sA, hrunA, hpcA, hspA, hxA, hvA, hmA⟩ :
-      ∃ sA, MStar H code retM s0 sA ∧ sA.pc = base + BitVec.ofNat 64 fo ∧ sA.sp = s0.sp ∧
-        (∀ k : Reg, k ≠ 16 → k ≠ 17 → k ≠ 27 → sA.x k = s0.x k) ∧ sA.v = s0.v ∧
-        sA.mem = s0.mem := by
-    rcases hchk with ⟨-, rfl⟩ | ⟨ce, tail, gOff, hck, rfl, hgo, hcs⟩
-    · exact ⟨s0, .refl, by simp [hE.pc], rfl, fun _ _ _ _ => rfl, rfl, rfl⟩
-    · exact check_run hlink hsz hret hcs hE.pc hE.gOutside hg (by omega) (hpass _ _ _ hck)
+  -- the state at the frame words, after the stack check passed from `s0'`
+  obtain ⟨s0', sA, hmr, hrunA, hpcA, hspA, hxA, hvA, hmA⟩ :
+      ∃ s0' sA, MoreRel tab.check spills.toList s0 s0' ∧ MStar H code retM s0 sA ∧
+        sA.pc = base + BitVec.ofNat 64 fo ∧ sA.sp = s0'.sp ∧
+        (∀ k : Reg, k ≠ 16 → k ≠ 17 → k ≠ 27 → sA.x k = s0'.x k) ∧ sA.v = s0'.v ∧
+        sA.mem = s0'.mem := by
+    rcases hchk with ⟨-, rfl⟩ | ⟨ce, tail, gOff, hck, hfo', hgo, hcs⟩
+    · exact ⟨s0, s0, Or.inl rfl, .refl, by simp [hE.pc], rfl, fun _ _ _ _ => rfl, rfl, rfl⟩
+    · subst fo
+      obtain ⟨e, htl⟩ := checkObj_tail hc ce tail gOff hck
+      obtain ⟨sl, hpl, -⟩ := checkTail_spec htl
+      obtain ⟨u, hu, hmu, hpass⟩ := more_loop (H := H) hlink hsz hret hcs hgo htl hpl
+        (hms ce tail gOff hck) (hsep ce tail gOff hck) (by have := hE.room; omega) hE.gOutside hg
+        hE.pc
+      obtain ⟨sA, hrA, hpcA, hspA, hxA, hvA, hmA⟩ := stackCheck_run (H := H) hlink hsz hret hcs
+        (hmu.pc.trans hE.pc) (by rw [hmu.x28]; exact hE.gOutside) (by rw [hmu.x28]; exact hg)
+        (by omega)
+      simp only [hpass, ↓reduceIte] at hpcA
+      exact ⟨u, sA, Or.inr ⟨ce, tail, gOff, sl, hck, hpl, hmu⟩, mstar_trans hu hrA, hpcA, hspA,
+        hxA, hvA, hmA⟩
   have hsp : 4096 + tab.autosize + 8 ≤ (sA.sp.toNat : Int) := by
     have := hE.room
-    rw [hspA]
+    rw [hspA, hmr.keep.2.1]
     omega
   obtain ⟨s1, hrun1, hpc1, hsp1, hlr, hfp, h29, hx1, hv1, hm1⟩ :=
     frame_run hlink hsz hret hw hf hfo hmod hpcA haz0 hsp
-  refine ⟨s1, mstar_trans hrunA hrun1, ?_, hpc1, fun k h16 h17 h20 h27 h29 => ?_, ?_,
+  refine ⟨s0', s1, hmr, mstar_trans hrunA hrun1, ?_, hpc1, fun k h16 h17 h20 h27 h29 => ?_, ?_,
     fun a ha => ?_⟩
   · simp only [haz, ↓reduceIte]
     exact { sp := by rw [hsp1, hspA]

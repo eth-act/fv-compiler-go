@@ -431,11 +431,13 @@ theorem panic_of {lc : LocCtx} (hf : lcFacts lc = true) :
         · rw [(hregs r v hv).2 h0]; trivial
       slots := by intro k v h; rw [hslots] at h; cases h }
   refine ⟨mm', hrun, ?_⟩
+  have hnone := Option.isNone_iff_eq_none.1 hchk
   obtain ⟨e', n, t', he, hn⟩ := obj_whole_panic (H := GenG2.H0) hc hO (hookMap_retLR fun _ => rfl)
     hookPanicMap_H0 (boundsOK_none hnpb) (ObjG7.noICall_spec hni L) hME (by rw [haz]; decide)
-    (by decide) (fun _ _ _ h => by rw [Option.isNone_iff_eq_none.1 hchk] at h; cases h)
-    (g28Env hc hav hsl hnc hwi hme hend hso) hEE hb2 hbm (by omega) hsI hent hinv hu' hpc hP hPP
-    hrun
+    (by decide) (fun _ _ _ h => by rw [hnone] at h; cases h)
+    (fun _ _ _ h => by rw [hnone] at h; cases h)
+    (g28Env hc hav hsl hnc hwi hme hend hso) hEE hb2 hbm (by omega) hsI hent
+    (fun _ _ _ h => by rw [hnone] at h; cases h) hinv hu' hpc hP hPP hrun
   rcases he with rfl | ⟨k, x, y, h, -⟩
   · exact ⟨n, t', hn⟩
   · cases h

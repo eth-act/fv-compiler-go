@@ -375,11 +375,13 @@ theorem objWholeNL_ret_witness :
           rfl
         · rw [(hregs r v hv).2 h0]; trivial
       slots := by intro k v h; rw [hslots] at h; cases h }
+  have hnone := Option.isNone_iff_eq_none.1 hchk
   obtain ⟨E, t', n, hx, hn, hX, hRes⟩ := obj_whole_ret (H := GenG2.H0) hc hO
     (hookMap_retLR fun _ => rfl) (ObjG7.noICall_spec hni L) hrok hME
     (by rw [haz]; decide) (by decide)
-    (fun _ _ _ h => by rw [Option.isNone_iff_eq_none.1 hchk] at h; cases h) (Or.inl haz)
-    (g28Env hc hav hsl hnc hwi hme hend hso) hEE hb1 hbm (of_decide_eq_true hsz) hsI hent hinv
+    (fun _ _ _ h => by rw [hnone] at h; cases h) (fun _ _ _ h => by rw [hnone] at h; cases h)
+    (Or.inl haz) (g28Env hc hav hsl hnc hwi hme hend hso) hEE hb1 hbm (of_decide_eq_true hsz) hsI
+    hent (fun _ _ _ h => by rw [hnone] at h; cases h) hinv
     (List.isEmpty_iff.1 hu) hpc' (runPre_simple (by rw [hentry]; exact hsim)) hrun
   rw [houts] at hRes
   have hX0 : t'.x 0 = 0x1234 := by
