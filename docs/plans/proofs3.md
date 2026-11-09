@@ -17,12 +17,14 @@ closure context premise `CloOK` (§4, `docs/proofs/STATUS.md` Assumptions); §6 
 on these premises.
 The assembler validator `checkObj` (P0 against the assembled words, D2–D5, probe `obj-check`) is
 implemented and proven sound (`GoFV/Proof/Obj/`: `obj_star`, the templates `obj_entry`/`obj_exit`;
-`g7_obj_value`/`g7_obj_term` and `g12_obj_value`/`g12_obj_term` compose it with G7 and G12: `runLoc`
-to the machine words; §7). Whole functions: `obj_whole_ret` (a returning `runLoc` body of a G12
-function, from the machine's entry through the prologue, the blocks and the epilogue to the
-caller's return address), and the first end-to-end statement `verified_mach_ret` (generic SSA
-`run` refined by `runLoc`, whose body is matched by `runMach` of the assembled words; §9), with a
-witness on `pallocSum.start` from its generic SSA.
+`g7_obj_value`/`g7_obj_term` and `g30_obj_value`/`g30_obj_term`/`g30_obj_nilPanic`/
+`g30_obj_boundsPanic` compose it with G7 and G30: `runLoc` to the machine words; §7). Whole
+functions: `obj_whole_ret` (a returning `runLoc` body of a G30 function, from the machine's entry
+through the prologue, the blocks and the epilogue to the caller's return address, the results in
+their ABI registers), `obj_whole_panic` (a panicking body: nil checks, bounds checks, static calls
+whose callee panics), and the end-to-end statement `verified_mach` (generic SSA `run` refined by
+`runLoc`, whose body is matched by `runMach` of the assembled words; §9), with a witness on
+`pallocSum.start` from its generic SSA.
 Context:
 `docs/plans/semantics3.md` (§4 `LocMatch`, §6 hooks, §7 layers), `docs/PASSES3.md` (the steps
 A1–F2), `docs/plans/regalloc-check.md` (the Phase 2 pattern this plan follows: an untrusted port
@@ -1400,11 +1402,12 @@ reason in parentheses):
 
 ## 9. Whole functions and the end-to-end statement
 
-**Whole functions** (`GoFV/Proof/Obj/Whole.lean`). The value and terminator theorems of a slice,
-composed with `obj_star` (`g12_obj_value`/`g12_obj_term`, `GoFV/Proof/Obj/G12.lean`), are chained
-along a run of `runLoc`'s body. The invariant `SimAt` before value `i` of block `b`: a P0 state `m`
-`LocMatch`ed to `runLoc`'s state under an activation `E` extending the entry's `E0` (`G10Env`,
-`G3Inv` at the class map `kAt`), and `ObjRel`-related to the machine state.
+**Whole functions** (`GoFV/Proof/Obj/Whole.lean`). The value and terminator theorems of the latest
+slice, composed with `obj_star` (`g30_obj_value`/`g30_obj_term`, `GoFV/Proof/Obj/G30.lean`), are
+chained along a run of `runLoc`'s body. The invariant `SimAt` before value `i` of block `b`: a P0
+state `m` `LocMatch`ed to `runLoc`'s state under an activation `E` extending the entry's `E0`
+(`G28Env`, `G3Inv` at the class map `kAt`, the upper-bit table `UOKL`), and `ObjRel`-related to
+the machine state.
 
 - **Entry** (`sim_entry`). From `MachEntry s0` with the stack check passing, `obj_entry` builds
   the frame (`BodyEntry`). The P0 state is the machine's with the PC of the entry block's value
@@ -1412,12 +1415,15 @@ along a run of `runLoc`'s body. The invariant `SimAt` before value `i` of block 
   nothing and are not `g*_value`'s). Its `LocMatch` with the state `sI` after them follows from
   `EntryMatch E0 sI s0` and `EntryEnv E0 … s0`: the argument registers, no flags or slots, the
   memory injected (the prologue writes only the saved `LR`/`FP` words, outside the live blocks by
-  `G3Inv`'s `SepFrom`), the frame. The premise `ObjEnv.map … (E0.pcOf entry k) = base + offs[0]`
-  places value `k` at the body's start (the Progs before it are pseudo-ops).
-- **Values, terminators** (`sim_value`, `sim_goto`, `sim_values`): `g12_obj_value`/`g12_obj_term`
+  `G3Inv`'s `SepFrom`), the frame; `uL … k = []` (no upper-bit fact on entry). The premise
+  `ObjEnv.map … (E0.pcOf entry k) = base + offs[0]` places value `k` at the body's start (the
+  Progs before it are pseudo-ops).
+- **Values, terminators** (`sim_value`, `sim_goto`, `sim_values`): `g30_obj_value`/`g30_obj_term`
   under the per-step premises `RunPre`, stated at the states `runLoc` reaches (`LReach`) from
-  `(entry, k, sI)`: `G7Pre`, `G1TermPre`, no entry value, and the callee contracts at every
-  `LocMatch`ed machine state.
+  `(entry, k, sI)`: `G14Pre`, `G1TermPre`, no entry value (`entryOp24`), `GetGOK`, and the callee
+  contracts (`CallOK`, `CallOKZ`, `ICallOK`, `WbOK`, `CloOK`, `MemEqOK`) at every `LocMatch`ed
+  machine state. `checkG30_cx` gives the context of both modes (lowered, and G26's functions with
+  no arm64 op).
 - **Return** (`sim_ret`): only a `Ret` block returns (`stepTermL_ret_kind`); its terminator is a
   P0 `RET` after no-ops (`termG3_ret`); the no-ops run (`pstar_oneAt`, `obj_star`), then the
   epilogue (`obj_exit`) returns to `s0.x 30`: through the saved `LR` in a framed function
@@ -1425,26 +1431,47 @@ along a run of `runLoc`'s body. The invariant `SimAt` before value `i` of block 
   outside the P0 addresses so `ObjRel` maps it to itself). A framed leaf returns through `X30`
   too, which `LocMatch` does not track in a framed function: it is excluded by the premise
   `autosize = 0 ∨ ¬leaf` until `X30` is carried across the body (no P0 Prog of a leaf writes it).
+  The results (`ret_results`, `GoFV/Proof/Obj/Results.lean`): `retRegsOK` (`GoFV/Gen/Results.lean`)
+  asks of every `Ret` block a `MakeResult` control with one tuple component per argument, the last
+  the memory, each result homed in its ABI register (`ownOutRegs`) at a class no wider than the
+  register's at the `Ret`; `runLoc` retypes the arguments to the components (`Val.retypeL` in the
+  lowered mode, `Val.retype` in Phase 1's), which keeps the register relation
+  (`valRel_retypeL_le`, `lmode_valRel_le`). `expand calls` types the components as the results'
+  register types (`abi.RegisterTypes`), e.g. a `uintptr` itab word for an `*itab` result.
 - **Run** (`sim_from_ret`, induction on the fuel), **function** (`obj_whole_ret`): `runLoopLoc`
   from `runLoc`'s state at the entry block, the first `k` values run to `sI` (`runLoopLoc_entry`);
-  a run that returns is matched by `runMach` returning to `s0.x 30` (`mstar_returned`) in a state
-  `ExitRel`-related to the state before the returning terminator: `MachRet s0`, the registers but
-  `X29`/`X30`, the memory.
+  a run that returns `(rs, mm)` is matched by `runMach` returning to `s0.x 30` (`mstar_returned`)
+  in a state `t'` with `MachRet s0 t'` and `ResultRel E outs rs mm t'` (`rs` in the result
+  registers, `mm` injected).
+- **Panics** (`sim_valuePanic`, `sim_from_panic`, `obj_whole_panic`): a step that panics is a nil
+  check (`g30_obj_nilPanic`: the `MOVB` faults in the nil page), a bounds check
+  (`g30_obj_boundsPanic`, under the trusted `BoundsOK`: `runtime.panicBounds` reports the same
+  failure, `BoundsAgree`), or a static call whose callee panics (`g30_obj_callPanic`,
+  `GoFV/Proof/Obj/CallPanic.lean`, under the trusted `CallPanicOK`: the callee's hook panics alike
+  from every state with the call's arguments in their registers and the memory injected);
+  terminators do not panic (`stepTermLoc_ne_panic`). The premise `RunPanicPre` says that every
+  panicking step the run reaches is of these kinds; the machine run panics with `e'`,
+  `BoundsAgree e e'`.
 
-**End to end** (`GoFV/Proof/Obj/EndToEnd.lean`, `verified_mach_ret`): `verifiedPipelineFull_refines`
+**End to end** (`GoFV/Proof/Obj/EndToEnd.lean`, `verified_mach`): `verifiedPipelineFull_refines`
 gives a `runLoc` of the allocated function refining the generic `run`; `runLoc` is `finish` of its
 body (`runLoc_eq`, from `locInit`), whose outcome is defined (`finish_defined`); a returning body
-is `obj_whole_ret`'s. The statement lists every premise (STATUS, Assumptions).
+is `obj_whole_ret`'s, a panicking one `obj_whole_panic`'s (under its panic premises). The
+statement lists every premise (STATUS, Assumptions).
 
 **Witnesses.** `objWhole_ret_witness` (`pallocSum.start`, `p = 7`, `plRunEnv`): `runLoc`'s run
 from `locInit` and `runMach` from the entry to the caller's `0x40`, through `b1`'s `TBNZ` and
-`b2`'s `ANDconst`/`MakeResult`/`RET`. `verified_mach_witness`: the same function from its generic
-SSA (the export's first section, in the whole-file environment of `gofv-ssa-opt --verified`)
-through `verifiedPipelineFull` (`fullyVerified`), with every premise of `verified_mach_ret`
-discharged; `checkG12` accepts genssa's Progs against the pipeline's own output. `RunPre` there is
+`b2`'s `ANDconst`/`MakeResult`/`RET`, with 7 in `X0`. `objWholeNL_ret_witness`
+(`runtime.gclinkptr.ptr`, no arm64 op: `ret_results` in Phase 1's mode). `objWhole_panic_witness`
+(`(*A).g` on a nil receiver: the nil check faults). `g30_callPanic_witness` (`fint64to32`, a callee
+that panics). `verified_mach_witness`: `pallocSum.start` from its generic SSA (the export's first
+section, in the whole-file environment of `gofv-ssa-opt --verified`) through
+`verifiedPipelineFull` (`fullyVerified`), with every premise of `verified_mach` discharged;
+`checkG30` accepts genssa's Progs against the pipeline's own output. `RunPre` there is
 `runPre_simple`.
 
-**Next.** Panics (`obj_panic`: `PPanics` → `MPanics`, then `g12_nilPanic` along the run; calls
-whose callee panics need a callee contract for panics); framed leaves (`X30` across the body);
-the morestack path of the prologue (`morestackHook`); the results in their ABI registers (relate
-the `MakeResult` of the `Ret` block to `ExitRel`); the slices after G12 (G13 `LoweredZero`).
+**Next.** Panics of the other kinds (a store's nil-page fault outside a nil check, interface and
+closure calls whose callee panics, write barriers, `memequal`); results on the stack (the
+`retRegsOK` class `a result on the stack`); framed leaves (`X30` across the body); the morestack
+path of the prologue (`morestackHook`) as a covered path instead of the premise that the stack
+check passes.
