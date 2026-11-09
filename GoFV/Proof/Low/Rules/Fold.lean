@@ -10,7 +10,9 @@ symbols and frame variables folded into stores (`881-905`), indexed stores (`786
 `(MOV{B,BU,H,HU,W,WU,D}load [off1] {sym} (ADDconst [off2] ptr) mem) && is32Bit(int64(off1)+off2)
 && … => (MOV…load [off1+int32(off2)] {sym} ptr mem)`. The validator admits an instance only
 without a symbol and with small non-negative offsets (`Pat.addrOKL`, `offOK`), where the two
-addresses are the same (`GoFV.Proof.Low.addr_fold`).
+addresses are the same (`GoFV.Proof.Low.addr_fold`). The 128-bit loads `FMOVQload` and `FLDPQ`
+fold alike (`688`, `691`, `872`, `876`; `refines_ldQ_fold`, `refines_ldQ_foldAddr`), `FLDPQ`'s
+second address at the offset moved by 16 as well.
 
 `(MOV{B,H,W,D}store [off1] {sym} (ADDconst [off2] ptr) val mem) && … => (MOV…store
 [off1+int32(off2)] {sym} ptr val mem)` and `FMOV{S,D}store`: stores are atoms, the validator
@@ -98,28 +100,58 @@ theorem retypeL_word_wide (p : Ptr) {T : Ty} (hT : 64 ≤ argWidth T) :
     rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ | ⟨-, h⟩ <;> rw [h] <;> rfl
   | _ => simp [argWidth] at hT
 
-/-- `MOVDaddr [k2] {ax} x` (at a shape of at least 64 bits) moved by `k1` as a load address:
-undefined, the folded address `[k1+k2] {ax} x` a load reads (`symPtr`), or outside its block's
-window, for small non-negative offsets and `x` a register value. A global symbol's `MOVDaddr` is
-the symbol at `k2` (no window, no address); a frame variable's the variable's address word,
-which moved by `k1` stays in the frame block's window (`addr_word`); without aux,
-`addr_movFold`; with any other aux the `MOVDaddr` term is `poison`. -/
-theorem symPtr_movFold (tabs : Tables) {T0 T1 : Ty} {k1 k2 : Int64} (hk1 : offOK k1 = true)
-    (hk2 : offOK k2 = true) (hT1 : 64 ≤ argWidth T1) {x : Val} (hx : x.hasTy T0 = true)
-    (ax : Option AuxRef) :
-    symPtr tabs k1 none ((movAddr tabs k2 ax [x]).retypeL T1) = none ∨
-      symPtr tabs k1 none ((movAddr tabs k2 ax [x]).retypeL T1) =
-        symPtr tabs
-          (Int64.ofInt (wrapInt 32 true (wrapInt 32 true k1.toInt + wrapInt 32 true k2.toInt)))
-          ax x ∨
-      ∃ q, symPtr tabs k1 none ((movAddr tabs k2 ax [x]).retypeL T1) = some q ∧
-        q.inWindow = false := by
-  obtain ⟨b1, -⟩ := offOK_toNat hk1
-  obtain ⟨b2, -⟩ := offOK_toNat hk2
+/-- An offset moved by a natural number, as an immediate. -/
+theorem imm_addNat (k : Int64) (n : Nat) :
+    BitVec.ofInt 64 (k + Int64.ofNat n).toInt = BitVec.ofInt 64 k.toInt + BitVec.ofNat 64 n := by
+  rw [← Int64.toInt_toBitVec, ← Int64.toInt_toBitVec, BitVec.ofInt_toInt, BitVec.ofInt_toInt,
+    Int64.toBitVec_add]
+  rfl
+
+/-- A register value's address is defined at every offset or at none. -/
+theorem addr_isSome (x : Val) (k k' : BitVec 64) :
+    (Arm64.addr x k).isSome = (Arm64.addr x k').isSome := by
+  cases x <;> simp [Arm64.addr]
+
+/-- `ADDconst [k2] x` (at a shape of at least 64 bits) as the base of a load at `j` without aux:
+undefined or the address of `x` at `K = j + k2`, for `j + k2 < 2^24` and `x` a register value
+(`addr_fold_sum`). -/
+theorem symPtr_fold (tabs : Tables) {T0 T1 : Ty} {j k2 K : Int64}
+    (hj : (BitVec.ofInt 64 j.toInt).toNat + (BitVec.ofInt 64 k2.toInt).toNat < 2 ^ 24)
+    (hK : BitVec.ofInt 64 K.toInt = BitVec.ofInt 64 j.toInt + BitVec.ofInt 64 k2.toInt)
+    (hT1 : 64 ≤ argWidth T1) {x : Val} (hx : x.hasTy T0 = true) :
+    symPtr tabs j none ((Arm64.addP T1 x (BitVec.ofInt 64 k2.toInt)).retypeL T1) = none ∨
+      symPtr tabs j none ((Arm64.addP T1 x (BitVec.ofInt 64 k2.toInt)).retypeL T1) =
+        symPtr tabs K none x := by
+  simp only [symPtr, hK]
+  exact addr_fold_sum hx hT1 hj
+
+/-- `MOVDaddr [k2] {ax} x` (at a shape of at least 64 bits) moved by `j` as a load address:
+undefined, the folded address `[K] {ax} x` (`K = j + k2`) a load reads (`symPtr`), or outside its
+block's window with the folded address defined, for `j + k2 < 2^24` and `x` a register value. A
+global symbol's `MOVDaddr` is the symbol at `k2` (no window, no address); a frame variable's the
+variable's address word, which moved by `j` stays in the frame block's window (`addr_word`);
+without aux, `addr_movFold` (a `MOVDaddr` with an address has one at every offset,
+`addr_isSome`); with any other aux the `MOVDaddr` term is `poison`. -/
+theorem symPtr_movFold (tabs : Tables) {T0 T1 : Ty} {j k2 K : Int64}
+    (hj : (BitVec.ofInt 64 j.toInt).toNat + (BitVec.ofInt 64 k2.toInt).toNat < 2 ^ 24)
+    (hK : BitVec.ofInt 64 K.toInt = BitVec.ofInt 64 j.toInt + BitVec.ofInt 64 k2.toInt)
+    (hT1 : 64 ≤ argWidth T1) {x : Val} (hx : x.hasTy T0 = true) (ax : Option AuxRef) :
+    symPtr tabs j none ((movAddr tabs k2 ax [x]).retypeL T1) = none ∨
+      symPtr tabs j none ((movAddr tabs k2 ax [x]).retypeL T1) = symPtr tabs K ax x ∨
+      ∃ q, symPtr tabs j none ((movAddr tabs k2 ax [x]).retypeL T1) = some q ∧
+        q.inWindow = false ∧ (symPtr tabs K ax x).isSome = true := by
   cases ax with
   | none =>
-    simp only [movAddr, symPtr, imm_fold hk1 hk2]
-    exact addr_movFold hx hT1 b1 b2
+    simp only [movAddr, symPtr, hK]
+    rcases addr_movFold hx hT1 hj with h | h | ⟨q, h, hq⟩
+    · exact .inl h
+    · exact .inr (.inl h)
+    · refine .inr (.inr ⟨q, h, hq, ?_⟩)
+      cases hx2 : Arm64.addr x (BitVec.ofInt 64 k2.toInt) with
+      | none =>
+        rw [hx2] at h
+        simp [Option.elim, retypeL_poison, Arm64.addr, Arm64.reg] at h
+      | some p => rw [addr_isSome x _ (BitVec.ofInt 64 k2.toInt), hx2]; rfl
   | some a =>
     simp only [movAddr, symPtr]
     split
@@ -127,10 +159,10 @@ theorem symPtr_movFold (tabs : Tables) {T0 T1 : Ty} {k1 k2 : Int64} (hk1 : offOK
       simp only [Option.elim, hd]
       rcases retypeL_global _ _ T1 with hw | hw <;> rw [hw]
       · right; left
-        simp only [Arm64.addr, Ptr.add, imm_fold hk1 hk2, BitVec.add_comm]
+        simp only [Arm64.addr, Ptr.add, hK, BitVec.add_comm]
       · left; rfl
     · rename_i hd
-      simp only [Option.elim, hd, imm_fold hk1 hk2]
+      simp only [Option.elim, hd, hK]
       simp only [PtrOps.ptrRes,
         frame_inWindow tabs 0 a (k := BitVec.ofInt 64 k2.toInt) (by omega), ite_true]
       rcases retypeL_word_wide ⟨frameBlk tabs 0 a, BitVec.ofInt 64 k2.toInt⟩ hT1 with hw | hw <;>
@@ -162,11 +194,127 @@ theorem refines_ld_foldAddr {o : Op} {n : Nat} {s : Bool} (hl : ldOp? o = some (
   cases m with
   | mem mm =>
     simp only [ldVal]
-    rcases symPtr_movFold tabs hk1 hk2 hT1 hx ax with h | h | ⟨q, h, hq⟩ <;> rw [h]
+    rcases symPtr_movFold tabs (offOK_sum hk1 hk2) (imm_fold hk1 hk2) hT1 hx ax with
+      h | h | ⟨q, h, hq, -⟩ <;> rw [h]
     · rw [Option.elim, retypeL_poison]; exact .poison _
     · exact Sem.Refines.refl _
     · rw [Option.elim, loadN_outWindow hq, retypeL_poison]; exact .poison _
   | _ => simp only [ldVal, retypeL_poison]; exact .poison _
+
+/-- **A 128-bit load at folded addresses** (`ldQVal`): the load at `ai` (aux `ax`) of `a` is
+refined by the one at `bi` (aux `bx`) of `b` if each address the first reads, at the offset and
+(`FLDPQ`, `n = 32`) at the offset moved by 16, is undefined, the second's, or outside its block's
+window (an element read there is `poison`, `load16_outWindow`) with the second's defined. -/
+theorem refines_ldQVal_addr (tabs : Tables) (n : Nat) (T : Ty) {ai bi : Int64}
+    {ax bx : Option AuxRef} {a b : Val} (m : Val)
+    (h0 : symPtr tabs ai ax a = none ∨ symPtr tabs ai ax a = symPtr tabs bi bx b ∨
+      ∃ q, symPtr tabs ai ax a = some q ∧ q.inWindow = false ∧
+        (symPtr tabs bi bx b).isSome = true)
+    (h16 : n = 32 → symPtr tabs (ai + Int64.ofNat 16) ax a = none ∨
+      symPtr tabs (ai + Int64.ofNat 16) ax a = symPtr tabs (bi + Int64.ofNat 16) bx b ∨
+      ∃ q, symPtr tabs (ai + Int64.ofNat 16) ax a = some q ∧ q.inWindow = false ∧
+        (symPtr tabs (bi + Int64.ofNat 16) bx b).isSome = true) :
+    Sem.Refines ((ldQVal tabs n T ai ax [a, m]).retypeL T)
+      ((ldQVal tabs n T bi bx [b, m]).retypeL T) := by
+  refine retypeL_mono T ?_
+  cases m with
+  | mem mm =>
+    have hout : ∀ (i : Nat) (r r' : Ptr), r.inWindow = false →
+        Sem.Refines (Arm64.loadElt (Arm64.tupleTy T i) 16 false mm r)
+          (Arm64.loadElt (Arm64.tupleTy T i) 16 false mm r') := by
+      intro i r r' hr
+      simp only [Arm64.loadElt, ite_true, load16_outWindow hr]
+      exact .poison _
+    have key : ∀ P P' Q Q' : Option Ptr,
+        (P = none ∨ P = P' ∨ ∃ p, P = some p ∧ p.inWindow = false ∧ P'.isSome = true) →
+        (Q = none ∨ Q = Q' ∨ ∃ q, Q = some q ∧ q.inWindow = false ∧ Q'.isSome = true) →
+        Sem.Refines
+          (match P, Q with
+            | some p, some q => Arm64.loadPair T 16 false mm p q
+            | _, _ => .poison)
+          (match P', Q' with
+            | some p, some q => Arm64.loadPair T 16 false mm p q
+            | _, _ => .poison) := by
+      intro P P' Q Q' hP hQ
+      rcases hP with rfl | rfl | ⟨p, rfl, hp, hP'⟩
+      · exact .poison _
+      · rcases hQ with rfl | rfl | ⟨q, rfl, hq, hQ'⟩
+        · cases P <;> exact .poison _
+        · exact Sem.Refines.refl _
+        · obtain ⟨q', rfl⟩ := Option.isSome_iff_exists.1 hQ'
+          cases P with
+          | none => exact .poison _
+          | some p => exact .tuple (.cons (Sem.Refines.refl _) (.cons (hout 1 q q' hq) .nil))
+      · obtain ⟨p', rfl⟩ := Option.isSome_iff_exists.1 hP'
+        rcases hQ with rfl | rfl | ⟨q, rfl, hq, hQ'⟩
+        · exact .poison _
+        · cases Q with
+          | none => exact .poison _
+          | some q => exact .tuple (.cons (hout 0 p p' hp) (.cons (Sem.Refines.refl _) .nil))
+        · obtain ⟨q', rfl⟩ := Option.isSome_iff_exists.1 hQ'
+          exact .tuple (.cons (hout 0 p p' hp) (.cons (hout 1 q q' hq) .nil))
+    simp only [ldQVal]
+    split
+    · rename_i hn
+      exact key _ _ _ _ h0 (h16 hn)
+    · rcases h0 with h | h | ⟨q, h, hq, -⟩ <;> rw [h]
+      · exact .poison _
+      · exact Sem.Refines.refl _
+      · simp only [Option.elim, load16_outWindow hq]; exact .poison _
+  | _ => exact .poison _
+
+/-- The folded offset `K` of `j` and `k2`, moved by 16, as an immediate: the fold of `j + 16`
+and `k2`. -/
+theorem imm_fold16 {j k2 K : Int64}
+    (hK : BitVec.ofInt 64 K.toInt = BitVec.ofInt 64 j.toInt + BitVec.ofInt 64 k2.toInt) :
+    BitVec.ofInt 64 (K + Int64.ofNat 16).toInt =
+      BitVec.ofInt 64 (j + Int64.ofNat 16).toInt + BitVec.ofInt 64 k2.toInt := by
+  rw [imm_addNat, imm_addNat, hK, BitVec.add_assoc, BitVec.add_comm (BitVec.ofInt 64 k2.toInt),
+    ← BitVec.add_assoc]
+
+/-- **An offset folded into a 128-bit load** (`ARM64.rules:688`, `691`): as `refines_ld_fold`
+(`symPtr_fold`); `FLDPQ`'s second address, at the offset moved by 16, folds alike when that
+offset is small too (`Pat.addrOKL`). -/
+theorem refines_ldQ_fold {o : Op} {n : Nat} (hq : ldQ? o = some n) (tabs : Tables)
+    {T T0 T1 : Ty} {k1 k2 : Int64} (hk1 : offOK k1 = true) (hk2 : offOK k2 = true)
+    (h16 : n = 32 → offOK (k1 + Int64.ofNat 16) = true)
+    (hT1 : 64 ≤ argWidth T1) {x : Val} (hx : x.hasTy T0 = true) (m : Val) :
+    Sem.Refines
+      ((opValL tabs o T k1 none
+        [(Arm64.addP T1 x (BitVec.ofInt 64 k2.toInt)).retypeL T1, m]).retypeL T)
+      ((opValL tabs o T
+        (Int64.ofInt (wrapInt 32 true (wrapInt 32 true k1.toInt + wrapInt 32 true k2.toInt))) none
+        [x, m]).retypeL T) := by
+  rw [opValL_ldQ hq, opValL_ldQ hq]
+  have hK := imm_fold hk1 hk2
+  generalize Int64.ofInt (wrapInt 32 true (wrapInt 32 true k1.toInt + wrapInt 32 true k2.toInt)) =
+    K at hK ⊢
+  refine refines_ldQVal_addr tabs n T m ?_ fun hn => ?_
+  · rcases symPtr_fold tabs (offOK_sum hk1 hk2) hK hT1 hx with h | h
+    · exact .inl h
+    · exact .inr (.inl h)
+  · rcases symPtr_fold tabs (offOK_sum (h16 hn) hk2) (imm_fold16 hK) hT1 hx with h | h
+    · exact .inl h
+    · exact .inr (.inl h)
+
+/-- **A symbol's address folded into a 128-bit load** (`ARM64.rules:872`, `876`): as
+`refines_ld_foldAddr` (`symPtr_movFold`); `FLDPQ`'s second address, at the offset moved by 16,
+folds alike when that offset is small too (`Pat.addrOKL`). -/
+theorem refines_ldQ_foldAddr {o : Op} {n : Nat} (hq : ldQ? o = some n) (tabs : Tables)
+    {T T0 T1 : Ty} {k1 k2 : Int64} (hk1 : offOK k1 = true) (hk2 : offOK k2 = true)
+    (h16 : n = 32 → offOK (k1 + Int64.ofNat 16) = true)
+    (hT1 : 64 ≤ argWidth T1) {x : Val} (hx : x.hasTy T0 = true) (ax : Option AuxRef) (m : Val) :
+    Sem.Refines
+      ((opValL tabs o T k1 none [(movAddr tabs k2 ax [x]).retypeL T1, m]).retypeL T)
+      ((opValL tabs o T
+        (Int64.ofInt (wrapInt 32 true (wrapInt 32 true k1.toInt + wrapInt 32 true k2.toInt))) ax
+        [x, m]).retypeL T) := by
+  rw [opValL_ldQ hq, opValL_ldQ hq]
+  have hK := imm_fold hk1 hk2
+  generalize Int64.ofInt (wrapInt 32 true (wrapInt 32 true k1.toInt + wrapInt 32 true k2.toInt)) =
+    K at hK ⊢
+  exact refines_ldQVal_addr tabs n T m (symPtr_movFold tabs (offOK_sum hk1 hk2) hK hT1 hx ax)
+    fun hn => symPtr_movFold tabs (offOK_sum (h16 hn) hk2) (imm_fold16 hK) hT1 hx ax
 
 /-- **An offset folded into a symbol's address** (`ARM64.rules:650`): `ADDconst [k1]` of
 `MOVDaddr [k2] {ax} x` is `MOVDaddr [k1+k2] {ax} x`, for an aux, small non-negative offsets and
@@ -242,6 +390,35 @@ macro "arm_ldfoldAddr" : tactic => `(tactic| (
   rw [show e.aux [] = none from beq_iff_eq.1 hax]
   exact refines_ld_foldAddr rfl rfl rfl _ hk1 hk2 (by simpa [armReadW] using harg.1.1) hty.1 _ _))
 
+set_option hygiene false in
+/-- The obligation of a rule folding an offset into a 128-bit load (`arm_unfold`, `arm_norm`). -/
+macro "arm_ldQfold" : tactic => `(tactic| (
+  left
+  arm_unfold
+  simp only [Pat.addrOKL, Pat.addrOKLs, Bool.and_eq_true, Bool.or_eq_true] at hadr
+  arm_norm
+  obtain ⟨⟨hA | ⟨⟨hax, hk1⟩, hk2⟩, -, hq16⟩, -⟩ := hadr
+  · exact absurd hA (by decide)
+  rw [show _ = none from beq_iff_eq.1 hax]
+  exact refines_ldQ_fold rfl _ hk1 hk2
+    (fun hn => by first | exact absurd hn (by decide) | exact hq16.resolve_left (by decide))
+    (by simpa [armReadW] using harg.1.1) hty.1 _))
+
+set_option hygiene false in
+/-- The obligation of a rule folding a symbol's address into a 128-bit load (`arm_unfold`,
+`arm_norm`). -/
+macro "arm_ldQfoldAddr" : tactic => `(tactic| (
+  left
+  arm_unfold
+  simp only [Pat.addrOKL, Pat.addrOKLs, Bool.and_eq_true, Bool.or_eq_true] at hadr
+  arm_norm
+  obtain ⟨⟨hA | ⟨⟨hax, hk1⟩, hk2⟩, -, hq16⟩, -⟩ := hadr
+  · exact absurd hA (by decide)
+  rw [show e.aux [] = none from beq_iff_eq.1 hax]
+  exact refines_ldQ_foldAddr rfl _ hk1 hk2
+    (fun hn => by first | exact absurd hn (by decide) | exact hq16.resolve_left (by decide))
+    (by simpa [armReadW] using harg.1.1) hty.1 _ _))
+
 /-- `ARM64.rules:658`: `(MOVBload [off1] {sym} (ADDconst [off2] ptr) mem) && is32Bit(int64(off1)+off2) && (ptr.Op != OpSB || !config.ctxt.Flag_dynlink) => (MOVBload [off1+int32(off2)] {sym} ptr mem)` -/
 theorem r_ARM64_658_sound : ArmRule.Checked r_ARM64_658 := by
   arm_ldfold
@@ -277,6 +454,14 @@ theorem r_ARM64_682_sound : ArmRule.Checked r_ARM64_682 := by
 /-- `ARM64.rules:685`: `(FMOVDload [off1] {sym} (ADDconst [off2] ptr) mem) && is32Bit(int64(off1)+off2) && (ptr.Op != OpSB || !config.ctxt.Flag_dynlink) => (FMOVDload [off1+int32(off2)] {sym} ptr mem)` -/
 theorem r_ARM64_685_sound : ArmRule.Checked r_ARM64_685 := by
   arm_ldfold
+
+/-- `ARM64.rules:688`: `(FMOVQload [off1] {sym} (ADDconst [off2] ptr) mem) && is32Bit(int64(off1)+off2) && (ptr.Op != OpSB || !config.ctxt.Flag_dynlink) => (FMOVQload [off1+int32(off2)] {sym} ptr mem)` -/
+theorem r_ARM64_688_sound : ArmRule.Checked r_ARM64_688 := by
+  arm_ldQfold
+
+/-- `ARM64.rules:691`: `(FLDPQ [off1] {sym} (ADDconst [off2] ptr) mem) && is32Bit(int64(off1)+off2) && (ptr.Op != OpSB || !config.ctxt.Flag_dynlink) => (FLDPQ [off1+int32(off2)] {sym} ptr mem)` -/
+theorem r_ARM64_691_sound : ArmRule.Checked r_ARM64_691 := by
+  arm_ldQfold
 
 /-- `ARM64.rules:758`: `(MOVBstore [off1] {sym} (ADDconst [off2] ptr) val mem) && is32Bit(int64(off1)+off2) && (ptr.Op != OpSB || !config.ctxt.Flag_dynlink) => (MOVBstore [off1+int32(off2)] {sym} ptr val mem)` -/
 theorem r_ARM64_758_sound : ArmRule.Checked r_ARM64_758 := checked_armStore rfl rfl
@@ -353,7 +538,7 @@ theorem r_ARM64_650_sound : ArmRule.Checked r_ARM64_650 := by
   arm_unfold
   simp only [Pat.addrOKL, Pat.addrOKLs, Bool.and_eq_true, Bool.or_eq_true] at hadr
   arm_norm
-  obtain ⟨⟨-, (hB | hB) | ⟨⟨⟨⟨hs, hk1⟩, hk2⟩, hT⟩, hT1⟩⟩, -⟩ := hadr
+  obtain ⟨⟨-, ⟨(hB | hB) | ⟨⟨⟨⟨hs, hk1⟩, hk2⟩, hT⟩, hT1⟩, -⟩⟩, -⟩ := hadr
   · exact absurd hB (by decide)
   · exact absurd hB (by decide)
   exact refines_addConst_movAddr _ hT hT1 hk1 hk2 hs _
@@ -393,5 +578,13 @@ theorem r_ARM64_864_sound : ArmRule.Checked r_ARM64_864 := by
 /-- `ARM64.rules:868`: `(FMOVDload [off1] {sym1} (MOVDaddr [off2] {sym2} ptr) mem) && canMergeSym(sym1,sym2) && is32Bit(int64(off1)+int64(off2)) && (ptr.Op != OpSB || !config.ctxt.Flag_dynlink) => (FMOVDload [off1+off2] {mergeSym(sym1,sym2)} ptr mem)` -/
 theorem r_ARM64_868_sound : ArmRule.Checked r_ARM64_868 := by
   arm_ldfoldAddr
+
+/-- `ARM64.rules:872`: `(FMOVQload [off1] {sym1} (MOVDaddr [off2] {sym2} ptr) mem) && canMergeSym(sym1,sym2) && is32Bit(int64(off1)+int64(off2)) && (ptr.Op != OpSB || !config.ctxt.Flag_dynlink) => (FMOVQload [off1+off2] {mergeSym(sym1,sym2)} ptr mem)` -/
+theorem r_ARM64_872_sound : ArmRule.Checked r_ARM64_872 := by
+  arm_ldQfoldAddr
+
+/-- `ARM64.rules:876`: `(FLDPQ [off1] {sym1} (MOVDaddr [off2] {sym2} ptr) mem) && canMergeSym(sym1,sym2) && is32Bit(int64(off1)+int64(off2)) && (ptr.Op != OpSB || !config.ctxt.Flag_dynlink) => (FLDPQ [off1+off2] {mergeSym(sym1,sym2)} ptr mem)` -/
+theorem r_ARM64_876_sound : ArmRule.Checked r_ARM64_876 := by
+  arm_ldQfoldAddr
 
 end GoFV.Proof.Low.Rules

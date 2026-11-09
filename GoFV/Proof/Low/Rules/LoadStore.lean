@@ -26,8 +26,8 @@ base)`: frame addresses are atoms, the validator pairs each `MOVDaddr` with the 
 lowers (`addrLower`, `addr_lower_eval`: the frame variable's address, whatever the argument), so
 these rules are `ArmRule.Mem` (`checked_localAddr`).
 
-Not covered: `FMOVQload` (323) is an atom; `FMOVQstore` (332) stores a 16-byte shape `memLower`
-does not pair.
+Not covered: `FMOVQload` (323), a 128-bit load term (`ldQ?`, not `ldOp?`); `FMOVQstore` (332)
+stores a 16-byte shape `memLower` does not pair.
 -/
 
 namespace GoFV.Proof.Low.Rules
