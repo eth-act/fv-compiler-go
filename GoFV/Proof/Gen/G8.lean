@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G7
 import GoFV.Proof.Gen.Spec8
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of the genssa validator's slice G8: write barriers (`docs/plans/proofs3.md` §4)
 
@@ -170,7 +172,11 @@ theorem stepLoc_wb (hl : lc.ctx.f.lowered = true) (ht : (lc.temps[v.id]?).join =
   cases hr
   rw [lmode_retype hl, clobber_wb hop ht]
   unfold LocState.write
-  rw [hh, hty]
+  have hw : Val.retypeL (.tuple [.ptr e, .mem]) (wbOp v.auxInt [.mem mm]) =
+      .tuple [.ptr ⟨.wbuf, 0⟩, .mem (mm.wbAlloc v.auxInt.toInt.toNat)] := by
+    simp [wbOp, Val.retypeL, Val.widen, Val.widenList, Val.retypePre, Val.retype, Ptr.word,
+      Ptr.addr?, Ptr.inWindow, Blk.window?]
+  rw [hh, hty, hw]
   rfl
 
 /-- A write-barrier request read from its home `(Rr, -)`: the register at the pointer shape and the

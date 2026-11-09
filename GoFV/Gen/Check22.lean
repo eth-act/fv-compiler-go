@@ -1,5 +1,7 @@
 import GoFV.Gen.Check21
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The genssa validator, slice G22: pair loads and stores of globals (`docs/plans/proofs3.md` §4)
 

@@ -337,6 +337,8 @@ theorem rankOK_iff (vs : Array SNode) (isNode : ID → Bool) (o : Array ID) :
   funext vs isNode o
   exact Bool.eq_iff_iff.2 ((rankOK_iff vs isNode o).trans (rankOKFast_iff vs isNode o).symm)
 
+variable [Addrs]
+
 /-- `o` lists every node of `vs` exactly once (`vs` has distinct IDs), each after its
 arguments within the block (a dependency order), pure nodes as early as their arguments allow
 relative to the other nodes, and nodes of priority ≤ 1 (pure or `NilCheck`) as early as their
@@ -987,9 +989,9 @@ def memRoot (ctx : Ctx) (v : Value) (argv : List Val) : Res Val :=
 def frameVal (ctx : Ctx) (v : Value) : Option Val :=
   match v.op with
   | .SP => some (.ptr ⟨.outargs ctx.act, 0⟩)
-  -- the caller's SP lies just above this activation's frame region (`Blk.base?`), so
-  -- "is this pointer in my frame" checks (`append` of a stack slice) see the frame
-  | .GetCallerSP => some (.int .w64 (BitVec.ofNat 64 (2 ^ 62 + (ctx.act + 1) * 2 ^ 42)))
+  -- the caller's SP (`Addrs.callerSP`; under `Addrs.fixed` just above this activation's frame
+  -- region, so "is this pointer in my frame" checks, `append` of a stack slice, see the frame)
+  | .GetCallerSP => some (.int .w64 (Addrs.callerSP ctx.act))
   | .LocalAddr => v.aux.map fun n => .ptr ⟨frameBlk ctx.tabs ctx.act n, 0⟩
   | .Addr =>
     match v.aux.bind ctx.tabs.aux? with
@@ -1389,7 +1391,7 @@ namespace GoFV.SSA
 
 /-- `GoFV.SSA.run`: the outcome of running `f` (with the tables `tabs` of its export section)
 on `args` from memory `mem` with at most `fuel` block entries (`docs/plans/semantics.md` §8). -/
-def run (env : Sem.Env) (tabs : Tables) (f : Func) (args : List Sem.Val) (mem : Sem.Mem)
+def run [Sem.Addrs] (env : Sem.Env) (tabs : Tables) (f : Func) (args : List Sem.Val) (mem : Sem.Mem)
     (fuel : Nat) : Sem.Outcome :=
   Sem.runCtx env (Sem.Ctx.make tabs f) args mem fuel
 

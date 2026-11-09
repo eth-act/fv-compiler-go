@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.ECPanic
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The conversion simulation (issue #28)
 

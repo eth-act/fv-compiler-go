@@ -8,6 +8,8 @@ import GoFV.Proof.Avail
 import GoFV.Proof.Pass.FusePlainFrame
 import GoFV.Proof.SchedFast
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # fuseBlockPlain: what the step checker establishes
 

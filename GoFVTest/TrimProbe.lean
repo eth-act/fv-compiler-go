@@ -2,6 +2,8 @@ import GoFV.SSA.Parse
 import GoFV.Opt.Trim
 import GoFV.Proof.Pass.TrimLocCheck
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `lake exe trim-probe <dir>...`: `trimRelB` on the corpus
 

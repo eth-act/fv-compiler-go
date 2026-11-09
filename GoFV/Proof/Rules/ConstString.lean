@@ -29,6 +29,10 @@ namespace GoFV.Proof.Rules
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Rules
 
+section
+
+variable [GoFV.SSA.Sem.Addrs]
+
 theorem strVal_of_strAux {tabs : Tables} {a : Option AuxRef} {s d : GoStr}
     (h : strAux? tabs a = some (s, d)) (hs : s.size ≠ 0) :
     strVal tabs a =
@@ -80,7 +84,7 @@ theorem r_generic_1022_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generi
   have hc : Conv.const .w64 (Int64.ofNat s.size) = .int .w64 (BitVec.ofNat 64 s.size) := by
     simp only [Conv.const, Width.bits, Int64.toInt, BitVec.ofInt_toInt]; rfl
   simp only [hc, Comp.make, Val.retype, Nat.le_refl, ite_true, BitVec.setWidth_eq, Ptr.word,
-    Ptr.convertible, Ptr.inWindow, Blk.window?]
+    Ptr.convertible_global, Ptr.addr?, Blk.base?_global, Ptr.inWindow, Blk.window?]
   unfold Val.ofStr at hty ⊢
   split
   · rename_i hok
@@ -161,6 +165,10 @@ def Rule.InstT (r : Rule) (tabs : Tables) (e : PEnv) (or : Oracle) : Prop :=
 /-- The string shape. -/
 def strTy : Ty := .str
 
+end
+
+open scoped GoFV.SSA.Sem.Fixed
+
 /-- Aux 1: the empty string constant. -/
 def emptyStrTabs : Tables where
   auxes := #[none,
@@ -202,7 +210,8 @@ theorem inst_r_generic_1011 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_
   rule_eval
   have h2 : (2#64).msb = false := by decide
   simp [Comp.select, Comp.make, Val.retype, Val.retypeFields, Val.ofStr, Val.strOK, Val.retypePtr,
-    Val.retypeI64, h2, Ptr.word, Ptr.convertible, Ptr.inWindow, Blk.window?]
+    Val.retypeI64, h2, Ptr.word, Ptr.convertible_global, Ptr.addr?, Blk.base?_global,
+    Ptr.inWindow, Blk.window?]
   exact ⟨fun xe x h => by subst h; simp [strDataVar?], fun xe x h => by subst h; simp [auxVar?]⟩
 
 end GoFV.Proof.Rules

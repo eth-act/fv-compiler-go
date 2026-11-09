@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.WBRole
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # writebarrier: the checker's block conditions as propositions (issue #36)
 

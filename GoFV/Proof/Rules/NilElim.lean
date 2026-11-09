@@ -1,6 +1,8 @@
 import GoFV.Opt.RewriteCheck
 import GoFV.Rules.Generated.Generic
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Nil-check elimination rules (issue #151)
 

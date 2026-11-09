@@ -3,6 +3,8 @@ import GoFV.Proof.DomRel
 import GoFV.Proof.Refine
 import GoFV.Proof.Cong
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The fuse driver keeps refinement and `WFDom`, for any checked step
 

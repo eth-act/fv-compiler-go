@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.FwdNew
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for a fixed load from a read-only symbol (issue #69)
 

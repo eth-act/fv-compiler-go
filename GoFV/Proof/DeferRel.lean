@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.DAEAvoid
 import GoFV.Proof.Refine
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Deferred calls under memory relations that hide frame temporaries
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Rules.Tactic
 import GoFV.Rules.Generated.Generic.Values14
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: `ZeroExt` rules
 

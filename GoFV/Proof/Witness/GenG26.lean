@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G26
 import GoFV.Proof.Witness.GenG25
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G26 of the genssa validator on `main.func1` of examples/generics
 

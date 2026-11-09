@@ -1,5 +1,7 @@
 import GoFV.Proof.Rules.Tactic
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The comparisons the range-check rules fold (`generic.rules:321–366`), any width
 

@@ -4,6 +4,8 @@ import GoFV.SSA.Parse
 import GoFV.Opt.ExpandCallsCheck
 import GoFV.Opt.TabsAgree
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `expand-calls-probe`
 

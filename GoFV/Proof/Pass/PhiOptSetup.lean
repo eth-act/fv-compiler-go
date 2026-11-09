@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.PhiOptFacts
 import GoFV.Proof.Pass.ZCSESetup
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # phiopt: what the simulation uses
 

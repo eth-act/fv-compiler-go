@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.DeadEdgeVal
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # deadcode's edge removal as recursions
 

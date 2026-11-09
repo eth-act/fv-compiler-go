@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.FwdFixed
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for a fixed load through an interface's itab word (issue #69)
 

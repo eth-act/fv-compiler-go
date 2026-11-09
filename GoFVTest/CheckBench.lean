@@ -2,6 +2,8 @@ import GoFV.SSA.Parse
 import GoFV.SSA.Check
 import GoFV.SSA.WFCheck
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `check-bench`: where `check` spends its time
 

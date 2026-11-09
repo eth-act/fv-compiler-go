@@ -1,6 +1,8 @@
 import GoFV.Opt.SccpCheck
 import GoFV.Proof.Pass.KnownBitsInv
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The source-side invariant of sccp (issue #32)
 

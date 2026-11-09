@@ -1,5 +1,7 @@
 import GoFV.Proof.ProveCheck.Den
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The range of an `ROp` node is sound (issue #24)
 

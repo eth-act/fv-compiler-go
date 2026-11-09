@@ -2,6 +2,8 @@ import GoFV.SSA.Parse
 import GoFV.SSA.Check
 import GoFV.Opt.PhiOptCheck
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `phiopt-probe`: does phiopt's checker ever reject?
 

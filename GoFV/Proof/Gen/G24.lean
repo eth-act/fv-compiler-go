@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G23
 import GoFV.Proof.Gen.Spec24
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of the genssa validator's slice G24: `SP` anywhere (`docs/plans/proofs3.md` §4)
 

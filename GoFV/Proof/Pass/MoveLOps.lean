@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.MoveLCheck
 import GoFV.Proof.Pass.CSEOp
 import GoFV.Proof.EvalOpLDispatch
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Total ops (`totalOp`) under `runL`
 

@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.StructLoadMem
 import GoFV.Proof.Rules.DecShape
 import GoFV.Proof.PureMono
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Selections of a `Load` (issue #17)
 

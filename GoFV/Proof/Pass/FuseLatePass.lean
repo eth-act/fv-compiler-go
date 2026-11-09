@@ -4,6 +4,8 @@ import GoFV.Proof.Pass.FusePlain
 import GoFV.Proof.Pass.FuseRedirect
 import GoFV.Opt.Fuse
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # late fuse refines its input
 

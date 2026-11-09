@@ -3,6 +3,8 @@ import GoFV.Proof.Pass.ECFinish
 import GoFV.Proof.CallMono
 import GoFV.Proof.MemRefine
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `expand calls`: the obligations of calls and `MakeResult`s (issue #28)
 

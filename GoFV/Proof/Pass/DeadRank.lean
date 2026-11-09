@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.DeadBlock
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Removing dead values keeps the roots' order (#96)
 

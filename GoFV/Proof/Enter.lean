@@ -1,6 +1,8 @@
 import GoFV.Proof.Avail
 import GoFV.Proof.Sim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # What one block entry of a well-formed function does
 

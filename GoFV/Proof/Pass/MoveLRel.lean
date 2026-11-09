@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.MoveLOps
 import GoFV.Proof.Speculate
 import GoFV.Proof.RetypeL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Related values (`Rel`) and their evaluation
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.FusePlain
 import GoFV.Proof.Witness.Max3
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: plain fusion of a 3-block chain
 

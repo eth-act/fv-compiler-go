@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.CopyElimGraph
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # What copyelim's primitives do to the value table
 

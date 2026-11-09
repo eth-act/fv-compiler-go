@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.ECCall
 import GoFV.Proof.Pass.ECArgSel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `expand calls`: stack-assigned call results (issue #28)
 
@@ -629,40 +631,16 @@ theorem ecr_selectNAddr_slot {ai : Int64} {act : Nat} {outs : List ABIParam} {p 
   simp only [ecrAddrs, show ¬ ai.toInt < 0 by omega, ↓reduceIte, List.getElem?_map, hp,
     Option.map_some, hpst]
 
-/-- The slot of offset `k` of activation 0's outgoing-arguments area converts to its address. -/
-theorem ecr_slot_word {k : Nat} (hk : k < 2 ^ 24) :
-    (ecsSlot k).word = .int .w64 (BitVec.ofNat 64 (2 ^ 62 + 0 * 2 ^ 42) + BitVec.ofNat 64 k) := by
-  have hc : (ecsSlot k).convertible = true := by
-    simp only [Ptr.convertible, ecsSlot, Bool.and_eq_true, decide_eq_true_eq, BitVec.toNat_ofNat]
-    omega
-  unfold Ptr.word
-  rw [hc]
-  rfl
-
-/-- `OffPtr [k]` of the area's start as a `uintptr`, at a pointer shape: slot `k`'s address
-word. -/
+/-- `OffPtr [k]` of the area's start as a `uintptr`, at a pointer shape: slot `k`'s word. -/
 theorem ecr_offPtr_word {ai : Int64} {k : Nat} (hai : ai.toInt = k) (hk : k < 2 ^ 24)
     (e : Option Nat) :
     (PtrOps.offPtr ai [(Val.ptr (ecsSlot 0)).retype (.int .w64)]).retype (.ptr e) =
       (ecsSlot k).word := by
-  have h1 : (Val.ptr (ecsSlot 0)).retype (.int .w64) =
-      .int .w64 (BitVec.ofNat 64 (2 ^ 62 + 0 * 2 ^ 42) + BitVec.ofNat 64 0) := rfl
-  have hA : Ptr.ofAddr (BitVec.ofNat 64 (2 ^ 62 + 0 * 2 ^ 42) + BitVec.ofNat 64 0) = ecsSlot 0 :=
-    Ptr.ofAddr_addr (p := ecsSlot 0) (by decide) rfl
-  have hs : (ecsSlot 0).add (BitVec.ofNat 64 k) = ecsSlot k := by
-    simp only [Ptr.add, ecsSlot]
-    rw [show BitVec.ofNat 64 0 + BitVec.ofNat 64 k = BitVec.ofNat 64 k by simp]
-  have hw : ((Ptr.ofAddr (BitVec.ofNat 64 (2 ^ 62 + 0 * 2 ^ 42) + BitVec.ofNat 64 0)).add
-      (BitVec.ofNat 64 k)).inWindow = true := by
-    rw [hA, hs]
+  have h1 : (Val.ptr (ecsSlot 0)).retype (.int .w64) = (ecsSlot 0).word := rfl
+  have hw0 : (ecsSlot 0).inWindow = true := by
     simp only [Ptr.inWindow, ecsSlot, Blk.window?, decide_eq_true_eq, BitVec.toNat_ofNat]
     omega
-  rw [h1, ecr_slot_word hk]
-  simp only [PtrOps.offPtr, hai, BitVec.ofInt_natCast]
-  unfold PtrOps.wordRes
-  rw [if_pos hw]
-  show Val.int .w64 _ = Val.int .w64 _
-  simp
+  rw [h1, PtrOps.offPtr_word ai hw0, ecs_offPtr_ptr hai hk, Ptr.word_retype_ptr]
 
 /-- **The address of a result address's `OffPtr [off]` of a `uintptr` `SP`** (`selAddrOK`): the
 register of the `OffPtr` holds the slot's address word. -/

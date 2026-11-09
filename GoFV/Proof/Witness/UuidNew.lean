@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.StackF2
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function: `uuid.New` at `expand calls`
 

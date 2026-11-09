@@ -1,5 +1,7 @@
 import GoFV.Proof.ProveCheck.RngSound
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # prove's value rewrites are refinements under their facts (issue #24)
 

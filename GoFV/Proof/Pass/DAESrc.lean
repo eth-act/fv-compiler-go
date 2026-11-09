@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.DAERel
 import GoFV.Proof.Eval
 import GoFV.Proof.Pass.CSEEval
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dead auto elim: the source's invariant
 
@@ -281,7 +283,7 @@ theorem retype_word_shape {t : Ty} (ht : (∃ e, t = .ptr e) ∨ t = .int .w64) 
     rw [hw]
     rcases Ptr.word_cases ⟨.temp 0 n, off⟩ with ⟨-, h⟩ | ⟨hc, -⟩ | ⟨-, h⟩
     · exact .inr ⟨off, h⟩
-    · simp [Ptr.convertible] at hc
+    · simp at hc
     · exact .inl h
 
 theorem ptrRes_temp {n : Nat} (p : Ptr) (hp : p.blk = .temp 0 n) :
@@ -292,7 +294,7 @@ theorem ptrRes_temp {n : Nat} (p : Ptr) (hp : p.blk = .temp 0 n) :
   unfold PtrOps.ptrRes
   split
   · rename_i hw
-    exact .inr ⟨off, Ptr.word_of_held (Ptr.held_iff.2 ⟨rfl, hw⟩)⟩
+    exact .inr ⟨off, Ptr.word_of_held (Ptr.held_iff.2 ⟨Ptr.convertible_temp 0 n off, hw⟩)⟩
   · exact .inl rfl
 
 /-- A pointer op on a tainted argument 0 points into the same temporary. -/

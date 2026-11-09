@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.ShortCircSpec
 import GoFV.Proof.WFCheck
 import GoFV.Proof.Merge
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Checked `shortcircuitBlock`: the result is well formed
 

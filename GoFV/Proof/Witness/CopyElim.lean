@@ -3,6 +3,8 @@ import GoFV.Proof.Witness.Early
 import GoFV.Proof.Witness.CopyElimRel
 import GoFV.Proof.Witness.PhiElim
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: copyelim on `clamp`
 

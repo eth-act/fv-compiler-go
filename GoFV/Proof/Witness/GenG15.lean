@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G15
 import GoFV.Proof.Witness.GenG14
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G15 of the genssa validator on `(*T3).M` of `test/recover`
 

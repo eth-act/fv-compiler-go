@@ -1,5 +1,7 @@
 import GoFV.Proof.Gen.Progs3
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The nil check under `runProg`, and Prog runs that panic (`docs/plans/proofs3.md` §4, G7)
 

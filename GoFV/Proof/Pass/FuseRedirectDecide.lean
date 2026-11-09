@@ -4,6 +4,8 @@ import GoFV.Proof.AtomSimDen
 import GoFV.Proof.Avail
 import GoFV.Proof.Eval
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The redirect decision is sound
 

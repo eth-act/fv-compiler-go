@@ -1,5 +1,7 @@
 import GoFV.SSA.Sem.RunProg
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `checkObj`'s symbolic states (`docs/plans/proofs3.md` §2, row D4/D5; semantics3 §3 (c))
 

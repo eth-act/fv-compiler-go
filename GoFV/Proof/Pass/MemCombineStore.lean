@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.MemCombineRef
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # memcombine: a combined store writes what its chain wrote (issue #35)
 

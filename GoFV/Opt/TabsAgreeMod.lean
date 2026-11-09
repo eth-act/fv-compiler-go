@@ -1,6 +1,8 @@
 import GoFV.Opt.TabsAgree
 import GoFV.Opt.DeadAutosCheck
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Extended tables with extra frame temporaries (`tabsAgreeMod`)
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.TermStep
 import GoFV.Opt.LowerCheck
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowered values as terms over atoms (issue #385)
 

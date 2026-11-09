@@ -2,6 +2,8 @@ import GoFV.Proof.Refine
 import GoFV.Opt.CheckBCE
 import GoFV.Opt.SoftFloat
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `check bce` and `softfloat` refine their input
 

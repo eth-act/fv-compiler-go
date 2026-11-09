@@ -1,5 +1,7 @@
 import GoFV.Proof.Low.Rules.Kit
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Flags of `CMP`/`CMPW` and the comparison rules (issue #385)
 

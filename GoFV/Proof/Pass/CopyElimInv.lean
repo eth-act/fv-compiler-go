@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.CopyElimView
 import GoFV.Proof.CheckFacts
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The invariant of copyelim's sweeps
 

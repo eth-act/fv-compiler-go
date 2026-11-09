@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.PhiTightenL
 import GoFV.Proof.Witness.TightenL
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: phi tighten on a lowered function
 

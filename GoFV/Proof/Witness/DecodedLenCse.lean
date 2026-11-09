@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.DecodedLen
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function: `decodedLen` at `generic cse`
 

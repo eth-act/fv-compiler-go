@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.DSEMem
 import GoFV.Proof.ValRefine
 import GoFV.SSA.Sem.FrameSafe
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dead auto elim: memories equal outside frame temporaries
 

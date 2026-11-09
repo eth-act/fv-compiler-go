@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerCopyPtr
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower` on a negative offset: `neg` (hand-written, issue #385)
 

@@ -1,4 +1,4 @@
-import GoFV.SSA.Sem.Val
+import GoFV.SSA.Sem.Addrs
 
 /-!
 # Memory (`docs/plans/semantics.md` §3.3, §3.4; phase P2)
@@ -16,34 +16,7 @@ read-only data (`writable = false`) likewise.
 
 namespace GoFV.SSA.Sem
 
-/-! ## Concrete addresses -/
-
-/-- The base address of a block, for `Convert` (ptr ↔ uintptr) and pointer comparison:
-`nil` at 0, heap objects at `(n + 1)·2^40`, frame objects of activation `a` from `2^62`.
-Globals have no concrete address in the semantics (`none`). -/
-def Blk.base? : Blk → Option Nat
-  | .nil => some 0
-  | .heap n => some ((n + 1) * 2 ^ 40)
-  | .local a k | .temp a k => some (2 ^ 62 + a * 2 ^ 42 + k * 2 ^ 24)
-  | .outargs a => some (2 ^ 62 + a * 2 ^ 42)
-  | .global _ | .wbuf => none
-
-/-- The concrete address of a pointer (`none` for globals). -/
-def Ptr.addr? (p : Ptr) : Option (BitVec 64) :=
-  p.blk.base?.map fun b => BitVec.ofNat 64 b + p.off
-
-/-- The pointer at a concrete address: the inverse of `Ptr.addr?` on the encodings of heap and
-frame blocks; any other address points into no allocation (`Blk.nil`). -/
-def Ptr.ofAddr (x : BitVec 64) : Ptr :=
-  let n := x.toNat
-  if n < 2 ^ 40 then ⟨.nil, x⟩
-  else if n < 2 ^ 62 then ⟨.heap (n / 2 ^ 40 - 1), BitVec.ofNat 64 (n % 2 ^ 40)⟩
-  else
-    let r := n - 2 ^ 62
-    let a := r / 2 ^ 42
-    let k := (r % 2 ^ 42) / 2 ^ 24
-    let off := BitVec.ofNat 64 (r % 2 ^ 24)
-    if k == 0 then ⟨.outargs a, off⟩ else ⟨.local a k, off⟩
+variable [Addrs]
 
 namespace Val
 

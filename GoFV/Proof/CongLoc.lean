@@ -5,6 +5,8 @@ import GoFV.Proof.FrameL
 import GoFV.Proof.SimLocSign
 import GoFV.Proof.EvalOpLDispatch
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `runLoc` ignores block order, positions, predictions, caches and the lowered-pass flags
 

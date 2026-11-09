@@ -2,6 +2,8 @@ import GoFV.Proof.Rules.Tactic
 import GoFV.Proof.Rules.DivmodSPow2
 import GoFV.Rules.Generated.Generic.Values02
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: `Div` rules
 

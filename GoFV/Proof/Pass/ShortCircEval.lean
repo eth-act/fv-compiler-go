@@ -1,6 +1,8 @@
 import GoFV.Proof.Merge
 import GoFV.Proof.Enter
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Evaluating a list of values against expected results
 

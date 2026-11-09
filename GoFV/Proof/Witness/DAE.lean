@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.DAE
 import GoFV.Proof.Witness.StackF0
 import GoFV.Proof.Witness.Util
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: dead auto elim on `f0` of `test/stack`
 

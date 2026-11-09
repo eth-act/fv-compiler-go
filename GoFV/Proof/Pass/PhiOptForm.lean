@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.PhiOptSetup
 import GoFV.Proof.Pass.ZCSEEval
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # phiopt: the rewritten `Phi`s evaluate to the `Phi`'s value
 

@@ -3,6 +3,8 @@ import GoFV.Gen.Genssa
 import GoFV.Asm.Parse
 import GoFV.SSA.Parse
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G1 of the genssa validator on `clamp`
 

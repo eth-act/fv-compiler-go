@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.WBEval
 import GoFV.Proof.Enter
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Entering a block whose values satisfy a register property (issue #36)
 

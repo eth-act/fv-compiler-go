@@ -5,6 +5,8 @@ import GoFV.Opt.Fuse.ComparisonsCheck
 import GoFV.Opt.Fuse.IfCheck
 import GoFV.Opt.Fuse.BranchRedirectCheck
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # early fuse and late fuse (`fuseEarly`, `fuseLate`, `fuse.go:13-18`)
 

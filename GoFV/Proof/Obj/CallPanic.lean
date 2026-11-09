@@ -1,5 +1,7 @@
 import GoFV.Proof.Obj.G44
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Calls whose callee panics (`docs/plans/proofs3.md` §6, §9)
 

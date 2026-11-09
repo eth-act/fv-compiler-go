@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.ZCSE
 import GoFV.Proof.Witness.DecodedLen
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: zero arg cse on `decodedLen`
 

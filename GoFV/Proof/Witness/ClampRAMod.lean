@@ -3,6 +3,8 @@ import GoFV.Proof.Witness.ClampRA
 import GoFV.Proof.Witness.TabsAgreeMod
 import GoFV.Proof.Witness.DAE
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness: `runSched_tabsAgreeModL` on `clamp` with a new spill slot
 

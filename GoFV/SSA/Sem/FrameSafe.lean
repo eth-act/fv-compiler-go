@@ -1,5 +1,7 @@
 import GoFV.SSA.Sem.Run
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Contracts that cannot see unreachable frame temporaries (#31)
 
@@ -97,16 +99,6 @@ def InitAvoids (env : Env) (args : List Val) (mem : Mem) : Prop :=
   ∀ a n, (∀ v ∈ args, v.Avoids (· = .temp a n)) ∧ mem.Avoids (· = .temp a n) ∧
     mem.find? (.temp a n) = none ∧
     ∀ g ∈ env.globals, ∀ x ∈ g.2.data.toList, Byte.Avoids (· = .temp a n) x
-
-/-- **No integer converts to a `temp` block.** -/
-theorem Ptr.ofAddr_ne_temp (x : BitVec 64) (a n : Nat) : (Ptr.ofAddr x).blk ≠ .temp a n := by
-  unfold Ptr.ofAddr
-  simp only
-  split
-  · nofun
-  · split
-    · nofun
-    · split <;> nofun
 
 theorem frameBlk_temp {tabs : Tables} {n : AuxRef} (h : tabs.forgeable n = false) (act : Nat) :
     frameBlk tabs act n = .temp act n := by

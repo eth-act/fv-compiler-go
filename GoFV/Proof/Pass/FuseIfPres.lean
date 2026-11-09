@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.FuseIfSetup
 import GoFV.Proof.Pass.FuseCmpRel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # fuseBlockIf keeps well-formedness and use dominance
 

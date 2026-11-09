@@ -3,6 +3,8 @@ import GoFV.Proof.Witness.LicmL
 import GoFV.Proof.Witness.AddZero
 import GoFV.Proof.Witness.LowerTrunc
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: `late lower` on a lowered loop
 

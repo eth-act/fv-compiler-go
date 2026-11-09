@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.Decompose
 import GoFV.Proof.Witness.DecPhis
 import GoFV.Proof.Witness.TabsAgreeMod
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witnesses: decompose user and decompose builtin
 

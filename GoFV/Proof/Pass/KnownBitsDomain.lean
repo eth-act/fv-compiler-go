@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.KnownBitsCore
 import GoFV.Proof.Pass.KnownBitsKind
 import GoFV.Proof.Retype
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of known bits' transfer functions on values (issue #26)
 

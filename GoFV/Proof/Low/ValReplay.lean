@@ -2,6 +2,8 @@ import GoFV.Proof.Low.ValBlock
 import GoFV.Proof.Low.AddrFold
 import GoFV.Proof.Low.ValMul
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Replaying the lowering log refines the denotations (issue #385)
 

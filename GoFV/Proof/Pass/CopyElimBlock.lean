@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.CopyElimSim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # copyelim: one block entry
 

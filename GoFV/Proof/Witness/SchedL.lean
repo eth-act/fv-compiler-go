@@ -1,6 +1,8 @@
 import GoFV.Proof.RefineSched
 import GoFV.Proof.Witness.ClampRA
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witnesses: refinement over `runSched` and `runLF`
 

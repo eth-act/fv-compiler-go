@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerStoreIdx
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness for an indexed store's index scaled in `lower`: `sts` (hand-written, issue #385)
 

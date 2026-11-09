@@ -1,6 +1,8 @@
 import GoFV.Opt.KnownBitsCheck
 import GoFV.SSA.Sem.Pure
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The op families of known bits' checker (issue #26)
 

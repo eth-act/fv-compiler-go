@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.Seg
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for a read-only segment (issue #151)
 

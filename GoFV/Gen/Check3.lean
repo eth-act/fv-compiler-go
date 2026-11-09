@@ -1,5 +1,7 @@
 import GoFV.Gen.Check2
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The genssa validator, slice G3: widths (`docs/plans/proofs3.md` §4)
 

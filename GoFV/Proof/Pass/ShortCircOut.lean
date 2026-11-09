@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.ShortCircKEnter
 import GoFV.Proof.Agree
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Checked `shortcircuitBlock`: blocks outside `K`
 

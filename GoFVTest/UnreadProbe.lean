@@ -2,6 +2,8 @@ import GoFV.SSA.Parse
 import GoFV.SSA.Check
 import GoFV.Proof.Pass.UnreadLRel
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `lake exe unread-probe <dir>...`: elim unread autos' fragment on the corpus
 

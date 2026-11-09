@@ -2,6 +2,8 @@ import GoFV.Proof.TabsAgreeModOps
 import GoFV.Proof.Pass.DAESrc
 import GoFV.Opt.TabsAgreeMod
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Running in tables with extra frame temporaries: the source avoids them
 

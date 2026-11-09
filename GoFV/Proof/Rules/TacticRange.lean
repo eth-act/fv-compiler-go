@@ -1,5 +1,7 @@
 import GoFV.Proof.Rules.RangeLemmas2
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `rule_range`: integer range checks combined by `AndB`/`OrB` (`generic.rules:321–366`)
 

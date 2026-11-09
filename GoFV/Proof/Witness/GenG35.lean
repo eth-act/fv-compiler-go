@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G35
 import GoFV.Proof.Witness.GenG13
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G35 of the genssa validator on `regexp/syntax.(*InstOp).String`
 

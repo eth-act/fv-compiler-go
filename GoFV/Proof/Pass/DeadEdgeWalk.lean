@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.DeadEdgeInv
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # deadcode's edge removal keeps `EI`
 

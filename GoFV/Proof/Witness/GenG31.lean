@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G31
 import GoFV.Proof.Witness.GenG13
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G31 of the genssa validator on `runtime.(*hexdumper).close`
 

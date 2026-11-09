@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.TrimLoc
 import GoFV.Proof.Witness.LoopRotateLoc
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: `trim` under `runLoc`
 

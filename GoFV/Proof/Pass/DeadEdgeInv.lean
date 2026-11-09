@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.DeadEdges
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The invariant of deadcode's edge removal
 

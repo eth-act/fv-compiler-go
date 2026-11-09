@@ -1,5 +1,7 @@
 import GoFV.Proof.Gen.Mem
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Narrow loads and stores of slice G3 under `MemInj` (`docs/plans/proofs3.md` §3)
 

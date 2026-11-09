@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.UnreadLRel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # elim unread autos on `runL`: the arm64 ops keep values avoiding frame temporaries
 

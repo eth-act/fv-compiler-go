@@ -2,6 +2,8 @@ import GoFV.SSA.Parse
 import GoFV.Opt.ShortCircuit
 import GoFV.Opt.ZCSE
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `lake exe shortcirc-probe <dir>...`: what short circuit rewrites on the corpus (issue #16)
 

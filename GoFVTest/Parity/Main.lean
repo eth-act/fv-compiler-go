@@ -2,6 +2,8 @@ import GoFVTest.Parity.Registry
 import GoFVTest.Parity.Compare
 import GoFV.SSA.Parse
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `pass-parity`
 

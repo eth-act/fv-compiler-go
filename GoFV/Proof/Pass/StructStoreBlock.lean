@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.StructStoreSrc
 import GoFV.Proof.PtrAddr
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Struct-store splits: one block of the target (issue #151)
 

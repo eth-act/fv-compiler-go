@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.WBOrder
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # writebarrier: the order of the non-pure nodes of a chain (issue #36)
 

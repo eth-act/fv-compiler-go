@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.UnreadLBlock
 import GoFV.Proof.Pass.DeadRelL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # elim unread autos on `runL`: the simulation
 

@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.DeadRelL
 import GoFV.Proof.Pass.DeadEdgeWF
 import GoFV.Proof.Pass.DeadTail
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # deadcode's steps keep `DeadRelL` and `lowered`
 

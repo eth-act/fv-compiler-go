@@ -4,6 +4,8 @@ import GoFV.Proof.Pass.NilSeeds
 import GoFV.Proof.AtomSimEnter
 import GoFV.Proof.RoImage
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The forwarding layer's source invariant (issue #69)
 
@@ -393,14 +395,20 @@ theorem fresh_eval_sc {env : Env} (hA : env.AllocZero) {fr : Frame} {c : ID} {cv
   rw [BitVec.ofInt_toInt]
   exact hspos
 
+/-- A pointer to the start of a global retyped at a pointer shape is itself (a global has no
+address). -/
+private theorem retype_ptr_global (n : String) (e : Option Nat) :
+    (Val.ptr ⟨.global n, 0⟩).retype (.ptr e) = .ptr ⟨.global n, 0⟩ := by
+  simp [Val.retype, Ptr.word, Ptr.addr?, Ptr.inWindow, Blk.window?]
+
 /-- A pointer to the start of a global retyped at any shape is itself or `poison` (a global has
 no address). -/
 private theorem retype_global (n : String) (t : Ty) :
     (Val.ptr ⟨.global n, 0⟩).retype t = .ptr ⟨.global n, 0⟩ ∨
       (Val.ptr ⟨.global n, 0⟩).retype t = .poison := by
   cases t with
-  | int w => cases w <;> first | exact .inl rfl | exact .inr rfl
-  | ptr e => exact .inl rfl
+  | int w => cases w <;> simp [Val.retype, Ptr.word, Ptr.addr?, Ptr.inWindow, Blk.window?]
+  | ptr e => exact .inl (retype_ptr_global n e)
   | _ => exact .inr rfl
 
 /-- `Runtime.typeInfo` of a pointer to the start of a global whose bytes `roTypeInfo?` reads. -/
@@ -528,7 +536,7 @@ theorem fresh_eval_new {ro : List (String × Alloc)} {env : Env} (hA : env.Alloc
   rw [h1]
   have hf : m.find? (.global nm) = some e'.2 := hen ▸ (hRm e'.1 e'.2 he').2
   simp only [AllocReq, ite_true]
-  refine ⟨_, ⟨.global nm, 0⟩, sp.1, sp.2, rfl, rfl, ?_, by omega⟩
+  refine ⟨_, ⟨.global nm, 0⟩, sp.1, sp.2, by rw [retype_ptr_global], rfl, ?_, by omega⟩
   rw [typeInfo_poisonBelow_ne _ (by nofun)]
   exact typeInfo_global hf hti'
 

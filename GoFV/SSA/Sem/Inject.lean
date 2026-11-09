@@ -2,6 +2,8 @@ import GoFV.SSA.Sem.RunMach
 import GoFV.SSA.Sem.Mem
 import Std.Data.HashMap
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The injection `ι` executed: Phase 1 memory in the flat machine memory (`docs/plans/semantics3.md` §4.3)
 

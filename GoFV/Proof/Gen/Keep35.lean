@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G34
 import GoFV.Proof.Gen.Spec35
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The values G35's upper-bit table changes for beyond G34's (`docs/plans/proofs3.md` §4)
 

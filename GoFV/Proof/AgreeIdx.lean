@@ -1,5 +1,7 @@
 import GoFV.Proof.Agree
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Entering a block along renumbered edges
 

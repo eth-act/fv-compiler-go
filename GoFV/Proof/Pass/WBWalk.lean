@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.WBArgs
 import GoFV.Proof.SimIH
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # writebarrier: walking the chain of a block (issue #36)
 

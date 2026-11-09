@@ -1,5 +1,7 @@
 import GoFV.Gen.Check9
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The genssa validator, slice G10: interface and closure calls (`docs/plans/proofs3.md` §4)
 

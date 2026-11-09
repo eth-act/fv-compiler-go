@@ -1,5 +1,7 @@
 import GoFV.Proof.Rules.TacticRange
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Float comparisons (`docs/proofs/rules.md`, #69)
 

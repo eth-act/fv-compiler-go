@@ -1,6 +1,8 @@
 import GoFV.Opt.LoweredCSE
 import GoFV.SSA.Sem.RunL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The lowered cse checker (`CSEL.crel`)
 

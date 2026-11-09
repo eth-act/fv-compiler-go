@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.DeadRank
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Removing dead values: entering a kept block
 

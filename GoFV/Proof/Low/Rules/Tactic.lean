@@ -1,6 +1,8 @@
 import Lean
 import GoFV.Proof.Low.Rules.Kit
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Tactics for the lowering rule lemmas (issue #385)
 
@@ -34,7 +36,7 @@ commutation choice, unfolded (module doc). -/
 elab "arm_unfold" : tactic => do
   let goal ← getMainGoal
   let ty ← instantiateMVars (← goal.getType)
-  let some r := ty.getAppArgs[0]? | throwError "arm_unfold: goal is not `ArmRule.Sound r`"
+  let some r := ty.getAppArgs.back? | throwError "arm_unfold: goal is not `ArmRule.Sound r`"
   let some rn := r.getAppFn.constName? | throwError "arm_unfold: rule is not a constant"
   let rid := mkIdent rn
   let n ← withTransparency .all <| reduce
@@ -88,7 +90,8 @@ elab "arm_unfold" : tactic => do
 elab "arm_shape" : tactic => withMainContext do
   let some h := (← getLCtx).findFromUserName? `htop | throwError "arm_shape: no htop"
   let some (_, lhs, _) := (← instantiateMVars h.type).eq? | throwError "arm_shape: htop"
-  let t ← Term.exprToSyntax (lhs.getArg! 1)
+  -- `topOKL [Addrs] op T`: the shape is the last argument
+  let t ← Term.exprToSyntax lhs.getAppArgs.back!
   let T := mkIdent `T
   let htop := mkIdent `htop
   evalTactic (← `(tactic| (
@@ -109,7 +112,7 @@ old block takes edge `b`). -/
 elab "arm_bunfold" : tactic => do
   let goal ← getMainGoal
   let ty ← instantiateMVars (← goal.getType)
-  let some r := ty.getAppArgs[0]? | throwError "arm_bunfold: goal is not `BlockRuleL.Sound br`"
+  let some r := ty.getAppArgs.back? | throwError "arm_bunfold: goal is not `BlockRuleL.Sound br`"
   let some rn := r.constName? | throwError "arm_bunfold: rule is not a constant"
   let rid := mkIdent rn
   let nk ← withTransparency .all <| whnf (mkApp (mkConst ``GoFV.Rules.BlockRule.newKind) r)

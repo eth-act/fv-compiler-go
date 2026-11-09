@@ -2,6 +2,8 @@ import GoFV.Asm.CheckObj
 import GoFV.Asm.Flush
 import GoFV.Asm.Parse
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `obj-check`: coverage of the assembler validator (`docs/plans/proofs3.md` §2, row D2–D5)
 

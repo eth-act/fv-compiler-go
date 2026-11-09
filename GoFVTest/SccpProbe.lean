@@ -2,6 +2,8 @@ import GoFV.SSA.Parse
 import GoFV.SSA.Check
 import GoFV.Opt.SccpCheck
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `sccp-probe`: does sccp's checker ever reject?
 

@@ -1,5 +1,7 @@
 import GoFV.Gen.Check7
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The genssa validator, slice G8: write barriers (`docs/plans/proofs3.md` §4)
 

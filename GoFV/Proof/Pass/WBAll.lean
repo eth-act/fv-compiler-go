@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.WBBlock
 import GoFV.Proof.Pass.WBCall
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # writebarrier: every value of a chain (issue #36)
 

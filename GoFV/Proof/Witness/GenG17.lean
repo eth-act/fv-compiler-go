@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G17
 import GoFV.Proof.Witness.GenG16
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G17 of the genssa validator on `runtime.getm`
 

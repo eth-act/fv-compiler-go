@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.NilLateLSim
 import GoFV.Opt.NilCheckLate
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `late nilcheck` refines under `runSched`
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Mixed
 import GoFV.Proof.Order
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Generic evaluation lemmas for the writebarrier proof
 

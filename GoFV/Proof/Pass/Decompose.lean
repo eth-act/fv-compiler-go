@@ -6,6 +6,8 @@ import GoFV.Proof.Pass.Rewrite
 import GoFV.Proof.Rules.Proven
 import GoFV.Proof.TabsAgreeMod
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # decompose user, decompose builtin refine their input (issue #17)
 

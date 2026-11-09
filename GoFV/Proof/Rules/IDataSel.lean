@@ -2,6 +2,8 @@ import GoFV.Proof.Rules.Dec
 import GoFV.Rules.Generated.Generic.Values01
 import GoFV.Rules.Generated.Generic.Values12
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: selections of an interface's data word (issue #69)
 

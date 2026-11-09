@@ -1,6 +1,8 @@
 import GoFV.Proof.Rules.TacticRange
 import GoFV.Rules.Generated.Generic.Values01
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: `AndB` rules (part 4)
 

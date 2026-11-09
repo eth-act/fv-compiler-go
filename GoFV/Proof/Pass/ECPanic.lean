@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.ECOk
 import GoFV.Proof.Pass.ZCSERank
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # A block entry that panics (issue #28)
 

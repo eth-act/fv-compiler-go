@@ -1,6 +1,8 @@
 import GoFV.Proof.TabsAgree
 import GoFV.Proof.Witness.Clamp
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness: `run_tabsAgree` on `clamp` with extended tables
 

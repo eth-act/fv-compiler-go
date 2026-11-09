@@ -1,6 +1,8 @@
 import Lean
 import GoFV.Proof.Rules.Den
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `reduceArgShapeOk`
 

@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.ShortCircCpaMid
 import GoFV.Proof.Pass.PhiOptForm
 import GoFV.Proof.Merge
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # short circuit, step 1: replacing the `If` controls in `Phi`s by constants
 

@@ -2,6 +2,8 @@ import GoFV.Proof.Gen.G30
 import GoFV.Proof.Witness.GenG26
 import GoFV.Proof.Witness.GenG29
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G30 of the genssa validator on `runtime.gclinkptr.ptr`
 

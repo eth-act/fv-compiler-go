@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.Sccp
 import GoFV.Proof.Witness.AddZero
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: sccp on `pick` (hand-written)
 

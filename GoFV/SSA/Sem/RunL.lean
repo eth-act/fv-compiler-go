@@ -1,6 +1,8 @@
 import GoFV.SSA.Sem.Run
 import GoFV.SSA.Sem.Arm64
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `GoFV.SSA.runL`: lowered arm64 SSA (L0, `docs/plans/semantics2.md` §1, §3–§5)
 

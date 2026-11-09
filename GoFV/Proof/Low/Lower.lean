@@ -7,6 +7,8 @@ import GoFV.Proof.RefineL
 import GoFV.Proof.Checked
 import GoFV.Opt.LowerChecked
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The checked `lower` refines its input (issue #385)
 

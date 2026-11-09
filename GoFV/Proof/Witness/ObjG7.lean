@@ -3,6 +3,8 @@ import GoFV.Proof.Witness.ObjFrame
 import GoFV.Proof.Witness.GenG7
 import GoFV.Proof.Witness.GenG3
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G7 down to the machine words (`g7_obj_value`, `g7_obj_term`)
 

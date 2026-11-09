@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.MemCombineComplete
 import GoFV.Proof.Pass.KnownBitsTerm
 import GoFV.Opt.MemCombine.Check
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # memcombine: the values the checker relates (issue #35)
 

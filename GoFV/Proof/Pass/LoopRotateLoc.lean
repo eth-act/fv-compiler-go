@@ -1,6 +1,8 @@
 import GoFV.Proof.CongLoc
 import GoFV.Opt.LoopRotate
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `loop rotate` refines its input under `runLoc`
 

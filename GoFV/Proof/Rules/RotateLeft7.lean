@@ -1,6 +1,8 @@
 import GoFV.Proof.Rules.Tactic
 import GoFV.Rules.Generated.Generic.Values10
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: `RotateLeft` rules (part 7)
 

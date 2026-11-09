@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerLoadStore
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower` on frame addresses: `lad` (hand-written, issue #385)
 

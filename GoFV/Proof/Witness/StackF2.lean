@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.HasWaitingReaders
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function: `f2` of `test/stack` at `expand calls`
 

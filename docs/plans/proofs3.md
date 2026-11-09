@@ -1686,64 +1686,200 @@ few:
   `StkAt`/`SepFrom` protect. Arguments start at offset 8: `ABIParam.offset` includes the fixed
   frame word.
 
-**Option 2: design.**
+**Option 2: design (revised after #607, design review of #553/#385).**
 
-1. **Parameter.** `AddrMap := Blk → Option Nat` with admissibility:
-   - `nil ↦ 0`;
-   - heap blocks keep `(n+1)·2^40`;
-   - frame blocks (`local`, `outargs`, `temp`) are anywhere outside the nil page and the heap
-     range, without wrap, injective on the windows of live blocks;
-   - a decoder `ofAddr : BitVec 64 → Ptr` that inverts the assignment on in-window addresses and
-     gives `nil` elsewhere.
+0. **What #607 changed, and a correction.** #607 made `Ptr.convertible` exactly the `ofAddr`
+   round trip, `Ptr.word` `poison` outside the window, and `hasTy` at the word shapes
+   `Ptr.held`. So convertibility is a consequence of the address assignment, not a second
+   table. The first version of this design asked for frame blocks "anywhere, injective on the
+   windows of live blocks". That cannot hold at `SP + frameOff`: Phase 1's windows are fixed
+   (`Blk.window?`, frame blocks `2^24`), and pointer arithmetic on words needs the decoded
+   windows to tile the address space (`Ptr.ofAddr_add_of_inWindow`, which `wordRes`, `offPtr`,
+   the `OffPtr` folds and `AddrFold` rely on). Two frame variables 16 bytes apart cannot both own
+   a `2^24` window. The parameter is therefore the assignment **and its decoder**: a frame block
+   need not be decoded at all. The machine instance leaves the running activation's frame blocks
+   undecoded, so they are held pointers like `temp`, and `ι` puts them at `SP + frameOff`. The
+   windows stay fixed. Parametric windows, which would give frame variables machine integer
+   addresses, are a later step (see 5).
+1. **Parameter.** It is an instance-implicit class `Addrs` (`GoFV/SSA/Sem/Val.lean`), not an
+   `Env` field. The readers (`Ptr.word`, `Val.retype`, `hasTy`, `decode`, `Mem.load`, `ptrRes`,
+   …) are pure helpers that take no `Env`. A class keeps every statement's text: modules declare
+   `variable [Addrs]`, and executables use `open scoped GoFV.SSA.Sem.Fixed`. There is no global
+   instance, so a checker cannot depend on the assignment by accident: its build fails. Fields:
+   - data: `baseOf : Blk → Option Nat`, `decode : BitVec 64 → Ptr`, `callerSP : Nat → BitVec 64`
+     (`GetCallerSP`);
+   - admissibility, proved once per instance:
+     - `baseOf_nil`/`_heap`/`_global`/`_wbuf`: `nil ↦ 0`, `heap n ↦ (n+1)·2^40`, globals and
+       the write-barrier buffer `none`;
+     - `decode_low`: below `2^62` the decoder is #156's (nil page, heap);
+     - `decode_high`: from `2^62` up it gives `outargs`/`local` blocks (no `temp`);
+     - `decode_addr`: the decoded pointer has that address;
+     - `decode_inWindow`: the decoded pointer is inside its window;
+     - `decode_add`: arithmetic inside a decoded window is integer arithmetic.
 
-   It is a field of `Env`, read by:
-   - `Ptr.addr?`, `Ptr.ofAddr`, `Ptr.word`, `Ptr.convertible`, `Val.asPtrWord`, `ptrRes`,
-     `wordRes`, `offPtr`;
-   - the `Arm64` ops `add`, `sub`, `addP`, `addr` and the pointer compares.
-
-   The default `Env.addr` is today's `Blk.base?`, so executables (`gofv-ssa-opt`, `gen-check`)
-   do not change.
+   `Blk.base?`, `Ptr.addr?` and `Ptr.ofAddr` keep their names (they read the instance).
+   `Ptr.convertible p := (p.addr?.map ofAddr) = some p`, as in #607, so `held`, `word`, `retype`
+   and `asPtrWord` follow. `Addrs.fixed` (`Sem/Addrs.lean`) is #156's assignment.
+   `Ptr.convertible_fixed` proves that at `Addrs.fixed` it is #607's bounds condition
+   (`Ptr.fixedConvertible`), so every executable computes what it computes today.
 2. **Statements that change.**
-   - Every Phase 1/2 theorem quantified over `env` holds for every admissible `env.addr`.
-     Statements keep their shape; lemmas that unfold `Blk.base?`/`Ptr.ofAddr` take admissibility
-     instead. This touches 45 modules / 225 sites: `SSA/Sem` 15, `Proof/Pass` 26, `Opt` 17,
-     `Proof/Rules` + `Proof/Low` 13, `Proof` 10, `Proof/Gen` 7.
-   - Phase 3: `AddrAgree ι` becomes `∀ b, env.addr b = ι b` for blocks with an address. This
-     covers the frame blocks, so `NotTemp` drops out.
-   - `MatchEnv` instantiates `env.addr` with `SP + frameOff` for this activation's `local`,
-     `outargs` and `temp`, and `CallSpec` extends it for the callee's frame.
-   - `g*_value` gain no premise; their `env` is the instantiated one.
-3. **Migration order.**
-   1. `SSA/Sem` definitions and their round-trip lemmas (`ofAddr_addr`, `addr_ofAddr`, window
-      facts) under admissibility.
-   2. The Phase 1 pass proofs in dependency order (`Proof/Pass`, then `Proof/Rules`/`Low`).
-   3. Phase 2 (`TabsAgree*`, `MemInv`, `DeferRel`).
-   4. Phase 3 `Rel`/`Value`/`Mem` (`AddrAgree` → equality with `env.addr`), then G1–G15
-      unchanged above `Rel`.
+   - Every Phase 1/2/3 theorem gains `[Addrs]`. That is a generalisation with no new premise,
+     because admissibility is in the class. `verifiedPipeline_refines`,
+     `verifiedPipelineFull_refines` and `verified_mach` keep their text. Their old forms
+     are the instances at `Addrs.fixed`: `verifiedPipeline_refines_fixed`,
+     `verifiedPipelineFull_refines_fixed` and `verified_mach_fixed` state them without the
+     parameter.
+   - Internal lemmas that compute a fixed address become generic, or move to the
+     fixed-instance witnesses:
+     - `Ptr.word_outargs` → `Witness/ExpandCalls`;
+     - the `ecsSlot` words in `ECStack`/`ECStackRes`;
+     - `MoveLPairMem.ofAddr_adj`, `CSEMemChain.addr_ofAddr`, `NilLateLEval.ofAddr_nil`,
+       `G7.ofAddr_off_nil`;
+     - `Ptr.convertible_add` and `Ptr.convertible_eq_of_blk` now follow from `decode_add`.
+   - Phase 3: `AddrAgree ι` keeps its text, and `Blk.base?` now reads the instance. Every
+     non-`temp` block with an address sits at its address. A narrower version that pinned only
+     decoded blocks would have strengthened `SubOK`, a premise of `verified_mach`, at
+     `Addrs.fixed`, so it is not used. The machine instance satisfies `AddrAgree` because its
+     bases for the running frame are `SP + frameOff` themselves.
+   - **Correction:** the checkers do read the assignment. `RewriteCheck.termConst` evaluates
+     term nodes on constants (`opVal` → `evalPure`: `OffPtr`, `Convert`, `EqPtr`, …, then
+     `retype`), and the checker modules that call it (`RewriteCheck`, `LowerCheck`,
+     `SccpCheck`, `ProveCheck`, … about 35) declare `variable [Addrs]`. The executables run them
+     at `Addrs.fixed`, so their verdicts are today's. Relating a verdict at `Addrs.fixed` to
+     the machine instance is item 6.
+3. **Migration and staging.** The class sits at the root of the import graph, so one PR: the
+   specialisation lemma, `SSA/Sem`, `Proof/PtrAddr`/`Retype`, the Phase 1 passes and rules,
+   Phase 2, Phase 3 (`Rel`, `Value`, `Mem`, `G*`, `Obj`), then the witnesses and tests at
+   `Addrs.fixed`. Splitting it would leave a main that does not build.
+4. **The machine instance (follow-up slices, not this PR).** `Addrs.mach a base callerSP`
+   for the running activation `a`:
+   - its `local`/`temp`/`outargs` blocks at `base` (`SP + frameOff`, `outargs ↦ SP`);
+   - the fixed region of `a` decoded as activation `a + 2^22`, which `Addrs.fixed` never decodes;
+     those fictitious blocks keep the fixed bases;
+   - every other block and address as in `Addrs.fixed`;
+   - `callerSP a` genssa's `LoweredGetCallerSP`.
 
-   Each step builds on its own: steps 1–3 keep `env.addr := Blk.base?` at every use until step 4
-   instantiates it.
-4. **Slices it unlocks.**
+   It is admissible by the fixed proofs plus the renaming. Under it, `outargs a` and every
+   `PPARAM`/`PPARAMOUT` `local a k` are held pointers, `ι` is free on them, and `Convert` of
+   one is `poison`: option 1's guard, now semantic.
+5. **Slices it unlocks, and coverage.** Phase 1/2 counts do not move: executables run
+   `Addrs.fixed`, so sem-difftest and full-v9 are identical.
    - **G16+, stack arguments.**
      - `SP` as a no-code value outside the entry prefix.
-     - SP-relative stores and pair stores at the checked outgoing offsets, the injection
-       `outargs ↦ SP` with a poison prefix `[0, 8)` exempted from `SepFrom`.
-     - `CallSpec` relating the stack arguments by `MemInj`; the callee's `decodeArgs` reads them
-       there.
+     - SP-relative stores and pair stores at the checked outgoing offsets, and `outargs ↦ SP`
+       with the poison prefix `[0, 8)` exempted from `SepFrom`.
+     - `CallSpec` relating the stack arguments by `MemInj`; the callee's `decodeArgs` reads
+       them there.
      - Expected: the 10 sole functions, and up to 308 together with other slices.
    - **Frame parameters and results.**
      - `frameVar?` for `.PARAM` operands, and `varWin` in the caller's argument area.
      - Disjointness from `PARAM` home slots, with a checked entry-store prefix materialising
        register parameters whose address is taken (`XChan.Send`: `MOVD R1, x+8(FP)`).
-     - Expected: 89 sole, 294 occurs. Integer addresses add 11 sole and 197 occurs.
-5. **Interaction with the 1183/1184 experiment** (`agent/p2p1183`). It redefines
-   `Ptr.convertible` as the `ofAddr` round trip (with `a < 3·2^20`), makes `Ptr.word` poison
-   outside the window, and adds `Ptr.held` to `hasTy`. Option 2 should start from it once it
-   lands:
-   - "convertible = round trip" is exactly the property admissibility must provide, so
-     convertibility becomes a consequence of `env.addr` rather than a second fixed table;
-   - starting before it lands would make both refactors edit the same definitions (`Ptr.word`,
-     `Ptr.convertible`, `asPtrWord`) and their 26 `Proof/Pass` users.
+     - Expected: 89 sole, 294 occurs.
+   - **Integer frame addresses** (11 sole, 197 occurs) stay partly blocked. Under `Addrs.mach`
+     their `Convert` is `poison`, which covers a function whose integer is not branched on.
+     Full coverage needs per-block windows in `Addrs`.
+6. **Independence of the checkers from the assignment (`verifiedPipelineFull_indep`).** The
+   executables compute `@verifiedPipelineFull Addrs.fixed`; `verified_mach` at the machine
+   instance (item 4) needs the verdict at that instance. The goal is
+   `@verifiedPipelineFull A env f s zv dcl = @verifiedPipelineFull Addrs.fixed env f s zv dcl`
+   for every `A`. It is **not provable as the checkers stand**: on an integer word
+   `x ≥ 2^62`, `Ptr.ofAddr x` depends on the instance (`decode_high` fixes only the block kind),
+   so `wordRes x k` of `OffPtr [k] (Const64 [x])` can be `poison` under one instance and an
+   integer under another, and `Convert`/`EqPtr` likewise. A rewrite on such a constant can be
+   accepted under one instance and rejected under the other. Plan:
+   1. **Guard (the one checker change).** In `termConst`, a 64-bit integer that an op reads as
+      a pointer (`OffPtr`, `AddPtr`, `Convert`, `EqPtr`/`NeqPtr`, `IsNonNil`, the loads) is a
+      constant only below `2^62`; above, `termConst` gives `none` and the checker treats the
+      value symbolically. Constants that high come only from frame addresses, which no
+      constant names (`termOp` excludes `SP` and `LocalAddr`), so Phase 1 and through-trim
+      counts on the full corpus should not move; measure them.
+   2. **Agreement lemma.** `LowVal v`: `v` holds no pointer into a frame block (`local`,
+      `temp`, `outargs`), and its pointer-read integers are below `2^62`. On `LowVal`
+      arguments, `evalPure`, `retype`, `hasTy`, `Ptr.word`, `Mem.load` agree between any `A`
+      and `Addrs.fixed`, and the result is `LowVal`. Ingredients: the `baseOf_*` fields
+      (nil, heap, globals, the write-barrier buffer) are the same in every instance,
+      `decode_low`, and `Ptr.convertible_eq_fixed` (nil and heap pointers convert under every
+      instance exactly when they do under `Addrs.fixed`; a heap pointer whose address would
+      reach `2^62` converts under none, by `decode_high`).
+   3. **Congruence.** `termConst_indep` by induction on the fuel, from 2: SSA constants
+      (`Const*`, `ConstNil`, `ConstString`, `Addr` of a global) are `LowVal`. Then one
+      `*_indep` lemma per checker module that reads the instance, by rewriting with
+      `termConst_indep` and the agreement lemma at its other uses (first list them: a module
+      whose only instance use is through `termConst` gets its lemma by `simp only`), then
+      `verifiedPipelineFull_indep` by unfolding `runPasses`/`runPassesL` over the pass tables.
+   4. **Use.** `verified_mach_ofFixed`: a verdict at `Addrs.fixed` (what `gofv-ssa-opt`
+      computes) gives `verified_mach` at `Addrs.mach`.
+
+   The alternative, checkers that evaluate at `@… Addrs.fixed` with the guard (so
+   independence is `rfl` and the agreement lemma moves into each checker's soundness proof
+   where its constant meets the semantics' value), is the fallback if step 3 needs more than a
+   few modules with uses outside `termConst`.
+7. **Slice plan: calls with stack arguments and stack results.** Rejected today by `callRegs`
+   (`Gen/Check2.lean:104-112`: `stack argument`, `stack result`; G15's `callRegsZ` drops only
+   zero-sized stack inputs). After G15: 308 functions, 10 where it is the only reason. Phase
+   1: the caller stores each stack argument into its `outargs a` block at `ABIParam.offset`
+   (which includes the fixed frame word, so `≥ 8`) through `OffPtr [o] SP`; the callee reads it
+   there (`decodeArgs`, `Sem/Run.lean:613-625`), and `encodeResults` writes stack results there.
+   - **Instance and environment.** At `Addrs.mach a E.sp …`, `Blk.base? (.outargs a) =
+     some E.sp` and `outargs a` is undecoded (held, `Convert` of it `poison`). New
+     `MatchEnv` invariant `SPAt E`: `E.ι (.outargs E.act) = some E.sp`, which with `AddrAgree`
+     is the instance's base. `outargs a` is live with size `outargsSize`.
+   - **`SP`.** A no-code value anywhere, holding `.ptr ⟨outargs a, 0⟩` with no X register
+     (the `SP after the entry values` slice, G24, which needs no option 2).
+   - **SP-based accesses.** `MOVDstore [o] SP x` (and the narrow, pair and float forms)
+     store through `⟨outargs a, o⟩`; the machine address `m.sp + o = E.sp + o` by `FrameRel` and
+     `SPAt`. G3's store lemma with this base, as G6 does for frame variables. Loads of stack
+     results after the call likewise. The checker requires `8 ≤ o` and
+     `o + size ≤ outargsSize`.
+   - **The `[0, 8)` prefix.** The `outargs` block starts at `SP`, where the saved `LR` lies
+     (`StkAt`), so `SepFrom` fails as stated (`Proof/Gen/G1.lean:62-64` excludes whole
+     blocks). Change `SepFrom` to exempt the bytes `[0, 8)` of `outargs E.act`, with the
+     invariant `OutPoison`: those bytes are `poison` in Phase 1 (`frameAllocs` allocates
+     `outargs` as poison; every store to it is at `o ≥ 8`, by the check above and by
+     `ABIParam.offset ≥ 8` for the callee's `encodeResults`). `BytesRel` relates poison to any
+     machine byte, so `MemInj` holds with the saved `LR` there.
+   - **Layout check.** `[SP + 8, SP + outargsSize)` is disjoint from the spill slots and the
+     `AUTO` windows (`frameOff .AUTO`), from `Link.autosize`/`extrasize`.
+   - **Call contract.** `CallSpec` (`Proof/Gen/G2.lean:90-100`) keeps its text: the callee's
+     stack arguments are bytes of `mm` that `MemInj` already relates to `m.mem` at
+     `E.sp + offset`, and its conclusion `MemInj ι' mm' m'.mem` covers stack results. The
+     trusted premise gains a variant `CallOKS` (as G15's `CallOKZ`) over `callRegsS`, which
+     accepts stack inputs and outputs: the hook reads stack arguments at `m.sp + offset` and
+     writes stack results there, as `decodeArgs`/`encodeResults` do at `outargs a`.
+   - **Theorems.** `gN_value`/`gN_term`/`gN_nilPanic`/`gN_boundsPanic` over `checkGN` with
+     `CallOKS` and `SPAt`, generic in `[Addrs]` with the premise
+     `Blk.base? (.outargs E.act) = some E.sp.toNat`; witness at `Addrs.mach` once it exists,
+     else on a function whose stack arguments are written and read at the decoded addresses
+     of `Addrs.fixed`.
+8. **Slice plan: frame parameters and results (`.PARAM` operands).** Rejected today by
+   `frameVar?` (`Gen/Check6.lean:57-68`: `frame variable operand class`; after G23 95
+   functions where it is the only reason, 294 where it occurs). Phase 1 gives every
+   `PPARAM`/`PPARAMOUT` a `local a k` block (`Tables.forgeable`, `frameBlk`), initialised from
+   the input argument (`frameAllocs`). Genssa addresses them at the caller's argument area,
+   `SP + autosize + 8 + off` (`frameOff .PARAM`, `Proof/Gen/Progs2.lean:21-24`).
+   - **Instance.** At `Addrs.mach`, `Blk.base? (.local a k) = some (E.sp + autosize + 8 + off_k)`
+     for each parameter `k`, undecoded. `MatchEnv` invariant `ParamAt E`: `E.ι` agrees.
+   - **Checker.** `frameVar?` accepts `(.PARAM, off)` for a parameter without `addrconv` (one
+     whose address becomes an integer stays blocked, as item 5's integer frame addresses);
+     `varWin` returns `(off, off + sz)` for `.PARAM` too, inside the function's
+     own argument area (`[0, argsize)` from its ABI) and disjoint from every home slot,
+     including the `.PARAM` homes `checkFrame` already accepts (`checkVars` compares only
+     with `.AUTO` homes today).
+   - **Entry.** Stack-assigned parameters are already at their address when the function is
+     entered: the caller stored them (the stack part of `CallOKS`, from the callee's side).
+     A register parameter whose address is taken is materialised by genssa's entry stores
+     (`MOVD R1, x+8(FP)`, `XChan.Send`). The checker requires a prefix of the entry block that
+     stores each such parameter's register to its window before any other access to it.
+     `EntryMatch` (`Proof/Obj/Whole.lean:613-619`) gains `ParamMem`: `MemInj` over the
+     parameter blocks, for the stack-assigned ones at entry, for the register ones after the
+     prefix; the prefix lemma turns the second into the first.
+   - **Results.** `PPARAMOUT` blocks are read by `MakeResult` into the result registers
+     (register results) or written to the caller's `outargs` (stack results, item 7's
+     `encodeResults`); a result variable accessed through its `.PARAM` operand is covered by
+     the same window, its `MakeResult` load by G6's load lemma at that base.
+   - **Theorems.** As item 7, with `ParamAt` and `ParamMem` as premises at entry, discharged
+     at `Addrs.mach` by `verified_mach`'s composition; witness on `XChan.Send`.
 
 **Plan for `MOVDnop`, which needs no option 2.** G20 and G21 (§4) are the first step: their table
 `uAt` has an entry only directly after a narrow load, so no slice has to say which registers it

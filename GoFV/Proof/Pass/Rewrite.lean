@@ -17,6 +17,8 @@ import GoFV.Proof.RoImage
 import GoFV.Proof.Rules.Proven
 import GoFV.Opt.Opt
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The checked rewrite passes refine their input (issue #113)
 

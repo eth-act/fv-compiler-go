@@ -1,6 +1,8 @@
 import GoFV.SSA.Sem.RunL
 import GoFV.Proof.Witness.Early
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: `runL_generic` on `clamp`
 

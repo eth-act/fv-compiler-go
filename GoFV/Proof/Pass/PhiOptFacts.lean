@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.PhiOptRel
 import GoFV.Proof.DomCert
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # phiopt's checker: what its parts say
 

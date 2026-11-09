@@ -4,6 +4,8 @@ import GoFV.Opt.NilLateCheck
 import GoFV.Proof.CheckFacts
 import GoFVTest.Parity.Compare
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `lake exe nillate-probe [--jobs n] <dir>...`: `nilLateB` on the corpus
 

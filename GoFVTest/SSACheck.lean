@@ -2,6 +2,8 @@ import GoFV.SSA.Parse
 import GoFV.SSA.Check
 import Std.Data.HashMap
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `ssa-check`
 

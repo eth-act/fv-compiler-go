@@ -5,6 +5,8 @@ import GoFV.SSA.Sem.Conv
 import GoFV.SSA.Sem.Ptr
 import GoFV.SSA.Sem.Float
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `evalPure`: the pure ops (`docs/plans/semantics.md` §4)
 

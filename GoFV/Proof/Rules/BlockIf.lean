@@ -2,6 +2,8 @@ import GoFV.Proof.Rules.Tactic
 import GoFV.Proof.Rules.Block
 import GoFV.Rules.Generated.Generic.Blocks
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Block rule lemmas: `If` rules
 

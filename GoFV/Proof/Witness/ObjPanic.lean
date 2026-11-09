@@ -5,6 +5,8 @@ import GoFV.Proof.Witness.GenG10
 import GoFV.Proof.Witness.GenG21
 import GoFV.Proof.Witness.GenG38
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witnesses: panics down to the machine words (`obj_whole_panic`, `g44_callPanic`)
 

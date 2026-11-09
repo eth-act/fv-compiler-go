@@ -1,6 +1,8 @@
 import GoFV.SSA.Export
 import GoFV.SSA.Sem.Mem
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Type shapes (`docs/plans/semantics.md` §3.1)
 

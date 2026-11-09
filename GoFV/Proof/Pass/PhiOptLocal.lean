@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.PhiOptCore
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # phiopt: each target value evaluates to its reference register
 

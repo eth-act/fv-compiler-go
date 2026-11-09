@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G39
 import GoFV.Proof.Witness.GenG13
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G39 of the genssa validator on `strings.HasSuffix`
 

@@ -3,6 +3,8 @@ import GoFV.SSA.Check
 import GoFV.Opt.Prove.Pass
 import GoFV.Opt.ProveCheck.Check
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `prove-probe`: what stock prove rewrites (issue #24)
 

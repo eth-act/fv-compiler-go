@@ -1,5 +1,7 @@
 import GoFV.Asm.CheckObjLink
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # What a symbolic effect says about machine states (`docs/plans/proofs3.md` §6)
 

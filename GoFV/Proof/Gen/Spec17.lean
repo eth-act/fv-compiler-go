@@ -1,6 +1,8 @@
 import GoFV.Gen.Check17
 import GoFV.Proof.Gen.Spec16
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # What the genssa validator's slice G17 accepted (`docs/plans/proofs3.md` §4)
 

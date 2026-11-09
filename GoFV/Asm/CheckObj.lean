@@ -1,5 +1,7 @@
 import GoFV.Asm.CheckObjSym
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `checkObj`: the assembler validator (`docs/plans/proofs3.md` §2, row D2–D5)
 

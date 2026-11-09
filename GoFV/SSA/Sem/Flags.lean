@@ -1,6 +1,8 @@
 import GoFV.SSA.Op
 import GoFV.SSA.Sem.Val
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Condition flags of lowered arm64 SSA (`docs/plans/semantics2.md` §3, §5)
 

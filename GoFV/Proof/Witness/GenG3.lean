@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G3
 import GoFV.Proof.Witness.GenG2
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G3 of the genssa validator on `pallocSum.start`
 

@@ -1,6 +1,8 @@
 import GoFV.Opt.RewriteCheck
 import GoFV.Rules.Generated.Generic
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Load-of-Store forwarding rules (issue #151)
 

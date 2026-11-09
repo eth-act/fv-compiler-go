@@ -3,6 +3,8 @@ import GoFV.Proof.FrameL
 import GoFV.Proof.SimL
 import GoFV.Proof.CongL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `late nilcheck` under `runSched`: the relation the validator decides
 

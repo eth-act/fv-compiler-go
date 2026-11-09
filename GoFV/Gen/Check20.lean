@@ -1,5 +1,7 @@
 import GoFV.Gen.Check19
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The genssa validator, slice G20: `MOVDnop` after its narrow load (`docs/plans/proofs3.md` §4, §8)
 

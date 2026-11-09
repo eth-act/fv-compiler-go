@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G25
 import GoFV.Proof.Witness.GenG24
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G25 of the genssa validator on `reflect.flag.ro`
 

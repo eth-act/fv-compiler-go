@@ -1,6 +1,8 @@
 import GoFV.Opt.KnownBitsCheck
 import Lean
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Known bits on 64-bit patterns (issue #26)
 

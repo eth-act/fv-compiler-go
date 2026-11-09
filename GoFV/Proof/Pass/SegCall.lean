@@ -36,6 +36,10 @@ set_option Elab.async false
 namespace GoFV.Proof.Seg
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt.MemCall
 
+section
+
+variable [GoFV.SSA.Sem.Addrs]
+
 /-! ## `callOp` of a static call -/
 
 /-- The ABI parameter assignments of call `v` (none without an ABI). -/
@@ -492,6 +496,10 @@ theorem callOp_memmove_not_panic {env : Env} (hE : env.MemOps) {ctx : Ctx} {v : 
   obtain rfl := (hE.atAct ctx.act).2 c hx
   simp only [Runtime.memmove, Runtime.ok?] at hr
   split at hr <;> cases hr
+
+end
+
+open scoped GoFV.SSA.Sem.Fixed
 
 /-! ## Non-vacuity -/
 

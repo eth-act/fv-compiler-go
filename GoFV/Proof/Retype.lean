@@ -12,19 +12,28 @@ shapes have the same values and retype alike (`Val.hasTy_ptr_eq_i64`, `Val.retyp
 
 namespace GoFV.SSA.Sem
 
+section
+
+variable [Addrs]
+
 /-! ## Words -/
 
 /-- A pointer that converts to an integer has a concrete address. -/
 theorem Ptr.addr?_isSome_of_convertible {p : Ptr} (h : p.convertible = true) :
     p.addr?.isSome = true := by
-  rcases p with ⟨b, off⟩
-  cases b <;> simp_all [Ptr.convertible, Ptr.addr?, Blk.base?]
+  unfold Ptr.convertible at h
+  split at h
+  · rename_i x hx; rw [hx]; rfl
+  · cases h
 
-/-- A pointer that converts to an integer lies inside its window. -/
+/-- A pointer that converts to an integer lies inside its window (it is the pointer at its
+address, `Addrs.decode_inWindow`). -/
 theorem Ptr.inWindow_of_convertible {p : Ptr} (h : p.convertible = true) :
     p.inWindow = true := by
-  rcases p with ⟨b, off⟩
-  cases b <;> simp_all [Ptr.convertible, Ptr.inWindow, Blk.window?]
+  unfold Ptr.convertible at h
+  split at h
+  · rw [← beq_iff_eq.1 h]; exact Addrs.decode_inWindow _
+  · cases h
 
 /-- A pointer at offset 0 lies inside its window (every window is positive). -/
 theorem Ptr.inWindow_zero (b : Blk) : (⟨b, 0⟩ : Ptr).inWindow = true := by
@@ -92,7 +101,8 @@ theorem Ptr.word_eq_int {p : Ptr} {w : Width} {y : BitVec w.bits} (h : p.word = 
   rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ | ⟨-, h⟩ <;> rw [h] <;> nofun
 
 /-- The nil pointer's word is address 0. -/
-theorem Ptr.null_word : Ptr.null.word = .int .w64 0 := rfl
+theorem Ptr.null_word : Ptr.null.word = .int .w64 0 := by
+  simp [Ptr.word, Ptr.null, Ptr.addr?]
 
 /-- A pointer held as a pointer is its own word. -/
 theorem Ptr.word_of_held {p : Ptr} (h : p.held = true) : p.word = .ptr p := by
@@ -465,8 +475,11 @@ theorem Ptr.word_of_addr_none {p : Ptr} (h : p.addr? = none) (hw : p.inWindow = 
     p.word = .ptr p := by
   simp [Ptr.word, h, hw]
 
+end
 
 /-! ## Witnesses -/
+
+open scoped Fixed
 
 /-- `Val.hasTy_str` applies to a defined string of length 3 (and a negative length is not a
 string: it retypes to `poison`). -/
@@ -489,7 +502,7 @@ example : (Val.agg [.ptr Ptr.null, .int .w64 5, .int .w64 2]).retype (.slice (so
 /-- A convertible pointer retypes to its address at a pointer shape (`⟨heap 0, 8⟩` is at
 `2^40 + 8`), and a global stays a pointer at both word shapes. -/
 example : (Val.ptr ⟨.heap 0, 8⟩).retype (.ptr none) = .int .w64 (2 ^ 40 + 8) := by
-  simp [Val.retype, Ptr.word, Ptr.convertible, Ptr.addr?, Blk.base?]; decide
+  simp [Val.retype, Ptr.word, Ptr.addr?]; decide
 
 example : (Val.ptr ⟨.global "s", 0⟩).retype (.int .w64) = .ptr ⟨.global "s", 0⟩ := rfl
 

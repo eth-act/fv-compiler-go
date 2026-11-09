@@ -1,6 +1,8 @@
 import GoFV.Opt.LowerCheck
 import GoFV.Proof.Pass.MoveLCheck
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The `pair` validator (`pairB`, issue #385)
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.LoadFwdDrop
 import GoFV.Proof.Pass.SegCall
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Changed `Move` sources: the memory facts (issue #151)
 

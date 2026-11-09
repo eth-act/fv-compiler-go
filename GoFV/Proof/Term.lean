@@ -3,6 +3,8 @@ import GoFV.Proof.Retype
 import GoFV.Opt.RewriteCheck
 import GoFV.Proof.Rules.OpVal
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Values as terms over atoms (issue #113)
 

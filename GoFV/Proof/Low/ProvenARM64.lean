@@ -25,6 +25,8 @@ import GoFV.Proof.Low.Rules.SetOpInt
 import GoFV.Proof.Low.Rules.Shift
 import GoFV.Proof.Low.Rules.ShiftOp
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The proven `ARM64.rules` rule set is sound (issue #385)
 

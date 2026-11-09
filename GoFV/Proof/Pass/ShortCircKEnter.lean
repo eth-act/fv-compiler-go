@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.ShortCircKBlock
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Checked `shortcircuitBlock`: a checked block's entry
 

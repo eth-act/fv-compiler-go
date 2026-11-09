@@ -1,6 +1,8 @@
 import GoFV.Proof.Frame
 import GoFV.Proof.Eval
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Unchanged blocks in frames that differ on unread values
 

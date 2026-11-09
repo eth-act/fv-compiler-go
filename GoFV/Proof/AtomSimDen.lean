@@ -2,6 +2,8 @@ import GoFV.Proof.Term
 import GoFV.Proof.Sim
 import GoFV.Proof.Eval
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Registers as terms over the atoms (issue #113)
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.RefineL
 import GoFV.Proof.Witness.Clamp
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function: lowered `clamp`
 

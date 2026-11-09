@@ -4,6 +4,8 @@ import GoFV.SSA.Check
 import GoFV.Opt.CopyRelCheck
 import GoFV.Proof.Pass.DeadEdgeVal
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # sccp's checker
 

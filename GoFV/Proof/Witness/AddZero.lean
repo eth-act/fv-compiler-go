@@ -6,6 +6,8 @@ import GoFV.Proof.Rules.Add6
 import GoFV.Proof.Rules.AllSound
 import GoFV.Proof.Witness.Util
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for the rewrite passes: `addZero` (hand-written)
 

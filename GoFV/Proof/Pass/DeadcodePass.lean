@@ -3,6 +3,8 @@ import GoFV.Proof.Pass.DeadFrag
 import GoFV.Proof.Pass.DeadTail
 import GoFV.Proof.Pass.CopyElimWF
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # deadcode refines its input (all five instances)
 

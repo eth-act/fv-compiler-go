@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerNarrowArgs
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness functions for `lower`'s bit-field peepholes and byte swaps: `bfx`, `bfm`, `bsw` (hand-written, issue #385)
 

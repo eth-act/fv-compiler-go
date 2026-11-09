@@ -1,6 +1,8 @@
 import GoFV.Proof.Block
 import GoFV.Proof.Sched
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Frames: what one block entry changes
 

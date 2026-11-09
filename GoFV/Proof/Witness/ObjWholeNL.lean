@@ -1,6 +1,8 @@
 import GoFV.Proof.Witness.ObjWhole
 import GoFV.Proof.Witness.GenG30
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: a function with no arm64 op down to the machine words (`obj_whole_ret`)
 

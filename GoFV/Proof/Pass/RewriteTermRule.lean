@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.RewriteTermPat
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # A validated rule event (issue #113)
 

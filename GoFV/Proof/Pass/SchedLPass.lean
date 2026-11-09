@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.SchedLSim
 import GoFV.Opt.Schedule
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `schedule` refines its input (`schedule_refinesSchedLF`, issue #385)
 

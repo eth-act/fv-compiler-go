@@ -2,6 +2,8 @@ import GoFV.Proof.Gen.G6
 import GoFV.Proof.Gen.Spec7
 import GoFV.Proof.Gen.Progs7
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of the genssa validator's slice G7: nil checks (`docs/plans/proofs3.md` §4)
 
@@ -245,15 +247,7 @@ def G7Pre (lc : LocCtx) (s : LocState) (v : Value) : Prop := G4Pre lc s v ∧ Ni
 
 /-- An integer address in the nil block is that block at the address. -/
 theorem ofAddr_off_nil {k : BitVec 64} (h : (Ptr.ofAddr k).blk = .nil) : (Ptr.ofAddr k).off = k := by
-  unfold Ptr.ofAddr at h ⊢
-  dsimp only at h ⊢
-  split
-  · rfl
-  · rename_i h1
-    simp only [h1, ↓reduceIte] at h
-    split at h
-    · cases h
-    · split at h <;> cases h
+  rw [Ptr.ofAddr_eq_nil h]
 
 /-- The nil pointer (as a pointer or as the integer 0) is the machine word 0. -/
 theorem nil_word {ι : Blk → Option (BitVec 64)} (h0 : ι .nil = some 0) {x : Val} {X : BitVec 64}

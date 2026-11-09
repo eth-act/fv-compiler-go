@@ -1,6 +1,8 @@
 import GoFV.SSA.Sem.Cmp
 import GoFV.SSA.Sem.Mem
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Integer conversions, constants, tuples (`docs/plans/semantics.md` §4.5, §4.8)
 -/

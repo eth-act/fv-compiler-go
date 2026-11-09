@@ -3,6 +3,8 @@ import GoFV.SSA.Check
 import GoFV.Proof.Pass.CopyElimPassL
 import GoFV.Proof.Pass.DeadcodePassL
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `lake exe lowfrag-probe [--shard i/n] <dir>...`: coverage of the lowered copyelim and deadcode theorems
 

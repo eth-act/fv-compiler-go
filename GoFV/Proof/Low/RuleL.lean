@@ -2,6 +2,8 @@ import GoFV.Opt.RewriteCheck
 import GoFV.Opt.LowerTerm
 import GoFV.Rules.Derive
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The obligation of an `ARM64.rules` / `ARM64latelower.rules` rule (issue #385)
 

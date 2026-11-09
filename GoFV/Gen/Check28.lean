@@ -1,5 +1,7 @@
 import GoFV.Gen.Check27
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The genssa validator, slice G28: `LoweredMemEq` (`docs/plans/proofs3.md` §4)
 

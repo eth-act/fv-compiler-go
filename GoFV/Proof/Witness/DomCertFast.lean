@@ -1,6 +1,8 @@
 import GoFV.Proof.Witness.Max3
 import GoFV.SSA.DomCert
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: the compiled forms of the dominator certificate
 

@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.PairL
 import GoFV.Proof.Witness.LowerLoadStore
 import GoFV.Proof.Witness.LowCong
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: `pair` on lowered loads and stores
 

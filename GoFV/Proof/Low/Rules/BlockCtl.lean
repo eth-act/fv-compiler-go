@@ -1,5 +1,7 @@
 import GoFV.Proof.Low.Rules.BlockFlags
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowering rule lemmas: block rules that build a new control (`ARM64.rules:558-561`, `603`, `604`)
 

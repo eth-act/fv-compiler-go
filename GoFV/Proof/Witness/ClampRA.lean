@@ -1,6 +1,8 @@
 import GoFV.Proof.RefineLoc
 import GoFV.Proof.Witness.ClampL
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function: `clamp` before and after `regalloc`
 

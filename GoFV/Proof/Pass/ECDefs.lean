@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.ECRel
 import GoFV.Opt.ExpandCallsCheck
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The conversion of `expand calls` (issue #28)
 

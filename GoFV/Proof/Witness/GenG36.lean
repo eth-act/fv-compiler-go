@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G36
 import GoFV.Proof.Witness.GenG13
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G36 of the genssa validator on `encoding/hex.DecodedLen`
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.Step3
 import GoFV.Gen.Check4
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `stepLoc` on each op of slice G4 (`docs/plans/proofs3.md` §4)
 

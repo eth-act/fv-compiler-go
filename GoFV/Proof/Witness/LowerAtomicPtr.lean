@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerAtomicRmw
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower` on a pointer's atomic store: `asp` (hand-written, issue #385)
 

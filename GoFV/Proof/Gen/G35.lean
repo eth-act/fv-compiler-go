@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.Keep35
 import GoFV.Proof.Gen.Spec35
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of the genssa validator's slice G35: the upper-bit table across pair loads
 (`docs/plans/proofs3.md` §4)

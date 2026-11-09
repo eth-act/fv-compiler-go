@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.DAEAvoid
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dead auto elim: the pure ops keep values avoiding frame temporaries
 

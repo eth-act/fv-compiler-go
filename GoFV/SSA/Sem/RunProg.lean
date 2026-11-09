@@ -2,6 +2,8 @@ import GoFV.Asm.Prog
 import GoFV.Asm.Reg
 import GoFV.SSA.Sem.RunMach
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `runProg`: the machine whose instructions are Progs (`docs/plans/semantics3.md` §7)
 

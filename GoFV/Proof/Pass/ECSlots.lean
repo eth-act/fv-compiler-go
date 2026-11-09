@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.ECRel
 import GoFV.Proof.FrameKeep
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The result slots along the source's run (issue #28)
 

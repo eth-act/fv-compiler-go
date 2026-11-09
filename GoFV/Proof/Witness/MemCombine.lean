@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.MemCombine
 import GoFV.Proof.Witness.Clamp
 import GoFV.Proof.Witness.Util
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: memcombine on `encoding/binary.littleEndian.Uint16`
 

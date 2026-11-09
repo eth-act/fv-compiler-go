@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.SchedLRel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `schedule` on `runSched`: one block's values
 

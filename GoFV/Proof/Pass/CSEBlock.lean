@@ -3,6 +3,8 @@ import GoFV.Proof.Pass.CSEBlockSpec
 import GoFV.Proof.Sched
 import GoFV.Proof.Pass.CopyElimEnter
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # cse: one block's evaluation
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G33
 import GoFV.Gen.Check34
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The values G34's upper-bit table keeps its entries across write at most their home
 (`docs/plans/proofs3.md` §4)

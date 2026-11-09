@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G5
 import GoFV.Proof.Witness.GenG4
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G5 of the genssa validator on `g` of `test/stackobj`
 

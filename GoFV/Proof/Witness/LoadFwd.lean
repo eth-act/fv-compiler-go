@@ -1,6 +1,8 @@
 import GoFV.Proof.Witness.ConstString
 import GoFV.Proof.Rules.LoadFwd
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for Load-of-Store forwarding: `storeLoad` (hand-written, issue #151)
 

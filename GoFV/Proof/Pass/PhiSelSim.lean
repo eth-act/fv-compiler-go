@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.PhiSelRel
 import GoFV.Proof.Pass.ECIdent
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Selections of `Phi`s of `SliceMake`s refine their input (issue #69)
 

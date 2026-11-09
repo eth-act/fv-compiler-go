@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G37
 import GoFV.Proof.Gen.Spec38
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Slice G38 of the genssa validator: the acquire loads (`docs/plans/proofs3.md` §4)
 

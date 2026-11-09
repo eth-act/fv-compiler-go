@@ -1,5 +1,7 @@
 import GoFV.SSA.Sem.Val
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Decidable equality of type shapes
 

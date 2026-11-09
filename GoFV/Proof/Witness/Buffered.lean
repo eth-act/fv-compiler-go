@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.NilSim
 import GoFV.Proof.Witness.DecodedLen
 import GoFV.SSA.Check
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: nilcheckelim on `(*bufio.Reader).Buffered`
 

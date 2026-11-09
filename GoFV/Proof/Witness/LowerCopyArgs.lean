@@ -1,6 +1,8 @@
 import GoFV.Proof.Witness.LowerCallTrunc
 import GoFV.Proof.Witness.LowerCondSel
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness functions for `lower` reading narrowing copies at narrow shapes: `cpa`, `cpm` (hand-written, issue #385)
 

@@ -6,6 +6,8 @@ import GoFV.Opt.Licm
 import GoFV.Proof.Pass.LicmL
 import GoFVTest.Parity.Compare
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `lake exe move-probe [--jobs N] <dir|file>...`: the value-motion validator on the corpus
 

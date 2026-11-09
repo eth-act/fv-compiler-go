@@ -3,6 +3,8 @@ import GoFV.SSA.Sem.Cmp
 import GoFV.SSA.Sem.Mem
 import GoFV.SSA.Sem.Env
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Atomics, barriers, prefetch (`docs/plans/semantics.md` §9.5, phase P5)
 

@@ -4,6 +4,8 @@ import GoFV.Proof.Witness.DecodedLenCse
 import GoFV.Proof.Witness.Util
 import Std.Data.String.ToInt
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: generic cse on `decodedLen`
 

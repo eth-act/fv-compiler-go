@@ -1,6 +1,8 @@
 import GoFV.Opt.RegallocCheck
 import GoFV.Proof.RetypeL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Regalloc checker soundness, stages 1–2: locations and shapes (`docs/plans/regalloc-check.md` §6)
 

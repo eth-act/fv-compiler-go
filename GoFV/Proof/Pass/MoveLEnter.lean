@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.MoveLPhase
 import GoFV.Proof.AvailL
 import GoFV.Proof.DomRel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Related block entries for `refinesL_of_move`
 

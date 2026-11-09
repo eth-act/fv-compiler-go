@@ -3,6 +3,8 @@ import GoFV.Proof.Rules.NonVacuous
 import GoFV.Rules.Generated.Divmod.Values00
 import GoFV.Proof.Rules.DivmodUMagic
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Unsigned magic-number division rules of `divmod.rules` (#69)
 

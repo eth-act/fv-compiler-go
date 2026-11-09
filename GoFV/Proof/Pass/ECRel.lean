@@ -5,6 +5,8 @@ import GoFV.Proof.OrderRank
 import GoFV.Proof.RunMono
 import GoFV.Opt.MemTy
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The conversion simulation: relation and obligations (issue #28)
 

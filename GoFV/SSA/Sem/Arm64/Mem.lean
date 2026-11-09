@@ -1,5 +1,7 @@
 import GoFV.SSA.Sem.Arm64.Reg
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # arm64 memory ops on the Phase 1 memory (`docs/plans/semantics2.md` §4 (c.4))
 

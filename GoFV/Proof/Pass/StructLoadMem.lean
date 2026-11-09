@@ -2,6 +2,8 @@ import GoFV.Proof.Retype
 import GoFV.Proof.PtrAddr
 import GoFV.Opt.RewriteCheck
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Struct-load expansions: a struct's bytes are its fields' bytes (issue #151)
 

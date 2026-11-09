@@ -1,5 +1,7 @@
 import GoFV.Opt.Verified
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Why a deadcode or copyelim run is outside its fragment
 

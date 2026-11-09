@@ -2,6 +2,8 @@ import GoFV.Proof.Gen.G18
 import GoFV.Proof.Gen.Spec19
 import GoFV.SSA.Sem.Hooks
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of the genssa validator's slice G19: bounds panics (`docs/plans/proofs3.md` §4)
 

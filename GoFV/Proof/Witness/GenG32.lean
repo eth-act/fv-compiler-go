@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G32
 import GoFV.Proof.Witness.GenG13
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G32 of the genssa validator on `or64` and `runtime.funpack64`
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.TabsAgreeModMem
 import GoFV.Proof.Pass.DAECall
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Running in tables with extra frame temporaries: ops on related memories
 

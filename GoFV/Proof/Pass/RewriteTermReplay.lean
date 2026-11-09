@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.RewriteTermStep
 import GoFV.Proof.Rules.AllSound
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Replaying the log refines the denotations (issue #113)
 

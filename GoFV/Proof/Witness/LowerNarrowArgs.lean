@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerTrunc
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness functions for `lower` reading narrow arguments: `nsel`, `nchn`, `ntst`, `nand` (hand-written, issue #385)
 

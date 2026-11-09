@@ -2,6 +2,8 @@ import GoFV.Asm.Parse
 import GoFV.SSA.Sem.RunProg
 import Std.Data.HashMap
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `arm64-decode`: the Prog semantics against the machine on the asm sections (issue #552)
 

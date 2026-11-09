@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.FwdMalloc
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for the length of a `growslice` result (`generic.rules:2128`, issue #69)
 

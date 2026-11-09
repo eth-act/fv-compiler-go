@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G8
 import GoFV.Proof.Gen.Spec9
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of the genssa validator's slice G9: call results (`docs/plans/proofs3.md` §4)
 

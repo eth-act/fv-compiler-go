@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.BranchElimNormal
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # branchelim: the merged block before its schedule runs
 

@@ -1,6 +1,8 @@
 import GoFV.Opt.SpecSafe
 import GoFV.Proof.Eval
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Speculative execution is safe
 

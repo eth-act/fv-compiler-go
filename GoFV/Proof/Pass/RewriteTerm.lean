@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.RewriteTermBlock
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of the rewrite validator at the term level (issue #113)
 

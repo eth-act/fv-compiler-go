@@ -1,6 +1,8 @@
 import GoFV.Proof.Low.Rules.Kit
 import GoFV.Rules.Generated.ARM64
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowering rule lemmas: ellipsis rules on integer ops (`ARM64.rules:5-50`, `108-110`, `191-211`)
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.ZCSEPanic
 import GoFV.Proof.Pass.CopyElim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # zero arg cse refines its input
 

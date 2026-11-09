@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.BranchElimSetup
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # branchelim: a block outside the diamond
 

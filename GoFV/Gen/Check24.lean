@@ -1,5 +1,7 @@
 import GoFV.Gen.Check23
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The genssa validator, slice G24: `SP` anywhere (`docs/plans/proofs3.md` §4)
 

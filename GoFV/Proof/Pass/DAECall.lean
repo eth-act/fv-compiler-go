@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.DAERoot
 import GoFV.Proof.DeferRel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dead auto elim: calls under frame-safe contracts
 

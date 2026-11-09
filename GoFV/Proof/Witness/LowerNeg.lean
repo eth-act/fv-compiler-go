@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerCvtMask
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness functions for `lower` on `NEG` of `SUB` and of `NEG`: `nsb`, `nng` (hand-written, issue #385)
 

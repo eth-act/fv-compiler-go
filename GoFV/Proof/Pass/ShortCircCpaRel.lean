@@ -2,6 +2,8 @@ import GoFV.Opt.ShortCircuitCheck
 import GoFV.Proof.Checked
 import GoFV.Proof.Pass.ZCSERel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # short circuit, step 1: the relation `cpaOK` establishes
 

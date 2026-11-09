@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.FusePlainPanic
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # One checked `fuseBlockPlain` rewrite refines
 

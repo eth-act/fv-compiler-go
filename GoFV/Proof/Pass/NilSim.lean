@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.NilBlock
 import GoFV.Proof.Pass.CSESim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # nilcheckelim refines its input
 

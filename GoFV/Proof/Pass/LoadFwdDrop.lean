@@ -4,6 +4,8 @@ import GoFV.Proof.NilPre
 import GoFV.Proof.Pass.ECChain
 import GoFV.Proof.Pass.ECTree
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Dropped identity writes (issues #151, #69)
 

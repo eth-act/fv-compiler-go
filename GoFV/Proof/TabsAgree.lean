@@ -1,6 +1,8 @@
 import GoFV.Opt.TabsAgree
 import GoFV.Proof.Refine
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Running a function in extended tables (`run_tabsAgree`)
 

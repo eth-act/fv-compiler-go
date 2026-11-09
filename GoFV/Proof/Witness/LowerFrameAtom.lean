@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerLocalAddr
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower` on a frame address at offset 0: `fpa` (hand-written, issue #385)
 

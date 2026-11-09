@@ -1,6 +1,8 @@
 import GoFV.Opt.CopyRelCheck
 import GoFV.Proof.Pass.CopyElimSim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `Phi`s turned copies: `copyOK` gives copyelim's `CopyRel` (issues #32, #69)
 

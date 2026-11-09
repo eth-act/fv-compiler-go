@@ -9,6 +9,8 @@ import GoFV.Proof.Eval
 import GoFV.Proof.AtomSimSet
 import GoFV.Proof.DomCert
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `expand calls`: the local obligation of every source value (issue #28)
 

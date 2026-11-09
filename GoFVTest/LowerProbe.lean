@@ -5,6 +5,8 @@ import GoFV.Opt.RewriteCheck
 import GoFV.Opt.LowerCheck
 import GoFV.Opt.LowerChecked
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `lower-probe`: which `ARM64.rules` rules `lower` fires (issue #385)
 

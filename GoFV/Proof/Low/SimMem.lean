@@ -1,5 +1,7 @@
 import GoFV.Proof.Low.SimAtom
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowered loads and stores refine the generic ones (issue #385)
 

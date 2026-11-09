@@ -1,5 +1,7 @@
 import GoFV.Proof.Obj.Basic
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The smart constructors of `Ex`/`Fl` preserve the meaning (`GoFV/Asm/CheckObjSym.lean`)
 

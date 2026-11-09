@@ -3,6 +3,8 @@ import GoFV.Proof.Pass.LoadFwdMoveSrc
 import GoFV.Proof.Pass.RewriteTerm
 import GoFV.Proof.AtomSim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Load-of-Store forwarding refines its input (issues #151, #69)
 

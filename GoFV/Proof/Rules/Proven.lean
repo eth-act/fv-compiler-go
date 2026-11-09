@@ -148,6 +148,8 @@ import GoFV.Proof.Rules.Xor4
 import GoFV.Proof.Rules.XorCom
 import GoFV.Proof.Rules.ZeroExt
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Every rule of the proven-only rule sets is sound
 

@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.FwdGrow
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for a folded `runtime.ifaceeq` call (`generic.rules:2287`, `:1343`, #69, #189)
 

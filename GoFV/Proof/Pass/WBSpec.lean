@@ -1,6 +1,8 @@
 import GoFV.Opt.WriteBarrierCheck
 import GoFV.Proof.Pass.RewriteTerm
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # writebarrier: what the checker's structure establishes (issue #36)
 

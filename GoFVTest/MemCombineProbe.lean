@@ -2,6 +2,8 @@ import GoFV.SSA.Parse
 import GoFV.SSA.Check
 import GoFV.Opt.MemCombine.Check
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `memcombine-probe`: what memcombine's checker accepts
 

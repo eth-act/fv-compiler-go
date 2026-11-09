@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.MoveLPair
 import GoFV.Proof.SimL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Evaluating a block's values on one side, the other side fixed
 

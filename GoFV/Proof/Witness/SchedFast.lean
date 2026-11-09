@@ -1,6 +1,8 @@
 import GoFV.Proof.SchedFast
 import GoFV.Proof.Witness.Max3
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: `schedFast` on a block with a `NilCheck` and a `Store`
 

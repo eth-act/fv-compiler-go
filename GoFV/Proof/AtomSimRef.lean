@@ -1,5 +1,7 @@
 import GoFV.Proof.AtomSimDen
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Applying `TermRef` to registers (issue #113)
 

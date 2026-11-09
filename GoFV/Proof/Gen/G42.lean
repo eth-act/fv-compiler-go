@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G41
 import GoFV.Proof.Gen.Spec42
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Slice G42 of the genssa validator: `ANDconst` widening a narrow argument (`docs/plans/proofs3.md` §4)
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.DAEAvoid
 import GoFV.Proof.Retype
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dead auto elim: related registers
 

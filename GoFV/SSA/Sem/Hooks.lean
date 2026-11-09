@@ -1,6 +1,8 @@
 import GoFV.SSA.Sem.Inject
 import GoFV.SSA.Sem.Run
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Runtime hooks: the trusted runtime boundary of `runMach` (`docs/plans/semantics3.md` §6)
 

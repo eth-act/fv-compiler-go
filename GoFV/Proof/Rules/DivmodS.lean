@@ -3,6 +3,8 @@ import GoFV.Proof.Rules.DivmodSBV
 import GoFV.Proof.Rules.NonVacuous
 import GoFV.Rules.Generated.Divmod.Values00
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Signed division by a constant (`divmod.rules`, #69)
 

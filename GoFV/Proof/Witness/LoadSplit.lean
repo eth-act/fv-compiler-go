@@ -1,6 +1,8 @@
 import GoFV.Proof.Witness.StructLoad
 import GoFV.Proof.Rules.DecLoad
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for the dec `Load` splits: `strLen` (hand-written, issue #17)
 

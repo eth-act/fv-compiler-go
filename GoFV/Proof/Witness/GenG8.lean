@@ -2,6 +2,8 @@ import GoFV.Proof.Gen.G8
 import GoFV.Proof.Witness.GenG2
 import GoFV.SSA.Sem.Hooks
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G8 of the genssa validator on `sync_runtime_registerPoolCleanup`
 

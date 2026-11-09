@@ -2,6 +2,8 @@ import GoFV.Proof.Refine
 import GoFV.Proof.PureMono
 import GoFV.Proof.CallMono
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The interpreter is monotone in refinement
 

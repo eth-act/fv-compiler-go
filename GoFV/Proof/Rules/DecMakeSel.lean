@@ -2,6 +2,8 @@ import GoFV.Proof.Rules.AllSound
 import GoFV.Rules.Generated.Dec.Values00
 import GoFV.Rules.Generated.Generic.Values12
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Selections of a variadic `Make` (issue #17)
 

@@ -4,6 +4,8 @@ import GoFV.Proof.Obj.Spec
 import GoFV.Proof.Gen.Basic
 import GoFV.Proof.Gen.Progs7
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `runProg` of P0 is matched by `runMach` of the linked words (`docs/plans/proofs3.md` §6)
 

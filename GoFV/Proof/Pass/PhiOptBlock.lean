@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.PhiOptLocal
 import GoFV.Proof.Pass.ZCSEBlock
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # phiopt: the target's evaluation of a block
 

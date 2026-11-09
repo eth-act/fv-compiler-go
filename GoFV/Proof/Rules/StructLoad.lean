@@ -1,6 +1,8 @@
 import GoFV.Opt.RewriteCheck
 import GoFV.Rules.Generated.Generic
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Struct-load expansion rules (issue #151)
 

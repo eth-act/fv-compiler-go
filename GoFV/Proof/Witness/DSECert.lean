@@ -1,6 +1,8 @@
 import GoFV.Opt.DeadStoreCheck
 import GoFV.Proof.Witness.InitF10
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness for dse: the certificates of `f10` (kernel evaluation)
 

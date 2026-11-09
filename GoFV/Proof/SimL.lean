@@ -2,6 +2,8 @@ import GoFV.Proof.RefineL
 import GoFV.Proof.Sim
 import GoFV.Proof.SimIH
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Simulation over `runL`
 

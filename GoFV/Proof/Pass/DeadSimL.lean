@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.DeadEnterL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Removing unreachable blocks and dead values refines under `runL`
 

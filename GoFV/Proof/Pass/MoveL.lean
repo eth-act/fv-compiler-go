@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.MoveLEnter
 import GoFV.Proof.Pass.DeadRelL
 import GoFV.Proof.CheckFacts
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Value motion over a fixed CFG refines under `runL` (`refinesL_of_move`, issue #385)
 

@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.NilGetG
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for the malloc-result and dictionary nil-check eliminations (issue #151)
 

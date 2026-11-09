@@ -2,6 +2,8 @@ import GoFV.SSA.Sem.Mem
 import GoFV.SSA.Sem.Layout
 import Std.Data.HashMap
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The global image (`docs/plans/semantics.md` §3.4, "Globals"; phase P2)
 

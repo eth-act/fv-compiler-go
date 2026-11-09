@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.FuseIf
 import GoFV.Proof.Witness.Max3
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: `fuseBlockIf` on an if-triangle
 

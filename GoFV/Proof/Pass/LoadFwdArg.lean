@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.DAEPure
 import GoFV.Proof.Pass.LoadFwdPtr
 import GoFV.Proof.AtomSimEnter
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Argument pointers avoid the frame temporaries (issue #69)
 

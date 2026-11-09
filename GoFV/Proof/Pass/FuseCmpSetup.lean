@@ -6,6 +6,8 @@ import GoFV.Proof.SimIH
 import GoFV.Proof.Speculate
 import GoFV.Proof.Merge
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # fuseComparisons: the setting of one checked rewrite
 

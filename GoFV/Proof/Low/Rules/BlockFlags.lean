@@ -1,6 +1,8 @@
 import GoFV.Proof.Low.Rules.Peep
 import GoFV.Proof.Rules.DivisibleInv
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowering rule lemmas: block rules on flags with a variable control (`ARM64.rules:556`, `621-624`, `644-647`, `1332-1341`)
 

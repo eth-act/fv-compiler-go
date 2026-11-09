@@ -1,6 +1,8 @@
 import GoFV.Opt.MemCombine.Sym
 import GoFV.Proof.Pass.DSEMem
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # memcombine: bytes of integers and of memory (issue #35)
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Witness.LowerAdd
 import GoFV.Proof.Low.ValMul
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness for a strength-reduced multiplication in `lower`: `mul10` (hand-written, issue #385)
 

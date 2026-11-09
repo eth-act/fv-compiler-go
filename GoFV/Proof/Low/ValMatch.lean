@@ -1,6 +1,8 @@
 import GoFV.Proof.Low.DenL
 import GoFV.Proof.Pass.RewriteTerm
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Pattern matches of the lowering validator (issue #385)
 

@@ -3,6 +3,8 @@ import GoFV.Proof.Pass.BranchElimPres
 import GoFV.Proof.Pass.NumberLines
 import GoFV.Opt.BranchElim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # branchelim refines its input
 

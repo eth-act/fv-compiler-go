@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.PhiOptSched
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # phiopt: one block entry, the pieces
 

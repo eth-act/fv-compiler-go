@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.MemCombineDesc
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # memcombine: source descriptions are sound (issue #35)
 

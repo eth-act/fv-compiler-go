@@ -4,6 +4,8 @@ import GoFV.Opt.Pair
 import GoFV.Opt.LateLowerCheck
 import GoFV.Opt.PairCheck
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `lake exe stocklow-probe [--jobs N] <dir>...`: what `late lower` and `pair` change
 

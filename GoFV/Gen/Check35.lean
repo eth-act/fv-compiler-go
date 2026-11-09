@@ -1,5 +1,7 @@
 import GoFV.Gen.Check34
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The genssa validator, slice G35: the upper-bit table across pair loads
 (`docs/plans/proofs3.md` §4)

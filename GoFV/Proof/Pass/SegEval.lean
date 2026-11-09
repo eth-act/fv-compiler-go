@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.SegBlock
 import GoFV.Proof.Pass.StructStoreEval
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Segments: one block's evaluation (issue #151)
 

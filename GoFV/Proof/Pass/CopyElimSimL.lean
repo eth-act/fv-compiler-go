@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.CopyFragL
 import GoFV.Proof.AvailL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # copyelim on `runL`: setup
 

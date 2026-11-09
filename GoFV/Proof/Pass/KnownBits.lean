@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.KnownBitsTerm
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # known bits refines its input (issue #26)
 

@@ -2,6 +2,8 @@ import GoFV.SSA.Parse
 import GoFV.SSA.Check
 import GoFV.Opt.CSE
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `cse-probe`: does cse's checker ever reject?
 

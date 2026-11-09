@@ -5,6 +5,8 @@ import GoFV.Proof.CheckFacts
 import GoFV.Proof.Pass.CSEOp
 import GoFV.Proof.Pass.ECTyped
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `expand calls`: the structural soundness of `blockOK` (issue #28)
 

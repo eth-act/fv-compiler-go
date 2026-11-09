@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G11
 import GoFV.Proof.Witness.GenG10
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G11 of the genssa validator on `adder.func1`
 

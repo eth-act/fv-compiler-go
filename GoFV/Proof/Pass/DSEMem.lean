@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.CSEMemChain
 import GoFV.Opt.DeadStoreCheck
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dse: memories equal outside a set of bytes
 

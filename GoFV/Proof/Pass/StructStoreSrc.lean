@@ -4,6 +4,8 @@ import GoFV.Proof.Pass.DSEBlock
 import GoFV.Proof.AtomSimStep
 import GoFV.Proof.Pass.RewriteTermDen
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Struct-store splits: the source side of a block (issue #151)
 

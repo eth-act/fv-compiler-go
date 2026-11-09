@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.CopyElimCtrl
 import Std.Tactic.Do
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # copyelim's output satisfies `CopyRel`
 

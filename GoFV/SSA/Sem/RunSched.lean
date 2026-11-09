@@ -1,5 +1,7 @@
 import GoFV.SSA.Sem.RunL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `GoFV.SSA.runSched`: scheduled SSA (L1, `docs/plans/semantics2.md` §6)
 

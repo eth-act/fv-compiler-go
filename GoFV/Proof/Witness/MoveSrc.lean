@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.FwdDrop
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for a changed `Move` source (issue #151)
 

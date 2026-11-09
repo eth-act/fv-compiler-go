@@ -4,6 +4,8 @@ import GoFV.Proof.Pass.DeadRelL
 import GoFV.Proof.DomRel
 import GoFV.Proof.CheckFacts
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # What `flagAllocB` gives, and evaluating clones (issue #385)
 

@@ -6,6 +6,8 @@ import GoFV.Opt.ShortCircuitBlockCheck
 import GoFV.SSA.ConstCache
 import GoFV.SSA.Edges
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # shortcircuit (`shortcircuit.go`)
 

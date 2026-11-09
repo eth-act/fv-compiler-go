@@ -1,6 +1,8 @@
 import GoFV.Proof.Obj.Ex
 import GoFV.Proof.Obj.Bitfield
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `progSym` is the symbolic `progEffect` (`GoFV/Asm/CheckObj.lean`)
 

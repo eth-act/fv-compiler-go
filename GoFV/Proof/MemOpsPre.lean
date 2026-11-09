@@ -1,6 +1,8 @@
 import GoFV.SSA.Sem.Runtime
 import GoFV.SSA.Sem.Run
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Environments whose memory runtime calls are the model's contracts (#151)
 

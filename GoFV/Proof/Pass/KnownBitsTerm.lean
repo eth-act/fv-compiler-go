@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.KnownBitsInv
 import GoFV.Proof.Pass.RewriteTerm
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # known bits: atoms' arguments and controls as terms (issue #26)
 

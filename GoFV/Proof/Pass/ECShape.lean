@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.ECDefs
 import GoFV.Proof.Retype
 import GoFV.Proof.Eval
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Shapes up to pointers' element sizes (issue #28)
 

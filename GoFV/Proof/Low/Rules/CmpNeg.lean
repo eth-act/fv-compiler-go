@@ -1,5 +1,7 @@
 import GoFV.Proof.Low.Rules.Peep
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowering rule lemmas: compares with a negated immediate (`ARM64.rules:597`, `598`)
 

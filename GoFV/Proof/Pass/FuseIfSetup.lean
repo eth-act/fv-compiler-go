@@ -3,6 +3,8 @@ import GoFV.Proof.Pass.FuseIfEnter
 import GoFV.Proof.Merge
 import GoFV.Proof.DomRel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # fuseBlockIf: the setting of one checked rewrite
 

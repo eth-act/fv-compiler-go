@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.ShortCircPass
 import GoFV.Proof.Witness.FusePlain
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: short circuit of `a < b && b < c`
 

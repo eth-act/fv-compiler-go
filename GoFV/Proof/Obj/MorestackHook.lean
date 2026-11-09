@@ -2,6 +2,8 @@ import GoFV.Proof.Obj.Morestack
 import GoFV.SSA.Sem.Hooks
 import Std.Data.HashMap.Lemmas
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The runtime model of `runtime.morestack` meets its contract (`morestackHook_ok`)
 

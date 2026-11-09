@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.DAEStep
 import GoFV.Proof.Pass.DSEBlockBase
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dead auto elim: one block's evaluation, the setting
 

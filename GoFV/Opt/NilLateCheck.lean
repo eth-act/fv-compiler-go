@@ -1,6 +1,8 @@
 import GoFV.SSA.Sem.RunSched
 import GoFV.Proof.Cong
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `nilLateB`: a validator for `late nilcheck` (`nilcheckelim2`, #408)
 

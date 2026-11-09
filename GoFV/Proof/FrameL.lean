@@ -1,5 +1,7 @@
 import GoFV.Proof.EvalL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowered block entries: `evalAllL` and `enterBlockL`
 

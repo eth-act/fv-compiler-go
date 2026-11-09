@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.DSERel
 import GoFV.Proof.Pass.CSEClass
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dse: one value's evaluation in source and target
 

@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.ZCSEEnter
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # zcse: the target's evaluation of a block
 

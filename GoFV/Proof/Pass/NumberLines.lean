@@ -2,6 +2,8 @@ import GoFV.Proof.Cong
 import GoFV.Opt.NumberLines
 import Std.Tactic.Do
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `number lines` refines its input
 
