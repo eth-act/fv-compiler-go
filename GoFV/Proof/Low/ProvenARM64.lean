@@ -25,7 +25,6 @@ import GoFV.Proof.Low.Rules.Rename
 import GoFV.Proof.Low.Rules.SetOpInt
 import GoFV.Proof.Low.Rules.Shift
 import GoFV.Proof.Low.Rules.ShiftOp
-import GoFV.Proof.Low.Rules.ZZProbe
 
 variable [GoFV.SSA.Sem.Addrs]
 
