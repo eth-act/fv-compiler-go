@@ -1932,10 +1932,27 @@ theorem zSet_spec {f : Val} (h : zSet f = true) :
   · rename_i n c v g; exact ⟨n, c, v, g, rfl⟩
   · cases h
 
+/-- The result is an integer. -/
+def isInt : Res Val → Bool
+  | .ok (.int _ _) => true
+  | _ => false
+
+theorem isInt_spec {r : Res Val} (h : isInt r = true) : ∃ w i, r = .ok (.int w i) := by
+  unfold isInt at h
+  split at h
+  · rename_i w i; exact ⟨w, i, rfl⟩
+  · cases h
+
+/-- Reading `v6` from `s0` gives an integer. -/
+def readInt : Bool := isInt (s0.read lc 6)
+
+theorem readInt_spec (h : readInt = true) : ∃ w i, s0.read lc 6 = .ok (.int w i) :=
+  isInt_spec h
+
 /-- What compiled evaluation checks on `traceNextGen`: it holds an arm64 op; `checkG41` accepts it
 with `tab` and `kt` and `checkG40` does not; it accesses no frame variable and has no home slot;
 `b1` holds `v5` (`CMNconst [1] v6`) at index 2, where `R0` has class 64 and G35's table is empty;
-`stepLoc` runs `v5` from `s0` to flags with `Z` set. -/
+`stepLoc` runs `v5` from `s0` to flags with `Z` set; reading `v6` from `s0` gives an integer. -/
 def gFacts : Bool :=
   lc.ctx.f.lowered &&
     (checkG41 lc0 ps bs g).toOption == some (tab, kt) && (checkG40 lc0 ps bs g).toOption.isNone &&
@@ -1944,7 +1961,7 @@ def gFacts : Bool :=
     (lc.ctx.f.value? 5).isSome && blk.values[2]? == some 5 && (val 5).op == .ARM64CMNconst &&
     (val 5).args[0]? == some 6 && (kAt lc kt 1 blk 2).get 0 == some 64 &&
     uL35 lc (uIn35 lc 1) blk 2 == [] &&
-    GenG1.okThen (stepLoc GenG2.env lc s0 (val 5)) fun s1 => zSet s1.flags
+    GenG1.okThen (stepLoc GenG2.env lc s0 (val 5)) (fun s1 => zSet s1.flags) && readInt
 
 theorem g41_facts : gFacts = true := by
   native_decide
@@ -1958,12 +1975,13 @@ theorem facts :
       lc.ctx.f.value? 5 = some (val 5) ∧ blk.values[2]? = some 5 ∧
       (val 5).op = .ARM64CMNconst ∧ (val 5).args[0]? = some 6 ∧
       (kAt lc kt 1 blk 2).get 0 = some 64 ∧ uL35 lc (uIn35 lc 1) blk 2 = [] ∧
-      GenG1.okThen (stepLoc GenG2.env lc s0 (val 5)) (fun s1 => zSet s1.flags) = true := by
+      GenG1.okThen (stepLoc GenG2.env lc s0 (val 5)) (fun s1 => zSet s1.flags) = true ∧
+      readInt = true := by
   have hf := g41_facts
   simp only [gFacts, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem, and_assoc,
     Option.isNone_iff_eq_none] at hf
-  obtain ⟨hl, hres, h40, hav, hsl, hm1, hbs, hvs, hi2, hop, ha0, hk0, hu2, hrun⟩ := hf
-  refine ⟨hl, ?_, h40, hav, hsl, hm1, ?_, ?_, hi2, hop, ha0, hk0, hu2, hrun⟩
+  obtain ⟨hl, hres, h40, hav, hsl, hm1, hbs, hvs, hi2, hop, ha0, hk0, hu2, hrun, hri⟩ := hf
+  refine ⟨hl, ?_, h40, hav, hsl, hm1, ?_, ?_, hi2, hop, ha0, hk0, hu2, hrun, hri⟩
   · revert hres; cases checkG41 lc0 ps bs g <;> simp [Except.toOption]
   · obtain ⟨b, hb⟩ := Option.isSome_iff_exists.1 hbs
     simp [blk, hb]
@@ -2050,7 +2068,8 @@ theorem g41Inv0 (h0 : (kAt lc kt 1 blk 2).get 0 = some 64) :
 
 /-- The per-value premises of `v5`, `CMNconst`: G38's do not apply, and `CmpPre` holds (`gen` is
 an integer, no pointer). -/
-theorem pre5 (hop : (val 5).op = .ARM64CMNconst) (ha0 : (val 5).args[0]? = some 6) :
+theorem pre5 (hop : (val 5).op = .ARM64CMNconst) (ha0 : (val 5).args[0]? = some 6)
+    (hri : readInt = true) :
     G41Pre lc s0 (val 5) := by
   have hne : ∀ o : Op, o ≠ .ARM64CMNconst → (val 5).op ≠ o := fun o h h' =>
     h (h'.symm.trans hop)
@@ -2067,6 +2086,44 @@ theorem pre5 (hop : (val 5).op = .ARM64CMNconst) (ha0 : (val 5).args[0]? = some 
     rw [ha0] at ha
     cases ha
     subst hp
-    sorry
+    obtain ⟨w, i, hr⟩ := readInt_spec hri
+    rw [hr] at hx
+    cases hx
+
+/-- **G41 on `runtime.traceNextGen`**: `b1` compares `gen` (`v6`, `-1` in `R0`) with `-1` by
+`CMN $1, R0` (`v5`, `CMNconst`), which `checkG40` rejects and `checkG41` accepts. From `s0`,
+where `gen` is an integer (`CmpPre`), `stepLoc` runs `v5` to flags with `Z` set, and
+`g41_value` relates the result to a machine state after `v5`'s code whose `Z` is set, under an
+activation extending `E` that is again a `G28Env`. -/
+theorem genG41_witness :
+    (checkG40 lc0 ps bs g).toOption = none ∧
+      ∃ s1 E1 m1, stepLoc GenG2.env lc s0 (val 5) = .ok s1 ∧
+        (∃ n c v gf, s1.flags = .agg [n, .bool true, c, v, gf]) ∧
+        E.Extends E1 ∧ G28Env lc g L ps 0 tab E1 ∧ PStar GenG2.H0 L ps.toList 0 m0 m1 ∧
+        LocMatch E1 s1 1 3 m1 ∧ m1.nzcv.z = true := by
+  obtain ⟨hl, hc, h40, hav, hsl, hm1, hb, hv5, hi2, hop, ha0, hk0, hu2, hrun, hri⟩ := facts
+  obtain ⟨s1, hs1, hz⟩ := GenG1.okThen_spec hrun
+  obtain ⟨n, c, v, gf, hf⟩ := zSet_spec hz
+  have hE := g41Env hc hl hav hsl
+  have hne : ∀ o : Op, o ≠ .ARM64CMNconst → (val 5).op ≠ o := fun o h h' =>
+    h (h'.symm.trans hop)
+  -- `g41_value` reads the blocks and values of `lc0`: rewrite rather than unfold (the kernel
+  -- would evaluate `lc0`).
+  have hm0 : 1 ∈ lc0.ctx.f.blocks.toList := by rw [← liveCtx_ctx (lc := lc0)]; exact hm1
+  have hb0 : lc0.ctx.f.block? 1 = some blk := by rw [← liveCtx_ctx (lc := lc0)]; exact hb
+  have hv0 : lc0.ctx.f.value? 5 = some (val 5) := by rw [← liveCtx_ctx (lc := lc0)]; exact hv5
+  obtain ⟨E1, m1, hx1, hE1, hp1, hm1', -, -⟩ := g41_value (H := GenG2.H0) (env := GenG2.env)
+    hc hE hm0 hb0 hi2 hv0 (by rw [hop]; rfl) locMatch0 (g41Inv0 hk0)
+    (by change UOKL m0 (uL35 lc (uIn35 lc 1) blk 2); rw [hu2]; intro e he; cases he)
+    (pre5 hop ha0 hri)
+    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
+    (GenG10.icallOK_ne (by rw [hop]; rfl))
+    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
+    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide))) hs1
+  refine ⟨h40, s1, E1, m1, hs1, ⟨n, c, v, gf, hf⟩, hx1, hE1, hp1, hm1', ?_⟩
+  have hfl := hm1'.flags
+  rw [hf] at hfl
+  simp only [FlagsRel, BitRel] at hfl
+  exact hfl.2.1.symm
 
 end GoFV.Proof.Witness.GenG41

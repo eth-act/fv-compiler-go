@@ -743,6 +743,22 @@ Witness: `genG40_witness` (`unicode/utf16.IsSurrogate`, `InitMem` in the return 
 G39 rejects; `runLoc` runs it from a state holding the initial memory to one holding it again).
 Coverage on quick-v10 (`lake exe gen-check`): 6,472 of 9,297 functions (69.61%), 182,705 values.
 
+## Phase 3: genssa, slice G41 (I7, #553)
+
+`GoFV.Proof.Gen.g41_value`, `g41_initMem`, `g41_term`, `g41_nilPanic`, `g41_boundsPanic`
+(`GoFV/Proof/Gen/G41.lean`): when slice G41 (`checkG41`: G40 with the compares `CMNconst`
+(`CMN $k, Rn`), `CMPshiftLL` and `CMPshiftRL` (`CMP Rm SHIFT k, Rn`) of 64-bit arguments, of the
+flags shape, without home or temporary) accepts a function, they are `g40_value`'s,
+`g40_initMem`'s, `g40_term`'s, `g40_nilPanic`'s and `g40_boundsPanic`'s statements; `g41_value`'s
+per-value premise `G41Pre` adds to `G38Pre` the run premise `CmpPre` (the first argument of a G41
+compare is no pointer without an integer form, G1's `NoBarePtr`, as G1's premise for
+`CMP`/`CMPconst`: on such a pointer Phase 1 gives `Z` clear, which the machine does not compute).
+`CmpPre` is a property of the run state, checkable on it, not a trusted hook. No new trusted
+premise. Witness: `genG41_witness` (`CMN $1, R0` in `runtime.traceNextGen`, which G40 rejects:
+`CmpPre` holds for `gen = -1`, an integer, `runLoc` runs it to flags with `Z` set, and the
+machine's `Z` is set). Coverage on quick-v10 (`lake exe gen-check`): 6,570 of 9,297 functions
+(70.66%), 192,225 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g38_obj_value`, `g38_obj_term`, `g38_obj_nilPanic`, `g38_obj_boundsPanic`

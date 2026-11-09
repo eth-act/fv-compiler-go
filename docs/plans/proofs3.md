@@ -947,24 +947,38 @@ lemmas). `g40_value`, `g40_term`, `g40_nilPanic`, `g40_boundsPanic` are G39's st
 `checkG40`. G40 accepts 6,472 functions (+25 over G39); `InitMem` after the entry values remains
 the sole blocker of 13 functions, whose memory a call or store changes before the return block.
 
+**Slice G41: `CMNconst`, `CMPshiftLL`, `CMPshiftRL`** (`GoFV/Gen/Check41.lean`, `checkG41 lc ps
+bstart g`, returning G4's tables; proven sound, `g41_value`, `g41_initMem`, `g41_term`,
+`g41_nilPanic`, `g41_boundsPanic`): G40 with, in a function with an arm64 op, the compares
+`CMNconst [k] x` (`CMN $k, Rn`) and `CMPshiftLL`/`CMPshiftRL [k] x y` (`CMP Rm SHIFT k, Rn`, G27's
+shifted operand, `0 ≤ k < 64`) of 64-bit arguments, of the flags shape, without home or temporary.
+`runLoc` runs them as Phase 1's `cmp1P`/`cmpSh` (`stepLoc_alu41`): on registers, the flags of the
+64-bit `ADDS`/`SUBS`, which the machine computes (`progStep_cmnConst`, `progStep_cmpShift`,
+`flagsRel_cmnK`, `flagsRel_cmpSh41`); on a pointer without an integer form as first argument, `Z`
+clear (`Arm64.zClear`), which the machine does not compute. `g41_value`'s per-value premise
+`G41Pre` is `G38Pre` and the run premise `CmpPre` (the first argument of a G41 compare is no such
+pointer, G1's `NoBarePtr`, as G1's premise for `CMP`/`CMPconst`): a property of the run state, not
+a trusted hook. `g41_initMem`, `g41_term`, `g41_nilPanic`, `g41_boundsPanic` are G40's statements
+over `checkG41`. G41 accepts 6,570 functions (+98 over G40).
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
 1. **Calls** with nonempty stack arguments (`stack argument` 308; §8) or floating-point
    arguments or results (153 (33)).
 2. **Frame variables beyond G6**: parameters and results (`NAME_PARAM`, `Blk.local`: `frame
-   variable operand class`, 294 (90)) and variables whose address is converted to an integer
-   (`frame variable with an integer address`, 197 (12)): option 2 of semantics3 §4.3 (addresses as
-   a parameter of the semantics); slots of other sizes (`slot … frame operand, size or alignment`,
-   717).
+   variable operand class`, 294 (113 after G41)) and variables whose address is converted to an
+   integer (`frame variable with an integer address`, 197 (50)): option 2 of semantics3 §4.3
+   (addresses as a parameter of the semantics); slots of other sizes (`slot … frame operand, size
+   or alignment`, 717).
 3. **Other values**: `InitMem` after the entry values in functions that write memory (13 sole after
-   G40), `CMNconst` (40),
-   `CMPshiftRL` (36) and `CMPshiftLL` (17) (a new premise, G36), `LoweredGetCallerPC` (26),
-   `shift or mask widths` (37: narrow arguments of right shifts), `REV#W widths` (6:
-   `REVW`/`REV16W` of narrow arguments); the acquire loads are done in G38, the homes of removed
-   values in G39, `InitMem` in functions that keep the memory in G40; `MOVDnop` 750 (91) and
-   `MOVDreg` (27 sole) are done in G20, G21, G29, G31, G34 and G35 but for 8 functions with no
-   other blocker after G40, whose tables need stores, `Convert` or `Copy` to keep or copy their
+   G41), `LoweredGetCallerPC` (26), `shift or mask widths` (40: narrow arguments of right shifts,
+   mostly `ANDconst` widening a narrow load), `REV#W widths` (6: `REVW`/`REV16W` of narrow
+   arguments), `CMN` (5), `CMPshiftRA` (3), `CMNW` (2); the acquire loads are done in G38, the
+   homes of removed values in G39, `InitMem` in functions that keep the memory in G40, `CMNconst`,
+   `CMPshiftLL` and `CMPshiftRL` in G41; `MOVDnop` 750 (91) and
+   `MOVDreg` (27 sole) are done in G20, G21, G29, G31, G34 and G35 but for 9 functions with no
+   other blocker after G41, whose tables need stores, `Convert` or `Copy` to keep or copy their
    entries (§4, G35). Bounds panics (`LoweredPanicBoundsRR` 616 (68), `RC` 332 (46), `CR` 76
    (33), `CC` 170 (22)) are done in G19 but for #541's 2 functions.
 
@@ -1015,6 +1029,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G38 | 6,380 (68.62%) | 177,277 |
 | G39 | 6,447 (69.34%) | 182,395 |
 | G40 | 6,472 (69.61%) | 182,705 |
+| G41 | 6,570 (70.66%) | 192,225 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1265,6 +1280,12 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `stepLoc_shape`, `stepLoc_initMem`, `memInit_stepLoc`, `memInit_stepTermLoc`, `uStep35_initMem`,
   `g40L_initMem`, `g40L_value`, `g40L_nilPanic`, `g40L_boundsPanic`, `g40L_term`, `g40_value`,
   `g40_initMem`, `g40_nilPanic`, `g40_boundsPanic`, `g40_term`.
+- `Spec41.lean`: what `checkG41` accepted (`cmpSh41?_some`, `cmnKind_spec`, `cmpShKind_spec`,
+  `vkind41_spec`, `vkind41_initMem`, `checkG33_of_41L`, `checkG41L_spec`, `checkG41_spec`).
+- `G41.lean`: `CmpPre`, `G41Pre`, `AluOp41`, `uStep35_alu41`, `stepLoc_alu41`, `addSub_addFlags`,
+  `progStep_cmnConst`, `progStep_cmpShift`, `flagsRel_cmnK`, `flagsRel_cmpSh41`, `g41_cmn`,
+  `g41_cmpSh`, `vk41_step`, `g41L_value`, `g41L_initMem`, `g41L_nilPanic`, `g41L_boundsPanic`,
+  `g41L_term`, `g41_value`, `g41_initMem`, `g41_nilPanic`, `g41_boundsPanic`, `g41_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -1387,7 +1408,9 @@ runs alike under `lc0` and `liveCtx lc0`, and `g39_value` runs `ADD R3, R1, R4` 
 `len(suffix) = 2`, after which the machine's `X4 = 7`), `GenG40.lean` (`unicode/utf16.IsSurrogate`,
 whose `InitMem` `v1` sits in the return block `b2`, which G39 rejects: from a state holding the
 initial memory, `stepLoc` runs `v1` to a state that holds it again (`memInit_stepLoc`), and
-`g40_initMem` relates it to the machine after no code).
+`g40_initMem` relates it to the machine after no code), `GenG41.lean` (`runtime.traceNextGen`,
+whose `CMN $1, R0` (`v5`, `CMNconst`) G40 rejects: `CmpPre` holds for `gen = -1`, an integer, and
+`g41_value` runs `v5` to flags with `Z` set, after which the machine's `Z` is set).
 Each decides its inputs by compiled evaluation (`native_decide`, pinned in
 `scripts/axioms-allowlist.txt`).
 
