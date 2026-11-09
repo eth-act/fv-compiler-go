@@ -17,12 +17,14 @@ open scoped GoFV.SSA.Sem.Fixed
   and on `BIC X1, X2, X3` (logical shifted register with the inversion, `Ex.inv`).
 * `objOps_rem_witness`: `REM R3, R1, R2` (`progSym`, `dp2P`) and its words `SDIV X27, X1, X3;
   MSUB X2, X27, X3, X1` (`symInsn`) have the same effect (`sameEffect`).
+* `objOps_fadd_witness`: `symInsn_sound` on `FADD D3, D2, D1` (the SIMD&FP data processing,
+  `VEx.fp2` into `V3`), and `FADDD F1, F2, F3` (`progSym`, `fpP`) has the same effect.
 -/
 
 namespace GoFV.Proof.Witness.ObjOps
 
 open GoFV.Arm64 GoFV.Asm GoFV.Asm.CheckObj GoFV.Proof.Obj
-open GoFV.Asm.ARM64 (REG_R0)
+open GoFV.Asm.ARM64 (REG_R0 REG_F0)
 
 /-- A machine state with every register `0`, at `0x1000`. -/
 def t0 : MState :=
@@ -109,5 +111,22 @@ theorem objOps_rem_witness :
     ∃ σ1 σ2 pσ, symInsn sdiv27 0 {} = .ok (σ1, .fall) ∧ symInsn msub27 4 σ1 = .ok (σ2, .fall) ∧
       progSym 0 0 remP = .ok (pσ, .fall) ∧ sameEffect σ2 pσ = .ok () :=
   ⟨_, _, _, rfl, rfl, rfl, rfl⟩
+
+/-- `FADD D3, D2, D1`. -/
+def fadd : Insn := .fp2 1 2 1 2 3
+
+/-- `FADDD F1, F2, F3`. -/
+def faddP : Prog :=
+  mkProg 3 .FADDD { type := .REG, reg := REG_F0 + 1 } { type := .REG, reg := REG_F0 + 3 }
+    (REG_F0 + 2)
+
+theorem objOps_fadd_witness :
+    ∃ σ' mc t' pσ, symInsn fadd 0 {} = .ok (σ', mc) ∧ exec fadd t0 = .ok t' ∧
+      WordsPost ⟨t0, fun _ => 0⟩ 0x1000 0 σ' mc t' ∧
+      progSym 0 0 faddP = .ok (pσ, .fall) ∧ sameEffect σ' pσ = .ok () := by
+  have h : symInsn fadd 0 {} = .ok (({} : Sym).wV 3 (.fp2 1 2 (.v 2) (.v 1)), .fall) := rfl
+  obtain ⟨t', he, hp⟩ := symInsn_sound (c := ⟨t0, fun _ => 0⟩) (base := 0x1000) h (holds_init _)
+    (by simp [t0]) ⟨fun _ _ h => by simp [Sym.wV] at h, fun _ _ _ h => by simp [Sym.wV] at h⟩
+  exact ⟨_, _, t', _, h, he, hp, rfl, rfl⟩
 
 end GoFV.Proof.Witness.ObjOps
