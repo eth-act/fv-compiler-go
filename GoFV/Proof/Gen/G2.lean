@@ -1105,6 +1105,11 @@ theorem g2_selReg (F : Facts lc sym text az ez psA.toList ret E)
 theorem reg5_ne30 {r : Nat} (hr : r < 16) : (BitVec.ofNat 5 r : Reg) ≠ 30 := by
   intro h; have := congrArg BitVec.toNat h; simp at this; omega
 
+/-- A Go register from `F0` on has no X register. -/
+theorem objX?_high {r : Nat} (hr : 31 ≤ r) : objX? r = none := by
+  unfold objX?
+  simp only [show ¬ r < 18 by omega, show ¬ r < 26 by omega, show ¬ r < 29 by omega, ↓reduceIte]
+
 /-- The callee contract at the static call `v` of `(name, abi)` with register arguments `ins` and
 results `outs`: `CallOK`'s conclusion for one call, whatever check gave `ins` and `outs`. -/
 def CallAt (H : Hooks) (E : MatchEnv) (g : G2In) (L : Link) (lc : LocCtx) (s s' : LocState)
@@ -1116,9 +1121,10 @@ def CallAt (H : Hooks) (E : MatchEnv) (g : G2In) (L : Link) (lc : LocCtx) (s s' 
     s.mem = .mem mm → m₁.pc = L.sym y → m₁.sp = m.sp → m₁.v = m.v → m₁.nzcv = m.nzcv →
     m₁.mem = m.mem → (∀ k, k ≠ 30 → m₁.x k = m.x k) → CallSpec H E ins outs args mm s' m₁
 
-/-- A static call whose callee satisfies `CallAt`: the arguments in their ABI registers,
-`CALL sym(SB)` with the return address in `X30`, the callee by the contract, the results in the
-result registers. The injection grows by the callee's. -/
+/-- A static call whose callee satisfies `CallAt`: the arguments in their ABI registers (`R0`–`R15`,
+or `F0`–`F15` read from their V registers, `hV`), `CALL sym(SB)` with the return address in `X30`,
+the callee by the contract, the results in the result registers. The injection grows by the
+callee's. -/
 theorem g2_callAt (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E) (hlc : E.lc = lc)
     (hcf : checkFrame lc g = .ok ()) (hframed : E.framed = true)
     (hsyms : ∀ y, (Link.byId sym text az ez psA.toList).sym y ≠ ret ∧ ∀ p ∈ psA.toList,
@@ -1127,9 +1133,11 @@ theorem g2_callAt (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
     (hR : KRead lc v K)
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {name : GoStr} {abi : Nat} {ins outs : List Nat} {pat : Pat}
-    (hop : v.op = .ARM64CALLstatic) (h16 : ∀ r ∈ ins ++ outs, r < 16)
+    (hop : v.op = .ARM64CALLstatic) (h16 : ∀ r ∈ ins ++ outs, r < 16 ∨ (31 ≤ r ∧ r < 47))
     (hlen : v.args.toList.dropLast.length = ins.length)
     (hargs : ∀ a r, (a, r) ∈ v.args.toList.dropLast.zip ins → lc.home a = some (.reg r))
+    (hV : ∀ a r, (a, r) ∈ v.args.toList.dropLast.zip ins → 31 ≤ r →
+      ∃ x, s.read lc a = .ok x ∧ ∀ k, objV? r = some k → FValRel x (m.v k))
     (hres : lc.home v.id = some (.results (outs.map some).toArray) ∨
       (lc.home v.id = none ∧ outs = []))
     (hct : callTy outs.length (lc.ty v.id) = true)
@@ -1178,7 +1186,7 @@ theorem g2_callAt (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
     rw [progStep_callSym (nextAddr_pcAt F.nodup hk) has ht1 ht2 ht3 hy1, wX_pc]
     simp only [MState.wX, show ¬ ((30 : Reg) = 31) by decide, ↓reduceIte]
     rfl
-  -- the arguments, read from their ABI registers
+  -- the arguments, read from their ABI registers (an X register, or a V register by `hV`)
   have hargs' : ∀ a ∈ v.args.toList.dropLast, ∃ x, s.read lc a = .ok x ∧
       ∀ r, lc.home a = some (.reg r) → RegRel E.ι x m₁ r := by
     intro a ha
@@ -1188,7 +1196,14 @@ theorem g2_callAt (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
       List.mem_of_getElem? (List.getElem?_zip_eq_some.2 ⟨List.getElem?_eq_getElem hj0,
         List.getElem?_eq_getElem hjin⟩)
     have hh := hargs _ _ hz
-    have hr16 := h16 _ (List.mem_append_left _ (List.getElem_mem hjin))
+    by_cases hr31 : 31 ≤ ins[j0]
+    · obtain ⟨x, hx, hxv⟩ := hV _ _ hz hr31
+      refine ⟨x, hx, fun r hr => ?_⟩
+      rw [hh] at hr
+      cases hr
+      exact ⟨fun q hq => (by rw [objX?_high hr31] at hq; cases hq), fun q hq => hxv q hq⟩
+    have hr16 : ins[j0] < 16 := by
+      rcases h16 _ (List.mem_append_left _ (List.getElem_mem hjin)) with h | h <;> omega
     have hrz : ins[j0] ≠ zeroReg := by unfold zeroReg; omega
     obtain ⟨c, hc⟩ : ∃ c, cls (lc.ty v.args.toList.dropLast[j0]) = some c :=
       Option.isSome_iff_exists.1 (F.clsReg _ _ hh hrz)
@@ -1317,7 +1332,9 @@ theorem g2_call (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E) 
       PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
       LocMatch { E with ι := ι' } s' b (i + 1) m' ∧
       CoreInv ι' (StkAt { E with ι := ι' }) K' s' ∧ SlotInv lc s' :=
-  g2_callAt F hF hlc hcf hframed hsyms hm hinv hsi hR hj hj' hop h16 hlen hargs hres hct hKc hpat
+  g2_callAt F hF hlc hcf hframed hsyms hm hinv hsi hR hj hj' hop (fun r hr => .inl (h16 r hr)) hlen
+    hargs (fun _ r har hr => absurd (h16 r (List.mem_append_left _ (List.of_mem_zip har).2))
+      (by omega)) hres hct hKc hpat
     hvs htemp hs (fun y args mm m₁ hy => hok hop name abi cabi ins outs y args mm m₁ hcall hcr hy)
 
 end Cases

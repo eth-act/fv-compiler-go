@@ -60,7 +60,10 @@ theorem vk15_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
       · rfl
     have hnp : v.op ≠ .Phi := by rw [hop]; nofun
     obtain ⟨ι', hext', hA', m', hstar, hlm, hcore', hsl'⟩ := g2_callAt (H := H) F hF hlcE hcf
-      hframed hsyms hm hinv.core hinv.slots (kread_of_reads hreads) hj hj' hop h16 hlen hargs hres
+      hframed hsyms hm hinv.core hinv.slots (kread_of_reads hreads) hj hj' hop
+      (fun r hr => .inl (h16 r hr)) hlen hargs
+      (fun _ r har hr => absurd (h16 r (List.mem_append_left _ (List.of_mem_zip har).2))
+        (by omega)) hres
       hct (kcall_kStep hnp hres hnd (callTy_len hct)) (fun _ hp => callPat_spec hp) hvs htemp hs
       (hcallz hop _ _ _ _ _ hcall' hcr)
     have hx : E.Extends { E with ι := ι' } := ⟨rfl, hext'⟩
