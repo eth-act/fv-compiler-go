@@ -1,5 +1,5 @@
 import GoFV.Gen.Genssa
-import GoFV.Gen.Check32
+import GoFV.Gen.Check31
 import GoFV.Asm.Parse
 import GoFV.SSA.Parse
 import GoFVTest.GenIn
@@ -19,9 +19,9 @@ G17 (`GoFV.Gen.Check.checkG17`), G18 (`GoFV.Gen.Check.checkG18`), G19 (`GoFV.Gen
 G20 (`GoFV.Gen.Check.checkG20`), G21 (`GoFV.Gen.Check.checkG21`), G22 (`GoFV.Gen.Check.checkG22`),
 G23 (`GoFV.Gen.Check.checkG23`), G24 (`GoFV.Gen.Check.checkG24`), G25 (`GoFV.Gen.Check.checkG25`),
 G26 (`GoFV.Gen.Check.checkG26`), G27 (`GoFV.Gen.Check.checkG27`), G28 (`GoFV.Gen.Check.checkG28`),
-G29 (`GoFV.Gen.Check.checkG29`), G30 (`GoFV.Gen.Check.checkG30`) and G32
-(`GoFV.Gen.Check.checkG32`), all with G2's inputs, on its P0 output and the function after `trim`,
-and counts the accepted functions. Rejections by the last
+G29 (`GoFV.Gen.Check.checkG29`), G30 (`GoFV.Gen.Check.checkG30`), G32 (`GoFV.Gen.Check.checkG32`)
+and G31 (`GoFV.Gen.Check.checkG31`), all with G2's inputs, on its P0 output and the function after
+`trim`, and counts the accepted functions. Rejections by the last
 slice are grouped by their reason with value and block numbers removed. `--sets FILE` writes each
 rejected function's reason set, one line per function (path, then the reasons, tab-separated), to
 measure what a slice covering several reasons would gain.
@@ -68,6 +68,7 @@ structure Stats where
   accepted29 : Nat := 0
   accepted30 : Nat := 0
   accepted32 : Nat := 0
+  accepted31 : Nat := 0
   errors : Nat := 0
   values : Nat := 0
   acceptedValues : Nat := 0
@@ -101,6 +102,7 @@ structure Stats where
   acceptedValues29 : Nat := 0
   acceptedValues30 : Nat := 0
   acceptedValues32 : Nat := 0
+  acceptedValues31 : Nat := 0
   /-- Functions by the set of reasons that reject them (sole reason: one-element set). -/
   sole : Std.HashMap String Nat := {}
   /-- Functions each reason occurs in. -/
@@ -129,6 +131,7 @@ def Stats.merge (a b : Stats) : Stats :=
     accepted26 := a.accepted26 + b.accepted26, accepted27 := a.accepted27 + b.accepted27,
     accepted28 := a.accepted28 + b.accepted28, accepted29 := a.accepted29 + b.accepted29,
     accepted30 := a.accepted30 + b.accepted30, accepted32 := a.accepted32 + b.accepted32,
+    accepted31 := a.accepted31 + b.accepted31,
     errors := a.errors + b.errors,
     values := a.values + b.values, acceptedValues := a.acceptedValues + b.acceptedValues,
     acceptedValues2 := a.acceptedValues2 + b.acceptedValues2,
@@ -161,6 +164,7 @@ def Stats.merge (a b : Stats) : Stats :=
     acceptedValues29 := a.acceptedValues29 + b.acceptedValues29,
     acceptedValues30 := a.acceptedValues30 + b.acceptedValues30,
     acceptedValues32 := a.acceptedValues32 + b.acceptedValues32,
+    acceptedValues31 := a.acceptedValues31 + b.acceptedValues31,
     sole := mergeMap a.sole b.sole, occurs := mergeMap a.occurs b.occurs,
     accept := a.accept ++ b.accept, sets := a.sets ++ b.sets }
 
@@ -173,9 +177,9 @@ def Stats.reject (st : Stats) (path : System.FilePath) (msgs : List String) : St
     | _ => st.sole.insert s!"({ks.length} reasons)" (st.sole.getD s!"({ks.length} reasons)" 0 + 1)
   { st with occurs, sole, sets := st.sets.push ("\t".intercalate (path.toString :: ks)) }
 
-/-- Every reason the G32 validator could give for `lc` (homes, values, block kinds, the frame;
+/-- Every reason the G31 validator could give for `lc` (homes, values, block kinds, the frame;
 then the run itself). On a function with no arm64 op, the values and blocks `checkNL30` rejects. -/
-def reasons32 (lc : GoFV.SSA.Sem.LocCtx) (ps : Array Prog) (bstart : GoFV.SSA.ID → Option Nat)
+def reasons31 (lc : GoFV.SSA.Sem.LocCtx) (ps : Array Prog) (bstart : GoFV.SSA.ID → Option Nat)
     (g : Check.G2In) : List String := Id.run do
   let mut rs : List String := []
   let low := lc.ctx.f.lowered
@@ -196,7 +200,7 @@ def reasons32 (lc : GoFV.SSA.Sem.LocCtx) (ps : Array Prog) (bstart : GoFV.SSA.ID
       rs := s!"b{bid}: block kind {b.kind.name} in a function with no arm64 op" :: rs
   if let .error e := Check.checkFrame lc g then rs := e :: rs
   if rs.isEmpty then
-    match Check.checkG32 lc ps bstart g with
+    match Check.checkG31 lc ps bstart g with
     | .error e => rs := [e]
     | .ok _ => pure ()
   return rs
@@ -347,7 +351,11 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
   let st := if ok30 then
       { st with accepted30 := st.accepted30 + 1, acceptedValues30 := st.acceptedValues30 + nv }
     else st
-  match Check.checkG32 lc ps bstart g with
+  let ok32 := (Check.checkG32 lc ps bstart g).toOption.isSome
+  let st := if ok32 then
+      { st with accepted32 := st.accepted32 + 1, acceptedValues32 := st.acceptedValues32 + nv }
+    else st
+  match Check.checkG31 lc ps bstart g with
   | .ok _ =>
     let tag := if ok4 then "" else if ok5 then " (G5)" else if ok6 then " (G6)"
       else if ok7 then " (G7)" else if ok8 then " (G8)" else if ok9 then " (G9)"
@@ -358,11 +366,11 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
       else if ok22 then " (G22)" else if ok23 then " (G23)" else if ok24 then " (G24)"
       else if ok25 then " (G25)" else if ok26 then " (G26)" else if ok27 then " (G27)"
       else if ok28 then " (G28)" else if ok29 then " (G29)" else if ok30 then " (G30)"
-      else " (G32)"
-    return { st with accepted32 := st.accepted32 + 1, acceptedValues32 := st.acceptedValues32 + nv,
+      else if ok32 then " (G32)" else " (G31)"
+    return { st with accepted31 := st.accepted31 + 1, acceptedValues31 := st.acceptedValues31 + nv,
                      accept := st.accept.push s!"{path}{tag}" }
   | .error msg =>
-    let rs := reasons32 lc ps bstart g
+    let rs := reasons31 lc ps bstart g
     return st.reject path (if rs.isEmpty then [msg] else rs)
 
 def progFiles (p : System.FilePath) : IO (Array System.FilePath) := do
@@ -430,6 +438,7 @@ def main (args : List String) : IO UInt32 := do
   out := out ++ s!"| {st.files} | G29 | {st.accepted29} | {pct st.accepted29 st.files} | {st.values} | {st.acceptedValues29} |\n"
   out := out ++ s!"| {st.files} | G30 | {st.accepted30} | {pct st.accepted30 st.files} | {st.values} | {st.acceptedValues30} |\n"
   out := out ++ s!"| {st.files} | G32 | {st.accepted32} | {pct st.accepted32 st.files} | {st.values} | {st.acceptedValues32} |\n"
+  out := out ++ s!"| {st.files} | G31 | {st.accepted31} | {pct st.accepted31 st.files} | {st.values} | {st.acceptedValues31} |\n"
   out := out ++ s!"\n{st.errors} parse, env or genssa errors\n"
   let sorted (m : Std.HashMap String Nat) :=
     m.toArray.qsort fun a b => a.2 > b.2 || (a.2 == b.2 && a.1 < b.1)
@@ -437,7 +446,7 @@ def main (args : List String) : IO UInt32 := do
   for (k, c) in (sorted st.sole).toList.take 60 do out := out ++ s!"| `{k}` | {c} |\n"
   out := out ++ "\n| reason | functions it occurs in |\n| --- | ---: |\n"
   for (k, c) in (sorted st.occurs).toList.take 80 do out := out ++ s!"| `{k}` | {c} |\n"
-  out := out ++ "\naccepted (G32; the first slice that accepts a function past G4 in parentheses):\n"
+  out := out ++ "\naccepted (G31; the first slice that accepts a function past G4 in parentheses):\n"
   for a in st.accept.qsort (· < ·) do out := out ++ s!"- {a}\n"
   IO.println out
   if let some f := table then IO.FS.writeFile f out

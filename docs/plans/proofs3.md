@@ -761,6 +761,31 @@ and the machine stores the register's low `n` bytes (`progStep_stlr`), so G3's s
 applies (`g32_stlr`). The G32 ops empty the upper-bit table (`uStepL`), as every value outside
 G29's does. G32 accepts 5,678 functions (+311 over G30).
 
+**Slice G31: the upper-bit table across values and blocks** (`GoFV/Gen/Check31.lean`, `checkG31 lc
+ps bstart g`, returning G4's tables; proven sound, `g31_value`, `g31_term`, `g31_nilPanic`,
+`g31_boundsPanic`): G32 with a larger upper-bit table `uL31` in place of G29's `uL` on a function
+with an arm64 op. Across a value of G1's kinds or G3's `CMPW`/`CMPWconst` (`keep31`: `Phi`, `ZERO`,
+`InlMark`, `Copy`, `MakeResult`, `MOVDconst`, `ADD`, `SUB`, `ADDconst`, `SUBconst`, `CMP`,
+`CMPconst`, `CMPW`, `CMPWconst`, and `MOVDload`/`MOVDstore` without symbol) the table keeps the
+entries of the registers other than the value's register home (`uStep31`); every other value steps
+as in G29 (`uStepL`). Each block starts with `uIn`: nothing at the entry block, elsewhere the
+entries every reached predecessor ends with (`uFlow`, a forward dataflow to a fixed point), which
+`uEdgesOK` checks (the entry starts empty, every successor's start is in its predecessor's end).
+`movdOK31` asks each `MOVDnop`/`MOVDreg` to find its argument's entry in the table before it. The
+statements are G32's over `checkG31`, with the same premises, except that `g31_value` takes `UOKL
+m (uL31 lc (uIn lc bid) blk i)` and concludes `UOKL m' (uL31 lc (uIn lc bid) blk (i + 1))`, and
+`g31_term` takes `UOKL m (uL31 lc (uIn lc bid) blk blk.values.size)` and concludes `UOKL m' (uIn lc
+e.b)` at the successor; `uIn lc entry = []` (`uEdgesOK_entry`), so the premise is trivial at the
+function's entry. No new trusted premise. The proof (`G31.lean`, `Keep31.lean`): a `keep31` value
+is G3's (`vk32_vk3`, peeling `VK32` to `VK3`), and its step writes at most its register home's X
+register (`XW`, now concluded by G1's `value_core` and G2's `g2_g1`; `g3_cmpw`, `g3_cmpwK` keep
+every X register; `vk3_keep`), so the other registers' entries stay true (`uokl_keep`); every other
+value steps as in G32 (`vk32_stepU`). A terminator keeps every X register (G1's `term_core`, G3's
+`term_test`, `termK_stepX`), and each successor's start is in its predecessor's end
+(`uEdgesOK_edge`). G31 accepts 5,703 functions (+25 over G32); 26 still have `upper bits unknown`
+as their only reason, whose tables need frames for spills and reloads, `LDP`/`Select`, bounds
+panics or `MOVBreg` to keep the entries.
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -772,10 +797,10 @@ reason in parentheses):
    a parameter of the semantics); slots of other sizes (`slot … frame operand, size or alignment`,
    717).
 3. **Other values**: the acquire loads `LDAR`/`LDARW` (383, 277); `InitMem` after the entry values
-   (32 sole after G32), `UBFIZ` (31), `LoweredGetCallerPC`, `REV` (24 each), `CLZ`, `CMNconst`,
-   `SRAconst` (21 each); `MOVDnop` 750 (91) and `MOVDreg` (27 sole) are done in G20, G21 and G29
-   but for those whose load is in another block (51 functions with no other blocker after G32),
-   which need the table across blocks (§8). Bounds panics
+   (33 sole after G31), `UBFIZ` (31), `LoweredGetCallerPC` (25), `REV` (24), `SRAconst` (22),
+   `CLZ`, `CMNconst` (21 each), `CMNWconst` (15); `MOVDnop` 750 (91) and `MOVDreg` (27 sole) are
+   done in G20, G21, G29 and G31 but for 26 functions with no other blocker after G31, whose
+   tables need more ops to keep their entries (§8). Bounds panics
    (`LoweredPanicBoundsRR` 616 (68), `RC` 332 (46), `CR` 76 (33), `CC` 170 (22)) are done in G19
    but for #541's 2 functions.
 
@@ -817,6 +842,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G29 | 5,361 (57.66%) | 121,036 |
 | G30 | 5,367 (57.72%) | 121,060 |
 | G32 | 5,678 (61.07%) | 143,647 |
+| G31 | 5,703 (61.34%) | 145,016 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1012,6 +1038,11 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `addr_asPtrWord`, `progStep_stlr`, `g32_bin`, `g32_binK`, `g32_un`, `g32_csinc`, `g32_stlr`,
   `vk32_step`, `vk32_stepU`, `g32_value`, `vk32_nil`, `g32_nilPanic`, `g32_boundsPanic`,
   `g32_term`.
+- `Spec31.lean`: what `checkG31` accepted (`uL31_succ`, `uIn_nl`, `uL31_nl`, `movdOK31_spec`,
+  `uEdgesOK_entry`, `uEdgesOK_edge`, `checkG31_nl`, `checkG31_spec`).
+- `Keep31.lean`: `VK32` of a `keep31` value is `VK3` (`vk32_vk3`, through `vk4_vk3` … `vk32_vk28`).
+- `G31.lean`: `uok_of_x`, `uokl_of_x`, `uStep31_keep`, `uStep31_other`, `uokl_keep`, `vk3_keep`,
+  `vk31_step`, `uL_nl30`, `g31_value`, `g31_nilPanic`, `g31_boundsPanic`, `g31_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -1102,7 +1133,12 @@ R1`, from `0xffffffeeddccbbab`, after which `X1 = 0x1122334455`, and on `v17 = S
 `runLoc`'s memory holds the word's bytes and the machine's 8 bytes at `2^41` read
 `0x1122334455`), `GenG32c.lean` (`internal/bytealg.countGeneric`: `g32_value` on `v32 = CSINC
 [NotEqual] v31 v31 v40`, `CSINC NE, R4, R4, R4`, with the flags of an equal `CMPW` and `R4 = 5`,
-after which the machine's `X4 = 6`).
+after which the machine's `X4 = 6`), `GenG31.lean` (`runtime.(*hexdumper).close`, which G32
+rejects: `b1` loads the byte `h.nbuf` into `R4` and copies it to `R5`, and `b3`'s `v22 = MOVDreg
+v8`, `MOVD R4, R2`, finds `R4`'s entry only in `uIn lc 3 = [(5, 8, false), (4, 8, false)]`, the end
+of `b1`; `g31_value` on `v22` from a machine whose `X4`, `X5` are zero-extended from 8 bits, after
+which the machine's whole `X2 = 0x2a`, and `g31_term` on `b1`'s `CBZW R5` to `b3` with `UOKL` of
+`uIn lc 3`, which gives the whole `X5 = 0x2a`).
 Each decides its inputs by compiled evaluation (`native_decide`, pinned in
 `scripts/axioms-allowlist.txt`).
 
@@ -1352,7 +1388,9 @@ narrow loads, `MOVDnop`s and `MOVDreg`s between (each writes at most its own reg
 `g3_loadW`, `g14_idxW`, `g20_nop` and `op_reg2W` already state), so a table of several entries
 carried across just those values would take them; the other 22 need the cross-block table. G29
 (§4) is that in-block table; it took 29 functions, and 46 still have `upper bits unknown` as
-their only reason.
+their only reason. G31 (§4) carries it across G1's and G3's ops (`XW`) and blocks (`uIn`, `uFlow`);
+it took 25 functions, and 26 still have `upper bits unknown` as their only reason. A wider keep set
+(frames for spills and reloads, `LDP`/`Select`, bounds panics, `MOVBreg`) measured 38 of the 46.
 
 - **The obstacle.** `MOVDnop x` emits no code. `runLoc` gives it the full 64-bit register:
   `movdLoc` takes the zero or sign extension of `x`'s low bits, as `LocCtx.signOf` decides from
