@@ -27,9 +27,10 @@ with `obj_star` and `obj_panic` (`runProg` on P0 → `runMach` on the linked wor
 * `g45_obj_boundsPanic`: a bounds check that panics is matched by machine steps to a state that
   panics with a panic `BoundsAgree`ing with it.
 
-The premises are `g45L_value`'s (`G45Pre`: `G41Pre`, that is `G38Pre` (`G14Pre` and an acquire
-load's valid bytes `LdarPre`) and `CmpPre`, the first argument of a G41 compare no pointer without
-an integer form; and `FLoadPre`, a float load's valid bytes, no bare pointer; `GetGOK`, the
+The premises are `g45L_value`'s (`G45Pre`: `G44Pre`, that is `G41Pre` (`G38Pre`, i.e. `G14Pre`
+and an acquire load's valid bytes `LdarPre`, and `CmpPre`, the first argument of a G41 compare no
+pointer without an integer form) and `FLoadPre`, a float load's valid bytes, no bare pointer; and
+`FIdxPre`, the same of a float register-index load; `GetGOK`, the
 trusted contracts `CallOK`, `CallOKZ`, `ICallOK`, `WbOK`, `CloOK`,
 `MemEqOK`) and `obj_star`'s (`ObjEnv`, the trusted `HookMap`); a panic also `obj_panic`'s (the
 trusted `HookPanicMap`), a bounds panic the trusted `BoundsOK`.
@@ -71,7 +72,7 @@ theorem g45L_clean {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} 
   have hid' : blk.values.toList[i] = id := by simpa using hid
   rw [hid', hv] at hv'
   cases hv'
-  rw [hvk, vkind44_initMem hop] at hkd
+  rw [hvk, vkind45_initMem hop, vkind44_initMem hop] at hkd
   obtain ⟨hok, hcl, -⟩ := vkind43_initMem hkd hop
   exact ⟨hok, initMemClean_spec hcl hbid hb hi hv hop⟩
 

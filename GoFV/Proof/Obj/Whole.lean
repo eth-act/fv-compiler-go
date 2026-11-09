@@ -181,14 +181,16 @@ def RunPre (env : Env) (H : Hooks) (lc : LocCtx) (g : G2In) (L : Link) (ret : Bi
 
 /-- An op none of whose per-step premises says anything: no compare, load, pair load,
 register-index load, subtraction, nil check, zeroing, call, write barrier, closure pointer,
-`GetG`, `LoweredMemEq`, acquire load, G41 compare or float load, and no entry value. -/
+`GetG`, `LoweredMemEq`, acquire load, G41 compare, float load or float register-index load, and
+no entry value. -/
 def simpleOp (op : Op) : Bool :=
   op != .ARM64CMP && op != .ARM64CMPconst && (loadOp? op).isNone && op != .ARM64LDP &&
     op != .ARM64SUB && op != .ARM64LoweredNilCheck && op != .ARM64CALLstatic &&
     (icallLead op).isNone && op != .ARM64LoweredWB && op != .ARM64LoweredGetClosurePtr &&
     !entryOp3 op && op != .ARM64LoweredZero && (loadIdxOp? op).isNone && op != .GetG &&
     op != .ARM64LoweredMemEq && (ldar? op).isNone && op != .ARM64CMNconst &&
-    (cmpSh41? op).isNone && op != .ARM64FMOVSload && op != .ARM64FMOVDload
+    (cmpSh41? op).isNone && op != .ARM64FMOVSload && op != .ARM64FMOVDload &&
+    (fLoadIdxOp? op).isNone
 
 /-- Every value of `f` from value `i0` of block `b0` on (and of every other block) has a simple
 op, no block is a register test (`Z`/`NZ`) and no edge goes to `b0`. -/
@@ -283,11 +285,11 @@ theorem g45Pre_simple {lc : LocCtx} {v : Value} (h : simpleOp v.op = true) (s : 
     G45Pre lc s v := by
   simp only [simpleOp, Bool.and_eq_true, bne_iff_ne, ne_eq, Option.isNone_iff_eq_none,
     Bool.not_eq_eq_eq_not, Bool.not_true] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, -⟩, -⟩, -⟩, -⟩, -⟩, hz⟩, hix⟩, -⟩, -⟩, hld⟩,
-    hcmn⟩, hsh⟩, hfs⟩, hfd⟩ := h
-  refine ⟨⟨⟨⟨⟨⟨⟨⟨fun h => by rcases h with h | h <;> contradiction,
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, -⟩, -⟩, -⟩, -⟩, -⟩, hz⟩, hix⟩, -⟩, -⟩,
+    hld⟩, hcmn⟩, hsh⟩, hfs⟩, hfd⟩, hfi⟩ := h
+  refine ⟨⟨⟨⟨⟨⟨⟨⟨⟨fun h => by rcases h with h | h <;> contradiction,
     (fun _ _ _ hl => by rw [h3] at hl; cases hl), fun h => absurd h h5⟩, fun h => absurd h h4⟩,
-    fun h => absurd h h6⟩, fun h => absurd h hz⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩
+    fun h => absurd h h6⟩, fun h => absurd h hz⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩
   · intro as n sh sg hl
     rw [hix] at hl
     cases hl
@@ -302,6 +304,9 @@ theorem g45Pre_simple {lc : LocCtx} {v : Value} (h : simpleOp v.op = true) (s : 
     rcases hop with hop | hop
     · exact absurd hop hfs
     · exact absurd hop hfd
+  · intro n sh hl
+    rw [hfi] at hl
+    cases hl
 
 /-- **`RunPre` of a function of simple ops** (`simpleFrom`): every premise is vacuous. -/
 theorem runPre_simple {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
@@ -345,8 +350,8 @@ theorem runPre_simple {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link
     have hs' := hs
     simp only [simpleOp, Bool.and_eq_true, bne_iff_ne, ne_eq, Option.isNone_iff_eq_none,
       Bool.not_eq_eq_eq_not, Bool.not_true] at hs'
-    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, -⟩, -⟩, -⟩, -⟩, -⟩, hc⟩, hic⟩, hwb⟩, hcl⟩, hen⟩, -⟩, -⟩, hgg⟩,
-      hme⟩, -⟩, -⟩, -⟩, -⟩, -⟩ := hs'
+    obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, -⟩, -⟩, -⟩, -⟩, -⟩, hc⟩, hic⟩, hwb⟩, hcl⟩, hen⟩, -⟩, -⟩, hgg⟩,
+      hme⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩ := hs'
     refine ⟨.inl (by simp [entryOp24, hen]), fun s' _ => ⟨g45Pre_simple hs s, fun E m _ _ =>
       ⟨fun h => absurd h hc, fun h => absurd h hc, ?_, fun h => absurd h hwb, fun h => absurd h hcl,
         fun h => absurd h hgg, fun h => absurd h hme⟩⟩⟩

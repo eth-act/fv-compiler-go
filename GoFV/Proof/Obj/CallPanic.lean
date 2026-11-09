@@ -10,17 +10,16 @@ Progs run the no-ops before the `CALL sym(SB)` and the `CALL` (`X30` the return 
 callee's symbol), where the runtime hook panics with the same panic by the callee contract
 `CallPanicOK` (trusted, as `CallOK` for a callee that returns): `g45_callPanic` (`runLoc` →
 `runProg` on P0), `g45_obj_callPanic` (→ `runMach` on the linked words, `obj_panic`). A function
-with no arm64 op has no call (`nl30_ops`); in one with, `vkind44` of a call is `vkind43`'s
-(`vkind44_eq43`), so `vkind42`'s (`vkind43_eq42`), `vkind41`'s (`vkind42_eq41`), `vkind40`'s
-(`vkind41_eq40`), `vkind38`'s (`vkind40_eq38`) and `vkind28`'s (`vkind38_eq28`), whose static
-calls are G15's (`vk28_vk18`, `vk18_call`).
+with no arm64 op has no call (`nl30_ops`); in one with, `vkind45` of a call is `vkind44`'s
+(`vkind45_eq44`), so `vkind43`'s (`vkind44_eq43`), `vkind42`'s (`vkind43_eq42`), `vkind41`'s
+(`vkind42_eq41`), `vkind40`'s (`vkind41_eq40`), `vkind38`'s (`vkind40_eq38`) and `vkind28`'s
+(`vkind38_eq28`), whose static calls are G15's (`vk28_vk18`, `vk18_call`).
 
 An interface or closure call that panics: the no-ops, then `CALL (Rn)` to the code pointer in
 `Rn`, where the callee's hook panics with the same panic by `ICallPanicOK` (trusted, as `ICallOK`):
-`g45_icallPanic`, `g45_obj_icallPanic`. `vkind44` of such a call is `vkind10`'s, `icallKind`
-(`vkind44_eq43`, `vkind43_eq42`, `vkind42_eq41`, `vkind41_eq40`, `vkind40_eq38`, `vkind38_eq28`,
-`vkind28_icall`,
-`icallKind_facts`).
+`g45_icallPanic`, `g45_obj_icallPanic`. `vkind45` of such a call is `vkind10`'s, `icallKind`
+(`vkind45_eq44`, `vkind44_eq43`, `vkind43_eq42`, `vkind42_eq41`, `vkind41_eq40`, `vkind40_eq38`,
+`vkind38_eq28`, `vkind28_icall`, `icallKind_facts`).
 -/
 
 namespace GoFV.Proof.Obj
@@ -176,7 +175,8 @@ theorem g45_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   have hid' : blk.values.toList[i] = id := by simpa using hid
   rw [hid', hv] at hv'
   cases hv'
-  rw [hvk, vkind44_eq43 (by rw [hop]; rfl), vkind43_eq42 (by rw [hop]; nofun),
+  rw [hvk, vkind45_eq44 (by rw [hop]; rfl) (by rw [hop]; rfl),
+    vkind44_eq43 (by rw [hop]; rfl), vkind43_eq42 (by rw [hop]; nofun),
     vkind42_eq41 (by rw [hop]; nofun),
     vkind41_eq40 (by rw [hop]; nofun) (by rw [hop]; rfl),
     vkind40_eq38 (by rw [hop]; nofun), vkind38_call hop] at hkd
@@ -392,7 +392,9 @@ theorem g45_icallPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   have hid' : blk.values.toList[i] = id := by simpa using hid
   rw [hid', hv] at hv'
   cases hv'
-  rw [hvk, vkind44_eq43 (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl),
+  rw [hvk, vkind45_eq44 (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl)
+      (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl),
+    vkind44_eq43 (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl),
     vkind43_eq42 (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> nofun),
     vkind42_eq41 (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> nofun),
     vkind41_eq40 (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> nofun)

@@ -666,7 +666,10 @@ theorem g45_memPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   have hid' : blk.values.toList[i] = id := by simpa using hid
   rw [hid', hv] at hv'
   cases hv'
-  rw [hvk, vkind44_eq43 (by
+  rw [hvk, vkind45_eq44 (by
+    rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;> rfl)
+    (by rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;> rfl),
+    vkind44_eq43 (by
     rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;> rfl),
     vkind43_eq42 (by
     rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;> nofun),
@@ -801,6 +804,8 @@ theorem g45_ldarPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link
   rw [hid', hv] at hv'
   cases hv'
   rw [hvk,
+    vkind45_eq44 (by rcases ldar?_some hop with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl)
+      (by rcases ldar?_some hop with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl),
     vkind44_eq43 (by rcases ldar?_some hop with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl),
     vkind43_eq42 (by rcases ldar?_some hop with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> nofun),
     vkind42_eq41 (by rcases ldar?_some hop with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> nofun),
