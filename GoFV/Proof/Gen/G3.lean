@@ -601,7 +601,7 @@ theorem g3_cmpw (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j (.ofShape { as := .CMPW, from_ := regA rm, reg := rn }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ m'.x = m.x := by
   have hl := F.lowered
   have hA := F.addr
   have hnp : v.op ≠ .Phi := by rw [hop]; nofun
@@ -621,7 +621,7 @@ theorem g3_cmpw (F : Facts lc sym text az ez psA.toList ret E)
     (knext_same hK (Or.inr fun _ _ => by rw [hhn]; nofun)) (fun k hk hok => by
       obtain ⟨has, hf, hr, -, -⟩ := Shape.ok_eq hok
       rw [progStep_cmpwReg hkn hkm (nextAddr_pcAt F.nodup hk) has hf hr] <;> rfl)).imp
-    fun m' ⟨h1, h2, h3, _⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, _, h5⟩ => ⟨h1, h2, h3, hsi, h5⟩
 
 /-- `CMPW $k, Rn`. -/
 theorem g3_cmpwK (F : Facts lc sym text az ez psA.toList ret E)
@@ -634,7 +634,7 @@ theorem g3_cmpwK (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j (.ofShape { as := .CMPW, from_ := constA v.auxInt.toInt, reg := rn }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ m'.x = m.x := by
   have hl := F.lowered
   have hA := F.addr
   have hnp : v.op ≠ .Phi := by rw [hop]; nofun
@@ -650,7 +650,7 @@ theorem g3_cmpwK (F : Facts lc sym text az ez psA.toList ret E)
     (knext_same hK (Or.inr fun _ _ => by rw [hhn]; nofun)) (fun k hk hok => by
       obtain ⟨has, hf, hr, -, -⟩ := Shape.ok_eq hok
       rw [progStep_cmpwConst hkn (nextAddr_pcAt F.nodup hk) has hf hr] <;> rfl)).imp
-    fun m' ⟨h1, h2, h3, _⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, _, h5⟩ => ⟨h1, h2, h3, hsi, h5⟩
 
 /-- A value of no home and a register shape writes nothing. -/
 theorem write_none_cls {id : ID} {x : Val} (hh : lc.home id = none)
@@ -701,7 +701,8 @@ end Cases
 /-! ## The register and bit tests -/
 
 /-- A 32-bit register test (`ZW`/`NZW`: `CBZW`/`CBNZW`) or a bit test (`TBZ`/`TBNZ`) that goes
-to a successor, from the facts `Cx.termG3` gives about its block (`TermOK3`). -/
+to a successor, from the facts `Cx.termG3` gives about its block (`TermOK3`); the machine's X
+registers are kept. -/
 theorem term_test {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int}
     {ret : BitVec 64} {E : MatchEnv} {cx : Cx} {P : BitVec 64 → Prop} {bid : ID} {blk : Block}
     {e : Edge} {s s' : LocState} {m : MState} {e' : Nat} {next : Option (ID × Nat)}
@@ -715,7 +716,7 @@ theorem term_test {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az e
     (ht : stepTermLoc cx.lc s blk = .ok (.goto e, s')) :
     ∃ m', PStar H (Link.byId sym text az ez cx.ps.toList) cx.ps.toList ret m m' ∧
       LocMatch E s' e.b 0 m' ∧ (∃ R, s' = { s with fr := { s.fr with regs := R } }) ∧
-      e ∈ blk.succs.toList ∧ e.b ∈ cx.lc.ctx.f.blocks.toList := by
+      e ∈ blk.succs.toList ∧ e.b ∈ cx.lc.ctx.f.blocks.toList ∧ m'.x = m.x := by
   have hl := F.lowered
   have hA := F.addr
   have hm0 : ({ m with pc := pcAt text cx.ps.toList e' } : MState) = m := by
@@ -744,7 +745,7 @@ theorem term_test {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az e
   subst hxx
   have hmem : (if t then e0 else e1) ∈ blk.succs.toList := by cases t <;> simp [he0, he1]
   subst hR
-  refine ⟨_, ?_, locMatch_jump hm, ⟨R, rfl⟩, hmem, hsucc _ hmem⟩
+  refine ⟨_, ?_, locMatch_jump hm, ⟨R, rfl⟩, hmem, hsucc _ hmem, rfl⟩
   rw [← hm0]
   have hrx : ∀ k', ({ m with pc := pcAt text cx.ps.toList k' } : MState).rX (BitVec.ofNat 5 kn) =
       m.rX (BitVec.ofNat 5 kn) := fun _ => rfl
@@ -981,9 +982,9 @@ theorem vk3_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat →
         rcases hops with ⟨hl0, -⟩ | ⟨-, hx⟩
         · rw [hop] at hl0; simp [loadOp?] at hl0
         · exact hx
-      obtain ⟨m', h⟩ := g2_g1 (H := H) F hF hsz hm hinv.core hinv.slots hj hj' hvs hvk htemp
-        (hpre.g1 haux) hR (hK hnc) hs
-      exact same m' h
+      obtain ⟨m', h1, h2, h3, h4, -⟩ := g2_g1 (H := H) F hF hsz hm hinv.core hinv.slots hj hj'
+        hvs hvk htemp (hpre.g1 haux) hR (hK hnc) hs
+      exact same m' ⟨h1, h2, h3, h4⟩
     | call hop hcall' hcr _ _ _ h16 hlen hargs hres hct hrr hpat =>
       have hframed : E.framed = true := by
         cases hfr : E.framed
@@ -1051,13 +1052,13 @@ theorem vk3_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat →
       hj' hop hsz1 hk0 hk16 hao hro h8 hw0 hlw hpat hvs htemp hs
     exact same m' h
   | cmpw hop hsz2 hfl hhn hao hbo hca hcb =>
-    obtain ⟨m', h⟩ := g3_cmpw (H := H) F hm hinv.core hinv.slots hR (hK (by rw [hop]; nofun)) hj
-      hj' hop hsz2 hfl hhn hao hbo hca hcb hvs htemp hs
-    exact same m' h
+    obtain ⟨m', h1, h2, h3, h4, -⟩ := g3_cmpw (H := H) F hm hinv.core hinv.slots hR
+      (hK (by rw [hop]; nofun)) hj hj' hop hsz2 hfl hhn hao hbo hca hcb hvs htemp hs
+    exact same m' ⟨h1, h2, h3, h4⟩
   | cmpwK hop hsz1 hfl hhn hao hca =>
-    obtain ⟨m', h⟩ := g3_cmpwK (H := H) F hm hinv.core hinv.slots hR (hK (by rw [hop]; nofun)) hj
-      hj' hop hsz1 hfl hhn hao hca hvs htemp hs
-    exact same m' h
+    obtain ⟨m', h1, h2, h3, h4, -⟩ := g3_cmpwK (H := H) F hm hinv.core hinv.slots hR
+      (hK (by rw [hop]; nofun)) hj hj' hop hsz1 hfl hhn hao hca hvs htemp hs
+    exact same m' ⟨h1, h2, h3, h4⟩
 
 /-- **G3, values.** A value (not an entry value) of a function `checkG3` accepted with the class
 table `kt`, run by `runLoc` from a state related by `LocMatch` to a machine state whose registers
@@ -1110,10 +1111,11 @@ theorem g3_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps
 /-- A terminator of a function whose blocks `c.blocks` accepted with G3's terminator check
 (`Cx.termG3`) and whose class table `kt` passes `checkK`, from a state whose registers hold the
 classes of the block's end: matched by `runProg` steps to a state related before the successor's
-first value, with the registers at the successor's classes. `g3_term` and the later slices'
-terminator theorems apply it to their validator's facts. -/
-theorem termK_step {H : Hooks} {c : Cx2} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int}
-    {ret : BitVec 64} {tab : PcTab} {kt : KTab} {E : MatchEnv} {bid : ID} {blk : Block}
+first value, with the registers at the successor's classes; the successor is one of the block's
+and the machine's X registers are kept. `termK_step` drops the last two facts. -/
+theorem termK_stepX {H : Hooks} {c : Cx2} {sym : Nat → BitVec 64} {text : BitVec 64}
+    {az ez : Int} {ret : BitVec 64} {tab : PcTab} {kt : KTab} {E : MatchEnv} {bid : ID}
+    {blk : Block}
     {e : Edge} {s s' : LocState} {m : MState}
     (hpcOf : E.pcOf = pcOfTab text c.cx.ps.toList tab)
     (F : Facts c.cx.lc sym text az ez c.cx.ps.toList ret E) (htm : c.tm = c.cx.termG3)
@@ -1124,7 +1126,7 @@ theorem termK_step {H : Hooks} {c : Cx2} {sym : Nat → BitVec 64} {text : BitVe
     (hpre : G1TermPre c.cx.lc s blk) (ht : stepTermLoc c.cx.lc s blk = .ok (.goto e, s')) :
     ∃ m', PStar H (Link.byId sym text az ez c.cx.ps.toList) c.cx.ps.toList ret m m' ∧
       LocMatch E s' e.b 0 m' ∧ G3Inv E c.cx.lc (kt.at e.b) s' ∧
-      e.b ∈ c.cx.lc.ctx.f.blocks.toList := by
+      e.b ∈ c.cx.lc.ctx.f.blocks.toList ∧ e ∈ blk.succs.toList ∧ m'.x = m.x := by
   obtain ⟨b, j, js, e', next, hb', -, hvals, hterm, hnext, hrow⟩ :=
     Cx2.blocks_spec hblocks bid hbid
   rw [hb] at hb'
@@ -1142,19 +1144,36 @@ theorem termK_step {H : Hooks} {c : Cx2} {sym : Nat → BitVec 64} {text : BitVe
   have hst := start_of_mem2 hblocks hpcOf
   have fin : ∀ m', PStar H (Link.byId sym text az ez c.cx.ps.toList) c.cx.ps.toList ret m m' ∧
       LocMatch E s' e.b 0 m' ∧ (∃ R, s' = { s with fr := { s.fr with regs := R } }) ∧
-      e ∈ blk.succs.toList ∧ e.b ∈ c.cx.lc.ctx.f.blocks.toList →
+      e ∈ blk.succs.toList ∧ e.b ∈ c.cx.lc.ctx.f.blocks.toList ∧ m'.x = m.x →
       ∃ m', PStar H (Link.byId sym text az ez c.cx.ps.toList) c.cx.ps.toList ret m m' ∧
         LocMatch E s' e.b 0 m' ∧ G3Inv E c.cx.lc (kt.at e.b) s' ∧
-        e.b ∈ c.cx.lc.ctx.f.blocks.toList := by
-    rintro m' ⟨hstar, hlm, ⟨R, rfl⟩, hmem, hin⟩
+        e.b ∈ c.cx.lc.ctx.f.blocks.toList ∧ e ∈ blk.succs.toList ∧ m'.x = m.x := by
+    rintro m' ⟨hstar, hlm, ⟨R, rfl⟩, hmem, hin, hx⟩
     exact ⟨m', hstar, hlm,
-      ⟨(core_fr hinv.core).mono fun r cc _ h => hedge e hmem r cc h, hinv.slots⟩, hin⟩
+      ⟨(core_fr hinv.core).mono fun r cc _ h => hedge e hmem r cc h, hinv.slots⟩, hin, hmem, hx⟩
   rcases Cx.termG3_spec hterm with ⟨-, hterm⟩ | ⟨asm, inv, hbr, hterm⟩
   · rcases Cx.termG2_spec hterm with ⟨hk', -⟩ | ⟨-, hterm⟩
     · obtain ⟨R, -, hn⟩ := stepTermLoc_gen ht
       exact (stepTermL_exit hk' hn).elim
     exact fin _ (term_core (H := H) F hst hterm hnext hpcT hm hinv.core hK hpre ht).choose_spec
   · exact fin _ (term_test (H := H) F hst hbr hterm hnext hpcT hm hinv.core hK ht).choose_spec
+
+/-- `termK_stepX` without the successor and the X registers. -/
+theorem termK_step {H : Hooks} {c : Cx2} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int}
+    {ret : BitVec 64} {tab : PcTab} {kt : KTab} {E : MatchEnv} {bid : ID} {blk : Block}
+    {e : Edge} {s s' : LocState} {m : MState}
+    (hpcOf : E.pcOf = pcOfTab text c.cx.ps.toList tab)
+    (F : Facts c.cx.lc sym text az ez c.cx.ps.toList ret E) (htm : c.tm = c.cx.termG3)
+    (hk : checkK c.cx.lc kt = .ok ()) (hblocks : c.blocks c.cx.lc.ctx.f.blocks.toList = .ok tab)
+    (hbid : bid ∈ c.cx.lc.ctx.f.blocks.toList) (hb : c.cx.lc.ctx.f.block? bid = some blk)
+    (hm : LocMatch E s bid blk.values.size m)
+    (hinv : G3Inv E c.cx.lc (kAt c.cx.lc kt bid blk blk.values.size) s)
+    (hpre : G1TermPre c.cx.lc s blk) (ht : stepTermLoc c.cx.lc s blk = .ok (.goto e, s')) :
+    ∃ m', PStar H (Link.byId sym text az ez c.cx.ps.toList) c.cx.ps.toList ret m m' ∧
+      LocMatch E s' e.b 0 m' ∧ G3Inv E c.cx.lc (kt.at e.b) s' ∧
+      e.b ∈ c.cx.lc.ctx.f.blocks.toList :=
+  (termK_stepX hpcOf F htm hk hblocks hbid hb hm hinv hpre ht).imp
+    fun _ ⟨h1, h2, h3, h4, _⟩ => ⟨h1, h2, h3, h4⟩
 
 /-- **G3, terminators.** A terminator of a function `checkG3` accepted with the class table `kt`
 that goes to a successor, from a state whose registers hold the classes of the block's end, is

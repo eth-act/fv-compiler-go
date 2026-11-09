@@ -619,12 +619,26 @@ theorem op_none {s' : LocState} (hm : LocMatch E s b i m) (hinv : CoreInv E.ι P
       LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι P K' s' ∧ s'.slots = s.slots :=
   ⟨m, .refl, hs ▸ locMatch_pc hm (hpc.trans hm.pc.symm), hs ▸ hinv.mono hKL, hs ▸ rfl⟩
 
-/-- A value whose one Prog writes its register. -/
-theorem op_reg (F : Facts lc sym text az ez psA.toList ret E) (hm : LocMatch E s b i m)
+/-- `op_none`, with the machine's X registers kept. -/
+theorem op_noneX {s' : LocState} (hm : LocMatch E s b i m) (hinv : CoreInv E.ι P K s)
+    (hs : s' = s) (hpc : E.pcOf b (i + 1) = E.pcOf b i) (hKL : KLe K' K) :
+    ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι P K' s' ∧ s'.slots = s.slots ∧ m'.x = m.x :=
+  ⟨m, .refl, hs ▸ locMatch_pc hm (hpc.trans hm.pc.symm), hs ▸ hinv.mono hKL, hs ▸ rfl, rfl⟩
+
+/-- What a value does to the machine's X registers: nothing, or it writes the X register of its
+register home (`value_core`). -/
+def XW (lc : LocCtx) (v : Value) (m m' : MState) : Prop :=
+  m'.x = m.x ∨ ∃ (r kd : Nat) (val : BitVec 64), lc.home v.id = some (.reg r) ∧
+    objOf? r = some (GoFV.Asm.ARM64.REG_R0 + kd) ∧ m'.x = (m.wX (BitVec.ofNat 5 kd) val).x
+
+/-- A value whose one Prog writes its register (its register home `r`). -/
+theorem op_reg {v : Value} (F : Facts lc sym text az ez psA.toList ret E) (hm : LocMatch E s b i m)
     (hinv : CoreInv E.ι P K s) {j j' : Nat} (hj : E.pcOf b i = pcAt text psA.toList j)
     (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j') {sh : Shape} (hone : OneAt psA j sh j')
     {r c kd : Nat} {x : Val} {val : BitVec 64} (hd : destOK r = true)
     (hkd : kd < 32) (hrk : objOf? r = some (GoFV.Asm.ARM64.REG_R0 + kd))
+    (hvh : lc.home v.id = some (.reg r))
     (hx : ValRel E.ι x val) (hfx : Fits c x) (hKL : KLe K' (kSet K r (some c)))
     (hstep : ∀ k (hk : k < psA.toList.length), sh.ok psA.toList[k] = true →
       progStep (Link.byId sym text az ez psA.toList) psA.toList[k]
@@ -632,13 +646,13 @@ theorem op_reg (F : Facts lc sym text az ez psA.toList ret E) (hm : LocMatch E s
         .ok { m.wX (BitVec.ofNat 5 kd) val with pc := pcAt text psA.toList (k + 1) }) :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
       LocMatch E (s.setReg r x) b (i + 1) m' ∧ CoreInv E.ι P K' (s.setReg r x) ∧
-      (s.setReg r x).slots = s.slots := by
+      (s.setReg r x).slots = s.slots ∧ XW lc v m m' := by
   obtain ⟨k, rfl, hk, hok, hstar⟩ := pstar_oneAt (H := H) F.nodup F.lt F.ret rfl hone m
   rw [pc_eta hm hj] at hstar
   obtain ⟨hlm, hinv'⟩ := finish_reg hm hinv hd hkd hrk hx hfx (b' := b) (i' := i + 1)
   rw [hj'] at hlm
   exact ⟨_, hstar.tail (pstep_at F.nodup F.lt F.ret hk rfl (hstep k hk hok)), hlm,
-    hinv'.mono hKL, rfl⟩
+    hinv'.mono hKL, rfl, .inr ⟨r, kd, val, hvh, hrk, rfl⟩⟩
 
 /-- A value whose one Prog sets the flags. -/
 theorem op_flags (F : Facts lc sym text az ez psA.toList ret E) (hm : LocMatch E s b i m)
@@ -651,13 +665,13 @@ theorem op_flags (F : Facts lc sym text az ez psA.toList ret E) (hm : LocMatch E
         .ok { m with nzcv := nz, pc := pcAt text psA.toList (k + 1) }) :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
       LocMatch E { s with flags := f } b (i + 1) m' ∧ CoreInv E.ι P K' { s with flags := f } ∧
-      ({ s with flags := f } : LocState).slots = s.slots := by
+      ({ s with flags := f } : LocState).slots = s.slots ∧ m'.x = m.x := by
   obtain ⟨k, rfl, hk, hok, hstar⟩ := pstar_oneAt (H := H) F.nodup F.lt F.ret rfl hone m
   rw [pc_eta hm hj] at hstar
   have hlm := locMatch_setFlags hm hf (b' := b) (i' := i + 1)
   rw [hj'] at hlm
   exact ⟨_, hstar.tail (pstep_at F.nodup F.lt F.ret hk rfl (hstep k hk hok)), hlm,
-    (core_setFlags hinv).mono hKL, rfl⟩
+    (core_setFlags hinv).mono hKL, rfl, rfl⟩
 
 /-- A value whose one Prog stores, outside the addresses `P`. -/
 theorem op_mem (F : Facts lc sym text az ez psA.toList ret E) (hm : LocMatch E s b i m)
@@ -673,14 +687,15 @@ theorem op_mem (F : Facts lc sym text az ez psA.toList ret E) (hm : LocMatch E s
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
       LocMatch E { s with mem := .mem mm' } b (i + 1) m' ∧
       CoreInv E.ι P K' { s with mem := .mem mm' } ∧
-      ({ s with mem := .mem mm' } : LocState).slots = s.slots := by
+      ({ s with mem := .mem mm' } : LocState).slots = s.slots ∧ m'.x = m.x := by
   obtain ⟨k, rfl, hk, hok, hstar⟩ := pstar_oneAt (H := H) F.nodup F.lt F.ret rfl hone m
   rw [pc_eta hm hj] at hstar
   obtain ⟨hsl, hfr⟩ := hkeep M hP
   have hlm := locMatch_setMem hm hsl hfr hM (b' := b) (i' := i + 1)
   rw [hj'] at hlm
   exact ⟨_, hstar.tail (pstep_at F.nodup F.lt F.ret hk rfl (hstep k hk hok)), hlm,
-    (⟨hinv.regs, ⟨mm', rfl, hkn, hsep⟩⟩ : CoreInv E.ι P K { s with mem := .mem mm' }).mono hKL, rfl⟩
+    (⟨hinv.regs, ⟨mm', rfl, hkn, hsep⟩⟩ : CoreInv E.ι P K { s with mem := .mem mm' }).mono hKL, rfl,
+    rfl⟩
 
 /-- A register argument `i` of a value that reads it holds its class, by `KRead`. -/
 theorem kread_arg {v : Value} (hR : KRead lc v K) (hop : v.op ≠ .Phi) {n a r c : Nat}
@@ -699,32 +714,39 @@ theorem value_core {env : Env} (F : Facts lc sym text az ez psA.toList ret E)
     (hVK : VK lc v kd) (htemp : (lc.temps[v.id]?).join = none) (hpre : G1Pre lc s v)
     (hR : KRead lc v K) (hK : KNext lc v K K') (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι P K' s' ∧ s'.slots = s.slots := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι P K' s' ∧ s'.slots = s.slots ∧ XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have hnone : ∀ {r : Nat}, lc.home v.id = none → r ≠ zeroReg → lc.home v.id ≠ some (.reg r) :=
     fun h _ => by rw [h]; nofun
+  have keep : ∀ {s'' : LocState},
+      (∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
+        LocMatch E s'' b (i + 1) m' ∧ CoreInv E.ι P K' s'' ∧ s''.slots = s.slots ∧ m'.x = m.x) →
+      ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
+        LocMatch E s'' b (i + 1) m' ∧ CoreInv E.ι P K' s'' ∧ s''.slots = s.slots ∧
+        XW lc v m m' :=
+    fun h => h.imp fun _ ⟨h1, h2, h3, h4, h5⟩ => ⟨h1, h2, h3, h4, .inl h5⟩
   cases hVK with
   | phi hop _ =>
-    exact op_none hm hinv (stepLoc_phi hop hs) (by rw [hj', hj, show j' = j from hvs])
-      (knext_same hK (Or.inl hop))
+    exact keep (op_noneX hm hinv (stepLoc_phi hop hs) (by rw [hj', hj, show j' = j from hvs])
+      (knext_same hK (Or.inl hop)))
   | zero hop _ hh hc =>
     obtain ⟨c, hc'⟩ := Option.isSome_iff_exists.1 hc
     obtain ⟨argv, -, rfl⟩ := stepLoc_pure hl htemp (Or.inl hop) hs
-    exact op_none hm hinv (by rw [write_reg hh hc', setReg_zero])
+    exact keep (op_noneX hm hinv (by rw [write_reg hh hc', setReg_zero])
       (by rw [hj', hj, show j' = j from hvs])
-      (knext_same hK (Or.inr fun r hr => by rw [hh]; simpa using Ne.symm hr))
+      (knext_same hK (Or.inr fun r hr => by rw [hh]; simpa using Ne.symm hr)))
   | inl hop hh hi =>
-    exact op_none hm hinv (stepLoc_inlMark htemp hop hh hi hs)
-      (by rw [hj', hj, show j' = j from hvs]) (knext_same hK (Or.inr fun _ => hnone hh))
+    exact keep (op_noneX hm hinv (stepLoc_inlMark htemp hop hh hi hs)
+      (by rw [hj', hj, show j' = j from hvs]) (knext_same hK (Or.inr fun _ => hnone hh)))
   | copyMem hop hmt hsz hma hh =>
     obtain ⟨a, ha0, hamt, hah⟩ := memArg_spec hma
     obtain ⟨x, hx, rfl⟩ := stepLoc_copy hl htemp hop (arr1 hsz ha0) hs
     obtain ⟨mm, hmm, -⟩ := hm.mem
     rw [read_mem hl hah hamt hmm] at hx
     cases hx
-    refine op_none hm hinv ?_ (by rw [hj', hj, show j' = j from hvs])
-      (knext_same hK (Or.inr fun _ => hnone hh))
+    refine keep (op_noneX hm hinv ?_ (by rw [hj', hj, show j' = j from hvs])
+      (knext_same hK (Or.inr fun _ => hnone hh)))
     rw [write_mem hh hmt, memTy_eq hmt, retypeL_mem, ← hmm]
   | copySame hop hmt hsz hao hro =>
     obtain ⟨a, r1, ha0, hah, hor1, hca⟩ := argObj_spec hao
@@ -741,7 +763,7 @@ theorem value_core {env : Env} (F : Facts lc sym text az ez psA.toList ret E)
     obtain ⟨hlm, hinv'⟩ := finish_reg hm hinv hd hk32 hor1
       (valRel_retypeL hA hcv hxf hxv) (fits_retypeL hcv _) (b' := b) (i' := i + 1)
     rw [wX_rX_self, hj', show j' = j from hvs, ← hj, ← hm.pc] at hlm
-    exact ⟨m, .refl, hlm, hinv'.mono (knext_set hK hnp hvh hcv), rfl⟩
+    exact ⟨m, .refl, hlm, hinv'.mono (knext_set hK hnp hvh hcv), rfl, .inl rfl⟩
   | copyMov hop hmt hsz hao hro hne =>
     obtain ⟨a, r1, ha0, hah, hor1, hca⟩ := argObj_spec hao
     obtain ⟨r2, hvh, hd, hor2, hcv⟩ := resObj_spec hro
@@ -754,16 +776,16 @@ theorem value_core {env : Env} (F : Facts lc sym text az ez psA.toList ret E)
     rw [hx] at hx'
     cases hx'
     rw [write_reg hvh hcv]
-    exact op_reg F hm hinv hj hj' hvs hd hkd hor2 (valRel_retypeL hA hcv hxf hxv)
+    exact op_reg F hm hinv hj hj' hvs hd hkd hor2 hvh (valRel_retypeL hA hcv hxf hxv)
       (fits_retypeL hcv _) (knext_set hK hnp hvh hcv) (fun k hk hok => by
         obtain ⟨has, hf, -, ht, -⟩ := Shape.ok_eq hok
         rw [progStep_movReg hka hkd (nextAddr_pcAt F.nodup hk) has hf ht, wX_pc] <;> rfl)
   | result hop hh hty hmem _ =>
     obtain ⟨argv, hargv, rfl⟩ := stepLoc_makeResult hl htemp hop hs
     obtain ⟨mm, hmm, -⟩ := hm.mem
-    exact op_none hm hinv (write_result_noop hl hmm hh hty hmem hargv)
+    exact keep (op_noneX hm hinv (write_result_noop hl hmm hh hty hmem hargv)
       (by rw [hj', hj, show j' = j from hvs])
-      (knext_same hK (Or.inr fun r _ => by rcases hh with h | h <;> rw [h] <;> nofun))
+      (knext_same hK (Or.inr fun r _ => by rcases hh with h | h <;> rw [h] <;> nofun)))
   | movConst hop hsz hro hb1 =>
     obtain ⟨r, hvh, hd, hor, hcv⟩ := resObj_spec hro
     obtain ⟨kd, hkd, hrd, -⟩ := objOf?_some hor
@@ -773,7 +795,7 @@ theorem value_core {env : Env} (F : Facts lc sym text az ez psA.toList ret E)
     have he : Arm64.evalPure .ARM64MOVDconst (lc.ty v.id) v.auxInt v.aux argv =
         Arm64.res (lc.ty v.id) (BitVec.ofInt 64 v.auxInt.toInt) := rfl
     rw [he]
-    refine op_reg F hm hinv hj hj' hvs hd hkd hor
+    refine op_reg F hm hinv hj hj' hvs hd hkd hor hvh
       (valRel_res_const hcv (fun h1 => ?_)) (fits_retypeL hcv _)
       (knext_set hK (by rw [hop]; nofun) hvh hcv) (fun k hk hok => by
         obtain ⟨has, hf, -, ht, -⟩ := Shape.ok_eq hok
@@ -803,7 +825,7 @@ theorem value_core {env : Env} (F : Facts lc sym text az ez psA.toList ret E)
     · have he : Arm64.evalPure v.op (lc.ty v.id) v.auxInt v.aux [x, y] =
           Arm64.add (lc.ty v.id) [x, y] := by rw [hop]; rfl
       rw [he]
-      exact op_reg F hm hinv hj hj' hvs hd hkd hor
+      exact op_reg F hm hinv hj hj' hvs hd hkd hor hvh
         (valRel_retypeL_lo hA hcv ht (lo_add hA hxv hyv hxf hyf h8 hca hcb ht))
         (fits_retypeL hcv _) hKL (fun k hk hok => by
           obtain ⟨has, hf, hr, ht', -⟩ := Shape.ok_eq hok
@@ -813,7 +835,7 @@ theorem value_core {env : Env} (F : Facts lc sym text az ez psA.toList ret E)
     · have he : Arm64.evalPure v.op (lc.ty v.id) v.auxInt v.aux [x, y] =
           Arm64.sub (lc.ty v.id) [x, y] := by rw [hop]; rfl
       rw [he]
-      exact op_reg F hm hinv hj hj' hvs hd hkd hor
+      exact op_reg F hm hinv hj hj' hvs hd hkd hor hvh
         (valRel_retypeL_lo hA hcv ht
           (lo_sub hA hxv hyv hxf hyf h8 hca hcb ht (hpre.2.2 hop a0 a1 x y ha0 ha1 hx hy)))
         (fits_retypeL hcv _) hKL (fun k hk hok => by
@@ -841,7 +863,7 @@ theorem value_core {env : Env} (F : Facts lc sym text az ez psA.toList ret E)
     · have he : Arm64.evalPure v.op (lc.ty v.id) v.auxInt v.aux [x] =
           Arm64.addK (lc.ty v.id) (BitVec.ofInt 64 v.auxInt.toInt) [x] := by rw [hop]; rfl
       rw [he]
-      exact op_reg F hm hinv hj hj' hvs hd hkd hor
+      exact op_reg F hm hinv hj hj' hvs hd hkd hor hvh
         (valRel_retypeL_lo hA hcv ht (lo_addK hA hxv hxf h8 hca ht))
         (fits_retypeL hcv _) hKL (fun k hk hok => by
           obtain ⟨has, hf, hr, ht', -⟩ := Shape.ok_eq hok
@@ -853,7 +875,7 @@ theorem value_core {env : Env} (F : Facts lc sym text az ez psA.toList ret E)
       rw [he]
       have hlo := lo_addK hA hxv hxf h8 hca ht (k := -BitVec.ofInt 64 v.auxInt.toInt) (t := lc.ty v.id)
       rw [← BitVec.sub_eq_add_neg] at hlo
-      exact op_reg F hm hinv hj hj' hvs hd hkd hor
+      exact op_reg F hm hinv hj hj' hvs hd hkd hor hvh
         (valRel_retypeL_lo hA hcv ht hlo)
         (fits_retypeL hcv _) hKL (fun k hk hok => by
           obtain ⟨has, hf, hr, ht', -⟩ := Shape.ok_eq hok
@@ -879,11 +901,11 @@ theorem value_core {env : Env} (F : Facts lc sym text az ez psA.toList ret E)
     have he : Arm64.evalPure v.op (lc.ty v.id) v.auxInt v.aux [x, y] = Arm64.cmp x y := by
       rw [hop]; rfl
     rw [write_flags hhn hfl, he, isFlags_eq hfl]
-    exact op_flags F hm hinv hj hj' hvs (flagsRel_cmp hA hxv hyv hxf hyf hpx hpy)
+    exact keep (op_flags F hm hinv hj hj' hvs (flagsRel_cmp hA hxv hyv hxf hyf hpx hpy)
       (knext_same hK (Or.inr fun _ => hnone hhn)) (fun k hk hok => by
         obtain ⟨has, hf, hr, -, -⟩ := Shape.ok_eq hok
         rw [progStep_cmp hkn (nextAddr_pcAt F.nodup hk) has (by rw [hf]; exact ctx_src_reg hkm) hr]
-          <;> rfl)
+          <;> rfl))
   | cmpK hop hsz hfl hhn hao =>
     obtain ⟨a0, r0, ha0, hah0, hor0, hca0⟩ := argObj_spec hao
     obtain ⟨kn, hkn, rfl, hkkn⟩ := objOf?_some hor0
@@ -897,12 +919,12 @@ theorem value_core {env : Env} (F : Facts lc sym text az ez psA.toList ret E)
     have he : Arm64.evalPure v.op (lc.ty v.id) v.auxInt v.aux [x] =
         Arm64.cmp x (.int .w64 (BitVec.ofInt 64 v.auxInt.toInt)) := by rw [hop]; rfl
     rw [write_flags hhn hfl, he, isFlags_eq hfl]
-    exact op_flags F hm hinv hj hj' hvs
+    exact keep (op_flags F hm hinv hj hj' hvs
       (flagsRel_cmp hA hxv (Or.inl rfl) hxf rfl hpx (fun _ h => by cases h))
       (knext_same hK (Or.inr fun _ => hnone hhn)) (fun k hk hok => by
         obtain ⟨has, hf, hr, -, -⟩ := Shape.ok_eq hok
         rw [progStep_cmp hkn (nextAddr_pcAt F.nodup hk) has (by rw [hf]; exact ctx_src_const) hr]
-          <;> rfl)
+          <;> rfl))
   | load hop hsz haux hao hma hro h8 =>
     obtain ⟨a0, r0, ha0, hah0, hor0, hca0⟩ := argObj_spec hao
     obtain ⟨a1, ha1, hamt, hah1⟩ := memArg_spec hma
@@ -927,7 +949,7 @@ theorem value_core {env : Env} (F : Facts lc sym text az ez psA.toList ret E)
     rw [write_reg hvh hcv, haddr]
     simp only [Option.elim]
     rw [loadN_eq ht]
-    exact op_reg F hm hinv hj hj' hvs hd hkd hor
+    exact op_reg F hm hinv hj hj' hvs hd hkd hor hvh
       (valRel_retypeL_lo hA hcv ht ((lo_load hA hMI hpa hrd).mono (cls_le hcv)))
       (fits_retypeL hcv _) (knext_set hK hnp hvh hcv) (fun k hk hok => by
         obtain ⟨has, hf, -, ht', hsc⟩ := Shape.ok_eq hok
@@ -967,7 +989,7 @@ theorem value_core {env : Env} (F : Facts lc sym text az ez psA.toList ret E)
       intro b2 al2 a2 hb hι y hy
       obtain ⟨al1, hb1, hs1⟩ := hback b2 al2 hb
       rw [← hs1]; exact hsep0 b2 al1 a2 hb1 hι y hy
-    exact op_mem F hm hinv hkeep hj hj' hvs hM' hk' hsep'
+    exact keep (op_mem F hm hinv hkeep hj hj' hvs hM' hk' hsep'
       (fun y hy => hout y fun j hj he => hsep0 _ _ _ hal hpa y hy ⟨by omega, by omega⟩)
       (knext_same hK (Or.inr fun _ => hnone hhn)) (fun k hk hok => by
         obtain ⟨has, hf, -, ht', hsc⟩ := Shape.ok_eq hok
@@ -975,7 +997,7 @@ theorem value_core {env : Env} (F : Facts lc sym text az ez psA.toList ret E)
             BitVec.ofInt 64 v.auxInt.toInt = a + p.off := haeq
         rw [progStep_store hkn hks (nextAddr_pcAt F.nodup hk) has hf hsc ht'
           (by rw [haeq']; exact hnil), haeq']
-        rfl)
+        rfl))
 
 end Ops
 
@@ -1195,7 +1217,8 @@ end Term
 
 /-! ## The terminators of a checked block -/
 
-/-- A terminator that goes to a successor, from the facts the checker gives about its block. -/
+/-- A terminator that goes to a successor, from the facts the checker gives about its block; the
+machine's X registers are kept. -/
 theorem term_core {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int}
     {ret : BitVec 64} {E : MatchEnv} {cx : Cx} {P : BitVec 64 → Prop} {bid : ID} {blk : Block}
     {e : Edge} {s s' : LocState} {m : MState} {e' : Nat} {next : Option (ID × Nat)}
@@ -1208,7 +1231,7 @@ theorem term_core {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az e
     (hpre : G1TermPre cx.lc s blk) (ht : stepTermLoc cx.lc s blk = .ok (.goto e, s')) :
     ∃ m', PStar H (Link.byId sym text az ez cx.ps.toList) cx.ps.toList ret m m' ∧
       LocMatch E s' e.b 0 m' ∧ (∃ R, s' = { s with fr := { s.fr with regs := R } }) ∧
-      e ∈ blk.succs.toList ∧ e.b ∈ cx.lc.ctx.f.blocks.toList := by
+      e ∈ blk.succs.toList ∧ e.b ∈ cx.lc.ctx.f.blocks.toList ∧ m'.x = m.x := by
   have hl := F.lowered
   have hA := F.addr
   have hm0 : ({ m with pc := pcAt text cx.ps.toList e' } : MState) = m := by
@@ -1220,9 +1243,9 @@ theorem term_core {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az e
         { m with pc := E.pcOf e0.b 0 } →
       ∃ m', PStar H (Link.byId sym text az ez cx.ps.toList) cx.ps.toList ret m m' ∧
         LocMatch E s' e.b 0 m' ∧ (∃ R, s' = { s with fr := { s.fr with regs := R } }) ∧
-        e ∈ blk.succs.toList ∧ e.b ∈ cx.lc.ctx.f.blocks.toList := by
+        e ∈ blk.succs.toList ∧ e.b ∈ cx.lc.ctx.f.blocks.toList ∧ m'.x = m.x := by
     rintro e0 he0 rfl ⟨R, rfl⟩ hstar
-    exact ⟨_, hstar, locMatch_jump hm, ⟨R, rfl⟩, he0, hsucc _ he0⟩
+    exact ⟨_, hstar, locMatch_jump hm, ⟨R, rfl⟩, he0, hsucc _ he0, rfl⟩
   by_cases hk : blk.kind = .Plain
   · obtain ⟨e0, hs0, hfall⟩ := hterm.plain hk
     obtain ⟨R, hR, hn⟩ := stepTermLoc_gen ht
@@ -1385,7 +1408,7 @@ theorem g1_value {env : Env} {H : Hooks} {lc : LocCtx} {L : Link} {ps : Array Pr
   have hhome' : ∀ i r, cx.lc.home i = some (.reg r) → homeOK cx.lc i = true := fun i _ _ => hhome i
   have F : Facts cx.lc sym text az ez cx.ps.toList ret E :=
     ⟨hl, clsReg_of_home hhome', hnd, hlt, hret, hA⟩
-  obtain ⟨m', hstar, hlm, hinv', hsl⟩ := value_core F hm hinv.core
+  obtain ⟨m', hstar, hlm, hinv', hsl, -⟩ := value_core F hm hinv.core
     (g1_keeps hm hleaf hinv.slots)
     (by rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some])
     (by rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some]) hvs hVK htemp hpre
@@ -1420,7 +1443,8 @@ theorem g1_term {H : Hooks} {lc : LocCtx} {L : Link} {ps : Array Prog}
     simp only [pcOfTab, hrow, Option.getD_some]
     rw [List.getD_eq_getElem?_getD, List.getElem?_append_right (by simp [hlen])]
     simp [hlen]
-  obtain ⟨m', hstar, hlm, ⟨R, rfl⟩, -, hmem⟩ := term_core (H := H) F (start_of_mem hblocks hpcOf)
+  obtain ⟨m', hstar, hlm, ⟨R, rfl⟩, -, hmem, -⟩ :=
+    term_core (H := H) F (start_of_mem hblocks hpcOf)
     hterm hnext hpcT hm (hinv.core (ι := E.ι))
     (fun c r cc _ hh hr hcc => regCls_of_home (hhome c) hh hr hcc) hpre ht
   exact ⟨m', hstar, hlm, ⟨hinv.slots, hinv.regs, hinv.mem⟩, hmem⟩

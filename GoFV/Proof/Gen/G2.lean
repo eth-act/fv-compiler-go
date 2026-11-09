@@ -743,7 +743,8 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
   {ret : BitVec 64} {E : MatchEnv} {lc : LocCtx} {g : G2In} {s s' : LocState} {b : ID} {i : Nat}
   {m : MState} {env : Env} {v : Value} {j j' : Nat} {K K' : Nat → Option Nat}
 
-/-- A value of slice G1, in a framed activation with slots. -/
+/-- A value of slice G1, in a framed activation with slots (and what it does to the X
+registers, `XW`). -/
 theorem g2_g1 (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
     (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
@@ -753,10 +754,11 @@ theorem g2_g1 (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
     (hpre : G1Pre lc s v) (hR : KRead lc v K) (hK : KNext lc v K K')
     (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
-  obtain ⟨m', hstar, hlm, hcore, hsl⟩ :=
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧
+      XW lc v m m' := by
+  obtain ⟨m', hstar, hlm, hcore, hsl, hxw⟩ :=
     value_core F hm hinv (stk_keeps hm hF hsz) hj hj' (vstep_v2 hvs) hVK htemp hpre hR hK hs
-  exact ⟨m', hstar, hlm, hcore, fun k v hk => hsi k v (hsl ▸ hk)⟩
+  exact ⟨m', hstar, hlm, hcore, fun k v hk => hsi k v (hsl ▸ hk), hxw⟩
 
 /-- A reload of a 64-bit value from its slot. -/
 theorem g2_reload (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E) (hlc : E.lc = lc)
@@ -1410,9 +1412,9 @@ theorem g2_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps
     fun m' ⟨h1, h2, h3, h4⟩ => ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE0, h1, h2, ⟨h3, h4⟩⟩
   cases hVK with
   | g1 _ _ _ _ _ hvk =>
-    obtain ⟨m', h⟩ := g2_g1 (H := H) F hF hsz hm hinv.core hinv.slots hj hj' hvs hvk htemp hpre
-      hR hK hs
-    exact same m' h
+    obtain ⟨m', h1, h2, h3, h4, -⟩ := g2_g1 (H := H) F hF hsz hm hinv.core hinv.slots hj hj'
+      hvs hvk htemp hpre hR hK hs
+    exact same m' ⟨h1, h2, h3, h4⟩
   | call hop hcall' hcr _ _ _ h16 hlen hargs hres hct hrr hpat =>
     have hframed : E.framed = true := by
       cases hfr : E.framed
@@ -1482,7 +1484,8 @@ theorem g2_term {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog
     simp only [pcOfTab, hrow, Option.getD_some]
     rw [List.getD_eq_getElem?_getD, List.getElem?_append_right (by simp [hlen])]
     simp [hlen]
-  obtain ⟨m', hstar, hlm, ⟨R, rfl⟩, -, hmem⟩ := term_core (H := H) F (start_of_mem2 hblocks hpcOf)
+  obtain ⟨m', hstar, hlm, ⟨R, rfl⟩, -, hmem, -⟩ :=
+    term_core (H := H) F (start_of_mem2 hblocks hpcOf)
     hterm hnext hpcT hm hinv.core
     (fun c r cc _ hh hr hcc => regCls_of_home (hhome c r hh) hh hr hcc) hpre ht
   exact ⟨m', hstar, hlm, ⟨core_fr hinv.core, hinv.slots⟩, hmem⟩
