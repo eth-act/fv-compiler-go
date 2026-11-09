@@ -729,6 +729,20 @@ runs alike under `lc` and `liveCtx lc`. No new premise. Witness: `genG39_witness
 runs alike under both contexts, and the machine's `X4 = 7`). Coverage on quick-v10
 (`lake exe gen-check`): 6,447 of 9,297 functions (69.34%), 182,395 values.
 
+## Phase 3: genssa, slice G40 (I7, #553)
+
+`GoFV.Proof.Gen.g40_value`, `g40_term`, `g40_nilPanic`, `g40_boundsPanic`
+(`GoFV/Proof/Gen/G40.lean`): when slice G40 (`checkG40`: G39 with, in a function whose values
+keep the memory, `memPure`, `InitMem` anywhere and without code) accepts a function, they are
+`g39_value`'s, `g39_term`'s, `g39_nilPanic`'s and `g39_boundsPanic`'s statements.
+`GoFV.Proof.Gen.g40_initMem`: in such a lowered function, `InitMem` from a state holding the
+activation's initial memory (`MemInit s`: `s.mem = .mem s.fr.mem0`) has `g40_value`'s conclusion
+(no code, the state unchanged). `MemInit` is no trusted premise: `runLoc`'s first state holds it
+and every step keeps it under `memPure` (`GoFV.Proof.Gen.memInit_stepLoc`, `memInit_stepTermLoc`).
+Witness: `genG40_witness` (`unicode/utf16.IsSurrogate`, `InitMem` in the return block `b2`, which
+G39 rejects; `runLoc` runs it from a state holding the initial memory to one holding it again).
+Coverage on quick-v10 (`lake exe gen-check`): 6,472 of 9,297 functions (69.61%), 182,705 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g34_obj_value`, `g34_obj_term`, `g34_obj_nilPanic`, `g34_obj_boundsPanic`
