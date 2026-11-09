@@ -825,36 +825,45 @@ def symUntil (t : ByteArray) (rs : List Reloc) : Nat → Nat → Sym → Except 
     let (σ', c) ← symWords t rs used o σ
     if c == .fall then symUntil t rs fuel (o + 4 * used) σ' else pure (o + 4 * used, σ', c)
 
-/-- One register-argument spill of the morestack tail (`tailPlan`): general register `reg`
-stored in its `n` low bytes at `off(SP)` (`SP` at the entry: the frame is not yet allocated),
-reloaded sign-extended if `sg`. -/
+/-- One register-argument spill of the morestack tail (`tailPlan`): general register `reg` (or
+vector register `V reg` if `fp`: an `F` register's `S`/`D` part) stored in its `n` low bytes at
+`off(SP)` (`SP` at the entry: the frame is not yet allocated), reloaded sign-extended if `sg` (a
+vector register zero-extended to 128 bits). -/
 structure TailSlot where
   reg : Nat
   n : Nat
   off : Nat
   sg : Bool
+  fp : Bool
   deriving DecidableEq, Repr, Inhabited
 
 /-- The slot's address, `off(SP)`. -/
 def TailSlot.addr (s : TailSlot) : Ex := Ex.mkAdd .sp (.k (BitVec.ofNat 64 s.off))
 
-/-- The slot's spill. -/
-def TailSlot.store (s : TailSlot) : Ex × Nat × Ex := (s.addr, s.n, .x s.reg)
+/-- The slot's spill: the general register, or the `S`/`D` part of the vector register
+(`vStoreEx`). -/
+def TailSlot.store (s : TailSlot) : Ex × Nat × Ex :=
+  (s.addr, s.n, if s.fp then vStoreEx s.n s.reg else .x s.reg)
 
-/-- The slot's reload. -/
+/-- The slot's reload into a general register. -/
 def TailSlot.reload (s : TailSlot) : Ex :=
   if s.sg then Ex.mkSext (8 * s.n) (.ld s.n s.addr) else .ld s.n s.addr
 
-/-- The slot register `r` is reloaded from: its last spill. -/
-def reloadOf (sl : List TailSlot) (r : Nat) : Option TailSlot := sl.reverse.find? (·.reg == r)
+/-- The slot's reload into a vector register (`LDR S`/`D`: zero-extended). -/
+def TailSlot.vreload (s : TailSlot) : VEx := .ld s.n s.addr
+
+/-- The slot register `r` is reloaded from: its last spill (of a vector register if `fp`, else
+of a general one). -/
+def reloadOf (sl : List TailSlot) (fp : Bool) (r : Nat) : Option TailSlot :=
+  sl.reverse.find? fun s => s.fp == fp && s.reg == r
 
 /-- Whether the slots' byte ranges are pairwise disjoint. -/
 def slotsApart : List TailSlot → Bool
   | [] => true
   | s :: ss => ss.all (fun s' => s.off + s.n ≤ s'.off || s'.off + s'.n ≤ s.off) && slotsApart ss
 
-/-- The slots of one spill: a register (`MOVx`) or a pair (`STP`) at `off(RSP)`, the frame not
-yet allocated. -/
+/-- The slots of one spill: a register (`MOVx`, `FMOVS`/`FMOVD`) or a pair (`STP`/`STPW`,
+`FSTPS`/`FSTPD`) at `off(RSP)`, the frame not yet allocated. -/
 def spillSlots (sp : Spill) : Except String (List TailSlot) := do
   let a := sp.addr
   let named := match a.name with
@@ -863,15 +872,17 @@ def spillSlots (sp : Spill) : Except String (List TailSlot) := do
   if a.type != .MEM || !named || a.reg != REG_RSP || a.index != 0 || a.offset < 0 then
     throw "tail: spill address"
   let off := a.offset.toNat
-  let some r := gpIdx? sp.reg | throw "tail: spill register"
+  let regIdx := fun (fp : Bool) (r : Int) => if fp then fpIdx? r else gpIdx? r
   match movMem sp.spill.name, pairOp sp.spill.name with
-  | some (n, _, false), _ =>
-    let some (n', sg, false) := movMem sp.unspill.name | throw s!"tail: unspill {sp.unspill.name}"
-    if n' != n then throw "tail: unspill size"
-    pure [⟨r, n, off, sg⟩]
-  | _, some (false, n, false, false) =>
-    let some r2 := gpIdx? sp.reg2 | throw "tail: spill register"
-    pure [⟨r, n, off, false⟩, ⟨r2, n, off + n, false⟩]
+  | some (n, _, fp), _ =>
+    let some r := regIdx fp sp.reg | throw "tail: spill register"
+    let some (n', sg, fp') := movMem sp.unspill.name | throw s!"tail: unspill {sp.unspill.name}"
+    if n' != n || fp' != fp then throw "tail: unspill size"
+    pure [⟨r, n, off, sg && !fp, fp⟩]
+  | _, some (false, n, false, fp) =>
+    let some r := regIdx fp sp.reg | throw "tail: spill register"
+    let some r2 := regIdx fp sp.reg2 | throw "tail: spill register"
+    pure [⟨r, n, off, false, fp⟩, ⟨r2, n, off + n, false, fp⟩]
   | _, _ => throw s!"tail: spill {sp.spill.name}"
 
 /-- The slots of the spills, in order. -/
@@ -883,11 +894,12 @@ def tailSlots : List Spill → Except String (List TailSlot)
     pure (here ++ more)
 
 /-- The morestack tail's spills (`FuncInfo.spills`) as slots, in order: argument registers
-`R0`–`R15`, `1`–`8` bytes each, disjoint byte ranges. -/
+`R0`–`R15` (`1`–`8` bytes each) and `F0`–`F15` (`4` or `8` bytes), disjoint byte ranges. -/
 def tailPlan (spills : List Spill) : Except String (List TailSlot) := do
   let sl ← tailSlots spills
   if sl.any (·.reg ≥ 16) then throw "tail: spill register"
-  if sl.any (fun s => s.n == 0 || s.n > 8) then throw "tail: spill size"
+  if sl.any (fun s => s.n == 0 || s.n > 8 || (s.fp && s.n != 4 && s.n != 8)) then
+    throw "tail: spill size"
   if !slotsApart sl then throw "tail: spill slots overlap"
   pure sl
 
@@ -900,7 +912,9 @@ def tailCall (t : ByteArray) (rs : List Reloc) (o : Nat) : Option (Nat × Int) :
 /-- The morestack tail at `o` (`stacksplit`): the spills of `FuncInfo.spills` at their entry
 addresses (`tailPlan`), `MOVD R30, R3`, the call, the reloads and the jump back to the stack
 check at `check`. Before the call `SP` is kept and nothing is loaded; after it `SP` and `R30`
-are kept, nothing is stored and the only loads are of the slots. Returns the tail's end. -/
+are kept, nothing is stored, the only loads are of the slots, each general register is its
+reload (or kept) and each reloaded vector register is its reload (the others are unconstrained:
+the hook clobbers them). Returns the tail's end. -/
 def checkTail (t : ByteArray) (rs : List Reloc) (spills : List Spill) (check o : Nat) :
     Except String Nat := do
   let sl ← tailPlan spills
@@ -921,9 +935,14 @@ def checkTail (t : ByteArray) (rs : List Reloc) (spills : List Spill) (check o :
   if σ2.getX 30 != .x 30 then throw "tail: R30 after the call"
   unless σ2.loads.all (fun x => sl.any fun s => s.addr == x.1 && s.n == x.2) do
     throw "tail: loads after the call"
-  let want := fun r => ((reloadOf sl r).map TailSlot.reload).getD (Ex.x r)
+  let want := fun r => ((reloadOf sl false r).map TailSlot.reload).getD (Ex.x r)
   if let some r := cmpRegs.find? (fun r => σ2.getX r != want r) then
     throw s!"tail: R{r} after the call: {(σ2.getX r).str}, want {(want r).str}"
+  if let some r := (List.range 16).find? (fun r =>
+      match reloadOf sl true r with
+      | some q => σ2.getV r != q.vreload
+      | none => false) then
+    throw s!"tail: F{r} after the call: {(σ2.getV r).str}"
   pure o2
 
 /-- The prologue `[0, body)` of a function with frame size `az`: nothing if frameless, else the
