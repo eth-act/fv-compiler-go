@@ -13,7 +13,8 @@ words).
   both accept, from a `LocMatch`ed state `m` (its X registers meeting G35's upper-bit table
   `uL35`, started from the block's `uIn35`, `UOKL`) whose machine state `t` is `ObjRel`-related
   to it, is matched by machine steps of the linked code to a state related to a `LocMatch`ed
-  `m'` after the value.
+  `m'` after the value; in a leaf (`checkObj`'s `leaf`), `m'` keeps `m`'s `X30` when it is no
+  P0 address (`obj_star_leaf`).
 * `g35_obj_term`: the same for a terminator that goes to the next block, whose start `uIn35` the
   state meets.
 * `g35_obj_nilPanic`: a nil check that panics is matched by machine steps to a state that panics
