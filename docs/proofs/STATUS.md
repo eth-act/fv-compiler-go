@@ -580,6 +580,18 @@ halfword loaded two values earlier, with `0xbeef` in `R1`, after which `runLoc`'
 32-bit `0xbeef` and the table gives the machine's whole `X1 = 0xbeef`). Coverage on quick-v10
 (`lake exe gen-check`): 5,361 of 9,297 functions (57.66%), 121,036 values.
 
+## Phase 3: genssa, slice G30 (I7, #553)
+
+`GoFV.Proof.Gen.g30_value`, `GoFV.Proof.Gen.g30_term`, `GoFV.Proof.Gen.g30_nilPanic`,
+`GoFV.Proof.Gen.g30_boundsPanic` (`GoFV/Proof/Gen/G30.lean`): when slice G30 (`checkG30`: G29, and
+on a function with no arm64 op G26's `checkNL` that also accepts `Convert` in its argument's
+register of class 64) accepts a function, they are `g29_value`'s, `g29_term`'s, `g29_nilPanic`'s
+and `g29_boundsPanic`'s statements under the same premises. No new trusted premise. Witness
+`genG30_value_witness` (`runtime.gclinkptr.ptr`, which G29 rejects: its `Convert`, no code, in
+Phase 1's mode with `p = 0x1234` in `R0`, after which `runLoc`'s `R0` holds `0x1234` and the
+machine's `X0` is `0x1234`). Coverage on quick-v10 (`lake exe gen-check`): 5,367 of 9,297
+functions (57.72%), 121,060 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g12_obj_value`, `g12_obj_term` (`GoFV/Proof/Obj/G12.lean`): `g12_value`/`g12_term`

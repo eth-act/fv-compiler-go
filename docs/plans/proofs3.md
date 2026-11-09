@@ -668,7 +668,7 @@ within one register (`stepLoc_copyP`, `op_regN`, `nl_core`). A `Ret` block goes 
 successor, and no value is a nil check or bounds panic (`nl_ops`). The statements are G25's over
 `checkG26`, with the same premises. No new trusted premise. Composing a whole function from them
 also needs a Phase-1-mode result mapping at `Ret`. G26 accepts 5,172 functions. The 7 rejected
-for having no arm64 op have a `Convert` or a `Plain` block.
+for having no arm64 op have a `Convert` or a `Plain` block (G30 takes the `Convert`s).
 
 **Slice G27: shifted logic ops** (`GoFV/Gen/Check27.lean`, `checkG27 lc ps bstart g`, returning
 G4's tables; proven sound, `g27_value`, `g27_term`, `g27_nilPanic`, `g27_boundsPanic`): G26 with
@@ -719,6 +719,20 @@ values that write at most one X register, a narrow load its own (`vk19_narrowW`)
 (`g20_nop`, `m' = m`), `MOVDreg` a copy of another (`g21_mov`); the entries of the registers a
 value does not write stay true (`KeepsX`, `uokl_filter`). G29 accepts 5,361 functions; 46 still
 have `upper bits unknown` as their only reason and need the table across blocks.
+
+**Slice G30: `Convert` in functions with no arm64 op** (`GoFV/Gen/Check30.lean`, `checkG30 lc ps
+bstart g`, returning G4's tables; proven sound, `g30_value`, `g30_term`, `g30_nilPanic`,
+`g30_boundsPanic`): G29 on a function with an arm64 op, and on one without, G26's `checkNL` that
+also accepts `Convert x mem` as G12 does in lowered functions (`convKind`: `x` and the value in one
+register of class 64, the memory last; no code). The 6 such functions on quick-v10 are pointer
+methods such as `runtime.guintptr.ptr`. The statements are G29's over `checkG30`, with the same
+premises. No new trusted premise. The proof (`G30.lean`): in Phase 1's mode `Convert` writes
+`PtrOps.convert` of its argument read with `Val.retype`, again retyped (`stepLoc_convP`); a register
+content of class 64 converts to one of class 64 related to the same machine word (`convert_rel`,
+factored out of G12's `valRel_convert`), which `Val.retype` keeps (`valRel_retype`), so the shared
+register needs no code (`nl_conv`). G30 accepts 5,367 functions. The one function with a `Plain`
+block (test/decl `main`) is also blocked by `InitMem after the entry values`, so G30 leaves
+`Plain` blocks out.
 
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
@@ -774,6 +788,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G27 | 5,261 (56.58%) | 117,659 |
 | G28 | 5,332 (57.35%) | 120,012 |
 | G29 | 5,361 (57.66%) | 121,036 |
+| G30 | 5,367 (57.72%) | 121,060 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -868,8 +883,8 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `g11_term`.
 - `Spec12.lean`: what `checkG12` accepted (`checkG12_spec`, `vkind12_spec` with `VK12`,
   `convKind_spec`).
-- `G12.lean`: `stepLoc_conv`, `valRel_convert`, `g12_conv`, `vk12_step`, `g12_value`,
-  `g12_nilPanic`, `g12_term`.
+- `G12.lean`: `stepLoc_conv`, `convert_rel`, `valRel_convert`, `g12_conv`, `vk12_step`,
+  `g12_value`, `g12_nilPanic`, `g12_term`.
 - `Spec13.lean`: what `checkG13` accepted (`checkG13_spec`, `vkind13_spec` with `VK13`,
   `zeroKind_spec`, `zeroCovers_spec`); `Spec2.lean`: `Cx2.many_spec` with `ManyAt2`.
 - `MemN.lean`: `memInj_writeAny`, `write_inside`.
@@ -955,6 +970,10 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
 - `G29.lean`: `UOKL`, `KeepsX`, `keepsX_wX`, `uokl_filter`, `find?_entry`, `uok_of_uokl`,
   `uStepL_movdReg`, `uokl_movdReg`, `uStepL_other`, `vk28_vk21`, `vk21_stepL`, `vk29_step`,
   `g29_value`, `g29_nilPanic`, `g29_boundsPanic`, `g29_term`.
+- `Spec30.lean`: what `checkG30` accepted (`checkG30_lowered`, `checkG30_nl`, `vkindNL30_spec`,
+  `checkNL30_spec`).
+- `G30.lean`: `stepLoc_convP`, `nl_conv`, `nl30_ops`, `g30_value`, `g30_nilPanic`,
+  `g30_boundsPanic`, `g30_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -1032,7 +1051,10 @@ and satisfies `MemEqOK`, after which `runLoc`'s `R0` holds `true` and the machin
 `g29_value` on `v33 = MOVDnop v31` in block `b5`, whose entry `(1, 16, false)` comes from the
 `MOVHU` load two values earlier, across `v21 = MOVDnop v26`; with `0xbeef` in `R1` and `X1`
 zero-extended from 16 bits, `runLoc`'s `R1` then holds the 32-bit `0xbeef` and the table after
-`v33` gives the whole `X1 = 0xbeef`).
+`v33` gives the whole `X1 = 0xbeef`), `GenG30.lean` (`runtime.gclinkptr.ptr`, which holds no arm64
+op and which G29 rejects: `g30_value` on its `Convert` in `R0`, no code, in Phase 1's mode with
+`p = 0x1234` in `R0`, after which `runLoc`'s `R0` holds `0x1234` and the machine's `X0` is
+`0x1234`).
 Each decides its inputs by compiled evaluation (`native_decide`, pinned in
 `scripts/axioms-allowlist.txt`).
 
