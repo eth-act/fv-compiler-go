@@ -239,7 +239,7 @@ theorem arm64Op_ld {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List
     evalOpL false env ctx fr v argv ty = .ok (ldVal ctx.tabs p.1 p.2 ty v.auxInt v.aux argv) := by
   have h0 : nilFaults false ctx v argv = none := rfl
   have hs := fun a => symAddr_ld (ctx := ctx) (v := v) (a := a) hact
-  rcases ldOp?_mem hl with h | h | h | h | h | h | h <;> rw [h] at hl <;> cases hl <;>
+  rcases ldOp?_mem hl with h | h | h | h | h | h | h | h | h <;> rw [h] at hl <;> cases hl <;>
   · unfold evalOpL
     rw [h, if_neg (by decide)]
     dsimp only
