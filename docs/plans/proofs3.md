@@ -1708,7 +1708,7 @@ errors):
 
 | Functions | Accepted | P0 Progs in accepted functions |
 | --: | --: | --: |
-| 9,297 | 7,741 (83.26%) | 277,986 of 429,130 |
+| 9,297 | 7,920 (85.18%) | 284,662 of 429,130 |
 | G7 slice: 2,109 | 2,108 (99.95%) | |
 | G8 slice: 2,323 | 2,322 (99.95%) | |
 | G9 slice: 2,551 | 2,550 (99.96%) | 51,122 of 51,143 |
@@ -1724,11 +1724,17 @@ calls come from `CALL` and register jumps from `RET` (`ctlOp`), and `sameEffect`
 the Prog is a load of the words (the converse of the earlier check, for `obj_panic`).
 
 The one slice function that is rejected is `init.func47` of `test/nilptr2`: its `LDP` is
-assembled with a literal-pool load (`LDR literal`), which is not modelled. The most frequent
-reasons now (functions each occurs in): `FLDPQ` 179, `LSL` by a register 173, `FMOVD` 168,
-`LDADDALW` 87, `CASALW` 81, `CASALD` 75, `LSR` by a register 67, `LDADDALD` 63, morestack tail
-spill registers 59, `FCMPD` 48, `GETCALLERPC` 44, `UDIV` 41, `JMP` to a register 37, `MVN` 37,
-`FMOVS` 36, `SCVTFD` 34, `FMOVQ` 30, `UDIVW` 28, `FLDPD` 26, `SDIVW` 20, `UMULL` 18, `SDIV` 17.
+assembled with a literal-pool load (`LDR literal`), which is not modelled.
+
+**SIMD&FP** (7,741 → 7,920; STATUS, `checkObj`): `Sym.v` (vector registers written, `VEx`),
+`Ex.vlo`/`Ex.fcvtz` (the low part of a vector register, `FCVTZ*`), `Fl.fcmp`; `HoldsCore.v` is
+`Sym.evalV`, `sameEffect` compares `V0`–`V31`. `symInsn` models `LDR`/`STR` `S`/`D`(/`Q` loads),
+`LDP`/`STP` (`Q` loads), `fp1`/`fp2`/`fp3`, `FCMP`, `FMOV` immediate, `FCSEL` and `fcvtInt`;
+`progSym` the `FMOV{S,D,Q}`, `FLDP*`/`FSTP{S,D}` and the `fpOp?` opcodes. The two sides meet on one
+form per value (`VEx.mkOfX`: `FMOV ZR, Fd` is the constant 0). Most frequent reasons now:
+`FSTPQ` 179 (`Q` stores), `LSL` by a register 176, `FMOVD` from the literal pool 126, `LDADDALW`
+87, `CASALW` 81, morestack tail spill registers 79, `CASALD` 76, `LSR` by a register 69,
+`LDADDALD` 65, `GETCALLERPC` 44, `UDIV` 41, `JMP` to a register 37, `MVN` 37.
 
 **Proof** (`GoFV/Proof/Obj/`):
 
