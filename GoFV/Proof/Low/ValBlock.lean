@@ -289,7 +289,8 @@ theorem BInvL.init (tabs : Tables) (f : Func) (C₀ : ID → Prop) :
 addresses of activation 0) keeps `BInvL`. -/
 theorem BInvL.mono {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C₀ : ID → Prop}
     {M M' : Defs} {C C' : ID → Prop} {B : BMapL} (h : BInvL tabs f D₀ C₀ M C B)
-    (hsub : ∀ y, C y → C' y) (hty : ∀ ρ, TypedL true D₀ tabs ρ → TypedL true M.get? tabs ρ)
+    (hsub : ∀ y, C y → C' y)
+    (hty : ∀ ρ, TypedL true D₀ tabs ρ → FrameVals tabs 0 D₀ ρ → TypedL true M.get? tabs ρ)
     {g : Nat → Nat} (hstep : ∀ ρ, TypedL true M.get? tabs ρ → FrameVals tabs 0 D₀ ρ → ∀ n y, C y →
       Sem.Refines (denL true M.get? tabs ρ n y) (denL true M'.get? tabs ρ (g n) y)) :
     BInvL tabs f D₀ C₀ M' C' B := by
@@ -301,13 +302,13 @@ theorem BInvL.mono {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C₀
     (stepValsL_mono rfl rfl rfl rfl ?_)⟩
   refine refinesList_idx (by simp) fun j hj1 hj2 => ?_
   simp only [Array.getElem_toList]
-  exact hstep ρ (hty ρ hρ) hF m _ (h2 _ (Array.getElem_mem _))
+  exact hstep ρ (hty ρ hρ hF) hF m _ (h2 _ (Array.getElem_mem _))
 
 /-- Retarget the replayed terminator of `b` to `st'` when it refines `st`'s. -/
 theorem BInvL.retarget {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C₀ : ID → Prop}
     {M : Defs} {C : ID → Prop} {B : BMapL} (h : BInvL tabs f D₀ C₀ M C B) {b : ID}
     {st st' : BStateL} (hst : bstateL f B b = some st)
-    (hty : ∀ ρ, TypedL true D₀ tabs ρ → TypedL true M.get? tabs ρ)
+    (hty : ∀ ρ, TypedL true D₀ tabs ρ → FrameVals tabs 0 D₀ ρ → TypedL true M.get? tabs ρ)
     (hnew : ∀ fb, f.block? b = some fb → (st.swapped = true → fb.succs.size = 2) →
       (∀ c ∈ st.ctrls, C c) →
       (st'.swapped = true → fb.succs.size = 2) ∧ (∀ c ∈ st'.ctrls, C c) ∧
@@ -326,14 +327,15 @@ theorem BInvL.retarget {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {
     refine ⟨n1, n2, fun n => ?_⟩
     obtain ⟨m, hm⟩ := h3 n
     obtain ⟨m', hm'⟩ := n3 m
-    exact ⟨m', fun ρ hρ hF => Res.Rel.trans_next (hm ρ hρ hF) (hm' ρ (hty ρ hρ))⟩
+    exact ⟨m', fun ρ hρ hF => Res.Rel.trans_next (hm ρ hρ hF) (hm' ρ (hty ρ hρ hF))⟩
   · simp only [hb, ite_false] at hst'
     exact h b' fb st'' hfb hc hst'
 
 /-- A control-replacement event keeps `BInvL`. -/
 theorem BInvL.control {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C₀ : ID → Prop}
     {M : Defs} {C : ID → Prop} {B : BMapL} (h : BInvL tabs f D₀ C₀ M C B) (hC : DefClosed M C)
-    (hty : ∀ ρ, TypedL true D₀ tabs ρ → TypedL true M.get? tabs ρ) {b : ID} {st : BStateL}
+    (hty : ∀ ρ, TypedL true D₀ tabs ρ → FrameVals tabs 0 D₀ ρ → TypedL true M.get? tabs ρ)
+    {b : ID} {st : BStateL}
     (hst : bstateL f B b = some st) {i : Nat} {c : ID} (hi : i < st.ctrls.size)
     (hr : copyReachL tabs M M.size st.ctrls[i] c = true) :
     BInvL tabs f D₀ C₀ M C ((b, { st with ctrls := st.ctrls.set i c }) :: B) := by
@@ -525,7 +527,8 @@ theorem obl_build {k : BlockKind} {n : RNode} {pos : CtrlPos} {ai' : Int64}
 the denotations of `C`. -/
 theorem BInvL.retargetStep {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C₀ : ID → Prop}
     {M M' : Defs} {C C' : ID → Prop} {B : BMapL} (h : BInvL tabs f D₀ C₀ M C B)
-    (hsub : ∀ y, C y → C' y) (hty : ∀ ρ, TypedL true D₀ tabs ρ → TypedL true M.get? tabs ρ)
+    (hsub : ∀ y, C y → C' y)
+    (hty : ∀ ρ, TypedL true D₀ tabs ρ → FrameVals tabs 0 D₀ ρ → TypedL true M.get? tabs ρ)
     (hden : ∀ ρ n y, C y → denL true M'.get? tabs ρ n y = denL true M.get? tabs ρ n y)
     {b : ID} {st st' : BStateL} (hst : bstateL f B b = some st)
     (hnew : ∀ fb, f.block? b = some fb → (st.swapped = true → fb.succs.size = 2) →
@@ -550,7 +553,7 @@ theorem BInvL.retargetStep {tabs : Tables} {f : Func} {D₀ : ID → Option Valu
     refine ⟨n1, n2, fun n => ?_⟩
     obtain ⟨m, hm⟩ := h3 n
     obtain ⟨m', hm'⟩ := n3 m
-    exact ⟨m', fun ρ hρ hF => Res.Rel.trans_next (hm ρ hρ hF) (hm' ρ (hty ρ hρ))⟩
+    exact ⟨m', fun ρ hρ hF => Res.Rel.trans_next (hm ρ hρ hF) (hm' ρ (hty ρ hρ hF))⟩
   · simp only [hb, ite_false] at hst'
     exact hB b' fb st'' hfb hc hst'
 
@@ -607,7 +610,8 @@ the denotations of `C ⊆ C'` and defines the built control (`us`, in `C'` when 
 are in `C`). -/
 theorem BInvL.block {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C₀ : ID → Prop}
     {M M' : Defs} {C C' : ID → Prop} {B : BMapL} (h : BInvL tabs f D₀ C₀ M C B)
-    (hC : DefClosed M C) (hty : ∀ ρ, TypedL true D₀ tabs ρ → TypedL true M.get? tabs ρ)
+    (hC : DefClosed M C)
+    (hty : ∀ ρ, TypedL true D₀ tabs ρ → FrameVals tabs 0 D₀ ρ → TypedL true M.get? tabs ρ)
     (hsub : ∀ y, C y → C' y)
     (hden : ∀ ρ n y, C y → denL true M'.get? tabs ρ n y = denL true M.get? tabs ρ n y)
     {b : ID} {st st' : BStateL}
@@ -923,7 +927,7 @@ theorem jumpOKL_facts {tabs : Tables} {M : Defs} {st st' : BStateL} {nc : Array 
 denotations of `C ⊆ C'` and defines the values it adds (`us`) in `C'`. -/
 theorem BInvL.jump {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C₀ : ID → Prop}
     {M M' : Defs} {C C' : ID → Prop} {B : BMapL} (h : BInvL tabs f D₀ C₀ M C B)
-    (hty : ∀ ρ, TypedL true D₀ tabs ρ → TypedL true M.get? tabs ρ)
+    (hty : ∀ ρ, TypedL true D₀ tabs ρ → FrameVals tabs 0 D₀ ρ → TypedL true M.get? tabs ρ)
     (hsub : ∀ y, C y → C' y)
     (hden : ∀ ρ n y, C y → denL true M'.get? tabs ρ n y = denL true M.get? tabs ρ n y)
     {b : ID} {st st' : BStateL} (hst : bstateL f B b = some st) (hk : st.kind = .JumpTable)

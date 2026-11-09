@@ -228,6 +228,8 @@ import GoFV.Proof.Low.RuleL
 import GoFV.Rules.ProvenARM64
 {imports}
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The proven `ARM64.rules` rule set is sound (issue #385)
 

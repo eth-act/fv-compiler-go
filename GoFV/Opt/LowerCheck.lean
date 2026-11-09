@@ -576,7 +576,7 @@ def atomDef1 (tabs : Tables) (f : Func) (M : Defs) (v : ID) (x u : Value) :
         (stFold tabs M x u || stFoldAddr tabs f M x u || stIdxFold tabs M x u) &&
           (f.value? v).any (·.op == .Store) ||
         stIdxScale tabs M x u && (f.value? v).any (fun a => a.op == .Store && a.args.size == 3) ||
-        qFold tabs f M x u && (f.value? v).any (·.op == .Move))
+        qFold tabs f M x u && ((f.value? v).any (·.op == .Move) || (f.value? v).isNone))
     then some (u, none)
   else none
 
@@ -629,7 +629,8 @@ def moveDef (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value) :
   | some x, _ :: u :: rest =>
     if x.id == v && u.id == v && x.op == .Move && x.args.size == 3 && !termVL tabs x &&
         !termVL tabs u && u.type == x.type && u.auxInt == 0 && u.aux == none &&
-        (rest.map (·.id)).Nodup && (f.value? v).any (·.op == .Move) then
+        (rest.map (·.id)).Nodup &&
+        (f.value? v).any (fun a => a.op == .Move && a.auxInt == x.auxInt) then
       match moveQOp x.auxInt, rest with
       | some (o, _), [l] =>
         if o == .ARM64FMOVQstore && u.op == o && l.op == .ARM64FMOVQload && moveLd tabs M v x l &&
@@ -641,6 +642,70 @@ def moveDef (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value) :
             moveSel tabs M v .Select0 p s0 && moveSel tabs M v .Select1 p s1 &&
             u.args == #[x.args[0]!, s0.id, s1.id, x.args[2]!] then some (u, [p, s0, s1])
         else none
+      | _, _ => none
+    else none
+  | _, _ => none
+
+/-- A load term `l` of `x`'s source and memory (arguments 1 and 2) at offset `k` without aux, at a
+fresh ID of `M` other than `v` (`moveLd` at an offset). -/
+def moveLdK (tabs : Tables) (M : Defs) (v : ID) (x l : Value) (k : Int64) : Bool :=
+  l.auxInt == k && l.aux == none && l.args == #[x.args[1]!, x.args[2]!] && l.id != v &&
+    (M.get? l.id).isNone && termVL tabs l
+
+/-- The value nodes `ns` of a 128-bit store `o` copying `x`'s source in its memory at offset `k`
+(`moveDef`'s, at an offset): an `FMOVQload [k]` (a `Vec128`) for `FMOVQstore`; `Select0` and
+`Select1` (`moveSel`) of an `FLDPQ [k]` (a pair of `Vec128`s) for `FSTPQ`; fresh load terms
+(`moveLdK`). The IDs of the values, and the nodes each after those it reads. -/
+def qVals (tabs : Tables) (M : Defs) (v : ID) (x : Value) (o : Op) (k : Int64) :
+    List Value → Option (List ID × List Value)
+  | [l] =>
+    if o == .ARM64FMOVQstore && l.op == .ARM64FMOVQload && moveLdK tabs M v x l k &&
+        Sem.Ty.beq (shpL tabs l.type) (.blob 16) then some ([l.id], [l]) else none
+  | [s0, p, s1] =>
+    if o == .ARM64FSTPQ && p.op == .ARM64FLDPQ && moveLdK tabs M v x p k &&
+        Sem.Ty.beq (shpL tabs p.type) (.tuple [.blob 16, .blob 16]) &&
+        moveSel tabs M v .Select0 p s0 && moveSel tabs M v .Select1 p s1 then
+      some ([s0.id, s1.id], [p, s0, s1])
+    else none
+  | _ => none
+
+/-- The number of value nodes of the 128-bit store `o` (`qVals`). -/
+def qNodes (o : Op) : Nat := if o == .ARM64FMOVQstore then 1 else 3
+
+/-- A rule event at the `Move [s]` `x` at `v` (a `Move` in `f`) lowering it to two 128-bit stores
+(`ARM64.rules:423`, `431`, `434`; `moveQ2Op`), replayed as its new definitions: the outer store
+`u` at `v` (`x`'s type, offset `q2Off s`, no aux) on `x`'s destination, values copying `x`'s
+source at that offset (`qVals`) and the inner store `w`; `w` (`x`'s type, an atom at a fresh ID
+`f` does not define, offset 0, no aux) on `x`'s destination, values copying the source from
+offset 0 and `x`'s memory. The log lists the nodes in pre-order: the outer store's values, `w`,
+`w`'s values; each is fresh where the replay puts it. The result is `u`, the fresh terms and
+`w`. -/
+def moveDef2 (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value) :
+    Option (Value × List Value × Value) :=
+  match M.get? v, defs with
+  | some x, _ :: u :: rest =>
+    if x.id == v && u.id == v && x.op == .Move && x.args.size == 3 && !termVL tabs x &&
+        !termVL tabs u && u.type == x.type && u.aux == none &&
+        (rest.map (·.id)).Nodup &&
+        (f.value? v).any (fun a => a.op == .Move && a.auxInt == x.auxInt) then
+      match moveQ2Op x.auxInt, rest.drop (qNodes u.op) with
+      | some (oo, _, oi, _), w :: ins =>
+        let k : Int64 := Int64.ofNat (q2Off x.auxInt)
+        match qVals tabs M v x oo k (rest.take (qNodes u.op)) with
+        | some (os, ons) =>
+          let M1 := ons.foldl (fun M s => M.put s.id s) M
+          match qVals tabs M1 v x oi 0 ins with
+          | some (is, ins') =>
+            if u.op == oo && u.auxInt == k && w.op == oi && w.auxInt == 0 && w.aux == none &&
+                w.type == x.type && !termVL tabs w && w.id != v &&
+                ((ins'.foldl (fun M s => M.put s.id s) M1).get? w.id).isNone &&
+                (f.value? w.id).isNone &&
+                w.args == #[x.args[0]!] ++ is.toArray ++ #[x.args[2]!] &&
+                u.args == #[x.args[0]!] ++ os.toArray ++ #[w.id] then
+              some (u, ons ++ ins', w)
+            else none
+          | none => none
+        | none => none
       | _, _ => none
     else none
   | _, _ => none
@@ -1048,6 +1113,11 @@ def replayL (tabs : Tables) (t : Interp.Table) (f : Func) :
               | some (u, ts) =>
                 replayL tabs t f ((ts.foldl (fun M s => M.put s.id s) M).put v u) B evs
               | none =>
+              match moveDef2 tabs f M v defs.toList with
+              | some (u, ts, w) =>
+                replayL tabs t f (((ts.foldl (fun M s => M.put s.id s) M).put w.id w).put v u) B
+                  evs
+              | none =>
               match frameFold tabs f M v defs.toList with
               | some u => replayL tabs t f (M.put v u) B evs
               | none =>
@@ -1104,11 +1174,11 @@ def atomsOfL (tabs : Tables) (h : Func) (b : Block) : List ID :=
 (`memLower`) or the `Zero` or `Move` `u` (`bulkLower`) with the same type and number of
 arguments, or the frame address `u` (`addrLower`), the bounds panic `u` with constant operands
 (`pbLower`), the store `u` to an indexed store (`idxLower`) or the `Move` `u` to a 128-bit store
-(`moveQLower`) with the same type. -/
+(`moveQLower`) or to two, the outer one (`moveQ2Lower`), with the same type. -/
 def atomPair (tabs : Tables) (u w : Value) : Bool :=
   (((u.op == w.op || renameOp u.op w.op) && u.auxInt == w.auxInt && u.aux == w.aux ||
     memLower tabs u w || bulkLower u w) && u.args.size == w.args.size || addrLower tabs u w ||
-    pbLower u w || idxLower tabs u w || moveQLower tabs u w) &&
+    pbLower u w || idxLower tabs u w || moveQLower tabs u w || moveQ2Lower u w) &&
   u.type == w.type && u.block == w.block && u.id == w.id
 
 /-- The operands of `PanicBounds [kind] x y mem` a lowered bounds panic with constant operands
@@ -1149,11 +1219,31 @@ frame variable's address into it (`650` at offset 0, `addrFoldEv`; `finalOKL` re
 def frameAtomG (tabs : Tables) (f : Func) (x : ID) (w : Value) : Bool :=
   w.op == .ARM64MOVDaddr && !termVL tabs w && w.args.size == 1 && (f.value? x).any (termVL tabs ·)
 
+/-- The atom after `x` in the schedule `og` of a block of `g` (`termVL`). -/
+def nextAtomL (tabs : Tables) (g : Func) (og : List ID) (x : ID) : Option ID :=
+  match og.dropWhile (· != x) with
+  | _ :: rest => rest.find? fun y => (g.value? y).any (!termVL tabs ·)
+  | [] => none
+
+/-- The atom `w` of `g` at `x`, where `f` has no value, is the inner store of the two 128-bit
+stores lowering a `Move` (`moveQ2In`, `ARM64.rules:423`, `431`, `434`; `moveDef2` replays it at a
+fresh ID), a memory: the next atom `v` of `g`'s schedule `og` is the outer one (`moveQ2Lower`) of
+the `Move` of `f` at `v`, its last argument `x`. -/
+def compOKL (tabs : Tables) (f g : Func) (og : List ID) (x : ID) (w : Value) : Bool :=
+  (f.value? x).isNone && !termVL tabs w && Sem.Ty.beq (shpL tabs w.type) .mem &&
+  match nextAtomL tabs g og x with
+  | some v =>
+    match f.value? v, g.value? v with
+    | some u, some wv => moveQ2Lower u wv && moveQ2In u w && wv.args[wv.args.size - 1]! == x
+    | _, _ => false
+  | none => false
+
 /-- `RewriteCheck.atomsOK` with `atomPair` (and `pbConstOK`): the same entry, blocks and own aux;
 every atom of `g` corresponds to an atom of `f` or is a lowered frame address where `f` has a term
-(`frameAtomG`), the atoms only `f` has are droppable (`dropAtomL`), and each block evaluates `f`'s
-roots, atoms of `g`, in the same order (`Sem.schedule`; `g` may evaluate a lowered `Zero` or
-`Move`, which is not a root of lowered SSA, earlier). -/
+(`frameAtomG`) or the inner store of a `Move` lowered to two 128-bit stores (`compOKL`), the atoms
+only `f` has are droppable (`dropAtomL`), and each block evaluates `f`'s roots, atoms of `g`, in
+the same order (`Sem.schedule`; `g` may evaluate a lowered `Zero` or `Move`, which is not a root of
+lowered SSA, earlier). -/
 def atomsOKL (tabs : Tables) (f g : Func) : Bool :=
   f.entry == g.entry && f.blocks == g.blocks && f.ownAux == g.ownAux &&
   f.blocks.all fun b =>
@@ -1164,7 +1254,8 @@ def atomsOKL (tabs : Tables) (f g : Func) : Bool :=
       let ag := atomsOfL tabs g gb
       ag.all (fun x => (af.contains x && match f.value? x, g.value? x with
         | some u, some w => atomPair tabs u w && pbConstOK tabs f u w
-        | _, _ => false) || (g.value? x).any (frameAtomG tabs f x)) &&
+        | _, _ => false) || (g.value? x).any (frameAtomG tabs f x) ||
+          (g.value? x).any (compOKL tabs f g (((Sem.schedule g gb).map (·.toList)).getD []) x)) &&
       af.all (fun x => ag.contains x || (f.value? x).any (dropAtomL ·.op)) &&
       match Sem.schedule f fb, Sem.schedule g gb with
       | some of, some og =>

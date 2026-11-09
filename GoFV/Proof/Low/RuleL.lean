@@ -752,6 +752,39 @@ def moveQLower (tabs : Tables) (u w : Value) : Bool :=
   u.op == .Move && u.args.size == 3 && offOK w.auxInt && stAux tabs w.aux &&
     (moveQOp u.auxInt).any fun (o, k) => w.op == o && w.args.size == k
 
+/-- The two 128-bit stores `lower` copies `Move [n]` with (`ARM64.rules:423`, `431`, `434`): the
+outer store's op and number of arguments, then the inner one's. The inner store copies the first
+16 or 32 bytes at offset 0, the outer the last ones at `n - 16 c` (`c` its 16-byte halves,
+`q2Off`) on the inner one's memory:
+* `(Move [s] dst src mem) && s > 24 && s < 32 => (FMOVQstore [int32(s-16)] dst (FMOVQload
+  [int32(s-16)] src mem) (FMOVQstore dst (FMOVQload src mem) mem))` (`423`);
+* `s > 40 && s <= 48`: the outer an `FMOVQstore [s-16]`, the inner an `FSTPQ` (`431`);
+* `s > 48 && s <= 64`: the outer an `FSTPQ [s-32]`, the inner an `FSTPQ` (`434`). -/
+def moveQ2Op (n : Int64) : Option (Op × Nat × Op × Nat) :=
+  if 24 < n.toInt ∧ n.toInt < 32 then some (.ARM64FMOVQstore, 3, .ARM64FMOVQstore, 3)
+  else if 40 < n.toInt ∧ n.toInt ≤ 48 then some (.ARM64FMOVQstore, 3, .ARM64FSTPQ, 4)
+  else if 48 < n.toInt ∧ n.toInt ≤ 64 then some (.ARM64FSTPQ, 4, .ARM64FSTPQ, 4)
+  else none
+
+/-- The offset of the outer store of `Move [n]`'s two 128-bit stores (`moveQ2Op`): `n - 16 c`,
+`c` the outer store's halves. -/
+def q2Off (n : Int64) : Nat :=
+  match moveQ2Op n with
+  | some (_, ko, _, _) => n.toInt.toNat - 16 * (ko - 2)
+  | none => 0
+
+/-- The atom `w` is the outer store of the two 128-bit stores lowering the `Move [n]` `u` (three
+arguments; `moveQ2Op`). Its last argument is the inner store (`moveQ2In`), a fresh atom
+(`GoFV.Opt.LowerCheck.moveDef2`, `compOKL`; `GoFV.Proof.Low.Sim.moveQ2_outer_eval`). -/
+def moveQ2Lower (u w : Value) : Bool :=
+  u.op == .Move && u.args.size == 3 &&
+    (moveQ2Op u.auxInt).any fun (o, k, _, _) => w.op == o && w.args.size == k
+
+/-- The atom `w` is the inner store of the two 128-bit stores lowering the `Move [n]` `u`
+(`moveQ2Op`). -/
+def moveQ2In (u w : Value) : Bool :=
+  (moveQ2Op u.auxInt).any fun (_, _, o, k) => w.op == o && w.args.size == k
+
 /-- The atom `w` lowers the frame address `u`: `(LocalAddr <t> {sym} base _) => (MOVDaddr {sym}
 base)` and `(MOVDaddr {sym} (SPanchored base mem))`, with the same frame variable `{sym}` (a
 `.name` aux) at offset 0 and one argument, whose value it ignores
@@ -933,6 +966,87 @@ theorem moveQLower_qStore {tabs : Tables} {u w : Value} (h : moveQLower tabs u w
   · split at h
     · simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at h; rw [h.1]; rfl
     · simp at h
+
+/-- What `moveQ2Op` says: two 128-bit stores, the outer at `q2Off n` (`k`) writing up to `n`, the
+inner from 0 up to at least `k` and at most `n ≤ 64` (`ARM64.rules:423`, `431`, `434`). -/
+theorem moveQ2Op_cases {n : Int64} {oo : Op} {ko : Nat} {oi : Op} {ki : Nat}
+    (h : moveQ2Op n = some (oo, ko, oi, ki)) :
+    ((oo = .ARM64FMOVQstore ∧ ko = 3) ∨ (oo = .ARM64FSTPQ ∧ ko = 4)) ∧
+    ((oi = .ARM64FMOVQstore ∧ ki = 3) ∨ (oi = .ARM64FSTPQ ∧ ki = 4)) ∧
+    q2Off n + 16 * (ko - 2) = n.toInt.toNat ∧ q2Off n ≤ 16 * (ki - 2) ∧
+    16 * (ki - 2) ≤ n.toInt.toNat ∧ n.toInt.toNat ≤ 64 ∧ 24 < n.toInt ∧ n.toInt ≠ 32 := by
+  have hq : q2Off n = n.toInt.toNat - 16 * (ko - 2) := by unfold q2Off; rw [h]
+  rw [hq]
+  unfold moveQ2Op at h
+  split at h
+  · rename_i hc; cases h
+    exact ⟨.inl ⟨rfl, rfl⟩, .inl ⟨rfl, rfl⟩, by omega⟩
+  · split at h
+    · rename_i hc; cases h
+      exact ⟨.inl ⟨rfl, rfl⟩, .inr ⟨rfl, rfl⟩, by omega⟩
+    · split at h
+      · rename_i hc; cases h
+        exact ⟨.inr ⟨rfl, rfl⟩, .inr ⟨rfl, rfl⟩, by omega⟩
+      · cases h
+
+/-- What `moveQ2Lower` says: a `Move` with three arguments and the outer store of `moveQ2Op`. -/
+theorem moveQ2Lower_facts {u w : Value} (h : moveQ2Lower u w = true) :
+    u.op = .Move ∧ u.args.size = 3 ∧ ∃ ko oi ki, moveQ2Op u.auxInt = some (w.op, ko, oi, ki) ∧
+      w.args.size = ko := by
+  unfold moveQ2Lower at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨hu, h3⟩, h⟩ := h
+  refine ⟨hu, h3, ?_⟩
+  cases hq : moveQ2Op u.auxInt with
+  | none => rw [hq] at h; cases h
+  | some q =>
+    obtain ⟨oo, ko, oi, ki⟩ := q
+    rw [hq] at h
+    simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at h
+    exact ⟨ko, oi, ki, by rw [h.1], h.2⟩
+
+/-- What `moveQ2In` says: the inner store of `moveQ2Op`. -/
+theorem moveQ2In_facts {u w : Value} (h : moveQ2In u w = true) :
+    ∃ oo ko, moveQ2Op u.auxInt = some (oo, ko, w.op, w.args.size) := by
+  unfold moveQ2In at h
+  cases hq : moveQ2Op u.auxInt with
+  | none => rw [hq] at h; cases h
+  | some q =>
+    obtain ⟨oo, ko, oi, ki⟩ := q
+    rw [hq] at h
+    simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at h
+    exact ⟨oo, ko, by rw [h.1, h.2]⟩
+
+/-- The outer store of `moveQ2Lower` is a 128-bit store. -/
+theorem moveQ2Lower_qStore {u w : Value} (h : moveQ2Lower u w = true) : qStore w.op = true := by
+  obtain ⟨-, -, ko, oi, ki, hq, -⟩ := moveQ2Lower_facts h
+  rcases (moveQ2Op_cases hq).1 with ⟨h1, -⟩ | ⟨h1, -⟩ <;> rw [h1] <;> rfl
+
+/-- The inner store of `moveQ2In` is a 128-bit store. -/
+theorem moveQ2In_qStore {u w : Value} (h : moveQ2In u w = true) : qStore w.op = true := by
+  obtain ⟨oo, ko, hq⟩ := moveQ2In_facts h
+  rcases (moveQ2Op_cases hq).2.1 with ⟨h1, -⟩ | ⟨h1, -⟩ <;> rw [h1] <;> rfl
+
+/-- No `Move` lowers to a single 128-bit store and to two. -/
+theorem moveQ2Lower_not_moveQ {tabs : Tables} {u w w' : Value} (h : moveQ2Lower u w = true) :
+    moveQLower tabs u w' = false := by
+  obtain ⟨-, -, ko, oi, ki, hq, -⟩ := moveQ2Lower_facts h
+  have hc := moveQ2Op_cases hq
+  cases h2 : moveQLower tabs u w'
+  · rfl
+  · exfalso
+    unfold moveQLower moveQOp at h2
+    simp only [Bool.and_eq_true, beq_iff_eq] at h2
+    have h2 := h2.2
+    split at h2
+    · rename_i h16
+      have : u.auxInt.toInt = 16 := by rw [show u.auxInt = 16 by simpa using h16]; decide
+      omega
+    · split at h2
+      · rename_i h32
+        have : u.auxInt.toInt = 32 := by rw [show u.auxInt = 32 by simpa using h32]; decide
+        omega
+      · simp at h2
 
 /-- Generic ops are no arm64 stores. -/
 theorem stSize_generic {o : Op} (h : o.generic = true) : stSize o = none := by

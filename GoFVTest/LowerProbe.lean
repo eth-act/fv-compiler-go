@@ -178,7 +178,9 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
           | some u, some w =>
             if !(atomPair tabs u w && pbConstOK tabs f u w) then
               return s!"atoms: {u.op.name} -> {w.op.name} v{x}"
-          | none, some w => return s!"atoms: new atom {w.op.name} v{x}"
+          | none, some w =>
+            if !compOKL tabs f g (((GoFV.SSA.Sem.schedule g gb).map (·.toList)).getD []) x w then
+              return s!"atoms: new atom {w.op.name} v{x}"
           | _, _ => return s!"atoms: v{x}?"
         for x in atomsOfL tabs f fb do
           if !(atomsOfL tabs g gb).contains x && !((f.value? x).any (dropAtomL ·.op)) then
@@ -217,6 +219,9 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
               | none =>
                 match moveDef tabs f M v defs.toList with
                 | some (u, ts) => M := (ts.foldl (fun M s => M.put s.id s) M).put v u
+                | none =>
+                match moveDef2 tabs f M v defs.toList with
+                | some (u, ts, w) => M := ((ts.foldl (fun M s => M.put s.id s) M).put w.id w).put v u
                 | none =>
                 match frameFold tabs f M v defs.toList with
                 | some u => M := M.put v u

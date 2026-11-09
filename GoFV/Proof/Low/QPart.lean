@@ -289,4 +289,26 @@ theorem qAt_ldPair (tabs : Tables) {o : Op} {i : Nat}
         exact load16_at h hQ1w
     | _ => first | exact .poison _ | exact Sem.Refines.refl _
 
+/-- **The outer store of a `Move` lowered to two 128-bit stores, as lowered**: at offset `k`
+without aux on a refinement of the `Move`'s destination, its address is the destination moved by
+`k` (`shiftW`, inside the window; `Ptr.ofAddr_add_of_inWindow` on an integer word). -/
+theorem addrRef_shiftW (tabs : Tables) {act : Nat} {K : Nat} (hK : K < 2 ^ 63) {x y : Val}
+    (h : Sem.Refines x y) : AddrRef tabs act none (Int64.ofNat K) (shiftW K x) y := by
+  intro q hq
+  obtain ⟨p, hp, rfl, hw⟩ := shiftW_asPtrWord hq
+  rw [asPtrWord_of_refines h hp]
+  unfold addrAt
+  rw [ofInt_ofNat_lt hK]
+  cases x with
+  | ptr p' =>
+    simp only [Val.asPtrWord, Option.some.injEq] at hp
+    subst hp; rfl
+  | int w a =>
+    cases w <;> simp only [Val.asPtrWord, reduceCtorEq] at hp
+    simp only [Option.some.injEq] at hp
+    subst hp
+    simp only [Arm64.addr, Arm64.reg, Option.map_some, BitVec.setWidth_eq]
+    rw [Ptr.ofAddr_add_of_inWindow hw]
+  | _ => simp [Val.asPtrWord] at hp
+
 end GoFV.Proof.Low
