@@ -964,32 +964,35 @@ LoweredAtomicCas#Variant` (92), `floating-point argument or result` (64); `retRe
 `checkObj`: `FLDPQ` (SIMD&FP, 121), `LSL` by a register (83), unmodelled atomics
 `LDADDAL`/`CASAL` (≈247 together), `tail: spill register` (58), `FMOVD` (SIMD&FP, 39).
 
-The full-v11 table below is the previous measurement (G18 probe, stock locals, main 8c5b1472 plus
-PR #606); it is re-measured on the composition on G34.
+The full-v11 table below is the composition on G34 (main 0d51e03e, framed leaves excluded); the
+run on the composition on G44 (main c3414814 plus #650) is in progress.
 
-| full-v11 (96,674 functions, in six parts, ≈5 h 06 min) | pipeline output | share | stock `trim` |
+| full-v11 (96,674 functions, in six parts, 4 h 25 min summed; composition on G34, main 0d51e03e, `--jobs 4`) | pipeline output | share | stock `trim` |
 | --- | ---: | ---: | ---: |
-| fully verified (Phase 2, through `trim`) | 81,003 | 83.78% | - |
-| … genssa and `Flushplist` ran | 73,422 | 75.94% | 96,674 |
-| … ∧ `checkG18` | 39,575 | 40.93% | 41,865 |
-| … ∧ `checkG18` ∧ `retRegsOK` | 28,813 | 29.80% | 30,586 |
-| … ∧ `checkObj` | 69,055 | 71.43% | 84,567 |
-| **… ∧ `checkG18` ∧ `retRegsOK` ∧ `checkObj` (end to end)** | **28,813** | **29.80%** | 30,582 |
-| … end to end, pipeline output identical to stock after `trim` | 26,048 | 26.94% | - |
+| fully verified (Phase 2, through `trim`) | 83,065 | 85.92% | - |
+| … genssa and `Flushplist` ran | 82,986 | 85.84% | 96,674 |
+| … ∧ `checkG34` | 60,698 | 62.78% | 64,374 |
+| … ∧ `checkG34` ∧ `retRegsOK` | 60,695 | 62.78% | 64,361 |
+| … ∧ `checkObj` | 76,998 | 79.64% | 84,567 |
+| … ∧ `checkG34` ∧ `retRegsOK` ∧ `checkObj` | 60,609 | 62.69% | 64,247 |
+| **… and no framed leaf (end to end, `verified_mach` on G34)** | **60,599** | **62.68%** | 64,229 |
+| … end to end, pipeline output identical to stock after `trim` | 53,355 | 55.19% | - |
 
-full-v11 ran as six invocations (`cmdmain`, `cmd/vendor`, the rest of `cmd` but `compile`,
-`cmd/compile`, `stdall/std` in two halves; the single run was lost to a global OOM kill of the
-machine after 5 h 41 min, at 2.9 GB RSS) whose tables are summed; `cmd/compile` alone took
-4 h 00 min under a load of ≈360 (47 functions over 60 s, `ppc64asm/init` 642 s). Top reasons
-among the fully verified: back-end errors `genssa: aux a# is not a Dcl name` (7,542, as above) and
-`Flushplist: PosTable.Pos: no position base` (39); `retRegsOK`: a `Ret` block's results not in
-their ABI registers (10,749) or a result on the stack (13); `checkObj`: `LDADDALW` (1,169), `FLDPQ`
-(1,043), `CASALW` (417), `LSL`/`LSR`/`ASR` by a register (775), `tail: spill register` (275),
-`RET` through another register (144), `CASALD` (127). `checkG18` (first reason; lower bounds, each
-part lists its top 40): `op LDAR` (3,192), `op LoweredPanicBoundsCC` (3,072), `op MOVDnop`
-(2,413), `frame variable operand class` (1,704), `op LoweredPanicBoundsCR` (≥1,524), `SP after
-the entry values` (1,488), `op CALLtail` (1,388), `frame variable with an integer address`
-(1,264), `pair load shape` (1,239), `op LoweredMemEq` (1,151), `store shape` (1,127).
+The previous full-v11 measurement (G18 probe, stock locals, main 8c5b1472 plus #606) counted
+28,813 (29.80%) end to end; its 7,542 back-end errors `genssa: aux a# is not a Dcl name` are gone
+(`ownFrame`), and `retRegsOK` now rejects 3 functions (10,749 then). full-v11 ran as six
+invocations (`cmdmain`, `cmd/vendor`, the rest of `cmd` but `compile`, `cmd/compile`,
+`stdall/std` in two halves) whose tables are summed (`cmd/compile` 2 h 59 min, of which
+`ssagen/simdAMD64Intrinsics` 7,769 s; peak RSS 1.7 GB). Top reasons among the fully verified:
+back-end errors `Flushplist: PosTable.Pos: no position base` (79); `checkObj`: `FLDPQ` (SIMD&FP,
+1,448), `LDADDALW` (1,181), `CASALW` (810), `LSR`/`LSL`/`ASR` by a register (1,217), `tail: spill
+register` (275), `JMP` to a register (155), `RET` through another register (144), `CASALD` (130).
+`checkG34` (first reason; lower bounds, five of the six parts hit their top-40 cap): `op LDAR`
+(5,033) and `op LDARW` (1,206) (G38), `store shape` (2,475), `frame variable operand class`
+(2,310), `frame variable with an integer address` (1,532), `op CALLtail` (1,388), `op
+LoweredAtomicAdd#Variant` (980), `register value of shape other` (565), `op ADDshiftRL` (457),
+`argument v# in register #` (446), `op LoweredAtomicCas#Variant` (436), `InitMem after the entry
+values` (341, G40/G43).
 
 ## Per-pass fragment coverage (verified pipeline, full-v6)
 
