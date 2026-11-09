@@ -226,6 +226,9 @@ GoFV.Proof.Witness.GenG36.g36_facts._native.native_decide.ax_1_1 98b598a59c3a63b
 # genG37_witness (GoFV/Proof/Witness/GenG37.lean, #553): `checkG37` accepts `math/bits.Reverse`
 # and `checkG36` does not; `runLoc` runs its `RBIT` `v9`; compiled evaluation.
 GoFV.Proof.Witness.GenG37.g37_facts._native.native_decide.ax_1_1 c28fd59e60f17ec20dd3aef6e36fe0d2d7d59b0baf709d79f0afc676fc84693f
+# genG38_witness (GoFV/Proof/Witness/GenG38.lean, #553): `checkG38` accepts `sync/atomic.LoadInt64`
+# and `checkG37` does not; `runLoc` runs its `LDAR` `v8`; compiled evaluation.
+GoFV.Proof.Witness.GenG38.g38_facts._native.native_decide.ax_1_1 85347640427743072fa4e340d528e3c3b3085cf9f9c149492a11f922bfc6b077
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
