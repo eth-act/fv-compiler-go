@@ -188,6 +188,10 @@ GoFV.Proof.Witness.GenG32b.g32b_facts._native.native_decide.ax_1_1 cf7495f7f00c3
 # genG32_csinc_witness (GoFV/Proof/Witness/GenG32c.lean, #553): `checkG32` accepts `countGeneric`;
 # `runLoc` runs its `CSINC`; compiled evaluation.
 GoFV.Proof.Witness.GenG32c.g32c_facts._native.native_decide.ax_1_1 2f87f93fb8344140bd2e0fb00ad5e79ebed678d853531ca0af97f8e73229a14b
+# genG31_value_witness, genG31_term_witness (GoFV/Proof/Witness/GenG31.lean, #553): `checkG31`
+# accepts `runtime.(*hexdumper).close` and `checkG32` does not, with G31's tables `uIn`/`uL31`;
+# `runLoc` runs its `MOVDreg` `v22` and `b1`'s `NZW`; compiled evaluation.
+GoFV.Proof.Witness.GenG31.g31_facts._native.native_decide.ax_1_1 81058b9239c163b8974ce780567a98dc574c83716cb34e074f3371223cefe6a4
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
