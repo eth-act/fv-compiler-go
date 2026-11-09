@@ -268,6 +268,14 @@ theorem r_ARM64_673_sound : ArmRule.Checked r_ARM64_673 := by
 theorem r_ARM64_676_sound : ArmRule.Checked r_ARM64_676 := by
   arm_ldfold
 
+/-- `ARM64.rules:682`: `(FMOVSload [off1] {sym} (ADDconst [off2] ptr) mem) && is32Bit(int64(off1)+off2) && (ptr.Op != OpSB || !config.ctxt.Flag_dynlink) => (FMOVSload [off1+int32(off2)] {sym} ptr mem)` -/
+theorem r_ARM64_682_sound : ArmRule.Checked r_ARM64_682 := by
+  arm_ldfold
+
+/-- `ARM64.rules:685`: `(FMOVDload [off1] {sym} (ADDconst [off2] ptr) mem) && is32Bit(int64(off1)+off2) && (ptr.Op != OpSB || !config.ctxt.Flag_dynlink) => (FMOVDload [off1+int32(off2)] {sym} ptr mem)` -/
+theorem r_ARM64_685_sound : ArmRule.Checked r_ARM64_685 := by
+  arm_ldfold
+
 /-- `ARM64.rules:758`: `(MOVBstore [off1] {sym} (ADDconst [off2] ptr) val mem) && is32Bit(int64(off1)+off2) && (ptr.Op != OpSB || !config.ctxt.Flag_dynlink) => (MOVBstore [off1+int32(off2)] {sym} ptr val mem)` -/
 theorem r_ARM64_758_sound : ArmRule.Checked r_ARM64_758 := checked_armStore rfl rfl
 
@@ -374,6 +382,14 @@ theorem r_ARM64_852_sound : ArmRule.Checked r_ARM64_852 := by
 
 /-- `ARM64.rules:856`: `(MOVDload [off1] {sym1} (MOVDaddr [off2] {sym2} ptr) mem) && canMergeSym(sym1,sym2) && is32Bit(int64(off1)+int64(off2)) && (ptr.Op != OpSB || !config.ctxt.Flag_dynlink) => (MOVDload [off1+off2] {mergeSym(sym1,sym2)} ptr mem)` -/
 theorem r_ARM64_856_sound : ArmRule.Checked r_ARM64_856 := by
+  arm_ldfoldAddr
+
+/-- `ARM64.rules:864`: `(FMOVSload [off1] {sym1} (MOVDaddr [off2] {sym2} ptr) mem) && canMergeSym(sym1,sym2) && is32Bit(int64(off1)+int64(off2)) && (ptr.Op != OpSB || !config.ctxt.Flag_dynlink) => (FMOVSload [off1+off2] {mergeSym(sym1,sym2)} ptr mem)` -/
+theorem r_ARM64_864_sound : ArmRule.Checked r_ARM64_864 := by
+  arm_ldfoldAddr
+
+/-- `ARM64.rules:868`: `(FMOVDload [off1] {sym1} (MOVDaddr [off2] {sym2} ptr) mem) && canMergeSym(sym1,sym2) && is32Bit(int64(off1)+int64(off2)) && (ptr.Op != OpSB || !config.ctxt.Flag_dynlink) => (FMOVDload [off1+off2] {mergeSym(sym1,sym2)} ptr mem)` -/
+theorem r_ARM64_868_sound : ArmRule.Checked r_ARM64_868 := by
   arm_ldfoldAddr
 
 end GoFV.Proof.Low.Rules

@@ -907,6 +907,7 @@ import GoFV.Proof.Witness.LowerConstFold
 import GoFV.Proof.Witness.LowerCopyArgs
 import GoFV.Proof.Witness.LowerCopyPtr
 import GoFV.Proof.Witness.LowerCvtMask
+import GoFV.Proof.Witness.LowerFloatLoad
 import GoFV.Proof.Witness.LowerFrameAtom
 import GoFV.Proof.Witness.LowerInvert
 import GoFV.Proof.Witness.LowerJumpTable

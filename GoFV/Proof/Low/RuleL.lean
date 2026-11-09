@@ -66,8 +66,9 @@ def movAddr (tabs : Tables) (ai : Int64) (ax : Option AuxRef) (args : List Val) 
   | [a] => (symPtr tabs ai ax a).elim .poison PtrOps.ptrRes
   | _ => .poison
 
-/-- The integer loads `Load` lowers to, with their size and signedness (`MOV{B,BU,H,HU,W,WU,D}load`;
-`Sem.arm64Op`'s `ld`). -/
+/-- The scalar loads `Load` lowers to, with their size and signedness (`MOV{B,BU,H,HU,W,WU,D}load`
+and the float loads `FMOV{S,D}load`, which load as `MOVWUload`/`MOVDload` do: a float shape is
+the integer shape of its size; `Sem.arm64Op`'s `ld`). -/
 def ldOp? : Op → Option (Nat × Bool)
   | .ARM64MOVBload => some (1, true)
   | .ARM64MOVBUload => some (1, false)
@@ -76,6 +77,8 @@ def ldOp? : Op → Option (Nat × Bool)
   | .ARM64MOVWload => some (4, true)
   | .ARM64MOVWUload => some (4, false)
   | .ARM64MOVDload => some (8, false)
+  | .ARM64FMOVSload => some (4, false)
+  | .ARM64FMOVDload => some (8, false)
   | _ => none
 
 /-- An `n`-byte integer load `[ai] {ax} a mem` (`Sem.arm64Op`'s `ld` in activation 0): the memory
@@ -109,7 +112,8 @@ theorem ldOp?_of_act {o : Op} (h : actOp o = false) : ldOp? o = none := by
 
 theorem ldOp?_mem {o : Op} {p : Nat × Bool} (h : ldOp? o = some p) :
     o = .ARM64MOVBload ∨ o = .ARM64MOVBUload ∨ o = .ARM64MOVHload ∨ o = .ARM64MOVHUload ∨
-      o = .ARM64MOVWload ∨ o = .ARM64MOVWUload ∨ o = .ARM64MOVDload := by
+      o = .ARM64MOVWload ∨ o = .ARM64MOVWUload ∨ o = .ARM64MOVDload ∨ o = .ARM64FMOVSload ∨
+      o = .ARM64FMOVDload := by
   unfold ldOp? at h
   split at h <;> simp_all
 
@@ -354,7 +358,8 @@ def armReadW (o : Op) (ty : Ty) (i : Nat) : Nat :=
   | .ARM64MOVBreg | .ARM64MOVBUreg => 8
   | .ARM64MOVHreg | .ARM64MOVHUreg => 16
   | .ARM64MOVBload | .ARM64MOVBUload | .ARM64MOVHload | .ARM64MOVHUload | .ARM64MOVWload
-  | .ARM64MOVWUload | .ARM64MOVDload => if i == 0 then 64 else 0
+  | .ARM64MOVWUload | .ARM64MOVDload | .ARM64FMOVSload
+  | .ARM64FMOVDload => if i == 0 then 64 else 0
   | .ARM64MOVDloadidx | .ARM64MOVWloadidx | .ARM64MOVWUloadidx | .ARM64MOVHloadidx
   | .ARM64MOVHUloadidx | .ARM64MOVBloadidx | .ARM64MOVBUloadidx | .ARM64FMOVSloadidx
   | .ARM64FMOVDloadidx | .ARM64MOVHloadidx2 | .ARM64MOVHUloadidx2 | .ARM64MOVWloadidx4

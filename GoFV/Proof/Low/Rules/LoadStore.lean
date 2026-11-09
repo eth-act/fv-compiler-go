@@ -3,15 +3,17 @@ import GoFV.Proof.Low.SimMem
 import GoFV.Rules.Generated.ARM64
 
 /-!
-# Lowering rule lemmas: frame addresses, integer loads and scalar stores (`ARM64.rules:309-310`,
-`313-320`, `326-331`)
+# Lowering rule lemmas: frame addresses, scalar loads and scalar stores (`ARM64.rules:309-310`,
+`313-322`, `326-331`)
 
-`(Load <t> ptr mem) && … => (MOV{B,BU,H,HU,W,WU,D}load ptr mem)`: the integer loads are lowered
-terms (`termVL`, `opValL`'s `ldVal`), and at offset 0 without aux `ldVal` is `Sim.ldRes`, so the
-rules are `Sim.ld_ref` at a shape the load's size fits. Go's conditions (`t.IsBoolean()`,
-`is8BitInt(t)`, …, `is64BitInt(t) || isPtr(t)`) are oracle atoms of the rule denotation; the size
-fit is the validator's instance check `resFitsL` (the obligation's `hfit`). The signedness
-(`t.IsSigned()`) does not matter: `retypeL` at the narrow shape cuts the extension.
+`(Load <t> ptr mem) && … => (MOV{B,BU,H,HU,W,WU,D}load ptr mem)` and `FMOV{S,D}load`: the scalar
+loads are lowered terms (`termVL`, `opValL`'s `ldVal`; a float load reads as `MOVWUload` or
+`MOVDload`, a float shape being the integer shape of its size), and at offset 0 without aux
+`ldVal` is `Sim.ldRes`, so the rules are `Sim.ld_ref` at a shape the load's size fits. Go's
+conditions (`t.IsBoolean()`, `is8BitInt(t)`, …, `is64BitInt(t) || isPtr(t)`, `is32BitFloat(t)`,
+`is64BitFloat(t)`) are oracle atoms of the rule denotation; the size fit is the validator's
+instance check `resFitsL` (the obligation's `hfit`). The signedness (`t.IsSigned()`) does not
+matter: `retypeL` at the narrow shape cuts the extension.
 
 `(Store {t} ptr val mem) && t.Size() == n … => (MOV{B,H,W,D}store ptr val mem)` and
 `FMOV{S,D}store`: stores are atoms, the validator pairs each lowered store with the `Store` it
@@ -22,8 +24,8 @@ base)`: frame addresses are atoms, the validator pairs each `MOVDaddr` with the 
 lowers (`addrLower`, `addr_lower_eval`: the frame variable's address, whatever the argument), so
 these rules are `ArmRule.Mem` (`checked_localAddr`).
 
-Not covered: the float loads (`FMOV{S,D}load`, 321-322) and `FMOVQload` (323) are atoms;
-`FMOVQstore` (332) stores a 16-byte shape `memLower` does not pair.
+Not covered: `FMOVQload` (323) is an atom; `FMOVQstore` (332) stores a 16-byte shape `memLower`
+does not pair.
 -/
 
 namespace GoFV.Proof.Low.Rules
@@ -121,6 +123,20 @@ theorem r_ARM64_319_sound : ArmRule.Checked r_ARM64_319 := by
 
 /-- `ARM64.rules:320`: `(Load <t> ptr mem) && (is64BitInt(t) || isPtr(t)) => (MOVDload ptr mem)` -/
 theorem r_ARM64_320_sound : ArmRule.Checked r_ARM64_320 := by
+  left
+  arm_unfold
+  simp only [resFitsL, ldOp?] at hfit
+  exact refines_ld rfl rfl rfl hfit _ _ _ _
+
+/-- `ARM64.rules:321`: `(Load <t> ptr mem) && is32BitFloat(t) => (FMOVSload ptr mem)` -/
+theorem r_ARM64_321_sound : ArmRule.Checked r_ARM64_321 := by
+  left
+  arm_unfold
+  simp only [resFitsL, ldOp?] at hfit
+  exact refines_ld rfl rfl rfl hfit _ _ _ _
+
+/-- `ARM64.rules:322`: `(Load <t> ptr mem) && is64BitFloat(t) => (FMOVDload ptr mem)` -/
+theorem r_ARM64_322_sound : ArmRule.Checked r_ARM64_322 := by
   left
   arm_unfold
   simp only [resFitsL, ldOp?] at hfit

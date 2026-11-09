@@ -2298,6 +2298,15 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   (`bf_bits`). No validator change: the instances were already admitted with the rules assumed.
   Witness `msk_lower`.
 
+- **Float loads** (`:321`, `:322`, `:682`, `:685`, `:702`, `:703`, `:719`–`:722`, `:748`, `:749`,
+  `:754`, `:755`, `:864`, `:868`, #385; `Rules/LoadStore.lean`, `Fold.lean`, `LoadIdx.lean`).
+  `(Load <t> ptr mem) && is32BitFloat(t) => (FMOVSload ptr mem)` (and `FMOVDload`), the folded
+  offsets, symbols and indices of `FMOV{S,D}load`, and the indexed forms with a constant index.
+  `Sem.arm64Op` loads `FMOVSload`/`FMOVDload` as `MOVWUload`/`MOVDload` (`ld 4/8 false`): a float
+  shape is the integer shape of its size. So both are scalar load terms (`ldOp?`), read no bits of
+  their memory argument (`armReadW`), and the existing load lemmas prove the rules. Witness
+  `fld_lower`.
+
 - **Compares with a pointer** (#385; module docs of `GoFV/Proof/Low/Rules/CmpNeg.lean` and
   `Invert.lean`). `CMP` compares a pointer without a concrete address with an integer as unequal
   (`Arm64.cmp`, `Z` clear). While `CMN` and `CMPshift*` read registers only (`Arm64.cmp1`/`cmp2`),

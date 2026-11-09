@@ -1118,7 +1118,7 @@ theorem args_two {y : Value} (h : y.args.size = 2) : y.args = #[y.args[0]!, y.ar
 /-- The integer loads are arm64 ops other than `MOVDaddr`. -/
 theorem ldOp_arm {o : Op} {p : Nat × Bool} (h : ldOp? o = some p) :
     o.generic = false ∧ (o == .ARM64MOVDaddr) = false := by
-  rcases ldOp?_mem h with rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> exact ⟨rfl, rfl⟩
+  rcases ldOp?_mem h with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> exact ⟨rfl, rfl⟩
 
 /-- An address at a frame variable's aux: the variable's block in activation 0. -/
 theorem symPtr_name {n : AuxRef} (hn : GoFV.Opt.LowerTerm.auxIsName tabs (some n) = true)
