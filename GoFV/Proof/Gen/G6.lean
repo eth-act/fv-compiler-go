@@ -193,7 +193,8 @@ theorem g6_addr (F : Facts lc sym text az ez psA.toList ret E)
   have hsp : m.sp = E.sp := hm.frame.1
   rw [← hsp, progStep_slotAddr hkd (nextAddr_pcAt F.nodup hk0) has hf1.1 hf1.2 (.inl rfl) ht, wX_pc]
 
-/-- A load of `n` bytes of a frame variable at `off(RSP)`. -/
+/-- A load of `n` bytes of a frame variable at `off(RSP)`, with the registers of the machine after
+the load: the zero or sign extension of the `n` loaded bytes written to `X[kd]`, `rd = R0 + kd`. -/
 theorem g6_load (F : Facts lc sym text az ez psA.toList ret E)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
     (hK : KNext lc v K K') (hpre : G3Pre lc s v)
@@ -208,7 +209,10 @@ theorem g6_load (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j ⟨plain as (slotA · .AUTO off) (· == regA rd), as.name⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧
+      ∃ (kd : Nat) (Y : BitVec (8 * n)), rd = GoFV.Asm.ARM64.REG_R0 + kd ∧
+        m'.x = (m.wX (BitVec.ofNat 5 kd)
+          (if sg then ProgOp.sextTo64 n (Y.setWidth 64) else Y.setWidth 64)).x := by
   have hl := F.lowered
   have hA := F.addr
   have hnp := loadOp?_ne_phi hop
@@ -243,9 +247,9 @@ theorem g6_load (F : Facts lc sym text az ez psA.toList ret E)
       rw [ht]
       exact valRel_loadBool hA hMI hpa hrd (h01 ht)
   obtain ⟨hnil, -⟩ := access_nil hMI hpa (by omega : 0 < n) (Or.inr (by rw [hrd]; rfl))
-  refine (op_reg2 (H := H) F hm hinv hj hj' hvs hd hkd hor hval (fits_retypeL hcv _)
+  refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor hval (fits_retypeL hcv _)
     (knext_set hK hnp hvh hcv) (fun k1 hk1 hok => ?_)).imp
-    fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, kd, _, rfl, h4⟩
   obtain ⟨has, hf1, -, ht', -⟩ := plain_spec hok
   simp only [beq_iff_eq] at ht'
   have hA' : m.sp + BitVec.ofInt 64 (frameOff (Link.byId sym text az ez psA.toList) .AUTO off) =
@@ -338,7 +342,8 @@ theorem g6_ldp (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j ⟨plain .LDP (slotA · .AUTO off) (· == pairA oa ob), "LDP"⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧
+      PairW ra rb m m' := by
   have hl := F.lowered
   have hA := F.addr
   obtain ⟨a1, ha1, hamt, hah1⟩ := memArg_spec hma
@@ -387,7 +392,10 @@ theorem g6_ldp (F : Facts lc sym text az ez psA.toList ret E)
   obtain ⟨hlm2, hinv2⟩ := finish_reg hlm1 hinv1 hdb (by omega : kb < 32) hob hrel1
     (fits_retypeL h1 _) (b' := b) (i' := i + 1)
   rw [hj'] at hlm2
-  refine ⟨_, hstar.tail (pstep_at F.nodup F.lt F.ret hk rfl ?_), hlm2, hinv2.mono hK, hsi⟩
+  refine ⟨_, hstar.tail (pstep_at F.nodup F.lt F.ret hk rfl ?_), hlm2, hinv2.mono hK, hsi, ka, kb,
+    (readMem m.mem (a + BitVec.ofInt 64 v.auxInt.toInt) 8).setWidth 64,
+    (readMem m.mem (a + (BitVec.ofInt 64 v.auxInt.toInt + 8)) 8).setWidth 64, hoa, hob,
+    by simp only [wX_pc]⟩
   obtain ⟨has, hf1, -, ht', -⟩ := plain_spec hok
   simp only [beq_iff_eq] at ht'
   have hA' : m.sp + BitVec.ofInt 64 (frameOff (Link.byId sym text az ez psA.toList) .AUTO off) =
@@ -532,20 +540,20 @@ theorem vk6_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat →
         htemp hs
       exact same m' ⟨h1, h2, h3, h4⟩
     | load hop hsz2 hma hro hc =>
-      obtain ⟨m', h⟩ := g6_load (H := H) F hm hinv.core hinv.slots
+      obtain ⟨m', h1', h2', h3', h4', -⟩ := g6_load (H := H) F hm hinv.core hinv.slots
         (knext_kStep fun _ => (hs_res hro).noRegs) hpre.1 hj hj' hx hvar hf hι hop hsz2 hma hro
         hc hvs htemp hs
-      exact same m' h
+      exact same m' ⟨h1', h2', h3', h4'⟩
     | store hop hsz3 hmt hhn hso hma hc =>
       obtain ⟨m', h⟩ := g6_store (H := H) F hF hsz hm hinv.core hinv.slots hR
         (knext_kStep fun _ => (hs_none hhn).noRegs) hj hj' hx hvar hf hι hop hsz3 hmt hhn hso
         hma hc hvs htemp hs
       exact same m' h
     | ldp hop hsz2 hty h0 h1 h80 h81 hma hh hne hza hzb hda hdb hoa hob =>
-      obtain ⟨m', h⟩ := g6_ldp (H := H) F hm hinv.core hinv.slots
+      obtain ⟨m', h1', h2', h3', h4', -⟩ := g6_ldp (H := H) F hm hinv.core hinv.slots
         (kpair_kStep (by rw [hop]; nofun) hh hty h0 h1 hne) hpre hj hj' hx hvar hf hι hop hsz2
         hty h0 h1 h80 h81 hma hh hza hzb hda hdb hoa hob hvs htemp hs
-      exact same m' h
+      exact same m' ⟨h1', h2', h3', h4'⟩
     | stp hop hsz4 hmt hhn hxo hyo hma =>
       obtain ⟨m', h⟩ := g6_stp (H := H) F hF hsz hm hinv.core hinv.slots hR
         (knext_kStep fun _ => (hs_none hhn).noRegs) hj hj' hx hvar hf hι hop hsz4 hmt hhn hxo

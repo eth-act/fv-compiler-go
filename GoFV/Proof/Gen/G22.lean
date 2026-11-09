@@ -135,7 +135,8 @@ theorem g22_ldp (F : Facts lc sym text az ez psA.toList ret E)
       ⟨plain .LDP (globA g name abi v.auxInt.toInt) (· == pairA oa ob), "LDP sym(SB)"⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧
+      PairW ra rb m m' := by
   have hl := F.lowered
   have hA := F.addr
   obtain ⟨a1, ha1, hamt, hah1⟩ := memArg_spec hma
@@ -187,7 +188,10 @@ theorem g22_ldp (F : Facts lc sym text az ez psA.toList ret E)
   obtain ⟨hlm2, hinv2⟩ := finish_reg hlm1 hinv1 hdb (by omega : kb < 32) hob hrel1
     (fits_retypeL h1 _) (b' := b) (i' := i + 1)
   rw [hj'] at hlm2
-  refine ⟨_, hstar.tail (pstep_at F.nodup F.lt F.ret hk rfl ?_), hlm2, hinv2.mono hK, hsi⟩
+  refine ⟨_, hstar.tail (pstep_at F.nodup F.lt F.ret hk rfl ?_), hlm2, hinv2.mono hK, hsi, ka, kb,
+    (readMem m.mem (sym yy + BitVec.ofInt 64 v.auxInt.toInt) 8).setWidth 64,
+    (readMem m.mem (sym yy + (BitVec.ofInt 64 v.auxInt.toInt + 8)) 8).setWidth 64, hoa, hob,
+    by simp only [wX_pc]⟩
   have hL : (Link.byId sym text az ez psA.toList).sym yy = sym yy := rfl
   have hA8 : sym yy + BitVec.ofInt 64 v.auxInt.toInt + 8 =
       sym yy + (BitVec.ofInt 64 v.auxInt.toInt + 8) := BitVec.add_assoc _ _ _
@@ -321,7 +325,7 @@ theorem vk22_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
       have : narrowLd? lc v = none := by unfold narrowLd?; rw [hop]; rfl
       simp only [uEntry, this]
     rw [hue]
-    obtain ⟨m', h1', h2', h3', h4'⟩ := g22_ldp (H := H) F hglob hm hinv.core hinv.slots
+    obtain ⟨m', h1', h2', h3', h4', -⟩ := g22_ldp (H := H) F hglob hm hinv.core hinv.slots
       (kpair_kStep (by rw [hop]; nofun) hh hty h0 h1 hne) hpre.1.1.1 hj hj' hx hsy hop hsz2 hty
       h0 h1 h80 h81 hma hh hza hzb hda hdb hoa hob hvs htemp hs
     exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE0, h1', h2', ⟨h3', h4'⟩, trivial⟩

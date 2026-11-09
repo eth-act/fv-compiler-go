@@ -154,6 +154,13 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
   {ret : BitVec 64} {E : MatchEnv} {lc : LocCtx} {s s' : LocState} {b : ID} {i : Nat}
   {m : MState} {env : Env} {v : Value} {j j' : Nat} {K K' : Nat → Option Nat}
 
+/-- What a pair load into the registers `ra` and `rb` does to the machine's X registers: it writes
+the X registers of `ra` and `rb`. -/
+def PairW (ra rb : Nat) (m m' : MState) : Prop :=
+  ∃ (ka kb : Nat) (va vb : BitVec 64), objOf? ra = some (GoFV.Asm.ARM64.REG_R0 + ka) ∧
+    objOf? rb = some (GoFV.Asm.ARM64.REG_R0 + kb) ∧
+    m'.x = ((m.wX (BitVec.ofNat 5 ka) va).wX (BitVec.ofNat 5 kb) vb).x
+
 /-- `LDP off(Rn), (Ra, Rb)`: the 8 bytes at the address into `Ra`, the 8 bytes above into `Rb`. -/
 theorem g4_ldp (F : Facts lc sym text az ez psA.toList ret E)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
@@ -170,7 +177,8 @@ theorem g4_ldp (F : Facts lc sym text az ez psA.toList ret E)
       (.ofShape { as := .LDP, from_ := memA rn v.auxInt.toInt, to := pairA oa ob }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧
+      PairW ra rb m m' := by
   have hl := F.lowered
   have hA := F.addr
   have hnp : v.op ≠ .Phi := by rw [hop]; nofun
@@ -222,7 +230,9 @@ theorem g4_ldp (F : Facts lc sym text az ez psA.toList ret E)
   obtain ⟨hlm2, hinv2⟩ := finish_reg hlm1 hinv1 hdb (by omega : kb < 32) hob hrel1
     (fits_retypeL h1 _) (b' := b) (i' := i + 1)
   rw [hj'] at hlm2
-  refine ⟨_, hstar.tail (pstep_at F.nodup F.lt F.ret hk rfl ?_), hlm2, hinv2.mono hK, hsi⟩
+  refine ⟨_, hstar.tail (pstep_at F.nodup F.lt F.ret hk rfl ?_), hlm2, hinv2.mono hK, hsi, ka, kb,
+    (readMem m.mem (a + p.off) 8).setWidth 64, (readMem m.mem (a' + q.off) 8).setWidth 64, hoa,
+    hob, by simp only [wX_pc]⟩
   obtain ⟨has, hf, -, ht', hsc⟩ := Shape.ok_eq hok
   have haeq0 : ({ m with pc := pcAt text psA.toList k } : MState).rX (BitVec.ofNat 5 kn) +
       BitVec.ofInt 64 v.auxInt.toInt = a + p.off := haeq
@@ -324,7 +334,7 @@ theorem g4_sel (F : Facts lc sym text az ez psA.toList ret E)
     (hKr : ∀ c0, cls (lc.ty v.id) = some c0 → K r = some c0)
     (hvs : j' = j) (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ m'.x = m.x := by
   have hl := F.lowered
   have hA := F.addr
   have hnp : v.op ≠ .Phi := by rcases hop with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> nofun
@@ -361,7 +371,7 @@ theorem g4_sel (F : Facts lc sym text az ez psA.toList ret E)
   obtain ⟨hlm, hinv'⟩ := finish_reg hm hinv hd hk32 ho hrel (fits_retypeL hcv _)
     (b' := b) (i' := i + 1)
   rw [wX_rX_self, hj', hvs, ← hj, ← hm.pc] at hlm
-  exact ⟨m, .refl, hlm, hinv'.mono (knext_set hK hnp hvh hcv), hsi⟩
+  exact ⟨m, .refl, hlm, hinv'.mono (knext_set hK hnp hvh hcv), hsi, rfl⟩
 
 end Cases
 
@@ -432,20 +442,20 @@ theorem vk4_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat →
     exact vk3_step hE0 F hns hcf hv hVK3 hvs htemp
       hj hj' hreads hm hinv hpre.1 hcall hs
   | ldp hop hsz2 hax hty h0 h1 h80 h81 hao hma hh hne hza hzb hda hdb hoa hob =>
-    obtain ⟨m', h⟩ := g4_ldp (H := H) F hm hinv.core hinv.slots hR
+    obtain ⟨m', h1', h2', h3', h4', -⟩ := g4_ldp (H := H) F hm hinv.core hinv.slots hR
       (kpair_kStep (by rw [hop]; nofun) hh hty h0 h1 hne) hpre hj hj' hop hsz2 hax hty h0 h1 h80
       h81 hao hma hh hza hzb hda hdb hoa hob hvs htemp hs
-    exact same m' h
+    exact same m' ⟨h1', h2', h3', h4'⟩
   | stp hop hsz4 hax hmt hhn hao hxo hyo hma =>
     obtain ⟨m', h⟩ := g4_stp (H := H) F hF hsz hm hinv.core hinv.slots hR
       (knext_kStep fun _ => (hs_none hhn).noRegs) hj hj' hop hsz4 hax hmt hhn hao hxo hyo hma hvs
       htemp hs
     exact same m' h
   | sel hop hsz1 hc0 _ _ hpt hhc hvh hrz hd hob hcls hcl =>
-    obtain ⟨m', h⟩ := g4_sel (H := H) F hm hinv.core hinv.slots
+    obtain ⟨m', h1', h2', h3', h4', -⟩ := g4_sel (H := H) F hm hinv.core hinv.slots
       (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz1 hc0 hpt hhc hvh hrz hd hob hcl
       (fun c0 hc0' => ksel4_of_reads hreads hop hc0 hhc (hcl.trans hc0')) hvs htemp hs
-    exact same m' h
+    exact same m' ⟨h1', h2', h3', h4'⟩
 
 /-- **G4, values.** A value (not an entry value) of a function `checkG4` accepted with the class
 table `kt`, run by `runLoc` from a state related by `LocMatch` to a machine state whose registers
