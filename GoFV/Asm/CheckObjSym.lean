@@ -320,6 +320,13 @@ def regsOK : VEx → Bool
   | .fp2 _ _ a b | .fcsel _ _ a b => regsOK a && regsOK b
   | .fp3 _ _ _ a n m => regsOK a && regsOK n && regsOK m
 
+/-- `ofX w a`, a constant folded (`FMOV` from `ZR`, the encoding of the `FCONST` `0.0`, is the
+constant `0`). -/
+def mkOfX (w : Nat) (a : Ex) : VEx :=
+  match a with
+  | .k x => .k ((x.setWidth w).setWidth 128)
+  | a => .ofX w a
+
 end VEx
 
 /-! ## Flags -/
