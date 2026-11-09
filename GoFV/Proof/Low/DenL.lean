@@ -88,22 +88,29 @@ theorem ldQVal_mono (tabs : Tables) (n : Nat) (ty : Ty) (ai : Int64) (ax : Optio
     rw [this]; exact .poison _
   | nil =>
   cases h2 with
-  | mem hm =>
+  | @mem mm mm' hm =>
     have hp : ∀ k, symPtr tabs k ax a = none ∨ symPtr tabs k ax a = symPtr tabs k ax a' := by
       intro k
       cases ax with
       | some _ => exact .inr rfl
       | none => cases h1 <;> first | exact .inr rfl | exact .inl rfl
+    have key : ∀ (P P' Q Q' : Option Ptr), (P = none ∨ P = P') → (Q = none ∨ Q = Q') →
+        Sem.Refines
+          (match P, Q with
+            | some p, some q => Arm64.loadPair ty 16 false mm p q
+            | _, _ => .poison)
+          (match P', Q' with
+            | some p, some q => Arm64.loadPair ty 16 false mm' p q
+            | _, _ => .poison) := by
+      intro P P' Q Q' hP hQ
+      rcases hP with rfl | rfl <;> rcases hQ with rfl | rfl
+      · exact .poison _
+      · exact .poison _
+      · cases P <;> exact .poison _
+      · cases P <;> cases Q <;> first | exact .poison _ | exact Mono.loadPair_mono hm ty 16 false _ _
     simp only [ldQVal]
     split
-    · rcases hp ai with he | he
-      · simp only [he]; exact .poison _
-      rcases hp (ai + Int64.ofNat 16) with he' | he'
-      · simp only [he']; split <;> exact .poison _
-      rw [he, he']
-      split
-      · exact Mono.loadPair_mono hm ty 16 false _ _
-      · exact .poison _
+    · exact key _ _ _ _ (hp ai) (hp _)
     · rcases hp ai with he | he
       · simp only [he, Option.elim]; exact .poison _
       · rw [he]
@@ -326,10 +333,12 @@ theorem arm64Op_ldQ {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : Lis
     unfold ldQVal pairAddr
     split
     · rename_i a m
-      simp only [hs a, hs' a, if_pos rfl]
+      simp only [hs a, hs' a]
       cases symPtr ctx.tabs v.auxInt v.aux a <;>
         cases symPtr ctx.tabs (v.auxInt + Int64.ofNat 16) v.aux a <;> rfl
-    · rfl
+    · split
+      · simp_all
+      · rfl
 
 /-- An acquiring load or `LoweredMemEq` evaluates by `Arm64.evalPure` (non-faulting mode:
 `arm64Op`'s default, `memEq`). -/
