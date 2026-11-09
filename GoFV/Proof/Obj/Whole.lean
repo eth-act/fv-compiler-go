@@ -7,7 +7,7 @@ import GoFV.Proof.CongLoc
 /-!
 # Whole functions: `runLoc` → `runMach` across blocks (`docs/plans/proofs3.md` §1, §7, §9)
 
-`g30_obj_value`/`g30_obj_term` chained along a whole `runLoc` run, with the prologue (`obj_entry`)
+`g34_obj_value`/`g34_obj_term` chained along a whole `runLoc` run, with the prologue (`obj_entry`)
 before it and the epilogue (`obj_exit`) after it; the results in their ABI registers (`retRegsOK`,
 `ret_results`); a panicking run (nil checks, bounds checks, callees that panic) matched by a
 panicking machine run.
@@ -106,10 +106,10 @@ inductive LReach (env : Env) (lc : LocCtx) (b0 : ID) (i0 : Nat) (s0 : LocState) 
       LReach env lc b0 i0 s0 e.b 0 s'
 
 /-- **The per-step premises of the run** at every state it reaches from `(b0, i0, s0)`: those of
-`g30_value` at a value whose step succeeds (`G14Pre`; `GetGOK` and the trusted contracts `CallOK`,
+`g34_value` at a value whose step succeeds (`G14Pre`; `GetGOK` and the trusted contracts `CallOK`,
 `CallOKZ`, `ICallOK`, `WbOK`, `CloOK`, `MemEqOK` at every `LocMatch`ed machine state of an
 activation extending `E0`; nothing at a step that panics, which `RunPanicPre` covers) and
-`g30_term` (`G1TermPre`); no value after the start is an entry value. -/
+`g34_term` (`G1TermPre`); no value after the start is an entry value. -/
 def RunPre (env : Env) (H : Hooks) (lc : LocCtx) (g : G2In) (L : Link) (ret : BitVec 64)
     (E0 : MatchEnv) (b0 : ID) (i0 : Nat) (s0 : LocState) : Prop :=
   ∀ b i s blk, LReach env lc b0 i0 s0 b i s → lc.ctx.f.block? b = some blk →
@@ -298,17 +298,17 @@ variable {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array
   {retM : BitVec 64}
 
 /-- Before value `i` of block `b` (of `blk`), `runLoc` in `s` and the machine in `t`: a P0 state
-`m` `LocMatch`ed to `s` under an activation `E` extending `E0`, its X registers meeting the
-upper-bit table (`UOKL`), `ObjRel`-related to `t`. -/
+`m` `LocMatch`ed to `s` under an activation `E` extending `E0`, its X registers meeting G34's
+upper-bit table (`UOKL` of `uL34` from the block's start `uIn34`), `ObjRel`-related to `t`. -/
 def SimAt (lc : LocCtx) (g : G2In) (L : Link) (ps : Array Prog) (tab : PcTab) (kt : KTab)
     (E0 : MatchEnv) (otab : Tab) (base : BitVec 64) (b : ID) (blk : Block) (i : Nat)
     (s : LocState) (t : MState) : Prop :=
   ∃ E m, E0.Extends E ∧ G28Env lc g L ps (endP L.text ps.toList) tab E ∧ LocMatch E s b i m ∧
-    G3Inv E lc (kAt lc kt b blk i) s ∧ UOKL m (uL lc blk i) ∧
+    G3Inv E lc (kAt lc kt b blk i) s ∧ UOKL m (uL34 lc (uIn34 lc b) blk i) ∧
     ObjRel (ObjEnv.map otab ps L base) m t ∧ b ∈ lc.ctx.f.blocks.toList
 
 /-- One value. -/
-theorem sim_value (hc : checkG30 lc ps bstart g = .ok (tab, kt))
+theorem sim_value (hc : checkG34 lc ps bstart g = .ok (tab, kt))
     (hO : ObjEnv ps spills o otab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hic : ∀ u, ICallOut L ps.toList u)
@@ -325,12 +325,12 @@ theorem sim_value (hc : checkG30 lc ps bstart g = .ok (tab, kt))
   obtain ⟨E, m, hx, hE, hm, hinv, hu, hR, hbid⟩ := hS
   obtain ⟨hcall, hcallz, hicall, hwb, hclo, hgetg, hmeq⟩ := hok E m hx hm
   obtain ⟨E', m', t', hx', hE', hm', hinv', hu', ht, hR'⟩ :=
-    g30_obj_value hc hE hbid hb hi hv hen hm hinv hu hpre hcall hcallz hicall hwb hclo hgetg hmeq
+    g34_obj_value hc hE hbid hb hi hv hen hm hinv hu hpre hcall hcallz hicall hwb hclo hgetg hmeq
       hs hO hH hR (fun u _ => hic u)
   exact ⟨t', ht, E', m', MatchEnv.Extends.trans hx hx', hE', hm', hinv', hu', hR', hbid⟩
 
 /-- A terminator that goes to a block. -/
-theorem sim_goto (hc : checkG30 lc ps bstart g = .ok (tab, kt))
+theorem sim_goto (hc : checkG34 lc ps bstart g = .ok (tab, kt))
     (hO : ObjEnv ps spills o otab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hic : ∀ u, ICallOut L ps.toList u)
@@ -339,14 +339,13 @@ theorem sim_goto (hc : checkG30 lc ps bstart g = .ok (tab, kt))
     (hS : SimAt lc g L ps tab kt E0 otab base b blk blk.values.size s t)
     (hpre : G1TermPre lc s blk) :
     ∃ t', MStar H code retM t t' ∧ SimAt lc g L ps tab kt E0 otab base e.b blk' 0 s' t' := by
-  obtain ⟨E, m, hx, hE, hm, hinv, -, hR, hbid⟩ := hS
-  obtain ⟨m', t', hm', hinv', hmem, htm, hR'⟩ :=
-    g30_obj_term (H := H) hc hE hbid hb hm hinv hpre ht hO hH hR (fun u _ => hic u)
-  exact ⟨t', htm, E, m', hx, hE, hm', by rw [kAt_zero]; exact hinv', (fun _ he => by cases he),
-    hR', hmem⟩
+  obtain ⟨E, m, hx, hE, hm, hinv, hu, hR, hbid⟩ := hS
+  obtain ⟨m', t', hm', hinv', hmem, hu', htm, hR'⟩ :=
+    g34_obj_term (H := H) hc hE hbid hb hm hinv hpre hu ht hO hH hR (fun u _ => hic u)
+  exact ⟨t', htm, E, m', hx, hE, hm', by rw [kAt_zero]; exact hinv', hu', hR', hmem⟩
 
 /-- The values of a block from value `i` on. -/
-theorem sim_values (hc : checkG30 lc ps bstart g = .ok (tab, kt))
+theorem sim_values (hc : checkG34 lc ps bstart g = .ok (tab, kt))
     (hO : ObjEnv ps spills o otab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hic : ∀ u, ICallOut L ps.toList u)
@@ -496,25 +495,33 @@ theorem low_ne {r : Nat} (hr : r < 16) {k : Nat} (hk : 16 ≤ k) (hk' : k < 32) 
     (BitVec.ofNat 5 r : Reg) ≠ BitVec.ofNat 5 k := by
   intro he; have := congrArg BitVec.toNat he; simp at this; omega
 
-/-- What `sim_ret` reads of `checkG30`'s acceptance, with or without an arm64 op: the blocks'
+/-- What `sim_ret` reads of `checkG34`'s acceptance, with or without an arm64 op: the blocks'
 check (`termG3` terminators) and the Progs' IDs. -/
-theorem checkG30_cx {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}
-    {tab : PcTab} {kt : KTab} (hc : checkG30 lc ps bstart g = .ok (tab, kt)) :
+theorem checkG34_cx {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}
+    {tab : PcTab} {kt : KTab} (hc : checkG34 lc ps bstart g = .ok (tab, kt)) :
     ∃ c : Cx2, c.cx.lc = lc ∧ c.cx.ps = ps ∧ c.tm = c.cx.termG3 ∧
       (∀ p ∈ ps.toList, p.id < 2 ^ 32) ∧ (ps.toList.map (·.id)).Nodup ∧
       c.blocks lc.ctx.f.blocks.toList = .ok tab := by
   cases hl : lc.ctx.f.lowered
   · obtain ⟨c, h1, h2, -, -, -, h6, -, -, -, -, h11, h12, h13, -, -⟩ :=
-      checkNL30_spec (checkG30_nl hl hc)
+      checkNL30_spec (checkNL30_of_34 hl hc)
     exact ⟨c, h1, h2, h6, h11, h12, h13⟩
-  · obtain ⟨c, h1, h2, -, -, -, h6, -, -, -, -, h11, h12, h13, -, -⟩ :=
-      checkG29_spec hl (checkG30_lowered hl hc)
+  · obtain ⟨c, h1, h2, -, -, -, h6, -, -, -, -, h11, h12, h13, -, -, -⟩ := checkG34_spec hl hc
     exact ⟨c, h1, h2, h6, h11, h12, h13⟩
+
+/-- `checkG34` accepted: the entry block starts with nothing in the upper-bit table. -/
+theorem checkG34_uIn_entry {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat}
+    {g : G2In} {tab : PcTab} {kt : KTab} (hc : checkG34 lc ps bstart g = .ok (tab, kt)) :
+    uIn34 lc lc.ctx.f.entry = [] := by
+  cases hl : lc.ctx.f.lowered
+  · exact uIn34_nl hl _
+  · obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, he⟩ := checkG34_spec hl hc
+    exact uEdgesOK34_entry he
 
 /-- **The return.** A `Ret` block's terminator, from related states, is matched by the machine
 steps of the `RET` and of the epilogue (`obj_exit`) to the caller's return address, with the
 results in their ABI registers (`retRegsOK`, `ResultRel`). -/
-theorem sim_ret (hc : checkG30 lc ps bstart g = .ok (tab, kt))
+theorem sim_ret (hc : checkG34 lc ps bstart g = .ok (tab, kt))
     (hO : ObjEnv ps spills o otab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hic : ∀ u, ICallOut L ps.toList u)
@@ -533,7 +540,7 @@ theorem sim_ret (hc : checkG30 lc ps bstart g = .ok (tab, kt))
   have hE2 := hE.env.env.env.env
   have hinvm := locMatch_inv hE2 hm
   obtain ⟨-, hlink, hpcOf, hret, hA, -, -, -, -, -, hfr⟩ := hE2
-  obtain ⟨c, hlc, hps, htm, hlt, hnd, hblocks⟩ := checkG30_cx hc
+  obtain ⟨c, hlc, hps, htm, hlt, hnd, hblocks⟩ := checkG34_cx hc
   have hRes := ret_results hA hm hinv.core (retRegsOK_block hrok hbid hb) hk ht
   obtain ⟨b', j, js, e, next, hb', -, hvals, hterm, -, hrow⟩ := Cx2.blocks_spec hblocks b hbid
   rw [hlc] at hb'
@@ -630,7 +637,7 @@ theorem sim_ret (hc : checkG30 lc ps bstart g = .ok (tab, kt))
 /-- **A returning run.** From related states before value `i` of block `b`, a run that returns is
 matched by a machine run to the caller's return address (`MachRet`) with the results in their
 ABI registers (`ResultRel`). -/
-theorem sim_from_ret (hc : checkG30 lc ps bstart g = .ok (tab, kt))
+theorem sim_from_ret (hc : checkG34 lc ps bstart g = .ok (tab, kt))
     (hO : ObjEnv ps spills o otab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hic : ∀ u, ICallOut L ps.toList u)
@@ -756,7 +763,7 @@ theorem sim_entry (hO : ObjEnv ps spills o otab L base code retM)
     (hE : G28Env lc g L ps (endP L.text ps.toList) tab E0)
     (hEE : EntryEnv E0 L ps.toList otab.autosize s0)
     {sI : LocState} {b : ID} {blk : Block} {k : Nat} (hent : EntryMatch E0 sI s0)
-    (hinv : G3Inv E0 lc (kAt lc kt b blk k) sI) (huE : uL lc blk k = [])
+    (hinv : G3Inv E0 lc (kAt lc kt b blk k) sI) (huE : uL34 lc (uIn34 lc b) blk k = [])
     (hbm : b ∈ lc.ctx.f.blocks.toList)
     (hpc : ObjEnv.map otab ps L base (E0.pcOf b k) = base + BitVec.ofNat 64 (otab.offs[0]!)) :
     ∃ t, MStar H code retM s0 t ∧ SimAt lc g L ps tab kt E0 otab base b blk k sI t := by
@@ -842,17 +849,18 @@ theorem mstar_returned {s0 t : MState} (h : MStar H code retM s0 t) (hpc : t.pc 
   obtain ⟨n, hn⟩ := h.runMach
   exact ⟨n + 1, by rw [hn 1]; simp [runMach, hpc]⟩
 
-/-- **A whole function of slice G30, returning, down to the machine words.** `checkG30` and
+/-- **A whole function of slice G34, returning, down to the machine words.** `checkG34` and
 `checkObj` accept the function and `retRegsOK` its returns; the machine starts at its entry
 (`MachEntry`, the return address `s0.x 30`) and the stack check passes. The run of `runLoc`
 (`runLoopLoc`, from the state `s` at the entry block) first runs `k` values of the entry block
 (the entry values) to `sI`, which is related to `s0` (`EntryMatch`, `EntryEnv`: the arguments in
-their registers, the memory injected, the frame; no upper-bit fact is carried into the body,
-`uL … k = []`); every later step meets its premises (`RunPre`). If it returns `(rs, mm)`,
+their registers, the memory injected, the frame; no upper-bit fact is carried into the body:
+G34's table after the entry values, from the entry block's empty start, is empty,
+`uL34 lc [] … k = []`); every later step meets its premises (`RunPre`). If it returns `(rs, mm)`,
 `runMach` returns to `s0.x 30` with the caller's `SP`, `g` and frame pointer (`MachRet s0`), the
 results `rs` in the function's ABI result registers (`ownOutRegs`; a result on the stack is in
 its `PPARAMOUT` variable in `mm`) and the memory `mm` injected (`ResultRel`). -/
-theorem obj_whole_ret (hc : checkG30 lc ps bstart g = .ok (tab, kt))
+theorem obj_whole_ret (hc : checkG34 lc ps bstart g = .ok (tab, kt))
     {room : Nat} {s0 : MState} (hO : ObjEnv ps spills o otab L base code (s0.x 30))
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hic : ∀ u, ICallOut L ps.toList u)
@@ -869,7 +877,7 @@ theorem obj_whole_ret (hc : checkG30 lc ps bstart g = .ok (tab, kt))
     (hbm : lc.ctx.f.entry ∈ lc.ctx.f.blocks.toList) (hk : k ≤ blkE.values.size)
     (hpre : enterListLoc env lc s (blkE.values.toList.take k) = .ok sI)
     (hent : EntryMatch E0 sI s0) (hinv : G3Inv E0 lc (kAt lc kt lc.ctx.f.entry blkE k) sI)
-    (huE : uL lc blkE k = [])
+    (huE : uL34 lc [] blkE k = [])
     (hpc : ObjEnv.map otab ps L base (E0.pcOf lc.ctx.f.entry k) =
       base + BitVec.ofNat 64 (otab.offs[0]!))
     (hP : RunPre env H lc g L (endP L.text ps.toList) E0 lc.ctx.f.entry k sI)
@@ -881,7 +889,8 @@ theorem obj_whole_ret (hc : checkG30 lc ps bstart g = .ok (tab, kt))
   | zero => simp [runLoopLoc] at hrun
   | succ n =>
     rw [runLoopLoc_entry hbE hpre] at hrun
-    obtain ⟨t1, ht1, hS⟩ := sim_entry (H := H) hO hME hroom hg hpass hE hEE hent hinv huE hbm hpc
+    obtain ⟨t1, ht1, hS⟩ := sim_entry (H := H) hO hME hroom hg hpass hE hEE hent hinv
+      (by rw [checkG34_uIn_entry hc]; exact huE) hbm hpc
     obtain ⟨E, t', hx, ht', hX, hRes⟩ :=
       sim_from_ret hc hO hH hic hEE hlf hrok hP n _ blkE k sI t1 .refl hbE hk hS hrun
     obtain ⟨n', hn'⟩ := mstar_returned (mstar_trans ht1 ht') hX.pc
@@ -976,7 +985,7 @@ theorem stepTermLoc_ne_panic {lc : LocCtx} {s : LocState} {blk : Block} {e : Pan
 static, interface or closure call whose callee panics, matched by machine steps to a state that
 panics alike (`BoundsAgree`: the same panic, or for a bounds check the runtime's report of the
 same failure). -/
-theorem sim_valuePanic (hc : checkG30 lc ps bstart g = .ok (tab, kt))
+theorem sim_valuePanic (hc : checkG34 lc ps bstart g = .ok (tab, kt))
     (hO : ObjEnv ps spills o otab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hHP : HookPanicMap H L ps.toList (ObjEnv.map otab ps L base))
@@ -994,22 +1003,22 @@ theorem sim_valuePanic (hc : checkG30 lc ps bstart g = .ok (tab, kt))
     ∃ e', BoundsAgree e e' ∧ ∃ t', MStar H code retM t t' ∧ MPanics H code retM t' e' := by
   obtain ⟨E, m, hx, hE, hm, hinv, -, hR, hbid⟩ := hS
   rcases hpp with hop | hop | hop | ⟨hop, hok⟩ | ⟨hop, hok⟩
-  · obtain ⟨-, t', ht, hp⟩ := g30_obj_nilPanic hc hE hbid hb hi hv hop hm hinv hs hO hH hHP hR
+  · obtain ⟨-, t', ht, hp⟩ := g34_obj_nilPanic hc hE hbid hb hi hv hop hm hinv hs hO hH hHP hR
       (fun u _ => hic u)
     exact ⟨e, Or.inl rfl, t', ht, hp⟩
-  · obtain ⟨-, t', ht, hp⟩ := g30_obj_memPanic hc hE hbid hb hi hv hop hm hinv hs hO hH hHP hR
+  · obtain ⟨-, t', ht, hp⟩ := g34_obj_memPanic hc hE hbid hb hi hv hop hm hinv hs hO hH hHP hR
       (fun u _ => hic u)
     exact ⟨e, Or.inl rfl, t', ht, hp⟩
-  · exact g30_obj_boundsPanic hc hE hbid hb hi hv hop hm hinv hbok hs hO hH hHP hR
+  · exact g34_obj_boundsPanic hc hE hbid hb hi hv hop hm hinv hbok hs hO hH hHP hR
       (fun u _ => hic u)
-  · exact ⟨e, Or.inl rfl, g30_obj_callPanic hc hE hbid hb hi hv hop hm hinv (hok E m hx hm) hO hH
+  · exact ⟨e, Or.inl rfl, g34_obj_callPanic hc hE hbid hb hi hv hop hm hinv (hok E m hx hm) hO hH
       hHP hR (fun u _ => hic u)⟩
   · obtain ⟨n, hn⟩ := Option.isSome_iff_exists.1 hop
-    exact ⟨e, Or.inl rfl, g30_obj_icallPanic hc hE hbid hb hi hv hn hm hinv (hok E m hx hm) hO hH
+    exact ⟨e, Or.inl rfl, g34_obj_icallPanic hc hE hbid hb hi hv hn hm hinv (hok E m hx hm) hO hH
       hHP hR (fun u _ => hic u)⟩
 
 /-- The values of a block from value `i` on, which panic. -/
-theorem sim_valuesPanic (hc : checkG30 lc ps bstart g = .ok (tab, kt))
+theorem sim_valuesPanic (hc : checkG34 lc ps bstart g = .ok (tab, kt))
     (hO : ObjEnv ps spills o otab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hHP : HookPanicMap H L ps.toList (ObjEnv.map otab ps L base))
@@ -1057,7 +1066,7 @@ theorem sim_valuesPanic (hc : checkG30 lc ps bstart g = .ok (tab, kt))
 /-- **A panicking run.** From related states before value `i` of block `b`, a run that panics
 with `e` is matched by a machine run to a state that panics with a panic `BoundsAgree`ing with
 `e` (`MPanics`). -/
-theorem sim_from_panic (hc : checkG30 lc ps bstart g = .ok (tab, kt))
+theorem sim_from_panic (hc : checkG34 lc ps bstart g = .ok (tab, kt))
     (hO : ObjEnv ps spills o otab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hHP : HookPanicMap H L ps.toList (ObjEnv.map otab ps L base))
@@ -1127,7 +1136,7 @@ fault in the nil page, bounds checks and static, interface or closure calls whos
 `CallPanicOK`, `ICallPanicOK`): if the run of `runLoc` panics with `e`, `runMach` panics with `e`
 (the nil-page fault of the nil check's `MOVB` or of the access, `sigpanic`; or the callee's hook)
 or, for a bounds check, with the runtime's report of the same failure (`BoundsAgree`). -/
-theorem obj_whole_panic (hc : checkG30 lc ps bstart g = .ok (tab, kt))
+theorem obj_whole_panic (hc : checkG34 lc ps bstart g = .ok (tab, kt))
     {room : Nat} {s0 : MState} (hO : ObjEnv ps spills o otab L base code (s0.x 30))
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hHP : HookPanicMap H L ps.toList (ObjEnv.map otab ps L base))
@@ -1144,7 +1153,7 @@ theorem obj_whole_panic (hc : checkG30 lc ps bstart g = .ok (tab, kt))
     (hbm : lc.ctx.f.entry ∈ lc.ctx.f.blocks.toList) (hk : k ≤ blkE.values.size)
     (hpre : enterListLoc env lc s (blkE.values.toList.take k) = .ok sI)
     (hent : EntryMatch E0 sI s0) (hinv : G3Inv E0 lc (kAt lc kt lc.ctx.f.entry blkE k) sI)
-    (huE : uL lc blkE k = [])
+    (huE : uL34 lc [] blkE k = [])
     (hpc : ObjEnv.map otab ps L base (E0.pcOf lc.ctx.f.entry k) =
       base + BitVec.ofNat 64 (otab.offs[0]!))
     (hP : RunPre env H lc g L (endP L.text ps.toList) E0 lc.ctx.f.entry k sI)
@@ -1156,7 +1165,8 @@ theorem obj_whole_panic (hc : checkG30 lc ps bstart g = .ok (tab, kt))
   | zero => simp [runLoopLoc] at hrun
   | succ n =>
     rw [runLoopLoc_entry hbE hpre] at hrun
-    obtain ⟨t1, ht1, hS⟩ := sim_entry (H := H) hO hME hroom hg hpass hE hEE hent hinv huE hbm hpc
+    obtain ⟨t1, ht1, hS⟩ := sim_entry (H := H) hO hME hroom hg hpass hE hEE hent hinv
+      (by rw [checkG34_uIn_entry hc]; exact huE) hbm hpc
     obtain ⟨e', he, t', ht', hp⟩ :=
       sim_from_panic hc hO hH hHP hbok hic hP hPP n _ blkE k sI t1 .refl hbE hk hS hrun
     obtain ⟨n', t'', hn⟩ := mstar_panicked (mstar_trans ht1 ht') hp

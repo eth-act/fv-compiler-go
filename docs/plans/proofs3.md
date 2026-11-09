@@ -17,9 +17,9 @@ closure context premise `CloOK` (§4, `docs/proofs/STATUS.md` Assumptions); §6 
 on these premises.
 The assembler validator `checkObj` (P0 against the assembled words, D2–D5, probe `obj-check`) is
 implemented and proven sound (`GoFV/Proof/Obj/`: `obj_star`, the templates `obj_entry`/`obj_exit`;
-`g7_obj_value`/`g7_obj_term` and `g30_obj_value`/`g30_obj_term`/`g30_obj_nilPanic`/
-`g30_obj_boundsPanic` compose it with G7 and G30: `runLoc` to the machine words; §7). Whole
-functions: `obj_whole_ret` (a returning `runLoc` body of a G30 function, from the machine's entry
+`g7_obj_value`/`g7_obj_term` and `g34_obj_value`/`g34_obj_term`/`g34_obj_nilPanic`/
+`g34_obj_boundsPanic` compose it with G7 and G34: `runLoc` to the machine words; §7). Whole
+functions: `obj_whole_ret` (a returning `runLoc` body of a G34 function, from the machine's entry
 through the prologue, the blocks and the epilogue to the caller's return address, the results in
 their ABI registers), `obj_whole_panic` (a panicking body: nil checks, bounds checks, static calls
 whose callee panics), and the end-to-end statement `verified_mach` (generic SSA `run` refined by
@@ -1511,11 +1511,12 @@ reason in parentheses):
 ## 9. Whole functions and the end-to-end statement
 
 **Whole functions** (`GoFV/Proof/Obj/Whole.lean`). The value and terminator theorems of the latest
-slice, composed with `obj_star` (`g30_obj_value`/`g30_obj_term`, `GoFV/Proof/Obj/G30.lean`), are
+slice, composed with `obj_star` (`g34_obj_value`/`g34_obj_term`, `GoFV/Proof/Obj/G34.lean`), are
 chained along a run of `runLoc`'s body. The invariant `SimAt` before value `i` of block `b`: a P0
 state `m` `LocMatch`ed to `runLoc`'s state under an activation `E` extending the entry's `E0`
-(`G28Env`, `G3Inv` at the class map `kAt`, the upper-bit table `UOKL`), and `ObjRel`-related to
-the machine state.
+(`G28Env`, `G3Inv` at the class map `kAt`, G34's upper-bit table `UOKL m (uL34 lc (uIn34 lc b)
+blk i)`: `g34_value` carries it from value to value, `g34_term` hands the successor's start
+`uIn34 lc e.b` on, `uEdgesOK34`), and `ObjRel`-related to the machine state.
 
 - **Entry** (`sim_entry`). From `MachEntry s0` with the stack check passing, `obj_entry` builds
   the frame (`BodyEntry`). The P0 state is the machine's with the PC of the entry block's value
@@ -1523,14 +1524,15 @@ the machine state.
   nothing and are not `g*_value`'s). Its `LocMatch` with the state `sI` after them follows from
   `EntryMatch E0 sI s0` and `EntryEnv E0 … s0`: the argument registers, no flags or slots, the
   memory injected (the prologue writes only the saved `LR`/`FP` words, outside the live blocks by
-  `G3Inv`'s `SepFrom`), the frame; `uL … k = []` (no upper-bit fact on entry). The premise
+  `G3Inv`'s `SepFrom`), the frame; `uL34 lc [] … k = []` (no upper-bit fact on entry; the entry
+  block's start `uIn34` is empty, `checkG34_uIn_entry`). The premise
   `ObjEnv.map … (E0.pcOf entry k) = base + offs[0]` places value `k` at the body's start (the
   Progs before it are pseudo-ops).
-- **Values, terminators** (`sim_value`, `sim_goto`, `sim_values`): `g30_obj_value`/`g30_obj_term`
+- **Values, terminators** (`sim_value`, `sim_goto`, `sim_values`): `g34_obj_value`/`g34_obj_term`
   under the per-step premises `RunPre`, stated at the states `runLoc` reaches (`LReach`) from
   `(entry, k, sI)`: `G14Pre`, `G1TermPre`, no entry value (`entryOp24`), `GetGOK`, and the callee
   contracts (`CallOK`, `CallOKZ`, `ICallOK`, `WbOK`, `CloOK`, `MemEqOK`) at every `LocMatch`ed
-  machine state. `checkG30_cx` gives the context of both modes (lowered, and G26's functions with
+  machine state. `checkG34_cx` gives the context of both modes (lowered, and G26's functions with
   no arm64 op).
 - **Return** (`sim_ret`): only a `Ret` block returns (`stepTermL_ret_kind`); its terminator is a
   P0 `RET` after no-ops (`termG3_ret`); the no-ops run (`pstar_oneAt`, `obj_star`), then the
@@ -1556,18 +1558,19 @@ the machine state.
   in a state `t'` with `MachRet s0 t'` and `ResultRel E outs rs mm t'` (`rs` in the result
   registers, `mm` injected).
 - **Panics** (`sim_valuePanic`, `sim_from_panic`, `obj_whole_panic`): a step that panics is a nil
-  check (`g30_obj_nilPanic`: the `MOVB` faults in the nil page), a load or store that faults
-  (`g30_obj_memPanic`, `GoFV/Proof/Obj/MemPanic.lean`: `MOV{D,W,WU,H,HU,B,BU}load`, `LDP`,
+  check (`g34_obj_nilPanic`: the `MOVB` faults in the nil page), a load or store that faults
+  (`g34_obj_memPanic`, `GoFV/Proof/Obj/MemPanic.lean`: `MOV{D,W,WU,H,HU,B,BU}load`, `LDP`,
   `MOV{D,W,H,B}store` and `STP`, `memFaultOp`; `nilFaults` found a nil base and an address in the
   nil page, so the access has no symbol, its base register holds the machine word 0 and
   `X[n] + off` is in the nil page, `nil_fault_page`; no premise), a bounds check
-  (`g30_obj_boundsPanic`, under the trusted `BoundsOK`: `runtime.panicBounds` reports the same
+  (`g34_obj_boundsPanic`, under the trusted `BoundsOK`: `runtime.panicBounds` reports the same
   failure, `BoundsAgree`), a static call whose
-  callee panics (`g30_obj_callPanic`, `GoFV/Proof/Obj/CallPanic.lean`, under the trusted
+  callee panics (`g34_obj_callPanic`, `GoFV/Proof/Obj/CallPanic.lean`, under the trusted
   `CallPanicOK`: the callee's hook panics alike from every state with the call's arguments in their
   registers and the memory injected), or an interface or closure call whose callee panics
-  (`g30_obj_icallPanic`, under the trusted `ICallPanicOK`: the hook at the code pointer in `Rn`
-  panics alike; `vkind28` of such a call is `vkind10`'s `icallKind`, `vkind28_icall`); terminators
+  (`g34_obj_icallPanic`, under the trusted `ICallPanicOK`: the hook at the code pointer in `Rn`
+  panics alike; `vkind28` of such a call is `vkind10`'s `icallKind`, `vkind28_icall`; `vkind33` of
+  a call, load or store is `vkind28`'s, `vkind33_eq28`); terminators
   do not panic (`stepTermLoc_ne_panic`). The premise `RunPanicPre` says that every panicking step
   the run reaches is of these kinds; the machine run panics with `e'`, `BoundsAgree e e'`.
   `RunPre` asks `G14Pre` (a load reads valid bytes, a nil check's pointer is not nil) only of the
@@ -1586,14 +1589,14 @@ statement lists every premise (STATUS, Assumptions).
 from `locInit` and `runMach` from the entry to the caller's `0x40`, through `b1`'s `TBNZ` and
 `b2`'s `ANDconst`/`MakeResult`/`RET`, with 7 in `X0`. `objWholeNL_ret_witness`
 (`runtime.gclinkptr.ptr`, no arm64 op: `ret_results` in Phase 1's mode). `objWhole_panic_witness`
-(`(*A).g` on a nil receiver: the nil check faults). `g30_callPanic_witness` (`fint64to32`, a callee
-that panics), `g30_icallPanic_witness` (`Locker.Lock`'s interface call), `g30_storePanic_witness`
-and `g30_loadPanic_witness` (`(*queueOnePass).next`'s `MOVW R2, 52(R0)` and `MOVWU 52(R0), R3`
+(`(*A).g` on a nil receiver: the nil check faults). `g34_callPanic_witness` (`fint64to32`, a callee
+that panics), `g34_icallPanic_witness` (`Locker.Lock`'s interface call), `g34_storePanic_witness`
+and `g34_loadPanic_witness` (`(*queueOnePass).next`'s `MOVW R2, 52(R0)` and `MOVWU 52(R0), R3`
 with a nil `q`). `verified_mach_witness`:
 `pallocSum.start` from its generic SSA (the export's first
 section, in the whole-file environment of `gofv-ssa-opt --verified`) through
 `verifiedPipelineFull` (`fullyVerified`), with every premise of `verified_mach` discharged;
-`checkG30` accepts genssa's Progs against the pipeline's own output. `RunPre` there is
+`checkG34` accepts genssa's Progs against the pipeline's own output. `RunPre` there is
 `runPre_simple`.
 
 **Next.** Panics of the other kinds (register-index loads and stores; write barriers, `memequal`);
