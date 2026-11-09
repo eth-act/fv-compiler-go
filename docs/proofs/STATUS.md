@@ -665,6 +665,19 @@ machine's `X2 = 0xffffffffffffffbe`, and G34's table keeps `R1`'s entry, which g
 `X1 = 0xbe`). Coverage on quick-v10 (`lake exe gen-check`): 5,825 of 9,297 functions (62.65%),
 152,495 values.
 
+## Phase 3: genssa, slice G35 (I7, #553)
+
+`GoFV.Proof.Gen.g35_value`, `GoFV.Proof.Gen.g35_term`, `GoFV.Proof.Gen.g35_nilPanic`,
+`GoFV.Proof.Gen.g35_boundsPanic` (`GoFV/Proof/Gen/G35.lean`): when slice G35 (`checkG35`: G34 with
+the upper-bit table `uL35`, which also keeps the entries of the registers other than its home's
+across the pair load `LDP` and `Select0`/`Select1` of one, and gives a narrow load of a frame
+variable an entry) accepts a function, they are `g34_value`'s, `g34_term`'s, `g34_nilPanic`'s and
+`g34_boundsPanic`'s statements under the same premises, with `uL35 lc (uIn35 lc bid)` and
+`uIn35 lc e.b` in place of G34's tables. No new trusted premise. Witness: `genG35_witness`
+(`Select1` of `LDP instOpNames(SB)` in `regexp/syntax.(*InstOp).String`, which G34 rejects: G35's
+table keeps `R2`'s and `R3`'s entries across it, which gives the whole `X2 = 0x2a`). Coverage on
+quick-v10 (`lake exe gen-check`): 5,838 of 9,297 functions (62.79%), 152,883 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g34_obj_value`, `g34_obj_term`, `g34_obj_nilPanic`, `g34_obj_boundsPanic`

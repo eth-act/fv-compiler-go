@@ -828,6 +828,31 @@ register and the other entries stay true (`uokl_keep`); every other value steps 
 their only reason. `LDP` with `Select0`/`Select1` (a pair write) in the keep set would take 18 of
 G33's 29.
 
+**Slice G35: the upper-bit table across pair loads, and loads of frame variables**
+(`GoFV/Gen/Check35.lean`, `checkG35 lc ps bstart g`, returning G4's tables; proven sound,
+`g35_value`, `g35_term`, `g35_nilPanic`, `g35_boundsPanic`): G34 with a larger upper-bit table
+`uL35` in place of `uL34` on a function with an arm64 op. Across the pair load `LDP` (G4's, G6's of
+a frame variable, G22's of a global) and `Select0`/`Select1` of an `LDP` (`pairOp35`) the table
+keeps the entries of the registers other than those of the value's home (`homeRegs`: the pair's
+two, or the select's one); a narrow load at any operand, also G6's of a frame variable, puts its
+entry in place of its register's (`ldEntry35`; G20's `uEntry` names only loads through a register
+or of a global); every other value steps as in G34 (`uStep35`). The dataflow (`uFlow35`, `uIn35`),
+its check (`uEdgesOK35`) and `movdOK35` are G34's over `uStep35`. The statements are G34's over
+`checkG35` with `uL35 lc (uIn35 lc bid)` in place of `uL34 lc (uIn34 lc bid)`, and `g35_term`
+concludes `UOKL m' (uIn35 lc e.b)`; `uIn35 lc entry = []` (`uEdgesOK35_entry`). No new trusted
+premise. The proof (`G35.lean`, `Keep35.lean`): the pair loads now conclude that they write the X
+registers of their pair (`PairW`; `g4_ldp`, `g6_ldp`, `g22_ldp`), a select of one that it keeps
+every X register (`g4_sel`), and G6's load the extension of its bytes in its register (`g6_load`,
+as G3's `g3_loadW`); `vk33_keep35` peels `VK33` down to `VK2` and refutes every other kind by its
+op (`ops35`, `ops35_mem`) or, for a select of a write-barrier request, by its argument
+(`sel_wb_pair`), so the entries of the other registers stay true (`uokl_pair`, `uokl_filter_x`)
+and a load's entry holds (`uok_ldW`, `uokl_ld`); every other value steps as in G34 (`vk34_step`).
+G35 accepts 5,838 functions (+13 over G34: 5 by the pair loads, 8 by the loads of frame
+variables); 3 still have `upper bits unknown` as their only reason. The stores, the markers and
+`Convert`, which write no X register, in the keep set would take 2 of them (`bytes.(*Buffer).ReadRune`
+across a `MOVBstore`, `regexp/syntax.(*Prog).Prefix` across a `Convert`); the third
+(`strings.(*stringFinder).next`) needs a `Copy` of a narrow load to copy its entry.
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -839,10 +864,10 @@ reason in parentheses):
    a parameter of the semantics); slots of other sizes (`slot … frame operand, size or alignment`,
    717).
 3. **Other values**: the acquire loads `LDAR`/`LDARW` (383, 277); `InitMem` after the entry values
-   (33 sole after G34), `LoweredGetCallerPC` (25), `SLL` (25), `ADDshiftRL` (23), `CMNconst` (22),
+   (33 sole after G35), `LoweredGetCallerPC` (25), `SLL` (25), `ADDshiftRL` (23), `CMNconst` (22),
    `CMPshiftRL` (15), `MADD` (12); `MOVDnop` 750 (91) and `MOVDreg` (27 sole) are done in G20, G21,
-   G29, G31 and G34 but for 16 functions with no other blocker after G34, whose tables need more
-   ops to keep their entries (§8). Bounds panics
+   G29, G31, G34 and G35 but for 3 functions with no other blocker after G35, whose tables need
+   stores, `Convert` or `Copy` to keep or copy their entries (§4, G35). Bounds panics
    (`LoweredPanicBoundsRR` 616 (68), `RC` 332 (46), `CR` 76 (33), `CC` 170 (22)) are done in G19
    but for #541's 2 functions.
 
@@ -887,6 +912,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G31 | 5,703 (61.34%) | 145,016 |
 | G33 | 5,812 (62.51%) | 151,700 |
 | G34 | 5,825 (62.65%) | 152,495 |
+| G35 | 5,838 (62.79%) | 152,883 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1101,6 +1127,12 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   (`keepOps34`, `keep34_mem`, `keep34_aux`, `keep34_all`, `vk33_keep`).
 - `G34.lean`: `uStep34_keep`, `uStep34_other`, `vk34_step`, `g34_value`, `g34_nilPanic`,
   `g34_boundsPanic`, `g34_term`.
+- `Spec35.lean`: what `checkG35` accepted (`uL35_succ`, `uIn35_nl`, `uL35_nl`, `movdOK35_spec`,
+  `uEdgesOK35_entry`, `uEdgesOK35_edge`, `checkG33_of_35`, `checkG35_spec`).
+- `Keep35.lean`: G35's table across a pair load, a select of one or a narrow load
+  (`ldEntry35_spec`, `uStep35_ld`, `uStep35_pair`, `uStep35_other`, `ops35`, `ops35_mem`,
+  `sel_wb_pair`, `uok_ldW`, `uokl_ld`, `uokl_pair`, `uokl_filter_x`, `ld_uokl`, `vk33_keep35`).
+- `G35.lean`: `vk35_step`, `g35_value`, `g35_nilPanic`, `g35_boundsPanic`, `g35_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -1206,7 +1238,12 @@ which `X1 = 0x17dde`, and on `v3 = CMNWconst [1] v10`, `CMNW $1, R1`, from the 3
 after which the machine's `Z` flag is set), `GenG34.lean` (`test/atomicload`'s `f`, which G33
 rejects: `v11 = MOVBreg v9`, `MOVB R1, R2`, writes only `R2`, so G34's table keeps `R1`'s entry for
 `v13 = MOVDreg v9`, where G31's is empty; `g34_value` on `v11` from the byte `0xbe` in `R1`, after
-which the machine's `X2 = 0xffffffffffffffbe` and the table gives the whole `X1 = 0xbe`).
+which the machine's `X2 = 0xffffffffffffffbe` and the table gives the whole `X1 = 0xbe`),
+`GenG35.lean` (`regexp/syntax.(*InstOp).String`, which G34 rejects: the pair load `v44 = LDP
+instOpNames(SB)` into `(R4, R5)` and its selects write neither `R2` nor `R3`, so G35's table keeps
+their entries `[(3, 8, false), (2, 8, false)]` for `b7`'s `v29 = MOVDreg v16`, where G34's is empty;
+`g35_value` on `v4 = Select1 v44` with the byte `0x2a` in `R2`, after which the table gives the
+whole `X2 = 0x2a`).
 Each decides its inputs by compiled evaluation (`native_decide`, pinned in
 `scripts/axioms-allowlist.txt`).
 
@@ -1473,7 +1510,8 @@ their only reason. G31 (§4) carries it across G1's and G3's ops (`XW`) and bloc
 it took 25 functions, and 26 still have `upper bits unknown` as their only reason. A wider keep set
 (frames for spills and reloads, `LDP`/`Select`, bounds panics, `MOVBreg`) measured 38 of the 46.
 G34 (§4) widens it to G3's, G16's, G23's, G25's, G32's and G33's single-register ops, spills,
-reloads and `MOVDaddr`; it took 13, and 16 remain.
+reloads and `MOVDaddr`; it took 13, and 16 remain. G35 (§4) adds `LDP` and its selects to the
+keep set and gives loads of frame variables an entry; it took 13, and 3 remain.
 
 - **The obstacle.** `MOVDnop x` emits no code. `runLoc` gives it the full 64-bit register:
   `movdLoc` takes the zero or sign extension of `x`'s low bits, as `LocCtx.signOf` decides from
