@@ -88,6 +88,14 @@ theorem vkind45_initMem {lc : LocCtx} {g : G2In} {v : Value} (hop : v.op = .Init
   | ok _ => rfl
   | error e => simp [fkind45, hop, fLoadIdxOp?, fStoreIdxOp?, ex_throw]
 
+/-- On an op that is neither a float register-index load nor store, `vkind45` is `vkind44`. -/
+theorem vkind45_eq44 {lc : LocCtx} {g : G2In} {v : Value} (hl : fLoadIdxOp? v.op = none)
+    (hs : fStoreIdxOp? v.op = none) : vkind45 lc g v = vkind44 lc g v := by
+  unfold vkind45
+  cases vkind44 lc g v with
+  | ok _ => rfl
+  | error e => simp [fkind45, hl, hs, ex_throw]
+
 /-- On a function with no arm64 op, G45's check is G33. -/
 theorem checkG33_of_45L {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}
     {r : Except String (PcTab × KTab)} (hl : lc.ctx.f.lowered = false)

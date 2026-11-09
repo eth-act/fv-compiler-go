@@ -87,6 +87,39 @@ theorem fops46_fp3 {op : Op} {n : Nat} {ft : BitVec 2} {o1 o0 : Bool}
   rcases fp3Of_some h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ |
     ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> simp [fops46]
 
+/-- On an op outside G46's (`fops46`), `vkind46` is `vkind45`. -/
+theorem vkind46_eq45 {lc : LocCtx} {g : G2In} {v : Value} (h : v.op ∉ fops46) :
+    vkind46 lc g v = vkind45 lc g v := by
+  unfold vkind46
+  cases vkind45 lc g v with
+  | ok _ => rfl
+  | error e =>
+    have h2 : fp2Of v.op = none := by
+      cases hx : fp2Of v.op with
+      | none => rfl
+      | some x => obtain ⟨_, _, _⟩ := x; exact absurd (fops46_fp2 hx) h
+    have h1 : fp1Of v.op = none := by
+      cases hx : fp1Of v.op with
+      | none => rfl
+      | some x => obtain ⟨_, _, _, _⟩ := x; exact absurd (fops46_fp1 hx) h
+    have hc : cvtfOf v.op = none := by
+      cases hx : cvtfOf v.op with
+      | none => rfl
+      | some x => obtain ⟨_, _, _⟩ := x; exact absurd (fops46_cvtf hx) h
+    have hz : fcvtzOf v.op = none := by
+      cases hx : fcvtzOf v.op with
+      | none => rfl
+      | some x => obtain ⟨_, _, _⟩ := x; exact absurd (fops46_fcvtz hx) h
+    have hm : fcmpOf v.op = none := by
+      cases hx : fcmpOf v.op with
+      | none => rfl
+      | some x => obtain ⟨_, _, _⟩ := x; exact absurd (fops46_fcmp hx) h
+    have h3 : fp3Of v.op = none := by
+      cases hx : fp3Of v.op with
+      | none => rfl
+      | some x => obtain ⟨_, _, _, _⟩ := x; exact absurd (fops46_fp3 hx) h
+    simp [fkind46, h2, h1, hc, hz, hm, h3]
+
 set_option hygiene false in
 /-- The 44 rows of `fops46` as hypotheses `h : op = …`. -/
 local macro "fops46_cases" : tactic => `(tactic| (

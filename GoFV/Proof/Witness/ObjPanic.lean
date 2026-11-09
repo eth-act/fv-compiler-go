@@ -8,9 +8,9 @@ import GoFV.Proof.Witness.GenG38
 open scoped GoFV.SSA.Sem.Fixed
 
 /-!
-# Non-vacuity witnesses: panics down to the machine words (`obj_whole_panic`, `g44_callPanic`)
+# Non-vacuity witnesses: panics down to the machine words (`obj_whole_panic`, `g46_callPanic`)
 
-**A nil check that panics, whole function.** `(*A).g` of `test/method` (`GenG7`: `checkG44L`
+**A nil check that panics, whole function.** `(*A).g` of `test/method` (`GenG7`: `checkG46L`
 accepts it with the tables of `checkG7`; `ObjG7`: `checkObj` accepts its assembled words, a
 frameless leaf without a stack check), the wrapper whose entry block `b2` runs `v5 = ArgIntReg`
 (`R0`), `v1 = InitMem`, `v6 = LoweredNilCheck v5 v1` (`MOVB (R0), R27`) and returns. From
@@ -23,30 +23,30 @@ image and a temporary), the entry values run to `sI` (`R0 = 0`), and the nil che
 address 0, `sigpanic`). The run reaches no state but `sI` (`lreach_of_panicAt`), where `RunPre`
 holds vacuously (the only step panics) and `RunPanicPre` is the nil check's.
 
-**A static call whose callee panics.** `fint64to32` (`GenG9`: `checkG44L` accepts it), whose
+**A static call whose callee panics.** `fint64to32` (`GenG9`: `checkG46L` accepts it), whose
 `v8 = CALLstatic v6 v1` calls `runtime.fintto32`: in the environment `envP` the callee panics with
 `nilDeref`; with the hook `Hp` that panics alike at the callee's symbol (`CallPanicOK`),
-`g44_callPanic` gives the P0 run through the `CALL` to the symbol, where `runProg` panics with the
+`g46_callPanic` gives the P0 run through the `CALL` to the symbol, where `runProg` panics with the
 same panic (`PPanics`).
 
-**An interface call whose callee panics.** `Locker.Lock` (`GenG10`: `checkG44L` accepts it), whose
+**An interface call whose callee panics.** `Locker.Lock` (`GenG10`: `checkG46L` accepts it), whose
 `v11 = CALLinter` calls the code pointer in `R2` (the start of `sync.(*Mutex).Lock`): in `envP` the
-callee panics with `nilDeref`; with `Hp` (`ICallPanicOK`), `g44_icallPanic` gives the P0 run
+callee panics with `nilDeref`; with `Hp` (`ICallPanicOK`), `g46_icallPanic` gives the P0 run
 through `CALL (R2)` to the callee's code at `symA`, where `runProg` panics with the same panic.
 
-**A store and a load that fault.** `(*queueOnePass).next` (`GenG21`: `checkG44L` accepts it with
+**A store and a load that fault.** `(*queueOnePass).next` (`GenG21`: `checkG46L` accepts it with
 `checkG21`'s tables), whose `b2` stores `q.nextIndex` (`v31 = MOVWstore [52] v6 v28 v1`,
 `MOVW R2, 52(R0)`): from a state with a nil `q` in `R0` (`sN`, the machine's `X0 = 0`, `mN`), the
-step panics with `nilDeref` (`nilFaults`), and `g44_memPanic` gives the P0 run to the `MOVW`,
+step panics with `nilDeref` (`nilFaults`), and `g46_memPanic` gives the P0 run to the `MOVW`,
 which faults at address 52 in the nil page. Its `b1` loads `q.nextIndex`
 (`v13 = MOVWUload [52] v6 v1`, `MOVWU 52(R0), R3`): from `sN` and the machine `mL` before `v13`,
-the step panics with `nilDeref` and `g44_memPanic` gives the P0 run to the `MOVWU`, which faults
+the step panics with `nilDeref` and `g46_memPanic` gives the P0 run to the `MOVWU`, which faults
 at address 52.
 
-**An acquire load that faults.** `sync/atomic.LoadInt64` (`GenG38`: `checkG44L` accepts it), whose
+**An acquire load that faults.** `sync/atomic.LoadInt64` (`GenG38`: `checkG46L` accepts it), whose
 `v8 = LDAR v6 v1` (`LDAR (R0), R0`) loads through `addr`: from a state with a nil `addr` in `R0`
 (`sA`, the machine's `X0 = 0`, `mA`), the step panics with `nilDeref` (`nilFaults`), and
-`g44_ldarPanic` gives the P0 run to the `LDAR`, which faults at address 0.
+`g46_ldarPanic` gives the P0 run to the `LDAR`, which faults at address 0.
 
 By compiled evaluation (`native_decide`, listed in `scripts/axioms-allowlist.txt`;
 `panic_obj_facts`, `panic_lc_facts`, `callPanic_facts`, `icallPanic_facts`, `storePanic_facts`,
@@ -194,13 +194,13 @@ def objFacts : Bool :=
 theorem panic_obj_facts : objFacts = true := by
   native_decide
 
-/-- What compiled evaluation checks of `runLoc` on `(*A).g`: `checkG44L` accepts it with `checkG7`'s
+/-- What compiled evaluation checks of `runLoc` on `(*A).g`: `checkG46L` accepts it with `checkG7`'s
 tables; no frame variable, home slot, static or indirect call, write barrier or `LoweredMemEq`; the
 entry is `b2`, whose value 2 is the nil check `v6`; the entry values run from `runLoc`'s first
 state on the nil receiver to `R0 = 0` and the frame memory, where `R0` has class 64, no upper-bit
 fact is carried (`uL35`) and `v6` panics with `nilDeref`; the whole run panics with `nilDeref`. -/
 def lcFacts (lc : LocCtx) : Bool :=
-  (checkG44L lc ps GenG7.bs GenG7.g).toOption == some (GenG7.tab, GenG7.kt) &&
+  (checkG46L lc ps GenG7.bs GenG7.g).toOption == some (GenG7.tab, GenG7.kt) &&
     (accessedVars lc).isEmpty && (homeSlots lc).isEmpty && GenG2.noCalls lc &&
     ObjWhole.noWbICall lc && lc.ctx.f.entry == 2 && lc.ctx.f.blocks.toList.contains 2 &&
     (lc.ctx.f.block? 2).isSome && (lc.ctx.f.value? 6).isSome && (blk lc).values[2]? == some 6 &&
@@ -262,13 +262,13 @@ theorem sep {lc : LocCtx} (hk : (memI.blocks.toList.map (·.1)).Nodup) :
   rcases hy with ⟨h, -⟩ | ⟨k, off, h, -⟩ <;> cases h
 
 theorem g28Env {lc : LocCtx}
-    (hc : checkG44L lc ps GenG7.bs GenG7.g = .ok (GenG7.tab, GenG7.kt))
+    (hc : checkG46L lc ps GenG7.bs GenG7.g = .ok (GenG7.tab, GenG7.kt))
     (hav : (accessedVars lc).isEmpty = true) (hsl : (homeSlots lc).isEmpty = true)
     (hnc : GenG2.noCalls lc = true) (hwi : ObjWhole.noWbICall lc = true)
     (hme : ObjWhole.noMemEq lc = true)
     (hend : GenG2.symA ≠ endP GenG2.text ps.toList) (hso : symsOut = true) :
     G28Env lc GenG7.g L ps (endP L.text ps.toList) GenG7.tab (E0 lc) := by
-  obtain ⟨-, -, -, -, hlt, -, -⟩ := checkG44L_cx hc
+  obtain ⟨-, -, -, -, hlt, -, -⟩ := checkG46L_cx hc
   have h2 : G2Env lc GenG7.g L ps 0 GenG7.tab (E0 lc) :=
     { lcEq := rfl
       link := rfl
@@ -361,8 +361,8 @@ theorem panic_of {lc : LocCtx} (hf : lcFacts lc = true) :
   simp only [lcFacts, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem] at hlf
   obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hres, hav⟩, hsl⟩, hnc⟩, hwi⟩, hentry⟩, hbm⟩, hbs⟩, hv6s⟩, hi2⟩, hop⟩,
     hsz⟩, hpre⟩, hk0⟩, hrunP⟩, hme⟩, hu⟩ := hlf
-  have hc : checkG44L lc ps GenG7.bs GenG7.g = .ok (GenG7.tab, GenG7.kt) := by
-    revert hres; cases checkG44L lc ps GenG7.bs GenG7.g <;> simp [Except.toOption]
+  have hc : checkG46L lc ps GenG7.bs GenG7.g = .ok (GenG7.tab, GenG7.kt) := by
+    revert hres; cases checkG46L lc ps GenG7.bs GenG7.g <;> simp [Except.toOption]
   have hb2 : lc.ctx.f.block? 2 = some (blk lc) := by
     obtain ⟨b, hb⟩ := Option.isSome_iff_exists.1 hbs
     simp [blk, hb]
@@ -469,11 +469,11 @@ def envP : Env := { extern := fun _ => some fun _ _ m => .panicked .nilDeref m }
 /-- The runtime panics with `nilDeref` at every call. -/
 def Hp : Hooks := ⟨fun m => some (.panicked .nilDeref m)⟩
 
-/-- What compiled evaluation checks on `fint64to32`: `checkG44L` accepts it with `checkG9`'s
+/-- What compiled evaluation checks on `fint64to32`: `checkG46L` accepts it with `checkG9`'s
 tables, it has no write barrier and no interface or closure call, and the static call `v8` panics
 with `nilDeref` from `GenG9.s0 5` in `envP`. -/
 def callFacts : Bool :=
-  (checkG44L GenG9.lc GenG9.ps GenG9.bs GenG9.g).toOption == some (GenG9.tab, GenG9.kt) &&
+  (checkG46L GenG9.lc GenG9.ps GenG9.bs GenG9.g).toOption == some (GenG9.tab, GenG9.kt) &&
     ObjWhole.noWbICall GenG9.lc &&
     isNilPanic (stepLoc envP GenG9.lc (GenG9.s0 5) (GenG9.val 8))
 
@@ -489,11 +489,11 @@ theorem g28Env9 (hc : checkG9 GenG9.lc GenG9.ps GenG9.bs GenG9.g = .ok (GenG9.ta
              icalls := fun _ _ _ hv => (ObjWhole.noWbICall_spec hwi hv).2 }
     memeqs := fun h => by cases h }
 
-/-- **A static call whose callee panics** (`g44_callPanic` on `fint64to32`): `runLoc`'s step of
+/-- **A static call whose callee panics** (`g46_callPanic` on `fint64to32`): `runLoc`'s step of
 `v8` panics with `nilDeref` (the callee's panic), and from the `LocMatch`ed machine state before it
 the P0 Progs run through the `CALL` to the callee's symbol, where `runProg` panics with
 `nilDeref` (the hook `Hp`, `CallPanicOK`). -/
-theorem g44_callPanic_witness :
+theorem g46_callPanic_witness :
     ∃ mm', stepLoc envP GenG9.lc (GenG9.s0 5) (GenG9.val 8) = .panic .nilDeref mm' ∧
       ∃ m', PStar Hp GenG9.L GenG9.ps.toList 0 (GenG9.m0 5) m' ∧
         PPanics Hp GenG9.L GenG9.ps.toList 0 m' .nilDeref := by
@@ -501,20 +501,20 @@ theorem g44_callPanic_witness :
   simp only [callFacts, Bool.and_eq_true, beq_iff_eq] at hf
   obtain ⟨⟨hres, hwi⟩, hpan⟩ := hf
   obtain ⟨mm', hpan⟩ := isNilPanic_spec hpan
-  have hc : checkG44L GenG9.lc GenG9.ps GenG9.bs GenG9.g = .ok (GenG9.tab, GenG9.kt) := by
-    revert hres; cases checkG44L GenG9.lc GenG9.ps GenG9.bs GenG9.g <;> simp [Except.toOption]
+  have hc : checkG46L GenG9.lc GenG9.ps GenG9.bs GenG9.g = .ok (GenG9.tab, GenG9.kt) := by
+    revert hres; cases checkG46L GenG9.lc GenG9.ps GenG9.bs GenG9.g <;> simp [Except.toOption]
   obtain ⟨hc9, hav, hsl, hm1, hb, hv8, -, -, hi2, -, -, hop8, -, -, -, hk0, -⟩ := GenG9.facts
-  refine ⟨mm', hpan, g44_callPanic hc (g28Env9 hc9 hav hsl hwi) hm1 hb hi2 hv8 hop8
+  refine ⟨mm', hpan, g46_callPanic hc (g28Env9 hc9 hav hsl hwi) hm1 hb hi2 hv8 hop8
     (GenG9.locMatch0 5) (GenG9.g9Inv0 5 hk0) ?_⟩
   intro _ _ _ _ _ _ _ _ _ m₁ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
   exact ⟨m₁, rfl⟩
 
 /-! ## `Locker.Lock`: an interface call whose callee panics -/
 
-/-- What compiled evaluation checks on `Locker.Lock`: `checkG44L` accepts it with `checkG10`'s
+/-- What compiled evaluation checks on `Locker.Lock`: `checkG46L` accepts it with `checkG10`'s
 tables, and the interface call `v11` panics with `nilDeref` from `GenG10.s0` in `envP`. -/
 def icallFacts : Bool :=
-  (checkG44L GenG10.lc GenG10.ps GenG10.bs GenG10.g).toOption == some (GenG10.tab, GenG10.kt) &&
+  (checkG46L GenG10.lc GenG10.ps GenG10.bs GenG10.g).toOption == some (GenG10.tab, GenG10.kt) &&
     isNilPanic (stepLoc envP GenG10.lc GenG10.s0 (GenG10.val 11))
 
 theorem icallPanic_facts : icallFacts = true := by
@@ -537,11 +537,11 @@ theorem icallPanicOKc {lc' : LocCtx} {L' : Link} {v : Value} {E' : MatchEnv} {re
   have hpc : m₁.pc = GenG2.symA := by rw [hpca]; simp
   exact ⟨by rw [hpc]; exact Ne.symm hret, fun id => by rw [hpc]; exact haddr id, m₁, rfl⟩
 
-/-- **An interface call whose callee panics** (`g44_icallPanic` on `Locker.Lock`): `runLoc`'s step
+/-- **An interface call whose callee panics** (`g46_icallPanic` on `Locker.Lock`): `runLoc`'s step
 of the interface call `v11` panics with `nilDeref` (the callee's panic), and from the `LocMatch`ed
 machine state before it the P0 Progs run through `CALL (R2)` to the callee's code at `symA`, where
 `runProg` panics with `nilDeref` (the hook `Hp`, `ICallPanicOK`). -/
-theorem g44_icallPanic_witness :
+theorem g46_icallPanic_witness :
     ∃ mm', stepLoc envP GenG10.lc GenG10.s0 (GenG10.val 11) = .panic .nilDeref mm' ∧
       ∃ m', PStar Hp GenG10.L GenG10.ps.toList 0 GenG10.m0 m' ∧
         PPanics Hp GenG10.L GenG10.ps.toList 0 m' .nilDeref := by
@@ -549,12 +549,12 @@ theorem g44_icallPanic_witness :
   simp only [icallFacts, Bool.and_eq_true, beq_iff_eq] at hf
   obtain ⟨hres, hpan⟩ := hf
   obtain ⟨mm', hpan⟩ := isNilPanic_spec hpan
-  have hc : checkG44L GenG10.lc GenG10.ps GenG10.bs GenG10.g = .ok (GenG10.tab, GenG10.kt) := by
-    revert hres; cases checkG44L GenG10.lc GenG10.ps GenG10.bs GenG10.g <;> simp [Except.toOption]
+  have hc : checkG46L GenG10.lc GenG10.ps GenG10.bs GenG10.g = .ok (GenG10.tab, GenG10.kt) := by
+    revert hres; cases checkG46L GenG10.lc GenG10.ps GenG10.bs GenG10.g <;> simp [Except.toOption]
   obtain ⟨hc10, hav, hsl, hm1, hb, hv11, -, hi5, -, hop11, -, -, hcode, hk0, hk2, -⟩ :=
     GenG10.facts
   obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hlt, -, -⟩ := checkG10_spec hc10
-  exact ⟨mm', hpan, g44_icallPanic (n := 1) hc
+  exact ⟨mm', hpan, g46_icallPanic (n := 1) hc
     { env := GenG10.g10Env hc10 hav hsl, memeqs := fun h => by cases h } hm1 hb hi5 hv11
     (by rw [hop11]; rfl) GenG10.locMatch0 (GenG10.g10Inv0 hk0 hk2)
     (icallPanicOKc (fun _ => rfl) (by decide) (GenG10.addr_ne_symA hlt) hcode)⟩
@@ -578,11 +578,11 @@ def mN : MState :=
     sp := GenG2.sp0, v := fun _ => 0, nzcv := ⟨false, false, false, false⟩,
     pc := GenG21.E.pcOf 2 2, mem := GenG21.MH }
 
-/-- What compiled evaluation checks on `(*queueOnePass).next`: `checkG44L` accepts it with
+/-- What compiled evaluation checks on `(*queueOnePass).next`: `checkG46L` accepts it with
 `checkG21`'s tables; `b2` holds `v31 = MOVWstore` at index 2, `R0` has class 64 there; and `v31`
 panics with `nilDeref` from `sN`. -/
 def storeFacts : Bool :=
-  (checkG44L GenG21.lc GenG21.ps GenG21.bs GenG21.g).toOption == some (GenG21.tab, GenG21.kt) &&
+  (checkG46L GenG21.lc GenG21.ps GenG21.bs GenG21.g).toOption == some (GenG21.tab, GenG21.kt) &&
     GenG21.lc.ctx.f.blocks.toList.contains 2 && (GenG21.lc.ctx.f.block? 2).isSome &&
     (GenG21.lc.ctx.f.value? 31).isSome && blk2.values[2]? == some 31 &&
     (GenG21.val 31).op == .ARM64MOVWstore &&
@@ -629,17 +629,17 @@ theorem invN (h0 : (kAt GenG21.lc GenG21.kt 2 blk2 2).get 0 = some 64) :
     · trivial
   slots := by intro k v h; simp [sN] at h
 
-theorem checkG44L_g21 :
-    checkG44L GenG21.lc GenG21.ps GenG21.bs GenG21.g = .ok (GenG21.tab, GenG21.kt) := by
+theorem checkG46L_g21 :
+    checkG46L GenG21.lc GenG21.ps GenG21.bs GenG21.g = .ok (GenG21.tab, GenG21.kt) := by
   have hf := storePanic_facts
   simp only [storeFacts, Bool.and_eq_true] at hf
   have hres := hf.1.1.1.1.1.1.1
-  revert hres; cases checkG44L GenG21.lc GenG21.ps GenG21.bs GenG21.g <;> simp [Except.toOption]
+  revert hres; cases checkG46L GenG21.lc GenG21.ps GenG21.bs GenG21.g <;> simp [Except.toOption]
 
-/-- **A store that faults** (`g44_memPanic` on `(*queueOnePass).next`): `runLoc`'s step of the
+/-- **A store that faults** (`g46_memPanic` on `(*queueOnePass).next`): `runLoc`'s step of the
 store `v31` through a nil `q` panics with `nilDeref`, and from the `LocMatch`ed machine state
 before it the P0 Progs run to `MOVW R2, 52(R0)`, which faults in the nil page (`PPanics`). -/
-theorem g44_storePanic_witness :
+theorem g46_storePanic_witness :
     ∃ mm', stepLoc GenG2.env GenG21.lc sN (GenG21.val 31) = .panic .nilDeref mm' ∧
       ∃ m', PStar GenG2.H0 GenG21.L GenG21.ps.toList 0 mN m' ∧
         PPanics GenG2.H0 GenG21.L GenG21.ps.toList 0 m' .nilDeref := by
@@ -654,7 +654,7 @@ theorem g44_storePanic_witness :
     obtain ⟨v, hv⟩ := Option.isSome_iff_exists.1 hv31s
     simp [GenG21.val, hv]
   obtain ⟨hc21, hav, hsl, -⟩ := GenG21.facts
-  obtain ⟨-, m', hp, hpp⟩ := g44_memPanic (H := GenG2.H0) checkG44L_g21
+  obtain ⟨-, m', hp, hpp⟩ := g46_memPanic (H := GenG2.H0) checkG46L_g21
     { env := GenG21.g21Env hc21 hav hsl, memeqs := fun h => by cases h } hm2 hb2 hi2 hv31
     (by rw [hop]; rfl) locMatchN (invN hk0) hpan
   exact ⟨mm', hpan, m', hp, hpp⟩
@@ -702,10 +702,10 @@ theorem invL (h0 : (kAt GenG21.lc GenG21.kt 1 GenG21.blk1 5).get 0 = some 64) :
     · trivial
   slots := by intro k v h; simp [sN] at h
 
-/-- **A load that faults** (`g44_memPanic` on `(*queueOnePass).next`): `runLoc`'s step of the
+/-- **A load that faults** (`g46_memPanic` on `(*queueOnePass).next`): `runLoc`'s step of the
 load `v13` through a nil `q` panics with `nilDeref`, and from the `LocMatch`ed machine state
 before it the P0 Progs run to `MOVWU 52(R0), R3`, which faults in the nil page (`PPanics`). -/
-theorem g44_loadPanic_witness :
+theorem g46_loadPanic_witness :
     ∃ mm', stepLoc GenG2.env GenG21.lc sN (GenG21.val 13) = .panic .nilDeref mm' ∧
       ∃ m', PStar GenG2.H0 GenG21.L GenG21.ps.toList 0 mL m' ∧
         PPanics GenG2.H0 GenG21.L GenG21.ps.toList 0 m' .nilDeref := by
@@ -713,7 +713,7 @@ theorem g44_loadPanic_witness :
   simp only [loadFacts, Bool.and_eq_true] at hf
   obtain ⟨mm', hpan⟩ := isNilPanic_spec hf.2
   obtain ⟨hc21, hav, hsl, hm1, hb, hv13, -, hi5, -, hop13, -, -, -, hk0, -⟩ := GenG21.facts
-  obtain ⟨-, m', hp, hpp⟩ := g44_memPanic (H := GenG2.H0) checkG44L_g21
+  obtain ⟨-, m', hp, hpp⟩ := g46_memPanic (H := GenG2.H0) checkG46L_g21
     { env := GenG21.g21Env hc21 hav hsl, memeqs := fun h => by cases h } hm1 hb hi5 hv13
     (by rw [hop13]; rfl) locMatchL (invL hk0) hpan
   exact ⟨mm', hpan, m', hp, hpp⟩
@@ -734,10 +734,10 @@ def mA : MState :=
     sp := GenG2.sp0, v := fun _ => 0, nzcv := ⟨false, false, false, false⟩,
     pc := GenG38.E.pcOf 1 2, mem := GenG14.M7 }
 
-/-- What compiled evaluation checks on `sync/atomic.LoadInt64`: `checkG44L` accepts it with
+/-- What compiled evaluation checks on `sync/atomic.LoadInt64`: `checkG46L` accepts it with
 `checkG38`'s tables, and `v8` panics with `nilDeref` from `sA` (a nil `addr` in `R0`). -/
 def ldarFacts : Bool :=
-  (checkG44L GenG38.lc GenG38.ps GenG38.bs GenG38.g).toOption == some (GenG38.tab, GenG38.kt) &&
+  (checkG46L GenG38.lc GenG38.ps GenG38.bs GenG38.g).toOption == some (GenG38.tab, GenG38.kt) &&
     isNilPanic (stepLoc GenG2.env GenG38.lc sA (GenG38.val 8))
 
 theorem ldarPanic_facts : ldarFacts = true := by
@@ -780,22 +780,22 @@ theorem invA (h0 : (kAt GenG38.lc GenG38.kt 1 GenG38.blk 2).get 0 = some 64) :
     · trivial
   slots := by intro k v h; simp [sA] at h
 
-/-- **An acquire load that faults** (`g44_ldarPanic` on `sync/atomic.LoadInt64`): `runLoc`'s step
+/-- **An acquire load that faults** (`g46_ldarPanic` on `sync/atomic.LoadInt64`): `runLoc`'s step
 of `v8 = LDAR v6 v1` through a nil `addr` panics with `nilDeref`, and from the `LocMatch`ed
 machine state before it the P0 Progs run to `LDAR (R0), R0`, which faults in the nil page
 (`PPanics`). -/
-theorem g44_ldarPanic_witness :
+theorem g46_ldarPanic_witness :
     ∃ mm', stepLoc GenG2.env GenG38.lc sA (GenG38.val 8) = .panic .nilDeref mm' ∧
       ∃ m', PStar GenG2.H0 GenG38.L GenG38.ps.toList 0 mA m' ∧
         PPanics GenG2.H0 GenG38.L GenG38.ps.toList 0 m' .nilDeref := by
   have hf := ldarPanic_facts
   simp only [ldarFacts, Bool.and_eq_true] at hf
   obtain ⟨mm', hpan⟩ := isNilPanic_spec hf.2
-  have hc44 : checkG44L GenG38.lc GenG38.ps GenG38.bs GenG38.g = .ok (GenG38.tab, GenG38.kt) := by
+  have hc45 : checkG46L GenG38.lc GenG38.ps GenG38.bs GenG38.g = .ok (GenG38.tab, GenG38.kt) := by
     have hres := hf.1
-    revert hres; cases checkG44L GenG38.lc GenG38.ps GenG38.bs GenG38.g <;> simp [Except.toOption]
+    revert hres; cases checkG46L GenG38.lc GenG38.ps GenG38.bs GenG38.g <;> simp [Except.toOption]
   obtain ⟨hl, hc, -, hav, hsl, hm1, hb, hv8, hi2, hop, -, hk0, -⟩ := GenG38.facts
-  obtain ⟨-, m', hp, hpp⟩ := g44_ldarPanic (H := GenG2.H0) hc44 (GenG38.g38Env hc hl hav hsl) hm1
+  obtain ⟨-, m', hp, hpp⟩ := g46_ldarPanic (H := GenG2.H0) hc45 (GenG38.g38Env hc hl hav hsl) hm1
     hb hi2 hv8 (by rw [hop]; rfl) locMatchA (invA hk0) hpan
   exact ⟨mm', hpan, m', hp, hpp⟩
 
