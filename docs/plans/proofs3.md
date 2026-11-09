@@ -853,6 +853,27 @@ variables); 3 still have `upper bits unknown` as their only reason. The stores, 
 across a `MOVBstore`, `regexp/syntax.(*Prog).Prefix` across a `Convert`); the third
 (`strings.(*stringFinder).next`) needs a `Copy` of a narrow load to copy its entry.
 
+**Slice G36: register shifts, shifted adds and subtracts, `TST`** (`GoFV/Gen/Check36.lean`,
+`checkG36 lc ps bstart g`, returning G4's tables; proven sound, `g36_value`, `g36_term`,
+`g36_nilPanic`, `g36_boundsPanic`): G35 with, in a function with an arm64 op, `SLL`, `SRL`, `SRA x
+y` (`LSL`/`LSR`/`ASR Rm, Rn, Rd`, `sh36?`) with `y` of at least 8 bits and `x` of at least the
+result's class (`SLL`) or of 64 bits; `ADDshiftRL`, `ADDshiftRA`, `SUBshiftLL`, `SUBshiftRL`,
+`SUBshiftRA [k] x y` (`ADD`/`SUB Rm SHIFT k, Rn, Rd`, G27's shifted operand `shiftA`, `shOp36?`,
+`0 ≤ k < 64`) with `x` of at least the result's class and `y` too (`SUBshiftLL`) or of 64 bits; and
+`TST x y` (`TST Rm, Rn`) of two 64-bit arguments (`VK36`). An ALU op has no temporary and a result
+of class `c ≥ 8`. The statements are G35's over `checkG36`, with the same premises and G35's table.
+No new trusted premise. The proof (`G36.lean`): `runLoc` runs the ops as `Arm64.evalPure`
+(`stepLoc_alu36`); a register shift is `Arm64.op2` of a shift by `y` modulo 64 (`shF36`), which the
+machine's `dp2Op` computes (`progStep_sh36`), and the amount reads only `y`'s low 6 bits
+(`mod64_low`), a left shift only `x`'s low bits (G27's `shl_low`; `lo_sh36`). The shifted adds and
+subtracts are Phase 1's `addSh`/`subSh`, `addP` of `x` and the shifted (negated) register of `y`
+(`lo_shOp36`, with `ADD`'s pointer case), which the machine computes through the shifted operand
+(`progStep_shOp36`). `TST`'s flags are `ANDS`' of the two registers (`progStep_tst36`,
+`flagsRel_tst36`). The G36 ops empty the upper-bit table (`uStep35_alu36`). G36 accepts 5,967
+functions (+129 over G35). `CMPshiftLL`/`CMPshiftRL` (13 and 28 sole after G36) stay out: as
+`CMNconst`'s, their flags on a pointer without an integer form are Phase 1's `zClear` (`cmpSh`),
+which only G1's `NoBarePtr` premise for `CMP`/`CMPconst` relates to the machine.
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -864,12 +885,13 @@ reason in parentheses):
    a parameter of the semantics); slots of other sizes (`slot … frame operand, size or alignment`,
    717).
 3. **Other values**: the acquire loads `LDAR`/`LDARW` (383, 277); `InitMem` after the entry values
-   (33 sole after G35), `LoweredGetCallerPC` (25), `SLL` (25), `ADDshiftRL` (23), `CMNconst` (22),
-   `CMPshiftRL` (15), `MADD` (12); `MOVDnop` 750 (91) and `MOVDreg` (27 sole) are done in G20, G21,
-   G29, G31, G34 and G35 but for 3 functions with no other blocker after G35, whose tables need
-   stores, `Convert` or `Copy` to keep or copy their entries (§4, G35). Bounds panics
-   (`LoweredPanicBoundsRR` 616 (68), `RC` 332 (46), `CR` 76 (33), `CC` 170 (22)) are done in G19
-   but for #541's 2 functions.
+   (34 sole after G36), `LoweredGetCallerPC` (25), `CMNconst` (23), `CMPshiftRL` (28) and
+   `CMPshiftLL` (13) (a new premise, G36), `UMULH` (18), `UDIV` (16), `MADD` (14), `DIV` (9),
+   `REVW` (9), `shift or mask widths` (31: narrow arguments of right shifts); `MOVDnop` 750 (91)
+   and `MOVDreg` (27 sole) are done in G20, G21, G29, G31, G34 and G35 but for 3 functions with no
+   other blocker after G35, whose tables need stores, `Convert` or `Copy` to keep or copy their
+   entries (§4, G35). Bounds panics (`LoweredPanicBoundsRR` 616 (68), `RC` 332 (46), `CR` 76
+   (33), `CC` 170 (22)) are done in G19 but for #541's 2 functions.
 
 ## 5. Results
 
@@ -913,6 +935,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G33 | 5,812 (62.51%) | 151,700 |
 | G34 | 5,825 (62.65%) | 152,495 |
 | G35 | 5,838 (62.79%) | 152,883 |
+| G36 | 5,967 (64.18%) | 159,085 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1133,6 +1156,12 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   (`ldEntry35_spec`, `uStep35_ld`, `uStep35_pair`, `uStep35_other`, `ops35`, `ops35_mem`,
   `sel_wb_pair`, `uok_ldW`, `uokl_ld`, `uokl_pair`, `uokl_filter_x`, `ld_uokl`, `vk33_keep35`).
 - `G35.lean`: `vk35_step`, `g35_value`, `g35_nilPanic`, `g35_boundsPanic`, `g35_term`.
+- `Spec36.lean`: what `checkG36` accepted (`VK36`, `sh36Kind_spec`, `shOp36Kind_spec`,
+  `tst36Kind_spec`, `vkind36_spec`, `checkG33_of_36`, `checkG36_spec`).
+- `G36.lean`: `shF36`, `shOpF36`, `shOpV36`, `evalPure_sh36`, `evalPure_shOp36`, `AluOp36`,
+  `uStep35_alu36`, `stepLoc_alu36`, `progStep_sh36`, `progStep_shOp36`, `progStep_tst36`,
+  `mod64_low`, `lo_sh36`, `lo_shOp36`, `flagsRel_tst36`, `g36_sh`, `g36_shOp`, `g36_tst`,
+  `vk36_step`, `g36_value`, `vk36_nil`, `g36_nilPanic`, `g36_boundsPanic`, `g36_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -1243,7 +1272,9 @@ which the machine's `X2 = 0xffffffffffffffbe` and the table gives the whole `X1 
 instOpNames(SB)` into `(R4, R5)` and its selects write neither `R2` nor `R3`, so G35's table keeps
 their entries `[(3, 8, false), (2, 8, false)]` for `b7`'s `v29 = MOVDreg v16`, where G34's is empty;
 `g35_value` on `v4 = Select1 v44` with the byte `0x2a` in `R2`, after which the table gives the
-whole `X2 = 0x2a`).
+whole `X2 = 0x2a`), `GenG36.lean` (`encoding/hex.DecodedLen`, `x / 2`, which G35 rejects:
+`g36_value` on `v7 = ADDshiftRL [63] v6 v6`, `ADD R0>>63, R0, R1`, from `x = -7`, after which the
+machine's `X1 = -6`).
 Each decides its inputs by compiled evaluation (`native_decide`, pinned in
 `scripts/axioms-allowlist.txt`).
 

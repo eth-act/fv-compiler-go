@@ -678,6 +678,17 @@ variable an entry) accepts a function, they are `g34_value`'s, `g34_term`'s, `g3
 table keeps `R2`'s and `R3`'s entries across it, which gives the whole `X2 = 0x2a`). Coverage on
 quick-v10 (`lake exe gen-check`): 5,838 of 9,297 functions (62.79%), 152,883 values.
 
+## Phase 3: genssa, slice G36 (I7, #553)
+
+`GoFV.Proof.Gen.g36_value`, `GoFV.Proof.Gen.g36_term`, `GoFV.Proof.Gen.g36_nilPanic`,
+`GoFV.Proof.Gen.g36_boundsPanic` (`GoFV/Proof/Gen/G36.lean`): when slice G36 (`checkG36`: G35 with
+the register shifts `SLL`, `SRL`, `SRA`, the shifted adds and subtracts `ADDshiftRL`, `ADDshiftRA`,
+`SUBshiftLL`, `SUBshiftRL`, `SUBshiftRA`, and `TST` of two 64-bit arguments) accepts a function,
+they are `g35_value`'s, `g35_term`'s, `g35_nilPanic`'s and `g35_boundsPanic`'s statements under the
+same premises. No new trusted premise. Witness: `genG36_witness` (`ADD R0>>63, R0, R1` in
+`encoding/hex.DecodedLen`, which G35 rejects: from `x = -7`, the machine's `X1 = -6`). Coverage on
+quick-v10 (`lake exe gen-check`): 5,967 of 9,297 functions (64.18%), 159,085 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g34_obj_value`, `g34_obj_term`, `g34_obj_nilPanic`, `g34_obj_boundsPanic`
