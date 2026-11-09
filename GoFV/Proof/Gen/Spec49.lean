@@ -212,6 +212,43 @@ theorem vkind49_initMem {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (hop 
         | stp h' => rw [hop] at h'; cases h'
     · cases h
 
+/-- On a value that is no access of a frame variable in a `Blk.local` block (`frameVar49?`), for
+instance one with no aux, `vkind49` is `vkind51`. -/
+theorem vkind49_eq51 {lc : LocCtx} {g : G2In} {v : Value} (h : frameVar49? lc g v = none) :
+    vkind49 lc g v = vkind51 lc g v := by
+  unfold vkind49
+  cases vkind51 lc g v with
+  | ok _ => rfl
+  | error e => simp only [h]
+
+/-- A value with no aux is no access of a frame variable. -/
+theorem frameVar49?_none {lc : LocCtx} {g : G2In} {v : Value} (h : v.aux = none) :
+    frameVar49? lc g v = none := by
+  unfold frameVar49?; rw [h]
+
+/-- On an op that is none of G49's accesses (`MOVDaddr`, a load or store of G3, `LDP`, `STP`),
+what `vkind49` accepts `vkind51` accepts. -/
+theorem vkind49_ok51 {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2}
+    (h1 : v.op ≠ .ARM64MOVDaddr) (h2 : loadOp? v.op = none) (h3 : storeOp? v.op = none)
+    (h4 : v.op ≠ .ARM64LDP) (h5 : v.op ≠ .ARM64STP) (h : vkind49 lc g v = .ok kd) :
+    vkind51 lc g v = .ok kd := by
+  unfold vkind49 at h
+  cases h51 : vkind51 lc g v with
+  | ok _ => rw [h51] at h; exact h
+  | error e =>
+    rw [h51] at h
+    simp only at h
+    split at h
+    · split at h
+      · cases h
+      · cases vkindVar49_spec h with
+        | addr h' => exact absurd h' h1
+        | load h' => rw [h2] at h'; cases h'
+        | store h' => rw [h3] at h'; cases h'
+        | ldp h' => exact absurd h' h4
+        | stp h' => exact absurd h' h5
+    · cases h
+
 /-- On a function with no arm64 op, G49's check is G33. -/
 theorem checkG33_of_49L {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}
     {r : Except String (PcTab × KTab)} (hl : lc.ctx.f.lowered = false)
