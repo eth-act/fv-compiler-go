@@ -264,7 +264,9 @@ def vkind (lc : LocCtx) (v : Value) : Except String VKind := do
 
 /-! ## Blocks -/
 
-/-- The conditional branch of a flags block kind and of its inverse. -/
+/-- The conditional branch of a flags block kind and of its inverse (`blockJump`, `ssa.go`): the
+integer kinds, the float kinds `FLT`/`FLE`/`FGT`/`FGE` (`MI`, `LS`, `GT`, `GE` after `FCMP`) and
+`LTnoov`/`GEnoov`. -/
 def condBr : BlockKind → Option (As × As)
   | .ARM64EQ => some (.BEQ, .BNE)
   | .ARM64NE => some (.BNE, .BEQ)
@@ -276,6 +278,12 @@ def condBr : BlockKind → Option (As × As)
   | .ARM64UGE => some (.BHS, .BLO)
   | .ARM64ULE => some (.BLS, .BHI)
   | .ARM64UGT => some (.BHI, .BLS)
+  | .ARM64FLT => some (.BMI, .BPL)
+  | .ARM64FGE => some (.BGE, .BLT)
+  | .ARM64FLE => some (.BLS, .BHI)
+  | .ARM64FGT => some (.BGT, .BLE)
+  | .ARM64LTnoov => some (.BMI, .BPL)
+  | .ARM64GEnoov => some (.BPL, .BMI)
   | _ => none
 
 /-- The compare-and-branch of a register test block kind and of its inverse. -/

@@ -300,7 +300,7 @@ theorem progStep_store {kn ks : Nat} {off : Int} (hkn : kn < 32) (hks : ks < 32)
 def condAs : As → Option GoFV.SSA.Sem.Cond
   | .BEQ => some .eq | .BNE => some .ne | .BLT => some .lt | .BGE => some .ge
   | .BLE => some .le | .BGT => some .gt | .BLO => some .lo | .BHS => some .hs
-  | .BLS => some .ls | .BHI => some .hi
+  | .BLS => some .ls | .BHI => some .hi | .BMI => some .mi | .BPL => some .pl
   | _ => none
 
 theorem ctx_target {c : ProgCtx} {t : Nat} {pt : BitVec 64} (h : c.L.addr t = some pt) :

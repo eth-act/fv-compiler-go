@@ -810,6 +810,21 @@ at the float's shape. Witness: `genG45_witness` (`sort.Float64Slice.Swap`, `FMOV
 F0`, which G44 rejects). Coverage on quick-v10 (`lake exe gen-check`): 6,657 of 9,297 functions
 (71.60%), 196,234 values.
 
+## Phase 3: genssa, slice G46, float arithmetic, conversions and compares (I7, #553)
+
+`GoFV.Proof.Gen.g46_value`, `g46_initMem`, `g46_term`, `g46_nilPanic`, `g46_boundsPanic`
+(`GoFV/Proof/Gen/G46.lean`, value lemmas `GoFV/Proof/Gen/FArith.lean`): when slice G46
+(`checkG46`: G45 with `FADD`/`FSUB`/`FMUL`/`FDIV`, `FNEG`/`FABS`/`FSQRT`, `FCVTSD`/`FCVTDS`,
+`SCVTF`/`UCVTF`, `FCVTZS`/`FCVTZU`, `FCMP` and `FCMP $(0.0)`, the fused `FMADD`/`FNMSUB`; the
+`FLT`/`FLE`/`FGT`/`FGE`/`LTnoov`/`GEnoov` blocks through `condBr`) accepts a function, they are
+G45's statements, `g46_value` under `G46Pre := G45Pre ∧ FArithPre`. `FArithPre` is a run premise
+(no trusted hook) that excludes the NaN operands on which Phase 1's result is not the machine's:
+an `FADD`/`FMUL` of two NaNs of one kind that Phase 1's `FOps.ordered` swaps (`FNaNSwap`), an
+`FMADD`/`FNMSUB` whose multiplicands are NaNs of one kind (`FSameNaN`). `FMSUB`/`FNMADD` are not
+accepted: Phase 1 negates the other multiplicand than the machine (a NaN's sign differs). Witness:
+`genG46_witness` (`sq.area`, `FMULD F0, F0, F0` of `1.5`, which G45 rejects). Coverage on
+quick-v10 (`lake exe gen-check`): 6,775 of 9,297 functions (72.87%), 202,352 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g44_obj_value`, `g44_obj_term`, `g44_obj_nilPanic`, `g44_obj_boundsPanic`

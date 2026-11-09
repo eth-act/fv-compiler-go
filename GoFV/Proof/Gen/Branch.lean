@@ -55,6 +55,8 @@ theorem progStep_bcond {c : Cond} {tid : Nat} (hn : L.nextAddr p.id = some next)
   next has => bcond_case As.BHS "BHS"
   next has => bcond_case As.BLS "BLS"
   next has => bcond_case As.BHI "BHI"
+  next has => bcond_case As.BMI "BMI"
+  next has => bcond_case As.BPL "BPL"
   next => cases hc
 
 /-- `JMP target`. -/
