@@ -469,7 +469,7 @@ theorem g3_ext (F : Facts lc sym text az ez psA.toList ret E)
     (h8 : 8 ≤ c) (hvs : OneAt2 psA j (.ofShape { as, from_ := regA rn, to := regA rd }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have hnp := extOp?_ne_phi he
@@ -486,9 +486,9 @@ theorem g3_ext (F : Facts lc sym text az ez psA.toList ret E)
   obtain rfl := mapM_res_one hargv hx
   rw [write_reg hvh hcv]
   have ht := cls_ne_bool hcv h8
-  refine (op_reg2 (H := H) F hm hinv hj hj' hvs hd hkd hor (valRel_ext hA hxv hxf hcv ht he hw)
+  refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor (valRel_ext hA hxv hxf hcv ht he hw)
     (fits_retypeL hcv _) (knext_set hK hnp hvh hcv) (fun k0 hk0 hok => ?_)).imp
-    fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, .inr ⟨r, kd, _, hvh, hor, h4⟩⟩
   obtain ⟨has, hf, -, ht', -⟩ := Shape.ok_eq hok
   rw [progStep_ext hkn hkd (nextAddr_pcAt F.nodup hk0) (by rw [has]; exact hmov) hf ht', wX_pc]
     <;> rfl
@@ -508,7 +508,7 @@ theorem g3_aluK (F : Facts lc sym text az ez psA.toList ret E)
       (.ofShape { as, from_ := constA v.auxInt.toInt, reg := rn, to := regA rd }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have hnp : v.op ≠ .Phi := by rcases hop with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> nofun
@@ -528,25 +528,25 @@ theorem g3_aluK (F : Facts lc sym text az ez psA.toList ret E)
   have hKL := knext_set hK hnp hvh hcv
   rcases hop with ⟨hop, rfl⟩ | ⟨hop, rfl⟩ | ⟨hop, rfl⟩
   · rw [hop]
-    refine (op_reg2 (H := H) F hm hinv hj hj' hvs hd hkd hor (valRel_andK hA hxv hxf hcv hca ht)
+    refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor (valRel_andK hA hxv hxf hcv hca ht)
       (fits_retypeL hcv _) hKL (fun k0 hk0 hok => ?_)).imp
-      fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
+      fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, .inr ⟨r, kd, _, hvh, hor, h4⟩⟩
     obtain ⟨has, hf, hr, ht', -⟩ := Shape.ok_eq hok
     rw [progStep_andK hkn hkd (nextAddr_pcAt F.nodup hk0) has hf hr ht', wX_pc] <;> rfl
   · have hk0 := (hk (by rw [hop]; nofun)).1
     rw [hop]
-    refine (op_reg2 (H := H) F hm hinv hj hj' hvs hd hkd hor (valRel_lslK hA hxv hxf hcv hca ht)
+    refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor (valRel_lslK hA hxv hxf hcv hca ht)
       (fits_retypeL hcv _) hKL (fun k0 hk0' hok => ?_)).imp
-      fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
+      fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, .inr ⟨r, kd, _, hvh, hor, h4⟩⟩
     obtain ⟨has, hf, hr, ht', -⟩ := Shape.ok_eq hok
     rw [progStep_lslK hkn hkd hk0 (nextAddr_pcAt F.nodup hk0') has hf hr ht', wX_pc] <;> rfl
   · have hk0 := (hk (by rw [hop]; nofun)).1
     have h64 := hsr hop
     subst h64
     rw [hop]
-    refine (op_reg2 (H := H) F hm hinv hj hj' hvs hd hkd hor (valRel_lsrK hA hxv hxf hcv ht)
+    refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor (valRel_lsrK hA hxv hxf hcv ht)
       (fits_retypeL hcv _) hKL (fun k0 hk0' hok => ?_)).imp
-      fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
+      fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, .inr ⟨r, kd, _, hvh, hor, h4⟩⟩
     obtain ⟨has, hf, hr, ht', -⟩ := Shape.ok_eq hok
     rw [progStep_lsrK hkn hkd hk0 (nextAddr_pcAt F.nodup hk0') has hf hr ht', wX_pc] <;> rfl
 
@@ -566,7 +566,7 @@ theorem g3_ubfx (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j pat j') (htemp : (lc.temps[v.id]?).join = none)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have hnp : v.op ≠ .Phi := by rw [hop]; nofun
@@ -582,9 +582,10 @@ theorem g3_ubfx (F : Facts lc sym text az ez psA.toList ret E)
   obtain rfl := mapM_res_one hargv hx
   rw [write_reg hvh hcv, hop]
   have ht := cls_ne_bool hcv h8
-  refine (op_reg2 (H := H) F hm hinv hj hj' hvs hd hkd hor (valRel_ubfx hA hxv hxf hk0 hlw hcv ht)
+  refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor
+    (valRel_ubfx hA hxv hxf hk0 hlw hcv ht)
     (fits_retypeL hcv _) (knext_set hK hnp hvh hcv) (fun k0 hk0' hok => ?_)).imp
-    fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, .inr ⟨r, kd, _, hvh, hor, h4⟩⟩
   obtain ⟨has, hf, hr, ht', hsc, h2, xr, hrest⟩ := hpat _ hok
   rw [progStep_ubfx hkn hkd (by omega) (by omega) (by omega) (nextAddr_pcAt F.nodup hk0') has hf hr
     ht' hrest, wX_pc] <;> rfl
@@ -1008,17 +1009,18 @@ theorem vk3_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat →
         hlt' hcl hhc hrs hvs htemp hs
       exact same m' h
     | addr hop hsz1 ha0 _ hx hsym hro hpat =>
-      obtain ⟨m', h⟩ := g2_addr (H := H) F (fun y name abi h => hglob y name abi h) hm hinv.core
-        hinv.slots (hK (by rw [hop]; nofun)) hj hj' hop hsz1 ha0 hx hsym hro hpat hvs htemp hs
-      exact same m' h
+      obtain ⟨m', h1, h2, h3, h4, -⟩ := g2_addr (H := H) F (fun y name abi h => hglob y name abi h)
+        hm hinv.core hinv.slots (hK (by rw [hop]; nofun)) hj hj' hop hsz1 ha0 hx hsym hro hpat hvs
+        htemp hs
+      exact same m' ⟨h1, h2, h3, h4⟩
     | spill hop hh hso hsz1 hcv hao hpat =>
-      obtain ⟨m', h⟩ := g2_spill (H := H) F hF hlcE hcf hslot hextra hm hinv.core hinv.slots hR
-        (hK (by rw [hop]; nofun)) hj hj' hop hh hso hsz1 hcv hao hpat hvs htemp hs
-      exact same m' h
+      obtain ⟨m', h1, h2, h3, h4, -⟩ := g2_spill (H := H) F hF hlcE hcf hslot hextra hm hinv.core
+        hinv.slots hR (hK (by rw [hop]; nofun)) hj hj' hop hh hso hsz1 hcv hao hpat hvs htemp hs
+      exact same m' ⟨h1, h2, h3, h4⟩
     | reload hop hsz1 ha0 hah hso hca hro hpat =>
-      obtain ⟨m', h⟩ := g2_reload (H := H) F hF hlcE hcf hslot hm hinv.core hinv.slots
-        (hK (by rw [hop]; nofun)) hj hj' hop hsz1 ha0 hah hso hca hro hpat hvs htemp hs
-      exact same m' h
+      obtain ⟨m', h1, h2, h3, h4, -⟩ := g2_reload (H := H) F hF hlcE hcf hslot hm hinv.core
+        hinv.slots (hK (by rw [hop]; nofun)) hj hj' hop hsz1 ha0 hah hso hca hro hpat hvs htemp hs
+      exact same m' ⟨h1, h2, h3, h4⟩
   | load hop _ hsz2 hacc hma hro hcw hpat =>
     have hnc : v.op ≠ .ARM64CALLstatic := by
       intro h; rw [h] at hop; simp [loadOp?, narrowLoad?] at hop
@@ -1038,19 +1040,19 @@ theorem vk3_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat →
   | ext he hsz1 hao hro hw h8 =>
     have hnc : v.op ≠ .ARM64CALLstatic := by
       intro h; rw [h] at he; simp [extOp?] at he
-    obtain ⟨m', h⟩ := g3_ext (H := H) F hm hinv.core hinv.slots hR (hK hnc) hj hj' he hsz1 hao hro
-      hw h8 hvs htemp hs
-    exact same m' h
+    obtain ⟨m', h1, h2, h3, h4, -⟩ := g3_ext (H := H) F hm hinv.core hinv.slots hR (hK hnc) hj hj'
+      he hsz1 hao hro hw h8 hvs htemp hs
+    exact same m' ⟨h1, h2, h3, h4⟩
   | aluK hop hsz1 hao hro h8 hca hsr hkk =>
     have hnc : v.op ≠ .ARM64CALLstatic := by
       rcases hop with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> nofun
-    obtain ⟨m', h⟩ := g3_aluK (H := H) F hm hinv.core hinv.slots hR (hK hnc) hj hj' hop hsz1 hao
-      hro h8 hca hsr hkk hvs htemp hs
-    exact same m' h
+    obtain ⟨m', h1, h2, h3, h4, -⟩ := g3_aluK (H := H) F hm hinv.core hinv.slots hR (hK hnc) hj
+      hj' hop hsz1 hao hro h8 hca hsr hkk hvs htemp hs
+    exact same m' ⟨h1, h2, h3, h4⟩
   | ubfx hop hsz1 hk0 hk16 hao hro h8 hw0 hlw hpat =>
-    obtain ⟨m', h⟩ := g3_ubfx (H := H) F hm hinv.core hinv.slots hR (hK (by rw [hop]; nofun)) hj
-      hj' hop hsz1 hk0 hk16 hao hro h8 hw0 hlw hpat hvs htemp hs
-    exact same m' h
+    obtain ⟨m', h1, h2, h3, h4, -⟩ := g3_ubfx (H := H) F hm hinv.core hinv.slots hR
+      (hK (by rw [hop]; nofun)) hj hj' hop hsz1 hk0 hk16 hao hro h8 hw0 hlw hpat hvs htemp hs
+    exact same m' ⟨h1, h2, h3, h4⟩
   | cmpw hop hsz2 hfl hhn hao hbo hca hcb =>
     obtain ⟨m', h1, h2, h3, h4, -⟩ := g3_cmpw (H := H) F hm hinv.core hinv.slots hR
       (hK (by rw [hop]; nofun)) hj hj' hop hsz2 hfl hhn hao hbo hca hcb hvs htemp hs

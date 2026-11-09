@@ -93,7 +93,7 @@ theorem g16_addSh (F : Facts lc sym text az ez psA.toList ret E)
       { as := .ADD, from_ := shiftLLA rm v.auxInt.toInt.toNat, reg := rn, to := regA rd }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have hnp : v.op ≠ .Phi := by rw [hop]; nofun
@@ -118,9 +118,9 @@ theorem g16_addSh (F : Facts lc sym text az ez psA.toList ret E)
   have hlo := lo_addSh hA hxv hyv hxf hyf (cls_le hcv) hca hcb ht (k := v.auxInt) (t := lc.ty v.id)
     (by rw [hamt]; exact hk)
   rw [hamt] at hlo
-  refine (op_reg2 (H := H) F hm hinv hj hj' hvs hd hkd hor (valRel_retypeL_lo hA hcv ht hlo)
+  refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor (valRel_retypeL_lo hA hcv ht hlo)
     (fits_retypeL hcv _) (knext_set hK hnp hvh hcv) (fun k0 hk0' hok => ?_)).imp
-    fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, .inr ⟨r, kd, _, hvh, hor, h4⟩⟩
   obtain ⟨has, hf, hr, ht', -⟩ := Shape.ok_eq hok
   rw [progStep_addShiftLL hkn hkm hkd hk (nextAddr_pcAt F.nodup hk0') has hf hr ht', wX_pc]
   rfl
@@ -156,7 +156,7 @@ theorem vk16_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
       hicall hwb hclo hs
   | addSh hop hsz hk0 hk64 hao hbo hro h8 hca hcb =>
     obtain ⟨r, hvh, -, -, -⟩ := resObj_spec hro
-    obtain ⟨m', h1, h2, h3, h4⟩ := g16_addSh (H := H) F hm hinv.core hinv.slots
+    obtain ⟨m', h1, h2, h3, h4, -⟩ := g16_addSh (H := H) F hm hinv.core hinv.slots
       (kread_of_reads hreads) (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz hk0 hk64
       hao hbo hro h8 hca hcb hvs htemp hs
     exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩⟩

@@ -353,7 +353,7 @@ theorem g25_csel (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j ⟨cselOK cc rn rm rd, "CSEL"⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have hnp : v.op ≠ .Phi := by rw [hop]; nofun
@@ -378,7 +378,7 @@ theorem g25_csel (F : Facts lc sym text az ez psA.toList ret E)
   refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor
     (valRel_csel hA hcd hfr hxv hyv hxf hyf hcv h8 hca hcb) (fits_retypeL hcv _)
     (knext_set hK hnp hvh hcv) (fun k hk hok => ?_)).imp
-    fun m' ⟨h1, h2, h3, _⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, .inr ⟨r, kd, _, hvh, hor, h4⟩⟩
   obtain ⟨has, hf, hr, ht, -, -, xr, hrest⟩ := cselOK_spec hok
   rw [progStep_csel hkn hkm hkd (nextAddr_pcAt F.nodup hk) has hf hrange hr hrest ht, wX_pc]
   simp only [MState.holds, hcond]
@@ -397,7 +397,7 @@ theorem g25_csel0 (F : Facts lc sym text az ez psA.toList ret E)
     (hca : c ≤ ca) (hvs : OneAt2 psA j ⟨cselOK cc rn (REG_R0 + 31) rd, "CSEL"⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have hnp : v.op ≠ .Phi := by rw [hop]; nofun
@@ -418,7 +418,7 @@ theorem g25_csel0 (F : Facts lc sym text az ez psA.toList ret E)
   refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor
     (valRel_csel0 hA hcd hfr hxv hxf hcv h8 hca) (fits_retypeL hcv _)
     (knext_set hK hnp hvh hcv) (fun k hk hok => ?_)).imp
-    fun m' ⟨h1, h2, h3, _⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, .inr ⟨r, kd, _, hvh, hor, h4⟩⟩
   obtain ⟨has, hf, hr, ht, -, -, xr, hrest⟩ := cselOK_spec hok
   rw [progStep_csel (km := 31) hkn (by omega) hkd (nextAddr_pcAt F.nodup hk) has hf hrange hr
     (by rw [hrest]; rfl) ht, wX_pc, rX_31]
@@ -437,7 +437,7 @@ theorem g25_tst (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j (.ofShape { as := .TST, from_ := constA v.auxInt.toInt, reg := rn }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have hnp : v.op ≠ .Phi := by rw [hop]; nofun
@@ -453,7 +453,7 @@ theorem g25_tst (F : Facts lc sym text az ez psA.toList ret E)
     (knext_same hK (Or.inr fun _ _ => by rw [hhn]; nofun)) (fun k hk hok => by
       obtain ⟨has, hf, hr, -, -⟩ := Shape.ok_eq hok
       rw [progStep_tst hkn (nextAddr_pcAt F.nodup hk) has hf hr] <;> rfl)).imp
-    fun m' ⟨h1, h2, h3, _⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, _, h5⟩ => ⟨h1, h2, h3, hsi, .inl h5⟩
 
 /-- `TSTW $k, Rn`, the bits it reads of the argument known (`tstOK`). -/
 theorem g25_tstw (F : Facts lc sym text az ez psA.toList ret E)
@@ -467,7 +467,7 @@ theorem g25_tstw (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j (.ofShape { as := .TSTW, from_ := constA v.auxInt.toInt, reg := rn }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have hnp : v.op ≠ .Phi := by rw [hop]; nofun
@@ -483,7 +483,7 @@ theorem g25_tstw (F : Facts lc sym text az ez psA.toList ret E)
     (knext_same hK (Or.inr fun _ _ => by rw [hhn]; nofun)) (fun k hk hok => by
       obtain ⟨has, hf, hr, -, -⟩ := Shape.ok_eq hok
       rw [progStep_tstw hkn (nextAddr_pcAt F.nodup hk) has hf hr] <;> rfl)).imp
-    fun m' ⟨h1, h2, h3, _⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, _, h5⟩ => ⟨h1, h2, h3, hsi, .inl h5⟩
 
 end Cases
 
@@ -522,7 +522,7 @@ theorem vk25_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     have hue : uEntry lc v = none := by simp only [uEntry, narrowLd?_g25 (Or.inl hop)]
     rw [hue]
     obtain ⟨r2, hvh, -, -, -⟩ := resObj_spec hro
-    obtain ⟨m', h1, h2, h3, h4⟩ := g25_csel (H := H) F hm hinv.core hinv.slots hR
+    obtain ⟨m', h1, h2, h3, h4, -⟩ := g25_csel (H := H) F hm hinv.core hinv.slots hR
       (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz hfa hfl hhn ho hco hcc hao hbo
       hro h8 hca hcb hvs htemp hs
     exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩, trivial⟩
@@ -530,7 +530,7 @@ theorem vk25_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     have hue : uEntry lc v = none := by simp only [uEntry, narrowLd?_g25 (Or.inr (Or.inl hop))]
     rw [hue]
     obtain ⟨r2, hvh, -, -, -⟩ := resObj_spec hro
-    obtain ⟨m', h1, h2, h3, h4⟩ := g25_csel0 (H := H) F hm hinv.core hinv.slots hR
+    obtain ⟨m', h1, h2, h3, h4, -⟩ := g25_csel0 (H := H) F hm hinv.core hinv.slots hR
       (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz hfa hfl hhn ho hco hcc hao hro
       h8 hca hvs htemp hs
     exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩, trivial⟩
@@ -538,14 +538,14 @@ theorem vk25_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     have hue : uEntry lc v = none := by
       simp only [uEntry, narrowLd?_g25 (Or.inr (Or.inr (Or.inl hop)))]
     rw [hue]
-    obtain ⟨m', h1, h2, h3, h4⟩ := g25_tst (H := H) F hm hinv.core hinv.slots hR
+    obtain ⟨m', h1, h2, h3, h4, -⟩ := g25_tst (H := H) F hm hinv.core hinv.slots hR
       (knext_kStep fun _ => (hs_none hhn).noRegs) hj hj' hop hsz1 hfl hhn hao hok hvs htemp hs
     exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩, trivial⟩
   | tstw hop hsz1 hfl hhn hao hok =>
     have hue : uEntry lc v = none := by
       simp only [uEntry, narrowLd?_g25 (Or.inr (Or.inr (Or.inr hop)))]
     rw [hue]
-    obtain ⟨m', h1, h2, h3, h4⟩ := g25_tstw (H := H) F hm hinv.core hinv.slots hR
+    obtain ⟨m', h1, h2, h3, h4, -⟩ := g25_tstw (H := H) F hm hinv.core hinv.slots hR
       (knext_kStep fun _ => (hs_none hhn).noRegs) hj hj' hop hsz1 hfl hhn hao hok hvs htemp hs
     exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩, trivial⟩
 

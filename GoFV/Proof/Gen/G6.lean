@@ -164,7 +164,7 @@ theorem g6_addr (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j ⟨plain .MOVD (addrA · off) (· == regA rd), "MOVD $var"⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   obtain ⟨r, hvh, hd, hor, hcv⟩ := resObj_spec hro
@@ -182,10 +182,11 @@ theorem g6_addr (F : Facts lc sym text az ez psA.toList ret E)
     unfold PtrOps.ptrRes; split
     · exact fits_word _
     · trivial
-  refine (op_reg2 (H := H) F hm hinv hj hj' hvs hd hkd hor
+  refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor
     (valRel_retypeL hA hcv hfit hrel) (fits_retypeL hcv _)
     (knext_set hK (by rw [hop]; nofun) hvh hcv)
-    (fun k0 hk0 hok => ?_)).imp fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
+    (fun k0 hk0 hok => ?_)).imp fun m' ⟨h1, h2, h3, h4⟩ =>
+      ⟨h1, h2, h3, hsi, .inr ⟨r, kd, _, hvh, hor, h4⟩⟩
   obtain ⟨has, hf1, -, ht, -⟩ := plain_spec hok
   simp only [addrA, Bool.and_eq_true, beq_iff_eq] at hf1
   simp only [beq_iff_eq] at ht
@@ -526,10 +527,10 @@ theorem vk6_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat →
     | addr hop hsz1 hro =>
       obtain ⟨a0, ha0⟩ : ∃ a0, v.args[0]? = some a0 :=
         ⟨v.args[0]'(by omega), Array.getElem?_eq_getElem (by omega)⟩
-      obtain ⟨m', h⟩ := g6_addr (H := H) F hm hinv.core hinv.slots
+      obtain ⟨m', h1, h2, h3, h4, -⟩ := g6_addr (H := H) F hm hinv.core hinv.slots
         (knext_kStep fun _ => (hs_res hro).noRegs) hj hj' hx hvar hf hι hop hsz1 ha0 hro hvs
         htemp hs
-      exact same m' h
+      exact same m' ⟨h1, h2, h3, h4⟩
     | load hop hsz2 hma hro hc =>
       obtain ⟨m', h⟩ := g6_load (H := H) F hm hinv.core hinv.slots
         (knext_kStep fun _ => (hs_res hro).noRegs) hpre.1 hj hj' hx hvar hf hι hop hsz2 hma hro

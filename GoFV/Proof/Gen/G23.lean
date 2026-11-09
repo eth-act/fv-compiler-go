@@ -136,7 +136,7 @@ theorem g23_cset (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j ⟨plain .CSET (· == specA cc) (· == regA rd), "CSET"⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ XW lc v m m' := by
   have hl := F.lowered
   obtain ⟨c, hcs⟩ := Option.isSome_iff_exists.1 hc
   have hnp : v.op ≠ .Phi := by intro h; rw [h] at hcs; cases hcs
@@ -150,7 +150,7 @@ theorem g23_cset (F : Facts lc sym text az ez psA.toList ret E)
   obtain ⟨hrange, hcond⟩ := cset_cond hcs hcc
   refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor (valRel_cset hcs hfr)
     (fits_retypeL (c := 1) rfl _) (knext_set hK hnp hvh hcv) (fun k hk hok => ?_)).imp
-    fun m' ⟨h1, h2, h3, _⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, .inr ⟨r, kd, _, hvh, hor, h4⟩⟩
   obtain ⟨has, hf, -, ht, -⟩ := plain_spec hok
   simp only [beq_iff_eq] at hf ht
   rw [progStep_cset hkd (nextAddr_pcAt F.nodup hk) has hf hrange ht, wX_pc]
@@ -192,7 +192,7 @@ theorem vk23_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     have hue : uEntry lc v = none := by simp only [uEntry, narrowLd?_cset hc]
     rw [hue]
     obtain ⟨r2, hvh, -, -, -⟩ := resObj_spec hro
-    obtain ⟨m', h1, h2, h3, h4⟩ := g23_cset (H := H) F hm hinv.core hinv.slots
+    obtain ⟨m', h1, h2, h3, h4, -⟩ := g23_cset (H := H) F hm hinv.core hinv.slots
       (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hc hcc hsz ha hfl hhn hro hvs htemp hs
     exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩, trivial⟩
 
