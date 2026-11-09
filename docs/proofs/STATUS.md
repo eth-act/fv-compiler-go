@@ -863,6 +863,22 @@ with a boolean argument) accepts a function, they are G50's statements, `g51_val
 `CmpPre`). Witness: `genG51_witness` (`math/bits.RotateLeft64`, `ROR R1, R0, R0`, which G50
 rejects). Coverage on quick-v10 (`lake exe gen-check`): 6,982 of 9,297 functions (75.09%),
 212,374 values.
+## Phase 3: genssa, slice G49, frame variables in `Blk.local` blocks (I7, #553)
+
+`GoFV.Proof.Gen.g49_value`, `g49_initMem`, `g49_term`, `g49_nilPanic`, `g49_boundsPanic`
+(`GoFV/Proof/Gen/G49.lean`): when slice G49 (`checkG49`: G50 with G6's accesses, `MOVDaddr`, the
+loads and stores of G3, `LDP` and `STP`, of a frame variable whose block is `Blk.local`: a
+parameter or result at its `NAME_PARAM` operand, or a `PAUTO` whose address the function converts
+to an integer at its `NAME_AUTO` operand; frame check `checkVars49`: windows inside the locals or
+the argument area, disjoint within an operand class and from its home slots) accepts a function,
+they are G50's statements, `g49_value` under `G50Pre`, all under the activation `G49Env :=
+G28Env ∧ VarsAt49`. New activation premise `VarsAt49`: the injection puts the `local` block of
+each accessed such variable at its operand, `E.ι (.local act x) = some (E.sp + frameOff L nc
+o)`. Not yet composed into `verified_mach`: at entry, the `local` block of a register parameter
+whose address is taken is not related by `MemInj` until genssa's entry store
+(`docs/plans/proofs3.md` §8 item 8). Witness: `genG49_witness` (`runtime.getm`'s ABI0 wrapper,
+`MOVD R0, ~r0+0(FP)`, which G50 rejects; at `Addrs.fixed`). Coverage on quick-v10 (`lake exe
+gen-check`): 7,071 of 9,297 functions (76.05%), 214,533 values.
 
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 

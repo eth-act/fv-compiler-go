@@ -1,0 +1,1877 @@
+import GoFV.Proof.Gen.G49
+import GoFV.Proof.Witness.GenG50
+
+open scoped GoFV.SSA.Sem.Fixed
+
+/-!
+# Non-vacuity witness: slice G49 of the genssa validator on `runtime.getm`'s ABI0 wrapper
+
+`std/std/runtime/getm,0.ssa` and `std/std/runtime/getm,0.prog` of the corpus
+`gofv-corpus/2aae1000ea1d/quick-v10/plain`, embedded verbatim (`fSsa`, `fProg`): the ABI0 wrapper
+of `func getm() uintptr`, which calls the ABIInternal `getm` and stores its result from `R0` into
+its stack result `~r0` at the `NAME_PARAM` operand (`MOVD R0, ~r0+0(FP)`). `genG49_witness`.
+-/
+
+namespace GoFV.Proof.Witness.GenG49
+
+open GoFV.SSA GoFV.SSA.Sem GoFV.Gen.Check GoFV.Arm64 GoFV.Proof.Gen
+
+/-- `std/std/runtime/getm,0.ssa` (quick-v10). -/
+def fSsa : String := r#"gofv-ssa 5.1
+pkg "runtime"
+func "getm" 0 1 0
+config arch arm64
+config goos linux
+config ptrsize 8
+config regsize 8
+config bigendian 0
+config unalignedok 1
+config havecondselect 1
+config havebswap64 1
+config havebswap32 1
+config havebswap16 1
+config hasgreg 1
+config softfloat 0
+config race 0
+config optimize 1
+config fixedframesize 8
+config archalign 1
+config flagshared 0
+config flagdynlink 0
+config usewb 1
+config debugnil 0
+config checkenabled 0
+config localpkg "runtime"
+config exp.cgocheck2 0
+config exp.preemptibleloops 0
+config exp.simd 0
+config abi0 0:0:8
+config abi1 16:16:8
+config abiself 0
+config abidefault 1
+config syslook.writeBarrier "runtime.writeBarrier"
+config syslook.wbZero "runtime.wbZero"
+config syslook.wbMove "runtime.wbMove"
+config syslook.cgoCheckPtrWrite "runtime.cgoCheckPtrWrite"
+config syslook.cgoCheckMemmove "runtime.cgoCheckMemmove"
+config syslook.goschedguarded "runtime.goschedguarded"
+config zerobase "runtime.zerobase"
+config rttype.Size_ 0:UINTPTR:8
+config rttype.PtrBytes 8:UINTPTR:8
+config rttype.Hash 16:UINT32:4
+config rttype.Kind_ 23:UINT8:1
+config rttype.GCData 32:PTR:8
+config rttype.PtrType.Elem 48:PTR:8
+config registers R0:8192,R1:8193,R2:8194,R3:8195,R4:8196,R5:8197,R6:8198,R7:8199,R8:8200,R9:8201,R10:8202,R11:8203,R12:8204,R13:8205,R14:8206,R15:8207,R16:8208,R17:8209,R19:8211,R20:8212,R21:8213,R22:8214,R23:8215,R24:8216,R25:8217,R26:8218,g:8220,R29:8221,R30:8222,ZERO:8223,SP:8383,F0:8224,F1:8225,F2:8226,F3:8227,F4:8228,F5:8229,F6:8230,F7:8231,F8:8232,F9:8233,F10:8234,F11:8235,F12:8236,F13:8237,F14:8238,F15:8239,F16:8240,F17:8241,F18:8242,F19:8243,F20:8244,F21:8245,F22:8246,F23:8247,F24:8248,F25:8249,F26:8250,F27:8251,F28:8252,F29:8253,F30:8254,F31:8255,SB:0
+config gpregmask 13ffffff
+config fpregmask 7fffffff80000000
+config fp32regmask 0
+config fp64regmask 0
+config simdregmask 7fffffff80000000
+config specialregmask 0
+config intparamregs 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15
+config floatparamregs 31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46
+config fpreg -1
+config linkreg 28
+config framepointer 1
+config clobberdeadreg 0
+config flagN 0
+config fmahash 0
+pass 0 "start"
+type t2 UINTPTR 8 8 0 comparable,named "uintptr" "uintptr"
+type t1 FUNC 8 8 8 hasptr,direct "func() uintptr" "func() uintptr" 0 0 1
+field 0 "" t2 ? 0
+aux a2 sym "runtime.getm" "runtime.getm" 0 - 0 - - - - 0
+posbase p43 "runtime/proc.go" 1 1 -1
+aux a3 name "~r0" "~r0" PPARAMOUT t2 0 1 - p43:2733:13:0:0
+aux a1 call "AuxCall{runtime.getm}" a2 0 0 1 16 0 0 0
+abiparam out 0 t2 a3 - 8
+type t3 BOOL 1 1 0 comparable,named "bool" "bool"
+type t4 INT8 1 1 0 comparable,named "int8" "int8"
+type t5 INT16 2 2 0 comparable,named "int16" "int16"
+type t6 INT32 4 4 0 comparable,named "int32" "int32"
+type t7 INT64 8 8 0 comparable,named "int64" "int64"
+type t8 UINT8 1 1 0 comparable,named "uint8" "uint8"
+type t9 UINT16 2 2 0 comparable,named "uint16" "uint16"
+type t10 UINT32 4 4 0 comparable,named "uint32" "uint32"
+type t11 UINT64 8 8 0 comparable,named "uint64" "uint64"
+type t12 INT 8 8 0 comparable,named "int" "int"
+type t13 FLOAT32 4 4 0 comparable,named "float32" "float32"
+type t14 FLOAT64 8 8 0 comparable,named "float64" "float64"
+type t15 UINT 8 8 0 comparable,named "uint" "uint"
+type t16 STRING 16 8 8 hasptr,comparable,named "string" "string"
+type t17 PTR 8 8 8 hasptr,direct,comparable "*uint8" "*uint8" t8
+type t18 PTR 8 8 8 hasptr,direct,comparable "*int32" "*int32" t6
+type t19 PTR 8 8 8 hasptr,direct,comparable "*uint32" "*uint32" t10
+type t20 PTR 8 8 8 hasptr,direct,comparable "*int" "*int" t12
+type t21 PTR 8 8 8 hasptr,direct,comparable "*uintptr" "*uintptr" t2
+type t22 PTR 8 8 8 hasptr,direct,comparable "*float32" "*float32" t13
+type t23 PTR 8 8 8 hasptr,direct,comparable "*float64" "*float64" t14
+type t24 PTR 8 8 8 hasptr,direct,comparable "**uint8" "**uint8" t17
+type t25 COMPLEX64 8 4 0 comparable,named "complex64" "complex64"
+type t26 COMPLEX128 16 8 0 comparable,named "complex128" "complex128"
+type t27 UNSAFEPTR 8 8 8 hasptr,direct,comparable,named "unsafe.Pointer" "unsafe.Pointer"
+type t28 SSA ? ? ? - "mem" ""
+type t29 SSA ? ? ? - "flags" ""
+type t30 SSA ? ? ? - "void" ""
+type t31 SSA 16 8 ? - "int128" ""
+type t32 RESULTS ? ? ? - "mem" "" 1 t28
+posbase p1 "<autogenerated>" 1 1 -1
+type t33 RESULTS ? ? ? - "uintptr,mem" "" 2 t2,t28
+aux a5 sym "runtime.getm" "runtime.getm" 1 - 0 - - - - 0
+aux a4 call "AuxCall{runtime.getm}" a5 1 0 1 8 0 0 1
+abiparam out 0 t2 - 0 -1
+f b1 t1 a1 9 1
+typs Bool=t3,Int8=t4,Int16=t5,Int32=t6,Int64=t7,UInt8=t8,UInt16=t9,UInt32=t10,UInt64=t11,Int=t12,Float32=t13,Float64=t14,UInt=t15,Uintptr=t2,String=t16,BytePtr=t17,Int32Ptr=t18,UInt32Ptr=t19,IntPtr=t20,UintptrPtr=t21,Float32Ptr=t22,Float64Ptr=t23,BytePtrPtr=t24,Complex64=t25,Complex128=t26,UnsafePtr=t27,Mem=t28,Flags=t29,Void=t30,Int128=t31,ResultMem=t32
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 2 -
+v v2 SP t2 0 - p0:0:0:0:0 1 -
+v v3 SB t2 0 - p0:0:0:0:0 0 -
+v v4 LocalAddr t21 0 a3 p0:0:0:0:0 0 v2,v1
+v v5 Const64 t2 0 - p0:0:0:0:0 0 -
+v v6 StaticLECall t33 0 a4 p1:1:0:0:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:0:0 1 v6
+v v9 MakeResult t33 0 - p1:1:0:0:0 1 v8,v7
+names -
+splits -
+canon -
+consts 0=v5
+freev -
+freeb -
+dcllen 2
+end
+pass 1 "number lines"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 2 -
+v v2 SP t2 0 - p0:0:0:0:0 1 -
+v v3 SB t2 0 - p0:0:0:0:0 0 -
+v v4 LocalAddr t21 0 a3 p0:0:0:0:0 0 v2,v1
+v v5 Const64 t2 0 - p0:0:0:0:0 0 -
+v v6 StaticLECall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:0:0 1 v6
+v v9 MakeResult t33 0 - p1:1:0:0:0 1 v8,v7
+names -
+splits -
+canon -
+consts 0=v5
+freev -
+freeb -
+cache postorder b1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 2 "early phielim and copyelim"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 2 -
+v v2 SP t2 0 - p0:0:0:0:0 1 -
+v v3 SB t2 0 - p0:0:0:0:0 0 -
+v v4 LocalAddr t21 0 a3 p0:0:0:0:0 0 v2,v1
+v v5 Const64 t2 0 - p0:0:0:0:0 0 -
+v v6 StaticLECall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:0:0 1 v6
+v v9 MakeResult t33 0 - p1:1:0:0:0 1 v8,v7
+names -
+splits -
+canon -
+consts 0=v5
+freev -
+freeb -
+cache postorder b1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 3 "early deadcode"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticLECall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:0:0 1 v6
+v v9 MakeResult t33 0 - p1:1:0:0:0 1 v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5,v4,v3,v2
+freeb -
+cache postorder b1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 4 "short circuit"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticLECall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:0:0 1 v6
+v v9 MakeResult t33 0 - p1:1:0:0:0 1 v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5,v4,v3,v2
+freeb -
+cache postorder b1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 5 "decompose user"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticLECall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:0:0 1 v6
+v v9 MakeResult t33 0 - p1:1:0:0:0 1 v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5,v4,v3,v2
+freeb -
+cache postorder b1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 6 "pre-opt deadcode"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticLECall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:0:0 1 v6
+v v9 MakeResult t33 0 - p1:1:0:0:0 1 v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5,v4,v3,v2
+freeb -
+cache postorder b1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 7 "opt"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticLECall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:0:0 1 v6
+v v9 MakeResult t33 0 - p1:1:0:0:0 1 v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5,v4,v3,v2
+freeb -
+cache postorder b1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 8 "zero arg cse"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticLECall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:0:0 1 v6
+v v9 MakeResult t33 0 - p1:1:0:0:0 1 v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5,v4,v3,v2
+freeb -
+cache postorder b1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 9 "opt deadcode"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticLECall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:0:0 1 v6
+v v9 MakeResult t33 0 - p1:1:0:0:0 1 v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5,v4,v3,v2
+freeb -
+cache postorder b1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 10 "generic cse"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticLECall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:0:0 1 v6
+v v9 MakeResult t33 0 - p1:1:0:0:0 1 v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5,v4,v3,v2
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 11 "phiopt"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticLECall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:0:0 1 v6
+v v9 MakeResult t33 0 - p1:1:0:0:0 1 v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5,v4,v3,v2
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 12 "gcse deadcode"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticLECall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:0:0 1 v6
+v v9 MakeResult t33 0 - p1:1:0:0:0 1 v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5,v4,v3,v2
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 13 "nilcheckelim"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticLECall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:0:0 1 v6
+v v9 MakeResult t33 0 - p1:1:0:0:0 1 v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5,v4,v3,v2
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 14 "prove"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticLECall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:0:0 1 v6
+v v9 MakeResult t33 0 - p1:1:0:0:0 1 v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5,v4,v3,v2
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 15 "divisible"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticLECall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:0:0 1 v6
+v v9 MakeResult t33 0 - p1:1:0:0:0 1 v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5,v4,v3,v2
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 16 "divmod"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticLECall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:0:0 1 v6
+v v9 MakeResult t33 0 - p1:1:0:0:0 1 v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5,v4,v3,v2
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 17 "middle opt"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticLECall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:0:0 1 v6
+v v9 MakeResult t33 0 - p1:1:0:0:0 1 v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5,v4,v3,v2
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 18 "known bits"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticLECall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:0:0 1 v6
+v v9 MakeResult t33 0 - p1:1:0:0:0 1 v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5,v4,v3,v2
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 19 "early fuse"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticLECall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:0:0 1 v6
+v v9 MakeResult t33 0 - p1:1:0:0:0 1 v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5,v4,v3,v2
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 20 "expand calls"
+aux a6 type "uintptr" t2
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticCall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 2 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v5 SB t2 0 - p0:0:0:0:0 0 -
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v3 LocalAddr t21 0 a3 p1:1:0:0:0 1 v4,v7
+v v2 Store t28 0 a6 p1:1:0:0:0 1 v3,v8,v7
+names -
+splits -
+canon -
+consts -
+freev -
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 21 "decompose builtin"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticCall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 2 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v5 SB t2 0 - p0:0:0:0:0 0 -
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v3 LocalAddr t21 0 a3 p1:1:0:0:0 1 v4,v7
+v v2 Store t28 0 a6 p1:1:0:0:0 1 v3,v8,v7
+names -
+splits -
+canon -
+consts -
+freev -
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 22 "softfloat"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticCall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 2 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v5 SB t2 0 - p0:0:0:0:0 0 -
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v3 LocalAddr t21 0 a3 p1:1:0:0:0 1 v4,v7
+v v2 Store t28 0 a6 p1:1:0:0:0 1 v3,v8,v7
+names -
+splits -
+canon -
+consts -
+freev -
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 23 "branchelim"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticCall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 2 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v5 SB t2 0 - p0:0:0:0:0 0 -
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v3 LocalAddr t21 0 a3 p1:1:0:0:0 1 v4,v7
+v v2 Store t28 0 a6 p1:1:0:0:0 1 v3,v8,v7
+names -
+splits -
+canon -
+consts -
+freev -
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 24 "late opt"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticCall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 2 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v3 LocalAddr t21 0 a3 p1:1:0:0:0 1 v4,v7
+v v2 Store t28 0 a6 p1:1:0:0:0 1 v3,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 25 "dead auto elim"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticCall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 2 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v3 LocalAddr t21 0 a3 p1:1:0:0:0 1 v4,v7
+v v2 Store t28 0 a6 p1:1:0:0:0 1 v3,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 26 "sccp"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticCall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 2 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v3 LocalAddr t21 0 a3 p1:1:0:0:0 1 v4,v7
+v v2 Store t28 0 a6 p1:1:0:0:0 1 v3,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 27 "generic deadcode"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticCall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 2 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v3 LocalAddr t21 0 a3 p1:1:0:0:0 1 v4,v7
+v v2 Store t28 0 a6 p1:1:0:0:0 1 v3,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 28 "late fuse"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticCall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 2 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v3 LocalAddr t21 0 a3 p1:1:0:0:0 1 v4,v7
+v v2 Store t28 0 a6 p1:1:0:0:0 1 v3,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 29 "check bce"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticCall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 2 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v3 LocalAddr t21 0 a3 p1:1:0:0:0 1 v4,v7
+v v2 Store t28 0 a6 p1:1:0:0:0 1 v3,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 30 "dse"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticCall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 2 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v3 LocalAddr t21 0 a3 p1:1:0:0:0 1 v4,v7
+v v2 Store t28 0 a6 p1:1:0:0:0 1 v3,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 31 "memcombine"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticCall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 2 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v3 LocalAddr t21 0 a3 p1:1:0:0:0 1 v4,v7
+v v2 Store t28 0 a6 p1:1:0:0:0 1 v3,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 32 "writebarrier"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 StaticCall t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 2 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v3 LocalAddr t21 0 a3 p1:1:0:0:0 1 v4,v7
+v v2 Store t28 0 a6 p1:1:0:0:0 1 v3,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 33 "lower"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 ARM64CALLstatic t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v2 ARM64MOVDstore t28 0 a3 p1:1:0:0:0 1 v4,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v3,v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 34 "addressing modes"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 ARM64CALLstatic t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v2 ARM64MOVDstore t28 0 a3 p1:1:0:0:0 1 v4,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v3,v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 35 "late lower"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 ARM64CALLstatic t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v2 ARM64MOVDstore t28 0 a3 p1:1:0:0:0 1 v4,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v3,v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 36 "pair"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 ARM64CALLstatic t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v2 ARM64MOVDstore t28 0 a3 p1:1:0:0:0 1 v4,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v3,v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 37 "lowered deadcode for cse"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 ARM64CALLstatic t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v2 ARM64MOVDstore t28 0 a3 p1:1:0:0:0 1 v4,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v3,v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 38 "lowered cse"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 ARM64CALLstatic t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v2 ARM64MOVDstore t28 0 a3 p1:1:0:0:0 1 v4,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v3,v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 39 "elim unread autos"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 ARM64CALLstatic t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v2 ARM64MOVDstore t28 0 a3 p1:1:0:0:0 1 v4,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v3,v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 40 "tighten tuple selectors"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 ARM64CALLstatic t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v2 ARM64MOVDstore t28 0 a3 p1:1:0:0:0 1 v4,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v3,v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 41 "lowered deadcode"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 ARM64CALLstatic t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v2 ARM64MOVDstore t28 0 a3 p1:1:0:0:0 1 v4,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v3,v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 42 "checkLower"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 ARM64CALLstatic t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v2 ARM64MOVDstore t28 0 a3 p1:1:0:0:0 1 v4,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v3,v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 43 "loop invariant"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 ARM64CALLstatic t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v2 ARM64MOVDstore t28 0 a3 p1:1:0:0:0 1 v4,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v3,v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 44 "late phielim and copyelim"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 ARM64CALLstatic t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v2 ARM64MOVDstore t28 0 a3 p1:1:0:0:0 1 v4,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v3,v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 45 "tighten"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 ARM64CALLstatic t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v2 ARM64MOVDstore t28 0 a3 p1:1:0:0:0 1 v4,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v3,v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache loopnest 2 0 - -
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 46 "late deadcode"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 ARM64CALLstatic t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v2 ARM64MOVDstore t28 0 a3 p1:1:0:0:0 1 v4,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v3,v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache loopnest 2 0 - -
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 47 "critical"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 ARM64CALLstatic t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v2 ARM64MOVDstore t28 0 a3 p1:1:0:0:0 1 v4,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v3,v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache loopnest 2 0 - -
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 48 "phi tighten"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 ARM64CALLstatic t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v2 ARM64MOVDstore t28 0 a3 p1:1:0:0:0 1 v4,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v3,v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache loopnest 2 0 - -
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 49 "likelyadjust"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 ARM64CALLstatic t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v2 ARM64MOVDstore t28 0 a3 p1:1:0:0:0 1 v4,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v3,v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache loopnest 2 0 - -
+cache auxmap -:1
+cache linestarts 1:1:1
+dcllen 2
+end
+pass 50 "layout"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 ARM64CALLstatic t33 0 a4 p1:1:0:1:0 2 v1
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v2 ARM64MOVDstore t28 0 a3 p1:1:0:0:0 1 v4,v8,v7
+names -
+splits -
+canon -
+consts -
+freev v3,v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache loopnest 2 0 - -
+cache auxmap -:1
+cache linestarts 1:1:1
+fstate laidout
+dcllen 2
+end
+pass 51 "schedule"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 ARM64CALLstatic t33 0 a4 p1:1:0:1:0 2 v1
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v2 ARM64MOVDstore t28 0 a3 p1:1:0:0:0 1 v4,v8,v7
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+names -
+splits -
+canon -
+consts -
+freev v3,v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache loopnest 2 0 - -
+cache auxmap -:1
+cache linestarts 1:1:1
+fstate scheduled,laidout
+dcllen 2
+end
+pass 52 "late nilcheck"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 ARM64CALLstatic t33 0 a4 p1:1:0:1:0 2 v1
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v2 ARM64MOVDstore t28 0 a3 p1:1:0:0:0 1 v4,v8,v7
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+names -
+splits -
+canon -
+consts -
+freev v3,v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache loopnest 2 0 - -
+cache auxmap -:1
+cache linestarts 1:1:1
+fstate scheduled,laidout
+dcllen 2
+end
+pass 53 "flagalloc"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 ARM64CALLstatic t33 0 a4 p1:1:0:1:0 2 v1
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v2 ARM64MOVDstore t28 0 a3 p1:1:0:0:0 1 v4,v8,v7
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+names -
+splits -
+canon -
+consts -
+freev v3,v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache loopnest 2 0 - -
+cache auxmap -:1
+cache linestarts 1:1:1
+fstate scheduled,laidout
+dcllen 2
+end
+pass 54 "regalloc"
+aux a4 call "AuxCall{runtime.getm}" a5 1 0 1 8 0 0 1
+abiparam out 0 t2 - 0 -1
+callreg - 0:1 7fffffff97ffffff -
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 ARM64CALLstatic t33 0 a4 p1:1:0:1:0 2 v1
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v2 ARM64MOVDstore t28 0 a3 p1:1:0:0:0 1 v4,v8,v7
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+names -
+splits -
+canon -
+consts -
+freev v3,v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache loopnest 2 0 - -
+cache auxmap -:1
+cache linestarts 1:1:1
+fstate scheduled,laidout
+regalloc 9 v4:SP,v6:[R0],v8:R0
+dcllen 2
+end
+pass 55 "loop rotate"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 ARM64CALLstatic t33 0 a4 p1:1:0:1:0 2 v1
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v2 ARM64MOVDstore t28 0 a3 p1:1:0:0:0 1 v4,v8,v7
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+names -
+splits -
+canon -
+consts -
+freev v3,v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache loopnest 2 0 - -
+cache auxmap -:1
+cache linestarts 1:1:1
+fstate scheduled,laidout
+regalloc 9 v4:SP,v6:[R0],v8:R0
+dcllen 2
+end
+pass 56 "trim"
+f b1 t1 a1 9 1
+b b1 Ret p1:1:0:1:0 0 0 - v9 - -
+v v4 SP t2 0 - p0:0:0:0:0 1 -
+v v1 InitMem t28 0 - p0:0:0:0:0 1 -
+v v6 ARM64CALLstatic t33 0 a4 p1:1:0:1:0 2 v1
+v v8 SelectN t2 0 - p1:1:0:1:0 1 v6
+v v7 SelectN t28 1 - p1:1:0:0:0 1 v6
+v v2 ARM64MOVDstore t28 0 a3 p1:1:0:0:0 1 v4,v8,v7
+v v9 MakeResult t32 0 - p1:1:0:0:0 1 v2
+names -
+splits -
+canon -
+consts -
+freev v3,v5
+freeb -
+cache postorder b1
+cache idom b1:-
+cache sdom b1:-:-:-:2:5
+cache loopnest 2 0 - -
+cache auxmap -:1
+cache linestarts 1:1:1
+fstate scheduled,laidout
+regalloc 9 v4:SP,v6:[R0],v8:R0
+dcllen 2
+end
+frontend
+end
+ptrcache t2,t3,t4,t5,t6,t7,t8,t9,t10,t11,t12,t13,t14,t15,t16,t17,t21,t24,t25,t26,t27
+typelink t28=t32
+typeorder t4,t8,t5,t9,t6,t10,t7,t11,t12,t15,t2,t25,t26,t13,t14,t3,t17,t18,t19,t20,t21,t22,t23,t24,t1,t16,t27,t28,t30,t29,t31,t32,t33
+eof
+"#
+
+/-- `std/std/runtime/getm,0.prog` (quick-v10). -/
+def fProg : String := r#"gofv-prog 3
+pkg "runtime"
+func "getm" 0
+config arch arm64
+config goarm64 "v8.0"
+config experiments "regabiwrappers,regabiargs,dwarf5,jsonv2,greenteagc,randomizedheapbase64,sizespecializedmalloc"
+config flagshared 0
+config flagdynlink 0
+config flaglinkshared 0
+config locationlists 1
+config optimize 1
+config maymorestack ""
+config mergelocals 1
+config flagN 0
+config clobberdead 0
+config clobberdeadreg 0
+config compilingruntime 1
+config gendwarfinl 2
+config debugasm 0
+config mergelocalshash ""
+frame
+type t1 8 8 0 0 - "uintptr"
+name n1 "~r0" PPARAMOUT t1 1 "runtime.~r0" 0 a3
+name n2 ".autotmp_1" PAUTO t1 3 "runtime..autotmp_1" 0 -
+in n1 0 -
+in n2 0 used,autotmp
+out n1 0 used
+opt n2 0 autotmp
+stack 0 0 8
+end
+genin
+posbase p1 "<autogenerated>" 1 1 -1 0 "<autogenerated>" "<autogenerated>" 1 1
+sym y1 "runtime.getm" 0
+curfn p1:1:0:0:0 0 0
+regargs -
+text y1 0 0 23 0 1 90085
+end
+prog0
+sym y2 "gclocals\xc2\xb7g5+hNtRBP6YXNjfog7aZjQ==" 0
+sym y3 "runtime.getm" 1
+sym y4 "runtime.~r0" 0
+p 0 0 0 0 0 - TEXT 0 MEM/0/0/0/EXTERN/0/0/y1/- 0 - TEXTSIZE/0/0/0/NONE/0/0/-/i8 0 0 p1:1:0:0:0
+p 1 1 0 0 0 - FUNCDATA 0 CONST/0/0/0/NONE/0/0/-/- 0 - MEM/0/0/0/EXTERN/0/0/y2/- 0 0 p1:1:0:0:0
+p 2 2 0 0 0 - FUNCDATA 0 CONST/0/0/0/NONE/0/1/-/- 0 - MEM/0/0/0/EXTERN/0/0/y2/- 0 0 p1:1:0:0:0
+p 3 3 0 0 0 - PCDATA 0 CONST/0/0/0/NONE/0/0/-/- 0 - CONST/0/0/0/NONE/0/-2/-/- 0 0 p1:1:0:1:0
+p 4 4 0 0 0 - PCDATA 0 CONST/0/0/0/NONE/0/1/-/- 0 - CONST/0/0/0/NONE/0/0/-/- 0 0 p1:1:0:1:0
+p 5 5 0 0 0 - CALL 0 _ 0 - MEM/0/0/0/EXTERN/0/0/y3/- 0 0 p1:1:0:1:0
+p 6 6 0 0 0 - MOVD 0 REG/8192/0/0/NONE/0/0/-/- 0 - MEM/8383/0/0/PARAM/0/0/y4/- 0 0 p1:1:0:2:0
+p 7 7 0 0 0 - RET 0 _ 0 - _ 0 0 p1:1:0:2:0
+p 8 8 0 0 0 - END 0 _ 0 - _ 0 0 p0:0:0:0:0
+fn y1 0 0 23 0 1 90085
+funcaux y2 y2 - - - - -
+needzero -
+regargs -
+text 0 0 - 0
+symalign y2:4
+autot -
+dbgentry 1
+dbgregout -
+dbgpc -
+end
+asm
+sym y5 "" 0
+sym y6 "" 0
+sym y7 "" 0
+sym y8 "" 0
+sym y9 "" 0
+sym y10 "" 0
+p 0 0 0 0 0 - TEXT 0 MEM/0/0/0/EXTERN/0/0/y1/- 0 - TEXTSIZE/0/0/0/NONE/0/16/-/i8 0 0 p1:1:0:0:0
+p 9 0 16 0 312 - MOVD 64 REG/8222/0/0/NONE/2/0/-/- 0 - MEM/8383/0/0/NONE/78/-16/-/- 0 0 p1:1:0:0:1
+p 10 4 0 0 307 - MOVD 0 REG/8221/0/0/NONE/2/0/-/- 0 - MEM/8383/0/0/NONE/79/-8/-/- 0 0 p1:1:0:0:0
+p 11 8 0 0 31 - SUB 0 CONST/0/0/0/NONE/17/8/-/- 8383 - REG/8221/0/0/NONE/2/0/-/- 0 0 p1:1:0:0:0
+p 1 12 0 0 4 - FUNCDATA 0 CONST/0/0/0/NONE/16/0/-/- 0 - MEM/0/0/0/EXTERN/110/0/y2/- 0 0 p1:1:0:0:0
+p 2 12 0 0 4 - FUNCDATA 0 CONST/0/0/0/NONE/17/1/-/- 0 - MEM/0/0/0/EXTERN/110/0/y2/- 0 0 p1:1:0:0:0
+p 3 12 0 0 13 - PCDATA 0 CONST/0/0/0/NONE/16/0/-/- 0 - CONST/0/0/0/NONE/22/-2/-/- 0 0 p1:1:0:1:0
+p 4 12 0 0 13 - PCDATA 0 CONST/0/0/0/NONE/17/1/-/- 0 - CONST/0/0/0/NONE/16/0/-/- 0 0 p1:1:0:1:0
+p 5 12 0 0 2 - CALL 0 NONE/0/0/0/NONE/1/0/-/- 0 - BRANCH/0/0/0/EXTERN/36/0/y3/- 0 0 p1:1:0:1:0
+p 6 16 0 0 304 - MOVD 0 REG/8192/0/0/NONE/2/0/-/- 0 - MEM/0/0/0/PARAM/48/0/y4/- 0 0 p1:1:0:2:0
+p 7 20 0 0 332 - MOVD 0 MEM/8383/0/0/NONE/79/-8/-/- 0 - REG/8221/0/0/NONE/2/0/-/- 0 0 p1:1:0:2:0
+p 12 24 -16 0 336 - MOVD 32 MEM/8383/0/0/NONE/86/16/-/- 0 - REG/8222/0/0/NONE/2/0/-/- 0 0 p1:1:0:2:0
+p 13 28 16 0 15 - RET 0 NONE/0/0/0/NONE/1/0/-/- 0 - MEM/8222/0/0/NONE/77/0/-/- 0 0 p1:1:0:2:0
+fn y1 8 8 23 0 1 90085
+funcaux y2 y2 - - - - -
+text 32 0 fe0f1ff8fd831ff8fd2300d100000094e00f00f9fd835ff8fe0741f8c0035fd6 1
+reloc 12 4 R_CALLARM64 0 y3
+pcln y7 y8 y9 y10 y5,y6 y2,y2
+usedfiles 0
+data y2 Sxxx 0 4 8000 0100000000000000 0
+data y5 SRODATA 5 1 28000 0003010500 0
+data y6 SRODATA 5 1 28000 0003020500 0
+data y7 SRODATA 7 1 28000 020120061f0100 0
+data y8 SRODATA 3 1 28000 020800 0
+data y9 SRODATA 3 1 28000 040800 0
+data y10 SRODATA 3 1 28000 000800 0
+end
+dwarf
+sym y11 "" 0
+sym y12 "" 0
+sym y13 "" 0
+sym y14 "" 0
+posbase p43 "runtime/proc.go" 1 1 -1 42 "runtime/proc.go" "runtime/proc.go" 1 1
+sym y15 "go:info.uintptr" 0
+dwfn y11 y12 y13 - y14 "runtime.getm" 0:1 1 0 1 4262
+dwdcl n1
+dwclosure 0 -
+dwparents -
+dwparams n1
+dwname n1 1 1 0 0 0 0 0 0 - - "uintptr" 0 0 1 p43:2733:13:0:0
+dwname n2 1 0 1 0 0 0 0 0 - - "uintptr" 0 0 1 p1:1:0:0:0
+var 0 0 "~r0" 5 0 1 0 0 8 y15 "runtime/proc.go" 2733 13 0 0 0 0 -
+scope 0 0 - 0
+data y11 SDWARFFCN 41 0 0 0372756e74696d652e6765746d00000020019c0100000001012e7e72300001ad150000000002910800 2
+reloc 14 2 R_DWTXTADDR_U2 0 y1
+reloc 33 4 R_DWARFSECREF 0 y15
+data y12 SDWARFLOC 0 0 0 - 0
+data y13 SDWARFRANGE 0 0 0 - 0
+data y14 SDWARFLINES 20 0 0 00090200000000000000000a0f06af0210000101 1
+reloc 3 8 R_ADDR 0 y1
+end
+eof
+"#
+
+/-- The loaded `getm` wrapper (`GenG2.load`, as `gen-check`). -/
+def stIn : Except String (LocCtx × Array GoFV.Asm.Prog × (ID → Option Nat) × G2In) :=
+  GenG2.load fSsa fProg
+
+/-- `runLoc`'s context of the wrapper. -/
+def lc0 : LocCtx :=
+  match stIn with
+  | .ok x => x.1
+  | .error _ => { ctx := default, homes := #[], temps := #[] }
+
+/-- The context G49's check runs on (`liveCtx`). -/
+def lc : LocCtx := liveCtx lc0
+
+def ps : Array GoFV.Asm.Prog :=
+  match stIn with
+  | .ok x => x.2.1
+  | .error _ => #[]
+
+def bs : ID → Option Nat :=
+  match stIn with
+  | .ok x => x.2.2.1
+  | .error _ => fun _ => none
+
+def g : G2In :=
+  match stIn with
+  | .ok x => x.2.2.2
+  | .error _ => { syms := #[], slotOp := fun _ => none, stksize := 0 }
+
+/-- The PC table `checkG49` gives. -/
+def tab : PcTab := (match checkG49 lc0 ps bs g with
+  | .ok (t, _) => t
+  | .error _ => [])
+
+/-- The class table `checkG49` gives. -/
+def kt : KTab := (match checkG49 lc0 ps bs g with
+  | .ok (_, k) => k
+  | .error _ => [])
+
+/-- Block `b1`: `v4 = SP`, `v1 = InitMem`, `v6 = CALLstatic {runtime.getm} v1`, `v8 = SelectN [0]
+v6` (`R0`), `v7 = SelectN [1] v6`, `v2 = MOVDstore {~r0} v4 v8 v7`, `v9 = MakeResult v2`; `Ret`. -/
+def blk : Block := (lc.ctx.f.block? 1).getD default
+
+def val (n : ID) : Value := (lc.ctx.f.value? n).getD default
+
+/-- P0's layout: the Prog with ID `n` at `0x10000 + 4n`, a 16-byte frame, every symbol at
+`symA`. -/
+def L : Link := Link.byId (fun _ => GenG2.symA) GenG2.text 16 8 ps.toList
+
+/-- The address of the result `~r0` (aux 3) of activation 0 under `Addrs.fixed`:
+`Blk.fixedBase? (.local 0 3)`. -/
+def base : BitVec 64 := 0x4000000003000000
+
+/-- `SP` such that the result's `NAME_PARAM` operand, `SP + autosize + 8 + 0`, is its address. -/
+def sp : BitVec 64 := base - 24
+
+/-- `ι`: GenG2's (`nil ↦ 0`, globals at `symA`), and the result's `local` block at its address. -/
+def ι49 (b : Blk) : Option (BitVec 64) :=
+  if b = .local 0 3 then some base else GenG2.ι b
+
+/-- A framed activation (saved `LR` and `FP` 0, `g = 0x9000`), no home slot, the PC table of
+`checkG49`. -/
+def E : MatchEnv :=
+  { lc, ι := ι49, sp, slot := fun _ => none, g := 0x9000, lr := 0, fp := 0,
+    framed := true, pcOf := pcOfTab GenG2.text ps.toList tab }
+
+/-- The memory: the result's block, 8 poison bytes. -/
+def mem1 : Mem := { blocks := #[(.local 0 3, { data := Array.replicate 8 .poison })] }
+
+/-- The `runLoc` state before `v2`: the callee's result `x` in `R0`, every other register
+`poison`. -/
+def s0 (x : BitVec 64) : LocState :=
+  { fr := { regs := Array.replicate 32 none, args := [], mem0 := mem1 },
+    regs := Array.ofFn (n := 64) fun i => if i.val = 0 then .i64 x else .poison,
+    flags := .poison, slots := [], mem := .mem mem1 }
+
+/-- The machine before `v2`: `X0 = x`, the activation's `g` and `FP`, the PC of `v2`, the memory
+0. -/
+def m0 (x : BitVec 64) : MState :=
+  { x := fun k => if k = 0 then x else if k = 28 then 0x9000 else if k = 29 then sp - 8 else 0,
+    sp, v := fun _ => 0, nzcv := ⟨false, false, false, false⟩, pc := E.pcOf 1 5,
+    mem := fun _ => 0 }
+
+/-- What compiled evaluation checks on the wrapper: it holds an arm64 op; `checkG49` accepts it
+and `checkG50` does not; `b1` holds `v2` (`MOVDstore {~r0} [0] SP v8 v7`) at index 5; `R0` has
+class 64 there and G35's table is empty; the only accessed frame variable is `~r0` (aux 3), a
+result (`Tables.forgeable`), operand `NAME_PARAM` 0, of activation 0, at `frameOff 24`; there is
+no home slot; and `stepLoc` runs `v2`, storing `x = 7` into the result's block. -/
+def gFacts : Bool :=
+  lc.ctx.f.lowered &&
+    (checkG49 lc0 ps bs g).toOption == some (tab, kt) && (checkG50 lc0 ps bs g).toOption.isNone &&
+    lc.ctx.f.blocks.toList.contains 1 && (lc.ctx.f.block? 1).isSome &&
+    (lc.ctx.f.value? 2).isSome && blk.values[5]? == some 2 &&
+    (val 2).op == .ARM64MOVDstore && (kAt lc kt 1 blk 5).get 0 == some 64 &&
+    uL35 lc (uIn35 lc 1) blk 5 == [] &&
+    accessedVars lc == [3] && varOp g 3 == some (.PARAM, 0) && lc.ctx.tabs.forgeable 3 &&
+    lc.ctx.act == 0 && (homeSlots lc).isEmpty && decide (frameOff L .PARAM 0 = 24) &&
+    GenG1.okThen (stepLoc default lc (s0 7) (val 2)) fun _ => true
+
+theorem g49_facts : gFacts = true := by
+  native_decide
+
+/-- The facts of `gFacts` as hypotheses. -/
+theorem facts :
+    lc.ctx.f.lowered = true ∧ checkG49 lc0 ps bs g = .ok (tab, kt) ∧
+      (checkG50 lc0 ps bs g).toOption = none ∧
+      1 ∈ lc.ctx.f.blocks.toList ∧ lc.ctx.f.block? 1 = some blk ∧
+      lc.ctx.f.value? 2 = some (val 2) ∧ blk.values[5]? = some 2 ∧
+      (val 2).op = .ARM64MOVDstore ∧ (kAt lc kt 1 blk 5).get 0 = some 64 ∧
+      uL35 lc (uIn35 lc 1) blk 5 = [] ∧
+      accessedVars lc = [3] ∧ varOp g 3 = some (.PARAM, 0) ∧ lc.ctx.tabs.forgeable 3 = true ∧
+      lc.ctx.act = 0 ∧ (homeSlots lc).isEmpty = true ∧ frameOff L .PARAM 0 = 24 ∧
+      GenG1.okThen (stepLoc default lc (s0 7) (val 2)) (fun _ => true) = true := by
+  have hf := g49_facts
+  simp only [gFacts, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem, and_assoc,
+    Option.isNone_iff_eq_none, decide_eq_true_eq] at hf
+  obtain ⟨hl, hres, h47, hm1, hbs, hvs, hi5, hop, hk0, hu5, hav, hvo, hfg, hact, hsl, hoff,
+    hrun⟩ := hf
+  refine ⟨hl, ?_, h47, hm1, ?_, ?_, hi5, hop, hk0, hu5, hav, hvo, hfg, hact, hsl, hoff, hrun⟩
+  · revert hres; cases checkG49 lc0 ps bs g <;> simp [Except.toOption]
+  · obtain ⟨b, hb⟩ := Option.isSome_iff_exists.1 hbs
+    simp [blk, hb]
+  · obtain ⟨v, hv⟩ := Option.isSome_iff_exists.1 hvs
+    simp [val, hv]
+
+/-! ## The activation -/
+
+theorem ι49_local : ι49 (.local 0 3) = some base := by simp [ι49]
+
+theorem ι49_ne {b : Blk} (h : b ≠ .local 0 3) : ι49 b = GenG2.ι b := by simp [ι49, h]
+
+/-- `ι49` puts the result's block at its address under `Addrs.fixed`, every other block as
+GenG2's. -/
+theorem addrAgree49 : AddrAgree ι49 := by
+  intro b n a hb ha hnt
+  by_cases h : b = .local 0 3
+  · subst h
+    rw [ι49_local] at ha
+    cases ha
+    have : Blk.base? (.local 0 3) = some (2 ^ 62 + 0 * 2 ^ 42 + 3 * 2 ^ 24) := rfl
+    rw [this] at hb
+    cases hb
+    rfl
+  · rw [ι49_ne h] at ha
+    exact GenG2.addrAgree b n a hb ha hnt
+
+theorem g49Env (hc : checkG49 lc0 ps bs g = .ok (tab, kt)) (hl : lc.ctx.f.lowered = true)
+    (hav : accessedVars lc = [3]) (hvo : varOp g 3 = some (.PARAM, 0))
+    (hfg : lc.ctx.tabs.forgeable 3 = true) (hact : lc.ctx.act = 0)
+    (hsl : (homeSlots lc).isEmpty = true) (hoff : frameOff L .PARAM 0 = 24) :
+    G49Env lc g L ps 0 tab E where
+  env := {
+    env := {
+      env := {
+        env := {
+          env := {
+            lcEq := rfl
+            link := rfl
+            pcOf := rfl
+            retOut := by
+              obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hlt, -, -, -, -, -⟩ :=
+                checkG49L_spec hl (checkG49_spec hc).2
+              intro p hp
+              exact GenG2.prog_addr_ne (hlt p hp) hp (by simp) (by simp)
+            addr := addrAgree49
+            glob := fun _ _ _ _ => by simp [E, ι49, GenG2.ι]; rfl
+            syms := by
+              obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hlt, -, -, -, -, -⟩ :=
+                checkG49L_spec hl (checkG49_spec hc).2
+              intro y
+              have hs : L.sym y = GenG2.symA := rfl
+              rw [hs]
+              refine ⟨by decide, fun p hp => ?_⟩
+              exact GenG2.prog_addr_ne (hlt p hp) hp (Or.inr (by decide)) (by decide)
+            calls := fun h => by cases h
+            slot := fun k hk => by simp [List.isEmpty_iff.1 hsl] at hk
+            extra := by show 0 ≤ (8 : Int); decide
+            frame := ⟨by show 4096 + 8 ≤ sp.toNat; decide,
+              by show sp.toNat + 8 ≤ 2 ^ 64; decide, fun k off h => by cases h⟩ }
+          vars := by
+            intro x hx o ho hf
+            rw [hav, List.mem_singleton] at hx
+            subst hx
+            rw [hfg] at hf
+            cases hf }
+        wbs := fun h => by cases h }
+      icalls := fun h => by cases h }
+    memeqs := fun h => by cases h }
+  vars := by
+    intro x hx nc o ho _ _
+    rw [hav, List.mem_singleton] at hx
+    subst hx
+    rw [hvo] at ho
+    cases ho
+    rw [hact, hoff]
+    show ι49 (.local 0 3) = some (sp + BitVec.ofInt 64 24)
+    rw [ι49_local]
+    rfl
+
+theorem memInj1 : MemInj ι49 mem1 (fun _ => 0) where
+  nil := by simp [ι49, GenG2.ι]
+  mapped := by
+    intro b al h
+    simp [mem1] at h
+    obtain ⟨rfl, rfl⟩ := h
+    exact ⟨base, ι49_local, fun _ => by decide, by decide⟩
+  inj := by
+    intro b al b' al' a a' h h' hne
+    simp [mem1] at h h'
+    exact absurd (h.1.trans h'.1.symm) hne
+  bytes := ⟨fun _ _ => False, by
+    intro b al a h _
+    simp [mem1] at h
+    obtain ⟨rfl, rfl⟩ := h
+    refine ⟨fun o ho => ho.elim, fun o _ ho => ho.elim, fun i hi _ => ?_⟩
+    simp [ByteRel]⟩
+
+theorem keys1 : KeysNodup mem1 := by simp [KeysNodup, mem1]
+
+theorem sep1 : SepFrom ι49 (StkAt E) mem1 := by
+  intro b al a hb hι y hy
+  simp [mem1] at hb
+  obtain ⟨rfl, rfl⟩ := hb
+  rw [ι49_local] at hι
+  cases hι
+  rcases hy with ⟨-, h1, h2⟩ | ⟨k, off, h, -⟩
+  · simp only [E] at h1 h2
+    simp only [Array.size_replicate]
+    rintro ⟨h3, -⟩
+    have hb' : base.toNat = 0x4000000003000000 := by decide
+    have hs' : sp.toNat = 0x4000000002ffffe8 := by decide
+    rw [hb'] at h3
+    rw [hs'] at h2
+    omega
+  · simp [E] at h
+
+theorem locMatch0 (x : BitVec 64) : LocMatch E (s0 x) 1 5 (m0 x) where
+  regs := by
+    intro r v hv
+    simp only [s0, Array.getElem?_ofFn] at hv
+    split at hv
+    · simp only [Option.some.injEq] at hv
+      refine ⟨fun k hk => ?_, fun k hk => ?_⟩
+      · split at hv
+        · subst hv
+          rename_i h1
+          subst h1
+          simp only [objX?] at hk
+          cases hk
+          exact Or.inl rfl
+        · subst hv; trivial
+      · split at hv
+        · rename_i h1; subst h1; simp [objV?] at hk
+        · subst hv; trivial
+    · cases hv
+  flags := trivial
+  slots := by intro k v h; simp [s0] at h
+  mem := ⟨mem1, rfl, memInj1⟩
+  frame := ⟨rfl, rfl, fun _ => ⟨rfl, by simp only [MState.word, readMem, m0, E]; decide,
+    by simp only [MState.word, readMem, m0, E]; decide⟩,
+    fun h => by cases h⟩
+  pc := rfl
+
+theorem g49Inv0 (x : BitVec 64) {K : KMap} (h0 : K.get 0 = some 64) : G3Inv E lc K (s0 x) where
+  core := by
+    refine ⟨fun r v c hr hv hc => ?_, mem1, rfl, keys1, sep1⟩
+    simp only [s0, Array.getElem?_ofFn] at hv
+    split at hv
+    · simp only [Option.some.injEq] at hv
+      split at hv
+      · rename_i h0'
+        subst hv; subst h0'
+        rw [h0] at hc; cases hc; rfl
+      · subst hv; trivial
+    · cases hv
+  slots := by intro k v h; simp [s0] at h
+
+/-- The per-value premises of `v2`, a store: none of G50's applies. -/
+theorem pre2 (hop : (val 2).op = .ARM64MOVDstore) : G50Pre lc (s0 7) (val 2) := by
+  have hne : ∀ o : Op, o ≠ .ARM64MOVDstore → (val 2).op ≠ o := fun o h h' =>
+    h (h'.symm.trans hop)
+  refine ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨?_, ?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_, ?_⟩, ?_⟩
+  · intro h; rcases h with h | h <;> exact absurd h (hne _ (by decide))
+  · intro _ _ _ hl; rw [hop] at hl; cases hl
+  · intro h; exact absurd h (hne _ (by decide))
+  · intro h; exact absurd h (hne _ (by decide))
+  · intro h; exact absurd h (hne _ (by decide))
+  · intro h; exact absurd h (hne _ (by decide))
+  · intro _ _ _ _ hl; rw [hop] at hl; cases hl
+  · intro _ _ hl; rw [hop] at hl; cases hl
+  · intro h; rcases h with h | h | h <;> exact absurd h (hne _ (by decide))
+  · intro h; rcases h with h | h <;> exact absurd h (hne _ (by decide))
+  · intro _ _ hl; rw [hop] at hl; cases hl
+  · intro _ _ _ hl; rw [hop] at hl; simp [fp2Of] at hl
+  · intro _ _ _ _ hl; rw [hop] at hl; simp [fp3Of] at hl
+  · intro _ _ _ _ hp; rw [hop] at hp; simp [pairOp50] at hp
+
+/-- **G49 on the `getm` wrapper** (`runtime.getm`'s ABI0 wrapper, which calls the ABIInternal
+`getm` and stores its result `R0` into the result `~r0`, `MOVD R0, ~r0+0(FP)`): the store `v2` of
+a result at its `NAME_PARAM` operand, which `checkG50` rejects (`frame variable operand class`) and
+`checkG49` accepts. From `s0`, with `x = 7` in `R0` and the result's `local` block in memory,
+`stepLoc` runs `v2`, and `g49_value` relates it to a machine run of its `MOVD R0, 24(RSP)`, at the
+block's address under `Addrs.fixed`, to a state related before `v9`, under an activation extending
+`E` that is again a `G49Env`. -/
+theorem genG49_witness :
+    (checkG50 lc0 ps bs g).toOption = none ∧
+      ∃ s1 E1 m1, stepLoc default lc (s0 7) (val 2) = .ok s1 ∧
+        E.Extends E1 ∧ G49Env lc g L ps 0 tab E1 ∧ PStar GenG2.H0 L ps.toList 0 (m0 7) m1 ∧
+        LocMatch E1 s1 1 6 m1 := by
+  obtain ⟨hl, hc, h47, hm1, hb, hv2, hi5, hop, hk0, hu5, hav, hvo, hfg, hact, hsl, hoff,
+    hrun⟩ := facts
+  obtain ⟨s1, hs1, -⟩ := GenG1.okThen_spec hrun
+  have hE := g49Env hc hl hav hvo hfg hact hsl hoff
+  have hne : ∀ o : Op, o ≠ .ARM64MOVDstore → (val 2).op ≠ o := fun o h h' =>
+    h (h'.symm.trans hop)
+  have hm0 : 1 ∈ lc0.ctx.f.blocks.toList := by rw [← liveCtx_ctx (lc := lc0)]; exact hm1
+  have hb0 : lc0.ctx.f.block? 1 = some blk := by rw [← liveCtx_ctx (lc := lc0)]; exact hb
+  have hv0 : lc0.ctx.f.value? 2 = some (val 2) := by rw [← liveCtx_ctx (lc := lc0)]; exact hv2
+  obtain ⟨E1, m1, hx1, hE1, hp1, hm1', -, -⟩ := g49_value (H := GenG2.H0) (env := default)
+    hc hE hm0 hb0 hi5 hv0 (by rw [hop]; rfl) (locMatch0 7) (g49Inv0 7 hk0)
+    (by change UOKL (m0 7) (uL35 lc (uIn35 lc 1) blk 5); rw [hu5]; intro e he; cases he)
+    (pre2 hop)
+    (GenG2.callOK_ne (hne _ (by decide)))
+    (fun h => absurd h (hne _ (by decide)))
+    (GenG10.icallOK_ne (by rw [hop]; rfl))
+    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
+    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide))) hs1
+  exact ⟨h47, s1, E1, m1, hs1, hx1, hE1, hp1, hm1'⟩
+
+end GoFV.Proof.Witness.GenG49

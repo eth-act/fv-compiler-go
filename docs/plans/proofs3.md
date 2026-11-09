@@ -1121,6 +1121,28 @@ New run premise `Pre51a` (`G51Pre := G50Pre ∧ Pre51a`): the first argument of 
 `shiftA` has no `ROR` kind). Witness `genG51_witness` (`math/bits.RotateLeft64`: `ROR R1, R0, R0`
 of `0x0123456789abcdef` by 8; `X0` then holds `0xef0123456789abcd`). G51 accepts 6,982 functions
 (+71 over G50).
+**Slice G49: frame variables in `Blk.local` blocks** (`GoFV/Gen/Check49.lean`, `checkG49 lc ps
+bstart g`; proven sound, `g49_value`, `g49_initMem`, `g49_term`, `g49_nilPanic`,
+`g49_boundsPanic`, `GoFV/Proof/Gen/G49.lean`; §8 item 8, and the `PAUTO`s of item 5 whose address
+becomes an integer). G50 with G6's accesses (`MOVDaddr`, the loads and stores of G3, `LDP`, `STP`)
+of a frame variable whose block is `Blk.local` (`Tables.forgeable`): a parameter or result at its
+`NAME_PARAM` operand, or a `PAUTO` whose address the function converts to an integer at its
+`NAME_AUTO` operand (`frameVar49?`, `vkindVar49`, tried when G50 rejects a value). Frame check
+`checkVars49` in place of G6's `checkVars`: a `NAME_AUTO` window lies in the locals, a
+`NAME_PARAM` window in the function's argument area (`argEnd`: the end of its ABI's spill area,
+without the fixed frame word); windows of one operand class are pairwise disjoint and away from
+that class's home slots. Proof: `AddrAgree` pins a `Blk.local` block that has an address to it,
+so the variables' places are a premise of the activation, `G49Env := G28Env ∧ VarsAt49`
+(`VarsAt49`: `E.ι (.local act x) = some (E.sp + frameOff L nc o)` for each accessed variable `x`
+at operand `(nc, o)`), which the machine instance (item 4) meets with these bases; each access is
+G6's case lemma at that address (`var49_addr`, `g49_addr`, `g49_load`, `g49_store`, `g49_ldp`,
+`g49_stp`), an address a `Ptr.word` related to `SP + frameOff` by `valRel_word` whatever the
+assignment. `g49_value` takes G50's `G50Pre`. Witness `genG49_witness` (`runtime.getm`'s ABI0
+wrapper: `MOVD R0, ~r0+0(FP)` stores the result into its `NAME_PARAM` operand, which G50 rejects;
+at `Addrs.fixed`, with `SP` chosen so that the operand is the block's fixed address). G49
+accepts 7,071 functions (+160 over G50). Composition (§9) is open: `EntryMatch`'s `MemInj` at
+entry does not hold for a register parameter whose address is taken until genssa's entry store
+(item 8's `ParamMem`).
 
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
@@ -1129,9 +1151,9 @@ reason in parentheses):
    or results (153 (33)) are done in G47.
 2. **Frame variables beyond G6**: parameters and results (`NAME_PARAM`, `Blk.local`: `frame
    variable operand class`, 294 (113 after G41)) and variables whose address is converted to an
-   integer (`frame variable with an integer address`, 197 (50)): option 2 of semantics3 §4.3
-   (addresses as a parameter of the semantics); slots of other sizes (`slot … frame operand, size
-   or alignment`, 717).
+   integer (`frame variable with an integer address`, 197 (50)) are done in G49 for G6's accesses
+   (option 2 of semantics3 §4.3: addresses as a parameter of the semantics); slots of other
+   sizes (`slot … frame operand, size or alignment`, 717).
 3. **Other values**: `LoweredGetCallerPC` (26; `runLoc` has no value for it, `Arm64.evalPure`'s
    `poison`, and `progEffect` no `GETCALLERPC`), `REV#W widths` (6: `REVW`/`REV16W` of narrow
    arguments), `MOD` (6), `UMOD` (5); `CMN`, `CMNW`, `CMPshiftRA` are done in G51, the acquire
@@ -1199,6 +1221,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G47 | 6,856 (73.74%) | 204,468 |
 | G50 | 6,911 (74.33%) | 206,743 |
 | G51 | 6,982 (75.09%) | 212,374 |
+| G49 | 7,071 (76.05%) | 214,533 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1519,6 +1542,14 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `vk51c_step`.
 - `G51.lean`: `G51Pre`, `vk51_step`, `vk51_nil`, `vk51_pb`, `g51L_value` … `g51L_term`,
   `g51_value`, `g51_initMem`, `g51_nilPanic`, `g51_boundsPanic`, `g51_term`.
+- `Spec49.lean`: what `checkG49` accepted (`FrameVar49OK`, `frameVar49?_spec`,
+  `vkindVar49_spec`, `vkind49_spec`, `vkind49_initMem`, `checkG33_of_49L`, `checkG49L_spec`,
+  `checkG49_spec`).
+- `G49.lean`: `VarsAt49`, `G49Env`, `VarsAt49.extend`, `symAddr_local`, `pairAddr_local`,
+  `frameOffN_add`, `var49_addr`, `stepLoc_addrLocal`, `g49_addr`, `g49_load`, `g49_store`,
+  `g49_ldp`, `g49_stp`, `narrowLd?_var49`, `uStep35_nil`, `vk49_ops`, `vk49_step`, `vk49_nil`,
+  `vk49_pb`, `g49L_value` … `g49L_term`, `g49_value`, `g49_initMem`, `g49_nilPanic`,
+  `g49_boundsPanic`, `g49_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -2031,6 +2062,14 @@ few:
      the same window, its `MakeResult` load by G6's load lemma at that base.
    - **Theorems.** As item 7, with `ParamAt` and `ParamMem` as premises at entry, discharged
      at `Addrs.mach` by `verified_mach`'s composition; witness on `XChan.Send`.
+   - **Done in G49 (§4)**, the slice part. Differences from this plan: `ParamAt` is `VarsAt49`
+     (also covering the `PAUTO`s with an integer address, at their `NAME_AUTO` operand), an
+     activation premise of `G49Env`; `checkVars49` keeps windows of one operand class apart
+     from that class's home slots, with no checked entry-store prefix; the witness is
+     `runtime.getm`'s ABI0 wrapper (a stack result), at `Addrs.fixed`. Open, in the composition
+     (§9): `EntryMatch`'s `MemInj` at entry fails for the `local` block of a register parameter
+     whose address is taken until its entry store. Either restate it to exclude those blocks
+     until the store, or add a `ParamMem` clause to `SimAt` that clears after it.
 
 **Plan for `MOVDnop`, which needs no option 2.** G20 and G21 (§4) are the first step: their table
 `uAt` has an entry only directly after a narrow load, so no slice has to say which registers it
