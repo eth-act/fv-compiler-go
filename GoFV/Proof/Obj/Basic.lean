@@ -11,7 +11,7 @@ state before a Prog. This module gives them their meaning on `MState`:
 * `storesMem c st m`: the memory `m` after the stores `st`, in order, evaluated in `c`.
 * `HoldsCore c σ t`: every general register of `t` but `X30` is the value `σ` gives it over
   the state `c.s` before the Prog (`X31`, unused, unchanged), and `SP`, the flags, the vector
-  registers (unchanged) and the memory (after `σ`'s stores) are; `Holds` adds `X30`.
+  registers (`Sym.evalV`) and the memory (after `σ`'s stores) are; `Holds` adds `X30`.
 * `NoNil c σ`: no load or store of `σ` is in the nil page.
 * `CtlPc c base o mc t`: the PC of `t` is where the control `mc` of the word at offset `o` of
   code placed at `base` goes (`symInsn`).
@@ -23,10 +23,21 @@ namespace GoFV.Proof.Obj
 
 open GoFV.Arm64 GoFV.Asm GoFV.Asm.CheckObj
 
-/-- The memory after the stores `st` in order (each the low `8 n` bits of its value). -/
+/-- The memory after the stores `st` in order (each the low `8 n` bits of its value's
+`Ex.eval128`). -/
 def storesMem (c : Ctx) : List (Ex × Nat × Ex) → Memory → Memory
   | [], m => m
-  | (a, n, v) :: st, m => storesMem c st (writeMem m (a.eval c) n ((v.eval c).setWidth (8 * n)))
+  | (a, n, v) :: st, m =>
+    storesMem c st (writeMem m (a.eval c) n ((v.eval128 c).setWidth (8 * n)))
+
+/-- A store of at most 8 bytes writes the low bits of the 64-bit value. -/
+theorem Ex.eval128_setWidth {n : Nat} (hn : n ≤ 8) (c : Ctx) (e : Ex) :
+    (e.eval128 c).setWidth (8 * n) = (e.eval c).setWidth (8 * n) := by
+  unfold Ex.eval128
+  split
+  · simp only [Ex.eval]
+    rw [BitVec.setWidth_setWidth_of_le _ (by omega)]
+  · rw [BitVec.setWidth_setWidth_of_le _ (by omega)]
 
 /-- `t` is what `σ` describes over `c.s`, `X30` aside. -/
 structure HoldsCore (c : Ctx) (σ : Sym) (t : MState) : Prop where
@@ -34,8 +45,46 @@ structure HoldsCore (c : Ctx) (σ : Sym) (t : MState) : Prop where
   x31 : t.x 31 = c.s.x 31
   sp : t.sp = σ.sp.eval c
   nzcv : t.nzcv = σ.fl.eval c
-  v : t.v = c.s.v
+  v : t.v = σ.evalV c
   mem : t.mem = storesMem c σ.stores c.s.mem
+
+/-- An effect that writes no vector register leaves them as before the Prog. -/
+theorem Sym.evalV_of_nil {σ : Sym} {c : Ctx} (h : σ.v = []) : σ.evalV c = c.s.v := by
+  funext r
+  simp [Sym.evalV, h]
+
+/-- A vector register the effect has not written is as before the Prog. -/
+theorem Sym.evalV_of_lookup {σ : Sym} {c : Ctx} {r : Reg} (h : σ.v.lookup r.toNat = none) :
+    σ.evalV c r = c.s.v r := by
+  simp [Sym.evalV, h]
+
+/-- The vector register `r` after the effect is `getV`'s value. -/
+theorem Sym.evalV_getV (σ : Sym) (c : Ctx) (r : Reg) : σ.evalV c r = (σ.getV r.toNat).eval c := by
+  unfold Sym.evalV Sym.getV
+  cases σ.v.lookup r.toNat <;> simp [VEx.eval]
+
+/-- A write of vector register `r < 32`. -/
+theorem Sym.evalV_wV (σ : Sym) (c : Ctx) {r : Nat} (hr : r < 32) (e : VEx) :
+    (σ.wV r e).evalV c = fun q => if q = BitVec.ofNat 5 r then e.eval c else σ.evalV c q := by
+  funext q
+  unfold Sym.evalV Sym.wV
+  by_cases hq : q = BitVec.ofNat 5 r
+  · subst hq
+    simp [List.lookup, Nat.mod_eq_of_lt hr]
+  · have hne : (q.toNat == r) = false := by
+      simp only [beq_eq_false_iff_ne]
+      intro h; apply hq; subst h; simp
+    simp [List.lookup, hne, hq]
+
+/-- What `Sym.vEx` accepts: `V r` is not written yet. -/
+theorem Sym.vEx_ok {σ : Sym} {r : Nat} {e e' : Ex} (h : σ.vEx r e = .ok e') :
+    σ.v.lookup r = none ∧ e' = e := by
+  unfold Sym.vEx at h
+  split at h
+  · rename_i hn
+    cases h
+    exact ⟨Option.isNone_iff_eq_none.1 hn, rfl⟩
+  · cases h
 
 /-- `t` is what `σ` describes over `c.s`. -/
 structure Holds (c : Ctx) (σ : Sym) (t : MState) : Prop extends HoldsCore c σ t where

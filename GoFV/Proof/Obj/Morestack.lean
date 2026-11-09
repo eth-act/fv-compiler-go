@@ -255,6 +255,7 @@ theorem storesMem_slot (c : Ctx) : ∀ (sl : List TailSlot) (m : Memory),
         omega
       rw [TailSlot.addr_eval, ms_readMem_congr s.n _ (fun j hj => storesMem_slots_out c sl _ _
         (fun s' hs' => (hw' s' hs').1) (hout j hj)), ms_readMem_self _ _ hw0.2]
+      rw [Ex.eval128_setWidth hw0.2]
       rfl
     · exact storesMem_slot c sl _ hap.2 hw' s hs
 
@@ -421,7 +422,7 @@ theorem stackCheck_run (hlink : linkCode base sym t rs = .ok code) (hsz : t.size
       sA.pc = base + BitVec.ofNat 64 (if CheckPasses az gOff s0 then ce else tail) ∧
       sA.sp = s0.sp ∧ (∀ k : Reg, k ≠ 16 → k ≠ 17 → k ≠ 27 → sA.x k = s0.x k) ∧ sA.v = s0.v ∧
       sA.mem = s0.mem := by
-  obtain ⟨-, σ, hw, hce, hst, hsp, hx30, hld, hregs⟩ := checkStackCheck_spec hc
+  obtain ⟨-, σ, hw, hce, hst, hv0, hsp, hx30, hld, hregs⟩ := checkStackCheck_spec hc
   obtain ⟨n, hn⟩ : ∃ n, (if az ≤ 128 then 3 else 4) = n + 1 := by
     split
     · exact ⟨2, rfl⟩
@@ -455,7 +456,7 @@ theorem stackCheck_run (hlink : linkCode base sym t rs = .ok code) (hsz : t.size
   have h30 : tm.x 30 = s0.x 30 := by
     rw [hx rfl, hx30]
     rfl
-  refine ⟨tm, hrun, ?_, ?_, fun k h16 h17 h27 => ?_, hcore.v, ?_⟩
+  refine ⟨tm, hrun, ?_, ?_, fun k h16 h17 h27 => ?_, hcore.v.trans (Sym.evalV_of_nil hv0), ?_⟩
   · rw [hctl]
     by_cases hp : CheckPasses az gOff s0
     · simp only [hp, decide_true, Bool.not_true, Bool.false_eq_true, ↓reduceIte]

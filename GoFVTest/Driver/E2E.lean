@@ -236,12 +236,16 @@ structure Counts where
   genWhy : Why := {}
   retWhy : Why := {}
   objWhy : Why := {}
+  /-- `checkObj`'s rejections of the functions `checkG46` and `retRegsOK` accept: what keeps them
+  from end to end. -/
+  e2eObjWhy : Why := {}
 
 def Counts.merge (a b : Counts) : Counts :=
   { ran := a.ran + b.ran, gen := a.gen + b.gen, ret := a.ret + b.ret, obj := a.obj + b.obj,
     genObj := a.genObj + b.genObj, all := a.all + b.all,
     errWhy := a.errWhy.merge b.errWhy, genWhy := a.genWhy.merge b.genWhy,
-    retWhy := a.retWhy.merge b.retWhy, objWhy := a.objWhy.merge b.objWhy }
+    retWhy := a.retWhy.merge b.retWhy, objWhy := a.objWhy.merge b.objWhy,
+    e2eObjWhy := a.e2eObjWhy.merge b.e2eObjWhy }
 
 def Counts.add (c : Counts) (path : String) (res : Except String Res) : Counts :=
   let ex (m : String) := s!"{path}: {m}"
@@ -256,7 +260,10 @@ def Counts.add (c : Counts) (path : String) (res : Except String Res) : Counts :
                       all := c.all + one r.all }
     let c := match r.gen with | some m => { c with genWhy := c.genWhy.note m (ex m) } | none => c
     let c := match r.ret with | some m => { c with retWhy := c.retWhy.note m (ex m) } | none => c
-    match r.obj with | some m => { c with objWhy := c.objWhy.note m (ex m) } | none => c
+    let c := match r.obj with | some m => { c with objWhy := c.objWhy.note m (ex m) } | none => c
+    match r.gen, r.ret, r.obj with
+    | none, none, some m => { c with e2eObjWhy := c.e2eObjWhy.note m (ex m) }
+    | _, _, _ => c
 
 structure Stats where
   files : Nat := 0
@@ -360,6 +367,9 @@ def Stats.text (st : Stats) (ms : Nat) : String := Id.run do
   out := out ++ whyTable "`retRegsOK` rejections among the fully verified accepted by `checkG46`:"
     o.retWhy 10
   out := out ++ whyTable "`checkObj` rejections among the fully verified:" o.objWhy 40
+  out := out ++ whyTable
+    "`checkObj` rejections among the fully verified accepted by `checkG46` and `retRegsOK`:"
+    o.e2eObjWhy 40
   out := out ++ whyTable "Back-end errors on the stock `trim` function:" s.errWhy 20
   return out
 

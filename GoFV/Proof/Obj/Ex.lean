@@ -188,6 +188,31 @@ theorem Ex.eval_mkDp3 (c : Ctx) (sf : Bool) (op31 : BitVec 3) (o0 : Bool) (a x y
     rw [← dp3_trunc, exT_opndK_trunc, exT_opndK_trunc, exT_opndK_trunc, dp3_trunc]
   · rfl
 
+theorem dp2_trunc (sf : Bool) (opc : BitVec 6) (x y : BitVec 64) :
+    dp2Op sf opc (ProgOp.trunc sf x) (ProgOp.trunc sf y) = dp2Op sf opc x y := by
+  cases sf <;> simp [dp2Op, sized, ProgOp.trunc, BitVec.setWidth_setWidth_of_le]
+
+theorem Ex.eval_mkDp2 (c : Ctx) (sf : Bool) (opc : BitVec 6) (a b : Ex) :
+    (Ex.mkDp2 sf opc a b).eval c = dp2Op sf opc (a.eval c) (b.eval c) := by
+  simp only [Ex.mkDp2, Ex.eval]
+  rw [← dp2_trunc, exT_opndK_trunc, exT_opndK_trunc, dp2_trunc]
+
+theorem inv_trunc (sf : Bool) (x : BitVec 64) :
+    (sized sf fun _ e => ~~~(e (ProgOp.trunc sf x))) = sized sf fun _ e => ~~~(e x) := by
+  cases sf <;> simp [sized, ProgOp.trunc, BitVec.setWidth_setWidth_of_le]
+
+theorem Ex.eval_mkInv (c : Ctx) (sf : Bool) (a : Ex) :
+    (Ex.mkInv sf a).eval c = sized sf fun _ e => ~~~(e (a.eval c)) := by
+  rw [← inv_trunc sf (a.eval c), ← exT_opnd_trunc c sf a, inv_trunc]
+  unfold Ex.mkInv
+  generalize Ex.opnd sf a = a'
+  split <;> rfl
+
+theorem VEx.eval_mkOfX (c : Ctx) (w : Nat) (a : Ex) :
+    (VEx.mkOfX w a).eval c = ((a.eval c).setWidth w).setWidth 128 := by
+  unfold VEx.mkOfX
+  split <;> rfl
+
 private theorem exT_awc_neg {w : Nat} (hw : 0 < w) (x y : BitVec w) (h0 : y ≠ 0)
     (hm : y ≠ BitVec.intMin w) :
     (GoFV.SSA.Sem.addWithCarry x (-y) false).2 = (GoFV.SSA.Sem.addWithCarry x (~~~y) true).2 := by
@@ -244,10 +269,10 @@ theorem Fl.eval_mkAnds (c : Ctx) (sf : Bool) (a b : Ex) :
     (Fl.mkAnds sf a b).eval c = (logical sf 3 (a.eval c) (b.eval c)).2 := by
   simp only [Fl.mkAnds, Fl.eval, exT_logical_opnd]
 
-/-- An `Ex` evaluates alike in two contexts with the same symbols, `SP`, flags and memory that
-agree on the registers it reads. -/
+/-- An `Ex` evaluates alike in two contexts with the same symbols, `SP`, flags, memory and vector
+registers that agree on the general registers it reads. -/
 theorem Ex.eval_congr {c c' : Ctx} (hsym : c.sym = c'.sym) (hsp : c.s.sp = c'.s.sp)
-    (hmem : c.s.mem = c'.s.mem) (hfl : c.s.nzcv = c'.s.nzcv) :
+    (hmem : c.s.mem = c'.s.mem) (hfl : c.s.nzcv = c'.s.nzcv) (hv : c.s.v = c'.s.v) :
     ∀ e : Ex, (∀ r, e.reads r = true → c.s.x (BitVec.ofNat 5 r) = c'.s.x (BitVec.ofNat 5 r)) →
       e.eval c = e.eval c' := by
   intro e
@@ -279,6 +304,11 @@ theorem Ex.eval_congr {c c' : Ctx} (hsym : c.sym = c'.sym) (hsp : c.s.sp = c'.s.
   | sext n a ih => intro he; simp only [Ex.eval]; rw [ih he]
   | page a ih => intro he; simp only [Ex.eval]; rw [ih he]
   | dp1 sf opc a ih => intro he; simp only [Ex.eval]; rw [ih he]
+  | dp2 sf opc a b iha ihb =>
+    intro he; simp only [Ex.eval]
+    rw [iha (fun r h => he r (by simp [Ex.reads, h])),
+      ihb (fun r h => he r (by simp [Ex.reads, h]))]
+  | inv sf a ih => intro he; simp only [Ex.eval]; rw [ih he]
   | dp3 sf op31 o0 a b d iha ihb ihd =>
     intro he; simp only [Ex.eval]
     rw [iha (fun r h => he r (by simp [Ex.reads, h])),
@@ -288,10 +318,51 @@ theorem Ex.eval_congr {c c' : Ctx} (hsym : c.sym = c'.sym) (hsp : c.s.sp = c'.s.
     intro he; simp only [Ex.eval]
     rw [iha (fun r h => he r (by simp [Ex.reads, h])),
       ihb (fun r h => he r (by simp [Ex.reads, h])), hfl]
+  | vlo ft r => intro _; simp only [Ex.eval, hv]
+  | vq r => intro _; simp only [Ex.eval, hv]
+  | fcvtz ft u m r => intro _; simp only [Ex.eval, hv]
+
+/-- `Ex.eval_congr` for `Ex.eval128`. -/
+theorem Ex.eval128_congr {c c' : Ctx} (hsym : c.sym = c'.sym) (hsp : c.s.sp = c'.s.sp)
+    (hmem : c.s.mem = c'.s.mem) (hfl : c.s.nzcv = c'.s.nzcv) (hv : c.s.v = c'.s.v) (e : Ex)
+    (he : ∀ r, e.reads r = true → c.s.x (BitVec.ofNat 5 r) = c'.s.x (BitVec.ofNat 5 r)) :
+    e.eval128 c = e.eval128 c' := by
+  unfold Ex.eval128
+  split
+  · rw [hv]
+  · rw [Ex.eval_congr hsym hsp hmem hfl hv _ he]
+
+/-- `Ex.eval_congr` for a `VEx`. -/
+theorem VEx.eval_congr {c c' : Ctx} (hsym : c.sym = c'.sym) (hsp : c.s.sp = c'.s.sp)
+    (hmem : c.s.mem = c'.s.mem) (hfl : c.s.nzcv = c'.s.nzcv) (hv : c.s.v = c'.s.v) :
+    ∀ e : VEx, (∀ r, e.reads r = true → c.s.x (BitVec.ofNat 5 r) = c'.s.x (BitVec.ofNat 5 r)) →
+      e.eval c = e.eval c' := by
+  intro e
+  have ex := Ex.eval_congr hsym hsp hmem hfl hv
+  induction e with
+  | v r => intro _; simp only [VEx.eval, hv]
+  | k => intro _; rfl
+  | ofX w a => intro he; simp only [VEx.eval]; rw [ex a he]
+  | ld n a => intro he; simp only [VEx.eval]; rw [ex a he, hmem]
+  | fp1 ft opc a ih => intro he; simp only [VEx.eval]; rw [ih he]
+  | fp2 ft opc a b iha ihb =>
+    intro he; simp only [VEx.eval]
+    rw [iha (fun r h => he r (by simp [VEx.reads, h])),
+      ihb (fun r h => he r (by simp [VEx.reads, h]))]
+  | fp3 ft o1 o0 a n m iha ihn ihm =>
+    intro he; simp only [VEx.eval]
+    rw [iha (fun r h => he r (by simp [VEx.reads, h])),
+      ihn (fun r h => he r (by simp [VEx.reads, h])),
+      ihm (fun r h => he r (by simp [VEx.reads, h]))]
+  | fcsel ft cc a b iha ihb =>
+    intro he; simp only [VEx.eval]
+    rw [iha (fun r h => he r (by simp [VEx.reads, h])),
+      ihb (fun r h => he r (by simp [VEx.reads, h])), hfl]
+  | cvtf ft m u a => intro he; simp only [VEx.eval]; rw [ex a he]
 
 /-- `Fl.eval_congr`, with the flags before the Prog equal. -/
 theorem Fl.eval_congr {c c' : Ctx} (hsym : c.sym = c'.sym) (hsp : c.s.sp = c'.s.sp)
-    (hmem : c.s.mem = c'.s.mem) (hfl : c.s.nzcv = c'.s.nzcv) :
+    (hmem : c.s.mem = c'.s.mem) (hfl : c.s.nzcv = c'.s.nzcv) (hv : c.s.v = c'.s.v) :
     ∀ f : Fl, (∀ r, f.reads r = true → c.s.x (BitVec.ofNat 5 r) = c'.s.x (BitVec.ofNat 5 r)) →
       f.eval c = f.eval c' := by
   intro f hf
@@ -299,11 +370,15 @@ theorem Fl.eval_congr {c c' : Ctx} (hsym : c.sym = c'.sym) (hsp : c.s.sp = c'.s.
   | init => exact hfl
   | addSub sf sub a b =>
     simp only [Fl.eval]
-    rw [Ex.eval_congr hsym hsp hmem hfl a (fun r h => hf r (by simp [Fl.reads, h])),
-      Ex.eval_congr hsym hsp hmem hfl b (fun r h => hf r (by simp [Fl.reads, h]))]
+    rw [Ex.eval_congr hsym hsp hmem hfl hv a (fun r h => hf r (by simp [Fl.reads, h])),
+      Ex.eval_congr hsym hsp hmem hfl hv b (fun r h => hf r (by simp [Fl.reads, h]))]
   | ands sf a b =>
     simp only [Fl.eval]
-    rw [Ex.eval_congr hsym hsp hmem hfl a (fun r h => hf r (by simp [Fl.reads, h])),
-      Ex.eval_congr hsym hsp hmem hfl b (fun r h => hf r (by simp [Fl.reads, h]))]
+    rw [Ex.eval_congr hsym hsp hmem hfl hv a (fun r h => hf r (by simp [Fl.reads, h])),
+      Ex.eval_congr hsym hsp hmem hfl hv b (fun r h => hf r (by simp [Fl.reads, h]))]
+  | fcmp ft a b =>
+    simp only [Fl.eval]
+    rw [VEx.eval_congr hsym hsp hmem hfl hv a (fun r h => hf r (by simp [Fl.reads, h])),
+      VEx.eval_congr hsym hsp hmem hfl hv b (fun r h => hf r (by simp [Fl.reads, h]))]
 
 end GoFV.Proof.Obj

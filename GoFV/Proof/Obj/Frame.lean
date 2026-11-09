@@ -114,7 +114,7 @@ private theorem fr_frame_mem {c : Ctx} {az : Int} {A : BitVec 64} {st : List (Ex
       a ≠ A + BitVec.ofNat 64 j ∧ a ≠ A - 8 + BitVec.ofNat 64 j := by
     intro a ha j hj; constructor <;> bv_omega
   rcases hst with rfl | rfl
-  · simp only [frameStores, storesMem, h1, h2] at hm
+  · simp only [frameStores, storesMem, h1, h2, Ex.eval128_setWidth (n := 8) (Nat.le_refl 8)] at hm
     refine ⟨?_, ?_, fun a ha => ?_⟩
     · simp only [MState.word, hm]
       rw [fr_readMem_other _ _ _ _ hd1, fr_readMem_self]
@@ -125,7 +125,7 @@ private theorem fr_frame_mem {c : Ctx} {az : Int} {A : BitVec 64} {st : List (Ex
     · rw [hm, GoFV.Proof.Gen.writeMem_other _ _ _ _ _ fun j hj => (hout a ha j hj).2,
         GoFV.Proof.Gen.writeMem_other _ _ _ _ _ fun j hj => (hout a ha j hj).1]
   · simp only [frameStores, List.reverse_cons, List.reverse_nil, List.nil_append,
-      List.cons_append, storesMem, h1, h2] at hm
+      List.cons_append, storesMem, h1, h2, Ex.eval128_setWidth (n := 8) (Nat.le_refl 8)] at hm
     refine ⟨?_, ?_, fun a ha => ?_⟩
     · simp only [MState.word, hm]
       rw [fr_readMem_self]
@@ -175,7 +175,7 @@ private theorem frame_run (hlink : linkCode base sym t rs = .ok code) (hsz : t.s
       s1.word (s1.sp - 8) = sA.x 29 ∧ s1.x 29 = s1.sp - 8 ∧
       (∀ k : Reg, k ≠ 20 → k ≠ 27 → k ≠ 29 → s1.x k = sA.x k) ∧ s1.v = sA.v ∧
       (∀ a, 16 ≤ (a - (s1.sp - 8)).toNat → s1.mem a = sA.mem a) := by
-  obtain ⟨hsp', h29, hregs, hx30, hst, hld⟩ := frameOK_spec hf
+  obtain ⟨hsp', h29, hregs, hx30, hst, hld, hv0⟩ := frameOK_spec hf
   obtain ⟨n, hn⟩ : ∃ n, (body - fo) / 4 = n + 1 := ⟨(body - fo) / 4 - 1, by omega⟩
   rw [hn] at hw
   have h1 : (Ex.mkAdd .sp (.k (BitVec.ofInt 64 (-az)))).eval ⟨sA, sym⟩ =
@@ -213,7 +213,8 @@ private theorem frame_run (hlink : linkCode base sym t rs = .ok code) (hsz : t.s
     rfl
   obtain ⟨hw1, hw2, hout⟩ := fr_frame_mem (s1 := s1) hst h1 h2 hcore.mem
   refine ⟨s1, hrun, ?_, hs1, by rw [hs1]; exact hw1, by rw [hs1]; exact hw2, ?_,
-    fun k h20 h27 h29 => ?_, hcore.v, fun a ha => hout a (by rwa [hs1] at ha)⟩
+    fun k h20 h27 h29 => ?_, hcore.v.trans (Sym.evalV_of_nil hv0),
+    fun a ha => hout a (by rwa [hs1] at ha)⟩
   · simp only [CtlPc] at hctl
     rw [hctl]
     exact fr_at (by omega)
@@ -381,7 +382,7 @@ theorem obj_exit {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab : Tab
     ⟨(e - tab.offs[j + 1]!) / 4 - 1, by omega⟩
   rw [hn] at hw
   rcases retOK_spec hok with ⟨haz, rfl, rfl⟩ |
-      ⟨haz, hsp', h29, h30', hregs, hfl, hst, rfl, hld⟩
+      ⟨haz, hsp', h29, h30', hregs, hfl, hst, hv0, rfl, hld⟩
   · -- frameless: the words only return
     obtain ⟨t', hrun, hcore, hx, hctl⟩ := symWords_sound (H := H) hlink hsz hret n _ {} {} _
       ⟨t, sym⟩ t hw rfl (fr_holds_init _) hpc ⟨fun _ _ h => by simp at h, fun _ _ _ h => by simp at h⟩
@@ -420,7 +421,8 @@ theorem obj_exit {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab : Tab
     rw [h30'] at h30
     rw [h29] at h29'
     refine ⟨t', hrun, ?_, ?_, ?_, ?_, fun r h27 h29r h30r => fr_reg hcore h27 (Or.inl h30r)
-      fun hk hm => hregs _ hm (by bv_omega), hcore.v, by rw [hcore.mem, hst]; rfl,
+      fun hk hm => hregs _ hm (by bv_omega), hcore.v.trans (Sym.evalV_of_nil hv0),
+      by rw [hcore.mem, hst]; rfl,
       by rw [hcore.nzcv, hfl]; rfl⟩
     · rw [hctl]
       cases tab.leaf <;> simp [haz, Ex.eval, fr_wordR]

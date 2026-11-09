@@ -365,12 +365,44 @@ Witnesses:
 - `objG7_value_witness` (`(*A).g`'s nil check, down to the linked words);
 - `objG7_term_witness` (`pallocSum.start`'s `TBNZ`);
 - `objOps_csel_witness`, `objOps_blr_witness`, `objOps_fault_witness`, `objOps_ctl_witness`
-  (`GoFV/Proof/Witness/ObjOps.lean`: `CSET` as `CSINC`, `BLR`, a faulting `LDAR`, `CALL (R2)`).
+  (`GoFV/Proof/Witness/ObjOps.lean`: `CSET` as `CSINC`, `BLR`, a faulting `LDAR`, `CALL (R2)`);
+  `objOps_stpq_witness`, `objOps_strq_witness` (`STP Q1, Q2, [SP, #32]` and `STR Q3, [SP, #16]`
+  through `symInsn_sound`: the memory after holds all 128 bits of each register; `FSTPQ`/`FMOVQ`
+  have the same effect), `objOps_eval128_witness`.
 
-Coverage on quick-v10 (`lake exe obj-check`): 7,741 of 9,297 functions (83.26%; 277,986 of
+Coverage on quick-v10 (`lake exe obj-check`): 8,464 of 9,297 functions (91.04%; 331,064 of
 429,130 P0 Progs in accepted functions), with `CSEL`/`CSINC`/`CSINV`/`CSNEG`/`CSET`/`CSETM`,
-`MUL`/`MNEG`/`MADD`/`MSUB`/`UMULH`/`SMULH`, `CLZ`/`RBIT`/`REV*`, `LDAR*`/`STLR*` and `CALL (Rn)`
-(was 5,533, 59.51%).
+`MUL`/`MNEG`/`MADD`/`MSUB`/`UMULH`/`SMULH`, `CLZ`/`RBIT`/`REV*`, `LDAR*`/`STLR*`, `CALL (Rn)`, the
+variable shifts, divisions, `REM`/`UREM`, `BIC`/`ORN`/`EON`/`MVN` and the SIMD&FP forms Go emits
+(below; was 8,263, 88.87%, before the `Q` stores, 7,920, 85.18%, before the integer operations
+after `MUL`, 7,741, 83.26%, before SIMD&FP, and 5,533, 59.51%, before the opcodes above).
+
+**SIMD&FP.** `Sym` carries the vector registers written (`Sym.v`, 128-bit values `VEx` over the
+state before the Prog: `.v r`, constants, `.ofX` of a general register, loads `.ld n a`, `fp1Op`,
+`fp2Op` (`Rn`, `Rm` order), `fp3Op`, `FCSEL` on the flags before the Prog, `SCVTF`/`UCVTF`), `Ex`
+reads the low `S`/`D` part of a vector register (`Ex.vlo`, the value of an `FMOV` to a general
+register and of an `S`/`D` store) and `FCVTZS`/`FCVTZU` (`Ex.fcvtz`), and the flags an `FCMP`
+(`Fl.fcmp`). `HoldsCore.v` states the machine's vector registers as `Sym.evalV`, `sameEffect`
+compares `V0`–`V31`, and the templates (prologue, epilogue, stack check) write none. Modelled on
+both sides (`symInsn` for `exec`, `progSym` for `progEffect`, soundness `symInsn_sound` and
+`progSym_sound` per family): `FMOVS`/`FMOVD`/`FMOVQ` loads (every address form, write-back) and
+stores, moves between vector registers, from and to a general register (`FMOV ZR` is the constant
+0, `VEx.mkOfX`) and of an encodable constant (`FMOV $c`, `fmovImm`); `FLDPS`/`FLDPD`/`FLDPQ`,
+`FSTPS`/`FSTPD`/`FSTPQ`; `FADD`/`FSUB`/`FMUL`/`FDIV`/`FMAX`/`FMIN`/`FNMUL`, `FNEG`/`FABS`/
+`FSQRT`/`FRINT*`, `FCVTSD`/`FCVTDS`, `FMADD`/`FMSUB`/`FNMADD`/`FNMSUB`, `FCMP`/`FCMPE` (also with
+`$(0.0)`), `FCSEL`, `FCVTZS`/`FCVTZU` and `SCVTF`/`UCVTF` (`S`/`D`, `W`/`X`). A store's value is
+`vStoreEx` of the register: its `S`/`D` part (`Ex.vlo`) or, for a `Q` store, the whole register
+(`Ex.vq`, whose 64-bit `eval` is the low half); `storesMem` and the P0 relation write the low `8 n`
+bits of `Ex.eval128` (128 bits: `vq r` all of `V r`, any other value zero-extended;
+`Ex.eval128_setWidth`: the same as `eval` for at most 8 bytes). Both `exec` and `progEffect` write
+a `Q` register's 16 bytes little-endian at one address with one nil-page check, so a `Q` store is
+one 16-byte entry, not two 8-byte ones (`NoNil` would then also require the second half's address
+outside the nil page, which neither side checks). Not modelled: a float constant that is not an
+`FMOV` immediate (`FMOVD` 133 functions, `FMOVS` 30, `PCREL_LDST: access`): `progedit` loads it
+from a read-only data symbol `$f64.<bits>`/`$f32.<bits>` (`ADRP` + `LDR D`/`S` with
+`R_ARM64_PCREL_LDST64`/`32`, e.g. `math.Ilogb`), not from the text; the machine reads that
+symbol's bytes from `MState.mem`, which neither `ObjEnv` nor `ObjRel` relates to the constant
+(P0's `FCONST` is the constant itself); `VCNT` (12 functions).
 
 ## Phase 3: genssa, slice G13 (I7, #553)
 
@@ -1017,15 +1049,15 @@ declarations, then the autos the pipeline created). From the stock `.prog` file 
 input view is read (definitions, config, `Dcl` at `AllocFrame`'s start, `genin`). The stock
 column runs the same back end on the stock `trim` function of every function.
 
-| quick-v10 (9,297 functions, 6 min 5 s; `agent/obj13` on main 705d06bb (G46), `--jobs 2`) | pipeline output | share | stock `trim` |
+| quick-v10 (9,297 functions, 6 min 48 s; `agent/objq` on main 873c6ecf (composition on G46), `--jobs 2`) | pipeline output | share | stock `trim` |
 | --- | ---: | ---: | ---: |
-| fully verified (Phase 2, through `trim`) | 7,834 | 84.26% | - |
-| … genssa and `Flushplist` ran | 7,834 | 84.26% | 9,297 |
+| fully verified (Phase 2, through `trim`) | 7,845 | 84.38% | - |
+| … genssa and `Flushplist` ran | 7,845 | 84.38% | 9,297 |
 | … ∧ `checkG46` | 6,086 | 65.46% | 6,775 |
 | … ∧ `checkG46` ∧ `retRegsOK` | 6,086 | 65.46% | 6,728 |
-| … ∧ `checkObj` | 7,067 | 76.01% | 7,741 |
-| **… ∧ `checkG46` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach`)** | **5,970** | **64.21%** | 6,426 |
-| … end to end, pipeline output identical to stock after `trim` | 5,066 | 54.49% | - |
+| … ∧ `checkObj` | 7,427 | 79.88% | 8,464 |
+| **… ∧ `checkG46` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach`)** | **6,084** | **65.44%** | 6,678 |
+| … end to end, pipeline output identical to stock after `trim` | 5,160 | 55.50% | - |
 
 The composition on G34 (#632) accepted 5,424 (58.34%), framed leaves excluded; on G37 with framed
 leaves 5,538 (59.56%); on G38 (the acquire loads) the probe counted 5,802 (62.40%); on G39 (the
@@ -1040,16 +1072,19 @@ c3414814 (#649, narrow left shifts in `lower`) adds 64 fully verified functions 
 (5,970). The compositions on G45 (register-index float loads and stores) and G46 (float
 arithmetic, conversions, compares, `FMADD`/`FNMSUB`; `FArithPre` in `RunPre`) stay at 5,970:
 `checkG46` accepts 28 more fully verified functions than `checkG44` (6,086), every one of them
-rejected by `checkObj`, which does not model the SIMD&FP forms (the binding constraint for floats
-end to end). `ownFrame` gives the stock
-`stksize`/`stkptrsize` on all 6,578 fully verified functions whose output is identical to stock.
+rejected by `checkObj`, which did not model the SIMD&FP forms (the binding constraint for floats
+end to end). With `checkObj`'s SIMD&FP forms, register shifts, `UDIV`/`SDIV`/`REM`, `BIC`/`ORN`/
+`EON`/`MVN` and the Q stores (main 873c6ecf, which adds 11 fully verified functions) the composition
+on G46 counts 6,084 end to end (5,970 before): `checkObj` rejects only 2 of the 6,086 functions `checkG46`
+accepts. `ownFrame` gives the stock
+`stksize`/`stkptrsize` on all 6,584 fully verified functions whose output is identical to stock.
 `pallocSum.start` (the witness `verified_mach_witness`) is among the accepted. Top reasons among
 the fully verified: `checkG46`: `store shape` (326), `frame variable off another base` (229),
 `argument v# in register #` (165), `op CALLtail` (164), `frame variable with an integer address`
 (138), `frame variable operand class` (134), `op LoweredAtomicAdd#Variant` (97), `op
 LoweredAtomicCas#Variant` (92), `floating-point argument or result` (64); `retRegsOK`: none;
-`checkObj`: `FLDPQ` (SIMD&FP, 121), `LSL` by a register (83), unmodelled atomics
-`LDADDAL`/`CASAL` (≈247 together), `tail: spill register` (58), `FMOVD` (SIMD&FP, 39).
+`checkObj`: unmodelled atomics `LDADDAL`/`CASAL` (255 together), `tail: spill register` (69), `JMP`
+to a register (12), the stack check of a huge frame (11).
 
 The full-v11 table below is the composition on G34 (main 0d51e03e, framed leaves excluded); the
 run on the composition on G44 (main c3414814 plus #650) is in progress.

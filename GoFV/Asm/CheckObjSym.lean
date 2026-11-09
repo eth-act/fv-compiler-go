@@ -8,13 +8,14 @@ variable [GoFV.SSA.Sem.Addrs]
 The assembler validator compares two descriptions of what one P0 Prog does: the Prog's own
 effect (`progEffect`, in Go's operand conventions) and the effect of the machine words the
 assembler encoded for it (`GoFV.Arm64.exec` of their decoded instructions). Both are computed
-**symbolically**, as a `Sym`: the general registers written, `SP`, the flags, the loads and the
-stores, each value an `Ex` over the state *before* the Prog. Equal `Sym`s (with `X27`, the
-assembler's scratch, ignored) mean equal effects on every state.
+**symbolically**, as a `Sym`: the general registers written, `SP`, the flags, the loads, the
+stores and the vector registers written, each value an `Ex` (64 bits) or a `VEx` (128 bits) over
+the state *before* the Prog. Equal `Sym`s (with `X27`, the assembler's scratch, ignored) mean
+equal effects on every state.
 
 `Ex`'s operations are the data operations `exec` and `progEffect` share (`addSub`, `logical`,
-`Shift.apply` through `sized`, `extendReg`, `bitfieldMove`, `sext`, loads), so the two sides
-meet syntactically. Smart constructors (`Ex.add`, `Ex.mkAddSub`, …) fold constants and pick
+`Shift.apply` through `sized`, `extendReg`, `bitfieldMove`, `sext`, `dp2Op`, loads), so the two
+sides meet syntactically. Smart constructors (`Ex.add`, `Ex.mkAddSub`, …) fold constants and pick
 one form for the identities the encodings need (`ORR Rd, ZR, Rm` is `Rm`, `ADD`/`SUB` of a
 constant is `+`, …); `Ex.eval` gives the meaning, and each smart constructor is proven to
 preserve it (`GoFV/Proof/Obj/`).
@@ -61,11 +62,25 @@ inductive Ex where
   | page (a : Ex)
   /-- `dp1Op sf opc a` (`CLZ`, `RBIT`, `REV`, …). -/
   | dp1 (sf : Bool) (opc : BitVec 3) (a : Ex)
+  /-- `dp2Op sf opc a b` (`UDIV`, `SDIV`, `LSLV`, `LSRV`, `ASRV`, `RORV`). -/
+  | dp2 (sf : Bool) (opc : BitVec 6) (a b : Ex)
+  /-- `sized sf fun _ e => ~~~(e a)`: the inverted operand of `BIC`/`ORN`/`EON` (`logShift`
+  with `n`). -/
+  | inv (sf : Bool) (a : Ex)
   /-- `dp3Op sf op31 o0 a x y` (`MADD`/`MSUB`, `UMULH`, `SMULH`). -/
   | dp3 (sf : Bool) (op31 : BitVec 3) (o0 : Bool) (a x y : Ex)
   /-- `cselVal sf op op2 h a b`, `h` whether condition `c` holds on the flags before the Prog
   (`CSEL`, `CSINC`, `CSINV`, `CSNEG`). -/
   | csel (sf op op2 : Bool) (c : BitVec 4) (a b : Ex)
+  /-- The low `S`/`D` part of vector register `V r` (`r < 32`) before the Prog, zero-extended:
+  `ft = 0` the low 32 bits, else the low 64 (`FMOV` to a general register, an `S`/`D` store). -/
+  | vlo (ft : BitVec 2) (r : Nat)
+  /-- Vector register `V r` (`r < 32`) before the Prog, whole: the value of a `Q` store
+  (`eval128`); as a 64-bit value its low half. -/
+  | vq (r : Nat)
+  /-- `FCVTZS`/`FCVTZU` (`u`) of the `S` (`ft = 0`) or `D` part of `V r` before the Prog into
+  `m` bits, zero-extended (`exec`'s `fcvtInt` with `rmode` 3). -/
+  | fcvtz (ft : BitVec 2) (u : Bool) (m : Nat) (r : Nat)
   deriving DecidableEq, Repr, Inhabited
 
 /-- The value of a conditional select (`condSel`): `x` at the datasize if `h`, else `y`
@@ -101,8 +116,24 @@ def eval (c : Ctx) : Ex → BitVec 64
   | .sext n a => GoFV.SSA.Sem.Arm64.sext n (eval c a)
   | .page a => eval c a &&& ~~~(0xFFF : BitVec 64)
   | .dp1 sf opc a => dp1Op sf opc (eval c a)
+  | .dp2 sf opc a b => dp2Op sf opc (eval c a) (eval c b)
+  | .inv sf a => sized sf fun _ e => ~~~(e (eval c a))
   | .dp3 sf op31 o0 a b d => dp3Op sf op31 o0 (eval c a) (eval c b) (eval c d)
   | .csel sf op op2 cc a b => cselVal sf op op2 ((condOf cc).holds c.s.nzcv) (eval c a) (eval c b)
+  | .vlo ft r =>
+    if ft = 0 then ((c.s.v (BitVec.ofNat 5 r)).setWidth 32).setWidth 64
+    else (c.s.v (BitVec.ofNat 5 r)).setWidth 64
+  | .vq r => (c.s.v (BitVec.ofNat 5 r)).setWidth 64
+  | .fcvtz ft u m r =>
+    if ft = 0 then
+      (GoFV.IEEE.toFixed .b32 ((c.s.v (BitVec.ofNat 5 r)).setWidth 32) u m .rz).setWidth 64
+    else (GoFV.IEEE.toFixed .b64 ((c.s.v (BitVec.ofNat 5 r)).setWidth 64) u m .rz).setWidth 64
+
+/-- The 128 bits a store of the value writes the low `8 n` bits of: `vq r` all of `V r`, any
+other value zero-extended. -/
+def eval128 (c : Ctx) : Ex → BitVec 128
+  | .vq r => c.s.v (BitVec.ofNat 5 r)
+  | e => (eval c e).setWidth 128
 
 /-- A short rendering for rejection messages. -/
 def str : Ex → String
@@ -121,28 +152,36 @@ def str : Ex → String
   | .sext n a => s!"sext{n}({str a})"
   | .page a => s!"page({str a})"
   | .dp1 sf opc a => s!"dp1_{opc.toNat}{if sf then "" else "W"}({str a})"
+  | .dp2 sf opc a b => s!"dp2_{opc.toNat}{if sf then "" else "W"}({str a},{str b})"
+  | .inv sf a => s!"inv{if sf then "" else "W"}({str a})"
   | .dp3 sf op31 o0 a b d =>
     s!"dp3_{op31.toNat}{if o0 then "S" else "A"}{if sf then "" else "W"}({str a},{str b},{str d})"
   | .csel sf op op2 cc a b =>
     s!"csel{if op then "I" else ""}{if op2 then "+" else ""}{if sf then "" else "W"}_{cc.toNat}({str a},{str b})"
+  | .vlo ft r => s!"vlo{ft.toNat}(V{r})"
+  | .vq r => s!"vq(V{r})"
+  | .fcvtz ft u m r => s!"fcvtz{if u then "U" else "S"}{ft.toNat}_{m}(V{r})"
 
 /-- Whether the value reads general register `r` of the state before the Prog. -/
 def reads (r : Nat) : Ex → Bool
   | .x q => q == r
-  | .sp | .k _ | .sym _ => false
-  | .ld _ a | .shift _ _ _ a | .ext _ _ a | .lo32 a | .sext _ a | .page a | .dp1 _ _ a => reads r a
-  | .add a b | .addSub _ _ a b | .logical _ _ a b | .bfm _ _ _ _ a b | .csel _ _ _ _ a b =>
-    reads r a || reads r b
+  | .sp | .k _ | .sym _ | .vlo .. | .vq _ | .fcvtz .. => false
+  | .ld _ a | .shift _ _ _ a | .ext _ _ a | .lo32 a | .sext _ a | .page a | .dp1 _ _ a
+  | .inv _ a => reads r a
+  | .add a b | .addSub _ _ a b | .logical _ _ a b | .bfm _ _ _ _ a b | .csel _ _ _ _ a b
+  | .dp2 _ _ a b => reads r a || reads r b
   | .dp3 _ _ _ a b d => reads r a || reads r b || reads r d
 
 /-- Whether every register the value reads is one of `X0`–`X30` but `X27` (the assembler's
-scratch) and `X30` (the link register): the registers a P0 state and its machine state agree on. -/
+scratch) and `X30` (the link register), or a vector register: the registers a P0 state and its
+machine state agree on. -/
 def regsOK : Ex → Bool
   | .x r => r < 31 && r != 27 && r != 30
-  | .sp | .k _ | .sym _ => true
-  | .ld _ a | .shift _ _ _ a | .ext _ _ a | .lo32 a | .sext _ a | .page a | .dp1 _ _ a => regsOK a
-  | .add a b | .addSub _ _ a b | .logical _ _ a b | .bfm _ _ _ _ a b | .csel _ _ _ _ a b =>
-    regsOK a && regsOK b
+  | .sp | .k _ | .sym _ | .vlo .. | .vq _ | .fcvtz .. => true
+  | .ld _ a | .shift _ _ _ a | .ext _ _ a | .lo32 a | .sext _ a | .page a | .dp1 _ _ a
+  | .inv _ a => regsOK a
+  | .add a b | .addSub _ _ a b | .logical _ _ a b | .bfm _ _ _ _ a b | .csel _ _ _ _ a b
+  | .dp2 _ _ a b => regsOK a && regsOK b
   | .dp3 _ _ _ a b d => regsOK a && regsOK b && regsOK d
 
 /-! ### Smart constructors (constant folding and the canonical forms) -/
@@ -231,7 +270,95 @@ datasize. -/
 def mkDp3 (sf : Bool) (op31 : BitVec 3) (o0 : Bool) (a x y : Ex) : Ex :=
   if op31 = 0 then .dp3 sf 0 o0 (opndK sf a) (opndK sf x) (opndK sf y) else .dp3 sf op31 o0 a x y
 
+/-- `dp2Op sf opc a b`: the operands at the datasize (`opndK`). -/
+def mkDp2 (sf : Bool) (opc : BitVec 6) (a b : Ex) : Ex := .dp2 sf opc (opndK sf a) (opndK sf b)
+
+/-- `sized sf fun _ e => ~~~(e a)`: the operand at the datasize (`opnd`), a constant folded. -/
+def mkInv (sf : Bool) (a : Ex) : Ex :=
+  match opnd sf a with
+  | .k v => .k (sized sf fun _ e => ~~~(e v))
+  | a => .inv sf a
+
 end Ex
+
+/-! ## Vector values -/
+
+/-- A 128-bit vector register value, symbolically, over the state before a Prog (`eval`). -/
+inductive VEx where
+  /-- Vector register `V r` (`r < 32`). -/
+  | v (r : Nat)
+  | k (c : BitVec 128)
+  /-- The low `w` bits of a general value, zero-extended (`FMOV` from a general register). -/
+  | ofX (w : Nat) (a : Ex)
+  /-- The `n` bytes at the address, zero-extended (the memory before the Prog). -/
+  | ld (n : Nat) (a : Ex)
+  /-- `fp1Op ft opc a`. -/
+  | fp1 (ft : BitVec 2) (opc : BitVec 6) (a : VEx)
+  /-- `fp2Op ft opc a b` (`Rn`, `Rm` order). -/
+  | fp2 (ft : BitVec 2) (opc : BitVec 4) (a b : VEx)
+  /-- `fp3Op ft o1 o0 a n m`. -/
+  | fp3 (ft : BitVec 2) (o1 o0 : Bool) (a n m : VEx)
+  /-- `FCSEL`: `a` if condition `c` holds on the flags before the Prog, else `b`, at the
+  format `ft`. -/
+  | fcsel (ft : BitVec 2) (c : BitVec 4) (a b : VEx)
+  /-- `SCVTF`/`UCVTF` (`u`) of the low `m` bits of a general value to the format `ft`. -/
+  | cvtf (ft : BitVec 2) (m : Nat) (u : Bool) (a : Ex)
+  deriving DecidableEq, Repr, Inhabited
+
+namespace VEx
+
+/-- The meaning of a `VEx`. -/
+def eval (c : Ctx) : VEx → BitVec 128
+  | .v r => c.s.v (BitVec.ofNat 5 r)
+  | .k w => w
+  | .ofX w a => ((a.eval c).setWidth w).setWidth 128
+  | .ld n a => (readMem c.s.mem (a.eval c) n).setWidth 128
+  | .fp1 ft opc a => fp1Op ft opc (eval c a)
+  | .fp2 ft opc a b => fp2Op ft opc (eval c a) (eval c b)
+  | .fp3 ft o1 o0 a n m => fp3Op ft o1 o0 (eval c a) (eval c n) (eval c m)
+  | .fcsel ft cc a b =>
+    fpUn ft (fun _ x => x) (if (condOf cc).holds c.s.nzcv then eval c a else eval c b)
+  | .cvtf ft m u a =>
+    if ft = 0 then (GoFV.IEEE.fromFixed .b32 m ((a.eval c).setWidth m) u .rne).setWidth 128
+    else (GoFV.IEEE.fromFixed .b64 m ((a.eval c).setWidth m) u .rne).setWidth 128
+
+/-- A short rendering for rejection messages. -/
+def str : VEx → String
+  | .v r => s!"V{r}"
+  | .k w => w.toHex
+  | .ofX w a => s!"ofX{w}({a.str})"
+  | .ld n a => s!"vld{n}({a.str})"
+  | .fp1 ft opc a => s!"fp1_{opc.toNat}_{ft.toNat}({str a})"
+  | .fp2 ft opc a b => s!"fp2_{opc.toNat}_{ft.toNat}({str a},{str b})"
+  | .fp3 ft o1 o0 a n m => s!"fp3_{o1}{o0}_{ft.toNat}({str a},{str n},{str m})"
+  | .fcsel ft cc a b => s!"fcsel{ft.toNat}_{cc.toNat}({str a},{str b})"
+  | .cvtf ft m u a => s!"cvtf{if u then "U" else "S"}{ft.toNat}_{m}({a.str})"
+
+/-- Whether the value reads general register `r` of the state before the Prog (`Ex.reads` of
+its `Ex` leaves). -/
+def reads (r : Nat) : VEx → Bool
+  | .v _ | .k _ => false
+  | .ofX _ a | .ld _ a | .cvtf _ _ _ a => a.reads r
+  | .fp1 _ _ a => reads r a
+  | .fp2 _ _ a b | .fcsel _ _ a b => reads r a || reads r b
+  | .fp3 _ _ _ a n m => reads r a || reads r n || reads r m
+
+/-- `Ex.regsOK` of its `Ex` leaves. -/
+def regsOK : VEx → Bool
+  | .v _ | .k _ => true
+  | .ofX _ a | .ld _ a | .cvtf _ _ _ a => a.regsOK
+  | .fp1 _ _ a => regsOK a
+  | .fp2 _ _ a b | .fcsel _ _ a b => regsOK a && regsOK b
+  | .fp3 _ _ _ a n m => regsOK a && regsOK n && regsOK m
+
+/-- `ofX w a`, a constant folded (`FMOV` from `ZR`, the encoding of the `FCONST` `0.0`, is the
+constant `0`). -/
+def mkOfX (w : Nat) (a : Ex) : VEx :=
+  match a with
+  | .k x => .k ((x.setWidth w).setWidth 128)
+  | a => .ofX w a
+
+end VEx
 
 /-! ## Flags -/
 
@@ -243,6 +370,8 @@ inductive Fl where
   | addSub (sf sub : Bool) (a b : Ex)
   /-- `(logical sf 3 a b).2` (`ANDS`). -/
   | ands (sf : Bool) (a b : Ex)
+  /-- `fcmpOp ft a b` (`FCMP`; the zero form compares with `.k 0`). -/
+  | fcmp (ft : BitVec 2) (a b : VEx)
   deriving DecidableEq, Repr, Inhabited
 
 namespace Fl
@@ -251,15 +380,18 @@ def eval (c : Ctx) : Fl → Flags
   | .init => c.s.nzcv
   | .addSub sf sub a b => (GoFV.Arm64.addSub sf sub (a.eval c) (b.eval c)).2
   | .ands sf a b => (GoFV.Arm64.logical sf 3 (a.eval c) (b.eval c)).2
+  | .fcmp ft a b => fcmpOp ft (a.eval c) (b.eval c)
 
 def reads (r : Nat) : Fl → Bool
   | .init => false
   | .addSub _ _ a b | .ands _ a b => a.reads r || b.reads r
+  | .fcmp _ a b => a.reads r || b.reads r
 
 /-- `Ex.regsOK` of the operands. -/
 def regsOK : Fl → Bool
   | .init => true
   | .addSub _ _ a b | .ands _ a b => a.regsOK && b.regsOK
+  | .fcmp _ a b => a.regsOK && b.regsOK
 
 /-- `SUBS` of a nonzero constant `y` sets the flags `ADDS` of `-y` does (`CMP $-c` is encoded
 as `CMN $c`); the canonical form is the `ADDS`. -/
@@ -283,14 +415,16 @@ end Fl
 /-! ## Symbolic states -/
 
 /-- The effect of a Prog (or of the words encoded for it) so far, over the state before it:
-general registers written (latest first), `SP`, the flags, the loads (latest first) and the
-stores (in order: address, bytes, value; the value's low `8 n` bits are stored). -/
+general registers written (latest first), `SP`, the flags, the loads (latest first), the
+stores (in order: address, bytes, value; the low `8 n` bits of the value's `Ex.eval128` are
+stored) and the vector registers written (latest first). -/
 structure Sym where
   x : List (Nat × Ex) := []
   sp : Ex := .sp
   fl : Fl := .init
   loads : List (Ex × Nat) := []
   stores : List (Ex × Nat × Ex) := []
+  v : List (Nat × VEx) := []
   deriving DecidableEq, Repr, Inhabited
 
 namespace Sym
@@ -317,6 +451,22 @@ def load (σ : Sym) (a : Ex) (n : Nat) : Except String (Sym × Ex) :=
   else throw "load after a store"
 
 def store (σ : Sym) (a : Ex) (n : Nat) (v : Ex) : Sym := { σ with stores := σ.stores ++ [(a, n, v)] }
+
+/-- Vector register `r` (`r < 32`). -/
+def getV (σ : Sym) (r : Nat) : VEx := (σ.v.lookup r).getD (.v r)
+
+/-- A write of vector register `r`. -/
+def wV (σ : Sym) (r : Nat) (e : VEx) : Sym := { σ with v := (r, e) :: σ.v }
+
+/-- `e`, a value reading `V r` before the Prog (`Ex.vlo`, `Ex.fcvtz`), while the effect has not
+written `V r`. -/
+def vEx (σ : Sym) (r : Nat) (e : Ex) : Except String Ex :=
+  if (σ.v.lookup r).isNone then pure e else throw "V register read after write"
+
+/-- The vector registers after the effect, over `c`: the latest write's value, else the
+register before the Prog. -/
+def evalV (σ : Sym) (c : Ctx) : Reg → BitVec 128 :=
+  fun r => ((σ.v.lookup r.toNat).map (·.eval c)).getD (c.s.v r)
 
 end Sym
 
@@ -402,6 +552,77 @@ def symCsel (σ : Sym) (sf op op2 : Bool) (rm : Reg) (cond : BitVec 4) (rn rd : 
     pure (σ.wX rd.toNat (.csel sf op op2 cond (σ.rX rn.toNat) (σ.rX rm.toNat)), .fall)
   else throw "conditional select on flags set by the words"
 
+/-! ### SIMD&FP -/
+
+/-- The value an `n`-byte SIMD&FP store of `V r` writes: the `S` part (4 bytes, `Ex.vlo 0`), the
+`D` part (8, `Ex.vlo 1`) or the whole register (16, `Ex.vq`). -/
+def vStoreEx (n r : Nat) : Ex := if n = 16 then .vq r else .vlo (if n = 4 then 0 else 1) r
+
+/-- `vStoreEx` for a store of 4, 8 or 16 bytes; a `B`/`H` store is not modelled. -/
+def vStoreVal (n r : Nat) : Except String Ex :=
+  if n = 4 ∨ n = 8 ∨ n = 16 then pure (vStoreEx n r)
+  else throw "SIMD&FP store of other than 4, 8 or 16 bytes"
+
+/-- The symbolic SIMD&FP single-register access of `ldst` at address `a` (no write-back): a load
+writes `V rt` (`VEx.ld`), a store stores `vStoreEx` of `V rt` before the Prog. -/
+def symVAccess (σ : Sym) (size opc : BitVec 2) (rt : Nat) (a : Ex) : Except String Sym := do
+  let n := accessBytes size true opc
+  if opc.getLsbD 0 then
+    let (σ, _) ← σ.load a n
+    pure (σ.wV rt (.ld n a))
+  else
+    let e ← vStoreVal n rt
+    let v ← σ.vEx rt e
+    pure (σ.store a n v)
+
+/-- The symbolic SIMD&FP `ldstPair` (`LDP`/`STP` of `S`, `D`, `Q`). -/
+def symVPair (σ : Sym) (opc mode : BitVec 2) (ld : Bool) (imm7 : BitVec 7) (rt2 rn rt : Reg) :
+    Except String Sym := do
+  let n := 4 * 2 ^ opc.toNat
+  let base := σ.rXsp rn.toNat
+  let off : BitVec 64 := imm7.signExtend 64 * BitVec.ofNat 64 n
+  let a := if mode = 1 then base else Ex.mkAdd base (.k off)
+  let a2 := Ex.mkAdd a (.k (BitVec.ofNat 64 n))
+  let σ' ← if ld then do
+      let (σ1, _) ← σ.load a n
+      let (σ2, _) ← σ1.load a2 n
+      pure ((σ2.wV rt.toNat (.ld n a)).wV rt2.toNat (.ld n a2))
+    else do
+      let e ← vStoreVal n rt.toNat
+      let v1 ← σ.vEx rt.toNat e
+      let v2 ← σ.vEx rt2.toNat (vStoreEx n rt2.toNat)
+      pure ((σ.store a n v1).store a2 n v2)
+  pure (if mode = 2 then σ' else σ'.wXsp rn.toNat (Ex.mkAdd base (.k off)))
+
+/-- The symbolic `FCSEL`: the condition on the flags before the Prog. -/
+def symFcsel (σ : Sym) (ft : BitVec 2) (rm : Reg) (cond : BitVec 4) (rn rd : Reg) :
+    Except String Sym :=
+  if σ.fl = .init then
+    pure (σ.wV rd.toNat (.fcsel ft cond (σ.getV rn.toNat) (σ.getV rm.toNat)))
+  else throw "FCSEL on flags set by the words"
+
+/-- The symbolic `fcvtInt` (`FMOV` between general and SIMD&FP registers, `SCVTF`/`UCVTF`,
+`FCVTZS`/`FCVTZU`). -/
+def symFcvt (σ : Sym) (sf : Bool) (ft rmode : BitVec 2) (opc : BitVec 3) (rn rd : Reg) :
+    Except String Sym :=
+  let m := if sf then 64 else 32
+  match rmode.toNat, opc.toNat with
+  | 0, 6 => do
+    let e ← σ.vEx rn.toNat (.vlo ft rn.toNat)
+    pure (σ.wX rd.toNat e)
+  | 0, 7 =>
+    pure (σ.wV rd.toNat
+      (if ft = 0 then VEx.mkOfX 32 (σ.rX rn.toNat) else VEx.mkOfX 64 (σ.rX rn.toNat)))
+  | 0, 2 => pure (σ.wV rd.toNat (.cvtf ft m false (σ.rX rn.toNat)))
+  | 0, 3 => pure (σ.wV rd.toNat (.cvtf ft m true (σ.rX rn.toNat)))
+  | 3, 0 => do
+    let e ← σ.vEx rn.toNat (.fcvtz ft false m rn.toNat)
+    pure (σ.wX rd.toNat e)
+  | 3, 1 => do
+    let e ← σ.vEx rn.toNat (.fcvtz ft true m rn.toNat)
+    pure (σ.wX rd.toNat e)
+  | _, _ => throw s!"instruction not modelled: {(Insn.fcvtInt sf ft rmode opc rn rd).form}"
+
 /-- The symbolic `exec` of one instruction at offset `o` (a word whose fields no relocation
 patches). -/
 def symInsn (i : Insn) (o : Nat) (σ : Sym) : Except String (Sym × MCtl) :=
@@ -442,13 +663,15 @@ def symInsn (i : Insn) (o : Nat) (σ : Sym) : Except String (Sym × MCtl) :=
     if kind = .blr then pure (σ, .callReg (σ.rX rn.toNat)) else pure (σ, .reg (σ.rX rn.toNat))
   | .condSel sf op op2 rm cond rn rd => symCsel σ sf op op2 rm cond rn rd
   | .dp1 sf opc rn rd => pure (σ.wX rd.toNat (.dp1 sf opc (σ.rX rn.toNat)), .fall)
+  | .dp2 sf opc rm rn rd =>
+    pure (σ.wX rd.toNat (Ex.mkDp2 sf opc (σ.rX rn.toNat) (σ.rX rm.toNat)), .fall)
   | .dp3 sf op31 o0 rm ra rn rd =>
     pure (σ.wX rd.toNat (Ex.mkDp3 sf op31 o0 (σ.rX ra.toNat) (σ.rX rn.toNat) (σ.rX rm.toNat)), .fall)
   | .ldstExcl size o2 ld _ _ rn rt => symExcl σ size o2 ld rn rt
   | .nop | .barrier .. => pure (σ, .fall)
   | .logShift sf opc shift n rm imm6 rn rd =>
     let y := Ex.mkShift sf shift imm6.toNat (σ.rX rm.toNat)
-    if n then throw "logical shifted register with inversion" else
+    let y := if n then Ex.mkInv sf y else y
     let x := σ.rX rn.toNat
     let r := Ex.mkLogical sf opc x y
     if opc = 3 then pure ({ σ.wX rd.toNat r with fl := Fl.mkAnds sf x y }, .fall)
@@ -465,16 +688,24 @@ def symInsn (i : Insn) (o : Nat) (σ : Sym) : Except String (Sym × MCtl) :=
     let r := Ex.mkAddSub sf sub x y
     if setf then pure ({ σ.wX rd.toNat r with fl := Fl.mkAddSub sf sub x y }, .fall)
     else pure (σ.wXsp rd.toNat r, .fall)
-  | .ldst size vec opc mode rn rt => do
-    if vec then throw "SIMD&FP load/store"
+  | .ldst size true opc mode rn rt => do
+    let (a, wb) := amodeSym σ mode rn.toNat (accessBytes size true opc)
+    let σ ← symVAccess σ size opc rt.toNat a
+    let σ := match wb with
+      | some b => σ.wXsp rn.toNat b
+      | none => σ
+    pure (σ, .fall)
+  | .ldst size false opc mode rn rt => do
     let (a, wb) := amodeSym σ mode rn.toNat (bytesOf size)
     let σ ← symAccess σ size opc rt.toNat a
     let σ := match wb with
       | some b => σ.wXsp rn.toNat b
       | none => σ
     pure (σ, .fall)
-  | .ldstPair opc vec mode ld imm7 rt2 rn rt => do
-    if vec then throw "SIMD&FP pair"
+  | .ldstPair opc true mode ld imm7 rt2 rn rt => do
+    let σ ← symVPair σ opc mode ld imm7 rt2 rn rt
+    pure (σ, .fall)
+  | .ldstPair opc false mode ld imm7 rt2 rn rt => do
     let n := if opc.getLsbD 1 then 8 else 4
     let base := σ.rXsp rn.toNat
     let off : BitVec 64 := imm7.signExtend 64 * BitVec.ofNat 64 n
@@ -488,6 +719,22 @@ def symInsn (i : Insn) (o : Nat) (σ : Sym) : Except String (Sym × MCtl) :=
       else pure ((σ.store a n (σ.rX rt.toNat)).store a2 n (σ.rX rt2.toNat))
     let σ' := if mode = 2 then σ' else σ'.wXsp rn.toNat (Ex.mkAdd base (.k off))
     pure (σ', .fall)
+  | .fp1 ft opc rn rd => pure (σ.wV rd.toNat (.fp1 ft opc (σ.getV rn.toNat)), .fall)
+  | .fp2 ft opc rm rn rd =>
+    pure (σ.wV rd.toNat (.fp2 ft opc (σ.getV rn.toNat) (σ.getV rm.toNat)), .fall)
+  | .fp3 ft o1 o0 rm ra rn rd =>
+    pure (σ.wV rd.toNat
+      (.fp3 ft o1 o0 (σ.getV ra.toNat) (σ.getV rn.toNat) (σ.getV rm.toNat)), .fall)
+  | .fcmp ft rm rn zero _ =>
+    pure ({ σ with fl := .fcmp ft (σ.getV rn.toNat) (if zero then .k 0 else σ.getV rm.toNat) },
+      .fall)
+  | .fmovImm ft imm8 rd => pure (σ.wV rd.toNat (.k (vfpExpandImm ft imm8)), .fall)
+  | .fcsel ft rm cond rn rd => do
+    let σ ← symFcsel σ ft rm cond rn rd
+    pure (σ, .fall)
+  | .fcvtInt sf ft rmode opc rn rd => do
+    let σ ← symFcvt σ sf ft rmode opc rn rd
+    pure (σ, .fall)
   | i => throw s!"instruction not modelled: {i.form}"
 
 end GoFV.Asm.CheckObj
