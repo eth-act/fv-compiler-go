@@ -640,6 +640,20 @@ $16, R1` in `runtime.(*mspan).pinnerBitSize`, `X1 = 0x17dde` from the 16-bit `0x
 `Z` set). Coverage on quick-v10 (`lake exe gen-check`): 5,812 of 9,297 functions (62.51%),
 151,700 values.
 
+## Phase 3: genssa, slice G34 (I7, #553)
+
+`GoFV.Proof.Gen.g34_value`, `GoFV.Proof.Gen.g34_term`, `GoFV.Proof.Gen.g34_nilPanic`,
+`GoFV.Proof.Gen.g34_boundsPanic` (`GoFV/Proof/Gen/G34.lean`): when slice G34 (`checkG34`: G33 with
+the upper-bit table `uL34`, which also keeps the entries of the registers a value does not write
+across the single-register ops of G3, G16, G23, G25, G32 and G33, spills, reloads and `MOVDaddr`)
+accepts a function, they are `g33_value`'s, `g33_term`'s, `g33_nilPanic`'s and
+`g33_boundsPanic`'s statements under the same premises, with `uL34 lc (uIn34 lc bid)` and
+`uIn34 lc e.b` in place of G31's tables. No new trusted premise. Witness: `genG34_witness`
+(`MOVB R1, R2` in `test/atomicload`'s `f`, which G33 rejects: from the byte `0xbe` in `R1`, the
+machine's `X2 = 0xffffffffffffffbe`, and G34's table keeps `R1`'s entry, which gives the whole
+`X1 = 0xbe`). Coverage on quick-v10 (`lake exe gen-check`): 5,825 of 9,297 functions (62.65%),
+152,495 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g30_obj_value`, `g30_obj_term`, `g30_obj_nilPanic`, `g30_obj_boundsPanic`
