@@ -514,6 +514,72 @@ def symCsel (σ : Sym) (sf op op2 : Bool) (rm : Reg) (cond : BitVec 4) (rn rd : 
     pure (σ.wX rd.toNat (.csel sf op op2 cond (σ.rX rn.toNat) (σ.rX rm.toNat)), .fall)
   else throw "conditional select on flags set by the words"
 
+/-! ### SIMD&FP -/
+
+/-- The format of an `S`/`D` store's value (`Ex.vlo`): 4 bytes the low 32 bits, 8 the low 64; a
+store of another size (a `B`/`H` or `Q` register) is not modelled. -/
+def vStoreFt (n : Nat) : Except String (BitVec 2) :=
+  if n = 4 then pure 0 else if n = 8 then pure 1 else throw "SIMD&FP store of other than 4 or 8 bytes"
+
+/-- The symbolic SIMD&FP single-register access of `ldst` at address `a` (no write-back): a load
+writes `V rt` (`VEx.ld`), a store stores the low part of `V rt` before the Prog. -/
+def symVAccess (σ : Sym) (size opc : BitVec 2) (rt : Nat) (a : Ex) : Except String Sym := do
+  let n := accessBytes size true opc
+  if opc.getLsbD 0 then
+    let (σ, _) ← σ.load a n
+    pure (σ.wV rt (.ld n a))
+  else
+    let ft ← vStoreFt n
+    let v ← σ.vEx rt (.vlo ft rt)
+    pure (σ.store a n v)
+
+/-- The symbolic SIMD&FP `ldstPair` (`LDP`/`STP` of `S`, `D`, `Q`; `Q` stores not modelled). -/
+def symVPair (σ : Sym) (opc mode : BitVec 2) (ld : Bool) (imm7 : BitVec 7) (rt2 rn rt : Reg) :
+    Except String Sym := do
+  let n := 4 * 2 ^ opc.toNat
+  let base := σ.rXsp rn.toNat
+  let off : BitVec 64 := imm7.signExtend 64 * BitVec.ofNat 64 n
+  let a := if mode = 1 then base else Ex.mkAdd base (.k off)
+  let a2 := Ex.mkAdd a (.k (BitVec.ofNat 64 n))
+  let σ' ← if ld then do
+      let (σ1, _) ← σ.load a n
+      let (σ2, _) ← σ1.load a2 n
+      pure ((σ2.wV rt.toNat (.ld n a)).wV rt2.toNat (.ld n a2))
+    else do
+      let ft ← vStoreFt n
+      let v1 ← σ.vEx rt.toNat (.vlo ft rt.toNat)
+      let v2 ← σ.vEx rt2.toNat (.vlo ft rt2.toNat)
+      pure ((σ.store a n v1).store a2 n v2)
+  pure (if mode = 2 then σ' else σ'.wXsp rn.toNat (Ex.mkAdd base (.k off)))
+
+/-- The symbolic `FCSEL`: the condition on the flags before the Prog. -/
+def symFcsel (σ : Sym) (ft : BitVec 2) (rm : Reg) (cond : BitVec 4) (rn rd : Reg) :
+    Except String Sym :=
+  if σ.fl = .init then
+    pure (σ.wV rd.toNat (.fcsel ft cond (σ.getV rn.toNat) (σ.getV rm.toNat)))
+  else throw "FCSEL on flags set by the words"
+
+/-- The symbolic `fcvtInt` (`FMOV` between general and SIMD&FP registers, `SCVTF`/`UCVTF`,
+`FCVTZS`/`FCVTZU`). -/
+def symFcvt (σ : Sym) (sf : Bool) (ft rmode : BitVec 2) (opc : BitVec 3) (rn rd : Reg) :
+    Except String Sym :=
+  let m := if sf then 64 else 32
+  match rmode.toNat, opc.toNat with
+  | 0, 6 => do
+    let e ← σ.vEx rn.toNat (.vlo ft rn.toNat)
+    pure (σ.wX rd.toNat e)
+  | 0, 7 =>
+    pure (σ.wV rd.toNat (if ft = 0 then .ofX 32 (σ.rX rn.toNat) else .ofX 64 (σ.rX rn.toNat)))
+  | 0, 2 => pure (σ.wV rd.toNat (.cvtf ft m false (σ.rX rn.toNat)))
+  | 0, 3 => pure (σ.wV rd.toNat (.cvtf ft m true (σ.rX rn.toNat)))
+  | 3, 0 => do
+    let e ← σ.vEx rn.toNat (.fcvtz ft false m rn.toNat)
+    pure (σ.wX rd.toNat e)
+  | 3, 1 => do
+    let e ← σ.vEx rn.toNat (.fcvtz ft true m rn.toNat)
+    pure (σ.wX rd.toNat e)
+  | _, _ => throw s!"instruction not modelled: {(Insn.fcvtInt sf ft rmode opc rn rd).form}"
+
 /-- The symbolic `exec` of one instruction at offset `o` (a word whose fields no relocation
 patches). -/
 def symInsn (i : Insn) (o : Nat) (σ : Sym) : Except String (Sym × MCtl) :=
@@ -577,16 +643,24 @@ def symInsn (i : Insn) (o : Nat) (σ : Sym) : Except String (Sym × MCtl) :=
     let r := Ex.mkAddSub sf sub x y
     if setf then pure ({ σ.wX rd.toNat r with fl := Fl.mkAddSub sf sub x y }, .fall)
     else pure (σ.wXsp rd.toNat r, .fall)
-  | .ldst size vec opc mode rn rt => do
-    if vec then throw "SIMD&FP load/store"
+  | .ldst size true opc mode rn rt => do
+    let (a, wb) := amodeSym σ mode rn.toNat (accessBytes size true opc)
+    let σ ← symVAccess σ size opc rt.toNat a
+    let σ := match wb with
+      | some b => σ.wXsp rn.toNat b
+      | none => σ
+    pure (σ, .fall)
+  | .ldst size false opc mode rn rt => do
     let (a, wb) := amodeSym σ mode rn.toNat (bytesOf size)
     let σ ← symAccess σ size opc rt.toNat a
     let σ := match wb with
       | some b => σ.wXsp rn.toNat b
       | none => σ
     pure (σ, .fall)
-  | .ldstPair opc vec mode ld imm7 rt2 rn rt => do
-    if vec then throw "SIMD&FP pair"
+  | .ldstPair opc true mode ld imm7 rt2 rn rt => do
+    let σ ← symVPair σ opc mode ld imm7 rt2 rn rt
+    pure (σ, .fall)
+  | .ldstPair opc false mode ld imm7 rt2 rn rt => do
     let n := if opc.getLsbD 1 then 8 else 4
     let base := σ.rXsp rn.toNat
     let off : BitVec 64 := imm7.signExtend 64 * BitVec.ofNat 64 n
@@ -600,6 +674,22 @@ def symInsn (i : Insn) (o : Nat) (σ : Sym) : Except String (Sym × MCtl) :=
       else pure ((σ.store a n (σ.rX rt.toNat)).store a2 n (σ.rX rt2.toNat))
     let σ' := if mode = 2 then σ' else σ'.wXsp rn.toNat (Ex.mkAdd base (.k off))
     pure (σ', .fall)
+  | .fp1 ft opc rn rd => pure (σ.wV rd.toNat (.fp1 ft opc (σ.getV rn.toNat)), .fall)
+  | .fp2 ft opc rm rn rd =>
+    pure (σ.wV rd.toNat (.fp2 ft opc (σ.getV rn.toNat) (σ.getV rm.toNat)), .fall)
+  | .fp3 ft o1 o0 rm ra rn rd =>
+    pure (σ.wV rd.toNat
+      (.fp3 ft o1 o0 (σ.getV ra.toNat) (σ.getV rn.toNat) (σ.getV rm.toNat)), .fall)
+  | .fcmp ft rm rn zero _ =>
+    pure ({ σ with fl := .fcmp ft (σ.getV rn.toNat) (if zero then .k 0 else σ.getV rm.toNat) },
+      .fall)
+  | .fmovImm ft imm8 rd => pure (σ.wV rd.toNat (.k (vfpExpandImm ft imm8)), .fall)
+  | .fcsel ft rm cond rn rd => do
+    let σ ← symFcsel σ ft rm cond rn rd
+    pure (σ, .fall)
+  | .fcvtInt sf ft rmode opc rn rd => do
+    let σ ← symFcvt σ sf ft rmode opc rn rd
+    pure (σ, .fall)
   | i => throw s!"instruction not modelled: {i.form}"
 
 end GoFV.Asm.CheckObj
