@@ -1238,12 +1238,18 @@ def compOKL (tabs : Tables) (f g : Func) (og : List ID) (x : ID) (w : Value) : B
     | _, _ => false
   | none => false
 
-/-- `RewriteCheck.atomsOK` with `atomPair` (and `pbConstOK`): the same entry, blocks and own aux;
-every atom of `g` corresponds to an atom of `f` or is a lowered frame address where `f` has a term
-(`frameAtomG`) or the inner store of a `Move` lowered to two 128-bit stores (`compOKL`), the atoms
-only `f` has are droppable (`dropAtomL`), and each block evaluates `f`'s roots, atoms of `g`, in
-the same order (`Sem.schedule`; `g` may evaluate a lowered `Zero` or `Move`, which is not a root of
-lowered SSA, earlier). -/
+/-- The outer store `w` at `x` of a `Move` `u` lowered to two 128-bit stores (`moveQ2Lower`) is
+the next atom of `g`'s schedule `og` after its memory, the inner store (`compOKL` from that side):
+both are in the same block, the inner one evaluated first. -/
+def q2OKL (tabs : Tables) (g : Func) (og : List ID) (x : ID) (u w : Value) : Bool :=
+  !moveQ2Lower u w || nextAtomL tabs g og w.args[w.args.size - 1]! == some x
+
+/-- `RewriteCheck.atomsOK` with `atomPair` (and `pbConstOK`, `q2OKL`): the same entry, blocks and
+own aux; every atom of `g` corresponds to an atom of `f` or is a lowered frame address where `f`
+has a term (`frameAtomG`) or the inner store of a `Move` lowered to two 128-bit stores
+(`compOKL`), the atoms only `f` has are droppable (`dropAtomL`), and each block evaluates `f`'s
+roots, atoms of `g`, in the same order (`Sem.schedule`; `g` may evaluate a lowered `Zero` or
+`Move`, which is not a root of lowered SSA, earlier). -/
 def atomsOKL (tabs : Tables) (f g : Func) : Bool :=
   f.entry == g.entry && f.blocks == g.blocks && f.ownAux == g.ownAux &&
   f.blocks.all fun b =>
@@ -1253,7 +1259,8 @@ def atomsOKL (tabs : Tables) (f g : Func) : Bool :=
       let af := atomsOfL tabs f fb
       let ag := atomsOfL tabs g gb
       ag.all (fun x => (af.contains x && match f.value? x, g.value? x with
-        | some u, some w => atomPair tabs u w && pbConstOK tabs f u w
+        | some u, some w => atomPair tabs u w && pbConstOK tabs f u w &&
+          q2OKL tabs g (((Sem.schedule g gb).map (·.toList)).getD []) x u w
         | _, _ => false) || (g.value? x).any (frameAtomG tabs f x) ||
           (g.value? x).any (compOKL tabs f g (((Sem.schedule g gb).map (·.toList)).getD []) x)) &&
       af.all (fun x => ag.contains x || (f.value? x).any (dropAtomL ·.op)) &&

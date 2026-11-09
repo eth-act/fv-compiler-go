@@ -591,7 +591,7 @@ theorem atomsOKL_facts {tabs : Tables} {f g : Func} (h : atomsOKL tabs f g = tru
         rw [hu] at hat
         simp only [isAtomL, Bool.not_eq_true'] at hat
         simp only [Bool.and_eq_true] at hfd
-        exact ⟨u, hu, hfd.1, hfd.2, hat⟩
+        exact ⟨u, hu, hfd.1.1, hfd.1.2, hat⟩
       · cases hfd
     · right; left
       rw [hw] at hfa
@@ -1511,7 +1511,8 @@ theorem _root_.GoFV.Proof.Low.validateL_termRef {s : RuleSet} (hs : ArmRuleSet.A
               ((liveOKL_facts hlive) bx hbx gbx hgbx |>.2 _ hxv wi hwi (.inl htwi) _
                 (Array.getElem_mem h2)))
         refine .inr (.inr (.inr (.inr ⟨by unfold moveQ2Lower at hq2 ⊢; rw [hop, hszw]; exact hq2,
-          _, wi, hlast, hL, by unfold moveQ2In at hbii ⊢; rw [hopi, hszi]; exact hbii, htwi, hshp,
+          _, wi, hlast, hL, hbiD, by unfold moveQ2In at hbii ⊢; rw [hopi, hszi]; exact hbii, htwi,
+          hshp,
           fun n => ?_, fun i hi n => ?_, fun n => ?_, fun n => ?_, fun i hi n => ?_⟩)))
         · obtain ⟨k, hk⟩ := hbA n
           refine ⟨k, fun ρ ρ' hρ hT hT' hF hS hFT => ?_⟩

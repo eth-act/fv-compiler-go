@@ -427,8 +427,8 @@ def AtomArgsRefL (tabs : Tables) (f g : Func) : Prop :=
           ArgTermRefL none f.lowered f.value? tabs u'.args[2]! g.lowered (listedDefs g) tabs
             u.args[u.args.size - 1]!) ∨
         (moveQ2Lower u' u = true ∧ ∃ x wi, u.args[u.args.size - 1]! = x ∧
-          listedDefs g x = some wi ∧ moveQ2In u' wi = true ∧ termVL tabs wi = false ∧
-          shpL tabs wi.type = .mem ∧
+          listedDefs g x = some wi ∧ f.value? x = none ∧ moveQ2In u' wi = true ∧
+          termVL tabs wi = false ∧ shpL tabs wi.type = .mem ∧
           ArgTermRefL (some (wi.auxInt, wi.aux)) f.lowered f.value? tabs u'.args[0]! g.lowered
             (listedDefs g) tabs wi.args[0]! ∧
           (∀ i, i + 2 < wi.args.size → ArgTermQL i f.lowered f.value? tabs u'.args[1]!

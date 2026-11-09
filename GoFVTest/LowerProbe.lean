@@ -178,6 +178,8 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
           | some u, some w =>
             if !(atomPair tabs u w && pbConstOK tabs f u w) then
               return s!"atoms: {u.op.name} -> {w.op.name} v{x}"
+            if !q2OKL tabs g (((GoFV.SSA.Sem.schedule g gb).map (·.toList)).getD []) x u w then
+              return s!"atoms: outer store not after its inner one v{x}"
           | none, some w =>
             if !compOKL tabs f g (((GoFV.SSA.Sem.schedule g gb).map (·.toList)).getD []) x w then
               return s!"atoms: new atom {w.op.name} v{x}"

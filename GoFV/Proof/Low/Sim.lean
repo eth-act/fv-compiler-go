@@ -133,6 +133,8 @@ theorem entry_relL {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tab
         simp only [entryFrame, makeL_f, Array.getElem?_replicate]
         split <;> simp), fun a s y _ _ h => absurd h (by
         simp only [entryFrame, makeL_f, Array.getElem?_replicate]
+        split <;> simp), fun a y _ h => absurd h (by
+        simp only [entryFrame, makeL_f, Array.getElem?_replicate]
         split <;> simp)⟩,
       den := ⟨fun _ => False, fun _ => False, denOKL_empty _ _ _ _, denOKL_empty _ _ _ _,
         fun _ h => h.elim, fun x h => hentry f ce H.wf H.cf x h,
