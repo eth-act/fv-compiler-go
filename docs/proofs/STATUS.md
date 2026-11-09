@@ -1210,6 +1210,19 @@ and the panic
 premises hold, `runMach` panics alike (`obj_whole_panic`'s conclusion). Every premise is in the
 statement; the trusted ones are in the table below.
 
+**The address assignment** (`docs/plans/proofs3.md` §8, item 6; #553, #385). `verified_mach`,
+`verifiedPipelineFull_refines` and every Phase 1/2/3 theorem hold under every admissible address
+assignment (`[Addrs]`, option 2). The checkers do not read it: they evaluate their constants at
+`Addrs.fixed` (`Rules.opValC`, `Val.retypeC`, `Val.hasTyC`, `Mem.loadC`, `evalPureC` in
+`GoFV/SSA/Sem/Agree.lean`; `termConst`, `constTop`, `nonNegD`, `fixedOK`, Sccp's `constVal`/
+`fixOK`/`repOK`, the static instances of `ruleOK`, `ruleOK1`, `ruleDefsL`, `blockOK1`), with a
+guard: an integer an op reads as a pointer is a constant only below `2^62` (`opGuard`), where every
+admissible assignment decodes alike (`*_agree`). So `verifiedPipeline`, `verifiedPipelineFull` and
+the slice checkers `checkG*` take no `Addrs` instance (checked by `GoFVTest/AddrsFree.lean`), and
+the verdict `gofv-ssa-opt` computes is `verified_mach`'s premise under every instance, the
+machine's among them. Counts unchanged: `gofv-ssa-opt --check --verified` on quick-v10 and
+full-v11 is identical to main.
+
 Witnesses:
 - `objWhole_ret_witness` (`GoFV/Proof/Witness/ObjWhole.lean`): `pallocSum.start` on `p = 7` in
   `plRunEnv`, from `runLoc`'s first state (`locInit`) to `runMach` returning to the caller's
