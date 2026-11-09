@@ -206,6 +206,145 @@ def exclP (az ez : Int) (ld : Bool) (n : Nat) (p : Prog) : Except String (Sym ×
   let (a, _) ← memP az ez p.scond p.to
   return (({} : Sym).store a n (← xP p.from_.reg), .fall)
 
+/-- A vector register operand (`ProgCtx.v`): its number. -/
+def vP (r : Int) : Except String Nat :=
+  match fpIdx? r with
+  | some i => pure i
+  | none => throw s!"fp register {r}"
+
+/-- A vector register write (`Eff.wV`). -/
+def wVP (σ : Sym) (r : Int) (v : VEx) : Except String Sym :=
+  match fpIdx? r with
+  | some i => pure (σ.wV i v)
+  | none => throw s!"destination fp register {r}"
+
+/-- The write-back of a memory operand (`memP`), on the empty effect. -/
+def wbP (wb : Option (Int × Ex)) : Except String Sym :=
+  match wb with
+  | some (r, b) => wP {} r b
+  | none => pure {}
+
+/-- The format of an `n`-byte SIMD&FP access or move: 0 single (4 bytes), 1 double. -/
+def fpFt (n : Nat) : BitVec 2 := if n == 4 then 0 else 1
+
+/-- `FMOVS`/`FMOVD`/`FMOVQ` (`movMem`'s SIMD&FP forms, `n` bytes): loads (all address forms,
+with write-back), `S`/`D` stores, `S`/`D` moves between vector registers and from or to a
+general register, constants. A store's value and a move to a general register read the `S`/`D`
+part of the vector register (`Ex.vlo`), a vector move is `FMOV`'s `fp1Op` of opcode 0. `Q`
+stores and `Q` register moves are not modelled. -/
+def fmovP (az ez : Int) (n : Nat) (p : Prog) : Except String (Sym × PCtl) := do
+  match p.from_.type, p.to.type with
+  | .MEM, .REG =>
+    let (a, wb) ← memP az ez p.scond p.from_
+    let σ ← wbP wb
+    return (← wVP { σ with loads := (a, n) :: σ.loads } p.to.reg (.ld n a), .fall)
+  | .REG, .MEM =>
+    if n == 16 then throw "FMOVQ store"
+    let (a, wb) ← memP az ez p.scond p.to
+    let σ ← wbP wb
+    return (σ.store a n (.vlo (fpFt n) (← vP p.from_.reg)), .fall)
+  | .REG, .REG =>
+    if n == 16 then throw "FMOVQ between registers"
+    match fpIdx? p.from_.reg, fpIdx? p.to.reg with
+    | some r, some _ => return (← wVP {} p.to.reg (.fp1 (fpFt n) 0 (.v r)), .fall)
+    | some r, none => return (← wP {} p.to.reg (.vlo (fpFt n) r), .fall)
+    | none, some _ => return (← wVP {} p.to.reg (VEx.mkOfX (8 * n) (← xP p.from_.reg)), .fall)
+    | none, none => throw "FMOV between general registers"
+  | .FCONST, .REG => return (← wVP {} p.to.reg (.k (← fconst (fpFt n) p.from_)), .fall)
+  | t, u => throw s!"{p.as.name} operands {t.name},{u.name}"
+
+/-- `FLDPS`/`FLDPD`/`FLDPQ`, `FSTPS`/`FSTPD` (`pairOp`'s SIMD&FP forms, `n` bytes each): two
+loads, or two stores of the `S`/`D` parts (`Ex.vlo`). `FSTPQ` is not modelled. -/
+def fpairP (az ez : Int) (ld : Bool) (n : Nat) (p : Prog) : Except String (Sym × PCtl) := do
+  let (memA, regs) := if ld then (p.from_, p.to) else (p.to, p.from_)
+  if regs.type != .REGREG then throw s!"pair operand {regs.type.name}"
+  if !ld && n == 16 then throw "FSTPQ"
+  let (a, wb) ← memP az ez p.scond memA
+  let σ ← wbP wb
+  let a2 := Ex.mkAdd a (.k (BitVec.ofNat 64 n))
+  if ld then
+    let σ ← wVP { σ with loads := (a2, n) :: (a, n) :: σ.loads } regs.reg (.ld n a)
+    return (← wVP σ regs.offset (.ld n a2), .fall)
+  let ft := fpFt n
+  return ((σ.store a n (.vlo ft (← vP regs.reg))).store a2 n (.vlo ft (← vP regs.offset)), .fall)
+
+/-- A SIMD&FP data-processing opcode `progEffect` models by name, with the fields of its
+encoding: the format `ft` (0 single, 1 double), the opcode, a conversion's signedness `u` and
+integer width `m`. -/
+inductive FpOp where
+  | fp1 (ft : BitVec 2) (opc : BitVec 6)
+  | fp2 (ft : BitVec 2) (opc : BitVec 4)
+  | fp3 (ft : BitVec 2) (o1 o0 : Bool)
+  | cmp (ft : BitVec 2)
+  | csel (ft : BitVec 2)
+  | cvtz (ft : BitVec 2) (u : Bool) (m : Nat)
+  | cvtf (ft : BitVec 2) (u : Bool) (m : Nat)
+
+/-- The SIMD&FP data-processing opcodes, as `progEffect` reads their names (`fpType`, its opcode
+tables, the `FCVTZ*`/`*CVTF*` name parsing). -/
+def fpOp? (name : String) : Option FpOp :=
+  match name with
+  | "FMULD" => some (.fp2 1 0) | "FMULS" => some (.fp2 0 0)
+  | "FDIVD" => some (.fp2 1 1) | "FDIVS" => some (.fp2 0 1)
+  | "FADDD" => some (.fp2 1 2) | "FADDS" => some (.fp2 0 2)
+  | "FSUBD" => some (.fp2 1 3) | "FSUBS" => some (.fp2 0 3)
+  | "FMAXD" => some (.fp2 1 4) | "FMAXS" => some (.fp2 0 4)
+  | "FMIND" => some (.fp2 1 5) | "FMINS" => some (.fp2 0 5)
+  | "FNMULD" => some (.fp2 1 8) | "FNMULS" => some (.fp2 0 8)
+  | "FMADDD" => some (.fp3 1 false false) | "FMADDS" => some (.fp3 0 false false)
+  | "FMSUBD" => some (.fp3 1 false true) | "FMSUBS" => some (.fp3 0 false true)
+  | "FNMADDD" => some (.fp3 1 true false) | "FNMADDS" => some (.fp3 0 true false)
+  | "FNMSUBD" => some (.fp3 1 true true) | "FNMSUBS" => some (.fp3 0 true true)
+  | "FABSD" => some (.fp1 1 1) | "FABSS" => some (.fp1 0 1)
+  | "FNEGD" => some (.fp1 1 2) | "FNEGS" => some (.fp1 0 2)
+  | "FSQRTD" => some (.fp1 1 3) | "FSQRTS" => some (.fp1 0 3)
+  | "FRINTND" => some (.fp1 1 8) | "FRINTNS" => some (.fp1 0 8)
+  | "FRINTPD" => some (.fp1 1 9) | "FRINTPS" => some (.fp1 0 9)
+  | "FRINTMD" => some (.fp1 1 10) | "FRINTMS" => some (.fp1 0 10)
+  | "FRINTZD" => some (.fp1 1 11) | "FRINTZS" => some (.fp1 0 11)
+  | "FRINTAD" => some (.fp1 1 12) | "FRINTAS" => some (.fp1 0 12)
+  | "FCVTSD" => some (.fp1 0 5) | "FCVTDS" => some (.fp1 1 4)
+  | "FCMPD" => some (.cmp 1) | "FCMPS" => some (.cmp 0)
+  | "FCMPED" => some (.cmp 1) | "FCMPES" => some (.cmp 0)
+  | "FCSELD" => some (.csel 1) | "FCSELS" => some (.csel 0)
+  | "FCVTZSD" => some (.cvtz 1 false 64) | "FCVTZSS" => some (.cvtz 0 false 64)
+  | "FCVTZUD" => some (.cvtz 1 true 64) | "FCVTZUS" => some (.cvtz 0 true 64)
+  | "FCVTZSDW" => some (.cvtz 1 false 32) | "FCVTZSSW" => some (.cvtz 0 false 32)
+  | "FCVTZUDW" => some (.cvtz 1 true 32) | "FCVTZUSW" => some (.cvtz 0 true 32)
+  | "SCVTFD" => some (.cvtf 1 false 64) | "SCVTFS" => some (.cvtf 0 false 64)
+  | "UCVTFD" => some (.cvtf 1 true 64) | "UCVTFS" => some (.cvtf 0 true 64)
+  | "SCVTFWD" => some (.cvtf 1 false 32) | "SCVTFWS" => some (.cvtf 0 false 32)
+  | "UCVTFWD" => some (.cvtf 1 true 32) | "UCVTFWS" => some (.cvtf 0 true 32)
+  | _ => none
+
+/-- The SIMD&FP data processing (`fpOp?`) in `progEffect`'s operand conventions: arithmetic
+(`fp1Op`, `fp2Op`, `fp3Op`), `FCMP` (the flags; `$(0.0)` compares with zero), `FCSEL` (on the
+flags before the Prog), and the conversions to (`Ex.fcvtz`) and from (`VEx.cvtf`) a general
+register. -/
+def fpP (k : FpOp) (p : Prog) : Except String (Sym × PCtl) := do
+  match k with
+  | .fp1 ft opc => return (← wVP {} p.to.reg (.fp1 ft opc (.v (← vP p.from_.reg))), .fall)
+  | .fp2 ft opc =>
+    let a ← vP (if p.reg != 0 then p.reg else p.to.reg)
+    let b ← vP p.from_.reg
+    return (← wVP {} p.to.reg (.fp2 ft opc (.v a) (.v b)), .fall)
+  | .fp3 ft o1 o0 =>
+    let a ← vP p.reg
+    let n ← vP (← restP p 0).reg
+    let m ← vP p.from_.reg
+    return (← wVP {} p.to.reg (.fp3 ft o1 o0 (.v a) (.v n) (.v m)), .fall)
+  | .cmp ft =>
+    let m : VEx ← if p.from_.type == .FCONST then pure (.k 0) else do pure (.v (← vP p.from_.reg))
+    let n ← vP p.reg
+    return ({ fl := .fcmp ft (.v n) m }, .fall)
+  | .csel ft =>
+    let cond ← condOfSpecial p.from_
+    let n ← vP p.reg
+    let m ← vP (← restP p 0).reg
+    return (← wVP {} p.to.reg (.fcsel ft cond (.v n) (.v m)), .fall)
+  | .cvtz ft u m => return (← wP {} p.to.reg (.fcvtz ft u m (← vP p.from_.reg)), .fall)
+  | .cvtf ft u m => return (← wVP {} p.to.reg (.cvtf ft m u (← xP p.from_.reg)), .fall)
+
 /-- The symbolic effect of a P0 Prog with code (`progEffect`) and its control, for the opcodes
 the validator models (`progSym` adds the opcode check of the control). `az`, `ez`: the frame
 (`Link.autosize`, `Link.extrasize`). -/
@@ -259,7 +398,7 @@ def progSymCore (az ez : Int) (p : Prog) : Except String (Sym × PCtl) := do
       | _ => Ex.mkBfm sf 2 (BitVec.ofNat 6 ((w - lsb) % w)) (BitVec.ofNat 6 (width - 1)) (.k 0) x
     return (← wP σ p.to.reg r, .fall)
   if let some (n, signed, fp) := movMem name then
-    if fp then throw s!"{name}: SIMD&FP"
+    if fp then return ← fmovP az ez n p
     match p.from_.type, p.to.type with
     | .MEM, .REG =>
       let (a, wb) ← memP az ez p.scond p.from_
@@ -292,7 +431,7 @@ def progSymCore (az ez : Int) (p : Prog) : Except String (Sym × PCtl) := do
       return (← wP σ p.to.reg a, .fall)
     | t, u => throw s!"{name} operands {t.name},{u.name}"
   if let some (ld, n, signed, fp) := pairOp name then
-    if fp then throw s!"{name}: SIMD&FP"
+    if fp then return ← fpairP az ez ld n p
     let (memA, regs) := if ld then (p.from_, p.to) else (p.to, p.from_)
     if regs.type != .REGREG then throw s!"pair operand {regs.type.name}"
     let (a, wb) ← memP az ez p.scond memA
@@ -340,7 +479,10 @@ def progSymCore (az ez : Int) (p : Prog) : Except String (Sym × PCtl) := do
   | "RET" =>
     let r := if p.to.type == .NONE then REG_R0 + 30 else p.to.reg
     return (σ, .reg (← xP r))
-  | _ => throw s!"opcode not modelled: {name}"
+  | _ =>
+    match fpOp? name with
+    | some k => fpP k p
+    | none => throw s!"opcode not modelled: {name}"
 
 /-- Calls come from `CALL`, register jumps from `RET`. -/
 def ctlOp (p : Prog) : PCtl → Except String Unit
