@@ -165,7 +165,7 @@ GoFV.Proof.Witness.GenG29.g29_facts._native.native_decide.ax_1_1 4724448479a462b
 # genG30_value_witness (GoFV/Proof/Witness/GenG30.lean, #553): `checkG30` accepts
 # `runtime.gclinkptr.ptr` and `checkG29` does not (parsed, `Env.load`, `genssa`), and `runLoc`
 # runs its `Convert` to `R0 = 0x1234`; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG30.g30_facts._native.native_decide.ax_1_1 0000000000000000000000000000000000000000000000000000000000000000
+GoFV.Proof.Witness.GenG30.g30_facts._native.native_decide.ax_1_1 c582ef29eee1a8a7e591494061fd63772163ef1b9c5f1d528c0c8dcbac4fbcc1
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
