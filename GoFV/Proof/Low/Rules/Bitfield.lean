@@ -1,7 +1,7 @@
 import GoFV.Proof.Low.Rules.ConstFold
 
 /-!
-# Lowering rule lemmas: bit-field peepholes (`ARM64.rules:1641-1765`, `1853-1855`)
+# Lowering rule lemmas: bit-field peepholes (`ARM64.rules:1397-1399`, `1641-1765`, `1853-1855`)
 
 `UBFX`/`UBFIZ`/`SBFX`/`SBFIZ` of an `ARM64BitField` auxint `width | lsb<<8` (`Arm64.bf`) built by
 `armBFAuxInt`, which the rule denotation computes in range and leaves to the oracle otherwise
@@ -14,6 +14,9 @@ width for an extension), and the composed op is the new one bit by bit (`bf_bits
 64, bit fields `bfOK`), so the result's `armBFAuxInt` is in range and `bf_ofInt` decodes it. A
 mask condition `isARM64BFMask(…)` names the mask's width (`bfMaskW`, `bf_mask`), whose bits
 `bf_mask_getLsbD` gives. `(ANDconst [0xff…] x) => (MOV{B,H,W}Ureg x)`: the same op.
+`(MOV{W,H,B}reg <t> (ANDconst x [c])) && uint64(c) & M == 0 => (ANDconst <t> x [c])` (1397-1399,
+`M` the bits from the sign bit of the extension up): the extension reads the `ANDconst`'s low
+bits, whose sign bit and above are clear (`bf_and_zero`), so it keeps them (`bf_ext_and`).
 -/
 
 namespace GoFV.Proof.Low.Rules.Bitfield
@@ -571,5 +574,59 @@ theorem r_ARM64_1855_sound : ArmRule.Checked r_ARM64_1855 := by
   have hf : (fun x => x &&& BitVec.ofInt 64 (e.auxInt []).toInt) = Arm64.ext false 8 := by
     funext x; rw [hc]; rfl
   rw [hf]; exact Refines.refl _
+
+/-- A condition `uint64(c) & M == 0`: the bits of `c` that `M` has are clear. -/
+private theorem bf_and_zero {c : Int} {M : Nat} (hM : M < 2 ^ 64)
+    (h : wrapInt 64 false ((pat64 (wrapInt 64 false c) &&& M : Nat) : Int) = 0) (i : Nat)
+    (hi : M.testBit i = true) : (BitVec.ofInt 64 c).getLsbD i = false := by
+  have hp : pat64 (wrapInt 64 false c) = (BitVec.ofInt 64 c).toNat := by
+    simp only [pat64, wrapInt, BitVec.toNat_ofInt]
+    show ((c % 2 ^ 64) % 2 ^ 64).toNat = (c % ((2 ^ 64 : Nat) : Int)).toNat
+    rw [Int.emod_emod]; rfl
+  rw [hp] at h
+  have hlt : (BitVec.ofInt 64 c).toNat &&& M < 2 ^ 64 := Nat.lt_of_le_of_lt Nat.and_le_right hM
+  have h0 : (BitVec.ofInt 64 c).toNat &&& M = 0 := by
+    have h' : (((BitVec.ofInt 64 c).toNat &&& M : Nat) : Int) % 2 ^ 64 = 0 := h
+    omega
+  have := congrArg (fun n => n.testBit i) h0
+  simp only [Nat.testBit_and, hi, Bool.and_true, Nat.zero_testBit] at this
+  simpa [BitVec.getLsbD] using this
+
+/-- A sign extension from `w` bits of a value whose bits from `w - 1` up are clear is the value. -/
+private theorem bf_ext_and {w : Nat} (h1 : 1 ≤ w) (h2 : w ≤ 64) (x C : BitVec 64)
+    (hz : ∀ i, w - 1 ≤ i → i < 64 → C.getLsbD i = false) :
+    Arm64.ext true w (x &&& C) = x &&& C := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  rw [bf_getLsbD_ext_true i _ h1 h2]
+  simp only [BitVec.getLsbD_and, hi, decide_true, Bool.true_and]
+  split
+  · rfl
+  · rw [hz (w - 1) (Nat.le_refl _) (by omega), hz i (by omega) hi]; simp
+
+set_option hygiene false in
+/-- `MOV{B,H,W}reg (ANDconst [c] x)` with the bits of `c` that the mask `m` has clear (`hcond`;
+`m` the bits from the extension's sign bit `n - 1` up), as the `ANDconst`. -/
+macro "bf_extand " n:num m:num : tactic => `(tactic| (
+  refine refines_op1_inner (n := $n) (by decide) (by decide)
+    (by simpa only [armReadW] using harg.1) _ _ _
+    (fun a b h => by rw [ext_low true (by decide) a, ext_low true (by decide) b, h]) ?_ _
+  intro x
+  simp only [show GoTy.uint64.intInfo?.getD (64, true) = (64, false) from rfl] at hcond
+  have hM : ∀ i < 64, $n - 1 ≤ i → Nat.testBit $m i = true := by decide
+  exact bf_ext_and (by decide) (by decide) _ _ fun i h1 h2 =>
+    bf_and_zero (by decide) hcond i (hM i h2 h1)))
+
+/-- `ARM64.rules:1397`: `(MOVWreg <t> (ANDconst x [c])) && uint64(c) & uint64(0xffffffff80000000) == 0 => (ANDconst <t> x [c])` -/
+theorem r_ARM64_1397_sound : ArmRule.Checked r_ARM64_1397 := by
+  left; arm_unfold; arm_norm; bf_extand 32 18446744071562067968
+
+/-- `ARM64.rules:1398`: `(MOVHreg <t> (ANDconst x [c])) && uint64(c) & uint64(0xffffffffffff8000) == 0 => (ANDconst <t> x [c])` -/
+theorem r_ARM64_1398_sound : ArmRule.Checked r_ARM64_1398 := by
+  left; arm_unfold; arm_norm; bf_extand 16 18446744073709518848
+
+/-- `ARM64.rules:1399`: `(MOVBreg <t> (ANDconst x [c])) && uint64(c) & uint64(0xffffffffffffff80) == 0 => (ANDconst <t> x [c])` -/
+theorem r_ARM64_1399_sound : ArmRule.Checked r_ARM64_1399 := by
+  left; arm_unfold; arm_norm; bf_extand 8 18446744073709551488
 
 end GoFV.Proof.Low.Rules

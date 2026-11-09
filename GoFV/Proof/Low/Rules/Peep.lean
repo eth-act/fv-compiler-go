@@ -19,7 +19,8 @@ Peepholes of lowered code (#385):
   (`Arm64.add`'s provenance case) holds a word shape, so the validator's provenance clause
   (`Pat.argsOKLs`) makes the result a word, whose constant operand is read whole
   (`retypeL_res_wide`); any other operand adds as a register, as the bitwise ops do
-  (`refines_add_const`).
+  (`refines_add_const`). `(SUB x (MOVDconst [c]))` as `(SUBconst [c] x)` likewise, moving a pointer
+  by `-c` (`refines_sub_const`).
 * `(ADDconst [c] y) && c < 0 => (SUBconst [-c] y)`: subtracting `-c` is adding `c` modulo `2^64`.
 * `(EQ|NE (CMPconst [0] x))` as `(Z|NZ x)`, `(EQ|NE (CMPWconst [0] x))` as `(ZW|NZW x)`: the flags
   of a compare read at any shape refine the flags (`retypeL_cmp_ref`), whose `Z` bit is whether the
@@ -493,5 +494,57 @@ theorem r_ARM64_974_sound : ArmRule.Checked r_ARM64_974 := by
   · rw [op2_comm _ (fun a b => BitVec.xor_comm a b)]
     exact refines_bitop_const _ (fun n a b b' h => by simp only [BitVec.setWidth_xor, h])
       (armReadW_low .ARM64XOR _ 0 (by simp) ▸ harg.1) _ _
+
+private theorem armReadW_sub (T : Ty) (i : Nat) : armReadW .ARM64SUB T i = lowW T := by
+  cases T <;> rfl
+
+private theorem sub_nonptr (T : Ty) {x c : Val} (hx : ∀ p, x ≠ .ptr p) :
+    Arm64.sub T [x, c] = Arm64.op2 T (· - ·) [x, c] := by
+  unfold Arm64.sub; split <;> simp_all
+
+private theorem setWidth_sub_congr (n : Nat) (a b b' : BitVec 64)
+    (h : b.setWidth n = b'.setWidth n) : (a - b).setWidth n = (a - b').setWidth n := by
+  by_cases hn : n ≤ 64
+  · rw [BitVec.sub_eq_add_neg, BitVec.sub_eq_add_neg, BitVec.setWidth_add _ _ hn,
+      BitVec.setWidth_add _ _ hn, BitVec.setWidth_neg_of_le hn, BitVec.setWidth_neg_of_le hn, h]
+  · have hb : b = b' := by
+      have := congrArg (BitVec.setWidth 64) h
+      rwa [BitVec.setWidth_setWidth_of_le _ (by omega), BitVec.setWidth_setWidth_of_le _ (by omega),
+        BitVec.setWidth_eq, BitVec.setWidth_eq] at this
+    rw [hb]
+
+/-- `SUB` with a constant operand, as `SUBconst` (`ADDconst` of the negated constant): as
+`refines_add_const`, a pointer operand needs a word result whose constant is read whole, and both
+sides move the pointer by `-k`; any other operand subtracts as a register. -/
+private theorem refines_sub_const {T T0 T1 : Ty} (hw : lowW T ≤ argWidth T1)
+    (hs : (!wordShape T0) = true ∨ wordShape T = true) {x : Val} (hx : x.hasTy T0 = true)
+    (k : BitVec 64) :
+    Refines ((Arm64.sub T [x, (Arm64.res T1 k).retypeL T1]).retypeL T)
+      ((Arm64.addP T x (-k)).retypeL T) := by
+  by_cases hp : ∃ p, x = .ptr p
+  · obtain ⟨p, rfl⟩ := hp
+    have hT0 : wordShape T0 = true := by
+      cases T0 with
+      | int w => cases w <;> simp_all [Val.hasTy, wordShape]
+      | _ => simp_all [Val.hasTy, wordShape]
+    have hT : wordShape T = true := by simpa [hT0] using hs
+    have h64 : lowW T = 64 := by
+      cases T with
+      | int w => cases w <;> simp_all [wordShape, lowW, Width.bits]
+      | _ => simp_all [wordShape, lowW]
+    rcases retypeL_res_wide (h64 ▸ hw) k with h | h
+    · rw [h]; simp only [Arm64.sub, Arm64.reg, BitVec.setWidth_eq, Arm64.addP]; exact Refines.refl _
+    · rw [h]; simp only [Arm64.sub, Arm64.reg, retypeL_poison]; exact .poison _
+  · have hp' : ∀ p, x ≠ .ptr p := fun p h => hp ⟨p, h⟩
+    rw [sub_nonptr T hp', addP_nonptr T hp']
+    have hf : (fun a : BitVec 64 => a + -k) = (fun a => a - k) := by
+      funext a; exact (BitVec.sub_eq_add_neg a k).symm
+    rw [hf]
+    exact refines_bitop_const (· - ·) setWidth_sub_congr hw x k
+
+/-- `ARM64.rules:971`: `(SUB x (MOVDconst [c])) => (SUBconst [c] x)` -/
+theorem r_ARM64_971_sound : ArmRule.Checked r_ARM64_971 := by
+  left; arm_unfold; arm_norm
+  exact refines_sub_const (armReadW_sub _ 1 ▸ harg.2.1) harg.1.2 hty _
 
 end GoFV.Proof.Low.Rules
