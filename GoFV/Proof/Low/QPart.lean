@@ -179,4 +179,114 @@ theorem qPart_ldPair (tabs : Tables) {o : Op} {i : Nat}
           exact this
     | _ => first | exact .poison _ | exact Sem.Refines.refl _
 
+/-! ## Parts at an offset (two-store forms) -/
+
+theorem ofInt_ofNat_lt {n : Nat} (hn : n < 2 ^ 63) :
+    BitVec.ofInt 64 (Int64.ofNat n).toInt = BitVec.ofNat 64 n := by
+  rw [Int64.toInt_ofNat_of_lt hn]
+  apply BitVec.eq_of_toNat_eq
+  simp
+
+/-- A 16-byte read at `P` moved by `k` keeps that address in its window. -/
+theorem inWindow_of_read16_at {m : Mem} {P : Ptr} {k : BitVec 64} {bs : Array Byte}
+    (h : m.read (P.add k) 16 = some bs) : (P.add k).inWindow = true := by
+  obtain ⟨-, -, -, -, h3, -⟩ := (read_eq_some (by decide)).1 h
+  unfold Ptr.inWindow
+  unfold Blk.endsInWindow at h3
+  cases hw : (P.add k).blk.window? with
+  | none => rfl
+  | some w =>
+    rw [hw] at h3
+    simp only [decide_eq_true_eq] at h3 ⊢
+    omega
+
+/-- The address of a load at offset `n` without aux of `s`: `s`'s pointer word moved by `n`, where
+that stays in its window. -/
+theorem symPtr_at (tabs : Tables) {s : Val} {P : Ptr} (hP : s.asPtrWord = some P) {n : Nat}
+    (hn : n < 2 ^ 63) :
+    ∃ Q, symPtr tabs (Int64.ofNat n) none s = some Q ∧
+      ((P.add (BitVec.ofNat 64 n)).inWindow = true → Q = P.add (BitVec.ofNat 64 n)) := by
+  unfold symPtr
+  rw [ofInt_ofNat_lt hn]
+  cases s with
+  | ptr p =>
+    simp only [Val.asPtrWord, Option.some.injEq] at hP
+    subst hP
+    exact ⟨_, rfl, fun _ => rfl⟩
+  | int w x =>
+    cases w <;> simp only [Val.asPtrWord, reduceCtorEq] at hP
+    simp only [Option.some.injEq] at hP
+    subst hP
+    exact ⟨_, rfl, fun hw => Ptr.ofAddr_add_of_inWindow hw⟩
+  | _ => simp [Val.asPtrWord] at hP
+
+/-- A 16-byte load at `Q`, where the read at `P` succeeding implies `Q = P`, refines that at `P`. -/
+private theorem load16_at {mm mm' : Mem} (h : Mem.Refines mm mm') {P Q : Ptr}
+    (hQ : P.inWindow = true → Q = P) :
+    Sem.Refines (Arm64.load16 mm P) ((Arm64.load16 mm' Q).retypeL (.blob 16)) := by
+  unfold Arm64.load16
+  cases hr : mm.read P 16 with
+  | none => exact .poison _
+  | some bs =>
+    have hw : P.inWindow = true := by
+      have := inWindow_of_read16_at (P := P) (k := 0) (by simpa [Ptr.add] using hr)
+      simpa [Ptr.add] using this
+    rw [hQ hw]
+    have := load16_retypeL h P
+    unfold Arm64.load16 at this
+    rw [hr] at this
+    exact this
+
+/-- **The 16 bytes `k` bytes into a `Move`'s copy are refined by an `FMOVQload [k]` of its source
+and memory** without aux, shaped as a `Vec128`. -/
+theorem qAt_ld16 (tabs : Tables) {k : Nat} (hk : k < 2 ^ 63) {s s' m m' : Val}
+    (hs : Sem.Refines s s') (hm : Sem.Refines m m') :
+    Sem.Refines (qAt k s m)
+      ((opValL tabs .ARM64FMOVQload (.blob 16) (Int64.ofNat k) none [s', m']).retypeL
+        (.blob 16)) := by
+  rw [opValL_ldQ (show ldQ? .ARM64FMOVQload = some 16 from rfl)]
+  unfold qAt
+  cases hp : s.asPtrWord with
+  | none => exact .poison _
+  | some p =>
+    obtain rfl := asPtrWord_of_refines hs hp
+    cases hm with
+    | mem h =>
+      obtain ⟨Q, hQ, hQw⟩ := symPtr_at tabs hp hk
+      simp only [ldQVal, show ((16 : Nat) = 32) = False by decide, ite_false, hQ, Option.elim]
+      exact load16_at h hQw
+    | _ => first | exact .poison _ | exact Sem.Refines.refl _
+
+/-- **The 32 bytes `k` bytes into a `Move`'s copy are refined by `Select0` and `Select1` of an
+`FLDPQ [k]` of its source and memory** without aux, the pair shaped as two `Vec128`s and each
+component as one. -/
+theorem qAt_ldPair (tabs : Tables) {o : Op} {i : Nat}
+    (ho : (o = .Select0 ∧ i = 0) ∨ (o = .Select1 ∧ i = 1)) {k : Nat} (hk : k + 16 < 2 ^ 63)
+    {s s' m m' : Val} (hs : Sem.Refines s s') (hm : Sem.Refines m m') :
+    Sem.Refines (qAt (k + 16 * i) s m)
+      ((opValL tabs o (.blob 16) 0 none
+        [(opValL tabs .ARM64FLDPQ (.tuple [.blob 16, .blob 16]) (Int64.ofNat k) none
+          [s', m']).retypeL (.tuple [.blob 16, .blob 16])]).retypeL (.blob 16)) := by
+  rw [opValL_ldQ (show ldQ? .ARM64FLDPQ = some 32 from rfl)]
+  unfold qAt
+  cases hp : s.asPtrWord with
+  | none => exact .poison _
+  | some p =>
+    obtain rfl := asPtrWord_of_refines hs hp
+    cases hm with
+    | @mem mm mm' h =>
+      obtain ⟨Q0, hQ0, hQ0w⟩ := symPtr_at tabs hp (n := k) (by omega)
+      obtain ⟨Q1, hQ1, hQ1w⟩ := symPtr_at tabs hp (n := k + 16) hk
+      have e16 : Int64.ofNat k + Int64.ofNat 16 = Int64.ofNat (k + 16) := by
+        rw [Int64.ofNat_add]
+      simp only [ldQVal, ite_true, hQ0, e16, hQ1, Arm64.loadPair, Arm64.tupleTy,
+        List.getD_cons_zero, List.getD_cons_succ, Arm64.loadElt]
+      rw [select_pair_retypeL tabs ho, retype_blob_retypeL]
+      rcases ho with ⟨-, rfl⟩ | ⟨-, rfl⟩
+      · simp only [ite_true, Nat.mul_zero, Nat.add_zero]
+        exact load16_at h hQ0w
+      · simp only [show (1 : Nat) ≠ 0 by decide, ite_false, Nat.mul_one]
+        exact load16_at h hQ1w
+    | _ => first | exact .poison _ | exact Sem.Refines.refl _
+
 end GoFV.Proof.Low

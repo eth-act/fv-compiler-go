@@ -83,6 +83,16 @@ def qPart (i : Nat) (s m : Val) : Val :=
   | some p, .mem mm => Arm64.load16 mm (p.add (BitVec.ofNat 64 (16 * i)))
   | _, _ => .poison
 
+/-- The 16 bytes a `Move` copies from the pointer word `s` in the memory `m`, `k` bytes in
+(`qPart i` is `qAt (16 i)`): what each 128-bit store of a `Move` lowered to two stores
+(`ARM64.rules:423`, `431`, `434`) writes, the outer one at `k = s - 16` or `s - 32`. -/
+def qAt (k : Nat) (s m : Val) : Val :=
+  match s.asPtrWord, m with
+  | some p, .mem mm => Arm64.load16 mm (p.add (BitVec.ofNat 64 k))
+  | _, _ => .poison
+
+theorem qPart_eq_qAt (i : Nat) (s m : Val) : qPart i s m = qAt (16 * i) s m := rfl
+
 /-- How argument `i` of the atom `w` relates to argument `i` of the atom `u` it corresponds to:
 the address of an arm64 store lowering a `Store` (argument 0) at the store's offset and aux
 (`AddrRef`; `ARM64.rules:758-776` fold `ADDconst` offsets into it, `881-905` symbols and frame
