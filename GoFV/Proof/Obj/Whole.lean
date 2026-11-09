@@ -831,15 +831,17 @@ structure EntryMatch (E : MatchEnv) (W : BitVec 64 → Prop) (s : LocState) (s0 
 /-- The caller's side of the morestack path (`sim_entry`, a function whose stack check reads
 `gOff(g)` and whose morestack tail spills `spills`) for the run's first state `s` and the entry
 state `s0`: every register holding a value but `R26` (the closure context, which
-`runtime.morestack` keeps) is reloaded by the tail from a slot the value fits (`ValFits`), no
-vector register holds one (the hook clobbers them), and the live blocks of `s`'s memory lie apart
-from the slots and the guard word. -/
+`runtime.morestack` keeps) is reloaded by the tail from a slot the value fits (`ValFits`; a
+vector register from a slot of its `F` register, whose value `FValRel` reads in its low bits
+only: the hook clobbers the vector registers), and the live blocks of `s`'s memory lie apart from
+the slots and the guard word. -/
 structure MoreEntry (E : MatchEnv) (spills : List Spill) (gOff : Nat) (s : LocState) (s0 : MState) :
     Prop where
   regs : ∀ r v, s.regs[r]? = some v → v ≠ .poison →
     (∀ q, objX? r = some q → q = 26 ∨ ∀ sl, tailPlan spills = .ok sl →
-      ∃ sq, reloadOf sl q.toNat = some sq ∧ ValFits v sq.n) ∧
-    ∀ q, objV? r = some q → False
+      ∃ sq, reloadOf sl false q.toNat = some sq ∧ ValFits v sq.n) ∧
+    ∀ q, objV? r = some q → ∀ sl, tailPlan spills = .ok sl →
+      ∃ sq, reloadOf sl true q.toNat = some sq ∧ ValFits v sq.n
   sep : ∀ mm, s.mem = .mem mm → ∀ sl, tailPlan spills = .ok sl →
     SepFrom E.ι (fun y => InSlots sl s0.sp y ∨ InWord (s0.x 28 + BitVec.ofNat 64 gOff) y) mm
 
@@ -855,17 +857,24 @@ theorem EntryMatch.more {E : MatchEnv} {W : BitVec 64 → Prop} {spills : List S
     · subst hp
       exact ⟨fun q hq => ⟨(hX q hq).1, trivial⟩, fun q hq => trivial⟩
     obtain ⟨hmX, hmV⟩ := hm.regs r v hv hp
-    refine ⟨fun q hq => ⟨(hX q hq).1, ?_⟩, fun q hq => (hmV q hq).elim⟩
-    rcases hmX q hq with rfl | hfit
-    · rw [hst.x26]
-      exact (hX 26 hq).2
-    · obtain ⟨sq, hsq, hf⟩ := hfit sl hpl
+    refine ⟨fun q hq => ⟨(hX q hq).1, ?_⟩, fun q hq => ?_⟩
+    · rcases hmX q hq with rfl | hfit
+      · rw [hst.x26]
+        exact (hX 26 hq).2
+      · obtain ⟨sq, hsq, hf⟩ := hfit sl hpl
+        have hn := hslot sq (reloadOf_mem hsq).1
+        rcases hst.regs q sq hsq with e | e
+        · rw [e]
+          exact (hX q hq).2
+        · rw [e]
+          exact valRel_reloadVal sq.sg hn.2.1 hn.2.2.1 (hX q hq).2 hf
+    · obtain ⟨sq, hsq, hf⟩ := hmV q hq sl hpl
       have hn := hslot sq (reloadOf_mem hsq).1
-      rcases hst.regs q sq hsq with e | e
+      rcases hst.vregs q sq hsq with e | e
       · rw [e]
-        exact (hX q hq).2
+        exact hV q hq
       · rw [e]
-        exact valRel_reloadVal sq.sg hn.2.1 hn.2.2 (hX q hq).2 hf
+        exact fvalRel_vreloadVal hn.2.2.1 (hV q hq) hf
   · classical
     obtain ⟨mm, hmm, M, hinj, hag⟩ := h.mem
     refine ⟨mm, hmm, fun y => if W y then M y else s0'.mem y,

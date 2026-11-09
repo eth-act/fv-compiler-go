@@ -116,7 +116,7 @@ def objFacts : Bool :=
     ps[14]?.map (fun p : Prog => p.to.sym.isNone) == some true &&
     tailCall obj.text obj.relocs.toList 60 == some (9, 0) &&
     code (sym 9 + BitVec.ofInt 64 0) == none && isOk (tailPlan spills.toList) &&
-    getOk (tailPlan spills.toList) == [⟨0, 8, 8, false⟩]
+    getOk (tailPlan spills.toList) == [⟨0, 8, 8, false, false⟩]
 
 theorem obj_facts : objFacts = true := by
   native_decide
@@ -129,7 +129,8 @@ theorem facts :
       obj.text.size ≤ 2 ^ 64 ∧ code retM = none ∧ CheckPasses 32 16 s0 ∧
       (∃ hk : 14 < ps.size, ps[14].as = .RET ∧ ps[14].to.type = .NONE ∧ ps[14].to.sym = none) ∧
       tailCall obj.text obj.relocs.toList 60 = some (9, 0) ∧
-      code (sym 9 + BitVec.ofInt 64 0) = none ∧ tailPlan spills.toList = .ok [⟨0, 8, 8, false⟩] := by
+      code (sym 9 + BitVec.ofInt 64 0) = none ∧
+      tailPlan spills.toList = .ok [⟨0, 8, 8, false, false⟩] := by
   have hf := obj_facts
   simp only [objFacts, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hf
   obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hc, haz⟩, hleaf⟩, hchk⟩, h0⟩, h14⟩, hl⟩, hsz⟩, hret⟩, hpass⟩, hk⟩, has⟩,

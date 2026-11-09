@@ -1021,6 +1021,7 @@ import GoFV.Proof.Witness.ObjEndToEnd
 import GoFV.Proof.Witness.ObjEntry49
 import GoFV.Proof.Witness.ObjFrame
 import GoFV.Proof.Witness.ObjG7
+import GoFV.Proof.Witness.ObjMoreF
 import GoFV.Proof.Witness.ObjOps
 import GoFV.Proof.Witness.ObjPanic
 import GoFV.Proof.Witness.ObjRo
