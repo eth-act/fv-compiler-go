@@ -566,6 +566,20 @@ bytes, under a hook that implements `memequal` on the machine, after which `runL
 `true` and the machine's `X0` is 1). Coverage on quick-v10 (`lake exe gen-check`): 5,332 of 9,297
 functions (57.35%), 120,012 values.
 
+## Phase 3: genssa, slice G29 (I7, #553)
+
+`GoFV.Proof.Gen.g29_value`, `GoFV.Proof.Gen.g29_term`, `GoFV.Proof.Gen.g29_nilPanic`,
+`GoFV.Proof.Gen.g29_boundsPanic` (`GoFV/Proof/Gen/G29.lean`): when slice G29 (`checkG29`: G28 with
+the upper-bit table `uL` of several entries carried across narrow loads, `MOVDnop` and `MOVDreg`
+within a block) accepts a function, they are `g28_value`'s, `g28_term`'s, `g28_nilPanic`'s and
+`g28_boundsPanic`'s statements under the same premises, except that `g29_value` takes the table's
+invariant `UOKL m (uL lc blk i)` in place of `UOK m (uAt lc blk i)` and concludes
+`UOKL m' (uL lc blk (i + 1))` (the table is empty at a block's entry). No new trusted premise.
+Witness `genG29_value_witness` (`.eq.M1K1M2` of test/genmeth1, which G28 rejects: `MOVDnop` of a
+halfword loaded two values earlier, with `0xbeef` in `R1`, after which `runLoc`'s `R1` holds the
+32-bit `0xbeef` and the table gives the machine's whole `X1 = 0xbeef`). Coverage on quick-v10
+(`lake exe gen-check`): 5,361 of 9,297 functions (57.66%), 121,036 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g12_obj_value`, `g12_obj_term` (`GoFV/Proof/Obj/G12.lean`): `g12_value`/`g12_term`
