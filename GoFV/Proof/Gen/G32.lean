@@ -720,7 +720,7 @@ theorem g32_bin (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j (.ofShape { as, from_ := regA rm, reg := rn, to := regA rd }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have halu := aluOp32_bin hop
@@ -747,9 +747,9 @@ theorem g32_bin (F : Facts lc sym text az ez psA.toList ret E)
       exact valRel_retypeL_lo hA hcv ht (lo_bin32 hA as hxv hyv hxf hyf hca hcb ht)
     · rw [cls_bool hcv]
       exact valRel_binBool hb hxv hyv hxf hyf
-  refine (op_reg2 (H := H) F hm hinv hj hj' hvs hd hkd hor hrel (fits_retypeL hcv _)
+  refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor hrel (fits_retypeL hcv _)
     (knext_set hK hnp hvh hcv) (fun k0 hk0' hok => ?_)).imp
-    fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, .inr ⟨r, kd, _, hvh, hor, h4⟩⟩
   obtain ⟨hpa, hf, hr, ht', -⟩ := Shape.ok_eq hok
   rw [progStep_bin32 hop hkn hkm hkd (nextAddr_pcAt F.nodup hk0') hpa hf hr ht', wX_pc]
   rfl
@@ -766,7 +766,7 @@ theorem g32_binK (F : Facts lc sym text az ez psA.toList ret E)
       (.ofShape { as, from_ := constA v.auxInt.toInt, reg := rn, to := regA rd }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have halu := aluOp32_binK hop
@@ -790,9 +790,9 @@ theorem g32_binK (F : Facts lc sym text az ez psA.toList ret E)
       exact valRel_retypeL_lo hA hcv ht (lo_binK32 hA as hxv hxf hca ht)
     · rw [cls_bool hcv]
       exact valRel_xorBool hk1 hxv hxf
-  refine (op_reg2 (H := H) F hm hinv hj hj' hvs hd hkd hor hrel (fits_retypeL hcv _)
+  refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor hrel (fits_retypeL hcv _)
     (knext_set hK hnp hvh hcv) (fun k0 hk0' hok => ?_)).imp
-    fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, .inr ⟨r, kd, _, hvh, hor, h4⟩⟩
   obtain ⟨hpa, hf, hr, ht', -⟩ := Shape.ok_eq hok
   rw [progStep_binK32 hop hkn hkd (nextAddr_pcAt F.nodup hk0') hpa hf hr ht', wX_pc]
   rfl
@@ -808,7 +808,7 @@ theorem g32_un (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j (.ofShape { as, from_ := regA rm, to := regA rd }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have halu := aluOp32_un hop
@@ -825,10 +825,10 @@ theorem g32_un (F : Facts lc sym text az ez psA.toList ret E)
   obtain rfl := mapM_res_one hargv hx
   rw [write_reg hvh hcv, evalPure_un32 hop]
   have ht := cls_ne_bool hcv h8
-  refine (op_reg2 (H := H) F hm hinv hj hj' hvs hd hkd hor
+  refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor
     (valRel_retypeL_lo hA hcv ht (lo_un32 hA as hxv hxf hca ht)) (fits_retypeL hcv _)
     (knext_set hK hnp hvh hcv) (fun k0 hk0' hok => ?_)).imp
-    fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, .inr ⟨r, kd, _, hvh, hor, h4⟩⟩
   obtain ⟨hpa, hf, -, ht', -⟩ := Shape.ok_eq hok
   rw [progStep_un32 hop hkm hkd (nextAddr_pcAt F.nodup hk0') hpa hf ht', wX_pc]
   rfl
@@ -847,7 +847,7 @@ theorem g32_csinc (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j ⟨csincOK cc rn rm rd, "CSINC"⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have hnp : v.op ≠ .Phi := by rw [hop]; nofun
@@ -873,7 +873,7 @@ theorem g32_csinc (F : Facts lc sym text az ez psA.toList ret E)
   refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor
     (valRel_csinc hA hcd hfr hxv hyv hxf hyf hcv h8 hca hcb) (fits_retypeL hcv _)
     (knext_set hK hnp hvh hcv) (fun k hk hok => ?_)).imp
-    fun m' ⟨h1, h2, h3, _⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, .inr ⟨r, kd, _, hvh, hor, h4⟩⟩
   obtain ⟨has, hf, hr, ht, -, -, xr, hrest⟩ := csincOK_spec hok
   rw [progStep_csinc hkn hkm hkd (nextAddr_pcAt F.nodup hk) has hf hrange hr hrest ht, wX_pc]
   simp only [MState.holds, hcond]
@@ -1007,25 +1007,25 @@ theorem vk32_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
       hicall hwb hclo hgetg hmeq hs
   | bin hop hsz hao hbo hro hw =>
     obtain ⟨r2, hvh, -, -, -⟩ := resObj_spec hro
-    obtain ⟨m', h1, h2, h3, h4⟩ := g32_bin (H := H) F hm hinv.core hinv.slots
+    obtain ⟨m', h1, h2, h3, h4, -⟩ := g32_bin (H := H) F hm hinv.core hinv.slots
       (kread_of_reads hreads) (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz hao hbo
       hro hw hvs htemp hs
     exact same m' (by simp only [uEntry, narrowLd?_alu32 (aluOp32_bin hop)]) h1 h2 h3 h4
   | binK hop hsz hao hro hw =>
     obtain ⟨r2, hvh, -, -, -⟩ := resObj_spec hro
-    obtain ⟨m', h1, h2, h3, h4⟩ := g32_binK (H := H) F hm hinv.core hinv.slots
+    obtain ⟨m', h1, h2, h3, h4, -⟩ := g32_binK (H := H) F hm hinv.core hinv.slots
       (kread_of_reads hreads) (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz hao hro
       hw hvs htemp hs
     exact same m' (by simp only [uEntry, narrowLd?_alu32 (aluOp32_binK hop)]) h1 h2 h3 h4
   | un hop hsz hao hro h8 hca =>
     obtain ⟨r2, hvh, -, -, -⟩ := resObj_spec hro
-    obtain ⟨m', h1, h2, h3, h4⟩ := g32_un (H := H) F hm hinv.core hinv.slots
+    obtain ⟨m', h1, h2, h3, h4, -⟩ := g32_un (H := H) F hm hinv.core hinv.slots
       (kread_of_reads hreads) (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz hao hro
       h8 hca hvs htemp hs
     exact same m' (by simp only [uEntry, narrowLd?_alu32 (aluOp32_un hop)]) h1 h2 h3 h4
   | csinc hop hsz hfa hfl hhn ho hco hcc hao hbo hro h8 hca hcb =>
     obtain ⟨r2, hvh, -, -, -⟩ := resObj_spec hro
-    obtain ⟨m', h1, h2, h3, h4⟩ := g32_csinc (H := H) F hm hinv.core hinv.slots
+    obtain ⟨m', h1, h2, h3, h4, -⟩ := g32_csinc (H := H) F hm hinv.core hinv.slots
       (kread_of_reads hreads) (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz hfa hfl
       hhn ho hco hcc hao hbo hro h8 hca hcb hvs htemp hs
     have halu : AluOp32 v.op := by unfold AluOp32; simp [hop]

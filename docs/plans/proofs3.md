@@ -807,6 +807,27 @@ clear (`Arm64.cmp1P`'s `zClear`), which only G1's `NoBarePtr` premise for `CMP`/
 to the machine; `LoweredGetCallerPC` (25) emits the pseudo-instruction `GETCALLERPC`, which the
 machine model of P0 does not run (`obj7`'s `preprocess` makes it `MOVD LR` or `MOVD (RSP)`).
 
+**Slice G34: the upper-bit table across more values** (`GoFV/Gen/Check34.lean`, `checkG34 lc ps
+bstart g`, returning G4's tables; proven sound, `g34_value`, `g34_term`, `g34_nilPanic`,
+`g34_boundsPanic`): G33 with a larger upper-bit table `uL34` in place of G31's `uL31` on a function
+with an arm64 op. Besides `keep31`'s values, the table keeps the entries of the registers other
+than the value's register home across the single-register ops of G3 (the extensions `MOV*reg`,
+`ANDconst`, `SLLconst`, `SRLconst`, `UBFX`), G16 (`ADDshiftLL`), G23 (the condition values
+`Equal` …), G25 (`CSEL`, `CSEL0`, `TSTconst`, `TSTWconst`), G32 and G33, the spills and reloads
+(`StoreReg`, `LoadReg`) and `MOVDaddr` (`keep34`, `uStep34`). The dataflow (`uFlow34`, `uIn34`),
+its check (`uEdgesOK34`) and `movdOK34` are G31's over `uStep34`. The statements are G33's over
+`checkG34` with `uL34 lc (uIn34 lc bid)` in place of `uL31 lc (uIn lc bid)`, and `g34_term`
+concludes `UOKL m' (uIn34 lc e.b)`; `uIn34 lc entry = []` (`uEdgesOK34_entry`). No new trusted
+premise. The proof (`G34.lean`, `Keep34.lean`): the case lemmas of the kept kinds now conclude
+`XW` (`g2_addr`, `g2_spill`, `g2_reload`, `g3_ext`, `g3_aluK`, `g3_ubfx`, `g6_addr`, `g16_addSh`,
+`g23_cset`, `g25_csel`, `g25_csel0`, `g25_tst`, `g25_tstw`, `g32_bin`, `g32_binK`, `g32_un`,
+`g32_csinc`, and G33's); `vk33_keep` peels `VK33` down to `VK2` and refutes every kind outside
+`keepOps34` by its op (`keep34_mem`, `keep34_aux`), so a `keep34` value writes at most its home's X
+register and the other entries stay true (`uokl_keep`); every other value steps as in G33
+(`vk33_step`). G34 accepts 5,825 functions (+13 over G33); 16 still have `upper bits unknown` as
+their only reason. `LDP` with `Select0`/`Select1` (a pair write) in the keep set would take 18 of
+G33's 29.
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -818,10 +839,10 @@ reason in parentheses):
    a parameter of the semantics); slots of other sizes (`slot … frame operand, size or alignment`,
    717).
 3. **Other values**: the acquire loads `LDAR`/`LDARW` (383, 277); `InitMem` after the entry values
-   (33 sole after G33), `LoweredGetCallerPC` (25), `SLL` (25), `ADDshiftRL` (23), `CMNconst` (22),
+   (33 sole after G34), `LoweredGetCallerPC` (25), `SLL` (25), `ADDshiftRL` (23), `CMNconst` (22),
    `CMPshiftRL` (15), `MADD` (12); `MOVDnop` 750 (91) and `MOVDreg` (27 sole) are done in G20, G21,
-   G29 and G31 but for 29 functions with no other blocker after G33, whose tables need more ops to
-   keep their entries (§8). Bounds panics
+   G29, G31 and G34 but for 16 functions with no other blocker after G34, whose tables need more
+   ops to keep their entries (§8). Bounds panics
    (`LoweredPanicBoundsRR` 616 (68), `RC` 332 (46), `CR` 76 (33), `CC` 170 (22)) are done in G19
    but for #541's 2 functions.
 
@@ -865,6 +886,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G32 | 5,678 (61.07%) | 143,647 |
 | G31 | 5,703 (61.34%) | 145,016 |
 | G33 | 5,812 (62.51%) | 151,700 |
+| G34 | 5,825 (62.65%) | 152,495 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1073,6 +1095,12 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `addSub_addFlags32`, `progStep_cmnwConst`, `lo_op1_64`, `lo_ubfiz`, `flagsRel_cmnwK`, `g33_un`,
   `g33_sra`, `g33_ubfiz`, `g33_cmnw`, `vk33_step`, `g33_value`, `vk33_nil`, `g33_nilPanic`,
   `g33_boundsPanic`, `g33_term`.
+- `Spec34.lean`: what `checkG34` accepted (`uL34_succ`, `uIn34_nl`, `uL34_nl`, `movdOK34_spec`,
+  `uEdgesOK34_entry`, `uEdgesOK34_edge`, `checkG33_of_34`, `checkG34_spec`).
+- `Keep34.lean`: a `VK33` value `keep34` accepts writes at most its home's X register
+  (`keepOps34`, `keep34_mem`, `keep34_aux`, `keep34_all`, `vk33_keep`).
+- `G34.lean`: `uStep34_keep`, `uStep34_other`, `vk34_step`, `g34_value`, `g34_nilPanic`,
+  `g34_boundsPanic`, `g34_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -1175,7 +1203,10 @@ v6`, `ASR $4, R0, R1`, from `-256`, after which `X1 = 0xfffffffffffffff0`), `Gen
 (`runtime.(*mspan).pinnerBitSize` and `runtime.(*_func).isInlined`: `g33_value` on `v13 = UBFIZ
 [272] v10`, `UBFIZ $1, R1, $16, R1`, from the 16-bit `0xbeef` with G31's table holding `R1`, after
 which `X1 = 0x17dde`, and on `v3 = CMNWconst [1] v10`, `CMNW $1, R1`, from the 32-bit `0xffffffff`,
-after which the machine's `Z` flag is set).
+after which the machine's `Z` flag is set), `GenG34.lean` (`test/atomicload`'s `f`, which G33
+rejects: `v11 = MOVBreg v9`, `MOVB R1, R2`, writes only `R2`, so G34's table keeps `R1`'s entry for
+`v13 = MOVDreg v9`, where G31's is empty; `g34_value` on `v11` from the byte `0xbe` in `R1`, after
+which the machine's `X2 = 0xffffffffffffffbe` and the table gives the whole `X1 = 0xbe`).
 Each decides its inputs by compiled evaluation (`native_decide`, pinned in
 `scripts/axioms-allowlist.txt`).
 
@@ -1428,6 +1459,8 @@ carried across just those values would take them; the other 22 need the cross-bl
 their only reason. G31 (§4) carries it across G1's and G3's ops (`XW`) and blocks (`uIn`, `uFlow`);
 it took 25 functions, and 26 still have `upper bits unknown` as their only reason. A wider keep set
 (frames for spills and reloads, `LDP`/`Select`, bounds panics, `MOVBreg`) measured 38 of the 46.
+G34 (§4) widens it to G3's, G16's, G23's, G25's, G32's and G33's single-register ops, spills,
+reloads and `MOVDaddr`; it took 13, and 16 remain.
 
 - **The obstacle.** `MOVDnop x` emits no code. `runLoc` gives it the full 64-bit register:
   `movdLoc` takes the zero or sign extension of `x`'s low bits, as `LocCtx.signOf` decides from
