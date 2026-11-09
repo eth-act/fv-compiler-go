@@ -315,4 +315,155 @@ theorem loop_run {N : Nat} {I : Nat → MState → Prop} {head exit : BitVec 64}
 
 end Run
 
+/-! ## `runLoc`'s clobbers -/
+
+section Clobber
+
+variable {lc : LocCtx} {v : Value}
+
+/-- A register after `setReg r0 poison`: `poison`, or the old content at a register other than
+`r0` (or `r0` is `ZERO`, which `setReg` does not write). -/
+theorem setReg_poison_get {s : LocState} {r0 q : Nat} {y : Val}
+    (h : (s.setReg r0 .poison).regs[q]? = some y) :
+    y = .poison ∨ (s.regs[q]? = some y ∧ (q ≠ r0 ∨ r0 = zeroReg)) := by
+  rcases setReg_get h with ⟨-, rfl⟩ | ⟨h1, h2⟩
+  · exact .inl rfl
+  · exact .inr ⟨h2, h1⟩
+
+/-- A register after `clobberMask msk`: `poison`, or the old content at a register not in `msk`. -/
+theorem clobberMask_get {s : LocState} {msk : RegMask} {q : Nat} {y : Val}
+    (h : (s.clobberMask msk).regs[q]? = some y) :
+    y = .poison ∨ (s.regs[q]? = some y ∧ msk.hasReg q = false) := by
+  unfold LocState.clobberMask at h
+  split at h
+  · rename_i he
+    refine .inr ⟨h, ?_⟩
+    cases hm : msk.hasReg q with
+    | false => rfl
+    | true =>
+      exfalso
+      simp only [RegMask.isEmpty, RegMask.hasReg, Bool.and_eq_true, beq_iff_eq] at he hm
+      split at hm <;> simp_all
+  · simp only [Array.getElem?_mapIdx] at h
+    cases hr : s.regs[q]? with
+    | none => rw [hr] at h; cases h
+    | some z =>
+      rw [hr] at h
+      simp only [Option.map_some, Option.some.injEq] at h
+      by_cases hm : msk.hasReg q = true
+      · left; rw [if_pos hm] at h; exact h.symm
+      · right; rw [if_neg hm] at h; exact ⟨by rw [h], by simpa using hm⟩
+
+/-- One argument's clobber of `LocState.clobber`. -/
+def clobArg54 (lc : LocCtx) (v : Value) (b : Bool) (i : Nat) (s : LocState) : LocState :=
+  if !b then s else match v.args[i]?.bind lc.regOf with
+    | some r => s.setReg r .poison
+    | none => s
+
+/-- The temporary's clobber of `LocState.clobber`. -/
+def clobTemp54 (lc : LocCtx) (v : Value) (s : LocState) : LocState :=
+  match (lc.temps[v.id]?).join with
+  | some r => s.setReg r .poison
+  | none => s
+
+/-- `LocState.clobber` as its steps. -/
+theorem clobber_eq54 (s : LocState) :
+    s.clobber lc v =
+      if v.op.clobberFlags then
+        { clobTemp54 lc v (clobArg54 lc v v.op.regInfo.clobbersArg0 0
+          (clobArg54 lc v v.op.regInfo.clobbersArg1 1 (s.clobberMask v.op.regInfo.clobbers)))
+          with flags := .poison }
+      else clobTemp54 lc v (clobArg54 lc v v.op.regInfo.clobbersArg0 0
+          (clobArg54 lc v v.op.regInfo.clobbersArg1 1 (s.clobberMask v.op.regInfo.clobbers))) := by
+  unfold LocState.clobber clobArg54 clobTemp54
+  rfl
+
+private theorem clobArg_get (b : Bool) (i : Nat) (s : LocState) {q : Nat} {y : Val}
+    (h : (clobArg54 lc v b i s).regs[q]? = some y) :
+    y = .poison ∨ (s.regs[q]? = some y ∧
+      (b = true → v.args[i]?.bind lc.regOf = some q → q = zeroReg)) := by
+  unfold clobArg54 at h
+  cases b with
+  | false => exact .inr ⟨h, fun h => by cases h⟩
+  | true =>
+    simp only [Bool.not_true, Bool.false_eq_true, ↓reduceIte] at h
+    cases hr : v.args[i]?.bind lc.regOf with
+    | none => rw [hr] at h; exact .inr ⟨h, fun _ h => by cases h⟩
+    | some r0 =>
+      rw [hr] at h
+      rcases setReg_poison_get h with rfl | ⟨h1, h2⟩
+      · exact .inl rfl
+      · refine .inr ⟨h1, fun _ he => ?_⟩
+        cases he
+        rcases h2 with h2 | h2
+        · exact absurd rfl h2
+        · exact h2
+
+private theorem clobTemp_get (s : LocState) {q : Nat} {y : Val}
+    (h : (clobTemp54 lc v s).regs[q]? = some y) :
+    y = .poison ∨ (s.regs[q]? = some y ∧ ((lc.temps[v.id]?).join = some q → q = zeroReg)) := by
+  unfold clobTemp54 at h
+  cases ht : (lc.temps[v.id]?).join with
+  | none => rw [ht] at h; exact .inr ⟨h, fun h => by cases h⟩
+  | some t =>
+    rw [ht] at h
+    rcases setReg_poison_get h with rfl | ⟨h1, h2⟩
+    · exact .inl rfl
+    · refine .inr ⟨h1, fun he => ?_⟩
+      cases he
+      rcases h2 with h2 | h2
+      · exact absurd rfl h2
+      · exact h2
+
+/-- A register after `LocState.clobber lc s v`: `poison`, or the old content at a register outside
+the op's mask, not an argument register it clobbers and not its temporary (`ZERO` excepted). -/
+theorem clobber_get54 {s : LocState} {r : Nat} {x : Val} (h : (s.clobber lc v).regs[r]? = some x) :
+    x = .poison ∨ (s.regs[r]? = some x ∧ v.op.regInfo.clobbers.hasReg r = false ∧
+      (v.op.regInfo.clobbersArg0 = true → v.args[0]?.bind lc.regOf = some r → r = zeroReg) ∧
+      (v.op.regInfo.clobbersArg1 = true → v.args[1]?.bind lc.regOf = some r → r = zeroReg) ∧
+      ((lc.temps[v.id]?).join = some r → r = zeroReg)) := by
+  rw [clobber_eq54] at h
+  have h4 : (clobTemp54 lc v (clobArg54 lc v v.op.regInfo.clobbersArg0 0
+      (clobArg54 lc v v.op.regInfo.clobbersArg1 1 (s.clobberMask v.op.regInfo.clobbers)))).regs[r]? =
+      some x := by
+    split at h <;> exact h
+  rcases clobTemp_get _ h4 with rfl | ⟨h3, ht⟩
+  · exact .inl rfl
+  rcases clobArg_get _ 0 _ h3 with rfl | ⟨h2, ha0⟩
+  · exact .inl rfl
+  rcases clobArg_get _ 1 _ h2 with rfl | ⟨h1, ha1⟩
+  · exact .inl rfl
+  rcases clobberMask_get h1 with rfl | ⟨h0, hm⟩
+  · exact .inl rfl
+  exact .inr ⟨h0, hm, ha0, ha1, ht⟩
+
+/-- `LocState.clobber` keeps the slots and the memory, and the flags of an op that keeps them. -/
+theorem clobber_keeps54 (s : LocState) (hf : v.op.clobberFlags = false) :
+    (s.clobber lc v).slots = s.slots ∧ (s.clobber lc v).flags = s.flags ∧
+      (s.clobber lc v).mem = s.mem := by
+  have hA : ∀ (b : Bool) (i : Nat) (s : LocState), (clobArg54 lc v b i s).slots = s.slots ∧
+      (clobArg54 lc v b i s).flags = s.flags ∧ (clobArg54 lc v b i s).mem = s.mem := by
+    intro b i s
+    unfold clobArg54
+    split
+    · exact ⟨rfl, rfl, rfl⟩
+    · split <;> exact ⟨rfl, rfl, rfl⟩
+  have hT : ∀ s : LocState, (clobTemp54 lc v s).slots = s.slots ∧
+      (clobTemp54 lc v s).flags = s.flags ∧ (clobTemp54 lc v s).mem = s.mem := by
+    intro s; unfold clobTemp54; split <;> exact ⟨rfl, rfl, rfl⟩
+  have hM : ∀ msk : RegMask, (s.clobberMask msk).slots = s.slots ∧
+      (s.clobberMask msk).flags = s.flags ∧ (s.clobberMask msk).mem = s.mem := by
+    intro msk; unfold LocState.clobberMask; split <;> exact ⟨rfl, rfl, rfl⟩
+  rw [clobber_eq54, hf, if_neg (by simp)]
+  obtain ⟨h1, h2, h3⟩ := hM v.op.regInfo.clobbers
+  obtain ⟨h4, h5, h6⟩ := hA v.op.regInfo.clobbersArg1 1 (s.clobberMask v.op.regInfo.clobbers)
+  obtain ⟨h7, h8, h9⟩ := hA v.op.regInfo.clobbersArg0 0
+    (clobArg54 lc v v.op.regInfo.clobbersArg1 1 (s.clobberMask v.op.regInfo.clobbers))
+  obtain ⟨h10, h11, h12⟩ := hT (clobArg54 lc v v.op.regInfo.clobbersArg0 0
+    (clobArg54 lc v v.op.regInfo.clobbersArg1 1 (s.clobberMask v.op.regInfo.clobbers)))
+  exact ⟨h10.trans (h7.trans (h4.trans h1)), h11.trans (h8.trans (h5.trans h2)),
+    h12.trans (h9.trans (h6.trans h3))⟩
+
+end Clobber
+
 end GoFV.Proof.Gen
