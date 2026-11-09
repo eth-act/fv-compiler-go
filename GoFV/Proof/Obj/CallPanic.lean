@@ -1,26 +1,29 @@
-import GoFV.Proof.Obj.G46
+import GoFV.Proof.Obj.G47
 
 variable [GoFV.SSA.Sem.Addrs]
 
 /-!
 # Calls whose callee panics (`docs/plans/proofs3.md` §6, §9)
 
-A static call of slice G46 that panics in `runLoc` (its callee panicked, `callOp`): genssa's
+A static call of slice G47 that panics in `runLoc` (its callee panicked, `callOp`): genssa's
 Progs run the no-ops before the `CALL sym(SB)` and the `CALL` (`X30` the return address, the PC the
 callee's symbol), where the runtime hook panics with the same panic by the callee contract
-`CallPanicOK` (trusted, as `CallOK` for a callee that returns): `g46_callPanic` (`runLoc` →
-`runProg` on P0), `g46_obj_callPanic` (→ `runMach` on the linked words, `obj_panic`). A function
-with no arm64 op has no call (`nl30_ops`); in one with, `vkind46` of a call is `vkind45`'s
-(`vkind46_eq45`), so `vkind44`'s (`vkind45_eq44`), `vkind43`'s (`vkind44_eq43`), `vkind42`'s
-(`vkind43_eq42`), `vkind41`'s (`vkind42_eq41`), `vkind40`'s (`vkind41_eq40`), `vkind38`'s
-(`vkind40_eq38`) and `vkind28`'s
-(`vkind38_eq28`), whose static calls are G15's (`vk28_vk18`, `vk18_call`).
+`CallPanicOK` (trusted, as `CallOK` for a callee that returns): `g47_callPanic` (`runLoc` →
+`runProg` on P0), `g47_obj_callPanic` (→ `runMach` on the linked words, `obj_panic`). A function
+with no arm64 op has no call (`nl30_ops`); in one with, `vkind47` of a call is `vkind46`'s or G47's
+`callKind47` (`vkind47_call`). `vkind46`'s is `vkind45`'s (`vkind46_eq45`), so `vkind44`'s
+(`vkind45_eq44`), `vkind43`'s (`vkind44_eq43`), `vkind42`'s (`vkind43_eq42`), `vkind41`'s
+(`vkind42_eq41`), `vkind40`'s (`vkind41_eq40`), `vkind38`'s (`vkind40_eq38`) and `vkind28`'s
+(`vkind38_eq28`), whose static calls are G15's (`vk28_vk18`, `vk18_call`), with the ABI registers
+in `R0`–`R15`; `callKind47`'s (`callKind47_facts`) admits `F0`–`F15`, an argument there at a float
+shape read from its V register (`argsV`).
 
 An interface or closure call that panics: the no-ops, then `CALL (Rn)` to the code pointer in
 `Rn`, where the callee's hook panics with the same panic by `ICallPanicOK` (trusted, as `ICallOK`):
-`g46_icallPanic`, `g46_obj_icallPanic`. `vkind46` of such a call is `vkind10`'s, `icallKind`
+`g47_icallPanic`, `g47_obj_icallPanic`. `vkind47` of such a call is `vkind10`'s, `icallKind`
 (`vkind46_eq45`, `vkind45_eq44`, `vkind44_eq43`, `vkind43_eq42`, `vkind42_eq41`, `vkind41_eq40`,
-`vkind40_eq38`, `vkind38_eq28`, `vkind28_icall`, `icallKind_facts`).
+`vkind40_eq38`, `vkind38_eq28`, `vkind28_icall`, `icallKind_facts`), or G47's `icallKind47`
+(`icallKind47_facts`), with `F0`–`F15` admitted alike (`vkind47_icall`).
 -/
 
 namespace GoFV.Proof.Obj
@@ -141,13 +144,87 @@ theorem vkind38_call {lc : LocCtx} {g : G2In} {v : Value} (hop : v.op = .ARM64CA
     vkind38 lc g v = vkind28 lc g v := by
   apply vkind38_eq28 <;> rw [hop] <;> first | rfl | nofun
 
-/-- **A static call of slice G46 whose callee panics**: from a `LocMatch`ed P0 state, the Progs
+/-- What `callKind47` accepted: `VK47.call`'s facts. -/
+theorem callKind47_facts {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2}
+    (h : callKind47 lc g v = .ok kd) :
+    ∃ name abi cabi ins outs, callOf? lc.ctx.tabs v.aux = some (name, abi, cabi) ∧
+      callRegsZ lc.ctx.tabs cabi = .ok (ins, outs) ∧ (∀ r ∈ ins ++ outs, r < 16 ∨ (31 ≤ r ∧ r < 47)) ∧
+      v.args.toList.dropLast.length = ins.length ∧
+      (∀ a r, (a, r) ∈ v.args.toList.dropLast.zip ins → lc.home a = some (.reg r)) ∧
+      (∀ a r, (a, r) ∈ v.args.toList.dropLast.zip ins → 31 ≤ r → fTy (lc.ty a) = true) ∧
+      kd = .prog (callPat g name abi) := by
+  unfold callKind47 at h
+  by_cases ht : (lc.temps[v.id]?).join = none
+  · simp only [ht, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte] at h
+    split at h
+    next name abi cabi hcall =>
+      obtain ⟨⟨ins, outs⟩, hcr, h⟩ := ex_bind_eq_ok h
+      obtain ⟨-, h⟩ := ex_guard h
+      split at h
+      next m hm =>
+        obtain ⟨-, h⟩ := ex_guard h
+        obtain ⟨h16, h⟩ := ex_guard h
+        obtain ⟨hlen, h⟩ := ex_guard h
+        obtain ⟨hargs, h⟩ := ex_guard h
+        obtain ⟨hfa, h⟩ := ex_guard h
+        simp only [beq_iff_eq] at hlen
+        refine ⟨name, abi, cabi, ins, outs, hcall, hcr,
+          fun r hr => abiRegOK_spec ((List.all_eq_true.mp h16) r hr), hlen, fun a r har => ?_,
+          fArgsOK_spec hfa, ?_⟩
+        · have := (List.all_eq_true.mp hargs) (a, r) har
+          simpa only [beq_iff_eq, regHome?_eq] using this
+        · split at h
+          all_goals first
+            | (simp [ex_throw, ex_bind_error] at h; done)
+            | (obtain ⟨-, h⟩ := ex_guard h
+               obtain ⟨-, h⟩ := ex_guard h
+               obtain ⟨-, h⟩ := ex_guard h
+               cases h
+               rfl)
+      next => simp [ex_throw] at h
+    next => simp [ex_throw] at h
+  · simp [ht, ex_throw, ex_bind_error] at h
+
+/-- A static call `vkind47` accepted: `vkind46`'s (G15's, through `vkind28`), its ABI registers in
+`R0`–`R15`, or G47's `callKind47`, with `F0`–`F15` admitted and an argument there at a float
+shape. -/
+theorem vkind47_call {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2}
+    (hop : v.op = .ARM64CALLstatic) (h : vkind47 lc g v = .ok kd) :
+    ∃ name abi cabi ins outs, callOf? lc.ctx.tabs v.aux = some (name, abi, cabi) ∧
+      callRegsZ lc.ctx.tabs cabi = .ok (ins, outs) ∧ (∀ r ∈ ins ++ outs, r < 16 ∨ (31 ≤ r ∧ r < 47)) ∧
+      v.args.toList.dropLast.length = ins.length ∧
+      (∀ a r, (a, r) ∈ v.args.toList.dropLast.zip ins → lc.home a = some (.reg r)) ∧
+      (∀ a r, (a, r) ∈ v.args.toList.dropLast.zip ins → 31 ≤ r → fTy (lc.ty a) = true) ∧
+      kd = .prog (callPat g name abi) := by
+  unfold vkind47 at h
+  cases h46 : vkind46 lc g v with
+  | ok kd' =>
+    rw [h46] at h
+    cases h
+    rw [vkind46_eq45 (by rw [hop]; simp [fops46]),
+      vkind45_eq44 (by rw [hop]; rfl) (by rw [hop]; rfl),
+      vkind44_eq43 (by rw [hop]; rfl), vkind43_eq42 (by rw [hop]; nofun),
+      vkind42_eq41 (by rw [hop]; nofun),
+      vkind41_eq40 (by rw [hop]; nofun) (by rw [hop]; rfl),
+      vkind40_eq38 (by rw [hop]; nofun), vkind38_call hop] at h46
+    obtain ⟨-, hVK⟩ := vkind28_spec h46 (by rw [hop]; rfl)
+    obtain ⟨name, abi, cabi, ins, outs, hcall, hcr, h16, hlen, hargs, rfl⟩ :=
+      vk18_call (vk28_vk18 hVK hop) hop
+    exact ⟨name, abi, cabi, ins, outs, hcall, hcr, fun r hr => .inl (h16 r hr), hlen, hargs,
+      fun _ r har hr => absurd (h16 r (List.mem_append_left _ (List.of_mem_zip har).2))
+        (by omega), rfl⟩
+  | error e =>
+    rw [h46] at h
+    simp only [fcall47, hop, ↓reduceIte] at h
+    exact callKind47_facts h
+
+/-- **A static call of slice G47 whose callee panics**: from a `LocMatch`ed P0 state, the Progs
 of the call run to the callee's symbol, where the runtime panics with `e` (`CallPanicOK`). -/
-theorem g46_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+theorem g47_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab}
     {E : MatchEnv} {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState}
     {m : MState} {e : Panic}
-    (hc : checkG46L lc ps bstart g = .ok (tab, kt)) (hE : G28Env lc g L ps ret tab E)
+    (hc : checkG47L lc ps bstart g = .ok (tab, kt)) (hE : G28Env lc g L ps ret tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
     (hop : v.op = .ARM64CALLstatic) (hm : LocMatch E s bid i m)
@@ -166,7 +243,7 @@ theorem g46_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   rw [htext] at hpcOf
   subst hL
   obtain ⟨c, rfl, rfl, -, rfl, hvk, -, hl, hhome, -, hk, hlt, hnd, hblocks, -, -, -⟩ :=
-    checkG46L_spec hl0 hc
+    checkG47L_spec hl0 hc
   obtain ⟨b, j, js, e', next, hb', -, hvals, -, -, hrow⟩ := Cx2.blocks_spec hblocks bid hbid
   rw [hb] at hb'
   cases hb'
@@ -176,21 +253,15 @@ theorem g46_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   have hid' : blk.values.toList[i] = id := by simpa using hid
   rw [hid', hv] at hv'
   cases hv'
-  rw [hvk, vkind46_eq45 (by rw [hop]; simp [fops46]),
-    vkind45_eq44 (by rw [hop]; rfl) (by rw [hop]; rfl),
-    vkind44_eq43 (by rw [hop]; rfl), vkind43_eq42 (by rw [hop]; nofun),
-    vkind42_eq41 (by rw [hop]; nofun),
-    vkind41_eq40 (by rw [hop]; nofun) (by rw [hop]; rfl),
-    vkind40_eq38 (by rw [hop]; nofun), vkind38_call hop] at hkd
-  obtain ⟨-, hVK⟩ := vkind28_spec hkd (by rw [hop]; rfl)
+  rw [hvk] at hkd
   have hj : E.pcOf bid i = pcAt text c.cx.ps.toList ((js ++ [e']).getD i 0) := by
     rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some]
   have hreads := ((checkK_spec hk).2 bid hbid blk hb).1 i id v hi hv
   have hR : KRead c.cx.lc v (kAt c.cx.lc kt bid blk i).get := kread_of_reads hreads
   have F : Facts c.cx.lc sym text az ez c.cx.ps.toList ret E :=
     ⟨hl, clsReg_of_home10 hhome, hnd, hlt, hret, hA⟩
-  obtain ⟨name, abi, cabi, ins, outs, hcall', hcr, h16, hlen, hargs, rfl⟩ :=
-    vk18_call (vk28_vk18 hVK hop) hop
+  obtain ⟨name, abi, cabi, ins, outs, hcall', hcr, h16, hlen, hargs, hfa, rfl⟩ :=
+    vkind47_call hop hkd
   -- the machine: no-ops, then the `CALL`
   obtain ⟨k, -, hk', hokp, hstar⟩ := pstar_oneAt2 (H := H) F.nodup F.lt F.ret hvs m
   rw [pc_eta hm hj] at hstar
@@ -206,7 +277,7 @@ theorem g46_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     rw [progStep_callSym (nextAddr_pcAt F.nodup hk') has ht1 ht2 ht3 hy1, wX_pc]
     simp only [MState.wX, show ¬ ((30 : Reg) = 31) by decide, ↓reduceIte]
     rfl
-  -- the arguments, read from their ABI registers
+  -- the arguments, read from their ABI registers (an X register, or a V register by `argsV`)
   have hargs' : ∀ a ∈ v.args.toList.dropLast, ∃ x, s.read c.cx.lc a = .ok x ∧
       ∀ r, c.cx.lc.home a = some (.reg r) → RegRel E.ι x m₁ r := by
     intro a ha
@@ -216,7 +287,15 @@ theorem g46_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
       List.mem_of_getElem? (List.getElem?_zip_eq_some.2 ⟨List.getElem?_eq_getElem hj0,
         List.getElem?_eq_getElem hjin⟩)
     have hh := hargs _ _ hz
-    have hr16 := h16 _ (List.mem_append_left _ (List.getElem_mem hjin))
+    by_cases hr31 : 31 ≤ ins[j0]
+    · obtain ⟨x, hx, hxv⟩ := argsV F hm hinv.core hR (by rw [hop]; nofun)
+        (fun a ha => List.dropLast_subset _ ha) hargs hfa _ _ hz hr31
+      refine ⟨x, hx, fun r hr => ?_⟩
+      rw [hh] at hr
+      cases hr
+      exact ⟨fun q hq => (by rw [objX?_high hr31] at hq; cases hq), fun q hq => hxv q hq⟩
+    have hr16 : ins[j0] < 16 := by
+      rcases h16 _ (List.mem_append_left _ (List.getElem_mem hjin)) with h | h <;> omega
     have hrz : ins[j0] ≠ zeroReg := by unfold zeroReg; omega
     obtain ⟨c0, hc0⟩ : ∃ c0, cls (c.cx.lc.ty v.args.toList.dropLast[j0]) = some c0 :=
       Option.isSome_iff_exists.1 (F.clsReg _ _ hh hrz)
@@ -250,15 +329,15 @@ theorem g46_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   refine ⟨m₁, hstar.tail (pstep_at F.nodup F.lt F.ret hk' rfl hcstep),
     (hsyms y).1, Or.inr ⟨progAt?_none (hsyms y).2, m', hcallH⟩⟩
 
-/-- **A static call of slice G46 whose callee panics, down to the machine words**: machine steps
+/-- **A static call of slice G47 whose callee panics, down to the machine words**: machine steps
 of the linked code to a state that panics with `e` (the hook at the callee's symbol,
 `MPanics`). -/
-theorem g46_obj_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+theorem g47_obj_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState} {m : MState}
     {e : Panic} {spills : Array Spill} {o : ObjIn} {otab : Tab} {base : BitVec 64}
     {code : Code} {retM : BitVec 64} {t : MState}
-    (hc : checkG46L lc ps bstart g = .ok (tab, kt))
+    (hc : checkG47L lc ps bstart g = .ok (tab, kt))
     (hE : G28Env lc g L ps (endP L.text ps.toList) tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
@@ -270,7 +349,7 @@ theorem g46_obj_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     (hR : ObjRel (ObjEnv.map otab ps L base) m t)
     (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
     ∃ t', MStar H code retM t t' ∧ MPanics H code retM t' e := by
-  obtain ⟨m', hp, hpp⟩ := g46_callPanic hc hE hbid hb hi hv hop hm hinv hok
+  obtain ⟨m', hp, hpp⟩ := g47_callPanic hc hE hbid hb hi hv hop hm hinv hok
   obtain ⟨t1, ht1, hR1, hI1⟩ := obj_star hO hH hp hR (locMatch_inv hE.env.env.env.env hm) hic
   obtain ⟨t2, ht2, hpan⟩ := obj_panic hO hHP hR1 (hI1.resolve_right hpp.1) hpp
   exact ⟨t2, mstar_trans ht1 ht2, hpan⟩
@@ -356,14 +435,106 @@ theorem icallKind_facts {lc : LocCtx} {v : Value} {k : Nat} {kd : VKind2}
     simp only [hne, ↓reduceIte] at h
     cases h
 
-/-- **An interface or closure call of slice G46 whose callee panics**: from a `LocMatch`ed P0
+/-- What `icallKind47` accepted, as the facts of `VK47.icall`. -/
+theorem icallKind47_facts {lc : LocCtx} {v : Value} {k : Nat} {kd : VKind2}
+    (h : icallKind47 lc v k = .ok kd) :
+    ∃ cabi ins outs a0 rc o, callABI? lc.ctx.tabs v.aux = some cabi ∧
+      callRegs cabi = .ok (ins, outs) ∧ (∀ r ∈ ins ++ outs, r < 16 ∨ (31 ≤ r ∧ r < 47)) ∧
+      v.args[0]? = some a0 ∧ lc.home a0 = some (.reg rc) ∧ rc < 26 ∧
+      (cls (lc.ty a0)).isSome = true ∧ objOf? rc = some o ∧
+      (k = 2 → ∃ a1, v.args[1]? = some a1 ∧ lc.home a1 = some (.reg ctxReg) ∧
+        (cls (lc.ty a1)).isSome = true) ∧
+      (v.args.toList.drop k).dropLast.length = ins.length ∧
+      (∀ a r, (a, r) ∈ (v.args.toList.drop k).dropLast.zip ins → lc.home a = some (.reg r)) ∧
+      (∀ a r, (a, r) ∈ (v.args.toList.drop k).dropLast.zip ins → 31 ≤ r →
+        fTy (lc.ty a) = true) ∧
+      kd = .prog (icallPat o) := by
+  unfold icallKind47 at h
+  by_cases ht : (lc.temps[v.id]?).join = none
+  · simp only [ht, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte] at h
+    split at h
+    next => cases h
+    next cabi hcabi =>
+      split at h
+      next => cases h
+      next ins outs hcr =>
+        split at h
+        next => cases h
+        next a0 ha0 =>
+          split at h
+          next => cases h
+          next rc hrc =>
+            split at h
+            next => cases h
+            next o ho =>
+              split at h
+              next => cases h
+              next herr =>
+                cases h
+                obtain ⟨-, -, -, h16, hrc26, hcl0, hctx, hlen, hargs, hfa, -, -⟩ :=
+                  icallErr47_spec herr
+                exact ⟨cabi, ins, outs, a0, rc, o, hcabi, hcr, h16, ha0, regHome?_eq.mp hrc, hrc26,
+                  hcl0, ho, fun h2 => ctxOK_spec (hctx h2), hlen, hargs, hfa, rfl⟩
+  · have hne : ((lc.temps[v.id]?).join != none) = true := by simpa using ht
+    simp only [hne, ↓reduceIte] at h
+    cases h
+
+/-- An interface or closure call `vkind47` accepted: `vkind46`'s (G10's `icallKind`, through
+`vkind28`), its ABI registers in `R0`–`R15`, or G47's `icallKind47`, with `F0`–`F15` admitted and
+an argument there at a float shape. -/
+theorem vkind47_icall {lc : LocCtx} {g : G2In} {v : Value} {n : Nat} {kd : VKind2}
+    (hn : icallLead v.op = some n) (h : vkind47 lc g v = .ok kd) :
+    ∃ cabi ins outs a0 rc o, callABI? lc.ctx.tabs v.aux = some cabi ∧
+      callRegs cabi = .ok (ins, outs) ∧ (∀ r ∈ ins ++ outs, r < 16 ∨ (31 ≤ r ∧ r < 47)) ∧
+      v.args[0]? = some a0 ∧ lc.home a0 = some (.reg rc) ∧ rc < 26 ∧
+      (cls (lc.ty a0)).isSome = true ∧ objOf? rc = some o ∧
+      (n = 2 → ∃ a1, v.args[1]? = some a1 ∧ lc.home a1 = some (.reg ctxReg) ∧
+        (cls (lc.ty a1)).isSome = true) ∧
+      (v.args.toList.drop n).dropLast.length = ins.length ∧
+      (∀ a r, (a, r) ∈ (v.args.toList.drop n).dropLast.zip ins → lc.home a = some (.reg r)) ∧
+      (∀ a r, (a, r) ∈ (v.args.toList.drop n).dropLast.zip ins → 31 ≤ r →
+        fTy (lc.ty a) = true) ∧
+      kd = .prog (icallPat o) := by
+  unfold vkind47 at h
+  cases h46 : vkind46 lc g v with
+  | ok kd' =>
+    rw [h46] at h
+    cases h
+    rw [vkind46_eq45 (by
+        rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> simp [fops46]),
+      vkind45_eq44 (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl)
+        (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl),
+      vkind44_eq43 (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl),
+      vkind43_eq42 (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> nofun),
+      vkind42_eq41 (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> nofun),
+      vkind41_eq40 (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> nofun)
+        (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl),
+      vkind40_eq38 (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> nofun),
+      vkind38_icall hn] at h46
+    have h10 := vkind28_icall hn h46
+    unfold vkind10 at h10
+    rw [hn] at h10
+    obtain ⟨cabi, ins, outs, a0, rc, o, hcabi, hcr, h16, ha0, hrc, hrc26, hcl0, ho, hctx, hlen,
+      hargs, rfl⟩ := icallKind_facts h10
+    exact ⟨cabi, ins, outs, a0, rc, o, hcabi, hcr, fun r hr => .inl (h16 r hr), ha0, hrc, hrc26,
+      hcl0, ho, hctx, hlen, hargs,
+      fun _ r har hr => absurd (h16 r (List.mem_append_left _ (List.of_mem_zip har).2))
+        (by omega), rfl⟩
+  | error e =>
+    rw [h46] at h
+    have hne : v.op ≠ .ARM64CALLstatic := by
+      rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> nofun
+    simp only [fcall47, hne, hn, ↓reduceIte] at h
+    exact icallKind47_facts h
+
+/-- **An interface or closure call of slice G47 whose callee panics**: from a `LocMatch`ed P0
 state, the no-ops and the `CALL (Rn)` run to the callee's code, where the hook panics with `e`
 (`ICallPanicOK`). -/
-theorem g46_icallPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+theorem g47_icallPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab}
     {E : MatchEnv} {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState}
     {m : MState} {e : Panic} {n : Nat}
-    (hc : checkG46L lc ps bstart g = .ok (tab, kt)) (hE : G28Env lc g L ps ret tab E)
+    (hc : checkG47L lc ps bstart g = .ok (tab, kt)) (hE : G28Env lc g L ps ret tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
     (hn : icallLead v.op = some n) (hm : LocMatch E s bid i m)
@@ -384,7 +555,7 @@ theorem g46_icallPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   rw [htext] at hpcOf
   subst hL
   obtain ⟨c, rfl, rfl, -, rfl, hvk, -, hl, hhome, -, hk, hlt, hnd, hblocks, -, -, -⟩ :=
-    checkG46L_spec hl0 hc
+    checkG47L_spec hl0 hc
   obtain ⟨b, j, js, e', next, hb', -, hvals, -, -, hrow⟩ := Cx2.blocks_spec hblocks bid hbid
   rw [hb] at hb'
   cases hb'
@@ -394,22 +565,9 @@ theorem g46_icallPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   have hid' : blk.values.toList[i] = id := by simpa using hid
   rw [hid', hv] at hv'
   cases hv'
-  rw [hvk, vkind46_eq45 (by
-      rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> simp [fops46]),
-    vkind45_eq44 (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl)
-      (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl),
-    vkind44_eq43 (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl),
-    vkind43_eq42 (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> nofun),
-    vkind42_eq41 (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> nofun),
-    vkind41_eq40 (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> nofun)
-      (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl),
-    vkind40_eq38 (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> nofun),
-    vkind38_icall hn] at hkd
-  have h10 := vkind28_icall hn hkd
-  unfold vkind10 at h10
-  rw [hn] at h10
+  rw [hvk] at hkd
   obtain ⟨cabi, ins, outs, a0, rc, o, hcabi, hcr, h16, ha0, hrc, hrc26, hcl0, ho, hctx, hlen,
-    hargs, rfl⟩ := icallKind_facts h10
+    hargs, hfa, rfl⟩ := vkind47_icall hn hkd
   have hj : E.pcOf bid i = pcAt text c.cx.ps.toList ((js ++ [e']).getD i 0) := by
     rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some]
   have hreads := ((checkK_spec hk).2 bid hbid blk hb).1 i id v hi hv
@@ -472,7 +630,8 @@ theorem g46_icallPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     rw [hm1x _ (by decide)]
     rw [rX_lt (by decide)] at hx1v
     exact hx1v
-  -- the register arguments, read from their ABI registers
+  -- the register arguments, read from their ABI registers (an X register, or a V register by
+  -- `argsV`)
   have hargs' : ∀ a ∈ (v.args.toList.drop n).dropLast, ∃ x, s.read c.cx.lc a = .ok x ∧
       ∀ r, c.cx.lc.home a = some (.reg r) → RegRel E.ι x m₁ r := by
     intro a ha
@@ -483,7 +642,15 @@ theorem g46_icallPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
       List.mem_of_getElem? (List.getElem?_zip_eq_some.2 ⟨List.getElem?_eq_getElem hj0,
         List.getElem?_eq_getElem hjin⟩)
     have hh := hargs _ _ hz
-    have hr16 := h16 _ (List.mem_append_left _ (List.getElem_mem hjin))
+    by_cases hr31 : 31 ≤ ins[j0]
+    · obtain ⟨x, hx, hxv⟩ := argsV F hm hinv.core hR (icall_notPhi hn)
+        (fun a ha => List.mem_of_mem_drop (List.dropLast_subset _ ha)) hargs hfa _ _ hz hr31
+      refine ⟨x, hx, fun r hr => ?_⟩
+      rw [hh] at hr
+      cases hr
+      exact ⟨fun q hq => (by rw [objX?_high hr31] at hq; cases hq), fun q hq => hxv q hq⟩
+    have hr16 : ins[j0] < 16 := by
+      rcases h16 _ (List.mem_append_left _ (List.getElem_mem hjin)) with h | h <;> omega
     have hrz' : ins[j0] ≠ zeroReg := by unfold zeroReg; omega
     obtain ⟨c2, hc2⟩ : ∃ c2, cls (c.cx.lc.ty (v.args.toList.drop n).dropLast[j0]) = some c2 :=
       Option.isSome_iff_exists.1 (F.clsReg _ _ hh hrz')
@@ -517,14 +684,14 @@ theorem g46_icallPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   exact ⟨m₁, hstar.tail (pstep_at F.nodup F.lt F.ret hk' rfl hcstep), hret1,
     Or.inr ⟨progAt?_none fun p _ => haddr1 p.id, m', hcallH⟩⟩
 
-/-- **An interface or closure call of slice G46 whose callee panics, down to the machine
+/-- **An interface or closure call of slice G47 whose callee panics, down to the machine
 words**: machine steps of the linked code to a state that panics with `e` (`MPanics`). -/
-theorem g46_obj_icallPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+theorem g47_obj_icallPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState} {m : MState}
     {e : Panic} {n : Nat} {spills : Array Spill} {o : ObjIn} {otab : Tab} {base : BitVec 64}
     {code : Code} {retM : BitVec 64} {t : MState}
-    (hc : checkG46L lc ps bstart g = .ok (tab, kt))
+    (hc : checkG47L lc ps bstart g = .ok (tab, kt))
     (hE : G28Env lc g L ps (endP L.text ps.toList) tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
@@ -537,7 +704,7 @@ theorem g46_obj_icallPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     (hR : ObjRel (ObjEnv.map otab ps L base) m t)
     (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
     ∃ t', MStar H code retM t t' ∧ MPanics H code retM t' e := by
-  obtain ⟨m', hp, hpp⟩ := g46_icallPanic hc hE hbid hb hi hv hn hm hinv hok
+  obtain ⟨m', hp, hpp⟩ := g47_icallPanic hc hE hbid hb hi hv hn hm hinv hok
   obtain ⟨t1, ht1, hR1, hI1⟩ := obj_star hO hH hp hR (locMatch_inv hE.env.env.env.env hm) hic
   obtain ⟨t2, ht2, hpan⟩ := obj_panic hO hHP hR1 (hI1.resolve_right hpp.1) hpp
   exact ⟨t2, mstar_trans ht1 ht2, hpan⟩
