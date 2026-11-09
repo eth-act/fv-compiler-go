@@ -7,8 +7,9 @@ import GoFV.Proof.Gen.Spec42
 On a value that is not an entry value, `vkind43` is `vkind42` (`vkind43_spec`); on `InitMem` it
 accepted a clean position (`vkind43_initMem`: `cleanOK`, `initMemClean`, and `initMemKind`'s
 facts). The facts of the clean positions: `keepsTo_succ` (one value less), `initMemClean_spec`
-(each position of the `InitMem`), `cleanOK_edge` (a block with a successor in `C` is in `C`, its
-values keeping the memory). `checkG43L_spec` is `checkG42L_spec` with `vkind43`, and
+(each position of an `InitMem`), `cleanOK_edge` (a block with a successor in `C` is in `C`, its
+values keeping the memory). `vkind43_eq42`: on an op other than `InitMem`, `vkind43` is
+`vkind42`. `checkG43L_spec` is `checkG42L_spec` with `vkind43`, and
 `checkG43_spec` splits off `refsLive`.
 -/
 
@@ -38,21 +39,20 @@ theorem cleanAt_succ {lc : LocCtx} {C : List ID} {bid : ID} {b : Block} {i : Nat
   obtain ⟨h1, h2⟩ := keepsTo_succ h.2 hi hv
   exact ⟨⟨h.1, h1⟩, h2⟩
 
-/-- Each position of an `InitMem` that `initMemClean` accepted is clean. -/
-theorem initMemClean_spec {lc : LocCtx} {C : List ID} {v : Value} {bid : ID} {b : Block} {i : Nat}
-    (h : initMemClean lc C v = true) (hbid : bid ∈ lc.ctx.f.blocks.toList)
-    (hb : lc.ctx.f.block? bid = some b) (hi : b.values[i]? = some v.id) :
+/-- Each position of an `InitMem` is clean under `initMemClean`. -/
+theorem initMemClean_spec {lc : LocCtx} {C : List ID} {bid : ID} {b : Block} {i : Nat} {id : ID}
+    {v : Value} (h : initMemClean lc C = true) (hbid : bid ∈ lc.ctx.f.blocks.toList)
+    (hb : lc.ctx.f.block? bid = some b) (hi : b.values[i]? = some id)
+    (hv : lc.ctx.f.value? id = some v) (hop : v.op = .InitMem) :
     cleanAt lc C bid b i = true := by
   unfold initMemClean at h
   have h1 := List.all_eq_true.1 h bid hbid
   rw [hb] at h1
   simp only [Option.all_some] at h1
-  have hlt : i < b.values.size := by
-    rcases Nat.lt_or_ge i b.values.size with hlt | hge
-    · exact hlt
-    · rw [Array.getElem?_eq_none hge] at hi; cases hi
+  have hlt : i < b.values.size := (Array.getElem?_eq_some_iff.1 hi).1
   have h2 := List.all_eq_true.1 h1 i (List.mem_range.2 hlt)
-  simp only [hi, bne_self_eq_false, Bool.false_or] at h2
+  simp only [hi, Option.bind_some, hv, Option.all_some, hop, bne_self_eq_false,
+    Bool.false_or] at h2
   exact h2
 
 /-- A block with a successor in `C`, under `cleanOK`: its end is a clean position. -/
@@ -82,12 +82,12 @@ theorem vkind43_spec {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2}
 temporary, no argument, no home, shape `mem`, and no code. -/
 theorem vkind43_initMem {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2}
     (h : vkind43 lc g v = .ok kd) (hop : v.op = .InitMem) :
-    cleanOK lc (cleanBlocks lc) = true ∧ initMemClean lc (cleanBlocks lc) v = true ∧
+    cleanOK lc (cleanBlocks lc) = true ∧ initMemClean lc (cleanBlocks lc) = true ∧
       (lc.temps[v.id]?).join = none ∧ v.args.size = 0 ∧ lc.home v.id = none ∧
       memTy (lc.ty v.id) = true ∧ kd = .none := by
   unfold vkind43 at h
   simp only [hop, beq_self_eq_true, ↓reduceIte] at h
-  cases hc : (cleanOK lc (cleanBlocks lc) && initMemClean lc (cleanBlocks lc) v) with
+  cases hc : (cleanOK lc (cleanBlocks lc) && initMemClean lc (cleanBlocks lc)) with
   | false =>
     rw [hc] at h
     cases h
@@ -96,6 +96,12 @@ theorem vkind43_initMem {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2}
     simp only [↓reduceIte] at h
     simp only [Bool.and_eq_true] at hc
     exact ⟨hc.1, hc.2, initMemKind_spec h⟩
+
+/-- `vkind43` of an op other than `InitMem` is `vkind42`'s. -/
+theorem vkind43_eq42 {lc : LocCtx} {g : G2In} {v : Value} (h : v.op ≠ .InitMem) :
+    vkind43 lc g v = vkind42 lc g v := by
+  unfold vkind43
+  simp [h]
 
 /-- On a function with no arm64 op, G43's check is G33. -/
 theorem checkG33_of_43L {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}

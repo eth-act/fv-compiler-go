@@ -212,6 +212,14 @@ theorem vkind44_initMem {lc : LocCtx} {g : G2In} {v : Value} (hop : v.op = .Init
   | ok _ => rfl
   | error e => simp [hop, fOp44]
 
+/-- On an op outside G44's (`fOp44`), `vkind44` is `vkind43`. -/
+theorem vkind44_eq43 {lc : LocCtx} {g : G2In} {v : Value} (h : fOp44 v.op = false) :
+    vkind44 lc g v = vkind43 lc g v := by
+  unfold vkind44
+  cases vkind43 lc g v with
+  | ok _ => rfl
+  | error e => simp [h]
+
 /-- On a function with no arm64 op, G44's check is G33. -/
 theorem checkG33_of_44L {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}
     {r : Except String (PcTab × KTab)} (hl : lc.ctx.f.lowered = false)
