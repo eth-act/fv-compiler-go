@@ -1155,6 +1155,8 @@ theorem ReplayInvL.copy {v : ID} {x : Value} {i : Nat} {src : ID} (hI : ReplayIn
           exact ⟨m, fun ρ hρ hF => (hm ρ hρ hF).trans_right
             ((hnew (j + 2) (by omega) (hC _ (by omega))).2 ρ hρ hF m)⟩
       · have hsz' : (x.args.set i src hi).size = x.args.size := by simp
+        have hs1 : ({ x with args := x.args.set i src hi } : Value).args.size = x.args.size := by
+          simp
         refine .inr (.inr (.inr ⟨hmv, h3, hq, by omega,
           fun j hj => (hnew j (by omega) (hC j (by omega))).1, fun n => ?_, fun j hj n => ?_,
           fun n => ?_⟩))
@@ -1468,6 +1470,9 @@ theorem ReplayInvL.foldAddr {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : ID
 theorem set!_zero_eq {xs : Array ID} (h : 0 < xs.size) (b : ID) : xs.set! 0 b = xs.set 0 b h := by
   simp [Array.set!_eq_setIfInBounds, Array.setIfInBounds, h]
 
+theorem argMem {xs : Array ID} {i : Nat} (h : i < xs.size) : xs[i]! ∈ xs := by
+  rw [getElem!_pos xs i h]; exact Array.getElem_mem h
+
 /-- What `qFold` says: the 128-bit store `x` with its address (argument 0) replaced by `b`, its
 offset and aux moved as `stFold` and `stFoldAddr` move a store's (`addrStep_off`,
 `addrStep_sym`, `addrStep_frame`). -/
@@ -1541,8 +1546,8 @@ theorem ReplayInvL.qFold {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : ID} {
     obtain ⟨j, hj, rfl⟩ := Array.mem_iff_getElem.1 ha
     rw [← getElem!_pos u.args j hj]
     by_cases hj0 : j = 0
-    · subst hj0; rw [hu0]; exact hbC hI.closed (hxa _ (getElem!_mem' h0))
-    · rw [hui j (by omega) (by omega)]; exact hxa _ (getElem!_mem' (by omega))
+    · subst hj0; rw [hu0]; exact hbC hI.closed (hxa _ (argMem h0))
+    · rw [hui j (by omega) (by omega)]; exact hxa _ (argMem (by omega))
   have hstep : ∀ ρ, TypedL true M.get? tabs ρ → FrameVals tabs 0 D₀ ρ → ∀ n z, C z →
       Sem.Refines (denL true M.get? tabs ρ n z) (denL true (M.put v u).get? tabs ρ (id n) z) :=
     fun ρ _ _ n z _ => by rw [rename_den hx ht ht']; exact Sem.Refines.refl _
@@ -1619,7 +1624,7 @@ theorem moveDef_facts {f : Func} {v : ID} {defs : List Value} {u : Value} {ts : 
     split at h
     · rename_i hc
       simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at hc
-      obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, hu0⟩, hxop⟩, hx3⟩, hxt⟩, hut⟩, hty⟩, hai⟩, hax⟩, hnd⟩, hfv⟩ := hc
+      obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, hu0⟩, hxop⟩, hx3⟩, hxt⟩, hut⟩, hty⟩, hai⟩, hax⟩, hnd⟩, hfv⟩ := hc
       split at h
       · rename_i o k l hq
         split at h
@@ -1635,10 +1640,10 @@ theorem moveDef_facts {f : Func} {v : ID} {defs : List Value} {u : Value} {ts : 
         · rename_i hc2
           cases h
           simp only [Bool.and_eq_true, beq_iff_eq] at hc2
-          obtain ⟨⟨⟨⟨⟨⟨⟨⟨ho, huo⟩, hpo⟩, hpd⟩, hsh⟩, hs0⟩, hs1⟩, hua⟩ := hc2
+          obtain ⟨⟨⟨⟨⟨⟨⟨ho, huo⟩, hpo⟩, hpd⟩, hsh⟩, hs0⟩, hs1⟩, hua⟩ := hc2
           simp only [List.map_cons, List.map_nil, List.nodup_cons, List.mem_cons,
-            List.not_mem_nil, or_false, not_or] at hnd
-          obtain ⟨⟨h1, h2⟩, ⟨h3, -⟩, -⟩ := hnd
+            List.not_mem_nil, or_false, not_or, decide_eq_true_eq] at hnd
+          obtain ⟨⟨h1, h2⟩, h3, -⟩ := hnd
           exact ⟨x, hx, hxop, hx3, hxt, hut, hty, hai, hax, any_move hfv,
             .inr ⟨huo.trans ho, p, s0, s1, rfl, hpo, hpd, Ty.eq_of_beq hsh, hs0, hs1, h1,
               fun e => h3 e.symm, h2, hua⟩⟩
@@ -1763,9 +1768,9 @@ theorem ReplayInvL.moveDef {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : ID}
         rw [hua] at ha
         simp only [List.mem_toArray, List.mem_cons, List.not_mem_nil, or_false] at ha
         rcases ha with rfl | rfl | rfl
-        · exact .inl (hxa _ (getElem!_mem' (by omega)))
-        · exact .inr ⟨⟨hxa _ (getElem!_mem' (by omega)), hxa _ (getElem!_mem' (by omega))⟩, rfl⟩
-        · exact .inl (hxa _ (getElem!_mem' (by omega)))
+        · exact .inl (hxa _ (argMem (by omega)))
+        · exact .inr ⟨⟨hxa _ (argMem (by omega)), hxa _ (argMem (by omega))⟩, rfl⟩
+        · exact .inl (hxa _ (argMem (by omega)))
       · exact absurd hv.symm hlv
     · have haop := hsrc a ha
       obtain ⟨hsz, hr⟩ := move_argsRef haop hxop hrest
@@ -1813,7 +1818,7 @@ theorem ReplayInvL.moveDef {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : ID}
     have hx3' : (((M.put p.id p).put s0.id s0).put s1.id s1).get? v = some x := by
       rw [get?_put, get?_put, get?_put]; simp [Ne.symm hpv, Ne.symm hs0v, Ne.symm hs1v, hx]
     have hp3 : (((M.put p.id p).put s0.id s0).put s1.id s1).get? p.id = some p := by
-      rw [get?_put, get?_put, get?_put]; simp [h0p, h1p]
+      rw [get?_put, get?_put, get?_put]; simp [Ne.symm h0p, Ne.symm h1p]
     have hs03 : (((M.put p.id p).put s0.id s0).put s1.id s1).get? s0.id = some s0 := by
       rw [get?_put, get?_put]; simp [h01]
     have hs13 : (((M.put p.id p).put s0.id s0).put s1.id s1).get? s1.id = some s1 := by
@@ -1823,14 +1828,14 @@ theorem ReplayInvL.moveDef {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : ID}
       fun y hy => .inl (.inl (.inl hy)), fun ρ hρ hF n y hy => ?_⟩
     · rcases hv with ((hv | ⟨-, hv⟩) | ⟨-, hv⟩) | ⟨-, hv⟩
       · have hxa := closed_args hI.closed hx hv
-        have hP : P := ⟨hxa _ (getElem!_mem' (by omega)), hxa _ (getElem!_mem' (by omega))⟩
+        have hP : P := ⟨hxa _ (argMem (by omega)), hxa _ (argMem (by omega))⟩
         rw [hua] at ha
         simp only [List.mem_toArray, List.mem_cons, List.not_mem_nil, or_false] at ha
         rcases ha with rfl | rfl | rfl | rfl
-        · exact .inl (.inl (.inl (hxa _ (getElem!_mem' (by omega)))))
+        · exact .inl (.inl (.inl (hxa _ (argMem (by omega)))))
         · exact .inl (.inr ⟨hP, rfl⟩)
         · exact .inr ⟨hP, rfl⟩
-        · exact .inl (.inl (.inl (hxa _ (getElem!_mem' (by omega)))))
+        · exact .inl (.inl (.inl (hxa _ (argMem (by omega)))))
       · exact absurd hv.symm hpv
       · exact absurd hv.symm hs0v
       · exact absurd hv.symm hs1v
@@ -2436,7 +2441,7 @@ theorem ReplayInvL.scaleIdx {v : ID} {x u : Value} (hI : ReplayInvL tabs D₀ C�
   rcases hrest with hf | ⟨hsza, -⟩ | hix | hmv
   · exact absurd (argFree_cases hf).1 (idxStore_facts hxo).2.2.2.2.2.1
   · rw [hsz, hS3] at hsza; cases hsza
-  swap
+  rotate_left
   · rw [(qStore_st hmv.2.2.1).2] at hxo; cases hxo
   obtain ⟨h3, -, -, hC, hA, hV⟩ := hix
   have hsc1 : idxScale x.op = 1 := by simp [idxScale, hxo]
