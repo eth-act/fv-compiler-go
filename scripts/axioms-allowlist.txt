@@ -243,6 +243,10 @@ GoFV.Proof.Witness.GenG39.g39_facts._native.native_decide.ax_1_1 756d231b3b23ca7
 # `unicode/utf16.IsSurrogate` and `checkG39` does not (`InitMem` in `b2`); `runLoc` runs its
 # `InitMem` `v1`; compiled evaluation.
 GoFV.Proof.Witness.GenG40.g40_facts._native.native_decide.ax_1_1 a116d14f03f261cc481e49ad7a35666d1b7d2c0aa67209d7fea8ff77f082966f
+# genG41_witness (GoFV/Proof/Witness/GenG41.lean, #553): `checkG41` accepts
+# `runtime.traceNextGen` and `checkG40` does not (`CMNconst` `v5`); `runLoc` runs `v5` to flags
+# with `Z` set, and reading `v6` from the state gives an integer (`CmpPre`); compiled evaluation.
+GoFV.Proof.Witness.GenG41.g41_facts._native.native_decide.ax_1_1 877dd0a82cfe355b735688e9e3894b168d2673de771bf91f7f77e1eaad04dc19
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
