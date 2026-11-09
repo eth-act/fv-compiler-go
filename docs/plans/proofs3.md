@@ -929,6 +929,23 @@ all values of the function under `refsLive`, so it runs alike under `lc` and `li
 (`stepLoc_live`, `enterListLoc_live`, `stepTermLoc_live`, `runLoopLoc_live`, `runCtxLoc_live`,
 `runLoc_live`: `runLoc` is `runCtxLoc` on `liveCtx`). G39 accepts 6,447 functions (+67 over G38).
 
+**Slice G40: `InitMem` after the entry values** (`GoFV/Gen/Check40.lean`, `checkG40 lc ps bstart
+g`, returning G4's tables; proven sound, `g40_value`, `g40_initMem`, `g40_term`, `g40_nilPanic`,
+`g40_boundsPanic`): G39 with, in a function with an arm64 op whose values keep the memory
+(`memPure`: every value a `Phi`, an `InitMem` without temporary or home, a `MakeResult` whose
+write changes nothing (G1's conditions), or of a shape without a memory component, `memInert`),
+`InitMem` anywhere (`schedule` places it next to its only use, e.g. in the return block): no
+temporary, no argument, no home, shape `mem`, no code. `runLoc` runs `InitMem` as the
+activation's initial memory. Every step of such a function keeps the state's memory at the
+initial memory (`MemInit`; `memInit_stepLoc`: a `Phi` changes nothing, a value of a
+memory-free shape writes no memory, `stepLoc_shape`, `clobber_memfr`, `write_memfr`; `InitMem`
+writes the initial memory, `stepLoc_initMem`; `MakeResult` changes nothing, `write_result_noop`;
+`memInit_stepTermLoc`: a terminator only stages its controls), and the run starts with it; so
+`InitMem` changes nothing (`g40_initMem`, under `MemInit`, which the run discharges with these
+lemmas). `g40_value`, `g40_term`, `g40_nilPanic`, `g40_boundsPanic` are G39's statements over
+`checkG40`. G40 accepts 6,472 functions (+25 over G39); `InitMem` after the entry values remains
+the sole blocker of 13 functions, whose memory a call or store changes before the return block.
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -939,13 +956,14 @@ reason in parentheses):
    (`frame variable with an integer address`, 197 (12)): option 2 of semantics3 §4.3 (addresses as
    a parameter of the semantics); slots of other sizes (`slot … frame operand, size or alignment`,
    717).
-3. **Other values**: `InitMem` after the entry values (38 sole after G39), `CMNconst` (40),
+3. **Other values**: `InitMem` after the entry values in functions that write memory (13 sole after
+   G40), `CMNconst` (40),
    `CMPshiftRL` (36) and `CMPshiftLL` (17) (a new premise, G36), `LoweredGetCallerPC` (26),
    `shift or mask widths` (37: narrow arguments of right shifts), `REV#W widths` (6:
    `REVW`/`REV16W` of narrow arguments); the acquire loads are done in G38, the homes of removed
-   values in G39; `MOVDnop` 750 (91) and
+   values in G39, `InitMem` in functions that keep the memory in G40; `MOVDnop` 750 (91) and
    `MOVDreg` (27 sole) are done in G20, G21, G29, G31, G34 and G35 but for 8 functions with no
-   other blocker after G39, whose tables need stores, `Convert` or `Copy` to keep or copy their
+   other blocker after G40, whose tables need stores, `Convert` or `Copy` to keep or copy their
    entries (§4, G35). Bounds panics (`LoweredPanicBoundsRR` 616 (68), `RC` 332 (46), `CR` 76
    (33), `CC` 170 (22)) are done in G19 but for #541's 2 functions.
 
@@ -995,6 +1013,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G37 | 6,099 (65.60%) | 165,436 |
 | G38 | 6,380 (68.62%) | 177,277 |
 | G39 | 6,447 (69.34%) | 182,395 |
+| G40 | 6,472 (69.61%) | 182,705 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1239,6 +1258,12 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `home_live`, `read_live`, `write_live`, `clobber_live`, `signOf_live`, `movdLoc_live`,
   `stepLoc_live`, `enterListLoc_live`, `control_live`, `stepTermLoc_live`, `runLoopLoc_live`,
   `runCtxLoc_live`, `runLoc_live`, `g39_value`, `g39_nilPanic`, `g39_boundsPanic`, `g39_term`.
+- `Spec40.lean`: what `checkG40` accepted (`memKeep_spec`, `memPure_spec`, `initMemKind_spec`,
+  `vkind40_spec`, `vkind40_initMem`, `checkG33_of_40L`, `checkG40L_spec`, `checkG40_spec`).
+- `G40.lean`: `MemInit`, `clobberMask_memfr`, `clobber_memfr`, `writeParts_memfr`, `write_memfr`,
+  `stepLoc_shape`, `stepLoc_initMem`, `memInit_stepLoc`, `memInit_stepTermLoc`, `uStep35_initMem`,
+  `g40L_initMem`, `g40L_value`, `g40L_nilPanic`, `g40L_boundsPanic`, `g40L_term`, `g40_value`,
+  `g40_initMem`, `g40_nilPanic`, `g40_boundsPanic`, `g40_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -1358,7 +1383,10 @@ machine's `X1 = -6`), `GenG37.lean` (`math/bits.Reverse`, which G36 rejects: `g3
 `GenG14`'s `heap 1`, `LdarPre` holding, after which the machine's `X0 = 7`), `GenG39.lean`
 (`strings.HasSuffix`, which G38 rejects for the home `R0` of the removed `v47`: `v34 = ADD v17 v26`
 runs alike under `lc0` and `liveCtx lc0`, and `g39_value` runs `ADD R3, R1, R4` from `len(s) = 5`,
-`len(suffix) = 2`, after which the machine's `X4 = 7`).
+`len(suffix) = 2`, after which the machine's `X4 = 7`), `GenG40.lean` (`unicode/utf16.IsSurrogate`,
+whose `InitMem` `v1` sits in the return block `b2`, which G39 rejects: from a state holding the
+initial memory, `stepLoc` runs `v1` to a state that holds it again (`memInit_stepLoc`), and
+`g40_initMem` relates it to the machine after no code).
 Each decides its inputs by compiled evaluation (`native_decide`, pinned in
 `scripts/axioms-allowlist.txt`).
 
