@@ -16,6 +16,10 @@ namespace GoFV.Proof.Rules
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Rules
 
+section
+
+variable [GoFV.SSA.Sem.Addrs]
+
 /-- A load of an aggregate of one field that fills it is `poison` or that field's load. -/
 theorem load_one (m : Mem) (p : Ptr) (f : Ty) :
     m.load (.agg [(0, f)] f.size) p = .poison ∨
@@ -74,6 +78,10 @@ theorem r_generic_994_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generic
       · rfl
     rw [hl]
     exact .poison _
+
+end
+
+open scoped GoFV.SSA.Sem.Fixed
 
 /-! ## Non-vacuity (`rule-sat` draws no tables) -/
 

@@ -2,6 +2,8 @@ import GoFV.Opt.LowerCheck
 import GoFV.Rules.ProvenARM64
 import GoFV.Opt.FmaContract
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The checked `lower` (issue #385)
 

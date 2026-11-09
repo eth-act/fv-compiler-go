@@ -1,5 +1,7 @@
 import GoFV.Proof.Regalloc.Read
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Regalloc checker soundness, stage 3: values
 

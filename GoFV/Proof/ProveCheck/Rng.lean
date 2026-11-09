@@ -1,5 +1,7 @@
 import GoFV.Opt.ProveCheck.Check
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Interval arithmetic of prove's validator (issue #24)
 

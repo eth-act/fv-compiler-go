@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.MoveLCheck
 import GoFV.SSA.Sem.RunSched
 import GoFV.SSA.DomCert
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The flagalloc validator `flagAllocB` (issue #385)
 

@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.CopyElimBlock
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # copyelim: the target block has a schedule
 

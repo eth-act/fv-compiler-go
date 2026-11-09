@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.CSELBlock
 import GoFV.Proof.Pass.CSESim
 import GoFV.Proof.Pass.CopyElimL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # lowered cse refines its input on `runL`
 

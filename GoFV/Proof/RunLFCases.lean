@@ -3,6 +3,8 @@ import GoFV.Proof.SimL
 import GoFV.Proof.Pass.SchedLEval
 import GoFV.Proof.EvalOpLDispatch
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `runLF` against `runL` (`runLF_cases`)
 

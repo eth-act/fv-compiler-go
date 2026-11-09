@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.FMove
 import GoFV.Proof.Gen.Spec44
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Slice G44 of the genssa validator: floating-point moves, loads and stores
 (`docs/plans/proofs3.md` §4)

@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.CSESim
 import GoFV.Proof.Pass.CSEBlock
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # generic cse refines its input
 

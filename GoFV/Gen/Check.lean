@@ -1,6 +1,8 @@
 import GoFV.SSA.Sem.LocMatch
 import GoFV.SSA.Sem.RunProg
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The genssa validator, slice G1 (`docs/plans/proofs3.md` §3)
 

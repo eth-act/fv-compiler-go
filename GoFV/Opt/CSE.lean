@@ -9,6 +9,8 @@ import GoFV.SSA.Sem.Run
 import GoFV.Opt.CSEMem
 import Std.Data.TreeMap
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # generic cse (`cse.go`)
 

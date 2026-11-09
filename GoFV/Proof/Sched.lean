@@ -1,6 +1,8 @@
 import GoFV.SSA.Sem.Run
 import GoFV.Proof.OrderRank
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # What `schedule` guarantees
 

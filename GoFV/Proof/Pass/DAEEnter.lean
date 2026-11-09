@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.DAEFinish
 import GoFV.Proof.Pass.DSESim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dead auto elim: `Phi`s and terminators
 

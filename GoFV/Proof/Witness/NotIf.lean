@@ -2,6 +2,8 @@ import GoFV.Proof.Witness.AddZero
 import GoFV.Proof.Rules.BlockIf
 import GoFV.Proof.Pass.Rewrite
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness of `checkedRewrite_refines` on a block rule: `notIf` (hand-written)
 

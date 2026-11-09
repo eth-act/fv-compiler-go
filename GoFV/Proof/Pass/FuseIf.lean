@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.FuseIfSim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The checked `fuseBlockIf` step refines its input
 

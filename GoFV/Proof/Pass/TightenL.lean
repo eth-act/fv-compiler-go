@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.MoveL
 import GoFV.Opt.Tighten
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `tighten` refines its input on `runL` (issue #385)
 

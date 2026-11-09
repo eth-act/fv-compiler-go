@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.FusePlainMerged
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # fuseBlockPlain: a panic in the run
 

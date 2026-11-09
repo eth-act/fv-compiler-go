@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.Clamp
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function: `decodedLen` from the corpus
 

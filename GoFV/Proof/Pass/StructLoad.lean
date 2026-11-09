@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.RewriteTermReplay
 import GoFV.Proof.Pass.StructLoadMem
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Replaying a struct-load expansion (issue #151)
 

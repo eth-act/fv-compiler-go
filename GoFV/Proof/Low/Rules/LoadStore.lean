@@ -2,6 +2,8 @@ import GoFV.Proof.Low.Rules.Tactic
 import GoFV.Proof.Low.SimMem
 import GoFV.Rules.Generated.ARM64
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowering rule lemmas: frame addresses, scalar loads and scalar stores (`ARM64.rules:309-310`,
 `313-322`, `326-331`)

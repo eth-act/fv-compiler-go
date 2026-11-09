@@ -2,6 +2,8 @@ import GoFV.Proof.Rules.Tactic
 import GoFV.Proof.PtrAddr
 import GoFV.Rules.Generated.Generic.Values08
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: `OffPtr` rules
 

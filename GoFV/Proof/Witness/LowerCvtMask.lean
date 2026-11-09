@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerCondSel
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness functions for `lower` on `CvtBoolToUint8` and a sign-masked add: `cvb`, `ams` (hand-written, issue #385)
 

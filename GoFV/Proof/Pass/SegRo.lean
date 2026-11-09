@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.SegRel
 import GoFV.Proof.Pass.LoadFwdPtr
 import GoFV.Proof.RoImage
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Segments: a `Move` from a read-only zero symbol (issue #151)
 
@@ -135,7 +137,8 @@ theorem retype_global_asPtrWord {n : String} {t : Ty} {Q : Ptr}
   cases t with
   | int w => cases w <;> simp_all [Val.retype, Val.asPtrWord, Ptr.word, Ptr.convertible, Ptr.addr?,
       Blk.base?, Ptr.inWindow, Blk.window?]
-  | _ => simp_all [Val.retype, Val.asPtrWord, Ptr.word, Ptr.convertible, Ptr.inWindow, Blk.window?]
+  | _ => simp_all [Val.retype, Val.asPtrWord, Ptr.word, Ptr.convertible, Ptr.addr?, Ptr.inWindow,
+      Blk.window?]
 
 /-- A `Move` that returns read its source and wrote the bytes at its destination (both
 pointer words). -/

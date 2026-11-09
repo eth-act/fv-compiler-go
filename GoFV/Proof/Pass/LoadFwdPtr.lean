@@ -2,6 +2,8 @@ import GoFV.Proof.PtrAddr
 import GoFV.Proof.Pass.LoadFwdMem
 import GoFV.Proof.Pass.RewriteTermDen
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Load-of-Store forwarding: pointers that evaluate alike (issue #151)
 

@@ -1,5 +1,7 @@
 import GoFV.Opt.LowerTerm
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `evalOpL`'s dispatch as an `if` chain
 

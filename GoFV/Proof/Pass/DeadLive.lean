@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.DeadRel
 import GoFV.Proof.Pass.DeadReach
 import Std.Tactic.Do
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The liveness roots of `liveValuesOrder`
 

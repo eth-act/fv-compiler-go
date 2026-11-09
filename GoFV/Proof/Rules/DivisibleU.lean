@@ -2,6 +2,8 @@ import GoFV.Proof.Rules.DivisibleInv
 import GoFV.Proof.Rules.NonVacuous
 import GoFV.Rules.Generated.Divisible.Values00
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `divisible.rules`: unsigned divisibility by a rotated product (#69)
 

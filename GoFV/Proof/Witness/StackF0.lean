@@ -1,6 +1,8 @@
 import GoFV.Proof.Witness.InitF10
 import GoFV.Opt.DeadAutosCheck
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function: `f0` of `test/stack` at `dead auto elim`
 

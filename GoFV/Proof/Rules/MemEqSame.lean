@@ -29,6 +29,10 @@ namespace GoFV.Proof.Rules
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Rules
 
+section
+
+variable [GoFV.SSA.Sem.Addrs]
+
 theorem memEq_self (x n m : Val) :
     memEq [x, x, n, m] = .poison ∨ memEq [x, x, n, m] = .bool true := by
   unfold memEq
@@ -191,6 +195,10 @@ theorem r_generic_1680_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generi
       exact Refines.poison _
   · simp only [PtrOps.addPtr, asOffset, hr0, PtrOps.eqPtr, Val.asPtrWord]
     exact Refines.poison _
+
+end
+
+open scoped GoFV.SSA.Sem.Fixed
 
 /-! ## Non-vacuity (`rule-sat` draws no tables) -/
 

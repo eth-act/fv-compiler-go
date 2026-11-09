@@ -2,6 +2,8 @@ import GoFV.SSA.Parse
 import GoFV.SSA.Check
 import GoFV.Opt.ZCSE
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `zcse-probe`: does zcse's checker ever reject?
 

@@ -1,5 +1,7 @@
 import GoFV.Asm.CheckObj
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The linked code of one function (`docs/plans/proofs3.md` §2, row D2–D5)
 

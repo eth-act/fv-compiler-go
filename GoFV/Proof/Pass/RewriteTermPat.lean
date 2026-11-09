@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.RewriteTermEval
 import GoFV.Proof.Pass.RewriteTermMatch
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The validator's pattern checks give `Rule.Sound`'s hypotheses (issue #113)
 

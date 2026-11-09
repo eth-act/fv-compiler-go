@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G42
 import GoFV.Proof.Gen.Spec43
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Slice G43 of the genssa validator: `InitMem` where the memory is still the initial one
 (`docs/plans/proofs3.md` §4)

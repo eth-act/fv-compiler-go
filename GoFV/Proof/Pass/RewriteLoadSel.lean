@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.StructLoad
 import GoFV.Proof.Pass.RewriteMakeSel
 import GoFV.Proof.Rules.SelLoad
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Replaying a selection of a `Load` (issue #17)
 

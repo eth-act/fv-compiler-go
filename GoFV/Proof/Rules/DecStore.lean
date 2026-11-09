@@ -1,5 +1,7 @@
 import GoFV.Proof.Rules.StructStore
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Decompose rules of a `Store` of a composite (issue #17)
 

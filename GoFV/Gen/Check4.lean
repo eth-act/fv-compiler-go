@@ -1,5 +1,7 @@
 import GoFV.Gen.Check3
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The genssa validator, slice G4: register pairs (`docs/plans/proofs3.md` §4)
 

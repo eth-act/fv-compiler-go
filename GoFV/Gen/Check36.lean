@@ -1,5 +1,7 @@
 import GoFV.Gen.Check35
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The genssa validator, slice G36: register shifts, shifted adds and subtracts, `TST`
 (`docs/plans/proofs3.md` §4)

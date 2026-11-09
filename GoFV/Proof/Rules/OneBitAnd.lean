@@ -4,6 +4,8 @@ import GoFV.Rules.Generated.Generic.Values07
 import GoFV.Rules.Generated.Generic.Values08
 import GoFV.Rules.Generated.Generic.Values09
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Single-bit masks and covering masks (`generic.rules:1183`, `:1185`, `:742–745`)
 

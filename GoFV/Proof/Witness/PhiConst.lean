@@ -1,6 +1,8 @@
 import GoFV.Proof.Witness.CondSel
 import GoFV.Proof.Rules.PhiSel
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for constant `Phi`s: `five` (hand-written, issue #69)
 

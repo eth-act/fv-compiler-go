@@ -3,6 +3,8 @@ import GoFV.Proof.RefineL
 import GoFV.Proof.Low.DenL
 import GoFV.Proof.EvalOpLDispatch
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Running a lowered function in extended tables (`runL_tabsAgreeL`, issue #385)
 

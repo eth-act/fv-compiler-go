@@ -1,5 +1,7 @@
 import GoFV.Gen.Check16
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The genssa validator, slice G17: the goroutine (`docs/plans/proofs3.md` §4)
 

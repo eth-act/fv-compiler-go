@@ -2,6 +2,8 @@ import GoFV.Proof.Low.Rules.Tactic
 import GoFV.Rules.Derive
 import GoFV.Rules.Generated.ARM64
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowering rule lemmas: `CondSelect` (`ARM64.rules:302`, `303`)
 
@@ -119,7 +121,10 @@ theorem refines_condSel_tstw {T : Ty} (hT : (∃ w, T = .int w) ∨ ∃ e, T = .
       split
       all_goals first
         | exact retypeL_regVal hT _
-        | (rename_i h; exact absurd h (by decide))
+        | (rename_i h
+           simp only [Arm64.reg32, Arm64.reg, Option.map_some,
+             show ∀ f : Flags, f.toVal.retypeL Ty.flags = f.toVal from fun _ => rfl] at h <;>
+             exact absurd h (by decide))
   | _ => simp [Val.asBool, retypeL_poison]; exact .poison _
 
 set_option maxRecDepth 100000 in

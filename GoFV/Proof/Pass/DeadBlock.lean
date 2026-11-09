@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.DeadRel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Removing dead values: one block entry
 

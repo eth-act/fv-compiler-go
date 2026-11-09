@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.DeadcodePass
 import GoFV.Proof.Witness.NextPow2
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: deadcode on `nextPowerOfTwo`
 

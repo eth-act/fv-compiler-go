@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.PhiOptEnter
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # phiopt: the target's `Phi`s and reference frame
 

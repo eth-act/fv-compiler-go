@@ -1,6 +1,8 @@
 import GoFV.Proof.Rules.Tactic
 import GoFV.Rules.Generated.Divisible.Values00
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: `Neq` rules (part 5)
 

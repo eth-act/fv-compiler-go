@@ -1,5 +1,7 @@
 import GoFV.Proof.AtomSimDen
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Term denotations: monotonicity, shapes and copies (issue #113)
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G14
 import GoFV.Proof.Gen.Spec15
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of the genssa validator's slice G15: zero-sized stack arguments (proofs3 §4)
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.ECEnter
 import GoFV.Proof.AtomSimBlock
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # A block entry the source completes (issue #28)
 

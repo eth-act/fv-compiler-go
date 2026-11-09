@@ -2,6 +2,8 @@ import GoFV.Opt.Fuse.IfCheck
 import GoFV.Proof.Checked
 import GoFV.Proof.WF
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # fuseBlockIf: what the step checker establishes
 

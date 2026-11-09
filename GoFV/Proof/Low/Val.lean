@@ -1,5 +1,7 @@
 import GoFV.Proof.Low.ValReplay
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of the lowering validator at the term level (issue #385)
 
@@ -756,8 +758,16 @@ private theorem offPtr_sp_le (tabs : Tables) (T : Ty) (k : Int64) {a b : Val}
   · rw [show PtrOps.offPtr k [.poison] = .poison from rfl, retypeL_poison]; exact .poison _
   · have hb : b = (spPtr 0).word := asPtrWord_of_refines hab (Ptr.word_asPtrWord rfl)
     subst hb
-    have hq : (spPtr 0).convertible = true := by decide
-    obtain ⟨X, hX⟩ : ∃ X, (spPtr 0).addr? = some X := ⟨_, rfl⟩
+    cases hq : (spPtr 0).convertible
+    · have hw : (spPtr 0).word = .ptr (spPtr 0) := by
+        rcases Ptr.word_cases (spPtr 0) with ⟨-, h⟩ | ⟨hc, -⟩ | ⟨hw', -⟩
+        · exact h
+        · rw [hq] at hc; cases hc
+        · exact absurd hw' (by decide)
+      rw [hw]
+      exact Sem.Refines.refl _
+    obtain ⟨X, hX⟩ : ∃ X, (spPtr 0).addr? = some X :=
+      Option.isSome_iff_exists.1 (Ptr.addr?_isSome_of_convertible hq)
     have hw : (spPtr 0).word = .int .w64 X := by unfold Ptr.word; rw [hq, hX]
     have hoX : Ptr.ofAddr X = spPtr 0 := Ptr.ofAddr_addr hq hX
     rw [hw]

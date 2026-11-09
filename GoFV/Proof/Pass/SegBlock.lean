@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.SegRel
 import GoFV.Proof.Pass.StructStoreBlock
 import GoFV.Proof.MemInv
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Segments: one block of the target (issue #151)
 

@@ -1,5 +1,7 @@
 import GoFV.Proof.Obj.Morestack
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The prologue and the epilogue (`checkPrologue`, `retOK`; `docs/plans/proofs3.md` §2, row C6/D3)
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Eval
 import GoFV.Proof.DomRel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lemma (D): available values hold their re-evaluation
 

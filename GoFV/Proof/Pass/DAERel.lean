@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.DAECall
 import GoFV.Proof.Pass.DSERel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dead auto elim's output relation
 

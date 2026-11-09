@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.DSEMem
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dse's output relation
 

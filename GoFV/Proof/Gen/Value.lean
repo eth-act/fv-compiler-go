@@ -1,5 +1,7 @@
 import GoFV.Proof.Gen.Rel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The values of slice G1's ops against the machine's words (`docs/plans/proofs3.md` §3)
 
@@ -561,12 +563,12 @@ theorem isZero_eq (hA : AddrAgree ι) {x : Val} {X : BitVec 64} {z : Bool} (hx :
     cases hn : p.isNil
     · have hX : X ≠ 0 := by
         rintro rfl
-        rw [← hpo] at hn
+        rw [← hpo, Ptr.ofAddr_small (x := 0) (by decide)] at hn
         exact absurd hn (by decide)
       have : (X == 0) = false := beq_eq_false_iff_ne.mpr hX
       rw [this]
     · simp only [Ptr.isNil, Bool.and_eq_true, beq_iff_eq] at hn
-      simp only [Ptr.addr?, hn.1, hn.2, Blk.base?, Option.map_some, Option.some.injEq] at hpa
+      simp only [Ptr.addr?, hn.1, hn.2, Blk.base?_nil, Option.map_some, Option.some.injEq] at hpa
       subst hpa
       decide
   | _ => cases h

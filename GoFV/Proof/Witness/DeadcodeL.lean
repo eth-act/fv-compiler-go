@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.DeadcodePassL
 import GoFV.Proof.Witness.ClampL
 import GoFV.Proof.Witness.Deadcode
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: deadcode on lowered code
 

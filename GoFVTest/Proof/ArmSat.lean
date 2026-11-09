@@ -4,6 +4,8 @@ import GoFV.Proof.Low.RuleL
 import GoFV.Rules.Derive
 import GoFV.SSA.OpARM64
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Random counterexample search for `ARM64.rules` / `ARM64latelower.rules` (`lake exe arm-sat`)
 

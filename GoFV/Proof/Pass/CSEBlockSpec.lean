@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.CSERel
 import GoFV.Proof.Avail
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # cse: what one block's evaluation gives (the statement)
 

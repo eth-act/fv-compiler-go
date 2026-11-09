@@ -4,6 +4,8 @@ import GoFV.Proof.Speculate
 import GoFV.Proof.Enter
 import GoFV.Proof.Agree
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Entering a block of two functions that differ on a set of values
 

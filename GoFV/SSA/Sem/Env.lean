@@ -1,5 +1,7 @@
 import GoFV.SSA.Sem.Val
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Environment, outcomes, the evaluation monad (`docs/plans/semantics.md` §5, §8)
 

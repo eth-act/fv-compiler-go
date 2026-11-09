@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.PhiOptPanic
 import GoFV.Proof.Pass.ZCSE
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # phiopt refines its input
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.Loc
 import GoFV.SSA.Sem.Arm64.Mem
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `stepLoc` on each op of slice G1 (`docs/plans/proofs3.md` §3)
 

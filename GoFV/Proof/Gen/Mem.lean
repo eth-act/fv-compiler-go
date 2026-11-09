@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.Value
 import GoFV.Arm64.State
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Loads and stores of slice G1 under `MemInj` (`docs/plans/proofs3.md` §3)
 

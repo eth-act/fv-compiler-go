@@ -2,6 +2,8 @@ import GoFV.Proof.TabsAgreeModSim
 import GoFV.Proof.TabsAgree
 import GoFV.Proof.CheckFacts
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Running a function in tables with extra frame temporaries (`run_tabsAgreeMod`)
 

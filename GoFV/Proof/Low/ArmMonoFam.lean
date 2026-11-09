@@ -1,6 +1,8 @@
 import GoFV.Proof.PureMono
 import GoFV.SSA.Sem.Arm64
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The arm64 op families are monotone (issue #385)
 

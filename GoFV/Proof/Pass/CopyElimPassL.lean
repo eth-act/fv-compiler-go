@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.CopyElimL
 import GoFV.Proof.Pass.CopyElimLoop
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `late phielim and copyelim` refines its input on `runL`
 

@@ -1,5 +1,7 @@
 import GoFV.Proof.ProveCheck.DecideSound
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # prove's validator: constant-folded arguments (issue #24)
 

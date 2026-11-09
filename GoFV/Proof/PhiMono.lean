@@ -1,6 +1,8 @@
 import GoFV.Proof.RunMono
 import GoFV.Proof.Frame
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The `Phi` collection of `enterBlock` is monotone in refinement
 

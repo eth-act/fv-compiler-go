@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.BranchElimPanic
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # One checked branchelim rewrite refines
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G18
 import GoFV.Proof.Witness.GenG17
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G18 of the genssa validator on `main.setpf` (`test/ken_array`)
 

@@ -1,5 +1,7 @@
 import GoFV.Proof.ProveCheck.Value
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Differences of values from chains of path facts (issue #24)
 

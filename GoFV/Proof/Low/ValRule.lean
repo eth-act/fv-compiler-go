@@ -1,5 +1,7 @@
 import GoFV.Proof.Low.ValMatch
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # A validated lowering rule event (issue #385)
 

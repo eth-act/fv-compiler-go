@@ -1,5 +1,7 @@
 import GoFV.Proof.Obj.Basic
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The bitfield moves the assembler encodes shifts, field extracts and extensions as
 

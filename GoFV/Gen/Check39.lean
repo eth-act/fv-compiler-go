@@ -1,5 +1,7 @@
 import GoFV.Gen.Check38
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The genssa validator, slice G39: the homes of removed values (`docs/plans/proofs3.md` §4)
 

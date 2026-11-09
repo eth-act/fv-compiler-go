@@ -1,5 +1,7 @@
 import GoFV.Proof.AtomSimPanic
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The atom simulation (issue #113)
 

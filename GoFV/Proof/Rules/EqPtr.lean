@@ -24,6 +24,10 @@ namespace GoFV.Proof.Rules
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Rules
 
+section
+
+variable [GoFV.SSA.Sem.Addrs]
+
 /-- `generic.rules:1684`: `(NeqPtr (ConstNil) p) => (IsNonNil p)` -/
 theorem r_generic_1684_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1684 := by
   rule_unfold
@@ -68,14 +72,6 @@ theorem r_generic_1646_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic
   · exact Refines.poison _
   · exact refines_retype_of_hasTy hty
 
-/-- `generic.rules:1646` at a global pointer. -/
-theorem inst_r_generic_1646 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1646
-    (PEnv.ofLists [([0], .ptr ⟨.global "g", 8⟩), ([1], .ptr ⟨.global "g", 8⟩)] [([], .bool)] (.ptr none) [])
-    (Oracle.const true) := by
-  simp [GoFV.Rules.Generated.Generic.r_generic_1646]
-  rule_eval
-  simp [PtrOps.eqPtr, Val.asPtrWord, ptr_eq_self]
-
 /-- `generic.rules:1647`: `(NeqPtr x x) => (ConstBool [false])` -/
 theorem r_generic_1647_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1647 := by
   rule_unfold
@@ -88,14 +84,6 @@ theorem r_generic_1647_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic
   · exact Refines.poison _
   · exact refines_retype_of_hasTy hty
 
-/-- `generic.rules:1647` at a global pointer. -/
-theorem inst_r_generic_1647 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1647
-    (PEnv.ofLists [([0], .ptr ⟨.global "g", 8⟩), ([1], .ptr ⟨.global "g", 8⟩)] [([], .bool)] (.ptr none) [])
-    (Oracle.const true) := by
-  simp [GoFV.Rules.Generated.Generic.r_generic_1647]
-  rule_eval
-  simp [PtrOps.eqPtr, Val.asPtrWord, ptr_eq_self]
-
 /-- `generic.rules:1687`: `(IsNonNil (ConstNil)) => (ConstBool [false])` -/
 theorem r_generic_1687_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1687 := by
   rule_unfold
@@ -103,20 +91,6 @@ theorem r_generic_1687_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic
   simp only [hr] at hty ⊢
   simp only [Val.retype, PtrOps.isNonNil, Ptr.isNil, Ptr.null] at hty ⊢
   exact refines_retype_of_hasTy hty
-
-/-- `generic.rules:1687` at a pointer-typed `ConstNil`. -/
-theorem inst_r_generic_1687 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1687
-    (PEnv.ofLists [] [([], .bool)] (.ptr none) []) (Oracle.const true) := by
-  simp [GoFV.Rules.Generated.Generic.r_generic_1687]
-  rule_eval
-  simp [PtrOps.isNonNil, Ptr.isNil, Ptr.null, Val.retype]
-
-/-- `generic.rules:1687` at a `uintptr`-typed `ConstNil` (a word argument, `argShapeOk`). -/
-theorem inst_r_generic_1687_i64 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1687
-    (PEnv.ofLists [] [([], .bool)] (.int .w64) []) (Oracle.const true) := by
-  simp [GoFV.Rules.Generated.Generic.r_generic_1687]
-  rule_eval
-  simp [PtrOps.isNonNil, Ptr.isNil, Ptr.null, Val.retype]
 
 /-- `generic.rules:1689`: `(IsNonNil (Addr _) ) => (ConstBool [true])` -/
 theorem r_generic_1689_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generic_1689 := by
@@ -136,7 +110,8 @@ theorem r_generic_1689_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generi
   have ha : Val.retype (.ptr none) (addrVal tabs (e.aux [0])) = .poison ∨
       ∃ n, Val.retype (.ptr none) (addrVal tabs (e.aux [0])) = .ptr ⟨.global n, 0⟩ := by
     unfold addrVal; split
-    · exact .inr ⟨_, rfl⟩
+    · exact .inr ⟨_, Ptr.word_of_addr_none (by simp [Ptr.addr?])
+        (by simp [Ptr.inWindow, Blk.window?])⟩
     · exact .inl rfl
   have hc : (toAuxIntD Op.ConstBool.auxType (ev (Expr.lit GoTy.bool (Lit.bool true)))).getD
       (or.auxInt (Expr.lit GoTy.bool (Lit.bool true))) = 1 := by
@@ -149,6 +124,40 @@ theorem r_generic_1689_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generi
     have hcb : Conv.constBool 1 = .bool true := rfl
     simp only [hb, Bool.false_and, Bool.not_false, hcb] at hty ⊢
     exact refines_retype_of_hasTy hty
+
+end
+
+open scoped GoFV.SSA.Sem.Fixed
+
+/-- `generic.rules:1646` at a global pointer. -/
+theorem inst_r_generic_1646 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1646
+    (PEnv.ofLists [([0], .ptr ⟨.global "g", 8⟩), ([1], .ptr ⟨.global "g", 8⟩)] [([], .bool)] (.ptr none) [])
+    (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_1646]
+  rule_eval
+  simp [PtrOps.eqPtr, Val.asPtrWord, ptr_eq_self]
+
+/-- `generic.rules:1647` at a global pointer. -/
+theorem inst_r_generic_1647 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1647
+    (PEnv.ofLists [([0], .ptr ⟨.global "g", 8⟩), ([1], .ptr ⟨.global "g", 8⟩)] [([], .bool)] (.ptr none) [])
+    (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_1647]
+  rule_eval
+  simp [PtrOps.eqPtr, Val.asPtrWord, ptr_eq_self]
+
+/-- `generic.rules:1687` at a pointer-typed `ConstNil`. -/
+theorem inst_r_generic_1687 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1687
+    (PEnv.ofLists [] [([], .bool)] (.ptr none) []) (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_1687]
+  rule_eval
+  simp [PtrOps.isNonNil, Ptr.isNil, Ptr.null, Val.retype]
+
+/-- `generic.rules:1687` at a `uintptr`-typed `ConstNil` (a word argument, `argShapeOk`). -/
+theorem inst_r_generic_1687_i64 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1687
+    (PEnv.ofLists [] [([], .bool)] (.int .w64) []) (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_1687]
+  rule_eval
+  simp [PtrOps.isNonNil, Ptr.isNil, Ptr.null, Val.retype]
 
 /-- `generic.rules:1689` at `IsNonNil (Addr {go:string.hi} SB)`. -/
 theorem inst_r_generic_1689 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_1689 hiSymTabs
@@ -164,6 +173,7 @@ theorem inst_r_generic_1689 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_
   refine ⟨⟨fun ae x h => ?_, fun ae b h => ?_⟩, ?_⟩
   · subst h; simp
   · subst h; simp
-  · simp [Val.retype, PtrOps.isNonNil, Ptr.word, Ptr.convertible, Ptr.inWindow, Blk.window?]
+  · simp [Val.retype, PtrOps.isNonNil, Ptr.word, Ptr.convertible_global, Ptr.addr?,
+      Ptr.inWindow, Blk.window?]
 
 end GoFV.Proof.Rules

@@ -1,5 +1,7 @@
 import GoFV.Gen.Check36
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The genssa validator, slice G37: multiplies, divides, byte and bit reversals, `SBFX`
 (`docs/plans/proofs3.md` §4)

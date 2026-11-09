@@ -2,6 +2,8 @@ import GoFV.Proof.Rules.DivisibleU
 import GoFV.Proof.Rules.DivmodSMagic
 import GoFV.Rules.Generated.Divisible.Values00
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `divisible.rules`: signed divisibility by a rotated product (#69)
 

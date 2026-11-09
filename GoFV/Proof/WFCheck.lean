@@ -1,6 +1,8 @@
 import GoFV.Proof.CheckFacts
 import GoFV.SSA.WFCheck
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The slim input check establishes `WF` (issue #147)
 

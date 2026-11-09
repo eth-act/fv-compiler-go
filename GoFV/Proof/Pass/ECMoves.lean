@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.ECStack
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `expand calls`: chains of `Move`s of wide stack arguments (issue #28)
 

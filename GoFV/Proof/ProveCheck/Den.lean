@@ -2,6 +2,8 @@ import GoFV.Proof.ProveCheck.Rng
 import GoFV.Proof.ProveCheck.Tabs
 import GoFV.Proof.AtomSimDen
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Values of terms, as prove's validator reads them (issue #24)
 

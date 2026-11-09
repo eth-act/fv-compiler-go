@@ -4,6 +4,8 @@ import GoFV.Asm.Parse
 import GoFV.SSA.Parse
 import GoFVTest.GenIn
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `gen-check`: coverage of the genssa validator (`docs/plans/proofs3.md` §3, §4)
 

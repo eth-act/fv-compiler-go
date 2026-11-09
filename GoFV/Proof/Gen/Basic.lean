@@ -1,5 +1,7 @@
 import GoFV.SSA.Sem.RunProg
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `runProg` runs between related states, and the ID layout (`docs/plans/proofs3.md` §3)
 

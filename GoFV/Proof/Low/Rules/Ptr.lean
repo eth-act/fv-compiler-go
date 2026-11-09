@@ -2,6 +2,8 @@ import GoFV.Proof.Low.Rules.ShiftOp
 import GoFV.Rules.Generated.ARM64
 import GoFV.Proof.Pass.RewriteTermDen
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowering rule lemmas: pointers and copies (`ARM64.rules:305`, `306`, `308`, `1184`, `1201`)
 

@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerTrunc
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower` reading a truncation through a `W` op: `trw` (hand-written, issue #385)
 

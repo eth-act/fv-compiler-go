@@ -1,6 +1,8 @@
 import GoFV.Proof.AtomSimStep
 import GoFV.Proof.RunMono
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Terminators as functions of their controls' terms (issues #113, #151)
 

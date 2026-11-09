@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.CopyElimEnter
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # copyelim refines its input
 

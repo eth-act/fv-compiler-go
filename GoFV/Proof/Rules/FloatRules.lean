@@ -4,6 +4,8 @@ import GoFV.Rules.Generated.Generic.Values04
 import GoFV.Rules.Generated.Generic.Values07
 import GoFV.Rules.Generated.Generic.Values09
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: float comparisons
 

@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerStoreSym
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower` reading a truncation through an extension: `trc` (hand-written, issue #385)
 

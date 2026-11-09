@@ -2,6 +2,8 @@ import GoFV.Proof.MemRefine
 import GoFV.SSA.Sem.Layout
 import GoFV.Proof.Retype
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Encoding, decoding and retyping are monotone in refinement
 

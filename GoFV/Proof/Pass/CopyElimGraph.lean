@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.CopyFrag
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Copy chains (`Src`) under copyelim's edits
 

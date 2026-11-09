@@ -6,6 +6,8 @@ import GoFV.Opt.DeadStoreCheck
 import GoFV.Opt.DeadAutosCheck
 import GoFV.Opt.CSE
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `mem-probe`: what the nilcheckelim / dse / dead auto elim proofs have to cover
 

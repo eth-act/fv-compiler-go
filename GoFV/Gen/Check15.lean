@@ -1,5 +1,7 @@
 import GoFV.Gen.Check14
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The genssa validator, slice G15: zero-sized stack arguments (`docs/plans/proofs3.md` §4)
 

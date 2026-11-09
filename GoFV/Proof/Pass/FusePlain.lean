@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.FusePlainSim
 import GoFV.Proof.Checked
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The checked `fuseBlockPlain` step refines its input
 

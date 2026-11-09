@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.FuseCmpSim
 import GoFV.Proof.Pass.FuseCmpPres
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The checked `fuseComparisons` step refines its input
 

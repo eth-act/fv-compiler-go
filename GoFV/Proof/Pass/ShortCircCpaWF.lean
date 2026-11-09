@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.ShortCircCpaRel
 import GoFV.Proof.DomRel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # short circuit, step 1: well-formedness of the result
 

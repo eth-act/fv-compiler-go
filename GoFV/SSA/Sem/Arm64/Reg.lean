@@ -1,6 +1,8 @@
 import GoFV.SSA.Sem.Ptr
 import GoFV.SSA.Sem.Flags
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Registers of lowered arm64 SSA (`docs/plans/semantics2.md` §3)
 

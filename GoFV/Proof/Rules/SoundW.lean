@@ -1,6 +1,8 @@
 import GoFV.Proof.Rules.DenT
 import GoFV.Proof.Retype
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The obligation of a rule whose matched value may be narrower than its op (issue #69)
 

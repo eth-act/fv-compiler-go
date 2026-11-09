@@ -1,6 +1,8 @@
 import GoFV.Proof.Low.Rules.Kit
 import GoFV.Rules.Generated.ARM64
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowering rule lemmas: atom renames, atomics and `MemEq` (`ARM64.rules:376-377`, `438-439`, `442-458`, `482-490`, `492-504`, `507`, `512-516`)
 

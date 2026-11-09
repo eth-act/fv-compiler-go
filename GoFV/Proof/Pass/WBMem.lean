@@ -3,6 +3,8 @@ import GoFV.Proof.MemInv
 import GoFV.Proof.Pass.CSEMemBytes
 import GoFV.Proof.ValRefine
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # writebarrier: memories (issue #36)
 

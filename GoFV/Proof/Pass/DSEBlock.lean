@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.DSEBlockBase
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dse: one block's evaluation
 

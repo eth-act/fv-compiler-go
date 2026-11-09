@@ -1,6 +1,8 @@
 import GoFV.Proof.Witness.LowerAdd
 import GoFV.Proof.Witness.LowerWBPanic
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower` on a bounds panic with a constant length: `pbx` (hand-written, issue #385)
 

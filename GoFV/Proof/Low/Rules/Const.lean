@@ -1,6 +1,8 @@
 import GoFV.Proof.Low.Rules.Tactic
 import GoFV.Rules.Generated.ARM64
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowering rule lemmas: constants (`ARM64.rules:182-184`)
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.SccpInv
 import GoFV.Proof.Pass.KnownBitsTerm
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # sccp: atoms' arguments and terminators as terms (issue #32)
 

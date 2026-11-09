@@ -4,6 +4,8 @@ import GoFV.Proof.Avail
 import GoFV.Proof.Pass.CSESim
 import GoFV.Proof.Pass.DAEEnter
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Running in tables with extra frame temporaries: blocks and the loop
 

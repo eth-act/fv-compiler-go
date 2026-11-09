@@ -2,6 +2,8 @@ import GoFV.Proof.Rules.AllSound
 import GoFV.Rules.Generated.Generic.Values03
 import GoFV.Rules.Generated.Generic.Values08
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: comparisons of symbol addresses (issue #69)
 

@@ -1,5 +1,7 @@
 import GoFV.Proof.Obj.Basic
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The linked words (`GoFV/Asm/CheckObjLink.lean`)
 

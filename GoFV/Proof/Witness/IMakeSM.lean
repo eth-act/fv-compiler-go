@@ -1,6 +1,8 @@
 import GoFV.Proof.Witness.CondSel
 import GoFV.Proof.Rules.IMakeSM
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for an `IMake` of a `StructMake`: `box` (hand-written, issue #69)
 

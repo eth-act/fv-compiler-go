@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.WBLocal
 import GoFV.Proof.Pass.SegCall
 import GoFV.Proof.Pass.ECCall
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # writebarrier: the write-barrier helper calls (issue #36)
 
@@ -179,7 +181,9 @@ theorem local_taddr {env : Env} {tabs : Tables} {g : Func} {c : WBCheck.Ctx} {rs
     rw [frameVal_sym hop hs]
     rfl
   rw [hev]
-  rfl
+  show Res.ok ((Val.ptr ⟨.global s, 0⟩).retype (.int .w64)) = _
+  exact congrArg Res.ok (by
+    simp [Val.retype, Val.retypePre, Ptr.word, Ptr.addr?, Ptr.inWindow, Blk.window?])
 
 theorem regsAre_snoc {g : Frame} : ∀ {l : List ID} {L : List Val} {a : ID} {z : Val},
     RegsAre g l L → g.regs[a]? = some (some z) → RegsAre g (l ++ [a]) (L ++ [z])

@@ -2,6 +2,8 @@ import GoFV.Proof.DomRel
 import GoFV.Proof.Checked
 import GoFV.Proof.Witness.Max3
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: the slim input check on `max3`
 

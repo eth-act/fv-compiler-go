@@ -1,6 +1,8 @@
 import GoFV.Proof.ValRefine
 import GoFV.SSA.Sem.Pure
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The pure ops are monotone in refinement (`docs/plans/semantics.md` §3.5)
 

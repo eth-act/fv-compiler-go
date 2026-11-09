@@ -1,6 +1,8 @@
 import GoFV.Proof.Rules.Tactic
 import GoFV.Rules.Generated.Generic.Values02
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: `CondSelect` of equal or constant arms (`generic.rules:293`, `:294`)
 

@@ -1,6 +1,8 @@
 import GoFV.Gen.Results
 import GoFV.Proof.Gen.G26
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The results of a return in their ABI registers (`docs/plans/proofs3.md` §9)
 

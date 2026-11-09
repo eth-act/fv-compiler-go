@@ -4,6 +4,8 @@ import GoFV.Proof.Pass.ShortCircCpa
 import GoFV.Proof.Pass.ShortCircSim
 import GoFV.Opt.ShortCircuit
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # short circuit refines its input
 

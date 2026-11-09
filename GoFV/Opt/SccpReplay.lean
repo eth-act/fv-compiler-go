@@ -1,5 +1,7 @@
 import GoFV.Opt.Sccp
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # sccp: replaying Go's map order from the stock output
 

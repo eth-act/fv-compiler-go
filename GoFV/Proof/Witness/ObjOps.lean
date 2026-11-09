@@ -1,5 +1,7 @@
 import GoFV.Proof.Obj.Sim
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witnesses: the opcodes `checkObj` added (#553)
 

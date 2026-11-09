@@ -2,6 +2,8 @@ import GoFV.Opt.NilCheckRel
 import GoFV.Proof.WF
 import GoFV.Proof.DomCert
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # nilcheckelim's output relation
 

@@ -4,6 +4,8 @@ import GoFV.SSA.Sem.Pure
 import GoFV.SSA.Sem.Layout
 import GoFV.SSA.Sem.TyEq
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The denotation of a value rule (`docs/proofs/rules.md`)
 

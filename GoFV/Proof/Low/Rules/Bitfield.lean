@@ -1,5 +1,7 @@
 import GoFV.Proof.Low.Rules.ConstFold
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowering rule lemmas: bit-field peepholes (`ARM64.rules:1397-1399`, `1617-1618`, `1641-1765`, `1853-1855`)
 

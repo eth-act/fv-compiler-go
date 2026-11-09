@@ -1,5 +1,7 @@
 import GoFV.SSA.Sem.Val
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Integer arithmetic and bit operations (`docs/plans/semantics.md` §4.1, §4.2)
 

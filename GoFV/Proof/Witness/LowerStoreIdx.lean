@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerLoadIdx
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness functions for `lower` on indexed stores: `stx`, `sti` (hand-written, issue #385)
 

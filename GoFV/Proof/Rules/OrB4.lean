@@ -1,6 +1,8 @@
 import GoFV.Proof.Rules.TacticRange
 import GoFV.Rules.Generated.Generic.Values09
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: `OrB` rules (part 4)
 

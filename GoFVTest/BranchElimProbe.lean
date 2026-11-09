@@ -2,6 +2,8 @@ import GoFV.SSA.Parse
 import GoFV.SSA.Check
 import GoFV.Opt.BranchElim
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `lake exe branchelim-probe <dir>...`: branchelim's step checker and fragment on the corpus
 

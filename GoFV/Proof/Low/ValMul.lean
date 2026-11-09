@@ -2,6 +2,8 @@ import GoFV.Proof.Low.ValStep
 import GoFV.Proof.Retype
 import GoFV.Proof.PtrAddr
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # A strength-reduced multiplication by a constant (issue #385)
 

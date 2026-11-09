@@ -2,6 +2,8 @@ import GoFV.Gen.Check39
 import GoFV.Proof.Gen.G38
 import GoFV.Proof.CongLoc
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Slice G39 of the genssa validator: the homes of removed values (`docs/plans/proofs3.md` §4)
 

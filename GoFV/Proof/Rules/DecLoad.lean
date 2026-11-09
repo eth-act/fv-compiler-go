@@ -3,6 +3,8 @@ import GoFV.Proof.Pass.StructLoadMem
 import GoFV.Proof.ValRefine
 import GoFV.Proof.Rules.SelLoad
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: `dec` rules, `Load` splits (`dec.rules`, issue #17)
 

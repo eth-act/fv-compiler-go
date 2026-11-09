@@ -32,6 +32,8 @@ import GoFV.Proof.Pass.LicmL
 import GoFV.Proof.Pass.TrimLocCheck
 import GoFV.Proof.Pass.FlagAllocLCheck
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The verified pipeline through `trim` (issues #385, #189)
 

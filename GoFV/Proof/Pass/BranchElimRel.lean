@@ -5,6 +5,8 @@ import GoFV.Proof.Agree
 import GoFV.Proof.Merge
 import GoFV.Proof.Pass.FusePlainRel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # branchelim: what the step checker establishes
 

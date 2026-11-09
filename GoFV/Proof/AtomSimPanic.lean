@@ -1,5 +1,7 @@
 import GoFV.Proof.AtomSimNoPanic
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # A block entry that panics (issue #113)
 

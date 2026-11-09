@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.UnreadLPure
 import GoFV.Proof.EvalL
 import GoFV.Proof.EvalOpLDispatch
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # elim unread autos on `runL`: the source's values avoid the eliminated variables
 

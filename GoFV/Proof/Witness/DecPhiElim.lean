@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.DecStore
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for decompose builtin's phi eliminations: `pickLen` (hand-written, issue #17)
 

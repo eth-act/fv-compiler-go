@@ -1,6 +1,8 @@
 import GoFV.Opt.DeadStore
 import GoFV.Opt.CSE
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dse's checker
 

@@ -1,6 +1,8 @@
 import GoFV.SSA.Sem.Run
 import GoFV.SSA.Sem.TyEq
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Extended tables that a function cannot tell apart (`tabsAgree`)
 

@@ -2,6 +2,8 @@ import GoFV.Opt.PhiOpt
 import GoFV.SSA.DomCert
 import GoFV.SSA.Sem.Run
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # phiopt's checker
 

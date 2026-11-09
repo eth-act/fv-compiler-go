@@ -1,5 +1,7 @@
 import GoFV.Gen.Check11
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The genssa validator, slice G12: pointer conversions (`docs/plans/proofs3.md` §4)
 

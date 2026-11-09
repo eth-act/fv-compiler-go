@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.CopyElimRank
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # copyelim: the target's evaluation of a block
 

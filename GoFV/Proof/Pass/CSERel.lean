@@ -3,6 +3,8 @@ import GoFV.Proof.WF
 import GoFV.Proof.DomCert
 import GoFV.Proof.Pass.CopyElimSim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # cse's output relation
 

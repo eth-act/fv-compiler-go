@@ -2,6 +2,8 @@ import GoFV.Proof.Low.Lower
 import GoFV.Proof.Witness.AddZero
 import GoFV.Proof.Witness.ClampL
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower`: `add` (hand-written, issue #385)
 

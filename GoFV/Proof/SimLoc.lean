@@ -1,5 +1,7 @@
 import GoFV.Proof.CongLoc
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Simulation over `runLoc`
 

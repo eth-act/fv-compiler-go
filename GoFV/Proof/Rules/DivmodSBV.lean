@@ -1,5 +1,7 @@
 import GoFV.Proof.Rules.DivmodSMagic
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Signed division by a constant: the `BitVec` forms (`divmod.rules`, #69)
 

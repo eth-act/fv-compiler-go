@@ -1,6 +1,8 @@
 import GoFV.Proof.ProveCheck.RngOp
 import GoFV.Proof.ProveCheck.Proj
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The range analysis is sound (issue #24)
 

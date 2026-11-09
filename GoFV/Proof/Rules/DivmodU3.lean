@@ -1,5 +1,7 @@
 import GoFV.Proof.Rules.DivmodUMagic2
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Unsigned magic division, `Mul` by `2^16 + m` and `Avg64u` (`divmod.rules:159`, `:221`, `:232`)
 

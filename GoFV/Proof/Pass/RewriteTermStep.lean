@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.RewriteTermRule
 import GoFV.Proof.Pass.RewriteTermNat
 import GoFV.Proof.Pass.RewriteTermNonNeg
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # One rule event refines the denotations (issue #113)
 

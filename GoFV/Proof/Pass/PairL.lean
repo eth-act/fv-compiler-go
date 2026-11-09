@@ -3,6 +3,8 @@ import GoFV.Proof.Low.TabsAgreeL
 import GoFV.Opt.PairCheck
 import GoFV.Opt.Pair
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `pair` refines its input on `runL` (issue #385)
 

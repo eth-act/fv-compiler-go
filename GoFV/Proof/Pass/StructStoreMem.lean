@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.MemCombineBytes
 import GoFV.Proof.ABIBytes
 import GoFV.Proof.ValRefine
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Struct-store splits: memory (issue #151)
 

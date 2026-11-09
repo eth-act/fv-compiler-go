@@ -3,6 +3,8 @@ import GoFV.Proof.Rules.NonNeg
 import GoFV.Proof.Rules.DivmodSPow2
 import GoFV.Rules.Generated.Generic.Values06
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: `Mod` rules
 

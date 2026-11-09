@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.DAEAvoid
 import GoFV.Proof.Retype
 import GoFV.Proof.Eval
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Running in tables with extra frame temporaries: memories and registers
 

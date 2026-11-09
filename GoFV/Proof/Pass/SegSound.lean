@@ -3,6 +3,8 @@ import GoFV.Proof.Pass.SegCall
 import GoFV.Proof.Pass.SegZeroMem
 import GoFV.Proof.MemInv
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Segments: the obligation of a segment (issue #151)
 

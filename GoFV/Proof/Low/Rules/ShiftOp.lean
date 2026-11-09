@@ -1,5 +1,7 @@
 import GoFV.Proof.Low.Rules.ConstFold
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowering rule lemmas: folded operand producers (`ARM64.rules:986-988`, `1012-1018`, `1179-1184`, `1426-1449`, `1635`)
 

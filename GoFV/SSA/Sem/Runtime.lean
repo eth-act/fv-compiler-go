@@ -1,6 +1,8 @@
 import GoFV.SSA.Sem.Env
 import GoFV.SSA.Sem.Ptr
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Runtime contracts (`docs/plans/semantics.md` §5, phase P3)
 

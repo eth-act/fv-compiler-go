@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.PhiNotRel
 import GoFV.Proof.Pass.PhiSelSim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `Phi`s of `Not`s refine their input (issue #69)
 

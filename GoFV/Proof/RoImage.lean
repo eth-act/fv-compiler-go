@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.WBMem
 import GoFV.SSA.Sem.Runtime
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Read-only symbols hold their exported bytes (#151)
 

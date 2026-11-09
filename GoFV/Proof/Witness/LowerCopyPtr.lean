@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerLoadFold
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower` copying across pointer shapes: `cpy` (hand-written, issue #385)
 

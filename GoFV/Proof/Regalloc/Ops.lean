@@ -1,6 +1,8 @@
 import GoFV.Proof.Regalloc.Match
 import GoFV.Proof.EvalOpLDispatch
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Regalloc checker soundness: the ops the checker reasons about
 

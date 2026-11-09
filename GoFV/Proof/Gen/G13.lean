@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G12
 import GoFV.Proof.Gen.Spec13
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of the genssa validator's slice G13: zeroing (`docs/plans/proofs3.md` §4)
 

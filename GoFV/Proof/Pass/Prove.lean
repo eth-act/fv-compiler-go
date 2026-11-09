@@ -1,6 +1,8 @@
 import GoFV.Proof.ProveCheck.Sim
 import GoFV.Proof.AtomSim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The checked prove refines its input (issue #24)
 

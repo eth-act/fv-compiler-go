@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.CSELSim
 import GoFV.Proof.Pass.CSE
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `lowered cse` refines its input on `runL`
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Witness.LoadSplit
 import GoFV.Proof.Rules.DecLoadSel
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness functions for the dec extractors of a `Load` (hand-written, issue #17)
 

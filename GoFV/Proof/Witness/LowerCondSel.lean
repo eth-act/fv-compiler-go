@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerAdd
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower` on a `CondSelect`: `smin` (hand-written, issue #385)
 

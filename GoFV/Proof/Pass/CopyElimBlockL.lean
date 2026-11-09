@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.CopyElimSimL
 import GoFV.Proof.Pass.CopyElimSched
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # copyelim on `runL`: one block entry
 

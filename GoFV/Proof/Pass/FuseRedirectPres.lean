@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.FuseRedirectRel
 import GoFV.Proof.Pass.FuseCmpPres
 import GoFV.Proof.DomRel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # A checked redirect keeps well-formedness and use dominance
 

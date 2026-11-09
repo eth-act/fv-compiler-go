@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G38
 import GoFV.Proof.Witness.GenG14
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G38 of the genssa validator on `sync/atomic.LoadInt64`
 

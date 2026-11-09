@@ -1,6 +1,8 @@
 import GoFV.SSA.Func
 import GoFV.SSA.Sem.Run
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # cse's checker: loads through disjoint stores
 

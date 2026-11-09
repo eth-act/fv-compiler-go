@@ -2,6 +2,8 @@ import GoFV.Proof.Rules.Tactic
 import GoFV.Proof.Rules.DecShape
 import GoFV.Rules.Generated.Dec.Values00
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: `dec` rules, selections (`dec.rules`, issue #17)
 

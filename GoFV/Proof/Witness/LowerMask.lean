@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerNarrowArgs
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower`'s shift-pair masks: `msk` (hand-written, issue #385)
 

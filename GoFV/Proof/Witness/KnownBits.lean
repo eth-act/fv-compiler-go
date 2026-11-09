@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.KnownBits
 import GoFV.Proof.Witness.TraceFP
 import GoFV.Proof.Witness.Util
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: known bits on `sort.isNaN[go.shape.string]`
 

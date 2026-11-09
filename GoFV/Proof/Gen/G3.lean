@@ -5,6 +5,8 @@ import GoFV.Proof.Gen.Progs3
 import GoFV.Proof.Gen.Value3
 import GoFV.Proof.Gen.Step3
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of the genssa validator's slice G3: widths (`docs/plans/proofs3.md` §4)
 

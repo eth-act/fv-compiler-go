@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.ZCSEBlock
 import GoFV.Proof.Pass.ZCSERank
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # zcse: a block where the source panics
 

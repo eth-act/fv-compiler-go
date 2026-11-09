@@ -2,6 +2,8 @@ import GoFV.Proof.TabsAgreeMod
 import GoFV.Proof.Witness.TabsAgree
 import GoFV.Proof.Witness.CopyElimRel
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness: `run_tabsAgreeMod` on `clamp` with an extra frame temporary
 

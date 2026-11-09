@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.GenG32
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G32's `CSINC` on `internal/bytealg.countGeneric`
 

@@ -2,6 +2,8 @@ import GoFV.Proof.Obj.Insn
 import GoFV.Proof.Obj.Link
 import GoFV.SSA.Sem.LocMatch
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The words of a Prog run as `symWords` says (`GoFV/Asm/CheckObj.lean`)
 

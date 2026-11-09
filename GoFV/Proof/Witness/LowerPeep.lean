@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerNarrowArgs
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness functions for `lower`'s constant folds, masked shifts, shifted `MVN` and bit tests: `pkf`, `tbx` (hand-written, issue #385)
 

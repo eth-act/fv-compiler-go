@@ -1,5 +1,7 @@
 import GoFV.Proof.Obj.CallPanic
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Loads and stores that fault in the nil page (`docs/plans/proofs3.md` §9)
 

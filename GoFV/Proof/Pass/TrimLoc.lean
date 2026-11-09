@@ -2,6 +2,8 @@ import GoFV.Proof.SimLoc
 import GoFV.Proof.Pass.TrimLocCheck
 import GoFV.Opt.Trim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `trim` refines its input under `runLoc`
 

@@ -2,6 +2,8 @@ import GoFVTest.Parity.Compare
 import GoFV.SSA.Parse
 import GoFV.Opt.Opt
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `opt-proven-probe`: what the proven-only rewrite passes cost (issue #113)
 

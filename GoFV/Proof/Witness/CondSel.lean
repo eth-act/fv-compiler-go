@@ -1,6 +1,8 @@
 import GoFV.Proof.Witness.StructStore
 import GoFV.Proof.Rules.CondSelect
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `CondSelect` tops: `pick` (hand-written, issue #69)
 

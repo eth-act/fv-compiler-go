@@ -2,6 +2,8 @@ import GoFV.Proof.Rules.OneBit
 import GoFV.Proof.Rules.NonVacuous
 import GoFV.Rules.Generated.Generic.Values09
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Single-bit equality tests, `OrB` form (`generic.rules:372`)
 

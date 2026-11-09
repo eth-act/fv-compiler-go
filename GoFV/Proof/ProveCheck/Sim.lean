@@ -3,6 +3,8 @@ import GoFV.Proof.ProveCheck.Fold
 import GoFV.Proof.Pass.RewriteTerm
 import GoFV.Proof.TermStep
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # prove's validator: the premises of the atom simulation (issue #24)
 

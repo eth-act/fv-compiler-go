@@ -5,6 +5,8 @@ import GoFV.Proof.EvalOpLDispatch
 import GoFV.Proof.PtrAddr
 import GoFV.Proof.Pass.CSEOp
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `schedule` on `runSched`: what a value's class says about its evaluation
 

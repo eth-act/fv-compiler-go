@@ -1,6 +1,8 @@
 import GoFV.Proof.FinishMono
 import GoFV.Proof.PureMono
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Calls are monotone in refinement
 

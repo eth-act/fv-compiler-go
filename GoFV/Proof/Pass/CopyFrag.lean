@@ -3,6 +3,8 @@ import GoFV.Opt.CopyElim
 import GoFV.SSA.Sem.Layout
 import GoFV.Proof.Retype
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The copy graph and copyelim's input condition `CopyFrag`
 

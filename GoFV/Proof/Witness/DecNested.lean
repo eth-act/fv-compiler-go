@@ -1,6 +1,8 @@
 import GoFV.Proof.Witness.MakeSel
 import GoFV.Proof.Witness.DecStore
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for selections of dropped nested `Make`s: `nest` (hand-written, issue #17)
 

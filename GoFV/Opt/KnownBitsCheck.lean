@@ -2,6 +2,8 @@ import GoFV.Opt.KnownBits
 import GoFV.Opt.RewriteCheck
 import GoFV.Opt.CSE
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # known bits' checker
 

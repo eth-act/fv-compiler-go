@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G28
 import GoFV.Proof.Gen.Spec29
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of the genssa validator's slice G29: the upper-bit table within a block
 (`docs/plans/proofs3.md` §4)

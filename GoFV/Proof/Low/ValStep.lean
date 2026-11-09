@@ -1,5 +1,7 @@
 import GoFV.Proof.Low.ValRule
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # One lowering rule event refines the denotations (issue #385)
 

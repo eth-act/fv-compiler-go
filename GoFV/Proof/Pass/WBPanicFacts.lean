@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.WBCov
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # writebarrier: facts for a panicking block entry (issue #36)
 

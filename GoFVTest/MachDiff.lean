@@ -3,6 +3,8 @@ import GoFV.SSA.Sem.Hooks
 import GoFV.Asm.Parse
 import Lean.Data.PersistentHashMap
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `mach-difftest`: whole functions under `runMach` against native execution (issue #552)
 

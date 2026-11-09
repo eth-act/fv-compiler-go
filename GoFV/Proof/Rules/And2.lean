@@ -2,6 +2,8 @@ import GoFV.Proof.Rules.Tactic
 import GoFV.Rules.Generated.Generic.Values00
 import GoFV.Rules.Generated.Generic.Values01
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: `And` rules (part 2)
 

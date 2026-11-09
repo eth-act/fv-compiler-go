@@ -1,6 +1,8 @@
 import GoFV.Proof.Low.Rules.BlockFlags
 import GoFV.Rules.Derive
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowering rule lemmas: `InvertFlags` (`ARM64.rules:991`, `993`, `1003`, `1352-1357`, `1374-1383`, `1463-1468`)
 

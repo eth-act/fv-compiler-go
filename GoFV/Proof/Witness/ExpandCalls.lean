@@ -6,6 +6,8 @@ import GoFV.Proof.Witness.UuidNew
 import GoFV.Proof.PtrAddr
 import GoFV.Proof.Witness.Util
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witnesses: expand calls on `sumOf[int]` and `syscall_hasWaitingReaders`
 
@@ -463,10 +465,13 @@ theorem expandCalls_selAddr_witness :
     exact ⟨out, rfl, hsa, hcp, hcall,
       GoFV.Proof.EC.expandCalls_refines hpe (ok_of_toBool hc) (ok_of_toBool hcg) hfrag⟩
 
-/-- `Ptr.word_outargs` at the slot of offset 8 of activation 0 (`uuid.New`'s callee result):
-its word reads back as the slot. -/
+/-- At `Addrs.fixed`, the slot of offset 8 of activation 0 (`uuid.New`'s callee result,
+`SelectNAddr`) is an integer word that reads back as the slot. -/
 theorem expandCalls_slotWord_witness :
-    ∃ x, (⟨.outargs 0, 8⟩ : Ptr).word = .int .w64 x ∧ Ptr.ofAddr x = ⟨.outargs 0, 8⟩ :=
-  Ptr.word_outargs (by decide) (by decide)
+    ∃ x, (⟨.outargs 0, 8⟩ : Ptr).word = .int .w64 x ∧ Ptr.ofAddr x = ⟨.outargs 0, 8⟩ := by
+  have hc : (⟨.outargs 0, 8⟩ : Ptr).convertible = true := by decide +kernel
+  have ha : (⟨.outargs 0, 8⟩ : Ptr).addr? = some (BitVec.ofNat 64 (2 ^ 62 + 8)) := by
+    decide +kernel
+  exact ⟨_, by simp only [Ptr.word, hc, ha], Ptr.ofAddr_addr hc ha⟩
 
 end GoFV.Proof.Witness

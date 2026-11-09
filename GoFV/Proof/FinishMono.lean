@@ -1,6 +1,8 @@
 import GoFV.SSA.Sem.Run
 import GoFV.Proof.ValRefine
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `goResults`, `Mem.freeFrame` and `Mem.dropFrames` are monotone in refinement
 

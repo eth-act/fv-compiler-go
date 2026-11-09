@@ -1,5 +1,7 @@
 import GoFV.SSA.Sem.Int
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Comparisons, booleans, select, bounds checks (`docs/plans/semantics.md` §4.4)
 -/

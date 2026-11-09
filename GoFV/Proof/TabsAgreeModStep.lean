@@ -1,6 +1,8 @@
 import GoFV.Proof.TabsAgreeModSrc
 import GoFV.Proof.Pass.DAEStep
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Running in tables with extra frame temporaries: one value
 

@@ -2,6 +2,8 @@ import GoFV.Proof.Low.Lower
 import GoFV.Proof.Witness.LowerAdd
 import GoFV.Proof.Witness.DecodedLen
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower` on memory: `ldst` (hand-written, issue #385)
 

@@ -4,6 +4,8 @@ import GoFV.Proof.EvalL
 import GoFV.SSA.Sem.TyEq
 import GoFV.Proof.EvalOpLDispatch
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # copyelim on lowered code: the fragment `CopyLFrag`
 

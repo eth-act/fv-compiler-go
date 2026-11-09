@@ -1,5 +1,7 @@
 import GoFV.Proof.Regalloc.Block
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Regalloc checker soundness, stage 5: the loop and `checkRA_sound`
 

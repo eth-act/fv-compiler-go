@@ -1,6 +1,8 @@
 import GoFV.Proof.Rules.DivmodSBV
 import GoFV.Rules.Generated.Divmod.Values00
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Signed division by a constant, `smagic` rules (`divmod.rules`, #69)
 

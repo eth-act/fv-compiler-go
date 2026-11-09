@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.SegSim
 import GoFV.Proof.Rules.Lemmas
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Selections of `Phi`s of `SliceMake`s: the relation (issue #69)
 

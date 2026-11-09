@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G11
 import GoFV.Proof.Gen.Spec12
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of the genssa validator's slice G12: pointer conversions (`docs/plans/proofs3.md` §4)
 

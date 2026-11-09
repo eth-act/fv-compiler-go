@@ -1,6 +1,8 @@
 import GoFV.Arm64.Exec
 import Std.Data.HashMap
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `arm64-cosim`: co-simulation of `GoFV.Arm64` against qemu (issue #552)
 

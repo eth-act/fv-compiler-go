@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.BranchElimOk
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # branchelim: panics in the merged block
 

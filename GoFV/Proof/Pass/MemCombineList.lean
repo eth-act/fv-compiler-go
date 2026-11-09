@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.MemCombineSplit
 import GoFV.Proof.Pass.MemCombineBytes
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # memcombine: descriptions as byte lists (issue #35)
 

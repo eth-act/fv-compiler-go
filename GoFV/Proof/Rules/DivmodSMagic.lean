@@ -1,6 +1,8 @@
 import GoFV.Rules.Helpers.Magic
 import GoFV.Proof.Rules.Tactic
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Signed division by a constant: `smagic` (`divmod.rules`, #69)
 

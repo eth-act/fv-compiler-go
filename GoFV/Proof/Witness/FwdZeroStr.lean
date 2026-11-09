@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.FwdChain
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for a dropped write of a zero composite (issue #69)
 

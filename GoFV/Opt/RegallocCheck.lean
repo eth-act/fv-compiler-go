@@ -4,6 +4,8 @@ import GoFV.SSA.Sem.TyEq
 import GoFV.SSA.Analysis.Postorder
 import Std.Data.HashMap
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The regalloc checker (`docs/plans/regalloc-check.md`)
 

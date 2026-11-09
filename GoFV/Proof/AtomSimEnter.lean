@@ -1,5 +1,7 @@
 import GoFV.Proof.AtomSimBlock
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Value sets along a block of the atom simulation (issue #113)
 

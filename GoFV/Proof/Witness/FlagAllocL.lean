@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.FlagAllocL
 import GoFV.Proof.Witness.TightenL
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: flagalloc on lowered `clamp`
 

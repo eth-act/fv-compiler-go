@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G35
 import GoFV.Proof.Gen.Spec36
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of the genssa validator's slice G36: register shifts, shifted adds and subtracts, `TST`
 (`docs/plans/proofs3.md` §4)

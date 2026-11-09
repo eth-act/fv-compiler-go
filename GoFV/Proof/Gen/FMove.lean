@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G43
 import GoFV.Gen.Check44
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Float moves: the V registers under `runProg` and `LocMatch` (`docs/plans/proofs3.md` §4, G44)
 

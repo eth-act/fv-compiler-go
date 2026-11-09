@@ -3,6 +3,8 @@ import GoFV.SSA.Check
 import GoFV.Opt.Schedule
 import GoFVTest.SchedClass
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `lake exe schedl-probe [--jobs N] <dir>...`: `scheduleCheck` on the corpus
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Witness.LowerAtomic
 import GoFV.Proof.Witness.TraceFP
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower` on a memory comparison: `meq` (hand-written, issue #385)
 

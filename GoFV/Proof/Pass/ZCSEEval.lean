@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.ZCSESched
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # zcse: argument-free values are constants of a run
 

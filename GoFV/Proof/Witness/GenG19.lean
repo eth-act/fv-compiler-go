@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G19
 import GoFV.Proof.Witness.GenG18
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G19 of the genssa validator on `main.func1` (`test/convert4`)
 

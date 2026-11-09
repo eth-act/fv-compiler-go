@@ -1,5 +1,7 @@
 import GoFV.SSA.Sem.RunL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Term ops of lowered SSA (issue #385)
 

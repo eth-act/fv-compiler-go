@@ -1,6 +1,8 @@
 import GoFV.Proof.MemRefine
 import GoFV.Proof.Pass.MemCombineBytes
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Segments: stores tiling a zeroed region (issue #151)
 

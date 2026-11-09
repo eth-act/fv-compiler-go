@@ -2,6 +2,8 @@ import GoFV.SSA.Parse
 import GoFV.SSA.Check
 import GoFV.Opt.KnownBitsCheck
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `knownbits-probe`: does known bits' checker ever reject?
 

@@ -20,6 +20,10 @@ namespace GoFV.Proof.Rules
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Rules
 
+section
+
+variable [GoFV.SSA.Sem.Addrs]
+
 /-- `AddPtr` of a `poison` offset is `poison`. -/
 theorem addPtr_poison (x : Val) : PtrOps.addPtr [x, .poison] = .poison := by
   cases x with
@@ -151,6 +155,10 @@ theorem r_generic_1053_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generi
     rw [hr, hP] at hty ⊢
     rw [Val.retype_of_hasTy hty]
     exact Refines.refl _
+
+end
+
+open scoped GoFV.SSA.Sem.Fixed
 
 /-! ## Non-vacuity -/
 

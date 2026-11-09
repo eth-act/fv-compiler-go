@@ -1,5 +1,7 @@
 import GoFV.SSA.Sem.Arm64.Reg
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # arm64 integer ops (`docs/plans/semantics2.md` §4 (c.1))
 

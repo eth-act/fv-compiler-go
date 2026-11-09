@@ -3,6 +3,8 @@ import GoFV.SSA.RegARM64
 import GoFV.SSA.OpARM64
 import GoFV.SSA.RegMask
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `GoFV.SSA.runLoc`: allocated SSA (L2, `docs/plans/semantics2.md` §7)
 

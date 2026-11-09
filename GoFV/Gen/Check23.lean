@@ -1,6 +1,8 @@
 import GoFV.Gen.Check22
 import GoFV.Asm.OpAsm
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The genssa validator, slice G23: flags to a register (`docs/plans/proofs3.md` §4)
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Rules.Den
 import GoFV.Proof.Rules.OpVal
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The obligation of a value rule over table-evaluated nodes (issue #151)
 

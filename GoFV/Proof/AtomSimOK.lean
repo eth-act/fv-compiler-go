@@ -1,6 +1,8 @@
 import GoFV.Proof.AtomSimDen
 import GoFV.Proof.Avail
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # What `RewriteCheck.atomsOK` says (issue #113)
 

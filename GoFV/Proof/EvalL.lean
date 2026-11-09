@@ -3,6 +3,8 @@ import GoFV.Proof.Frame
 import GoFV.Proof.Eval
 import GoFV.Proof.EvalOpLDispatch
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Evaluating a lowered value (`evalValueL`): locality, congruence, panics
 

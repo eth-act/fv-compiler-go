@@ -1,6 +1,8 @@
 import GoFV.Proof.Witness.IMakeSM
 import GoFV.Proof.Rules.IDataSel
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for a selection of an interface's data word: `unbox` (hand-written, issue #69)
 

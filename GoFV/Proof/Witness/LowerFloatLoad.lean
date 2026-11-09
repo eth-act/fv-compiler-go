@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.LowerPeep
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for `lower`'s float loads: `fld` (hand-written, issue #385)
 

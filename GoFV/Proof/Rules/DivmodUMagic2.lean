@@ -1,6 +1,8 @@
 import GoFV.Proof.Rules.DivmodU
 import GoFV.Proof.Rules.TacticCond
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lemmas for the unsigned magic-number division rules of `DivmodU2.lean`, `DivmodU3.lean` (#69)
 

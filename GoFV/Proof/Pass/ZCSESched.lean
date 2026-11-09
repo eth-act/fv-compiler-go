@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.ZCSESetup
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # zcse: the target block's schedule
 

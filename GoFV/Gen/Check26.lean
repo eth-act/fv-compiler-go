@@ -1,5 +1,7 @@
 import GoFV.Gen.Check25
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The genssa validator, slice G26: functions with no arm64 op (`docs/plans/proofs3.md` §4)
 

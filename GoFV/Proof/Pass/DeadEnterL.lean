@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.DeadRelL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Removing dead values in lowered code: entering a kept block under `runL`
 

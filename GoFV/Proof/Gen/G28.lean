@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G27
 import GoFV.Proof.Gen.Spec28
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of the genssa validator's slice G28: `LoweredMemEq` (`docs/plans/proofs3.md` §4)
 

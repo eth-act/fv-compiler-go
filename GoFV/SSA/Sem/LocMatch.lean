@@ -44,6 +44,10 @@ namespace GoFV.SSA.Sem
 
 open GoFV.SSA
 
+section
+
+variable [Addrs]
+
 /-! ## The environment of one activation -/
 
 /-- What is fixed for one activation of `f` (§4.5). -/
@@ -343,9 +347,13 @@ def FaultSim (env : Env) (H : GoFV.Arm64.Hooks) (code : GoFV.Arm64.Code) (ret : 
     LocMatch E s blk.id blk.values.size m → stepTermLoc E.lc s blk = .panic e mem →
     ∃ m', MStar H code ret m m' ∧ MPanics H code ret m' e)
 
+end
+
 /-! ## Witnesses -/
 
 namespace LocMatchWitness
+
+open scoped Fixed
 
 /-- An `int64` type (type 0). -/
 def tabs : Tables :=

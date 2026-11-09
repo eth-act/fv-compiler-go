@@ -1,5 +1,7 @@
 import GoFV.Opt.RewriteCheck
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule expressions do not read the values of pattern nodes (issue #113)
 

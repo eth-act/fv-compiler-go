@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.FuseEarlyPass
 import GoFV.Proof.Witness.Max3
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: early fuse on `0 <= a && a < 10`
 

@@ -5,6 +5,8 @@ import GoFV.Proof.Pass.CSELSim
 import GoFV.Proof.Low.TabsAgreeL
 import GoFV.Opt.TabsAgreeModL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Running a scheduled function in tables with extra frame temporaries (`runSched_tabsAgreeModL`)
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.MoveLRel
 import GoFV.Proof.Pass.MoveLPairMem
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `pair`'s cases of `relB`: selectors of pair loads and pair stores evaluate as their sources
 

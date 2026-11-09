@@ -1,6 +1,8 @@
 import GoFV.Proof.Low.Rules.Kit
 import GoFV.Rules.Generated.ARM64
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowering rule lemmas: multiplications by a constant strength-reduced (`ARM64.rules:1043`, `1044`)
 

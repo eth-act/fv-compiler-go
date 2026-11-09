@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G9
 import GoFV.Proof.Witness.GenG2
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G9 of the genssa validator on `runtime.fint64to32`
 

@@ -16,6 +16,10 @@ namespace GoFV.Proof.Rules
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Rules
 
+section
+
+variable [GoFV.SSA.Sem.Addrs]
+
 /-- `generic.rules:271`: `(IsSliceInBounds x x) => (ConstBool [true])` -/
 theorem r_generic_271_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_271 := by
   rule_unfold
@@ -49,6 +53,10 @@ theorem r_generic_278_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_
       simp only [BitVec.ule, decide_eq_true_eq]; omega
     simp [Comp.select, Val.retype, Cmp.inBounds, hcm, hle, Conv.constBool] at hty ⊢
     exact refines_retype_of_hasTy hty
+
+end
+
+open scoped GoFV.SSA.Sem.Fixed
 
 theorem inst_r_generic_278 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_278
     (PEnv.ofLists [([0, 0], .agg [.int .w64 0, .int .w64 2, .int .w64 5]),

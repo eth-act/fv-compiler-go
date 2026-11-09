@@ -1,6 +1,8 @@
 import GoFV.Proof.WF
 import GoFV.SSA.Edges
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Removing one edge (`removeSucc`, `removePred`)
 

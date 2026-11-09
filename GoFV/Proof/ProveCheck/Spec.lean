@@ -1,6 +1,8 @@
 import GoFV.Proof.ProveCheck.Facts
 import GoFV.Proof.AtomSimOK
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The checked relation `proveRel`, declaratively (issue #24)
 

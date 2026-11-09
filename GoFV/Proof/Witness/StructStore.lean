@@ -1,6 +1,8 @@
 import GoFV.Proof.Witness.StructLoad
 import GoFV.Proof.Rules.StructStore
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for struct-store splits: `storeS` (hand-written, issue #151)
 

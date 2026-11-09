@@ -2,6 +2,8 @@ import GoFV.SSA.Sem.Ptr
 import GoFV.SSA.Sem.Layout
 import GoFV.Proof.Retype
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Concrete addresses round-trip (#156)
 
@@ -13,86 +15,19 @@ An integer word at a pointer shape reads as the pointer at its address (§3.3), 
 arithmetic on it keeps that reading (`Ptr.ofAddr_add_of_inWindow`): `OffPtr`/`AddPtr`/`PtrIndex`
 of any pointer word read as the operand's pointer stepped inside its window (`Ptr.step?`,
 `PtrOps.offPtr_asPtrWord`, …).
+
+Everything here holds for every address assignment (`Addrs`, `docs/plans/proofs3.md` §8): the
+round trips are `Addrs`'s admissibility (`Addrs.decode_addr`, `Addrs.decode_add`), so they need no
+arithmetic on a concrete encoding (that is `Sem/Addrs.lean`'s, for `Addrs.fixed`).
 -/
 
 namespace GoFV.SSA.Sem
 
 theorem Ptr.ofAddr_addr {p : Ptr} {x : BitVec 64} (hc : p.convertible = true)
     (ha : p.addr? = some x) : Ptr.ofAddr x = p := by
-  obtain ⟨b, off⟩ := p
-  have hoff := off.isLt
-  cases b with
-  | nil =>
-    simp only [Ptr.convertible, decide_eq_true_eq] at hc
-    simp only [Ptr.addr?, Blk.base?, Option.map_some, Option.some.injEq] at ha
-    subst ha
-    have hx : (BitVec.ofNat 64 0 + off).toNat = off.toNat := by simp
-    unfold Ptr.ofAddr; simp only [hx, hc, ite_true]
-    simp
-  | heap n =>
-    simp only [Ptr.convertible, Bool.and_eq_true, decide_eq_true_eq] at hc
-    simp only [Ptr.addr?, Blk.base?, Option.map_some, Option.some.injEq] at ha
-    subst ha
-    have hx : (BitVec.ofNat 64 ((n + 1) * 2 ^ 40) + off).toNat = (n + 1) * 2 ^ 40 + off.toNat := by
-      rw [BitVec.toNat_add, BitVec.toNat_ofNat]
-      have h3 : (n + 1) * 2 ^ 40 + off.toNat < 2 ^ 64 := by omega
-      have h0 : (n + 1) * 2 ^ 40 < 2 ^ 64 := Nat.lt_of_le_of_lt (Nat.le_add_right _ _) h3
-      rw [Nat.mod_eq_of_lt h0, Nat.mod_eq_of_lt h3]
-    unfold Ptr.ofAddr
-    simp only [hx]
-    have h1 : ¬ ((n + 1) * 2 ^ 40 + off.toNat < 2 ^ 40) := by omega
-    have h2 : (n + 1) * 2 ^ 40 + off.toNat < 2 ^ 62 := by omega
-    simp only [h1, h2, ite_false, ite_true, Ptr.mk.injEq, Blk.heap.injEq]
-    constructor
-    · omega
-    · apply BitVec.eq_of_toNat_eq
-      rw [BitVec.toNat_ofNat]
-      have : ((n + 1) * 2 ^ 40 + off.toNat) % 2 ^ 40 = off.toNat := by omega
-      have h4 : off.toNat < 2 ^ 64 := hoff
-      rw [this]; exact Nat.mod_eq_of_lt h4
-  | «local» a k =>
-    simp only [Ptr.convertible, Bool.and_eq_true, decide_eq_true_eq] at hc
-    obtain ⟨⟨⟨hk0, hk⟩, ha'⟩, ho⟩ := hc
-    simp only [Ptr.addr?, Blk.base?, Option.map_some, Option.some.injEq] at ha
-    subst ha
-    have hb : 2 ^ 62 + a * 2 ^ 42 + k * 2 ^ 24 + off.toNat < 2 ^ 64 := by omega
-    have hx : (BitVec.ofNat 64 (2 ^ 62 + a * 2 ^ 42 + k * 2 ^ 24) + off).toNat =
-        2 ^ 62 + a * 2 ^ 42 + k * 2 ^ 24 + off.toNat := by
-      rw [BitVec.toNat_add, BitVec.toNat_ofNat]
-      rw [Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (Nat.le_add_right _ _) hb), Nat.mod_eq_of_lt hb]
-    unfold Ptr.ofAddr
-    simp only [hx]
-    have h1 : ¬ (2 ^ 62 + a * 2 ^ 42 + k * 2 ^ 24 + off.toNat < 2 ^ 40) := by omega
-    have h2 : ¬ (2 ^ 62 + a * 2 ^ 42 + k * 2 ^ 24 + off.toNat < 2 ^ 62) := by omega
-    have e1 : (2 ^ 62 + a * 2 ^ 42 + k * 2 ^ 24 + off.toNat - 2 ^ 62) / 2 ^ 42 = a := by omega
-    have e2 : (2 ^ 62 + a * 2 ^ 42 + k * 2 ^ 24 + off.toNat - 2 ^ 62) % 2 ^ 42 / 2 ^ 24 = k := by
-      omega
-    have e3 : (2 ^ 62 + a * 2 ^ 42 + k * 2 ^ 24 + off.toNat - 2 ^ 62) % 2 ^ 24 = off.toNat := by
-      omega
-    have hk' : (k == 0) = false := by simp; omega
-    simp only [h1, h2, ite_false, e1, e2, e3, hk', Bool.false_eq_true]
-    simp
-  | outargs a =>
-    simp only [Ptr.convertible, Bool.and_eq_true, decide_eq_true_eq] at hc
-    obtain ⟨ha', ho⟩ := hc
-    simp only [Ptr.addr?, Blk.base?, Option.map_some, Option.some.injEq] at ha
-    subst ha
-    have hb : 2 ^ 62 + a * 2 ^ 42 + off.toNat < 2 ^ 64 := by omega
-    have hx : (BitVec.ofNat 64 (2 ^ 62 + a * 2 ^ 42) + off).toNat = 2 ^ 62 + a * 2 ^ 42 + off.toNat := by
-      rw [BitVec.toNat_add, BitVec.toNat_ofNat]
-      rw [Nat.mod_eq_of_lt (Nat.lt_of_le_of_lt (Nat.le_add_right _ _) hb), Nat.mod_eq_of_lt hb]
-    unfold Ptr.ofAddr
-    simp only [hx]
-    have h1 : ¬ (2 ^ 62 + a * 2 ^ 42 + off.toNat < 2 ^ 40) := by omega
-    have h2 : ¬ (2 ^ 62 + a * 2 ^ 42 + off.toNat < 2 ^ 62) := by omega
-    have e1 : (2 ^ 62 + a * 2 ^ 42 + off.toNat - 2 ^ 62) / 2 ^ 42 = a := by omega
-    have e2 : (2 ^ 62 + a * 2 ^ 42 + off.toNat - 2 ^ 62) % 2 ^ 42 / 2 ^ 24 = 0 := by omega
-    have e3 : (2 ^ 62 + a * 2 ^ 42 + off.toNat - 2 ^ 62) % 2 ^ 24 = off.toNat := by omega
-    simp only [h1, h2, ite_false, e1, e2, e3, beq_self_eq_true, ite_true]
-    simp
-  | temp _ _ => simp [Ptr.convertible] at hc
-  | global _ => simp [Ptr.convertible] at hc
-  | wbuf => simp [Ptr.convertible] at hc
+  unfold Ptr.convertible at hc
+  rw [ha] at hc
+  exact beq_iff_eq.1 hc
 
 /-- **`Convert` round-trips**: a pointer converted to an integer is, wherever a pointer is
 read (`Val.asPtrWord`: an integer keeps its word at a pointer shape, so `Convert` back is the
@@ -130,95 +65,25 @@ theorem Ptr.word_asPtrWord_of {p q : Ptr} (h : p.word.asPtrWord = some q) : q = 
     rw [← h, Ptr.ofAddr_addr hc ha]
   · cases h
 
-/-- **A slot of an outgoing-arguments area is an integer word** (`SelectNAddr`'s result,
-`Tuple.selectNAddr`): the area of every activation numbered below `2^20` has a concrete address
-(`Blk.base?`), and for every offset inside its window the word `Ptr.ofAddr` reads back is exactly
-the slot `⟨outargs act, off⟩`. -/
-theorem Ptr.word_outargs {act : Nat} {off : BitVec 64} (ha : act < 2 ^ 20)
-    (ho : off.toNat < 2 ^ 24) :
-    ∃ x, (⟨.outargs act, off⟩ : Ptr).word = .int .w64 x ∧
-      Ptr.ofAddr x = ⟨.outargs act, off⟩ := by
-  have hc : (⟨.outargs act, off⟩ : Ptr).convertible = true := by
-    simp only [Ptr.convertible, Bool.and_eq_true, decide_eq_true_eq]; exact ⟨by omega, ho⟩
-  refine ⟨BitVec.ofNat 64 (2 ^ 62 + act * 2 ^ 42) + off, ?_, Ptr.ofAddr_addr hc rfl⟩
-  unfold Ptr.word
-  rw [hc]
-  rfl
-
 /-- **Pointer arithmetic on an integer word** (§3.3): where the pointer at address `x` plus `k`
 stays inside its block's address window, the integer `x + k` addresses that pointer. -/
 theorem Ptr.ofAddr_add_of_inWindow {x k : BitVec 64} (h : ((Ptr.ofAddr x).add k).inWindow = true) :
-    Ptr.ofAddr (x + k) = (Ptr.ofAddr x).add k := by
-  have hx := x.isLt
-  have hk := k.isLt
-  have hs : (x + k).toNat = (x.toNat + k.toNat) % 2 ^ 64 := BitVec.toNat_add x k
-  by_cases h1 : x.toNat < 2 ^ 40
-  · have e : Ptr.ofAddr x = ⟨.nil, x⟩ := by simp [Ptr.ofAddr, h1]
-    rw [e] at h ⊢
-    simp only [Ptr.add, Ptr.inWindow, Blk.window?] at h
-    unfold Ptr.ofAddr
-    rw [if_pos (of_decide_eq_true h)]; rfl
-  by_cases h2 : x.toNat < 2 ^ 62
-  · have e : Ptr.ofAddr x = ⟨.heap (x.toNat / 2 ^ 40 - 1), BitVec.ofNat 64 (x.toNat % 2 ^ 40)⟩ := by
-      simp [Ptr.ofAddr, h1, h2]
-    rw [e] at h ⊢
-    simp only [Ptr.add, Ptr.inWindow, Blk.window?, decide_eq_true_eq, BitVec.toNat_add,
-      BitVec.toNat_ofNat] at h
-    simp only [Ptr.ofAddr, hs, Ptr.add, show ¬ (x.toNat + k.toNat) % 2 ^ 64 < 2 ^ 40 by omega,
-      show (x.toNat + k.toNat) % 2 ^ 64 < 2 ^ 62 by omega, ite_false, ite_true,
-      show (x.toNat + k.toNat) % 2 ^ 64 / 2 ^ 40 = x.toNat / 2 ^ 40 by omega, Ptr.mk.injEq, true_and]
-    apply BitVec.eq_of_toNat_eq; simp only [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
-  obtain ⟨r, hr⟩ : ∃ r, x.toNat = 2 ^ 62 + r := ⟨x.toNat - 2 ^ 62, by omega⟩
-  have hr' : x.toNat - 2 ^ 62 = r := by omega
-  by_cases h3 : r % 2 ^ 42 / 2 ^ 24 = 0
-  · have e : Ptr.ofAddr x = ⟨.outargs (r / 2 ^ 42), BitVec.ofNat 64 (r % 2 ^ 24)⟩ := by
-      simp only [Ptr.ofAddr, h1, h2, ite_false, hr', h3, beq_self_eq_true, ite_true]
-    rw [e] at h ⊢
-    simp only [Ptr.add, Ptr.inWindow, Blk.window?, decide_eq_true_eq, BitVec.toNat_add,
-      BitVec.toNat_ofNat] at h
-    simp only [Ptr.ofAddr, hs, Ptr.add, show ¬ (x.toNat + k.toNat) % 2 ^ 64 < 2 ^ 40 by omega,
-      show ¬ (x.toNat + k.toNat) % 2 ^ 64 < 2 ^ 62 by omega, ite_false,
-      show ((x.toNat + k.toNat) % 2 ^ 64 - 2 ^ 62) % 2 ^ 42 / 2 ^ 24 = 0 by omega,
-      show ((x.toNat + k.toNat) % 2 ^ 64 - 2 ^ 62) / 2 ^ 42 = r / 2 ^ 42 by omega,
-      beq_self_eq_true, ite_true, Ptr.mk.injEq, true_and]
-    apply BitVec.eq_of_toNat_eq; simp only [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
-  · have e : Ptr.ofAddr x = ⟨.local (r / 2 ^ 42) (r % 2 ^ 42 / 2 ^ 24), BitVec.ofNat 64 (r % 2 ^ 24)⟩ := by
-      simp only [Ptr.ofAddr, h1, h2, ite_false, hr', beq_iff_eq, h3]
-    rw [e] at h ⊢
-    simp only [Ptr.add, Ptr.inWindow, Blk.window?, decide_eq_true_eq, BitVec.toNat_add,
-      BitVec.toNat_ofNat] at h
-    simp only [Ptr.ofAddr, hs, Ptr.add, show ¬ (x.toNat + k.toNat) % 2 ^ 64 < 2 ^ 40 by omega,
-      show ¬ (x.toNat + k.toNat) % 2 ^ 64 < 2 ^ 62 by omega, ite_false,
-      show ((x.toNat + k.toNat) % 2 ^ 64 - 2 ^ 62) % 2 ^ 42 / 2 ^ 24 = r % 2 ^ 42 / 2 ^ 24 by omega,
-      show ((x.toNat + k.toNat) % 2 ^ 64 - 2 ^ 62) / 2 ^ 42 = r / 2 ^ 42 by omega,
-      beq_iff_eq, h3, ite_false, Ptr.mk.injEq, true_and]
-    apply BitVec.eq_of_toNat_eq; simp only [BitVec.toNat_add, BitVec.toNat_ofNat]; omega
+    Ptr.ofAddr (x + k) = (Ptr.ofAddr x).add k :=
+  Addrs.decode_add x k h
 
 /-- The pointer at an address lies inside its block's window. -/
-theorem Ptr.ofAddr_inWindow (x : BitVec 64) : (Ptr.ofAddr x).inWindow = true := by
-  have hx := x.isLt
-  unfold Ptr.ofAddr; dsimp only
-  split
-  · simp only [Ptr.inWindow, Blk.window?, decide_eq_true_eq]; assumption
-  split
-  · simp only [Ptr.inWindow, Blk.window?, decide_eq_true_eq, BitVec.toNat_ofNat]; omega
-  split <;> (simp only [Ptr.inWindow, Blk.window?, decide_eq_true_eq, BitVec.toNat_ofNat]; omega)
+theorem Ptr.ofAddr_inWindow (x : BitVec 64) : (Ptr.ofAddr x).inWindow = true :=
+  Addrs.decode_inWindow x
 
-/-- **The pointer at an address converts** (back to that address, `Ptr.addr?_ofAddr`): its block
-is inside the address encoding (a heap object below `2^22 - 1`, a frame of an activation below
-`3·2^20`, which is every address from `2^62` up to `2^64`). -/
+/-- The pointer `Ptr.ofAddr` gives at an address has that address. -/
+theorem Ptr.addr?_ofAddr (x : BitVec 64) : (Ptr.ofAddr x).addr? = some x :=
+  Addrs.decode_addr x
+
+/-- **The pointer at an address converts** (back to that address, `Ptr.addr?_ofAddr`). -/
 theorem Ptr.convertible_ofAddr (x : BitVec 64) : (Ptr.ofAddr x).convertible = true := by
-  have hx := x.isLt
-  unfold Ptr.ofAddr; dsimp only
-  split
-  · simp only [Ptr.convertible, decide_eq_true_eq]; assumption
-  split
-  · simp only [Ptr.convertible, Bool.and_eq_true, decide_eq_true_eq, BitVec.toNat_ofNat]; omega
-  split
-  · simp only [Ptr.convertible, Bool.and_eq_true, decide_eq_true_eq, BitVec.toNat_ofNat]; omega
-  · rename_i hk
-    simp only [beq_iff_eq] at hk
-    simp only [Ptr.convertible, Bool.and_eq_true, decide_eq_true_eq, BitVec.toNat_ofNat]; omega
+  unfold Ptr.convertible
+  rw [Ptr.addr?_ofAddr]
+  exact beq_self_eq_true _
 
 /-- Adding nothing to an integer word keeps it. -/
 theorem PtrOps.wordRes_zero (x : BitVec 64) : PtrOps.wordRes x 0 = .int .w64 x := by
@@ -237,16 +102,23 @@ theorem PtrOps.wordRes_wordRes {x a b : BitVec 64} (h : ((Ptr.ofAddr x).add a).i
 
 /-! ## Pointer arithmetic on a pointer's word -/
 
-/-- Stepping a convertible pointer inside its window keeps it convertible. -/
-theorem Ptr.convertible_add {p : Ptr} {k : BitVec 64} (hc : p.convertible = true)
-    (hw : (p.add k).inWindow = true) : (p.add k).convertible = true := by
-  obtain ⟨b, off⟩ := p
-  cases b <;> simp_all [Ptr.convertible, Ptr.add, Ptr.inWindow, Blk.window?]
-
 theorem Ptr.addr?_add (p : Ptr) (k : BitVec 64) : (p.add k).addr? = p.addr?.map (· + k) := by
   obtain ⟨b, off⟩ := p
   simp only [Ptr.addr?, Ptr.add, Option.map_map]
   cases b.base? <;> simp [BitVec.add_assoc]
+
+/-- Stepping a convertible pointer inside its window keeps it convertible (`Addrs.decode_add`). -/
+theorem Ptr.convertible_add {p : Ptr} {k : BitVec 64} (hc : p.convertible = true)
+    (hw : (p.add k).inWindow = true) : (p.add k).convertible = true := by
+  cases ha : p.addr? with
+  | none => unfold Ptr.convertible at hc; rw [ha] at hc; cases hc
+  | some a =>
+    have he := Ptr.ofAddr_addr hc ha
+    have h2 : Ptr.ofAddr (a + k) = p.add k := by
+      rw [Ptr.ofAddr_add_of_inWindow (by rw [he]; exact hw), he]
+    unfold Ptr.convertible
+    rw [Ptr.addr?_add, ha]
+    simp [h2]
 
 /-- A convertible pointer stepped inside its window is the word of its address plus the step. -/
 theorem Ptr.word_add {p : Ptr} {k a : BitVec 64} (hc : p.convertible = true)
@@ -306,33 +178,6 @@ theorem Ptr.eq_iff (p q : Ptr) : p.eq q = true ↔ p = q := by
   obtain ⟨b, o⟩ := p; obtain ⟨b', o'⟩ := q
   simp [Ptr.eq]
 
-/-- The pointer `Ptr.ofAddr` gives at an address has that address. -/
-theorem Ptr.addr?_ofAddr (x : BitVec 64) : (Ptr.ofAddr x).addr? = some x := by
-  have hx := x.isLt
-  unfold Ptr.ofAddr
-  dsimp only
-  split
-  · simp [Ptr.addr?, Blk.base?]
-  · split
-    · rename_i h1 h2
-      simp only [Ptr.addr?, Blk.base?, Option.map_some, Option.some.injEq]
-      apply BitVec.eq_of_toNat_eq
-      rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
-      have : (x.toNat / 2 ^ 40 - 1 + 1) * 2 ^ 40 + x.toNat % 2 ^ 40 = x.toNat := by omega
-      omega
-    · rename_i h1 h2
-      split
-      · rename_i hk
-        simp only [beq_iff_eq] at hk
-        simp only [Ptr.addr?, Blk.base?, Option.map_some, Option.some.injEq]
-        apply BitVec.eq_of_toNat_eq
-        rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
-        omega
-      · simp only [Ptr.addr?, Blk.base?, Option.map_some, Option.some.injEq]
-        apply BitVec.eq_of_toNat_eq
-        rw [BitVec.toNat_add, BitVec.toNat_ofNat, BitVec.toNat_ofNat]
-        omega
-
 /-- **`Ptr.convertible` is exactly the round trip** (F2, #385): a pointer converts iff it has a
 concrete address and is the pointer `Ptr.ofAddr` gives back at it. So a pointer has a lowered
 register (`Arm64.ptrReg`) iff it converts. -/
@@ -347,15 +192,24 @@ theorem Ptr.convertible_iff (p : Ptr) :
   · rintro ⟨x, -, rfl⟩
     exact Ptr.convertible_ofAddr x
 
-/-- Inside its window, whether a pointer converts depends only on its block (`Ptr.convertible` is
-the block's encoding condition and the window). -/
+/-- Inside its window, whether a pointer converts depends only on its block (the window is a
+block's, and `Addrs.decode_add` steps inside it). -/
 theorem Ptr.convertible_eq_of_blk {p q : Ptr} (hb : q.blk = p.blk) (hp : p.inWindow = true)
     (hq : q.inWindow = true) : q.convertible = p.convertible := by
-  obtain ⟨b, o⟩ := p
-  obtain ⟨b', o'⟩ := q
-  simp only at hb
-  subst hb
-  cases b' <;> simp_all [Ptr.convertible, Ptr.inWindow, Blk.window?]
+  have step : ∀ {p q : Ptr}, q.blk = p.blk → q.inWindow = true → p.convertible = true →
+      q.convertible = true := fun {p q} hb hq hc => by
+    have hq' : q = p.add (q.off - p.off) := by
+      obtain ⟨b, o⟩ := p; obtain ⟨b', o'⟩ := q
+      simp only at hb; subst hb
+      simp only [Ptr.add, Ptr.mk.injEq, true_and]; bv_omega
+    rw [hq'] at hq ⊢
+    exact Ptr.convertible_add hc hq
+  cases hc : p.convertible with
+  | true => exact step hb hq hc
+  | false =>
+    cases hc' : q.convertible with
+    | false => rfl
+    | true => rw [step hb.symm hp hc'] at hc; cases hc
 
 /-- A pointer of a block whose pointers are held as pointers, inside its window, is held too
 (F1+F2, #385: not converting is a property of the block). -/

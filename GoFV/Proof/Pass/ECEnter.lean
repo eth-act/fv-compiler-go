@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.ECLoop
 import GoFV.Proof.Pass.ECTyped
 import GoFV.Proof.Pass.ECSlots
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Block entries of the conversion simulation (issue #28)
 

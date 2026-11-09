@@ -1,6 +1,8 @@
 import GoFV.Proof.ProveCheck.Den
 import GoFV.Proof.Pass.RewriteTermDen
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Components of composites, as prove's validator reads them (issue #24)
 

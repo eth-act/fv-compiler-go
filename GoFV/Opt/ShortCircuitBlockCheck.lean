@@ -2,6 +2,8 @@ import GoFV.Opt.ShortCircuitBlock
 import GoFV.Opt.Checked
 import GoFV.SSA.Sem.TyEq
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `shortcircuitBlock`, checked (issue #16)
 

@@ -1,6 +1,8 @@
 import GoFVTest.Parity.Registry
 import GoFV.Opt.VerifiedFull
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # The Lean pipeline
 

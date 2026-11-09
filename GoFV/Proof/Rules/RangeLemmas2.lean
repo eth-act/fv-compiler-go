@@ -1,5 +1,7 @@
 import GoFV.Proof.Rules.RangeLemmas
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The signed range-check identities with `c + 1`/`d + 1` (`generic.rules:325–328`, `349–352`)
 

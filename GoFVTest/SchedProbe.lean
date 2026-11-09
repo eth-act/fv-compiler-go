@@ -1,6 +1,8 @@
 import GoFV.SSA.Parse
 import GoFV.SSA.Sem.Run
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `sched-probe`: Kahn's schedules pass `schedValid`
 

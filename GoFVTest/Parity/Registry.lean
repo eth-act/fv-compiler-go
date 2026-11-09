@@ -42,6 +42,8 @@ import GoFV.Opt.LikelyAdjust
 import GoFV.Opt.Layout
 import GoFV.Opt.Regalloc
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Registered Lean passes
 

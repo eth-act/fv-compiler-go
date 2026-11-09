@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.FuseCmpSetup
 import GoFV.Proof.Pass.DeadRel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # fuseComparisons: block `b` in the target
 

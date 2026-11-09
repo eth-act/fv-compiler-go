@@ -1,6 +1,8 @@
 import GoFV.Proof.Low.SimDen
 import GoFV.Proof.CallMono
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Corresponding atoms evaluate to refinements (issue #385)
 

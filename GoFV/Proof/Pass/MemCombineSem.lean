@@ -2,6 +2,8 @@ import GoFV.Opt.MemCombine.Sym
 import GoFV.Proof.AtomSimDen
 import GoFV.Proof.MemRefine
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # memcombine: what a symbolic byte means (issue #35)
 

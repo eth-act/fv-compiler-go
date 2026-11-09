@@ -209,6 +209,7 @@ import GoFV.Proof.Obj.Basic
 import GoFV.Proof.Obj.Bitfield
 import GoFV.Proof.Obj.CallPanic
 import GoFV.Proof.Obj.EndToEnd
+import GoFV.Proof.Obj.EndToEndFixed
 import GoFV.Proof.Obj.Ex
 import GoFV.Proof.Obj.Frame
 import GoFV.Proof.Obj.G44

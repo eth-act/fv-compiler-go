@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G20
 import GoFV.Proof.Witness.GenG19
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G20 of the genssa validator on `runtime.NumCPU` (std/runtime)
 

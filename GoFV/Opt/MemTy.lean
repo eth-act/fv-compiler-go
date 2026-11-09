@@ -1,5 +1,7 @@
 import GoFV.SSA.Sem.Run
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Values whose shape may hold a memory (issues #36, #151)
 

@@ -5,6 +5,8 @@ import GoFV.Opt.DecomposeCheck
 import GoFV.Opt.TabsAgree
 import GoFV.Opt.Verified
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `decompose-probe`
 

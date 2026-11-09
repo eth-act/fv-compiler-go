@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.Rewrite
 import GoFV.Proof.Witness.AddZero
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: a phi elimination in the checked rewrite pass (hand-written, issue #69)
 

@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.DAEEnter
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dead auto elim: the simulation
 

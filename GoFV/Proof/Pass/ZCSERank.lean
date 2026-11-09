@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.ZCSESched
 import GoFV.Proof.Pass.CopyElimRank
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # zcse keeps the roots' order (#96)
 

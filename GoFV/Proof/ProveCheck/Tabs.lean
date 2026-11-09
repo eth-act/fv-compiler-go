@@ -1,6 +1,8 @@
 import GoFV.Opt.ProveCheck.Check
 import GoFV.Proof.Rules.OpVal
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The op tables of prove's validator, semantically (issue #24)
 

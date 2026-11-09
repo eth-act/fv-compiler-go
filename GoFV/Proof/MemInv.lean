@@ -7,6 +7,8 @@ import GoFV.Proof.Eval
 import GoFV.Proof.TabsAgreeModSrc
 import GoFV.Opt.WriteBarrierCheck
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Memory invariants of a source run (issues #36, #151)
 

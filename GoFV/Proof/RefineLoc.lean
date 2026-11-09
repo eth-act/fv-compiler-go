@@ -2,6 +2,8 @@ import GoFV.Proof.RefineL
 import GoFV.SSA.Sem.RunSched
 import GoFV.SSA.Sem.RunLoc
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Refinement over `runSched` and `runLoc` (L1, L2; `docs/plans/semantics2.md` §2)
 

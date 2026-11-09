@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.ZCSEFill
 import GoFV.Proof.Pass.CopyElimEnter
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # zcse: one block entry
 

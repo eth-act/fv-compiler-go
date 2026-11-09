@@ -1,5 +1,7 @@
 import GoFV.Opt.ProveCheck.Range
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # prove's validator: deciding comparisons under assumptions (issue #24)
 

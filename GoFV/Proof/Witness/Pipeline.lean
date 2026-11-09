@@ -3,6 +3,8 @@ import GoFV.Proof.Witness.DAE
 import GoFV.Proof.Witness.WriteBarrier
 import GoFV.Proof.Witness.TabsAgreeMod
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: the verified pipeline on `f0` of `test/stack`, with a global store
 

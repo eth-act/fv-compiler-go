@@ -1,6 +1,8 @@
 import GoFV.Proof.Witness.InitF10
 import GoFV.Opt.ExpandCallsCheck
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function: `sumOf[int]` of `examples/generics` at `expand calls`
 

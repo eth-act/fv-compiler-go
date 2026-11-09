@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.DAESim
 import GoFV.Proof.CheckFacts
 import GoFV.Proof.DomCert
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dead auto elim refines its input
 

@@ -1,6 +1,8 @@
 import GoFV.Opt.RewriteCheck
 import GoFV.SSA.Sem.TyEq
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Struct-store splits: the relation (issue #151)
 

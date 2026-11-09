@@ -2,6 +2,8 @@ import GoFV.Proof.Witness.StructStore
 import GoFV.Proof.Witness.Decompose
 import GoFV.Proof.Rules.DecStore
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for the decompose `Store` splits: `storeStr` (hand-written, issue #17)
 

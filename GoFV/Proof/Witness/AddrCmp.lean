@@ -1,6 +1,8 @@
 import GoFV.Proof.Witness.IMakeSM
 import GoFV.Proof.Rules.AddrCmp
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for a comparison of symbol addresses: `same` (hand-written, issue #69)
 

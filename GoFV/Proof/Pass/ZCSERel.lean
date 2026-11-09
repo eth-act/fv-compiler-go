@@ -1,6 +1,8 @@
 import GoFV.Opt.ZCSE
 import GoFV.Proof.WF
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # zcse's output relation
 

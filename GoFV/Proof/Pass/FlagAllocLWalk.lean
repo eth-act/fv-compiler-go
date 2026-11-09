@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.FlagAllocLEval
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # One block of a flagalloc rewrite under `runSched` (issue #385)
 

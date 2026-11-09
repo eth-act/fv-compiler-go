@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.InitF10
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function: `strconv.FormatBool` at `decompose builtin`
 

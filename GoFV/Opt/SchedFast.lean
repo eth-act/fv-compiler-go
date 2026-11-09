@@ -1,6 +1,8 @@
 import GoFV.SSA.Sem.Run
 import GoFV.Util.PdqSort
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # A checker-only block scheduler over compressed IDs (#147)
 

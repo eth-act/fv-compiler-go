@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G4
 import GoFV.Proof.Witness.GenG3
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G4 of the genssa validator on `(*errorString).Error`
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.DeadSim
 import GoFV.Proof.FrameL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Removing unreachable blocks and dead values in lowered code: what `runL` adds to `DeadRel`
 

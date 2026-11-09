@@ -1,6 +1,8 @@
 import GoFV.Gen.Check18
 import GoFV.Asm.Abi
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The genssa validator, slice G19: bounds panics (`docs/plans/proofs3.md` §4)
 

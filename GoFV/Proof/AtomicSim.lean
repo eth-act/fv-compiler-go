@@ -1,5 +1,7 @@
 import GoFV.Proof.Eval
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Atomic roots on related memories (`Sem/Atomic.lean`)
 

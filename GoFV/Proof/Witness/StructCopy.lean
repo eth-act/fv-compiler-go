@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.StructStore
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for a split `Store` of an expanded `Load`: `copyP` (hand-written, issue #151)
 

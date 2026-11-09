@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.CopyElimEnterL
 import GoFV.Proof.Pass.CopyElim
 import GoFV.Proof.Pass.DeadRelL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # copyelim refines its input on `runL`
 

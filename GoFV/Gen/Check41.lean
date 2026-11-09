@@ -1,5 +1,7 @@
 import GoFV.Gen.Check40
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The genssa validator, slice G41: `CMNconst`, `CMPshiftLL`, `CMPshiftRL` (`docs/plans/proofs3.md` §4)
 

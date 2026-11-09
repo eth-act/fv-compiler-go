@@ -2,6 +2,8 @@ import GoFV.Proof.Rules.Tactic
 import GoFV.Rules.Generated.Generic.Values06
 import GoFV.Rules.Generated.Generic.Values07
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: `Mul` rules
 

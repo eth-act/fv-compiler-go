@@ -1,6 +1,8 @@
 import GoFV.Proof.Low.ArmMonoFam
 import GoFV.Opt.LowerTerm
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The pure arm64 term ops are monotone, op by op (issue #385)
 

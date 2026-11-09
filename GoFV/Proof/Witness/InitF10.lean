@@ -2,6 +2,8 @@ import GoFV.Proof.Witness.Clamp
 import GoFV.SSA.Check
 import GoFV.Opt.DeadStoreCheck
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function: `f10` of `test/initialize` at `dse`
 

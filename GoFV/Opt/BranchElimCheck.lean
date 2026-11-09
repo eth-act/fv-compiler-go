@@ -2,6 +2,8 @@ import GoFV.Opt.SpecSafe
 import GoFV.Opt.Checked
 import GoFV.Opt.SchedFast
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # branchelim, checked: one rewrite at a time
 

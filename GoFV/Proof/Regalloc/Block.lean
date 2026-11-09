@@ -3,6 +3,8 @@ import GoFV.Proof.Low.SimBase
 import GoFV.Proof.Pass.DeadRelL
 import GoFV.Proof.Pass.TrimLoc
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Regalloc checker soundness, stage 4: blocks (`docs/plans/regalloc-check.md` §5)
 

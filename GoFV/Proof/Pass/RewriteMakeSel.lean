@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.RewriteTermReplay
 import GoFV.Proof.Rules.DecShape
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Replaying a selection of a `Make` (issue #17)
 

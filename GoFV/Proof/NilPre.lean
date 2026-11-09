@@ -2,6 +2,8 @@ import GoFV.Opt.NilCheckRel
 import GoFV.SSA.Sem.Runtime
 import GoFV.Proof.Pass.CSEMemBytes
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The checked rewrite passes' precondition on calls and arguments (issue #151)
 

@@ -2,6 +2,8 @@ import GoFV.Proof.Rules.AllSound
 import GoFV.Rules.Generated.Generic.Values03
 import GoFV.Rules.Generated.Dec.Values00
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: an `IMake` of a `StructMake` (issue #69)
 

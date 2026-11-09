@@ -5,6 +5,8 @@ import GoFV.Proof.AtomSimLoop
 import GoFV.Proof.AtomSimBlock
 import GoFV.Proof.Avail
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Decompose's phi splitting: one block entry (issue #17)
 

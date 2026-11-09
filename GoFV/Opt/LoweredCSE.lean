@@ -1,5 +1,7 @@
 import GoFV.Opt.CSE
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # lowered cse (`cse.go`)
 

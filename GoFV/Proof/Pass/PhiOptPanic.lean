@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.PhiOptBlock
 import GoFV.Proof.Pass.ZCSERank
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # phiopt: a block where the source panics
 

@@ -1,5 +1,7 @@
 import GoFV.SSA.Sem.Run
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Calls of `memclrNoHeapPointers` and `memmove` that a `Zero`/`Move` can replace (#151)
 

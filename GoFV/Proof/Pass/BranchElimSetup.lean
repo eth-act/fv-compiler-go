@@ -3,6 +3,8 @@ import GoFV.Proof.Enter
 import GoFV.Proof.Mixed
 import GoFV.Proof.SimIH
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # branchelim: the setting of one checked rewrite
 

@@ -2,6 +2,8 @@ import GoFV.Proof.Rules.Tactic
 import GoFV.Rules.Generated.Generic.Values13
 import GoFV.Rules.Generated.Generic.Values14
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Rule lemmas: `Xor` rules (part 3)
 

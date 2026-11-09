@@ -1,6 +1,8 @@
 import GoFV.Proof.Low.SimBase
 import GoFV.Proof.Low.AddrFold
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Registers as lowered terms over the atoms (issue #385)
 

@@ -1,5 +1,7 @@
 import GoFV.Proof.ProveCheck.Lin
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Deciding comparisons is sound (issue #24)
 

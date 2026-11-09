@@ -1,5 +1,7 @@
 import GoFV.Proof.RoImage
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Contracts keep the caller's frame (`Env.FrameKeep`, issue #28)
 

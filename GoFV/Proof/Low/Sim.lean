@@ -1,5 +1,7 @@
 import GoFV.Proof.Low.SimEnter
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The lowered atom simulation (issue #385)
 

@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.FwdCopy
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for dropped identity writes (issue #151)
 

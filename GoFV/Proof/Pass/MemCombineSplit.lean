@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.MemCombineSem
 import GoFV.Proof.AtomSimRef
 import GoFV.Proof.PtrAddr
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # memcombine: pointers taken apart (issue #35)
 

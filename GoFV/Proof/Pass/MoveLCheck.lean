@@ -1,6 +1,8 @@
 import GoFV.Proof.EvalL
 import GoFV.SSA.Sem.TyEq
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The fixed-CFG value-motion validator `moveB` (issue #385)
 

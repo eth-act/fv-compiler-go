@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.DAEPure
 import GoFV.Proof.Pass.DAEOps
 import GoFV.Proof.AtomicSim
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # dead auto elim: the memory roots on related memories
 

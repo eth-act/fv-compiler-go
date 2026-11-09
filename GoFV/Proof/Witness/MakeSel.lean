@@ -2,6 +2,8 @@ import GoFV.Proof.Witness.StructLoad
 import GoFV.Proof.Witness.DecodedLen
 import GoFV.Proof.Rules.DecMakeSel
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for selections of a variadic `Make`: `pick` (hand-written, issue #17)
 

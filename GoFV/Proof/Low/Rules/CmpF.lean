@@ -1,6 +1,8 @@
 import GoFV.Proof.Low.Rules.Cmp
 import GoFV.Proof.Rules.FloatCmp
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowering rule lemmas: float comparisons (`ARM64.rules:244-288`)
 

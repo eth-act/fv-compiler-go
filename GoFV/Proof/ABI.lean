@@ -1,5 +1,7 @@
 import GoFV.Proof.ABIBytes
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The ABI round trip of register-assigned values (#28)
 

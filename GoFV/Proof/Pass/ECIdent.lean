@@ -3,6 +3,8 @@ import GoFV.Proof.RunMono
 import GoFV.Proof.AtomSimOK
 import GoFV.Proof.Frame
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `expand calls`: unchanged, invalidated and new values (issue #28)
 

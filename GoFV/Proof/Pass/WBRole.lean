@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.WBLocal
 import GoFV.Proof.Pass.WBSpec
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # writebarrier: roles as propositions (issue #36)
 

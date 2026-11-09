@@ -5,6 +5,8 @@ import GoFV.Proof.PureMono
 import GoFV.Proof.Retype
 import GoFV.Proof.Eval
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Monotonicity of lowered terms and `Val.retypeL` (issue #385)
 

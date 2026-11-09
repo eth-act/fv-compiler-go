@@ -1,6 +1,8 @@
 import GoFV.Rules.Generated
 import GoFV.Proof.Rules.Names
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 `GoFV.Proof.Rules.helperNames` and `typNames` (the names with a `rule_helper` lemma) are
 exactly the function names the exported rules call and the `typ.<name>` fields they read.

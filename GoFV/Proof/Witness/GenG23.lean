@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G23
 import GoFV.Proof.Witness.GenG22
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G23 of the genssa validator on `bytes.shouldUseASCIISet`
 

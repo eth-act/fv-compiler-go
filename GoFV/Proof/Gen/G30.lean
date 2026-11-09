@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G29
 import GoFV.Proof.Gen.Spec30
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of the genssa validator's slice G30: pointer conversions in functions with no arm64
 op (`docs/plans/proofs3.md` §4)

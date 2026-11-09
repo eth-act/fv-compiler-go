@@ -1,5 +1,7 @@
 import GoFV.Proof.Witness.FwdMalloc
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witness function for writes into a `runtime.newobject` result (issue #69)
 

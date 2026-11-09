@@ -3,6 +3,8 @@ import GoFV.Proof.Pass.CSEBlock
 import GoFV.Proof.AvailL
 import GoFV.Proof.SimL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # lowered cse: one block's evaluation
 

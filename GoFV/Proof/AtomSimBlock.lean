@@ -1,5 +1,7 @@
 import GoFV.Proof.AtomSimLoop
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Block entries of the atom simulation (issue #113)
 

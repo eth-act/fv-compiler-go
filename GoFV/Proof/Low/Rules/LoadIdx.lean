@@ -1,6 +1,8 @@
 import GoFV.Proof.Low.Rules.Fold
 import GoFV.Proof.Low.Rules.Peep
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lowering rule lemmas: indexed loads (`ARM64.rules:695-746`, `750-753`)
 

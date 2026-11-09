@@ -36,6 +36,10 @@ namespace GoFV.Proof.Rules
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Rules
 
+section
+
+variable [GoFV.SSA.Sem.Addrs]
+
 /-- `e`, `or` instantiate `r`: every hypothesis of `Rule.Sound r` holds and the matched value
 is not `poison`. -/
 def Rule.Inst (r : Rule) (e : PEnv) (or : Oracle) : Prop :=
@@ -143,6 +147,12 @@ attribute [rule_eval] Rule.Inst Rule.res PEnv.ofLists Oracle.const Oracle.litFal
 /-- Evaluate `Rule.Inst`/`Rule.res` on a concrete rule and instance. -/
 macro "rule_eval" : tactic => `(tactic|
   simp (config := { decide := true }) only [rule_eval, rule_helper, rule_sem])
+
+end
+
+/-! The instances below are at the executables' address assignment (`Addrs.fixed`). -/
+
+open scoped GoFV.SSA.Sem.Fixed
 
 /-! ## A mutated rule is not sound -/
 
@@ -326,7 +336,7 @@ theorem inst_r_generic_964 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_96
   simp [GoFV.Rules.Generated.Generic.r_generic_964]
   rule_eval
   simp [PtrOps.offPtr, Val.retype, PtrOps.ptrRes, Ptr.add, Ptr.inWindow, Blk.window?, Ptr.word,
-    Ptr.convertible]
+    Ptr.convertible, Ptr.addr?]
 
 /-- `generic.rules:964` at a `uintptr`-typed `p` (the stack pointer `SP`; a word argument,
 `argShapeOk`) holding the integer word `4096`, `y = 16`, `x = 8`. -/
@@ -336,7 +346,7 @@ theorem inst_r_generic_964_i64 : Rule.Inst GoFV.Rules.Generated.Generic.r_generi
   simp [GoFV.Rules.Generated.Generic.r_generic_964]
   rule_eval
   simp [PtrOps.offPtr, Val.retype, PtrOps.wordRes, PtrOps.ptrRes, Ptr.add, Ptr.inWindow,
-    Blk.window?, Ptr.word, Ptr.convertible, Ptr.ofAddr]
+    Blk.window?, Ptr.word, Ptr.convertible, Ptr.ofAddr, Ptr.addr?, Ptr.fixedOfAddr]
 
 /-- `generic.rules:970`: `(PtrIndex <t> ptr idx) && config.PtrSize == 8 => (AddPtr ptr (Mul64
 <typ.Int> idx (Const64 <typ.Int> [t.Elem().Size()])))` at a global pointer, `idx = 3`, element
@@ -347,7 +357,7 @@ theorem inst_r_generic_970 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_97
   simp [GoFV.Rules.Generated.Generic.r_generic_970]
   rule_eval
   simp [PtrOps.ptrIndex, asOffset, PtrOps.ptrRes, Ptr.add, Ptr.inWindow, Blk.window?, Ptr.word,
-    Ptr.convertible]
+    Ptr.convertible, Ptr.addr?]
 
 /-- `generic.rules:126`: `(AddPtr <t> x (Const64 [c])) => (OffPtr <t> x [c])` at a global pointer,
 `c = 24`. -/
@@ -357,7 +367,7 @@ theorem inst_r_generic_126 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_12
   simp [GoFV.Rules.Generated.Generic.r_generic_126]
   rule_eval
   simp [PtrOps.addPtr, asOffset, PtrOps.ptrRes, Ptr.add, Ptr.inWindow, Blk.window?, Ptr.word,
-    Ptr.convertible]
+    Ptr.convertible, Ptr.addr?]
 
 /-- `generic.rules:1057`: `(ConstInterface) => (IMake (ConstNil <typ.Uintptr>) (ConstNil
 <typ.BytePtr>))` at the interface shape (`uintptr`, `*uint8`). -/

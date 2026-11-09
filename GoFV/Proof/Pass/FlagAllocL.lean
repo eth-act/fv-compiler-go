@@ -3,6 +3,8 @@ import GoFV.Proof.Pass.MoveL
 import GoFV.Proof.RefineSched
 import GoFV.Opt.FlagAlloc
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # flagalloc refines its input under `runSched` (`flagalloc_refinesSched`, issue #385)
 

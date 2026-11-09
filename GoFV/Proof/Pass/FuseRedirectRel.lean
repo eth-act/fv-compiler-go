@@ -1,6 +1,8 @@
 import GoFV.Opt.Fuse.BranchRedirectCheck
 import GoFV.Proof.Pass.FuseCmpRel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # fuseBranchRedirect: what the redirect checker establishes
 

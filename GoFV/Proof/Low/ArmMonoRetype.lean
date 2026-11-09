@@ -2,6 +2,8 @@ import GoFV.Proof.Low.RuleL
 import GoFV.Proof.ValRefine
 import GoFV.Proof.Retype
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `Val.widen` and `movAddr` are monotone (issue #385)
 

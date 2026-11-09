@@ -4,6 +4,8 @@ import GoFV.Opt.Decompose
 import GoFV.Opt.RewriteCheck
 import GoFV.Rules.Proven
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `dec-rewrite-probe`: the dec rules of "decompose builtin" and the rewrite validator (#17)
 

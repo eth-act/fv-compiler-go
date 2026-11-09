@@ -2,6 +2,8 @@ import GoFV.Proof.Pass.MoveL
 import GoFV.Proof.Pass.CriticalL
 import GoFV.Opt.Licm
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `loop invariant` refines its input on `runL` (issues #398, #385)
 

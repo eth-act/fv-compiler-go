@@ -1,6 +1,8 @@
 import GoFV.SSA.Sem.Pure
 import GoFV.SSA.Export
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The value of a term node: `evalPure`, or a table lookup (issue #151)
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.RunMono
 import GoFV.Proof.Eval
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Witnesses for the atomic roots (`Sem/Atomic.lean`, §9.5)
 

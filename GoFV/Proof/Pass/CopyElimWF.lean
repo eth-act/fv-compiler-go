@@ -1,5 +1,7 @@
 import GoFV.Proof.Pass.CopyElimLoop
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # copyelim's output is well-formed
 

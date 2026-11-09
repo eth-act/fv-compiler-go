@@ -2,6 +2,8 @@ import GoFV.Opt.Lower
 import GoFV.Opt.LowerCheck
 import GoFV.Proof.CongL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The checked `late lower` (`lateB`, issue #385)
 

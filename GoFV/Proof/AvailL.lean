@@ -1,6 +1,8 @@
 import GoFV.Proof.FrameL
 import GoFV.Proof.Avail
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Lemma (D) over `runL`: available values hold their re-evaluation
 

@@ -1,5 +1,7 @@
 import GoFV.Opt.Checked
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Soundness of the shared checker pieces (`GoFV.Opt.Checked`)
 -/

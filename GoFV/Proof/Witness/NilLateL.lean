@@ -1,6 +1,8 @@
 import GoFV.Proof.Pass.NilLateL
 import GoFV.Proof.Witness.DeadcodeL
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: late nilcheck under `runSched`
 

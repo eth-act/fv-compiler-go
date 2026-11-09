@@ -1,5 +1,7 @@
 import GoFV.Proof.Rules.DivisibleGen
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # `generic.rules:315–318` (Eq): comparison with a product by an odd constant (#69)
 

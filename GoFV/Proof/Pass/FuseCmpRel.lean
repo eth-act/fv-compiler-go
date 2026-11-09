@@ -3,6 +3,8 @@ import GoFV.Proof.Agree
 import GoFV.Proof.Checked
 import GoFV.Proof.Pass.FusePlainRel
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # fuseComparisons: what the step checker establishes
 

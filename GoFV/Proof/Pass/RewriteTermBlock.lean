@@ -3,6 +3,8 @@ import GoFV.Proof.Pass.RewriteAddrCmp
 import GoFV.Proof.TermStep
 import GoFV.Proof.Rules.Block
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Replaying block rules (issue #151)
 

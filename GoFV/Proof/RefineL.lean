@@ -1,6 +1,8 @@
 import GoFV.Proof.Refine
 import GoFV.SSA.Sem.RunL
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Refinement over `runL` (L0 → L0, `docs/plans/semantics2.md` §2)
 

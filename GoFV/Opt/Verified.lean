@@ -29,6 +29,8 @@ import GoFV.Opt.TabsAgree
 import GoFV.Proof.Pass.CopyFrag
 import GoFV.Proof.Pass.DeadFrag
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # The verified generic pipeline (issue #189)
 

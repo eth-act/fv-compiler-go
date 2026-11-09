@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G24
 import GoFV.Proof.Witness.GenG23
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Non-vacuity witness: slice G24 of the genssa validator on `SChan.Recv` of `test/closedchan`
 

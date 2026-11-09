@@ -7,6 +7,8 @@ import GoFV.SSA.Sem.Image
 import GoFV.SSA.Sem.Runtime
 import Std.Data.HashMap
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # `sem-difftest`: differential test of `GoFV.SSA.run` (issue #10)
 

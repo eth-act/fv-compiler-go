@@ -1,6 +1,8 @@
 import GoFV.Rules.Generated
 import GoFV.Proof.Rules.Den
 
+open scoped GoFV.SSA.Sem.Fixed
+
 /-!
 # Satisfying instances of the rule obligations (`docs/proofs/rules.md`, "Non-vacuity")
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.AtomSimStep
 import GoFV.Proof.TermStep
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Value sets of the atom simulation (issue #113)
 

@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G39
 import GoFV.Proof.Gen.Spec40
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Slice G40 of the genssa validator: `InitMem` after the entry values (`docs/plans/proofs3.md` §4)
 
