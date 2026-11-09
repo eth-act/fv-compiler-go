@@ -1163,6 +1163,29 @@ witnesses):
 Not assumed, by decision: disjointness of parameter slots from the other frame slots (the
 `not disjoint` class above stays open), and type-based aliasing (#111).
 
+**Limitation: run premise `FArithPre` excludes NaN-NaN operand cases** (Phase 3 G46 on,
+`GoFV/Proof/Gen/G46.lean`; #176). On these operands Phase 1's float semantics and the machine give
+different results, and the slices' value theorems (`g46_value` and later, so the end-to-end
+theorem) say nothing about a run that reaches one; Phase 1's semantics is unchanged for now
+(`GoFV/Proof/Gen/FArith.lean`, each pattern checked by `#eval`):
+
+- `FADD`/`FMUL` of two NaNs of one kind (`FNaNSwap`): Phase 1 orders the operands by encoding
+  (`FOps.ordered`), the machine takes `Rn, Rm`. `FADDS 0x7FC00001, 0x7FC00000`: Phase 1
+  `0x7FC00000`, machine `0x7FC00001`; `FMULD 0xFFF8000000000000, 0x7FF8000000000000`: Phase 1
+  `0x7FF8000000000000`, machine `0xFFF8000000000000`; `FADDD 0x7FF0000000000002,
+  0x7FF0000000000001`: Phase 1 `0x7FF8000000000001`, machine `0x7FF8000000000002`.
+- `FMADD`/`FNMSUB` whose multiplicands are NaNs of one kind (`FSameNaN`): Phase 1 computes
+  `FPMulAdd(±arg0, ±arg1, arg2)`, the machine on genssa's operands `FPMulAdd(±arg0, ±arg2, arg1)`.
+  `FMADDD 1.0, 0x7FF8000000000001, 0x7FF8000000000002`: Phase 1 `0x7FF8000000000001`, machine
+  `0x7FF8000000000002`.
+- `FMSUB`/`FNMADD` are not accepted at all (no slice proves them): Phase 1 negates the other
+  multiplicand, so a NaN result can carry the other sign. `FMSUBD 1.0, 0x7FF8000000000000, 2.0`:
+  Phase 1 `0xFFF8000000000000`, machine `0x7FF8000000000000`; `FNMADDS 1.0, 2.0, 0x7FC00000`:
+  Phase 1 `0x7FC00000`, machine `0xFFC00000`.
+
+Lifting it means making Phase 1's `FOps.ordered` and `Arm64.fmadd` operand order the hardware's,
+which Phase 2's `Contract` proofs (`fmadd`) depend on.
+
 Besides `VPre`, the theorems rest on the semantics itself (`GoFV.SSA.Sem`, its documented gaps in
 `docs/plans/semantics.md` §10) and on the exporter (`docs/contracts/export.md`). Axioms: `propext`,
 `Classical.choice`, `Quot.sound` and the `_native` axioms of `scripts/axioms-allowlist.txt`
