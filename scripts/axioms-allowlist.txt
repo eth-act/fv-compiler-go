@@ -83,11 +83,23 @@ GoFV.Proof.Witness.ObjG7.start_obj_facts._native.native_decide.ax_1_1 4733a435ca
 # machine-side facts of `pallocSum.start` (no `CALL (Rn)`), and `lcFacts` plus the returning run
 # of `runLoc` on p = 7 in plRunEnv; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.ObjWhole.obj_facts._native.native_decide.ax_1_1 67335114e2d2563421024fef3e0c1bfd72f14d144013fa86bbd31c7296d4e7fb
-GoFV.Proof.Witness.ObjWhole.start_facts._native.native_decide.ax_1_1 bd97ab2103802c61f2925e6cae038eed0c2b45f0992df02eeb1080a9f6bb7412
+GoFV.Proof.Witness.ObjWhole.start_facts._native.native_decide.ax_1_1 545e46f49fb4612d7b22d1953360a6c4dff360dd1ddd2e4e0dc2fe919a5e3d6e
 # verified_mach_witness (GoFV/Proof/Witness/ObjEndToEnd.lean, #553): `pallocSum.start` from its
 # generic SSA through the verified pipeline to genssa's Progs and the linked words; compiled
 # evaluation, as plF_pipeline.
-GoFV.Proof.Witness.ObjEndToEnd.e2e_facts._native.native_decide.ax_1_1 eac513a62a4792cf18b908388efcf4cc18f35d72f6777b7fd8493d9eff51414b
+GoFV.Proof.Witness.ObjEndToEnd.e2e_facts._native.native_decide.ax_1_1 5080ae291703d55ce26349207654cbc28fa34e37841929fe6ad8248123cf3743
+# objWholeNL_ret_witness (GoFV/Proof/Witness/ObjWholeNL.lean, #553): `checkObj`, `linkCode` and the
+# machine-side facts of `runtime.gclinkptr.ptr` (no arm64 op), and `lcFacts` plus the returning
+# run of `runLoc` in Phase 1's mode; compiled evaluation, as plF_pipeline.
+GoFV.Proof.Witness.ObjWholeNL.nl_obj_facts._native.native_decide.ax_1_1 85a5aa9cc4d373b755ed293b4e2e5d777ffeee6946ffdc0767a0a259904e7930
+GoFV.Proof.Witness.ObjWholeNL.nl_lc_facts._native.native_decide.ax_1_1 784da2871d2da3c9ebdc184dfb5b95614ddfc81941767c2431f7d614fc590872
+# objWhole_panic_witness, g30_callPanic_witness (GoFV/Proof/Witness/ObjPanic.lean, #553): `checkObj`,
+# `linkCode` and the machine-side facts of `(*A).g`, `lcFacts` with the nil check's panic from
+# `runLoc`'s first state on a nil receiver; `checkG30` on `fint64to32` and its call's panic in
+# `envP`; compiled evaluation, as plF_pipeline.
+GoFV.Proof.Witness.ObjPanic.panic_obj_facts._native.native_decide.ax_1_1 b73aef2e2f432e8a63f0e8348f7592acc99445f44674cd4a9dd2bafece91db37
+GoFV.Proof.Witness.ObjPanic.panic_lc_facts._native.native_decide.ax_1_1 2dc44f2361df5222cffb602557277d6e0a93a6213bd2876b4329ea5d90e25e89
+GoFV.Proof.Witness.ObjPanic.callPanic_facts._native.native_decide.ax_1_1 5966a8eb5828581c1d1c191ac4e9408d8eee324cab78311338c8b98a4e3fb981
 # genG13_value_witness (GoFV/Proof/Witness/GenG13.lean, #553): `checkG13` accepts
 # `runtime.(*pageBits).clearAll` and `checkG12` does not (parsed, `Env.load`, `genssa`), `runLoc`
 # runs the zeroing `LoweredZero [64]` to 64 zero bytes; compiled evaluation, as plF_pipeline.
