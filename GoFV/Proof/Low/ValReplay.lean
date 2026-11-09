@@ -2207,6 +2207,14 @@ theorem qArgs_last {α : Type} [Inhabited α] (a b : α) (l : List α) :
     (#[a] ++ l.toArray ++ #[b])[(#[a] ++ l.toArray ++ #[b]).size - 1]! = b := by
   rw [getElem!_pos _ _ (by simp)]; simp
 
+theorem qArgs_last' {α : Type} [Inhabited α] (a b : α) (l : List α) :
+    (#[a] ++ l.toArray ++ #[b])[l.length + 1]! = b := by
+  rw [getElem!_pos _ _ (by simp)]; simp
+
+theorem list_getElem!_mem {α : Type} [Inhabited α] {l : List α} {i : Nat} (h : i < l.length) :
+    l[i]! ∈ l := by
+  rw [getElem!_pos l i h]; exact List.getElem_mem h
+
 theorem qArgs_get {α : Type} [Inhabited α] (a b : α) (l : List α) {i : Nat}
     (hi : i < l.length) : (#[a] ++ l.toArray ++ #[b])[i + 1]! = l[i]! := by
   rw [getElem!_pos _ _ (by simp; omega), getElem!_pos l i hi]
@@ -2492,7 +2500,7 @@ theorem ReplayInvL.moveDef2 {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : ID
     rw [hget1 v fun s hs => (hf1 s hs).1]; exact hx
   -- the inner store's values
   obtain ⟨C2, hI2, hs2, hr2, hP2, hf2, hden2, hget2, hh2, hv2⟩ :=
-    hI1.qValsPut (K := 0) (by norm_num) hq2 hnd2
+    hI1.qValsPut (K := 0) (by omega) hq2 hnd2
   have hx2 : (ins.foldl (fun M s => M.put s.id s) (ons.foldl (fun M s => M.put s.id s) M)).get? v =
       some x := by
     rw [hget2 v fun s hs => (hf2 s hs).1]; exact hx1
@@ -2509,34 +2517,35 @@ theorem ReplayInvL.moveDef2 {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : ID
   have hx3 : ((ins.foldl (fun M s => M.put s.id s) (ons.foldl (fun M s => M.put s.id s) M)).put
       w.id w).get? v = some x := by
     rw [get?_put]; simp [hwv, Ne.symm hwv, hx2]
-  -- a value of the closed sets is one of `C` or a fresh one, if the `Move`'s source and memory are
-  -- in `C`
-  have hback : ∀ y, (C2 y ∨ (Q ∧ y = w.id)) → C y ∨ y = w.id ∨
-      ((C x.args[1]! ∧ C x.args[2]!) ∧ (y ∈ ons.map (·.id) ∨ y ∈ ins.map (·.id))) := by
-    intro y hy
-    rcases hy with hy | ⟨-, rfl⟩
-    · rcases hr2 y hy with hy | ⟨⟨h1, h2⟩, hm⟩
-      · rcases hr1 y hy with hy | ⟨hp, hm⟩
-        · exact .inl hy
-        · exact .inr (.inr ⟨hp, .inl hm⟩)
-      · have hp : C x.args[1]! ∧ C x.args[2]! := by
-          rcases hr1 _ h1 with h1 | ⟨hp, -⟩ <;> rcases hr1 _ h2 with h2 | ⟨hp', -⟩
-          · exact ⟨h1, h2⟩
-          all_goals assumption
-        exact .inr (.inr ⟨hp, .inr hm⟩)
-    · exact .inr (.inl rfl)
+  -- the closed sets gain the fresh values only if the `Move`'s source and memory are in `C`
+  let P : Prop := C x.args[1]! ∧ C x.args[2]!
+  have hPP : C1 x.args[1]! → C1 x.args[2]! → P := fun h1 h2 => by
+    rcases hr1 _ h1 with h1 | ⟨hp, -⟩ <;> rcases hr1 _ h2 with h2 | ⟨hp', -⟩
+    · exact ⟨h1, h2⟩
+    all_goals assumption
+  have hC3 : ∀ z, (C2 z ∨ (Q ∧ z = w.id)) → C z ∨ P := fun z hz => by
+    rcases hz with hz | ⟨hQ, -⟩
+    · rcases hr2 z hz with hz | ⟨⟨h1, h2⟩, -⟩
+      · exact (hr1 z hz).imp id (·.1)
+      · exact .inr (hPP h1 h2)
+    · exact .inr (hPP hQ.2.2.1 hQ.2.2.2)
+  have hPof : (C2 x.args[1]! ∨ (Q ∧ x.args[1]! = w.id)) →
+      (C2 x.args[2]! ∨ (Q ∧ x.args[2]! = w.id)) → P := fun h1 h2 => by
+    rcases hC3 _ h1 with h1 | h1 <;> rcases hC3 _ h2 with h2 | h2
+    · exact ⟨h1, h2⟩
+    all_goals assumption
   have hvC : (C2 v ∨ (Q ∧ v = w.id)) → C v := fun hv => by
-    rcases hback v hv with h | h | ⟨-, hm | hm⟩
-    · exact h
-    · exact absurd h.symm hwv
-    · obtain ⟨s, hs, he⟩ := List.mem_map.1 hm; exact absurd he (hf1 s hs).1
-    · obtain ⟨s, hs, he⟩ := List.mem_map.1 hm; exact absurd he (hf2 s hs).1
-  -- the source and memory of the `Move` are in `C` once a value of the closed sets reads them
-  have hPof : (C2 x.args[1]! ∨ (Q ∧ x.args[1]! = w.id)) → (C2 x.args[2]! ∨ (Q ∧ x.args[2]! = w.id)) →
-      C x.args[1]! ∧ C x.args[2]! := fun h1 h2 => by
-    rcases hback _ h1 with h1 | h1 | ⟨hp, -⟩ <;> rcases hback _ h2 with h2 | h2 | ⟨hp', -⟩
-    all_goals first | exact ⟨h1, h2⟩ | assumption | skip
-    all_goals sorry
+    rcases hv with hv | ⟨-, hv⟩
+    · rcases hr2 v hv with hv | ⟨-, hm⟩
+      · rcases hr1 v hv with hv | ⟨-, hm⟩
+        · exact hv
+        · obtain ⟨s, hs, he⟩ := List.mem_map.1 hm; exact absurd he (hf1 s hs).1
+      · obtain ⟨s, hs, he⟩ := List.mem_map.1 hm; exact absurd he (hf2 s hs).1
+    · exact absurd hv.symm hwv
+  have hQof : P → C2 x.args[0]! ∨ Q → Q := fun hp h0 => by
+    rcases h0 with h0 | hQ
+    · exact ⟨h0, hs2 _ (hs1 _ hp.2), hs1 _ hp.1, hs1 _ hp.2⟩
+    · exact hQ
   have hcl : (C2 v ∨ (Q ∧ v = w.id)) → ∀ a ∈ u.args, C2 a ∨ (Q ∧ a = w.id) := fun hv a ha => by
     have hxa := closed_args hI.closed hx (hvC hv)
     have h0 := hxa _ (argMem (show 0 < x.args.size by omega))
@@ -2548,7 +2557,103 @@ theorem ReplayInvL.moveDef2 {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : ID
     · exact .inl (hs2 _ (hs1 _ h0))
     · exact .inl (hs2 _ (hP1 ⟨h1, h2⟩ a ha))
     · exact .inr ⟨hQ, rfl⟩
-  sorry
+  have hvD : (D₀ v).isSome = true := by rw [hD, ha0]; rfl
+  -- denotations of `C` agree in `M` and after the fresh puts
+  have hw3 : ((ins.foldl (fun M s => M.put s.id s) (ons.foldl (fun M s => M.put s.id s) M)).put
+      w.id w).get? w.id = some w := by rw [get?_put]; simp
+  have hdenC : ∀ ρ n y, C y →
+      denL true ((ins.foldl (fun M s => M.put s.id s) (ons.foldl (fun M s => M.put s.id s) M)).put
+        w.id w).get? tabs ρ n y = denL true M.get? tabs ρ n y := fun ρ n y hy => by
+    rw [denL_put_fresh hwn hI2.closed n y (hs2 _ (hs1 _ hy)), hden2 ρ n y (hs1 _ hy),
+      hden1 ρ n y hy]
+  have hdenC1 : ∀ ρ n y, C1 y →
+      denL true ((ins.foldl (fun M s => M.put s.id s) (ons.foldl (fun M s => M.put s.id s) M)).put
+        w.id w).get? tabs ρ n y = denL true (ons.foldl (fun M s => M.put s.id s) M).get? tabs ρ n y :=
+    fun ρ n y hy => by
+      rw [denL_put_fresh hwn hI2.closed n y (hs2 _ hy), hden2 ρ n y hy]
+  have hdenC2 : ∀ ρ n y, C2 y →
+      denL true ((ins.foldl (fun M s => M.put s.id s) (ons.foldl (fun M s => M.put s.id s) M)).put
+        w.id w).get? tabs ρ n y =
+        denL true (ins.foldl (fun M s => M.put s.id s) (ons.foldl (fun M s => M.put s.id s) M)).get?
+          tabs ρ n y :=
+    fun ρ n y hy => denL_put_fresh hwn hI2.closed n y hy
+  have hosz : u.args.size = os.length + 2 := by rw [hua]; exact qArgs_size _ _ _
+  have hisz : w.args.size = is.length + 2 := by rw [hwa]; exact qArgs_size _ _ _
+  refine ⟨_, hI3.putMove hx3 hxt hut hty hcl hvD (fun a ha hrest => .inr ?_),
+    fun y hy => .inl (hs2 _ (hs1 _ hy)), fun ρ hρ hF n y hy => ?_⟩
+  · rw [hD, ha0] at ha; cases ha
+    obtain ⟨hsz, hr⟩ := move_argsRef ha0op hxop hrest
+    have ha3 : a0.args.size = 3 := by omega
+    have hP : P := hPof (hr 1 (by omega)).1 (hr 2 (by omega)).1
+    have hQ : Q := hQof hP ((hr 0 (by omega)).1.imp id (·.1))
+    have hr' := fun i hi => (hr i hi).2
+    have hq' : moveQ2Op a0.auxInt = some (oo, ko, oi, ki) := by rw [ha0k]; exact hq
+    have hko : u.args.size = ko := by
+      rw [hosz]
+      rcases hco with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> rcases hh1 with ⟨he, hl⟩ | ⟨he, hl⟩ <;>
+        first | omega | cases he
+    have hki : w.args.size = ki := by
+      rw [hisz]
+      rcases hci with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> rcases hh2 with ⟨he, hl⟩ | ⟨he, hl⟩ <;>
+        first | omega | cases he
+    have his1 : 1 ≤ is.length := by rcases hh2 with ⟨-, hl⟩ | ⟨-, hl⟩ <;> omega
+    have hfuel := move_srcMem ha3 hr'
+    refine ⟨?_, fun i hi => ?_, fun n => ?_, fun i hi n => ?_, w, ?_, ?_, hwt, ?_, ?_⟩
+    · unfold moveQ2Lower; simp [ha0op, ha3, hq', huo, hko]
+    · rw [hua]
+      rw [hosz] at hi
+      rcases Nat.lt_or_ge i 1 with h0 | h0
+      · obtain rfl : i = 0 := by omega
+        rw [qArgs_zero]; exact (hr 0 (by omega)).1
+      · rcases Nat.lt_or_ge i (os.length + 1) with h1 | h1
+        · obtain ⟨j, rfl⟩ : ∃ j, i = j + 1 := ⟨i - 1, by omega⟩
+          rw [qArgs_get _ _ _ (by omega)]
+          exact .inl (hs2 _ (hP1 hP _ (list_getElem!_mem (by omega))))
+        · obtain rfl : i = os.length + 1 := by omega
+          rw [qArgs_last']; exact .inr ⟨hQ, rfl⟩
+    · obtain ⟨m, hm⟩ := hr' 0 (by omega) n
+      refine ⟨m, fun ρ hρ hF => ?_⟩
+      rw [hua, qArgs_zero, hax, huk, ha0k]
+      exact addrRef_shiftW tabs (by omega) (hm ρ hρ hF)
+    · rw [hosz] at hi
+      obtain ⟨m, hm⟩ := hfuel n
+      obtain ⟨m', hm'⟩ := hv1 hP i (by omega) m
+      refine ⟨m', fun ρ hρ hF => ?_⟩
+      rw [hua, qArgs_get _ _ _ (by omega), hdenC1 ρ m' _ (hP1 hP _ (list_getElem!_mem
+        (by omega))), ha0k]
+      refine (qAt_mono _ (hm ρ hρ hF).1 (hm ρ hρ hF).2).trans ?_
+      rw [hdenC ρ m _ hP.1, hdenC ρ m _ hP.2]
+      exact hm' ρ
+    · have := qArgs_last x.args[0]! w.id os
+      rw [hua, this]; exact hw3
+    · have := qArgs_last x.args[0]! w.id os
+      rw [hua, this]; exact hwD
+    · unfold moveQ2In; simp [hq', hwo, hki]
+    · refine moveRefL_of ha0op ha3 hr' (by rw [hwo]; rcases hci with ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> rfl)
+        (by omega) (by rw [hwa, qArgs_zero]) (by rw [hwa, qArgs_last]) hwk hwx
+        (fun i hi => ?_) (fun i hi n => ?_)
+      · rw [hwa]
+        rw [hisz] at hi
+        rcases Nat.lt_or_ge i 1 with h0 | h0
+        · obtain rfl : i = 0 := by omega
+          rw [qArgs_zero]; exact (hr 0 (by omega)).1
+        · rcases Nat.lt_or_ge i (is.length + 1) with h1 | h1
+          · obtain ⟨j, rfl⟩ : ∃ j, i = j + 1 := ⟨i - 1, by omega⟩
+            rw [qArgs_get _ _ _ (by omega)]
+            exact .inl (hP2 ⟨hs1 _ hP.1, hs1 _ hP.2⟩ _ (list_getElem!_mem (by omega)))
+          · obtain rfl : i = is.length + 1 := by omega
+            rw [qArgs_last']; exact (hr 2 (by omega)).1
+      · rw [hisz] at hi
+        obtain ⟨m, hm⟩ := hfuel n
+        obtain ⟨m', hm'⟩ := hv2 ⟨hs1 _ hP.1, hs1 _ hP.2⟩ i (by omega) m
+        refine ⟨m', fun ρ hρ hF => ?_⟩
+        rw [hwa, qArgs_get _ _ _ (by omega), hdenC2 ρ m' _ (hP2 ⟨hs1 _ hP.1, hs1 _ hP.2⟩ _
+          (list_getElem!_mem (by omega))), qPart_eq_qAt]
+        refine (qAt_mono _ (hm ρ hρ hF).1 (hm ρ hρ hF).2).trans ?_
+        rw [hdenC ρ m _ hP.1, hdenC ρ m _ hP.2, ← hden1 ρ m _ hP.1, ← hden1 ρ m _ hP.2]
+        simpa using hm' ρ
+  · rw [rename_den hx3 hxt hut, hdenC ρ n y hy]
+    exact Sem.Refines.refl _
 
 /-- An integer load is a term. -/
 theorem termVL_ld {x : Value} {p : Nat × Bool} (hl : ldOp? x.op = some p) :
