@@ -6,8 +6,10 @@ import GoFV.Proof.Witness.LowerCopyPtr
 `neg(p *[2]int) int { q := &p[1]; return *(*int)(unsafe.Add(unsafe.Pointer(q), -8)) }` as `lower`
 sees it (one block: `v3 = OffPtr <*int> [8] v2`, `v4 = OffPtr <*int> [-8] v3`, `v5 = Load <int> v4
 v1`, returned by `v6 = MakeResult v5 v1`). The checked lower with the proven `ARM64.rules` fires
-`(OffPtr [off] ptr) => (ADDconst [off] ptr)` (306) twice and then `(ADDconst [c] y) && c < 0 =>
-(SUBconst [-c] y)` (1000): `v4` becomes `SUBconst [8] v3`. By `lower_refines` every returning or
+`(OffPtr [off] ptr) => (ADDconst [off] ptr)` (306) twice, folds the two offsets into `ADDconst [0]
+v2` (`(ADDconst [c] (ADDconst [d] x)) => (ADDconst [c+d] x)`, 1212: the pointer moved by 8 and
+back by 8 is the pointer), which `(ADDconst [0] x) => x` removes: `v5` becomes `MOVDload v2 v1`.
+(`(ADDconst [c] y) && c < 0 => (SUBconst [-c] y)`, 1000, is witnessed by `pkf_lower`.) By `lower_refines` every returning or
 panicking `run` of `neg` is, up to refinement, a `runL` of the result; on `ldo`'s heap block both
 return 0.
 -/
@@ -50,23 +52,23 @@ theorem neg_generic : negFunc.lowered = false := by decide +kernel
 /-- `neg` has no fused multiply-add shape: its contraction is itself. -/
 theorem neg_noFma : GoFV.Opt.FmaContract.contractAll negFunc = negFunc := by decide +kernel
 
-/-- By kernel evaluation: the checked lower keeps a lowered result whose `v4` is `SUBconst [8] v3`,
+/-- By kernel evaluation: the checked lower keeps a lowered result whose `v5` is `MOVDload v2 v1`,
 and `neg` returns 0 under `run` of the input and `runL` of the result (`cpy`'s tables). -/
 theorem neg_checks :
     (lowerChecked negPassEnv negFunc).toOption.map (fun o =>
-      ((o.func.value? 4).map (fun v => (v.op, v.auxInt, v.args)), o.func.lowered,
+      ((o.func.value? 5).map (fun v => (v.op, v.auxInt, v.args)), o.func.lowered,
         returnsInt (runL Env.p1 o.tables o.func ldsArgs ldoMem 1) 0)) =
-      some (some (.ARM64SUBconst, 8, #[3]), true, true) ∧
+      some (some (.ARM64MOVDload, 0, #[2, 1]), true, true) ∧
     returnsInt (run Env.p1 cpyTabs negFunc ldsArgs ldoMem 1) 0 = true := by
   decide +kernel
 
-/-- **Pass execution witness** for `lower_refines` (`lower_refines_run`) on `(ADDconst [c] y) && c <
-0 => (SUBconst [-c] y)`: on `neg`, the checked lower turns the `OffPtr [-8]` into `SUBconst [8] v3`,
+/-- **Pass execution witness** for `lower_refines` (`lower_refines_run`) on two offsets that cancel
+(`ARM64.rules:1212`): on `neg`, the checked lower loads at `v2` (`v5 = MOVDload v2 v1`),
 and every returning or panicking `run` of `neg` is, up to refinement, a `runL` of the result. -/
 theorem neg_lower :
     ∃ out, lowerChecked negPassEnv negFunc = .ok out ∧ out.func.lowered = true ∧
-      (out.func.value? 4).map (fun v => (v.op, v.auxInt, v.args)) =
-        some (.ARM64SUBconst, 8, #[3]) ∧
+      (out.func.value? 5).map (fun v => (v.op, v.auxInt, v.args)) =
+        some (.ARM64MOVDload, 0, #[2, 1]) ∧
       (∃ f', GoFV.Proof.Low.Contract negFunc f' ∧
         RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func negPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem fuel, (run env cpyTabs negFunc args mem fuel).Defined →
