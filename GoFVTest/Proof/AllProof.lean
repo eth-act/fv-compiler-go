@@ -39,6 +39,7 @@ import GoFV.Proof.FrameKeep
 import GoFV.Proof.FrameL
 import GoFV.Proof.Gen.Basic
 import GoFV.Proof.Gen.Branch
+import GoFV.Proof.Gen.FMove
 import GoFV.Proof.Gen.G1
 import GoFV.Proof.Gen.G10
 import GoFV.Proof.Gen.G11
@@ -77,6 +78,7 @@ import GoFV.Proof.Gen.G40
 import GoFV.Proof.Gen.G41
 import GoFV.Proof.Gen.G42
 import GoFV.Proof.Gen.G43
+import GoFV.Proof.Gen.G44
 import GoFV.Proof.Gen.G5
 import GoFV.Proof.Gen.G6
 import GoFV.Proof.Gen.G7
@@ -131,6 +133,7 @@ import GoFV.Proof.Gen.Spec40
 import GoFV.Proof.Gen.Spec41
 import GoFV.Proof.Gen.Spec42
 import GoFV.Proof.Gen.Spec43
+import GoFV.Proof.Gen.Spec44
 import GoFV.Proof.Gen.Spec5
 import GoFV.Proof.Gen.Spec6
 import GoFV.Proof.Gen.Spec7
@@ -880,6 +883,7 @@ import GoFV.Proof.Witness.GenG40
 import GoFV.Proof.Witness.GenG41
 import GoFV.Proof.Witness.GenG42
 import GoFV.Proof.Witness.GenG43
+import GoFV.Proof.Witness.GenG44
 import GoFV.Proof.Witness.GenG5
 import GoFV.Proof.Witness.GenG6
 import GoFV.Proof.Witness.GenG7
