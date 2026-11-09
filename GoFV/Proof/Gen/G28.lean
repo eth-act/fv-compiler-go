@@ -460,6 +460,59 @@ theorem g28_nilPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   | nil _ hsz2 _ _ hao hma =>
     exact g7_nilFault (H := H) F hm hinv.core (kread_of_reads hreads) hj hop hsz2 hao hma hvs hs
 
+/-- A bounds panic of G28's kinds is G19's (`vk19_boundsPanic`). -/
+theorem vk28_boundsPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In}
+    {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} {ps : Array Prog} {ret : BitVec 64}
+    {tab : PcTab} {E : MatchEnv} {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value}
+    {s : LocState} {m : MState} {e : Panic} {mm' : Mem} {K : KMap} {kd : VKind2} {row : List Nat}
+    (F : Facts lc sym text az ez ps.toList ret E)
+    (hsyms : ∀ y, (Link.byId sym text az ez ps.toList).sym y ≠ ret ∧
+      ∀ p ∈ ps.toList, (Link.byId sym text az ez ps.toList).addr p.id ≠
+        some ((Link.byId sym text az ez ps.toList).sym y))
+    (hpb : pbOK lc ps.toList tab = true) (hrow : tab.lookup bid = some row)
+    (hb : lc.ctx.f.block? bid = some blk) (hi : blk.values[i]? = some id)
+    (hv : lc.ctx.f.value? id = some v) (hVK : VK28 lc g v kd)
+    (hvs : VStep2 ps kd (row.getD i 0) (row.getD (i + 1) 0))
+    (hj : E.pcOf bid i = pcAt text ps.toList (row.getD i 0))
+    (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
+    (hop : pbOp v.op = true) (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s)
+    (hbok : BoundsOK H g (Link.byId sym text az ez ps.toList) ps.toList)
+    (hs : stepLoc env lc s v = .panic e mm') :
+    ∃ e' m', BoundsAgree e e' ∧ PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
+      PPanics H (Link.byId sym text az ez ps.toList) ps.toList ret m' e' := by
+  cases hVK with
+  | memEq h => rcases pbOp_cases hop with h' | h' | h' | h' <;> rw [h'] at h <;> cases h
+  | g27 _ hVK27 =>
+  cases hVK27 with
+  | logSh h => rcases pbOp_cases hop with h' | h' | h' | h' <;> rw [h'] at h <;> cases h
+  | g25 _ hVK25 =>
+  cases hVK25 with
+  | csel h => rcases pbOp_cases hop with h' | h' | h' | h' <;> rw [h'] at h <;> cases h
+  | csel0 h => rcases pbOp_cases hop with h' | h' | h' | h' <;> rw [h'] at h <;> cases h
+  | tst h => rcases pbOp_cases hop with h' | h' | h' | h' <;> rw [h'] at h <;> cases h
+  | tstw h => rcases pbOp_cases hop with h' | h' | h' | h' <;> rw [h'] at h <;> cases h
+  | g24 _ _ hVK24 =>
+    cases hVK24 with
+    | sp hsp => rcases pbOp_cases hop with h | h | h | h <;> rw [h] at hsp <;> cases hsp
+    | g23 _ hVK23 =>
+      cases hVK23 with
+      | cset hc =>
+        rcases pbOp_cases hop with h | h | h | h <;> rw [h] at hc <;> simp [Cond.ofOp] at hc
+      | g22 _ hVK22 =>
+        cases hVK22 with
+        | ldp hop' => rw [hop'] at hop; cases hop
+        | stp hop' => rw [hop'] at hop; cases hop
+        | g21 _ hVK21 =>
+          cases hVK21 with
+          | regSame hop' => rw [hop'] at hop; cases hop
+          | regMov hop' => rw [hop'] at hop; cases hop
+          | g20 _ hVK20 =>
+            cases hVK20 with
+            | nop hop' => rw [hop'] at hop; cases hop
+            | g19 _ hVK19 =>
+              exact vk19_boundsPanic F hsyms hpb hrow hb hi hv hVK19 hvs hj hreads hop hm hinv
+                hbok hs
+
 /-- **G28, bounds panics.** `g27_boundsPanic`'s statement over `checkG28`, under `G28Env` and
 `BoundsOK`. -/
 theorem g28_boundsPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
@@ -503,38 +556,7 @@ theorem g28_boundsPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Li
   have hreads := ((checkK_spec hk).2 bid hbid blk hb).1 i id v hi hv
   have F : Facts c.cx.lc sym text az ez c.cx.ps.toList ret E :=
     ⟨hl, clsReg_of_home10 hhome, hnd, hlt, hret, hA⟩
-  cases hVK with
-  | memEq h => rcases pbOp_cases hop with h' | h' | h' | h' <;> rw [h'] at h <;> cases h
-  | g27 _ hVK27 =>
-  cases hVK27 with
-  | logSh h => rcases pbOp_cases hop with h' | h' | h' | h' <;> rw [h'] at h <;> cases h
-  | g25 _ hVK25 =>
-  cases hVK25 with
-  | csel h => rcases pbOp_cases hop with h' | h' | h' | h' <;> rw [h'] at h <;> cases h
-  | csel0 h => rcases pbOp_cases hop with h' | h' | h' | h' <;> rw [h'] at h <;> cases h
-  | tst h => rcases pbOp_cases hop with h' | h' | h' | h' <;> rw [h'] at h <;> cases h
-  | tstw h => rcases pbOp_cases hop with h' | h' | h' | h' <;> rw [h'] at h <;> cases h
-  | g24 _ _ hVK24 =>
-    cases hVK24 with
-    | sp hsp => rcases pbOp_cases hop with h | h | h | h <;> rw [h] at hsp <;> cases hsp
-    | g23 _ hVK23 =>
-      cases hVK23 with
-      | cset hc =>
-        rcases pbOp_cases hop with h | h | h | h <;> rw [h] at hc <;> simp [Cond.ofOp] at hc
-      | g22 _ hVK22 =>
-        cases hVK22 with
-        | ldp hop' => rw [hop'] at hop; cases hop
-        | stp hop' => rw [hop'] at hop; cases hop
-        | g21 _ hVK21 =>
-          cases hVK21 with
-          | regSame hop' => rw [hop'] at hop; cases hop
-          | regMov hop' => rw [hop'] at hop; cases hop
-          | g20 _ hVK20 =>
-            cases hVK20 with
-            | nop hop' => rw [hop'] at hop; cases hop
-            | g19 _ hVK19 =>
-              exact vk19_boundsPanic F hsyms hpb hrow hb hi hv hVK19 hvs hj hreads hop hm hinv
-                hbok hs
+  exact vk28_boundsPanic F hsyms hpb hrow hb hi hv hVK hvs hj hreads hop hm hinv hbok hs
 
 /-- **G28, terminators.** `g27_term`'s statement over `checkG28`, under `G28Env`. -/
 theorem g28_term {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}

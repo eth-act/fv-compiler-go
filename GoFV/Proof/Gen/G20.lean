@@ -175,7 +175,7 @@ theorem objX?_dest {r : Nat} (hr : r < 26) : ∃ k, k < 31 ∧ objX? r = some (B
 
 /-- `MOVDnop x` (or `MOVDreg x`) homed in `x`'s register `r`: no code; `runLoc` writes the
 extension of `x` that `signOf` names, which is the machine register when the upper-bit table names
-`r` (`UOK`). -/
+`r` (`UOK`). The machine does not move. -/
 theorem g20_nop (F : Facts lc sym text az ez psA.toList ret E)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
@@ -187,7 +187,7 @@ theorem g20_nop (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : j' = j) (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s')
     (hu : UOK m (some (r, c, lc.signOf lc.ctx.f.valueTab.size x))) :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ m' = m := by
   have hl := F.lowered
   have hA := F.addr
   have hnp : v.op ≠ .Phi := by rcases hop with hop | hop <;> rw [hop] <;> nofun
@@ -215,7 +215,7 @@ theorem g20_nop (F : Facts lc sym text az ez psA.toList ret E)
   have hlm := locMatch_setReg_keep hm hobj hrel (b' := b) (i' := i + 1)
   rw [hj', hvs, ← hj, ← hm.pc] at hlm
   exact ⟨m, .refl, hlm,
-    (core_setReg hinv (fits_retypeL hcv _)).mono (knext_set hK hnp hvh hcv), hsi⟩
+    (core_setReg hinv (fits_retypeL hcv _)).mono (knext_set hK hnp hvh hcv), hsi, rfl⟩
 
 end Cases
 
@@ -487,6 +487,116 @@ theorem uEntry_spec {lc : LocCtx} {v : Value} {r c : Nat} {sg : Bool}
 
 /-! ## The theorems -/
 
+/-- A narrow load of G19's kinds with the upper-bit entry `(r, cc, sg)`: `vk19_step`'s conclusion
+under the same activation, the entry's `UOK` after it, and the one X register the load writes. -/
+theorem vk19_narrowW {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat → BitVec 64}
+    {text : BitVec 64} {az ez : Int} {ps : Array Prog} {ret : BitVec 64} {tab : PcTab}
+    {E : MatchEnv} {bid : ID} {i j j' : Nat} {v : Value} {s s' : LocState}
+    {m : MState} {K : KMap} {kd : VKind2} {r cc : Nat} {sg : Bool}
+    (hE : G10Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E)
+    (F : Facts lc sym text az ez ps.toList ret E) (hVK19 : VK19 lc g v kd)
+    (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
+    (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
+    (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
+    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s) (hpre : G14Pre lc s v)
+    (hs : stepLoc env lc s v = .ok s') (hue : uEntry lc v = some (r, cc, sg)) :
+    ∃ m', PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
+      LocMatch E s' bid (i + 1) m' ∧ G3Inv E lc (kStep lc K v) s' ∧ UOK m' (some (r, cc, sg)) ∧
+      ∃ (kd : Nat) (val : BitVec 64), objOf? r = some (GoFV.Asm.ARM64.REG_R0 + kd) ∧
+        m'.x = (m.wX (BitVec.ofNat 5 kd) val).x := by
+  obtain ⟨⟨⟨⟨-, -, -, -, -, hglob, -, -, -, -, -⟩, -⟩, -⟩, -⟩ := hE
+  obtain ⟨n, hnl, hvr, -, hcc, hnc⟩ := uEntry_spec hue
+  obtain ⟨hN, hld⟩ := narrowLd?_spec hnl
+  have hvh := regHome?_eq.1 hvr
+  have hobjr : ∀ (c0 kd : Nat) (rd : Int), resObj lc v = .ok (c0, rd) →
+      rd = GoFV.Asm.ARM64.REG_R0 + kd → objOf? r = some (GoFV.Asm.ARM64.REG_R0 + kd) := by
+    intro c0 kd rd hro hrd
+    obtain ⟨r0, hvh0, -, hor0, -⟩ := resObj_spec hro
+    rw [hvh] at hvh0
+    cases hvh0
+    rw [← hrd]
+    exact hor0
+  -- the machine register a narrow load wrote is the extension of its low bits
+  have huok : ∀ (m' : MState) (rd : Int) (c0 kd : Nat) (Y : BitVec (8 * n)), 1 ≤ n →
+      resObj lc v = .ok (c0, rd) → rd = GoFV.Asm.ARM64.REG_R0 + kd →
+      m'.x = (m.wX (BitVec.ofNat 5 kd)
+        (if sg then ProgOp.sextTo64 n (Y.setWidth 64) else Y.setWidth 64)).x →
+      UOK m' (some (r, cc, sg)) := by
+    intro m' rd c0 kd Y hn1 hro hrd hx' k hk hobj
+    obtain ⟨r0, hvh0, -, hor0, -⟩ := resObj_spec hro
+    rw [hvh] at hvh0
+    cases hvh0
+    obtain ⟨k0, hk0, hrd0, hk0'⟩ := objOf?_some hor0
+    rw [hrd] at hrd0
+    have hkk0 : kd = k0 := by omega
+    subst hkk0
+    rcases hk0' with ⟨hzr, -⟩ | ⟨-, hobj0⟩
+    · rw [hzr] at hobj; cases hobj
+    · rw [hobj] at hobj0
+      have hkk := ofNat5_inj (by omega) (by omega) (Option.some.inj hobj0)
+      subst hkk
+      rw [hx', wX_x_self hk]
+      exact extOK_load sg hn1 hnc (by omega) Y
+  have hvar : ∀ x off kd', FrameVarOK lc g v x off → VKVar lc v off kd' → False := by
+    intro x off kd' hf hvv
+    rcases hld with ⟨as, hl3, has, hax | hsb⟩ | ⟨as, sh, hl0, hli, has⟩
+    · rw [hf.aux] at hax; cases hax
+    · have hsp := hf.sp
+      unfold spArg at hsp
+      cases ha : v.args[0]? with
+      | none => rw [ha] at hsp; cases hsp
+      | some a =>
+        rw [ha] at hsp hsb
+        dsimp only at hsp
+        simp only [Option.bind_some] at hsb
+        rw [hsb] at hsp
+        exact absurd hsp (by decide)
+    · cases hvv with
+      | addr hop => exact idx_ne hli rfl hop
+      | load hop => rw [hl0] at hop; cases hop
+      | store hop => rw [idx_store hli] at hop; cases hop
+      | ldp hop => exact idx_ne hli rfl hop
+      | stp hop => exact idx_ne hli rfl hop
+  rcases hld with ⟨as, hl3, has, -⟩ | ⟨as, sh, hl0, hli, has⟩
+  · rcases vk19_narrow hVK19 hN hvar with h3 | ⟨_, _, _, _, _, _, _, _, hli, -⟩
+    · cases h3 with
+      | load hop _ hsz2 hacc hma hro hcw hpat =>
+        rw [hl3] at hop
+        cases hop
+        obtain ⟨m', h1, h2, h3, h4, kd, Y, hrd, hx'⟩ := g3_loadW (H := H) F
+          (fun y name abi h => hglob y name abi h) hm hinv.core hinv.slots
+          (kread_of_reads hreads) (knext_kStep fun _ => (hs_res hro).noRegs) hpre.1.1.1.1 hj hj'
+          hl3 hsz2 hacc hma hro hcw hpat hvs htemp hs
+        have hn1 : 1 ≤ n := by rcases (loadOp?_bytes hl3).1 with h | h | h | h <;> omega
+        exact ⟨m', h1, h2, ⟨h3, h4⟩, huok m' _ _ kd Y hn1 hro hrd hx', kd, _,
+          hobjr _ kd _ hro hrd, hx'⟩
+      | g2 hops =>
+        rcases hops with ⟨hl0, -⟩ | ⟨hmd | hms, -⟩
+        · rw [hl3] at hl0; cases hl0
+        · rw [hmd] at hl3; cases hl3; exact absurd rfl has
+        · exact absurd hms (hN.ne rfl rfl)
+      | store hop => rw [hN.store] at hop; cases hop
+      | sb hop => exact absurd hop (hN.ne rfl rfl)
+      | ext hop => rw [hN.ext] at hop; cases hop
+      | aluK hop =>
+        rcases hop with ⟨hop, -⟩ | ⟨hop, -⟩ | ⟨hop, -⟩ <;> exact absurd hop (hN.ne rfl rfl)
+      | ubfx hop => exact absurd hop (hN.ne rfl rfl)
+      | cmpw hop => exact absurd hop (hN.ne rfl rfl)
+      | cmpwK hop => exact absurd hop (hN.ne rfl rfl)
+    · rw [load_noIdx hl3] at hli; cases hli
+  · rcases vk19_narrow hVK19 hN hvar with h3 |
+      ⟨as', n', sh', sg', c', rn, ri, rd, hli', hsz3, hao, hio, hma, hro, hcw, rfl⟩
+    · exact (vk3_idx_false h3 hl0 hli).elim
+    · rw [hli] at hli'
+      cases hli'
+      obtain ⟨m', h1, h2, h3, h4, kd, Y, hrd, hx'⟩ := g14_idxW (H := H) F hm hinv.core
+        hinv.slots (kread_of_reads hreads) (knext_kStep fun _ => (hs_res hro).noRegs) hpre.2
+        hj hj' hli hsz3 hao hio hma hro hcw hvs htemp hs
+      have hn1 : 1 ≤ n := by
+        rcases (loadIdxOp?_facts hli).2.1 with h | h | h | h <;> omega
+      exact ⟨m', h1, h2, ⟨h3, h4⟩, huok m' _ _ kd Y hn1 hro hrd hx', kd, _,
+        hobjr _ kd _ hro hrd, hx'⟩
+
 /-- One value of G20's kinds: `vk19_step`'s statement, carrying the upper-bit invariant `UOK` from
 the table's entry for the argument of a `MOVDnop` or `MOVDreg` (`hu`) to the entry `uEntry` of the
 value. -/
@@ -526,7 +636,7 @@ theorem vk20_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
       rcases hcv with h | h | h | h <;> exact ⟨_, h, by omega⟩
     have hcc : c' = 8 ∨ c' = 16 ∨ c' = 32 := by
       rcases hcx with h | h | h <;> (rw [hc'] at h; cases h; simp)
-    obtain ⟨m', h1, h2, h3, h4⟩ := g20_nop (H := H) F hm hinv.core hinv.slots
+    obtain ⟨m', h1, h2, h3, h4, -⟩ := g20_nop (H := H) F hm hinv.core hinv.slots
       (kread_of_reads hreads) (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' (.inl hop) hsz hx
       hvh hd hz hxh hcv' hcv8 hc' hcc hvs htemp hs hu0
     have hne : uEntry lc v = none := by
@@ -541,89 +651,9 @@ theorem vk20_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
       exact ⟨E', m', h1, h2, h3, h4, h5, trivial⟩
     | some u =>
       obtain ⟨r, cc, sg⟩ := u
-      obtain ⟨n, hnl, hvr, -, hcc, hnc⟩ := uEntry_spec hue
-      obtain ⟨hN, hld⟩ := narrowLd?_spec hnl
-      have hvh := regHome?_eq.1 hvr
-      -- the machine register a narrow load wrote is the extension of its low bits
-      have huok : ∀ (m' : MState) (rd : Int) (c0 kd : Nat) (Y : BitVec (8 * n)), 1 ≤ n →
-          resObj lc v = .ok (c0, rd) → rd = GoFV.Asm.ARM64.REG_R0 + kd →
-          m'.x = (m.wX (BitVec.ofNat 5 kd)
-            (if sg then ProgOp.sextTo64 n (Y.setWidth 64) else Y.setWidth 64)).x →
-          UOK m' (some (r, cc, sg)) := by
-        intro m' rd c0 kd Y hn1 hro hrd hx' k hk hobj
-        obtain ⟨r0, hvh0, -, hor0, -⟩ := resObj_spec hro
-        rw [hvh] at hvh0
-        cases hvh0
-        obtain ⟨k0, hk0, hrd0, hk0'⟩ := objOf?_some hor0
-        rw [hrd] at hrd0
-        have hkk0 : kd = k0 := by omega
-        subst hkk0
-        rcases hk0' with ⟨hzr, -⟩ | ⟨-, hobj0⟩
-        · rw [hzr] at hobj; cases hobj
-        · rw [hobj] at hobj0
-          have hkk := ofNat5_inj (by omega) (by omega) (Option.some.inj hobj0)
-          subst hkk
-          rw [hx', wX_x_self hk]
-          exact extOK_load sg hn1 hnc (by omega) Y
-      have hvar : ∀ x off kd', FrameVarOK lc g v x off → VKVar lc v off kd' → False := by
-        intro x off kd' hf hvv
-        rcases hld with ⟨as, hl3, has, hax | hsb⟩ | ⟨as, sh, hl0, hli, has⟩
-        · rw [hf.aux] at hax; cases hax
-        · have hsp := hf.sp
-          unfold spArg at hsp
-          cases ha : v.args[0]? with
-          | none => rw [ha] at hsp; cases hsp
-          | some a =>
-            rw [ha] at hsp hsb
-            dsimp only at hsp
-            simp only [Option.bind_some] at hsb
-            rw [hsb] at hsp
-            exact absurd hsp (by decide)
-        · cases hvv with
-          | addr hop => exact idx_ne hli rfl hop
-          | load hop => rw [hl0] at hop; cases hop
-          | store hop => rw [idx_store hli] at hop; cases hop
-          | ldp hop => exact idx_ne hli rfl hop
-          | stp hop => exact idx_ne hli rfl hop
-      rcases hld with ⟨as, hl3, has, -⟩ | ⟨as, sh, hl0, hli, has⟩
-      · rcases vk19_narrow hVK19 hN hvar with h3 | ⟨_, _, _, _, _, _, _, _, hli, -⟩
-        · cases h3 with
-          | load hop _ hsz2 hacc hma hro hcw hpat =>
-            rw [hl3] at hop
-            cases hop
-            obtain ⟨m', h1, h2, h3, h4, kd, Y, hrd, hx'⟩ := g3_loadW (H := H) F
-              (fun y name abi h => hglob y name abi h) hm hinv.core hinv.slots
-              (kread_of_reads hreads) (knext_kStep fun _ => (hs_res hro).noRegs) hpre.1.1.1.1 hj hj'
-              hl3 hsz2 hacc hma hro hcw hpat hvs htemp hs
-            have hn1 : 1 ≤ n := by rcases (loadOp?_bytes hl3).1 with h | h | h | h <;> omega
-            exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE0, h1, h2, ⟨h3, h4⟩,
-              huok m' _ _ kd Y hn1 hro hrd hx'⟩
-          | g2 hops =>
-            rcases hops with ⟨hl0, -⟩ | ⟨hmd | hms, -⟩
-            · rw [hl3] at hl0; cases hl0
-            · rw [hmd] at hl3; cases hl3; exact absurd rfl has
-            · exact absurd hms (hN.ne rfl rfl)
-          | store hop => rw [hN.store] at hop; cases hop
-          | sb hop => exact absurd hop (hN.ne rfl rfl)
-          | ext hop => rw [hN.ext] at hop; cases hop
-          | aluK hop =>
-            rcases hop with ⟨hop, -⟩ | ⟨hop, -⟩ | ⟨hop, -⟩ <;> exact absurd hop (hN.ne rfl rfl)
-          | ubfx hop => exact absurd hop (hN.ne rfl rfl)
-          | cmpw hop => exact absurd hop (hN.ne rfl rfl)
-          | cmpwK hop => exact absurd hop (hN.ne rfl rfl)
-        · rw [load_noIdx hl3] at hli; cases hli
-      · rcases vk19_narrow hVK19 hN hvar with h3 |
-          ⟨as', n', sh', sg', c', rn, ri, rd, hli', hsz3, hao, hio, hma, hro, hcw, rfl⟩
-        · exact (vk3_idx_false h3 hl0 hli).elim
-        · rw [hli] at hli'
-          cases hli'
-          obtain ⟨m', h1, h2, h3, h4, kd, Y, hrd, hx'⟩ := g14_idxW (H := H) F hm hinv.core
-            hinv.slots (kread_of_reads hreads) (knext_kStep fun _ => (hs_res hro).noRegs) hpre.2
-            hj hj' hli hsz3 hao hio hma hro hcw hvs htemp hs
-          have hn1 : 1 ≤ n := by
-            rcases (loadIdxOp?_facts hli).2.1 with h | h | h | h <;> omega
-          exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE0, h1, h2, ⟨h3, h4⟩,
-            huok m' _ _ kd Y hn1 hro hrd hx'⟩
+      obtain ⟨m', h1, h2, h3, h4, -⟩ := vk19_narrowW hE0 F hVK19 hvs htemp hj hj' hreads hm hinv
+        hpre hs hue
+      exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE0, h1, h2, h3, h4⟩
 
 /-- **G20, values.** `g19_value`'s statement over `checkG20`, with the same premises, carrying the
 upper-bit invariant `UOK` of the table `uAt` from value `i` to value `i + 1`. -/

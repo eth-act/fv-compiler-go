@@ -703,6 +703,23 @@ runs the `CALL` (`progStep_callSym`) and the hook (`g28_memEq`); every other reg
 or one a call keeps (`clobber_memEq_reg`). G28 accepts 5,332 functions; 9 others blocked only by
 `LoweredMemEq` after G27 are now blocked by `MOVDnop/MOVDreg: upper bits unknown`.
 
+**Slice G29: the upper-bit table within a block** (`GoFV/Gen/Check29.lean`, `checkG29 lc ps
+bstart g`, returning G4's tables; proven sound, `g29_value`, `g29_term`, `g29_nilPanic`,
+`g29_boundsPanic`): G28 with a table of several entries in place of G20's `uAt`, which names only
+the previous value's load. The table `uL lc blk i` is a list of entries `(r, c, sg)` (Go register
+`r` is the zero or sign extension of its low `c` bits) built value by value (`uStepL`): a narrow
+load puts its `uEntry` in place of its register's entry, `MOVDnop` keeps the table, `MOVDreg x`
+copies the entry of `x`'s register to its own (`movdRegStep`), and every other value empties it.
+`movdOK29` asks that each `MOVDnop`/`MOVDreg` find its argument's entry in the list. The
+statements are G28's over `checkG29`, with the same premises, except that `g29_value` takes the
+invariant `UOKL m (uL lc blk i)` (every entry's `UOK`) in place of `UOK m (uAt lc blk i)` and
+concludes `UOKL m' (uL lc blk (i + 1))`; the table is empty at a block's entry, so the premise is
+trivial there. No new trusted premise. The proof (`G29.lean`): the table changes only across
+values that write at most one X register, a narrow load its own (`vk19_narrowW`), `MOVDnop` none
+(`g20_nop`, `m' = m`), `MOVDreg` a copy of another (`g21_mov`); the entries of the registers a
+value does not write stay true (`KeepsX`, `uokl_filter`). G29 accepts 5,361 functions; 46 still
+have `upper bits unknown` as their only reason and need the table across blocks.
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -715,9 +732,9 @@ reason in parentheses):
    717).
 3. **Other values**: the acquire loads `LDAR`/`LDARW` (383, 277); `STLR` (48 sole after G28),
    `CSINC` (28 sole), `InitMem` after the entry values (25 sole);
-   `MOVDnop` 750 (91) and `MOVDreg` (27 sole) are done in G20 and G21 but for those that do
-   not follow their load directly (220 `MOVDnop`s; 3 functions with no other blocker, and 13
-   with only `MOVDreg`), which need §8's register-frame lemmas. Bounds panics
+   `MOVDnop` 750 (91) and `MOVDreg` (27 sole) are done in G20, G21 and G29 but for those whose
+   load is in another block (46 functions with no other blocker), which need the table across
+   blocks (§8). Bounds panics
    (`LoweredPanicBoundsRR` 616 (68), `RC` 332 (46), `CR` 76 (33), `CC` 170 (22)) are done in G19
    but for #541's 2 functions.
 
@@ -756,6 +773,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G26 | 5,172 (55.63%) | 111,802 |
 | G27 | 5,261 (56.58%) | 117,659 |
 | G28 | 5,332 (57.35%) | 120,012 |
+| G29 | 5,361 (57.66%) | 121,036 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -888,7 +906,8 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `g14_idxW`.
 - `G20.lean`: `ExtOK`, `UOK`, `sext_bit`, `extOK_load`, `stepLoc_nop`, `lo_movd`, `g20_nop`,
   `NarrowOp`, `narrowLd?_spec`, `vk13_narrow`, `vk19_narrow`, `vk3_idx_false`, `uEntry_spec`,
-  `vk20_step`, `g20_value`, `vk20_nil`, `g20_nilPanic`, `g20_boundsPanic`, `g20_term`;
+  `vk19_narrowW`, `vk20_step`, `g20_value`, `vk20_nil`, `g20_nilPanic`, `g20_boundsPanic`,
+  `g20_term`;
   `G19.lean`: `vk19_boundsPanic`.
 - `Spec21.lean`: what `checkG21` accepted (`checkG21_spec`, `vkind21_spec` with `VK21`,
   `movRegKind_spec`).
@@ -930,7 +949,12 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
 - `G28.lean`: `MemEqSpec`, `MemEqOK`, `G28Env`, `memEq_clobbers`, `clobber_memEq`,
   `clobber_memEq_reg`, `clobber_memEq_slots`, `clobber_memEq_mem`, `evalOpL_memEq`, `fits_memEq`,
   `g28_memEq`, `G28Env.extend`, `narrowLd?_memEq`, `vk28_step`, `g28_value`, `vk28_nil`,
-  `g28_nilPanic`, `g28_boundsPanic`, `g28_term`.
+  `g28_nilPanic`, `vk28_boundsPanic`, `g28_boundsPanic`, `g28_term`.
+- `Spec29.lean`: what `checkG29` accepted (`uL_succ`, `movdOK29_spec`, `checkG28_of_29`,
+  `checkG29_spec`).
+- `G29.lean`: `UOKL`, `KeepsX`, `keepsX_wX`, `uokl_filter`, `find?_entry`, `uok_of_uokl`,
+  `uStepL_movdReg`, `uokl_movdReg`, `uStepL_other`, `vk28_vk21`, `vk21_stepL`, `vk29_step`,
+  `g29_value`, `g29_nilPanic`, `g29_boundsPanic`, `g29_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -1003,7 +1027,12 @@ machine's `X0` is 7), `GenG27.lean` (`regexp.newLazyFlag`, which G26 rejects: `g
 `R0` holds `0x100000002` and the machine's `X0` is `0x100000002`), `GenG28.lean`
 (`runtime.envKeyEqual`, which G27 rejects: `g28_value` on `CALL runtime.memequal(SB)` with two
 strings of 8 equal bytes in `heap 1`, under the hook `Hm` that implements `memequal` on the machine
-and satisfies `MemEqOK`, after which `runLoc`'s `R0` holds `true` and the machine's `X0` is 1).
+and satisfies `MemEqOK`, after which `runLoc`'s `R0` holds `true` and the machine's `X0` is 1),
+`GenG29.lean` (the generated equality `.eq.M1K1M2` of test/genmeth1, which G28 rejects:
+`g29_value` on `v33 = MOVDnop v31` in block `b5`, whose entry `(1, 16, false)` comes from the
+`MOVHU` load two values earlier, across `v21 = MOVDnop v26`; with `0xbeef` in `R1` and `X1`
+zero-extended from 16 bits, `runLoc`'s `R1` then holds the 32-bit `0xbeef` and the table after
+`v33` gives the whole `X1 = 0xbeef`).
 Each decides its inputs by compiled evaluation (`native_decide`, pinned in
 `scripts/axioms-allowlist.txt`).
 
@@ -1251,7 +1280,9 @@ freed more of the 220 `MOVDnop`s. After G23, 46 functions have `upper bits unkno
 reason; in 24 of them every such `MOVDnop`/`MOVDreg` follows its load in the same block with only
 narrow loads, `MOVDnop`s and `MOVDreg`s between (each writes at most its own register, which
 `g3_loadW`, `g14_idxW`, `g20_nop` and `op_reg2W` already state), so a table of several entries
-carried across just those values would take them; the other 22 need the cross-block table.
+carried across just those values would take them; the other 22 need the cross-block table. G29
+(§4) is that in-block table; it took 29 functions, and 46 still have `upper bits unknown` as
+their only reason.
 
 - **The obstacle.** `MOVDnop x` emits no code. `runLoc` gives it the full 64-bit register:
   `movdLoc` takes the zero or sign extension of `x`'s low bits, as `LocCtx.signOf` decides from

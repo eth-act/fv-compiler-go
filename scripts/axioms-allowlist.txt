@@ -157,6 +157,11 @@ GoFV.Proof.Witness.GenG27.g27_facts._native.native_decide.ax_1_1 700d30ab65e94ca
 # arguments `runLoc` reads is `true`, the machine bytes compare equal, and `runLoc` runs its
 # `LoweredMemEq` to `R0 = true`; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.GenG28.g28_facts._native.native_decide.ax_1_1 e1c134ac78540d3025dbdf3bcccfb49b450bfc02b3f236b94eb5106e4b56912d
+# genG29_value_witness (GoFV/Proof/Witness/GenG29.lean, #553): `checkG29` accepts `.eq.M1K1M2`
+# (test/genmeth1) and `checkG28` does not (parsed, `Env.load`, `genssa`), the upper-bit tables
+# `uAt` and `uL` before and after its `MOVDnop` `v33`, and `runLoc` runs `v33` to
+# `R1 = 0xbeef`; compiled evaluation, as plF_pipeline.
+GoFV.Proof.Witness.GenG29.g29_facts._native.native_decide.ax_1_1 4724448479a462baec8b613550ca837867f33d0f6c1cbe15669ea21c100ea055
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
