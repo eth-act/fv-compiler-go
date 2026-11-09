@@ -576,7 +576,8 @@ def symFcvt (σ : Sym) (sf : Bool) (ft rmode : BitVec 2) (opc : BitVec 3) (rn rd
     let e ← σ.vEx rn.toNat (.vlo ft rn.toNat)
     pure (σ.wX rd.toNat e)
   | 0, 7 =>
-    pure (σ.wV rd.toNat (if ft = 0 then .ofX 32 (σ.rX rn.toNat) else .ofX 64 (σ.rX rn.toNat)))
+    pure (σ.wV rd.toNat
+      (if ft = 0 then VEx.mkOfX 32 (σ.rX rn.toNat) else VEx.mkOfX 64 (σ.rX rn.toNat)))
   | 0, 2 => pure (σ.wV rd.toNat (.cvtf ft m false (σ.rX rn.toNat)))
   | 0, 3 => pure (σ.wV rd.toNat (.cvtf ft m true (σ.rX rn.toNat)))
   | 3, 0 => do
