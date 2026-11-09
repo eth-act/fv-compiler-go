@@ -922,6 +922,7 @@ import GoFV.Proof.Witness.ObjG7
 import GoFV.Proof.Witness.ObjOps
 import GoFV.Proof.Witness.ObjPanic
 import GoFV.Proof.Witness.ObjWhole
+import GoFV.Proof.Witness.ObjWholeNL
 import GoFV.Proof.Witness.PairL
 import GoFV.Proof.Witness.PhiConst
 import GoFV.Proof.Witness.PhiElim
