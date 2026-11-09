@@ -1145,6 +1145,18 @@ accepts 7,142 functions (+160 over G51). Composition (§9) is open: `EntryMatch`
 entry does not hold for a register parameter whose address is taken until genssa's entry store
 (item 8's `ParamMem`).
 
+**Slice G52: remainders** (`GoFV/Gen/Check52.lean`, `checkG52 lc ps bstart g`; proven sound,
+`g52_value`, `g52_initMem`, `g52_term`, `g52_nilPanic`, `g52_boundsPanic`,
+`GoFV/Proof/Gen/G52.lean`). G49 with one group of one-Prog values (`Check52b`/`Spec52b`/`G52b`,
+`vkind52b`, `VK52b`, `vk52b_step`) tried when G49 rejects a value: `MOD`, `UMOD` (`REM`/`UREM Rm,
+Rn, Rd` of two 64-bit arguments) and `MODW`, `UMODW` (`REMW`/`UREMW`, of arguments of at least 32
+bits), as G37's divides (`bin37Kind`). `runLoc` runs each as `Arm64.evalPure`: `srem`/`urem` on the
+registers, or on their low words zero-extended, which the machine's `REM`/`REMW` compute
+(`progStep_rem52b`); a register without an integer form gives `poison`, so no run premise
+(`g52_value` takes G51's `G51Pre`, under `G49Env`). The upper-bit table is empty after each.
+Witness `genG52_witness` (`test/ken_chan`'s `main.nrand`, `return randx % n`: `REM R0, R1, R0` of
+`-17` by `5`; `X0` then holds `-2`). G52 accepts 7,163 functions (+21 over G49).
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -1157,8 +1169,8 @@ reason in parentheses):
    sizes (`slot … frame operand, size or alignment`, 717).
 3. **Other values**: `LoweredGetCallerPC` (26; `runLoc` has no value for it, `Arm64.evalPure`'s
    `poison`, and `progEffect` no `GETCALLERPC`), `REV#W widths` (6: `REVW`/`REV16W` of narrow
-   arguments), `MOD` (6), `UMOD` (5); `CMN`, `CMNW`, `CMPshiftRA` are done in G51, the acquire
-   loads in G38, the homes of removed values in G39, `InitMem` in G40 and G43, `CMNconst`,
+   arguments); `MOD` (6) and `UMOD` (5) are done in G52, `CMN`, `CMNW`, `CMPshiftRA` in G51, the
+   acquire loads in G38, the homes of removed values in G39, `InitMem` in G40 and G43, `CMNconst`,
    `CMPshiftLL` and `CMPshiftRL` in G41, `ANDconst` widening a narrow argument in G42; `MOVDnop`
    750 (91) and
    `MOVDreg` (27 sole) are done in G20, G21, G29, G31, G34 and G35 but for 10 functions with no
@@ -1223,6 +1235,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G50 | 6,911 (74.33%) | 206,743 |
 | G51 | 6,982 (75.09%) | 212,374 |
 | G49 | 7,142 (76.82%) | 220,164 |
+| G52 | 7,163 (77.04%) | 221,257 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1551,6 +1564,13 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `g49_ldp`, `g49_stp`, `narrowLd?_var49`, `uStep35_nil`, `vk49_ops`, `vk49_step`, `vk49_nil`,
   `vk49_pb`, `g49L_value` … `g49L_term`, `g49_value`, `g49_initMem`, `g49_nilPanic`,
   `g49_boundsPanic`, `g49_term`.
+- `Spec52b.lean`: what `vkind52b` accepted (`VK52b`, `vkind52b_spec`, `vkind52b_none`,
+  `vk52b_op`); `Spec52.lean`: `VK52`, `vkind52_spec`, `vkind52_initMem`, `checkG33_of_52L`,
+  `checkG52L_spec`, `checkG52_spec`.
+- `G52b.lean`: `remF52b`, `rem52b?_some`, `stepLoc_rem52b`, `progStep_rem52b`, `lo_rem52b`,
+  `g52b_rem`, `vk52b_step`; `G52.lean`:
+  `vk52_step`, `vk52_nil`, `vk52_pb`, `g52L_value` … `g52L_term`, `g52_value`, `g52_initMem`,
+  `g52_nilPanic`, `g52_boundsPanic`, `g52_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
