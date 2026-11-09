@@ -1100,6 +1100,28 @@ pointer (`FLoadPre`'s condition, a pointer has no V register form). Witness `gen
 (`runtime.c128equal`: `FLDPD (R0), (F0, F1)` of `1.5 + 2.5i`; `V0` and `V1` then hold `1.5`'s and
 `2.5`'s bits). G50 accepts 6,911 functions (+55 over G47).
 
+**Slice G51: cheap single-instruction ops** (`GoFV/Gen/Check51.lean`, `checkG51 lc ps bstart g`;
+proven sound, `g51_value`, `g51_initMem`, `g51_term`, `g51_nilPanic`, `g51_boundsPanic`,
+`GoFV/Proof/Gen/G51.lean`). G50 with three groups of one-Prog values, each a module triple
+(`Check51X`/`Spec51X`/`G51X`, `vkind51X`, `VK51X`, `vk51X_step`) tried when G50 rejects a value:
+
+* (a) flags and conditional ops: `CSNEG` (as G32's `CSINC`), `TSTW` and `CMNW` (arguments of
+  class at least 32), `CMN` and `CMPshiftRA` (64-bit arguments, as G41's compares);
+* (b) ALU ops: `MVNshiftLL`/`RL`/`RA` (as G27's shifted operand with G32's `MVN`), `SBFIZ` (as
+  G33's `UBFIZ`), `RORconst`, `RORWconst`, `ROR`, `RORW` (64-bit, or the low 32 bits, rotated);
+* (c) boolean operands: `ADD`, `SUB`, `ADDconst`, `SUBconst`, `ADDshiftLL` and the shifted adds,
+  subtracts and logic ops with an argument of class 1, which the earlier slices reject by its width
+  (`arithmetic widths`, `shifted logic widths`): a boolean is 0 or 1 in the whole register
+  (`ValRel`), so its register agrees with Phase 1's on all 64 bits (`reg_full51c`).
+
+The kept ops of (c) keep the upper-bit table as before (`uokl_keep`); after the others it is empty.
+New run premise `Pre51a` (`G51Pre := G50Pre ∧ Pre51a`): the first argument of a `CMN` or
+`CMPshiftRA`, and the second of a `CMN`, is no pointer without an integer form (Phase 1's
+`cmpP`/`cmpSh` give `Z` clear there, as for G41's `CmpPre`). `MVNshiftRO` stays outside (G27's
+`shiftA` has no `ROR` kind). Witness `genG51_witness` (`math/bits.RotateLeft64`: `ROR R1, R0, R0`
+of `0x0123456789abcdef` by 8; `X0` then holds `0xef0123456789abcd`). G51 accepts 6,982 functions
+(+71 over G50).
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -1110,10 +1132,12 @@ reason in parentheses):
    integer (`frame variable with an integer address`, 197 (50)): option 2 of semantics3 §4.3
    (addresses as a parameter of the semantics); slots of other sizes (`slot … frame operand, size
    or alignment`, 717).
-3. **Other values**: `LoweredGetCallerPC` (26), `REV#W widths` (6: `REVW`/`REV16W` of narrow
-   arguments), `CMN` (5), `CMPshiftRA` (3), `CMNW` (2); the acquire loads are done in G38, the
-   homes of removed values in G39, `InitMem` in G40 and G43, `CMNconst`, `CMPshiftLL` and
-   `CMPshiftRL` in G41, `ANDconst` widening a narrow argument in G42; `MOVDnop` 750 (91) and
+3. **Other values**: `LoweredGetCallerPC` (26; `runLoc` has no value for it, `Arm64.evalPure`'s
+   `poison`, and `progEffect` no `GETCALLERPC`), `REV#W widths` (6: `REVW`/`REV16W` of narrow
+   arguments), `MOD` (6), `UMOD` (5); `CMN`, `CMNW`, `CMPshiftRA` are done in G51, the acquire
+   loads in G38, the homes of removed values in G39, `InitMem` in G40 and G43, `CMNconst`,
+   `CMPshiftLL` and `CMPshiftRL` in G41, `ANDconst` widening a narrow argument in G42; `MOVDnop`
+   750 (91) and
    `MOVDreg` (27 sole) are done in G20, G21, G29, G31, G34 and G35 but for 10 functions with no
    other blocker after G43, whose tables need stores, `Convert` or `Copy` to keep or copy their
    entries (§4, G35). Bounds panics (`LoweredPanicBoundsRR` 616 (68), `RC` 332 (46), `CR` 76
@@ -1174,6 +1198,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G46 | 6,775 (72.87%) | 202,352 |
 | G47 | 6,856 (73.74%) | 204,468 |
 | G50 | 6,911 (74.33%) | 206,743 |
+| G51 | 6,982 (75.09%) | 212,374 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1485,6 +1510,15 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `loadPair_tupleN`, `g50_ldpX`, `g50_ldpF`, `g50_selF`, `uStep35_pair50`, `uStep35_sel50`,
   `vk50_ops`, `vk50_step`, `vk50_nil`, `vk50_pb`, `g50L_value` … `g50L_term`, `g50_value`,
   `g50_initMem`, `g50_nilPanic`, `g50_boundsPanic`, `g50_term`.
+- `Spec51a.lean`, `Spec51b.lean`, `Spec51c.lean`: what each group of `checkG51` accepted (`VK51a`,
+  `VK51b`, `VK51c`; `vkind51X_spec`, `vkind51X_none`, `vk51X_op`); `Spec51.lean`: `VK51`,
+  `vkind51_spec`, `vkind51_initMem`, `checkG33_of_51L`, `checkG51L_spec`, `checkG51_spec`.
+- `G51a.lean`: `Pre51a`, `progStep_csneg`, `progStep_cmnReg`, `progStep_cmnwReg`,
+  `progStep_tstwReg`, `vk51a_step`; `G51b.lean`: `progStep_mvnSh51b`, `progStep_sbfiz51b`,
+  `progStep_rorK51b`, `progStep_ror51b`, `vk51b_step`; `G51c.lean`: `reg_full51c`, `lo_add51c` …,
+  `vk51c_step`.
+- `G51.lean`: `G51Pre`, `vk51_step`, `vk51_nil`, `vk51_pb`, `g51L_value` … `g51L_term`,
+  `g51_value`, `g51_initMem`, `g51_nilPanic`, `g51_boundsPanic`, `g51_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a

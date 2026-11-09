@@ -286,6 +286,11 @@ GoFV.Proof.Witness.GenG47.g47_facts._native.native_decide.ax_1_1 e1730f780b7af49
 # `F0 = 1.5`, `F1 = 2.5`'s bits; compiled evaluation.
 GoFV.Proof.Witness.GenG50.g50_facts._native.native_decide.ax_1_1 c3e46b92e5deca2c6cae27dbd5a7e264130e6df779edabbd4ff45dde9a9683dd
 
+# genG51_witness (GoFV/Proof/Witness/GenG51.lean, #553): `checkG51` accepts
+# `math/bits.RotateLeft64` and `checkG50` does not (`ROR R1, R0, R0` `v17`); `runLoc` runs `v17`
+# on `0x0123456789abcdef` rotated right by 8; compiled evaluation.
+GoFV.Proof.Witness.GenG51.g51_facts._native.native_decide.ax_1_1 28375fe97cf6addb12f5725209c2d1b3ebc2303b641fd448e9ff57c0a662d891
+
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
 # test code only: the parity runner's pointer-equality fast path (GoFVTest/Parity/Compare.lean).
