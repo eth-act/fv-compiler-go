@@ -975,6 +975,24 @@ class. The op writes only its register, so G35's table keeps the other entries (
 6,609 functions (+39 over G41; every `shift or mask widths` sole blocker after G41 was such an
 `ANDconst`, and one of their 40 functions is now blocked only by G35's upper-bit check).
 
+**Slice G43: `InitMem` where the memory is still the initial one** (`GoFV/Gen/Check43.lean`,
+`checkG43 lc ps bstart g`, returning G4's tables; proven sound, `g43_value`, `g43_initMem`,
+`g43_term`, `g43_nilPanic`, `g43_boundsPanic`): G42 with `InitMem` at clean positions also in a
+function that calls or stores. The clean blocks `C` (`cleanBlocks`) are those that no block with a
+value that changes the memory (`memKeep` false) reaches in one step or more; the check asks that
+`C` be closed backwards (`cleanOK`: a block with a successor in `C` is in `C` and all its values
+keep the memory), and that every position `(b, i)` of the `InitMem` be clean (`cleanAt`: `b ∈ C`,
+the values of `b` before `i` keep the memory; `initMemClean`). In a function whose values all keep
+the memory every position is clean, so G43 contains G40's case. At a clean position the state
+holds the activation's initial memory (`MemInit`): the run starts with it, a value that keeps the
+memory keeps it (`memInit_stepLoc_keep`), a step to the next clean position keeps the implication
+`cleanAt → MemInit` (`memInit_clean_step`, `cleanAt_succ`), and a terminator to a block of `C`
+leaves a block whose end is clean (`cleanOK_edge`, `memInit_clean_term`). So `InitMem` changes
+nothing there (`g43_initMem`: G41's statement without `memPure`, under `MemInit`, which the run
+discharges with these lemmas). In the 13 functions G40 left, the stores and calls sit after the
+`InitMem` in its block, in blocks reached only through it, or in blocks that end in a panic.
+G43 accepts 6,622 functions (+13 over G42).
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -985,13 +1003,12 @@ reason in parentheses):
    integer (`frame variable with an integer address`, 197 (50)): option 2 of semantics3 §4.3
    (addresses as a parameter of the semantics); slots of other sizes (`slot … frame operand, size
    or alignment`, 717).
-3. **Other values**: `InitMem` after the entry values in functions that write memory (13 sole after
-   G42), `LoweredGetCallerPC` (26), `REV#W widths` (6: `REVW`/`REV16W` of narrow arguments), `CMN`
-   (5), `CMPshiftRA` (3), `CMNW` (2); the acquire loads are done in G38, the homes of removed
-   values in G39, `InitMem` in functions that keep the memory in G40, `CMNconst`, `CMPshiftLL` and
+3. **Other values**: `LoweredGetCallerPC` (26), `REV#W widths` (6: `REVW`/`REV16W` of narrow
+   arguments), `CMN` (5), `CMPshiftRA` (3), `CMNW` (2); the acquire loads are done in G38, the
+   homes of removed values in G39, `InitMem` in G40 and G43, `CMNconst`, `CMPshiftLL` and
    `CMPshiftRL` in G41, `ANDconst` widening a narrow argument in G42; `MOVDnop` 750 (91) and
    `MOVDreg` (27 sole) are done in G20, G21, G29, G31, G34 and G35 but for 10 functions with no
-   other blocker after G42, whose tables need stores, `Convert` or `Copy` to keep or copy their
+   other blocker after G43, whose tables need stores, `Convert` or `Copy` to keep or copy their
    entries (§4, G35). Bounds panics (`LoweredPanicBoundsRR` 616 (68), `RC` 332 (46), `CR` 76
    (33), `CC` 170 (22)) are done in G19 but for #541's 2 functions.
 
@@ -1044,6 +1061,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G40 | 6,472 (69.61%) | 182,705 |
 | G41 | 6,570 (70.66%) | 192,225 |
 | G42 | 6,609 (71.08%) | 194,759 |
+| G43 | 6,622 (71.22%) | 195,711 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1305,6 +1323,12 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
 - `G42.lean`: `imm_bit_false`, `lo_andW`, `valRel_andW`, `g42_andW`, `uStep35_andK`, `vk42_step`,
   `vk42_nil`, `vk42_pb`, `g42L_value`, `g42L_initMem`, `g42L_nilPanic`, `g42L_boundsPanic`,
   `g42L_term`, `g42_value`, `g42_initMem`, `g42_nilPanic`, `g42_boundsPanic`, `g42_term`.
+- `Spec43.lean`: what `checkG43` accepted (`keepsTo_succ`, `cleanAt_succ`, `initMemClean_spec`,
+  `cleanOK_edge`, `vkind43_spec`, `vkind43_initMem`, `checkG33_of_43L`, `checkG43L_spec`,
+  `checkG43_spec`).
+- `G43.lean`: `memInit_stepLoc_keep`, `cleanAt_zero`, `memInit_clean_step`, `memInit_clean_term`,
+  `g43L_value`, `g43L_initMem`, `g43L_nilPanic`, `g43L_boundsPanic`, `g43L_term`, `g43_value`,
+  `g43_initMem`, `g43_nilPanic`, `g43_boundsPanic`, `g43_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -1432,7 +1456,11 @@ whose `CMN $1, R0` (`v5`, `CMNconst`) G40 rejects: `CmpPre` holds for `gen = -1`
 `g41_value` runs `v5` to flags with `Z` set, after which the machine's `Z` is set), `GenG42.lean`
 (`unicode/utf8.RuneStart`, whose `AND $192, R0, R1` (`v4`, `ANDconst` of the byte `b` at type
 `uint32`) G41 rejects: from `b = 0xc5` with ones above the low byte of `X0`, `g42_value` runs `v4`
-to `R1 = 0xc0`, after which the low 32 bits of the machine's `X1` are `0xc0`).
+to `R1 = 0xc0`, after which the low 32 bits of the machine's `X1` are `0xc0`), `GenG43.lean`
+(`runtime.(*debugLogWriter).varint`, whose `InitMem` `v1` sits in the return block `b2` before a
+call, which G42 rejects: `b2` is clean and `(b2, 1)` a clean position, `stepLoc` runs `v1` from a
+state holding the initial memory to one holding it at the clean `(b2, 2)` (`memInit_clean_step`),
+and `g43_initMem` relates it to the machine after no code).
 Each decides its inputs by compiled evaluation (`native_decide`, pinned in
 `scripts/axioms-allowlist.txt`).
 

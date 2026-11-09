@@ -251,6 +251,11 @@ GoFV.Proof.Witness.GenG41.g41_facts._native.native_decide.ax_1_1 877dd0a82cfe355
 # `unicode/utf8.RuneStart` and `checkG41` does not (`ANDconst [192]` `v4` of a byte at type
 # `uint32`); `runLoc` runs `v4` to `R1 = 0xc0`; compiled evaluation.
 GoFV.Proof.Witness.GenG42.g42_facts._native.native_decide.ax_1_1 b0e1dfcd2fbecec468813dc69ab5ea943360d564f700c22ce76d3cb8f14cb8a6
+# genG43_witness (GoFV/Proof/Witness/GenG43.lean, #553): `checkG43` accepts
+# `runtime.(*debugLogWriter).varint` and `checkG42` does not (`InitMem` `v1` before a call in
+# `b2`); its clean blocks are closed backwards and `(b2, 1)`, `(b2, 2)` are clean; `runLoc` runs
+# `v1`; compiled evaluation.
+GoFV.Proof.Witness.GenG43.g43_facts._native.native_decide.ax_1_1 56d41e45503e751d5f6c8b8c072b56f389e5a6ab12372137278f15dc85ffdde9
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
