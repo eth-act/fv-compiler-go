@@ -751,7 +751,7 @@ stores, bounds checks and calls (register-index loads and stores; write barriers
 
 The functions `verified_mach`'s function-level premises hold of (#553): the verified pipeline is
 `fullyVerified` (as `--check --verified` runs it: driver export environment, type rounds), and on
-the pipeline's own output (function and tables) genssa's P0 Progs are accepted by `checkG30`
+the pipeline's own output (function and tables) genssa's P0 Progs are accepted by `checkG34`
 against `LocCtx.make r.st.tables r.st.func`, `retRegsOK` holds of its class tables, `checkObj`
 accepts `Flushplist`'s output on those same Progs, and the frame is no framed leaf
 (`GoFVTest/Driver/E2E.lean`, `docs/DRIVER.md`). Frame (`allocFrame`), Progs and object are the
@@ -760,29 +760,29 @@ declarations, then the autos the pipeline created). From the stock `.prog` file 
 input view is read (definitions, config, `Dcl` at `AllocFrame`'s start, `genin`). The stock
 column runs the same back end on the stock `trim` function of every function.
 
-| quick-v10 (9,297 functions, 7 min 32 s; `agent/e2ewide` 17d1ab94, `--jobs 2`) | pipeline output | share | stock `trim` |
+| quick-v10 (9,297 functions, 8 min 52 s; `agent/obj8` 2fa1c005, `--jobs 2`) | pipeline output | share | stock `trim` |
 | --- | ---: | ---: | ---: |
 | fully verified (Phase 2, through `trim`) | 7,676 | 82.56% | - |
 | … genssa and `Flushplist` ran | 7,676 | 82.56% | 9,297 |
-| … ∧ `checkG30` | 5,068 | 54.51% | 5,367 |
-| … ∧ `checkG30` ∧ `retRegsOK` | 5,047 | 54.28% | 5,327 |
+| … ∧ `checkG34` | 5,435 | 58.45% | 5,825 |
+| … ∧ `checkG34` ∧ `retRegsOK` | 5,435 | 58.45% | 5,825 |
 | … ∧ `checkObj` | 7,036 | 75.68% | 7,741 |
-| … ∧ `checkG30` ∧ `retRegsOK` ∧ `checkObj` | 5,047 | 54.28% | 5,326 |
-| **… and no framed leaf (end to end, `verified_mach`)** | **5,045** | **54.26%** | 5,320 |
-| … end to end, pipeline output identical to stock after `trim` | 4,378 | 47.09% | - |
+| … ∧ `checkG34` ∧ `retRegsOK` ∧ `checkObj` | 5,426 | 58.36% | 5,810 |
+| **… and no framed leaf (end to end, `verified_mach`)** | **5,424** | **58.34%** | 5,804 |
+| … end to end, pipeline output identical to stock after `trim` | 4,673 | 50.26% | - |
 
-The previous measurement (G18 probe on stock locals, main 8c5b1472) was 3,418 (36.76%).
-`ownFrame` gives the stock `stksize`/`stkptrsize` on all 6,459 fully verified functions whose
-output is identical to stock. `pallocSum.start` (the witness `verified_mach_witness`) is among the
-accepted. Top reasons among the fully verified: `checkG30`: `store shape` (257), `frame variable
-off another base` (229), `op LDAR` (190), `op CALLtail` (164), `argument v# in register #` (136),
-`frame variable with an integer address` (134), `frame variable operand class` (133), `op LDARW`
-(109); `retRegsOK`: a result on the stack (21); `checkObj`: `FLDPQ` (SIMD&FP, 121), unmodelled
-atomics `LDADDAL`/`CASAL`/`SWPAL`/`LDORAL` (≈250 together), `tail: spill register` (58), shifts by
-a register (65), `MVN` (27), divisions (36).
+The composition on G30 (#630, main e6969584) accepted 5,066 (54.49%); G31's, G33's and G34's
+ops and upper-bit tables add 358. `ownFrame` gives the stock `stksize`/`stkptrsize` on all 6,459
+fully verified functions whose output is identical to stock. `pallocSum.start` (the witness
+`verified_mach_witness`) is among the accepted. Top reasons among the fully verified: `checkG34`:
+`store shape` (274), `frame variable off another base` (229), `op LDAR` (194), `op CALLtail`
+(164), `argument v# in register #` (141), `frame variable with an integer address` (134), `frame
+variable operand class` (133), `op LDARW` (110), `op LoweredAtomicAdd#Variant` (81); `retRegsOK`:
+none; `checkObj`: `FLDPQ` (SIMD&FP, 121), unmodelled atomics `LDADDAL`/`CASAL` (≈240 together),
+`tail: spill register` (58), shifts by a register (65), `MVN` (27), divisions (36).
 
 The full-v11 table below is the previous measurement (G18 probe, stock locals, main 8c5b1472 plus
-PR #606); it is re-measured after `agent/e2ewide` merges.
+PR #606); it is re-measured on the composition on G34.
 
 | full-v11 (96,674 functions, in six parts, ≈5 h 06 min) | pipeline output | share | stock `trim` |
 | --- | ---: | ---: | ---: |
