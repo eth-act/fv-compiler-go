@@ -266,4 +266,236 @@ theorem zloop_run (hnd : (psA.toList.map (·.id)).Nodup) (hlt : ∀ p ∈ psA.to
 
 end Run
 
+/-! ## The value -/
+
+private theorem zloop_arg0 : Op.ARM64LoweredZeroLoop.regInfo.clobbersArg0 = true := by decide
+
+private theorem zloop_flags : Op.ARM64LoweredZeroLoop.clobberFlags = false := by decide
+
+/-- The upper-bit table is empty after `LoweredZeroLoop`. -/
+theorem uStep35_54a {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value}
+    (hop : v.op = .ARM64LoweredZeroLoop) : uStep35 lc L v = [] := by
+  simp [uStep35, ldEntry35, loadOp?, narrowLoad?, pairOp35, uStep34, keep34, keep31, keepOp31,
+    keepOp34, uStepL, uEntry, narrowLd?, loadIdxOp?, hop]
+
+/-- A Go register `r < 26` with X register `k`: `k < 27` (not `g`, `FP`, `LR`). -/
+theorem objX?_lt27 {r : Nat} {k : Reg} (h : objX? r = some k) (hr : r < 26) : k.toNat < 27 := by
+  obtain ⟨-, hk⟩ := objX?_some h
+  rw [hk]
+  split <;> omega
+
+section Cases
+
+variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} {psA : Array Prog}
+  {ret : BitVec 64} {E : MatchEnv} {lc : LocCtx} {s s' : LocState} {b : ID} {i : Nat}
+  {m : MState} {env : Env} {v : Value} {j j' : Nat} {K : KMap}
+
+/-- `LoweredZeroLoop [n] p mem`: the loop and the tail zero the `n` bytes at `p`'s injected
+address, inside a live block and away from the frame; `p`'s register and the temporary are
+`poison` in `runLoc`, the only X registers the machine changes. -/
+theorem g54a_zero (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
+    (hm : LocMatch E s b i m) (hinv : G3Inv E lc K s) (hR : KRead lc v K.get)
+    (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
+    {t : Nat} {rp rc : Int} (hop : v.op = .ARM64LoweredZeroLoop)
+    (ht : (lc.temps[v.id]?).join = some t) (hsz2 : v.args.size = 2)
+    (hmt : memTy (lc.ty v.id) = true) (hhn : lc.home v.id = none)
+    (hao : argObj lc v 0 = .ok (64, rp)) (hma : memArg lc v 1 = .ok ())
+    (hrc : objOf? t = some rc) (h64 : 64 ≤ v.auxInt.toInt) (hdst : argDest lc v 0 = true)
+    (ht26 : t < 26) (hne : rc ≠ rp)
+    (hcov : zeroCovers (v.auxInt.toInt.toNat % 64) (zeroOffs (v.auxInt.toInt.toNat % 64)) = true)
+    (hvs : ManyAt2 psA j (loopPats rc v.auxInt.toInt (zeroBody rp) ++
+      (zeroOffs (v.auxInt.toInt.toNat % 64)).map (zeroPat rp)) j')
+    (hloop : loopTgt psA j = true) (hpre : Pre54a lc s v) (hs : stepLoc env lc s v = .ok s') :
+    ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
+      LocMatch E s' b (i + 1) m' ∧ G3Inv E lc K s' := by
+  have hl := F.lowered
+  have hA := F.addr
+  have hnp : v.op ≠ .Phi := by rw [hop]; nofun
+  -- the registers
+  obtain ⟨a0, r0, ha0, hah0, hor0, hca0⟩ := argObj_spec hao
+  obtain ⟨a0', r0', ha0', hah0', hr26⟩ := argDest_spec hdst
+  rw [ha0] at ha0'
+  cases ha0'
+  rw [hah0] at hah0'
+  cases hah0'
+  obtain ⟨kp, hkp, rfl, hkkp⟩ := objOf?_some hor0
+  have hkp' : kp < 31 ∧ objX? r0 = some (BitVec.ofNat 5 kp) := by
+    rcases hkkp with ⟨h, -⟩ | h
+    · exact absurd h (by unfold zeroReg; omega)
+    · exact h
+  obtain ⟨kc, hkc, rfl, hkkc⟩ := objOf?_some hrc
+  have hkc' : kc < 31 ∧ objX? t = some (BitVec.ofNat 5 kc) := by
+    rcases hkkc with ⟨h, -⟩ | h
+    · exact absurd h (by unfold zeroReg; omega)
+    · exact h
+  have hpc' : kp ≠ kc := fun h => hne (by rw [h])
+  have hp27 := objX?_lt27 hkp'.2 hr26
+  have hc27 := objX?_lt27 hkc'.2 ht26
+  simp only [BitVec.toNat_ofNat] at hp27 hc27
+  obtain ⟨a1, ha1, hamt, hah1⟩ := memArg_spec hma
+  obtain ⟨mm, hmm, hMI⟩ := hm.mem
+  obtain ⟨xv, hxr, hxv, hxf⟩ :=
+    arg_rel hA hl hm hinv.core hah0 hca0 (kread_arg hR hnp ha0 hah0 hca0) hkkp
+  obtain ⟨x, hx, rfl⟩ :=
+    stepLoc_zloop hl hop (arr2 hsz2 ha0 ha1) (read_mem hl hah1 hamt hmm) hs
+  rw [hxr] at hx
+  cases hx
+  obtain ⟨p, mm1, mm', hp, hmm1, hw⟩ := hpre hop a0 xv ha0 hxr
+  rw [hmm] at hmm1
+  cases hmm1
+  have hz : Arm64.zero v.auxInt [xv, .mem mm] = .mem mm' := by
+    simp only [Arm64.zero, hp, hw]
+  rw [hz, write_mem hhn hmt, memTy_eq hmt, retypeL_mem]
+  obtain ⟨hcsl, hcfl, -⟩ := clobber_keeps54 (lc := lc) (v := v) s (by rw [hop]; exact zloop_flags)
+  obtain ⟨mm0, hmm0, hk0, hsep0⟩ := hinv.core.mem
+  rw [hmm] at hmm0
+  cases hmm0
+  generalize hn : v.auxInt.toInt.toNat = n at hcov hvs hw
+  have hn64 : 64 ≤ n := by omega
+  have hbs : (Array.replicate n (Byte.b 0)).size = n := Array.size_replicate
+  obtain ⟨al, hal, hoff⟩ := write_inside hw (by rw [hbs]; omega)
+  rw [hbs] at hoff
+  have hcan : mm.canWrite p n = true := by
+    have := canWrite_of_write hw (by rw [hbs]; omega)
+    rwa [hbs] at this
+  obtain ⟨a, hpa, haeq, -⟩ := addr_rel hA hMI hxv hxf hp (by omega : 0 < n) (Or.inl hcan)
+  obtain ⟨a', ha', hlo, hhi⟩ := hMI.mapped _ _ hal
+  obtain rfl : a = a' := Option.some.inj (hpa.symm.trans ha')
+  have h4 := hlo (by omega)
+  have hAt : (a + p.off).toNat = a.toNat + p.off.toNat := by
+    rw [BitVec.toNat_add, Nat.mod_eq_of_lt (by omega)]
+  have hX : m.x (BitVec.ofNat 5 kp) = a + p.off := by
+    rw [← rX_of_lt hkp'.1]; simpa using haeq
+  -- the loop, then the tail at `a + p.off + 64 N`
+  obtain ⟨ke, mN, hrunL, hpcN, htl, hxN, hkN, hmemN⟩ := zloop_run (H := H) F.nodup F.lt F.ret
+    hkp'.1 hkc'.1 hpc' hvs hloop h64 m hX (by omega) (by rw [hn]; omega)
+  rw [pc_eta hm hj] at hrunL
+  rw [hn] at hxN hmemN
+  generalize hN : n / 64 = N at hxN hmemN
+  have hN64 : 64 * N ≤ n := by omega
+  obtain ⟨hin, hcovd⟩ := zeroCovers_spec hcov
+  have hw8 : ∀ pr : Bool, 8 ≤ zeroW pr := fun pr => by unfold zeroW; split <;> omega
+  have hnilT : ∀ st ∈ zeroOffs (n % 64),
+      nilPage (a + p.off + BitVec.ofNat 64 (64 * N) + BitVec.ofNat 64 st.2) = false ∧
+      (st.1 = true →
+        nilPage (a + p.off + BitVec.ofNat 64 (64 * N) + BitVec.ofNat 64 st.2 + 8) = false) := by
+    intro st hst
+    have hi := hin st hst
+    have h8 := hw8 st.1
+    rw [BitVec.add_assoc, BitVec.ofNat_add_ofNat]
+    refine ⟨nil_of (by omega) (by omega), fun hpr => ?_⟩
+    rw [hpr] at hi
+    simp only [zeroW, ↓reduceIte] at hi
+    rw [BitVec.add_assoc, show (8 : BitVec 64) = BitVec.ofNat 64 8 from rfl, BitVec.ofNat_add_ofNat]
+    exact nil_of (by omega) (by omega)
+  have hrunT := zero_run (H := H) F.nodup F.lt F.ret (by omega : kp < 32) (zeroOffs (n % 64)) ke
+    j' mN htl hnilT (by rw [rX_of_lt hkp'.1, hxN])
+  have hetaN : ({ mN with pc := pcAt text psA.toList ke } : MState) = mN := by rw [← hpcN]
+  rw [hetaN] at hrunT
+  let MT : Memory :=
+    zeroMem (a + p.off + BitVec.ofNat 64 (64 * N)) mN.mem (zeroOffs (n % 64))
+  let m' : MState := { mN with mem := MT, pc := pcAt text psA.toList j' }
+  -- every store, from `a + p.off`
+  let allSt : List (Bool × Nat) :=
+    zloopStores N ++ (zeroOffs (n % 64)).map fun st => (st.1, 64 * N + st.2)
+  have hmem' : m'.mem = zeroMem (a + p.off) m.mem allSt := by
+    show zeroMem _ mN.mem _ = _
+    rw [hmemN, zeroMem_shift, zeroMem_append]
+  have hinA : ∀ st ∈ allSt, st.2 + zeroW st.1 ≤ n := by
+    intro st hst
+    rcases List.mem_append.1 hst with h | h
+    · obtain ⟨h1, h2⟩ := mem_zloopStores h
+      rw [h1]; simp only [zeroW, ↓reduceIte]; omega
+    · obtain ⟨st0, h0, rfl⟩ := List.mem_map.1 h
+      have := hin st0 h0
+      simp only
+      omega
+  have hcovA : ∀ j, j < n → ∃ st ∈ allSt, st.2 ≤ j ∧ j < st.2 + zeroW st.1 := by
+    intro j hj
+    by_cases hjN : j < 64 * N
+    · obtain ⟨st, hst, hc⟩ := zloopStores_cover hjN
+      exact ⟨st, List.mem_append_left _ hst, hc⟩
+    · obtain ⟨st, hst, hc⟩ := hcovd (j - 64 * N) (by omega)
+      exact ⟨(st.1, 64 * N + st.2), List.mem_append_right _ (List.mem_map_of_mem hst),
+        by simp only; omega⟩
+  have hbnd : ∀ st ∈ allSt, (a + p.off).toNat + st.2 + zeroW st.1 ≤ 2 ^ 64 := by
+    intro st hst; have := hinA st hst; omega
+  have hMout : ∀ y : BitVec 64, (∀ j, j < n → y.toNat ≠ a.toNat + p.off.toNat + j) →
+      m'.mem y = m.mem y := by
+    intro y hy
+    rw [hmem']
+    refine zeroMem_out allSt m.mem hbnd fun st hst hc => ?_
+    have hi := hinA st hst
+    have h8 := hw8 st.1
+    unfold Covers at hc
+    exact hy (y.toNat - (a.toNat + p.off.toNat)) (by omega) (by omega)
+  obtain ⟨hMI', hk', hback, -⟩ := memInj_writeAny hA hMI hk0 (by omega) hpa hbs (M := m'.mem)
+    (fun j hj => by
+      obtain ⟨st, hst, hc⟩ := hcovA j hj
+      have hi := hinA st hst
+      have hy : (a + p.off + BitVec.ofNat 64 j).toNat = a.toNat + p.off.toNat + j := by
+        rw [BitVec.toNat_add, hAt, BitVec.toNat_ofNat, Nat.mod_eq_of_lt (by omega : j < 2 ^ 64),
+          Nat.mod_eq_of_lt (by omega)]
+      rw [hmem', zeroMem_cov allSt m.mem hbnd ⟨st, hst, by unfold Covers; rw [hy, hAt]; omega⟩]
+      rw [getElem!_pos _ _ (by rw [hbs]; exact hj), Array.getElem_replicate]
+      rfl)
+    hMout hw
+  have hsep' : SepFrom E.ι (StkAt E) mm' := by
+    intro b2 al2 a2 hb hι w hw'
+    obtain ⟨al0, hb0, hs0⟩ := hback b2 al2 hb
+    rw [← hs0]; exact hsep0 b2 al0 a2 hb0 hι w hw'
+  have hP : ∀ y, StkAt E y → m'.mem y = m.mem y := fun y hy =>
+    hMout y fun j hj he => hsep0 _ _ _ hal hpa y hy ⟨by omega, by omega⟩
+  have hkeep : Keeps54 [BitVec.ofNat 5 kp, BitVec.ofNat 5 kc] [] m m' := hkN
+  have hq : ∀ q : Nat, 27 ≤ q → q < 32 → m'.x (BitVec.ofNat 5 q) = m.x (BitVec.ofNat 5 q) := by
+    intro q hq1 hq2
+    refine hkeep.2.2.1 _ ?_
+    simp only [List.mem_cons, List.not_mem_nil, or_false, not_or]
+    constructor <;> intro he <;> have := congrArg BitVec.toNat he <;> simp at this <;> omega
+  obtain ⟨hslots, hframe⟩ := stk_slots_frame (E' := E) (m' := m') hm hF hsz rfl
+    (fun _ _ h => h) hP hkeep.1 (hq 28 (by omega) (by omega)) (hq 29 (by omega) (by omega))
+    (fun _ => hq 30 (by omega) (by omega))
+  -- the registers `runLoc` keeps are not the machine's changed ones
+  have hreg : ∀ r x, (s.clobber lc v).regs[r]? = some x → x = .poison ∨
+      (s.regs[r]? = some x ∧ ∀ q, objX? r = some q → m'.x q = m.x q) := by
+    intro r x h
+    rcases clobber_get54 h with rfl | ⟨h2, -, h0, -, htp⟩
+    · exact .inl rfl
+    refine .inr ⟨h2, fun q hq => hkeep.2.2.1 q ?_⟩
+    simp only [List.mem_cons, List.not_mem_nil, or_false, not_or]
+    constructor
+    · rintro rfl
+      have hr0 := objX?_inj hq hkp'.2
+      subst hr0
+      have := h0 (by rw [hop]; exact zloop_arg0) (by simp [ha0, LocCtx.regOf, hah0])
+      unfold zeroReg at this; omega
+    · rintro rfl
+      have hrt := objX?_inj hq hkc'.2
+      subst hrt
+      have := htp ht
+      unfold zeroReg at this; omega
+  refine ⟨m', hrunL.trans hrunT, ⟨fun r x h => ?_, ?_, ?_, ⟨mm', rfl, hMI'⟩, hframe, ?_⟩,
+    ⟨⟨fun r x c hrz h hc => ?_, mm', rfl, hk', hsep'⟩, fun k v hk => hinv.slots k v ?_⟩⟩
+  · rcases hreg r x h with rfl | ⟨h2, hx⟩
+    · exact ⟨fun _ _ => trivial, fun _ _ => trivial⟩
+    · obtain ⟨hx1, hv1⟩ := hm.regs r x h2
+      refine ⟨fun q hq => ?_, fun q hq => ?_⟩
+      · rw [hx q hq]; exact hx1 q hq
+      · rw [hkeep.2.2.2 q (by simp)]; exact hv1 q hq
+  · show FlagsRel (s.clobber lc v).flags m'.nzcv
+    rw [hcfl, hkeep.2.1]
+    exact hm.flags
+  · show ∀ k y, (s.clobber lc v).slots.lookup k = some y → _
+    rw [hcsl]
+    exact hslots
+  · show m'.pc = E.pcOf b (i + 1)
+    rw [hj']
+  · rcases clobber_get54 h with rfl | ⟨h2, -⟩
+    · trivial
+    · exact hinv.core.regs r x c hrz h2 hc
+  · rw [← hcsl]; exact hk
+
+end Cases
+
 end GoFV.Proof.Gen
