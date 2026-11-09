@@ -178,14 +178,16 @@ import GoFV.Proof.Mixed
 import GoFV.Proof.NilPre
 import GoFV.Proof.Obj.Basic
 import GoFV.Proof.Obj.Bitfield
+import GoFV.Proof.Obj.CallPanic
 import GoFV.Proof.Obj.EndToEnd
 import GoFV.Proof.Obj.Ex
 import GoFV.Proof.Obj.Frame
-import GoFV.Proof.Obj.G12
+import GoFV.Proof.Obj.G30
 import GoFV.Proof.Obj.G7
 import GoFV.Proof.Obj.Insn
 import GoFV.Proof.Obj.Link
 import GoFV.Proof.Obj.Prog
+import GoFV.Proof.Obj.Results
 import GoFV.Proof.Obj.Sim
 import GoFV.Proof.Obj.Spec
 import GoFV.Proof.Obj.Whole
@@ -918,7 +920,9 @@ import GoFV.Proof.Witness.ObjEndToEnd
 import GoFV.Proof.Witness.ObjFrame
 import GoFV.Proof.Witness.ObjG7
 import GoFV.Proof.Witness.ObjOps
+import GoFV.Proof.Witness.ObjPanic
 import GoFV.Proof.Witness.ObjWhole
+import GoFV.Proof.Witness.ObjWholeNL
 import GoFV.Proof.Witness.PairL
 import GoFV.Proof.Witness.PhiConst
 import GoFV.Proof.Witness.PhiElim

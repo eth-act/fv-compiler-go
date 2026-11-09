@@ -297,21 +297,29 @@ nightly gate runs
 it on the full corpus, and `driver-e2e.sh --verified`, as reports (`docs/GATE.md`).
 
 `gofv-ssa-opt --check --verified --e2e <dir|file>...` counts the functions the end-to-end theorem
-`GoFV.Proof.Obj.verified_mach_ret` applies to (`GoFVTest/Driver/E2E.lean`): per `.ssa` file with
+`GoFV.Proof.Obj.verified_mach` applies to (`GoFVTest/Driver/E2E.lean`): per `.ssa` file with
 its companion `.prog` file, the verified pipeline as above; on a `fullyVerified` result, the back
 end on the pipeline's own output (function and tables): `Env.load` with the `trim` section's
-function replaced (homes and temporaries from its `f.low`), `allocFrame`, `genssa` with its
-Progs in the file's symbol numbers (as `chain`), `checkG18` against `LocCtx.make` of the
-pipeline's tables and function and `retRegsOK` on its class tables (every `Ret` returns its
-results in their ABI registers), `Flushplist` on those Progs and `checkObj` on the same Progs.
-From the `.prog` file it reads only the input view (`inputView`: definitions, config, `Dcl` at
+function replaced (homes and temporaries from its `f.low`), `allocFrame` on the pipeline's own
+locals (`ownFrame`: `AllocFrame`'s input `Dcl` is the first `dcllen` of section 0 entries of the
+stock input, the frontend's, followed by the autos the pipeline created, the `name` aux values its
+tables define and section 0's do not, in creation order, with definitions made from the aux
+values; the stock passes' own autos are left out; a mismatch with the pipeline's `dcllen` after
+`trim` is an error), `genssa` with its Progs in the file's symbol numbers (as `chain`),
+`checkG30` (the latest merged genssa slice) against `LocCtx.make` of the pipeline's tables and
+function and `retRegsOK` on its class tables (every `Ret` returns its results in their ABI
+registers, `MakeResult` components of no wider class), `Flushplist` on those Progs, `checkObj` on
+the same Progs, and no framed leaf (`autosize = 0 ∨ ¬leaf`, a premise of `verified_mach`). From
+the `.prog` file it reads only the input view (`inputView`: definitions, config, `Dcl` at
 `AllocFrame`'s start, `genin`), no stock result. It prints the fully verified functions, those
-the back end ran on, those `checkG18`, `retRegsOK`, `checkObj` and all three accept (the
-end-to-end count), the end-to-end ones whose pipeline output equals stock, the top back-end
-errors and rejection reasons (numbers replaced by `#`), and as a cross-check the same back end on
-the stock `trim` function (whole-file tables; its `checkG18` count is `gen-check`'s G18 count).
-`--accepted FILE` writes the end-to-end accepted files. Exit 1 only for parse errors (including
-a missing `.prog`) or no input.
+the back end ran on, those `checkG30`, `retRegsOK`, `checkObj` and all three accept, those with
+no framed leaf besides (the end-to-end count), the end-to-end ones whose pipeline output equals
+stock, the frame sizes `ownFrame` gives on the functions whose output equals stock (against the
+stock `stksize`/`stkptrsize`), the top back-end errors and rejection reasons (numbers replaced by
+`#`; for `retRegsOK` the first failing condition, `retWhy`), and as a cross-check the same back
+end on the stock `trim` function (whole-file tables, stock `Dcl`). `--accepted FILE` writes the
+end-to-end accepted files. Exit 1 only for parse errors (including a missing `.prog`) or no
+input.
 
 `gofv-ssa-opt --verified --profile <in.ssa>` prints to stderr where the verified pipeline spends
 its time on one function (ms): `verifiedPipeline` through `rewrite tern`, then per pass from
