@@ -341,6 +341,30 @@ theorem loadN_mono {m m' : Mem} (h : Mem.Refines m m') (ty : Ty) (n : Nat) (s : 
       cases hl <;> first | exact .poison _ | exact Sem.Refines.refl _
     · exact Sem.Refines.refl _
 
+/-- A 128-bit load (`Arm64.load16`, a blob of the 16 bytes) on a refined memory refines. -/
+theorem load16_mono {m m' : Mem} (h : Mem.Refines m m') (p : Ptr) :
+    Sem.Refines (Arm64.load16 m p) (Arm64.load16 m' p) := by
+  unfold Arm64.load16
+  cases hr : m.read p 16 with
+  | none => exact .poison _
+  | some bs =>
+    obtain ⟨bs', hr', hb⟩ := h.read hr
+    rw [hr']
+    exact .blob hb
+
+/-- One element of a pair load on a refined memory refines. -/
+theorem loadElt_mono {m m' : Mem} (h : Mem.Refines m m') (ty : Ty) (n : Nat) (s : Bool)
+    (p : Ptr) : Sem.Refines (Arm64.loadElt ty n s m p) (Arm64.loadElt ty n s m' p) := by
+  unfold Arm64.loadElt
+  split
+  · exact load16_mono h p
+  · exact loadN_mono h ty n s p
+
+/-- A pair load on a refined memory refines. -/
+theorem loadPair_mono {m m' : Mem} (h : Mem.Refines m m') (ty : Ty) (n : Nat) (s : Bool)
+    (p q : Ptr) : Sem.Refines (Arm64.loadPair ty n s m p q) (Arm64.loadPair ty n s m' p q) :=
+  .tuple (.cons (loadElt_mono h _ n s p) (.cons (loadElt_mono h _ n s q) .nil))
+
 /-- An address read from a refined value: the same, unless the source's is undefined. -/
 theorem addr_of_refines (h : Refines a b) {k : BitVec 64} {p : Ptr}
     (hp : Arm64.addr a k = some p) : Arm64.addr b k = some p := by

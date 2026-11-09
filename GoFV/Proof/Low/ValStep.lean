@@ -275,7 +275,7 @@ theorem extReadW_mem {o : Op} {k : Nat} (h : extReadW o = some k) :
 theorem extReadW_cases {o : Op} {k : Nat} (h : extReadW o = some k) :
     ∃ s, (∀ ty ai (ax : Option AuxRef) args,
         Arm64.evalPure o ty ai ax args = Arm64.op1 ty (Arm64.ext s k) args) ∧
-      o.generic = false ∧ (o == .ARM64MOVDaddr) = false ∧ ldOp? o = none ∧
+      o.generic = false ∧ (o == .ARM64MOVDaddr) = false ∧ ldAny o = false ∧
       (GoFV.Opt.LowerTerm.armTerm o && !GoFV.Opt.LowerTerm.actOp o && !isRoot o) = true := by
   rcases extReadW_mem h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
       ⟨rfl, rfl⟩
@@ -291,15 +291,15 @@ theorem opValL_ext {o : Op} {k : Nat} (h : extReadW o = some k) :
     ∃ s, ∀ tabs ty ai ax args, opValL tabs o ty ai ax args = Arm64.op1 ty (Arm64.ext s k) args := by
   obtain ⟨s, he, hg, hm, hl, -⟩ := extReadW_cases h
   exact ⟨s, fun tabs ty ai ax args => by
-    simp only [opValL, hg, hm, hl, Bool.false_eq_true, ite_false]; exact he ty ai ax args⟩
+    simp only [opValL, hg, hm, (ldAny_false hl).1, (ldAny_false hl).2, Bool.false_eq_true,
+      ite_false]; exact he ty ai ax args⟩
 
 theorem termVL_ext {tabs : Tables} {v : Value} {k : Nat} (h : extReadW v.op = some k) :
     termVL tabs v = true := by
   obtain ⟨-, -, hg, hm, hl, ht⟩ := extReadW_cases h
   have hact : GoFV.Opt.LowerTerm.actOp v.op = false := by
     simp only [Bool.and_eq_true, Bool.not_eq_true'] at ht; exact ht.1.2
-  simp only [termVL, hg, hm, hl, pureActOp_of_act hact, Option.isSome_none, Bool.false_eq_true,
-    ite_false, ht]
+  simp only [termVL, hg, hm, hl, pureActOp_of_act hact, Bool.false_eq_true, ite_false, ht]
 
 theorem w32Op_mem {o : Op} (h : w32Op o = true) :
     o = .ARM64MULW ∨ o = .ARM64MNEGW ∨ o = .ARM64DIVW ∨ o = .ARM64UDIVW ∨ o = .ARM64MODW ∨
@@ -312,7 +312,7 @@ theorem w32Op_mem {o : Op} (h : w32Op o = true) :
 
 /-- A `W` op is no extension and a term (`armTerm`) whose `opValL` is `Arm64.evalPure`. -/
 theorem w32Op_cases {o : Op} (h : w32Op o = true) :
-    extReadW o = none ∧ o.generic = false ∧ (o == .ARM64MOVDaddr) = false ∧ ldOp? o = none ∧
+    extReadW o = none ∧ o.generic = false ∧ (o == .ARM64MOVDaddr) = false ∧ ldAny o = false ∧
       (GoFV.Opt.LowerTerm.armTerm o && !GoFV.Opt.LowerTerm.actOp o && !isRoot o) = true := by
   rcases w32Op_mem h with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl |
       rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
@@ -322,7 +322,7 @@ theorem opValL_w32 {o : Op} (h : w32Op o = true) (tabs : Tables) (ty : Ty) (ai :
     (ax : Option AuxRef) (args : List Val) :
     opValL tabs o ty ai ax args = Arm64.evalPure o ty ai ax args := by
   obtain ⟨-, hg, hm, hl, -⟩ := w32Op_cases h
-  simp only [opValL, hg, hm, hl, Bool.false_eq_true, ite_false]
+  simp only [opValL, hg, hm, (ldAny_false hl).1, (ldAny_false hl).2, Bool.false_eq_true, ite_false]
 
 theorem narrowReadW_cases {o : Op} {ai : Int64} {i k : Nat} (h : narrowReadW o ai i = some k) :
     (o = .ARM64TSTWconst ∧ i = 0 ∧ k = tstReadW ai) ∨ (extReadW o = some k ∧ i = 0) ∨
