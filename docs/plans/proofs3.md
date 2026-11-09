@@ -1928,9 +1928,11 @@ the assembler encodes as `ADRP` + `LDR D`/`S` with `R_ARM64_PCREL_LDST64`/`32` (
 `reloc 20 8 R_ARM64_PCREL_LDST64 0 y10`, `y10 = "$f64.7fefffffffffffff"`). The machine reads the
 symbol's bytes from `MState.mem` (`exec`'s `load`; `Code` is fetch-only), P0's `FCONST` is the
 constant itself, and nothing in `ObjEnv` or `ObjRel` says that memory at `L.sym y` holds the
-bits named by the symbol in every state of the run, nor that it is outside the nil page. Modelling
-it needs that premise as a run invariant of `obj_star` (rodata never stored to), discharged by the
-composition from the SSA memory model.
+bits named by the symbol in every state of the run, nor that it is outside the nil page. A run
+premise of `obj_star` cannot be discharged (the composition knows the memory only where
+`LocMatch` holds); the design is in §10: the symbol is a Phase 1 read-only allocation, and the
+composition runs `P0'`, P0 with `progedit`'s rewrite of the float constants, so that `checkObj`
+compares a load with a load.
 
 **Proof** (`GoFV/Proof/Obj/`):
 
@@ -2471,3 +2473,80 @@ pending window). `RunPre` there is `runPre_simple`.
 through a whole function with a real entry store of a register parameter (none of the e2e
 functions with a pending window is small enough for the native-decide witnesses yet). Entry
 stores after spills (`StoreReg`) in the entry block (`entryStoresOK` rejects them).
+
+## 10. Read-only data: float constants and jump tables
+
+**The gap.** Two kinds of machine loads read data that the assembler or genssa put in read-only
+symbols, which the SSA program never writes:
+
+- *Float constants.* `progedit` rewrites `FMOVD $c, Fd` (`FMOVS`) to a load of `$f64.<bits>`
+  (`$f32.<bits>`) when `c` is no `FMOV` immediate and not 0: `ADRP` + `LDR D` with
+  `R_ARM64_PCREL_LDST64` (§7). P0's `FMOVD $c` is the constant (`FCONST`). This is 163 of
+  `checkObj`'s rejections on quick-v10.
+- *Jump tables.* `JUMPTABLE`'s `MOVD (Rtab)(Ridx<<3), R27; JMP (R27)` loads the target from the
+  table genssa makes. `span7` fills the table with `R_ADDR` relocations to the function plus each
+  target's PC.
+
+Nothing in `ObjEnv`, `ObjRel` or `LocMatch` said that memory holds those bytes, or that stores and
+calls keep them.
+
+**Why not on the object side.** One option is a premise of `obj_star`: in every state of the P0
+run, the read-only bytes are in memory. The composition cannot discharge it. It knows the memory
+only in the states `LocMatch` relates (value and terminator boundaries), but `obj_star` steps
+through the P0 states inside a value's run (`PStar`), and the slice lemmas say nothing about
+those. An invariant of `obj_step` would need every P0 store to miss the read-only bytes, which
+only the slices know.
+
+**Design.** Read-only symbols are Phase 1 read-only allocations, and the read happens where
+`LocMatch` holds.
+
+1. *Image.* A read-only symbol is a global allocation with `writable := false`.
+   - Its bytes come from the export's data and `R_ADDR` fragments for an `SRODATA` symbol
+     (`rodataAlloc`, already in Phase 1's global image).
+   - For the constant symbols they come from the name (`constSymAlloc?`, `constRo names`,
+     `GoFV/SSA/Sem/ConstSym.lean`). `asm-parity` checks the port's constant symbols, bytes
+     included, against Go's (`Cmp.data`).
+   - The premise is an input property, like `RoImage`'s image part: the input memory with the
+     global image has the allocations, `RoMem ro (addGlobals env mem)`.
+2. *Run invariant* (`GoFV/Proof/Obj/RoLoc.lean`, `RoReach.lean`). Every memory `runLoc` holds
+   keeps those allocations (`lreach_roMem`):
+   - Stores: `Mem.write` needs a writable allocation (`Mem.keepsRo_write`), and frame
+     allocations and the write-barrier buffer are no globals.
+   - Calls: `Env.KeepsRo`, already a Phase 1 premise (`RoImage` in `VPre`, STATUS Assumptions).
+   The proof is `MemInv`'s, for `runLoc`. `LocMems P s` says that every memory in the state (its
+   memory, flags, registers, slots, staged controls, activation) is `P`.
+   - `stepLoc` keeps it (`stepLoc_locMems`). A copy (`LoadReg`/`StoreReg`) and a `MOVDreg` are
+     immediate. Otherwise the result comes from `evalOpL_mems`: Phase 1's memory ops by
+     `MemInv.evalOp_mems`, and the arm64 ops by `arm64Op_mems` (stores and the bulk ops write,
+     `LoweredWB` allocates the buffer, calls are contracts, nil checks are `memRoot`, atomics are
+     `atomicRoot`).
+   - This needs every value whose shape may hold a memory to have an op of `memOpL`. The
+     driver checks this as `memTyL`, `GoFV/Gen/MemTyL.lean`; a value of any other shape holds
+     none once `runLoc` shapes it.
+   - `stepTermLoc` stages controls, which are reads (`stepTermLoc_locMems`).
+3. *Machine side.* In a state `LocMatch` relates, `MemInj` puts each concrete byte of the
+   allocation at the global's injected address (`ro_byte`, under `AddrAgree`; above the nil
+   page, `ro_addr`). `G2Env.glob` puts that global at `L.sym y`. After a call, `CallSpec` already
+   gives `MemInj` of the post-call memory, which keeps the allocation, so no trusted clause is
+   added: the read-only data rests on the callee contracts and `Env.KeepsRo`.
+4. *Float constants* (next).
+   - The driver gives the composition `P0'`: P0 with `progedit`'s rewrite of the float constants
+     (`FMOVD $c` becomes `FMOVD $f64.<bits>(SB)`, with the index the port's `flush` gives the
+     symbol, also in `G2In.syms`).
+   - `checkObj` then compares a load with a load, and `ObjRel` is unchanged.
+   - A slice accepts `FMOVDconst`/`FMOVSconst` homed by such a load. It is proved in the value's
+     `LocMatch`ed state by `ro_byte`, with `RoMem` from `lreach_roMem`.
+   - `verified_mach` gains `memTyL lc = true` and `RoMem (constRo …) (addGlobals e mem)`.
+5. *Jump tables* (with the JUMPTABLE slice).
+   - The table is a Phase 1 read-only allocation of code-pointer fragments (the targets' Prog
+     IDs). `MemInj` resolves them through the link: `L.addr id` on P0, `base + pc` on the
+     machine.
+   - P0 reads the table in the terminator's `LocMatch`ed state, as in 2–3.
+   - `ObjRel.mem` stays equality outside the table and relates the table's words through the PC
+     map.
+
+Witness: `objRo_witness` (`GoFV/Proof/Witness/ObjRo.lean`). It runs `pallocSum.start` in
+`plRunEnv`, whose image has the read-only `runtime.writeBarrier` flag. `memTyL` accepts the
+function (`ro_facts`), the flag is in the memory after the entry values (`lreach_roMem`), and its
+byte is in the machine's memory at its linked address (`ro_byte`). `constSym_witness` checks the
+symbol of 1.0.

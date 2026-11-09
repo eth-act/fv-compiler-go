@@ -260,6 +260,8 @@ import GoFV.Proof.Obj.Morestack
 import GoFV.Proof.Obj.MorestackHook
 import GoFV.Proof.Obj.Prog
 import GoFV.Proof.Obj.Results
+import GoFV.Proof.Obj.RoLoc
+import GoFV.Proof.Obj.RoReach
 import GoFV.Proof.Obj.Sim
 import GoFV.Proof.Obj.Spec
 import GoFV.Proof.Obj.Whole
@@ -1021,6 +1023,7 @@ import GoFV.Proof.Witness.ObjFrame
 import GoFV.Proof.Witness.ObjG7
 import GoFV.Proof.Witness.ObjOps
 import GoFV.Proof.Witness.ObjPanic
+import GoFV.Proof.Witness.ObjRo
 import GoFV.Proof.Witness.ObjWhole
 import GoFV.Proof.Witness.ObjWholeNL
 import GoFV.Proof.Witness.PairL
