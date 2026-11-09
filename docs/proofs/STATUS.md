@@ -913,6 +913,16 @@ whose address is taken is not related by `MemInj` until genssa's entry store
 `MOVD R0, ~r0+0(FP)`, which G51 rejects; at `Addrs.fixed`). Coverage on quick-v10 (`lake exe
 gen-check`): 7,142 of 9,297 functions (76.82%), 220,164 values.
 
+## Phase 3: genssa, slice G52, remainders (I7, #553)
+
+`GoFV.Proof.Gen.g52_value`, `g52_initMem`, `g52_term`, `g52_nilPanic`, `g52_boundsPanic`
+(`GoFV/Proof/Gen/G52.lean`): when slice G52 (`checkG52`: G49 with `MOD`, `UMOD`, `MODW`, `UMODW`,
+one `REM`/`UREM`/`REMW`/`UREMW` each) accepts a function, they are G49's statements, under
+`G49Env`, `g52_value` under G51's `G51Pre` (no new premise: a register without an integer form
+gives Phase 1 `poison`). Witness: `genG52_witness` (`test/ken_chan`'s `main.nrand`,
+`REM R0, R1, R0` of `-17` by `5`, which G49 rejects). Coverage on quick-v10 (`lake exe
+gen-check`): 7,163 of 9,297 functions (77.04%), 221,257 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g46_obj_value`, `g46_obj_term`, `g46_obj_nilPanic`, `g46_obj_boundsPanic`

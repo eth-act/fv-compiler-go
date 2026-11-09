@@ -298,6 +298,11 @@ GoFV.Proof.Witness.GenG51.g51_facts._native.native_decide.ax_1_1 28375fe97cf6add
 # `NAME_PARAM` operand, `frameOff 24`); `runLoc` runs `v2` on `x = 7`; compiled evaluation.
 GoFV.Proof.Witness.GenG49.g49_facts._native.native_decide.ax_1_1 c09fd1340a71a8c05330a657dc651b765238cb792c46d5995999c83618955f71
 
+# genG52_witness (GoFV/Proof/Witness/GenG52.lean, #553): `checkG52` accepts `test/ken_chan`'s
+# `main.nrand` and `checkG49` does not (`REM R0, R1, R0` `v32`, `MOD v26 v6`); `runLoc` runs `v32`
+# on `-17` and `5`; compiled evaluation.
+GoFV.Proof.Witness.GenG52.g52_facts._native.native_decide.ax_1_1 1a6ac69d36fc8c759f0c4736c74f74deb6564caa5afd737eb9afc97b9ae275d3
+
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
 # test code only: the parity runner's pointer-equality fast path (GoFVTest/Parity/Compare.lean).
