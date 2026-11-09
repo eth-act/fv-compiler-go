@@ -192,6 +192,14 @@ GoFV.Proof.Witness.GenG32c.g32c_facts._native.native_decide.ax_1_1 2f87f93fb8344
 # accepts `runtime.(*hexdumper).close` and `checkG32` does not, with G31's tables `uIn`/`uL31`;
 # `runLoc` runs its `MOVDreg` `v22` and `b1`'s `NZW`; compiled evaluation.
 GoFV.Proof.Witness.GenG31.g31_facts._native.native_decide.ax_1_1 81058b9239c163b8974ce780567a98dc574c83716cb34e074f3371223cefe6a4
+# genG33_un_witness, genG33_sra_witness (GoFV/Proof/Witness/GenG33.lean, #553): `checkG33` accepts
+# `math/bits.ReverseBytes` and `internal/bytealg.Cutover` and `checkG31` does not; `runLoc` runs
+# their `REV` and `SRAconst`; compiled evaluation.
+GoFV.Proof.Witness.GenG33.g33_facts._native.native_decide.ax_1_1 8a25f86a1983fad2bc7cadda50a218093b2f54a0a68d08b3b7e5a3f112b5f06a
+# genG33_ubfiz_witness, genG33_cmnw_witness (GoFV/Proof/Witness/GenG33b.lean, #553): `checkG33`
+# accepts `runtime.(*mspan).pinnerBitSize` and `runtime.(*_func).isInlined` and `checkG31` does not;
+# `runLoc` runs their `UBFIZ` and `CMNWconst`; compiled evaluation.
+GoFV.Proof.Witness.GenG33b.g33b_facts._native.native_decide.ax_1_1 257a92cc16b6f9ca5a7d3de75c3016f6bf609f272268117f7378b02351680752
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:

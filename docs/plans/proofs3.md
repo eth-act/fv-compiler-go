@@ -786,6 +786,27 @@ value steps as in G32 (`vk32_stepU`). A terminator keeps every X register (G1's 
 as their only reason, whose tables need frames for spills and reloads, `LDP`/`Select`, bounds
 panics or `MOVBreg` to keep the entries.
 
+**Slice G33: more single-instruction ops** (`GoFV/Gen/Check33.lean`, `checkG33 lc ps bstart g`,
+returning G4's tables; proven sound, `g33_value`, `g33_term`, `g33_nilPanic`, `g33_boundsPanic`):
+G31 with, in a function with an arm64 op, `CLZ`, `REV x` (`CLZ`/`REV Rm, Rd`, `un33?`) and
+`SRAconst [k] x` (`ASR $k, Rn, Rd`, `0 ≤ k < 64`) of a 64-bit argument, `UBFIZ [k] x` (`UBFIZ $lsb,
+Rn, $width, Rd`, `k = lsb · 256 + width < 2 ^ 16`) of an argument of class `ca` with `width ≤ ca` or
+`c ≤ ca`, and `CMNWconst [k] x` (`CMNW $k, Rn`) of an argument of class at least 32 (`VK33`). An ALU
+op has no temporary and a result of class `c ≥ 8`. The statements are G31's over `checkG33`, with
+the same premises. No new trusted premise. The proof (`G33.lean`): `runLoc` runs the ops as
+`Arm64.evalPure` (`stepLoc_alu33`); on a 64-bit argument the register is the machine word, so
+`CLZ`/`REV` (`Arm64.clz`, `Arm64.rev`, the machine's `dp1Op`; `progStep_un33`) and `ASR`
+(`Shift.ra`, `dp2Op`'s `ASRV`; `progStep_asrK`) agree with the machine (`lo_op1_64`). The machine's
+`UBFIZ` is `Arm64.ubfiz` of the auxint `lsb · 256 + width` (`ubfiz_ofNat`, `progStep_ubfiz`); bit
+`i < c` of the result is bit `i - lsb < width` of the argument, below its class (`lo_ubfiz`). `CMNW
+$k, Rn` sets the flags of the 32-bit `ADDS` of the low words (`addSub_addFlags32`,
+`progStep_cmnwConst`), which `CMNWconst`'s are (`flagsRel_cmnwK`). The G33 ops are outside `keep31`
+and empty the upper-bit table (`keep31_alu33`). G33 accepts 5,812 functions (+109 over G31).
+`CMNconst` (22 sole after G33) stays out: on a pointer without an integer form `runLoc` gives `Z`
+clear (`Arm64.cmp1P`'s `zClear`), which only G1's `NoBarePtr` premise for `CMP`/`CMPconst` relates
+to the machine; `LoweredGetCallerPC` (25) emits the pseudo-instruction `GETCALLERPC`, which the
+machine model of P0 does not run (`obj7`'s `preprocess` makes it `MOVD LR` or `MOVD (RSP)`).
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -797,10 +818,10 @@ reason in parentheses):
    a parameter of the semantics); slots of other sizes (`slot … frame operand, size or alignment`,
    717).
 3. **Other values**: the acquire loads `LDAR`/`LDARW` (383, 277); `InitMem` after the entry values
-   (33 sole after G31), `UBFIZ` (31), `LoweredGetCallerPC` (25), `REV` (24), `SRAconst` (22),
-   `CLZ`, `CMNconst` (21 each), `CMNWconst` (15); `MOVDnop` 750 (91) and `MOVDreg` (27 sole) are
-   done in G20, G21, G29 and G31 but for 26 functions with no other blocker after G31, whose
-   tables need more ops to keep their entries (§8). Bounds panics
+   (33 sole after G33), `LoweredGetCallerPC` (25), `SLL` (25), `ADDshiftRL` (23), `CMNconst` (22),
+   `CMPshiftRL` (15), `MADD` (12); `MOVDnop` 750 (91) and `MOVDreg` (27 sole) are done in G20, G21,
+   G29 and G31 but for 29 functions with no other blocker after G33, whose tables need more ops to
+   keep their entries (§8). Bounds panics
    (`LoweredPanicBoundsRR` 616 (68), `RC` 332 (46), `CR` 76 (33), `CC` 170 (22)) are done in G19
    but for #541's 2 functions.
 
@@ -843,6 +864,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G30 | 5,367 (57.72%) | 121,060 |
 | G32 | 5,678 (61.07%) | 143,647 |
 | G31 | 5,703 (61.34%) | 145,016 |
+| G33 | 5,812 (62.51%) | 151,700 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1043,6 +1065,14 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
 - `Keep31.lean`: `VK32` of a `keep31` value is `VK3` (`vk32_vk3`, through `vk4_vk3` … `vk32_vk28`).
 - `G31.lean`: `uok_of_x`, `uokl_of_x`, `uStep31_keep`, `uStep31_other`, `uokl_keep`, `vk3_keep`,
   `vk31_step`, `uL_nl30`, `g31_value`, `g31_nilPanic`, `g31_boundsPanic`, `g31_term`.
+- `Spec33.lean`: what `checkG33` accepted (`VK33`, `ubfizOK_spec`, `un33Kind_spec`,
+  `ubfizKind_spec`, `sraKind_spec`, `cmnwKind_spec`, `vkind33_spec`, `checkG31_of_33`,
+  `checkG33_spec`).
+- `G33.lean`: `unF33`, `AluOp33`, `evalPure_un33`, `keep31_alu33`, `stepLoc_alu33`,
+  `progStep_un33`, `dp2Op_asr`, `progStep_asrK`, `ubfiz_ofNat`, `progStep_ubfiz`,
+  `addSub_addFlags32`, `progStep_cmnwConst`, `lo_op1_64`, `lo_ubfiz`, `flagsRel_cmnwK`, `g33_un`,
+  `g33_sra`, `g33_ubfiz`, `g33_cmnw`, `vk33_step`, `g33_value`, `vk33_nil`, `g33_nilPanic`,
+  `g33_boundsPanic`, `g33_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -1138,7 +1168,14 @@ rejects: `b1` loads the byte `h.nbuf` into `R4` and copies it to `R5`, and `b3`'
 v8`, `MOVD R4, R2`, finds `R4`'s entry only in `uIn lc 3 = [(5, 8, false), (4, 8, false)]`, the end
 of `b1`; `g31_value` on `v22` from a machine whose `X4`, `X5` are zero-extended from 8 bits, after
 which the machine's whole `X2 = 0x2a`, and `g31_term` on `b1`'s `CBZW R5` to `b3` with `UOKL` of
-`uIn lc 3`, which gives the whole `X5 = 0x2a`).
+`uIn lc 3`, which gives the whole `X5 = 0x2a`), `GenG33.lean` (`math/bits.ReverseBytes` and
+`internal/bytealg.Cutover`, which G31 rejects: `g33_value` on `v9 = REV v6`, `REV R0, R0`, from
+`0x0102030405060708`, after which the machine's `X0 = 0x0807060504030201`, and on `v10 = SRAconst [4]
+v6`, `ASR $4, R0, R1`, from `-256`, after which `X1 = 0xfffffffffffffff0`), `GenG33b.lean`
+(`runtime.(*mspan).pinnerBitSize` and `runtime.(*_func).isInlined`: `g33_value` on `v13 = UBFIZ
+[272] v10`, `UBFIZ $1, R1, $16, R1`, from the 16-bit `0xbeef` with G31's table holding `R1`, after
+which `X1 = 0x17dde`, and on `v3 = CMNWconst [1] v10`, `CMNW $1, R1`, from the 32-bit `0xffffffff`,
+after which the machine's `Z` flag is set).
 Each decides its inputs by compiled evaluation (`native_decide`, pinned in
 `scripts/axioms-allowlist.txt`).
 
