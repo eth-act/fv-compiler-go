@@ -100,6 +100,12 @@ GoFV.Proof.Witness.ObjWholeNL.nl_lc_facts._native.native_decide.ax_1_1 784da2871
 GoFV.Proof.Witness.ObjPanic.panic_obj_facts._native.native_decide.ax_1_1 b73aef2e2f432e8a63f0e8348f7592acc99445f44674cd4a9dd2bafece91db37
 GoFV.Proof.Witness.ObjPanic.panic_lc_facts._native.native_decide.ax_1_1 2dc44f2361df5222cffb602557277d6e0a93a6213bd2876b4329ea5d90e25e89
 GoFV.Proof.Witness.ObjPanic.callPanic_facts._native.native_decide.ax_1_1 5966a8eb5828581c1d1c191ac4e9408d8eee324cab78311338c8b98a4e3fb981
+# g30_icallPanic_witness, g30_storePanic_witness (GoFV/Proof/Witness/ObjPanic.lean, #553): `checkG30`
+# on `Locker.Lock` and its interface call's panic in `envP`; `checkG30` on `(*queueOnePass).next`
+# with `checkG21`'s tables and the nil-page panic of its `MOVWstore` from a nil `q`; compiled
+# evaluation, as plF_pipeline.
+GoFV.Proof.Witness.ObjPanic.icallPanic_facts._native.native_decide.ax_1_1 d5f7e02ad34948a791b7d2b91dd80cf45cda1b7dd5e9509c866c9a98620907ef
+GoFV.Proof.Witness.ObjPanic.storePanic_facts._native.native_decide.ax_1_1 9abc5156188affa8c43b3253a7a0ff59c48e9d109ef7fb11a6dcb0d888af351d
 # genG13_value_witness (GoFV/Proof/Witness/GenG13.lean, #553): `checkG13` accepts
 # `runtime.(*pageBits).clearAll` and `checkG12` does not (parsed, `Env.load`, `genssa`), `runLoc`
 # runs the zeroing `LoweredZero [64]` to 64 zero bytes; compiled evaluation, as plF_pipeline.
