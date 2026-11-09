@@ -159,6 +159,7 @@ import GoFV.Proof.Gen.Spec6
 import GoFV.Proof.Gen.Spec7
 import GoFV.Proof.Gen.Spec8
 import GoFV.Proof.Gen.Spec9
+import GoFV.Proof.Gen.SpecEntry49
 import GoFV.Proof.Gen.Stack
 import GoFV.Proof.Gen.Step
 import GoFV.Proof.Gen.Step3
@@ -233,9 +234,10 @@ import GoFV.Proof.Obj.Bitfield
 import GoFV.Proof.Obj.CallPanic
 import GoFV.Proof.Obj.EndToEnd
 import GoFV.Proof.Obj.EndToEndFixed
+import GoFV.Proof.Obj.Entry49
 import GoFV.Proof.Obj.Ex
 import GoFV.Proof.Obj.Frame
-import GoFV.Proof.Obj.G46
+import GoFV.Proof.Obj.G49
 import GoFV.Proof.Obj.G7
 import GoFV.Proof.Obj.Insn
 import GoFV.Proof.Obj.Link
@@ -997,6 +999,7 @@ import GoFV.Proof.Witness.NilMalloc
 import GoFV.Proof.Witness.NilSel
 import GoFV.Proof.Witness.NotIf
 import GoFV.Proof.Witness.ObjEndToEnd
+import GoFV.Proof.Witness.ObjEntry49
 import GoFV.Proof.Witness.ObjFrame
 import GoFV.Proof.Witness.ObjG7
 import GoFV.Proof.Witness.ObjOps

@@ -243,6 +243,14 @@ theorem vkind50_initMem {lc : LocCtx} {g : G2In} {v : Value} (hop : v.op = .Init
   | ok _ => rfl
   | error e => simp [pair50, pairOp50, hop]
 
+/-- On an op that is neither a G50 pair load nor `Select0`/`Select1`, `vkind50` is `vkind47`. -/
+theorem vkind50_eq47 {lc : LocCtx} {g : G2In} {v : Value} (h1 : pairOp50 v.op = none)
+    (h2 : v.op ≠ .Select0) (h3 : v.op ≠ .Select1) : vkind50 lc g v = vkind47 lc g v := by
+  unfold vkind50
+  cases vkind47 lc g v with
+  | ok _ => rfl
+  | error e => simp [pair50, h1, h2, h3]
+
 /-- On a function with no arm64 op, G50's check is G33. -/
 theorem checkG33_of_50L {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}
     {r : Except String (PcTab × KTab)} (hl : lc.ctx.f.lowered = false)

@@ -81,6 +81,16 @@ theorem vkind51_initMem {lc : LocCtx} {g : G2In} {v : Value} (hop : v.op = .Init
     rw [vkind51a_none (by rw [hop]; rfl), vkind51b_none (by rw [hop]; rfl),
       vkind51c_none (by rw [hop]; rfl)]
 
+/-- On an op of none of G51's groups, `vkind51` is `vkind50`. -/
+theorem vkind51_eq50 {lc : LocCtx} {g : G2In} {v : Value} (h1 : op51a v.op = false)
+    (h2 : op51b v.op = false) (h3 : op51c v.op = false) : vkind51 lc g v = vkind50 lc g v := by
+  unfold vkind51
+  cases vkind50 lc g v with
+  | ok _ => rfl
+  | error e =>
+    simp only
+    rw [vkind51a_none h1, vkind51b_none h2, vkind51c_none h3]
+
 /-- On a function with no arm64 op, G51's check is G33. -/
 theorem checkG33_of_51L {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}
     {r : Except String (PcTab × KTab)} (hl : lc.ctx.f.lowered = false)

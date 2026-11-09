@@ -8,7 +8,8 @@ variable [GoFV.SSA.Sem.Addrs]
 
 `VK47`: G46's kinds (`VK46`, through `vkind46`) and G47's static calls (`callKind47_spec`),
 interface and closure calls (`icallKind47_spec`) and selects in an `F` register
-(`selKind47_spec`); on `InitMem`, `vkind47` is `vkind46` (`vkind47_initMem`). `checkG47L_spec` is
+(`selKind47_spec`); on `InitMem`, `vkind47` is `vkind46` (`vkind47_initMem`), and so on an op
+that is neither a call nor `SelectN` (`vkind47_eq46`). `checkG47L_spec` is
 `checkG46L_spec` with `vkind47`, and `checkG47_spec` splits off `refsLive`.
 -/
 
@@ -322,6 +323,15 @@ theorem vkind47_initMem {lc : LocCtx} {g : G2In} {v : Value} (hop : v.op = .Init
   cases vkind46 lc g v with
   | ok _ => rfl
   | error e => simp [fcall47, hop, icallLead]
+
+/-- On an op that is neither a static, interface or closure call nor `SelectN`, `vkind47` is
+`vkind46`. -/
+theorem vkind47_eq46 {lc : LocCtx} {g : G2In} {v : Value} (h1 : v.op ≠ .ARM64CALLstatic)
+    (h2 : icallLead v.op = none) (h3 : v.op ≠ .SelectN) : vkind47 lc g v = vkind46 lc g v := by
+  unfold vkind47
+  cases vkind46 lc g v with
+  | ok _ => rfl
+  | error e => simp [fcall47, h1, h2, h3]
 
 /-- On a function with no arm64 op, G47's check is G33. -/
 theorem checkG33_of_47L {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}

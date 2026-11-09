@@ -1,5 +1,6 @@
 import GoFV.Gen.Results
 import GoFV.Proof.Gen.G26
+import GoFV.Proof.Gen.FMove
 
 variable [GoFV.SSA.Sem.Addrs]
 
@@ -8,11 +9,13 @@ variable [GoFV.SSA.Sem.Addrs]
 
 What `retRegsOK` (`GoFV/Gen/Results.lean`) gives: when the terminator of a `Ret` block returns
 `(rs, mm)` from a state `LocMatch`ed to the machine state `m`, `rs` are the contents of the
-function's result registers (`ownOutRegs`), related to `m`'s X registers, and `mm` is the state's
-memory (`ret_results`, `ResultRel`). Both modes: a lowered function reads its results as
-registers (`Val.retypeL`), one with no arm64 op (slice G26's functions) at their shapes
-(`Val.retype`); either keeps a register's relation at a `MakeResult` component of a class no
-wider than the result's (`valRel_retypeL_le`, `lmode_valRel_le`).
+function's result registers (`ownOutRegs`), related to `m`'s X registers (`R0`–`R15`) or V
+registers (`F0`–`F15`, `FValRel`), and `mm` is the state's memory (`ret_results`, `ResultRel`).
+Both modes: a lowered function reads its results as registers (`Val.retypeL`), one with no arm64
+op (slice G26's functions) at their shapes (`Val.retype`); either keeps a register's relation at
+a `MakeResult` component of a class no wider than the result's (`valRel_retypeL_le`,
+`lmode_valRel_le`), and a V register's at a float component of the result's class
+(`fvalRel_retypeL`, `lmode_fvalRel`).
 -/
 
 namespace GoFV.Proof.Obj
@@ -22,13 +25,14 @@ open GoFV.Arm64 (MState)
 open GoFV.Proof.Gen
 
 /-- The results `rs` and the memory `mm` of a return, and the machine state `t`: as many results
-as result registers `outs`, the `j`-th in the X register of `outs[j]` (`R0`–`R15`), and `mm`
-injected into the memory. -/
+as result registers `outs`, the `j`-th in the X register of `outs[j]` (`R0`–`R15`) or in the V
+register of `outs[j]` (`F0`–`F15`, Go registers 31–46), and `mm` injected into the memory. -/
 structure ResultRel (E : MatchEnv) (outs : List Nat) (rs : List Val) (mm : Mem) (t : MState) :
     Prop where
   len : rs.length = outs.length
   regs : ∀ (j : Nat) x r, rs[j]? = some x → outs[j]? = some r →
-    r < 16 ∧ ValRel E.ι x (t.x (BitVec.ofNat 5 r))
+    (r < 16 ∧ ValRel E.ι x (t.x (BitVec.ofNat 5 r))) ∨
+      (31 ≤ r ∧ r < 47 ∧ FValRel x (t.v (BitVec.ofNat 5 (r - 31))))
   mem : MemInj E.ι mm t.mem
 
 /-! ## Reading a register at a narrower shape -/
@@ -117,6 +121,18 @@ theorem lmode_valRel_le {ι : Blk → Option (BitVec 64)} (hA : AddrAgree ι) (f
   · rw [lmode_retypeP hl]; exact valRel_retype_le hA hc hle hf hv
   · rw [lmode_retype hl]; exact valRel_retypeL_le hA hc hle hf hv
 
+/-- `runLoc`'s reading of a V register content of class `c` at a float shape of class `c` keeps
+its relation. -/
+theorem lmode_fvalRel (f : Func) {c : Nat} {t : Ty} {x : Val} {q : BitVec 128}
+    (hx : FValRel x q) (hf : Fits c x) (ht : fTy t = true) (hc : cls t = some c) :
+    FValRel ((LMode.loc f).retype t x) q := by
+  cases hl : f.lowered
+  · rw [lmode_retypeP hl]
+    rcases retype_cases hc x with h | h
+    · rw [h]; exact fvalRel_retypeL hx hf ht hc
+    · rw [h]; trivial
+  · rw [lmode_retype hl]; exact fvalRel_retypeL hx hf ht hc
+
 theorem retypePre_eq : ∀ (ts : List Ty) (xs : List Val), ts.length = xs.length →
     Val.retypePre ts xs = some (List.zipWith (fun t x => x.retype t) ts xs)
   | [], [], _ => rfl
@@ -152,6 +168,27 @@ theorem arg_relL (hA : AddrAgree E.ι) (hm : LocMatch E s b i m) (hinv : CoreInv
   cases hl : lc.ctx.f.lowered
   · exact arg_relP hA hl hm hinv hh hc hK hk
   · exact arg_rel hA hl hm hinv hh hc hK hk
+
+/-- A register argument in a V register, read at its float shape (either mode): related to the V
+register and of its class. -/
+theorem arg_relVL (hm : LocMatch E s b i m) (hinv : CoreInv ι P K s) {a r c : Nat}
+    {k : GoFV.Arm64.Reg} (hh : lc.home a = some (.reg r)) (hft : fTy (lc.ty a) = true)
+    (hc : cls (lc.ty a) = some c) (hK : K r = some c) (hobj : objV? r = some k) :
+    ∃ x, s.read lc a = .ok x ∧ FValRel x (m.v k) ∧ Fits c x := by
+  have hL : FValRel ((s.reg (lc.ty a) r).retypeL (lc.ty a)) (m.v k) := by
+    have hrz : r ≠ zeroReg := by have := (objV?_some hobj).1; unfold zeroReg; omega
+    simp only [LocState.reg, beq_iff_eq, hrz, ↓reduceIte]
+    cases hv : s.regs[r]? with
+    | none => simp only [Option.getD_none, retypeL_poison]; trivial
+    | some v =>
+      simp only [Option.getD_some]
+      exact fvalRel_retypeL ((hm.regs r v hv).2 k hobj) (hinv.regs r v c hrz hv hK) hft hc
+  cases hl : lc.ctx.f.lowered
+  · refine ⟨_, read_regP hl hh hc, ?_, fits_retype hc _⟩
+    rcases retype_cases hc (s.reg (lc.ty a) r) with h | h
+    · rw [h]; exact hL
+    · rw [h]; trivial
+  · exact ⟨_, read_reg hl hh hc, hL, fits_retypeL hc _⟩
 
 /-- The memory argument (either mode). -/
 theorem read_memL {a : Nat} (hh : lc.home a = none) (ht : memTy (lc.ty a) = true) {mm : Mem}
@@ -194,7 +231,7 @@ theorem stepTermL_ret {fr : GoFV.SSA.Sem.Frame} {b : Block} {rs : List Val} {mm 
 /-- **The results of a return.** When `retBlockOK` accepts the `Ret` block `blk` (ID `b`) for the
 result registers `outs`, its terminator returning `(rs, mm)` from a state `s` `LocMatch`ed to `m`
 (the class map at the terminator holding of `s`) returns the contents of `outs`, related to `m`'s
-registers, and `s`'s memory; in either mode. -/
+X or V registers, and `s`'s memory; in either mode. -/
 theorem ret_results {E : MatchEnv} {lc : LocCtx} {kt : KTab} {P : BitVec 64 → Prop}
     {s s' : LocState} {b : ID} {blk : Block} {m : MState} {outs : List Nat} {rs : List Val}
     {mm : Mem} (hA : AddrAgree E.ι)
@@ -258,8 +295,8 @@ theorem ret_results {E : MatchEnv} {lc : LocCtx} {kt : KTab} {P : BitVec 64 → 
     have hja : j < v.args.toList.length := by simp; omega
     have hz := hall ((v.args.toList[j], ts[j]'(by omega)), outs[j]) (List.mem_iff_getElem.2
       ⟨j, by simp; omega, by simp⟩)
-    simp only [retArgOK, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hz
-    obtain ⟨⟨hh, h16⟩, hcm⟩ := hz
+    simp only [retArgOK, Bool.and_eq_true, beq_iff_eq] at hz
+    obtain ⟨hh, hcm⟩ := hz
     cases hc0 : cls (lc.ty v.args.toList[j]) with
     | none => rw [hc0] at hcm; cases hcm
     | some c0 =>
@@ -267,17 +304,25 @@ theorem ret_results {E : MatchEnv} {lc : LocCtx} {kt : KTab} {P : BitVec 64 → 
     | none => rw [hc0, hc1] at hcm; cases hcm
     | some c1 =>
     rw [hc0, hc1] at hcm
-    simp only [Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq] at hcm
-    obtain ⟨hle, hK⟩ := hcm
-    obtain ⟨x', hx', hrel, hfit⟩ := arg_relL hA hm hinv hh hc0 (fun _ => hK)
-      (Or.inr ⟨by omega, objX?_low h16⟩)
-    have hxj : xs[j]'(by omega) = x' := by
+    simp only [Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq, beq_iff_eq] at hcm
+    obtain ⟨hK, hcm⟩ := hcm
+    have hxj : ∀ x', s.read lc v.args.toList[j] = .ok x' → xs[j]'(by omega) = x' := by
+      intro x' hx'
       have := hread j hja (by omega)
       rw [hx'] at this
       exact (Res.ok.inj this).symm
-    refine ⟨h16, ?_⟩
-    rw [hcomp j hj, hxj, ← rX_lt (by omega)]
-    exact lmode_valRel_le hA _ hc1 hle hfit hrel
+    rcases hcm with ⟨h16, hle⟩ | ⟨⟨⟨⟨h31, h47⟩, hfa⟩, hft⟩, rfl⟩
+    · obtain ⟨x', hx', hrel, hfit⟩ := arg_relL hA hm hinv hh hc0 (fun _ => hK)
+        (Or.inr ⟨by omega, objX?_low h16⟩)
+      refine .inl ⟨h16, ?_⟩
+      rw [hcomp j hj, hxj x' hx', ← rX_lt (by omega)]
+      exact lmode_valRel_le hA _ hc1 hle hfit hrel
+    · have hk : objV? outs[j] = some (BitVec.ofNat 5 (outs[j] - 31)) := by
+        simp [objV?, h31, show outs[j] < 63 by omega]
+      obtain ⟨x', hx', hrel, hfit⟩ := arg_relVL hm hinv hh hfa hc0 hK hk
+      refine .inr ⟨h31, h47, ?_⟩
+      rw [hcomp j hj, hxj x' hx']
+      exact lmode_fvalRel _ hrel hfit hft hc1
   · -- the memory: the last argument's read, the state's memory
     have hlast' : v.args.toList.getLast? = some (v.args.toList[outs.length]'(by simp; omega)) := by
       rw [List.getLast?_eq_getElem?]

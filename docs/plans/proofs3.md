@@ -17,14 +17,16 @@ closure context premise `CloOK` (§4, `docs/proofs/STATUS.md` Assumptions); §6 
 on these premises.
 The assembler validator `checkObj` (P0 against the assembled words, D2–D5, probe `obj-check`) is
 implemented and proven sound (`GoFV/Proof/Obj/`: `obj_star`, the templates `obj_entry`/`obj_exit`;
-`g7_obj_value`/`g7_obj_term` and `g46_obj_value`/`g46_obj_term`/`g46_obj_nilPanic`/
-`g46_obj_boundsPanic` compose it with G7 and G46: `runLoc` to the machine words; §7). Whole
-functions: `obj_whole_ret` (a returning `runLoc` body of a G46 function, from the machine's entry
-through the prologue, the blocks and the epilogue to the caller's return address, the results in
+`g7_obj_value`/`g7_obj_term` and `g49_obj_value`/`g49_obj_term`/`g49_obj_nilPanic`/
+`g49_obj_boundsPanic` compose it with G7 and G49: `runLoc` to the machine words; §7). Whole
+functions: `obj_whole_ret` (a returning `runLoc` body of a G49 function, from the machine's entry
+through the prologue, the entry stores of the register parameters in `Blk.local` blocks, the
+blocks and the epilogue to the caller's return address, the results in
 their ABI registers), `obj_whole_panic` (a panicking body: nil checks, loads, stores and acquire
 loads that fault, bounds checks, calls whose callee panics), and the end-to-end statement
-`verified_mach` on slice G46 (generic SSA `run` refined by `runLoc`, whose body is matched by
-`runMach` of the assembled words; `checkG46`'s `checkG46L` on `liveCtx`, `runLoopLoc_live`; §9),
+`verified_mach` on slice G49 (generic SSA `run` refined by `runLoc`, whose body is matched by
+`runMach` of the assembled words; `checkG49`'s `checkG49L` on `liveCtx`, `runLoopLoc_live`,
+`entryStoresOK`; §9),
 with a witness on `pallocSum.start` from its generic SSA.
 Context:
 `docs/plans/semantics3.md` (§4 `LocMatch`, §6 hooks, §7 layers), `docs/PASSES3.md` (the steps
@@ -915,7 +917,7 @@ the zero extension of the `n` bytes the machine's `LDAR*` loads (`valRel_ldar`, 
 A component reads the tuple from `(Rd;-)` (`read_ldar`): `Select0` is `Rd`, which the machine
 already holds (`g38_sel0`), `Select1` the memory (`g38_sel1`). The G38 values empty the upper-bit
 table (`uStep35_ldar`, `uStep35_selLdar`). G38 accepts 6,380 functions (+281 over G37). An acquire
-load whose step faults (`nilFaults`) faults on the machine too (`g46_obj_ldarPanic`, §9).
+load whose step faults (`nilFaults`) faults on the machine too (`g51_obj_ldarPanic`, §9).
 
 **Slice G39: the homes of removed values** (`GoFV/Gen/Check39.lean`, `checkG39 lc ps bstart g`,
 returning G4's tables; proven sound, `g39_value`, `g39_term`, `g39_nilPanic`, `g39_boundsPanic`):
@@ -1141,9 +1143,10 @@ G6's case lemma at that address (`var49_addr`, `g49_addr`, `g49_load`, `g49_stor
 assignment. `g49_value` takes G51's `G51Pre`. Witness `genG49_witness` (`runtime.getm`'s ABI0
 wrapper: `MOVD R0, ~r0+0(FP)` stores the result into its `NAME_PARAM` operand, which G51 rejects;
 at `Addrs.fixed`, with `SP` chosen so that the operand is the block's fixed address). G49
-accepts 7,142 functions (+160 over G51). Composition (§9) is open: `EntryMatch`'s `MemInj` at
-entry does not hold for a register parameter whose address is taken until genssa's entry store
-(item 8's `ParamMem`).
+accepts 7,142 functions (+160 over G51). Composed in §9 (option (a)): `EntryMatch` leaves the
+windows of the register-assigned parameters it accesses out (`pendWins`), the entry stores run
+from that relaxed relation to the full one (`sim_entryStores`), under the checked
+`entryStoresOK`.
 
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
@@ -2098,10 +2101,11 @@ few:
      (also covering the `PAUTO`s with an integer address, at their `NAME_AUTO` operand), an
      activation premise of `G49Env`; `checkVars49` keeps windows of one operand class apart
      from that class's home slots, with no checked entry-store prefix; the witness is
-     `runtime.getm`'s ABI0 wrapper (a stack result), at `Addrs.fixed`. Open, in the composition
-     (§9): `EntryMatch`'s `MemInj` at entry fails for the `local` block of a register parameter
-     whose address is taken until its entry store. Either restate it to exclude those blocks
-     until the store, or add a `ParamMem` clause to `SimAt` that clears after it.
+     `runtime.getm`'s ABI0 wrapper (a stack result), at `Addrs.fixed`. **Composed in §9** with
+     the first option: `EntryMatch` excludes the windows of the accessed register parameters
+     (`pendWins`) until the entry stores, which `sim_entryStores` runs; the entry-store prefix
+     check is `entryStoresOK` (`GoFV/Gen/Entry49.lean`, a premise of `verified_mach`), not a part
+     of `checkVars49`; `ParamMem` is not needed (§9 records why).
 
 **Plan for `MOVDnop`, which needs no option 2.** G20 and G21 (§4) are the first step: their table
 `uAt` has an entry only directly after a narrow load, so no slice has to say which registers it
@@ -2176,11 +2180,12 @@ reason in parentheses):
 ## 9. Whole functions and the end-to-end statement
 
 **Whole functions** (`GoFV/Proof/Obj/Whole.lean`). The value and terminator theorems of the latest
-slice, composed with `obj_star` (`g46_obj_value`/`g46_obj_term`, `GoFV/Proof/Obj/G46.lean`), are
+slice, composed with `obj_star` (`g49_obj_value`/`g49_obj_term`, `GoFV/Proof/Obj/G49.lean`), are
 chained along a run of `runLoc`'s body. The invariant `SimAt` before value `i` of block `b`: a P0
 state `m` `LocMatch`ed to `runLoc`'s state under an activation `E` extending the entry's `E0`
-(`G28Env`, `G3Inv` at the class map `kAt`, G46's upper-bit table (G35's) `UOKL m (uL35 lc (uIn35 lc b)
-blk i)`: `g46_value` carries it from value to value, `g46_term` hands the successor's start
+(`G49Env`: `G28Env` and `VarsAt49`, kept along `Extends` by `VarsAt49.extend`; `G3Inv` at the
+class map `kAt`, G49's upper-bit table (G35's) `UOKL m (uL35 lc (uIn35 lc b)
+blk i)`: `g49_value` carries it from value to value, `g49_term` hands the successor's start
 `uIn35 lc e.b` on, `uEdgesOK35`), and `ObjRel`-related to the machine state; in a leaf
 (`checkObj`'s `leaf`, `leafOf`: no `CALL`), `m`'s `X30` is still the caller's return address
 `E0.lr`, which is no P0 address and not `endP`; at a clean position `runLoc`'s state holds the
@@ -2194,31 +2199,68 @@ initial memory (`MemAt`: in a lowered function under `cleanOK`, `cleanAt → Mem
   `valRel_reloadVal`), the other registers but `R26`, `R28`–`R30`, the vector registers, the slots
   and the guard word; the caller-side premise `MoreEntry` (every live register but `R26` reloaded
   from a slot it fits, `ValFits`; no live vector register; the live blocks apart from the slots and
-  the guard word) carries `EntryMatch E0 sI s0` to `s0'` (`EntryMatch.more`, `EntryEnv.more`). The
-  P0 state is the machine's with the PC of the entry block's value
+  the guard word) carries `EntryMatch E0 W sI s0` to `s0'` (`EntryMatch.more`, `EntryEnv.more`).
+  The P0 state is the machine's with the PC of the entry block's value
   `k`, the first after the entry values (`InitMem`, `SP`, `ArgIntReg`, `ArgFloatReg`, which emit
-  nothing and are not `g*_value`'s). Its `LocMatch` with the state `sI` after them follows from
-  `EntryMatch E0 sI s0'` and `EntryEnv E0 … s0'`: the argument registers, no flags or slots, the
-  memory injected (the prologue writes only the saved `LR`/`FP` words, outside the live blocks by
-  `G3Inv`'s `SepFrom`), the frame; `uL35 lc [] … k = []` (no upper-bit fact on entry; the entry
-  block's start `uIn35` is empty, `checkG46L_uIn_entry`). The premise
+  nothing and are not `g*_value`'s). It is related to the state `sI` after them with its memory
+  replaced (`SimAtW`, below): `EntryMatch E0 W sI s0'` and `EntryEnv E0 … s0'` give the argument
+  registers, no flags or slots, the memory injected into a memory that is the machine's but for
+  the bytes `W` (the prologue writes only the saved `LR`/`FP` words, outside the live blocks by
+  `G3Inv`'s `SepFrom`; the replaced memory takes the machine's bytes there), the frame;
+  `uL35 lc [] … k = []` (no upper-bit fact on entry; the entry
+  block's start `uIn35` is empty, `checkG49L_uIn_entry`). The premise
   `ObjEnv.map … (E0.pcOf entry k) = base + offs[0]` places value `k` at the body's start (the
   Progs before it are pseudo-ops).
-- **Values, terminators** (`sim_value`, `sim_goto`, `sim_values`): `g46_obj_value`/`g46_obj_term`
+- **Entry stores** (`sim_entryStores`, `GoFV/Proof/Obj/Entry49.lean`; `docs/plans/proofs3.md` §8
+  item 8). Phase 1 initialises the `Blk.local` block of every `PPARAM` with its argument's image
+  (`frameAllocs`), and `VarsAt49` places the block of an accessed one at its `NAME_PARAM` operand,
+  in the caller's spill area: for a register-assigned parameter that area holds garbage until
+  genssa's entry store (`MOVD R1, x+8(FP)`, `STP (R0, R1), x+0(FP)`), so `MemInj` at the entry
+  would make `EntryMatch` unsatisfiable for such functions. `EntryMatch E0 W` relates `sI`'s
+  memory to a memory `M` that is `s0`'s but for the bytes `W`; the end-to-end statement takes
+  `W = InWins L E0.sp (pendWins lc g)`, the windows of the register-assigned parameters in
+  `Blk.local` blocks the function accesses (`GoFV/Gen/Entry49.lean`). The entry stores
+  (`entryStore?`: a store of `MOV{D,W,H,B}store` or `STP` to a frame variable at its `NAME_PARAM`
+  operand that `vkind51` rejects, so G49's frame-variable path; `entryStores lc g k`, those at the
+  head of the entry block from value `k`) are run against the relaxed relation: `SimAtW` is
+  `SimAt` with the P0 state's memory replaced by one agreeing with it outside `W`; an entry store's
+  Prog writes its window alike in both memories (`g49L_entryStore`: `entryStore?_spec`,
+  `op_mem2W`, `g49_storeW`, `g49_stpW`, `writeMem_agree`/`writeMem_agree2`), so after it the
+  memories agree outside `W` minus that window (`sim_entryStore`); no entry store panics (it has a
+  symbol, `stepLoc_mem_panic_aux`); the run continues alike (`runFromLoc_val`). The checked
+  boolean `entryStoresOK lc g k` (a premise of `verified_mach` as `retRegsOK` is; the driver
+  checks it at `k = entryLen`) says the entry stores cover every byte of every pending window
+  (`entryStoresOK_cover`), so after them nothing is left out and `SimAtW` is `SimAt`
+  (`SimAtW.simAt`): `LocMatch`, the slice lemmas and `SimAt` are unchanged. On quick-v10, 100
+  functions' entry blocks store a `PPARAM` (`STP` 109 times, `MOVDstore` 43, narrower stores 14,
+  float stores 4); in 50 the stores follow the entry values directly, in the other 50 spills
+  (`StoreReg`) or `SP`/`InitMem` come first.
+  The choice (option (a)) over (b), a `ParamMem` clause in `SimAt` saying which parameter windows
+  are still pending: (b) weakens `LocMatch` (or adds a side condition) at every value, terminator
+  and panic lemma of every slice, all of which would have to carry and discharge it; (a) keeps the
+  relaxation inside the entry (`EntryMatch`, `SimAtW`, the entry stores) and needs only the entry
+  stores' Progs, at the cost of a check on their position (`entryStoresOK`), which rejects
+  functions whose entry stores are not at the head of the entry block.
+- **Values, terminators** (`sim_value`, `sim_goto`, `sim_values`): `g49_obj_value`/`g49_obj_term`
   under the per-step premises `RunPre`, stated at the states `runLoc` reaches (`LReach`) from
-  `(entry, k, sI)`: `G46Pre` (`G45Pre`: `G44Pre`, that is `G14Pre`, an acquire load's valid bytes
-  `LdarPre`, `CmpPre`, the first argument of a G41 compare no pointer without an integer form,
+  `(entry, k, sI)`: `G51Pre`, that is `G50Pre`, `G46Pre` (`G45Pre`: `G44Pre`, that is `G14Pre`, an acquire
+  load's valid bytes `LdarPre`, `CmpPre`, the first argument of a G41 compare no pointer without an
+  integer form,
   and `FLoadPre`, a float load's valid bytes at no bare pointer; and `FIdxPre`, the same of a
   float register-index load; and `FArithPre`, no `FADD`/`FMUL` of an `FNaNSwap` pair and no
-  `FMADD`/`FNMSUB` multiplying an `FSameNaN` pair), `G1TermPre`,
+  `FMADD`/`FNMSUB` multiplying an `FSameNaN` pair) and G50's `PairPre50` (a pair load reads valid
+  bytes at both addresses, no pointer into a V register) and G51's `Pre51a` (the compared
+  arguments of `CMN` and `CMPshiftRA` no pointer without an integer form), `G1TermPre`,
   no entry value (`entryOp24`) but an `InitMem` in a lowered function, `GetGOK`, and the callee
   contracts (`CallOK`, `CallOKZ`, `ICallOK`, `WbOK`, `CloOK`, `MemEqOK`) at every `LocMatch`ed
-  machine state. `checkG46L_cx` gives the context of both modes (lowered, and G26's functions with
-  no arm64 op). `checkG46L` accepted such an `InitMem` only at a clean position of a function
-  whose clean blocks are closed backwards (`g46L_clean`: `vkind46_initMem`, `vkind45_initMem`,
-  `vkind44_initMem`, `vkind43_initMem`, `initMemClean_spec`),
+  machine state. `checkG49L_cx` gives the context of both modes (lowered, and G26's functions with
+  no arm64 op). `checkG49L` accepted such an `InitMem` only at a clean position of a function
+  whose clean blocks are closed backwards (`g49L_clean`: `vkind49_initMem`, `vkind51_initMem`,
+  `vkind50_initMem`,
+  `vkind47_initMem`, `vkind46_initMem`,
+  `vkind45_initMem`, `vkind44_initMem`, `vkind43_initMem`, `initMemClean_spec`),
   where it runs no code and changes nothing from a state holding the initial memory (`MemInit`,
-  `g46L_initMem`). `SimAt` carries `MemAt`: from `runLoc`'s first state (`locInit` holds `MemInit`
+  `g49L_initMem`). `SimAt` carries `MemAt`: from `runLoc`'s first state (`locInit` holds `MemInit`
   by `rfl`) through the entry values before `k` (`memAt_enter`: a clean `k` means they keep the
   memory, `memInit_enterKeep`), along a value (`memInit_clean_step`) and along an edge
   (`memInit_clean_term`, `cleanAt_zero`: `SimAt`'s `b ∈ blocks` gives `cleanOK_edge`), so
@@ -2239,70 +2281,91 @@ initial memory (`MemAt`: in a lowered function under `cleanOK`, `cleanAt → Mem
   The results (`ret_results`, `GoFV/Proof/Obj/Results.lean`): `retRegsOK` (`GoFV/Gen/Results.lean`)
   asks of every `Ret` block a `MakeResult` control with one tuple component per argument, the last
   the memory, each result homed in its ABI register (`ownOutRegs`) at a class no wider than the
-  register's at the `Ret`; `runLoc` retypes the arguments to the components (`Val.retypeL` in the
-  lowered mode, `Val.retype` in Phase 1's), which keeps the register relation
-  (`valRel_retypeL_le`, `lmode_valRel_le`). `expand calls` types the components as the results'
+  register's at the `Ret`, a result in an `F` register (`F0`–`F15`, Go registers 31–46) at a float
+  shape (`fTy`) read at a float shape of its class; `runLoc` retypes the arguments to the
+  components (`Val.retypeL` in the lowered mode, `Val.retype` in Phase 1's), which keeps the
+  register relation (`valRel_retypeL_le`, `lmode_valRel_le`) and, for a result in `F0`–`F15`, the
+  V register relation (`FValRel`: `fvalRel_retypeL`, `lmode_fvalRel`; `ResultRel` relates it to
+  the V register). `expand calls` types the components as the results'
   register types (`abi.RegisterTypes`), e.g. a `uintptr` itab word for an `*itab` result. A
   result the ABI puts on the stack, or a zero-sized one, has no register (`ownOutRegs` skips it)
   and no `MakeResult` argument: `expand calls` (`rewriteFuncResults`) stores it to its
   `PPARAMOUT` variable, whose bytes `goResults` reads from the memory at the return; that memory
   is `mm`, which `ResultRel` injects into the machine's.
 - **Run** (`sim_from_ret`, induction on the fuel), **function** (`obj_whole_ret`): `runLoopLoc`
-  from `runLoc`'s state at the entry block, the first `k` values run to `sI` (`runLoopLoc_entry`);
+  from `runLoc`'s state at the entry block, the first `k` values run to `sI` (`runLoopLoc_entry`),
+  the entry stores to the first related state (`sim_entryStores`);
   a run that returns `(rs, mm)` is matched by `runMach` returning to `s0.x 30` (`mstar_returned`)
   in a state `t'` with `MachRet s0 t'` and `ResultRel E outs rs mm t'` (`rs` in the result
-  registers, `mm` injected).
+  registers: `R0`–`R15` related to the X registers, `F0`–`F15` to the V registers; `mm` injected).
 - **Panics** (`sim_valuePanic`, `sim_from_panic`, `obj_whole_panic`): a step that panics is a nil
-  check (`g46_obj_nilPanic`: the `MOVB` faults in the nil page), a load or store that faults
-  (`g46_obj_memPanic`, `GoFV/Proof/Obj/MemPanic.lean`: `MOV{D,W,WU,H,HU,B,BU}load`, `LDP`,
+  check (`g49_obj_nilPanic`: the `MOVB` faults in the nil page), a load or store that faults
+  (`g49_obj_memPanic`, `GoFV/Proof/Obj/MemPanic.lean`: `MOV{D,W,WU,H,HU,B,BU}load`, `LDP`,
   `MOV{D,W,H,B}store` and `STP`, `memFaultOp`; `nilFaults` found a nil base and an address in the
-  nil page, so the access has no symbol, its base register holds the machine word 0 and
+  nil page, so the access has no symbol, hence no G49 frame-variable access, `frameVar49?_none`,
+  `vkind49_eq51`, its base register holds the machine word 0 and
   `X[n] + off` is in the nil page, `nil_fault_page`; no premise), an acquire load that faults
-  (`g46_obj_ldarPanic`: `LDAR`, `LDARW`, `LDARB`, `ldar?`; its address, argument 0 at offset 0, is
+  (`g49_obj_ldarPanic`: `LDAR`, `LDARW`, `LDARB`, `ldar?`; its address, argument 0 at offset 0, is
   nil, `stepLoc_ldar_panic`, so `LDAR* (Rn)` faults at address 0, `progStep_ldar_nil`; no
   premise), a bounds check
-  (`g46_obj_boundsPanic`, under the trusted `BoundsOK`: `runtime.panicBounds` reports the same
+  (`g49_obj_boundsPanic`, under the trusted `BoundsOK`: `runtime.panicBounds` reports the same
   failure, `BoundsAgree`), a static call whose
-  callee panics (`g46_obj_callPanic`, `GoFV/Proof/Obj/CallPanic.lean`, under the trusted
+  callee panics (`g49_obj_callPanic`, `GoFV/Proof/Obj/CallPanic.lean`, under the trusted
   `CallPanicOK`: the callee's hook panics alike from every state with the call's arguments in their
   registers and the memory injected), or an interface or closure call whose callee panics
-  (`g46_obj_icallPanic`, under the trusted `ICallPanicOK`: the hook at the code pointer in `Rn`
-  panics alike; `vkind28` of such a call is `vkind10`'s `icallKind`, `vkind28_icall`; `vkind46` of
-  a call, load or store is `vkind28`'s, `vkind46_eq45`, `vkind45_eq44`, `vkind44_eq43`,
-  `vkind43_eq42`, `vkind42_eq41`, `vkind41_eq40`, `vkind40_eq38`, `vkind38_eq28`); terminators
+  (`g49_obj_icallPanic`, under the trusted `ICallPanicOK`: the hook at the code pointer in `Rn`
+  panics alike; `vkind28` of such a call is `vkind10`'s `icallKind`, `vkind28_icall`; what
+  `vkind49` accepts of an acquire load or a call `vkind51` accepts, `vkind49_ok51` (no G49
+  frame-variable access); `vkind51` of
+  a load, store or call is `vkind47`'s, `vkind51_eq50` (no G51 op), `vkind50_eq47` (no G50 pair
+  load or select), and `vkind47`
+  of a load or store is `vkind28`'s, `vkind47_eq46`, `vkind46_eq45`, `vkind45_eq44`, `vkind44_eq43`,
+  `vkind43_eq42`, `vkind42_eq41`, `vkind41_eq40`, `vkind40_eq38`, `vkind38_eq28`; `vkind47` of a
+  call is that chain's (its ABI registers in `R0`–`R15`) or G47's `callKind47`/`icallKind47`
+  (`vkind47_call`, `vkind47_icall`: `callKind47_facts`, `icallKind47_facts`, with `F0`–`F15`
+  admitted, an argument there read at its float shape from its V register, `argsV`, as
+  `g2_callAt`/`g10_icall` do); terminators
   do not panic (`stepTermLoc_ne_panic`). The premise `RunPanicPre` says that every panicking step
   the run reaches is of these kinds; the machine run panics with `e'`, `BoundsAgree e e'`.
-  `RunPre` asks `G46Pre` (a load, a float load or an acquire load reads valid bytes, a nil check's
+  `RunPre` asks `G51Pre` (a load, a float load, a pair load or an acquire load reads valid bytes, a nil check's
   pointer is not nil, a G41 compare's first argument is no bare pointer) only of the
   steps that succeed, so the faulting ones are `RunPanicPre`'s alone. The register-index loads and
   stores are not among them: `runLoc` faults on their nil base whatever the index (`nilAccesses`
   takes the base as the address of a non-`SymOff` op), the machine only when the index keeps the
-  address in the nil page.
+  address in the nil page. Nor are G50's pair loads (`LDPW`, `LDPSW`, `FLDPD`, `FLDPS`): a
+  run whose pair load faults is outside `RunPanicPre`; `simpleOp` excludes them and G51's
+  `CMN`/`CMPshiftRA` (`g51Pre_simple`).
 
 **End to end** (`GoFV/Proof/Obj/EndToEnd.lean`, `verified_mach`): `verifiedPipelineFull_refines`
 gives a `runLoc` of the allocated function refining the generic `run`; `runLoc` is `finish` of its
-body (`runLoc_eq`, from `locInit`), whose outcome is defined (`finish_defined`). The slice is G46:
-`checkG46` accepts `LocCtx.make` of the output when `refsLive` holds of it and `checkG46L` accepts
+body (`runLoc_eq`, from `locInit`), whose outcome is defined (`finish_defined`). The slice is G49:
+`checkG49` accepts `LocCtx.make` of the output when `refsLive` holds of it and `checkG49L` accepts
 `lc = liveCtx` of it; the body runs alike on `lc` (`runLoopLoc_live`), and the whole-function
 theorems apply on `lc`: a returning body is `obj_whole_ret`'s, a panicking one
-`obj_whole_panic`'s (under its panic premises). The statement lists every premise (STATUS,
-Assumptions).
+`obj_whole_panic`'s (under its panic premises), both with `entryStoresOK lc g k` and
+`EntryMatch E0 (InWins L E0.sp (pendWins lc g)) sI s0`. The statement lists every premise
+(STATUS, Assumptions).
 
 **Witnesses.** `objWhole_ret_witness` (`pallocSum.start`, `p = 7`, `plRunEnv`): `runLoc`'s run
 from `locInit` and `runMach` from the entry to the caller's `0x40`, through `b1`'s `TBNZ` and
 `b2`'s `ANDconst`/`MakeResult`/`RET`, with 7 in `X0`. `objWholeNL_ret_witness`
 (`runtime.gclinkptr.ptr`, no arm64 op: `ret_results` in Phase 1's mode). `objWhole_panic_witness`
-(`(*A).g` on a nil receiver: the nil check faults). `g46_callPanic_witness` (`fint64to32`, a callee
-that panics), `g46_icallPanic_witness` (`Locker.Lock`'s interface call), `g46_storePanic_witness`
-and `g46_loadPanic_witness` (`(*queueOnePass).next`'s `MOVW R2, 52(R0)` and `MOVWU 52(R0), R3`
-with a nil `q`), `g46_ldarPanic_witness` (`sync/atomic.LoadInt64`'s `LDAR (R0), R0` with a nil
+(`(*A).g` on a nil receiver: the nil check faults). `g49_callPanic_witness` (`fint64to32`, a callee
+that panics), `g49_icallPanic_witness` (`Locker.Lock`'s interface call), `g49_storePanic_witness`
+and `g49_loadPanic_witness` (`(*queueOnePass).next`'s `MOVW R2, 52(R0)` and `MOVWU 52(R0), R3`
+with a nil `q`), `g49_ldarPanic_witness` (`sync/atomic.LoadInt64`'s `LDAR (R0), R0` with a nil
 `addr`). `objStarLeaf_witness` (`(*A).g`, a leaf: the P0 run of its nil check keeps the
-caller's `0x40` in `X30`). `verified_mach_witness`:
+caller's `0x40` in `X30`). `entryStore_witness` (`GoFV/Proof/Witness/ObjEntry49.lean`:
+`g49L_entryStore` on `runtime.getm`'s ABI0 wrapper's `MOVD R0, ~r0+0(FP)` from a machine whose
+`~r0` window holds `0xAB`, to a full `LocMatch`). `verified_mach_witness`:
 `pallocSum.start` from its generic SSA (the export's first
 section, in the whole-file environment of `gofv-ssa-opt --verified`) through
 `verifiedPipelineFull` (`fullyVerified`), with every premise of `verified_mach` discharged;
-`checkG46` accepts genssa's Progs against the pipeline's own output. `RunPre` there is
-`runPre_simple`.
+`checkG49` accepts genssa's Progs against the pipeline's own output, `entryStoresOK` holds (no
+pending window). `RunPre` there is `runPre_simple`.
 
-**Next.** The lift to each new slice as it merges (G47's float calls). Panics of the other kinds
-(register-index loads and stores; write barriers, `memequal`).
+**Next.** The lift to each new slice as it merges. Panics of the other kinds
+(register-index loads and stores; write barriers, `memequal`). A witness of `sim_entryStores`
+through a whole function with a real entry store of a register parameter (none of the e2e
+functions with a pending window is small enough for the native-decide witnesses yet). Entry
+stores after spills (`StoreReg`) in the entry block (`entryStoresOK` rejects them).
