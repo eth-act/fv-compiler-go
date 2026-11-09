@@ -609,6 +609,22 @@ the machine's `X0` the `OR` of `0x1234` and `0xaa00dd55000066`), `genG32_binK_wi
 flags, `X4` from 5 to 6). Coverage on quick-v10 (`lake exe gen-check`): 5,678 of 9,297 functions
 (61.07%), 143,647 values.
 
+## Phase 3: genssa, slice G31 (I7, #553)
+
+`GoFV.Proof.Gen.g31_value`, `GoFV.Proof.Gen.g31_term`, `GoFV.Proof.Gen.g31_nilPanic`,
+`GoFV.Proof.Gen.g31_boundsPanic` (`GoFV/Proof/Gen/G31.lean`): when slice G31 (`checkG31`: G32 with
+the upper-bit table carried across G1's ops and G3's `CMPW`/`CMPWconst`, which keep the entries of
+the registers they do not write, and across blocks, each starting with the entries every
+predecessor ends with) accepts a function, they are `g32_value`'s, `g32_term`'s,
+`g32_nilPanic`'s and `g32_boundsPanic`'s statements under the same premises, except that
+`g31_value` carries `UOKL m (uL31 lc (uIn lc bid) blk i)` to value `i + 1` and `g31_term` takes it
+at the block's end and concludes `UOKL m' (uIn lc e.b)` at the successor (`uIn lc entry = []`, so
+the premise is trivial at the function's entry). No new trusted premise. Witnesses:
+`genG31_value_witness` (`runtime.(*hexdumper).close`, which G32 rejects: `MOVD R4, R2` at the start
+of `b3`, whose table comes from `b1`, the machine's whole `X2 = 0x2a`), `genG31_term_witness` (its
+`CBZW R5` from `b1` to `b3`, with `UOKL` of `uIn lc 3`, which gives the whole `X5 = 0x2a`). Coverage
+on quick-v10 (`lake exe gen-check`): 5,703 of 9,297 functions (61.34%), 145,016 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g30_obj_value`, `g30_obj_term`, `g30_obj_nilPanic`, `g30_obj_boundsPanic`
