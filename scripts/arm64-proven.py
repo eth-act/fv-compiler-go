@@ -17,7 +17,11 @@ its split form by `r_ARM64_<n>_flag_sound : ForallL ArmRule.Checked (flagSplit r
 `flagSplit r_ARM64_<n>` in its place; likewise a rule whose result reads `arm64Invert(cc)` or
 `arm64Negate(cc)` of its `CCop` auxint by `r_ARM64_<n>_cc_sound : ForallL ArmRule.Checked
 (ccSplit r_ARM64_<n>)` (`GoFV.Rules.Derive.ccSplit`: one rule per integer condition op, per
-condition op `arm64Negate` maps for the latter). The rule set keeps the generated
+condition op `arm64Negate` maps for the latter). A narrow left shift's rename `(Lsh32x<a> ...) =>
+(Lsh64x<a> ...)` is proven with the rules of `Lsh64x<a>` in their form on the narrow shift by
+`r_ARM64_<n>_lsh_sound : ForallL ArmRule.Checked (lshSplit r_ARM64_<n>)`
+(`GoFV.Rules.Derive.lshSplit`: the rename, then the derived rules the validator checks the later
+events at the renamed value against). The rule set keeps the generated
 matching order (`GoFV.Rules.Generated.ARM64.ruleSet`: ops by Go name, rules per op as rulegen
 tries them; block kinds likewise) restricted to the proven rules.
 """
@@ -38,8 +42,8 @@ def proven():
                      r"(ArmRule\.Checked|BlockRuleL\.Sound|BlockRuleL\.Checked) ", re.M)
     npat = re.compile(r"^theorem (r_ARM64_\w+)_b2i_sound : ArmRule\.Checked \(b2iNorm (r_ARM64_\w+)\)",
                       re.M)
-    spat = re.compile(r"^theorem (r_ARM64_\w+)_(flag|cc)_sound : ForallL ArmRule\.Checked "
-                      r"\((flagSplit|ccSplit) (r_ARM64_\w+)\)", re.M)
+    spat = re.compile(r"^theorem (r_ARM64_\w+)_(flag|cc|lsh)_sound : ForallL ArmRule\.Checked "
+                      r"\((flagSplit|ccSplit|lshSplit) (r_ARM64_\w+)\)", re.M)
     for f in sorted(LEMMAS.glob("*.lean")):
         text = f.read_text()
         found = pat.findall(text)
@@ -94,7 +98,7 @@ def main():
         return "b2iNorm " + q + r if r in pn else q + r
 
     def segments(rs):
-        """Runs of rules listed as such, and the split rules (`flagSplit`, `ccSplit`), in order."""
+        """Runs of rules listed as such, and the split rules (`flagSplit`, `ccSplit`, `lshSplit`), in order."""
         out = []
         for r in rs:
             if r in pf:
@@ -129,7 +133,10 @@ matching order: the rule set of the checked `lower` (`GoFV.Opt.lowerChecked`). A
 condition's op and flags (`flagArg`) is listed split by the condition op
 (`GoFV.Rules.Derive.flagSplit`), which rewrites the same instances; a rule on `arm64Invert` or
 `arm64Negate` of its `CCop` auxint is listed split by the condition ops
-(`GoFV.Rules.Derive.ccSplit`).
+(`GoFV.Rules.Derive.ccSplit`). A narrow left shift's rename is followed by the rules of the
+64-bit shift in their form on the narrow one (`GoFV.Rules.Derive.lshSplit`), which `lower` never
+fires (the rename always matches first) and the validator checks the later events at the renamed
+value against.
 -/
 
 namespace GoFV.Rules.ProvenARM64

@@ -35,6 +35,22 @@ theorem forallL_mem {α : Type} {P : α → Prop} : ∀ {l : List α}, ForallL P
   | _ :: _, ⟨h, _⟩, _, .head _ => h
   | _ :: _, ⟨_, t⟩, a, .tail _ h => forallL_mem t a h
 
+/-- Every value rule of a row of the table of a sound lowering rule set is `ArmRule.Checked`. -/
+theorem ofRuleSetL_checked_mem {s : RuleSet} (hs : ArmRuleSet.AllSound s) {k : Nat}
+    {row : Array GoFV.Rules.Interp.CRule} {cr : GoFV.Rules.Interp.CRule}
+    (hk : (GoFV.Rules.Interp.Table.ofRuleSet s).values[k]? = some row) (h : cr ∈ row) :
+    ArmRule.Checked cr.rule := by
+  rw [ofRuleSet_values] at hk
+  rcases foldl_rows s.values s.values (fun _ h => h) _ (fun k row h => by
+      rw [Array.getElem?_replicate] at h
+      split at h
+      · cases h; exact .inl rfl
+      · cases h) k row hk with rfl | ⟨p, hp, rfl⟩
+  · simp at h
+  · simp only [Array.mem_map, List.mem_toArray] at h
+    obtain ⟨r, hr, rfl⟩ := h
+    exact forallL_mem (forallL_mem hs.1 p hp) r hr
+
 /-- Every value rule of the table of a sound lowering rule set is `ArmRule.Checked`. -/
 theorem ofRuleSetL_checked {s : RuleSet} (hs : ArmRuleSet.AllSound s) {k i : Nat}
     {cr : GoFV.Rules.Interp.CRule}
@@ -45,17 +61,7 @@ theorem ofRuleSetL_checked {s : RuleSet} (hs : ArmRuleSet.AllSound s) {k i : Nat
   | some row =>
     rw [hk] at h
     simp only [Option.bind_some] at h
-    rw [ofRuleSet_values] at hk
-    rcases foldl_rows s.values s.values (fun _ h => h) _ (fun k row h => by
-        rw [Array.getElem?_replicate] at h
-        split at h
-        · cases h; exact .inl rfl
-        · cases h) k row hk with rfl | ⟨p, hp, rfl⟩
-    · simp at h
-    · have hm := Array.mem_of_getElem? h
-      simp only [Array.mem_map, List.mem_toArray] at hm
-      obtain ⟨r, hr, rfl⟩ := hm
-      exact forallL_mem (forallL_mem hs.1 p hp) r hr
+    exact ofRuleSetL_checked_mem hs hk (Array.mem_of_getElem? h)
 
 /-- Every block rule of the table of a sound lowering rule set is `BlockRuleL.Checked`. -/
 theorem ofRuleSetL_blockSound {s : RuleSet} (hs : ArmRuleSet.AllSound s) {k i : Nat}
@@ -2017,6 +2023,48 @@ theorem ruleOKL_facts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs ds : 
       · cases h1
     · cases h
 
+/-- A `Checked` rule whose result is no ellipsis (`hnot`) and no strength-reduced multiplication
+(`hmul`) that matched in the replay (`RuleFactsL`) is `Sound1` on the matched commutation choice:
+a rule on a memory or frame atom never matches, as those atoms are no terms. -/
+theorem checked_sound1 {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {ds : List Value}
+    (hck : ArmRule.Checked r) (hnot : ∀ o, ¬ r.result = .setOp o)
+    (hmul : ¬ GoFV.Rules.Interp.mulResult r = true) {sw : List Bool}
+    (hsw : sw ∈ choices (GoFV.Opt.RewriteCheck.Pat.commutes r.pat))
+    (F : RuleFactsL tabs M (Rule.swapC r sw) v ds) : ArmRule.Sound1 (Rule.swapC r sw) := by
+  rcases hck with hsd | ⟨o, o3, -, hr3, -⟩ | ⟨o, o3, -, hr3, -⟩ |
+      ⟨om, n, pty, pai, pax, par, pargs, pc, hpat, hom⟩ | hm | ⟨o, o3, -, hr3, -⟩
+  · exact hsd sw hsw
+  · exact absurd hr3 (hnot o3)
+  · exact absurd hr3 (hnot o3)
+  · exfalso
+    obtain ⟨args', sw', hs'⟩ := swapC_op om n pty pai pax par pargs pc sw
+    have hp' : (Rule.swapC r sw).pat = .op om n pty pai pax par args' false := by
+      simp only [Rule.swapC, hpat, hs']
+    have hm := F.hmatch
+    rw [F.hpat] at hp' hm
+    injection hp' with ho
+    obtain ⟨-, x', hx', hop, ht', -⟩ := hm
+    rw [termVL_mem tabs x' hom (hop.trans ho)] at ht'; cases ht'
+  · exact (hmul hm).elim
+  · exact absurd hr3 (hnot o3)
+
+/-- The rule `lshRule` gives at a renamed narrow left shift: a `Checked` rule of the table (of
+the narrow shift's row) that builds its result and is no strength-reduced multiplication. -/
+theorem lshRule_checked {s : RuleSet} (hs : ArmRuleSet.AllSound s) {o o' : Op} {i : Nat}
+    {cr : GoFV.Rules.Interp.CRule}
+    (h : lshRule (GoFV.Rules.Interp.Table.ofRuleSet s) o o' i = some cr) :
+    ArmRule.Checked cr.rule ∧ (∀ o2, ¬ cr.rule.result = .setOp o2) ∧
+      ¬ GoFV.Rules.Interp.mulResult cr.rule = true := by
+  unfold lshRule at h
+  split at h
+  · rename_i c row hc hrow
+    have hp := Array.find?_some h
+    simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at hp
+    refine ⟨ofRuleSetL_checked_mem hs hrow (Array.mem_of_find?_eq_some h), fun o2 he => ?_, ?_⟩
+    · rw [he] at hp; simp at hp
+    · rw [hp.2]; decide
+  · cases h
+
 /-- **Replay**: a successful replay of the log keeps `ReplayInvL` and `BInvL` (from `D₀`, `f`'s
 definitions). -/
 theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
@@ -2038,6 +2086,31 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
     · -- a constant folded into a lowered bounds panic (`pbFoldEv`): no change
       exact replayL_inv hs hD evs M M' B B' C h hI hB
     split at h
+    · -- a narrow left shift `lower` renamed to `Lsh64x<a>` (`lshWide`)
+      rename_i o' hw
+      split at h
+      · -- the rename (`lshRenEv`): no change
+        exact replayL_inv hs hD evs M M' B B' C h hI hB
+      split at h
+      · cases h
+      rename_i cr hcr
+      obtain ⟨hck, hnot, hmul⟩ := lshRule_checked hs hcr
+      split at h
+      · -- a rule of `Lsh64x<a>` in its derived form on the narrow shift (`lshRule`)
+        rename_i ds hok
+        obtain ⟨sw, hsw, ⟨F⟩⟩ := ruleOKL_facts hok
+        have hsd := checked_sound1 hck hnot hmul hsw F
+        have hput : ds.foldl (fun M u => M.put u.id u) M = putAll M ds := by
+          simp [putAll, Array.foldl_toList]
+        rw [hput] at h
+        have hI2 := hI.rule hsd F
+        have hB2 := hB.mono (M' := putAll M ds) (C' := fun y => C y ∨ (C v ∧ y ∈ defIds ds))
+          (fun y hy => .inl hy) hI.typed fun ρ hρ _ n y hy => F.step hsd hI.closed hρ n y hy
+        exact replayL_inv hs hD evs _ M' B B' _ h (copyFixL_inv _ hI2 hB2).1
+          (copyFixL_inv _ hI2 hB2).2
+      · cases h
+    rename_i hw
+    split at h
     · cases h
     rename_i cr hcr
     have hck := ofRuleSetL_checked hs hcr
@@ -2052,7 +2125,7 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
         rcases hk with ⟨ht, ht', htop, hsa⟩ | ⟨hren, ht⟩
         · have hso : SetOpSoundT x.op o' := by
             rcases hck with hsd | ⟨o, o3, he3, hr3, -, -, -, -, hso⟩ | ⟨o, o3, he3, hr3, -, -, hren⟩ |
-                ⟨om, n, pty, pai, pax, par, pargs, pc, hpat, hom⟩ | hm
+                ⟨om, n, pty, pai, pax, par, pargs, pc, hpat, hom⟩ | hm | ⟨o, o3, he3, hr3, hw3⟩
             · exact absurd hsd (not_sound_of_ellipsis he)
             · obtain ⟨c, hc⟩ := ellipsisOn_eq he
               obtain ⟨c', hc'⟩ := ellipsisOn_eq he3
@@ -2068,6 +2141,10 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
               injection hpat with hxo
               rw [termVL_mem tabs x hom hxo] at ht; cases ht
             · simp [ArmRule.Mul, GoFV.Rules.Interp.mulResult, hres] at hm
+            · obtain ⟨c, hc⟩ := ellipsisOn_eq he
+              obtain ⟨c', hc'⟩ := ellipsisOn_eq he3
+              rw [hc] at hc'; cases hc'
+              rw [hw] at hw3; cases hw3
           exact replayL_inv hs hD evs _ M' B B' C h
             (copyFixL_inv _ (hI.setOp hx ht ht' htop hsa hso)
               (hB.mono (g := id) (fun _ h => h) hI.typed fun ρ hρ _ n y _ =>
@@ -2108,22 +2185,7 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
       split at h
       · rename_i ds hok
         obtain ⟨sw, hsw, ⟨F⟩⟩ := ruleOKL_facts hok
-        have hsd : ArmRule.Sound1 (Rule.swapC cr.rule sw) := by
-          rcases hck with hsd | ⟨o, o3, -, hr3, -⟩ | ⟨o, o3, -, hr3, -⟩ |
-              ⟨om, n, pty, pai, pax, par, pargs, pc, hpat, hom⟩ | hm
-          · exact hsd sw hsw
-          · exact absurd hr3 (hnot o3)
-          · exact absurd hr3 (hnot o3)
-          · exfalso
-            obtain ⟨args', sw', hs'⟩ := swapC_op om n pty pai pax par pargs pc sw
-            have hp' : (Rule.swapC cr.rule sw).pat = .op om n pty pai pax par args' false := by
-              simp only [Rule.swapC, hpat, hs']
-            have hm := F.hmatch
-            rw [F.hpat] at hp' hm
-            injection hp' with ho
-            obtain ⟨-, x', hx', hop, ht', -⟩ := hm
-            rw [termVL_mem tabs x' hom (hop.trans ho)] at ht'; cases ht'
-          · exact (hmul hm).elim
+        have hsd := checked_sound1 hck hnot hmul hsw F
         have hput : ds.foldl (fun M u => M.put u.id u) M = putAll M ds := by
           simp [putAll, Array.foldl_toList]
         rw [hput] at h
