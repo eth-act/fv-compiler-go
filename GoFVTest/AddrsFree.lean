@@ -1,5 +1,6 @@
 import Lean
 import GoFV.Proof.Obj.EndToEnd
+import GoFV.Gen.Check47
 
 /-!
 # The verified pipeline takes no address assignment (`docs/plans/proofs3.md` §8, item 6)
@@ -9,7 +10,8 @@ the verdict of `verifiedPipelineFull`. The checkers evaluate their constants at 
 (`Rules.opValC`, `Val.retypeC`, the static instances of `ruleOK`/`ruleOK1`/`blockOK1`), so the
 pipeline takes no instance: the verdict `gofv-ssa-opt` computes is the premise under every
 instance, the machine's among them. This module fails to build if a checker comes to read the
-assignment again (an `[Addrs]` binder in the type of a pipeline or slice checker).
+assignment again (an `[Addrs]` binder in the type of the pipeline or of a slice checker
+`GoFV.Gen.Check.checkG*` it imports).
 -/
 
 open Lean Meta
@@ -27,8 +29,12 @@ private def hasAddrsBinder (ty : Expr) : Bool := Id.run do
 
 run_meta do
   let env ← getEnv
-  let roots := #[``GoFV.Opt.verifiedPipeline, ``GoFV.Opt.verifiedPipelineFull,
-    ``GoFV.Gen.Check.checkG44]
+  let mut roots := #[``GoFV.Opt.verifiedPipeline, ``GoFV.Opt.verifiedPipelineFull]
+  for (n, ci) in env.constants.toList do
+    if let (.str p s, .defnInfo _) := (n, ci) then
+      if p == `GoFV.Gen.Check && s.startsWith "checkG" then roots := roots.push n
+  unless roots.contains ``GoFV.Gen.Check.checkG46 && roots.contains ``GoFV.Gen.Check.checkG47 do
+    throwError "AddrsFree: the slice checkers checkG46/checkG47 are not in scope"
   for n in roots do
     let some ci := env.find? n | throwError "AddrsFree: {n} not found"
     if hasAddrsBinder ci.type then
