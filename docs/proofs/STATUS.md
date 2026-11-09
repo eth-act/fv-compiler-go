@@ -838,6 +838,19 @@ registers. Witness: `genG47_witness` (`math.Sin`, `CALL math.sin(SB)` with `x = 
 which G46 rejects, and a callee that returns its argument). Coverage on quick-v10 (`lake exe
 gen-check`): 6,856 of 9,297 functions (73.74%), 204,468 values.
 
+## Phase 3: genssa, slice G50, the narrow and float pair loads (I7, #553)
+
+`GoFV.Proof.Gen.g50_value`, `g50_initMem`, `g50_term`, `g50_nilPanic`, `g50_boundsPanic`
+(`GoFV/Proof/Gen/G50.lean`): when slice G50 (`checkG50`: G47 with the pair loads `LDPW` and
+`LDPSW` into two X registers, `FLDPD` and `FLDPS` into two V registers, each at a 64-bit register
+plus the offset, and the selects of their components; G48 and G49 are reserved) accepts a
+function, they are G47's statements, `g50_value` under `G50Pre := G46Pre ∧ PairPre50`. New run
+premise `PairPre50`: a pair load reads valid bytes at both of its addresses (`pairAddr`, as G4's
+`G4Pre` for `LDP`) and, for `FLDPD`/`FLDPS`, what it reads at each component shape is no pointer
+(as `FLoadPre`: a pointer has no V register form). Witness: `genG50_witness`
+(`runtime.c128equal`, `FLDPD (R0), (F0, F1)` of `1.5 + 2.5i`, which G47 rejects). Coverage on
+quick-v10 (`lake exe gen-check`): 6,911 of 9,297 functions (74.33%), 206,743 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g46_obj_value`, `g46_obj_term`, `g46_obj_nilPanic`, `g46_obj_boundsPanic`

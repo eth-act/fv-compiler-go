@@ -1080,6 +1080,26 @@ No new premise: `g47_value` takes G46's `G46Pre`. Witness `genG47_witness` (`mat
 math.sin(SB)` with `x = 1.5` in `F0` and a callee that returns its argument; `V0` then holds `1.5`'s
 bits). G47 accepts 6,856 functions (+81 over G46).
 
+**Slice G50: the narrow and float pair loads** (`GoFV/Gen/Check50.lean`, `checkG50 lc ps bstart g`;
+proven sound, `g50_value`, `g50_initMem`, `g50_term`, `g50_nilPanic`, `g50_boundsPanic`,
+`GoFV/Proof/Gen/G50.lean`; G48 and G49 are reserved for the frame variables). G47 with the pair
+loads genssa emits through `LDP`'s case besides `LDP` (`pairOp50`): `LDPW` and `LDPSW` into two
+distinct X registers G1 may write (components of integer classes of at least 8 bits, as G4's
+`LDP`), `FLDPD` and `FLDPS` into two distinct V registers (components float shapes of the element's
+width, `fpairTys`), each at a 64-bit register plus the offset, and `Select0`/`Select1` of them homed
+in the register of their component. Each is `arm64Op`'s `ldPair n sg` (`stepLoc_ldPair`), the two
+`n`-byte loads at `pairAddr` (`pairAddr_noAuxN`, `ofInt_addN`); on the machine `progStep_ldpw`
+(`Progs50.lean`: 4-byte loads, `sextTo64 4` for `LDPSW`) and `progStep_fldp` (`n`-byte loads into
+V registers). `LDPW`/`LDPSW` is G4's `LDP` at `n = 4` (`g50_ldpX`, `lo_loadN`); `FLDPD`/`FLDPS`
+relates each component to its V register by `fvalRel_of_valRel` (`g50_ldpF`); a select of an X pair
+is G4's `g4_sel`, of a V pair `g50_selF` (as `g47_selF`, with `read_pair`). The upper-bit table is
+empty after each (`uStep35_pair50`, `uStep35_sel50`; a select of `LDPSW` stays outside the
+`MOVDreg` tables). New run premise `PairPre50` (`G50Pre := G46Pre ∧ PairPre50`): a pair load reads
+valid bytes at both addresses and, for `FLDPD`/`FLDPS`, what it reads at each component shape is no
+pointer (`FLoadPre`'s condition, a pointer has no V register form). Witness `genG50_witness`
+(`runtime.c128equal`: `FLDPD (R0), (F0, F1)` of `1.5 + 2.5i`; `V0` and `V1` then hold `1.5`'s and
+`2.5`'s bits). G50 accepts 6,911 functions (+55 over G47).
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -1153,6 +1173,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G45 | 6,657 (71.60%) | 196,234 |
 | G46 | 6,775 (72.87%) | 202,352 |
 | G47 | 6,856 (73.74%) | 204,468 |
+| G50 | 6,911 (74.33%) | 206,743 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1456,6 +1477,14 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
 - `G47.lean`: `argsV`, `g47_selF`, `uStep35_call47`, `vk47_ops`, `vk47_step`, `vk47_nil`,
   `vk47_pb`, `g47L_value` … `g47L_term`, `g47_value`, `g47_initMem`, `g47_nilPanic`,
   `g47_boundsPanic`, `g47_term`.
+- `Progs50.lean`: `progStep_ldpw` (`LDPW`, `LDPSW`), `progStep_fldp` (`FLDPD`, `FLDPS`).
+- `Spec50.lean`: what `checkG50` accepted (`VK50`, `pairOp50_cases`, `fpairTys_spec`,
+  `ldp50_spec`, `sel50_spec`, `pair50_spec`, `vkind50_spec`, `vkind50_initMem`,
+  `checkG33_of_50L`, `checkG50L_spec`, `checkG50_spec`).
+- `G50.lean`: `PairPre50`, `G50Pre`, `stepLoc_ldPair`, `ofInt_addN`, `pairAddr_noAuxN`,
+  `loadPair_tupleN`, `g50_ldpX`, `g50_ldpF`, `g50_selF`, `uStep35_pair50`, `uStep35_sel50`,
+  `vk50_ops`, `vk50_step`, `vk50_nil`, `vk50_pb`, `g50L_value` … `g50L_term`, `g50_value`,
+  `g50_initMem`, `g50_nilPanic`, `g50_boundsPanic`, `g50_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
