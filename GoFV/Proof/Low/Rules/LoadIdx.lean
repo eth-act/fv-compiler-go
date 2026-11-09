@@ -25,8 +25,8 @@ terms whose value is `Arm64.loadIdx`: the load at the address of `ADD` of the ba
   at offset `c`, or none (`addr_add_imm`); `int32(c)<<k` is `c · 2^k` modulo `2^64` when `c<<k`
   is a 32-bit integer (`imm_shl`).
 
-The floating-point loads `FMOV{S,D}load` are atoms, not terms: the rules to or from them (702-703,
-719-722, 748-749, 754-755) are not proven.
+The floating-point loads `FMOV{S,D}load` are scalar loads (`ldOp?`) as the integer ones, so the
+rules to or from them (702-703, 719-722, 748-749, 754-755) have the same proofs.
 -/
 
 namespace GoFV.Proof.Low.Rules
@@ -478,6 +478,14 @@ theorem r_ARM64_700_sound : ArmRule.Checked r_ARM64_700 := by
 theorem r_ARM64_701_sound : ArmRule.Checked r_ARM64_701 := by
   arm_ldidx_add
 
+/-- `ARM64.rules:702`: `(FMOVSload [off] {sym} (ADD ptr idx) mem) && off == 0 && sym == nil => (FMOVSloadidx ptr idx mem)` -/
+theorem r_ARM64_702_sound : ArmRule.Checked r_ARM64_702 := by
+  arm_ldidx_add
+
+/-- `ARM64.rules:703`: `(FMOVDload [off] {sym} (ADD ptr idx) mem) && off == 0 && sym == nil => (FMOVDloadidx ptr idx mem)` -/
+theorem r_ARM64_703_sound : ArmRule.Checked r_ARM64_703 := by
+  arm_ldidx_add
+
 /-- `ARM64.rules:705`: `(MOVDloadidx ptr (MOVDconst [c]) mem) && is32Bit(c) => (MOVDload [int32(c)] ptr mem)` -/
 theorem r_ARM64_705_sound : ArmRule.Checked r_ARM64_705 := by
   arm_ldidx_const false, harg.2.1
@@ -532,6 +540,22 @@ theorem r_ARM64_717_sound : ArmRule.Checked r_ARM64_717 := by
 
 /-- `ARM64.rules:718`: `(MOVBloadidx (MOVDconst [c]) ptr mem) && is32Bit(c) => (MOVBload [int32(c)] ptr mem)` -/
 theorem r_ARM64_718_sound : ArmRule.Checked r_ARM64_718 := by
+  arm_ldidx_const true, harg.1
+
+/-- `ARM64.rules:719`: `(FMOVSloadidx ptr (MOVDconst [c]) mem) && is32Bit(c) => (FMOVSload [int32(c)] ptr mem)` -/
+theorem r_ARM64_719_sound : ArmRule.Checked r_ARM64_719 := by
+  arm_ldidx_const false, harg.2.1
+
+/-- `ARM64.rules:720`: `(FMOVSloadidx (MOVDconst [c]) ptr mem) && is32Bit(c) => (FMOVSload [int32(c)] ptr mem)` -/
+theorem r_ARM64_720_sound : ArmRule.Checked r_ARM64_720 := by
+  arm_ldidx_const true, harg.1
+
+/-- `ARM64.rules:721`: `(FMOVDloadidx ptr (MOVDconst [c]) mem) && is32Bit(c) => (FMOVDload [int32(c)] ptr mem)` -/
+theorem r_ARM64_721_sound : ArmRule.Checked r_ARM64_721 := by
+  arm_ldidx_const false, harg.2.1
+
+/-- `ARM64.rules:722`: `(FMOVDloadidx (MOVDconst [c]) ptr mem) && is32Bit(c) => (FMOVDload [int32(c)] ptr mem)` -/
+theorem r_ARM64_722_sound : ArmRule.Checked r_ARM64_722 := by
   arm_ldidx_const true, harg.1
 
 /-- `ARM64.rules:725`: `(MOVDload [off] {sym} (ADDshiftLL [3] ptr idx) mem) && off == 0 && sym == nil => (MOVDloadidx8 ptr idx mem)` -/
@@ -622,6 +646,14 @@ theorem r_ARM64_745_sound : ArmRule.Checked r_ARM64_745 := by
 theorem r_ARM64_746_sound : ArmRule.Checked r_ARM64_746 := by
   arm_ldidx_constSc
 
+/-- `ARM64.rules:748`: `(FMOVDload [off] {sym} (ADDshiftLL [3] ptr idx) mem) && off == 0 && sym == nil => (FMOVDloadidx8 ptr idx mem)` -/
+theorem r_ARM64_748_sound : ArmRule.Checked r_ARM64_748 := by
+  arm_ldidx_shift 3
+
+/-- `ARM64.rules:749`: `(FMOVSload [off] {sym} (ADDshiftLL [2] ptr idx) mem) && off == 0 && sym == nil => (FMOVSloadidx4 ptr idx mem)` -/
+theorem r_ARM64_749_sound : ArmRule.Checked r_ARM64_749 := by
+  arm_ldidx_shift 2
+
 /-- `ARM64.rules:750`: `(FMOVDloadidx ptr (SLLconst [3] idx) mem) => (FMOVDloadidx8 ptr idx mem)` -/
 theorem r_ARM64_750_sound : ArmRule.Checked r_ARM64_750 := by
   arm_ldidx_sll 3, false, harg.2.1.1
@@ -637,5 +669,13 @@ theorem r_ARM64_752_sound : ArmRule.Checked r_ARM64_752 := by
 /-- `ARM64.rules:753`: `(FMOVSloadidx (SLLconst [2] idx) ptr mem) => (FMOVSloadidx4 ptr idx mem)` -/
 theorem r_ARM64_753_sound : ArmRule.Checked r_ARM64_753 := by
   arm_ldidx_sll 2, true, harg.1.1
+
+/-- `ARM64.rules:754`: `(FMOVDloadidx8 ptr (MOVDconst [c]) mem) && is32Bit(c<<3) => (FMOVDload ptr [int32(c)<<3] mem)` -/
+theorem r_ARM64_754_sound : ArmRule.Checked r_ARM64_754 := by
+  arm_ldidx_constSc
+
+/-- `ARM64.rules:755`: `(FMOVSloadidx4 ptr (MOVDconst [c]) mem) && is32Bit(c<<2) => (FMOVSload ptr [int32(c)<<2] mem)` -/
+theorem r_ARM64_755_sound : ArmRule.Checked r_ARM64_755 := by
+  arm_ldidx_constSc
 
 end GoFV.Proof.Low.Rules
