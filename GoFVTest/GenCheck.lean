@@ -1,5 +1,5 @@
 import GoFV.Gen.Genssa
-import GoFV.Gen.Check52
+import GoFV.Gen.Check53
 import GoFV.Asm.Parse
 import GoFV.SSA.Parse
 import GoFVTest.GenIn
@@ -28,8 +28,8 @@ G35 (`GoFV.Gen.Check.checkG35`), G36 (`GoFV.Gen.Check.checkG36`), G37
 (`GoFV.Gen.Check.checkG40`), G41 (`GoFV.Gen.Check.checkG41`), G42 (`GoFV.Gen.Check.checkG42`), G43
 (`GoFV.Gen.Check.checkG43`), G44 (`GoFV.Gen.Check.checkG44`), G45 (`GoFV.Gen.Check.checkG45`), G46
 (`GoFV.Gen.Check.checkG46`), G47 (`GoFV.Gen.Check.checkG47`), G50 (`GoFV.Gen.Check.checkG50`),
-G51 (`GoFV.Gen.Check.checkG51`), G49 (`GoFV.Gen.Check.checkG49`, on G51; G48 is reserved) and G52
-(`GoFV.Gen.Check.checkG52`),
+G51 (`GoFV.Gen.Check.checkG51`), G49 (`GoFV.Gen.Check.checkG49`, on G51; G48 is reserved), G52
+(`GoFV.Gen.Check.checkG52`) and G53 (`GoFV.Gen.Check.checkG53`),
 all with G2's inputs, on its P0 output and the function after `trim`, and counts the accepted
 functions. Rejections by the last
 slice are grouped by their reason with value and block numbers removed. `--sets FILE` writes each
@@ -98,6 +98,7 @@ structure Stats where
   accepted51 : Nat := 0
   accepted49 : Nat := 0
   accepted52 : Nat := 0
+  accepted53 : Nat := 0
   errors : Nat := 0
   values : Nat := 0
   acceptedValues : Nat := 0
@@ -151,6 +152,7 @@ structure Stats where
   acceptedValues51 : Nat := 0
   acceptedValues49 : Nat := 0
   acceptedValues52 : Nat := 0
+  acceptedValues53 : Nat := 0
   /-- Functions by the set of reasons that reject them (sole reason: one-element set). -/
   sole : Std.HashMap String Nat := {}
   /-- Functions each reason occurs in. -/
@@ -193,6 +195,7 @@ def Stats.merge (a b : Stats) : Stats :=
     accepted51 := a.accepted51 + b.accepted51,
     accepted49 := a.accepted49 + b.accepted49,
     accepted52 := a.accepted52 + b.accepted52,
+    accepted53 := a.accepted53 + b.accepted53,
     errors := a.errors + b.errors,
     values := a.values + b.values, acceptedValues := a.acceptedValues + b.acceptedValues,
     acceptedValues2 := a.acceptedValues2 + b.acceptedValues2,
@@ -245,6 +248,7 @@ def Stats.merge (a b : Stats) : Stats :=
     acceptedValues51 := a.acceptedValues51 + b.acceptedValues51,
     acceptedValues49 := a.acceptedValues49 + b.acceptedValues49,
     acceptedValues52 := a.acceptedValues52 + b.acceptedValues52,
+    acceptedValues53 := a.acceptedValues53 + b.acceptedValues53,
     sole := mergeMap a.sole b.sole, occurs := mergeMap a.occurs b.occurs,
     accept := a.accept ++ b.accept, sets := a.sets ++ b.sets }
 
@@ -257,10 +261,10 @@ def Stats.reject (st : Stats) (path : System.FilePath) (msgs : List String) : St
     | _ => st.sole.insert s!"({ks.length} reasons)" (st.sole.getD s!"({ks.length} reasons)" 0 + 1)
   { st with occurs, sole, sets := st.sets.push ("\t".intercalate (path.toString :: ks)) }
 
-/-- Every reason the G52 validator could give for `lc`: a value referring to an ID that is no value
+/-- Every reason the G53 validator could give for `lc`: a value referring to an ID that is no value
 of the function; then, on `liveCtx lc`, the homes, values, block kinds, the frame, and the run
 itself. On a function with no arm64 op, the values and blocks `checkNL30` rejects. -/
-def reasons52 (lc0 : GoFV.SSA.Sem.LocCtx) (ps : Array Prog) (bstart : GoFV.SSA.ID → Option Nat)
+def reasons53 (lc0 : GoFV.SSA.Sem.LocCtx) (ps : Array Prog) (bstart : GoFV.SSA.ID → Option Nat)
     (g : Check.G2In) : List String := Id.run do
   unless Check.refsLive lc0 do return ["a value refers to an ID that is no value of the function"]
   let lc := Check.liveCtx lc0
@@ -272,7 +276,7 @@ def reasons52 (lc0 : GoFV.SSA.Sem.LocCtx) (ps : Array Prog) (bstart : GoFV.SSA.I
     let some b := lc.ctx.f.block? bid | continue
     for id in b.values do
       let some v := lc.ctx.f.value? id | continue
-      match (if low then Check.vkind52 lc g v else Check.vkindNL30 lc g v) with
+      match (if low then Check.vkind53 lc g v else Check.vkindNL30 lc g v) with
       | .error e => rs := e :: rs
       | .ok _ => pure ()
     if low then
@@ -283,7 +287,7 @@ def reasons52 (lc0 : GoFV.SSA.Sem.LocCtx) (ps : Array Prog) (bstart : GoFV.SSA.I
       rs := s!"b{bid}: block kind {b.kind.name} in a function with no arm64 op" :: rs
   if let .error e := Check.checkFrame lc g then rs := e :: rs
   if rs.isEmpty then
-    match Check.checkG52 lc0 ps bstart g with
+    match Check.checkG53 lc0 ps bstart g with
     | .error e => rs := [e]
     | .ok _ => pure ()
   return rs
@@ -514,7 +518,11 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
   let st := if ok49 then
       { st with accepted49 := st.accepted49 + 1, acceptedValues49 := st.acceptedValues49 + nv }
     else st
-  match Check.checkG52 lc ps bstart g with
+  let ok52 := (Check.checkG52 lc ps bstart g).toOption.isSome
+  let st := if ok52 then
+      { st with accepted52 := st.accepted52 + 1, acceptedValues52 := st.acceptedValues52 + nv }
+    else st
+  match Check.checkG53 lc ps bstart g with
   | .ok _ =>
     let tag := if ok4 then "" else if ok5 then " (G5)" else if ok6 then " (G6)"
       else if ok7 then " (G7)" else if ok8 then " (G8)" else if ok9 then " (G9)"
@@ -531,11 +539,12 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
       else if ok40 then " (G40)" else if ok41 then " (G41)" else if ok42 then " (G42)"
       else if ok43 then " (G43)" else if ok44 then " (G44)" else if ok45 then " (G45)"
       else if ok46 then " (G46)" else if ok47 then " (G47)" else if ok50 then " (G50)"
-      else if ok51 then " (G51)" else if ok49 then " (G49)" else " (G52)"
-    return { st with accepted52 := st.accepted52 + 1, acceptedValues52 := st.acceptedValues52 + nv,
+      else if ok51 then " (G51)" else if ok49 then " (G49)" else if ok52 then " (G52)"
+      else " (G53)"
+    return { st with accepted53 := st.accepted53 + 1, acceptedValues53 := st.acceptedValues53 + nv,
                      accept := st.accept.push s!"{path}{tag}" }
   | .error msg =>
-    let rs := reasons52 lc ps bstart g
+    let rs := reasons53 lc ps bstart g
     return st.reject path (if rs.isEmpty then [msg] else rs)
 
 def progFiles (p : System.FilePath) : IO (Array System.FilePath) := do
@@ -623,6 +632,7 @@ def main (args : List String) : IO UInt32 := do
   out := out ++ s!"| {st.files} | G51 | {st.accepted51} | {pct st.accepted51 st.files} | {st.values} | {st.acceptedValues51} |\n"
   out := out ++ s!"| {st.files} | G49 | {st.accepted49} | {pct st.accepted49 st.files} | {st.values} | {st.acceptedValues49} |\n"
   out := out ++ s!"| {st.files} | G52 | {st.accepted52} | {pct st.accepted52 st.files} | {st.values} | {st.acceptedValues52} |\n"
+  out := out ++ s!"| {st.files} | G53 | {st.accepted53} | {pct st.accepted53 st.files} | {st.values} | {st.acceptedValues53} |\n"
   out := out ++ s!"\n{st.errors} parse, env or genssa errors\n"
   let sorted (m : Std.HashMap String Nat) :=
     m.toArray.qsort fun a b => a.2 > b.2 || (a.2 == b.2 && a.1 < b.1)
@@ -630,7 +640,7 @@ def main (args : List String) : IO UInt32 := do
   for (k, c) in (sorted st.sole).toList.take 60 do out := out ++ s!"| `{k}` | {c} |\n"
   out := out ++ "\n| reason | functions it occurs in |\n| --- | ---: |\n"
   for (k, c) in (sorted st.occurs).toList.take 80 do out := out ++ s!"| `{k}` | {c} |\n"
-  out := out ++ "\naccepted (G52; the first slice that accepts a function past G4 in parentheses):\n"
+  out := out ++ "\naccepted (G53; the first slice that accepts a function past G4 in parentheses):\n"
   for a in st.accept.qsort (· < ·) do out := out ++ s!"- {a}\n"
   IO.println out
   if let some f := table then IO.FS.writeFile f out

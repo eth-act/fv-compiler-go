@@ -303,6 +303,11 @@ GoFV.Proof.Witness.GenG49.g49_facts._native.native_decide.ax_1_1 c09fd1340a71a8c
 # on `-17` and `5`; compiled evaluation.
 GoFV.Proof.Witness.GenG52.g52_facts._native.native_decide.ax_1_1 1a6ac69d36fc8c759f0c4736c74f74deb6564caa5afd737eb9afc97b9ae275d3
 
+# genG53_witness (GoFV/Proof/Witness/GenG53.lean, #553): `checkG53` accepts
+# `runtime.(*cpuStatsAggregate).compute` and `checkG52` does not (`LoweredMove [88]` `v10`);
+# `runLoc` runs `v10` from one heap block to another; compiled evaluation.
+GoFV.Proof.Witness.GenG53.g53_facts._native.native_decide.ax_1_1 5f91de43fa9e42129db4f0b759ba8610397ca1db0e0f74beeb95e64fc673d50f
+
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
 # test code only: the parity runner's pointer-equality fast path (GoFVTest/Parity/Compare.lean).
