@@ -222,8 +222,8 @@ theorem addrLower_of_argFree {x : ID} {u w : Value} (hu : f.value? x = some u)
       rw [(argFree_cases hf).1] at hks; cases hks
     · obtain ⟨-, -, -, -, -, p, s, -, hp, -⟩ := idxLower_cases hb
       exact (idxStore_facts hp).2.2.2.2.2.1 (argFree_cases hf).1
-    · obtain ⟨-, hw | hw, -⟩ := (Sim.moveQLower_cases hq).2 <;>
-        exact absurd ((argFree_cases hf).1.symm.trans hw.1) (by decide)
+    · rcases (Sim.moveQLower_cases hq).2 with hw | hw <;>
+        exact absurd ((argFree_cases hf).1.symm.trans hw.2.1) (by decide)
   · rfl
 
 /-! ## Registers related through the term relations -/
@@ -417,8 +417,8 @@ theorem atom_ref (hfrS : RegsFrame tabs 0 f.value? G) (hfrT : RegsFrameL tabs 0 
   cases hmq : moveQLower tabs u w
   case true =>
     rcases hTR with hf' | ⟨-, hmq', -⟩ | ⟨hix', -⟩ | ⟨-, hA, hV, hM⟩
-    · obtain ⟨-, hw | hw, -⟩ := (Sim.moveQLower_cases hmq).2 <;>
-        exact absurd ((argFree_cases hf').1.symm.trans hw.1) (by decide)
+    · rcases (Sim.moveQLower_cases hmq).2 with hw | hw <;>
+        exact absurd ((argFree_cases hf').1.symm.trans hw.2.1) (by decide)
     · rw [hmq] at hmq'; cases hmq'
     · obtain ⟨hu', -⟩ := Sim.moveQLower_cases hmq
       rw [(idxLower_cases hix').1] at hu'; cases hu'

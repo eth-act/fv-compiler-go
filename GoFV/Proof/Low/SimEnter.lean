@@ -614,7 +614,7 @@ theorem atomPair_op_of_generic {tabs : Tables} {u w : Value} (h : atomPair tabs 
     obtain ⟨-, -, -, -, -, p, s, -, hp, -⟩ := idxLower_cases h
     rw [(idxStore_facts hp).1] at hg; cases hg
   · exfalso
-    obtain ⟨-, hw | hw, -⟩ := (Sim.moveQLower_cases h).2 <;> rw [hw.1] at hg <;> cases hg
+    rcases (Sim.moveQLower_cases h).2 with hw | hw <;> rw [hw.2.1] at hg <;> cases hg
 
 /-- **A panicking block entry.** -/
 theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')
