@@ -2,7 +2,7 @@ import GoFV.Proof.Low.Rules.Peep
 import GoFV.Proof.Rules.DivisibleInv
 
 /-!
-# Lowering rule lemmas: block rules on flags with a variable control (`ARM64.rules:621-624`, `644-647`, `1332-1341`)
+# Lowering rule lemmas: block rules on flags with a variable control (`ARM64.rules:556`, `621-624`, `644-647`, `1332-1341`)
 
 Block rules of lowered code that branch on a rule variable (#385):
 
@@ -14,6 +14,8 @@ Block rules of lowered code that branch on a rule variable (#385):
   whose `AND` with the register is zero iff the bit is clear (`and_twoPow_eq_zero`).
 * `(K (InvertFlags cmp))` as `(K' cmp)` for the integer kinds: `K` on the flags of the swapped
   compare is `K'` on `cmp`, whatever `cmp` (`invertFlags_cond`).
+* `(TB(Z|NZ) [0] (XORconst [1] x))` as `(TB(NZ|Z) [0] x)`: bit 0 of the `XORconst`'s register,
+  read back at its shape, is bit 0 of `x`'s register flipped (`xor1_bit0`).
 -/
 
 namespace GoFV.Proof.Low.Rules
@@ -408,5 +410,60 @@ theorem r_ARM64_624_sound : BlockRuleL.Sound r_ARM64_624 := by
   simp only [logicFlags, Flags.toVal, Cond.onVal, Cond.eval, Val.flagBit, Option.map_some,
     Option.some.injEq, and_twoPow32_eq_zero hk, Bool.not_not] at h
   rw [hr, Option.map_some, h]
+
+/-- Bit 0 of a register result read back at its shape is bit 0 of the result. -/
+private theorem reg_retypeL_res_bit0 (T : Ty) (y : BitVec 64) {z : BitVec 64}
+    (h : Arm64.reg ((Arm64.res T y).retypeL T) = some z) : z.getLsbD 0 = y.getLsbD 0 := by
+  cases T with
+  | int w =>
+    cases w <;> simp [Arm64.res, Val.retypeL, Val.widen, Val.retype, Arm64.reg, Width.bits] at h <;>
+      subst h <;> simp
+  | bool =>
+    simp only [Arm64.res, Val.retypeL, Val.widen, Val.retype, Arm64.reg] at h
+    cases hb : y.getLsbD 0 <;> simp_all <;> (subst_vars; decide)
+  | _ => simp_all [Arm64.res, Val.retypeL, Val.widen, Val.retype, Arm64.reg]
+
+/-- A test `f` of bit 0 of `XORconst [1] x` is the test of bit 0 of `x` flipped. -/
+private theorem xor1_bit0 (T : Ty) (x : Val) (f : Bool → Bool) (b : Bool)
+    (h : (Arm64.reg ((Arm64.op1 T (fun y => y ^^^ BitVec.ofInt 64 1) [x]).retypeL T)).map
+      (fun y => f (y.getLsbD 0)) = some b) :
+    (Arm64.reg x).map (fun y => f (!y.getLsbD 0)) = some b := by
+  cases hx : Arm64.reg x with
+  | none =>
+    rw [show Arm64.op1 T (fun y => y ^^^ BitVec.ofInt 64 1) [x] = .poison by simp only [Arm64.op1, hx],
+      retypeL_poison] at h
+    simp only [show Arm64.reg .poison = none from rfl, Option.map_none] at h
+    cases h
+  | some r =>
+    simp only [Arm64.op1, hx] at h
+    cases hz : Arm64.reg ((Arm64.res T (r ^^^ BitVec.ofInt 64 1)).retypeL T) with
+    | none => rw [hz] at h; cases h
+    | some z =>
+      rw [hz, Option.map_some, Option.some.injEq] at h
+      have hz0 := reg_retypeL_res_bit0 T _ hz
+      rw [BitVec.getLsbD_xor, show (BitVec.ofInt 64 1).getLsbD 0 = true by decide,
+        Bool.xor_true] at hz0
+      rw [Option.map_some, ← h, hz0]
+
+/-- `ARM64.rules:556`: `(TB(Z|NZ) [0] (XORconst [1] x) yes no) => (TB(NZ|Z) [0] x yes no)` -/
+theorem r_ARM64_556_sound : BlockRuleL.Sound r_ARM64_556 := by
+  arm_bunfold; arm_norm
+  simp only [DV.int.injEq] at hc
+  rw [hc] at hbr
+  simp only [brVal, show BlockKind.ARM64TBNZ.isArm64 = true from rfl,
+    show BlockKind.ARM64TBZ.isArm64 = true from rfl, ite_true, Arm64.taken, hb,
+    show (Int64.ofInt 0).toInt.toNat = 0 from rfl, Int.toNat_zero, Bool.bne_false] at hbr ⊢
+  exact xor1_bit0 _ _ id b hbr
+
+/-- `ARM64.rules:556`: `(TB(Z|NZ) [0] (XORconst [1] x) yes no) => (TB(NZ|Z) [0] x yes no)` -/
+theorem r_ARM64_556_2_sound : BlockRuleL.Sound r_ARM64_556_2 := by
+  arm_bunfold; arm_norm
+  simp only [DV.int.injEq] at hc
+  rw [hc] at hbr
+  simp only [brVal, show BlockKind.ARM64TBNZ.isArm64 = true from rfl,
+    show BlockKind.ARM64TBZ.isArm64 = true from rfl, ite_true, Arm64.taken, hb,
+    show (Int64.ofInt 0).toInt.toNat = 0 from rfl, Int.toNat_zero, Bool.bne_false] at hbr ⊢
+  have := xor1_bit0 _ _ (!·) b hbr
+  simpa only [Bool.not_not] using this
 
 end GoFV.Proof.Low.Rules

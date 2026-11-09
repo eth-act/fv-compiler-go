@@ -1,7 +1,7 @@
-import GoFV.Proof.Low.Rules.Peep
+import GoFV.Proof.Low.Rules.ConstFold
 
 /-!
-# Lowering rule lemmas: folded operand producers (`ARM64.rules:1012-1018`, `1179-1184`, `1433-1449`, `1635`)
+# Lowering rule lemmas: folded operand producers (`ARM64.rules:986-988`, `1012-1018`, `1179-1184`, `1426-1449`, `1635`)
 
 Peepholes of lowered code (#385) that fold an operand's producer into its consumer:
 
@@ -31,13 +31,18 @@ Peepholes of lowered code (#385) that fold an operand's producer into its consum
   a pointer outside it `poison`, #385), has no register (`Ptr.convertible` is the `Ptr.ofAddr`
   round trip), and neither has any pointer `SUB` moves it to inside its window
   (`Ptr.held_of_blk`), so `NEG` of it is `poison` (`refines_neg_sub`, `refines_neg_neg`).
+* `(SLL|SRL|SRA x (ANDconst [63] y)) => (SLL|SRL|SRA x y)` (986-988): the amount is read whole
+  (`armReadW`), so the `ANDconst` is `y`'s register masked or `poison`, and the shift takes its
+  amount modulo 64 (`and63_mod`, `refines_sh_and63`).
+* `(NEG|MVN x:(SLLconst|SRLconst|SRAconst [c] y)) && clobberIfDead(x) => (NEGshift..|MVNshift..
+  [c] y)` and `(MVN x:(RORconst [c] y)) && … => (MVNshiftRO [c] y)` (1426-1432): the outer op reads
+  the low bits of the shifted operand (`refines_op1_inner`), which the shifted-register form
+  computes from `y`.
 
 False under the semantics (docs/proofs/rules.md, Findings; counterexamples evaluated with
 `#eval`), so not proven: 1197 (`x = heap (2^22) + 0`, `y = z = 2^41`: the target's `ADD x z`
 leaves the window); 1198 (`x = y = temp 0 1 + 0`, `z = 2^24`: the target's `x - (y + z)` moves
 `x` through an intermediate outside its window).
-Not provable: 1701/1703 (`UBFX [armBFAuxInt(…)]`): `armBFAuxInt` is not a modelled helper
-(`Helper.ofName`), so the result's auxint is the oracle's.
 -/
 
 namespace GoFV.Proof.Low.Rules
@@ -1080,5 +1085,96 @@ theorem r_ARM64_1018_sound : ArmRule.Checked r_ARM64_1018 := by
     | (simp [binE] at hcond; done)
     | exact refines_msubw rfl (armReadW_addSub .ARM64SUB _ 1 (.inr rfl) ▸ harg.2.1.1) harg.1.2
         _ _ _ hty.1
+
+/-! ## Masked shift amounts (986-988) and shifted `NEG`/`MVN` operands (1426-1432) -/
+
+private theorem and63_mod (r : BitVec 64) :
+    (r &&& BitVec.ofInt 64 63).toNat % 64 = r.toNat % 64 := by
+  have h63 : (BitVec.ofInt 64 63) = BitVec.ofNat 64 (2 ^ 6 - 1) := by decide
+  rw [h63, BitVec.toNat_and, BitVec.toNat_ofNat, show (2 ^ 6 - 1) % 2 ^ 64 = 2 ^ 6 - 1 by decide,
+    Nat.and_two_pow_sub_one_eq_mod]
+  omega
+
+/-- A register-amount shift of an `ANDconst [63]` amount, read at a shape with a whole register
+(`h64`): the shift reads its amount modulo 64, which the mask keeps. -/
+private theorem refines_sh_and63 {T T1 : Ty} (h64 : 64 ≤ argWidth T1)
+    (g : BitVec 64 → Nat → BitVec 64) (x y : Val) :
+    Refines ((Arm64.op2 T (fun a b => g a (b.toNat % 64))
+        [x, (Arm64.op1 T1 (fun a => a &&& BitVec.ofInt 64 63) [y]).retypeL T1]).retypeL T)
+      ((Arm64.op2 T (fun a b => g a (b.toNat % 64)) [x, y]).retypeL T) := by
+  cases hy : Arm64.reg y with
+  | none =>
+    have : Arm64.op1 T1 (fun a => a &&& BitVec.ofInt 64 63) [y] = .poison := by
+      simp only [Arm64.op1, hy]
+    rw [this, retypeL_poison]
+    cases hx : Arm64.reg x <;> simp only [Arm64.op2, hx, show Arm64.reg .poison = none from rfl,
+      retypeL_poison] <;> exact .poison _
+  | some r =>
+    simp only [Arm64.op1, hy]
+    rcases retypeL_res_wide h64 (r &&& BitVec.ofInt 64 63) with h | h <;> rw [h]
+    · have hm : Arm64.reg (.int .w64 (r &&& BitVec.ofInt 64 63)) = some (r &&& BitVec.ofInt 64 63) :=
+        rfl
+      cases hx : Arm64.reg x <;> simp only [Arm64.op2, hx, hy, hm, and63_mod]
+      · simp only [retypeL_poison]; exact .poison _
+      · exact Refines.refl _
+    · cases hx : Arm64.reg x <;> simp only [Arm64.op2, hx, show Arm64.reg .poison = none from rfl,
+        retypeL_poison] <;> exact .poison _
+
+/-- `ARM64.rules:986`: `(SLL x (ANDconst [63] y)) => (SLL x y)` -/
+theorem r_ARM64_986_sound : ArmRule.Checked r_ARM64_986 := by
+  left; arm_unfold; arm_norm
+  simp only [DV.int.injEq] at hc
+  rw [hc]
+  exact refines_sh_and63 (by simpa [armReadW] using harg.2.1) (fun a s => a <<< s) _ _
+
+/-- `ARM64.rules:987`: `(SRL x (ANDconst [63] y)) => (SRL x y)` -/
+theorem r_ARM64_987_sound : ArmRule.Checked r_ARM64_987 := by
+  left; arm_unfold; arm_norm
+  simp only [DV.int.injEq] at hc
+  rw [hc]
+  exact refines_sh_and63 (by simpa [armReadW] using harg.2.1) (fun a s => a >>> s) _ _
+
+/-- `ARM64.rules:988`: `(SRA x (ANDconst [63] y)) => (SRA x y)` -/
+theorem r_ARM64_988_sound : ArmRule.Checked r_ARM64_988 := by
+  left; arm_unfold; arm_norm
+  simp only [DV.int.injEq] at hc
+  rw [hc]
+  exact refines_sh_and63 (by simpa [armReadW] using harg.2.1) (fun a s => a.sshiftRight s) _ _
+
+set_option hygiene false in
+/-- `NEG`/`MVN` of a shifted operand as the shifted-register form: the outer op reads the low
+`lowW` bits of the operand (`armReadW`), which its result keeps (`refines_op1_inner`). -/
+macro "sh_neg_mvn " rd:term:max low:term:max : tactic => `(tactic| (
+  left; arm_unfold; arm_norm
+  exact refines_op1_inner (lowW_pos _).1 (lowW_pos _).2 ($rd _ ▸ harg.1) _ _ _
+    $low (fun x => by simp [Arm64.shifted, Int64.ofInt_toInt]) _))
+
+/-- `ARM64.rules:1426`: `(NEG x:(SLLconst [c] y)) && clobberIfDead(x) => (NEGshiftLL [c] y)` -/
+theorem r_ARM64_1426_sound : ArmRule.Checked r_ARM64_1426 := by
+  sh_neg_mvn armReadW_neg (fun a b h => neg_low (lowW_pos _).2 a b h)
+
+/-- `ARM64.rules:1427`: `(NEG x:(SRLconst [c] y)) && clobberIfDead(x) => (NEGshiftRL [c] y)` -/
+theorem r_ARM64_1427_sound : ArmRule.Checked r_ARM64_1427 := by
+  sh_neg_mvn armReadW_neg (fun a b h => neg_low (lowW_pos _).2 a b h)
+
+/-- `ARM64.rules:1428`: `(NEG x:(SRAconst [c] y)) && clobberIfDead(x) => (NEGshiftRA [c] y)` -/
+theorem r_ARM64_1428_sound : ArmRule.Checked r_ARM64_1428 := by
+  sh_neg_mvn armReadW_neg (fun a b h => neg_low (lowW_pos _).2 a b h)
+
+/-- `ARM64.rules:1429`: `(MVN x:(SLLconst [c] y)) && clobberIfDead(x) => (MVNshiftLL [c] y)` -/
+theorem r_ARM64_1429_sound : ArmRule.Checked r_ARM64_1429 := by
+  sh_neg_mvn armReadW_mvn (fun a b h => not_low _ a b h)
+
+/-- `ARM64.rules:1430`: `(MVN x:(SRLconst [c] y)) && clobberIfDead(x) => (MVNshiftRL [c] y)` -/
+theorem r_ARM64_1430_sound : ArmRule.Checked r_ARM64_1430 := by
+  sh_neg_mvn armReadW_mvn (fun a b h => not_low _ a b h)
+
+/-- `ARM64.rules:1431`: `(MVN x:(SRAconst [c] y)) && clobberIfDead(x) => (MVNshiftRA [c] y)` -/
+theorem r_ARM64_1431_sound : ArmRule.Checked r_ARM64_1431 := by
+  sh_neg_mvn armReadW_mvn (fun a b h => not_low _ a b h)
+
+/-- `ARM64.rules:1432`: `(MVN x:(RORconst [c] y)) && clobberIfDead(x) => (MVNshiftRO [c] y)` -/
+theorem r_ARM64_1432_sound : ArmRule.Checked r_ARM64_1432 := by
+  sh_neg_mvn armReadW_mvn (fun a b h => not_low _ a b h)
 
 end GoFV.Proof.Low.Rules

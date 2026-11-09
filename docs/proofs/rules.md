@@ -2277,6 +2277,17 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   return the memory (`atomicRoot_ptrStore`; `evalOpL_atomicRen` composes it with
   `atomicRoot_fit`). Witness `asp_lower`.
 
+- **Constant folds and pointer moves** (`:971`, `:1211`–`:1216`, #385; `Rules/Peep.lean`,
+  `Rules/ConstFold.lean`). `(SUB x (MOVDconst [c])) => (SUBconst [c] x)` and the folds of
+  `ADDconst`/`SUBconst` chains (`(SUBconst [c] (ADDconst [d] x)) => (ADDconst [-c+d] x)`, …) move a
+  pointer `x` held at a word shape (`Ptr.held`) once by the sum, where the source moves it twice.
+  The intermediate pointer lies in `x`'s block, so it is held too if it lies inside the window
+  (`Ptr.held_of_blk`) and the second move starts from it; if it does not, the source is `poison`.
+  So the rules hold for every pointer (`refines_addP_addP`); any other `x` adds as a register.
+  The masked shift amounts `:986`–`:988`, the shifted `NEG`/`MVN` operands `:1426`–`:1432`, the
+  sign extensions of a mask `:1397`–`:1399` and the bit test `:556` read registers only.
+  Witnesses `pkf_lower`, `tbx_lower`.
+
 - **Compares with a pointer** (#385; module docs of `GoFV/Proof/Low/Rules/CmpNeg.lean` and
   `Invert.lean`). `CMP` compares a pointer without a concrete address with an integer as unequal
   (`Arm64.cmp`, `Z` clear). While `CMN` and `CMPshift*` read registers only (`Arm64.cmp1`/`cmp2`),

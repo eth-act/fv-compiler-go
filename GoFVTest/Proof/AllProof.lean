@@ -882,6 +882,7 @@ import GoFV.Proof.Witness.LowerNarrowArgs
 import GoFV.Proof.Witness.LowerNeg
 import GoFV.Proof.Witness.LowerNegOff
 import GoFV.Proof.Witness.LowerPanicConst
+import GoFV.Proof.Witness.LowerPeep
 import GoFV.Proof.Witness.LowerProv
 import GoFV.Proof.Witness.LowerPtrCmp
 import GoFV.Proof.Witness.LowerSPAddr
