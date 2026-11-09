@@ -94,6 +94,10 @@ import GoFV.Proof.Gen.G52
 import GoFV.Proof.Gen.G52b
 import GoFV.Proof.Gen.G53
 import GoFV.Proof.Gen.G53a
+import GoFV.Proof.Gen.G54
+import GoFV.Proof.Gen.G54L
+import GoFV.Proof.Gen.G54a
+import GoFV.Proof.Gen.G54b
 import GoFV.Proof.Gen.G6
 import GoFV.Proof.Gen.G7
 import GoFV.Proof.Gen.G8
@@ -163,6 +167,8 @@ import GoFV.Proof.Gen.Spec52
 import GoFV.Proof.Gen.Spec52b
 import GoFV.Proof.Gen.Spec53
 import GoFV.Proof.Gen.Spec53a
+import GoFV.Proof.Gen.Spec54
+import GoFV.Proof.Gen.Spec54a
 import GoFV.Proof.Gen.Spec6
 import GoFV.Proof.Gen.Spec7
 import GoFV.Proof.Gen.Spec8
@@ -927,6 +933,7 @@ import GoFV.Proof.Witness.GenG50
 import GoFV.Proof.Witness.GenG51
 import GoFV.Proof.Witness.GenG52
 import GoFV.Proof.Witness.GenG53
+import GoFV.Proof.Witness.GenG54
 import GoFV.Proof.Witness.GenG6
 import GoFV.Proof.Witness.GenG7
 import GoFV.Proof.Witness.GenG8

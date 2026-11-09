@@ -937,6 +937,21 @@ equal or disjoint (the machine copies chunk by chunk). Witness: `genG53_witness`
 rejects). Coverage on quick-v10 (`lake exe gen-check`): 7,260 of 9,297 functions (78.08%),
 227,056 values.
 
+## Phase 3: genssa, slice G54, `LoweredZeroLoop` and `LoweredMoveLoop` (I7, #553)
+
+`GoFV.Proof.Gen.g54_value`, `g54_initMem`, `g54_term`, `g54_nilPanic`, `g54_boundsPanic`
+(`GoFV/Proof/Gen/G54.lean`): when slice G54 (`checkG54`: G53 with `LoweredZeroLoop [n]` and
+`LoweredMoveLoop [n]`, `n ≥ 64`, as genssa's loop of `n / 64` iterations — `MOVD $n/64, Rc`, four
+`STP.P (ZR, ZR)` or two `FLDPQ.P`/`FSTPQ.P` pairs, `SUB $1, Rc`, `CBNZ Rc` to the head — then the
+straight-line tail of the `n mod 64` bytes left; `loopOK`: each `CBNZ` branches to the Prog after
+its `MOVD`) accepts a function, they are G53's statements, under `G49Env`, `g54_value` under
+`G54Pre := G53Pre ∧ Pre54a ∧ Pre54b`. The machine run is an induction over the iterations
+(`loop_run`). New run premises `Pre54a` (the zeroing writes `n` bytes at a valid address) and
+`Pre54b` (the copy reads and writes `n` valid bytes, and the two ranges are equal or disjoint, as
+`Pre53a`). Witness: `genG54_witness` (`runtime.(*consistentHeapStats).unsafeClear`, a 3504-byte
+`LoweredZeroLoop` with its temporary as the counter, which G53 rejects). Coverage on quick-v10
+(`lake exe gen-check`): 7,308 of 9,297 functions (78.60%), 231,647 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g49_obj_value`, `g49_obj_term`, `g49_obj_nilPanic`, `g49_obj_boundsPanic`
