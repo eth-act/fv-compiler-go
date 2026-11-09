@@ -1,6 +1,8 @@
 import GoFV.Proof.Gen.G44
 import GoFV.Proof.Gen.Spec45
 
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Slice G45 of the genssa validator: register-index float loads and stores
 (`docs/plans/proofs3.md` §4)
