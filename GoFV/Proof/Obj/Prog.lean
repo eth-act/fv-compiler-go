@@ -588,7 +588,23 @@ private theorem fam_shift {op : String} {sf : Bool}
   unfold progEffect at he
   simp only [hbin, ProgCtx.rn] at he
   by_cases hc : p.from_.type = .CONST
-  case neg => simp only [hc, beq_iff_eq, ↓reduceIte] at h; cases h
+  case neg =>
+    have hc' : (p.from_.type == .CONST) = false := by simpa using hc
+    simp only [hc', Bool.false_eq_true, ↓reduceIte] at h
+    simp only [hc', Bool.false_and, Bool.false_eq_true, ↓reduceIte] at he
+    obtain ⟨x, hx, h⟩ := pg_bind_ok h
+    obtain ⟨y, hy, h⟩ := pg_bind_ok h
+    obtain ⟨σ1, hσ1, h⟩ := pg_bind_ok h
+    obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj h)
+    simp only [src_reg hx, srcP_eval hy, pg_ok_bind] at he
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hop
+    rcases hop with rfl | rfl | rfl <;>
+    · simp (config := { decide := true }) only [ProgOp.binOp, ↓reduceIte] at he hσ1
+      obtain ⟨e1, he1, he⟩ := pg_bind_ok he
+      obtain rfl := pg_ok_inj he
+      obtain ⟨hR, -, -, hfl, hpc⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he1
+        (by rw [Ex.eval_mkDp2, dp2_trunc])
+      exact .inl ⟨⟨hR.x, hR.xlt, hR.sp, by rw [hfl]; rfl, hR.v, hR.vlt, hR.loads, hR.stores⟩, hpc⟩
   by_cases hneg : p.from_.offset < 0
   · simp only [hc, hneg, beq_self_eq_true, ↓reduceIte] at h; cases h
   simp only [hc, hneg, beq_self_eq_true, ↓reduceIte] at h
@@ -1675,6 +1691,170 @@ private theorem fam_excl {az ez : Int} {ld : Bool} {n : Nat} (haz : L.autosize =
   · excl_st_tac
   · excl_st_tac
 
+/-! ### Variable shifts, divisions, remainders, inverted logical operations (`dp2P`) -/
+
+private theorem dp2_pre {name op : String} {sf : Bool}
+    (hb : ProgOp.baseOf name ["ROR", "UDIV", "SDIV", "REM", "UREM", "BIC", "ORN", "EON", "MVN"] =
+      some (op, sf)) :
+    (op ∈ ["ROR", "UDIV", "SDIV"] ∧ ProgOp.baseOf name ProgOp.binNames = some (op, sf)) ∨
+    (op ∈ ["REM", "UREM"] ∧ ProgOp.baseOf name ProgOp.binNames = some (op, sf)) ∨
+    (op ∈ ["BIC", "ORN", "EON"] ∧ ProgOp.baseOf name ProgOp.binNames = some (op, sf)) ∨
+    (op = "MVN" ∧ ProgOp.baseOf name ProgOp.binNames = none ∧
+      ProgOp.baseOf name ["CMP", "CMN", "TST"] = none ∧
+      ProgOp.baseOf name ["NEG", "NEGS", "MVN", "NGC", "NGCS"] = some (op, sf)) := by
+  obtain ⟨hop, rfl⟩ := baseOf_some hb
+  have key : ∀ op ∈ ["ROR", "UDIV", "SDIV", "REM", "UREM", "BIC", "ORN", "EON", "MVN"], ∀ sf : Bool,
+      (op ∈ ["ROR", "UDIV", "SDIV"] ∧
+        ProgOp.baseOf (if sf then op else op ++ "W") ProgOp.binNames = some (op, sf)) ∨
+      (op ∈ ["REM", "UREM"] ∧
+        ProgOp.baseOf (if sf then op else op ++ "W") ProgOp.binNames = some (op, sf)) ∨
+      (op ∈ ["BIC", "ORN", "EON"] ∧
+        ProgOp.baseOf (if sf then op else op ++ "W") ProgOp.binNames = some (op, sf)) ∨
+      (op = "MVN" ∧ ProgOp.baseOf (if sf then op else op ++ "W") ProgOp.binNames = none ∧
+        ProgOp.baseOf (if sf then op else op ++ "W") ["CMP", "CMN", "TST"] = none ∧
+        ProgOp.baseOf (if sf then op else op ++ "W") ["NEG", "NEGS", "MVN", "NGC", "NGCS"] =
+          some (op, sf)) := by
+    decide
+  exact key op hop sf
+
+/-- `REM`/`UREM` at the datasize: the division into `REGTMP`, then `MSUB`. -/
+private theorem rem_val (sf : Bool) (x y : BitVec 64) :
+    (sized sf fun _ e => GoFV.SSA.Sem.Arm64.srem (e (ProgOp.trunc sf x)) (e (ProgOp.trunc sf y))) =
+      dp3Op sf 0 true x (dp2Op sf 3 x y) y := by
+  cases sf <;> simp [dp3Op, dp2Op, sized, ProgOp.trunc, GoFV.SSA.Sem.Arm64.srem,
+    BitVec.setWidth_setWidth_of_le]
+
+private theorem urem_val (sf : Bool) (x y : BitVec 64) :
+    (sized sf fun _ e => GoFV.SSA.Sem.Arm64.urem (e (ProgOp.trunc sf x)) (e (ProgOp.trunc sf y))) =
+      dp3Op sf 0 true x (dp2Op sf 2 x y) y := by
+  cases sf <;> simp [dp3Op, dp2Op, sized, ProgOp.trunc, GoFV.SSA.Sem.Arm64.urem,
+    BitVec.setWidth_setWidth_of_le]
+
+/-- `binOp`'s inverted operand (`BIC`/`ORN`/`EON`) is `Ex.inv`'s. -/
+private theorem bic_val (sf : Bool) (opc : BitVec 2) (x y : BitVec 64) :
+    logical sf opc (ProgOp.trunc sf x) (ProgOp.trunc sf (~~~(ProgOp.trunc sf y))) =
+      logical sf opc x (sized sf fun _ e => ~~~(e y)) := by
+  cases sf <;> simp [logical, sizedF, sized, ProgOp.trunc, BitVec.setWidth_setWidth_of_le]
+
+private theorem mvn_val (sf : Bool) (opc : BitVec 2) (x y : BitVec 64) :
+    logical sf opc x (ProgOp.trunc sf (~~~(ProgOp.trunc sf y))) =
+      logical sf opc x (sized sf fun _ e => ~~~(e y)) := by
+  cases sf <;> simp [logical, sizedF, sized, ProgOp.trunc, BitVec.setWidth_setWidth_of_le]
+
+/-- `ROR` by a register, `UDIV`/`SDIV` (and `W`): data-processing (2 source). -/
+private theorem fam_div {op : String} {sf : Bool} (hop : op ∈ ["ROR", "UDIV", "SDIV"])
+    (hbin : ProgOp.baseOf p.as.name ProgOp.binNames = some (op, sf))
+    (hm : dp2P op sf p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) : Out L p s e σ pc := by
+  unfold progEffect at he
+  simp only [hbin, ProgCtx.rn] at he
+  unfold dp2P at hm
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hop
+  by_cases hc : p.from_.type = .CONST
+  · rcases hop with rfl | rfl | rfl <;>
+    simp (config := { decide := true }) only [hc, beq_self_eq_true, ↓reduceIte] at hm <;>
+    cases hm
+  have hc' : (p.from_.type == .CONST) = false := by simpa using hc
+  simp only [hc', Bool.false_and, Bool.false_eq_true, ↓reduceIte] at he
+  rcases hop with rfl | rfl | rfl <;>
+  · simp (config := { decide := true }) only [hc', Bool.false_eq_true, ↓reduceIte, bind_assoc,
+      pure_bind] at hm
+    obtain ⟨x, hx, hm⟩ := pg_bind_ok hm
+    obtain ⟨y, hy, hm⟩ := pg_bind_ok hm
+    obtain ⟨σ1, hσ1, hm⟩ := pg_bind_ok hm
+    obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj hm)
+    simp (config := { decide := true }) only [src_reg hx, srcP_eval hy, pg_ok_bind,
+      ProgOp.binOp] at he
+    obtain ⟨e1, he1, he⟩ := pg_bind_ok he
+    obtain rfl := pg_ok_inj he
+    obtain ⟨hR, -, -, hfl, hpc⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he1
+      (by rw [Ex.eval_mkDp2, dp2_trunc])
+    exact .inl ⟨⟨hR.x, hR.xlt, hR.sp, by rw [hfl]; rfl, hR.v, hR.vlt, hR.loads, hR.stores⟩, hpc⟩
+
+/-- `REM`/`UREM` (and `W`): the division into `REGTMP` and `MSUB`. -/
+private theorem fam_rem {op : String} {sf : Bool} (hop : op ∈ ["REM", "UREM"])
+    (hbin : ProgOp.baseOf p.as.name ProgOp.binNames = some (op, sf))
+    (hm : dp2P op sf p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) : Out L p s e σ pc := by
+  have hnsh : ["LSL", "LSR", "ASR", "ROR"].contains op = false := by
+    have key : ∀ op ∈ ["REM", "UREM"], ["LSL", "LSR", "ASR", "ROR"].contains op = false := by decide
+    exact key op hop
+  unfold progEffect at he
+  simp only [hbin, ProgCtx.rn, hnsh, Bool.and_false, Bool.false_eq_true, ↓reduceIte] at he
+  unfold dp2P at hm
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hop
+  rcases hop with rfl | rfl
+  all_goals
+    simp (config := { decide := true }) only [bind_assoc, pure_bind, ↓reduceIte] at hm
+    obtain ⟨x, hx, hm⟩ := pg_bind_ok hm
+    obtain ⟨y, hy, hm⟩ := pg_bind_ok hm
+    obtain ⟨σ1, hσ1, hm⟩ := pg_bind_ok hm
+    obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj hm)
+    simp (config := { decide := true }) only [src_reg hx, srcP_eval hy, pg_ok_bind, Bool.and_false,
+      Bool.false_eq_true, ↓reduceIte, ProgOp.binOp] at he
+    obtain ⟨e1, he1, he⟩ := pg_bind_ok he
+    obtain rfl := pg_ok_inj he
+  · obtain ⟨hR, -, -, hfl, hpc⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he1
+      (by rw [Ex.eval_mkDp3, Ex.eval_mkDp2]; exact rem_val sf _ _)
+    exact .inl ⟨⟨hR.x, hR.xlt, hR.sp, by rw [hfl]; rfl, hR.v, hR.vlt, hR.loads, hR.stores⟩, hpc⟩
+  · obtain ⟨hR, -, -, hfl, hpc⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he1
+      (by rw [Ex.eval_mkDp3, Ex.eval_mkDp2]; exact urem_val sf _ _)
+    exact .inl ⟨⟨hR.x, hR.xlt, hR.sp, by rw [hfl]; rfl, hR.v, hR.vlt, hR.loads, hR.stores⟩, hpc⟩
+
+/-- `BIC`/`ORN`/`EON` (and `W`): the logical operation of the inverted operand. -/
+private theorem fam_bic {op : String} {sf : Bool} (hop : op ∈ ["BIC", "ORN", "EON"])
+    (hbin : ProgOp.baseOf p.as.name ProgOp.binNames = some (op, sf))
+    (hm : dp2P op sf p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) : Out L p s e σ pc := by
+  have hnsh : ["LSL", "LSR", "ASR", "ROR"].contains op = false := by
+    have key : ∀ op ∈ ["BIC", "ORN", "EON"], ["LSL", "LSR", "ASR", "ROR"].contains op = false := by
+      decide
+    exact key op hop
+  unfold progEffect at he
+  simp only [hbin, ProgCtx.rn, hnsh, Bool.and_false, Bool.false_eq_true, ↓reduceIte] at he
+  unfold dp2P at hm
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hop
+  rcases hop with rfl | rfl | rfl <;>
+  · simp (config := { decide := true }) only [bind_assoc, pure_bind, ↓reduceIte] at hm
+    obtain ⟨x, hx, hm⟩ := pg_bind_ok hm
+    obtain ⟨y, hy, hm⟩ := pg_bind_ok hm
+    obtain ⟨σ1, hσ1, hm⟩ := pg_bind_ok hm
+    obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj hm)
+    simp (config := { decide := true }) only [src_reg hx, srcP_eval hy, pg_ok_bind, Bool.and_false,
+      Bool.false_eq_true, ↓reduceIte, ProgOp.binOp] at he
+    obtain ⟨e1, he1, he⟩ := pg_bind_ok he
+    obtain rfl := pg_ok_inj he
+    obtain ⟨hR, -, -, hfl, hpc⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he1
+      (by rw [Ex.eval_mkLogical, Ex.eval_mkInv, bic_val])
+    exact .inl ⟨⟨hR.x, hR.xlt, hR.sp, by rw [hfl]; rfl, hR.v, hR.vlt, hR.loads, hR.stores⟩, hpc⟩
+
+/-- `MVN` (and `W`): `ORN` with `ZR`. -/
+private theorem fam_mvn {sf : Bool}
+    (q1 : ProgOp.baseOf p.as.name ProgOp.binNames = none)
+    (q2 : ProgOp.baseOf p.as.name ["CMP", "CMN", "TST"] = none)
+    (q3 : ProgOp.baseOf p.as.name ["NEG", "NEGS", "MVN", "NGC", "NGCS"] = some ("MVN", sf))
+    (hm : dp2P "MVN" sf p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) : Out L p s e σ pc := by
+  unfold progEffect at he
+  simp only [q1, q2, q3] at he
+  unfold dp2P at hm
+  simp (config := { decide := true }) only [bind_assoc, pure_bind] at hm
+  obtain ⟨y, hy, hm⟩ := pg_bind_ok hm
+  obtain ⟨σ1, hσ1, hm⟩ := pg_bind_ok hm
+  obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj hm)
+  simp (config := { decide := true }) only [srcP_eval hy, pg_ok_bind, ProgOp.binOp] at he
+  obtain ⟨e1, he1, he⟩ := pg_bind_ok he
+  obtain rfl := pg_ok_inj he
+  obtain ⟨hR, -, -, hfl, hpc⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he1
+    (by rw [Ex.eval_mkLogical, Ex.eval_mkInv, mvn_val]; rfl)
+  exact .inl ⟨⟨hR.x, hR.xlt, hR.sp, by rw [hfl]; rfl, hR.v, hR.vlt, hR.loads, hR.stores⟩, hpc⟩
+
+private theorem fam_dp2 {op : String} {sf : Bool}
+    (hb : ProgOp.baseOf p.as.name
+      ["ROR", "UDIV", "SDIV", "REM", "UREM", "BIC", "ORN", "EON", "MVN"] = some (op, sf))
+    (hm : dp2P op sf p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) : Out L p s e σ pc := by
+  rcases dp2_pre hb with ⟨hop, hbin⟩ | ⟨hop, hbin⟩ | ⟨hop, hbin⟩ | ⟨rfl, q1, q2, q3⟩
+  · exact fam_div hop hbin hm he
+  · exact fam_rem hop hbin hm he
+  · exact fam_bic hop hbin hm he
+  · exact fam_mvn q1 q2 q3 hm he
+
 /-! ### SIMD&FP data processing (`fpOp?`, `fpP`)
 
 One lemma per `FpOp` form, `progEffect`'s branch given with its fields as it computes them from
@@ -1950,10 +2130,12 @@ private theorem fam_rest
     (hdp1 : ProgOp.baseOf p.as.name ["CLZ", "RBIT", "REV", "REV16", "REV32"] = none)
     (hcsel : ProgOp.baseOf p.as.name ["CSEL", "CSINC", "CSINV", "CSNEG", "CSET", "CSETM"] = none)
     (hex : exclOp p.as.name = none)
+    (hdp2 : ProgOp.baseOf p.as.name
+      ["ROR", "UDIV", "SDIV", "REM", "UREM", "BIC", "ORN", "EON", "MVN"] = none)
     (h : progSymCore az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) :
     Out L p s e σ pc := by
   unfold progSymCore at h
-  simp only [hb1, hb2, hb3, hb4, hb5, hm0, hp0, hc0, hmul, hdp1, hcsel, hex] at h
+  simp only [hb1, hb2, hb3, hb4, hb5, hm0, hp0, hc0, hmul, hdp1, hcsel, hex, hdp2] at h
   split at h
   · next _ hn =>
     by_cases h0 : (p.from_.offset == 0) = true
@@ -2143,7 +2325,14 @@ private theorem dispatch {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl} {L : Li
     simp only [hmul, hdp1, hcsel, hex] at h
     exact fam_excl haz hez hex h he
   | none =>
-  exact fam_rest hb1 hb2 hb3 hb4 hb5 hm hp hc hmul hdp1 hcsel hex h0 he
+  cases hdp2 : ProgOp.baseOf p.as.name
+      ["ROR", "UDIV", "SDIV", "REM", "UREM", "BIC", "ORN", "EON", "MVN"] with
+  | some r =>
+    obtain ⟨op, sf⟩ := r
+    simp only [hmul, hdp1, hcsel, hex, hdp2] at h
+    exact fam_dp2 hdp2 h he
+  | none =>
+  exact fam_rest hb1 hb2 hb3 hb4 hb5 hm hp hc hmul hdp1 hcsel hex hdp2 h0 he
 
 end fam
 

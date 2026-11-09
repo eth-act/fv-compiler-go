@@ -14,8 +14,8 @@ the state *before* the Prog. Equal `Sym`s (with `X27`, the assembler's scratch, 
 equal effects on every state.
 
 `Ex`'s operations are the data operations `exec` and `progEffect` share (`addSub`, `logical`,
-`Shift.apply` through `sized`, `extendReg`, `bitfieldMove`, `sext`, loads), so the two sides
-meet syntactically. Smart constructors (`Ex.add`, `Ex.mkAddSub`, …) fold constants and pick
+`Shift.apply` through `sized`, `extendReg`, `bitfieldMove`, `sext`, `dp2Op`, loads), so the two
+sides meet syntactically. Smart constructors (`Ex.add`, `Ex.mkAddSub`, …) fold constants and pick
 one form for the identities the encodings need (`ORR Rd, ZR, Rm` is `Rm`, `ADD`/`SUB` of a
 constant is `+`, …); `Ex.eval` gives the meaning, and each smart constructor is proven to
 preserve it (`GoFV/Proof/Obj/`).
@@ -62,6 +62,11 @@ inductive Ex where
   | page (a : Ex)
   /-- `dp1Op sf opc a` (`CLZ`, `RBIT`, `REV`, …). -/
   | dp1 (sf : Bool) (opc : BitVec 3) (a : Ex)
+  /-- `dp2Op sf opc a b` (`UDIV`, `SDIV`, `LSLV`, `LSRV`, `ASRV`, `RORV`). -/
+  | dp2 (sf : Bool) (opc : BitVec 6) (a b : Ex)
+  /-- `sized sf fun _ e => ~~~(e a)`: the inverted operand of `BIC`/`ORN`/`EON` (`logShift`
+  with `n`). -/
+  | inv (sf : Bool) (a : Ex)
   /-- `dp3Op sf op31 o0 a x y` (`MADD`/`MSUB`, `UMULH`, `SMULH`). -/
   | dp3 (sf : Bool) (op31 : BitVec 3) (o0 : Bool) (a x y : Ex)
   /-- `cselVal sf op op2 h a b`, `h` whether condition `c` holds on the flags before the Prog
@@ -108,6 +113,8 @@ def eval (c : Ctx) : Ex → BitVec 64
   | .sext n a => GoFV.SSA.Sem.Arm64.sext n (eval c a)
   | .page a => eval c a &&& ~~~(0xFFF : BitVec 64)
   | .dp1 sf opc a => dp1Op sf opc (eval c a)
+  | .dp2 sf opc a b => dp2Op sf opc (eval c a) (eval c b)
+  | .inv sf a => sized sf fun _ e => ~~~(e (eval c a))
   | .dp3 sf op31 o0 a b d => dp3Op sf op31 o0 (eval c a) (eval c b) (eval c d)
   | .csel sf op op2 cc a b => cselVal sf op op2 ((condOf cc).holds c.s.nzcv) (eval c a) (eval c b)
   | .vlo ft r =>
@@ -135,6 +142,8 @@ def str : Ex → String
   | .sext n a => s!"sext{n}({str a})"
   | .page a => s!"page({str a})"
   | .dp1 sf opc a => s!"dp1_{opc.toNat}{if sf then "" else "W"}({str a})"
+  | .dp2 sf opc a b => s!"dp2_{opc.toNat}{if sf then "" else "W"}({str a},{str b})"
+  | .inv sf a => s!"inv{if sf then "" else "W"}({str a})"
   | .dp3 sf op31 o0 a b d =>
     s!"dp3_{op31.toNat}{if o0 then "S" else "A"}{if sf then "" else "W"}({str a},{str b},{str d})"
   | .csel sf op op2 cc a b =>
@@ -146,9 +155,10 @@ def str : Ex → String
 def reads (r : Nat) : Ex → Bool
   | .x q => q == r
   | .sp | .k _ | .sym _ | .vlo .. | .fcvtz .. => false
-  | .ld _ a | .shift _ _ _ a | .ext _ _ a | .lo32 a | .sext _ a | .page a | .dp1 _ _ a => reads r a
-  | .add a b | .addSub _ _ a b | .logical _ _ a b | .bfm _ _ _ _ a b | .csel _ _ _ _ a b =>
-    reads r a || reads r b
+  | .ld _ a | .shift _ _ _ a | .ext _ _ a | .lo32 a | .sext _ a | .page a | .dp1 _ _ a
+  | .inv _ a => reads r a
+  | .add a b | .addSub _ _ a b | .logical _ _ a b | .bfm _ _ _ _ a b | .csel _ _ _ _ a b
+  | .dp2 _ _ a b => reads r a || reads r b
   | .dp3 _ _ _ a b d => reads r a || reads r b || reads r d
 
 /-- Whether every register the value reads is one of `X0`–`X30` but `X27` (the assembler's
@@ -157,9 +167,10 @@ machine state agree on. -/
 def regsOK : Ex → Bool
   | .x r => r < 31 && r != 27 && r != 30
   | .sp | .k _ | .sym _ | .vlo .. | .fcvtz .. => true
-  | .ld _ a | .shift _ _ _ a | .ext _ _ a | .lo32 a | .sext _ a | .page a | .dp1 _ _ a => regsOK a
-  | .add a b | .addSub _ _ a b | .logical _ _ a b | .bfm _ _ _ _ a b | .csel _ _ _ _ a b =>
-    regsOK a && regsOK b
+  | .ld _ a | .shift _ _ _ a | .ext _ _ a | .lo32 a | .sext _ a | .page a | .dp1 _ _ a
+  | .inv _ a => regsOK a
+  | .add a b | .addSub _ _ a b | .logical _ _ a b | .bfm _ _ _ _ a b | .csel _ _ _ _ a b
+  | .dp2 _ _ a b => regsOK a && regsOK b
   | .dp3 _ _ _ a b d => regsOK a && regsOK b && regsOK d
 
 /-! ### Smart constructors (constant folding and the canonical forms) -/
@@ -247,6 +258,15 @@ def opndK (sf : Bool) (a : Ex) : Ex :=
 datasize. -/
 def mkDp3 (sf : Bool) (op31 : BitVec 3) (o0 : Bool) (a x y : Ex) : Ex :=
   if op31 = 0 then .dp3 sf 0 o0 (opndK sf a) (opndK sf x) (opndK sf y) else .dp3 sf op31 o0 a x y
+
+/-- `dp2Op sf opc a b`: the operands at the datasize (`opndK`). -/
+def mkDp2 (sf : Bool) (opc : BitVec 6) (a b : Ex) : Ex := .dp2 sf opc (opndK sf a) (opndK sf b)
+
+/-- `sized sf fun _ e => ~~~(e a)`: the operand at the datasize (`opnd`), a constant folded. -/
+def mkInv (sf : Bool) (a : Ex) : Ex :=
+  match opnd sf a with
+  | .k v => .k (sized sf fun _ e => ~~~(e v))
+  | a => .inv sf a
 
 end Ex
 
@@ -628,13 +648,15 @@ def symInsn (i : Insn) (o : Nat) (σ : Sym) : Except String (Sym × MCtl) :=
     if kind = .blr then pure (σ, .callReg (σ.rX rn.toNat)) else pure (σ, .reg (σ.rX rn.toNat))
   | .condSel sf op op2 rm cond rn rd => symCsel σ sf op op2 rm cond rn rd
   | .dp1 sf opc rn rd => pure (σ.wX rd.toNat (.dp1 sf opc (σ.rX rn.toNat)), .fall)
+  | .dp2 sf opc rm rn rd =>
+    pure (σ.wX rd.toNat (Ex.mkDp2 sf opc (σ.rX rn.toNat) (σ.rX rm.toNat)), .fall)
   | .dp3 sf op31 o0 rm ra rn rd =>
     pure (σ.wX rd.toNat (Ex.mkDp3 sf op31 o0 (σ.rX ra.toNat) (σ.rX rn.toNat) (σ.rX rm.toNat)), .fall)
   | .ldstExcl size o2 ld _ _ rn rt => symExcl σ size o2 ld rn rt
   | .nop | .barrier .. => pure (σ, .fall)
   | .logShift sf opc shift n rm imm6 rn rd =>
     let y := Ex.mkShift sf shift imm6.toNat (σ.rX rm.toNat)
-    if n then throw "logical shifted register with inversion" else
+    let y := if n then Ex.mkInv sf y else y
     let x := σ.rX rn.toNat
     let r := Ex.mkLogical sf opc x y
     if opc = 3 then pure ({ σ.wX rd.toNat r with fl := Fl.mkAnds sf x y }, .fall)

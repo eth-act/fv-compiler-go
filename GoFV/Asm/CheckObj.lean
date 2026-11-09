@@ -172,6 +172,33 @@ def dp1P (op : String) (sf : Bool) (p : Prog) : Except String (Sym × PCtl) := d
   let x ← xP p.from_.reg
   return (← wP {} p.to.reg (.dp1 sf opc x), .fall)
 
+/-- `ROR` by a register, `UDIV`/`SDIV`, `REM`/`UREM`, `BIC`/`ORN`/`EON` and `MVN` (and `W`), as
+the assembler encodes them: variable shifts and divisions as data-processing (2 source)
+(`Ex.mkDp2`), `REM`/`UREM` as the division into `REGTMP` and `MSUB` (`asmout` case 16), `BIC`/
+`ORN`/`EON` as the logical operation of the inverted operand (`Ex.mkInv`), `MVN` as `ORN` with
+`ZR`. -/
+def dp2P (op : String) (sf : Bool) (p : Prog) : Except String (Sym × PCtl) := do
+  let rn : Int := if p.reg != 0 then p.reg else p.to.reg
+  let r ← match op with
+    | "MVN" => do
+      let y ← srcP sf p.from_
+      pure (Ex.mkLogical sf 1 (.k 0) (Ex.mkInv sf y))
+    | "BIC" | "ORN" | "EON" => do
+      let x ← xP rn
+      let y ← srcP sf p.from_
+      pure (Ex.mkLogical sf (if op == "BIC" then 0 else if op == "ORN" then 1 else 2) x
+        (Ex.mkInv sf y))
+    | "REM" | "UREM" => do
+      let x ← xP rn
+      let y ← srcP sf p.from_
+      pure (Ex.mkDp3 sf 0 true x (Ex.mkDp2 sf (if op == "REM" then 3 else 2) x y) y)
+    | _ => do
+      if p.from_.type == .CONST then throw s!"{op} by a constant"
+      let x ← xP rn
+      let y ← srcP sf p.from_
+      pure (Ex.mkDp2 sf (if op == "ROR" then 11 else if op == "UDIV" then 2 else 3) x y)
+  return (← wP {} p.to.reg r, .fall)
+
 /-- `CSEL`/`CSINC`/`CSINV`/`CSNEG` (and `W`): the conditional select on the flags before the
 Prog; `CSET`/`CSETM` as the assembler encodes them, `CSINC`/`CSINV` of `ZR` on the inverted
 condition (not `AL`/`NV`, whose inversion is not their negation). -/
@@ -352,13 +379,17 @@ def progSymCore (az ez : Int) (p : Prog) : Except String (Sym × PCtl) := do
   let name := p.as.name
   let σ : Sym := {}
   let rn : Int := if p.reg != 0 then p.reg else p.to.reg
-  -- constant shifts (`binOp` of `LSL`/`LSR`/`ASR` with a constant)
+  -- shifts (`binOp` of `LSL`/`LSR`/`ASR`): by a constant the bitfield move, by a register the
+  -- variable shift
   if let some (op, sf) := baseOf name ["LSL", "LSR", "ASR"] then
     if p.from_.type == .CONST then
       if p.from_.offset < 0 then throw s!"{name} by a negative amount"
       let x ← xP rn
       return (← wP σ p.to.reg (← shiftBfm op sf p.from_.offset.toNat x), .fall)
-    throw s!"{name} by a register"
+    let x ← xP rn
+    let y ← srcP sf p.from_
+    let opc : BitVec 6 := if op == "LSL" then 8 else if op == "LSR" then 9 else 10
+    return (← wP σ p.to.reg (Ex.mkDp2 sf opc x y), .fall)
   if let some (op, sf) := baseOf name ["ADD", "SUB", "AND", "ORR", "EOR", "ADDS", "SUBS", "ANDS"] then
     let x ← xP rn
     let y ← srcP sf p.from_
@@ -455,6 +486,9 @@ def progSymCore (az ez : Int) (p : Prog) : Except String (Sym × PCtl) := do
     return ← cselP op sf p
   if let some (ld, n) := exclOp name then
     return ← exclP az ez ld n p
+  if let some (op, sf) := baseOf name ["ROR", "UDIV", "SDIV", "REM", "UREM", "BIC", "ORN", "EON",
+      "MVN"] then
+    return ← dp2P op sf p
   match name with
   | "HINT" => if p.from_.offset == 0 then return (σ, .fall) else throw "HINT"
   | "JMP" =>

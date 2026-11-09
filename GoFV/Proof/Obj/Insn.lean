@@ -444,26 +444,23 @@ private theorem insn_logShift {sf : Bool} {opc shift : BitVec 2} {n : Bool} {rm 
     ∃ t', exec (.logShift sf opc shift n rm imm6 rn rd) t = .ok t' ∧ Holds c σ' t' ∧
       CtlPc c base o mc t' := by
   cases n
-  · rcases opc with ⟨⟨_ | _ | _ | _ | k, hk⟩⟩
-    · cases h
-      exact ⟨_, rfl, insn_fall hpc (insn_holds_wX hH rd
-        (by rw [Ex.eval_mkLogical, Ex.eval_mkShift, insn_rX hH, insn_rX hH] <;> rfl))
-        (insn_wX_pc _ _ _)⟩
-    · cases h
-      exact ⟨_, rfl, insn_fall hpc (insn_holds_wX hH rd
-        (by rw [Ex.eval_mkLogical, Ex.eval_mkShift, insn_rX hH, insn_rX hH] <;> rfl))
-        (insn_wX_pc _ _ _)⟩
-    · cases h
-      exact ⟨_, rfl, insn_fall hpc (insn_holds_wX hH rd
-        (by rw [Ex.eval_mkLogical, Ex.eval_mkShift, insn_rX hH, insn_rX hH] <;> rfl))
-        (insn_wX_pc _ _ _)⟩
+  all_goals
+    rcases opc with ⟨⟨_ | _ | _ | _ | k, hk⟩⟩
+    rotate_right 2
     · cases h
       exact ⟨_, rfl, insn_fall hpc (insn_holds_fl (insn_holds_wX hH rd
-        (by rw [Ex.eval_mkLogical, Ex.eval_mkShift, insn_rX hH, insn_rX hH] <;> rfl))
-        (by rw [Fl.eval_mkAnds, Ex.eval_mkShift, insn_rX hH, insn_rX hH] <;> rfl))
+        (by simp only [Ex.eval_mkLogical, Ex.eval_mkInv, Ex.eval_mkShift, insn_rX hH,
+          Bool.false_eq_true, ↓reduceIte]; try rfl))
+        (by simp only [Fl.eval_mkAnds, Ex.eval_mkInv, Ex.eval_mkShift, insn_rX hH,
+          Bool.false_eq_true, ↓reduceIte]; try rfl))
         (insn_wX_pc _ _ _)⟩
     · exact absurd hk (by omega)
-  · cases h
+    all_goals
+      cases h
+      exact ⟨_, rfl, insn_fall hpc (insn_holds_wX hH rd
+        (by simp only [Ex.eval_mkLogical, Ex.eval_mkInv, Ex.eval_mkShift, insn_rX hH,
+          Bool.false_eq_true, ↓reduceIte]; try rfl))
+        (insn_wX_pc _ _ _)⟩
 
 private theorem insn_addSubShift {sf sub setf : Bool} {shift : BitVec 2} {rm : Reg}
     {imm6 : BitVec 6} {rn rd : Reg} {o : Nat} {σ σ' : Sym} {mc : MCtl} {c : Ctx} {t : MState}
@@ -1135,6 +1132,15 @@ private theorem insn_dp1 {sf : Bool} {opc : BitVec 3} {rn rd : Reg}
   exact ⟨_, rfl, insn_fall hpc (insn_holds_wX hH rd (by simp only [Ex.eval, insn_rX hH]))
     (insn_wX_pc _ _ _)⟩
 
+private theorem insn_dp2 {sf : Bool} {opc : BitVec 6} {rm rn rd : Reg}
+    {o : Nat} {σ σ' : Sym} {mc : MCtl} {c : Ctx} {t : MState} {base : BitVec 64}
+    (h : symInsn (.dp2 sf opc rm rn rd) o σ = .ok (σ', mc)) (hH : Holds c σ t)
+    (hpc : t.pc = base + BitVec.ofNat 64 o) :
+    ∃ t', exec (.dp2 sf opc rm rn rd) t = .ok t' ∧ Holds c σ' t' ∧ CtlPc c base o mc t' := by
+  cases h
+  exact ⟨_, rfl, insn_fall hpc (insn_holds_wX hH rd (by simp only [Ex.eval_mkDp2, insn_rX hH]))
+    (insn_wX_pc _ _ _)⟩
+
 private theorem insn_dp3 {sf : Bool} {op31 : BitVec 3} {o0 : Bool} {rm ra rn rd : Reg}
     {o : Nat} {σ σ' : Sym} {mc : MCtl} {c : Ctx} {t : MState} {base : BitVec 64}
     (h : symInsn (.dp3 sf op31 o0 rm ra rn rd) o σ = .ok (σ', mc)) (hH : Holds c σ t)
@@ -1217,6 +1223,7 @@ theorem symInsn_sound {i : Insn} {o : Nat} {σ σ' : Sym} {mc : MCtl} {c : Ctx} 
   | ldstPair => exact insn_post (insn_pair h hH hpc hnil)
   | condSel => exact insn_post (insn_condSel h hH hpc)
   | dp1 => exact insn_post (insn_dp1 h hH hpc)
+  | dp2 => exact insn_post (insn_dp2 h hH hpc)
   | dp3 => exact insn_post (insn_dp3 h hH hpc)
   | ldstExcl => exact insn_post (insn_excl h hH hpc hnil)
   | fp1 => exact insn_post (insn_fp1 h hH hpc)
@@ -1327,6 +1334,7 @@ theorem symInsn_mono {i : Insn} {o : Nat} {σ σ' : Sym} {mc : MCtl}
     · cases hh; insn_mono_tac
     · cases hh
   | dp1 => cases h; insn_mono_tac
+  | dp2 => cases h; insn_mono_tac
   | dp3 => cases h; insn_mono_tac
   | ldstExcl size o2 ld o0 rs rn rt =>
     have hh : symExcl σ size o2 ld rn rt = .ok (σ', mc) := h
@@ -1341,12 +1349,10 @@ theorem symInsn_mono {i : Insn} {o : Nat} {σ σ' : Sym} {mc : MCtl}
   | nop => cases h; insn_mono_tac
   | barrier => cases h; insn_mono_tac
   | logShift sf opc shift n =>
-    cases n
-    · rcases opc with ⟨⟨_ | _ | _ | _ | k, hk⟩⟩
-      all_goals first
-        | (cases h; insn_mono_tac)
-        | exact absurd hk (by omega)
-    · cases h
+    cases n <;> rcases opc with ⟨⟨_ | _ | _ | _ | k, hk⟩⟩
+    all_goals first
+      | (cases h; insn_mono_tac)
+      | exact absurd hk (by omega)
   | addSubShift sf sub setf => cases setf <;> cases h <;> insn_mono_tac
   | addSubExt sf sub setf => cases setf <;> cases h <;> insn_mono_tac
   | ldst size vec opc mode rn rt =>
@@ -1459,16 +1465,15 @@ private theorem symInsn_noMem {i : Insn} {o : Nat} {σ σ' : Sym} {mc : MCtl}
     · cases hh; insn_same_tac
     · cases hh
   | dp1 => cases h; insn_same_tac
+  | dp2 => cases h; insn_same_tac
   | dp3 => cases h; insn_same_tac
   | nop => cases h; insn_same_tac
   | barrier => cases h; insn_same_tac
   | logShift sf opc shift n =>
-    cases n
-    · rcases opc with ⟨⟨_ | _ | _ | _ | k, hk⟩⟩
-      all_goals first
-        | (cases h; insn_same_tac)
-        | exact absurd hk (by omega)
-    · cases h
+    cases n <;> rcases opc with ⟨⟨_ | _ | _ | _ | k, hk⟩⟩
+    all_goals first
+      | (cases h; insn_same_tac)
+      | exact absurd hk (by omega)
   | addSubShift sf sub setf => cases setf <;> cases h <;> insn_same_tac
   | addSubExt sf sub setf => cases setf <;> cases h <;> insn_same_tac
   | ldst | ldstPair | ldstExcl => cases hi

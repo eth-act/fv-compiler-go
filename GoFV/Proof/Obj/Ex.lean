@@ -188,6 +188,26 @@ theorem Ex.eval_mkDp3 (c : Ctx) (sf : Bool) (op31 : BitVec 3) (o0 : Bool) (a x y
     rw [← dp3_trunc, exT_opndK_trunc, exT_opndK_trunc, exT_opndK_trunc, dp3_trunc]
   · rfl
 
+theorem dp2_trunc (sf : Bool) (opc : BitVec 6) (x y : BitVec 64) :
+    dp2Op sf opc (ProgOp.trunc sf x) (ProgOp.trunc sf y) = dp2Op sf opc x y := by
+  cases sf <;> simp [dp2Op, sized, ProgOp.trunc, BitVec.setWidth_setWidth_of_le]
+
+theorem Ex.eval_mkDp2 (c : Ctx) (sf : Bool) (opc : BitVec 6) (a b : Ex) :
+    (Ex.mkDp2 sf opc a b).eval c = dp2Op sf opc (a.eval c) (b.eval c) := by
+  simp only [Ex.mkDp2, Ex.eval]
+  rw [← dp2_trunc, exT_opndK_trunc, exT_opndK_trunc, dp2_trunc]
+
+theorem inv_trunc (sf : Bool) (x : BitVec 64) :
+    (sized sf fun _ e => ~~~(e (ProgOp.trunc sf x))) = sized sf fun _ e => ~~~(e x) := by
+  cases sf <;> simp [sized, ProgOp.trunc, BitVec.setWidth_setWidth_of_le]
+
+theorem Ex.eval_mkInv (c : Ctx) (sf : Bool) (a : Ex) :
+    (Ex.mkInv sf a).eval c = sized sf fun _ e => ~~~(e (a.eval c)) := by
+  rw [← inv_trunc sf (a.eval c), ← exT_opnd_trunc c sf a, inv_trunc]
+  unfold Ex.mkInv
+  generalize Ex.opnd sf a = a'
+  split <;> rfl
+
 theorem VEx.eval_mkOfX (c : Ctx) (w : Nat) (a : Ex) :
     (VEx.mkOfX w a).eval c = ((a.eval c).setWidth w).setWidth 128 := by
   unfold VEx.mkOfX
@@ -284,6 +304,11 @@ theorem Ex.eval_congr {c c' : Ctx} (hsym : c.sym = c'.sym) (hsp : c.s.sp = c'.s.
   | sext n a ih => intro he; simp only [Ex.eval]; rw [ih he]
   | page a ih => intro he; simp only [Ex.eval]; rw [ih he]
   | dp1 sf opc a ih => intro he; simp only [Ex.eval]; rw [ih he]
+  | dp2 sf opc a b iha ihb =>
+    intro he; simp only [Ex.eval]
+    rw [iha (fun r h => he r (by simp [Ex.reads, h])),
+      ihb (fun r h => he r (by simp [Ex.reads, h]))]
+  | inv sf a ih => intro he; simp only [Ex.eval]; rw [ih he]
   | dp3 sf op31 o0 a b d iha ihb ihd =>
     intro he; simp only [Ex.eval]
     rw [iha (fun r h => he r (by simp [Ex.reads, h])),

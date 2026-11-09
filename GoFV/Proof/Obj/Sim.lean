@@ -178,10 +178,10 @@ theorem Ex.regsOK_reads {e : Ex} (h : e.regsOK = true) {r : Nat} (hr : e.reads r
   | x q => simp [Ex.regsOK, Ex.reads] at h hr; omega
   | sp | k | sym | vlo | fcvtz => simp [Ex.reads] at hr
   | ld _ a ih | shift _ _ _ a ih | ext _ _ a ih | lo32 a ih | sext _ a ih | page a ih
-  | dp1 _ _ a ih =>
+  | dp1 _ _ a ih | inv _ a ih =>
     exact ih (by simpa [Ex.regsOK] using h) (by simpa [Ex.reads] using hr)
   | add a b iha ihb | addSub _ _ a b iha ihb | logical _ _ a b iha ihb | bfm _ _ _ _ a b iha ihb
-  | csel _ _ _ _ a b iha ihb =>
+  | csel _ _ _ _ a b iha ihb | dp2 _ _ a b iha ihb =>
     simp only [Ex.regsOK, Bool.and_eq_true] at h
     simp only [Ex.reads, Bool.or_eq_true] at hr
     rcases hr with hr | hr
