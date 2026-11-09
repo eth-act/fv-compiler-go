@@ -17,14 +17,14 @@ closure context premise `CloOK` (§4, `docs/proofs/STATUS.md` Assumptions); §6 
 on these premises.
 The assembler validator `checkObj` (P0 against the assembled words, D2–D5, probe `obj-check`) is
 implemented and proven sound (`GoFV/Proof/Obj/`: `obj_star`, the templates `obj_entry`/`obj_exit`;
-`g7_obj_value`/`g7_obj_term` and `g42_obj_value`/`g42_obj_term`/`g42_obj_nilPanic`/
-`g42_obj_boundsPanic` compose it with G7 and G42: `runLoc` to the machine words; §7). Whole
-functions: `obj_whole_ret` (a returning `runLoc` body of a G42 function, from the machine's entry
+`g7_obj_value`/`g7_obj_term` and `g44_obj_value`/`g44_obj_term`/`g44_obj_nilPanic`/
+`g44_obj_boundsPanic` compose it with G7 and G44: `runLoc` to the machine words; §7). Whole
+functions: `obj_whole_ret` (a returning `runLoc` body of a G44 function, from the machine's entry
 through the prologue, the blocks and the epilogue to the caller's return address, the results in
 their ABI registers), `obj_whole_panic` (a panicking body: nil checks, loads, stores and acquire
 loads that fault, bounds checks, calls whose callee panics), and the end-to-end statement
-`verified_mach` on slice G42 (generic SSA `run` refined by `runLoc`, whose body is matched by
-`runMach` of the assembled words; `checkG42`'s `checkG42L` on `liveCtx`, `runLoopLoc_live`; §9),
+`verified_mach` on slice G44 (generic SSA `run` refined by `runLoc`, whose body is matched by
+`runMach` of the assembled words; `checkG44`'s `checkG44L` on `liveCtx`, `runLoopLoc_live`; §9),
 with a witness on `pallocSum.start` from its generic SSA.
 Context:
 `docs/plans/semantics3.md` (§4 `LocMatch`, §6 hooks, §7 layers), `docs/PASSES3.md` (the steps
@@ -915,7 +915,7 @@ the zero extension of the `n` bytes the machine's `LDAR*` loads (`valRel_ldar`, 
 A component reads the tuple from `(Rd;-)` (`read_ldar`): `Select0` is `Rd`, which the machine
 already holds (`g38_sel0`), `Select1` the memory (`g38_sel1`). The G38 values empty the upper-bit
 table (`uStep35_ldar`, `uStep35_selLdar`). G38 accepts 6,380 functions (+281 over G37). An acquire
-load whose step faults (`nilFaults`) faults on the machine too (`g42_obj_ldarPanic`, §9).
+load whose step faults (`nilFaults`) faults on the machine too (`g44_obj_ldarPanic`, §9).
 
 **Slice G39: the homes of removed values** (`GoFV/Gen/Check39.lean`, `checkG39 lc ps bstart g`,
 returning G4's tables; proven sound, `g39_value`, `g39_term`, `g39_nilPanic`, `g39_boundsPanic`):
@@ -981,9 +981,11 @@ class. The op writes only its register, so G35's table keeps the other entries (
 function that calls or stores. The clean blocks `C` (`cleanBlocks`) are those that no block with a
 value that changes the memory (`memKeep` false) reaches in one step or more; the check asks that
 `C` be closed backwards (`cleanOK`: a block with a successor in `C` is in `C` and all its values
-keep the memory), and that every position `(b, i)` of the `InitMem` be clean (`cleanAt`: `b ∈ C`,
-the values of `b` before `i` keep the memory; `initMemClean`). In a function whose values all keep
-the memory every position is clean, so G43 contains G40's case. At a clean position the state
+keep the memory), and that every position `(b, i)` of an `InitMem` be clean (`cleanAt`: `b ∈ C`,
+the values of `b` before `i` keep the memory; `initMemClean`, which finds the `InitMem`s by the
+op of the value at each position, so the composition needs no `v.id = id`). In a function whose
+values all keep the memory every position is clean, so G43 contains G40's case. At a clean
+position the state
 holds the activation's initial memory (`MemInit`): the run starts with it, a value that keeps the
 memory keeps it (`memInit_stepLoc_keep`), a step to the next clean position keeps the implication
 `cleanAt → MemInit` (`memInit_clean_step`, `cleanAt_succ`), and a terminator to a block of `C`
@@ -1348,13 +1350,14 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `vk42_nil`, `vk42_pb`, `g42L_value`, `g42L_initMem`, `g42L_nilPanic`, `g42L_boundsPanic`,
   `g42L_term`, `g42_value`, `g42_initMem`, `g42_nilPanic`, `g42_boundsPanic`, `g42_term`.
 - `Spec43.lean`: what `checkG43` accepted (`keepsTo_succ`, `cleanAt_succ`, `initMemClean_spec`,
-  `cleanOK_edge`, `vkind43_spec`, `vkind43_initMem`, `checkG33_of_43L`, `checkG43L_spec`,
-  `checkG43_spec`).
+  `cleanOK_edge`, `vkind43_spec`, `vkind43_initMem`, `vkind43_eq42`, `checkG33_of_43L`,
+  `checkG43L_spec`, `checkG43_spec`).
 - `G43.lean`: `memInit_stepLoc_keep`, `cleanAt_zero`, `memInit_clean_step`, `memInit_clean_term`,
   `g43L_value`, `g43L_initMem`, `g43L_nilPanic`, `g43L_boundsPanic`, `g43L_term`, `g43_value`,
   `g43_initMem`, `g43_nilPanic`, `g43_boundsPanic`, `g43_term`.
 - `Spec44.lean`: what `checkG44` accepted (`fobjOf?_some`, `fargObj_spec`, `fresObj_spec`,
-  `fTy_spec`, `VK44`, `fkind44_spec`, `vkind44_spec`, `vkind44_initMem`, `checkG33_of_44L`,
+  `fTy_spec`, `VK44`, `fkind44_spec`, `vkind44_spec`, `vkind44_initMem`, `vkind44_eq43`,
+  `checkG33_of_44L`,
   `checkG44L_spec`, `checkG44_spec`).
 - `FMove.lean`: `maskN_low`, `fpIdx?_f0`, `progStep_fmovVV`, `progStep_fmovXV`, `progStep_fmovVX`,
   `progStep_fconst`, `progStep_floadAt`, `progStep_fstoreAt`, `objV?_some`, `objV?_inj`,
@@ -1815,14 +1818,15 @@ reason in parentheses):
 ## 9. Whole functions and the end-to-end statement
 
 **Whole functions** (`GoFV/Proof/Obj/Whole.lean`). The value and terminator theorems of the latest
-slice, composed with `obj_star` (`g42_obj_value`/`g42_obj_term`, `GoFV/Proof/Obj/G42.lean`), are
+slice, composed with `obj_star` (`g44_obj_value`/`g44_obj_term`, `GoFV/Proof/Obj/G44.lean`), are
 chained along a run of `runLoc`'s body. The invariant `SimAt` before value `i` of block `b`: a P0
 state `m` `LocMatch`ed to `runLoc`'s state under an activation `E` extending the entry's `E0`
-(`G28Env`, `G3Inv` at the class map `kAt`, G42's upper-bit table (G35's) `UOKL m (uL35 lc (uIn35 lc b)
-blk i)`: `g42_value` carries it from value to value, `g42_term` hands the successor's start
+(`G28Env`, `G3Inv` at the class map `kAt`, G44's upper-bit table (G35's) `UOKL m (uL35 lc (uIn35 lc b)
+blk i)`: `g44_value` carries it from value to value, `g44_term` hands the successor's start
 `uIn35 lc e.b` on, `uEdgesOK35`), and `ObjRel`-related to the machine state; in a leaf
 (`checkObj`'s `leaf`, `leafOf`: no `CALL`), `m`'s `X30` is still the caller's return address
-`E0.lr`, which is no P0 address and not `endP`.
+`E0.lr`, which is no P0 address and not `endP`; at a clean position `runLoc`'s state holds the
+initial memory (`MemAt`: in a lowered function under `cleanOK`, `cleanAt → MemInit`).
 
 - **Entry** (`sim_entry`). From `MachEntry s0`, `obj_entry` runs the stack check, looping through
   the morestack tail while it fails (`more_loop`, under the trusted `MorestackOK` and the caller's
@@ -1839,22 +1843,25 @@ blk i)`: `g42_value` carries it from value to value, `g42_term` hands the succes
   `EntryMatch E0 sI s0'` and `EntryEnv E0 … s0'`: the argument registers, no flags or slots, the
   memory injected (the prologue writes only the saved `LR`/`FP` words, outside the live blocks by
   `G3Inv`'s `SepFrom`), the frame; `uL35 lc [] … k = []` (no upper-bit fact on entry; the entry
-  block's start `uIn35` is empty, `checkG42L_uIn_entry`). The premise
+  block's start `uIn35` is empty, `checkG44L_uIn_entry`). The premise
   `ObjEnv.map … (E0.pcOf entry k) = base + offs[0]` places value `k` at the body's start (the
   Progs before it are pseudo-ops).
-- **Values, terminators** (`sim_value`, `sim_goto`, `sim_values`): `g42_obj_value`/`g42_obj_term`
+- **Values, terminators** (`sim_value`, `sim_goto`, `sim_values`): `g44_obj_value`/`g44_obj_term`
   under the per-step premises `RunPre`, stated at the states `runLoc` reaches (`LReach`) from
-  `(entry, k, sI)`: `G41Pre` (`G14Pre`, an acquire load's valid bytes `LdarPre`, and `CmpPre`, the
-  first argument of a G41 compare no pointer without an integer form), `G1TermPre`,
-  no entry value (`entryOp24`) but an `InitMem` in a lowered function whose values keep the memory
-  (`memPure`, G40), `GetGOK`, and the callee
+  `(entry, k, sI)`: `G44Pre` (`G14Pre`, an acquire load's valid bytes `LdarPre`, `CmpPre`, the
+  first argument of a G41 compare no pointer without an integer form, and `FLoadPre`, a float
+  load's valid bytes at no bare pointer), `G1TermPre`,
+  no entry value (`entryOp24`) but an `InitMem` in a lowered function, `GetGOK`, and the callee
   contracts (`CallOK`, `CallOKZ`, `ICallOK`, `WbOK`, `CloOK`, `MemEqOK`) at every `LocMatch`ed
-  machine state. `checkG42L_cx` gives the context of both modes (lowered, and G26's functions with
-  no arm64 op). Such an `InitMem` runs no code and changes nothing from a state holding the
-  initial memory (`MemInit`, `g42L_initMem`); the run keeps `MemInit` from `runLoc`'s first state
-  (`locInit` holds it by `rfl`) through the entry values (`memInit_enterList`) and every state it
-  reaches (`lreach_memInit`, over `memInit_stepLoc`/`memInit_stepTermLoc`), so `obj_whole_ret`
-  and `obj_whole_panic` take it of the first state only.
+  machine state. `checkG44L_cx` gives the context of both modes (lowered, and G26's functions with
+  no arm64 op). `checkG44L` accepted such an `InitMem` only at a clean position of a function
+  whose clean blocks are closed backwards (`g44L_clean`: `vkind43_initMem`, `initMemClean_spec`),
+  where it runs no code and changes nothing from a state holding the initial memory (`MemInit`,
+  `g44L_initMem`). `SimAt` carries `MemAt`: from `runLoc`'s first state (`locInit` holds `MemInit`
+  by `rfl`) through the entry values before `k` (`memAt_enter`: a clean `k` means they keep the
+  memory, `memInit_enterKeep`), along a value (`memInit_clean_step`) and along an edge
+  (`memInit_clean_term`, `cleanAt_zero`: `SimAt`'s `b ∈ blocks` gives `cleanOK_edge`), so
+  `obj_whole_ret` and `obj_whole_panic` take `MemInit` of the first state only.
 - **Return** (`sim_ret`): only a `Ret` block returns (`stepTermL_ret_kind`); its terminator is a
   P0 `RET` after no-ops (`termG3_ret`); the no-ops run (`pstar_oneAt`, `obj_star`), then the
   epilogue (`obj_exit`) returns to `s0.x 30`: through the saved `LR` in a framed function
@@ -1885,26 +1892,27 @@ blk i)`: `g42_value` carries it from value to value, `g42_term` hands the succes
   in a state `t'` with `MachRet s0 t'` and `ResultRel E outs rs mm t'` (`rs` in the result
   registers, `mm` injected).
 - **Panics** (`sim_valuePanic`, `sim_from_panic`, `obj_whole_panic`): a step that panics is a nil
-  check (`g42_obj_nilPanic`: the `MOVB` faults in the nil page), a load or store that faults
-  (`g42_obj_memPanic`, `GoFV/Proof/Obj/MemPanic.lean`: `MOV{D,W,WU,H,HU,B,BU}load`, `LDP`,
+  check (`g44_obj_nilPanic`: the `MOVB` faults in the nil page), a load or store that faults
+  (`g44_obj_memPanic`, `GoFV/Proof/Obj/MemPanic.lean`: `MOV{D,W,WU,H,HU,B,BU}load`, `LDP`,
   `MOV{D,W,H,B}store` and `STP`, `memFaultOp`; `nilFaults` found a nil base and an address in the
   nil page, so the access has no symbol, its base register holds the machine word 0 and
   `X[n] + off` is in the nil page, `nil_fault_page`; no premise), an acquire load that faults
-  (`g42_obj_ldarPanic`: `LDAR`, `LDARW`, `LDARB`, `ldar?`; its address, argument 0 at offset 0, is
+  (`g44_obj_ldarPanic`: `LDAR`, `LDARW`, `LDARB`, `ldar?`; its address, argument 0 at offset 0, is
   nil, `stepLoc_ldar_panic`, so `LDAR* (Rn)` faults at address 0, `progStep_ldar_nil`; no
   premise), a bounds check
-  (`g42_obj_boundsPanic`, under the trusted `BoundsOK`: `runtime.panicBounds` reports the same
+  (`g44_obj_boundsPanic`, under the trusted `BoundsOK`: `runtime.panicBounds` reports the same
   failure, `BoundsAgree`), a static call whose
-  callee panics (`g42_obj_callPanic`, `GoFV/Proof/Obj/CallPanic.lean`, under the trusted
+  callee panics (`g44_obj_callPanic`, `GoFV/Proof/Obj/CallPanic.lean`, under the trusted
   `CallPanicOK`: the callee's hook panics alike from every state with the call's arguments in their
   registers and the memory injected), or an interface or closure call whose callee panics
-  (`g42_obj_icallPanic`, under the trusted `ICallPanicOK`: the hook at the code pointer in `Rn`
-  panics alike; `vkind28` of such a call is `vkind10`'s `icallKind`, `vkind28_icall`; `vkind42` of
-  a call, load or store is `vkind28`'s, `vkind42_eq41`, `vkind41_eq40`, `vkind40_eq38`, `vkind38_eq28`); terminators
+  (`g44_obj_icallPanic`, under the trusted `ICallPanicOK`: the hook at the code pointer in `Rn`
+  panics alike; `vkind28` of such a call is `vkind10`'s `icallKind`, `vkind28_icall`; `vkind44` of
+  a call, load or store is `vkind28`'s, `vkind44_eq43`, `vkind43_eq42`, `vkind42_eq41`, `vkind41_eq40`,
+  `vkind40_eq38`, `vkind38_eq28`); terminators
   do not panic (`stepTermLoc_ne_panic`). The premise `RunPanicPre` says that every panicking step
   the run reaches is of these kinds; the machine run panics with `e'`, `BoundsAgree e e'`.
-  `RunPre` asks `G41Pre` (a load or an acquire load reads valid bytes, a nil check's pointer is
-  not nil, a G41 compare's first argument is no bare pointer) only of the
+  `RunPre` asks `G44Pre` (a load, a float load or an acquire load reads valid bytes, a nil check's
+  pointer is not nil, a G41 compare's first argument is no bare pointer) only of the
   steps that succeed, so the faulting ones are `RunPanicPre`'s alone. The register-index loads and
   stores are not among them: `runLoc` faults on their nil base whatever the index (`nilAccesses`
   takes the base as the address of a non-`SymOff` op), the machine only when the index keeps the
@@ -1912,8 +1920,8 @@ blk i)`: `g42_value` carries it from value to value, `g42_term` hands the succes
 
 **End to end** (`GoFV/Proof/Obj/EndToEnd.lean`, `verified_mach`): `verifiedPipelineFull_refines`
 gives a `runLoc` of the allocated function refining the generic `run`; `runLoc` is `finish` of its
-body (`runLoc_eq`, from `locInit`), whose outcome is defined (`finish_defined`). The slice is G40:
-`checkG42` accepts `LocCtx.make` of the output when `refsLive` holds of it and `checkG42L` accepts
+body (`runLoc_eq`, from `locInit`), whose outcome is defined (`finish_defined`). The slice is G44:
+`checkG44` accepts `LocCtx.make` of the output when `refsLive` holds of it and `checkG44L` accepts
 `lc = liveCtx` of it; the body runs alike on `lc` (`runLoopLoc_live`), and the whole-function
 theorems apply on `lc`: a returning body is `obj_whole_ret`'s, a panicking one
 `obj_whole_panic`'s (under its panic premises). The statement lists every premise (STATUS,
@@ -1923,19 +1931,17 @@ Assumptions).
 from `locInit` and `runMach` from the entry to the caller's `0x40`, through `b1`'s `TBNZ` and
 `b2`'s `ANDconst`/`MakeResult`/`RET`, with 7 in `X0`. `objWholeNL_ret_witness`
 (`runtime.gclinkptr.ptr`, no arm64 op: `ret_results` in Phase 1's mode). `objWhole_panic_witness`
-(`(*A).g` on a nil receiver: the nil check faults). `g42_callPanic_witness` (`fint64to32`, a callee
-that panics), `g42_icallPanic_witness` (`Locker.Lock`'s interface call), `g42_storePanic_witness`
-and `g42_loadPanic_witness` (`(*queueOnePass).next`'s `MOVW R2, 52(R0)` and `MOVWU 52(R0), R3`
-with a nil `q`), `g42_ldarPanic_witness` (`sync/atomic.LoadInt64`'s `LDAR (R0), R0` with a nil
+(`(*A).g` on a nil receiver: the nil check faults). `g44_callPanic_witness` (`fint64to32`, a callee
+that panics), `g44_icallPanic_witness` (`Locker.Lock`'s interface call), `g44_storePanic_witness`
+and `g44_loadPanic_witness` (`(*queueOnePass).next`'s `MOVW R2, 52(R0)` and `MOVWU 52(R0), R3`
+with a nil `q`), `g44_ldarPanic_witness` (`sync/atomic.LoadInt64`'s `LDAR (R0), R0` with a nil
 `addr`). `objStarLeaf_witness` (`(*A).g`, a leaf: the P0 run of its nil check keeps the
 caller's `0x40` in `X30`). `verified_mach_witness`:
 `pallocSum.start` from its generic SSA (the export's first
 section, in the whole-file environment of `gofv-ssa-opt --verified`) through
 `verifiedPipelineFull` (`fullyVerified`), with every premise of `verified_mach` discharged;
-`checkG42` accepts genssa's Progs against the pipeline's own output. `RunPre` there is
+`checkG44` accepts genssa's Progs against the pipeline's own output. `RunPre` there is
 `runPre_simple`.
 
-**Next.** The lift to G43 (`InitMem` at clean positions): `SimAt` carries `MemInit` at the clean
-positions (`cleanAt`, `memInit_clean_step`/`memInit_clean_term`) instead of under `memPure`, and
-`RunPre` admits `InitMem` there. Panics of the other kinds (register-index loads and stores; write
-barriers, `memequal`).
+**Next.** The lift to each new slice as it merges (G44's further float stages). Panics of the other kinds
+(register-index loads and stores; write barriers, `memequal`).

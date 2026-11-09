@@ -57,16 +57,18 @@ memory. -/
 def cleanAt (lc : LocCtx) (C : List ID) (bid : ID) (b : Block) (i : Nat) : Bool :=
   C.contains bid && keepsTo lc b i
 
-/-- Every position of `v` in a block of the function is clean. -/
-def initMemClean (lc : LocCtx) (C : List ID) (v : Value) : Bool :=
+/-- Every position of the function whose value is an `InitMem` is clean (by the value at the
+position, so with no assumption that a value's `id` is its position's ID). -/
+def initMemClean (lc : LocCtx) (C : List ID) : Bool :=
   lc.ctx.f.blocks.toList.all fun bid => (lc.ctx.f.block? bid).all fun b =>
-    (List.range b.values.size).all fun i => b.values[i]? != some v.id || cleanAt lc C bid b i
+    (List.range b.values.size).all fun i =>
+      (b.values[i]?.bind lc.ctx.f.value?).all (·.op != .InitMem) || cleanAt lc C bid b i
 
 /-- What `v` emits in G43, or why it is outside the slice: `InitMem` at clean positions only (in a
 function whose values keep the memory every position is clean), any other value as G42. -/
 def vkind43 (lc : LocCtx) (g : G2In) (v : Value) : Except String VKind2 :=
   if v.op == .InitMem then
-    if cleanOK lc (cleanBlocks lc) && initMemClean lc (cleanBlocks lc) v then initMemKind lc v
+    if cleanOK lc (cleanBlocks lc) && initMemClean lc (cleanBlocks lc) then initMemKind lc v
     else throw s!"v{v.id}: InitMem after the entry values"
   else vkind42 lc g v
 
