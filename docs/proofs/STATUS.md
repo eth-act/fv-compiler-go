@@ -676,6 +676,30 @@ entry values` (140); `retRegsOK`: a `Ret` block's results not in their ABI regis
 `checkObj`: `FLDPQ` (SIMD&FP, 110), unmodelled atomics `LDADDAL`/`CASAL`/`SWPAL`/`LDORAL` (≈250
 together), `tail: spill register` (58), `MVN` (21), shifts by a register (38), divisions (≈40).
 
+| full-v11 (96,674 functions, in six parts, ≈5 h 06 min) | pipeline output | share | stock `trim` |
+| --- | ---: | ---: | ---: |
+| fully verified (Phase 2, through `trim`) | 81,003 | 83.78% | - |
+| … genssa and `Flushplist` ran | 73,422 | 75.94% | 96,674 |
+| … ∧ `checkG18` | 39,575 | 40.93% | 41,865 |
+| … ∧ `checkG18` ∧ `retRegsOK` | 28,813 | 29.80% | 30,586 |
+| … ∧ `checkObj` | 69,055 | 71.43% | 84,567 |
+| **… ∧ `checkG18` ∧ `retRegsOK` ∧ `checkObj` (end to end)** | **28,813** | **29.80%** | 30,582 |
+| … end to end, pipeline output identical to stock after `trim` | 26,048 | 26.94% | - |
+
+full-v11 ran as six invocations (`cmdmain`, `cmd/vendor`, the rest of `cmd` but `compile`,
+`cmd/compile`, `stdall/std` in two halves; the single run was lost to a global OOM kill of the
+machine after 5 h 41 min, at 2.9 GB RSS) whose tables are summed; `cmd/compile` alone took
+4 h 00 min under a load of ≈360 (47 functions over 60 s, `ppc64asm/init` 642 s). Top reasons
+among the fully verified: back-end errors `genssa: aux a# is not a Dcl name` (7,542, as above) and
+`Flushplist: PosTable.Pos: no position base` (39); `retRegsOK`: a `Ret` block's results not in
+their ABI registers (10,749) or a result on the stack (13); `checkObj`: `LDADDALW` (1,169), `FLDPQ`
+(1,043), `CASALW` (417), `LSL`/`LSR`/`ASR` by a register (775), `tail: spill register` (275),
+`RET` through another register (144), `CASALD` (127). `checkG18` (first reason; lower bounds, each
+part lists its top 40): `op LDAR` (3,192), `op LoweredPanicBoundsCC` (3,072), `op MOVDnop`
+(2,413), `frame variable operand class` (1,704), `op LoweredPanicBoundsCR` (≥1,524), `SP after
+the entry values` (1,488), `op CALLtail` (1,388), `frame variable with an integer address`
+(1,264), `pair load shape` (1,239), `op LoweredMemEq` (1,151), `store shape` (1,127).
+
 ## Per-pass fragment coverage (verified pipeline, full-v6)
 
 Runs per pass of `gofv-ssa-opt --check --verified` (96,553 functions, each pass run once per function). *Proven*: the theorem's variant ran and changed the function; *identity*: same function (or tables the function cannot tell apart); *skipped*: an optional pass outside its fragment (the input is kept); *unverified*: a required pass outside its fragment, or a checked rewrite pass whose result differs from stock (`checked variant incomplete`: an unproven rule fired or the validator rejected; the stock result is kept). Every Phase 1 pass has a theorem; `insert resched checks`, `cpufeatures` and `rewrite tern` never run for linux/arm64.
