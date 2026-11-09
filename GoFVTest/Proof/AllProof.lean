@@ -175,6 +175,7 @@ import GoFV.Proof.Low.Contract
 import GoFV.Proof.Low.DenL
 import GoFV.Proof.Low.Lower
 import GoFV.Proof.Low.ProvenARM64
+import GoFV.Proof.Low.QPart
 import GoFV.Proof.Low.RuleL
 import GoFV.Proof.Low.Rules.Attr
 import GoFV.Proof.Low.Rules.Bitfield
@@ -195,6 +196,7 @@ import GoFV.Proof.Low.Rules.Invert
 import GoFV.Proof.Low.Rules.Kit
 import GoFV.Proof.Low.Rules.LoadIdx
 import GoFV.Proof.Low.Rules.LoadStore
+import GoFV.Proof.Low.Rules.MoveQ
 import GoFV.Proof.Low.Rules.Mul
 import GoFV.Proof.Low.Rules.Peep
 import GoFV.Proof.Low.Rules.Ptr
@@ -209,6 +211,7 @@ import GoFV.Proof.Low.SimBase
 import GoFV.Proof.Low.SimDen
 import GoFV.Proof.Low.SimEnter
 import GoFV.Proof.Low.SimMem
+import GoFV.Proof.Low.SimMoveQ
 import GoFV.Proof.Low.SimSet
 import GoFV.Proof.Low.TabsAgreeL
 import GoFV.Proof.Low.TermL
@@ -960,6 +963,7 @@ import GoFV.Proof.Witness.LowerLsh
 import GoFV.Proof.Witness.LowerMask
 import GoFV.Proof.Witness.LowerMemEq
 import GoFV.Proof.Witness.LowerMove
+import GoFV.Proof.Witness.LowerMoveQ
 import GoFV.Proof.Witness.LowerMul
 import GoFV.Proof.Witness.LowerNarrowArgs
 import GoFV.Proof.Witness.LowerNeg

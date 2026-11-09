@@ -57,7 +57,7 @@ theorem termVL_of_arm (tabs : Tables) {w : Value}
   obtain ⟨⟨⟨⟨hg, hm⟩, ha⟩, hact⟩, hr⟩ := h
   unfold termVL
   have hm' : (w.op == .ARM64MOVDaddr) = false := by simpa using hm
-  simp only [hg, hm', ha, hact, hr, ldOp?_of_act hact, pureActOp_of_act hact, Option.isSome_none,
+  simp only [hg, hm', ha, hact, hr, ldAny_of_act hact, pureActOp_of_act hact,
     Bool.false_eq_true, ite_false, Bool.not_false, Bool.and_self]
 
 /-- A fused op is a term of lowered SSA. -/

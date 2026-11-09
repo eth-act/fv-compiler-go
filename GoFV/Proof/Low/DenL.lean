@@ -74,6 +74,53 @@ theorem ldVal_mono (tabs : Tables) (n : Nat) (s : Bool) (ty : Ty) (ai : Int64)
       | some p => exact Mono.loadN_mono hm ty n s p
   | _ => first | exact .poison _ | exact Sem.Refines.refl _
 
+/-- `ldQVal` is monotone. -/
+theorem ldQVal_mono (tabs : Tables) (n : Nat) (ty : Ty) (ai : Int64) (ax : Option AuxRef)
+    {as bs : List Val} (hr : RefinesList as bs) :
+    Sem.Refines (ldQVal tabs n ty ai ax as) (ldQVal tabs n ty ai ax bs) := by
+  cases hr with
+  | nil => exact .poison _
+  | @cons a a' _ _ h1 hr =>
+  cases hr with
+  | nil => exact .poison _
+  | @cons b b' _ _ h2 hr =>
+  cases hr with
+  | @cons c _ l _ _ _ =>
+    have : ldQVal tabs n ty ai ax (a :: b :: c :: l) = .poison := by cases b <;> rfl
+    rw [this]; exact .poison _
+  | nil =>
+  cases h2 with
+  | @mem mm mm' hm =>
+    have hp : ∀ k, symPtr tabs k ax a = none ∨ symPtr tabs k ax a = symPtr tabs k ax a' := by
+      intro k
+      cases ax with
+      | some _ => exact .inr rfl
+      | none => cases h1 <;> first | exact .inr rfl | exact .inl rfl
+    have key : ∀ (P P' Q Q' : Option Ptr), (P = none ∨ P = P') → (Q = none ∨ Q = Q') →
+        Sem.Refines
+          (match P, Q with
+            | some p, some q => Arm64.loadPair ty 16 false mm p q
+            | _, _ => .poison)
+          (match P', Q' with
+            | some p, some q => Arm64.loadPair ty 16 false mm' p q
+            | _, _ => .poison) := by
+      intro P P' Q Q' hP hQ
+      rcases hP with rfl | rfl <;> rcases hQ with rfl | rfl
+      · exact .poison _
+      · exact .poison _
+      · cases P <;> exact .poison _
+      · cases P <;> cases Q <;> first | exact .poison _ | exact Mono.loadPair_mono hm ty 16 false _ _
+    simp only [ldQVal]
+    split
+    · exact key _ _ _ _ (hp ai) (hp _)
+    · rcases hp ai with he | he
+      · simp only [he, Option.elim]; exact .poison _
+      · rw [he]
+        cases symPtr tabs ai ax a' with
+        | none => exact .poison _
+        | some p => exact Mono.load16_mono hm p
+  | _ => first | exact .poison _ | exact Sem.Refines.refl _
+
 /-- `opValL` of a term value is monotone. -/
 theorem opValL_mono_term {tabs : Tables} {v : Value} (ht : termVL tabs v = true) (ty : Ty)
     {as bs : List Val} (h : RefinesList as bs) :
@@ -89,8 +136,12 @@ theorem opValL_mono_term {tabs : Tables} {v : Value} (ht : termVL tabs v = true)
       cases hl : ldOp? v.op with
       | some p => exact ldVal_mono tabs p.1 p.2 ty v.auxInt v.aux h
       | none =>
+      cases hq : ldQ? v.op with
+      | some n => exact ldQVal_mono tabs n ty v.auxInt v.aux h
+      | none =>
         unfold termVL at ht
-        simp only [hg, Bool.false_eq_true, ite_false, hm', hl, Option.isSome_none] at ht
+        simp only [hg, Bool.false_eq_true, ite_false, hm', ldAny, hl, hq, Option.isSome_none,
+          Bool.or_self] at ht
         by_cases hd : pureActOp v.op = true
         · rcases pureActOp_cases hd with hv | hv | hv | hv <;> rw [hv]
           · exact atomicLoad_mono ty h
@@ -253,6 +304,44 @@ theorem arm64Op_ld {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List
     unfold ldVal
     split <;> simp_all
 
+/-- A 128-bit load evaluates to `ldQVal` in activation 0 (`arm64Op`'s `ld16`, and `ldPair 16` at
+`pairAddr`). -/
+theorem arm64Op_ldQ {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
+    {n : Nat} (hq : ldQ? v.op = some n) (hact : ctx.act = 0) :
+    evalOpL false env ctx fr v argv ty = .ok (ldQVal ctx.tabs n ty v.auxInt v.aux argv) := by
+  have h0 : nilFaults false ctx v argv = none := rfl
+  have hs := fun a => symAddr_ld (ctx := ctx) (v := v) (a := a) hact
+  have hs' := fun a => symAddr_ld (ctx := ctx)
+    (v := { v with auxInt := v.auxInt + Int64.ofNat 16 }) (a := a) hact
+  rcases ldQ?_mem hq with ⟨h, rfl⟩ | ⟨h, rfl⟩
+  · unfold evalOpL
+    rw [h, if_neg (by decide)]
+    dsimp only
+    unfold arm64Op
+    rw [h0]
+    dsimp only
+    rw [h]
+    dsimp only
+    unfold ldQVal
+    split <;> simp_all
+  · unfold evalOpL
+    rw [h, if_neg (by decide)]
+    dsimp only
+    unfold arm64Op
+    rw [h0]
+    dsimp only
+    rw [h]
+    dsimp only
+    unfold ldQVal pairAddr
+    split
+    · rename_i a m
+      simp only [hs a, hs' a]
+      cases symPtr ctx.tabs v.auxInt v.aux a <;>
+        cases symPtr ctx.tabs (v.auxInt + Int64.ofNat 16) v.aux a <;> rfl
+    · split
+      · simp_all
+      · rfl
+
 /-- An acquiring load or `LoweredMemEq` evaluates by `Arm64.evalPure` (non-faulting mode:
 `arm64Op`'s default, `memEq`). -/
 theorem arm64Op_pureAct {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
@@ -295,16 +384,22 @@ theorem evalOpL_termVL {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : 
         rw [arm64Op_ld hl hact]
         simp only [opValL, hg, Bool.false_eq_true, ite_false, hm', hl]
       | none =>
-      simp only [hl, Option.isSome_none, Bool.false_eq_true, ite_false] at ht
+      cases hq : ldQ? v.op with
+      | some n =>
+        rw [arm64Op_ldQ hq hact]
+        simp only [opValL, hg, Bool.false_eq_true, ite_false, hm', hl, hq]
+      | none =>
+      simp only [ldAny, hl, hq, Option.isSome_none, Bool.or_self, Bool.false_eq_true, ite_false]
+        at ht
       by_cases hd : pureActOp v.op = true
       · rw [arm64Op_pureAct hd]
-        simp only [opValL, hg, Bool.false_eq_true, ite_false, hm', hl]
+        simp only [opValL, hg, Bool.false_eq_true, ite_false, hm', hl, hq]
       simp only [hd, Bool.false_eq_true, ite_false, Bool.and_eq_true, Bool.not_eq_true'] at ht
       obtain ⟨⟨-, ha⟩, hr⟩ := ht
       have : evalOpL false env ctx fr v argv ty = pure (Arm64.evalPure v.op ty v.auxInt v.aux argv) := by
         rw [evalOpL_of_not_actOp (by simpa using hg) (by simpa using ha), hr]; rfl
       rw [this]
-      simp only [opValL, hg, Bool.false_eq_true, ite_false, hm', hl, pure]
+      simp only [opValL, hg, Bool.false_eq_true, ite_false, hm', hl, hq, pure]
 
 /-- `idxAddr` is monotone. -/
 theorem idxAddr_mono (s : Nat) {a a' i i' : Val} (ha : Sem.Refines a a') (hi : Sem.Refines i i') :

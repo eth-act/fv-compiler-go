@@ -91,15 +91,40 @@ def ldVal (tabs : Tables) (n : Nat) (s : Bool) (ty : Ty) (ai : Int64) (ax : Opti
   | [a, .mem m] => (symPtr tabs ai ax a).elim .poison (Arm64.loadN ty n s m)
   | _ => .poison
 
+/-- The 128-bit loads: `FMOVQload` (16 bytes, one `Vec128`) and `FLDPQ` (32 bytes, two). -/
+def ldQ? : Op → Option Nat
+  | .ARM64FMOVQload => some 16
+  | .ARM64FLDPQ => some 32
+  | _ => none
+
+/-- A 128-bit load `[ai] {ax} a mem` in activation 0 (`Sem.arm64Op`'s `ld16` and `ldPair 16`):
+16 bytes at `symPtr` as a blob (`Arm64.load16`), or 32 as two blobs at `symPtr` of the offset and
+of the offset moved by 16 (`Sem.pairAddr`, `Arm64.loadPair`); `poison` without an address. -/
+def ldQVal (tabs : Tables) (n : Nat) (ty : Ty) (ai : Int64) (ax : Option AuxRef) :
+    List Val → Val
+  | [a, .mem m] =>
+    if n = 32 then
+      match symPtr tabs ai ax a, symPtr tabs (ai + Int64.ofNat 16) ax a with
+      | some p, some q => Arm64.loadPair ty 16 false m p q
+      | _, _ => .poison
+    else (symPtr tabs ai ax a).elim .poison (Arm64.load16 m)
+  | _ => .poison
+
+/-- An arm64 load term: a scalar load (`ldOp?`) or a 128-bit one (`ldQ?`). -/
+def ldAny (o : Op) : Bool := (ldOp? o).isSome || (ldQ? o).isSome
+
 /-- The value of a lowered term node before shaping: Phase 1's `opVal` for a generic op,
-`movAddr` for `MOVDaddr`, `ldVal` for an integer load, `Arm64.evalPure` otherwise. -/
+`movAddr` for `MOVDaddr`, `ldVal` for an integer load, `ldQVal` for a 128-bit load,
+`Arm64.evalPure` otherwise. -/
 def opValL (tabs : Tables) (op : Op) (ty : Ty) (ai : Int64) (ax : Option AuxRef)
     (args : List Val) : Val :=
   if op.generic then Rules.opVal tabs op ty ai ax args
   else if op == .ARM64MOVDaddr then movAddr tabs ai ax args
   else match ldOp? op with
     | some (n, s) => ldVal tabs n s ty ai ax args
-    | none => Arm64.evalPure op ty ai ax args
+    | none => match ldQ? op with
+      | some n => ldQVal tabs n ty ai ax args
+      | none => Arm64.evalPure op ty ai ax args
 
 /-- `opValL` of an integer load: `ldVal`. -/
 theorem opValL_ld {o : Op} {n : Nat} {s : Bool} (hg : o.generic = false)
@@ -112,6 +137,32 @@ theorem opValL_ld {o : Op} {n : Nat} {s : Bool} (hg : o.generic = false)
 theorem ldOp?_of_act {o : Op} (h : actOp o = false) : ldOp? o = none := by
   unfold ldOp?
   split <;> first | rfl | exact absurd h (by decide)
+
+/-- The 128-bit loads are activation ops. -/
+theorem ldQ?_of_act {o : Op} (h : actOp o = false) : ldQ? o = none := by
+  unfold ldQ?
+  split <;> first | rfl | exact absurd h (by decide)
+
+/-- No load term is an activation op. -/
+theorem ldAny_of_act {o : Op} (h : actOp o = false) : ldAny o = false := by
+  simp [ldAny, ldOp?_of_act h, ldQ?_of_act h]
+
+/-- An op that is no load term is neither kind of load. -/
+theorem ldAny_false {o : Op} (h : ldAny o = false) : ldOp? o = none ∧ ldQ? o = none := by
+  simp only [ldAny, Bool.or_eq_false_iff, Option.isSome_eq_false_iff, Option.isNone_iff_eq_none]
+    at h
+  exact h
+
+theorem ldQ?_mem {o : Op} {n : Nat} (h : ldQ? o = some n) :
+    (o = .ARM64FMOVQload ∧ n = 16) ∨ (o = .ARM64FLDPQ ∧ n = 32) := by
+  unfold ldQ? at h
+  split at h <;> simp_all
+
+/-- `opValL` of a 128-bit load: `ldQVal`. -/
+theorem opValL_ldQ {o : Op} {n : Nat} (hq : ldQ? o = some n) (tabs : Tables) (ty : Ty)
+    (ai : Int64) (ax : Option AuxRef) (args : List Val) :
+    opValL tabs o ty ai ax args = ldQVal tabs n ty ai ax args := by
+  rcases ldQ?_mem hq with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> rfl
 
 theorem ldOp?_mem {o : Op} {p : Nat × Bool} (h : ldOp? o = some p) :
     o = .ARM64MOVBload ∨ o = .ARM64MOVBUload ∨ o = .ARM64MOVHload ∨ o = .ARM64MOVHUload ∨
@@ -135,11 +186,15 @@ theorem pureActOp_of_act {o : Op} (h : actOp o = false) : pureActOp o = false :=
 theorem ldOp?_of_pureAct {o : Op} (h : pureActOp o = true) : ldOp? o = none := by
   rcases pureActOp_cases h with rfl | rfl | rfl | rfl <;> rfl
 
+/-- The acquiring loads and `LoweredMemEq` are no load terms. -/
+theorem ldAny_of_pureAct {o : Op} (h : pureActOp o = true) : ldAny o = false := by
+  rcases pureActOp_cases h with rfl | rfl | rfl | rfl <;> rfl
+
 /-- The value `v` is a term of a lowered function (module doc of `GoFV.Opt.LowerTerm`). -/
 def termVL (tabs : Tables) (v : Value) : Bool :=
   if v.op.generic then GoFV.Opt.RewriteCheck.termOp v.op
   else if v.op == .ARM64MOVDaddr then !(auxIsName tabs v.aux && v.auxInt == 0)
-  else if (ldOp? v.op).isSome then true
+  else if ldAny v.op then true
   else if pureActOp v.op then true
   else armTerm v.op && !actOp v.op && !isRoot v.op
 
@@ -362,7 +417,7 @@ def armReadW (o : Op) (ty : Ty) (i : Nat) : Nat :=
   | .ARM64MOVHreg | .ARM64MOVHUreg => 16
   | .ARM64MOVBload | .ARM64MOVBUload | .ARM64MOVHload | .ARM64MOVHUload | .ARM64MOVWload
   | .ARM64MOVWUload | .ARM64MOVDload | .ARM64FMOVSload
-  | .ARM64FMOVDload => if i == 0 then 64 else 0
+  | .ARM64FMOVDload | .ARM64FMOVQload | .ARM64FLDPQ => if i == 0 then 64 else 0
   | .ARM64MOVDloadidx | .ARM64MOVWloadidx | .ARM64MOVWUloadidx | .ARM64MOVHloadidx
   | .ARM64MOVHUloadidx | .ARM64MOVBloadidx | .ARM64MOVBUloadidx | .ARM64FMOVSloadidx
   | .ARM64FMOVDloadidx | .ARM64MOVHloadidx2 | .ARM64MOVHUloadidx2 | .ARM64MOVWloadidx4
@@ -454,9 +509,9 @@ def resFitsL (ty : Ty) : Result → Bool
     | none => true
   | _ => true
 
-/-- An arm64 op whose address is `Sem.symAddr` of its aux, auxint and base (its argument 0): an
-integer load (`ldOp?`) or `MOVDaddr`. -/
-def addrOp (o : Op) : Bool := (ldOp? o).isSome || o == .ARM64MOVDaddr
+/-- An arm64 op whose address is `Sem.symAddr` of its aux, auxint and base (its argument 0): a
+load term (`ldAny`) or `MOVDaddr`. -/
+def addrOp (o : Op) : Bool := ldAny o || o == .ARM64MOVDaddr
 
 /-- A small non-negative offset: `[0, 2^23)`. -/
 def offOK (k : Int64) : Bool := decide (0 ≤ k.toInt) && decide (k.toInt < 2 ^ 23)
@@ -472,15 +527,17 @@ offset has a concrete address that the second offset could carry into another al
 small and non-negative and both nodes word shapes (`ty`): without a symbol, `ADDconst` adds to a
 word without the window check of `MOVDaddr`'s `ptrRes`, and at a narrow or boolean shape it
 reads a frame variable's address word as an integer where `retypeL` makes the folded address
-`poison`. -/
+`poison`. A pair load `FLDPQ` (`ldQ? = some 32`) also reads at its offset moved by 16, which must
+stay small (`offOK`) for its folded second address to stay in the first allocation too. -/
 def Pat.addrOKL (ty : Path → Ty) (ax : Path → Option AuxRef) (ai : Path → Int64) (p : Path) :
     Pat → Bool
   | .op o _ _ _ _ _ args _ =>
     (match args with
       | .op o' .. :: _ => (!addrOp o || (ax p == none && offOK (ai p) && offOK (ai (0 :: p)))) &&
-          (o != .ARM64ADDconst || o' != .ARM64MOVDaddr ||
+          ((o != .ARM64ADDconst || o' != .ARM64MOVDaddr ||
             ((ax (0 :: p)).isSome && offOK (ai p) && offOK (ai (0 :: p)) && wordShape (ty p) &&
-              wordShape (ty (0 :: p))))
+              wordShape (ty (0 :: p)))) &&
+            (ldQ? o != some 32 || offOK (ai p + Int64.ofNat 16)))
       | _ => true) && Pat.addrOKLs ty ax ai p 0 args
   | _ => true
 /-- `Pat.addrOKL` of the arguments `i, i+1, …` of the node at `p`. -/
@@ -663,6 +720,38 @@ def idxLower (tabs : Tables) (u w : Value) : Bool :=
   u.op == .Store && u.args.size == 3 && w.args.size == 4 && w.auxInt == 0 && w.aux == none &&
     (idxStore w.op).any fun p => (stSize p.1).any (fitsB (auxTy tabs u.aux))
 
+/-- The 128-bit store `lower` copies `Move [n]` with, and its number of arguments:
+`(Move [16] dst src mem) => (FMOVQstore dst (FMOVQload src mem) mem)` (`ARM64.rules:418`) and
+`(Move [32] dst src mem) => (FSTPQ dst (Select0 (FLDPQ src mem)) (Select1 (FLDPQ src mem)) mem)`
+(`426`). -/
+def moveQOp (n : Int64) : Option (Op × Nat) :=
+  if n == 16 then some (.ARM64FMOVQstore, 3) else if n == 32 then some (.ARM64FSTPQ, 4) else none
+
+/-- The 128-bit stores a `Move` lowers to (`moveQOp`). -/
+def qStore (o : Op) : Bool := o == .ARM64FMOVQstore || o == .ARM64FSTPQ
+
+theorem qStore_cases {o : Op} (h : qStore o = true) : o = .ARM64FMOVQstore ∨ o = .ARM64FSTPQ := by
+  simpa [qStore] using h
+
+/-- The 128-bit stores are neither scalar nor indexed arm64 stores. -/
+theorem qStore_st {o : Op} (h : qStore o = true) : stSize o = none ∧ idxStore o = none := by
+  rcases qStore_cases h with rfl | rfl <;> exact ⟨rfl, rfl⟩
+
+/-- No scalar arm64 store is a 128-bit one. -/
+theorem qStore_of_st {o : Op} (h : (stSize o).isSome = true) : qStore o = false := by
+  cases hq : qStore o
+  · rfl
+  · rw [(qStore_st hq).1] at h; cases h
+
+/-- The atom `w` lowers the `Move [n]` `u` (three arguments) to the 128-bit store `moveQOp n`, at
+a small non-negative offset (`offOK`: 0 as lowered, or a folded `ADDconst` offset,
+`ARM64.rules:779`, `782`) and an aux `Sem.symAddr` reads (`stAux`: none, or a symbol or frame
+variable folded in, `909`, `913`). Its value arguments are the 16-byte halves `u` copies
+(`GoFV.Proof.Low.qPart`; `GoFV.Proof.Low.Sim.moveQ_lower_eval`). -/
+def moveQLower (tabs : Tables) (u w : Value) : Bool :=
+  u.op == .Move && u.args.size == 3 && offOK w.auxInt && stAux tabs w.aux &&
+    (moveQOp u.auxInt).any fun (o, k) => w.op == o && w.args.size == k
+
 /-- The atom `w` lowers the frame address `u`: `(LocalAddr <t> {sym} base _) => (MOVDaddr {sym}
 base)` and `(MOVDaddr {sym} (SPanchored base mem))`, with the same frame variable `{sym}` (a
 `.name` aux) at offset 0 and one argument, whose value it ignores
@@ -814,6 +903,37 @@ theorem renameOp_stSize {o o' : Op} (h : renameOp o o' = true) :
   · obtain ⟨-, -, h1, h2, -⟩ := atomicRen_facts h
     exact ⟨h1, h2⟩
 
+/-- Renamed atoms are no 128-bit stores. -/
+theorem renameOp_qStore {o o' : Op} (h : renameOp o o' = true) :
+    qStore o = false ∧ qStore o' = false := by
+  unfold renameOp at h
+  simp only [Bool.or_eq_true] at h
+  rcases h with h | h
+  · unfold callRename at h
+    split at h <;> first | (cases h; done) | exact ⟨rfl, rfl⟩
+  · have hg := (atomicRen_facts h).1
+    refine ⟨?_, ?_⟩
+    · cases hq : qStore o
+      · rfl
+      · rcases qStore_cases hq with rfl | rfl <;> cases hg
+    · cases hq : qStore o'
+      · rfl
+      · unfold atomicRen at h
+        rcases qStore_cases hq with rfl | rfl <;> simp at h <;> cases h
+
+/-- What `moveQLower` says about the ops: a `Move` with three arguments and a 128-bit store. -/
+theorem moveQLower_qStore {tabs : Tables} {u w : Value} (h : moveQLower tabs u w = true) :
+    u.op = .Move ∧ u.args.size = 3 ∧ qStore w.op = true := by
+  unfold moveQLower moveQOp at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨⟨⟨hu, h3⟩, -⟩, -⟩, h⟩ := h
+  refine ⟨hu, h3, ?_⟩
+  split at h
+  · simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at h; rw [h.1]; rfl
+  · split at h
+    · simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at h; rw [h.1]; rfl
+    · simp at h
+
 /-- Generic ops are no arm64 stores. -/
 theorem stSize_generic {o : Op} (h : o.generic = true) : stSize o = none := by
   unfold stSize
@@ -924,17 +1044,18 @@ def pbAtom : Op → Bool
   | _ => false
 
 /-- A rule on a memory or frame atom (`(Store {t} ptr val mem)`, `(LocalAddr {sym} base mem)`, an
-arm64 store `stSize` knows or an indexed one, `idxStore`, a `Zero` or a `Move`) or on a lowered
-bounds panic (`pbAtom`): the validator accepts its events only as a lowered store, `Zero` or
-`Move`, a folded store offset, a scaled store index or a frame address it pairs with the atom
-itself (`GoFV.Opt.LowerCheck.atomDef`, `memLower`, `bulkLower`, `stFold`, `stIdxScale`,
-`addrLower`), or as a constant folded into a bounds panic, which the replay keeps as the renamed
-atom (`GoFV.Opt.LowerCheck.pbFoldEv`; `finalOKL` and `atomsOKL` relate the result, `pbLower`), so
-the rule carries no obligation of its own. -/
+arm64 store `stSize` knows or an indexed one, `idxStore`, a `Zero`, a `Move` or a 128-bit store
+lowering a `Move`, `qStore`) or on a lowered bounds panic (`pbAtom`): the validator accepts its
+events only as a lowered store, `Zero` or `Move`, a folded store offset, a scaled store index or a
+frame address it pairs with the atom itself (`GoFV.Opt.LowerCheck.atomDef`, `memLower`,
+`bulkLower`, `stFold`, `qFold`, `stIdxScale`, `addrLower`, `moveDef`), or as a constant folded
+into a bounds panic, which the replay keeps as the renamed atom (`GoFV.Opt.LowerCheck.pbFoldEv`;
+`finalOKL` and `atomsOKL` relate the result, `pbLower`), so the rule carries no obligation of its
+own. -/
 def ArmRule.Mem (r : Rule) : Prop :=
   ∃ o n ty ai ax ar args c, r.pat = .op o n ty ai ax ar args c ∧
     (o = .Store ∨ o = .LocalAddr ∨ ((stSize o).isSome ∨ (idxStore o).isSome) ∨ pbAtom o ∨
-      o = .Zero ∨ o = .Move)
+      o = .Zero ∨ o = .Move ∨ qStore o)
 
 /-- A rule whose result is `mulStrengthReduce{,32}(v, x, c)` (`ARM64.rules:1043`, `1044`): the
 validator checks its events by their effect alone (`GoFV.Opt.LowerCheck.mulOKL`: the values the

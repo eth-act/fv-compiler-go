@@ -540,6 +540,32 @@ def stValPick (tabs : Tables) (M : Defs) (x u : Value) : Value :=
     else u
   | none => u
 
+/-- The atom `u` folds the address of the 128-bit store `x` lowering a `Move` (`moveDef`) into its
+offset and aux, as `stFold` and `stFoldAddr` do for a store lowering a `Store`: `ADDconst [k2] b`
+or `OffPtr [k2] b` into the offset (`ARM64.rules:779`, `782`), a global symbol's `MOVDaddr [k2]
+{sym} b` into the offset and aux (`909`, `913`), or a frame variable's lowered address
+(`frameAddr`) into the aux; `b` for the address, the other arguments kept, all offsets small and
+non-negative (`offOK`). -/
+def qFold (tabs : Tables) (f : Func) (M : Defs) (x u : Value) : Bool :=
+  qStore x.op && u.op == x.op && u.type == x.type && x.aux == none && decide (3 ≤ x.args.size) &&
+    offOK x.auxInt && offOK u.auxInt &&
+    ((match M.get? x.args[0]! with
+      | some y =>
+        (y.op == .ARM64ADDconst || y.op == .OffPtr) && termVL tabs y && y.args.size == 1 &&
+            wordShape (shpL tabs y.type) && offOK y.auxInt && u.aux == none &&
+            u.auxInt.toInt == x.auxInt.toInt + y.auxInt.toInt &&
+            u.args == x.args.set! 0 y.args[0]! ||
+          y.op == .ARM64MOVDaddr && y.args.size == 1 && y.aux.isSome && u.aux == y.aux &&
+            u.auxInt.toInt == x.auxInt.toInt + y.auxInt.toInt &&
+            u.args == x.args.set! 0 y.args[0]! && termVL tabs y && wordShape (shpL tabs y.type)
+      | none => false) ||
+     match frameAddr tabs M x.args[0]! with
+     | some (a, m) =>
+       m.args.size == 1 && m.aux.isSome && u.aux == m.aux && u.auxInt == x.auxInt &&
+         u.args == x.args.set! 0 m.args[0]! &&
+         (f.value? a).any fun l => l.op == .LocalAddr && l.aux == m.aux
+     | none => false)
+
 /-- `atomDef` for one new definition `u` at the atom `x` at `v`. -/
 def atomDef1 (tabs : Tables) (f : Func) (M : Defs) (v : ID) (x u : Value) :
     Option (Value × Option Value) :=
@@ -549,7 +575,8 @@ def atomDef1 (tabs : Tables) (f : Func) (M : Defs) (v : ID) (x u : Value) :
         u.args.all x.args.contains && addrLower tabs x u ||
         (stFold tabs M x u || stFoldAddr tabs f M x u || stIdxFold tabs M x u) &&
           (f.value? v).any (·.op == .Store) ||
-        stIdxScale tabs M x u && (f.value? v).any fun a => a.op == .Store && a.args.size == 3)
+        stIdxScale tabs M x u && (f.value? v).any (fun a => a.op == .Store && a.args.size == 3) ||
+        qFold tabs f M x u && (f.value? v).any (·.op == .Move))
     then some (u, none)
   else none
 
@@ -575,6 +602,46 @@ def atomDef (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value) :
     if x.id == v && u.id == v && !termVL tabs x && !termVL tabs u && u.type == x.type &&
         addrLower tabs x u && u.args == #[s.id] && s.id != v && (M.get? s.id).isNone &&
         termVL tabs s && s.args.all x.args.contains then some (u, some s)
+    else none
+  | _, _ => none
+
+/-- A load term `l` of `x`'s source and memory (arguments 1 and 2) at offset 0 without aux, at a
+fresh ID of `M` other than `v`. -/
+def moveLd (tabs : Tables) (M : Defs) (v : ID) (x l : Value) : Bool :=
+  l.auxInt == 0 && l.aux == none && l.args == #[x.args[1]!, x.args[2]!] && l.id != v &&
+    (M.get? l.id).isNone && termVL tabs l
+
+/-- A selector `s` (`o`, offset 0, no aux) of `p`, a `Vec128` at a fresh ID of `M` other than
+`v`. -/
+def moveSel (tabs : Tables) (M : Defs) (v : ID) (o : Op) (p s : Value) : Bool :=
+  s.op == o && s.args == #[p.id] && s.auxInt == 0 && s.aux == none && s.id != v &&
+    (M.get? s.id).isNone && termVL tabs s && Sem.Ty.beq (shpL tabs s.type) (.blob 16)
+
+/-- A rule event at the `Move [16]` or `Move [32]` `x` at `v` (a `Move` in `f`) lowering it to a
+128-bit copy (`ARM64.rules:418`, `426`; `moveQOp`), replayed as its new definitions: the 128-bit
+store `u` at `v` (`x`'s type, offset 0, no aux) on `x`'s destination and memory, whose values are
+fresh load terms of `x`'s source and memory (`moveLd`) at their lowered shapes: an `FMOVQload` (a
+`Vec128`) for `FMOVQstore`, `Select0` and `Select1` (`moveSel`) of one `FLDPQ` (a pair of
+`Vec128`s) for `FSTPQ`. The result is `u` and the fresh terms, each after those it reads. -/
+def moveDef (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value) :
+    Option (Value × List Value) :=
+  match M.get? v, defs with
+  | some x, _ :: u :: rest =>
+    if x.id == v && u.id == v && x.op == .Move && x.args.size == 3 && !termVL tabs x &&
+        !termVL tabs u && u.type == x.type && u.auxInt == 0 && u.aux == none &&
+        (rest.map (·.id)).Nodup && (f.value? v).any (·.op == .Move) then
+      match moveQOp x.auxInt, rest with
+      | some (o, _), [l] =>
+        if o == .ARM64FMOVQstore && u.op == o && l.op == .ARM64FMOVQload && moveLd tabs M v x l &&
+            Sem.Ty.beq (shpL tabs l.type) (.blob 16) &&
+            u.args == #[x.args[0]!, l.id, x.args[2]!] then some (u, [l]) else none
+      | some (o, _), [s0, p, s1] =>
+        if o == .ARM64FSTPQ && u.op == o && p.op == .ARM64FLDPQ && moveLd tabs M v x p &&
+            Sem.Ty.beq (shpL tabs p.type) (.tuple [.blob 16, .blob 16]) &&
+            moveSel tabs M v .Select0 p s0 && moveSel tabs M v .Select1 p s1 &&
+            u.args == #[x.args[0]!, s0.id, s1.id, x.args[2]!] then some (u, [p, s0, s1])
+        else none
+      | _, _ => none
     else none
   | _, _ => none
 
@@ -977,6 +1044,10 @@ def replayL (tabs : Tables) (t : Interp.Table) (f : Func) :
             | some (u, none) => replayL tabs t f (M.put v u) B evs
             | some (u, some s) => replayL tabs t f ((M.put s.id s).put v u) B evs
             | none =>
+              match moveDef tabs f M v defs.toList with
+              | some (u, ts) =>
+                replayL tabs t f ((ts.foldl (fun M s => M.put s.id s) M).put v u) B evs
+              | none =>
               match frameFold tabs f M v defs.toList with
               | some u => replayL tabs t f (M.put v u) B evs
               | none =>
@@ -1032,11 +1103,12 @@ def atomsOfL (tabs : Tables) (h : Func) (b : Block) : List ID :=
 (`renameOp`) with the same type, auxint, aux and number of arguments, or `w` lowers the store `u`
 (`memLower`) or the `Zero` or `Move` `u` (`bulkLower`) with the same type and number of
 arguments, or the frame address `u` (`addrLower`), the bounds panic `u` with constant operands
-(`pbLower`) or the store `u` to an indexed store (`idxLower`) with the same type. -/
+(`pbLower`), the store `u` to an indexed store (`idxLower`) or the `Move` `u` to a 128-bit store
+(`moveQLower`) with the same type. -/
 def atomPair (tabs : Tables) (u w : Value) : Bool :=
   (((u.op == w.op || renameOp u.op w.op) && u.auxInt == w.auxInt && u.aux == w.aux ||
     memLower tabs u w || bulkLower u w) && u.args.size == w.args.size || addrLower tabs u w ||
-    pbLower u w || idxLower tabs u w) &&
+    pbLower u w || idxLower tabs u w || moveQLower tabs u w) &&
   u.type == w.type && u.block == w.block && u.id == w.id
 
 /-- The operands of `PanicBounds [kind] x y mem` a lowered bounds panic with constant operands

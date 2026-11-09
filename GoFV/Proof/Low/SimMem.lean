@@ -1,4 +1,5 @@
 import GoFV.Proof.Low.SimAtom
+import GoFV.Proof.Low.SimMoveQ
 
 variable [GoFV.SSA.Sem.Addrs]
 
@@ -967,19 +968,21 @@ theorem memLower_cases {tabs : Tables} {u w : Value} (h : memLower tabs u w = tr
 theorem atomPair_spec {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true) :
     (((((u.op = w.op ∨ renameOp u.op w.op = true) ∧ u.auxInt = w.auxInt ∧ u.aux = w.aux) ∨
         memLower tabs u w = true ∨ bulkLower u w = true) ∧ u.args.size = w.args.size) ∨
-        addrLower tabs u w = true ∨ pbLower u w = true ∨ idxLower tabs u w = true) ∧
+        addrLower tabs u w = true ∨ pbLower u w = true ∨ idxLower tabs u w = true ∨
+        moveQLower tabs u w = true) ∧
       u.type = w.type ∧ u.block = w.block ∧ u.id = w.id := by
   unfold atomPair at h
   simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
   obtain ⟨⟨⟨h1, h2⟩, h3⟩, h4⟩ := h
   refine ⟨?_, h2, h3, h4⟩
-  rcases h1 with ((⟨(⟨⟨h1, h6⟩, h7⟩ | h1) | h1, hs⟩ | h1) | h1) | h1
+  rcases h1 with (((⟨(⟨⟨h1, h6⟩, h7⟩ | h1) | h1, hs⟩ | h1) | h1) | h1) | h1
   · exact .inl ⟨.inl ⟨h1, h6, h7⟩, hs⟩
   · exact .inl ⟨.inr (.inl h1), hs⟩
   · exact .inl ⟨.inr (.inr h1), hs⟩
   · exact .inr (.inl h1)
   · exact .inr (.inr (.inl h1))
-  · exact .inr (.inr (.inr h1))
+  · exact .inr (.inr (.inr (.inl h1)))
+  · exact .inr (.inr (.inr (.inr h1)))
 
 /-- A bounds panic with constant operands and the `PanicBounds` it lowers: no `Phi`s, both
 roots. -/
@@ -988,16 +991,33 @@ theorem pbLower_ops {u w : Value} (h : pbLower u w = true) :
   obtain ⟨hu, -, -, ks, hk, -⟩ := pbLower_cases h
   rcases pbKeep_cases hk with ⟨hw, -⟩ | ⟨hw, -⟩ | ⟨hw, -⟩ <;> rw [hu, hw] <;> decide
 
-/-- Corresponding atoms other than a lowered frame address or a bounds panic with constant
-operands have as many arguments. -/
+/-- A 128-bit store and the `Move` it lowers: no `Phi`s, both roots. -/
+theorem moveQLower_ops {tabs : Tables} {u w : Value} (h : moveQLower tabs u w = true) :
+    u.op ≠ .Phi ∧ w.op ≠ .Phi ∧ isRoot w.op = isRoot u.op := by
+  unfold moveQLower moveQOp at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨⟨⟨hu, -⟩, -⟩, -⟩, h⟩ := h
+  rw [hu]
+  split at h
+  · simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at h
+    rw [h.1]; decide
+  · split at h
+    · simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at h
+      rw [h.1]; decide
+    · simp at h
+
+/-- Corresponding atoms other than a lowered frame address, a bounds panic with constant
+operands, an indexed store or a 128-bit store have as many arguments. -/
 theorem atomPair_size {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true)
-    (hn : addrLower tabs u w = false) (hb : pbLower u w = false) (hx : idxLower tabs u w = false) :
+    (hn : addrLower tabs u w = false) (hb : pbLower u w = false) (hx : idxLower tabs u w = false)
+    (hq : moveQLower tabs u w = false) :
     u.args.size = w.args.size := by
-  rcases (atomPair_spec h).1 with ⟨-, hs⟩ | ha | ha | ha
+  rcases (atomPair_spec h).1 with ⟨-, hs⟩ | ha | ha | ha | ha
   · exact hs
   · rw [hn] at ha; cases ha
   · rw [hb] at ha; cases ha
   · rw [hx] at ha; cases ha
+  · rw [hq] at ha; cases ha
 
 /-- An indexed store and the `Store` it lowers: no `Phi`s, both roots. -/
 theorem idxLower_ops {tabs : Tables} {u w : Value} (h : idxLower tabs u w = true) :
@@ -1029,7 +1049,7 @@ theorem bulkLower_ops {u w : Value} (h : bulkLower u w = true) :
 /-- Corresponding atoms are both `Phi`s or neither. -/
 theorem atomPair_phi {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true) :
     w.op = .Phi ↔ u.op = .Phi := by
-  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h | h, -⟩ | h | h | h
+  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h | h, -⟩ | h | h | h | h
   · rw [h]
   · rcases renameOp_cases h with ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ |
         ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | h9 <;> first
@@ -1046,12 +1066,14 @@ theorem atomPair_phi {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true
     exact ⟨fun h' => absurd h' h2, fun h' => absurd h' h1⟩
   · obtain ⟨h1, h2, -⟩ := idxLower_ops h
     exact ⟨fun h' => absurd h' h2, fun h' => absurd h' h1⟩
+  · obtain ⟨h1, h2, -⟩ := moveQLower_ops h
+    exact ⟨fun h' => absurd h' h2, fun h' => absurd h' h1⟩
 
 /-- Corresponding atoms are both roots or neither, except a lowered `Zero` or `Move`
 (`bulkLower`), which is not a root where the `Zero` or `Move` is. -/
 theorem atomPair_isRoot {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true) :
     isRoot w.op = isRoot u.op ∨ bulkLower u w = true := by
-  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h | h, -⟩ | h | h | h
+  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h | h, -⟩ | h | h | h | h
   · exact .inl (by rw [h])
   · left
     rcases renameOp_cases h with ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ |
@@ -1064,6 +1086,7 @@ theorem atomPair_isRoot {tabs : Tables} {u w : Value} (h : atomPair tabs u w = t
   · exact .inl (addrLower_ops h).2.2
   · exact .inl (pbLower_ops h).2.2
   · exact .inl (idxLower_ops h).2.2
+  · exact .inl (moveQLower_ops h).2.2
 
 /-- An atom of `g` that is a root corresponds to a root of `f`. -/
 theorem atomPair_root {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true)
@@ -1164,7 +1187,7 @@ private theorem atomPair_eval_arg {tabs : Tables} {f g : Func} {env : Env} (hE :
     (hown : f.ownAux = g.ownAux) (hl : f.lowered = true → g.lowered = true) (hgl : g.lowered = true)
     {GS GT : Frame} (hfr : GT = { GS with regs := GT.regs }) {u w : Value}
     (hp : atomPair tabs u w = true) (hn : addrLower tabs u w = false) (hb : pbLower u w = false)
-    (hx : idxLower tabs u w = false)
+    (hx : idxLower tabs u w = false) (hq : moveQLower tabs u w = false)
     (hgen : u.op.generic = true)
     (hty : (Ctx.makeL tabs g).tys[w.id]?.getD .other = (Ctx.makeL tabs f).tys[u.id]?.getD .other)
     (hregS : ∀ a ∈ u.args, Reg GS a) (hregT : ∀ a ∈ w.args, Reg GT a)
@@ -1174,7 +1197,7 @@ private theorem atomPair_eval_arg {tabs : Tables} {f g : Func} {env : Env} (hE :
     Res.Refines (evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) GS u)
       (evalValueL ⟨g.lowered, false⟩ env (Ctx.makeL tabs g) GT w) := by
   obtain ⟨hk', -, -, hid⟩ := atomPair_spec hp
-  obtain ⟨hk, hsz⟩ := hk'.resolve_right (by rw [hn, hb, hx]; decide)
+  obtain ⟨hk, hsz⟩ := hk'.resolve_right (by rw [hn, hb, hx, hq]; decide)
   rw [evalValueL_of_regs hregS, evalValueL_of_regs hregT, hty]
   have hrel : (∀ j, stFitTy w.op j = none) → ∀ (i : Nat) a a', u.args.toList[i]? = some a →
       w.args.toList[i]? = some a' →
@@ -1310,7 +1333,7 @@ private theorem atomPair_eval_call {tabs : Tables} {f g : Func} {env : Env} (hE 
     {GS GT : Frame} (hfr : GT = { GS with regs := GT.regs }) {u w : Value} {k : Nat}
     (hk : callLead w.op = some k)
     (hp : atomPair tabs u w = true) (hn : addrLower tabs u w = false) (hb : pbLower u w = false)
-    (hx : idxLower tabs u w = false)
+    (hx : idxLower tabs u w = false) (hq : moveQLower tabs u w = false)
     (hgen : u.op.generic = true)
     (hty : (Ctx.makeL tabs g).tys[w.id]?.getD .other = (Ctx.makeL tabs f).tys[u.id]?.getD .other)
     (hregS : ∀ a ∈ u.args, Reg GS a) (hregT : ∀ a ∈ w.args, Reg GT a)
@@ -1320,7 +1343,7 @@ private theorem atomPair_eval_call {tabs : Tables} {f g : Func} {env : Env} (hE 
     Res.Refines (evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) GS u)
       (evalValueL ⟨g.lowered, false⟩ env (Ctx.makeL tabs g) GT w) := by
   obtain ⟨hk', -, -, hid⟩ := atomPair_spec hp
-  obtain ⟨hk2, hsz⟩ := hk'.resolve_right (by rw [hn, hb, hx]; decide)
+  obtain ⟨hk2, hsz⟩ := hk'.resolve_right (by rw [hn, hb, hx, hq]; decide)
   rw [evalValueL_of_regs hregS, evalValueL_of_regs hregT, hty]
   generalize (Ctx.makeL tabs f).tys[u.id]?.getD .other = ty
   have hwst : stSize w.op = none := by
@@ -1380,7 +1403,7 @@ theorem atomPair_eval {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
     (hown : f.ownAux = g.ownAux) (hl : f.lowered = true → g.lowered = true) (hgl : g.lowered = true)
     {GS GT : Frame} (hfr : GT = { GS with regs := GT.regs }) {u w : Value}
     (hp : atomPair tabs u w = true) (hn : addrLower tabs u w = false) (hb : pbLower u w = false)
-    (hx : idxLower tabs u w = false)
+    (hx : idxLower tabs u w = false) (hq : moveQLower tabs u w = false)
     (hgen : u.op.generic = true)
     (hty : (Ctx.makeL tabs g).tys[w.id]?.getD .other = (Ctx.makeL tabs f).tys[u.id]?.getD .other)
     (hregS : ∀ a ∈ u.args, Reg GS a) (hregT : ∀ a ∈ w.args, Reg GT a)
@@ -1392,12 +1415,12 @@ theorem atomPair_eval {tabs : Tables} {f g : Func} {env : Env} (hE : env.Mono)
       (evalValueL ⟨g.lowered, false⟩ env (Ctx.makeL tabs g) GT w) := by
   cases hk : callLead w.op with
   | none =>
-    exact atomPair_eval_arg hE hown hl hgl hfr hp hn hb hx hgen hty hregS hregT fun i hi => by
+    exact atomPair_eval_arg hE hown hl hgl hfr hp hn hb hx hq hgen hty hregS hregT fun i hi => by
       simpa [atomFitTy, hk] using hargs i hi
   | some k =>
     have hwst : stSize w.op = none := by
       rcases callLead_some hk with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl
-    exact atomPair_eval_call hE hown hl hfr hk hp hn hb hx hgen hty hregS hregT fun i hi => by
+    exact atomPair_eval_call hE hown hl hfr hk hp hn hb hx hq hgen hty hregS hregT fun i hi => by
       have := hargs i hi
       rwa [stArg_none hwst, atomFitTy, hk] at this
 
@@ -1584,5 +1607,56 @@ theorem idx_atom_eval {tabs : Tables} {f g : Func} {env : Env}
       ha' (.cons (by simpa using hv) (.cons (by simpa using hm) .nil))
   · exact idx_lower_eval_fit hu (idxOp_of hp hn) (by rw [makeL_tabs]; exact fitsB_store hf) hwd
       f.lowered ha' (by simpa using hv) (.cons (by simpa using hm) .nil)
+
+/-- **A `Move` lowered to a 128-bit store refines** (`moveQLower`): `w`'s address at its offset
+and aux holds `u`'s destination, `w`'s values refine the 16-byte halves `u` copies (`qPart`) and
+`w`'s memory refines `u`'s (`Sim.moveQ_lower_eval`). -/
+theorem moveQ_atom_eval {tabs : Tables} {f g : Func} {env : Env}
+    (hgl : g.lowered = true) {GS GT : Frame} {u w : Value} (hq : moveQLower tabs u w = true)
+    (hty : (Ctx.makeL tabs g).tys[w.id]?.getD .other = (Ctx.makeL tabs f).tys[u.id]?.getD .other)
+    (hregS : ∀ a ∈ u.args, Reg GS a) (hregT : ∀ a ∈ w.args, Reg GT a)
+    (ha : AddrRef tabs 0 w.aux w.auxInt (rv GS u.args[0]!) (rv GT w.args[0]!))
+    (hv : ∀ i, i + 2 < w.args.size →
+      Sem.Refines (qPart i (rv GS u.args[1]!) (rv GS u.args[2]!)) (rv GT w.args[i + 1]!))
+    (hm : Sem.Refines (rv GS u.args[2]!) (rv GT w.args[w.args.size - 1]!)) :
+    Res.Refines (evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) GS u)
+      (evalValueL ⟨g.lowered, false⟩ env (Ctx.makeL tabs g) GT w) := by
+  obtain ⟨hu, hc⟩ := Sim.moveQLower_cases hq
+  have h3 : u.args.size = 3 := by
+    unfold moveQLower at hq; simp only [Bool.and_eq_true, beq_iff_eq] at hq; exact hq.1.1.1.2
+  have hq' : moveQLower (Ctx.makeL tabs g).tabs u w = true := by rw [makeL_tabs]; exact hq
+  rw [evalValueL_of_regs hregS, evalValueL_of_regs hregT, hty, hgl]
+  generalize (Ctx.makeL tabs f).tys[u.id]?.getD .other = ty
+  obtain ⟨a0, a1, a2, hua⟩ := args3 h3
+  rw [hua] at ha hv hm
+  rw [hua]
+  simp only [List.toList_toArray, List.map_cons, List.map_nil]
+  rw [evalOpL_generic _ _ _ _ _ _ (by rw [hu]; decide)]
+  have ha' : AddrRef (Ctx.makeL tabs g).tabs (Ctx.makeL tabs g).act w.aux w.auxInt (rv GS a0)
+      (rv GT w.args[0]!) := by
+    rw [makeL_tabs, show (Ctx.makeL tabs g).act = 0 by unfold Ctx.makeL; split <;> rfl]; exact ha
+  rcases hc with ⟨-, -, h3w⟩ | ⟨-, -, h4w⟩
+  · obtain ⟨b0, b1, b2, hwa⟩ := args3 h3w
+    rw [hwa] at ha' hv hm
+    rw [hwa]
+    simp only [List.toList_toArray, List.map_cons, List.map_nil]
+    exact Sim.moveQ_lower_eval (w := w) hq' f.lowered (xs := [rv GT b1]) (by simpa using ha')
+      (by simpa using hm) (by rw [hwa]; rfl) fun i x hx => by
+        rcases i with _ | i
+        · simp only [List.getElem?_cons_zero, Option.some.injEq] at hx
+          subst hx; simpa using hv 0 (by simp)
+        · simp at hx
+  · obtain ⟨b0, b1, b2, b3, hwa⟩ := args4 h4w
+    rw [hwa] at ha' hv hm
+    rw [hwa]
+    simp only [List.toList_toArray, List.map_cons, List.map_nil]
+    exact Sim.moveQ_lower_eval (w := w) hq' f.lowered (xs := [rv GT b1, rv GT b2])
+      (by simpa using ha') (by simpa using hm) (by rw [hwa]; rfl) fun i x hx => by
+        rcases i with _ | _ | i
+        · simp only [List.getElem?_cons_zero, Option.some.injEq] at hx
+          subst hx; simpa using hv 0 (by simp)
+        · simp only [List.getElem?_cons_succ, List.getElem?_cons_zero, Option.some.injEq] at hx
+          subst hx; simpa using hv 1 (by simp)
+        · simp at hx
 
 end GoFV.Proof.Low

@@ -2324,6 +2324,20 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   at the end differs from the output in `finalOKL`; both reject. No change to `Sem` or
   `Refines`. Witness `lsh_lower`.
 
+- **128-bit copies** (`:418`, `:426`, `:688`, `:691`, `:779`, `:782`, `:872`, `:876`, `:909`,
+  `:913`, #385; `Rules/MoveQ.lean`, `Fold.lean`, `GoFV/Proof/Low/QPart.lean`, `SimMoveQ.lean`).
+  `(Move [16] dst src mem) => (FMOVQstore dst (FMOVQload src mem) mem)`, `(Move [32] …) =>
+  (FSTPQ dst (Select0 (FLDPQ src mem)) (Select1 (FLDPQ src mem)) mem)`, the offsets and symbols
+  or frame variables folded into the 128-bit stores and loads. A 16-byte load is a byte blob
+  (`Arm64.load16`) that `storeBytes` writes back, so the store copies bytes exactly as the `Move`
+  does. The validator replays the event as the store at the `Move` and fresh load terms of its
+  source (`LowerCheck.moveDef`, which requires a `Move` in the input), pairs the store with the
+  `Move` (`moveQLower`) and replays the folds as the store's new definition (`qFold`). The replay
+  relates the store to the `Move` by `MoveRefL` (address `AddrRef`, values ⊒ the halves the `Move`
+  copies, `qPart`, memory ⊒); `moveQ_lower_eval` proves the store refines the `Move`. An `FLDPQ`
+  fold also needs room for the second element (`Pat.addrOKL`: `offOK` of the offset + 16).
+  Witness `mvq_lower`.
+
 - **Compares with a pointer** (#385; module docs of `GoFV/Proof/Low/Rules/CmpNeg.lean` and
   `Invert.lean`). `CMP` compares a pointer without a concrete address with an integer as unequal
   (`Arm64.cmp`, `Z` clear). While `CMN` and `CMPshift*` read registers only (`Arm64.cmp1`/`cmp2`),
