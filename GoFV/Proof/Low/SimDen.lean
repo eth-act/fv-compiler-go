@@ -544,6 +544,23 @@ theorem argTermIdxL_apply (hfr : RegsFrame tabs 0 D FS) {s : Nat} {x y z : ID}
   exact ArgRel.trans_right (o := some (0, none)) h (idxAddr_mono s
     (denL_fuel_mono lowT E tabs ρ' m _ y (by omega)) (denL_fuel_mono lowT E tabs ρ' m _ z (by omega)))
 
+/-- **`ArgTermQL` on registers**, the source's frame addresses and stack pointer those of
+activation 0. -/
+theorem argTermQL_apply (hfr : RegsFrame tabs 0 D FS) {i : Nat} {s m y : ID}
+    (hT : ArgTermQL i lowS D tabs s m lowT E tabs y) (hsS : VS s) (hmS : VS m) (hyT : VT y) :
+    Sem.Refines (qPart i (rv FS s) (rv FS m)) (rv FT y) := by
+  obtain ⟨ρ, ρ', hval, htD, htE, hρ, hρ', hρp, hFT⟩ :=
+    vals_exist hl hS hG hrel htyS htyT hsh hfT hlT
+  obtain ⟨hF, hSP⟩ := frameVals_of hl hS hG hrel htyS htyT hsh hfT hlT hfr hρ hρp
+  obtain ⟨N1, hN1⟩ := (hS s hsS).2 ρ hρ
+  obtain ⟨N2, hN2⟩ := (hS m hmS).2 ρ hρ
+  obtain ⟨M, hM⟩ := (hG y hyT).2 ρ' hρ'
+  obtain ⟨k, h⟩ := hT (max N1 N2)
+  have h := h ρ ρ' hval htD htE hF hSP hFT
+  rw [hN1 _ (Nat.le_max_left _ _), hN2 _ (Nat.le_max_right _ _)] at h
+  rw [← hM (max k M) (Nat.le_max_right k M)]
+  exact h.trans (denL_fuel_mono lowT E tabs ρ' k (max k M) y (Nat.le_max_left k M))
+
 /-- **The terminators on registers**, as functions of their controls' terms, the source's frame
 addresses and stack pointer those of activation 0. -/
 theorem termStepRefL_apply (hfr : RegsFrame tabs 0 D FS) {fb gb : Block}
