@@ -32,9 +32,9 @@ The Lean pipeline (`number lines` through `trim`) as a program (`docs/DRIVER.md`
 - `gofv-ssa-opt --check --verified --e2e [--whole-file-env] [--jobs N] [--table FILE]
   [--accepted FILE] <dir|file>...`: end-to-end coverage (`GoFVTest.Driver.E2E`): per `.ssa` file
   with its companion `.prog` file, the verified pipeline as `--check --verified` runs it, then on
-  a fully verified result genssa, `checkG18` with `retRegsOK`, `Flushplist` and `checkObj` on the
-  pipeline's own output; counts the functions `GoFV.Proof.Obj.verified_mach_ret` applies to.
-  `--accepted FILE` writes the accepted files.
+  a fully verified result genssa (on the pipeline's own `Dcl`, `E2E.ownFrame`), `checkG30` with
+  `retRegsOK`, `Flushplist` and `checkObj` on the pipeline's own output; counts the functions
+  `GoFV.Proof.Obj.verified_mach` applies to. `--accepted FILE` writes the accepted files.
 -/
 
 open GoFV.SSA GoFV.Opt GoFVTest.Parity
@@ -1091,20 +1091,24 @@ def e2eFile (wholeFile : Bool) (path : System.FilePath) (st : E2E.Stats) : IO E2
     let (e, x) ← parseExportExt data
     let pf ← GoFV.Asm.parseProgFile progData
     let r ← verifiedExport wholeFile e x
-    return (e, Back.inputView pf, r)
+    return (e, x, Back.inputView pf, (pf.frame.stksize, pf.frame.stkptrsize), r)
   match parsed with
   | .error m =>
     IO.eprintln s!"PARSE ERROR {path}: {m}"
     return { st with parseErrors := st.parseErrors + 1 }
-  | .ok (e, pin, r) =>
+  | .ok (e, x, pin, stockFrame, r) =>
     let file := path.toString
     let stockF := ((e.sections.back?).map (·.func)).getD default
-    let st := st.addStock file (E2E.back e pin e.frontendTables stockF)
+    let st := st.addStock file (E2E.back e pin #[] e.frontendTables stockF)
     match r with
     | .error _ => return { st with passErrors := st.passErrors + 1 }
     | .ok r =>
       if !r.st.fullyVerified then return st
-      return st.addFull file r.same (E2E.back e pin r.st.st.tables r.st.st.func)
+      let t0 := ({} : Tables).addAll (((e.sections[0]?).map (·.defs)).getD #[])
+      let res := do
+        let (pin, links) ← E2E.ownFrame pin t0 r.st.st.tables ((x.dclLen? 0).getD 0) r.st.dclLen
+        E2E.back e pin links r.st.st.tables r.st.st.func
+      return st.addFull file r.same stockFrame res
 
 /-- `--check --verified --e2e`: end-to-end coverage (exit 1 only for parse errors or no files). -/
 def runE2E (o : Opts) : IO UInt32 := do
