@@ -11,7 +11,10 @@ matching order: the rule set of the checked `lower` (`GoFV.Opt.lowerChecked`). A
 condition's op and flags (`flagArg`) is listed split by the condition op
 (`GoFV.Rules.Derive.flagSplit`), which rewrites the same instances; a rule on `arm64Invert` or
 `arm64Negate` of its `CCop` auxint is listed split by the condition ops
-(`GoFV.Rules.Derive.ccSplit`).
+(`GoFV.Rules.Derive.ccSplit`). A narrow left shift's rename is followed by the rules of the
+64-bit shift in their form on the narrow one (`GoFV.Rules.Derive.lshSplit`), which `lower` never
+fires (the rename always matches first) and the validator checks the later events at the renamed
+value against.
 -/
 
 namespace GoFV.Rules.ProvenARM64
@@ -63,7 +66,7 @@ def b2iNorm (r : Rule) : Rule where
     | res => res
   pos := r.pos
 
-/-- `ARM64.rules` restricted to its 537 proven value rules and 96 proven block rules. -/
+/-- `ARM64.rules` restricted to its 549 proven value rules and 96 proven block rules. -/
 def lower : RuleSet where
   name := "ARM64"
   values := [(.ARM64ADD, [Generated.ARM64.r_ARM64_970, Generated.ARM64.r_ARM64_1012, Generated.ARM64.r_ARM64_1014, Generated.ARM64.r_ARM64_1017, Generated.ARM64.r_ARM64_1433, Generated.ARM64.r_ARM64_1434, Generated.ARM64.r_ARM64_1435, Generated.ARM64.r_ARM64_1635]),
@@ -257,10 +260,22 @@ def lower : RuleSet where
     (.Less8U, [Generated.ARM64.r_ARM64_271_4, Generated.ARM64.r_ARM64_276]),
     (.Load, [Generated.ARM64.r_ARM64_313, Generated.ARM64.r_ARM64_314, Generated.ARM64.r_ARM64_315, Generated.ARM64.r_ARM64_316, Generated.ARM64.r_ARM64_317, Generated.ARM64.r_ARM64_318, Generated.ARM64.r_ARM64_319, Generated.ARM64.r_ARM64_320, Generated.ARM64.r_ARM64_321, Generated.ARM64.r_ARM64_322]),
     (.LocalAddr, [Generated.ARM64.r_ARM64_309, Generated.ARM64.r_ARM64_310]),
+    (.Lsh16x16, Derive.lshSplit Generated.ARM64.r_ARM64_149),
+    (.Lsh16x32, Derive.lshSplit Generated.ARM64.r_ARM64_149_2),
+    (.Lsh16x64, Derive.lshSplit Generated.ARM64.r_ARM64_149_3),
+    (.Lsh16x8, Derive.lshSplit Generated.ARM64.r_ARM64_149_4),
+    (.Lsh32x16, Derive.lshSplit Generated.ARM64.r_ARM64_148),
+    (.Lsh32x32, Derive.lshSplit Generated.ARM64.r_ARM64_148_2),
+    (.Lsh32x64, Derive.lshSplit Generated.ARM64.r_ARM64_148_3),
+    (.Lsh32x8, Derive.lshSplit Generated.ARM64.r_ARM64_148_4),
     (.Lsh64x16, [Generated.ARM64.r_ARM64_152, Generated.ARM64.r_ARM64_171]),
     (.Lsh64x32, [Generated.ARM64.r_ARM64_152_2, Generated.ARM64.r_ARM64_170]),
     (.Lsh64x64, [Generated.ARM64.r_ARM64_152_3, Generated.ARM64.r_ARM64_169]),
     (.Lsh64x8, [Generated.ARM64.r_ARM64_152_4, Generated.ARM64.r_ARM64_171_2]),
+    (.Lsh8x16, Derive.lshSplit Generated.ARM64.r_ARM64_150),
+    (.Lsh8x32, Derive.lshSplit Generated.ARM64.r_ARM64_150_2),
+    (.Lsh8x64, Derive.lshSplit Generated.ARM64.r_ARM64_150_3),
+    (.Lsh8x8, Derive.lshSplit Generated.ARM64.r_ARM64_150_4),
     (.MemEq, [Generated.ARM64.r_ARM64_458]),
     (.Mod64, [Generated.ARM64.r_ARM64_33]),
     (.Mod64u, [Generated.ARM64.r_ARM64_35]),

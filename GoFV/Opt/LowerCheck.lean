@@ -896,10 +896,38 @@ def argCopies (us ds' : List Value) : List (ID × Nat × ID) :=
     (List.range d.args.size).filterMap fun j =>
       if u.args[j]? != d.args[j]? then d.args[j]?.map fun a => (u.id, j, a) else none
 
+/-- A rule event at the narrow left shift `v` that `lower` renames to `o'`
+(`GoFV.Rules.Derive.lshWide`) is the rename itself (`(Lsh32x<a> ...) => (Lsh64x<a> ...)`,
+`ARM64.rules:148-150`, logged with `v`'s new definition alone, of op `o'`). The replay keeps `v`
+as it is (the narrow shift) and checks the later events at `v` by `lshRule`; `finalOKL` rejects
+a `v` still renamed at the end. -/
+def lshRenEv (o' : Op) (v : ID) (defs : List Value) : Bool :=
+  match defs with
+  | [u] => u.id == v && u.op == o'
+  | _ => false
+
+/-- The rule of a later event at the narrow left shift of op `o` that `lower` renamed to `o'`:
+rule `i` of `o'`'s row, in its form on `o` (`GoFV.Rules.Derive.lshDerive`), which the rule set
+lists after the rename (`GoFV.Rules.Derive.lshSplit`): the rule of `o`'s row with its location
+that builds its result and is no strength-reduced multiplication. -/
+def lshRule (t : Interp.Table) (o o' : Op) (i : Nat) : Option Interp.CRule :=
+  match (t.values[o'.ctorIdx]?).bind (·[i]?), t.values[o.ctorIdx]? with
+  | some c, some row => row.find? fun d =>
+      d.rule.loc == c.rule.loc && (d.rule.result matches .build _) && !Interp.mulResult d.rule
+  | _, _ => none
+
+/-- The logged definitions of a later event at the renamed narrow left shift `v` of op `o`, with
+`v` built as an `Lsh64x<b>` (`171`) read as the narrow shift its derived form builds
+(`GoFV.Rules.Derive.lshAt`). -/
+def lshDefs (o : Op) (v : ID) (defs : List Value) : List Value :=
+  defs.map fun u => if u.id == v then { u with op := GoFV.Rules.Derive.lshAt o u.op } else u
+
 /-- Replay the log on the definitions `M` and the terminators `B`, from `f`'s; `none` if an event
 is not validated. A copy-argument replacement the copies of `M` do not justify is skipped (`M`
 keeps its definition; `finalOKL` decides), as is one of the arguments `lower` gave a rule's new
-definitions (`argCopies`, `copyFixL`); phi eliminations and snapshots reject. -/
+definitions (`argCopies`, `copyFixL`); phi eliminations and snapshots reject. A narrow left
+shift's rename is replayed as no change and the later events at it by their derived rules
+(`lshRenEv`, `lshRule`). -/
 def replayL (tabs : Tables) (t : Interp.Table) (f : Func) :
     Defs → BMapL → List RwEvent → Option (Defs × BMapL)
   | M, B, [] => some (M, B)
@@ -910,6 +938,19 @@ def replayL (tabs : Tables) (t : Interp.Table) (f : Func) :
       if pbFoldEv M v defs.toList || addrFoldEv tabs M v defs.toList || spFoldEv M v defs.toList then
         replayL tabs t f M B evs
       else
+      match GoFV.Rules.Derive.lshWide x.op with
+      | some o' =>
+        if lshRenEv o' v defs.toList then replayL tabs t f M B evs
+        else
+        match lshRule t x.op o' i with
+        | none => none
+        | some cr =>
+          match ruleOKL tabs M cr.rule v (lshDefs x.op v defs.toList) with
+          | some ds =>
+            replayL tabs t f (copyFixL tabs (ds.foldl (fun M u => M.put u.id u) M)
+              (argCopies (ds.drop 1) (defs.toList.drop 1))) B evs
+          | none => none
+      | none =>
       match (t.values[x.op.ctorIdx]?).bind (·[i]?) with
       | none => none
       | some cr =>

@@ -1,5 +1,6 @@
 import GoFV.Rules.Syntax
 import GoFV.Rules.Helpers.ARM64
+import GoFV.Rules.Generated.ARM64.Values09
 
 /-!
 # Derived forms of `ARM64.rules` rules for the checked `lower` (issue #385)
@@ -28,6 +29,15 @@ exactly the same instances (the rewrite engine evaluates the same Go expressions
   condition ops `arm64Negate` maps (`negCondOps`, the integer and float ones), `arm64Negate(cc)`
   the op `arm64Negate(X)`: a negated condition holds exactly when the condition does not, float
   conditions included.
+
+One more is no form of the same instances but rules `lower` never fires:
+
+* `lshSplit r`: the rename `(Lsh32x<a> ...) => (Lsh64x<a> ...)` of a narrow left shift
+  (`148`-`150`), which is false (`Lsh64x<a>` asks for a 64-bit operand), followed by the rules of
+  `Lsh64x<a>` (`152`, `169`-`171`) with the narrow shift as their top op (`lshDerive`). `lower`
+  always fires the rename first, then a rule of `Lsh64x<a>` at the same value; the validator
+  replays the rename as no change and that rule as its derived form, which holds on the narrow
+  shift (`GoFV.Opt.LowerCheck.lshRule`, `docs/proofs/rules.md`).
 -/
 
 namespace GoFV.Rules.Derive
@@ -223,5 +233,69 @@ def ccSplit (r : Rule) : List Rule :=
       (if negates r then negCondOps else intCondOps).map (ccAt r k)
     else [r]
   | _ => [r]
+
+/-- The value and amount widths of a left shift `Lsh{w}x{a}`. -/
+def lshShape : Op → Option (Nat × Nat)
+  | .Lsh8x8 => some (8, 8) | .Lsh8x16 => some (8, 16) | .Lsh8x32 => some (8, 32)
+  | .Lsh8x64 => some (8, 64) | .Lsh16x8 => some (16, 8) | .Lsh16x16 => some (16, 16)
+  | .Lsh16x32 => some (16, 32) | .Lsh16x64 => some (16, 64) | .Lsh32x8 => some (32, 8)
+  | .Lsh32x16 => some (32, 16) | .Lsh32x32 => some (32, 32) | .Lsh32x64 => some (32, 64)
+  | .Lsh64x8 => some (64, 8) | .Lsh64x16 => some (64, 16) | .Lsh64x32 => some (64, 32)
+  | .Lsh64x64 => some (64, 64)
+  | _ => none
+
+/-- The left shift of a `w`-bit value by an `a`-bit amount (`lshShape`'s inverse). -/
+def lshOp : Nat × Nat → Option Op
+  | (8, 8) => some .Lsh8x8 | (8, 16) => some .Lsh8x16 | (8, 32) => some .Lsh8x32
+  | (8, 64) => some .Lsh8x64 | (16, 8) => some .Lsh16x8 | (16, 16) => some .Lsh16x16
+  | (16, 32) => some .Lsh16x32 | (16, 64) => some .Lsh16x64 | (32, 8) => some .Lsh32x8
+  | (32, 16) => some .Lsh32x16 | (32, 32) => some .Lsh32x32 | (32, 64) => some .Lsh32x64
+  | (64, 8) => some .Lsh64x8 | (64, 16) => some .Lsh64x16 | (64, 32) => some .Lsh64x32
+  | (64, 64) => some .Lsh64x64
+  | _ => none
+
+/-- The 64-bit left shift `Lsh64x<a>` that `lower` renames the narrow `Lsh{8,16,32}x<a>` to
+(`(Lsh32x<a> ...) => (Lsh64x<a> ...)`, `ARM64.rules:148-150`). -/
+def lshWide (o : Op) : Option Op :=
+  match lshShape o with
+  | some (w, a) => if w < 64 then lshOp (64, a) else none
+  | none => none
+
+/-- A built `Lsh64x<b>` as the narrow left shift of `o`'s value width by `b` (`o` narrow); any
+other op as it is. -/
+def lshAt (o o' : Op) : Op :=
+  match lshShape o, lshShape o' with
+  | some (w, _), some (64, b) => if w < 64 then (lshOp (w, b)).getD o' else o'
+  | _, _ => o'
+
+/-- Rule `r` of `Lsh64x<a>` in its form on the narrow `o` renamed to it: the pattern's top op
+`o`, and a built `Lsh64x<b>` (`(Lsh64x16 [b] x y) && !shiftIsBounded(v) => (Lsh64x32 [b] x
+(ZeroExt16to32 y))`, `171`) the narrow `lshAt o`. -/
+def lshDerive (o : Op) (r : Rule) : Rule :=
+  { r with
+    op := o
+    pat := match r.pat with
+      | .op _ n ty ai ax ar args c => .op o n ty ai ax ar args c
+      | p => p
+    result := match r.result with
+      | .build ns => .build (ns.map fun n => { n with op := lshAt o n.op })
+      | res => res }
+
+/-- The rules of `Lsh64x<a>` in matching order (`ARM64.rules:152`, `169-171`). -/
+def lshRow : Op → List Rule
+  | .Lsh64x8 => Generated.ARM64.ops_Lsh64x8
+  | .Lsh64x16 => Generated.ARM64.ops_Lsh64x16
+  | .Lsh64x32 => Generated.ARM64.ops_Lsh64x32
+  | .Lsh64x64 => Generated.ARM64.ops_Lsh64x64
+  | _ => []
+
+/-- A narrow left shift's rename `(Lsh32x<a> ...) => (Lsh64x<a> ...)` followed by the rules of
+`Lsh64x<a>` in their form on the narrow shift (`lshDerive`), else `r` itself. `lower` always fires
+the rename first; the derived rules are what the validator checks the later events at the renamed
+value against (`GoFV.Opt.LowerCheck.lshRule`). -/
+def lshSplit (r : Rule) : List Rule :=
+  match r.pat, r.result with
+  | .op o .., .setOp o' => if lshWide o == some o' then r :: (lshRow o').map (lshDerive o) else [r]
+  | _, _ => [r]
 
 end GoFV.Rules.Derive
