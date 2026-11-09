@@ -255,6 +255,7 @@ theorem storesMem_slot (c : Ctx) : ∀ (sl : List TailSlot) (m : Memory),
         omega
       rw [TailSlot.addr_eval, ms_readMem_congr s.n _ (fun j hj => storesMem_slots_out c sl _ _
         (fun s' hs' => (hw' s' hs').1) (hout j hj)), ms_readMem_self _ _ hw0.2]
+      rw [Ex.eval128_setWidth hw0.2]
       rfl
     · exact storesMem_slot c sl _ hap.2 hw' s hs
 

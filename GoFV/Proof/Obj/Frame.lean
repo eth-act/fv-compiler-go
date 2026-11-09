@@ -114,7 +114,7 @@ private theorem fr_frame_mem {c : Ctx} {az : Int} {A : BitVec 64} {st : List (Ex
       a ≠ A + BitVec.ofNat 64 j ∧ a ≠ A - 8 + BitVec.ofNat 64 j := by
     intro a ha j hj; constructor <;> bv_omega
   rcases hst with rfl | rfl
-  · simp only [frameStores, storesMem, h1, h2] at hm
+  · simp only [frameStores, storesMem, h1, h2, Ex.eval128_setWidth (n := 8) (Nat.le_refl 8)] at hm
     refine ⟨?_, ?_, fun a ha => ?_⟩
     · simp only [MState.word, hm]
       rw [fr_readMem_other _ _ _ _ hd1, fr_readMem_self]
@@ -125,7 +125,7 @@ private theorem fr_frame_mem {c : Ctx} {az : Int} {A : BitVec 64} {st : List (Ex
     · rw [hm, GoFV.Proof.Gen.writeMem_other _ _ _ _ _ fun j hj => (hout a ha j hj).2,
         GoFV.Proof.Gen.writeMem_other _ _ _ _ _ fun j hj => (hout a ha j hj).1]
   · simp only [frameStores, List.reverse_cons, List.reverse_nil, List.nil_append,
-      List.cons_append, storesMem, h1, h2] at hm
+      List.cons_append, storesMem, h1, h2, Ex.eval128_setWidth (n := 8) (Nat.le_refl 8)] at hm
     refine ⟨?_, ?_, fun a ha => ?_⟩
     · simp only [MState.word, hm]
       rw [fr_readMem_self]

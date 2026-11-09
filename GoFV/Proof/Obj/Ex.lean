@@ -319,7 +319,18 @@ theorem Ex.eval_congr {c c' : Ctx} (hsym : c.sym = c'.sym) (hsp : c.s.sp = c'.s.
     rw [iha (fun r h => he r (by simp [Ex.reads, h])),
       ihb (fun r h => he r (by simp [Ex.reads, h])), hfl]
   | vlo ft r => intro _; simp only [Ex.eval, hv]
+  | vq r => intro _; simp only [Ex.eval, hv]
   | fcvtz ft u m r => intro _; simp only [Ex.eval, hv]
+
+/-- `Ex.eval_congr` for `Ex.eval128`. -/
+theorem Ex.eval128_congr {c c' : Ctx} (hsym : c.sym = c'.sym) (hsp : c.s.sp = c'.s.sp)
+    (hmem : c.s.mem = c'.s.mem) (hfl : c.s.nzcv = c'.s.nzcv) (hv : c.s.v = c'.s.v) (e : Ex)
+    (he : ∀ r, e.reads r = true → c.s.x (BitVec.ofNat 5 r) = c'.s.x (BitVec.ofNat 5 r)) :
+    e.eval128 c = e.eval128 c' := by
+  unfold Ex.eval128
+  split
+  · rw [hv]
+  · rw [Ex.eval_congr hsym hsp hmem hfl hv _ he]
 
 /-- `Ex.eval_congr` for a `VEx`. -/
 theorem VEx.eval_congr {c c' : Ctx} (hsym : c.sym = c'.sym) (hsp : c.s.sp = c'.s.sp)

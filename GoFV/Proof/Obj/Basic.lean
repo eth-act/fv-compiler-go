@@ -23,10 +23,21 @@ namespace GoFV.Proof.Obj
 
 open GoFV.Arm64 GoFV.Asm GoFV.Asm.CheckObj
 
-/-- The memory after the stores `st` in order (each the low `8 n` bits of its value). -/
+/-- The memory after the stores `st` in order (each the low `8 n` bits of its value's
+`Ex.eval128`). -/
 def storesMem (c : Ctx) : List (Ex × Nat × Ex) → Memory → Memory
   | [], m => m
-  | (a, n, v) :: st, m => storesMem c st (writeMem m (a.eval c) n ((v.eval c).setWidth (8 * n)))
+  | (a, n, v) :: st, m =>
+    storesMem c st (writeMem m (a.eval c) n ((v.eval128 c).setWidth (8 * n)))
+
+/-- A store of at most 8 bytes writes the low bits of the 64-bit value. -/
+theorem Ex.eval128_setWidth {n : Nat} (hn : n ≤ 8) (c : Ctx) (e : Ex) :
+    (e.eval128 c).setWidth (8 * n) = (e.eval c).setWidth (8 * n) := by
+  unfold Ex.eval128
+  split
+  · simp only [Ex.eval]
+    rw [BitVec.setWidth_setWidth_of_le _ (by omega)]
+  · rw [BitVec.setWidth_setWidth_of_le _ (by omega)]
 
 /-- `t` is what `σ` describes over `c.s`, `X30` aside. -/
 structure HoldsCore (c : Ctx) (σ : Sym) (t : MState) : Prop where

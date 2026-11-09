@@ -159,20 +159,32 @@ private theorem insn_holds_loads {c : Ctx} {σ : Sym} {t : MState} (hH : Holds c
 private theorem insn_storesMem_append (c : Ctx) (st : List (Ex × Nat × Ex)) (a : Ex) (n : Nat)
     (v : Ex) (m : Memory) :
     storesMem c (st ++ [(a, n, v)]) m =
-      writeMem (storesMem c st m) (a.eval c) n ((v.eval c).setWidth (8 * n)) := by
+      writeMem (storesMem c st m) (a.eval c) n ((v.eval128 c).setWidth (8 * n)) := by
   induction st generalizing m with
   | nil => rfl
   | cons p st ih =>
     obtain ⟨a', n', v'⟩ := p
     exact ih _
 
-private theorem insn_holds_store {c : Ctx} {σ : Sym} {t : MState} (hH : Holds c σ t) (a : Ex)
-    (n : Nat) {v : Ex} {val : BitVec (8 * n)} (hv : (v.eval c).setWidth (8 * n) = val) :
+private theorem insn_holds_store128 {c : Ctx} {σ : Sym} {t : MState} (hH : Holds c σ t) (a : Ex)
+    (n : Nat) {v : Ex} {val : BitVec (8 * n)} (hv : (v.eval128 c).setWidth (8 * n) = val) :
     Holds c (σ.store a n v) { t with mem := writeMem t.mem (a.eval c) n val } :=
   { x := hH.x, x31 := hH.x31, sp := hH.sp, nzcv := hH.nzcv, v := hH.v, x30 := hH.x30
     mem := by
       show writeMem t.mem _ n val = storesMem c (σ.stores ++ [(a, n, v)]) c.s.mem
       rw [insn_storesMem_append, ← hH.mem, hv] }
+
+/-- A store of at most 8 bytes of a 64-bit value. -/
+private theorem insn_holds_store {c : Ctx} {σ : Sym} {t : MState} (hH : Holds c σ t) (a : Ex)
+    {n : Nat} (hn : n ≤ 8) {v : Ex} {val : BitVec (8 * n)} (hv : (v.eval c).setWidth (8 * n) = val) :
+    Holds c (σ.store a n v) { t with mem := writeMem t.mem (a.eval c) n val } :=
+  insn_holds_store128 hH a n (by rw [Ex.eval128_setWidth hn, hv])
+
+private theorem insn_bytesOf_le (size : BitVec 2) : bytesOf size ≤ 8 := by
+  have := size.isLt
+  unfold bytesOf
+  generalize size.toNat = k at *
+  rcases k with _ | _ | _ | _ | k <;> simp <;> omega
 
 @[simp] private theorem insn_wX_pc (t : MState) (r : Reg) (v : BitVec 64) : (t.wX r v).pc = t.pc := by
   unfold MState.wX; split <;> rfl
@@ -549,7 +561,7 @@ private theorem insn_access {σ σ1 : Sym} {c : Ctx} {t : MState} {size opc : Bi
       cases h
       have hna : nilPage (a.eval c) = false :=
         hnil.2 a (bytesOf size) (σ.rX rt) (by simp [Sym.store])
-      have hst := insn_holds_store hH a (bytesOf size)
+      have hst := insn_holds_store hH a (insn_bytesOf_le size)
         (val := (t.rX (BitVec.ofNat 5 rt)).setWidth (8 * bytesOf size)) (by rw [hH.rX_eval hrt])
       refine ⟨_, hst, rfl, ?_⟩
       simp only [Bool.false_eq_true, ↓reduceIte, store, hna, bind, Except.bind, pure,
@@ -640,23 +652,25 @@ private theorem insn_vlo_eval (c : Ctx) (ft : BitVec 2) (r : Reg) :
       if ft = 0 then ((c.s.v r).setWidth 32).setWidth 64 else (c.s.v r).setWidth 64 := by
   simp only [Ex.eval, insn_ofNat_toNat]
 
-/-- The value of an `S`/`D` store of `V r`. -/
-private theorem insn_vlo_store {c : Ctx} {n : Nat} {ft : BitVec 2} (h : vStoreFt n = .ok ft)
-    (r : Reg) : ((Ex.vlo ft r.toNat).eval c).setWidth (8 * n) = (c.s.v r).setWidth (8 * n) := by
-  unfold vStoreFt at h
-  rw [insn_vlo_eval]
+private theorem insn_vStoreEx {n : Nat} (hn : n = 4 ∨ n = 8 ∨ n = 16) (c : Ctx) (r : Reg) :
+    ((vStoreEx n r.toNat).eval128 c).setWidth (8 * n) = (c.s.v r).setWidth (8 * n) := by
+  apply BitVec.eq_of_toNat_eq
+  rcases hn with rfl | rfl | rfl <;>
+    simp [vStoreEx, Ex.eval128, Ex.eval, insn_ofNat_toNat, BitVec.toNat_setWidth] <;> omega
+
+private theorem insn_vStoreVal {n r : Nat} {e : Ex} (h : vStoreVal n r = .ok e) :
+    (n = 4 ∨ n = 8 ∨ n = 16) ∧ e = vStoreEx n r := by
+  unfold vStoreVal at h
   split at h
-  · rename_i hn
-    subst hn
-    cases h
-    rw [ite_eq_left rfl, BitVec.setWidth_setWidth_of_le _ (by omega),
-      BitVec.setWidth_setWidth_of_le _ (by omega)]
-  · split at h
-    · rename_i hn
-      subst hn
-      cases h
-      rw [ite_eq_right (by decide), BitVec.setWidth_setWidth_of_le _ (by omega)]
-    · cases h
+  · cases h
+    exact ⟨by assumption, rfl⟩
+  · cases h
+
+/-- The value of a SIMD&FP store of `V r`. -/
+private theorem insn_vstore {c : Ctx} {n : Nat} {e : Ex} {r : Reg} (h : vStoreVal n r.toNat = .ok e) :
+    (e.eval128 c).setWidth (8 * n) = (c.s.v r).setWidth (8 * n) := by
+  obtain ⟨hn, rfl⟩ := insn_vStoreVal h
+  exact insn_vStoreEx hn c r
 
 /-- The SIMD&FP single access of `symVAccess` at `a`, as `insn_access`. -/
 private theorem insn_vaccess {σ σ1 : Sym} {c : Ctx} {t : MState} {size opc : BitVec 2} {rt : Reg}
@@ -672,13 +686,13 @@ private theorem insn_vaccess {σ σ1 : Sym} {c : Ctx} {t : MState} {size opc : B
   generalize accessBytes size true opc = n at h ⊢
   cases hl : opc.getLsbD 0
   · simp only [hl, Bool.false_eq_true, ↓reduceIte] at h ⊢
-    obtain ⟨ft, hf, h⟩ := insn_bind_ok h
+    obtain ⟨e, hf, h⟩ := insn_bind_ok h
     obtain ⟨v, hv, h⟩ := insn_bind_ok h
     cases h
     obtain ⟨rfl, hvt⟩ := insn_vEx hH hv
-    have hna : nilPage (a.eval c) = false := hnil.2 a n (.vlo ft rt.toNat) (by simp [Sym.store])
-    have hst := insn_holds_store hH a n (v := .vlo ft rt.toNat) (val := (t.v rt).setWidth (8 * n))
-      (by rw [insn_vlo_store hf, hvt])
+    have hna : nilPage (a.eval c) = false := hnil.2 a n v (by simp [Sym.store])
+    have hst := insn_holds_store128 hH a n (v := v) (val := (t.v rt).setWidth (8 * n))
+      (by rw [insn_vstore hf, hvt])
     refine ⟨_, hst, rfl, ?_⟩
     simp only [store, MState.storeVal, hna, Bool.false_eq_true, ↓reduceIte, bind, Except.bind, pure,
       Except.pure]
@@ -758,23 +772,24 @@ private theorem insn_vpair {opc : BitVec 2} {mode : BitVec 2} {ld : Bool}
   clear hae
   cases ld
   · simp only [Bool.false_eq_true, ↓reduceIte] at hs ⊢
-    obtain ⟨ft, hf, hs⟩ := insn_bind_ok hs
+    obtain ⟨e, hf, hs⟩ := insn_bind_ok hs
     obtain ⟨v1, hv1, hs⟩ := insn_bind_ok hs
     obtain ⟨v2, hv2, hs⟩ := insn_bind_ok hs
     cases hs
     obtain ⟨rfl, hvt1⟩ := insn_vEx hH hv1
     obtain ⟨rfl, hvt2⟩ := insn_vEx hH hv2
+    have hn := (insn_vStoreVal hf).1
     have hna1 : nilPage A = false := by
       rw [← haA]
-      exact hnil.2 a n (.vlo ft rt.toNat) (by split <;> simp [Sym.store])
+      exact hnil.2 a n v1 (by split <;> simp [Sym.store])
     have hna2 : nilPage A2 = false := by
       rw [← ha2]
-      exact hnil.2 a2 n (.vlo ft rt2.toNat) (by split <;> simp [Sym.store])
-    have h1 := insn_holds_store hH a n (v := .vlo ft rt.toNat) (val := (t.v rt).setWidth (8 * n))
-      (by rw [insn_vlo_store hf, hvt1])
+      exact hnil.2 a2 n (vStoreEx n rt2.toNat) (by split <;> simp [Sym.store])
+    have h1 := insn_holds_store128 hH a n (v := v1) (val := (t.v rt).setWidth (8 * n))
+      (by rw [insn_vstore hf, hvt1])
     rw [haA] at h1
-    have h2 := insn_holds_store h1 a2 n (v := .vlo ft rt2.toNat)
-      (val := (t.v rt2).setWidth (8 * n)) (by rw [insn_vlo_store hf, hvt2])
+    have h2 := insn_holds_store128 h1 a2 n (v := vStoreEx n rt2.toNat)
+      (val := (t.v rt2).setWidth (8 * n)) (by rw [insn_vStoreEx hn, hvt2])
     rw [ha2] at h2
     by_cases hm : mode = 2
     · simp only [hm, ↓reduceIte]
@@ -1025,7 +1040,8 @@ private theorem insn_pair {opc : BitVec 2} {vec : Bool} {mode : BitVec 2} {ld : 
   unfold execPair
   simp only [Bool.false_eq_true, ↓reduceIte, Bool.not_false, Bool.true_and, decide_eq_true_eq]
     at h ⊢
-  generalize (if opc.getLsbD 1 = true then 8 else 4) = n at h ⊢
+  have hn8 : (if opc.getLsbD 1 = true then 8 else 4) ≤ 8 := by split <;> omega
+  generalize (if opc.getLsbD 1 = true then 8 else 4) = n at h hn8 ⊢
   generalize hae : (if mode = 1 then σ.rXsp rn.toNat
     else Ex.mkAdd (σ.rXsp rn.toNat) (.k (imm7.signExtend 64 * BitVec.ofNat 64 n))) = a at h
   have haA : a.eval c =
@@ -1056,9 +1072,10 @@ private theorem insn_pair {opc : BitVec 2} {vec : Bool} {mode : BitVec 2} {ld : 
     have hna2 : nilPage A2 = false := by
       rw [← ha2]
       exact hnil.2 a2 n (σ.rX rt2.toNat) (by split <;> simp [Sym.store])
-    have h1 := insn_holds_store hH a n (val := (t.rX rt).setWidth (8 * n)) (by rw [insn_rX hH])
+    have h1 := insn_holds_store hH a hn8 (val := (t.rX rt).setWidth (8 * n)) (by rw [insn_rX hH])
     rw [haA] at h1
-    have h2 := insn_holds_store h1 a2 n (val := (t.rX rt2).setWidth (8 * n)) (by rw [insn_rX hH])
+    have h2 := insn_holds_store h1 a2 hn8 (val := (t.rX rt2).setWidth (8 * n))
+      (by rw [insn_rX hH])
     rw [ha2] at h2
     by_cases hm : mode = 2
     · simp only [hm, ↓reduceIte]
@@ -1169,7 +1186,7 @@ private theorem insn_excl {size : BitVec 2} {o2 ld o0 : Bool} {rs rn rt : Reg}
       cases hh
       have hna : nilPage (t.rXsp rn) = false := by
         rw [← ha]; exact hnil.2 _ (bytesOf size) (σ.rX rt.toNat) (by simp [Sym.store])
-      have hst := insn_holds_store hH (σ.rXsp rn.toNat) (bytesOf size) (v := σ.rX rt.toNat)
+      have hst := insn_holds_store hH (σ.rXsp rn.toNat) (insn_bytesOf_le size) (v := σ.rX rt.toNat)
         (val := (t.rX rt).setWidth (8 * bytesOf size)) (by rw [insn_rX hH])
       rw [ha] at hst
       refine ⟨_, ?_, insn_fall hpc hst rfl⟩

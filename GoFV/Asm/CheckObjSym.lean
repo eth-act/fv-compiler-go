@@ -75,6 +75,9 @@ inductive Ex where
   /-- The low `S`/`D` part of vector register `V r` (`r < 32`) before the Prog, zero-extended:
   `ft = 0` the low 32 bits, else the low 64 (`FMOV` to a general register, an `S`/`D` store). -/
   | vlo (ft : BitVec 2) (r : Nat)
+  /-- Vector register `V r` (`r < 32`) before the Prog, whole: the value of a `Q` store
+  (`eval128`); as a 64-bit value its low half. -/
+  | vq (r : Nat)
   /-- `FCVTZS`/`FCVTZU` (`u`) of the `S` (`ft = 0`) or `D` part of `V r` before the Prog into
   `m` bits, zero-extended (`exec`'s `fcvtInt` with `rmode` 3). -/
   | fcvtz (ft : BitVec 2) (u : Bool) (m : Nat) (r : Nat)
@@ -120,10 +123,17 @@ def eval (c : Ctx) : Ex → BitVec 64
   | .vlo ft r =>
     if ft = 0 then ((c.s.v (BitVec.ofNat 5 r)).setWidth 32).setWidth 64
     else (c.s.v (BitVec.ofNat 5 r)).setWidth 64
+  | .vq r => (c.s.v (BitVec.ofNat 5 r)).setWidth 64
   | .fcvtz ft u m r =>
     if ft = 0 then
       (GoFV.IEEE.toFixed .b32 ((c.s.v (BitVec.ofNat 5 r)).setWidth 32) u m .rz).setWidth 64
     else (GoFV.IEEE.toFixed .b64 ((c.s.v (BitVec.ofNat 5 r)).setWidth 64) u m .rz).setWidth 64
+
+/-- The 128 bits a store of the value writes the low `8 n` bits of: `vq r` all of `V r`, any
+other value zero-extended. -/
+def eval128 (c : Ctx) : Ex → BitVec 128
+  | .vq r => c.s.v (BitVec.ofNat 5 r)
+  | e => (eval c e).setWidth 128
 
 /-- A short rendering for rejection messages. -/
 def str : Ex → String
@@ -149,12 +159,13 @@ def str : Ex → String
   | .csel sf op op2 cc a b =>
     s!"csel{if op then "I" else ""}{if op2 then "+" else ""}{if sf then "" else "W"}_{cc.toNat}({str a},{str b})"
   | .vlo ft r => s!"vlo{ft.toNat}(V{r})"
+  | .vq r => s!"vq(V{r})"
   | .fcvtz ft u m r => s!"fcvtz{if u then "U" else "S"}{ft.toNat}_{m}(V{r})"
 
 /-- Whether the value reads general register `r` of the state before the Prog. -/
 def reads (r : Nat) : Ex → Bool
   | .x q => q == r
-  | .sp | .k _ | .sym _ | .vlo .. | .fcvtz .. => false
+  | .sp | .k _ | .sym _ | .vlo .. | .vq _ | .fcvtz .. => false
   | .ld _ a | .shift _ _ _ a | .ext _ _ a | .lo32 a | .sext _ a | .page a | .dp1 _ _ a
   | .inv _ a => reads r a
   | .add a b | .addSub _ _ a b | .logical _ _ a b | .bfm _ _ _ _ a b | .csel _ _ _ _ a b
@@ -166,7 +177,7 @@ scratch) and `X30` (the link register), or a vector register: the registers a P0
 machine state agree on. -/
 def regsOK : Ex → Bool
   | .x r => r < 31 && r != 27 && r != 30
-  | .sp | .k _ | .sym _ | .vlo .. | .fcvtz .. => true
+  | .sp | .k _ | .sym _ | .vlo .. | .vq _ | .fcvtz .. => true
   | .ld _ a | .shift _ _ _ a | .ext _ _ a | .lo32 a | .sext _ a | .page a | .dp1 _ _ a
   | .inv _ a => regsOK a
   | .add a b | .addSub _ _ a b | .logical _ _ a b | .bfm _ _ _ _ a b | .csel _ _ _ _ a b
@@ -405,8 +416,8 @@ end Fl
 
 /-- The effect of a Prog (or of the words encoded for it) so far, over the state before it:
 general registers written (latest first), `SP`, the flags, the loads (latest first), the
-stores (in order: address, bytes, value; the value's low `8 n` bits are stored) and the vector
-registers written (latest first). -/
+stores (in order: address, bytes, value; the low `8 n` bits of the value's `Ex.eval128` are
+stored) and the vector registers written (latest first). -/
 structure Sym where
   x : List (Nat × Ex) := []
   sp : Ex := .sp
@@ -543,24 +554,28 @@ def symCsel (σ : Sym) (sf op op2 : Bool) (rm : Reg) (cond : BitVec 4) (rn rd : 
 
 /-! ### SIMD&FP -/
 
-/-- The format of an `S`/`D` store's value (`Ex.vlo`): 4 bytes the low 32 bits, 8 the low 64; a
-store of another size (a `B`/`H` or `Q` register) is not modelled. -/
-def vStoreFt (n : Nat) : Except String (BitVec 2) :=
-  if n = 4 then pure 0 else if n = 8 then pure 1 else throw "SIMD&FP store of other than 4 or 8 bytes"
+/-- The value an `n`-byte SIMD&FP store of `V r` writes: the `S` part (4 bytes, `Ex.vlo 0`), the
+`D` part (8, `Ex.vlo 1`) or the whole register (16, `Ex.vq`). -/
+def vStoreEx (n r : Nat) : Ex := if n = 16 then .vq r else .vlo (if n = 4 then 0 else 1) r
+
+/-- `vStoreEx` for a store of 4, 8 or 16 bytes; a `B`/`H` store is not modelled. -/
+def vStoreVal (n r : Nat) : Except String Ex :=
+  if n = 4 ∨ n = 8 ∨ n = 16 then pure (vStoreEx n r)
+  else throw "SIMD&FP store of other than 4, 8 or 16 bytes"
 
 /-- The symbolic SIMD&FP single-register access of `ldst` at address `a` (no write-back): a load
-writes `V rt` (`VEx.ld`), a store stores the low part of `V rt` before the Prog. -/
+writes `V rt` (`VEx.ld`), a store stores `vStoreEx` of `V rt` before the Prog. -/
 def symVAccess (σ : Sym) (size opc : BitVec 2) (rt : Nat) (a : Ex) : Except String Sym := do
   let n := accessBytes size true opc
   if opc.getLsbD 0 then
     let (σ, _) ← σ.load a n
     pure (σ.wV rt (.ld n a))
   else
-    let ft ← vStoreFt n
-    let v ← σ.vEx rt (.vlo ft rt)
+    let e ← vStoreVal n rt
+    let v ← σ.vEx rt e
     pure (σ.store a n v)
 
-/-- The symbolic SIMD&FP `ldstPair` (`LDP`/`STP` of `S`, `D`, `Q`; `Q` stores not modelled). -/
+/-- The symbolic SIMD&FP `ldstPair` (`LDP`/`STP` of `S`, `D`, `Q`). -/
 def symVPair (σ : Sym) (opc mode : BitVec 2) (ld : Bool) (imm7 : BitVec 7) (rt2 rn rt : Reg) :
     Except String Sym := do
   let n := 4 * 2 ^ opc.toNat
@@ -573,9 +588,9 @@ def symVPair (σ : Sym) (opc mode : BitVec 2) (ld : Bool) (imm7 : BitVec 7) (rt2
       let (σ2, _) ← σ1.load a2 n
       pure ((σ2.wV rt.toNat (.ld n a)).wV rt2.toNat (.ld n a2))
     else do
-      let ft ← vStoreFt n
-      let v1 ← σ.vEx rt.toNat (.vlo ft rt.toNat)
-      let v2 ← σ.vEx rt2.toNat (.vlo ft rt2.toNat)
+      let e ← vStoreVal n rt.toNat
+      let v1 ← σ.vEx rt.toNat e
+      let v2 ← σ.vEx rt2.toNat (vStoreEx n rt2.toNat)
       pure ((σ.store a n v1).store a2 n v2)
   pure (if mode = 2 then σ' else σ'.wXsp rn.toNat (Ex.mkAdd base (.k off)))
 

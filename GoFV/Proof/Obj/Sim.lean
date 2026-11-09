@@ -176,7 +176,7 @@ theorem Ex.regsOK_reads {e : Ex} (h : e.regsOK = true) {r : Nat} (hr : e.reads r
     r < 31 ∧ r ≠ 27 ∧ r ≠ 30 := by
   induction e with
   | x q => simp [Ex.regsOK, Ex.reads] at h hr; omega
-  | sp | k | sym | vlo | fcvtz => simp [Ex.reads] at hr
+  | sp | k | sym | vlo | vq | fcvtz => simp [Ex.reads] at hr
   | ld _ a ih | shift _ _ _ a ih | ext _ _ a ih | lo32 a ih | sext _ a ih | page a ih
   | dp1 _ _ a ih | inv _ a ih =>
     exact ih (by simpa [Ex.regsOK] using h) (by simpa [Ex.reads] using hr)
@@ -269,7 +269,13 @@ theorem storesMem_rel {f : BitVec 64 → BitVec 64} {s t : MState} (hR : ObjRel 
   | (a, n, v) :: st, m, h => by
     have ha := (h (a, n, v) (by simp)).1
     have hv := (h (a, n, v) (by simp)).2
-    simp only [storesMem, eval_rel hR sym ha, eval_rel hR sym hv]
+    have hv' : v.eval128 ⟨t, sym⟩ = v.eval128 ⟨s, sym⟩ :=
+      Ex.eval128_congr (c := ⟨t, sym⟩) (c' := ⟨s, sym⟩) rfl hR.sp hR.mem hR.nzcv hR.v v
+        fun r hr => by
+          obtain ⟨h31, h27, h30⟩ := Ex.regsOK_reads hv hr
+          obtain ⟨h27', h30'⟩ := reg_ne_of h31 h27 h30
+          exact hR.x _ h27' h30'
+    simp only [storesMem, eval_rel hR sym ha, hv']
     exact storesMem_rel hR sym st _ fun x hx => h x (by simp [hx])
 
 theorem holds_init (c : Ctx) : Holds c {} c.s where

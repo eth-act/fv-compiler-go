@@ -255,10 +255,10 @@ def wbP (wb : Option (Int × Ex)) : Except String Sym :=
 def fpFt (n : Nat) : BitVec 2 := if n == 4 then 0 else 1
 
 /-- `FMOVS`/`FMOVD`/`FMOVQ` (`movMem`'s SIMD&FP forms, `n` bytes): loads (all address forms,
-with write-back), `S`/`D` stores, `S`/`D` moves between vector registers and from or to a
-general register, constants. A store's value and a move to a general register read the `S`/`D`
-part of the vector register (`Ex.vlo`), a vector move is `FMOV`'s `fp1Op` of opcode 0. `Q`
-stores and `Q` register moves are not modelled. -/
+with write-back), stores, `S`/`D` moves between vector registers and from or to a general
+register, constants. A store's value is `vStoreEx` of the vector register (its `S`/`D` part,
+`Ex.vlo`, or the whole `Q` register, `Ex.vq`), a move to a general register reads the `S`/`D`
+part, a vector move is `FMOV`'s `fp1Op` of opcode 0. `Q` register moves are not modelled. -/
 def fmovP (az ez : Int) (n : Nat) (p : Prog) : Except String (Sym × PCtl) := do
   match p.from_.type, p.to.type with
   | .MEM, .REG =>
@@ -266,10 +266,9 @@ def fmovP (az ez : Int) (n : Nat) (p : Prog) : Except String (Sym × PCtl) := do
     let σ ← wbP wb
     return (← wVP { σ with loads := (a, n) :: σ.loads } p.to.reg (.ld n a), .fall)
   | .REG, .MEM =>
-    if n == 16 then throw "FMOVQ store"
     let (a, wb) ← memP az ez p.scond p.to
     let σ ← wbP wb
-    return (σ.store a n (.vlo (fpFt n) (← vP p.from_.reg)), .fall)
+    return (σ.store a n (vStoreEx n (← vP p.from_.reg)), .fall)
   | .REG, .REG =>
     if n == 16 then throw "FMOVQ between registers"
     match fpIdx? p.from_.reg, fpIdx? p.to.reg with
@@ -280,20 +279,19 @@ def fmovP (az ez : Int) (n : Nat) (p : Prog) : Except String (Sym × PCtl) := do
   | .FCONST, .REG => return (← wVP {} p.to.reg (.k (← fconst (fpFt n) p.from_)), .fall)
   | t, u => throw s!"{p.as.name} operands {t.name},{u.name}"
 
-/-- `FLDPS`/`FLDPD`/`FLDPQ`, `FSTPS`/`FSTPD` (`pairOp`'s SIMD&FP forms, `n` bytes each): two
-loads, or two stores of the `S`/`D` parts (`Ex.vlo`). `FSTPQ` is not modelled. -/
+/-- `FLDPS`/`FLDPD`/`FLDPQ`, `FSTPS`/`FSTPD`/`FSTPQ` (`pairOp`'s SIMD&FP forms, `n` bytes each):
+two loads, or two stores of `vStoreEx` of the registers (`Ex.vlo`, `Ex.vq`). -/
 def fpairP (az ez : Int) (ld : Bool) (n : Nat) (p : Prog) : Except String (Sym × PCtl) := do
   let (memA, regs) := if ld then (p.from_, p.to) else (p.to, p.from_)
   if regs.type != .REGREG then throw s!"pair operand {regs.type.name}"
-  if !ld && n == 16 then throw "FSTPQ"
   let (a, wb) ← memP az ez p.scond memA
   let σ ← wbP wb
   let a2 := Ex.mkAdd a (.k (BitVec.ofNat 64 n))
   if ld then
     let σ ← wVP { σ with loads := (a2, n) :: (a, n) :: σ.loads } regs.reg (.ld n a)
     return (← wVP σ regs.offset (.ld n a2), .fall)
-  let ft := fpFt n
-  return ((σ.store a n (.vlo ft (← vP regs.reg))).store a2 n (.vlo ft (← vP regs.offset)), .fall)
+  return ((σ.store a n (vStoreEx n (← vP regs.reg))).store a2 n (vStoreEx n (← vP regs.offset)),
+    .fall)
 
 /-- A SIMD&FP data-processing opcode `progEffect` models by name, with the fields of its
 encoding: the format `ft` (0 single, 1 double), the opcode, a conversion's signedness `u` and

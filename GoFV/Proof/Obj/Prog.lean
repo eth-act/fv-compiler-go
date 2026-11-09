@@ -51,7 +51,7 @@ private structure ERel (c : Ctx) (e : Eff) (σ : Sym) : Prop where
   vlt : ∀ q ∈ σ.v, q.1 < 32
   loads : e.loads = σ.loads.map (fun q => (q.1.eval c, q.2))
   stores : e.stores = σ.stores.map
-    (fun q => (q.1.eval c, q.2.1, (q.2.2.eval c).toNat % 2 ^ (8 * q.2.1)))
+    (fun q => (q.1.eval c, q.2.1, (q.2.2.eval128 c).toNat % 2 ^ (8 * q.2.1)))
 
 private theorem erel_init (c : Ctx) : ERel c {} {} :=
   ⟨rfl, by simp, rfl, rfl, rfl, by simp, rfl, rfl⟩
@@ -126,13 +126,13 @@ private theorem apply_v {c : Ctx} {e : Eff} {l : List (Nat × VEx)} {s : MState}
       simp only [hne, ↓reduceIte, List.lookup, hb]
       exact ih
 
-private theorem pg_ofNat_mod (n : Nat) (x : BitVec 64) :
+private theorem pg_ofNat_mod {w : Nat} (n : Nat) (x : BitVec w) :
     BitVec.ofNat (8 * n) (x.toNat % 2 ^ (8 * n)) = x.setWidth (8 * n) := by
   apply BitVec.eq_of_toNat_eq
   simp
 
 private theorem apply_mem {c : Ctx} (l : List (Ex × Nat × Ex)) (m : Memory) :
-    (l.map (fun q => (q.1.eval c, q.2.1, (q.2.2.eval c).toNat % 2 ^ (8 * q.2.1)))).foldl
+    (l.map (fun q => (q.1.eval c, q.2.1, (q.2.2.eval128 c).toNat % 2 ^ (8 * q.2.1)))).foldl
       (fun m (q : BitVec 64 × Nat × Nat) => writeMem m q.1 q.2.1 (BitVec.ofNat (8 * q.2.1) q.2.2)) m =
       storesMem c l m := by
   induction l generalizing m with
@@ -278,6 +278,17 @@ private theorem xP_eval {L : Link} {s : MState} {p : Prog} {r : Int} {a : Ex} (h
         · next _ heq' => exact absurd (Option.some.inj heq') h31
         · next _ i' _ heq' => cases heq'; cases h; simp only [h31, ↓reduceIte]; rfl
         · next _ heq' => cases heq'
+
+/-- A register operand `progSym` accepts is not a whole vector register: a store writes its
+value zero-extended. -/
+private theorem xP_eval128 {r : Int} {a : Ex} (h : xP r = .ok a) (c : Ctx) :
+    (a.eval128 c).toNat = (a.eval c).toNat := by
+  have : a.eval128 c = (a.eval c).setWidth 128 := by
+    unfold xP at h
+    split at h
+    · cases h; rfl
+    · split at h <;> cases h <;> rfl
+  rw [this, BitVec.toNat_setWidth_of_le (by omega)]
 
 private theorem trunc_trunc (sf : Bool) (x : BitVec 64) :
     ProgOp.trunc sf (ProgOp.trunc sf x) = ProgOp.trunc sf x := by
@@ -522,10 +533,12 @@ private theorem fmov_xv {n : Nat} (hn : n = 4 ∨ n = 8) (x : BitVec 64) :
     simp [ProgOp.trunc, BitVec.toNat_setWidth] <;> omega
   · simp [ProgOp.maskN]
 
-/-- The bytes an `S`/`D` store writes: the low `n` bytes of the vector register (`Ex.vlo`). -/
-private theorem vlo_mod {n : Nat} (hn : n = 4 ∨ n = 8) (c : Ctx) (r : Nat) :
-    ((Ex.vlo (fpFt n) r).eval c).toNat % 2 ^ (8 * n) = (c.s.v (BitVec.ofNat 5 r)).toNat % 2 ^ (8 * n) := by
-  rcases hn with rfl | rfl <;> simp [Ex.eval, fpFt, BitVec.toNat_setWidth] <;> omega
+/-- The bytes a SIMD&FP store writes: the low `n` bytes of the vector register (`vStoreEx`). -/
+private theorem vstore_mod {n : Nat} (hn : n = 4 ∨ n = 8 ∨ n = 16) (c : Ctx) (r : Nat) :
+    ((vStoreEx n r).eval128 c).toNat % 2 ^ (8 * n) =
+      (c.s.v (BitVec.ofNat 5 r)).toNat % 2 ^ (8 * n) := by
+  rcases hn with rfl | rfl | rfl <;>
+    simp [vStoreEx, Ex.eval128, Ex.eval, BitVec.toNat_setWidth] <;> omega
 
 private theorem pg_ofInt_toNat {off : Int} (h : ¬ off < 0) :
     BitVec.ofInt 64 off = BitVec.ofNat 64 off.toNat := by
@@ -904,10 +917,6 @@ private theorem fam_fmov {n : Nat} {sg : Bool}
   · -- store
     next hf ht =>
     simp only [hf, ht] at he
-    cases h16 : n == 16
-    case true => simp only [h16, ↓reduceIte] at h; cases h
-    have hn' := n16 hn h16
-    simp only [h16, Bool.false_eq_true, ↓reduceIte] at h
     obtain ⟨⟨a, wb⟩, hma, h⟩ := pg_bind_ok h
     rw [memP_eval hma ht haz hez, pg_ok_bind] at he
     rcases wb with _ | ⟨r0, b⟩
@@ -917,7 +926,7 @@ private theorem fam_fmov {n : Nat} {sg : Bool}
       simp only [(vP_eval hr).1, pg_ok_bind] at he
       obtain rfl := pg_ok_inj he
       refine .inl ⟨⟨rfl, by simp [Sym.store], rfl, rfl, rfl, by simp [Sym.store], rfl, ?_⟩, rfl⟩
-      simp only [Sym.store, List.nil_append, List.map_cons, List.map_nil, vlo_mod hn']
+      simp only [Sym.store, List.nil_append, List.map_cons, List.map_nil, vstore_mod hn]
       rfl
     · simp only [wbP, Option.map] at h he
       obtain ⟨σ1, hσ1, h⟩ := pg_bind_ok h
@@ -929,7 +938,7 @@ private theorem fam_fmov {n : Nat} {sg : Bool}
       obtain ⟨hR1, -, hs1, -, hpc1⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he1 rfl
       refine .inl ⟨⟨hR1.x, hR1.xlt, hR1.sp, hR1.fl, hR1.v, hR1.vlt, hR1.loads, ?_⟩, hpc1⟩
       simp only [Sym.store, hR1.stores, hs1, List.nil_append, List.map_cons, List.map_nil,
-        vlo_mod hn']
+        vstore_mod hn]
       rfl
   · -- register move
     next hf ht =>
@@ -972,7 +981,7 @@ private theorem fam_fmov {n : Nat} {sg : Bool}
     exact .inl ⟨hR, hpc⟩
   · cases h
 
-/-- `FLDPS`/`FLDPD`/`FLDPQ`, `FSTPS`/`FSTPD` (`fpairP`). -/
+/-- `FLDPS`/`FLDPD`/`FLDPQ`, `FSTPS`/`FSTPD`/`FSTPQ` (`fpairP`). -/
 private theorem fam_fpair {ld : Bool} {n : Nat} {sg : Bool}
     (hp : ProgOp.pairOp p.as.name = some (ld, n, sg, true)) (hm0 : ProgOp.movMem p.as.name = none)
     (h : fpairP az ez ld n p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e)
@@ -988,19 +997,15 @@ private theorem fam_fpair {ld : Bool} {n : Nat} {sg : Bool}
     by_cases hr : p.from_.type = .REGREG
     case neg => simp only [hr, bne_iff_ne, ne_eq, not_false_eq_true, ↓reduceIte] at h; cases h
     simp only [hr, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte] at h he
-    cases h16 : n == 16
-    case true => simp only [h16, ↓reduceIte] at h; cases h
-    have hn' := n16 hn h16
-    simp only [h16, Bool.false_eq_true, ↓reduceIte] at h
     obtain ⟨⟨a, wb⟩, hma, h⟩ := pg_bind_ok h
     obtain ⟨r', hm', he⟩ := pg_bind_ok he
     rw [memP_eval hma (mem_type hm') haz hez] at hm'
     obtain rfl := pg_ok_inj hm'
-    have hst : ∀ (r1 r2 : Nat), ((Ex.vlo (fpFt n) r1).eval ⟨s, L.sym⟩).toNat % 2 ^ (8 * n) =
+    have hst : ∀ (r1 r2 : Nat), ((vStoreEx n r1).eval128 ⟨s, L.sym⟩).toNat % 2 ^ (8 * n) =
         (s.v (BitVec.ofNat 5 r1)).toNat % 2 ^ (8 * n) ∧
-        ((Ex.vlo (fpFt n) r2).eval ⟨s, L.sym⟩).toNat % 2 ^ (8 * n) =
+        ((vStoreEx n r2).eval128 ⟨s, L.sym⟩).toNat % 2 ^ (8 * n) =
         (s.v (BitVec.ofNat 5 r2)).toNat % 2 ^ (8 * n) :=
-      fun r1 r2 => ⟨vlo_mod hn' _ r1, vlo_mod hn' _ r2⟩
+      fun r1 r2 => ⟨vstore_mod hn _ r1, vstore_mod hn _ r2⟩
     rcases wb with _ | ⟨r0, b⟩
     · simp only [wbP, Option.map, pg_pure, pg_ok_bind] at h he
       obtain ⟨x1, hx1, h⟩ := pg_bind_ok h
@@ -1121,7 +1126,7 @@ private theorem fam_mov {n : Nat} {sg fp : Bool}
       simp only [(xP_eval hx).1, pg_ok_bind] at he
       obtain rfl := pg_ok_inj he
       exact .inl ⟨⟨rfl, by simp [Sym.store], rfl, rfl, rfl, by simp [Sym.store], rfl,
-        by simp [Sym.store]⟩, rfl⟩
+        by simp [Sym.store, xP_eval128 hx]⟩, rfl⟩
     · simp only [Option.map] at h he
       obtain ⟨σ1, hσ1, h⟩ := pg_bind_ok h
       obtain ⟨x, hx, h⟩ := pg_bind_ok h
@@ -1131,7 +1136,7 @@ private theorem fam_mov {n : Nat} {sg fp : Bool}
       obtain rfl := pg_ok_inj he
       obtain ⟨hR1, -, hs1, -, hpc1⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he1 rfl
       refine .inl ⟨⟨hR1.x, hR1.xlt, hR1.sp, hR1.fl, hR1.v, hR1.vlt, hR1.loads, ?_⟩, hpc1⟩
-      simp [Sym.store, hR1.stores, hs1]
+      simp [Sym.store, hR1.stores, hs1, xP_eval128 hx]
   · -- register move
     next hf ht =>
     obtain ⟨x, hx, h⟩ := pg_bind_ok h
@@ -1217,7 +1222,7 @@ private theorem fam_pair {ld : Bool} {n : Nat} {sg fp : Bool}
       simp only [(xP_eval hx1).1, (xP_eval hx2).1, pg_ok_bind] at he
       obtain rfl := pg_ok_inj he
       exact .inl ⟨⟨rfl, by simp [Sym.store], rfl, rfl, rfl, by simp [Sym.store], rfl,
-        by simp [Sym.store, Ex.eval_mkAdd, Ex.eval]⟩, rfl⟩
+        by simp [Sym.store, Ex.eval_mkAdd, Ex.eval, xP_eval128 hx1, xP_eval128 hx2]⟩, rfl⟩
     · simp only [Option.map] at h he
       obtain ⟨σ1, hσ1, h⟩ := pg_bind_ok h
       obtain ⟨x1, hx1, h⟩ := pg_bind_ok h
@@ -1228,7 +1233,7 @@ private theorem fam_pair {ld : Bool} {n : Nat} {sg fp : Bool}
       obtain rfl := pg_ok_inj he
       obtain ⟨hR1, -, hs1, -, hpc1⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he1 rfl
       refine .inl ⟨⟨hR1.x, hR1.xlt, hR1.sp, hR1.fl, hR1.v, hR1.vlt, hR1.loads, ?_⟩, hpc1⟩
-      simp [Sym.store, hR1.stores, hs1, Ex.eval_mkAdd, Ex.eval]
+      simp [Sym.store, hR1.stores, hs1, Ex.eval_mkAdd, Ex.eval, xP_eval128 hx1, xP_eval128 hx2]
   · -- load
     by_cases hr : p.to.type = .REGREG
     case neg => simp only [hr, bne_iff_ne, ne_eq, not_false_eq_true, ↓reduceIte] at h; cases h
@@ -1668,7 +1673,7 @@ local macro "excl_st_tac" : tactic => `(tactic| (
   simp only [(xP_eval hx).1, pg_ok_bind, pg_pure] at he
   obtain rfl := pg_ok_inj he
   exact .inl ⟨⟨rfl, by simp [Sym.store], rfl, rfl, rfl, by simp [Sym.store], rfl,
-    by simp [Sym.store]⟩, rfl⟩))
+    by simp [Sym.store, xP_eval128 hx]⟩, rfl⟩))
 
 /-- `LDAR*`/`STLR*` (`exclOp`). -/
 private theorem fam_excl {az ez : Int} {ld : Bool} {n : Nat} (haz : L.autosize = az)
