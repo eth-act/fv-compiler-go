@@ -1,6 +1,7 @@
 import GoFV.Proof.Obj.Whole
 import GoFV.Proof.Witness.ObjWhole
 import GoFV.Proof.Witness.GenG9
+import GoFV.Proof.Witness.GenG10
 
 /-!
 # Non-vacuity witnesses: panics down to the machine words (`obj_whole_panic`, `g30_callPanic`)
@@ -24,8 +25,13 @@ holds (the nil check's `NilPre` on a nil pointer) and `RunPanicPre` is the nil c
 `g30_callPanic` gives the P0 run through the `CALL` to the symbol, where `runProg` panics with the
 same panic (`PPanics`).
 
+**An interface call whose callee panics.** `Locker.Lock` (`GenG10`: `checkG30` accepts it), whose
+`v11 = CALLinter` calls the code pointer in `R2` (the start of `sync.(*Mutex).Lock`): in `envP` the
+callee panics with `nilDeref`; with `Hp` (`ICallPanicOK`), `g30_icallPanic` gives the P0 run
+through `CALL (R2)` to the callee's code at `symA`, where `runProg` panics with the same panic.
+
 By compiled evaluation (`native_decide`, listed in `scripts/axioms-allowlist.txt`;
-`panic_obj_facts`, `panic_lc_facts`, `callPanic_facts`).
+`panic_obj_facts`, `panic_lc_facts`, `callPanic_facts`, `icallPanic_facts`).
 -/
 
 namespace GoFV.Proof.Witness.ObjPanic
@@ -396,8 +402,8 @@ theorem panic_of {lc : LocCtx} (hf : lcFacts lc = true) :
       · intro h; rw [hop] at h; cases h
       · intro _ _ _ _ hl; rw [hop] at hl; cases hl
     exact ⟨by rw [hop]; rfl, hg, fun s' hs' => by rw [hpan] at hs'; cases hs'⟩
-  have hPP : RunPanicPre GoFV.Proof.Witness.plRunEnv GenG2.H0 lc GenG7.g L (E0 lc)
-      lc.ctx.f.entry 2 sI := by
+  have hPP : RunPanicPre GoFV.Proof.Witness.plRunEnv GenG2.H0 lc GenG7.g L
+      (endP L.text ps.toList) (E0 lc) lc.ctx.f.entry 2 sI := by
     intro b i s blk' hr hb' id v e mm hi hv _
     obtain ⟨rfl, rfl, rfl⟩ := hreach _ _ _ hr
     rw [hb2] at hb'
@@ -501,5 +507,55 @@ theorem g30_callPanic_witness :
     (GenG9.locMatch0 5) (GenG9.g9Inv0 5 hk0) ?_⟩
   intro _ _ _ _ _ _ _ _ _ m₁ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
   exact ⟨m₁, rfl⟩
+
+/-! ## `Locker.Lock`: an interface call whose callee panics -/
+
+/-- What compiled evaluation checks on `Locker.Lock`: `checkG30` accepts it with `checkG10`'s
+tables, and the interface call `v11` panics with `nilDeref` from `GenG10.s0` in `envP`. -/
+def icallFacts : Bool :=
+  (checkG30 GenG10.lc GenG10.ps GenG10.bs GenG10.g).toOption == some (GenG10.tab, GenG10.kt) &&
+    isNilPanic (stepLoc envP GenG10.lc GenG10.s0 (GenG10.val 11))
+
+theorem icallPanic_facts : icallFacts = true := by
+  native_decide
+
+/-- The callee contract of `Hp` at an interface call whose code pointer reads as the start of a
+global: the PC is `symA` (the globals' address), no Prog address nor the return address, and the
+hook panics with `nilDeref` (stated for any context, so that the kernel never evaluates the parsed
+function). -/
+theorem icallPanicOKc {lc' : LocCtx} {L' : Link} {v : Value} {E' : MatchEnv} {ret : BitVec 64}
+    (hglob : ∀ n, E'.ι (.global n) = some GenG2.symA) (hret : ret ≠ GenG2.symA)
+    (haddr : ∀ id, L'.addr id ≠ some GenG2.symA) {s : LocState} {m : MState}
+    (hcode : GenG10.codeGlobal lc' s v = true) : ICallPanicOK Hp E' L' ret lc' s v m .nilDeref := by
+  intro n cabi ins outs a0 rc q args mm m₁ _ _ _ ha0 _ _ _ hrel
+  intros
+  obtain ⟨nm, hrd⟩ := GenG10.codeGlobal_spec hcode ha0
+  obtain ⟨a, ha, hpca⟩ := hrel _ hrd
+  rw [hglob] at ha
+  cases ha
+  have hpc : m₁.pc = GenG2.symA := by rw [hpca]; simp
+  exact ⟨by rw [hpc]; exact Ne.symm hret, fun id => by rw [hpc]; exact haddr id, m₁, rfl⟩
+
+/-- **An interface call whose callee panics** (`g30_icallPanic` on `Locker.Lock`): `runLoc`'s step
+of the interface call `v11` panics with `nilDeref` (the callee's panic), and from the `LocMatch`ed
+machine state before it the P0 Progs run through `CALL (R2)` to the callee's code at `symA`, where
+`runProg` panics with `nilDeref` (the hook `Hp`, `ICallPanicOK`). -/
+theorem g30_icallPanic_witness :
+    ∃ mm', stepLoc envP GenG10.lc GenG10.s0 (GenG10.val 11) = .panic .nilDeref mm' ∧
+      ∃ m', PStar Hp GenG10.L GenG10.ps.toList 0 GenG10.m0 m' ∧
+        PPanics Hp GenG10.L GenG10.ps.toList 0 m' .nilDeref := by
+  have hf := icallPanic_facts
+  simp only [icallFacts, Bool.and_eq_true, beq_iff_eq] at hf
+  obtain ⟨hres, hpan⟩ := hf
+  obtain ⟨mm', hpan⟩ := isNilPanic_spec hpan
+  have hc : checkG30 GenG10.lc GenG10.ps GenG10.bs GenG10.g = .ok (GenG10.tab, GenG10.kt) := by
+    revert hres; cases checkG30 GenG10.lc GenG10.ps GenG10.bs GenG10.g <;> simp [Except.toOption]
+  obtain ⟨hc10, hav, hsl, hm1, hb, hv11, -, hi5, -, hop11, -, -, hcode, hk0, hk2, -⟩ :=
+    GenG10.facts
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hlt, -, -⟩ := checkG10_spec hc10
+  exact ⟨mm', hpan, g30_icallPanic (n := 1) hc
+    { env := GenG10.g10Env hc10 hav hsl, memeqs := fun h => by cases h } hm1 hb hi5 hv11
+    (by rw [hop11]; rfl) GenG10.locMatch0 (GenG10.g10Inv0 hk0 hk2)
+    (icallPanicOKc (fun _ => rfl) (by decide) (GenG10.addr_ne_symA hlt) hcode)⟩
 
 end GoFV.Proof.Witness.ObjPanic
