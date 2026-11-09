@@ -1082,18 +1082,19 @@ declarations, then the autos the pipeline created). From the stock `.prog` file 
 input view is read (definitions, config, `Dcl` at `AllocFrame`'s start, `genin`). The stock
 column runs the same back end on the stock `trim` function of every function.
 
-| quick-v10 (9,297 functions, 6 min 46 s; `agent/objg49` on main 1169f32c (G49 on G51), `--jobs 2`) | pipeline output | share | stock `trim` |
+| quick-v10 (9,297 functions, 5 min 23 s; `agent/objg49` on main 7641ba1d (G49 on G51, #662's `checkObj`), `--jobs 2`) | pipeline output | share | stock `trim` |
 | --- | ---: | ---: | ---: |
-| fully verified (Phase 2, through `trim`) | 7,834 | 84.26% | - |
-| … genssa and `Flushplist` ran | 7,834 | 84.26% | 9,297 |
+| fully verified (Phase 2, through `trim`) | 7,845 | 84.38% | - |
+| … genssa and `Flushplist` ran | 7,845 | 84.38% | 9,297 |
 | … ∧ `checkG49` ∧ `entryStoresOK` | 6,344 | 68.23% | 7,125 |
 | … ∧ `checkG49` ∧ `entryStoresOK` ∧ `retRegsOK` | 6,344 | 68.23% | 7,125 |
-| … ∧ `checkObj` | 7,067 | 76.01% | 7,741 |
-| **… ∧ `checkG49` ∧ `entryStoresOK` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach`)** | **6,124** | **65.87%** | 6,620 |
-| … end to end, pipeline output identical to stock after `trim` | 5,184 | 55.75% | - |
+| … ∧ `checkObj` | 7,427 | 79.88% | 8,464 |
+| **… ∧ `checkG49` ∧ `entryStoresOK` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach`)** | **6,283** | **67.58%** | 6,977 |
+| … end to end, pipeline output identical to stock after `trim` | 5,319 | 57.21% | - |
 
-The composition on G49 (frame variables in `Blk.local` blocks; the entry stores) adds 113 over
-G51's 6,011. `checkG49` accepts 6,359 fully verified functions; 48 of them have a pending window
+With #662's `checkObj`, the composition on G49 counts 6,283 end to end (65.87%, 6,124, with main's
+older `checkObj` on 1169f32c). The composition on G49 (frame variables in `Blk.local` blocks; the
+entry stores) added 113 over G51's 6,011. `checkG49` accepts 6,359 fully verified functions; 48 of them have a pending window
 (a register-assigned parameter in a `Blk.local` block that the function accesses), of which
 `entryStoresOK` rejects 15 (`entry stores (#) do not cover the pending window`, e.g.
 `runtime.(*Pinner).Pin`: no entry store at the head of the entry block) and 33 are end to end
