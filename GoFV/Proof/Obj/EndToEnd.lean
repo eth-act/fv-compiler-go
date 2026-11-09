@@ -39,9 +39,9 @@ which is `finish` of its body `runLoopLoc` from `locInit`; when the body returns
 caller's `SP`, `g` and frame pointer (`MachRet`), `rs` in the result registers and `mm` injected
 into the memory (`ResultRel`); when the body panics with `pe` and the panic premises hold (the
 trusted `HookPanicMap` and `BoundsOK`, and `RunPanicPre`: the run's panics come from nil checks,
-bounds checks and static calls whose callee panics by the trusted `CallPanicOK`), `runMach`
-panics with `pe` or, for a bounds check, with the runtime's report of the same failure
-(`BoundsAgree`).
+stores that fault in the nil page, bounds checks and static, interface or closure calls whose
+callee panics by the trusted `CallPanicOK`, `ICallPanicOK`), `runMach` panics with `pe` or, for
+a bounds check, with the runtime's report of the same failure (`BoundsAgree`).
 
 Premises of the machine side: those of `obj_whole_ret` (trusted: `HookMap`, and in `RunPre` the
 callee contracts `CallOK`, `CallOKZ`, `ICallOK`, `WbOK`, `CloOK`, `MemEqOK`; the caller's side:
@@ -92,7 +92,8 @@ theorem verified_mach
         ∃ E t' n, E0.Extends E ∧ runMach H code (s0.x 30) n s0 = .returned t' ∧
           MachRet s0 t' ∧ ResultRel E outs rs mm t') ∧
       (∀ pe mm, raw = .panicked pe mm → HookPanicMap H L ps.toList (ObjEnv.map otab ps L base) →
-        BoundsOK H g L ps.toList → RunPanicPre e H lc g L E0 lc.ctx.f.entry k sI →
+        BoundsOK H g L ps.toList →
+        RunPanicPre e H lc g L (endP L.text ps.toList) E0 lc.ctx.f.entry k sI →
         ∃ pe' n t', BoundsAgree pe pe' ∧ runMach H code (s0.x 30) n s0 = .panicked pe' t') := by
   obtain ⟨fuel', href⟩ := verifiedPipelineFull_refines hpipe hv hP hn ha hnp hd
   have hd' : (runLoc e r.st.tables r.st.func args mem fuel').Defined := href.defined_right

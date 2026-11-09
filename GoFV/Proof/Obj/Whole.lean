@@ -1,4 +1,4 @@
-import GoFV.Proof.Obj.CallPanic
+import GoFV.Proof.Obj.StorePanic
 import GoFV.Proof.Pass.DeadRelL
 import GoFV.Proof.Obj.Results
 import GoFV.Proof.Obj.Frame
@@ -889,18 +889,22 @@ theorem obj_whole_ret (hc : checkG30 lc ps bstart g = .ok (tab, kt))
 /-! ## Panics -/
 
 /-- **The panic premise of the run** at every state it reaches from `(b0, i0, s0)`: a value
-whose step panics is a nil check, a bounds check (the runtime's bounds panic is the trusted
-`BoundsOK`, a premise of the whole run), or a static call whose callee panics as the trusted
-contract `CallPanicOK` says at every `LocMatch`ed machine state of an activation extending
-`E0`. -/
-def RunPanicPre (env : Env) (H : Hooks) (lc : LocCtx) (g : G2In) (L : Link) (E0 : MatchEnv)
-    (b0 : ID) (i0 : Nat) (s0 : LocState) : Prop :=
+whose step panics is a nil check, a store that faults in the nil page (`storeFaultOp`: no
+premise, the machine's store faults too), a bounds check (the runtime's bounds panic is the
+trusted `BoundsOK`, a premise of the whole run), a static call whose callee panics as the trusted
+contract `CallPanicOK` says, or an interface or closure call whose callee panics as the trusted
+`ICallPanicOK` says (P0's return address `ret`), at every `LocMatch`ed machine state of an
+activation extending `E0`. -/
+def RunPanicPre (env : Env) (H : Hooks) (lc : LocCtx) (g : G2In) (L : Link) (ret : BitVec 64)
+    (E0 : MatchEnv) (b0 : ID) (i0 : Nat) (s0 : LocState) : Prop :=
   ∀ b i s blk, LReach env lc b0 i0 s0 b i s → lc.ctx.f.block? b = some blk →
     ∀ id v e mm, blk.values[i]? = some id → lc.ctx.f.value? id = some v →
       stepLoc env lc s v = .panic e mm →
-      v.op = .ARM64LoweredNilCheck ∨ pbOp v.op = true ∨
+      v.op = .ARM64LoweredNilCheck ∨ storeFaultOp v.op = true ∨ pbOp v.op = true ∨
         (v.op = .ARM64CALLstatic ∧ ∀ E m, E0.Extends E → LocMatch E s b i m →
-          CallPanicOK H E g L lc s v m e)
+          CallPanicOK H E g L lc s v m e) ∨
+        ((icallLead v.op).isSome = true ∧ ∀ E m, E0.Extends E → LocMatch E s b i m →
+          ICallPanicOK H E L ret lc s v m e)
 
 theorem mapM_loop_ne_panic {α β : Type} {f : α → Res β} (hf : ∀ a e m, f a ≠ .panic e m) :
     ∀ (l : List α) (acc : List β) e m, List.mapM.loop f l acc ≠ .panic e m
@@ -967,9 +971,10 @@ theorem stepTermLoc_ne_panic {lc : LocCtx} {s : LocState} {blk : Block} {e : Pan
     · cases hc
   · cases h
 
-/-- One value whose step panics: a nil check, a bounds check or a static call whose callee
-panics, matched by machine steps to a state that panics alike (`BoundsAgree`: the same panic,
-or for a bounds check the runtime's report of the same failure). -/
+/-- One value whose step panics: a nil check, a store that faults, a bounds check, or a static,
+interface or closure call whose callee panics, matched by machine steps to a state that panics
+alike (`BoundsAgree`: the same panic, or for a bounds check the runtime's report of the same
+failure). -/
 theorem sim_valuePanic (hc : checkG30 lc ps bstart g = .ok (tab, kt))
     (hO : ObjEnv ps spills o otab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
@@ -980,18 +985,26 @@ theorem sim_valuePanic (hc : checkG30 lc ps bstart g = .ok (tab, kt))
     {t : MState} (hb : lc.ctx.f.block? b = some blk) (hi : blk.values[i]? = some id)
     (hv : lc.ctx.f.value? id = some v) (hs : stepLoc env lc s v = .panic e mm)
     (hS : SimAt lc g L ps tab kt E0 otab base b blk i s t)
-    (hpp : v.op = .ARM64LoweredNilCheck ∨ pbOp v.op = true ∨
+    (hpp : v.op = .ARM64LoweredNilCheck ∨ storeFaultOp v.op = true ∨ pbOp v.op = true ∨
       (v.op = .ARM64CALLstatic ∧ ∀ E m, E0.Extends E → LocMatch E s b i m →
-        CallPanicOK H E g L lc s v m e)) :
+        CallPanicOK H E g L lc s v m e) ∨
+      ((icallLead v.op).isSome = true ∧ ∀ E m, E0.Extends E → LocMatch E s b i m →
+        ICallPanicOK H E L (endP L.text ps.toList) lc s v m e)) :
     ∃ e', BoundsAgree e e' ∧ ∃ t', MStar H code retM t t' ∧ MPanics H code retM t' e' := by
   obtain ⟨E, m, hx, hE, hm, hinv, -, hR, hbid⟩ := hS
-  rcases hpp with hop | hop | ⟨hop, hok⟩
+  rcases hpp with hop | hop | hop | ⟨hop, hok⟩ | ⟨hop, hok⟩
   · obtain ⟨-, t', ht, hp⟩ := g30_obj_nilPanic hc hE hbid hb hi hv hop hm hinv hs hO hH hHP hR
+      (fun u _ => hic u)
+    exact ⟨e, Or.inl rfl, t', ht, hp⟩
+  · obtain ⟨-, t', ht, hp⟩ := g30_obj_storePanic hc hE hbid hb hi hv hop hm hinv hs hO hH hHP hR
       (fun u _ => hic u)
     exact ⟨e, Or.inl rfl, t', ht, hp⟩
   · exact g30_obj_boundsPanic hc hE hbid hb hi hv hop hm hinv hbok hs hO hH hHP hR
       (fun u _ => hic u)
   · exact ⟨e, Or.inl rfl, g30_obj_callPanic hc hE hbid hb hi hv hop hm hinv (hok E m hx hm) hO hH
+      hHP hR (fun u _ => hic u)⟩
+  · obtain ⟨n, hn⟩ := Option.isSome_iff_exists.1 hop
+    exact ⟨e, Or.inl rfl, g30_obj_icallPanic hc hE hbid hb hi hv hn hm hinv (hok E m hx hm) hO hH
       hHP hR (fun u _ => hic u)⟩
 
 /-- The values of a block from value `i` on, which panic. -/
@@ -1003,7 +1016,7 @@ theorem sim_valuesPanic (hc : checkG30 lc ps bstart g = .ok (tab, kt))
     (hic : ∀ u, ICallOut L ps.toList u)
     {b0 : ID} {i0 : Nat} {s0 : LocState}
     (hP : RunPre env H lc g L (endP L.text ps.toList) E0 b0 i0 s0)
-    (hPP : RunPanicPre env H lc g L E0 b0 i0 s0) {e : Panic} {mm : Mem}
+    (hPP : RunPanicPre env H lc g L (endP L.text ps.toList) E0 b0 i0 s0) {e : Panic} {mm : Mem}
     {b : ID} {blk : Block} (hb : lc.ctx.f.block? b = some blk) :
     ∀ (n i : Nat) (s : LocState) (t : MState), i + n = blk.values.size →
       LReach env lc b0 i0 s0 b i s → SimAt lc g L ps tab kt E0 otab base b blk i s t →
@@ -1050,7 +1063,7 @@ theorem sim_from_panic (hc : checkG30 lc ps bstart g = .ok (tab, kt))
     (hic : ∀ u, ICallOut L ps.toList u)
     {b0 : ID} {i0 : Nat} {sI : LocState}
     (hP : RunPre env H lc g L (endP L.text ps.toList) E0 b0 i0 sI)
-    (hPP : RunPanicPre env H lc g L E0 b0 i0 sI) {e : Panic} {mm : Mem} :
+    (hPP : RunPanicPre env H lc g L (endP L.text ps.toList) E0 b0 i0 sI) {e : Panic} {mm : Mem} :
     ∀ (fuel : Nat) (b : ID) (blk : Block) (i : Nat) (s : LocState) (t : MState),
       LReach env lc b0 i0 sI b i s → lc.ctx.f.block? b = some blk → i ≤ blk.values.size →
       SimAt lc g L ps tab kt E0 otab base b blk i s t →
@@ -1107,9 +1120,10 @@ theorem mstar_panicked {s0 t : MState} {e : Panic} (h : MStar H code retM s0 t)
 
 /-- **A whole function of slice G30, panicking, down to the machine words.** `obj_whole_ret`'s
 premises on the entry and the steps (`RunPre`), the trusted `HookPanicMap` and `BoundsOK`, and
-the panic premise `RunPanicPre` (the run's panics come from nil checks, bounds checks and static
-calls whose callee panics, `CallPanicOK`): if the run of `runLoc` panics with `e`, `runMach`
-panics with `e` (the nil-page fault of the nil check's `MOVB`, `sigpanic`; or the callee's hook)
+the panic premise `RunPanicPre` (the run's panics come from nil checks, stores that fault in the
+nil page, bounds checks and static, interface or closure calls whose callee panics,
+`CallPanicOK`, `ICallPanicOK`): if the run of `runLoc` panics with `e`, `runMach` panics with `e`
+(the nil-page fault of the nil check's `MOVB` or of the store, `sigpanic`; or the callee's hook)
 or, for a bounds check, with the runtime's report of the same failure (`BoundsAgree`). -/
 theorem obj_whole_panic (hc : checkG30 lc ps bstart g = .ok (tab, kt))
     {room : Nat} {s0 : MState} (hO : ObjEnv ps spills o otab L base code (s0.x 30))
@@ -1132,7 +1146,7 @@ theorem obj_whole_panic (hc : checkG30 lc ps bstart g = .ok (tab, kt))
     (hpc : ObjEnv.map otab ps L base (E0.pcOf lc.ctx.f.entry k) =
       base + BitVec.ofNat 64 (otab.offs[0]!))
     (hP : RunPre env H lc g L (endP L.text ps.toList) E0 lc.ctx.f.entry k sI)
-    (hPP : RunPanicPre env H lc g L E0 lc.ctx.f.entry k sI)
+    (hPP : RunPanicPre env H lc g L (endP L.text ps.toList) E0 lc.ctx.f.entry k sI)
     {fuel : Nat} {e : Panic} {mm : Mem}
     (hrun : runLoopLoc env lc fuel s lc.ctx.f.entry = .panicked e mm) :
     ∃ e' n t', BoundsAgree e e' ∧ runMach H code (s0.x 30) n s0 = .panicked e' t' := by
