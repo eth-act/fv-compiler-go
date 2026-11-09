@@ -689,6 +689,18 @@ same premises. No new trusted premise. Witness: `genG36_witness` (`ADD R0>>63, R
 `encoding/hex.DecodedLen`, which G35 rejects: from `x = -7`, the machine's `X1 = -6`). Coverage on
 quick-v10 (`lake exe gen-check`): 5,967 of 9,297 functions (64.18%), 159,085 values.
 
+## Phase 3: genssa, slice G37 (I7, #553)
+
+`GoFV.Proof.Gen.g37_value`, `GoFV.Proof.Gen.g37_term`, `GoFV.Proof.Gen.g37_nilPanic`,
+`GoFV.Proof.Gen.g37_boundsPanic` (`GoFV/Proof/Gen/G37.lean`): when slice G37 (`checkG37`: G36 with
+the multiplies and divides `UMULH`, `MULH`, `UDIV`, `DIV` of 64-bit arguments and `MULW`, `UDIVW`,
+`DIVW`, `UMULL` of arguments of at least 32 bits, the reversals `RBIT`, `REVW`, `REV16W`, the
+multiply-adds `MADD`, `MSUB`, `MADDW`, `MSUBW`, and `SBFX`) accepts a function, they are
+`g36_value`'s, `g36_term`'s, `g36_nilPanic`'s and `g36_boundsPanic`'s statements under the same
+premises. No new trusted premise. Witness: `genG37_witness` (`RBIT R0, R0` in `math/bits.Reverse`,
+which G36 rejects: from `x = 0x0f`, the machine's `X0 = 0xf000000000000000`). Coverage on quick-v10
+(`lake exe gen-check`): 6,099 of 9,297 functions (65.60%), 165,436 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g34_obj_value`, `g34_obj_term`, `g34_obj_nilPanic`, `g34_obj_boundsPanic`
