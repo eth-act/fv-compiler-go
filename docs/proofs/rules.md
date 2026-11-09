@@ -2338,6 +2338,25 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   fold also needs room for the second element (`Pat.addrOKL`: `offOK` of the offset + 16).
   Witness `mvq_lower`.
 
+- **Two 128-bit stores** (`:423`, `:431`, `:434`, #385; `RuleL.moveQ2Op`, `ValReplay`
+  `ReplayInvL.moveDef2`, `SimMoveQ.moveQ2_inner_eval`/`moveQ2_outer_eval`, `SimSet.tgt_loop`).
+  `Move [s]` with `24 < s < 32`, `40 < s ≤ 48` or `48 < s ≤ 64` lowers to an inner 128-bit store
+  at offset 0 (`FMOVQstore` or `FSTPQ`) and an outer one at `s-16` or `s-32` on it, the two
+  overlapping where `s` is not a multiple of 16. The inner store is a new atom at a fresh ID where
+  the input has no value. The validator replays the event in pre-order (`moveDef2`: the outer
+  store's values, the inner store, its values; `qVals`/`moveLdK`), pairs the outer store with the
+  `Move` (`moveQ2Lower`) and accepts the inner one as a new atom when the next atom of the
+  schedule is its outer store (`compOKL`), and the outer store only right after its inner one
+  (`q2OKL`). The replay relates them by `MoveRefL2`: the outer address is the destination moved
+  by `q2Off` (`shiftW`, `AddrRef`), its values ⊒ the 16 bytes the `Move` copies from there
+  (`qAt`), its memory the inner store, related to the `Move` by `MoveRefL`. The valuations hold
+  `poison` at the IDs the input does not define (`FrameVals`, `RegsFrame`), which types the inner
+  store. In the simulation the inner store evaluates, when its `Move` does (a source schedule
+  member), to a memory ⊒ the `Move`'s first `16 k` bytes written (`qPre`; `LoopInvL`'s
+  `CompAtL`), and the outer store on that memory refines the `Move` (`write_overlap`: the second
+  write rewrites the overlap with the same bytes). Witness `mvq2_lower` (`Move [48]` as
+  `FMOVQstore [32]` on `FSTPQ`).
+
 - **Compares with a pointer** (#385; module docs of `GoFV/Proof/Low/Rules/CmpNeg.lean` and
   `Invert.lean`). `CMP` compares a pointer without a concrete address with an integer as unequal
   (`Arm64.cmp`, `Z` clear). While `CMN` and `CMPshift*` read registers only (`Arm64.cmp1`/`cmp2`),
