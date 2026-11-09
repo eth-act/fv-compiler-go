@@ -6,7 +6,7 @@ open scoped GoFV.SSA.Sem.Fixed
 /-!
 # Non-vacuity witness: a function with no arm64 op down to the machine words (`obj_whole_ret`)
 
-`runtime.gclinkptr.ptr` (`GenG30`: `checkG46L` accepts it, a function with no arm64 op that
+`runtime.gclinkptr.ptr` (`GenG30`: `checkG49L` accepts it, a function with no arm64 op that
 `runLoc` runs in Phase 1's mode; `checkObj` accepts its assembled words, a frameless leaf without
 a stack check):
 
@@ -175,15 +175,16 @@ def objFacts : Bool :=
 theorem nl_obj_facts : objFacts = true := by
   native_decide
 
-/-- What compiled evaluation checks of `runLoc` on `gclinkptr.ptr`: no arm64 op; `checkG46L`
+/-- What compiled evaluation checks of `runLoc` on `gclinkptr.ptr`: no arm64 op; `checkG49L`
 accepts it with `GenG30`'s tables and `retRegsOK` its return (the result in `R0`); no frame
 variable, home slot, static or indirect call, write barrier or `LoweredMemEq`; the entry is `b1`,
 with four values, the first two running from `runLoc`'s first state on `p = 0x1234` to
 `R0 = 0x1234` and the frame memory; `R0` has class 64 after them and no upper-bit fact is carried;
-simple ops from there on; the whole run returns `0x1234`. -/
+simple ops from there on; `entryStoresOK` holds (no pending window); the whole run returns
+`0x1234`. -/
 def lcFacts (lc : LocCtx) : Bool :=
   !lc.ctx.f.lowered &&
-    (checkG46L lc ps GenG30.bs GenG30.g).toOption == some (GenG30.tab, GenG30.kt) &&
+    (checkG49L lc ps GenG30.bs GenG30.g).toOption == some (GenG30.tab, GenG30.kt) &&
     retRegsOK lc GenG30.kt && ownOutRegs lc == [0] &&
     (accessedVars lc).isEmpty && (homeSlots lc).isEmpty && GenG2.noCalls lc && noWbICall lc &&
     lc.ctx.f.entry == 1 && lc.ctx.f.blocks.toList.contains 1 && (lc.ctx.f.block? 1).isSome &&
@@ -191,7 +192,7 @@ def lcFacts (lc : LocCtx) : Bool :=
     GenG1.okThen (enterListLoc GoFV.Proof.Witness.plRunEnv lc
       (locInit GoFV.Proof.Witness.plRunEnv lc args {}) ((blkOf lc).values.toList.take 2)) sIIs &&
     (kAt lc GenG30.kt 1 (blkOf lc) 2).get 0 == some 64 && simpleFrom lc.ctx.f 1 2 &&
-    noMemEq lc && (uL35 lc [] (blkOf lc) 2).isEmpty &&
+    noMemEq lc && (uL35 lc [] (blkOf lc) 2).isEmpty && entryStoresOK lc GenG30.g 2 &&
     isRetP (runLoopLoc GoFV.Proof.Witness.plRunEnv lc 4
       (locInit GoFV.Proof.Witness.plRunEnv lc args {}) lc.ctx.f.entry)
 
@@ -246,13 +247,13 @@ theorem sep {lc : LocCtx} (hk : (memI.blocks.toList.map (·.1)).Nodup) :
   refine ⟨hk, fun b al a _ _ y hy => ?_⟩
   rcases hy with ⟨h, -⟩ | ⟨k, off, h, -⟩ <;> cases h
 
-theorem g28Env {lc : LocCtx}
-    (hc : checkG46L lc ps GenG30.bs GenG30.g = .ok (GenG30.tab, GenG30.kt))
+theorem g49Env {lc : LocCtx}
+    (hc : checkG49L lc ps GenG30.bs GenG30.g = .ok (GenG30.tab, GenG30.kt))
     (hav : (accessedVars lc).isEmpty = true) (hsl : (homeSlots lc).isEmpty = true)
     (hnc : GenG2.noCalls lc = true) (hwi : noWbICall lc = true) (hme : noMemEq lc = true)
     (hend : GenG2.symA ≠ endP GenG2.text ps.toList) (hso : symsOut = true) :
-    G28Env lc GenG30.g L ps (endP L.text ps.toList) GenG30.tab (E0 lc) := by
-  obtain ⟨-, -, -, -, hlt, -, -⟩ := checkG46L_cx hc
+    G49Env lc GenG30.g L ps (endP L.text ps.toList) GenG30.tab (E0 lc) := by
+  obtain ⟨-, -, -, -, hlt, -, -⟩ := checkG49L_cx hc
   have h2 : G2Env lc GenG30.g L ps 0 GenG30.tab (E0 lc) :=
     { lcEq := rfl
       link := rfl
@@ -288,13 +289,17 @@ theorem g28Env {lc : LocCtx}
     { env := {
         env := {
           env := {
-            env := ObjG7.g2Env_endP h2 (ObjG7.retOut_endP hlt) (fun _ => hend)
-            vars := by
-              intro x hx
-              simp [List.isEmpty_iff.1 hav] at hx }
-          wbs := fun _ _ _ hv => (noWbICall_spec hwi hv).1 }
-        icalls := fun _ _ _ hv => (noWbICall_spec hwi hv).2 }
-      memeqs := fun _ _ _ hv => noMemEq_spec hme hv }
+            env := {
+              env := ObjG7.g2Env_endP h2 (ObjG7.retOut_endP hlt) (fun _ => hend)
+              vars := by
+                intro x hx
+                simp [List.isEmpty_iff.1 hav] at hx }
+            wbs := fun _ _ _ hv => (noWbICall_spec hwi hv).1 }
+          icalls := fun _ _ _ hv => (noWbICall_spec hwi hv).2 }
+        memeqs := fun _ _ _ hv => noMemEq_spec hme hv }
+      vars := by
+        intro x hx
+        simp [List.isEmpty_iff.1 hav] at hx }
 
 /-- **A function with no arm64 op down to the machine words** (`obj_whole_ret` on
 `gclinkptr.ptr`, `p = 0x1234`): `runLoc`'s run (in Phase 1's mode) from its first state returns
@@ -335,10 +340,10 @@ theorem objWholeNL_ret_witness :
   have hlf := nl_lc_facts
   simp only [lcFacts, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem,
     Bool.not_eq_true'] at hlf
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hl, hres⟩, hrok⟩, houts⟩, hav⟩, hsl⟩, hnc⟩, hwi⟩, hentry⟩, hbm⟩, hbs⟩,
-    hsz⟩, hpre⟩, hk0⟩, hsim⟩, hme⟩, hu⟩, hrunP⟩ := hlf
-  have hc : checkG46L GenG30.lc ps GenG30.bs GenG30.g = .ok (GenG30.tab, GenG30.kt) := by
-    revert hres; cases checkG46L GenG30.lc ps GenG30.bs GenG30.g <;> simp [Except.toOption]
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hl, hres⟩, hrok⟩, houts⟩, hav⟩, hsl⟩, hnc⟩, hwi⟩, hentry⟩, hbm⟩, hbs⟩,
+    hsz⟩, hpre⟩, hk0⟩, hsim⟩, hme⟩, hu⟩, hes⟩, hrunP⟩ := hlf
+  have hc : checkG49L GenG30.lc ps GenG30.bs GenG30.g = .ok (GenG30.tab, GenG30.kt) := by
+    revert hres; cases checkG49L GenG30.lc ps GenG30.bs GenG30.g <;> simp [Except.toOption]
   have hb1 : GenG30.lc.ctx.f.block? 1 = some (blkOf GenG30.lc) := by
     obtain ⟨b, hb⟩ := Option.isSome_iff_exists.1 hbs
     simp [blkOf, hb]
@@ -349,7 +354,8 @@ theorem objWholeNL_ret_witness :
   have hpc' : ObjEnv.map otab ps L ObjG7.base ((E0 GenG30.lc).pcOf GenG30.lc.ctx.f.entry 2) =
       ObjG7.base + BitVec.ofNat 64 (otab.offs[0]!) := by
     rw [hentry]; exact hpc
-  have hent : EntryMatch (E0 GenG30.lc) sI s0 :=
+  have hent : EntryMatch (E0 GenG30.lc) (InWins L (E0 GenG30.lc).sp (pendWins GenG30.lc GenG30.g))
+      sI s0 :=
     { regs := by
         intro r v hv
         by_cases h0 : r = 0
@@ -364,7 +370,7 @@ theorem objWholeNL_ret_witness :
           exact ⟨fun _ _ => ⟨fun _ => rfl, trivial⟩, fun _ _ => trivial⟩
       flags := hflags
       slots := hslots
-      mem := ⟨memI, hmem, memInj⟩ }
+      mem := ⟨memI, hmem, s0.mem, memInj, fun _ _ => rfl⟩ }
   have hinv : G3Inv (E0 GenG30.lc) GenG30.lc
       (kAt GenG30.lc GenG30.kt GenG30.lc.ctx.f.entry (blkOf GenG30.lc) 2) sI :=
     { core := by
@@ -382,13 +388,14 @@ theorem objWholeNL_ret_witness :
     (hookMap_retLR fun _ => rfl) (ObjG7.noICall_spec hni L) hrok hME
     (by rw [haz]; decide) (by decide)
     (fun _ _ _ h => by rw [hnone] at h; cases h) (fun _ _ _ h => by rw [hnone] at h; cases h)
-    (g28Env hc hav hsl hnc hwi hme hend hso) hEE hb1 hbm (of_decide_eq_true hsz)
-    (by exact rfl) hsI
+    (g49Env hc hav hsl hnc hwi hme hend hso) hEE hb1 hbm (of_decide_eq_true hsz)
+    (by exact rfl) hsI hes
     hent (fun _ _ _ h => by rw [hnone] at h; cases h) hinv
     (List.isEmpty_iff.1 hu) hpc' (runPre_simple (by rw [hentry]; exact hsim)) hrun
   rw [houts] at hRes
   have hX0 : t'.x 0 = 0x1234 := by
-    rcases (hRes.regs 0 _ 0 rfl rfl).2 with h | ⟨hb, -⟩
+    rcases ((hRes.regs 0 _ 0 rfl rfl).resolve_right fun h => absurd h.1 (by decide)).2 with
+      h | ⟨hb, -⟩
     · exact h
     · exact absurd (by decide) hb
   exact ⟨hl, mm, hrun, E, t', n, hx, hn, hX, hX0, hRes⟩
