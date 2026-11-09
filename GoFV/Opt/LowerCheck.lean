@@ -166,12 +166,12 @@ def ruleOK1 (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (x : Value) (defs : L
   | some I =>
     let e := envL tabs M I
     let vtys := r.vars.map (·.ty)
-    let σ := sigmaL tabs e r.pat
+    let σ := @sigmaL Sem.Addrs.fixed tabs e r.pat
     let nodes := match r.result, defs with
       | .build ns, _ :: us => ns.zip us
       | _, _ => []
     let or := oracleL vtys tabs ((r.cond.map (negAtoms false)).getD []) nodes
-    let ev := evalE vtys σ or e (Pat.denL tabs e [] r.pat)
+    let ev := evalE vtys σ or e (@Pat.denL Sem.Addrs.fixed tabs e [] r.pat)
     I.tail.all (·.2 != v) &&
     consOK ev σ e I [] r.pat && wfOK e [] r.pat &&
     (match r.cond with
@@ -190,7 +190,7 @@ a narrowing `Copy` the rule binds (a truncation lowered to a `Copy`, eliminated 
 def ruleDefsL (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : List Value :=
   match r.result, defs, matchPatL tabs M r.pat [] v with
   | .build nodes, u0 :: us, some I =>
-    let σ := sigmaL tabs (envL tabs M I) r.pat
+    let σ := @sigmaL Sem.Addrs.fixed tabs (envL tabs M I) r.pat
     let ids := us.map (·.id)
     u0 :: (nodes.zip us).map (fun (n, u) =>
       { u with args := (n.args.filterMap fun a => argID σ I ids a).toArray }) ++ us.drop nodes.length
@@ -952,9 +952,9 @@ def blockOK1 (tabs : Tables) (M : Defs) (br : BlockRule) (pat : Pat) (st : BStat
   | some I =>
     let e := envL tabs M I
     let vtys := br.vars.map (·.ty)
-    let σ := sigmaL tabs e pat
+    let σ := @sigmaL Sem.Addrs.fixed tabs e pat
     let or := oracleL vtys tabs ((br.cond.map (negAtoms false)).getD []) []
-    let ev := evalE vtys σ or e (Pat.denL tabs e [] pat)
+    let ev := evalE vtys σ or e (@Pat.denL Sem.Addrs.fixed tabs e [] pat)
     if (Pat.sames pat).all (fun x => !(Pat.opNames pat).contains x) &&
         consOK ev σ e I [] pat && wfOK e [] pat &&
         (match br.cond with

@@ -376,32 +376,32 @@ structure BlockFactsL (tabs : Tables) (M : Defs) (br : BlockRule) (st : BStateL)
   hc : st.ctrls.toList = [c]
   hkind : st.kind = br.kind
   hmatch : matchPatL tabs M (Pat.swapC pat sw).1 [] c = some I
-  hcons : consOK (evalE (br.vars.map (·.ty)) (sigmaL tabs (envL tabs M I) (Pat.swapC pat sw).1)
+  hcons : consOK (evalE (br.vars.map (·.ty)) (@sigmaL Addrs.fixed tabs (envL tabs M I) (Pat.swapC pat sw).1)
       (oracleL (br.vars.map (·.ty)) tabs ((br.cond.map (negAtoms false)).getD []) [])
-      (envL tabs M I) (Pat.denL tabs (envL tabs M I) [] (Pat.swapC pat sw).1))
-    (sigmaL tabs (envL tabs M I) (Pat.swapC pat sw).1) (envL tabs M I) I [] (Pat.swapC pat sw).1 = true
+      (envL tabs M I) (@Pat.denL Addrs.fixed tabs (envL tabs M I) [] (Pat.swapC pat sw).1))
+    (@sigmaL Addrs.fixed tabs (envL tabs M I) (Pat.swapC pat sw).1) (envL tabs M I) I [] (Pat.swapC pat sw).1 = true
   hwf : wfOK (envL tabs M I) [] (Pat.swapC pat sw).1 = true
   hsames : ∀ x, x ∈ GoFV.Opt.RewriteCheck.Pat.sames (Pat.swapC pat sw).1 →
     x ∉ GoFV.Opt.RewriteCheck.Pat.opNames (Pat.swapC pat sw).1
   hcond : ∀ cd, br.cond = some cd → evalE (br.vars.map (·.ty))
-      (sigmaL tabs (envL tabs M I) (Pat.swapC pat sw).1)
+      (@sigmaL Addrs.fixed tabs (envL tabs M I) (Pat.swapC pat sw).1)
       (oracleL (br.vars.map (·.ty)) tabs ((br.cond.map (negAtoms false)).getD []) [])
-      (envL tabs M I) (Pat.denL tabs (envL tabs M I) [] (Pat.swapC pat sw).1) cd = .bool true
+      (envL tabs M I) (@Pat.denL Addrs.fixed tabs (envL tabs M I) [] (Pat.swapC pat sw).1) cd = .bool true
   hargs : GoFV.Proof.Rules.Pat.argsOK (envL tabs M I).ty [] (Pat.swapC pat sw).1 = true
   htop : Pat.topOKL ((envL tabs M I).ty []) (Pat.swapC pat sw).1 = true
   hargsL : argsOKLr br.loc (envL tabs M I).ty (Pat.swapC pat sw).1 = true
   hleaves : leavesOK M I [] (Pat.swapC pat sw).1 = true
   hauxB : blockAuxOKB br.auxInt st.auxInt = true
   hbuilt : builtL tabs M br (envL tabs M I) (Pat.swapC pat sw).1
-      (evalE (br.vars.map (·.ty)) (sigmaL tabs (envL tabs M I) (Pat.swapC pat sw).1)
+      (evalE (br.vars.map (·.ty)) (@sigmaL Addrs.fixed tabs (envL tabs M I) (Pat.swapC pat sw).1)
         (oracleL (br.vars.map (·.ty)) tabs ((br.cond.map (negAtoms false)).getD []) [])
-        (envL tabs M I) (Pat.denL tabs (envL tabs M I) [] (Pat.swapC pat sw).1))
+        (envL tabs M I) (@Pat.denL Addrs.fixed tabs (envL tabs M I) [] (Pat.swapC pat sw).1))
       (oracleL (br.vars.map (·.ty)) tabs ((br.cond.map (negAtoms false)).getD []) [])
-      (sigmaL tabs (envL tabs M I) (Pat.swapC pat sw).1) I c nc = some us
+      (@sigmaL Addrs.fixed tabs (envL tabs M I) (Pat.swapC pat sw).1) I c nc = some us
   ai' : Int64
-  hai' : newAuxL (evalE (br.vars.map (·.ty)) (sigmaL tabs (envL tabs M I) (Pat.swapC pat sw).1)
+  hai' : newAuxL (evalE (br.vars.map (·.ty)) (@sigmaL Addrs.fixed tabs (envL tabs M I) (Pat.swapC pat sw).1)
       (oracleL (br.vars.map (·.ty)) tabs ((br.cond.map (negAtoms false)).getD []) [])
-      (envL tabs M I) (Pat.denL tabs (envL tabs M I) [] (Pat.swapC pat sw).1)) br.newAuxInt = some ai'
+      (envL tabs M I) (@Pat.denL Addrs.fixed tabs (envL tabs M I) [] (Pat.swapC pat sw).1)) br.newAuxInt = some ai'
   hst' : st' = { kind := br.newKind, ctrls := nc, auxInt := ai', swapped := st.swapped != br.swapSuccs }
 
 theorem blockFactsL {tabs : Tables} {M : Defs} {br : BlockRule} {st st' : BStateL} {nc : Array ID}
@@ -560,16 +560,17 @@ theorem BInvL.retargetStep {tabs : Tables} {f : Func} {D₀ : ID → Option Valu
 /-- A rule variable bound at position `p` of a block-rule match is a matched value. -/
 theorem BlockFactsL.pos {tabs : Tables} {M : Defs} {br : BlockRule} {st : BStateL} {nc : Array ID}
     {st' : BStateL} {us : List Value} (F : BlockFactsL tabs M br st nc st' us) {x : Nat} {p : Path}
-    (hp : DV.pos? (sigmaL tabs (envL tabs M F.I) (Pat.swapC F.pat F.sw).1 x) = some p) :
+    (hp : DV.pos? (@sigmaL Addrs.fixed tabs (envL tabs M F.I) (Pat.swapC F.pat F.sw).1 x) = some p) :
     (p, F.I.at p) ∈ F.I := by
   obtain ⟨hmo, -, hnd, -⟩ := matchPatL_ok F.hmatch
   have hat : ∀ p w, (p, w) ∈ F.I → F.I.at p = w := fun p w h => inst_at h hnd
-  have hσs : Good (InI F.I) (sigmaL tabs (envL tabs M F.I) (Pat.swapC F.pat F.sw).1 x) :=
+  have hσs : Good (InI F.I) (@sigmaL Addrs.fixed tabs (envL tabs M F.I) (Pat.swapC F.pat F.sw).1 x) :=
+    letI : Addrs := Addrs.fixed
     sigmaL_good (Q := fun _ => True) (S := GoFV.Proof.Pass.Rewrite.Pat.sz (Pat.swapC F.pat F.sw).1)
       (fun _ _ => trivial) (fun p w h _ => ⟨w, h⟩) (fun _ p w h _ _ => ⟨w, h.mem⟩) hmo trivial
       (Nat.le_refl _) x
   revert hσs hp
-  cases sigmaL tabs (envL tabs M F.I) (Pat.swapC F.pat F.sw).1 x <;>
+  cases @sigmaL Addrs.fixed tabs (envL tabs M F.I) (Pat.swapC F.pat F.sw).1 x <;>
     simp only [DV.pos?, reduceCtorEq, false_implies]
   rename_i w p'
   intro h hd
@@ -639,7 +640,8 @@ theorem BInvL.block {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C�
     | cons a I =>
       rw [hI] at hhd; simp only [List.head?_cons, Option.some.injEq] at hhd; subst hhd
       exact List.mem_cons_self
-  have hσs : ∀ x, Good (InI F.I) (sigmaL tabs (envL tabs M F.I) pat' x) := fun x =>
+  have hσs : ∀ x, Good (InI F.I) (@sigmaL Addrs.fixed tabs (envL tabs M F.I) pat' x) := fun x =>
+    letI : Addrs := Addrs.fixed
     sigmaL_good (Q := fun _ => True) (S := GoFV.Proof.Pass.Rewrite.Pat.sz pat')
       (fun _ _ => trivial) (fun p w h _ => ⟨w, h⟩) (fun _ p w h _ _ => ⟨w, h.mem⟩) hmo trivial
       (Nat.le_refl _) x
@@ -677,10 +679,10 @@ theorem BInvL.block {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C�
   · -- the new terminator takes the old one's edge
     refine ⟨m + GoFV.Proof.Pass.Rewrite.Pat.sz pat' + 1, fun ρ hρ => ?_⟩
     let e' := semEnvL tabs M F.I (denL true M.get? tabs ρ m)
-    have hσ : ∀ x, (sigmaL tabs (envL tabs M F.I) pat' x).erase = (sigmaL tabs e' pat' x).erase :=
+    have hσ : ∀ x, (@sigmaL Addrs.fixed tabs (envL tabs M F.I) pat' x).erase = (sigmaL tabs e' pat' x).erase :=
       sigmaL_erase (e := envL tabs M F.I) (e' := e') rfl rfl pat'
-    have hev : ∀ x, (evalE vtys (sigmaL tabs (envL tabs M F.I) pat') or (envL tabs M F.I)
-        (Pat.denL tabs (envL tabs M F.I) [] pat') x).erase =
+    have hev : ∀ x, (evalE vtys (@sigmaL Addrs.fixed tabs (envL tabs M F.I) pat') or (envL tabs M F.I)
+        (@Pat.denL Addrs.fixed tabs (envL tabs M F.I) [] pat') x).erase =
         (evalE vtys (sigmaL tabs e' pat') or e' (Pat.denL tabs e' [] pat') x).erase :=
       evalE_erase (e := envL tabs M F.I) (e' := e') _ _ rfl rfl hσ _ _
     have hF : FieldsOKL tabs M F.I e' := by
@@ -707,13 +709,13 @@ theorem BInvL.block {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C�
     have hob := hsound tabs e' or st.auxInt F.ai' hbt hwf hcons hcond htyped F.hargs F.htop F.hargsL
       (blockAuxOK_of F.hauxB) hai'
     -- a bound variable's value refines its matched value's denotation in `M'`
-    have hvar : ∀ x p, DV.pos? (sigmaL tabs (envL tabs M F.I) pat' x) = some p →
+    have hvar : ∀ x p, DV.pos? (@sigmaL Addrs.fixed tabs (envL tabs M F.I) pat' x) = some p →
         ∃ wv, sigmaL tabs e' pat' x = .val wv (some p) ∧
           Sem.Refines wv (denL true M'.get? tabs ρ (m + GoFV.Proof.Pass.Rewrite.Pat.sz pat')
             (F.I.at p)) := by
       intro x p hp
-      obtain ⟨w0, hw0⟩ : ∃ w0, sigmaL tabs (envL tabs M F.I) pat' x = .val w0 (some p) := by
-        revert hp; cases sigmaL tabs (envL tabs M F.I) pat' x <;> simp [DV.pos?]
+      obtain ⟨w0, hw0⟩ : ∃ w0, @sigmaL Addrs.fixed tabs (envL tabs M F.I) pat' x = .val w0 (some p) := by
+        revert hp; cases @sigmaL Addrs.fixed tabs (envL tabs M F.I) pat' x <;> simp [DV.pos?]
       have hx := hσ x
       rw [hw0] at hx
       have hσ2 : Good (fun w p => Sem.Refines w
@@ -840,9 +842,9 @@ theorem BInvL.block {tabs : Tables} {f : Func} {D₀ : ID → Option Value} {C�
         rw [hnd1, denT_succ hget ht]
         rw [← tySelL_eq hev, ← aiSelL_eq hev, ← hty', ← hai, ← hop]
         have hax' : nodeAuxL e' pat' or n.aux = (ctrlDefL (envL tabs M F.I) pat'
-            (evalE vtys (sigmaL tabs (envL tabs M F.I) pat') or (envL tabs M F.I)
-              (Pat.denL tabs (envL tabs M F.I) [] pat')) or
-            (sigmaL tabs (envL tabs M F.I) pat') F.I n xv c').aux := by
+            (evalE vtys (@sigmaL Addrs.fixed tabs (envL tabs M F.I) pat') or (envL tabs M F.I)
+              (@Pat.denL Addrs.fixed tabs (envL tabs M F.I) [] pat')) or
+            (@sigmaL Addrs.fixed tabs (envL tabs M F.I) pat') F.I n xv c').aux := by
           rw [hax]; rfl
         rw [hax']
         apply retypeL_mono

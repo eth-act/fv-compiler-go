@@ -325,7 +325,8 @@ theorem evalPure_constTop {op : Op} {ty : Ty} (ai : Int64) (ax : Option AuxRef) 
     (h : constTop op ty = true) : (evalPure op ty ai ax args).hasTy ty = true := by
   simp only [constTop, Bool.and_eq_true] at h
   obtain ⟨ho, h⟩ := h
-  cases op <;> first | exact absurd ho (by decide) | exact h
+  cases op <;> first | exact absurd ho (by decide) |
+    exact (Val.hasTy_agree (A := inferInstance) (B := Addrs.fixed) ty _ rfl).trans h
 
 theorem frameOp_false {o : Op} (h1 : o ≠ .Addr) (h2 : o ≠ .ConstString) :
     GoFV.Proof.Rules.frameOp o = false := by

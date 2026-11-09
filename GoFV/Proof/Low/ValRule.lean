@@ -32,13 +32,15 @@ def stNodesL (r : Rule) (defs : List Value) : List (RNode × Value) :=
 def stOrL (tabs : Tables) (r : Rule) (defs : List Value) : Oracle :=
   oracleL (stVtysL r) tabs ((r.cond.map (negAtoms false)).getD []) (stNodesL r defs)
 
+/-- The validator's bindings (`LowerCheck.ruleOK1`): at `Addrs.fixed`, which the semantic side
+relates to its instance up to values (`sigmaL_erase`). -/
 def stσL (tabs : Tables) (M : Defs) (r : Rule) (I : Inst) : Nat → DV :=
-  sigmaL tabs (envL tabs M I) r.pat
+  @sigmaL Addrs.fixed tabs (envL tabs M I) r.pat
 
 def stEvL (tabs : Tables) (M : Defs) (r : Rule) (defs : List Value) (I : Inst) :
     GoFV.Rules.Expr → DV :=
   evalE (stVtysL r) (stσL tabs M r I) (stOrL tabs r defs) (envL tabs M I)
-    (Pat.denL tabs (envL tabs M I) [] r.pat)
+    (@Pat.denL Addrs.fixed tabs (envL tabs M I) [] r.pat)
 
 /-- What `ruleOK1` (and the term check of `ruleOKL`) establishes. -/
 structure RuleFactsL (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) where
@@ -163,6 +165,7 @@ theorem RuleFactsL.stσ_good (F : RuleFactsL tabs M r v defs) (x : Nat) :
   unfold stσL
   have hm := F.hmatch
   rw [F.hpat] at hm ⊢
+  letI : Addrs := Addrs.fixed
   exact sigmaL_good (Q := fun _ => True) (S := GoFV.Proof.Pass.Rewrite.Pat.sz
       (.op F.o none F.pty F.pai F.pax F.par F.pargs F.pcm))
     (fun _ _ => trivial) (fun p w h _ => ⟨w, h⟩) (fun _ p w h _ _ => ⟨w, h.mem⟩) hm trivial

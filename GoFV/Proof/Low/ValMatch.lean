@@ -285,10 +285,14 @@ section Binds
 
 variable {e e' : PEnv} {tabs tabs' : Tables}
 
+omit [GoFV.SSA.Sem.Addrs] in
 mutual
-theorem bindsL_erase (hty : e.ty = e'.ty) (hai : e.auxInt = e'.auxInt) :
-    ∀ (p : Path) (q : Pat), (Pat.bindsL tabs e p q).map (fun a => (a.1, a.2.erase)) =
-      (Pat.bindsL tabs' e' p q).map (fun a => (a.1, a.2.erase))
+/-- The bindings of two instances with the same node fields agree up to the values of `DV.val`,
+also under two address assignments `A`, `B` (the checker's static instance is evaluated at
+`Addrs.fixed`, `LowerCheck.ruleOK1`). -/
+theorem bindsL_erase {A B : GoFV.SSA.Sem.Addrs} (hty : e.ty = e'.ty) (hai : e.auxInt = e'.auxInt) :
+    ∀ (p : Path) (q : Pat), (@Pat.bindsL A tabs e p q).map (fun a => (a.1, a.2.erase)) =
+      (@Pat.bindsL B tabs' e' p q).map (fun a => (a.1, a.2.erase))
   | _, .wild | _, .same _ => rfl
   | _, .bind _ => rfl
   | p, .op o nm ty ai _ _ args _ => by
@@ -298,22 +302,26 @@ theorem bindsL_erase (hty : e.ty = e'.ty) (hai : e.auxInt = e'.auxInt) :
     · cases nm <;> rfl
     · cases ty <;> simp [hty]
     · cases ai <;> simp [hai]
-theorem bindssL_erase (hty : e.ty = e'.ty) (hai : e.auxInt = e'.auxInt) :
+theorem bindssL_erase {A B : GoFV.SSA.Sem.Addrs} (hty : e.ty = e'.ty) (hai : e.auxInt = e'.auxInt) :
     ∀ (p : Path) (i : Nat) (qs : List Pat),
-      (Pat.bindssL tabs e p i qs).map (fun a => (a.1, a.2.erase)) =
-      (Pat.bindssL tabs' e' p i qs).map (fun a => (a.1, a.2.erase))
+      (@Pat.bindssL A tabs e p i qs).map (fun a => (a.1, a.2.erase)) =
+      (@Pat.bindssL B tabs' e' p i qs).map (fun a => (a.1, a.2.erase))
   | _, _, [] => rfl
   | p, i, q :: qs => by
     simp only [Pat.bindssL, List.map_append]
     rw [bindsL_erase hty hai (i :: p) q, bindssL_erase hty hai p (i + 1) qs]
 end
 
-theorem sigmaL_erase (hty : e.ty = e'.ty) (hai : e.auxInt = e'.auxInt) (pat : Pat) (x : Nat) :
-    (sigmaL tabs e pat x).erase = (sigmaL tabs' e' pat x).erase := by
-  have h := congrArg (List.lookup x) (bindsL_erase (tabs := tabs) (tabs' := tabs') hty hai [] pat)
+omit [GoFV.SSA.Sem.Addrs] in
+theorem sigmaL_erase {A B : GoFV.SSA.Sem.Addrs} (hty : e.ty = e'.ty) (hai : e.auxInt = e'.auxInt)
+    (pat : Pat) (x : Nat) :
+    (@sigmaL A tabs e pat x).erase = (@sigmaL B tabs' e' pat x).erase := by
+  have h := congrArg (List.lookup x)
+    (bindsL_erase (A := A) (B := B) (tabs := tabs) (tabs' := tabs') hty hai [] pat)
   rw [lookup_map, lookup_map] at h
   simp only [sigmaL]
-  cases h1 : (Pat.bindsL tabs e [] pat).lookup x <;> cases h2 : (Pat.bindsL tabs' e' [] pat).lookup x <;>
+  cases h1 : (@Pat.bindsL A tabs e [] pat).lookup x <;>
+    cases h2 : (@Pat.bindsL B tabs' e' [] pat).lookup x <;>
     simp_all [DV.erase]
 
 end Binds

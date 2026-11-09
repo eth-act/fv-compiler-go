@@ -2,8 +2,6 @@ import GoFV.SSA.Check
 import GoFV.SSA.WFCheck
 import GoFV.SSA.Sem.Run
 
-variable [GoFV.SSA.Sem.Addrs]
-
 /-!
 # Shared pieces of the per-rewrite checkers (branchelim, fuse)
 

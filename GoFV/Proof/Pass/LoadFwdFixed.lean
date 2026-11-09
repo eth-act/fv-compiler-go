@@ -108,10 +108,10 @@ theorem fixedOK_spec {tabs : Tables} {ro : List (String × Alloc)} {f : Func} {u
     (h : fixedOK tabs ro f u w = true) :
     u.op = .Load ∧ u.args.size = 2 ∧
       (w.op = .Addr ∨ (((w.op = .Const64 ∨ w.op = .Const32) ∨ w.op = .Const8) ∧ w.args.size = 0)) ∧
-      ∃ n e, baseBlk? tabs f (ptrBase tabs f 8 u.args[0]!).1 = some (.global n) ∧ e ∈ ro ∧
-        e.1 = n ∧ fixedEq (fixedSrc n e.2 (tabs.ty u.type) (ptrBase tabs f 8 u.args[0]!).2)
-          ((GoFV.Proof.Rules.opVal tabs w.op (tabs.ty u.type) w.auxInt w.aux []).retype
-            (tabs.ty u.type)) = true ∧
+      ∃ n e s r, baseBlk? tabs f (ptrBase tabs f 8 u.args[0]!).1 = some (.global n) ∧ e ∈ ro ∧
+        e.1 = n ∧ fixedSrc n e.2 (tabs.ty u.type) (ptrBase tabs f 8 u.args[0]!).2 = some s ∧
+        GoFV.Proof.Rules.opValC tabs w.op (tabs.ty u.type) w.auxInt w.aux [] = some r ∧
+        fixedEq s (r.retypeC (tabs.ty u.type)) = true ∧
         WBCheck.memTyOK tabs f = true := by
   unfold fixedOK at h
   simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
@@ -121,8 +121,26 @@ theorem fixedOK_spec {tabs : Tables} {ro : List (String × Alloc)} {f : Func} {u
   · next n hB =>
     obtain ⟨e, he, hen⟩ := List.any_eq_true.1 hb
     simp only [Bool.and_eq_true, beq_iff_eq] at hen
-    exact ⟨n, e, hB, he, hen.1, hen.2, hmt⟩
+    obtain ⟨hen, hq⟩ := hen
+    split at hq
+    · next s r hs hr => exact ⟨n, e, s, r, hB, he, hen, hs, hr, hq, hmt⟩
+    · cases hq
   · cases hb
+
+/-- `fixedSrc` reads what a load from the allocation alone reads under every instance. -/
+theorem fixedSrc_eq {n : String} {a : Alloc} {t : Ty} {o : BitVec 64} {s : Val}
+    (h : fixedSrc n a t o = some s) :
+    ((({} : Mem).set (.global n) a).load t ((⟨.global n, 0⟩ : Ptr).add o)).retype t = s := by
+  unfold fixedSrc at h
+  simp only at h
+  split at h
+  · rename_i hm
+    split at h
+    · rename_i hv
+      cases h
+      rw [← Mem.loadC_eq hm, Val.retypeC_eq hv]
+    · cases h
+  · cases h
 
 /-- The new definition of a fixed load is a term node. -/
 theorem fixedOK_term {tabs : Tables} {ro : List (String × Alloc)} {f : Func} {u w : Value}
@@ -157,7 +175,7 @@ theorem fixed_den {tabs : Tables} {ro : List (String × Alloc)} {f : Func} {g : 
     (hargs : ∀ a ∈ u.args, LM f a) (hL : g x = some w) (hwty : w.type = u.type)
     (h : fixedOK tabs ro f u w = true) (n : Nat) :
     Sem.Refines (den f.value? tabs ρ (n + 1) x) (den g tabs ρ' 1 x) := by
-  obtain ⟨hld, hsz, hw, n0, e, hB, he, hen, hfx, hmt⟩ := fixedOK_spec h
+  obtain ⟨hld, hsz, hw, n0, e, s, r, hB, he, hen, hs, hr, hfx, hmt⟩ := fixedOK_spec h
   have hLt : termOp u.op = true := by rw [hld]; decide
   show Sem.Refines _ (den g tabs ρ' (0 + 1) x)
   rw [den_succ_term hu hLt, toList_two hsz, List.map_cons, List.map_cons, List.map_nil, hld,
@@ -194,9 +212,11 @@ theorem fixed_den {tabs : Tables} {ro : List (String × Alloc)} {f : Func} {g : 
       rw [(hR e.1 e.2 he).2, find?_set]
       simp
     rw [hld']
+    obtain ⟨hr, hrl⟩ := GoFV.Proof.Rules.opValC_eq hr
+    rw [fixedSrc_eq hs, hr, ← Val.retypeC_eq hrl]
     rcases fixedEq_spec hfx with h0 | h0
-    · unfold fixedSrc at h0; rw [h0]; exact .poison _
-    · unfold fixedSrc at h0; rw [h0]; exact .refl _
+    · rw [h0]; exact .poison _
+    · rw [h0]; exact .refl _
   · rw [loadOp_other hcase, AtomSim.retype_poison]; exact .poison _
 
 end GoFV.Proof.Pass.LoadFwd
