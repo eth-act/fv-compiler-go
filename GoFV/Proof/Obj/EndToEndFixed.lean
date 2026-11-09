@@ -54,7 +54,7 @@ theorem verified_mach_fixed
     {H : Hooks} {g : G2In} {L : Link} {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab}
     {kt : KTab} {E0 : MatchEnv} {spills : Array Spill} {o : ObjIn} {otab : Tab}
     {base : BitVec 64} {code : Code} {room : Nat} {s0 : MState}
-    (hc : checkG47 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
+    (hc : checkG50 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
     (hO : ObjEnv ps spills o otab L base code (s0.x 30))
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hic : ∀ u, ICallOut L ps.toList u)
