@@ -264,6 +264,11 @@ GoFV.Proof.Witness.GenG43.g43_facts._native.native_decide.ax_1_1 43cf3951648adda
 # compiled evaluation.
 GoFV.Proof.Witness.GenG44.g44_facts._native.native_decide.ax_1_1 e46d0ad334d524b1001ca92adea057ca9d72a73421df3d28270a8eacd10b3a3e
 
+# genG45_witness (GoFV/Proof/Witness/GenG45.lean, #553): `checkG45` accepts `sort.Float64Slice.Swap`
+# and `checkG44` does not (`FMOVDloadidx8` `v17` into `F0`); `runLoc` runs `v17` to `F0 = 1.5`'s
+# bits; compiled evaluation.
+GoFV.Proof.Witness.GenG45.g45_facts._native.native_decide.ax_1_1 954bd6bef08a04c6be3ea1cc6e0e71960f7b09a6048dd28817b134eda888c0e5
+
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
 # test code only: the parity runner's pointer-equality fast path (GoFVTest/Parity/Compare.lean).

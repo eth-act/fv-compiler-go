@@ -1012,7 +1012,22 @@ float load reads valid bytes (G3's clause for `loadOp?`), and what it reads at i
 pointer without an integer form (`Ptr.word` of a global or a frame temporary; a pointer has no V
 register form under `FValRel`). No trusted premise. Witness `genG44_witness`
 (`math.Float64frombits`: `FMOVD R0, F0` of `1.0`'s bits). G44 accepts 6,652 functions (+30 over
-G43). Five more need only `FMOVDloadidx8`/`FMOVDstoreidx8` (`sort.Float64Slice.Swap`, …).
+G43).
+
+**Slice G45: register-index float loads and stores** (`GoFV/Gen/Check45.lean`,
+`checkG45 lc ps bstart g`; proven sound, `g45_value`, `g45_initMem`, `g45_term`, `g45_nilPanic`,
+`g45_boundsPanic`, `GoFV/Proof/Gen/G45.lean`): G44 with `FMOV{S,D}loadidx{,4,8} ptr idx mem` and
+`FMOV{S,D}storeidx{,4,8} ptr idx val mem` (`fLoadIdxOp?`, `fStoreIdxOp?`). Phase 1 runs them as
+the integer ones (`Arm64.loadIdx`, `stIdx`: the `n` bytes at `idxSum (2^sh)`); genssa emits one
+`FMOVS`/`FMOVD` from or to `(Rp)(Ri<<sh)` (`idxA`, G14 and G18), with `ptr` and `idx` in X
+registers of class 64 and the float in an `F` register at a float shape of `8n` bits. The address
+is G14's (`lo_idxSum`, `ctx_mem_idx`), the value G44's (`fvalRel_of_valRel` for a load,
+`valRel_of_fvalRel` and `memInj_storeN` for a store). New run premise `FIdxPre` (`G45Pre := G44Pre
+∧ FIdxPre`): a float register-index load reads valid bytes at its address (G14's `IdxPre`) and
+what it reads at its float shape is no pointer (as `FLoadPre`). No trusted premise. Witness
+`genG45_witness` (`sort.Float64Slice.Swap`: `FMOVD (R0)(R3<<3), F0` of `x[1] = 1.5`). G45 accepts
+6,657 functions (+5 over G44: `sort.Float64Slice.Swap` and its pointer method,
+`breakPatternsOrdered`, `heapSortOrdered`, `reverseRangeOrdered` at `float64`).
 Stage (b), float arithmetic and compares (`FADD`…`FDIV`, `FMADD` under the 12 `useFMA` shapes, which
 `lower` refines only up to `Contract`, semantics2 §2.1; `FCMP` and the `FLT`/`FLE`/… blocks), and
 stage (c), calls with float arguments or results (the `< 16` ABI-register check of Check2/9/10/15),
@@ -1088,6 +1103,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G42 | 6,609 (71.08%) | 194,759 |
 | G43 | 6,622 (71.22%) | 195,711 |
 | G44 | 6,652 (71.54%) | 196,069 |
+| G45 | 6,657 (71.60%) | 196,234 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1368,6 +1384,12 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `g44_fpgp`, `g44_fconst`, `g44_fload`, `g44_fstore`, `uStep35_fcopy`, `uStep35_f44`,
   `vk44_step`, `vk44_nil`, `vk44_pb`, `g44L_value` … `g44L_term`, `g44_value`, `g44_initMem`,
   `g44_nilPanic`, `g44_boundsPanic`, `g44_term`.
+- `Spec45.lean`: what `checkG45` accepted (`VK45`, `fkind45_spec`, `vkind45_spec`,
+  `vkind45_initMem`, `checkG33_of_45L`, `checkG45L_spec`, `checkG45_spec`).
+- `G45.lean`: `fLoadIdxOp?_op`, `fStoreIdxOp?_op`, `FIdxPre`, `G45Pre`, `stepLoc_fLoadIdx`,
+  `stepLoc_fStoreIdx`, `g45_fldIdx`, `g45_fstIdx`, `uStep35_f45`, `vk45_step`, `vk45_nil`,
+  `vk45_pb`, `g45L_value` … `g45L_term`, `g45_value`, `g45_initMem`, `g45_nilPanic`,
+  `g45_boundsPanic`, `g45_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
