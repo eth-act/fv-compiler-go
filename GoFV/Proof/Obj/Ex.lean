@@ -188,6 +188,11 @@ theorem Ex.eval_mkDp3 (c : Ctx) (sf : Bool) (op31 : BitVec 3) (o0 : Bool) (a x y
     rw [← dp3_trunc, exT_opndK_trunc, exT_opndK_trunc, exT_opndK_trunc, dp3_trunc]
   · rfl
 
+theorem VEx.eval_mkOfX (c : Ctx) (w : Nat) (a : Ex) :
+    (VEx.mkOfX w a).eval c = ((a.eval c).setWidth w).setWidth 128 := by
+  unfold VEx.mkOfX
+  split <;> rfl
+
 private theorem exT_awc_neg {w : Nat} (hw : 0 < w) (x y : BitVec w) (h0 : y ≠ 0)
     (hm : y ≠ BitVec.intMin w) :
     (GoFV.SSA.Sem.addWithCarry x (-y) false).2 = (GoFV.SSA.Sem.addWithCarry x (~~~y) true).2 := by
