@@ -30,18 +30,19 @@ theorem runLoc_args {env : Env} {tabs : Tables} {f : Func} {args : List Val} {me
 
 /-- **Generic SSA to machine words.** `f` goes through the verified pipeline (`fullyVerified`)
 to the allocated function `r.st.func` (tables `r.st.tables`); genssa's P0 Progs `ps` of it are
-accepted by `checkG30`, its returns by `retRegsOK` (the results in the ABI registers `outs`), and
-the assembler's output `o` by `checkObj` (`ObjEnv`: linked at `base` to `code`, the caller's
-return address `s0.x 30`). On every input of Phase 1's `VPre` with the pipeline's premises, a
-`run` of `f` that returns or panics is refined by a `runLoc` of `r.st.func` (`OutcomeRefines`),
-which is `finish` of its body `runLoopLoc` from `locInit`; when the body returns `(rs, mm)`,
-`runMach` of the linked words from the function's entry `s0` returns to `s0.x 30` with the
-caller's `SP`, `g` and frame pointer (`MachRet`), `rs` in the result registers and `mm` injected
+accepted by `checkG30`, its returns by `retRegsOK` (the register results in their ABI registers,
+`ownOutRegs`), and the assembler's output `o` by `checkObj` (`ObjEnv`: linked at `base` to
+`code`, the caller's return address `s0.x 30`). On every input of Phase 1's `VPre` with the
+pipeline's premises, a `run` of `f` that returns or panics is refined by a `runLoc` of
+`r.st.func` (`OutcomeRefines`), which is `finish` of its body `runLoopLoc` from `locInit`; when
+the body returns `(rs, mm)`, `runMach` of the linked words from the function's entry `s0` returns
+to `s0.x 30` with the caller's `SP`, `g` and frame pointer (`MachRet`), `rs` in the result
+registers and `mm` (with the results on the stack, in their `PPARAMOUT` variables) injected
 into the memory (`ResultRel`); when the body panics with `pe` and the panic premises hold (the
 trusted `HookPanicMap` and `BoundsOK`, and `RunPanicPre`: the run's panics come from nil checks,
-stores that fault in the nil page, bounds checks and static, interface or closure calls whose
-callee panics by the trusted `CallPanicOK`, `ICallPanicOK`), `runMach` panics with `pe` or, for
-a bounds check, with the runtime's report of the same failure (`BoundsAgree`).
+loads and stores that fault in the nil page, bounds checks and static, interface or closure calls
+whose callee panics by the trusted `CallPanicOK`, `ICallPanicOK`), `runMach` panics with `pe` or,
+for a bounds check, with the runtime's report of the same failure (`BoundsAgree`).
 
 Premises of the machine side: those of `obj_whole_ret` (trusted: `HookMap`, and in `RunPre` the
 callee contracts `CallOK`, `CallOKZ`, `ICallOK`, `WbOK`, `CloOK`, `MemEqOK`; the caller's side:
@@ -65,7 +66,7 @@ theorem verified_mach
     (hO : ObjEnv ps spills o otab L base code (s0.x 30))
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hic : ∀ u, ICallOut L ps.toList u)
-    {outs : List Nat} (hrok : retRegsOK lc kt = true) (houts : ownOutRegs lc = some outs)
+    (hrok : retRegsOK lc kt = true)
     (hME : MachEntry code base room s0) (hroom : otab.autosize + 8 ≤ room)
     (hg : (s0.x 28).toNat + 32 ≤ 2 ^ 64)
     (hpass : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
@@ -90,7 +91,7 @@ theorem verified_mach
         raw.Defined ∧
       (∀ rs mm, raw = .returned rs mm →
         ∃ E t' n, E0.Extends E ∧ runMach H code (s0.x 30) n s0 = .returned t' ∧
-          MachRet s0 t' ∧ ResultRel E outs rs mm t') ∧
+          MachRet s0 t' ∧ ResultRel E (ownOutRegs lc) rs mm t') ∧
       (∀ pe mm, raw = .panicked pe mm → HookPanicMap H L ps.toList (ObjEnv.map otab ps L base) →
         BoundsOK H g L ps.toList →
         RunPanicPre e H lc g L (endP L.text ps.toList) E0 lc.ctx.f.entry k sI →
@@ -102,7 +103,7 @@ theorem verified_mach
   subst hlc
   refine ⟨fuel', href, _, rfl, heq, finish_defined (heq ▸ hd'), fun rs mm hraw => ?_,
     fun pe mm hraw hHP hbok hPP => ?_⟩
-  · exact obj_whole_ret hc hO hH hic hrok houts hME hroom hg hpass hlf hE hEE hbE hbm hk hpre hent
+  · exact obj_whole_ret hc hO hH hic hrok hME hroom hg hpass hlf hE hEE hbE hbm hk hpre hent
       hinv huE hpc hRP hraw
   · exact obj_whole_panic hc hO hH hHP hbok hic hME hroom hg hpass hE hEE hbE hbm hk hpre hent hinv
       huE hpc hRP hPP hraw

@@ -48,7 +48,7 @@ open GoFV.Gen.Check (kAt KTab cls retBlockOK retArgOK memTy) in
 /-- Why `retRegsOK lc kt` fails: the first failing condition of the first block `retBlockOK`
 rejects. -/
 def retWhy (lc : LocCtx) (kt : KTab) : String := Id.run do
-  let some outs := ownOutRegs lc | return "a result on the stack"
+  let outs := ownOutRegs lc
   for bid in lc.ctx.f.blocks.toList do
     let some blk := lc.ctx.f.block? bid | continue
     if retBlockOK lc kt outs bid blk then continue

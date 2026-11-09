@@ -178,8 +178,9 @@ theorem verified_mach_witness :
       ObjWhole.lc_premises hlcf
     rw [← hentry] at hpc
     obtain ⟨fuel', href, raw, hraw, hfin, hdef, hret, -⟩ :=
-      verified_mach hpe hv hvpre hnn hap hnp hd rfl hc hO hH hic hrok houts hME hroom hg hpass
+      verified_mach hpe hv hvpre hnn hap hnp hd rfl hc hO hH hic hrok hME hroom hg hpass
         hlf hE (hEE _) hb1 hbm hk hsI hent hinv hu (hpc _) hP
+    rw [houts] at hret
     exact ⟨r, rfl, hv, ⟨rs0, m0, hrun0⟩, fuel', href, raw, hraw, hfin, hdef, hret⟩
 
 end GoFV.Proof.Witness.ObjEndToEnd

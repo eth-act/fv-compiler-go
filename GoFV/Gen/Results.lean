@@ -5,29 +5,32 @@ import GoFV.SSA.Sem.TyEq
 # The results of a return in their ABI registers (`docs/plans/proofs3.md` §9)
 
 `retRegsOK lc kt` checks, of the allocated function of `lc` and the class tables `kt` of the genssa
-validator (`checkG30`'s), that every `Ret` block returns its results in the registers the ABI
-gives the function's own results (`f.OwnAux`'s assignments, `ownOutRegs`, as `callRegs` reads a
-callee's): its one control is a `MakeResult` whose arguments are the results, each homed in the
-next result register (an integer register, `R0`–`R15`) and holding its class there before the
-terminator (`kAt`), then the memory (no home). The `MakeResult`'s type is a tuple of as many
+validator (`checkG30`'s), that every `Ret` block returns its register-assigned results in the
+registers the ABI gives the function's own results (`f.OwnAux`'s assignments, `ownOutRegs`, as
+`callRegs` reads a callee's): its one control is a `MakeResult` whose arguments are those
+results, each homed in the next result register (an integer register, `R0`–`R15`) and holding its
+class there before the terminator (`kAt`), then the memory (no home). A result the ABI puts on the
+stack (or a zero-sized one) has no register and no `MakeResult` argument: `expand calls` stores it
+to its `PPARAMOUT` variable (`rewriteFuncResults`), where `goResults` reads it from the memory at
+the return. The `MakeResult`'s type is a tuple of as many
 shapes (`expand calls` gives it the results' register types, `abi.RegisterTypes`, which need not
 be the arguments' own: a pointer of another element type, a `uintptr` itab word for a `*itab`),
 each of a class no wider than its argument's (`retypeL` then keeps the register's relation,
 `valRel_retypeL_le`), the memory's last.
 `GoFV/Proof/Obj/Results.lean` proves what it gives (`ret_results`, `ret_resultsP` in Phase 1's
 mode): `runLoc`'s returned values are the contents of those registers, related to the machine's
-(`ResultRel`).
+(`ResultRel`); the stack results are in the returned memory, which `ResultRel` injects into the
+machine's.
 -/
 
 namespace GoFV.Gen.Check
 
 open GoFV.SSA GoFV.SSA.Sem
 
-/-- The Go registers of the function's own results by its ABI (`abiParams`: `f.OwnAux`'s
-assignments), in order; `none` if a result is on the stack. -/
-def ownOutRegs (lc : LocCtx) : Option (List Nat) :=
-  let outs := (abiParams lc.ctx.tabs lc.ctx.f).toList.filter (·.out)
-  if outs.all (!·.regs.isEmpty) then some (outs.flatMap (·.regs.toList.map abiReg)) else none
+/-- The Go registers of the function's own register-assigned results by its ABI (`abiParams`:
+`f.OwnAux`'s assignments), in order; a result on the stack has none. -/
+def ownOutRegs (lc : LocCtx) : List Nat :=
+  ((abiParams lc.ctx.tabs lc.ctx.f).toList.filter (·.out)).flatMap (·.regs.toList.map abiReg)
 
 /-- A result `a` at component shape `t` in register `r` with the class map `K` before the
 terminator: homed in `r` (`R0`–`R15`), of a class `c` that `K` gives `r`, read at a shape of a
@@ -60,14 +63,12 @@ def retBlockOK (lc : LocCtx) (kt : KTab) (outs : List Nat) (bid : ID) (blk : Blo
       | _, _ => false
     | _ => false
 
-/-- Every `Ret` block of the function returns its results in their ABI registers. -/
+/-- Every `Ret` block of the function returns its register-assigned results in their ABI
+registers. -/
 def retRegsOK (lc : LocCtx) (kt : KTab) : Bool :=
-  match ownOutRegs lc with
-  | none => false
-  | some outs =>
-    lc.ctx.f.blocks.toList.all fun bid =>
-      match lc.ctx.f.block? bid with
-      | some blk => retBlockOK lc kt outs bid blk
-      | none => true
+  lc.ctx.f.blocks.toList.all fun bid =>
+    match lc.ctx.f.block? bid with
+    | some blk => retBlockOK lc kt (ownOutRegs lc) bid blk
+    | none => true
 
 end GoFV.Gen.Check

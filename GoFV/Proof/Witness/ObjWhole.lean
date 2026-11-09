@@ -228,7 +228,7 @@ the ABI's); no frame variable, home slot, static or indirect call, write barrier
 carried (`uL`); simple ops from there on (`simpleFrom`). -/
 def lcFacts (env : Env) (lc : LocCtx) : Bool :=
   (checkG30 lc ps GenG3.bs GenG3.g).toOption == some (GenG3.tab, GenG3.kt) &&
-    retRegsOK lc GenG3.kt && ownOutRegs lc == some [0] &&
+    retRegsOK lc GenG3.kt && ownOutRegs lc == [0] &&
     (accessedVars lc).isEmpty && (homeSlots lc).isEmpty && GenG2.noCalls lc && noWbICall lc &&
     lc.ctx.f.entry == 1 && lc.ctx.f.blocks.toList.contains 1 && (lc.ctx.f.block? 1).isSome &&
     (blkOf lc).values.size == 2 &&
@@ -383,7 +383,7 @@ theorem obj_premises :
 meets `lcFacts`. -/
 theorem lc_premises {env : Env} {lc : LocCtx} (hf : lcFacts env lc = true) :
     checkG30 lc ps GenG3.bs GenG3.g = .ok (GenG3.tab, GenG3.kt) ∧
-    retRegsOK lc GenG3.kt = true ∧ ownOutRegs lc = some [0] ∧
+    retRegsOK lc GenG3.kt = true ∧ ownOutRegs lc = [0] ∧
     G28Env lc GenG3.g L ps (endP L.text ps.toList) GenG3.tab (E0 lc) ∧
     lc.ctx.f.block? lc.ctx.f.entry = some (blkOf lc) ∧ lc.ctx.f.entry ∈ lc.ctx.f.blocks.toList ∧
     2 ≤ (blkOf lc).values.size ∧ lc.ctx.f.entry = 1 ∧ uL lc (blkOf lc) 2 = [] ∧
@@ -446,8 +446,9 @@ theorem whole_of {env : Env} {lc : LocCtx} (hf : lcFacts env lc = true) {fuel : 
   obtain ⟨hO, hH, hME, hroom, hg, hpass, hlf, -, hEE, hpc, -, -, hic⟩ := obj_premises
   obtain ⟨hc, hrok, houts, hE, hb1, hbm, hk, hentry, hu, sI, hsI, hent, hinv, hP⟩ := lc_premises hf
   rw [← hentry] at hpc
-  exact obj_whole_ret hc hO hH hic hrok houts hME hroom hg hpass hlf hE (hEE lc) hb1 hbm hk hsI
+  have h := obj_whole_ret hc hO hH hic hrok hME hroom hg hpass hlf hE (hEE lc) hb1 hbm hk hsI
     hent hinv hu (hpc lc) hP hrun
+  rwa [houts] at h
 
 /-- The machine word of the 64-bit integer `7` is `7`. -/
 theorem valRel_7 {ι : Blk → Option (BitVec 64)} {r : BitVec 64} (h : ValRel ι (.int .w64 7) r) :
