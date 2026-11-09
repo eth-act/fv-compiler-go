@@ -817,12 +817,14 @@ bounds check the runtime's report of the same failure). The pieces: `sim_valuePa
 
 `GoFV.Proof.Obj.verified_mach` (`GoFV/Proof/Obj/EndToEnd.lean`): `verifiedPipelineFull_refines`
 composed with `obj_whole_ret` and `obj_whole_panic`. For `f` through the verified pipeline
-(`fullyVerified`) and its output's genssa Progs and assembled words accepted by `checkG38`,
-`retRegsOK` and `checkObj`, on every input of `VPre` with the pipeline's premises (`hn`, `ha`,
-`hnp`) on which `run` of `f` returns or panics, a `runLoc` of the output refines it
-(`OutcomeRefines`), `runLoc` is `finish` of its body's defined outcome (`runLoc_eq`,
-`finish_defined`); when the body returns, `runMach` of the linked words returns to the caller with
-the results in their registers (`obj_whole_ret`'s conclusion); when it panics and the panic
+(`fullyVerified`) and its output's genssa Progs and assembled words accepted by `checkG39`
+(slice G39 on `LocCtx.make` of the output: `refsLive`, and `checkG38` on `lc = liveCtx` of it),
+`retRegsOK` (on `lc`) and `checkObj`, on every input of `VPre` with the pipeline's premises (`hn`,
+`ha`, `hnp`) on which `run` of `f` returns or panics, a `runLoc` of the output refines it
+(`OutcomeRefines`), `runLoc` is `finish` of its body's defined outcome on `lc` (`runLoc_eq`,
+`runLoopLoc_live`, `finish_defined`); when the body returns, `runMach` of the linked words returns
+to the caller with the results in their registers (`obj_whole_ret`'s conclusion); when it panics
+and the panic
 premises hold, `runMach` panics alike (`obj_whole_panic`'s conclusion). Every premise is in the
 statement; the trusted ones are in the table below.
 
@@ -846,7 +848,7 @@ Witnesses:
 - `verified_mach_witness` (`GoFV/Proof/Witness/ObjEndToEnd.lean`): `pallocSum.start` from its
   generic SSA (the export's first section, the whole-file pass environment of
   `gofv-ssa-opt --verified`) through the verified pipeline (`fullyVerified`), with every premise
-  of `verified_mach` discharged.
+  of `verified_mach` discharged (`checkG39` on its output: `refsLive`, `checkG38` on `liveCtx`).
 
 Not yet covered (#553): panics other than nil checks, loads, stores, acquire loads, bounds checks
 and calls (register-index loads and stores; write barriers; `memequal`).
@@ -855,8 +857,9 @@ and calls (register-index loads and stores; write barriers; `memequal`).
 
 The functions `verified_mach`'s function-level premises hold of (#553): the verified pipeline is
 `fullyVerified` (as `--check --verified` runs it: driver export environment, type rounds), and on
-the pipeline's own output (function and tables) genssa's P0 Progs are accepted by `checkG38`
-against `LocCtx.make r.st.tables r.st.func`, `retRegsOK` holds of its class tables, and `checkObj`
+the pipeline's own output (function and tables) genssa's P0 Progs are accepted by `checkG39`
+against `LocCtx.make r.st.tables r.st.func`, `retRegsOK` holds of `liveCtx` of it and its class
+tables, and `checkObj`
 accepts `Flushplist`'s output on those same Progs (`GoFVTest/Driver/E2E.lean`,
 `docs/DRIVER.md`). Frame (`allocFrame`), Progs and object are the
 ports' own; the frame is laid out on the pipeline's own locals (`ownFrame`: the frontend's
@@ -864,24 +867,24 @@ declarations, then the autos the pipeline created). From the stock `.prog` file 
 input view is read (definitions, config, `Dcl` at `AllocFrame`'s start, `genin`). The stock
 column runs the same back end on the stock `trim` function of every function.
 
-| quick-v10 (9,297 functions, 16 min 37 s; `agent/obj9-g37` be122643, `--jobs 2`) | pipeline output | share | stock `trim` |
+| quick-v10 (9,297 functions, 10 min 24 s; `agent/obj9` on main 02429890 (G39), `--jobs 2`) | pipeline output | share | stock `trim` |
 | --- | ---: | ---: | ---: |
-| fully verified (Phase 2, through `trim`) | 7,676 | 82.56% | - |
-| … genssa and `Flushplist` ran | 7,676 | 82.56% | 9,297 |
-| … ∧ `checkG37` | 5,598 | 60.21% | 6,099 |
-| … ∧ `checkG37` ∧ `retRegsOK` | 5,598 | 60.21% | 6,099 |
-| … ∧ `checkObj` | 7,036 | 75.68% | 7,741 |
-| **… ∧ `checkG37` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach`)** | **5,538** | **59.56%** | 5,946 |
-| … end to end, pipeline output identical to stock after `trim` | 4,744 | 51.02% | - |
+| fully verified (Phase 2, through `trim`) | 7,699 | 82.81% | - |
+| … genssa and `Flushplist` ran | 7,699 | 82.81% | 9,297 |
+| … ∧ `checkG39` | 5,914 | 63.61% | 6,447 |
+| … ∧ `checkG39` ∧ `retRegsOK` | 5,914 | 63.61% | 6,447 |
+| … ∧ `checkObj` | 7,052 | 75.85% | 7,741 |
+| **… ∧ `checkG39` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach`)** | **5,853** | **62.95%** | 6,286 |
+| … end to end, pipeline output identical to stock after `trim` | 4,975 | 53.51% | - |
 
-The composition on G34 (#632) accepted 5,424 (58.34%), framed leaves excluded. On G35 the probe
-counted 5,438 accepted by all three, 5,431 without framed leaves: covering framed leaves adds 7.
-G36's and G37's ops add the rest (+114 over G34 in all). `ownFrame` gives the stock `stksize`/`stkptrsize` on all
-6,459 fully verified functions whose output is identical to stock. `pallocSum.start` (the witness
-`verified_mach_witness`) is among the accepted. Top reasons among the fully verified: `checkG37`:
-`store shape` (275), `frame variable off another base` (229), `op LDAR` (196), `op CALLtail`
-(164), `argument v# in register #` (144), `frame variable with an integer address` (135), `frame
-variable operand class` (133), `op LDARW` (111), `op LoweredAtomicAdd#Variant` (81); `retRegsOK`:
+The composition on G34 (#632) accepted 5,424 (58.34%), framed leaves excluded; on G37 with framed
+leaves 5,538 (59.56%); on G38 (the acquire loads) the probe counted 5,802 (62.40%); G39 (the
+homes of removed values) adds 51. `ownFrame` gives the stock `stksize`/`stkptrsize` on all
+6,472 fully verified functions whose output is identical to stock. `pallocSum.start` (the witness
+`verified_mach_witness`) is among the accepted. Top reasons among the fully verified: `checkG39`:
+`store shape` (304), `frame variable off another base` (229), `op CALLtail` (164), `argument v#
+in register #` (151), `frame variable with an integer address` (138), `frame variable operand
+class` (133), `op LoweredAtomicAdd#Variant` (95), `op LoweredAtomicCas#Variant` (91); `retRegsOK`:
 none; `checkObj`: `FLDPQ` (SIMD&FP, 121), unmodelled atomics `LDADDAL`/`CASAL` (≈240 together),
 `tail: spill register` (58), `LSL` by a register (39).
 

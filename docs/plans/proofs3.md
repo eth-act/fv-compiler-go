@@ -23,9 +23,9 @@ functions: `obj_whole_ret` (a returning `runLoc` body of a G38 function, from th
 through the prologue, the blocks and the epilogue to the caller's return address, the results in
 their ABI registers), `obj_whole_panic` (a panicking body: nil checks, loads, stores and acquire
 loads that fault, bounds checks, calls whose callee panics), and the end-to-end statement
-`verified_mach` (generic SSA `run` refined by `runLoc`, whose body is matched by `runMach` of the
-assembled words; §9), with a witness on
-`pallocSum.start` from its generic SSA.
+`verified_mach` on slice G39 (generic SSA `run` refined by `runLoc`, whose body is matched by
+`runMach` of the assembled words; `checkG39`'s `checkG38` on `liveCtx`, `runLoopLoc_live`; §9),
+with a witness on `pallocSum.start` from its generic SSA.
 Context:
 `docs/plans/semantics3.md` (§4 `LocMatch`, §6 hooks, §7 layers), `docs/PASSES3.md` (the steps
 A1–F2), `docs/plans/regalloc-check.md` (the Phase 2 pattern this plan follows: an untrusted port
@@ -1797,9 +1797,12 @@ blk i)`: `g38_value` carries it from value to value, `g38_term` hands the succes
 
 **End to end** (`GoFV/Proof/Obj/EndToEnd.lean`, `verified_mach`): `verifiedPipelineFull_refines`
 gives a `runLoc` of the allocated function refining the generic `run`; `runLoc` is `finish` of its
-body (`runLoc_eq`, from `locInit`), whose outcome is defined (`finish_defined`); a returning body
-is `obj_whole_ret`'s, a panicking one `obj_whole_panic`'s (under its panic premises). The
-statement lists every premise (STATUS, Assumptions).
+body (`runLoc_eq`, from `locInit`), whose outcome is defined (`finish_defined`). The slice is G39:
+`checkG39` accepts `LocCtx.make` of the output when `refsLive` holds of it and `checkG38` accepts
+`lc = liveCtx` of it; the body runs alike on `lc` (`runLoopLoc_live`), and the whole-function
+theorems apply on `lc`: a returning body is `obj_whole_ret`'s, a panicking one
+`obj_whole_panic`'s (under its panic premises). The statement lists every premise (STATUS,
+Assumptions).
 
 **Witnesses.** `objWhole_ret_witness` (`pallocSum.start`, `p = 7`, `plRunEnv`): `runLoc`'s run
 from `locInit` and `runMach` from the entry to the caller's `0x40`, through `b1`'s `TBNZ` and
@@ -1814,7 +1817,7 @@ caller's `0x40` in `X30`). `verified_mach_witness`:
 `pallocSum.start` from its generic SSA (the export's first
 section, in the whole-file environment of `gofv-ssa-opt --verified`) through
 `verifiedPipelineFull` (`fullyVerified`), with every premise of `verified_mach` discharged;
-`checkG38` accepts genssa's Progs against the pipeline's own output. `RunPre` there is
+`checkG39` accepts genssa's Progs against the pipeline's own output. `RunPre` there is
 `runPre_simple`.
 
 **Next.** Panics of the other kinds (register-index loads and stores; write barriers, `memequal`).

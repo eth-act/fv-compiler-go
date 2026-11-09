@@ -90,9 +90,9 @@ GoFV.Proof.Witness.ObjG7.g_leaf_facts._native.native_decide.ax_1_1 6d02479123ac0
 GoFV.Proof.Witness.ObjWhole.obj_facts._native.native_decide.ax_1_1 6868e3bf789cdc99d1a28cbfa2d40bd152c00f1bf0dff40764d8fd9b29cf4b7f
 GoFV.Proof.Witness.ObjWhole.start_facts._native.native_decide.ax_1_1 8e35acc4b9cfbf40888fe43939cbab7a62f57fbe44e39c68d40c217e08310afa
 # verified_mach_witness (GoFV/Proof/Witness/ObjEndToEnd.lean, #553): `pallocSum.start` from its
-# generic SSA through the verified pipeline to genssa's Progs and the linked words; compiled
-# evaluation, as plF_pipeline.
-GoFV.Proof.Witness.ObjEndToEnd.e2e_facts._native.native_decide.ax_1_1 356642eeaca6e20fc20cfa036353391faa1575607042e0f3a6988f768b295406
+# generic SSA through the verified pipeline to genssa's Progs (`refsLive` of the output, `lcFacts`
+# on `liveCtx` of it) and the linked words; compiled evaluation, as plF_pipeline.
+GoFV.Proof.Witness.ObjEndToEnd.e2e_facts._native.native_decide.ax_1_1 56e5f4712675884852fa79890cbc19c48b956a6f5e6e5d8af47a977cffc45c55
 # objWholeNL_ret_witness (GoFV/Proof/Witness/ObjWholeNL.lean, #553): `checkObj`, `linkCode` and the
 # machine-side facts of `runtime.gclinkptr.ptr` (no arm64 op), and `lcFacts` plus the returning
 # run of `runLoc` in Phase 1's mode; compiled evaluation, as plF_pipeline.
