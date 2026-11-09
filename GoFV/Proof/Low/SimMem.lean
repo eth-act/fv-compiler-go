@@ -1,4 +1,5 @@
 import GoFV.Proof.Low.SimAtom
+import GoFV.Proof.Low.SimMoveQ
 
 /-!
 # Lowered loads and stores refine the generic ones (issue #385)
@@ -1604,5 +1605,56 @@ theorem idx_atom_eval {tabs : Tables} {f g : Func} {env : Env}
       ha' (.cons (by simpa using hv) (.cons (by simpa using hm) .nil))
   · exact idx_lower_eval_fit hu (idxOp_of hp hn) (by rw [makeL_tabs]; exact fitsB_store hf) hwd
       f.lowered ha' (by simpa using hv) (.cons (by simpa using hm) .nil)
+
+/-- **A `Move` lowered to a 128-bit store refines** (`moveQLower`): `w`'s address at its offset
+and aux holds `u`'s destination, `w`'s values refine the 16-byte halves `u` copies (`qPart`) and
+`w`'s memory refines `u`'s (`Sim.moveQ_lower_eval`). -/
+theorem moveQ_atom_eval {tabs : Tables} {f g : Func} {env : Env}
+    (hgl : g.lowered = true) {GS GT : Frame} {u w : Value} (hq : moveQLower tabs u w = true)
+    (hty : (Ctx.makeL tabs g).tys[w.id]?.getD .other = (Ctx.makeL tabs f).tys[u.id]?.getD .other)
+    (hregS : ∀ a ∈ u.args, Reg GS a) (hregT : ∀ a ∈ w.args, Reg GT a)
+    (ha : AddrRef tabs 0 w.aux w.auxInt (rv GS u.args[0]!) (rv GT w.args[0]!))
+    (hv : ∀ i, i + 2 < w.args.size →
+      Sem.Refines (qPart i (rv GS u.args[1]!) (rv GS u.args[2]!)) (rv GT w.args[i + 1]!))
+    (hm : Sem.Refines (rv GS u.args[2]!) (rv GT w.args[w.args.size - 1]!)) :
+    Res.Refines (evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) GS u)
+      (evalValueL ⟨g.lowered, false⟩ env (Ctx.makeL tabs g) GT w) := by
+  obtain ⟨hu, hc⟩ := Sim.moveQLower_cases hq
+  have h3 : u.args.size = 3 := by
+    unfold moveQLower at hq; simp only [Bool.and_eq_true, beq_iff_eq] at hq; exact hq.1.1.1.2
+  have hq' : moveQLower (Ctx.makeL tabs g).tabs u w = true := by rw [makeL_tabs]; exact hq
+  rw [evalValueL_of_regs hregS, evalValueL_of_regs hregT, hty, hgl]
+  generalize (Ctx.makeL tabs f).tys[u.id]?.getD .other = ty
+  obtain ⟨a0, a1, a2, hua⟩ := args3 h3
+  rw [hua] at ha hv hm
+  rw [hua]
+  simp only [List.toList_toArray, List.map_cons, List.map_nil]
+  rw [evalOpL_generic _ _ _ _ _ _ (by rw [hu]; decide)]
+  have ha' : AddrRef (Ctx.makeL tabs g).tabs (Ctx.makeL tabs g).act w.aux w.auxInt (rv GS a0)
+      (rv GT w.args[0]!) := by
+    rw [makeL_tabs, makeL_act]; exact ha
+  rcases hc with ⟨-, -, h3w⟩ | ⟨-, -, h4w⟩
+  · obtain ⟨b0, b1, b2, hwa⟩ := args3 h3w
+    rw [hwa] at ha' hv hm
+    rw [hwa]
+    simp only [List.toList_toArray, List.map_cons, List.map_nil]
+    exact Sim.moveQ_lower_eval (w := w) hq' f.lowered (xs := [rv GT b1]) (by simpa using ha')
+      (by simpa using hm) (by rw [hwa]; rfl) fun i x hx => by
+        rcases i with _ | i
+        · simp only [List.getElem?_cons_zero, Option.some.injEq] at hx
+          subst hx; simpa using hv 0 (by simp)
+        · simp at hx
+  · obtain ⟨b0, b1, b2, b3, hwa⟩ := args4 h4w
+    rw [hwa] at ha' hv hm
+    rw [hwa]
+    simp only [List.toList_toArray, List.map_cons, List.map_nil]
+    exact Sim.moveQ_lower_eval (w := w) hq' f.lowered (xs := [rv GT b1, rv GT b2])
+      (by simpa using ha') (by simpa using hm) (by rw [hwa]; rfl) fun i x hx => by
+        rcases i with _ | _ | i
+        · simp only [List.getElem?_cons_zero, Option.some.injEq] at hx
+          subst hx; simpa using hv 0 (by simp)
+        · simp only [List.getElem?_cons_succ, List.getElem?_cons_zero, Option.some.injEq] at hx
+          subst hx; simpa using hv 1 (by simp)
+        · simp at hx
 
 end GoFV.Proof.Low
