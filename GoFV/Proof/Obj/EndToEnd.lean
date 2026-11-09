@@ -1,4 +1,5 @@
 import GoFV.Proof.Obj.Whole
+import GoFV.Proof.Gen.G39
 import GoFV.Proof.Pass.PipelineFull
 
 /-!
@@ -6,10 +7,13 @@ import GoFV.Proof.Pass.PipelineFull
 
 `verifiedPipelineFull_refines` (Phase 2: every returning or panicking `run` of the generic SSA
 input is refined by a `runLoc` of `trim`'s output) composed with `obj_whole_ret` (Phase 3: a
-returning `runLoc` body of a function `checkG34`, `retRegsOK` and `checkObj` accept is matched by
+returning `runLoc` body of a function `checkG38`, `retRegsOK` and `checkObj` accept is matched by
 `runMach` of the linked words, with the results in their ABI registers) and `obj_whole_panic` (a
-panicking body by a panicking `runMach`). `runLoc` is `finish` of its body `runLoopLoc`
-(`runLoc_eq`), whose outcome is returned or panicked when `runLoc`'s is (`finish_defined`).
+panicking body by a panicking `runMach`), on slice G39: `checkG39` accepts the pipeline's output
+`LocCtx.make tabs f` when `refsLive` holds of it and `checkG38` accepts `liveCtx` of it (the homes
+of removed values dropped), under which `runLoc` runs alike (`runLoopLoc_live`). `runLoc` is
+`finish` of its body `runLoopLoc` (`runLoc_eq`), whose outcome is returned or panicked when
+`runLoc`'s is (`finish_defined`).
 -/
 
 namespace GoFV.Proof.Obj
@@ -30,19 +34,21 @@ theorem runLoc_args {env : Env} {tabs : Tables} {f : Func} {args : List Val} {me
 
 /-- **Generic SSA to machine words.** `f` goes through the verified pipeline (`fullyVerified`)
 to the allocated function `r.st.func` (tables `r.st.tables`); genssa's P0 Progs `ps` of it are
-accepted by `checkG34`, its returns by `retRegsOK` (the register results in their ABI registers,
-`ownOutRegs`), and the assembler's output `o` by `checkObj` (`ObjEnv`: linked at `base` to
-`code`, the caller's return address `s0.x 30`). On every input of Phase 1's `VPre` with the
-pipeline's premises, a `run` of `f` that returns or panics is refined by a `runLoc` of
-`r.st.func` (`OutcomeRefines`), which is `finish` of its body `runLoopLoc` from `locInit`; when
-the body returns `(rs, mm)`, `runMach` of the linked words from the function's entry `s0` returns
-to `s0.x 30` with the caller's `SP`, `g` and frame pointer (`MachRet`), `rs` in the result
+accepted by `checkG39` (so `checkG38` accepts them on `lc`, `LocCtx.make` of the pipeline's
+output without the homes of removed values, `liveCtx`), its returns by `retRegsOK` (the register
+results in their ABI registers, `ownOutRegs`), and the assembler's output `o` by `checkObj`
+(`ObjEnv`: linked at `base` to `code`, the caller's return address `s0.x 30`). On every input of
+Phase 1's `VPre` with the pipeline's premises, a `run` of `f` that returns or panics is refined by
+a `runLoc` of `r.st.func` (`OutcomeRefines`), which is `finish` of its body `runLoopLoc` on `lc`
+from `locInit`; when the body returns `(rs, mm)`, `runMach` of the linked words from the
+function's entry `s0` returns to `s0.x 30` with the caller's `SP`, `g` and frame pointer
+(`MachRet`), `rs` in the result
 registers and `mm` (with the results on the stack, in their `PPARAMOUT` variables) injected
 into the memory (`ResultRel`); when the body panics with `pe` and the panic premises hold (the
 trusted `HookPanicMap` and `BoundsOK`, and `RunPanicPre`: the run's panics come from nil checks,
-loads and stores that fault in the nil page, bounds checks and static, interface or closure calls
-whose callee panics by the trusted `CallPanicOK`, `ICallPanicOK`), `runMach` panics with `pe` or,
-for a bounds check, with the runtime's report of the same failure (`BoundsAgree`).
+loads, stores and acquire loads that fault in the nil page, bounds checks and static, interface or
+closure calls whose callee panics by the trusted `CallPanicOK`, `ICallPanicOK`), `runMach` panics
+with `pe` or, for a bounds check, with the runtime's report of the same failure (`BoundsAgree`).
 
 Premises of the machine side: those of `obj_whole_ret` (trusted: `HookMap`, `runtime.morestack`'s
 contract `MorestackOK` at the morestack tail's call, and in `RunPre` the callee contracts
@@ -60,11 +66,11 @@ theorem verified_mach
     (ha : ∀ x ∈ r.nnf, ArgPtrsOK x.1 x.2 e args mem)
     (hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 e args mem) {fuel : Nat}
     (hd : (GoFV.SSA.run e penv.tables f args mem fuel).Defined)
-    {lc : LocCtx} (hlc : lc = LocCtx.make r.st.tables r.st.func)
+    {lc : LocCtx} (hlc : lc = liveCtx (LocCtx.make r.st.tables r.st.func))
     {H : Hooks} {g : G2In} {L : Link} {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab}
     {kt : KTab} {E0 : MatchEnv} {spills : Array Spill} {o : ObjIn} {otab : Tab}
     {base : BitVec 64} {code : Code} {room : Nat} {s0 : MState}
-    (hc : checkG34 lc ps bstart g = .ok (tab, kt))
+    (hc : checkG39 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
     (hO : ObjEnv ps spills o otab L base code (s0.x 30))
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hic : ∀ u, ICallOut L ps.toList u)
@@ -75,7 +81,6 @@ theorem verified_mach
       tailCall o.text o.relocs.toList tail = some (n, add) →
       MorestackOK H code (s0.x 30) (L.sym n + BitVec.ofInt 64 add) otab.autosize gOff s0)
     (hsep : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) → TailSep spills.toList s0)
-    (hlf : otab.autosize = 0 ∨ otab.leaf = false)
     (hE : G28Env lc g L ps (endP L.text ps.toList) tab E0)
     (hEE : EntryEnv E0 L ps.toList otab.autosize s0)
     {sI : LocState} {blkE : Block} {k : Nat}
@@ -86,7 +91,7 @@ theorem verified_mach
     (hmore : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
       MoreEntry E0 spills.toList gOff sI s0)
     (hinv : G3Inv E0 lc (kAt lc kt lc.ctx.f.entry blkE k) sI)
-    (huE : uL34 lc [] blkE k = [])
+    (huE : uL35 lc [] blkE k = [])
     (hpc : ObjEnv.map otab ps L base (E0.pcOf lc.ctx.f.entry k) =
       base + BitVec.ofNat 64 (otab.offs[0]!))
     (hRP : RunPre e H lc g L (endP L.text ps.toList) E0 lc.ctx.f.entry k sI) :
@@ -106,11 +111,16 @@ theorem verified_mach
   obtain ⟨fuel', href⟩ := verifiedPipelineFull_refines hpipe hv hP hn ha hnp hd
   have hd' : (runLoc e r.st.tables r.st.func args mem fuel').Defined := href.defined_right
   have hargs := runLoc_args hd'
-  have heq := runLoc_eq (env := e) (mem := mem) (fuel := fuel') hargs
+  obtain ⟨hr, hc⟩ := checkG39_spec hc
+  have heq : runLoc e r.st.tables r.st.func args mem fuel' =
+      finish e lc.ctx.outs lc.ctx.defers lc.ctx.act
+        (runLoopLoc e lc fuel' (locInit e lc args mem) lc.ctx.f.entry) := by
+    rw [runLoc_eq hargs, hlc, runLoopLoc_live hr]
+    rfl
   subst hlc
   refine ⟨fuel', href, _, rfl, heq, finish_defined (heq ▸ hd'), fun rs mm hraw => ?_,
     fun pe mm hraw hHP hbok hPP => ?_⟩
-  · exact obj_whole_ret hc hO hH hic hrok hME hroom hg hms hsep hlf hE hEE hbE hbm hk hpre hent
+  · exact obj_whole_ret hc hO hH hic hrok hME hroom hg hms hsep hE hEE hbE hbm hk hpre hent
       hmore hinv huE hpc hRP hraw
   · exact obj_whole_panic hc hO hH hHP hbok hic hME hroom hg hms hsep hE hEE hbE hbm hk hpre hent
       hmore hinv huE hpc hRP hPP hraw

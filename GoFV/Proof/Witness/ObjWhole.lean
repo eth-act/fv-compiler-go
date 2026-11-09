@@ -5,7 +5,7 @@ import GoFV.Proof.Witness.Pipeline
 /-!
 # Non-vacuity witness: a whole function down to the machine words (`obj_whole_ret`)
 
-`pallocSum.start` of `std/runtime` (`GenG3`: `checkG34` accepts it with the tables of `checkG3`;
+`pallocSum.start` of `std/runtime` (`GenG3`: `checkG38` accepts it with the tables of `checkG3`;
 `ObjG7`: `checkObj` accepts its assembled words, a frameless leaf without a stack check):
 
 ```go
@@ -220,14 +220,14 @@ def objFacts : Bool :=
 theorem obj_facts : objFacts = true := by
   native_decide
 
-/-- What compiled evaluation checks of a `runLoc` context `lc` (`env`): `checkG34` accepts
+/-- What compiled evaluation checks of a `runLoc` context `lc` (`env`): `checkG38` accepts
 genssa's Progs of `pallocSum.start` against it, and `retRegsOK` its return (the result in `R0`,
 the ABI's); no frame variable, home slot, static or indirect call, write barrier or
 `LoweredMemEq`; the entry is `b1`, with two values, which run from `runLoc`'s first state on
 `p = 7` to `R0 = 7` and the frame memory; `R0` has class 64 after them and no upper-bit fact is
-carried (`uL34`); simple ops from there on (`simpleFrom`). -/
+carried (`uL35`); simple ops from there on (`simpleFrom`). -/
 def lcFacts (env : Env) (lc : LocCtx) : Bool :=
-  (checkG34 lc ps GenG3.bs GenG3.g).toOption == some (GenG3.tab, GenG3.kt) &&
+  (checkG38 lc ps GenG3.bs GenG3.g).toOption == some (GenG3.tab, GenG3.kt) &&
     retRegsOK lc GenG3.kt && ownOutRegs lc == [0] &&
     (accessedVars lc).isEmpty && (homeSlots lc).isEmpty && GenG2.noCalls lc && noWbICall lc &&
     lc.ctx.f.entry == 1 && lc.ctx.f.blocks.toList.contains 1 && (lc.ctx.f.block? 1).isSome &&
@@ -235,7 +235,7 @@ def lcFacts (env : Env) (lc : LocCtx) : Bool :=
     GenG1.okThen (enterListLoc env lc (locInit env lc args {}) ((blkOf lc).values.toList.take 2))
       sIIs &&
     (kAt lc GenG3.kt 1 (blkOf lc) 2).get 0 == some 64 && simpleFrom lc.ctx.f 1 2 &&
-    noMemEq lc && (uL34 lc [] (blkOf lc) 2).isEmpty
+    noMemEq lc && (uL35 lc [] (blkOf lc) 2).isEmpty
 
 /-! ## The activation -/
 
@@ -288,12 +288,12 @@ theorem sep {lc : LocCtx} (hk : (memI.blocks.toList.map (·.1)).Nodup) :
   refine ⟨hk, fun b al a _ _ y hy => ?_⟩
   rcases hy with ⟨h, -⟩ | ⟨k, off, h, -⟩ <;> cases h
 
-theorem g28Env {lc : LocCtx} (hc : checkG34 lc ps GenG3.bs GenG3.g = .ok (GenG3.tab, GenG3.kt))
+theorem g28Env {lc : LocCtx} (hc : checkG38 lc ps GenG3.bs GenG3.g = .ok (GenG3.tab, GenG3.kt))
     (hav : (accessedVars lc).isEmpty = true) (hsl : (homeSlots lc).isEmpty = true)
     (hnc : GenG2.noCalls lc = true) (hwi : noWbICall lc = true) (hme : noMemEq lc = true)
     (hend : GenG2.symA ≠ endP GenG2.text ps.toList) (hso : symsOut = true) :
     G28Env lc GenG3.g L ps (endP L.text ps.toList) GenG3.tab (E0 lc) := by
-  obtain ⟨-, -, -, -, hlt, -, -⟩ := checkG34_cx hc
+  obtain ⟨-, -, -, -, hlt, -, -⟩ := checkG38_cx hc
   have h2 : G2Env lc GenG3.g L ps 0 GenG3.tab (E0 lc) :=
     { lcEq := rfl
       link := rfl
@@ -345,7 +345,6 @@ theorem obj_premises :
     MachEntry ObjG7.startCode ObjG7.base 8 s0 ∧ ObjG7.startTab.autosize + 8 ≤ 8 ∧
     (s0.x 28).toNat + 32 ≤ 2 ^ 64 ∧
     ObjG7.startTab.check = none ∧
-    (ObjG7.startTab.autosize = 0 ∨ ObjG7.startTab.leaf = false) ∧
     GenG2.symA ≠ endP GenG2.text ps.toList ∧
     (∀ lc, EntryEnv (E0 lc) L ps.toList ObjG7.startTab.autosize s0) ∧
     (∀ lc, ObjEnv.map ObjG7.startTab ps L ObjG7.base ((E0 lc).pcOf 1 2) =
@@ -365,7 +364,7 @@ theorem obj_premises :
       gOutside := by decide, fp := by decide },
     (by rw [haz]; decide), (by decide),
     Option.isNone_iff_eq_none.1 hchk,
-    Or.inl haz, hend, fun lc => ?_, fun _ => hpc, hkeys, hso, ObjG7.noICall_spec hni L⟩
+    hend, fun lc => ?_, fun _ => hpc, hkeys, hso, ObjG7.noICall_spec hni L⟩
   exact
     { sp := by rw [haz]; show (0x7fff0000 : BitVec 64) + BitVec.ofInt 64 0 = 0x7fff0000; decide
       g := rfl
@@ -381,21 +380,21 @@ theorem obj_premises :
 /-- The `runLoc`-side premises of `obj_whole_ret` on `pallocSum.start` in a context `lc` that
 meets `lcFacts`. -/
 theorem lc_premises {env : Env} {lc : LocCtx} (hf : lcFacts env lc = true) :
-    checkG34 lc ps GenG3.bs GenG3.g = .ok (GenG3.tab, GenG3.kt) ∧
+    checkG38 lc ps GenG3.bs GenG3.g = .ok (GenG3.tab, GenG3.kt) ∧
     retRegsOK lc GenG3.kt = true ∧ ownOutRegs lc = [0] ∧
     G28Env lc GenG3.g L ps (endP L.text ps.toList) GenG3.tab (E0 lc) ∧
     lc.ctx.f.block? lc.ctx.f.entry = some (blkOf lc) ∧ lc.ctx.f.entry ∈ lc.ctx.f.blocks.toList ∧
-    2 ≤ (blkOf lc).values.size ∧ lc.ctx.f.entry = 1 ∧ uL34 lc [] (blkOf lc) 2 = [] ∧
+    2 ≤ (blkOf lc).values.size ∧ lc.ctx.f.entry = 1 ∧ uL35 lc [] (blkOf lc) 2 = [] ∧
     ∃ sI, enterListLoc env lc (locInit env lc args {}) ((blkOf lc).values.toList.take 2) = .ok sI ∧
       EntryMatch (E0 lc) sI s0 ∧
       G3Inv (E0 lc) lc (kAt lc GenG3.kt lc.ctx.f.entry (blkOf lc) 2) sI ∧
       RunPre env GenG2.H0 lc GenG3.g L (endP L.text ps.toList) (E0 lc) lc.ctx.f.entry 2 sI := by
-  obtain ⟨-, -, -, -, -, -, -, hend, -, -, hkeys, hso, -⟩ := obj_premises
+  obtain ⟨-, -, -, -, -, -, hend, -, -, hkeys, hso, -⟩ := obj_premises
   simp only [lcFacts, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem] at hf
   obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hres, hrok⟩, houts⟩, hav⟩, hsl⟩, hnc⟩, hwi⟩, hentry⟩, hbm⟩, hbs⟩, hsz⟩,
     hpre⟩, hk0⟩, hsim⟩, hme⟩, hu⟩ := hf
-  have hc : checkG34 lc ps GenG3.bs GenG3.g = .ok (GenG3.tab, GenG3.kt) := by
-    revert hres; cases checkG34 lc ps GenG3.bs GenG3.g <;> simp [Except.toOption]
+  have hc : checkG38 lc ps GenG3.bs GenG3.g = .ok (GenG3.tab, GenG3.kt) := by
+    revert hres; cases checkG38 lc ps GenG3.bs GenG3.g <;> simp [Except.toOption]
   have hb1 : lc.ctx.f.block? 1 = some (blkOf lc) := by
     obtain ⟨b, hb⟩ := Option.isSome_iff_exists.1 hbs
     simp [blkOf, hb]
@@ -442,12 +441,12 @@ theorem whole_of {env : Env} {lc : LocCtx} (hf : lcFacts env lc = true) {fuel : 
     ∃ E t' n, (E0 lc).Extends E ∧
       runMach GenG2.H0 ObjG7.startCode 0x40 n s0 = .returned t' ∧ MachRet s0 t' ∧
       ResultRel E [0] rs mm t' := by
-  obtain ⟨hO, hH, hME, hroom, hg, hnone, hlf, -, hEE, hpc, -, -, hic⟩ := obj_premises
+  obtain ⟨hO, hH, hME, hroom, hg, hnone, -, hEE, hpc, -, -, hic⟩ := obj_premises
   obtain ⟨hc, hrok, houts, hE, hb1, hbm, hk, hentry, hu, sI, hsI, hent, hinv, hP⟩ := lc_premises hf
   rw [← hentry] at hpc
   have h := obj_whole_ret hc hO hH hic hrok hME hroom hg
     (fun _ _ _ h => by rw [hnone] at h; cases h) (fun _ _ _ h => by rw [hnone] at h; cases h)
-    hlf hE (hEE lc) hb1 hbm hk hsI hent (fun _ _ _ h => by rw [hnone] at h; cases h) hinv hu
+    hE (hEE lc) hb1 hbm hk hsI hent (fun _ _ _ h => by rw [hnone] at h; cases h) hinv hu
     (hpc lc) hP hrun
   rwa [houts] at h
 

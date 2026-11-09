@@ -8,16 +8,16 @@ import GoFV.Proof.Witness.PipelineFull
 `pallocSum.start` of `std/runtime` from its first export section (the input of `number lines`,
 `GenG3.startSsa`), in the pass environment `gofv-ssa-opt --verified` builds for it (`baseEnv`, the
 whole-file environment), through `verifiedPipelineFull` (`fullyVerified`) to the allocated
-function; genssa's Progs (`GenG3.ps`) are accepted by `checkG34` and its return by `retRegsOK`
-against the pipeline's output (`ObjWhole.lcFacts`), and the assembler's words by `checkObj`
-(`ObjWhole.obj_premises`). On the argument `p = 7` in the Phase 1 test environment `plRunEnv`
+function; genssa's Progs (`GenG3.ps`) are accepted by `checkG39` (`refsLive`, and `checkG38` on
+`liveCtx` of the pipeline's output) and its return by `retRegsOK` (`ObjWhole.lcFacts` on that
+context), and the assembler's words by `checkObj` (`ObjWhole.obj_premises`). On the argument `p = 7` in the Phase 1 test environment `plRunEnv`
 (`VPre` as for `isNaN` in `PipelineFull.lean`), the generic `run` returns; `verified_mach`
 gives the `runLoc` that refines it, its body's outcome, and the machine run that returns to the
 caller with it, the result in the ABI's result register `X0`. By compiled evaluation
 (`native_decide`, listed in `scripts/axioms-allowlist.txt`; `e2e_facts`): the
 export parses, the pipeline is `fullyVerified` with `schedule` inputs free of memory ops,
-pointer-shaped parameter pieces and checked pointers, `lcFacts` holds of its output, the generic
-`run` returns, and the input has no dictionary parameter and no read-only symbol.
+pointer-shaped parameter pieces and checked pointers, `refsLive` holds of its output and `lcFacts`
+of `liveCtx` of it, the generic `run` returns, and the input has no dictionary parameter and no read-only symbol.
 -/
 
 namespace GoFV.Proof.Witness.ObjEndToEnd
@@ -94,7 +94,8 @@ def e2eFacts : Bool :=
   ((verifiedPipelineFull penv f0 0 sec0.zvar dcl).toOption.map fun r =>
       r.fullyVerified &&
         r.nnf.all (fun x => noActB x.2 && noArgPtrB x.1 x.2 && noNilPtrB x.1 x.2) &&
-        ObjWhole.lcFacts plRunEnv (LocCtx.make r.st.tables r.st.func)) == some true &&
+        refsLive (LocCtx.make r.st.tables r.st.func) &&
+        ObjWhole.lcFacts plRunEnv (liveCtx (LocCtx.make r.st.tables r.st.func))) == some true &&
     isRetG (GoFV.SSA.run plRunEnv penv.tables f0 ObjWhole.args {} 5) &&
     (NilCheck.dictParams penv.tables f0).isEmpty && (pipelineRo penv f0).isEmpty
 
@@ -128,16 +129,16 @@ theorem verified_mach_witness :
       (∃ rs m, GoFV.SSA.run plRunEnv penv.tables f0 ObjWhole.args {} 5 = .returned rs m) ∧
       ∃ fuel', OutcomeRefines 0 (GoFV.SSA.run plRunEnv penv.tables f0 ObjWhole.args {} 5)
           (runLoc plRunEnv r.st.tables r.st.func ObjWhole.args {} fuel') ∧
-        ∃ raw, runLoopLoc plRunEnv (LocCtx.make r.st.tables r.st.func) fuel'
-            (locInit plRunEnv (LocCtx.make r.st.tables r.st.func) ObjWhole.args {})
-            (LocCtx.make r.st.tables r.st.func).ctx.f.entry = raw ∧
+        ∃ raw, runLoopLoc plRunEnv (liveCtx (LocCtx.make r.st.tables r.st.func)) fuel'
+            (locInit plRunEnv (liveCtx (LocCtx.make r.st.tables r.st.func)) ObjWhole.args {})
+            (liveCtx (LocCtx.make r.st.tables r.st.func)).ctx.f.entry = raw ∧
           runLoc plRunEnv r.st.tables r.st.func ObjWhole.args {} fuel' =
-            finish plRunEnv (LocCtx.make r.st.tables r.st.func).ctx.outs
-              (LocCtx.make r.st.tables r.st.func).ctx.defers
-              (LocCtx.make r.st.tables r.st.func).ctx.act raw ∧
+            finish plRunEnv (liveCtx (LocCtx.make r.st.tables r.st.func)).ctx.outs
+              (liveCtx (LocCtx.make r.st.tables r.st.func)).ctx.defers
+              (liveCtx (LocCtx.make r.st.tables r.st.func)).ctx.act raw ∧
           raw.Defined ∧
           ∀ rs mm, raw = .returned rs mm →
-            ∃ E t' n, (ObjWhole.E0 (LocCtx.make r.st.tables r.st.func)).Extends E ∧
+            ∃ E t' n, (ObjWhole.E0 (liveCtx (LocCtx.make r.st.tables r.st.func))).Extends E ∧
               runMach GenG2.H0 ObjG7.startCode (ObjWhole.s0.x 30) n ObjWhole.s0 = .returned t' ∧
               MachRet ObjWhole.s0 t' ∧ ResultRel E [0] rs mm t' := by
   have hf := e2e_facts
@@ -148,7 +149,7 @@ theorem verified_mach_witness :
   | ok r =>
     rw [hpe] at hp
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Bool.and_eq_true] at hp
-    obtain ⟨⟨hv, hn⟩, hlcf⟩ := hp
+    obtain ⟨⟨⟨hv, hn⟩, hrl⟩, hlcf⟩ := hp
     have hx2 : ∀ x ∈ r.nnf,
         (noActB x.2 = true ∧ noArgPtrB x.1 x.2 = true) ∧ noNilPtrB x.1 x.2 = true := fun x hx => by
       have := List.all_eq_true.1 hn x hx
@@ -173,14 +174,17 @@ theorem verified_mach_witness :
       cases GoFV.SSA.run plRunEnv penv.tables f0 ObjWhole.args {} 5 <;> simp [isRetG]
     have hd : (GoFV.SSA.run plRunEnv penv.tables f0 ObjWhole.args {} 5).Defined := by
       rw [hrun0]; trivial
-    obtain ⟨hO, hH, hME, hroom, hg, hnone, hlf, -, hEE, hpc, -, -, hic⟩ := ObjWhole.obj_premises
+    obtain ⟨hO, hH, hME, hroom, hg, hnone, -, hEE, hpc, -, -, hic⟩ := ObjWhole.obj_premises
     obtain ⟨hc, hrok, houts, hE, hb1, hbm, hk, hentry, hu, sI, hsI, hent, hinv, hP⟩ :=
       ObjWhole.lc_premises hlcf
+    have hc39 : checkG39 (LocCtx.make r.st.tables r.st.func) GenG3.ps GenG3.bs GenG3.g =
+        .ok (GenG3.tab, GenG3.kt) := by
+      simpa [checkG39, hrl] using hc
     rw [← hentry] at hpc
     obtain ⟨fuel', href, raw, hraw, hfin, hdef, hret, -⟩ :=
-      verified_mach hpe hv hvpre hnn hap hnp hd rfl hc hO hH hic hrok hME hroom hg
+      verified_mach hpe hv hvpre hnn hap hnp hd rfl hc39 hO hH hic hrok hME hroom hg
         (fun _ _ _ h => by rw [hnone] at h; cases h) (fun _ _ _ h => by rw [hnone] at h; cases h)
-        hlf hE (hEE _) hb1 hbm hk hsI hent (fun _ _ _ h => by rw [hnone] at h; cases h) hinv hu
+        hE (hEE _) hb1 hbm hk hsI hent (fun _ _ _ h => by rw [hnone] at h; cases h) hinv hu
         (hpc _) hP
     rw [houts] at hret
     exact ⟨r, rfl, hv, ⟨rs0, m0, hrun0⟩, fuel', href, raw, hraw, hfin, hdef, hret⟩
