@@ -2209,9 +2209,12 @@ initial memory (`MemAt`: in a lowered function under `cleanOK`, `cleanAt → Mem
   The results (`ret_results`, `GoFV/Proof/Obj/Results.lean`): `retRegsOK` (`GoFV/Gen/Results.lean`)
   asks of every `Ret` block a `MakeResult` control with one tuple component per argument, the last
   the memory, each result homed in its ABI register (`ownOutRegs`) at a class no wider than the
-  register's at the `Ret`; `runLoc` retypes the arguments to the components (`Val.retypeL` in the
-  lowered mode, `Val.retype` in Phase 1's), which keeps the register relation
-  (`valRel_retypeL_le`, `lmode_valRel_le`). `expand calls` types the components as the results'
+  register's at the `Ret`, a result in an `F` register (`F0`–`F15`, Go registers 31–46) at a float
+  shape (`fTy`) read at a float shape of its class; `runLoc` retypes the arguments to the
+  components (`Val.retypeL` in the lowered mode, `Val.retype` in Phase 1's), which keeps the
+  register relation (`valRel_retypeL_le`, `lmode_valRel_le`) and, for a result in `F0`–`F15`, the
+  V register relation (`FValRel`: `fvalRel_retypeL`, `lmode_fvalRel`; `ResultRel` relates it to
+  the V register). `expand calls` types the components as the results'
   register types (`abi.RegisterTypes`), e.g. a `uintptr` itab word for an `*itab` result. A
   result the ABI puts on the stack, or a zero-sized one, has no register (`ownOutRegs` skips it)
   and no `MakeResult` argument: `expand calls` (`rewriteFuncResults`) stores it to its
@@ -2221,7 +2224,7 @@ initial memory (`MemAt`: in a lowered function under `cleanOK`, `cleanAt → Mem
   from `runLoc`'s state at the entry block, the first `k` values run to `sI` (`runLoopLoc_entry`);
   a run that returns `(rs, mm)` is matched by `runMach` returning to `s0.x 30` (`mstar_returned`)
   in a state `t'` with `MachRet s0 t'` and `ResultRel E outs rs mm t'` (`rs` in the result
-  registers, `mm` injected).
+  registers: `R0`–`R15` related to the X registers, `F0`–`F15` to the V registers; `mm` injected).
 - **Panics** (`sim_valuePanic`, `sim_from_panic`, `obj_whole_panic`): a step that panics is a nil
   check (`g47_obj_nilPanic`: the `MOVB` faults in the nil page), a load or store that faults
   (`g47_obj_memPanic`, `GoFV/Proof/Obj/MemPanic.lean`: `MOV{D,W,WU,H,HU,B,BU}load`, `LDP`,

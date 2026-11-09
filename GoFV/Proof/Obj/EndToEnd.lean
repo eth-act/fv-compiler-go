@@ -43,9 +43,9 @@ Phase 1's `VPre` with the pipeline's premises, a `run` of `f` that returns or pa
 a `runLoc` of `r.st.func` (`OutcomeRefines`), which is `finish` of its body `runLoopLoc` on `lc`
 from `locInit`; when the body returns `(rs, mm)`, `runMach` of the linked words from the
 function's entry `s0` returns to `s0.x 30` with the caller's `SP`, `g` and frame pointer
-(`MachRet`), `rs` in the result
-registers and `mm` (with the results on the stack, in their `PPARAMOUT` variables) injected
-into the memory (`ResultRel`); when the body panics with `pe` and the panic premises hold (the
+(`MachRet`), `rs` in the result registers (`R0`–`R15` or `F0`–`F15`) and `mm` (with the results
+on the stack, in their `PPARAMOUT` variables) injected into the memory (`ResultRel`); when the
+body panics with `pe` and the panic premises hold (the
 trusted `HookPanicMap` and `BoundsOK`, and `RunPanicPre`: the run's panics come from nil checks,
 loads, stores and acquire loads that fault in the nil page, bounds checks and static, interface or
 closure calls whose callee panics by the trusted `CallPanicOK`, `ICallPanicOK`), `runMach` panics

@@ -727,12 +727,15 @@ theorem sim_ret (hc : checkG47L lc ps bstart g = .ok (tab, kt))
   · obtain ⟨mm', hs, hinj⟩ := hm.mem
     exact ⟨mm', hs, by rw [hm2, hR1.mem]; exact hinj⟩
   · intro j y r hy hr
-    obtain ⟨h16, hv⟩ := hRes.regs j y r hy hr
-    refine ⟨h16, ?_⟩
-    rw [hx2 _ (low_ne h16 (by decide) (by decide)) (low_ne h16 (by decide) (by decide))
-      (low_ne h16 (by decide) (by decide)), hx1 _ (low_ne h16 (by decide) (by decide))
-      (low_ne h16 (by decide) (by decide))]
-    exact hv
+    rcases hRes.regs j y r hy hr with ⟨h16, hv⟩ | ⟨h31, h47, hv⟩
+    · refine .inl ⟨h16, ?_⟩
+      rw [hx2 _ (low_ne h16 (by decide) (by decide)) (low_ne h16 (by decide) (by decide))
+        (low_ne h16 (by decide) (by decide)), hx1 _ (low_ne h16 (by decide) (by decide))
+        (low_ne h16 (by decide) (by decide))]
+      exact hv
+    · refine .inr ⟨h31, h47, ?_⟩
+      rw [hv2, hR1.v]
+      exact hv
   · rw [hm2, hR1.mem]
     exact hRes.mem
 

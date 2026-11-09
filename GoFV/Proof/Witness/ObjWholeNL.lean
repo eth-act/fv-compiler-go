@@ -388,7 +388,8 @@ theorem objWholeNL_ret_witness :
     (List.isEmpty_iff.1 hu) hpc' (runPre_simple (by rw [hentry]; exact hsim)) hrun
   rw [houts] at hRes
   have hX0 : t'.x 0 = 0x1234 := by
-    rcases (hRes.regs 0 _ 0 rfl rfl).2 with h | ⟨hb, -⟩
+    rcases ((hRes.regs 0 _ 0 rfl rfl).resolve_right fun h => absurd h.1 (by decide)).2 with
+      h | ⟨hb, -⟩
     · exact h
     · exact absurd (by decide) hb
   exact ⟨hl, mm, hrun, E, t', n, hx, hn, hX, hX0, hRes⟩

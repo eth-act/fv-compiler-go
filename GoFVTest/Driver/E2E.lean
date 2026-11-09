@@ -45,7 +45,7 @@ open GoFV.Gen.Check (checkG47 liveCtx G2In retRegsOK ownOutRegs)
 open GoFVTest.Driver.Back (genP0 GenP0 inputView)
 open GoFVTest.GenCheck (slotOpOf classOf)
 
-open GoFV.Gen.Check (kAt KTab cls retBlockOK retArgOK memTy) in
+open GoFV.Gen.Check (kAt KTab cls retBlockOK retArgOK memTy fTy) in
 /-- Why `retRegsOK lc kt` fails: the first failing condition of the first block `retBlockOK`
 rejects. -/
 def retWhy (lc : LocCtx) (kt : KTab) : String := Id.run do
@@ -63,13 +63,16 @@ def retWhy (lc : LocCtx) (kt : KTab) : String := Id.run do
     let K := kAt lc kt bid blk blk.values.size
     for ((a, t), r) in (args.zip ts).zip outs do
       if retArgOK lc K a t r then continue
-      if r ≥ 16 then return "floating-point result"
+      if 16 ≤ r && r < 31 || 47 ≤ r then return s!"result register {r}"
       if lc.home a != some (.reg r) then
         return s!"result not homed in its register: {repr (lc.home a)}"
       match cls (lc.ty a), cls t with
       | some c, some c' =>
-        if c < c' then return s!"result of class {c} read at class {c'}"
-        return s!"result class {c}, class at the Ret {K.get r}"
+        if K.get r != some c then return s!"result class {c}, class at the Ret {K.get r}"
+        if r < 16 then return s!"result of class {c} read at class {c'}"
+        if !fTy (lc.ty a) || !fTy t then
+          return s!"floating-point result shape {repr (lc.ty a)} read at {repr t}"
+        return s!"floating-point result of class {c} read at class {c'}"
       | none, _ => return s!"result shape {repr (lc.ty a)}"
       | _, none => return s!"MakeResult component shape {repr t}"
     return "Ret: memory"

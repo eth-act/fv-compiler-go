@@ -484,6 +484,7 @@ theorem objWhole_ret_witness :
   simp only [Bool.and_eq_true] at hf
   obtain ⟨mm, hrun⟩ := isRet7_spec hf.2
   obtain ⟨E, t', n, hx, hn, hX, hRes⟩ := whole_of hf.1 hrun
-  exact ⟨mm, hrun, E, t', n, hx, hn, hX, valRel_7 (hRes.regs 0 _ 0 rfl rfl).2, hRes⟩
+  exact ⟨mm, hrun, E, t', n, hx, hn, hX,
+    valRel_7 ((hRes.regs 0 _ 0 rfl rfl).resolve_right fun h => absurd h.1 (by decide)).2, hRes⟩
 
 end GoFV.Proof.Witness.ObjWhole

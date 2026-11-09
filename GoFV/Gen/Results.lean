@@ -1,4 +1,4 @@
-import GoFV.Gen.Check3
+import GoFV.Gen.Check44
 import GoFV.SSA.Sem.TyEq
 
 /-!
@@ -8,8 +8,9 @@ import GoFV.SSA.Sem.TyEq
 validator (`checkG30`'s), that every `Ret` block returns its register-assigned results in the
 registers the ABI gives the function's own results (`f.OwnAux`'s assignments, `ownOutRegs`, as
 `callRegs` reads a callee's): its one control is a `MakeResult` whose arguments are those
-results, each homed in the next result register (an integer register, `R0`–`R15`) and holding its
-class there before the terminator (`kAt`), then the memory (no home). A result the ABI puts on the
+results, each homed in the next result register (an integer register, `R0`–`R15`, or, at a float
+shape, an `F` register, `F0`–`F15`) and holding its class there before the terminator (`kAt`),
+then the memory (no home). A result the ABI puts on the
 stack (or a zero-sized one) has no register and no `MakeResult` argument: `expand calls` stores it
 to its `PPARAMOUT` variable (`rewriteFuncResults`), where `goResults` reads it from the memory at
 the return. The `MakeResult`'s type is a tuple of as many
@@ -33,12 +34,16 @@ def ownOutRegs (lc : LocCtx) : List Nat :=
   ((abiParams lc.ctx.tabs lc.ctx.f).toList.filter (·.out)).flatMap (·.regs.toList.map abiReg)
 
 /-- A result `a` at component shape `t` in register `r` with the class map `K` before the
-terminator: homed in `r` (`R0`–`R15`), of a class `c` that `K` gives `r`, read at a shape of a
-class no wider. -/
+terminator: homed in `r`, of a class `c` that `K` gives `r`; in an integer register (`R0`–`R15`)
+read at a shape of a class no wider, or in an `F` register (`F0`–`F15`, Go registers 31–46) at
+a float shape (`fTy`) read at a float shape of its class. -/
 def retArgOK (lc : LocCtx) (K : KMap) (a : ID) (t : Ty) (r : Nat) : Bool :=
-  lc.home a == some (.reg r) && decide (r < 16) &&
+  lc.home a == some (.reg r) &&
     match cls (lc.ty a), cls t with
-    | some c, some c' => decide (c' ≤ c) && K.get r == some c
+    | some c, some c' =>
+      K.get r == some c &&
+        ((decide (r < 16) && decide (c' ≤ c)) ||
+          (decide (31 ≤ r) && decide (r < 47) && fTy (lc.ty a) && fTy t && c' == c))
     | _, _ => false
 
 /-- The return of `blk` (ID `bid`) puts its results in `outs` (see the module comment): the

@@ -934,13 +934,16 @@ position, `MemAt`: `memAt_enter` through the entry values, `memInit_clean_step` 
 `(rs, mm)`, is matched by `runMach` of the linked words that returns to `s0.x 30` in a state `t'`
 with `MachRet s0 t'` (`SP`, `g`, `R29` as at entry) and `ResultRel E (ownOutRegs lc) rs mm t'`
 (`GoFV/Proof/Obj/Results.lean`): `rs` in the function's ABI result registers (`ownOutRegs`: those
-of its register-assigned results), `mm` injected; a result the ABI puts on the stack (or a
-zero-sized one) is no `MakeResult` argument: `expand calls` stores it to its `PPARAMOUT` variable,
-which is in `mm`. `retRegsOK` (`GoFV/Gen/Results.lean`): every `Ret` block's control
-is a `MakeResult` whose tuple has one component per argument, the last the memory, each result
-homed in its ABI register at a class no wider than the register's (`ret_results`, in both of
-`runLoc`'s modes: `valRel_retypeL_le` for lowered functions, `lmode_valRel_le` for those with no
-arm64 op). The pieces: the prologue (`sim_entry`, over `obj_entry`), each value (`sim_value`, over
+of its register-assigned results), each related to its X register (`R0`–`R15`, `ValRel`) or, a
+result in `F0`–`F15` (Go registers 31–46), to its V register (`FValRel`), `mm` injected; a result
+the ABI puts on the stack (or a zero-sized one) is no `MakeResult` argument: `expand calls` stores
+it to its `PPARAMOUT` variable, which is in `mm`. `retRegsOK` (`GoFV/Gen/Results.lean`): every
+`Ret` block's control is a `MakeResult` whose tuple has one component per argument, the last the
+memory, each result homed in its ABI register at a class no wider than the register's, a result
+in an `F` register at a float shape (`fTy`) read at a float shape of its class (`ret_results`, in
+both of `runLoc`'s modes: `valRel_retypeL_le` for lowered functions, `lmode_valRel_le` for those
+with no arm64 op; `fvalRel_retypeL`, `lmode_fvalRel` for the V registers). The pieces: the
+prologue (`sim_entry`, over `obj_entry`), each value (`sim_value`, over
 `g47_obj_value`), each terminator (`sim_goto`, over `g47_obj_term`), the return (`sim_ret`: the
 `RET` after no-ops, `termG3_ret`, `obj_exit`, `ret_results`), the run by induction on the fuel
 (`sim_from_ret`). `checkG47L_cx` covers lowered functions and those with no arm64 op (G26). A
