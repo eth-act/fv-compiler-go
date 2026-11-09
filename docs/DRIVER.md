@@ -306,13 +306,13 @@ stock input, the frontend's, followed by the autos the pipeline created, the `na
 tables define and section 0's do not, in creation order, with definitions made from the aux
 values; the stock passes' own autos are left out; a mismatch with the pipeline's `dcllen` after
 `trim` is an error), `genssa` with its Progs in the file's symbol numbers (as `chain`),
-`checkG37` (the latest merged genssa slice) against `LocCtx.make` of the pipeline's tables and
+`checkG38` (the latest merged genssa slice) against `LocCtx.make` of the pipeline's tables and
 function and `retRegsOK` on its class tables (every `Ret` returns its results in their ABI
 registers, `MakeResult` components of no wider class), `Flushplist` on those Progs and `checkObj`
 on the same Progs. From
 the `.prog` file it reads only the input view (`inputView`: definitions, config, `Dcl` at
 `AllocFrame`'s start, `genin`), no stock result. It prints the fully verified functions, those
-the back end ran on, those `checkG37`, `retRegsOK`, `checkObj` and all three accept (the
+the back end ran on, those `checkG38`, `retRegsOK`, `checkObj` and all three accept (the
 end-to-end count), the end-to-end ones whose pipeline output equals
 stock, the frame sizes `ownFrame` gives on the functions whose output equals stock (against the
 stock `stksize`/`stkptrsize`), the top back-end errors and rejection reasons (numbers replaced by
