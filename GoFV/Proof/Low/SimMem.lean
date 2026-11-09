@@ -1632,7 +1632,7 @@ theorem moveQ_atom_eval {tabs : Tables} {f g : Func} {env : Env}
   rw [evalOpL_generic _ _ _ _ _ _ (by rw [hu]; decide)]
   have ha' : AddrRef (Ctx.makeL tabs g).tabs (Ctx.makeL tabs g).act w.aux w.auxInt (rv GS a0)
       (rv GT w.args[0]!) := by
-    rw [makeL_tabs, makeL_act]; exact ha
+    rw [makeL_tabs, show (Ctx.makeL tabs g).act = 0 by unfold Ctx.makeL; split <;> rfl]; exact ha
   rcases hc with ⟨-, -, h3w⟩ | ⟨-, -, h4w⟩
   · obtain ⟨b0, b1, b2, hwa⟩ := args3 h3w
     rw [hwa] at ha' hv hm

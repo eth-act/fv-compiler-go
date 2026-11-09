@@ -1474,10 +1474,14 @@ theorem argMem {xs : Array ID} {i : Nat} (h : i < xs.size) : xs[i]! ∈ xs := by
 /-- A `Move` paired with a 128-bit store: the store lowers it (`moveQLower`). -/
 theorem atomPair_moveQ {u w : Value} (h : atomPair tabs u w = true) (hu : u.op = .Move)
     (hw : qStore w.op = true) : moveQLower tabs u w = true := by
+  cases hq : moveQLower tabs u w
+  case true => rfl
+  exfalso
   unfold atomPair at h
-  simp only [Bool.and_eq_true, Bool.or_eq_true] at h
+  rw [hq] at h
+  simp only [Bool.or_false, Bool.and_eq_true, Bool.or_eq_true] at h
   obtain ⟨⟨⟨h1, -⟩, -⟩, -⟩ := h
-  rcases h1 with ((⟨(⟨⟨h1 | h1, -⟩, -⟩ | h1) | h1, -⟩ | h1) | h1) | h1 | h1 | h1
+  rcases h1 with (((⟨((⟨⟨h1 | h1, -⟩, -⟩ | h1) | h1), -⟩ | h1) | h1) | h1)
   · rw [← beq_iff_eq.1 h1, hu] at hw; cases hw
   · rw [(renameOp_qStore h1).2] at hw; cases hw
   · rw [memLower_op h1] at hu; cases hu
@@ -1488,7 +1492,6 @@ theorem atomPair_moveQ {u w : Value} (h : atomPair tabs u w = true) (hu : u.op =
     rw [h1.1.1.1] at hu; cases hu
   · unfold idxLower at h1; simp only [Bool.and_eq_true, beq_iff_eq] at h1
     rw [h1.1.1.1.1.1] at hu; cases hu
-  · exact h1
 
 /-- A 128-bit store fits no argument (`argFitTy`). -/
 theorem argFitTy_qStore {v : Value} (h : qStore v.op = true) (i : Nat) :
