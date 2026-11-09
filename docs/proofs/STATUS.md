@@ -1115,6 +1115,28 @@ Witnesses:
 Not yet covered (#553): panics other than nil checks, loads, stores, acquire loads, bounds checks
 and calls (register-index loads and stores; G50's pair loads; write barriers; `memequal`).
 
+**Read-only data** (`docs/plans/proofs3.md` §10; the base for the float constants `$f64.<bits>` and
+`JUMPTABLE`'s table):
+- `GoFV.Proof.Obj.lreach_roMem` (`GoFV/Proof/Obj/RoReach.lean`). Assume:
+  - the input memory with the global image has the read-only allocations `ro` (`RoMem`);
+  - the contracts keep them (`Env.KeepsRo`, already in Phase 1's `RoImage`);
+  - every value of the function whose shape may hold a memory has a memory op (`memTyL`,
+    `GoFV/Gen/MemTyL.lean`, a checked condition).
+
+  Then every memory of every state `runLoc` reaches has them: stores need a writable allocation,
+  and calls are contracts (`stepLoc_locMems`, `arm64Op_mems`, `stepTermLoc_locMems`,
+  `GoFV/Proof/Obj/RoLoc.lean`).
+- `ro_byte`: in a `LocMatch`ed state, each concrete byte of such an allocation is in the machine's
+  memory at the global's address (`MemInj`, `AddrAgree`). `ro_addr`: the allocation lies above the
+  nil page.
+- `constSymAlloc?` (`GoFV/SSA/Sem/ConstSym.lean`): the allocation of a float constant symbol,
+  built from its name.
+
+No trusted clause is added. Witness: `objRo_witness` (`GoFV/Proof/Witness/ObjRo.lean`, on
+`pallocSum.start` in `plRunEnv`, which has the read-only `runtime.writeBarrier` flag). Not yet
+used by a slice. The float constants need P0 with `progedit`'s rewrite and a slice accepting
+`FMOVDconst` as a load; `JUMPTABLE` needs its slice.
+
 ### End-to-end coverage (`gofv-ssa-opt --check --verified --e2e`)
 
 The functions `verified_mach`'s function-level premises hold of (#553): the verified pipeline is
