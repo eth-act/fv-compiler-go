@@ -30,20 +30,25 @@ def wbFlag : Alloc := { data := #[.b 0, .b 0, .b 0, .b 0], writable := false }
 def roWB : List (String × Alloc) := [("runtime.writeBarrier", wbFlag)]
 
 /-- What compiled evaluation checks: `memTyL` accepts `pallocSum.start`, `plRunEnv`'s global
-image has the flag, and the float constant symbol of 1.0 is its eight little-endian bytes. -/
+image has the flag, the float constant symbol of 1.0 is its eight little-endian bytes, and the
+entry values run to `sI` with the frame memory `memI` (`ObjWhole.sIIs`). -/
 def roFacts : Bool :=
   memTyL GenG3.lc && (addGlobals plRunEnv {}).find? (.global "runtime.writeBarrier") == some wbFlag &&
-    constSymAlloc? "$f64.3ff0000000000000" == some (roAlloc #[0, 0, 0, 0, 0, 0, 0xf0, 0x3f])
+    constSymAlloc? "$f64.3ff0000000000000" == some (roAlloc #[0, 0, 0, 0, 0, 0, 0xf0, 0x3f]) &&
+    GenG1.okThen (enterListLoc plRunEnv GenG3.lc (locInit plRunEnv GenG3.lc args {})
+      ((blkOf GenG3.lc).values.toList.take 2)) sIIs
 
 theorem ro_facts : roFacts = true := by
   native_decide
 
 theorem ro_facts' : memTyL GenG3.lc = true ∧
     (addGlobals plRunEnv {}).find? (.global "runtime.writeBarrier") = some wbFlag ∧
-    constSymAlloc? "$f64.3ff0000000000000" = some (roAlloc #[0, 0, 0, 0, 0, 0, 0xf0, 0x3f]) := by
+    constSymAlloc? "$f64.3ff0000000000000" = some (roAlloc #[0, 0, 0, 0, 0, 0, 0xf0, 0x3f]) ∧
+    GenG1.okThen (enterListLoc plRunEnv GenG3.lc (locInit plRunEnv GenG3.lc args {})
+      ((blkOf GenG3.lc).values.toList.take 2)) sIIs = true := by
   have h := ro_facts
   simp only [roFacts, Bool.and_eq_true, beq_iff_eq] at h
-  exact ⟨h.1.1, h.1.2, h.2⟩
+  exact ⟨h.1.1.1, h.1.1.2, h.1.2, h.2⟩
 
 theorem plRunEnv_keepsRo : plRunEnv.KeepsRo := fun name c hc =>
   plRunEnv_keeps Mem.KeepsRo.refl name c hc
@@ -61,12 +66,7 @@ theorem objRo_witness :
     ∃ sI mmI, enterListLoc plRunEnv GenG3.lc (locInit plRunEnv GenG3.lc args {})
         ((blkOf GenG3.lc).values.toList.take 2) = .ok sI ∧ sI.mem = .mem mmI ∧
       RoMem roWB mmI ∧ mm (gAddr2 + BitVec.ofNat 64 0) = 0 := by
-  have hf := start_facts
-  simp only [Bool.and_eq_true] at hf
-  have hlf := hf.1
-  simp only [lcFacts, Bool.and_eq_true] at hlf
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, hpre⟩, -⟩, -⟩, -⟩, -⟩ := hlf
-  obtain ⟨sI, hsI, hIs⟩ := GenG1.okThen_spec hpre
+  obtain ⟨sI, hsI, hIs⟩ := GenG1.okThen_spec ro_facts'.2.2.2
   obtain ⟨-, -, -, hmem⟩ := sIIs_spec hIs
   have hro : RoMem roWB memI :=
     lreach_roMem plRunEnv_keepsRo ro_facts'.1 roWB_image hsI (.refl (b0 := 0) (i0 := 0)) hmem
@@ -77,6 +77,6 @@ theorem objRo_witness :
 theorem constSym_witness :
     constSymAlloc? "$f64.3ff0000000000000" =
       some (roAlloc #[0, 0, 0, 0, 0, 0, 0xf0, 0x3f]) :=
-  ro_facts'.2.2
+  ro_facts'.2.2.1
 
 end GoFV.Proof.Witness.ObjRo
