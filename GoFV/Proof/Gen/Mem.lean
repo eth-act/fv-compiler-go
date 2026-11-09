@@ -240,8 +240,8 @@ private theorem canWrite_some {m : Mem} {p : Ptr} {n : Nat} (hn : 0 < n)
   cases hf : m.find? p.blk with
   | none => simp [hf] at h; omega
   | some al =>
-    simp [hf] at h
-    rcases h with h | ⟨⟨⟨-, h⟩, -⟩, -⟩
+    simp only [hf, Bool.or_eq_true, beq_iff_eq, Bool.and_eq_true, decide_eq_true_eq] at h
+    rcases h with h | ⟨⟨⟨⟨-, -⟩, h⟩, -⟩, -⟩
     · omega
     · exact ⟨al, rfl, h⟩
 
@@ -545,6 +545,74 @@ theorem memInj_store (hA : AddrAgree ι) {m m' : Mem} {mm : Memory} (h : MemInj 
         rw [hout _ ?_]
         · exact memInj_byteRel hA h hb hι hi
         · intro j hj; simp [BitVec.toNat_add]; omega
+  · cases hw
+
+/-- After a write, every live block is one of the memory before it, of the same size and with
+the same bytes below `Blk.writableFrom`, which no write reaches. -/
+theorem write_back {m m' : Mem} (hk : KeysNodup m) {p : Ptr} {bs : Array Byte}
+    (hw : m.write p bs = some m') : ∀ b al2, (b, al2) ∈ m'.blocks →
+      ∃ al1, (b, al1) ∈ m.blocks ∧ al1.data.size = al2.data.size ∧
+        ∀ i, i < b.writableFrom → al2.data[i]? = al1.data[i]? := by
+  unfold Mem.write at hw
+  by_cases he : bs.isEmpty = true
+  · simp only [he, ↓reduceIte] at hw
+    cases hw
+    exact fun b al2 hb => ⟨al2, hb, rfl, fun _ _ => rfl⟩
+  simp only [he, Bool.false_eq_true, ↓reduceIte] at hw
+  cases hfa : m.find? p.blk with
+  | none => simp [hfa] at hw
+  | some al =>
+  simp only [hfa, Option.bind_eq_bind, Option.bind_some] at hw
+  split at hw
+  · rename_i hc
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+    have hwf : p.blk.writableFrom ≤ p.off.toNat := hc.1.1.1.2
+    simp only [Option.some.injEq] at hw
+    have hfs := fold_set bs p.off.toNat bs.size al.data
+    generalize List.foldl (fun d i => d.set! (p.off.toNat + i) bs[i]!) al.data (List.range bs.size)
+      = D at hw hfs
+    obtain ⟨hDsz, hDget⟩ := hfs
+    have hmem := find?_mem hfa
+    unfold Mem.set at hw
+    cases hi : m.blocks.findIdx? (·.1 == p.blk) with
+    | none =>
+      have := Array.findIdx?_eq_none_iff.1 hi _ hmem
+      simp at this
+    | some idx =>
+    rw [hi] at hw
+    obtain ⟨hidx, hkey, -⟩ := Array.findIdx?_eq_some_iff_getElem.1 hi
+    simp only [beq_iff_eq] at hkey
+    generalize hal' : ({ data := D, writable := al.writable } : Alloc) = al' at hw
+    have hm' : m'.blocks = m.blocks.set! idx (p.blk, al') := by rw [← hw]
+    have hlist : m'.blocks.toList = m.blocks.toList.set idx (p.blk, al') := by
+      rw [hm', Array.set!_eq_setIfInBounds, Array.toList_setIfInBounds]
+    have hk' : KeysNodup m' := by
+      unfold KeysNodup at hk ⊢
+      rw [hlist, List.map_set]
+      have hl : idx < (m.blocks.toList.map (·.1)).length := by simp [hidx]
+      have := List.set_getElem_self hl
+      rw [List.getElem_map, Array.getElem_toList, hkey] at this
+      rw [this]; exact hk
+    have hnew : (p.blk, al') ∈ m'.blocks := by
+      rw [Array.mem_def, hlist]
+      have hl : idx < (m.blocks.toList.set idx (p.blk, al')).length := by simp [hidx]
+      have := List.getElem_mem hl
+      rwa [List.getElem_set_self] at this
+    intro b al2 hb
+    by_cases hbp : b = p.blk
+    · subst hbp
+      obtain rfl := nodup_unique hk' (Array.mem_def.1 hb) (Array.mem_def.1 hnew)
+      subst hal'
+      refine ⟨al, hmem, hDsz.symm, fun i hi => ?_⟩
+      show D[i]? = al.data[i]?
+      by_cases his : i < al.data.size
+      · rw [hDget i his, ite_eq_right (by omega)]
+      · rw [Array.getElem?_eq_none (by omega), Array.getElem?_eq_none (by omega)]
+    · refine ⟨al2, ?_, rfl, fun _ _ => rfl⟩
+      rw [Array.mem_def, hlist] at hb
+      rcases List.mem_or_eq_of_mem_set hb with hb | hb
+      · exact Array.mem_def.2 hb
+      · exact absurd (congrArg Prod.fst hb) hbp
   · cases hw
 
 end GoFV.Proof.Gen

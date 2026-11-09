@@ -11,7 +11,8 @@ Access rule (as clifv): an access of `n` bytes at `⟨blk, off⟩` is valid iff 
 allocation, `off + n ≤ size`, `off + n < 2^64` and `off + n` is inside `blk`'s address window
 (`Blk.endsInWindow`). Invalid loads give `poison` (loads are pure); invalid
 stores/moves/zeroes are `stuck` (the caller turns `none` into `stuck`); stores into
-read-only data (`writable = false`) likewise.
+read-only data (`writable = false`) likewise, and so are nonempty stores below
+`Blk.writableFrom` (the saved-`LR` word at offset 0 of an outgoing-arguments area).
 -/
 
 namespace GoFV.SSA.Sem
@@ -41,6 +42,18 @@ def Blk.endsInWindow (b : Blk) (e : Nat) : Bool :=
   match b.window? with
   | some w => decide (e ≤ w)
   | none => true
+
+/-- The first offset of block `b` a program may write: 8 in an outgoing-arguments area, else 0.
+On arm64 `FixedFrameSize = 8` (`cmd/internal/sys/arch.go:136`, `ArchARM64`): the word at
+`0(RSP)` holds the saved `LR`, which the prologue stores (`cmd/internal/obj/arm64/obj7.go:610`,
+`:653`), and Go places stack arguments and results from offset `FixedFrameSize`
+(`offsetForLocals`, `cmd/compile/internal/ssa/config.go:387-388`,
+`cmd/compile/internal/abi/abiutils.go:318`; runtime calls' arguments,
+`cmd/compile/internal/ssagen/ssa.go:5613`). A store into `outargs[0, 8)` is no Go program
+behaviour (only unsafe pointer arithmetic could reach it); it is `stuck`. -/
+def Blk.writableFrom : Blk → Nat
+  | .outargs _ => 8
+  | _ => 0
 
 /-- A pointer as the word a program computes for it by address arithmetic: its concrete address
 when it converts back to itself (`Ptr.convertible`, `Ptr.ofAddr_addr`), else the pointer if it
@@ -88,13 +101,14 @@ def read (m : Mem) (p : Ptr) (n : Nat) : Option (Array Byte) := do
   else none
 
 /-- Write `bs` at `p`, if the access is valid (in bounds, below `2^64`, inside the window, as
-`read`) and the allocation writable (an empty write always is, and changes nothing). -/
+`read`), the allocation writable and `p` at or above `Blk.writableFrom` (an empty write always
+is, and changes nothing). -/
 def write (m : Mem) (p : Ptr) (bs : Array Byte) : Option Mem := do
   if bs.isEmpty then return m
   let a ← m.find? p.blk
   let off := p.off.toNat
-  if a.writable && off + bs.size ≤ a.data.size && off + bs.size < 2 ^ 64 &&
-      p.blk.endsInWindow (off + bs.size) then
+  if a.writable && p.blk.writableFrom ≤ off && off + bs.size ≤ a.data.size &&
+      off + bs.size < 2 ^ 64 && p.blk.endsInWindow (off + bs.size) then
     let data := (List.range bs.size).foldl (fun d i => d.set! (off + i) bs[i]!) a.data
     some (m.set p.blk { a with data })
   else none
@@ -103,8 +117,8 @@ def write (m : Mem) (p : Ptr) (bs : Array Byte) : Option Mem := do
 def canWrite (m : Mem) (p : Ptr) (n : Nat) : Bool :=
   n == 0 ||
     match m.find? p.blk with
-    | some a => a.writable && p.off.toNat + n ≤ a.data.size && p.off.toNat + n < 2 ^ 64 &&
-        p.blk.endsInWindow (p.off.toNat + n)
+    | some a => a.writable && p.blk.writableFrom ≤ p.off.toNat && p.off.toNat + n ≤ a.data.size &&
+        p.off.toNat + n < 2 ^ 64 && p.blk.endsInWindow (p.off.toNat + n)
     | none => false
 
 /-- Make every byte of block `b` poison (`VarDef`); no effect on a missing block. -/

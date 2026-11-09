@@ -85,11 +85,11 @@ theorem write_comm {m m1 m2 : Mem} {p q : Ptr} {bp bq : Array Byte}
     unfold Mem.write; simp [he]
   obtain ⟨aq, haq⟩ := write_find h1 (by omega)
   obtain ⟨e1, wq⟩ := write_spec haq h1
-  obtain ⟨wq, hq1, hq2, hq3⟩ := wq (by omega)
+  obtain ⟨wq, fq, hq1, hq2, hq3⟩ := wq (by omega)
   subst e1
   obtain ⟨ap, hap⟩ := write_find h2 (by omega)
   obtain ⟨e2, wp⟩ := write_spec hap h2
-  obtain ⟨wp, hp1, hp2, hp3⟩ := wp (by omega)
+  obtain ⟨wp, fp, hp1, hp2, hp3⟩ := wp (by omega)
   subst e2
   rw [find?_set] at hap
   by_cases hb : q.blk = p.blk
@@ -102,23 +102,23 @@ theorem write_comm {m m1 m2 : Mem} {p q : Ptr} {bp bq : Array Byte}
       rcases hd with hd | hd
       · exact absurd hb.symm hd
       · exact hd
-    refine ⟨_, write_of_valid haq (by omega) wp hp1 hp2 hp3, ?_⟩
+    refine ⟨_, write_of_valid haq (by omega) wp fp hp1 hp2 hp3, ?_⟩
     rw [write_of_valid (a := { aq with data := ((List.range bp.size).foldl
         (fun d i => d.set! (p.off.toNat + i) bp[i]!) aq.data) }) (by rw [find?_set, hb]; simp)
-        (by omega) wq (by rw [foldl_set_size]; exact hq1) hq2 (hb ▸ hq3)]
+        (by omega) wq fq (by rw [foldl_set_size]; exact hq1) hq2 (hb ▸ hq3)]
     rw [hb, set_set, set_set, fold_comm _ _ _ _ _ hp1 hq1 hd']
   · simp only [hb, ite_false] at hap
-    refine ⟨_, write_of_valid hap (by omega) wp hp1 hp2 hp3, ?_⟩
+    refine ⟨_, write_of_valid hap (by omega) wp fp hp1 hp2 hp3, ?_⟩
     have hpq : p.blk ≠ q.blk := Ne.symm hb
     rw [write_of_valid (a := aq) (by rw [find?_set]; simp only [hpq, ite_false]; exact haq)
-      (by omega) wq hq1 hq2 hq3]
+      (by omega) wq fq hq1 hq2 hq3]
     exact congrArg some (set_comm _ _ hb haq)
 
 /-- A non-empty write that succeeds ends below `2^64`. -/
 theorem write_end {m m' : Mem} {p : Ptr} {bs : Array Byte} (h : m.write p bs = some m')
     (hpos : 0 < bs.size) : p.off.toNat + bs.size < 2 ^ 64 := by
   obtain ⟨a, ha⟩ := write_find h hpos
-  exact ((write_spec ha h).2 hpos).2.2.1
+  exact ((write_spec ha h).2 hpos).2.2.2.1
 
 /-! ## Adjacent addresses -/
 

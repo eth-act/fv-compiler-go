@@ -2420,6 +2420,19 @@ few:
      `outargs` as poison; every store to it is at `o ≥ 8`, by the check above and by
      `ABIParam.offset ≥ 8` for the callee's `encodeResults`). `BytesRel` relates poison to any
      machine byte, so `MemInj` holds with the saved `LR` there.
+     **Done (stage A):** `Mem.write`/`Mem.canWrite` require `Blk.writableFrom ≤ off` for a
+     nonempty access (`writableFrom (.outargs _) = 8`, else 0; `GoFV/SSA/Sem/Mem.lean`, with the
+     Go sources in `docs/plans/semantics.md` §3.4's access rule), so no Phase 1 write reaches
+     `outargs[0, 8)`. `SepFrom` and the trusted call premises (`CallSpec`, `CallPanicOK`,
+     `ICallPanicOK`) are unchanged: their full-block separation still holds in every existing
+     slice (no `outargs` at `SP`). The weaker form is `SepFromW` (`Proof/Gen/G1.lean`): a live
+     block's byte at an address of `P` lies below `writableFrom` and is `poison` (the poison
+     invariant folded into the separation, since contracts and the entry memory are arbitrary
+     and a global `OutPoison` is not derivable). `SepFrom.w`, `SepFromW.write` (Phase 1 writes
+     keep it, from `write_back`) and `memInj_of_sepW` (a machine memory changed only at `P`
+     keeps `MemInj`: spills, `Proof/Gen/Stack.lean`) are ready for the slice, whose functions
+     use a `SepFromW` invariant and a separate contract `CallOKS` for all their calls (old
+     `CallOK` needs the full `SepFrom`, false once `outargs` sits at `SP`).
    - **Layout check.** `[SP + 8, SP + outargsSize)` is disjoint from the spill slots and the
      `AUTO` windows (`frameOff .AUTO`), from `Link.autosize`/`extrasize`.
    - **Call contract.** `CallSpec` (`Proof/Gen/G2.lean:90-100`) keeps its text: the callee's

@@ -90,18 +90,20 @@ theorem Tiles.cover : ∀ {lo n : Nat} {ws : List (Nat × Array Byte)}, Tiles lo
 /-- Stores valid in block `Q.blk` of `m` all succeed. -/
 private theorem fold_ok (Q : Ptr) : ∀ (ws : List (Nat × Array Byte)) (m : Mem) (a : Alloc),
     m.find? Q.blk = some a → a.writable = true →
-    (∀ p ∈ ws, 0 < p.2.size → tileOff Q p + p.2.size ≤ a.data.size ∧
-      tileOff Q p + p.2.size < 2 ^ 64 ∧ Q.blk.endsInWindow (tileOff Q p + p.2.size) = true) →
+    (∀ p ∈ ws, 0 < p.2.size → Q.blk.writableFrom ≤ tileOff Q p ∧
+      tileOff Q p + p.2.size ≤ a.data.size ∧ tileOff Q p + p.2.size < 2 ^ 64 ∧
+      Q.blk.endsInWindow (tileOff Q p + p.2.size) = true) →
     ∃ mr, ws.foldlM (tileStep Q) m = some mr
   | [], m, _, _, _, _ => ⟨m, rfl⟩
   | p :: ws, m, a, hm, hwr, hv => by
     rw [List.foldlM_cons]
     by_cases hp : 0 < p.2.size
-    · obtain ⟨h1, h2, h3⟩ := hv p List.mem_cons_self hp
+    · obtain ⟨h0, h1, h2, h3⟩ := hv p List.mem_cons_self hp
       have ho : (Q.add (BitVec.ofNat 64 p.1)).off.toNat = tileOff Q p := by
         rw [Ptr.add_off, toNat_add_ofNat]; rfl
       have hs := write_of_valid (p := Q.add (BitVec.ofNat 64 p.1)) (bs := p.2) hm hp hwr
-        (by rw [ho]; exact h1) (by rw [ho]; exact h2) (by rw [Ptr.add_blk, ho]; exact h3)
+        (by rw [Ptr.add_blk, ho]; exact h0) (by rw [ho]; exact h1) (by rw [ho]; exact h2)
+        (by rw [Ptr.add_blk, ho]; exact h3)
       rw [Ptr.add_blk, ho] at hs
       change tileStep Q m p = _ at hs
       rw [hs]
@@ -135,7 +137,7 @@ theorem writes_over_zero_eq {m Z W : Mem} {P : Ptr} {n : Nat} {ws : List (Nat ×
   have hrs : (Array.replicate n (Byte.b 0)).size = n := Array.size_replicate
   obtain ⟨a0, ha0⟩ := write_find hz (by omega)
   obtain ⟨hZ, hv⟩ := write_spec ha0 hz
-  obtain ⟨hwr, hv1, hv2, hv3⟩ := hv (by omega)
+  obtain ⟨hwr, hv0, hv1, hv2, hv3⟩ := hv (by omega)
   rw [hrs] at hv1 hv2 hv3
   -- the zeroed data: unchanged outside `[off, off + n)`
   obtain ⟨Dz, rfl, hDzs, hDzu⟩ : ∃ Dz : Array Byte, Z = m.set P.blk { a0 with data := Dz } ∧
@@ -155,7 +157,7 @@ theorem writes_over_zero_eq {m Z W : Mem} {P : Ptr} {n : Nat} {ws : List (Nat ×
   obtain ⟨W2, hW2⟩ := fold_ok P ws m a0 ha0 hwr fun p hp _ => by
     have := (hb.2 p hp).2
     rw [hoff p hp]
-    exact ⟨by omega, by omega, endsInWindow_mono hv3 (by omega)⟩
+    exact ⟨by omega, by omega, by omega, endsInWindow_mono hv3 (by omega)⟩
   obtain ⟨D2, rfl, hD2s, hD2u, hD2w⟩ := fold_data P ws m W2 a0 ha0 hW2 hnw hdis
   rw [hW2, set_set]
   have hD : D = D2 := by

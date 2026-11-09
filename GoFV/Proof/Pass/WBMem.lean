@@ -62,7 +62,7 @@ theorem MemOK.write {m m' : Mem} (h : MemOK m) {p : Ptr} {bs : Array Byte}
       · rename_i hc
         cases hw
         have hwr : a.writable = true := by
-          simp only [Bool.and_eq_true] at hc; exact hc.1.1.1
+          simp only [Bool.and_eq_true] at hc; exact hc.1.1.1.1
         refine h.set ?_ ?_ _
         · intro hb
           obtain ⟨a', ha', hok⟩ := h.flag
@@ -231,7 +231,7 @@ theorem Buf.write {M m : Mem} {n : Nat} (h : Buf M n m) {j : Nat} (hj : j < n) {
   unfold Mem.write
   simp only [hne, Bool.false_eq_true, ↓reduceIte, ha]
   dsimp only [bind, Option.bind]
-  rw [if_pos (by simp [hwr, hoff, hbs, hsz, Blk.endsInWindow, Blk.window?]; omega)]
+  rw [if_pos (by simp [hwr, hoff, hbs, hsz, Blk.endsInWindow, Blk.window?, Blk.writableFrom]; omega)]
   refine ⟨_, rfl, ?_, hn, _, by rw [CSE.Mem.find?_set, if_pos rfl], ?_, ?_⟩
   · rw [erase_set_X (by rfl)]; exact he
   · show (List.foldl _ a.data _).size = _; rw [CSE.Mem.foldl_set_size]; exact hsz

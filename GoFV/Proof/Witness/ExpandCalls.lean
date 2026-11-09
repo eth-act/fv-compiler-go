@@ -199,12 +199,13 @@ theorem expandCalls_selfMove_witness :
 
 /-! ## Several wide stack arguments, each copied by its own `Move` -/
 
-/-- A call's ABI: two stack-assigned `sync.RWMutex` arguments (24 bytes, `t3`) at offsets 0 and
-24. -/
+/-- A call's ABI: two stack-assigned `sync.RWMutex` arguments (24 bytes, `t3`) at offsets 8 and
+32 (above the fixed frame word at 0, `Blk.writableFrom`, as arm64's ABI offsets start at
+`FixedFrameSize`). -/
 def mmABI : CallABI :=
-  { abi := 0, nin := 2, nout := 0, spillOff := 48, spillSize := 0, inRegs := 0, outRegs := 0,
-    params := #[{ out := false, index := 0, type := 3, name := none, regs := #[], offset := 0 },
-                { out := false, index := 1, type := 3, name := none, regs := #[], offset := 24 }] }
+  { abi := 0, nin := 2, nout := 0, spillOff := 56, spillSize := 0, inRegs := 0, outRegs := 0,
+    params := #[{ out := false, index := 0, type := 3, name := none, regs := #[], offset := 8 },
+                { out := false, index := 1, type := 3, name := none, regs := #[], offset := 32 }] }
 
 /-- Its `AuxCall` (aux `a7`). -/
 def mmCallAux : AuxDef :=
@@ -233,8 +234,8 @@ def mmF : Func :=
       some (mmV 7 .StaticLECall 39 0 (some 7) #[5, 6, 1])]
     blockTab := #[none, some mmFB], blocks := #[1], vidLast := 7 }
 
-/-- Its rewrite: the arguments copied into their slots by `v9 = Move [24] (OffPtr [0] SP) v3 v1`
-and, above it, `v11 = Move [24] (OffPtr [24] SP) v4 v9`; the call `v7 = StaticCall {a7} v11`. -/
+/-- Its rewrite: the arguments copied into their slots by `v9 = Move [24] (OffPtr [8] SP) v3 v1`
+and, above it, `v11 = Move [24] (OffPtr [32] SP) v4 v9`; the call `v7 = StaticCall {a7} v11`. -/
 def mmGB : Block := mkB 1 .Exit p0 #[7] #[] #[] #[1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 7]
 
 def mmG : Func :=
@@ -246,9 +247,9 @@ def mmG : Func :=
       some (mmV 5 .Dereference 3 0 none #[3, 1]),
       some (mmV 6 .Dereference 3 0 none #[4, 1]),
       some (mmV 7 .StaticCall 39 0 (some 7) #[11]),
-      some (mmV 8 .OffPtr 2 0 none #[2]),
+      some (mmV 8 .OffPtr 2 8 none #[2]),
       some (mmV 9 .Move 35 24 (some 3) #[8, 3, 1]),
-      some (mmV 10 .OffPtr 2 24 none #[2]),
+      some (mmV 10 .OffPtr 2 32 none #[2]),
       some (mmV 11 .Move 35 24 (some 3) #[10, 4, 9])]
     blockTab := #[none, some mmGB], blocks := #[1], vidLast := 11 }
 
@@ -259,17 +260,17 @@ theorem expandCalls_multiMove_witness :
       some [9, 11] ∧ ECCheck.ecCheck mmTabs mmF mmG = true := by
   decide +kernel
 
-/-- The memory of the witness: the outgoing-arguments area (48 bytes) and the two frame
+/-- The memory of the witness: the outgoing-arguments area (56 bytes) and the two frame
 variables (24 bytes each). -/
 def mmMem : Mem :=
-  { blocks := #[(.outargs 0, { data := Array.replicate 48 (.b 0) }),
+  { blocks := #[(.outargs 0, { data := Array.replicate 56 (.b 0) }),
       (.local 0 3, { data := Array.replicate 24 (.b 1) }),
       (.local 0 4, { data := Array.replicate 24 (.b 2) })] }
 
-/-- The memory after `v9`'s copy of `v3`'s bytes into slot 0, then after `v11`'s of `v4`'s
-into slot 24. -/
-def mmMem9 : Mem := ((mmMem.write ⟨.outargs 0, 0⟩ (Array.replicate 24 (.b 1))).getD {})
-def mmMem11 : Mem := ((mmMem9.write ⟨.outargs 0, 24⟩ (Array.replicate 24 (.b 2))).getD {})
+/-- The memory after `v9`'s copy of `v3`'s bytes into slot 8, then after `v11`'s of `v4`'s
+into slot 32. -/
+def mmMem9 : Mem := ((mmMem.write ⟨.outargs 0, 8⟩ (Array.replicate 24 (.b 1))).getD {})
+def mmMem11 : Mem := ((mmMem9.write ⟨.outargs 0, 32⟩ (Array.replicate 24 (.b 2))).getD {})
 
 /-- The target's registers: the memories of `v1`, `v9` and `v11`. -/
 def mmT : Frame :=
@@ -280,8 +281,8 @@ def mmT : Frame :=
 block, outside the area `v9` wrote): both slots read back the bytes of their frame variables. -/
 theorem expandCalls_moves_witness :
     ∃ Mt, rv mmT 11 = .mem Mt ∧
-      Mt.read ⟨.outargs 0, 0⟩ 24 = some (Array.replicate 24 (.b 1)) ∧
-      Mt.read ⟨.outargs 0, 24⟩ 24 = some (Array.replicate 24 (.b 2)) := by
+      Mt.read ⟨.outargs 0, 8⟩ 24 = some (Array.replicate 24 (.b 1)) ∧
+      Mt.read ⟨.outargs 0, 32⟩ 24 = some (Array.replicate 24 (.b 2)) := by
   have hc : ECCheck.moveChain mmG (ECCheck.isNewB mmF) 12 11 1 = some [9, 11] := by decide +kernel
   have hv9 : mmG.value? 9 = some (mmV 9 .Move 35 24 (some 3) #[8, 3, 1]) := by decide +kernel
   have hv11 : mmG.value? 11 = some (mmV 11 .Move 35 24 (some 3) #[10, 4, 9]) := by decide +kernel
