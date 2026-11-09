@@ -213,6 +213,10 @@ GoFV.Proof.Witness.GenG33b.g33b_facts._native.native_decide.ax_1_1 257a92cc16b6f
 # `checkG33` does not, with G31's and G34's tables `uL31`/`uL34` around its `MOVBreg` `v11`;
 # `runLoc` runs `v11`; compiled evaluation.
 GoFV.Proof.Witness.GenG34.g34_facts._native.native_decide.ax_1_1 b19c7a6f73a55ccdc97c32a51061b23a821b83180b25be4114f777ea17a42ca0
+# genG35_witness (GoFV/Proof/Witness/GenG35.lean, #553): `checkG35` accepts
+# `regexp/syntax.(*InstOp).String` and `checkG34` does not, with G35's table `uL35` across its
+# `LDP` and `Select1`; `runLoc` runs `v4 = Select1 v44`; compiled evaluation.
+GoFV.Proof.Witness.GenG35.g35_facts._native.native_decide.ax_1_1 3c9a8927f15a09ef27efae4888ddfef4944293536460e392a5cfd78c2ca02183
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
