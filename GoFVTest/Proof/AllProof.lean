@@ -71,6 +71,7 @@ import GoFV.Proof.Gen.G35
 import GoFV.Proof.Gen.G36
 import GoFV.Proof.Gen.G37
 import GoFV.Proof.Gen.G38
+import GoFV.Proof.Gen.G39
 import GoFV.Proof.Gen.G4
 import GoFV.Proof.Gen.G5
 import GoFV.Proof.Gen.G6
@@ -865,6 +866,7 @@ import GoFV.Proof.Witness.GenG35
 import GoFV.Proof.Witness.GenG36
 import GoFV.Proof.Witness.GenG37
 import GoFV.Proof.Witness.GenG38
+import GoFV.Proof.Witness.GenG39
 import GoFV.Proof.Witness.GenG4
 import GoFV.Proof.Witness.GenG5
 import GoFV.Proof.Witness.GenG6
