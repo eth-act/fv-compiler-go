@@ -851,6 +851,19 @@ premise `PairPre50`: a pair load reads valid bytes at both of its addresses (`pa
 (`runtime.c128equal`, `FLDPD (R0), (F0, F1)` of `1.5 + 2.5i`, which G47 rejects). Coverage on
 quick-v10 (`lake exe gen-check`): 6,911 of 9,297 functions (74.33%), 206,743 values.
 
+## Phase 3: genssa, slice G51, cheap single-instruction ops (I7, #553)
+
+`GoFV.Proof.Gen.g51_value`, `g51_initMem`, `g51_term`, `g51_nilPanic`, `g51_boundsPanic`
+(`GoFV/Proof/Gen/G51.lean`): when slice G51 (`checkG51`: G50 with `CSNEG`, `TSTW`, `CMN`, `CMNW`,
+`CMPshiftRA`; `MVNshiftLL`/`RL`/`RA`, `SBFIZ`, `RORconst`, `RORWconst`, `ROR`, `RORW`; and
+`ADD`, `SUB`, `ADDconst`, `SUBconst`, `ADDshiftLL` and the shifted adds, subtracts and logic ops
+with a boolean argument) accepts a function, they are G50's statements, `g51_value` under
+`G51Pre := G50Pre ∧ Pre51a`. New run premise `Pre51a`: the first argument of a `CMN` or
+`CMPshiftRA`, and the second of a `CMN`, is no pointer without an integer form (as G41's
+`CmpPre`). Witness: `genG51_witness` (`math/bits.RotateLeft64`, `ROR R1, R0, R0`, which G50
+rejects). Coverage on quick-v10 (`lake exe gen-check`): 6,982 of 9,297 functions (75.09%),
+212,374 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g46_obj_value`, `g46_obj_term`, `g46_obj_nilPanic`, `g46_obj_boundsPanic`
