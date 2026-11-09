@@ -1157,6 +1157,25 @@ registers, or on their low words zero-extended, which the machine's `REM`/`REMW`
 Witness `genG52_witness` (`test/ken_chan`'s `main.nrand`, `return randx % n`: `REM R0, R1, R0` of
 `-17` by `5`; `X0` then holds `-2`). G52 accepts 7,163 functions (+21 over G49).
 
+**Slice G53: `LoweredMove`** (`GoFV/Gen/Check53.lean`, `checkG53 lc ps bstart g`; proven sound,
+`g53_value`, `g53_initMem`, `g53_term`, `g53_nilPanic`, `g53_boundsPanic`,
+`GoFV/Proof/Gen/G53.lean`). G52 with one group (`Check53a`/`Spec53a`/`G53a`, `vkind53a`, `VK53a`,
+`vk53a_step`) tried when G52 rejects a value: `LoweredMove [n] dst src mem` (`16 ≤ n`, `dst` and
+`src` in 64-bit registers other than `R25`, no temporary), which genssa emits as nothing when
+`dst` and `src` share their register, else as `moveTail`'s chunks (`moveOffs`, `movePats`): a
+`FLDPQ`/`FSTPQ` pair through `V16`, `V17` per 32 bytes, an `FMOVQ` pair through `V16` for 16 of
+the rest, then one or two `MOVD` pairs through `X25` (the last overlapping), checked per value to
+lie inside the `n` bytes and cover them (`moveCovers`). The machine copies chunk by chunk
+(`move_run`) while `Arm64.move` reads all `n` bytes first; they agree when the two ranges are the
+same or disjoint. New run premise `Pre53a` (`G53Pre := G51Pre ∧ Pre53a`): the move reads `n`
+valid bytes at `src`, writes them at `dst`, and the two ranges are equal or disjoint (Go's `Move`
+never copies between partially overlapping ones). The clobbered `R25`, `F16`, `F17` are `poison`
+in `runLoc`; the upper-bit table is empty after the move. Witness `genG53_witness`
+(`runtime.(*cpuStatsAggregate).compute`, `a.cpuStats = work.cpuStats`: an 88-byte move, two
+`FLDPQ`/`FSTPQ`, one `FMOVQ` and one `MOVD R25` pair, from one heap block to another; the
+destination's first machine byte is then the source's). G53 accepts 7,260 functions (+97 over
+G52).
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -1177,6 +1196,30 @@ reason in parentheses):
    other blocker after G43, whose tables need stores, `Convert` or `Copy` to keep or copy their
    entries (§4, G35). Bounds panics (`LoweredPanicBoundsRR` 616 (68), `RC` 332 (46), `CR` 76
    (33), `CC` 170 (22)) are done in G19 but for #541's 2 functions.
+4. **Loops and indirect jumps** (counts after G53, among the 2,037 rejected functions):
+   - `LoweredZeroLoop` (in 75 functions; rejected as `temporary register`, sole reason in 31) and
+     `LoweredMoveLoop` (33 (9)): 48 functions have no other blocker. Genssa emits
+     `MOVD $n/64, Rc`, a body of post-indexed `STP.P (ZR, ZR), 16(Rp)` (four) or
+     `FLDPQ.P`/`FSTPQ.P` (two pairs), `SUB $1, Rc`, `CBNZ Rc, <head>` back to the first body Prog,
+     then `zeroTail`/`moveTail` of `n mod 64`. Design: no new `VKind2` constructor; the value
+     emits `.progs` with a `CBNZ` pattern that takes any `TYPE_BRANCH` operand, and a whole-function
+     check like `pbOK` (`loopOK`) fixes each loop's `CBNZ` target to the Prog ID after the
+     counter's `MOVD` (branch targets are Prog IDs, `.target p`; `RunProg.mem` already has
+     `C_XPOST`). The proof is an induction over the `n/64` iterations (machine memory after `k`
+     iterations: the first `64k` bytes at `p` written, `Rp` advanced by `64k`, `Rc = n/64 - k`),
+     then G13's/G53a's tail lemmas at the advanced base; Phase 1 writes all `n` bytes at once, and
+     the clobbered argument registers and `Rc` are `poison`. The checker also needs the
+     temporary (`ZeroLoop`'s `regTmp`) in `kStep`, and `MoveLoop` `Pre53a`'s overlap premise.
+   - `JUMPTABLE` (38 (19)): `MOVD (Rtab)(Ridx<<3), R27; JMP (R27)`. Blocked on the object side:
+     `checkObj` rejects `JMP` to a register and `ObjIn` has no data symbols; the table's words are
+     `R_ADDR` relocations to the function symbol plus each target's PC (`span7`), which P0
+     (`Link.byId`, Prog addresses `text + 4 id`) would read as P0 addresses, while `ObjRel` keeps
+     memory identical across the PC remapping; and nothing keeps the table's bytes across stores
+     and callee hooks. Deferred with `checkObj`'s float constants (rodata read through `ADRP`) to
+     one design: a rodata clause in `ObjRel` (table words related through the PC map) with a
+     no-store invariant from `MemInj`'s block separation and the hook contracts. Slice side:
+     `termK_stepX` keeps every X register, which `R27` breaks (a variant up to `R27`, which no
+     value lives in), and `kControl` reads control 0 only.
 
 ## 5. Results
 
@@ -1236,6 +1279,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G51 | 6,982 (75.09%) | 212,374 |
 | G49 | 7,142 (76.82%) | 220,164 |
 | G52 | 7,163 (77.04%) | 221,257 |
+| G53 | 7,260 (78.08%) | 227,056 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1571,6 +1615,12 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `g52b_rem`, `vk52b_step`; `G52.lean`:
   `vk52_step`, `vk52_nil`, `vk52_pb`, `g52L_value` … `g52L_term`, `g52_value`, `g52_initMem`,
   `g52_nilPanic`, `g52_boundsPanic`, `g52_term`.
+- `Spec53a.lean`: what `vkind53a` accepted (`VK53a`, `moveKind_spec`, `vkind53a_spec`,
+  `vkind53a_none`, `vk53a_op`, `moveCovers_spec`); `Spec53.lean`: `VK53`, `vkind53_spec`,
+  `vkind53_initMem`, `checkG33_of_53L`, `checkG53L_spec`, `checkG53_spec`.
+- `G53a.lean`: `Pre53a`, `vk53a_step`; `G53.lean`: `G53Pre`, `vk53_step`, `vk53_nil`, `vk53_pb`,
+  `g53L_value` … `g53L_term`, `g53_value`, `g53_initMem`, `g53_nilPanic`, `g53_boundsPanic`,
+  `g53_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a

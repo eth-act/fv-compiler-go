@@ -923,6 +923,19 @@ gives Phase 1 `poison`). Witness: `genG52_witness` (`test/ken_chan`'s `main.nran
 `REM R0, R1, R0` of `-17` by `5`, which G49 rejects). Coverage on quick-v10 (`lake exe
 gen-check`): 7,163 of 9,297 functions (77.04%), 221,257 values.
 
+## Phase 3: genssa, slice G53, `LoweredMove` (I7, #553)
+
+`GoFV.Proof.Gen.g53_value`, `g53_initMem`, `g53_term`, `g53_nilPanic`, `g53_boundsPanic`
+(`GoFV/Proof/Gen/G53.lean`): when slice G53 (`checkG53`: G52 with `LoweredMove [n]`, `n ≥ 16`,
+as `moveTail`'s `FLDPQ`/`FSTPQ`, `FMOVQ` and `MOVD` chunks through `V16`, `V17`, `X25`, or nothing
+when source and destination share their register) accepts a function, they are G52's statements,
+under `G49Env`, `g53_value` under `G53Pre := G51Pre ∧ Pre53a`. New run premise `Pre53a`: the move
+reads `n` valid bytes at the source and writes them at the destination, and the two ranges are
+equal or disjoint (the machine copies chunk by chunk). Witness: `genG53_witness`
+(`runtime.(*cpuStatsAggregate).compute`, an 88-byte move between two heap blocks, which G52
+rejects). Coverage on quick-v10 (`lake exe gen-check`): 7,260 of 9,297 functions (78.08%),
+227,056 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g46_obj_value`, `g46_obj_term`, `g46_obj_nilPanic`, `g46_obj_boundsPanic`
