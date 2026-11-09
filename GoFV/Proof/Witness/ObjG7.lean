@@ -224,6 +224,69 @@ theorem objG7_value_witness :
     (hookMap_retLR fun _ => rfl) (objRel_relInit _ _) (fun u _ => noICall_spec hni _ u)
   exact ⟨hpc, s1, E', m1, t1, hs1, hx, hlm, hinv, hst, hR⟩
 
+/-- What compiled evaluation checks for `objStarLeaf_witness`: `(*A).g` is a leaf (`checkObj`'s
+`leafOf`: no `CALL`), and the caller's return address `0x40` is neither a Prog address nor `endP`. -/
+def gLeafFacts : Bool :=
+  gTab.leaf && GenG7.ps.toList.all (fun p => addrP GenG2.text p.id != 0x40) &&
+    (0x40 : BitVec 64) != endP GenG2.text GenG7.ps.toList
+
+theorem g_leaf_facts : gLeafFacts = true := by
+  native_decide
+
+/-- **A leaf's P0 run keeps `X30`** (`obj_star_leaf` on `(*A).g`, a leaf): when the receiver
+points to `s`, the P0 run of the nil check `v6` from `GenG7.m0` (whose `X30` is the caller's
+return address `0x40`) to a state `LocMatch`ed before `v11` keeps `0x40` in `X30`. -/
+theorem objStarLeaf_witness :
+    gTab.leaf = true ∧
+    ∃ s1 E' m1, stepLoc default GenG7.lc (GenG7.s0 GenG4.ptrS) GenG7.v6 = .ok s1 ∧
+      PStar GenG2.H0 GenG7.L GenG7.ps.toList (endP GenG2.text GenG7.ps.toList)
+        (GenG7.m0 GenG2.symA) m1 ∧
+      LocMatch E' s1 2 3 m1 ∧ m1.x 30 = 0x40 := by
+  have hf := g_obj_facts
+  simp only [gObjFacts, Bool.and_eq_true, beq_iff_eq] at hf
+  obtain ⟨⟨hef, hni⟩, -⟩ := hf
+  obtain ⟨hO, hend⟩ := envFacts_spec hef
+  have hl := g_leaf_facts
+  simp only [gLeafFacts, Bool.and_eq_true, bne_iff_ne, ne_eq, List.all_eq_true] at hl
+  obtain ⟨⟨hleaf, hnp⟩, hne⟩ := hl
+  obtain ⟨hc, hav, hsl, hnc, hm2, hb, hv, hi2, hop, harg, hk0, hread, hrun, -⟩ := GenG7.facts
+  obtain ⟨s1, hs1, -⟩ := GenG1.okThen_spec hrun
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, hlt, -, -⟩ := checkG7_spec hc
+  have hE := g6Env_endP (GenG7.g7Env hc hav hsl hnc) hlt hend
+  have hpre : G7Pre GenG7.lc (GenG7.s0 GenG4.ptrS) GenG7.v6 := by
+    refine ⟨⟨⟨?_, ?_, ?_⟩, ?_⟩, fun _ a x ha hx p hp _ => ?_⟩
+    · intro h
+      rcases h with h | h <;> rw [hop] at h <;> cases h
+    · intro _ _ _ hl
+      rw [hop] at hl
+      cases hl
+    · intro h
+      rw [hop] at h
+      cases h
+    · intro h
+      rw [hop] at h
+      cases h
+    rw [harg] at ha
+    cases ha
+    obtain ⟨x', hx', hall⟩ := GenG1.okThen_spec hread
+    rw [hx] at hx'
+    cases hx'
+    rw [hp] at hall
+    exact ⟨GenG4.memS, rfl, by simpa using hall⟩
+  have hm0 := GenG7.locMatch0 GenG4.ptrS GenG2.symA ⟨GenG2.symA, rfl, by decide⟩
+  obtain ⟨E', m1, -, -, hp, hlm, -⟩ := g7_value (H := GenG2.H0) (env := default)
+    hc hE hm2 hb hi2 hv (by rw [hop]; rfl) hm0 (GenG7.g7Inv0 _ hk0) hpre
+    (GenG2.callOK_ne (by rw [hop]; nofun)) hs1
+  have h30 : (GenG7.m0 GenG2.symA).x 30 = 0x40 := rfl
+  refine ⟨hleaf, s1, E', m1, hs1, hp, hlm, ?_⟩
+  rw [← h30]
+  refine obj_star_leaf hO (hookMap_retLR fun _ => rfl) hp (objRel_relInit _ _)
+    (locMatch_inv hE.env hm0) (fun u _ => noICall_spec hni _ u) hleaf ⟨?_, ?_⟩
+  · rintro ⟨p, hp', he⟩
+    exact hnp p hp' he
+  · rw [h30]
+    exact hne
+
 /-! ## `pallocSum.start`: a terminator -/
 
 def startObjIn : Except String (Array Spill × ObjIn) := objOf GenG3.startProg

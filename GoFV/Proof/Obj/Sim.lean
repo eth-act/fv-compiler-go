@@ -670,6 +670,103 @@ theorem obj_star {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab : Tab
     obtain ⟨t2, h2, hR2, hI2⟩ := obj_step hE hH hst hR1 hI1' (hO _ hpre)
     exact ⟨t2, mstar_trans h1 h2, hR2, hI2⟩
 
+/-! ## Leaves keep `X30` -/
+
+/-- A Prog of a leaf (`leafOf`: no `CALL`) keeps `X30` from a state at a Prog: the `TEXT` and the
+skips do not touch it, `RET` does not step on P0, and a compared Prog's effect does not write it
+(`sameEffect`) and its control is no call (`progSym_ctl`; a register jump is no `CtlMatch`). -/
+theorem leaf_step_x30 {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab : Tab}
+    {L : Link} {base : BitVec 64} {code : Code} {retM : BitVec 64} {H : Hooks} {s s' : MState}
+    (hE : ObjEnv ps spills o tab L base code retM) (hleaf : tab.leaf = true)
+    (hs : PStep H L ps.toList (endP L.text ps.toList) s s')
+    (hpa : IsProgAddr L.text ps.toList s.pc) : s'.x 30 = s.x 30 := by
+  obtain ⟨text0, body, h0, hT, hnd, hlt, -, hofs, -, -, hlf, -, -, hbody⟩ := checkObj_spec hE.check
+  have hlink := hE.link
+  have hlen : tab.offs.toList.length = ps.toList.length := by simp [hofs]
+  have hskip : ∀ {p : Prog}, p.isSkip = true → progStep L p s = .ok s' → s'.x 30 = s.x 30 := by
+    intro p hsk hst
+    unfold progStep at hst
+    cases hn : L.nextAddr p.id with
+    | none => rw [hn] at hst; cases hst
+    | some next =>
+      simp only [hn, hsk, ↓reduceIte, Except.ok.injEq] at hst
+      rw [← hst]
+  cases hs with
+  | hook hpc hnone hcall =>
+    exfalso
+    rw [hlink] at hnone
+    obtain ⟨p, hp⟩ := progAt?_some hnd hlt hpa
+    rw [hp] at hnone
+    cases hnone
+  | prog hpc hp hstep =>
+    rename_i p
+    rw [hlink] at hp
+    obtain ⟨hmem, -⟩ := progAt?_mem hp
+    obtain ⟨k, hk, rfl⟩ := List.getElem_of_mem hmem
+    rcases Nat.eq_zero_or_pos k with rfl | hk1
+    · have hp0 : ps.toList[0] = text0 := by
+        rw [Array.getElem?_eq_some_iff] at h0
+        obtain ⟨_, h0⟩ := h0
+        simpa using h0
+      exact hskip (by rw [hp0]; simp [Prog.isSkip, hT]) hstep
+    · have hone := body_at hbody hlen hk1 hk
+      rcases checkOne_spec hone with ⟨hret0, -⟩ | ⟨-, hcp⟩
+      · exact absurd hstep (progStep_ret0 hret0)
+      rcases checkProg_spec hcp with ⟨hsk | hend, -⟩ |
+          ⟨hsk, -, -, -, pσ, pc, mσ, mc, hps, -, hse, hsc⟩
+      · exact hskip hsk hstep
+      · exact absurd hstep (progStep_end hend)
+      · obtain ⟨-, -, hpp⟩ := progSym_sound hps (by rw [hlink]; rfl) (by rw [hlink]; rfl) hsk
+          hstep
+        obtain ⟨-, -, h30p, -⟩ := sameEffect_spec hse
+        have hcm := sameCtl_spec hsc
+        obtain ⟨hc1, hc2, -⟩ := progSym_ctl hps
+        have hnc : ps.toList[k].as ≠ .CALL := by
+          have hall := hlf ▸ hleaf
+          simp only [leafOf, Array.all_eq_true, Bool.and_eq_true, bne_iff_ne, ne_eq] at hall
+          simpa using (hall k (by simpa using hk)).1.1
+        have h30 : (pσ.getX 30).eval ⟨s, L.sym⟩ = s.x 30 := by rw [h30p]; rfl
+        cases pc with
+        | fall => exact hpp.2.trans h30
+        | jmp id => exact hpp.2.trans h30
+        | cond cc id => exact hpp.2.trans h30
+        | cbz sf nz a id => exact hpp.2.trans h30
+        | tbz nz b a id => exact hpp.2.trans h30
+        | reg a => cases mc <;> simp only [CtlMatch] at hcm
+        | call n add => exact absurd (hc1 n add rfl) hnc
+        | callReg a => exact absurd (hc2 a rfl) hnc
+
+/-- **A leaf's P0 run keeps `X30`** when it starts at a Prog (or the end) with `X30` outside the
+Progs and the end: then every state of the run is at a Prog (`ObjInv`, a symbol is only reached
+with a P0 return address in `X30`), and `leaf_step_x30` steps it. -/
+theorem obj_star_leaf {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab : Tab} {L : Link}
+    {base : BitVec 64} {code : Code} {retM : BitVec 64} {H : Hooks} {s s' t : MState}
+    (hE : ObjEnv ps spills o tab L base code retM)
+    (hH : HookMap H L ps.toList (ObjEnv.map tab ps L base))
+    (hs : PStar H L ps.toList (endP L.text ps.toList) s s')
+    (hR : ObjRel (ObjEnv.map tab ps L base) s t)
+    (hI : ObjInv L ps.toList s ∨ s.pc = endP L.text ps.toList)
+    (hO : ∀ u, PStar H L ps.toList (endP L.text ps.toList) s u → ICallOut L ps.toList u)
+    (hleaf : tab.leaf = true)
+    (hout : ¬ IsProgAddr L.text ps.toList (s.x 30) ∧ s.x 30 ≠ endP L.text ps.toList) :
+    s'.x 30 = s.x 30 := by
+  induction hs with
+  | refl => rfl
+  | tail hpre hst ih =>
+    rename_i s1 s2
+    have hpc : s1.pc ≠ endP L.text ps.toList := match hst with
+      | .prog h _ _ => h
+      | .hook h _ _ => h
+    obtain ⟨-, -, -, hI1⟩ := obj_star hE hH hpre hR hI hO
+    have hpa : IsProgAddr L.text ps.toList s1.pc := by
+      rcases hI1.resolve_right hpc with h | ⟨-, h30⟩
+      · exact h
+      · rw [ih] at h30
+        rcases h30 with h | h
+        · exact absurd h hout.1
+        · exact absurd h hout.2
+    rw [leaf_step_x30 hE hleaf hst hpa, ih]
+
 /-! ## Panics -/
 
 /-- The Prog performs no access in the nil page if the machine words do not (`sameEffect`'s
