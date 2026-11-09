@@ -799,6 +799,17 @@ are no pointer without an integer form at the float's shape. Witness: `genG44_wi
 (`math.Float64frombits`, `FMOVD R0, F0`, which G43 rejects). Coverage on quick-v10 (`lake exe
 gen-check`): 6,652 of 9,297 functions (71.54%), 196,069 values.
 
+## Phase 3: genssa, slice G45, register-index float loads and stores (I7, #553)
+
+`GoFV.Proof.Gen.g45_value`, `g45_initMem`, `g45_term`, `g45_nilPanic`, `g45_boundsPanic`
+(`GoFV/Proof/Gen/G45.lean`): when slice G45 (`checkG45`: G44 with `FMOV{S,D}loadidx{,4,8}` and
+`FMOV{S,D}storeidx{,4,8}`, one `FMOVS`/`FMOVD` from or to `(Rp)(Ri<<sh)`) accepts a function,
+they are G44's statements, `g45_value` under `G45Pre := G44Pre ∧ FIdxPre`. `FIdxPre` is a run
+premise (no trusted hook): a float register-index load reads valid bytes, and they are no pointer
+at the float's shape. Witness: `genG45_witness` (`sort.Float64Slice.Swap`, `FMOVD (R0)(R3<<3),
+F0`, which G44 rejects). Coverage on quick-v10 (`lake exe gen-check`): 6,657 of 9,297 functions
+(71.60%), 196,234 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g44_obj_value`, `g44_obj_term`, `g44_obj_nilPanic`, `g44_obj_boundsPanic`
