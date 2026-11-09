@@ -176,7 +176,7 @@ theorem Ex.regsOK_reads {e : Ex} (h : e.regsOK = true) {r : Nat} (hr : e.reads r
     r < 31 ∧ r ≠ 27 ∧ r ≠ 30 := by
   induction e with
   | x q => simp [Ex.regsOK, Ex.reads] at h hr; omega
-  | sp | k | sym => simp [Ex.reads] at hr
+  | sp | k | sym | vlo | fcvtz => simp [Ex.reads] at hr
   | ld _ a ih | shift _ _ _ a ih | ext _ _ a ih | lo32 a ih | sext _ a ih | page a ih
   | dp1 _ _ a ih =>
     exact ih (by simpa [Ex.regsOK] using h) (by simpa [Ex.reads] using hr)
@@ -195,6 +195,40 @@ theorem Ex.regsOK_reads {e : Ex} (h : e.regsOK = true) {r : Nat} (hr : e.reads r
     · exact ihb h.1.2 hr
     · exact ihd h.2 hr
 
+theorem VEx.regsOK_reads {e : VEx} (h : e.regsOK = true) {r : Nat} (hr : e.reads r = true) :
+    r < 31 ∧ r ≠ 27 ∧ r ≠ 30 := by
+  induction e with
+  | v | k => simp [VEx.reads] at hr
+  | ofX _ a | ld _ a | cvtf _ _ _ a =>
+    exact Ex.regsOK_reads (by simpa [VEx.regsOK] using h) (by simpa [VEx.reads] using hr)
+  | fp1 _ _ a ih => exact ih (by simpa [VEx.regsOK] using h) (by simpa [VEx.reads] using hr)
+  | fp2 _ _ a b iha ihb | fcsel _ _ a b iha ihb =>
+    simp only [VEx.regsOK, Bool.and_eq_true] at h
+    simp only [VEx.reads, Bool.or_eq_true] at hr
+    rcases hr with hr | hr
+    · exact iha h.1 hr
+    · exact ihb h.2 hr
+  | fp3 _ _ _ a b d iha ihb ihd =>
+    simp only [VEx.regsOK, Bool.and_eq_true] at h
+    simp only [VEx.reads, Bool.or_eq_true] at hr
+    rcases hr with (hr | hr) | hr
+    · exact iha h.1.1 hr
+    · exact ihb h.1.2 hr
+    · exact ihd h.2 hr
+
+theorem Fl.regsOK_reads {fl : Fl} (h : fl.regsOK = true) {r : Nat} (hr : fl.reads r = true) :
+    r < 31 ∧ r ≠ 27 ∧ r ≠ 30 := by
+  cases fl with
+  | init => simp [Fl.reads] at hr
+  | addSub _ _ a b | ands _ a b =>
+    simp only [Fl.regsOK, Bool.and_eq_true] at h
+    simp only [Fl.reads, Bool.or_eq_true] at hr
+    exact hr.elim (Ex.regsOK_reads h.1) (Ex.regsOK_reads h.2)
+  | fcmp _ a b =>
+    simp only [Fl.regsOK, Bool.and_eq_true] at h
+    simp only [Fl.reads, Bool.or_eq_true] at hr
+    exact hr.elim (VEx.regsOK_reads h.1) (VEx.regsOK_reads h.2)
+
 theorem reg_ne_of {r : Nat} (hr : r < 31) (h27 : r ≠ 27) (h30 : r ≠ 30) :
     (BitVec.ofNat 5 r : Reg) ≠ 27 ∧ (BitVec.ofNat 5 r : Reg) ≠ 30 := by
   constructor <;> intro h <;> have := congrArg BitVec.toNat h <;> simp at this <;> omega
@@ -202,28 +236,27 @@ theorem reg_ne_of {r : Nat} (hr : r < 31) (h27 : r ≠ 27) (h30 : r ≠ 30) :
 theorem eval_rel {f : BitVec 64 → BitVec 64} {s t : MState} (hR : ObjRel f s t)
     (sym : Nat → BitVec 64) {e : Ex} (he : e.regsOK = true) :
     e.eval ⟨t, sym⟩ = e.eval ⟨s, sym⟩ := by
-  refine Ex.eval_congr (c := ⟨t, sym⟩) (c' := ⟨s, sym⟩) rfl hR.sp hR.mem hR.nzcv e fun r hr => ?_
+  refine Ex.eval_congr (c := ⟨t, sym⟩) (c' := ⟨s, sym⟩) rfl hR.sp hR.mem hR.nzcv hR.v e
+    fun r hr => ?_
   obtain ⟨h31, h27, h30⟩ := Ex.regsOK_reads he hr
+  obtain ⟨h27', h30'⟩ := reg_ne_of h31 h27 h30
+  exact hR.x _ h27' h30'
+
+theorem vex_eval_rel {f : BitVec 64 → BitVec 64} {s t : MState} (hR : ObjRel f s t)
+    (sym : Nat → BitVec 64) {e : VEx} (he : e.regsOK = true) :
+    e.eval ⟨t, sym⟩ = e.eval ⟨s, sym⟩ := by
+  refine VEx.eval_congr (c := ⟨t, sym⟩) (c' := ⟨s, sym⟩) rfl hR.sp hR.mem hR.nzcv hR.v e
+    fun r hr => ?_
+  obtain ⟨h31, h27, h30⟩ := VEx.regsOK_reads he hr
   obtain ⟨h27', h30'⟩ := reg_ne_of h31 h27 h30
   exact hR.x _ h27' h30'
 
 theorem fl_eval_rel {f : BitVec 64 → BitVec 64} {s t : MState} (hR : ObjRel f s t)
     (sym : Nat → BitVec 64) {fl : Fl} (hfl : fl.regsOK = true) :
     fl.eval ⟨t, sym⟩ = fl.eval ⟨s, sym⟩ := by
-  refine Fl.eval_congr (c := ⟨t, sym⟩) (c' := ⟨s, sym⟩) rfl hR.sp hR.mem hR.nzcv fl
+  refine Fl.eval_congr (c := ⟨t, sym⟩) (c' := ⟨s, sym⟩) rfl hR.sp hR.mem hR.nzcv hR.v fl
     fun r hr => ?_
-  have hok : ∃ a b : Ex, (r ∈ [r] ∧ (a.reads r = true ∨ b.reads r = true)) ∧ a.regsOK = true ∧
-      b.regsOK = true := by
-    cases fl with
-    | init => simp [Fl.reads] at hr
-    | addSub _ _ a b =>
-      simp only [Fl.reads, Bool.or_eq_true] at hr; simp only [Fl.regsOK, Bool.and_eq_true] at hfl
-      exact ⟨a, b, ⟨by simp, hr⟩, hfl⟩
-    | ands _ a b =>
-      simp only [Fl.reads, Bool.or_eq_true] at hr; simp only [Fl.regsOK, Bool.and_eq_true] at hfl
-      exact ⟨a, b, ⟨by simp, hr⟩, hfl⟩
-  obtain ⟨a, b, ⟨-, hr'⟩, ha, hb⟩ := hok
-  obtain ⟨h31, h27, h30⟩ := hr'.elim (Ex.regsOK_reads ha) (Ex.regsOK_reads hb)
+  obtain ⟨h31, h27, h30⟩ := Fl.regsOK_reads hfl hr
   obtain ⟨h27', h30'⟩ := reg_ne_of h31 h27 h30
   exact hR.x _ h27' h30'
 
@@ -253,8 +286,8 @@ theorem holds_init (c : Ctx) : Holds c {} c.s where
 private theorem mem_cmpRegs {r : Nat} : r ∈ cmpRegs ↔ r < 31 ∧ r ≠ 27 ∧ r ≠ 30 := by
   simp only [cmpRegs, List.mem_filter, List.mem_range, Bool.and_eq_true, bne_iff_ne, ne_eq]
 
-private theorem lookup_regsOK {l : List (Nat × Ex)} (h : ∀ x ∈ l, x.2.regsOK = true) {r : Nat}
-    {v : Ex} (hl : l.lookup r = some v) : v.regsOK = true := by
+private theorem lookup_ok {α : Type} {ok : α → Bool} {l : List (Nat × α)}
+    (h : ∀ x ∈ l, ok x.2 = true) {r : Nat} {v : α} (hl : l.lookup r = some v) : ok v = true := by
   induction l with
   | nil => simp at hl
   | cons a l ih =>
@@ -272,26 +305,31 @@ private theorem lookup_regsOK {l : List (Nat × Ex)} (h : ∀ x ∈ l, x.2.regsO
 private theorem readsTmp_false {σ : Sym} (h : σ.readsTmp = false) :
     (∀ r ∈ cmpRegs, (σ.getX r).regsOK = true) ∧ σ.sp.regsOK = true ∧ σ.fl.regsOK = true ∧
     (∀ x ∈ σ.loads, x.1.regsOK = true) ∧
-    (∀ x ∈ σ.stores, x.1.regsOK = true ∧ x.2.2.regsOK = true) := by
+    (∀ x ∈ σ.stores, x.1.regsOK = true ∧ x.2.2.regsOK = true) ∧
+    (∀ r, (σ.getV r).regsOK = true) := by
   simp only [Sym.readsTmp, Bool.or_eq_false_iff, List.any_eq_false, Bool.not_eq_true',
     Bool.not_eq_false'] at h
-  obtain ⟨⟨⟨⟨hx, hsp⟩, hfl⟩, hld⟩, hst⟩ := h
+  obtain ⟨⟨⟨⟨⟨hx, hsp⟩, hfl⟩, hld⟩, hst⟩, hv⟩ := h
   refine ⟨fun r hr => ?_, by simpa using hsp, by simpa using hfl,
     fun x hx => by simpa using hld x hx,
-    fun x hx => by simpa using hst x hx⟩
-  unfold Sym.getX
-  cases hl : σ.x.lookup r with
-  | none =>
-    obtain ⟨h31, h27, h30⟩ := mem_cmpRegs.1 hr
-    simp [Ex.regsOK, h31, h27, h30]
-  | some v => exact lookup_regsOK (fun x hx' => by simpa using hx x hx') hl
+    fun x hx => by simpa using hst x hx, fun r => ?_⟩
+  · unfold Sym.getX
+    cases hl : σ.x.lookup r with
+    | none =>
+      obtain ⟨h31, h27, h30⟩ := mem_cmpRegs.1 hr
+      simp [Ex.regsOK, h31, h27, h30]
+    | some v => exact lookup_ok (ok := Ex.regsOK) (fun x hx' => by simpa using hx x hx') hl
+  · unfold Sym.getV
+    cases hl : σ.v.lookup r with
+    | none => rfl
+    | some v => exact lookup_ok (ok := VEx.regsOK) (fun x hx' => by simpa using hv x hx') hl
 
 /-- The machine words perform no access in the nil page if the Prog does not. -/
 private theorem noNil_rel {f : BitVec 64 → BitVec 64} {sym : Nat → BitVec 64} {pσ mσ : Sym}
     {s t : MState} (hR : ObjRel f s t) (hse : sameEffect mσ pσ = .ok ())
     (hn : NoNil ⟨s, sym⟩ pσ) : NoNil ⟨t, sym⟩ mσ := by
   obtain ⟨-, -, -, -, -, hst, hld, hrt, -⟩ := sameEffect_spec hse
-  obtain ⟨-, -, -, hldok, hstok⟩ := readsTmp_false hrt
+  obtain ⟨-, -, -, hldok, hstok, -⟩ := readsTmp_false hrt
   refine ⟨fun a n hx => ?_, fun a n v hx => ?_⟩
   · have hx' := hld _ hx
     rw [eval_rel hR sym (hldok _ hx')]
@@ -307,8 +345,8 @@ private theorem obj_core {f : BitVec 64 → BitVec 64} {sym : Nat → BitVec 64}
     (hm : HoldsCore ⟨t, sym⟩ mσ t') (hp : HoldsCore ⟨s, sym⟩ pσ s') :
     (∀ k : Reg, k ≠ 27 → k ≠ 30 → t'.x k = s'.x k) ∧ t'.sp = s'.sp ∧ t'.v = s'.v ∧
       t'.nzcv = s'.nzcv ∧ t'.mem = s'.mem := by
-  obtain ⟨hregs, -, -, hsp, hfl, hst, -, hrt, -⟩ := sameEffect_spec hse
-  obtain ⟨hxok, hspok, hflok, -, hstok⟩ := readsTmp_false hrt
+  obtain ⟨hregs, -, -, hsp, hfl, hst, -, hrt, -, hvs⟩ := sameEffect_spec hse
+  obtain ⟨hxok, hspok, hflok, -, hstok, hvok⟩ := readsTmp_false hrt
   refine ⟨fun k h27 h30 => ?_, ?_, ?_, ?_, ?_⟩
   · have hk : k = BitVec.ofNat 5 k.toNat := by simp
     have hlt := k.isLt
@@ -324,8 +362,9 @@ private theorem obj_core {f : BitVec 64 → BitVec 64} {sym : Nat → BitVec 64}
       exact eval_rel hR sym (hxok _ hmem)
   · rw [hm.sp, hp.sp, hsp]
     exact eval_rel hR sym hspok
-  · rw [hm.v, hp.v]
-    exact hR.v
+  · funext k
+    rw [hm.v, hp.v, Sym.evalV_getV, Sym.evalV_getV, hvs _ k.isLt]
+    exact vex_eval_rel hR sym (hvok _)
   · rw [hm.nzcv, hp.nzcv, hfl]
     exact fl_eval_rel hR sym hflok
   · rw [hm.mem, hp.mem, hst]
@@ -776,8 +815,8 @@ converse load check and equal stores). -/
 private theorem noNil_back {f : BitVec 64 → BitVec 64} {sym : Nat → BitVec 64} {pσ mσ : Sym}
     {s t : MState} (hR : ObjRel f s t) (hse : sameEffect mσ pσ = .ok ())
     (hn : NoNil ⟨t, sym⟩ mσ) : NoNil ⟨s, sym⟩ pσ := by
-  obtain ⟨-, -, -, -, -, hst, -, hrt, hld'⟩ := sameEffect_spec hse
-  obtain ⟨-, -, -, hldok, hstok⟩ := readsTmp_false hrt
+  obtain ⟨-, -, -, -, -, hst, -, hrt, hld', -⟩ := sameEffect_spec hse
+  obtain ⟨-, -, -, hldok, hstok, -⟩ := readsTmp_false hrt
   refine ⟨fun a n hx => ?_, fun a n v hx => ?_⟩
   · rw [← eval_rel hR sym (hldok _ hx)]
     exact hn.1 a n (hld' _ hx)

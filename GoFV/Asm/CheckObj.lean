@@ -21,9 +21,10 @@ literal pools); it decodes the words and compares effects:
   linker patches them, `symWords`), every word but the last falling through; the Prog's effect
   is computed symbolically from its operands (`progSym`). The two `Sym`s must agree on every
   general register but `X27` (the assembler's scratch) and `X30` (written only by calls), on
-  `SP`, the flags and the stores in order, every machine load must be a load of the Prog, the
-  Prog must not read `X27` or `X30`, and the control must agree: a branch to the offset of the
-  target Prog, a call to the same symbol and addend, a return through the same register.
+  every vector register, on `SP`, the flags and the stores in order, every machine load must be
+  a load of the Prog, the Prog must not read `X27` or `X30`, and the control must agree: a
+  branch to the offset of the target Prog, a call to the same symbol and addend, a return
+  through the same register. The templates below write no vector register.
 * **Prologue** (`checkPrologue`): the stack check (`stacksplit`: `MOVD 16(g), R16`, the compare
   of `SP` or `SP − (framesize − StackSmall)`, `BLS` to the morestack tail) when present, then the
   frame (`MOVD.W R30, -autosize(RSP)`; `MOVD R29, -8(RSP)`; `SUB $8, RSP, R29`, or the large-frame
@@ -508,16 +509,20 @@ def symWords (t : ByteArray) (rs : List Reloc) : Nat → Nat → Sym → Except 
 /-- The registers compared: all general registers but `X27` (REGTMP) and `X30`. -/
 def cmpRegs : List Nat := (List.range 31).filter fun r => r != 27 && r != 30
 
-/-- Whether a value of a P0 effect reads `X27`, `X30` or no general register (`Ex.regsOK`). -/
+/-- Whether a value of a P0 effect reads `X27`, `X30` or no general register (`Ex.regsOK`,
+`VEx.regsOK`). -/
 def Sym.readsTmp (σ : Sym) : Bool :=
   let rd (e : Ex) := !e.regsOK
   σ.x.any (rd ·.2) || rd σ.sp || !σ.fl.regsOK ||
-    σ.loads.any (rd ·.1) || σ.stores.any fun (a, _, v) => rd a || rd v
+    σ.loads.any (rd ·.1) || (σ.stores.any fun (a, _, v) => rd a || rd v) ||
+    σ.v.any (!·.2.regsOK)
 
 /-- The machine effect `m` matches the Prog effect `p` (the module doc). -/
 def sameEffect (m p : Sym) : Except String Unit := do
   if let some r := cmpRegs.find? (fun r => m.getX r != p.getX r) then
     throw s!"R{r}: machine {(m.getX r).str}, Prog {(p.getX r).str}"
+  if let some r := (List.range 32).find? (fun r => m.getV r != p.getV r) then
+    throw s!"V{r}: machine {(m.getV r).str}, Prog {(p.getV r).str}"
   if m.getX 30 != .x 30 || p.getX 30 != .x 30 then throw "R30 written"
   if m.sp != p.sp then throw "SP"
   if m.fl != p.fl then throw s!"flags: machine {repr m.fl}, Prog {repr p.fl}"
@@ -580,6 +585,7 @@ def frameOK (az : Int) (σ : Sym) : Except String Unit := do
   let st := [(sp', 8, Ex.x 30), (fp', 8, Ex.x 29)]
   if σ.stores != st && σ.stores != st.reverse then throw "prologue: stores"
   if !σ.loads.isEmpty then throw "prologue: loads"
+  if !σ.v.isEmpty then throw "prologue: V registers"
 
 /-- The epilogue's specification: `R29` restored (a leaf recomputes it, `SP + autosize - 8`,
 others reload it from `-8(SP)`), `R30` reloaded from `0(SP)` unless a leaf, `SP` raised by
@@ -598,6 +604,7 @@ def retOK (az : Int) (leaf : Bool) (σ : Sym) (c back : MCtl) : Except String Un
     throw s!"epilogue: R{r} written"
   if σ.fl != .init then throw "epilogue: flags"
   if !σ.stores.isEmpty then throw "epilogue: stores"
+  if !σ.v.isEmpty then throw "epilogue: V registers"
   let reloads := [(Ex.mkAdd .sp (.k (BitVec.ofInt 64 (-8))), 8), (Ex.sp, 8)]
   unless σ.loads.all (reloads.contains ·) do throw "epilogue: loads"
   if c != back then throw "epilogue: return"
@@ -618,6 +625,7 @@ def checkStackCheck (t : ByteArray) (rs : List Reloc) (az : Int) (o : Nat) (gOff
   | .cond fl 9 q =>
     if fl != .addSub true true lim g then throw s!"stack check: flags {repr fl}" else
     if σ.stores != [] then throw "stack check: stores" else
+    if !σ.v.isEmpty then throw "stack check: V registers" else
     if σ.sp != .sp then throw "stack check: SP" else
     if σ.getX 30 != .x 30 then throw "stack check: R30" else
     if σ.loads != [(Ex.mkAdd (.x 28) (.k (BitVec.ofNat 64 gOff)), 8)] then

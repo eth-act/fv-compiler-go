@@ -12,7 +12,7 @@ state the symbolic effect describes (`HoldsCore`), and its PC (and a call's `X30
 symbolic control goes (`PcP`).
 
 The bridge is `ERel c e σ`: the effect `e` (`progEffect`) is `σ` evaluated in `c` (registers,
-`SP`, flags, loads, stores; no vector register), and `PRel` relates `e`'s PC to `progSym`'s
+`SP`, flags, vector registers, loads, stores), and `PRel` relates `e`'s PC to `progSym`'s
 control. `erel_apply` turns them into the three conclusions; the family lemmas (`fam_*`) derive
 them from `progSym … = .ok` and `progEffect … = .ok`, operand by operand (`xP_eval`,
 `srcP_eval`, `memP_eval`, `targetP_eval`, `wP_rel`).
@@ -47,13 +47,14 @@ private structure ERel (c : Ctx) (e : Eff) (σ : Sym) : Prop where
   xlt : ∀ q ∈ σ.x, q.1 < 31
   sp : e.sp.getD c.s.sp = σ.sp.eval c
   fl : e.flags.getD c.s.nzcv = σ.fl.eval c
-  v : e.v = []
+  v : e.v = σ.v.map (fun q => (q.1, q.2.eval c))
+  vlt : ∀ q ∈ σ.v, q.1 < 32
   loads : e.loads = σ.loads.map (fun q => (q.1.eval c, q.2))
   stores : e.stores = σ.stores.map
     (fun q => (q.1.eval c, q.2.1, (q.2.2.eval c).toNat % 2 ^ (8 * q.2.1)))
 
 private theorem erel_init (c : Ctx) : ERel c {} {} :=
-  ⟨rfl, by simp, rfl, rfl, rfl, rfl, rfl⟩
+  ⟨rfl, by simp, rfl, rfl, rfl, by simp, rfl, rfl⟩
 
 private theorem pg_ofNat5_inj {a b : Nat} (ha : a < 32) (hb : b < 32)
     (h : BitVec.ofNat 5 a = BitVec.ofNat 5 b) : a = b := by
@@ -61,12 +62,22 @@ private theorem pg_ofNat5_inj {a b : Nat} (ha : a < 32) (hb : b < 32)
   simp only [BitVec.toNat_ofNat] at this
   omega
 
+/-- The vector-register writes keep the general registers, `SP`, the flags and the memory. -/
+private theorem foldr_wV_other (l : List (Nat × BitVec 128)) (s : MState) :
+    let t := l.foldr (fun (q : Nat × BitVec 128) (t : MState) => t.wV (BitVec.ofNat 5 q.1) q.2) s
+    t.x = s.x ∧ t.sp = s.sp ∧ t.nzcv = s.nzcv ∧ t.mem = s.mem := by
+  induction l with
+  | nil => exact ⟨rfl, rfl, rfl, rfl⟩
+  | cons q l ih => exact ih
+
 private theorem apply_x {c : Ctx} {e : Eff} {l : List (Nat × Ex)} {s : MState} {next : BitVec 64}
-    (hx : e.x = l.map (fun q => (q.1, q.2.eval c))) (hl : ∀ q ∈ l, q.1 < 31) (hv : e.v = [])
+    (hx : e.x = l.map (fun q => (q.1, q.2.eval c))) (hl : ∀ q ∈ l, q.1 < 31)
     (r : Nat) (hr : r < 32) :
     (e.apply s next).x (BitVec.ofNat 5 r) = ((l.lookup r).map (·.eval c)).getD (s.x (BitVec.ofNat 5 r)) := by
   unfold Eff.apply
-  simp only [hx, hv, List.foldr_nil]
+  dsimp only
+  rw [(foldr_wV_other e.v _).1]
+  simp only [hx]
   clear hx
   induction l with
   | nil => rfl
@@ -93,6 +104,28 @@ private theorem foldr_wX_other (l : List (Nat × BitVec 64)) (s : MState) :
     simp only [List.foldr_cons, MState.wX]
     split <;> exact ih
 
+/-- The vector registers after the effect, as `apply_x`. -/
+private theorem apply_v {c : Ctx} {e : Eff} {l : List (Nat × VEx)} {s : MState} {next : BitVec 64}
+    (hv : e.v = l.map (fun q => (q.1, q.2.eval c))) (hl : ∀ q ∈ l, q.1 < 32)
+    (r : Nat) (hr : r < 32) :
+    (e.apply s next).v (BitVec.ofNat 5 r) = ((l.lookup r).map (·.eval c)).getD (s.v (BitVec.ofNat 5 r)) := by
+  unfold Eff.apply
+  simp only [hv]
+  clear hv
+  induction l with
+  | nil => exact congrFun (foldr_wX_other e.x s).2.1 _
+  | cons q l ih =>
+    have hq : q.1 < 32 := hl q (by simp)
+    have ih := ih (fun q' h => hl q' (by simp [h]))
+    simp only [List.map_cons, List.foldr_cons]
+    rw [MState.wV]
+    by_cases hrq : r = q.1
+    · subst hrq; simp [List.lookup]
+    · have hne : ¬ BitVec.ofNat 5 r = BitVec.ofNat 5 q.1 := fun h => hrq (pg_ofNat5_inj hr hq h)
+      have hb : (r == q.1) = false := by simpa using hrq
+      simp only [hne, ↓reduceIte, List.lookup, hb]
+      exact ih
+
 private theorem pg_ofNat_mod (n : Nat) (x : BitVec 64) :
     BitVec.ofNat (8 * n) (x.toNat % 2 ^ (8 * n)) = x.setWidth (8 * n) := by
   apply BitVec.eq_of_toNat_eq
@@ -116,10 +149,12 @@ private theorem erel_apply {L : Link} {s : MState} {e : Eff} {σ : Sym} {next : 
   have hnone := List.find?_eq_none.mp hnil
   have hx : ∀ r, r < 31 → (e.apply s next).x (BitVec.ofNat 5 r) = (σ.getX r).eval ⟨s, L.sym⟩ := by
     intro r hr
-    rw [apply_x hR.x hR.xlt hR.v r (by omega)]
+    rw [apply_x hR.x hR.xlt r (by omega)]
     simp only [Sym.getX]
     cases σ.x.lookup r <;> rfl
   have ho := foldr_wX_other (e.x) s
+  have hw := foldr_wV_other e.v
+    (e.x.foldr (fun (q : Nat × BitVec 64) (t : MState) => t.wX (BitVec.ofNat 5 q.1) q.2) s)
   refine ⟨⟨?_, ?_⟩, ⟨fun r hr => hx r (by omega), ?_, ?_, ?_, ?_, ?_⟩, hx 30 (by omega), rfl⟩
   · intro a n ha
     have := hnone (a.eval ⟨s, L.sym⟩)
@@ -129,20 +164,24 @@ private theorem erel_apply {L : Link} {s : MState} {e : Eff} {σ : Sym} {next : 
     have := hnone (a.eval ⟨s, L.sym⟩)
       (by rw [List.mem_append, hR.stores]; exact .inr (List.mem_map.mpr ⟨_, List.mem_map.mpr ⟨_, ha, rfl⟩, rfl⟩))
     simpa using this
-  · have h31 := apply_x (s := s) (next := next) hR.x hR.xlt hR.v 31 (by omega)
+  · have h31 := apply_x (s := s) (next := next) hR.x hR.xlt 31 (by omega)
     have hl : σ.x.lookup 31 = none := by
       rw [List.lookup_eq_none_iff]
       intro q hq; have := hR.xlt q hq; simp only [bne_iff_ne, ne_eq]; omega
     rw [hl] at h31
     exact h31
-  · simp only [Eff.apply, hR.v, List.foldr_nil]
-    rw [ho.1]; exact hR.sp
-  · simp only [Eff.apply, hR.v, List.foldr_nil]
-    rw [ho.2.2.1]; exact hR.fl
-  · simp only [Eff.apply, hR.v, List.foldr_nil]
-    exact ho.2.1
-  · simp only [Eff.apply, hR.v, List.foldr_nil]
-    rw [ho.2.2.2, hR.stores]
+  · simp only [Eff.apply]
+    rw [hw.2.1, ho.1]; exact hR.sp
+  · simp only [Eff.apply]
+    rw [hw.2.2.1, ho.2.2.1]; exact hR.fl
+  · funext r
+    obtain ⟨n, hn, rfl⟩ : ∃ n, n < 32 ∧ r = BitVec.ofNat 5 n := ⟨r.toNat, r.isLt, by simp⟩
+    have hn' : (BitVec.ofNat 5 n).toNat = n := by simp; omega
+    rw [apply_v hR.v hR.vlt n hn]
+    unfold Sym.evalV
+    rw [hn']
+  · simp only [Eff.apply]
+    rw [hw.2.2.2, ho.2.2.2, hR.stores]
     exact apply_mem _ _
 
 /-- Where the effect's PC goes, against `progSym`'s control (calls apart). -/
@@ -384,7 +423,7 @@ private theorem wP_rel {c : Ctx} {e e' : Eff} {σ σ' : Sym} {r : Int} {v : Ex} 
       cases h
       simp only [hc, hc', Bool.false_eq_true, ↓reduceIte] at he
       cases he
-      exact ⟨⟨hR.x, hR.xlt, rfl, hR.fl, hR.v, hR.loads, hR.stores⟩, rfl, rfl, rfl, rfl⟩
+      exact ⟨⟨hR.x, hR.xlt, rfl, hR.fl, hR.v, hR.vlt, hR.loads, hR.stores⟩, rfl, rfl, rfl, rfl⟩
     · rename_i hc'
       simp only [hc, hc', Bool.false_eq_true, ↓reduceIte] at he
       split at h
@@ -397,7 +436,7 @@ private theorem wP_rel {c : Ctx} {e e' : Eff} {σ σ' : Sym} {r : Int} {v : Ex} 
           have : r ≠ REG_R31 := fun h' => by simp [h'] at hc
           simp only [GoFV.Asm.ARM64.REG_R0, GoFV.Asm.ARM64.REG_R31] at hi this
           omega
-        refine ⟨⟨?_, ?_, hR.sp, hR.fl, hR.v, hR.loads, hR.stores⟩, rfl, rfl, rfl, rfl⟩
+        refine ⟨⟨?_, ?_, hR.sp, hR.fl, hR.v, hR.vlt, hR.loads, hR.stores⟩, rfl, rfl, rfl, rfl⟩
         · simp only [List.map_cons, hR.x]
         · intro q hq
           simp only [List.mem_cons] at hq
@@ -535,7 +574,7 @@ private theorem fam_add {op : String} {sf : Bool}
     obtain rfl := pg_ok_inj he
     obtain ⟨hR, -, -, hfl, hpc⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he1
       (by simp only [Ex.eval_mkAddSub, Ex.eval_mkLogical, addSub_trunc, logical_trunc])
-    refine .inl ⟨⟨hR.x, hR.xlt, hR.sp, ?_, hR.v, hR.loads, hR.stores⟩, hpc⟩
+    refine .inl ⟨⟨hR.x, hR.xlt, hR.sp, ?_, hR.v, hR.vlt, hR.loads, hR.stores⟩, hpc⟩
     simp only [hfl, Option.getD_none, Option.getD_some, Fl.eval_mkAddSub, Fl.eval_mkAnds,
       addSub_trunc, logical_trunc]
     try rfl
@@ -566,7 +605,7 @@ private theorem fam_cmp {op : String} {sf : Bool}
   obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj h)
   simp only [src_reg hx, srcP_eval hy, pg_ok_bind] at he
   obtain rfl := pg_ok_inj he
-  refine .inl ⟨⟨rfl, by simp, rfl, ?_, rfl, rfl, rfl⟩, rfl⟩
+  refine .inl ⟨⟨rfl, by simp, rfl, ?_, rfl, by simp, rfl, rfl⟩, rfl⟩
   simp only [List.mem_cons, List.not_mem_nil, or_false] at hop
   rcases hop with rfl | rfl | rfl <;>
   · simp (config := { decide := true }) only [ProgOp.binOp, Option.getD_some, ↓reduceIte,
@@ -605,7 +644,7 @@ private theorem fam_neg {op : String} {sf : Bool}
   obtain ⟨hR, -, -, hfl, hpc⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he1 (by
     rw [Ex.eval_mkAddSub, ← addSub_trunc sf true 0, trunc_trunc, addSub_trunc]
     rfl)
-  exact .inl ⟨⟨hR.x, hR.xlt, hR.sp, by rw [hfl]; rfl, hR.v, hR.loads, hR.stores⟩, hpc⟩
+  exact .inl ⟨⟨hR.x, hR.xlt, hR.sp, by rw [hfl]; rfl, hR.v, hR.vlt, hR.loads, hR.stores⟩, hpc⟩
 
 private theorem ubfx_pre {name op : String} {sf : Bool}
     (hb : ProgOp.baseOf name ["UBFX", "SBFX", "UBFIZ"] = some (op, sf)) :
@@ -721,7 +760,8 @@ private theorem memP_type {az ez : Int} {sc : Nat} {a : Addr} (ha : a.type = .AD
 
 private theorem erel_ld {c : Ctx} {e : Eff} {σ : Sym} (hR : ERel c e σ) (a : Ex) (n : Nat) :
     ERel c (e.ld (a.eval c) n) { σ with loads := (a, n) :: σ.loads } :=
-  ⟨hR.x, hR.xlt, hR.sp, hR.fl, hR.v, by simp only [Eff.ld, hR.loads, List.map_cons], hR.stores⟩
+  ⟨hR.x, hR.xlt, hR.sp, hR.fl, hR.v, hR.vlt, by simp only [Eff.ld, hR.loads, List.map_cons],
+    hR.stores⟩
 
 /-- The `MOV` family: loads (with write-back), stores, register moves, constants, `$addr`. -/
 private theorem fam_mov {n : Nat} {sg fp : Bool}
@@ -777,7 +817,8 @@ private theorem fam_mov {n : Nat} {sg fp : Bool}
       obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj h)
       simp only [(xP_eval hx).1, pg_ok_bind] at he
       obtain rfl := pg_ok_inj he
-      exact .inl ⟨⟨rfl, by simp [Sym.store], rfl, rfl, rfl, rfl, by simp [Sym.store]⟩, rfl⟩
+      exact .inl ⟨⟨rfl, by simp [Sym.store], rfl, rfl, rfl, by simp [Sym.store], rfl,
+        by simp [Sym.store]⟩, rfl⟩
     · simp only [Option.map] at h he
       obtain ⟨σ1, hσ1, h⟩ := pg_bind_ok h
       obtain ⟨x, hx, h⟩ := pg_bind_ok h
@@ -786,7 +827,7 @@ private theorem fam_mov {n : Nat} {sg fp : Bool}
       simp only [(xP_eval hx).1, pg_ok_bind, pg_pure] at he
       obtain rfl := pg_ok_inj he
       obtain ⟨hR1, -, hs1, -, hpc1⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he1 rfl
-      refine .inl ⟨⟨hR1.x, hR1.xlt, hR1.sp, hR1.fl, hR1.v, hR1.loads, ?_⟩, hpc1⟩
+      refine .inl ⟨⟨hR1.x, hR1.xlt, hR1.sp, hR1.fl, hR1.v, hR1.vlt, hR1.loads, ?_⟩, hpc1⟩
       simp [Sym.store, hR1.stores, hs1]
   · -- register move
     next hf ht =>
@@ -870,7 +911,7 @@ private theorem fam_pair {ld : Bool} {n : Nat} {sg fp : Bool}
       obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj h)
       simp only [(xP_eval hx1).1, (xP_eval hx2).1, pg_ok_bind] at he
       obtain rfl := pg_ok_inj he
-      exact .inl ⟨⟨rfl, by simp [Sym.store], rfl, rfl, rfl, rfl,
+      exact .inl ⟨⟨rfl, by simp [Sym.store], rfl, rfl, rfl, by simp [Sym.store], rfl,
         by simp [Sym.store, Ex.eval_mkAdd, Ex.eval]⟩, rfl⟩
     · simp only [Option.map] at h he
       obtain ⟨σ1, hσ1, h⟩ := pg_bind_ok h
@@ -881,7 +922,7 @@ private theorem fam_pair {ld : Bool} {n : Nat} {sg fp : Bool}
       simp only [(xP_eval hx1).1, (xP_eval hx2).1, pg_ok_bind, pg_pure] at he
       obtain rfl := pg_ok_inj he
       obtain ⟨hR1, -, hs1, -, hpc1⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he1 rfl
-      refine .inl ⟨⟨hR1.x, hR1.xlt, hR1.sp, hR1.fl, hR1.v, hR1.loads, ?_⟩, hpc1⟩
+      refine .inl ⟨⟨hR1.x, hR1.xlt, hR1.sp, hR1.fl, hR1.v, hR1.vlt, hR1.loads, ?_⟩, hpc1⟩
       simp [Sym.store, hR1.stores, hs1, Ex.eval_mkAdd, Ex.eval]
   · -- load
     by_cases hr : p.to.type = .REGREG
@@ -953,7 +994,7 @@ private theorem fam_bcond {k : Nat}
       exact ⟨t, ht, (pg_ok_inj he).symm⟩
   obtain ⟨t, ht, rfl⟩ := key
   refine .inl ⟨?_, t, targetP_eval hid ht, ?_⟩
-  · split <;> exact ⟨rfl, by simp, rfl, rfl, rfl, rfl, rfl⟩
+  · split <;> exact ⟨rfl, by simp, rfl, rfl, rfl, by simp, rfl, rfl⟩
   · simp only [MState.holds]
     split <;> rename_i hh <;> simp only [hh, ↓reduceIte, Bool.false_eq_true]
 
@@ -974,7 +1015,7 @@ private theorem fam_cbz {a : Ex} {id : Nat}
       exact ⟨t, ht, (pg_ok_inj he).symm⟩
   obtain ⟨t, ht, rfl⟩ := key
   refine .inl ⟨?_, t, targetP_eval hid ht, ?_⟩
-  · split <;> exact ⟨rfl, by simp, rfl, rfl, rfl, rfl, rfl⟩
+  · split <;> exact ⟨rfl, by simp, rfl, rfl, rfl, by simp, rfl, rfl⟩
   · cases ProgOp.trunc (!ProgOp.endsS p.as.name "W") (a.eval ⟨s, L.sym⟩) == 0 <;>
       cases ProgOp.startsS p.as.name "CBZ" <;> rfl
 
@@ -994,7 +1035,7 @@ private theorem fam_tbz {a : Ex} {id : Nat} (hn : p.as.name = "TBZ" ∨ p.as.nam
       exact ⟨t, ht, (pg_ok_inj he).symm⟩
   obtain ⟨t, ht, rfl⟩ := key
   refine .inl ⟨?_, t, targetP_eval hid ht, ?_⟩
-  · split <;> exact ⟨rfl, by simp, rfl, rfl, rfl, rfl, rfl⟩
+  · split <;> exact ⟨rfl, by simp, rfl, rfl, rfl, by simp, rfl, rfl⟩
   · split <;> rfl
 
 private theorem target_sym {L : Link} {s : MState} {p : Prog} {a : Addr} {n : Nat}
@@ -1068,7 +1109,7 @@ private theorem fam_mulb {op : String} {sf : Bool} (hop : op ∈ ["MUL", "MNEG",
     obtain rfl := pg_ok_inj he
     obtain ⟨hR, -, -, hfl, hpc⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he1
       (by rw [Ex.eval_mkDp3]; exact mul_val sf _ _)
-    exact .inl ⟨⟨hR.x, hR.xlt, hR.sp, by rw [hfl]; rfl, hR.v, hR.loads, hR.stores⟩, hpc⟩
+    exact .inl ⟨⟨hR.x, hR.xlt, hR.sp, by rw [hfl]; rfl, hR.v, hR.vlt, hR.loads, hR.stores⟩, hpc⟩
   · simp (config := { decide := true }) only [bind_assoc, pure_bind] at hm
     obtain ⟨x, hx, hm⟩ := pg_bind_ok hm
     obtain ⟨y, hy, hm⟩ := pg_bind_ok hm
@@ -1079,7 +1120,7 @@ private theorem fam_mulb {op : String} {sf : Bool} (hop : op ∈ ["MUL", "MNEG",
     obtain rfl := pg_ok_inj he
     obtain ⟨hR, -, -, hfl, hpc⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he1
       (by rw [Ex.eval_mkDp3]; exact mneg_val sf _ _)
-    exact .inl ⟨⟨hR.x, hR.xlt, hR.sp, by rw [hfl]; rfl, hR.v, hR.loads, hR.stores⟩, hpc⟩
+    exact .inl ⟨⟨hR.x, hR.xlt, hR.sp, by rw [hfl]; rfl, hR.v, hR.vlt, hR.loads, hR.stores⟩, hpc⟩
   all_goals
     cases sf
     · simp (config := { decide := true }) only [Bool.not_false, ↓reduceIte] at hm
@@ -1096,7 +1137,7 @@ private theorem fam_mulb {op : String} {sf : Bool} (hop : op ∈ ["MUL", "MNEG",
     obtain rfl := pg_ok_inj he
     obtain ⟨hR, -, -, hfl, hpc⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he1
       (by rw [Ex.eval_mkDp3]; rfl)
-    exact .inl ⟨⟨hR.x, hR.xlt, hR.sp, by rw [hfl]; rfl, hR.v, hR.loads, hR.stores⟩, hpc⟩
+    exact .inl ⟨⟨hR.x, hR.xlt, hR.sp, by rw [hfl]; rfl, hR.v, hR.vlt, hR.loads, hR.stores⟩, hpc⟩
 
 /-- `MADD`/`MSUB` (and `W`). -/
 private theorem fam_madd {op : String} {sf : Bool} (hop : op ∈ ["MADD", "MSUB"])
@@ -1321,7 +1362,8 @@ local macro "excl_st_tac" : tactic => `(tactic| (
   rw [memP_eval hma ht haz hez, pg_ok_bind] at he
   simp only [(xP_eval hx).1, pg_ok_bind, pg_pure] at he
   obtain rfl := pg_ok_inj he
-  exact .inl ⟨⟨rfl, by simp [Sym.store], rfl, rfl, rfl, rfl, by simp [Sym.store]⟩, rfl⟩))
+  exact .inl ⟨⟨rfl, by simp [Sym.store], rfl, rfl, rfl, by simp [Sym.store], rfl,
+    by simp [Sym.store]⟩, rfl⟩))
 
 /-- `LDAR*`/`STLR*` (`exclOp`). -/
 private theorem fam_excl {az ez : Int} {ld : Bool} {n : Nat} (haz : L.autosize = az)
@@ -1383,7 +1425,7 @@ private theorem fam_rest
       ProgOp.rmw, ProgOp.bcond, ↓reduceIte, hb, beq_self_eq_true] at he
     obtain ⟨t, ht, he⟩ := pg_bind_ok he
     obtain rfl := pg_ok_inj he
-    exact .inl ⟨⟨rfl, by simp, rfl, rfl, rfl, rfl, rfl⟩, t, targetP_eval hid ht, rfl⟩
+    exact .inl ⟨⟨rfl, by simp, rfl, rfl, rfl, by simp, rfl, rfl⟩, t, targetP_eval hid ht, rfl⟩
   · next _ hn =>
     obtain ⟨a, hx, h⟩ := pg_bind_ok h
     obtain ⟨id, hid, h⟩ := pg_bind_ok h
@@ -1489,7 +1531,7 @@ private theorem fam_rest
     simp only [hN', Bool.false_eq_true, ↓reduceIte] at hx
     simp only [(xP_eval hx).1, pg_ok_bind] at he
     obtain rfl := pg_ok_inj he
-    exact .inl ⟨⟨rfl, by simp, rfl, rfl, rfl, rfl, rfl⟩, rfl⟩
+    exact .inl ⟨⟨rfl, by simp, rfl, rfl, rfl, by simp, rfl, rfl⟩, rfl⟩
   · cases h
 
 private theorem dispatch {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl} {L : Link} {s : MState}
@@ -1626,7 +1668,7 @@ theorem progSym_sound {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl} {L : Link}
     | callReg a => exact hP.elim
   · have hR : ERel ⟨s, L.sym⟩ { x := [(30, f)], pc := some (L.sym n + BitVec.ofInt 64 add) }
         { x := [(30, .k f)] } :=
-      ⟨rfl, by simp, rfl, rfl, rfl, rfl, rfl⟩
+      ⟨rfl, by simp, rfl, rfl, rfl, by simp, rfl, rfl⟩
     obtain ⟨-, hH, h30, hpc⟩ := erel_apply (next := next) hR hnil
     refine ⟨⟨fun _ _ h => by simp at h, fun _ _ _ h => by simp at h⟩,
       ⟨fun r hr => ?_, hH.x31, hH.sp, hH.nzcv, hH.v, hH.mem⟩, ⟨by rw [hpc]; rfl, ?_⟩⟩
@@ -1636,7 +1678,7 @@ theorem progSym_sound {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl} {L : Link}
     · rw [h30]; exact hf
   · have hR : ERel ⟨s, L.sym⟩ { x := [(30, f)], pc := some (a.eval ⟨s, L.sym⟩) }
         { x := [(30, .k f)] } :=
-      ⟨rfl, by simp, rfl, rfl, rfl, rfl, rfl⟩
+      ⟨rfl, by simp, rfl, rfl, rfl, by simp, rfl, rfl⟩
     obtain ⟨-, hH, h30, hpc⟩ := erel_apply (next := next) hR hnil
     refine ⟨⟨fun _ _ h => by simp at h, fun _ _ _ h => by simp at h⟩,
       ⟨fun r hr => ?_, hH.x31, hH.sp, hH.nzcv, hH.v, hH.mem⟩, ⟨by rw [hpc]; rfl, ?_, hic⟩⟩
