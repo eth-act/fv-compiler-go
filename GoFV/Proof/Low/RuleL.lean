@@ -527,15 +527,17 @@ offset has a concrete address that the second offset could carry into another al
 small and non-negative and both nodes word shapes (`ty`): without a symbol, `ADDconst` adds to a
 word without the window check of `MOVDaddr`'s `ptrRes`, and at a narrow or boolean shape it
 reads a frame variable's address word as an integer where `retypeL` makes the folded address
-`poison`. -/
+`poison`. A pair load `FLDPQ` (`ldQ? = some 32`) also reads at its offset moved by 16, which must
+stay small (`offOK`) for its folded second address to stay in the first allocation too. -/
 def Pat.addrOKL (ty : Path → Ty) (ax : Path → Option AuxRef) (ai : Path → Int64) (p : Path) :
     Pat → Bool
   | .op o _ _ _ _ _ args _ =>
     (match args with
       | .op o' .. :: _ => (!addrOp o || (ax p == none && offOK (ai p) && offOK (ai (0 :: p)))) &&
-          (o != .ARM64ADDconst || o' != .ARM64MOVDaddr ||
+          ((o != .ARM64ADDconst || o' != .ARM64MOVDaddr ||
             ((ax (0 :: p)).isSome && offOK (ai p) && offOK (ai (0 :: p)) && wordShape (ty p) &&
-              wordShape (ty (0 :: p))))
+              wordShape (ty (0 :: p)))) &&
+            (ldQ? o != some 32 || offOK (ai p + Int64.ofNat 16)))
       | _ => true) && Pat.addrOKLs ty ax ai p 0 args
   | _ => true
 /-- `Pat.addrOKL` of the arguments `i, i+1, …` of the node at `p`. -/
