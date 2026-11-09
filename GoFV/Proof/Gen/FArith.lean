@@ -1,4 +1,5 @@
 import GoFV.Proof.Gen.G44
+import GoFV.Gen.Check46
 
 /-!
 # Float arithmetic, conversions and compares (`docs/plans/proofs3.md` §4, float stage (b))
@@ -59,22 +60,14 @@ namespace GoFV.Proof.Gen
 
 /-! ## Opcode tables
 
-`if` chains, not `match`es on `Op` (a `match` with a wildcard over `Op`'s constructors makes
-`split` generate a splitter with an equation per constructor). -/
+The tables (`fp2Of`, `fp1Of`, `cvtfOf`, `fcvtzOf`, `fcmpOf`, `fp3Of`) are the validator's
+(`GoFV/Gen/Check46.lean`); their inversions. -/
 
 set_option hygiene false in
 /-- Inverting an opcode table: one `split` per `if`, the `some` leaves give the row. -/
 local macro "table_some" : tactic => `(tactic| (
   repeat' split at h
   all_goals (cases h <;> simp_all)))
-
-/-- The binary float ops: bytes `n`, `ftype` and `opc` of `fp2Op`. -/
-def fp2Of (op : Op) : Option (Nat × BitVec 2 × BitVec 4) :=
-  if op = .ARM64FADDD then some (8, 1, 2) else if op = .ARM64FADDS then some (4, 0, 2)
-  else if op = .ARM64FSUBD then some (8, 1, 3) else if op = .ARM64FSUBS then some (4, 0, 3)
-  else if op = .ARM64FMULD then some (8, 1, 0) else if op = .ARM64FMULS then some (4, 0, 0)
-  else if op = .ARM64FDIVD then some (8, 1, 1) else if op = .ARM64FDIVS then some (4, 0, 1)
-  else none
 
 theorem fp2Of_some {op : Op} {n : Nat} {ft : BitVec 2} {opc : BitVec 4}
     (h : fp2Of op = some (n, ft, opc)) :
@@ -84,17 +77,6 @@ theorem fp2Of_some {op : Op} {n : Nat} {ft : BitVec 2} {opc : BitVec 4}
     op = .ARM64FDIVD ∧ n = 8 ∧ ft = 1 ∧ opc = 1 ∨ op = .ARM64FDIVS ∧ n = 4 ∧ ft = 0 ∧ opc = 1 := by
   unfold fp2Of at h
   table_some
-
-/-- The unary float ops (`FNEG`, `FABS`, `FSQRT`, `FCVT`): source bytes `ns`, destination bytes
-`nd`, `ftype` and `opc` of `fp1Op`. -/
-def fp1Of (op : Op) : Option (Nat × Nat × BitVec 2 × BitVec 6) :=
-  if op = .ARM64FNEGD then some (8, 8, 1, 2) else if op = .ARM64FNEGS then some (4, 4, 0, 2)
-  else if op = .ARM64FABSD then some (8, 8, 1, 1) else if op = .ARM64FABSS then some (4, 4, 0, 1)
-  else if op = .ARM64FSQRTD then some (8, 8, 1, 3)
-  else if op = .ARM64FSQRTS then some (4, 4, 0, 3)
-  else if op = .ARM64FCVTSD then some (4, 8, 0, 5)
-  else if op = .ARM64FCVTDS then some (8, 4, 1, 4)
-  else none
 
 theorem fp1Of_some {op : Op} {ns nd : Nat} {ft : BitVec 2} {opc : BitVec 6}
     (h : fp1Of op = some (ns, nd, ft, opc)) :
@@ -109,18 +91,6 @@ theorem fp1Of_some {op : Op} {ns nd : Nat} {ft : BitVec 2} {opc : BitVec 6}
   unfold fp1Of at h
   table_some
 
-/-- `SCVTF`/`UCVTF`: unsigned, integer source bytes `ns`, float destination bytes `nd`. -/
-def cvtfOf (op : Op) : Option (Bool × Nat × Nat) :=
-  if op = .ARM64SCVTFWS then some (false, 4, 4)
-  else if op = .ARM64SCVTFWD then some (false, 4, 8)
-  else if op = .ARM64UCVTFWS then some (true, 4, 4)
-  else if op = .ARM64UCVTFWD then some (true, 4, 8)
-  else if op = .ARM64SCVTFS then some (false, 8, 4)
-  else if op = .ARM64SCVTFD then some (false, 8, 8)
-  else if op = .ARM64UCVTFS then some (true, 8, 4)
-  else if op = .ARM64UCVTFD then some (true, 8, 8)
-  else none
-
 theorem cvtfOf_some {op : Op} {u : Bool} {ns nd : Nat} (h : cvtfOf op = some (u, ns, nd)) :
     op = .ARM64SCVTFWS ∧ u = false ∧ ns = 4 ∧ nd = 4 ∨
     op = .ARM64SCVTFWD ∧ u = false ∧ ns = 4 ∧ nd = 8 ∨
@@ -132,18 +102,6 @@ theorem cvtfOf_some {op : Op} {u : Bool} {ns nd : Nat} (h : cvtfOf op = some (u,
     op = .ARM64UCVTFD ∧ u = true ∧ ns = 8 ∧ nd = 8 := by
   unfold cvtfOf at h
   table_some
-
-/-- `FCVTZS`/`FCVTZU`: unsigned, float source bytes `ns`, integer destination bytes `nd`. -/
-def fcvtzOf (op : Op) : Option (Bool × Nat × Nat) :=
-  if op = .ARM64FCVTZSSW then some (false, 4, 4)
-  else if op = .ARM64FCVTZSDW then some (false, 8, 4)
-  else if op = .ARM64FCVTZUSW then some (true, 4, 4)
-  else if op = .ARM64FCVTZUDW then some (true, 8, 4)
-  else if op = .ARM64FCVTZSS then some (false, 4, 8)
-  else if op = .ARM64FCVTZSD then some (false, 8, 8)
-  else if op = .ARM64FCVTZUS then some (true, 4, 8)
-  else if op = .ARM64FCVTZUD then some (true, 8, 8)
-  else none
 
 theorem fcvtzOf_some {op : Op} {u : Bool} {ns nd : Nat} (h : fcvtzOf op = some (u, ns, nd)) :
     op = .ARM64FCVTZSSW ∧ u = false ∧ ns = 4 ∧ nd = 4 ∨
@@ -157,12 +115,6 @@ theorem fcvtzOf_some {op : Op} {u : Bool} {ns nd : Nat} (h : fcvtzOf op = some (
   unfold fcvtzOf at h
   table_some
 
-/-- `FCMP`: bytes `n`, `ftype`, and whether it compares with `#0.0` (`FCMPS0`/`FCMPD0`). -/
-def fcmpOf (op : Op) : Option (Nat × BitVec 2 × Bool) :=
-  if op = .ARM64FCMPS then some (4, 0, false) else if op = .ARM64FCMPD then some (8, 1, false)
-  else if op = .ARM64FCMPS0 then some (4, 0, true) else if op = .ARM64FCMPD0 then some (8, 1, true)
-  else none
-
 theorem fcmpOf_some {op : Op} {n : Nat} {ft : BitVec 2} {z : Bool}
     (h : fcmpOf op = some (n, ft, z)) :
     op = .ARM64FCMPS ∧ n = 4 ∧ ft = 0 ∧ z = false ∨ op = .ARM64FCMPD ∧ n = 8 ∧ ft = 1 ∧ z = false ∨
@@ -170,18 +122,6 @@ theorem fcmpOf_some {op : Op} {n : Nat} {ft : BitVec 2} {z : Bool}
     op = .ARM64FCMPD0 ∧ n = 8 ∧ ft = 1 ∧ z = true := by
   unfold fcmpOf at h
   table_some
-
-/-- The fused multiply-adds: bytes `n`, `ftype` and `(o1, o0)` of `fp3Op`. -/
-def fp3Of (op : Op) : Option (Nat × BitVec 2 × Bool × Bool) :=
-  if op = .ARM64FMADDD then some (8, 1, false, false)
-  else if op = .ARM64FMADDS then some (4, 0, false, false)
-  else if op = .ARM64FMSUBD then some (8, 1, false, true)
-  else if op = .ARM64FMSUBS then some (4, 0, false, true)
-  else if op = .ARM64FNMADDD then some (8, 1, true, false)
-  else if op = .ARM64FNMADDS then some (4, 0, true, false)
-  else if op = .ARM64FNMSUBD then some (8, 1, true, true)
-  else if op = .ARM64FNMSUBS then some (4, 0, true, true)
-  else none
 
 theorem fp3Of_some {op : Op} {n : Nat} {ft : BitVec 2} {o1 o0 : Bool}
     (h : fp3Of op = some (n, ft, o1, o0)) :

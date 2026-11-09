@@ -269,6 +269,11 @@ GoFV.Proof.Witness.GenG44.g44_facts._native.native_decide.ax_1_1 e46d0ad334d524b
 # bits; compiled evaluation.
 GoFV.Proof.Witness.GenG45.g45_facts._native.native_decide.ax_1_1 954bd6bef08a04c6be3ea1cc6e0e71960f7b09a6048dd28817b134eda888c0e5
 
+# genG46_witness (GoFV/Proof/Witness/GenG46.lean, #553): `checkG46` accepts `sq.area` (examples/ifaces)
+# and `checkG45` does not (`FMULD` `v10` into `F0`); `runLoc` runs `v10` to `F0 = 2.25`'s bits;
+# compiled evaluation.
+GoFV.Proof.Witness.GenG46.g46_facts._native.native_decide.ax_1_1 0000000000000000000000000000000000000000000000000000000000000000
+
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
 # test code only: the parity runner's pointer-equality fast path (GoFVTest/Parity/Compare.lean).

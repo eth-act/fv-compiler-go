@@ -731,6 +731,16 @@ None of these weaken what is proven: every compiler theorem still prints only `p
 #### Don't depend on private library internals
 - A proof that reached into the private internals of `Array.qsort` would break on a toolchain update. Sorting `cfg.loops.attach` instead carries the membership fact through the sort, with the same output (#318).
 
+#### Opcode tables over `Op`: `if` chains, not `match` with a wildcard
+- **Problem:** `GoFV/Proof/Gen/FArith.lean` (#553, G46) inverted opcode tables written as
+  `match op with | .ARM64FADDD => … | _ => none`; `split` on such a `match` over `Op`'s ~900
+  constructors generates a splitter with an equation per constructor, and a 216-way case split
+  over three NaN kinds sat in one lemma. The `.olean` was 37 MB.
+- **Trick:** write the tables as `if op = .X then … else if …` (`GoFV/Gen/Check46.lean`'s
+  `fp2Of` … `fp3Of`) and invert them with one `split` per `if`; split the case analysis.
+- **Effect:** 37 MB → 22.5 MB (the table matches cost 7.4 MB, the case split 7.1 → 0.9 MB). The
+  rest is the 42 `progStep` lemmas (≈ 380 KB each, `progEffect`'s private match equations).
+
 ### Build infrastructure
 
 #### Threads per Lean process don't help us

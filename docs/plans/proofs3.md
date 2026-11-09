@@ -1028,10 +1028,40 @@ what it reads at its float shape is no pointer (as `FLoadPre`). No trusted premi
 `genG45_witness` (`sort.Float64Slice.Swap`: `FMOVD (R0)(R3<<3), F0` of `x[1] = 1.5`). G45 accepts
 6,657 functions (+5 over G44: `sort.Float64Slice.Swap` and its pointer method,
 `breakPatternsOrdered`, `heapSortOrdered`, `reverseRangeOrdered` at `float64`).
-Stage (b), float arithmetic and compares (`FADD`…`FDIV`, `FMADD` under the 12 `useFMA` shapes, which
-`lower` refines only up to `Contract`, semantics2 §2.1; `FCMP` and the `FLT`/`FLE`/… blocks), and
-stage (c), calls with float arguments or results (the `< 16` ABI-register check of Check2/9/10/15),
-follow.
+
+**Slice G46: float arithmetic, conversions and compares** (`GoFV/Gen/Check46.lean`,
+`checkG46 lc ps bstart g`; proven sound, `g46_value`, `g46_initMem`, `g46_term`, `g46_nilPanic`,
+`g46_boundsPanic`, `GoFV/Proof/Gen/G46.lean`; value lemmas and machine steps
+`GoFV/Proof/Gen/FArith.lean`): stage (b) of the float slice. G45 with one Prog each, opcode
+`opAsm op`, on registers of the op's classes (tables `fp2Of`, `fp1Of`, `cvtfOf`, `fcvtzOf`,
+`fcmpOf`, `fp3Of`, which give the operands of `Exec.lean`'s `fp2Op`/`fp1Op`/`fcmpOp`/`fp3Op`):
+`FADD`/`FSUB`/`FMUL`/`FDIV` (`op Fm, Fn, Fd`), `FNEG`/`FABS`/`FSQRT`/`FCVTSD`/`FCVTDS`,
+`SCVTF`/`UCVTF` of an X register of at least the input's width, `FCVTZS`/`FCVTZU` into an X
+register of the output's width, `FCMP Fm, Fn` and `FCMP $(0.0), Fn` of a flags value with no
+home, and the fused `FMADD`/`FNMSUB` (`op Fm, Fa, Fn, Fd` with `Fn` the rest operand). The float
+blocks `FLT`/`FLE`/`FGT`/`FGE` (and `LTnoov`/`GEnoov`) are `condBr` kinds (`BMI`/`BPL`,
+`BLS`/`BHI`, `BGT`/`BLE`, `BGE`/`BLT`, `condAs`), so G1's terminator proof covers them; `FCMP`'s
+flags are `fcmpFlags` on both sides. Phase 1 and the machine call the same `GoFV.IEEE` functions;
+they disagree only on NaN operands (`FArith.lean`, each with an `#eval`-checked bit pattern):
+
+* `FADD`/`FMUL`: Phase 1 orders the operands by encoding (`FOps.ordered`), the machine takes
+  `Rn, Rm` = `arg0, arg1`; `FPAdd`/`FPMul` commute unless both operands are NaNs of one kind
+  (`add_comm_of`, `mul_comm_of`), so the results differ exactly on `FNaNSwap arg0 arg1`
+  (`FADDS 0x7FC00001, 0x7FC00000`: Phase 1 `0x7FC00000`, machine `0x7FC00001`);
+* fused ops: genssa's operands make the machine compute `FPMulAdd(±arg0, ±arg2, arg1)`, Phase 1
+  `FPMulAdd(±arg0, ±arg1, arg2)`. For `FMADD`/`FNMSUB` they differ only on multiplicands that are
+  NaNs of one kind (`FSameNaN`, `mulAdd_comm_of`); for `FMSUB`/`FNMADD` the negated multiplicand
+  differs, so a NaN multiplicand comes out with the other sign (`FMSUBD 1.0, qNaN, 2.0`: Phase 1
+  `0xFFF8000000000000`, machine `0x7FF8000000000000`). G46 does not accept `FMSUB`/`FNMADD`.
+
+New run premise `FArithPre` (`G46Pre := G45Pre ∧ FArithPre`): no `FADD`/`FMUL` of a `FNaNSwap`
+pair and no `FMADD`/`FNMSUB` of `FSameNaN` multiplicands. No trusted premise. The fused ops in the
+lowered function are `lower`'s contractions (Phase 2's `Contract`, the 12 `useFMA` shapes); G46
+relates the machine's fused instruction to Phase 1's fused op, not to the separate multiply and
+add. Witness `genG46_witness` (`sq.area`: `FMULD F0, F0, F0` of `1.5`, `V0` then holds `2.25`'s
+bits). G46 accepts 6,775 functions (+118 over G45).
+Stage (c), calls with float arguments or results (the `< 16` ABI-register check of Check2/9/10/15),
+follows.
 
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
@@ -1104,6 +1134,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G43 | 6,622 (71.22%) | 195,711 |
 | G44 | 6,652 (71.54%) | 196,069 |
 | G45 | 6,657 (71.60%) | 196,234 |
+| G46 | 6,775 (72.87%) | 202,352 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1390,6 +1421,17 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `stepLoc_fStoreIdx`, `g45_fldIdx`, `g45_fstIdx`, `uStep35_f45`, `vk45_step`, `vk45_nil`,
   `vk45_pb`, `g45L_value` … `g45L_term`, `g45_value`, `g45_initMem`, `g45_nilPanic`,
   `g45_boundsPanic`, `g45_term`.
+- `FArith.lean`: the inversions `fp2Of_some` … `fp3Of_some`, `cvtfBits`, `fcvtzBits`,
+  `progStep_fp2`, `progStep_fp1`, `progStep_cvtf`, `progStep_fcvtz`, `progStep_fcmp`,
+  `progStep_fcmp0`, `progStep_fp3`, `SameNaN`, `add_comm_of`, `mul_comm_of`, `NaNSwap`,
+  `FNaNSwap`, `ordered_of`, `fvalRel_fp2`, `fvalRel_fsubdiv`, `fvalRel_fp1`, `fvalRel_cvtf`,
+  `lo_fcvtz`, `flagsRel_fcmp`, `flagsRel_fcmp0`, `mulAdd_comm_of`, `FSameNaN`, `fvalRel_fma`.
+- `Spec46.lean`: what `checkG46` accepted (`VK46`, `fbin46_spec` … `fma46_spec`, `fkind46_spec`,
+  `vkind46_spec`, `vkind46_initMem`, `checkG33_of_46L`, `checkG46L_spec`, `checkG46_spec`).
+- `G46.lean`: `FArithPre`, `G46Pre`, `fops46`, `fops46_facts`, `fops46_eval`, `stepLoc_pure46`,
+  `g46_fbin`, `g46_fun`, `g46_cvtf`, `g46_fcvtz`, `g46_fcmp`, `g46_fcmp0`, `fmaPat_ok`,
+  `g46_fma`, `uStep35_f46`, `vk46_step`, `vk46_nil`, `vk46_pb`, `g46L_value` … `g46L_term`,
+  `g46_value`, `g46_initMem`, `g46_nilPanic`, `g46_boundsPanic`, `g46_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
