@@ -191,11 +191,11 @@ import GoFV.Proof.Obj.G30
 import GoFV.Proof.Obj.G7
 import GoFV.Proof.Obj.Insn
 import GoFV.Proof.Obj.Link
+import GoFV.Proof.Obj.MemPanic
 import GoFV.Proof.Obj.Prog
 import GoFV.Proof.Obj.Results
 import GoFV.Proof.Obj.Sim
 import GoFV.Proof.Obj.Spec
-import GoFV.Proof.Obj.StorePanic
 import GoFV.Proof.Obj.Whole
 import GoFV.Proof.Obj.Words
 import GoFV.Proof.Order

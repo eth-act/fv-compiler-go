@@ -1,18 +1,19 @@
 import GoFV.Proof.Obj.CallPanic
 
 /-!
-# Stores that fault in the nil page (`docs/plans/proofs3.md` §9)
+# Loads and stores that fault in the nil page (`docs/plans/proofs3.md` §9)
 
-A store of slice G30 whose `runLoc` step panics: `nilFaults` (memory ops fault under `runLoc`)
-found its base nil (`Ptr.isNil`) and its address in the nil page (`Ptr.nilFault`), so it has no
-symbol (a global or frame variable is never in the nil block) and its base is a register
-(`off(Rn)`). That register holds the machine word 0 (`nil_word`), so the store's address
-`X[n] + off` is in the nil page (`nil_fault_page`) and the store faults (`progStep_storeN_nil`,
-`progStep_stp_nil`): `runProg` panics with `nilDeref`, as `runLoc` does (`g30_storePanic`), and so
-does `runMach` (`g30_obj_storePanic`, `obj_panic`). The stores are `storeOp?`'s
-`MOV{D,W,H,B}store` and `STP` (`storeFaultOp`); the register-index stores are not among them:
-`runLoc` faults on their nil base whatever the index, the machine only when the index keeps the
-address in the nil page.
+A load or store of slice G30 whose `runLoc` step panics: `nilFaults` (memory ops fault under
+`runLoc`) found its base nil (`Ptr.isNil`) and its address in the nil page (`Ptr.nilFault`), so it
+has no symbol (a global or frame variable is never in the nil block) and its base is a register
+(`off(Rn)`). That register holds the machine word 0 (`nil_word`), so the access's address
+`X[n] + off` is in the nil page (`nil_fault_page`) and the access faults (`progStep_loadN_nil`,
+`progStep_ldp_nil`, `progStep_storeN_nil`, `progStep_stp_nil`): `runProg` panics with
+`nilDeref`, as `runLoc` does (`g30_memPanic`), and so does `runMach` (`g30_obj_memPanic`,
+`obj_panic`). The accesses are `loadOp?`'s `MOV{D,W,WU,H,HU,B,BU}load`, `LDP`, `storeOp?`'s
+`MOV{D,W,H,B}store` and `STP` (`memFaultOp`); the register-index loads and stores are not among
+them: `runLoc` faults on their nil base whatever the index, the machine only when the index keeps
+the address in the nil page.
 -/
 
 namespace GoFV.Proof.Obj
@@ -20,28 +21,28 @@ namespace GoFV.Proof.Obj
 open GoFV.SSA GoFV.SSA.Sem GoFV.Gen.Check GoFV.Arm64 GoFV.Asm GoFV.Asm.CheckObj
 open GoFV.Proof.Gen
 
-/-- The stores whose nil-page fault the panic theorems cover: `storeOp?`'s `MOV{D,W,H,B}store`
-and `STP`. -/
-def storeFaultOp (o : Op) : Bool := (storeOp? o).isSome || o == .ARM64STP
+/-- The loads and stores whose nil-page fault the panic theorems cover: `loadOp?`'s
+`MOV{D,W,WU,H,HU,B,BU}load`, `LDP`, `storeOp?`'s `MOV{D,W,H,B}store` and `STP`. -/
+def memFaultOp (o : Op) : Bool :=
+  (loadOp? o).isSome || o == .ARM64LDP || (storeOp? o).isSome || o == .ARM64STP
 
-theorem storeFaultOp_cases {o : Op} (h : storeFaultOp o = true) :
-    o = .ARM64MOVDstore ∨ o = .ARM64MOVBstore ∨ o = .ARM64MOVHstore ∨ o = .ARM64MOVWstore ∨
+theorem memFaultOp_cases {o : Op} (h : memFaultOp o = true) :
+    o = .ARM64MOVDload ∨ o = .ARM64MOVBload ∨ o = .ARM64MOVBUload ∨ o = .ARM64MOVHload ∨
+      o = .ARM64MOVHUload ∨ o = .ARM64MOVWload ∨ o = .ARM64MOVWUload ∨ o = .ARM64LDP ∨
+      o = .ARM64MOVDstore ∨ o = .ARM64MOVBstore ∨ o = .ARM64MOVHstore ∨ o = .ARM64MOVWstore ∨
       o = .ARM64STP := by
-  unfold storeFaultOp at h
-  cases hs : storeOp? o with
-  | none =>
-    rw [hs] at h
-    simp only [Option.isSome_none, Bool.false_or, beq_iff_eq] at h
-    exact Or.inr (Or.inr (Or.inr (Or.inr h)))
-  | some an =>
-    obtain ⟨as, n⟩ := an
-    rcases storeOp?_op hs with ⟨h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩
-    · exact Or.inl h1
-    · exact Or.inr (Or.inl h1)
-    · exact Or.inr (Or.inr (Or.inl h1))
-    · exact Or.inr (Or.inr (Or.inr (Or.inl h1)))
+  unfold memFaultOp at h
+  simp only [Bool.or_eq_true, beq_iff_eq] at h
+  rcases h with ((hl | h) | hs) | h
+  · obtain ⟨⟨as, n, sg⟩, hl⟩ := Option.isSome_iff_exists.1 hl
+    rcases loadOp?_op hl with ⟨h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ |
+      ⟨h1, -⟩ <;> simp [h1]
+  · simp [h]
+  · obtain ⟨⟨as, n⟩, hs⟩ := Option.isSome_iff_exists.1 hs
+    rcases storeOp?_op hs with ⟨h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ | ⟨h1, -⟩ <;> simp [h1]
+  · simp [h]
 
-/-! ## `runLoc`: the step of a store that panics -/
+/-! ## `runLoc`: the step of a load or store that panics -/
 
 section Step
 
@@ -106,9 +107,9 @@ theorem stepLoc_panic_eval (hne : v.op ≠ .Phi) (h1 : v.op ≠ .LoadReg) (h2 : 
       · rename_i e' m' hr; cases h; exact ⟨_, rfl, hr⟩
       · cases h
 
-/-- The nil fault of a store: its base (argument 0) is nil and its address (`symAddr`) is in the
-nil page. -/
-theorem nilFaults_store {ctx : GoFV.SSA.Sem.Ctx} (hop : storeFaultOp v.op = true)
+/-- The nil fault of a load or store: its base (argument 0) is nil and its address (`symAddr`) is
+in the nil page. -/
+theorem nilFaults_mem {ctx : GoFV.SSA.Sem.Ctx} (hop : memFaultOp v.op = true)
     {argv : List Val} {m : Mem}
     (h : nilFaults true ctx v argv = some m) :
     ∃ x b p, argv.head? = some x ∧ Arm64.addr x 0 = some b ∧ b.isNil = true ∧
@@ -118,7 +119,8 @@ theorem nilFaults_store {ctx : GoFV.SSA.Sem.Ctx} (hop : storeFaultOp v.op = true
   split at h
   · split at h
     · rename_i hany
-      rcases storeFaultOp_cases hop with ho | ho | ho | ho | ho <;>
+      rcases memFaultOp_cases hop with ho | ho | ho | ho | ho | ho | ho | ho | ho | ho | ho | ho |
+        ho <;>
       · simp only [nilAccesses, ho] at hany
         simp (config := { decide := true }) only [↓reduceIte, Option.toList,
           List.append_nil] at hany
@@ -136,13 +138,14 @@ theorem nilFaults_store {ctx : GoFV.SSA.Sem.Ctx} (hop : storeFaultOp v.op = true
     · cases h
   · cases h
 
-/-- `evalOpL` of a store is `arm64Op`'s, which panics only by `nilFaults`. -/
-theorem evalOpL_store_panic {ctx : GoFV.SSA.Sem.Ctx} {fr : GoFV.SSA.Sem.Frame} {ty : Ty}
+/-- `evalOpL` of a load or store is `arm64Op`'s, which panics only by `nilFaults`. -/
+theorem evalOpL_mem_panic {ctx : GoFV.SSA.Sem.Ctx} {fr : GoFV.SSA.Sem.Frame} {ty : Ty}
     {argv : List Val}
-    (hop : storeFaultOp v.op = true) {e : Panic} {mm : Mem}
+    (hop : memFaultOp v.op = true) {e : Panic} {mm : Mem}
     (h : evalOpL true env ctx fr v argv ty = .panic e mm) :
     e = .nilDeref ∧ nilFaults true ctx v argv = some mm := by
-  rcases storeFaultOp_cases hop with ho | ho | ho | ho | ho <;>
+  rcases memFaultOp_cases hop with ho | ho | ho | ho | ho | ho | ho | ho | ho | ho | ho | ho |
+    ho <;>
   · have hev : evalOpL true env ctx fr v argv ty = arm64Op true env ctx fr v argv ty := by
       unfold evalOpL; rw [ho]; rfl
     rw [hev] at h
@@ -159,22 +162,22 @@ theorem evalOpL_store_panic {ctx : GoFV.SSA.Sem.Ctx} {fr : GoFV.SSA.Sem.Frame} {
       repeat' split at h
       all_goals first | cases h | (simp only [writeRes] at h; split at h <;> cases h)
 
-/-- **A store whose step panics**: with `nilDeref`, its base (argument 0) read as a nil pointer
-and its address in the nil page. -/
-theorem stepLoc_store_panic (hop : storeFaultOp v.op = true) {e : Panic} {mm : Mem}
+/-- **A load or store whose step panics**: with `nilDeref`, its base (argument 0) read as a nil
+pointer and its address in the nil page. -/
+theorem stepLoc_mem_panic (hop : memFaultOp v.op = true) {e : Panic} {mm : Mem}
     (h : stepLoc env lc s v = .panic e mm) :
     e = .nilDeref ∧ ∃ a0 x b p, v.args[0]? = some a0 ∧ s.read lc a0 = .ok x ∧
       Arm64.addr x 0 = some b ∧ b.isNil = true ∧ symAddr lc.ctx v x = some p ∧
       p.nilFault = true := by
-  have hne : ∀ o, v.op = o → storeFaultOp o = true := fun o h => h ▸ hop
+  have hne : ∀ o, v.op = o → memFaultOp o = true := fun o h => h ▸ hop
+  have hsimp : ∀ o, v.op = o → memFaultOp o = false → False := fun o h h' => by
+    rw [hne o h] at h'; cases h'
   obtain ⟨argv, hmap, hev⟩ := stepLoc_panic_eval
-    (by intro h'; have := hne _ h'; simp [storeFaultOp, storeOp?, narrowStore?] at this)
-    (by intro h'; have := hne _ h'; simp [storeFaultOp, storeOp?, narrowStore?] at this)
-    (by intro h'; have := hne _ h'; simp [storeFaultOp, storeOp?, narrowStore?] at this)
-    (by intro h'; have := hne _ h'; simp [storeFaultOp, storeOp?, narrowStore?] at this)
-    (by intro h'; have := hne _ h'; simp [storeFaultOp, storeOp?, narrowStore?] at this) h
-  obtain ⟨rfl, hn⟩ := evalOpL_store_panic hop hev
-  obtain ⟨x, b, p, hx, hb, hbn, hp, hpf⟩ := nilFaults_store hop hn
+    (fun h' => hsimp _ h' (by decide)) (fun h' => hsimp _ h' (by decide))
+    (fun h' => hsimp _ h' (by decide)) (fun h' => hsimp _ h' (by decide))
+    (fun h' => hsimp _ h' (by decide)) h
+  obtain ⟨rfl, hn⟩ := evalOpL_mem_panic hop hev
+  obtain ⟨x, b, p, hx, hb, hbn, hp, hpf⟩ := nilFaults_mem hop hn
   cases ha : v.args.toList.head? with
   | none =>
     obtain ⟨hlen, -⟩ := mapM_res hmap
@@ -206,10 +209,10 @@ theorem symAddr_aux_ne_nil {ctx : GoFV.SSA.Sem.Ctx} {n : AuxRef} (haux : v.aux =
   · cases h; unfold frameBlk; split <;> nofun
   · cases h
 
-/-- A store whose step panics has no symbol. -/
-theorem stepLoc_store_panic_aux (hop : storeFaultOp v.op = true) {e : Panic} {mm : Mem}
+/-- A load or store whose step panics has no symbol. -/
+theorem stepLoc_mem_panic_aux (hop : memFaultOp v.op = true) {e : Panic} {mm : Mem}
     (h : stepLoc env lc s v = .panic e mm) : v.aux = none := by
-  obtain ⟨-, a0, x, b, p, -, -, -, -, hp, hpf⟩ := stepLoc_store_panic hop h
+  obtain ⟨-, a0, x, b, p, -, -, -, -, hp, hpf⟩ := stepLoc_mem_panic hop h
   cases haux : v.aux with
   | none => rfl
   | some n =>
@@ -218,7 +221,7 @@ theorem stepLoc_store_panic_aux (hop : storeFaultOp v.op = true) {e : Panic} {mm
 
 end Step
 
-/-! ## The machine: the store faults -/
+/-! ## The machine: the access faults -/
 
 /-- A nil base (`Ptr.isNil`) moved by `k` into the nil page: the machine word of the base plus `k`
 is in the nil page. -/
@@ -285,6 +288,66 @@ private theorem isSkip_of {n : Nat} {sg : Bool}
   unfold Prog.isSkip
   split <;> rename_i has <;> (try rfl) <;> rw [has] at h <;> exact absurd (by decide) h
 
+/-- A load of the `MOV` family from the address `a` (as `Progs3`'s private `eff_load`). -/
+private theorem eff_load {c : ProgCtx} {n kd : Nat} {sg : Bool} {a : BitVec 64} (hkd : kd < 32)
+    (hm : ProgOp.movMem c.p.as.name = some (n, sg, false)) (hf : c.p.from_.type = .MEM)
+    (hma : c.mem c.p.from_ = .ok (a, none)) (ht : c.p.to = regA (REG_R0 + kd)) :
+    progEffect c = .ok (effWd { loads := [(a, n)] } kd
+      (if sg then ProgOp.sextTo64 n ((readMem c.s.mem a n).setWidth 64)
+       else (readMem c.s.mem a n).setWidth 64)) := by
+  obtain ⟨-, h1, h2, h3, h4, h5, h6, h7, h8, h9⟩ := movPre_of hm
+  unfold progEffect
+  simp only [h1, h2, h3, h4, h5, h6, h7, h8, h9, hm, hf, hma, ht, regA, Eff.ld, ProgCtx.load,
+    Bool.false_eq_true, ↓reduceIte]
+  simp only [eff_wX_dest hkd]
+  rfl
+
+/-- `LDP` at the address `A` of its operand (as `Progs4`'s private `eff_ldp`). -/
+private theorem eff_ldp {c : ProgCtx} {ka kb : Nat} {A : BitVec 64} (hka : ka < 31)
+    (hkb : kb < 31) (has : c.p.as = .LDP) (hma : c.mem c.p.from_ = .ok (A, none))
+    (ht : c.p.to = pairA (REG_R0 + ka) (REG_R0 + kb)) :
+    progEffect c = .ok
+      { x := [(kb, c.load (A + BitVec.ofNat 64 8) 8), (ka, c.load A 8)],
+        loads := [(A + BitVec.ofNat 64 8, 8), (A, 8)] } := by
+  have hname : As.name .LDP = "LDP" := rfl
+  unfold progEffect
+  simp (config := { decide := true }) only [has, hname, ProgOp.baseOf, ↓reduceIte,
+    ProgOp.movMem, ProgOp.pairOp, ht, pairA, hma, Eff.ld, eff_wX_r0 hka, eff_wX_r0 hkb]
+  rfl
+
+/-- `MOV{D,B,BU,H,HU,W,WU} off(Rn), Rd` with the address in the nil page: the load faults. -/
+theorem progStep_loadN_nil {kn kd n : Nat} {sg : Bool} {off : Int} (hkn : kn < 32)
+    (hkd : kd < 32) (hn : L.nextAddr p.id = some next)
+    (hm : ProgOp.movMem p.as.name = some (n, sg, false)) (hf : p.from_ = memA (REG_R0 + kn) off)
+    (hsc : p.scond = 0) (ht : p.to = regA (REG_R0 + kd))
+    (hnil : nilPage (s.rX (BitVec.ofNat 5 kn) + BitVec.ofInt 64 off) = true) :
+    progStep L p s = .error (.nilPage (s.rX (BitVec.ofNat 5 kn) + BitVec.ofInt 64 off)) := by
+  have hma : (ProgCtx.mk L s p).mem p.from_ =
+      .ok (s.rX (BitVec.ofNat 5 kn) + BitVec.ofInt 64 off, none) := by
+    rw [hf]; exact ctx_mem_reg hkn hsc
+  have he := eff_load (c := ⟨L, s, p⟩) hkd hm (by rw [hf]; rfl) hma ht
+  by_cases h : kd = 31 <;>
+    simp [progStep, hn, isSkip_of hm, he, effWd, h, Eff.nilAccess?, hnil]
+
+/-- `LDP off(Rn), (Ra, Rb)` with the first address in the nil page: the load faults (at that
+address or 8 bytes above, the first of the two `LDP` reads). -/
+theorem progStep_ldp_nil {kn ka kb : Nat} {off : Int} (hkn : kn < 32) (hka : ka < 31)
+    (hkb : kb < 31) (hn : L.nextAddr p.id = some next) (has : p.as = .LDP)
+    (hf : p.from_ = memA (REG_R0 + kn) off) (hsc : p.scond = 0)
+    (ht : p.to = pairA (REG_R0 + ka) (REG_R0 + kb))
+    (hnil : nilPage (s.rX (BitVec.ofNat 5 kn) + BitVec.ofInt 64 off) = true) :
+    ∃ a, progStep L p s = .error (.nilPage a) := by
+  have hma := ctx_mem_reg (c := ⟨L, s, p⟩) hkn hsc (off := off)
+  rw [← hf] at hma
+  have he := eff_ldp (c := ⟨L, s, p⟩) hka hkb has hma ht
+  cases h8 : nilPage (s.rX (BitVec.ofNat 5 kn) + BitVec.ofInt 64 off + BitVec.ofNat 64 8) with
+  | true =>
+    exact ⟨s.rX (BitVec.ofNat 5 kn) + BitVec.ofInt 64 off + BitVec.ofNat 64 8,
+      by simp [progStep, hn, Prog.isSkip, has, he, Eff.nilAccess?, h8]⟩
+  | false =>
+    exact ⟨s.rX (BitVec.ofNat 5 kn) + BitVec.ofInt 64 off,
+      by simp [progStep, hn, Prog.isSkip, has, he, Eff.nilAccess?, h8, hnil]⟩
+
 /-- A store of the `MOV` family of `X ks` to the address `a` (as `Progs3`'s private
 `eff_store`). -/
 private theorem eff_store {c : ProgCtx} {n ks : Nat} {sg : Bool} {a : BitVec 64} (hks : ks < 32)
@@ -339,96 +402,130 @@ end Machine
 
 /-! ## Slice G30 -/
 
-/-- `vkind28` of a store with no symbol is `vkind6`'s. -/
-theorem vkind28_store {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2}
-    (hop : storeFaultOp v.op = true) (haux : v.aux = none) (h : vkind28 lc g v = .ok kd) :
+/-- `vkind28` of a load or store with no symbol is `vkind6`'s. -/
+theorem vkind28_mem {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2}
+    (hop : memFaultOp v.op = true) (haux : v.aux = none) (h : vkind28 lc g v = .ok kd) :
     vkind6 lc g v = .ok kd := by
-  rcases storeFaultOp_cases hop with ho | ho | ho | ho | ho <;>
+  rcases memFaultOp_cases hop with ho | ho | ho | ho | ho | ho | ho | ho | ho | ho | ho | ho |
+    ho <;>
     simpa [vkind28, vkind27, vkind25, vkind24, vkind23, vkind22, vkind21, vkind20, vkind19,
       vkind18, vkind17, vkind16, vkind15, vkind14, vkind13, vkind12, vkind11, vkind10, vkind9,
       vkind8, vkind7, globPair, logSh?, pbOp, Cond.ofOp, storeIdxOp?, loadIdxOp?, icallLead,
       haux, ho] using h
 
-/-- The kinds of G6 of a store with no symbol: `MOV… Rs, off(Rn)` (G1's `MOVD`, G3's narrow
-stores) or `STP (Rx, Ry), off(Rn)` (G4), the address in a 64-bit register. -/
-theorem vk6_store {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (hVK : VK6 lc g v kd)
-    (hop : storeFaultOp v.op = true) (haux : v.aux = none) :
+/-- The kinds of G6 of a load or store with no symbol, the address in a 64-bit register `rn`:
+`MOV… off(Rn), Rd` (G1's `MOVD`, G3's narrow loads), `LDP off(Rn), (Ra, Rb)` (G4),
+`MOV… Rs, off(Rn)` (G1's `MOVD`, G3's narrow stores) or `STP (Rx, Ry), off(Rn)` (G4). -/
+theorem vk6_mem {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (hVK : VK6 lc g v kd)
+    (hop : memFaultOp v.op = true) (haux : v.aux = none) :
     ∃ rn pat, argObj lc v 0 = .ok (64, rn) ∧ kd = .prog pat ∧
-      ((∃ as n cs rs sg, ProgOp.movMem as.name = some (n, sg, false) ∧
+      ((∃ as n sg r rd, ProgOp.movMem as.name = some (n, sg, false) ∧ objOf? r = some rd ∧
+          ∀ p, pat.ok p = true →
+            p.as = as ∧ p.from_ = memA rn v.auxInt.toInt ∧ p.to = regA rd ∧ p.scond = 0) ∨
+        (∃ ra rb oa ob, ra ≠ zeroReg ∧ rb ≠ zeroReg ∧ objOf? ra = some oa ∧
+          objOf? rb = some ob ∧ ∀ p, pat.ok p = true →
+            p.as = .LDP ∧ p.from_ = memA rn v.auxInt.toInt ∧ p.to = pairA oa ob ∧ p.scond = 0) ∨
+        (∃ as n cs rs sg, ProgOp.movMem as.name = some (n, sg, false) ∧
           argObj lc v 1 = .ok (cs, rs) ∧ ∀ p, pat.ok p = true →
             p.as = as ∧ p.from_ = regA rs ∧ p.to = memA rn v.auxInt.toInt ∧ p.scond = 0) ∨
         (∃ rx ry, argObj lc v 1 = .ok (64, rx) ∧ argObj lc v 2 = .ok (64, ry) ∧
           ∀ p, pat.ok p = true →
-            p.as = .STP ∧ p.from_ = pairA rx ry ∧ p.to = memA rn v.auxInt.toInt ∧ p.scond = 0)) := by
-  have hcases := storeFaultOp_cases hop
+            p.as = .STP ∧ p.from_ = pairA rx ry ∧ p.to = memA rn v.auxInt.toInt ∧
+              p.scond = 0)) := by
+  have hcases := memFaultOp_cases hop
   cases hVK with
   | var hfv _ => rw [hfv.aux] at haux; cases haux
   | g5 h5 =>
     cases h5 with
-    | mark hmk => rcases hcases with ho | ho | ho | ho | ho <;> rw [ho] at hmk <;> cases hmk
+    | mark hmk =>
+      rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] at hmk <;>
+        cases hmk
     | g4 _ h4 =>
       cases h4 with
-      | ldp ho => rcases hcases with h | h | h | h | h <;> rw [h] at ho <;> cases ho
+      | ldp _ _ _ _ _ _ _ _ hao _ _ _ hza hzb _ _ hoa hob =>
+        refine ⟨_, _, hao, rfl, Or.inr (Or.inl ⟨_, _, _, _, hza, hzb, hoa, hob, fun p hp => ?_⟩)⟩
+        obtain ⟨has, hf, -, ht, hsc⟩ := Shape.ok_eq hp
+        exact ⟨has, hf, ht, hsc⟩
       | stp _ _ _ _ _ hao hxo hyo _ =>
-        refine ⟨_, _, hao, rfl, Or.inr ⟨_, _, hxo, hyo, fun p hp => ?_⟩⟩
+        refine ⟨_, _, hao, rfl, Or.inr (Or.inr (Or.inr ⟨_, _, hxo, hyo, fun p hp => ?_⟩))⟩
         obtain ⟨has, hf, -, ht, hsc⟩ := Shape.ok_eq hp
         exact ⟨has, hf, ht, hsc⟩
       | sel hsel =>
         rcases hsel with ⟨ho, -⟩ | ⟨ho, -⟩ <;>
-          rcases hcases with h | h | h | h | h <;> rw [h] at ho <;> cases ho
-      | g3 _ hnstp _ _ h3 =>
+          rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] at ho <;>
+          cases ho
+      | g3 hnldp hnstp _ _ h3 =>
         cases h3 with
         | g2 hcond _ h2 =>
-          rcases hcond with ⟨-, hst, -⟩ | ⟨hmd, -⟩
-          · rcases hcases with h | h | h | h | h <;> rw [h] at hst hnstp <;>
-              first | exact absurd rfl hnstp | simp [storeOp?, narrowStore?] at hst
-          · have hmd' : v.op = .ARM64MOVDstore := by
-              rcases hmd with h | h
-              · rcases hcases with h' | h' | h' | h' | h' <;> rw [h'] at h <;> cases h
-              · exact h
-            cases h2 with
+          rcases hcond with ⟨hld, hst, -⟩ | ⟨hmd, -⟩
+          · rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;>
+              rw [h] at hld hst hnldp hnstp <;>
+              first
+                | exact absurd rfl hnldp
+                | exact absurd rfl hnstp
+                | simp [loadOp?, narrowLoad?, storeOp?, narrowStore?] at hld hst
+          · cases h2 with
             | g1 _ _ _ _ _ hvk =>
               cases hvk with
-              | store _ _ _ _ _ hao hso _ _ =>
-                refine ⟨_, _, hao, rfl, Or.inl ⟨.MOVD, 8, _, _, false, rfl, hso, fun p hp => ?_⟩⟩
+              | load _ _ _ hao _ hro _ =>
+                obtain ⟨r, -, -, hor, -⟩ := resObj_spec hro
+                refine ⟨_, _, hao, rfl, Or.inl ⟨.MOVD, 8, false, r, _, rfl, hor, fun p hp => ?_⟩⟩
                 obtain ⟨has, hf, -, ht, hsc⟩ := Shape.ok_eq hp
                 exact ⟨has, hf, ht, hsc⟩
-              | _ => simp_all
-            | _ => simp_all
-        | load hld => rcases hcases with h | h | h | h | h <;> rw [h] at hld <;> cases hld
+              | store _ _ _ _ _ hao hso _ _ =>
+                refine ⟨_, _, hao, rfl,
+                  Or.inr (Or.inr (Or.inl ⟨.MOVD, 8, _, _, false, rfl, hso, fun p hp => ?_⟩))⟩
+                obtain ⟨has, hf, -, ht, hsc⟩ := Shape.ok_eq hp
+                exact ⟨has, hf, ht, hsc⟩
+              | _ => rcases hmd with h | h <;> simp_all
+            | _ => rcases hmd with h | h <;> simp_all
+        | load hld _ _ hacc _ hro _ hpat =>
+          cases hacc with
+          | reg _ hao =>
+            obtain ⟨r, -, -, hor, -⟩ := resObj_spec hro
+            refine ⟨_, _, hao, rfl,
+              Or.inl ⟨_, _, _, r, _, loadOp?_movMem hld, hor, fun p hp => ?_⟩⟩
+            obtain ⟨has, hf, -, ht, hsc, -, -⟩ := hpat p hp
+            exact ⟨has, hf, ht, hsc⟩
+          | glob hx => rw [hx] at haux; cases haux
         | store hst _ _ _ _ hacc hso _ _ hpat =>
           cases hacc with
           | reg _ hao =>
             obtain ⟨sg, hmov⟩ := storeOp?_movMem hst
-            refine ⟨_, _, hao, rfl, Or.inl ⟨_, _, _, _, sg, hmov, hso, fun p hp => ?_⟩⟩
+            refine ⟨_, _, hao, rfl,
+              Or.inr (Or.inr (Or.inl ⟨_, _, _, _, sg, hmov, hso, fun p hp => ?_⟩))⟩
             obtain ⟨has, hf, -, ht, hsc, -, -⟩ := hpat p hp
             exact ⟨has, hf, ht, hsc⟩
           | glob hx => rw [hx] at haux; cases haux
-        | _ => exfalso; rcases hcases with h | h | h | h | h <;> simp_all [extOp?]
+        | _ =>
+          exfalso
+          rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;>
+            simp_all [extOp?]
 
-/-- **A store of slice G30 that faults**: from a `LocMatch`ed P0 state, a store whose `runLoc`
-step panics (with `nilDeref`, `stepLoc_store_panic`) is matched by the no-ops before its Prog,
-which faults in the nil page (`PPanics`). -/
-theorem g30_storePanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+/-- **A load or store of slice G30 that faults**: from a `LocMatch`ed P0 state, a load or store
+whose `runLoc` step panics (with `nilDeref`, `stepLoc_mem_panic`) is matched by the no-ops before
+its Prog, which faults in the nil page (`PPanics`). -/
+theorem g30_memPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab}
     {E : MatchEnv} {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState}
     {m : MState} {e : Panic} {mm : Mem}
     (hc : checkG30 lc ps bstart g = .ok (tab, kt)) (hE : G28Env lc g L ps ret tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
-    (hop : storeFaultOp v.op = true) (hm : LocMatch E s bid i m)
+    (hop : memFaultOp v.op = true) (hm : LocMatch E s bid i m)
     (hinv : G3Inv E lc (kAt lc kt bid blk i) s) (hs : stepLoc env lc s v = .panic e mm) :
     e = .nilDeref ∧ ∃ m', PStar H L ps.toList ret m m' ∧ PPanics H L ps.toList ret m' e := by
-  obtain ⟨rfl, a0, x, b0, p, ha0, hx, hb0, hbn, hp, hpf⟩ := stepLoc_store_panic hop hs
-  have haux := stepLoc_store_panic_aux hop hs
-  have hcases := storeFaultOp_cases hop
+  obtain ⟨rfl, a0, x, b0, p, ha0, hx, hb0, hbn, hp, hpf⟩ := stepLoc_mem_panic hop hs
+  have haux := stepLoc_mem_panic_aux hop hs
+  have hcases := memFaultOp_cases hop
   have hen : entryOp24 v.op = false := by
-    rcases hcases with h | h | h | h | h <;> rw [h] <;> rfl
+    rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;> rfl
   refine ⟨rfl, ?_⟩
   cases hl0 : lc.ctx.f.lowered with
   | false =>
     rcases nl30_ops (checkG30_nl hl0 hc) hbid hb hi hv hen with h | h | h | h <;>
-      rcases hcases with h' | h' | h' | h' | h' <;> rw [h] at h' <;> cases h'
+      rcases hcases with h' | h' | h' | h' | h' | h' | h' | h' | h' | h' | h' | h' | h' <;>
+      rw [h] at h' <;> cases h'
   | true =>
   obtain ⟨⟨⟨⟨⟨-, hlink, hpcOf, hret, hA, -, -, -, -, -, -⟩, -⟩, -⟩, -⟩, -⟩ := hE
   obtain ⟨sym, text, az, ez, hL⟩ : ∃ sym text az ez, L = Link.byId sym text az ez ps.toList :=
@@ -448,16 +545,16 @@ theorem g30_storePanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Lin
   rw [hid', hv] at hv'
   cases hv'
   rw [hvk] at hkd
-  obtain ⟨-, hVK⟩ := vkind6_spec (vkind28_store hop haux hkd)
-    (by rcases hcases with h | h | h | h | h <;> rw [h] <;> rfl)
-  obtain ⟨rn, pat, hao, rfl, hshape⟩ := vk6_store hVK hop haux
+  obtain ⟨-, hVK⟩ := vkind6_spec (vkind28_mem hop haux hkd)
+    (by rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;> rfl)
+  obtain ⟨rn, pat, hao, rfl, hshape⟩ := vk6_mem hVK hop haux
   have hj : E.pcOf bid i = pcAt text c.cx.ps.toList ((js ++ [e']).getD i 0) := by
     rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some]
   have hreads := ((checkK_spec hk).2 bid hbid blk hb).1 i id v hi hv
   have hR : KRead c.cx.lc v (kAt c.cx.lc kt bid blk i).get := kread_of_reads hreads
   have F : Facts c.cx.lc sym text az ez c.cx.ps.toList ret E :=
     ⟨hl, clsReg_of_home10 hhome, hnd, hlt, hret, hA⟩
-  have hnp : v.op ≠ .Phi := by rcases hcases with h | h | h | h | h <;> rw [h] <;> nofun
+  have hnp : v.op ≠ .Phi := fun h => by rw [h] at hop; exact absurd hop (by decide)
   -- the base, nil in a register: the machine word 0
   obtain ⟨a0', r0, ha0', hah0, hor0, hca0⟩ := argObj_spec hao
   rw [ha0] at ha0'
@@ -471,12 +568,27 @@ theorem g30_storePanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Lin
   have hsym : Arm64.addr x (BitVec.ofInt 64 v.auxInt.toInt) = some p := by
     rw [← hp]; unfold symAddr; rw [haux]
   have hnil := nil_fault_page hMI.nil hxv hxf hb0 hbn hsym hpf
-  -- the machine: no-ops, then the store, which faults
+  -- the machine: no-ops, then the access, which faults
   obtain ⟨k, -, hk', hokp, hstar⟩ := pstar_oneAt2 (H := H) F.nodup F.lt F.ret hvs m
   rw [pc_eta hm hj] at hstar
   have hne : ({ m with pc := pcAt text c.cx.ps.toList k } : MState).pc ≠ ret := fun hr =>
     F.ret _ (List.getElem_mem hk') (by rw [addr_pcAt hk']; exact congrArg some hr)
-  rcases hshape with ⟨as, n, cs, rs, sg, hmov, hso, hpat⟩ | ⟨rx, ry, hxo, hyo, hpat⟩
+  rcases hshape with ⟨as, n, sg, r, rd, hmov, hor, hpat⟩ |
+      ⟨ra, rb, oa, ob, hza, hzb, hoa, hob, hpat⟩ | ⟨as, n, cs, rs, sg, hmov, hso, hpat⟩ |
+      ⟨rx, ry, hxo, hyo, hpat⟩
+  · obtain ⟨has, hf, ht, hsc⟩ := hpat _ hokp
+    obtain ⟨kd, hkd, rfl, -⟩ := objOf?_some hor
+    exact ⟨_, hstar, hne, .inl ⟨_, _, progAt?_pcAt F.nodup F.lt hk',
+      progStep_loadN_nil hkn hkd (nextAddr_pcAt F.nodup hk') (by rw [has]; exact hmov) hf hsc ht
+        hnil, rfl⟩⟩
+  · obtain ⟨has, hf, ht, hsc⟩ := hpat _ hokp
+    obtain ⟨ka, -, rfl, hka⟩ := objOf?_some hoa
+    obtain ⟨kb, -, rfl, hkb⟩ := objOf?_some hob
+    have hka' : ka < 31 := hka.elim (fun h => absurd h.1 hza) (fun h => h.1)
+    have hkb' : kb < 31 := hkb.elim (fun h => absurd h.1 hzb) (fun h => h.1)
+    obtain ⟨a, ha⟩ := progStep_ldp_nil (s := { m with pc := pcAt text c.cx.ps.toList k }) hkn hka'
+      hkb' (nextAddr_pcAt F.nodup hk') has hf hsc ht hnil
+    exact ⟨_, hstar, hne, .inl ⟨_, _, progAt?_pcAt F.nodup F.lt hk', ha, rfl⟩⟩
   · obtain ⟨has, hf, ht, hsc⟩ := hpat _ hokp
     obtain ⟨a1, r1, -, -, hor1, -⟩ := argObj_spec hso
     obtain ⟨ks, hks, rfl, -⟩ := objOf?_some hor1
@@ -491,9 +603,9 @@ theorem g30_storePanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Lin
     exact ⟨_, hstar, hne, .inl ⟨_, _, progAt?_pcAt F.nodup F.lt hk',
       progStep_stp_nil hkn hkx hky (nextAddr_pcAt F.nodup hk') has hf hsc ht hnil, rfl⟩⟩
 
-/-- **A store of slice G30 that faults, down to the machine words**: machine steps of the linked
-code to a state that panics with `nilDeref` (the store's nil-page fault, `MPanics`). -/
-theorem g30_obj_storePanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+/-- **A load or store of slice G30 that faults, down to the machine words**: machine steps of the
+linked code to a state that panics with `nilDeref` (the access's nil-page fault, `MPanics`). -/
+theorem g30_obj_memPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState} {m : MState}
     {e : Panic} {mm : Mem} {spills : Array Spill} {o : ObjIn} {otab : Tab} {base : BitVec 64}
@@ -502,7 +614,7 @@ theorem g30_obj_storePanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L :
     (hE : G28Env lc g L ps (endP L.text ps.toList) tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
-    (hop : storeFaultOp v.op = true) (hm : LocMatch E s bid i m)
+    (hop : memFaultOp v.op = true) (hm : LocMatch E s bid i m)
     (hinv : G3Inv E lc (kAt lc kt bid blk i) s) (hs : stepLoc env lc s v = .panic e mm)
     (hO : ObjEnv ps spills o otab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
@@ -510,7 +622,7 @@ theorem g30_obj_storePanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L :
     (hR : ObjRel (ObjEnv.map otab ps L base) m t)
     (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
     e = .nilDeref ∧ ∃ t', MStar H code retM t t' ∧ MPanics H code retM t' e := by
-  obtain ⟨he, m', hp, hpp⟩ := g30_storePanic (H := H) hc hE hbid hb hi hv hop hm hinv hs
+  obtain ⟨he, m', hp, hpp⟩ := g30_memPanic (H := H) hc hE hbid hb hi hv hop hm hinv hs
   obtain ⟨t1, ht1, hR1, hI1⟩ := obj_star hO hH hp hR (locMatch_inv hE.env.env.env.env hm) hic
   obtain ⟨t2, ht2, hpan⟩ := obj_panic hO hHP hR1 (hI1.resolve_right hpp.1) hpp
   exact ⟨he, t2, mstar_trans ht1 ht2, hpan⟩

@@ -650,13 +650,14 @@ panics (`MPanics`) with `nilDeref`, or with a bounds panic that `BoundsAgree`s w
 `GoFV.Proof.Obj.g30_obj_callPanic` (`GoFV/Proof/Obj/CallPanic.lean`): a static call whose callee
 panics, under the trusted `CallPanicOK` (§ Assumptions), is matched by machine steps to a state
 that panics with the same panic; `g30_obj_icallPanic`: the same for an interface or closure call
-(`CALL (Rn)`), under the trusted `ICallPanicOK`. `GoFV.Proof.Obj.g30_obj_storePanic`
-(`GoFV/Proof/Obj/StorePanic.lean`): a store (`MOV{D,W,H,B}store`, `STP`; `storeFaultOp`) whose
-step panics (`nilFaults`: a nil base, the address in the nil page) has no symbol and its base in a
-register holding the machine word 0, so its Prog faults in the nil page (`nil_fault_page`,
+(`CALL (Rn)`), under the trusted `ICallPanicOK`. `GoFV.Proof.Obj.g30_obj_memPanic`
+(`GoFV/Proof/Obj/MemPanic.lean`): a load (`MOV{D,W,WU,H,HU,B,BU}load`, `LDP`) or store
+(`MOV{D,W,H,B}store`, `STP`; `memFaultOp`) whose step panics (`nilFaults`: a nil base, the address
+in the nil page) has no symbol and its base in a register holding the machine word 0, so its Prog
+faults in the nil page (`nil_fault_page`, `progStep_loadN_nil`, `progStep_ldp_nil`,
 `progStep_storeN_nil`, `progStep_stp_nil`): the machine panics with `nilDeref`, no premise. The
-register-index stores are excluded: `runLoc` faults on their nil base whatever the index, the
-machine only when the index keeps the address in the nil page.
+register-index loads and stores are excluded: `runLoc` faults on their nil base whatever the
+index, the machine only when the index keeps the address in the nil page.
 
 `GoFV.Proof.Obj.obj_whole_ret` (`GoFV/Proof/Obj/Whole.lean`): when `checkG30` and `checkObj` accept
 a function and `retRegsOK` its returns, the machine starts at its entry (`MachEntry`, return
@@ -665,8 +666,9 @@ state `s` at the entry block) whose first `k` values (the entry values) lead to 
 related to the entry machine state (`EntryMatch`: the argument registers, no flags or slots, the
 memory injected; `EntryEnv`: the frame, `g`, the caller's `LR`/`FP`; no upper-bit fact carried
 into the body, `uL … k = []`) and whose every later step meets its premises (`RunPre`, at the
-states `runLoc` reaches from `sI`: `G14Pre`, `G1TermPre`, no entry value (`entryOp24`), `GetGOK`
-and the trusted `CallOK`, `CallOKZ`, `ICallOK`, `WbOK`, `CloOK`, `MemEqOK`), and that returns
+states `runLoc` reaches from `sI`: at a value whose step succeeds `G14Pre`, `GetGOK` and the
+trusted `CallOK`, `CallOKZ`, `ICallOK`, `WbOK`, `CloOK`, `MemEqOK`; `G1TermPre`; no entry value
+(`entryOp24`)), and that returns
 `(rs, mm)`, is matched by `runMach` of the linked words that returns to `s0.x 30` in a state `t'`
 with `MachRet s0 t'` (`SP`, `g`, `R29` as at entry) and `ResultRel E outs rs mm t'`
 (`GoFV/Proof/Obj/Results.lean`): `rs` in the function's ABI result registers `outs`
@@ -683,12 +685,12 @@ arm64 op). The pieces: the prologue (`sim_entry`, over `obj_entry`), each value 
 
 `GoFV.Proof.Obj.obj_whole_panic` (`Whole.lean`): `obj_whole_ret`'s premises on the entry and the
 steps, the trusted `HookPanicMap` and `BoundsOK`, and the panic premise `RunPanicPre` (at every
-state the run reaches, a value whose step panics is a nil check, a store of `storeFaultOp`, a
+state the run reaches, a value whose step panics is a nil check, a load or store of `memFaultOp`, a
 bounds check, or a static, interface or closure call whose callee panics as `CallPanicOK` or
 `ICallPanicOK` says at every `LocMatch`ed machine state): if the run of `runLoc` panics with `e`,
 `runMach` panics with `e'`, `BoundsAgree e e'` (the same panic, or for a bounds check the runtime's
 report of the same failure). The pieces: `sim_valuePanic` (over `g30_obj_nilPanic`,
-`g30_obj_storePanic`, `g30_obj_boundsPanic`, `g30_obj_callPanic`, `g30_obj_icallPanic`),
+`g30_obj_memPanic`, `g30_obj_boundsPanic`, `g30_obj_callPanic`, `g30_obj_icallPanic`),
 `sim_from_panic`; terminators
 never panic (`stepTermLoc_ne_panic`).
 
@@ -714,8 +716,9 @@ Witnesses:
   a nil receiver: the nil check's `MOVB` faults in the nil page. `g30_callPanic_witness`:
   `g30_callPanic` (P0) on `fint64to32`'s call, under a hook whose callee panics with `nilDeref`;
   `g30_icallPanic_witness`: `g30_icallPanic` on `Locker.Lock`'s interface call `v11`;
-  `g30_storePanic_witness`: `g30_storePanic` on `(*queueOnePass).next`'s `MOVW R2, 52(R0)` with a
-  nil `q`, which faults at address 52.
+  `g30_storePanic_witness`: `g30_memPanic` on `(*queueOnePass).next`'s `MOVW R2, 52(R0)` with a
+  nil `q`, which faults at address 52; `g30_loadPanic_witness`: `g30_memPanic` on its
+  `MOVWU 52(R0), R3`.
 - `verified_mach_witness` (`GoFV/Proof/Witness/ObjEndToEnd.lean`): `pallocSum.start` from its
   generic SSA (the export's first section, the whole-file pass environment of
   `gofv-ssa-opt --verified`) through the verified pipeline (`fullyVerified`), with every premise
@@ -724,9 +727,8 @@ Witnesses:
 Not yet covered (#553): framed leaves (`autosize ≠ 0` and no `CALL`: the epilogue returns through
 `X30`, which needs `X30` kept across the body; premise `autosize = 0 ∨ ¬leaf`), the morestack path
 of the prologue (premise: the stack check passes), results on the stack (`retRegsOK` asks for
-register results), and panics other than nil checks, stores, bounds checks and calls (loads that
-fault: `G3Pre` asks a load to read valid bytes; register-index stores; write barriers;
-`memequal`).
+register results), and panics other than nil checks, loads, stores, bounds checks and calls
+(register-index loads and stores; write barriers; `memequal`).
 
 ### End-to-end coverage (`gofv-ssa-opt --check --verified --e2e`)
 

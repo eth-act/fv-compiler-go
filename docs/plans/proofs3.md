@@ -1519,22 +1519,25 @@ the machine state.
   in a state `t'` with `MachRet s0 t'` and `ResultRel E outs rs mm t'` (`rs` in the result
   registers, `mm` injected).
 - **Panics** (`sim_valuePanic`, `sim_from_panic`, `obj_whole_panic`): a step that panics is a nil
-  check (`g30_obj_nilPanic`: the `MOVB` faults in the nil page), a store that faults
-  (`g30_obj_storePanic`, `GoFV/Proof/Obj/StorePanic.lean`: `MOV{D,W,H,B}store` and `STP`,
-  `storeFaultOp`; `nilFaults` found a nil base and an address in the nil page, so the store has no
-  symbol, its base register holds the machine word 0 and `X[n] + off` is in the nil page,
-  `nil_fault_page`; no premise), a bounds check (`g30_obj_boundsPanic`, under the trusted
-  `BoundsOK`: `runtime.panicBounds` reports the same failure, `BoundsAgree`), a static call whose
+  check (`g30_obj_nilPanic`: the `MOVB` faults in the nil page), a load or store that faults
+  (`g30_obj_memPanic`, `GoFV/Proof/Obj/MemPanic.lean`: `MOV{D,W,WU,H,HU,B,BU}load`, `LDP`,
+  `MOV{D,W,H,B}store` and `STP`, `memFaultOp`; `nilFaults` found a nil base and an address in the
+  nil page, so the access has no symbol, its base register holds the machine word 0 and
+  `X[n] + off` is in the nil page, `nil_fault_page`; no premise), a bounds check
+  (`g30_obj_boundsPanic`, under the trusted `BoundsOK`: `runtime.panicBounds` reports the same
+  failure, `BoundsAgree`), a static call whose
   callee panics (`g30_obj_callPanic`, `GoFV/Proof/Obj/CallPanic.lean`, under the trusted
   `CallPanicOK`: the callee's hook panics alike from every state with the call's arguments in their
   registers and the memory injected), or an interface or closure call whose callee panics
   (`g30_obj_icallPanic`, under the trusted `ICallPanicOK`: the hook at the code pointer in `Rn`
   panics alike; `vkind28` of such a call is `vkind10`'s `icallKind`, `vkind28_icall`); terminators
   do not panic (`stepTermLoc_ne_panic`). The premise `RunPanicPre` says that every panicking step
-  the run reaches is of these kinds; the machine run panics with `e'`, `BoundsAgree e e'`. The
-  register-index stores are not among them: `runLoc` faults on their nil base whatever the index
-  (`nilAccesses` takes the base as the address of a non-`SymOff` op), the machine only when the
-  index keeps the address in the nil page.
+  the run reaches is of these kinds; the machine run panics with `e'`, `BoundsAgree e e'`.
+  `RunPre` asks `G14Pre` (a load reads valid bytes, a nil check's pointer is not nil) only of the
+  steps that succeed, so the faulting ones are `RunPanicPre`'s alone. The register-index loads and
+  stores are not among them: `runLoc` faults on their nil base whatever the index (`nilAccesses`
+  takes the base as the address of a non-`SymOff` op), the machine only when the index keeps the
+  address in the nil page.
 
 **End to end** (`GoFV/Proof/Obj/EndToEnd.lean`, `verified_mach`): `verifiedPipelineFull_refines`
 gives a `runLoc` of the allocated function refining the generic `run`; `runLoc` is `finish` of its
@@ -1548,15 +1551,15 @@ from `locInit` and `runMach` from the entry to the caller's `0x40`, through `b1`
 (`runtime.gclinkptr.ptr`, no arm64 op: `ret_results` in Phase 1's mode). `objWhole_panic_witness`
 (`(*A).g` on a nil receiver: the nil check faults). `g30_callPanic_witness` (`fint64to32`, a callee
 that panics), `g30_icallPanic_witness` (`Locker.Lock`'s interface call), `g30_storePanic_witness`
-(`(*queueOnePass).next`'s `MOVW R2, 52(R0)` with a nil `q`). `verified_mach_witness`:
+and `g30_loadPanic_witness` (`(*queueOnePass).next`'s `MOVW R2, 52(R0)` and `MOVWU 52(R0), R3`
+with a nil `q`). `verified_mach_witness`:
 `pallocSum.start` from its generic SSA (the export's first
 section, in the whole-file environment of `gofv-ssa-opt --verified`) through
 `verifiedPipelineFull` (`fullyVerified`), with every premise of `verified_mach` discharged;
 `checkG30` accepts genssa's Progs against the pipeline's own output. `RunPre` there is
 `runPre_simple`.
 
-**Next.** Panics of the other kinds (a load's nil-page fault: `G3Pre` asks a load to read valid
-bytes, so a faulting load is outside `RunPre`; register-index stores; write barriers, `memequal`);
+**Next.** Panics of the other kinds (register-index loads and stores; write barriers, `memequal`);
 results on the stack (the
 `retRegsOK` class `a result on the stack`); framed leaves (`X30` across the body); the morestack
 path of the prologue (`morestackHook`) as a covered path instead of the premise that the stack
