@@ -6,7 +6,7 @@ import GoFV.Proof.Gen.Spec31
 
 `checkG33 lc ps bstart g = .ok (tab, kt)` unfolded: on a function with an arm64 op, G31's facts
 (`checkG33_spec`) with G33's value check (`vkind33_spec`, `VK33`: G32's values, `CLZ`/`REV`,
-`UBFIZ`, `SRAconst` and `CMNWconst`); on one without, `checkNL30`'s (`checkG33_nl`).
+`UBFIZ`, `SRAconst` and `CMNWconst`); on one without, G31's (`checkG31_of_33`).
 -/
 
 namespace GoFV.Gen.Check
@@ -148,12 +148,6 @@ theorem vkind33_spec {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2}
     simp only [hc', Bool.false_eq_true, ↓reduceIte] at h
     obtain ⟨htm, h32⟩ := vkind32_spec h hen
     exact ⟨htm, .g32 h1 hu hs hc h32⟩
-
-/-- On a function with no arm64 op, G33 is `checkNL30`. -/
-theorem checkG33_nl {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}
-    {r : Except String (PcTab × KTab)} (hl : lc.ctx.f.lowered = false)
-    (h : checkG33 lc ps bstart g = r) : checkNL30 lc ps bstart g = r := by
-  simpa [checkG33, hl] using h
 
 /-- On a function with no arm64 op, G33 is G31. -/
 theorem checkG31_of_33 {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}

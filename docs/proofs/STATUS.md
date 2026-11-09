@@ -625,6 +625,21 @@ of `b3`, whose table comes from `b1`, the machine's whole `X2 = 0x2a`), `genG31_
 `CBZW R5` from `b1` to `b3`, with `UOKL` of `uIn lc 3`, which gives the whole `X5 = 0x2a`). Coverage
 on quick-v10 (`lake exe gen-check`): 5,703 of 9,297 functions (61.34%), 145,016 values.
 
+## Phase 3: genssa, slice G33 (I7, #553)
+
+`GoFV.Proof.Gen.g33_value`, `GoFV.Proof.Gen.g33_term`, `GoFV.Proof.Gen.g33_nilPanic`,
+`GoFV.Proof.Gen.g33_boundsPanic` (`GoFV/Proof/Gen/G33.lean`): when slice G33 (`checkG33`: G31 with
+`CLZ`, `REV` and `SRAconst` of a 64-bit argument, `UBFIZ` of an argument holding the bits it reads,
+and `CMNWconst` of an argument of at least 32 bits) accepts a function, they are `g31_value`'s,
+`g31_term`'s, `g31_nilPanic`'s and `g31_boundsPanic`'s statements under the same premises. No new
+trusted premise. Witnesses: `genG33_un_witness` (`REV R0, R0` in `math/bits.ReverseBytes`, the
+machine's `X0 = 0x0807060504030201` from `0x0102030405060708`), `genG33_sra_witness` (`ASR $4, R0,
+R1` in `internal/bytealg.Cutover`, `X1 = -16` from `-256`), `genG33_ubfiz_witness` (`UBFIZ $1, R1,
+$16, R1` in `runtime.(*mspan).pinnerBitSize`, `X1 = 0x17dde` from the 16-bit `0xbeef`),
+`genG33_cmnw_witness` (`CMNW $1, R1` in `runtime.(*_func).isInlined` on `0xffffffff`, the machine's
+`Z` set). Coverage on quick-v10 (`lake exe gen-check`): 5,812 of 9,297 functions (62.51%),
+151,700 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g30_obj_value`, `g30_obj_term`, `g30_obj_nilPanic`, `g30_obj_boundsPanic`
