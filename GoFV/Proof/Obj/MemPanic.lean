@@ -3,13 +3,13 @@ import GoFV.Proof.Obj.CallPanic
 /-!
 # Loads and stores that fault in the nil page (`docs/plans/proofs3.md` §9)
 
-A load or store of slice G30 whose `runLoc` step panics: `nilFaults` (memory ops fault under
+A load or store of slice G33 whose `runLoc` step panics: `nilFaults` (memory ops fault under
 `runLoc`) found its base nil (`Ptr.isNil`) and its address in the nil page (`Ptr.nilFault`), so it
 has no symbol (a global or frame variable is never in the nil block) and its base is a register
 (`off(Rn)`). That register holds the machine word 0 (`nil_word`), so the access's address
 `X[n] + off` is in the nil page (`nil_fault_page`) and the access faults (`progStep_loadN_nil`,
 `progStep_ldp_nil`, `progStep_storeN_nil`, `progStep_stp_nil`): `runProg` panics with
-`nilDeref`, as `runLoc` does (`g30_memPanic`), and so does `runMach` (`g30_obj_memPanic`,
+`nilDeref`, as `runLoc` does (`g33_memPanic`), and so does `runMach` (`g33_obj_memPanic`,
 `obj_panic`). The accesses are `loadOp?`'s `MOV{D,W,WU,H,HU,B,BU}load`, `LDP`, `storeOp?`'s
 `MOV{D,W,H,B}store` and `STP` (`memFaultOp`); the register-index loads and stores are not among
 them: `runLoc` faults on their nil base whatever the index, the machine only when the index keeps
@@ -400,7 +400,7 @@ theorem progStep_stp_nil {kn kx ky : Nat} {off : Int} (hkn : kn < 32) (hkx : kx 
 
 end Machine
 
-/-! ## Slice G30 -/
+/-! ## Slice G33 -/
 
 /-- `vkind28` of a load or store with no symbol is `vkind6`'s. -/
 theorem vkind28_mem {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2}
@@ -412,6 +412,12 @@ theorem vkind28_mem {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2}
       vkind18, vkind17, vkind16, vkind15, vkind14, vkind13, vkind12, vkind11, vkind10, vkind9,
       vkind8, vkind7, globPair, logSh?, pbOp, Cond.ofOp, storeIdxOp?, loadIdxOp?, icallLead,
       haux, ho] using h
+
+/-- `vkind33` of a load or store is `vkind28`'s. -/
+theorem vkind33_mem {lc : LocCtx} {g : G2In} {v : Value} (hop : memFaultOp v.op = true) :
+    vkind33 lc g v = vkind28 lc g v := by
+  rcases memFaultOp_cases hop with ho | ho | ho | ho | ho | ho | ho | ho | ho | ho | ho | ho |
+    ho <;> apply vkind33_eq28 <;> rw [ho] <;> first | rfl | nofun
 
 /-- The kinds of G6 of a load or store with no symbol, the address in a 64-bit register `rn`:
 `MOV… off(Rn), Rd` (G1's `MOVD`, G3's narrow loads), `LDP off(Rn), (Ra, Rb)` (G4),
@@ -502,14 +508,14 @@ theorem vk6_mem {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (hVK : VK6 lc
           rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;>
             simp_all [extOp?]
 
-/-- **A load or store of slice G30 that faults**: from a `LocMatch`ed P0 state, a load or store
+/-- **A load or store of slice G33 that faults**: from a `LocMatch`ed P0 state, a load or store
 whose `runLoc` step panics (with `nilDeref`, `stepLoc_mem_panic`) is matched by the no-ops before
 its Prog, which faults in the nil page (`PPanics`). -/
-theorem g30_memPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+theorem g33_memPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab}
     {E : MatchEnv} {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState}
     {m : MState} {e : Panic} {mm : Mem}
-    (hc : checkG30 lc ps bstart g = .ok (tab, kt)) (hE : G28Env lc g L ps ret tab E)
+    (hc : checkG33 lc ps bstart g = .ok (tab, kt)) (hE : G28Env lc g L ps ret tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
     (hop : memFaultOp v.op = true) (hm : LocMatch E s bid i m)
@@ -523,7 +529,8 @@ theorem g30_memPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   refine ⟨rfl, ?_⟩
   cases hl0 : lc.ctx.f.lowered with
   | false =>
-    rcases nl30_ops (checkG30_nl hl0 hc) hbid hb hi hv hen with h | h | h | h <;>
+    rcases nl30_ops (checkG31_nl hl0 (checkG31_of_33 hl0 hc)) hbid hb hi hv hen with
+      h | h | h | h <;>
       rcases hcases with h' | h' | h' | h' | h' | h' | h' | h' | h' | h' | h' | h' | h' <;>
       rw [h] at h' <;> cases h'
   | true =>
@@ -533,8 +540,8 @@ theorem g30_memPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   have htext : L.text = text := by rw [hL]; rfl
   rw [htext] at hpcOf
   subst hL
-  obtain ⟨c, rfl, rfl, -, rfl, hvk, -, hl, hhome, -, hk, hlt, hnd, hblocks, -, -⟩ :=
-    checkG29_spec hl0 (checkG30_lowered hl0 hc)
+  obtain ⟨c, rfl, rfl, -, rfl, hvk, -, hl, hhome, -, hk, hlt, hnd, hblocks, -, -, -⟩ :=
+    checkG33_spec hl0 hc
   obtain ⟨b, j, js, e', next, hb', -, hvals, -, -, hrow⟩ := Cx2.blocks_spec hblocks bid hbid
   rw [hb] at hb'
   cases hb'
@@ -544,7 +551,7 @@ theorem g30_memPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   have hid' : blk.values.toList[i] = id := by simpa using hid
   rw [hid', hv] at hv'
   cases hv'
-  rw [hvk] at hkd
+  rw [hvk, vkind33_mem hop] at hkd
   obtain ⟨-, hVK⟩ := vkind6_spec (vkind28_mem hop haux hkd)
     (by rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;> rfl)
   obtain ⟨rn, pat, hao, rfl, hshape⟩ := vk6_mem hVK hop haux
@@ -603,14 +610,14 @@ theorem g30_memPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     exact ⟨_, hstar, hne, .inl ⟨_, _, progAt?_pcAt F.nodup F.lt hk',
       progStep_stp_nil hkn hkx hky (nextAddr_pcAt F.nodup hk') has hf hsc ht hnil, rfl⟩⟩
 
-/-- **A load or store of slice G30 that faults, down to the machine words**: machine steps of the
+/-- **A load or store of slice G33 that faults, down to the machine words**: machine steps of the
 linked code to a state that panics with `nilDeref` (the access's nil-page fault, `MPanics`). -/
-theorem g30_obj_memPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+theorem g33_obj_memPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState} {m : MState}
     {e : Panic} {mm : Mem} {spills : Array Spill} {o : ObjIn} {otab : Tab} {base : BitVec 64}
     {code : Code} {retM : BitVec 64} {t : MState}
-    (hc : checkG30 lc ps bstart g = .ok (tab, kt))
+    (hc : checkG33 lc ps bstart g = .ok (tab, kt))
     (hE : G28Env lc g L ps (endP L.text ps.toList) tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
@@ -622,7 +629,7 @@ theorem g30_obj_memPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : L
     (hR : ObjRel (ObjEnv.map otab ps L base) m t)
     (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
     e = .nilDeref ∧ ∃ t', MStar H code retM t t' ∧ MPanics H code retM t' e := by
-  obtain ⟨he, m', hp, hpp⟩ := g30_memPanic (H := H) hc hE hbid hb hi hv hop hm hinv hs
+  obtain ⟨he, m', hp, hpp⟩ := g33_memPanic (H := H) hc hE hbid hb hi hv hop hm hinv hs
   obtain ⟨t1, ht1, hR1, hI1⟩ := obj_star hO hH hp hR (locMatch_inv hE.env.env.env.env hm) hic
   obtain ⟨t2, ht2, hpan⟩ := obj_panic hO hHP hR1 (hI1.resolve_right hpp.1) hpp
   exact ⟨he, t2, mstar_trans ht1 ht2, hpan⟩

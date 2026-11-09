@@ -93,20 +93,20 @@ GoFV.Proof.Witness.ObjEndToEnd.e2e_facts._native.native_decide.ax_1_1 64c11270bc
 # run of `runLoc` in Phase 1's mode; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.ObjWholeNL.nl_obj_facts._native.native_decide.ax_1_1 85a5aa9cc4d373b755ed293b4e2e5d777ffeee6946ffdc0767a0a259904e7930
 GoFV.Proof.Witness.ObjWholeNL.nl_lc_facts._native.native_decide.ax_1_1 a51ae75fa06a06bdb968e217d1d0edef79cbce986973bb19f4bff026f982e800
-# objWhole_panic_witness, g30_callPanic_witness (GoFV/Proof/Witness/ObjPanic.lean, #553): `checkObj`,
+# objWhole_panic_witness, g33_callPanic_witness (GoFV/Proof/Witness/ObjPanic.lean, #553): `checkObj`,
 # `linkCode` and the machine-side facts of `(*A).g`, `lcFacts` with the nil check's panic from
-# `runLoc`'s first state on a nil receiver; `checkG30` on `fint64to32` and its call's panic in
+# `runLoc`'s first state on a nil receiver; `checkG33` on `fint64to32` and its call's panic in
 # `envP`; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.ObjPanic.panic_obj_facts._native.native_decide.ax_1_1 b73aef2e2f432e8a63f0e8348f7592acc99445f44674cd4a9dd2bafece91db37
 GoFV.Proof.Witness.ObjPanic.panic_lc_facts._native.native_decide.ax_1_1 e435d62534a337e34a3b3933d2e3ce9381f9c92afc040ee3e63a9b4bf6c07bb0
 GoFV.Proof.Witness.ObjPanic.callPanic_facts._native.native_decide.ax_1_1 5966a8eb5828581c1d1c191ac4e9408d8eee324cab78311338c8b98a4e3fb981
-# g30_icallPanic_witness, g30_storePanic_witness (GoFV/Proof/Witness/ObjPanic.lean, #553): `checkG30`
-# on `Locker.Lock` and its interface call's panic in `envP`; `checkG30` on `(*queueOnePass).next`
+# g33_icallPanic_witness, g33_storePanic_witness (GoFV/Proof/Witness/ObjPanic.lean, #553): `checkG33`
+# on `Locker.Lock` and its interface call's panic in `envP`; `checkG33` on `(*queueOnePass).next`
 # with `checkG21`'s tables and the nil-page panic of its `MOVWstore` from a nil `q`; compiled
 # evaluation, as plF_pipeline.
 GoFV.Proof.Witness.ObjPanic.icallPanic_facts._native.native_decide.ax_1_1 d5f7e02ad34948a791b7d2b91dd80cf45cda1b7dd5e9509c866c9a98620907ef
 GoFV.Proof.Witness.ObjPanic.storePanic_facts._native.native_decide.ax_1_1 9abc5156188affa8c43b3253a7a0ff59c48e9d109ef7fb11a6dcb0d888af351d
-# g30_loadPanic_witness (GoFV/Proof/Witness/ObjPanic.lean, #553): `(*queueOnePass).next`'s `v13` is
+# g33_loadPanic_witness (GoFV/Proof/Witness/ObjPanic.lean, #553): `(*queueOnePass).next`'s `v13` is
 # `MOVWUload` and panics with `nilDeref` from a nil `q`; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.ObjPanic.loadPanic_facts._native.native_decide.ax_1_1 0449cfb2cd7a04755473a3768122c0aaa2b65efc2e3f689848f0740bfb593a38
 # genG13_value_witness (GoFV/Proof/Witness/GenG13.lean, #553): `checkG13` accepts
