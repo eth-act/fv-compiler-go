@@ -860,26 +860,26 @@ declarations, then the autos the pipeline created). From the stock `.prog` file 
 input view is read (definitions, config, `Dcl` at `AllocFrame`'s start, `genin`). The stock
 column runs the same back end on the stock `trim` function of every function.
 
-| quick-v10 (9,297 functions, 8 min 52 s; `agent/obj8` 2fa1c005, `--jobs 2`) | pipeline output | share | stock `trim` |
+| quick-v10 (9,297 functions, 16 min 37 s; `agent/obj9-g37` be122643, `--jobs 2`) | pipeline output | share | stock `trim` |
 | --- | ---: | ---: | ---: |
 | fully verified (Phase 2, through `trim`) | 7,676 | 82.56% | - |
 | … genssa and `Flushplist` ran | 7,676 | 82.56% | 9,297 |
-| … ∧ `checkG34` | 5,435 | 58.45% | 5,825 |
-| … ∧ `checkG34` ∧ `retRegsOK` | 5,435 | 58.45% | 5,825 |
+| … ∧ `checkG37` | 5,598 | 60.21% | 6,099 |
+| … ∧ `checkG37` ∧ `retRegsOK` | 5,598 | 60.21% | 6,099 |
 | … ∧ `checkObj` | 7,036 | 75.68% | 7,741 |
-| … ∧ `checkG34` ∧ `retRegsOK` ∧ `checkObj` | 5,426 | 58.36% | 5,810 |
-| **… and no framed leaf (end to end, `verified_mach`)** | **5,424** | **58.34%** | 5,804 |
-| … end to end, pipeline output identical to stock after `trim` | 4,673 | 50.26% | - |
+| **… ∧ `checkG37` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach`)** | **5,538** | **59.56%** | 5,946 |
+| … end to end, pipeline output identical to stock after `trim` | 4,744 | 51.02% | - |
 
-The composition on G30 (#630, main e6969584) accepted 5,066 (54.49%); G31's, G33's and G34's
-ops and upper-bit tables add 358. `ownFrame` gives the stock `stksize`/`stkptrsize` on all 6,459
-fully verified functions whose output is identical to stock. `pallocSum.start` (the witness
-`verified_mach_witness`) is among the accepted. Top reasons among the fully verified: `checkG34`:
-`store shape` (274), `frame variable off another base` (229), `op LDAR` (194), `op CALLtail`
-(164), `argument v# in register #` (141), `frame variable with an integer address` (134), `frame
-variable operand class` (133), `op LDARW` (110), `op LoweredAtomicAdd#Variant` (81); `retRegsOK`:
+The composition on G34 (#632) accepted 5,424 (58.34%), framed leaves excluded. On G35 the probe
+counted 5,438 accepted by all three, 5,431 without framed leaves: covering framed leaves adds 7.
+G36's and G37's ops add the rest (+114 over G34 in all). `ownFrame` gives the stock `stksize`/`stkptrsize` on all
+6,459 fully verified functions whose output is identical to stock. `pallocSum.start` (the witness
+`verified_mach_witness`) is among the accepted. Top reasons among the fully verified: `checkG37`:
+`store shape` (275), `frame variable off another base` (229), `op LDAR` (196), `op CALLtail`
+(164), `argument v# in register #` (144), `frame variable with an integer address` (135), `frame
+variable operand class` (133), `op LDARW` (111), `op LoweredAtomicAdd#Variant` (81); `retRegsOK`:
 none; `checkObj`: `FLDPQ` (SIMD&FP, 121), unmodelled atomics `LDADDAL`/`CASAL` (≈240 together),
-`tail: spill register` (58), shifts by a register (65), `MVN` (27), divisions (36).
+`tail: spill register` (58), `LSL` by a register (39).
 
 The full-v11 table below is the previous measurement (G18 probe, stock locals, main 8c5b1472 plus
 PR #606); it is re-measured on the composition on G34.
