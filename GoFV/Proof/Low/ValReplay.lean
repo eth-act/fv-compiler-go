@@ -1337,7 +1337,8 @@ theorem ReplayInvL.foldAddr {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : ID
 theorem termVL_ld {x : Value} {p : Nat × Bool} (hl : ldOp? x.op = some p) :
     termVL tabs x = true := by
   obtain ⟨hg, hm⟩ := ldOp_arm hl
-  simp only [termVL, hg, hm, hl, Bool.false_eq_true, ite_false, Option.isSome_some, ite_true]
+  simp only [termVL, hg, hm, ldAny, hl, Bool.false_eq_true, ite_false, Option.isSome_some,
+    Bool.true_or, ite_true]
 
 /-- **Replacing the term `x` at `v` by the term `u`** refines every denotation, where the top
 node does (`htop`) for argument values refining each other that have a property `P` every
