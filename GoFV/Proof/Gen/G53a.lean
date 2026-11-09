@@ -157,7 +157,7 @@ end Step
 /-! ## Registers -/
 
 /-- A Go register other than `R25` has no X register `X25`. -/
-private theorem objX?_ne25 {r : Nat} {k : Reg} (h : objX? r = some k) (hr : r ≠ 24) :
+theorem objX?_ne25 {r : Nat} {k : Reg} (h : objX? r = some k) (hr : r ≠ 24) :
     k ≠ 25 := by
   intro he
   subst he
@@ -171,14 +171,14 @@ private theorem objX?_ne25 {r : Nat} {k : Reg} (h : objX? r = some k) (hr : r �
       · cases h
 
 /-- A Go register other than `F16`, `F17` has neither `V16` nor `V17`. -/
-private theorem objV?_ne1617 {r : Nat} {k : Reg} (h : objV? r = some k) (h47 : r ≠ 47)
+theorem objV?_ne1617 {r : Nat} {k : Reg} (h : objV? r = some k) (h47 : r ≠ 47)
     (h48 : r ≠ 48) : k ≠ 16 ∧ k ≠ 17 := by
   obtain ⟨h1, h2, rfl⟩ := objV?_some h
   constructor <;> intro he <;> have := congrArg BitVec.toNat he <;> simp at this <;> omega
 
 /-! ## Machine bytes -/
 
-private theorem extract_extract53 {k : Nat} (V : BitVec (8 * (k + 1))) (t : Nat) (h1 : 1 ≤ t)
+theorem extract_extract53 {k : Nat} (V : BitVec (8 * (k + 1))) (t : Nat) (h1 : 1 ≤ t)
     (h2 : t ≤ k) :
     (V.extractLsb' 8 (8 * k)).extractLsb' (8 * (t - 1)) 8 = V.extractLsb' (8 * t) 8 := by
   apply BitVec.eq_of_getLsbD_eq
@@ -189,7 +189,7 @@ private theorem extract_extract53 {k : Nat} (V : BitVec (8 * (k + 1))) (t : Nat)
 
 /-- The byte at `y` after an `k`-byte write at `A`: byte `y - A` of the value inside the window,
 the old byte elsewhere. -/
-private theorem writeMem_get : ∀ (k : Nat) (M : Memory) (A : BitVec 64) (V : BitVec (8 * k))
+theorem writeMem_get : ∀ (k : Nat) (M : Memory) (A : BitVec 64) (V : BitVec (8 * k))
     (y : BitVec 64), k < 2 ^ 64 →
     writeMem M A k V y = if (y - A).toNat < k then V.extractLsb' (8 * (y - A).toNat) 8 else M y
   | 0, M, A, V, y, _ => by simp [writeMem]
@@ -210,13 +210,13 @@ private theorem writeMem_get : ∀ (k : Nat) (M : Memory) (A : BitVec 64) (V : B
         exact if_neg h0
 
 /-- Byte `j` of a `k`-byte read at `A` is the byte at `A + j`. -/
-private theorem readMem_get (M : Memory) (A : BitVec 64) {k j : Nat} (hj : j < k) :
+theorem readMem_get (M : Memory) (A : BitVec 64) {k j : Nat} (hj : j < k) :
     (readMem M A k).extractLsb' (8 * j) 8 = M (A + BitVec.ofNat 64 j) := by
   apply BitVec.eq_of_toNat_eq
   rw [← readMem_byte M k A j hj, BitVec.extractLsb'_toNat, Nat.shiftRight_eq_div_pow, Nat.pow_mul]
 
 /-- The `k` bytes of a `k`-byte read, stored from a register of at least `8k` bits. -/
-private theorem ofNat_rd {k w : Nat} (B : BitVec (8 * k)) (h : 8 * k ≤ w) :
+theorem ofNat_rd {k w : Nat} (B : BitVec (8 * k)) (h : 8 * k ≤ w) :
     BitVec.ofNat (8 * k) ((B.setWidth w).toNat % 2 ^ (8 * k)) = B := by
   apply BitVec.eq_of_toNat_eq
   have hB := B.isLt
@@ -225,16 +225,16 @@ private theorem ofNat_rd {k w : Nat} (B : BitVec (8 * k)) (h : 8 * k ≤ w) :
   rw [Nat.mod_eq_of_lt (by omega : B.toNat < 2 ^ w), Nat.mod_mod, Nat.mod_eq_of_lt hB]
 
 /-- The machine memory after a chunk copies the `w` bytes at offset `o` from `S` to `D`. -/
-private def cpW (S D : BitVec 64) (M : Memory) (o w : Nat) : Memory := fun y =>
+def cpW (S D : BitVec 64) (M : Memory) (o w : Nat) : Memory := fun y =>
   if o ≤ (y - D).toNat ∧ (y - D).toNat < o + w then M (S + (y - D)) else M y
 
 /-- The machine memory after the chunks `cs` (kind, offset) copy from `S` to `D`, in order. -/
-private def cpMem (S D : BitVec 64) (M : Memory) (cs : List (Nat × Nat)) : Memory :=
+def cpMem (S D : BitVec 64) (M : Memory) (cs : List (Nat × Nat)) : Memory :=
   cs.foldl (fun M c => cpW S D M c.2 (moveW c.1)) M
 
 /-- A `w`-byte write at `D + o` of the `w` bytes read at `S + o` in `M`: inside the window, the
 byte of `M` at the same distance from `S`. -/
-private theorem wr_get {M M' : Memory} {S D y : BitVec 64} {o w : Nat} (hw : o + w < 2 ^ 64) :
+theorem wr_get {M M' : Memory} {S D y : BitVec 64} {o w : Nat} (hw : o + w < 2 ^ 64) :
     writeMem M' (D + BitVec.ofNat 64 o) w (readMem M (S + BitVec.ofNat 64 o) w) y =
       if o ≤ (y - D).toNat ∧ (y - D).toNat < o + w then M (S + (y - D)) else M' y := by
   rw [writeMem_get w M' _ _ y (by omega)]
@@ -249,7 +249,7 @@ private theorem wr_get {M M' : Memory} {S D y : BitVec 64} {o w : Nat} (hw : o +
 /-- The chunks copy: when the source and the destination are the same bytes or the source lies
 outside the `n` bytes at `D`, and every chunk lies inside the `n` bytes, a byte some chunk covers
 is the byte at the same distance from `S`, and every other byte is unchanged. -/
-private theorem cpMem_get {S D : BitVec 64} {n : Nat}
+theorem cpMem_get {S D : BitVec 64} {n : Nat}
     (hsd : S = D ∨ ∀ k, k < n → n ≤ (S + BitVec.ofNat 64 k - D).toNat) :
     ∀ (cs : List (Nat × Nat)) (M : Memory), (∀ c ∈ cs, c.2 + moveW c.1 ≤ n) → ∀ y,
       cpMem S D M cs y = if ∃ c ∈ cs, c.2 ≤ (y - D).toNat ∧ (y - D).toNat < c.2 + moveW c.1
@@ -285,41 +285,41 @@ private theorem cpMem_get {S D : BitVec 64} {n : Nat}
 /-! ## The machine's chunks -/
 
 /-- `m'` is `m` but for `X25`, `V16`, `V17`, the memory and the PC. -/
-private def Keeps53 (m m' : MState) : Prop :=
+def Keeps53 (m m' : MState) : Prop :=
   m'.sp = m.sp ∧ m'.nzcv = m.nzcv ∧ (∀ q : Reg, q ≠ 25 → m'.x q = m.x q) ∧
     ∀ q : Reg, q ≠ 16 → q ≠ 17 → m'.v q = m.v q
 
-private theorem Keeps53.trans {m m' m'' : MState} (h : Keeps53 m m') (h' : Keeps53 m' m'') :
+theorem Keeps53.trans {m m' m'' : MState} (h : Keeps53 m m') (h' : Keeps53 m' m'') :
     Keeps53 m m'' :=
   ⟨h'.1.trans h.1, h'.2.1.trans h.2.1, fun q hq => (h'.2.2.1 q hq).trans (h.2.2.1 q hq),
     fun q h16 h17 => (h'.2.2.2 q h16 h17).trans (h.2.2.2 q h16 h17)⟩
 
-private theorem Keeps53.rX {m m' : MState} (h : Keeps53 m m') {r : Reg} (hr : r ≠ 25) :
+theorem Keeps53.rX {m m' : MState} (h : Keeps53 m m') {r : Reg} (hr : r ≠ 25) :
     m'.rX r = m.rX r := by
   unfold MState.rX
   split
   · rfl
   · exact h.2.2.1 r hr
 
-private theorem reg_ne25 {k : Nat} (hk : k < 32) (h : k ≠ 25) : (BitVec.ofNat 5 k : Reg) ≠ 25 := by
+theorem reg_ne25 {k : Nat} (hk : k < 32) (h : k ≠ 25) : (BitVec.ofNat 5 k : Reg) ≠ 25 := by
   intro he
   have := congrArg BitVec.toNat he
   simp at this
   omega
 
-private theorem ofInt_nat (o : Nat) : BitVec.ofInt 64 (o : Int) = BitVec.ofNat 64 o := by
+theorem ofInt_nat (o : Nat) : BitVec.ofInt 64 (o : Int) = BitVec.ofNat 64 o := by
   apply BitVec.eq_of_toNat_eq; simp
 
-private theorem eff_wV16 {e : Eff} {val : BitVec 128} :
+theorem eff_wV16 {e : Eff} {val : BitVec 128} :
     e.wV f16A val = .ok { e with v := (16, val) :: e.v } := eff_wV_f0 (k := 16) (by decide)
 
-private theorem eff_wV17 {e : Eff} {val : BitVec 128} :
+theorem eff_wV17 {e : Eff} {val : BitVec 128} :
     e.wV f17A val = .ok { e with v := (17, val) :: e.v } := eff_wV_f0 (k := 17) (by decide)
 
-private theorem ctx_v16 {c : ProgCtx} : c.v f16A = .ok (c.s.v (BitVec.ofNat 5 16)) :=
+theorem ctx_v16 {c : ProgCtx} : c.v f16A = .ok (c.s.v (BitVec.ofNat 5 16)) :=
   ctx_v_f0 (k := 16) (by decide)
 
-private theorem ctx_v17 {c : ProgCtx} : c.v f17A = .ok (c.s.v (BitVec.ofNat 5 17)) :=
+theorem ctx_v17 {c : ProgCtx} : c.v f17A = .ok (c.s.v (BitVec.ofNat 5 17)) :=
   ctx_v_f0 (k := 17) (by decide)
 
 /-- `FLDPQ` at the address `A` of its operand: the 16 bytes at `A` into `V16`, the 16 above into
@@ -396,19 +396,19 @@ private theorem progStep_fstpq {kn : Nat} {off : Int} (hkn : kn < 32)
 
 end Machine
 
-private theorem wX_fields {m : MState} {r : Reg} {val : BitVec 64} :
+theorem wX_fields {m : MState} {r : Reg} {val : BitVec 64} :
     (m.wX r val).mem = m.mem ∧ (m.wX r val).sp = m.sp ∧ (m.wX r val).nzcv = m.nzcv ∧
       (m.wX r val).v = m.v := by
   unfold MState.wX; split <;> exact ⟨rfl, rfl, rfl, rfl⟩
 
-private theorem wX_x_of_ne {m : MState} {r q : Reg} {val : BitVec 64} (h : q ≠ r) :
+theorem wX_x_of_ne {m : MState} {r q : Reg} {val : BitVec 64} (h : q ≠ r) :
     (m.wX r val).x q = m.x q := by
   unfold MState.wX
   split
   · rfl
   · simp [h]
 
-private theorem nil_of {A : BitVec 64} {d : Nat} (h1 : 4096 ≤ A.toNat)
+theorem nil_of {A : BitVec 64} {d : Nat} (h1 : 4096 ≤ A.toNat)
     (h2 : A.toNat + d < 2 ^ 64) : nilPage (A + BitVec.ofNat 64 d) = false := by
   simp only [nilPage, decide_eq_false_iff_not, Nat.not_lt]
   bv_omega
@@ -420,7 +420,7 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
 
 /-- One chunk, its load off `X ks` (holding `S`) then its store off `X kd` (holding `D`): the
 machine copies the chunk's bytes and changes only `X25`, `V16`, `V17`. -/
-private theorem chunk_run (hnd : (psA.toList.map (·.id)).Nodup)
+theorem chunk_run (hnd : (psA.toList.map (·.id)).Nodup)
     (hlt : ∀ p ∈ psA.toList, p.id < 2 ^ 32)
     (hret : ∀ p ∈ psA.toList, (Link.byId sym text az ez psA.toList).addr p.id ≠ some ret)
     {ks kd : Nat} (hks : ks < 32) (hkd : kd < 32) (hkd25 : kd ≠ 25) {S D : BitVec 64}
@@ -572,7 +572,7 @@ private theorem chunk_run (hnd : (psA.toList.map (·.id)).Nodup)
     rfl
 
 /-- The chunks `cs` off `X ks` (holding `S`) and `X kd` (holding `D`), from index `j` to `j'`. -/
-private theorem move_run (hnd : (psA.toList.map (·.id)).Nodup)
+theorem move_run (hnd : (psA.toList.map (·.id)).Nodup)
     (hlt : ∀ p ∈ psA.toList, p.id < 2 ^ 32)
     (hret : ∀ p ∈ psA.toList, (Link.byId sym text az ez psA.toList).addr p.id ≠ some ret)
     {ks kd : Nat} (hks : ks < 32) (hkd : kd < 32) (hks25 : ks ≠ 25) (hkd25 : kd ≠ 25)
@@ -609,7 +609,7 @@ end Run
 
 /-! ## The bytes `runLoc` copies -/
 
-private theorem find?_mem53 {m : Mem} {b : Blk} {al : Alloc} (h : m.find? b = some al) :
+theorem find?_mem53 {m : Mem} {b : Blk} {al : Alloc} (h : m.find? b = some al) :
     (b, al) ∈ m.blocks := by
   unfold Mem.find? at h
   cases hf : m.blocks.find? (·.1 == b) with
@@ -625,7 +625,7 @@ private theorem find?_mem53 {m : Mem} {b : Blk} {al : Alloc} (h : m.find? b = so
     subst h2
     exact h1
 
-private theorem read_some53 {m : Mem} {p : Ptr} {n : Nat} {bs : Array Byte} (hn : 0 < n)
+theorem read_some53 {m : Mem} {p : Ptr} {n : Nat} {bs : Array Byte} (hn : 0 < n)
     (h : m.read p n = some bs) : ∃ al, m.find? p.blk = some al ∧ p.off.toNat + n ≤ al.data.size ∧
       bs = al.data.extract p.off.toNat (p.off.toNat + n) := by
   unfold Mem.read at h
