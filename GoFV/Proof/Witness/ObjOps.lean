@@ -13,6 +13,10 @@ open scoped GoFV.SSA.Sem.Fixed
   acquire load's symbolic access is in the nil page and the word faults there.
 * `objOps_ctl_witness`: `progSym_ctl` on `CALL (R2)`: an indirect call's control is `callReg`,
   from a `CALL`.
+* `objOps_udiv_witness`, `objOps_bic_witness`: `symInsn_sound` on `UDIV X1, X2, X3` (`Ex.dp2`)
+  and on `BIC X1, X2, X3` (logical shifted register with the inversion, `Ex.inv`).
+* `objOps_rem_witness`: `REM R3, R1, R2` (`progSym`, `dp2P`) and its words `SDIV X27, X1, X3;
+  MSUB X2, X27, X3, X1` (`symInsn`) have the same effect (`sameEffect`).
 -/
 
 namespace GoFV.Proof.Witness.ObjOps
@@ -66,5 +70,44 @@ theorem objOps_ctl_witness :
     progSym 0 0 callR2 = .ok ({}, .callReg (.x 2)) ∧ callR2.as = .CALL :=
   have h : progSym 0 0 callR2 = .ok ({}, .callReg (.x 2)) := by rfl
   ⟨h, (progSym_ctl h).2.1 _ rfl⟩
+
+/-- `UDIV X1, X2, X3`. -/
+def udiv : Insn := .dp2 true 2 3 2 1
+
+theorem objOps_udiv_witness :
+    ∃ σ' mc t', symInsn udiv 0 {} = .ok (σ', mc) ∧ exec udiv t0 = .ok t' ∧
+      WordsPost ⟨t0, fun _ => 0⟩ 0x1000 0 σ' mc t' := by
+  have h : symInsn udiv 0 {} = .ok (({} : Sym).wX 1 (.dp2 true 2 (.x 2) (.x 3)), .fall) := rfl
+  obtain ⟨t', he, hp⟩ := symInsn_sound (c := ⟨t0, fun _ => 0⟩) (base := 0x1000) h (holds_init _)
+    (by simp [t0]) ⟨fun _ _ h => by simp [Sym.wX] at h, fun _ _ _ h => by simp [Sym.wX] at h⟩
+  exact ⟨_, _, t', h, he, hp⟩
+
+/-- `BIC X1, X2, X3` (`AND` shifted register with the inversion `n`). -/
+def bic : Insn := .logShift true 0 0 true 3 0 2 1
+
+theorem objOps_bic_witness :
+    ∃ σ' mc t', symInsn bic 0 {} = .ok (σ', mc) ∧ exec bic t0 = .ok t' ∧
+      WordsPost ⟨t0, fun _ => 0⟩ 0x1000 0 σ' mc t' := by
+  have h : symInsn bic 0 {} =
+      .ok (({} : Sym).wX 1 (.logical true 0 (.x 2) (.inv true (.x 3))), .fall) := rfl
+  obtain ⟨t', he, hp⟩ := symInsn_sound (c := ⟨t0, fun _ => 0⟩) (base := 0x1000) h (holds_init _)
+    (by simp [t0]) ⟨fun _ _ h => by simp [Sym.wX] at h, fun _ _ _ h => by simp [Sym.wX] at h⟩
+  exact ⟨_, _, t', h, he, hp⟩
+
+/-- `REM R3, R1, R2` and the words the assembler encodes it as (`asmout` case 16):
+`SDIV X27, X1, X3; MSUB X2, X27, X3, X1`. -/
+def remP : Prog :=
+  mkProg 3 .REM { type := .REG, reg := REG_R0 + 3 } { type := .REG, reg := REG_R0 + 2 } (REG_R0 + 1)
+
+/-- `SDIV X27, X1, X3`. -/
+def sdiv27 : Insn := .dp2 true 3 3 1 27
+
+/-- `MSUB X2, X27, X3, X1`. -/
+def msub27 : Insn := .dp3 true 0 true 3 1 27 2
+
+theorem objOps_rem_witness :
+    ∃ σ1 σ2 pσ, symInsn sdiv27 0 {} = .ok (σ1, .fall) ∧ symInsn msub27 4 σ1 = .ok (σ2, .fall) ∧
+      progSym 0 0 remP = .ok (pσ, .fall) ∧ sameEffect σ2 pσ = .ok () :=
+  ⟨_, _, _, rfl, rfl, rfl, rfl⟩
 
 end GoFV.Proof.Witness.ObjOps
