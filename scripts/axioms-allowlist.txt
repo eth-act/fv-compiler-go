@@ -74,8 +74,10 @@ GoFV.Proof.Witness.GenG12.g12_facts._native.native_decide.ax_1_1 2dbfec438646e21
 # `flush`, as obj-check) framed with a stack check, `linkCode` links it, the stack check passes from
 # the entry state, the morestack tail calls a symbol without code and spills `R0` to `8(RSP)`;
 # compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.ObjFrame.obj_facts._native.native_decide.ax_1_1 28bbd66cfb6ad179d083217d5d50853a41c5d6a4f88310afdd5161322a689cca
+GoFV.Proof.Witness.ObjFrame.obj_facts._native.native_decide.ax_1_1 f4589c74ec0e946ef1a94c23a04e03d1b1ca77dab08f781040080420ea1d5e67
 # Pins of ObjFrame/ObjG7 updated for #553 objops (checkObj's new opcodes; `noICall` in the facts).
+# Pins of every Obj* `obj_facts` entry updated for #553 checkObj SIMD&FP, integer ops and Q stores
+# (`checkObj` and `Sym` changed).
 # Pins of every Obj* entry updated for the morestack path (#553: `checkTail` tightened, `tailPlan`).
 # objG7_value_witness, objG7_term_witness (GoFV/Proof/Witness/ObjG7.lean, #553): `checkObj` accepts
 # `(*A).g` of test/method and `pallocSum.start` of std/runtime (parsed, `flush`, as obj-check;
@@ -83,15 +85,15 @@ GoFV.Proof.Witness.ObjFrame.obj_facts._native.native_decide.ax_1_1 28bbd66cfb6ad
 # symbols have no code and are neither Prog addresses nor `endP`, the related machine state starts
 # at the base; `checkG7` accepts `pallocSum.start` with GenG3's tables; compiled evaluation, as
 # plF_pipeline.
-GoFV.Proof.Witness.ObjG7.g_obj_facts._native.native_decide.ax_1_1 e51909374d7da0c250cd8db94975f23d823edfd80c1701adf201050c9de921f9
-GoFV.Proof.Witness.ObjG7.start_obj_facts._native.native_decide.ax_1_1 2343cf3eebb5201f968b36eb9b0a83d34f0b53b5f8e538e9f06aee491ebec810
+GoFV.Proof.Witness.ObjG7.g_obj_facts._native.native_decide.ax_1_1 7da2a2194c444c7a0cfbeddc731e81987fa9ceff34b2b5bfbcb6fafa67263149
+GoFV.Proof.Witness.ObjG7.start_obj_facts._native.native_decide.ax_1_1 7a8208b038a9035da4bf2156d0d6572e3a70087648a710f5daa736e485855dcc
 # objStarLeaf_witness (GoFV/Proof/Witness/ObjG7.lean, #553): `(*A).g` is a leaf (`leafOf`) and the
 # caller's 0x40 is neither a Prog address nor `endP`; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.ObjG7.g_leaf_facts._native.native_decide.ax_1_1 3a064efdfc296a60658a603e4831d0c7e1795f0f26040c4b24454f29ead1ec67
+GoFV.Proof.Witness.ObjG7.g_leaf_facts._native.native_decide.ax_1_1 e25811f44861f1577eb8e97b4a6aa522688c7fab9a3b42afbd0d6ae78fcedafb
 # objWhole_ret_witness (GoFV/Proof/Witness/ObjWhole.lean, #553): `checkObj`, `linkCode` and the
 # machine-side facts of `pallocSum.start` (no `CALL (Rn)`), and `lcFacts` plus the returning run
 # of `runLoc` on p = 7 in plRunEnv; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.ObjWhole.obj_facts._native.native_decide.ax_1_1 0780ba8878336c974ffcb880fe764a74a49a59c25f006fad91d3ab8b001f1183
+GoFV.Proof.Witness.ObjWhole.obj_facts._native.native_decide.ax_1_1 ff52d3bdad1ce7949e72fade9638e757702c0b952c0cf9a6e3b9fd94666ee872
 GoFV.Proof.Witness.ObjWhole.start_facts._native.native_decide.ax_1_1 e8157243b371c24e580f8954b318255455b4ec65aacd6db5ebd37cf367f9d07e
 # verified_mach_witness (GoFV/Proof/Witness/ObjEndToEnd.lean, #553): `pallocSum.start` from its
 # generic SSA through the verified pipeline to genssa's Progs (`refsLive` of the output, `lcFacts`,
@@ -100,13 +102,13 @@ GoFV.Proof.Witness.ObjEndToEnd.e2e_facts._native.native_decide.ax_1_1 1c4e7e6027
 # objWholeNL_ret_witness (GoFV/Proof/Witness/ObjWholeNL.lean, #553): `checkObj`, `linkCode` and the
 # machine-side facts of `runtime.gclinkptr.ptr` (no arm64 op), and `lcFacts` plus the returning
 # run of `runLoc` in Phase 1's mode; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.ObjWholeNL.nl_obj_facts._native.native_decide.ax_1_1 c4c8b58ad810fdf8a63e7a23bc82e07b167aeeecdad60f98b17ec59adb0fbd1a
+GoFV.Proof.Witness.ObjWholeNL.nl_obj_facts._native.native_decide.ax_1_1 0c8dde7b251d4300c6dc614eb7efccdb686f4da40494d07093df4ffcfdc8c447
 GoFV.Proof.Witness.ObjWholeNL.nl_lc_facts._native.native_decide.ax_1_1 5de8c4956cc84abf6ed857d85d78047727c72805000ffdebb72a75c4c37c936d
 # objWhole_panic_witness, g46_callPanic_witness (GoFV/Proof/Witness/ObjPanic.lean, #553): `checkObj`,
 # `linkCode` and the machine-side facts of `(*A).g`, `lcFacts` with the nil check's panic from
 # `runLoc`'s first state on a nil receiver; `checkG46L` on `fint64to32` and its call's panic in
 # `envP`; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.ObjPanic.panic_obj_facts._native.native_decide.ax_1_1 bd0260b986ba294616a555842c6a83937e266ad685c3c0f2bdf0e80b488f234f
+GoFV.Proof.Witness.ObjPanic.panic_obj_facts._native.native_decide.ax_1_1 a5807223508c348ab7dc8a9c0f800b34ebf14764c2eab91293e23e4f3bb6f062
 GoFV.Proof.Witness.ObjPanic.panic_lc_facts._native.native_decide.ax_1_1 b69ee921c4a19807766e3b4a38cb5cf671232e461a0aa1349e15c420e508c44a
 GoFV.Proof.Witness.ObjPanic.callPanic_facts._native.native_decide.ax_1_1 b1fe79a73c3037667fee901970f6fe295946445307f6797c28d61d78bfa8a4ae
 # g46_icallPanic_witness, g46_storePanic_witness (GoFV/Proof/Witness/ObjPanic.lean, #553): `checkG46L`

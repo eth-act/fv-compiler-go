@@ -1049,15 +1049,15 @@ declarations, then the autos the pipeline created). From the stock `.prog` file 
 input view is read (definitions, config, `Dcl` at `AllocFrame`'s start, `genin`). The stock
 column runs the same back end on the stock `trim` function of every function.
 
-| quick-v10 (9,297 functions, 6 min 5 s; `agent/obj13` on main 705d06bb (G46), `--jobs 2`) | pipeline output | share | stock `trim` |
+| quick-v10 (9,297 functions, 6 min 48 s; `agent/objq` on main 873c6ecf (composition on G46), `--jobs 2`) | pipeline output | share | stock `trim` |
 | --- | ---: | ---: | ---: |
-| fully verified (Phase 2, through `trim`) | 7,834 | 84.26% | - |
-| … genssa and `Flushplist` ran | 7,834 | 84.26% | 9,297 |
+| fully verified (Phase 2, through `trim`) | 7,845 | 84.38% | - |
+| … genssa and `Flushplist` ran | 7,845 | 84.38% | 9,297 |
 | … ∧ `checkG46` | 6,086 | 65.46% | 6,775 |
 | … ∧ `checkG46` ∧ `retRegsOK` | 6,086 | 65.46% | 6,728 |
-| … ∧ `checkObj` | 7,067 | 76.01% | 7,741 |
-| **… ∧ `checkG46` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach`)** | **5,970** | **64.21%** | 6,426 |
-| … end to end, pipeline output identical to stock after `trim` | 5,066 | 54.49% | - |
+| … ∧ `checkObj` | 7,427 | 79.88% | 8,464 |
+| **… ∧ `checkG46` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach`)** | **6,084** | **65.44%** | 6,678 |
+| … end to end, pipeline output identical to stock after `trim` | 5,160 | 55.50% | - |
 
 The composition on G34 (#632) accepted 5,424 (58.34%), framed leaves excluded; on G37 with framed
 leaves 5,538 (59.56%); on G38 (the acquire loads) the probe counted 5,802 (62.40%); on G39 (the
@@ -1072,16 +1072,19 @@ c3414814 (#649, narrow left shifts in `lower`) adds 64 fully verified functions 
 (5,970). The compositions on G45 (register-index float loads and stores) and G46 (float
 arithmetic, conversions, compares, `FMADD`/`FNMSUB`; `FArithPre` in `RunPre`) stay at 5,970:
 `checkG46` accepts 28 more fully verified functions than `checkG44` (6,086), every one of them
-rejected by `checkObj`, which does not model the SIMD&FP forms (the binding constraint for floats
-end to end). `ownFrame` gives the stock
-`stksize`/`stkptrsize` on all 6,578 fully verified functions whose output is identical to stock.
+rejected by `checkObj`, which did not model the SIMD&FP forms (the binding constraint for floats
+end to end). With `checkObj`'s SIMD&FP forms, register shifts, `UDIV`/`SDIV`/`REM`, `BIC`/`ORN`/
+`EON`/`MVN` and the Q stores (main 873c6ecf, which adds 11 fully verified functions) the composition
+on G46 counts 6,084 end to end (5,970 before): `checkObj` rejects only 2 of the 6,086 functions `checkG46`
+accepts. `ownFrame` gives the stock
+`stksize`/`stkptrsize` on all 6,584 fully verified functions whose output is identical to stock.
 `pallocSum.start` (the witness `verified_mach_witness`) is among the accepted. Top reasons among
 the fully verified: `checkG46`: `store shape` (326), `frame variable off another base` (229),
 `argument v# in register #` (165), `op CALLtail` (164), `frame variable with an integer address`
 (138), `frame variable operand class` (134), `op LoweredAtomicAdd#Variant` (97), `op
 LoweredAtomicCas#Variant` (92), `floating-point argument or result` (64); `retRegsOK`: none;
-`checkObj`: `FLDPQ` (SIMD&FP, 121), `LSL` by a register (83), unmodelled atomics
-`LDADDAL`/`CASAL` (≈247 together), `tail: spill register` (58), `FMOVD` (SIMD&FP, 39).
+`checkObj`: unmodelled atomics `LDADDAL`/`CASAL` (255 together), `tail: spill register` (69), `JMP`
+to a register (12), the stack check of a huge frame (11).
 
 The full-v11 table below is the composition on G34 (main 0d51e03e, framed leaves excluded); the
 run on the composition on G44 (main c3414814 plus #650) is in progress.
