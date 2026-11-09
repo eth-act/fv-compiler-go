@@ -162,6 +162,10 @@ GoFV.Proof.Witness.GenG28.g28_facts._native.native_decide.ax_1_1 e1c134ac78540d3
 # `uAt` and `uL` before and after its `MOVDnop` `v33`, and `runLoc` runs `v33` to
 # `R1 = 0xbeef`; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.GenG29.g29_facts._native.native_decide.ax_1_1 4724448479a462baec8b613550ca837867f33d0f6c1cbe15669ea21c100ea055
+# genG30_value_witness (GoFV/Proof/Witness/GenG30.lean, #553): `checkG30` accepts
+# `runtime.gclinkptr.ptr` and `checkG29` does not (parsed, `Env.load`, `genssa`), and `runLoc`
+# runs its `Convert` to `R0 = 0x1234`; compiled evaluation, as plF_pipeline.
+GoFV.Proof.Witness.GenG30.g30_facts._native.native_decide.ax_1_1 c582ef29eee1a8a7e591494061fd63772163ef1b9c5f1d528c0c8dcbac4fbcc1
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:

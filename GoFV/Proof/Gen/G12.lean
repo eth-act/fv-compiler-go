@@ -59,22 +59,27 @@ end Step
 
 /-! ## The relation -/
 
+/-- A register content of class 64, converted: of class 64 and related to the same machine word. -/
+theorem convert_rel {ι : Blk → Option (BitVec 64)} (hA : AddrAgree ι) {t : Ty} {x y : Val}
+    {r : BitVec 64} (hf : Fits 64 x) (hv : ValRel ι x r) :
+    Fits 64 (PtrOps.convert t [x, y]) ∧ ValRel ι (PtrOps.convert t [x, y]) r := by
+  simp only [PtrOps.convert]
+  split
+  · rename_i p
+    cases hc : p.convertible with
+    | false => exact ⟨trivial, trivial⟩
+    | true =>
+      cases ha : p.addr? with
+      | none => exact ⟨trivial, trivial⟩
+      | some a => exact ⟨rfl, Or.inl (ptrRel_addr hA hv ha (notTemp_of_convertible hc))⟩
+  · exact ⟨hf, hv⟩
+
 /-- A register content of class 64 converted to a shape of class 64 keeps its machine word. -/
 theorem valRel_convert {ι : Blk → Option (BitVec 64)} (hA : AddrAgree ι) {t : Ty} {x y : Val}
     {r : BitVec 64} (ht : cls t = some 64) (hf : Fits 64 x) (hv : ValRel ι x r) :
-    ValRel ι ((PtrOps.convert t [x, y]).retypeL t) r := by
-  have key : Fits 64 (PtrOps.convert t [x, y]) ∧ ValRel ι (PtrOps.convert t [x, y]) r := by
-    simp only [PtrOps.convert]
-    split
-    · rename_i p
-      cases hc : p.convertible with
-      | false => exact ⟨trivial, trivial⟩
-      | true =>
-        cases ha : p.addr? with
-        | none => exact ⟨trivial, trivial⟩
-        | some a => exact ⟨rfl, Or.inl (ptrRel_addr hA hv ha (notTemp_of_convertible hc))⟩
-    · exact ⟨hf, hv⟩
-  exact valRel_retypeL hA ht key.1 key.2
+    ValRel ι ((PtrOps.convert t [x, y]).retypeL t) r :=
+  have key := convert_rel (t := t) (y := y) hA hf hv
+  valRel_retypeL hA ht key.1 key.2
 
 /-! ## The value -/
 
