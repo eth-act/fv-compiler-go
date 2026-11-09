@@ -687,6 +687,22 @@ with no arm64 op, `checkG27` is `checkG26` (`checkG26_of_27`). The statements ar
 `checkG27`, with the same premises. No new trusted premise. G27 accepts 5,261 functions; in 26
 others a shifted logic op fails the width rule (`shifted logic widths`).
 
+**Slice G28: `LoweredMemEq`** (`GoFV/Gen/Check28.lean`, `checkG28 lc ps bstart g`, returning G4's
+tables; proven sound, `g28_value`, `g28_term`, `g28_nilPanic`, `g28_boundsPanic`): G27 with
+`LoweredMemEq p q n mem`, which genssa emits as `CALL runtime.memequal(SB)` (ABIInternal). Its
+register constraints put `p`, `q`, `n` in `R0`, `R1`, `R2` and the result in `R0`, and it clobbers
+what a call does. G28 accepts it with no temporary, `p`, `q`, `n` homed in `R0`–`R2` at class 64,
+the memory last and the boolean result in `R0` (`memEqKind`). The statements are G27's over
+`checkG28`, under `G28Env` (`G10Env`, and a function with `LoweredMemEq` has a frame, since the
+`CALL` overwrites `X30`), with a new trusted premise for values, `MemEqOK` (`MemEqSpec`, STATUS
+Assumptions): from `runtime.memequal`'s symbol, with `X0`–`X2` related to the arguments and the
+memory injected, the hook returns to `X30` with `SP`, `R28`, `R29` and the memory kept and `X0`
+related to `memEq [p, q, n, mem]`. The proof (`G28.lean`): `runLoc` clobbers what a static call
+does and writes `memEq` of the arguments to `R0` (`clobber_memEq`, `evalOpL_memEq`); the machine
+runs the `CALL` (`progStep_callSym`) and the hook (`g28_memEq`); every other register is `poison`
+or one a call keeps (`clobber_memEq_reg`). G28 accepts 5,332 functions; 9 others blocked only by
+`LoweredMemEq` after G27 are now blocked by `MOVDnop/MOVDreg: upper bits unknown`.
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -697,8 +713,8 @@ reason in parentheses):
    (`frame variable with an integer address`, 197 (12)): option 2 of semantics3 §4.3 (addresses as
    a parameter of the semantics); slots of other sizes (`slot … frame operand, size or alignment`,
    717).
-3. **Other values**: the acquire loads `LDAR`/`LDARW` (383, 277); `LoweredMemEq` (80 sole after
-   G27), `STLR` (48 sole), `CSINC` (28 sole), `InitMem` after the entry values (25 sole);
+3. **Other values**: the acquire loads `LDAR`/`LDARW` (383, 277); `STLR` (48 sole after G28),
+   `CSINC` (28 sole), `InitMem` after the entry values (25 sole);
    `MOVDnop` 750 (91) and `MOVDreg` (27 sole) are done in G20 and G21 but for those that do
    not follow their load directly (220 `MOVDnop`s; 3 functions with no other blocker, and 13
    with only `MOVDreg`), which need §8's register-frame lemmas. Bounds panics
@@ -739,6 +755,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G25 | 4,925 (52.97%) | 111,247 |
 | G26 | 5,172 (55.63%) | 111,802 |
 | G27 | 5,261 (56.58%) | 117,659 |
+| G28 | 5,332 (57.35%) | 120,012 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -908,6 +925,12 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `narrowLd?_logSh`, `stepLoc_logSh`, `shiftOf_shK`, `ctx_src_shift`, `logical_orr`,
   `logical_eor`, `binOp_logF`, `progStep_logSh`, `logF_low`, `shl_low`, `lo_logSh`, `g27_logSh`,
   `vk27_step`, `g27_value`, `vk27_nil`, `g27_nilPanic`, `g27_boundsPanic`, `g27_term`.
+- `Spec28.lean`: what `checkG28` accepted (`VK28`, `boolTy_spec`, `memEqArg_spec`,
+  `memEqKind_spec`, `vkind28_spec`, `checkG27_of_28`, `checkG28_spec`, `memEqPat_spec`).
+- `G28.lean`: `MemEqSpec`, `MemEqOK`, `G28Env`, `memEq_clobbers`, `clobber_memEq`,
+  `clobber_memEq_reg`, `clobber_memEq_slots`, `clobber_memEq_mem`, `evalOpL_memEq`, `fits_memEq`,
+  `g28_memEq`, `G28Env.extend`, `narrowLd?_memEq`, `vk28_step`, `g28_value`, `vk28_nil`,
+  `g28_nilPanic`, `g28_boundsPanic`, `g28_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -977,8 +1000,12 @@ examples/generics, which holds no arm64 op and which G25 rejects: `g26_value` on
 `MOVD R2, R0`, in Phase 1's mode with `x = 7` in `R2`, after which `runLoc`'s `R0` holds 7 and the
 machine's `X0` is 7), `GenG27.lean` (`regexp.newLazyFlag`, which G26 rejects: `g27_value` on
 `ORR R2<<32, R1, R0` with `uint32(r2) = 2` in `R1` and `r1 = 1` in `R2`, after which `runLoc`'s
-`R0` holds `0x100000002` and the machine's `X0` is `0x100000002`). Each decides its inputs by
-compiled evaluation (`native_decide`, pinned in `scripts/axioms-allowlist.txt`).
+`R0` holds `0x100000002` and the machine's `X0` is `0x100000002`), `GenG28.lean`
+(`runtime.envKeyEqual`, which G27 rejects: `g28_value` on `CALL runtime.memequal(SB)` with two
+strings of 8 equal bytes in `heap 1`, under the hook `Hm` that implements `memequal` on the machine
+and satisfies `MemEqOK`, after which `runLoc`'s `R0` holds `true` and the machine's `X0` is 1).
+Each decides its inputs by compiled evaluation (`native_decide`, pinned in
+`scripts/axioms-allowlist.txt`).
 
 ## 6. Future work: recursion through function values
 
