@@ -367,10 +367,29 @@ Witnesses:
 - `objOps_csel_witness`, `objOps_blr_witness`, `objOps_fault_witness`, `objOps_ctl_witness`
   (`GoFV/Proof/Witness/ObjOps.lean`: `CSET` as `CSINC`, `BLR`, a faulting `LDAR`, `CALL (R2)`).
 
-Coverage on quick-v10 (`lake exe obj-check`): 7,741 of 9,297 functions (83.26%; 277,986 of
+Coverage on quick-v10 (`lake exe obj-check`): 7,920 of 9,297 functions (85.18%; 284,662 of
 429,130 P0 Progs in accepted functions), with `CSEL`/`CSINC`/`CSINV`/`CSNEG`/`CSET`/`CSETM`,
-`MUL`/`MNEG`/`MADD`/`MSUB`/`UMULH`/`SMULH`, `CLZ`/`RBIT`/`REV*`, `LDAR*`/`STLR*` and `CALL (Rn)`
-(was 5,533, 59.51%).
+`MUL`/`MNEG`/`MADD`/`MSUB`/`UMULH`/`SMULH`, `CLZ`/`RBIT`/`REV*`, `LDAR*`/`STLR*`, `CALL (Rn)` and
+the SIMD&FP forms Go emits (below; was 7,741, 83.26%, before them, and 5,533, 59.51%, before the
+opcodes above).
+
+**SIMD&FP.** `Sym` carries the vector registers written (`Sym.v`, 128-bit values `VEx` over the
+state before the Prog: `.v r`, constants, `.ofX` of a general register, loads `.ld n a`, `fp1Op`,
+`fp2Op` (`Rn`, `Rm` order), `fp3Op`, `FCSEL` on the flags before the Prog, `SCVTF`/`UCVTF`), `Ex`
+reads the low `S`/`D` part of a vector register (`Ex.vlo`, the value of an `FMOV` to a general
+register and of an `S`/`D` store) and `FCVTZS`/`FCVTZU` (`Ex.fcvtz`), and the flags an `FCMP`
+(`Fl.fcmp`). `HoldsCore.v` states the machine's vector registers as `Sym.evalV`, `sameEffect`
+compares `V0`–`V31`, and the templates (prologue, epilogue, stack check) write none. Modelled on
+both sides (`symInsn` for `exec`, `progSym` for `progEffect`, soundness `symInsn_sound` and
+`progSym_sound` per family): `FMOVS`/`FMOVD`/`FMOVQ` loads (every address form, write-back),
+`FMOVS`/`FMOVD` stores, moves between vector registers, from and to a general register (`FMOV ZR`
+is the constant 0, `VEx.mkOfX`) and of an encodable constant (`FMOV $c`, `fmovImm`); `FLDPS`/
+`FLDPD`/`FLDPQ`, `FSTPS`/`FSTPD`; `FADD`/`FSUB`/`FMUL`/`FDIV`/`FMAX`/`FMIN`/`FNMUL`, `FNEG`/`FABS`/
+`FSQRT`/`FRINT*`, `FCVTSD`/`FCVTDS`, `FMADD`/`FMSUB`/`FNMADD`/`FNMSUB`, `FCMP`/`FCMPE` (also with
+`$(0.0)`), `FCSEL`, `FCVTZS`/`FCVTZU` and `SCVTF`/`UCVTF` (`S`/`D`, `W`/`X`). Not modelled: `Q`
+stores (`FSTPQ` 179 functions, `FMOVQ` stores 31; a store value is 64 bits), a float constant
+from the literal pool (`FMOV{D,S}` through `R_ARM64_PCREL_LDST*`, 126 and 27: the pool's bytes
+are not in the P0 semantics), `VCNT`/`VUADDLV` (9).
 
 ## Phase 3: genssa, slice G13 (I7, #553)
 
