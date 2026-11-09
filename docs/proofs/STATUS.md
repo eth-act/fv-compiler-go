@@ -790,28 +790,31 @@ values.
 
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
-`GoFV.Proof.Obj.g38_obj_value`, `g38_obj_term`, `g38_obj_nilPanic`, `g38_obj_boundsPanic`
-(`GoFV/Proof/Obj/G38.lean`): `g38_value`/`g38_term`/`g38_nilPanic`/`g38_boundsPanic` composed
+`GoFV.Proof.Obj.g40_obj_value`, `g40_obj_term`, `g40_obj_nilPanic`, `g40_obj_boundsPanic`
+(`GoFV/Proof/Obj/G40.lean`): G40's statements on `checkG40L` (`g40L_value`/`g40L_initMem`/
+`g40L_term`/`g40L_nilPanic`/`g40L_boundsPanic`) composed
 with `obj_star` and `obj_panic`, as `g7_obj_value`/`g7_obj_term` for G7, under `G28Env` and G35's
 upper-bit table of the P0 state (`UOKL m (uL35 lc (uIn35 lc b) blk i)`; a terminator hands the
-successor's start `uIn35 lc e.b` on). A panic is matched by machine steps to a state that
+successor's start `uIn35 lc e.b` on). `g40_obj_value` also covers an `InitMem` in a lowered
+function whose values keep the memory (`memPure`), from a state holding the initial memory
+(`MemInit`): no code, the state unchanged. A panic is matched by machine steps to a state that
 panics (`MPanics`) with `nilDeref`, or with a bounds panic that `BoundsAgree`s with `runLoc`'s.
-`GoFV.Proof.Obj.g38_obj_callPanic` (`GoFV/Proof/Obj/CallPanic.lean`): a static call whose callee
+`GoFV.Proof.Obj.g40_obj_callPanic` (`GoFV/Proof/Obj/CallPanic.lean`): a static call whose callee
 panics, under the trusted `CallPanicOK` (§ Assumptions), is matched by machine steps to a state
-that panics with the same panic; `g38_obj_icallPanic`: the same for an interface or closure call
-(`CALL (Rn)`), under the trusted `ICallPanicOK`. `GoFV.Proof.Obj.g38_obj_memPanic`
+that panics with the same panic; `g40_obj_icallPanic`: the same for an interface or closure call
+(`CALL (Rn)`), under the trusted `ICallPanicOK`. `GoFV.Proof.Obj.g40_obj_memPanic`
 (`GoFV/Proof/Obj/MemPanic.lean`): a load (`MOV{D,W,WU,H,HU,B,BU}load`, `LDP`) or store
 (`MOV{D,W,H,B}store`, `STP`; `memFaultOp`) whose step panics (`nilFaults`: a nil base, the address
 in the nil page) has no symbol and its base in a register holding the machine word 0, so its Prog
 faults in the nil page (`nil_fault_page`, `progStep_loadN_nil`, `progStep_ldp_nil`,
 `progStep_storeN_nil`, `progStep_stp_nil`): the machine panics with `nilDeref`, no premise.
-`GoFV.Proof.Obj.g38_obj_ldarPanic`: the same for an acquire load (`LDAR`, `LDARW`, `LDARB`,
+`GoFV.Proof.Obj.g40_obj_ldarPanic`: the same for an acquire load (`LDAR`, `LDARW`, `LDARB`,
 `ldar?`) whose step panics: its address (argument 0, offset 0, no symbol) is nil
 (`stepLoc_ldar_panic`), so `LDAR* (Rn)` faults at address 0 (`progStep_ldar_nil`). The
 register-index loads and stores are excluded: `runLoc` faults on their nil base whatever the
 index, the machine only when the index keeps the address in the nil page.
 
-`GoFV.Proof.Obj.obj_whole_ret` (`GoFV/Proof/Obj/Whole.lean`): when `checkG38` and `checkObj` accept
+`GoFV.Proof.Obj.obj_whole_ret` (`GoFV/Proof/Obj/Whole.lean`): when `checkG40L` and `checkObj` accept
 a function and `retRegsOK` its returns, the machine starts at its entry (`MachEntry`, return
 address `s0.x 30`; when the stack check fails, the prologue loops through the morestack tail under
 `runtime.morestack`'s contract `MorestackOK`, with the spill slots apart from `g`, `TailSep`, and
@@ -821,11 +824,14 @@ of `runLoc`'s body (`runLoopLoc` from the
 state `s` at the entry block) whose first `k` values (the entry values) lead to a state `sI`
 related to the entry machine state (`EntryMatch`: the argument registers, no flags or slots, the
 memory injected; `EntryEnv`: the frame, `g`, the caller's `LR`/`FP`; no upper-bit fact carried
-into the body: G38's table (G35's) after the entry values is empty, `uL35 lc [] … k = []`, the entry
-block's start being empty, `checkG38_uIn_entry`) and whose every later step meets its premises
+into the body: G40's table (G35's) after the entry values is empty, `uL35 lc [] … k = []`, the entry
+block's start being empty, `checkG40L_uIn_entry`) and whose every later step meets its premises
 (`RunPre`, at the states `runLoc` reaches from `sI`: at a value whose step succeeds `G38Pre`
 (`G14Pre` and `LdarPre`), `GetGOK` and the trusted `CallOK`, `CallOKZ`, `ICallOK`, `WbOK`, `CloOK`,
-`MemEqOK`; `G1TermPre`; no entry value (`entryOp24`)), and that returns
+`MemEqOK`; `G1TermPre`; no entry value (`entryOp24`) but an `InitMem` in a lowered function whose
+values keep the memory, `memPure`), whose first state `s` holds the initial memory in such a
+function (`MemInit`; every state the run reaches then holds it, `memInit_enterList`,
+`lreach_memInit`), and that returns
 `(rs, mm)`, is matched by `runMach` of the linked words that returns to `s0.x 30` in a state `t'`
 with `MachRet s0 t'` (`SP`, `g`, `R29` as at entry) and `ResultRel E (ownOutRegs lc) rs mm t'`
 (`GoFV/Proof/Obj/Results.lean`): `rs` in the function's ABI result registers (`ownOutRegs`: those
@@ -836,9 +842,9 @@ is a `MakeResult` whose tuple has one component per argument, the last the memor
 homed in its ABI register at a class no wider than the register's (`ret_results`, in both of
 `runLoc`'s modes: `valRel_retypeL_le` for lowered functions, `lmode_valRel_le` for those with no
 arm64 op). The pieces: the prologue (`sim_entry`, over `obj_entry`), each value (`sim_value`, over
-`g38_obj_value`), each terminator (`sim_goto`, over `g38_obj_term`), the return (`sim_ret`: the
+`g40_obj_value`), each terminator (`sim_goto`, over `g40_obj_term`), the return (`sim_ret`: the
 `RET` after no-ops, `termG3_ret`, `obj_exit`, `ret_results`), the run by induction on the fuel
-(`sim_from_ret`). `checkG38_cx` covers lowered functions and those with no arm64 op (G26). A
+(`sim_from_ret`). `checkG40L_cx` covers lowered functions and those with no arm64 op (G26). A
 leaf (`checkObj`'s `leaf`: no `CALL`), framed or not, returns through `X30`: `SimAt` carries the
 caller's return address in the P0 state's `X30` of a leaf, from the prologue (which keeps it)
 through every P0 run of a value or terminator (`GoFV.Proof.Obj.obj_star_leaf`,
@@ -847,7 +853,7 @@ end, the run stays at Progs, so no hook runs, and no Prog of a leaf writes `X30`
 `progSym_ctl`); a framed leaf's epilogue recomputes `R29` as the caller's `SP - 8`
 (`EntryEnv.fp0`).
 `runPre_simple`: `RunPre` holds of a function whose ops from the start on are simple
-(`simpleFrom`; `g38Pre_simple`).
+(`simpleFrom`; `g40Pre_simple`).
 
 `GoFV.Proof.Obj.obj_whole_panic` (`Whole.lean`): `obj_whole_ret`'s premises on the entry and the
 steps, the trusted `HookPanicMap` and `BoundsOK`, and the panic premise `RunPanicPre` (at every
@@ -856,18 +862,19 @@ an acquire load (`ldar?`), a bounds check, or a static, interface or closure cal
 panics as `CallPanicOK` or `ICallPanicOK` says at every `LocMatch`ed machine state): if the run of
 `runLoc` panics with `e`, `runMach` panics with `e'`, `BoundsAgree e e'` (the same panic, or for a
 bounds check the runtime's report of the same failure). The pieces: `sim_valuePanic` (over
-`g38_obj_nilPanic`, `g38_obj_memPanic`, `g38_obj_ldarPanic`, `g38_obj_boundsPanic`,
-`g38_obj_callPanic`, `g38_obj_icallPanic`; a call's or access's `vkind38` is `vkind28`'s,
-`vkind38_eq28`), `sim_from_panic`; terminators never panic (`stepTermLoc_ne_panic`).
+`g40_obj_nilPanic`, `g40_obj_memPanic`, `g40_obj_ldarPanic`, `g40_obj_boundsPanic`,
+`g40_obj_callPanic`, `g40_obj_icallPanic`; a call's or access's `vkind40` is `vkind28`'s,
+`vkind40_eq38`, `vkind38_eq28`), `sim_from_panic`; terminators never panic (`stepTermLoc_ne_panic`).
 
 `GoFV.Proof.Obj.verified_mach` (`GoFV/Proof/Obj/EndToEnd.lean`): `verifiedPipelineFull_refines`
 composed with `obj_whole_ret` and `obj_whole_panic`. For `f` through the verified pipeline
-(`fullyVerified`) and its output's genssa Progs and assembled words accepted by `checkG39`
-(slice G39 on `LocCtx.make` of the output: `refsLive`, and `checkG38` on `lc = liveCtx` of it),
+(`fullyVerified`) and its output's genssa Progs and assembled words accepted by `checkG40`
+(slice G40 on `LocCtx.make` of the output: `refsLive`, and `checkG40L` on `lc = liveCtx` of it),
 `retRegsOK` (on `lc`) and `checkObj`, on every input of `VPre` with the pipeline's premises (`hn`,
 `ha`, `hnp`) on which `run` of `f` returns or panics, a `runLoc` of the output refines it
 (`OutcomeRefines`), `runLoc` is `finish` of its body's defined outcome on `lc` (`runLoc_eq`,
-`runLoopLoc_live`, `finish_defined`); when the body returns, `runMach` of the linked words returns
+`runLoopLoc_live`, `finish_defined`; `locInit` holds the initial memory, `MemInit`, by `rfl`);
+when the body returns, `runMach` of the linked words returns
 to the caller with the results in their registers (`obj_whole_ret`'s conclusion); when it panics
 and the panic
 premises hold, `runMach` panics alike (`obj_whole_panic`'s conclusion). Every premise is in the
@@ -881,19 +888,19 @@ Witnesses:
 - `objWholeNL_ret_witness` (`GoFV/Proof/Witness/ObjWholeNL.lean`): `obj_whole_ret` on
   `runtime.gclinkptr.ptr`, a function with no arm64 op (G26), `ret_results` in Phase 1's mode.
 - `objWhole_panic_witness` (`GoFV/Proof/Witness/ObjPanic.lean`): `obj_whole_panic` on `(*A).g` with
-  a nil receiver: the nil check's `MOVB` faults in the nil page. `g38_callPanic_witness`:
-  `g38_callPanic` (P0) on `fint64to32`'s call, under a hook whose callee panics with `nilDeref`;
-  `g38_icallPanic_witness`: `g38_icallPanic` on `Locker.Lock`'s interface call `v11`;
-  `g38_storePanic_witness`: `g38_memPanic` on `(*queueOnePass).next`'s `MOVW R2, 52(R0)` with a
-  nil `q`, which faults at address 52; `g38_loadPanic_witness`: `g38_memPanic` on its
-  `MOVWU 52(R0), R3`; `g38_ldarPanic_witness`: `g38_ldarPanic` on `sync/atomic.LoadInt64`'s
+  a nil receiver: the nil check's `MOVB` faults in the nil page. `g40_callPanic_witness`:
+  `g40_callPanic` (P0) on `fint64to32`'s call, under a hook whose callee panics with `nilDeref`;
+  `g40_icallPanic_witness`: `g40_icallPanic` on `Locker.Lock`'s interface call `v11`;
+  `g40_storePanic_witness`: `g40_memPanic` on `(*queueOnePass).next`'s `MOVW R2, 52(R0)` with a
+  nil `q`, which faults at address 52; `g40_loadPanic_witness`: `g40_memPanic` on its
+  `MOVWU 52(R0), R3`; `g40_ldarPanic_witness`: `g40_ldarPanic` on `sync/atomic.LoadInt64`'s
   `LDAR (R0), R0` with a nil `addr`, which faults at address 0.
 - `objStarLeaf_witness` (`GoFV/Proof/Witness/ObjG7.lean`): `obj_star_leaf` on `(*A).g`, a leaf:
   the P0 run of its nil check `v6` keeps the caller's `0x40` in `X30`.
 - `verified_mach_witness` (`GoFV/Proof/Witness/ObjEndToEnd.lean`): `pallocSum.start` from its
   generic SSA (the export's first section, the whole-file pass environment of
   `gofv-ssa-opt --verified`) through the verified pipeline (`fullyVerified`), with every premise
-  of `verified_mach` discharged (`checkG39` on its output: `refsLive`, `checkG38` on `liveCtx`).
+  of `verified_mach` discharged (`checkG40` on its output: `refsLive`, `checkG40L` on `liveCtx`).
 
 Not yet covered (#553): panics other than nil checks, loads, stores, acquire loads, bounds checks
 and calls (register-index loads and stores; write barriers; `memequal`).
@@ -902,7 +909,7 @@ and calls (register-index loads and stores; write barriers; `memequal`).
 
 The functions `verified_mach`'s function-level premises hold of (#553): the verified pipeline is
 `fullyVerified` (as `--check --verified` runs it: driver export environment, type rounds), and on
-the pipeline's own output (function and tables) genssa's P0 Progs are accepted by `checkG39`
+the pipeline's own output (function and tables) genssa's P0 Progs are accepted by `checkG40`
 against `LocCtx.make r.st.tables r.st.func`, `retRegsOK` holds of `liveCtx` of it and its class
 tables, and `checkObj`
 accepts `Flushplist`'s output on those same Progs (`GoFVTest/Driver/E2E.lean`,
@@ -912,21 +919,22 @@ declarations, then the autos the pipeline created). From the stock `.prog` file 
 input view is read (definitions, config, `Dcl` at `AllocFrame`'s start, `genin`). The stock
 column runs the same back end on the stock `trim` function of every function.
 
-| quick-v10 (9,297 functions, 10 min 24 s; `agent/obj9` on main 02429890 (G39), `--jobs 2`) | pipeline output | share | stock `trim` |
+| quick-v10 (9,297 functions, 7 min 11 s; `agent/obj10` on main be69adb9 (G40), `--jobs 2`) | pipeline output | share | stock `trim` |
 | --- | ---: | ---: | ---: |
 | fully verified (Phase 2, through `trim`) | 7,699 | 82.81% | - |
 | … genssa and `Flushplist` ran | 7,699 | 82.81% | 9,297 |
-| … ∧ `checkG39` | 5,914 | 63.61% | 6,447 |
-| … ∧ `checkG39` ∧ `retRegsOK` | 5,914 | 63.61% | 6,447 |
+| … ∧ `checkG40` | 5,936 | 63.84% | 6,472 |
+| … ∧ `checkG40` ∧ `retRegsOK` | 5,936 | 63.84% | 6,472 |
 | … ∧ `checkObj` | 7,052 | 75.85% | 7,741 |
-| **… ∧ `checkG39` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach`)** | **5,853** | **62.95%** | 6,286 |
-| … end to end, pipeline output identical to stock after `trim` | 4,975 | 53.51% | - |
+| **… ∧ `checkG40` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach`)** | **5,874** | **63.18%** | 6,308 |
+| … end to end, pipeline output identical to stock after `trim` | 4,996 | 53.73% | - |
 
 The composition on G34 (#632) accepted 5,424 (58.34%), framed leaves excluded; on G37 with framed
-leaves 5,538 (59.56%); on G38 (the acquire loads) the probe counted 5,802 (62.40%); G39 (the
-homes of removed values) adds 51. `ownFrame` gives the stock `stksize`/`stkptrsize` on all
+leaves 5,538 (59.56%); on G38 (the acquire loads) the probe counted 5,802 (62.40%); on G39 (the
+homes of removed values, #642) 5,853 (62.95%); G40 (`InitMem` after the entry values) adds 21.
+`ownFrame` gives the stock `stksize`/`stkptrsize` on all
 6,472 fully verified functions whose output is identical to stock. `pallocSum.start` (the witness
-`verified_mach_witness`) is among the accepted. Top reasons among the fully verified: `checkG39`:
+`verified_mach_witness`) is among the accepted. Top reasons among the fully verified: `checkG40`:
 `store shape` (304), `frame variable off another base` (229), `op CALLtail` (164), `argument v#
 in register #` (151), `frame variable with an integer address` (138), `frame variable operand
 class` (133), `op LoweredAtomicAdd#Variant` (95), `op LoweredAtomicCas#Variant` (91); `retRegsOK`:
@@ -1086,13 +1094,13 @@ witnesses):
 | `ICallOK` (Phase 3 G10, `GoFV/Proof/Gen/G10.lean`, premise of `g10_value` and every later slice's `gN_value` at each interface or closure call `CALLinter`/`CALLclosure`) | from every state that is the caller's but for `X30`, with the PC the content of the code register `Rn` (related to `runLoc`'s code pointer), the register arguments in their ABI registers and, at a closure call, `R26` holding the closure context: that address is no Prog address of the caller and not its return address, and the hook there satisfies `CallSpec` (the static callee's contract, the `CallOK` row above) | Go's internal ABI: the code pointer of a method (an itab's `fun` entry) or of a closure (its first word) is the entry of a function linked outside the caller's code, which the hook runs by its Phase 1 contract (`callTarget` names the callee by the code pointer); a closure call passes its context in `R26` (abi-internal.md: the closure context pointer register) | a code pointer into the caller's own code (a recursive call through a function value, which the hook model does not run; lifting this needs the function-level callee contract of `docs/plans/proofs3.md` §6), or a callee that breaks `CallSpec` | trusted; the witness `genG10_value_witness` discharges it for a callee that returns at once at a global function's address |
 | `CloOK` (Phase 3 G11, `GoFV/Proof/Gen/G11.lean`, premise of `g11_value` and every later slice's `gN_value` at `LoweredGetClosurePtr`) | at `LoweredGetClosurePtr`, which `checkG11` places in the entry block after the register arguments only (`cloFirst`; no code but the prologue runs before it), `X26` holds the activation's closure context (`fr.closure`, `poison` outside a closure call), a 64-bit word | Go's internal ABI passes the closure context in `R26` (abi-internal.md; semantics3 §5); the prologue does not write `R26` and its `morestack` path saves and restores the context (`runtime.morestack`, `gobuf.ctxt`); the register arguments emit no code | a caller that enters a closure without its context in `R26`, or a prologue that clobbers `R26` | trusted; the witness `genG11_value_witness` discharges it for a closure context that is a pointer to a global at `2^40` |
 | `GetGOK` (Phase 3 G17, `GoFV/Proof/Gen/G17.lean`, premise of `g17_value` at `GetG`) | the injection `ι` maps Phase 1's opaque global `runtime.g` (`GetG`'s result, `Sem/Pure.lean`) to the activation's goroutine `E.g`, which `LocMatch`'s frame clause puts in `X28`; `E.Extends` keeps it, so it is a property of the activation's first injection | Phase 1 models the goroutine as an opaque allocation of the environment, never nil (semantics2 §5); on arm64 the goroutine pointer lives in `R28` (`g`), which Go code does not write outside the runtime's `g` switches | a `runtime.g` symbol referenced as a global (then `G2Env.glob` puts it at its link address), or code that switches `g` | a choice of `ι`, not of external code; the witness `genG17_value_witness` takes `ι` with `runtime.g` at `X28` |
-| `BoundsOK` (Phase 3 G19, `GoFV/Proof/Gen/G19.lean`, premise of `g19_boundsPanic`, …, `g38_obj_boundsPanic`, `obj_whole_panic` and the panic branch of `verified_mach`) | from every machine state at the symbol of `runtime.panicBounds` whose `X30` is the return address of a `CALL` at index `k` of the Prog list, the hook `H.call` panics with `boundsPanic c` of the state's registers, `c` the `PCDATA_PanicBounds` value in force at that `CALL` (`pbData`) | the hook's contract `panicBoundsHook` (row above): `panicBounds64` decodes the PC-value table at `X30 − 1`, which is `c` | a runtime whose `panicBounds` reads other registers or another table, or a PC-value table that the assembler does not emit as the Prog list says (D7, `checkObj`) | trusted; the witness `genG19_boundsPanic_witness` discharges it for a hook that panics with `boundsPanic 350`, the only value at its `CALL` (`boundsOK_of`) |
+| `BoundsOK` (Phase 3 G19, `GoFV/Proof/Gen/G19.lean`, premise of `g19_boundsPanic`, …, `g40_obj_boundsPanic`, `obj_whole_panic` and the panic branch of `verified_mach`) | from every machine state at the symbol of `runtime.panicBounds` whose `X30` is the return address of a `CALL` at index `k` of the Prog list, the hook `H.call` panics with `boundsPanic c` of the state's registers, `c` the `PCDATA_PanicBounds` value in force at that `CALL` (`pbData`) | the hook's contract `panicBoundsHook` (row above): `panicBounds64` decodes the PC-value table at `X30 − 1`, which is `c` | a runtime whose `panicBounds` reads other registers or another table, or a PC-value table that the assembler does not emit as the Prog list says (D7, `checkObj`) | trusted; the witness `genG19_boundsPanic_witness` discharges it for a hook that panics with `boundsPanic 350`, the only value at its `CALL` (`boundsOK_of`) |
 | `MemEqOK`/`MemEqSpec` (Phase 3 G28, `GoFV/Proof/Gen/G28.lean`, premise of `g28_value` at each `LoweredMemEq`) | from the state at `runtime.memequal`'s symbol (the caller's but for `X30`), with `X0`, `X1`, `X2` related to the arguments `p`, `q`, `n` `runLoc` reads and the memory injected (distinct keys, the live blocks away from the frame), the hook `H.call` returns to `X30` with `SP`, `R28`, `R29` and the memory kept, and `X0` related to `memEq [p, q, n, mem]`: 1 if the `n` bytes at `p` and at `q` agree, 0 if not (no claim when a read is invalid or reads `poison`) | `runtime.memequal`'s contract: `internal/bytealg/equal_arm64.s` (`NOSPLIT`, `NOFRAME`) compares the `R2` bytes at `R0` and `R1`, writes no memory, and returns with `MOVD $1, R0` or `MOVB ZR, R0` (the whole register 1 or 0); the injection relates `runLoc`'s bytes at `p`, `q` to the machine bytes at their addresses, so equal bytes are equal machine bytes and conversely | a `memequal` that writes memory or `R28`/`R29`, or returns another result | trusted; the witness `genG28_value_witness` discharges it for a hook that implements `memequal` on the machine (`GenG28.Hm`), on 8 equal bytes |
-| `HookMap` (Phase 3 `checkObj`, `GoFV/Proof/Obj/Sim.lean`, premise of `obj_step`/`obj_star`, `g7_obj_value`/`g7_obj_term`, `g38_obj_value`/`g38_obj_term`, `obj_whole_ret`, `obj_whole_panic` and `verified_mach`) | a hook (callee, runtime entry) that returns from a P0 state at a symbol, after a call whose return address is a Prog or the end, also returns from every `ObjRel`-related machine state, to a related state at a Prog or the end: it treats the return address `X30` only as an address to return to (P0's ID layout and the machine's byte layout differ only there) and does not read `X27` | the callee's code is outside the function and cannot observe where the caller's words are, except through `X30`, which it only returns to (`RET`); Go code does not read `R27` (REGTMP) across a call | a callee that reads or stores its return address as data (tracebacks, `runtime.Callers`), or reads `X27` | trusted; `hookMap_retLR` discharges it for callees that return through `X30` and change nothing else (the witnesses' `GenG2.H0`) |
-| `HookPanicMap` (Phase 3 `checkObj`, `Sim.lean`, premise of `obj_panic`, `g38_obj_nilPanic`/`_memPanic`/`_ldarPanic`/`_boundsPanic`/`_callPanic`/`_icallPanic`, `obj_whole_panic` and the panic branch of `verified_mach`) | a hook that panics from a P0 state at a symbol (after a call) panics with the same panic from every `ObjRel`-related machine state | as `HookMap` | as `HookMap` | trusted; `hookPanicMap_H0` (`objWhole_panic_witness`) |
-| `CallPanicOK` (Phase 3, `GoFV/Proof/Obj/CallPanic.lean`, premise of `g38_callPanic`/`g38_obj_callPanic`; in `RunPanicPre`, premise of `obj_whole_panic` and the panic branch of `verified_mach`, at each static call whose step panics) | from every machine state at the callee's symbol that is the caller's but for `X30`, with the call's arguments in their ABI registers and the memory injected (`CallOK`'s premises, distinct keys, the live blocks away from the frame), the hook `H.call` panics with the panic `runLoc`'s call step panics with | the callee's Phase 1 contract lifted through ABIInternal (the `liftContract` row above): a callee that panics in Phase 1 on these arguments and memory panics alike on the machine, before returning | a callee whose machine code panics with another value, or returns, where its Phase 1 contract panics | trusted; the witness `g38_callPanic_witness` discharges it for a hook whose callee panics with `nilDeref` (`fint64to32`) |
-| `ICallPanicOK` (Phase 3, `GoFV/Proof/Obj/CallPanic.lean`, premise of `g38_icallPanic`/`g38_obj_icallPanic`; in `RunPanicPre`, premise of `obj_whole_panic` and the panic branch of `verified_mach`, at each interface or closure call whose step panics) | from every machine state that is the caller's but for `X30`, with the PC the content of the code register `Rn` (related to `runLoc`'s code pointer), `R26` holding the closure context of a closure call, the remaining register arguments in their ABI registers and the memory injected, the callee's code is no Prog of the caller and not its return address, and the hook there panics with the panic `runLoc`'s call step panics with | as `ICallOK` (the code pointer of a method or closure is a function entry outside the caller) and `CallPanicOK` (the callee's Phase 1 contract lifted through ABIInternal panics alike) | a callee whose machine code panics with another value or returns where its Phase 1 contract panics; a code pointer into the caller | trusted; the witness `g38_icallPanic_witness` discharges it for a hook that panics with `nilDeref` at the callee's code (`Locker.Lock`, `icallPanicOKc`) |
-| `ICallOut` (Phase 3 `checkObj`, `Sim.lean`, run premise of `obj_star` (and `obj_step` at the state), `g7_obj_value`/`g7_obj_term`, `g38_obj_*`; as `∀ u, ICallOut L ps u` of `obj_whole_ret`, `obj_whole_panic`, `verified_mach`) | at a `CALL (Rn)` on the P0 run, the register holds a linked symbol's address (a function value's code word, an itab's `fun` entry is a function entry) | Go's function values and itabs point to function entries (data relocations `R_ADDR`, proofs3 §6) | a function value pointing into the caller's own words or to a non-entry address | trusted per run; `iCallOut_of_none` discharges it for a list without `CALL (Rn)` (the ObjG7, ObjWhole, ObjWholeNL, ObjPanic and ObjEndToEnd witnesses) |
+| `HookMap` (Phase 3 `checkObj`, `GoFV/Proof/Obj/Sim.lean`, premise of `obj_step`/`obj_star`, `g7_obj_value`/`g7_obj_term`, `g40_obj_value`/`g40_obj_term`, `obj_whole_ret`, `obj_whole_panic` and `verified_mach`) | a hook (callee, runtime entry) that returns from a P0 state at a symbol, after a call whose return address is a Prog or the end, also returns from every `ObjRel`-related machine state, to a related state at a Prog or the end: it treats the return address `X30` only as an address to return to (P0's ID layout and the machine's byte layout differ only there) and does not read `X27` | the callee's code is outside the function and cannot observe where the caller's words are, except through `X30`, which it only returns to (`RET`); Go code does not read `R27` (REGTMP) across a call | a callee that reads or stores its return address as data (tracebacks, `runtime.Callers`), or reads `X27` | trusted; `hookMap_retLR` discharges it for callees that return through `X30` and change nothing else (the witnesses' `GenG2.H0`) |
+| `HookPanicMap` (Phase 3 `checkObj`, `Sim.lean`, premise of `obj_panic`, `g40_obj_nilPanic`/`_memPanic`/`_ldarPanic`/`_boundsPanic`/`_callPanic`/`_icallPanic`, `obj_whole_panic` and the panic branch of `verified_mach`) | a hook that panics from a P0 state at a symbol (after a call) panics with the same panic from every `ObjRel`-related machine state | as `HookMap` | as `HookMap` | trusted; `hookPanicMap_H0` (`objWhole_panic_witness`) |
+| `CallPanicOK` (Phase 3, `GoFV/Proof/Obj/CallPanic.lean`, premise of `g40_callPanic`/`g40_obj_callPanic`; in `RunPanicPre`, premise of `obj_whole_panic` and the panic branch of `verified_mach`, at each static call whose step panics) | from every machine state at the callee's symbol that is the caller's but for `X30`, with the call's arguments in their ABI registers and the memory injected (`CallOK`'s premises, distinct keys, the live blocks away from the frame), the hook `H.call` panics with the panic `runLoc`'s call step panics with | the callee's Phase 1 contract lifted through ABIInternal (the `liftContract` row above): a callee that panics in Phase 1 on these arguments and memory panics alike on the machine, before returning | a callee whose machine code panics with another value, or returns, where its Phase 1 contract panics | trusted; the witness `g40_callPanic_witness` discharges it for a hook whose callee panics with `nilDeref` (`fint64to32`) |
+| `ICallPanicOK` (Phase 3, `GoFV/Proof/Obj/CallPanic.lean`, premise of `g40_icallPanic`/`g40_obj_icallPanic`; in `RunPanicPre`, premise of `obj_whole_panic` and the panic branch of `verified_mach`, at each interface or closure call whose step panics) | from every machine state that is the caller's but for `X30`, with the PC the content of the code register `Rn` (related to `runLoc`'s code pointer), `R26` holding the closure context of a closure call, the remaining register arguments in their ABI registers and the memory injected, the callee's code is no Prog of the caller and not its return address, and the hook there panics with the panic `runLoc`'s call step panics with | as `ICallOK` (the code pointer of a method or closure is a function entry outside the caller) and `CallPanicOK` (the callee's Phase 1 contract lifted through ABIInternal panics alike) | a callee whose machine code panics with another value or returns where its Phase 1 contract panics; a code pointer into the caller | trusted; the witness `g40_icallPanic_witness` discharges it for a hook that panics with `nilDeref` at the callee's code (`Locker.Lock`, `icallPanicOKc`) |
+| `ICallOut` (Phase 3 `checkObj`, `Sim.lean`, run premise of `obj_star` (and `obj_step` at the state), `g7_obj_value`/`g7_obj_term`, `g40_obj_*`; as `∀ u, ICallOut L ps u` of `obj_whole_ret`, `obj_whole_panic`, `verified_mach`) | at a `CALL (Rn)` on the P0 run, the register holds a linked symbol's address (a function value's code word, an itab's `fun` entry is a function entry) | Go's function values and itabs point to function entries (data relocations `R_ADDR`, proofs3 §6) | a function value pointing into the caller's own words or to a non-entry address | trusted per run; `iCallOut_of_none` discharges it for a list without `CALL (Rn)` (the ObjG7, ObjWhole, ObjWholeNL, ObjPanic and ObjEndToEnd witnesses) |
 | `MachEntry` (Phase 3, `GoFV/SSA/Sem/RunMach.lean`, `GoFV/Proof/Obj/Frame.lean`; premises of `obj_entry`, `obj_whole_ret`, `obj_whole_panic`, `verified_mach`) | the call: PC at the entry, `SP` 16-aligned with room for the frame, `X30` outside the code, `g` above the nil page (its 32 bytes below `2^64`), `R29 = SP − 8` | the caller's side of the ABI (`obj7.go`) | a caller that enters with a misaligned `SP` or a return address in the callee's code | `objFrame_entry_witness`, `objFrame_morestack_witness`, `objWhole_ret_witness`, `objWholeNL_ret_witness`, `objWhole_panic_witness`, `verified_mach_witness` |
 | `MorestackOK` (Phase 3, `GoFV/Proof/Obj/Morestack.lean`; premise of `more_loop`, `obj_entry`, `sim_entry`, `obj_whole_ret`, `obj_whole_panic`, `verified_mach`, for a function with a stack check, at the address of the morestack tail's call `tailCall`) | the address has no code and is not the return address; from every state there with the entry's `SP`, `g` and stack bound `0(g)` whose stack check fails (`¬ CheckPasses`), the hook `H.call` returns to `X30` with `X30` set to `R3` (the `MOVD R30, R3` of the tail), `SP`, `R26`, `R28`, `R29` kept, the memory kept but the guard word `gOff(g)`, and the guard lower (the loop's measure) | `runtime.morestack`/`morestack_noctxt` (`morestackHook`: `newstack` grows the stack in place, `stackguard0` lowered by `growBy` down to `stack.lo + StackGuard`, `gogo` resumes after the `BL` with `X30 = R3`); the stack can grow (the floor below the limit); `morestackHook_ok` (`GoFV/Proof/Obj/MorestackHook.lean`) proves the model meets the contract at those entry points for a check of `stackguard0` when `growBy > 0` and `stack.lo + StackGuard` is below the check's limit | a runtime that moves the stack (`δ ≠ 0`, not modelled) or cannot grow it (then the hook is stuck: no obligation); the tail's call to another symbol (the validator does not see symbol names) | `msHook_ok` (`objFrame_morestack_witness`: a hook that clears the guard), `morestackHook_ok`; vacuous (no stack check) in the ObjWhole, ObjWholeNL, ObjPanic and ObjEndToEnd witnesses |
 | `TailSep`, `MoreEntry` (Phase 3, `Morestack.lean`, `Whole.lean`; premises of `obj_entry`/`sim_entry` and `obj_whole_ret`, `obj_whole_panic`, `verified_mach`, for a function with a stack check) | the spill slots of the morestack tail (`tailPlan`: `off(SP)` of the entry's `SP`) lie below `2^64` and apart from `g`'s first 32 bytes; every register `runLoc`'s first state holds a value in but `R26` is reloaded by the tail from a slot the value fits (`ValFits`: an integer of at most `8n` bits, a boolean, else `n = 8`), no vector register holds one (the hook clobbers them), and the live blocks of its memory lie apart from the slots and the guard word | ABIInternal's spill area of the register arguments is in the caller's frame, `g` is not on the stack; the spills are those of the arguments (`SpillRegisterArgs`) | a register argument the tail does not spill (the validator spills only general registers, so a function with floating-point arguments and a stack check is rejected) | `tailSep` (`objFrame_entry_witness`, `objFrame_morestack_witness`); vacuous in the whole-function witnesses |

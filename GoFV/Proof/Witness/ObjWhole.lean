@@ -446,7 +446,8 @@ theorem whole_of {env : Env} {lc : LocCtx} (hf : lcFacts env lc = true) {fuel : 
   rw [← hentry] at hpc
   have h := obj_whole_ret hc hO hH hic hrok hME hroom hg
     (fun _ _ _ h => by rw [hnone] at h; cases h) (fun _ _ _ h => by rw [hnone] at h; cases h)
-    hE (hEE lc) hb1 hbm hk (fun _ _ => rfl) hsI hent (fun _ _ _ h => by rw [hnone] at h; cases h) hinv hu
+    hE (hEE lc) hb1 hbm hk (fun _ _ => by exact rfl) hsI hent
+    (fun _ _ _ h => by rw [hnone] at h; cases h) hinv hu
     (hpc lc) hP hrun
   rwa [houts] at h
 

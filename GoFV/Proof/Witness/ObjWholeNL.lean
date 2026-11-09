@@ -380,7 +380,8 @@ theorem objWholeNL_ret_witness :
     (hookMap_retLR fun _ => rfl) (ObjG7.noICall_spec hni L) hrok hME
     (by rw [haz]; decide) (by decide)
     (fun _ _ _ h => by rw [hnone] at h; cases h) (fun _ _ _ h => by rw [hnone] at h; cases h)
-    (g28Env hc hav hsl hnc hwi hme hend hso) hEE hb1 hbm (of_decide_eq_true hsz) (fun _ _ => rfl) hsI
+    (g28Env hc hav hsl hnc hwi hme hend hso) hEE hb1 hbm (of_decide_eq_true hsz)
+    (fun _ _ => by exact rfl) hsI
     hent (fun _ _ _ h => by rw [hnone] at h; cases h) hinv
     (List.isEmpty_iff.1 hu) hpc' (runPre_simple (by rw [hentry]; exact hsim)) hrun
   rw [houts] at hRes

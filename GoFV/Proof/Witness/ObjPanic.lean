@@ -442,7 +442,8 @@ theorem panic_of {lc : LocCtx} (hf : lcFacts lc = true) :
     hookPanicMap_H0 (boundsOK_none hnpb) (ObjG7.noICall_spec hni L) hME (by rw [haz]; decide)
     (by decide) (fun _ _ _ h => by rw [hnone] at h; cases h)
     (fun _ _ _ h => by rw [hnone] at h; cases h)
-    (g28Env hc hav hsl hnc hwi hme hend hso) hEE hb2 hbm (by omega) (fun _ _ => rfl) hsI hent
+    (g28Env hc hav hsl hnc hwi hme hend hso) hEE hb2 hbm (by omega) (fun _ _ => by exact rfl) hsI
+    hent
     (fun _ _ _ h => by rw [hnone] at h; cases h) hinv hu' hpc hP hPP hrun
   rcases he with rfl | ⟨k, x, y, h, -⟩
   · exact ⟨n, t', hn⟩
@@ -731,9 +732,11 @@ def mA : MState :=
     sp := GenG2.sp0, v := fun _ => 0, nzcv := ⟨false, false, false, false⟩,
     pc := GenG38.E.pcOf 1 2, mem := GenG14.M7 }
 
-/-- `v8` panics with `nilDeref` from `sA` (a nil `addr` in `R0`). -/
+/-- What compiled evaluation checks on `sync/atomic.LoadInt64`: `checkG40L` accepts it with
+`checkG38`'s tables, and `v8` panics with `nilDeref` from `sA` (a nil `addr` in `R0`). -/
 def ldarFacts : Bool :=
-  isNilPanic (stepLoc GenG2.env GenG38.lc sA (GenG38.val 8))
+  (checkG40L GenG38.lc GenG38.ps GenG38.bs GenG38.g).toOption == some (GenG38.tab, GenG38.kt) &&
+    isNilPanic (stepLoc GenG2.env GenG38.lc sA (GenG38.val 8))
 
 theorem ldarPanic_facts : ldarFacts = true := by
   native_decide
@@ -783,10 +786,15 @@ theorem g40_ldarPanic_witness :
     ∃ mm', stepLoc GenG2.env GenG38.lc sA (GenG38.val 8) = .panic .nilDeref mm' ∧
       ∃ m', PStar GenG2.H0 GenG38.L GenG38.ps.toList 0 mA m' ∧
         PPanics GenG2.H0 GenG38.L GenG38.ps.toList 0 m' .nilDeref := by
-  obtain ⟨mm', hpan⟩ := isNilPanic_spec ldarPanic_facts
+  have hf := ldarPanic_facts
+  simp only [ldarFacts, Bool.and_eq_true] at hf
+  obtain ⟨mm', hpan⟩ := isNilPanic_spec hf.2
+  have hc40 : checkG40L GenG38.lc GenG38.ps GenG38.bs GenG38.g = .ok (GenG38.tab, GenG38.kt) := by
+    have hres := hf.1
+    revert hres; cases checkG40L GenG38.lc GenG38.ps GenG38.bs GenG38.g <;> simp [Except.toOption]
   obtain ⟨hl, hc, -, hav, hsl, hm1, hb, hv8, hi2, hop, -, hk0, -⟩ := GenG38.facts
-  obtain ⟨-, m', hp, hpp⟩ := g40_ldarPanic (H := GenG2.H0) hc (GenG38.g38Env hc hl hav hsl) hm1 hb
-    hi2 hv8 (by rw [hop]; rfl) locMatchA (invA hk0) hpan
+  obtain ⟨-, m', hp, hpp⟩ := g40_ldarPanic (H := GenG2.H0) hc40 (GenG38.g38Env hc hl hav hsl) hm1
+    hb hi2 hv8 (by rw [hop]; rfl) locMatchA (invA hk0) hpan
   exact ⟨mm', hpan, m', hp, hpp⟩
 
 end GoFV.Proof.Witness.ObjPanic

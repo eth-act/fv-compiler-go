@@ -119,11 +119,9 @@ theorem verified_mach
   subst hlc
   refine ⟨fuel', href, _, rfl, heq, finish_defined (heq ▸ hd'), fun rs mm hraw => ?_,
     fun pe mm hraw hHP hbok hPP => ?_⟩
-  · exact obj_whole_ret hc hO hH hic hrok hME hroom hg hms hsep hE hEE hbE hbm hk (fun _ _ => rfl) hpre
-      hent
-      hmore hinv huE hpc hRP hraw
+  · exact obj_whole_ret hc hO hH hic hrok hME hroom hg hms hsep hE hEE hbE hbm hk
+      (fun _ _ => by exact rfl) hpre hent hmore hinv huE hpc hRP hraw
   · exact obj_whole_panic hc hO hH hHP hbok hic hME hroom hg hms hsep hE hEE hbE hbm hk
-      (fun _ _ => rfl) hpre hent
-      hmore hinv huE hpc hRP hPP hraw
+      (fun _ _ => by exact rfl) hpre hent hmore hinv huE hpc hRP hPP hraw
 
 end GoFV.Proof.Obj

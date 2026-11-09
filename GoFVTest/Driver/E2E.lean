@@ -1,6 +1,6 @@
 import GoFVTest.Driver.Back
 import GoFVTest.GenIn
-import GoFV.Gen.Check39
+import GoFV.Gen.Check40
 import GoFV.Gen.Results
 import GoFV.Asm.CheckObj
 
@@ -8,9 +8,9 @@ import GoFV.Asm.CheckObj
 # `gofv-ssa-opt --check --verified --e2e`: end-to-end coverage (`docs/DRIVER.md`)
 
 `GoFV.Proof.Obj.verified_mach` applies to a function when the verified pipeline is
-`fullyVerified`, `checkG39` (the latest merged genssa slice) accepts genssa's P0 Progs against
+`fullyVerified`, `checkG40` (the latest merged genssa slice) accepts genssa's P0 Progs against
 the pipeline's own output (`LocCtx.make` of its tables and function) with class tables `kt`,
-`retRegsOK` holds of them on `liveCtx` of that context (the context `checkG39` runs `checkG38`
+`retRegsOK` holds of them on `liveCtx` of that context (the context `checkG40` runs `checkG40L`
 on; every `Ret` block returns its results in their ABI registers),
 `checkObj` accepts the assembler's output on those same Progs. `back` runs this back end on a
 function after `trim` and its tables:
@@ -19,7 +19,7 @@ function after `trim` and its tables:
   (homes and temporary registers from its `f.low`), and the given tables;
 - the frame layout (`allocFrame`) and `genssa` on it, its Progs in the input file's symbol
   numbers (`Back.genP0`, as the driver's back end `Back.chain`);
-- `checkG39` with G2's inputs of that frame (the symbols by the file's numbers,
+- `checkG40` with G2's inputs of that frame (the symbols by the file's numbers,
   `GenCheck.slotOpOf`, the frame size), and `retRegsOK` on `liveCtx` and its class tables;
 - `Flushplist` (`GoFV.Asm.flush`) on the file with those Progs (`GenP0.progFile`) and `checkObj`
   on the same Progs, their register-argument spills and the port's text, relocations and Progs.
@@ -41,7 +41,7 @@ namespace GoFVTest.Driver.E2E
 open GoFV.SSA (ExportFile Tables Func GoStr)
 open GoFV.SSA.Sem (LocCtx)
 open GoFV.Asm GoFV.Asm.CheckObj
-open GoFV.Gen.Check (checkG39 liveCtx G2In retRegsOK ownOutRegs)
+open GoFV.Gen.Check (checkG40 liveCtx G2In retRegsOK ownOutRegs)
 open GoFVTest.Driver.Back (genP0 GenP0 inputView)
 open GoFVTest.GenCheck (slotOpOf classOf)
 
@@ -78,7 +78,7 @@ def retWhy (lc : LocCtx) (kt : KTab) : String := Id.run do
 /-- The validators' verdicts on one function (`none`: accepted). -/
 structure Res where
   gen : Option String
-  /-- `retRegsOK`'s rejection (`none` also when `checkG39` rejects: not run). -/
+  /-- `retRegsOK`'s rejection (`none` also when `checkG40` rejects: not run). -/
   ret : Option String
   obj : Option String
   /-- The frame layout's `stksize` and `stkptrsize`. -/
@@ -199,7 +199,7 @@ def back (e : ExportFile) (pin : ProgFile)
       stksize := g.fr.stksize }
   let bstart := fun b => (g.gout.st.bstart[b]?).join
   let lc := LocCtx.make tabs f
-  let (gen, ret) := match checkG39 lc ps bstart gin with
+  let (gen, ret) := match checkG40 lc ps bstart gin with
     | .ok (_, kt) =>
       (none, if retRegsOK (liveCtx lc) kt then none else some (retWhy (liveCtx lc) kt))
     | .error m => (some m, none)
@@ -225,12 +225,12 @@ def Why.merge (a b : Why) : Why :=
 structure Counts where
   ran : Nat := 0
   gen : Nat := 0
-  /-- `checkG39` ∧ `retRegsOK`. -/
+  /-- `checkG40` ∧ `retRegsOK`. -/
   ret : Nat := 0
   obj : Nat := 0
-  /-- `checkG39` ∧ `checkObj`. -/
+  /-- `checkG40` ∧ `checkObj`. -/
   genObj : Nat := 0
-  /-- `checkG39` ∧ `retRegsOK` ∧ `checkObj` (`Res.all`, end to end). -/
+  /-- `checkG40` ∧ `retRegsOK` ∧ `checkObj` (`Res.all`, end to end). -/
   all : Nat := 0
   errWhy : Why := {}
   genWhy : Why := {}
@@ -342,11 +342,11 @@ def Stats.text (st : Stats) (ms : Nat) : String := Id.run do
     | --- | ---: | ---: | ---: | ---: |\n"
   out := out ++ row "fully verified (Phase 2, through `trim`)" (some st.full) none
   out := out ++ row "… genssa and `Flushplist` ran" (some o.ran) (some s.ran)
-  out := out ++ row "… ∧ `checkG39`" (some o.gen) (some s.gen)
-  out := out ++ row "… ∧ `checkG39` ∧ `retRegsOK`" (some o.ret) (some s.ret)
+  out := out ++ row "… ∧ `checkG40`" (some o.gen) (some s.gen)
+  out := out ++ row "… ∧ `checkG40` ∧ `retRegsOK`" (some o.ret) (some s.ret)
   out := out ++ row "… ∧ `checkObj`" (some o.obj) (some s.obj)
-  out := out ++ row "… ∧ `checkG39` ∧ `checkObj`" (some o.genObj) (some s.genObj)
-  out := out ++ row "**… ∧ `checkG39` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach`)**"
+  out := out ++ row "… ∧ `checkG40` ∧ `checkObj`" (some o.genObj) (some s.genObj)
+  out := out ++ row "**… ∧ `checkG40` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach`)**"
     (some o.all) (some s.all)
   out := out ++ row "… end to end, pipeline output identical to stock after `trim`" (some st.allSame) none
   out := out ++ row "fully verified, pipeline output identical to stock" (some st.fullSame) none
@@ -356,8 +356,8 @@ def Stats.text (st : Stats) (ms : Nat) : String := Id.run do
     verified functions whose output is identical to stock: stock `stksize`/`stkptrsize` \
     {st.frameSame}, other {st.frameDiff}{if st.frameDiffEx.isEmpty then "" else s!" ({st.frameDiffEx})"}.\n"
   out := out ++ whyTable "Back-end errors among the fully verified:" o.errWhy 30
-  out := out ++ whyTable "`checkG39` rejections among the fully verified (first reason):" o.genWhy 40
-  out := out ++ whyTable "`retRegsOK` rejections among the fully verified accepted by `checkG39`:" o.retWhy 10
+  out := out ++ whyTable "`checkG40` rejections among the fully verified (first reason):" o.genWhy 40
+  out := out ++ whyTable "`retRegsOK` rejections among the fully verified accepted by `checkG40`:" o.retWhy 10
   out := out ++ whyTable "`checkObj` rejections among the fully verified:" o.objWhy 40
   out := out ++ whyTable "Back-end errors on the stock `trim` function:" s.errWhy 20
   return out
