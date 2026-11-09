@@ -1,14 +1,14 @@
 import GoFV.Gen.Check49
-import GoFV.Proof.Gen.Spec50
+import GoFV.Proof.Gen.Spec51
 
 variable [GoFV.SSA.Sem.Addrs]
 
 /-!
 # What `checkG49` accepted (`GoFV/Gen/Check49.lean`)
 
-`VK49`: G50's kinds (`VK50`, through `vkind50`) and the accesses of a frame variable in a
+`VK49`: G51's kinds (`VK51`, through `vkind51`) and the accesses of a frame variable in a
 `Blk.local` block at its operand (`FrameVar49OK`, `VKVar49`); on `InitMem`, what `vkind49`
-accepts `vkind50` accepts (`vkind49_initMem`). `checkG49L_spec` is `checkG50L_spec` with `vkind49`,
+accepts `vkind51` accepts (`vkind49_initMem`). `checkG49L_spec` is `checkG51L_spec` with `vkind49`,
 and `checkG49_spec` splits off `refsLive`.
 -/
 
@@ -163,8 +163,8 @@ theorem vkindVar49_spec {lc : LocCtx} {v : Value} {nc : AddrName} {off : Int} {k
 
 /-- What `vkind49` accepted of a value that is not an entry value, and what it emits. -/
 inductive VK49 (lc : LocCtx) (g : G2In) (v : Value) : VKind2 → Prop
-  /-- A value of slice G50. -/
-  | g50 {kd : VKind2} : VK50 lc g v kd → VK49 lc g v kd
+  /-- A value of slice G51. -/
+  | g51 {kd : VKind2} : VK51 lc g v kd → VK49 lc g v kd
   /-- An access of frame variable `x` (a `Blk.local` block) at the operand `nc`, `off`. -/
   | var {x : AuxRef} {nc : AddrName} {off : Int} {kd : VKind2} :
       FrameVar49OK lc g v x nc off → VKVar49 lc v nc off kd → VK49 lc g v kd
@@ -174,14 +174,14 @@ theorem vkind49_spec {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2}
     (h : vkind49 lc g v = .ok kd) (hen : entryOp24 v.op = false) :
     (lc.temps[v.id]?).join = none ∧ VK49 lc g v kd := by
   unfold vkind49 at h
-  cases h50 : vkind50 lc g v with
+  cases h51 : vkind51 lc g v with
   | ok kd' =>
-    rw [h50] at h
+    rw [h51] at h
     cases h
-    obtain ⟨ht, hVK⟩ := vkind50_spec h50 hen
-    exact ⟨ht, .g50 hVK⟩
+    obtain ⟨ht, hVK⟩ := vkind51_spec h51 hen
+    exact ⟨ht, .g51 hVK⟩
   | error e =>
-    rw [h50] at h
+    rw [h51] at h
     simp only at h
     split at h
     · rename_i x nc off hf
@@ -192,14 +192,14 @@ theorem vkind49_spec {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2}
         exact ⟨ht, .var (frameVar49?_spec hf) (vkindVar49_spec h)⟩
     · cases h
 
-/-- On `InitMem`, what `vkind49` accepts `vkind50` accepts. -/
+/-- On `InitMem`, what `vkind49` accepts `vkind51` accepts. -/
 theorem vkind49_initMem {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (hop : v.op = .InitMem)
-    (h : vkind49 lc g v = .ok kd) : vkind50 lc g v = .ok kd := by
+    (h : vkind49 lc g v = .ok kd) : vkind51 lc g v = .ok kd := by
   unfold vkind49 at h
-  cases h50 : vkind50 lc g v with
-  | ok _ => rw [h50] at h; exact h
+  cases h51 : vkind51 lc g v with
+  | ok _ => rw [h51] at h; exact h
   | error e =>
-    rw [h50] at h
+    rw [h51] at h
     simp only at h
     split at h
     · split at h
@@ -218,7 +218,7 @@ theorem checkG33_of_49L {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option 
     (h : checkG49L lc ps bstart g = r) : checkG33 lc ps bstart g = r := by
   simpa [checkG33, checkG49L, hl] using h
 
-/-- What `checkG49L` accepted of a function with an arm64 op: G50's facts with G49's value
+/-- What `checkG49L` accepted of a function with an arm64 op: G51's facts with G49's value
 check. -/
 theorem checkG49L_spec {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}
     {tab : PcTab} {kt : KTab} (hl : lc.ctx.f.lowered = true)

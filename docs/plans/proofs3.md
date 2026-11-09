@@ -1121,13 +1121,14 @@ New run premise `Pre51a` (`G51Pre := G50Pre ∧ Pre51a`): the first argument of 
 `shiftA` has no `ROR` kind). Witness `genG51_witness` (`math/bits.RotateLeft64`: `ROR R1, R0, R0`
 of `0x0123456789abcdef` by 8; `X0` then holds `0xef0123456789abcd`). G51 accepts 6,982 functions
 (+71 over G50).
+
 **Slice G49: frame variables in `Blk.local` blocks** (`GoFV/Gen/Check49.lean`, `checkG49 lc ps
 bstart g`; proven sound, `g49_value`, `g49_initMem`, `g49_term`, `g49_nilPanic`,
 `g49_boundsPanic`, `GoFV/Proof/Gen/G49.lean`; §8 item 8, and the `PAUTO`s of item 5 whose address
-becomes an integer). G50 with G6's accesses (`MOVDaddr`, the loads and stores of G3, `LDP`, `STP`)
+becomes an integer). G51 with G6's accesses (`MOVDaddr`, the loads and stores of G3, `LDP`, `STP`)
 of a frame variable whose block is `Blk.local` (`Tables.forgeable`): a parameter or result at its
 `NAME_PARAM` operand, or a `PAUTO` whose address the function converts to an integer at its
-`NAME_AUTO` operand (`frameVar49?`, `vkindVar49`, tried when G50 rejects a value). Frame check
+`NAME_AUTO` operand (`frameVar49?`, `vkindVar49`, tried when G51 rejects a value). Frame check
 `checkVars49` in place of G6's `checkVars`: a `NAME_AUTO` window lies in the locals, a
 `NAME_PARAM` window in the function's argument area (`argEnd`: the end of its ABI's spill area,
 without the fixed frame word); windows of one operand class are pairwise disjoint and away from
@@ -1137,10 +1138,10 @@ so the variables' places are a premise of the activation, `G49Env := G28Env ∧ 
 at operand `(nc, o)`), which the machine instance (item 4) meets with these bases; each access is
 G6's case lemma at that address (`var49_addr`, `g49_addr`, `g49_load`, `g49_store`, `g49_ldp`,
 `g49_stp`), an address a `Ptr.word` related to `SP + frameOff` by `valRel_word` whatever the
-assignment. `g49_value` takes G50's `G50Pre`. Witness `genG49_witness` (`runtime.getm`'s ABI0
-wrapper: `MOVD R0, ~r0+0(FP)` stores the result into its `NAME_PARAM` operand, which G50 rejects;
+assignment. `g49_value` takes G51's `G51Pre`. Witness `genG49_witness` (`runtime.getm`'s ABI0
+wrapper: `MOVD R0, ~r0+0(FP)` stores the result into its `NAME_PARAM` operand, which G51 rejects;
 at `Addrs.fixed`, with `SP` chosen so that the operand is the block's fixed address). G49
-accepts 7,071 functions (+160 over G50). Composition (§9) is open: `EntryMatch`'s `MemInj` at
+accepts 7,142 functions (+160 over G51). Composition (§9) is open: `EntryMatch`'s `MemInj` at
 entry does not hold for a register parameter whose address is taken until genssa's entry store
 (item 8's `ParamMem`).
 
@@ -1221,7 +1222,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G47 | 6,856 (73.74%) | 204,468 |
 | G50 | 6,911 (74.33%) | 206,743 |
 | G51 | 6,982 (75.09%) | 212,374 |
-| G49 | 7,071 (76.05%) | 214,533 |
+| G49 | 7,142 (76.82%) | 220,164 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)

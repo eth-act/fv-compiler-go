@@ -1629,13 +1629,13 @@ def m0 (x : BitVec 64) : MState :=
     mem := fun _ => 0 }
 
 /-- What compiled evaluation checks on the wrapper: it holds an arm64 op; `checkG49` accepts it
-and `checkG50` does not; `b1` holds `v2` (`MOVDstore {~r0} [0] SP v8 v7`) at index 5; `R0` has
+and `checkG51` does not; `b1` holds `v2` (`MOVDstore {~r0} [0] SP v8 v7`) at index 5; `R0` has
 class 64 there and G35's table is empty; the only accessed frame variable is `~r0` (aux 3), a
 result (`Tables.forgeable`), operand `NAME_PARAM` 0, of activation 0, at `frameOff 24`; there is
 no home slot; and `stepLoc` runs `v2`, storing `x = 7` into the result's block. -/
 def gFacts : Bool :=
   lc.ctx.f.lowered &&
-    (checkG49 lc0 ps bs g).toOption == some (tab, kt) && (checkG50 lc0 ps bs g).toOption.isNone &&
+    (checkG49 lc0 ps bs g).toOption == some (tab, kt) && (checkG51 lc0 ps bs g).toOption.isNone &&
     lc.ctx.f.blocks.toList.contains 1 && (lc.ctx.f.block? 1).isSome &&
     (lc.ctx.f.value? 2).isSome && blk.values[5]? == some 2 &&
     (val 2).op == .ARM64MOVDstore && (kAt lc kt 1 blk 5).get 0 == some 64 &&
@@ -1650,7 +1650,7 @@ theorem g49_facts : gFacts = true := by
 /-- The facts of `gFacts` as hypotheses. -/
 theorem facts :
     lc.ctx.f.lowered = true ∧ checkG49 lc0 ps bs g = .ok (tab, kt) ∧
-      (checkG50 lc0 ps bs g).toOption = none ∧
+      (checkG51 lc0 ps bs g).toOption = none ∧
       1 ∈ lc.ctx.f.blocks.toList ∧ lc.ctx.f.block? 1 = some blk ∧
       lc.ctx.f.value? 2 = some (val 2) ∧ blk.values[5]? = some 2 ∧
       (val 2).op = .ARM64MOVDstore ∧ (kAt lc kt 1 blk 5).get 0 = some 64 ∧
@@ -1822,11 +1822,12 @@ theorem g49Inv0 (x : BitVec 64) {K : KMap} (h0 : K.get 0 = some 64) : G3Inv E lc
     · cases hv
   slots := by intro k v h; simp [s0] at h
 
-/-- The per-value premises of `v2`, a store: none of G50's applies. -/
-theorem pre2 (hop : (val 2).op = .ARM64MOVDstore) : G50Pre lc (s0 7) (val 2) := by
+/-- The per-value premises of `v2`, a store: none of G51's applies. -/
+theorem pre2 (hop : (val 2).op = .ARM64MOVDstore) : G51Pre lc (s0 7) (val 2) := by
   have hne : ∀ o : Op, o ≠ .ARM64MOVDstore → (val 2).op ≠ o := fun o h h' =>
     h (h'.symm.trans hop)
-  refine ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨?_, ?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_, ?_⟩, ?_⟩
+  refine ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨?_, ?_, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_⟩, ?_, ?_⟩, ?_⟩,
+    ?_, ?_⟩
   · intro h; rcases h with h | h <;> exact absurd h (hne _ (by decide))
   · intro _ _ _ hl; rw [hop] at hl; cases hl
   · intro h; exact absurd h (hne _ (by decide))
@@ -1841,16 +1842,18 @@ theorem pre2 (hop : (val 2).op = .ARM64MOVDstore) : G50Pre lc (s0 7) (val 2) := 
   · intro _ _ _ hl; rw [hop] at hl; simp [fp2Of] at hl
   · intro _ _ _ _ hl; rw [hop] at hl; simp [fp3Of] at hl
   · intro _ _ _ _ hp; rw [hop] at hp; simp [pairOp50] at hp
+  · intro h; rcases h with h | h <;> exact absurd h (hne _ (by decide))
+  · intro h; exact absurd h (hne _ (by decide))
 
 /-- **G49 on the `getm` wrapper** (`runtime.getm`'s ABI0 wrapper, which calls the ABIInternal
 `getm` and stores its result `R0` into the result `~r0`, `MOVD R0, ~r0+0(FP)`): the store `v2` of
-a result at its `NAME_PARAM` operand, which `checkG50` rejects (`frame variable operand class`) and
+a result at its `NAME_PARAM` operand, which `checkG51` rejects (`frame variable operand class`) and
 `checkG49` accepts. From `s0`, with `x = 7` in `R0` and the result's `local` block in memory,
 `stepLoc` runs `v2`, and `g49_value` relates it to a machine run of its `MOVD R0, 24(RSP)`, at the
 block's address under `Addrs.fixed`, to a state related before `v9`, under an activation extending
 `E` that is again a `G49Env`. -/
 theorem genG49_witness :
-    (checkG50 lc0 ps bs g).toOption = none ∧
+    (checkG51 lc0 ps bs g).toOption = none ∧
       ∃ s1 E1 m1, stepLoc default lc (s0 7) (val 2) = .ok s1 ∧
         E.Extends E1 ∧ G49Env lc g L ps 0 tab E1 ∧ PStar GenG2.H0 L ps.toList 0 (m0 7) m1 ∧
         LocMatch E1 s1 1 6 m1 := by

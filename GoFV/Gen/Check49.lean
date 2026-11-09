@@ -1,4 +1,4 @@
-import GoFV.Gen.Check50
+import GoFV.Gen.Check51
 
 variable [GoFV.SSA.Sem.Addrs]
 
@@ -29,8 +29,8 @@ function's argument area (`argEnd`: the end of its ABI's spill area, without the
 word); windows of one operand class are pairwise disjoint and away from the home slots of that
 class (8 bytes each).
 
-`checkG49 lc ps bstart g` is slice G50 (`GoFV/Gen/Check50.lean`, which G49 follows: G48 is
-reserved) with these values (tried when G50 rejects a value) and this frame check.
+`checkG49 lc ps bstart g` is slice G51 (`GoFV/Gen/Check51.lean`, which G49 follows: G48 is
+reserved) with these values (tried when G51 rejects a value) and this frame check.
 -/
 
 namespace GoFV.Gen.Check
@@ -96,10 +96,10 @@ def vkindVar49 (lc : LocCtx) (v : Value) (nc : AddrName) (off : Int) : Except St
     return .prog ⟨plain .STP (· == pairA rx ry) (slotA · nc off), "STP"⟩
   | _ => throw s!"v{v.id}: frame variable aux on {v.op.name}"
 
-/-- What `v` emits in G49, or why it is outside the slice: G50's kinds, then the accesses of
+/-- What `v` emits in G49, or why it is outside the slice: G51's kinds, then the accesses of
 frame variables in `Blk.local` blocks. -/
 def vkind49 (lc : LocCtx) (g : G2In) (v : Value) : Except String VKind2 :=
-  match vkind50 lc g v with
+  match vkind51 lc g v with
   | .ok kd => .ok kd
   | .error e =>
     match frameVar49? lc g v with
@@ -147,7 +147,7 @@ def checkVars49 (lc : LocCtx) (g : G2In) : Except String Unit := do
   unless ws.all fun w => slots.all (winApart49 w) do
     throw "frame variable over a spill slot"
 
-/-- G50's check with G49's value check and frame check. -/
+/-- G51's check with G49's value check and frame check. -/
 def checkG49L (lc : LocCtx) (ps : Array Prog) (bstart : ID → Option Nat) (g : G2In) :
     Except String (PcTab × KTab) :=
   if lc.ctx.f.lowered then do

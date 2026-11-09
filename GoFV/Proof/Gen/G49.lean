@@ -1,4 +1,4 @@
-import GoFV.Proof.Gen.G50
+import GoFV.Proof.Gen.G51
 import GoFV.Proof.Gen.Spec49
 
 variable [GoFV.SSA.Sem.Addrs]
@@ -7,7 +7,7 @@ variable [GoFV.SSA.Sem.Addrs]
 # Slice G49 of the genssa validator: frame variables in `Blk.local` blocks
 (`docs/plans/proofs3.md` §8, item 8)
 
-`checkG49 lc` (`GoFV/Gen/Check49.lean`) is G50 with G6's accesses (`MOVDaddr`, the loads and
+`checkG49 lc` (`GoFV/Gen/Check49.lean`) is G51 with G6's accesses (`MOVDaddr`, the loads and
 stores of G3, `LDP`, `STP`) of a frame variable whose block is `Blk.local` (`Tables.forgeable`: a
 parameter or result, at its `NAME_PARAM` operand, or a `PAUTO` whose address the function converts
 to an integer, at its `NAME_AUTO` operand).
@@ -25,8 +25,8 @@ injected address, `var49_addr`). An address is a `Ptr.word` related to `SP + fra
 load's entry (`ld_uokl`), a pair load's other entries (`uokl_pair`), the entries an address keeps
 (`uokl_keep`), and is empty after a wider load or a store.
 
-`g49_value` takes G50's premise `G50Pre`; `g49_initMem`, `g49_term`, `g49_nilPanic`,
-`g49_boundsPanic` are G50's statements over `checkG49`, under `G49Env`.
+`g49_value` takes G51's premise `G51Pre`; `g49_initMem`, `g49_term`, `g49_nilPanic`,
+`g49_boundsPanic` are G51's statements over `checkG49`, under `G49Env`.
 -/
 
 namespace GoFV.Proof.Gen
@@ -517,14 +517,14 @@ theorem uStep35_nil {lc : LocCtx} {v : Value} {L : List (Nat × Nat × Bool)}
 
 /-! ## One value -/
 
-/-- What a value of G49's kinds is: G50's, or an access of a frame variable in a `local` block. -/
+/-- What a value of G49's kinds is: G51's, or an access of a frame variable in a `local` block. -/
 theorem vk49_ops {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK49 lc g v kd) :
-    VK50 lc g v kd ∨ ∃ x nc off, FrameVar49OK lc g v x nc off ∧ VKVar49 lc v nc off kd := by
+    VK51 lc g v kd ∨ ∃ x nc off, FrameVar49OK lc g v x nc off ∧ VKVar49 lc v nc off kd := by
   cases h with
-  | g50 h => exact .inl h
+  | g51 h => exact .inl h
   | var hfv hv => exact .inr ⟨_, _, _, hfv, hv⟩
 
-/-- One value of G49's kinds: `vk50_step`'s statement under `G49Env`. -/
+/-- One value of G49's kinds: `vk51_step`'s statement under `G49Env`. -/
 theorem vk49_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat → BitVec 64}
     {text : BitVec 64} {az ez : Int} {ps : Array Prog} {ret : BitVec 64} {tab : PcTab}
     {E : MatchEnv} {bid : ID} {i j j' : Nat} {id : ID} {v : Value} {s s' : LocState}
@@ -539,7 +539,7 @@ theorem vk49_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     (hmem : ∀ x, (v.op = .ARM64MOVDnop ∨ v.op = .ARM64MOVDreg) → v.args[0]? = some x →
       ∃ r c, regHome? lc x = some r ∧ cls (lc.ty x) = some c ∧
         (r, c, lc.signOf lc.ctx.f.valueTab.size x) ∈ L)
-    (hpre : G50Pre lc s v)
+    (hpre : G51Pre lc s v)
     (hcall : CallOK H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
     (hcallz : CallOKZ H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
     (hicall : ICallOK H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
@@ -552,15 +552,15 @@ theorem vk49_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
       UOKL m' (uStep35 lc L v) := by
   obtain ⟨hE28, hvars⟩ := hE
   cases hVK with
-  | g50 hVK50 =>
-    obtain ⟨E', m', hx, hE', h⟩ := vk50_step hE28 F hhome hcf hv hVK50 hvs htemp hj hj' hreads
+  | g51 hVK51 =>
+    obtain ⟨E', m', hx, hE', h⟩ := vk51_step hE28 F hhome hcf hv hVK51 hvs htemp hj hj' hreads
       hm hinv hL hmem hpre hcall hcallz hicall hwb hclo hgetg hmeq hs
     exact ⟨E', m', hx, ⟨hE', hvars.extend hx⟩, h⟩
   | var hfv hVar =>
     obtain ⟨hlcE, -, -, -, -, -, -, -, -, -, hF⟩ := hE28.env.env.env.env
     have hR := kread_of_reads hreads
     have hsz := slot_sizes hlcE hcf hinv.slots
-    have h14 : G14Pre lc s v := hpre.1.1.1.1.1.1
+    have h14 : G14Pre lc s v := hpre.1.1.1.1.1.1.1
     have hι := var49_addr hfv hv hvars
     have hx := hfv.aux
     have hvar := hfv.var
@@ -656,7 +656,7 @@ theorem vk49_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
 theorem vk49_nil {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK49 lc g v kd)
     (hop : v.op = .ARM64LoweredNilCheck) : VK7 lc g v kd := by
   cases h with
-  | g50 h => exact vk50_nil h hop
+  | g51 h => exact vk51_nil h hop
   | var _ hv =>
     cases hv with
     | addr h' => rw [hop] at h'; cases h'
@@ -669,7 +669,7 @@ theorem vk49_nil {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK49 lc
 theorem vk49_pb {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK49 lc g v kd)
     (hop : pbOp v.op = true) : VK28 lc g v kd := by
   cases h with
-  | g50 h => exact vk50_pb h hop
+  | g51 h => exact vk51_pb h hop
   | var _ hv =>
     cases hv with
     | addr h' => rw [h'] at hop; cases hop
@@ -683,7 +683,7 @@ theorem vk49_pb {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK49 lc 
 
 /-! ## The theorems on G49's check -/
 
-/-- G50's values and G49's accesses of frame variables under G49's check, under `G50Pre`. -/
+/-- G51's values and G49's accesses of frame variables under G49's check, under `G51Pre`. -/
 theorem g49L_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
     {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s s' : LocState} {m : MState}
@@ -692,7 +692,7 @@ theorem g49L_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
     (hen : entryOp24 v.op = false) (hm : LocMatch E s bid i m)
     (hinv : G3Inv E lc (kAt lc kt bid blk i) s) (hu : UOKL m (uL35 lc (uIn35 lc bid) blk i))
-    (hpre : G50Pre lc s v)
+    (hpre : G51Pre lc s v)
     (hcall : CallOK H E g L lc s s' v m) (hcallz : CallOKZ H E g L lc s s' v m)
     (hicall : ICallOK H E L ret lc s s' v m)
     (hwb : WbOK H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
@@ -703,7 +703,7 @@ theorem g49L_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {
   cases hl : lc.ctx.f.lowered with
   | false =>
     obtain ⟨E', m', hx, hE', h1, h2, h3, -⟩ := g33_value (checkG33_of_49L hl hc) hE.env hbid hb
-      hi hv hen hm hinv (by rw [uL31_nl hl]; intro e he; cases he) hpre.1.1.1.1.1.1 hcall hcallz
+      hi hv hen hm hinv (by rw [uL31_nl hl]; intro e he; cases he) hpre.1.1.1.1.1.1.1 hcall hcallz
       hicall hwb hclo hgetg hmeq hs
     refine ⟨E', m', hx, ⟨hE', hE.vars.extend hx⟩, h1, h2, h3, ?_⟩
     rw [uL35_nl hl]
@@ -743,7 +743,7 @@ theorem g49L_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {
     (fun x hop hx => movdOK35_spec hmovd hbid hb hi hv hop hx)
     hpre hcall hcallz hicall hwb hclo hgetg hmeq hs
 
-/-- `InitMem` under G49's check: `g50L_initMem`'s statement. -/
+/-- `InitMem` under G49's check: `g51L_initMem`'s statement. -/
 theorem g49L_initMem {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
     {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s s' : LocState} {m : MState}
@@ -775,8 +775,8 @@ theorem g49L_initMem {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   cases hv'
   rw [hvk] at hkd
   have hkd := vkind49_initMem hop hkd
-  rw [vkind50_initMem hop, vkind47_initMem hop, vkind46_initMem hop, vkind45_initMem hop,
-    vkind44_initMem hop] at hkd
+  rw [vkind51_initMem hop, vkind50_initMem hop, vkind47_initMem hop, vkind46_initMem hop,
+    vkind45_initMem hop, vkind44_initMem hop] at hkd
   obtain ⟨-, -, ht, -, hh, hmt, rfl⟩ := vkind43_initMem hkd hop
   have hj : E.pcOf bid i = pcAt text c.cx.ps.toList ((js ++ [e]).getD i 0) := by
     rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some]
@@ -919,9 +919,9 @@ theorem g49L_term {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Pr
 
 /-! ## The slice: the theorems on `checkG49 lc`, on `liveCtx lc` -/
 
-/-- **G49, values.** `g50_value`'s statement over `checkG49` under `G49Env` (G28's activation with
-the accessed frame variables in `Blk.local` blocks at their operands, `VarsAt49`), under G50's
-premise `G50Pre`. -/
+/-- **G49, values.** `g51_value`'s statement over `checkG49` under `G49Env` (G28's activation with
+the accessed frame variables in `Blk.local` blocks at their operands, `VarsAt49`), under G51's
+premise `G51Pre`. -/
 theorem g49_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
     {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s s' : LocState} {m : MState}
@@ -931,7 +931,7 @@ theorem g49_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
     (hen : entryOp24 v.op = false) (hm : LocMatch E s bid i m)
     (hinv : G3Inv E (liveCtx lc) (kAt (liveCtx lc) kt bid blk i) s)
     (hu : UOKL m (uL35 (liveCtx lc) (uIn35 (liveCtx lc) bid) blk i))
-    (hpre : G50Pre (liveCtx lc) s v)
+    (hpre : G51Pre (liveCtx lc) s v)
     (hcall : CallOK H E g L (liveCtx lc) s s' v m) (hcallz : CallOKZ H E g L (liveCtx lc) s s' v m)
     (hicall : ICallOK H E L ret (liveCtx lc) s s' v m)
     (hwb : WbOK H E g L (liveCtx lc) s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
@@ -942,7 +942,7 @@ theorem g49_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
   g49L_value (checkG49_spec hc).2 hE hbid hb hi hv hen hm hinv hu hpre hcall hcallz hicall hwb hclo
     hgetg hmeq hs
 
-/-- **G49, `InitMem`.** `g50_initMem`'s statement over `checkG49`. -/
+/-- **G49, `InitMem`.** `g51_initMem`'s statement over `checkG49`. -/
 theorem g49_initMem {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
     {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s s' : LocState} {m : MState}
@@ -958,7 +958,7 @@ theorem g49_initMem {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} 
       UOKL m' (uL35 (liveCtx lc) (uIn35 (liveCtx lc) bid) blk (i + 1)) :=
   g49L_initMem (checkG49_spec hc).2 hE hl hbid hb hi hv hop hm hinv hpre hs
 
-/-- **G49, nil panics.** `g50_nilPanic`'s statement over `checkG49`. -/
+/-- **G49, nil panics.** `g51_nilPanic`'s statement over `checkG49`. -/
 theorem g49_nilPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab}
     {E : MatchEnv} {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState}
@@ -972,7 +972,7 @@ theorem g49_nilPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     e = .nilDeref ∧ ∃ m', PStar H L ps.toList ret m m' ∧ PPanics H L ps.toList ret m' e :=
   g49L_nilPanic (checkG49_spec hc).2 hE hbid hb hi hv hop hm hinv hs
 
-/-- **G49, bounds panics.** `g50_boundsPanic`'s statement over `checkG49`. -/
+/-- **G49, bounds panics.** `g51_boundsPanic`'s statement over `checkG49`. -/
 theorem g49_boundsPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab}
     {E : MatchEnv} {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState}
@@ -986,7 +986,7 @@ theorem g49_boundsPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Li
     ∃ e' m', BoundsAgree e e' ∧ PStar H L ps.toList ret m m' ∧ PPanics H L ps.toList ret m' e' :=
   g49L_boundsPanic (checkG49_spec hc).2 hE hbid hb hi hv hop hm hinv hbok hs
 
-/-- **G49, terminators.** `g50_term`'s statement over `checkG49`. -/
+/-- **G49, terminators.** `g51_term`'s statement over `checkG49`. -/
 theorem g49_term {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
     {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {e : Edge} {s s' : LocState} {m : MState}
