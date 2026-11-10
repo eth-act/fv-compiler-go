@@ -2357,6 +2357,20 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   write rewrites the overlap with the same bytes). Witness `mvq2_lower` (`Move [48]` as
   `FMOVQstore [32]` on `FSTPQ`).
 
+- **Stores of `0`** (`:336`, `:337`, `:338`, `:351`, `:373`; `STP` folds `:770`, `:897`; #385;
+  `RuleL.zeroOp`, `ValReplay` `ReplayInvL.zeroDef`, `SimMoveQ.zeroSt_lower_eval`). `Zero [n]`
+  with `n` 1, 2, 4 or 8 lowers to `MOV{B,H,W,D}store ptr (MOVDconst [0]) mem` and `Zero [16]` to
+  `STP ptr (MOVDconst [0]) (MOVDconst [0]) mem`. The validator replays the event as a fresh
+  `MOVDconst [0]` term and the store at the `Zero` (`zeroDef`, `zConst`), folds offsets and
+  symbols or frame variables into the store as into a 128-bit one (`qFold`, guarded by the
+  source op in `atomDef1`) and pairs the store with the `Zero` (`zeroLower`). The replay relates
+  them by `ZeroRefL`: the address the `Zero`'s pointer at the store's offset and aux, the values
+  the word `0` (`zConst_den`), the memory the `Zero`'s (`ArgTermZL` in `AtomArgsRefL`). Unlike a
+  `Move`, whose bytes may be partly `poison`, the stores write defined zero bytes
+  (`storeBytes_zero`), which is what `Zero` writes. A narrowing `Copy` never holds the stored
+  word (`zero_not_narrow`). Witness `zst_lower` (`Zero [8]` as `MOVDstore {g}`, `Zero [16]` as
+  `STP {k}`).
+
 - **Compares with a pointer** (#385; module docs of `GoFV/Proof/Low/Rules/CmpNeg.lean` and
   `Invert.lean`). `CMP` compares a pointer without a concrete address with an integer as unequal
   (`Arm64.cmp`, `Z` clear). While `CMN` and `CMPshift*` read registers only (`Arm64.cmp1`/`cmp2`),

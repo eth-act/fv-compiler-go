@@ -334,10 +334,10 @@ theorem atomDef_one {tabs : Tables} {f : Func} {M : Defs} {v : ID} {defs : List 
   split at h
   · rename_i x _ u' hx
     unfold atomDef1 at h
-    split at h
-    · rename_i hc
-      cases h
-      simp only [Bool.and_eq_true, Bool.or_eq_true] at hc
+    rw [Option.ite_none_right_eq_some] at h
+    obtain ⟨hc, h⟩ := h
+    cases h
+    · simp only [Bool.and_eq_true, Bool.or_eq_true] at hc
       obtain ⟨⟨⟨⟨⟨-, -⟩, ht⟩, ht'⟩, hty⟩, hk⟩ := hc
       simp only [Bool.not_eq_true'] at ht ht'
       refine ⟨x, hx, ht, ht', beq_iff_eq.1 hty, ?_⟩
@@ -359,7 +359,6 @@ theorem atomDef_one {tabs : Tables} {f : Func} {M : Defs} {v : ID} {defs : List 
           intro h2
           simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at h2
           exact .inl ⟨a, rfl, h2.imp id fun h => ⟨h.1.1, h.1.2, h.2⟩⟩
-    · cases h
   · rename_i x _ u' s hx
     rw [Option.ite_none_right_eq_some] at h
     obtain ⟨-, h⟩ := h
@@ -377,7 +376,9 @@ theorem atomDef_two {tabs : Tables} {f : Func} {M : Defs} {v : ID} {defs : List 
   split at h
   · rename_i x _ u' hx
     unfold atomDef1 at h
-    split at h <;> cases h
+    rw [Option.ite_none_right_eq_some] at h
+    obtain ⟨-, h⟩ := h
+    cases h
   · rename_i x _ u' s' hx
     rw [Option.ite_none_right_eq_some] at h
     obtain ⟨hc, h⟩ := h
@@ -1773,6 +1774,40 @@ theorem atomPair_moveQ {u w : Value} (h : atomPair tabs u w = true) (hu : u.op =
       · cases hs
   · rw [(zeroLower_facts h1).1] at hu; cases hu
 
+/-- A `Zero` paired with a store of `zStore`'s: the store lowers it (`zeroLower`). -/
+theorem atomPair_zero {u w : Value} (h : atomPair tabs u w = true) (hu : u.op = .Zero)
+    (hw : zStore w.op = true) : zeroLower tabs u w = true := by
+  cases hq : zeroLower tabs u w
+  case true => rfl
+  exfalso
+  unfold atomPair at h
+  rw [hq] at h
+  simp only [Bool.or_false, Bool.and_eq_true, Bool.or_eq_true] at h
+  obtain ⟨⟨⟨h1, -⟩, -⟩, -⟩ := h
+  rcases h1 with (((((⟨((⟨⟨h1 | h1, -⟩, -⟩ | h1) | h1), -⟩ | h1) | h1) | h1) | h1) | h1)
+  · rw [← beq_iff_eq.1 h1, hu] at hw; cases hw
+  · rcases zStore_cases hw with hs | hs
+    · rw [(renameOp_stSize h1).2] at hs; cases hs
+    · rw [hu, hs] at h1; exact absurd h1 (by decide)
+  · rw [memLower_op h1] at hu; cases hu
+  · rcases bulkLower_op h1 with h | h | h | h <;> rw [h] at hw <;> cases hw
+  · unfold addrLower at h1; simp only [Bool.and_eq_true, beq_iff_eq] at h1
+    rw [h1.1.1.1.1.1] at hu; cases hu
+  · unfold pbLower at h1; simp only [Bool.and_eq_true, beq_iff_eq] at h1
+    rw [h1.1.1.1] at hu; cases hu
+  · unfold idxLower at h1; simp only [Bool.and_eq_true, beq_iff_eq] at h1
+    rw [h1.1.1.1.1.1] at hu; cases hu
+  · rw [(moveQLower_qStore h1).1] at hu; cases hu
+  · rw [(moveQ2Lower_facts h1).1] at hu; cases hu
+
+/-- A store lowering a `Zero` fits no argument but its value (argument 1, `argFitTy`). -/
+theorem argFitTy_zStore {v : Value} (h : zStore v.op = true) {i : Nat} (hi : i ≠ 1) :
+    argFitTy tabs v i = none := by
+  unfold zStore at h
+  simp only [Bool.or_eq_true, beq_iff_eq] at h
+  rcases h with (((h | h) | h) | h) | h <;>
+    simp [argFitTy, atomFitTy, stFitTy, callLead, stValW, stIdxValW, h, hi]
+
 /-- A 128-bit store fits no argument (`argFitTy`). -/
 theorem argFitTy_qStore {v : Value} (h : qStore v.op = true) (i : Nat) :
     argFitTy tabs v i = none := by
@@ -2032,9 +2067,9 @@ theorem moveSel_facts {v : ID} {o : Op} {p s : Value} (h : moveSel tabs M v o p 
   obtain ⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩ := h
   exact ⟨h1, h2, h3, h4, h5, h6, h7, Ty.eq_of_beq h8⟩
 
-theorem any_moveAux {o : Option Value} {k : Int64}
-    (h : o.any (fun a => a.op == .Move && a.auxInt == k) = true) :
-    ∃ a, o = some a ∧ a.op = .Move ∧ a.auxInt = k := by
+theorem any_moveAux {o : Option Value} {op : Op} {k : Int64}
+    (h : o.any (fun a => a.op == op && a.auxInt == k) = true) :
+    ∃ a, o = some a ∧ a.op = op ∧ a.auxInt = k := by
   cases o with
   | none => cases h
   | some a =>
@@ -2090,33 +2125,38 @@ theorem moveDef_facts {f : Func} {v : ID} {defs : List Value} {u : Value} {ts : 
     · cases h
   · cases h
 
-/-- The atom `x` replayed from a `Move` of `D₀` before its 128-bit lowering: its arguments refine
-the `Move`'s (`ArgsRefL`; neither indexed nor a 128-bit store, no frame address). -/
-theorem move_argsRef {a x : Value} (haop : a.op = .Move) (hxop : x.op = .Move)
+/-- The atom `x` replayed from a `Move` or `Zero` of `D₀` before its lowering to stores: its
+arguments refine the source's (`ArgsRefL`; neither indexed nor a store lowering a `Move` or
+`Zero`, no frame address). -/
+theorem move_argsRef {a x : Value} (haop : a.op ≠ .Store) (hxop : x.op = .Move ∨ x.op = .Zero)
     (h : argFree tabs x = true ∨ AtomRefL tabs D₀ M C a x) :
     x.args.size = a.args.size ∧ ∀ i < a.args.size, C x.args[i]! ∧ ∀ n, ∃ m, ∀ ρ,
       TypedL true D₀ tabs ρ → FrameVals tabs 0 D₀ ρ →
         Sem.Refines (denL true D₀ tabs ρ n a.args[i]!) (denL true M.get? tabs ρ m x.args[i]!) := by
-  rcases h with hf | ⟨hsz, hr, -⟩ | hix | hmv | hmv2
-  · rw [(argFree_cases hf).1] at hxop; cases hxop
+  rcases h with hf | ⟨hsz, hr, -⟩ | hix | hmv | hmv2 | hz
+  · rcases hxop with hxop | hxop <;> rw [(argFree_cases hf).1] at hxop <;> cases hxop
   · refine ⟨hsz, fun i hi => ⟨(hr i hi).1, fun n => ?_⟩⟩
     obtain ⟨m, hm⟩ := (hr i hi).2 n
     exact ⟨m, fun ρ hρ hF => by
-      have := hm ρ hρ hF; rwa [stArg_of_ne (by rw [haop]; decide)] at this⟩
+      have := hm ρ hρ hF; rwa [stArg_of_ne haop] at this⟩
   · obtain ⟨⟨p, s⟩, hp⟩ := Option.isSome_iff_exists.1 hix.2.2.1
-    rw [hxop] at hp; cases hp
-  · have := hmv.1.2.2.1; rw [hxop] at this; cases this
-  · have := moveQ2Lower_qStore hmv2.1; rw [hxop] at this; cases this
+    rcases hxop with hxop | hxop <;> rw [hxop] at hp <;> cases hp
+  · have := hmv.1.2.2.1
+    rcases hxop with hxop | hxop <;> rw [hxop] at this <;> cases this
+  · have := moveQ2Lower_qStore hmv2.1
+    rcases hxop with hxop | hxop <;> rw [hxop] at this <;> cases this
+  · have := hz.2.2.1
+    rcases hxop with hxop | hxop <;> rw [hxop] at this <;> cases this
 
-/-- Replacing the atom `x` at `v` (a `Move` of `D₀`) by the 128-bit store `u` lowering it, or the
-outer store of two, of the same type, whose relation to the `Move` (`MoveRefL`, `MoveRefL2`)
-`hmv` gives. -/
+/-- Replacing the atom `x` at `v` (a `Move` or `Zero` of `D₀`) by the 128-bit store `u` lowering
+it, the outer store of two, or the store of `0` lowering the `Zero`, of the same type, whose
+relation to the source (`MoveRefL`, `MoveRefL2`, `ZeroRefL`) `hmv` gives. -/
 theorem ReplayInvL.putMove {v : ID} {x u : Value} (hI : ReplayInvL tabs D₀ C₀ M C)
     (hx : M.get? v = some x) (ht : termVL tabs x = false) (ht' : termVL tabs u = false)
     (hty : u.type = x.type) (hcl : C v → ∀ a ∈ u.args, C a) (hvD : (D₀ v).isSome = true)
     (hmv : ∀ a, D₀ v = some a → (argFree tabs x = true ∨ AtomRefL tabs D₀ M C a x) →
       (MoveRefL tabs D₀ M C a u ∧ (moveQOp a.auxInt).isSome = true) ∨
-        MoveRefL2 tabs D₀ M C a u) :
+        MoveRefL2 tabs D₀ M C a u ∨ ZeroRefL tabs D₀ M C a u) :
     ReplayInvL tabs D₀ C₀ (M.put v u) C where
   closed := put_closed hcl hI.closed
   typed := fun ρ h hF => put_typed hx hty (by rw [ht, ht']) (hI.typed ρ h hF)
@@ -2131,7 +2171,8 @@ theorem ReplayInvL.putMove {v : ID} {x u : Value} (hI : ReplayInvL tabs D₀ C�
       rw [hx] at ha'; cases ha'
       exact ⟨u, by rw [get?_put]; simp, ht',
         .inr (.inr (.inr ((hmv a hy hrest).imp (fun h => ⟨h.1.step (fun _ h => h) hI.typed hstep,
-          h.2⟩) fun h => h.step (fun _ h => h) hI.typed hstep hkeep)))⟩
+          h.2⟩) (Or.imp (fun h => h.step (fun _ h => h) hI.typed hstep hkeep)
+            fun h => h.step (fun _ h => h) hI.typed hstep))))⟩
     · exact ⟨a', by rw [get?_put]; simp [hyv, ha'], hat, hrest.imp id fun hr =>
         hr.step (fun _ h => h) hI.typed hstep hkeep⟩
 
@@ -2220,7 +2261,7 @@ theorem ReplayInvL.moveDef {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : ID}
         · exact .inl (hxa _ (argMem (by omega)))
       · exact absurd hv.symm hlv
     · have haop := hsrc a ha
-      obtain ⟨hsz, hr⟩ := move_argsRef haop hxop hrest
+      obtain ⟨hsz, hr⟩ := move_argsRef (by rw [haop]; decide) (.inl hxop) hrest
       have ha3 : a.args.size = 3 := by omega
       have hP : P := hPx (C1 := fun y => C y ∨ (P ∧ y = l.id))
         (fun z hz => hz.imp id (·.1)) (hr 1 (by omega)).1 (hr 2 (by omega)).1
@@ -2287,7 +2328,7 @@ theorem ReplayInvL.moveDef {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : ID}
       · exact absurd hv.symm hs0v
       · exact absurd hv.symm hs1v
     · have haop := hsrc a ha
-      obtain ⟨hsz, hr⟩ := move_argsRef haop hxop hrest
+      obtain ⟨hsz, hr⟩ := move_argsRef (by rw [haop]; decide) (.inl hxop) hrest
       have ha3 : a.args.size = 3 := by omega
       have hP : P := hPx
         (C1 := fun y => ((C y ∨ (P ∧ y = p.id)) ∨ (P ∧ y = s0.id)) ∨ (P ∧ y = s1.id))
@@ -2325,6 +2366,122 @@ theorem ReplayInvL.moveDef {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : ID}
     · rw [rename_den hx3' hxt hut, denL_put_fresh hk1 hI2.closed n y (.inl (.inl hy)),
         denL_put_fresh hk0 hI1.closed n y (.inl hy), denL_put_fresh hpk hI.closed n y hy]
       exact Sem.Refines.refl _
+
+/-! ### A store of `0` lowering a `Zero` (`zeroDef`) -/
+
+/-- What `zConst` says. -/
+theorem zConst_facts {v : ID} {c : Value} (h : zConst tabs M v c = true) :
+    c.op = .ARM64MOVDconst ∧ c.auxInt = 0 ∧ c.aux = none ∧ c.args.size = 0 ∧ c.id ≠ v ∧
+      M.get? c.id = none ∧ termVL tabs c = true ∧ shpL tabs c.type = .int .w64 := by
+  unfold zConst at h
+  simp only [Bool.and_eq_true, beq_iff_eq, bne_iff_ne, ne_eq, Option.isNone_iff_eq_none] at h
+  obtain ⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩ := h
+  exact ⟨h1, h2, h3, h4, h5, h6, h7, Ty.eq_of_beq h8⟩
+
+/-- The `MOVDconst [0]` term of `zConst`, at the 64-bit integer shape, denotes the word `0`. -/
+theorem zConst_den {D : ID → Option Value} {c : Value} (hc : D c.id = some c)
+    (hco : c.op = .ARM64MOVDconst) (hck : c.auxInt = 0) (hcx : c.aux = none)
+    (hct : termVL tabs c = true) (hsh : shpL tabs c.type = .int .w64) (ρ : ID → Val) (n : Nat) :
+    denL true D tabs ρ (n + 1) c.id = .i64 0 := by
+  rw [denT_succ hc hct, hco, hck, hcx, hsh]
+  rfl
+
+/-- What `zeroDef` says. -/
+theorem zeroDef_facts {f : Func} {v : ID} {defs : List Value} {u c : Value}
+    (h : zeroDef tabs f M v defs = some (u, c)) :
+    ∃ x, M.get? v = some x ∧ x.op = .Zero ∧ x.args.size = 2 ∧ termVL tabs x = false ∧
+      termVL tabs u = false ∧ u.type = x.type ∧ u.auxInt = 0 ∧ u.aux = none ∧
+      zConst tabs M v c = true ∧
+      (∃ a, f.value? v = some a ∧ a.op = .Zero ∧ a.auxInt = x.auxInt) ∧
+      ∃ o k, zeroOp x.auxInt = some (o, k) ∧ u.op = o ∧
+        (u.args = #[x.args[0]!, c.id, x.args[1]!] ∨
+          u.args = #[x.args[0]!, c.id, c.id, x.args[1]!]) := by
+  unfold zeroDef at h
+  split at h
+  · rename_i x _ u0 c0 hx
+    split at h
+    · rename_i hc
+      simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at hc
+      obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, -⟩, hxop⟩, hx2⟩, hxt⟩, hut⟩, hty⟩, hai⟩, hax⟩, hzc⟩, hfv⟩ := hc
+      split at h
+      · rename_i o k hq
+        rw [Option.ite_none_right_eq_some] at h
+        obtain ⟨hc2, h⟩ := h
+        cases h
+        simp only [Bool.and_eq_true, beq_iff_eq] at hc2
+        obtain ⟨huo, hua⟩ := hc2
+        refine ⟨x, hx, hxop, hx2, hxt, hut, hty, hai, hax, hzc, any_moveAux hfv, o, k, hq, huo,
+          ?_⟩
+        split at hua
+        · exact .inl hua
+        · exact .inr hua
+      · cases h
+    · cases h
+  · cases h
+
+/-- **A `Zero` lowered to a store of `0`** (`zeroDef`): the fresh `MOVDconst [0]` term
+(`ReplayInvL.fresh`), then the store at the `Zero`, related to it by `ZeroRefL` (`zConst_den`);
+every denotation of `C` stays. -/
+theorem ReplayInvL.zeroDef {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : ID} {defs : List Value}
+    {u c : Value} (hI : ReplayInvL tabs D₀ C₀ M C)
+    (h : zeroDef tabs f M v defs = some (u, c)) :
+    ∃ C', ReplayInvL tabs D₀ C₀ ((M.put c.id c).put v u) C' ∧
+      (∀ y, C y → C' y) ∧ ∀ ρ, TypedL true M.get? tabs ρ → FrameVals tabs 0 D₀ ρ → ∀ n y, C y →
+        Sem.Refines (denL true M.get? tabs ρ n y)
+          (denL true ((M.put c.id c).put v u).get? tabs ρ n y) := by
+  obtain ⟨x, hx, hxop, hx2, hxt, hut, hty, hai, hax, hzc, ⟨a0, ha0, ha0op, -⟩, o, k, hq, huo,
+    hua⟩ := zeroDef_facts h
+  obtain ⟨hco, hck, hcx, hca, hcv, hcn, hct, hcsh⟩ := zConst_facts hzc
+  have hvD : (D₀ v).isSome = true := by rw [hD, ha0]; rfl
+  have hI1 := hI.fresh (P := True) hcn hct fun _ a ha => by
+    obtain ⟨i, hi, -⟩ := Array.mem_iff_getElem.1 ha
+    omega
+  have hx1 : (M.put c.id c).get? v = some x := by rw [get?_put]; simp [Ne.symm hcv, hx]
+  have hc1 : (M.put c.id c).get? c.id = some c := by rw [get?_put]; simp
+  have hzs : zStore u.op = true := by rw [huo]; exact (zeroOp_some hq).1
+  have hu3 : 3 ≤ u.args.size := by rcases hua with hua | hua <;> rw [hua] <;> simp
+  have hu0 : u.args[0]! = x.args[0]! := by rcases hua with hua | hua <;> rw [hua] <;> rfl
+  have hul : u.args[u.args.size - 1]! = x.args[1]! := by
+    rcases hua with hua | hua <;> rw [hua] <;> rfl
+  have huv : ∀ i, i + 2 < u.args.size → u.args[i + 1]! = c.id := fun i hi => by
+    rcases hua with hua | hua <;> rw [hua] at hi ⊢
+    · obtain rfl : i = 0 := by simp at hi; omega
+      rfl
+    · obtain rfl | rfl : i = 0 ∨ i = 1 := by simp at hi; omega
+      all_goals rfl
+  have hmem : ∀ a ∈ u.args, a = x.args[0]! ∨ a = c.id ∨ a = x.args[1]! := fun a ha => by
+    rcases hua with hua | hua <;> rw [hua] at ha <;>
+      simp only [List.mem_toArray, List.mem_cons, List.not_mem_nil, or_false] at ha
+    · rcases ha with rfl | rfl | rfl <;> simp
+    · rcases ha with rfl | rfl | rfl | rfl <;> simp
+  refine ⟨_, hI1.putMove hx1 hxt hut hty (fun hv a ha => ?_) hvD (fun a ha hrest => ?_),
+    fun y hy => .inl hy, fun ρ hρ hF n y hy => ?_⟩
+  · rcases hv with hv | ⟨-, hv⟩
+    · have hxa := closed_args hI.closed hx hv
+      rcases hmem a ha with rfl | rfl | rfl
+      · exact .inl (hxa _ (argMem (by omega)))
+      · exact .inr ⟨trivial, rfl⟩
+      · exact .inl (hxa _ (argMem (by omega)))
+    · exact absurd hv.symm hcv
+  · rw [hD, ha0] at ha; cases ha
+    obtain ⟨hsz, hr⟩ := move_argsRef (by rw [ha0op]; decide) (.inr hxop) hrest
+    refine .inr (.inr ⟨ha0op, by omega, hzs, hu3, fun i hi => ?_, fun n => ?_, fun i hi => ?_,
+      fun n => ?_⟩)
+    · rcases hmem _ (argMem hi) with he | he | he <;> rw [he]
+      · exact (hr 0 (by omega)).1
+      · exact .inr ⟨trivial, rfl⟩
+      · exact (hr 1 (by omega)).1
+    · obtain ⟨m, hm⟩ := (hr 0 (by omega)).2 n
+      rw [hu0, hai, hax]
+      exact ⟨m, fun ρ hρ hF => addrRef_zero (hm ρ hρ hF)⟩
+    · refine ⟨0 + 1, fun ρ _ _ => ?_⟩
+      rw [huv i hi, zConst_den hc1 hco hck hcx hct hcsh]
+      exact Sem.Refines.refl _
+    · obtain ⟨m, hm⟩ := (hr 1 (by omega)).2 n
+      rw [hul]
+      exact ⟨m, hm⟩
+  · rw [rename_den hx1 hxt hut, denL_put_fresh hcn hI.closed n y hy]
+    exact Sem.Refines.refl _
 
 /-! ### Two 128-bit stores lowering a `Move` (`moveDef2`) -/
 
@@ -2712,10 +2869,10 @@ theorem ReplayInvL.moveDef2 {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : ID
     fun ρ n y hy => denL_put_fresh hwn hI2.closed n y hy
   have hosz : u.args.size = os.length + 2 := by rw [hua]; exact qArgs_size _ _ _
   have hisz : w.args.size = is.length + 2 := by rw [hwa]; exact qArgs_size _ _ _
-  refine ⟨_, hI3.putMove hx3 hxt hut hty hcl hvD (fun a ha hrest => .inr ?_),
+  refine ⟨_, hI3.putMove hx3 hxt hut hty hcl hvD (fun a ha hrest => .inr (.inl ?_)),
     fun y hy => .inl (hs2 _ (hs1 _ hy)), fun ρ hρ hF n y hy => ?_⟩
   · rw [hD, ha0] at ha; cases ha
-    obtain ⟨hsz, hr⟩ := move_argsRef ha0op hxop hrest
+    obtain ⟨hsz, hr⟩ := move_argsRef (by rw [ha0op]; decide) (.inl hxop) hrest
     have ha3 : a0.args.size = 3 := by omega
     have hP : P := hPof (hr 1 (by omega)).1 (hr 2 (by omega)).1
     have hQ : Q := hQof hP ((hr 0 (by omega)).1.imp id (·.1))
@@ -3207,13 +3364,14 @@ theorem ReplayInvL.idxFold {v : ID} {x u : Value} (hI : ReplayInvL tabs D₀ C�
   rw [hx] at ha'; cases ha'
   refine ⟨u, by rw [get?_put]; simp, ht', .inr (.inr (.inl ?_))⟩
   have hS := hsrc a hz
-  rcases hrest with hf | ⟨hsza, hr, -⟩ | hix | hmv | hmv2
+  rcases hrest with hf | ⟨hsza, hr, -⟩ | hix | hmv | hmv2 | hzr
   · exact absurd hst (by rw [(argFree_cases hf).1]; decide)
   rotate_left
   · obtain ⟨⟨p, s'⟩, hp⟩ := Option.isSome_iff_exists.1 hix.2.2.1
     rw [(idxStore_facts hp).2.1] at hst; cases hst
   · rw [(qStore_st hmv.1.2.2.1).1] at hst; cases hst
   · rw [(qStore_st (moveQ2Lower_qStore hmv2.1)).1] at hst; cases hst
+  · rw [hzr.1] at hS; cases hS
   have hsc : idxScale u.op = s := by simp [idxScale, ho]
   obtain ⟨hc0, hd0⟩ := hr 0 (by omega)
   have hya := closed_args hI.closed hy hc0
@@ -3356,12 +3514,13 @@ theorem ReplayInvL.scaleIdx {v : ID} {x u : Value} (hI : ReplayInvL tabs D₀ C�
   rw [hx] at ha'; cases ha'
   refine ⟨u, by rw [get?_put]; simp, ht', .inr (.inr (.inl ?_))⟩
   obtain ⟨-, hS3⟩ := hsrc a hz
-  rcases hrest with hf | ⟨hsza, -⟩ | hix | hmv | hmv2
+  rcases hrest with hf | ⟨hsza, -⟩ | hix | hmv | hmv2 | hzr
   · exact absurd (argFree_cases hf).1 (idxStore_facts hxo).2.2.2.2.2.1
   · rw [hsz, hS3] at hsza; cases hsza
   rotate_left
   · rw [(qStore_st hmv.1.2.2.1).2] at hxo; cases hxo
   · rw [moveQ2Lower_qStore hmv2.1] at hxq; cases hxq
+  · rw [hzr.2.1] at hS3; cases hS3
   obtain ⟨h3, -, -, hC, hA, hV⟩ := hix
   have hsc1 : idxScale x.op = 1 := by simp [idxScale, hxo]
   have hscs : idxScale u.op = s := by simp [idxScale, huo]
@@ -3764,6 +3923,12 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
           split at h
           · rename_i u ts w hmd2
             obtain ⟨C', hI', hsub, hstep⟩ := hI.moveDef2 hD hmd2
+            exact replayL_inv hs hD evs _ M' B B' C' h hI'
+              (hB.mono (g := id) hsub hI.typed hstep)
+          -- a `Zero` lowered to a store of `0` (`zeroDef`)
+          split at h
+          · rename_i u c hzd
+            obtain ⟨C', hI', hsub, hstep⟩ := hI.zeroDef hD hzd
             exact replayL_inv hs hD evs _ M' B B' C' h hI'
               (hB.mono (g := id) hsub hI.typed hstep)
           -- a frame variable's address folded into a load or an `ADDconst` (`frameFold`)

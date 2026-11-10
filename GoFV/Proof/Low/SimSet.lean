@@ -269,7 +269,8 @@ theorem addrLower_of_argFree {x : ID} {u w : Value} (hu : f.value? x = some u)
     (hf : argFree tabs w = true) : addrLower tabs u w = true := by
   cases hal : addrLower tabs u w
   · exfalso
-    rcases (atomPair_spec hpair).1 with ⟨⟨hop | hop, -⟩ | hm | hz, -⟩ | ha | hb | hb | hq | hq2
+    rcases (atomPair_spec hpair).1 with ⟨⟨hop | hop, -⟩ | hm | hz, -⟩ | ha | hb | hb | hq | hq2 |
+        hzl
     · have hg := H.gen x u hu hut
       rw [hop, (argFree_cases hf).1] at hg; exact absurd hg (by decide)
     · have hw' := (argFree_cases hf).1
@@ -290,6 +291,8 @@ theorem addrLower_of_argFree {x : ID} {u w : Value} (hu : f.value? x = some u)
         exact absurd ((argFree_cases hf).1.symm.trans hw.2.1) (by decide)
     · have := moveQ2Lower_qStore hq2
       rw [(argFree_cases hf).1] at this; cases this
+    · rcases zStore_cases (zeroLower_facts hzl).2.2.2.2.1 with h | h <;>
+        rw [(argFree_cases hf).1] at h <;> exact absurd h (by decide)
   · rfl
 
 /-! ## Registers related through the term relations -/
@@ -404,6 +407,17 @@ theorem argTermShL_regs (hfrS : RegsFrame tabs 0 f.value? G)
     (fun a _ hnf hat' hdef _ hfs => shapeL_atom_def H hnf hat' hdef hfs)
     (frameT_of H hDS hDT hVT hrel htyS htyT hfrS hfrT) H.glow hfrS hT hx hy
 
+/-- `ArgTermZL` on a register of a frame whose atoms are refined, the frame addresses those of
+activation 0 (`RegsFrame`, `RegsFrameL`). -/
+theorem argTermZL_regs (hfrS : RegsFrame tabs 0 f.value? G)
+    (hfrT : RegsFrameL tabs 0 g.value? T) {y : ID}
+    (hT : ArgTermZL f.lowered f.value? tabs g.lowered (listedDefs g) tabs y) (hy : VT y) :
+    Sem.Refines (.i64 0) (rv T y) :=
+  argTermZL_apply H.low hDS hDT (fun a h1 h2 h3 h4 => hrel a h3 h1 h2 h4)
+    (tyS' H hDS hDT hVT hrel htyS htyT) (tyT' H hDS hDT hVT hrel htyS htyT)
+    (fun a _ hnf hat' hdef _ hfs => shapeL_atom_def H hnf hat' hdef hfs)
+    (frameT_of H hDS hDT hVT hrel htyS htyT hfrS hfrT) H.glow hfrS hT hy
+
 /-- The terminators between two frames whose atoms are refined, the frame addresses those of
 activation 0 (`RegsFrame`, `RegsFrameL`). -/
 theorem termStepRefL_regs (hfrS : RegsFrame tabs 0 f.value? G)
@@ -447,13 +461,13 @@ theorem atom_ref (hfrS : RegsFrame tabs 0 f.value? G) (hfrT : RegsFrameL tabs 0 
   rw [hu] at hu'; cases hu'
   obtain ⟨-, hty, -, hid⟩ := atomPair_spec hpair
   have hargs2 : w.op ≠ .Phi → argFree tabs w = false → idxLower tabs u w = false →
-      moveQLower tabs u w = false → moveQ2Lower u w = false →
+      moveQLower tabs u w = false → moveQ2Lower u w = false → zeroLower tabs u w = false →
       ∀ i < w.args.size, VS u.args[argIx u w i]! → VT w.args[i]! →
       ArgRel tabs 0 (stArg u w i) (rv G u.args[argIx u w i]!) (rv T w.args[i]!) ∨
       ∃ t, atomFitTy tabs w i = some t ∧
         Sem.Refines (fitPiece t (rv G u.args[argIx u w i]!)) (fitPiece t (rv T w.args[i]!)) :=
-    fun hph hf hix hmq hq2 i hi h1 h2 => by
-    rcases hTR with hf' | ⟨-, -, -, hTR⟩ | ⟨hix', -⟩ | ⟨hmq', -⟩ | ⟨hq2', -⟩
+    fun hph hf hix hmq hq2 hz0 i hi h1 h2 => by
+    rcases hTR with hf' | ⟨-, -, -, -, hTR⟩ | ⟨hix', -⟩ | ⟨hmq', -⟩ | ⟨hq2', -⟩ | ⟨hz', -⟩
     · rw [hf] at hf'; cases hf'
     · rcases hTR i hi with hTR | ⟨t, htf, hTR⟩
       · exact .inl (argTermRefL_regs H hDS hDT hVT hrel htyS htyT hfrS hfrT hTR h1 h2)
@@ -462,12 +476,14 @@ theorem atom_ref (hfrS : RegsFrame tabs 0 f.value? G) (hfrT : RegsFrameL tabs 0 
     · rw [hix] at hix'; cases hix'
     · rw [hmq] at hmq'; cases hmq'
     · rw [hq2] at hq2'; cases hq2'
+    · rw [hz0] at hz'; cases hz'
   have hargs : callLead w.op = none → (∀ j, stFitTy w.op j = none) → w.op ≠ .Phi →
       argFree tabs w = false → idxLower tabs u w = false → moveQLower tabs u w = false →
-      moveQ2Lower u w = false →
+      moveQ2Lower u w = false → zeroLower tabs u w = false →
       ∀ i < w.args.size, VS u.args[argIx u w i]! → VT w.args[i]! →
       ArgRel tabs 0 (stArg u w i) (rv G u.args[argIx u w i]!) (rv T w.args[i]!) :=
-    fun hcl hsv hph hf hix hmq hq2 i hi h1 h2 => (hargs2 hph hf hix hmq hq2 i hi h1 h2).resolve_right
+    fun hcl hsv hph hf hix hmq hq2 hz0 i hi h1 h2 =>
+      (hargs2 hph hf hix hmq hq2 hz0 i hi h1 h2).resolve_right
       (by rintro ⟨t, ht, -⟩; simp [atomFitTy, hcl, hsv] at ht)
   have hphi : w.op = .Phi → ∀ i < w.args.size, VS u.args[argIx u w i]! → VT w.args[i]! →
       Sem.Refines (rty f.lowered (shpL tabs w.type) (rv G u.args[argIx u w i]!))
@@ -481,7 +497,7 @@ theorem atom_ref (hfrS : RegsFrame tabs 0 f.value? G) (hfrT : RegsFrameL tabs 0 
       · rfl
       · exact absurd hph (idxLower_ops hix).2.1
     have huph : u.op = .Phi := (atomPair_phi hpair).1 hph
-    rcases hTR with hf' | ⟨-, -, -, hTR⟩ | ⟨hix', -⟩ | ⟨hmq', -⟩ | ⟨hq2', -⟩
+    rcases hTR with hf' | ⟨-, -, -, -, hTR⟩ | ⟨hix', -⟩ | ⟨hmq', -⟩ | ⟨hq2', -⟩ | ⟨hz', -⟩
     · rw [hf] at hf'; cases hf'
     · rcases hTR i hi with hTR | ⟨t, htf, hTR⟩
       · have hr := argTermRefL_regs H hDS hDT hVT hrel htyS htyT hfrS hfrT hTR h1 h2
@@ -506,6 +522,7 @@ theorem atom_ref (hfrS : RegsFrame tabs 0 f.value? G) (hfrT : RegsFrameL tabs 0 
     · rw [hix] at hix'; cases hix'
     · exact absurd hph (moveQLower_ops hmq').2.1
     · exact absurd hph (moveQ2Lower_ops hq2').2.1
+    · rw [(zeroLower_facts hz').1] at huph; cases huph
   refine ⟨hpair, hphi, fun env hE hS hT hnph hcomp => ?_⟩
   obtain ⟨w', hw', hwid, -⟩ := H.wg.valueId w.block blk ⟨hbm, hblk⟩ x hx
   rw [hw] at hw'; cases hw'
@@ -516,7 +533,7 @@ theorem atom_ref (hfrS : RegsFrame tabs 0 f.value? G) (hfrT : RegsFrameL tabs 0 
   case true =>
     obtain ⟨hu', hu3, -⟩ := moveQ2Lower_facts hq2
     rcases hTR with hf' | ⟨-, -, hq2', -⟩ | ⟨hix', -⟩ | ⟨hmq', -⟩ |
-        ⟨-, x', wi, hlast, hL, hfn, hin, -, -, -, -, -, hSh, hQ⟩
+        ⟨-, x', wi, hlast, hL, hfn, hin, -, -, -, -, -, hSh, hQ⟩ | ⟨hz', -⟩
     · have := moveQ2Lower_qStore hq2
       rw [(argFree_cases hf').1] at this; cases this
     · rw [hq2] at hq2'; cases hq2'
@@ -534,9 +551,10 @@ theorem atom_ref (hfrS : RegsFrame tabs 0 f.value? G) (hfrT : RegsFrameL tabs 0 
         (fun i hi => argTermQAtL_regs H hDS hDT hVT hrel htyS htyT hfrS hfrT (hQ i hi)
           (hu 1 (by omega)) (hu 2 (by omega)) (hw _ (by omega)))
         (hcomp hq2 wi (by rw [hlast]; exact hL) (by rw [hlast]; exact hfn) hin)
+    · rw [(zeroLower_facts hz').1] at hu'; cases hu'
   cases hmq : moveQLower tabs u w
   case true =>
-    rcases hTR with hf' | ⟨-, hmq', -⟩ | ⟨hix', -⟩ | ⟨-, hA, hV, hM⟩ | ⟨hq2', -⟩
+    rcases hTR with hf' | ⟨-, hmq', -⟩ | ⟨hix', -⟩ | ⟨-, hA, hV, hM⟩ | ⟨hq2', -⟩ | ⟨hz', -⟩
     · rcases (Sim.moveQLower_cases hmq).2 with hw | hw <;>
         exact absurd ((argFree_cases hf').1.symm.trans hw.2.1) (by decide)
     · rw [hmq] at hmq'; cases hmq'
@@ -558,10 +576,12 @@ theorem atom_ref (hfrS : RegsFrame tabs 0 f.value? G) (hfrT : RegsFrameL tabs 0 
         (argTermRefL_regs H hDS hDT hVT hrel htyS htyT hfrS hfrT hM (hu 2 (by omega))
           (hw _ (by omega)))
     · rw [hq2] at hq2'; cases hq2'
+    · obtain ⟨hu', -⟩ := Sim.moveQLower_cases hmq
+      rw [(zeroLower_facts hz').1] at hu'; cases hu'
   cases hix : idxLower tabs u w
   case true =>
     obtain ⟨-, h3, h4, -, -, p, s, -, hp, -⟩ := idxLower_cases hix
-    rcases hTR with hf' | ⟨hix', -⟩ | ⟨-, hI, hV, hM⟩ | ⟨hmq', -⟩ | ⟨hq2', -⟩
+    rcases hTR with hf' | ⟨hix', -⟩ | ⟨-, hI, hV, hM⟩ | ⟨hmq', -⟩ | ⟨hq2', -⟩ | ⟨hz', -⟩
     · exact absurd (argFree_cases hf').1 (idxStore_facts hp).2.2.2.2.2.1
     · rw [hix] at hix'; cases hix'
     · have hu : ∀ i < 3, VS u.args[i]! := fun i hi => hS _ (getElem!_mem' (by omega))
@@ -589,19 +609,41 @@ theorem atom_ref (hfrS : RegsFrame tabs 0 f.value? G) (hfrT : RegsFrameL tabs 0 
           (hw 3 (by omega)))
     · rw [hmq] at hmq'; cases hmq'
     · rw [hq2] at hq2'; cases hq2'
+    · obtain ⟨hu', -⟩ := idxLower_cases hix
+      rw [(zeroLower_facts hz').1] at hu'; cases hu'
+  cases hz0 : zeroLower tabs u w
+  case true =>
+    rcases hTR with hf' | ⟨-, -, -, hz', -⟩ | ⟨hix', -⟩ | ⟨hmq', -⟩ | ⟨hq2', -⟩ | ⟨-, hA, hV, hM⟩
+    · rcases zStore_cases (zeroLower_facts hz0).2.2.2.2.1 with h | h <;>
+        rw [(argFree_cases hf').1] at h <;> exact absurd h (by decide)
+    · rw [hz0] at hz'; cases hz'
+    · rw [hix] at hix'; cases hix'
+    · rw [hmq] at hmq'; cases hmq'
+    · rw [hq2] at hq2'; cases hq2'
+    · obtain ⟨-, h2, -, -, -, hw3⟩ := zeroLower_facts hz0
+      have hu : ∀ i < 2, VS u.args[i]! := fun i hi => hS _ (getElem!_mem' (by omega))
+      have hw : ∀ i < w.args.size, VT w.args[i]! := fun i hi => hT _ (getElem!_mem' hi)
+      exact zeroSt_atom_eval H.glow hz0 hty' (fun a ha => (hDS a (hS a ha)).1)
+        (fun a ha => (hDT a (hT a ha)).1)
+        (argTermRefL_regs H hDS hDT hVT hrel htyS htyT hfrS hfrT hA (hu 0 (by omega))
+          (hw 0 (by omega)))
+        (fun i hi => argTermZL_regs H hDS hDT hVT hrel htyS htyT hfrS hfrT (hV i hi)
+          (hw _ (by omega)))
+        (argTermRefL_regs H hDS hDT hVT hrel htyS htyT hfrS hfrT hM (hu 1 (by omega))
+          (hw _ (by omega)))
   cases hal : addrLower tabs u w
   · have hf : argFree tabs w = false := by
       cases hf : argFree tabs w
       · rfl
       · rw [addrLower_of_argFree H hu hut hpair hf] at hal; cases hal
     cases hpb : pbLower u w
-    · have hsz := atomPair_size hpair hal hpb hix hmq hq2
-      refine atomPair_eval hE H.ok.ownAux H.low H.glow hfr hpair hal hpb hix hmq hq2
+    · have hsz := atomPair_size hpair hal hpb hix hmq hq2 hz0
+      refine atomPair_eval hE H.ok.ownAux H.low H.glow hfr hpair hal hpb hix hmq hq2 hz0
         (H.gen x u hu hut)
         hty' (fun a ha => (hDS a (hS a ha)).1) (fun a ha => (hDT a (hT a ha)).1) fun i hi => ?_
       have hi' : i < w.args.size := hsz ▸ hi
       rw [makeL_act]
-      have := hargs2 hnph hf hix hmq hq2 i hi'
+      have := hargs2 hnph hf hix hmq hq2 hz0 i hi'
         (by rw [argIx_of_not hpb]; exact hS _ (getElem!_mem' hi))
         (hT _ (getElem!_mem' hi'))
       rwa [argIx_of_not hpb] at this
@@ -628,7 +670,7 @@ theorem atom_ref (hfrS : RegsFrame tabs 0 f.value? G) (hfrT : RegsFrameL tabs 0 
         have hsv : ∀ j, stFitTy w.op j = none := fun j => by
           rcases pbKeep_cases hks with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;>
             simp [stFitTy, stValW, stIdxValW, h]
-        have := hargs hcl hsv hnph hf hix hmq hq2 i hi
+        have := hargs hcl hsv hnph hf hix hmq hq2 hz0 i hi
           (hS _ (getElem!_mem' (by rw [argIx_of_pb hpb hks hik, h3]; exact hk3)))
           (hT _ (getElem!_mem' hi))
         rwa [stArg_of_ne (by rw [hu3]; decide)] at this
@@ -657,7 +699,7 @@ theorem evalOpL_safeL {env : Env} {ctx : Ctx} {fr : Frame} {u w : Value} {argv :
     rcases atomPair_isRoot hp with h | h
     · rw [← h]; exact hr
     · rw [hz] at h; cases h
-  rcases (atomPair_spec hp).1 with ⟨⟨hop | hop, -⟩ | hm | hz', -⟩ | ha | hb | hx | hq | hq2
+  rcases (atomPair_spec hp).1 with ⟨⟨hop | hop, -⟩ | hm | hz', -⟩ | ha | hb | hx | hq | hq2 | hzl
   · rw [evalOpL_generic _ _ _ _ _ _ (hop ▸ hgen)]
     exact evalOp_safe hr ha hai
   · rcases evalOpL_rename (env := env) (ctx := ctx) (fr := fr) (argv := argv) (ty := ty) hop with
@@ -685,6 +727,8 @@ theorem evalOpL_safeL {env : Env} {ctx : Ctx} {fr : Frame} {u w : Value} {argv :
   · obtain ⟨hu, -⟩ := Sim.moveQLower_cases hq
     rw [hu] at hr'; exact absurd hr' (by decide)
   · obtain ⟨hu, -⟩ := moveQ2Lower_facts hq2
+    rw [hu] at hr'; exact absurd hr' (by decide)
+  · obtain ⟨hu, -⟩ := zeroLower_facts hzl
     rw [hu] at hr'; exact absurd hr' (by decide)
 
 end
@@ -936,7 +980,7 @@ theorem tgt_loop {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
               rw [hu] at hv'; cases hv'; rw [hut] at hvt; cases hvt
           rw [hu] at hu'; cases hu'
           rcases hTR with hf' | ⟨-, -, hq2', -⟩ | ⟨hix', -⟩ | ⟨hmq', -⟩ |
-              ⟨-, x', wi, hlast', hL, -, hin, -, hshp, hA, hV, hM, -, -⟩
+              ⟨-, x', wi, hlast', hL, -, hin, -, hshp, hA, hV, hM, -, -⟩ | ⟨hz', -⟩
           · have := moveQ2Lower_qStore hq2
             rw [(argFree_cases hf').1] at this; cases this
           · rw [hq2] at hq2'; cases hq2'
@@ -962,6 +1006,7 @@ theorem tgt_loop {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
                 (huV 1 (by omega)) (huV 2 (by omega)) (hwV _ (by omega)))
               (argTermRefL_regs H hDS hTD hVTd hrel' htyS hTt hfrS hTF hM (huV 2 (by omega))
                 (hwV _ (by omega))) hevS
+          · rw [(zeroLower_facts hz').1] at huop; cases huop
         obtain ⟨v, u, wv, hvP, hu, hpv, hq2, hlast⟩ := hcompL x hxL w hw hterm hfn
         obtain ⟨r, hr, -⟩ := key v u wv hvP hu hpv hq2 hlast
         refine ⟨r, hr, (fun h => by rw [hfn] at h; cases h),
