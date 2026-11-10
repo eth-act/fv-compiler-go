@@ -96,6 +96,9 @@ theorem r_generic_2155_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r
 /-- `generic.rules:2128`: `(SliceLen (SelectN [0] (StaticLECall {sym} _ newLen:(Const64) _ _ _ _))) && (isSameCall(sym, "runtime.growslice") || isSameCall(sym, "runtime.growsliceNoAlias")) => newLen` -/
 theorem r_generic_2128_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2128 := rfl
 
+/-- `generic.rules:2131`: `(SelectN [1] (StaticCall {sym} _ newLen:(Const64) _ _ _ _)) && v.Type.IsInteger() && (isSameCall(sym, "runtime.growslice") || isSameCall(sym, "runtime.growsliceNoAlias")) => newLen` (issue #69: the post-`expand calls` form of `:2128`, `RewriteCheck.growPOK`) -/
+theorem r_generic_2131_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2131 := rfl
+
 /-- `generic.rules:2251`: `(Load (Addr {s} sb) _) && isFixedLoad(v, s, 0) => rewriteFixedLoad(v, s, sb, 0)` (issue #69: the read from the read-only symbol's allocation, `RewriteCheck.fixedOK`,
 under `Sem.RoImage`) -/
 theorem r_generic_2251_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2251 := rfl

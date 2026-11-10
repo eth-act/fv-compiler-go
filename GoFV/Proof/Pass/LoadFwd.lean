@@ -520,6 +520,89 @@ private theorem selectN_one (a b : Val) (l : List Val) :
     Tuple.selectN 1 [.tuple (a :: b :: l)] = b := by
   simp [Tuple.selectN]
 
+/-! ## The length registers of post-`expand calls` `growslice` calls (`generic.rules:2131`) -/
+
+theorem growPOK_spec {tabs : Tables} {f : Func} {u w : Value} (h : growPOK tabs f u w = true) :
+    u.op = .SelectN ∧ u.auxInt = 1 ∧ u.args.size = 1 ∧ tabs.ty u.type = .int .w64 ∧
+      w.op = .Copy ∧ w.args.size = 1 ∧ ∃ cv xv, f.value? u.args[0]! = some cv ∧
+        growPV tabs cv = true ∧ cv.args[1]! = w.args[0]! ∧ f.value? w.args[0]! = some xv ∧
+        tabs.ty xv.type = .int .w64 := by
+  unfold growPOK at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨⟨⟨⟨⟨⟨huop, hai⟩, husz⟩, huty⟩, hwop⟩, hwsz⟩, hc⟩, hx⟩ := h
+  refine ⟨huop, hai, husz, int64_of_matches huty, hwop, hwsz, ?_⟩
+  cases hcv : f.value? u.args[0]! with
+  | none => rw [hcv] at hc; cases hc
+  | some cv =>
+    rw [hcv] at hc
+    simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at hc
+    cases hxv : f.value? w.args[0]! with
+    | none => rw [hxv] at hx; cases hx
+    | some xv =>
+      rw [hxv] at hx
+      simp only [Option.any_some] at hx
+      exact ⟨cv, xv, rfl, hc.1, hc.2, rfl, int64_of_matches hx⟩
+
+/-- The value `SelectN [1] c` denotes, past the fuel its argument needs. -/
+private theorem growP_den {tabs : Tables} {f : Func} {ρ : ID → Val} {x : ID} {u cv : Value}
+    (hu : f.value? x = some u) (huop : u.op = .SelectN) (hai : u.auxInt = 1)
+    (husz : u.args.size = 1) (huty : tabs.ty u.type = .int .w64)
+    (hcv : f.value? u.args[0]! = some cv) (hcop : cv.op = .StaticCall) (n : Nat) :
+    den f.value? tabs ρ n x = .poison ∨
+      den f.value? tabs ρ n x = (Tuple.selectN 1 [ρ u.args[0]!]).retype (.int .w64) := by
+  match n with
+  | 0 => exact .inl rfl
+  | 1 =>
+    left
+    rw [den_succ_term hu (by rw [huop]; rfl), toList_one husz, huop, huty]
+    rfl
+  | n + 2 =>
+    right
+    rw [den_succ_term hu (by rw [huop]; rfl), toList_one husz, huop, huty, List.map_cons,
+      List.map_nil, den_succ_atom (not_term_of hcv (by rw [hcop]; decide)),
+      GoFV.Proof.Rules.opVal_pure (op := Op.SelectN) rfl, evalPure_selectN, hai]
+
+/-- **The source of a post-`expand calls` `growslice` length** (`growPOK`): under the forwarding
+layer's relation of the call to its arguments (`RAtoms` of `growPR`), `SelectN [1] c` is
+`poison` or the call's length argument (of the 64-bit integer shape, so its one register piece
+decodes as itself). -/
+theorem growP_src {tabs : Tables} {f : Func} {ρ : ID → Val} (hT : Term.Typed f.value? tabs ρ)
+    (hR : RAtoms (growPR tabs) f.value? tabs ρ) {x : ID} {u cv xv : Value}
+    (hu : f.value? x = some u) (huop : u.op = .SelectN) (hai : u.auxInt = 1)
+    (husz : u.args.size = 1) (huty : tabs.ty u.type = .int .w64)
+    (hcv : f.value? u.args[0]! = some cv) (hgv : growPV tabs cv = true)
+    (hxv : f.value? cv.args[1]! = some xv) (hxty : tabs.ty xv.type = .int .w64) :
+    ∃ N, ∀ n k, N ≤ k → Sem.Refines (den f.value? tabs ρ n x)
+      ((den f.value? tabs ρ k cv.args[1]!).retype (.int .w64)) := by
+  have hgv' := hgv
+  unfold growPV at hgv'
+  simp only [Bool.and_eq_true, beq_iff_eq] at hgv'
+  obtain ⟨⟨⟨⟨⟨hcop, hcsz⟩, -⟩, -⟩, -⟩, -⟩ := hgv'
+  by_cases hp : ρ u.args[0]! = .poison
+  · refine ⟨0, fun n k _ => ?_⟩
+    rcases growP_den hu huop hai husz huty hcv hcop (ρ := ρ) n with h | h <;> rw [h]
+    · exact .poison _
+    · rw [hp]; exact .poison _
+  obtain ⟨N, hN⟩ := hR _ cv hcv (by rw [hcop]; rfl) (by rw [hcop]; decide) hp
+  have hl1 : ∀ k, ((cv.args.toList.map (den f.value? tabs ρ k))[1]?.getD .poison) =
+      den f.value? tabs ρ k cv.args[1]! := fun k => by
+    rw [List.getElem?_map, Array.getElem?_toList, getElem!_pos cv.args 1 (by omega),
+      Array.getElem?_eq_getElem (show 1 < cv.args.size by omega)]
+    rfl
+  refine ⟨N, fun n k hk => ?_⟩
+  have hG := hN k hk hgv
+  rw [hl1] at hG
+  have hty := den_hasTy hT k hxv
+  rw [hxty] at hty
+  unfold GrowResP at hG
+  rw [ofPieces_i64_of_hasTy hty] at hG
+  rw [Val.retype_of_hasTy hty]
+  rcases growP_den hu huop hai husz huty hcv hcop (ρ := ρ) n with h | h <;> rw [h]
+  · exact .poison _
+  · rcases hG with hG | ⟨L, hL, hs⟩
+    · rw [hG]; exact .poison _
+    · rw [hs, hL, retype_i64]; exact .refl _
+
 section
 variable {tabs : Tables} {ro : List (String × Alloc)} {eq : List String × List String} {f g : Func}
   (F : FwdFacts tabs ro eq f g)
@@ -541,7 +624,7 @@ theorem rep_of {x : ID} {u : Value} (hu : f.value? x = some u) :
        fwdConstOK tabs f u w = true ∨ dropOK tabs f g u w = true ∨
        fwdMoveRep tabs f g u w = true ∨ moveSrcOK tabs f u w = true ∨
        fixedOK tabs ro f u w = true ∨ growOK tabs f u w = true ∨
-       eqCallOK tabs eq f g u w = true ∨ selMROK tabs f u w = true) := by
+       eqCallOK tabs eq f g u w = true ∨ selMROK tabs f u w = true ∨ growPOK tabs f u w = true) := by
   have h := F.rep x (lt_of_value? hu)
   unfold fwdRepOK fwdNewOK at h
   rw [hu] at h
@@ -553,7 +636,7 @@ theorem rep_of {x : ID} {u : Value} (hu : f.value? x = some u) :
     obtain ⟨⟨⟨hid, hblk⟩, hty⟩, h⟩ := h
     refine ⟨w, rfl, hid, hblk, hty, ?_⟩
     rcases h with (⟨⟨⟨hop, hai⟩, hax⟩, hargs⟩ |
-      ((((((⟨⟨hop, hsz⟩, hok⟩ | hc) | hd) | hs) | hx) | hg) | he) | hm') | hm
+      (((((((⟨⟨hop, hsz⟩, hok⟩ | hc) | hd) | hs) | hx) | hg) | he) | hm') | hp) | hm
     · exact .inl ⟨hop, hai, hax, hargs⟩
     · exact .inr (.inl ⟨hop, hsz, hok⟩)
     · exact .inr (.inr (.inl hc))
@@ -562,7 +645,8 @@ theorem rep_of {x : ID} {u : Value} (hu : f.value? x = some u) :
     · exact .inr (.inr (.inr (.inr (.inr (.inr (.inl hx))))))
     · exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inl hg)))))))
     · exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inl he))))))))
-    · exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr hm'))))))))
+    · exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inl hm')))))))))
+    · exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr hp)))))))))
     · exact .inr (.inr (.inr (.inr (.inl hm))))
 
 /-- The arguments of a value listed in `f` are listed. -/
@@ -1054,7 +1138,7 @@ theorem rep_call {x : ID} {u : Value} (hu : f.value? x = some u) (hop : u.op = .
     (hn : rootP g x = false) : ∃ w, g.value? x = some w ∧ eqCallOK tabs eq f g u w = true := by
   obtain ⟨w, hw, -, -, -, hrep⟩ := rep_of F hu
   refine ⟨w, hw, ?_⟩
-  rcases hrep with ⟨hwop, -⟩ | ⟨-, -, hok⟩ | hok | hok | hok | hok | hok | hok | hok | hok
+  rcases hrep with ⟨hwop, -⟩ | ⟨-, -, hok⟩ | hok | hok | hok | hok | hok | hok | hok | hok | hok
   · exfalso
     simp only [rootP, hw, Option.any_some, hwop, hop] at hn
     cases hn
@@ -1068,6 +1152,7 @@ theorem rep_call {x : ID} {u : Value} (hu : f.value? x = some u) (hop : u.op = .
   · rw [(growOK_spec hok).1] at hop; cases hop
   · exact hok
   · unfold selMROK at hok; simp [hop] at hok
+  · rw [(growPOK_spec hok).1] at hop; cases hop
 
 /-- **The dropped calls do not panic** (`AtomSim.DropNP`): a folded call's descriptor register
 points at the start of a symbol of its list (`DescReg`, part of the invariant), so under
@@ -1103,7 +1188,7 @@ theorem fwd_den {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.v
       Sem.Refines (den f.value? tabs ρ n a) (den (listedDefs g) tabs ρ' m a) :=
     fun a ha hla hda => ih _ ha a rfl hla hda
   rcases hrep with ⟨hop, hai, hax, hargs⟩ | ⟨hop, hsz, hok⟩ | hok | hdrop | hmv | hms | hfx | hgr |
-    hec | hsm
+    hec | hsm | hgp
   rotate_left 3
   · exact drop_den F hT hM hQ.1 hQ.2.2 hx hu hL hwty hdrop
       (fun a ha hla hda => hIH a (hr ▸ ha) hla hda) n
@@ -1151,12 +1236,37 @@ theorem fwd_den {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.v
     cases hdx
   · -- a selection of a `MakeResult`: a `Copy` of the argument
     exact selMR_den F hx hu hL hwty hsm (fun a ha hla hda => hIH a (hr ▸ ha) hla hda) n
+  · -- the length register of a post-`expand calls` `growslice` call: a `Copy` of its length
+    -- argument
+    obtain ⟨huop, hai, husz, huty, hwop, hwsz, cv, xv, hcv, hgv, harg, hxv, hxty⟩ :=
+      growPOK_spec hgp
+    have hcsz : cv.args.size = 6 := by
+      unfold growPV at hgv; simp only [Bool.and_eq_true, beq_iff_eq] at hgv; exact hgv.1.1.1.1.2
+    have hcop : cv.op = .StaticCall := by
+      unfold growPV at hgv; simp only [Bool.and_eq_true, beq_iff_eq] at hgv; exact hgv.1.1.1.1.1
+    have hu0 : u.args[0]! ∈ u.args := by
+      rw [getElem!_pos u.args 0 (by omega)]; exact Array.getElem_mem _
+    have hc1 : cv.args[1]! ∈ cv.args := by
+      rw [getElem!_pos cv.args 1 (by omega)]; exact Array.getElem_mem _
+    have hlc := lm_arg F hx hu _ hu0
+    have hla := lm_arg F hlc hcv _ hc1
+    have hra : (fwdRank f)[cv.args[1]!]?.getD 0 < r := by
+      have h1 := fwdRankOK_spec F.rank hx hu (by rw [huop]; decide) _ hu0
+      have h2 := fwdRankOK_spec F.rank hlc hcv (by rw [hcop]; decide) _ hc1
+      omega
+    obtain ⟨N, hN⟩ := growP_src hT (rAtoms_mono (fun _ _ _ h => h.2.2) hR) hu huop hai husz huty
+      hcv hgv (by rw [harg]; exact hxv) hxty
+    obtain ⟨m, hm⟩ := hIH _ hra hla (ndc_arg F hcv (by rw [hcop]; decide) hc1) N
+    refine ⟨m + 1, ?_⟩
+    rw [den_succ_term hL (by rw [hwop]; rfl), hwop, toList_one hwsz, List.map_cons, List.map_nil,
+      GoFV.Proof.Rules.opVal_pure (op := Op.Copy) rfl, evalPure_copy, hwty, huty, ← harg]
+    exact (hN (n + 1) N (Nat.le_refl N)).trans (retype_mono _ hm)
   · by_cases ht : termOp u.op = true
     · by_cases hsd : u.op = .SelectN ∧ u.args.size = 1 ∧ dcB tabs eq f g u.args[0]! = true
       · -- a selection of a folded call
         have hu0 : u.args[0]! ∈ u.args := by
           rw [getElem!_pos u.args 0 (by omega)]; exact Array.getElem_mem _
-        exact selDC_den F hT (rAtoms_mono (fun _ _ _ h => h.2) hR) hx hu hL hwty hop hai hargs
+        exact selDC_den F hT (rAtoms_mono (fun _ _ _ h => h.2.1) hR) hx hu hL hwty hop hai hargs
           hsd.1 hsd.2.1 (dc_arg F hu hu0 hsd.2.2).2.2 hsd.2.2
           (fun a ha hla hda => hIH a (hr ▸ ha) hla hda) n
       have hnd : ∀ a ∈ u.args, dcB tabs eq f g a = false := fun a ha => by
@@ -1402,7 +1512,7 @@ theorem fwd_atomArgs (hro : fwdRoOK tabs ro f = true) :
   have hargs := (closedOK_facts F.cf b hbf fb hfb).2 a haf u' hu'
   have hns : u'.op ≠ .SelectN := fun h => by rw [hop] at h; rw [h] at ht; cases ht
   have hsame : (u.aux = u'.aux ∧ u.args = u'.args) ∨ moveSrcOK tabs f u' u = true := by
-    rcases hrep with ⟨-, -, hax, h⟩ | ⟨h, -⟩ | h | h | h | h | h | h | h | h
+    rcases hrep with ⟨-, -, hax, h⟩ | ⟨h, -⟩ | h | h | h | h | h | h | h | h | h
     · exact .inl ⟨hax, h⟩
     · rw [h] at ht; cases ht
     · rcases const64Op_cases (fwdConstOK_spec h).2.2.1 with h | h <;> rw [h] at ht <;> cases ht
@@ -1415,6 +1525,7 @@ theorem fwd_atomArgs (hro : fwdRoOK tabs ro f = true) :
     · have hc : u.op = .Copy := by
         unfold selMROK at h; simp only [Bool.and_eq_true, beq_iff_eq] at h; exact h.1.1.2
       rw [hc] at ht; cases ht
+    · rw [(growPOK_spec h).2.2.2.2.1] at ht; cases ht
   rcases hsame with hsame | hms
   · refine .inl ⟨u', hu', hop, hty, hai, hsame.1.symm, hsz, fun i hi => ?_⟩
     have hi' : i < u'.args.size := hsame.2 ▸ hi
