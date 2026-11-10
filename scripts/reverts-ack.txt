@@ -3,3 +3,4 @@
 0acc194 #350 CopyElimBlock/CopyElimLoop/CopyRelCheck return to before f52e649e: the Addr case is subsumed by retypeEqB (canonical pointer words), documented in #350
 5d9b6cc #314 Proven.lean/AllProof.lean re-import Convert.lean after #312 dropped :1072 (guarded :1072 restored), documented in #314
 26d8b10 #625 intended: deletes GoFV/Proof/Obj/G12.lean (composition on G12, superseded by Obj/G30.lean), PR body: check-reverts.sh --allow; nothing to restore
+c0bded59 #675 intended: Opt/Checked.lean, Fuse/BranchRedirectCheck.lean, Fuse/ComparisonsCheck.lean, ShortCircuitBlockCheck.lean, ShortCircuitCheck.lean drop `variable [Addrs]` (checkers at Addrs.fixed, proofs3 §8 item 6), returning to before 3d8dfd5a; PR body: check-reverts.sh --allow; nothing to restore
