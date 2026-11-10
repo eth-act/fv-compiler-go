@@ -374,7 +374,7 @@ theorem nonNegD_den (tabs : Tables) (D : ID → Option Value) (ρ : ID → Val)
         simp only [ht, Bool.true_and] at h
         simp only [den, hD, ht, ite_true, GoFV.Proof.Rules.opVal_pure hfr]
         cases kd with
-        | const w => rw [hsem]; exact h
+        | const w => rw [hsem, ← Val.retypeC_eq (v := Conv.const w v.auxInt) rfl]; exact h
         | always w? =>
           revert h
           cases hrw : tabs.ty v.type with

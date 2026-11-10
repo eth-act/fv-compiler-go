@@ -1,8 +1,6 @@
 import GoFV.Opt.Checked
 import GoFV.Opt.ZCSE
 
-variable [GoFV.SSA.Sem.Addrs]
-
 /-!
 # short circuit, checked (issue #16)
 

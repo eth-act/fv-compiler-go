@@ -70,6 +70,12 @@ theorem cval_scalar {tabs : Tables} {f : Func} {C : Array (Option Lat)} {x : ID}
     · cases h
   · cases h
 
+/-- A claimed constant holds no frame pointer (it is an integer or a boolean), so the checker's
+`Val.retypeC` of it is the instance's `Val.retype`. -/
+theorem cval_lowB {tabs : Tables} {f : Func} {C : Array (Option Lat)} {x : ID} {c : Val}
+    (h : cval tabs f C x = some c) : c.lowB = true := by
+  rcases cval_scalar h with ⟨w, y, rfl⟩ | ⟨b, rfl⟩ <;> rfl
+
 /-- A value refining an integer or boolean is `poison` or that value. -/
 theorem refines_scalar {y c : Val} (hc : (∃ w x, c = .int w x) ∨ ∃ b, c = .bool b)
     (h : Sem.Refines y c) : y = .poison ∨ y = c := by
@@ -195,9 +201,13 @@ theorem sc_term {x : ID} {v : Value} (hv : f.value? x = some v) (ht : termOp v.o
   simp only [fixOK, hc, hv, beq_iff_eq, hph, ite_false, ht, Bool.true_and] at hfix
   split at hfix
   · rename_i cs hcs
-    rw [← scalarEq_eq hfix]
-    exact retype_mono _ (GoFV.Proof.Rules.opVal_mono _ _ _ _ _ (refinesList_mapM
-      (fun a ha c hc => hρ a (Array.mem_toList_iff.1 ha) c hc) hcs))
+    split at hfix
+    · rename_i r hr
+      obtain ⟨hov, hrl⟩ := GoFV.Proof.Rules.opValC_eq hr
+      rw [← scalarEq_eq hfix, Val.retypeC_eq hrl, ← hov]
+      exact retype_mono _ (GoFV.Proof.Rules.opVal_mono _ _ _ _ _ (refinesList_mapM
+        (fun a ha c hc => hρ a (Array.mem_toList_iff.1 ha) c hc) hcs))
+    · cases hfix
   · cases hfix
 
 /-- An atom keeps the invariant: it claims nothing. -/
@@ -241,7 +251,7 @@ theorem sc_phis {fr : Frame} {b : ID} {i : Nat} (hb : b ∈ f.blocks)
   simp only [Bool.not_true, Bool.false_or] at h1
   split at h1
   · rename_i c' hc'
-    rw [← scalarEq_eq h1]
+    rw [← scalarEq_eq h1, Val.retypeC_eq (cval_lowB hc')]
     exact retype_mono _ (hinv a c' hc')
   · cases h1
 

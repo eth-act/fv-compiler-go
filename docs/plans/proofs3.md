@@ -2383,6 +2383,19 @@ few:
    independence is `rfl` and the agreement lemma moves into each checker's soundness proof
    where its constant meets the semantics' value), is the fallback if step 3 needs more than a
    few modules with uses outside `termConst`.
+
+   **Done (the fallback).** The frontier from `verifiedPipelineFull` into code that reads the
+   assignment was 14 checker definitions (in `RewriteCheck`, Sccp's among them, and
+   `LowerCheck`), most of them outside `termConst`, so step 3 was not a few `simp only`s. The
+   checkers now evaluate at `Addrs.fixed` behind step 1's guard (`opGuard`), with step 2's
+   agreement lemmas (`GoFV/SSA/Sem/Agree.lean`: `Val.lowB`, `Ptr.*_agree`, `Mem.load_agree`,
+   `Val.retype_agree`, `evalPure_agree` over every op) used in their soundness proofs
+   (`binds(L)_erase`/`sigma(L)_erase` take two instances; `opVal_agree`). `verifiedPipeline`,
+   `verifiedPipelineFull` and every `checkG*` take no `Addrs` instance (`GoFVTest/AddrsFree.lean`),
+   so independence holds by construction and step 4 needs no lemma: `verified_mach` at any
+   instance takes the verdict `gofv-ssa-opt` computes. `gofv-ssa-opt --check --verified` counts
+   on quick-v10 and full-v11 are identical to main's (full-v11 on main 06837b1e: 93,683 through
+   `rewrite tern`, 84,123 through `trim`, the same verdict for every function).
 7. **Slice plan: calls with stack arguments and stack results.** Rejected today by `callRegs`
    (`Gen/Check2.lean:104-112`: `stack argument`, `stack result`; G15's `callRegsZ` drops only
    zero-sized stack inputs). After G15: 308 functions, 10 where it is the only reason. Phase

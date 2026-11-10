@@ -2,8 +2,6 @@ import GoFV.Opt.Fuse.Comparisons
 import GoFV.Opt.Checked
 import GoFV.Opt.SpecSafe
 
-variable [GoFV.SSA.Sem.Addrs]
-
 /-!
 # fuseComparisons, checked
 

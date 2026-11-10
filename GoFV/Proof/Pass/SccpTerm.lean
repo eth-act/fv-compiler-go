@@ -122,9 +122,11 @@ theorem sc_ref {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ')
           exact hρ x
       · -- `x` became a constant term of its claimed value
         split at hc
-        · rename_i c hcx
+        · rename_i c r hcx hr
+          obtain ⟨hov, hrl⟩ := GoFV.Proof.Rules.opValC_eq hr
           have hnil' : w.args = #[] := Array.isEmpty_iff.1 hnil
-          rw [den_succ_term hL ht, hnil', Array.toList_empty, List.map_nil, scalarEq_eq hc]
+          rw [den_succ_term hL ht, hnil', Array.toList_empty, List.map_nil, hov,
+            ← Val.retypeC_eq hrl, scalarEq_eq hc]
           exact sc_den hwf K hP (n + 1) x c hcx
         · cases hc
 

@@ -325,10 +325,11 @@ def ptrTop (op : Op) (ty : Sem.Ty) : Bool :=
   | _ => false
 
 /-- Constant ops of a pointer or composite shape (`ConstNil`, `ConstSlice`, `ConstInterface`)
-whose constant has the shape `ty`; their value depends on nothing but the op. -/
+whose constant has the shape `ty`; their value depends on nothing but the op (an integer word or
+a composite of them: no instance reads it, `Val.hasTyC`). -/
 def constTop (op : Op) (ty : Sem.Ty) : Bool :=
   (op matches .ConstNil | .ConstSlice | .ConstInterface) &&
-    (Sem.evalPure op ty 0 none []).hasTy ty
+    (@Sem.evalPure Sem.Addrs.fixed op ty 0 none []).hasTyC ty
 
 /-- The string shape (`Sem.tyOf` of a `STRING`). -/
 def strTy : Sem.Ty := .str
@@ -616,7 +617,7 @@ def nonNegD (tabs : Tables) (D : ID → Option Value) : Nat → ID → Bool
       let ty := tabs.ty v.type
       termOp v.op && match nonNegKind v.op with
       | none => false
-      | some (.const w) => ((Sem.Conv.const w v.auxInt).retype ty).nonNeg
+      | some (.const w) => ((Sem.Conv.const w v.auxInt).retypeC ty).nonNeg
       | some (.always w?) => match ty with
         | .int rw => w?.all (· == rw)
         | _ => false
@@ -659,12 +660,12 @@ def ruleOK (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : 
       | some (I, _) =>
         let e := env tabs M I
         let vtys := r.vars.map (·.ty)
-        let σ := sigmaT tabs e r.pat
+        let σ := @sigmaT Sem.Addrs.fixed tabs e r.pat
         let nodes := match r.result, defs with
           | .build ns, _ :: us => ns.zip us
           | _, _ => []
         let or := oracle vtys tabs nodes
-        let ev := evalE vtys σ or e (Pat.denT tabs e [] r.pat)
+        let ev := evalE vtys σ or e (@Pat.denT Sem.Addrs.fixed tabs e [] r.pat)
         I.tail.all (·.2 != v) &&
         consOK ev σ e I [] r.pat && wfOK e [] r.pat &&
         (match r.cond with
@@ -1399,13 +1400,23 @@ def sliceComp (l c : Sem.Val) (len : Bool) : Sem.Val :=
     if len then l.retypeI64 else c.retypeI64
   else .poison
 
+omit [GoFV.SSA.Sem.Addrs] in
+/-- `sliceComp` of values without frame pointers agrees under any two instances. -/
+theorem sliceComp_agree {A B : Sem.Addrs} {l c : Sem.Val} (hl : l.lowB = true) (hc : c.lowB = true)
+    (len : Bool) : @sliceComp A l c len = @sliceComp B l c len := by
+  simp only [sliceComp, Sem.Val.retypeI64_agree (A := A) (B := B) hl,
+    Sem.Val.retypeI64_agree (A := A) (B := B) hc]
+
 /-- The value of `a` if it is a constant term of `f` at most `k` deep: a term node (`termOp`)
 whose arguments are constant terms, evaluated as the semantics evaluates it (`Rules.opVal` at its
 value's shape, retyped), e.g. `Mul64 (StringLen (ConstString {s})) (Const64 [1])`, which value
 rules fold to a `Const64` only later in the log; or a `SliceLen`/`SliceCap` of a `SliceMake` of
 slice shape whose length and capacity are constant terms (`sliceMakeLC?`, `sliceComp`; its
 pointer need not be constant), e.g. the size `Mul64 (SliceLen (SliceMake p (Sub64 (Const64 [8])
-(Const64 [0])) …)) (Const64 [1])` of a `memmove` call of `copy(a[i:j], …)`. -/
+(Const64 [0])) …)) (Const64 [1])` of a `memmove` call of `copy(a[i:j], …)`. It evaluates at
+`Addrs.fixed` (`Rules.opValC`, `Val.retypeC`) on values without frame pointers whose integers an
+op reads as pointers lie below `2^62`, where every instance gives the same value
+(`docs/plans/proofs3.md` §8, item 6); any other term is no constant. -/
 def termConst (tabs : Tables) (f : Func) : Nat → ID → Option Sem.Val
   | 0, _ => none
   | k + 1, a =>
@@ -1419,13 +1430,16 @@ def termConst (tabs : Tables) (f : Func) : Nat → ID → Option Sem.Val
           | some (l, c) =>
             match termConst tabs f j l, termConst tabs f j c with
             | some lv, some cv =>
-              some ((sliceComp lv cv (v.op == .SliceLen)).retype (tabs.ty v.type))
+              if lv.lowB && cv.lowB then
+                let s := @sliceComp Sem.Addrs.fixed lv cv (v.op == .SliceLen)
+                if s.lowB then some (s.retypeC (tabs.ty v.type)) else none
+              else none
             | _, _ => none
           | none => none
       else if termOp v.op then
-        (v.args.toList.mapM (termConst tabs f k)).map fun cs =>
-          (GoFV.Proof.Rules.opVal tabs v.op (tabs.ty v.type) v.auxInt v.aux cs).retype
-            (tabs.ty v.type)
+        (v.args.toList.mapM (termConst tabs f k)).bind fun cs =>
+          (GoFV.Proof.Rules.opValC tabs v.op (tabs.ty v.type) v.auxInt v.aux cs).map
+            (·.retypeC (tabs.ty v.type))
       else none
     | none => none
 
@@ -1922,9 +1936,14 @@ def moveSrcOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
   | none => false
 
 /-- What a `Load` of shape `t` reads at offset `o` of the read-only symbol `n` from its
-allocation `a` alone, retyped (`fixedOK`). -/
-def fixedSrc (n : String) (a : Sem.Alloc) (t : Sem.Ty) (o : BitVec 64) : Sem.Val :=
-  ((({} : Sem.Mem).set (.global n) a).load t ((⟨.global n, 0⟩ : Sem.Ptr).add o)).retype t
+allocation `a` alone, retyped (`fixedOK`), at `Addrs.fixed` (`Mem.loadC`, `Val.retypeC`): if the
+allocation and the value hold no frame pointer, so that every instance reads it alike. -/
+def fixedSrc (n : String) (a : Sem.Alloc) (t : Sem.Ty) (o : BitVec 64) : Option Sem.Val :=
+  let m := ({} : Sem.Mem).set (.global n) a
+  if m.lowB then
+    let v := m.loadC t ((⟨.global n, 0⟩ : Sem.Ptr).add o)
+    if v.lowB then some (v.retypeC t) else none
+  else none
 
 /-- `a` is `poison`, or the integer or pointer `b` (`fixedOK`). -/
 def fixedEq : Sem.Val → Sem.Val → Bool
@@ -1946,9 +1965,10 @@ def fixedOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f : Func) (u w : 
   (match baseBlk? tabs f (ptrBase tabs f 8 u.args[0]!).1 with
    | some (.global n) =>
      ro.any fun e => e.1 == n &&
-       fixedEq (fixedSrc n e.2 (tabs.ty u.type) (ptrBase tabs f 8 u.args[0]!).2)
-         ((GoFV.Proof.Rules.opVal tabs w.op (tabs.ty u.type) w.auxInt w.aux []).retype
-           (tabs.ty u.type))
+       match fixedSrc n e.2 (tabs.ty u.type) (ptrBase tabs f 8 u.args[0]!).2,
+           GoFV.Proof.Rules.opValC tabs w.op (tabs.ty u.type) w.auxInt w.aux [] with
+       | some s, some r => fixedEq s (r.retypeC (tabs.ty u.type))
+       | _, _ => false
    | _ => false) &&
   WBCheck.memTyOK tabs f
 
@@ -3578,9 +3598,11 @@ def scalarEq : Sem.Val → Sem.Val → Bool
   | .bool b, .bool b' => b == b'
   | _, _ => false
 
-/-- The value of a constant op at shape `t`. -/
+/-- The value of a constant op at shape `t`, at `Addrs.fixed` (`Val.retypeC`), if it holds no
+frame pointer (then every instance gives it), else `poison` (no scalar, so no claim). -/
 def constVal (op : Op) (t : Sem.Ty) (ai : Int64) : Sem.Val :=
-  (Sem.evalPure op t ai none []).retype t
+  let v := @Sem.evalPure Sem.Addrs.fixed op t ai none []
+  if v.lowB then v.retypeC t else .poison
 
 /-- The constant `x`'s cell claims: its constant op's value at `x`'s type, if an integer or
 boolean. -/
@@ -3627,12 +3649,14 @@ def fixOK (tabs : Tables) (f : Func) (C : Array (Option Lat)) (vis : Array Edge)
     if v.op == .Phi then
       (List.range v.args.size).all fun i =>
         !live vis v.block i || match cval tabs f C v.args[i]! with
-          | some c' => scalarEq (c'.retype t) c
+          | some c' => scalarEq (c'.retypeC t) c
           | none => false
     else
       RewriteCheck.termOp v.op &&
       match v.args.toList.mapM (cval tabs f C) with
-      | some cs => scalarEq ((GoFV.Proof.Rules.opVal tabs v.op t v.auxInt v.aux cs).retype t) c
+      | some cs => match GoFV.Proof.Rules.opValC tabs v.op t v.auxInt v.aux cs with
+        | some r => scalarEq (r.retypeC t) c
+        | none => false
       | none => false
   | _, _ => true
 
@@ -3647,10 +3671,9 @@ def repOK (tabs : Tables) (f g : Func) (C : Array (Option Lat)) (x : ID) : Bool 
     ((w.op == u.op && w.type == u.type && w.auxInt == u.auxInt && w.aux == u.aux &&
       w.args == u.args) ||
      (RewriteCheck.termOp w.op && w.args.isEmpty && w.type == u.type &&
-      match cval tabs f C x with
-      | some c => scalarEq ((GoFV.Proof.Rules.opVal tabs w.op (tabs.ty w.type) w.auxInt w.aux []).retype
-          (tabs.ty w.type)) c
-      | none => false))
+      match cval tabs f C x, GoFV.Proof.Rules.opValC tabs w.op (tabs.ty w.type) w.auxInt w.aux [] with
+      | some c, some r => scalarEq (r.retypeC (tabs.ty w.type)) c
+      | _, _ => false))
 
 /-- The successor an `If` or `JumpTable` takes on the constant control `c`. -/
 def pickIdx : BlockKind → Option Sem.Val → Option Nat

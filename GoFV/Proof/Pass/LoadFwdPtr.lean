@@ -242,7 +242,9 @@ theorem termConst_den :
         next l c hlc =>
           split at h
           next lv cv hl hc =>
-            cases h
+            simp only [Option.ite_none_right_eq_some, Bool.and_eq_true, Option.some.injEq] at h
+            obtain ⟨⟨hl1, hl2⟩, hs, rfl⟩ := h
+            rw [Val.retypeC_eq hs, sliceComp_agree (A := Addrs.fixed) (B := inferInstance) hl1 hl2]
             obtain ⟨hop, m, mv, e, hva, hmv, hmop, hma, hty⟩ := AtomSim.sliceMakeLC_spec hlc
             have ht : termOp v.op = true := by rcases hop with h | h <;> rw [h] <;> rfl
             have htm : termOp mv.op = true := by rw [hmop]; rfl
@@ -258,7 +260,10 @@ theorem termConst_den :
       next =>
         split at h
         next ht =>
-          obtain ⟨cs, hcs, rfl⟩ := Option.map_eq_some_iff.1 h
+          obtain ⟨cs, hcs, h⟩ := Option.bind_eq_some_iff.1 h
+          obtain ⟨r, hr', rfl⟩ := Option.map_eq_some_iff.1 h
+          obtain ⟨hov, hrl⟩ := GoFV.Proof.Rules.opValC_eq hr'
+          rw [Val.retypeC_eq hrl, ← hov]
           have hl : ∀ (l : List ID) (cs : List Val), l.mapM (termConst tabs f k) = some cs →
               l.map (den f.value? tabs ρ n) = cs := by
             intro l

@@ -131,7 +131,9 @@ private theorem termConst_reg {env : Env} {tabs : Tables} {f : Func} {S : Frame}
       next l c hlc =>
         split at h
         next lv cv hl hc =>
-          cases h
+          simp only [Option.ite_none_right_eq_some, Bool.and_eq_true, Option.some.injEq] at h
+          obtain ⟨⟨hl1, hl2⟩, hs, rfl⟩ := h
+          rw [Val.retypeC_eq hs, sliceComp_agree (A := Addrs.fixed) (B := inferInstance) hl1 hl2]
           obtain ⟨hop, m, mv, e, hva, hmv, hmop, hma, hty⟩ := AtomSim.sliceMakeLC_spec hlc
           have ht : termOp v.op = true := by rcases hop with h | h <;> rw [h] <;> rfl
           have htm : termOp mv.op = true := by rw [hmop]; rfl
@@ -152,7 +154,9 @@ private theorem termConst_reg {env : Env} {tabs : Tables} {f : Func} {S : Frame}
     next =>
     split at h
     next ht =>
-      obtain ⟨cs, hcs, rfl⟩ := Option.map_eq_some_iff.1 h
+      obtain ⟨cs, hcs, h⟩ := Option.bind_eq_some_iff.1 h
+      obtain ⟨r, hr', rfl⟩ := Option.map_eq_some_iff.1 h
+      obtain ⟨hov, hrl⟩ := GoFV.Proof.Rules.opValC_eq hr'
       have hnphi : v.op ≠ .Phi := fun e => by rw [e] at ht; exact absurd ht (by decide)
       have hl : ∀ (l : List ID) (cs : List Val), (∀ b ∈ l, A b) →
           l.mapM (termConst tabs f k) = some cs → l.map (rv S) = cs := by
@@ -175,7 +179,7 @@ private theorem termConst_reg {env : Env} {tabs : Tables} {f : Func} {S : Frame}
       have hargs := hl _ cs (fun b hb => hA.cl a v ha hv hnphi b (Array.mem_toList_iff.1 hb)) hcs
       have hy' := GoFV.Proof.AtomSim.evalValue_term ht (hev hnphi)
       rw [hid a v ha hv, tys_of_value hv, Option.getD_some, hargs] at hy'
-      rw [hr, hy']
+      rw [hr, hy', Val.retypeC_eq hrl, ← hov]
       rfl
     next => cases h
 

@@ -1,4 +1,4 @@
-import GoFV.SSA.Sem.Pure
+import GoFV.SSA.Sem.Agree
 import GoFV.SSA.Export
 
 variable [GoFV.SSA.Sem.Addrs]
@@ -58,5 +58,52 @@ theorem opVal_constString (tabs : Tables) (ty : Ty) (ai : Int64) (ax : Option Au
 
 example : opVal {} .Add64 (.int .w64) 0 none [.i64 1, .i64 2] = .i64 3 := rfl
 example : opVal {} .Addr (.ptr none) 0 none [] = .poison := rfl
+
+end GoFV.Proof.Rules
+
+namespace GoFV.Proof.Rules
+
+open GoFV.SSA GoFV.SSA.Sem
+
+omit [GoFV.SSA.Sem.Addrs] in
+/-- `opVal` agrees under any two instances on arguments `evalPure_agree` accepts (`Addr` and
+`ConstString` read only the tables). -/
+theorem opVal_agree {A B : Addrs} (tabs : Tables) (op : Op) (ty : Ty) (ai : Int64)
+    (ax : Option AuxRef) {args : List Val} (hl : Val.lowBs args = true)
+    (hg : opGuard op args = true) :
+    @opVal A tabs op ty ai ax args = @opVal B tabs op ty ai ax args := by
+  unfold opVal
+  split
+  · rfl
+  · split
+    · rfl
+    · exact evalPure_agree op ty ai ax hl hg
+
+/-- **The value of a term node as the checkers compute it** (proofs3 §8, item 6): `opVal` at
+`Addrs.fixed`, on arguments without frame pointers whose pointer-read integers lie below `2^62`
+(`opGuard`), and only if the value has no frame pointer either; else `none`. Under every
+instance `opVal` then gives the same value (`opValC_eq`), so a checker built on it takes no
+instance. -/
+def opValC (tabs : Tables) (op : Op) (ty : Ty) (ai : Int64) (ax : Option AuxRef)
+    (args : List Val) : Option Val :=
+  if Val.lowBs args && opGuard op args then
+    let v := @opVal Addrs.fixed tabs op ty ai ax args
+    if v.lowB then some v else none
+  else none
+
+theorem opValC_eq {tabs : Tables} {op : Op} {ty : Ty} {ai : Int64} {ax : Option AuxRef}
+    {args : List Val} {v : Val} (h : opValC tabs op ty ai ax args = some v) :
+    opVal tabs op ty ai ax args = v ∧ v.lowB = true := by
+  unfold opValC at h
+  split at h
+  · rename_i hg
+    simp only [Bool.and_eq_true] at hg
+    simp only at h
+    split at h
+    · rename_i hv
+      cases h
+      exact ⟨opVal_agree tabs op ty ai ax hg.1 hg.2, hv⟩
+    · cases h
+  · cases h
 
 end GoFV.Proof.Rules

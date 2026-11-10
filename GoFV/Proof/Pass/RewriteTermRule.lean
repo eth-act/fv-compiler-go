@@ -129,13 +129,15 @@ def stNodes (r : Rule) (defs : List Value) : List (RNode × Value) :=
 def stOr (tabs : Tables) (r : Rule) (defs : List Value) : Oracle :=
   oracle (stVtys r) tabs (stNodes r defs)
 
+/-- The validator's bindings (`RewriteCheck.ruleOK`): at `Addrs.fixed`, which the semantic side
+relates to its instance up to values (`sigma_erase`). -/
 def stσ (tabs : Tables) (M : Defs) (r : Rule) (I : Inst) : Nat → DV :=
-  GoFV.Proof.Rules.sigmaT tabs (env tabs M I) r.pat
+  @GoFV.Proof.Rules.sigmaT Addrs.fixed tabs (env tabs M I) r.pat
 
 def stEv (tabs : Tables) (M : Defs) (r : Rule) (defs : List Value) (I : Inst) :
     GoFV.Rules.Expr → DV :=
   evalE (stVtys r) (stσ tabs M r I) (stOr tabs r defs) (env tabs M I)
-    (GoFV.Proof.Rules.Pat.denT tabs (env tabs M I) [] r.pat)
+    (@GoFV.Proof.Rules.Pat.denT Addrs.fixed tabs (env tabs M I) [] r.pat)
 
 /-- What `ruleOK` establishes. -/
 structure RuleFacts (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) where
@@ -269,6 +271,7 @@ theorem RuleFacts.stσ_good (F : RuleFacts tabs M r v defs) (x : Nat) :
   unfold stσ
   have hm := F.hmatch
   rw [F.hpat] at hm ⊢
+  letI : Addrs := Addrs.fixed
   exact sigma_good (S := Pat.sz (.op F.o none F.pty F.pai F.pax F.par F.pargs F.pcm))
     (fun p w h _ => ⟨w, h⟩) (fun _ p w h _ _ => ⟨w, h.mem⟩) hm (Nat.le_refl _) x
 

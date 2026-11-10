@@ -512,11 +512,15 @@ def fixedWhy (tabs : Tables) (ro : List (String × Sem.Alloc)) (f : Func) (u w :
     | none => s!"fixed: symbol not read-only"
     | some e =>
       let ty := tabs.ty u.type
-      let src := fixedSrc n e.2 ty (ptrBase tabs f 8 u.args[0]!).2
-      let tgt := (GoFV.Proof.Rules.opVal tabs w.op ty w.auxInt w.aux []).retype ty
-      if !fixedEq src tgt then s!"fixed: value {w.op.name} <{src.render} vs {tgt.render}>"
-      else if !WBCheck.memTyOK tabs f then "fixed: memTy"
-      else "fixed: ?"
+      match fixedSrc n e.2 ty (ptrBase tabs f 8 u.args[0]!).2,
+          GoFV.Proof.Rules.opValC tabs w.op ty w.auxInt w.aux [] with
+      | some src, some r =>
+        let tgt := r.retypeC ty
+        if !fixedEq src tgt then s!"fixed: value {w.op.name} <{src.render} vs {tgt.render}>"
+        else if !WBCheck.memTyOK tabs f then "fixed: memTy"
+        else "fixed: ?"
+      | none, _ => "fixed: frame pointer in the symbol"
+      | _, none => "fixed: value has a frame pointer"
   | _ => s!"fixed: base {((f.value? b).map (·.op.name)).getD "?"}"
 
 open GoFV.Rules RewriteCheck in
