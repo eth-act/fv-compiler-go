@@ -1401,11 +1401,46 @@ its linked address, `g56_value` ends with +Inf's bits in `V0`'s low word). G56 a
 functions on P0' (G55 on P0 accepts 7,331; 61 of them load a float constant, which G55 would
 reject on P0', where `checkObj` now accepts them).
 
+**Slice G48: stack arguments and stack results** (`GoFV/Gen/Check48.lean`, `checkG48 lc ps
+bstart g`; proven sound, `g48_value`, `g48_initMem`, `g48_term`, `g48_nilPanic`,
+`g48_boundsPanic`, `GoFV/Proof/Gen/G48.lean`; §8 item 7). G57 with two groups tried when G57
+rejects a value: the static calls whose ABI assigns inputs or outputs to the stack
+(`callKind48`: G47's call check on `callRegsS`, the ABI without its stack-assigned parameters),
+and the accesses off `SP` without an aux (`spKind48`: G3's stores and loads, `STP`, `STPW`,
+`FSTPD`, `FMOVS`/`FMOVD` stores and loads at `o(RSP)`). An access's window `[o, o + n)` lies in
+`[8, outargsSize)` (`outWin48`) and its base is an `SP` value homed in the Go register `SP` at a
+64-bit shape (`spBase48`); the function homes nothing but `SP` values and `Phi`s in that register
+(`spHomes48`, the checker's form of G48b's `SPHomes`). The theorems hold in an activation whose
+`outargs` block sits at `SP` (`hosp : E.outSP = true`; G48b's separation `SepFromW` and `SPInv`):
+an access's base reads as `SP`'s pointer (`sp_base48`, from `SPInv` and the base register's class
+in the class table), its machine address is `m.sp + o`, and G48a's step lemmas (`g48_spStore` …
+`g48_spFLoad`) keep `SepFromW`, a Phase 1 write lying at or above `Blk.writableFrom`
+(`sepW_out`). A call is G2's (`g2_callAt`) under the new trusted contract `CallOKStk`
+(`CallAtM true` at the registers `callRegsS` gives; STATUS Assumptions): the caller has stored
+the stack arguments at `8(RSP)` and up, where the callee reads them and writes its stack
+results. The upper-bit table: a store or a float access keeps the X registers (`uokl_x48`), an
+integer load gives G35's entry or drops its register's (`uokl_spLoad48`). `g48_value` takes
+`G54Pre` (G57's premise) and the contracts of the mode `true` through `E.outSP`; it and
+`g48_initMem`, `g48_term` keep `SPInv` (`spInv_step` under `spHomes48`); `g48_value` and
+`g48_initMem` take a lowered function (on one with no arm64 op `checkG48` is `checkNL30`, which
+G53S covers). Witness
+`genG48_witness` (`runtime.exit`'s ABI wrapper, `MOVW R0, 8(RSP)` then `CALL runtime.exit(SB)` of
+the `ABI0` `exit`, which G57 rejects (`v10: argument v3 in register 30`): in an activation with
+`outargs 0` at `SP = 2^62`, its `Addrs.fixed` address, `g48_value` runs the store of `code = 7`,
+after which the machine's byte at `SP + 8` is 7); `genG48_call_witness` then steps the `CALL`
+(`v6`) by `g48_value` with that byte at `SP + 8`, under `CallOKStk` for a callee that returns at
+once (`callOKStkC`); Phase 1's call consumes the argument (`outargs` `poison` again), and the
+activation stays a `G49Env` with `G3Inv` of the mode and `SPInv`. On quick-v10 no store reaches
+`outargs[0, 8)`:
+298 functions store off `SP` without an aux, 664 stores, the lowest at offset 8 (3 of them
+`FSTPQ`, outside G48). G48 accepts 7,595 functions (+217 over G57).
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
-1. **Calls** with nonempty stack arguments (`stack argument` 308; §8). Floating-point arguments
-   or results (153 (33)) are done in G47.
+1. **Calls** with nonempty stack arguments (`stack argument` 308; §8) are done in G48 for static
+   calls (after G48: 6 (3), from the calls other than static ones, whose check is `callRegs`).
+   Floating-point arguments or results (153 (33)) are done in G47.
 2. **Frame variables beyond G6**: parameters and results (`NAME_PARAM`, `Blk.local`: `frame
    variable operand class`, 294 (113 after G41)) and variables whose address is converted to an
    integer (`frame variable with an integer address`, 197 (50)) are done in G49 for G6's accesses
@@ -1498,6 +1533,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G55 | 7,331 (78.85%) | 232,869 |
 | G56 (on G55, P0') | 7,331 (78.85%) | 232,869 |
 | G57 | 7,378 (79.35%) | 235,204 |
+| G48 | 7,595 (81.69%) | 242,306 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1879,6 +1915,16 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `G56.lean`: `RoPre56`, `roAlloc_byte`, `constRo_mem`, `readMem_fconst`, `g56_fconst`,
   `vk56_step`, `vk56_nil`, `vk56_pb`, `g56L_value` … `g56L_term`, `g56_value`, `g56_initMem`,
   `g56_nilPanic`, `g56_boundsPanic`, `g56_term`.
+- `Spec48.lean`: what `checkG48` accepted (`VKsp48`, `VK48`, `callKind48_spec`, `spKind48_spec`,
+  `kind48_spec`, `vkind48_spec`, `vkind48_initMem`, `checkG33_of_48L`, `checkG48L_spec`,
+  `checkG48_spec`, `spHomes48_spec`, `spBase48_spec`).
+- `G48a.lean`: `ctx_mem_sp`, `progStep_stpAt`, `stepLoc_fstpd`, `progStep_stpwAt`,
+  `progStep_fstpdAt`, `wf_of_canWrite`, `sepW_out`, `g48_spStore`, `g48_spLoad`, `g48_spStp`,
+  `g48_spStpw` (on `G57a.lean`'s `stepLoc_stpw`), `g48_spFstpd`, `g48_spFStore`, `g48_spFLoad`;
+  `G48.lean`: `CallOKStk`,
+  `sp_base48`, `opsX48`, `uokl_x48`, `uokl_spLoad48`, `vk48_sp`, `vk48_step`, `VKsp48.ops`,
+  `vk48_nil`, `vk48_pb`, `g48L_value` … `g48L_term`, `g48_value`, `g48_initMem`,
+  `g48_nilPanic`, `g48_boundsPanic`, `g48_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -2470,6 +2516,21 @@ few:
      `Blk.base? (.outargs E.act) = some E.sp.toNat`; witness at `Addrs.mach` once it exists,
      else on a function whose stack arguments are written and read at the decoded addresses
      of `Addrs.fixed`.
+   - **Done (G48, §4).** `checkG48` is G57 (G54, G55 and G57 mode-generalized by G48b) with the
+     static calls of `callRegsS` and the accesses off `SP` at `[8, outargsSize)`; gen-check 7,595
+     (+217 over G57), and no store on quick-v10 reaches `outargs[0, 8)` (664 stores off `SP`
+     without an aux in 298 functions, the lowest at offset 8). Differences from this plan: `SPAt`
+     is G48b's
+     `SPInv` (with `hosp : E.outSP = true`), not a `Blk.base?` premise (`AddrAgree` gives the
+     base; the witness is at `Addrs.fixed` with `SP` at `outargs 0`'s address `2^62`); the
+     callee contract is a separate trusted `CallOKStk` (`CallAtM true` over `callRegsS`), the
+     `CallOKS` family keeping `callRegs`; the layout check is not in the checker: the
+     separation `SepFromW` of the activation (`G3Inv … true`) already keeps every live block,
+     the `outargs` block included, off the spill slots, and `sepW_out` places each store; two
+     static checks are new, `spBase48` (an access's base homed in the Go register `SP`) and
+     `spHomes48` (`SPHomes`); the theorems are `g48_*` only (G53S keeps the older slices in the
+     mode), and `g48_value`/`g48_initMem` take a lowered function. Not covered: interface and
+     closure calls with stack arguments (`callRegs`), `FSTPQ`/`LDP`/`MOVDaddr` off `SP`.
 8. **Slice plan: frame parameters and results (`.PARAM` operands).** Rejected today by
    `frameVar?` (`Gen/Check6.lean:57-68`: `frame variable operand class`; after G23 95
    functions where it is the only reason, 294 where it occurs). Phase 1 gives every

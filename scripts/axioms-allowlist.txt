@@ -376,6 +376,16 @@ GoFV.Proof.Witness.ObjRo.ro_facts._native.native_decide.ax_1_1 06168020e542decc9
 # relates `V0` (`fvalRel_vreloadVal`); compiled evaluation.
 GoFV.Proof.Witness.ObjMoreF.tan_facts._native.native_decide.ax_1_1 5c57601d3b390b621e3a5d015298575e4230eb28619485675a3f0d823655f163
 
+# genG48_witness (GoFV/Proof/Witness/GenG48.lean, #553): `checkG48` accepts `runtime.exit`'s ABI
+# wrapper and `checkG57` does not (`MOVWstore [8] SP` `v10`, a stack argument of the `ABI0` call);
+# `runLoc` runs `v10` into `outargs 0`; compiled evaluation.
+GoFV.Proof.Witness.GenG48.g48_facts._native.native_decide.ax_1_1 e0ca1c863ab3c985f74f8310ab8795b9e0e6dd6a802f1a6921a0c587374e6765
+
+# genG48_call_witness (GoFV/Proof/Witness/GenG48.lean, #553): `v6` of `runtime.exit`'s wrapper is a
+# static call with a stack input (`callRegs` rejects, `callRegsS` gives no register); `runLoc` runs
+# it from the state after the stack store; compiled evaluation.
+GoFV.Proof.Witness.GenG48.g48_callFacts._native.native_decide.ax_1_1 fbd6ff3a553c63fe42042e1a3f13e825f959cfd6acf7073283447250e19d4f81
+
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
 # test code only: the parity runner's pointer-equality fast path (GoFVTest/Parity/Compare.lean).
