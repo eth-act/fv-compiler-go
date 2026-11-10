@@ -7,9 +7,10 @@ variable [GoFV.SSA.Sem.Addrs]
 /-!
 # What `checkG61` accepted (`GoFV/Gen/Check61.lean`)
 
-`VK61`: G60's kinds (`VK60`), or G61's group A (`VK61a`: the atomics and their components). On
-`InitMem`, `vkind61` is `vkind60` (`vkind61_initMem`). `checkG61L_spec` is `checkG60L_spec` with
-`vkind61` and `atomOK`, and `checkG61_spec` splits off `refsLive`.
+`VK61`: G60's kinds (`VK60`), or G61's group A (`VK61a`: the atomics and their components). Off
+G61's ops (`op61a`), `vkind61` is `vkind60` (`vkind61_eq60`; on `InitMem`, `vkind61_initMem`); of
+an atomic it accepts what `vkind61a` accepts (`vkind61_atom`). `checkG61L_spec` is
+`checkG60L_spec` with `vkind61` and `atomOK`, and `checkG61_spec` splits off `refsLive`.
 -/
 
 namespace GoFV.Gen.Check
@@ -27,26 +28,39 @@ inductive VK61 (lc : LocCtx) (g : G2In) (v : Value) : VKind2 → Prop
 theorem vkind61_spec {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2}
     (h : vkind61 lc g v = .ok kd) (hen : entryOp24 v.op = false) : VK61 lc g v kd := by
   unfold vkind61 at h
-  cases h60 : vkind60 lc g v with
-  | ok kd' =>
-    rw [h60] at h
-    cases h
-    exact .g60 (vkind60_spec h60 hen)
-  | error e =>
-    rw [h60] at h
+  cases ha : vkind61a lc v with
+  | some r =>
+    rw [ha] at h
     simp only at h
-    split at h
-    · rename_i r ha
-      cases h
-      exact .a (vkind61a_spec ha)
-    · cases h
+    subst h
+    exact .a (vkind61a_spec ha)
+  | none =>
+    rw [ha] at h
+    exact .g60 (vkind60_spec h hen)
+
+/-- On an op outside G61's group A and its components, `vkind61` is `vkind60`. -/
+theorem vkind61_eq60 {lc : LocCtx} {g : G2In} {v : Value} (h : op61a v.op = false) :
+    vkind61 lc g v = vkind60 lc g v := by
+  unfold vkind61
+  rw [vkind61a_none h]
 
 /-- On `InitMem`, `vkind61` is `vkind60`. -/
 theorem vkind61_initMem {lc : LocCtx} {g : G2In} {v : Value} (hop : v.op = .InitMem) :
-    vkind61 lc g v = vkind60 lc g v := by
-  have hn : vkind61a lc v = none := vkind61a_none (by simp [op61a, atom61?, hop])
-  unfold vkind61
-  cases vkind60 lc g v <;> simp [hn]
+    vkind61 lc g v = vkind60 lc g v :=
+  vkind61_eq60 (by simp [op61a, atom61?, hop])
+
+/-- What `vkind61` accepted of an atomic of G61's group A is `vkind61a`'s. -/
+theorem vkind61_atom {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} {f : AtomF61} {n : Nat}
+    (hop : atom61? v.op = some (f, n)) (h : vkind61 lc g v = .ok kd) : VK61a lc v kd := by
+  unfold vkind61 at h
+  cases ha : vkind61a lc v with
+  | some r =>
+    rw [ha] at h
+    simp only at h
+    subst h
+    exact vkind61a_spec ha
+  | none =>
+    simp [vkind61a, hop] at ha
 
 /-- On a function with no arm64 op, G61's check is G33. -/
 theorem checkG33_of_61L {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}

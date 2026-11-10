@@ -20,7 +20,7 @@ vacuously. `verified_mach_S_atSP` applies with every premise discharged:
 
 * the Progs are the stock `.prog` file's (`pf.prog0`, the Progs genssa's port reproduces; P0' is
   the identity: no float constant), numbered by the assembler's `flush` (`g`: `GenG49Mach.g` with
-  the `flush` symbol table), so that `checkG60` (`refsLive`, `checkG60L` on `liveCtx` of the
+  the `flush` symbol table), so that `checkG61` (`refsLive`, `checkG61L` on `liveCtx` of the
   pipeline's output), `retRegsOK`, `entryStoresOK` (no pending window) and `checkObj` (the port's
   words, 16-byte frame, no stack check) accept the same list; every symbol at `symS = 0x8000`,
   within `CALL`'s range of the code at `ObjG7.base`;
@@ -121,7 +121,7 @@ def pf : ProgFile :=
 /-- Its P0 Progs, numbered by the assembler. -/
 def ps : Array Prog := pf.prog0.progs
 
-/-- `checkG60`'s input: `GenG49Mach.g` with the symbols numbered as the assembler's `flush`. -/
+/-- `checkG61`'s input: `GenG49Mach.g` with the symbols numbered as the assembler's `flush`. -/
 def g : G2In :=
   match flush pf with
   | .ok fo => { GenG49Mach.g with syms := fo.st.syms }
@@ -215,8 +215,8 @@ def blkOf (lc : LocCtx) : Block := (lc.ctx.f.block? 1).getD default
 /-- The call `v7` of `lc`. -/
 def v7Of (lc : LocCtx) : Value := (lc.ctx.f.value? 7).getD default
 
-/-- The tables `checkG60L` gives on `lc`. -/
-def ktOf (lc : LocCtx) : KTab := (getOk (checkG60L lc ps bs g)).2
+/-- The tables `checkG61L` gives on `lc`. -/
+def ktOf (lc : LocCtx) : KTab := (getOk (checkG61L lc ps bs g)).2
 
 /-- The value is the pointer to the start of activation 0's `outargs` block. -/
 def isSp0 : Val → Bool
@@ -292,14 +292,14 @@ def objFacts : Bool :=
 theorem obj_facts : objFacts = true := by
   native_decide
 
-/-- What compiled evaluation checks of a `runLoc` context `lc` with no instance: `checkG60L`
+/-- What compiled evaluation checks of a `runLoc` context `lc` with no instance: `checkG61L`
 accepts the Progs with `tab`, `retRegsOK` the return (no register result), the accessed frame
 variables are the results (aux 4 and 3, `Blk.local`), no home slot; the entry `b1`
 has nine values, the third the static call `v7` (`callFacts`); `R30` has class 64 after the entry
 values, no upper-bit fact is carried; simple ops after the call (`simpleFrom`); `entryStoresOK`
 holds with no pending window; `memTyL`. -/
 def lcFactsC (lc : LocCtx) : Bool :=
-  isOk (checkG60L lc ps bs g) && (getOk (checkG60L lc ps bs g)).1 == tab &&
+  isOk (checkG61L lc ps bs g) && (getOk (checkG61L lc ps bs g)).1 == tab &&
     retRegsOK lc (ktOf lc) && ownOutRegs lc == [] &&
     accessedVars lc == [4, 3] && lc.ctx.tabs.forgeable 3 && lc.ctx.tabs.forgeable 4 &&
     (homeSlots lc).isEmpty && lc.ctx.f.entry == 1 && lc.ctx.f.blocks.toList.contains 1 && (lc.ctx.f.block? 1).isSome &&
@@ -670,7 +670,7 @@ theorem sCallIs_spec {s : LocState} (h : sCallIs s = true) :
 
 /-- The checks of `lcFactsC` as propositions. -/
 theorem lcC_spec {lc : LocCtx} (h : lcFactsC lc = true) :
-    checkG60L lc ps bs g = .ok (tab, ktOf lc) ∧ retRegsOK lc (ktOf lc) = true ∧
+    checkG61L lc ps bs g = .ok (tab, ktOf lc) ∧ retRegsOK lc (ktOf lc) = true ∧
     ownOutRegs lc = [] ∧ accessedVars lc = [4, 3] ∧ lc.ctx.tabs.forgeable 3 = true ∧
     lc.ctx.tabs.forgeable 4 = true ∧ (homeSlots lc).isEmpty = true ∧ lc.ctx.f.entry = 1 ∧
     1 ∈ lc.ctx.f.blocks.toList ∧ lc.ctx.f.block? 1 = some (blkOf lc) ∧
@@ -683,7 +683,7 @@ theorem lcC_spec {lc : LocCtx} (h : lcFactsC lc = true) :
   simp only [lcFactsC, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem, and_assoc] at h
   obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h15, h16, h17, h18, h19,
     h20, h21, h22, h23⟩ := h
-  have hc : checkG60L lc ps bs g = .ok (tab, ktOf lc) := by
+  have hc : checkG61L lc ps bs g = .ok (tab, ktOf lc) := by
     rw [← h2]
     exact eq_getOk h1
   have hb : lc.ctx.f.block? 1 = some (blkOf lc) := by
@@ -1166,9 +1166,9 @@ theorem verified_mach_S_atSP_witness :
     obtain ⟨m0, hrun0⟩ := isRet2_spec hrun
     have hd : (GoFV.SSA.run env penv.tables f0 [] {} 5).Defined := by
       rw [hrun0]; trivial
-    have hc60 : checkG60 (LocCtx.make r.st.tables r.st.func) ps bs g = .ok (tab, ktOf
+    have hc61 : checkG61 (LocCtx.make r.st.tables r.st.func) ps bs g = .ok (tab, ktOf
         (liveCtx (LocCtx.make r.st.tables r.st.func))) := by
-      simpa [checkG60, hrl] using hcL
+      simpa [checkG61, hrl] using hcL
     have hm3 := ιM_l3 h3 ho0
     have hm4 := ιM_l4 h4 ho8
     have hE := g28Env (lc := liveCtx (LocCtx.make r.st.tables r.st.func)) hlt hav hf3 hf4 hsl hso
@@ -1232,7 +1232,7 @@ theorem verified_mach_S_atSP_witness :
     obtain ⟨fuel', href, raw, hraw, hfin, hdef, hret, -⟩ :=
       verified_mach_S_atSP (A := AM) (g := g) (L := L)
         (E0 := E0 (liveCtx (LocCtx.make r.st.tables r.st.func))) rfl hpe hv
-        (env_vpre hdict hro _) hnn hap hnp hd rfl hc60 hO hookMap_H
+        (env_vpre hdict hro _) hnn hap hnp hd rfl hc61 hO hookMap_H
         (ObjG7.noICall_spec hni L) hrok hME (by rw [haz]; decide) (by decide)
         (fun _ _ _ h => by rw [hnone] at h; cases h) (fun _ _ _ h => by rw [hnone] at h; cases h)
         hE hEE hb1 hbm (by rw [hsz]; decide) hsI hes hent

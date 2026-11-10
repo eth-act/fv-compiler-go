@@ -12,7 +12,9 @@ status `R27` is 0: one core, `progEffect`'s exclusive store always succeeds), th
 compare-and-swap `CASAL*` (`progStep_casal`: the old bytes to the compared register, the new
 value stored when they equal it) and the other LSE instructions (`progStep_lse`: the old bytes to
 the destination, `lseF` of them and the operand stored), and `ADD Rm, Rd` (`progStep_addTo`, the
-two-operand form genssa emits after an atomic add).
+two-operand form genssa emits after an atomic add). With the address in the nil page, `LDAXR*`,
+`CASAL*` and the LSE instructions fault there (`progStep_ldaxr_nil`, `progStep_casal_nil`,
+`progStep_lse_nil`): each loads the location first.
 -/
 
 namespace GoFV.Proof.Gen
@@ -86,6 +88,32 @@ private theorem lsePre_of {f : AtomF61} {n : Nat}
 
 variable {L : Link} {p : Prog} {s : MState} {next : BitVec 64}
 
+/-- A Prog whose effect loads first at `a` in the nil page faults there. -/
+theorem progStep_nil_load {e : Eff} {a : BitVec 64} {n : Nat} {ls : List (BitVec 64 × Nat)}
+    (hn : L.nextAddr p.id = some next) (hsk : p.isSkip = false)
+    (he : progEffect ⟨L, s, p⟩ = .ok e) (hl : e.loads = (a, n) :: ls) (hnil : nilPage a = true) :
+    progStep L p s = .error (.nilPage a) := by
+  simp [progStep, hn, hsk, he, Eff.nilAccess?, hl, List.find?, hnil]
+
+private theorem eff_ldaxr {n kd : Nat} {a : BitVec 64} (hn' : n = 8 ∨ n = 4 ∨ n = 1)
+    (hkd : kd < 32) (hpa : p.as = (llsc61 n).1)
+    (hma : (ProgCtx.mk L s p).mem p.from_ = .ok (a, none)) (ht : p.to = regA (REG_R0 + kd)) :
+    progEffect ⟨L, s, p⟩ =
+      .ok (effWd { loads := [(a, n)] } kd ((readMem s.mem a n).setWidth 64)) := by
+  have hp := ldaxPre_of hn'
+  rw [← hpa] at hp
+  obtain ⟨⟨-, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩, h12, h13, h14⟩ := hp
+  unfold progEffect
+  simp only [h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, hma, ht, regA, Eff.ld,
+    ProgCtx.load, Bool.false_or, Bool.false_eq_true, ↓reduceIte, h12, h13, h14, bind,
+    Except.bind]
+  rw [h12, if_neg Bool.false_ne_true, h14]
+  exact eff_wX_dest hkd
+
+private theorem ldaxr_skip {n : Nat} (hn' : n = 8 ∨ n = 4 ∨ n = 1) (hpa : p.as = (llsc61 n).1) :
+    p.isSkip = false := by
+  rcases hn' with rfl | rfl | rfl <;> simp [Prog.isSkip, hpa, llsc61]
+
 /-- `LDAXR{,W,B} (Rn), Rd` with the address `a` outside the nil page: the zero extension of the
 `n` bytes at `a` in `X kd`. -/
 theorem progStep_ldaxr {n kd : Nat} {a : BitVec 64} (hn' : n = 8 ∨ n = 4 ∨ n = 1) (hkd : kd < 32)
@@ -94,19 +122,8 @@ theorem progStep_ldaxr {n kd : Nat} {a : BitVec 64} (hn' : n = 8 ∨ n = 4 ∨ n
     (ht : p.to = regA (REG_R0 + kd)) (hnil : nilPage a = false) :
     progStep L p s = .ok { s.wX (BitVec.ofNat 5 kd) ((readMem s.mem a n).setWidth 64) with
       pc := next } := by
-  have hp := ldaxPre_of hn'
-  rw [← hpa] at hp
-  obtain ⟨⟨-, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩, h12, h13, h14⟩ := hp
-  have he : progEffect ⟨L, s, p⟩ =
-      .ok (effWd { loads := [(a, n)] } kd ((readMem s.mem a n).setWidth 64)) := by
-    unfold progEffect
-    simp only [h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, hma, ht, regA, Eff.ld,
-      ProgCtx.load, Bool.false_or, Bool.false_eq_true, ↓reduceIte, h12, h13, h14, bind,
-      Except.bind]
-    rw [h12, if_neg Bool.false_ne_true, h14]
-    exact eff_wX_dest hkd
-  have hsk : p.isSkip = false := by
-    rcases hn' with rfl | rfl | rfl <;> simp [Prog.isSkip, hpa, llsc61]
+  have he := eff_ldaxr hn' hkd hpa hma ht
+  have hsk := ldaxr_skip hn' hpa
   have hnil' : (effWd { loads := [(a, n)] } kd ((readMem s.mem a n).setWidth 64)).nilAccess? =
       none := by
     by_cases h : kd = 31 <;> simp [effWd, h, Eff.nilAccess?, List.find?, hnil]
@@ -115,6 +132,15 @@ theorem progStep_ldaxr {n kd : Nat} {a : BitVec 64} (hn' : n = 8 ∨ n = 4 ∨ n
   · subst h; rfl
   · simp only [effWd, h, ↓reduceIte, Eff.apply, List.foldr]
     rfl
+
+/-- `LDAXR{,W,B} (Rn), Rd` with the address `a` in the nil page: the load faults. -/
+theorem progStep_ldaxr_nil {n kd : Nat} {a : BitVec 64} (hn' : n = 8 ∨ n = 4 ∨ n = 1)
+    (hkd : kd < 32) (hn : L.nextAddr p.id = some next) (hpa : p.as = (llsc61 n).1)
+    (hma : (ProgCtx.mk L s p).mem p.from_ = .ok (a, none))
+    (ht : p.to = regA (REG_R0 + kd)) (hnil : nilPage a = true) :
+    progStep L p s = .error (.nilPage a) :=
+  progStep_nil_load (n := n) (ls := []) hn (ldaxr_skip hn' hpa) (eff_ldaxr hn' hkd hpa hma ht)
+    (by by_cases h : kd = 31 <;> simp [effWd, h]) hnil
 
 /-- `STLXR{,W,B} Rs, (Rn), R27` with the address `a` outside the nil page: the low `n` bytes of
 `X ks` stored at `a`, and the status `X27 = 0` (the store succeeds on one core). -/
@@ -144,6 +170,36 @@ theorem progStep_stlxr {n ks : Nat} {a : BitVec 64} (hn' : n = 8 ∨ n = 4 ∨ n
   simp only [Eff.apply, List.foldr, List.foldl, Option.getD_none]
   simp only [MState.wX, show (BitVec.ofNat 5 27 : BitVec 5) ≠ 31 by decide, ↓reduceIte]
 
+/-- The effect of `CASAL{D,W} Rs, (Rn), Rt` at the address `a`: the old bytes to `X ks`, and the
+new ones stored when they equal the compared ones. -/
+private theorem eff_casal {n ks kt : Nat} {a : BitVec 64} (hn' : n = 8 ∨ n = 4) (hks : ks < 31)
+    (hkt : kt < 32) (hpa : p.as = lse61 .casV n) (hf : p.from_ = regA (REG_R0 + ks))
+    (hma : (ProgCtx.mk L s p).mem p.to = .ok (a, none)) (ht2 : p.regTo2 = REG_R0 + kt) :
+    progEffect ⟨L, s, p⟩ = .ok
+      (if (readMem s.mem a n).setWidth 64 == ProgOp.maskN n (s.rX (BitVec.ofNat 5 ks)) then
+        ({ x := [(ks, (readMem s.mem a n).setWidth 64)]
+           loads := [(a, n)]
+           stores := [(a, n, (s.rX (BitVec.ofNat 5 kt)).toNat % 2 ^ (8 * n))] } : Eff)
+      else ({ x := [(ks, (readMem s.mem a n).setWidth 64)], loads := [(a, n)] } : Eff)) := by
+  have hp := casalPre_of hn'
+  rw [← hpa] at hp
+  obtain ⟨⟨-, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩, h12, h13, h14, h15, h16, h17⟩ := hp
+  unfold progEffect
+  simp only [h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, hma, hf, ht2, regA, Eff.ld,
+    ProgCtx.load, ctx_x_r0 (by omega : ks < 32), ctx_x_r0 hkt, Bool.false_or,
+    Bool.false_eq_true, ↓reduceIte, h12, h13, h14, h15, h16, eff_wX_r0 hks, bind,
+    Except.bind]
+  rw [h17]
+  by_cases heq : (readMem s.mem a n).setWidth 64 == ProgOp.maskN n (s.rX (BitVec.ofNat 5 ks))
+  · rw [if_pos heq, if_pos heq]
+    rfl
+  · rw [if_neg heq, if_neg heq]
+    rfl
+
+private theorem casal_skip {n : Nat} (hn' : n = 8 ∨ n = 4) (hpa : p.as = lse61 .casV n) :
+    p.isSkip = false := by
+  rcases hn' with rfl | rfl <;> simp [Prog.isSkip, hpa, lse61]
+
 /-- `CASAL{D,W} Rs, (Rn), Rt` with the address `a` outside the nil page: the zero extension of
 the `n` bytes at `a` in `X ks`, and, when they equal the low `n` bytes of `X ks`, the low `n`
 bytes of `X kt` stored at `a`. -/
@@ -158,38 +214,53 @@ theorem progStep_casal {n ks kt : Nat} {a : BitVec 64} (hn' : n = 8 ∨ n = 4) (
             (BitVec.ofNat (8 * n) ((s.rX (BitVec.ofNat 5 kt)).toNat % 2 ^ (8 * n))),
           pc := next }
       else { s.wX (BitVec.ofNat 5 ks) ((readMem s.mem a n).setWidth 64) with pc := next }) := by
-  have hp := casalPre_of hn'
-  rw [← hpa] at hp
-  obtain ⟨⟨-, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩, h12, h13, h14, h15, h16, h17⟩ := hp
-  have hsk : p.isSkip = false := by
-    rcases hn' with rfl | rfl <;> simp [Prog.isSkip, hpa, lse61]
+  have he := eff_casal hn' hks hkt hpa hf hma ht2
+  have hsk := casal_skip hn' hpa
   by_cases heq : (readMem s.mem a n).setWidth 64 == ProgOp.maskN n (s.rX (BitVec.ofNat 5 ks))
-  · have he : progEffect ⟨L, s, p⟩ = .ok ({
-        x := [(ks, (readMem s.mem a n).setWidth 64)]
-        loads := [(a, n)]
-        stores := [(a, n, (s.rX (BitVec.ofNat 5 kt)).toNat % 2 ^ (8 * n))] } : Eff) := by
-      unfold progEffect
-      simp only [h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, hma, hf, ht2, regA, Eff.ld,
-        ProgCtx.load, ctx_x_r0 (by omega : ks < 32), ctx_x_r0 hkt, Bool.false_or,
-        Bool.false_eq_true, ↓reduceIte, h12, h13, h14, h15, h16, eff_wX_r0 hks, bind,
-        Except.bind]
-      rw [h17, if_pos heq]
-      rfl
+  · rw [if_pos heq] at he
     rw [progStep_eq hn hsk he (by simp [Eff.nilAccess?, List.find?, hnil]), if_pos heq]
     simp only [Eff.apply, List.foldr, List.foldl, Option.getD_none]
     by_cases hc : (BitVec.ofNat 5 ks : BitVec 5) = 31 <;> simp only [MState.wX, hc, ↓reduceIte]
-  · have he : progEffect ⟨L, s, p⟩ = .ok ({
-        x := [(ks, (readMem s.mem a n).setWidth 64)]
-        loads := [(a, n)] } : Eff) := by
-      unfold progEffect
-      simp only [h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, hma, hf, ht2, regA, Eff.ld,
-        ProgCtx.load, ctx_x_r0 (by omega : ks < 32), ctx_x_r0 hkt, Bool.false_or,
-        Bool.false_eq_true, ↓reduceIte, h12, h13, h14, h15, h16, eff_wX_r0 hks, bind,
-        Except.bind]
-      rw [h17, if_neg heq]
-      rfl
+  · rw [if_neg heq] at he
     rw [progStep_eq hn hsk he (by simp [Eff.nilAccess?, List.find?, hnil]), if_neg heq]
     simp only [Eff.apply, List.foldr, List.foldl, Option.getD_none]
+
+/-- `CASAL{D,W} Rs, (Rn), Rt` with the address `a` in the nil page: the load faults. -/
+theorem progStep_casal_nil {n ks kt : Nat} {a : BitVec 64} (hn' : n = 8 ∨ n = 4) (hks : ks < 31)
+    (hkt : kt < 32) (hn : L.nextAddr p.id = some next) (hpa : p.as = lse61 .casV n)
+    (hf : p.from_ = regA (REG_R0 + ks)) (hma : (ProgCtx.mk L s p).mem p.to = .ok (a, none))
+    (ht2 : p.regTo2 = REG_R0 + kt) (hnil : nilPage a = true) :
+    progStep L p s = .error (.nilPage a) :=
+  progStep_nil_load (n := n) (ls := []) hn (casal_skip hn' hpa)
+    (eff_casal hn' hks hkt hpa hf hma ht2)
+    (by split <;> rfl) hnil
+
+/-- The effect of an LSE read-modify-write `op Rs, (Rn), Rt` of family `f` at the address `a`. -/
+private theorem eff_lse {f : AtomF61} {n ks kt : Nat} {a : BitVec 64}
+    (hf' : f = .xchgV ∧ (n = 8 ∨ n = 4 ∨ n = 1) ∨ f = .addV ∧ (n = 8 ∨ n = 4) ∨
+      f = .andV ∧ (n = 8 ∨ n = 4 ∨ n = 1) ∨ f = .orV ∧ (n = 8 ∨ n = 4 ∨ n = 1))
+    (hks : ks < 32) (hkt : kt < 32) (hpa : p.as = lse61 f n)
+    (hf : p.from_ = regA (REG_R0 + ks)) (hma : (ProgCtx.mk L s p).mem p.to = .ok (a, none))
+    (ht2 : p.regTo2 = REG_R0 + kt) :
+    progEffect ⟨L, s, p⟩ = .ok { (effWd { loads := [(a, n)] } kt
+      ((readMem s.mem a n).setWidth 64)) with
+        stores := [(a, n, (ProgOp.maskN n
+          (lseF f ((readMem s.mem a n).setWidth 64) (s.rX (BitVec.ofNat 5 ks)))).toNat)] } := by
+  have hp := lsePre_of hf'
+  rw [← hpa] at hp
+  obtain ⟨⟨-, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩, h12, h13, h14, h15, h16, h17⟩ := hp
+  unfold progEffect
+  simp only [h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, hma, hf, ht2, regA, Eff.ld,
+    ProgCtx.load, ctx_x_r0 hks, Bool.false_or, Bool.false_eq_true, ↓reduceIte, h12, h13, h14,
+    h15, h16, h17, eff_wX_dest hkt, bind, Except.bind]
+  rfl
+
+private theorem lse_skip {f : AtomF61} {n : Nat}
+    (hf' : f = .xchgV ∧ (n = 8 ∨ n = 4 ∨ n = 1) ∨ f = .addV ∧ (n = 8 ∨ n = 4) ∨
+      f = .andV ∧ (n = 8 ∨ n = 4 ∨ n = 1) ∨ f = .orV ∧ (n = 8 ∨ n = 4 ∨ n = 1))
+    (hpa : p.as = lse61 f n) : p.isSkip = false := by
+  rcases hf' with ⟨rfl, hn⟩ | ⟨rfl, hn⟩ | ⟨rfl, hn⟩ | ⟨rfl, hn⟩ <;>
+  · rcases hn with rfl | rfl | rfl <;> simp [Prog.isSkip, hpa, lse61]
 
 /-- An LSE read-modify-write `op Rs, (Rn), Rt` of family `f` with the address `a` outside the nil
 page: the zero extension of the `n` bytes at `a` in `X kt`, and the low `n` bytes of `lseF f` of
@@ -204,21 +275,8 @@ theorem progStep_lse {f : AtomF61} {n ks kt : Nat} {a : BitVec 64}
       mem := writeMem s.mem a n (BitVec.ofNat (8 * n) (ProgOp.maskN n
         (lseF f ((readMem s.mem a n).setWidth 64) (s.rX (BitVec.ofNat 5 ks)))).toNat),
       pc := next } := by
-  have hp := lsePre_of hf'
-  rw [← hpa] at hp
-  obtain ⟨⟨-, h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩, h12, h13, h14, h15, h16, h17⟩ := hp
-  have hsk : p.isSkip = false := by
-    rcases hf' with ⟨rfl, hn⟩ | ⟨rfl, hn⟩ | ⟨rfl, hn⟩ | ⟨rfl, hn⟩ <;>
-    · rcases hn with rfl | rfl | rfl <;> simp [Prog.isSkip, hpa, lse61]
-  have he : progEffect ⟨L, s, p⟩ = .ok { (effWd { loads := [(a, n)] } kt
-      ((readMem s.mem a n).setWidth 64)) with
-        stores := [(a, n, (ProgOp.maskN n
-          (lseF f ((readMem s.mem a n).setWidth 64) (s.rX (BitVec.ofNat 5 ks)))).toNat)] } := by
-    unfold progEffect
-    simp only [h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, hma, hf, ht2, regA, Eff.ld,
-      ProgCtx.load, ctx_x_r0 hks, Bool.false_or, Bool.false_eq_true, ↓reduceIte, h12, h13, h14,
-      h15, h16, h17, eff_wX_dest hkt, bind, Except.bind]
-    rfl
+  have hsk := lse_skip hf' hpa
+  have he := eff_lse hf' hks hkt hpa hf hma ht2
   rw [progStep_eq hn hsk he (by by_cases h : kt = 31 <;>
     simp [effWd, h, Eff.nilAccess?, List.find?, hnil])]
   by_cases h : kt = 31
@@ -227,6 +285,18 @@ theorem progStep_lse {f : AtomF61} {n ks kt : Nat} {a : BitVec 64}
     simp only [MState.wX, show (BitVec.ofNat 5 31 : BitVec 5) = 31 by decide, ↓reduceIte]
   · simp only [effWd, h, ↓reduceIte, Eff.apply, List.foldr, List.foldl, Option.getD_none]
     by_cases hc : (BitVec.ofNat 5 kt : BitVec 5) = 31 <;> simp only [MState.wX, hc, ↓reduceIte]
+
+/-- An LSE read-modify-write `op Rs, (Rn), Rt` of family `f` with the address `a` in the nil page:
+the load faults. -/
+theorem progStep_lse_nil {f : AtomF61} {n ks kt : Nat} {a : BitVec 64}
+    (hf' : f = .xchgV ∧ (n = 8 ∨ n = 4 ∨ n = 1) ∨ f = .addV ∧ (n = 8 ∨ n = 4) ∨
+      f = .andV ∧ (n = 8 ∨ n = 4 ∨ n = 1) ∨ f = .orV ∧ (n = 8 ∨ n = 4 ∨ n = 1))
+    (hks : ks < 32) (hkt : kt < 32) (hn : L.nextAddr p.id = some next) (hpa : p.as = lse61 f n)
+    (hf : p.from_ = regA (REG_R0 + ks)) (hma : (ProgCtx.mk L s p).mem p.to = .ok (a, none))
+    (ht2 : p.regTo2 = REG_R0 + kt) (hnil : nilPage a = true) :
+    progStep L p s = .error (.nilPage a) :=
+  progStep_nil_load (n := n) (ls := []) hn (lse_skip hf' hpa) (eff_lse hf' hks hkt hpa hf hma ht2)
+    (by by_cases h : kt = 31 <;> simp [effWd, h]) hnil
 
 theorem rn_to {c : ProgCtx} (h : c.p.reg = 0) : c.rn = c.p.to.reg := by
   simp [ProgCtx.rn, h]

@@ -9,8 +9,8 @@ variable [GoFV.SSA.Sem.Addrs]
 `checkG61 lc ps bstart g` is slice G60 (`GoFV/Gen/Check60.lean`, on P0') with, in a function with an
 arm64 op, the values of `Check61a.lean` (`vkind61a`: the lowered atomic exchanges, adds,
 compare-and-swaps, ands and ors, their load-exclusive/store-exclusive loops and LSE forms, and
-their components), tried when G60 rejects a value, and `atomOK`: each loop's `CBNZ R27` branches
-to its `LDAXR`, and each compare-and-swap loop's `BNE` branches to its `CSET`.
+their components), tried before G60's kinds, and `atomOK`: each loop's `CBNZ R27` branches to its
+`LDAXR`, and each compare-and-swap loop's `BNE` branches to its `CSET`.
 `GoFV/Proof/Gen/G61.lean` proves what an accepted function satisfies.
 -/
 
@@ -18,15 +18,12 @@ namespace GoFV.Gen.Check
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Asm
 
-/-- What `v` emits in G61, or why it is outside the slice: G60's kinds, then G61's group A (`e` is
-G60's reason, kept for the other values). -/
+/-- What `v` emits in G61, or why it is outside the slice: an atomic of G61's group A or one of its
+components by `vkind61a`, every other value by G60's kinds. -/
 def vkind61 (lc : LocCtx) (g : G2In) (v : Value) : Except String VKind2 :=
-  match vkind60 lc g v with
-  | .ok kd => .ok kd
-  | .error e =>
-    match vkind61a lc v with
-    | some r => r
-    | none => .error e
+  match vkind61a lc v with
+  | some r => r
+  | none => vkind60 lc g v
 
 /-- G60's check with G61's value check and `atomOK`. -/
 def checkG61L (lc : LocCtx) (ps : Array Prog) (bstart : ID → Option Nat) (g : G2In) :
