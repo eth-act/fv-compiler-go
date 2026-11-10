@@ -496,6 +496,11 @@ GoFV.Proof.Witness.GenG62.g62_facts._native.native_decide.ax_1_1 069f55ec8c356bf
 # `test/ken_cplx0` and `checkG62` rejects it; `runLoc` runs `v2` (`StoreReg` of `F0`, the float
 # spill `FMOVD F0, c+0(FP)`) from `1.5` in `F0`; compiled evaluation.
 GoFV.Proof.Witness.GenG63.g63_facts._native.native_decide.ax_1_1 28a78bc746829b11ada0e720b6f01cd0310e18533a1adc050f248790ee21cb2f
+# genG64_witness (GoFV/Proof/Witness/GenG64.lean, #553): on P0', `checkG64` accepts `makearray` of
+# `test/range` and `checkG63` rejects it; `runLoc` runs `v10` (`FLDPQ main..stmp_16(SB), (F0, F1)`,
+# the 128-bit pair load of the literal `[5]int{1, 2, 3, 4, 5}`) from a memory holding the literal;
+# compiled evaluation.
+GoFV.Proof.Witness.GenG64.g64_facts._native.native_decide.ax_1_1 7f1b8c81335dd202fbb18380d2eb47596513b62c371138be2045fa0795f787b1
 # objWhole_ret_witness in G48's mode (GoFV/Proof/Witness/ObjWholeS.lean, #553): `ObjWhole`'s facts
 # with the activation at `outargs 0`'s fixed base; compiled evaluation.
 GoFV.Proof.Witness.ObjWholeS.obj_facts._native.native_decide.ax_1_1 92778712e9ede9f127bc66e5b18b511f38318121b1576c48abf79f1866f0c9db

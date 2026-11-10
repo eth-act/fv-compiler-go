@@ -1400,8 +1400,11 @@ copies memory it owns. It joins `RunPre`'s per-step premises at the lift. Covera
 (`lake exe gen-check --jobs 2`, G64 on P0', on agent/g63 b19f5edd): 8,261 of 9,297 functions
 (88.85%, +55 over G63's 8,206; the ceiling of the 61 functions whose whole reason set was the blob
 moves is 58, the 3 others store to the outgoing area off `SP`), 281,544 values; rows G1 to G63
-identical to G63's run, the rejected set a subset of G63's. No witness yet (`GenG64`, on
-`examples/slices/main/main,1`, the first function only G64 accepts). Not yet composed into
+identical to G63's run, the rejected set a subset of G63's. Witness: `genG64_witness`
+(`GenG64.lean`, `makearray` of `test/range` on P0', mode `false`: `checkG63` rejects it, `checkG64`
+accepts it; `v10 = FLDPQ` from a memory holding `main..stmp_16` runs `FLDPQ main..stmp_16(SB),
+(F0, F1)` and leaves the blobs of the literal's first two 16-byte halves in `F0`/`F1` and their
+128 bits in `V0`/`V1`; `QLoadPre` holds by the two valid reads). Not yet composed into
 `verified_mach`.
 
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)

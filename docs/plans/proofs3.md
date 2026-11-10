@@ -1862,7 +1862,12 @@ blob has no class (`core_setRegN`, `knext_setN`, `kpairB_kStep`), and no X regis
 `vkind64_spec` and `vkind64_initMem`. G64 on P0' accepts 8,261 functions (88.85%, +55 over G63's
 8,206), 281,544 values (`--jobs 2`); G63 and every earlier slice are unchanged, and the rejected set
 is a subset of G63's. The 3 of the 61 that store off `SP` into the outgoing area (G48's mode) stay
-rejected. No witness yet. The lift to G64 adds `QLoadPre` to `RunPre`'s per-step premises.
+rejected. Witness `genG64_witness` (`GenG64.lean`, `makearray` of `test/range` on P0', at the mode
+`false`): `checkG63` rejects it (`v10: op FLDPQ`) and `checkG64` accepts it, and `g64_value` runs
+`v10 = FLDPQ {main..stmp_16}` (`FLDPQ main..stmp_16(SB), (F0, F1)`) from a memory holding the
+literal `[5]int{1, 2, 3, 4, 5}`, after which `F0`/`F1` hold the blobs of its first two 16-byte
+halves and the machine's `V0`/`V1` their 128 bits. The lift to G64 adds `QLoadPre` to `RunPre`'s
+per-step premises.
 
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
