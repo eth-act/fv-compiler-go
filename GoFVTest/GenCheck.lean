@@ -1,5 +1,5 @@
 import GoFV.Gen.Genssa
-import GoFV.Gen.Check57
+import GoFV.Gen.Check58
 import GoFV.Gen.Check56
 import GoFV.Gen.Check48
 import GoFV.Asm.ConstLoad
@@ -35,7 +35,8 @@ G51 (`GoFV.Gen.Check.checkG51`), G49 (`GoFV.Gen.Check.checkG49`, on G51), G52
 (`GoFV.Gen.Check.checkG52`), G53 (`GoFV.Gen.Check.checkG53`), G54 (`GoFV.Gen.Check.checkG54`),
 G55 (`GoFV.Gen.Check.checkG55`), G56 (`GoFV.Gen.Check.checkG56`, on G55, on P0': `p0PrimeSyms`, P0
 with `progedit`'s float constant loads and the constant symbols in G2's symbols), G57
-(`GoFV.Gen.Check.checkG57`) and G48 (`GoFV.Gen.Check.checkG48`, on G57),
+(`GoFV.Gen.Check.checkG57`), G48 (`GoFV.Gen.Check.checkG48`, on G57) and G58
+(`GoFV.Gen.Check.checkG58`, on G48),
 all with G2's inputs, on its P0 output and the function after `trim`, and counts the accepted
 functions. Rejections by the last
 slice are grouped by their reason with value and block numbers removed. `--sets FILE` writes each
@@ -113,6 +114,7 @@ structure Stats where
   constLoads56 : Nat := 0
   accepted57 : Nat := 0
   accepted48 : Nat := 0
+  accepted58 : Nat := 0
   errors : Nat := 0
   values : Nat := 0
   acceptedValues : Nat := 0
@@ -172,6 +174,7 @@ structure Stats where
   acceptedValues56 : Nat := 0
   acceptedValues57 : Nat := 0
   acceptedValues48 : Nat := 0
+  acceptedValues58 : Nat := 0
   /-- Functions by the set of reasons that reject them (sole reason: one-element set). -/
   sole : Std.HashMap String Nat := {}
   /-- Functions each reason occurs in. -/
@@ -221,6 +224,7 @@ def Stats.merge (a b : Stats) : Stats :=
     constLoads56 := a.constLoads56 + b.constLoads56,
     accepted57 := a.accepted57 + b.accepted57,
     accepted48 := a.accepted48 + b.accepted48,
+    accepted58 := a.accepted58 + b.accepted58,
     errors := a.errors + b.errors,
     values := a.values + b.values, acceptedValues := a.acceptedValues + b.acceptedValues,
     acceptedValues2 := a.acceptedValues2 + b.acceptedValues2,
@@ -279,6 +283,7 @@ def Stats.merge (a b : Stats) : Stats :=
     acceptedValues56 := a.acceptedValues56 + b.acceptedValues56,
     acceptedValues57 := a.acceptedValues57 + b.acceptedValues57,
     acceptedValues48 := a.acceptedValues48 + b.acceptedValues48,
+    acceptedValues58 := a.acceptedValues58 + b.acceptedValues58,
     sole := mergeMap a.sole b.sole, occurs := mergeMap a.occurs b.occurs,
     accept := a.accept ++ b.accept, sets := a.sets ++ b.sets }
 
@@ -291,10 +296,10 @@ def Stats.reject (st : Stats) (path : System.FilePath) (msgs : List String) : St
     | _ => st.sole.insert s!"({ks.length} reasons)" (st.sole.getD s!"({ks.length} reasons)" 0 + 1)
   { st with occurs, sole, sets := st.sets.push ("\t".intercalate (path.toString :: ks)) }
 
-/-- Every reason the G48 validator could give for `lc`: a value referring to an ID that is no value
+/-- Every reason the G58 validator could give for `lc`: a value referring to an ID that is no value
 of the function; then, on `liveCtx lc`, the homes, values, block kinds, the frame, and the run
 itself. On a function with no arm64 op, the values and blocks `checkNL30` rejects. -/
-def reasons48 (lc0 : GoFV.SSA.Sem.LocCtx) (ps : Array Prog) (bstart : GoFV.SSA.ID → Option Nat)
+def reasons58 (lc0 : GoFV.SSA.Sem.LocCtx) (ps : Array Prog) (bstart : GoFV.SSA.ID → Option Nat)
     (g : Check.G2In) : List String := Id.run do
   unless Check.refsLive lc0 do return ["a value refers to an ID that is no value of the function"]
   let lc := Check.liveCtx lc0
@@ -306,7 +311,7 @@ def reasons48 (lc0 : GoFV.SSA.Sem.LocCtx) (ps : Array Prog) (bstart : GoFV.SSA.I
     let some b := lc.ctx.f.block? bid | continue
     for id in b.values do
       let some v := lc.ctx.f.value? id | continue
-      match (if low then Check.vkind48 lc g v else Check.vkindNL30 lc g v) with
+      match (if low then Check.vkind58 lc g v else Check.vkindNL30 lc g v) with
       | .error e => rs := e :: rs
       | .ok _ => pure ()
     if low then
@@ -317,7 +322,7 @@ def reasons48 (lc0 : GoFV.SSA.Sem.LocCtx) (ps : Array Prog) (bstart : GoFV.SSA.I
       rs := s!"b{bid}: block kind {b.kind.name} in a function with no arm64 op" :: rs
   if let .error e := Check.checkFrame lc g then rs := e :: rs
   if rs.isEmpty then
-    match Check.checkG48 lc0 ps bstart g with
+    match Check.checkG58 lc0 ps bstart g with
     | .error e => rs := [e]
     | .ok _ => pure ()
   return rs
@@ -577,7 +582,11 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
   let st := if ok57 then
       { st with accepted57 := st.accepted57 + 1, acceptedValues57 := st.acceptedValues57 + nv }
     else st
-  match Check.checkG48 lc ps bstart g with
+  let ok48 := (Check.checkG48 lc ps bstart g).toOption.isSome
+  let st := if ok48 then
+      { st with accepted48 := st.accepted48 + 1, acceptedValues48 := st.acceptedValues48 + nv }
+    else st
+  match Check.checkG58 lc ps bstart g with
   | .ok _ =>
     let tag := if ok4 then "" else if ok5 then " (G5)" else if ok6 then " (G6)"
       else if ok7 then " (G7)" else if ok8 then " (G8)" else if ok9 then " (G9)"
@@ -596,11 +605,11 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
       else if ok46 then " (G46)" else if ok47 then " (G47)" else if ok50 then " (G50)"
       else if ok51 then " (G51)" else if ok49 then " (G49)" else if ok52 then " (G52)"
       else if ok53 then " (G53)" else if ok54 then " (G54)" else if ok55 then " (G55)"
-      else if ok57 then " (G57)" else " (G48)"
-    return { st with accepted48 := st.accepted48 + 1, acceptedValues48 := st.acceptedValues48 + nv,
+      else if ok57 then " (G57)" else if ok48 then " (G48)" else " (G58)"
+    return { st with accepted58 := st.accepted58 + 1, acceptedValues58 := st.acceptedValues58 + nv,
                      accept := st.accept.push s!"{path}{tag}" }
   | .error msg =>
-    let rs := reasons48 lc ps bstart g
+    let rs := reasons58 lc ps bstart g
     return st.reject path (if rs.isEmpty then [msg] else rs)
 
 def progFiles (p : System.FilePath) : IO (Array System.FilePath) := do
@@ -694,6 +703,7 @@ def main (args : List String) : IO UInt32 := do
   out := out ++ s!"| {st.files} | G56 (on G55, P0') | {st.accepted56} | {pct st.accepted56 st.files} | {st.values} | {st.acceptedValues56} |\n"
   out := out ++ s!"| {st.files} | G57 | {st.accepted57} | {pct st.accepted57 st.files} | {st.values} | {st.acceptedValues57} |\n"
   out := out ++ s!"| {st.files} | G48 | {st.accepted48} | {pct st.accepted48 st.files} | {st.values} | {st.acceptedValues48} |\n"
+  out := out ++ s!"| {st.files} | G58 | {st.accepted58} | {pct st.accepted58 st.files} | {st.values} | {st.acceptedValues58} |\n"
   out := out ++ s!"\n{st.constLoads56} functions accepted by G56 load a float constant from a constant symbol (P0')\n"
   out := out ++ s!"\n{st.errors} parse, env or genssa errors\n"
   let sorted (m : Std.HashMap String Nat) :=

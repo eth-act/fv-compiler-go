@@ -1434,8 +1434,110 @@ activation stays a `G49Env` with `G3Inv` of the mode and `SPInv`. On quick-v10 n
 `outargs[0, 8)`:
 298 functions store off `SP` without an aux, 664 stores, the lowest at offset 8 (3 of them
 `FSTPQ`, outside G48). G48 accepts 7,595 functions (+217 over G57; re-measured on main 977d0814
-with G56 merged). G48 stays chained on G57: G56 is not chained after G57 but beside it, on G55,
-and runs on P0' (`p0PrimeSyms`), while G57 and G48 check P0; no newer slice builds on G57.
+with G56 merged; 7,607 with G58's group B). G48 is chained on G57 (G56 is not chained after G57
+but beside it, on G55, and runs on P0' (`p0PrimeSyms`), while G57 and G48 check P0), and G58 on
+G48: G57 → G48 → G58.
+
+**Slice G58, group A: narrow and boolean operands, wider store-release sources,
+`LoweredRound*F`** (`Check58a`/`Spec58a`, proof `G58a`, `vkind58a lc g v`, `VK58a`,
+`vk58a_step`; tried when G57 rejects a value). The earlier checks ask more of an argument's class
+than the op reads; G58a accepts these values, each emitting the earlier check's Prog (no
+temporary; a result of class `c ≥ 8` where it has one):
+
+- `REV16W x` (`rev16w58`) of an `x` of at least 16 bits for a result of at most 16 (G37 asks 32):
+  the low halfword of `REV16W`'s word swaps the bytes of the low halfword only (`rev16_low58`,
+  `lo_rev16w58`). Sole functions: `encoding/binary`'s `bigEndian.Uint16`/`PutUint16` and their
+  `(*bigEndian)` wrappers, `(*base64.Encoding).Encode`, `math/bits.ReverseBytes16`.
+- `MADDW`, `MSUBW a x y` (`maddw58`) for a result of class `c ≤ 32` of arguments of at least `c`
+  bits (G37 asks 32): the low `c` bits of the low word's `a ± x · y` read only the low `c` bits
+  of `a`, `x`, `y` (`lo_maddw58`; `uint16(x) % 26` in `test/copy`'s `u16`, `reset`, `verify16`).
+- A boolean (class 1) operand of G32's register ops (`bin58`: `math.shrcompress`'s `OR` of a
+  `NotEqual`), G32's constant ops (`binK58`), G36's register shifts as the amount (`sh58`:
+  `math.sqrt`, `runtime.(*pinState).set`), G33's `UBFIZ` (`ubfiz58`:
+  `runtime.doubleCheckHeapType`) and G32's `CSINC` (`csinc58`: `test/ken_chan`'s `sel`): a
+  boolean's register is 0 or 1 on all 64 bits (`ValRel` of `.bool`), as G51c's arithmetic
+  (`wid51c`, `reg_bool51c`, `lo_op2_51c`; `lo_op1B58`, `lo_sh58`, `valRel_csinc58`).
+- `STLRW`, `STLRB p x mem` (`stlr58`) of a source of at least `8 n` bits (G32 asks exactly them):
+  Phase 1's generic atomic store fits the operand to the location (`fitPiece`, an integer's
+  `retypeL` truncates), whose bytes are those of `Arm64.storeBytes` of the source, or `poison` for
+  a pointer stored narrower (`encode_fit58`, `intBytes_mod58`), which G32's store argument
+  relates (`g58_stlr`). Sole functions: `runtime.(*timers).unlock`/`.take`,
+  `runtime.gcPrepareMarkRoots`, `runtime.parsegodebug` (`ts.len.Store(uint32(len(ts.heap)))`
+  and the like, whose conversion lowering drops).
+- `LoweredRound32F`, `LoweredRound64F x` (`round58`): no code (`ssaGenValue`'s `nop` case;
+  `regalloc`'s `resultInArg0` puts the result in `x`'s `F` register, which the check asks), Phase 1's
+  `Round32F`/`Round64F` is the identity on the float read at its width (`round_id58`), so the
+  match moves the register's value to the result as G44's `Copy` to itself (`g58_round`). Sole
+  functions: `test/gcgort`'s `main.init.func95.1`, `main.init.func103.1`.
+
+No run premise. `vk58a_step` is in `vk57a_step`'s form (`G49Env`: the store-release needs
+`FrameOK`) without a premise, plus G51c's `hL : UOKL m L`: G32's register and constant ops,
+`UBFIZ` and `CSINC` keep the upper-bit table's entries of the other registers (`keepOp34`),
+`REV16W`, `MADDW`/`MSUBW` and G36's shifts those of the registers other than the home's (group
+B's `keepOps35`, `uokl_xw`), the others empty it (`uStep35_58a`); `ops58a_facts` and
+`vkind58a_none` (off `op58a`) serve the composition. A probe of `checkG57` with `vkind58a` tried
+after `vkind57` accepts 19 of the 20 functions whose sole reason these were;
+`runtime.checkFinalizersAndCleanups.func1` (`ORconst` of
+a boolean) then fails at `b32: control read at another class` (a `Phi` of the boolean and the
+`ORconst` result). Witnesses (each on `vk58a_step` directly, a hand PC table and `G49Env` from
+compiled facts, G57's `vkind57` rejecting the value): `genG58a_witness`
+(`math/bits.ReverseBytes16`: `REV16W R0, R0` of `0x1234` gives `0x3412`), `genG58a2_witness`
+(`test/copy` `main.u16`: `MSUBW R1, R0, R2, R1` of `1000 - 38·26` with a 16-bit `v14` gives 12),
+`genG58a3_witness` (`runtime.(*pinState).set`: `LSL R2, R3, R2` of the `uint8` 5 by the boolean
+`true` gives 10), `genG58a4_witness` (`runtime.(*timers).unlock`: `STLRW R1, (R2)` of
+`0x1122334455667788` leaves `0x88` at the `heap` block's address) and `genG58a5_witness` (on
+`GenG57b`'s `main.init.func95.1`: `LoweredRound32F` of `float32(1.5)` in `F0`, no Prog runs). As
+G51c, the boolean kinds rest on `ValRel`'s 0-or-1 register for every boolean, including a boolean
+argument's register at entry (`pinState.set`'s `multipin`).
+
+**Slice G58, group B: G35's upper-bit table across more writes** (`GoFV/Gen/Check35.lean`,
+`GoFV/Proof/Gen/Keep35.lean`; no new group function, the statements of every slice from G35 on
+unchanged). Of the 25 functions G57 rejects only for `MOVDnop/MOVDreg: upper bits unknown`, the
+source's entry was dropped by: a word pair load and its select, which recorded nothing (`LDPW`,
+9 functions, 4 also needing `ORshiftLL`/`MOVWstore`); a G36/G37/G51b op writing only its register
+(`SLL` 1, `MULW` 1, `UMULH`+`MADD` 1, `SBFX`+`SBFIZ` 2); an acquire load (`LDAR`, 2); a narrow
+store (`MOVBstore`/`MOVHstore`, 2); G27's shifted logic ops (`ORshiftLL`, `ANDshiftRA`, 2); a `Copy`
+of a narrow load (3); a `Convert` (1); `runtime.sigdisable` (a join of blocks, not analysed further).
+`pairOp35` now also covers `LDPW`/`LDPSW` (G50, G57a), whose pair registers get the entries of a
+zero- or sign-extended word (`wEntries35`, `uStep35_ldpX`, `WPairW`, `uokl_wpair`), `LDAR`/`LDARW`/
+`LDARB` with home `(Rd;-)` (`homeRegs` gives `[Rd]`; `uStep35_ldar`, `uokl_one`), the selects of
+these and of `LDP` (no code: the table stays, `uStep35_sel`), and `SLL`, `SRL`, `SRA`, the G37 ops and
+`SBFIZ` (`keepOps35`, `uStep35_keepOps`, `uokl_xw`). Their case lemmas now conclude what the machine
+writes (`XW`: `g36_sh`, `g37_bin`/`un`/`madd`/`sbfx`, `g51b_sbfiz`; `g38_ldar`; `WPairW`:
+`g50_ldpX`, `g57_ldpwGlob`, `g57_ldpwVar`); `vk51b_step` and `vk57a_step` now take the table before
+the value (`hL`). No new premise. 12 of the 25 functions are accepted by `checkG57` with the new
+table (checked with the checker on the corpus files: `errors.as`, `hash/fnv.(*sum32).Write`,
+`(*sum128).Write`, `regexp.(*machine).add`, `makeOnePass`, `onePassPrefix`,
+`runtime.(*fixalloc).alloc`, `preprintpanics`, `runGCProg`, `vdsoFindVersion`,
+`unicode/utf8.decodeRuneSlow`, `decodeRuneInStringSlow`). The stores, G27's ops, `Copy` and
+`Convert` are VK33 kinds: keeping them needs their G1/G3/G12/G27 case lemmas to conclude `XW` and a
+case in `vk33_keep35` (8 more functions with the 3 `LDPW`+`ORshiftLL` ones).
+
+**Slice G58: groups A and B composed** (`GoFV/Gen/Check58.lean`, `checkG58 lc ps bstart g`; proven
+sound, `g58_value`, `g58_initMem`, `g58_term`, `g58_nilPanic`, `g58_boundsPanic`,
+`GoFV/Proof/Gen/G58.lean`). G48 (on G57) with group A (`vkind58a lc g v`) tried when G48 rejects a
+value (`vkind58`; G48's reason is kept for the other values); group B is G35's table, which
+`checkG58L` checks as G48 does (`movdOK35`, `uEdgesOK35`), with G48's `spHomes48`. `VK58`
+(`Spec58.lean`) has a case for G48's kinds and one for group A, with no temporary; `vk58_step` is
+`vk48_step`'s statement, by `vk48_step` and `vk58a_step` (`hL`; no premise, in either mode);
+`vk58_nil`/`vk58_pb` use `ops58a_facts`, and `g58L_*` are `g48L_*` with `checkG58L_spec`,
+`vkind58_spec` and `vkind58_initMem`. With group B, `uStep35_58a` has a third case, the `homeRegs`
+filter of `keepOps35` (`REV16W`, `MADDW`/`MSUBW`, the shifts), closed in `vk58a_step` by
+`uokl_xw`. The theorems are G48's: in the mode `outSP` (`hosp`, `SPInv`, kept), `g58_value` under
+`G54Pre`, the contracts of the mode `E.outSP` and `CallOKStk`; group A adds no premise (the store
+`g58_stlr` keeps `SepAt` by `SepAt.write`/`not_mem`). Witness `genG58_witness` (`GenG58.lean`, on
+`GenG58a`'s `math/bits.ReverseBytes16` and state, in an activation whose `outargs` block sits at
+`SP`, `GenG48`'s `ι48` and `spO`): `checkG48` rejects the function and `checkG58` accepts it with
+the block walk's tables (`v11` starting at the no-op Prog before its `REV16W`), and `g58_value`
+relates `v11`'s run to a machine state whose `X0` has the low halfword `0x3412`, `SPInv` kept. G58
+accepts 7,626 functions (§5, `--jobs 1`; G58 is gen-check's last slice): G48's 7,607 and group A's
+19 (the 20 of its probe less `runtime.checkFinalizersAndCleanups.func1`). Group B's 12 are accepted
+by earlier slices too (G37 the two `hash/fnv` `Write`s, G38 `runtime.preprintpanics`, G42
+`runtime.runGCProg`, G50 four, G51 three, G57 `regexp.makeOnePass`; G57 7,390, G48 7,607). No
+slice's count drops, and every function G58 rejects G48 rejected. The sole reasons left (120
+functions) are led by `op LoweredGetCallerPC` (29), `block kind JUMPTABLE` (19), `MOVDnop/MOVDreg:
+upper bits unknown` (14), `block kind Defer` (13), `a register read at another class` (7),
+`FMSUBD: negated multiplicand` (7) and `pair load shape` (6).
 
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
@@ -1449,8 +1551,9 @@ reason in parentheses):
    (option 2 of semantics3 §4.3: addresses as a parameter of the semantics); slots of other
    sizes (`slot … frame operand, size or alignment`, 717).
 3. **Other values**: `LoweredGetCallerPC` (26; `runLoc` has no value for it, `Arm64.evalPure`'s
-   `poison`, and `progEffect` no `GETCALLERPC`), `REV#W widths` (6: `REVW`/`REV16W` of narrow
-   arguments); `MOD` (6) and `UMOD` (5) are done in G52, `CMN`, `CMNW`, `CMPshiftRA` in G51, the
+   `poison`, and `progEffect` no `GETCALLERPC`); `REV16W` of narrow arguments (`REV#W widths` 6),
+   the other narrow and boolean widths and `LoweredRound*F` are done in G58a; `MOD` (6) and
+   `UMOD` (5) are done in G52, `CMN`, `CMNW`, `CMPshiftRA` in G51, the
    acquire loads in G38, the homes of removed values in G39, `InitMem` in G40 and G43, `CMNconst`,
    `CMPshiftLL` and `CMPshiftRL` in G41, `ANDconst` widening a narrow argument in G42; `MOVDnop`
    750 (91) and
@@ -1536,6 +1639,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G56 (on G55, P0') | 7,331 (78.85%) | 232,869 |
 | G57 | 7,378 (79.35%) | 235,204 |
 | G48 | 7,595 (81.69%) | 242,306 |
+| G58 (on G48) | 7,626 (82.02%) | 245,347 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1544,6 +1648,11 @@ address is converted to an integer were accepted — its validator accepted 2,02
 `Cx.falls`), which every slice shares: re-measured with it, G3 accepts 1,612, G10 3,150, G20
 4,330, G30 5,369, G40 6,482, G50 6,921, G53 7,274, G54 7,322 (78.75%, +14; 232,417 values) and
 G55 7,345 (79.00%; 233,639 values).)
+
+(G58's group B changes G35's upper-bit table, which every slice from G35 on reads: re-measured
+with it (`--jobs 1`), G35 and G36 are unchanged, G37 accepts 6,107 (2 more than with G57's
+table), G38 6,391, G42 6,623, G50 6,929, G51 7,004, G49 7,167, G55 7,356, G57 7,390 (79.48%,
++12; 236,767 values) and G48 7,607 (81.82%, +12; 243,869 values); no slice drops.)
 
 (On quick-v9, before the G2 validator was tightened for the proof — call arguments and results in
 `R0`–`R15`, `SelectN`'s component class, 64-bit `MOVDaddr` and spill shapes — G2 accepted 1,211.)
@@ -1927,6 +2036,14 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `sp_base48`, `opsX48`, `uokl_x48`, `uokl_spLoad48`, `vk48_sp`, `vk48_step`, `VKsp48.ops`,
   `vk48_nil`, `vk48_pb`, `g48L_value` … `g48L_term`, `g48_value`, `g48_initMem`,
   `g48_nilPanic`, `g48_boundsPanic`, `g48_term`.
+- `Spec58a.lean`/`G58a.lean` (G58's group A: `VK58a`, `vkind58a_spec`, `vkind58a_none`,
+  `vk58a_op`, `ops58a_facts`; `rev16_low58`, `intBytes_mod58`, `encode_fit58`, `round_id58`,
+  `lo_rev16w58`, `lo_maddw58`, `lo_op1B58`, `lo_sh58`, `valRel_csinc58`, `g58_rev16w`,
+  `g58_maddw`, `g58_bin`, `g58_binK`, `g58_sh`, `g58_ubfiz`, `g58_csinc`, `g58_stlr`,
+  `g58_round`, `uStep35_58a`, `vk58a_step`); `Spec58.lean`: `VK58`, `vkind58_spec`,
+  `vkind58_initMem`, `checkG33_of_58L`, `checkG58L_spec`, `checkG58_spec`; `G58.lean`:
+  `vk58_step`, `vk58_nil`, `vk58_pb`, `g58L_value` … `g58L_term`, `g58_value`, `g58_initMem`,
+  `g58_nilPanic`, `g58_boundsPanic`, `g58_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a

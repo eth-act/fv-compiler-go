@@ -55,61 +55,30 @@ theorem ldar_ne {op : Op} {as : As} {n : Nat} (h : ldar? op = some (as, n)) :
   rcases ldar?_some h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ <;>
     exact ⟨nofun, nofun, nofun, nofun, rfl, rfl, rfl, nofun⟩
 
-/-- An acquire load empties G35's table. -/
+/-- An acquire load writes only the register of its `(Rd;-)` home: G35's table keeps the entries
+of the other registers. -/
 theorem uStep35_ldar {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value} {as : As} {n : Nat}
-    (hop : ldar? v.op = some (as, n)) : uStep35 lc L v = [] := by
-  obtain ⟨-, hn1, hn2, -, -, hl, hi, hldp⟩ := ldar_ne hop
-  have hp : pairOp35 lc v = false := by
-    simp only [pairOp35, Bool.or_eq_false_iff, Bool.and_eq_false_iff, beq_eq_false_iff_ne]
-    rcases ldar?_some hop with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;>
-      exact ⟨nofun, .inl (by decide)⟩
-  have hk : keep34 v = false := by
-    unfold keep34 keep31
-    rcases ldar?_some hop with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> simp [h, keepOp31, keepOp34]
-  have hk31 : keep31 v = false := by
-    simp only [keep34, Bool.or_eq_false_iff] at hk
-    exact hk.1
-  have hue : uEntry lc v = none := by
-    have : narrowLd? lc v = none := by
-      unfold narrowLd?
-      rw [hl, hi]
-    simp only [uEntry, this]
-  rw [uStep35_other (ldEntry35_none hl) hp, uStep34_other hk, uStep31_other hk31,
-    uStepL_other hue hn1 hn2]
+    (hop : ldar? v.op = some (as, n)) :
+    uStep35 lc L v = L.filter (!(homeRegs lc v.id).contains ·.1) := by
+  obtain ⟨-, -, -, -, -, hl, -, -⟩ := ldar_ne hop
+  rcases ldar?_some hop with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;>
+    exact uStep35_keepOp (ldEntry35_none hl) (by simp [pairOp35, h]) (by simp [h]) (by simp [h])
 
-/-- A component of an acquire load (of the value `c`) empties G35's table. -/
+/-- A component of an acquire load (of the value `c`) emits no code: G35's table stays. -/
 theorem uStep35_selLdar {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value} {c : ID}
     (hop : v.op = .Select0 ∨ v.op = .Select1) (hc : v.args[0]? = some c)
     (hu : ((lc.ctx.f.value? c).any fun u => (ldar? u.op).isSome) = true) :
-    uStep35 lc L v = [] := by
+    uStep35 lc L v = L := by
   have hl : loadOp? v.op = none := by rcases hop with h | h <;> rw [h] <;> rfl
-  have hi : loadIdxOp? v.op = none := by rcases hop with h | h <;> rw [h] <;> rfl
-  have hn1 : v.op ≠ .ARM64MOVDnop := by rcases hop with h | h <;> rw [h] <;> nofun
-  have hn2 : v.op ≠ .ARM64MOVDreg := by rcases hop with h | h <;> rw [h] <;> nofun
-  have hp : pairOp35 lc v = false := by
-    unfold pairOp35
-    rw [hc, Option.bind_some]
-    cases hv : lc.ctx.f.value? c with
-    | none => rcases hop with h | h <;> simp [h]
-    | some u =>
-      rw [hv] at hu
-      simp only [Option.any_some, Option.isSome_iff_exists] at hu
-      obtain ⟨⟨as, n⟩, hu⟩ := hu
-      have hldp := (ldar_ne hu).2.2.2.2.2.2.2
-      rcases hop with h | h <;> simp [h, hldp]
-  have hk : keep34 v = false := by
-    unfold keep34 keep31
-    rcases hop with h | h <;> simp [h, keepOp31, keepOp34]
-  have hk31 : keep31 v = false := by
-    simp only [keep34, Bool.or_eq_false_iff] at hk
-    exact hk.1
-  have hue : uEntry lc v = none := by
-    have : narrowLd? lc v = none := by
-      unfold narrowLd?
-      rw [hl, hi]
-    simp only [uEntry, this]
-  rw [uStep35_other (ldEntry35_none hl) hp, uStep34_other hk, uStep31_other hk31,
-    uStepL_other hue hn1 hn2]
+  refine uStep35_sel (ldEntry35_none hl) ?_ hop
+  cases hv : lc.ctx.f.value? c with
+  | none => rw [hv] at hu; cases hu
+  | some u =>
+    rw [hv] at hu
+    simp only [Option.any_some, Option.isSome_iff_exists] at hu
+    obtain ⟨⟨as, n⟩, hu⟩ := hu
+    rcases ldar?_some hu with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rcases hop with h' | h' <;>
+      simp [pairOp35, h', hc, hv, h]
 
 /-! ## `runLoc` -/
 
@@ -450,7 +419,9 @@ theorem g38_ldar (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j ⟨plain as (· == memA rn 0) (· == regA rd), as.name⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' ∧
+      ∃ (kd : Nat) (val : BitVec 64), objOf? r = some (GoFV.Asm.ARM64.REG_R0 + kd) ∧
+        m'.x = (m.wX (BitVec.ofNat 5 kd) val).x := by
   have hl := F.lowered
   have hA := F.addr
   have hnp : v.op ≠ .Phi := (ldar_ne hop).1
@@ -476,9 +447,9 @@ theorem g38_ldar (F : Facts lc sym text az ez psA.toList ret E)
   rw [hty]
   simp only [atomicLoad, asPtrWord_of_addr hxf haddr]
   rw [retypeL_pair, retypeL_mem, write_ldar hh hty hc0' hmm]
-  refine (op_reg2 (H := H) F hm hinv hj hj' hvs hd hkd hor
+  refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor
     (valRel_ldar hA hMI hn hc0 hpa hrd) (fits_retypeL hc0 _) hK (fun k0 hk0 hok => ?_)).imp
-    fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, kd, _, hor, h4⟩
   obtain ⟨has, hf, -, ht', hsc, -, -⟩ := plain_spec hok
   simp only [beq_iff_eq] at hf ht'
   have hmaddr : (ProgCtx.mk (Link.byId sym text az ez psA.toList)
@@ -599,41 +570,45 @@ theorem vk38_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp ∧
       UOKL m' (uStep35 lc L v) := by
-  have fin : uStep35 lc L v = [] → ∀ m',
+  have fin : ∀ m',
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' →
       LocMatch E s' bid (i + 1) m' → CoreInv E.ι (StkAt E) (kStep lc K v).get s' osp →
-      SlotInv lc s' →
+      SlotInv lc s' → UOKL m' (uStep35 lc L v) →
       ∃ E' m', E.Extends E' ∧ G28Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
         PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
         LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp ∧
-        UOKL m' (uStep35 lc L v) := fun hu m' h1 h2 h3 h4 => by
-    refine ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩, ?_⟩
-    rw [hu]
-    intro e he
-    cases he
+        UOKL m' (uStep35 lc L v) := fun m' h1 h2 h3 h4 h5 =>
+    ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩, h5⟩
   cases hVK with
   | g37 _ _ hVK37 =>
     exact vk37_step hE F hhome hcf hv hVK37 hvs htemp hj hj' hreads hm hinv hL hmem hpre.1 hcall
       hcallz hicall hwb hclo hgetg hmeq hs
   | ldar hop hsz hax hk0 hty hc0 hao hma hh hrz hd hor =>
-    obtain ⟨m', h1, h2, h3, h4⟩ := g38_ldar (H := H) F hm hinv.core hinv.slots
-      (kread_of_reads hreads) (kldar_kStep (ldar_ne hop).1 hh hty hc0) hpre.2 hj hj' hop hsz hk0
-      hty hc0 hao hma hh hd hor hvs htemp hs
-    exact fin (uStep35_ldar hop) m' h1 h2 h3 h4
+    obtain ⟨m', h1, h2, h3, h4, kd, val, hor', hx⟩ := g38_ldar (H := H) F hm hinv.core
+      hinv.slots (kread_of_reads hreads) (kldar_kStep (ldar_ne hop).1 hh hty hc0) hpre.2 hj hj'
+      hop hsz hk0 hty hc0 hao hma hh hd hor hvs htemp hs
+    refine fin m' h1 h2 h3 h4 ?_
+    rw [uStep35_ldar hop]
+    simp only [homeRegs, hh]
+    exact uokl_one hL hor' hx
   | @sel0 c r t0 hop hsz hc0 hu htc hct hhc hvh hrz hd hob hcls hcl =>
     obtain ⟨cv, hcv⟩ := Option.isSome_iff_exists.1 hcls
     have hKr : ∀ c0, Gen.Check.cls (lc.ty v.id) = some c0 → K.get r = some c0 := fun c0 hc0' => by
       have h0 : Gen.Check.cls t0 = some c0 := hcl.trans hc0'
       exact ksel38_of_reads hreads hop hc0 hhc (by rw [htc]; simpa [tupleTys] using h0)
-    obtain ⟨m', h1, h2, h3, h4, -⟩ := g38_sel0 (H := H) F hm hinv.core hinv.slots
+    obtain ⟨m', h1, h2, h3, h4, hx⟩ := g38_sel0 (H := H) F hm hinv.core hinv.slots
       (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz hc0 htc hhc hvh hrz hd hob hcv hcl
       hKr hvs htemp hs
-    exact fin (uStep35_selLdar (.inl hop) hc0 hu) m' h1 h2 h3 h4
+    refine fin m' h1 h2 h3 h4 ?_
+    rw [uStep35_selLdar (.inl hop) hc0 hu]
+    exact fun e he => uok_of_x hx (hL e he)
   | sel1 hop hsz hc0 hu htc hct hhc hmt hhn =>
     have hpc : E.pcOf bid (i + 1) = E.pcOf bid i := by rw [hj', hj, hvs]
-    obtain ⟨m', h1, h2, h3, h4, -⟩ := g38_sel1 (H := H) F hm hinv.core hinv.slots
+    obtain ⟨m', h1, h2, h3, h4, hx⟩ := g38_sel1 (H := H) F hm hinv.core hinv.slots
       (knext_kStep fun _ => (hs_none hhn).noRegs) hpc hop hsz hc0 htc hct hhc hmt hhn htemp hs
-    exact fin (uStep35_selLdar (.inr hop) hc0 hu) m' h1 h2 h3 h4
+    refine fin m' h1 h2 h3 h4 ?_
+    rw [uStep35_selLdar (.inr hop) hc0 hu]
+    exact fun e he => uok_of_x hx (hL e he)
 
 /-- **G38, values.** `g37_value`'s statement over `checkG38`, under the per-value premise
 `G38Pre` (`G14Pre`, and an acquire load reads valid bytes). -/

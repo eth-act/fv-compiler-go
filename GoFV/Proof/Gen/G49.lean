@@ -629,7 +629,7 @@ theorem vk49_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat â†
         (kpair_kStep (by rw [hop]; nofun) hh hty h0 h1 hne) h14.1.1.1 hj hj' hx hvar hf hnc hÎ¹
         hop hsz2 hty h0 h1 h80 h81 hma hh hza hzb hda hdb hoa hob hvs htemp hs
       refine same m' h1' h2' h3' h4' ?_
-      rw [uStep35_pair (ldEntry35_none (by rw [hop]; rfl)) (by simp [pairOp35, hop])]
+      rw [uStep35_ldp hop]
       have hr : homeRegs lc v.id = [ra, rb] := by simp [homeRegs, hh]
       rw [hr]
       exact uokl_pair hL h5'
