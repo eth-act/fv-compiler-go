@@ -4,7 +4,7 @@
 
 Corpus: `full-v9/plain`; 96560 `lower` sections.
 
-The checked lower (proven rules) equals stock on 89618 of them. `lower` fires only proven rules on 91508: the greedy cover below starts there and adds, at each step, the rule whose proof completes the most functions (all the rules `lower` fires on them proven; the validator may still reject an instance). Columns: the rule (`ARM64.rules` line and op, or block kind), the functions covered with it, the functions it completes, the functions that fire it. The validator's ceiling (every rule assumed proven) and its rejections follow the table.
+The checked lower (proven rules) equals stock on 90433 of them. `lower` fires only proven rules on 91508: the greedy cover below starts there and adds, at each step, the rule whose proof completes the most functions (all the rules `lower` fires on them proven; the validator may still reject an instance). Columns: the rule (`ARM64.rules` line and op, or block kind), the functions covered with it, the functions it completes, the functions that fire it. The validator's ceiling (every rule assumed proven) and its rejections follow the table.
 
 | step | rule | covered | completes | fired in |
 |---:|---|---:|---:|---:|
@@ -240,120 +240,120 @@ The checked lower (proven rules) equals stock on 89618 of them. `lower` fires on
 
 ## The next rules by functions gained at stock
 
-The same greedy cover over the 90118 functions the validator accepts with every rule (below): there the checked lower equals stock once every rule `lower` fires is proven. Of them, 88539 fire only proven rules. A step's completed functions are the functions its proof adds at stock, up to the validator's verdict on the proven rules alone.
+The same greedy cover over the 90973 functions the validator accepts with every rule (below): there the checked lower equals stock once every rule `lower` fires is proven. Of them, 89350 fire only proven rules. A step's completed functions are the functions its proof adds at stock, up to the validator's verdict on the proven rules alone.
 
 | step | rule | covered | completes | fired in |
 |---:|---|---:|---:|---:|
-| 1 | `ARM64:1197 SUB` | 89119 | 580 | 804 |
-| 2 | `ARM64:1198 SUB` | 89283 | 164 | 222 |
-| 3 | `ARM64:134 OrB` | 89372 | 89 | 131 |
-| 4 | `ARM64:133 AndB` | 89442 | 70 | 690 |
-| 5 | `ARM64:230 Cvt32Fto64F` | 89465 | 23 | 89 |
-| 6 | `ARM64:575 block GT` | 89486 | 21 | 34 |
-| 7 | `ARM64:183 Const64F` | 89506 | 20 | 387 |
-| 8 | `ARM64:78 Ctz64` | 89526 | 20 | 141 |
-| 9 | `ARM64:76 Ctz64NonZero` | 89587 | 61 | 103 |
-| 10 | `ARM64:74 RotateLeft64` | 89604 | 17 | 59 |
-| 11 | `ARM64:121 UMOD` | 89620 | 16 | 27 |
-| 12 | `ARM64:225 Cvt64Fto64` | 89633 | 13 | 94 |
-| 13 | `ARM64:53 Abs` | 89646 | 13 | 74 |
-| 14 | `ARM64:575 block EQ` | 89658 | 12 | 24 |
-| 15 | `ARM64:41 Avg64u` | 89668 | 10 | 16 |
-| 16 | `ARM64:1605 ORshiftLL` | 89677 | 9 | 20 |
-| 17 | `ARM64:231 Cvt64Fto32F` | 89686 | 9 | 70 |
-| 18 | `ARM64:29 Div32u` | 89694 | 8 | 34 |
-| 19 | `ARM64:618 block NZ` | 89702 | 8 | 16 |
-| 20 | `ARM64:13 Mul64F` | 89709 | 7 | 194 |
-| 21 | `ARM64:217 Cvt64to64F` | 89723 | 14 | 172 |
-| 22 | `ARM64:31 Div64F` | 89744 | 21 | 171 |
-| 23 | `ARM64:6 Add64F` | 89762 | 18 | 119 |
-| 24 | `ARM64:298 FCMPD` | 89775 | 13 | 113 |
-| 25 | `ARM64:49 Neg64F` | 89794 | 19 | 86 |
-| 26 | `ARM64:9 Sub64F` | 89808 | 14 | 92 |
-| 27 | `ARM64:1799 FADDD` | 89818 | 10 | 55 |
-| 28 | `ARM64:221 Cvt64Uto64F` | 89829 | 11 | 49 |
-| 29 | `ARM64:236 Round64F` | 89850 | 21 | 37 |
-| 30 | `ARM64:821 FMOVDstore` | 89860 | 10 | 20 |
-| 31 | `ARM64:823 FMOVDstoreidx` | 89870 | 10 | 12 |
-| 32 | `ARM64:23 Div32` | 89877 | 7 | 17 |
-| 33 | `ARM64:1008 MUL` | 89883 | 6 | 47 |
-| 34 | `ARM64:1225 MSUB` | 89889 | 6 | 14 |
-| 35 | `ARM64:34 Mod32` | 89895 | 6 | 13 |
-| 36 | `ARM64:73 RotateLeft32` | 89901 | 6 | 45 |
-| 37 | `ARM64:79 Ctz32` | 89907 | 6 | 12 |
-| 38 | `ARM64:1207 XORconst` | 89912 | 5 | 7 |
-| 39 | `ARM64:229 Cvt64Fto64U` | 89917 | 5 | 15 |
-| 40 | `ARM64:299 FCMPD` | 89922 | 5 | 58 |
-| 41 | `ARM64:1342 block FLT` | 89928 | 6 | 18 |
-| 42 | `ARM64:617 block Z` | 89933 | 5 | 12 |
-| 43 | `ARM64:1090 MADD` | 89937 | 4 | 5 |
-| 44 | `ARM64:1170 ADD` | 89941 | 4 | 6 |
-| 45 | `ARM64:183 Const32F` | 89945 | 4 | 33 |
-| 46 | `ARM64:579 block EQ` | 89949 | 4 | 4 |
-| 47 | `ARM64:590 Equal` | 89953 | 4 | 4 |
-| 48 | `ARM64:114 BitRev16` | 89956 | 3 | 5 |
-| 49 | `ARM64:1205 ORconst` | 89959 | 3 | 10 |
-| 50 | `ARM64:1604 ADDshiftLL` | 89962 | 3 | 4 |
-| 51 | `ARM64:1850 MUL` | 89966 | 4 | 6 |
-| 52 | `ARM64:1792 FMULD` | 89969 | 3 | 12 |
-| 53 | `ARM64:56 Floor` | 89973 | 4 | 9 |
-| 54 | `ARM64:1849 MUL` | 89976 | 3 | 35 |
-| 55 | `ARM64:215 Cvt32to64F` | 89979 | 3 | 10 |
-| 56 | `ARM64:54 Sqrt` | 89982 | 3 | 18 |
-| 57 | `ARM64:1801 FSUBD` | 89986 | 4 | 22 |
-| 58 | `ARM64:1803 FSUBD` | 89991 | 5 | 15 |
-| 59 | `ARM64:822 FMOVSstore` | 89994 | 3 | 4 |
-| 60 | `ARM64:1790 FNEGD` | 89996 | 2 | 4 |
-| 61 | `ARM64:24 Div16` | 89998 | 2 | 2 |
-| 62 | `ARM64:38 Mod16u` | 90000 | 2 | 2 |
-| 63 | `ARM64:573 block LT` | 90002 | 2 | 3 |
-| 64 | `ARM64:575 block NE` | 90004 | 2 | 2 |
-| 65 | `ARM64:580 Equal` | 90006 | 2 | 2 |
-| 66 | `ARM64:593 NotEqual` | 90008 | 2 | 2 |
-| 67 | `ARM64:112 BitRev64` | 90009 | 1 | 1 |
-| 68 | `ARM64:1634 ADD` | 90010 | 1 | 1 |
-| 69 | `ARM64:1805 FADDD` | 90011 | 1 | 3 |
-| 70 | `ARM64:223 Cvt64Fto32` | 90012 | 1 | 4 |
-| 71 | `ARM64:25 Div16u` | 90013 | 1 | 1 |
-| 72 | `ARM64:26 Div8` | 90014 | 1 | 1 |
-| 73 | `ARM64:27 Div8u` | 90015 | 1 | 1 |
-| 74 | `ARM64:37 Mod16` | 90016 | 1 | 1 |
-| 75 | `ARM64:37 Mod8` | 90017 | 1 | 1 |
-| 76 | `ARM64:38 Mod8u` | 90018 | 1 | 1 |
-| 77 | `ARM64:49 Neg32F` | 90019 | 1 | 6 |
-| 78 | `ARM64:55 Ceil` | 90020 | 1 | 3 |
-| 79 | `ARM64:57 Round` | 90021 | 1 | 2 |
-| 80 | `ARM64:576 block EQ` | 90022 | 1 | 1 |
-| 81 | `ARM64:576 block NE` | 90023 | 1 | 1 |
-| 82 | `ARM64:619 block ZW` | 90024 | 1 | 2 |
-| 83 | `ARM64:626 block NZ` | 90025 | 1 | 2 |
-| 84 | `ARM64:65 Max64F` | 90026 | 1 | 1 |
-| 85 | `ARM64:70 RotateLeft8` | 90027 | 1 | 1 |
-| 86 | `ARM64:72 RotateLeft16` | 90028 | 1 | 1 |
-| 87 | `ARM64:76 Ctz8NonZero` | 90029 | 1 | 1 |
-| 88 | `ARM64:80 Ctz16` | 90030 | 1 | 3 |
-| 89 | `ARM64:81 Ctz8` | 90031 | 1 | 3 |
-| 90 | `ARM64:1253 NEG` | 90031 | 0 | 62 |
-| 91 | `ARM64:996 RORW` | 90052 | 21 | 37 |
-| 92 | `ARM64:995 ROR` | 90072 | 20 | 25 |
-| 93 | `ARM64:1450 XOR` | 90074 | 2 | 3 |
-| 94 | `ARM64:1454 BIC` | 90075 | 1 | 1 |
-| 95 | `ARM64:1263 CMPconst` | 90075 | 0 | 64 |
-| 96 | `ARM64:1284 block NE` | 90105 | 30 | 36 |
-| 97 | `ARM64:1404 CSEL0` | 90109 | 4 | 25 |
-| 98 | `ARM64:1403 CSEL` | 90110 | 1 | 3 |
-| 99 | `ARM64:122 UMODW` | 90110 | 0 | 43 |
-| 100 | `ARM64:36 Mod32u` | 90115 | 5 | 43 |
-| 101 | `ARM64:595 Equal` | 90116 | 1 | 1 |
-| 102 | `ARM64:1027 SUB` | 90116 | 0 | 2 |
-| 103 | `ARM64:1224 MADD` | 90117 | 1 | 1 |
-| 104 | `ARM64:13 Mul32F` | 90117 | 0 | 11 |
-| 105 | `ARM64:220 Cvt64Uto32F` | 90117 | 0 | 2 |
-| 106 | `ARM64:30 Div32F` | 90118 | 1 | 4 |
+| 1 | `ARM64:1197 SUB` | 89949 | 599 | 804 |
+| 2 | `ARM64:1198 SUB` | 90116 | 167 | 222 |
+| 3 | `ARM64:134 OrB` | 90208 | 92 | 131 |
+| 4 | `ARM64:133 AndB` | 90283 | 75 | 690 |
+| 5 | `ARM64:575 block GT` | 90307 | 24 | 34 |
+| 6 | `ARM64:230 Cvt32Fto64F` | 90330 | 23 | 89 |
+| 7 | `ARM64:183 Const64F` | 90351 | 21 | 387 |
+| 8 | `ARM64:78 Ctz64` | 90371 | 20 | 141 |
+| 9 | `ARM64:76 Ctz64NonZero` | 90432 | 61 | 103 |
+| 10 | `ARM64:74 RotateLeft64` | 90449 | 17 | 59 |
+| 11 | `ARM64:121 UMOD` | 90465 | 16 | 27 |
+| 12 | `ARM64:225 Cvt64Fto64` | 90480 | 15 | 94 |
+| 13 | `ARM64:575 block EQ` | 90494 | 14 | 24 |
+| 14 | `ARM64:53 Abs` | 90507 | 13 | 74 |
+| 15 | `ARM64:231 Cvt64Fto32F` | 90517 | 10 | 70 |
+| 16 | `ARM64:41 Avg64u` | 90527 | 10 | 16 |
+| 17 | `ARM64:1605 ORshiftLL` | 90536 | 9 | 20 |
+| 18 | `ARM64:29 Div32u` | 90544 | 8 | 34 |
+| 19 | `ARM64:298 FCMPD` | 90552 | 8 | 113 |
+| 20 | `ARM64:49 Neg64F` | 90570 | 18 | 86 |
+| 21 | `ARM64:13 Mul64F` | 90578 | 8 | 194 |
+| 22 | `ARM64:217 Cvt64to64F` | 90596 | 18 | 172 |
+| 23 | `ARM64:31 Div64F` | 90621 | 25 | 171 |
+| 24 | `ARM64:6 Add64F` | 90639 | 18 | 119 |
+| 25 | `ARM64:9 Sub64F` | 90653 | 14 | 92 |
+| 26 | `ARM64:1799 FADDD` | 90663 | 10 | 55 |
+| 27 | `ARM64:221 Cvt64Uto64F` | 90674 | 11 | 49 |
+| 28 | `ARM64:236 Round64F` | 90696 | 22 | 37 |
+| 29 | `ARM64:821 FMOVDstore` | 90706 | 10 | 20 |
+| 30 | `ARM64:823 FMOVDstoreidx` | 90716 | 10 | 12 |
+| 31 | `ARM64:618 block NZ` | 90724 | 8 | 16 |
+| 32 | `ARM64:23 Div32` | 90731 | 7 | 17 |
+| 33 | `ARM64:1008 MUL` | 90737 | 6 | 47 |
+| 34 | `ARM64:1225 MSUB` | 90743 | 6 | 14 |
+| 35 | `ARM64:34 Mod32` | 90749 | 6 | 13 |
+| 36 | `ARM64:73 RotateLeft32` | 90755 | 6 | 45 |
+| 37 | `ARM64:79 Ctz32` | 90761 | 6 | 12 |
+| 38 | `ARM64:1207 XORconst` | 90766 | 5 | 7 |
+| 39 | `ARM64:229 Cvt64Fto64U` | 90771 | 5 | 15 |
+| 40 | `ARM64:299 FCMPD` | 90776 | 5 | 58 |
+| 41 | `ARM64:1342 block FLT` | 90782 | 6 | 18 |
+| 42 | `ARM64:617 block Z` | 90787 | 5 | 12 |
+| 43 | `ARM64:1090 MADD` | 90791 | 4 | 5 |
+| 44 | `ARM64:1170 ADD` | 90795 | 4 | 6 |
+| 45 | `ARM64:1205 ORconst` | 90799 | 4 | 10 |
+| 46 | `ARM64:183 Const32F` | 90803 | 4 | 33 |
+| 47 | `ARM64:579 block EQ` | 90807 | 4 | 4 |
+| 48 | `ARM64:590 Equal` | 90811 | 4 | 4 |
+| 49 | `ARM64:114 BitRev16` | 90814 | 3 | 5 |
+| 50 | `ARM64:1604 ADDshiftLL` | 90817 | 3 | 4 |
+| 51 | `ARM64:1850 MUL` | 90821 | 4 | 6 |
+| 52 | `ARM64:1792 FMULD` | 90824 | 3 | 12 |
+| 53 | `ARM64:56 Floor` | 90828 | 4 | 9 |
+| 54 | `ARM64:1849 MUL` | 90831 | 3 | 35 |
+| 55 | `ARM64:215 Cvt32to64F` | 90834 | 3 | 10 |
+| 56 | `ARM64:54 Sqrt` | 90837 | 3 | 18 |
+| 57 | `ARM64:1801 FSUBD` | 90841 | 4 | 22 |
+| 58 | `ARM64:1803 FSUBD` | 90846 | 5 | 15 |
+| 59 | `ARM64:822 FMOVSstore` | 90849 | 3 | 4 |
+| 60 | `ARM64:1790 FNEGD` | 90851 | 2 | 4 |
+| 61 | `ARM64:24 Div16` | 90853 | 2 | 2 |
+| 62 | `ARM64:38 Mod16u` | 90855 | 2 | 2 |
+| 63 | `ARM64:573 block LT` | 90857 | 2 | 3 |
+| 64 | `ARM64:575 block NE` | 90859 | 2 | 2 |
+| 65 | `ARM64:580 Equal` | 90861 | 2 | 2 |
+| 66 | `ARM64:593 NotEqual` | 90863 | 2 | 2 |
+| 67 | `ARM64:112 BitRev64` | 90864 | 1 | 1 |
+| 68 | `ARM64:1634 ADD` | 90865 | 1 | 1 |
+| 69 | `ARM64:1805 FADDD` | 90866 | 1 | 3 |
+| 70 | `ARM64:223 Cvt64Fto32` | 90867 | 1 | 4 |
+| 71 | `ARM64:25 Div16u` | 90868 | 1 | 1 |
+| 72 | `ARM64:26 Div8` | 90869 | 1 | 1 |
+| 73 | `ARM64:27 Div8u` | 90870 | 1 | 1 |
+| 74 | `ARM64:37 Mod16` | 90871 | 1 | 1 |
+| 75 | `ARM64:37 Mod8` | 90872 | 1 | 1 |
+| 76 | `ARM64:38 Mod8u` | 90873 | 1 | 1 |
+| 77 | `ARM64:49 Neg32F` | 90874 | 1 | 6 |
+| 78 | `ARM64:55 Ceil` | 90875 | 1 | 3 |
+| 79 | `ARM64:57 Round` | 90876 | 1 | 2 |
+| 80 | `ARM64:576 block EQ` | 90877 | 1 | 1 |
+| 81 | `ARM64:576 block NE` | 90878 | 1 | 1 |
+| 82 | `ARM64:619 block ZW` | 90879 | 1 | 2 |
+| 83 | `ARM64:626 block NZ` | 90880 | 1 | 2 |
+| 84 | `ARM64:65 Max64F` | 90881 | 1 | 1 |
+| 85 | `ARM64:70 RotateLeft8` | 90882 | 1 | 1 |
+| 86 | `ARM64:72 RotateLeft16` | 90883 | 1 | 1 |
+| 87 | `ARM64:76 Ctz8NonZero` | 90884 | 1 | 1 |
+| 88 | `ARM64:80 Ctz16` | 90885 | 1 | 3 |
+| 89 | `ARM64:81 Ctz8` | 90886 | 1 | 3 |
+| 90 | `ARM64:1253 NEG` | 90886 | 0 | 62 |
+| 91 | `ARM64:996 RORW` | 90907 | 21 | 37 |
+| 92 | `ARM64:995 ROR` | 90927 | 20 | 25 |
+| 93 | `ARM64:1450 XOR` | 90929 | 2 | 3 |
+| 94 | `ARM64:1454 BIC` | 90930 | 1 | 1 |
+| 95 | `ARM64:1263 CMPconst` | 90930 | 0 | 64 |
+| 96 | `ARM64:1284 block NE` | 90960 | 30 | 36 |
+| 97 | `ARM64:1404 CSEL0` | 90964 | 4 | 25 |
+| 98 | `ARM64:1403 CSEL` | 90965 | 1 | 3 |
+| 99 | `ARM64:122 UMODW` | 90965 | 0 | 43 |
+| 100 | `ARM64:36 Mod32u` | 90970 | 5 | 43 |
+| 101 | `ARM64:595 Equal` | 90971 | 1 | 1 |
+| 102 | `ARM64:1027 SUB` | 90971 | 0 | 2 |
+| 103 | `ARM64:1224 MADD` | 90972 | 1 | 1 |
+| 104 | `ARM64:13 Mul32F` | 90972 | 0 | 11 |
+| 105 | `ARM64:220 Cvt64Uto32F` | 90972 | 0 | 2 |
+| 106 | `ARM64:30 Div32F` | 90973 | 1 | 4 |
 
 ## The validator's ceiling
 
-With every rule of `ARM64.rules` (the derived forms of the proven set included), the validator accepts 90118 of the 96560 functions. Each rejected function counts once, under the first check that rejects it (`whyL`): its class is the reason without value IDs, a rule's reasons one per commutation choice (`nomatch`: the pattern does not match the replayed definitions; `top`/`argsL`: a shape check; `ctrls`: the new block controls; `result`: the built values). Fixing a class gains at most its functions: a function may fail a later check too.
+With every rule of `ARM64.rules` (the derived forms of the proven set included), the validator accepts 90973 of the 96560 functions. Each rejected function counts once, under the first check that rejects it (`whyL`): its class is the reason without value IDs, a rule's reasons one per commutation choice (`nomatch`: the pattern does not match the replayed definitions; `top`/`argsL`: a shape check; `ctrls`: the new block controls; `result`: the built values). Fixing a class gains at most its functions: a function may fail a later check too.
 
 ### By family (the rule, the atom's input op, the final check)
 
@@ -361,34 +361,34 @@ With every rule of `ARM64.rules` (the derived forms of the proven set included),
 |---:|---|---:|
 | 1 | `atoms: Move -> *` | 1581 |
 | 2 | `not lowered` | 956 |
-| 3 | `rule ARM64:876 FLDPQ` | 582 |
-| 4 | `rule ARM64:872 FMOVQload` | 497 |
-| 5 | `rule ARM64:1713 ANDconst` | 225 |
-| 6 | `rule ARM64:1815 MOVBload` | 225 |
-| 7 | `rule ARM64:1811 MOVBUload` | 176 |
-| 8 | `rule ARM64:1814 MOVDload` | 160 |
-| 9 | `rule ARM64:100 FMOVDload` | 143 |
-| 10 | `rule ARM64:99 MOVDload` | 134 |
-| 11 | `final: ORshiftLL` | 89 |
-| 12 | `atoms: OffPtr -> *` | 82 |
-| 13 | `rule ARM64:1817 MOVWload` | 58 |
-| 14 | `atoms: GetCallerPC -> *` | 57 |
+| 3 | `rule ARM64:1815 MOVBload` | 236 |
+| 4 | `rule ARM64:1713 ANDconst` | 233 |
+| 5 | `rule ARM64:1811 MOVBUload` | 178 |
+| 6 | `rule ARM64:1814 MOVDload` | 165 |
+| 7 | `rule ARM64:100 FMOVDload` | 149 |
+| 8 | `rule ARM64:99 MOVDload` | 144 |
+| 9 | `rule ARM64:876 FLDPQ` | 111 |
+| 10 | `final: ORshiftLL` | 92 |
+| 11 | `atoms: OffPtr -> *` | 82 |
+| 12 | `rule ARM64:1817 MOVWload` | 59 |
+| 13 | `atoms: GetCallerPC -> *` | 57 |
+| 14 | `rule ARM64:1816 MOVHload` | 56 |
 | 15 | `atoms: order` | 54 |
 | 16 | `atoms: Select1 -> *` | 53 |
 | 17 | `rule ARM64:19 Select0` | 52 |
-| 18 | `rule ARM64:1816 MOVHload` | 51 |
-| 19 | `atoms: new atom SUBSflags` | 50 |
-| 20 | `rule ARM64:1247 MOVBUreg` | 46 |
-| 21 | `final: ADDshiftLL` | 45 |
+| 18 | `atoms: new atom SUBSflags` | 50 |
+| 19 | `final: ADDshiftLL` | 47 |
+| 20 | `rule ARM64:1247 MOVBUreg` | 47 |
+| 21 | `rule ARM64:1855 ANDconst` | 45 |
 | 22 | `rule ARM64:1044 MULW mul` | 44 |
-| 23 | `rule ARM64:1855 ANDconst` | 43 |
-| 24 | `rule ARM64:986 SLL` | 40 |
-| 25 | `atoms: new atom VUADDLV` | 39 |
-| 26 | `final: ANDconst` | 38 |
-| 27 | `rule ARM64:1397 MOVWreg` | 35 |
-| 28 | `final: SLL` | 34 |
-| 29 | `rule ARM64:1718 ANDconst` | 34 |
-| 30 | `rule ARM64:1845 Select0` | 34 |
+| 23 | `rule ARM64:986 SLL` | 40 |
+| 24 | `atoms: new atom VUADDLV` | 39 |
+| 25 | `final: ANDconst` | 39 |
+| 26 | `rule ARM64:872 FMOVQload` | 38 |
+| 27 | `rule ARM64:1718 ANDconst` | 36 |
+| 28 | `rule ARM64:1397 MOVWreg` | 35 |
+| 29 | `final: SLL` | 34 |
+| 30 | `rule ARM64:1659 MOVWreg` | 34 |
 
 ### By class
 
@@ -396,78 +396,78 @@ With every rule of `ARM64.rules` (the derived forms of the proven set included),
 |---:|---|---:|
 | 1 | `atoms: Move -> MOVDstore` | 1118 |
 | 2 | `not lowered` | 956 |
-| 3 | `rule ARM64:876 FLDPQ [nomatch]` | 582 |
-| 4 | `rule ARM64:872 FMOVQload [nomatch]` | 497 |
-| 5 | `rule ARM64:1815 MOVBload [ok]` | 225 |
-| 6 | `rule ARM64:1713 ANDconst [argsL]` | 204 |
-| 7 | `rule ARM64:1811 MOVBUload [ok]` | 176 |
-| 8 | `rule ARM64:1814 MOVDload [ok]` | 160 |
-| 9 | `rule ARM64:100 FMOVDload [nomatch]` | 143 |
-| 10 | `atoms: Move -> MOVWstore` | 138 |
-| 11 | `rule ARM64:99 MOVDload [nomatch]` | 134 |
-| 12 | `atoms: Move -> MOVHstoreidx` | 85 |
-| 13 | `atoms: OffPtr -> MOVDaddr` | 82 |
-| 14 | `atoms: Move -> MOVBstore` | 80 |
-| 15 | `rule ARM64:1817 MOVWload [ok]` | 58 |
-| 16 | `atoms: GetCallerPC -> LoweredGetCallerPC` | 57 |
+| 3 | `rule ARM64:1815 MOVBload [ok]` | 236 |
+| 4 | `rule ARM64:1713 ANDconst [argsL]` | 209 |
+| 5 | `rule ARM64:1811 MOVBUload [ok]` | 178 |
+| 6 | `rule ARM64:1814 MOVDload [ok]` | 165 |
+| 7 | `rule ARM64:100 FMOVDload [nomatch]` | 149 |
+| 8 | `rule ARM64:99 MOVDload [nomatch]` | 144 |
+| 9 | `atoms: Move -> MOVWstore` | 138 |
+| 10 | `rule ARM64:876 FLDPQ [nomatch]` | 111 |
+| 11 | `atoms: Move -> MOVHstoreidx` | 85 |
+| 12 | `atoms: OffPtr -> MOVDaddr` | 82 |
+| 13 | `atoms: Move -> MOVBstore` | 80 |
+| 14 | `rule ARM64:1817 MOVWload [ok]` | 59 |
+| 15 | `atoms: GetCallerPC -> LoweredGetCallerPC` | 57 |
+| 16 | `rule ARM64:1816 MOVHload [ok]` | 56 |
 | 17 | `atoms: Move -> MOVHstore` | 54 |
 | 18 | `atoms: order` | 54 |
 | 19 | `atoms: Select1 -> ADCzerocarry` | 53 |
 | 20 | `atoms: Move -> MOVBstoreidx` | 52 |
 | 21 | `rule ARM64:19 Select0 [top int (w64)]` | 52 |
-| 22 | `rule ARM64:1816 MOVHload [ok]` | 51 |
-| 23 | `atoms: new atom SUBSflags` | 50 |
-| 24 | `rule ARM64:1247 MOVBUreg [nomatch]` | 46 |
+| 22 | `atoms: new atom SUBSflags` | 50 |
+| 23 | `rule ARM64:1247 MOVBUreg [nomatch]` | 47 |
+| 24 | `rule ARM64:1855 ANDconst [argsL]` | 45 |
 | 25 | `rule ARM64:1044 MULW mul` | 44 |
-| 26 | `rule ARM64:1855 ANDconst [argsL]` | 43 |
-| 27 | `atoms: Move -> MOVWstoreidx` | 40 |
-| 28 | `rule ARM64:986 SLL [argsL]` | 40 |
-| 29 | `atoms: new atom VUADDLV` | 39 |
-| 30 | `rule ARM64:1397 MOVWreg [nomatch]` | 35 |
-| 31 | `rule ARM64:1718 ANDconst [argsL]` | 34 |
-| 32 | `rule ARM64:1845 Select0 [top int (w64)]` | 34 |
-| 33 | `rule ARM64:1399 MOVBreg [nomatch]` | 33 |
-| 34 | `rule ARM64:1659 MOVWreg [argsL]` | 33 |
-| 35 | `final: ORshiftLL arg (Copy)->(ANDconst)` | 32 |
-| 36 | `atoms: new atom NGCzerocarry` | 31 |
-| 37 | `rule ARM64:1694 SLLconst [argsL]` | 31 |
+| 26 | `atoms: Move -> MOVWstoreidx` | 40 |
+| 27 | `rule ARM64:986 SLL [argsL]` | 40 |
+| 28 | `atoms: new atom VUADDLV` | 39 |
+| 29 | `rule ARM64:872 FMOVQload [nomatch]` | 38 |
+| 30 | `rule ARM64:1718 ANDconst [argsL]` | 36 |
+| 31 | `rule ARM64:1397 MOVWreg [nomatch]` | 35 |
+| 32 | `rule ARM64:1659 MOVWreg [argsL]` | 34 |
+| 33 | `rule ARM64:1845 Select0 [top int (w64)]` | 34 |
+| 34 | `rule ARM64:1399 MOVBreg [nomatch]` | 33 |
+| 35 | `rule ARM64:1694 SLLconst [argsL]` | 33 |
+| 36 | `final: ORshiftLL arg (Copy)->(ANDconst)` | 32 |
+| 37 | `atoms: new atom NGCzerocarry` | 31 |
 | 38 | `blockRule ARM64:606 block NZ [ctrls]` | 30 |
 | 39 | `final: SLL arg (Copy)->(MOVDload)` | 30 |
 | 40 | `atoms: PubBarrier -> DMB` | 27 |
 | 41 | `blockRule ARM64:624 block NE [ctrls]` | 27 |
 | 42 | `final: ADDshiftLL arg (Copy)->(LessEqualU)` | 24 |
-| 43 | `rule ARM64:1621 ORconst [nomatch]` | 21 |
-| 44 | `rule ARM64:1713 ANDconst [nomatch]` | 21 |
-| 45 | `blockRule ARM64:646 block LT [ctrls]` | 20 |
+| 43 | `rule ARM64:1713 ANDconst [nomatch]` | 24 |
+| 44 | `rule ARM64:1621 ORconst [nomatch]` | 22 |
+| 45 | `blockRule ARM64:646 block LT [ctrls]` | 21 |
 | 46 | `final: ANDconst arg (Copy)->(MOVDload)` | 20 |
 | 47 | `rule ARM64:1448 XOR [nomatch]` | 20 |
 | 48 | `rule ARM64:101 MOVWUload [nomatch]` | 18 |
-| 49 | `rule ARM64:1716 SRLconst [argsL]` | 16 |
+| 49 | `rule ARM64:1716 SRLconst [argsL]` | 17 |
 | 50 | `atoms: new atom ADDSflags` | 15 |
 | 51 | `rule ARM64:1643 MOVWreg [nomatch]` | 15 |
 | 52 | `atoms: Store -> MOVDstore` | 14 |
 | 53 | `blockRule ARM64:623 block EQ [ctrls]` | 14 |
 | 54 | `rule ARM64:102 FMOVSload [nomatch]` | 14 |
 | 55 | `rule ARM64:1725 MOVBUreg [nomatch]` | 13 |
-| 56 | `rule ARM64:1434 ADD [nomatch]` | 11 |
-| 57 | `rule ARM64:1443 OR [nomatch]` | 11 |
-| 58 | `atoms: Move -> MOVDstoreidx` | 10 |
-| 59 | `final: ADDshiftLL arg (Copy)->(MOVDload)` | 10 |
+| 56 | `final: ADDshiftLL arg (Copy)->(MOVDload)` | 11 |
+| 57 | `rule ARM64:1434 ADD [nomatch]` | 11 |
+| 58 | `rule ARM64:1443 OR [nomatch]` | 11 |
+| 59 | `atoms: Move -> MOVDstoreidx` | 10 |
 | 60 | `final: ORshiftLL arg (Copy)->(LessThan)` | 10 |
-| 61 | `blockRule ARM64:644 block GE [ctrls]` | 9 |
-| 62 | `final: MSUBW arg (Copy)->(SRLconst)` | 9 |
-| 63 | `final: ORshiftLL arg (Copy)->(LessEqualU)` | 9 |
-| 64 | `final: ORshiftLL arg (Copy)->(NotEqual)` | 9 |
-| 65 | `final: UBFX arg (Copy)->(SRLconst)` | 9 |
-| 66 | `rule ARM64:1404 CSEL0 [argsL]` | 9 |
-| 67 | `rule ARM64:987 SRL [argsL]` | 9 |
-| 68 | `final: ANDconst arg (Copy)->(ORshiftLL)` | 8 |
-| 69 | `final: MADDW arg (MULW)->(MULW)` | 8 |
-| 70 | `final: ORshiftLL arg (Copy)->(ArgIntReg)` | 8 |
-| 71 | `final: REV16W arg (Copy)->(SUB)` | 8 |
-| 72 | `final: SLLconst arg (Copy)->(ArgIntReg)` | 8 |
-| 73 | `final: fields ADDconst->MOVDaddr` | 8 |
-| 74 | `rule ARM64:1197 SUB [nomatch]` | 8 |
+| 61 | `rule ARM64:1404 CSEL0 [argsL]` | 10 |
+| 62 | `blockRule ARM64:644 block GE [ctrls]` | 9 |
+| 63 | `final: MSUBW arg (Copy)->(SRLconst)` | 9 |
+| 64 | `final: ORshiftLL arg (Copy)->(LessEqualU)` | 9 |
+| 65 | `final: ORshiftLL arg (Copy)->(NotEqual)` | 9 |
+| 66 | `final: REV16W arg (Copy)->(SUB)` | 9 |
+| 67 | `final: UBFX arg (Copy)->(SRLconst)` | 9 |
+| 68 | `rule ARM64:1197 SUB [nomatch]` | 9 |
+| 69 | `rule ARM64:987 SRL [argsL]` | 9 |
+| 70 | `final: ANDconst arg (Copy)->(ORshiftLL)` | 8 |
+| 71 | `final: MADDW arg (MULW)->(MULW)` | 8 |
+| 72 | `final: ORshiftLL arg (Copy)->(ArgIntReg)` | 8 |
+| 73 | `final: SLLconst arg (Copy)->(ArgIntReg)` | 8 |
+| 74 | `final: fields ADDconst->MOVDaddr` | 8 |
 | 75 | `rule ARM64:1437 SUB [nomatch]` | 8 |
 | 76 | `rule ARM64:1709 MOVBUreg [nomatch]` | 8 |
 | 77 | `rule ARM64:1812 MOVHUload [ok]` | 8 |

@@ -1052,6 +1052,7 @@ import GoFV.Proof.Witness.LowerMemEq
 import GoFV.Proof.Witness.LowerMove
 import GoFV.Proof.Witness.LowerMoveQ
 import GoFV.Proof.Witness.LowerMoveQ2
+import GoFV.Proof.Witness.LowerMoveQFrame
 import GoFV.Proof.Witness.LowerMul
 import GoFV.Proof.Witness.LowerNarrowArgs
 import GoFV.Proof.Witness.LowerNeg

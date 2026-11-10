@@ -778,9 +778,10 @@ def zeroDef2 (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value) 
 argument, a lowered frame address (`frameAddr`: the atom `MOVDaddr {sym} b` at offset 0 of a
 `LocalAddr {sym}` of `f`, or `ADDconst [0]` of it), into its aux, with `x`'s type and offset (small
 and non-negative, `offOK`), `u` with the `MOVDaddr`'s aux and `b` for the address:
-* an integer load without aux (`(MOV…load [off1] {sym1} (MOVDaddr [off2] {sym2} ptr) mem) &&
+* a load without aux, an integer one (`(MOV…load [off1] {sym1} (MOVDaddr [off2] {sym2} ptr) mem) &&
   canMergeSym(sym1,sym2) … => (MOV…load [off1+off2] {mergeSym(sym1,sym2)} ptr mem)`,
-  `ARM64.rules:832-856`), the same op;
+  `ARM64.rules:832-856`) or a 128-bit one (`FMOVQload`, `FLDPQ`: `870`, `874`; `ldAny`; an `FLDPQ`'s
+  second half at a small offset too), the same op;
 * an `ADDconst` at a word shape (`(ADDconst [off1] (MOVDaddr [off2] {sym} ptr)) && … =>
   (MOVDaddr [int32(off1)+off2] {sym} ptr)`, `650`), a `MOVDaddr` term.
 
@@ -797,7 +798,8 @@ def frameFold (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value)
       if x.id == v && u.id == v && u.type == x.type && u.auxInt == x.auxInt && offOK x.auxInt &&
           termVL tabs x && termVL tabs u && m.args.size == 1 && u.aux == m.aux &&
           (f.value? a).any (fun l => l.op == .LocalAddr && l.aux == m.aux) &&
-          ((ldOp? x.op).isSome && u.op == x.op && x.aux == none && x.args.size == 2 &&
+          (ldAny x.op && (ldQ? x.op != some 32 || offOK (x.auxInt + Int64.ofNat 16)) &&
+              u.op == x.op && x.aux == none && x.args.size == 2 &&
               u.args == #[m.args[0]!, x.args[1]!] ||
             x.op == .ARM64ADDconst && u.op == .ARM64MOVDaddr && x.args.size == 1 &&
               wordShape (shpL tabs x.type) && u.args == #[m.args[0]!])
