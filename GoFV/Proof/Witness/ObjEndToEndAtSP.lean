@@ -735,13 +735,13 @@ theorem callOKH {lc : LocCtx} {E : MatchEnv} {s s' : LocState} {v : Value} {m : 
       exact callSpecH hA hout h0 h1 hm
   · cases hcf
 
-/-- `H` treats related states alike (`HookMap`). -/
+/-- `H` treats related states alike and returns to `LR` (`HookMap`). -/
 theorem hookMap_H {L' : Link} {ps' : List Prog} {f : BitVec 64 → BitVec 64} :
     HookMap H L' ps' f := by
-  intro s t s' hR _ hx hc
+  intro s t s' hR _ _ hc
   simp only [H, Option.some.injEq, HookOut.ret.injEq] at hc
   subst hc
-  refine ⟨hkS t, rfl, ?_, hx⟩
+  refine ⟨hkS t, rfl, ?_, rfl⟩
   exact
     { x := fun k h27 h30 => by
         simp only [hkS]

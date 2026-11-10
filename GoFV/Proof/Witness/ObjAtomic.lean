@@ -21,9 +21,10 @@ as `progEffect`).
   `checkProg` accepts its Progs `LDADDALW R1, (R0), R2`, `LDAXRW (R0), R2` and
   `STLXRW R2, (R0), R27` against their words (`LDADDAL W1, W2, [X0]`, `LDAXR W2, [X0]`,
   `STLXR W27, W2, [X0]`), and `progSym` gives the effects `σAdd` (the old value to `R2`, the sum
-  stored) and `σStx` (the store, `R27` 0). A whole atomic function is not accepted yet: its
-  LL/SC loop reads `R27` across Progs (`CBNZ R27`), which needs the `X27` agreement of
-  `docs/plans/proofs3.md` §7.
+  stored) and `σStx` (the store, `R27` 0); only `STLXRW` leaves `X27` related (`est27`).
+* `objAtomic_whole_witness`: `checkObj` accepts the whole function, whose LL/SC loop reads `R27`
+  across Progs (`CBNZ R27` after `STLXRW`): it relies on `X27` (`Tab.ok27`) exactly there, where
+  `X27At` (`Sim.lean`) asks the machine's `X27` to be P0's (`docs/plans/proofs3.md` §7).
 * `objAtomic_ldadd_run`, `objAtomic_stlxr_run`, `objAtomic_cas_hit`, `objAtomic_cas_miss`:
   `symInsn_sound` on the decoded words from concrete states: `LDADDAL` adds 5 to the 37 in memory
   and returns 37, `STLXR` stores and writes 0 to `W27`, `CASAL` stores on a match and leaves the
@@ -238,11 +239,15 @@ def progOf (a : As) : Prog := ps[(ps.findIdx? (·.as == a)).getD 0]!
 /-- The offset the assembler placed the Prog with ID `id` at. -/
 def pcOf (id : Nat) : Nat := ((obj.progs.find? (·.id == id)).map (·.pc.toNat)).getD 0
 
-/-- `checkProg` (a frameless function: `autosize` and `extrasize` 0) accepts `p` against its one
-word, and the word decodes to `i`. -/
-def okProg (p : Prog) (i : Insn) : Bool :=
-  isOk (checkProg obj.text obj.relocs.toList [] 0 0 p (pcOf p.id) (pcOf p.id + 4)) &&
-    decode (wordAt obj.text (pcOf p.id)) == some i
+/-- `checkProg` of `p` (a frameless function: `autosize` and `extrasize` 0; `X27` not related
+before it) against its one word. -/
+def chk (p : Prog) : Except String Bool :=
+  checkProg obj.text obj.relocs.toList [] 0 0 false p (pcOf p.id) (pcOf p.id + 4)
+
+/-- `checkProg` accepts `p` against its one word, returning `b` (whether `X27` is related after
+it), and the word decodes to `i`. -/
+def okProg (p : Prog) (i : Insn) (b : Bool) : Bool :=
+  isOk (chk p) && getOk (chk p) == b && decode (wordAt obj.text (pcOf p.id)) == some i
 
 /-- `LDADDAL W1, W2, [X0]`. -/
 def insnAdd : Insn := .atomic 2 true true 1 false 0 0 2
@@ -272,10 +277,11 @@ def casP : Prog :=
     regTo2 := REG_R0 + 2 }
 
 /-- What compiled evaluation checks: `checkProg` accepts `AddInt32`'s `LDADDALW`, `LDAXRW` and
-`STLXRW` against their words; `progSym` gives `σAdd`, `σStx`, and `σCas` for `casP`. -/
+`STLXRW` against their words (only `STLXRW`, which sets `R27` to `0` on both sides, leaves `X27`
+related); `progSym` gives `σAdd`, `σStx`, and `σCas` for `casP`. -/
 def atomicFacts : Bool :=
-  okProg (progOf .LDADDALW) insnAdd && okProg (progOf .LDAXRW) insnLdx &&
-    okProg (progOf .STLXRW) insnStx &&
+  okProg (progOf .LDADDALW) insnAdd false && okProg (progOf .LDAXRW) insnLdx false &&
+    okProg (progOf .STLXRW) insnStx true &&
     (progOf .LDADDALW).as == .LDADDALW && (progOf .LDAXRW).as == .LDAXRW &&
     (progOf .STLXRW).as == .STLXRW &&
     isOk (progSym 0 0 (progOf .LDADDALW)) && getOk (progSym 0 0 (progOf .LDADDALW)) == (σAdd, .fall) &&
@@ -286,17 +292,20 @@ theorem atomic_facts : atomicFacts = true := by
   native_decide
 
 /-- **`checkProg` on `AddInt32`'s atomics**: its `LDADDALW`, `LDAXRW` and `STLXRW` are accepted
-against the words the assembler gave them; the Prog side and the word side have the effects
-`σAdd` and `σStx`; `CASALW R27, (R0), R2` and its word `CASAL W27, W2, [X0]` have the same effect
-`σCas`. -/
+against the words the assembler gave them, and only `STLXRW` leaves `X27` related to `R27` (its
+status `0` on both sides, `est27`); the Prog side and the word side have the effects `σAdd` and
+`σStx`; `CASALW R27, (R0), R2` and its word `CASAL W27, W2, [X0]` have the same effect `σCas`. -/
 theorem objAtomic_prog_witness :
     let pA := progOf .LDADDALW
     let pL := progOf .LDAXRW
     let pS := progOf .STLXRW
     pA.as = .LDADDALW ∧ pL.as = .LDAXRW ∧ pS.as = .STLXRW ∧
-      checkProg obj.text obj.relocs.toList [] 0 0 pA (pcOf pA.id) (pcOf pA.id + 4) = .ok () ∧
-      checkProg obj.text obj.relocs.toList [] 0 0 pL (pcOf pL.id) (pcOf pL.id + 4) = .ok () ∧
-      checkProg obj.text obj.relocs.toList [] 0 0 pS (pcOf pS.id) (pcOf pS.id + 4) = .ok () ∧
+      checkProg obj.text obj.relocs.toList [] 0 0 false pA (pcOf pA.id) (pcOf pA.id + 4) =
+        .ok false ∧
+      checkProg obj.text obj.relocs.toList [] 0 0 false pL (pcOf pL.id) (pcOf pL.id + 4) =
+        .ok false ∧
+      checkProg obj.text obj.relocs.toList [] 0 0 false pS (pcOf pS.id) (pcOf pS.id + 4) =
+        .ok true ∧
       decode (wordAt obj.text (pcOf pA.id)) = some insnAdd ∧
       decode (wordAt obj.text (pcOf pL.id)) = some insnLdx ∧
       decode (wordAt obj.text (pcOf pS.id)) = some insnStx ∧
@@ -305,13 +314,59 @@ theorem objAtomic_prog_witness :
       progSym 0 0 casP = .ok (σCas, .fall) ∧ symInsn insnCas 16 {} = .ok (σCas, .fall) := by
   have hf := atomic_facts
   simp only [atomicFacts, okProg, Bool.and_eq_true, beq_iff_eq] at hf
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hA, hdA⟩, hL, hdL⟩, hS, hdS⟩, haA⟩, haL⟩, haS⟩, hpA⟩, hpA'⟩, hpS⟩, hpS'⟩,
-    hpC⟩, hpC'⟩ := hf
-  have hck (r : Except String Unit) (h : isOk r = true) : r = .ok () := by
-    cases r <;> simp_all [isOk]
-  exact ⟨haA, haL, haS, hck _ hA, hck _ hL, hck _ hS, hdA, hdL, hdS,
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hA, hbA⟩, hdA⟩, ⟨hL, hbL⟩, hdL⟩, ⟨hS, hbS⟩, hdS⟩, haA⟩, haL⟩, haS⟩, hpA⟩,
+    hpA'⟩, hpS⟩, hpS'⟩, hpC⟩, hpC'⟩ := hf
+  exact ⟨haA, haL, haS, (eq_getOk hA).trans (congrArg _ hbA),
+    (eq_getOk hL).trans (congrArg _ hbL), (eq_getOk hS).trans (congrArg _ hbS), hdA, hdL, hdS,
     by rw [eq_getOk hpA, hpA'], rfl, by rw [eq_getOk hpS, hpS'], rfl,
     by rw [eq_getOk hpC, hpC'], rfl⟩
+
+/-! ## The whole function: `X27` across Progs -/
+
+/-- The morestack tail's spills of `AddInt32` (`prog0`'s `fn`, as `obj-check`). -/
+def spills : Array Spill :=
+  match parseProgFile fProg.toUTF8 with
+  | .ok pf => pf.prog0.fn.spills
+  | .error _ => #[]
+
+/-- What `checkObj` returns on `AddInt32`. -/
+def tab : Tab := getOk (checkObj ps spills obj)
+
+/-- What compiled evaluation checks of the whole function: `checkObj` accepts it, relying on
+`X27` (`Tab.ok27`) only at the Prog at index 15, the `CBNZ R27` after the `STLXRW` (whose status
+`R27` the words leave in `X27`); the loop head `LDAXRW` (index 12) and the `MOVD` after the loop
+(index 16) are branch targets, so `X27` is not relied on there. -/
+def wholeFacts : Bool :=
+  isOk (checkObj ps spills obj) && tab.ok27.toList == (List.range 19).map (· == 15) &&
+    ps.size == 19 && (ps[14]!).as == .STLXRW && (ps[15]!).as == .CBNZ
+
+theorem whole_facts : wholeFacts = true := by
+  native_decide
+
+/-- **`checkObj` accepts the whole of `AddInt32`**, its LSE path and its LL/SC fallback loop, and
+relies on `X27` (`Tab.ok27`) exactly at the `CBNZ R27`; there `X27At` holds of a P0 state `s` and
+a machine state `t` exactly if `t.x 27 = s.x 27` (for a layout `L` whose symbols are not at the
+`CBNZ`'s P0 address). -/
+theorem objAtomic_whole_witness :
+    checkObj ps spills obj = .ok tab ∧ (ps[15]!).as = .CBNZ ∧ tab.ok27[15]? = some true ∧
+      (∀ j, j ≠ 15 → tab.ok27[j]? ≠ some true) ∧
+      ∀ (L : Link) (s t : MState), (∀ y, L.sym y ≠ s.pc) →
+        s.pc = addrP L.text (ps[15]!).id → (X27At tab L ps.toList s t ↔ t.x 27 = s.x 27) := by
+  have hf := whole_facts
+  simp only [wholeFacts, Bool.and_eq_true, beq_iff_eq] at hf
+  obtain ⟨⟨⟨⟨hok, hl⟩, hsz⟩, -⟩, hcb⟩ := hf
+  have hok' : tab.ok27[15]? = some true := by
+    rw [← Array.getElem?_toList, hl]; decide
+  have h15 : 15 < ps.toList.length := by simp [hsz]
+  have hp15 : ps.toList[15] = ps[15]! := by simp [getElem!_def, hsz]
+  refine ⟨eq_getOk hok, hcb, hok', fun j hj h => hj ?_, fun L s t hsym hpc => ⟨fun hX => ?_, fun h27 => ?_⟩⟩
+  · rw [← Array.getElem?_toList, hl] at h
+    by_cases hj' : j < 19
+    · simp [hj'] at h
+      exact h
+    · simp [hj'] at h
+  · exact hX.at27 15 h15 (by rw [hp15]; exact hpc.symm) hok'
+  · exact ⟨fun _ _ _ _ => h27, fun ⟨y, hy⟩ => absurd hy.symm (hsym y)⟩
 
 /-! ## The words, run -/
 

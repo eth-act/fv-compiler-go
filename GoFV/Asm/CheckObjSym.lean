@@ -192,6 +192,22 @@ def regsOK : Ex → Bool
   | .dp3 _ _ _ a b d => regsOK a && regsOK b && regsOK d
   | .eqsel _ a b u w => regsOK a && regsOK b && regsOK u && regsOK w
 
+/-- `regsOK` with `X27` allowed: the registers a P0 state and its machine state agree on before
+a Prog whose `X27` `checkObj` has related (`ok27`: its predecessor in the list left `X27` as the
+P0 state's `R27`). -/
+def regsOK30 : Ex → Bool
+  | .x r => r < 31 && r != 30
+  | .sp | .k _ | .sym _ | .vlo .. | .vq _ | .fcvtz .. => true
+  | .ld _ a | .shift _ _ _ a | .ext _ _ a | .lo32 a | .sext _ a | .page a | .dp1 _ _ a
+  | .inv _ a => regsOK30 a
+  | .add a b | .addSub _ _ a b | .logical _ _ a b | .bfm _ _ _ _ a b | .csel _ _ _ _ a b
+  | .dp2 _ _ a b => regsOK30 a && regsOK30 b
+  | .dp3 _ _ _ a b d => regsOK30 a && regsOK30 b && regsOK30 d
+  | .eqsel _ a b u w => regsOK30 a && regsOK30 b && regsOK30 u && regsOK30 w
+
+/-- `regsOK`, or `regsOK30` when `k` (`X27` related). -/
+def regsOKK (k : Bool) (e : Ex) : Bool := if k then e.regsOK30 else e.regsOK
+
 /-! ### Smart constructors (constant folding and the canonical forms) -/
 
 /-- `a + b`, constants folded and collected on the right. -/
@@ -359,6 +375,17 @@ def regsOK : VEx → Bool
   | .fp2 _ _ a b | .fcsel _ _ a b => regsOK a && regsOK b
   | .fp3 _ _ _ a n m => regsOK a && regsOK n && regsOK m
 
+/-- `Ex.regsOK30` of its `Ex` leaves. -/
+def regsOK30 : VEx → Bool
+  | .v _ | .k _ => true
+  | .ofX _ a | .ld _ a | .cvtf _ _ _ a => a.regsOK30
+  | .fp1 _ _ a => regsOK30 a
+  | .fp2 _ _ a b | .fcsel _ _ a b => regsOK30 a && regsOK30 b
+  | .fp3 _ _ _ a n m => regsOK30 a && regsOK30 n && regsOK30 m
+
+/-- `regsOK`, or `regsOK30` when `k`. -/
+def regsOKK (k : Bool) (e : VEx) : Bool := if k then e.regsOK30 else e.regsOK
+
 /-- `ofX w a`, a constant folded (`FMOV` from `ZR`, the encoding of the `FCONST` `0.0`, is the
 constant `0`). -/
 def mkOfX (w : Nat) (a : Ex) : VEx :=
@@ -400,6 +427,15 @@ def regsOK : Fl → Bool
   | .init => true
   | .addSub _ _ a b | .ands _ a b => a.regsOK && b.regsOK
   | .fcmp _ a b => a.regsOK && b.regsOK
+
+/-- `Ex.regsOK30` of the operands. -/
+def regsOK30 : Fl → Bool
+  | .init => true
+  | .addSub _ _ a b | .ands _ a b => a.regsOK30 && b.regsOK30
+  | .fcmp _ a b => a.regsOK30 && b.regsOK30
+
+/-- `regsOK`, or `regsOK30` when `k`. -/
+def regsOKK (k : Bool) (e : Fl) : Bool := if k then e.regsOK30 else e.regsOK
 
 /-- `SUBS` of a nonzero constant `y` sets the flags `ADDS` of `-y` does (`CMP $-c` is encoded
 as `CMN $c`); the canonical form is the `ADDS`. -/

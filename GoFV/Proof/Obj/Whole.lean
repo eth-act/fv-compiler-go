@@ -504,7 +504,8 @@ variable {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array
 `m` `LocMatch`ed to `s` under an activation `E` extending `E0`, in the separation of the mode
 `osp` (`G3Inv … osp`), with `SPInv` in a lowered function at the mode `true`, its X registers
 meeting G35's
-upper-bit table (`UOKL` of `uL35` from the block's start `uIn35`), `ObjRel`-related to `t`; in a
+upper-bit table (`UOKL` of `uL35` from the block's start `uIn35`), `ObjRel`-related to `t` with
+`X27` where `checkObj` relied on it (`X27At`); in a
 leaf (`otab.leaf`), `X30` still the caller's return address `E0.lr`, which is no P0 address; at
 a clean position, `s` holds the initial memory (`MemAt`). -/
 def SimAt (lc : LocCtx) (g : G2In) (L : Link) (ps : Array Prog) (tab : PcTab) (kt : KTab)
@@ -513,7 +514,8 @@ def SimAt (lc : LocCtx) (g : G2In) (L : Link) (ps : Array Prog) (tab : PcTab) (k
   ∃ E m, E0.Extends E ∧ G49Env lc g L ps (endP L.text ps.toList) tab E ∧ LocMatch E s b i m ∧
     G3Inv E lc (kAt lc kt b blk i) s osp ∧ (osp = true → lc.ctx.f.lowered = true → SPInv E s) ∧
     UOKL m (uL35 lc (uIn35 lc b) blk i) ∧
-    ObjRel (ObjEnv.map otab ps L base) m t ∧ b ∈ lc.ctx.f.blocks.toList ∧
+    ObjRel (ObjEnv.map otab ps L base) m t ∧ X27At otab L ps.toList m t ∧
+    b ∈ lc.ctx.f.blocks.toList ∧
     (otab.leaf = true → m.x 30 = E0.lr ∧ ¬ IsProgAddr L.text ps.toList E0.lr ∧
       E0.lr ≠ endP L.text ps.toList) ∧ MemAt lc b blk i s
 
@@ -547,13 +549,13 @@ theorem sim_value (hc : checkG60L lc ps bstart g = .ok (tab, kt))
         WbOKAt osp H E g L lc s v m ∧ CloOK E s v m ∧ GetGOK E v ∧
         MemEqOKAt osp H E g L lc s v m ∧ (osp = true → CallOKStk H E g L lc s s' v m)) :
     ∃ t', MStar H code retM t t' ∧ SimAt lc g L ps tab kt E0 osp otab base b blk (i + 1) s' t' := by
-  obtain ⟨E, m, hx, hE, hm, hinv, hsp, hu, hR, hbid, hlr, hma⟩ := hS
+  obtain ⟨E, m, hx, hE, hm, hinv, hsp, hu, hR, hX, hbid, hlr, hma⟩ := hS
   have ho : E.outSP = E0.outSP := hx.outSP
   obtain ⟨hcall, hcallz, hicall, hwb, hclo, hgetg, hmeq, hcallk⟩ := hok E m hx hm
-  obtain ⟨E', m', t', hx', hE', hm', hinv', hsp', hu', ht, hR', hk⟩ :=
+  obtain ⟨E', m', t', hx', hE', hm', hinv', hsp', hu', ht, hR', hX', hk⟩ :=
     g60_obj_value hc hE hbid hb hi hv hen hma hm hinv hsp (fun h => ho.trans (hosp h)) hn48 hu
-      hpre hro hcall hcallz hicall hwb hclo hgetg hmeq hcallk hs hO hH hR (fun u _ => hic u)
-  exact ⟨t', ht, E', m', MatchEnv.Extends.trans hx hx', hE', hm', hinv', hsp', hu', hR', hbid,
+      hpre hro hcall hcallz hicall hwb hclo hgetg hmeq hcallk hs hO hH hR hX (fun u _ => hic u)
+  exact ⟨t', ht, E', m', MatchEnv.Extends.trans hx hx', hE', hm', hinv', hsp', hu', hR', hX', hbid,
     leafLR_keep hlr hk, fun hl hok hcl => memInit_clean_step hl hi hv (hma hl hok) hs hcl⟩
 
 /-- A terminator that goes to a block. -/
@@ -566,12 +568,12 @@ theorem sim_goto (hc : checkG60L lc ps bstart g = .ok (tab, kt))
     (hS : SimAt lc g L ps tab kt E0 osp otab base b blk blk.values.size s t)
     (hpre : G1TermPre lc s blk) :
     ∃ t', MStar H code retM t t' ∧ SimAt lc g L ps tab kt E0 osp otab base e.b blk' 0 s' t' := by
-  obtain ⟨E, m, hx, hE, hm, hinv, hsp, hu, hR, hbid, hlr, hma⟩ := hS
-  obtain ⟨m', t', hm', hinv', hsp', hmem, hu', htm, hR', hk⟩ :=
-    g60_obj_term (H := H) hc hE hbid hb hm hinv hsp hpre hu ht hO hH hR (fun u _ => hic u)
+  obtain ⟨E, m, hx, hE, hm, hinv, hsp, hu, hR, hX, hbid, hlr, hma⟩ := hS
+  obtain ⟨m', t', hm', hinv', hsp', hmem, hu', htm, hR', hX', hk⟩ :=
+    g60_obj_term (H := H) hc hE hbid hb hm hinv hsp hpre hu ht hO hH hR hX (fun u _ => hic u)
   obtain ⟨R, -, hn⟩ := stepTermLoc_gen ht
   have he := stepTermL_goto_mem hn
-  exact ⟨t', htm, E, m', hx, hE, hm', by rw [kAt_zero]; exact hinv', hsp', hu', hR', hmem,
+  exact ⟨t', htm, E, m', hx, hE, hm', by rw [kAt_zero]; exact hinv', hsp', hu', hR', hX', hmem,
     leafLR_keep hlr hk, fun hl hok hcl => memInit_clean_term hok hbid hb he (hma hl hok) ht
       (by rwa [cleanAt_zero] at hcl)⟩
 
@@ -769,7 +771,7 @@ theorem sim_ret (hc : checkG60L lc ps bstart g = .ok (tab, kt))
     (hS : SimAt lc g L ps tab kt E0 osp otab base b blk blk.values.size s t) :
     ∃ E t', E0.Extends E ∧ MStar H code retM t t' ∧ ExitRel E s s0 t' ∧
       ResultRel E (ownOutRegs lc) rs mm t' := by
-  obtain ⟨E, m, hx, hE, hm, hinv, -, -, hR, hbid, hlr, -⟩ := hS
+  obtain ⟨E, m, hx, hE, hm, hinv, -, -, hR, hX, hbid, hlr, -⟩ := hS
   have hEE' := hEE.extend hx
   obtain ⟨R, -, hn⟩ := stepTermLoc_gen ht
   have hk := stepTermL_ret_kind hn
@@ -800,7 +802,8 @@ theorem sim_ret (hc : checkG60L lc ps bstart g = .ok (tab, kt))
   obtain ⟨k, rfl, hk2, hok, hstar⟩ := pstar_oneAt (H := H) (sym := sym) (az := az) (ez := ez)
     (ret := endP text ps.toList) hnd hlt (by rw [← hL, ← htext]; exact hret) rfl hone m
   rw [pc_eta hm hj, ← hL, ← htext] at hstar
-  obtain ⟨t1, ht1, hR1, -⟩ := obj_star hO hH hstar hR (by rw [htext]; exact hinvm) (fun u _ => hic u)
+  obtain ⟨t1, ht1, hR1, -⟩ := obj_star hO hH hstar hR hX (by rw [htext]; exact hinvm)
+    (fun u _ => hic u)
   obtain ⟨hras, -, -, hrto, -⟩ := Shape.ok_eq hok
   obtain ⟨-, -, -, -, -, -, -, hofs, -⟩ := checkObj_spec hO.check
   have hlen' : otab.offs.toList.length = ps.toList.length := by simp; exact hofs
@@ -1087,7 +1090,8 @@ def SimAtW (lc : LocCtx) (g : G2In) (L : Link) (ps : Array Prog) (tab : PcTab) (
     LocMatch E s b i { m with mem := M } ∧ (∀ y, ¬ W y → M y = m.mem y) ∧
     G3Inv E lc (kAt lc kt b blk i) s osp ∧ (osp = true → lc.ctx.f.lowered = true → SPInv E s) ∧
     UOKL m (uL35 lc (uIn35 lc b) blk i) ∧
-    ObjRel (ObjEnv.map otab ps L base) m t ∧ b ∈ lc.ctx.f.blocks.toList ∧
+    ObjRel (ObjEnv.map otab ps L base) m t ∧ X27At otab L ps.toList m t ∧
+    b ∈ lc.ctx.f.blocks.toList ∧
     (otab.leaf = true → m.x 30 = E0.lr ∧ ¬ IsProgAddr L.text ps.toList E0.lr ∧
       E0.lr ≠ endP L.text ps.toList) ∧ MemAt lc b blk i s
 
@@ -1157,7 +1161,8 @@ theorem sim_entry (hO : ObjEnv ps spills o otab L base code retM)
     ↓reduceIte]
   refine ⟨s1, h1, E0, { s1 with pc := E0.pcOf b k }, M1, ⟨rfl, fun _ _ h => h⟩, hE, ?_, hM1,
     hinv, hspI, (by rw [huE]; intro _ he; cases he),
-    ⟨fun _ _ _ => rfl, ?_, rfl, rfl, rfl, rfl, by rw [hpc1, ← hpc]⟩, hbm,
+    ⟨fun _ _ _ => rfl, ?_, rfl, rfl, rfl, rfl, by rw [hpc1, ← hpc]⟩,
+    x27At_of_eq hO rfl (pcOf_inv hE.env.env.env.env.env b k), hbm,
     fun _ => ⟨by show s1.x 30 = E0.lr; rw [h30, hEE.lr], by rw [hEE.lr]; exact hEE.lrOut.1,
       by rw [hEE.lr]; exact hEE.lrOut.2⟩, hma⟩
   rotate_left
@@ -1263,7 +1268,7 @@ theorem sim_entryStore (hc : checkG60L lc ps bstart g = .ok (tab, kt))
       b blk i s t) :
     ∃ t', MStar H code retM t t' ∧
       SimAtW lc g L ps tab kt E0 osp otab base W b blk (i + 1) s' t' := by
-  obtain ⟨E, m, M, hx, hE, hm, hag, hinv, hspI, -, hR, hbid, hlr, hma⟩ := hS
+  obtain ⟨E, m, M, hx, hE, hm, hag, hinv, hspI, -, hR, hX, hbid, hlr, hma⟩ := hS
   have hsp : E.sp = E0.sp := by rw [hx.1]
   have hspI' : osp = true → lc.ctx.f.lowered = true → SPInv E s' := fun ho hl => by
     obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, hsh⟩ := checkG60L_spec hl hc
@@ -1274,8 +1279,8 @@ theorem sim_entryStore (hc : checkG60L lc ps bstart g = .ok (tab, kt))
       (fun ⟨j, hj, he⟩ => hw j hj (by rw [hsp]; exact he)) hy) hinv hs
   have hI0 := locMatch_inv hE.env.env.env.env.env hm
   have hI : ObjInv L ps.toList m ∨ m.pc = endP L.text ps.toList := hI0
-  obtain ⟨t', ht, hR', -⟩ := obj_star hO hH hp hR hI (fun u _ => hic u)
-  exact ⟨t', ht, E, m', M', hx, hE, hm', hag', hinv', hspI', hu', hR', hbid,
+  obtain ⟨t', ht, hR', -, hX'⟩ := obj_star hO hH hp hR hX hI (fun u _ => hic u)
+  exact ⟨t', ht, E, m', M', hx, hE, hm', hag', hinv', hspI', hu', hR', hX', hbid,
     fun hl => ⟨(congrFun hxm 30).trans (hlr hl).1, (hlr hl).2⟩,
     fun hl hok hcl => memInit_clean_step hl hi hv (hma hl hok) hs hcl⟩
 
@@ -1561,26 +1566,26 @@ theorem sim_valuePanic (hc : checkG60L lc ps bstart g = .ok (tab, kt))
       ((icallLead v.op).isSome = true ∧ ∀ E m, E0.Extends E → LocMatch E s b i m →
         ICallPanicOKAt osp H E L (endP L.text ps.toList) lc s v m e)) :
     ∃ e', BoundsAgree e e' ∧ ∃ t', MStar H code retM t t' ∧ MPanics H code retM t' e' := by
-  obtain ⟨E, m, hx, hE, hm, hinv, hsp, -, hR, hbid, -, -⟩ := hS
+  obtain ⟨E, m, hx, hE, hm, hinv, hsp, -, hR, hX, hbid, -, -⟩ := hS
   have ho : E.outSP = E0.outSP := hx.outSP
   rcases hpp with hop | hop | hop | hop | ⟨hop, hok⟩ | ⟨hop, hok⟩
-  · obtain ⟨-, t', ht, hp⟩ := g60_obj_nilPanic hc hE hbid hb hi hv hop hm hinv hs hO hH hHP hR
+  · obtain ⟨-, t', ht, hp⟩ := g60_obj_nilPanic hc hE hbid hb hi hv hop hm hinv hs hO hH hHP hR hX
       (fun u _ => hic u)
     exact ⟨e, Or.inl rfl, t', ht, hp⟩
   · obtain ⟨-, t', ht, hp⟩ := g60_obj_memPanic hc hE.env hbid hb hi hv hop hm hinv
       (fun hl h => have ho' := hn48 (take48_of_needs48 hl hv h); ⟨hsp ho' hl, ho.trans (hosp ho')⟩)
-      hs hO hH hHP hR (fun u _ => hic u)
+      hs hO hH hHP hR hX (fun u _ => hic u)
     exact ⟨e, Or.inl rfl, t', ht, hp⟩
   · obtain ⟨-, t', ht, hp⟩ := g60_obj_ldarPanic hc hE.env hbid hb hi hv hop hm hinv hs hO hH hHP
-      hR (fun u _ => hic u)
+      hR hX (fun u _ => hic u)
     exact ⟨e, Or.inl rfl, t', ht, hp⟩
-  · exact g60_obj_boundsPanic hc hE hbid hb hi hv hop hm hinv hbok hs hO hH hHP hR
+  · exact g60_obj_boundsPanic hc hE hbid hb hi hv hop hm hinv hbok hs hO hH hHP hR hX
       (fun u _ => hic u)
   · exact ⟨e, Or.inl rfl, g60_obj_callPanic hc hE.env hbid hb hi hv hop hm hinv (hok E m hx hm)
-      hn48 hO hH hHP hR (fun u _ => hic u)⟩
+      hn48 hO hH hHP hR hX (fun u _ => hic u)⟩
   · obtain ⟨n, hn⟩ := Option.isSome_iff_exists.1 hop
     exact ⟨e, Or.inl rfl, g60_obj_icallPanic hc hE.env hbid hb hi hv hn hm hinv (hok E m hx hm) hO
-      hH hHP hR (fun u _ => hic u)⟩
+      hH hHP hR hX (fun u _ => hic u)⟩
 
 /-- The values of a block from value `i` on, which panic. -/
 theorem sim_valuesPanic (hc : checkG60L lc ps bstart g = .ok (tab, kt))

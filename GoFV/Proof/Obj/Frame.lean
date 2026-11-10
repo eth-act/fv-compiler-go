@@ -359,20 +359,20 @@ theorem obj_exit {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab : Tab
         else if tab.leaf then t.sp + BitVec.ofInt 64 (tab.autosize - 8) else t.word (t.sp - 8)) ∧
       (∀ r : Reg, r ≠ 27 → r ≠ 29 → r ≠ 30 → t'.x r = t.x r) ∧ t'.v = t.v ∧ t'.mem = t.mem ∧
       t'.nzcv = t.nzcv := by
-  obtain ⟨text, -, hps0, hT, -, -, -, hlen, -, -, -, -, -, hbody⟩ := checkObj_spec hc
+  obtain ⟨text, -, hps0, hT, -, -, -, hlen, -, -, -, -, -, ks, hbody, -⟩ := checkObj_spec hc
   have hk0 : k ≠ 0 := by
     rintro rfl
     rw [Array.getElem?_eq_getElem hk, Option.some.injEq] at hps0
     rw [hps0, hT] at hr
     cases hr
   obtain ⟨j, rfl⟩ : ∃ j, k = j + 1 := ⟨k - 1, by omega⟩
-  have hone := checkBody_spec _ _ _ hbody (by simp [hlen]) j (by simp; omega)
+  obtain ⟨b, hone, -⟩ := (checkBody_spec _ _ _ _ ks hbody (by simp [hlen])).2.2 j (by simp; omega)
   have hp : (ps.toList.drop 1)[j]'(by simp; omega) = ps[j + 1] := by simp
   have hs : (tab.offs.toList.drop 1)[j]'(by simp [hlen]; omega) = tab.offs[j + 1]! := by
     simp [hlen, hk]
   rw [hp, hs] at hone
   generalize ((tab.offs.toList.drop 1).getD (j + 1) tab.endOff) = e at hone
-  obtain ⟨-, hlt, hmod, σ, c, hw, hok⟩ := (checkOne_spec hone).resolve_right fun ⟨hne, _⟩ => by
+  obtain ⟨-, hlt, hmod, -, σ, c, hw, hok⟩ := (checkOne_spec hone).resolve_right fun ⟨hne, _⟩ => by
     simp [isRet0, hr, hto] at hne
   have hback : retBack tab.autosize tab.leaf ps[j + 1] =
       .reg (if tab.autosize == 0 || tab.leaf then .x 30 else .ld 8 .sp) := by
