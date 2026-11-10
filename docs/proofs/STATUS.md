@@ -933,11 +933,19 @@ variable's block at `SP + frameOff` (`VarsAt49`), and `AddrAgree` (in `G2Env`) p
 block with an address at its base. At `Addrs.fixed` (`Blk.fixedBase?`) block `k` of activation
 `a` is at `2^62 + a·2^42 + k·2^24`: two `local` blocks of one activation are a multiple of `2^24`
 apart, so two variables at distinct operands of one frame cannot both be at `SP + frameOff`. A
-function that accesses two or more has no `G49Env` at `Addrs.fixed`: there `g49_value` …
-`g49_boundsPanic`, and G52's, G53's, G54's, G55's and G57's statements (all under `G49Env`), hold
-of it only vacuously. An assignment that puts the running activation's `local` blocks,
-undecoded, at `SP + frameOff` (the machine instance, `docs/plans/proofs3.md` §8 item 4, not on
-main yet) admits such an activation. On quick-v10 (stock functions, `liveCtx`, main 55116073, a
+function that accesses two or more has no `G49Env` at `Addrs.fixed` (`g49Env_fixed_apart`,
+`GoFV/Proof/Gen/G49Mach.lean`): there `g49_value` … `g49_boundsPanic`, and G52's, G53's, G54's,
+G55's and G57's statements (all under `G49Env`), hold of it only vacuously. At `Addrs.atSP base`
+(an `Addrs` instance, every class law proven: activation 0's `local` blocks at `base k`,
+undecoded, their fixed region decoded as activation `actM = 2^22`, which `Ptr.fixedOfAddr` never
+decodes; everything else as `Addrs.fixed`; the machine instance of `docs/plans/proofs3.md` §8
+item 4 for activation 0), every `G28Env` at `Addrs.fixed` of a function of activation 0 gives a
+`G49Env` (`g49Env_atSP`, with `base = baseSP g L E.sp`, the variables' frame operands, and the
+activation `envAtSP g L E`), so the statements hold of these functions non-vacuously there;
+`verified_mach_atSP` (§ whole functions) is the end-to-end statement at that layout. Witness
+`genG49Mach_witness` (`runtime.secret_getStack`'s ABI0 wrapper, results `~r0`/`~r1` at
+`NAME_PARAM` 0 and 8): no `G49Env` at `Addrs.fixed`, one at `Addrs.atSP` with the results at
+`SP + 24` and `SP + 32`. On quick-v10 (stock functions, `liveCtx`, main 55116073, a
 throwaway count beside `gen-check`), 21 of the functions `checkG49` accepts access two or more
 (the same 21 are accepted by G52 through G57, and G57 adds none): `main.safeDiv` (`examples/defers`;
 `NAME_AUTO` -40 and -42, two address-converted autos), `(*HashTrieMap[…]).CompareAndSwap` in
@@ -1051,7 +1059,8 @@ loads take its `PairPre50` component; `STPW`, `DMB`, `PRFM` and the float stores
 Witness: `genG57_witness` (`main.grow`: `checkG55` rejects it and `checkG57` accepts it; `STPW
 (R2, R3), 8(R0)` of `0x11223344` and `0x55` leaves `0x44` at the struct's address plus 8). At
 `Addrs.fixed`, `g57_value` and the other four hold only vacuously of the 21 accepted functions
-that access two or more `Blk.local` frame variables (§ slice G49). Coverage on quick-v10
+that access two or more `Blk.local` frame variables; at `Addrs.atSP` they hold of them
+non-vacuously (`g49Env_atSP`, § slice G49). Coverage on quick-v10
 (`lake exe gen-check`, with the fall-through over no-ops): 7,378 of 9,297 functions (79.35%,
 33 more than G55's 7,345), 235,204 values.
 
@@ -1357,6 +1366,20 @@ machine's among them. Counts unchanged: `gofv-ssa-opt --check --verified` on qui
 through `rewrite tern`, 7,845 through `trim`, main 6f6f8ea0) and full-v11 (93,683 and 84,123,
 main 06837b1e; 93,683 and 83,919 on 7641ba1d) is identical to main, function by function.
 
+**The machine layout** (`GoFV.Proof.Obj.verified_mach_atSP`, `GoFV/Proof/Obj/EndToEndAtSP.lean`;
+`docs/plans/proofs3.md` §8 items 4 and 6; #553). `verified_mach` at the instance
+`Addrs.atSP (baseSP g L E0.sp)` (§ slice G49: activation 0's `local` blocks undecoded at their frame
+operands from `SP`), for the activation `envAtSP g L E0`, with the premise `G49Env` replaced by
+`G28Env` of `E0` at `Addrs.fixed`, which asks no place of a frame variable (`g49Env_atSP`; the
+pipeline's context is activation 0, `liveCtx_make_act`). Its other premises are `verified_mach`'s
+(the table below) at that instance; the checked ones (`verifiedPipelineFull`, `checkG56`,
+`liveCtx`, `retRegsOK`, `entryStoresOK`, `pendWins`, `memTyL`, `checkObj`) take no instance
+(`GoFVTest/AddrsFree.lean`), so they are what `gofv-ssa-opt --e2e` computes. Unlike
+`verified_mach_fixed`, it holds non-vacuously of the functions that access two or more
+`Blk.local` variables (End-to-end coverage below). Under it a `Convert` of such a block's address
+is `poison` (the block is undecoded, a held pointer; §8 item 5), so of a function whose
+frame-variable address becomes an integer it covers the runs that do not branch on that integer.
+
 Witnesses:
 - `objWhole_ret_witness` (`GoFV/Proof/Witness/ObjWhole.lean`): `pallocSum.start` on `p = 7` in
   `plRunEnv`, from `runLoc`'s first state (`locInit`) to `runMach` returning to the caller's
@@ -1384,6 +1407,16 @@ Witnesses:
   `gofv-ssa-opt --verified`) through the verified pipeline (`fullyVerified`), with every premise
   of `verified_mach` discharged (`checkG56` on its output: `refsLive`, `checkG56L` on `liveCtx`;
   `entryStoresOK`: no pending window, `EntryMatch` with nothing left out).
+- `verified_mach_atSP_witness` (`GoFV/Proof/Witness/ObjEndToEndAtSP.lean`):
+  `runtime.secret_getStack`'s ABI0 wrapper (two stack results, `Blk.local` blocks at `NAME_PARAM`
+  0 and 8, so no `G49Env` at `Addrs.fixed`) from its generic SSA through `verifiedPipelineFull`
+  (`fullyVerified`), with every premise of `verified_mach_atSP` discharged: `plRunEnv` with
+  `runtime/secret.getStack` returning `0x11` and `0x22` (`VPre` at the machine layout), a hook
+  that returns them in `R0`/`R1` (`CallSpec` at every activation extending `envAtSP`), the stock
+  Progs accepted by `checkG56`, `retRegsOK`, `entryStoresOK` and `checkObj`, `EntryMatch` with the
+  results' blocks at `SP + 24` and `SP + 32`, `RunPre` with the call's contract. `runMach` returns
+  to the caller's `0x40` (`MachRet`, `ResultRel`) with `0x11` and `0x22` at the caller's `SP + 8`
+  and `SP + 16`.
 
 Not yet covered (#553): panics other than nil checks, loads, stores, acquire loads, bounds checks
 and calls (register-index loads and stores; G50's pair loads; G53's `LoweredMove`; G54's loops;
@@ -1442,21 +1475,23 @@ column runs the same back end on the stock `trim` function of every function.
 | **… ∧ `checkG56` ∧ `entryStoresOK` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach`)** | **6,484** | **69.74%** | 7,281 |
 | … end to end, pipeline output identical to stock after `trim` | 5,503 | 59.19% | - |
 
-**Vacuous at `Addrs.fixed`: functions with two or more `Blk.local` variables** (#553). Of the
-functions counted end to end, those that access two or more `Blk.local` frame variables at distinct
-operands have no `G49Env` at `Addrs.fixed` (§ slice G49), so `verified_mach_fixed` holds of them
-only vacuously. Measured on main 55116073 (end to end 6,494; `back`'s `liveCtx` of the pipeline
-output, a throwaway count in `back`): 18 of the 6,494, `main.safeDiv` (`examples/defers`),
-`fmt.(*ss).Token`, `fmt.(*ss).doScan`, `regexp/syntax.dumpProg`, `runtime.bytes`,
-`runtime.cgoCheckPointer`, the ABI0 wrappers `runtime.plugin_lastmoduleinit`,
-`reflect_compiledTypelinks`, `reflect_typelinks`, `runtime_pprof_readProfile`, `secret_getStack`,
-`time_now`, `time_runtimeNow`, `sync/atomic.(*Value).CompareAndSwap`, `(*Value).Swap`, `main.cmp`
-(`test/bigmap`), `main.func5` and `main.func6` (`test/range4`). So 6,476 are end to end at
-`Addrs.fixed` with a satisfiable `G49Env`; 194 of them access exactly one such variable (`SP` then
-places it at its fixed base, as `genG49_witness`), 6,282 none. `verified_mach` holds for every
-assignment, but for the 18 no assignment admitting their activation is on main (the machine
-instance, `docs/plans/proofs3.md` §8 item 4), and `verified_mach` at another assignment needs the
-pipeline's verdict there (item 6).
+**Functions with two or more `Blk.local` variables: vacuous at `Addrs.fixed`, not at the machine
+layout** (#553). Of the functions counted end to end, those that access two or more `Blk.local`
+frame variables at distinct operands have no `G49Env` at `Addrs.fixed` (§ slice G49), so
+`verified_mach_fixed` holds of them only vacuously; `verified_mach_atSP` (§ whole functions) asks
+no place of a frame variable at `Addrs.fixed` (`G28Env`) and holds of them non-vacuously at
+`Addrs.atSP` (witness: `verified_mach_atSP_witness`, `secret_getStack`'s wrapper, every premise
+discharged). Measured on main ae9b2124 with this change (#672; the composition on G56, `gofv-ssa-opt
+--check --verified --e2e --jobs 2`, 337 s, with a throwaway count in `back` of the accessed
+forgeable `NAME_AUTO`/`NAME_PARAM` variables of `liveCtx` of the pipeline output): 6,494 end to
+end, of which 18 access two or more (the same 18 as on main 55116073): `main.safeDiv`
+(`examples/defers`), `fmt.(*ss).Token`, `fmt.(*ss).doScan`, `regexp/syntax.dumpProg`,
+`runtime.bytes`, `runtime.cgoCheckPointer`, the ABI0 wrappers `runtime.plugin_lastmoduleinit` (4),
+`reflect_compiledTypelinks`, `reflect_typelinks`, `runtime_pprof_readProfile` (3),
+`secret_getStack`, `time_now` (3), `time_runtimeNow` (3), `sync/atomic.(*Value).CompareAndSwap`,
+`(*Value).Swap`, `main.cmp` (`test/bigmap`), `main.func5` and `main.func6` (`test/range4`); 194
+access exactly one, 6,282 none. So all 6,494 are end to end under `verified_mach_atSP` with a
+satisfiable activation premise, and the 6,476 with at most one also under `verified_mach_fixed`.
 
 The composition on G56 (G55's `VCNT`/`VUADDLV`/`FRINT*`/shifted `NEG`/`CLZW`/`MULL`/`EXTR` and the
 float constants loaded from their read-only symbols, P0'; `RoRun` from `memTyL` and
@@ -1469,9 +1504,9 @@ from 7,206 to 7,281 (`checkObj` 8,544 → 8,703, `checkG56` ∧ `entryStoresOK` 
 `entryStoresOK` rejects 16, 33 are end to end with a pending window (stock column: 7,329, 51, 18,
 33). `memTyL` (required only of a function that loads a float constant) and the P0' numbering
 check do not appear among the listed rejection reasons (the top 40). This table predates the
-vacuity count above (main cdf73c37, before #670's two-store forms): its 6,484 include the functions
-with two or more `Blk.local` variables, for which `verified_mach_fixed` is vacuous (18 of main
-55116073's 6,494).
+count above (main cdf73c37, before #670's two-store forms, which bring the end-to-end count to
+6,494): its 6,484 include the functions with two or more `Blk.local` variables, for which
+`verified_mach_fixed` is vacuous and `verified_mach_atSP` is not.
 
 The composition on G54 (main e53604fc: through G52's remainders, G53's `LoweredMove` and G54's
 loops; `G54Pre` in `RunPre`) counted 6,484 end to end, 201 over the composition on G49's 6,283
@@ -1646,7 +1681,9 @@ its read-only symbols. `verifiedPipelineFull_refines` adds three assumptions on 
 `schedule` inputs `r.nnf` (its `hn`, `ha`, `hnp`). Every assumption of the end-to-end theorems,
 in one table: what it assumes, why it is justified, what would falsify it, and what
 discharges it (the runtime model `Env.runtime`, the Phase 1 test environment `Env.p1`, or the
-witnesses):
+witnesses). `verified_mach_fixed` and `verified_mach_atSP` take `verified_mach`'s assumptions, at
+`Addrs.fixed` and at `Addrs.atSP` (where `G28Env` at `Addrs.fixed` replaces `G49Env`); the latter
+adds none:
 
 | Assumption | Assumes | Justification | Falsified by | Discharged for |
 | --- | --- | --- | --- | --- |

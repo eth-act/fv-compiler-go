@@ -2656,6 +2656,19 @@ few:
    It is admissible by the fixed proofs plus the renaming. Under it, `outargs a` and every
    `PPARAM`/`PPARAMOUT` `local a k` are held pointers, `ι` is free on them, and `Convert` of
    one is `poison`: option 1's guard, now semantic.
+
+   **Done for activation 0's `local` blocks** (#672, `GoFV/Proof/Gen/G49Mach.lean`):
+   `Addrs.atSP base` puts activation 0's `local` blocks at `base k`, undecoded, decodes their fixed
+   region as activation `actM = 2^22` (`fixedOfAddr_act_lt`: `Ptr.fixedOfAddr` never decodes it),
+   and is `Addrs.fixed` elsewhere; every class law is proven. With `base = baseSP g L sp` (each
+   variable's frame operand from `sp`, the fixed base for one without an operand) and the
+   activation `envAtSP g L E` (`ιSP`: activation 0's `local` blocks at those bases, activation
+   `actM`'s at theirs, the rest as `E.ι`), every `G28Env` at `Addrs.fixed` of activation 0 is a
+   `G49Env` there (`g49Env_atSP`). That is needed: at `Addrs.fixed` two `local` blocks of one
+   activation are a multiple of `2^24` apart, so a function that accesses two at distinct
+   operands has no `G49Env` (`g49Env_fixed_apart`; 18 end-to-end functions on quick-v10).
+   `verified_mach_atSP` (§9) is the end-to-end statement there. `outargs a`, the `temp` blocks
+   and `callerSP` stay as in `Addrs.fixed`; item 7 (`SPAt`) extends the instance to `outargs a`.
 5. **Slices it unlocks, and coverage.** Phase 1/2 counts do not move: executables run
    `Addrs.fixed`, so sem-difftest and full-v9 are identical.
    - **G16+, stack arguments.**
@@ -3105,6 +3118,16 @@ includes `loopOK` (each loop's `CBNZ` branches to its head), which `g56L_value` 
 `checkG56L_spec`; it is no separate premise. The statement lists every premise (STATUS,
 Assumptions).
 
+**At the machine layout** (`GoFV/Proof/Obj/EndToEndAtSP.lean`, `verified_mach_atSP`, #672):
+`verified_mach` at `Addrs.atSP (baseSP g L E0.sp)` (§8 item 4) for the activation `envAtSP g L E0`,
+with `G28Env` of `E0` at `Addrs.fixed` in place of `G49Env` (`g49Env_atSP`; `lc.ctx.act = 0`,
+`liveCtx_make_act`). By item 6 the checks take no instance (`GoFVTest/AddrsFree.lean` also scans
+`liveCtx`, `retRegsOK`, `entryStoresOK`, `pendWins`, `memTyL`, `checkObj`), so the premise is the
+executables' verdict. It holds non-vacuously of the functions with two or more `Blk.local`
+variables, of which `verified_mach_fixed` holds only vacuously (18 of quick-v10's 6,494 end to
+end on main ae9b2124). `ιSP` places activation `actM`'s blocks (at the fixed bases of activation
+0's) so that an activation extending `envAtSP` can meet `CallSpec`'s `AddrAgree`.
+
 **Coverage** (quick-v10, `gofv-ssa-opt --check --verified --e2e`, STATUS End-to-end coverage): on
 G56 (on P0', `checkObj` with the SIMD&FP `PCREL_LDST` loads; main cdf73c37 with G55), 6,484 of
 9,297 functions end to end (69.74%), as on G54 (main e53604fc): no fully verified function needs
@@ -3131,6 +3154,10 @@ section, in the whole-file environment of `gofv-ssa-opt --verified`) through
 pending window). `RunPre` there is `runPre_simple`. The witnesses' facts check `checkG56L` (or
 `checkG56`) and `constRo (symNames g) = []` on the same functions with the same tables as before (none of them has a remainder,
 `LoweredMove` or loop).
+`verified_mach_atSP_witness` (`GoFV/Proof/Witness/ObjEndToEndAtSP.lean`): `secret_getStack`'s
+ABI0 wrapper, with every premise of `verified_mach_atSP` discharged (a callee contract returning
+`0x11`, `0x22`; its hook; the results' blocks at `SP + 24`/`SP + 32`), returning with them at the
+caller's `SP + 8`/`SP + 16`; at `Addrs.fixed` it has no `G49Env` (`fixed_none`).
 
 **Next.** The lift to each new slice as it merges. Panics of the other kinds
 (register-index loads and stores; write barriers, `memequal`). A witness of `sim_entryStores`
