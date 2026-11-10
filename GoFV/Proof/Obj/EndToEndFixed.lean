@@ -54,7 +54,7 @@ theorem verified_mach_fixed
     {H : Hooks} {g : G2In} {L : Link} {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab}
     {kt : KTab} {E0 : MatchEnv} {spills : Array Spill} {o : ObjIn} {otab : Tab}
     {base : BitVec 64} {code : Code} {room : Nat} {s0 : MState}
-    (hc : checkG56 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
+    (hc : checkG60 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
     (hO : ObjEnv ps spills o otab L base code (s0.x 30))
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hic : ∀ u, ICallOut L ps.toList u)
@@ -75,7 +75,9 @@ theorem verified_mach_fixed
     (hent : EntryMatch E0 (InWins L E0.sp (pendWins lc g)) sI s0)
     (hmore : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
       MoreEntry E0 spills.toList gOff sI s0)
-    (hinv : G3Inv E0 lc (kAt lc kt lc.ctx.f.entry blkE k) sI)
+    (hinv : G3Inv E0 lc (kAt lc kt lc.ctx.f.entry blkE k) sI E0.outSP)
+    (hosp : lc.ctx.f.lowered = true → E0.outSP = true)
+    (hspI : lc.ctx.f.lowered = true → SPInv E0 sI)
     (huE : uL35 lc [] blkE k = [])
     (hpc : ObjEnv.map otab ps L base (E0.pcOf lc.ctx.f.entry k) =
       base + BitVec.ofNat 64 (otab.offs[0]!))
@@ -96,6 +98,6 @@ theorem verified_mach_fixed
         RunPanicPre e H lc g L (endP L.text ps.toList) E0 lc.ctx.f.entry k sI →
         ∃ pe' n t', BoundsAgree pe pe' ∧ runMach H code (s0.x 30) n s0 = .panicked pe' t') :=
   verified_mach hpipe hv hP hn ha hnp hd hlc hc hO hH hic hrok hME hroom hg hms hsep hE hEE hbE hbm
-    hk hpre hes hent hmore hinv huE hpc hRP hmt hro
+    hk hpre hes hent hmore hinv hosp hspI huE hpc hRP hmt hro
 
 end GoFV.Proof.Obj

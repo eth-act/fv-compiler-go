@@ -12,7 +12,7 @@ only vacuously. `verified_mach_atSP` states it at `Addrs.atSP (baseSP g L E0.sp)
 0's `local` blocks sit, undecoded, at their frame operands from `SP`: the activation is
 `envAtSP g L E0`, and `G49Env` is no premise, it follows (`g49Env_atSP`) from the activation
 without the variables' places at `Addrs.fixed` (`G28Env`), which constrains no frame variable.
-The checked premises (`verifiedPipelineFull`, `checkG56`, `retRegsOK`, `entryStoresOK`,
+The checked premises (`verifiedPipelineFull`, `checkG60`, `retRegsOK`, `entryStoresOK`,
 `memTyL`, `checkObj`'s `ObjEnv`) take no address assignment (§8 item 6,
 `GoFVTest/AddrsFree.lean`): they are the verdicts `gofv-ssa-opt --e2e` computes. The others
 (the input's `VPre`, the caller's entry relation, the callee contracts) are stated at the
@@ -52,7 +52,7 @@ theorem verified_mach_atSP
     {H : Hooks} {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab}
     {kt : KTab} {spills : Array Spill} {o : ObjIn} {otab : Tab}
     {base : BitVec 64} {code : Code} {room : Nat} {s0 : MState}
-    (hc : checkG56 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
+    (hc : checkG60 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
     (hO : ObjEnv ps spills o otab L base code (s0.x 30))
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hic : ∀ u, ICallOut L ps.toList u)

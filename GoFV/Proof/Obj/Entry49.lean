@@ -11,11 +11,12 @@ of the register-assigned parameters (`pendWins`, `GoFV/Gen/Entry49.lean`) are no
 blocks' images. The entry relation (`EntryMatch`) therefore relates `runLoc`'s memory to a
 machine memory `M` that agrees with the machine's but for a set `W` of bytes, and the entry stores
 (`entryStore?`) are run against it: an entry store is a store of G49's frame-variable path
-(`entryStore?_spec`; no op of G52–G56, so `vkind56` of it is `vkind49`'s, `vkind56_eq49`), whose
+(`entryStore?_spec`; no op of G52's–G59's groups and no access off `SP` without an aux, so what
+`vkind60` accepts of it `vkind49` accepts, `vkind60_ok49`, in any mode), whose
 P0 Prog writes its window in the machine's memory as in `M`. So from
 `LocMatch E s b i {m with mem := M}` (`M` agreeing with `m.mem` outside `W` and the store's
 window) the Prog runs `m` to `m'` with `LocMatch E s' b (i + 1) {m' with mem := M'}`, `M'`
-agreeing with `m'.mem` outside `W` (`g56L_entryStore`): the window is written alike in both
+agreeing with `m'.mem` outside `W` (`g60L_entryStore`): the window is written alike in both
 (`writeMem_in`), every other byte is kept (`writeMem_pt`). When the windows of the entry stores
 cover `W`, after them `M'` is `m'.mem` and the relation is `LocMatch` (`Whole.lean`,
 `sim_entryStores`).
@@ -92,24 +93,24 @@ section Cases
 variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} {psA : Array Prog}
   {ret : BitVec 64} {E : MatchEnv} {lc : LocCtx} {s s' : LocState} {b : ID} {i : Nat}
   {m : MState} {env : Env} {v : Value} {j j' : Nat} {K K' : Nat → Option Nat}
-  {x : AuxRef} {nc : AddrName} {off : Int}
+  {x : AuxRef} {nc : AddrName} {off : Int} {osp : Bool}
 
 /-- G3's `op_mem2` with the P0 step on `m` and the relation on `{m with mem := M0}`: the Prog
 writes `Mr` in `m`'s memory, the relation after it is on `{m' with mem := M}`. -/
 theorem op_mem2W {P : BitVec 64 → Prop} (F : Facts lc sym text az ez psA.toList ret E)
-    {M0 : Memory} (hm : LocMatch E s b i { m with mem := M0 }) (hinv : CoreInv E.ι P K s)
+    {M0 : Memory} (hm : LocMatch E s b i { m with mem := M0 }) (hinv : CoreInv E.ι P K s osp)
     (hkeep : Keeps E P s { m with mem := M0 })
     (hj : E.pcOf b i = pcAt text psA.toList j)
     (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j') {pat : Pat} (hone : OneAt2 psA j pat j')
     {mm' : Mem} {M Mr : Memory} (hM : MemInj E.ι mm' M) (hkn : KeysNodup mm')
-    (hsep : SepFrom E.ι P mm') (hP : ∀ y, P y → M y = M0 y) (hKL : KLe K' K)
+    (hsep : SepAt osp E.ι P mm') (hP : ∀ y, P y → M y = M0 y) (hKL : KLe K' K)
     (hstep : ∀ k (hk : k < psA.toList.length), pat.ok psA.toList[k] = true →
       progStep (Link.byId sym text az ez psA.toList) psA.toList[k]
           { m with pc := pcAt text psA.toList k } =
         .ok { m with mem := Mr, pc := pcAt text psA.toList (k + 1) }) :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧ m'.mem = Mr ∧
       m'.x = m.x ∧ LocMatch E { s with mem := .mem mm' } b (i + 1) { m' with mem := M } ∧
-      CoreInv E.ι P K' { s with mem := .mem mm' } := by
+      CoreInv E.ι P K' { s with mem := .mem mm' } osp := by
   obtain ⟨k, rfl, hk, hok, hstar⟩ := pstar_oneAt2 (H := H) F.nodup F.lt F.ret hone m
   have hpc : m.pc = E.pcOf b i := hm.pc
   have heta : ({ m with pc := pcAt text psA.toList j } : MState) = m := by rw [← hj, ← hpc]
@@ -118,14 +119,15 @@ theorem op_mem2W {P : BitVec 64 → Prop} (F : Facts lc sym text az ez psA.toLis
   have hlm := locMatch_setMem hm hsl hfr hM (b' := b) (i' := i + 1)
   rw [hj'] at hlm
   exact ⟨_, hstar.tail (pstep_at F.nodup F.lt F.ret hk rfl (hstep k hk hok)), rfl, rfl, hlm,
-    (⟨hinv.regs, ⟨mm', rfl, hkn, hsep⟩⟩ : CoreInv E.ι P K { s with mem := .mem mm' }).mono hKL⟩
+    (⟨hinv.regs, ⟨mm', rfl, hkn, hsep⟩⟩ : CoreInv E.ι P K { s with mem := .mem mm' } osp).mono
+      hKL⟩
 
 /-- `g49_store` from a relation on `{m with mem := M0}`, `M0` agreeing with `m`'s memory outside
 `W` and the store's window: the same store, from `m`, to a relation on `{m' with mem := M'}`,
 `M'` agreeing with `m'`'s memory outside `W`. -/
 theorem g49_storeW (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
     (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8) {M0 : Memory}
-    (hm : LocMatch E s b i { m with mem := M0 }) (hinv : CoreInv E.ι (StkAt E) K s)
+    (hm : LocMatch E s b i { m with mem := M0 }) (hinv : CoreInv E.ι (StkAt E) K s osp)
     (hsi : SlotInv lc s) (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     (hx : v.aux = some x) (hvar : isVar lc x = true) (hf : lc.ctx.tabs.forgeable x = true)
@@ -144,7 +146,7 @@ theorem g49_storeW (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK 
       (frameOff (Link.byId sym text az ez psA.toList) nc off) + BitVec.ofNat 64 j) →
         M0 y = m.mem y) :
     ∃ m' M', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧ m'.x = m.x ∧
-      LocMatch E s' b (i + 1) { m' with mem := M' } ∧ CoreInv E.ι (StkAt E) K' s' ∧
+      LocMatch E s' b (i + 1) { m' with mem := M' } ∧ CoreInv E.ι (StkAt E) K' s' osp ∧
       SlotInv lc s' ∧ ∀ y, ¬ W y → M' y = m'.mem y := by
   have hl := F.lowered
   have hA := F.addr
@@ -177,17 +179,15 @@ theorem g49_storeW (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK 
   obtain ⟨a, hpa, haeq⟩ := hι
   obtain ⟨hnil, -⟩ := access_nil hMI hpa (by omega : 0 < n) (Or.inl hcan)
   obtain ⟨hM', hk', hback, al, hal, hoff, hout⟩ := memInj_storeN hA hMI hk0 hn hpa hyv hyf hcs hw
-  have hsep' : SepFrom E.ι (StkAt E) mm' := by
-    intro b2 al2 a2 hb hι' y hy
-    obtain ⟨al1, hb1, hs1⟩ := hback b2 al2 hb
-    rw [← hs1]; exact hsep0 b2 al1 a2 hb1 hι' y hy
+  have hsep' : SepAt osp E.ι (StkAt E) mm' := hsep0.write hk0 hw
   have hA' : m.sp + BitVec.ofInt 64 (frameOff (Link.byId sym text az ez psA.toList) nc off) =
       a + BitVec.ofInt 64 v.auxInt.toInt := by
     have hsp : m.sp = E.sp := hm.frame.1
     rw [hsp, haeq]
   obtain ⟨m', h1, h2, h3, h4, h5⟩ := op_mem2W (H := H) F hm hinv (stk_keeps hm hF hsz) hj hj' hvs
     hM' hk' hsep'
-    (fun y hy => hout y fun j hj he => hsep0 _ _ _ hal hpa y hy ⟨by omega, by omega⟩)
+    (fun y hy => hout y fun j hj he =>
+      hsep0.not_mem hal hpa hy (by simp only [Blk.writableFrom]; omega) (by omega))
     (knext_same hK (Or.inr fun _ _ => by rw [hhn]; nofun))
     (Mr := writeMem m.mem (a + BitVec.ofInt 64 v.auxInt.toInt) n
       (BitVec.ofNat (8 * n) ((m.rX (BitVec.ofNat 5 ks)).toNat % 2 ^ (8 * n))))
@@ -205,7 +205,7 @@ theorem g49_storeW (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK 
 /-- `g49_stp` from a relation on `{m with mem := M0}`, as `g49_storeW`. -/
 theorem g49_stpW (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
     (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8) {M0 : Memory}
-    (hm : LocMatch E s b i { m with mem := M0 }) (hinv : CoreInv E.ι (StkAt E) K s)
+    (hm : LocMatch E s b i { m with mem := M0 }) (hinv : CoreInv E.ι (StkAt E) K s osp)
     (hsi : SlotInv lc s) (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     (hx : v.aux = some x) (hvar : isVar lc x = true) (hf : lc.ctx.tabs.forgeable x = true)
@@ -223,7 +223,7 @@ theorem g49_stpW (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
       (frameOff (Link.byId sym text az ez psA.toList) nc off) + BitVec.ofNat 64 j) →
         M0 y = m.mem y) :
     ∃ m' M', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧ m'.x = m.x ∧
-      LocMatch E s' b (i + 1) { m' with mem := M' } ∧ CoreInv E.ι (StkAt E) K' s' ∧
+      LocMatch E s' b (i + 1) { m' with mem := M' } ∧ CoreInv E.ι (StkAt E) K' s' osp ∧
       SlotInv lc s' ∧ ∀ y, ¬ W y → M' y = m'.mem y := by
   have hl := F.lowered
   have hA := F.addr
@@ -264,14 +264,8 @@ theorem g49_stpW (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
   obtain ⟨hnil', -⟩ := access_nil hM1 hpa (by omega : 0 < 8) (Or.inl hcan2)
   obtain ⟨hM2, hk2, hback2, al2, hal2, hoff2, hout2⟩ :=
     memInj_storeN hA hM1 hk1 (by simp) hpa hzv hzf (Or.inl (Nat.le_refl _)) hw2
-  have hsep1 : SepFrom E.ι (StkAt E) mm1 := by
-    intro b2 al a2 hb hι' w hw
-    obtain ⟨al0, hb0, hs0⟩ := hback1 b2 al hb
-    rw [← hs0]; exact hsep0 b2 al0 a2 hb0 hι' w hw
-  have hsep2 : SepFrom E.ι (StkAt E) mm' := by
-    intro b2 al a2 hb hι' w hw
-    obtain ⟨al0, hb0, hs0⟩ := hback2 b2 al hb
-    rw [← hs0]; exact hsep1 b2 al0 a2 hb0 hι' w hw
+  have hsep1 : SepAt osp E.ι (StkAt E) mm1 := hsep0.write hk0 hw1
+  have hsep2 : SepAt osp E.ι (StkAt E) mm' := hsep1.write hk1 hw2
   rw [write_mem hhn hmt, memTy_eq hmt, retypeL_mem]
   have hA' : m.sp + BitVec.ofInt 64 (frameOff (Link.byId sym text az ez psA.toList) nc off) =
       a + BitVec.ofInt 64 v.auxInt.toInt := by
@@ -281,8 +275,10 @@ theorem g49_stpW (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
       a + (BitVec.ofInt 64 v.auxInt.toInt + 8) := by rw [hA', BitVec.add_assoc]
   obtain ⟨m', h1, h2, h3, h4, h5⟩ := op_mem2W (H := H) F hm hinv (stk_keeps hm hF hsz) hj hj' hvs
     hM2 hk2 hsep2
-    (fun w hw => (hout2 w fun j hj he => hsep1 _ _ _ hal2 hpa w hw ⟨by omega, by omega⟩).trans
-      (hout1 w fun j hj he => hsep0 _ _ _ hal1 hpa w hw ⟨by omega, by omega⟩))
+    (fun w hw => (hout2 w fun j hj he =>
+        hsep1.not_mem hal2 hpa hw (by simp only [Blk.writableFrom]; omega) (by omega)).trans
+      (hout1 w fun j hj he =>
+        hsep0.not_mem hal1 hpa hw (by simp only [Blk.writableFrom]; omega) (by omega)))
     (knext_same hK (Or.inr fun _ _ => by rw [hhn]; nofun))
     (Mr := writeMem (writeMem m.mem (a + BitVec.ofInt 64 v.auxInt.toInt) 8
         (BitVec.ofNat (8 * 8) ((m.rX (BitVec.ofNat 5 kx)).toNat % 2 ^ (8 * 8))))
@@ -340,27 +336,27 @@ theorem entryStore?_aux {lc : LocCtx} {g : G2In} {v : Value} {off : Int} {n : Na
   · cases h
   · rw [frameVar49?_none ha] at h; cases h
 
-/-- **An entry store of slice G56 against a memory related but for some bytes.** From a relation
+/-- **An entry store of slice G60 against a memory related but for some bytes.** From a relation
 on `{m with mem := M0}`, `M0` agreeing with `m`'s memory outside `W` and the store's window
 (`SP + frameOff` of its `NAME_PARAM` operand, `n` bytes), an entry store (`entryStore?`) that
-`checkG56L` accepted runs its Prog from `m` to `m'` (the X registers kept) with a relation on
+`checkG60L` accepted runs its Prog from `m` to `m'` (the X registers kept) with a relation on
 `{m' with mem := M'}`, `M'` agreeing with `m'`'s memory outside `W`, the class map and G35's
 table after the value. -/
-theorem g56L_entryStore {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+theorem g60L_entryStore {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab}
     {E : MatchEnv} {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s s' : LocState}
-    {m : MState} {M0 : Memory} {off : Int} {n : Nat} {W : BitVec 64 → Prop}
-    (hc : checkG56L lc ps bstart g = .ok (tab, kt)) (hE : G49Env lc g L ps ret tab E)
+    {m : MState} {M0 : Memory} {off : Int} {n : Nat} {W : BitVec 64 → Prop} {osp : Bool}
+    (hc : checkG60L lc ps bstart g = .ok (tab, kt)) (hE : G49Env lc g L ps ret tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
     (hes : entryStore? lc g v = some (off, n))
     (hm : LocMatch E s bid i { m with mem := M0 })
     (hW : ∀ y, ¬ W y → (∀ j, j < n → y ≠ E.sp + BitVec.ofInt 64 (frameOff L .PARAM off) +
       BitVec.ofNat 64 j) → M0 y = m.mem y)
-    (hinv : G3Inv E lc (kAt lc kt bid blk i) s) (hs : stepLoc env lc s v = .ok s') :
+    (hinv : G3Inv E lc (kAt lc kt bid blk i) s osp) (hs : stepLoc env lc s v = .ok s') :
     ∃ m' M', PStar H L ps.toList ret m m' ∧ m'.x = m.x ∧
       LocMatch E s' bid (i + 1) { m' with mem := M' } ∧
-      G3Inv E lc (kAt lc kt bid blk (i + 1)) s' ∧
+      G3Inv E lc (kAt lc kt bid blk (i + 1)) s' osp ∧
       UOKL m' (uL35 lc (uIn35 lc bid) blk (i + 1)) ∧ ∀ y, ¬ W y → M' y = m'.mem y := by
   have hmf := entryStore?_memFault hes
   have hcases := memFaultOp_cases hmf
@@ -368,7 +364,7 @@ theorem g56L_entryStore {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Li
     rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;> rfl
   cases hl0 : lc.ctx.f.lowered with
   | false =>
-    rcases nl30_ops (checkNL30_of_56L hl0 hc) hbid hb hi hv hen with h | h | h | h <;>
+    rcases nl30_ops (checkNL30_of_60L hl0 hc) hbid hb hi hv hen with h | h | h | h <;>
       rcases hcases with h' | h' | h' | h' | h' | h' | h' | h' | h' | h' | h' | h' | h' <;>
       rw [h] at h' <;> cases h'
   | true =>
@@ -380,8 +376,8 @@ theorem g56L_entryStore {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Li
   have htext : L.text = text := by rw [hL]; rfl
   rw [htext] at hpcOf
   subst hL
-  obtain ⟨c, rfl, rfl, -, rfl, hvk, -, hl, hhome, hcf, hk, hlt, hnd, hblocks, -, -, -, -⟩ :=
-    checkG56L_spec hl0 hc
+  obtain ⟨c, rfl, rfl, -, rfl, hvk, -, hl, hhome, hcf, hk, hlt, hnd, hblocks, -, -, -, -, -⟩ :=
+    checkG60L_spec hl0 hc
   obtain ⟨b, j, js, e, next, hb', -, hvals, -, -, hrow⟩ := Cx2.blocks_spec hblocks bid hbid
   rw [hb] at hb'
   cases hb'
@@ -391,11 +387,21 @@ theorem g56L_entryStore {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Li
   have hid' : blk.values.toList[i] = id := by simpa using hid
   rw [hid', hv] at hv'
   cases hv'
+  have h7x : op57a v.op = false ∧ op57b v.op = false ∧ op58a v.op = false ∧ op59p v.op = false := by
+    rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;>
+      exact ⟨rfl, rfl, rfl, rfl⟩
   have h5x : op56 v.op = false ∧ op55a v.op = false ∧ op55b v.op = false ∧
       op52b v.op = false ∧ op53a v.op = false ∧ op54a v.op = false := by
     rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;>
       exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
-  rw [hvk, vkind56_eq49 h5x.1 h5x.2.1 h5x.2.2.1 h5x.2.2.2.1 h5x.2.2.2.2.1 h5x.2.2.2.2.2] at hkd
+  rw [hvk] at hkd
+  -- G48's `kind48` takes a call or an access off `SP` without an aux; an entry store has one
+  have hkd := (vkind60_ok49 h7x.1 h7x.2.1 h7x.2.2.1 h7x.2.2.2 h5x.1 h5x.2.1 h5x.2.2.1
+    h5x.2.2.2.1 h5x.2.2.2.2.1 h5x.2.2.2.2.2 hkd).resolve_right fun ⟨_, hk48⟩ => by
+      rcases kind48_cases hk48 with ⟨hc0, -⟩ | ⟨-, ha, -⟩
+      · rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] at hc0 <;>
+          cases hc0
+      · exact entryStore?_aux hes ha
   obtain ⟨x, hfv, htemp, hVar, hshape⟩ := entryStore?_spec hes hkd
   have hj : E.pcOf bid i = pcAt text c.cx.ps.toList ((js ++ [e]).getD i 0) := by
     rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some]

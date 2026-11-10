@@ -8,10 +8,10 @@ variable [GoFV.SSA.Sem.Addrs]
 
 `verifiedPipelineFull_refines` (Phase 2: every returning or panicking `run` of the generic SSA
 input is refined by a `runLoc` of `trim`'s output) composed with `obj_whole_ret` (Phase 3: a
-returning `runLoc` body of a function `checkG56L`, `retRegsOK` and `checkObj` accept is matched by
+returning `runLoc` body of a function `checkG60L`, `retRegsOK` and `checkObj` accept is matched by
 `runMach` of the linked words, with the results in their ABI registers) and `obj_whole_panic` (a
-panicking body by a panicking `runMach`), on slice G56: `checkG56` accepts the pipeline's output
-`LocCtx.make tabs f` when `refsLive` holds of it and `checkG56L` accepts `liveCtx` of it (the homes
+panicking body by a panicking `runMach`), on slice G60: `checkG60` accepts the pipeline's output
+`LocCtx.make tabs f` when `refsLive` holds of it and `checkG60L` accepts `liveCtx` of it (the homes
 of removed values dropped), under which `runLoc` runs alike (`runLoopLoc_live`). `runLoc` is
 `finish` of its body `runLoopLoc` (`runLoc_eq`), whose outcome is returned or panicked when
 `runLoc`'s is (`finish_defined`). The entry relation leaves out the windows of the
@@ -20,7 +20,11 @@ value `k` write (`entryStoresOK`, a checked premise). The Progs are P0' (`GoFV.A
 float constants that are no `FMOV` immediate loaded from their constant symbols, which `g`
 lists); every state of the run has those symbols (`RoRun`, by `lreach_roMem` from the input
 premise `RoMem (constRo (symNames g)) (addGlobals e mem)`, `memTyL` and `Env.KeepsRo` of
-`VPre`'s `RoImage`).
+`VPre`'s `RoImage`). A function with an arm64 op runs in G48's mode: its activation's `outargs`
+block sits at `SP` (`hosp : lc.ctx.f.lowered = true → E0.outSP = true`, `SPInv` at the entry,
+`hspI`), the separation `SepFromW` (`G3Inv … E0.outSP`) and the callee contracts of that mode (the
+`CallOKS` family, `CallOKStk` at a call with stack arguments or results, `CallPanicOKS`,
+`ICallPanicOKS`); a function with none runs in either mode.
 -/
 
 namespace GoFV.Proof.Obj
@@ -41,7 +45,7 @@ theorem runLoc_args {env : Env} {tabs : Tables} {f : Func} {args : List Val} {me
 
 /-- **Generic SSA to machine words.** `f` goes through the verified pipeline (`fullyVerified`)
 to the allocated function `r.st.func` (tables `r.st.tables`); genssa's Progs with `progedit`'s
-float constant loads, P0' `ps`, are accepted by `checkG56` (so `checkG56L` accepts them on `lc`,
+float constant loads, P0' `ps`, are accepted by `checkG60` (so `checkG60L` accepts them on `lc`,
 `LocCtx.make` of the pipeline's output without the homes of removed values, `liveCtx`), its
 returns by `retRegsOK` (the register results in their ABI registers, `ownOutRegs`), the memory
 types by `memTyL`, and the assembler's output `o` by `checkObj`
@@ -56,13 +60,17 @@ input memory has the float constant symbols `g` lists (`RoMem (constRo (symNames
 body panics with `pe` and the panic premises hold (the
 trusted `HookPanicMap` and `BoundsOK`, and `RunPanicPre`: the run's panics come from nil checks,
 loads, stores and acquire loads that fault in the nil page, bounds checks and static, interface or
-closure calls whose callee panics by the trusted `CallPanicOK`, `ICallPanicOK`), `runMach` panics
+closure calls whose callee panics by the trusted `CallPanicOKAt`, `ICallPanicOKAt` of the
+activation's mode), `runMach` panics
 with `pe` or, for a bounds check, with the runtime's report of the same failure (`BoundsAgree`).
 
 Premises of the machine side: those of `obj_whole_ret` (trusted: `HookMap`, `runtime.morestack`'s
-contract `MorestackOK` at the morestack tail's call, and in `RunPre` the callee contracts
-`CallOK`, `CallOKZ`, `ICallOK`, `WbOK`, `CloOK`, `MemEqOK`; the caller's side: `MachEntry`,
-`EntryMatch`/`EntryEnv` of the arguments, memory and frame at the entry (the memory but for the
+contract `MorestackOK` at the morestack tail's call, and in `RunPre` the callee contracts of the
+activation's mode `E0.outSP` (`CallOKAt`, `CallOKZAt`, `ICallOKAt`, `WbOKAt`, `MemEqOKAt`: `CallOK`
+… in the mode `false`, the `CallOKS` family in the mode `true`), `CloOK` and `CallOKStk`; the
+caller's side: `MachEntry`, `EntryMatch`/`EntryEnv` of the arguments, memory and frame at the
+entry, the mode (`hosp`: G48's for a function with an arm64 op) and `SPInv` at the entry (`hspI`:
+the `outargs` block at `SP`, the Go register `SP` related to it) (the memory but for the
 windows of the register-assigned parameters the function accesses, `pendWins`, which the entry
 stores from value `k` cover, `entryStoresOK`), and for a function with
 a stack check the spill slots apart from `g` (`TailSep`) and the entry values surviving the
@@ -81,7 +89,7 @@ theorem verified_mach
     {H : Hooks} {g : G2In} {L : Link} {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab}
     {kt : KTab} {E0 : MatchEnv} {spills : Array Spill} {o : ObjIn} {otab : Tab}
     {base : BitVec 64} {code : Code} {room : Nat} {s0 : MState}
-    (hc : checkG56 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
+    (hc : checkG60 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
     (hO : ObjEnv ps spills o otab L base code (s0.x 30))
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hic : ∀ u, ICallOut L ps.toList u)
@@ -102,7 +110,9 @@ theorem verified_mach
     (hent : EntryMatch E0 (InWins L E0.sp (pendWins lc g)) sI s0)
     (hmore : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
       MoreEntry E0 spills.toList gOff sI s0)
-    (hinv : G3Inv E0 lc (kAt lc kt lc.ctx.f.entry blkE k) sI)
+    (hinv : G3Inv E0 lc (kAt lc kt lc.ctx.f.entry blkE k) sI E0.outSP)
+    (hosp : lc.ctx.f.lowered = true → E0.outSP = true)
+    (hspI : lc.ctx.f.lowered = true → SPInv E0 sI)
     (huE : uL35 lc [] blkE k = [])
     (hpc : ObjEnv.map otab ps L base (E0.pcOf lc.ctx.f.entry k) =
       base + BitVec.ofNat 64 (otab.offs[0]!))
@@ -125,7 +135,7 @@ theorem verified_mach
   obtain ⟨fuel', href⟩ := verifiedPipelineFull_refines hpipe hv hP hn ha hnp hd
   have hd' : (runLoc e r.st.tables r.st.func args mem fuel').Defined := href.defined_right
   have hargs := runLoc_args hd'
-  obtain ⟨hr, hc⟩ := checkG56_spec hc
+  obtain ⟨hr, hc⟩ := checkG60_spec hc
   have hRo : RoRun g e lc lc.ctx.f.entry k sI := by
     by_cases hcr : constRo (symNames g) = []
     · exact roRun_nil hcr
@@ -140,8 +150,8 @@ theorem verified_mach
   refine ⟨fuel', href, _, rfl, heq, finish_defined (heq ▸ hd'), fun rs mm hraw => ?_,
     fun pe mm hraw hHP hbok hPP => ?_⟩
   · exact obj_whole_ret hc hO hH hic hrok hME hroom hg hms hsep hE hEE hbE hbm hk
-      (by exact rfl) hpre hes hent hmore hinv huE hpc hRP hRo hraw
+      (by exact rfl) hpre hes hent hmore hinv hosp hspI huE hpc hRP hRo hraw
   · exact obj_whole_panic hc hO hH hHP hbok hic hME hroom hg hms hsep hE hEE hbE hbm hk
-      (by exact rfl) hpre hes hent hmore hinv huE hpc hRP hRo hPP hraw
+      (by exact rfl) hpre hes hent hmore hinv hosp hspI huE hpc hRP hRo hPP hraw
 
 end GoFV.Proof.Obj
