@@ -168,8 +168,8 @@ theorem sep59 : SepFrom ι59s (StkAt E59) memD := by
   have hsp : E59.sp.toNat = 0x4000000000000000 := rfl
   have hA : GenG2.symA.toNat = 0x10000000000 := rfl
   simp only [hA, bytesD, Array.size_ofFn]
-  rcases hy with ⟨-, -, h2⟩ | ⟨k, off, hk, -, h2⟩
-  · rw [hsp] at h2
+  rcases hy with ⟨-, h1, -⟩ | ⟨k, off, hk, -, h2⟩
+  · rw [hsp] at h1
     omega
   · simp [E59] at hk
 

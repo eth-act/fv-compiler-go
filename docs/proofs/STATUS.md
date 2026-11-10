@@ -1196,15 +1196,17 @@ zero-extended word). The 13 functions G58 rejected only for `upper bits unknown`
 ## Phase 3: genssa, slice G59, float pair loads of a global or a frame variable, `Defer` blocks, narrower register classes, G35's upper-bit table across stores, shifted logic ops, `Convert` and `Copy` (I7, #553)
 
 `GoFV.Proof.Gen.g59_value`, `g59_initMem`, `g59_term`, `g59_nilPanic`, `g59_boundsPanic`
-(`GoFV/Proof/Gen/G59.lean`): when slice G59 (`checkG59`: G58 with group P's `vkind59p` tried when
-G58 rejects a value, over the shared checks groups D, K and U change, `GoFV/Gen/Check59.lean`)
-accepts a function, they are G58's statements, under `G49Env`, `g59_value` under `G54Pre` (no new
+(`GoFV/Proof/Gen/G59.lean`): when slice G59 (`checkG59`: G58, on G48, on G57, with group P's
+`vkind59p` tried when G58 rejects a value, over the shared checks groups D, K and U change, and
+G48's `spHomes48`, `GoFV/Gen/Check59.lean`) accepts a function, they are G58's statements: in an
+activation whose `outargs` block sits at `SP` (`hosp : E.outSP = true`, `SPInv`, kept), under
+`G49Env`, `g59_value` under `G54Pre`, the contracts of the mode `E.outSP` and `CallOKStk` (no new
 premise: group P's loads take its `PairPre50` component). Witness: `genG59_witness`
-(`test/zerodivide` `main.init.func33`: `checkG58` rejects it and `checkG59` accepts it; `FLDPD
-main.d(SB), (F2, F3)` of `complex(1.5, 2.5)` leaves the bits of `1.5` and `2.5` in `V2`, `V3`).
-Coverage on quick-v10 (`lake exe gen-check --jobs 1`): 7,449 of 9,297 functions (80.12%, 40 more
-than G58's 7,409: 6 by group P, 13 by D, 8 by K, 13 by U), 241,768 values; no earlier slice's count
-drops (G58 itself now 7,443).
+(`test/zerodivide` `main.init.func33`: `checkG58` rejects it and `checkG59` accepts it; in the
+mode `outSP`, `FLDPD main.d(SB), (F2, F3)` of `complex(1.5, 2.5)` leaves the bits of `1.5` and
+`2.5` in `V2`, `V3`). Coverage on quick-v10 (`lake exe gen-check --jobs 1`, G59 the last slice):
+7,667 of 9,297 functions (82.46%, 41 more than G58's 7,626: 6 by group P, 35 by D, K and U),
+249,111 values; no earlier slice's count drops (G58 itself now 7,661, G48 7,641).
 
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
