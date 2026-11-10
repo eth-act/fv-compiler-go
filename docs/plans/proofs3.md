@@ -24,8 +24,8 @@ through the prologue, the entry stores of the register parameters in `Blk.local`
 blocks and the epilogue to the caller's return address, the results in
 their ABI registers), `obj_whole_panic` (a panicking body: nil checks, loads, stores and acquire
 loads that fault, bounds checks, calls whose callee panics), and the end-to-end statement
-`verified_mach` on slice G60 (G59 with G56's float constants, on P0', in G48's mode for lowered
-functions; generic SSA `run` refined by `runLoc`, whose body is matched by `runMach` of the
+`verified_mach` on slice G60 (G59 with G56's float constants, on P0'; per function, at G48's mode
+`verified_mach_S` for a function that needs it, `needs48`; generic SSA `run` refined by `runLoc`, whose body is matched by `runMach` of the
 assembled words; `checkG60`'s `checkG60L` on `liveCtx`, `runLoopLoc_live`, `entryStoresOK`; §9),
 with a witness on `pallocSum.start` from its generic SSA.
 Context:
@@ -1704,8 +1704,8 @@ constants and G57+'s ops; the composition (§9) needs one. `vkind60` tries G56's
 (`FMOVSconst`/`FMOVDconst` homed by `FCONST` or, on P0', by the load of its constant symbol), as
 `vkind56` does before G55's kinds, then G59's `vkind59`; `checkG60L` is `checkG59L` with it
 (G48's `spHomes48` included). `VK60` (`Spec60.lean`) has a case for G59's kinds of a value that is
-no float constant and G56's `fconst` case; `vk60_step` is `vk59_step`'s statement (G48's mode:
-`hosp`, `SPInv`, `CallOKStk`) with `RoPre56`, by `vk59_step` and `g56_fconst`; `g60L_*` are
+no float constant and G56's `fconst` case; `vk60_step` is `vk59_step`'s statement (at a mode `osp`;
+`SPInv`, `CallOKStk` at the mode `true`) with `RoPre56`, by `vk59_step` and `g56_fconst`; `g60L_*` are
 `g59L_*` with `checkG60L_spec`, `vkind60_spec` and `vkind60_initMem`. `vkind60_eq48`: on an op of
 none of G56's (`op56`), G58's (`op58a`) and G59's (`op59p`) groups `vkind60` is `vkind48`, which
 accepts what `vkind57` or G48's `kind48` accepts (`vkind48_ok`, `kind48_cases`: a static call on
@@ -1718,7 +1718,13 @@ composition's accesses, calls and entry stores read). Premises: `g60_value` take
 (`v96: SLL widths`, G58's group A), `checkG60` accepts it with its tables, and `g60_value` relates
 `v56` to a machine state whose `V1` holds `math.MaxFloat64`'s bits in its low 64 bits). G60 on
 P0' accepts 7,667 functions (82.46%, as G59 on P0, §5), of which 69 load a float constant (61 by
-G56).
+G56). **The mode, per function.** G58's and G59's theorems (and G60's) take
+the mode `osp` as a parameter: G48's own kinds (`take48`, `GoFV/Gen/Check58.lean`: a static call
+whose `callRegsS` differs from `callRegsZ`, i.e. with stack arguments or results, or an aux-less
+access off `SP` with its base homed in `SP`) need the mode `true` (`vk48_stepM`), every other value
+runs at either (`vk48_stepM` at `false`: a G48 call is one on `callRegsZ`, `CallOKZ`'s contract,
+`take48_call`, and `g2_callAt` runs in either mode). `needs48 lc` (checked, Addrs-free) is the
+function-level flag; with it false a function runs at the mode `false`, as G57 and before.
 
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
@@ -2705,20 +2711,21 @@ few:
    one is `poison`: option 1's guard, now semantic.
 
    **Done for activation 0's `local` blocks and its `outargs` block** (#672, `G49Mach.lean`;
-   `outargs 0` with the lift to G60): `Addrs.atSP base osp` puts activation 0's `local` blocks at
-   `base k` and its `outargs` block at `osp`, undecoded, decodes their fixed regions as activation
+   `outargs 0` with the lift to G60): `Addrs.atSPM base osp` puts activation 0's `local` blocks at
+   `base k` and, with `osp = some o`, its `outargs` block at `o` (`Addrs.atSP base` without,
+   `Addrs.atSPO base o` with), undecoded, decodes their fixed regions as activation
    `actM = 2^22` (`fixedOfAddr_act_lt`, `fixedOfAddr_out_lt`: `Ptr.fixedOfAddr` never decodes it),
    and is `Addrs.fixed` elsewhere; every class law is proven. With `base = baseSP g L sp` (each
    variable's frame operand from `sp`, the fixed base for one without an operand), `osp = sp`
-   and the activation `envAtSP g L E` (`ιSP`: activation 0's `local` blocks at those bases, its
-   `outargs` block at `sp`, activation `actM`'s at theirs, the rest as `E.ι`), every `G28Env` at
-   `Addrs.fixed` of activation 0 is a `G49Env` there (`g49Env_atSP`), and `SPInv`'s `outargs`
-   part holds (`envAtSP_out`). That is needed: at `Addrs.fixed` two `local` blocks of one
+   and the activation `envAtSP g L E` (`ιSP`: activation 0's `local` blocks at those bases,
+   activation `actM`'s at theirs, the rest as `E.ι`; `envAtSPO`/`ιSPO` also the `outargs` block at
+   `sp`), every `G28Env` at `Addrs.fixed` of activation 0 is a `G49Env` there (`g49Env_atSP`,
+   `g49Env_atSPO`), and at `Addrs.atSPO` `SPInv`'s `outargs` part holds (`envAtSPO_out`). That is needed: at `Addrs.fixed` two `local` blocks of one
    activation are a multiple of `2^24` apart, so a function that accesses two at distinct
    operands has no `G49Env` (`g49Env_fixed_apart`; 18 end-to-end functions on quick-v10), and in
    G48's mode `SPInv` pins `SP` to `outargs 0`'s fixed base, so a function that accesses any
-   `local` block has none (`g49Env_fixed_outSP`). `verified_mach_atSP` (§9) is the end-to-end
-   statement there. `outargs a` of the other activations, the `temp` blocks and `callerSP` stay
+   `local` block has none (`g49Env_fixed_outSP`). `verified_mach_atSP` and `verified_mach_S_atSP`
+   (§9) are the end-to-end statements there. `outargs a` of the other activations, the `temp` blocks and `callerSP` stay
    as in `Addrs.fixed`; item 7 (`SPAt`) extends the instance to them.
 5. **Slices it unlocks, and coverage.** Phase 1/2 counts do not move: executables run
    `Addrs.fixed`, so sem-difftest and full-v9 are identical.
@@ -2995,12 +3002,15 @@ blk i)`: `g60_value` carries it from value to value, `g60_term` hands the succes
 `uIn35 lc e.b` on, `uEdgesOK35`), and `ObjRel`-related to the machine state; in a leaf
 (`checkObj`'s `leaf`, `leafOf`: no `CALL`), `m`'s `X30` is still the caller's return address
 `E0.lr`, which is no P0 address and not `endP`; at a clean position `runLoc`'s state holds the
-initial memory (`MemAt`: in a lowered function under `cleanOK`, `cleanAt → MemInit`). The slices
-from G48 on run a lowered function in G48's mode (`MatchEnv.outSP`: its `outargs` block at `SP`,
-the saved-`LR` word its first, `poison` word): `SimAt` carries `G3Inv` in the mode `E0.outSP`
-(`SepAt`: `SepFromW` in it) and, in a lowered function, `SPInv` (`outargs` at `SP`, the Go register
-`SP` holding `SP`), which `g60_value` keeps; `hosp : lowered → E0.outSP = true` selects the mode,
-and a function with no arm64 op runs G33's mode-generic lemmas in either.
+initial memory (`MemAt`: in a lowered function under `cleanOK`, `cleanAt → MemInit`). The
+composition is over a mode `osp` (`SimAt … osp`, `RunPreM osp`, `RunPanicPreM osp`): `SimAt`
+carries `G3Inv` at the mode (`SepAt`: `SepFromW` at `true`) and, at the mode `true` in a lowered
+function, `SPInv` (`outargs` at `SP`, the Go register `SP` holding `SP`), which `g60_value` keeps.
+The mode is `true` for a function that needs G48's mode (`hn48 : needs48 lc = true → osp = true`;
+then `hosp : osp = true → E0.outSP = true`, the activation's `outargs` block at `SP`, the saved-`LR`
+word its first, `poison` word); a function with no arm64 op runs G33's mode-generic lemmas in
+either. `verified_mach` is the mode `false` (`needs48 lc = false`), `verified_mach_S` the mode
+`true`, both `verified_mach_M`.
 
 - **Entry** (`sim_entry`). From `MachEntry s0`, `obj_entry` runs the stack check, looping through
   the morestack tail while it fails (`more_loop`, under the trusted `MorestackOK` and the caller's
@@ -3073,10 +3083,10 @@ and a function with no arm64 op runs G33's mode-generic lemmas in either.
   bytes at both addresses, no pointer into a V register) and G51's `Pre51a` (the compared
   arguments of `CMN` and `CMPshiftRA` no pointer without an integer form), `G1TermPre`,
   no entry value (`entryOp24`) but an `InitMem` in a lowered function, `GetGOK`, and the callee
-  contracts of the mode `E0.outSP` (`CallOKAt`, `CallOKZAt`, `ICallOKAt`, `WbOKAt`, `MemEqOKAt`:
-  `CallOK` … at `false`, the `CallOKS` family with `SepFromW` at `true`), `CloOK` and G48's
-  `CallOKStk` (a static call with stack arguments or results) at every `LocMatch`ed machine
-  state. `checkG60L_cx` gives the context of both modes (lowered, and G26's functions with
+  contracts of the mode `osp` (`CallOKAt`, `CallOKZAt`, `ICallOKAt`, `WbOKAt`, `MemEqOKAt`:
+  `CallOK` … at `false`, `RunPre`; the `CallOKS` family with `SepFromW` and G48's `CallOKStk`, a
+  static call with stack arguments or results, at `true`, `RunPreS`), `CloOK` at every
+  `LocMatch`ed machine state. `checkG60L_cx` gives the context of both modes (lowered, and G26's functions with
   no arm64 op). `checkG60L` accepted such an `InitMem` only at a clean position of a function
   whose clean blocks are closed backwards (`g60L_clean`: `vkind60_initMem`, `vkind59_initMem`, `vkind58_initMem`, `vkind48_initMem`,
   `vkind57_initMem`, `vkind55_initMem`,
@@ -3131,7 +3141,8 @@ and a function with no arm64 op runs G33's mode-generic lemmas in either.
   nil page, so the access has no symbol, hence no G49 frame-variable access, `frameVar49?_none`,
   `vkind49_eq51` (and no op of G52–G59's groups: `vkind60_eq48`, `vkind48_ok`, `vkind56_eq55`,
   `vkind55_eq54`, `vkind54_eq53`, `vkind53_eq52`, `vkind52_eq49`; an access off `SP`, G48's
-  `kind48`, does not fault: in G48's mode `SPInv` relates its base to `SP`, above the nil page,
+  `kind48`, does not fault: it takes G48's mode (`take48`), where `SPInv` relates its base to
+  `SP`, above the nil page,
   `sp_base48`), its base register holds the machine word 0 and
   `X[n] + off` is in the nil page, `nil_fault_page`; no premise), an acquire load that faults
   (`g60_obj_ldarPanic`: `LDAR`, `LDARW`, `LDARB`, `ldar?`; its address, argument 0 at offset 0, is
@@ -3140,11 +3151,11 @@ and a function with no arm64 op runs G33's mode-generic lemmas in either.
   (`g60_obj_boundsPanic`, under the trusted `BoundsOK`: `runtime.panicBounds` reports the same
   failure, `BoundsAgree`), a static call whose
   callee panics (`g60_obj_callPanic`, `GoFV/Proof/Obj/CallPanic.lean`, under the trusted
-  `CallPanicOKAt E0.outSP`: `CallPanicOK`, or in G48's mode `CallPanicOKS` with `SepFromW` and the
+  `CallPanicOKAt osp`: `CallPanicOK`, or at G48's mode `CallPanicOKS` with `SepFromW` and the
   ABI registers of `callRegsZ` or `callRegsS`, a call with stack arguments, G48's `callKind48`: the
   callee's hook panics alike from every state with the call's arguments in their
   registers and the memory injected), or an interface or closure call whose callee panics
-  (`g60_obj_icallPanic`, under the trusted `ICallPanicOKAt E0.outSP`, `ICallPanicOK` or
+  (`g60_obj_icallPanic`, under the trusted `ICallPanicOKAt osp`, `ICallPanicOK` or
   `ICallPanicOKS`: the hook at the code pointer in `Rn`
   panics alike; `vkind28` of such a call is `vkind10`'s `icallKind`, `vkind28_icall`; `vkind54`
   of an acquire load or a call is `vkind49`'s, `vkind56_eq49`, and what
@@ -3182,33 +3193,39 @@ theorems apply on `lc`: a returning body is `obj_whole_ret`'s, a panicking one
 `EntryMatch E0 (InWins L E0.sp (pendWins lc g)) sI s0` and `RoRun` (the float constant symbols in
 every reached state's memory: `lreach_roMem` from `hmt`/`hro`, or `roRun_nil`). `checkG60L`
 includes `loopOK` (each loop's `CBNZ` branches to its head), which `g60L_value` reads off
-`checkG60L_spec`; it is no separate premise. In G48's mode it takes `hinv` in the mode
-`E0.outSP`, `hosp : lc.ctx.f.lowered = true → E0.outSP = true` and
-`hspI : lc.ctx.f.lowered = true → SPInv E0 sI`; the contracts in `RunPre`/`RunPanicPre` are those
-of the mode. The statement lists every premise (STATUS, Assumptions).
+`checkG60L_spec`; it is no separate premise. `verified_mach` asks `needs48 lc = false` (checked)
+and is main's statement otherwise (`RunPre`, `RunPanicPre`: `CallOK` …, `CallPanicOK`,
+`ICallPanicOK`; `G3Inv` at the mode `false`). `verified_mach_S` is the same in G48's mode, for any
+function `checkG60` accepts: `hinv : G3Inv … sI true`, `hosp : E0.outSP = true`,
+`hspI : lc.ctx.f.lowered = true → SPInv E0 sI`, `RunPreS`, `RunPanicPreS`. `verified_mach_fixed`
+and `verified_mach_S_fixed` restate them at `Addrs.fixed`. The statements list every premise
+(STATUS, Assumptions).
 
 **At the machine layout** (`GoFV/Proof/Obj/EndToEndAtSP.lean`, `verified_mach_atSP`, #672):
-`verified_mach` at `Addrs.atSP (baseSP g L E0.sp) E0.sp.toNat` (§8 item 4; activation 0's `outargs`
-block at `SP` too, G48's mode, `ιSP_out0`, `envAtSP_out`) for the activation `envAtSP g L E0`,
+`verified_mach` at `Addrs.atSP (baseSP g L E0.sp)` (§8 item 4) for the activation `envAtSP g L E0`
+(and `verified_mach_S_atSP`: `verified_mach_S` at `Addrs.atSPO (baseSP g L E0.sp) E0.sp.toNat`,
+activation 0's `outargs` block at `SP` too, for `envAtSPO g L E0`, `ιSPO_out0`, `envAtSPO_out`),
 with `G28Env` of `E0` at `Addrs.fixed` in place of `G49Env` (`g49Env_atSP`; `lc.ctx.act = 0`,
 `liveCtx_make_act`). By item 6 the checks take no instance (`GoFVTest/AddrsFree.lean` also scans
 `liveCtx`, `retRegsOK`, `entryStoresOK`, `pendWins`, `memTyL`, `checkObj`), so the premise is the
 executables' verdict. It holds non-vacuously of the functions with two or more `Blk.local`
 variables, of which `verified_mach_fixed` holds only vacuously (18 of quick-v10's 6,494 end to
-end on main ae9b2124), and, in G48's mode, of every lowered function that accesses a `Blk.local`
+end on main ae9b2124); `verified_mach_S_atSP` of every function in G48's mode that accesses a
+`Blk.local`
 variable: at `Addrs.fixed` `SPInv` pins `SP` to `outargs 0`'s fixed base `2^62`, and `AddrAgree`
 the variable to `2^62 + x·2^24`, which no frame operand reaches (`g49Env_fixed_outSP`; witness
 `fixed_outSP_none`). `gofv-ssa-opt --e2e` counts those functions (STATUS). `ιSP` places activation `actM`'s blocks (at the fixed bases of activation
 0's) so that an activation extending `envAtSP` can meet `CallSpec`'s `AddrAgree`.
 
 **Coverage** (quick-v10, `gofv-ssa-opt --check --verified --e2e`, STATUS End-to-end coverage): on
-G60 in G48's mode (`agent/lift60b` on main 3672e208, with G59, objbar and Zero2), 6,745 of 9,297
-functions end to end (72.55%), 261 more than on G56 (6,484, main cdf73c37) and none fewer; of the
-210 a tree before objbar and Zero2 gained over the first lift to G60 without G48's mode (6,524),
-194 need G48's stack arguments and results; Zero2 adds 11. `checkG60` ∧ `entryStoresOK` accepts
-6,748, `checkObj` rejects 3 of them. Stock column 7,281 → 7,597. 229 of the 6,745 (lowered,
-accessing a `Blk.local` variable) are vacuous under `verified_mach_fixed` and covered by
-`verified_mach_atSP`.
+G60, per function at either mode (`agent/lift60b` on main 544c0e3b, with G59, objbar, Zero2 and
+ZeroIdx), 6,745 of 9,297 functions end to end (72.55%): 6,550 under `verified_mach`
+(`needs48 = false`, the mode `false`) and 195 under `verified_mach_S` (G48's mode); 261 more than
+on G56 (6,484, main cdf73c37) and none fewer; of the 210 a tree before objbar and Zero2 gained over
+the first lift to G60 without G48's mode (6,524), 194 need G48's stack arguments and results; Zero2
+adds 11. `checkG60` ∧ `entryStoresOK` accepts 6,748, `checkObj` rejects 3 of them. Stock column
+7,281 → 7,597. Vacuous at `Addrs.fixed`: 20 of the 6,550 (two or more `Blk.local` operands) and 7
+of the 195 (any `Blk.local` access in G48's mode); the `_atSP` variants cover all.
 
 **Witnesses.** `objWhole_ret_witness` (`pallocSum.start`, `p = 7`, `plRunEnv`): `runLoc`'s run
 from `locInit` and `runMach` from the entry to the caller's `0x40`, through `b1`'s `TBNZ` and
@@ -3229,17 +3246,17 @@ section, in the whole-file environment of `gofv-ssa-opt --verified`) through
 `checkG60` accepts genssa's Progs against the pipeline's own output, `entryStoresOK` holds (no
 pending window). `RunPre` there is `runPre_simple`. The witnesses' facts check `checkG60L` (or
 `checkG60`) and `constRo (symNames g) = []` on the same functions with the same tables as before
-(none of them has a remainder, `LoweredMove` or loop). The lowered ones run in G48's mode
-(`objWhole_ret_witness`, `objWhole_panic_witness`, `verified_mach_witness`: `SP` at `outargs 0`'s
-fixed base `0x4000000000000000`, `SepFromW`, `SPInv`; `g60_callPanic_witness` under
-`CallPanicOKS`); `objWholeNL_ret_witness` (no arm64 op) and the step-level panic witnesses keep
-Phase 1's mode, which `hosp` and `hsp` allow off G48's accesses (`spArg` false).
+(none of them has a remainder, `LoweredMove` or loop); they run at the mode `false` (`needs48`
+false, checked), as on main. Their G48-mode versions: `ObjWholeS.objWhole_ret_witness` and
+`verified_mach_S_witness` (`ObjEndToEndS`: `SP` at `outargs 0`'s fixed base `0x4000000000000000`,
+`SepFromW`, `SPInv`, `RunPreS`), `g60_callPanicS_witness` (`CallPanicOKS`).
 `verified_mach_atSP_witness` (`GoFV/Proof/Witness/ObjEndToEndAtSP.lean`): `secret_getStack`'s
-ABI0 wrapper, with every premise of `verified_mach_atSP` discharged in G48's mode (a callee
-contract returning `0x11`, `0x22`: `CallOKS`, `CallOKZS`, `CallOKStk`; its hook; the `outargs`
-block at `SP`, its saved-`LR` word `poison`, `SepFromW`; the results' blocks at `SP + 24`/`SP + 32`;
-the Go register `SP` holding the held pointer to `outargs 0`, `SPInv`), returning with them at the
+ABI0 wrapper, with every premise of `verified_mach_atSP` discharged (a callee contract returning
+`0x11`, `0x22`; its hook; the results' blocks at `SP + 24`/`SP + 32`), returning with them at the
 caller's `SP + 8`/`SP + 16`; at `Addrs.fixed` it has no `G49Env` (`fixed_none`).
+`verified_mach_S_atSP_witness` (`ObjEndToEndAtSPS`): the same in G48's mode (`CallOKS`,
+`CallOKZS`, `CallOKStk`; the `outargs` block at `SP`, its saved-`LR` word `poison`, `SepFromW`;
+the Go register `SP` holding the held pointer to `outargs 0`, `SPInv`).
 
 **Next.** The lift to each new slice as it merges. Panics of the other kinds
 (register-index loads and stores; write barriers, `memequal`). A witness of `sim_entryStores`
@@ -3340,18 +3357,20 @@ only the slices know.
      `Flushplist`'s `symIdx` for `checkObj`, a function whose two numberings differ rejected,
      `memTyL` on `liveCtx`, `checkG56`, `checkObj` on P0'.
    - **The lift to G60** (G57–G59 are stacked on G55, so the composition needs a slice with both
-     G56's float constants and G57+'s ops, §4 G60; G48 on puts a lowered function in G48's mode):
-     `Obj/G56.lean` → `Obj/G60.lean` (`g60_obj_*` from `g60L_valueX`/`g60L_termX`, in the mode
-     `E.outSP`: a lowered function by `g60L_*` under `hosp`/`SPInv`, one with no arm64 op by
-     G33's mode-generic lemmas; `g60L_clean` through `vkind60_initMem` … `vkind48_initMem`),
-     `MemPanic` (`g60_memPanic`: an access off `SP`, `kind48`, does not fault under `SPInv`),
-     `CallPanic` (`g60_callPanic` under `CallPanicOKAt`, `callKind48` among the calls, the new
-     trusted `CallPanicOKS`/`ICallPanicOKS`), `Entry49` (`g60L_entryStore` in either mode),
-     `Whole.lean` on `checkG60L` (`SimAt` with `G3Inv` in the mode and `SPInv`; `RunPre` with the
-     contracts of the mode and `CallOKStk`; `sim_entry` by `memInj_of_sepW`). `verified_mach`
-     takes `checkG60 (LocCtx.make …) ps bstart g` on P0' and the mode premises `hinv` (mode
-     `E0.outSP`), `hosp`, `hspI`; `verified_mach_fixed` restates it, `verified_mach_atSP` at
-     `Addrs.atSP (baseSP g L E0.sp) E0.sp.toNat`.
+     G56's float constants and G57+'s ops, §4 G60; G48's own kinds need G48's mode, per
+     function, `needs48`): `Obj/G56.lean` → `Obj/G60.lean` (`g60_obj_*` from
+     `g60L_valueX`/`g60L_termX` at a mode `osp`: a lowered function by `g60L_*`, with `hn48`, and
+     `hosp`/`SPInv` at the mode `true`, one with no arm64 op by G33's mode-generic lemmas;
+     `g60L_clean` through `vkind60_initMem` … `vkind48_initMem`), `MemPanic` (`g60_memPanic`: an
+     access off `SP`, `kind48`, takes G48's mode and does not fault under `SPInv`), `CallPanic`
+     (`g60_callPanic` under `CallPanicOKAt`, `callKind48` among the calls, on `callRegsZ` at the
+     mode `false`, the new trusted `CallPanicOKS`/`ICallPanicOKS` at `true`), `Entry49`
+     (`g60L_entryStore` in either mode), `Whole.lean` on `checkG60L` (`SimAt` at the mode, with
+     `SPInv` at `true`; `RunPreM`/`RunPanicPreM` with the contracts of the mode; `sim_entry` by
+     `memInj_of_sepW`). `verified_mach` takes `checkG60 (LocCtx.make …) ps bstart g` on P0' and
+     `needs48 lc = false`, otherwise main's statement; `verified_mach_S` is G48's mode (`hinv` at
+     `true`, `hosp`, `hspI`, `RunPreS`, `RunPanicPreS`); `verified_mach_fixed`/`_S_fixed` restate
+     them, `verified_mach_atSP`/`_S_atSP` at `Addrs.atSP`/`Addrs.atSPO`.
    - The `RoMem` premise is about the input memory: Phase 1's export image (`globalImage`) has no
      assembler symbols, so `addGlobals` adds none and the input `mem` must hold the constant
      symbols' allocations. With `EntryMatch`'s `MemInj` and `G2Env.glob` it says that the loaded

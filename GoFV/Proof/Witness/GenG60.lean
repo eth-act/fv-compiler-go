@@ -8398,7 +8398,8 @@ theorem genG60_witness :
   have hv0 : lc0.ctx.f.value? 56 = some (val 56) := by
     rw [← liveCtx_ctx (lc := lc0)]; exact hv56
   obtain ⟨E1, m1, hx1, hE1, hp1, hm1', -, -, -⟩ := g60_value (H := GenG2.H0) (env := GenG2.env)
-    hc hE hl0 hm0 hb0 hi1 hv0 (by rw [hop]; rfl) locMatch0 g60Inv0 (fun _ => spInv0 hact) (fun _ => rfl) (fun _ => rfl)
+    hc hE hl0 hm0 hb0 hi1 hv0 (by rw [hop]; rfl) locMatch0 g60Inv0
+    (fun _ => spInv0 hact) (fun _ => rfl) (fun _ => rfl)
     (by change UOKL m0 (uL35 lc (uIn35 lc 6) blk 1); rw [hu1]; intro e he; cases he)
     (pre54 hop) (ro0 hro)
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))

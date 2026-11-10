@@ -322,10 +322,12 @@ the `.prog` file it reads only the input view (`inputView`: definitions, config,
 `AllocFrame`'s start, `genin`), no stock result. It prints the fully verified functions, those
 the back end ran on, those `checkG60` with `memTyL`, `entryStoresOK`, `retRegsOK`, `checkObj` and all of
 them accept (the end-to-end count; a line counts the functions with a pending window and those
-`entryStoresOK` rejects; another the end-to-end functions with an arm64 op that access a
-`Blk.local` frame variable with a frame operand, of which `verified_mach_fixed` holds only
-vacuously in G48's mode, `g49Env_fixed_outSP`, and `verified_mach_atSP` covers), the end-to-end
-ones whose pipeline output equals
+`entryStoresOK` rejects; another the end-to-end functions by mode: under `verified_mach`, those
+that do not need G48's mode, `needs48` of `liveCtx` false, and of them those with two or more
+distinct `Blk.local` frame operands, vacuous at `Addrs.fixed` (`g49Env_fixed_apart`); under
+`verified_mach_S`, the others, and of them those with one, vacuous at `Addrs.fixed` in G48's mode
+(`g49Env_fixed_outSP`); the `_atSP` variants cover them), the end-to-end ones whose pipeline output
+equals
 stock, the frame sizes `ownFrame` gives on the functions whose output equals stock (against the
 stock `stksize`/`stkptrsize`), the top back-end errors and rejection reasons (numbers replaced by
 `#`; for `retRegsOK` the first failing condition, `retWhy`), and as a cross-check the same back

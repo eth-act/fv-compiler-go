@@ -8,12 +8,15 @@ variable [GoFV.SSA.Sem.Addrs]
 # Slice G60 of the genssa validator: G59 with G56's float constants (`docs/plans/proofs3.md` §4, §10)
 
 `checkG60 lc` (`GoFV/Gen/Check60.lean`) is G59 (on G58, G48, G57, G55) with G56's
-`FMOVSconst`/`FMOVDconst` (`vkind56a`): homed by `FMOVS`/`FMOVD $c, Fd` or, on P0', by the load of
-a float constant symbol whose bytes the memory has (`RoPre56`, `g56_fconst`, in any mode). Every
-other value is G59's (`vk59_step`). The theorems are G59's over `checkG60`: in an activation whose
-`outargs` block sits at `SP` (`hosp : E.outSP = true`, `SPInv`), with G57's premise `G54Pre`, the
-contracts of the mode `true` and G48's `CallOKStk`; `g60_value` also takes G56's `RoPre56`;
-`g60_value`, `g60_initMem`, `g60_term` keep `SPInv`.
+`FMOVSconst`/`FMOVDconst` (`vkind56a`): homed by `FMOVS`/`FMOVD $c, Fd` or, on P0', by the load of a
+float constant symbol whose bytes the memory has (`RoPre56`, `g56_fconst`, in any mode). Every other
+value is G59's (`vk59_step`). The theorems are G59's over `checkG60`, at either mode `osp`
+(`G3Inv … osp`, the contracts of the mode), the mode `true` for a function that needs G48's mode
+(`needs48`, `hn48`): only G48's own kinds (`take48`: a static call with stack arguments or results,
+an access off `SP`) need it (`vk48_stepM`), with the activation's `outargs` block at `SP` (`hosp`,
+`SPInv`) and G48's `CallOKStk`; at the mode `false` they are the contracts `CallOK` … with
+`SepFrom`, as G57 and before; with G57's premise `G54Pre`; `g60_value` also takes G56's `RoPre56`;
+`g60_value`, `g60_initMem`, `g60_term` keep `SPInv` at the mode `true`.
 -/
 
 namespace GoFV.Proof.Gen

@@ -253,7 +253,8 @@ with `pe` or, for a bounds check, with the runtime's report of the same failure 
 
 Premises of the machine side: those of `obj_whole_ret` (trusted: `HookMap`, `runtime.morestack`'s
 contract `MorestackOK` at the morestack tail's call, and in `RunPre` the callee contracts of the
-activation's mode `E0.outSP` (`CallOKAt`, `CallOKZAt`, `ICallOKAt`, `WbOKAt`, `MemEqOKAt` at the mode `true`:
+activation's mode `E0.outSP` (`CallOKAt`, `CallOKZAt`, `ICallOKAt`, `WbOKAt`, `MemEqOKAt` at the
+mode `true`:
 the `CallOKS` family), `CloOK` and `CallOKStk`; the
 caller's side: `MachEntry`, `EntryMatch`/`EntryEnv` of the arguments, memory and frame at the
 entry, the mode (`hosp`: G48's for a function with an arm64 op) and `SPInv` at the entry (`hspI`:

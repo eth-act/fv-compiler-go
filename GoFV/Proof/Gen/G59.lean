@@ -12,10 +12,14 @@ blocks (`docs/plans/proofs3.md` §4)
 (`FLDPD`/`FLDPS` with an aux, of a global or of a `Blk.temp` frame variable), each one Prog, proven
 one value at a time in `G59p.lean` (`vk59p_step`, under G50's `PairPre50`, part of `G54Pre`; the
 upper-bit table is empty after each). Group D is the `Defer` arm of the shared terminator check
-(`Cx.term`), which the terminator theorems of every slice already carry (`termK_stepX`).
-The theorems are G58's (`g58_value`, …) over `checkG59`: in an activation whose `outargs` block
-sits at `SP` (`hosp : E.outSP = true`, `SPInv`), with G57's premise `G54Pre`, the contracts of the
-mode `true` and G48's `CallOKStk`; `g59_value`, `g59_initMem`, `g59_term` keep `SPInv`.
+(`Cx.term`), which the terminator theorems of every slice already carry (`termK_stepX`). The
+theorems are G58's (`g58_value`, …) over `checkG59`, at either mode `osp` (`G3Inv … osp`, the
+contracts of the mode), the mode `true` for a function that needs G48's mode (`needs48`, `hn48`):
+only G48's own kinds (`take48`: a static call with stack arguments or results, an access off `SP`)
+need it (`vk48_stepM`), with the activation's `outargs` block at `SP` (`hosp`, `SPInv`) and G48's
+`CallOKStk`; at the mode `false` they are the contracts `CallOK` … with `SepFrom`, as G57 and
+before; with G57's premise `G54Pre`; `g59_value`, `g59_initMem`, `g59_term` keep `SPInv` at the mode
+`true`.
 -/
 
 namespace GoFV.Proof.Gen

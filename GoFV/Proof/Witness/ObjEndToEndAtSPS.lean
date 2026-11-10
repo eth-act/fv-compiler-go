@@ -3,7 +3,7 @@ import GoFV.Proof.Witness.GenG49Mach
 import GoFV.Proof.Witness.ObjEndToEnd
 
 /-!
-# Non-vacuity witness: generic SSA to machine words at the machine layout in G48's mode (`verified_mach_S_atSP`)
+# Non-vacuity witness: the machine layout in G48's mode (`verified_mach_S_atSP`)
 
 `ObjEndToEndAtSP`'s witness for `verified_mach_S_atSP`: the same wrapper, in G48's mode (its
 `outargs` block at `SP`, `Addrs.atSPO`, `envAtSPO`), every premise of `verified_mach_S_atSP`

@@ -9,15 +9,15 @@ import GoFV.Gen.Check48
 /-!
 # The verified pipeline takes no address assignment (`docs/plans/proofs3.md` §8, item 6)
 
-`verified_mach` holds under every admissible address assignment (`[Addrs]`), and its premise is
-the verdict of `verifiedPipelineFull`. The checkers evaluate their constants at `Addrs.fixed`
+`verified_mach` holds under every admissible address assignment (`[Addrs]`), and its premise is the
+verdict of `verifiedPipelineFull`. The checkers evaluate their constants at `Addrs.fixed`
 (`Rules.opValC`, `Val.retypeC`, the static instances of `ruleOK`/`ruleOK1`/`blockOK1`), so the
-pipeline takes no instance: the verdict `gofv-ssa-opt` computes is the premise under every
-instance, the machine's among them. This module fails to build if a checker comes to read the
-assignment again (an `[Addrs]` binder in the type of the pipeline, of a slice checker
-`GoFV.Gen.Check.checkG*` it imports, or of `verified_mach`'s other checks: `liveCtx`,
-`retRegsOK`, `entryStoresOK`, `pendWins`, `memTyL`, `needs48`, `checkObj`). So `verified_mach_atSP`'s
-checked premises at the machine layout are the verdicts `gofv-ssa-opt --e2e` computes.
+pipeline takes no instance: the verdict `gofv-ssa-opt` computes is the premise under every instance,
+the machine's among them. This module fails to build if a checker comes to read the assignment again
+(an `[Addrs]` binder in the type of the pipeline, of a slice checker `GoFV.Gen.Check.checkG*` it
+imports, or of `verified_mach`'s other checks: `liveCtx`, `retRegsOK`, `entryStoresOK`, `pendWins`,
+`memTyL`, `needs48`, `checkObj`). So `verified_mach_atSP`'s checked premises at the machine layout
+are the verdicts `gofv-ssa-opt --e2e` computes.
 -/
 
 open Lean Meta

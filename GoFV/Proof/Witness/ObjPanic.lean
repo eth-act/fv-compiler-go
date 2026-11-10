@@ -518,6 +518,30 @@ theorem g60_callPanic_witness :
   intro _ _ _ _ _ _ _ _ _ m₁ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
   exact ⟨m₁, rfl⟩
 
+/-- `G3Inv` in G48's mode from `G3Inv` (`SepFrom` gives `SepFromW`). -/
+theorem inv_w {E : MatchEnv} {lc : LocCtx} {K : KMap} {s : LocState} (h : G3Inv E lc K s) :
+    G3Inv E lc K s true := by
+  obtain ⟨⟨hr, mm, hm, hk, hs⟩, hsl⟩ := h
+  exact ⟨⟨hr, mm, hm, hk, SepAt.of_sep hs⟩, hsl⟩
+
+/-- **A static call whose callee panics, at G48's mode** (`g60_callPanic` at the mode `true` on
+`fint64to32`, under `CallPanicOKS`): as `g60_callPanic_witness`. -/
+theorem g60_callPanicS_witness :
+    ∃ mm', stepLoc envP GenG9.lc (GenG9.s0 5) (GenG9.val 8) = .panic .nilDeref mm' ∧
+      ∃ m', PStar Hp GenG9.L GenG9.ps.toList 0 (GenG9.m0 5) m' ∧
+        PPanics Hp GenG9.L GenG9.ps.toList 0 m' .nilDeref := by
+  have hf := callPanic_facts
+  simp only [callFacts, Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at hf
+  obtain ⟨⟨⟨hres, hwi⟩, hpan⟩, -⟩ := hf
+  obtain ⟨mm', hpan⟩ := isNilPanic_spec hpan
+  have hc : checkG60L GenG9.lc GenG9.ps GenG9.bs GenG9.g = .ok (GenG9.tab, GenG9.kt) := by
+    revert hres; cases checkG60L GenG9.lc GenG9.ps GenG9.bs GenG9.g <;> simp [Except.toOption]
+  obtain ⟨hc9, hav, hsl, hm1, hb, hv8, -, -, hi2, -, -, hop8, -, -, -, hk0, -⟩ := GenG9.facts
+  refine ⟨mm', hpan, g60_callPanic (osp := true) hc (g28Env9 hc9 hav hsl hwi) hm1 hb hi2 hv8 hop8
+    (GenG9.locMatch0 5) (inv_w (GenG9.g9Inv0 5 hk0)) ?_ (fun _ => rfl)⟩
+  intro _ _ _ _ _ _ _ _ _ m₁ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  exact ⟨m₁, rfl⟩
+
 /-! ## `Locker.Lock`: an interface call whose callee panics -/
 
 /-- What compiled evaluation checks on `Locker.Lock`: `checkG60L` accepts it with `checkG10`'s

@@ -9,15 +9,18 @@ variable [GoFV.SSA.Sem.Addrs]
 `LoweredRound*F`; G35's upper-bit table across more writes (`docs/plans/proofs3.md` §4)
 
 `checkG58 lc` (`GoFV/Gen/Check58.lean`) is G48 (on G57) with the values of `Check58a.lean`
-(`REV16W`, `MADDW`/`MSUBW` of narrow arguments, boolean operands of G32's register and constant
-ops, G36's shifts, `UBFIZ` and `CSINC`, `STLRW`/`STLRB` of wider sources, `LoweredRound32F`/`64F`),
-each the earlier check's Prog (or none), proven one value at a time in `G58a.lean` (`vk58a_step`,
-no premise, in either `outSP` mode; the upper-bit table keeps the other registers' entries where
-G32's ops or `keepOps35`'s do). Group B is G35's table (`uStep35`), which G35's proof and every
-later slice already carry.
-The theorems are G48's (`g48_value`, …) over `checkG58`: in an activation whose `outargs` block
-sits at `SP` (`hosp : E.outSP = true`, `SPInv`), with G57's premise `G54Pre`, the contracts of the
-mode `true` and G48's `CallOKStk`; `g58_value`, `g58_initMem`, `g58_term` keep `SPInv`.
+(`REV16W`, `MADDW`/`MSUBW` of narrow arguments, boolean operands of G32's register and constant ops,
+G36's shifts, `UBFIZ` and `CSINC`, `STLRW`/`STLRB` of wider sources, `LoweredRound32F`/`64F`), each
+the earlier check's Prog (or none), proven one value at a time in `G58a.lean` (`vk58a_step`, no
+premise, in either `outSP` mode; the upper-bit table keeps the other registers' entries where G32's
+ops or `keepOps35`'s do). Group B is G35's table (`uStep35`), which G35's proof and every later
+slice already carry. The theorems are over `checkG58`, at either mode `osp` (`G3Inv … osp`, the
+contracts of the mode), the mode `true` for a function that needs G48's mode (`needs48`, `hn48`):
+only G48's own kinds (`take48`: a static call with stack arguments or results, an access off `SP`)
+need it (`vk48_stepM`), with the activation's `outargs` block at `SP` (`hosp`, `SPInv`) and G48's
+`CallOKStk`; at the mode `false` they are the contracts `CallOK` … with `SepFrom`, as G57 and
+before; with G57's premise `G54Pre`; `g58_value`, `g58_initMem`, `g58_term` keep `SPInv` at the mode
+`true`.
 -/
 
 namespace GoFV.Proof.Gen

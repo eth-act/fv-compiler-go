@@ -268,7 +268,8 @@ theorem genG59_witness :
   have hb0 : lc0.ctx.f.block? 2 = some blk := by rw [← liveCtx_ctx (lc := lc0)]; exact hb
   have hv0 : lc0.ctx.f.value? 24 = some (val 24) := by rw [← liveCtx_ctx (lc := lc0)]; exact hv
   obtain ⟨E1, m1, hx1, hE1, hp1, hm1, -, -, -⟩ := g59_value (H := GenG2.H0) (env := GenG2.env)
-    hc hE hl0' hm0 hb0 hi hv0 (by rw [hop]; rfl) locMatch59 inv59 (fun _ => spInv59 hact) (fun _ => rfl) (fun _ => rfl)
+    hc hE hl0' hm0 hb0 hi hv0 (by rw [hop]; rfl) locMatch59 inv59
+    (fun _ => spInv59 hact) (fun _ => rfl) (fun _ => rfl)
     (by
       change UOKL m59 (uL35 lc (uIn35 lc 2) blk 3)
       rw [hu]

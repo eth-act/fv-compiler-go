@@ -6,7 +6,7 @@ import GoFV.Proof.Witness.Pipeline
 open scoped GoFV.SSA.Sem.Fixed
 
 /-!
-# Non-vacuity witness: a whole function down to the machine words in G48's mode (`obj_whole_ret` at the mode `true`)
+# Non-vacuity witness: a whole function in G48's mode (`obj_whole_ret` at the mode `true`)
 
 `pallocSum.start` of `std/runtime` (`GenG3`: `checkG60L` accepts it with the tables of `checkG3`;
 `ObjG7`: `checkObj` accepts its assembled words, a frameless leaf without a stack check):

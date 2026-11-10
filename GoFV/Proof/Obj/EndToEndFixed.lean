@@ -96,7 +96,8 @@ theorem verified_mach_fixed
         BoundsOK H g L ps.toList →
         RunPanicPre e H lc g L (endP L.text ps.toList) E0 lc.ctx.f.entry k sI →
         ∃ pe' n t', BoundsAgree pe pe' ∧ runMach H code (s0.x 30) n s0 = .panicked pe' t') :=
-  verified_mach hpipe hv hP hn ha hnp hd hlc hc hn48 hO hH hic hrok hME hroom hg hms hsep hE hEE hbE hbm
+  verified_mach hpipe hv hP hn ha hnp hd hlc hc hn48 hO hH hic hrok hME hroom hg hms hsep hE hEE
+    hbE hbm
     hk hpre hes hent hmore hinv huE hpc hRP hmt hro
 
 /-- `verified_mach_S` at `Addrs.fixed`. -/
@@ -156,7 +157,8 @@ theorem verified_mach_S_fixed
         BoundsOK H g L ps.toList →
         RunPanicPreS e H lc g L (endP L.text ps.toList) E0 lc.ctx.f.entry k sI →
         ∃ pe' n t', BoundsAgree pe pe' ∧ runMach H code (s0.x 30) n s0 = .panicked pe' t') :=
-  verified_mach_S hpipe hv hP hn ha hnp hd hlc hc hO hH hic hrok hME hroom hg hms hsep hE hEE hbE hbm
+  verified_mach_S hpipe hv hP hn ha hnp hd hlc hc hO hH hic hrok hME hroom hg hms hsep hE hEE
+    hbE hbm
     hk hpre hes hent hmore hinv hosp hspI huE hpc hRP hmt hro
 
 end GoFV.Proof.Obj

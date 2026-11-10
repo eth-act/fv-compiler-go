@@ -18,10 +18,10 @@ frame operand, `E.ι (.local act x) = some (E.sp + frameOff L nc o)`, and `AddrA
   a parameter): activation 0's `local` blocks at `base`, undecoded, their fixed region decoded as
   activation `actM = 2^22`'s, which `Ptr.fixedOfAddr` never decodes (`fixedOfAddr_act_lt`);
   everything else as `Addrs.fixed`. `Addrs.atSPO base osp` (§8 item 7, G48's mode) also puts
-  activation 0's `outargs` block at `osp` (`fixedOfAddr_out_lt`); both are `Addrs.atSPM`. With `base` the frame operands from
-  the activation's `SP` (`baseSP`), every `G28Env` at `Addrs.fixed` of a function of activation 0
-  gives a `G49Env` (`g49Env_atSP`; `g49Env_atSPO` at `Addrs.atSPO … E.sp.toNat`): the variables'
-places are no longer a constraint.
+  activation 0's `outargs` block at `osp` (`fixedOfAddr_out_lt`); both are `Addrs.atSPM`. With
+  `base` the frame operands from the activation's `SP` (`baseSP`), every `G28Env` at
+  `Addrs.fixed` of a function of activation 0 gives a `G49Env` (`g49Env_atSP`; `g49Env_atSPO` at
+  `Addrs.atSPO … E.sp.toNat`): the variables' places are no longer a constraint.
 -/
 
 namespace GoFV.Proof.Gen

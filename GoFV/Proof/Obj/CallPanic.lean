@@ -388,7 +388,8 @@ theorem g60_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
             cases h : take48 c.cx.lc v
             · rfl
             · exact absurd (hn48 (take48_of_needs48 hl0 hv h)) (by rw [ho]; decide)
-          exact ⟨name, abi, cabi, ins, outs, h1, .inl (take48_call ht hop h1 h2), h3, h4, h5, h6, h7⟩
+          exact ⟨name, abi, cabi, ins, outs, h1, .inl (take48_call ht hop h1 h2), h3, h4, h5, h6,
+            h7⟩
         · exact ⟨name, abi, cabi, ins, outs, h1, .inr ⟨rfl, h2⟩, h3, h4, h5, h6, h7⟩
       · exact absurd hop hne
   have hj : E.pcOf bid i = pcAt text c.cx.ps.toList ((js ++ [e']).getD i 0) := by
