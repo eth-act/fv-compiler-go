@@ -1068,6 +1068,18 @@ they are G57's statements, under `G49Env`, `g58_value` under `G54Pre` (no new pr
 (`lake exe gen-check --jobs 1`): 7,409 of 9,297 functions (79.69%, 31 more than G57's 7,378:
 19 by group A, 12 by group B), 238,245 values; no earlier slice's count drops.
 
+## Phase 3: genssa, slice G59 group P, float pair loads of a global or a frame variable (I7, #553)
+
+`GoFV.Proof.Gen.vk59p_step` (`GoFV/Proof/Gen/G59p.lean`): one value `vkind59p`
+(`GoFV/Gen/Check59p.lean`, tried after G58's value check) accepts (`VK59p`, `vkind59p_spec`), in
+`vk57a_step`'s form under `G49Env` with `hL` and G50's `PairPre50` (no new premise): `FLDPD`/`FLDPS`
+with an aux, of a global (`FLDPD sym+off(SB), (Fa, Fb)`, `g59_fldpGlob`) or of a `Blk.temp` frame
+variable (`g59_fldpVar`), into two distinct V registers; their selects are G50's. Composition into
+`checkG59` is the slice's. A probe of G58's check with `vkind59p` accepts the 6 functions whose sole
+reason was `pair load shape` (`test/zerodivide` `main.init.func33`–`func38`). Witness:
+`genG59p_witness` (`main.init.func33`: `FLDPD main.d(SB), (F2, F3)` of `complex(1.5, 2.5)` leaves
+the bits of `1.5` and `2.5` in `V2`, `V3`; `checkG58` rejects the function).
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g54_obj_value`, `g54_obj_term`, `g54_obj_nilPanic`, `g54_obj_boundsPanic`

@@ -1467,6 +1467,38 @@ sole reasons left (105 functions) are led by `op LoweredGetCallerPC` (26), `bloc
 (19), `MOVDnop/MOVDreg: upper bits unknown` (13), `block kind Defer` (13), `a register read at
 another class` (7), `FMSUBD: negated multiplicand` (7) and `pair load shape` (6).
 
+**Slice G59, group P: float pair loads of a global or a frame variable** (`Check59p`/`Spec59p`,
+proof `G59p`, `vkind59p lc g v`, `VK59p`, `vk59p_step`; tried when G58 rejects a value). The 6
+functions G58 rejects only for `pair load shape` are `test/zerodivide`'s `main.init.func33` to
+`func38` (`use(d / c)` of `complex128` and `complex64` globals): genssa loads each global's two
+parts with `FLDPD main.d(SB), (F2, F3)` or `FLDPS`, which G50's `ldp50` rejects (it asks
+`v.aux = none`). Group P is G57's group A (`ldpw57`) for the float pair loads:
+
+- `FLDPD`/`FLDPS {x} [off] base mem` with an aux (`fldp59`, `FldpOp`: 8- and 4-byte elements)
+  into two distinct V registers, each component a float shape of the element's width (G50's
+  `fpairTys`: Phase 1's `float64`/`float32` components are `.int .w64`/`.int .w32`), of a global
+  (`symOf?`, `op sym+off(SB), (Fa, Fb)`, `VK59p.glob`) or of a frame variable whose block is
+  `Blk.temp` (G6's `frameVar?`, `op off'(RSP), (Fa, Fb)` at its `NAME_AUTO` operand,
+  `VK59p.var`; none of the 6 functions has one, it is G57a's case for floats). Proof: G50's
+  `FLDPD` (`stepLoc_ldPair`, `lo_loadN` at `n = 8` or `4`, `fvalRel_of_valRel`) at G22's address of
+  the global's block (`pairAddr_globN`, `G2Env.glob`; `g59_fldpGlob`) or at G6's address of the
+  variable's `temp` block (`pairAddr_varN`, `var_addr`; `g59_fldpVar`); the machine
+  (`step_fldp59`) loads the two elements at the operand's address (`ctx_mem_glob`,
+  `ctx_mem_slot`) into `V ka`, `V kb`.
+
+Their `Select0`/`Select1` are G50's `sel50` (it reads the op, not the aux). `vk59p_step` is
+`vk57a_step`'s statement (`G49Env`, `hL`, G50's `PairPre50`, which already states the valid bytes
+and the no-pointer components for every `pairOp50` op with or without an aux; part of `G54Pre`): no
+new premise. The upper-bit table is empty after each (`uStep35_ldpF`); `ops59p_facts` (no `Phi`,
+nil check, bounds check or entry value) and `vkind59p_none` (off `op59p`) serve the composition.
+No shared analysis changes. A probe of `checkG58` with `vkind59p` tried after `vkind58` accepts
+all 6 functions. Witness `genG59p_witness` (`GenG59p.lean`, on `vk59p_step` directly, a hand PC
+table, `G49Env` with `.autotmp_1`'s `temp` block, `vkind58` rejecting the value):
+`main.init.func33`'s `v24 = FLDPD {main.d} [0] v3 v1`, `FLDPD main.d(SB), (F2, F3)`; from
+`main.d = complex(1.5, 2.5)`, `F2` (Go register 33) holds `0x3ff8000000000000` and `F3`
+`0x4004000000000000` after the run, and the machine's `V2`, `V3` the same in their low 64 bits after
+Prog 3; `checkG58` rejects the function.
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
