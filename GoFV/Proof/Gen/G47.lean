@@ -101,7 +101,7 @@ theorem g47_selF (F : Facts lc sym text az ez psA.toList ret E)
     | some raw =>
       simp only [Option.getD_some]
       have hfit := hinv.regs r raw c0 hrz hv (hKr c0 hcv)
-      exact fvalRel_retypeL (fvalRel_retypeL ((hm.regs r raw hv).2 _ hk) hfit hft hc0t)
+      exact fvalRel_retypeL (fvalRel_retypeLW ((hm.regs r raw hv).2 _ hk) hfit hft hc0t)
         (fits_retypeL hc0t _) hfv hcv
   have hlm := locMatch_setRegV hm hk hrel (b' := b) (i' := i + 1)
   have hpc : E.pcOf b (i + 1) = m.pc := by rw [hj', hvs, ← hj, hm.pc]

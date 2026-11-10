@@ -965,6 +965,7 @@ import GoFV.Proof.Witness.GenG58a2
 import GoFV.Proof.Witness.GenG58a3
 import GoFV.Proof.Witness.GenG58a4
 import GoFV.Proof.Witness.GenG58a5
+import GoFV.Proof.Witness.GenG59k
 import GoFV.Proof.Witness.GenG6
 import GoFV.Proof.Witness.GenG7
 import GoFV.Proof.Witness.GenG8

@@ -311,6 +311,28 @@ theorem fvalRel_retypeL {x : Val} {q : BitVec 128} {c : Nat} {t : Ty} (hx : FVal
     exact hx
   | _ => exact absurd hx id
 
+/-- A V register content read at a float shape of a class it allows (`FitsW`): its low bits. -/
+theorem fvalRel_retypeLW {x : Val} {q : BitVec 128} {c : Nat} {t : Ty} (hx : FValRel x q)
+    (hf : FitsW c x) (ht : fTy t = true) (hc : cls t = some c) : FValRel (x.retypeL t) q := by
+  have hw : ∃ w : Width, t = .int w ∧ (w = .w32 ∨ w = .w64) := by
+    cases t with
+    | int w => cases w <;> simp_all [fTy]
+    | _ => simp [fTy] at ht
+  obtain ⟨w, rfl, -⟩ := hw
+  simp only [GoFV.Gen.Check.cls, Option.some.injEq] at hc
+  subst hc
+  cases x with
+  | poison => rw [retypeL_poison]; trivial
+  | int w' y =>
+    have hle : w.bits ≤ w'.bits := by
+      have hf : kNarrow w.bits w'.bits = true := hf
+      revert hf; cases w <;> cases w' <;> decide
+    rw [retypeL_int_low y hle]
+    have hx : q.setWidth w'.bits = y := hx
+    show q.setWidth w.bits = y.setWidth w.bits
+    rw [← hx, BitVec.setWidth_setWidth_of_le _ hle]
+  | _ => exact absurd hx id
+
 /-- A value related to a V register is `poison` or an integer of its class. -/
 theorem fval_cases {x : Val} {q : BitVec 128} {c : Nat} (hx : FValRel x q) (hf : Fits c x) :
     x = .poison ∨ ∃ w y, x = .int w y ∧ w.bits = c := by
@@ -407,7 +429,7 @@ theorem arg_relV (hl : lc.ctx.f.lowered = true) (hm : LocMatch E s b i m)
   | none => simp only [Option.getD_none, retypeL_poison]; trivial
   | some v =>
     simp only [Option.getD_some]
-    exact fvalRel_retypeL ((hm.regs r v hv).2 k hobj) (hinv.regs r v c hrz hv hK) hft hc
+    exact fvalRel_retypeLW ((hm.regs r v hv).2 k hobj) (hinv.regs r v c hrz hv hK) hft hc
 
 end Machine
 

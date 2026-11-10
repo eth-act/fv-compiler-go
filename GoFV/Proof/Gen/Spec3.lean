@@ -591,16 +591,16 @@ theorem kOK_spec {K : KMap} {rs : List (Nat × Nat)} (h : kOK K rs = true) :
   have := List.all_eq_true.mp h rc hrc
   simpa using this
 
-/-- What `kLe K' K` accepted: every class `K'` knows, `K` knows. -/
+/-- What `kLe K' K` accepted: every class `K'` knows can be read from the class `K` knows. -/
 theorem kLe_spec {K' K : KMap} (h : kLe K' K = true) :
-    ∀ r c, K'.get r = some c → K.get r = some c := by
+    ∀ r c, K'.get r = some c → ∃ c', K.get r = some c' ∧ kNarrow c c' = true := by
   intro r c hr
   have hlt : r < K'.size := by
     refine Nat.lt_of_not_le fun hn => ?_
     simp [KMap.get, Array.getElem?_eq_none_iff.mpr hn] at hr
   have := List.all_eq_true.mp h r (List.mem_range.mpr hlt)
   rw [hr] at this
-  simpa using this
+  simpa [Option.any_eq_true] using this
 
 /-- What `kValues` accepted: its result is the map after the values (`kSteps`), and each value's
 reads find their classes in the map before it. -/
@@ -658,7 +658,8 @@ private theorem forIn_yield3 {α : Type} {l : List α}
 
 /-- What `checkK` accepted of the class table `kt`: nothing known at the entry; in each block of
 the layout, every value's reads find their classes before it (`kAt`), the control's read finds
-its class at the block's end, and the end implies the start of each successor. -/
+its class at the block's end, and every class at the start of each successor can be read from the
+class at the end (`kNarrow`). -/
 theorem checkK_spec {lc : LocCtx} {kt : KTab} (h : checkK lc kt = .ok ()) :
     kt.at lc.ctx.f.entry = KMap.bot ∧
     ∀ bid ∈ lc.ctx.f.blocks.toList, ∀ b, lc.ctx.f.block? bid = some b →
@@ -666,7 +667,7 @@ theorem checkK_spec {lc : LocCtx} {kt : KTab} (h : checkK lc kt = .ok ()) :
         ∀ rc ∈ kReads lc v, (kAt lc kt bid b i).get rc.1 = some rc.2) ∧
       (∀ rc ∈ kControl lc b, (kAt lc kt bid b b.values.size).get rc.1 = some rc.2) ∧
       (∀ e ∈ b.succs.toList, ∀ r c, (kt.at e.b).get r = some c →
-        (kAt lc kt bid b b.values.size).get r = some c) := by
+        ∃ c', (kAt lc kt bid b b.values.size).get r = some c' ∧ kNarrow c c' = true) := by
   unfold checkK at h
   obtain ⟨he, h⟩ := ex_guard h
   refine ⟨by simpa using he, ?_⟩

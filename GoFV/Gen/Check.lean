@@ -84,6 +84,11 @@ def cls : Ty → Option Nat
   | .bool => some 1
   | _ => none
 
+/-- A register whose content has class `c'` may be read (or claimed) at class `c`: the same
+class, or an integer class of at least 8 bits no wider than an integer or pointer content (its
+low bits), or any integer class of a boolean (0 or 1 in the whole register). -/
+def kNarrow (c c' : Nat) : Bool := c == c' || (8 ≤ c && (c ≤ c' || c' == 1))
+
 /-- The memory shape. -/
 def memTy : Ty → Bool
   | .mem => true

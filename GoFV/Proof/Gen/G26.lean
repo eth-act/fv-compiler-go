@@ -81,6 +81,14 @@ theorem valRel_retype {ι : Blk → Option (BitVec 64)} (hA : AddrAgree ι) {c :
   · rw [h]; exact valRel_retypeL hA hc hf hv
   · rw [h]; trivial
 
+/-- `valRel_retype` of a register content read at a class it allows (`FitsW`). -/
+theorem valRel_retypeW {ι : Blk → Option (BitVec 64)} (hA : AddrAgree ι) {c : Nat} {t : Ty}
+    {v : Val} {r : BitVec 64} (hc : cls t = some c) (hf : FitsW c v) (hv : ValRel ι v r) :
+    ValRel ι (v.retype t) r := by
+  rcases retype_cases hc v with h | h
+  · rw [h]; exact valRel_retypeLW hA hc hf hv
+  · rw [h]; trivial
+
 theorem fits_retype {c : Nat} {t : Ty} (hc : cls t = some c) (v : Val) : Fits c (v.retype t) := by
   rcases retype_cases hc v with h | h
   · rw [h]; exact fits_retypeL hc v
@@ -240,7 +248,7 @@ theorem arg_relP (hA : AddrAgree E.ι) (hl : lc.ctx.f.lowered = false)
     | none => simp only [Option.getD_none, retype_poison]; trivial
     | some v =>
       simp only [Option.getD_some]
-      exact valRel_retype hA hc (hinv.regs r v c hrz hv (hK hrz)) ((hm.regs r v hv).1 _ hobj)
+      exact valRel_retypeW hA hc (hinv.regs r v c hrz hv (hK hrz)) ((hm.regs r v hv).1 _ hobj)
 
 /-- A value whose one Prog writes its register (`op_reg` from the facts it uses). -/
 theorem op_regN (hnd : (psA.toList.map (·.id)).Nodup) (hlt : ∀ p ∈ psA.toList, p.id < 2 ^ 32)

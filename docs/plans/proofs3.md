@@ -1467,6 +1467,39 @@ sole reasons left (105 functions) are led by `op LoweredGetCallerPC` (26), `bloc
 (19), `MOVDnop/MOVDreg: upper bits unknown` (13), `block kind Defer` (13), `a register read at
 another class` (7), `FMSUBD: negated multiplicand` (7) and `pair load shape` (6).
 
+**Slice G59, group K: narrower register classes** (G3's class table, `GoFV/Gen/Check.lean`,
+`GoFV/Gen/Check3.lean`, `GoFV/Proof/Gen/Rel.lean`, `G1.lean`, `Spec3.lean`, `G3.lean`; no new
+group function, every `gN_*`/`gNL_*` statement unchanged, no new premise). Seven functions G58
+rejects only for `a register read at another class` and one only for `control read at another
+class` read a `Phi` homed in a register whose last writers had another class: a 32-bit `Phi` of
+64-bit values (`math.lz`, `runtime.(*moduledata).textOff`, `(**moduledata).runtime.textOff`,
+`findfunc`: `R0`/`R6` at 64 bits at every predecessor's end), a loop `Phi` joining a 64-bit `Copy`
+with a 32-bit value (`hash/crc32.init`, `init.func1`, `simplePopulateTable`: the join was `none`),
+and a 64-bit `Phi` of booleans (`runtime.checkFinalizersAndCleanups.func1`: `R1` at class 1 from two
+predecessors, 64 from the third). A class in the table now is a class the register's content *can
+be read at*: `kNarrow c c'` (`Check.lean`) holds when `c = c'`, or `c ≥ 8` and the content has an
+integer or pointer class `c' ≥ c` (its low bits) or is a boolean (`c' = 1`, 0 or 1 in the whole
+register). The invariant follows it: `CoreInv.regs` and `G1Inv.regs` give `FitsW c v` (`Rel.lean`:
+`kNarrow c` of the content's class, `fitsW_of_fits`, `FitsW.narrow`) instead of `Fits c v`, and
+`valRel_retypeLW` (`retypeL_int_low`, through `valRel_i64` for a 64-bit content), `valRel_retypeW`
+(G26, Phase 1 functions) and `fvalRel_retypeLW` (`FMove.lean`) relate a content read at any class
+it allows; `arg_rel`, `arg_relP`, `arg_relV`, `arg_relVL` and the reads of a selected or reloaded
+register (G2, G4, G8, G38, G47, G50) use them, and the writes conclude `FitsW` by `fitsW_of_fits`
+(`core_setReg`, the call results of G2/G10, G8, G28). Reads stay exact (`kOK`, `KRead`); the edges
+allow narrowing: `kLe K' K` asks `(K.get r).any (kNarrow c)` (`kLe_spec`, `checkK_spec`'s edge
+part), which `termK_stepX` closes with `CoreInv.monoW` (`KLeW`). The dataflow, unverified, uses it:
+`kJoin` keeps the class both predecessors allow (the narrower integer class, the integer class over
+a boolean) and `kPhis` sets the home register of a successor's `Phi` to the `Phi`'s class where the
+content allows it. Changed shared definitions: `KMap`-level `kLe`, `kMeet` (by `kJoin`), `kPass`
+(by `kPhis`), hence `kFlow` and every `checkGN`'s class table; `CoreInv`, `G1Inv`; new `kNarrow`,
+`kJoin`, `kPhis`, `FitsW`, `KLeW`. Witness `genG59k_witness` (`GenG59k.lean`, `math.lz`):
+`checkG58` accepts it with `R0` at 64 bits at `b5`'s end and at 32 at `b3`'s start, where `v29`
+reads it at 32; from a state with `0xffffffff00000045` in `R0`, `g58_term` runs `b5`'s jump to a
+state related at `b3`'s table, and `arg_rel` relates `v27`'s read `0x45` to `X0`, which keeps the
+64-bit word. `GenG8`'s table changes at `b3` (`R1` now joined at 32 bits). All 8 functions are
+accepted by `checkG58` with the new table (probe on the corpus files); on every fifth file of
+quick-v10 (1,859 functions) no function G58 accepted is rejected by the new class check.
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 

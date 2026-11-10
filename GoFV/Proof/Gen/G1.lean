@@ -52,10 +52,11 @@ structure G1Env (lc : LocCtx) (L : Link) (ps : Array Prog) (ret : BitVec 64) (ta
   addr : AddrAgree E.ι
   leaf : E.framed = false
 
-/-- The invariant of G1's `runLoc` states. -/
+/-- The invariant of G1's `runLoc` states (a register content can be read at its class,
+`FitsW`). -/
 structure G1Inv (lc : LocCtx) (s : LocState) : Prop where
   slots : s.slots = []
-  regs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → regCls lc r = some c → Fits c v
+  regs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → regCls lc r = some c → FitsW c v
   mem : ∃ mm, s.mem = .mem mm ∧ KeysNodup mm
 
 /-- The addresses `P` lie outside the windows of the live blocks of `mm` under `ι`. -/
@@ -64,16 +65,22 @@ def SepFrom (ι : Blk → Option (BitVec 64)) (P : BitVec 64 → Prop) (mm : Mem
     ¬ (a.toNat ≤ y.toNat ∧ y.toNat < a.toNat + al.data.size)
 
 /-- The invariant the value steps of every slice keep: every register other than `ZERO` holds a
-value of the class the class map `K` gives it (G1, G2: `regCls`, one class per register; G3: the
-class of its last writer, by dataflow), the memory's block keys are distinct, and the live blocks
-lie away from the addresses `P` (G1: none; G2: the saved `LR`/`FP` words and the spill slots). -/
+value that can be read at the class the class map `K` gives it (`FitsW`; G1, G2: `regCls`, one
+class per register; G3: the class of its last writer, by dataflow, or one it allows), the memory's
+block keys are distinct, and the live blocks lie away from the addresses `P` (G1: none; G2: the
+saved `LR`/`FP` words and the spill slots). -/
 structure CoreInv (ι : Blk → Option (BitVec 64)) (P : BitVec 64 → Prop) (K : Nat → Option Nat)
     (s : LocState) : Prop where
-  regs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → K r = some c → Fits c v
+  regs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → K r = some c → FitsW c v
   mem : ∃ mm, s.mem = .mem mm ∧ KeysNodup mm ∧ SepFrom ι P mm
 
 /-- The class map `K'` claims no class `K` does not (outside `ZERO`). -/
 def KLe (K' K : Nat → Option Nat) : Prop := ∀ r c, r ≠ zeroReg → K' r = some c → K r = some c
+
+/-- The class map `K'` claims only classes the classes of `K` allow (`kNarrow`, outside
+`ZERO`). -/
+def KLeW (K' K : Nat → Option Nat) : Prop :=
+  ∀ r c, r ≠ zeroReg → K' r = some c → ∃ c', K r = some c' ∧ kNarrow c c' = true
 
 /-- The class map `K` with register `r` set to `c`. -/
 def kSet (K : Nat → Option Nat) (r : Nat) (c : Option Nat) : Nat → Option Nat :=
@@ -267,6 +274,12 @@ theorem G1Inv.of_core (hinv : CoreInv ι P (regCls lc) s) (hsl : s.slots = []) :
 theorem CoreInv.mono (hinv : CoreInv ι P K s) (h : KLe K' K) : CoreInv ι P K' s :=
   ⟨fun r v c hr hv hc => hinv.regs r v c hr hv (h r c hr hc), hinv.mem⟩
 
+/-- The invariant at a class map whose classes the invariant's allow (`KLeW`). -/
+theorem CoreInv.monoW (hinv : CoreInv ι P K s) (h : KLeW K' K) : CoreInv ι P K' s :=
+  ⟨fun r v c hr hv hc =>
+    let ⟨_, hc', hn⟩ := h r c hr hc
+    (hinv.regs r v _ hr hv hc').narrow hn, hinv.mem⟩
+
 theorem core_setReg (hinv : CoreInv ι P K s) {r c : Nat} {x : Val} (hx : Fits c x) :
     CoreInv ι P (kSet K r (some c)) (s.setReg r x) where
   mem := hinv.mem
@@ -281,7 +294,7 @@ theorem core_setReg (hinv : CoreInv ι P K s) {r c : Nat} {x : Val} (hx : Fits c
       · rename_i hlt
         simp only [Bool.and_eq_true, decide_eq_true_eq, bne_iff_ne, ne_eq] at hlt
         rw [Array.set!_eq_setIfInBounds, Array.getElem?_setIfInBounds_self_of_lt hlt.1] at hv
-        cases hv; exact hx
+        cases hv; exact fitsW_of_fits hx
       · rename_i hlt
         simp only [Bool.and_eq_true, decide_eq_true_eq, bne_iff_ne, ne_eq, not_and,
           Decidable.not_not] at hlt
@@ -374,7 +387,7 @@ theorem arg_rel (hA : AddrAgree E.ι) (hl : lc.ctx.f.lowered = true)
     | none => simp only [Option.getD_none, retypeL_poison]; trivial
     | some v =>
       simp only [Option.getD_some]
-      exact valRel_retypeL hA hc (hinv.regs r v c hrz hv (hK hrz)) ((hm.regs r v hv).1 _ hobj)
+      exact valRel_retypeLW hA hc (hinv.regs r v c hrz hv (hK hrz)) ((hm.regs r v hv).1 _ hobj)
 
 /-- Writing a register G1 may write with a value related to the machine's new word: `LocMatch`
 at the next value and the invariant with the register at the value's class. -/

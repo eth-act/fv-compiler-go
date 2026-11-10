@@ -12,15 +12,16 @@ variable [GoFV.SSA.Sem.Addrs]
 
 `g3_value`: when `checkG3` accepts a function with the class table `kt`, every value of a block
 (other than the entry values) run by `runLoc` from a state related by `LocMatch` to a machine state,
-whose registers hold values of the classes the table gives before that value (`G3Inv` at
-`kAt lc kt b blk i`), is matched by `runProg` steps of genssa's P0 Progs to a state related before
-the next value, with the registers at the classes before the next value. `g3_term`: a terminator
-that goes to a successor is matched by steps to a state related before the successor's first value,
-with the registers at the classes of the successor's start (`kt.at`).
+whose registers hold values that can be read at the classes the table gives before that value
+(`FitsW`; `G3Inv` at `kAt lc kt b blk i`), is matched by `runProg` steps of genssa's P0 Progs to a
+state related before the next value, with the registers at the classes before the next value.
+`g3_term`: a terminator that goes to a successor is matched by steps to a state related before the
+successor's first value, with the registers at the classes of the successor's start (`kt.at`).
 
 The activation is G2's (`G2Env`); the invariant (`G3Inv`) is G2's with the class map of the table
-instead of one class per register; the per-value premises (`G3Pre`) are G1's, with every load (of
-`n` bytes, through a register or of a global) reading valid bytes and a boolean load reading 0 or 1.
+instead of one class per register (an edge may narrow a class, `kNarrow`: `termK_stepX` by
+`CoreInv.monoW`); the per-value premises (`G3Pre`) are G1's, with every load (of `n` bytes,
+through a register or of a global) reading valid bytes and a boolean load reading 0 or 1.
 -/
 
 namespace GoFV.Proof.Gen
@@ -1154,7 +1155,7 @@ theorem termK_stepX {H : Hooks} {c : Cx2} {sym : Nat → BitVec 64} {text : BitV
         e.b ∈ c.cx.lc.ctx.f.blocks.toList ∧ e ∈ blk.succs.toList ∧ m'.x = m.x := by
     rintro m' ⟨hstar, hlm, ⟨R, rfl⟩, hmem, hin, hx⟩
     exact ⟨m', hstar, hlm,
-      ⟨(core_fr hinv.core).mono fun r cc _ h => hedge e hmem r cc h, hinv.slots⟩, hin, hmem, hx⟩
+      ⟨(core_fr hinv.core).monoW fun r cc _ h => hedge e hmem r cc h, hinv.slots⟩, hin, hmem, hx⟩
   rcases Cx.termG3_spec hterm with ⟨-, hterm⟩ | ⟨asm, inv, hbr, hterm⟩
   · rcases Cx.termG2_spec hterm with ⟨hk', -⟩ | ⟨-, hterm⟩
     · obtain ⟨R, -, hn⟩ := stepTermLoc_gen ht

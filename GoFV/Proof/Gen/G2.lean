@@ -1095,7 +1095,7 @@ theorem g2_selReg (F : Facts lc sym text az ez psA.toList ret E)
     | some raw =>
       simp only [Option.getD_some]
       have hfit := hinv.regs r raw c0 hrz hv (hKr c0 hcv)
-      have h1 := valRel_retypeL hA hc0t hfit ((hm.regs r raw hv).1 _ (objX?_low hr16))
+      have h1 := valRel_retypeLW hA hc0t hfit ((hm.regs r raw hv).1 _ (objX?_low hr16))
       exact valRel_retypeL hA hcv (fits_retypeL hc0t _) h1
   obtain ⟨hlm, hinv'⟩ := finish_reg hm hinv (by simp [destOK]; omega)
     (by omega : r < 32) (objOf?_low hr16) hrel (fits_retypeL hcv _) (b' := b) (i' := i + 1)
@@ -1246,7 +1246,7 @@ theorem g2_callAt (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
     rcases writeParts_call ts' _ outs _ hcls hts'len r x h with h1 | ⟨j, t, -, ho, -⟩
     · exact clobber_call_reg hop htemp h1
     · exact absurd (List.mem_of_getElem? ho) hro
-  have hfits : ∀ r x c, r ≠ zeroReg → s'.regs[r]? = some x → K' r = some c → Fits c x := by
+  have hfits : ∀ r x c, r ≠ zeroReg → s'.regs[r]? = some x → K' r = some c → FitsW c x := by
     intro r x c hrz h hc
     obtain ⟨hKout, hKin⟩ := hKc r c hrz hc
     have h' := h
@@ -1261,7 +1261,7 @@ theorem g2_callAt (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
     · have hjt : j < ts'.length := (List.getElem?_eq_some_iff.1 ht).1
       have ht2 : (ts' ++ [Ty.mem])[j]? = some t := by rw [List.getElem?_append_left hjt]; exact ht
       have hct := hKout j t ho ht2
-      exact fits_tuple_get ht2 hct hx
+      exact fitsW_of_fits (fits_tuple_get ht2 hct hx)
   -- the frame and the slots under the larger injection
   obtain ⟨hslots', hframe'⟩ := stk_slots_frame (E' := { E with ι := ι' }) (m' := m') hm hF
     (slot_sizes hlc hcf hsi) rfl hext (fun q hq => hstk q hq) hsp'

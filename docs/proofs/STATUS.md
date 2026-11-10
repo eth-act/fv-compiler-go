@@ -1068,6 +1068,20 @@ they are G57's statements, under `G49Env`, `g58_value` under `G54Pre` (no new pr
 (`lake exe gen-check --jobs 1`): 7,409 of 9,297 functions (79.69%, 31 more than G57's 7,378:
 19 by group A, 12 by group B), 238,245 values; no earlier slice's count drops.
 
+## Phase 3: genssa, slice G59 group K, narrower register classes (I7, #553)
+
+G3's class table (`GoFV/Gen/Check.lean` `kNarrow`, `GoFV/Gen/Check3.lean` `kLe`, `kJoin`, `kMeet`,
+`kPhis`, `kPass`) now holds a class a register's content can be read at: the same class, an
+integer class of at least 8 bits no wider than an integer or pointer content, or any integer class
+over a boolean. `CoreInv`/`G1Inv` give `GoFV.Proof.Gen.FitsW` (`Rel.lean`), read by
+`valRel_retypeLW`, `valRel_retypeW`, `fvalRel_retypeLW`; edges by `kLe_spec`, `checkK_spec` and
+`CoreInv.monoW` (`KLeW`) in `termK_stepX`. Every `gN_*`/`gNL_*` statement is unchanged, no new
+premise. Witness `genG59k_witness` (`GenG59k.lean`, `math.lz`: `checkG58` accepts it with `R0` at 64
+bits at `b5`'s end and 32 at `b3`'s start; `g58_term` runs `b5`'s jump from `0xffffffff00000045` in
+`R0`, and `arg_rel` relates `v27`'s 32-bit read `0x45` to `X0`). The 8 functions G58 rejected only
+for `a register read at another class` (7) or `control read at another class` (1) are accepted
+(proofs3.md §4, slice G59 group K).
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g54_obj_value`, `g54_obj_term`, `g54_obj_nilPanic`, `g54_obj_boundsPanic`

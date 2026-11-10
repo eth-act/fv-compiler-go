@@ -1883,8 +1883,9 @@ def tab : PcTab := [(1, [5, 5, 5, 5, 8]), (2, [9, 10, 11, 11, 11, 12]), (3, [12,
 def k2 : KMap :=
   ((KMap.bot.setIfInBounds 0 (some 64)).setIfInBounds 1 (some 32)).setIfInBounds 63 (some 64)
 
-/-- The class map at the start of `b3`. -/
-def k3 : KMap := (KMap.bot.setIfInBounds 0 (some 64)).setIfInBounds 63 (some 64)
+/-- The class map at the start of `b3`: `k2`'s (`R1` at 32 bits, `kJoin` of its predecessors'
+classes). -/
+def k3 : KMap := k2
 
 /-- The class table `checkG8` gives: nothing known at the entry `b1`. -/
 def kt : KTab := [(1, KMap.bot), (2, k2), (3, k3)]
