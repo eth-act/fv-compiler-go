@@ -1187,21 +1187,24 @@ private theorem insn_excl {size : BitVec 2} {o2 ld o0 : Bool} {rs rn rt : Reg}
     ∃ t', exec (.ldstExcl size o2 ld o0 rs rn rt) t = .ok t' ∧ Holds c σ' t' ∧
       CtlPc c base o mc t' := by
   show ∃ t', execExcl t size o2 ld rs rn rt = .ok t' ∧ _
-  have hh : symExcl σ size o2 ld rn rt = .ok (σ', mc) := h
+  have hh : symExcl σ size o2 ld rs rn rt = .ok (σ', mc) := h
   have ha := insn_rXsp hH rn
   unfold symExcl at hh
   unfold execExcl
   cases ld
-  · cases o2
-    · cases hh
-    · simp only [Bool.false_eq_true, ↓reduceIte] at hh ⊢
-      cases hh
-      have hna : nilPage (t.rXsp rn) = false := by
-        rw [← ha]; exact hnil.2 _ (bytesOf size) (σ.rX rt.toNat) (by simp [Sym.store])
-      have hst := insn_holds_store hH (σ.rXsp rn.toNat) (insn_bytesOf_le size) (v := σ.rX rt.toNat)
-        (val := (t.rX rt).setWidth (8 * bytesOf size)) (by rw [insn_rX hH])
-      rw [ha] at hst
-      refine ⟨_, ?_, insn_fall hpc hst rfl⟩
+  · simp only [Bool.false_eq_true, ↓reduceIte] at hh ⊢
+    cases hh
+    have hna : nilPage (t.rXsp rn) = false := by
+      rw [← ha]; exact hnil.2 _ (bytesOf size) (σ.rX rt.toNat) (by cases o2 <;> simp [Sym.store])
+    have hst := insn_holds_store hH (σ.rXsp rn.toNat) (insn_bytesOf_le size) (v := σ.rX rt.toNat)
+      (val := (t.rX rt).setWidth (8 * bytesOf size)) (by rw [insn_rX hH])
+    rw [ha] at hst
+    cases o2
+    · refine ⟨_, ?_, insn_fall hpc (insn_holds_wX hst rs (v := .k 0) (val := 0) rfl)
+        (insn_wX_pc _ _ _)⟩
+      simp only [store, bytesOf, hna, Bool.false_eq_true, ↓reduceIte, bind, Except.bind, pure,
+        Except.pure]
+    · refine ⟨_, ?_, insn_fall hpc hst rfl⟩
       simp only [store, bytesOf, hna, Bool.false_eq_true, ↓reduceIte, bind, Except.bind, pure,
         Except.pure]
   · simp only [↓reduceIte] at hh ⊢
@@ -1220,6 +1223,114 @@ private theorem insn_excl {size : BitVec 2} {o2 ld o0 : Bool} {rs rn rt : Reg}
         (by simp only [Ex.eval, ha, hmem]; rfl)
       refine ⟨_, ?_, insn_fall hpc hW (insn_wX_pc _ _ _)⟩
       simp only [load, hna, Bool.false_eq_true, ↓reduceIte, bind, Except.bind, pure, Except.pure]
+
+/-- What `symRmw` gives: the access is outside the nil page, the old value is the bytes there,
+and the store of the new value's low bytes with the old value written to `rd` give the effect. -/
+private theorem insn_rmw {σ σ' : Sym} {mc : MCtl} {c : Ctx} {t : MState} {size : BitVec 2}
+    {rn rd : Reg} {nw : Ex → Ex} (h : symRmw σ size rn rd nw = .ok (σ', mc)) (hH : Holds c σ t)
+    (hnil : NoNil c σ') :
+    mc = .fall ∧ nilPage (t.rXsp rn) = false ∧
+      (.ld (bytesOf size) (σ.rXsp rn.toNat) : Ex).eval c =
+        (readMem t.mem (t.rXsp rn) (bytesOf size)).setWidth 64 ∧
+      ∀ val : BitVec (8 * bytesOf size),
+        ((nw (.ld (bytesOf size) (σ.rXsp rn.toNat))).eval c).setWidth (8 * bytesOf size) = val →
+        Holds c σ' ({ t with mem := writeMem t.mem (t.rXsp rn) (bytesOf size) val }.wX rd
+          ((readMem t.mem (t.rXsp rn) (bytesOf size)).setWidth 64)) := by
+  have ha := insn_rXsp hH rn
+  unfold symRmw Sym.load at h
+  cases hs : σ.stores.isEmpty
+  · simp only [hs, Bool.false_eq_true, ↓reduceIte] at h; cases h
+  simp only [hs, ↓reduceIte, pure, Except.pure] at h
+  cases h
+  have hs' : σ.stores = [] := List.isEmpty_iff.mp hs
+  have hmem : t.mem = c.s.mem := by rw [hH.mem, hs']; rfl
+  have hld : (Ex.ld (bytesOf size) (σ.rXsp rn.toNat)).eval c =
+      (readMem t.mem (t.rXsp rn) (bytesOf size)).setWidth 64 := by
+    simp only [Ex.eval, ha, hmem]
+  refine ⟨rfl, ?_, hld, fun val hv => ?_⟩
+  · rw [← ha]; exact hnil.1 _ (bytesOf size) (by simp [Sym.store])
+  have hst := insn_holds_store (insn_holds_loads hH ((σ.rXsp rn.toNat, bytesOf size) :: σ.loads))
+    (σ.rXsp rn.toNat) (insn_bytesOf_le size) hv
+  rw [ha] at hst
+  exact insn_holds_wX hst rd hld
+
+/-- The low `8 n` bits of a value zero-extended from them. -/
+private theorem insn_setWidth_back {n : Nat} (hn : n ≤ 8) (x : BitVec (8 * n)) :
+    (x.setWidth 64).setWidth (8 * n) = x := by
+  rw [BitVec.setWidth_setWidth_of_le _ (by omega), BitVec.setWidth_eq]
+
+/-- `rmwEx` at the low `8 n` bits is `execAtomic`'s new value. -/
+private theorem insn_rmwEx {n : Nat} (hn : n ≤ 8) (c : Ctx) (o3 : Bool) (opc : BitVec 3)
+    {old v : Ex} {x : BitVec (8 * n)} {y : BitVec 64} (hx : old.eval c = x.setWidth 64)
+    (hy : v.eval c = y) :
+    ((rmwEx o3 opc old v).eval c).setWidth (8 * n) =
+      if o3 then y.setWidth (8 * n) else match opc.toNat with
+        | 0 => x + y.setWidth (8 * n) | 1 => x &&& ~~~(y.setWidth (8 * n))
+        | 2 => x ^^^ y.setWidth (8 * n) | _ => x ||| y.setWidth (8 * n) := by
+  unfold rmwEx
+  cases o3
+  · simp only [Bool.false_eq_true, ↓reduceIte]
+    generalize opc.toNat = k
+    rcases k with _ | _ | _ | k
+    · simp only [Ex.eval, hx, hy]
+      rw [BitVec.setWidth_add _ _ (by omega), insn_setWidth_back hn]
+    all_goals
+      simp only [Ex.eval, logical, sizedF, sized, ↓reduceIte, hx, hy, BitVec.setWidth_eq]
+      apply BitVec.eq_of_getLsbD_eq
+      intro i hi
+      simp [BitVec.getLsbD_setWidth, hi, show i < 64 by omega]
+  · simp only [↓reduceIte, hy]
+
+private theorem insn_atomic {size : BitVec 2} {a r o3 : Bool} {rs : Reg} {opc : BitVec 3}
+    {rn rt : Reg} {o : Nat} {σ σ' : Sym} {mc : MCtl} {c : Ctx} {t : MState} {base : BitVec 64}
+    (h : symInsn (.atomic size a r rs o3 opc rn rt) o σ = .ok (σ', mc)) (hH : Holds c σ t)
+    (hpc : t.pc = base + BitVec.ofNat 64 o) (hnil : NoNil c σ') :
+    ∃ t', exec (.atomic size a r rs o3 opc rn rt) t = .ok t' ∧ Holds c σ' t' ∧
+      CtlPc c base o mc t' := by
+  show ∃ t', execAtomic t size rs o3 opc rn rt = .ok t' ∧ _
+  have hh : symRmw σ size rn rt (fun old => rmwEx o3 opc old (σ.rX rs.toNat)) = .ok (σ', mc) := h
+  obtain ⟨rfl, hna, hld, hH'⟩ := insn_rmw hh hH hnil
+  have hv := insn_rmwEx (insn_bytesOf_le size) c o3 opc hld (insn_rX hH rs)
+  refine ⟨_, ?_, insn_fall hpc (hH' _ hv) (insn_wX_pc _ _ _)⟩
+  simp only [execAtomic, load, store, hna, Bool.false_eq_true, ↓reduceIte, bind, Except.bind, pure,
+    Except.pure]
+  rfl
+
+private theorem insn_cas {size : BitVec 2} {acq rel : Bool} {rs rn rt : Reg}
+    {o : Nat} {σ σ' : Sym} {mc : MCtl} {c : Ctx} {t : MState} {base : BitVec 64}
+    (h : symInsn (.cas size acq rel rs rn rt) o σ = .ok (σ', mc)) (hH : Holds c σ t)
+    (hpc : t.pc = base + BitVec.ofNat 64 o) (hnil : NoNil c σ') :
+    ∃ t', exec (.cas size acq rel rs rn rt) t = .ok t' ∧ Holds c σ' t' ∧ CtlPc c base o mc t' := by
+  show ∃ t', execCas t size rs rn rt = .ok t' ∧ _
+  have hh : symRmw σ size rn rs (fun old => .eqsel (bytesOf size) old (σ.rX rs.toNat)
+      (σ.rX rt.toNat) old) = .ok (σ', mc) := h
+  obtain ⟨rfl, hna, hld, hH'⟩ := insn_rmw hh hH hnil
+  have hn := insn_bytesOf_le size
+  have hv : ((Ex.eqsel (bytesOf size) (.ld (bytesOf size) (σ.rXsp rn.toNat)) (σ.rX rs.toNat)
+      (σ.rX rt.toNat) (.ld (bytesOf size) (σ.rXsp rn.toNat))).eval c).setWidth (8 * bytesOf size) =
+      if readMem t.mem (t.rXsp rn) (bytesOf size) = (t.rX rs).setWidth (8 * bytesOf size) then
+        (t.rX rt).setWidth (8 * bytesOf size)
+      else readMem t.mem (t.rXsp rn) (bytesOf size) := by
+    have hld' : readMem c.s.mem ((σ.rXsp rn.toNat).eval c) (bytesOf size) =
+        readMem t.mem (t.rXsp rn) (bytesOf size) := by
+      have := congrArg (BitVec.setWidth (8 * bytesOf size)) hld
+      simpa only [Ex.eval, insn_setWidth_back hn] using this
+    simp only [Ex.eval, hld', insn_rX hH, apply_ite (BitVec.setWidth (8 * bytesOf size)),
+      insn_setWidth_back hn]
+  refine ⟨_, ?_, insn_fall hpc (hH' _ hv) (insn_wX_pc _ _ _)⟩
+  by_cases he : readMem t.mem (t.rXsp rn) (bytesOf size) = (t.rX rs).setWidth (8 * bytesOf size)
+  · rw [ite_eq_left_of_eq_true _ _ (eq_true he)]
+    have hb : (readMem t.mem (t.rXsp rn) (2 ^ size.toNat) ==
+        (t.rX rs).setWidth (8 * 2 ^ size.toNat)) = true := beq_iff_eq.2 he
+    simp only [execCas, load, store, hna, hb, Bool.false_eq_true, ↓reduceIte, bind, Except.bind,
+      pure, Except.pure]
+    rfl
+  · rw [ite_eq_right_of_eq_false _ _ (eq_false he), writeMem_readMem]
+    have hb : (readMem t.mem (t.rXsp rn) (2 ^ size.toNat) ==
+        (t.rX rs).setWidth (8 * 2 ^ size.toNat)) = false := beq_eq_false_iff_ne.2 he
+    simp only [execCas, load, hna, hb, Bool.false_eq_true, ↓reduceIte, bind, Except.bind, pure,
+      Except.pure]
+    rfl
 
 /-! ## `symInsn_sound` -/
 
@@ -1255,6 +1366,8 @@ theorem symInsn_sound {i : Insn} {o : Nat} {σ σ' : Sym} {mc : MCtl} {c : Ctx} 
   | dp2 => exact insn_post (insn_dp2 h hH hpc)
   | dp3 => exact insn_post (insn_dp3 h hH hpc)
   | ldstExcl => exact insn_post (insn_excl h hH hpc hnil)
+  | cas => exact insn_post (insn_cas h hH hpc hnil)
+  | atomic => exact insn_post (insn_atomic h hH hpc hnil)
   | fp1 => exact insn_post (insn_fp1 h hH hpc)
   | fp2 => exact insn_post (insn_fp2 h hH hpc)
   | fp3 => exact insn_post (insn_fp3 h hH hpc)
@@ -1328,6 +1441,14 @@ theorem symAccess_mono {σ σ' : Sym} {size opc : BitVec 2} {rt : Nat} {a : Ex}
     cases h
     exact ⟨fun _ hx => hx, fun _ hx => hx⟩
 
+private theorem symRmw_mono {σ σ' : Sym} {size : BitVec 2} {rn rd : Reg} {nw : Ex → Ex} {mc : MCtl}
+    (h : symRmw σ size rn rd nw = .ok (σ', mc)) :
+    (∀ x ∈ σ.loads, x ∈ σ'.loads) ∧ (∀ x ∈ σ.stores, x ∈ σ'.stores) := by
+  unfold symRmw Sym.load at h
+  cases hs : σ.stores.isEmpty
+  · simp only [hs, Bool.false_eq_true, ↓reduceIte] at h; cases h
+  · simp only [hs, ↓reduceIte, pure, Except.pure] at h; cases h; insn_mono_tac
+
 theorem symInsn_mono {i : Insn} {o : Nat} {σ σ' : Sym} {mc : MCtl}
     (h : symInsn i o σ = .ok (σ', mc)) :
     (∀ x ∈ σ.loads, x ∈ σ'.loads) ∧ (∀ x ∈ σ.stores, x ∈ σ'.stores) := by
@@ -1367,15 +1488,15 @@ theorem symInsn_mono {i : Insn} {o : Nat} {σ σ' : Sym} {mc : MCtl}
   | dp2 => cases h; insn_mono_tac
   | dp3 => cases h; insn_mono_tac
   | ldstExcl size o2 ld o0 rs rn rt =>
-    have hh : symExcl σ size o2 ld rn rt = .ok (σ', mc) := h
+    have hh : symExcl σ size o2 ld rs rn rt = .ok (σ', mc) := h
     unfold symExcl Sym.load at hh
     cases ld
-    · cases o2
-      · cases hh
-      · simp only [Bool.false_eq_true, ↓reduceIte] at hh; cases hh; insn_mono_tac
+    · cases o2 <;> simp only [Bool.false_eq_true, ↓reduceIte] at hh <;> cases hh <;> insn_mono_tac
     · cases hs : σ.stores.isEmpty
       · simp only [hs, Bool.false_eq_true, ↓reduceIte] at hh; cases hh
       · simp only [hs, ↓reduceIte, pure, Except.pure] at hh; cases hh; insn_mono_tac
+  | cas size acq rel rs rn rt => exact symRmw_mono h
+  | atomic size a r rs o3 opc rn rt => exact symRmw_mono h
   | nop => cases h; insn_mono_tac
   | barrier => cases h; insn_mono_tac
   | logShift sf opc shift n =>
@@ -1453,7 +1574,7 @@ theorem NoNil.of_same {c : Ctx} {σ σ' : Sym} (hl : σ'.loads = σ.loads) (hs :
 
 /-- The classes `symInsn` gives loads or stores. -/
 private def insnMem : Insn → Bool
-  | .ldst .. | .ldstPair .. | .ldstExcl .. => true
+  | .ldst .. | .ldstPair .. | .ldstExcl .. | .cas .. | .atomic .. => true
   | _ => false
 
 local macro "insn_same_tac" : tactic =>
@@ -1506,7 +1627,7 @@ private theorem symInsn_noMem {i : Insn} {o : Nat} {σ σ' : Sym} {mc : MCtl}
       | exact absurd hk (by omega)
   | addSubShift sf sub setf => cases setf <;> cases h <;> insn_same_tac
   | addSubExt sf sub setf => cases setf <;> cases h <;> insn_same_tac
-  | ldst | ldstPair | ldstExcl => cases hi
+  | ldst | ldstPair | ldstExcl | cas | atomic => cases hi
   | fp1 => cases h; insn_same_tac
   | fp2 => cases h; insn_same_tac
   | fp3 => cases h; insn_same_tac
@@ -1669,25 +1790,27 @@ private theorem insn_excl_fault {size : BitVec 2} {o2 ld o0 : Bool} {rs rn rt : 
     (hN : NoNil c σ) (hbad : ¬ NoNil c σ') :
     ∃ x, exec (.ldstExcl size o2 ld o0 rs rn rt) t = .error (.nilPage x) := by
   show ∃ x, execExcl t size o2 ld rs rn rt = _
-  have hh : symExcl σ size o2 ld rn rt = .ok (σ', mc) := h
+  have hh : symExcl σ size o2 ld rs rn rt = .ok (σ', mc) := h
   have ha := insn_rXsp hH rn
   unfold symExcl at hh
   unfold execExcl
   refine ⟨t.rXsp rn, ?_⟩
   cases ld
-  · cases o2
-    · cases hh
-    · simp only [Bool.false_eq_true, ↓reduceIte] at hh ⊢
-      cases hh
-      cases hna : nilPage (t.rXsp rn)
-      · exfalso
-        apply hbad
-        refine ⟨fun a' n' hl => hN.1 a' n' (by simpa [Sym.store] using hl), fun a' n' v' hs => ?_⟩
-        simp only [Sym.store, List.mem_append, List.mem_singleton, Prod.mk.injEq] at hs
-        rcases hs with hs | ⟨rfl, -, -⟩
-        · exact hN.2 _ _ _ hs
-        · rw [ha]; exact hna
-      · simp only [store, hna, ↓reduceIte, bind, Except.bind]
+  · simp only [Bool.false_eq_true, ↓reduceIte] at hh ⊢
+    cases hh
+    cases hna : nilPage (t.rXsp rn)
+    · exfalso
+      apply hbad
+      refine ⟨fun a' n' hl => hN.1 a' n' (by cases o2 <;> simpa [Sym.store] using hl),
+        fun a' n' v' hs => ?_⟩
+      have hs : (a', n', v') ∈ σ.stores ++
+          [(σ.rXsp rn.toNat, bytesOf size, σ.rX rt.toNat)] := by
+        cases o2 <;> simpa [Sym.store] using hs
+      simp only [List.mem_append, List.mem_singleton, Prod.mk.injEq] at hs
+      rcases hs with hs | ⟨rfl, -, -⟩
+      · exact hN.2 _ _ _ hs
+      · rw [ha]; exact hna
+    · simp only [store, hna, ↓reduceIte, bind, Except.bind]
   · simp only [↓reduceIte] at hh ⊢
     unfold Sym.load at hh
     cases hs : σ.stores.isEmpty
@@ -1703,6 +1826,48 @@ private theorem insn_excl_fault {size : BitVec 2} {o2 ld o0 : Bool} {rs rn rt : 
         · rw [ha]; exact hna
         · exact hN.1 _ _ hl
       · simp only [load, hna, ↓reduceIte, bind, Except.bind]
+
+/-- A `symRmw` whose access is in the nil page: the address of `Rn` is there. -/
+private theorem insn_rmw_nil {σ σ' : Sym} {mc : MCtl} {c : Ctx} {t : MState} {size : BitVec 2}
+    {rn rd : Reg} {nw : Ex → Ex} (h : symRmw σ size rn rd nw = .ok (σ', mc)) (hH : Holds c σ t)
+    (hN : NoNil c σ) (hbad : ¬ NoNil c σ') : nilPage (t.rXsp rn) = true := by
+  have ha := insn_rXsp hH rn
+  unfold symRmw Sym.load at h
+  cases hs : σ.stores.isEmpty
+  · simp only [hs, Bool.false_eq_true, ↓reduceIte] at h; cases h
+  simp only [hs, ↓reduceIte, pure, Except.pure] at h
+  cases h
+  cases hna : nilPage (t.rXsp rn)
+  · exfalso
+    apply hbad
+    refine ⟨fun a' n' hl => ?_, fun a' n' v' hs' => ?_⟩
+    · simp only [insn_wX_loads, Sym.store, List.mem_cons, Prod.mk.injEq] at hl
+      rcases hl with ⟨rfl, -⟩ | hl
+      · rw [ha]; exact hna
+      · exact hN.1 _ _ hl
+    · simp only [insn_wX_stores, Sym.store, List.mem_append, List.mem_singleton,
+        Prod.mk.injEq] at hs'
+      rcases hs' with hs' | ⟨rfl, -, -⟩
+      · exact hN.2 _ _ _ hs'
+      · rw [ha]; exact hna
+  · rfl
+
+private theorem insn_atomic_fault {size : BitVec 2} {a r o3 : Bool} {rs : Reg} {opc : BitVec 3}
+    {rn rt : Reg} {o : Nat} {σ σ' : Sym} {mc : MCtl} {c : Ctx} {t : MState}
+    (h : symInsn (.atomic size a r rs o3 opc rn rt) o σ = .ok (σ', mc)) (hH : Holds c σ t)
+    (hN : NoNil c σ) (hbad : ¬ NoNil c σ') :
+    ∃ x, exec (.atomic size a r rs o3 opc rn rt) t = .error (.nilPage x) := by
+  have hna := insn_rmw_nil (nw := fun old => rmwEx o3 opc old (σ.rX rs.toNat)) h hH hN hbad
+  exact ⟨t.rXsp rn, by simp only [exec, execAtomic, load, hna, ↓reduceIte, bind, Except.bind]⟩
+
+private theorem insn_cas_fault {size : BitVec 2} {acq rel : Bool} {rs rn rt : Reg}
+    {o : Nat} {σ σ' : Sym} {mc : MCtl} {c : Ctx} {t : MState}
+    (h : symInsn (.cas size acq rel rs rn rt) o σ = .ok (σ', mc)) (hH : Holds c σ t)
+    (hN : NoNil c σ) (hbad : ¬ NoNil c σ') :
+    ∃ x, exec (.cas size acq rel rs rn rt) t = .error (.nilPage x) := by
+  have hna := insn_rmw_nil (nw := fun old => .eqsel (bytesOf size) old (σ.rX rs.toNat)
+    (σ.rX rt.toNat) old) h hH hN hbad
+  exact ⟨t.rXsp rn, by simp only [exec, execCas, load, hna, ↓reduceIte, bind, Except.bind]⟩
 
 /-- The SIMD&FP single access of `symVAccess` at `a`, in the nil page: `execLdSt` faults. -/
 theorem symVAccess_fault {σ σ1 : Sym} {c : Ctx} {t : MState} {size opc : BitVec 2}
@@ -1829,5 +1994,7 @@ theorem symInsn_fault {i : Insn} {o : Nat} {σ σ' : Sym} {mc : MCtl} {c : Ctx} 
     · exact insn_pair_fault h hH hN hbad
     · exact insn_vpair_fault h hH hN hbad
   case ldstExcl => exact insn_excl_fault h hH hN hbad
+  case cas => exact insn_cas_fault h hH hN hbad
+  case atomic => exact insn_atomic_fault h hH hN hbad
 
 end GoFV.Proof.Obj
