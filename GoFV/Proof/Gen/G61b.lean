@@ -3,7 +3,7 @@ import GoFV.Proof.Gen.G61a
 variable [GoFV.SSA.Sem.Addrs]
 
 /-!
-# Slice G61, group B: the atomic add and the atomic and/or loops (`docs/plans/proofs3.md` §4)
+# Slice G61, group A: the atomic add and the atomic and/or loops (`docs/plans/proofs3.md` §4)
 
 The load-exclusive/store-exclusive loops of `LoweredAtomicAdd{64,32}` (`add`) and
 `LoweredAtomic{And,Or}{64,32,8}` (`andL`, `orL`), from `runLoc`'s step (`stepLoc_rmw61`) to the

@@ -469,6 +469,11 @@ GoFV.Proof.Witness.GenG59u.g59u_facts._native.native_decide.ax_1_1 deee551967dfd
 # argument G58's) and `checkG56` and `checkG59` reject it; `runLoc` runs the constant into `V1`
 # in G48's mode (`outargs 0` at `SP`); compiled evaluation.
 GoFV.Proof.Witness.GenG60.g60_facts._native.native_decide.ax_1_1 8ca53b3cd4632242e0d2703da7ab95ce8858fe3a6a66e37f8faa542b85a6f62b
+# genG61_witness (GoFV/Proof/Witness/GenG61.lean, #553): on P0', `checkG61` accepts
+# `sync/atomic.SwapInt64` and `checkG60` rejects it; `runLoc` runs `v17`
+# (`LoweredAtomicExchange64`, the load-exclusive/store-exclusive loop) from `addr` the pointer to
+# the word 7 of `heap 1` and `new = 9`; compiled evaluation.
+GoFV.Proof.Witness.GenG61.g61_facts._native.native_decide.ax_1_1 5f176421c6984b88aeb64e841cc2b9d3625cad48b088fe83561078b18f21260e
 # objWhole_ret_witness in G48's mode (GoFV/Proof/Witness/ObjWholeS.lean, #553): `ObjWhole`'s facts
 # with the activation at `outargs 0`'s fixed base; compiled evaluation.
 GoFV.Proof.Witness.ObjWholeS.obj_facts._native.native_decide.ax_1_1 84413f328ce9ae2f2216d941a04eb2b589f3bf6fe3989f12c2e45e3ed1e293dd
