@@ -692,7 +692,7 @@ private theorem evalOpL_stp {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {ty
   rw [hpq]
 
 /-- A generic `Zero` that does not get stuck wrote its `n` zero bytes. -/
-private theorem memRoot_zero_inv {ctx : Ctx} {u : Value} (hu : u.op = .Zero) (argv : List Val) :
+theorem memRoot_zero_inv {ctx : Ctx} {u : Value} (hu : u.op = .Zero) (argv : List Val) :
     (∃ msg, memRoot ctx u argv = .stuck msg) ∨
       ∃ a mm P m1, argv = [a, .mem mm] ∧ a.asPtrWord = some P ∧
         mm.write P (Array.replicate u.auxInt.toInt.toNat (.b 0)) = some m1 ∧
