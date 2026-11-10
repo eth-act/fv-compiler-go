@@ -1339,6 +1339,36 @@ std/runtime, 3 of std/internal, 1 of std/sync, 1 of std/bytes), 271,361 values; 
 identical to main's run, the rejected set a subset of G61's. Composed into `verified_mach` (the
 composition on G62, below).
 
+## Phase 3: genssa, slice G63, float spills and reloads (I7, #553)
+
+`GoFV.Proof.Gen.g63_value`, `g63_initMem`, `g63_term`, `g63_nilPanic`, `g63_boundsPanic`
+(`GoFV/Proof/Gen/G63.lean`): `checkG63` (on P0', `GoFV/Gen/Check63.lean`) is G62 with the spill
+and the reload of a `float64` homed in an `F` register (`vkind63a`, tried when G62 rejects a
+`StoreReg` or `LoadReg`; G2's spill and reload take X registers only): a `StoreReg` of a float
+shape of class 64 whose argument is in an `F` register, homed in a spill slot with a frame
+operand, is `FMOVD Fs, off(RSP)` (`fspill63`); a `LoadReg` of a 64-bit value from such a slot into
+an `F` register at a float shape of class 64 is `FMOVD off(RSP), Fd` (`freload63`), as genssa's
+`storeByType`/`loadByType` emit them (`cmd/compile/internal/arm64/ssa.go`, `ssa.OpStoreReg`,
+`ssa.OpLoadReg`). The slots are `checkFrame`'s 8-byte slots (a `float32` slot fails `slotOK`).
+When `checkG63` accepts a function, they are G62's statements at either mode `osp` (`vk63_step`:
+G62's values by `vk62_step`; `g63_fspill`, `GoFV/Proof/Gen/G63a.lean`: the V register's low 64
+bits stored at the slot relate as a register (`SlotRel`, `valRel_of_fvalRel`); `g63_freload`: the
+slot's 8 bytes loaded into the V register relate to the value by `fvalRel_of_valRel`; neither
+writes an X register, `uokl_f63`). **Run premise added: `FReloadPre`** (not trusted, a fact of
+the run, as G44's `FLoadPre`): a float reload reads, at its float shape, no pointer without an
+integer form (a V register relates only integers and `poison`, `FValRel`; a slot relates a pointer
+by its injected address). It joins `RunPre`'s per-step premises at the lift. Witness:
+`genG63_witness` (`doprint` of `test/ken_cplx0` on P0', mode `false`: `checkG62` rejects it,
+`checkG63` accepts it; `v2 = StoreReg v15` from `1.5` in `F0` runs `FMOVD F0, c+0(FP)` and
+leaves the slot of `c`'s first piece holding the bits `0x3FF8000000000000` and the machine's
+word at `SP + 24` the same). Coverage on quick-v10 (`lake exe gen-check --jobs 2`, G63 on P0', on
+agent/g62 c6b60516): 8,206 of 9,297 functions (88.26%, +31 over G62's 8,175: 31 of the 32 whose
+whole reason set was `argument v# in register #` with `writes register #`; the 32nd,
+`test/ken_convert` `main`, then fails G35's `MOVDnop/MOVDreg: upper bits unknown`), 274,435
+values; rows G1 to G62 identical to G62's run, the rejected set a subset of G62's. The 11 `float
+spill shape` and 12 `float reload shape` functions are `float32` spills (4-byte slots). Not yet
+composed into `verified_mach`.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g62_obj_value`, `g62_obj_term`, `g62_obj_nilPanic`, `g62_obj_boundsPanic`
