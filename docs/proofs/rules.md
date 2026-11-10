@@ -2471,7 +2471,11 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   writes as the address bytes `intBytes 8 a`, where `Move` copied the fragments; `Byte.Refines`
   does not relate a fragment to a concrete byte, so the target's memory does not refine the
   source's (evaluated: `p = heap 0 + 8` copies as `[0x08,0,0,0,0,0x01,0,0]`). The load semantics
-  is unchanged; the design review lists the options and their costs.
+  is unchanged. The design review lists the options and their costs; decision (integrator,
+  2026-11-10): deferred (6–8 agent-days for +414 functions at stock; option B2 weakens
+  `Mem.Refines` in principle, B3 adds a premise). Revisit when the remaining blockers on the same
+  copies (the `FLDPQ`/`FMOVQload` offset folds, the indexed `Move` stores) are done and `Move` →
+  `MOV*store` is the top remaining class.
 
 - **`MemEq` → `Eq*` of two `Load`s** (`generic.rules:1560`, `:1568`, `:1576`, `:1584`;
   Phase1Tail, #69): false under the semantics, not a Go bug. `memEq` (`Sem/Ptr.lean`) reads the

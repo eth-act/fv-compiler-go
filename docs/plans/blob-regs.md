@@ -1,8 +1,14 @@
 # Design review: byte-precise integer registers for `Move` → `MOV*store` (#385)
 
 Status: design review, nothing implemented (issue #385; analysis by P2ProofLow39 in #385 comment
-6730880066, deferral in 6741128337). Decision pending with the integrator. Semantics of lowered
-code: `docs/plans/semantics2.md`; Phase 3: `docs/plans/semantics3.md`, `docs/plans/proofs3.md`.
+6730880066, deferral in 6741128337, review summary in 6768173103). Semantics of lowered code:
+`docs/plans/semantics2.md`; Phase 3: `docs/plans/semantics3.md`, `docs/plans/proofs3.md`.
+
+**Decision (integrator, 2026-11-10): deferred.** Reasons: 6–8 agent-days for +414 functions at
+stock (≈ 0.4 % of full-v9, §9); B2 weakens `Mem.Refines` in principle, the relation every phase
+rests on, a high-risk change to the trust story for a small gain; B3 adds a new premise. Revisit
+when the remaining blockers on the same copies (the `FLDPQ`/`FMOVQload` offset folds, the indexed
+`Move` stores, §9) are done and `Move` → `MOV*store` is the top remaining class.
 
 ## 1. The class
 
