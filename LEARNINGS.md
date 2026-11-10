@@ -868,3 +868,14 @@ above. The rest applies as rules; move an entry up once measured in gofv.
   (`simp only [beq_self_eq_true, e1]` with `e1 : ("CSET" == "CSETM") = false := by decide`), one
   explicit lemma per opcode instead of `first`. Bisect with truncated copies of the module run
   by `lake env lean` under `timeout` (lean prints nothing until it finishes).
+- **`cases op` over `arm64Op` with `first` closers: heartbeat timeout** (#553, `arm64Op_mems` in
+  `GoFV/Proof/Obj/RoLoc.lean`). The proof does `unfold arm64Op`, then `cases op`, then
+  `dsimp only` and `repeat' split`, and closes each of ~80 goals with `first | exact … | …`.
+  This hit the 200,000-heartbeat limit on `whnf`. The failing alternatives ran full defeq checks
+  that unfolded `Arm64.evalPure`, `storeN` and similar definitions in unrelated goals, and since
+  the limit is per declaration, every later goal failed too.
+  **Fix:** wrap each alternative in `with_reducible exact`, so a mismatch fails fast. Give one
+  lemma per head symbol, so that the closers match syntactically: `writeRes_storeN_mems` instead
+  of `writeRes_mems` up to `storeN`'s unfolding, and `evalPure_memOps_mems` for the `evalPure`
+  arms. Raise the limit for that theorem only (`set_option maxHeartbeats 800000 in`). The
+  module then builds in ~125 s, most of it this one theorem.

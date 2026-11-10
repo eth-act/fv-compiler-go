@@ -1863,9 +1863,14 @@ and the assembler's final Prog list, used only as a hint for each Prog's PC) aga
   - The epilogue at a P0 `RET` (`retOK`).
   - The morestack tail (`checkTail`: the register-argument spills, the call, the reloads, the jump
     back). The spills are planned by `tailPlan` (`off(RSP)` of argument registers `R0`–`R15`,
-    `1`–`8` bytes, disjoint slots); before the call `SP` is kept and nothing loaded, after it `SP`
-    and `R30` are kept, nothing stored and only slots loaded (what the proof needs; on quick-v10
-    obj-check accepts the same 7,741 functions).
+    `1`–`8` bytes, and `F0`–`F15`, `4` or `8` bytes (`FMOVS`/`FMOVD`, `FSTPS`/`FSTPD`: the
+    `vStoreEx` of `V n`, `TailSlot.fp`), disjoint slots); before the call `SP` is kept and nothing
+    loaded, after it `SP` and `R30` are kept, nothing stored and only slots loaded, every general
+    register is its reload (`reloadOf sl false`) or kept, and every reloaded vector register is
+    its slot's load (`TailSlot.vreload`, `VEx.ld`; the other vector registers are unconstrained,
+    as the hook clobbers them). These are what the proof needs (the tightening to them kept
+    obj-check's 7,741 functions on quick-v10). The `F` spills took quick-v10 from 8,464 to 8,544
+    accepted: the 80 rejections `tail: spill register` are gone and no `tail:` reason is left.
 - **Out of scope.** Words after the tail (literal pools, padding) are never executed by the
   checked ranges.
 
@@ -1879,7 +1884,7 @@ errors):
 
 | Functions | Accepted | P0 Progs in accepted functions |
 | --: | --: | --: |
-| 9,297 | 8,464 (91.04%) | 331,064 of 429,130 |
+| 9,297 | 8,544 (91.90%) | 332,878 of 429,130 |
 | G7 slice: 2,109 | 2,108 (99.95%) | |
 | G8 slice: 2,323 | 2,322 (99.95%) | |
 | G9 slice: 2,551 | 2,550 (99.96%) | 51,122 of 51,143 |
@@ -1919,8 +1924,9 @@ entry: two 8-byte entries would add the second half's address to `NoNil`, which 
 checks (it differs from the first's near the top of the address space). Witnesses
 `objOps_stpq_witness`, `objOps_strq_witness`, `objOps_eval128_witness`. Most frequent reasons
 now: `FMOVD` 133 and `FMOVS` 30 of a constant that is not an `FMOV` immediate (`PCREL_LDST:
-access`), `CASALW` 90, `LDADDALW` 89, morestack tail spill registers 80, `CASALD` 79, `LDADDALD`
-66, `GETCALLERPC` 44, `JMP` to a register 38, `DMB` 26, `UMULL` 19, `LDORALB` 17.
+access`), `CASALW` 90, `LDADDALW` 89, morestack tail spill registers 80 (now accepted, below),
+`CASALD` 79, `LDADDALD` 66, `GETCALLERPC` 44, `JMP` to a register 38, `DMB` 26, `UMULL` 19,
+`LDORALB` 17.
 
 The float constants are not a literal pool in the text: `progedit` rewrites `FMOVD $c, Fd` (not an
 `FMOV` immediate) to a load of the read-only data symbol `$f64.<bits>` (`$f32.` for `FMOVS`), which
@@ -1928,9 +1934,11 @@ the assembler encodes as `ADRP` + `LDR D`/`S` with `R_ARM64_PCREL_LDST64`/`32` (
 `reloc 20 8 R_ARM64_PCREL_LDST64 0 y10`, `y10 = "$f64.7fefffffffffffff"`). The machine reads the
 symbol's bytes from `MState.mem` (`exec`'s `load`; `Code` is fetch-only), P0's `FCONST` is the
 constant itself, and nothing in `ObjEnv` or `ObjRel` says that memory at `L.sym y` holds the
-bits named by the symbol in every state of the run, nor that it is outside the nil page. Modelling
-it needs that premise as a run invariant of `obj_star` (rodata never stored to), discharged by the
-composition from the SSA memory model.
+bits named by the symbol in every state of the run, nor that it is outside the nil page. A run
+premise of `obj_star` cannot be discharged (the composition knows the memory only where
+`LocMatch` holds); the design is in §10: the symbol is a Phase 1 read-only allocation, and the
+composition runs `P0'`, P0 with `progedit`'s rewrite of the float constants, so that `checkObj`
+compares a load with a load.
 
 **Proof** (`GoFV/Proof/Obj/`):
 
@@ -1961,9 +1969,13 @@ composition from the SSA memory model.
 - `Morestack.lean`: `symUntil_sound` (the chunks of `symUntil`, from `symWords_sound`),
   `stackCheck_run` (the stack check to its end when it passes, to the tail when it fails),
   `checkTail_spec`/`tailPlan_spec`/`checkObj_tail` (`Spec.lean`), the trusted contract
-  `MorestackOK` of `runtime.morestack` at the tail's call (`tailCall`), and `more_loop`: round
-  trips through the tail (the spills `storesMem_slot`, the hook, the reloads `reloadVal`) by
-  induction on the guard, which the hook lowers, until the check passes (`MoreStep`).
+  `MorestackOK` of `runtime.morestack` at the tail's call (`tailCall`; unchanged by the `F`
+  spills: it says nothing of the vector registers, and the tail reloads them from slots it keeps),
+  and `more_loop`: round trips through the tail (the spills `storesMem_slot`, `TailSlot.store_eval`
+  for a general register's low bytes or a vector register's `S`/`D` part, the hook, the reloads
+  `reloadVal`, and `vreloadVal` for a vector register: the slot's bytes zero-extended to 128 bits)
+  by induction on the guard, which the hook lowers, until the check passes (`MoreStep`: each
+  reloaded general or vector register its own value or its reload).
 - `MorestackHook.lean`: `morestackHook_ok`: the runtime model `morestackHook` (at
   `runtime.morestack`/`morestack_noctxt` of `RtInfo.hooks`) meets `MorestackOK` for a check of
   `stackguard0` when the stack can grow (`growBy > 0`, `stack.lo + StackGuard` below the limit).
@@ -1975,9 +1987,11 @@ composition from the SSA memory model.
 
 Witnesses: `Witness/ObjFrame.lean` (`testInts`, framed, with the small stack check: `obj_entry`
 and `obj_exit`; `objFrame_morestack_witness` enters with a failing check and a hook that clears
-the guard) and `Witness/ObjG7.lean` (`(*A).g`: `g7_obj_value` on its nil check;
-`pallocSum.start`: `g7_obj_term` on `TBNZ [63]`). Each decides `checkObj` and `linkCode` by
-compiled evaluation (pinned).
+the guard), `Witness/ObjMoreF.lean` (`math.Tan`, whose tail spills `F0` with `FMOVD`:
+`objMoreF_witness` enters with `F0 = π` and a failing check under a hook that clears the guard
+and clobbers every vector register, and `F0` is `π` again at the body) and `Witness/ObjG7.lean`
+(`(*A).g`: `g7_obj_value` on its nil check; `pallocSum.start`: `g7_obj_term` on `TBNZ [63]`).
+Each decides `checkObj` and `linkCode` by compiled evaluation (pinned).
 
 ## 8. Plans: frame addresses (option 2), nonempty stack arguments, frame parameters, `MOVDnop`
 
@@ -2298,10 +2312,13 @@ initial memory (`MemAt`: in a lowered function under `cleanOK`, `cleanAt → Mem
   `TailSep`), to a state `s0'` (`MoreRel`), and builds the frame (`BodyEntry`). On the morestack
   path `s0'` is `s0` but for the reloaded registers (a narrow reload zero- or sign-extends the
   slot's low bytes: `ValRel` of a narrow integer reads only them, a boolean is 0/1 either way,
-  `valRel_reloadVal`), the other registers but `R26`, `R28`–`R30`, the vector registers, the slots
-  and the guard word; the caller-side premise `MoreEntry` (every live register but `R26` reloaded
-  from a slot it fits, `ValFits`; no live vector register; the live blocks apart from the slots and
-  the guard word) carries `EntryMatch E0 W sI s0` to `s0'` (`EntryMatch.more`, `EntryEnv.more`).
+  `valRel_reloadVal`; a reloaded vector register is the slot's `S`/`D` bytes zero-extended,
+  `vreloadVal`, and `FValRel` reads only the value's low `w` bits, `fvalRel_vreloadVal`), the
+  other registers but `R26`, `R28`–`R30`, the vector registers not reloaded, the slots and the
+  guard word; the caller-side premise `MoreEntry` (every live register but `R26` reloaded from a
+  slot it fits, `ValFits`, a live vector register from a slot of its `F` register,
+  `reloadOf sl true`; the live blocks apart from the slots and the guard word) carries
+  `EntryMatch E0 W sI s0` to `s0'` (`EntryMatch.more`, `EntryEnv.more`).
   The P0 state is the machine's with the PC of the entry block's value
   `k`, the first after the entry values (`InitMem`, `SP`, `ArgIntReg`, `ArgFloatReg`, which emit
   nothing and are not `g*_value`'s). It is related to the state `sI` after them with its memory
@@ -2471,3 +2488,80 @@ pending window). `RunPre` there is `runPre_simple`.
 through a whole function with a real entry store of a register parameter (none of the e2e
 functions with a pending window is small enough for the native-decide witnesses yet). Entry
 stores after spills (`StoreReg`) in the entry block (`entryStoresOK` rejects them).
+
+## 10. Read-only data: float constants and jump tables
+
+**The gap.** Two kinds of machine loads read data that the assembler or genssa put in read-only
+symbols, which the SSA program never writes:
+
+- *Float constants.* `progedit` rewrites `FMOVD $c, Fd` (`FMOVS`) to a load of `$f64.<bits>`
+  (`$f32.<bits>`) when `c` is no `FMOV` immediate and not 0: `ADRP` + `LDR D` with
+  `R_ARM64_PCREL_LDST64` (§7). P0's `FMOVD $c` is the constant (`FCONST`). This is 163 of
+  `checkObj`'s rejections on quick-v10.
+- *Jump tables.* `JUMPTABLE`'s `MOVD (Rtab)(Ridx<<3), R27; JMP (R27)` loads the target from the
+  table genssa makes. `span7` fills the table with `R_ADDR` relocations to the function plus each
+  target's PC.
+
+Nothing in `ObjEnv`, `ObjRel` or `LocMatch` said that memory holds those bytes, or that stores and
+calls keep them.
+
+**Why not on the object side.** One option is a premise of `obj_star`: in every state of the P0
+run, the read-only bytes are in memory. The composition cannot discharge it. It knows the memory
+only in the states `LocMatch` relates (value and terminator boundaries), but `obj_star` steps
+through the P0 states inside a value's run (`PStar`), and the slice lemmas say nothing about
+those. An invariant of `obj_step` would need every P0 store to miss the read-only bytes, which
+only the slices know.
+
+**Design.** Read-only symbols are Phase 1 read-only allocations, and the read happens where
+`LocMatch` holds.
+
+1. *Image.* A read-only symbol is a global allocation with `writable := false`.
+   - Its bytes come from the export's data and `R_ADDR` fragments for an `SRODATA` symbol
+     (`rodataAlloc`, already in Phase 1's global image).
+   - For the constant symbols they come from the name (`constSymAlloc?`, `constRo names`,
+     `GoFV/SSA/Sem/ConstSym.lean`). `asm-parity` checks the port's constant symbols, bytes
+     included, against Go's (`Cmp.data`).
+   - The premise is an input property, like `RoImage`'s image part: the input memory with the
+     global image has the allocations, `RoMem ro (addGlobals env mem)`.
+2. *Run invariant* (`GoFV/Proof/Obj/RoLoc.lean`, `RoReach.lean`). Every memory `runLoc` holds
+   keeps those allocations (`lreach_roMem`):
+   - Stores: `Mem.write` needs a writable allocation (`Mem.keepsRo_write`), and frame
+     allocations and the write-barrier buffer are no globals.
+   - Calls: `Env.KeepsRo`, already a Phase 1 premise (`RoImage` in `VPre`, STATUS Assumptions).
+   The proof is `MemInv`'s, for `runLoc`. `LocMems P s` says that every memory in the state (its
+   memory, flags, registers, slots, staged controls, activation) is `P`.
+   - `stepLoc` keeps it (`stepLoc_locMems`). A copy (`LoadReg`/`StoreReg`) and a `MOVDreg` are
+     immediate. Otherwise the result comes from `evalOpL_mems`: Phase 1's memory ops by
+     `MemInv.evalOp_mems`, and the arm64 ops by `arm64Op_mems` (stores and the bulk ops write,
+     `LoweredWB` allocates the buffer, calls are contracts, nil checks are `memRoot`, atomics are
+     `atomicRoot`).
+   - This needs every value whose shape may hold a memory to have an op of `memOpL`. The
+     driver checks this as `memTyL`, `GoFV/Gen/MemTyL.lean`; a value of any other shape holds
+     none once `runLoc` shapes it.
+   - `stepTermLoc` stages controls, which are reads (`stepTermLoc_locMems`).
+3. *Machine side.* In a state `LocMatch` relates, `MemInj` puts each concrete byte of the
+   allocation at the global's injected address (`ro_byte`, under `AddrAgree`; above the nil
+   page, `ro_addr`). `G2Env.glob` puts that global at `L.sym y`. After a call, `CallSpec` already
+   gives `MemInj` of the post-call memory, which keeps the allocation, so no trusted clause is
+   added: the read-only data rests on the callee contracts and `Env.KeepsRo`.
+4. *Float constants* (next).
+   - The driver gives the composition `P0'`: P0 with `progedit`'s rewrite of the float constants
+     (`FMOVD $c` becomes `FMOVD $f64.<bits>(SB)`, with the index the port's `flush` gives the
+     symbol, also in `G2In.syms`).
+   - `checkObj` then compares a load with a load, and `ObjRel` is unchanged.
+   - A slice accepts `FMOVDconst`/`FMOVSconst` homed by such a load. It is proved in the value's
+     `LocMatch`ed state by `ro_byte`, with `RoMem` from `lreach_roMem`.
+   - `verified_mach` gains `memTyL lc = true` and `RoMem (constRo …) (addGlobals e mem)`.
+5. *Jump tables* (with the JUMPTABLE slice).
+   - The table is a Phase 1 read-only allocation of code-pointer fragments (the targets' Prog
+     IDs). `MemInj` resolves them through the link: `L.addr id` on P0, `base + pc` on the
+     machine.
+   - P0 reads the table in the terminator's `LocMatch`ed state, as in 2–3.
+   - `ObjRel.mem` stays equality outside the table and relates the table's words through the PC
+     map.
+
+Witness: `objRo_witness` (`GoFV/Proof/Witness/ObjRo.lean`). It runs `pallocSum.start` in
+`plRunEnv`, whose image has the read-only `runtime.writeBarrier` flag. `memTyL` accepts the
+function (`ro_facts`), the flag is in the memory after the entry values (`lreach_roMem`), and its
+byte is in the machine's memory at its linked address (`ro_byte`). `constSym_witness` checks the
+symbol of 1.0.

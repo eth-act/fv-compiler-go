@@ -8,7 +8,7 @@ variable [GoFV.SSA.Sem.Addrs]
 The executable validator's checks as propositions: `sameEffect_spec`, `sameCtl_spec`
 (`CtlMatch`), `checkProg_spec`, `checkOne_spec`, `checkBody_spec`, the templates
 (`frameOK_spec`, `retOK_spec`, `checkStackCheck_spec`, `checkPrologue_spec`, the morestack tail's
-`tailPlan_spec` and `checkTail_spec`), the offset table (`startsOf_*`, `offOf_zip`),
+`tailPlan_spec`, `reloadOf_mem` and `checkTail_spec`), the offset table (`startsOf_*`, `offOf_zip`),
 `checkObj_spec` and `checkObj_tail`.
 -/
 
@@ -508,14 +508,27 @@ theorem checkObj_spec {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab 
 /-! ## The morestack tail -/
 
 theorem tailPlan_spec {spills : List Spill} {sl : List TailSlot} (h : tailPlan spills = .ok sl) :
-    slotsApart sl = true ∧ ∀ s ∈ sl, s.reg < 16 ∧ 0 < s.n ∧ s.n ≤ 8 := by
+    slotsApart sl = true ∧
+      ∀ s ∈ sl, s.reg < 16 ∧ 0 < s.n ∧ s.n ≤ 8 ∧ (s.fp = true → s.n = 4 ∨ s.n = 8) := by
   unfold tailPlan at h
   simp only [bind, Except.bind, pure, Except.pure, spec_throw] at h
   split at h
   · cases h
   · simp at h
     obtain ⟨h1, h2, h3, rfl⟩ := h
-    exact ⟨h3, fun s hs => ⟨h1 s hs, by have := h2 s hs; omega, (h2 s hs).2⟩⟩
+    refine ⟨h3, fun s hs => ?_⟩
+    obtain ⟨ha, hb⟩ := h2 s hs
+    refine ⟨h1 s hs, by omega, by omega, fun hf => ?_⟩
+    by_cases h4 : s.n = 4
+    · exact .inl h4
+    · exact .inr (hb hf h4)
+
+theorem reloadOf_mem {sl : List TailSlot} {fp : Bool} {r : Nat} {q : TailSlot}
+    (h : reloadOf sl fp r = some q) : q ∈ sl ∧ q.fp = fp ∧ q.reg = r := by
+  unfold reloadOf at h
+  have := List.find?_some h
+  simp only [Bool.and_eq_true, beq_iff_eq] at this
+  exact ⟨List.mem_reverse.1 (List.mem_of_find?_eq_some h), this⟩
 
 theorem checkTail_spec {t : ByteArray} {rs : List Reloc} {spills : List Spill} {check o e : Nat}
     (h : checkTail t rs spills check o = .ok e) :
@@ -526,7 +539,8 @@ theorem checkTail_spec {t : ByteArray} {rs : List Reloc} {spills : List Spill} {
       ∃ o2 σ2, symUntil t rs ((t.size - o) / 4) o1 {} = .ok (o2, σ2, .jmp check) ∧
         σ2.stores = [] ∧ σ2.sp = .sp ∧ σ2.getX 30 = .x 30 ∧
         (∀ x ∈ σ2.loads, ∃ s ∈ sl, s.addr = x.1 ∧ s.n = x.2) ∧
-        ∀ r ∈ cmpRegs, σ2.getX r = ((reloadOf sl r).map TailSlot.reload).getD (.x r) := by
+        (∀ r ∈ cmpRegs, σ2.getX r = ((reloadOf sl false r).map TailSlot.reload).getD (.x r)) ∧
+        ∀ r q, reloadOf sl true r = some q → σ2.getV r = q.vreload := by
   unfold checkTail at h
   simp only [bind, Except.bind, pure, Except.pure, spec_throw] at h
   split at h
@@ -555,10 +569,22 @@ theorem checkTail_spec {t : ByteArray} {rs : List Reloc} {spills : List Spill} {
     · cases h
     rename_i hf2
     have hn2 := spec_find_none hf2
+    split at h
+    · cases h
+    rename_i hf3
+    have hn3 := spec_find_none hf3
     refine ⟨sl, hsl, o1, σ1, n, add, hv1, hst, hsp, hld, fun r hr => by simpa using hn1 r hr,
-      o2, σ2, hv2, hst2, hsp2, h30, fun x hx => ?_, fun r hr => by simpa using hn2 r hr⟩
-    obtain ⟨s, hs, h1, h2⟩ := hld2 x.1 x.2 hx
-    exact ⟨s, hs, h1, h2⟩
+      o2, σ2, hv2, hst2, hsp2, h30, fun x hx => ?_, fun r hr => by simpa using hn2 r hr,
+      fun r q hq => ?_⟩
+    · obtain ⟨s, hs, h1, h2⟩ := hld2 x.1 x.2 hx
+      exact ⟨s, hs, h1, h2⟩
+    · obtain ⟨hq1, -, hq3⟩ := reloadOf_mem hq
+      have hr : r ∈ List.range 16 := by
+        rw [List.mem_range, ← hq3]
+        exact ((tailPlan_spec hsl).2 q hq1).1
+      have := hn3 r hr
+      rw [hq] at this
+      simpa using this
   · cases h
 
 /-- `checkObj` checked the morestack tail of the stack check. -/
