@@ -292,15 +292,22 @@ theorem checkG10_spec {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Na
       rw [hh]
       rfl
 
-/-- A home G10 handles that is no `results` home is one G4 handles. -/
+/-- A home G10 handles that is no `results` home and no slot of an `Arg` is one G4 handles. -/
 theorem homeOK4_of_10 {lc : LocCtx} {i : Nat} (h : homeOK10 lc i = true)
-    (hr : ∀ rs, lc.home i ≠ some (.results rs)) : homeOK4 lc i = true := by
+    (hr : ∀ rs, lc.home i ≠ some (.results rs))
+    (ha : ∀ k, lc.home i = some (.slot k) → (lc.ctx.f.value? i).map (·.op) ≠ some .Arg) :
+    homeOK4 lc i = true := by
   unfold homeOK10 at h
   cases hh : lc.home i with
   | none => simpa [hh] using h
   | some l =>
     cases l with
     | results rs => exact absurd hh (hr rs)
+    | slot k =>
+      have hna := ha k hh
+      rw [hh] at h
+      simp only [Bool.or_eq_true, beq_iff_eq] at h
+      exact h.resolve_right hna
     | _ => simpa [hh] using h
 
 end GoFV.Gen.Check
