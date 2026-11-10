@@ -960,6 +960,16 @@ its `MOVD`) accepts a function, they are G53's statements, under `G49Env`, `g54_
 `LoweredZeroLoop` with its temporary as the counter, which G53 rejects). Coverage on quick-v10
 (`lake exe gen-check`): 7,308 of 9,297 functions (78.60%), 231,647 values.
 
+## Phase 3: genssa, fall-through over no-ops, all slices (I7, #553)
+
+`Cx.falls` (`GoFV/Gen/Check.lean`), shared by `Cx.two` and `Cx.term`: a block falls through to
+the successor laid out next when only no-ops (argument-liveness `PCDATA`, inline-mark `NOP`,
+`HINT $0`) lie between its last Prog and the successor's start, bounded by that start. `TwoAt`
+and `TermOK.plain` take `FallAt` (`Cx.falls_spec`, `GoFV/Proof/Gen/Spec.lean`); `fall_path`
+(`G1.lean`) runs the no-ops by `pstar_noops`. Every `gN_term` statement is unchanged, no new
+premise. Coverage on quick-v10 (`lake exe gen-check`): G54 7,322 of 9,297 functions
+(78.75%, 14 more: the functions rejected only for `expected JMP`), 232,417 values.
+
 ## Phase 3: genssa, slice G55, `VCNT`, `VUADDLV`, the `FRINT` rounds, shifted `NEG`, `CLZW`, `MULL`, `EXTR` (I7, #553)
 
 `GoFV.Proof.Gen.g55_value`, `g55_initMem`, `g55_term`, `g55_nilPanic`, `g55_boundsPanic`
@@ -974,6 +984,47 @@ Witnesses: `genG55_witness` (`math/bits.OnesCount`:
 `VCNT` then `VUADDLV` of `0x103` give 3 in `V0`, which G54 rejects) and `genG55b_witness`
 (`math/bits.LeadingZeros32`: `CLZW` of the 32-bit `0x10000` gives 15 in `X0`). Coverage on quick-v10
 (`lake exe gen-check`): 7,331 of 9,297 functions (78.85%), 232,869 values.
+
+## Phase 3: genssa, slice G57 group A, `STPW` and narrow pair loads with an aux (I7, #553)
+
+`GoFV.Proof.Gen.vk57a_step` (`GoFV/Proof/Gen/G57a.lean`): one value `vkind57a`
+(`GoFV/Gen/Check57a.lean`, tried after G55's value check) accepts, in `vk55_step`'s form under
+`G49Env`: `STPW [off] p x y mem` as `STPW (Rx, Ry), off(Rn)` (sources of at least 32 bits, `ZR`
+included; the machine stores their low words) and `LDPW`/`LDPSW` with an aux as `op
+sym+off(SB), (Ra, Rb)` of a global or `op off'(RSP), (Ra, Rb)` of a frame variable in a
+`Blk.temp` block, into two X registers. No new premise: the loads take G50's `PairPre50` (part of
+`G54Pre`), which states valid bytes for every `pairOp50` op with or without an aux. Witnesses:
+`genG57a_witness` (`examples/structs/main.grow`: `STPW (R2, R3), 8(R0)` of `0x11223344` and
+`0x55`, which G55 rejects; the machine then holds `0x44` at the struct's address plus 8) and
+`genG57a2_witness` (`runtime.bootstrapRand`: `LDPW runtime.globalRand+328(SB), (R1, R2)`, which
+G55 rejects; `X1`'s low word then holds `0x04030201`).
+Composition into `checkG57` and its coverage: the slice G57 entry.
+
+## Phase 3: genssa, slice G57 group B, `DMB`, `PRFM`, float stores to frame variables (I7, #553)
+
+`GoFV.Proof.Gen.vk57b_step` (`GoFV/Proof/Gen/G57b.lean`): one value `vkind57b` accepts (`VK57b`,
+`vkind57b_spec`: `DMB $k`, `PRFM 0(Rn), $k`, and `FMOVS`/`FMOVD Fs, off(<nc>)`,
+`FSTPS`/`FSTPD (Fa, Fb), off(<nc>)` to a frame variable in a `Blk.local` (G49) or `Blk.temp` (G6)
+block), in `vk55_step`'s form under `G49Env`: its Prog runs, the match and `G3Inv` hold after it
+under the same activation, and the upper-bit table is empty. No run premise. Composed into
+`checkG57` by the slice. `checkObj` does not model `DMB`/`PRFM` yet (object side). Witnesses:
+`genG57b_witness` (`test/gcgort` `main.init.func95.1`: `FSTPS` of `float32(1.5)` into the `temp`
+block of `.autotmp_1`, which G55 rejects) and `genG57b2_witness`
+(`runtime.mallocgcSmallNoscanReuse`: `DMB $14`, which G55 rejects).
+
+## Phase 3: genssa, slice G57, `STPW`, narrow pair loads with an aux, `DMB`, `PRFM`, float stores to frame variables (I7, #553)
+
+`GoFV.Proof.Gen.g57_value`, `g57_initMem`, `g57_term`, `g57_nilPanic`, `g57_boundsPanic`
+(`GoFV/Proof/Gen/G57.lean`): when slice G57 (`checkG57`: G55 with group A's `vkind57a` and then
+group B's `vkind57b` tried when G55 rejects a value, `GoFV/Gen/Check57.lean`) accepts a function,
+they are G55's statements, under `G49Env`, `g57_value` under `G54Pre` (no new premise: the pair
+loads take its `PairPre50` component; `STPW`, `DMB`, `PRFM` and the float stores need none).
+Witness: `genG57_witness` (`main.grow`: `checkG55` rejects it and `checkG57` accepts it; `STPW
+(R2, R3), 8(R0)` of `0x11223344` and `0x55` leaves `0x44` at the struct's address plus 8). Under
+`Addrs.fixed`, a function that accesses two `Blk.local` frame variables has no `VarsAt49`
+instance, so `g57_value` says nothing about it there (group B's note). Coverage on quick-v10
+(`lake exe gen-check`, with the fall-through over no-ops): 7,378 of 9,297 functions (79.35%,
+33 more than G55's 7,345), 235,204 values.
 
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 

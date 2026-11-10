@@ -93,7 +93,10 @@ is the memory, so its write changes nothing), `Copy`, `MOVDconst`, `ADD`, `SUB`,
 ten flags branches and `Z`/`NZ`, every successor laid out; no stack slot, register pair or
 temporary; each register holds values of one width class; destinations not `g`, `R29`, `R30`. The
 output table gives `pcOf b i` = the address of the first Prog of value `i` of block `b` under
-`Link.byId`.
+`Link.byId`. A block falls through to the successor laid out next (no `JMP`) when only no-ops
+(`noop`: pseudo-ops, `HINT $0`) lie between its last Prog and the successor's start (`Cx.falls`,
+`FallAt`; the skip stops at that start, so no-ops leading the successor stay its own); under
+`Link.byId` each no-op has its own address, so `fall_path` runs them (`pstar_noops`).
 
 **Statement** (`GoFV/Proof/Gen/G1.lean`). Premises on the activation (`G1Env lc L ps ret tab E`):
 
@@ -1210,6 +1213,20 @@ changes. New run premises `Pre54a` (the zeroing writes `n` bytes at a valid addr
 zeroing, 54 iterations and a tail of three `STP`s, counter the temporary `R1`; the machine's byte
 at the end of the block, 1 before, is then 0). G54 accepts 7,308 functions (+48 over G53).
 
+**Fall-through over no-ops** (2026-11-10, shared by every slice: `GoFV/Gen/Check.lean`,
+`GoFV/Proof/Gen/Spec.lean`, `G1.lean`). A block whose successor is laid out next fell through
+only when its last Prog ended exactly at the successor's start (`next = some (s, k)`); 14
+functions (sole reason `Prog N: …, expected JMP`) leave no-ops a value did not consume in
+between: argument-liveness `PCDATA $3` (7), inline-mark `NOP` (3) or `HINT $0` (4), e.g.
+`sync/atomic.(*Value).Store`, `runtime.runqempty`, `test/literal main.main`. `Cx.falls` (used by
+`Cx.two` and `Cx.term`'s `Plain` and two-way cases) now accepts `next = some (s, n)` with
+`k ≤ n` and `skipFrom ps k (n - k) = n`: bounded by the successor's start, since a skip to the
+end of the no-ops would run over `PCDATA`/`HINT` leading the successor (`runqempty`,
+`memoryLimitHeapGoal`, `literal`). `TwoAt` and `TermOK.plain` take `FallAt cx next k f` (`next =
+some (f, n)`, `k ≤ n`, every Prog in `[k, n)` a `noop`; `Cx.falls_spec`), and `fall_path` runs
+those Progs by `pstar_noops` (each has its own address `text + 4 id` under `Link.byId`) instead
+of `.refl`. No other statement changed; no run premise. All 14 are accepted (G54: 7,322, §5).
+
 **Slice G55: `VCNT`, `VUADDLV`, `FRINT*`; shifted `NEG`, `CLZW`, `MULL`, `EXTR`**
 (`GoFV/Gen/Check55.lean`, `checkG55 lc ps bstart g`; proven sound, `g55_value`, `g55_initMem`,
 `g55_term`, `g55_nilPanic`, `g55_boundsPanic`, `GoFV/Proof/Gen/G55.lean`). G54 with two groups
@@ -1256,6 +1273,102 @@ Blockers recorded and not taken after G55 (counts among G54's 1,989 rejected fun
   G46. Phase 1 negates the other multiplicand than the machine, and the results differ in a NaN's
   sign (`FArith.lean`). Taking them needs an `FArithPre`-style run premise excluding a NaN
   multiplicand (as `FSameNaN` for `FMADD`), not a checker change.
+
+**Slice G57, group A: `STPW`; narrow pair loads of a global or a frame variable**
+(`Check57a`/`Spec57a`, proof `G57a`, `vkind57a lc g v`, `VK57a`, `vk57a_step`; tried when G55
+rejects a value). The word pair accesses of `ssaGenValue`'s `LDP*`/`STP*` case the earlier
+slices reject, each one Prog with no temporary:
+
+- `STPW [off] p x y mem` (`stpw57`) as `STPW (Rx, Ry), off(Rn)`: G4's `STP` at `n = 4` (`p` in a
+  64-bit register, no aux; sources of classes of at least 32 bits, `ZR` included:
+  `runtime.(*fixalloc).init`'s `STPW (ZR, R1), 40(R0)` stores a `uintptr` source's low word).
+  `runLoc` runs `stPair 4` (`stepLoc_stpw`): `storeBytes 4`, the low word of an integer, at
+  `pairAddr` (`pairAddr_noAuxN`); the machine (`progStep_stpw`, `RunProg`'s pair case with `STPW`'s
+  `n = 4`) stores the low 32 bits of `X kx` at `X kn + off` and of `X ky` 4 bytes above, related by
+  `storeBytes_relN`/`memInj_storeN` at `n = 4` (`g57_stpw`). Sole functions:
+  `examples/structs/main.grow`, `runtime.(*fixalloc).init`.
+- `LDPW`/`LDPSW {x} [off] base mem` with an aux (`ldpw57`), into two distinct X registers G1 may
+  write (`pairTys`), which G50's `ldp50` rejects (`pair load shape`: it asks `v.aux = none`): of a
+  global (`symOf?`, as `LDPW sym+off(SB), (Ra, Rb)`: `runtime.bootstrapRand`'s
+  `runtime.globalRand+328(SB)`, `runtime.vgetrandomGetState`'s `LDPSW
+  runtime.vgetrandomAlloc+40(SB)`) or of a frame variable whose block is `Blk.temp` (G6's
+  `frameVar?`, as `LDPW off'(RSP), (Ra, Rb)` at its `NAME_AUTO` operand: `regexp.makeOnePass`'s
+  `.autotmp_35`, `runtime.(*scavengeIndex).alloc`/`.free`'s `sc`; all three are `Blk.temp`, none
+  takes G49's `Blk.local` path). Proof: G50's `LDPW` (`stepLoc_ldPair`, `lo_loadN` at `n = 4`) at
+  G22's address of the global's block (`pairAddr_globN`, `G2Env.glob`; `g57_ldpwGlob`) or at G6's
+  address of the variable's `temp` block (`pairAddr_varN`, `var_addr`; `g57_ldpwVar`); the machine
+  (`step_ldpw57`) loads at the operand's address (`ctx_mem_glob`, `ctx_mem_slot`).
+
+`vk57a_step` is in `vk55_step`'s form (`G49Env` gives the globals' addresses, the variables'
+places and `FrameOK`). No new run premise: the pair loads read valid bytes at both addresses by
+G50's `PairPre50`, which already states it for every `pairOp50` op, with or without an aux (part
+of `G54Pre`); `STPW` needs none (`runLoc`'s store succeeded). The upper-bit table is empty after
+each (`uStep35_57a`); `ops57a_facts` (no `Phi`, nil check, bounds check or entry value) and
+`vkind57a_none` (off `op57a`) serve the composition. Witness `genG57a_witness`
+(`examples/structs/main.grow`: `v12 = STPW [8] v7 v37 v44 v31`, `STPW (R2, R3), 8(R0)`; from
+`x = 0x11223344` in `R2` with a nonzero upper half on the machine, `vk57a_step` relates the run to
+a machine memory holding `0x44` at `heap 1 + 8`; `checkG55` rejects the function, and the block
+walk with `vkind57a` tried after `vkind55` places `v12` at Prog 15) and `genG57a2_witness`
+(`runtime.bootstrapRand`: `v46 = LDPW {runtime.globalRand} [328] v3 v76`, `LDPW
+runtime.globalRand+328(SB), (R1, R2)`; from the global's bytes 328 to 335 `1, …, 8`, `R1 =
+0x04030201` and `X1`'s low word the same after Prog 17, under an activation with the function's
+home slot at its frame operand; `PairPre50` holds there).
+
+**Slice G57, group B: `DMB`, `PRFM`, float stores to frame variables** (`Check57b`/`Spec57b`, proof
+`G57b`, `vkind57b`, `VK57b`, `vk57b_step`; tried when G55 rejects a value, composed into G57 with
+group A). Each value is one Prog with no temporary:
+
+- `DMB [k] mem` (`PubBarrier`) as `DMB $k` (`dmbShape`), and `PRFM [k] addr mem`
+  (`PrefetchCache*`) as `PRFM 0(Rn), $k` (`prfmShape`, `Rn` the register of `addr`), a memory with
+  no home. Phase 1 (`arm64Op`) returns the memory unchanged and ignores `PRFM`'s address, so the
+  state stays (`stepLoc_dmb57`, `stepLoc_prfm57`); `progEffect`'s `DMB`/`PRFM` arm has no effect
+  (`progStep_barrier57`), and the machine of `GoFV/Arm64/Exec.lean` runs barriers and `PRFM` as
+  no-ops. `checkObj` (`GoFV/Asm/CheckObj.lean`, `CheckObjSym.lean`'s `throw "PRFM"`) does not
+  model either Prog yet: the whole-function composition (`GoFV/Proof/Obj`) of a function with one
+  waits for that object-side step.
+- `FMOVSstore`/`FMOVDstore [off] {x} SP val mem` as `FMOVS`/`FMOVD Fs, off(<nc>)` and
+  `FSTPS`/`FSTPD [off] {x} SP a b mem` as `FSTPS`/`FSTPD (Fa, Fb), off(<nc>)` (`fstpOf`,
+  `fstpAs`), floats of the op's width, of a frame variable `x` at its operand (`fvar57?`: G49's
+  `frameVar49?`, a `Blk.local` block at `NAME_PARAM` or `NAME_AUTO`, else G6's `frameVar?`, a
+  `Blk.temp` block at `NAME_AUTO`; `FVar57`). Both blocks are at `SP + frameOff` under the
+  injection (`VarsAt49` or G6's `VarsAt`, `varAt57`, `VarAt57`); `runLoc` writes the floats' raw
+  bits (`stepLoc_fstore`, `stPair` in `stepLoc_fstp57`), the machine the low bytes of the V
+  registers at the frame operand (`progStep_fstoreAt`, `progStep_fstp57`), related as G44's float
+  stores (`g57_fstore`, `g57_fstp` after `g49_store`/`g49_stp`).
+
+No run premise (a `poison` float stores `poison` bytes on both sides); the upper-bit table is empty
+after each value (`uStep35_57b`). `vk57b_step` has `vk55_step`'s form (under `G49Env`, the same
+activation after the value). The witnesses use `vk57b_step` directly (a hand PC table, `G49Env`
+built from compiled facts, written before `checkG57`): `genG57b_witness` (`test/gcgort`'s
+`main.init.func95.1`: `FSTPS (F0, F0), .autotmp_1-8(AUTO)` of `float32(1.5)` into a `temp`
+block, which `vkind55` rejects; G55 also rejects the function's `LoweredRound32F`) and
+`genG57b2_witness` (`runtime.mallocgcSmallNoscanReuse`: `DMB $14`, its only value G55 rejects;
+`stepLoc` returns the same state). The frame-variable witness is a `temp` block: under
+`Addrs.fixed` two accessed `Blk.local` variables (as `fandbits`'s `x` and `y`) cannot both sit at
+`SP + frameOff` (`AddrAgree` pins them `2^24` apart), so `VarsAt49` has no instance there.
+
+**Slice G57: groups A and B composed** (`GoFV/Gen/Check57.lean`, `checkG57 lc ps bstart g`; proven
+sound, `g57_value`, `g57_initMem`, `g57_term`, `g57_nilPanic`, `g57_boundsPanic`,
+`GoFV/Proof/Gen/G57.lean`). G55 with group A (`vkind57a lc g v`) and then group B
+(`vkind57b lc g v`) tried when G55 rejects a value (`vkind57`; G55's reason is kept for the other
+values). `VK57` (`Spec57.lean`) has a case for G55's kinds and one for each group, each with no
+temporary; `vk57_step` is `vk55_step`'s statement, by `vk55_step`, `vk57a_step` (with `G54Pre`'s
+`PairPre50` component) and `vk57b_step`; `vk57_nil`/`vk57_pb` use `ops57a_facts`/`ops57b_facts`,
+and `g57L_*` are `g55L_*` with `checkG57L_spec`, `vkind57_spec` and `vkind57_initMem`. No new
+premise: `g57_value` takes `G54Pre`. Witness `genG57_witness` (`GenG57.lean`, on `GenG57a`'s
+`main.grow` and states): `checkG55` rejects the function and `checkG57` accepts it with the block
+walk's tables, and `g57_value` relates `v12`'s run to a machine memory holding `0x44` at `A + 8`.
+G57 accepts 7,378 functions (+33 over G55's 7,345 with the fall-through over no-ops, §5): 4 with
+group A's ops (`main.grow`, `runtime.(*fixalloc).init`, `runtime.bootstrapRand`,
+`runtime.vgetrandomGetState`) and 29 with group B's (12 `fmin`/`fmax` instances and
+`fandbits`/`forbits`' 4, `FMOVS`/`FMOVDstore` to a parameter; 6 `test/gcgort` closures,
+`ken_cplx4`'s `doprint`, `generics`' and `complit`'s `main`; `DMB` in
+`mallocgcSmallNoscanReuse` and `(*mspan).userArenaNextFree`, `PRFM` in `scanObject` and
+`scanObjectSmall`). As group B notes, under `Addrs.fixed` a function that accesses two
+`Blk.local` variables (as `fandbits`) has no `VarsAt49` instance, so `g57_value` says nothing
+about it there. The sole reasons left are led by `op LoweredGetCallerPC` (26),
+`MOVDnop/MOVDreg: upper bits unknown` (25), `block kind JUMPTABLE` (19) and `block kind Defer`
+(13); 6 functions are left with `pair load shape` alone and 1 with `pair store shape` alone.
 
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
@@ -1352,9 +1465,15 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G53 | 7,260 (78.08%) | 227,056 |
 | G54 | 7,308 (78.60%) | 231,647 |
 | G55 | 7,331 (78.85%) | 232,869 |
+| G57 | 7,378 (79.35%) | 235,204 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
+
+(The rows G1 to G55 were measured before the fall-through over no-ops (§4, after G54;
+`Cx.falls`), which every slice shares: re-measured with it, G3 accepts 1,612, G10 3,150, G20
+4,330, G30 5,369, G40 6,482, G50 6,921, G53 7,274, G54 7,322 (78.75%, +14; 232,417 values) and
+G55 7,345 (79.00%; 233,639 values).)
 
 (On quick-v9, before the G2 validator was tightened for the proof — call arguments and results in
 `R0`–`R15`, `SelectN`'s component class, 64-bit `MOVDaddr` and spill shapes — G2 accepted 1,211.)
@@ -1384,7 +1503,8 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   address of an access (`addr_rel`), the 8-byte load (`lo_load`) and store (`memInj_store`, which
   keeps `MemInj` with no pointer words and `KeysNodup`).
 - `Spec.lean`: what `checkG1` accepted (`checkG1_spec`, `Cx.blocks_spec`, `Cx.values_spec`,
-  `Cx.term_spec`, `vkind_spec` with the per-op facts `VK`).
+  `Cx.term_spec` with `TermOK`/`TwoAt`/`FallAt`, `Cx.falls_spec`, `vkind_spec` with the per-op
+  facts `VK`).
 - `Loc.lean`, `Step.lean`: `stepLoc` per op (`stepLoc_pure`, `stepLoc_copy`,
   `stepLoc_makeResult`, `stepLoc_load`, `stepLoc_store`, …).
 - `G1.lean`: the steps on the ID layout (`pstar_noops`, `pstar_oneAt`), one lemma per value kind
@@ -1717,6 +1837,11 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `vk55b_op`); `G55b.lean`: `AluOp55b`, `aluOp55b_facts`, `stepLoc_alu55b`, `progStep_negSh55b`,
   `progStep_clzw55b`, `progStep_smull55b`, `progStep_extr55b`, `lo_negSh55b`, `lo_clzw55b`,
   `lo_mull55b`, `lo_extr55b`, `g55b_negSh`, `g55b_clzw`, `g55b_mull`, `g55b_extr`, `vk55b_step`.
+- `Spec57a.lean`/`G57a.lean` (group A: `VK57a`, `vkind57a_spec`, `ops57a_facts`, `vk57a_step`),
+  `Spec57b.lean`/`G57b.lean` (group B: `VK57b`, `vkind57b_spec`, `ops57b_facts`, `vk57b_step`);
+  `Spec57.lean`: `VK57`, `vkind57_spec`, `vkind57_initMem`, `checkG33_of_57L`, `checkG57L_spec`,
+  `checkG57_spec`; `G57.lean`: `vk57_step`, `vk57_nil`, `vk57_pb`, `g57L_value` … `g57L_term`,
+  `g57_value`, `g57_initMem`, `g57_nilPanic`, `g57_boundsPanic`, `g57_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a

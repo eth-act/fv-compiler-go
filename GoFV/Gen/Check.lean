@@ -30,11 +30,12 @@ its terminator. It accepts a function when
   `MOVDstore` (`MOVD Rs, off(Rn)`) without a symbol (`vkind`), each emitting that Prog after
   any pseudo-ops (`Prog.isSkip`); the arguments of the arithmetic are at least as wide as the
   result, compares and addresses read 64-bit registers, a stored value is 64-bit or boolean;
-* every block is `Plain` (nothing when it falls through to its successor, else `JMP`), `Ret`
+* every block is `Plain` (only no-ops when it falls through to its successor, else `JMP`), `Ret`
   (`RET`), a two-way flags branch (`EQ`, `NE`, `LT`, `LE`, `GT`, `GE`, `ULT`, `ULE`, `UGT`,
   `UGE`) or a register test (`Z`, `NZ`: `CBZ`, `CBNZ` on a 64-bit or boolean register) emitted as
   `ssaGenBlock` does: a conditional branch (the condition or its inverse) and the fall-through
-  to the next block's start, or a conditional branch and a `JMP`; every successor is laid out;
+  to the next block's start (over no-ops only, `Cx.falls`), or a conditional branch and a `JMP`;
+  every successor is laid out;
 * destination registers are neither `g` (`R28`), `R29` nor `R30`; Prog IDs are distinct and
   below `2^32`.
 
@@ -328,16 +329,24 @@ def Cx.one (cx : Cx) (j : Nat) (sh : Shape) : Except String Nat := do
   unless sh.ok p do throw s!"Prog {p.id}: {p.as.name}, expected {sh.as.name}"
   return k + 1
 
+/-- Whether the Progs from index `k` fall through to block `s`: `s` is laid out next (`next`,
+starting at index `n`) and only no-ops lie between, `k ≤ n` and `ps[k:n]` all `noop` (argument
+liveness PCDATA, inline-mark NOP/`HINT $0` that no value consumed). Bounded by `n`, so no-ops
+leading `s` itself are not skipped past. -/
+def Cx.falls (cx : Cx) (next : Option (ID × Nat)) (k : Nat) (s : ID) : Bool :=
+  match next with
+  | some (s', n) => s == s' && decide (k ≤ n) && skipFrom cx.ps k (n - k) == n
+  | none => false
+
 /-- A branch of shape `br` to `t` from index `j`, then the fall-through to `f` (laid out next,
-`next`) or a `JMP` to `f` (`Cx.term`'s two-way case). -/
+`next`, `Cx.falls`) or a `JMP` to `f` (`Cx.term`'s two-way case). -/
 def Cx.two (cx : Cx) (j : Nat) (next : Option (ID × Nat)) (br : Shape) (t f : ID) :
     Except String Unit := do
-  let falls (k : Nat) (s : ID) : Bool := next == some (s, k)
   let tgt (s : ID) : Except String Addr := do
     let some id := cx.bstart s | throw s!"b{s}: no start"
     return brA id
   let k ← cx.one j { br with to := ← tgt t }
-  unless falls k f do
+  unless cx.falls next k f do
     let _ ← cx.one k { as := .JMP, to := ← tgt f }
 
 /-- The values of a block from index `j`: the start index of each and the index after them.
@@ -359,21 +368,20 @@ def Cx.values (cx : Cx) (entry : Bool) : List ID → Nat → Bool → Except Str
 /-- The terminator of `b` from index `j`; `stop`: where the next block starts, if one is laid out
 after `b`. -/
 def Cx.term (cx : Cx) (b : Block) (j : Nat) (next : Option (ID × Nat)) : Except String Unit := do
-  let falls (k : Nat) (s : ID) : Bool := next == some (s, k)
   let tgt (s : ID) : Except String Addr := do
     let some id := cx.bstart s | throw s!"b{s}: no start"
     return brA id
   -- a branch to `t` and either the fall-through or a jump to `f`
   let two (br : Shape) (t f : ID) : Except String Unit := do
     let k ← cx.one j { br with to := ← tgt t }
-    unless falls k f do
+    unless cx.falls next k f do
       let _ ← cx.one k { as := .JMP, to := ← tgt f }
   unless b.succs.all (cx.lc.ctx.f.blocks.contains ·.b) do throw s!"b{b.id}: successor not laid out"
   match b.kind with
   | .Plain =>
     let some e := b.succs[0]? | throw s!"b{b.id}: no successor"
     unless b.succs.size == 1 && b.controls.isEmpty do throw s!"b{b.id}: plain shape"
-    unless falls j e.b do
+    unless cx.falls next j e.b do
       let _ ← cx.one j { as := .JMP, to := ← tgt e.b }
   | .Ret =>
     unless b.controls.size == 1 && b.succs.isEmpty do throw s!"b{b.id}: ret shape"
