@@ -1077,6 +1077,8 @@ import GoFV.Proof.Witness.NotIf
 import GoFV.Proof.Witness.ObjBarrier
 import GoFV.Proof.Witness.ObjEndToEnd
 import GoFV.Proof.Witness.ObjEndToEndAtSP
+import GoFV.Proof.Witness.ObjEndToEndAtSPS
+import GoFV.Proof.Witness.ObjEndToEndS
 import GoFV.Proof.Witness.ObjEntry49
 import GoFV.Proof.Witness.ObjFrame
 import GoFV.Proof.Witness.ObjG7
@@ -1086,6 +1088,7 @@ import GoFV.Proof.Witness.ObjPanic
 import GoFV.Proof.Witness.ObjRo
 import GoFV.Proof.Witness.ObjWhole
 import GoFV.Proof.Witness.ObjWholeNL
+import GoFV.Proof.Witness.ObjWholeS
 import GoFV.Proof.Witness.OutSP
 import GoFV.Proof.Witness.PairL
 import GoFV.Proof.Witness.PhiConst

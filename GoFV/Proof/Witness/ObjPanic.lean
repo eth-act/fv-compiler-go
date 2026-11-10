@@ -88,18 +88,16 @@ def memI : Mem :=
 /-- The machine memory: 0. -/
 def mm : Memory := fun _ => 0
 
-/-- The activation: frameless, in G48's mode (`outSP`) with `SP = ObjWhole.spO` (the fixed base of
-`outargs 0`), `g = 0x9000`, `LR = 0x40`, `FP = SP - 8`. -/
+/-- The activation: frameless, `SP = 0x7fff0000`, `g = 0x9000`, `LR = 0x40`, `FP = SP - 8`. -/
 def E0 (lc : LocCtx) : MatchEnv :=
-  { lc, ι := ObjWhole.ι, sp := ObjWhole.spO, slot := fun _ => none, g := 0x9000, lr := 0x40,
-    fp := ObjWhole.spO - 8, framed := false, pcOf := pcOfTab GenG2.text ps.toList GenG7.tab,
-    outSP := true }
+  { lc, ι := ObjWhole.ι, sp := 0x7fff0000, slot := fun _ => none, g := 0x9000, lr := 0x40,
+    fp := 0x7fff0000 - 8, framed := false, pcOf := pcOfTab GenG2.text ps.toList GenG7.tab }
 
 /-- The machine at the function's entry: `X0 = 0`. -/
 def s0 : MState :=
-  { x := fun k => if k = 28 then 0x9000 else if k = 29 then ObjWhole.spO - 8
+  { x := fun k => if k = 28 then 0x9000 else if k = 29 then 0x7fff0000 - 8
       else if k = 30 then 0x40 else 0,
-    sp := ObjWhole.spO, v := fun _ => 0, nzcv := ⟨false, false, false, false⟩, pc := ObjG7.base,
+    sp := 0x7fff0000, v := fun _ => 0, nzcv := ⟨false, false, false, false⟩, pc := ObjG7.base,
     mem := mm }
 
 /-- The 64-bit integer 0. -/
@@ -201,7 +199,7 @@ tables; no frame variable, home slot, static or indirect call, write barrier or 
 entry is `b2`, whose value 2 is the nil check `v6`; the entry values run from `runLoc`'s first
 state on the nil receiver to `R0 = 0` and the frame memory, where `R0` has class 64, no upper-bit
 fact is carried (`uL35`) and `v6` panics with `nilDeref`; the whole run panics with `nilDeref`;
-`entryStoresOK` holds (no pending window); the activation is 0. -/
+`entryStoresOK` holds (no pending window); it does not need G48's mode (`needs48`). -/
 def lcFacts (lc : LocCtx) : Bool :=
   (checkG60L lc ps GenG7.bs GenG7.g).toOption == some (GenG7.tab, GenG7.kt) &&
     (accessedVars lc).isEmpty && (homeSlots lc).isEmpty && GenG2.noCalls lc &&
@@ -216,7 +214,7 @@ def lcFacts (lc : LocCtx) : Bool :=
     isNilPanicked (runLoopLoc GoFV.Proof.Witness.plRunEnv lc 4
       (locInit GoFV.Proof.Witness.plRunEnv lc args {}) lc.ctx.f.entry) &&
     ObjWhole.noMemEq lc && (uL35 lc [] (blk lc) 2).isEmpty && entryStoresOK lc GenG7.g 2 &&
-    (constRo (symNames GenG7.g)).isEmpty && lc.ctx.act == 0
+    (constRo (symNames GenG7.g)).isEmpty && !needs48 lc
 
 theorem panic_lc_facts : lcFacts GenG7.lc = true := by
   native_decide
@@ -261,7 +259,7 @@ theorem memInj : MemInj ObjWhole.ι memI mm where
       | 0, _ | 1, _ | 2, _ | 3, _ | 4, _ | 5, _ | 6, _ | 7, _ => trivial
 
 theorem sep {lc : LocCtx} (hk : (memI.blocks.toList.map (·.1)).Nodup) :
-    KeysNodup memI ∧ SepFromW ObjWhole.ι (StkAt (E0 lc)) memI := by
+    KeysNodup memI ∧ SepFrom ObjWhole.ι (StkAt (E0 lc)) memI := by
   refine ⟨hk, fun b al a _ _ y hy => ?_⟩
   rcases hy with ⟨h, -⟩ | ⟨k, off, h, -⟩ <;> cases h
 
@@ -302,8 +300,8 @@ theorem g49Env {lc : LocCtx}
         simp [hop] at h2
       slot := fun k hk => by simp [List.isEmpty_iff.1 hsl] at hk
       extra := by decide
-      frame := ⟨show 4096 + 8 ≤ ObjWhole.spO.toNat by decide,
-        show ObjWhole.spO.toNat + 8 ≤ 2 ^ 64 by decide, fun k off h => by cases h⟩ }
+      frame := ⟨show 4096 + 8 ≤ (0x7fff0000 : BitVec 64).toNat by decide,
+        show (0x7fff0000 : BitVec 64).toNat + 8 ≤ 2 ^ 64 by decide, fun k off h => by cases h⟩ }
   exact
     { env := {
         env := {
@@ -354,7 +352,7 @@ theorem panic_of {lc : LocCtx} (hf : lcFacts lc = true) :
     { pc := rfl, spAlign := by decide, room := by decide, lrOutside := hr40,
       gOutside := by decide, fp := by decide }
   have hEE : EntryEnv (E0 lc) L ps.toList ObjG7.gTab.autosize s0 :=
-    { sp := by rw [haz]; show ObjWhole.spO + BitVec.ofInt 64 0 = ObjWhole.spO; decide
+    { sp := by rw [haz]; show (0x7fff0000 : BitVec 64) + BitVec.ofInt 64 0 = 0x7fff0000; decide
       g := rfl
       lr := rfl
       fp := rfl
@@ -366,9 +364,10 @@ theorem panic_of {lc : LocCtx} (hf : lcFacts lc = true) :
         exact hnp p hp h }
   -- the `runLoc` side
   have hlf := hf
-  simp only [lcFacts, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem] at hlf
+  simp only [lcFacts, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem,
+    Bool.not_eq_true'] at hlf
   obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hres, hav⟩, hsl⟩, hnc⟩, hwi⟩, hentry⟩, hbm⟩, hbs⟩, hv6s⟩, hi2⟩,
-    hop⟩, hsz⟩, hpre⟩, hk0⟩, hrunP⟩, hme⟩, hu⟩, hes⟩, hcr⟩, hact⟩ := hlf
+    hop⟩, hsz⟩, hpre⟩, hk0⟩, hrunP⟩, hme⟩, hu⟩, hes⟩, hcr⟩, hn48⟩ := hlf
   have hc : checkG60L lc ps GenG7.bs GenG7.g = .ok (GenG7.tab, GenG7.kt) := by
     revert hres; cases checkG60L lc ps GenG7.bs GenG7.g <;> simp [Except.toOption]
   have hb2 : lc.ctx.f.block? 2 = some (blk lc) := by
@@ -435,7 +434,7 @@ theorem panic_of {lc : LocCtx} (hf : lcFacts lc = true) :
       flags := hflags
       slots := hslots
       mem := ⟨memI, hmem, mm, memInj, fun _ _ => rfl⟩ }
-  have hinv : G3Inv (E0 lc) lc (kAt lc GenG7.kt lc.ctx.f.entry (blk lc) 2) sI true :=
+  have hinv : G3Inv (E0 lc) lc (kAt lc GenG7.kt lc.ctx.f.entry (blk lc) 2) sI :=
     { core := by
         refine ⟨fun r v c hr hv hcl => ?_, memI, hmem, sep hkeys⟩
         by_cases h0 : r = 0
@@ -446,13 +445,6 @@ theorem panic_of {lc : LocCtx} (hf : lcFacts lc = true) :
           rfl
         · rw [(hregs r v hv).2 h0]; trivial
       slots := by intro k v h; rw [hslots] at h; cases h }
-  have hspI : SPInv (E0 lc) sI := by
-    refine fun _ => ⟨?_, fun x hx => ?_⟩
-    · show ObjWhole.ι (.outargs lc.ctx.act) = some ObjWhole.spO
-      rw [hact]
-      rfl
-    · rw [(hregs spReg x hx).2 (by decide)]
-      trivial
   refine ⟨mm', hrun, ?_⟩
   have hnone := Option.isNone_iff_eq_none.1 hchk
   obtain ⟨e', n, t', he, hn⟩ := obj_whole_panic (H := GenG2.H0) hc hO (hookMap_retLR fun _ => rfl)
@@ -461,8 +453,9 @@ theorem panic_of {lc : LocCtx} (hf : lcFacts lc = true) :
     (fun _ _ _ h => by rw [hnone] at h; cases h)
     (g49Env hc hav hsl hnc hwi hme hend hso) hEE hb2 hbm (by omega) (by exact rfl) hsI hes
     hent
-    (fun _ _ _ h => by rw [hnone] at h; cases h) hinv (fun _ => rfl) (fun _ => hspI) hu' hpc hP
-    (roRun_nil (List.isEmpty_iff.1 hcr)) hPP hrun
+    (fun _ _ _ h => by rw [hnone] at h; cases h) hinv (fun h => by cases h)
+    (fun h => by rw [hn48] at h; cases h) (fun h => by cases h) hu' hpc hP.m
+    (roRun_nil (List.isEmpty_iff.1 hcr)) hPP.m hrun
   rcases he with rfl | ⟨k, x, y, h, -⟩
   · exact ⟨n, t', hn⟩
   · cases h
@@ -491,7 +484,7 @@ with `nilDeref` from `GenG9.s0 5` in `envP`. -/
 def callFacts : Bool :=
   (checkG60L GenG9.lc GenG9.ps GenG9.bs GenG9.g).toOption == some (GenG9.tab, GenG9.kt) &&
     ObjWhole.noWbICall GenG9.lc &&
-    isNilPanic (stepLoc envP GenG9.lc (GenG9.s0 5) (GenG9.val 8))
+    isNilPanic (stepLoc envP GenG9.lc (GenG9.s0 5) (GenG9.val 8)) && !needs48 GenG9.lc
 
 theorem callPanic_facts : callFacts = true := by
   native_decide
@@ -505,30 +498,23 @@ theorem g28Env9 (hc : checkG9 GenG9.lc GenG9.ps GenG9.bs GenG9.g = .ok (GenG9.ta
              icalls := fun _ _ _ hv => (ObjWhole.noWbICall_spec hwi hv).2 }
     memeqs := fun h => by cases h }
 
-/-- `G3Inv` in G48's mode from `G3Inv` (`SepFrom` gives `SepFromW`). -/
-theorem inv_w {E : MatchEnv} {lc : LocCtx} {K : KMap} {s : LocState} (h : G3Inv E lc K s) :
-    G3Inv E lc K s true := by
-  obtain ⟨⟨hr, mm, hm, hk, hs⟩, hsl⟩ := h
-  exact ⟨⟨hr, mm, hm, hk, SepAt.of_sep hs⟩, hsl⟩
-
-/-- **A static call whose callee panics** (`g60_callPanic` on `fint64to32`, in G48's mode):
-`runLoc`'s step of
+/-- **A static call whose callee panics** (`g60_callPanic` on `fint64to32`): `runLoc`'s step of
 `v8` panics with `nilDeref` (the callee's panic), and from the `LocMatch`ed machine state before it
 the P0 Progs run through the `CALL` to the callee's symbol, where `runProg` panics with
-`nilDeref` (the hook `Hp`, `CallPanicOKS`). -/
+`nilDeref` (the hook `Hp`, `CallPanicOK`). -/
 theorem g60_callPanic_witness :
     ∃ mm', stepLoc envP GenG9.lc (GenG9.s0 5) (GenG9.val 8) = .panic .nilDeref mm' ∧
       ∃ m', PStar Hp GenG9.L GenG9.ps.toList 0 (GenG9.m0 5) m' ∧
         PPanics Hp GenG9.L GenG9.ps.toList 0 m' .nilDeref := by
   have hf := callPanic_facts
-  simp only [callFacts, Bool.and_eq_true, beq_iff_eq] at hf
-  obtain ⟨⟨hres, hwi⟩, hpan⟩ := hf
+  simp only [callFacts, Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at hf
+  obtain ⟨⟨⟨hres, hwi⟩, hpan⟩, hn48⟩ := hf
   obtain ⟨mm', hpan⟩ := isNilPanic_spec hpan
   have hc : checkG60L GenG9.lc GenG9.ps GenG9.bs GenG9.g = .ok (GenG9.tab, GenG9.kt) := by
     revert hres; cases checkG60L GenG9.lc GenG9.ps GenG9.bs GenG9.g <;> simp [Except.toOption]
   obtain ⟨hc9, hav, hsl, hm1, hb, hv8, -, -, hi2, -, -, hop8, -, -, -, hk0, -⟩ := GenG9.facts
-  refine ⟨mm', hpan, g60_callPanic (osp := true) hc (g28Env9 hc9 hav hsl hwi) hm1 hb hi2 hv8 hop8
-    (GenG9.locMatch0 5) (inv_w (GenG9.g9Inv0 5 hk0)) ?_ (fun _ => rfl)⟩
+  refine ⟨mm', hpan, g60_callPanic hc (g28Env9 hc9 hav hsl hwi) hm1 hb hi2 hv8 hop8
+    (GenG9.locMatch0 5) (GenG9.g9Inv0 5 hk0) ?_ (fun h => by rw [hn48] at h; cases h)⟩
   intro _ _ _ _ _ _ _ _ _ m₁ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
   exact ⟨m₁, rfl⟩
 
@@ -602,8 +588,8 @@ def mN : MState :=
     pc := GenG21.E.pcOf 2 2, mem := GenG21.MH }
 
 /-- What compiled evaluation checks on `(*queueOnePass).next`: `checkG60L` accepts it with
-`checkG21`'s tables; `b2` holds `v31 = MOVWstore` at index 2, `R0` has class 64 there; `v31`
-panics with `nilDeref` from `sN`, and its base is no `SP` (`spArg`). -/
+`checkG21`'s tables; `b2` holds `v31 = MOVWstore` at index 2, `R0` has class 64 there; and `v31`
+panics with `nilDeref` from `sN`. -/
 def storeFacts : Bool :=
   (checkG60L GenG21.lc GenG21.ps GenG21.bs GenG21.g).toOption == some (GenG21.tab, GenG21.kt) &&
     GenG21.lc.ctx.f.blocks.toList.contains 2 && (GenG21.lc.ctx.f.block? 2).isSome &&
@@ -611,7 +597,7 @@ def storeFacts : Bool :=
     (GenG21.val 31).op == .ARM64MOVWstore &&
     (kAt GenG21.lc GenG21.kt 2 blk2 2).get 0 == some 64 &&
     isNilPanic (stepLoc GenG2.env GenG21.lc sN (GenG21.val 31)) &&
-    !spArg GenG21.lc (GenG21.val 31)
+    !take48 GenG21.lc (GenG21.val 31)
 
 theorem storePanic_facts : storeFacts = true := by
   native_decide
@@ -692,12 +678,11 @@ def mL : MState :=
     sp := GenG2.sp0, v := fun _ => 0, nzcv := ⟨false, false, false, false⟩,
     pc := GenG21.E.pcOf 1 5, mem := GenG21.MH }
 
-/-- `v13` is `MOVWUload` and panics with `nilDeref` from `sN` (a nil `q` in `R0`); its base is no
-`SP` (`spArg`). -/
+/-- `v13` is `MOVWUload` and panics with `nilDeref` from `sN` (a nil `q` in `R0`). -/
 def loadFacts : Bool :=
   (GenG21.val 13).op == .ARM64MOVWUload &&
     isNilPanic (stepLoc GenG2.env GenG21.lc sN (GenG21.val 13)) &&
-    !spArg GenG21.lc (GenG21.val 13)
+    !take48 GenG21.lc (GenG21.val 13)
 
 theorem loadPanic_facts : loadFacts = true := by
   native_decide

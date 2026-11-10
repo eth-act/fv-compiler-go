@@ -24,9 +24,7 @@ From `runLoc`'s first state on the argument `p = 7` in the Phase 1 test environm
 (`locInit`: the frame memory holds the environment's globals `main.g` and `runtime.writeBarrier`,
 `p`'s image and the result slot), the entry values `v6 = ArgIntReg` (`R0`) and `v1 = InitMem` run to
 `sI`; the run then takes `b1`'s bit test to `b2`, runs `v19 = ANDconst`, `v22 = MakeResult` and
-returns `7`. The machine starts at the function's entry `base` (`MachEntry`:
-`SP = 0x4000000000000000`, the `outargs` block's fixed base, as G48's mode asks of a lowered
-function (`SPInv`),
+returns `7`. The machine starts at the function's entry `base` (`MachEntry`: `SP = 0x7fff0000`,
 `X0 = 7`, `g = 0x9000`, the caller's `LR = 0x40` outside the code, `R29 = SP - 8`, `p`'s image at
 its Phase 1 address, the globals' zero bytes at `0x30000000` and `0x30000010`). `obj_whole_ret`
 gives a `runMach` of the linked words that returns to `0x40` (`MachRet`) with the result `7` in
@@ -82,21 +80,17 @@ def pAddr : BitVec 64 := 0x4000000003000000
 /-- The machine memory: `p`'s image (7) at its address. -/
 def mm : Memory := fun a => if a = pAddr then 7 else 0
 
-/-- The machine's `SP`: the fixed base of `outargs 0`. -/
-def spO : BitVec 64 := 0x4000000000000000
-
-/-- The activation of `runLoc`'s context `lc`: frameless, in G48's mode (`outSP`) with
-`SP = spO`, `g = 0x9000`, `LR = 0x40`, `FP = SP - 8`. -/
+/-- The activation of `runLoc`'s context `lc`: frameless, `SP = 0x7fff0000`, `g = 0x9000`,
+`LR = 0x40`, `FP = SP - 8`. -/
 def E0 (lc : LocCtx) : MatchEnv :=
-  { lc, ι, sp := spO, slot := fun _ => none, g := 0x9000, lr := 0x40,
-    fp := spO - 8, framed := false, pcOf := pcOfTab GenG2.text ps.toList GenG3.tab,
-    outSP := true }
+  { lc, ι, sp := 0x7fff0000, slot := fun _ => none, g := 0x9000, lr := 0x40,
+    fp := 0x7fff0000 - 8, framed := false, pcOf := pcOfTab GenG2.text ps.toList GenG3.tab }
 
 /-- The machine at the function's entry. -/
 def s0 : MState :=
-  { x := fun k => if k = 0 then 7 else if k = 28 then 0x9000 else if k = 29 then spO - 8
+  { x := fun k => if k = 0 then 7 else if k = 28 then 0x9000 else if k = 29 then 0x7fff0000 - 8
       else if k = 30 then 0x40 else 0,
-    sp := spO, v := fun _ => 0, nzcv := ⟨false, false, false, false⟩, pc := ObjG7.base,
+    sp := 0x7fff0000, v := fun _ => 0, nzcv := ⟨false, false, false, false⟩, pc := ObjG7.base,
     mem := mm }
 
 /-! ## Checks on states -/
@@ -236,8 +230,8 @@ the ABI's); no frame variable, home slot, static or indirect call, write barrier
 `p = 7` to `R0 = 7` and the frame memory; `R0` has class 64 after them and no upper-bit fact is
 carried (`uL35`); simple ops from there on (`simpleFrom`); `entryStoresOK` holds (no pending
 window: no frame variable is accessed); `memTyL` accepts it and its Progs load no float
-constant symbol (`constRo` of `GenG3.g`'s names is empty); the activation is 0 and the function is
-lowered. -/
+constant symbol (`constRo` of `GenG3.g`'s names is empty); it does not need G48's mode
+(`needs48`). -/
 def lcFacts (env : Env) (lc : LocCtx) : Bool :=
   (checkG60L lc ps GenG3.bs GenG3.g).toOption == some (GenG3.tab, GenG3.kt) &&
     retRegsOK lc GenG3.kt && ownOutRegs lc == [0] &&
@@ -248,13 +242,18 @@ def lcFacts (env : Env) (lc : LocCtx) : Bool :=
       sIIs &&
     (kAt lc GenG3.kt 1 (blkOf lc) 2).get 0 == some 64 && simpleFrom lc.ctx.f 1 2 &&
     noMemEq lc && (uL35 lc [] (blkOf lc) 2).isEmpty && entryStoresOK lc GenG3.g 2 &&
-    memTyL lc && (constRo (symNames GenG3.g)).isEmpty && lc.ctx.act == 0 && lc.ctx.f.lowered
+    memTyL lc && (constRo (symNames GenG3.g)).isEmpty && !needs48 lc
 
 /-- The read-only premises `lcFacts` checks: `memTyL`, and no float constant symbol. -/
 theorem lc_ro {env : Env} {lc : LocCtx} (hf : lcFacts env lc = true) :
     memTyL lc = true ∧ constRo (symNames GenG3.g) = [] := by
   simp only [lcFacts, Bool.and_eq_true, List.isEmpty_iff] at hf
-  exact ⟨hf.1.1.1.2, hf.1.1.2⟩
+  exact ⟨hf.1.1.2, hf.1.2⟩
+
+/-- The function does not need G48's mode. -/
+theorem lc_n48 {env : Env} {lc : LocCtx} (hf : lcFacts env lc = true) : needs48 lc = false := by
+  simp only [lcFacts, Bool.and_eq_true, Bool.not_eq_true'] at hf
+  exact hf.2
 
 /-! ## The activation -/
 
@@ -304,7 +303,7 @@ theorem memInj : MemInj ι memI mm where
       | 0, _ | 1, _ | 2, _ | 3, _ | 4, _ | 5, _ | 6, _ | 7, _ => trivial
 
 theorem sep {lc : LocCtx} (hk : (memI.blocks.toList.map (·.1)).Nodup) :
-    KeysNodup memI ∧ SepFromW ι (StkAt (E0 lc)) memI := by
+    KeysNodup memI ∧ SepFrom ι (StkAt (E0 lc)) memI := by
   refine ⟨hk, fun b al a _ _ y hy => ?_⟩
   rcases hy with ⟨h, -⟩ | ⟨k, off, h, -⟩ <;> cases h
 
@@ -343,8 +342,8 @@ theorem g49Env {lc : LocCtx} (hc : checkG60L lc ps GenG3.bs GenG3.g = .ok (GenG3
         simp [hop] at h2
       slot := fun k hk => by simp [List.isEmpty_iff.1 hsl] at hk
       extra := by decide
-      frame := ⟨show 4096 + 8 ≤ spO.toNat by decide, show spO.toNat + 8 ≤ 2 ^ 64 by decide,
-        fun k off h => by cases h⟩ }
+      frame := ⟨show 4096 + 8 ≤ (0x7fff0000 : BitVec 64).toNat by decide,
+        show (0x7fff0000 : BitVec 64).toNat + 8 ≤ 2 ^ 64 by decide, fun k off h => by cases h⟩ }
   exact
     { env := {
         env := {
@@ -390,7 +389,7 @@ theorem obj_premises :
     Option.isNone_iff_eq_none.1 hchk,
     hend, fun lc => ?_, fun _ => hpc, hkeys, hso, ObjG7.noICall_spec hni L⟩
   exact
-    { sp := by rw [haz]; show spO + BitVec.ofInt 64 0 = spO; decide
+    { sp := by rw [haz]; show (0x7fff0000 : BitVec 64) + BitVec.ofInt 64 0 = 0x7fff0000; decide
       g := rfl
       lr := rfl
       fp := rfl
@@ -412,13 +411,12 @@ theorem lc_premises {env : Env} {lc : LocCtx} (hf : lcFacts env lc = true) :
     entryStoresOK lc GenG3.g 2 = true ∧
     ∃ sI, enterListLoc env lc (locInit env lc args {}) ((blkOf lc).values.toList.take 2) = .ok sI ∧
       EntryMatch (E0 lc) (InWins L (E0 lc).sp (pendWins lc GenG3.g)) sI s0 ∧
-      G3Inv (E0 lc) lc (kAt lc GenG3.kt lc.ctx.f.entry (blkOf lc) 2) sI true ∧
-      SPInv (E0 lc) sI ∧
+      G3Inv (E0 lc) lc (kAt lc GenG3.kt lc.ctx.f.entry (blkOf lc) 2) sI ∧
       RunPre env GenG2.H0 lc GenG3.g L (endP L.text ps.toList) (E0 lc) lc.ctx.f.entry 2 sI := by
   obtain ⟨-, -, -, -, -, -, hend, -, -, hkeys, hso, -⟩ := obj_premises
   simp only [lcFacts, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem] at hf
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hres, hrok⟩, houts⟩, hav⟩, hsl⟩, hnc⟩, hwi⟩, hentry⟩, hbm⟩, hbs⟩,
-    hsz⟩, hpre⟩, hk0⟩, hsim⟩, hme⟩, hu⟩, hes⟩, -⟩, -⟩, hact⟩, -⟩ := hf
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hres, hrok⟩, houts⟩, hav⟩, hsl⟩, hnc⟩, hwi⟩, hentry⟩, hbm⟩, hbs⟩,
+    hsz⟩, hpre⟩, hk0⟩, hsim⟩, hme⟩, hu⟩, hes⟩, -⟩, -⟩, -⟩ := hf
   have hc : checkG60L lc ps GenG3.bs GenG3.g = .ok (GenG3.tab, GenG3.kt) := by
     revert hres; cases checkG60L lc ps GenG3.bs GenG3.g <;> simp [Except.toOption]
   have hb1 : lc.ctx.f.block? 1 = some (blkOf lc) := by
@@ -428,7 +426,7 @@ theorem lc_premises {env : Env} {lc : LocCtx} (hf : lcFacts env lc = true) :
   obtain ⟨hregs, hflags, hslots, hmem⟩ := sIIs_spec hsIIs
   rw [← hentry] at hb1 hk0 hbm
   refine ⟨hc, hrok, houts, g49Env hc hav hsl hnc hwi hme hend hso, hb1, hbm,
-    by rw [hsz]; exact Nat.le_refl 2, hentry, List.isEmpty_iff.1 hu, hes, sI, hsI, ?_, ?_, ?_,
+    by rw [hsz]; exact Nat.le_refl 2, hentry, List.isEmpty_iff.1 hu, hes, sI, hsI, ?_, ?_,
     runPre_simple (by rw [hentry]; exact hsim)⟩
   · exact
       { regs := by
@@ -457,12 +455,6 @@ theorem lc_premises {env : Env} {lc : LocCtx} (hf : lcFacts env lc = true) :
             rfl
           · rw [(hregs r v hv).2 h0]; trivial
         slots := by intro k v h; rw [hslots] at h; cases h }
-  · refine fun _ => ⟨?_, fun x hx => ?_⟩
-    · show ι (.outargs lc.ctx.act) = some spO
-      rw [hact]
-      rfl
-    · rw [(hregs spReg x hx).2 (by decide)]
-      trivial
 
 /-- **`pallocSum.start` down to the machine words, in any `runLoc` context meeting `lcFacts`**:
 a returning run of `runLoc`'s body from its first state on `p = 7` is matched by a `runMach` of
@@ -474,14 +466,15 @@ theorem whole_of {env : Env} {lc : LocCtx} (hf : lcFacts env lc = true) {fuel : 
       runMach GenG2.H0 ObjG7.startCode 0x40 n s0 = .returned t' ∧ MachRet s0 t' ∧
       ResultRel E [0] rs mm t' := by
   obtain ⟨hO, hH, hME, hroom, hg, hnone, -, hEE, hpc, -, -, hic⟩ := obj_premises
-  obtain ⟨hc, hrok, houts, hE, hb1, hbm, hk, hentry, hu, hes, sI, hsI, hent, hinv, hspI, hP⟩ :=
+  obtain ⟨hc, hrok, houts, hE, hb1, hbm, hk, hentry, hu, hes, sI, hsI, hent, hinv, hP⟩ :=
     lc_premises hf
   rw [← hentry] at hpc
   have h := obj_whole_ret hc hO hH hic hrok hME hroom hg
     (fun _ _ _ h => by rw [hnone] at h; cases h) (fun _ _ _ h => by rw [hnone] at h; cases h)
     hE (hEE lc) hb1 hbm hk (by exact rfl) hsI hes hent
-    (fun _ _ _ h => by rw [hnone] at h; cases h) hinv (fun _ => rfl) (fun _ => hspI) hu
-    (hpc lc) hP (roRun_nil (lc_ro hf).2) hrun
+    (fun _ _ _ h => by rw [hnone] at h; cases h) hinv (fun h => by cases h)
+    (fun h => by rw [lc_n48 hf] at h; cases h) (fun h => by cases h) hu
+    (hpc lc) hP.m (roRun_nil (lc_ro hf).2) hrun
   rwa [houts] at h
 
 /-- The machine word of the 64-bit integer `7` is `7`. -/

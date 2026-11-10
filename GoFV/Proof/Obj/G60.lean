@@ -7,15 +7,16 @@ variable [GoFV.SSA.Sem.Addrs]
 # `runLoc` → `runMach` on slice G60 (`docs/plans/proofs3.md` §1, §7, §9, §10)
 
 `g7_obj_value`/`g7_obj_term`'s composition for the latest slice: `g60L_value`/
-`g60L_initMem`/`g60L_term` (in G48's mode: the activation's `outargs` block at `SP`, `hosp`,
-`SPInv`; for a lowered function) or G33's theorems (for a function with no arm64 op, in any
+`g60L_initMem`/`g60L_term` (at either mode; at G48's, the activation's `outargs` block at `SP`,
+`hosp`, `SPInv`; for a lowered function) or G33's theorems (for a function with no arm64 op, in any
 mode), `g60L_nilPanic`/`g60L_boundsPanic` (any mode) (`runLoc` → `runProg` on P0' under
 `G49Env` with P0's return address `endP`: G28's activation and the accessed frame variables in
 `Blk.local` blocks at their operands, `VarsAt49`; `checkG60L`, the check `checkG60` runs on
 `liveCtx`) with `obj_star` and `obj_panic` (`runProg` on P0' → `runMach` on the linked words).
-The value and terminator steps hold in the mode `E.outSP` of the activation (`G3Inv … E.outSP`,
-the contracts of that mode), which is `true` for a lowered function (`hosp`), and keep `SPInv`
-of a lowered function (`g60L_valueX`, `g60L_termX`).
+The value and terminator steps hold at a mode `osp` (`G3Inv … osp`, the contracts of that
+mode), which is `true` for a function that needs G48's mode (`needs48`, `hn48`; then the
+activation's `outargs` block sits at `SP`, `hosp`), and keep `SPInv` of a lowered function at the
+mode `true` (`g60L_valueX`, `g60L_termX`).
 
 * `g60_obj_value`: a value step of a function that `checkG60L` and `checkObj` both accept (not an
   entry value, or an `InitMem` in a lowered function, from a state holding the initial memory
@@ -35,8 +36,8 @@ of a lowered function (`g60L_valueX`, `g60L_termX`).
 
 The premises are `g60L_value`'s (`RoPre56`: the state's memory has the float constant symbols
 among the Prog list's symbols; G48's `CallOKStk` at a static call with stack arguments or
-results; the contracts of the mode `E.outSP`, `CallOKAt` …, the `CallOKS` family in the mode
-`true`; `G54Pre`: `G53Pre`, that is `G51Pre` (G49 and G52 adding none)
+results, at the mode `true`; the contracts of the mode `osp`, `CallOKAt` …, the `CallOKS` family
+at the mode `true`; `G54Pre`: `G53Pre`, that is `G51Pre` (G49 and G52 adding none)
 and G53's `Pre53a` (`LoweredMove` reads and writes valid bytes, its two ranges the same or
 disjoint), and G54's `Pre54a` (`LoweredZeroLoop` writes valid bytes) and `Pre54b` (`LoweredMoveLoop`
 as `Pre53a`); `G51Pre`: `G50Pre` and G51's `Pre51a`, the
@@ -108,152 +109,155 @@ theorem _root_.GoFV.SSA.Sem.MatchEnv.Extends.outSP {E E' : MatchEnv} (h : E.Exte
 
 /-! ## One value and one terminator in the mode of the activation
 
-`g60L_value`/`g60L_initMem`/`g60L_term` hold in an activation whose `outargs` block sits at `SP`
-(`hosp`) and keep `SPInv`, for a lowered function. A function with no arm64 op runs by G33's
-theorems (`checkNL30`), which take any mode. The composition carries `SPInv` for a lowered
-function only (`lc.ctx.f.lowered = true → …`). -/
+`g60L_value`/`g60L_initMem`/`g60L_term` hold at either mode `osp`, the mode `true` for a function
+that needs G48's mode (`hn48`); at the mode `true` the activation's `outargs` block sits at `SP`
+(`hosp`) and they keep `SPInv`. A function with no arm64 op runs by G33's theorems
+(`checkNL30`), which take any mode. The composition carries `SPInv` at the mode `true` for a
+lowered function only (`osp = true → lc.ctx.f.lowered = true → …`). -/
 
-/-- A value of slice G60 (not an entry value) in the mode `E.outSP`, `E.outSP` for a lowered
-function. -/
+/-- A value of slice G60 (not an entry value) at the mode `osp`. -/
 theorem g60L_valueX {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab}
     {E : MatchEnv} {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s s' : LocState}
-    {m : MState}
+    {m : MState} {osp : Bool}
     (hc : checkG60L lc ps bstart g = .ok (tab, kt)) (hE : G49Env lc g L ps ret tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
     (hen : entryOp24 v.op = false) (hm : LocMatch E s bid i m)
-    (hinv : G3Inv E lc (kAt lc kt bid blk i) s E.outSP)
-    (hsp : lc.ctx.f.lowered = true → SPInv E s) (hosp : lc.ctx.f.lowered = true → E.outSP = true)
+    (hinv : G3Inv E lc (kAt lc kt bid blk i) s osp)
+    (hsp : osp = true → lc.ctx.f.lowered = true → SPInv E s)
+    (hosp : osp = true → E.outSP = true) (hn48 : needs48 lc = true → osp = true)
     (hu : UOKL m (uL35 lc (uIn35 lc bid) blk i))
     (hpre : G54Pre lc s v) (hro : RoPre56 g s)
-    (hcall : CallOKAt E.outSP H E g L lc s s' v m)
-    (hcallz : CallOKZAt E.outSP H E g L lc s s' v m)
-    (hicall : ICallOKAt E.outSP H E L ret lc s s' v m)
-    (hwb : WbOKAt E.outSP H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
-    (hmeq : MemEqOKAt E.outSP H E g L lc s v m) (hcallk : CallOKStk H E g L lc s s' v m)
+    (hcall : CallOKAt osp H E g L lc s s' v m)
+    (hcallz : CallOKZAt osp H E g L lc s s' v m)
+    (hicall : ICallOKAt osp H E L ret lc s s' v m)
+    (hwb : WbOKAt osp H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
+    (hmeq : MemEqOKAt osp H E g L lc s v m) (hcallk : osp = true → CallOKStk H E g L lc s s' v m)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G49Env lc g L ps ret tab E' ∧ PStar H L ps.toList ret m m' ∧
-      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' E.outSP ∧
-      (lc.ctx.f.lowered = true → SPInv E' s') ∧
+      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' osp ∧
+      (osp = true → lc.ctx.f.lowered = true → SPInv E' s') ∧
       UOKL m' (uL35 lc (uIn35 lc bid) blk (i + 1)) := by
   cases hl : lc.ctx.f.lowered with
   | false =>
     obtain ⟨E', m', hx, hE', h1, h2, h3, -⟩ := g33_value (checkG33_of_60L hl hc) hE.env hbid hb
       hi hv hen hm hinv (by rw [uL31_nl hl]; intro e he; cases he) hpre.1.1.1.1.1.1.1.1.1 hcall
       hcallz hicall hwb hclo hgetg hmeq hs
-    refine ⟨E', m', hx, ⟨hE', hE.vars.extend hx⟩, h1, h2, h3, (fun h => by cases h), ?_⟩
+    refine ⟨E', m', hx, ⟨hE', hE.vars.extend hx⟩, h1, h2, h3, (fun _ h => by cases h), ?_⟩
     rw [uL35_nl hl]
     intro e he
     cases he
   | true =>
     obtain ⟨E', m', hx, hE', h1, h2, h3, h4, h5⟩ := g60L_value hc hE hl hbid hb hi hv hen hm hinv
-      (hsp hl) (hosp hl) hu hpre hro hcall hcallz hicall hwb hclo hgetg hmeq hcallk hs
-    exact ⟨E', m', hx, hE', h1, h2, h3, fun _ => h4, h5⟩
+      (fun ho => hsp ho hl) hosp hn48 hu hpre hro hcall hcallz hicall hwb hclo hgetg hmeq hcallk hs
+    exact ⟨E', m', hx, hE', h1, h2, h3, fun ho _ => h4 ho, h5⟩
 
-/-- A terminator of slice G60 that goes to a block, in the mode `E.outSP`. -/
+/-- A terminator of slice G60 that goes to a block, at the mode `osp`. -/
 theorem g60L_termX {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
     {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab} {E : MatchEnv}
-    {bid : ID} {blk : Block} {e : Edge} {s s' : LocState} {m : MState}
+    {bid : ID} {blk : Block} {e : Edge} {s s' : LocState} {m : MState} {osp : Bool}
     (hc : checkG60L lc ps bstart g = .ok (tab, kt)) (hE : G49Env lc g L ps ret tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hm : LocMatch E s bid blk.values.size m)
-    (hinv : G3Inv E lc (kAt lc kt bid blk blk.values.size) s E.outSP)
-    (hsp : lc.ctx.f.lowered = true → SPInv E s)
+    (hinv : G3Inv E lc (kAt lc kt bid blk blk.values.size) s osp)
+    (hsp : osp = true → lc.ctx.f.lowered = true → SPInv E s)
     (hpre : G1TermPre lc s blk) (hu : UOKL m (uL35 lc (uIn35 lc bid) blk blk.values.size))
     (ht : stepTermLoc lc s blk = .ok (.goto e, s')) :
     ∃ m', PStar H L ps.toList ret m m' ∧ LocMatch E s' e.b 0 m' ∧
-      G3Inv E lc (kt.at e.b) s' E.outSP ∧ (lc.ctx.f.lowered = true → SPInv E s') ∧
+      G3Inv E lc (kt.at e.b) s' osp ∧ (osp = true → lc.ctx.f.lowered = true → SPInv E s') ∧
       e.b ∈ lc.ctx.f.blocks.toList ∧ UOKL m' (uIn35 lc e.b) := by
   cases hl : lc.ctx.f.lowered with
   | false =>
     obtain ⟨m', h1, h2, h3, h4, -⟩ := g33_term (checkG33_of_60L hl hc) hE.env hbid hb hm hinv hpre
       (by rw [uL31_nl hl]; intro e he; cases he) ht
-    refine ⟨m', h1, h2, h3, (fun h => by cases h), h4, ?_⟩
+    refine ⟨m', h1, h2, h3, (fun _ h => by cases h), h4, ?_⟩
     rw [uIn35_nl hl]
     intro e he
     cases he
   | true =>
-    obtain ⟨m', h1, h2, h3, h4, h5, h6⟩ := g60L_term (H := H) hc hE hbid hb hm hinv (hsp hl) hpre hu
-      ht
-    exact ⟨m', h1, h2, h3, fun _ => h4, h5, h6⟩
+    obtain ⟨m', h1, h2, h3, h4, h5, h6⟩ := g60L_term (H := H) hc hE hbid hb hm hinv
+      (fun ho => hsp ho hl) hpre hu ht
+    exact ⟨m', h1, h2, h3, fun ho _ => h4 ho, h5, h6⟩
 
 /-! ## Down to the machine words -/
 
-/-- **A value step of slice G60, down to the machine words**, in the mode of the activation
-(`E.outSP`, which a lowered function's activation has, `hosp`), keeping `SPInv` of a lowered
-function. -/
+/-- **A value step of slice G60, down to the machine words**, at the mode `osp` (`true` for a
+function that needs G48's mode, `hn48`; there the `outargs` block sits at `SP`, `hosp`), keeping
+`SPInv` of a lowered function at the mode `true`. -/
 theorem g60_obj_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s s' : LocState} {m : MState}
     {spills : Array Spill} {o : ObjIn} {otab : Tab} {base : BitVec 64} {code : Code}
-    {retM : BitVec 64} {t : MState}
+    {retM : BitVec 64} {t : MState} {osp : Bool}
     (hc : checkG60L lc ps bstart g = .ok (tab, kt))
     (hE : G49Env lc g L ps (endP L.text ps.toList) tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
     (hen : entryOp24 v.op = false ∨ (v.op = .InitMem ∧ lc.ctx.f.lowered = true))
     (hmi : MemAt lc bid blk i s) (hm : LocMatch E s bid i m)
-    (hinv : G3Inv E lc (kAt lc kt bid blk i) s E.outSP)
-    (hsp : lc.ctx.f.lowered = true → SPInv E s) (hosp : lc.ctx.f.lowered = true → E.outSP = true)
+    (hinv : G3Inv E lc (kAt lc kt bid blk i) s osp)
+    (hsp : osp = true → lc.ctx.f.lowered = true → SPInv E s)
+    (hosp : osp = true → E.outSP = true) (hn48 : needs48 lc = true → osp = true)
     (hu : UOKL m (uL35 lc (uIn35 lc bid) blk i))
     (hpre : G54Pre lc s v) (hro : RoPre56 g s)
-    (hcall : CallOKAt E.outSP H E g L lc s s' v m)
-    (hcallz : CallOKZAt E.outSP H E g L lc s s' v m)
-    (hicall : ICallOKAt E.outSP H E L (endP L.text ps.toList) lc s s' v m)
-    (hwb : WbOKAt E.outSP H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
-    (hmeq : MemEqOKAt E.outSP H E g L lc s v m) (hcallk : CallOKStk H E g L lc s s' v m)
+    (hcall : CallOKAt osp H E g L lc s s' v m)
+    (hcallz : CallOKZAt osp H E g L lc s s' v m)
+    (hicall : ICallOKAt osp H E L (endP L.text ps.toList) lc s s' v m)
+    (hwb : WbOKAt osp H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
+    (hmeq : MemEqOKAt osp H E g L lc s v m) (hcallk : osp = true → CallOKStk H E g L lc s s' v m)
     (hs : stepLoc env lc s v = .ok s')
     (hO : ObjEnv ps spills o otab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hR : ObjRel (ObjEnv.map otab ps L base) m t)
     (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
     ∃ E' m' t', E.Extends E' ∧ G49Env lc g L ps (endP L.text ps.toList) tab E' ∧
-      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' E.outSP ∧
-      (lc.ctx.f.lowered = true → SPInv E' s') ∧
+      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' osp ∧
+      (osp = true → lc.ctx.f.lowered = true → SPInv E' s') ∧
       UOKL m' (uL35 lc (uIn35 lc bid) blk (i + 1)) ∧
       MStar H code retM t t' ∧ ObjRel (ObjEnv.map otab ps L base) m' t' ∧
       (otab.leaf = true → ¬ IsProgAddr L.text ps.toList (m.x 30) →
         m.x 30 ≠ endP L.text ps.toList → m'.x 30 = m.x 30) := by
   have hstep : ∃ E' m', E.Extends E' ∧ G49Env lc g L ps (endP L.text ps.toList) tab E' ∧
       PStar H L ps.toList (endP L.text ps.toList) m m' ∧ LocMatch E' s' bid (i + 1) m' ∧
-      G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' E.outSP ∧
-      (lc.ctx.f.lowered = true → SPInv E' s') ∧
+      G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' osp ∧
+      (osp = true → lc.ctx.f.lowered = true → SPInv E' s') ∧
       UOKL m' (uL35 lc (uIn35 lc bid) blk (i + 1)) := by
     rcases hen with hen | ⟨hop, hl⟩
-    · exact g60L_valueX hc hE hbid hb hi hv hen hm hinv hsp hosp hu hpre hro hcall hcallz hicall
-        hwb hclo hgetg hmeq hcallk hs
+    · exact g60L_valueX hc hE hbid hb hi hv hen hm hinv hsp hosp hn48 hu hpre hro hcall hcallz
+        hicall hwb hclo hgetg hmeq hcallk hs
     · obtain ⟨hok, hcl⟩ := g60L_clean hc hl hbid hb hi hv hop
       obtain ⟨E', m', hx, hE', h1, h2, h3, h4, h5⟩ :=
-        g60L_initMem (H := H) hc hE hl hbid hb hi hv hop hm hinv (hsp hl) (hmi hl hok hcl) hs
-      exact ⟨E', m', hx, hE', h1, h2, h3, fun _ => h4, h5⟩
+        g60L_initMem (H := H) hc hE hl hbid hb hi hv hop hm hinv (fun ho => hsp ho hl)
+          (hmi hl hok hcl) hs
+      exact ⟨E', m', hx, hE', h1, h2, h3, fun ho _ => h4 ho, h5⟩
   obtain ⟨E', m', hx, hE', hp, hlm, hinv', hsp', hu'⟩ := hstep
   have hI := locMatch_inv hE.env.env.env.env.env hm
   obtain ⟨t', ht, hR', -⟩ := obj_star hO hH hp hR hI hic
   exact ⟨E', m', t', hx, hE', hlm, hinv', hsp', hu', ht, hR',
     fun hl h1 h2 => obj_star_leaf hO hH hp hR hI hic hl ⟨h1, h2⟩⟩
 
-/-- **A terminator of slice G60 that goes to a block, down to the machine words**, in the mode of
-the activation. -/
+/-- **A terminator of slice G60 that goes to a block, down to the machine words**, at the mode
+`osp`. -/
 theorem g60_obj_term {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
     {bstart : ID → Option Nat} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {e : Edge} {s s' : LocState} {m : MState}
     {spills : Array Spill} {o : ObjIn} {otab : Tab} {base : BitVec 64} {code : Code}
-    {retM : BitVec 64} {t : MState}
+    {retM : BitVec 64} {t : MState} {osp : Bool}
     (hc : checkG60L lc ps bstart g = .ok (tab, kt))
     (hE : G49Env lc g L ps (endP L.text ps.toList) tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hm : LocMatch E s bid blk.values.size m)
-    (hinv : G3Inv E lc (kAt lc kt bid blk blk.values.size) s E.outSP)
-    (hsp : lc.ctx.f.lowered = true → SPInv E s) (hpre : G1TermPre lc s blk)
+    (hinv : G3Inv E lc (kAt lc kt bid blk blk.values.size) s osp)
+    (hsp : osp = true → lc.ctx.f.lowered = true → SPInv E s) (hpre : G1TermPre lc s blk)
     (hu : UOKL m (uL35 lc (uIn35 lc bid) blk blk.values.size))
     (ht : stepTermLoc lc s blk = .ok (.goto e, s'))
     (hO : ObjEnv ps spills o otab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hR : ObjRel (ObjEnv.map otab ps L base) m t)
     (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
-    ∃ m' t', LocMatch E s' e.b 0 m' ∧ G3Inv E lc (kt.at e.b) s' E.outSP ∧
-      (lc.ctx.f.lowered = true → SPInv E s') ∧
+    ∃ m' t', LocMatch E s' e.b 0 m' ∧ G3Inv E lc (kt.at e.b) s' osp ∧
+      (osp = true → lc.ctx.f.lowered = true → SPInv E s') ∧
       e.b ∈ lc.ctx.f.blocks.toList ∧ UOKL m' (uIn35 lc e.b) ∧
       MStar H code retM t t' ∧ ObjRel (ObjEnv.map otab ps L base) m' t' ∧
       (otab.leaf = true → ¬ IsProgAddr L.text ps.toList (m.x 30) →

@@ -1861,7 +1861,7 @@ theorem genG49Mach_witness :
     (checkG57 lc0 ps bs g).toOption.isSome = true ∧ accessedVars lc = [4, 3] ∧
       lc.ctx.tabs.forgeable 3 = true ∧ lc.ctx.tabs.forgeable 4 = true ∧
       (∀ L' ps' ret tab' E', ¬ @G49Env Addrs.fixed lc g L' ps' ret tab' E') ∧
-      @G49Env (Addrs.atSP (baseSP g L E.sp) E.sp.toNat) lc g L ps 0 tab EM ∧
+      @G49Env (Addrs.atSP (baseSP g L E.sp)) lc g L ps 0 tab EM ∧
       EM.ι (.local 0 3) = some (EM.sp + BitVec.ofInt 64 24) ∧
       EM.ι (.local 0 4) = some (EM.sp + BitVec.ofInt 64 32) := by
   obtain ⟨h57, -, hav, -, -, hf3, hf4, hact, -, -, -⟩ := facts

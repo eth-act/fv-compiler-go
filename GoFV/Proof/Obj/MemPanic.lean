@@ -644,7 +644,7 @@ theorem g60_memPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
     (hop : memFaultOp v.op = true) (hm : LocMatch E s bid i m)
     (hinv : G3Inv E lc (kAt lc kt bid blk i) s osp)
-    (hsp : lc.ctx.f.lowered = true → spArg lc v = true → SPInv E s ∧ E.outSP = true)
+    (hsp : lc.ctx.f.lowered = true → take48 lc v = true → SPInv E s ∧ E.outSP = true)
     (hs : stepLoc env lc s v = .panic e mm) :
     e = .nilDeref ∧ ∃ m', PStar H L ps.toList ret m m' ∧ PPanics H L ps.toList ret m' e := by
   obtain ⟨rfl, a0, x, b0, p, ha0, hx, hb0, hbn, hp, hpf⟩ := stepLoc_mem_panic hop hs
@@ -689,10 +689,10 @@ theorem g60_memPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   -- the nil page (`FrameOK`)
   have hkd := (vkind60_ok49 h7x.1 h7x.2.1 h7x.2.2.1 h7x.2.2.2 h5x.1 h5x.2.1 h5x.2.2.1
     h5x.2.2.2.1 h5x.2.2.2.2.1 h5x.2.2.2.2.2 hkd).resolve_right fun ⟨_, hk48⟩ => by
-      rcases kind48_cases hk48 with ⟨hc0, -⟩ | ⟨-, -, hspa, hsb, -⟩
+      rcases kind48_cases hk48 with ⟨hc0, -⟩ | ⟨-, hax, hspa, hsb, -⟩
       · rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] at hc0 <;>
           cases hc0
-      · obtain ⟨hspI, hosp⟩ := hsp hl0 hspa
+      · obtain ⟨hspI, hosp⟩ := hsp hl0 (by simp [take48, hax, hspa, hsb])
         have hR := kread_of_reads (((checkK_spec hk).2 bid hbid blk hb).1 i id v hi hv)
         have hnp : v.op ≠ .Phi := fun h => by rw [h] at hop; exact absurd hop (by decide)
         obtain ⟨hxr, hxf⟩ := sp_base48 hl hA hspI hosp hinv.core.regs hR hnp hsb a0 x ha0 hx
@@ -805,7 +805,7 @@ theorem g60_obj_memPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : L
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
     (hop : memFaultOp v.op = true) (hm : LocMatch E s bid i m)
     (hinv : G3Inv E lc (kAt lc kt bid blk i) s osp)
-    (hsp : lc.ctx.f.lowered = true → spArg lc v = true → SPInv E s ∧ E.outSP = true)
+    (hsp : lc.ctx.f.lowered = true → take48 lc v = true → SPInv E s ∧ E.outSP = true)
     (hs : stepLoc env lc s v = .panic e mm)
     (hO : ObjEnv ps spills o otab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))

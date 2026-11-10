@@ -22,19 +22,16 @@ vacuously. `verified_mach_atSP` applies with every premise discharged:
   within `CALL`'s range of the code at `ObjG7.base`;
 * the environment `env` is the Phase 1 test environment `plRunEnv` with `runtime/secret.getStack`
   returning `0x11` and `0x22` and the memory unchanged (`getStackC`); its `VPre` facts hold at the
-  machine layout `AM = Addrs.atSP (baseSP g L sp0) sp0.toNat` (`env_vpre`); the generic `run`
-  returns `[0x11, 0x22]`;
+  machine layout `AM = Addrs.atSP (baseSP g L sp0)` (`env_vpre`); the generic `run` returns
+  `[0x11, 0x22]`;
 * the machine: the hook `H` returns to `X30` with `X0 = 0x11`, `X1 = 0x22` and everything else
   kept (`HookMap`: `hookMap_H`; the callee contract `CallSpec` at every `LocMatch`ed state of an
   activation extending `envAtSP g L (E0 lc)`: `callSpecH`, whose `AddrAgree` holds since `ιSP`
   places every block with a base, `addrAgree_ext`); the caller enters at `ObjG7.base` with
   `SP = 0x7fff0010`, `LR = 0x40`, `g = 0x9000` and a zero memory (`MachEntry`, `EntryEnv`);
-  `E0 lc` is a `G28Env` at `Addrs.fixed` (`g28Env`) in G48's mode (`outSP`: the function is
-  lowered), and the run's first state `sI` (after the entry values `SP`, `InitMem`) is
-  `EntryMatch`ed under `envAtSP`, whose `ιSP` puts the `outargs` block at `SP` and the results'
-  blocks at `SP + 24` and `SP + 32` (`memInjI`; the `outargs` block's first word, `poison`, is
-  the saved `LR`'s, `SepFromW`: `sepI`), with the Go register `SP` holding `SP` (`SPInv`);
-  `RunPre` holds with the call's contracts (`CallOKS`, `CallOKZS`, `CallOKStk`: `callOKH`) at
+  `E0 lc` is a `G28Env` at `Addrs.fixed` (`g28Env`), and the run's first state `sI` (after the
+  entry values `SP`, `InitMem`) is `EntryMatch`ed under `envAtSP`, whose `ιSP` puts the results'
+  blocks at `SP + 24` and `SP + 32` (`memInjI`); `RunPre` holds with the call's contracts at
   `sI`, the only state the run reaches before the call (`lreach_start`), every other op simple
   (`runPreH`).
 
@@ -166,10 +163,10 @@ def ιF : Blk → Option (BitVec 64)
   | b => (Blk.fixedBase? b).map (BitVec.ofNat 64)
 
 /-- The activation of `runLoc`'s context `lc`: framed, `SP = 0x7fff0000` in the body, `g =
-0x9000`, the caller's `LR = 0x40` and `FP = SP + 8`, in G48's mode (`outSP`). -/
+0x9000`, the caller's `LR = 0x40` and `FP = SP + 8`. -/
 def E0 (lc : LocCtx) : MatchEnv :=
   { lc, ι := ιF, sp := sp0, slot := fun _ => none, g := 0x9000, lr := 0x40, fp := sp0 + 8,
-    framed := true, pcOf := pcOfTab GenG2.text ps.toList tab, outSP := true }
+    framed := true, pcOf := pcOfTab GenG2.text ps.toList tab }
 
 /-- The machine at the function's entry: `SP = 0x7fff0010`, `R29 = SP - 8`, `LR = 0x40`, a zero
 memory. -/
@@ -179,9 +176,8 @@ def s0 : MState :=
     sp := sp0 + 16, v := fun _ => 0, nzcv := ⟨false, false, false, false⟩, pc := ObjG7.base,
     mem := fun _ => 0 }
 
-/-- The machine layout: activation 0's `local` blocks at their frame operands from `sp0`, its
-`outargs` block at `sp0`. -/
-abbrev AM : Addrs := Addrs.atSP (baseSP g L sp0) sp0.toNat
+/-- The machine layout: activation 0's `local` blocks at their frame operands from `sp0`. -/
+abbrev AM : Addrs := Addrs.atSP (baseSP g L sp0)
 
 /-- The injection of `envAtSP g L (E0 lc)`. -/
 abbrev ιM : Blk → Option (BitVec 64) := ιSP g L sp0 ιF
@@ -214,18 +210,16 @@ def v7Of (lc : LocCtx) : Value := (lc.ctx.f.value? 7).getD default
 /-- The tables `checkG60L` gives on `lc`. -/
 def ktOf (lc : LocCtx) : KTab := (getOk (checkG60L lc ps bs g)).2
 
-/-- The value is the pointer to the start of activation 0's `outargs` block. -/
-def isSp0 : Val → Bool
-  | .ptr ⟨.outargs 0, o⟩ => o == 0
+def isInt64 : Val → Bool
+  | .int .w64 _ => true
   | _ => false
 
-/-- `SP` (register 30) holds the pointer to the start of the `outargs` block (held: at `AM` its
-base `sp0` decodes to no such pointer), every other register `poison`; no flags, no slot, the
-frame memory. -/
+/-- `SP` (register 30) holds a 64-bit integer, every other register `poison`; no flags, no slot,
+the frame memory. -/
 def sIIs (s : LocState) : Bool :=
   (List.range s.regs.size).all (fun r =>
       match s.regs[r]? with
-      | some v => if r = 30 then isSp0 v else isPoison v
+      | some v => if r = 30 then isInt64 v else isPoison v
       | none => true) &&
     isPoison s.flags && s.slots.isEmpty &&
     match s.mem with
@@ -253,14 +247,13 @@ def sCallIs (s : LocState) : Bool :=
     | .mem m => decide (m = memI)
     | _ => false
 
-/-- The call `v` has no register argument and its results in `R0`, `R1`, by `callRegs`, by
-`callRegsZ` and by `callRegsS`. -/
+/-- The call `v` has no register argument and its results in `R0`, `R1`, by `callRegs` and by
+`callRegsZ`. -/
 def callFacts (lc : LocCtx) (v : Value) : Bool :=
   match callOf? lc.ctx.tabs v.aux with
   | some (_, _, c) =>
     (callRegs c).toOption == some ([], [0, 1]) &&
-      (callRegsZ lc.ctx.tabs c).toOption == some ([], [0, 1]) &&
-      (callRegsS c).toOption == some ([], [0, 1])
+      (callRegsZ lc.ctx.tabs c).toOption == some ([], [0, 1])
   | none => false
 
 /-- No symbol of the wrapper is one of `plRunEnv`'s globals. -/
@@ -303,7 +296,7 @@ def lcFactsC (lc : LocCtx) : Bool :=
     (lc.ctx.f.value? 7).isSome && (v7Of lc).op == .ARM64CALLstatic && callFacts lc (v7Of lc) &&
     (kAt lc (ktOf lc) 1 (blkOf lc) 2).get 30 == some 64 && simpleFrom lc.ctx.f 1 3 &&
     (uL35 lc [] (blkOf lc) 2).isEmpty && entryStoresOK lc g 2 && (pendWins lc g).isEmpty &&
-    memTyL lc && (constRo (symNames g)).isEmpty
+    memTyL lc && (constRo (symNames g)).isEmpty && !needs48 lc
 
 /-! ## At `Addrs.fixed`: the activation without the variables' places -/
 
@@ -511,7 +504,7 @@ theorem e2e_facts : e2eFacts = true := by
 theorem ιM_total (b : Blk) (hb : b ≠ .wbuf) : ∃ a, ιM b = some a := by
   cases b with
   | «local» a k =>
-    simp only [ιM, ιSP]
+    simp only [ιM, ιSP, ιSPM]
     split
     · exact ⟨_, rfl⟩
     · split
@@ -519,7 +512,7 @@ theorem ιM_total (b : Blk) (hb : b ≠ .wbuf) : ∃ a, ιM b = some a := by
       · exact ⟨_, rfl⟩
   | wbuf => exact absurd rfl hb
   | global n =>
-    simp only [ιM, ιSP, ιF]
+    simp only [ιM, ιSP, ιSPM, ιF]
     split
     · exact ⟨_, rfl⟩
     · split
@@ -528,13 +521,7 @@ theorem ιM_total (b : Blk) (hb : b ≠ .wbuf) : ∃ a, ιM b = some a := by
   | nil => exact ⟨_, rfl⟩
   | heap _ => exact ⟨_, rfl⟩
   | temp _ _ => exact ⟨_, rfl⟩
-  | outargs a =>
-    simp only [ιM, ιSP]
-    split
-    · exact ⟨_, rfl⟩
-    · split
-      · exact ⟨_, rfl⟩
-      · exact ⟨_, rfl⟩
+  | outargs _ => exact ⟨_, rfl⟩
 
 theorem addrAgreeM : AddrAgree ιM := addrAgree_atSP addrAgreeF
 
@@ -545,7 +532,7 @@ theorem addrAgree_ext {lc : LocCtx} {E : MatchEnv} (hx : (envAtSP g L (E0 lc)).E
   intro b n a hb ha hnt
   have hw : b ≠ .wbuf := by
     rintro rfl
-    have h : baseM (baseSP g L sp0) sp0.toNat Blk.wbuf = some n := hb
+    have h : baseM (baseSP g L sp0) none Blk.wbuf = some n := hb
     simp [baseM, Blk.fixedBase?] at h
   obtain ⟨a0, h0⟩ := ιM_total b hw
   have h1 := hx.2 b a0 h0
@@ -564,7 +551,7 @@ theorem ιM_l4 (h4 : varOp g 4 = some (.PARAM, 8)) (ho : frameOff L .PARAM 8 = 3
   rw [ιSP_local0 h4, ho]
 
 /-- `memI` injected into the zero memory: the globals at `gAddr1`, `gAddr2`, the
-outgoing-arguments area at `SP`, the results at `SP + 24` and `SP + 32`. -/
+outgoing-arguments area at `2^62`, the results at `SP + 24` and `SP + 32`. -/
 theorem memInjI (hm3 : ιM (.local 0 3) = some (sp0 + BitVec.ofInt 64 24))
     (hm4 : ιM (.local 0 4) = some (sp0 + BitVec.ofInt 64 32)) :
     MemInj ιM memI (fun _ => 0) where
@@ -597,13 +584,12 @@ theorem memInjI (hm3 : ιM (.local 0 3) = some (sp0 + BitVec.ofInt 64 24))
     rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
       simp [Array.getElem_replicate, ByteRel]
 
-/-- `memI`'s keys are distinct and its blocks lie apart from the saved `LR`/`FP` words, but for
-the `outargs` block's first word (the saved `LR`'s), `poison` (`SepFromW`). -/
+/-- `memI`'s keys are distinct and its blocks lie apart from the saved `LR`/`FP` words. -/
 theorem sepI {lc : LocCtx} (hk : (memI.blocks.toList.map (·.1)).Nodup)
     (hm3 : ιM (.local 0 3) = some (sp0 + BitVec.ofInt 64 24))
     (hm4 : ιM (.local 0 4) = some (sp0 + BitVec.ofInt 64 32)) :
-    KeysNodup memI ∧ SepFromW ιM (StkAt (envAtSP g L (E0 lc))) memI := by
-  refine ⟨hk, fun b al a h ha y hy i hi he => ?_⟩
+    KeysNodup memI ∧ SepFrom ιM (StkAt (envAtSP g L (E0 lc))) memI := by
+  refine ⟨hk, fun b al a h ha y hy => ?_⟩
   rcases hy with ⟨-, h1, h2⟩ | ⟨k, off, h, -⟩
   · have e1 : (envAtSP g L (E0 lc)).sp.toNat = 0x7fff0000 := rfl
     rw [e1] at h1 h2
@@ -611,20 +597,15 @@ theorem sepI {lc : LocCtx} (hk : (memI.blocks.toList.map (·.1)).Nodup)
       or_false] at h
     rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
     (try rw [hm3] at ha) <;> (try rw [hm4] at ha) <;> cases ha <;>
-      simp only [Array.size_replicate] at hi
-    · simp [gAddr1] at he; omega
-    · simp [gAddr2] at he; omega
-    · have hi' : i < 24 := by simpa using hi
-      have he' : 0x7fff0000 + i = y.toNat := by simpa [sp0] using he
-      exact ⟨by simp only [Blk.writableFrom]; omega, by simp⟩
-    · simp [sp0, BitVec.toNat_add] at he; omega
-    · simp [sp0, BitVec.toNat_add] at he; omega
+    · rintro ⟨h3, h4⟩
+      simp [sp0, gAddr1, gAddr2] at h3 h4
+      omega
   · cases h
 
 /-! ## The checks as propositions -/
 
 theorem sIIs_spec {s : LocState} (h : sIIs s = true) :
-    (∀ r v, s.regs[r]? = some v → (r = 30 → v = .ptr ⟨.outargs 0, 0⟩) ∧ (r ≠ 30 → v = .poison)) ∧
+    (∀ r v, s.regs[r]? = some v → (r = 30 → ∃ x, v = .int .w64 x) ∧ (r ≠ 30 → v = .poison)) ∧
       s.flags = .poison ∧ s.slots = [] ∧ s.mem = .mem memI := by
   simp only [sIIs, Bool.and_eq_true, List.all_eq_true, List.mem_range, List.isEmpty_iff] at h
   obtain ⟨⟨⟨hr, hf⟩, hs⟩, hm⟩ := h
@@ -634,11 +615,9 @@ theorem sIIs_spec {s : LocState} (h : sIIs s = true) :
     rw [hv] at this
     constructor
     · rintro rfl
-      simp only [↓reduceIte, isSp0] at this
+      simp only [↓reduceIte, isInt64] at this
       split at this
-      · simp only [beq_iff_eq] at this
-        subst this
-        rfl
+      · exact ⟨_, rfl⟩
       · cases this
     · intro h0
       simp only [h0, ↓reduceIte, isPoison] at this
@@ -675,10 +654,11 @@ theorem lcC_spec {lc : LocCtx} (h : lcFactsC lc = true) :
     callFacts lc (v7Of lc) = true ∧ (kAt lc (ktOf lc) 1 (blkOf lc) 2).get 30 = some 64 ∧
     simpleFrom lc.ctx.f 1 3 = true ∧ uL35 lc [] (blkOf lc) 2 = [] ∧
     entryStoresOK lc g 2 = true ∧ pendWins lc g = [] ∧ memTyL lc = true ∧
-    constRo (symNames g) = [] := by
-  simp only [lcFactsC, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem, and_assoc] at h
+    constRo (symNames g) = [] ∧ needs48 lc = false := by
+  simp only [lcFactsC, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem, and_assoc,
+    Bool.not_eq_true'] at h
   obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h15, h16, h17, h18, h19,
-    h20, h21, h22, h23⟩ := h
+    h20, h21, h22, h23, h24⟩ := h
   have hc : checkG60L lc ps bs g = .ok (tab, ktOf lc) := by
     rw [← h2]
     exact eq_getOk h1
@@ -689,17 +669,16 @@ theorem lcC_spec {lc : LocCtx} (h : lcFactsC lc = true) :
     obtain ⟨v, hv⟩ := Option.isSome_iff_exists.1 h14
     simp [v7Of, hv]
   exact ⟨hc, h3, h4, h5, h6, h7, h8, h9, h10, hb, h12, h13, hv, h15, h16, h17, h18,
-    List.isEmpty_iff.1 h19, h20, List.isEmpty_iff.1 h21, h22, List.isEmpty_iff.1 h23⟩
+    List.isEmpty_iff.1 h19, h20, List.isEmpty_iff.1 h21, h22, List.isEmpty_iff.1 h23, h24⟩
 
 /-! ## The callee -/
 
-/-- **The callee contract of `H`** (`CallSpec`, `CallSpecS`, by the separation of mode `w`): from
-any state at the callee, it returns to `X30` with the results in `X0`, `X1` and nothing else
-changed; the memory `mm` stays injected by `E.ι`. -/
-theorem callSpecH {w : Bool} {E : MatchEnv} (hA : AddrAgree E.ι) {ins outs : List Nat}
-    {args : List Val} {mm : Mem} {s' : LocState} {m₁ : MState} (hout : outs = [0, 1])
+/-- **The callee contract of `H`**: from any state at the callee, it returns to `X30` with the
+results in `X0`, `X1` and nothing else changed; the memory `mm` stays injected by `E.ι`. -/
+theorem callSpecH {E : MatchEnv} (hA : AddrAgree E.ι) {ins outs : List Nat} {args : List Val}
+    {mm : Mem} {s' : LocState} {m₁ : MState} (hout : outs = [0, 1])
     (h0 : s'.regs[0]? = some (.int .w64 r0)) (h1 : s'.regs[1]? = some (.int .w64 r1))
-    (hm : s'.mem = .mem mm) : CallSpecM w H E ins outs args mm s' m₁ := by
+    (hm : s'.mem = .mem mm) : CallSpec H E ins outs args mm s' m₁ := by
   intro _ _ hinj hk hsep
   refine ⟨E.ι, hkS m₁, mm, rfl, fun _ _ h => h, hA, rfl, rfl, rfl, rfl, fun _ _ => rfl, hm,
     hinj, hk, hsep, ?_⟩
@@ -720,44 +699,40 @@ theorem callSpecH {w : Bool} {E : MatchEnv} (hA : AddrAgree E.ι) {ins outs : Li
     cases hk
     exact Or.inl rfl
 
-/-- The callee contracts of G48's mode, `CallOKS`, `CallOKZS` and `CallOKStk`, of `H` at the call
-`v`, from a state with the frame memory to one with the results in `R0`, `R1` and the frame
-memory. -/
+/-- The callee contracts `CallOK` and `CallOKZ` of `H` at the call `v`, from a state with the
+frame memory to one with the results in `R0`, `R1` and the frame memory. -/
 theorem callOKH {lc : LocCtx} {E : MatchEnv} {s s' : LocState} {v : Value} {m : MState}
     (hA : AddrAgree E.ι) (hcf : callFacts lc v = true) (hsm : s.mem = .mem memI)
     (h0 : s'.regs[0]? = some (.int .w64 r0)) (h1 : s'.regs[1]? = some (.int .w64 r1))
     (hm : s'.mem = .mem memI) :
-    CallOKS H E g L lc s s' v m ∧ CallOKZS H E g L lc s s' v m ∧ CallOKStk H E g L lc s s' v m := by
+    CallOK H E g L lc s s' v m ∧ CallOKZ H E g L lc s s' v m := by
   unfold callFacts at hcf
   split at hcf
   · rename_i n a c hc
     simp only [Bool.and_eq_true, beq_iff_eq] at hcf
-    obtain ⟨⟨hR, hZ⟩, hS⟩ := hcf
-    have hout : ∀ {ins outs : List Nat} {r : Except String (List Nat × List Nat)},
-        r.toOption = some ([], [0, 1]) → r = .ok (ins, outs) → outs = [0, 1] := by
-      intro ins outs r h1 h2
-      rw [h2] at h1
-      simp only [Except.toOption, Option.some.injEq, Prod.mk.injEq] at h1
-      exact h1.2
-    refine ⟨?_, ?_, ?_⟩
+    refine ⟨?_, ?_⟩
     · intro _ name abi cabi ins outs y args mm m₁ hc' hcr _ _ _ hs _ _ _ _ _ _
       rw [hc] at hc'
       cases hc'
+      rw [hcr] at hcf
+      have hout : outs = [0, 1] := by
+        have := hcf.1
+        simp only [Except.toOption, Option.some.injEq, Prod.mk.injEq] at this
+        exact this.2
       rw [hsm] at hs
       cases hs
-      exact callSpecH (w := true) hA (hout hR hcr) h0 h1 hm
+      exact callSpecH hA hout h0 h1 hm
     · intro _ name abi cabi ins outs hc' hcr y args mm m₁ _ _ _ hs _ _ _ _ _ _
       rw [hc] at hc'
       cases hc'
+      rw [hcr] at hcf
+      have hout : outs = [0, 1] := by
+        have := hcf.2
+        simp only [Except.toOption, Option.some.injEq, Prod.mk.injEq] at this
+        exact this.2
       rw [hsm] at hs
       cases hs
-      exact callSpecH hA (hout hZ hcr) h0 h1 hm
-    · intro _ name abi cabi ins outs hc' hcr y args mm m₁ _ _ _ hs _ _ _ _ _ _
-      rw [hc] at hc'
-      cases hc'
-      rw [hsm] at hs
-      cases hs
-      exact callSpecH hA (hout hS hcr) h0 h1 hm
+      exact callSpecH hA hout h0 h1 hm
   · cases hcf
 
 /-- `H` treats related states alike (`HookMap`). -/
@@ -852,18 +827,15 @@ theorem lreach_start {env' : Env} {lc : LocCtx} {b0 : ID} {i0 : Nat} {s0' : LocS
     · exact absurd (heb.trans hb) (hno b' blk' hb' e he)
   | term _ _ _ _ => intro _ hi; omega
 
-/-- **`RunPre` of the wrapper** in G48's mode: the call `v7` (value 2 of `b1`) at `sI`, the only
-state the run reaches there, with the contracts `hcall`; every other value a simple op. -/
+/-- **`RunPre` of the wrapper**: the call `v7` (value 2 of `b1`) at `sI`, the only state the run
+reaches there, with the contracts `hcall`; every other value a simple op. -/
 theorem runPreH {lc : LocCtx} {E0' : MatchEnv} {blk : Block} {sI : LocState} {v : Value}
     {ret : BitVec 64} (hsim : simpleFrom lc.ctx.f 1 3 = true) (hb : lc.ctx.f.block? 1 = some blk)
     (hi2 : blk.values[2]? = some 7) (hv : lc.ctx.f.value? 7 = some v)
-    (hop : v.op = .ARM64CALLstatic) (hosp : E0'.outSP = true)
+    (hop : v.op = .ARM64CALLstatic)
     (hcall : ∀ s', stepLoc env lc sI v = .ok s' → ∀ E m, E0'.Extends E → LocMatch E sI 1 2 m →
-      CallOKS H E g L lc sI s' v m ∧ CallOKZS H E g L lc sI s' v m ∧
-        CallOKStk H E g L lc sI s' v m) :
+      CallOK H E g L lc sI s' v m ∧ CallOKZ H E g L lc sI s' v m) :
     RunPre env H lc g L ret E0' 1 2 sI := by
-  unfold RunPre
-  rw [hosp]
   have hblk := simpleFrom_blk hsim
   have hno : ∀ b' blk', lc.ctx.f.block? b' = some blk' → ∀ e ∈ blk'.succs.toList, e.b ≠ 1 :=
     fun b' blk' h => (hblk b' blk' h).2.2.1
@@ -886,8 +858,8 @@ theorem runPreH {lc : LocCtx} {E0' : MatchEnv} {blk : Block} {sI : LocState} {v 
       rw [hv] at hval
       cases hval
       refine ⟨.inl (by rw [hop]; rfl), fun s' hs => ⟨g54Pre_call hop, fun E m hx hm => ?_⟩⟩
-      obtain ⟨hc, hcz, hstk⟩ := hcall s' hs E m hx hm
-      refine ⟨hc, hcz, ?_, fun h => ?_, fun h => ?_, fun h => ?_, fun h => ?_, hstk⟩
+      obtain ⟨hc, hcz⟩ := hcall s' hs E m hx hm
+      refine ⟨hc, hcz, ?_, fun h => ?_, fun h => ?_, fun h => ?_, fun h => ?_⟩
       · intro n _ _ _ _ _ _ _ _ _ hn
         rw [hop] at hn
         cases hn
@@ -899,8 +871,7 @@ theorem runPreH {lc : LocCtx} {E0' : MatchEnv} {blk : Block} {sI : LocState} {v 
         -⟩, hgg⟩, hme⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩, -⟩ := hs'
       refine ⟨.inl (by simp [entryOp24, hen]), fun s' _ => ⟨g54Pre_simple hs s, fun E m _ _ =>
         ⟨fun h => absurd h hc, fun h => absurd h hc, ?_, fun h => absurd h hwb,
-          fun h => absurd h hcl, fun h => absurd h hgg, fun h => absurd h hme,
-          fun h => absurd h hc⟩⟩⟩
+          fun h => absurd h hcl, fun h => absurd h hgg, fun h => absurd h hme⟩⟩⟩
       intro n _ _ _ _ _ _ _ _ _ hn
       rw [hic] at hn
       cases hn
@@ -1141,7 +1112,7 @@ theorem verified_mach_atSP_witness :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Bool.and_eq_true] at hp
     obtain ⟨⟨⟨⟨hv, hn⟩, hrl⟩, hC⟩, hR⟩ := hp
     obtain ⟨hcL, hrok, houts, hav, hf3, hf4, hsl, hentry, hbm, hb1, hsz, hi2, hv7, hop, hcf, hk30,
-      hsim, hu, hes, -, hmt, hcr⟩ := lcC_spec hC
+      hsim, hu, hes, -, hmt, hcr, hn48⟩ := lcC_spec hC
     simp only [lcFactsR, Bool.and_eq_true] at hR
     obtain ⟨hR, hFin⟩ := hR
     obtain ⟨sI, hsI, hR'⟩ := GenG1.okThen_spec hR
@@ -1203,12 +1174,12 @@ theorem verified_mach_atSP_witness :
         (kAt (liveCtx (LocCtx.make r.st.tables r.st.func))
           (ktOf (liveCtx (LocCtx.make r.st.tables r.st.func)))
           (liveCtx (LocCtx.make r.st.tables r.st.func)).ctx.f.entry
-          (blkOf (liveCtx (LocCtx.make r.st.tables r.st.func))) 2) sI true :=
+          (blkOf (liveCtx (LocCtx.make r.st.tables r.st.func))) 2) sI :=
       { core := by
           refine ⟨fun r v c _ hv hc => ?_, memI, hmem, sepI hkeys hm3 hm4⟩
           by_cases h30 : r = 30
           · subst h30
-            rw [(hregs 30 v hv).1 rfl]
+            obtain ⟨x, rfl⟩ := (hregs 30 v hv).1 rfl
             rw [hentry, hk30] at hc
             cases hc
             rfl
@@ -1218,24 +1189,19 @@ theorem verified_mach_atSP_witness :
     have hRP : RunPre env H (liveCtx (LocCtx.make r.st.tables r.st.func)) g L
         (endP L.text ps.toList) (envAtSP g L (E0 (liveCtx (LocCtx.make r.st.tables r.st.func))))
         1 2 sI :=
-      runPreH hsim hb1 hi2 hv7 hop rfl fun s'' hs E m hx _ => by
+      runPreH hsim hb1 hi2 hv7 hop fun s'' hs E m hx _ => by
         rw [hs'] at hs
         cases hs
         exact callOKH (addrAgree_ext hx) hcf hmem hr0 hr1 hmem'
-    have hspI : SPInv (envAtSP g L (E0 (liveCtx (LocCtx.make r.st.tables r.st.func)))) sI :=
-      fun _ => ⟨envAtSP_out (liveCtx_make_act _ _), fun x hx => by
-        rw [(hregs spReg x hx).1 rfl]
-        exact ⟨sp0, ιSP_out0 (g := g) (L := L) (ι := ιF), (BitVec.add_zero sp0).symm⟩⟩
     rw [← hentry] at hb1 hbm hRP hpcF
     obtain ⟨fuel', href, raw, hraw, hfin, hdef, hret, -⟩ :=
       verified_mach_atSP (A := AM) (g := g) (L := L)
         (E0 := E0 (liveCtx (LocCtx.make r.st.tables r.st.func))) rfl hpe hv
-        (env_vpre hdict hro _) hnn hap hnp hd rfl hc60 hO hookMap_H
+        (env_vpre hdict hro _) hnn hap hnp hd rfl hc60 hn48 hO hookMap_H
         (ObjG7.noICall_spec hni L) hrok hME (by rw [haz]; decide) (by decide)
         (fun _ _ _ h => by rw [hnone] at h; cases h) (fun _ _ _ h => by rw [hnone] at h; cases h)
         hE hEE hb1 hbm (by rw [hsz]; decide) hsI hes hent
-        (fun _ _ _ h => by rw [hnone] at h; cases h) hinv (fun _ => rfl) (fun _ => hspI) hu hpcF
-        hRP (fun _ => hmt)
+        (fun _ _ _ h => by rw [hnone] at h; cases h) hinv hu hpcF hRP (fun _ => hmt)
         (by rw [hcr]; intro n a h; cases h)
     rw [houts] at hret
     have hF := isRetF_spec hFin

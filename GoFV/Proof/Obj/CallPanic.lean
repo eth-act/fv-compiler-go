@@ -325,7 +325,8 @@ theorem callKind48_facts {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2}
 
 /-- **A static call of slice G60 whose callee panics**: from a `LocMatch`ed P0 state, the Progs
 of the call run to the callee's symbol, where the runtime panics with `e` (`CallPanicOKAt` of the
-mode `osp`, which is `true` for a lowered function, `hosp`: a call G48 accepts, on `callRegsS`, is
+mode `osp`, which is `true` for a function that needs G48's mode, `hn48`: a call G48 accepts, on
+`callRegsS`, is
 `CallPanicOKS`'s). -/
 theorem g60_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab}
@@ -336,7 +337,7 @@ theorem g60_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
     (hop : v.op = .ARM64CALLstatic) (hm : LocMatch E s bid i m)
     (hinv : G3Inv E lc (kAt lc kt bid blk i) s osp) (hok : CallPanicOKAt osp H E g L lc s v m e)
-    (hosp : lc.ctx.f.lowered = true → osp = true) :
+    (hn48 : needs48 lc = true → osp = true) :
     ∃ m', PStar H L ps.toList ret m m' ∧ PPanics H L ps.toList ret m' e := by
   cases hl0 : lc.ctx.f.lowered with
   | false =>
@@ -382,7 +383,13 @@ theorem g60_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
       exact ⟨name, abi, cabi, ins, outs, h1, .inl h2, h3, h4, h5, h6, h7⟩
     · rcases kind48_cases hkd with ⟨-, hkd⟩ | ⟨hne, -⟩
       · obtain ⟨name, abi, cabi, ins, outs, h1, h2, h3, h4, h5, h6, h7⟩ := callKind48_facts hkd
-        exact ⟨name, abi, cabi, ins, outs, h1, .inr ⟨hosp hl0, h2⟩, h3, h4, h5, h6, h7⟩
+        cases ho : osp
+        · have ht : take48 c.cx.lc v = false := by
+            cases h : take48 c.cx.lc v
+            · rfl
+            · exact absurd (hn48 (take48_of_needs48 hl0 hv h)) (by rw [ho]; decide)
+          exact ⟨name, abi, cabi, ins, outs, h1, .inl (take48_call ht hop h1 h2), h3, h4, h5, h6, h7⟩
+        · exact ⟨name, abi, cabi, ins, outs, h1, .inr ⟨rfl, h2⟩, h3, h4, h5, h6, h7⟩
       · exact absurd hop hne
   have hj : E.pcOf bid i = pcAt text c.cx.ps.toList ((js ++ [e']).getD i 0) := by
     rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some]
@@ -477,14 +484,14 @@ theorem g60_obj_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
     (hop : v.op = .ARM64CALLstatic) (hm : LocMatch E s bid i m)
     (hinv : G3Inv E lc (kAt lc kt bid blk i) s osp) (hok : CallPanicOKAt osp H E g L lc s v m e)
-    (hosp : lc.ctx.f.lowered = true → osp = true)
+    (hn48 : needs48 lc = true → osp = true)
     (hO : ObjEnv ps spills o otab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hHP : HookPanicMap H L ps.toList (ObjEnv.map otab ps L base))
     (hR : ObjRel (ObjEnv.map otab ps L base) m t)
     (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
     ∃ t', MStar H code retM t t' ∧ MPanics H code retM t' e := by
-  obtain ⟨m', hp, hpp⟩ := g60_callPanic hc hE hbid hb hi hv hop hm hinv hok hosp
+  obtain ⟨m', hp, hpp⟩ := g60_callPanic hc hE hbid hb hi hv hop hm hinv hok hn48
   obtain ⟨t1, ht1, hR1, hI1⟩ := obj_star hO hH hp hR (locMatch_inv hE.env.env.env.env hm) hic
   obtain ⟨t2, ht2, hpan⟩ := obj_panic hO hHP hR1 (hI1.resolve_right hpp.1) hpp
   exact ⟨t2, mstar_trans ht1 ht2, hpan⟩

@@ -391,9 +391,9 @@ theorem objWholeNL_ret_witness :
     (fun _ _ _ h => by rw [hnone] at h; cases h) (fun _ _ _ h => by rw [hnone] at h; cases h)
     (g49Env hc hav hsl hnc hwi hme hend hso) hEE hb1 hbm (of_decide_eq_true hsz)
     (by exact rfl) hsI hes
-    hent (fun _ _ _ h => by rw [hnone] at h; cases h) hinv
-    (fun h => by rw [hl] at h; cases h) (fun h => by rw [hl] at h; cases h)
-    (List.isEmpty_iff.1 hu) hpc' (runPre_simple (by rw [hentry]; exact hsim))
+    hent (fun _ _ _ h => by rw [hnone] at h; cases h) hinv (fun h => by cases h)
+    (fun h => by simp [needs48, hl] at h) (fun h => by cases h)
+    (List.isEmpty_iff.1 hu) hpc' (runPre_simple (by rw [hentry]; exact hsim)).m
     (roRun_nil (List.isEmpty_iff.1 hcr))
     hrun
   rw [houts] at hRes
