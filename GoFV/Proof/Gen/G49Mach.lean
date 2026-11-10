@@ -195,13 +195,16 @@ def baseSP (g : G2In) (L : Link) (sp : BitVec 64) (k : Nat) : Nat :=
   | some (nc, o) => (sp + BitVec.ofInt 64 (frameOff L nc o)).toNat
   | none => 0
 
-/-- The injection with activation 0's `local` blocks at `baseSP`, activation `actM`'s without an
-address, every other block as `ι`. -/
+/-- The injection with activation 0's `local` blocks at `baseSP`, activation `actM`'s at their
+bases (activation 0's fixed bases, `baseM`), every other block as `ι`. Every block `ι` places,
+`ιSP` places, so an activation extending `envAtSP` can still meet `AddrAgree` (a callee's
+`CallSpec`). -/
 def ιSP (g : G2In) (L : Link) (sp : BitVec 64) (ι : Blk → Option (BitVec 64)) : Blk →
     Option (BitVec 64)
   | .local a k =>
     if a = 0 then some (BitVec.ofNat 64 (baseSP g L sp k))
-    else if a = actM then none else ι (.local a k)
+    else if a = actM then (Blk.fixedBase? (.local 0 k)).map (BitVec.ofNat 64)
+    else ι (.local a k)
   | b => ι b
 
 /-- `ιSP` puts activation 0's `local` block of a variable with an operand at that operand. -/
@@ -227,7 +230,13 @@ theorem addrAgree_atSP {g : G2In} {L : Link} {sp : BitVec 64} {ι : Blk → Opti
     · simp only [h0, ite_true, Option.some.injEq] at ha hb'
       rw [← ha, ← hb']
     · by_cases h1 : a' = actM
-      · simp [h1, actM] at ha
+      · subst h1
+        have h0' : (actM = 0) = False := eq_false h0
+        simp only [h0', ite_false, ite_true, Option.map_eq_some_iff] at ha hb'
+        obtain ⟨n', hn', rfl⟩ := ha
+        rw [hn'] at hb'
+        cases hb'
+        rfl
       · simp only [h0, h1, ite_false] at ha hb'
         exact hA (.local a' k) n a hb' ha hnt
   · have e1 : ιSP g L sp ι b = ι b := by
