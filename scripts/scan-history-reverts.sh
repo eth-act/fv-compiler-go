@@ -33,7 +33,9 @@ for c in $(git rev-list -n "$count" --no-merges "$ref"); do
         status=1
       fi
     fi
-  done < <(git diff-tree --no-commit-id --name-status -r "$c" | awk -F'\t' '$1=="D"||$1=="M"')
+  # -M: a rename (git's default 50% similarity, e.g. each composition lift's Obj/Gxx.lean => Obj/Gyy.lean)
+  # is status R, neither a deletion nor a restore
+  done < <(git diff-tree --no-commit-id --name-status -r -M "$c" | awk -F'\t' '$1=="D"||$1=="M"')
 done
 [ $status = 0 ] && echo "scan-history-reverts: OK (last $count commits)"
 exit $status
