@@ -754,15 +754,17 @@ def symWords (t : ByteArray) (rs : List Reloc) : Nat → Nat → Sym → Except 
 def cmpRegs : List Nat := (List.range 31).filter fun r => r != 27 && r != 30
 
 /-- Whether a value of a P0 effect reads `X27`, `X30` or no general register (`Ex.regsOK`,
-`VEx.regsOK`). -/
-def Sym.readsTmp (σ : Sym) : Bool :=
-  let rd (e : Ex) := !e.regsOK
-  σ.x.any (rd ·.2) || rd σ.sp || !σ.fl.regsOK ||
+`VEx.regsOK`); with `k` (`X27` related before the Prog), whether it reads `X30` or no general
+register (`Ex.regsOKK`). -/
+def Sym.readsTmpK (k : Bool) (σ : Sym) : Bool :=
+  let rd (e : Ex) := !e.regsOKK k
+  σ.x.any (rd ·.2) || rd σ.sp || !σ.fl.regsOKK k ||
     σ.loads.any (rd ·.1) || (σ.stores.any fun (a, _, v) => rd a || rd v) ||
-    σ.v.any (!·.2.regsOK)
+    σ.v.any (!·.2.regsOKK k)
 
-/-- The machine effect `m` matches the Prog effect `p` (the module doc). -/
-def sameEffect (m p : Sym) : Except String Unit := do
+/-- The machine effect `m` matches the Prog effect `p` (the module doc); with `k`, the Prog may
+read `X27`. -/
+def sameEffectK (k : Bool) (m p : Sym) : Except String Unit := do
   if let some r := cmpRegs.find? (fun r => m.getX r != p.getX r) then
     throw s!"R{r}: machine {(m.getX r).str}, Prog {(p.getX r).str}"
   if let some r := (List.range 32).find? (fun r => m.getV r != p.getV r) then
@@ -775,18 +777,23 @@ def sameEffect (m p : Sym) : Except String Unit := do
     throw s!"stores: machine {f m.stores}, Prog {f p.stores}"
   unless m.loads.all (p.loads.contains ·) do throw "a machine load the Prog does not perform"
   unless p.loads.all (m.loads.contains ·) do throw "a Prog load the machine does not perform"
-  if p.readsTmp then throw "the Prog reads R27 or R30"
+  if p.readsTmpK k then throw "the Prog reads R27 or R30"
+
+/-- `sameEffectK` of a Prog that may not read `X27`. -/
+def sameEffect (m p : Sym) : Except String Unit := sameEffectK false m p
 
 /-- The offset of a P0 Prog, by ID (`Tab.offs` aligned with the list). -/
 def offOf (ids : List (Nat × Nat)) (id : Nat) : Option Nat := ids.lookup id
 
-/-- The machine control `m` matches the Prog control `p` (branch offsets through `offs`). -/
-def sameCtl (offs : List (Nat × Nat)) (m : MCtl) (p : PCtl) (_pr : Sym) : Except String Unit := do
+/-- The machine control `m` matches the Prog control `p` (branch offsets through `offs`); with
+`k`, the control may read `X27`. -/
+def sameCtl (k : Bool) (offs : List (Nat × Nat)) (m : MCtl) (p : PCtl) (_pr : Sym) :
+    Except String Unit := do
   let tgt (id : Nat) (q : Int) : Except String Unit :=
     match offOf offs id with
     | some o => if (o : Int) == q then pure () else throw s!"branch to {q}, target Prog at {o}"
     | none => throw "branch target not a P0 Prog"
-  let ctlReads (e : Ex) : Bool := !e.regsOK
+  let ctlReads (e : Ex) : Bool := !e.regsOKK k
   match m, p with
   | .fall, .fall => pure ()
   | .jmp q, .jmp id => tgt id q
@@ -802,16 +809,24 @@ def sameCtl (offs : List (Nat × Nat)) (m : MCtl) (p : PCtl) (_pr : Sym) : Excep
   | .callReg a, .callReg a' => if a != a' || ctlReads a' then throw "call register" else pure ()
   | _, _ => throw s!"control: machine {repr m}, Prog {repr p}"
 
-/-- One P0 Prog against its words `[o, e)`. -/
+/-- Whether the words of a compared Prog leave `X27` as the Prog leaves `R27`: the same value,
+over registers related before the Prog (`Ex.regsOKK k`), and no call (a callee returns with
+any `X27`). -/
+def est27 (k : Bool) (m p : Sym) (mc : MCtl) : Bool :=
+  !mc.links && m.getX 27 == p.getX 27 && (p.getX 27).regsOKK k
+
+/-- One P0 Prog against its words `[o, e)`; with `k` (`X27` related before it, `checkBody`) it
+may read `X27`. Returns whether `X27` is related after it (`est27`; never after a skip). -/
 def checkProg (t : ByteArray) (rs : List Reloc) (offs : List (Nat × Nat)) (az ez : Int)
-    (p : Prog) (o e : Nat) : Except String Unit := do
+    (k : Bool) (p : Prog) (o e : Nat) : Except String Bool := do
   if p.isSkip || p.as == .END then
-    if o != e then throw s!"{p.as.name} owns words" else return
+    if o != e then throw s!"{p.as.name} owns words" else return false
   if e ≤ o || (e - o) % 4 != 0 then throw s!"{p.as.name}: no words"
   let (pσ, pc) ← progSym az ez p
   let (mσ, mc) ← symWords t rs ((e - o) / 4) o {}
-  sameEffect mσ pσ
-  sameCtl offs mc pc pσ
+  sameEffectK k mσ pσ
+  sameCtl k offs mc pc pσ
+  return est27 k mσ pσ mc
 
 /-! ## Prologue, epilogue, morestack tail -/
 
@@ -1043,9 +1058,10 @@ def checkPrologue (t : ByteArray) (rs : List Reloc) (az : Int) (body : Nat) :
   return check
 
 /-- One body Prog `p` against its words `[s, e)`: a P0 `RET` (without operand, or of a symbol)
-against the epilogue (`retOK`), any other Prog by `checkProg`. -/
+against the epilogue (`retOK`), any other Prog by `checkProg` (`k`: `X27` related before it).
+Returns whether `X27` is related after it. -/
 def checkOne (t : ByteArray) (rs : List Reloc) (offs : List (Nat × Nat)) (az ez : Int)
-    (leaf : Bool) (p : Prog) (s e : Nat) : Except String Unit :=
+    (leaf k : Bool) (p : Prog) (s e : Nat) : Except String Bool :=
   if p.as == .RET && (p.to.type == .NONE || p.to.sym.isSome) then
     if e ≤ s || (e - s) % 4 != 0 then throw s!"Prog {p.id} RET: no epilogue" else
     match symWords t rs ((e - s) / 4) s {} with
@@ -1055,21 +1071,35 @@ def checkOne (t : ByteArray) (rs : List Reloc) (offs : List (Nat × Nat)) (az ez
         | some y => MCtl.jmpSym y p.to.offset
         | none => .reg (if az == 0 || leaf then .x 30 else .ld 8 .sp)
       match retOK az leaf σ c back with
-      | .ok () => pure ()
+      | .ok () => pure false
       | .error msg => throw s!"Prog {p.id} RET: {msg}"
   else
-    match checkProg t rs offs az ez p s e with
-    | .ok () => pure ()
+    match checkProg t rs offs az ez k p s e with
+    | .ok b => pure b
     | .error msg => throw s!"Prog {p.id} {p.as.name}: {msg}"
 
+/-- The IDs of the Progs a P0 Prog branches to (a `BRANCH` operand `To` with a Prog target). -/
+def branchTargets (ps : List Prog) : List Nat :=
+  ps.filterMap fun p =>
+    if p.to.type == .BRANCH then
+      match p.to.val with
+      | .target id => some id
+      | _ => none
+    else none
+
 /-- The body Progs in list order with their offsets (`ss`; the last one's words end at
-`lastEnd`). -/
+`lastEnd`). `X27` is related before a Prog (`ok27`) if the Prog before it in the list left it
+related (`prev`, `checkOne`) and no Prog branches to it (`tgts`), so that it is only reached from
+its predecessor; returns each Prog's `ok27`. -/
 def checkBody (t : ByteArray) (rs : List Reloc) (offs : List (Nat × Nat)) (az ez : Int)
-    (leaf : Bool) : List Prog → List Nat → Nat → Except String Unit
+    (leaf : Bool) (tgts : List Nat) (prev : Bool) : List Prog → List Nat → Nat →
+    Except String (List Bool)
   | p :: ps, s :: ss, lastEnd => do
-    checkOne t rs offs az ez leaf p s (ss.headD lastEnd)
-    checkBody t rs offs az ez leaf ps ss lastEnd
-  | _, _, _ => pure ()
+    let k := prev && !tgts.contains p.id
+    let b ← checkOne t rs offs az ez leaf k p s (ss.headD lastEnd)
+    let ks ← checkBody t rs offs az ez leaf tgts b ps ss lastEnd
+    return k :: ks
+  | _, _, _ => pure []
 
 /-- Each Prog's offset: its PC in the assembled list, or (no PC: `TEXT`, an `END` placeholder)
 the next Prog's, `lastEnd` after the last. -/
@@ -1088,6 +1118,8 @@ structure Tab where
   leaf : Bool
   /-- The stack check: its end, the morestack tail's offset, the `g` offset it reads. -/
   check : Option (Nat × Nat × Nat)
+  /-- Whether `X27` is related before each Prog (`checkBody`; aligned with the list). -/
+  ok27 : Array Bool
   deriving Repr, Inhabited
 
 /-- The assembled function: text bytes, relocations, and the assembler's final Prog list (a hint
@@ -1143,9 +1175,11 @@ def checkObj (ps : Array Prog) (spills : Array Spill) (o : ObjIn) : Except Strin
   let starts := startsOf lastEnd pcsOpt.toList
   if starts.length != ps.size || starts.headD 0 != body then throw "internal: PC table"
   let offs := (ps.toList.zip starts).map fun (p, s) => (p.id, s)
-  checkBody t rs offs az ez leaf (ps.toList.drop 1) (starts.drop 1) lastEnd
+  let oks ← checkBody t rs offs az ez leaf (branchTargets ps.toList) false (ps.toList.drop 1)
+    (starts.drop 1) lastEnd
   if let some (_, tail, _) := check then
     let _ ← checkTail t rs spills.toList 0 tail
-  return { offs := starts.toArray, endOff := lastEnd, autosize := az, extrasize := ez, leaf, check }
+  return { offs := starts.toArray, endOff := lastEnd, autosize := az, extrasize := ez, leaf, check,
+           ok27 := (false :: oks).toArray }
 
 end GoFV.Asm.CheckObj
