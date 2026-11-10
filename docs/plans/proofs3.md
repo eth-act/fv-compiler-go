@@ -1210,6 +1210,53 @@ changes. New run premises `Pre54a` (the zeroing writes `n` bytes at a valid addr
 zeroing, 54 iterations and a tail of three `STP`s, counter the temporary `R1`; the machine's byte
 at the end of the block, 1 before, is then 0). G54 accepts 7,308 functions (+48 over G53).
 
+**Slice G55: `VCNT`, `VUADDLV`, `FRINT*`; shifted `NEG`, `CLZW`, `MULL`, `EXTR`**
+(`GoFV/Gen/Check55.lean`, `checkG55 lc ps bstart g`; proven sound, `g55_value`, `g55_initMem`,
+`g55_term`, `g55_nilPanic`, `g55_boundsPanic`, `GoFV/Proof/Gen/G55.lean`). G54 with two groups
+tried when G54 rejects a value, each value one Prog with no temporary.
+
+- Group A (`Check55a`/`Spec55a`, proof `G55a`), on V registers: `PopCount*`'s `VCNT x`
+  (`VCNT Va.B8, Vd.B8`) and `VUADDLV x` (`VUADDLV Va.B8, Vd`) of 64-bit values (`simd55`,
+  `simdShape`; `arng8B r` is genssa's `simdRegArng r ARNG_8B`, `vOfF r` the `V` register of `F`
+  register `r`), and the rounds `FRINTN`/`FRINTP`/`FRINTM`/`FRINTZ`/`FRINTA` `D`/`S` (`frintOf`,
+  `op Fa, Fd` as G46's `fun46`). Phase 1 runs `VCNT`/`VUADDLV` as `op1` of `Arm64.vcnt`/
+  `Arm64.vuaddlv` on the 64-bit register and the rounds as `FOps.roundInt` of the float; the
+  machine (`progStep_simd55`, `progStep_frint55`) reads the `ARNG` and `V` operands as the V
+  register's number (`fpIdx?_arng`, `fpIdx?_vOfF`), applies the same function to the low 64 bits
+  and zero-extends it, and runs the rounds as `fp1Op` with `frintOf`'s `opc` (`IEEE.roundInt` on
+  both sides, a NaN's processing included). No mismatch, so no run premise: each round's mode is
+  fixed by its opcode (`8`–`12`: `rne`/`rpi`/`rmi`/`rz`/`rna`, the ARM ARM's `FRINTN`/`P`/`M`/`Z`/
+  `A`, which ignore `FPCR.RMode`) and is the mode Phase 1's `Floor`/`Ceil`/`Trunc`/`Round`/
+  `RoundToEven` use; a NaN is quietened with its payload and sign kept and a zero result keeps the
+  operand's sign on both sides. The machine's `FZ = DN = 0` is the model's standing `FPCR = 0`
+  (`docs/plans/semantics3.md` §3), not a G55 premise; `FRINTX`/`FRINTI` (which read
+  `FPCR.RMode`) are not taken.
+- Group B (`Check55b`/`Spec55b`, proof `G55b`), on X registers: `NEGshiftLL`/`RL`/`RA [k] x` as
+  `NEG Rm SHIFT k, Rd` (G51b's shifted `MVN` with G32's `unF .NEG`: `LL` of an `x` of at least the
+  result's class, `RL`/`RA` of a 64-bit `x`), `CLZW x` as `CLZW Rm, Rd` and `MULL x y` as
+  `SMULL Rm, Rn, Rd` (arguments of at least 32 bits, which the machine reads the low words of, as
+  G37's `REVW` and `UMULL`), and `EXTRconst`/`EXTRWconst [k] x y` as `EXTR`/`EXTRW $k, Rx, Ry, Rd`
+  (`extrOK`: `x`, the high half, the one `RestArgs` source; arguments of at least the width,
+  `0 ≤ k <` the width; `extrF55b`, `sized`).
+
+No new premise: `g55_value` takes `G54Pre`. Witnesses `genG55_witness` (`math/bits.OnesCount`: from
+`x = 0x103` in `F0`, `VCNT` gives `0x102` and `VUADDLV` 3, in `V0`'s low 64 bits after each Prog)
+and, for group B, `genG55b_witness` (`math/bits.LeadingZeros32`: from the 32-bit `x = 0x10000` in
+`R0`, `CLZW` gives 15, `X0 = 15` after its Prog).
+G55 accepts 7,331 functions (+23 over G54: 16 by group A, 7 by group B).
+
+Blockers recorded and not taken after G55 (counts among G54's 1,989 rejected functions, `--sets`):
+
+- **Tail calls** (`CALLtail`/`RetJmp`, 71 functions with no other blocker): Phase 1 has no
+  tail-call semantics. `TailLECall*` is a root that `evalOp` leaves `stuck` (`ECTyped.lean`,
+  `evalOp_tail`), so Phase 2 counts these functions vacuous and an end-to-end theorem would hold
+  only vacuously for them. They wait for Phase 1 tail-call semantics (#385's `TailCall` note);
+  the genssa slice and `checkObj`'s epilogue follow it.
+- **`FMSUB`/`FNMADD`** (`op FMSUBD: negated multiplicand`, 14 functions, 5 sole): rejected since
+  G46. Phase 1 negates the other multiplicand than the machine, and the results differ in a NaN's
+  sign (`FArith.lean`). Taking them needs an `FArithPre`-style run premise excluding a NaN
+  multiplicand (as `FSameNaN` for `FMADD`), not a checker change.
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -1304,6 +1351,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G52 | 7,163 (77.04%) | 221,257 |
 | G53 | 7,260 (78.08%) | 227,056 |
 | G54 | 7,308 (78.60%) | 231,647 |
+| G55 | 7,331 (78.85%) | 232,869 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1657,6 +1705,18 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `cpMem_shift`, `cpP_one`, `mloop_run`, `g54b_move`; `G54.lean`: `G54Pre`, `vk54_step`,
   `vk54_nil`, `vk54_pb`, `g54L_value` … `g54L_term`, `g54_value`, `g54_initMem`,
   `g54_nilPanic`, `g54_boundsPanic`, `g54_term`.
+- `Spec55a.lean`: what `vkind55a` accepted (`VK55a`, `frintOf_some`, `vkind55a_spec`,
+  `vkind55a_none`, `vk55a_op`); `Spec55.lean`: `VK55`, `vkind55_spec`, `vkind55_initMem`,
+  `checkG33_of_55L`, `checkG55L_spec`, `checkG55_spec`.
+- `G55a.lean`: `ops55a`, `ops55a_facts`, `stepLoc_pure55`, `fpIdx?_arng`, `fpIdx?_vOfF`,
+  `progStep_simd55`, `progStep_frint55`, `fvalRel_simd55`, `fvalRel_frint55`, `g55_simd`,
+  `g55_frint`, `vk55a_step`; `G55.lean`: `vk55_step`, `vk55_nil`, `vk55_pb`, `g55L_value` …
+  `g55L_term`, `g55_value`, `g55_initMem`, `g55_nilPanic`, `g55_boundsPanic`, `g55_term`.
+- `Spec55b.lean`: what `vkind55b` accepted (`VK55b`, `extrOK_spec`, `negSh55bKind_spec`,
+  `clzw55bKind_spec`, `mull55bKind_spec`, `extr55bKind_spec`, `vkind55b_spec`, `vkind55b_none`,
+  `vk55b_op`); `G55b.lean`: `AluOp55b`, `aluOp55b_facts`, `stepLoc_alu55b`, `progStep_negSh55b`,
+  `progStep_clzw55b`, `progStep_smull55b`, `progStep_extr55b`, `lo_negSh55b`, `lo_clzw55b`,
+  `lo_mull55b`, `lo_extr55b`, `g55b_negSh`, `g55b_clzw`, `g55b_mull`, `g55b_extr`, `vk55b_step`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
