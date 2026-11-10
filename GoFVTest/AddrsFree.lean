@@ -13,8 +13,10 @@ the verdict of `verifiedPipelineFull`. The checkers evaluate their constants at 
 (`Rules.opValC`, `Val.retypeC`, the static instances of `ruleOK`/`ruleOK1`/`blockOK1`), so the
 pipeline takes no instance: the verdict `gofv-ssa-opt` computes is the premise under every
 instance, the machine's among them. This module fails to build if a checker comes to read the
-assignment again (an `[Addrs]` binder in the type of the pipeline or of a slice checker
-`GoFV.Gen.Check.checkG*` it imports).
+assignment again (an `[Addrs]` binder in the type of the pipeline, of a slice checker
+`GoFV.Gen.Check.checkG*` it imports, or of `verified_mach`'s other checks: `liveCtx`,
+`retRegsOK`, `entryStoresOK`, `pendWins`, `memTyL`, `checkObj`). So `verified_mach_atSP`'s
+checked premises at the machine layout are the verdicts `gofv-ssa-opt --e2e` computes.
 -/
 
 open Lean Meta
@@ -32,7 +34,9 @@ private def hasAddrsBinder (ty : Expr) : Bool := Id.run do
 
 run_meta do
   let env ← getEnv
-  let mut roots := #[``GoFV.Opt.verifiedPipeline, ``GoFV.Opt.verifiedPipelineFull]
+  let mut roots := #[``GoFV.Opt.verifiedPipeline, ``GoFV.Opt.verifiedPipelineFull,
+    ``GoFV.Gen.Check.liveCtx, ``GoFV.Gen.Check.retRegsOK, ``GoFV.Gen.Check.entryStoresOK,
+    ``GoFV.Gen.Check.pendWins, ``GoFV.Gen.Check.memTyL, ``GoFV.Asm.CheckObj.checkObj]
   for (n, ci) in env.constants.toList do
     if let (.str p s, .defnInfo _) := (n, ci) then
       if p == `GoFV.Gen.Check && s.startsWith "checkG" then roots := roots.push n
