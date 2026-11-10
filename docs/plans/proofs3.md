@@ -1829,6 +1829,41 @@ and every earlier slice are unchanged, and the rejected set is a subset of G62's
 spill shape` and 12 `float reload shape` functions spill `float32` values (4-byte slots, which
 `slotOK` rejects). The lift to G63 adds `FReloadPre` to `RunPre`'s per-step premises.
 
+**Slice G64: 128-bit moves of blobs** (`GoFV/Gen/Check64.lean`, `checkG64 lc ps bstart g`;
+proven sound, `g64_value`, `g64_initMem`, `g64_term`, `g64_nilPanic`, `g64_boundsPanic`,
+`GoFV/Proof/Gen/G64.lean`). The 61 functions whose whole reason set was the blob moves (`op
+FMOVQload`, `op FLDPQ`, `select of FLDPQ`, `op FSTPQ`, `op FMOVQstore`, their frame-variable forms,
+`register value of shape blob 16`) copy a `Move` of 16 to 64 bytes through V registers
+(`ARM64.rules` 420–428). `vkind64` is G63's `vkind63`, then, on one of these ops G63 rejects,
+`qkind64`: `FMOVQload` into an `F` register at `blob 16` (`FMOVQ src, Fd`), `FMOVQstore` of such a
+blob (`FMOVQ Fs, dst`), `FLDPQ` into two distinct `F` registers, `FSTPQ`, and a select of an
+`FLDPQ` component homed in its register (no code), at `qaccessA`'s operand: G3's (`accessA`:
+`off(Rn)`, `sym+off(SB)`) or a frame variable's (`fvar57?`). `homeOK10` accepts a blob's V register
+home (`blobHome`: an `FMOVQload`'s or a select's, every earlier slice rejecting those values by its
+value check, so its rows are unchanged). **Design: the register relation.** `runLoc` holds a blob
+as its 16 raw bytes (`Arm64.load16`), pointer fragments included (a copied string header), so a V
+register holding one needs the injection; `FValRel` has none and stays as it was. `LocMatch` relates
+a V register by `VRel ι`, by cases on the value: a blob by `BlobRel ι` (each byte `ByteRel ι` to
+the register's byte at its position, as memory bytes are), every other value by `FValRel` by
+definition. The earlier slices' proofs keep their statements; the ones that read a V register
+convert (`vrel_fvalW`: a content of a class is no blob), the ones that write one wrap
+(`VRel.of_fval`, `locMatch_setRegV` over `locMatch_setRegVR`), and the callee contracts' `RegRel`
+keeps `FValRel` (`RegRel.loc`); `ExitRel` relates V registers by `VRel`. `Facts.clsReg` admits a
+blob in a V register (`clsReg_of_home10`, `Facts.clsLow` for X registers). `G64a.lean`: a load
+reads 16 valid bytes of a live block (the run premise `QLoadPre`, as G3's loads), related to the
+128 bits `LDR Q`/`LDP Q` load (`blobRel_load`, `progStep_floadAt`, `progStep_fldpqAt`); a store
+writes the bytes of the register's content read at `blob 16` (`poison` or a 16-byte blob,
+`store16_rel`) and keeps `MemInj` with the machine's 16-byte writes (`memInj_write16`,
+`progStep_fstoreAt`, `progStep_fstpqAt`); the operand's machine address and its relation to the
+Phase 1 address are `qbase64`'s (`QBase`, `OpAt`; `addr_rel`, `symAddr_global`, `varAt57`); a
+blob has no class (`core_setRegN`, `knext_setN`, `kpairB_kStep`), and no X register is written
+(the upper-bit table is empty after each, `uStep35_q64`, `uStep35_qsel64`). `vk64_step` is
+`vk63_step`'s statement with `QLoadPre`; `g64L_*` are `g63L_*` with `checkG64L_spec`,
+`vkind64_spec` and `vkind64_initMem`. G64 on P0' accepts 8,261 functions (88.85%, +55 over G63's
+8,206), 281,544 values (`--jobs 2`); G63 and every earlier slice are unchanged, and the rejected set
+is a subset of G63's. The 3 of the 61 that store off `SP` into the outgoing area (G48's mode) stay
+rejected. No witness yet. The lift to G64 adds `QLoadPre` to `RunPre`'s per-step premises.
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -1935,6 +1970,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G61 (G60 with the atomics, P0') | 7,983 (85.86%) | 269,353 |
 | G62 (G61 with the incoming stack arguments, P0') | 8,175 (87.93%) | 271,361 |
 | G63 (G62 with the float spills and reloads, P0') | 8,206 (88.26%) | 274,435 |
+| G64 (G63 with the 128-bit moves of blobs, P0') | 8,261 (88.85%) | 281,544 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -2368,6 +2404,16 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `checkG33_of_63L`, `checkG63L_spec`, `checkG63_spec`; `G63a.lean`: `FReloadPre`, `g63_fspill`,
   `g63_freload`, `uokl_f63`; `G63.lean`: `vk63_step`, `vk63_nil`, `vk63_pb`, `g63L_value` …
   `g63L_term`, `g63_value`, `g63_initMem`, `g63_nilPanic`, `g63_boundsPanic`, `g63_term`.
+- `Spec64.lean`: `QAccessOK`, `qaccessA_spec`, `qresObj_spec`, `qargObj_spec`, `qpairTy_spec`,
+  `VK64`, `qkind64_spec`, `vkind64_spec`, `vkind64_initMem`, `checkG33_of_64L`, `checkG64L_spec`,
+  `checkG64_spec`; `G64a.lean`: `QLoadPre`, `stepLoc_qload`/`qstore`/`qldp`/`qstp`, `read_regB`,
+  `write_regB`, `read_pairB`, `write_pairB`, `retypeB_cases`, `vrel_retypeB`, `store16_rel`,
+  `arg_relB`, `core_setRegN`, `knext_setN`, `kpairB_kStep`, `blobRel_load`, `memInj_write16`,
+  `progStep_fldpqAt`, `progStep_fstpqAt`, `OpAt`, `QBase`, `qbase64`, `op_regVB`, `g64_qload`,
+  `g64_qstore`, `g64_qldp`, `g64_qstp`, `g64_qsel`, `uStep35_q64`, `uStep35_qsel64`; `G64.lean`:
+  `vk64_step`, `vk64_nil`, `vk64_pb`, `g64L_value` … `g64L_term`, `g64_value`, `g64_initMem`,
+  `g64_nilPanic`, `g64_boundsPanic`, `g64_term`. `LocMatch.lean`: `BlobRel`, `VRel`,
+  `VRel.of_fval`, `VRel.fval`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a

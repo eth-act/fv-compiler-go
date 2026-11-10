@@ -717,7 +717,7 @@ structure ExitRel (E : MatchEnv) (s : LocState) (s0 t : MState) : Prop where
   ret : MachRet s0 t
   regs : ∀ r v, s.regs[r]? = some v →
     (∀ k, objX? r = some k → k ≠ 29 → k ≠ 30 → ValRel E.ι v (t.x k)) ∧
-      (∀ k, objV? r = some k → FValRel v (t.v k))
+      (∀ k, objV? r = some k → VRel E.ι v (t.v k))
   mem : ∃ mm, s.mem = .mem mm ∧ MemInj E.ι mm t.mem
 
 theorem objX?_ne27 {r : Nat} {k : Reg} (h : objX? r = some k) : k ≠ 27 := by
@@ -1366,7 +1366,7 @@ theorem sim_entry (hO : ObjEnv ps spills o otab L base code retM)
     have hfr0 : E0.framed = false := by rw [hEE.framed, h0]; rfl
     refine ⟨fun r v hv => ?_, ?_, ?_, ?_, ⟨?_, ?_, fun h => ?_, fun _ => ?_⟩, rfl⟩
     · obtain ⟨hX, hV⟩ := hent.regs r v hv
-      exact ⟨fun q hq => (hX q hq).2, hV⟩
+      exact ⟨fun q hq => (hX q hq).2, fun q hq => VRel.of_fval (hV q hq)⟩
     · rw [hent.flags]; trivial
     · exact hslots
     · refine ⟨mm, hmm, memInj_congr hinj fun bk al a hb ha i hi => ?_⟩
@@ -1401,8 +1401,8 @@ theorem sim_entry (hO : ObjEnv ps spills o otab L base code retM)
           show ValRel E0.ι v (s1.x q)
           rw [hx1 q hq'.1 hq'.2.1 hq'.2.2.1 (objX?_ne27 hq) hq'.2.2.2]
           exact (hX q hq).2
-      · show FValRel v (s1.v q)
-        rw [hv1]; exact hV q hq
+      · show VRel E0.ι v (s1.v q)
+        rw [hv1]; exact VRel.of_fval (hV q hq)
     · rw [hent.flags]; trivial
     · exact hslots
     · -- `M1` is `M` but for the saved words, which are in `StkAt E0`: the live blocks' bytes

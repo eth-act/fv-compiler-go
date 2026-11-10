@@ -126,6 +126,8 @@ import GoFV.Proof.Gen.G62
 import GoFV.Proof.Gen.G62a
 import GoFV.Proof.Gen.G63
 import GoFV.Proof.Gen.G63a
+import GoFV.Proof.Gen.G64
+import GoFV.Proof.Gen.G64a
 import GoFV.Proof.Gen.G7
 import GoFV.Proof.Gen.G8
 import GoFV.Proof.Gen.G9
@@ -216,6 +218,7 @@ import GoFV.Proof.Gen.Spec61
 import GoFV.Proof.Gen.Spec61a
 import GoFV.Proof.Gen.Spec62
 import GoFV.Proof.Gen.Spec63
+import GoFV.Proof.Gen.Spec64
 import GoFV.Proof.Gen.Spec7
 import GoFV.Proof.Gen.Spec8
 import GoFV.Proof.Gen.Spec9
