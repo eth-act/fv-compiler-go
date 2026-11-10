@@ -1434,8 +1434,9 @@ activation stays a `G49Env` with `G3Inv` of the mode and `SPInv`. On quick-v10 n
 `outargs[0, 8)`:
 298 functions store off `SP` without an aux, 664 stores, the lowest at offset 8 (3 of them
 `FSTPQ`, outside G48). G48 accepts 7,595 functions (+217 over G57; re-measured on main 977d0814
-with G56 merged). G48 stays chained on G57: G56 is not chained after G57 but beside it, on G55,
-and runs on P0' (`p0PrimeSyms`), while G57 and G48 check P0; no newer slice builds on G57.
+with G56 merged; 7,607 with G58's group B). G48 is chained on G57 (G56 is not chained after G57
+but beside it, on G55, and runs on P0' (`p0PrimeSyms`), while G57 and G48 check P0), and G58 on
+G48: G57 → G48 → G58.
 
 **Slice G58, group A: narrow and boolean operands, wider store-release sources,
 `LoweredRound*F`** (`Check58a`/`Spec58a`, proof `G58a`, `vkind58a lc g v`, `VK58a`,
@@ -1514,27 +1515,29 @@ case in `vk33_keep35` (8 more functions with the 3 `LDPW`+`ORshiftLL` ones).
 
 **Slice G58: groups A and B composed** (`GoFV/Gen/Check58.lean`, `checkG58 lc ps bstart g`; proven
 sound, `g58_value`, `g58_initMem`, `g58_term`, `g58_nilPanic`, `g58_boundsPanic`,
-`GoFV/Proof/Gen/G58.lean`). G57 with group A (`vkind58a lc g v`) tried when G57 rejects a value
-(`vkind58`; G57's reason is kept for the other values); group B is G35's table, which `checkG58L`
-checks as G57 does (`movdOK35`, `uEdgesOK35`). `VK58` (`Spec58.lean`) has a case for G57's kinds
-and one for group A, with no temporary; `vk58_step` is `vk57_step`'s statement, by `vk57_step` and
-`vk58a_step` (`hL`; no premise); `vk58_nil`/`vk58_pb` use `ops58a_facts`, and `g58L_*` are
-`g57L_*` with `checkG58L_spec`, `vkind58_spec` and `vkind58_initMem`. With group B, `uStep35_58a`
-has a third case, the `homeRegs` filter of `keepOps35` (`REV16W`, `MADDW`/`MSUBW`, the shifts),
-closed in `vk58a_step` by `uokl_xw`. No new premise: `g58_value` takes `G54Pre`. Like G57's, G58's
-statements are generalised over G48b's mode `osp` (the store `g58_stlr` keeps `SepAt` by
-`SepAt.write`/`not_mem`); at `osp = false` they are the statements before G48b. Witness
-`genG58_witness` (`GenG58.lean`, on `GenG58a`'s `math/bits.ReverseBytes16` and state):
-`checkG57` rejects the function and `checkG58` accepts it with the block walk's tables (`v11`
-starting at the no-op Prog before its `REV16W`), and `g58_value` relates `v11`'s run to a machine
-state whose `X0` has the low halfword `0x3412`. G58 accepts 7,409 functions (+31 over G57's 7,378,
-§5, `--jobs 1`): group A's 19 (the 20 of its probe less `runtime.checkFinalizersAndCleanups.func1`)
-and group B's 12, which earlier slices accept now too (G37 the two `hash/fnv` `Write`s, G38
-`runtime.preprintpanics`, G42 `runtime.runGCProg`, G50 four, G51 three, G57
-`regexp.makeOnePass`). No slice's count drops, and every function G58 rejects G57 rejected. The
-sole reasons left (105 functions) are led by `op LoweredGetCallerPC` (26), `block kind JUMPTABLE`
-(19), `MOVDnop/MOVDreg: upper bits unknown` (13), `block kind Defer` (13), `a register read at
-another class` (7), `FMSUBD: negated multiplicand` (7) and `pair load shape` (6).
+`GoFV/Proof/Gen/G58.lean`). G48 (on G57) with group A (`vkind58a lc g v`) tried when G48 rejects a
+value (`vkind58`; G48's reason is kept for the other values); group B is G35's table, which
+`checkG58L` checks as G48 does (`movdOK35`, `uEdgesOK35`), with G48's `spHomes48`. `VK58`
+(`Spec58.lean`) has a case for G48's kinds and one for group A, with no temporary; `vk58_step` is
+`vk48_step`'s statement, by `vk48_step` and `vk58a_step` (`hL`; no premise, in either mode);
+`vk58_nil`/`vk58_pb` use `ops58a_facts`, and `g58L_*` are `g48L_*` with `checkG58L_spec`,
+`vkind58_spec` and `vkind58_initMem`. With group B, `uStep35_58a` has a third case, the `homeRegs`
+filter of `keepOps35` (`REV16W`, `MADDW`/`MSUBW`, the shifts), closed in `vk58a_step` by
+`uokl_xw`. The theorems are G48's: in the mode `outSP` (`hosp`, `SPInv`, kept), `g58_value` under
+`G54Pre`, the contracts of the mode `E.outSP` and `CallOKStk`; group A adds no premise (the store
+`g58_stlr` keeps `SepAt` by `SepAt.write`/`not_mem`). Witness `genG58_witness` (`GenG58.lean`, on
+`GenG58a`'s `math/bits.ReverseBytes16` and state, in an activation whose `outargs` block sits at
+`SP`, `GenG48`'s `ι48` and `spO`): `checkG48` rejects the function and `checkG58` accepts it with
+the block walk's tables (`v11` starting at the no-op Prog before its `REV16W`), and `g58_value`
+relates `v11`'s run to a machine state whose `X0` has the low halfword `0x3412`, `SPInv` kept. G58
+accepts 7,626 functions (§5, `--jobs 1`; G58 is gen-check's last slice): G48's 7,607 and group A's
+19 (the 20 of its probe less `runtime.checkFinalizersAndCleanups.func1`). Group B's 12 are accepted
+by earlier slices too (G37 the two `hash/fnv` `Write`s, G38 `runtime.preprintpanics`, G42
+`runtime.runGCProg`, G50 four, G51 three, G57 `regexp.makeOnePass`; G57 7,390, G48 7,607). No
+slice's count drops, and every function G58 rejects G48 rejected. The sole reasons left (120
+functions) are led by `op LoweredGetCallerPC` (29), `block kind JUMPTABLE` (19), `MOVDnop/MOVDreg:
+upper bits unknown` (14), `block kind Defer` (13), `a register read at another class` (7),
+`FMSUBD: negated multiplicand` (7) and `pair load shape` (6).
 
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
@@ -1636,7 +1639,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G56 (on G55, P0') | 7,331 (78.85%) | 232,869 |
 | G57 | 7,378 (79.35%) | 235,204 |
 | G48 | 7,595 (81.69%) | 242,306 |
-| G58 | 7,409 (79.69%) | 238,245 |
+| G58 (on G48) | 7,626 (82.02%) | 245,347 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1648,8 +1651,8 @@ G55 7,345 (79.00%; 233,639 values).)
 
 (G58's group B changes G35's upper-bit table, which every slice from G35 on reads: re-measured
 with it (`--jobs 1`), G35 and G36 are unchanged, G37 accepts 6,107 (2 more than with G57's
-table), G38 6,391, G42 6,623, G50 6,929, G51 7,004, G49 7,167, G55 7,356 and G57 7,390 (79.48%,
-+12; 236,767 values); no slice drops.)
+table), G38 6,391, G42 6,623, G50 6,929, G51 7,004, G49 7,167, G55 7,356, G57 7,390 (79.48%,
++12; 236,767 values) and G48 7,607 (81.82%, +12; 243,869 values); no slice drops.)
 
 (On quick-v9, before the G2 validator was tightened for the proof — call arguments and results in
 `R0`–`R15`, `SelectN`'s component class, 64-bit `MOVDaddr` and spill shapes — G2 accepted 1,211.)
