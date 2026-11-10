@@ -1,5 +1,5 @@
 import GoFV.Gen.Genssa
-import GoFV.Gen.Check57
+import GoFV.Gen.Check58
 import GoFV.Gen.Check56
 import GoFV.Gen.Check48
 import GoFV.Asm.ConstLoad
@@ -35,7 +35,8 @@ G51 (`GoFV.Gen.Check.checkG51`), G49 (`GoFV.Gen.Check.checkG49`, on G51), G52
 (`GoFV.Gen.Check.checkG52`), G53 (`GoFV.Gen.Check.checkG53`), G54 (`GoFV.Gen.Check.checkG54`),
 G55 (`GoFV.Gen.Check.checkG55`), G56 (`GoFV.Gen.Check.checkG56`, on G55, on P0': `p0PrimeSyms`, P0
 with `progedit`'s float constant loads and the constant symbols in G2's symbols), G57
-(`GoFV.Gen.Check.checkG57`) and G48 (`GoFV.Gen.Check.checkG48`, on G57),
+(`GoFV.Gen.Check.checkG57`), G48 (`GoFV.Gen.Check.checkG48`, on G57) and G58
+(`GoFV.Gen.Check.checkG58`, on G57),
 all with G2's inputs, on its P0 output and the function after `trim`, and counts the accepted
 functions. Rejections by the last
 slice are grouped by their reason with value and block numbers removed. `--sets FILE` writes each
@@ -113,6 +114,7 @@ structure Stats where
   constLoads56 : Nat := 0
   accepted57 : Nat := 0
   accepted48 : Nat := 0
+  accepted58 : Nat := 0
   errors : Nat := 0
   values : Nat := 0
   acceptedValues : Nat := 0
@@ -172,6 +174,7 @@ structure Stats where
   acceptedValues56 : Nat := 0
   acceptedValues57 : Nat := 0
   acceptedValues48 : Nat := 0
+  acceptedValues58 : Nat := 0
   /-- Functions by the set of reasons that reject them (sole reason: one-element set). -/
   sole : Std.HashMap String Nat := {}
   /-- Functions each reason occurs in. -/
@@ -221,6 +224,7 @@ def Stats.merge (a b : Stats) : Stats :=
     constLoads56 := a.constLoads56 + b.constLoads56,
     accepted57 := a.accepted57 + b.accepted57,
     accepted48 := a.accepted48 + b.accepted48,
+    accepted58 := a.accepted58 + b.accepted58,
     errors := a.errors + b.errors,
     values := a.values + b.values, acceptedValues := a.acceptedValues + b.acceptedValues,
     acceptedValues2 := a.acceptedValues2 + b.acceptedValues2,
@@ -279,6 +283,7 @@ def Stats.merge (a b : Stats) : Stats :=
     acceptedValues56 := a.acceptedValues56 + b.acceptedValues56,
     acceptedValues57 := a.acceptedValues57 + b.acceptedValues57,
     acceptedValues48 := a.acceptedValues48 + b.acceptedValues48,
+    acceptedValues58 := a.acceptedValues58 + b.acceptedValues58,
     sole := mergeMap a.sole b.sole, occurs := mergeMap a.occurs b.occurs,
     accept := a.accept ++ b.accept, sets := a.sets ++ b.sets }
 
@@ -577,6 +582,10 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
   let st := if ok57 then
       { st with accepted57 := st.accepted57 + 1, acceptedValues57 := st.acceptedValues57 + nv }
     else st
+  let ok58 := (Check.checkG58 lc ps bstart g).toOption.isSome
+  let st := if ok58 then
+      { st with accepted58 := st.accepted58 + 1, acceptedValues58 := st.acceptedValues58 + nv }
+    else st
   match Check.checkG48 lc ps bstart g with
   | .ok _ =>
     let tag := if ok4 then "" else if ok5 then " (G5)" else if ok6 then " (G6)"
@@ -694,6 +703,7 @@ def main (args : List String) : IO UInt32 := do
   out := out ++ s!"| {st.files} | G56 (on G55, P0') | {st.accepted56} | {pct st.accepted56 st.files} | {st.values} | {st.acceptedValues56} |\n"
   out := out ++ s!"| {st.files} | G57 | {st.accepted57} | {pct st.accepted57 st.files} | {st.values} | {st.acceptedValues57} |\n"
   out := out ++ s!"| {st.files} | G48 | {st.accepted48} | {pct st.accepted48 st.files} | {st.values} | {st.acceptedValues48} |\n"
+  out := out ++ s!"| {st.files} | G58 | {st.accepted58} | {pct st.accepted58 st.files} | {st.values} | {st.acceptedValues58} |\n"
   out := out ++ s!"\n{st.constLoads56} functions accepted by G56 load a float constant from a constant symbol (P0')\n"
   out := out ++ s!"\n{st.errors} parse, env or genssa errors\n"
   let sorted (m : Std.HashMap String Nat) :=

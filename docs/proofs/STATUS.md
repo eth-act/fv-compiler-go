@@ -1093,6 +1093,48 @@ quick-v10 no store off `SP` reaches `outargs[0, 8)` (lowest offset 8 in 664 stor
 quick-v10 (`lake exe gen-check`): 7,595 of 9,297 functions (81.69%), 242,306 values (+217
 functions over G57).
 
+## Phase 3: genssa, slice G58 group A, narrow and boolean operands, wider store-release sources, `LoweredRound*F` (I7, #553)
+
+`GoFV.Proof.Gen.vk58a_step` (`GoFV/Proof/Gen/G58a.lean`): one value `vkind58a`
+(`GoFV/Gen/Check58a.lean`, tried after G57's value check) accepts (`VK58a`, `vkind58a_spec`),
+in `vk57a_step`'s form under `G49Env` with no run premise and with `hL : UOKL m L` (as
+`vk51c_step`: G32's ops keep the upper-bit table's other entries): `REV16W` of a 16-bit argument
+for a result of at most 16 bits; `MADDW`/`MSUBW` for a result of class `c ≤ 32` of arguments of
+at least `c` bits; G32's register and constant ops, G36's register shifts (as the amount), G33's
+`UBFIZ` and G32's `CSINC` with a boolean argument (0 or 1 in the whole register); `STLRW`/`STLRB`
+of a source wider than the access (Phase 1's `fitPiece` truncates; `encode_fit58`); and
+`LoweredRound32F`/`64F` with no code, the result in the argument's `F` register (`FOps.round` is
+the identity). Composition into `checkG58` is the slice's. A probe of G57's check with `vkind58a`
+accepts 19 of the 20 functions with one of these sole reasons
+(`runtime.checkFinalizersAndCleanups.func1` then fails at a `Phi`'s class). Witnesses:
+`genG58a_witness` (`math/bits.ReverseBytes16`: `REV16W` of `0x1234`), `genG58a2_witness`
+(`test/copy` `main.u16`: `MSUBW` of a 16-bit divisor), `genG58a3_witness`
+(`runtime.(*pinState).set`: `LSL` by the boolean `multipin`), `genG58a4_witness`
+(`runtime.(*timers).unlock`: `STLRW` of a 64-bit `int`, `0x88` stored at the address),
+`genG58a5_witness` (`test/gcgort` `main.init.func95.1`: `LoweredRound32F` of `float32(1.5)`).
+
+## Phase 3: genssa, slice G58 group B, G35's upper-bit table across more writes (I7, #553)
+
+`GoFV.Gen.Check.uStep35` (`GoFV/Gen/Check35.lean`) follows `LDPW`/`LDPSW` (entries of the
+extended words), `LDAR*`, the selects of pair and acquire loads, and the G36 register shifts, G37
+ops and `SBFIZ` register by register (`pairOp35`); `GoFV/Proof/Gen/Keep35.lean` (`uStep35_ldp`,
+`uStep35_sel`, `uStep35_pairW`, `uStep35_keepOp`, `keepOps35`, `uStep35_keepOps`, `uokl_xw`,
+`uokl_one`, `WPairW`, `uokl_wpair`). Every `g*_value` statement from G35 to G57 is unchanged;
+`vk51b_step` and `vk57a_step` take `UOKL m L`. Exercised by `genG57_witness` (`main.grow`: the table
+before `STPW` now holds the `LDPSW` words' entries for `R8`, `R9`). 12 functions G57 rejected only
+for `upper bits unknown` are accepted (proofs3.md §4, slice G58 group B).
+
+## Phase 3: genssa, slice G58, narrow and boolean operands, wider store-release sources, `LoweredRound*F`, G35's upper-bit table across more writes (I7, #553)
+
+`GoFV.Proof.Gen.g58_value`, `g58_initMem`, `g58_term`, `g58_nilPanic`, `g58_boundsPanic`
+(`GoFV/Proof/Gen/G58.lean`): when slice G58 (`checkG58`: G57 with group A's `vkind58a` tried when
+G57 rejects a value, over group B's upper-bit table, `GoFV/Gen/Check58.lean`) accepts a function,
+they are G57's statements, under `G49Env`, `g58_value` under `G54Pre` (no new premise). Witness:
+`genG58_witness` (`math/bits.ReverseBytes16`: `checkG57` rejects it and `checkG58` accepts it;
+`REV16W R0, R0` of `0x1234` leaves `0x3412` in `X0`'s low halfword). Coverage on quick-v10
+(`lake exe gen-check --jobs 1`): 7,409 of 9,297 functions (79.69%, 31 more than G57's 7,378:
+19 by group A, 12 by group B), 238,245 values; no earlier slice's count drops.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g56_obj_value`, `g56_obj_term`, `g56_obj_nilPanic`, `g56_obj_boundsPanic`

@@ -329,7 +329,8 @@ theorem g57_ldpwGlob (F : Facts lc sym text az ez psA.toList ret E)
       ⟨plain as (globA g name abi v.auxInt.toInt) (· == pairA oa ob), "LDPW sym(SB)"⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' ∧
+      WPairW ra rb sg m m' := by
   have hl := F.lowered
   have hA := F.addr
   have hpo := hop.pairOp
@@ -379,7 +380,8 @@ theorem g57_ldpwGlob (F : Facts lc sym text az ez psA.toList ret E)
   obtain ⟨hlm2, hinv2⟩ := finish_reg hlm1 hinv1 hdb (by omega : kb < 32) hob hrel1
     (fits_retypeL h1 _) (b' := b) (i' := i + 1)
   rw [hj'] at hlm2
-  refine ⟨_, hstar.tail (pstep_at F.nodup F.lt F.ret hk rfl ?_), hlm2, hinv2.mono hK, hsi⟩
+  refine ⟨_, hstar.tail (pstep_at F.nodup F.lt F.ret hk rfl ?_), hlm2, hinv2.mono hK, hsi,
+    ka, kb, _, _, hoa, hob, by simp only [wX_pc] <;> rfl⟩
   have has' : psA.toList[k].as = .LDPW ∧ sg = false ∨ psA.toList[k].as = .LDPSW ∧ sg = true := by
     rw [has]; rcases hop with ⟨-, rfl, rfl⟩ | ⟨-, rfl, rfl⟩
     · exact .inl ⟨rfl, rfl⟩
@@ -413,7 +415,8 @@ theorem g57_ldpwVar (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j ⟨plain as (slotA · .AUTO off) (· == pairA oa ob), "LDPW var"⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' ∧
+      WPairW ra rb sg m m' := by
   have hl := F.lowered
   have hA := F.addr
   have hpo := hop.pairOp
@@ -460,7 +463,8 @@ theorem g57_ldpwVar (F : Facts lc sym text az ez psA.toList ret E)
   obtain ⟨hlm2, hinv2⟩ := finish_reg hlm1 hinv1 hdb (by omega : kb < 32) hob hrel1
     (fits_retypeL h1 _) (b' := b) (i' := i + 1)
   rw [hj'] at hlm2
-  refine ⟨_, hstar.tail (pstep_at F.nodup F.lt F.ret hk rfl ?_), hlm2, hinv2.mono hK, hsi⟩
+  refine ⟨_, hstar.tail (pstep_at F.nodup F.lt F.ret hk rfl ?_), hlm2, hinv2.mono hK, hsi,
+    ka, kb, _, _, hoa, hob, by simp only [wX_pc] <;> rfl⟩
   obtain ⟨has, hf1, -, ht', -⟩ := plain_spec hok
   simp only [beq_iff_eq] at ht'
   have has' : psA.toList[k].as = .LDPW ∧ sg = false ∨ psA.toList[k].as = .LDPSW ∧ sg = true := by
@@ -495,7 +499,8 @@ theorem vk57a_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
     (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
-    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s osp) (hpre : PairPre50 lc s v)
+    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s osp) (hL : UOKL m L)
+    (hpre : PairPre50 lc s v)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G49Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
@@ -504,35 +509,40 @@ theorem vk57a_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
   have hE2 := hE.env.env.env.env.env
   have hvars := hE.env.env.env.env.vars
   have hR := kread_of_reads hreads
-  have hU : ∀ m', UOKL m' (uStep35 lc L v) := fun m' => by
-    rw [uStep35_57a (ops57a_of (vk57a_op hVK))]
-    exact fun e he => by cases he
   have same : ∀ m', PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
       LocMatch E s' bid (i + 1) m' ∧ CoreInv E.ι (StkAt E) (kStep lc K v).get s' osp ∧
-      SlotInv lc s' →
+      SlotInv lc s' → UOKL m' (uStep35 lc L v) →
       ∃ E' m', E.Extends E' ∧ G49Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
         PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
         LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp ∧
         UOKL m' (uStep35 lc L v) :=
-    fun m' ⟨h1, h2, h3, h4⟩ => ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩, hU m'⟩
+    fun m' ⟨h1, h2, h3, h4⟩ hu => ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩, hu⟩
   cases hVK with
   | stpw hop hsz4 hax hmt hhn hao hxo hyo hma hcx hcy =>
     have hsz := slot_sizes hE2.lcEq hcf hinv.slots
     obtain ⟨m', h⟩ := g57_stpw (H := H) F hE2.frame hsz hm hinv.core hinv.slots hR
       (knext_kStep fun _ => (hs_none hhn).noRegs) hj hj' hop hsz4 hax hmt hhn hao hxo hyo hma
       hcx hcy hvs htemp hs
-    exact same m' h
+    refine same m' h ?_
+    rw [uStep35_57a hop]
+    exact fun e he => by cases he
   | glob hop hsz2 hx hsy hty h0 h1 h80 h81 hma hh hne hza hzb hda hdb hoa hob =>
     have hnp : v.op ≠ .Phi := by rcases hop with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> nofun
-    obtain ⟨m', h⟩ := g57_ldpwGlob (H := H) F hE2.glob hm hinv.core hinv.slots
+    obtain ⟨m', h1, h2, h3, h4, h5⟩ := g57_ldpwGlob (H := H) F hE2.glob hm hinv.core hinv.slots
       (kpair_kStep hnp hh hty h0 h1 hne) hpre hj hj' hop hsz2 hx hsy hty h0 h1 h80 h81 hma hh
       hza hzb hda hdb hoa hob hvs htemp hs
-    exact same m' h
+    refine same m' ⟨h1, h2, h3, h4⟩ ?_
+    rw [uStep35_ldpX hop.pairOp]
+    simp only [homeRegs, hh]
+    exact uokl_wpair hL hne h5
   | var hop hsz2 hfv hty h0 h1 h80 h81 hma hh hne hza hzb hda hdb hoa hob =>
     have hnp : v.op ≠ .Phi := by rcases hop with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> nofun
-    obtain ⟨m', h⟩ := g57_ldpwVar (H := H) F hm hinv.core hinv.slots
+    obtain ⟨m', h1, h2, h3, h4, h5⟩ := g57_ldpwVar (H := H) F hm hinv.core hinv.slots
       (kpair_kStep hnp hh hty h0 h1 hne) hpre hj hj' hop hsz2 hfv.aux hfv.var hfv.temp
       (var_addr hfv hv hvars) hty h0 h1 h80 h81 hma hh hza hzb hda hdb hoa hob hvs htemp hs
-    exact same m' h
+    refine same m' ⟨h1, h2, h3, h4⟩ ?_
+    rw [uStep35_ldpX hop.pairOp]
+    simp only [homeRegs, hh]
+    exact uokl_wpair hL hne h5
 
 end GoFV.Proof.Gen

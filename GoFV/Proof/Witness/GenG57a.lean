@@ -3401,7 +3401,8 @@ theorem genG57a_witness :
   have hpre : PairPre50 lc s0 (val 12) := by
     intro _ _ _ _ hpo; rw [hop] at hpo; simp [pairOp50] at hpo
   obtain ⟨E1, m1, hx1, hE1, hp1, hm1', -, -⟩ := vk57a_step (H := GenG2.H0) (env := GenG2.env)
-    (L := []) hE F hcf hv hVK hvs htemp hj hj' hrd locMatch0 (g57aInv0 hk0 hk2 hk3) hpre hs1
+    (L := []) hE F hcf hv hVK hvs htemp hj hj' hrd locMatch0 (g57aInv0 hk0 hk2 hk3)
+    (fun _ h => by cases h) hpre hs1
   -- Byte 8 of `heap 1` after the store, read through `MemInj`: no pointer word covers it.
   have hA : m1.mem (A + BitVec.ofNat 64 8) = 0x44 := by
     obtain ⟨mm1, hmm1, hinj⟩ := hm1'.mem
