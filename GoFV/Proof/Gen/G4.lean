@@ -384,13 +384,14 @@ theorem homeOK3_of_4 {lc : LocCtx} {i : Nat} (h : homeOK4 lc i = true)
   next a b hh => exact absurd hh (hp a b)
   next => exact h
 
-/-- A register home G4 handles other than `ZERO` holds a value with a class. -/
+/-- A register home G4 handles other than `ZERO` holds a value with a class (`Facts`' form). -/
 theorem clsReg_of_home4 {lc : LocCtx} (h : ∀ i, homeOK4 lc i = true) :
-    ∀ i r, lc.home i = some (.reg r) → r ≠ zeroReg → (cls (lc.ty i)).isSome = true := by
+    ∀ i r, lc.home i = some (.reg r) → r ≠ zeroReg →
+      (cls (lc.ty i)).isSome = true ∨ (31 ≤ r ∧ r < 63 ∧ lc.ty i = .blob 16) := by
   intro i r hh hr
   have := homeOK3_of_4 (h i) (fun a b hab => by rw [hh] at hab; cases hab)
   simp only [homeOK3, hh, Bool.or_eq_true, beq_iff_eq, hr, false_or] at this
-  exact this
+  exact .inl this
 
 /-- No static call is homed in a slot: what the value steps of G3 and later slices need of the
 homes (`vk3_step`), beyond the register homes' classes (`Facts`). -/

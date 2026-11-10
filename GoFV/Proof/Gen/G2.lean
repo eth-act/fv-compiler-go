@@ -80,6 +80,13 @@ def KCall (ts : List Ty) (outs : List Nat) (K K' : Nat → Option Nat) : Prop :=
 def RegRel (ι : Blk → Option (BitVec 64)) (x : Val) (m : MState) (r : Nat) : Prop :=
   (∀ k, objX? r = some k → ValRel ι x (m.x k)) ∧ (∀ k, objV? r = some k → FValRel x (m.v k))
 
+/-- A register related by `RegRel` (the callee contracts' float relation) is related as
+`LocMatch` relates registers (`VRel`). -/
+theorem RegRel.loc {ι : Blk → Option (BitVec 64)} {x : Val} {m : MState} {r : Nat}
+    (h : RegRel ι x m r) :
+    (∀ k, objX? r = some k → ValRel ι x (m.x k)) ∧ (∀ k, objV? r = some k → VRel ι x (m.v k)) :=
+  ⟨h.1, fun k hk => VRel.of_fval (h.2 k hk)⟩
+
 /-- **The callee contract at a static call** (trusted, semantics3 §6; `docs/proofs/STATUS.md`
 Assumptions): from the machine state `m` at the callee's entry, if the ABI argument registers
 `ins` hold the arguments `args` and the memory injects `runLoc`'s memory `mm` (distinct keys, the
@@ -1280,7 +1287,7 @@ theorem g2_callAt (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
       rcases h16 _ (List.mem_append_left _ (List.getElem_mem hjin)) with h | h <;> omega
     have hrz : ins[j0] ≠ zeroReg := by unfold zeroReg; omega
     obtain ⟨c, hc⟩ : ∃ c, cls (lc.ty v.args.toList.dropLast[j0]) = some c :=
-      Option.isSome_iff_exists.1 (F.clsReg _ _ hh hrz)
+      Option.isSome_iff_exists.1 (F.clsLow hh hrz (by omega))
     obtain ⟨x, hx, hxv, -⟩ := arg_rel hA hl hm hinv hh hc
       (fun hr => hR (by rw [hop]; nofun) _ (List.dropLast_subset _ ha) _ _ hh hr hc)
       (Or.inr ⟨by omega, objX?_low hr16⟩)
@@ -1345,7 +1352,7 @@ theorem g2_callAt (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
     by rw [hsl']; exact hslots', ⟨mm', hmem', hMI'⟩, hframe', ?_⟩,
     ⟨hfits, mm', hmem', hkn', hsep'⟩, fun k v hk => hsi k v (hsl' ▸ hk)⟩
   · by_cases hro : r ∈ outs
-    · exact hregs' r hro x h
+    · exact RegRel.loc (hregs' r hro x h)
     · rcases hregs r x h hro with rfl | ⟨h2, hr⟩
       · exact ⟨fun _ _ => trivial, fun _ _ => trivial⟩
       · obtain ⟨hx1, -⟩ := hm.regs r x h2

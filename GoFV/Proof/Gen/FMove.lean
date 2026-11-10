@@ -245,11 +245,11 @@ theorem objX?_none_of_V {r : Nat} {k : GoFV.Arm64.Reg} (h : objV? r = some k) : 
   unfold objX?
   simp only [show ¬ r < 18 by omega, show ¬ r < 26 by omega, show ¬ r < 29 by omega, ↓reduceIte]
 
-/-- Writing a V register (`setReg` on `runLoc`'s side, `wV` on the machine's) with related
-values keeps `LocMatch`, at any PC. -/
-theorem locMatch_setRegV {E : MatchEnv} {s : LocState} {b : ID} {i : Nat} {m : GoFV.Arm64.MState}
-    (h : LocMatch E s b i m) {r : Nat} {k : GoFV.Arm64.Reg} {x : Val} {q : BitVec 128}
-    (hrk : objV? r = some k) (hx : FValRel x q) {b' : ID} {i' : Nat} :
+/-- Writing a V register (`setReg` on `runLoc`'s side, `wV` on the machine's) with values related
+by `VRel` keeps `LocMatch`, at any PC. -/
+theorem locMatch_setRegVR {E : MatchEnv} {s : LocState} {b : ID} {i : Nat}
+    {m : GoFV.Arm64.MState} (h : LocMatch E s b i m) {r : Nat} {k : GoFV.Arm64.Reg} {x : Val}
+    {q : BitVec 128} (hrk : objV? r = some k) (hx : VRel E.ι x q) {b' : ID} {i' : Nat} :
     LocMatch E (s.setReg r x) b' i' { m.wV k q with pc := E.pcOf b' i' } := by
   have hr31 := (objV?_some hrk).1
   have hrz : r ≠ zeroReg := by unfold zeroReg; omega
@@ -267,7 +267,7 @@ theorem locMatch_setRegV {E : MatchEnv} {s : LocState} {b : ID} {i : Nat} {m : G
       refine ⟨fun k' hk' => (by rw [objX?_none_of_V hrk] at hk'; cases hk'), fun k' hk' => ?_⟩
       rw [hrk] at hk'
       cases hk'
-      simp [GoFV.Arm64.MState.wV, hx]
+      simpa [GoFV.Arm64.MState.wV] using hx
     · rename_i hlt
       simp only [Bool.and_eq_true, decide_eq_true_eq, bne_iff_ne, ne_eq, not_and,
         Decidable.not_not] at hlt
@@ -285,6 +285,18 @@ theorem locMatch_setRegV {E : MatchEnv} {s : LocState} {b : ID} {i : Nat} {m : G
       intro he; subst he; exact hrr (objV?_inj hk' hrk)
     simp only [GoFV.Arm64.MState.wV, this, ↓reduceIte]
     exact h2 k' hk'
+
+/-- `locMatch_setRegVR` for a float (`FValRel`). -/
+theorem locMatch_setRegV {E : MatchEnv} {s : LocState} {b : ID} {i : Nat} {m : GoFV.Arm64.MState}
+    (h : LocMatch E s b i m) {r : Nat} {k : GoFV.Arm64.Reg} {x : Val} {q : BitVec 128}
+    (hrk : objV? r = some k) (hx : FValRel x q) {b' : ID} {i' : Nat} :
+    LocMatch E (s.setReg r x) b' i' { m.wV k q with pc := E.pcOf b' i' } :=
+  locMatch_setRegVR h hrk (VRel.of_fval hx)
+
+/-- A V register's content of a class (`FitsW`, no blob) is related by `FValRel`. -/
+theorem vrel_fvalW {ι : Blk → Option (BitVec 64)} {x : Val} {q : BitVec 128} {c : Nat}
+    (h : VRel ι x q) (hf : FitsW c x) : FValRel x q :=
+  VRel.fval h fun bs he => by subst he; exact hf
 
 /-- A register value of class `c` read at a float shape of class `c` is unchanged. -/
 theorem fvalRel_retypeL {x : Val} {q : BitVec 128} {c : Nat} {t : Ty} (hx : FValRel x q)
@@ -430,7 +442,8 @@ theorem arg_relV (hl : lc.ctx.f.lowered = true) (hm : LocMatch E s b i m)
   | none => simp only [Option.getD_none, retypeL_poison]; trivial
   | some v =>
     simp only [Option.getD_some]
-    exact fvalRel_retypeLW ((hm.regs r v hv).2 k hobj) (hinv.regs r v c hrz hv hK) hft hc
+    have hfit := hinv.regs r v c hrz hv hK
+    exact fvalRel_retypeLW (vrel_fvalW ((hm.regs r v hv).2 k hobj) hfit) hfit hft hc
 
 end Machine
 

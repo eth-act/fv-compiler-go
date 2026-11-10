@@ -437,7 +437,7 @@ theorem g62_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
       rcases h16 _ (List.mem_append_left _ (List.getElem_mem hjin)) with h | h <;> omega
     have hrz : ins[j0] ≠ zeroReg := by unfold zeroReg; omega
     obtain ⟨c0, hc0⟩ : ∃ c0, cls (c.cx.lc.ty v.args.toList.dropLast[j0]) = some c0 :=
-      Option.isSome_iff_exists.1 (F.clsReg _ _ hh hrz)
+      Option.isSome_iff_exists.1 (F.clsLow hh hrz (by omega))
     obtain ⟨x, hx, hxv, -⟩ := arg_rel hA hl hm hinv.core hh hc0
       (fun hr => hR (by rw [hop]; nofun) _ (List.dropLast_subset _ ha) _ _ hh hr hc0)
       (Or.inr ⟨by omega, objX?_low hr16⟩)
@@ -884,7 +884,7 @@ theorem g62_icallPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
       rcases h16 _ (List.mem_append_left _ (List.getElem_mem hjin)) with h | h <;> omega
     have hrz' : ins[j0] ≠ zeroReg := by unfold zeroReg; omega
     obtain ⟨c2, hc2⟩ : ∃ c2, cls (c.cx.lc.ty (v.args.toList.drop n).dropLast[j0]) = some c2 :=
-      Option.isSome_iff_exists.1 (F.clsReg _ _ hh hrz')
+      Option.isSome_iff_exists.1 (F.clsLow hh hrz' (by omega))
     obtain ⟨x, hx, hxv, -⟩ := arg_rel hA hl hm hinv.core hh hc2
       (fun hr => hRa _ (List.mem_of_mem_drop (List.dropLast_subset _ ha)) _ _ hh hr hc2)
       (Or.inr ⟨by omega, objX?_low hr16⟩)

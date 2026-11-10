@@ -292,10 +292,12 @@ theorem checkG10_spec {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Na
       rw [hh]
       rfl
 
-/-- A home G10 handles that is no `results` home and no slot of an `Arg` is one G4 handles. -/
+/-- A home G10 handles that is no `results` home, no slot of an `Arg` and no blob's V register
+(`blobHome`) is one G4 handles. -/
 theorem homeOK4_of_10 {lc : LocCtx} {i : Nat} (h : homeOK10 lc i = true)
     (hr : ∀ rs, lc.home i ≠ some (.results rs))
-    (ha : ∀ k, lc.home i = some (.slot k) → (lc.ctx.f.value? i).map (·.op) ≠ some .Arg) :
+    (ha : ∀ k, lc.home i = some (.slot k) → (lc.ctx.f.value? i).map (·.op) ≠ some .Arg)
+    (hb : ∀ r, lc.home i = some (.reg r) → blobHome lc i r = false) :
     homeOK4 lc i = true := by
   unfold homeOK10 at h
   cases hh : lc.home i with
@@ -308,6 +310,23 @@ theorem homeOK4_of_10 {lc : LocCtx} {i : Nat} (h : homeOK10 lc i = true)
       rw [hh] at h
       simp only [Bool.or_eq_true, beq_iff_eq] at h
       exact h.resolve_right hna
+    | reg r =>
+      have hnb := hb r hh
+      rw [hh] at h
+      simp only [Bool.or_eq_true, hnb] at h
+      exact h.resolve_right (by simp)
     | _ => simpa [hh] using h
+
+theorem blob16_eq {t : Ty} (h : blob16 t = true) : t = .blob 16 := by
+  unfold blob16 at h
+  split at h
+  · rfl
+  · cases h
+
+/-- A blob's V register home (`blobHome`): `F0`–`F31`, at the 16-byte blob shape. -/
+theorem blobHome_spec {lc : LocCtx} {i r : Nat} (h : blobHome lc i r = true) :
+    31 ≤ r ∧ r < 63 ∧ lc.ty i = .blob 16 := by
+  simp only [blobHome, Bool.and_eq_true, decide_eq_true_eq] at h
+  exact ⟨h.1.1.1, h.1.1.2, blob16_eq h.1.2⟩
 
 end GoFV.Gen.Check

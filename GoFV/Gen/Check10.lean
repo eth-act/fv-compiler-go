@@ -135,14 +135,30 @@ def vkind10 (lc : LocCtx) (g : G2In) (v : Value) : Except String VKind2 :=
       | none => vkind9 lc g v
     else vkind9 lc g v
 
+/-- The 16-byte blob shape (`Vec128`: `FMOVQload`, the components of `FLDPQ`). -/
+def blob16 : Ty → Bool
+  | .blob 16 => true
+  | _ => false
+
+/-- A V register home (`F0`–`F31`) of a 16-byte blob that `FMOVQload` or a select (of an
+`FLDPQ`) writes (`GoFV/Gen/Check64.lean`; every slice before G64 rejects those values by their
+value check). -/
+def blobHome (lc : LocCtx) (i r : Nat) : Bool :=
+  31 ≤ r && r < 63 && blob16 (lc.ty i) &&
+    ((lc.ctx.f.value? i).map (·.op) == some .ARM64FMOVQload ||
+      (lc.ctx.f.value? i).map (·.op) == some .Select0 ||
+      (lc.ctx.f.value? i).map (·.op) == some .Select1)
+
 /-- The home of value `i` is one G10 handles: G4's, the `results` home of an interface or
-closure call, or the slot of an `Arg` (an incoming stack argument, `GoFV/Gen/Check62.lean`; every
-slice before G62 rejects the `Arg` itself by its value check). -/
+closure call, the slot of an `Arg` (an incoming stack argument, `GoFV/Gen/Check62.lean`; every
+slice before G62 rejects the `Arg` itself by its value check), or a 16-byte blob's V register
+(`blobHome`). -/
 def homeOK10 (lc : LocCtx) (i : Nat) : Bool :=
   homeOK4 lc i ||
     match lc.home i with
     | some (.results _) => ((lc.ctx.f.value? i).bind (icallLead ·.op)).isSome
     | some (.slot _) => (lc.ctx.f.value? i).map (·.op) == some .Arg
+    | some (.reg r) => blobHome lc i r
     | _ => false
 
 /-- Slice G10 of the genssa validator (module doc): G4's tables of the accepted function. -/

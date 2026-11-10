@@ -4908,7 +4908,7 @@ theorem genG57a2_witness :
   have hr1' := isW32_spec hr.1
   have hE := g57a2Env hlt hav hfit
   have F : Facts lc (fun _ => GenG2.symA) GenG2.text 32 8 ps.toList 0 E :=
-    ⟨hl, GenG57a.clsReg0 hho, hnd, hlt,
+    ⟨hl, fun i r hh hr => .inl (GenG57a.clsReg0 hho i r hh hr), hnd, hlt,
       fun p hp => GenG2.prog_addr_ne (hlt p hp) hp (by simp) (by simp), GenG12.addrAgree⟩
   obtain ⟨htemp, hVK⟩ := vkind57a_spec hvk
   have hvs : VStep2 ps (.prog pt) 17 18 :=

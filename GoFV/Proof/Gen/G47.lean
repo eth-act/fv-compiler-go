@@ -49,7 +49,8 @@ theorem argsV (F : Facts lc sym text az ez psA.toList ret E) (hm : LocMatch E s 
   intro a r har h31
   have hh := hargs a r har
   have hrz : r ≠ zeroReg := by unfold zeroReg; omega
-  obtain ⟨c, hc⟩ := Option.isSome_iff_exists.1 (F.clsReg a r hh hrz)
+  obtain ⟨c, hc⟩ := Option.isSome_iff_exists.1 ((F.clsReg a r hh hrz).resolve_right fun h => by
+    have := hfa a r har h31; rw [h.2.2] at this; simp [fTy] at this)
   have hK := hR hnp a (has a (List.of_mem_zip har).1) r c hh hrz hc
   refine ⟨_, read_reg F.lowered hh hc, fun k hk => ?_⟩
   obtain ⟨x, hx, hxv, -⟩ := arg_relV F.lowered hm hinv hh (hfa a r har h31) hc hK hk
@@ -101,7 +102,8 @@ theorem g47_selF (F : Facts lc sym text az ez psA.toList ret E)
     | some raw =>
       simp only [Option.getD_some]
       have hfit := hinv.regs r raw c0 hrz hv (hKr c0 hcv)
-      exact fvalRel_retypeL (fvalRel_retypeLW ((hm.regs r raw hv).2 _ hk) hfit hft hc0t)
+      exact fvalRel_retypeL (fvalRel_retypeLW (vrel_fvalW ((hm.regs r raw hv).2 _ hk) hfit) hfit
+        hft hc0t)
         (fits_retypeL hc0t _) hfv hcv
   have hlm := locMatch_setRegV hm hk hrel (b' := b) (i' := i + 1)
   have hpc : E.pcOf b (i + 1) = m.pc := by rw [hj', hvs, ← hj, hm.pc]

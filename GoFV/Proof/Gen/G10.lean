@@ -329,7 +329,7 @@ theorem g10_icall (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
       rcases h16 _ (List.mem_append_left _ (List.getElem_mem hjin)) with h | h <;> omega
     have hrz' : ins[j0] ≠ zeroReg := by unfold zeroReg; omega
     obtain ⟨c, hc⟩ : ∃ c, cls (lc.ty (v.args.toList.drop n).dropLast[j0]) = some c :=
-      Option.isSome_iff_exists.1 (F.clsReg _ _ hh hrz')
+      Option.isSome_iff_exists.1 (F.clsLow hh hrz' (by omega))
     obtain ⟨x, hx, hxv, -⟩ := arg_rel hA hl hm hinv hh hc
       (fun hr => hRa _ (List.mem_of_mem_drop (List.dropLast_subset _ ha)) _ _ hh hr hc)
       (Or.inr ⟨by omega, objX?_low hr16⟩)
@@ -395,7 +395,7 @@ theorem g10_icall (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
     by rw [hsl']; exact hslots', ⟨mm', hmem', hMI'⟩, hframe', ?_⟩,
     ⟨hfits, mm', hmem', hkn', hsep'⟩, fun k v hk => hsi k v (hsl' ▸ hk)⟩
   · by_cases hro : r ∈ outs
-    · exact hregs' r hro x h
+    · exact RegRel.loc (hregs' r hro x h)
     · rcases hregs r x h hro with rfl | ⟨h2, hr⟩
       · exact ⟨fun _ _ => trivial, fun _ _ => trivial⟩
       · obtain ⟨hx1, -⟩ := hm.regs r x h2
@@ -431,15 +431,21 @@ end Cases
 
 /-! ## Static facts of an accepted function -/
 
-/-- A register home G10 handles other than `ZERO` holds a value with a class. -/
+/-- A register home G10 handles other than `ZERO` holds a value with a class, or is a 16-byte
+blob's V register (`blobHome`). -/
 theorem clsReg_of_home10 {lc : LocCtx} (h : ∀ i, homeOK10 lc i = true) :
-    ∀ i r, lc.home i = some (.reg r) → r ≠ zeroReg → (cls (lc.ty i)).isSome = true := by
+    ∀ i r, lc.home i = some (.reg r) → r ≠ zeroReg →
+      (cls (lc.ty i)).isSome = true ∨ (31 ≤ r ∧ r < 63 ∧ lc.ty i = .blob 16) := by
   intro i r hh hr
-  have h4 := homeOK4_of_10 (h i) (fun rs hrs => by rw [hh] at hrs; cases hrs)
-    (fun k hk => by rw [hh] at hk; cases hk)
-  have := homeOK3_of_4 h4 (fun a b hab => by rw [hh] at hab; cases hab)
-  simp only [homeOK3, hh, Bool.or_eq_true, beq_iff_eq, hr, false_or] at this
-  exact this
+  cases hb : blobHome lc i r with
+  | true => exact .inr (blobHome_spec hb)
+  | false =>
+    have h4 := homeOK4_of_10 (h i) (fun rs hrs => by rw [hh] at hrs; cases hrs)
+      (fun k hk => by rw [hh] at hk; cases hk) (fun r' hr' => by
+        rw [hh] at hr'; cases hr'; exact hb)
+    have := homeOK3_of_4 h4 (fun a b hab => by rw [hh] at hab; cases hab)
+    simp only [homeOK3, hh, Bool.or_eq_true, beq_iff_eq, hr, false_or] at this
+    exact .inl this
 
 /-- A slot home G10 handles is a spill's or an `Arg`'s. -/
 theorem slot_spill10 {lc : LocCtx} (h : ∀ i, homeOK10 lc i = true) {c : ID} {u : Value}
@@ -449,7 +455,7 @@ theorem slot_spill10 {lc : LocCtx} (h : ∀ i, homeOK10 lc i = true) {c : ID} {u
   · exact .inr ha
   · left
     have h4 := homeOK4_of_10 (h c) (fun rs hrs => by rw [hk] at hrs; cases hrs)
-      (fun _ _ => by rw [hu]; simpa using ha)
+      (fun _ _ => by rw [hu]; simpa using ha) (fun r hr => by rw [hk] at hr; cases hr)
     have := homeOK3_of_4 h4 (fun a b hab => by rw [hk] at hab; cases hab)
     simpa [homeOK3, homeOK2, hk, hu] using this
 
