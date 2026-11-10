@@ -1787,6 +1787,8 @@ of `code` holds 7 and the machine's word there is 7. G62 on P0' accepts 8,175 fu
 +192 over G61's 7,983, exactly that reason set), 271,361 values (`--jobs 2`); G61 and every earlier
 slice are unchanged, and the rejected set is a subset of G61's. The 37 functions with the same
 pair and a narrow stack parameter stay rejected (`Arg width`; 8-byte slots only, `slotOK`).
+`ArgOK` is trusted at the slices (STATUS Assumptions); the lift to G62 derives it from the entry
+condition (§9 **Next**).
 
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
@@ -3425,6 +3427,32 @@ the Go register `SP` holding the held pointer to `outargs 0`, `SPInv`).
 through a whole function with a real entry store of a register parameter (none of the e2e
 functions with a pending window is small enough for the native-decide witnesses yet). Entry
 stores after spills (`StoreReg`) in the entry block (`entryStoresOK` rejects them).
+
+*The lift to G62 derives `ArgOK` at the entry* (G62's run premise, STATUS Assumptions; it is a
+caller-side fact about the entry state, so it goes into the entry condition, not into `RunPre`):
+
+1. A check `argFirst lc` in `checkG62L`, as `cloFirst`: every `Arg` of a stack parameter is in
+   the entry block, and the values before it emit no code (entry values, `InitMem`,
+   `LoweredGetClosurePtr`, other such `Arg`s) or are entry stores (`entryStores`). Go's scheduler
+   puts the `Arg`s at the top of the entry block (`cmd/compile/internal/ssa/schedule.go:18,
+   164-166`, `ScoreArg`); gen-check measures what it drops of G62's 192.
+2. A clause `stack` of the caller's side next to `EntryMatch E0 W sI s0` (the ABI0 stack layout,
+   `cmd/compile/internal/abi/abiutils.go:108,270-318`, `offsetForLocals` = `FixedFrameSize` = 8):
+   for every `Arg {x} [off]` of the function with `argVal sI.fr x off t = .ok y` (`stackParam`),
+   the bytes of `s0` at `s0.sp + 8 + offset(x) + off` hold `y` at the value's shape (`SlotRel`).
+   `EntryEnv.sp` and `G2Env.slot` (`frameOff .PARAM` = `autosize + 8 + off`) make that address
+   `E0.sp + o` for the slot's `o`.
+3. The clause survives the morestack path (`EntryMatch.more`: `MoreStep.mem` keeps every byte
+   off the tail's spill slots, which are register parameters' and so apart from the stack
+   parameters' offsets, and off the guard word) and the prologue (`BodyEntry`: it writes the saved
+   `LR`/`FP` words below the entry `SP` only), and every entry store before an `Arg` (a window of
+   a register parameter, apart from the home slots by `checkVars49`).
+4. In the head of the entry block the machine state at each `Arg` is then the entry's after the
+   prologue and the entry stores (`g62_arg` does not step: `PStar … m m`), so `ArgOK` holds there
+   by the clause (a lemma `argOK_entry`); `argFirst` puts no `Arg` past the head, where `ArgOK` is
+   vacuous, so `RunPre` gains no premise. STATUS then lists the clause in the entry condition with
+   the ABI0 citation and drops `ArgOK`'s row; `genG62_witness` keeps `argOK0`, and the G62
+   end-to-end witness discharges the clause from its `MachEntry` state.
 
 ## 10. Read-only data: float constants and jump tables
 
