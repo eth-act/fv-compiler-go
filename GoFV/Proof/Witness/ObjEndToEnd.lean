@@ -10,9 +10,9 @@ open scoped GoFV.SSA.Sem.Fixed
 `pallocSum.start` of `std/runtime` from its first export section (the input of `number lines`,
 `GenG3.startSsa`), in the pass environment `gofv-ssa-opt --verified` builds for it (`baseEnv`, the
 whole-file environment), through `verifiedPipelineFull` (`fullyVerified`) to the allocated
-function; genssa's Progs (`GenG3.ps`) are accepted by `checkG54` (`refsLive`, and `checkG54L` on
+function; genssa's Progs (`GenG3.ps`) are accepted by `checkG62` (`refsLive`, and `checkG62L` on
 `liveCtx` of the pipeline's output) and its return by `retRegsOK` (`ObjWhole.lcFacts` on that
-context, with `entryStoresOK`: no pending window), and the assembler's words by `checkObj`
+context, with `entryStoresOK`: no pending window, and `argsOK`: no `Arg`), and the assembler's words by `checkObj`
 (`ObjWhole.obj_premises`). On the argument `p = 7` in the Phase 1 test environment `plRunEnv`
 (`VPre` as for `isNaN` in `PipelineFull.lean`), the generic `run` returns; `verified_mach`
 gives the `runLoc` that refines it, its body's outcome, and the machine run that returns to the
@@ -178,18 +178,19 @@ theorem verified_mach_witness :
     have hd : (GoFV.SSA.run plRunEnv penv.tables f0 ObjWhole.args {} 5).Defined := by
       rw [hrun0]; trivial
     obtain ⟨hO, hH, hME, hroom, hg, hnone, -, hEE, hpc, -, -, hic⟩ := ObjWhole.obj_premises
-    obtain ⟨hc, hrok, houts, hE, hb1, hbm, hk, hentry, hu, hes, sI, hsI, hent, hinv, hP⟩ :=
+    obtain ⟨hc, hrok, houts, hE, hb1, hbm, hk, hentry, hu, hes, hargs, sI, hsI, hent, hinv, hP⟩ :=
       ObjWhole.lc_premises hlcf
-    have hc61 : checkG61 (LocCtx.make r.st.tables r.st.func) GenG3.ps GenG3.bs GenG3.g =
+    have hc62 : checkG62 (LocCtx.make r.st.tables r.st.func) GenG3.ps GenG3.bs GenG3.g =
         .ok (GenG3.tab, GenG3.kt) := by
-      simpa [checkG61, hrl] using hc
+      simpa [checkG62, hrl] using hc
     rw [← hentry] at hpc
     obtain ⟨hmt, hcr⟩ := ObjWhole.lc_ro hlcf
     obtain ⟨fuel', href, raw, hraw, hfin, hdef, hret, -⟩ :=
-      verified_mach hpe hv hvpre hnn hap hnp hd rfl hc61 (ObjWhole.lc_n48 hlcf) hO hH hic hrok hME
+      verified_mach hpe hv hvpre hnn hap hnp hd rfl hc62 (ObjWhole.lc_n48 hlcf) hO hH hic hrok hME
         hroom hg
         (fun _ _ _ h => by rw [hnone] at h; cases h) (fun _ _ _ h => by rw [hnone] at h; cases h)
-        hE (hEE _) hb1 hbm hk hsI hes hent (fun _ _ _ h => by rw [hnone] at h; cases h) hinv hu
+        hE (hEE _) hb1 hbm hk hsI hes hargs hent (fun _ _ _ h => by rw [hnone] at h; cases h) hinv
+        hu
         (hpc _) hP (fun _ => hmt) (by rw [hcr]; intro n a h; cases h)
     rw [houts] at hret
     exact ⟨r, rfl, hv, ⟨rs0, m0, hrun0⟩, fuel', href, raw, hraw, hfin, hdef, hret⟩

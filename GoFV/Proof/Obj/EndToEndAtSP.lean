@@ -75,8 +75,8 @@ theorem verified_mach_atSP
     (hbE : lc.ctx.f.block? lc.ctx.f.entry = some blkE)
     (hbm : lc.ctx.f.entry ∈ lc.ctx.f.blocks.toList) (hk : k ≤ blkE.values.size)
     (hpre : enterListLoc e lc (locInit e lc args mem) (blkE.values.toList.take k) = .ok sI)
-    (hes : entryStoresOK lc g k = true)
-    (hent : EntryMatch (envAtSP g L E0) (InWins L E0.sp (pendWins lc g)) sI s0)
+    (hes : entryStoresOK lc g k = true) (hargs : argsOK lc g spills.toList k = true)
+    (hent : EntryMatch (envAtSP g L E0) g (InWins L E0.sp (pendWins lc g)) sI s0)
     (hmore : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
       MoreEntry (envAtSP g L E0) spills.toList gOff sI s0)
     (hinv : G3Inv (envAtSP g L E0) lc (kAt lc kt lc.ctx.f.entry blkE k) sI)
@@ -103,7 +103,7 @@ theorem verified_mach_atSP
   have hact : lc.ctx.act = 0 := hlc ▸ liveCtx_make_act _ _
   letI : Addrs := Addrs.atSP (baseSP g L E0.sp)
   exact verified_mach hpipe hv hP hn ha hnp hd hlc hc hn48 hO hH hic hrok hME hroom hg hms hsep
-    (g49Env_atSP hE hact) hEE hbE hbm hk hpre hes hent hmore hinv huE hpc hRP hmt hro
+    (g49Env_atSP hE hact) hEE hbE hbm hk hpre hes hargs hent hmore hinv huE hpc hRP hmt hro
 
 /-- **Generic SSA to machine words at the machine layout, in G48's mode.** `verified_mach_S` at
 the address assignment `A = Addrs.atSPO (baseSP g L E0.sp) E0.sp.toNat` (activation 0's `local`
@@ -145,8 +145,8 @@ theorem verified_mach_S_atSP
     (hbE : lc.ctx.f.block? lc.ctx.f.entry = some blkE)
     (hbm : lc.ctx.f.entry ∈ lc.ctx.f.blocks.toList) (hk : k ≤ blkE.values.size)
     (hpre : enterListLoc e lc (locInit e lc args mem) (blkE.values.toList.take k) = .ok sI)
-    (hes : entryStoresOK lc g k = true)
-    (hent : EntryMatch (envAtSPO g L E0) (InWins L E0.sp (pendWins lc g)) sI s0)
+    (hes : entryStoresOK lc g k = true) (hargs : argsOK lc g spills.toList k = true)
+    (hent : EntryMatch (envAtSPO g L E0) g (InWins L E0.sp (pendWins lc g)) sI s0)
     (hmore : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
       MoreEntry (envAtSPO g L E0) spills.toList gOff sI s0)
     (hinv : G3Inv (envAtSPO g L E0) lc (kAt lc kt lc.ctx.f.entry blkE k) sI true)
@@ -175,7 +175,8 @@ theorem verified_mach_S_atSP
   have hact : lc.ctx.act = 0 := hlc ▸ liveCtx_make_act _ _
   letI : Addrs := Addrs.atSPO (baseSP g L E0.sp) E0.sp.toNat
   exact verified_mach_S hpipe hv hP hn ha hnp hd hlc hc hO hH hic hrok hME hroom hg hms hsep
-    (g49Env_atSPO hE hact) hEE hbE hbm hk hpre hes hent hmore hinv hosp hspI huE hpc hRP hmt hro
+    (g49Env_atSPO hE hact) hEE hbE hbm hk hpre hes hargs hent hmore hinv hosp hspI huE hpc hRP
+    hmt hro
 
 
 end GoFV.Proof.Obj

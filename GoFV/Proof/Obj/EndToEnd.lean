@@ -82,8 +82,8 @@ theorem verified_mach_M {osp : Bool}
     (hbE : lc.ctx.f.block? lc.ctx.f.entry = some blkE)
     (hbm : lc.ctx.f.entry ∈ lc.ctx.f.blocks.toList) (hk : k ≤ blkE.values.size)
     (hpre : enterListLoc e lc (locInit e lc args mem) (blkE.values.toList.take k) = .ok sI)
-    (hes : entryStoresOK lc g k = true)
-    (hent : EntryMatch E0 (InWins L E0.sp (pendWins lc g)) sI s0)
+    (hes : entryStoresOK lc g k = true) (hargs : argsOK lc g spills.toList k = true)
+    (hent : EntryMatch E0 g (InWins L E0.sp (pendWins lc g)) sI s0)
     (hmore : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
       MoreEntry E0 spills.toList gOff sI s0)
     (hinv : G3Inv E0 lc (kAt lc kt lc.ctx.f.entry blkE k) sI osp)
@@ -126,9 +126,9 @@ theorem verified_mach_M {osp : Bool}
   refine ⟨fuel', href, _, rfl, heq, finish_defined (heq ▸ hd'), fun rs mm hraw => ?_,
     fun pe mm hraw hHP hbok hPP => ?_⟩
   · exact obj_whole_ret hc hO hH hic hrok hME hroom hg hms hsep hE hEE hbE hbm hk
-      (by exact rfl) hpre hes hent hmore hinv hosp hn48 hspI huE hpc hRP hRo hraw
+      (by exact rfl) hpre hes hargs hent hmore hinv hosp hn48 hspI huE hpc hRP hRo hraw
   · exact obj_whole_panic hc hO hH hHP hbok hic hME hroom hg hms hsep hE hEE hbE hbm hk
-      (by exact rfl) hpre hes hent hmore hinv hosp hn48 hspI huE hpc hRP hRo hPP hraw
+      (by exact rfl) hpre hes hargs hent hmore hinv hosp hn48 hspI huE hpc hRP hRo hPP hraw
 
 
 /-- **Generic SSA to machine words.** `f` goes through the verified pipeline (`fullyVerified`)
@@ -159,7 +159,9 @@ contract `MorestackOK` at the morestack tail's call, and in `RunPre` the callee 
 `CallOK`, `CallOKZ`, `ICallOK`, `WbOK`, `CloOK`, `MemEqOK`; the caller's side: `MachEntry`,
 `EntryMatch`/`EntryEnv` of the arguments, memory and frame at the entry (the memory but for the
 windows of the register-assigned parameters the function accesses, `pendWins`, which the entry
-stores from value `k` cover, `entryStoresOK`), and for a function with
+stores from value `k` cover, `entryStoresOK`; the incoming stack arguments, which the `Arg`s before
+`k` read, at `8 + off` above the entry `SP`, ABI0's caller obligation, `EntryMatch.stack`; the
+`Arg`s checked by `argsOK`), and for a function with
 a stack check the spill slots apart from `g` (`TailSep`) and the entry values surviving the
 morestack tail (`MoreEntry`)). -/
 theorem verified_mach
@@ -194,8 +196,8 @@ theorem verified_mach
     (hbE : lc.ctx.f.block? lc.ctx.f.entry = some blkE)
     (hbm : lc.ctx.f.entry ∈ lc.ctx.f.blocks.toList) (hk : k ≤ blkE.values.size)
     (hpre : enterListLoc e lc (locInit e lc args mem) (blkE.values.toList.take k) = .ok sI)
-    (hes : entryStoresOK lc g k = true)
-    (hent : EntryMatch E0 (InWins L E0.sp (pendWins lc g)) sI s0)
+    (hes : entryStoresOK lc g k = true) (hargs : argsOK lc g spills.toList k = true)
+    (hent : EntryMatch E0 g (InWins L E0.sp (pendWins lc g)) sI s0)
     (hmore : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
       MoreEntry E0 spills.toList gOff sI s0)
     (hinv : G3Inv E0 lc (kAt lc kt lc.ctx.f.entry blkE k) sI)
@@ -221,8 +223,8 @@ theorem verified_mach
   obtain ⟨fuel', href, raw, hraw, hfin, hdef, hret, hpan⟩ :=
     verified_mach_M (osp := false) hpipe hv hP hn ha hnp hd hlc hc
       (fun h => by rw [hn48] at h; cases h) hO hH hic hrok hME hroom hg hms hsep hE hEE hbE hbm
-      hk hpre hes hent hmore hinv (fun h => by cases h) (fun h => by cases h) huE hpc hRP.m hmt
-      hro
+      hk hpre hes hargs hent hmore hinv (fun h => by cases h) (fun h => by cases h) huE hpc hRP.m
+      hmt hro
   exact ⟨fuel', href, raw, hraw, hfin, hdef, hret, fun pe mm hr hHP hbok hPP =>
     hpan pe mm hr hHP hbok hPP.m⟩
 
@@ -262,7 +264,8 @@ caller's side: `MachEntry`, `EntryMatch`/`EntryEnv` of the arguments, memory and
 entry, the mode (`hosp`: G48's for a function with an arm64 op) and `SPInv` at the entry (`hspI`:
 the `outargs` block at `SP`, the Go register `SP` related to it) (the memory but for the
 windows of the register-assigned parameters the function accesses, `pendWins`, which the entry
-stores from value `k` cover, `entryStoresOK`), and for a function with
+stores from value `k` cover, `entryStoresOK`; the incoming stack arguments at `8 + off` above the
+entry `SP`, `EntryMatch.stack`, the `Arg`s checked by `argsOK`), and for a function with
 a stack check the spill slots apart from `g` (`TailSep`) and the entry values surviving the
 morestack tail (`MoreEntry`)). -/
 theorem verified_mach_S
@@ -296,8 +299,8 @@ theorem verified_mach_S
     (hbE : lc.ctx.f.block? lc.ctx.f.entry = some blkE)
     (hbm : lc.ctx.f.entry ∈ lc.ctx.f.blocks.toList) (hk : k ≤ blkE.values.size)
     (hpre : enterListLoc e lc (locInit e lc args mem) (blkE.values.toList.take k) = .ok sI)
-    (hes : entryStoresOK lc g k = true)
-    (hent : EntryMatch E0 (InWins L E0.sp (pendWins lc g)) sI s0)
+    (hes : entryStoresOK lc g k = true) (hargs : argsOK lc g spills.toList k = true)
+    (hent : EntryMatch E0 g (InWins L E0.sp (pendWins lc g)) sI s0)
     (hmore : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
       MoreEntry E0 spills.toList gOff sI s0)
     (hinv : G3Inv E0 lc (kAt lc kt lc.ctx.f.entry blkE k) sI true)
@@ -323,7 +326,7 @@ theorem verified_mach_S
         ∃ pe' n t', BoundsAgree pe pe' ∧ runMach H code (s0.x 30) n s0 = .panicked pe' t') := by
   obtain ⟨fuel', href, raw, hraw, hfin, hdef, hret, hpan⟩ :=
     verified_mach_M (osp := true) hpipe hv hP hn ha hnp hd hlc hc (fun _ => rfl) hO hH hic hrok
-      hME hroom hg hms hsep hE hEE hbE hbm hk hpre hes hent hmore hinv (fun _ => hosp)
+      hME hroom hg hms hsep hE hEE hbE hbm hk hpre hes hargs hent hmore hinv (fun _ => hosp)
       (fun _ => hspI) huE hpc hRP.m hmt hro
   exact ⟨fuel', href, raw, hraw, hfin, hdef, hret, fun pe mm hr hHP hbok hPP =>
     hpan pe mm hr hHP hbok hPP.m⟩

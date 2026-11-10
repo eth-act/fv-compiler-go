@@ -1,5 +1,6 @@
 import GoFV.Proof.Obj.AtomPanic
 import GoFV.Proof.Obj.Entry49
+import GoFV.Gen.Entry62
 import GoFV.Proof.Pass.DeadRelL
 import GoFV.Proof.Obj.Results
 import GoFV.Proof.Obj.Frame
@@ -424,8 +425,7 @@ theorem noArgRun_of_argsBefore {env : Env} {lc : LocCtx} {k : Nat} {s0 : LocStat
 /-- A function with an `Arg` is no `noArg` one. -/
 theorem noArg_false {lc : LocCtx} {id : ID} {u : Value} (hu : lc.ctx.f.value? id = some u)
     (hop : u.op = .Arg) : noArg lc = false := by
-  by_contra hn
-  have hn' : noArg lc = true := by simpa using hn
+  refine Bool.eq_false_iff.2 fun hn' => ?_
   have hlt : id < lc.ctx.f.valueTab.size := by
     have hu' : (lc.ctx.f.valueTab[id]?).join = some u := hu
     cases h' : lc.ctx.f.valueTab[id]? with
@@ -1035,6 +1035,29 @@ structure EntryMatch (E : MatchEnv) (g : G2In) (W : BitVec 64 → Prop) (s : Loc
       (s0.x 28).toNat + 32 ≤ s0.sp.toNat + off.toNat + 8)
   mem : ∃ mm, s.mem = .mem mm ∧ ∃ M, MemInj E.ι mm M ∧ ∀ y, ¬ W y → M y = s0.mem y
 
+/-- **The stack clause reduces to the condition before G62** (`slots = []`) for a function with
+no incoming stack argument (`noArg`, no `Arg`): `EntryMatch` is then G61's entry condition,
+field by field. -/
+theorem EntryMatch_stack_nil {E : MatchEnv} {g : G2In} {W : BitVec 64 → Prop} {s : LocState}
+    {s0 : MState} (hna : noArg E.lc = true) :
+    EntryMatch E g W s s0 ↔
+      (∀ r v, s.regs[r]? = some v →
+        (∀ q, objX? r = some q → ((q = 16 ∨ q = 17 ∨ q = 20 ∨ q = 29) → v = .poison) ∧
+          ValRel E.ι v (s0.x q)) ∧ (∀ q, objV? r = some q → FValRel v (s0.v q))) ∧
+      s.flags = .poison ∧ s.slots = [] ∧
+      (∃ mm, s.mem = .mem mm ∧ ∃ M, MemInj E.ι mm M ∧ ∀ y, ¬ W y → M y = s0.mem y) := by
+  constructor
+  · intro h
+    refine ⟨h.regs, h.flags, ?_, h.mem⟩
+    cases hs : s.slots with
+    | nil => rfl
+    | cons p ps =>
+      obtain ⟨id, u, -, -, hu, hop, -⟩ := h.stack p.1 p.2 (by rw [hs]; simp [List.lookup])
+      rw [noArg_false hu hop] at hna
+      cases hna
+  · rintro ⟨hr, hf, hs, hm⟩
+    exact ⟨hr, hf, fun k v hk => (by rw [hs] at hk; cases hk), hm⟩
+
 /-- The caller's side of the morestack path (`sim_entry`, a function whose stack check reads
 `gOff(g)` and whose morestack tail spills `spills`) for the run's first state `s` and the entry
 state `s0`: every register holding a value but `R26` (the closure context, which
@@ -1323,8 +1346,9 @@ theorem sim_entry (hO : ObjEnv ps spills o otab L base code retM)
         omega
       rw [hbody.sp]
       have h64 : (2 : Nat) ^ 64 = 18446744073709551616 := rfl
-      rw [h64] at ha hbnd
-      simp only [BitVec.toNat_sub, BitVec.toNat_ofNat, h64, ha]
+      have h8 : (8 : BitVec 64).toNat = 8 := rfl
+      rw [h64] at hbnd
+      simp only [BitVec.toNat_sub, BitVec.toNat_ofNat, h64, h8, ha]
       omega
   refine ⟨s1, h1, E0, { s1 with pc := E0.pcOf b k }, M1, ⟨rfl, fun _ _ h => h⟩, hE, ?_, hM1,
     hinv, hspI, (by rw [huE]; intro _ he; cases he),

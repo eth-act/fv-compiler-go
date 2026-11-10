@@ -94,17 +94,17 @@ theorem verified_mach_S_witness :
     have hd : (GoFV.SSA.run plRunEnv penv.tables f0 ObjWholeS.args {} 5).Defined := by
       rw [hrun0]; trivial
     obtain ⟨hO, hH, hME, hroom, hg, hnone, -, hEE, hpc, -, -, hic⟩ := ObjWholeS.obj_premises
-    obtain ⟨hc, hrok, houts, hE, hb1, hbm, hk, hentry, hu, hes, sI, hsI, hent, hinv, hspI, hP⟩ :=
-      ObjWholeS.lc_premises hlcf
-    have hc61 : checkG61 (LocCtx.make r.st.tables r.st.func) GenG3.ps GenG3.bs GenG3.g =
+    obtain ⟨hc, hrok, houts, hE, hb1, hbm, hk, hentry, hu, hes, hargs, sI, hsI, hent, hinv, hspI,
+      hP⟩ := ObjWholeS.lc_premises hlcf
+    have hc62 : checkG62 (LocCtx.make r.st.tables r.st.func) GenG3.ps GenG3.bs GenG3.g =
         .ok (GenG3.tab, GenG3.kt) := by
-      simpa [checkG61, hrl] using hc
+      simpa [checkG62, hrl] using hc
     rw [← hentry] at hpc
     obtain ⟨hmt, hcr⟩ := ObjWholeS.lc_ro hlcf
     obtain ⟨fuel', href, raw, hraw, hfin, hdef, hret, -⟩ :=
-      verified_mach_S hpe hv hvpre hnn hap hnp hd rfl hc61 hO hH hic hrok hME hroom hg
+      verified_mach_S hpe hv hvpre hnn hap hnp hd rfl hc62 hO hH hic hrok hME hroom hg
         (fun _ _ _ h => by rw [hnone] at h; cases h) (fun _ _ _ h => by rw [hnone] at h; cases h)
-        hE (hEE _) hb1 hbm hk hsI hes hent (fun _ _ _ h => by rw [hnone] at h; cases h) hinv
+        hE (hEE _) hb1 hbm hk hsI hes hargs hent (fun _ _ _ h => by rw [hnone] at h; cases h) hinv
         rfl (fun _ => hspI) hu
         (hpc _) hP (fun _ => hmt) (by rw [hcr]; intro n a h; cases h)
     rw [houts] at hret
