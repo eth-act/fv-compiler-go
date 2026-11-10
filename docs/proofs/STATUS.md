@@ -1056,8 +1056,8 @@ Composition into `checkG57` and its coverage: the slice G57 entry.
 block), in `vk55_step`'s form under `G49Env`: its Prog runs, the match and `G3Inv` hold after it
 under the same activation, and the upper-bit table is empty. No run premise. Composed into
 `checkG57` by the slice. `checkObj` models `DMB`/`PRFM` as no-ops (the assembler entry,
-`objBarrier_dmb_witness`); the composition (`verified_mach`) is on G56, so no function with one is
-end to end yet. Witnesses:
+`objBarrier_dmb_witness`); the composition (`verified_mach`) is on G60, G57's ops included, but
+none of quick-v10's 31 functions with a `DMB` or `PRFM` is end to end (End-to-end coverage). Witnesses:
 `genG57b_witness` (`test/gcgort` `main.init.func95.1`: `FSTPS` of `float32(1.5)` into the `temp`
 block of `.autotmp_1`, which G55 rejects) and `genG57b2_witness`
 (`runtime.mallocgcSmallNoscanReuse`: `DMB $14`, which G55 rejects).
@@ -1247,7 +1247,7 @@ and entry stores read). Witness: `genG60_witness` (`math.sqrt`:
 `FMOVDconst [MaxFloat64]` in `F1`, the load of `$f64.7fefffffffffffff` on P0'; `checkG59` rejects
 the function (the load), `checkG56` rejects it (`v96`'s `SLL` of a narrow argument, G58's), and
 `checkG60` accepts it; in G48's mode, `V1`'s low word is `math.MaxFloat64`'s bits after it).
-Coverage on quick-v10 (`lake exe gen-check --jobs 2`, G60 on P0', `agent/lift60b` 3c64c72c): 7,667
+Coverage on quick-v10 (`lake exe gen-check --jobs 2`, G60 on P0', `agent/lift60b` on main 3672e208): 7,667
 of 9,297 functions (82.46%, as G59 on P0), 249,111 values, 69 of them loading a float constant
 from a constant symbol (61 by G56). Composed into `verified_mach` (`GoFV/Proof/Obj/G60.lean`,
 `g60_obj_*`, below).
@@ -1525,29 +1525,33 @@ declarations, then the autos the pipeline created). From the stock `.prog` file 
 input view is read (definitions, config, `Dcl` at `AllocFrame`'s start, `genin`). The stock
 column runs the same back end on the stock `trim` function of every function.
 
-| quick-v10 (9,297 functions, 5 min 24 s; the composition on G60 in G48's mode (`agent/lift60b` 3c64c72c: G59 32f63729 on G58 and G48, on main f1204bce, with main a757b5c4, #672), P0' in `checkG60` and `checkObj`, `--jobs 2`) | pipeline output | share | stock `trim` |
+| quick-v10 (9,297 functions, 5 min; the composition on G60 in G48's mode (`agent/lift60b` on main 3672e208: G59 #685, Zero2 #684, objbar #683, G58 #682), P0' in `checkG60` and `checkObj`, `--jobs 2`) | pipeline output | share | stock `trim` |
 | --- | ---: | ---: | ---: |
-| fully verified (Phase 2, through `trim`) | 7,867 | 84.61% | - |
-| … genssa and `Flushplist` ran | 7,867 | 84.61% | 9,297 |
-| … ∧ `checkG60` ∧ `entryStoresOK` | 6,737 | 72.46% | 7,638 |
-| … ∧ `checkG60` ∧ `entryStoresOK` ∧ `retRegsOK` | 6,737 | 72.46% | 7,637 |
-| … ∧ `checkObj` | 7,521 | 80.89% | 8,703 |
-| **… ∧ `checkG60` ∧ `entryStoresOK` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach`)** | **6,734** | **72.43%** | 7,595 |
-| … end to end, pipeline output identical to stock after `trim` | 5,718 | 61.50% | - |
+| fully verified (Phase 2, through `trim`) | 7,878 | 84.73% | - |
+| … genssa and `Flushplist` ran | 7,878 | 84.73% | 9,297 |
+| … ∧ `checkG60` ∧ `entryStoresOK` | 6,748 | 72.58% | 7,638 |
+| … ∧ `checkG60` ∧ `entryStoresOK` ∧ `retRegsOK` | 6,748 | 72.58% | 7,637 |
+| … ∧ `checkObj` | 7,532 | 81.01% | 8,729 |
+| **… ∧ `checkG60` ∧ `entryStoresOK` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach`)** | **6,745** | **72.55%** | 7,597 |
+| … end to end, pipeline output identical to stock after `trim` | 5,729 | 61.62% | - |
 
 The composition on G60 (G59 with G56's float constants, through G48's stack arguments and
 results, G58 and G59; a lowered function in G48's mode, `outargs` at `SP`: `hosp`, `SPInv`, the
-`CallOKS` family, `CallOKStk`, `CallPanicOKS`, `ICallPanicOKS`) counts 6,734 end to end, 250 more
+`CallOKS` family, `CallOKStk`, `CallPanicOKS`, `ICallPanicOKS`) counts 6,745 end to end, 261 more
 than the composition on G56 (6,484, main cdf73c37) and none fewer: a superset of the first lift to
-G60 without G48's mode (6,524, `agent/lift60` on main ae9b2124), which was one of G56's. By the
-first slice `gen-check` lists for each of the 210 over that lift: 194 need G48 (stack arguments
-and results: `hash/crc32`'s `Checksum`, `math.Asin`/`Atan`/…, `runtime.Callers`, `forEachP`'s
-closures, …), 16 pass an earlier slice after main's changes since ae9b2124 (#681's `Zero` stores,
-22 more fully verified functions) or the checks G58 and G59 share. `checkG60` ∧ `entryStoresOK`
-accepts 6,737 fully verified functions and `checkObj` rejects 3 of them (`SBFIZ` not modelled,
-the stack check of a huge frame twice); stock column 7,595 (7,382 on the first lift). `checkG60`
-accepts 6,756; 59 have a pending window, `entryStoresOK` rejects 19, 40 are end to end with a
-pending window (stock column: 7,663, 66, 25, 41). The first rejection reasons of `checkG60` among
+G60 without G48's mode (6,524, `agent/lift60` on main ae9b2124), which was one of G56's. On the
+tree before main's #683/#684 (`agent/lift60b` 3c64c72c: G59 on G58 and G48, main f1204bce with
+a757b5c4) it counted 6,734 (7,867 fully verified, stock column 7,595); by the first slice
+`gen-check` lists for each of the 210 over the first lift, 194 need G48 (stack arguments and
+results: `hash/crc32`'s `Checksum`, `math.Asin`/`Atan`/…, `runtime.Callers`, `forEachP`'s
+closures, …), 16 pass an earlier slice after main's changes since ae9b2124 (#681's `Zero` stores)
+or the checks G58 and G59 share. With #684's two-store `Zero` (7,867 → 7,878 fully verified) 11
+more are end to end (`fmt.(*fmt).clearflags`, `(*fmt).init`, `runtime.dumpint`, 8 closures of
+`test/gcgort`); #683's `DMB`/`PRFM` adds none: of the 31 quick-v10 functions with one, none is end
+to end. `checkG60` ∧ `entryStoresOK` accepts 6,748 fully verified functions and `checkObj` rejects
+3 of them (`SBFIZ` not modelled, the stack check of a huge frame twice); stock column 7,597 (7,382
+on the first lift). `checkG60` accepts 6,767; 59 have a pending window, `entryStoresOK` rejects 19,
+40 are end to end with a pending window (stock column: 7,663, 66, 25, 41). The first rejection reasons of `checkG60` among
 the fully verified are led by `store shape` (358), `frame variable off another base` (229),
 `op CALLtail` (164), the atomic read-modify-write ops (`LoweredAtomicCas#Variant` 129, `…Add…`
 107, `…Or…` 21, `…Exchange…` 19, `…And…` 16), `branch shape`, `load shape` and `op FMOVQload` (9
@@ -1563,10 +1567,10 @@ variable** (#553). In G48's mode `SPInv` puts `outargs 0` at `SP`, so at `Addrs.
 `2^62 + frameOff`, where `AddrAgree` asks `2^62 + x·2^24`: no frame operand within the
 stack-variable limit is that (`g49Env_fixed_outSP`, witness `fixed_outSP_none` on
 `secret_getStack`'s wrapper). `gofv-ssa-opt --e2e` counts them (`Res.usesLocal`: an arm64 op, and an
-accessed forgeable variable with a `NAME_AUTO`/`NAME_PARAM` operand): 229 of the 6,734 end to end
-(stock column 262 of 7,595). `verified_mach_fixed` holds of them only vacuously (before G48's mode
+accessed forgeable variable with a `NAME_AUTO`/`NAME_PARAM` operand): 229 of the 6,745 end to end
+(stock column 262 of 7,597). `verified_mach_fixed` holds of them only vacuously (before G48's mode
 only the 18 below with two or more such variables were); `verified_mach_atSP`, with `outargs 0`
-at `SP` in `Addrs.atSP`, holds of all 6,734 with a satisfiable activation premise.
+at `SP` in `Addrs.atSP`, holds of all 6,745 with a satisfiable activation premise.
 
 **Functions with two or more `Blk.local` variables: vacuous at `Addrs.fixed`, not at the machine
 layout** (#553; before G48's mode, see above). Of the functions counted end to end, those that access two or more `Blk.local`

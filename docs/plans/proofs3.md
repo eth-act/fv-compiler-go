@@ -3202,12 +3202,13 @@ the variable to `2^62 + x·2^24`, which no frame operand reaches (`g49Env_fixed_
 0's) so that an activation extending `envAtSP` can meet `CallSpec`'s `AddrAgree`.
 
 **Coverage** (quick-v10, `gofv-ssa-opt --check --verified --e2e`, STATUS End-to-end coverage): on
-G60 in G48's mode (`agent/lift60b` 3c64c72c: G59 on G58 and G48, main f1204bce with a757b5c4),
-6,734 of 9,297 functions end to end (72.43%), 250 more than on G56 (6,484, main cdf73c37) and
-none fewer; of the 210 over the first lift to G60 without G48's mode (6,524), 194 need G48's stack
-arguments and results. `checkG60` ∧ `entryStoresOK` accepts 6,737, `checkObj` rejects 3 of them.
-Stock column 7,281 → 7,595. 229 of the 6,734 (lowered, accessing a `Blk.local` variable) are
-vacuous under `verified_mach_fixed` and covered by `verified_mach_atSP`.
+G60 in G48's mode (`agent/lift60b` on main 3672e208, with G59, objbar and Zero2), 6,745 of 9,297
+functions end to end (72.55%), 261 more than on G56 (6,484, main cdf73c37) and none fewer; of the
+210 a tree before objbar and Zero2 gained over the first lift to G60 without G48's mode (6,524),
+194 need G48's stack arguments and results; Zero2 adds 11. `checkG60` ∧ `entryStoresOK` accepts
+6,748, `checkObj` rejects 3 of them. Stock column 7,281 → 7,597. 229 of the 6,745 (lowered,
+accessing a `Blk.local` variable) are vacuous under `verified_mach_fixed` and covered by
+`verified_mach_atSP`.
 
 **Witnesses.** `objWhole_ret_witness` (`pallocSum.start`, `p = 7`, `plRunEnv`): `runLoc`'s run
 from `locInit` and `runMach` from the entry to the caller's `0x40`, through `b1`'s `TBNZ` and
