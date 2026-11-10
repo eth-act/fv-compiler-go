@@ -1433,7 +1433,9 @@ once (`callOKStkC`); Phase 1's call consumes the argument (`outargs` `poison` ag
 activation stays a `G49Env` with `G3Inv` of the mode and `SPInv`. On quick-v10 no store reaches
 `outargs[0, 8)`:
 298 functions store off `SP` without an aux, 664 stores, the lowest at offset 8 (3 of them
-`FSTPQ`, outside G48). G48 accepts 7,595 functions (+217 over G57).
+`FSTPQ`, outside G48). G48 accepts 7,595 functions (+217 over G57; re-measured on main 977d0814
+with G56 merged). G48 stays chained on G57: G56 is not chained after G57 but beside it, on G55,
+and runs on P0' (`p0PrimeSyms`), while G57 and G48 check P0; no newer slice builds on G57.
 
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
@@ -2516,7 +2518,7 @@ few:
      `Blk.base? (.outargs E.act) = some E.sp.toNat`; witness at `Addrs.mach` once it exists,
      else on a function whose stack arguments are written and read at the decoded addresses
      of `Addrs.fixed`.
-   - **Done (G48, §4).** `checkG48` is G57 (G54, G55 and G57 mode-generalized by G48b) with the
+   - **Done (G48, §4).** `checkG48` is G57 (G53–G57 mode-generalized by G48b) with the
      static calls of `callRegsS` and the accesses off `SP` at `[8, outargsSize)`; gen-check 7,595
      (+217 over G57), and no store on quick-v10 reaches `outargs[0, 8)` (664 stores off `SP`
      without an aux in 298 functions, the lowest at offset 8). Differences from this plan: `SPAt`
