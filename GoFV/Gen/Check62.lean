@@ -8,17 +8,18 @@ variable [GoFV.SSA.Sem.Addrs]
 A parameter that the function's ABI assigns to the stack (every parameter of an `ABI0` function,
 e.g. an ABI wrapper `abigen_*`/`…,0`, and those past the integer and float registers of an
 `ABIInternal` one) is read by an `Arg {x} [off]` value. `stackalloc` homes it in the slot of its
-own piece (`StackAlloc.lean`: `{name := x, type, off}`), which Go's frame layout puts in the
-caller's frame, at the `NAME_PARAM` operand `x+off(FP)`, where the caller stored the argument.
-Genssa emits no code for it (`ssaGenValue`'s `OpArg`: "input args need no code"); a later value
-reads it back with a `LoadReg` (G2's `MOVD x+off(FP), Rd`).
+own piece (`GoFV/Opt/Regalloc/StackAlloc.lean`: `{name := x, type, off}`), which Go's frame
+layout puts in the caller's frame, at the `NAME_PARAM` operand `x+off(FP)`, where the caller
+stored the argument. Genssa emits no code for it (`cmd/compile/internal/ssagen/ssa.go:7121-7122`,
+`OpArg`: "input args need no code"); a later value reads it back with a `LoadReg` (G2's
+`MOVD x+off(FP), Rd`).
 
 `checkG62 lc ps bstart g` is slice G61 (`GoFV/Gen/Check61.lean`, on P0') with, in a function with
 an arm64 op, such an `Arg` (`vkind62a`), tried when G61 rejects a value: no temporary, no argument,
 the aux `x` an input parameter that the ABI assigns to the stack, the value of a 64-bit class
-(G2's spill slots hold 8 bytes, `checkFrame`'s `slotOK`), homed in the slot `argKey x off` with a
-`NAME_PARAM` operand; no code. `homeOK10` accepts the slot home of an `Arg` (every slice before
-G62 rejects the `Arg` itself). `GoFV/Proof/Gen/G62.lean` proves what an accepted function
+(G2's spill slots hold 8 bytes, `checkFrame`'s `slotOK`), homed in the slot `argKey x type off`
+with a `NAME_PARAM` operand; no code. `homeOK10` accepts the slot home of an `Arg` (every slice
+before G62 rejects the `Arg` itself). `GoFV/Proof/Gen/G62.lean` proves what an accepted function
 satisfies, given the argument in the machine's slot when the `Arg` runs (`ArgOK`: the caller's
 stack argument).
 -/

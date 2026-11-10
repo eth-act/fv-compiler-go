@@ -1604,7 +1604,8 @@ at `symA`, the home slots at their frame operands and the PC table of `checkG62`
 (`outSP = false`). -/
 def E : MatchEnv :=
   { lc, ι := GenG2.ι, sp := GenG2.sp0,
-    slot := fun k => if k ∈ homeSlots lc then (g.slotOp k).map (fun p => frameOff L p.1 p.2) else none,
+    slot := fun k =>
+      if k ∈ homeSlots lc then (g.slotOp k).map (fun p => frameOff L p.1 p.2) else none,
     g := 0x9000, lr := 0, fp := 0, framed := true, pcOf := pcOfTab GenG2.text ps.toList tab }
 
 /-- The little-endian bytes of the word 7: the image of `code = 7`. -/
