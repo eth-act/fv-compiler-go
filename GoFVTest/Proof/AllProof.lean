@@ -251,7 +251,7 @@ import GoFV.Proof.Obj.EndToEndFixed
 import GoFV.Proof.Obj.Entry49
 import GoFV.Proof.Obj.Ex
 import GoFV.Proof.Obj.Frame
-import GoFV.Proof.Obj.G49
+import GoFV.Proof.Obj.G54
 import GoFV.Proof.Obj.G7
 import GoFV.Proof.Obj.Insn
 import GoFV.Proof.Obj.Link

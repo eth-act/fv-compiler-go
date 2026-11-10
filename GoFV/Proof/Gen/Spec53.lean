@@ -8,8 +8,9 @@ variable [GoFV.SSA.Sem.Addrs]
 # What `checkG53` accepted (`GoFV/Gen/Check53.lean`)
 
 `VK53`: G52's kinds (`VK52`, through `vkind52`) and `LoweredMove` (`VK53a`, `Spec53a.lean`). On
-`InitMem`, `vkind53` is `vkind52` (`vkind53_initMem`). `checkG53L_spec` is `checkG52L_spec` with
-`vkind53`, and `checkG53_spec` splits off `refsLive`.
+`InitMem`, `vkind53` is `vkind52` (`vkind53_initMem`), and so on any op but `LoweredMove`
+(`vkind53_eq52`). `checkG53L_spec` is `checkG52L_spec` with `vkind53`, and `checkG53_spec` splits
+off `refsLive`.
 -/
 
 namespace GoFV.Gen.Check
@@ -56,6 +57,16 @@ theorem vkind53_initMem {lc : LocCtx} {g : G2In} {v : Value} (hop : v.op = .Init
   | error e =>
     simp only
     rw [vkind53a_none (by rw [hop]; rfl)]
+
+/-- On an op off G53's group A, `vkind53` is `vkind52`. -/
+theorem vkind53_eq52 {lc : LocCtx} {g : G2In} {v : Value} (h : op53a v.op = false) :
+    vkind53 lc g v = vkind52 lc g v := by
+  unfold vkind53
+  cases vkind52 lc g v with
+  | ok _ => rfl
+  | error e =>
+    simp only
+    rw [vkind53a_none h]
 
 /-- On a function with no arm64 op, G53's check is G33. -/
 theorem checkG33_of_53L {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}

@@ -8,8 +8,10 @@ variable [GoFV.SSA.Sem.Addrs]
 # What `checkG54` accepted (`GoFV/Gen/Check54.lean`)
 
 `VK54`: G53's kinds (`VK53`, through `vkind53`, with no temporary) and the loops (`VK54a`,
-`Spec54a.lean`). On `InitMem`, `vkind54` is `vkind53` (`vkind54_initMem`). `checkG54L_spec` is
-`checkG53L_spec` with `vkind54` and `loopOK`, and `checkG54_spec` splits off `refsLive`.
+`Spec54a.lean`). On `InitMem`, `vkind54` is `vkind53` (`vkind54_initMem`), and so on any op but
+the loops (`vkind54_eq53`); on an op of none of G52–G54's groups, `vkind54` is `vkind49`
+(`vkind54_eq49`). `checkG54L_spec` is `checkG53L_spec` with `vkind54` and `loopOK`, and
+`checkG54_spec` splits off `refsLive`.
 -/
 
 namespace GoFV.Gen.Check
@@ -54,6 +56,21 @@ theorem vkind54_initMem {lc : LocCtx} {g : G2In} {v : Value} (hop : v.op = .Init
   | error e =>
     simp only
     rw [vkind54a_none (by rw [hop]; rfl)]
+
+/-- On an op off G54's group A, `vkind54` is `vkind53`. -/
+theorem vkind54_eq53 {lc : LocCtx} {g : G2In} {v : Value} (h : op54a v.op = false) :
+    vkind54 lc g v = vkind53 lc g v := by
+  unfold vkind54
+  cases vkind53 lc g v with
+  | ok _ => rfl
+  | error e =>
+    simp only
+    rw [vkind54a_none h]
+
+/-- On an op of none of G52's, G53's and G54's groups, `vkind54` is `vkind49`. -/
+theorem vkind54_eq49 {lc : LocCtx} {g : G2In} {v : Value} (h2 : op52b v.op = false)
+    (h3 : op53a v.op = false) (h4 : op54a v.op = false) : vkind54 lc g v = vkind49 lc g v := by
+  rw [vkind54_eq53 h4, vkind53_eq52 h3, vkind52_eq49 h2]
 
 /-- On a function with no arm64 op, G54's check is G33. -/
 theorem checkG33_of_54L {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}

@@ -11,10 +11,11 @@ of the register-assigned parameters (`pendWins`, `GoFV/Gen/Entry49.lean`) are no
 blocks' images. The entry relation (`EntryMatch`) therefore relates `runLoc`'s memory to a
 machine memory `M` that agrees with the machine's but for a set `W` of bytes, and the entry stores
 (`entryStore?`) are run against it: an entry store is a store of G49's frame-variable path
-(`entryStore?_spec`), whose P0 Prog writes its window in the machine's memory as in `M`. So from
+(`entryStore?_spec`; no op of G52–G54, so `vkind54` of it is `vkind49`'s, `vkind54_eq49`), whose
+P0 Prog writes its window in the machine's memory as in `M`. So from
 `LocMatch E s b i {m with mem := M}` (`M` agreeing with `m.mem` outside `W` and the store's
 window) the Prog runs `m` to `m'` with `LocMatch E s' b (i + 1) {m' with mem := M'}`, `M'`
-agreeing with `m'.mem` outside `W` (`g49L_entryStore`): the window is written alike in both
+agreeing with `m'.mem` outside `W` (`g54L_entryStore`): the window is written alike in both
 (`writeMem_in`), every other byte is kept (`writeMem_pt`). When the windows of the entry stores
 cover `W`, after them `M'` is `m'.mem` and the relation is `LocMatch` (`Whole.lean`,
 `sim_entryStores`).
@@ -339,17 +340,17 @@ theorem entryStore?_aux {lc : LocCtx} {g : G2In} {v : Value} {off : Int} {n : Na
   · cases h
   · rw [frameVar49?_none ha] at h; cases h
 
-/-- **An entry store of slice G49 against a memory related but for some bytes.** From a relation
+/-- **An entry store of slice G54 against a memory related but for some bytes.** From a relation
 on `{m with mem := M0}`, `M0` agreeing with `m`'s memory outside `W` and the store's window
 (`SP + frameOff` of its `NAME_PARAM` operand, `n` bytes), an entry store (`entryStore?`) that
-`checkG49L` accepted runs its Prog from `m` to `m'` (the X registers kept) with a relation on
+`checkG54L` accepted runs its Prog from `m` to `m'` (the X registers kept) with a relation on
 `{m' with mem := M'}`, `M'` agreeing with `m'`'s memory outside `W`, the class map and G35's
 table after the value. -/
-theorem g49L_entryStore {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+theorem g54L_entryStore {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab}
     {E : MatchEnv} {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s s' : LocState}
     {m : MState} {M0 : Memory} {off : Int} {n : Nat} {W : BitVec 64 → Prop}
-    (hc : checkG49L lc ps bstart g = .ok (tab, kt)) (hE : G49Env lc g L ps ret tab E)
+    (hc : checkG54L lc ps bstart g = .ok (tab, kt)) (hE : G49Env lc g L ps ret tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
     (hes : entryStore? lc g v = some (off, n))
@@ -367,7 +368,7 @@ theorem g49L_entryStore {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Li
     rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;> rfl
   cases hl0 : lc.ctx.f.lowered with
   | false =>
-    rcases nl30_ops (checkNL30_of_43L hl0 hc) hbid hb hi hv hen with h | h | h | h <;>
+    rcases nl30_ops (checkNL30_of_54L hl0 hc) hbid hb hi hv hen with h | h | h | h <;>
       rcases hcases with h' | h' | h' | h' | h' | h' | h' | h' | h' | h' | h' | h' | h' <;>
       rw [h] at h' <;> cases h'
   | true =>
@@ -379,8 +380,8 @@ theorem g49L_entryStore {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Li
   have htext : L.text = text := by rw [hL]; rfl
   rw [htext] at hpcOf
   subst hL
-  obtain ⟨c, rfl, rfl, -, rfl, hvk, -, hl, hhome, hcf, hk, hlt, hnd, hblocks, -, -, -⟩ :=
-    checkG49L_spec hl0 hc
+  obtain ⟨c, rfl, rfl, -, rfl, hvk, -, hl, hhome, hcf, hk, hlt, hnd, hblocks, -, -, -, -⟩ :=
+    checkG54L_spec hl0 hc
   obtain ⟨b, j, js, e, next, hb', -, hvals, -, -, hrow⟩ := Cx2.blocks_spec hblocks bid hbid
   rw [hb] at hb'
   cases hb'
@@ -390,7 +391,10 @@ theorem g49L_entryStore {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Li
   have hid' : blk.values.toList[i] = id := by simpa using hid
   rw [hid', hv] at hv'
   cases hv'
-  rw [hvk] at hkd
+  have h5x : op52b v.op = false ∧ op53a v.op = false ∧ op54a v.op = false := by
+    rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;>
+      exact ⟨rfl, rfl, rfl⟩
+  rw [hvk, vkind54_eq49 h5x.1 h5x.2.1 h5x.2.2] at hkd
   obtain ⟨x, hfv, htemp, hVar, hshape⟩ := entryStore?_spec hes hkd
   have hj : E.pcOf bid i = pcAt text c.cx.ps.toList ((js ++ [e]).getD i 0) := by
     rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some]
