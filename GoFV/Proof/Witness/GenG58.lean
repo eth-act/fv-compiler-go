@@ -193,7 +193,7 @@ theorem genG58_witness :
   have hb0 : lc0.ctx.f.block? 1 = some blk := by rw [← liveCtx_ctx (lc := lc0)]; exact hb
   have hv0 : lc0.ctx.f.value? 11 = some (val 11) := by rw [← liveCtx_ctx (lc := lc0)]; exact hv
   obtain ⟨E1, m1, hx1, hE1, hp1, hm1', -, hsp1, -⟩ := g58_value (H := GenG2.H0) (env := GenG2.env)
-    hc hE hl0 hm0 hb0 hi hv0 (by rw [hop]; rfl) locMatch58 (inv58 hk) (spInv58 hact) rfl
+    hc hE hl0 hm0 hb0 hi hv0 (by rw [hop]; rfl) locMatch58 (inv58 hk) (fun _ => spInv58 hact) (fun _ => rfl) (fun _ => rfl)
     (by
       change UOKL m58 (uL35 lc (uIn35 lc 1) blk 2)
       rw [hu]
@@ -204,8 +204,8 @@ theorem genG58_witness :
     (fun _ _ _ _ _ _ _ _ _ _ hn => by rw [hop] at hn; cases hn)
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
-    (fun h => absurd h (hne _ (by decide))) hs1
-  exact ⟨h48, hc, s1, E1, m1, hs1, hr1, hx1, hE1, hp1, hm1', hsp1,
+    (fun _ h => absurd h (hne _ (by decide))) hs1
+  exact ⟨h48, hc, s1, E1, m1, hs1, hr1, hx1, hE1, hp1, hm1', hsp1 rfl,
     (hm1'.regs 0 _ hr1).1 _ (by simp [objX?])⟩
 
 end GoFV.Proof.Witness.GenG58
