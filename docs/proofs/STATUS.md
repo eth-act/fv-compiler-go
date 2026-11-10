@@ -374,17 +374,24 @@ Witnesses:
   (`GoFV/Proof/Witness/ObjOps.lean`: `CSET` as `CSINC`, `BLR`, a faulting `LDAR`, `CALL (R2)`);
   `objOps_stpq_witness`, `objOps_strq_witness` (`STP Q1, Q2, [SP, #32]` and `STR Q3, [SP, #16]`
   through `symInsn_sound`: the memory after holds all 128 bits of each register; `FSTPQ`/`FMOVQ`
-  have the same effect), `objOps_eval128_witness`.
+  have the same effect), `objOps_eval128_witness`;
+- `objBarrier_dmb_witness` (`GoFV/Proof/Witness/ObjBarrier.lean`: `checkObj` accepts
+  `runtime.mallocgcSmallNoscanReuse`, whose `DMB $14` assembles to `.barrier 5 14`; `progSym_sound`
+  on that Prog), `objBarrier_prfm_witness` (`PRFM PLDL1KEEP, [X0]` with `X0 = 0` through
+  `symInsn_sound`: no fault, memory kept; `PRFM (R0), $0` has the same effect).
 
-Coverage on quick-v10 (`lake exe obj-check`, on P0'): 8,703 of 9,297 functions (93.61%; 354,101 of
+Coverage on quick-v10 (`lake exe obj-check`, on P0'): 8,729 of 9,297 functions (93.89%; 358,922 of
 429,130 P0 Progs in accepted functions), with `CSEL`/`CSINC`/`CSINV`/`CSNEG`/`CSET`/`CSETM`,
 `MUL`/`MNEG`/`MADD`/`MSUB`/`UMULH`/`SMULH`, `CLZ`/`RBIT`/`REV*`, `LDAR*`/`STLR*`, `CALL (Rn)`, the
 variable shifts, divisions, `REM`/`UREM`, `BIC`/`ORN`/`EON`/`MVN`, the SIMD&FP forms Go emits
-(below), the morestack tail's `F` spills and the float constants loaded from constant symbols
-(was 8,544, 91.90%, before P0' (163 rejections `PCREL_LDST: access`, 159 now accepted, 4 stopped
-by a later reason), 8,464, 91.04%, before the `F` spills (80 rejections `tail: spill register`),
-8,263, 88.87%, before the `Q` stores, 7,920, 85.18%, before the integer operations after `MUL`,
-7,741, 83.26%, before SIMD&FP, and 5,533, 59.51%, before the opcodes above).
+(below), the morestack tail's `F` spills, the float constants loaded from constant symbols and
+`DMB $k`/`PRFM 0(Rn), $k` as no-ops (`progSym`'s `DMB`/`PRFM` arms, `symAccess` of a `PRFM` word,
+as `execLdSt`) (was 8,703, 93.61%, before `DMB`/`PRFM` (26 of the 31 functions with one; the
+other 5 stop at `LDORALB`, `VCNT`, `SBFIZ`), 8,544, 91.90%, before P0' (163 rejections
+`PCREL_LDST: access`, 159 now accepted, 4 stopped by a later reason), 8,464, 91.04%, before the
+`F` spills (80 rejections `tail: spill register`), 8,263, 88.87%, before the `Q` stores, 7,920,
+85.18%, before the integer operations after `MUL`, 7,741, 83.26%, before SIMD&FP, and 5,533,
+59.51%, before the opcodes above).
 
 **SIMD&FP.** `Sym` carries the vector registers written (`Sym.v`, 128-bit values `VEx` over the
 state before the Prog: `.v r`, constants, `.ofX` of a general register, loads `.ld n a`, `fp1Op`,
@@ -1044,7 +1051,9 @@ Composition into `checkG57` and its coverage: the slice G57 entry.
 `FSTPS`/`FSTPD (Fa, Fb), off(<nc>)` to a frame variable in a `Blk.local` (G49) or `Blk.temp` (G6)
 block), in `vk55_step`'s form under `G49Env`: its Prog runs, the match and `G3Inv` hold after it
 under the same activation, and the upper-bit table is empty. No run premise. Composed into
-`checkG57` by the slice. `checkObj` does not model `DMB`/`PRFM` yet (object side). Witnesses:
+`checkG57` by the slice. `checkObj` models `DMB`/`PRFM` as no-ops (the assembler entry,
+`objBarrier_dmb_witness`); the composition (`verified_mach`) is on G56, so no function with one is
+end to end yet. Witnesses:
 `genG57b_witness` (`test/gcgort` `main.init.func95.1`: `FSTPS` of `float32(1.5)` into the `temp`
 block of `.autotmp_1`, which G55 rejects) and `genG57b2_witness`
 (`runtime.mallocgcSmallNoscanReuse`: `DMB $14`, which G55 rejects).
