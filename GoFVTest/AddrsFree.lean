@@ -1,7 +1,7 @@
 import Lean
 import GoFV.Proof.Obj.EndToEnd
 import GoFV.Gen.Check49
-import GoFV.Gen.Check54
+import GoFV.Gen.Check55
 
 /-!
 # The verified pipeline takes no address assignment (`docs/plans/proofs3.md` §8, item 6)
@@ -36,8 +36,9 @@ run_meta do
       if p == `GoFV.Gen.Check && s.startsWith "checkG" then roots := roots.push n
   unless [``GoFV.Gen.Check.checkG46, ``GoFV.Gen.Check.checkG47, ``GoFV.Gen.Check.checkG50,
       ``GoFV.Gen.Check.checkG51, ``GoFV.Gen.Check.checkG49, ``GoFV.Gen.Check.checkG52,
-      ``GoFV.Gen.Check.checkG53, ``GoFV.Gen.Check.checkG54].all roots.contains do
-    throwError "AddrsFree: the slice checkers checkG46/G47/G50/G51/G49/G52/G53/G54 are not in scope"
+      ``GoFV.Gen.Check.checkG53, ``GoFV.Gen.Check.checkG54, ``GoFV.Gen.Check.checkG55].all
+      roots.contains do
+    throwError "AddrsFree: the slice checkers checkG46/G47/G50/G51/G49/G52..G55 are not in scope"
   for n in roots do
     let some ci := env.find? n | throwError "AddrsFree: {n} not found"
     if hasAddrsBinder ci.type then
