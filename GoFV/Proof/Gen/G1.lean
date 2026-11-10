@@ -1161,21 +1161,24 @@ theorem target_pc {n : ID} {j0 id : Nat} (hj : cx.startIdx n = .ok j0) (hb : cx.
   rw [← hid, ← this]
   exact addr_pcAt hj''
 
-/-- From index `k`: the fall-through to `fb` laid out next, or a `JMP` to it. -/
+/-- From index `k`: the fall-through over no-ops to `fb` laid out next, or a `JMP` to it. -/
 theorem fall_path (F : Facts cx.lc sym text az ez cx.ps.toList ret E) (hst : Starts cx text E)
     {next : Option (ID × Nat)}
     (hnext : ∀ n k, next = some (n, k) → cx.startIdx n = .ok k) {fb : ID}
     (hfb : fb ∈ cx.lc.ctx.f.blocks.toList) {k : Nat}
-    (h : next = some (fb, k) ∨ ∃ fid k', cx.bstart fb = some fid ∧
+    (h : FallAt cx next k fb ∨ ∃ fid k', cx.bstart fb = some fid ∧
       OneAt cx.ps k { as := .JMP, to := brA fid } k') (m : MState) :
     PStar H (Link.byId sym text az ez cx.ps.toList) cx.ps.toList ret
       { m with pc := pcAt text cx.ps.toList k } { m with pc := E.pcOf fb 0 } := by
   obtain ⟨j0, hj0, hpc0⟩ := hst fb hfb
   rw [hpc0]
-  rcases h with h | ⟨fid, k', hfid, hone⟩
-  · rw [hnext _ _ h] at hj0
+  rcases h with ⟨n, hn, hkn, hno⟩ | ⟨fid, k', hfid, hone⟩
+  · rw [hnext _ _ hn] at hj0
     cases hj0
-    exact .refl
+    obtain ⟨-, -, hn', -⟩ := Cx.startIdx_spec (hnext _ _ hn)
+    exact pstar_noops F.nodup F.lt F.ret hkn (by simp only [Array.length_toList]; omega)
+      (fun l hl h1 h2 => by
+        simpa only [Array.getElem_toList] using hno l (by simpa using hl) h1 h2) m
   · obtain ⟨k0, rfl, hk0, hok, hstar⟩ := pstar_oneAt (H := H) F.nodup F.lt F.ret rfl hone m
     obtain ⟨has, -, -, ht, -⟩ := Shape.ok_eq hok
     exact hstar.tail (pstep_at F.nodup F.lt F.ret hk0 rfl

@@ -960,6 +960,16 @@ its `MOVD`) accepts a function, they are G53's statements, under `G49Env`, `g54_
 `LoweredZeroLoop` with its temporary as the counter, which G53 rejects). Coverage on quick-v10
 (`lake exe gen-check`): 7,308 of 9,297 functions (78.60%), 231,647 values.
 
+## Phase 3: genssa, fall-through over no-ops, all slices (I7, #553)
+
+`Cx.falls` (`GoFV/Gen/Check.lean`), shared by `Cx.two` and `Cx.term`: a block falls through to
+the successor laid out next when only no-ops (argument-liveness `PCDATA`, inline-mark `NOP`,
+`HINT $0`) lie between its last Prog and the successor's start, bounded by that start. `TwoAt`
+and `TermOK.plain` take `FallAt` (`Cx.falls_spec`, `GoFV/Proof/Gen/Spec.lean`); `fall_path`
+(`G1.lean`) runs the no-ops by `pstar_noops`. Every `gN_term` statement is unchanged, no new
+premise. Coverage on quick-v10 (`lake exe gen-check`): G54 7,322 of 9,297 functions
+(78.75%, 14 more: the functions rejected only for `expected JMP`), 232,417 values.
+
 ## Phase 3: genssa, slice G55, `VCNT`, `VUADDLV`, the `FRINT` rounds, shifted `NEG`, `CLZW`, `MULL`, `EXTR` (I7, #553)
 
 `GoFV.Proof.Gen.g55_value`, `g55_initMem`, `g55_term`, `g55_nilPanic`, `g55_boundsPanic`

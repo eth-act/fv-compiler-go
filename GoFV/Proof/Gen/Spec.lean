@@ -490,18 +490,34 @@ theorem Cx.values_spec {cx : Cx} {entry : Bool} :
 
 /-! ## Terminators -/
 
+/-- The fall-through from index `k` to block `f`: `f` is laid out next, starting at index `n`, and
+only no-ops lie in between (`Cx.falls`). -/
+def FallAt (cx : Cx) (next : Option (ID × Nat)) (k : Nat) (f : ID) : Prop :=
+  ∃ n, next = some (f, n) ∧ k ≤ n ∧ ∀ q (hq : q < cx.ps.size), k ≤ q → q < n → noop cx.ps[q] = true
+
+theorem Cx.falls_spec {cx : Cx} {next : Option (ID × Nat)} {k : Nat} {f : ID}
+    (h : cx.falls next k f = true) : FallAt cx next k f := by
+  unfold Cx.falls at h
+  split at h
+  next s n =>
+    simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
+    obtain ⟨⟨rfl, hkn⟩, hs⟩ := h
+    obtain ⟨-, hno⟩ := skipFrom_spec cx.ps (n - k) k
+    exact ⟨n, rfl, hkn, fun q hq h1 h2 => hno q hq h1 (by omega)⟩
+  next => cases h
+
 /-- A branch of shape `br` to `t`, then the fall-through to `f` (laid out next, `next`) or a `JMP`
 to `f`, from index `j`. -/
 def TwoAt (cx : Cx) (next : Option (ID × Nat)) (j : Nat) (br : Shape) (t f : ID) : Prop :=
   ∃ tid k, cx.bstart t = some tid ∧ OneAt cx.ps j { br with to := brA tid } k ∧
-    (next = some (f, k) ∨
+    (FallAt cx next k f ∨
       ∃ fid k', cx.bstart f = some fid ∧ OneAt cx.ps k { as := .JMP, to := brA fid } k')
 
 /-- What `Cx.term` accepted of a terminator from index `j`. -/
 structure TermOK (cx : Cx) (b : Block) (j : Nat) (next : Option (ID × Nat)) : Prop where
   succs : ∀ e ∈ b.succs.toList, e.b ∈ cx.lc.ctx.f.blocks.toList
   plain : b.kind = .Plain → ∃ e, b.succs = #[e] ∧
-    (next = some (e.b, j) ∨ ∃ id k, cx.bstart e.b = some id ∧ OneAt cx.ps j { as := .JMP, to := brA id } k)
+    (FallAt cx next j e.b ∨ ∃ id k, cx.bstart e.b = some id ∧ OneAt cx.ps j { as := .JMP, to := brA id } k)
   branch : b.kind ≠ .Plain → b.kind ≠ .Ret → ∃ e0 e1 c, b.succs = #[e0, e1] ∧ b.controls = #[c] ∧
     ((∃ asm inv, condBr b.kind = some (asm, inv) ∧ (cx.lc.ty c).isFlags = true ∧
         cx.lc.home c = none ∧
@@ -524,7 +540,7 @@ theorem Cx.two_spec {cx : Cx} {j : Nat} {next : Option (ID × Nat)} {br : Shape}
   obtain ⟨k, hk, h⟩ := ex_bind_eq_ok h
   refine ⟨tid, k, htid, Cx.one_spec hk, ?_⟩
   split at h
-  next hf => left; simpa using hf
+  next hf => left; exact Cx.falls_spec hf
   next =>
     right
     obtain ⟨a2, ha2, h⟩ := ex_bind_eq_ok h
@@ -553,7 +569,7 @@ theorem Cx.term_spec {cx : Cx} {b : Block} {j : Nat} {next : Option (ID × Nat)}
       simp only [Bool.and_eq_true, beq_iff_eq] at hc
       refine ⟨e, arr_one hc.1 he, ?_⟩
       split at h
-      next hf => left; simpa using hf
+      next hf => left; exact Cx.falls_spec hf
       next =>
         right
         obtain ⟨a, ha, h⟩ := ex_bind_eq_ok h

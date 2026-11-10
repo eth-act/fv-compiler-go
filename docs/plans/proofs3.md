@@ -93,7 +93,10 @@ is the memory, so its write changes nothing), `Copy`, `MOVDconst`, `ADD`, `SUB`,
 ten flags branches and `Z`/`NZ`, every successor laid out; no stack slot, register pair or
 temporary; each register holds values of one width class; destinations not `g`, `R29`, `R30`. The
 output table gives `pcOf b i` = the address of the first Prog of value `i` of block `b` under
-`Link.byId`.
+`Link.byId`. A block falls through to the successor laid out next (no `JMP`) when only no-ops
+(`noop`: pseudo-ops, `HINT $0`) lie between its last Prog and the successor's start (`Cx.falls`,
+`FallAt`; the skip stops at that start, so no-ops leading the successor stay its own); under
+`Link.byId` each no-op has its own address, so `fall_path` runs them (`pstar_noops`).
 
 **Statement** (`GoFV/Proof/Gen/G1.lean`). Premises on the activation (`G1Env lc L ps ret tab E`):
 
@@ -1210,6 +1213,20 @@ changes. New run premises `Pre54a` (the zeroing writes `n` bytes at a valid addr
 zeroing, 54 iterations and a tail of three `STP`s, counter the temporary `R1`; the machine's byte
 at the end of the block, 1 before, is then 0). G54 accepts 7,308 functions (+48 over G53).
 
+**Fall-through over no-ops** (2026-11-10, shared by every slice: `GoFV/Gen/Check.lean`,
+`GoFV/Proof/Gen/Spec.lean`, `G1.lean`). A block whose successor is laid out next fell through
+only when its last Prog ended exactly at the successor's start (`next = some (s, k)`); 14
+functions (sole reason `Prog N: …, expected JMP`) leave no-ops a value did not consume in
+between: argument-liveness `PCDATA $3` (7), inline-mark `NOP` (3) or `HINT $0` (4), e.g.
+`sync/atomic.(*Value).Store`, `runtime.runqempty`, `test/literal main.main`. `Cx.falls` (used by
+`Cx.two` and `Cx.term`'s `Plain` and two-way cases) now accepts `next = some (s, n)` with
+`k ≤ n` and `skipFrom ps k (n - k) = n`: bounded by the successor's start, since a skip to the
+end of the no-ops would run over `PCDATA`/`HINT` leading the successor (`runqempty`,
+`memoryLimitHeapGoal`, `literal`). `TwoAt` and `TermOK.plain` take `FallAt cx next k f` (`next =
+some (f, n)`, `k ≤ n`, every Prog in `[k, n)` a `noop`; `Cx.falls_spec`), and `fall_path` runs
+those Progs by `pstar_noops` (each has its own address `text + 4 id` under `Link.byId`) instead
+of `.refl`. No other statement changed; no run premise. All 14 are accepted (G54: 7,322, §5).
+
 **Slice G55: `VCNT`, `VUADDLV`, `FRINT*`; shifted `NEG`, `CLZW`, `MULL`, `EXTR`**
 (`GoFV/Gen/Check55.lean`, `checkG55 lc ps bstart g`; proven sound, `g55_value`, `g55_initMem`,
 `g55_term`, `g55_nilPanic`, `g55_boundsPanic`, `GoFV/Proof/Gen/G55.lean`). G54 with two groups
@@ -1429,6 +1446,10 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
 
+(The rows above were measured before the fall-through over no-ops (§4, after G54; `Cx.falls`),
+which every slice shares: re-measured with it, G3 accepts 1,612, G10 3,150, G20 4,330, G30 5,369,
+G40 6,482, G50 6,921, G53 7,274 and G54 7,322 (78.75%, +14; 232,417 values).)
+
 (On quick-v9, before the G2 validator was tightened for the proof — call arguments and results in
 `R0`–`R15`, `SelectN`'s component class, 64-bit `MOVDaddr` and spill shapes — G2 accepted 1,211.)
 Before G2, the most frequent reasons functions were outside G1 (functions each occurs in):
@@ -1457,7 +1478,8 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   address of an access (`addr_rel`), the 8-byte load (`lo_load`) and store (`memInj_store`, which
   keeps `MemInj` with no pointer words and `KeysNodup`).
 - `Spec.lean`: what `checkG1` accepted (`checkG1_spec`, `Cx.blocks_spec`, `Cx.values_spec`,
-  `Cx.term_spec`, `vkind_spec` with the per-op facts `VK`).
+  `Cx.term_spec` with `TermOK`/`TwoAt`/`FallAt`, `Cx.falls_spec`, `vkind_spec` with the per-op
+  facts `VK`).
 - `Loc.lean`, `Step.lean`: `stepLoc` per op (`stepLoc_pure`, `stepLoc_copy`,
   `stepLoc_makeResult`, `stepLoc_load`, `stepLoc_store`, …).
 - `G1.lean`: the steps on the ID layout (`pstar_noops`, `pstar_oneAt`), one lemma per value kind
