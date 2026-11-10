@@ -75,10 +75,24 @@ theorem stlr?_some {op : Op} {as : As} {n : Nat} (h : stlr? op = some (as, n)) :
   unfold stlr? at h
   split at h <;> (try cases h) <;> simp
 
-/-- `Arm64.evalPure` of a register op of G32: `op2` of its word function. -/
+/-- The lowered value of a register op of G32: `op2` of its word function, except `AND`, which
+is `Arm64.and` (a `false` operand absorbs at the `bool` shape). -/
+def binV (as : As) (t : Ty) (argv : List Val) : Val :=
+  match as with
+  | .AND => Arm64.and t argv
+  | _ => Arm64.op2 t (binF as) argv
+
+/-- `binV` at a shape other than `bool`: `op2` of the word function. -/
+theorem binV_of_ne_bool (as : As) {t : Ty} (ht : t ≠ .bool) (argv : List Val) :
+    binV as t argv = Arm64.op2 t (binF as) argv := by
+  unfold binV; split
+  · exact Arm64.and_of_ne_bool ht argv
+  · rfl
+
+/-- `Arm64.evalPure` of a register op of G32: `binV` of its instruction. -/
 theorem evalPure_bin32 {op : Op} {as : As} (h : bin32? op = some as) (t : Ty) (k : Int64)
     (aux : Option AuxRef) (argv : List Val) :
-    Arm64.evalPure op t k aux argv = Arm64.op2 t (binF as) argv := by
+    Arm64.evalPure op t k aux argv = binV as t argv := by
   rcases bin32?_some h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ |
     ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> rfl
 
@@ -419,8 +433,8 @@ private theorem valRel_boolRes {X : BitVec 64} (h : X = 0 ∨ X = 1) :
   show X = if X.getLsbD 0 then 1 else 0
   rcases h with rfl | rfl <;> decide
 
-/-- `AND`, `OR`, `XOR` of two booleans: the machine's 0 or 1. -/
-theorem valRel_binBool {as : As} (hb : boolBin as = true) {x y : Val} {X Y : BitVec 64}
+/-- `op2` of `AND`, `OR`, `XOR` of two booleans: the machine's 0 or 1. -/
+private theorem valRel_op2Bool {as : As} (hb : boolBin as = true) {x y : Val} {X Y : BitVec 64}
     (hx : ValRel ι x X) (hy : ValRel ι y Y) (hfx : Fits 1 x) (hfy : Fits 1 y) :
     ValRel ι ((Arm64.op2 .bool (binF as) [x, y]).retypeL .bool) (binF as X Y) := by
   have has : (as = .AND ∨ as = .ORR) ∨ as = .EOR := by
@@ -434,6 +448,40 @@ theorem valRel_binBool {as : As} (hb : boolBin as = true) {x y : Val} {X Y : Bit
     .bool) _
   apply valRel_boolRes
   rcases has with (rfl | rfl) | rfl <;> cases a <;> cases b <;> decide
+
+/-- `AND` of two booleans (`Arm64.and`): a `false` operand is the machine's 0, which gives 0 whatever
+the other register holds; otherwise as `op2`. -/
+theorem valRel_andBool {x y : Val} {X Y : BitVec 64}
+    (hx : ValRel ι x X) (hy : ValRel ι y Y) (hfx : Fits 1 x) (hfy : Fits 1 y) :
+    ValRel ι ((Arm64.and .bool [x, y]).retypeL .bool) (X &&& Y) := by
+  have hb : boolBin .AND = true := rfl
+  by_cases hf : ∃ a b, [x, y] = [a, b] ∧ (a = .bool false ∨ b = .bool false)
+  · obtain ⟨a, b, he, hab⟩ := hf
+    simp only [List.cons.injEq, and_true] at he
+    obtain ⟨rfl, rfl⟩ := he
+    rcases hab with rfl | rfl
+    · rw [Arm64.and_false_left]
+      have hX : X = 0 := hx
+      show X &&& Y = if false then 1 else 0
+      rw [hX]; simp
+    · rw [Arm64.and_false_right]
+      have hY : Y = 0 := hy
+      show X &&& Y = if false then 1 else 0
+      rw [hY]; simp
+  · rw [Arm64.and_eq_op2 fun ⟨_, h⟩ => hf h]
+    exact valRel_op2Bool hb hx hy hfx hfy
+
+/-- `AND`, `OR`, `XOR` of two booleans (`binV`): the machine's 0 or 1. -/
+theorem valRel_binBool {as : As} (hb : boolBin as = true) {x y : Val} {X Y : BitVec 64}
+    (hx : ValRel ι x X) (hy : ValRel ι y Y) (hfx : Fits 1 x) (hfy : Fits 1 y) :
+    ValRel ι ((binV as .bool [x, y]).retypeL .bool) (binF as X Y) := by
+  have has : (as = .AND ∨ as = .ORR) ∨ as = .EOR := by
+    unfold boolBin at hb
+    simpa [Bool.or_eq_true, beq_iff_eq] using hb
+  rcases has with (rfl | rfl) | rfl
+  · exact valRel_andBool hx hy hfx hfy
+  · exact valRel_op2Bool hb hx hy hfx hfy
+  · exact valRel_op2Bool hb hx hy hfx hfy
 
 /-- `XORconst [1]` of a boolean: the machine's 0 or 1. -/
 theorem valRel_xorBool {x : Val} {X : BitVec 64} {k : Int64} (hk : k.toInt = 1)
@@ -743,10 +791,11 @@ theorem g32_bin (F : Facts lc sym text az ez psA.toList ret E)
   rw [arr2 hsz ha0 ha1] at hargv
   obtain rfl := mapM_res_two hargv hx hy
   rw [write_reg hvh hcv, evalPure_bin32 hop]
-  have hrel : ValRel E.ι ((Arm64.op2 (lc.ty v.id) (binF as) [x, y]).retypeL (lc.ty v.id))
+  have hrel : ValRel E.ι ((binV as (lc.ty v.id) [x, y]).retypeL (lc.ty v.id))
       (binF as (m.rX (BitVec.ofNat 5 kn)) (m.rX (BitVec.ofNat 5 km))) := by
     rcases hw with ⟨h8, hca, hcb⟩ | ⟨rfl, rfl, rfl, hb⟩
     · have ht := cls_ne_bool hcv h8
+      rw [binV_of_ne_bool as ht]
       exact valRel_retypeL_lo hA hcv ht (lo_bin32 hA as hxv hyv hxf hyf hca hcb ht)
     · rw [cls_bool hcv]
       exact valRel_binBool hb hxv hyv hxf hyf

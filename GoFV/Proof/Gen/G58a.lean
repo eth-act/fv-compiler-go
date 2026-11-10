@@ -485,8 +485,8 @@ theorem g58_bin (F : Facts lc sym text az ez psA.toList ret E)
   obtain ⟨argv, hargv, rfl⟩ := stepLoc_alu32 hl htemp halu hs
   rw [arr2 hsz ha0 ha1] at hargv
   obtain rfl := mapM_res_two hargv hx hy
-  rw [write_reg hvh hcv, evalPure_bin32 hop]
   have ht := cls_ne_bool hcv h8
+  rw [write_reg hvh hcv, evalPure_bin32 hop, binV_of_ne_bool as ht]
   have hc64 := cls_le hcv
   refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor
     (valRel_retypeL_lo hA hcv ht (lo_op2_51c hA hxv hyv hxf hyf hca hcb ht
