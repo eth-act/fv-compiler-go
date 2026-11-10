@@ -1049,6 +1049,7 @@ import GoFV.Proof.Witness.LowerTruncW
 import GoFV.Proof.Witness.LowerWBPanic
 import GoFV.Proof.Witness.LowerZero
 import GoFV.Proof.Witness.LowerZeroSt
+import GoFV.Proof.Witness.LowerZeroSt2
 import GoFV.Proof.Witness.MakeSel
 import GoFV.Proof.Witness.Max3
 import GoFV.Proof.Witness.MemCombine
