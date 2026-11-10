@@ -57,6 +57,15 @@ theorem locMatch_inv {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog} {ret 
   · exact Or.inl (Or.inl (by rw [hpc]; exact h))
   · exact Or.inr (hpc.trans h)
 
+/-- A `LocMatch`ed P0 state and a machine state with its `X27`: `X27At`. -/
+theorem x27At_locMatch {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog} {ret : BitVec 64}
+    {tab : PcTab} {E : MatchEnv} {s : LocState} {b : ID} {i : Nat} {m t : MState}
+    {spills : Array Spill} {o : ObjIn} {otab : Tab} {base : BitVec 64} {code : Code}
+    {retM : BitVec 64} (hO : ObjEnv ps spills o otab L base code retM)
+    (hE : G2Env lc g L ps ret tab E) (hm : LocMatch E s b i m) (h27 : t.x 27 = m.x 27) :
+    X27At otab L ps.toList m t :=
+  x27At_of_eq hO h27 (by rw [hm.pc]; exact pcOf_inv hE b i)
+
 /-- Callees that return through `X30` and change nothing else treat related states alike. -/
 theorem hookMap_retLR {H : Hooks} {L : Link} {ps : List Prog} {f : BitVec 64 → BitVec 64}
     (hH : ∀ s, H.call s = some (.ret { s with pc := s.x 30 })) : HookMap H L ps f := by

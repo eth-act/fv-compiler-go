@@ -67,6 +67,10 @@ theorem objRel_relInit (f : BitVec 64 → BitVec 64) (m : MState) : ObjRel f m (
   mem := rfl
   pc := rfl
 
+/-- `relInit` keeps `X27`. -/
+theorem relInit_x27 (f : BitVec 64 → BitVec 64) (m : MState) : (relInit f m).x 27 = m.x 27 := by
+  simp [relInit]
+
 /-- `endP` is not a Prog address. -/
 theorem retOut_endP {sym : Nat → BitVec 64} {text : BitVec 64} {a x : Int} {ps : List Prog}
     (hlt : ∀ p ∈ ps, p.id < 2 ^ 32) :
@@ -219,11 +223,12 @@ theorem objG7_value_witness :
     cases hx'
     rw [hp] at hall
     exact ⟨GenG4.memS, rfl, by simpa using hall⟩
-  obtain ⟨E', m1, t1, hx, -, hlm, hinv, hst, hR⟩ := g7_obj_value (H := GenG2.H0) (env := default)
-    hc hE hm2 hb hi2 hv (by rw [hop]; rfl)
-    (GenG7.locMatch0 GenG4.ptrS GenG2.symA ⟨GenG2.symA, rfl, by decide⟩)
+  have hm0 := GenG7.locMatch0 GenG4.ptrS GenG2.symA ⟨GenG2.symA, rfl, by decide⟩
+  obtain ⟨E', m1, t1, hx, -, hlm, hinv, hst, hR, -⟩ := g7_obj_value (H := GenG2.H0)
+    (env := default) hc hE hm2 hb hi2 hv (by rw [hop]; rfl) hm0
     (GenG7.g7Inv0 _ hk0) hpre (GenG2.callOK_ne (by rw [hop]; nofun)) hs1 hO
-    (hookMap_retLR fun _ => rfl) (objRel_relInit _ _) (fun u _ => noICall_spec hni _ u)
+    (hookMap_retLR fun _ => rfl) (objRel_relInit _ _)
+    (x27At_locMatch hO hE.env hm0 (relInit_x27 _ _)) (fun u _ => noICall_spec hni _ u)
   exact ⟨hpc, s1, E', m1, t1, hs1, hx, hlm, hinv, hst, hR⟩
 
 /-- What compiled evaluation checks for `objStarLeaf_witness`: `(*A).g` is a leaf (`checkObj`'s
@@ -283,6 +288,7 @@ theorem objStarLeaf_witness :
   refine ⟨hleaf, s1, E', m1, hs1, hp, hlm, ?_⟩
   rw [← h30]
   refine obj_star_leaf hO (hookMap_retLR fun _ => rfl) hp (objRel_relInit _ _)
+    (x27At_locMatch hO hE.env hm0 (relInit_x27 _ _))
     (locMatch_inv hE.env hm0) (fun u _ => noICall_spec hni _ u) hleaf ⟨?_, ?_⟩
   · rintro ⟨p, hp', he⟩
     exact hnp p hp' he
@@ -361,10 +367,12 @@ theorem objG7_term_witness :
   simp only [Bool.and_eq_true] at hrun
   obtain ⟨hgo, -⟩ := hrun
   obtain ⟨e, rfl, het⟩ := GenG1.gotoIs_spec hgo
-  obtain ⟨m1, t1, hlm, hinv, -, hst, hR⟩ := g7_obj_term (H := GenG2.H0) hc7 hE hm1 hb1
-    (GenG3.locMatch0 7) (GenG3.g3Inv0 7 (by rw [hsz]; exact hk0))
+  have hm0 := GenG3.locMatch0 7
+  obtain ⟨m1, t1, hlm, hinv, -, hst, hR, -⟩ := g7_obj_term (H := GenG2.H0) hc7 hE hm1 hb1
+    hm0 (GenG3.g3Inv0 7 (by rw [hsz]; exact hk0))
     (fun hz => by rw [hkind] at hz; rcases hz with h | h <;> cases h) hs1 hO
-    (hookMap_retLR fun _ => rfl) (objRel_relInit _ _) (fun u _ => noICall_spec hni _ u)
+    (hookMap_retLR fun _ => rfl) (objRel_relInit _ _)
+    (x27At_locMatch hO hE.env hm0 (relInit_x27 _ _)) (fun u _ => noICall_spec hni _ u)
   exact ⟨hpc, s1, e, m1, t1, hs1, het, het ▸ hlm, het ▸ hinv, hst, hR⟩
 
 end GoFV.Proof.Witness.ObjG7

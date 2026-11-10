@@ -2515,7 +2515,7 @@ below; 0 parse or port errors):
 
 | Functions | Accepted | P0 Progs in accepted functions |
 | --: | --: | --: |
-| 9,297 | 8,729 (93.89%) | 358,922 of 429,130 |
+| 9,297 | 9,124 (98.13%) | 395,421 of 429,130 |
 | G7 slice: 2,109 | 2,108 (99.95%) | |
 | G8 slice: 2,323 | 2,322 (99.95%) | |
 | G9 slice: 2,551 | 2,550 (99.96%) | 51,122 of 51,143 |
@@ -2527,8 +2527,9 @@ below; 0 parse or port errors):
 the datasize); `CLZ`/`RBIT`/`REV`/`REV16`/`REV32` (`dp1`); the acquire loads `LDAR`/`LDARW`/`LDARH`/
 `LDARB` and the release stores `STLR*` (`exclOp`; `execExcl`'s plain access); and `CALL (Rn)` as
 `BLR` (`MCtl.callReg`/`PCtl.callReg`, matched register to register). `progSym` also checks that
-calls come from `CALL` and register jumps from `RET` (`ctlOp`), and `sameEffect` that every load of
-the Prog is a load of the words (the converse of the earlier check, for `obj_panic`).
+calls come from `CALL`, register jumps from `RET` and branches go to the Prog of the operand `To`
+(`ctlOp`), and `sameEffect` that every load of the Prog is a load of the words (the converse of the
+earlier check, for `obj_panic`).
 
 The one slice function that is rejected is `init.func47` of `test/nilptr2`: its `LDP` is
 assembled with a literal-pool load (`LDR literal`), which is not modelled.
@@ -2626,12 +2627,47 @@ B/W/X), 4,864 cases, 0 mismatches. All 417 quick-v10 functions with these words 
 Prog that reads `R27` set by the previous Prog (`STLXR …, R27; CBNZ R27` 215, `MOVW R1, R27;
 CASAL R27, …` 171, `MVN R1, R27; LDCLRAL R27, …` 21), which `sameEffect`/`sameCtl` reject because
 `ObjRel` does not relate `X27`. Accepting them needs an `X27` agreement invariant at such
-readers in `obj_star` (next step). Witnesses `objAtomic_prog_witness`
+readers in `obj_star` (next paragraph). Witnesses `objAtomic_prog_witness`
 (`GoFV/Proof/Witness/ObjAtomic.lean`: `checkProg` accepts `sync/atomic.AddInt32`'s `LDADDALW`,
 `LDAXRW`, `STLXRW` against their words; `progSym` and `symInsn` give the same effects, and
 `CASALW R27, (R0), R2` and its word too), `objAtomic_ldadd_run`, `objAtomic_stlxr_run`,
 `objAtomic_cas_hit`, `objAtomic_cas_miss` (`symInsn_sound` on the decoded words from concrete
 states), `objAtomic_rmwEx`.
+
+**Atomics across Progs: `X27`** (8,729 → 9,124, +395, none lost function by function; of the 407
+functions that stopped at a Prog reading `R27`, 395 are accepted, 12 stop at a later Prog):
+`checkObj` relates `X27` before a body Prog (`Tab.ok27`, one entry per Prog, `checkBody`) when
+the Prog before it in the list is compared (not a skip, not `RET`), its words leave `X27` as the
+Prog leaves `R27` (`est27 k m p mc`: the same `Ex`, over registers related before that Prog,
+`Ex.regsOKK k`) and are no call (`MCtl.links`: a callee returns with any `X27`), and no Prog
+branches to it (`branchTargets`: the `BRANCH` operands of the list, `branchTo`), so that it is
+reached only by falling through from its predecessor. Such a Prog may read `X27`
+(`sameEffectK k`, `sameCtl k`, `Sym.readsTmpK k`: `regsOK30`, `X30` still excluded).
+`progSym`'s `ctlOp` now checks that a branch control's target is the Prog of the operand
+`To` (`branchTo p = some id`), which `obj_step` needs to see that a taken branch lands on a
+`branchTargets` member; every `progSymCore` branch already took its target from `To`
+(`targetP`), so no function is lost. The invariant (`Sim.lean`) is
+`X27At tab L ps s t`: at a Prog with `ok27`, `t.x 27 = s.x 27` (`at27`); at a symbol (after a
+call), the return address `X30` names no Prog with `ok27` (`ret27`). `obj_step`, `obj_star`,
+`obj_star_leaf` and `obj_panic` take it with `ObjRel` and `obj_step`/`obj_star` return it:
+after the words of a Prog at index `k`, the next state is at the fall-through (then
+`ok27[k+1]` needs `est27`, and the words' `X27` is `(m.getX 27).eval t = (p.getX 27).eval s`,
+`eval_rel` over `regsOKK`; `ok27_next`), at a branch target (`ok27` false there, `ok27_tgt`) or,
+for a call, at a symbol with the fall-through in `X30` (`est27` false for a call, so `ret27`);
+a hook returns to `X30` (`HookMap`, strengthened: `s'.pc = s.x 30`), a Prog without `ok27` by
+`ret27`. The `TEXT` and the first body Prog have no `ok27` (`ok27_spec`), so a run from the
+entry starts with `X27At` from `x27At_of_eq` (`sim_entry`: the P0 state is the machine's); the
+per-value theorems (`g7_obj_value`/`_term`, `g60_obj_value`/`_term`, the `g60_obj_*Panic`) and
+`Whole.lean`'s `SimAt`/`SimAtW` carry it next to `ObjRel`, and the end-to-end statements are
+unchanged. The recovery path is outside the model (no hook for `deferproc*`, `deferreturn`,
+`gorecover`: such a call is `stuck`), and every modelled hook that returns (`liftContract`,
+`morestackHook`, `wbHook`) sets `pc := s.x 30`, so the stronger `HookMap` is the arm64 `BL`/`RET`
+ABI (STATUS Assumptions, "`HookMap` returns to `LR`"); `MorestackOK` already returns to `X30`
+and is outside `obj_star` (the tail is no P0 Prog, and the body's first Prog has no `ok27`).
+Witness `objAtomic_whole_witness`: `checkObj` accepts the whole of `sync/atomic.AddInt32` (its
+LSE path and its LL/SC loop) with `ok27` exactly at the `CBNZ R27` after `STLXRW`, where `X27At`
+holds iff the machine's `X27` is P0's. End to end the atomics still stop at genssa
+(`LoweredAtomic*`, slice G61).
 
 **Proof** (`GoFV/Proof/Obj/`):
 

@@ -25,6 +25,10 @@ literal pools); it decodes the words and compares effects:
   a load of the Prog, the Prog must not read `X27` or `X30`, and the control must agree: a
   branch to the offset of the target Prog, a call to the same symbol and addend, a return
   through the same register. The templates below write no vector register.
+* **`X27` across Progs** (`checkBody`, `Tab.ok27`): a Prog may read `X27` when the Prog before
+  it in the list left `X27` as it leaves `R27` (`est27`: the same value over the registers
+  related before it, no call) and no Prog branches to it (`branchTargets`; a branch's target is
+  the Prog of its operand `To`, `ctlOp`), so it is reached only from that Prog.
 * **Prologue** (`checkPrologue`): the stack check (`stacksplit`: `MOVD 16(g), R16`, the compare
   of `SP` or `SP − (framesize − StackSmall)`, `BLS` to the morestack tail) when present, then the
   frame (`MOVD.W R30, -autosize(RSP)`; `MOVD R29, -8(RSP)`; `SUB $8, RSP, R29`, or the large-frame

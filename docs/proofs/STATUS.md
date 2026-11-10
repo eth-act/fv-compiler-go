@@ -331,7 +331,10 @@ linker model (`linkCode`) places the text at `base` (`ObjEnv`), every `runProg` 
 (`PStar` under `Link.byId` with the validated frame) is matched by a `runMach` run of the linked
 words (`MStar`). The relation `ObjRel f` holds between the two: registers but `X27`/`X30` equal,
 `X30` and the PC through the address map `f` (a P0 Prog's address ↦ its words), `SP`, `V`, flags
-and memory equal.
+and memory equal. With it `X27At` (proofs3 §7, "Atomics across Progs"): at a Prog where
+`checkObj` relates `X27` (`Tab.ok27`: the Prog before it left `X27` as P0's `R27`, no call in
+between, no branch to it), the machine's `X27` is P0's; after a call, the return address names no
+such Prog.
 
 The pieces:
 - `obj_step`;
@@ -357,9 +360,10 @@ but `R26`, `R28`–`R30`, the vector registers not reloaded, the slots and the g
 (`MoreStep`).
 `g7_obj_value`/`g7_obj_term` (`GoFV/Proof/Obj/G7.lean`) compose `g7_value`/`g7_term` with
 `obj_star`: the first statements from `runLoc` to the machine words. They rest on the trusted
-premises `HookMap` and `ICallOut` (below; `ICallOut` holds trivially for a function without
-`CALL (Rn)`, `iCallOut_of_none`). `obj_panic` carries a P0 panic (a nil-page fault of a Prog, or a
-hook that panics) to a machine panic (`MPanics`) under `HookPanicMap`.
+premises `HookMap` (strengthened for `X27At`: a hook returns to `X30`, § Assumptions) and
+`ICallOut` (below; `ICallOut` holds trivially for a function without `CALL (Rn)`,
+`iCallOut_of_none`). `obj_panic` carries a P0 panic (a nil-page fault of a Prog, or a hook that
+panics) to a machine panic (`MPanics`) under `HookPanicMap`.
 
 Witnesses:
 - `objFrame_entry_witness`, `objFrame_exit_witness` (`testInts`, framed with a stack check);
@@ -381,28 +385,32 @@ Witnesses:
   `symInsn_sound`: no fault, memory kept; `PRFM (R0), $0` has the same effect);
 - `objAtomic_prog_witness` (`GoFV/Proof/Witness/ObjAtomic.lean`: `checkProg` accepts
   `sync/atomic.AddInt32`'s `LDADDALW`, `LDAXRW` and `STLXRW` against their words, with equal
-  Prog and word effects; `CASALW R27, (R0), R2` and its word have equal effects),
+  Prog and word effects, only `STLXRW` leaving `X27` related; `CASALW R27, (R0), R2` and its word
+  have equal effects), `objAtomic_whole_witness` (`checkObj` accepts the whole function, `ok27`
+  exactly at its `CBNZ R27`, where `X27At` holds iff the machine's `X27` is P0's),
   `objAtomic_ldadd_run`, `objAtomic_stlxr_run`, `objAtomic_cas_hit`, `objAtomic_cas_miss`
   (`symInsn_sound` on `LDADDAL`, `STLXR` and `CASAL` words, a `CAS` mismatch keeping the memory),
   `objAtomic_rmwEx`.
 
-Coverage on quick-v10 (`lake exe obj-check`, on P0'): 8,729 of 9,297 functions (93.89%; 358,922 of
+Coverage on quick-v10 (`lake exe obj-check`, on P0'): 9,124 of 9,297 functions (98.13%; 395,421 of
 429,130 P0 Progs in accepted functions), with `CSEL`/`CSINC`/`CSINV`/`CSNEG`/`CSET`/`CSETM`,
 `MUL`/`MNEG`/`MADD`/`MSUB`/`UMULH`/`SMULH`, `CLZ`/`RBIT`/`REV*`, `LDAR*`/`STLR*`, `CALL (Rn)`, the
 variable shifts, divisions, `REM`/`UREM`, `BIC`/`ORN`/`EON`/`MVN`, the SIMD&FP forms Go emits
-(below), the morestack tail's `F` spills, the float constants loaded from constant symbols and
+(below), the morestack tail's `F` spills, the float constants loaded from constant symbols,
 `DMB $k`/`PRFM 0(Rn), $k` as no-ops (`progSym`'s `DMB`/`PRFM` arms, `symAccess` of a `PRFM` word,
-as `execLdSt`) (was 8,703, 93.61%, before `DMB`/`PRFM` (26 of the 31 functions with one; the
+as `execLdSt`) and the atomics (was 8,729, 93.89%, before `X27` across Progs (395 functions, none
+lost), 8,703, 93.61%, before `DMB`/`PRFM` (26 of the 31 functions with one; the
 other 5 stop at `LDORALB`, `VCNT`, `SBFIZ`), 8,544, 91.90%, before P0' (163 rejections
 `PCREL_LDST: access`, 159 now accepted, 4 stopped by a later reason), 8,464, 91.04%, before the
 `F` spills (80 rejections `tail: spill register`), 8,263, 88.87%, before the `Q` stores, 7,920,
 85.18%, before the integer operations after `MUL`, 7,741, 83.26%, before SIMD&FP, and 5,533,
 59.51%, before the opcodes above). `LDAXR*`, `STLXR*`, `CASAL*` and the LSE read-modify-writes
 `LDADDAL*`/`LDCLRAL*`/`LDEORAL*`/`LDORAL*`/`SWPAL*` are modelled per Prog (`exclOp`, `atomOp`;
-co-simulation: 19 forms, 4,864 cases, 0 mismatches) but gain no function yet: every quick-v10
-function with them (417, `goarm64 v8.0`'s LL/SC fallbacks) has a Prog that reads `R27` set by
-the Prog before it (`CBNZ R27` after `STLXR …, R27`, `CASAL R27`, `LDCLRAL R27`), which needs an
-`X27` agreement invariant in `obj_star` (`docs/plans/proofs3.md` §7, **Atomics, per Prog**).
+co-simulation: 19 forms, 4,864 cases, 0 mismatches); the Progs that read `R27` set by the Prog
+before them (`CBNZ R27` after `STLXR …, R27`, `CASAL R27`, `LDCLRAL R27`) are compared with
+`X27` related (`Tab.ok27`, `X27At`): of the 407 functions that stopped at such a Prog, 395 are
+accepted and 12 stop at a later Prog (`GETCALLERPC` 3, a `JMP`'s branch offset 4, `VCNT` 2,
+`UMULL` 1, `SBFIZ` 1, a `TBZ`'s branch offset 1).
 
 **SIMD&FP.** `Sym` carries the vector registers written (`Sym.v`, 128-bit values `VEx` over the
 state before the Prog: `.v r`, constants, `.ofX` of a general register, loads `.ld n a`, `fp1Op`,
@@ -1593,7 +1601,7 @@ column runs the same back end on the stock `trim` function of every function.
 | … genssa and `Flushplist` ran | 7,878 | 84.73% | 9,297 |
 | … ∧ `checkG60` ∧ `entryStoresOK` | 6,748 | 72.58% | 7,638 |
 | … ∧ `checkG60` ∧ `entryStoresOK` ∧ `retRegsOK` | 6,748 | 72.58% | 7,637 |
-| … ∧ `checkObj` | 7,532 | 81.01% | 8,729 |
+| … ∧ `checkObj` | 7,841 | 84.33% | 9,124 |
 | **… ∧ `checkG60` ∧ `entryStoresOK` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach` or `verified_mach_S`)** | **6,745** | **72.55%** | 7,597 |
 | … of which `needs48 = false`: `verified_mach` (`SepFrom`, `CallOK` …) | 6,550 | 70.45% | 7,384 |
 | … of which `needs48 = true`: `verified_mach_S` (G48's mode) | 195 | 2.10% | 213 |
@@ -1629,7 +1637,11 @@ them loading a float constant on P0' (61 by G56). The tree on main 3672e208 (bef
 same end-to-end set, and so does main 544c0e3b (before #687): #687's atomics in `checkObj` move its
 rejection reasons (now led by `CBNZ: CBZ` 162, `CASALW`/`CASALD` reading `R#` 71/64, `JMP` to a
 register 12, the stack check of a huge frame 11) but no function end to end, since `checkG60`
-rejects the atomic ops (`LoweredAtomic*`).
+rejects the atomic ops (`LoweredAtomic*`). `X27` across Progs in `checkObj` (objatom part B: the
+atomics' `R27` readers, `Tab.ok27`, `X27At`) adds none either: `checkObj` alone 7,532 → 7,841
+(stock column 8,729 → 9,124), end to end 6,745 (the same set), its rejections among the fully
+verified now led by `JMP` to a register (12) and the stack check of a huge frame (11), no atomic
+left (`checkG60` still rejects every function with an atomic op; slice G61).
 
 **Vacuous at `Addrs.fixed`, per theorem** (#553). `gofv-ssa-opt --e2e` counts, for each end-to-end
 function, the distinct frame operands of its accessed `Blk.local` variables (forgeable, with a
@@ -1896,7 +1908,8 @@ its assumptions:
 | `GetGOK` (Phase 3 G17, `GoFV/Proof/Gen/G17.lean`, premise of `g17_value` at `GetG`) | the injection `ι` maps Phase 1's opaque global `runtime.g` (`GetG`'s result, `Sem/Pure.lean`) to the activation's goroutine `E.g`, which `LocMatch`'s frame clause puts in `X28`; `E.Extends` keeps it, so it is a property of the activation's first injection | Phase 1 models the goroutine as an opaque allocation of the environment, never nil (semantics2 §5); on arm64 the goroutine pointer lives in `R28` (`g`), which Go code does not write outside the runtime's `g` switches | a `runtime.g` symbol referenced as a global (then `G2Env.glob` puts it at its link address), or code that switches `g` | a choice of `ι`, not of external code; the witness `genG17_value_witness` takes `ι` with `runtime.g` at `X28` |
 | `BoundsOK` (Phase 3 G19, `GoFV/Proof/Gen/G19.lean`, premise of `g19_boundsPanic`, …, `g42_obj_boundsPanic`, `obj_whole_panic` and the panic branch of `verified_mach`) | from every machine state at the symbol of `runtime.panicBounds` whose `X30` is the return address of a `CALL` at index `k` of the Prog list, the hook `H.call` panics with `boundsPanic c` of the state's registers, `c` the `PCDATA_PanicBounds` value in force at that `CALL` (`pbData`) | the hook's contract `panicBoundsHook` (row above): `panicBounds64` decodes the PC-value table at `X30 − 1`, which is `c` | a runtime whose `panicBounds` reads other registers or another table, or a PC-value table that the assembler does not emit as the Prog list says (D7, `checkObj`) | trusted; the witness `genG19_boundsPanic_witness` discharges it for a hook that panics with `boundsPanic 350`, the only value at its `CALL` (`boundsOK_of`) |
 | `MemEqOK`/`MemEqSpec` (Phase 3 G28, `GoFV/Proof/Gen/G28.lean`, premise of `g28_value` at each `LoweredMemEq`) | from the state at `runtime.memequal`'s symbol (the caller's but for `X30`), with `X0`, `X1`, `X2` related to the arguments `p`, `q`, `n` `runLoc` reads and the memory injected (distinct keys, the live blocks away from the frame), the hook `H.call` returns to `X30` with `SP`, `R28`, `R29` and the memory kept, and `X0` related to `memEq [p, q, n, mem]`: 1 if the `n` bytes at `p` and at `q` agree, 0 if not (no claim when a read is invalid or reads `poison`) | `runtime.memequal`'s contract: `internal/bytealg/equal_arm64.s` (`NOSPLIT`, `NOFRAME`) compares the `R2` bytes at `R0` and `R1`, writes no memory, and returns with `MOVD $1, R0` or `MOVB ZR, R0` (the whole register 1 or 0); the injection relates `runLoc`'s bytes at `p`, `q` to the machine bytes at their addresses, so equal bytes are equal machine bytes and conversely | a `memequal` that writes memory or `R28`/`R29`, or returns another result | trusted; the witness `genG28_value_witness` discharges it for a hook that implements `memequal` on the machine (`GenG28.Hm`), on 8 equal bytes |
-| `HookMap` (Phase 3 `checkObj`, `GoFV/Proof/Obj/Sim.lean`, premise of `obj_step`/`obj_star`, `g7_obj_value`/`g7_obj_term`, `g42_obj_value`/`g42_obj_term`, `obj_whole_ret`, `obj_whole_panic` and `verified_mach`) | a hook (callee, runtime entry) that returns from a P0 state at a symbol, after a call whose return address is a Prog or the end, also returns from every `ObjRel`-related machine state, to a related state at a Prog or the end: it treats the return address `X30` only as an address to return to (P0's ID layout and the machine's byte layout differ only there) and does not read `X27` | the callee's code is outside the function and cannot observe where the caller's words are, except through `X30`, which it only returns to (`RET`); Go code does not read `R27` (REGTMP) across a call | a callee that reads or stores its return address as data (tracebacks, `runtime.Callers`), or reads `X27` | trusted; `hookMap_retLR` discharges it for callees that return through `X30` and change nothing else (the witnesses' `GenG2.H0`) |
+| `HookMap` (Phase 3 `checkObj`, `GoFV/Proof/Obj/Sim.lean`, premise of `obj_step`/`obj_star`, `g7_obj_value`/`g7_obj_term`, `g60_obj_value`/`g60_obj_term`, `obj_whole_ret`, `obj_whole_panic` and `verified_mach`) | a hook (callee, runtime entry) that returns from a P0 state at a symbol, after a call whose return address is a Prog or the end, also returns from every `ObjRel`-related machine state, to a related state at the P0 state's `X30` (next row): it treats the return address `X30` only as an address to return to (P0's ID layout and the machine's byte layout differ only there) and does not read `X27` | the callee's code is outside the function and cannot observe where the caller's words are, except through `X30`, which it only returns to (`RET`); Go code does not read `R27` (REGTMP) across a call | a callee that reads or stores its return address as data (tracebacks, `runtime.Callers`), or reads `X27` | trusted; `hookMap_retLR` discharges it for callees that return through `X30` and change nothing else (the witnesses' `GenG2.H0`), `hookMap_H` for the `ObjEndToEndAtSP`/`ObjEndToEndAtSPS` callee |
+| `HookMap` returns to `LR` (Phase 3 `checkObj`, `Sim.lean`: `HookMap`'s conclusion `s'.pc = s.x 30`, used by `obj_step` for `X27At`'s `ret27`: after a call `checkObj` relies on `X27` at no Prog the return address names, `Tab.ok27`, so a hook may return with any `X27` but must land on that Prog) | a hook that returns from a P0 state at a symbol returns to that state's `X30`, the return address of its `BL`/`BLR` | the arm64 `BL`/`RET` ABI: a callee returns with `RET` to `LR`. The modelled hooks (`GoFV/SSA/Sem/Hooks.lean`): the three that return set `pc := s.x 30` (`liftContract`, `morestackHook`, `wbHook`), `panicBoundsHook` only panics; `runtime.morestack` is moreover under `MorestackOK` (returns to `X30`; the tail is no P0 Prog, and `checkObj` relies on `X27` at neither the `TEXT` nor the first body Prog, `ok27_spec`), panicking callees under the `CallPanicOK` family (no return); recovery is outside the model: no hook for `deferproc*`, `deferreturn`, `gorecover`, so a run reaching them is `stuck` (row "not modelled by the hooks") | recovery resuming at `deferreturn` (after a `recover`, Go resumes the frame at its `deferreturn` call, not at the panicking call's return address), or any routine that does not `RET` to `LR` (a `gogo` to another PC) | `hookMap_retLR` (`GenG2.H0`: the `ObjG7`, `ObjWhole`, `ObjWholeS`, `ObjWholeNL`, `ObjPanic` witnesses), `hookMap_H` (`ObjEndToEndAtSP`, `ObjEndToEndAtSPS`); trusted for `RtInfo.hooks` (every `.ret` hook sets `pc := s.x 30`) |
 | `HookPanicMap` (Phase 3 `checkObj`, `Sim.lean`, premise of `obj_panic`, `g42_obj_nilPanic`/`_memPanic`/`_ldarPanic`/`_boundsPanic`/`_callPanic`/`_icallPanic`, `obj_whole_panic` and the panic branch of `verified_mach`) | a hook that panics from a P0 state at a symbol (after a call) panics with the same panic from every `ObjRel`-related machine state | as `HookMap` | as `HookMap` | trusted; `hookPanicMap_H0` (`objWhole_panic_witness`) |
 | `CallPanicOK` (Phase 3, `GoFV/Proof/Obj/CallPanic.lean`, premise of `g42_callPanic`/`g42_obj_callPanic`; in `RunPanicPre`, premise of `obj_whole_panic` and the panic branch of `verified_mach`, at each static call whose step panics) | from every machine state at the callee's symbol that is the caller's but for `X30`, with the call's arguments in their ABI registers and the memory injected (`CallOK`'s premises, distinct keys, the live blocks away from the frame), the hook `H.call` panics with the panic `runLoc`'s call step panics with | the callee's Phase 1 contract lifted through ABIInternal (the `liftContract` row above): a callee that panics in Phase 1 on these arguments and memory panics alike on the machine, before returning | a callee whose machine code panics with another value, or returns, where its Phase 1 contract panics | trusted; the witness `g42_callPanic_witness` discharges it for a hook whose callee panics with `nilDeref` (`fint64to32`) |
 | `ICallPanicOK` (Phase 3, `GoFV/Proof/Obj/CallPanic.lean`, premise of `g42_icallPanic`/`g42_obj_icallPanic`; in `RunPanicPre`, premise of `obj_whole_panic` and the panic branch of `verified_mach`, at each interface or closure call whose step panics) | from every machine state that is the caller's but for `X30`, with the PC the content of the code register `Rn` (related to `runLoc`'s code pointer), `R26` holding the closure context of a closure call, the remaining register arguments in their ABI registers and the memory injected, the callee's code is no Prog of the caller and not its return address, and the hook there panics with the panic `runLoc`'s call step panics with | as `ICallOK` (the code pointer of a method or closure is a function entry outside the caller) and `CallPanicOK` (the callee's Phase 1 contract lifted through ABIInternal panics alike) | a callee whose machine code panics with another value or returns where its Phase 1 contract panics; a code pointer into the caller | trusted; the witness `g42_icallPanic_witness` discharges it for a hook that panics with `nilDeref` at the callee's code (`Locker.Lock`, `icallPanicOKc`) |

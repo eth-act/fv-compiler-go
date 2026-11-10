@@ -15,12 +15,17 @@ and `X30` equal, `X30` and the PC related by the address map `f` (`objMap`: the 
 the Prog at index `k` ↦ `base + Tab.offs[k]`, the P0 end address ↦ `base + Tab.endOff`, every
 other address to itself), `SP`, the vector registers, the flags and the memory equal.
 
+`X27At tab L ps s t`: where `checkObj` relates `X27` before a Prog (`Tab.ok27`, `ok27_spec`: its
+predecessor in the list left `X27` as P0's `R27`, `est27`, and no Prog branches to it,
+`ok27_tgt`), the machine's `X27` is P0's; at a symbol after a call the return address names no
+such Prog (a callee returns with any `X27`).
+
 `obj_step`: one `PStep` of `runProg` (a Prog, or a hook that returns) from related states is
 matched by `MStar` of `runMach` (`symWords_sound`, `progSym_sound`, `checkObj_spec`), keeping
 `ObjInv` (the PC at a Prog, or at a symbol after a call whose return address is a Prog or the
-end); the hooks must treat related states alike (`HookMap`, the trusted runtime boundary of
-`docs/proofs/STATUS.md`). `obj_star` iterates it over `PStar`. P0's `RET` is the epilogue's
-(`obj_exit` in `Frame.lean`): `runProg` never steps it.
+end) and `X27At`; the hooks must treat related states alike and return to `X30` (`HookMap`, the
+trusted runtime boundary of `docs/proofs/STATUS.md`). `obj_star` iterates it over `PStar`. P0's
+`RET` is the epilogue's (`obj_exit` in `Frame.lean`): `runProg` never steps it.
 -/
 
 namespace GoFV.Proof.Obj
