@@ -73,6 +73,13 @@ theorem vkind62_initMem {lc : LocCtx} {g : G2In} {v : Value} (hop : v.op = .Init
   unfold vkind62
   cases vkind61 lc g v <;> simp [hn]
 
+/-- Off `Arg`, `vkind62` is `vkind61`. -/
+theorem vkind62_eq61 {lc : LocCtx} {g : G2In} {v : Value} (hop : v.op ≠ .Arg) :
+    vkind62 lc g v = vkind61 lc g v := by
+  have hn : vkind62a lc g v = none := by simp [vkind62a, hop]
+  unfold vkind62
+  cases vkind61 lc g v <;> simp [hn]
+
 /-- On a function with no arm64 op, G62's check is G33. -/
 theorem checkG33_of_62L {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}
     {r : Except String (PcTab × KTab)} (hl : lc.ctx.f.lowered = false)

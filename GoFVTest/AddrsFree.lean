@@ -39,6 +39,7 @@ run_meta do
   let mut roots := #[``GoFV.Opt.verifiedPipeline, ``GoFV.Opt.verifiedPipelineFull,
     ``GoFV.Gen.Check.liveCtx, ``GoFV.Gen.Check.retRegsOK, ``GoFV.Gen.Check.entryStoresOK,
     ``GoFV.Gen.Check.pendWins, ``GoFV.Gen.Check.memTyL, ``GoFV.Gen.Check.needs48,
+    ``GoFV.Gen.Check.argsOK,
     ``GoFV.Asm.CheckObj.checkObj]
   for (n, ci) in env.constants.toList do
     if let (.str p s, .defnInfo _) := (n, ci) then

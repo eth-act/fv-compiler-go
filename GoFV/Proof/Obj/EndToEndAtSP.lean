@@ -17,7 +17,7 @@ In G48's mode (`verified_mach_S`) `SPInv` pins `SP` to the `outargs` block's fix
 (`g49Env_fixed_outSP`); `verified_mach_S_atSP` states `verified_mach_S` at
 `Addrs.atSPO (baseSP g L E0.sp) E0.sp.toNat`, with activation 0's `outargs` block at `SP` too
 (`envAtSPO g L E0`).
-The checked premises (`verifiedPipelineFull`, `checkG61`, `needs48`, `retRegsOK`, `entryStoresOK`,
+The checked premises (`verifiedPipelineFull`, `checkG62`, `needs48`, `retRegsOK`, `entryStoresOK`,
 `memTyL`, `checkObj`'s `ObjEnv`) take no address assignment (§8 item 6,
 `GoFVTest/AddrsFree.lean`): they are the verdicts `gofv-ssa-opt --e2e` computes. The others
 (the input's `VPre`, the caller's entry relation, the callee contracts) are stated at the
@@ -57,7 +57,7 @@ theorem verified_mach_atSP
     {H : Hooks} {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab}
     {kt : KTab} {spills : Array Spill} {o : ObjIn} {otab : Tab}
     {base : BitVec 64} {code : Code} {room : Nat} {s0 : MState}
-    (hc : checkG61 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
+    (hc : checkG62 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
     (hn48 : needs48 lc = false)
     (hO : ObjEnv ps spills o otab L base code (s0.x 30))
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
@@ -75,8 +75,8 @@ theorem verified_mach_atSP
     (hbE : lc.ctx.f.block? lc.ctx.f.entry = some blkE)
     (hbm : lc.ctx.f.entry ∈ lc.ctx.f.blocks.toList) (hk : k ≤ blkE.values.size)
     (hpre : enterListLoc e lc (locInit e lc args mem) (blkE.values.toList.take k) = .ok sI)
-    (hes : entryStoresOK lc g k = true)
-    (hent : EntryMatch (envAtSP g L E0) (InWins L E0.sp (pendWins lc g)) sI s0)
+    (hes : entryStoresOK lc g k = true) (hargs : argsOK lc g spills.toList k = true)
+    (hent : EntryMatch (envAtSP g L E0) g (InWins L E0.sp (pendWins lc g)) sI s0)
     (hmore : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
       MoreEntry (envAtSP g L E0) spills.toList gOff sI s0)
     (hinv : G3Inv (envAtSP g L E0) lc (kAt lc kt lc.ctx.f.entry blkE k) sI)
@@ -103,7 +103,7 @@ theorem verified_mach_atSP
   have hact : lc.ctx.act = 0 := hlc ▸ liveCtx_make_act _ _
   letI : Addrs := Addrs.atSP (baseSP g L E0.sp)
   exact verified_mach hpipe hv hP hn ha hnp hd hlc hc hn48 hO hH hic hrok hME hroom hg hms hsep
-    (g49Env_atSP hE hact) hEE hbE hbm hk hpre hes hent hmore hinv huE hpc hRP hmt hro
+    (g49Env_atSP hE hact) hEE hbE hbm hk hpre hes hargs hent hmore hinv huE hpc hRP hmt hro
 
 /-- **Generic SSA to machine words at the machine layout, in G48's mode.** `verified_mach_S` at
 the address assignment `A = Addrs.atSPO (baseSP g L E0.sp) E0.sp.toNat` (activation 0's `local`
@@ -128,7 +128,7 @@ theorem verified_mach_S_atSP
     {H : Hooks} {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab}
     {kt : KTab} {spills : Array Spill} {o : ObjIn} {otab : Tab}
     {base : BitVec 64} {code : Code} {room : Nat} {s0 : MState}
-    (hc : checkG61 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
+    (hc : checkG62 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
     (hO : ObjEnv ps spills o otab L base code (s0.x 30))
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hic : ∀ u, ICallOut L ps.toList u)
@@ -145,8 +145,8 @@ theorem verified_mach_S_atSP
     (hbE : lc.ctx.f.block? lc.ctx.f.entry = some blkE)
     (hbm : lc.ctx.f.entry ∈ lc.ctx.f.blocks.toList) (hk : k ≤ blkE.values.size)
     (hpre : enterListLoc e lc (locInit e lc args mem) (blkE.values.toList.take k) = .ok sI)
-    (hes : entryStoresOK lc g k = true)
-    (hent : EntryMatch (envAtSPO g L E0) (InWins L E0.sp (pendWins lc g)) sI s0)
+    (hes : entryStoresOK lc g k = true) (hargs : argsOK lc g spills.toList k = true)
+    (hent : EntryMatch (envAtSPO g L E0) g (InWins L E0.sp (pendWins lc g)) sI s0)
     (hmore : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
       MoreEntry (envAtSPO g L E0) spills.toList gOff sI s0)
     (hinv : G3Inv (envAtSPO g L E0) lc (kAt lc kt lc.ctx.f.entry blkE k) sI true)
@@ -175,7 +175,8 @@ theorem verified_mach_S_atSP
   have hact : lc.ctx.act = 0 := hlc ▸ liveCtx_make_act _ _
   letI : Addrs := Addrs.atSPO (baseSP g L E0.sp) E0.sp.toNat
   exact verified_mach_S hpipe hv hP hn ha hnp hd hlc hc hO hH hic hrok hME hroom hg hms hsep
-    (g49Env_atSPO hE hact) hEE hbE hbm hk hpre hes hent hmore hinv hosp hspI huE hpc hRP hmt hro
+    (g49Env_atSPO hE hact) hEE hbE hbm hk hpre hes hargs hent hmore hinv hosp hspI huE hpc hRP
+    hmt hro
 
 
 end GoFV.Proof.Obj

@@ -74,13 +74,16 @@ def entryStoresOK (lc : LocCtx) (g : G2In) (k : Nat) : Bool :=
   let st := entryStores lc g k
   (pendWins lc g).all fun (o, n) => (List.range n).all fun j => inWins st (o + j)
 
-/-- The number of entry values (`entryOp`: the arguments, `SP`, `SB`, `InitMem`, …) at the head of
-the entry block: the position of the entry stores, the end-to-end theorem's `k` as the driver
-takes it. -/
+/-- The number of values at the head of the entry block that set up the activation, in any order:
+the entry values (`entryOp`: the arguments in registers, `SP`, `SB`, `InitMem`, …) and the `Arg`s
+of the incoming stack arguments (G62, no code; `runLoc` writes their slots, which the caller's
+side `EntryMatch.stack` relates). The position of the entry stores, the end-to-end theorem's `k`
+as the driver takes it. -/
 def entryLen (lc : LocCtx) : Nat :=
   match lc.ctx.f.block? lc.ctx.f.entry with
   | some blk =>
-    (blk.values.toList.takeWhile fun id => (lc.ctx.f.value? id).any (entryOp ·.op)).length
+    (blk.values.toList.takeWhile fun id =>
+      (lc.ctx.f.value? id).any fun v => entryOp v.op || v.op == .Arg).length
   | none => 0
 
 /-- Why `entryStoresOK lc g k` fails: the first pending window with a byte no entry store

@@ -54,7 +54,7 @@ theorem verified_mach_fixed
     {H : Hooks} {g : G2In} {L : Link} {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab}
     {kt : KTab} {E0 : MatchEnv} {spills : Array Spill} {o : ObjIn} {otab : Tab}
     {base : BitVec 64} {code : Code} {room : Nat} {s0 : MState}
-    (hc : checkG61 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
+    (hc : checkG62 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
     (hn48 : needs48 lc = false)
     (hO : ObjEnv ps spills o otab L base code (s0.x 30))
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
@@ -72,8 +72,8 @@ theorem verified_mach_fixed
     (hbE : lc.ctx.f.block? lc.ctx.f.entry = some blkE)
     (hbm : lc.ctx.f.entry ∈ lc.ctx.f.blocks.toList) (hk : k ≤ blkE.values.size)
     (hpre : enterListLoc e lc (locInit e lc args mem) (blkE.values.toList.take k) = .ok sI)
-    (hes : entryStoresOK lc g k = true)
-    (hent : EntryMatch E0 (InWins L E0.sp (pendWins lc g)) sI s0)
+    (hes : entryStoresOK lc g k = true) (hargs : argsOK lc g spills.toList k = true)
+    (hent : EntryMatch E0 g (InWins L E0.sp (pendWins lc g)) sI s0)
     (hmore : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
       MoreEntry E0 spills.toList gOff sI s0)
     (hinv : G3Inv E0 lc (kAt lc kt lc.ctx.f.entry blkE k) sI)
@@ -98,7 +98,7 @@ theorem verified_mach_fixed
         ∃ pe' n t', BoundsAgree pe pe' ∧ runMach H code (s0.x 30) n s0 = .panicked pe' t') :=
   verified_mach hpipe hv hP hn ha hnp hd hlc hc hn48 hO hH hic hrok hME hroom hg hms hsep hE hEE
     hbE hbm
-    hk hpre hes hent hmore hinv huE hpc hRP hmt hro
+    hk hpre hes hargs hent hmore hinv huE hpc hRP hmt hro
 
 /-- `verified_mach_S` at `Addrs.fixed`. -/
 theorem verified_mach_S_fixed
@@ -115,7 +115,7 @@ theorem verified_mach_S_fixed
     {H : Hooks} {g : G2In} {L : Link} {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab}
     {kt : KTab} {E0 : MatchEnv} {spills : Array Spill} {o : ObjIn} {otab : Tab}
     {base : BitVec 64} {code : Code} {room : Nat} {s0 : MState}
-    (hc : checkG61 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
+    (hc : checkG62 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
     (hO : ObjEnv ps spills o otab L base code (s0.x 30))
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hic : ∀ u, ICallOut L ps.toList u)
@@ -132,8 +132,8 @@ theorem verified_mach_S_fixed
     (hbE : lc.ctx.f.block? lc.ctx.f.entry = some blkE)
     (hbm : lc.ctx.f.entry ∈ lc.ctx.f.blocks.toList) (hk : k ≤ blkE.values.size)
     (hpre : enterListLoc e lc (locInit e lc args mem) (blkE.values.toList.take k) = .ok sI)
-    (hes : entryStoresOK lc g k = true)
-    (hent : EntryMatch E0 (InWins L E0.sp (pendWins lc g)) sI s0)
+    (hes : entryStoresOK lc g k = true) (hargs : argsOK lc g spills.toList k = true)
+    (hent : EntryMatch E0 g (InWins L E0.sp (pendWins lc g)) sI s0)
     (hmore : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
       MoreEntry E0 spills.toList gOff sI s0)
     (hinv : G3Inv E0 lc (kAt lc kt lc.ctx.f.entry blkE k) sI true)
@@ -159,6 +159,6 @@ theorem verified_mach_S_fixed
         ∃ pe' n t', BoundsAgree pe pe' ∧ runMach H code (s0.x 30) n s0 = .panicked pe' t') :=
   verified_mach_S hpipe hv hP hn ha hnp hd hlc hc hO hH hic hrok hME hroom hg hms hsep hE hEE
     hbE hbm
-    hk hpre hes hent hmore hinv hosp hspI huE hpc hRP hmt hro
+    hk hpre hes hargs hent hmore hinv hosp hspI huE hpc hRP hmt hro
 
 end GoFV.Proof.Obj
