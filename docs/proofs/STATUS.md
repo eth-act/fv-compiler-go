@@ -922,6 +922,30 @@ so `EntryMatch` leaves its window out and the entry stores run before the full r
 `MOVD R0, ~r0+0(FP)`, which G51 rejects; at `Addrs.fixed`). Coverage on quick-v10 (`lake exe
 gen-check`): 7,142 of 9,297 functions (76.82%), 220,164 values.
 
+**Vacuous at `Addrs.fixed` for two or more `Blk.local` variables** (#553). The statements hold for
+every address assignment (`Addrs`), but their premise `G49Env` puts every accessed `Blk.local`
+variable's block at `SP + frameOff` (`VarsAt49`), and `AddrAgree` (in `G2Env`) puts a `local`
+block with an address at its base. At `Addrs.fixed` (`Blk.fixedBase?`) block `k` of activation
+`a` is at `2^62 + a·2^42 + k·2^24`: two `local` blocks of one activation are a multiple of `2^24`
+apart, so two variables at distinct operands of one frame cannot both be at `SP + frameOff`. A
+function that accesses two or more has no `G49Env` at `Addrs.fixed`: there `g49_value` …
+`g49_boundsPanic`, and G52's, G53's, G54's, G55's and G57's statements (all under `G49Env`), hold
+of it only vacuously. An assignment that puts the running activation's `local` blocks,
+undecoded, at `SP + frameOff` (the machine instance, `docs/plans/proofs3.md` §8 item 4, not on
+main yet) admits such an activation. On quick-v10 (stock functions, `liveCtx`, main 55116073, a
+throwaway count beside `gen-check`), 21 of the functions `checkG49` accepts access two or more
+(the same 21 are accepted by G52 through G57, and G57 adds none): `main.safeDiv` (`examples/defers`;
+`NAME_AUTO` -40 and -42, two address-converted autos), `(*HashTrieMap[…]).CompareAndSwap` in
+`encoding/binary` and in `sync`, `fmt.(*ss).Token`, `fmt.(*ss).doScan`, `regexp/syntax.dumpProg`,
+`runtime.bytes`, `runtime.cgoCheckPointer`, the ABI0 wrappers `runtime.plugin_lastmoduleinit` (4
+stack results), `reflect_compiledTypelinks`, `reflect_typelinks`, `runtime_pprof_readProfile`,
+`secret_getStack`, `time_now`, `time_runtimeNow`, `sync/atomic.(*Value).CompareAndSwap`,
+`(*Value).Swap`, `main.cmp` (`test/bigmap`; `NAME_PARAM` 0 and 1000), `main.main` (`test/ddd`),
+`main.func5` and `main.func6` (`test/range4`). Of `checkG57`'s 7,378, 244 access exactly one (an
+activation exists at `Addrs.fixed`: `SP` places the variable at its fixed base, as
+`genG49_witness`) and 7,113 none. `fandbits` is not among the 21: after `trim` it accesses only
+`x` (`FMOVSstore {x}`); `y` stays in a register.
+
 ## Phase 3: genssa, slice G52, remainders (I7, #553)
 
 `GoFV.Proof.Gen.g52_value`, `g52_initMem`, `g52_term`, `g52_nilPanic`, `g52_boundsPanic`
@@ -1020,9 +1044,9 @@ group B's `vkind57b` tried when G55 rejects a value, `GoFV/Gen/Check57.lean`) ac
 they are G55's statements, under `G49Env`, `g57_value` under `G54Pre` (no new premise: the pair
 loads take its `PairPre50` component; `STPW`, `DMB`, `PRFM` and the float stores need none).
 Witness: `genG57_witness` (`main.grow`: `checkG55` rejects it and `checkG57` accepts it; `STPW
-(R2, R3), 8(R0)` of `0x11223344` and `0x55` leaves `0x44` at the struct's address plus 8). Under
-`Addrs.fixed`, a function that accesses two `Blk.local` frame variables has no `VarsAt49`
-instance, so `g57_value` says nothing about it there (group B's note). Coverage on quick-v10
+(R2, R3), 8(R0)` of `0x11223344` and `0x55` leaves `0x44` at the struct's address plus 8). At
+`Addrs.fixed`, `g57_value` and the other four hold only vacuously of the 21 accepted functions
+that access two or more `Blk.local` frame variables (§ slice G49). Coverage on quick-v10
 (`lake exe gen-check`, with the fall-through over no-ops): 7,378 of 9,297 functions (79.35%,
 33 more than G55's 7,345), 235,204 values.
 
@@ -1234,6 +1258,22 @@ column runs the same back end on the stock `trim` function of every function.
 | … ∧ `checkObj` | 7,496 | 80.62% | 8,544 |
 | **… ∧ `checkG54` ∧ `entryStoresOK` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach`)** | **6,484** | **69.74%** | 7,206 |
 | … end to end, pipeline output identical to stock after `trim` | 5,503 | 59.19% | - |
+
+**Vacuous at `Addrs.fixed`: functions with two or more `Blk.local` variables** (#553). Of the
+functions counted end to end, those that access two or more `Blk.local` frame variables at distinct
+operands have no `G49Env` at `Addrs.fixed` (§ slice G49), so `verified_mach_fixed` holds of them
+only vacuously. Measured on main 55116073 (end to end 6,494; `back`'s `liveCtx` of the pipeline
+output, a throwaway count in `back`): 18 of the 6,494, `main.safeDiv` (`examples/defers`),
+`fmt.(*ss).Token`, `fmt.(*ss).doScan`, `regexp/syntax.dumpProg`, `runtime.bytes`,
+`runtime.cgoCheckPointer`, the ABI0 wrappers `runtime.plugin_lastmoduleinit`,
+`reflect_compiledTypelinks`, `reflect_typelinks`, `runtime_pprof_readProfile`, `secret_getStack`,
+`time_now`, `time_runtimeNow`, `sync/atomic.(*Value).CompareAndSwap`, `(*Value).Swap`, `main.cmp`
+(`test/bigmap`), `main.func5` and `main.func6` (`test/range4`). So 6,476 are end to end at
+`Addrs.fixed` with a satisfiable `G49Env`; 194 of them access exactly one such variable (`SP` then
+places it at its fixed base, as `genG49_witness`), 6,282 none. `verified_mach` holds for every
+assignment, but for the 18 no assignment admitting their activation is on main (the machine
+instance, `docs/plans/proofs3.md` §8 item 4), and `verified_mach` at another assignment needs the
+pipeline's verdict there (item 6).
 
 The composition on G54 (through G52's remainders, G53's `LoweredMove` and G54's loops; `G54Pre`
 in `RunPre`) counts 6,484 end to end, 201 over the composition on G49's 6,283 (main 74bf59ed,
