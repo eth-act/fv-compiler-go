@@ -3318,7 +3318,7 @@ theorem genG59d_witness :
   have hm0 : 3 ∈ lc0.ctx.f.blocks.toList := by rw [← liveCtx_ctx (lc := lc0)]; exact hm3
   have hb0 : lc0.ctx.f.block? 3 = some blk := by rw [← liveCtx_ctx (lc := lc0)]; exact hb
   obtain ⟨m1, hp1, hm1, -, -, -, -⟩ := g58_term (H := GenG2.H0) hc hE hm0 hb0 locMatch0 (inv0 _)
-    (fun h => Bool.false_ne_true h)
+    (fun h => (Bool.false_ne_true h).elim)
     (fun h => by rcases h with h | h <;> rw [hk] at h <;> cases h)
     (by
       change UOKL m0 (uL35 lc (uIn35 lc 3) blk blk.values.size)

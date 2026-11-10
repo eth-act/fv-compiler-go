@@ -2822,7 +2822,7 @@ theorem genG59k_witness :
   have hb0 : lc0.ctx.f.block? 5 = some blk5 := by rw [← liveCtx_ctx (lc := lc0)]; exact hb5
   obtain ⟨m1, hp1, hlm1, hinv1, -, -, -⟩ := g58_term (H := GenG2.H0) hc hE hm0 hb0
     (by rw [hsz]; exact locMatchT) (by rw [hsz]; exact invT hk5)
-    (fun h => Bool.false_ne_true h)
+    (fun h => (Bool.false_ne_true h).elim)
     (fun hz => by rw [hkind] at hz; rcases hz with h | h <;> cases h)
     (by
       change UOKL mT (uL35 lc (uIn35 lc 5) blk5 blk5.values.size)

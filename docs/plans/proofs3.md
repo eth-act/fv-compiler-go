@@ -1671,27 +1671,31 @@ which `X2` is still a zero-extended 32-bit word (`ExtOK (m1.x 2) 32 false`).
 
 **Slice G59: groups P, D, K and U composed** (`GoFV/Gen/Check59.lean`, `checkG59 lc ps bstart g`;
 proven sound, `g59_value`, `g59_initMem`, `g59_term`, `g59_nilPanic`, `g59_boundsPanic`,
-`GoFV/Proof/Gen/G59.lean`). G58 with group P (`vkind59p lc g v`) tried when G58 rejects a value
-(`vkind59`; G58's reason is kept for the other values). Groups D, K and U change shared checks that
-`checkG59L` reads as every slice does: the `Defer` arm of `Cx.term` (through `Cx.termG3`), G3's
-class table (`kNarrow`) and G35's upper-bit table. `VK59`
+`GoFV/Proof/Gen/G59.lean`). G58 (on G48, on G57) with group P (`vkind59p lc g v`) tried when G58
+rejects a value (`vkind59`; G58's reason is kept for the other values), with G48's `spHomes48`.
+Groups D, K and U change shared checks that `checkG59L` reads as every slice does: the `Defer` arm
+of `Cx.term` (through `Cx.termG3`), G3's class table (`kNarrow`) and G35's upper-bit table. `VK59`
 (`Spec59.lean`) has a case for G58's kinds and one for group P, with no temporary; `vk59_step` is
 `vk58_step`'s statement, by `vk58_step` and `vk59p_step` (with `G54Pre`'s `PairPre50` component,
 as G57's group A); `vk59_nil`/`vk59_pb` use `ops59p_facts`, and `g59L_*` are `g58L_*` with
 `checkG59L_spec`, `vkind59_spec` and `vkind59_initMem`; `g59L_term` is `g58L_term` over
-`checkG59L` (`termK_stepX`, which group D's `term_core` case covers). No new premise:
-`g59_value` takes `G54Pre`. Like G58's, G59's statements (and group U's stores, `op_mem2X`, and
-group K's `CoreInv.monoW`) are generalised over G48b's mode `osp`; group K's `FitsW` and G48b's
-`SepAt` are separate fields of `CoreInv`. Witness `genG59_witness` (`GenG59.lean`, on `GenG59p`'s
-`test/zerodivide` `main.init.func33` and state): `checkG58` rejects the function and `checkG59`
-accepts it with the block walk's tables (`v24` at Prog 3), and `g59_value` relates `v24`'s `FLDPD
-main.d(SB), (F2, F3)` to a machine state whose `V2` and `V3` hold the bits of `1.5` and `2.5` in
-their low 64 bits. G59 accepts 7,449 functions (80.12%, +40 over G58's 7,409, §5, `--jobs 1`): the 6
-of group P, the 13 of group D, the 8 of group K and the 13 of group U, all of whose sole reasons
-are gone. Because D, K and U are shared, earlier slices accept more too (G4 1,834 to G58 7,443; G58
-itself +34). No slice's count drops, and every function G59 rejects G58 rejected (1,848 of
-1,888). The sole reasons left are led by `op LoweredGetCallerPC` (26), `block kind JUMPTABLE` (19),
-`FMSUBD: negated multiplicand` (10), `access of a frame variable` (7) and `stack argument` (3).
+`checkG59L` (`termK_stepX`, which group D's `term_core` case covers). The theorems are G58's, so
+G48's: in the mode `outSP` (`hosp`, `SPInv`, kept), `g59_value` under `G54Pre`, the contracts of
+the mode `E.outSP` and `CallOKStk`; group P adds no premise. Group U's stores (`op_mem2X`) and
+group K's `CoreInv.monoW` hold in either mode; group K's `FitsW` and G48b's `SepAt` are separate
+fields of `CoreInv` (G48's access lemmas take `FitsW`; G48's `uokl_x48` closes by `uokl_xw35` and
+its integer loads by G35's `ld_uokl`, now that narrow stores and loads are `pairOp35`'s). Witness
+`genG59_witness` (`GenG59.lean`, on `GenG59p`'s `test/zerodivide` `main.init.func33` and state, in
+an activation whose `outargs` block sits at `SP`, `.autotmp_1` at `SP + 40`): `checkG58` rejects
+the function and `checkG59` accepts it with the block walk's tables (`v24` at Prog 3), and
+`g59_value` relates `v24`'s `FLDPD main.d(SB), (F2, F3)` to a machine state whose `V2` and `V3`
+hold the bits of `1.5` and `2.5` in their low 64 bits. G59 accepts 7,667 functions (82.46%, +41
+over G58's 7,626, §5, `--jobs 1`; G59 is gen-check's last slice): the 6 of group P and 35 by
+groups D, K and U, which earlier slices accept now too (G4 1,834 to G58 7,661; G58 itself +35). No
+slice's count drops, and every function G59 rejects G58 rejected (1,630 of 1,671). The sole
+reasons left are led by `op LoweredGetCallerPC` (29), `block kind JUMPTABLE` (19), `FMSUBD:
+negated multiplicand` (10), `access of a frame variable` (7), `SP access MOVDaddr` (4) and `stack
+argument` (3).
 
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
@@ -1794,7 +1798,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G57 | 7,378 (79.35%) | 235,204 |
 | G48 | 7,595 (81.69%) | 242,306 |
 | G58 (on G48) | 7,626 (82.02%) | 245,347 |
-| G59 | 7,449 (80.12%) | 241,768 |
+| G59 (on G58) | 7,667 (82.46%) | 249,111 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1812,7 +1816,7 @@ table), G38 6,391, G42 6,623, G50 6,929, G51 7,004, G49 7,167, G55 7,356, G57 7,
 (G59's groups D, K and U change shared checks (the `Defer` arm of `Cx.term`, G3's class table,
 G35's upper-bit table): re-measured with them (`--jobs 1`), G3 is unchanged, G4 accepts 1,834,
 G10 3,154, G20 4,334, G30 5,374, G35 5,854, G40 6,501, G50 6,948, G49 7,198, G54 7,364, G55
-7,387, G57 7,423 and G58 7,443 (80.05%, +34; 241,564 values); no slice drops.)
+7,387, G57 7,423, G48 7,641 and G58 7,661 (82.40%, +35; 248,907 values); no slice drops.)
 
 (On quick-v9, before the G2 validator was tightened for the proof — call arguments and results in
 `R0`–`R15`, `SelectN`'s component class, 64-bit `MOVDaddr` and spill shapes — G2 accepted 1,211.)

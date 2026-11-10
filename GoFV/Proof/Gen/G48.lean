@@ -63,7 +63,7 @@ relates to the machine's `SP` when the `outargs` block sits at `SP` (`SPInv`), a
 theorem sp_base48 {E : MatchEnv} {lc : LocCtx} {s : LocState} {v : Value}
     {K : Nat → Option Nat} (hl : lc.ctx.f.lowered = true) (hA : AddrAgree E.ι)
     (hsp : SPInv E s) (hosp : E.outSP = true)
-    (hregs : ∀ r x c, r ≠ zeroReg → s.regs[r]? = some x → K r = some c → Fits c x)
+    (hregs : ∀ r x c, r ≠ zeroReg → s.regs[r]? = some x → K r = some c → FitsW c x)
     (hR : KRead lc v K) (hnp : v.op ≠ .Phi) (hb : spBase48 lc v = true) :
     ∀ a x, v.args[0]? = some a → s.read lc a = .ok x → ValRel E.ι x E.sp ∧ Fits 64 x := by
   obtain ⟨a0, ha0, hh, hc⟩ := spBase48_spec hb
@@ -80,7 +80,7 @@ theorem sp_base48 {E : MatchEnv} {lc : LocCtx} {s : LocState} {v : Value}
   rw [hreg]
   cases hy : s.regs[spReg]? with
   | none => exact valRel_retypeL hA hc trivial trivial
-  | some y => exact valRel_retypeL hA hc (hregs _ _ _ hz hy hK) ((hsp hosp).2 y hy)
+  | some y => exact valRel_retypeLW hA hc (hregs _ _ _ hz hy hK) ((hsp hosp).2 y hy)
 
 /-! ## The upper-bit table -/
 
@@ -145,7 +145,7 @@ theorem vk48_sp {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat → 
           (Or.inr fun _ _ => by rw [hhn]; nofun)), hinv.slots⟩, uokl_x48 hops h6 hL⟩
   -- a load: the memory and the slots kept
   have load : ∀ m', s'.mem = s.mem → s'.slots = s.slots →
-      (∀ r x c, r ≠ zeroReg → s'.regs[r]? = some x → (kStep lc K v).get r = some c → Fits c x) →
+      (∀ r x c, r ≠ zeroReg → s'.regs[r]? = some x → (kStep lc K v).get r = some c → FitsW c x) →
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' →
       LocMatch E s' bid (i + 1) m' → UOKL m' (uStep35 lc L v) →
       ∃ m', PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
