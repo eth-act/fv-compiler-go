@@ -323,6 +323,16 @@ GoFV.Proof.Witness.GenG53.g53_facts._native.native_decide.ax_1_1 5f91de43fa9e421
 # `v33`); `runLoc` runs `v33` on a heap block; compiled evaluation.
 GoFV.Proof.Witness.GenG54.g54_facts._native.native_decide.ax_1_1 62b6557c0d55ecdc6b28261a96596d8f062dbfcfb40b45afeb1d3fb7ebdbd762
 
+# genG55_witness (GoFV/Proof/Witness/GenG55.lean, #553): `checkG55` accepts `math/bits.OnesCount`
+# and `checkG54` does not (`VCNT` `v5`); `runLoc` runs `v5` (`VCNT`) and `v4` (`VUADDLV`) from
+# `x = 0x103`; compiled evaluation.
+GoFV.Proof.Witness.GenG55.g55_facts._native.native_decide.ax_1_1 28dedc9c70b3d027ba1ebb3ba300efb79f77064b9fbabccd2d61f27ff69086e4
+
+# genG55b_witness (GoFV/Proof/Witness/GenG55b.lean, #553): `checkG55` accepts
+# `math/bits.LeadingZeros32` and `checkG54` does not (`CLZW` `v4`); `runLoc` runs `v4` from
+# `x = 0x10000`; compiled evaluation.
+GoFV.Proof.Witness.GenG55b.g55b_facts._native.native_decide.ax_1_1 ea0d49c395c630e91ed077d835e1ac8f97e04332aa2b8bf170e5bbcb35d570c9
+
 # objRo_witness, constSym_witness (GoFV/Proof/Witness/ObjRo.lean, #553): `memTyL` accepts
 # `pallocSum.start`, `plRunEnv`'s global image has the read-only `runtime.writeBarrier` flag,
 # `constSymAlloc?` builds the symbol of 1.0, and the entry values run to `sI` (`lreach_roMem`,
