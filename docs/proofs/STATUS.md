@@ -1012,6 +1012,20 @@ under the same activation, and the upper-bit table is empty. No run premise. Com
 block of `.autotmp_1`, which G55 rejects) and `genG57b2_witness`
 (`runtime.mallocgcSmallNoscanReuse`: `DMB $14`, which G55 rejects).
 
+## Phase 3: genssa, slice G57, `STPW`, narrow pair loads with an aux, `DMB`, `PRFM`, float stores to frame variables (I7, #553)
+
+`GoFV.Proof.Gen.g57_value`, `g57_initMem`, `g57_term`, `g57_nilPanic`, `g57_boundsPanic`
+(`GoFV/Proof/Gen/G57.lean`): when slice G57 (`checkG57`: G55 with group A's `vkind57a` and then
+group B's `vkind57b` tried when G55 rejects a value, `GoFV/Gen/Check57.lean`) accepts a function,
+they are G55's statements, under `G49Env`, `g57_value` under `G54Pre` (no new premise: the pair
+loads take its `PairPre50` component; `STPW`, `DMB`, `PRFM` and the float stores need none).
+Witness: `genG57_witness` (`main.grow`: `checkG55` rejects it and `checkG57` accepts it; `STPW
+(R2, R3), 8(R0)` of `0x11223344` and `0x55` leaves `0x44` at the struct's address plus 8). Under
+`Addrs.fixed`, a function that accesses two `Blk.local` frame variables has no `VarsAt49`
+instance, so `g57_value` says nothing about it there (group B's note). Coverage on quick-v10
+(`lake exe gen-check`, with the fall-through over no-ops): 7,378 of 9,297 functions (79.35%,
+33 more than G55's 7,345), 235,204 values.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g54_obj_value`, `g54_obj_term`, `g54_obj_nilPanic`, `g54_obj_boundsPanic`

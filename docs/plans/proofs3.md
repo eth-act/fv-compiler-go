@@ -1339,13 +1339,36 @@ group A). Each value is one Prog with no temporary:
 No run premise (a `poison` float stores `poison` bytes on both sides); the upper-bit table is empty
 after each value (`uStep35_57b`). `vk57b_step` has `vk55_step`'s form (under `G49Env`, the same
 activation after the value). The witnesses use `vk57b_step` directly (a hand PC table, `G49Env`
-built from compiled facts, as no `checkG57` exists yet): `genG57b_witness` (`test/gcgort`'s
+built from compiled facts, written before `checkG57`): `genG57b_witness` (`test/gcgort`'s
 `main.init.func95.1`: `FSTPS (F0, F0), .autotmp_1-8(AUTO)` of `float32(1.5)` into a `temp`
 block, which `vkind55` rejects; G55 also rejects the function's `LoweredRound32F`) and
 `genG57b2_witness` (`runtime.mallocgcSmallNoscanReuse`: `DMB $14`, its only value G55 rejects;
 `stepLoc` returns the same state). The frame-variable witness is a `temp` block: under
 `Addrs.fixed` two accessed `Blk.local` variables (as `fandbits`'s `x` and `y`) cannot both sit at
 `SP + frameOff` (`AddrAgree` pins them `2^24` apart), so `VarsAt49` has no instance there.
+
+**Slice G57: groups A and B composed** (`GoFV/Gen/Check57.lean`, `checkG57 lc ps bstart g`; proven
+sound, `g57_value`, `g57_initMem`, `g57_term`, `g57_nilPanic`, `g57_boundsPanic`,
+`GoFV/Proof/Gen/G57.lean`). G55 with group A (`vkind57a lc g v`) and then group B
+(`vkind57b lc g v`) tried when G55 rejects a value (`vkind57`; G55's reason is kept for the other
+values). `VK57` (`Spec57.lean`) has a case for G55's kinds and one for each group, each with no
+temporary; `vk57_step` is `vk55_step`'s statement, by `vk55_step`, `vk57a_step` (with `G54Pre`'s
+`PairPre50` component) and `vk57b_step`; `vk57_nil`/`vk57_pb` use `ops57a_facts`/`ops57b_facts`,
+and `g57L_*` are `g55L_*` with `checkG57L_spec`, `vkind57_spec` and `vkind57_initMem`. No new
+premise: `g57_value` takes `G54Pre`. Witness `genG57_witness` (`GenG57.lean`, on `GenG57a`'s
+`main.grow` and states): `checkG55` rejects the function and `checkG57` accepts it with the block
+walk's tables, and `g57_value` relates `v12`'s run to a machine memory holding `0x44` at `A + 8`.
+G57 accepts 7,378 functions (+33 over G55's 7,345 with the fall-through over no-ops, §5): 4 with
+group A's ops (`main.grow`, `runtime.(*fixalloc).init`, `runtime.bootstrapRand`,
+`runtime.vgetrandomGetState`) and 29 with group B's (12 `fmin`/`fmax` instances and
+`fandbits`/`forbits`' 4, `FMOVS`/`FMOVDstore` to a parameter; 6 `test/gcgort` closures,
+`ken_cplx4`'s `doprint`, `generics`' and `complit`'s `main`; `DMB` in
+`mallocgcSmallNoscanReuse` and `(*mspan).userArenaNextFree`, `PRFM` in `scanObject` and
+`scanObjectSmall`). As group B notes, under `Addrs.fixed` a function that accesses two
+`Blk.local` variables (as `fandbits`) has no `VarsAt49` instance, so `g57_value` says nothing
+about it there. The sole reasons left are led by `op LoweredGetCallerPC` (26),
+`MOVDnop/MOVDreg: upper bits unknown` (25), `block kind JUMPTABLE` (19) and `block kind Defer`
+(13); 6 functions are left with `pair load shape` alone and 1 with `pair store shape` alone.
 
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
@@ -1442,13 +1465,15 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G53 | 7,260 (78.08%) | 227,056 |
 | G54 | 7,308 (78.60%) | 231,647 |
 | G55 | 7,331 (78.85%) | 232,869 |
+| G57 | 7,378 (79.35%) | 235,204 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
 
-(The rows above were measured before the fall-through over no-ops (§4, after G54; `Cx.falls`),
-which every slice shares: re-measured with it, G3 accepts 1,612, G10 3,150, G20 4,330, G30 5,369,
-G40 6,482, G50 6,921, G53 7,274 and G54 7,322 (78.75%, +14; 232,417 values).)
+(The rows G1 to G55 were measured before the fall-through over no-ops (§4, after G54;
+`Cx.falls`), which every slice shares: re-measured with it, G3 accepts 1,612, G10 3,150, G20
+4,330, G30 5,369, G40 6,482, G50 6,921, G53 7,274, G54 7,322 (78.75%, +14; 232,417 values) and
+G55 7,345 (79.00%; 233,639 values).)
 
 (On quick-v9, before the G2 validator was tightened for the proof — call arguments and results in
 `R0`–`R15`, `SelectN`'s component class, 64-bit `MOVDaddr` and spill shapes — G2 accepted 1,211.)
@@ -1812,6 +1837,11 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `vk55b_op`); `G55b.lean`: `AluOp55b`, `aluOp55b_facts`, `stepLoc_alu55b`, `progStep_negSh55b`,
   `progStep_clzw55b`, `progStep_smull55b`, `progStep_extr55b`, `lo_negSh55b`, `lo_clzw55b`,
   `lo_mull55b`, `lo_extr55b`, `g55b_negSh`, `g55b_clzw`, `g55b_mull`, `g55b_extr`, `vk55b_step`.
+- `Spec57a.lean`/`G57a.lean` (group A: `VK57a`, `vkind57a_spec`, `ops57a_facts`, `vk57a_step`),
+  `Spec57b.lean`/`G57b.lean` (group B: `VK57b`, `vkind57b_spec`, `ops57b_facts`, `vk57b_step`);
+  `Spec57.lean`: `VK57`, `vkind57_spec`, `vkind57_initMem`, `checkG33_of_57L`, `checkG57L_spec`,
+  `checkG57_spec`; `G57.lean`: `vk57_step`, `vk57_nil`, `vk57_pb`, `g57L_value` … `g57L_term`,
+  `g57_value`, `g57_initMem`, `g57_nilPanic`, `g57_boundsPanic`, `g57_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
