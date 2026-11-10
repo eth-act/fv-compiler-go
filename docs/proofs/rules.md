@@ -2442,7 +2442,11 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
     is `poison` on both sides (`refines_neg_sub`, `refines_neg_neg`).
   - `:1197` (`(SUB x (SUB y z)) => (SUB (ADD <v.Type> x z) y)`): `x` the pointer
     `heap (2^22) + 0` (no integer form), `y = z = 2^41`: the source is `x`, the target's
-    `ADD x z` leaves the heap window (`poison`).
+    `ADD x z` leaves the heap window (`poison`). Re-checked after #607 (window rule, `Ptr.word`
+    `poison` outside the window) on 544c0e3b by `#eval` at `int64`: still false, and also with the
+    frame temporary `x = temp 0 1 + 0`, `y = z = 2^24` (source `x`, target `poison`). Go's rule
+    relies on wrapping intermediates, which the window rule forbids a pointer without an integer
+    form; it stays unproven (580 functions at stock, `lower-next.md`).
   - `:1198` (`(SUB (SUB x y) z) => (SUB x (ADD <y.Type> y z))`): `x = y` the frame temporary
     `temp 0 1 + 0` (no integer form), `z = 2^24`: the source subtracts the two pointers by
     offset (`0`) and then `z`, the target's `ADD y z` leaves the frame window (`poison`). (The
@@ -2454,16 +2458,20 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   while `ADDshiftLL` adds the whole `2^40 + 512`); with the clause on every word-shaped argument
   they are proven.
 
-- **`Move [8]` → `MOVDstore dst (MOVDload src mem) mem`** (`ARM64.rules:396`; #385; model
-  limit, not a Go bug): false under the semantics. `Move` copies bytes as they are, while the
-  integer load `MOVDload` decodes its 8 bytes at the word shape (`Arm64.loadN 8`, `Mem.load`):
-  bytes that mix defined and `poison` ones (a struct's padding) or fragments of different values
-  decode as `poison`, and the store then writes 8 `poison` bytes. Counterexample: `src` holds a
-  4-byte integer followed by 4 bytes of padding; a later 4-byte load of `dst` reads the integer in
-  the source and `poison` in the target. Loading such bytes as a blob instead would break the
-  monotonicity of loads under memory refinement (`Refines` has no case from a blob to an
-  integer), so a proof needs a semantics decision on loads of mixed bytes; the load semantics is
-  unchanged. 100 functions on full-v9 need only this rule (`lower-next.md`).
+- **`Move [8]` → `MOVDstore dst (MOVDload src mem) mem`** (`ARM64.rules:396`, and the other
+  integer copies `380`–`415`, `420`, `428`; #385; model limits, not a Go bug): false under the
+  semantics, on two counts (design review `docs/plans/blob-regs.md`). (A) `Move` copies bytes as
+  they are, while the integer load `MOVDload` decodes its 8 bytes at the word shape
+  (`Arm64.loadN 8`, `Mem.load`): bytes that mix defined and `poison` ones (a struct's padding) or
+  fragments of different values decode as `poison`, and the store then writes 8 `poison` bytes.
+  Counterexample: `src` holds a 4-byte integer followed by 4 bytes of padding; a later 4-byte load
+  of `dst` reads the integer in the source and `poison` in the target. Loading such bytes as a
+  blob instead needs a blob → integer case in the refinement (`blobInt`). (B) The 8 fragments of
+  a stored convertible pointer `p` decode to its word `.int a` (`Ptr.word`), which `MOVDstore`
+  writes as the address bytes `intBytes 8 a`, where `Move` copied the fragments; `Byte.Refines`
+  does not relate a fragment to a concrete byte, so the target's memory does not refine the
+  source's (evaluated: `p = heap 0 + 8` copies as `[0x08,0,0,0,0,0x01,0,0]`). The load semantics
+  is unchanged; the design review lists the options and their costs.
 
 - **`MemEq` → `Eq*` of two `Load`s** (`generic.rules:1560`, `:1568`, `:1576`, `:1584`;
   Phase1Tail, #69): false under the semantics, not a Go bug. `memEq` (`Sem/Ptr.lean`) reads the
