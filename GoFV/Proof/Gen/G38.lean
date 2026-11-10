@@ -504,7 +504,7 @@ theorem g38_sel0 (F : Facts lc sym text az ez psA.toList ret E)
     | some raw =>
       simp only [Option.getD_some]
       have hfit := hinv.regs r raw cv hrz hv (hKr cv hcv)
-      have h1' := valRel_retypeL hA hct hfit ((hm.regs r raw hv).1 _ hk31.2)
+      have h1' := valRel_retypeLW hA hct hfit ((hm.regs r raw hv).1 _ hk31.2)
       exact valRel_retypeL hA hcv (fits_retypeL hct _) h1'
   obtain ⟨hlm, hinv'⟩ := finish_reg hm hinv hd hk32 ho hrel (fits_retypeL hcv _)
     (b' := b) (i' := i + 1)

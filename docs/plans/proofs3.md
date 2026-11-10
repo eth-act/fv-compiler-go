@@ -1539,6 +1539,157 @@ functions) are led by `op LoweredGetCallerPC` (29), `block kind JUMPTABLE` (19),
 upper bits unknown` (14), `block kind Defer` (13), `a register read at another class` (7),
 `FMSUBD: negated multiplicand` (7) and `pair load shape` (6).
 
+**Slice G59, group P: float pair loads of a global or a frame variable** (`Check59p`/`Spec59p`,
+proof `G59p`, `vkind59p lc g v`, `VK59p`, `vk59p_step`; tried when G58 rejects a value). The 6
+functions G58 rejects only for `pair load shape` are `test/zerodivide`'s `main.init.func33` to
+`func38` (`use(d / c)` of `complex128` and `complex64` globals): genssa loads each global's two
+parts with `FLDPD main.d(SB), (F2, F3)` or `FLDPS`, which G50's `ldp50` rejects (it asks
+`v.aux = none`). Group P is G57's group A (`ldpw57`) for the float pair loads:
+
+- `FLDPD`/`FLDPS {x} [off] base mem` with an aux (`fldp59`, `FldpOp`: 8- and 4-byte elements)
+  into two distinct V registers, each component a float shape of the element's width (G50's
+  `fpairTys`: Phase 1's `float64`/`float32` components are `.int .w64`/`.int .w32`), of a global
+  (`symOf?`, `op sym+off(SB), (Fa, Fb)`, `VK59p.glob`) or of a frame variable whose block is
+  `Blk.temp` (G6's `frameVar?`, `op off'(RSP), (Fa, Fb)` at its `NAME_AUTO` operand,
+  `VK59p.var`; none of the 6 functions has one, it is G57a's case for floats). Proof: G50's
+  `FLDPD` (`stepLoc_ldPair`, `lo_loadN` at `n = 8` or `4`, `fvalRel_of_valRel`) at G22's address of
+  the global's block (`pairAddr_globN`, `G2Env.glob`; `g59_fldpGlob`) or at G6's address of the
+  variable's `temp` block (`pairAddr_varN`, `var_addr`; `g59_fldpVar`); the machine
+  (`step_fldp59`) loads the two elements at the operand's address (`ctx_mem_glob`,
+  `ctx_mem_slot`) into `V ka`, `V kb`.
+
+Their `Select0`/`Select1` are G50's `sel50` (it reads the op, not the aux). `vk59p_step` is
+`vk57a_step`'s statement (`G49Env`, `hL`, G50's `PairPre50`, which already states the valid bytes
+and the no-pointer components for every `pairOp50` op with or without an aux; part of `G54Pre`): no
+new premise. The upper-bit table is empty after each (`uStep35_ldpF`); `ops59p_facts` (no `Phi`,
+nil check, bounds check or entry value) and `vkind59p_none` (off `op59p`) serve the composition.
+No shared analysis changes. A probe of `checkG58` with `vkind59p` tried after `vkind58` accepts
+all 6 functions. Witness `genG59p_witness` (`GenG59p.lean`, on `vk59p_step` directly, a hand PC
+table, `G49Env` with `.autotmp_1`'s `temp` block, `vkind58` rejecting the value):
+`main.init.func33`'s `v24 = FLDPD {main.d} [0] v3 v1`, `FLDPD main.d(SB), (F2, F3)`; from
+`main.d = complex(1.5, 2.5)`, `F2` (Go register 33) holds `0x3ff8000000000000` and `F3`
+`0x4004000000000000` after the run, and the machine's `V2`, `V3` the same in their low 64 bits after
+Prog 3; `checkG58` rejects the function.
+
+**Slice G59, group D: `Defer` blocks** (`GoFV/Gen/Check.lean`'s `Cx.term`, `GoFV/Proof/Gen/Spec.lean`,
+`GoFV/Proof/Gen/G1.lean`; no new group function, the statements of every slice unchanged). The 13
+functions G58 rejects only for `block kind Defer` (`examples/defers` `main.withCleanup`,
+`test/defer` `main.test1helper`/`test2helper`, `test/print` `main.main`, `test/range4`'s `func7`,
+`func7-range1`, `func8`, `func8-range1`, `func8-range1-range1`, `func8-range2`, `func9` and the two
+`func9-range1-range1`) end a block in a `deferproc` call. Go's arm64 `ssaGenBlock` (`arm64/ssa.go:2009`,
+`case ssa.BlockPlain, ssa.BlockDefer`) emits `Plain`'s `JMP Succs[0]` unless `Succs[0]` is next:
+`deferproc` returns no result and there is no `CBNZ R0` (older Go's recovery test); `Succs[1]`,
+`f.DeferReturn`, is reached only by the runtime's recovery. Phase 1's `stepTerm` (`Run.lean`) takes
+successor 0 (semantics §9.7: a recovery returns through `finish`), and the `deferproc` call before
+it is a static call of the existing call slices. `Cx.term`, which every slice reaches through
+`Cx.termG3`/`Cx.termG2`, now has a `Defer` arm (two successors, one control, then `Plain`'s
+fall-through or `JMP`); `TermOK` gains `defer` (successor 0, `FallAt` or a `JMP` there) and
+`branch` takes `b.kind ≠ .Defer`; `Cx.term_spec` proves the arm, and `term_core` handles `Defer`
+as `Plain` with `stepTermL_defer` (`stepTermL` of a `Defer` block is `succ b 0`). Shared
+definitions changed: `Cx.term` and `TermOK`, so every `checkGN` from G1 on accepts these blocks
+(checks of earlier slices whose sole reason was the `Defer` block may now pass too). No new
+premise. A probe of `checkG58` with the new `Cx.term` accepts all 13. Witness `genG59d_witness`
+(`GenG59d.lean`, `test/defer` `main.test1helper` embedded): `checkG58` accepts it, block `b3`
+(`v24 = CALLstatic {runtime.deferproc}`; successors `b4`, `b7`) is a `Defer` block, and from a
+state at its end `stepTermLoc` goes to `b4` and `g58_term` relates it to a machine run of its
+`JMP` (Prog 19) to `b4`'s start (`G49Env` with the function's home slot at its frame operand).
+
+**Slice G59, group K: narrower register classes** (G3's class table, `GoFV/Gen/Check.lean`,
+`GoFV/Gen/Check3.lean`, `GoFV/Proof/Gen/Rel.lean`, `G1.lean`, `Spec3.lean`, `G3.lean`; no new
+group function, every `gN_*`/`gNL_*` statement unchanged, no new premise). Seven functions G58
+rejects only for `a register read at another class` and one only for `control read at another
+class` read a `Phi` homed in a register whose last writers had another class: a 32-bit `Phi` of
+64-bit values (`math.lz`, `runtime.(*moduledata).textOff`, `(**moduledata).runtime.textOff`,
+`findfunc`: `R0`/`R6` at 64 bits at every predecessor's end), a loop `Phi` joining a 64-bit `Copy`
+with a 32-bit value (`hash/crc32.init`, `init.func1`, `simplePopulateTable`: the join was `none`),
+and a 64-bit `Phi` of booleans (`runtime.checkFinalizersAndCleanups.func1`: `R1` at class 1 from two
+predecessors, 64 from the third). A class in the table now is a class the register's content *can
+be read at*: `kNarrow c c'` (`Check.lean`) holds when `c = c'`, or `c ≥ 8` and the content has an
+integer or pointer class `c' ≥ c` (its low bits) or is a boolean (`c' = 1`, 0 or 1 in the whole
+register). The invariant follows it: `CoreInv.regs` and `G1Inv.regs` give `FitsW c v` (`Rel.lean`:
+`kNarrow c` of the content's class, `fitsW_of_fits`, `FitsW.narrow`) instead of `Fits c v`, and
+`valRel_retypeLW` (`retypeL_int_low`, through `valRel_i64` for a 64-bit content), `valRel_retypeW`
+(G26, Phase 1 functions) and `fvalRel_retypeLW` (`FMove.lean`) relate a content read at any class
+it allows; `arg_rel`, `arg_relP`, `arg_relV`, `arg_relVL` and the reads of a selected or reloaded
+register (G2, G4, G8, G38, G47, G50) use them, and the writes conclude `FitsW` by `fitsW_of_fits`
+(`core_setReg`, the call results of G2/G10, G8, G28). Reads stay exact (`kOK`, `KRead`); the edges
+allow narrowing: `kLe K' K` asks `(K.get r).any (kNarrow c)` (`kLe_spec`, `checkK_spec`'s edge
+part), which `termK_stepX` closes with `CoreInv.monoW` (`KLeW`). The dataflow, unverified, uses it:
+`kJoin` keeps the class both predecessors allow (the narrower integer class, the integer class over
+a boolean) and `kPhis` sets the home register of a successor's `Phi` to the `Phi`'s class where the
+content allows it. Changed shared definitions: `KMap`-level `kLe`, `kMeet` (by `kJoin`), `kPass`
+(by `kPhis`), hence `kFlow` and every `checkGN`'s class table; `CoreInv`, `G1Inv`; new `kNarrow`,
+`kJoin`, `kPhis`, `FitsW`, `KLeW`. Witness `genG59k_witness` (`GenG59k.lean`, `math.lz`):
+`checkG58` accepts it with `R0` at 64 bits at `b5`'s end and at 32 at `b3`'s start, where `v29`
+reads it at 32; from a state with `0xffffffff00000045` in `R0`, `g58_term` runs `b5`'s jump to a
+state related at `b3`'s table, and `arg_rel` relates `v27`'s read `0x45` to `X0`, which keeps the
+64-bit word. `GenG8`'s table changes at `b3` (`R1` now joined at 32 bits). All 8 functions are
+accepted by `checkG58` with the new table (probe on the corpus files); on every fifth file of
+quick-v10 (1,859 functions) no function G58 accepted is rejected by the new class check.
+
+**Slice G59, group U: G35's upper-bit table across narrow stores, shifted logic ops, `Convert`,
+boolean loads and `Copy`** (`GoFV/Gen/Check35.lean`, `GoFV/Proof/Gen/Keep35.lean`; no new group
+function, the statements of every slice from G35 on unchanged, no new premise). Of the 13
+functions G58 rejects only for `MOVDnop/MOVDreg: upper bits unknown`, the source's entry was
+dropped by: a narrow store through a register (`bytes.(*Buffer).ReadRune` `MOVBstore`,
+`runtime.(*semaRoot).queue` `MOVHstore`, `runtime.vdsoInitFromSysinfoEhdr` `MOVWstore`); G27's
+shifted logic ops (`ORshiftLL`: `encoding/base64.(*Encoding).Decode`,
+`runtime.(*scavChunkData).pack`, `(*scavengeIndex).alloc`, `(*scavengeIndex).free`; `ANDshiftRA`:
+`runtime.gostringw`); a `Copy` of a narrow load (`strings.(*singleStringReplacer).Replace`,
+`WriteString`, `(*stringFinder).next`), whose step dropped the destination's entry instead of
+copying the source's; `regexp/syntax.(*Prog).Prefix`, where a `Convert` (`b54`) between the byte
+load (`b30`) and the `MOVDreg` (`b60`) emptied the table; and `runtime.sigdisable`, where a
+`MOVBUload` of a boolean into `R2` (`b10`, class 1, so no entry) emptied it and the join `b22`
+(from `b20` and `b10`) lost `R0`'s word entry. `pairOp35` now also covers `MOVBstore`,
+`MOVHstore`, `MOVWstore` with no symbol (a store of a frame variable, G54's entry stores among
+them, still empties the table, so `g54L_entryStore` keeps its statement), the twelve ops of
+`logSh?`, `Convert` and the narrow loads (`ldEntry35` is tried first: here only those with no
+entry); `uStep35` gives a `Copy` between registers the source's entry (`copyStep35`, `MOVDreg`'s
+`movdRegStep`). Their case lemmas now conclude what the machine writes (`XW`: `g3_store`,
+`g6_store`, `g49_store` through `op_mem2X`; `g12_conv`; `g27_logSh`, `g51c_logSh` through
+`op_reg2W`); `Keep35.lean` adds `uStep35_copy`, `uokl_keepOps`, `uokl_xw35`, `st_uokl`,
+`extOK_zero`, `uokl_copyKeep`, `uokl_copyMov` and the copy case lemmas `g2_copySame` (no code,
+`X` kept) and `g2_copyMov` (`X[kd]` gets `rX ka`, zero for `ZR`); `ld_uokl` covers a load with no
+entry and no longer takes `hk`; `keepOps35` gains the shifted logic ops and `Convert`, `ops35`
+these, the stores and `Copy`; `vk33_keep35` takes `checkFrame` and a `Copy` (cases for G3's and
+G6's stores, G27's `logSh`, G12's `conv`, G1's `copyMem`/`copySame`/`copyMov`), and
+`uStep35_other` takes `v.op ≠ .Copy`. G44's float copies keep the table (`uokl_fcopy`: a V
+register has no X register), G49 uses `ld_uokl`/`st_uokl` (`narrowLd?_var49` is gone) and G51c
+`logSh_keep35` (`uStep35_logSh51c` is gone). Shared definitions changed: `pairOp35`, `uStep35`
+(new `copyStep35`), hence `uL35`, `uPass35`, `uFlow35`, `uIn35`, `uEdgesOK35`, `movdOK35` and
+every check from `checkG35` to `checkG58` (`checkG57` accepts the 13 functions too); the pins of
+witness `*_facts` that reach them may move. All 13 are accepted by `checkG58` with the new table
+(checked with the checker on the corpus files). Witness `genG59u_witness` (`GenG59u.lean`, on
+`runtime.(*scavChunkData).pack`): `checkG58` accepts it; before `v29 = ORshiftLL` (`ORR R3<<26,
+R1, R1`) the table holds `R3`, `R1`, `R2`, G34's step (G35's across `ORshiftLL` before this group)
+empties it, the new one keeps `R3` and `R2` for `v31 = MOVDnop v5`; from `R1 = 5`, `R2 = 7`,
+`R3 = 3`, `g58_value` relates `v29`'s run (`0xC000005` in `R1`) to the machine's `ORR`, after
+which `X2` is still a zero-extended 32-bit word (`ExtOK (m1.x 2) 32 false`).
+
+**Slice G59: groups P, D, K and U composed** (`GoFV/Gen/Check59.lean`, `checkG59 lc ps bstart g`;
+proven sound, `g59_value`, `g59_initMem`, `g59_term`, `g59_nilPanic`, `g59_boundsPanic`,
+`GoFV/Proof/Gen/G59.lean`). G58 with group P (`vkind59p lc g v`) tried when G58 rejects a value
+(`vkind59`; G58's reason is kept for the other values). Groups D, K and U change shared checks that
+`checkG59L` reads as every slice does: the `Defer` arm of `Cx.term` (through `Cx.termG3`), G3's
+class table (`kNarrow`) and G35's upper-bit table. `VK59`
+(`Spec59.lean`) has a case for G58's kinds and one for group P, with no temporary; `vk59_step` is
+`vk58_step`'s statement, by `vk58_step` and `vk59p_step` (with `G54Pre`'s `PairPre50` component,
+as G57's group A); `vk59_nil`/`vk59_pb` use `ops59p_facts`, and `g59L_*` are `g58L_*` with
+`checkG59L_spec`, `vkind59_spec` and `vkind59_initMem`; `g59L_term` is `g58L_term` over
+`checkG59L` (`termK_stepX`, which group D's `term_core` case covers). No new premise:
+`g59_value` takes `G54Pre`. Like G58's, G59's statements (and group U's stores, `op_mem2X`, and
+group K's `CoreInv.monoW`) are generalised over G48b's mode `osp`; group K's `FitsW` and G48b's
+`SepAt` are separate fields of `CoreInv`. Witness `genG59_witness` (`GenG59.lean`, on `GenG59p`'s
+`test/zerodivide` `main.init.func33` and state): `checkG58` rejects the function and `checkG59`
+accepts it with the block walk's tables (`v24` at Prog 3), and `g59_value` relates `v24`'s `FLDPD
+main.d(SB), (F2, F3)` to a machine state whose `V2` and `V3` hold the bits of `1.5` and `2.5` in
+their low 64 bits. G59 accepts 7,449 functions (80.12%, +40 over G58's 7,409, §5, `--jobs 1`): the 6
+of group P, the 13 of group D, the 8 of group K and the 13 of group U, all of whose sole reasons
+are gone. Because D, K and U are shared, earlier slices accept more too (G4 1,834 to G58 7,443; G58
+itself +34). No slice's count drops, and every function G59 rejects G58 rejected (1,848 of
+1,888). The sole reasons left are led by `op LoweredGetCallerPC` (26), `block kind JUMPTABLE` (19),
+`FMSUBD: negated multiplicand` (10), `access of a frame variable` (7) and `stack argument` (3).
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -1640,6 +1791,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G57 | 7,378 (79.35%) | 235,204 |
 | G48 | 7,595 (81.69%) | 242,306 |
 | G58 (on G48) | 7,626 (82.02%) | 245,347 |
+| G59 | 7,449 (80.12%) | 241,768 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1653,6 +1805,11 @@ G55 7,345 (79.00%; 233,639 values).)
 with it (`--jobs 1`), G35 and G36 are unchanged, G37 accepts 6,107 (2 more than with G57's
 table), G38 6,391, G42 6,623, G50 6,929, G51 7,004, G49 7,167, G55 7,356, G57 7,390 (79.48%,
 +12; 236,767 values) and G48 7,607 (81.82%, +12; 243,869 values); no slice drops.)
+
+(G59's groups D, K and U change shared checks (the `Defer` arm of `Cx.term`, G3's class table,
+G35's upper-bit table): re-measured with them (`--jobs 1`), G3 is unchanged, G4 accepts 1,834,
+G10 3,154, G20 4,334, G30 5,374, G35 5,854, G40 6,501, G50 6,948, G49 7,198, G54 7,364, G55
+7,387, G57 7,423 and G58 7,443 (80.05%, +34; 241,564 values); no slice drops.)
 
 (On quick-v9, before the G2 validator was tightened for the proof — call arguments and results in
 `R0`–`R15`, `SelectN`'s component class, 64-bit `MOVDaddr` and spill shapes — G2 accepted 1,211.)
@@ -1928,7 +2085,7 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `fvalRel_of_valRel`, `op_regV`, `arg_relV`.
 - `G44.lean`: `FLoadPre`, `G44Pre`, `stepLoc_pureF`, `stepLoc_fload`, `stepLoc_fstore`,
   `fvalRel_gpfp`, `lo_fmovVX`, `fvalRel_fconst`, `g44_fcopy`, `g44_fcopyNone`, `g44_gpfp`,
-  `g44_fpgp`, `g44_fconst`, `g44_fload`, `g44_fstore`, `uStep35_fcopy`, `uStep35_f44`,
+  `g44_fpgp`, `g44_fconst`, `g44_fload`, `g44_fstore`, `uokl_fcopy`, `uStep35_f44`,
   `vk44_step`, `vk44_nil`, `vk44_pb`, `g44L_value` … `g44L_term`, `g44_value`, `g44_initMem`,
   `g44_nilPanic`, `g44_boundsPanic`, `g44_term`.
 - `Spec45.lean`: what `checkG45` accepted (`VK45`, `fkind45_spec`, `vkind45_spec`,
@@ -1976,7 +2133,7 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `checkG49_spec`).
 - `G49.lean`: `VarsAt49`, `G49Env`, `VarsAt49.extend`, `symAddr_local`, `pairAddr_local`,
   `frameOffN_add`, `var49_addr`, `stepLoc_addrLocal`, `g49_addr`, `g49_load`, `g49_store`,
-  `g49_ldp`, `g49_stp`, `narrowLd?_var49`, `uStep35_nil`, `vk49_ops`, `vk49_step`, `vk49_nil`,
+  `g49_ldp`, `g49_stp`, `uStep35_nil`, `vk49_ops`, `vk49_step`, `vk49_nil`,
   `vk49_pb`, `g49L_value` … `g49L_term`, `g49_value`, `g49_initMem`, `g49_nilPanic`,
   `g49_boundsPanic`, `g49_term`.
 - `Spec52b.lean`: what `vkind52b` accepted (`VK52b`, `vkind52b_spec`, `vkind52b_none`,

@@ -22,6 +22,11 @@ puts the running activation's frame at the machine's `SP + frameOff` (`docs/plan
 of class `c` (`Val.retypeL`) keeps `ValRel` (`valRel_retypeL`); a narrower content read at a wider
 shape would be zero-extended by `retypeL` while the machine's upper bits are arbitrary, which the
 validator's one-class-per-register rule excludes.
+
+`FitsW c v` (the class tables of G3 on): a register content that can be read at class `c`
+(`GoFV.Gen.Check.kNarrow`): `Fits c v`, an integer or pointer content of at least `c ≥ 8` bits
+(read at `c`, its low bits), or a boolean (0 or 1 in the whole register) read at an integer class.
+Reading it at a shape of class `c` keeps `ValRel` (`valRel_retypeLW`).
 -/
 
 namespace GoFV.Proof.Gen
@@ -157,6 +162,127 @@ theorem fits_retypeL {c : Nat} {t : Ty} (hc : cls t = some c) (v : Val) : Fits c
     subst hc
     cases v <;> simp only [Val.retypeL, Val.widen, Val.retype] <;> trivial
   | _ => simp [cls] at hc
+
+/-- A register content that can be read at class `c` (`kNarrow` of its class). -/
+def FitsW (c : Nat) : Val → Prop
+  | .poison => True
+  | .int w _ => kNarrow c w.bits = true
+  | .ptr _ => kNarrow c 64 = true
+  | .bool _ => kNarrow c 1 = true
+  | _ => False
+
+theorem kNarrow_refl (c : Nat) : kNarrow c c = true := by simp [kNarrow]
+
+theorem kNarrow_trans {a b c : Nat} (h1 : kNarrow a b = true) (h2 : kNarrow b c = true) :
+    kNarrow a c = true := by
+  simp only [kNarrow, Bool.or_eq_true, beq_iff_eq, Bool.and_eq_true, decide_eq_true_eq] at *
+  omega
+
+theorem fitsW_of_fits {c : Nat} {v : Val} (h : Fits c v) : FitsW c v := by
+  cases v with
+  | poison => trivial
+  | int w x =>
+    have h : w.bits = c := h
+    subst h; exact kNarrow_refl _
+  | ptr p =>
+    have h : c = 64 := h
+    subst h; exact kNarrow_refl _
+  | bool b =>
+    have h : c = 1 := h
+    subst h; exact kNarrow_refl _
+  | _ => simp [Fits] at h
+
+/-- A content that can be read at class `c'` can be read at any class `c'` allows. -/
+theorem FitsW.narrow {c c' : Nat} {v : Val} (hf : FitsW c' v) (h : kNarrow c c' = true) :
+    FitsW c v := by
+  cases v with
+  | poison => trivial
+  | int w x => exact kNarrow_trans h hf
+  | ptr p => exact kNarrow_trans h hf
+  | bool b => exact kNarrow_trans h hf
+  | _ => exact hf
+
+/-- An integer read at a shape of at most its width: its low bits. -/
+theorem retypeL_int_low {w w' : Width} (x : BitVec w.bits) (hle : w'.bits ≤ w.bits) :
+    (Val.int w x).retypeL (.int w') = .int w' (x.setWidth w'.bits) := by
+  cases w <;> cases w' <;> simp [Width.bits] at hle <;>
+    simp [Val.retypeL, Val.widen, Val.retype, Width.bits]
+
+/-- An integer register content read at a class it allows: its low bits. -/
+private theorem valRel_int_low (hA : AddrAgree ι) {w w' : Width} {x : BitVec w.bits}
+    {r : BitVec 64} (hle : w'.bits ≤ w.bits) (hv : ValRel ι (.int w x) r) :
+    ValRel ι (.int w' (x.setWidth w'.bits)) r := by
+  cases w
+  case w64 =>
+    have hr := valRel_i64 hA hv
+    subst hr
+    cases w'
+    case w64 => exact Or.inl (BitVec.setWidth_eq _).symm
+    all_goals exact rfl
+  all_goals
+    have hv' : r.setWidth _ = x := hv
+    cases w'
+    case w64 => exact absurd hle (by decide)
+    all_goals
+      show r.setWidth _ = x.setWidth _
+      rw [← hv', BitVec.setWidth_setWidth_of_le _ hle]
+
+/-- A register content read at a shape of a class it allows keeps its relation. -/
+theorem valRel_retypeLW (hA : AddrAgree ι) {c : Nat} {t : Ty} {v : Val} {r : BitVec 64}
+    (hc : cls t = some c) (hf : FitsW c v) (hv : ValRel ι v r) : ValRel ι (v.retypeL t) r := by
+  cases t with
+  | int w' =>
+    simp only [cls, Option.some.injEq] at hc
+    subst hc
+    cases v with
+    | poison => exact trivial
+    | int w x =>
+      have hle : w'.bits ≤ w.bits := by
+        have hf : kNarrow w'.bits w.bits = true := hf
+        revert hf; cases w <;> cases w' <;> decide
+      rw [retypeL_int_low x hle]
+      exact valRel_int_low hA hle hv
+    | ptr p =>
+      cases w' with
+      | w64 => exact (valRel_word hA hv : ValRel ι p.word r)
+      | _ => exact trivial
+    | bool b =>
+      have hv : r = if b then 1 else 0 := hv
+      subst hv
+      simp only [Val.retypeL, Val.widen, Val.retype, Nat.le_refl, ↓reduceIte]
+      cases w' <;> cases b <;> simp [ValRel, Width.bits]
+    | _ => exact absurd hf id
+  | ptr e =>
+    simp only [cls, Option.some.injEq] at hc
+    subst hc
+    cases v with
+    | poison => exact trivial
+    | int w x =>
+      have hf : kNarrow 64 w.bits = true := hf
+      cases w <;> simp [kNarrow, Width.bits] at hf
+      exact hv
+    | ptr p => exact (valRel_word hA hv : ValRel ι p.word r)
+    | bool b =>
+      have hv : r = if b then 1 else 0 := hv
+      subst hv
+      simp only [Val.retypeL, Val.widen, Val.retype]
+      exact Or.inl rfl
+    | _ => exact absurd hf id
+  | bool =>
+    simp only [cls, Option.some.injEq] at hc
+    subst hc
+    cases v with
+    | poison => exact trivial
+    | int w x =>
+      have hf : kNarrow 1 w.bits = true := hf
+      cases w <;> simp [kNarrow, Width.bits] at hf
+    | bool b => exact hv
+    | ptr p =>
+      have hf : kNarrow 1 64 = true := hf
+      simp [kNarrow] at hf
+    | _ => exact absurd hf id
+  | _ => simp [cls] at hc
+
 /-! ## Registers -/
 
 theorem objX?_some {r : Nat} {k : GoFV.Arm64.Reg} (h : objX? r = some k) :

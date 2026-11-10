@@ -322,7 +322,7 @@ theorem g28_memEq (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
     rcases setReg_get h with ⟨rfl, rfl⟩ | ⟨hne, h2⟩
     · rw [if_pos ⟨hnp, hh⟩, hcb] at hc'
       cases hc'
-      exact fits_retypeL hcb _
+      exact fitsW_of_fits (fits_retypeL hcb _)
     · have hr0 : r ≠ 0 := by
         rcases hne with hne | hne
         · exact hne

@@ -399,7 +399,7 @@ theorem g8_wb (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E) (h
     rcases hreg r x h with ⟨rfl, rfl⟩ | rfl | ⟨h2, hne, -⟩
     · simp only [kSet, ↓reduceIte, Option.some.injEq] at hc'
       subst hc'
-      exact (rfl : (64 : Nat) = 64)
+      exact fitsW_of_fits (rfl : (64 : Nat) = 64)
     · trivial
     · simp only [kSet, hne, ↓reduceIte] at hc'
       exact hinv.regs r x c hrz h2 hc'
@@ -437,7 +437,7 @@ theorem g8_sel0 (F : Facts lc sym text az ez psA.toList ret E)
     | some raw =>
       simp only [Option.getD_some]
       have hfit := hinv.regs wbReg raw 64 (by decide) hv hKr
-      have h1' := valRel_retypeL hA (rfl : cls (Ty.ptr e) = some 64) hfit
+      have h1' := valRel_retypeLW hA (rfl : cls (Ty.ptr e) = some 64) hfit
         ((hm.regs wbReg raw hv).1 _ objX?_wbReg)
       exact valRel_retypeL hA hcv (fits_retypeL rfl _) h1'
   obtain ⟨hlm, hinv'⟩ := finish_reg hm hinv (by decide : destOK wbReg = true)

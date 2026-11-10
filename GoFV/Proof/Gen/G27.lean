@@ -247,7 +247,7 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
   {ret : BitVec 64} {E : MatchEnv} {lc : LocCtx} {s s' : LocState} {b : ID} {i : Nat}
   {m : MState} {env : Env} {v : Value} {j j' : Nat} {K K' : Nat → Option Nat}
 
-/-- `op Rm SHIFT k, Rn, Rd`. -/
+/-- `op Rm SHIFT k, Rn, Rd`, which writes only its register (`XW`). -/
 theorem g27_logSh (F : Facts lc sym text az ez psA.toList ret E)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
@@ -261,7 +261,8 @@ theorem g27_logSh (F : Facts lc sym text az ez psA.toList ret E)
       { as, from_ := shiftA typ rm v.auxInt.toInt.toNat, reg := rn, to := regA rd }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' ∧
+      XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have hnp : v.op ≠ .Phi := (logSh_noclobber hop).1
@@ -288,9 +289,9 @@ theorem g27_logSh (F : Facts lc sym text az ez psA.toList ret E)
   have hk : v.auxInt.toInt.toNat < 64 := by omega
   have hlo := lo_logSh (as := as) (typ := typ) (k := v.auxInt) hA hxv hyv hxf hyf hca hll hrr ht
   rw [hamt] at hlo
-  refine (op_reg2 (H := H) F hm hinv hj hj' hvs hd hkd hor (valRel_retypeL_lo hA hcv ht hlo)
+  refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor (valRel_retypeL_lo hA hcv ht hlo)
     (fits_retypeL hcv _) (knext_set hK hnp hvh hcv) (fun k0 hk0' hok => ?_)).imp
-    fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, .inr ⟨r, kd, _, hvh, hor, h4⟩⟩
   obtain ⟨hpa, hf, hr, ht', -⟩ := Shape.ok_eq hok
   rw [progStep_logSh has ht3 hkn hkm hkd hk (nextAddr_pcAt F.nodup hk0') hpa hf hr ht', wX_pc]
   rfl
@@ -331,7 +332,7 @@ theorem vk27_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     have hue : uEntry lc v = none := by simp only [uEntry, narrowLd?_logSh hop]
     rw [hue]
     obtain ⟨r2, hvh, -, -, -⟩ := resObj_spec hro
-    obtain ⟨m', h1, h2, h3, h4⟩ := g27_logSh (H := H) F hm hinv.core hinv.slots
+    obtain ⟨m', h1, h2, h3, h4, -⟩ := g27_logSh (H := H) F hm hinv.core hinv.slots
       (kread_of_reads hreads) (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz hk0 hk64
       hao hbo hro h8 hca hll hrr hvs htemp hs
     exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩, trivial⟩

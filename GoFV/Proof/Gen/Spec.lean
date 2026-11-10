@@ -518,7 +518,11 @@ structure TermOK (cx : Cx) (b : Block) (j : Nat) (next : Option (ID × Nat)) : P
   succs : ∀ e ∈ b.succs.toList, e.b ∈ cx.lc.ctx.f.blocks.toList
   plain : b.kind = .Plain → ∃ e, b.succs = #[e] ∧
     (FallAt cx next j e.b ∨ ∃ id k, cx.bstart e.b = some id ∧ OneAt cx.ps j { as := .JMP, to := brA id } k)
-  branch : b.kind ≠ .Plain → b.kind ≠ .Ret → ∃ e0 e1 c, b.succs = #[e0, e1] ∧ b.controls = #[c] ∧
+  /-- A `Defer` block: `Plain`'s jump to its successor 0. -/
+  defer : b.kind = .Defer → ∃ e, b.succs[0]? = some e ∧
+    (FallAt cx next j e.b ∨ ∃ id k, cx.bstart e.b = some id ∧ OneAt cx.ps j { as := .JMP, to := brA id } k)
+  branch : b.kind ≠ .Plain → b.kind ≠ .Ret → b.kind ≠ .Defer → ∃ e0 e1 c, b.succs = #[e0, e1] ∧
+    b.controls = #[c] ∧
     ((∃ asm inv, condBr b.kind = some (asm, inv) ∧ (cx.lc.ty c).isFlags = true ∧
         cx.lc.home c = none ∧
         (TwoAt cx next j { as := asm } e0.b e1.b ∨ TwoAt cx next j { as := inv } e1.b e0.b)) ∨
@@ -562,7 +566,7 @@ theorem Cx.term_spec {cx : Cx} {b : Block} {j : Nat} {next : Option (ID × Nat)}
     simpa using hs e (by simpa using he)
   split at h
   next hk =>
-    refine ⟨hsucc, fun _ => ?_, fun h1 _ => absurd hk h1⟩
+    refine ⟨hsucc, fun _ => ?_, (fun h1 => by rw [hk] at h1; cases h1), fun h1 _ _ => absurd hk h1⟩
     split at h
     next e he =>
       obtain ⟨hc, h⟩ := ex_guard h
@@ -582,11 +586,32 @@ theorem Cx.term_spec {cx : Cx} {b : Block} {j : Nat} {next : Option (ID × Nat)}
         exact ⟨id, k, hid, Cx.one_spec hk1⟩
     next => simp [ex_throw] at h
   next hk =>
-    refine ⟨hsucc, fun h1 => ?_, fun _ h2 => absurd hk h2⟩
-    rw [hk] at h1
-    cases h1
-  next hk1 hk2 =>
-    refine ⟨hsucc, fun h1 => absurd h1 hk1, fun _ _ => ?_⟩
+    refine ⟨hsucc, (fun h1 => by rw [hk] at h1; cases h1), fun _ => ?_, fun _ _ h3 => absurd hk h3⟩
+    split at h
+    next e he =>
+      obtain ⟨-, h⟩ := ex_guard h
+      refine ⟨e, he, ?_⟩
+      split at h
+      next hf => left; exact Cx.falls_spec hf
+      next =>
+        right
+        obtain ⟨a, ha, h⟩ := ex_bind_eq_ok h
+        obtain ⟨id, hid, rfl⟩ : ∃ id, cx.bstart e.b = some id ∧ a = brA id := by
+          simp only at ha
+          split at ha
+          next id hid => simp only [ex_pure, Except.ok.injEq] at ha; exact ⟨id, hid, ha.symm⟩
+          next => simp [ex_throw] at ha
+        obtain ⟨k, hk1, -⟩ := ex_bind_eq_ok h
+        exact ⟨id, k, hid, Cx.one_spec hk1⟩
+    next => simp [ex_throw] at h
+  next hk =>
+    refine ⟨hsucc, fun h1 => ?_, fun h1 => ?_, fun _ h2 => absurd hk h2⟩
+    · rw [hk] at h1
+      cases h1
+    · rw [hk] at h1
+      cases h1
+  next hk1 hk2 hk3 =>
+    refine ⟨hsucc, fun h1 => absurd h1 hk1, fun h1 => absurd h1 hk2, fun _ _ _ => ?_⟩
     split at h
     next e0 he0 =>
       split at h

@@ -1139,6 +1139,73 @@ B); they raise G57 to 7,390 and G48 to 7,607.
 quick-v10 (`lake exe gen-check --jobs 1`, now G58 the last slice): 7,626 of 9,297 functions
 (82.02%, 19 more than G48's 7,607, by group A), 245,347 values; no earlier slice's count drops.
 
+## Phase 3: genssa, slice G59 group P, float pair loads of a global or a frame variable (I7, #553)
+
+`GoFV.Proof.Gen.vk59p_step` (`GoFV/Proof/Gen/G59p.lean`): one value `vkind59p`
+(`GoFV/Gen/Check59p.lean`, tried after G58's value check) accepts (`VK59p`, `vkind59p_spec`), in
+`vk57a_step`'s form under `G49Env` with `hL` and G50's `PairPre50` (no new premise): `FLDPD`/`FLDPS`
+with an aux, of a global (`FLDPD sym+off(SB), (Fa, Fb)`, `g59_fldpGlob`) or of a `Blk.temp` frame
+variable (`g59_fldpVar`), into two distinct V registers; their selects are G50's. Composition into
+`checkG59` is the slice's. A probe of G58's check with `vkind59p` accepts the 6 functions whose sole
+reason was `pair load shape` (`test/zerodivide` `main.init.func33`–`func38`). Witness:
+`genG59p_witness` (`main.init.func33`: `FLDPD main.d(SB), (F2, F3)` of `complex(1.5, 2.5)` leaves
+the bits of `1.5` and `2.5` in `V2`, `V3`; `checkG58` rejects the function).
+
+## Phase 3: genssa, slice G59 group D, `Defer` blocks (I7, #553)
+
+`GoFV.Gen.Check.Cx.term` (`GoFV/Gen/Check.lean`), the terminator check every slice reaches through
+`Cx.termG3`/`Cx.termG2`, accepts a `Defer` block (two successors, one control) as `Plain`'s
+fall-through or `JMP` to `Succs[0]`: Go's `ssaGenBlock` emits nothing else for it (`case
+ssa.BlockPlain, ssa.BlockDefer`), and Phase 1's `stepTerm` goes to successor 0 (the `deferproc`
+call returned; a recovery returns through `finish`). `TermOK` (`GoFV/Proof/Gen/Spec.lean`) has a
+`defer` field and `branch` takes `b.kind ≠ .Defer`; `Cx.term_spec`, `stepTermL_defer` and
+`term_core`'s `Defer` case (`GoFV/Proof/Gen/G1.lean`). Every `g*_term` statement from G1 to G58 is
+unchanged. Witness: `genG59d_witness` (`GoFV/Proof/Witness/GenG59d.lean`, `test/defer`
+`main.test1helper`: `checkG58` accepts it, and `g58_term` relates `b3`'s `Defer` step to its
+`JMP` to `b4`). The 13 functions G58 rejected only for `block kind Defer` are accepted by
+`checkG58` (proofs3.md §4, slice G59 group D).
+
+## Phase 3: genssa, slice G59 group K, narrower register classes (I7, #553)
+
+G3's class table (`GoFV/Gen/Check.lean` `kNarrow`, `GoFV/Gen/Check3.lean` `kLe`, `kJoin`, `kMeet`,
+`kPhis`, `kPass`) now holds a class a register's content can be read at: the same class, an
+integer class of at least 8 bits no wider than an integer or pointer content, or any integer class
+over a boolean. `CoreInv`/`G1Inv` give `GoFV.Proof.Gen.FitsW` (`Rel.lean`), read by
+`valRel_retypeLW`, `valRel_retypeW`, `fvalRel_retypeLW`; edges by `kLe_spec`, `checkK_spec` and
+`CoreInv.monoW` (`KLeW`) in `termK_stepX`. Every `gN_*`/`gNL_*` statement is unchanged, no new
+premise. Witness `genG59k_witness` (`GenG59k.lean`, `math.lz`: `checkG58` accepts it with `R0` at 64
+bits at `b5`'s end and 32 at `b3`'s start; `g58_term` runs `b5`'s jump from `0xffffffff00000045` in
+`R0`, and `arg_rel` relates `v27`'s 32-bit read `0x45` to `X0`). The 8 functions G58 rejected only
+for `a register read at another class` (7) or `control read at another class` (1) are accepted
+(proofs3.md §4, slice G59 group K).
+
+## Phase 3: genssa, slice G59 group U, G35's upper-bit table across narrow stores, shifted logic ops, `Convert`, boolean loads and `Copy` (I7, #553)
+
+`GoFV.Gen.Check.pairOp35` (`GoFV/Gen/Check35.lean`) also follows narrow stores through a register,
+G27's shifted logic ops, `Convert` and narrow loads with no entry, and `uStep35` gives a register
+`Copy` its source's entry (`copyStep35`); `GoFV/Proof/Gen/Keep35.lean` (`uStep35_copy`,
+`uokl_keepOps`, `uokl_xw35`, `st_uokl`, `extOK_zero`, `uokl_copyKeep`, `uokl_copyMov`,
+`g2_copySame`, `g2_copyMov`, `vk33_keep35`'s new cases); `g3_store`, `g6_store`, `g49_store`,
+`g12_conv`, `g27_logSh`, `g51c_logSh` conclude `XW`. Every `g*_value` statement from G35 to G58 is
+unchanged, with no new premise. Witness: `GoFV.Proof.Witness.GenG59u.genG59u_witness`
+(`runtime.(*scavChunkData).pack`: `checkG58` accepts it; across `ORshiftLL` the table keeps `R2`'s
+word entry, which G34's step dropped, and after `g58_value`'s run of the `ORR` `X2` is still a
+zero-extended word). The 13 functions G58 rejected only for `upper bits unknown` are accepted
+(proofs3.md §4, slice G59 group U).
+
+## Phase 3: genssa, slice G59, float pair loads of a global or a frame variable, `Defer` blocks, narrower register classes, G35's upper-bit table across stores, shifted logic ops, `Convert` and `Copy` (I7, #553)
+
+`GoFV.Proof.Gen.g59_value`, `g59_initMem`, `g59_term`, `g59_nilPanic`, `g59_boundsPanic`
+(`GoFV/Proof/Gen/G59.lean`): when slice G59 (`checkG59`: G58 with group P's `vkind59p` tried when
+G58 rejects a value, over the shared checks groups D, K and U change, `GoFV/Gen/Check59.lean`)
+accepts a function, they are G58's statements, under `G49Env`, `g59_value` under `G54Pre` (no new
+premise: group P's loads take its `PairPre50` component). Witness: `genG59_witness`
+(`test/zerodivide` `main.init.func33`: `checkG58` rejects it and `checkG59` accepts it; `FLDPD
+main.d(SB), (F2, F3)` of `complex(1.5, 2.5)` leaves the bits of `1.5` and `2.5` in `V2`, `V3`).
+Coverage on quick-v10 (`lake exe gen-check --jobs 1`): 7,449 of 9,297 functions (80.12%, 40 more
+than G58's 7,409: 6 by group P, 13 by D, 8 by K, 13 by U), 241,768 values; no earlier slice's count
+drops (G58 itself now 7,443).
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g56_obj_value`, `g56_obj_term`, `g56_obj_nilPanic`, `g56_obj_boundsPanic`
