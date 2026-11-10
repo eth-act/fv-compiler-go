@@ -180,7 +180,8 @@ theorem uStep35_initMem {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value
       unfold narrowLd?
       rw [hl, hi]
     simp only [uEntry, this]
-  rw [uStep35_other (ldEntry35_none hl) hp, uStep34_other hk, uStep31_other hk31,
+  rw [uStep35_other (ldEntry35_none hl) hp (by rw [hop]; nofun), uStep34_other hk,
+    uStep31_other hk31,
     uStepL_other hue (by rw [hop]; nofun) (by rw [hop]; nofun)]
 
 /-- `InitMem` in a function whose values keep the memory, from a state holding the initial

@@ -27,8 +27,8 @@ the separation `SepFromW` (`G3Inv … E.outSP`), and keep `SPInv` (`G53S.lean`).
   the callee reads them and writes its stack results there (Phase 1's `decodeArgs` /
   `encodeResults` on `outargs`), where the caller loads them after the call.
 * The upper-bit table (`UOKL`): a store keeps the X registers (`m'.x = m.x`) and the table drops
-  at most entries (`uokl_x48`); an integer load writes its register's X register (`uokl_spLoad48`,
-  G35's `ld_uokl` for a narrow load with an entry); a float load writes no X register.
+  at most entries (`uokl_x48`); an integer load writes its register's X register (G35's
+  `ld_uokl`); a float load writes no X register.
 
 `g48_value` takes G57's premise `G54Pre`, the contracts of the mode `true` through `E.outSP`, and
 `CallOKStk`; `g48_initMem`, `g48_term` keep `SPInv` (the function homes only `SP` values in the Go
@@ -63,7 +63,7 @@ relates to the machine's `SP` when the `outargs` block sits at `SP` (`SPInv`), a
 theorem sp_base48 {E : MatchEnv} {lc : LocCtx} {s : LocState} {v : Value}
     {K : Nat → Option Nat} (hl : lc.ctx.f.lowered = true) (hA : AddrAgree E.ι)
     (hsp : SPInv E s) (hosp : E.outSP = true)
-    (hregs : ∀ r x c, r ≠ zeroReg → s.regs[r]? = some x → K r = some c → Fits c x)
+    (hregs : ∀ r x c, r ≠ zeroReg → s.regs[r]? = some x → K r = some c → FitsW c x)
     (hR : KRead lc v K) (hnp : v.op ≠ .Phi) (hb : spBase48 lc v = true) :
     ∀ a x, v.args[0]? = some a → s.read lc a = .ok x → ValRel E.ι x E.sp ∧ Fits 64 x := by
   obtain ⟨a0, ha0, hh, hc⟩ := spBase48_spec hb
@@ -80,7 +80,7 @@ theorem sp_base48 {E : MatchEnv} {lc : LocCtx} {s : LocState} {v : Value}
   rw [hreg]
   cases hy : s.regs[spReg]? with
   | none => exact valRel_retypeL hA hc trivial trivial
-  | some y => exact valRel_retypeL hA hc (hregs _ _ _ hz hy hK) ((hsp hosp).2 y hy)
+  | some y => exact valRel_retypeLW hA hc (hregs _ _ _ hz hy hK) ((hsp hosp).2 y hy)
 
 /-! ## The upper-bit table -/
 
@@ -89,80 +89,17 @@ def opsX48 : List Op :=
   [.ARM64MOVDstore, .ARM64MOVWstore, .ARM64MOVHstore, .ARM64MOVBstore, .ARM64STP, .ARM64STPW,
     .ARM64FSTPD, .ARM64FMOVSstore, .ARM64FMOVDstore, .ARM64FMOVSload, .ARM64FMOVDload]
 
-/-- Across a value of `opsX48` that keeps the X registers, the table keeps at most its entries. -/
+/-- Across a value of `opsX48` that keeps the X registers, the table keeps at most its entries
+(`uokl_xw35`: a narrow store without an aux is `pairOp35`'s since slice G59 group U). -/
 theorem uokl_x48 {lc : LocCtx} {v : Value} {m m' : MState} {L : List (Nat × Nat × Bool)}
     (hop : v.op ∈ opsX48) (hx : m'.x = m.x) (hL : UOKL m L) : UOKL m' (uStep35 lc L v) := by
   have h := List.all_eq_true.1 (show opsX48.all (fun o => (loadOp? o).isNone &&
-    (loadIdxOp? o).isNone && o != .ARM64LDP && o != .Select0 && o != .Select1 &&
-    o != .ARM64MOVDnop && o != .ARM64MOVDreg) = true by decide) _ hop
+    (loadIdxOp? o).isNone && o != .ARM64LDPW && o != .ARM64LDPSW && o != .Select0 &&
+    o != .Select1 && o != .Copy && o != .ARM64MOVDnop && o != .ARM64MOVDreg) = true by decide) _ hop
   simp only [Bool.and_eq_true, Option.isNone_iff_eq_none, bne_iff_ne, ne_eq] at h
-  obtain ⟨⟨⟨⟨⟨⟨hl, hi⟩, hp1⟩, hp2⟩, hp3⟩, h1⟩, h2⟩ := h
-  have hp : pairOp35 lc v = false := by
-    simp only [opsX48, List.mem_cons, List.not_mem_nil, or_false] at hop
-    rcases hop with h | h | h | h | h | h | h | h | h | h | h <;> simp [pairOp35, h]
-  intro e he
-  rw [uStep35_other (ldEntry35_none hl) hp] at he
-  unfold uStep34 at he
-  split at he
-  · exact uok_of_x hx (hL e (List.mem_filter.1 he).1)
-  · have hue : uEntry lc v = none := by simp [uEntry, narrowLd?, hl, hi]
-    rw [uStepL_other hue h1 h2] at he
-    cases he
-
-/-- Across an integer load without an aux that writes the zero or sign extension of its bytes to
-the X register of its home, the table: G35's `ld_uokl` for a narrow load with an entry, else the
-entries of the other registers or none. -/
-theorem uokl_spLoad48 {lc : LocCtx} {v : Value} {m m' : MState} {L : List (Nat × Nat × Bool)}
-    {as : As} {n : Nat} {sg : Bool} {c : Nat} {rd : Int} {kd : Nat} {Y : BitVec (8 * n)}
-    (hop : loadOp? v.op = some (as, n, sg)) (haux : v.aux = none)
-    (hro : resObj lc v = .ok (c, rd)) (hrd : rd = GoFV.Asm.ARM64.REG_R0 + kd)
-    (hx : m'.x = (m.wX (BitVec.ofNat 5 kd)
-      (if sg then ProgOp.sextTo64 n (Y.setWidth 64) else Y.setWidth 64)).x)
-    (hL : UOKL m L) : UOKL m' (uStep35 lc L v) := by
-  by_cases h0 : ldEntry35 lc v = none
-  · obtain ⟨r, hvh, -, hor, -⟩ := resObj_spec hro
-    rw [hrd] at hor
-    have hk := keepsX_wX hor hx
-    have hr := regHome?_eq.2 hvh
-    have hops : v.op ≠ .ARM64LDP ∧ v.op ≠ .Select0 ∧ v.op ≠ .Select1 ∧
-        v.op ≠ .ARM64MOVDnop ∧ v.op ≠ .ARM64MOVDreg := by
-      rcases loadOp?_op hop with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;>
-        rw [h] <;> exact ⟨nofun, nofun, nofun, nofun, nofun⟩
-    obtain ⟨hp1, hp2, hp3, h1, h2⟩ := hops
-    have hp : pairOp35 lc v = false := by
-      rcases loadOp?_op hop with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;>
-        simp [pairOp35, h]
-    rw [uStep35_other h0 hp]
-    unfold uStep34
-    split
-    · intro e he
-      obtain ⟨heL, hne⟩ := List.mem_filter.1 he
-      rw [hr] at hne
-      refine uokl_filter hL hk e (List.mem_filter.2 ⟨heL, ?_⟩)
-      simp only [bne_iff_ne, ne_eq, Option.some.injEq] at hne
-      exact bne_iff_ne.2 fun h => hne h.symm
-    · have hue : uEntry lc v = none := by
-        by_cases has : as = .MOVD
-        · simp [uEntry, narrowLd?, hop, has]
-        · have hn : narrowLd? lc v = some (n, sg) := by simp [narrowLd?, hop, has, haux]
-          have has' : (as != .MOVD) = true := bne_iff_ne.2 has
-          unfold ldEntry35 at h0
-          unfold uEntry
-          rw [hop, hr] at h0
-          rw [hn, hr]
-          cases hc : cls (lc.ty v.id) with
-          | none => rfl
-          | some c' =>
-            rw [hc] at h0
-            simp only [has', Bool.true_and] at h0 ⊢
-            split at h0
-            · cases h0
-            · rename_i hcond
-              exact ite_eq_right hcond
-      rw [uStepL_other hue h1 h2]
-      intro e he
-      cases he
-  · exact ld_uokl (.inr h0) hop hro hrd hx hL
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨hl, hi⟩, hw1⟩, hw2⟩, hs1⟩, hs2⟩, hc⟩, h1⟩, h2⟩ := h
+  exact uokl_xw35 hL (.inl hx) (ldEntry35_none hl) (by simp [uEntry, narrowLd?, hl, hi])
+    ⟨hs1, hs2⟩ ⟨hw1, hw2⟩ hc ⟨h1, h2⟩
 
 /-! ## One value -/
 
@@ -208,7 +145,7 @@ theorem vk48_sp {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat → 
           (Or.inr fun _ _ => by rw [hhn]; nofun)), hinv.slots⟩, uokl_x48 hops h6 hL⟩
   -- a load: the memory and the slots kept
   have load : ∀ m', s'.mem = s.mem → s'.slots = s.slots →
-      (∀ r x c, r ≠ zeroReg → s'.regs[r]? = some x → (kStep lc K v).get r = some c → Fits c x) →
+      (∀ r x c, r ≠ zeroReg → s'.regs[r]? = some x → (kStep lc K v).get r = some c → FitsW c x) →
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' →
       LocMatch E s' bid (i + 1) m' → UOKL m' (uStep35 lc L v) →
       ∃ m', PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
@@ -234,7 +171,7 @@ theorem vk48_sp {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat → 
         obtain ⟨h1, h2, h3, h4, h5, h6, h7⟩ := plain_spec hp
         exact ⟨h1, beq_iff_eq.mp h2, h3, beq_iff_eq.mp h4, h5, h6, h7⟩)
       hvs htemp hs
-    exact load m' hmem hsl hregs h1 h2 (uokl_spLoad48 hop hax hro hrd hx hL)
+    exact load m' hmem hsl hregs h1 h2 (ld_uokl hop hro hrd hx hL)
   | store hop hsz3 hmt hhn _ hso hma hc =>
     obtain ⟨m', mm', h1, h2, h3, h4, h5, h6⟩ := g48_spStore (H := H) F hF hsz hm hmm hkn hsep
       hinv.core.regs hR (hbase (storeOp?_ne_phi hop)) hj hj' hop hsz3 hax hmt hhn hso hma hc

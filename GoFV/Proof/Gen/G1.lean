@@ -52,10 +52,11 @@ structure G1Env (lc : LocCtx) (L : Link) (ps : Array Prog) (ret : BitVec 64) (ta
   addr : AddrAgree E.ι
   leaf : E.framed = false
 
-/-- The invariant of G1's `runLoc` states. -/
+/-- The invariant of G1's `runLoc` states (a register content can be read at its class,
+`FitsW`). -/
 structure G1Inv (lc : LocCtx) (s : LocState) : Prop where
   slots : s.slots = []
-  regs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → regCls lc r = some c → Fits c v
+  regs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → regCls lc r = some c → FitsW c v
   mem : ∃ mm, s.mem = .mem mm ∧ KeysNodup mm
 
 /-- The addresses `P` lie outside the windows of the live blocks of `mm` under `ι`. -/
@@ -80,13 +81,14 @@ def SepAt : Bool → (Blk → Option (BitVec 64)) → (BitVec 64 → Prop) → M
   | true, ι, P, mm => SepFromW ι P mm
 
 /-- The invariant the value steps of every slice keep: every register other than `ZERO` holds a
-value of the class the class map `K` gives it (G1, G2: `regCls`, one class per register; G3: the
-class of its last writer, by dataflow), the memory's block keys are distinct, and the live blocks
-lie away from the addresses `P` (G1: none; G2: the saved `LR`/`FP` words and the spill slots), in
-the separation of mode `w` (`SepAt`; `false`, `SepFrom`, unless stated). -/
+value that can be read at the class the class map `K` gives it (`FitsW`; G1, G2: `regCls`, one
+class per register; G3: the class of its last writer, by dataflow, or one it allows), the memory's
+block keys are distinct, and the live blocks lie away from the addresses `P` (G1: none; G2: the
+saved `LR`/`FP` words and the spill slots), in the separation of mode `w` (`SepAt`; `false`,
+`SepFrom`, unless stated). -/
 structure CoreInv (ι : Blk → Option (BitVec 64)) (P : BitVec 64 → Prop) (K : Nat → Option Nat)
     (s : LocState) (w : Bool := false) : Prop where
-  regs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → K r = some c → Fits c v
+  regs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → K r = some c → FitsW c v
   mem : ∃ mm, s.mem = .mem mm ∧ KeysNodup mm ∧ SepAt w ι P mm
 
 section SepAt
@@ -141,6 +143,11 @@ end SepAt
 
 /-- The class map `K'` claims no class `K` does not (outside `ZERO`). -/
 def KLe (K' K : Nat → Option Nat) : Prop := ∀ r c, r ≠ zeroReg → K' r = some c → K r = some c
+
+/-- The class map `K'` claims only classes the classes of `K` allow (`kNarrow`, outside
+`ZERO`). -/
+def KLeW (K' K : Nat → Option Nat) : Prop :=
+  ∀ r c, r ≠ zeroReg → K' r = some c → ∃ c', K r = some c' ∧ kNarrow c c' = true
 
 /-- The class map `K` with register `r` set to `c`. -/
 def kSet (K : Nat → Option Nat) (r : Nat) (c : Option Nat) : Nat → Option Nat :=
@@ -334,6 +341,12 @@ theorem G1Inv.of_core (hinv : CoreInv ι P (regCls lc) s osp) (hsl : s.slots = [
 theorem CoreInv.mono (hinv : CoreInv ι P K s osp) (h : KLe K' K) : CoreInv ι P K' s osp :=
   ⟨fun r v c hr hv hc => hinv.regs r v c hr hv (h r c hr hc), hinv.mem⟩
 
+/-- The invariant at a class map whose classes the invariant's allow (`KLeW`). -/
+theorem CoreInv.monoW (hinv : CoreInv ι P K s osp) (h : KLeW K' K) : CoreInv ι P K' s osp :=
+  ⟨fun r v c hr hv hc =>
+    let ⟨_, hc', hn⟩ := h r c hr hc
+    (hinv.regs r v _ hr hv hc').narrow hn, hinv.mem⟩
+
 theorem core_setReg (hinv : CoreInv ι P K s osp) {r c : Nat} {x : Val} (hx : Fits c x) :
     CoreInv ι P (kSet K r (some c)) (s.setReg r x) osp where
   mem := hinv.mem
@@ -348,7 +361,7 @@ theorem core_setReg (hinv : CoreInv ι P K s osp) {r c : Nat} {x : Val} (hx : Fi
       · rename_i hlt
         simp only [Bool.and_eq_true, decide_eq_true_eq, bne_iff_ne, ne_eq] at hlt
         rw [Array.set!_eq_setIfInBounds, Array.getElem?_setIfInBounds_self_of_lt hlt.1] at hv
-        cases hv; exact hx
+        cases hv; exact fitsW_of_fits hx
       · rename_i hlt
         simp only [Bool.and_eq_true, decide_eq_true_eq, bne_iff_ne, ne_eq, not_and,
           Decidable.not_not] at hlt
@@ -443,7 +456,7 @@ theorem arg_rel (hA : AddrAgree E.ι) (hl : lc.ctx.f.lowered = true)
     | none => simp only [Option.getD_none, retypeL_poison]; trivial
     | some v =>
       simp only [Option.getD_some]
-      exact valRel_retypeL hA hc (hinv.regs r v c hrz hv (hK hrz)) ((hm.regs r v hv).1 _ hobj)
+      exact valRel_retypeLW hA hc (hinv.regs r v c hrz hv (hK hrz)) ((hm.regs r v hv).1 _ hobj)
 
 /-- Writing a register G1 may write with a value related to the machine's new word: `LocMatch`
 at the next value and the invariant with the register at the value's class. -/
@@ -1184,6 +1197,12 @@ theorem stepTermL_plain {fr : GoFV.SSA.Sem.Frame} {b : Block} {n : Next} (hk : b
   unfold stepTermL stepTerm at h
   simpa [BlockKind.isArm64, hk] using h
 
+/-- A `Defer` block goes to its successor 0 (the `deferproc` call returned). -/
+theorem stepTermL_defer {fr : GoFV.SSA.Sem.Frame} {b : Block} {n : Next} (hk : b.kind = .Defer)
+    (h : stepTermL fr b = .ok n) : succ b 0 = .ok n := by
+  unfold stepTermL stepTerm at h
+  simpa [BlockKind.isArm64, hk] using h
+
 theorem stepTermL_ret {fr : GoFV.SSA.Sem.Frame} {b : Block} {e : Edge} (hk : b.kind = .Ret)
     (h : stepTermL fr b = .ok (.goto e)) : False := by
   unfold stepTermL stepTerm at h
@@ -1329,10 +1348,21 @@ theorem term_core {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az e
     refine hfin e0 (by simp [hs0]) hsn.symm ⟨R, hR⟩ ?_
     rw [← hm0]
     exact fall_path F hst hnext (hsucc e0 (by simp [hs0])) hfall m
+  by_cases hd : blk.kind = .Defer
+  · obtain ⟨e0, hs0, hfall⟩ := hterm.defer hd
+    have he0 : e0 ∈ blk.succs.toList := by
+      obtain ⟨i, hi, rfl⟩ := Array.getElem?_eq_some_iff.1 hs0
+      simp
+    obtain ⟨R, hR, hn⟩ := stepTermLoc_gen ht
+    have hsn := stepTermL_defer hd hn
+    simp [succ, hs0, Res.ofOption] at hsn
+    refine hfin e0 he0 hsn.symm ⟨R, hR⟩ ?_
+    rw [← hm0]
+    exact fall_path F hst hnext (hsucc e0 he0) hfall m
   by_cases hr : blk.kind = .Ret
   · obtain ⟨R, -, hn⟩ := stepTermLoc_gen ht
     exact (stepTermL_ret hr hn).elim
-  obtain ⟨e0, e1, c, hs01, hcs, hcase⟩ := hterm.branch hk hr
+  obtain ⟨e0, e1, c, hs01, hcs, hcase⟩ := hterm.branch hk hr hd
   have he0 : e0 ∈ blk.succs.toList := by simp [hs01]
   have he1 : e1 ∈ blk.succs.toList := by simp [hs01]
   obtain ⟨x, R, hx, hR, hctl, hn⟩ := stepTermLoc_one hcs ht

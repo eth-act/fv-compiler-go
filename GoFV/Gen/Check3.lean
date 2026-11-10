@@ -14,11 +14,19 @@ block, the width class (`cls`) of the content of each register at the block's st
 the class of each register's last writer (`kStep`: a value homed in register `r` sets `r` to its
 class, a static call each result register to its result's class; a `Phi` writes nothing; values
 homed elsewhere leave the map), forward through the blocks from the entry block (where nothing is
-known), meeting at joins (`kFlow`). `checkK` then checks the table it returns: every register a
+known), joining at joins (`kFlow`). `checkK` then checks the table it returns: every register a
 value reads holds the class it is read at (`kReads`: the register arguments, the call result a
 `SelectN` reads; the control of a register test), and the class map at each successor's start is
 implied by the one at the end of each predecessor (`kLe`). A register clobbered by a call holds
 `poison`, which fits every class, so a call keeps the map elsewhere.
+
+**Narrower classes** (slice G59, group K). A class in the table is a class the register's content
+can be read at (`kNarrow`): an integer class of at least 8 bits no wider than the content's
+integer or pointer class (the low bits of the register), or any integer class over a boolean (0 or
+1 in the whole register). The edges check this (`kLe`), so the dataflow may join an integer class
+with a narrower one or with a boolean (`kJoin`), and set the home register of a successor's `Phi`
+to the `Phi`'s class when the content allows it (`kPhis`): a 32-bit `Phi` of 64-bit arguments, a
+64-bit `Phi` of booleans.
 
 **Values** beyond G2's (`vkind3`):
 
@@ -123,25 +131,50 @@ def kControl (lc : LocCtx) (b : Block) : List (Nat × Nat) :=
 /-- Every read `(r, c)` finds class `c` in `r`. -/
 def kOK (K : KMap) (rs : List (Nat × Nat)) : Bool := rs.all fun (r, c) => K.get r == some c
 
-/-- `K` implies `K'`: every class `K'` knows, `K` knows. -/
+/-- `K` implies `K'`: every class `K'` knows can be read from the class `K` knows (`kNarrow`). -/
 def kLe (K' K : KMap) : Bool :=
-  (List.range K'.size).all fun r => (K'.get r).all fun c => K.get r == some c
+  (List.range K'.size).all fun r => (K'.get r).all fun c => (K.get r).any (kNarrow c)
 
-/-- Where the classes of `a` and `b` agree. -/
+/-- The class two predecessors both allow (`kNarrow`): the narrower of two integer classes, the
+integer class over a boolean; `none` where neither reads the other. -/
+def kJoin : Option Nat → Option Nat → Option Nat
+  | some x, some y => if kNarrow x y then some x else if kNarrow y x then some y else none
+  | _, _ => none
+
+/-- Where the classes of `a` and `b` join (`kJoin`). -/
 def kMeet (a b : KMap) : KMap :=
-  Array.ofFn (n := a.size) fun i => if a.get i == b.get i then a.get i else none
+  Array.ofFn (n := a.size) fun i => kJoin (a.get i) (b.get i)
+
+/-- The class map entering block `b`: the home register of each `Phi` of `b` read at the `Phi`'s
+class where its content allows it (`kNarrow`), so that the `Phi`'s readers find its class. -/
+def kPhis (lc : LocCtx) (b : Block) (K : KMap) : KMap :=
+  b.values.foldl (fun K id => match lc.ctx.f.value? id with
+    | some v =>
+      if v.op == .Phi then
+        match lc.home id, cls (lc.ty id) with
+        | some (.reg r), some c =>
+          if r != zeroReg && (K.get r).any (fun c' => c != c' && kNarrow c c') then
+            K.setIfInBounds r (some c)
+          else K
+        | _, _ => K
+      else K
+    | none => K) K
 
 /-- One pass of the forward dataflow over the blocks `bids` (layout order): the class map at the
-start of each reached block, met with the end of each reached predecessor. -/
+start of each reached block, the join of the end of each reached predecessor (entering the block,
+`kPhis`). -/
 def kPass (lc : LocCtx) (kin : Std.HashMap ID KMap) (bids : List ID) : Std.HashMap ID KMap :=
   bids.foldl (fun kin bid =>
     match kin[bid]?, lc.ctx.f.block? bid with
     | some K, some b =>
       let out := kSteps lc K b.values.toList
       b.succs.foldl (fun kin e =>
+        let o := match lc.ctx.f.block? e.b with
+          | some sb => kPhis lc sb out
+          | none => out
         match kin[e.b]? with
-        | some K' => kin.insert e.b (kMeet K' out)
-        | none => kin.insert e.b out) kin
+        | some K' => kin.insert e.b (kMeet K' o)
+        | none => kin.insert e.b o) kin
     | _, _ => kin) kin
 
 /-- The class table: the dataflow from the entry block (nothing known) to a fixed point (at most

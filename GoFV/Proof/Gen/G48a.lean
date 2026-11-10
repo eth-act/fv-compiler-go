@@ -266,7 +266,7 @@ theorem g48_spStore (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK
     (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
     (hm : LocMatch E s b i m) {mm : Mem} (hmm : s.mem = .mem mm) (hkn : KeysNodup mm)
     {w : Bool} (hsep : SepAt w E.ι (StkAt E) mm)
-    (hregs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → K r = some c → Fits c v)
+    (hregs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → K r = some c → FitsW c v)
     (hR : KRead lc v K)
     (hsp : ∀ a x, v.args[0]? = some a → s.read lc a = .ok x → ValRel E.ι x E.sp ∧ Fits 64 x)
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
@@ -343,7 +343,7 @@ register: the registers keep their classes under the next class map `K'`, the me
 unchanged. -/
 theorem g48_spLoad (F : Facts lc sym text az ez psA.toList ret E)
     (hm : LocMatch E s b i m) {mm : Mem} (hmm : s.mem = .mem mm) (hkn : KeysNodup mm)
-    (hregs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → K r = some c → Fits c v)
+    (hregs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → K r = some c → FitsW c v)
     (hK : KNext lc v K K')
     (hsp : ∀ a x, v.args[0]? = some a → s.read lc a = .ok x → ValRel E.ι x E.sp ∧ Fits 64 x)
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
@@ -360,7 +360,7 @@ theorem g48_spLoad (F : Facts lc sym text az ez psA.toList ret E)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
       LocMatch E s' b (i + 1) m' ∧ s'.mem = s.mem ∧ s'.slots = s.slots ∧
-      (∀ r v c, r ≠ zeroReg → s'.regs[r]? = some v → K' r = some c → Fits c v) ∧
+      (∀ r v c, r ≠ zeroReg → s'.regs[r]? = some v → K' r = some c → FitsW c v) ∧
       ∃ (kd : Nat) (Y : BitVec (8 * n)), rd = GoFV.Asm.ARM64.REG_R0 + kd ∧
         m'.x = (m.wX (BitVec.ofNat 5 kd)
           (if sg then ProgOp.sextTo64 n (Y.setWidth 64) else Y.setWidth 64)).x := by
@@ -418,7 +418,7 @@ theorem g48_spStp (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
     (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
     (hm : LocMatch E s b i m) {mm : Mem} (hmm : s.mem = .mem mm) (hkn : KeysNodup mm)
     {w : Bool} (hsep : SepAt w E.ι (StkAt E) mm)
-    (hregs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → K r = some c → Fits c v)
+    (hregs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → K r = some c → FitsW c v)
     (hR : KRead lc v K)
     (hsp : ∀ a x, v.args[0]? = some a → s.read lc a = .ok x → ValRel E.ι x E.sp ∧ Fits 64 x)
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
@@ -503,7 +503,7 @@ theorem g48_spStpw (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK 
     (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
     (hm : LocMatch E s b i m) {mm : Mem} (hmm : s.mem = .mem mm) (hkn : KeysNodup mm)
     {w : Bool} (hsep : SepAt w E.ι (StkAt E) mm)
-    (hregs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → K r = some c → Fits c v)
+    (hregs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → K r = some c → FitsW c v)
     (hR : KRead lc v K)
     (hsp : ∀ a x, v.args[0]? = some a → s.read lc a = .ok x → ValRel E.ι x E.sp ∧ Fits 64 x)
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
@@ -590,7 +590,7 @@ theorem g48_spFstpd (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK
     (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
     (hm : LocMatch E s b i m) {mm : Mem} (hmm : s.mem = .mem mm) (hkn : KeysNodup mm)
     {w : Bool} (hsep : SepAt w E.ι (StkAt E) mm)
-    (hregs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → K r = some c → Fits c v)
+    (hregs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → K r = some c → FitsW c v)
     (hR : KRead lc v K)
     (hsp : ∀ a x, v.args[0]? = some a → s.read lc a = .ok x → ValRel E.ι x E.sp ∧ Fits 64 x)
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
@@ -683,7 +683,7 @@ theorem g48_spFStore (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameO
     (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
     (hm : LocMatch E s b i m) {mm : Mem} (hmm : s.mem = .mem mm) (hkn : KeysNodup mm)
     {w : Bool} (hsep : SepAt w E.ι (StkAt E) mm)
-    (hregs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → K r = some c → Fits c v)
+    (hregs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → K r = some c → FitsW c v)
     (hR : KRead lc v K)
     (hsp : ∀ a x, v.args[0]? = some a → s.read lc a = .ok x → ValRel E.ι x E.sp ∧ Fits 64 x)
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
@@ -761,7 +761,7 @@ theorem g48_spFStore (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameO
 at `⟨outargs act, o⟩` into the result's V register (`g44_fload` with the base `SP`, `hsp`). -/
 theorem g48_spFLoad (F : Facts lc sym text az ez psA.toList ret E)
     (hm : LocMatch E s b i m) {mm : Mem} (hmm : s.mem = .mem mm) (hkn : KeysNodup mm)
-    (hregs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → K r = some c → Fits c v)
+    (hregs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → K r = some c → FitsW c v)
     (hK : KNext lc v K K')
     (hsp : ∀ a x, v.args[0]? = some a → s.read lc a = .ok x → ValRel E.ι x E.sp ∧ Fits 64 x)
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
@@ -777,7 +777,7 @@ theorem g48_spFLoad (F : Facts lc sym text az ez psA.toList ret E)
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
       LocMatch E s' b (i + 1) m' ∧ s'.mem = s.mem ∧ s'.slots = s.slots ∧
-      (∀ r v c, r ≠ zeroReg → s'.regs[r]? = some v → K' r = some c → Fits c v) ∧
+      (∀ r v c, r ≠ zeroReg → s'.regs[r]? = some v → K' r = some c → FitsW c v) ∧
       m'.x = m.x := by
   have hl := F.lowered
   have hA := F.addr

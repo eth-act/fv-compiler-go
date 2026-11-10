@@ -23,6 +23,12 @@ acquire loads `LDAR`/`LDARW`/`LDARB` (G38, home `(Rd;-)`), the selects of these 
 table stays), and the ops of G36 (`SLL`, `SRL`, `SRA`), G37 and G51b (`SBFIZ`) that write only
 their register home, across which the entries of the other registers stay.
 
+Slice G59 group U (`docs/plans/proofs3.md` §4) widens `pairOp35` to the narrow stores through a
+register (no symbol; they write no register), G27's shifted logic ops, `Convert` and the narrow
+loads with no entry (of a boolean), across which the entries of the registers other than the
+home's stay; and a `Copy` between registers gives its register the entry of its argument's
+(`copyStep35`, as `MOVDreg`'s `movdRegStep`).
+
 On a function with no arm64 op, `checkG35` is `checkG33`'s `checkNL30`.
 `GoFV/Proof/Gen/G35.lean` proves what an accepted function satisfies.
 -/
@@ -33,10 +39,13 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Asm
 
 /-- The values whose writes G35's table follows register by register: the pair loads `LDP`,
 `LDPW`, `LDPSW` and the acquire loads `LDAR`, `LDARW`, `LDARB`, which write the registers of their
-home (`homeRegs`); `Select0`/`Select1` of one of these, which emit no code; and the ops of G36,
+home (`homeRegs`); `Select0`/`Select1` of one of these, which emit no code; the ops of G36,
 G37 and G51b that write only their register home (`SLL`, `SRL`, `SRA`; `UMULH` … `SBFX`;
-`SBFIZ`; slice G58b, `docs/plans/proofs3.md` §4). The test is a chain of `==` so that `simp
-[pairOp35, h]` decides it for `h : v.op = o`. -/
+`SBFIZ`; slice G58b, `docs/plans/proofs3.md` §4); and, slice G59 group U, the narrow stores
+through a register (`MOVBstore`, `MOVHstore`, `MOVWstore` with no symbol; no register home), G27's
+shifted logic ops, `Convert` and the narrow loads (`ldEntry35` comes first: here only those with
+no entry, e.g. of a boolean), which write at most their register home. The test is a chain of `==`
+so that `simp [pairOp35, h]` decides it for `h : v.op = o` (and, for a store, `v.aux`). -/
 def pairOp35 (lc : LocCtx) (v : Value) : Bool :=
   v.op == .ARM64LDP || v.op == .ARM64LDPW || v.op == .ARM64LDPSW || v.op == .ARM64LDAR ||
   v.op == .ARM64LDARW || v.op == .ARM64LDARB ||
@@ -47,7 +56,16 @@ def pairOp35 (lc : LocCtx) (v : Value) : Bool :=
   v.op == .ARM64MULH || v.op == .ARM64UDIV || v.op == .ARM64DIV || v.op == .ARM64MULW ||
   v.op == .ARM64UDIVW || v.op == .ARM64DIVW || v.op == .ARM64UMULL || v.op == .ARM64RBIT ||
   v.op == .ARM64REVW || v.op == .ARM64REV16W || v.op == .ARM64MADD || v.op == .ARM64MSUB ||
-  v.op == .ARM64MADDW || v.op == .ARM64MSUBW || v.op == .ARM64SBFX || v.op == .ARM64SBFIZ
+  v.op == .ARM64MADDW || v.op == .ARM64MSUBW || v.op == .ARM64SBFX || v.op == .ARM64SBFIZ ||
+  ((v.op == .ARM64MOVBstore || v.op == .ARM64MOVHstore || v.op == .ARM64MOVWstore) &&
+    v.aux.isNone) ||
+  v.op == .ARM64ANDshiftLL || v.op == .ARM64ANDshiftRL || v.op == .ARM64ANDshiftRA ||
+  v.op == .ARM64ORshiftLL || v.op == .ARM64ORshiftRL || v.op == .ARM64ORshiftRA ||
+  v.op == .ARM64XORshiftLL || v.op == .ARM64XORshiftRL || v.op == .ARM64XORshiftRA ||
+  v.op == .ARM64BICshiftLL || v.op == .ARM64BICshiftRL || v.op == .ARM64BICshiftRA ||
+  v.op == .Convert || v.op == .ARM64MOVBload || v.op == .ARM64MOVBUload ||
+  v.op == .ARM64MOVHload || v.op == .ARM64MOVHUload || v.op == .ARM64MOVWload ||
+  v.op == .ARM64MOVWUload
 
 /-- The registers of `id`'s home: its register, the two registers of its pair, or the register of
 an acquire load's `(Rd;-)`. -/
@@ -74,6 +92,15 @@ def ldEntry35 (lc : LocCtx) (v : Value) : Option (Nat × Nat × Bool) :=
     if as != .MOVD && (c == 8 || c == 16 || c == 32) && 8 * n ≤ c then some (r, c, sg) else none
   | _, _, _ => none
 
+/-- The upper-bit table after `Copy` (slice G59 group U): a copy between registers gives the
+destination the source's entry (`movdRegStep`, as `MOVDreg`); any other copy (of the memory)
+keeps the entries of the registers other than its register home (G31's step). -/
+def copyStep35 (lc : LocCtx) (L : List (Nat × Nat × Bool)) (v : Value) :
+    List (Nat × Nat × Bool) :=
+  match (v.args[0]?).bind (regHome? lc), regHome? lc v.id with
+  | some rx, some rv => movdRegStep L rx rv
+  | _, _ => L.filter fun e => regHome? lc v.id != some e.1
+
 /-- The upper-bit table after value `v` (module doc). -/
 def uStep35 (lc : LocCtx) (L : List (Nat × Nat × Bool)) (v : Value) : List (Nat × Nat × Bool) :=
   match ldEntry35 lc v with
@@ -82,6 +109,7 @@ def uStep35 (lc : LocCtx) (L : List (Nat × Nat × Bool)) (v : Value) : List (Na
     if pairOp35 lc v then
       if v.op == .Select0 || v.op == .Select1 then L
       else wEntries35 v.op (homeRegs lc v.id) ++ L.filter (!(homeRegs lc v.id).contains ·.1)
+    else if v.op == .Copy then copyStep35 lc L v
     else uStep34 lc L v
 
 /-- The upper-bit table before value `i` of block `blk`, which starts with `L0` (nothing past the
