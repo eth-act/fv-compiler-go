@@ -128,6 +128,12 @@ def targetP (a : Addr) : Except String Nat :=
   | .BRANCH, .target id => pure id
   | _, _ => throw "branch target"
 
+/-- The Prog a P0 Prog branches to (a `BRANCH` operand `To` with a Prog target). -/
+def branchTo (p : Prog) : Option Nat :=
+  match p.to.type, p.to.val with
+  | .BRANCH, .target id => some id
+  | _, _ => none
+
 /-- The bitfield move the assembler encodes a constant shift as (`LSL`/`LSR`/`ASR $k`). -/
 def shiftBfm (op : String) (sf : Bool) (k : Nat) (x : Ex) : Except String Ex :=
   let w := if sf then 64 else 32
@@ -578,11 +584,14 @@ def progSymCore (az ez : Int) (p : Prog) : Except String (Sym × PCtl) := do
     | some k => fpP k p
     | none => throw s!"opcode not modelled: {name}"
 
-/-- Calls come from `CALL`, register jumps from `RET`. -/
+/-- Calls come from `CALL`, register jumps from `RET`; a branch goes to the Prog of the operand
+`To` (`branchTo`; `checkBody`'s `ok27` relies on it). -/
 def ctlOp (p : Prog) : PCtl → Except String Unit
   | .call .. | .callReg _ => if p.as == .CALL then pure () else throw "call control"
   | .reg _ => if p.as == .RET then pure () else throw "register jump control"
-  | _ => pure ()
+  | .jmp id | .cond _ id | .cbz _ _ _ id | .tbz _ _ _ id =>
+    if branchTo p == some id then pure () else throw "branch target operand"
+  | .fall => pure ()
 
 /-- `progSymCore`, its control checked against the opcode (`ctlOp`). -/
 def progSym (az ez : Int) (p : Prog) : Except String (Sym × PCtl) :=
@@ -1078,14 +1087,8 @@ def checkOne (t : ByteArray) (rs : List Reloc) (offs : List (Nat × Nat)) (az ez
     | .ok b => pure b
     | .error msg => throw s!"Prog {p.id} {p.as.name}: {msg}"
 
-/-- The IDs of the Progs a P0 Prog branches to (a `BRANCH` operand `To` with a Prog target). -/
-def branchTargets (ps : List Prog) : List Nat :=
-  ps.filterMap fun p =>
-    if p.to.type == .BRANCH then
-      match p.to.val with
-      | .target id => some id
-      | _ => none
-    else none
+/-- The IDs of the Progs a P0 Prog branches to (`branchTo`). -/
+def branchTargets (ps : List Prog) : List Nat := ps.filterMap branchTo
 
 /-- The body Progs in list order with their offsets (`ss`; the last one's words end at
 `lastEnd`). `X27` is related before a Prog (`ok27`) if the Prog before it in the list left it

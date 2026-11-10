@@ -32,11 +32,11 @@ private theorem spec_find_none {p : Nat → Bool} {l : List Nat}
   intro r hr
   simpa using List.find?_eq_none.1 hn r hr
 
-theorem sameEffect_spec {m p : Sym} (h : sameEffect m p = .ok ()) :
+theorem sameEffect_spec {k : Bool} {m p : Sym} (h : sameEffectK k m p = .ok ()) :
     (∀ r ∈ cmpRegs, m.getX r = p.getX r) ∧ m.getX 30 = .x 30 ∧ p.getX 30 = .x 30 ∧
     m.sp = p.sp ∧ m.fl = p.fl ∧ m.stores = p.stores ∧ (∀ x ∈ m.loads, x ∈ p.loads) ∧
-    p.readsTmp = false ∧ (∀ x ∈ p.loads, x ∈ m.loads) ∧ (∀ r < 32, m.getV r = p.getV r) := by
-  unfold sameEffect at h
+    p.readsTmpK k = false ∧ (∀ x ∈ p.loads, x ∈ m.loads) ∧ (∀ r < 32, m.getV r = p.getV r) := by
+  unfold sameEffectK at h
   simp only [bind, Except.bind, pure, Except.pure, spec_throw] at h
   split at h
   · cases h
@@ -55,21 +55,21 @@ theorem sameEffect_spec {m p : Sym} (h : sameEffect m p = .ok ()) :
 def TgtOK (offs : List (Nat × Nat)) (id : Nat) (q : Int) : Prop :=
   ∃ o, offOf offs id = some o ∧ (o : Int) = q
 
-/-- What `sameCtl` accepts. -/
-def CtlMatch (offs : List (Nat × Nat)) (_pr : Sym) : MCtl → PCtl → Prop
+/-- What `sameCtl k` accepts (`k`: the control may read `X27`). -/
+def CtlMatch (k : Bool) (offs : List (Nat × Nat)) (_pr : Sym) : MCtl → PCtl → Prop
   | .fall, .fall => True
   | .jmp q, .jmp id => TgtOK offs id q
   | .cond fl c q, .cond c' id => fl = .init ∧ c = c' ∧ TgtOK offs id q
   | .cbz sf nz a q, .cbz sf' nz' a' id =>
-    sf = sf' ∧ nz = nz' ∧ a = a' ∧ a'.regsOK = true ∧ TgtOK offs id q
+    sf = sf' ∧ nz = nz' ∧ a = a' ∧ a'.regsOKK k = true ∧ TgtOK offs id q
   | .tbz nz b a q, .tbz nz' b' a' id =>
-    nz = nz' ∧ b = b' ∧ a = a' ∧ a'.regsOK = true ∧ TgtOK offs id q
+    nz = nz' ∧ b = b' ∧ a = a' ∧ a'.regsOKK k = true ∧ TgtOK offs id q
   | .call n add, .call n' add' => n = n' ∧ add = add' ∧ add = 0
-  | .callReg a, .callReg a' => a = a' ∧ a'.regsOK = true
+  | .callReg a, .callReg a' => a = a' ∧ a'.regsOKK k = true
   | _, _ => False
 
-theorem sameCtl_spec {offs : List (Nat × Nat)} {m : MCtl} {p : PCtl} {pr : Sym}
-    (h : sameCtl offs m p pr = .ok ()) : CtlMatch offs pr m p := by
+theorem sameCtl_spec {k : Bool} {offs : List (Nat × Nat)} {m : MCtl} {p : PCtl} {pr : Sym}
+    (h : sameCtl k offs m p pr = .ok ()) : CtlMatch k offs pr m p := by
   unfold sameCtl at h
   cases m <;> cases p <;> simp [pure, Except.pure] at h <;> simp only [CtlMatch, TgtOK]
   case jmp.jmp =>
@@ -108,17 +108,18 @@ theorem sameCtl_spec {offs : List (Nat × Nat)} {m : MCtl} {p : PCtl} {pr : Sym}
     exact ⟨h.1, h.2⟩
 
 theorem checkProg_spec {t : ByteArray} {rs : List Reloc} {offs : List (Nat × Nat)} {az ez : Int}
-    {p : Prog} {o e : Nat} (h : checkProg t rs offs az ez p o e = .ok ()) :
-    ((p.isSkip = true ∨ p.as = .END) ∧ o = e) ∨
+    {k : Bool} {p : Prog} {o e : Nat} {b : Bool} (h : checkProg t rs offs az ez k p o e = .ok b) :
+    ((p.isSkip = true ∨ p.as = .END) ∧ o = e ∧ b = false) ∨
     (p.isSkip = false ∧ p.as ≠ .END ∧ o < e ∧ (e - o) % 4 = 0 ∧ ∃ pσ pc mσ mc,
       progSym az ez p = .ok (pσ, pc) ∧ symWords t rs ((e - o) / 4) o {} = .ok (mσ, mc) ∧
-      sameEffect mσ pσ = .ok () ∧ sameCtl offs mc pc pσ = .ok ()) := by
+      sameEffectK k mσ pσ = .ok () ∧ sameCtl k offs mc pc pσ = .ok () ∧
+      b = est27 k mσ pσ mc) := by
   unfold checkProg at h
   simp [bind, Except.bind, pure, Except.pure] at h
   split at h
   · rename_i hc
     simp at h
-    exact Or.inl ⟨hc, h⟩
+    exact Or.inl ⟨hc, h.1, h.2⟩
   · rename_i hc
     simp at h hc
     obtain ⟨hw, h⟩ := h
@@ -131,7 +132,11 @@ theorem checkProg_spec {t : ByteArray} {rs : List Reloc} {offs : List (Nat × Na
         split at h
         · cases h
         · rename_i u hu
-          exact Or.inr ⟨hc.1, hc.2, by omega, by omega, v.1, v.2, w.1, w.2, hv, hw', hu, h⟩
+          split at h
+          · cases h
+          · rename_i u' hu'
+            cases h
+            exact Or.inr ⟨hc.1, hc.2, by omega, by omega, v.1, v.2, w.1, w.2, hv, hw', hu, hu', rfl⟩
 
 /-- A P0 `RET` (without operand, or of a symbol: a tail call). -/
 def isRet0 (p : Prog) : Bool := p.as == .RET && (p.to.type == .NONE || p.to.sym.isSome)
@@ -143,10 +148,11 @@ def retBack (az : Int) (leaf : Bool) (p : Prog) : MCtl :=
   | none => .reg (if az == 0 || leaf then .x 30 else .ld 8 .sp)
 
 theorem checkOne_spec {t : ByteArray} {rs : List Reloc} {offs : List (Nat × Nat)} {az ez : Int}
-    {leaf : Bool} {p : Prog} {s e : Nat} (h : checkOne t rs offs az ez leaf p s e = .ok ()) :
-    (isRet0 p = true ∧ s < e ∧ (e - s) % 4 = 0 ∧ ∃ σ c,
+    {leaf k : Bool} {p : Prog} {s e : Nat} {b : Bool}
+    (h : checkOne t rs offs az ez leaf k p s e = .ok b) :
+    (isRet0 p = true ∧ s < e ∧ (e - s) % 4 = 0 ∧ b = false ∧ ∃ σ c,
       symWords t rs ((e - s) / 4) s {} = .ok (σ, c) ∧ retOK az leaf σ c (retBack az leaf p) = .ok ()) ∨
-    (isRet0 p = false ∧ checkProg t rs offs az ez p s e = .ok ()) := by
+    (isRet0 p = false ∧ checkProg t rs offs az ez k p s e = .ok b) := by
   unfold checkOne at h
   split at h
   · rename_i hc
@@ -155,46 +161,70 @@ theorem checkOne_spec {t : ByteArray} {rs : List Reloc} {offs : List (Nat × Nat
     · cases h
     · rename_i hw
       simp at hw
-      refine ⟨hc, by omega, by omega, ?_⟩
       split at h
       · cases h
       · rename_i σ c hs
-        refine ⟨σ, c, hs, ?_⟩
         dsimp only at h
         split at h
         · rename_i hr
-          exact hr
+          cases h
+          exact ⟨hc, by omega, by omega, rfl, σ, c, hs, hr⟩
         · cases h
   · rename_i hc
     right
     refine ⟨by simpa [isRet0] using hc, ?_⟩
     split at h
     · rename_i hr
+      cases h
       exact hr
     · cases h
 
+/-- What `checkBody` accepted: each Prog against its words with its `ok27` (`ks`), `ok27` of the
+first from `prev`, of the next one from what the Prog returned (`X27` related after it), both
+unless a Prog branches to it (`tgts`). -/
 theorem checkBody_spec {t : ByteArray} {rs : List Reloc} {offs : List (Nat × Nat)} {az ez : Int}
-    {leaf : Bool} : ∀ (ps : List Prog) (ss : List Nat) (lastEnd : Nat),
-    checkBody t rs offs az ez leaf ps ss lastEnd = .ok () → ∀ (hlen : ss.length = ps.length),
-    ∀ k (hk : k < ps.length),
-      checkOne t rs offs az ez leaf ps[k] (ss[k]'(by omega)) (ss.getD (k + 1) lastEnd) = .ok () := by
-  intro ps
-  induction ps with
-  | nil => intro ss lastEnd _ _ k hk; simp at hk
+    {leaf : Bool} {tgts : List Nat} : ∀ (prev : Bool) (ps : List Prog) (ss : List Nat)
+    (lastEnd : Nat) (ks : List Bool),
+    checkBody t rs offs az ez leaf tgts prev ps ss lastEnd = .ok ks →
+    ∀ (hlen : ss.length = ps.length),
+    ks.length = ps.length ∧ ks[0]? = ps[0]?.map (fun q => prev && !tgts.contains q.id) ∧
+    ∀ k (hk : k < ps.length), ∃ b,
+      checkOne t rs offs az ez leaf (ks.getD k false) ps[k] (ss[k]'(by omega))
+        (ss.getD (k + 1) lastEnd) = .ok b ∧
+      ks[k + 1]? = ps[k + 1]?.map (fun q => b && !tgts.contains q.id) := by
+  intro prev ps
+  induction ps generalizing prev with
+  | nil =>
+    intro ss lastEnd ks h hlen
+    cases ss with
+    | nil =>
+      simp only [checkBody, pure, Except.pure, Except.ok.injEq] at h
+      subst h
+      exact ⟨rfl, rfl, fun k hk => by simp at hk⟩
+    | cons => simp at hlen
   | cons p ps ih =>
-    intro ss lastEnd h hlen k hk
+    intro ss lastEnd ks h hlen
     cases ss with
     | nil => simp at hlen
     | cons s ss =>
       simp only [checkBody, bind, Except.bind] at h
       split at h
       · cases h
-      · rename_i u hone
-        cases k with
-        | zero =>
-          cases ss <;> exact hone
-        | succ k =>
-          exact ih ss lastEnd h (by simpa using hlen) k (by simpa using hk)
+      · rename_i b hone
+        split at h
+        · cases h
+        · rename_i ks' hrest
+          simp only [pure, Except.pure, Except.ok.injEq] at h
+          subst h
+          obtain ⟨hl, h0, hall⟩ := ih b ss lastEnd ks' hrest (by simpa using hlen)
+          refine ⟨by simp [hl], by simp, fun k hk => ?_⟩
+          cases k with
+          | zero =>
+            refine ⟨b, ?_, by simpa using h0⟩
+            cases ss <;> exact hone
+          | succ k =>
+            obtain ⟨b', h1, h2⟩ := hall k (by simpa using hk)
+            exact ⟨b', by simpa using h1, by simpa using h2⟩
 
 theorem startsOf_length (e : Nat) (os : List (Option Nat)) : (startsOf e os).length = os.length := by
   induction os with
@@ -446,9 +476,10 @@ theorem checkObj_spec {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab 
       tab.offs[0]? = some body ∧ tab.offs[1]? = some body ∧ tab.leaf = leafOf ps ∧
       checkPrologue o.text o.relocs.toList tab.autosize body = .ok tab.check ∧
       (∀ ce tail gOff, tab.check = some (ce, tail, gOff) → tab.endOff = tail) ∧
-      checkBody o.text o.relocs.toList ((ps.toList.zip tab.offs.toList).map fun (p, s) => (p.id, s))
-        tab.autosize tab.extrasize tab.leaf (ps.toList.drop 1) (tab.offs.toList.drop 1)
-        tab.endOff = .ok () := by
+      ∃ ks, checkBody o.text o.relocs.toList
+        ((ps.toList.zip tab.offs.toList).map fun (p, s) => (p.id, s)) tab.autosize tab.extrasize
+        tab.leaf (branchTargets ps.toList) false (ps.toList.drop 1) (tab.offs.toList.drop 1)
+        tab.endOff = .ok ks ∧ tab.ok27 = (false :: ks).toArray := by
   unfold checkObj at h
   cases h0 : ps[0]? with
   | none =>
@@ -486,20 +517,20 @@ theorem checkObj_spec {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab 
           obtain ⟨e1, e2, e3⟩ := spec_starts hv0 hlen (by omega) hhd
           split at h
           · cases h
-          · rename_i u hbody
+          · rename_i ks hbody
             split at h
             · split at h
               · cases h
               · cases h
                 refine ⟨text, _, rfl, by simpa using hT, hND, spec_all hall, by omega, e1, e2,
-                  e3, rfl, hchk, ?_, hbody⟩
+                  e3, rfl, hchk, ?_, ks, hbody, rfl⟩
                 intro ce tail gOff hc
                 simp at hc
                 obtain ⟨rfl, rfl, rfl⟩ := hc
                 rfl
             · cases h
               refine ⟨text, _, rfl, by simpa using hT, hND, spec_all hall, by omega, e1, e2,
-                e3, rfl, hchk, ?_, hbody⟩
+                e3, rfl, hchk, ?_, ks, hbody, rfl⟩
               intro ce' tail' gOff' hc
               first
               | (rename_i hnm; exact (hnm _ _ _ hc).elim)
