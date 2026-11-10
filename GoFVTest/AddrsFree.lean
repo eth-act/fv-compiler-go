@@ -3,6 +3,7 @@ import GoFV.Proof.Obj.EndToEnd
 import GoFV.Gen.Check49
 import GoFV.Gen.Check56
 import GoFV.Gen.Check59
+import GoFV.Gen.Check60
 import GoFV.Gen.Check48
 
 /-!
@@ -44,9 +45,10 @@ run_meta do
       ``GoFV.Gen.Check.checkG51, ``GoFV.Gen.Check.checkG49, ``GoFV.Gen.Check.checkG52,
       ``GoFV.Gen.Check.checkG53, ``GoFV.Gen.Check.checkG54, ``GoFV.Gen.Check.checkG55,
       ``GoFV.Gen.Check.checkG56, ``GoFV.Gen.Check.checkG57, ``GoFV.Gen.Check.checkG48,
-      ``GoFV.Gen.Check.checkG58, ``GoFV.Gen.Check.checkG59].all roots.contains do
-    throwError "AddrsFree: the slice checkers checkG46/G47/G50/G51/G49/G52..G57/G48/G58/G59 are \
-      not in scope"
+      ``GoFV.Gen.Check.checkG58, ``GoFV.Gen.Check.checkG59,
+      ``GoFV.Gen.Check.checkG60].all roots.contains do
+    throwError "AddrsFree: the slice checkers checkG46/G47/G50/G51/G49/G52..G57/G48/G58/G59/G60 \
+      are not in scope"
   for n in roots do
     let some ci := env.find? n | throwError "AddrsFree: {n} not found"
     if hasAddrsBinder ci.type then

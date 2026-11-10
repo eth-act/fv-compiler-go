@@ -178,7 +178,7 @@ theorem verified_mach_witness :
     have hd : (GoFV.SSA.run plRunEnv penv.tables f0 ObjWhole.args {} 5).Defined := by
       rw [hrun0]; trivial
     obtain ⟨hO, hH, hME, hroom, hg, hnone, -, hEE, hpc, -, -, hic⟩ := ObjWhole.obj_premises
-    obtain ⟨hc, hrok, houts, hE, hb1, hbm, hk, hentry, hu, hes, sI, hsI, hent, hinv, hP⟩ :=
+    obtain ⟨hc, hrok, houts, hE, hb1, hbm, hk, hentry, hu, hes, sI, hsI, hent, hinv, hspI, hP⟩ :=
       ObjWhole.lc_premises hlcf
     have hc60 : checkG60 (LocCtx.make r.st.tables r.st.func) GenG3.ps GenG3.bs GenG3.g =
         .ok (GenG3.tab, GenG3.kt) := by
@@ -188,7 +188,8 @@ theorem verified_mach_witness :
     obtain ⟨fuel', href, raw, hraw, hfin, hdef, hret, -⟩ :=
       verified_mach hpe hv hvpre hnn hap hnp hd rfl hc60 hO hH hic hrok hME hroom hg
         (fun _ _ _ h => by rw [hnone] at h; cases h) (fun _ _ _ h => by rw [hnone] at h; cases h)
-        hE (hEE _) hb1 hbm hk hsI hes hent (fun _ _ _ h => by rw [hnone] at h; cases h) hinv hu
+        hE (hEE _) hb1 hbm hk hsI hes hent (fun _ _ _ h => by rw [hnone] at h; cases h) hinv
+        (fun _ => rfl) (fun _ => hspI) hu
         (hpc _) hP (fun _ => hmt) (by rw [hcr]; intro n a h; cases h)
     rw [houts] at hret
     exact ⟨r, rfl, hv, ⟨rs0, m0, hrun0⟩, fuel', href, raw, hraw, hfin, hdef, hret⟩

@@ -8,8 +8,11 @@ import GoFV.Proof.Gen.G49Mach
 the `Blk.local` block of every accessed frame variable at `SP + frameOff`. At `Addrs.fixed`, which
 spaces those blocks `2^24` apart, no activation of a function that accesses two of them at distinct
 operands is a `G49Env` (`g49Env_fixed_apart`), so there `verified_mach` holds of such a function
-only vacuously. `verified_mach_atSP` states it at `Addrs.atSP (baseSP g L E0.sp)`, where activation
-0's `local` blocks sit, undecoded, at their frame operands from `SP`: the activation is
+only vacuously; in G48's mode (a function with an arm64 op, `hosp`), `SPInv` pins `SP` to the
+`outargs` block's fixed base, so there a function that accesses any `local` variable has no
+`G49Env` (`g49Env_fixed_outSP`). `verified_mach_atSP` states it at
+`Addrs.atSP (baseSP g L E0.sp) E0.sp.toNat`, where activation 0's `local` blocks sit, undecoded, at
+their frame operands from `SP` and its `outargs` block at `SP`: the activation is
 `envAtSP g L E0`, and `G49Env` is no premise, it follows (`g49Env_atSP`) from the activation
 without the variables' places at `Addrs.fixed` (`G28Env`), which constrains no frame variable.
 The checked premises (`verifiedPipelineFull`, `checkG60`, `retRegsOK`, `entryStoresOK`,
@@ -32,13 +35,15 @@ theorem liveCtx_make_act (tabs : Tables) (f : Func) :
   split <;> rfl
 
 /-- **Generic SSA to machine words at the machine layout.** `verified_mach` at the address
-assignment `A = Addrs.atSP (baseSP g L E0.sp)` (activation 0's `local` blocks at their frame
-operands from `E0.sp`, undecoded; every other block as at `Addrs.fixed`), for the activation
+assignment `A = Addrs.atSP (baseSP g L E0.sp) E0.sp.toNat` (activation 0's `local` blocks at their
+frame operands from `E0.sp` and its `outargs` block at `E0.sp`, undecoded; every other block as at
+`Addrs.fixed`), for the activation
 `envAtSP g L E0`, with the premise `G49Env` replaced by `G28Env` of `E0` at `Addrs.fixed` (no
 place of a frame variable asked; `g49Env_atSP`). Every other premise is `verified_mach`'s: the
 checks as `gofv-ssa-opt --e2e` computes them, the rest at `A`. -/
 theorem verified_mach_atSP
-    {g : G2In} {L : Link} {E0 : MatchEnv} [A : Addrs] (hA : A = Addrs.atSP (baseSP g L E0.sp))
+    {g : G2In} {L : Link} {E0 : MatchEnv} [A : Addrs]
+    (hA : A = Addrs.atSP (baseSP g L E0.sp) E0.sp.toNat)
     {penv : PassEnv} {f : Func} {zv : Array (ID × Nat)} {dcl : Nat} {r : FState}
     (hpipe : verifiedPipelineFull penv f 0 zv dcl = .ok r) (hv : r.fullyVerified = true)
     {e : Env} {args : List Val} {mem : Mem}
@@ -73,7 +78,9 @@ theorem verified_mach_atSP
     (hent : EntryMatch (envAtSP g L E0) (InWins L E0.sp (pendWins lc g)) sI s0)
     (hmore : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
       MoreEntry (envAtSP g L E0) spills.toList gOff sI s0)
-    (hinv : G3Inv (envAtSP g L E0) lc (kAt lc kt lc.ctx.f.entry blkE k) sI)
+    (hinv : G3Inv (envAtSP g L E0) lc (kAt lc kt lc.ctx.f.entry blkE k) sI E0.outSP)
+    (hosp : lc.ctx.f.lowered = true → E0.outSP = true)
+    (hspI : lc.ctx.f.lowered = true → SPInv (envAtSP g L E0) sI)
     (huE : uL35 lc [] blkE k = [])
     (hpc : ObjEnv.map otab ps L base ((envAtSP g L E0).pcOf lc.ctx.f.entry k) =
       base + BitVec.ofNat 64 (otab.offs[0]!))
@@ -95,8 +102,8 @@ theorem verified_mach_atSP
         ∃ pe' n t', BoundsAgree pe pe' ∧ runMach H code (s0.x 30) n s0 = .panicked pe' t') := by
   subst hA
   have hact : lc.ctx.act = 0 := hlc ▸ liveCtx_make_act _ _
-  letI : Addrs := Addrs.atSP (baseSP g L E0.sp)
+  letI : Addrs := Addrs.atSP (baseSP g L E0.sp) E0.sp.toNat
   exact verified_mach hpipe hv hP hn ha hnp hd hlc hc hO hH hic hrok hME hroom hg hms hsep
-    (g49Env_atSP hE hact) hEE hbE hbm hk hpre hes hent hmore hinv huE hpc hRP hmt hro
+    (g49Env_atSP hE hact) hEE hbE hbm hk hpre hes hent hmore hinv hosp hspI huE hpc hRP hmt hro
 
 end GoFV.Proof.Obj
