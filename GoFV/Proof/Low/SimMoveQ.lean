@@ -40,9 +40,9 @@ private theorem write_append {m m2 : Mem} {p : Ptr} {A B : Array Byte} (hA : 0 <
   have hpos : 0 < (A ++ B).size := by rw [Array.size_append]; omega
   obtain ⟨a, ha⟩ := write_find h hpos
   obtain ⟨rfl, hv⟩ := write_spec ha h
-  obtain ⟨hwr, h1, h2, h3⟩ := hv hpos
+  obtain ⟨hwr, hwf, h1, h2, h3⟩ := hv hpos
   rw [Array.size_append] at h1 h2 h3
-  rw [write_of_valid ha hA hwr (by omega) (by omega) (endsInWindow_mono h3 (by omega)),
+  rw [write_of_valid ha hA hwr hwf (by omega) (by omega) (endsInWindow_mono h3 (by omega)),
     Option.bind_some]
   generalize hD1 : (List.range A.size).foldl (fun d i => d.set! (p.off.toNat + i) A[i]!) a.data
     = D1
@@ -52,7 +52,8 @@ private theorem write_append {m m2 : Mem} {p : Ptr} {A B : Array Byte} (hA : 0 <
   have hf : (m.set p.blk { a with data := D1 }).find? (p.add (BitVec.ofNat 64 A.size)).blk =
       some { a with data := D1 } := by
     rw [find?_set, Ptr.add_blk, ite_eq_left rfl]
-  rw [write_of_valid hf hB hwr (by rw [hoff, hs1]; omega) (by rw [hoff]; omega)
+  rw [write_of_valid hf hB hwr (by rw [hoff, Ptr.add_blk]; omega) (by rw [hoff, hs1]; omega)
+    (by rw [hoff]; omega)
     (by rw [hoff, Ptr.add_blk]; exact endsInWindow_mono h3 (by omega)), Ptr.add_blk, set_set]
   congr 3
   apply Array.ext_getElem?
@@ -82,7 +83,7 @@ private theorem inWindow_of_write {m m1 : Mem} {P : Ptr} {bs : Array Byte}
     (hw : m.write P bs = some m1) {k : Nat} (hk : k < bs.size) :
     (P.add (BitVec.ofNat 64 k)).inWindow = true := by
   obtain ⟨a, ha⟩ := write_find hw (by omega)
-  obtain ⟨-, -, h2, h3⟩ := (write_spec ha hw).2 (by omega)
+  obtain ⟨-, -, -, h2, h3⟩ := (write_spec ha hw).2 (by omega)
   unfold Ptr.inWindow
   unfold Blk.endsInWindow at h3
   rw [Ptr.add_blk, Ptr.add_off, toNat_add_ofNat, Nat.mod_eq_of_lt (by omega)]
@@ -340,10 +341,10 @@ theorem write_overlap {m m1 : Mem} {p : Ptr} {bs : Array Byte} {a k : Nat} (ha :
   have hpos : 0 < bs.size := by omega
   obtain ⟨al, hal⟩ := write_find h hpos
   obtain ⟨rfl, hv⟩ := write_spec hal h
-  obtain ⟨hwr, h1, h2, h3⟩ := hv hpos
+  obtain ⟨hwr, hwf, h1, h2, h3⟩ := hv hpos
   have hA : (bs.extract 0 a).size = a := by rw [Array.size_extract]; omega
   have hB : (bs.extract k bs.size).size = bs.size - k := by rw [Array.size_extract]; omega
-  rw [write_of_valid hal (by omega) hwr (by omega) (by omega)
+  rw [write_of_valid hal (by omega) hwr hwf (by omega) (by omega)
     (endsInWindow_mono h3 (by omega)), Option.bind_some]
   generalize hD1 : (List.range (bs.extract 0 a).size).foldl
     (fun d i => d.set! (p.off.toNat + i) (bs.extract 0 a)[i]!) al.data = D1
@@ -353,7 +354,8 @@ theorem write_overlap {m m1 : Mem} {p : Ptr} {bs : Array Byte} {a k : Nat} (ha :
   have hf : (m.set p.blk { al with data := D1 }).find? (p.add (BitVec.ofNat 64 k)).blk =
       some { al with data := D1 } := by
     rw [find?_set, Ptr.add_blk, ite_eq_left rfl]
-  rw [write_of_valid hf (by omega) hwr (by rw [hoff, hs1]; omega) (by rw [hoff]; omega)
+  rw [write_of_valid hf (by omega) hwr (by rw [hoff, Ptr.add_blk]; omega)
+    (by rw [hoff, hs1]; omega) (by rw [hoff]; omega)
     (by rw [hoff, Ptr.add_blk]; exact endsInWindow_mono h3 (by omega)), Ptr.add_blk, set_set]
   congr 3
   apply Array.ext_getElem?
