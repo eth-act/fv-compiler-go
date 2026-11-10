@@ -1645,8 +1645,9 @@ from `RoImage`. `JUMPTABLE` needs its slice.
 The functions `verified_mach`'s function-level premises hold of (#553): the verified pipeline is
 `fullyVerified` (as `--check --verified` runs it: driver export environment, type rounds), and on
 the pipeline's own output (function and tables) genssa's Progs with `progedit`'s float constant
-loads (P0', the constant symbols numbered as `Flushplist` numbers them) are accepted by `checkG61`
-against `LocCtx.make r.st.tables r.st.func`, `entryStoresOK` and `retRegsOK` hold of `liveCtx` of
+loads (P0', the constant symbols numbered as `Flushplist` numbers them) are accepted by `checkG62`
+against `LocCtx.make r.st.tables r.st.func`, `entryStoresOK`, `argsOK` and `retRegsOK` hold of
+`liveCtx` of
 it and its class
 tables (and `memTyL` when the Progs load a float constant), and `checkObj`
 accepts `Flushplist`'s output on P0' (`GoFVTest/Driver/E2E.lean`,
@@ -1655,6 +1656,35 @@ ports' own; the frame is laid out on the pipeline's own locals (`ownFrame`: the 
 declarations, then the autos the pipeline created). From the stock `.prog` file only the driver
 input view is read (definitions, config, `Dcl` at `AllocFrame`'s start, `genin`). The stock
 column runs the same back end on the stock `trim` function of every function.
+
+| quick-v10 (9,297 functions, 5.5 min; the composition on G62, per function at either mode (`agent/lift62` on main e3ac04bb, G62 #698), P0' in `checkG62` and `checkObj`, `--jobs 2`) | pipeline output | share | stock `trim` |
+| --- | ---: | ---: | ---: |
+| fully verified (Phase 2, through `trim`) | 7,895 | 84.91% | - |
+| … genssa and `Flushplist` ran | 7,895 | 84.91% | 9,297 |
+| … ∧ `checkG62` ∧ `entryStoresOK` ∧ `argsOK` | 7,199 | 77.43% | 8,136 |
+| … ∧ `checkG62` ∧ `entryStoresOK` ∧ `argsOK` ∧ `retRegsOK` | 7,199 | 77.43% | 8,135 |
+| … ∧ `checkObj` | 7,858 | 84.52% | 9,124 |
+| **… ∧ `checkG62` ∧ `entryStoresOK` ∧ `argsOK` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach` or `verified_mach_S`)** | **7,195** | **77.39%** | 8,089 |
+| … of which `needs48 = false`: `verified_mach` (`SepFrom`, `CallOK` …) | 6,984 | 75.12% | 7,854 |
+| … of which `needs48 = true`: `verified_mach_S` (G48's mode) | 211 | 2.27% | 235 |
+| … end to end, pipeline output identical to stock after `trim` | 6,130 | 65.93% | - |
+
+The composition on G62 (G61 with the incoming stack arguments; `EntryMatch`'s stack clause, the
+checked `argsOK`) counts 7,195 end to end (6,984 under `verified_mach`, 211 under
+`verified_mach_S`), 192 more than the composition on G61 (7,003 on main e80f022b rebased on #693:
+6,792 + 211) and none fewer, in either mode (`needs48` is unchanged, so each function keeps its
+mode: +192 under `verified_mach`, +0 under `verified_mach_S`): 187 of std/runtime, 3 of
+std/internal, 1 of std/sync, 1 of std/bytes, exactly G62's gain in `gen-check`. `argsOK` rejects
+none of the 7,199 functions `checkG62` and `entryStoresOK` accept (stock column: none of 8,136):
+every `Arg` sits before `entryLen`, no edge enters the entry block, and no function with an `Arg`
+has a pending window or a morestack spill. `checkG62` accepts 7,227; 69 have a pending window,
+`entryStoresOK` rejects 28, 41 are end to end with a pending window (stock column: 8,170, 76, 34,
+42). Vacuous at `Addrs.fixed` (below): 30 of the 6,984 under `verified_mach` (stock 33 of
+7,854), 7 of the 211 under `verified_mach_S` (stock 7 of 235). The first rejection reasons of
+`checkG62` among the fully verified: `store shape` (381), `op CALLtail` (164), `Arg width` (37,
+the narrow stack parameters), then `branch shape`, `argument v# in register #`, `load shape`,
+`op FMOVQload` (9 each); `frame variable off another base` (229 on G61, the stack parameters'
+windows) no longer occurs.
 
 | quick-v10 (9,297 functions, 5.5 min; the composition on G61, per function at either mode (`agent/lift61` on main 0f930080: objatom part B #692, G61 #691, the composition on G60 #690), P0' in `checkG61` and `checkObj`, `--jobs 2`) | pipeline output | share | stock `trim` |
 | --- | ---: | ---: | ---: |
