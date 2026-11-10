@@ -1159,7 +1159,7 @@ declarations, then the autos the pipeline created). From the stock `.prog` file 
 input view is read (definitions, config, `Dcl` at `AllocFrame`'s start, `genin`). The stock
 column runs the same back end on the stock `trim` function of every function.
 
-| quick-v10 (9,297 functions, 14 min 18 s; `agent/objg54` on `agent/rodata` 8036926e (G54 on main 74bf59ed, the morestack F0–F15 spills in `checkObj`), `--jobs 2`) | pipeline output | share | stock `trim` |
+| quick-v10 (9,297 functions, 14 min 18 s; the composition on G54 on main 7b3bc787 (#667: G54 #666, the morestack F0–F15 spills in `checkObj`), `--jobs 2`) | pipeline output | share | stock `trim` |
 | --- | ---: | ---: | ---: |
 | fully verified (Phase 2, through `trim`) | 7,845 | 84.38% | - |
 | … genssa and `Flushplist` ran | 7,845 | 84.38% | 9,297 |
@@ -1172,7 +1172,7 @@ column runs the same back end on the stock `trim` function of every function.
 The composition on G54 (through G52's remainders, G53's `LoweredMove` and G54's loops; `G54Pre`
 in `RunPre`) counts 6,484 end to end, 201 over the composition on G49's 6,283 (main 74bf59ed,
 #662's `checkObj`): `checkG54` ∧ `entryStoresOK` accepts 6,486 fully verified functions (+142 over
-`checkG49`'s 6,344), and `checkObj` with the morestack tail's F0–F15 spills (`agent/rodata`)
+`checkG49`'s 6,344), and `checkObj` with the morestack tail's F0–F15 spills (#667)
 rejects 2 of them (61 of `checkG49`'s before; the 2: `SBFIZ` not modelled, the stack check of a
 huge frame). `checkG54` accepts 6,502; 49 of them have a pending window, `entryStoresOK` rejects
 16, 33 are end to end with a pending window (stock column: 7,308, 51, 18, 33).
