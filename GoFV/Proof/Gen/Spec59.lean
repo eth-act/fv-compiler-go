@@ -71,7 +71,8 @@ theorem checkG59L_spec {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option N
       lc.ctx.f.lowered = true ∧ (∀ i, homeOK10 lc i = true) ∧ checkFrame lc g = .ok () ∧
       checkK lc kt = .ok () ∧ (∀ p ∈ ps.toList, p.id < 2 ^ 32) ∧ (ps.toList.map (·.id)).Nodup ∧
       c.blocks lc.ctx.f.blocks.toList = .ok tab ∧ pbOK lc ps.toList tab = true ∧
-      movdOK35 lc = true ∧ uEdgesOK35 lc = true ∧ loopOK lc ps tab = true := by
+      movdOK35 lc = true ∧ uEdgesOK35 lc = true ∧ loopOK lc ps tab = true ∧
+      spHomes48 lc = true := by
   simp only [checkG59L, hl, ↓reduceIte] at h
   obtain ⟨tab', hb, h⟩ := ex_bind_eq_ok h
   obtain ⟨hpb, h⟩ := ex_guard h
@@ -85,6 +86,7 @@ theorem checkG59L_spec {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option N
   | none =>
     rw [hf] at h
     obtain ⟨-, h⟩ := ex_guard h
+    obtain ⟨hsph, h⟩ := ex_guard h
     obtain ⟨⟨⟩, hfr, h⟩ := ex_bind_eq_ok h
     obtain ⟨⟨⟩, -, h⟩ := ex_bind_eq_ok h
     obtain ⟨⟨⟩, hk, h⟩ := ex_bind_eq_ok h
@@ -93,7 +95,8 @@ theorem checkG59L_spec {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option N
     obtain ⟨rfl, rfl⟩ := h
     simp only [Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at hids
     refine ⟨_, rfl, rfl, rfl, rfl, rfl, rfl, hl, fun i => ?_, hfr, hk,
-      fun p hp => hids.1 _ (List.mem_map_of_mem hp), hids.2, hb, hpb, hmovd.1, hmovd.2, hlp⟩
+      fun p hp => hids.1 _ (List.mem_map_of_mem hp), hids.2, hb, hpb, hmovd.1, hmovd.2, hlp,
+      hsph⟩
     by_cases hi : i < lc.homes.size
     · have := List.find?_eq_none.mp hf i (List.mem_range.mpr hi)
       simpa using this
