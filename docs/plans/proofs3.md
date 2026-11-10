@@ -17,16 +17,18 @@ closure context premise `CloOK` (§4, `docs/proofs/STATUS.md` Assumptions); §6 
 on these premises.
 The assembler validator `checkObj` (P0 against the assembled words, D2–D5, probe `obj-check`) is
 implemented and proven sound (`GoFV/Proof/Obj/`: `obj_star`, the templates `obj_entry`/`obj_exit`;
-`g7_obj_value`/`g7_obj_term` and `g61_obj_value`/`g61_obj_term`/`g61_obj_nilPanic`/
-`g61_obj_boundsPanic` compose it with G7 and G61: `runLoc` to the machine words; §7). Whole
-functions: `obj_whole_ret` (a returning `runLoc` body of a G61 function, from the machine's entry
+`g7_obj_value`/`g7_obj_term` and `g62_obj_value`/`g62_obj_term`/`g62_obj_nilPanic`/
+`g62_obj_boundsPanic` compose it with G7 and G62: `runLoc` to the machine words; §7). Whole
+functions: `obj_whole_ret` (a returning `runLoc` body of a G62 function, from the machine's entry
 through the prologue, the entry stores of the register parameters in `Blk.local` blocks, the
 blocks and the epilogue to the caller's return address, the results in
 their ABI registers), `obj_whole_panic` (a panicking body: nil checks, loads, stores, acquire
 loads and atomics that fault, bounds checks, calls whose callee panics), and the end-to-end
-statement `verified_mach` on slice G61 (G60 with the atomics, on P0'; per function, at G48's mode
+statement `verified_mach` on slice G62 (G61 with the incoming stack arguments, on P0'; per
+function, at G48's mode
 `verified_mach_S` for a function that needs it, `needs48`; generic SSA `run` refined by `runLoc`, whose body is matched by `runMach` of the
-assembled words; `checkG61`'s `checkG61L` on `liveCtx`, `runLoopLoc_live`, `entryStoresOK`; §9),
+assembled words; `checkG62`'s `checkG62L` on `liveCtx`, `runLoopLoc_live`, `entryStoresOK`,
+`argsOK` and `EntryMatch`'s stack clause; §9),
 with a witness on `pallocSum.start` from its generic SSA.
 Context:
 `docs/plans/semantics3.md` (§4 `LocMatch`, §6 hooks, §7 layers), `docs/PASSES3.md` (the steps
@@ -1787,8 +1789,8 @@ of `code` holds 7 and the machine's word there is 7. G62 on P0' accepts 8,175 fu
 +192 over G61's 7,983, exactly that reason set), 271,361 values (`--jobs 2`); G61 and every earlier
 slice are unchanged, and the rejected set is a subset of G61's. The 37 functions with the same
 pair and a narrow stack parameter stay rejected (`Arg width`; 8-byte slots only, `slotOK`).
-`ArgOK` is trusted at the slices (STATUS Assumptions); the lift to G62 derives it from the entry
-condition (§9 **Next**).
+`ArgOK` is trusted at the slices (STATUS Assumptions); the lift to G62 discharges it from the
+entry condition (§9 *The lift to G62*).
 
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
@@ -3145,7 +3147,7 @@ reason in parentheses):
 ## 9. Whole functions and the end-to-end statement
 
 **Whole functions** (`GoFV/Proof/Obj/Whole.lean`). The value and terminator theorems of the latest
-slice, composed with `obj_star` (`g61_obj_value`/`g61_obj_term`, `GoFV/Proof/Obj/G61.lean`), are
+slice, composed with `obj_star` (`g62_obj_value`/`g62_obj_term`, `GoFV/Proof/Obj/G62.lean`), are
 chained along a run of `runLoc`'s body. The invariant `SimAt` before value `i` of block `b`: a P0
 state `m` `LocMatch`ed to `runLoc`'s state under an activation `E` extending the entry's `E0`
 (`G49Env`: `G28Env` and `VarsAt49`, kept along `Extends` by `VarsAt49.extend`; `G3Inv` at the
@@ -3175,19 +3177,24 @@ either. `verified_mach` is the mode `false` (`needs48 lc = false`), `verified_ma
   guard word; the caller-side premise `MoreEntry` (every live register but `R26` reloaded from a
   slot it fits, `ValFits`, a live vector register from a slot of its `F` register,
   `reloadOf sl true`; the live blocks apart from the slots and the guard word) carries
-  `EntryMatch E0 W sI s0` to `s0'` (`EntryMatch.more`, `EntryEnv.more`).
+  `EntryMatch E0 g W sI s0` to `s0'` (`EntryMatch.more`, `EntryEnv.more`; the stack clause
+  survives since a function with a slot at the entry has no tail spill, `argsOK`, and the guard
+  word is among `g`'s first 32 bytes, `checkObj_gOff`).
   The P0 state is the machine's with the PC of the entry block's value
-  `k`, the first after the entry values (`InitMem`, `SP`, `ArgIntReg`, `ArgFloatReg`, which emit
+  `k`, the first after the entry values and the `Arg`s (`InitMem`, `SP`, `ArgIntReg`,
+  `ArgFloatReg`, G62's `Arg`, which emit
   nothing and are not `g*_value`'s). It is related to the state `sI` after them with its memory
-  replaced (`SimAtW`, below): `EntryMatch E0 W sI s0'` and `EntryEnv E0 … s0'` give the argument
-  registers, no flags or slots, the memory injected into a memory that is the machine's but for
+  replaced (`SimAtW`, below): `EntryMatch E0 g W sI s0'` and `EntryEnv E0 … s0'` give the argument
+  registers, no flags, the slots (the `Arg`s', at their frame operands: the caller's bytes at
+  `8 + off` above the entry `SP`, outside `W` and above the saved words), the memory injected into
+  a memory that is the machine's but for
   the bytes `W` (the prologue writes only the saved `LR`/`FP` words, outside the live blocks by
   `G3Inv`'s `SepAt`: in G48's mode the saved `LR` word is the `outargs` block's first, `poison`
   byte, `memInj_of_sepW`; the replaced memory takes the machine's bytes there), the frame;
   `SPInv` of `sI` (`hspI`; the entry stores keep it, `spInv_step`, as stores to `Blk.local`
   blocks off no `SP` home, `spHomes48_spec`);
   `uL35 lc [] … k = []` (no upper-bit fact on entry; the entry
-  block's start `uIn35` is empty, `checkG61L_uIn_entry`). The premise
+  block's start `uIn35` is empty, `checkG62L_uIn_entry`). The premise
   `ObjEnv.map … (E0.pcOf entry k) = base + offs[0]` places value `k` at the body's start (the
   Progs before it are pseudo-ops).
 - **Entry stores** (`sim_entryStores`, `GoFV/Proof/Obj/Entry49.lean`; `docs/plans/proofs3.md` §8
@@ -3343,19 +3350,20 @@ either. `verified_mach` is the mode `false` (`needs48 lc = false`), `verified_ma
 
 **End to end** (`GoFV/Proof/Obj/EndToEnd.lean`, `verified_mach`): `verifiedPipelineFull_refines`
 gives a `runLoc` of the allocated function refining the generic `run`; `runLoc` is `finish` of its
-body (`runLoc_eq`, from `locInit`), whose outcome is defined (`finish_defined`). The slice is G61
-(G60 with the atomics, §4) on P0' (§10 item 4): `checkG61` accepts `LocCtx.make` of the
-output when `refsLive` holds of it and `checkG61L` accepts
+body (`runLoc_eq`, from `locInit`), whose outcome is defined (`finish_defined`). The slice is G62
+(G61 with the incoming stack arguments, §4) on P0' (§10 item 4): `checkG62` accepts `LocCtx.make`
+of the output when `refsLive` holds of it and `checkG62L` accepts
 `lc = liveCtx` of it; the body runs alike on `lc` (`runLoopLoc_live`), and the whole-function
 theorems apply on `lc`: a returning body is `obj_whole_ret`'s, a panicking one
 `obj_whole_panic`'s (under its panic premises), both with `entryStoresOK lc g k`,
-`EntryMatch E0 (InWins L E0.sp (pendWins lc g)) sI s0` and `RoRun` (the float constant symbols in
-every reached state's memory: `lreach_roMem` from `hmt`/`hro`, or `roRun_nil`). `checkG61L`
-includes `loopOK` (each loop's `CBNZ` branches to its head), which `g61L_value` reads off
-`checkG61L_spec`; it is no separate premise. `verified_mach` asks `needs48 lc = false` (checked)
+`argsOK lc g spills.toList k`,
+`EntryMatch E0 g (InWins L E0.sp (pendWins lc g)) sI s0` and `RoRun` (the float constant symbols
+in every reached state's memory: `lreach_roMem` from `hmt`/`hro`, or `roRun_nil`). `checkG62L`
+includes `loopOK` (each loop's `CBNZ` branches to its head), which `g62L_value` reads off
+`checkG62L_spec`; it is no separate premise. `verified_mach` asks `needs48 lc = false` (checked)
 and is main's statement otherwise (`RunPre`, `RunPanicPre`: `CallOK` …, `CallPanicOK`,
 `ICallPanicOK`; `G3Inv` at the mode `false`). `verified_mach_S` is the same in G48's mode, for any
-function `checkG61` accepts: `hinv : G3Inv … sI true`, `hosp : E0.outSP = true`,
+function `checkG62` accepts: `hinv : G3Inv … sI true`, `hosp : E0.outSP = true`,
 `hspI : lc.ctx.f.lowered = true → SPInv E0 sI`, `RunPreS`, `RunPanicPreS`. `verified_mach_fixed`
 and `verified_mach_S_fixed` restate them at `Addrs.fixed`. The statements list every premise
 (STATUS, Assumptions).
@@ -3428,31 +3436,30 @@ through a whole function with a real entry store of a register parameter (none o
 functions with a pending window is small enough for the native-decide witnesses yet). Entry
 stores after spills (`StoreReg`) in the entry block (`entryStoresOK` rejects them).
 
-*The lift to G62 derives `ArgOK` at the entry* (G62's run premise, STATUS Assumptions; it is a
-caller-side fact about the entry state, so it goes into the entry condition, not into `RunPre`):
+*The lift to G62* (done; G62's run premise `ArgOK` is discharged from the entry condition, not
+added to `RunPre`):
 
-1. A check `argFirst lc` in `checkG62L`, as `cloFirst`: every `Arg` of a stack parameter is in
-   the entry block, and the values before it emit no code (entry values, `InitMem`,
-   `LoweredGetClosurePtr`, other such `Arg`s) or are entry stores (`entryStores`). Go's scheduler
-   puts the `Arg`s at the top of the entry block (`cmd/compile/internal/ssa/schedule.go:18,
-   164-166`, `ScoreArg`); gen-check measures what it drops of G62's 192.
-2. A clause `stack` of the caller's side next to `EntryMatch E0 W sI s0` (the ABI0 stack layout,
-   `cmd/compile/internal/abi/abiutils.go:108,270-318`, `offsetForLocals` = `FixedFrameSize` = 8):
-   for every `Arg {x} [off]` of the function with `argVal sI.fr x off t = .ok y` (`stackParam`),
-   the bytes of `s0` at `s0.sp + 8 + offset(x) + off` hold `y` at the value's shape (`SlotRel`).
-   `EntryEnv.sp` and `G2Env.slot` (`frameOff .PARAM` = `autosize + 8 + off`) make that address
-   `E0.sp + o` for the slot's `o`.
-3. The clause survives the morestack path (`EntryMatch.more`: `MoreStep.mem` keeps every byte
-   off the tail's spill slots, which are register parameters' and so apart from the stack
-   parameters' offsets, and off the guard word) and the prologue (`BodyEntry`: it writes the saved
-   `LR`/`FP` words below the entry `SP` only), and every entry store before an `Arg` (a window of
-   a register parameter, apart from the home slots by `checkVars49`).
-4. In the head of the entry block the machine state at each `Arg` is then the entry's after the
-   prologue and the entry stores (`g62_arg` does not step: `PStar … m m`), so `ArgOK` holds there
-   by the clause (a lemma `argOK_entry`); `argFirst` puts no `Arg` past the head, where `ArgOK` is
-   vacuous, so `RunPre` gains no premise. STATUS then lists the clause in the entry condition with
-   the ABI0 citation and drops `ArgOK`'s row; `genG62_witness` keeps `argOK0`, and the G62
-   end-to-end witness discharges the clause from its `MachEntry` state.
+1. The `Arg`s run with the entry values before the start `k` (`entryLen` counts entry values and
+   `Arg`s, in any order), on `runLoc`'s side only: neither emits code, so the machine at `k` is
+   the entry's after the prologue.
+2. `EntryMatch E0 g W sI s0` has a clause `stack` in place of `slots = []` (the ABI0 caller's
+   side, `cmd/compile/internal/abi/abiutils.go:108,270-318`, `offsetForLocals` = `FixedFrameSize`
+   = 8): every slot of `sI` is the home of an `Arg` with a `NAME_PARAM` operand `x+off(FP)`,
+   `off ≥ 0`, whose bytes at `s0.sp + 8 + off` hold the slot's value (`SlotRel`), below `2^64` and
+   apart from `g`'s first 32 bytes. For a function with no `Arg` it is `slots = []`:
+   `EntryMatch_stack_nil` (`noArg E.lc = true →` `EntryMatch` iff G61's four fields).
+3. The checked boolean `argsOK lc g spills k` (`GoFV/Gen/Entry62.lean`): `argsBefore` (every `Arg`
+   in the entry block before `k`, no edge to the entry block), and a function with an `Arg` has no
+   pending window (`pendWins`) and no morestack spill. `EntryMatch.more` keeps the clause (no
+   tail spill slot when a slot exists; the guard word at `gOff` 16 or 24, `checkObj_gOff`, apart
+   from the bytes), and `sim_entry` builds `LocMatch.slots` from it: `frameOff .PARAM off` =
+   `autosize + 8 + off` makes the slot's address `E0.sp + o` the caller's bytes, which the
+   prologue (below the entry `SP`) and `W` (empty when a slot exists) leave alone.
+4. `noArgRun_of_argsBefore`: no state the run reaches from `(entry, k)` is at an `Arg`
+   (`NoArgRun`), so `sim_value` passes `g62_obj_value` an `ArgOK` that holds vacuously.
+   `verified_mach`, `verified_mach_S` (and `_fixed`, `_atSP`) take `checkG62`, `argsOK lc g
+   spills.toList k` and `EntryMatch E0 g …`, otherwise their statements on G61. STATUS lists the
+   clause in the entry condition with the ABI0 citations and marks `ArgOK` discharged.
 
 ## 10. Read-only data: float constants and jump tables
 
@@ -3571,6 +3578,11 @@ only the slices know.
      `sim_valuePanic` by `g61_obj_atomPanic`. `verified_mach` and `verified_mach_S` (and
      `_fixed`, `_atSP`) take `checkG61 (LocCtx.make …) ps bstart g`, otherwise their statements
      on G60.
+   - **The lift to G62** (the incoming stack arguments, §4 G62; §9 *The lift to G62*):
+     `Obj/G61.lean` → `Obj/G62.lean` (`g62_obj_*` over `g62L_*`; `g62_obj_value` takes `ArgOK`),
+     the panics' `vkind62` read through `vkind62_eq61` (no access, call, atomic or entry store is
+     an `Arg`), `Whole.lean` on `checkG62L` with `NoArgRun`; `EntryMatch` with the stack clause
+     and `argsOK` in the statements.
    - The `RoMem` premise is about the input memory: Phase 1's export image (`globalImage`) has no
      assembler symbols, so `addGlobals` adds none and the input `mem` must hold the constant
      symbols' allocations. With `EntryMatch`'s `MemInj` and `G2Env.glob` it says that the loaded
