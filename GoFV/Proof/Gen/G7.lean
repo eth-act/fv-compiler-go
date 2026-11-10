@@ -288,7 +288,7 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
 /-- A nil check that does not panic: `MOVB (Rp), R27` loads a byte of the pointer's block into
 `X27`, which `LocMatch` leaves free; `runLoc`'s state is unchanged. -/
 theorem g7_nil (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K') (hpre : NilPre lc s v)
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {rp : Int} (hop : v.op = .ARM64LoweredNilCheck) (hsz2 : v.args.size = 2)
@@ -297,7 +297,7 @@ theorem g7_nil (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j (.ofShape (nilShape rp)) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
   have hA := F.addr
   obtain ⟨a0, r0, ha0, hah0, hor0, hca0⟩ := argObj_spec hao
@@ -333,7 +333,7 @@ theorem g7_nil (F : Facts lc sym text az ez psA.toList ret E)
 /-- A nil check that panics: its pointer is nil, the machine word 0, so `MOVB (Rp), R27` faults
 in the nil page and `runProg` panics with the same `nilDeref`. -/
 theorem g7_nilFault {P : BitVec 64 → Prop} (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι P K s) (hR : KRead lc v K)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι P K s osp) (hR : KRead lc v K)
     (hj : E.pcOf b i = pcAt text psA.toList j)
     {rp : Int} (hop : v.op = .ARM64LoweredNilCheck) (hsz2 : v.args.size = 2)
     (hao : argObj lc v 0 = .ok (64, rp)) (hma : memArg lc v 1 = .ok ())
@@ -384,12 +384,12 @@ theorem vk7_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat →
     (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
     (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
-    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s) (hpre : G7Pre lc s v)
-    (hcall : CallOK H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
+    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s osp) (hpre : G7Pre lc s v)
+    (hcall : CallOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G6Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' := by
+      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp := by
   cases hVK with
   | g6 _ hVK6 =>
     exact vk6_step hE F hns hcf hv hVK6 hvs htemp hj hj' hreads hm hinv hpre.1 hcall hs

@@ -62,7 +62,7 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
 
 /-- `Convert` in its argument's register (Phase 1): no code; the register keeps its word. -/
 theorem nl_conv (hl : lc.ctx.f.lowered = false) (hA : AddrAgree E.ι)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι P K s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι P K s osp)
     (hj : E.pcOf b i = pcAt text psA.toList j)
     (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j') (hvs : j' = j)
     {o : Int} (hop : v.op = .Convert) (hsz : v.args.size = 2) (hao : argObj lc v 0 = .ok (64, o))
@@ -70,7 +70,7 @@ theorem nl_conv (hl : lc.ctx.f.lowered = false) (hA : AddrAgree E.ι)
     (htemp : (lc.temps[v.id]?).join = none)
     (hR : KRead lc v K) (hK : KNext lc v K K') (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι P K' s' ∧ s'.slots = s.slots := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι P K' s' osp ∧ s'.slots = s.slots := by
   obtain ⟨a, r1, ha0, hah, hor1, hca⟩ := argObj_spec hao
   obtain ⟨r2, hvh, hd, hor2, hcv⟩ := resObj_spec hro
   obtain rfl := objOf?_inj hor1 hor2
@@ -129,14 +129,14 @@ theorem g30_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
     (hen : entryOp24 v.op = false) (hm : LocMatch E s bid i m)
-    (hinv : G3Inv E lc (kAt lc kt bid blk i) s) (hu : UOKL m (uL lc blk i))
+    (hinv : G3Inv E lc (kAt lc kt bid blk i) s osp) (hu : UOKL m (uL lc blk i))
     (hpre : G14Pre lc s v)
-    (hcall : CallOK H E g L lc s s' v m) (hcallz : CallOKZ H E g L lc s s' v m)
-    (hicall : ICallOK H E L ret lc s s' v m)
-    (hwb : WbOK H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
-    (hmeq : MemEqOK H E g L lc s v m) (hs : stepLoc env lc s v = .ok s') :
+    (hcall : CallOKAt osp H E g L lc s s' v m) (hcallz : CallOKZAt osp H E g L lc s s' v m)
+    (hicall : ICallOKAt osp H E L ret lc s s' v m)
+    (hwb : WbOKAt osp H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
+    (hmeq : MemEqOKAt osp H E g L lc s v m) (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G28Env lc g L ps ret tab E' ∧ PStar H L ps.toList ret m m' ∧
-      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' ∧
+      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' osp ∧
       UOKL m' (uL lc blk (i + 1)) := by
   cases hl : lc.ctx.f.lowered with
   | true =>
@@ -174,13 +174,13 @@ theorem g30_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
   have fin : ∀ m', v.op ≠ .ARM64MOVDnop → v.op ≠ .ARM64MOVDreg → narrowLd? c.cx.lc v = none →
       PStar H (Link.byId sym text az ez c.cx.ps.toList) c.cx.ps.toList ret m m' →
       LocMatch E s' bid (i + 1) m' →
-      CoreInv E.ι (StkAt E) (kStep c.cx.lc (kAt c.cx.lc kt bid blk i) v).get s' →
+      CoreInv E.ι (StkAt E) (kStep c.cx.lc (kAt c.cx.lc kt bid blk i) v).get s' osp →
       s'.slots = s.slots →
       ∃ E' m', E.Extends E' ∧
         G28Env c.cx.lc c.g (Link.byId sym text az ez c.cx.ps.toList) c.cx.ps ret tab E' ∧
         PStar H (Link.byId sym text az ez c.cx.ps.toList) c.cx.ps.toList ret m m' ∧
         LocMatch E' s' bid (i + 1) m' ∧
-        G3Inv E' c.cx.lc (kStep c.cx.lc (kAt c.cx.lc kt bid blk i) v) s' ∧
+        G3Inv E' c.cx.lc (kStep c.cx.lc (kAt c.cx.lc kt bid blk i) v) s' osp ∧
         UOKL m' (uStepL c.cx.lc (uL c.cx.lc blk i) v) := by
     intro m' h1 h2 hnl hp hlm hcore hsl
     have hue : uEntry c.cx.lc v = none := by simp only [uEntry, hnl]

@@ -26,6 +26,29 @@ def CallOKZ (H : Hooks) (E : MatchEnv) (g : G2In) (L : Link) (lc : LocCtx) (s s'
     callOf? lc.ctx.tabs v.aux = some (name, abi, cabi) →
     callRegsZ lc.ctx.tabs cabi = .ok (ins, outs) → CallAt H E g L lc s s' v m name abi ins outs
 
+/-- `CallOKZ` with `CallSpecS` (`CallAtM true`; trusted, a function whose `outargs` block sits at
+`SP`). -/
+def CallOKZS (H : Hooks) (E : MatchEnv) (g : G2In) (L : Link) (lc : LocCtx) (s s' : LocState)
+    (v : Value) (m : MState) : Prop :=
+  v.op = .ARM64CALLstatic → ∀ name abi cabi ins outs,
+    callOf? lc.ctx.tabs v.aux = some (name, abi, cabi) →
+    callRegsZ lc.ctx.tabs cabi = .ok
+    (ins, outs) → CallAtM true H E g L lc s s' v m name abi ins outs
+
+/-- The `callRegsZ` static-call contract of mode `w`: `CallOKZ` (`false`) or `CallOKZS` (`true`). -/
+def CallOKZAt : Bool → Hooks → MatchEnv → G2In → Link → LocCtx → LocState → LocState → Value →
+    MState → Prop
+  | false, H, E, g, L, lc, s, s', v, m => CallOKZ H E g L lc s s' v m
+  | true, H, E, g, L, lc, s, s', v, m => CallOKZS H E g L lc s s' v m
+
+theorem CallOKZAt.spec {w : Bool} {H : Hooks} {E : MatchEnv} {g : G2In} {L : Link} {lc : LocCtx}
+    {s s' : LocState} {v : Value} {m : MState} (h : CallOKZAt w H E g L lc s s' v m) :
+    v.op = .ARM64CALLstatic → ∀ name abi cabi ins outs,
+      callOf? lc.ctx.tabs v.aux = some (name, abi, cabi) →
+      callRegsZ lc.ctx.tabs cabi = .ok
+      (ins, outs) → CallAtM w H E g L lc s s' v m name abi ins outs := by
+  cases w <;> exact h
+
 /-- One value of G15's kinds (`VK15`) emitted at the Progs from `j` to `j'`: `vk14_step`'s
 statement for G15's values, with the contract `CallOKZ` of their static calls. -/
 theorem vk15_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat → BitVec 64}
@@ -38,15 +61,15 @@ theorem vk15_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
     (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
-    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s) (hpre : G14Pre lc s v)
-    (hcall : CallOK H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
-    (hcallz : CallOKZ H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
-    (hicall : ICallOK H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
-    (hwb : WbOK H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
+    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s osp) (hpre : G14Pre lc s v)
+    (hcall : CallOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
+    (hcallz : CallOKZAt osp H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
+    (hicall : ICallOKAt osp H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
+    (hwb : WbOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G10Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' := by
+      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp := by
   cases hVK with
   | g14 _ hVK14 =>
     exact vk14_step hE F hhome hcf hv hVK14 hvs htemp hj hj' hreads hm hinv hpre hcall hicall
@@ -65,7 +88,7 @@ theorem vk15_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
       (fun _ r har hr => absurd (h16 r (List.mem_append_left _ (List.of_mem_zip har).2))
         (by omega)) hres
       hct (kcall_kStep hnp hres hnd (callTy_len hct)) (fun _ hp => callPat_spec hp) hvs htemp hs
-      (hcallz hop _ _ _ _ _ hcall' hcr)
+      (hcallz.spec hop _ _ _ _ _ hcall' hcr)
     have hx : E.Extends { E with ι := ι' } := ⟨rfl, hext'⟩
     exact ⟨_, m', hx, hE.extend hx (hE.env.extend hx (hE0.extend hext' hA')), hstar, hlm,
       ⟨hcore', hsl'⟩⟩

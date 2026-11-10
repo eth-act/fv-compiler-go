@@ -93,6 +93,7 @@ import GoFV.Proof.Gen.G51c
 import GoFV.Proof.Gen.G52
 import GoFV.Proof.Gen.G52b
 import GoFV.Proof.Gen.G53
+import GoFV.Proof.Gen.G53S
 import GoFV.Proof.Gen.G53a
 import GoFV.Proof.Gen.G54
 import GoFV.Proof.Gen.G54L
@@ -1051,6 +1052,7 @@ import GoFV.Proof.Witness.ObjPanic
 import GoFV.Proof.Witness.ObjRo
 import GoFV.Proof.Witness.ObjWhole
 import GoFV.Proof.Witness.ObjWholeNL
+import GoFV.Proof.Witness.OutSP
 import GoFV.Proof.Witness.PairL
 import GoFV.Proof.Witness.PhiConst
 import GoFV.Proof.Witness.PhiElim

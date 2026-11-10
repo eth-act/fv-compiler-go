@@ -375,7 +375,7 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
 the X registers are unchanged. -/
 theorem op_regV {P : BitVec 64 → Prop} {K K' : Nat → Option Nat}
     (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι P K s) {j j' : Nat}
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι P K s osp) {j j' : Nat}
     (hj : E.pcOf b i = pcAt text psA.toList j)
     (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j') {pat : Pat} (hone : OneAt2 psA j pat j')
     {r c kd : Nat} {x : Val} {q : BitVec 128} (hrk : objV? r = some (BitVec.ofNat 5 kd))
@@ -385,7 +385,8 @@ theorem op_regV {P : BitVec 64 → Prop} {K K' : Nat → Option Nat}
           { m with pc := pcAt text psA.toList k } =
         .ok { m.wV (BitVec.ofNat 5 kd) q with pc := pcAt text psA.toList (k + 1) }) :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E (s.setReg r x) b (i + 1) m' ∧ CoreInv E.ι P K' (s.setReg r x) ∧ m'.x = m.x := by
+      LocMatch E (s.setReg r x) b (i + 1) m' ∧ CoreInv E.ι P K' (s.setReg r x) osp ∧
+      m'.x = m.x := by
   obtain ⟨k, rfl, hk, hok, hstar⟩ := pstar_oneAt2 (H := H) F.nodup F.lt F.ret hone m
   rw [pc_eta hm hj] at hstar
   have hlm := locMatch_setRegV hm hrk hx (b' := b) (i' := i + 1)
@@ -396,7 +397,7 @@ theorem op_regV {P : BitVec 64 → Prop} {K K' : Nat → Option Nat}
 /-- A register argument in a V register, read at its float shape: related to the V register and
 of its class. -/
 theorem arg_relV (hl : lc.ctx.f.lowered = true) (hm : LocMatch E s b i m)
-    {P : BitVec 64 → Prop} {K : Nat → Option Nat} (hinv : CoreInv E.ι P K s) {a r c : Nat}
+    {P : BitVec 64 → Prop} {K : Nat → Option Nat} (hinv : CoreInv E.ι P K s osp) {a r c : Nat}
     {k : GoFV.Arm64.Reg} (hh : lc.home a = some (.reg r)) (hft : fTy (lc.ty a) = true)
     (hc : cls (lc.ty a) = some c) (hK : K r = some c) (hobj : objV? r = some k) :
     ∃ x, s.read lc a = .ok x ∧ FValRel x (m.v k) ∧ Fits c x := by

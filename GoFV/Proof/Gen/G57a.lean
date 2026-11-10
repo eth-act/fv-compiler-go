@@ -236,7 +236,7 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
 outside the frame. -/
 theorem g57_stpw (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
     (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {rn rx ry : Int} {cx cy : Nat} (hop : v.op = .ARM64STPW) (hsz4 : v.args.size = 4)
@@ -248,7 +248,7 @@ theorem g57_stpw (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
       (.ofShape { as := .STPW, from_ := pairA rx ry, to := memA rn v.auxInt.toInt }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
   have hA := F.addr
   have hnp : v.op ≠ .Phi := by rw [hop]; nofun
@@ -289,20 +289,16 @@ theorem g57_stpw (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
   obtain ⟨a', hqa, haeq', hnil'⟩ := addr_rel hA hM1 hxv hxf haq (by omega : 0 < 4) (Or.inl hcan2)
   obtain ⟨hM2, hk2, hback2, al2, hal2, hoff2, hout2⟩ :=
     memInj_storeN hA hM1 hk1 (by simp) hqa hzv hzf (Or.inl (by omega)) hw2
-  have hsep1 : SepFrom E.ι (StkAt E) mm1 := by
-    intro b2 al a2 hb hι w hw
-    obtain ⟨al0, hb0, hs0⟩ := hback1 b2 al hb
-    rw [← hs0]; exact hsep0 b2 al0 a2 hb0 hι w hw
-  have hsep2 : SepFrom E.ι (StkAt E) mm' := by
-    intro b2 al a2 hb hι w hw
-    obtain ⟨al0, hb0, hs0⟩ := hback2 b2 al hb
-    rw [← hs0]; exact hsep1 b2 al0 a2 hb0 hι w hw
+  have hsep1 : SepAt osp E.ι (StkAt E) mm1 := hsep0.write hk0 hw1
+  have hsep2 : SepAt osp E.ι (StkAt E) mm' := hsep1.write hk1 hw2
+  have hwf1 := write_wf hw1 (by rw [hby]; omega)
+  have hwf2 := write_wf hw2 (by rw [hbz]; omega)
   rw [write_mem hhn hmt, memTy_eq hmt, retypeL_mem]
   have haeq4 : a + p.off + BitVec.ofNat 64 4 = a' + q.off := by
     rw [← haeq, BitVec.add_assoc]; exact haeq'
   refine (op_mem2 (H := H) F hm hinv (stk_keeps hm hF hsz) hj hj' hvs hM2 hk2 hsep2
-    (fun w hw => (hout2 w fun j hj he => hsep1 _ _ _ hal2 hqa w hw ⟨by omega, by omega⟩).trans
-      (hout1 w fun j hj he => hsep0 _ _ _ hal1 hpa w hw ⟨by omega, by omega⟩))
+    (fun w hw => (hout2 w fun j hj he => hsep1.not_mem hal2 hqa hw (by omega) (by omega)).trans
+      (hout1 w fun j hj he => hsep0.not_mem hal1 hpa hw (by omega) (by omega)))
     (knext_same hK (Or.inr fun _ _ => by rw [hhn]; nofun)) (fun k hk hok => ?_)).imp
     fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
   obtain ⟨has, hf, -, ht', hsc⟩ := Shape.ok_eq hok
@@ -317,7 +313,7 @@ the global's injected address, zero- or sign-extended. -/
 theorem g57_ldpwGlob (F : Facts lc sym text az ez psA.toList ret E)
     (hglob : ∀ y name abi, g.syms[y]? = some (name, abi) →
       E.ι (.global name.toStringLossy) = some (sym y))
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     {ra rb : Nat} {t0 t1 : Ty} {c0 c1 : Nat}
     (hK : KLe K' (kSet (kSet K ra (some c0)) rb (some c1))) (hpre : PairPre50 lc s v)
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
@@ -333,7 +329,7 @@ theorem g57_ldpwGlob (F : Facts lc sym text az ez psA.toList ret E)
       ⟨plain as (globA g name abi v.auxInt.toInt) (· == pairA oa ob), "LDPW sym(SB)"⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
   have hA := F.addr
   have hpo := hop.pairOp
@@ -400,7 +396,7 @@ theorem g57_ldpwGlob (F : Facts lc sym text az ez psA.toList ret E)
 /-- `LDPW`/`LDPSW off'(RSP), (Ra, Rb)`: the two 4-byte words of a frame variable in a `Blk.temp`
 block at the offset, at its injected address `SP + frameOff off`, zero- or sign-extended. -/
 theorem g57_ldpwVar (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     {ra rb : Nat} {t0 t1 : Ty} {c0 c1 : Nat}
     (hK : KLe K' (kSet (kSet K ra (some c0)) rb (some c1))) (hpre : PairPre50 lc s v)
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
@@ -417,7 +413,7 @@ theorem g57_ldpwVar (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j ⟨plain as (slotA · .AUTO off) (· == pairA oa ob), "LDPW var"⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
   have hA := F.addr
   have hpo := hop.pairOp
@@ -499,11 +495,11 @@ theorem vk57a_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
     (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
-    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s) (hpre : PairPre50 lc s v)
+    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s osp) (hpre : PairPre50 lc s v)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G49Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' ∧
+      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp ∧
       UOKL m' (uStep35 lc L v) := by
   have hE2 := hE.env.env.env.env.env
   have hvars := hE.env.env.env.env.vars
@@ -512,11 +508,11 @@ theorem vk57a_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     rw [uStep35_57a (ops57a_of (vk57a_op hVK))]
     exact fun e he => by cases he
   have same : ∀ m', PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-      LocMatch E s' bid (i + 1) m' ∧ CoreInv E.ι (StkAt E) (kStep lc K v).get s' ∧
+      LocMatch E s' bid (i + 1) m' ∧ CoreInv E.ι (StkAt E) (kStep lc K v).get s' osp ∧
       SlotInv lc s' →
       ∃ E' m', E.Extends E' ∧ G49Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
         PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-        LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' ∧
+        LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp ∧
         UOKL m' (uStep35 lc L v) :=
     fun m' ⟨h1, h2, h3, h4⟩ => ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩, hU m'⟩
   cases hVK with

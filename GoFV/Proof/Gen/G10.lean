@@ -54,6 +54,45 @@ def ICallOK (H : Hooks) (E : MatchEnv) (L : Link) (ret : BitVec 64) (lc : LocCtx
     (∀ k, k ≠ 30 → m₁.x k = m.x k) →
     m₁.pc ≠ ret ∧ (∀ id, L.addr id ≠ some m₁.pc) ∧ CallSpec H E ins outs args mm s' m₁
 
+/-- `ICallOK` with `CallSpecS` (trusted; a function whose `outargs` block sits at `SP`). -/
+def ICallOKS (H : Hooks) (E : MatchEnv) (L : Link) (ret : BitVec 64) (lc : LocCtx)
+    (s s' : LocState) (v : Value) (m : MState) : Prop :=
+  ∀ n cabi ins outs a0 rc (q : Reg) args mm (m₁ : MState),
+    icallLead v.op = some n → callABI? lc.ctx.tabs v.aux = some cabi →
+    callRegs cabi = .ok (ins, outs) → v.args[0]? = some a0 → lc.home a0 = some (.reg rc) →
+    objX? rc = some q → m₁.pc = m.x q →
+    (∀ x, s.read lc a0 = .ok x → ValRel E.ι x m₁.pc) →
+    (n = 2 → ∀ a1 x, v.args[1]? = some a1 → s.read lc a1 = .ok x → RegRel E.ι x m₁ ctxReg) →
+    args.length = (v.args.toList.drop n).dropLast.length →
+    (∀ (j : Nat) (a : ID) (x : Val), (v.args.toList.drop n).dropLast[j]? = some a →
+      args[j]? = some x → s.read lc a = .ok x) →
+    s.mem = .mem mm → m₁.sp = m.sp → m₁.v = m.v → m₁.nzcv = m.nzcv → m₁.mem = m.mem →
+    (∀ k, k ≠ 30 → m₁.x k = m.x k) →
+    m₁.pc ≠ ret ∧ (∀ id, L.addr id ≠ some m₁.pc) ∧ CallSpecS H E ins outs args mm s' m₁
+
+/-- The interface/closure-call contract of mode `w`: `ICallOK` (`false`) or `ICallOKS` (`true`). -/
+def ICallOKAt : Bool → Hooks → MatchEnv → Link → BitVec 64 → LocCtx → LocState → LocState →
+    Value → MState → Prop
+  | false, H, E, L, ret, lc, s, s', v, m => ICallOK H E L ret lc s s' v m
+  | true, H, E, L, ret, lc, s, s', v, m => ICallOKS H E L ret lc s s' v m
+
+theorem ICallOKAt.spec {w : Bool} {H : Hooks} {E : MatchEnv} {L : Link} {ret : BitVec 64}
+    {lc : LocCtx} {s s' : LocState} {v : Value} {m : MState}
+    (h : ICallOKAt w H E L ret lc s s' v m) :
+    ∀ n cabi ins outs a0 rc (q : Reg) args mm (m₁ : MState),
+      icallLead v.op = some n → callABI? lc.ctx.tabs v.aux = some cabi →
+      callRegs cabi = .ok (ins, outs) → v.args[0]? = some a0 → lc.home a0 = some (.reg rc) →
+      objX? rc = some q → m₁.pc = m.x q →
+      (∀ x, s.read lc a0 = .ok x → ValRel E.ι x m₁.pc) →
+      (n = 2 → ∀ a1 x, v.args[1]? = some a1 → s.read lc a1 = .ok x → RegRel E.ι x m₁ ctxReg) →
+      args.length = (v.args.toList.drop n).dropLast.length →
+      (∀ (j : Nat) (a : ID) (x : Val), (v.args.toList.drop n).dropLast[j]? = some a →
+        args[j]? = some x → s.read lc a = .ok x) →
+      s.mem = .mem mm → m₁.sp = m.sp → m₁.v = m.v → m₁.nzcv = m.nzcv → m₁.mem = m.mem →
+      (∀ k, k ≠ 30 → m₁.x k = m.x k) →
+      m₁.pc ≠ ret ∧ (∀ id, L.addr id ≠ some m₁.pc) ∧ CallSpecM w H E ins outs args mm s' m₁ := by
+  cases w <;> exact h
+
 /-- The activation of a function `checkG10` accepted: G8's, and a function with an interface or
 closure call has a frame (the `CALL` overwrites `X30`). -/
 structure G10Env (lc : LocCtx) (g : G2In) (L : Link) (ps : Array Prog) (ret : BitVec 64)
@@ -168,7 +207,7 @@ register arguments in their ABI registers (`R0`–`R15`, or `F0`–`F15` read fr
 (`ICallOK`), the results in the result registers. The injection grows by the callee's. -/
 theorem g10_icall (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E) (hlc : E.lc = lc)
     (hcf : checkFrame lc g = .ok ()) (hframed : E.framed = true)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K)
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {n : Nat} {cabi : CallABI} {ins outs : List Nat} {a0 rc : Nat} {o : Int}
@@ -188,11 +227,11 @@ theorem g10_icall (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
     (hKc : KCall (tupleTys (lc.ty v.id)) outs K K')
     (hvs : OneAt2 psA j (icallPat o) j') (htemp : (lc.temps[v.id]?).join = none)
     (hs : stepLoc env lc s v = .ok s')
-    (hok : ICallOK H E (Link.byId sym text az ez psA.toList) ret lc s s' v m) :
+    (hok : ICallOKAt osp H E (Link.byId sym text az ez psA.toList) ret lc s s' v m) :
     ∃ ι', (∀ b a, E.ι b = some a → ι' b = some a) ∧ AddrAgree ι' ∧ ∃ m',
       PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
       LocMatch { E with ι := ι' } s' b (i + 1) m' ∧
-      CoreInv ι' (StkAt { E with ι := ι' }) K' s' ∧ SlotInv lc s' := by
+      CoreInv ι' (StkAt { E with ι := ι' }) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
   have hA := F.addr
   have hnp := icall_notPhi hn
@@ -308,7 +347,7 @@ theorem g10_icall (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
   obtain ⟨mm0, hmm0, hkn, hsep⟩ := hinv.mem
   rw [hmm] at hmm0
   cases hmm0
-  obtain ⟨hret1, haddr1, hspec⟩ := hok n cabi ins outs a0 rc (BitVec.ofNat 5 kc) args mm m₁ hn
+  obtain ⟨hret1, haddr1, hspec⟩ := hok.spec n cabi ins outs a0 rc (BitVec.ofNat 5 kc) args mm m₁ hn
     hcabi hcr ha0 hrc hkc'.2 rfl hcode hctxR hal (fun j a x ha hx => (hargsP j a x ha hx).1) hmm
     rfl rfl rfl rfl hm1x
   obtain ⟨ι', m', mm', hcallH, hext, hA', hpc', hsp', h28, h29, hstk, hmem', hMI', hkn', hsep',
@@ -439,23 +478,23 @@ theorem vk10_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
     (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
-    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s) (hpre : G7Pre lc s v)
-    (hcall : CallOK H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
-    (hicall : ICallOK H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
-    (hwb : WbOK H E g (Link.byId sym text az ez ps.toList) lc s v m)
+    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s osp) (hpre : G7Pre lc s v)
+    (hcall : CallOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
+    (hicall : ICallOKAt osp H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
+    (hwb : WbOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G10Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' := by
+      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp := by
   have hE10 := hE
   have hE0 := hE.env.env.env
   obtain ⟨hlcE, -, -, -, -, -, -, -, -, -, hF⟩ := hE.env.env.env
   have same : ∀ m', PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-      LocMatch E s' bid (i + 1) m' ∧ CoreInv E.ι (StkAt E) (kStep lc K v).get s' ∧
+      LocMatch E s' bid (i + 1) m' ∧ CoreInv E.ι (StkAt E) (kStep lc K v).get s' osp ∧
       SlotInv lc s' →
       ∃ E' m', E.Extends E' ∧ G10Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
         PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-        LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' :=
+        LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp :=
     fun m' ⟨h1, h2, h3, h4⟩ => ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE10, h1, h2, ⟨h3, h4⟩⟩
   cases hVK with
   | g9 hVK9 =>

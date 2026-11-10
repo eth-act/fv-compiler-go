@@ -547,6 +547,23 @@ theorem memInj_store (hA : AddrAgree ι) {m m' : Mem} {mm : Memory} (h : MemInj 
         · intro j hj; simp [BitVec.toNat_add]; omega
   · cases hw
 
+/-- A nonempty write starts at or above `Blk.writableFrom`. -/
+theorem write_wf {m m' : Mem} {p : Ptr} {bs : Array Byte} (hw : m.write p bs = some m')
+    (hn : 0 < bs.size) : p.blk.writableFrom ≤ p.off.toNat := by
+  unfold Mem.write at hw
+  have he : bs.isEmpty = false := by
+    rw [Bool.eq_false_iff]; intro h'; rw [Array.isEmpty_iff_size_eq_zero] at h'; omega
+  simp only [he, Bool.false_eq_true, ↓reduceIte] at hw
+  cases hfa : m.find? p.blk with
+  | none => simp [hfa] at hw
+  | some al =>
+  simp only [hfa, Option.bind_eq_bind, Option.bind_some] at hw
+  split at hw
+  · rename_i hc
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+    exact hc.1.1.1.2
+  · cases hw
+
 /-- After a write, every live block is one of the memory before it, of the same size and with
 the same bytes below `Blk.writableFrom`, which no write reaches. -/
 theorem write_back {m m' : Mem} (hk : KeysNodup m) {p : Ptr} {bs : Array Byte}

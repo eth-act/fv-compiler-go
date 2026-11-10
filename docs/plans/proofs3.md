@@ -2433,6 +2433,30 @@ few:
      keeps `MemInj`: spills, `Proof/Gen/Stack.lean`) are ready for the slice, whose functions
      use a `SepFromW` invariant and a separate contract `CallOKS` for all their calls (old
      `CallOK` needs the full `SepFrom`, false once `outargs` sits at `SP`).
+     **Finding (stage B, G48b):** every existing slice (G1–G57) was unusable at `Addrs.mach` for
+     a function with nonempty `outargs` until G48b: `CoreInv.mem` held
+     `SepFrom E.ι (StkAt E) mm`, and `StkAt E` contains the saved-`LR` word `[SP, SP + 8)`, which
+     is `outargs act [0, 8)`, a byte of a live block; so `G3Inv` was false and no `gN_value`
+     applied. **Now fixed (G48b):**
+     `MatchEnv.outSP : Bool := false`; `SepAt w` (`false` ↦ `SepFrom`, `true` ↦ `SepFromW`,
+     `Proof/Gen/G1.lean`); `CoreInv`/`G3Inv` take a trailing mode `(w : Bool := false)`, so every
+     existing statement that names them without a mode means today's invariant. The value steps
+     and the slices' layers are generalised over the mode `osp` (stores keep `SepAt` by
+     `SepAt.write`/`not_mem` from `write_back`/`write_wf`: a store's bytes lie at or above
+     `writableFrom`; spills by `memInj_of_sepW`; `MemSub` by `sepFrom_sub`), with the calls by
+     the selectors `CallOKAt`/`CallOKZAt`/`ICallOKAt`/`WbOKAt`/`MemEqOKAt` of mode `osp`
+     (`false`: the existing contracts verbatim; `true`: the new trusted `CallOKS` family, STATUS
+     Assumptions). G53, G54 (`G54.lean`, `G54a.lean`, `G54b.lean`: `g54_value` and the loop
+     steps `g54a_zero`/`g54b_move`), G55 (`G55.lean`, `G55a.lean`, `G55b.lean`), G56 (`G56.lean`,
+     with `g56_fconst`) and G57 (`G57.lean`, `G57a.lean`, `G57b.lean`, with the stores
+     `g57_stpw`/`g57_fstore`/`g57_fstp`) are generalised over the mode; at `osp = false` every
+     statement is the one before G48b (the statement dump in the G48b PR), so the composition
+     (`Obj/G56.lean`, `EndToEnd`, `EndToEndFixed`) is unchanged.
+     `G53S.lean`: `g53_valueS`/`g53_initMemS`/
+     `g53_termS` (and `L` forms) in the mode `E.outSP`, keeping `SPInv` (`SP`'s block at `SP`
+     under `ι`, the Go register `SP` related to `SP`) by `spInv_step` under the static premise
+     `SPHomes`; the panic theorems `g53_nilPanic`/`g53_boundsPanic` already take any mode. Witness
+     `Witness/OutSP.lean`.
    - **Layout check.** `[SP + 8, SP + outargsSize)` is disjoint from the spill slots and the
      `AUTO` windows (`frameOff .AUTO`), from `Link.autosize`/`extrasize`.
    - **Call contract.** `CallSpec` (`Proof/Gen/G2.lean:90-100`) keeps its text: the callee's

@@ -89,8 +89,8 @@ GoFV.Proof.Witness.ObjFrame.obj_facts._native.native_decide.ax_1_1 50f47318ad4bb
 # symbols have no code and are neither Prog addresses nor `endP`, the related machine state starts
 # at the base; `checkG7` accepts `pallocSum.start` with GenG3's tables; compiled evaluation, as
 # plF_pipeline.
-GoFV.Proof.Witness.ObjG7.g_obj_facts._native.native_decide.ax_1_1 1e2ecd0c4769c3bc685e17a6728da08cec0d69c3add35c9f1b9f2089414a4f83
-GoFV.Proof.Witness.ObjG7.start_obj_facts._native.native_decide.ax_1_1 ca067551494d01531ead42cc5b6203da221921f4267510a31d24314eb56d9e21
+GoFV.Proof.Witness.ObjG7.g_obj_facts._native.native_decide.ax_1_1 a4c286a4e662321377c2d3c513d05c229cdc8fea38e0815c022a50ad83b4d7bb
+GoFV.Proof.Witness.ObjG7.start_obj_facts._native.native_decide.ax_1_1 a6620e8083997859521682daed9d6bb8f50c9f79f00ae33184a38cd2a3e606e3
 # objStarLeaf_witness (GoFV/Proof/Witness/ObjG7.lean, #553): `(*A).g` is a leaf (`leafOf`) and the
 # caller's 0x40 is neither a Prog address nor `endP`; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.ObjG7.g_leaf_facts._native.native_decide.ax_1_1 13b08f41838bb82109712fc6e9b99d5120689e42bfc4e212511d05fef9c9d7e8
@@ -204,7 +204,7 @@ GoFV.Proof.Witness.GenG27.g27_facts._native.native_decide.ax_1_1 c6fe8a0c70b39c4
 # `runtime.envKeyEqual` and `checkG27` does not (parsed, `Env.load`, `genssa`), `memEq` of the
 # arguments `runLoc` reads is `true`, the machine bytes compare equal, and `runLoc` runs its
 # `LoweredMemEq` to `R0 = true`; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.GenG28.g28_facts._native.native_decide.ax_1_1 7354d8a6828d0a22cb0c5526c26e5af40c7838f7e6323fb0ae80ec943d3109f9
+GoFV.Proof.Witness.GenG28.g28_facts._native.native_decide.ax_1_1 7a4aa5ecc4708a45a9a06dd3974792f6a5e6929519b1f2dcdf7c93d0d23ba92c
 # genG29_value_witness (GoFV/Proof/Witness/GenG29.lean, #553): `checkG29` accepts `.eq.M1K1M2`
 # (test/genmeth1) and `checkG28` does not (parsed, `Env.load`, `genssa`), the upper-bit tables
 # `uAt` and `uL` before and after its `MOVDnop` `v33`, and `runLoc` runs `v33` to
