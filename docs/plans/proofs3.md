@@ -1257,6 +1257,46 @@ Blockers recorded and not taken after G55 (counts among G54's 1,989 rejected fun
   sign (`FArith.lean`). Taking them needs an `FArithPre`-style run premise excluding a NaN
   multiplicand (as `FSameNaN` for `FMADD`), not a checker change.
 
+**Slice G57, group A: `STPW`; narrow pair loads of a global or a frame variable**
+(`Check57a`/`Spec57a`, proof `G57a`, `vkind57a lc g v`, `VK57a`, `vk57a_step`; tried when G55
+rejects a value). The word pair accesses of `ssaGenValue`'s `LDP*`/`STP*` case the earlier
+slices reject, each one Prog with no temporary:
+
+- `STPW [off] p x y mem` (`stpw57`) as `STPW (Rx, Ry), off(Rn)`: G4's `STP` at `n = 4` (`p` in a
+  64-bit register, no aux; sources of classes of at least 32 bits, `ZR` included:
+  `runtime.(*fixalloc).init`'s `STPW (ZR, R1), 40(R0)` stores a `uintptr` source's low word).
+  `runLoc` runs `stPair 4` (`stepLoc_stpw`): `storeBytes 4`, the low word of an integer, at
+  `pairAddr` (`pairAddr_noAuxN`); the machine (`progStep_stpw`, `RunProg`'s pair case with `STPW`'s
+  `n = 4`) stores the low 32 bits of `X kx` at `X kn + off` and of `X ky` 4 bytes above, related by
+  `storeBytes_relN`/`memInj_storeN` at `n = 4` (`g57_stpw`). Sole functions:
+  `examples/structs/main.grow`, `runtime.(*fixalloc).init`.
+- `LDPW`/`LDPSW {x} [off] base mem` with an aux (`ldpw57`), into two distinct X registers G1 may
+  write (`pairTys`), which G50's `ldp50` rejects (`pair load shape`: it asks `v.aux = none`): of a
+  global (`symOf?`, as `LDPW sym+off(SB), (Ra, Rb)`: `runtime.bootstrapRand`'s
+  `runtime.globalRand+328(SB)`, `runtime.vgetrandomGetState`'s `LDPSW
+  runtime.vgetrandomAlloc+40(SB)`) or of a frame variable whose block is `Blk.temp` (G6's
+  `frameVar?`, as `LDPW off'(RSP), (Ra, Rb)` at its `NAME_AUTO` operand: `regexp.makeOnePass`'s
+  `.autotmp_35`, `runtime.(*scavengeIndex).alloc`/`.free`'s `sc`; all three are `Blk.temp`, none
+  takes G49's `Blk.local` path). Proof: G50's `LDPW` (`stepLoc_ldPair`, `lo_loadN` at `n = 4`) at
+  G22's address of the global's block (`pairAddr_globN`, `G2Env.glob`; `g57_ldpwGlob`) or at G6's
+  address of the variable's `temp` block (`pairAddr_varN`, `var_addr`; `g57_ldpwVar`); the machine
+  (`step_ldpw57`) loads at the operand's address (`ctx_mem_glob`, `ctx_mem_slot`).
+
+`vk57a_step` is in `vk55_step`'s form (`G49Env` gives the globals' addresses, the variables'
+places and `FrameOK`). No new run premise: the pair loads read valid bytes at both addresses by
+G50's `PairPre50`, which already states it for every `pairOp50` op, with or without an aux (part
+of `G54Pre`); `STPW` needs none (`runLoc`'s store succeeded). The upper-bit table is empty after
+each (`uStep35_57a`); `ops57a_facts` (no `Phi`, nil check, bounds check or entry value) and
+`vkind57a_none` (off `op57a`) serve the composition. Witness `genG57a_witness`
+(`examples/structs/main.grow`: `v12 = STPW [8] v7 v37 v44 v31`, `STPW (R2, R3), 8(R0)`; from
+`x = 0x11223344` in `R2` with a nonzero upper half on the machine, `vk57a_step` relates the run to
+a machine memory holding `0x44` at `heap 1 + 8`; `checkG55` rejects the function, and the block
+walk with `vkind57a` tried after `vkind55` places `v12` at Prog 15) and `genG57a2_witness`
+(`runtime.bootstrapRand`: `v46 = LDPW {runtime.globalRand} [328] v3 v76`, `LDPW
+runtime.globalRand+328(SB), (R1, R2)`; from the global's bytes 328 to 335 `1, …, 8`, `R1 =
+0x04030201` and `X1`'s low word the same after Prog 17, under an activation with the function's
+home slot at its frame operand; `PairPre50` holds there).
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 

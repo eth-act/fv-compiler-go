@@ -975,6 +975,21 @@ Witnesses: `genG55_witness` (`math/bits.OnesCount`:
 (`math/bits.LeadingZeros32`: `CLZW` of the 32-bit `0x10000` gives 15 in `X0`). Coverage on quick-v10
 (`lake exe gen-check`): 7,331 of 9,297 functions (78.85%), 232,869 values.
 
+## Phase 3: genssa, slice G57 group A, `STPW` and narrow pair loads with an aux (I7, #553)
+
+`GoFV.Proof.Gen.vk57a_step` (`GoFV/Proof/Gen/G57a.lean`): one value `vkind57a`
+(`GoFV/Gen/Check57a.lean`, tried after G55's value check) accepts, in `vk55_step`'s form under
+`G49Env`: `STPW [off] p x y mem` as `STPW (Rx, Ry), off(Rn)` (sources of at least 32 bits, `ZR`
+included; the machine stores their low words) and `LDPW`/`LDPSW` with an aux as `op
+sym+off(SB), (Ra, Rb)` of a global or `op off'(RSP), (Ra, Rb)` of a frame variable in a
+`Blk.temp` block, into two X registers. No new premise: the loads take G50's `PairPre50` (part of
+`G54Pre`), which states valid bytes for every `pairOp50` op with or without an aux. Witnesses:
+`genG57a_witness` (`examples/structs/main.grow`: `STPW (R2, R3), 8(R0)` of `0x11223344` and
+`0x55`, which G55 rejects; the machine then holds `0x44` at the struct's address plus 8) and
+`genG57a2_witness` (`runtime.bootstrapRand`: `LDPW runtime.globalRand+328(SB), (R1, R2)`, which
+G55 rejects; `X1`'s low word then holds `0x04030201`).
+Composition into `checkG57` and its coverage: the slice G57 entry.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g54_obj_value`, `g54_obj_term`, `g54_obj_nilPanic`, `g54_obj_boundsPanic`
