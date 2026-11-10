@@ -188,7 +188,30 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
   {m : MState} {env : Env} {v : Value} {j j' : Nat} {K K' : Nat → Option Nat}
 
 /-- A value whose one Prog (matching a pattern) stores, outside the frame (G1's `op_mem` for a
-pattern). -/
+pattern), and keeps the machine's X registers. -/
+theorem op_mem2X {P : BitVec 64 → Prop} (F : Facts lc sym text az ez psA.toList ret E)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι P K s) (hkeep : Keeps E P s m)
+    (hj : E.pcOf b i = pcAt text psA.toList j)
+    (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j') {pat : Pat} (hone : OneAt2 psA j pat j')
+    {mm' : Mem} {M : Memory} (hM : MemInj E.ι mm' M) (hkn : KeysNodup mm')
+    (hsep : SepFrom E.ι P mm') (hP : ∀ y, P y → M y = m.mem y) (hKL : KLe K' K)
+    (hstep : ∀ k (hk : k < psA.toList.length), pat.ok psA.toList[k] = true →
+      progStep (Link.byId sym text az ez psA.toList) psA.toList[k]
+          { m with pc := pcAt text psA.toList k } =
+        .ok { m with mem := M, pc := pcAt text psA.toList (k + 1) }) :
+    ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
+      LocMatch E { s with mem := .mem mm' } b (i + 1) m' ∧
+      CoreInv E.ι P K' { s with mem := .mem mm' } ∧ m'.x = m.x := by
+  obtain ⟨k, rfl, hk, hok, hstar⟩ := pstar_oneAt2 (H := H) F.nodup F.lt F.ret hone m
+  rw [pc_eta hm hj] at hstar
+  obtain ⟨hsl, hfr⟩ := hkeep M hP
+  have hlm := locMatch_setMem hm hsl hfr hM (b' := b) (i' := i + 1)
+  rw [hj'] at hlm
+  exact ⟨_, hstar.tail (pstep_at F.nodup F.lt F.ret hk rfl (hstep k hk hok)), hlm,
+    (⟨hinv.regs, ⟨mm', rfl, hkn, hsep⟩⟩ : CoreInv E.ι P K { s with mem := .mem mm' }).mono hKL,
+    rfl⟩
+
+/-- `op_mem2X` without the X registers. -/
 theorem op_mem2 {P : BitVec 64 → Prop} (F : Facts lc sym text az ez psA.toList ret E)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι P K s) (hkeep : Keeps E P s m)
     (hj : E.pcOf b i = pcAt text psA.toList j)
@@ -201,14 +224,9 @@ theorem op_mem2 {P : BitVec 64 → Prop} (F : Facts lc sym text az ez psA.toList
         .ok { m with mem := M, pc := pcAt text psA.toList (k + 1) }) :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
       LocMatch E { s with mem := .mem mm' } b (i + 1) m' ∧
-      CoreInv E.ι P K' { s with mem := .mem mm' } := by
-  obtain ⟨k, rfl, hk, hok, hstar⟩ := pstar_oneAt2 (H := H) F.nodup F.lt F.ret hone m
-  rw [pc_eta hm hj] at hstar
-  obtain ⟨hsl, hfr⟩ := hkeep M hP
-  have hlm := locMatch_setMem hm hsl hfr hM (b' := b) (i' := i + 1)
-  rw [hj'] at hlm
-  exact ⟨_, hstar.tail (pstep_at F.nodup F.lt F.ret hk rfl (hstep k hk hok)), hlm,
-    (⟨hinv.regs, ⟨mm', rfl, hkn, hsep⟩⟩ : CoreInv E.ι P K { s with mem := .mem mm' }).mono hKL⟩
+      CoreInv E.ι P K' { s with mem := .mem mm' } :=
+  (op_mem2X (H := H) F hm hinv hkeep hj hj' hone hM hkn hsep hP hKL hstep).imp
+    fun _ h => ⟨h.1, h.2.1, h.2.2.1⟩
 
 theorem loadOp?_ne_phi {op : Op} {as : As} {n : Nat} {sg : Bool}
     (h : loadOp? op = some (as, n, sg)) : op ≠ .Phi := by
@@ -354,7 +372,8 @@ theorem g3_load (F : Facts lc sym text az ez psA.toList ret E)
   (g3_loadW (H := H) F hglob hm hinv hsi hR hK hpre hj hj' hop hsz2 hacc hma hro hc hpat hvs
     htemp hs).imp fun _ h => ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1⟩
 
-/-- A store of `n` bytes, through a 64-bit register (`off(Rn)`) or to a global (`sym+off(SB)`). -/
+/-- A store of `n` bytes, through a 64-bit register (`off(Rn)`) or to a global (`sym+off(SB)`);
+it writes no X register (`XW`). -/
 theorem g3_store (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
     (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
     (hglob : ∀ y name abi, g.syms[y]? = some (name, abi) →
@@ -372,7 +391,8 @@ theorem g3_store (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
     (hvs : OneAt2 psA j pat j') (htemp : (lc.temps[v.id]?).join = none)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧
+      XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have hnp := storeOp?_ne_phi hop
@@ -410,7 +430,8 @@ theorem g3_store (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
             pc := pcAt text psA.toList (k + 1) }) →
       ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
         LocMatch E { s with mem := .mem mm' } b (i + 1) m' ∧
-        CoreInv E.ι (StkAt E) K' { s with mem := .mem mm' } ∧ SlotInv lc { s with mem := .mem mm' } by
+        CoreInv E.ι (StkAt E) K' { s with mem := .mem mm' } ∧
+        SlotInv lc { s with mem := .mem mm' } ∧ XW lc v m m' by
     cases hacc with
     | reg haux hao =>
       obtain ⟨a0', r0, ha0', hah0, hor0, hca0⟩ := argObj_spec hao
@@ -455,10 +476,10 @@ theorem g3_store (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
     intro b2 al2 a2 hb hι y hy
     obtain ⟨al1, hb1, hs1⟩ := hback b2 al2 hb
     rw [← hs1]; exact hsep0 b2 al1 a2 hb1 hι y hy
-  exact (op_mem2 (H := H) F hm hinv (stk_keeps hm hF hsz) hj hj' hvs hM' hk' hsep'
+  exact (op_mem2X (H := H) F hm hinv (stk_keeps hm hF hsz) hj hj' hvs hM' hk' hsep'
     (fun y hy => hout y fun j hj he => hsep0 _ _ _ hal hpa y hy ⟨by omega, by omega⟩)
     (knext_same hK (Or.inr fun _ _ => by rw [hhn]; nofun)) hstep).imp
-    fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, .inl h4⟩
 
 /-- An extension `MOV{B,BU,H,HU,W,WU} Rn, Rd`. -/
 theorem g3_ext (F : Facts lc sym text az ez psA.toList ret E)
@@ -1032,9 +1053,10 @@ theorem vk3_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat →
   | store hop _ hsz3 hmt hhn hacc hso hma hcw hpat =>
     have hnc : v.op ≠ .ARM64CALLstatic := by
       intro h; rw [h] at hop; simp [storeOp?, narrowStore?] at hop
-    obtain ⟨m', h⟩ := g3_store (H := H) F hF hsz (fun y name abi h => hglob y name abi h) hm
-      hinv.core hinv.slots hR (hK hnc) hj hj' hop hsz3 hmt hhn hacc hso hma hcw hpat hvs htemp hs
-    exact same m' h
+    obtain ⟨m', h1, h2, h3, h4, -⟩ := g3_store (H := H) F hF hsz
+      (fun y name abi h => hglob y name abi h) hm hinv.core hinv.slots hR (hK hnc) hj hj' hop hsz3
+      hmt hhn hacc hso hma hcw hpat hvs htemp hs
+    exact same m' ⟨h1, h2, h3, h4⟩
   | sb hop _ hcl hh =>
     obtain ⟨m', h⟩ := g3_sb (H := H) F hm hinv.core hinv.slots (hK (by rw [hop]; nofun)) hj hj'
       hop hcl hh hvs htemp hs

@@ -1467,6 +1467,45 @@ sole reasons left (105 functions) are led by `op LoweredGetCallerPC` (26), `bloc
 (19), `MOVDnop/MOVDreg: upper bits unknown` (13), `block kind Defer` (13), `a register read at
 another class` (7), `FMSUBD: negated multiplicand` (7) and `pair load shape` (6).
 
+**Slice G59, group U: G35's upper-bit table across narrow stores, shifted logic ops, `Convert`,
+boolean loads and `Copy`** (`GoFV/Gen/Check35.lean`, `GoFV/Proof/Gen/Keep35.lean`; no new group
+function, the statements of every slice from G35 on unchanged, no new premise). Of the 13
+functions G58 rejects only for `MOVDnop/MOVDreg: upper bits unknown`, the source's entry was
+dropped by: a narrow store through a register (`bytes.(*Buffer).ReadRune` `MOVBstore`,
+`runtime.(*semaRoot).queue` `MOVHstore`, `runtime.vdsoInitFromSysinfoEhdr` `MOVWstore`); G27's
+shifted logic ops (`ORshiftLL`: `encoding/base64.(*Encoding).Decode`,
+`runtime.(*scavChunkData).pack`, `(*scavengeIndex).alloc`, `(*scavengeIndex).free`; `ANDshiftRA`:
+`runtime.gostringw`); a `Copy` of a narrow load (`strings.(*singleStringReplacer).Replace`,
+`WriteString`, `(*stringFinder).next`), whose step dropped the destination's entry instead of
+copying the source's; `regexp/syntax.(*Prog).Prefix`, where a `Convert` (`b54`) between the byte
+load (`b30`) and the `MOVDreg` (`b60`) emptied the table; and `runtime.sigdisable`, where a
+`MOVBUload` of a boolean into `R2` (`b10`, class 1, so no entry) emptied it and the join `b22`
+(from `b20` and `b10`) lost `R0`'s word entry. `pairOp35` now also covers `MOVBstore`,
+`MOVHstore`, `MOVWstore` with no symbol (a store of a frame variable, G54's entry stores among
+them, still empties the table, so `g54L_entryStore` keeps its statement), the twelve ops of
+`logSh?`, `Convert` and the narrow loads (`ldEntry35` is tried first: here only those with no
+entry); `uStep35` gives a `Copy` between registers the source's entry (`copyStep35`, `MOVDreg`'s
+`movdRegStep`). Their case lemmas now conclude what the machine writes (`XW`: `g3_store`,
+`g6_store`, `g49_store` through `op_mem2X`; `g12_conv`; `g27_logSh`, `g51c_logSh` through
+`op_reg2W`); `Keep35.lean` adds `uStep35_copy`, `uokl_keepOps`, `uokl_xw35`, `st_uokl`,
+`extOK_zero`, `uokl_copyKeep`, `uokl_copyMov` and the copy case lemmas `g2_copySame` (no code,
+`X` kept) and `g2_copyMov` (`X[kd]` gets `rX ka`, zero for `ZR`); `ld_uokl` covers a load with no
+entry and no longer takes `hk`; `keepOps35` gains the shifted logic ops and `Convert`, `ops35`
+these, the stores and `Copy`; `vk33_keep35` takes `checkFrame` and a `Copy` (cases for G3's and
+G6's stores, G27's `logSh`, G12's `conv`, G1's `copyMem`/`copySame`/`copyMov`), and
+`uStep35_other` takes `v.op ≠ .Copy`. G44's float copies keep the table (`uokl_fcopy`: a V
+register has no X register), G49 uses `ld_uokl`/`st_uokl` (`narrowLd?_var49` is gone) and G51c
+`logSh_keep35` (`uStep35_logSh51c` is gone). Shared definitions changed: `pairOp35`, `uStep35`
+(new `copyStep35`), hence `uL35`, `uPass35`, `uFlow35`, `uIn35`, `uEdgesOK35`, `movdOK35` and
+every check from `checkG35` to `checkG58` (`checkG57` accepts the 13 functions too); the pins of
+witness `*_facts` that reach them may move. All 13 are accepted by `checkG58` with the new table
+(checked with the checker on the corpus files). Witness `genG59u_witness` (`GenG59u.lean`, on
+`runtime.(*scavChunkData).pack`): `checkG58` accepts it; before `v29 = ORshiftLL` (`ORR R3<<26,
+R1, R1`) the table holds `R3`, `R1`, `R2`, G34's step (G35's across `ORshiftLL` before this group)
+empties it, the new one keeps `R3` and `R2` for `v31 = MOVDnop v5`; from `R1 = 5`, `R2 = 7`,
+`R3 = 3`, `g58_value` relates `v29`'s run (`0xC000005` in `R1`) to the machine's `ORR`, after
+which `X2` is still a zero-extended 32-bit word (`ExtOK (m1.x 2) 32 false`).
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -1853,7 +1892,7 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `fvalRel_of_valRel`, `op_regV`, `arg_relV`.
 - `G44.lean`: `FLoadPre`, `G44Pre`, `stepLoc_pureF`, `stepLoc_fload`, `stepLoc_fstore`,
   `fvalRel_gpfp`, `lo_fmovVX`, `fvalRel_fconst`, `g44_fcopy`, `g44_fcopyNone`, `g44_gpfp`,
-  `g44_fpgp`, `g44_fconst`, `g44_fload`, `g44_fstore`, `uStep35_fcopy`, `uStep35_f44`,
+  `g44_fpgp`, `g44_fconst`, `g44_fload`, `g44_fstore`, `uokl_fcopy`, `uStep35_f44`,
   `vk44_step`, `vk44_nil`, `vk44_pb`, `g44L_value` … `g44L_term`, `g44_value`, `g44_initMem`,
   `g44_nilPanic`, `g44_boundsPanic`, `g44_term`.
 - `Spec45.lean`: what `checkG45` accepted (`VK45`, `fkind45_spec`, `vkind45_spec`,
@@ -1901,7 +1940,7 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `checkG49_spec`).
 - `G49.lean`: `VarsAt49`, `G49Env`, `VarsAt49.extend`, `symAddr_local`, `pairAddr_local`,
   `frameOffN_add`, `var49_addr`, `stepLoc_addrLocal`, `g49_addr`, `g49_load`, `g49_store`,
-  `g49_ldp`, `g49_stp`, `narrowLd?_var49`, `uStep35_nil`, `vk49_ops`, `vk49_step`, `vk49_nil`,
+  `g49_ldp`, `g49_stp`, `uStep35_nil`, `vk49_ops`, `vk49_step`, `vk49_nil`,
   `vk49_pb`, `g49L_value` … `g49L_term`, `g49_value`, `g49_initMem`, `g49_nilPanic`,
   `g49_boundsPanic`, `g49_term`.
 - `Spec52b.lean`: what `vkind52b` accepted (`VK52b`, `vkind52b_spec`, `vkind52b_none`,

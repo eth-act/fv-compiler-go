@@ -22,8 +22,9 @@ places the block at `SP + frameOff` or leaves it without an address: the machine
 `NAME_PARAM` (`g49_addr`, `g49_load`, `g49_store`, `g49_ldp`, `g49_stp`, each at the variable's
 injected address, `var49_addr`). An address is a `Ptr.word` related to `SP + frameOff` by
 `valRel_word` under `AddrAgree`, whatever the assignment. The upper-bit table (G35) takes a narrow
-load's entry (`ld_uokl`), a pair load's other entries (`uokl_pair`), the entries an address keeps
-(`uokl_keep`), and is empty after a wider load or a store.
+load's entry, or keeps the other entries across a load with none (`ld_uokl`), a pair load's other
+entries (`uokl_pair`), the entries an address keeps (`uokl_keep`), and is empty after a store of
+a frame variable (`st_uokl`).
 
 `g49_value` takes G51's premise `G51Pre`; `g49_initMem`, `g49_term`, `g49_nilPanic`,
 `g49_boundsPanic` are G51's statements over `checkG49`, under `G49Env`.
@@ -254,7 +255,7 @@ theorem g49_load (F : Facts lc sym text az ez psA.toList ret E)
     ht' (by rw [hA']; exact hnil), hA', wX_pc]
 
 /-- A store of `n` bytes to a frame variable at `off(<nc>)` (`g6_store` on its `local` block),
-outside the frame's saved words and slots. -/
+outside the frame's saved words and slots; it writes no X register (`XW`). -/
 theorem g49_store (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
     (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
@@ -272,7 +273,8 @@ theorem g49_store (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
     (hvs : OneAt2 psA j ⟨plain as (· == regA rs) (slotA · nc off), as.name⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧
+      XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have hnp := storeOp?_ne_phi hop
@@ -308,10 +310,10 @@ theorem g49_store (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
     intro b2 al2 a2 hb hι' y hy
     obtain ⟨al1, hb1, hs1⟩ := hback b2 al2 hb
     rw [← hs1]; exact hsep0 b2 al1 a2 hb1 hι' y hy
-  refine (op_mem2 (H := H) F hm hinv (stk_keeps hm hF hsz) hj hj' hvs hM' hk' hsep'
+  refine (op_mem2X (H := H) F hm hinv (stk_keeps hm hF hsz) hj hj' hvs hM' hk' hsep'
     (fun y hy => hout y fun j hj he => hsep0 _ _ _ hal hpa y hy ⟨by omega, by omega⟩)
     (knext_same hK (Or.inr fun _ _ => by rw [hhn]; nofun)) (fun k1 hk1 hok => ?_)).imp
-    fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, .inl h4⟩
   obtain ⟨has, hf1, -, ht1, -⟩ := plain_spec hok
   simp only [beq_iff_eq] at hf1
   have hA' : m.sp + BitVec.ofInt 64 (frameOff (Link.byId sym text az ez psA.toList) nc off) =
@@ -489,29 +491,14 @@ end Cases
 
 /-! ## The upper-bit table across G49's values -/
 
-/-- A load of a frame variable is no narrow load of G20's table (its base is `SP`, not `SB`). -/
-theorem narrowLd?_var49 {lc : LocCtx} {g : G2In} {v : Value} {x : AuxRef} {nc : AddrName}
-    {off : Int} {as : As} {n : Nat} {sg : Bool} (hfv : FrameVar49OK lc g v x nc off)
-    (hop : loadOp? v.op = some (as, n, sg)) : narrowLd? lc v = none := by
-  have hsp := hfv.sp
-  have hx := hfv.aux
-  unfold spArg at hsp
-  unfold narrowLd?
-  rw [hop]
-  cases ha : v.args[0]? with
-  | none => rw [ha] at hsp; cases hsp
-  | some a =>
-    rw [ha] at hsp
-    have hsp' : Option.map (fun x => x.op) (lc.ctx.f.value? a) = some .SP := by simpa using hsp
-    simp [hx, hsp']
-
 /-- A value no narrow load (`uEntry`), `MOVDnop` or `MOVDreg`, outside `keep34` and no pair load:
 G35's table is empty after it. -/
 theorem uStep35_nil {lc : LocCtx} {v : Value} {L : List (Nat × Nat × Bool)}
     (hue : uEntry lc v = none) (h0 : ldEntry35 lc v = none) (hp : pairOp35 lc v = false)
     (hk : keep34 v = false) (h1 : v.op ≠ .ARM64MOVDnop) (h2 : v.op ≠ .ARM64MOVDreg) :
     uStep35 lc L v = [] := by
-  rw [uStep35_other h0 hp, uStep34, hk]
+  have hc : v.op ≠ .Copy := fun h => by simp [keep34, keep31, keepOp31, h] at hk
+  rw [uStep35_other h0 hp hc, uStep34, hk]
   simp only [Bool.false_eq_true, ↓reduceIte]
   exact uStepL_other hue h1 h2
 
@@ -583,7 +570,7 @@ theorem vk49_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
         htemp hs
       refine same m' h1 h2 h3 h4 ?_
       have hl0 : loadOp? v.op = none := by rw [hop]; rfl
-      rw [uStep35_other (ldEntry35_none hl0) (by simp [pairOp35, hop]),
+      rw [uStep35_other (ldEntry35_none hl0) (by simp [pairOp35, hop]) (by rw [hop]; nofun),
         uStep34_keep (by simp [keep34, keepOp34, hop])]
       exact uokl_keep hL hxw
     | load hop hsz2 hma hro hc =>
@@ -591,44 +578,12 @@ theorem vk49_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
         hinv.slots (knext_kStep fun _ => (hs_res hro).noRegs) h14.1.1.1.1 hj hj' hx hvar hf hnc
         hι hop hsz2 hma hro hc hvs htemp hs
       refine same m' h1 h2 h3 h4 ?_
-      by_cases he : ldEntry35 lc v = none
-      · have hops : v.op = .ARM64MOVDload ∨ v.op = .ARM64MOVBload ∨ v.op = .ARM64MOVBUload ∨
-            v.op = .ARM64MOVHload ∨ v.op = .ARM64MOVHUload ∨ v.op = .ARM64MOVWload ∨
-            v.op = .ARM64MOVWUload := by
-          rcases loadOp?_op hop with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ |
-            ⟨h, -⟩ <;> simp [h]
-        have hue : uEntry lc v = none := by
-          unfold uEntry; rw [narrowLd?_var49 hfv hop]
-        rw [uStep35_nil hue he
-          (by rcases hops with h | h | h | h | h | h | h <;> simp [pairOp35, h])
-          (by rcases hops with h | h | h | h | h | h | h <;>
-            simp [keep34, keep31, keepOp31, keepOp34, h, hx])
-          (by rcases hops with h | h | h | h | h | h | h <;> rw [h] <;> nofun)
-          (by rcases hops with h | h | h | h | h | h | h <;> rw [h] <;> nofun)]
-        intro e he'
-        cases he'
-      · exact ld_uokl (.inr he) hop hro hrd hx' hL
+      exact ld_uokl hop hro hrd hx' hL
     | store hop hsz3 hmt hhn hso hma hc =>
-      obtain ⟨m', h1, h2, h3, h4⟩ := g49_store (H := H) F hF hsz hm hinv.core hinv.slots hR
+      obtain ⟨m', h1, h2, h3, h4, h5⟩ := g49_store (H := H) F hF hsz hm hinv.core hinv.slots hR
         (knext_kStep fun _ => (hs_none hhn).noRegs) hj hj' hx hvar hf hnc hι hop hsz3 hmt hhn hso
         hma hc hvs htemp hs
-      refine same m' h1 h2 h3 h4 ?_
-      have hops : v.op = .ARM64MOVDstore ∨ v.op = .ARM64MOVBstore ∨ v.op = .ARM64MOVHstore ∨
-          v.op = .ARM64MOVWstore := by
-        rcases storeOp?_op hop with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> simp [h]
-      have hl0 : loadOp? v.op = none := by
-        rcases hops with h | h | h | h <;> rw [h] <;> rfl
-      have hue : uEntry lc v = none := by
-        have : narrowLd? lc v = none := by
-          unfold narrowLd?; rcases hops with h | h | h | h <;> rw [h] <;> rfl
-        unfold uEntry; rw [this]
-      rw [uStep35_nil hue (ldEntry35_none hl0)
-        (by rcases hops with h | h | h | h <;> simp [pairOp35, h])
-        (by rcases hops with h | h | h | h <;> simp [keep34, keep31, keepOp31, keepOp34, h, hx])
-        (by rcases hops with h | h | h | h <;> rw [h] <;> nofun)
-        (by rcases hops with h | h | h | h <;> rw [h] <;> nofun)]
-      intro e he'
-      cases he'
+      exact same m' h1 h2 h3 h4 (st_uokl hop hL h5)
     | @ldp ra rb _ _ _ _ _ _ hop hsz2 hty h0 h1 h80 h81 hma hh hne hza hzb hda hdb hoa hob =>
       obtain ⟨m', h1', h2', h3', h4', h5'⟩ := g49_ldp (H := H) F hm hinv.core hinv.slots
         (kpair_kStep (by rw [hop]; nofun) hh hty h0 h1 hne) h14.1.1.1 hj hj' hx hvar hf hnc hι

@@ -91,7 +91,8 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
   {ret : BitVec 64} {E : MatchEnv} {lc : LocCtx} {s s' : LocState} {b : ID} {i : Nat}
   {m : MState} {env : Env} {v : Value} {j j' : Nat} {K K' : Nat → Option Nat}
 
-/-- `Convert` in its argument's register: no code; the register keeps its word. -/
+/-- `Convert` in its argument's register: no code; the register keeps its word, and so does every
+X register (`XW`). -/
 theorem g12_conv (F : Facts lc sym text az ez psA.toList ret E)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
@@ -100,7 +101,8 @@ theorem g12_conv (F : Facts lc sym text az ez psA.toList ret E)
     (hro : resObj lc v = .ok (64, o)) (hma : memArg lc v 1 = .ok ()) (hvs : j' = j)
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧
+      XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   obtain ⟨a, r1, ha0, hah, hor1, hca⟩ := argObj_spec hao
@@ -118,7 +120,7 @@ theorem g12_conv (F : Facts lc sym text az ez psA.toList ret E)
   obtain ⟨hlm, hinv'⟩ := finish_reg hm hinv hd hk32 hor1 (valRel_convert hA hcv hxf hxv)
     (fits_retypeL hcv _) (b' := b) (i' := i + 1)
   rw [wX_rX_self, hj', hvs, ← hj, ← hm.pc] at hlm
-  exact ⟨m, .refl, hlm, hinv'.mono (knext_set hK hnp hvh hcv), hsi⟩
+  exact ⟨m, .refl, hlm, hinv'.mono (knext_set hK hnp hvh hcv), hsi, .inl rfl⟩
 
 end Cases
 
@@ -150,7 +152,7 @@ theorem vk12_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
       hclo hs
   | conv hop hsz hao hro hma =>
     obtain ⟨r, hvh, -, -, -⟩ := resObj_spec hro
-    obtain ⟨m', h1, h2, h3, h4⟩ := g12_conv (H := H) F hm hinv.core hinv.slots
+    obtain ⟨m', h1, h2, h3, h4, -⟩ := g12_conv (H := H) F hm hinv.core hinv.slots
       (kread_of_reads hreads) (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz hao hro
       hma hvs htemp hs
     exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩⟩

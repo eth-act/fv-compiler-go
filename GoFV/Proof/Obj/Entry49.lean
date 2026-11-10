@@ -435,7 +435,7 @@ theorem g54L_entryStore {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Li
           unfold narrowLd?; rcases hops with h | h | h | h <;> rw [h] <;> rfl
         unfold uEntry; rw [this]
       rw [uStep35_nil hue (ldEntry35_none hl0)
-        (by rcases hops with h | h | h | h <;> simp [pairOp35, h])
+        (by rcases hops with h | h | h | h <;> simp [pairOp35, h, hfv.aux])
         (by rcases hops with h | h | h | h <;>
           simp [keep34, keep31, keepOp31, keepOp34, h, hfv.aux])
         (by rcases hops with h | h | h | h <;> rw [h] <;> nofun)

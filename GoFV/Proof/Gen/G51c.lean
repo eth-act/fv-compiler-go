@@ -23,8 +23,9 @@ The machine steps are the existing ones (`progStep_aluReg`, `progStep_aluConst`,
 `progStep_addShiftLL`, `progStep_shOp36`, `progStep_logSh`), each writing the X register of the
 value's home (`XW`). `ADD`, `SUB`, `ADDconst`, `SUBconst`, `ADDshiftLL` are kept ops of G35's
 upper-bit table (`uStep35_keep51c`): the entries of the other registers stay true (`uokl_keep`), so
-`vk51c_step` takes the table's `UOKL m L` before the value. After a shifted add, subtract or logic
-op the table is empty (`uStep35_alu36`, `uStep35_logSh51c`).
+`vk51c_step` takes the table's `UOKL m L` before the value. After a shifted add or subtract the
+table is empty (`uStep35_alu36`); a shifted logic op keeps the entries of the other registers
+(`logSh_keep35`, `uokl_keepOps`; slice G59 group U).
 -/
 
 namespace GoFV.Proof.Gen
@@ -570,7 +571,8 @@ theorem g51c_shOp (F : Facts lc sym text az ez psA.toList ret E)
   rw [progStep_shOp36 has ht3 hkn hkm hkd hk (nextAddr_pcAt F.nodup hk0') hpa hf hr ht', wX_pc]
   rfl
 
-/-- `AND`/`ORR`/`EOR`/`BIC Rm SHIFT k, Rn, Rd` with a boolean argument. -/
+/-- `AND`/`ORR`/`EOR`/`BIC Rm SHIFT k, Rn, Rd` with a boolean argument, which writes only its
+register (`XW`). -/
 theorem g51c_logSh (F : Facts lc sym text az ez psA.toList ret E)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
@@ -584,7 +586,8 @@ theorem g51c_logSh (F : Facts lc sym text az ez psA.toList ret E)
       { as, from_ := shiftA typ rm v.auxInt.toInt.toNat, reg := rn, to := regA rd }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧
+      XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have hnp : v.op ≠ .Phi := (logSh_noclobber hop).1
@@ -611,9 +614,9 @@ theorem g51c_logSh (F : Facts lc sym text az ez psA.toList ret E)
   have hk : v.auxInt.toInt.toNat < 64 := by omega
   have hlo := lo_logSh51c (as := as) (typ := typ) (k := v.auxInt) hA hxv hyv hxf hyf hca hll hrr ht
   rw [hamt] at hlo
-  refine (op_reg2 (H := H) F hm hinv hj hj' hvs hd hkd hor (valRel_retypeL_lo hA hcv ht hlo)
+  refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor (valRel_retypeL_lo hA hcv ht hlo)
     (fits_retypeL hcv _) (knext_set hK hnp hvh hcv) (fun k0 hk0' hok => ?_)).imp
-    fun m' ⟨e1, e2, e3⟩ => ⟨e1, e2, e3, hsi⟩
+    fun m' ⟨e1, e2, e3, e4⟩ => ⟨e1, e2, e3, hsi, .inr ⟨r, kd, _, hvh, hor, e4⟩⟩
   obtain ⟨hpa, hf, hr, ht', -⟩ := Shape.ok_eq hok
   rw [progStep_logSh has ht3 hkn hkm hkd hk (nextAddr_pcAt F.nodup hk0') hpa hf hr ht', wX_pc]
   rfl
@@ -631,30 +634,15 @@ theorem uStep35_keep51c {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value
   have hl : loadOp? v.op = none := by
     rcases h with h | h | h | h | h <;> rw [h] <;> rfl
   rw [uStep35_other (ldEntry35_none hl)
-      (by rcases h with h | h | h | h | h <;> simp [pairOp35, h]),
+      (by rcases h with h | h | h | h | h <;> simp [pairOp35, h])
+      (by rcases h with h | h | h | h | h <;> rw [h] <;> nofun),
     uStep34_keep (by rcases h with h | h | h | h | h <;> simp [keep34, keep31, keepOp31, keepOp34, h])]
 
-/-- A shifted logic op empties G35's table. -/
-theorem uStep35_logSh51c {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value} {as : As}
-    {typ : Nat} (h : logSh? v.op = some (as, typ)) : uStep35 lc L v = [] := by
-  obtain ⟨-, -, -, hn1, hn2, -⟩ := logSh_noclobber h
-  have hl : loadOp? v.op = none := by
-    rcases logSh?_some h with ⟨hop, -⟩ | ⟨hop, -⟩ | ⟨hop, -⟩ | ⟨hop, -⟩ <;>
-      rcases hop with hop | hop | hop <;> rw [hop] <;> rfl
-  have hp : pairOp35 lc v = false := by
-    rcases logSh?_some h with ⟨hop, -⟩ | ⟨hop, -⟩ | ⟨hop, -⟩ | ⟨hop, -⟩ <;>
-      rcases hop with hop | hop | hop <;> simp [pairOp35, hop]
-  have hk : keep34 v = false := by
-    unfold keep34 keep31
-    rcases logSh?_some h with ⟨hop, -⟩ | ⟨hop, -⟩ | ⟨hop, -⟩ | ⟨hop, -⟩ <;>
-      rcases hop with hop | hop | hop <;> simp [hop, keepOp31, keepOp34]
-  have hk31 : keep31 v = false := by
-    simp only [keep34, Bool.or_eq_false_iff] at hk
-    exact hk.1
-  have hue : uEntry lc v = none := by
-    simp only [uEntry, narrowLd?_logSh h]
-  rw [uStep35_other (ldEntry35_none hl) hp, uStep34_other hk, uStep31_other hk31,
-    uStepL_other hue hn2 hn1]
+/-- A shifted logic op is a kept op of G35's table. -/
+theorem logSh_keep35 {op : Op} {as : As} {typ : Nat} (h : logSh? op = some (as, typ)) :
+    op ∈ keepOps35 := by
+  rcases logSh?_some h with ⟨hop, -⟩ | ⟨hop, -⟩ | ⟨hop, -⟩ | ⟨hop, -⟩ <;>
+    rcases hop with rfl | rfl | rfl <;> simp [keepOps35]
 
 /-- One value of G51c's kinds (`VK51c`) emitted at the Progs from `j` to `j'`: the machine runs
 from `m` to `m'` matching the state after the value, with the class map `kStep lc K v` and G35's
@@ -701,12 +689,10 @@ theorem vk51c_step {env : Env} {H : Hooks} {lc : LocCtx} {sym : Nat → BitVec 6
   | sh hop hsz hk0 hk64 hao hbo hro h8 hca hll hrr _ =>
     obtain ⟨r, hvh, -, -, -⟩ := resObj_spec hro
     rcases hop with hop | hop
-    · obtain ⟨m', e1, e2, e3, e4⟩ := g51c_logSh (H := H) F hm hinv.core hinv.slots hR
+    · obtain ⟨m', e1, e2, e3, e4, e5⟩ := g51c_logSh (H := H) F hm hinv.core hinv.slots hR
         (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz hk0 hk64 hao hbo hro h8 hca
         hll hrr hvs htemp hs
-      refine ⟨m', e1, e2, ⟨e3, e4⟩, ?_⟩
-      rw [uStep35_logSh51c hop]
-      exact hempty m'
+      exact ⟨m', e1, e2, ⟨e3, e4⟩, uokl_keepOps (logSh_keep35 hop) hL e5⟩
     · obtain ⟨m', e1, e2, e3, e4⟩ := g51c_shOp (H := H) F hm hinv.core hinv.slots hR
         (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz hk0 hk64 hao hbo hro h8 hca
         hll hrr hvs htemp hs

@@ -50,12 +50,12 @@ theorem vk35_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' ∧
       UOKL m' (uStep35 lc L v) := by
-  by_cases hk : pairOp35 lc v = true ∨ ldEntry35 lc v ≠ none
-  · obtain ⟨m', h1, h2, h3, h4⟩ := vk33_keep35 hE F hv hVK hk hvs htemp hj hj' hreads hm hinv
+  by_cases hk : pairOp35 lc v = true ∨ ldEntry35 lc v ≠ none ∨ v.op = .Copy
+  · obtain ⟨m', h1, h2, h3, h4⟩ := vk33_keep35 hE F hcf hv hVK hk hvs htemp hj hj' hreads hm hinv
       hpre hL hs
     exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, h3, h4⟩
   · simp only [not_or, Ne, Decidable.not_not, Bool.not_eq_true] at hk
-    rw [uStep35_other hk.2 hk.1]
+    rw [uStep35_other hk.2.1 hk.1 hk.2.2]
     exact vk34_step hE F hhome hcf hv hVK hvs htemp hj hj' hreads hm hinv hL hmem hpre hcall
       hcallz hicall hwb hclo hgetg hmeq hs
 

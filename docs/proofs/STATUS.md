@@ -1068,6 +1068,20 @@ they are G57's statements, under `G49Env`, `g58_value` under `G54Pre` (no new pr
 (`lake exe gen-check --jobs 1`): 7,409 of 9,297 functions (79.69%, 31 more than G57's 7,378:
 19 by group A, 12 by group B), 238,245 values; no earlier slice's count drops.
 
+## Phase 3: genssa, slice G59 group U, G35's upper-bit table across narrow stores, shifted logic ops, `Convert`, boolean loads and `Copy` (I7, #553)
+
+`GoFV.Gen.Check.pairOp35` (`GoFV/Gen/Check35.lean`) also follows narrow stores through a register,
+G27's shifted logic ops, `Convert` and narrow loads with no entry, and `uStep35` gives a register
+`Copy` its source's entry (`copyStep35`); `GoFV/Proof/Gen/Keep35.lean` (`uStep35_copy`,
+`uokl_keepOps`, `uokl_xw35`, `st_uokl`, `extOK_zero`, `uokl_copyKeep`, `uokl_copyMov`,
+`g2_copySame`, `g2_copyMov`, `vk33_keep35`'s new cases); `g3_store`, `g6_store`, `g49_store`,
+`g12_conv`, `g27_logSh`, `g51c_logSh` conclude `XW`. Every `g*_value` statement from G35 to G58 is
+unchanged, with no new premise. Witness: `GoFV.Proof.Witness.GenG59u.genG59u_witness`
+(`runtime.(*scavChunkData).pack`: `checkG58` accepts it; across `ORshiftLL` the table keeps `R2`'s
+word entry, which G34's step dropped, and after `g58_value`'s run of the `ORR` `X2` is still a
+zero-extended word). The 13 functions G58 rejected only for `upper bits unknown` are accepted
+(proofs3.md §4, slice G59 group U).
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g54_obj_value`, `g54_obj_term`, `g54_obj_nilPanic`, `g54_obj_boundsPanic`

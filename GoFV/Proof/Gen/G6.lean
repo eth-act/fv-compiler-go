@@ -260,7 +260,7 @@ theorem g6_load (F : Facts lc sym text az ez psA.toList ret E)
     ht' (by rw [hA']; exact hnil), hA', wX_pc]
 
 /-- A store of `n` bytes to a frame variable at `off(RSP)`, outside the frame's saved words and
-slots. -/
+slots; it writes no X register (`XW`). -/
 theorem g6_store (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
     (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
@@ -277,7 +277,8 @@ theorem g6_store (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
     (hvs : OneAt2 psA j ⟨plain as (· == regA rs) (slotA · .AUTO off), as.name⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧
+      XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have hnp := storeOp?_ne_phi hop
@@ -313,10 +314,10 @@ theorem g6_store (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
     intro b2 al2 a2 hb hι' y hy
     obtain ⟨al1, hb1, hs1⟩ := hback b2 al2 hb
     rw [← hs1]; exact hsep0 b2 al1 a2 hb1 hι' y hy
-  refine (op_mem2 (H := H) F hm hinv (stk_keeps hm hF hsz) hj hj' hvs hM' hk' hsep'
+  refine (op_mem2X (H := H) F hm hinv (stk_keeps hm hF hsz) hj hj' hvs hM' hk' hsep'
     (fun y hy => hout y fun j hj he => hsep0 _ _ _ hal hpa y hy ⟨by omega, by omega⟩)
     (knext_same hK (Or.inr fun _ _ => by rw [hhn]; nofun)) (fun k1 hk1 hok => ?_)).imp
-    fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, .inl h4⟩
   obtain ⟨has, hf1, -, ht1, -⟩ := plain_spec hok
   simp only [beq_iff_eq] at hf1
   have hA' : m.sp + BitVec.ofInt 64 (frameOff (Link.byId sym text az ez psA.toList) .AUTO off) =
@@ -547,10 +548,10 @@ theorem vk6_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat →
         hc hvs htemp hs
       exact same m' ⟨h1', h2', h3', h4'⟩
     | store hop hsz3 hmt hhn hso hma hc =>
-      obtain ⟨m', h⟩ := g6_store (H := H) F hF hsz hm hinv.core hinv.slots hR
+      obtain ⟨m', h1', h2', h3', h4', -⟩ := g6_store (H := H) F hF hsz hm hinv.core hinv.slots hR
         (knext_kStep fun _ => (hs_none hhn).noRegs) hj hj' hx hvar hf hι hop hsz3 hmt hhn hso
         hma hc hvs htemp hs
-      exact same m' h
+      exact same m' ⟨h1', h2', h3', h4'⟩
     | ldp hop hsz2 hty h0 h1 h80 h81 hma hh hne hza hzb hda hdb hoa hob =>
       obtain ⟨m', h1', h2', h3', h4', -⟩ := g6_ldp (H := H) F hm hinv.core hinv.slots
         (kpair_kStep (by rw [hop]; nofun) hh hty h0 h1 hne) hpre hj hj' hx hvar hf hι hop hsz2

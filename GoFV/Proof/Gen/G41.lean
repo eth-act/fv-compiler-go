@@ -66,7 +66,8 @@ theorem uStep35_alu41 {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value}
       unfold narrowLd?
       rw [hl, hi]
     simp only [uEntry, this]
-  rw [uStep35_other (ldEntry35_none hl) hp, uStep34_other hk, uStep31_other hk31,
+  rw [uStep35_other (ldEntry35_none hl) hp (by rcases hop with h | h | h <;> rw [h] <;> nofun),
+    uStep34_other hk, uStep31_other hk31,
     uStepL_other hue hn1 hn2]
 
 section Steps

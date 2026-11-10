@@ -27,10 +27,10 @@ register) or its memory (`memInj_storeN`), with the value relation from `FMove.l
 * `FMOVconst` writes `fconstBits n` of `auxInt`'s bits, Phase 1's `Const64F`/`Const32F`
   (`fvalRel_fconst`: `FMOVS` rounds the `float64` to single precision as `Const32F` does).
 
-None of these writes an X register but `fpgp`, so G35's upper-bit table drops the entry of the
-home (`Copy`, `uokl_keep`) or is empty after them (`uStep35_f44`). `g44_value` takes
-`G44Pre := G41Pre ∧ FLoadPre`; `g44_initMem`, `g44_term`, `g44_nilPanic`, `g44_boundsPanic` are
-G43's statements over `checkG44`.
+None of these writes an X register but `fpgp`, so G35's upper-bit table copies its source's entry
+across a `Copy` (of a V register: vacuous, `uokl_fcopy`) or is empty after them (`uStep35_f44`).
+`g44_value` takes `G44Pre := G41Pre ∧ FLoadPre`; `g44_initMem`, `g44_term`, `g44_nilPanic`,
+`g44_boundsPanic` are G43's statements over `checkG44`.
 -/
 
 namespace GoFV.Proof.Gen
@@ -808,11 +808,18 @@ end Cases
 
 /-! ## One value -/
 
-/-- A float `Copy` writes only its register: G35's table drops the entry of its home. -/
-theorem uStep35_fcopy {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value}
-    (hop : v.op = .Copy) : uStep35 lc L v = L.filter fun e => regHome? lc v.id != some e.1 := by
-  rw [uStep35_other (ldEntry35_none (by rw [hop]; rfl)) (by simp [pairOp35, hop]),
-    uStep34_keep (by simp [keep34, keep31, keepOp31, hop])]
+/-- A float `Copy` keeps every X register and copies a V register (or one to itself): G35's
+table (`copyStep35`) holds. -/
+theorem uokl_fcopy {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value} {m m' : MState}
+    {c : Nat} {ro : Int} (hop : v.op = .Copy) (hr : fresObj lc v = .ok (c, ro)) (hL : UOKL m L)
+    (hx : m'.x = m.x) : UOKL m' (uStep35 lc L v) := by
+  rw [uStep35_copy hop]
+  obtain ⟨r, hvh, hor, -, -⟩ := fresObj_spec hr
+  refine uokl_copyKeep hL hx fun rx rv _ hrv => .inr ?_
+  rw [regHome?_eq.2 hvh] at hrv
+  cases hrv
+  obtain ⟨k, hk, -⟩ := Option.map_eq_some_iff.1 hor
+  exact objX?_none_of_V hk
 
 /-- G44's ops other than `Copy`. -/
 def FOp44 (op : Op) : Prop :=
@@ -866,15 +873,13 @@ theorem vk44_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     obtain ⟨m', h1, h2, h3, h4, h5⟩ := g44_fcopyNone (H := H) F hm hinv.core hinv.slots hR
       (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz ha hr hvs htemp hs
     refine ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE0, h1, h2, ⟨h3, h4⟩, ?_⟩
-    rw [uStep35_fcopy hop]
-    exact uokl_keep hL (.inl h5)
+    exact uokl_fcopy hop hr hL h5
   | fcopy hop hsz ha hr =>
     obtain ⟨r, hvh, -, -, -⟩ := fresObj_spec hr
     obtain ⟨m', h1, h2, h3, h4, h5⟩ := g44_fcopy (H := H) F hm hinv.core hinv.slots hR
       (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz ha hr hvs htemp hs
     refine ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE0, h1, h2, ⟨h3, h4⟩, ?_⟩
-    rw [uStep35_fcopy hop]
-    exact uokl_keep hL (.inl h5)
+    exact uokl_fcopy hop hr hL h5
   | fload hop hsz hacc hma hr hc =>
     obtain ⟨r, hvh, -, -, -⟩ := fresObj_spec hr
     obtain ⟨m', h1, h2, h3, h4, -⟩ := g44_fload (H := H) F (fun y name abi h => hglob y name abi h)
