@@ -1268,7 +1268,7 @@ and entry stores read). Witness: `genG60_witness` (`math.sqrt`:
 `FMOVDconst [MaxFloat64]` in `F1`, the load of `$f64.7fefffffffffffff` on P0'; `checkG59` rejects
 the function (the load), `checkG56` rejects it (`v96`'s `SLL` of a narrow argument, G58's), and
 `checkG60` accepts it; at G48's mode, `V1`'s low word is `math.MaxFloat64`'s bits after it).
-Coverage on quick-v10 (`lake exe gen-check --jobs 2`, G60 on P0', `agent/lift60b` on main 544c0e3b): 7,667
+Coverage on quick-v10 (`lake exe gen-check --jobs 2`, G60 on P0', `agent/lift60b` on main 70f8f2ec): 7,667
 of 9,297 functions (82.46%, as G59 on P0), 249,111 values, 69 of them loading a float constant
 from a constant symbol (61 by G56). Composed into `verified_mach` (`GoFV/Proof/Obj/G60.lean`,
 `g60_obj_*`, below).
@@ -1559,7 +1559,7 @@ declarations, then the autos the pipeline created). From the stock `.prog` file 
 input view is read (definitions, config, `Dcl` at `AllocFrame`'s start, `genin`). The stock
 column runs the same back end on the stock `trim` function of every function.
 
-| quick-v10 (9,297 functions, 5 min; the composition on G60, per function at either mode (`agent/lift60b` on main 544c0e3b: ZeroIdx #686, G59 #685, Zero2 #684, objbar #683, G58 #682), P0' in `checkG60` and `checkObj`, `--jobs 2`) | pipeline output | share | stock `trim` |
+| quick-v10 (9,297 functions, 5 min; the composition on G60, per function at either mode (`agent/lift60b` on main 70f8f2ec: objatom #687, ZeroIdx #686, G59 #685, Zero2 #684, objbar #683, G58 #682), P0' in `checkG60` and `checkObj`, `--jobs 2`) | pipeline output | share | stock `trim` |
 | --- | ---: | ---: | ---: |
 | fully verified (Phase 2, through `trim`) | 7,878 | 84.73% | - |
 | … genssa and `Flushplist` ran | 7,878 | 84.73% | 9,297 |
@@ -1598,7 +1598,10 @@ by the atomics' opcodes (`LDADDALW` 72, `CASALW` 71, `CASALD` 64, `LDADDALD` 48,
 `JMP` to a register (12) and the stack check of a huge frame (11). `memTyL` and the P0' numbering
 check are not among them. `gen-check` on the same tree: G60 7,667 (82.46%, as G59 on P0), 69 of
 them loading a float constant on P0' (61 by G56). The tree on main 3672e208 (before #686) gave the
-same end-to-end set.
+same end-to-end set, and so does main 544c0e3b (before #687): #687's atomics in `checkObj` move its
+rejection reasons (now led by `CBNZ: CBZ` 162, `CASALW`/`CASALD` reading `R#` 71/64, `JMP` to a
+register 12, the stack check of a huge frame 11) but no function end to end, since `checkG60`
+rejects the atomic ops (`LoweredAtomic*`).
 
 **Vacuous at `Addrs.fixed`, per theorem** (#553). `gofv-ssa-opt --e2e` counts, for each end-to-end
 function, the distinct frame operands of its accessed `Blk.local` variables (forgeable, with a

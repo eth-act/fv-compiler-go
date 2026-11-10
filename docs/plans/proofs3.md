@@ -3253,8 +3253,8 @@ the variable to `2^62 + x·2^24`, which no frame operand reaches (`g49Env_fixed_
 0's) so that an activation extending `envAtSP` can meet `CallSpec`'s `AddrAgree`.
 
 **Coverage** (quick-v10, `gofv-ssa-opt --check --verified --e2e`, STATUS End-to-end coverage): on
-G60, per function at either mode (`agent/lift60b` on main 544c0e3b, with G59, objbar, Zero2 and
-ZeroIdx), 6,745 of 9,297 functions end to end (72.55%): 6,550 under `verified_mach`
+G60, per function at either mode (`agent/lift60b` on main 70f8f2ec, with G59, objbar, Zero2,
+ZeroIdx and objatom), 6,745 of 9,297 functions end to end (72.55%): 6,550 under `verified_mach`
 (`needs48 = false`, the mode `false`) and 195 under `verified_mach_S` (G48's mode); 261 more than
 on G56 (6,484, main cdf73c37) and none fewer; of the 210 a tree before objbar and Zero2 gained over
 the first lift to G60 without G48's mode (6,524), 194 need G48's stack arguments and results; Zero2
