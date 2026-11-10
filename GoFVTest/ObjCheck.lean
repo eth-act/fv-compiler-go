@@ -1,4 +1,5 @@
 import GoFV.Asm.CheckObj
+import GoFV.Asm.ConstLoad
 import GoFV.Asm.Flush
 import GoFV.Asm.Parse
 
@@ -8,11 +9,12 @@ open scoped GoFV.SSA.Sem.Fixed
 # `obj-check`: coverage of the assembler validator (`docs/plans/proofs3.md` §2, row D2–D5)
 
 For every `*.prog` file under the given directories, runs the assembler port (`GoFV.Asm.flush`,
-as `asm-parity`) on the `prog0` section and the validator `GoFV.Asm.CheckObj.checkObj` on the P0
-Prog list, the function's register-argument spills and the port's output (text bytes,
-relocations, final Prog list as the PC hint). Counts accepted functions and P0 Progs; rejections
-are grouped by reason with numbers replaced by `#`. With `--accept FILE` (the accepted list of
-`gen-check --table`), also counts the accepted functions among the slice's.
+as `asm-parity`) on the `prog0` section and the validator `GoFV.Asm.CheckObj.checkObj` on P0'
+(the P0 Prog list with `progedit`'s float constant loads, `GoFV.Asm.p0Prime`, the constant symbols
+numbered as the port's `flush` numbers them), the function's register-argument spills and the
+port's output (text bytes, relocations, final Prog list as the PC hint). Counts accepted functions
+and P0 Progs; rejections are grouped by reason with numbers replaced by `#`. With `--accept FILE`
+(the accepted list of `gen-check --table`), also counts the accepted functions among the slice's.
 
 usage: `lake exe obj-check [--jobs N] [--accept FILE] [--table FILE] <dir|file>...`; exit status 1
 on a parse or port error.
@@ -71,7 +73,10 @@ def checkFile (slice : Std.HashSet String) (path : System.FilePath) (st : Stats)
   let ps := pf.prog0.progs
   let st := { st with progs := st.progs + ps.size }
   let obj : ObjIn := { text := out.st.textP, relocs := out.st.textR, progs := out.progs }
-  match checkObj ps pf.prog0.fn.spills obj with
+  match p0Prime (fun n => out.st.symIdx[(GoFV.SSA.GoStr.ofString n, Obj.ABI0.toNat)]?) ps with
+  | .error e => return { (st.reject s!"port: {e}" path.toString) with errors := st.errors + 1 }
+  | .ok ps' =>
+  match checkObj ps' pf.prog0.fn.spills obj with
   | .ok _ =>
     let st := { st with accepted := st.accepted + 1, acceptedProgs := st.acceptedProgs + ps.size }
     return if inSlice then { st with sliceAccepted := st.sliceAccepted + 1 } else st

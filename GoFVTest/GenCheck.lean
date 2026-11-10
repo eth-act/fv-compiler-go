@@ -1,5 +1,7 @@
 import GoFV.Gen.Genssa
 import GoFV.Gen.Check57
+import GoFV.Gen.Check56
+import GoFV.Asm.ConstLoad
 import GoFV.Asm.Parse
 import GoFV.SSA.Parse
 import GoFVTest.GenIn
@@ -30,7 +32,9 @@ G35 (`GoFV.Gen.Check.checkG35`), G36 (`GoFV.Gen.Check.checkG36`), G37
 (`GoFV.Gen.Check.checkG46`), G47 (`GoFV.Gen.Check.checkG47`), G50 (`GoFV.Gen.Check.checkG50`),
 G51 (`GoFV.Gen.Check.checkG51`), G49 (`GoFV.Gen.Check.checkG49`, on G51; G48 is reserved), G52
 (`GoFV.Gen.Check.checkG52`), G53 (`GoFV.Gen.Check.checkG53`), G54 (`GoFV.Gen.Check.checkG54`),
-G55 (`GoFV.Gen.Check.checkG55`) and G57 (`GoFV.Gen.Check.checkG57`),
+G55 (`GoFV.Gen.Check.checkG55`), G56 (`GoFV.Gen.Check.checkG56`, on G55, on P0': `p0PrimeSyms`, P0
+with `progedit`'s float constant loads and the constant symbols in G2's symbols) and G57
+(`GoFV.Gen.Check.checkG57`),
 all with G2's inputs, on its P0 output and the function after `trim`, and counts the accepted
 functions. Rejections by the last
 slice are grouped by their reason with value and block numbers removed. `--sets FILE` writes each
@@ -102,6 +106,10 @@ structure Stats where
   accepted53 : Nat := 0
   accepted54 : Nat := 0
   accepted55 : Nat := 0
+  /-- G56 (on G55) on P0' (`p0PrimeSyms`). -/
+  accepted56 : Nat := 0
+  /-- Functions `checkG56` accepts whose P0' loads a float constant from a constant symbol. -/
+  constLoads56 : Nat := 0
   accepted57 : Nat := 0
   errors : Nat := 0
   values : Nat := 0
@@ -159,6 +167,7 @@ structure Stats where
   acceptedValues53 : Nat := 0
   acceptedValues54 : Nat := 0
   acceptedValues55 : Nat := 0
+  acceptedValues56 : Nat := 0
   acceptedValues57 : Nat := 0
   /-- Functions by the set of reasons that reject them (sole reason: one-element set). -/
   sole : Std.HashMap String Nat := {}
@@ -205,6 +214,8 @@ def Stats.merge (a b : Stats) : Stats :=
     accepted53 := a.accepted53 + b.accepted53,
     accepted54 := a.accepted54 + b.accepted54,
     accepted55 := a.accepted55 + b.accepted55,
+    accepted56 := a.accepted56 + b.accepted56,
+    constLoads56 := a.constLoads56 + b.constLoads56,
     accepted57 := a.accepted57 + b.accepted57,
     errors := a.errors + b.errors,
     values := a.values + b.values, acceptedValues := a.acceptedValues + b.acceptedValues,
@@ -261,6 +272,7 @@ def Stats.merge (a b : Stats) : Stats :=
     acceptedValues53 := a.acceptedValues53 + b.acceptedValues53,
     acceptedValues54 := a.acceptedValues54 + b.acceptedValues54,
     acceptedValues55 := a.acceptedValues55 + b.acceptedValues55,
+    acceptedValues56 := a.acceptedValues56 + b.acceptedValues56,
     acceptedValues57 := a.acceptedValues57 + b.acceptedValues57,
     sole := mergeMap a.sole b.sole, occurs := mergeMap a.occurs b.occurs,
     accept := a.accept ++ b.accept, sets := a.sets ++ b.sets }
@@ -547,6 +559,15 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
   let st := if ok55 then
       { st with accepted55 := st.accepted55 + 1, acceptedValues55 := st.acceptedValues55 + nv }
     else st
+  -- G56 on P0': the float constants `progedit` loads from constant symbols, those symbols in G2's
+  let st := match p0PrimeSyms g.syms ps with
+    | .ok (syms', ps') =>
+      if (Check.checkG56 lc ps' bstart { g with syms := syms' }).toOption.isSome then
+        { st with accepted56 := st.accepted56 + 1, acceptedValues56 := st.acceptedValues56 + nv,
+                  constLoads56 := st.constLoads56 +
+                    (if ps.any (fconstSym? · |>.isSome) then 1 else 0) }
+      else st
+    | .error _ => st
   match Check.checkG57 lc ps bstart g with
   | .ok _ =>
     let tag := if ok4 then "" else if ok5 then " (G5)" else if ok6 then " (G6)"
@@ -661,7 +682,9 @@ def main (args : List String) : IO UInt32 := do
   out := out ++ s!"| {st.files} | G53 | {st.accepted53} | {pct st.accepted53 st.files} | {st.values} | {st.acceptedValues53} |\n"
   out := out ++ s!"| {st.files} | G54 | {st.accepted54} | {pct st.accepted54 st.files} | {st.values} | {st.acceptedValues54} |\n"
   out := out ++ s!"| {st.files} | G55 | {st.accepted55} | {pct st.accepted55 st.files} | {st.values} | {st.acceptedValues55} |\n"
+  out := out ++ s!"| {st.files} | G56 (on G55, P0') | {st.accepted56} | {pct st.accepted56 st.files} | {st.values} | {st.acceptedValues56} |\n"
   out := out ++ s!"| {st.files} | G57 | {st.accepted57} | {pct st.accepted57 st.files} | {st.values} | {st.acceptedValues57} |\n"
+  out := out ++ s!"\n{st.constLoads56} functions accepted by G56 load a float constant from a constant symbol (P0')\n"
   out := out ++ s!"\n{st.errors} parse, env or genssa errors\n"
   let sorted (m : Std.HashMap String Nat) :=
     m.toArray.qsort fun a b => a.2 > b.2 || (a.2 == b.2 && a.1 < b.1)

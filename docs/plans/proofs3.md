@@ -1374,6 +1374,33 @@ only vacuously there (21 functions, all also accepted by G49). The sole reasons 
 (19) and `block kind Defer` (13); 6 functions are left with `pair load shape` alone and 1 with
 `pair store shape` alone.
 
+**Slice G56: float constants in read-only symbols** (`GoFV/Gen/Check56.lean`,
+`checkG56 lc ps bstart g`; proven sound, `g56_value`, `g56_initMem`, `g56_term`, `g56_nilPanic`,
+`g56_boundsPanic`, `GoFV/Proof/Gen/G56.lean`; §10 item 4). G55 with the float constants
+(`vkind56` falls back to `vkind55`; `vkind56_eq55`, `vkind56_eq49` with G55's `vkind55_eq54`). It
+runs on P0' (`GoFV.Asm.p0PrimeSyms`, §7): P0 with `progedit`'s float
+constant loads, the constant symbols added to `G2In.syms` as the assembler's `lookup` adds them.
+`vkind56a`, tried before G55's kinds, accepts `FMOVSconst`/`FMOVDconst` (no temporary, no
+argument, homed in an `F` register of class `8 · fBytes`) with one pattern (`fconstPat56`): G44's
+`FMOVS`/`FMOVD $c, Fd`, or the load `FMOVS`/`FMOVD sym(SB), Fd` (`plain`, `constSymA`: `MEM`,
+`EXTERN`, offset 0, a symbol `y` with `g.syms[y]? = some (name, _)` and
+`constSymAlloc? name = some (roAlloc (leBytesU8 (fconstNat n c) n))`, the name parsed, not
+formatted: `fconstNat` is `float32(c)`'s bits for `FMOVS`, `c`'s for `FMOVD`, the bits `FCONST`
+writes). The proof (`g56_fconst`): the `FCONST` branch is `g44_fconst`'s; the load branch takes
+the symbol's address from `G2Env.glob` (`L.sym y`), its allocation from `constRo_mem` and the
+premise `RoPre56 g s` (the `LocMatch`ed state's memory has `RoMem (constRo (symNames g))`, as
+`lreach_roMem` gives along the run), the address above the nil page from `ro_addr`, each byte
+from `ro_byte` (both moved to `GoFV/Proof/Gen/RoByte.lean` so that `Proof/Gen` can import them),
+and `readMem_fconst` (`readMem_of_bytes`) turns the `n` bytes into `fconstBits n c`, what
+`FCONST` writes, so both branches end in the same V register value (`op_regV`). `g56_value`
+takes `G54Pre` (G55 adds none) and `RoPre56`; the other theorems are G55's over `checkG56`.
+Witness `genG56_witness` (`runtime.float64Inf`, `v8: FMOVDconst [+Inf]` in `F0`: +Inf is no
+`FMOV` immediate, so P0' loads it from `$f64.7ff0000000000000`, which `checkG55` rejects and
+`checkG56` accepts; from a machine whose `V0` is 0 and whose memory holds the symbol's bytes at
+its linked address, `g56_value` ends with +Inf's bits in `V0`'s low word). G56 accepts 7,331
+functions on P0' (G55 on P0 accepts 7,331; 61 of them load a float constant, which G55 would
+reject on P0', where `checkObj` now accepts them).
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -1469,6 +1496,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G53 | 7,260 (78.08%) | 227,056 |
 | G54 | 7,308 (78.60%) | 231,647 |
 | G55 | 7,331 (78.85%) | 232,869 |
+| G56 (on G55, P0') | 7,331 (78.85%) | 232,869 |
 | G57 | 7,378 (79.35%) | 235,204 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
@@ -1846,6 +1874,11 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `Spec57.lean`: `VK57`, `vkind57_spec`, `vkind57_initMem`, `checkG33_of_57L`, `checkG57L_spec`,
   `checkG57_spec`; `G57.lean`: `vk57_step`, `vk57_nil`, `vk57_pb`, `g57L_value` … `g57L_term`,
   `g57_value`, `g57_initMem`, `g57_nilPanic`, `g57_boundsPanic`, `g57_term`.
+- `Spec56.lean`: `VK56`, `vkind56a_none`, `vkind56_spec`, `vkind56_initMem`, `constSymA_spec`,
+  `checkG33_of_56L`, `checkG56L_spec`, `checkG56_spec`; `RoByte.lean`: `ro_byte`, `ro_addr`;
+  `G56.lean`: `RoPre56`, `roAlloc_byte`, `constRo_mem`, `readMem_fconst`, `g56_fconst`,
+  `vk56_step`, `vk56_nil`, `vk56_pb`, `g56L_value` … `g56L_term`, `g56_value`, `g56_initMem`,
+  `g56_nilPanic`, `g56_boundsPanic`, `g56_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -2069,12 +2102,12 @@ epilogue, stated on the machine. `arm64-decode` on quick-v10 after this change: 
 Progs and 122,770/122,770 blocks match.
 
 **Coverage** (`lake exe obj-check --jobs 8 [--accept <gen-check table>] <corpus>/quick-v10`; the
-assembler port `GoFV.Asm.flush` on each `prog0` section, as `asm-parity`; 0 parse or port
-errors):
+assembler port `GoFV.Asm.flush` on each `prog0` section, as `asm-parity`, and `checkObj` on P0',
+below; 0 parse or port errors):
 
 | Functions | Accepted | P0 Progs in accepted functions |
 | --: | --: | --: |
-| 9,297 | 8,544 (91.90%) | 332,878 of 429,130 |
+| 9,297 | 8,703 (93.61%) | 354,101 of 429,130 |
 | G7 slice: 2,109 | 2,108 (99.95%) | |
 | G8 slice: 2,323 | 2,322 (99.95%) | |
 | G9 slice: 2,551 | 2,550 (99.96%) | 51,122 of 51,143 |
@@ -2129,6 +2162,18 @@ premise of `obj_star` cannot be discharged (the composition knows the memory onl
 `LocMatch` holds); the design is in §10: the symbol is a Phase 1 read-only allocation, and the
 composition runs `P0'`, P0 with `progedit`'s rewrite of the float constants, so that `checkObj`
 compares a load with a load.
+
+**P0'** (8,544 → 8,703, +159 of the 163 float-constant rejections; the other 4 now stop at a later
+reason, `CASALW` 2, `LDADDALD` 1, `ADCS` 1): `obj-check` gives `checkObj` P0' (`GoFV.Asm.p0Prime`,
+`GoFV/Asm/ConstLoad.lean`: each Prog `fconstSym?` names, `progedit`'s `FMOVS`/`FMOVD` cases, gets
+`progedit`'s `From`, `MEM`/`EXTERN` of the constant symbol at offset 0, numbered as the port's
+`flush` numbers it, `symIdx` at `(name, ABI0)`); `progSym`'s `fmovP` already models the load. On
+the machine side the `R_ARM64_PCREL_LDST*` pair now admits a SIMD&FP access (`ldstLo?` returns
+`vec`, `B`/`H`/`S`/`D` only; `symLdstAcc`: `symVAccess` for a vector access, `symAccess` for an
+integer one). Proof: `decode_ldstLo` for either kind of access (bit 26 is `vec`),
+`accessBytes_vec` (a non-`Q` vector access moves `2 ^ size` bytes, the relocation's scale),
+`symVAccess_exec` (`insn_vaccess`) and the now public `symVAccess_fault` in `symUnit_sound` and
+`symUnit_fault`. `ObjRel`, `ObjEnv` and the theorem statements are unchanged.
 
 **Proof** (`GoFV/Proof/Obj/`):
 
@@ -2530,11 +2575,11 @@ initial memory (`MemAt`: in a lowered function under `cleanOK`, `cleanAt → Mem
   `W = InWins L E0.sp (pendWins lc g)`, the windows of the register-assigned parameters in
   `Blk.local` blocks the function accesses (`GoFV/Gen/Entry49.lean`). The entry stores
   (`entryStore?`: a store of `MOV{D,W,H,B}store` or `STP` to a frame variable at its `NAME_PARAM`
-  operand that `vkind51` rejects, so G49's frame-variable path, no op of G52–G54, `vkind54_eq49`;
+  operand that `vkind51` rejects, so G49's frame-variable path, no op of G52–G56, `vkind56_eq49`;
   `entryStores lc g k`, those at the
   head of the entry block from value `k`) are run against the relaxed relation: `SimAtW` is
   `SimAt` with the P0 state's memory replaced by one agreeing with it outside `W`; an entry store's
-  Prog writes its window alike in both memories (`g54L_entryStore`: `entryStore?_spec`,
+  Prog writes its window alike in both memories (`g56L_entryStore`: `entryStore?_spec`,
   `op_mem2W`, `g49_storeW`, `g49_stpW`, `writeMem_agree`/`writeMem_agree2`), so after it the
   memories agree outside `W` minus that window (`sim_entryStore`); no entry store panics (it has a
   symbol, `stepLoc_mem_panic_aux`); the run continues alike (`runFromLoc_val`). The checked
@@ -2551,7 +2596,7 @@ initial memory (`MemAt`: in a lowered function under `cleanOK`, `cleanAt → Mem
   relaxation inside the entry (`EntryMatch`, `SimAtW`, the entry stores) and needs only the entry
   stores' Progs, at the cost of a check on their position (`entryStoresOK`), which rejects
   functions whose entry stores are not at the head of the entry block.
-- **Values, terminators** (`sim_value`, `sim_goto`, `sim_values`): `g54_obj_value`/`g54_obj_term`
+- **Values, terminators** (`sim_value`, `sim_goto`, `sim_values`): `g56_obj_value`/`g56_obj_term`
   under the per-step premises `RunPre`, stated at the states `runLoc` reaches (`LReach`) from
   `(entry, k, sI)`: `G54Pre`, that is `G53Pre` and G54's `Pre54a` (a `LoweredZeroLoop` writes
   valid bytes) and `Pre54b` (a `LoweredMoveLoop` reads and writes valid bytes, its two ranges the
@@ -2566,15 +2611,16 @@ initial memory (`MemAt`: in a lowered function under `cleanOK`, `cleanAt → Mem
   arguments of `CMN` and `CMPshiftRA` no pointer without an integer form), `G1TermPre`,
   no entry value (`entryOp24`) but an `InitMem` in a lowered function, `GetGOK`, and the callee
   contracts (`CallOK`, `CallOKZ`, `ICallOK`, `WbOK`, `CloOK`, `MemEqOK`) at every `LocMatch`ed
-  machine state. `checkG54L_cx` gives the context of both modes (lowered, and G26's functions with
-  no arm64 op). `checkG54L` accepted such an `InitMem` only at a clean position of a function
-  whose clean blocks are closed backwards (`g54L_clean`: `vkind54_initMem`, `vkind53_initMem`,
+  machine state. `checkG56L_cx` gives the context of both modes (lowered, and G26's functions with
+  no arm64 op). `checkG56L` accepted such an `InitMem` only at a clean position of a function
+  whose clean blocks are closed backwards (`g56L_clean`: `vkind56_initMem`, `vkind55_initMem`,
+  `vkind54_initMem`, `vkind53_initMem`,
   `vkind52_initMem`, `vkind49_initMem`, `vkind51_initMem`,
   `vkind50_initMem`,
   `vkind47_initMem`, `vkind46_initMem`,
   `vkind45_initMem`, `vkind44_initMem`, `vkind43_initMem`, `initMemClean_spec`),
   where it runs no code and changes nothing from a state holding the initial memory (`MemInit`,
-  `g54L_initMem`). `SimAt` carries `MemAt`: from `runLoc`'s first state (`locInit` holds `MemInit`
+  `g56L_initMem`). `SimAt` carries `MemAt`: from `runLoc`'s first state (`locInit` holds `MemInit`
   by `rfl`) through the entry values before `k` (`memAt_enter`: a clean `k` means they keep the
   memory, `memInit_enterKeep`), along a value (`memInit_clean_step`) and along an edge
   (`memInit_clean_term`, `cleanAt_zero`: `SimAt`'s `b ∈ blocks` gives `cleanOK_edge`), so
@@ -2613,24 +2659,24 @@ initial memory (`MemAt`: in a lowered function under `cleanOK`, `cleanAt → Mem
   in a state `t'` with `MachRet s0 t'` and `ResultRel E outs rs mm t'` (`rs` in the result
   registers: `R0`–`R15` related to the X registers, `F0`–`F15` to the V registers; `mm` injected).
 - **Panics** (`sim_valuePanic`, `sim_from_panic`, `obj_whole_panic`): a step that panics is a nil
-  check (`g54_obj_nilPanic`: the `MOVB` faults in the nil page), a load or store that faults
-  (`g54_obj_memPanic`, `GoFV/Proof/Obj/MemPanic.lean`: `MOV{D,W,WU,H,HU,B,BU}load`, `LDP`,
+  check (`g56_obj_nilPanic`: the `MOVB` faults in the nil page), a load or store that faults
+  (`g56_obj_memPanic`, `GoFV/Proof/Obj/MemPanic.lean`: `MOV{D,W,WU,H,HU,B,BU}load`, `LDP`,
   `MOV{D,W,H,B}store` and `STP`, `memFaultOp`; `nilFaults` found a nil base and an address in the
   nil page, so the access has no symbol, hence no G49 frame-variable access, `frameVar49?_none`,
-  `vkind49_eq51` (and no op of G52–G54, `vkind54_eq49`: `vkind54_eq53`, `vkind53_eq52`,
+  `vkind49_eq51` (and no op of G52–G56, `vkind56_eq49`: `vkind56_eq55`, `vkind55_eq54`, `vkind54_eq53`, `vkind53_eq52`,
   `vkind52_eq49`), its base register holds the machine word 0 and
   `X[n] + off` is in the nil page, `nil_fault_page`; no premise), an acquire load that faults
-  (`g54_obj_ldarPanic`: `LDAR`, `LDARW`, `LDARB`, `ldar?`; its address, argument 0 at offset 0, is
+  (`g56_obj_ldarPanic`: `LDAR`, `LDARW`, `LDARB`, `ldar?`; its address, argument 0 at offset 0, is
   nil, `stepLoc_ldar_panic`, so `LDAR* (Rn)` faults at address 0, `progStep_ldar_nil`; no
   premise), a bounds check
-  (`g54_obj_boundsPanic`, under the trusted `BoundsOK`: `runtime.panicBounds` reports the same
+  (`g56_obj_boundsPanic`, under the trusted `BoundsOK`: `runtime.panicBounds` reports the same
   failure, `BoundsAgree`), a static call whose
-  callee panics (`g54_obj_callPanic`, `GoFV/Proof/Obj/CallPanic.lean`, under the trusted
+  callee panics (`g56_obj_callPanic`, `GoFV/Proof/Obj/CallPanic.lean`, under the trusted
   `CallPanicOK`: the callee's hook panics alike from every state with the call's arguments in their
   registers and the memory injected), or an interface or closure call whose callee panics
-  (`g54_obj_icallPanic`, under the trusted `ICallPanicOK`: the hook at the code pointer in `Rn`
+  (`g56_obj_icallPanic`, under the trusted `ICallPanicOK`: the hook at the code pointer in `Rn`
   panics alike; `vkind28` of such a call is `vkind10`'s `icallKind`, `vkind28_icall`; `vkind54`
-  of an acquire load or a call is `vkind49`'s, `vkind54_eq49`, and what
+  of an acquire load or a call is `vkind49`'s, `vkind56_eq49`, and what
   `vkind49` accepts of it `vkind51` accepts, `vkind49_ok51` (no G49
   frame-variable access); `vkind51` of
   a load, store or call is `vkind47`'s, `vkind51_eq50` (no G51 op), `vkind50_eq47` (no G50 pair
@@ -2656,39 +2702,43 @@ initial memory (`MemAt`: in a lowered function under `cleanOK`, `cleanAt → Mem
 
 **End to end** (`GoFV/Proof/Obj/EndToEnd.lean`, `verified_mach`): `verifiedPipelineFull_refines`
 gives a `runLoc` of the allocated function refining the generic `run`; `runLoc` is `finish` of its
-body (`runLoc_eq`, from `locInit`), whose outcome is defined (`finish_defined`). The slice is G54:
-`checkG54` accepts `LocCtx.make` of the output when `refsLive` holds of it and `checkG54L` accepts
+body (`runLoc_eq`, from `locInit`), whose outcome is defined (`finish_defined`). The slice is G56
+on P0' (§10 item 4): `checkG56` accepts `LocCtx.make` of the output when `refsLive` holds of it
+and `checkG56L` accepts
 `lc = liveCtx` of it; the body runs alike on `lc` (`runLoopLoc_live`), and the whole-function
 theorems apply on `lc`: a returning body is `obj_whole_ret`'s, a panicking one
-`obj_whole_panic`'s (under its panic premises), both with `entryStoresOK lc g k` and
-`EntryMatch E0 (InWins L E0.sp (pendWins lc g)) sI s0`. `checkG54L` includes `loopOK` (each
-loop's `CBNZ` branches to its head), which `g54L_value` reads off `checkG54L_spec`; it is no
-separate premise. The statement lists every premise (STATUS, Assumptions).
+`obj_whole_panic`'s (under its panic premises), both with `entryStoresOK lc g k`,
+`EntryMatch E0 (InWins L E0.sp (pendWins lc g)) sI s0` and `RoRun` (the float constant symbols in
+every reached state's memory: `lreach_roMem` from `hmt`/`hro`, or `roRun_nil`). `checkG56L`
+includes `loopOK` (each loop's `CBNZ` branches to its head), which `g56L_value` reads off
+`checkG56L_spec`; it is no separate premise. The statement lists every premise (STATUS,
+Assumptions).
 
 **Coverage** (quick-v10, `gofv-ssa-opt --check --verified --e2e`, STATUS End-to-end coverage): on
-G54 (with the morestack tail's F0–F15 spills in `checkObj`), 6,484 of 9,297 functions end to end
-(69.74%), 201 over the composition on G49's 6,283 (67.58%): `checkG54` ∧ `entryStoresOK` accepts
-6,486 fully verified functions (`checkG49`: 6,344), `checkObj` rejects 2 of them.
+G56 (on P0', `checkObj` with the SIMD&FP `PCREL_LDST` loads; main cdf73c37 with G55), 6,484 of
+9,297 functions end to end (69.74%), as on G54 (main e53604fc): no fully verified function needs
+G55's ops or a float constant load to pass; `checkG56` ∧ `entryStoresOK` accepts 6,486, `checkObj`
+rejects 2 of them. Stock column 7,206 → 7,281.
 
 **Witnesses.** `objWhole_ret_witness` (`pallocSum.start`, `p = 7`, `plRunEnv`): `runLoc`'s run
 from `locInit` and `runMach` from the entry to the caller's `0x40`, through `b1`'s `TBNZ` and
 `b2`'s `ANDconst`/`MakeResult`/`RET`, with 7 in `X0`. `objWholeNL_ret_witness`
 (`runtime.gclinkptr.ptr`, no arm64 op: `ret_results` in Phase 1's mode). `objWhole_panic_witness`
-(`(*A).g` on a nil receiver: the nil check faults). `g54_callPanic_witness` (`fint64to32`, a callee
-that panics), `g54_icallPanic_witness` (`Locker.Lock`'s interface call), `g54_storePanic_witness`
-and `g54_loadPanic_witness` (`(*queueOnePass).next`'s `MOVW R2, 52(R0)` and `MOVWU 52(R0), R3`
-with a nil `q`), `g54_ldarPanic_witness` (`sync/atomic.LoadInt64`'s `LDAR (R0), R0` with a nil
+(`(*A).g` on a nil receiver: the nil check faults). `g56_callPanic_witness` (`fint64to32`, a callee
+that panics), `g56_icallPanic_witness` (`Locker.Lock`'s interface call), `g56_storePanic_witness`
+and `g56_loadPanic_witness` (`(*queueOnePass).next`'s `MOVW R2, 52(R0)` and `MOVWU 52(R0), R3`
+with a nil `q`), `g56_ldarPanic_witness` (`sync/atomic.LoadInt64`'s `LDAR (R0), R0` with a nil
 `addr`). `objStarLeaf_witness` (`(*A).g`, a leaf: the P0 run of its nil check keeps the
 caller's `0x40` in `X30`). `entryStore_witness` (`GoFV/Proof/Witness/ObjEntry49.lean`:
-`g54L_entryStore` on `runtime.getm`'s ABI0 wrapper's `MOVD R0, ~r0+0(FP)` (`checkG54` accepts the
+`g56L_entryStore` on `runtime.getm`'s ABI0 wrapper's `MOVD R0, ~r0+0(FP)` (`checkG56` accepts the
 wrapper with `checkG49`'s tables) from a machine whose
 `~r0` window holds `0xAB`, to a full `LocMatch`). `verified_mach_witness`:
 `pallocSum.start` from its generic SSA (the export's first
 section, in the whole-file environment of `gofv-ssa-opt --verified`) through
 `verifiedPipelineFull` (`fullyVerified`), with every premise of `verified_mach` discharged;
-`checkG54` accepts genssa's Progs against the pipeline's own output, `entryStoresOK` holds (no
-pending window). `RunPre` there is `runPre_simple`. The witnesses' facts check `checkG54L` (or
-`checkG54`) on the same functions with the same tables as before (none of them has a remainder,
+`checkG56` accepts genssa's Progs against the pipeline's own output, `entryStoresOK` holds (no
+pending window). `RunPre` there is `runPre_simple`. The witnesses' facts check `checkG56L` (or
+`checkG56`) and `constRo (symNames g) = []` on the same functions with the same tables as before (none of them has a remainder,
 `LoweredMove` or loop).
 
 **Next.** The lift to each new slice as it merges. Panics of the other kinds
@@ -2752,14 +2802,48 @@ only the slices know.
    page, `ro_addr`). `G2Env.glob` puts that global at `L.sym y`. After a call, `CallSpec` already
    gives `MemInj` of the post-call memory, which keeps the allocation, so no trusted clause is
    added: the read-only data rests on the callee contracts and `Env.KeepsRo`.
-4. *Float constants* (next).
-   - The driver gives the composition `P0'`: P0 with `progedit`'s rewrite of the float constants
-     (`FMOVD $c` becomes `FMOVD $f64.<bits>(SB)`, with the index the port's `flush` gives the
-     symbol, also in `G2In.syms`).
-   - `checkObj` then compares a load with a load, and `ObjRel` is unchanged.
-   - A slice accepts `FMOVDconst`/`FMOVSconst` homed by such a load. It is proved in the value's
-     `LocMatch`ed state by `ro_byte`, with `RoMem` from `lreach_roMem`.
-   - `verified_mach` gains `memTyL lc = true` and `RoMem (constRo …) (addGlobals e mem)`.
+4. *Float constants* (done, composed; agent/fconst).
+   - P0' (`GoFV/Asm/ConstLoad.lean`): `p0Prime idx ps` applies `progedit`'s rewrite to each Prog
+     `fconstSym?` names (`GoFV/Asm/Obj7.lean`, the `FMOVS`/`FMOVD` cases of `progedit`, sharing
+     `float32SymName`/`float64SymName` with `float32Sym`/`float64Sym`): `From` becomes
+     `MEM`/`EXTERN` of the constant symbol, offset 0, numbered `idx name` (`obj-check`: the port's
+     `flush`, `symIdx` at `(name, ABI0)`); `internConsts`/`p0PrimeSyms` add the symbols to a table
+     as `lookup` does (`gen-check`'s `G2In.syms`).
+   - `checkObj` on P0' compares a load with a load; `ObjRel` is unchanged. Its machine side now
+     admits a SIMD&FP access in an `R_ARM64_PCREL_LDST*` pair (§7, **P0'**). quick-v10: 8,544 →
+     8,703 functions.
+   - Slice G56 (§4) accepts `FMOVSconst`/`FMOVDconst` homed by `FCONST` or by the load of a
+     constant symbol of `G2In.syms` whose name holds the bits (`constSymA`); proved in the value's
+     `LocMatch`ed state by `ro_byte`/`ro_addr` (now `GoFV/Proof/Gen/RoByte.lean`) under
+     `RoPre56 g s` (`RoMem (constRo (symNames g))` of the state's memory). gen-check on P0':
+     7,331 (on G55), of which 61 load a float constant. Witness `genG56_witness`
+     (`runtime.float64Inf`).
+   - **The composition** (on the lift to G54, main e53604fc; on G55, cdf73c37): `Obj/G54.lean` → `Obj/G56.lean`
+     (`g56_obj_value` … from `g56L_*`; `checkNL30_of_56L`, `g56L_clean`), `MemPanic`,
+     `CallPanic`, `Entry49` (`g56_memPanic`, `g56_ldarPanic`, `g56_callPanic`,
+     `g56_icallPanic`, `g56L_entryStore`: an access, call or entry store is no G56 op,
+     `vkind56_eq49`, `op56`), `Whole.lean` on `checkG56L` (`checkG56L_cx`,
+     `checkG56L_uIn_entry`). The read-only premise is `RoRun g env lc b0 i0 s0` (`RoPre56` at
+     every state the run reaches), a premise of `sim_values`, `sim_from_ret`, `sim_valuesPanic`,
+     `sim_from_panic`, `obj_whole_ret`, `obj_whole_panic` next to `RunPre` (`RunPre` itself is
+     unchanged, so `runPre_simple` still discharges it); `verified_mach` discharges it by
+     `lreach_roMem` (the entry values' run `hpre`, `Env.KeepsRo` from `VPre`'s `RoImage`).
+     `verified_mach` takes `checkG56 (LocCtx.make …) ps bstart g` on P0' `ps` (with `g` the
+     symbols with the constants) and `checkObj` on the same `ps`, and gains exactly two premises:
+     `(hmt : constRo (symNames g) ≠ [] → memTyL lc = true)` (executable, the driver checks it
+     when the function loads a float constant; without one `RoRun` is `roRun_nil`; `memTyL` itself
+     rejects `WBend` and `CALLtail`, 733 and about 160 quick-v10 functions; sound by `memTyL_val`) and
+     `(hro : RoMem (constRo (symNames g)) (addGlobals e mem))`; `verified_mach_fixed` restates
+     it. Witnesses: `ObjWhole`, `ObjWholeNL`, `ObjPanic` check `constRo (symNames g) = []`
+     (`roRun_nil`), `ObjWhole.lcFacts` also `memTyL` (`lc_ro`), which `verified_mach_witness`
+     uses. The driver (`E2E.back`): P0' numbered by `internConsts` for `checkG56` and by
+     `Flushplist`'s `symIdx` for `checkObj`, a function whose two numberings differ rejected,
+     `memTyL` on `liveCtx`, `checkG56`, `checkObj` on P0'.
+   - The `RoMem` premise is about the input memory: Phase 1's export image (`globalImage`) has no
+     assembler symbols, so `addGlobals` adds none and the input `mem` must hold the constant
+     symbols' allocations. With `EntryMatch`'s `MemInj` and `G2Env.glob` it says that the loaded
+     image holds the bits at the symbol's linked address: an assumption about the linker and
+     loader (STATUS Assumptions, `RoMem` of the constant symbols), not about the compiled code.
 5. *Jump tables* (with the JUMPTABLE slice).
    - The table is a Phase 1 read-only allocation of code-pointer fragments (the targets' Prog
      IDs). `MemInj` resolves them through the link: `L.addr id` on P0, `base + pc` on the

@@ -101,6 +101,7 @@ import GoFV.Proof.Gen.G54b
 import GoFV.Proof.Gen.G55
 import GoFV.Proof.Gen.G55a
 import GoFV.Proof.Gen.G55b
+import GoFV.Proof.Gen.G56
 import GoFV.Proof.Gen.G57
 import GoFV.Proof.Gen.G57a
 import GoFV.Proof.Gen.G57b
@@ -121,6 +122,7 @@ import GoFV.Proof.Gen.Progs4
 import GoFV.Proof.Gen.Progs50
 import GoFV.Proof.Gen.Progs7
 import GoFV.Proof.Gen.Rel
+import GoFV.Proof.Gen.RoByte
 import GoFV.Proof.Gen.Spec
 import GoFV.Proof.Gen.Spec10
 import GoFV.Proof.Gen.Spec11
@@ -178,6 +180,7 @@ import GoFV.Proof.Gen.Spec54a
 import GoFV.Proof.Gen.Spec55
 import GoFV.Proof.Gen.Spec55a
 import GoFV.Proof.Gen.Spec55b
+import GoFV.Proof.Gen.Spec56
 import GoFV.Proof.Gen.Spec57
 import GoFV.Proof.Gen.Spec57a
 import GoFV.Proof.Gen.Spec57b
@@ -263,7 +266,7 @@ import GoFV.Proof.Obj.EndToEndFixed
 import GoFV.Proof.Obj.Entry49
 import GoFV.Proof.Obj.Ex
 import GoFV.Proof.Obj.Frame
-import GoFV.Proof.Obj.G54
+import GoFV.Proof.Obj.G56
 import GoFV.Proof.Obj.G7
 import GoFV.Proof.Obj.Insn
 import GoFV.Proof.Obj.Link
@@ -950,6 +953,7 @@ import GoFV.Proof.Witness.GenG53
 import GoFV.Proof.Witness.GenG54
 import GoFV.Proof.Witness.GenG55
 import GoFV.Proof.Witness.GenG55b
+import GoFV.Proof.Witness.GenG56
 import GoFV.Proof.Witness.GenG57
 import GoFV.Proof.Witness.GenG57a
 import GoFV.Proof.Witness.GenG57a2

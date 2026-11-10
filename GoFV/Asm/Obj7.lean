@@ -154,13 +154,19 @@ private def constSym (name : String) (size align : Int) (p : ByteArray) : AsmM N
     modify fun s => { s with symAlign := s.symAlign.insert k align }
   return k
 
+/-- The name `ctxt.Float32Sym` gives the float of `math.Float32bits` `bits` (`sym.go:163-176`). -/
+def float32SymName (bits : Nat) : String := s!"$f32.{hexPad bits 8}"
+
+/-- The name `ctxt.Float64Sym` gives the float of `math.Float64bits` `bits` (`sym.go:178-191`). -/
+def float64SymName (bits : Nat) : String := s!"$f64.{hexPad bits 16}"
+
 /-- `ctxt.Float32Sym(f)` (`sym.go:163-176`), `f` given by its `math.Float32bits`. -/
 def float32Sym (bits : Nat) : AsmM Nat :=
-  constSym s!"$f32.{hexPad bits 8}" 4 4 (leBytes bits 4)
+  constSym (float32SymName bits) 4 4 (leBytes bits 4)
 
 /-- `ctxt.Float64Sym(f)` (`sym.go:178-191`), `f` given by its `math.Float64bits`. -/
 def float64Sym (bits : Nat) : AsmM Nat :=
-  constSym s!"$f64.{hexPad bits 16}" 8 8 (leBytes bits 8)
+  constSym (float64SymName bits) 8 8 (leBytes bits 8)
 
 /-- `ctxt.Int32Sym(i)` (`sym.go:193-205`): the name formats `uint64(i)`. -/
 def int32Sym (i : Int) : AsmM Nat :=
@@ -252,6 +258,20 @@ def progedit (pid : Nat) : AsmM Unit := do
   setP pid p
   if (← read).flagDynlink then
     rewriteToUseGot pid
+
+/-- The constant symbol `progedit` loads `p`'s float constant from (`obj7.go:353-385`, the
+`FMOVS`/`FMOVD` cases above): for `FMOVS`/`FMOVD $c, Fd` (`FCONST`) whose `c` is no `FMOV`
+immediate (`chipfloat7`) and not 0 (`float32(c)` not 0 for `FMOVS`), the name of
+`Float32Sym(float32(c))`/`Float64Sym(c)`; `none` for every other Prog. -/
+def fconstSym? (p : Prog) : Option String :=
+  if p.from_.type != .FCONST then none else
+  match p.as, p.from_.val with
+  | .FMOVS, .float f64 =>
+    let f32 := f64to32bits f64
+    if chipfloat7 f64 > 0 || f32 == 0 then none else some (float32SymName f32)
+  | .FMOVD, .float f64 =>
+    if chipfloat7 f64 > 0 || f64 == 0 then none else some (float64SymName f64.toNat)
+  | _, _ => none
 
 /-! ## `linkpatch` (`pass.go:125-181`) -/
 

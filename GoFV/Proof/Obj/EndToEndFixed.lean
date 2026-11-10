@@ -54,7 +54,7 @@ theorem verified_mach_fixed
     {H : Hooks} {g : G2In} {L : Link} {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab}
     {kt : KTab} {E0 : MatchEnv} {spills : Array Spill} {o : ObjIn} {otab : Tab}
     {base : BitVec 64} {code : Code} {room : Nat} {s0 : MState}
-    (hc : checkG54 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
+    (hc : checkG56 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
     (hO : ObjEnv ps spills o otab L base code (s0.x 30))
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hic : ∀ u, ICallOut L ps.toList u)
@@ -79,7 +79,9 @@ theorem verified_mach_fixed
     (huE : uL35 lc [] blkE k = [])
     (hpc : ObjEnv.map otab ps L base (E0.pcOf lc.ctx.f.entry k) =
       base + BitVec.ofNat 64 (otab.offs[0]!))
-    (hRP : RunPre e H lc g L (endP L.text ps.toList) E0 lc.ctx.f.entry k sI) :
+    (hRP : RunPre e H lc g L (endP L.text ps.toList) E0 lc.ctx.f.entry k sI)
+    (hmt : constRo (symNames g) ≠ [] → memTyL lc = true)
+    (hro : RoMem (constRo (symNames g)) (addGlobals e mem)) :
     ∃ fuel', OutcomeRefines 0 (GoFV.SSA.run e penv.tables f args mem fuel)
         (runLoc e r.st.tables r.st.func args mem fuel') ∧
       ∃ raw, runLoopLoc e lc fuel' (locInit e lc args mem) lc.ctx.f.entry = raw ∧
@@ -94,6 +96,6 @@ theorem verified_mach_fixed
         RunPanicPre e H lc g L (endP L.text ps.toList) E0 lc.ctx.f.entry k sI →
         ∃ pe' n t', BoundsAgree pe pe' ∧ runMach H code (s0.x 30) n s0 = .panicked pe' t') :=
   verified_mach hpipe hv hP hn ha hnp hd hlc hc hO hH hic hrok hME hroom hg hms hsep hE hEE hbE hbm
-    hk hpre hes hent hmore hinv huE hpc hRP
+    hk hpre hes hent hmore hinv huE hpc hRP hmt hro
 
 end GoFV.Proof.Obj

@@ -1,4 +1,4 @@
-import GoFV.Proof.Obj.Whole
+import GoFV.Proof.Obj.RoReach
 import GoFV.Proof.Pass.PipelineFull
 
 variable [GoFV.SSA.Sem.Addrs]
@@ -8,15 +8,19 @@ variable [GoFV.SSA.Sem.Addrs]
 
 `verifiedPipelineFull_refines` (Phase 2: every returning or panicking `run` of the generic SSA
 input is refined by a `runLoc` of `trim`'s output) composed with `obj_whole_ret` (Phase 3: a
-returning `runLoc` body of a function `checkG54L`, `retRegsOK` and `checkObj` accept is matched by
+returning `runLoc` body of a function `checkG56L`, `retRegsOK` and `checkObj` accept is matched by
 `runMach` of the linked words, with the results in their ABI registers) and `obj_whole_panic` (a
-panicking body by a panicking `runMach`), on slice G54: `checkG54` accepts the pipeline's output
-`LocCtx.make tabs f` when `refsLive` holds of it and `checkG54L` accepts `liveCtx` of it (the homes
+panicking body by a panicking `runMach`), on slice G56: `checkG56` accepts the pipeline's output
+`LocCtx.make tabs f` when `refsLive` holds of it and `checkG56L` accepts `liveCtx` of it (the homes
 of removed values dropped), under which `runLoc` runs alike (`runLoopLoc_live`). `runLoc` is
 `finish` of its body `runLoopLoc` (`runLoc_eq`), whose outcome is returned or panicked when
 `runLoc`'s is (`finish_defined`). The entry relation leaves out the windows of the
 register-assigned parameters the function accesses (`pendWins`), which the entry stores from
-value `k` write (`entryStoresOK`, a checked premise).
+value `k` write (`entryStoresOK`, a checked premise). The Progs are P0' (`GoFV.Asm.p0Prime`: the
+float constants that are no `FMOV` immediate loaded from their constant symbols, which `g`
+lists); every state of the run has those symbols (`RoRun`, by `lreach_roMem` from the input
+premise `RoMem (constRo (symNames g)) (addGlobals e mem)`, `memTyL` and `Env.KeepsRo` of
+`VPre`'s `RoImage`).
 -/
 
 namespace GoFV.Proof.Obj
@@ -36,17 +40,19 @@ theorem runLoc_args {env : Env} {tabs : Tables} {f : Func} {args : List Val} {me
     exact h.elim
 
 /-- **Generic SSA to machine words.** `f` goes through the verified pipeline (`fullyVerified`)
-to the allocated function `r.st.func` (tables `r.st.tables`); genssa's P0 Progs `ps` of it are
-accepted by `checkG54` (so `checkG54L` accepts them on `lc`, `LocCtx.make` of the pipeline's
-output without the homes of removed values, `liveCtx`), its returns by `retRegsOK` (the register
-results in their ABI registers, `ownOutRegs`), and the assembler's output `o` by `checkObj`
+to the allocated function `r.st.func` (tables `r.st.tables`); genssa's Progs with `progedit`'s
+float constant loads, P0' `ps`, are accepted by `checkG56` (so `checkG56L` accepts them on `lc`,
+`LocCtx.make` of the pipeline's output without the homes of removed values, `liveCtx`), its
+returns by `retRegsOK` (the register results in their ABI registers, `ownOutRegs`), the memory
+types by `memTyL`, and the assembler's output `o` by `checkObj`
 (`ObjEnv`: linked at `base` to `code`, the caller's return address `s0.x 30`). On every input of
 Phase 1's `VPre` with the pipeline's premises, a `run` of `f` that returns or panics is refined by
 a `runLoc` of `r.st.func` (`OutcomeRefines`), which is `finish` of its body `runLoopLoc` on `lc`
 from `locInit`; when the body returns `(rs, mm)`, `runMach` of the linked words from the
 function's entry `s0` returns to `s0.x 30` with the caller's `SP`, `g` and frame pointer
 (`MachRet`), `rs` in the result registers (`R0`–`R15` or `F0`–`F15`) and `mm` (with the results
-on the stack, in their `PPARAMOUT` variables) injected into the memory (`ResultRel`); when the
+on the stack, in their `PPARAMOUT` variables) injected into the memory (`ResultRel`), provided the
+input memory has the float constant symbols `g` lists (`RoMem (constRo (symNames g))`); when the
 body panics with `pe` and the panic premises hold (the
 trusted `HookPanicMap` and `BoundsOK`, and `RunPanicPre`: the run's panics come from nil checks,
 loads, stores and acquire loads that fault in the nil page, bounds checks and static, interface or
@@ -75,7 +81,7 @@ theorem verified_mach
     {H : Hooks} {g : G2In} {L : Link} {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab}
     {kt : KTab} {E0 : MatchEnv} {spills : Array Spill} {o : ObjIn} {otab : Tab}
     {base : BitVec 64} {code : Code} {room : Nat} {s0 : MState}
-    (hc : checkG54 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
+    (hc : checkG56 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
     (hO : ObjEnv ps spills o otab L base code (s0.x 30))
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hic : ∀ u, ICallOut L ps.toList u)
@@ -100,7 +106,9 @@ theorem verified_mach
     (huE : uL35 lc [] blkE k = [])
     (hpc : ObjEnv.map otab ps L base (E0.pcOf lc.ctx.f.entry k) =
       base + BitVec.ofNat 64 (otab.offs[0]!))
-    (hRP : RunPre e H lc g L (endP L.text ps.toList) E0 lc.ctx.f.entry k sI) :
+    (hRP : RunPre e H lc g L (endP L.text ps.toList) E0 lc.ctx.f.entry k sI)
+    (hmt : constRo (symNames g) ≠ [] → memTyL lc = true)
+    (hro : RoMem (constRo (symNames g)) (addGlobals e mem)) :
     ∃ fuel', OutcomeRefines 0 (GoFV.SSA.run e penv.tables f args mem fuel)
         (runLoc e r.st.tables r.st.func args mem fuel') ∧
       ∃ raw, runLoopLoc e lc fuel' (locInit e lc args mem) lc.ctx.f.entry = raw ∧
@@ -117,7 +125,12 @@ theorem verified_mach
   obtain ⟨fuel', href⟩ := verifiedPipelineFull_refines hpipe hv hP hn ha hnp hd
   have hd' : (runLoc e r.st.tables r.st.func args mem fuel').Defined := href.defined_right
   have hargs := runLoc_args hd'
-  obtain ⟨hr, hc⟩ := checkG54_spec hc
+  obtain ⟨hr, hc⟩ := checkG56_spec hc
+  have hRo : RoRun g e lc lc.ctx.f.entry k sI := by
+    by_cases hcr : constRo (symNames g) = []
+    · exact roRun_nil hcr
+    · exact fun _ _ _ hreach mm hm =>
+        lreach_roMem hP.2.2.2.2.2.2.2.2.1.1 (hmt hcr) hro hpre hreach hm
   have heq : runLoc e r.st.tables r.st.func args mem fuel' =
       finish e lc.ctx.outs lc.ctx.defers lc.ctx.act
         (runLoopLoc e lc fuel' (locInit e lc args mem) lc.ctx.f.entry) := by
@@ -127,8 +140,8 @@ theorem verified_mach
   refine ⟨fuel', href, _, rfl, heq, finish_defined (heq ▸ hd'), fun rs mm hraw => ?_,
     fun pe mm hraw hHP hbok hPP => ?_⟩
   · exact obj_whole_ret hc hO hH hic hrok hME hroom hg hms hsep hE hEE hbE hbm hk
-      (by exact rfl) hpre hes hent hmore hinv huE hpc hRP hraw
+      (by exact rfl) hpre hes hent hmore hinv huE hpc hRP hRo hraw
   · exact obj_whole_panic hc hO hH hHP hbok hic hME hroom hg hms hsep hE hEE hbE hbm hk
-      (by exact rfl) hpre hes hent hmore hinv huE hpc hRP hPP hraw
+      (by exact rfl) hpre hes hent hmore hinv huE hpc hRP hRo hPP hraw
 
 end GoFV.Proof.Obj
