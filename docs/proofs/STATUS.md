@@ -378,7 +378,13 @@ Witnesses:
 - `objBarrier_dmb_witness` (`GoFV/Proof/Witness/ObjBarrier.lean`: `checkObj` accepts
   `runtime.mallocgcSmallNoscanReuse`, whose `DMB $14` assembles to `.barrier 5 14`; `progSym_sound`
   on that Prog), `objBarrier_prfm_witness` (`PRFM PLDL1KEEP, [X0]` with `X0 = 0` through
-  `symInsn_sound`: no fault, memory kept; `PRFM (R0), $0` has the same effect).
+  `symInsn_sound`: no fault, memory kept; `PRFM (R0), $0` has the same effect);
+- `objAtomic_prog_witness` (`GoFV/Proof/Witness/ObjAtomic.lean`: `checkProg` accepts
+  `sync/atomic.AddInt32`'s `LDADDALW`, `LDAXRW` and `STLXRW` against their words, with equal
+  Prog and word effects; `CASALW R27, (R0), R2` and its word have equal effects),
+  `objAtomic_ldadd_run`, `objAtomic_stlxr_run`, `objAtomic_cas_hit`, `objAtomic_cas_miss`
+  (`symInsn_sound` on `LDADDAL`, `STLXR` and `CASAL` words, a `CAS` mismatch keeping the memory),
+  `objAtomic_rmwEx`.
 
 Coverage on quick-v10 (`lake exe obj-check`, on P0'): 8,729 of 9,297 functions (93.89%; 358,922 of
 429,130 P0 Progs in accepted functions), with `CSEL`/`CSINC`/`CSINV`/`CSNEG`/`CSET`/`CSETM`,
@@ -391,7 +397,12 @@ other 5 stop at `LDORALB`, `VCNT`, `SBFIZ`), 8,544, 91.90%, before P0' (163 reje
 `PCREL_LDST: access`, 159 now accepted, 4 stopped by a later reason), 8,464, 91.04%, before the
 `F` spills (80 rejections `tail: spill register`), 8,263, 88.87%, before the `Q` stores, 7,920,
 85.18%, before the integer operations after `MUL`, 7,741, 83.26%, before SIMD&FP, and 5,533,
-59.51%, before the opcodes above).
+59.51%, before the opcodes above). `LDAXR*`, `STLXR*`, `CASAL*` and the LSE read-modify-writes
+`LDADDAL*`/`LDCLRAL*`/`LDEORAL*`/`LDORAL*`/`SWPAL*` are modelled per Prog (`exclOp`, `atomOp`;
+co-simulation: 19 forms, 4,864 cases, 0 mismatches) but gain no function yet: every quick-v10
+function with them (417, `goarm64 v8.0`'s LL/SC fallbacks) has a Prog that reads `R27` set by
+the Prog before it (`CBNZ R27` after `STLXR …, R27`, `CASAL R27`, `LDCLRAL R27`), which needs an
+`X27` agreement invariant in `obj_star` (`docs/plans/proofs3.md` §7, **Atomics, per Prog**).
 
 **SIMD&FP.** `Sym` carries the vector registers written (`Sym.v`, 128-bit values `VEx` over the
 state before the Prog: `.v r`, constants, `.ofX` of a general register, loads `.ld n a`, `fp1Op`,
@@ -1719,7 +1730,7 @@ adds none:
 | hook `wbHook` (`runtime.gcWriteBarrier<n>`) | returns the write-barrier buffer (`8n` bytes at `RtInfo.wbuf`) in `R25`; `R27` and the flags clobbered, every other register kept | `runtime/asm_arm64.s` `gcWriteBarrier`; Phase 1's `WbPre` protocol (row above) | a buffer flush that changes other registers or memory the code reads | trusted |
 | hook `panicBoundsHook` (`runtime.panicBounds`) | panics with `.bounds kind x y` decoded from the caller's `PCDATA_PanicBounds` at `X30 − 1` (`pcvalue`, `abi.BoundsDecode`), `x`/`y` from `R0`–`R15` or constants (`boundsPanic`; the kind `2·code`, `+1` when unsigned, and `BoundsConvert`, code 8, kind 16 = `ssa.BoundsConvert`, `cmd/compile/internal/ssa/op.go`) | `runtime/panic.go:211-236` `panicBounds64`, `internal/abi` `BoundsDecode` | a runtime whose decoding differs | trusted |
 | `runMach` nil page (`GoFV/SSA/Sem/RunMach.lean`) | a load or store in `[0, 4096)` is `panicked nilDeref`; no other address faults | the kernel leaves the nil page unmapped; SIGSEGV there becomes `sigpanic` → `panicmem` | an access fault outside the nil page that the code relies on | trusted |
-| `GoFV.Arm64` single core | exclusive stores always succeed, barriers advance the PC; `DMB`/`DSB`/`ISB` are no-ops because of it (they only order memory accesses between observers, and one core has none), and so is `checkObj`'s `DMB` (`progSymCore`); `PRFM` is a no-op independently of it (a hint with no architectural effect on registers or memory, Arm ARM C6.2 `PRFM`) | one goroutine, one core, as Phase 2 §8 | a multi-threaded observation | trusted |
+| `GoFV.Arm64` single core | exclusive stores always succeed, barriers advance the PC; `DMB`/`DSB`/`ISB` are no-ops because of it (they only order memory accesses between observers, and one core has none), and so is `checkObj`'s `DMB` (`progSymCore`); `PRFM` is a no-op independently of it (a hint with no architectural effect on registers or memory, Arm ARM C6.2 `PRFM`). `checkObj` relies on it for the exclusive accesses: `LDAXR*` is a plain load, `STLXR*` a store with status 0 on both sides (`symExcl`, `atomP`, as `execExcl` and `progEffect`); the LSE single instructions (`CASAL*`, `LDADDAL*`, `LDCLRAL*`, `LDEORAL*`, `LDORAL*`, `SWPAL*`) are one load and one store, with no other observer in between | one goroutine, one core, as Phase 2 §8 | a multi-threaded observation (another core's store between an `LDAXR` and its `STLXR`, which would fail it) | trusted |
 | `CallOK`/`CallSpec` (Phase 3 G2 and G3, `GoFV/Proof/Gen/G2.lean`, premise of `g2_value` and `g3_value` at each static call) | from the state at the callee's symbol (the caller's but for `X30`, the return address), with the call's arguments in their ABI registers and the memory injected, the hook `H.call` returns to `X30` with `SP`, `R28`, `R29` and the frame (saved `LR`/`FP`, spill slots: `StkAt`) kept, `runLoc`'s memory after the call injected by an extension of `ι` that keeps the live blocks away from the frame, and `runLoc`'s results in the ABI result registers | the callee's Phase 1 contract lifted through ABIInternal (semantics3 §6, the `liftContract` row above); Go's calling convention keeps `R28`/`R29`/`SP` and the caller's frame | a callee that writes the caller's frame or spill slots, returns elsewhere, or whose results differ from `runLoc`'s | trusted; the witness `genG2_value_witness` discharges it for a callee that returns at once |
 | `CallOKZ` (Phase 3 G15, `GoFV/Proof/Gen/G15.lean`, premise of `g15_value` at each static call) | `CallOK`'s contract (`CallAt`) at a static call whose ABI, without its zero-sized stack inputs, has the register arguments and results `callRegsZ` gives | as `CallOK`: a zero-sized stack input passes no byte, so the callee's Phase 1 contract lifted through ABIInternal is the same | as `CallOK` | trusted; the witness `genG15_value_witness` discharges it for a callee that returns at once |
 | `WbOK`/`WbSpec` (Phase 3 G8, `GoFV/Proof/Gen/G8.lean`, premise of `g8_value` and every later slice's `gN_value` at each write-barrier request `LoweredWB [n]`) | from the state at `runtime.gcWriteBarrier<n>`'s symbol (the caller's but for `X30`), with the memory injected, the hook `H.call` returns to `X30` with `SP`, the memory and every register but `X25` and `X27` kept, `X25` the address of the buffer under an extension of `ι` that maps the block `wbuf` there and injects `runLoc`'s memory with a fresh `8n`-byte buffer (`Mem.wbAlloc`), the live blocks away from the frame | the hook `wbHook` (row above): `runtime/asm_arm64.s` `gcWriteBarrier` returns `8n` bytes of the per-P buffer in `R25`, clobbering only `R27` and the flags; the layout puts the buffer (`RtInfo.wbuf`) apart from the live blocks and the stack | a buffer that overlaps a live block or the frame, or a flush that changes other registers or memory | trusted; the witness `genG8_value_witness` discharges it for a hook that is `wbHook` with the buffer at `2^41` |

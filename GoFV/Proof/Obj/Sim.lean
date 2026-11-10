@@ -194,6 +194,14 @@ theorem Ex.regsOK_reads {e : Ex} (h : e.regsOK = true) {r : Nat} (hr : e.reads r
     · exact iha h.1.1 hr
     · exact ihb h.1.2 hr
     · exact ihd h.2 hr
+  | eqsel _ a b u w iha ihb ihu ihw =>
+    simp only [Ex.regsOK, Bool.and_eq_true] at h
+    simp only [Ex.reads, Bool.or_eq_true] at hr
+    rcases hr with ((hr | hr) | hr) | hr
+    · exact iha h.1.1.1 hr
+    · exact ihb h.1.1.2 hr
+    · exact ihu h.1.2 hr
+    · exact ihw h.2 hr
 
 theorem VEx.regsOK_reads {e : VEx} (h : e.regsOK = true) {r : Nat} (hr : e.reads r = true) :
     r < 31 ∧ r ≠ 27 ∧ r ≠ 30 := by

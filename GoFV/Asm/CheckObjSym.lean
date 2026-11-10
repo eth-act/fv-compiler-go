@@ -81,6 +81,9 @@ inductive Ex where
   /-- `FCVTZS`/`FCVTZU` (`u`) of the `S` (`ft = 0`) or `D` part of `V r` before the Prog into
   `m` bits, zero-extended (`exec`'s `fcvtInt` with `rmode` 3). -/
   | fcvtz (ft : BitVec 2) (u : Bool) (m : Nat) (r : Nat)
+  /-- `u` if the low `8 n` bits of `a` and `b` agree, else `w`: the value `CAS` stores (the new
+  value on a match, else the old one, which leaves the memory as it was). -/
+  | eqsel (n : Nat) (a b u w : Ex)
   deriving DecidableEq, Repr, Inhabited
 
 /-- The value of a conditional select (`condSel`): `x` at the datasize if `h`, else `y`
@@ -128,6 +131,8 @@ def eval (c : Ctx) : Ex → BitVec 64
     if ft = 0 then
       (GoFV.IEEE.toFixed .b32 ((c.s.v (BitVec.ofNat 5 r)).setWidth 32) u m .rz).setWidth 64
     else (GoFV.IEEE.toFixed .b64 ((c.s.v (BitVec.ofNat 5 r)).setWidth 64) u m .rz).setWidth 64
+  | .eqsel n a b u w =>
+    if (eval c a).setWidth (8 * n) = (eval c b).setWidth (8 * n) then eval c u else eval c w
 
 /-- The 128 bits a store of the value writes the low `8 n` bits of: `vq r` all of `V r`, any
 other value zero-extended. -/
@@ -161,6 +166,7 @@ def str : Ex → String
   | .vlo ft r => s!"vlo{ft.toNat}(V{r})"
   | .vq r => s!"vq(V{r})"
   | .fcvtz ft u m r => s!"fcvtz{if u then "U" else "S"}{ft.toNat}_{m}(V{r})"
+  | .eqsel n a b u w => s!"eqsel{n}({str a},{str b},{str u},{str w})"
 
 /-- Whether the value reads general register `r` of the state before the Prog. -/
 def reads (r : Nat) : Ex → Bool
@@ -171,6 +177,7 @@ def reads (r : Nat) : Ex → Bool
   | .add a b | .addSub _ _ a b | .logical _ _ a b | .bfm _ _ _ _ a b | .csel _ _ _ _ a b
   | .dp2 _ _ a b => reads r a || reads r b
   | .dp3 _ _ _ a b d => reads r a || reads r b || reads r d
+  | .eqsel _ a b u w => reads r a || reads r b || reads r u || reads r w
 
 /-- Whether every register the value reads is one of `X0`–`X30` but `X27` (the assembler's
 scratch) and `X30` (the link register), or a vector register: the registers a P0 state and its
@@ -183,6 +190,7 @@ def regsOK : Ex → Bool
   | .add a b | .addSub _ _ a b | .logical _ _ a b | .bfm _ _ _ _ a b | .csel _ _ _ _ a b
   | .dp2 _ _ a b => regsOK a && regsOK b
   | .dp3 _ _ _ a b d => regsOK a && regsOK b && regsOK d
+  | .eqsel _ a b u w => regsOK a && regsOK b && regsOK u && regsOK w
 
 /-! ### Smart constructors (constant folding and the canonical forms) -/
 
@@ -536,15 +544,36 @@ def symAccess (σ : Sym) (size : BitVec 2) (opc : BitVec 2) (rt : Nat) (a : Ex) 
     pure (σ.wX rt (loadVal opc n v))
   else pure (σ.store a n (σ.rX rt))
 
-/-- The symbolic `execExcl` (`LDAR*`/`LDAXR*`, and the ordered store `STLR*`; an exclusive
-store, which writes its status register, is not modelled). -/
-def symExcl (σ : Sym) (size : BitVec 2) (o2 ld : Bool) (rn rt : Reg) : Except String (Sym × MCtl) :=
+/-- The symbolic `execExcl` (`LDAR*`/`LDAXR*`, the ordered store `STLR*`, and the exclusive
+store `STXR*`/`STLXR*`, which succeeds on one core: its status register `Rs` becomes 0). -/
+def symExcl (σ : Sym) (size : BitVec 2) (o2 ld : Bool) (rs rn rt : Reg) :
+    Except String (Sym × MCtl) :=
   if ld then
     match σ.load (σ.rXsp rn.toNat) (bytesOf size) with
     | .ok (σ1, v) => pure (σ1.wX rt.toNat v, .fall)
     | .error e => throw e
-  else if o2 then pure (σ.store (σ.rXsp rn.toNat) (bytesOf size) (σ.rX rt.toNat), .fall)
-  else throw "store exclusive"
+  else
+    let σ1 := σ.store (σ.rXsp rn.toNat) (bytesOf size) (σ.rX rt.toNat)
+    pure (if o2 then σ1 else σ1.wX rs.toNat (.k 0), .fall)
+
+/-- The value an LSE atomic stores (`execAtomic`): `v` (`SWP`, `o3`), or the old value combined
+with `v` (`LDADD`, `LDCLR`, `LDEOR`, `LDSET` for `opc` 0–3); only its low bytes are stored. -/
+def rmwEx (o3 : Bool) (opc : BitVec 3) (old v : Ex) : Ex :=
+  if o3 then v else
+  match opc.toNat with
+  | 0 => .add old v
+  | 1 => .logical true 0 old (.inv true v)
+  | 2 => .logical true 2 old v
+  | _ => .logical true 1 old v
+
+/-- An atomic read-modify-write of `bytesOf size` bytes at `Rn` (`execAtomic`, `execCas`): the old
+value loaded, `nw old` stored, the old value written to `rd`. -/
+def symRmw (σ : Sym) (size : BitVec 2) (rn rd : Reg) (nw : Ex → Ex) :
+    Except String (Sym × MCtl) :=
+  match σ.load (σ.rXsp rn.toNat) (bytesOf size) with
+  | .ok (σ1, old) =>
+    pure ((σ1.store (σ.rXsp rn.toNat) (bytesOf size) (nw old)).wX rd.toNat old, .fall)
+  | .error e => throw e
 
 /-- The symbolic `condSel`: the condition on the flags before the Prog. -/
 def symCsel (σ : Sym) (sf op op2 : Bool) (rm : Reg) (cond : BitVec 4) (rn rd : Reg) :
@@ -668,7 +697,10 @@ def symInsn (i : Insn) (o : Nat) (σ : Sym) : Except String (Sym × MCtl) :=
     pure (σ.wX rd.toNat (Ex.mkDp2 sf opc (σ.rX rn.toNat) (σ.rX rm.toNat)), .fall)
   | .dp3 sf op31 o0 rm ra rn rd =>
     pure (σ.wX rd.toNat (Ex.mkDp3 sf op31 o0 (σ.rX ra.toNat) (σ.rX rn.toNat) (σ.rX rm.toNat)), .fall)
-  | .ldstExcl size o2 ld _ _ rn rt => symExcl σ size o2 ld rn rt
+  | .ldstExcl size o2 ld _ rs rn rt => symExcl σ size o2 ld rs rn rt
+  | .cas size _ _ rs rn rt =>
+    symRmw σ size rn rs fun old => .eqsel (bytesOf size) old (σ.rX rs.toNat) (σ.rX rt.toNat) old
+  | .atomic size _ _ rs o3 opc rn rt => symRmw σ size rn rt fun old => rmwEx o3 opc old (σ.rX rs.toNat)
   | .nop | .barrier .. => pure (σ, .fall)
   | .logShift sf opc shift n rm imm6 rn rd =>
     let y := Ex.mkShift sf shift imm6.toNat (σ.rX rm.toNat)

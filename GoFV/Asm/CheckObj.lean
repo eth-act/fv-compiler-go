@@ -214,12 +214,15 @@ def cselP (op : String) (sf : Bool) (p : Prog) : Except String (Sym × PCtl) := 
       pure (Ex.csel sf (op == "CSINV" || op == "CSNEG") (op == "CSINC" || op == "CSNEG") c n m)
   return (← wP {} p.to.reg r, .fall)
 
-/-- The acquire loads `LDAR*` and the release stores `STLR*`: whether a load, and the bytes. -/
+/-- The acquire loads `LDAR*`/`LDAXR*` (an exclusive load is a load on one core) and the release
+stores `STLR*`: whether a load, and the bytes. -/
 def exclOp (name : String) : Option (Bool × Nat) :=
   match name with
   | "LDAR" => some (true, 8) | "LDARW" => some (true, 4) | "LDARH" => some (true, 2)
   | "LDARB" => some (true, 1) | "STLR" => some (false, 8) | "STLRW" => some (false, 4)
   | "STLRH" => some (false, 2) | "STLRB" => some (false, 1)
+  | "LDAXR" => some (true, 8) | "LDAXRW" => some (true, 4) | "LDAXRH" => some (true, 2)
+  | "LDAXRB" => some (true, 1)
   | _ => none
 
 /-- An acquire load or release store (`exclOp`): a plain access of `n` bytes at the operand's
@@ -232,6 +235,57 @@ def exclP (az ez : Int) (ld : Bool) (n : Nat) (p : Prog) : Except String (Sym ×
   if p.to.type != .MEM then throw "release store operand"
   let (a, _) ← memP az ez p.scond p.to
   return (({} : Sym).store a n (← xP p.from_.reg), .fall)
+
+/-- The kinds of `progEffect`'s exclusive stores and atomics (`atomOp`). -/
+inductive AtomK where
+  /-- `STLXR* Rs, (Rn), Rstatus`. -/
+  | stlxr
+  /-- `CASAL* Rs, (Rn), Rt`. -/
+  | cas
+  /-- An LSE read-modify-write `Rs, (Rn), Rt` of `rmwEx o3 opc`. -/
+  | rmw (o3 : Bool) (opc : BitVec 3)
+  deriving DecidableEq, Repr
+
+/-- The exclusive stores `STLXR*`, the compare-and-swaps `CASAL*` and the read-modify-writes
+`LDADDAL*`, `LDCLRAL*`, `LDEORAL*`, `LDORAL*`, `SWPAL*` (`ProgOp.rmw`): the kind and the bytes. -/
+def atomOp (name : String) : Option (AtomK × Nat) :=
+  match name with
+  | "STLXR" => some (.stlxr, 8) | "STLXRW" => some (.stlxr, 4) | "STLXRH" => some (.stlxr, 2)
+  | "STLXRB" => some (.stlxr, 1)
+  | "CASALD" => some (.cas, 8) | "CASALW" => some (.cas, 4) | "CASALH" => some (.cas, 2)
+  | "CASALB" => some (.cas, 1)
+  | "LDADDALD" => some (.rmw false 0, 8) | "LDADDALW" => some (.rmw false 0, 4)
+  | "LDADDALH" => some (.rmw false 0, 2) | "LDADDALB" => some (.rmw false 0, 1)
+  | "LDCLRALD" => some (.rmw false 1, 8) | "LDCLRALW" => some (.rmw false 1, 4)
+  | "LDCLRALH" => some (.rmw false 1, 2) | "LDCLRALB" => some (.rmw false 1, 1)
+  | "LDEORALD" => some (.rmw false 2, 8) | "LDEORALW" => some (.rmw false 2, 4)
+  | "LDEORALH" => some (.rmw false 2, 2) | "LDEORALB" => some (.rmw false 2, 1)
+  | "LDORALD" => some (.rmw false 3, 8) | "LDORALW" => some (.rmw false 3, 4)
+  | "LDORALH" => some (.rmw false 3, 2) | "LDORALB" => some (.rmw false 3, 1)
+  | "SWPALD" => some (.rmw true 0, 8) | "SWPALW" => some (.rmw true 0, 4)
+  | "SWPALH" => some (.rmw true 0, 2) | "SWPALB" => some (.rmw true 0, 1)
+  | _ => none
+
+/-- An exclusive store or atomic (`atomOp`) of `n` bytes at the operand's address, as
+`progEffect`: `STLXR*` stores `Rs` and writes 0 to its status register (one core); `CASAL*`
+loads the old value into `Rs` and stores `Rt` if it equals `Rs`'s low bytes, else the old value
+back (`Ex.eqsel`); a read-modify-write loads the old value into `Rt` and stores `rmwEx` of it and
+`Rs`. -/
+def atomP (az ez : Int) (k : AtomK) (n : Nat) (p : Prog) : Except String (Sym × PCtl) := do
+  if p.to.type != .MEM then throw "atomic operand"
+  let (a, _) ← memP az ez p.scond p.to
+  let s ← xP p.from_.reg
+  match k with
+  | .stlxr =>
+    let σ ← wP {} p.regTo2 (.k 0)
+    return (σ.store a n s, .fall)
+  | .cas =>
+    let t ← xP p.regTo2
+    let σ ← wP { loads := [(a, n)] } p.from_.reg (.ld n a)
+    return (σ.store a n (.eqsel n (.ld n a) s t (.ld n a)), .fall)
+  | .rmw o3 opc =>
+    let σ ← wP { loads := [(a, n)] } p.regTo2 (.ld n a)
+    return (σ.store a n (rmwEx o3 opc (.ld n a) s), .fall)
 
 /-- A vector register operand (`ProgCtx.v`): its number. -/
 def vP (r : Int) : Except String Nat :=
@@ -484,6 +538,8 @@ def progSymCore (az ez : Int) (p : Prog) : Except String (Sym × PCtl) := do
     return ← cselP op sf p
   if let some (ld, n) := exclOp name then
     return ← exclP az ez ld n p
+  if let some (k, n) := atomOp name then
+    return ← atomP az ez k n p
   if let some (op, sf) := baseOf name ["ROR", "UDIV", "SDIV", "REM", "UREM", "BIC", "ORN", "EON",
       "MVN"] then
     return ← dp2P op sf p
