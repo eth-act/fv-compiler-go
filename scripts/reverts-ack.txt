@@ -5,3 +5,4 @@
 26d8b10 #625 intended: deletes GoFV/Proof/Obj/G12.lean (composition on G12, superseded by Obj/G30.lean), PR body: check-reverts.sh --allow; nothing to restore
 c0bded59 #675 intended: Opt/Checked.lean, Fuse/BranchRedirectCheck.lean, Fuse/ComparisonsCheck.lean, ShortCircuitBlockCheck.lean, ShortCircuitCheck.lean drop `variable [Addrs]` (checkers at Addrs.fixed, proofs3 §8 item 6), returning to before 3d8dfd5a; PR body: check-reverts.sh --allow; nothing to restore
 e6969584 #630 intended: Obj/StorePanic.lean renamed to Obj/MemPanic.lean (memFaultOp covers loads and stores; PR body says "MemPanic.lean, which replaces StorePanic.lean"); nothing to restore
+83565f6b #632 intended: Obj/G30.lean renamed to Obj/G34.lean (the composition lifted from G30 to G34; git show --stat: Obj/{G30.lean => G34.lean}); nothing to restore

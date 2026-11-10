@@ -15,7 +15,8 @@ ack=$(cd "$(dirname "$0")" && pwd)/reverts-ack.txt
 status=0
 for c in $(git rev-list -n "$count" --no-merges "$ref"); do
   git log -1 --format=%s "$c" | grep -qi revert && continue
-  [ -f "$ack" ] && grep -q "^$(git rev-parse --short=7 "$c")\b" "$ack" && continue
+  # an ack line starts with the commit's short hash, 7 or more hex digits (some lines use 8)
+  [ -f "$ack" ] && grep -q "^$(git rev-parse --short=7 "$c")[0-9a-f]*\b" "$ack" && continue
   while IFS=$'\t' read -r st f; do
     if [ "$st" = D ]; then
       a=$(git log -1 --format=%H --diff-filter=A "$c^" -- "$f" || true)
