@@ -1052,6 +1052,7 @@ import GoFV.Proof.Witness.NilMalloc
 import GoFV.Proof.Witness.NilSel
 import GoFV.Proof.Witness.NotIf
 import GoFV.Proof.Witness.ObjEndToEnd
+import GoFV.Proof.Witness.ObjEndToEndAtSP
 import GoFV.Proof.Witness.ObjEntry49
 import GoFV.Proof.Witness.ObjFrame
 import GoFV.Proof.Witness.ObjG7

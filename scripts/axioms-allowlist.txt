@@ -315,6 +315,15 @@ GoFV.Proof.Witness.GenG49.g49_facts._native.native_decide.ax_1_1 75768085318fff8
 # and `~r1` (`Blk.local`, `NAME_PARAM` 0 and 8, `frameOff` 24 and 32); compiled evaluation.
 GoFV.Proof.Witness.GenG49Mach.g49Mach_facts._native.native_decide.ax_1_1 9a49b4aba1c37cdff9e9028ecbe7572690839ff7f458db09305e2d6ef2782376
 
+# verified_mach_atSP_witness (GoFV/Proof/Witness/ObjEndToEndAtSP.lean, #553): the same wrapper from
+# its generic SSA through the verified pipeline (`fullyVerified`, `schedule` inputs running as
+# `runL`, `refsLive`, `checkG56L` on `liveCtx` of the output with the stock Progs numbered by
+# `flush`, `retRegsOK`, `entryStoresOK`) to the linked words (`checkObj`, `linkCode`, the layout's
+# facts), and the runs of `run`/`runLoc` at `Addrs.atSP` (entry values, the call, the return's
+# memory); compiled evaluation.
+GoFV.Proof.Witness.ObjEndToEndAtSP.obj_facts._native.native_decide.ax_1_1 9e17c58474fdabbb46509f7d3957b6f44ad78c895866dac2e77d71b20c63cf40
+GoFV.Proof.Witness.ObjEndToEndAtSP.e2e_facts._native.native_decide.ax_1_1 a42461b1b039570e191b86bcc42548708b29f94a0fe60ccb8c12a9922ee52ad0
+
 # genG52_witness (GoFV/Proof/Witness/GenG52.lean, #553): `checkG52` accepts `test/ken_chan`'s
 # `main.nrand` and `checkG49` does not (`REM R0, R1, R0` `v32`, `MOD v26 v6`); `runLoc` runs `v32`
 # on `-17` and `5`; compiled evaluation.
