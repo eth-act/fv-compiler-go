@@ -25,6 +25,7 @@ import GoFV.Proof.Low.Rules.Rename
 import GoFV.Proof.Low.Rules.SetOpInt
 import GoFV.Proof.Low.Rules.Shift
 import GoFV.Proof.Low.Rules.ShiftOp
+import GoFV.Proof.Low.Rules.ZeroSt
 
 variable [GoFV.SSA.Sem.Addrs]
 
@@ -129,6 +130,7 @@ theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
       ⟨r_ARM64_1641_sound, r_ARM64_1653_sound, r_ARM64_1655_sound, r_ARM64_1656_sound, r_ARM64_1657_sound, r_ARM64_1665_sound, r_ARM64_1668_sound, trivial⟩,
       ⟨r_ARM64_984_sound, r_ARM64_987_sound, trivial⟩,
       ⟨r_ARM64_1617_sound, r_ARM64_1681_sound, r_ARM64_1701_sound, r_ARM64_1703_sound, r_ARM64_1704_sound, r_ARM64_1705_sound, r_ARM64_1716_sound, r_ARM64_1743_sound, r_ARM64_1754_sound, r_ARM64_1757_sound, trivial⟩,
+      ⟨r_ARM64_770_sound, r_ARM64_897_sound, trivial⟩,
       ⟨r_ARM64_971_sound, r_ARM64_1013_sound, r_ARM64_1015_sound, r_ARM64_1018_sound, r_ARM64_1436_sound, r_ARM64_1437_sound, r_ARM64_1438_sound, trivial⟩,
       ⟨r_ARM64_1214_sound, r_ARM64_1215_sound, r_ARM64_1216_sound, trivial⟩,
       ⟨r_ARM64_1749_sound, trivial⟩,
@@ -341,7 +343,7 @@ theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
       ⟨r_ARM64_45_2_sound, trivial⟩,
       ⟨r_ARM64_45_3_sound, trivial⟩,
       ⟨r_ARM64_45_4_sound, trivial⟩,
-      ⟨r_ARM64_376_sound, r_ARM64_377_sound, trivial⟩,
+      ⟨r_ARM64_336_sound, r_ARM64_337_sound, r_ARM64_338_sound, r_ARM64_339_sound, r_ARM64_342_sound, r_ARM64_345_sound, r_ARM64_348_sound, r_ARM64_351_sound, r_ARM64_352_sound, r_ARM64_355_sound, r_ARM64_358_sound, r_ARM64_361_sound, r_ARM64_364_sound, r_ARM64_367_sound, r_ARM64_370_sound, r_ARM64_373_sound, r_ARM64_376_sound, r_ARM64_377_sound, trivial⟩,
       ⟨r_ARM64_201_sound, trivial⟩,
       ⟨r_ARM64_203_sound, trivial⟩,
       ⟨r_ARM64_204_sound, trivial⟩,

@@ -5,7 +5,7 @@ import GoFV.Proof.Pass.MemCombineBytes
 variable [GoFV.SSA.Sem.Addrs]
 
 /-!
-# A 128-bit store lowering a `Move` refines it (issue #385)
+# A 128-bit store lowering a `Move`, or a store of `0` lowering a `Zero`, refines it (issue #385)
 
 `ARM64.rules:418` lowers `(Move [16] dst src mem)` to `(FMOVQstore dst (FMOVQload src mem) mem)`
 and `426` `(Move [32] dst src mem)` to `(FSTPQ dst (Select0 (FLDPQ src mem)) (Select1 (FLDPQ src
@@ -23,7 +23,17 @@ shaped (`rty`).
   the destination's window (`Ptr.ofAddr_add_of_inWindow`; `symAddr_add`).
 * Two adjacent writes are the write of their concatenation (`write_append`).
 
-The module sits below `SimMem.lean`, whose `atomPair` simulation uses `moveQ_lower_eval`.
+`ARM64.rules:336`, `337`, `338`, `351` lower `(Zero [n] ptr mem)` (`n` 1, 2, 4, 8) to
+`(MOV{B,H,W,D}store ptr (MOVDconst [0]) mem)` and `373` `(Zero [16] ptr mem)` to `(STP [0] ptr
+(MOVDconst [0]) (MOVDconst [0]) mem)`; `757`-`770` and `879`-`897` fold an offset and a symbol or
+frame variable into the store (`zeroLower`). `zeroSt_lower_eval`: when the store's address is the
+`Zero`'s pointer (`AddrRef`), its values are the word `0` (whose bytes are zeros,
+`storeBytes_zero`) and its memory refines the `Zero`'s, the store refines the generic `Zero`
+(`memRoot`: the write of `n` zero bytes), both shaped; `STP` writes its two words as one write
+(`write_append`).
+
+The module sits below `SimMem.lean`, whose `atomPair` simulation uses `moveQ_lower_eval` and
+`zeroSt_lower_eval`.
 -/
 
 namespace GoFV.Proof.Low.Sim
@@ -592,5 +602,196 @@ theorem moveQ2_outer_eval {env : Env} {ctx ctx' : Ctx} {fr fr2 : Frame} {u w2 : 
   rw [evalOpL_qStore h2 hP2 hl2 hs2 hw3']
   simp only [Res.bind_ok]
   exact .ok (rty_le (fun _ => rfl) ty (.mem hm3))
+
+/-! ## Stores of `0` (`ARM64.rules:336`, `337`, `338`, `351`, `373`) -/
+
+/-- `zeroLower`: a `Zero [n]` (two arguments) lowered to the scalar integer store of `n` bytes
+(three arguments, `n` 1, 2, 4 or 8) or, at 16 bytes, to `STP` (four). -/
+theorem zeroLower_cases {tabs : Tables} {u w : Value} (h : zeroLower tabs u w = true) :
+    u.op = .Zero ∧ u.args.size = 2 ∧
+      ((w.args.size = 3 ∧ ((w.op = .ARM64MOVBstore ∧ u.auxInt.toInt.toNat = 1) ∨
+          (w.op = .ARM64MOVHstore ∧ u.auxInt.toInt.toNat = 2) ∨
+          (w.op = .ARM64MOVWstore ∧ u.auxInt.toInt.toNat = 4) ∨
+          (w.op = .ARM64MOVDstore ∧ u.auxInt.toInt.toNat = 8))) ∨
+        (w.args.size = 4 ∧ w.op = .ARM64STP ∧ u.auxInt.toInt.toNat = 16)) := by
+  unfold zeroLower zeroOp at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨⟨⟨hu, h2⟩, -⟩, -⟩, h⟩ := h
+  refine ⟨hu, h2, ?_⟩
+  split at h
+  · rename_i h1
+    simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at h
+    rw [show u.auxInt = 1 by simpa using h1]
+    exact .inl ⟨h.2, .inl ⟨h.1, by decide⟩⟩
+  split at h
+  · rename_i h1
+    simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at h
+    rw [show u.auxInt = 2 by simpa using h1]
+    exact .inl ⟨h.2, .inr (.inl ⟨h.1, by decide⟩)⟩
+  split at h
+  · rename_i h1
+    simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at h
+    rw [show u.auxInt = 4 by simpa using h1]
+    exact .inl ⟨h.2, .inr (.inr (.inl ⟨h.1, by decide⟩))⟩
+  split at h
+  · rename_i h1
+    simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at h
+    rw [show u.auxInt = 8 by simpa using h1]
+    exact .inl ⟨h.2, .inr (.inr (.inr ⟨h.1, by decide⟩))⟩
+  split at h
+  · rename_i h1
+    simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at h
+    rw [show u.auxInt = 16 by simpa using h1]
+    exact .inr ⟨h.2, h.1, by decide⟩
+  · simp at h
+
+/-- The bytes a store of the word `0` writes, at 1 to 8 bytes: zeros. -/
+theorem storeBytes_zero {n : Nat} (hn : n = 1 ∨ n = 2 ∨ n = 4 ∨ n = 8) :
+    Arm64.storeBytes n (.i64 0) = Array.replicate n (.b 0) := by
+  rcases hn with rfl | rfl | rfl | rfl <;>
+  · simp only [Arm64.storeBytes, Arm64.reg, intBytes]
+    apply Array.ext <;> simp
+
+/-- A scalar integer store (`MOV{B,H,W,D}store`, `k` bytes) writes `k` bytes of its value at
+`symAddr`. -/
+private theorem evalOpL_movSt {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {ty : Ty} {k : Nat}
+    (hw : (w.op = .ARM64MOVBstore ∧ k = 1) ∨ (w.op = .ARM64MOVHstore ∧ k = 2) ∨
+      (w.op = .ARM64MOVWstore ∧ k = 4) ∨ (w.op = .ARM64MOVDstore ∧ k = 8))
+    {a x : Val} {m : Mem} {p : Ptr} (hp : symAddr ctx w a = some p) :
+    ∃ what, evalOpL false env ctx fr w [a, x, .mem m] ty =
+      writeRes what (Arm64.storeN k p x m) := by
+  have h0 : nilFaults false ctx w [a, x, .mem m] = none := rfl
+  refine ⟨s!"v{w.id}: {w.op.name}", ?_⟩
+  rcases hw with ⟨hw, rfl⟩ | ⟨hw, rfl⟩ | ⟨hw, rfl⟩ | ⟨hw, rfl⟩ <;>
+  · unfold evalOpL
+    rw [hw, ite_eq_right (by decide)]
+    dsimp only
+    unfold arm64Op
+    rw [h0]
+    dsimp only
+    rw [hw]
+    dsimp only
+    rw [hp]
+
+/-- `STP` writes its two words at the pair's addresses (`pairAddr`). -/
+private theorem evalOpL_stp {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {ty : Ty}
+    (hw : w.op = .ARM64STP) {a x y : Val} {m : Mem} {p q : Ptr}
+    (hpq : pairAddr ctx w 8 a = some (p, q)) :
+    ∃ what, evalOpL false env ctx fr w [a, x, y, .mem m] ty =
+      writeRes what (Arm64.storePair 8 p q x y m) := by
+  have h0 : nilFaults false ctx w [a, x, y, .mem m] = none := rfl
+  refine ⟨s!"v{w.id}: {w.op.name}", ?_⟩
+  unfold evalOpL
+  rw [hw, ite_eq_right (by decide)]
+  dsimp only
+  unfold arm64Op
+  rw [h0]
+  dsimp only
+  rw [hw]
+  dsimp only
+  rw [hpq]
+
+/-- A generic `Zero` that does not get stuck wrote its `n` zero bytes. -/
+private theorem memRoot_zero_inv {ctx : Ctx} {u : Value} (hu : u.op = .Zero) (argv : List Val) :
+    (∃ msg, memRoot ctx u argv = .stuck msg) ∨
+      ∃ a mm P m1, argv = [a, .mem mm] ∧ a.asPtrWord = some P ∧
+        mm.write P (Array.replicate u.auxInt.toInt.toNat (.b 0)) = some m1 ∧
+        memRoot ctx u argv = .ok (.mem m1) := by
+  unfold memRoot
+  rw [hu]
+  split
+  all_goals first
+    | (rename_i h; exact absurd h (by decide))
+    | skip
+  case h_5 =>
+    rename_i a mm _
+    dsimp only
+    cases hP : a.asPtrWord with
+    | none => exact .inl ⟨_, rfl⟩
+    | some P =>
+      dsimp only
+      cases hw : mm.write P (Array.replicate u.auxInt.toInt.toNat (.b 0)) with
+      | none => exact .inl ⟨_, rfl⟩
+      | some m1 => exact .inr ⟨a, mm, P, m1, rfl, hP, hw, rfl⟩
+  all_goals
+    left
+    dsimp only
+    split <;> exact ⟨_, rfl⟩
+
+/-- **`Zero [n]` lowered to a store of `0`** (`ARM64.rules:336`, `337`, `338`, `351`, `373`; an
+offset folded, `757`-`770`, a symbol or frame variable, `879`-`897`): on a pointer whose store
+address is the `Zero`'s (`AddrRef`), values that are the word `0` and a refined memory, the store
+refines the generic `Zero` (both shaped). -/
+theorem zeroSt_lower_eval {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame} {u w : Value}
+    (hz : zeroLower ctx'.tabs u w = true) {ty : Ty} (lS : Bool) {d m d' m' : Val}
+    {xs : List Val} (hd : AddrRef ctx'.tabs ctx'.act w.aux w.auxInt d d')
+    (hm : Sem.Refines m m') (hlen : xs.length + 2 = w.args.size)
+    (hx : ∀ x ∈ xs, Sem.Refines (.i64 0) x) :
+    Res.Refines ((evalOp env ctx fr u [d, m] ty).bind fun r => .ok (rty lS ty r))
+      ((evalOpL false env ctx' fr' w (d' :: xs ++ [m']) ty).bind fun r => .ok (rty true ty r)) := by
+  obtain ⟨hu, -, hc⟩ := zeroLower_cases hz
+  have hS : evalOp env ctx fr u [d, m] ty = memRoot ctx u [d, m] := by
+    unfold evalOp; rw [hu]
+  rw [hS]
+  refine Res.Rel.bind ?_ fun x y hxy => .ok (rty_le (fun _ => rfl) ty hxy)
+  rcases memRoot_zero_inv (ctx := ctx) hu [d, m] with ⟨msg, hst⟩ |
+    ⟨a, mm, P, m1, harg, hP, hw, hres⟩
+  · rw [hst]; exact .stuck _ _
+  simp only [List.cons.injEq, and_true] at harg
+  obtain ⟨rfl, rfl⟩ := harg
+  rw [hres]
+  cases hm with | @mem _ mm' hmm =>
+  have hdP : symAddr ctx' w d' = some P := (show symAddr ctx' w d' =
+    addrAt ctx'.tabs ctx'.act w.aux w.auxInt d' by unfold symAddr addrAt; rfl).trans (hd P hP)
+  have hx0 : ∀ x ∈ xs, x = .i64 0 := fun x hx' => by cases hx x hx'; rfl
+  rcases hc with ⟨hsz, hk⟩ | ⟨hsz, hwo, hn⟩
+  · -- a scalar store of `k` bytes
+    obtain ⟨k, hk', hn, hkk⟩ : ∃ k, ((w.op = .ARM64MOVBstore ∧ k = 1) ∨
+        (w.op = .ARM64MOVHstore ∧ k = 2) ∨ (w.op = .ARM64MOVWstore ∧ k = 4) ∨
+        (w.op = .ARM64MOVDstore ∧ k = 8)) ∧ u.auxInt.toInt.toNat = k ∧
+        (k = 1 ∨ k = 2 ∨ k = 4 ∨ k = 8) := by
+      rcases hk with ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩ | ⟨h1, h2⟩
+      · exact ⟨1, .inl ⟨h1, rfl⟩, h2, .inl rfl⟩
+      · exact ⟨2, .inr (.inl ⟨h1, rfl⟩), h2, .inr (.inl rfl)⟩
+      · exact ⟨4, .inr (.inr (.inl ⟨h1, rfl⟩)), h2, .inr (.inr (.inl rfl))⟩
+      · exact ⟨8, .inr (.inr (.inr ⟨h1, rfl⟩)), h2, .inr (.inr (.inr rfl))⟩
+    rw [hn] at hw
+    rcases xs with _ | ⟨x0, _ | ⟨x1, l⟩⟩
+    · simp at hlen; omega
+    · rw [hx0 x0 (by simp)]
+      obtain ⟨m2, hw2, hm2⟩ := hmm.write (BytesRefineA.refl _) hw
+      obtain ⟨what, he⟩ := evalOpL_movSt (env := env) (fr := fr') (ty := ty) (x := .i64 0)
+        (m := mm') hk' hdP
+      simp only [List.cons_append, List.nil_append]
+      rw [he]
+      simp only [writeRes, Arm64.storeN, storeBytes_zero hkk, hw2]
+      exact .ok (.mem hm2)
+    · simp at hlen; omega
+  · -- `STP` of two words: the 16 zero bytes as two writes of 8
+    rw [hn] at hw
+    rcases xs with _ | ⟨x0, _ | ⟨x1, _ | ⟨x2, l⟩⟩⟩
+    · simp at hlen; omega
+    · simp at hlen; omega
+    · rw [hx0 x0 (by simp), hx0 x1 (by simp)]
+      obtain ⟨m2, hw2, hm2⟩ := hmm.write (BytesRefineA.refl _) hw
+      have h16 : Array.replicate 16 (Byte.b 0) =
+          Array.replicate 8 (Byte.b 0) ++ Array.replicate 8 (Byte.b 0) := by
+        rw [Array.replicate_append_replicate]
+      rw [h16] at hw2
+      have hpair := write_append (by simp) (by simp) hw2
+      rw [Array.size_replicate] at hpair
+      have hQ := symAddr_add (n := 8) hdP
+        (inWindow_of_write hw (k := 8) (by rw [Array.size_replicate]; omega))
+      have hpq : pairAddr ctx' w 8 d' = some (P, P.add (BitVec.ofNat 64 8)) := by
+        unfold pairAddr
+        rw [hdP]
+        simp only [Option.bind_some, hQ, Option.map_some]
+      obtain ⟨what, he⟩ := evalOpL_stp (env := env) (fr := fr') (ty := ty) (x := .i64 0)
+        (y := .i64 0) (m := mm') hwo hpq
+      simp only [List.cons_append, List.nil_append]
+      rw [he]
+      simp only [writeRes, Arm64.storePair, storeBytes_zero (n := 8) (by decide), hpair]
+      exact .ok (.mem hm2)
+    · simp at hlen; omega
 
 end GoFV.Proof.Low.Sim
