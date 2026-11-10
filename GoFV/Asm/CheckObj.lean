@@ -489,6 +489,12 @@ def progSymCore (az ez : Int) (p : Prog) : Except String (Sym × PCtl) := do
     return ← dp2P op sf p
   match name with
   | "HINT" => if p.from_.offset == 0 then return (σ, .fall) else throw "HINT"
+  -- no effect on one core (`progEffect`'s `DMB`/`PRFM` arm): `DMB $k` and `PRFM 0(Rn), $k`
+  | "DMB" => if p.from_.type == .CONST && p.to.type == .NONE then return (σ, .fall) else throw "DMB"
+  | "PRFM" =>
+    if p.from_.type == .MEM && p.from_.name == .NONE && p.from_.offset == 0 &&
+        p.from_.index == 0 && p.to.type == .CONST then return (σ, .fall)
+    else throw "PRFM"
   | "JMP" =>
     if p.to.type == .BRANCH then return (σ, .jmp (← targetP p.to))
     throw "JMP to a register"

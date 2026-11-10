@@ -589,6 +589,9 @@ private theorem insn_access {σ σ1 : Sym} {c : Ctx} {t : MState} {size opc : Bi
           rfl
   · rw [hp] at h
     cases h
+    refine ⟨t, hH, rfl, ?_⟩
+    simp only [hp, ↓reduceIte, bind, Except.bind, pure, Except.pure]
+    rfl
 
 theorem symAccess_exec {σ σ' : Sym} {c : Ctx} {t : MState} {size opc : BitVec 2} {rt : Nat}
     {a : Ex} {mode : AMode} {rn : Reg} (h : symAccess σ size opc rt a = .ok σ') (hH : Holds c σ t)
@@ -1323,6 +1326,7 @@ theorem symAccess_mono {σ σ' : Sym} {size opc : BitVec 2} {rt : Nat} {a : Ex}
         insn_mono_tac
   · rw [hp] at h
     cases h
+    exact ⟨fun _ hx => hx, fun _ hx => hx⟩
 
 theorem symInsn_mono {i : Insn} {o : Nat} {σ σ' : Sym} {mc : MCtl}
     (h : symInsn i o σ = .ok (σ', mc)) :
@@ -1561,6 +1565,7 @@ theorem symAccess_fault {σ σ1 : Sym} {c : Ctx} {t : MState} {size opc : BitVec
           simp only [↓reduceIte, load, hna, bind, Except.bind]
   · rw [hp] at h
     cases h
+    exact absurd hN hbad
 
 private theorem insn_ldst_fault {size : BitVec 2} {opc : BitVec 2} {mode : AMode}
     {rn rt : Reg} {o : Nat} {σ σ' : Sym} {mc : MCtl} {c : Ctx} {t : MState}
