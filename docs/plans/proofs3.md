@@ -1760,6 +1760,36 @@ the pointer to the word 7 of `GenG14`'s `heap 1` and `new = 9`, after which the 
 84 of std/sync, 10 of std/encoding, 4 tests; std/sync/atomic is now accepted whole, 91 of 91),
 269,353 values (`--jobs 2`); G60 and every earlier slice are unchanged.
 
+**Slice G62: incoming stack arguments** (`GoFV/Gen/Check62.lean`, `checkG62 lc ps bstart g`;
+proven sound, `g62_value`, `g62_initMem`, `g62_term`, `g62_nilPanic`, `g62_boundsPanic`,
+`GoFV/Proof/Gen/G62.lean`). The 192 functions whose whole reason set was `frame variable off
+another base` with `stack slot` (mostly `ABI0` wrappers, `abigen_*` and `…,0`) read a parameter
+the ABI assigns to the stack: `Arg {x} [off]`, homed by `stackalloc` in the slot of its own piece
+(`argKey x type off`), whose `NAME_PARAM` operand `x+off(FP)` is where the caller stored the
+argument; genssa emits no code for it, and a later `LoadReg` reloads it (G2's `MOVD x+off(FP),
+Rd`). This is the incoming side of G48's `outargs`; G48's mode is not involved (the slot is
+`E.slot`'s, at `SP + autosize + 8 + off`, and the `Arg` runs at either mode `osp`). `vkind62` is
+G61's `vkind61`, then, on an `Arg` G61 rejects, `argKind62`: no temporary, no argument, `x` an
+input parameter without registers in the function's ABI (`stackParam`), a 64-bit class, the home
+`argKey`'s slot with a `NAME_PARAM` operand; `.none`. `homeOK10` (G10 on) accepts the slot home of
+an `Arg` (earlier slices still reject the `Arg` by its value check; `slot_spill10`: a slot home is
+a spill's or an `Arg`'s, so `callsNotSlot10`/`icallNotSlot10` hold as before). `g62_arg`
+(`G62a.lean`): `stepLoc_arg` (`argVal`'s piece at the value's shape written to the slot), the
+machine does not step, `LocMatch` gains the slot by the new run premise `ArgOK` (at an `Arg`, the
+machine's bytes at the slot hold the piece, `SlotRel`: the caller's stack argument), every other
+slot, register and the memory are unchanged; `kStep_arg`, `uStep35_arg` (the table empty after
+it). `vk62_step` is `vk61_step`'s statement with `ArgOK`; `g62L_*` are `g61L_*` with
+`checkG62L_spec`, `vkind62_spec` and `vkind62_initMem`. Witness `genG62_witness` (`GenG62.lean`,
+`runtime.syscall_Exit`'s ABI0 wrapper on P0', at the mode `false`): `checkG61` rejects it and
+`checkG62` accepts it, and `g62_value` runs `v5 = Arg {code}` from the first state of an
+activation on `code = 7`, with the caller's word 7 at `SP + 24` (`argOK0`), after which the slot
+of `code` holds 7 and the machine's word there is 7. G62 on P0' accepts 8,175 functions (87.93%,
++192 over G61's 7,983, exactly that reason set), 271,361 values (`--jobs 2`); G61 and every earlier
+slice are unchanged, and the rejected set is a subset of G61's. The 37 functions with the same
+pair and a narrow stack parameter stay rejected (`Arg width`; 8-byte slots only, `slotOK`).
+`ArgOK` is trusted at the slices (STATUS Assumptions); the lift to G62 derives it from the entry
+condition (§9 **Next**).
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -1864,6 +1894,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G59 (on G58) | 7,667 (82.46%) | 249,111 |
 | G60 (G59 with G56's float constants, P0') | 7,667 (82.46%) | 249,111 |
 | G61 (G60 with the atomics, P0') | 7,983 (85.86%) | 269,353 |
+| G62 (G61 with the incoming stack arguments, P0') | 8,175 (87.93%) | 271,361 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -2289,6 +2320,10 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `checkG33_of_61L`, `checkG61L_spec`, `checkG61_spec`; `G61.lean`: `vk61_step`, `vk61_nil`,
   `vk61_pb`, `g61L_value` … `g61L_term`, `g61_value`, `g61_initMem`, `g61_nilPanic`,
   `g61_boundsPanic`, `g61_term`.
+- `Spec62.lean`: `VK62`, `argKind62_spec`, `vkind62_spec`, `vkind62_initMem`, `checkG33_of_62L`,
+  `checkG62L_spec`, `checkG62_spec`; `G62a.lean`: `ArgOK`, `stepLoc_arg`, `kStep_arg`,
+  `uStep35_arg`, `g62_arg`; `G62.lean`: `vk62_step`, `vk62_nil`, `vk62_pb`, `g62L_value` …
+  `g62L_term`, `g62_value`, `g62_initMem`, `g62_nilPanic`, `g62_boundsPanic`, `g62_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
@@ -3392,6 +3427,32 @@ the Go register `SP` holding the held pointer to `outargs 0`, `SPInv`).
 through a whole function with a real entry store of a register parameter (none of the e2e
 functions with a pending window is small enough for the native-decide witnesses yet). Entry
 stores after spills (`StoreReg`) in the entry block (`entryStoresOK` rejects them).
+
+*The lift to G62 derives `ArgOK` at the entry* (G62's run premise, STATUS Assumptions; it is a
+caller-side fact about the entry state, so it goes into the entry condition, not into `RunPre`):
+
+1. A check `argFirst lc` in `checkG62L`, as `cloFirst`: every `Arg` of a stack parameter is in
+   the entry block, and the values before it emit no code (entry values, `InitMem`,
+   `LoweredGetClosurePtr`, other such `Arg`s) or are entry stores (`entryStores`). Go's scheduler
+   puts the `Arg`s at the top of the entry block (`cmd/compile/internal/ssa/schedule.go:18,
+   164-166`, `ScoreArg`); gen-check measures what it drops of G62's 192.
+2. A clause `stack` of the caller's side next to `EntryMatch E0 W sI s0` (the ABI0 stack layout,
+   `cmd/compile/internal/abi/abiutils.go:108,270-318`, `offsetForLocals` = `FixedFrameSize` = 8):
+   for every `Arg {x} [off]` of the function with `argVal sI.fr x off t = .ok y` (`stackParam`),
+   the bytes of `s0` at `s0.sp + 8 + offset(x) + off` hold `y` at the value's shape (`SlotRel`).
+   `EntryEnv.sp` and `G2Env.slot` (`frameOff .PARAM` = `autosize + 8 + off`) make that address
+   `E0.sp + o` for the slot's `o`.
+3. The clause survives the morestack path (`EntryMatch.more`: `MoreStep.mem` keeps every byte
+   off the tail's spill slots, which are register parameters' and so apart from the stack
+   parameters' offsets, and off the guard word) and the prologue (`BodyEntry`: it writes the saved
+   `LR`/`FP` words below the entry `SP` only), and every entry store before an `Arg` (a window of
+   a register parameter, apart from the home slots by `checkVars49`).
+4. In the head of the entry block the machine state at each `Arg` is then the entry's after the
+   prologue and the entry stores (`g62_arg` does not step: `PStar … m m`), so `ArgOK` holds there
+   by the clause (a lemma `argOK_entry`); `argFirst` puts no `Arg` past the head, where `ArgOK` is
+   vacuous, so `RunPre` gains no premise. STATUS then lists the clause in the entry condition with
+   the ABI0 citation and drops `ArgOK`'s row; `genG62_witness` keeps `argOK0`, and the G62
+   end-to-end witness discharges the clause from its `MachEntry` state.
 
 ## 10. Read-only data: float constants and jump tables
 

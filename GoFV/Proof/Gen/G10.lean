@@ -436,26 +436,31 @@ theorem clsReg_of_home10 {lc : LocCtx} (h : ∀ i, homeOK10 lc i = true) :
     ∀ i r, lc.home i = some (.reg r) → r ≠ zeroReg → (cls (lc.ty i)).isSome = true := by
   intro i r hh hr
   have h4 := homeOK4_of_10 (h i) (fun rs hrs => by rw [hh] at hrs; cases hrs)
+    (fun k hk => by rw [hh] at hk; cases hk)
   have := homeOK3_of_4 h4 (fun a b hab => by rw [hh] at hab; cases hab)
   simp only [homeOK3, hh, Bool.or_eq_true, beq_iff_eq, hr, false_or] at this
   exact this
 
-/-- A slot home G10 handles is a spill's. -/
+/-- A slot home G10 handles is a spill's or an `Arg`'s. -/
 theorem slot_spill10 {lc : LocCtx} (h : ∀ i, homeOK10 lc i = true) {c : ID} {u : Value}
     (hu : lc.ctx.f.value? c = some u) {k : SlotKey} (hk : lc.home c = some (.slot k)) :
-    u.op = .StoreReg := by
-  have h4 := homeOK4_of_10 (h c) (fun rs hrs => by rw [hk] at hrs; cases hrs)
-  have := homeOK3_of_4 h4 (fun a b hab => by rw [hk] at hab; cases hab)
-  simpa [homeOK3, homeOK2, hk, hu] using this
+    u.op = .StoreReg ∨ u.op = .Arg := by
+  by_cases ha : u.op = .Arg
+  · exact .inr ha
+  · left
+    have h4 := homeOK4_of_10 (h c) (fun rs hrs => by rw [hk] at hrs; cases hrs)
+      (fun _ _ => by rw [hu]; simpa using ha)
+    have := homeOK3_of_4 h4 (fun a b hab => by rw [hk] at hab; cases hab)
+    simpa [homeOK3, homeOK2, hk, hu] using this
 
 theorem callsNotSlot10 {lc : LocCtx} (h : ∀ i, homeOK10 lc i = true) : CallsNotSlot lc :=
-  fun _ _ hu hcop k hk => by rw [slot_spill10 h hu hk] at hcop; cases hcop
+  fun _ _ hu hcop k hk => by
+    rcases slot_spill10 h hu hk with h' | h' <;> rw [h'] at hcop <;> cases hcop
 
 theorem icallNotSlot10 {lc : LocCtx} (h : ∀ i, homeOK10 lc i = true) {c : ID} {u : Value}
     (hu : lc.ctx.f.value? c = some u) (hi : (icallLead u.op).isSome = true) :
     ∀ k, lc.home c ≠ some (.slot k) := fun k hk => by
-  rw [slot_spill10 h hu hk] at hi
-  cases hi
+  rcases slot_spill10 h hu hk with h' | h' <;> rw [h'] at hi <;> cases hi
 
 /-! ## The theorems -/
 

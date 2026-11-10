@@ -135,12 +135,14 @@ def vkind10 (lc : LocCtx) (g : G2In) (v : Value) : Except String VKind2 :=
       | none => vkind9 lc g v
     else vkind9 lc g v
 
-/-- The home of value `i` is one G10 handles: G4's, or the `results` home of an interface or
-closure call. -/
+/-- The home of value `i` is one G10 handles: G4's, the `results` home of an interface or
+closure call, or the slot of an `Arg` (an incoming stack argument, `GoFV/Gen/Check62.lean`; every
+slice before G62 rejects the `Arg` itself by its value check). -/
 def homeOK10 (lc : LocCtx) (i : Nat) : Bool :=
   homeOK4 lc i ||
     match lc.home i with
     | some (.results _) => ((lc.ctx.f.value? i).bind (icallLead ·.op)).isSome
+    | some (.slot _) => (lc.ctx.f.value? i).map (·.op) == some .Arg
     | _ => false
 
 /-- Slice G10 of the genssa validator (module doc): G4's tables of the accepted function. -/
