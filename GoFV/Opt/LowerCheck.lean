@@ -542,6 +542,60 @@ def stValPick (tabs : Tables) (M : Defs) (x u : Value) : Value :=
     else u
   | none => u
 
+/-! PROBE ONLY (blob-regs design review, #385; not for merge): the integer `Move` copies
+(`ARM64.rules:380`-`428`) accepted like the 128-bit ones, assuming their soundness. -/
+
+/-- The unsigned load an integer store copies with. -/
+def iStoreLd (o : Op) : Option Op :=
+  if o == .ARM64MOVBstore then some .ARM64MOVBUload
+  else if o == .ARM64MOVHstore then some .ARM64MOVHUload
+  else if o == .ARM64MOVWstore then some .ARM64MOVWUload
+  else if o == .ARM64MOVDstore then some .ARM64MOVDload
+  else none
+
+/-- `moveQOp` with the single integer copies (`380`, `381`, `385`, `396`). -/
+def moveIOp (n : Int64) : Option (Op × Nat) :=
+  if n == 1 then some (.ARM64MOVBstore, 3) else if n == 2 then some (.ARM64MOVHstore, 3)
+  else if n == 4 then some (.ARM64MOVWstore, 3) else if n == 8 then some (.ARM64MOVDstore, 3)
+  else moveQOp n
+
+/-- `moveQ2Op` with the integer outer or inner copies, and the outer offset. -/
+def moveI2Op (n : Int64) : Option (Op × Nat × Op × Nat × Nat) :=
+  let s := n.toInt
+  let B := Op.ARM64MOVBstore
+  let H := Op.ARM64MOVHstore
+  let W := Op.ARM64MOVWstore
+  let D := Op.ARM64MOVDstore
+  if s == 3 then some (B, 3, H, 3, 2)
+  else if s == 5 then some (B, 3, W, 3, 4)
+  else if s == 6 then some (H, 3, W, 3, 4)
+  else if s == 7 then some (W, 3, W, 3, 3)
+  else if s == 9 then some (B, 3, D, 3, 8)
+  else if s == 10 then some (H, 3, D, 3, 8)
+  else if s == 11 then some (D, 3, D, 3, 3)
+  else if s == 12 then some (W, 3, D, 3, 8)
+  else if 13 ≤ s ∧ s ≤ 15 then some (D, 3, D, 3, s.toNat - 8)
+  else if 16 < s ∧ s ≤ 24 then some (D, 3, .ARM64FMOVQstore, 3, s.toNat - 8)
+  else if 32 < s ∧ s ≤ 40 then some (D, 3, .ARM64FSTPQ, 4, s.toNat - 8)
+  else match moveQ2Op n with
+    | some (oo, ko, oi, ki) => some (oo, ko, oi, ki, q2Off n)
+    | none => none
+
+def qStoreP (o : Op) : Bool := qStore o || (iStoreLd o).isSome
+
+def moveQLowerP (tabs : Tables) (u w : Value) : Bool :=
+  u.op == .Move && u.args.size == 3 && offOK w.auxInt && stAux tabs w.aux &&
+    (moveIOp u.auxInt).any fun (o, k) => w.op == o && w.args.size == k
+
+def moveQ2LowerP (u w : Value) : Bool :=
+  u.op == .Move && u.args.size == 3 &&
+    (moveI2Op u.auxInt).any fun (o, k, _, _, _) => w.op == o && w.args.size == k
+
+def moveQ2InP (u w : Value) : Bool :=
+  (moveI2Op u.auxInt).any fun (_, _, o, k, _) => w.op == o && w.args.size == k
+
+def st2LowerP (u w : Value) : Bool := moveQ2LowerP u w || zero2Lower u w
+
 /-- The atom `u` folds the address of the 128-bit store `x` lowering a `Move` (`moveDef`), or of
 the store `x` lowering a `Zero` (`zeroDef`, `zStore`), into its offset and aux, as `stFold` and
 `stFoldAddr` do for a store lowering a `Store`: `ADDconst [k2] b` or `OffPtr [k2] b` into the
@@ -584,8 +638,8 @@ def atomDef1 (tabs : Tables) (f : Func) (M : Defs) (v : ID) (x u : Value) :
           (f.value? v).any (fun a => a.op == .Zero && a.args.size == 2 && (zeroOp a.auxInt).isSome) ||
         qFold tabs f M x u && match f.value? v with
           | some a =>
-            a.op == .Move && qStore x.op || a.op == .Zero && a.args.size == 2 && zStore x.op
-          | none => qStore x.op || zStore x.op)
+            a.op == .Move && qStoreP x.op || a.op == .Zero && a.args.size == 2 && zStore x.op
+          | none => qStoreP x.op || zStore x.op)
     then some (u, none)
   else none
 
@@ -643,10 +697,12 @@ def moveDef (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value) :
         !termVL tabs u && u.type == x.type && u.auxInt == 0 && u.aux == none &&
         (rest.map (·.id)).Nodup &&
         (f.value? v).any (fun a => a.op == .Move && a.auxInt == x.auxInt) then
-      match moveQOp x.auxInt, rest with
+      match moveIOp x.auxInt, rest with
       | some (o, _), [l] =>
-        if o == .ARM64FMOVQstore && u.op == o && l.op == .ARM64FMOVQload && moveLd tabs M v x l &&
-            Sem.Ty.beq (shpL tabs l.type) (.blob 16) &&
+        if u.op == o && moveLd tabs M v x l &&
+            (o == .ARM64FMOVQstore && l.op == .ARM64FMOVQload &&
+              Sem.Ty.beq (shpL tabs l.type) (.blob 16) ||
+             iStoreLd o == some l.op && (shpL tabs l.type matches .int _)) &&
             u.args == #[x.args[0]!, l.id, x.args[2]!] then some (u, [l]) else none
       | some (o, _), [s0, p, s1] =>
         if o == .ARM64FSTPQ && u.op == o && p.op == .ARM64FLDPQ && moveLd tabs M v x p &&
@@ -671,8 +727,11 @@ def moveLdK (tabs : Tables) (M : Defs) (v : ID) (x l : Value) (k : Int64) : Bool
 def qVals (tabs : Tables) (M : Defs) (v : ID) (x : Value) (o : Op) (k : Int64) :
     List Value → Option (List ID × List Value)
   | [l] =>
-    if o == .ARM64FMOVQstore && l.op == .ARM64FMOVQload && moveLdK tabs M v x l k &&
-        Sem.Ty.beq (shpL tabs l.type) (.blob 16) then some ([l.id], [l]) else none
+    if moveLdK tabs M v x l k &&
+        (o == .ARM64FMOVQstore && l.op == .ARM64FMOVQload &&
+          Sem.Ty.beq (shpL tabs l.type) (.blob 16) ||
+         iStoreLd o == some l.op && (shpL tabs l.type matches .int _)) then some ([l.id], [l])
+    else none
   | [s0, p, s1] =>
     if o == .ARM64FSTPQ && p.op == .ARM64FLDPQ && moveLdK tabs M v x p k &&
         Sem.Ty.beq (shpL tabs p.type) (.tuple [.blob 16, .blob 16]) &&
@@ -682,7 +741,7 @@ def qVals (tabs : Tables) (M : Defs) (v : ID) (x : Value) (o : Op) (k : Int64) :
   | _ => none
 
 /-- The number of value nodes of the 128-bit store `o` (`qVals`). -/
-def qNodes (o : Op) : Nat := if o == .ARM64FMOVQstore then 1 else 3
+def qNodes (o : Op) : Nat := if o == .ARM64FSTPQ then 3 else 1
 
 /-- A rule event at the `Move [s]` `x` at `v` (a `Move` in `f`) lowering it to two 128-bit stores
 (`ARM64.rules:423`, `431`, `434`; `moveQ2Op`), replayed as its new definitions: the outer store
@@ -700,9 +759,9 @@ def moveDef2 (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value) 
         !termVL tabs u && u.type == x.type && u.aux == none &&
         (rest.map (·.id)).Nodup &&
         (f.value? v).any (fun a => a.op == .Move && a.auxInt == x.auxInt) then
-      match moveQ2Op x.auxInt, rest.drop (qNodes u.op) with
-      | some (oo, _, oi, _), w :: ins =>
-        let k : Int64 := Int64.ofNat (q2Off x.auxInt)
+      match moveI2Op x.auxInt, rest.drop (qNodes u.op) with
+      | some (oo, _, oi, _, ko), w :: ins =>
+        let k : Int64 := Int64.ofNat ko
         match qVals tabs M v x oo k (rest.take (qNodes u.op)) with
         | some (os, ons) =>
           let M1 := ons.foldl (fun M s => M.put s.id s) M
@@ -1250,7 +1309,7 @@ the same type. -/
 def atomPair (tabs : Tables) (u w : Value) : Bool :=
   (((u.op == w.op || renameOp u.op w.op) && u.auxInt == w.auxInt && u.aux == w.aux ||
     memLower tabs u w || bulkLower u w) && u.args.size == w.args.size || addrLower tabs u w ||
-    pbLower u w || idxLower tabs u w || moveQLower tabs u w || moveQ2Lower u w ||
+    pbLower u w || idxLower tabs u w || moveQLowerP tabs u w || moveQ2LowerP u w ||
     zeroLower tabs u w || zero2Lower u w || zeroIdxLower u w) &&
   u.type == w.type && u.block == w.block && u.id == w.id
 
@@ -1309,7 +1368,7 @@ def compOKL (tabs : Tables) (f g : Func) (og : List ID) (x : ID) (w : Value) : B
   | some v =>
     match f.value? v, g.value? v with
     | some u, some wv =>
-      (moveQ2Lower u wv && moveQ2In u w || zero2Lower u wv && zero2In u w) &&
+      (moveQ2LowerP u wv && moveQ2InP u w || zero2Lower u wv && zero2In u w) &&
         wv.args[wv.args.size - 1]! == x
     | _, _ => false
   | none => false
@@ -1318,7 +1377,7 @@ def compOKL (tabs : Tables) (f g : Func) (og : List ID) (x : ID) (w : Value) : B
 the next atom of `g`'s schedule `og` after its memory, the inner store (`compOKL` from that side):
 both are in the same block, the inner one evaluated first. -/
 def q2OKL (tabs : Tables) (g : Func) (og : List ID) (x : ID) (u w : Value) : Bool :=
-  !st2Lower u w || nextAtomL tabs g og w.args[w.args.size - 1]! == some x
+  !st2LowerP u w || nextAtomL tabs g og w.args[w.args.size - 1]! == some x
 
 /-- `RewriteCheck.atomsOK` with `atomPair` (and `pbConstOK`, `q2OKL`): the same entry, blocks and
 own aux; every atom of `g` corresponds to an atom of `f` or is a lowered frame address where `f`
