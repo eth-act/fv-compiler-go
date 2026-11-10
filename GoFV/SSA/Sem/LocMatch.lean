@@ -72,6 +72,11 @@ structure MatchEnv where
   /-- The address of the first word of value `i` of block `b` (`bstart[b]` for `i = 0`, §4.4);
   the Prog ID on P0 (`runProg`), the linked address on M. -/
   pcOf : ID → Nat → BitVec 64
+  /-- The activation's `outargs` block sits at `SP` (a function with stack arguments or results,
+  `docs/plans/proofs3.md` §8 item 7): its first word is the saved `LR` of the frame, so the live
+  blocks are away from the frame but for that word's `poison` bytes (`SepFromW`), and calls go by
+  the contracts of that separation (`CallOKS`). -/
+  outSP : Bool := false
 
 /-- `E'` is `E` with `ι` extended (blocks allocated since, e.g. by the allocator hook). -/
 def MatchEnv.Extends (E E' : MatchEnv) : Prop :=

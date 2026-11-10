@@ -380,7 +380,7 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
 
 /-- `NEG Rm SHIFT k, Rd`. -/
 theorem g55b_negSh (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {typ ca c : Nat} {rm rd : Int} (hop : negSh55b? v.op = some typ)
@@ -391,7 +391,7 @@ theorem g55b_negSh (F : Facts lc sym text az ez psA.toList ret E)
       { as := .NEG, from_ := shiftA typ rm v.auxInt.toInt.toNat, to := regA rd }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
   have hA := F.addr
   have halu := aluOp55b_negSh hop
@@ -424,7 +424,7 @@ theorem g55b_negSh (F : Facts lc sym text az ez psA.toList ret E)
 
 /-- `CLZW Rm, Rd`. -/
 theorem g55b_clzw (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {cx c : Nat} {rm rd : Int} (hop : v.op = .ARM64CLZW)
@@ -433,7 +433,7 @@ theorem g55b_clzw (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j (.ofShape { as := .CLZW, from_ := regA rm, to := regA rd }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
   have hA := F.addr
   have halu : AluOp55b v.op := by unfold AluOp55b; simp [hop]
@@ -461,7 +461,7 @@ theorem g55b_clzw (F : Facts lc sym text az ez psA.toList ret E)
 
 /-- `SMULL Rm, Rn, Rd`. -/
 theorem g55b_mull (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {cx cy c : Nat} {rn rm rd : Int} (hop : v.op = .ARM64MULL)
@@ -470,7 +470,7 @@ theorem g55b_mull (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j (.ofShape { as := .SMULL, from_ := regA rm, reg := rn, to := regA rd }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
   have hA := F.addr
   have halu : AluOp55b v.op := by unfold AluOp55b; simp [hop]
@@ -502,7 +502,7 @@ theorem g55b_mull (F : Facts lc sym text az ez psA.toList ret E)
 
 /-- `EXTR`/`EXTRW $k, Rn, Rm, Rd`. -/
 theorem g55b_extr (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {as : As} {w ca cb c : Nat} {rn rm rd : Int} (hop : extr55b? v.op = some (as, w))
@@ -512,7 +512,7 @@ theorem g55b_extr (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j ⟨extrOK as v.auxInt.toInt rn rm rd, as.name⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
   have hA := F.addr
   have halu := aluOp55b_extr hop
@@ -558,16 +558,17 @@ theorem vk55b_step {env : Env} {H : Hooks} {lc : LocCtx} {sym : Nat → BitVec 6
     (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
     (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
-    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s)
+    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s osp)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-      LocMatch E s' bid (i + 1) m' ∧ G3Inv E lc (kStep lc K v) s' ∧ UOKL m' (uStep35 lc L v) := by
+      LocMatch E s' bid (i + 1) m' ∧ G3Inv E lc (kStep lc K v) s' osp ∧
+      UOKL m' (uStep35 lc L v) := by
   have hR := kread_of_reads hreads
   have fin : AluOp55b v.op → ∀ m', PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' →
-      LocMatch E s' bid (i + 1) m' → CoreInv E.ι (StkAt E) (kStep lc K v).get s' →
+      LocMatch E s' bid (i + 1) m' → CoreInv E.ι (StkAt E) (kStep lc K v).get s' osp →
       SlotInv lc s' →
       ∃ m', PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-        LocMatch E s' bid (i + 1) m' ∧ G3Inv E lc (kStep lc K v) s' ∧
+        LocMatch E s' bid (i + 1) m' ∧ G3Inv E lc (kStep lc K v) s' osp ∧
         UOKL m' (uStep35 lc L v) := fun halu m' h1 h2 h3 h4 => by
     refine ⟨m', h1, h2, ⟨h3, h4⟩, ?_⟩
     rw [uStep35_alu55b halu]

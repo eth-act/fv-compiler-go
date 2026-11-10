@@ -333,7 +333,7 @@ private theorem csnegOK_spec {cc rn rm rd : Int} {p : Prog} (h : csnegOK cc rn r
 
 /-- `CSNEG [cc] x y f`: `CSNEG cond, Rx, Ry, Rd` writes `x`'s word or `y`'s negation. -/
 private theorem g51a_csneg (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {f : ID} {o : Op} {cc rn rm rd : Int} {ca cb c : Nat}
@@ -345,7 +345,7 @@ private theorem g51a_csneg (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j ⟨csnegOK cc rn rm rd, "CSNEG"⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
   have hA := F.addr
   have hnp : v.op ≠ .Phi := by rw [hop]; nofun
@@ -378,7 +378,7 @@ private theorem g51a_csneg (F : Facts lc sym text az ez psA.toList ret E)
 
 /-- `CMN Rm, Rn` of two 64-bit arguments that are no pointers without an integer form. -/
 private theorem g51a_cmn (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K') (hpre : Pre51a lc s v)
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {rn rm : Int} (hop : v.op = .ARM64CMN) (hsz : v.args.size = 2)
@@ -387,7 +387,7 @@ private theorem g51a_cmn (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j (.ofShape { as := .CMN, from_ := regA rm, reg := rn }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
   have hA := F.addr
   have hnp : v.op ≠ .Phi := by rw [hop]; nofun
@@ -414,7 +414,7 @@ private theorem g51a_cmn (F : Facts lc sym text az ez psA.toList ret E)
 
 /-- `TSTW`/`CMNW Rm, Rn` of two arguments of classes at least 32. -/
 private theorem g51a_cmpW (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {as : As} {ca cb : Nat} {rn rm : Int}
@@ -424,7 +424,7 @@ private theorem g51a_cmpW (F : Facts lc sym text az ez psA.toList ret E)
     (hcb : 32 ≤ cb) (hvs : OneAt2 psA j (.ofShape { as, from_ := regA rm, reg := rn }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
   have hA := F.addr
   have h51 : op51a v.op = true := by rcases hop with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl
@@ -458,7 +458,7 @@ private theorem g51a_cmpW (F : Facts lc sym text az ez psA.toList ret E)
 
 /-- `CMP Rm->k, Rn` of two 64-bit arguments, the first no pointer without an integer form. -/
 private theorem g51a_cmpShRA (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K') (hpre : Pre51a lc s v)
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {rn rm : Int} (hop : v.op = .ARM64CMPshiftRA) (hsz : v.args.size = 2)
@@ -469,7 +469,7 @@ private theorem g51a_cmpShRA (F : Facts lc sym text az ez psA.toList ret E)
       { as := .CMP, from_ := shiftA 2 rm v.auxInt.toInt.toNat, reg := rn }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
   have hA := F.addr
   have hnp : v.op ≠ .Phi := by rw [hop]; nofun
@@ -510,10 +510,11 @@ theorem vk51a_step {env : Env} {H : Hooks} {lc : LocCtx} {sym : Nat → BitVec 6
     (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
     (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
-    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s) (hpre : Pre51a lc s v)
+    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s osp) (hpre : Pre51a lc s v)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-      LocMatch E s' bid (i + 1) m' ∧ G3Inv E lc (kStep lc K v) s' ∧ UOKL m' (uStep35 lc L v) := by
+      LocMatch E s' bid (i + 1) m' ∧ G3Inv E lc (kStep lc K v) s' osp ∧ UOKL m'
+      (uStep35 lc L v) := by
   have hR := kread_of_reads hreads
   have hU : ∀ m', UOKL m' (uStep35 lc L v) := fun _ => by
     rw [uStep35_51a (vk51a_op hVK)]

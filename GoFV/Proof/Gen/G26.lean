@@ -222,7 +222,7 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
 /-- A register argument read at its shape (Phase 1): related to its machine register and of its
 class. -/
 theorem arg_relP (hA : AddrAgree E.ι) (hl : lc.ctx.f.lowered = false)
-    (hm : LocMatch E s b i m) (hinv : CoreInv ι P K s) {a r c k : Nat}
+    (hm : LocMatch E s b i m) (hinv : CoreInv ι P K s osp) {a r c k : Nat}
     (hh : lc.home a = some (.reg r)) (hc : cls (lc.ty a) = some c)
     (hK : r ≠ zeroReg → K r = some c)
     (hk : (r = zeroReg ∧ k = 31) ∨ (k < 31 ∧ objX? r = some (BitVec.ofNat 5 k))) :
@@ -246,7 +246,7 @@ theorem arg_relP (hA : AddrAgree E.ι) (hl : lc.ctx.f.lowered = false)
 theorem op_regN (hnd : (psA.toList.map (·.id)).Nodup) (hlt : ∀ p ∈ psA.toList, p.id < 2 ^ 32)
     (hret : ∀ p ∈ psA.toList, (Link.byId sym text az ez psA.toList).addr p.id ≠ some ret)
     (hm : LocMatch E s b i m)
-    (hinv : CoreInv E.ι P K s) (hj : E.pcOf b i = pcAt text psA.toList j)
+    (hinv : CoreInv E.ι P K s osp) (hj : E.pcOf b i = pcAt text psA.toList j)
     (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j') {sh : Shape} (hone : OneAt psA j sh j')
     {r c kd : Nat} {x : Val} {val : BitVec 64} (hd : destOK r = true)
     (hkd : kd < 32) (hrk : objOf? r = some (GoFV.Asm.ARM64.REG_R0 + kd))
@@ -256,7 +256,7 @@ theorem op_regN (hnd : (psA.toList.map (·.id)).Nodup) (hlt : ∀ p ∈ psA.toLi
           { m with pc := pcAt text psA.toList k } =
         .ok { m.wX (BitVec.ofNat 5 kd) val with pc := pcAt text psA.toList (k + 1) }) :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E (s.setReg r x) b (i + 1) m' ∧ CoreInv E.ι P K' (s.setReg r x) ∧
+      LocMatch E (s.setReg r x) b (i + 1) m' ∧ CoreInv E.ι P K' (s.setReg r x) osp ∧
       (s.setReg r x).slots = s.slots := by
   obtain ⟨k, rfl, hk, hok, hstar⟩ := pstar_oneAt (H := H) hnd hlt hret rfl hone m
   rw [pc_eta hm hj] at hstar
@@ -269,14 +269,14 @@ Phase 1's mode. -/
 theorem nl_core (hl : lc.ctx.f.lowered = false) (hA : AddrAgree E.ι)
     (hnd : (psA.toList.map (·.id)).Nodup) (hlt : ∀ p ∈ psA.toList, p.id < 2 ^ 32)
     (hret : ∀ p ∈ psA.toList, (Link.byId sym text az ez psA.toList).addr p.id ≠ some ret)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι P K s) {kd : VKind}
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι P K s osp) {kd : VKind}
     (hj : E.pcOf b i = pcAt text psA.toList j)
     (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j') (hvs : VStep psA kd j j')
     (hops : v.op = .MakeResult ∨ v.op = .InlMark ∨ v.op = .Copy)
     (hVK : VK lc v kd) (htemp : (lc.temps[v.id]?).join = none)
     (hR : KRead lc v K) (hK : KNext lc v K K') (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι P K' s' ∧ s'.slots = s.slots := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι P K' s' osp ∧ s'.slots = s.slots := by
   have hnone : ∀ {r : Nat}, lc.home v.id = none → r ≠ zeroReg → lc.home v.id ≠ some (.reg r) :=
     fun h _ => by rw [h]; nofun
   cases hVK with
@@ -412,14 +412,14 @@ theorem g26_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
     (hen : entryOp24 v.op = false) (hm : LocMatch E s bid i m)
-    (hinv : G3Inv E lc (kAt lc kt bid blk i) s) (hu : UOK m (uAt lc blk i))
+    (hinv : G3Inv E lc (kAt lc kt bid blk i) s osp) (hu : UOK m (uAt lc blk i))
     (hpre : G14Pre lc s v)
-    (hcall : CallOK H E g L lc s s' v m) (hcallz : CallOKZ H E g L lc s s' v m)
-    (hicall : ICallOK H E L ret lc s s' v m)
-    (hwb : WbOK H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
+    (hcall : CallOKAt osp H E g L lc s s' v m) (hcallz : CallOKZAt osp H E g L lc s s' v m)
+    (hicall : ICallOKAt osp H E L ret lc s s' v m)
+    (hwb : WbOKAt osp H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G10Env lc g L ps ret tab E' ∧ PStar H L ps.toList ret m m' ∧
-      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' ∧
+      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' osp ∧
       UOK m' (uAt lc blk (i + 1)) := by
   cases hl : lc.ctx.f.lowered with
   | true =>

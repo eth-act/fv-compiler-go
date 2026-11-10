@@ -244,7 +244,7 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
 /-- `g14_idx` with the registers of the machine after the load: the zero or sign extension of the
 `n` loaded bytes written to `X[kd]`, `rd = R0 + kd`. -/
 theorem g14_idxW (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K') (hpre : IdxPre lc s v)
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {as : As} {n sh : Nat} {sg : Bool} {c : Nat} {rn ri rd : Int}
@@ -255,7 +255,7 @@ theorem g14_idxW (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j ⟨plain as (· == idxA rn ri sh) (· == regA rd), as.name⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' ∧
       ∃ (kd : Nat) (Y : BitVec (8 * n)), rd = GoFV.Asm.ARM64.REG_R0 + kd ∧
         m'.x = (m.wX (BitVec.ofNat 5 kd)
           (if sg then ProgOp.sextTo64 n (Y.setWidth 64) else Y.setWidth 64)).x := by
@@ -318,7 +318,7 @@ theorem g14_idxW (F : Facts lc sym text az ez psA.toList ret E)
 
 /-- A register-index load `MOV… (Rp)(Ri<<sh), Rd` of `n` valid bytes. -/
 theorem g14_idx (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K') (hpre : IdxPre lc s v)
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {as : As} {n sh : Nat} {sg : Bool} {c : Nat} {rn ri rd : Int}
@@ -329,7 +329,7 @@ theorem g14_idx (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j ⟨plain as (· == idxA rn ri sh) (· == regA rd), as.name⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' :=
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' :=
   (g14_idxW (H := H) F hm hinv hsi hR hK hpre hj hj' hop hsz3 hao hio hma hro hc hvs htemp
     hs).imp fun _ h => ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1⟩
 
@@ -349,14 +349,14 @@ theorem vk14_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
     (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
-    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s) (hpre : G14Pre lc s v)
-    (hcall : CallOK H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
-    (hicall : ICallOK H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
-    (hwb : WbOK H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
+    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s osp) (hpre : G14Pre lc s v)
+    (hcall : CallOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
+    (hicall : ICallOKAt osp H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
+    (hwb : WbOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G10Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' := by
+      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp := by
   cases hVK with
   | g13 hVK13 =>
     exact vk13_step hE F hhome hcf hv hVK13 hvs htemp hj hj' hreads hm hinv hpre.1 hcall hicall

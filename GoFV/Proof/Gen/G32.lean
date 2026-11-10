@@ -712,7 +712,7 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
 
 /-- `op Rm, Rn, Rd` for a register op of G32. -/
 theorem g32_bin (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {as : As} {ca cb c : Nat} {rn rm rd : Int} (hop : bin32? v.op = some as)
@@ -722,7 +722,8 @@ theorem g32_bin (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j (.ofShape { as, from_ := regA rm, reg := rn, to := regA rd }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ XW lc v m m' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' ∧
+      XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have halu := aluOp32_bin hop
@@ -758,7 +759,7 @@ theorem g32_bin (F : Facts lc sym text az ez psA.toList ret E)
 
 /-- `op $k, Rn, Rd` for a constant op of G32. -/
 theorem g32_binK (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {as : As} {ca c : Nat} {rn rd : Int} (hop : binK32? v.op = some as)
@@ -768,7 +769,8 @@ theorem g32_binK (F : Facts lc sym text az ez psA.toList ret E)
       (.ofShape { as, from_ := constA v.auxInt.toInt, reg := rn, to := regA rd }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ XW lc v m m' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' ∧
+      XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have halu := aluOp32_binK hop
@@ -801,7 +803,7 @@ theorem g32_binK (F : Facts lc sym text az ez psA.toList ret E)
 
 /-- `op Rm, Rd` for a unary op of G32. -/
 theorem g32_un (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {as : As} {ca c : Nat} {rm rd : Int} (hop : un32? v.op = some as)
@@ -810,7 +812,8 @@ theorem g32_un (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j (.ofShape { as, from_ := regA rm, to := regA rd }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ XW lc v m m' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' ∧
+      XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have halu := aluOp32_un hop
@@ -837,7 +840,7 @@ theorem g32_un (F : Facts lc sym text az ez psA.toList ret E)
 
 /-- `CSINC [cc] x y f`: `CSINC cond, Rx, Ry, Rd` writes `x`'s word or `y`'s plus 1. -/
 theorem g32_csinc (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {f : ID} {o : Op} {cc rn rm rd : Int} {ca cb c : Nat}
@@ -849,7 +852,8 @@ theorem g32_csinc (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j ⟨csincOK cc rn rm rd, "CSINC"⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ XW lc v m m' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' ∧
+      XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have hnp : v.op ≠ .Phi := by rw [hop]; nofun
@@ -884,7 +888,7 @@ theorem g32_csinc (F : Facts lc sym text az ez psA.toList ret E)
 /-- `STLR{,W,B} Rs, (Rn)`: G3's store argument with the generic atomic store's bytes. -/
 theorem g32_stlr (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
     (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {as : As} {n ca cs : Nat} {rn rs : Int}
@@ -895,7 +899,7 @@ theorem g32_stlr (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
     (hvs : OneAt2 psA j ⟨plain as (· == regA rs) (· == memA rn 0), as.name⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
   have hA := F.addr
   obtain ⟨hnp, -, -, -, -, -⟩ := stlr_ne (lc := lc) hop
@@ -955,12 +959,10 @@ theorem g32_stlr (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
     rw [progStep_stlr hop hks (nextAddr_pcAt F.nodup hk0) has hf hma' hnil]
     rfl
   obtain ⟨hM', hk', hback, al, hal, hoff, hout⟩ := memInj_storeN hA hMI hk0' hn hpa hyv hyf hcs hw
-  have hsep' : SepFrom E.ι (StkAt E) mm' := by
-    intro b2 al2 a2 hb hι y hy
-    obtain ⟨al1, hb1, hs1⟩ := hback b2 al2 hb
-    rw [← hs1]; exact hsep0 b2 al1 a2 hb1 hι y hy
+  have hsep' : SepAt osp E.ι (StkAt E) mm' := hsep0.write hk0' hw
+  have hwf := write_wf hw (by rw [hbs]; omega)
   exact (op_mem2 (H := H) F hm hinv (stk_keeps hm hF hsz) hj hj' hvs hM' hk' hsep'
-    (fun y hy => hout y fun j hj he => hsep0 _ _ _ hal hpa y hy ⟨by omega, by omega⟩)
+    (fun y hy => hout y fun j hj he => hsep0.not_mem hal hpa hy (by omega) (by omega))
     (knext_same hK (Or.inr fun _ _ => by rw [hhn]; nofun)) hstep).imp
     fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
 
@@ -979,27 +981,27 @@ theorem vk32_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
     (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
-    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s)
+    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s osp)
     (hu : ∀ x, (v.op = .ARM64MOVDnop ∨ v.op = .ARM64MOVDreg) → v.args[0]? = some x →
       ∃ r c, regHome? lc x = some r ∧ cls (lc.ty x) = some c ∧
         UOK m (some (r, c, lc.signOf lc.ctx.f.valueTab.size x)))
     (hpre : G14Pre lc s v)
-    (hcall : CallOK H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
-    (hcallz : CallOKZ H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
-    (hicall : ICallOK H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
-    (hwb : WbOK H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
-    (hgetg : GetGOK E v) (hmeq : MemEqOK H E g (Link.byId sym text az ez ps.toList) lc s v m)
+    (hcall : CallOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
+    (hcallz : CallOKZAt osp H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
+    (hicall : ICallOKAt osp H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
+    (hwb : WbOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
+    (hgetg : GetGOK E v) (hmeq : MemEqOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G28Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' ∧ UOK m' (uEntry lc v) := by
+      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp ∧ UOK m' (uEntry lc v) := by
   have same : ∀ m', (uEntry lc v = none) →
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' →
-      LocMatch E s' bid (i + 1) m' → CoreInv E.ι (StkAt E) (kStep lc K v).get s' →
+      LocMatch E s' bid (i + 1) m' → CoreInv E.ι (StkAt E) (kStep lc K v).get s' osp →
       SlotInv lc s' →
       ∃ E' m', E.Extends E' ∧ G28Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
         PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-        LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' ∧
+        LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp ∧
         UOK m' (uEntry lc v) := fun m' hue h1 h2 h3 h4 => by
     rw [hue]
     exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩, trivial⟩
@@ -1053,26 +1055,26 @@ theorem vk32_stepU {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
     (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
-    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s) (hL : UOKL m L)
+    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s osp) (hL : UOKL m L)
     (hmem : ∀ x, (v.op = .ARM64MOVDnop ∨ v.op = .ARM64MOVDreg) → v.args[0]? = some x →
       ∃ r c, regHome? lc x = some r ∧ cls (lc.ty x) = some c ∧
         (r, c, lc.signOf lc.ctx.f.valueTab.size x) ∈ L)
     (hpre : G14Pre lc s v)
-    (hcall : CallOK H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
-    (hcallz : CallOKZ H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
-    (hicall : ICallOK H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
-    (hwb : WbOK H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
-    (hgetg : GetGOK E v) (hmeq : MemEqOK H E g (Link.byId sym text az ez ps.toList) lc s v m)
+    (hcall : CallOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
+    (hcallz : CallOKZAt osp H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
+    (hicall : ICallOKAt osp H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
+    (hwb : WbOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
+    (hgetg : GetGOK E v) (hmeq : MemEqOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G28Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' ∧
+      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp ∧
       UOKL m' (uStepL lc L v) := by
   have fin : VK32 lc g v kd → v.op ≠ .ARM64MOVDnop → v.op ≠ .ARM64MOVDreg →
       narrowLd? lc v = none →
       ∃ E' m', E.Extends E' ∧ G28Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
         PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-        LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' ∧
+        LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp ∧
         UOKL m' (uStepL lc L v) := fun hVK' h1 h2 hnl => by
     have hue : uEntry lc v = none := by simp only [uEntry, hnl]
     obtain ⟨E', m', hx, hE', hp, hlm, hinv', -⟩ := vk32_step hE F hhome hcf hv hVK' hvs htemp hj

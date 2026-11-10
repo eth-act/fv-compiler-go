@@ -405,7 +405,7 @@ private theorem mapM_three {a b c : ID} :
 
 /-- A register operand `REG_R0 + xv` of class 64: an integer it holds is the machine word. -/
 theorem pb_reg (hA : AddrAgree E.ι) (hl : lc.ctx.f.lowered = true) (hm : LocMatch E s b i m)
-    (hinv : CoreInv E.ι P K s) (hR : KRead lc v K) (hnp : v.op ≠ .Phi) {n : Nat} {r : Int}
+    (hinv : CoreInv E.ι P K s osp) (hR : KRead lc v K) (hnp : v.op ≠ .Phi) {n : Nat} {r : Int}
     {xv : Nat} (hao : argObj lc v n = .ok (64, r)) (hr : r = REG_R0 + xv) (hxv : xv ≤ 15) :
     ∃ a x, v.args[n]? = some a ∧ s.read lc a = .ok x ∧ ∀ (w : Width) (X : BitVec w.bits),
       x = .int w X → X.toInt = (m.x (BitVec.ofNat 5 xv)).toInt ∧
@@ -443,7 +443,7 @@ theorem ofInt_const {c : Int} (h : pbConst c = true) :
 /-- Phase 1's panic of a bounds panic, and the machine words the encoding names after the moves:
 the index `X` and the length `Y` in the registers (`xr`, `yr`) or the constants of the encoding. -/
 theorem pb_phase1 (hA : AddrAgree E.ι) (hl : lc.ctx.f.lowered = true) (hm : LocMatch E s b i m)
-    (hinv : CoreInv E.ι P K s) (hR : KRead lc v K) (hop : pbOp v.op = true) {c : Nat}
+    (hinv : CoreInv E.ι P K s osp) (hR : KRead lc v K) (hop : pbOp v.op = true) {c : Nat}
     {mvs : List (Nat × Int)} (hinfo : pbInfo lc v = .ok (c, mvs)) {e : Panic} {mm' : Mem}
     (hs : stepLoc env lc s v = .panic e mm') :
     ∃ (k : Nat) (xr yr : Bool) (xv yv : Nat) (X Y : BitVec 64), k ≤ 16 ∧
@@ -607,15 +607,15 @@ theorem vk19_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
     (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
-    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s) (hpre : G14Pre lc s v)
-    (hcall : CallOK H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
-    (hcallz : CallOKZ H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
-    (hicall : ICallOK H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
-    (hwb : WbOK H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
+    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s osp) (hpre : G14Pre lc s v)
+    (hcall : CallOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
+    (hcallz : CallOKZAt osp H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
+    (hicall : ICallOKAt osp H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
+    (hwb : WbOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
     (hgetg : GetGOK E v) (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G10Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' := by
+      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp := by
   cases hVK with
   | g18 _ hVK18 =>
     exact vk18_step hE F hhome hcf hv hVK18 hvs htemp hj hj' hreads hm hinv hpre hcall hcallz
@@ -730,7 +730,7 @@ theorem vk19_boundsPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In}
     (hvs : VStep2 ps kd (row.getD i 0) (row.getD (i + 1) 0))
     (hj : E.pcOf bid i = pcAt text ps.toList (row.getD i 0))
     (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
-    (hop : pbOp v.op = true) (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s)
+    (hop : pbOp v.op = true) (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s osp)
     (hbok : BoundsOK H g (Link.byId sym text az ez ps.toList) ps.toList)
     (hs : stepLoc env lc s v = .panic e mm') :
     ∃ e' m', BoundsAgree e e' ∧ PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧

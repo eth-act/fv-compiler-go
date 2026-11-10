@@ -653,7 +653,7 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
 `dst`'s, inside a live block and away from the frame; `R25`, `F16`, `F17` are `poison`. -/
 private theorem g53a_move (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
     (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
-    (hm : LocMatch E s b i m) (hinv : G3Inv E lc K s) (hR : KRead lc v K.get)
+    (hm : LocMatch E s b i m) (hinv : G3Inv E lc K s osp) (hR : KRead lc v K.get)
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {rd rs : Int} (hop : v.op = .ARM64LoweredMove) (hsz3 : v.args.size = 3)
     (hmt : memTy (lc.ty v.id) = true) (hhn : lc.home v.id = none)
@@ -666,7 +666,7 @@ private theorem g53a_move (F : Facts lc sym text az ez psA.toList ret E) (hF : F
     (hpre : Pre53a lc s v)
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ G3Inv E lc K s' := by
+      LocMatch E s' b (i + 1) m' ∧ G3Inv E lc K s' osp := by
   have hl := F.lowered
   have hA := F.addr
   have hnp : v.op ≠ .Phi := by rw [hop]; nofun
@@ -804,12 +804,10 @@ private theorem g53a_move (F : Facts lc sym text az ez psA.toList ret E) (hF : F
   -- `MemInj`, the separation and the frame
   obtain ⟨hMI', hk', hback, -⟩ := memInj_writeAny hA hMI hk0 (by omega : 0 < n) had hbs
     (M := m'.mem) (fun j hj => by rw [hcp j hj]; exact hsrc j hj) hout hwr
-  have hsep' : SepFrom E.ι (StkAt E) mm' := by
-    intro b2 al2 a2 hb hι w hw'
-    obtain ⟨al0, hb0, hs0⟩ := hback b2 al2 hb
-    rw [← hs0]; exact hsep0 b2 al0 a2 hb0 hι w hw'
+  have hsep' : SepAt osp E.ι (StkAt E) mm' := hsep0.write hk0 hwr
+  have hwf := write_wf hwr (by rw [hbs]; omega)
   have hP : ∀ y, StkAt E y → m'.mem y = m.mem y := fun y hy =>
-    hout y fun j hj he => hsep0 _ _ _ hald had y hy ⟨by omega, by omega⟩
+    hout y fun j hj he => hsep0.not_mem hald had hy (by omega) (by omega)
   obtain ⟨hslots, hframe⟩ := stk_slots_frame (E' := E) (m' := m') hm hF hsz rfl
     (fun _ _ h => h) hP hkeep.1 (hkeep.2.2.1 _ (by decide)) (hkeep.2.2.1 _ (by decide))
     (fun _ => hkeep.2.2.1 _ (by decide))
@@ -851,10 +849,11 @@ theorem vk53a_step {env : Env} {H : Hooks} {lc : LocCtx} {sym : Nat → BitVec 6
     (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
     (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
-    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s) (hpre : Pre53a lc s v)
+    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s osp) (hpre : Pre53a lc s v)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-      LocMatch E s' bid (i + 1) m' ∧ G3Inv E lc (kStep lc K v) s' ∧ UOKL m' (uStep35 lc L v) := by
+      LocMatch E s' bid (i + 1) m' ∧ G3Inv E lc (kStep lc K v) s' osp ∧ UOKL m'
+      (uStep35 lc L v) := by
   cases hVK with
   | move hop hsz3 hmt hhn hdo hso hma h16 hrd hrs hcov =>
     have hK : kStep lc K v = K := by

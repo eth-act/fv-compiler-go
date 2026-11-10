@@ -179,7 +179,7 @@ theorem objX?_dest {r : Nat} (hr : r < 26) : ∃ k, k < 31 ∧ objX? r = some (B
 extension of `x` that `signOf` names, which is the machine register when the upper-bit table names
 `r` (`UOK`). The machine does not move. -/
 theorem g20_nop (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {x r c cv : Nat} (hop : v.op = .ARM64MOVDnop ∨ v.op = .ARM64MOVDreg) (hsz : v.args.size = 1)
@@ -189,7 +189,7 @@ theorem g20_nop (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : j' = j) (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s')
     (hu : UOK m (some (r, c, lc.signOf lc.ctx.f.valueTab.size x))) :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ m' = m := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' ∧ m' = m := by
   have hl := F.lowered
   have hA := F.addr
   have hnp : v.op ≠ .Phi := by rcases hop with hop | hop <;> rw [hop] <;> nofun
@@ -500,10 +500,10 @@ theorem vk19_narrowW {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat
     (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
     (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
-    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s) (hpre : G14Pre lc s v)
+    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s osp) (hpre : G14Pre lc s v)
     (hs : stepLoc env lc s v = .ok s') (hue : uEntry lc v = some (r, cc, sg)) :
     ∃ m', PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-      LocMatch E s' bid (i + 1) m' ∧ G3Inv E lc (kStep lc K v) s' ∧ UOK m' (some (r, cc, sg)) ∧
+      LocMatch E s' bid (i + 1) m' ∧ G3Inv E lc (kStep lc K v) s' osp ∧ UOK m' (some (r, cc, sg)) ∧
       ∃ (kd : Nat) (val : BitVec 64), objOf? r = some (GoFV.Asm.ARM64.REG_R0 + kd) ∧
         m'.x = (m.wX (BitVec.ofNat 5 kd) val).x := by
   obtain ⟨⟨⟨⟨-, -, -, -, -, hglob, -, -, -, -, -⟩, -⟩, -⟩, -⟩ := hE
@@ -612,19 +612,19 @@ theorem vk20_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
     (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
-    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s)
+    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s osp)
     (hu : ∀ x, (v.op = .ARM64MOVDnop ∨ v.op = .ARM64MOVDreg) → v.args[0]? = some x →
       ∃ r c, regHome? lc x = some r ∧ cls (lc.ty x) = some c ∧
         UOK m (some (r, c, lc.signOf lc.ctx.f.valueTab.size x)))
     (hpre : G14Pre lc s v)
-    (hcall : CallOK H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
-    (hcallz : CallOKZ H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
-    (hicall : ICallOK H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
-    (hwb : WbOK H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
+    (hcall : CallOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
+    (hcallz : CallOKZAt osp H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
+    (hicall : ICallOKAt osp H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
+    (hwb : WbOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
     (hgetg : GetGOK E v) (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G10Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' ∧ UOK m' (uEntry lc v) := by
+      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp ∧ UOK m' (uEntry lc v) := by
   have hE0 := hE
   obtain ⟨⟨⟨⟨-, -, -, -, -, hglob, -, -, -, -, -⟩, -⟩, -⟩, -⟩ := hE
   cases hVK with

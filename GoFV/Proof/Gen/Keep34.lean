@@ -78,19 +78,19 @@ theorem vk33_keep {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
     (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
-    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s) (hpre : G14Pre lc s v)
+    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s osp) (hpre : G14Pre lc s v)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-      LocMatch E s' bid (i + 1) m' ∧ G3Inv E lc (kStep lc K v) s' ∧ XW lc v m m' := by
+      LocMatch E s' bid (i + 1) m' ∧ G3Inv E lc (kStep lc K v) s' osp ∧ XW lc v m m' := by
   obtain ⟨hlcE, -, -, -, -, hglob, -, -, hslot, hextra, hF⟩ := hE.env.env.env.env
   have hvars := hE.env.env.env.vars
   have hsz := slot_sizes hlcE hcf hinv.slots
   have hR := kread_of_reads hreads
   have fin : (∃ m', PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-      LocMatch E s' bid (i + 1) m' ∧ CoreInv E.ι (StkAt E) (kStep lc K v).get s' ∧
+      LocMatch E s' bid (i + 1) m' ∧ CoreInv E.ι (StkAt E) (kStep lc K v).get s' osp ∧
       SlotInv lc s' ∧ XW lc v m m') →
       ∃ m', PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-        LocMatch E s' bid (i + 1) m' ∧ G3Inv E lc (kStep lc K v) s' ∧ XW lc v m m' :=
+        LocMatch E s' bid (i + 1) m' ∧ G3Inv E lc (kStep lc K v) s' osp ∧ XW lc v m m' :=
     fun ⟨m', h1, h2, h3, h4, h5⟩ => ⟨m', h1, h2, ⟨h3, h4⟩, h5⟩
   cases hVK with
   | un hop hsz hao hro h8 hca =>

@@ -500,7 +500,7 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
 
 /-- `MVN Rm SHIFT k, Rd`. -/
 theorem g51b_mvnSh (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {typ ca c : Nat} {rm rd : Int} (hop : mvnSh51b? v.op = some typ)
@@ -511,7 +511,7 @@ theorem g51b_mvnSh (F : Facts lc sym text az ez psA.toList ret E)
       { as := .MVN, from_ := shiftA typ rm v.auxInt.toInt.toNat, to := regA rd }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
   have hA := F.addr
   have halu := aluOp51b_mvnSh hop
@@ -544,7 +544,7 @@ theorem g51b_mvnSh (F : Facts lc sym text az ez psA.toList ret E)
 
 /-- `SBFIZ $lsb, Rn, $width, Rd`. -/
 theorem g51b_sbfiz (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {ca c : Nat} {rn rd : Int}
@@ -556,7 +556,7 @@ theorem g51b_sbfiz (F : Facts lc sym text az ez psA.toList ret E)
       ⟨sbfizOK (v.auxInt.toInt / 256) (v.auxInt.toInt % 256) rn rd, "SBFIZ"⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
   have hA := F.addr
   have halu : AluOp51b v.op := by unfold AluOp51b; simp [hop]
@@ -584,7 +584,7 @@ theorem g51b_sbfiz (F : Facts lc sym text az ez psA.toList ret E)
 
 /-- `ROR`/`RORW $k, Rn, Rd`. -/
 theorem g51b_rorK (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {as : As} {w ca c : Nat} {rn rd : Int} (hop : rorK51b? v.op = some (as, w))
@@ -594,7 +594,7 @@ theorem g51b_rorK (F : Facts lc sym text az ez psA.toList ret E)
       (.ofShape { as, from_ := constA v.auxInt.toInt, reg := rn, to := regA rd }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
   have hA := F.addr
   have halu := aluOp51b_rorK hop
@@ -621,7 +621,7 @@ theorem g51b_rorK (F : Facts lc sym text az ez psA.toList ret E)
 
 /-- `ROR`/`RORW Rm, Rn, Rd`. -/
 theorem g51b_ror (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {as : As} {w ca cb c : Nat} {rn rm rd : Int} (hop : ror51b? v.op = some (as, w))
@@ -630,7 +630,7 @@ theorem g51b_ror (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j (.ofShape { as, from_ := regA rm, reg := rn, to := regA rd }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
   have hA := F.addr
   have halu := aluOp51b_ror hop
@@ -673,16 +673,17 @@ theorem vk51b_step {env : Env} {H : Hooks} {lc : LocCtx} {sym : Nat → BitVec 6
     (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
     (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
-    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s)
+    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s osp)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-      LocMatch E s' bid (i + 1) m' ∧ G3Inv E lc (kStep lc K v) s' ∧ UOKL m' (uStep35 lc L v) := by
+      LocMatch E s' bid (i + 1) m' ∧ G3Inv E lc (kStep lc K v) s' osp ∧ UOKL m'
+      (uStep35 lc L v) := by
   have hR := kread_of_reads hreads
   have fin : AluOp51b v.op → ∀ m', PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' →
-      LocMatch E s' bid (i + 1) m' → CoreInv E.ι (StkAt E) (kStep lc K v).get s' →
+      LocMatch E s' bid (i + 1) m' → CoreInv E.ι (StkAt E) (kStep lc K v).get s' osp →
       SlotInv lc s' →
       ∃ m', PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-        LocMatch E s' bid (i + 1) m' ∧ G3Inv E lc (kStep lc K v) s' ∧
+        LocMatch E s' bid (i + 1) m' ∧ G3Inv E lc (kStep lc K v) s' osp ∧
         UOKL m' (uStep35 lc L v) := fun halu m' h1 h2 h3 h4 => by
     refine ⟨m', h1, h2, ⟨h3, h4⟩, ?_⟩
     rw [uStep35_alu51b halu]

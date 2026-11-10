@@ -73,12 +73,20 @@ theorem memInj_sub (hA : AddrAgree ι) {m m' : Mem} {mm : Memory} (h : MemInj ι
     · rw [he]; trivial
     · rw [he]; exact memInj_byteRel hA h hb1 hι hi1
 
-/-- `SepFrom` survives fewer blocks of the same sizes. -/
-theorem sepFrom_sub {P : BitVec 64 → Prop} {m m' : Mem} (h : SepFrom ι P m) (hs : MemSub m m') :
-    SepFrom ι P m' := by
-  intro b al a hb hι y hy
-  obtain ⟨al1, hb1, hsz, -⟩ := hs b al hb
-  rw [← hsz]; exact h b al1 a hb1 hι y hy
+/-- The separation survives fewer blocks of the same sizes, some bytes poisoned. -/
+theorem sepFrom_sub {P : BitVec 64 → Prop} {w : Bool} {m m' : Mem} (h : SepAt w ι P m)
+    (hs : MemSub m m') : SepAt w ι P m' := by
+  cases w
+  · intro b al a hb hι y hy
+    obtain ⟨al1, hb1, hsz, -⟩ := hs b al hb
+    rw [← hsz]; exact h b al1 a hb1 hι y hy
+  · intro b al a hb hι y hy i hi he
+    obtain ⟨al1, hb1, hsz, hby⟩ := hs b al hb
+    obtain ⟨hwf, hpz⟩ := h b al1 a hb1 hι y hy i (by omega) he
+    refine ⟨hwf, ?_⟩
+    rcases hby i hi (by omega) with h2 | h2
+    · exact h2
+    · rw [h2, hpz]
 
 theorem memSub_refl (m : Mem) : MemSub m m :=
   fun _ al hb => ⟨al, hb, rfl, fun _ _ _ => .inr rfl⟩
@@ -142,14 +150,14 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
 /-- A memory marker (`VarDef`, `VarLive`, `KeepAlive`, `WBend`) emits no code: the machine state
 stays, related to the state with the marker's memory. -/
 theorem g5_mark (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {n : Nat} (hop : markOp? v.op = some n) (hsz : v.args.size = n)
     (hmt : memTy (lc.ty v.id) = true) (hhn : lc.home v.id = none) (hma : memArg lc v (n - 1) = .ok ())
     (hvs : j' = j) (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
   obtain ⟨a, ha, hamt, hah⟩ := memArg_spec hma
   obtain ⟨mm, hmm, hMI⟩ := hm.mem
@@ -166,7 +174,7 @@ theorem g5_mark (F : Facts lc sym text az ez psA.toList ret E)
     hm.frame, ?_⟩, ?_, hsi⟩
   · rw [hm.pc, hj, hj', hvs]
   · exact (⟨hinv.regs, ⟨mm', rfl, hk', sepFrom_sub hsep0 hsub⟩⟩ :
-      CoreInv E.ι (StkAt E) K { s with mem := .mem mm' }).mono
+      CoreInv E.ι (StkAt E) K { s with mem := .mem mm' } osp).mono
       (knext_same hK (Or.inr fun _ _ => by rw [hhn]; nofun))
 
 end Cases
@@ -185,12 +193,12 @@ theorem vk5_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat →
     (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
     (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
-    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s) (hpre : G4Pre lc s v)
-    (hcall : CallOK H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
+    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s osp) (hpre : G4Pre lc s v)
+    (hcall : CallOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G2Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' := by
+      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp := by
   cases hVK with
   | g4 _ hVK4 =>
     exact vk4_step hE F hns hcf hv hVK4 hvs htemp hj hj' hreads hm hinv hpre hcall hs

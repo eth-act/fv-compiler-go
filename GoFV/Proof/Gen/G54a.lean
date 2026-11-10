@@ -295,7 +295,7 @@ address, inside a live block and away from the frame; `p`'s register and the tem
 `poison` in `runLoc`, the only X registers the machine changes. -/
 theorem g54a_zero (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
     (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
-    (hm : LocMatch E s b i m) (hinv : G3Inv E lc K s) (hR : KRead lc v K.get)
+    (hm : LocMatch E s b i m) (hinv : G3Inv E lc K s osp) (hR : KRead lc v K.get)
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {t : Nat} {rp rc : Int} (hop : v.op = .ARM64LoweredZeroLoop)
     (ht : (lc.temps[v.id]?).join = some t) (hsz2 : v.args.size = 2)
@@ -308,7 +308,7 @@ theorem g54a_zero (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
       (zeroOffs (v.auxInt.toInt.toNat % 64)).map (zeroPat rp)) j')
     (hloop : loopTgt psA j = true) (hpre : Pre54a lc s v) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ G3Inv E lc K s' := by
+      LocMatch E s' b (i + 1) m' ∧ G3Inv E lc K s' osp := by
   have hl := F.lowered
   have hA := F.addr
   have hnp : v.op ≠ .Phi := by rw [hop]; nofun
@@ -441,12 +441,10 @@ theorem g54a_zero (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
       rw [getElem!_pos _ _ (by rw [hbs]; exact hj), Array.getElem_replicate]
       rfl)
     hMout hw
-  have hsep' : SepFrom E.ι (StkAt E) mm' := by
-    intro b2 al2 a2 hb hι w hw'
-    obtain ⟨al0, hb0, hs0⟩ := hback b2 al2 hb
-    rw [← hs0]; exact hsep0 b2 al0 a2 hb0 hι w hw'
+  have hsep' : SepAt osp E.ι (StkAt E) mm' := hsep0.write hk0 hw
+  have hwf := write_wf hw (by rw [hbs]; omega)
   have hP : ∀ y, StkAt E y → m'.mem y = m.mem y := fun y hy =>
-    hMout y fun j hj he => hsep0 _ _ _ hal hpa y hy ⟨by omega, by omega⟩
+    hMout y fun j hj he => hsep0.not_mem hal hpa hy (by omega) (by omega)
   have hkeep : Keeps54 [BitVec.ofNat 5 kp, BitVec.ofNat 5 kc] [] m m' := hkN
   have hq : ∀ q : Nat, 27 ≤ q → q < 32 → m'.x (BitVec.ofNat 5 q) = m.x (BitVec.ofNat 5 q) := by
     intro q hq1 hq2

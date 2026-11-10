@@ -53,6 +53,46 @@ def WbOK (H : Hooks) (E : MatchEnv) (g : G2In) (L : Link) (lc : LocCtx) (s : Loc
     s.mem = .mem mm → m₁.pc = L.sym y → m₁.sp = m.sp → m₁.v = m.v → m₁.nzcv = m.nzcv →
     m₁.mem = m.mem → (∀ k, k ≠ 30 → m₁.x k = m.x k) → WbSpec H E v.auxInt.toInt.toNat mm m₁
 
+/-- **The write-barrier hook's contract from a function whose `outargs` block sits at `SP`**
+(trusted; `docs/proofs/STATUS.md` Assumptions; `MatchEnv.outSP`): `WbSpec` with the separation
+`SepFromW` in place of `SepFrom`, in its premise and its conclusion. -/
+def WbSpecS (H : Hooks) (E : MatchEnv) (n : Nat) (mm : Mem) (m : MState) : Prop :=
+  MemInj E.ι mm m.mem → KeysNodup mm → SepFromW E.ι (StkAt E) mm →
+  ∃ ι' m', H.call m = some (.ret m') ∧ (∀ b a, E.ι b = some a → ι' b = some a) ∧
+    AddrAgree ι' ∧ m'.pc = m.x 30 ∧ m'.sp = m.sp ∧
+    (∀ k : Reg, k ≠ 25 → k ≠ 27 → m'.x k = m.x k) ∧ m'.mem = m.mem ∧
+    ι' .wbuf = some (m'.x 25) ∧ MemInj ι' (mm.wbAlloc n) m'.mem ∧ KeysNodup (mm.wbAlloc n) ∧
+    SepFromW ι' (StkAt E) (mm.wbAlloc n)
+
+/-- `WbOK` with `WbSpecS` (trusted; a function whose `outargs` block sits at `SP`). -/
+def WbOKS (H : Hooks) (E : MatchEnv) (g : G2In) (L : Link) (lc : LocCtx) (s : LocState)
+    (v : Value) (m : MState) : Prop :=
+  v.op = .ARM64LoweredWB → ∀ y mm (m₁ : MState), g.syms[y]? = some (wbSym v.auxInt.toInt) →
+    s.mem = .mem mm → m₁.pc = L.sym y → m₁.sp = m.sp → m₁.v = m.v → m₁.nzcv = m.nzcv →
+    m₁.mem = m.mem → (∀ k, k ≠ 30 → m₁.x k = m.x k) → WbSpecS H E v.auxInt.toInt.toNat mm m₁
+
+/-- `WbSpec` (`w = false`) or `WbSpecS` (`w = true`), by the separation of mode `w`. -/
+def WbSpecM (w : Bool) (H : Hooks) (E : MatchEnv) (n : Nat) (mm : Mem) (m : MState) : Prop :=
+  MemInj E.ι mm m.mem → KeysNodup mm → SepAt w E.ι (StkAt E) mm →
+  ∃ ι' m', H.call m = some (.ret m') ∧ (∀ b a, E.ι b = some a → ι' b = some a) ∧
+    AddrAgree ι' ∧ m'.pc = m.x 30 ∧ m'.sp = m.sp ∧
+    (∀ k : Reg, k ≠ 25 → k ≠ 27 → m'.x k = m.x k) ∧ m'.mem = m.mem ∧
+    ι' .wbuf = some (m'.x 25) ∧ MemInj ι' (mm.wbAlloc n) m'.mem ∧ KeysNodup (mm.wbAlloc n) ∧
+    SepAt w ι' (StkAt E) (mm.wbAlloc n)
+
+/-- The write-barrier contract of mode `w`: `WbOK` (`false`) or `WbOKS` (`true`). -/
+def WbOKAt : Bool → Hooks → MatchEnv → G2In → Link → LocCtx → LocState → Value → MState → Prop
+  | false, H, E, g, L, lc, s, v, m => WbOK H E g L lc s v m
+  | true, H, E, g, L, lc, s, v, m => WbOKS H E g L lc s v m
+
+theorem WbOKAt.spec {w : Bool} {H : Hooks} {E : MatchEnv} {g : G2In} {L : Link} {lc : LocCtx}
+    {s : LocState} {v : Value} {m : MState} (h : WbOKAt w H E g L lc s v m) :
+    v.op = .ARM64LoweredWB → ∀ y mm (m₁ : MState), g.syms[y]? = some (wbSym v.auxInt.toInt) →
+      s.mem = .mem mm → m₁.pc = L.sym y → m₁.sp = m.sp → m₁.v = m.v → m₁.nzcv = m.nzcv →
+      m₁.mem = m.mem →
+      (∀ k, k ≠ 30 → m₁.x k = m.x k) → WbSpecM w H E v.auxInt.toInt.toNat mm m₁ := by
+  cases w <;> exact h
+
 /-- The activation of a function `checkG8` accepted: G6's, and a function with a write barrier
 has a frame (the `CALL` overwrites `X30`). -/
 structure G8Env (lc : LocCtx) (g : G2In) (L : Link) (ps : Array Prog) (ret : BitVec 64)
@@ -274,18 +314,18 @@ theorem g8_wb (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E) (h
     (hsyms : ∀ y, (Link.byId sym text az ez psA.toList).sym y ≠ ret ∧ ∀ p ∈ psA.toList,
       (Link.byId sym text az ez psA.toList).addr p.id ≠
         some ((Link.byId sym text az ez psA.toList).sym y))
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hK : KLe K' (kSet K wbReg (some 64)))
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     (hop : v.op = .ARM64LoweredWB) (hsz1 : v.args.size = 1)
     (hh : lc.home v.id = some (.pair (some wbReg) none)) (hty : wbTy (lc.ty v.id) = true)
     (hma : memArg lc v 0 = .ok ()) (hvs : OneAt2 psA j (wbPat g v.auxInt.toInt) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s')
-    (hok : WbOK H E g (Link.byId sym text az ez psA.toList) lc s v m) :
+    (hok : WbOKAt osp H E g (Link.byId sym text az ez psA.toList) lc s v m) :
     ∃ ι', (∀ b a, E.ι b = some a → ι' b = some a) ∧ AddrAgree ι' ∧ ∃ m',
       PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
       LocMatch { E with ι := ι' } s' b (i + 1) m' ∧
-      CoreInv ι' (StkAt { E with ι := ι' }) K' s' ∧ SlotInv lc s' := by
+      CoreInv ι' (StkAt { E with ι := ι' }) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
   obtain ⟨e, hte⟩ := wbTy_spec hty
   obtain ⟨a0, ha0, hamt, hah0⟩ := memArg_spec hma
@@ -310,7 +350,7 @@ theorem g8_wb (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E) (h
     simp only [MState.wX, show ¬ ((30 : Reg) = 31) by decide, ↓reduceIte]
     rfl
   obtain ⟨ι', m', hcallH, hext, hA', hpc', hsp', hx', hmem', hbuf, hMI', hkn', hsep'⟩ :=
-    hok hop y mm m₁ hy hmm rfl rfl rfl rfl rfl hm1x hMI hkn hsep
+    hok.spec hop y mm m₁ hy hmm rfl rfl rfl rfl rfl hm1x hMI hkn hsep
   have hstep2 : PStep H (Link.byId sym text az ez psA.toList) psA.toList ret m₁ m' :=
     .hook (hsyms y).1 (progAt?_none (hsyms y).2) hcallH
   have hstar' := (hstar.tail (pstep_at F.nodup F.lt F.ret hk rfl hcstep)).tail hstep2
@@ -367,7 +407,7 @@ theorem g8_wb (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E) (h
 /-- `Select0` of a write-barrier request, homed in `R25` like the request's pointer: no code;
 `R25` is reread at the value's shape. -/
 theorem g8_sel0 (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {c : ID} (hop : v.op = .Select0) (hsz1 : v.args.size = 1) (hc0 : v.args[0]? = some c)
@@ -375,7 +415,7 @@ theorem g8_sel0 (F : Facts lc sym text az ez psA.toList ret E)
     (hcv : cls (lc.ty v.id) = some 64) (hKr : K wbReg = some 64)
     (hvs : j' = j) (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
   have hA := F.addr
   obtain ⟨-, hhc, hty⟩ := wbArg_spec hw
@@ -408,14 +448,14 @@ theorem g8_sel0 (F : Facts lc sym text az ez psA.toList ret E)
 
 /-- `Select1` of a write-barrier request, the memory with no home: no code, no change. -/
 theorem g8_sel1 (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {c : ID} (hop : v.op = .Select1) (hsz1 : v.args.size = 1) (hc0 : v.args[0]? = some c)
     (hw : wbArg lc c = true) (hmt : memTy (lc.ty v.id) = true) (hhn : lc.home v.id = none)
     (hvs : j' = j) (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
   obtain ⟨-, hhc, hty⟩ := wbArg_spec hw
   obtain ⟨e, hte⟩ := wbTy_spec hty
@@ -461,23 +501,23 @@ theorem vk8_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat →
     (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
     (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
-    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s) (hpre : G7Pre lc s v)
-    (hcall : CallOK H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
-    (hwb : WbOK H E g (Link.byId sym text az ez ps.toList) lc s v m)
+    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s osp) (hpre : G7Pre lc s v)
+    (hcall : CallOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
+    (hwb : WbOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G8Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' := by
+      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp := by
   have hE8 := hE
   obtain ⟨⟨hE2, hvars⟩, hwbs⟩ := hE
   have hE0 := hE2
   obtain ⟨hlcE, -, -, -, -, -, hsyms, -, -, -, hF⟩ := hE2
   have same : ∀ m', PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-      LocMatch E s' bid (i + 1) m' ∧ CoreInv E.ι (StkAt E) (kStep lc K v).get s' ∧
+      LocMatch E s' bid (i + 1) m' ∧ CoreInv E.ι (StkAt E) (kStep lc K v).get s' osp ∧
       SlotInv lc s' →
       ∃ E' m', E.Extends E' ∧ G8Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
         PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-        LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' :=
+        LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp :=
     fun m' ⟨h1, h2, h3, h4⟩ => ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE8, h1, h2, ⟨h3, h4⟩⟩
   cases hVK with
   | g7 hVK7 =>

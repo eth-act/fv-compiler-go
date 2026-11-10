@@ -40,7 +40,7 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
 /-- The arguments `as` of `v` in `F` registers, read at their float shapes: related to their V
 registers (`arg_relV`). -/
 theorem argsV (F : Facts lc sym text az ez psA.toList ret E) (hm : LocMatch E s b i m)
-    {P : BitVec 64 → Prop} (hinv : CoreInv E.ι P K s) (hR : KRead lc v K) (hnp : v.op ≠ .Phi)
+    {P : BitVec 64 → Prop} (hinv : CoreInv E.ι P K s osp) (hR : KRead lc v K) (hnp : v.op ≠ .Phi)
     {as : List ID} {rs : List Nat} (has : ∀ a ∈ as, a ∈ v.args.toList)
     (hargs : ∀ a r, (a, r) ∈ as.zip rs → lc.home a = some (.reg r))
     (hfa : ∀ a r, (a, r) ∈ as.zip rs → 31 ≤ r → fTy (lc.ty a) = true) :
@@ -60,7 +60,7 @@ theorem argsV (F : Facts lc sym text az ez psA.toList ret E) (hm : LocMatch E s 
 /-- `SelectN [i]` of a call's result `i` in its result register, an `F` register, at a float shape
 (`g2_selReg` with the V register): no code. -/
 theorem g47_selF (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {c : ID} {ts : List Ty} {r : Nat} {rs : Array (Option Nat)} {t : Ty}
@@ -74,7 +74,7 @@ theorem g47_selF (F : Facts lc sym text az ez psA.toList ret E)
     (hhc : lc.home c = some (.results rs)) (hrs : rs[v.auxInt.toInt.toNat]? = some (some r))
     (hvs : j' = j) (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
   obtain ⟨ts', rfl, -, hcls⟩ := callTy_split hct
   obtain ⟨xs, hread, hlen, -, hcomp⟩ := read_call (s := s) hl hts hcls hns
@@ -145,20 +145,20 @@ theorem vk47_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
     (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
-    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s) (hL : UOKL m L)
+    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s osp) (hL : UOKL m L)
     (hmem : ∀ x, (v.op = .ARM64MOVDnop ∨ v.op = .ARM64MOVDreg) → v.args[0]? = some x →
       ∃ r c, regHome? lc x = some r ∧ cls (lc.ty x) = some c ∧
         (r, c, lc.signOf lc.ctx.f.valueTab.size x) ∈ L)
     (hpre : G46Pre lc s v)
-    (hcall : CallOK H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
-    (hcallz : CallOKZ H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
-    (hicall : ICallOK H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
-    (hwb : WbOK H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
-    (hgetg : GetGOK E v) (hmeq : MemEqOK H E g (Link.byId sym text az ez ps.toList) lc s v m)
+    (hcall : CallOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
+    (hcallz : CallOKZAt osp H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
+    (hicall : ICallOKAt osp H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
+    (hwb : WbOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
+    (hgetg : GetGOK E v) (hmeq : MemEqOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G28Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' ∧
+      LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp ∧
       UOKL m' (uStep35 lc L v) := by
   have hR := kread_of_reads hreads
   have hempty : ∀ m', UOKL m' [] := fun _ e he => by cases he
@@ -178,7 +178,7 @@ theorem vk47_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
       hframed hsyms hm hinv.core hinv.slots hR hj hj' hop h16 hlen hargs
       (argsV F hm hinv.core hR hnp (fun a ha => List.dropLast_subset _ ha) hargs hfa) hres
       hct (kcall_kStep hnp hres hnd (callTy_len hct)) (fun _ hp => callPat_spec hp) hvs htemp hs
-      (hcallz hop _ _ _ _ _ hcall' hcr)
+      (hcallz.spec hop _ _ _ _ _ hcall' hcr)
     have hx : E.Extends { E with ι := ι' } := ⟨rfl, hext'⟩
     refine ⟨_, m', hx, hE.extend hx (hE.env.extend hx (hE.env.env.extend hx
       (hE0.extend hext' hA'))), hstar, hlm, ⟨hcore', hsl'⟩, ?_⟩

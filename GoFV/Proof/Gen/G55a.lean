@@ -279,7 +279,7 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
 
 /-- A float argument in a V register, read at its shape: `arg_relV` from `fargObj` (`G46.lean`). -/
 private theorem farg_rel55 (F : Facts lc sym text az ez psA.toList ret E) (hm : LocMatch E s b i m)
-    (hinv : CoreInv E.ι (StkAt E) K s) (hR : KRead lc v K) (hnp : v.op ≠ .Phi) {n c : Nat}
+    (hinv : CoreInv E.ι (StkAt E) K s osp) (hR : KRead lc v K) (hnp : v.op ≠ .Phi) {n c : Nat}
     {ra : Int} (hao : fargObj lc v n = .ok (c, ra)) :
     ∃ (a : ID) (k : Nat), v.args[n]? = some a ∧ ra = REG_F0 + k ∧ k < 32 ∧
       ∃ x, s.read lc a = .ok x ∧ FValRel x (m.v (BitVec.ofNat 5 k)) ∧ Fits c x := by
@@ -291,7 +291,7 @@ private theorem farg_rel55 (F : Facts lc sym text az ez psA.toList ret E) (hm : 
 
 /-- `VCNT Va.B8, Vd.B8` (`cnt`) or `VUADDLV Va.B8, Vd`. -/
 theorem g55_simd (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {cnt : Bool} {ra rd : Int} (hop : v.op = cond cnt .ARM64VCNT .ARM64VUADDLV)
@@ -299,7 +299,7 @@ theorem g55_simd (F : Facts lc sym text az ez psA.toList ret E)
     (hro : fresObj lc v = .ok (64, rd)) (hvs : OneAt2 psA j (.ofShape (simdShape cnt ra rd)) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
   have hmem := ops55a_simd hop
   have hnp := (ops55a_facts hmem).1
@@ -320,7 +320,7 @@ theorem g55_simd (F : Facts lc sym text az ez psA.toList ret E)
 
 /-- `FRINTN`/`FRINTP`/`FRINTM`/`FRINTZ`/`FRINTA` `Fa, Fd`. -/
 theorem g55_frint (F : Facts lc sym text az ez psA.toList ret E)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s) (hsi : SlotInv lc s)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {n : Nat} {ft : BitVec 2} {opc : BitVec 6} {ra rd : Int}
@@ -329,7 +329,7 @@ theorem g55_frint (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j (.ofShape { as := opAsm v.op, from_ := regA ra, to := regA rd }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
   have hmem := ops55a_frint hop
   have hnp := (ops55a_facts hmem).1
@@ -362,10 +362,11 @@ theorem vk55a_step {env : Env} {H : Hooks} {lc : LocCtx} {sym : Nat → BitVec 6
     (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
     (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
-    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s)
+    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s osp)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
-      LocMatch E s' bid (i + 1) m' ∧ G3Inv E lc (kStep lc K v) s' ∧ UOKL m' (uStep35 lc L v) := by
+      LocMatch E s' bid (i + 1) m' ∧ G3Inv E lc (kStep lc K v) s' osp ∧
+      UOKL m' (uStep35 lc L v) := by
   have hR := kread_of_reads hreads
   cases hVK with
   | simd hop hsz hao hro =>
