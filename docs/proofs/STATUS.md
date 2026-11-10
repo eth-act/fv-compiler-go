@@ -1119,21 +1119,25 @@ accepts 19 of the 20 functions with one of these sole reasons
 extended words), `LDAR*`, the selects of pair and acquire loads, and the G36 register shifts, G37
 ops and `SBFIZ` register by register (`pairOp35`); `GoFV/Proof/Gen/Keep35.lean` (`uStep35_ldp`,
 `uStep35_sel`, `uStep35_pairW`, `uStep35_keepOp`, `keepOps35`, `uStep35_keepOps`, `uokl_xw`,
-`uokl_one`, `WPairW`, `uokl_wpair`). Every `g*_value` statement from G35 to G57 is unchanged;
-`vk51b_step` and `vk57a_step` take `UOKL m L`. Exercised by `genG57_witness` (`main.grow`: the table
-before `STPW` now holds the `LDPSW` words' entries for `R8`, `R9`). 12 functions G57 rejected only
-for `upper bits unknown` are accepted (proofs3.md §4, slice G58 group B).
+`uokl_one`, `WPairW`, `uokl_wpair`). Every `g*_value` statement from G35 to G57 and G48's is
+unchanged; `vk51b_step` and `vk57a_step` take `UOKL m L`. Exercised by `genG57_witness`
+(`main.grow`: the table before `STPW` now holds the `LDPSW` words' entries for `R8`, `R9`). 12
+functions G57 rejected only for `upper bits unknown` are accepted (proofs3.md §4, slice G58 group
+B); they raise G57 to 7,390 and G48 to 7,607.
 
 ## Phase 3: genssa, slice G58, narrow and boolean operands, wider store-release sources, `LoweredRound*F`, G35's upper-bit table across more writes (I7, #553)
 
 `GoFV.Proof.Gen.g58_value`, `g58_initMem`, `g58_term`, `g58_nilPanic`, `g58_boundsPanic`
-(`GoFV/Proof/Gen/G58.lean`): when slice G58 (`checkG58`: G57 with group A's `vkind58a` tried when
-G57 rejects a value, over group B's upper-bit table, `GoFV/Gen/Check58.lean`) accepts a function,
-they are G57's statements, under `G49Env`, `g58_value` under `G54Pre` (no new premise). Witness:
-`genG58_witness` (`math/bits.ReverseBytes16`: `checkG57` rejects it and `checkG58` accepts it;
-`REV16W R0, R0` of `0x1234` leaves `0x3412` in `X0`'s low halfword). Coverage on quick-v10
-(`lake exe gen-check --jobs 1`): 7,409 of 9,297 functions (79.69%, 31 more than G57's 7,378:
-19 by group A, 12 by group B), 238,245 values; no earlier slice's count drops.
+(`GoFV/Proof/Gen/G58.lean`): when slice G58 (`checkG58`: G48, itself on G57, with group A's
+`vkind58a` tried when G48 rejects a value, over group B's upper-bit table, and G48's `spHomes48`,
+`GoFV/Gen/Check58.lean`) accepts a function, they are G48's statements: in an activation whose
+`outargs` block sits at `SP` (`hosp : E.outSP = true`, `SPInv`, kept by `g58_value`,
+`g58_initMem`, `g58_term`), under `G49Env`, `g58_value` under `G54Pre`, the contracts of the mode
+`E.outSP` and `CallOKStk` (no new premise; group A's values need none). Witness: `genG58_witness`
+(`math/bits.ReverseBytes16`: `checkG48` rejects it and `checkG58` accepts it; in the mode `outSP`,
+`REV16W R0, R0` of `0x1234` leaves `0x3412` in `X0`'s low halfword, `SPInv` kept). Coverage on
+quick-v10 (`lake exe gen-check --jobs 1`, now G58 the last slice): 7,626 of 9,297 functions
+(82.02%, 19 more than G48's 7,607, by group A), 245,347 values; no earlier slice's count drops.
 
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
