@@ -10,7 +10,7 @@ variable [GoFV.SSA.Sem.Addrs]
 variable in a `Blk.temp` block (`var`), and the one Prog each emits (`vkind57a_spec`). `vkind57a`
 is `none` off `op57a` (`vkind57a_none`), and every `VK57a` value's op is one of `op57a`
 (`vk57a_op`). The ops (`ops57a`) are no `Phi`, nil check, bounds check or entry value and clobber
-nothing (`ops57a_facts`); the upper-bit table is empty after each (`uStep35_57a`).
+nothing (`ops57a_facts`); the upper-bit table is empty after `STPW` (`uStep35_57a`).
 -/
 
 namespace GoFV.Gen.Check
@@ -177,12 +177,11 @@ theorem ops57a_facts {op : Op} (hmem : op ∈ ops57a) :
   rcases hmem with h | h | h <;> subst h <;>
     exact ⟨nofun, nofun, nofun, nofun, nofun, rfl, rfl, rfl, rfl, nofun, rfl, rfl⟩
 
-/-- G35's table is empty after G57's group A. -/
+/-- G35's table is empty after `STPW` (the word pair loads of G57's group A follow G35's table
+register by register, `uStep35_ldpX`). -/
 theorem uStep35_57a {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value}
-    (hmem : v.op ∈ ops57a) : uStep35 lc L v = [] := by
-  simp only [ops57a, List.mem_cons, List.not_mem_nil, or_false] at hmem
-  rcases hmem with h | h | h <;>
-    simp [uStep35, ldEntry35, loadOp?, narrowLoad?, pairOp35, uStep34, keep34, keep31, keepOp31,
-      keepOp34, uStepL, uEntry, narrowLd?, loadIdxOp?, h]
+    (h : v.op = .ARM64STPW) : uStep35 lc L v = [] := by
+  simp [uStep35, ldEntry35, loadOp?, narrowLoad?, pairOp35, uStep34, keep34, keep31, keepOp31,
+    keepOp34, uStepL, uEntry, narrowLd?, loadIdxOp?, h]
 
 end GoFV.Gen.Check

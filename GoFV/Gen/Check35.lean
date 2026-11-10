@@ -17,6 +17,12 @@ through a register or of a global). `uStep35` is G34's `uStep34` otherwise. The 
 (`uPass35`, `uFlow35`, `uIn35`), its check (`uEdgesOK35`) and the `MOVDnop`/`MOVDreg` check
 (`movdOK35`) are G34's over `uStep35`.
 
+Slice G58b (`docs/plans/proofs3.md` §4) widens `pairOp35` to the word pair loads `LDPW`/`LDPSW`
+(G50, G57a), whose registers get the entries of a zero- or sign-extended word (`wEntries35`), the
+acquire loads `LDAR`/`LDARW`/`LDARB` (G38, home `(Rd;-)`), the selects of these (no code: the
+table stays), and the ops of G36 (`SLL`, `SRL`, `SRA`), G37 and G51b (`SBFIZ`) that write only
+their register home, across which the entries of the other registers stay.
+
 On a function with no arm64 op, `checkG35` is `checkG33`'s `checkNL30`.
 `GoFV/Proof/Gen/G35.lean` proves what an accepted function satisfies.
 -/
@@ -25,17 +31,39 @@ namespace GoFV.Gen.Check
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Asm
 
-/-- The pair load `LDP`, and `Select0`/`Select1` of a value whose op is `LDP`. -/
+/-- The values whose writes G35's table follows register by register: the pair loads `LDP`,
+`LDPW`, `LDPSW` and the acquire loads `LDAR`, `LDARW`, `LDARB`, which write the registers of their
+home (`homeRegs`); `Select0`/`Select1` of one of these, which emit no code; and the ops of G36,
+G37 and G51b that write only their register home (`SLL`, `SRL`, `SRA`; `UMULH` … `SBFX`;
+`SBFIZ`; slice G58b, `docs/plans/proofs3.md` §4). The test is a chain of `==` so that `simp
+[pairOp35, h]` decides it for `h : v.op = o`. -/
 def pairOp35 (lc : LocCtx) (v : Value) : Bool :=
-  v.op == .ARM64LDP || ((v.op == .Select0 || v.op == .Select1) &&
-    ((v.args[0]?).bind lc.ctx.f.value?).any (·.op == .ARM64LDP))
+  v.op == .ARM64LDP || v.op == .ARM64LDPW || v.op == .ARM64LDPSW || v.op == .ARM64LDAR ||
+  v.op == .ARM64LDARW || v.op == .ARM64LDARB ||
+  ((v.op == .Select0 || v.op == .Select1) && ((v.args[0]?).bind lc.ctx.f.value?).any fun u =>
+    u.op == .ARM64LDP || u.op == .ARM64LDPW || u.op == .ARM64LDPSW || u.op == .ARM64LDAR ||
+    u.op == .ARM64LDARW || u.op == .ARM64LDARB) ||
+  v.op == .ARM64SLL || v.op == .ARM64SRL || v.op == .ARM64SRA || v.op == .ARM64UMULH ||
+  v.op == .ARM64MULH || v.op == .ARM64UDIV || v.op == .ARM64DIV || v.op == .ARM64MULW ||
+  v.op == .ARM64UDIVW || v.op == .ARM64DIVW || v.op == .ARM64UMULL || v.op == .ARM64RBIT ||
+  v.op == .ARM64REVW || v.op == .ARM64REV16W || v.op == .ARM64MADD || v.op == .ARM64MSUB ||
+  v.op == .ARM64MADDW || v.op == .ARM64MSUBW || v.op == .ARM64SBFX || v.op == .ARM64SBFIZ
 
-/-- The registers of `id`'s home: its register, or the two registers of its pair. -/
+/-- The registers of `id`'s home: its register, the two registers of its pair, or the register of
+an acquire load's `(Rd;-)`. -/
 def homeRegs (lc : LocCtx) (id : ID) : List Nat :=
   match lc.home id with
   | some (.reg r) => [r]
   | some (.pair (some a) (some b)) => [a, b]
+  | some (.pair (some a) none) => [a]
   | _ => []
+
+/-- The entries a word pair load writes to the registers `rs` of its pair: `LDPW` the zero and
+`LDPSW` the sign extension of a 32-bit word in each. -/
+def wEntries35 (op : Op) (rs : List Nat) : List (Nat × Nat × Bool) :=
+  if op == .ARM64LDPW then rs.map fun r => (r, 32, false)
+  else if op == .ARM64LDPSW then rs.map fun r => (r, 32, true)
+  else []
 
 /-- The entry of a narrow load of `n` bytes (`loadOp?`, at any operand: G3's through a register or
 of a global, G6's of a frame variable) homed in register `r` at class `c ∈ {8, 16, 32}`, `8n ≤ c`:
@@ -50,7 +78,11 @@ def ldEntry35 (lc : LocCtx) (v : Value) : Option (Nat × Nat × Bool) :=
 def uStep35 (lc : LocCtx) (L : List (Nat × Nat × Bool)) (v : Value) : List (Nat × Nat × Bool) :=
   match ldEntry35 lc v with
   | some e => e :: L.filter (·.1 != e.1)
-  | none => if pairOp35 lc v then L.filter (!(homeRegs lc v.id).contains ·.1) else uStep34 lc L v
+  | none =>
+    if pairOp35 lc v then
+      if v.op == .Select0 || v.op == .Select1 then L
+      else wEntries35 v.op (homeRegs lc v.id) ++ L.filter (!(homeRegs lc v.id).contains ·.1)
+    else uStep34 lc L v
 
 /-- The upper-bit table before value `i` of block `blk`, which starts with `L0` (nothing past the
 start on a function with no arm64 op). -/

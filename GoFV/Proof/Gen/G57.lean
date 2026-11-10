@@ -55,7 +55,7 @@ theorem vk57_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat â†
     exact vk55_step hE F hhome hcf hv hVK55 hvs hloop hj hj' hreads hm hinv hL hmem hpre hcall
       hcallz hicall hwb hclo hgetg hmeq hs
   | a htemp hVK =>
-    exact vk57a_step hE F hcf hv hVK hvs htemp hj hj' hreads hm hinv hpre.1.1.1.2 hs
+    exact vk57a_step hE F hcf hv hVK hvs htemp hj hj' hreads hm hinv hL hpre.1.1.1.2 hs
   | b htemp hVK =>
     exact vk57b_step hE F hcf hv hVK hvs htemp hj hj' hreads hm hinv hs
 

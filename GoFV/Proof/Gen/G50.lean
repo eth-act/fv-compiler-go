@@ -155,7 +155,8 @@ theorem g50_ldpX (F : Facts lc sym text az ez psA.toList ret E)
       (.ofShape { as, from_ := memA rn v.auxInt.toInt, to := pairA oa ob }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' ∧
+      WPairW ra rb sg m m' := by
   have hl := F.lowered
   have hA := F.addr
   have has4 : (as = .LDPW ∧ sg = false ∨ as = .LDPSW ∧ sg = true) ∧ n = 4 := by
@@ -219,7 +220,9 @@ theorem g50_ldpX (F : Facts lc sym text az ez psA.toList ret E)
   obtain ⟨hlm2, hinv2⟩ := finish_reg hlm1 hinv1 hdb (by omega : kb < 32) hob hrel1
     (fits_retypeL h1 _) (b' := b) (i' := i + 1)
   rw [hj'] at hlm2
-  refine ⟨_, hstar.tail (pstep_at F.nodup F.lt F.ret hk rfl ?_), hlm2, hinv2.mono hK, hsi⟩
+  refine ⟨_, hstar.tail (pstep_at F.nodup F.lt F.ret hk rfl ?_), hlm2, hinv2.mono hK, hsi,
+    ka, kb, readMem m.mem (a + p.off) 4, readMem m.mem (a' + q.off) 4, hoa, hob,
+    by simp only [wX_pc]⟩
   obtain ⟨has, hf, -, ht', hsc⟩ := Shape.ok_eq hok
   have has'' : psA.toList[k].as = .LDPW ∧ sg = false ∨ psA.toList[k].as = .LDPSW ∧ sg = true := by
     rw [has]; exact has'
@@ -379,22 +382,56 @@ end Cases
 
 /-! ## One value -/
 
-/-- The upper-bit table is empty after a pair load of G50. -/
-theorem uStep35_pair50 {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value} {as : As}
-    {n : Nat} {sg fp : Bool} (hpo : pairOp50 v.op = some (as, n, sg, fp)) : uStep35 lc L v = [] := by
-  rcases pairOp50_cases hpo with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;>
+/-- After a float pair load of G50 the upper-bit table is empty. -/
+theorem uStep35_ldpF {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value} {as : As}
+    {n : Nat} {sg : Bool} (hpo : pairOp50 v.op = some (as, n, sg, true)) : uStep35 lc L v = [] := by
+  rcases pairOp50_cases hpo with ⟨-, -, -, -, h⟩ | ⟨-, -, -, -, h⟩ | ⟨h, -⟩ | ⟨h, -⟩
+  · cases h
+  · cases h
+  all_goals
     simp [uStep35, ldEntry35, loadOp?, narrowLoad?, pairOp35, uStep34, keep34, keep31, keepOp31,
       keepOp34, uStepL, uEntry, narrowLd?, loadIdxOp?, h]
 
-/-- The upper-bit table is empty after a select of a pair load of G50. -/
-theorem uStep35_sel50 {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v u : Value} {c : ID}
-    {as : As} {n : Nat} {sg fp : Bool} (hop : v.op = .Select0 ∨ v.op = .Select1)
+/-- After a word pair load of G50 the upper-bit table holds the zero (`LDPW`) or sign (`LDPSW`)
+extension of a word in each register of the pair, and the entries of the other registers. -/
+theorem uStep35_ldpX {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value} {as : As}
+    {n : Nat} {sg : Bool} (hpo : pairOp50 v.op = some (as, n, sg, false)) :
+    uStep35 lc L v = (homeRegs lc v.id).map (fun r => (r, 32, sg)) ++
+      L.filter (!(homeRegs lc v.id).contains ·.1) := by
+  rcases pairOp50_cases hpo with ⟨h, -, -, rfl, -⟩ | ⟨h, -, -, rfl, -⟩ | ⟨-, -, -, -, h⟩ |
+    ⟨-, -, -, -, h⟩
+  · rw [uStep35_pairW (ldEntry35_none (by rw [h]; rfl)) (by simp [pairOp35, h]) (by simp [h])]
+    simp [wEntries35, h]
+  · rw [uStep35_pairW (ldEntry35_none (by rw [h]; rfl)) (by simp [pairOp35, h]) (by simp [h])]
+    simp [wEntries35, h]
+  · cases h
+  · cases h
+
+/-- After a select of a float pair load of G50 the upper-bit table is empty. -/
+theorem uStep35_selF50 {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v u : Value} {c : ID}
+    {as : As} {n : Nat} {sg : Bool} (hop : v.op = .Select0 ∨ v.op = .Select1)
     (hc0 : v.args[0]? = some c) (hu : lc.ctx.f.value? c = some u)
-    (hpo : pairOp50 u.op = some (as, n, sg, fp)) : uStep35 lc L v = [] := by
-  rcases pairOp50_cases hpo with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;>
+    (hpo : pairOp50 u.op = some (as, n, sg, true)) : uStep35 lc L v = [] := by
+  rcases pairOp50_cases hpo with ⟨-, -, -, -, h⟩ | ⟨-, -, -, -, h⟩ | ⟨h, -⟩ | ⟨h, -⟩
+  · cases h
+  · cases h
+  all_goals
     rcases hop with hop | hop <;>
     simp [uStep35, ldEntry35, loadOp?, narrowLoad?, pairOp35, uStep34, keep34, keep31, keepOp31,
       keepOp34, uStepL, uEntry, narrowLd?, loadIdxOp?, h, hop, hc0, hu]
+
+/-- A select of a word pair load of G50 emits no code: the upper-bit table stays. -/
+theorem uStep35_selX50 {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v u : Value} {c : ID}
+    {as : As} {n : Nat} {sg : Bool} (hop : v.op = .Select0 ∨ v.op = .Select1)
+    (hc0 : v.args[0]? = some c) (hu : lc.ctx.f.value? c = some u)
+    (hpo : pairOp50 u.op = some (as, n, sg, false)) : uStep35 lc L v = L := by
+  have hl : loadOp? v.op = none := by rcases hop with h | h <;> rw [h] <;> rfl
+  refine uStep35_sel (ldEntry35_none hl) ?_ hop
+  rcases pairOp50_cases hpo with ⟨h, -⟩ | ⟨h, -⟩ | ⟨-, -, -, -, h⟩ | ⟨-, -, -, -, h⟩
+  · rcases hop with hop | hop <;> simp [pairOp35, hop, hc0, hu, h]
+  · rcases hop with hop | hop <;> simp [pairOp35, hop, hc0, hu, h]
+  · cases h
+  · cases h
 
 /-- G50's own values are pair loads and selects. -/
 theorem vk50_ops {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK50 lc g v kd) :
@@ -440,33 +477,34 @@ theorem vk50_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
       hcallz hicall hwb hclo hgetg hmeq hs
   | ldpX hpo hsz2 hax hty h0 h1 h80 h81 hao hma hh hne hza hzb hda hdb hoa hob =>
     have hnp : v.op ≠ .Phi := by intro h; rw [h] at hpo; simp [pairOp50] at hpo
-    obtain ⟨m', h1', h2', h3', h4'⟩ := g50_ldpX (H := H) F hm hinv.core hinv.slots hR
+    obtain ⟨m', h1', h2', h3', h4', h5'⟩ := g50_ldpX (H := H) F hm hinv.core hinv.slots hR
       (kpair_kStep hnp hh hty h0 h1 hne) hpre.2 hj hj' hpo hsz2 hax hty h0 h1 h80
       h81 hao hma hh hza hzb hda hdb hoa hob hvs htemp hs
     refine ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1', h2', ⟨h3', h4'⟩, ?_⟩
-    rw [uStep35_pair50 hpo]
-    exact hempty m'
+    rw [uStep35_ldpX hpo]
+    simp only [homeRegs, hh]
+    exact uokl_wpair hL hne h5'
   | ldpF hpo hsz2 hax hty hf0 hf1 h0 h1 hao hma hh hne hoa hob =>
     have hnp : v.op ≠ .Phi := by intro h; rw [h] at hpo; simp [pairOp50] at hpo
     obtain ⟨m', h1', h2', h3', h4'⟩ := g50_ldpF (H := H) F hm hinv.core hinv.slots hR
       (kpair_kStep hnp hh hty h0 h1 hne) hpre.2 hj hj' hpo hsz2 hax hty hf0 hf1 h0 h1
       hao hma hh hoa hob hvs htemp hs
     refine ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1', h2', ⟨h3', h4'⟩, ?_⟩
-    rw [uStep35_pair50 hpo]
+    rw [uStep35_ldpF hpo]
     exact hempty m'
   | selX hop hsz1 hc0 hu hpo hpt hhc hvh hrz hd hob hcls hcl =>
-    obtain ⟨m', h1', h2', h3', h4', -⟩ := g4_sel (H := H) F hm hinv.core hinv.slots
+    obtain ⟨m', h1', h2', h3', h4', hx⟩ := g4_sel (H := H) F hm hinv.core hinv.slots
       (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz1 hc0 hpt hhc hvh hrz hd hob hcl
       (fun c0 hc0' => ksel4_of_reads hreads hop hc0 hhc (hcl.trans hc0')) hvs htemp hs
     refine ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1', h2', ⟨h3', h4'⟩, ?_⟩
-    rw [uStep35_sel50 (hop.imp (·.1) (·.1)) hc0 hu hpo]
-    exact hempty m'
+    rw [uStep35_selX50 (hop.imp (·.1) (·.1)) hc0 hu hpo]
+    exact fun e he => uok_of_x hx (hL e he)
   | selF hop hsz1 hc0 hu hpo hpt hhc hvh hcls hcl hfo hfv =>
     obtain ⟨m', h1', h2', h3', h4'⟩ := g50_selF (H := H) F hm hinv.core hinv.slots
       (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz1 hc0 hpt hhc hvh hcl hfo hfv
       (fun c0 hc0' => ksel4_of_reads hreads hop hc0 hhc (hcl.trans hc0')) hvs htemp hs
     refine ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1', h2', ⟨h3', h4'⟩, ?_⟩
-    rw [uStep35_sel50 (hop.imp (·.1) (·.1)) hc0 hu hpo]
+    rw [uStep35_selF50 (hop.imp (·.1) (·.1)) hc0 hu hpo]
     exact hempty m'
 
 /-- A nil check of G50's kinds is G7's. -/

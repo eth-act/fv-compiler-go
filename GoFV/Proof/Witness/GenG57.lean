@@ -20,11 +20,11 @@ open GoFV.Proof.Witness.GenG57a
 
 /-- What compiled evaluation checks on `main.grow` beyond `GenG57a.gFacts`: `checkG57` accepts it
 with `GenG57a`'s `tab` and `kt`; `b1` is a block of it, and G35's table before `v12` (index 14 of
-`b1`) is empty. -/
+`b1`) holds the sign extensions of the words the `LDPSW` at index 9 loaded into `R8` and `R9`. -/
 def gFacts : Bool :=
   (checkG57 lc0 ps bs g).toOption == some (tab, kt) &&
     lc.ctx.f.blocks.toList.contains 1 && (lc.ctx.f.block? 1).isSome &&
-    uL35 lc (uIn35 lc 1) blk 14 == []
+    uL35 lc (uIn35 lc 1) blk 14 == [(8, 32, true), (9, 32, true)]
 
 theorem g57_facts : gFacts = true := by
   native_decide
@@ -32,7 +32,8 @@ theorem g57_facts : gFacts = true := by
 /-- The facts of `gFacts` as hypotheses. -/
 theorem facts :
     checkG57 lc0 ps bs g = .ok (tab, kt) ∧ 1 ∈ lc.ctx.f.blocks.toList ∧
-      lc.ctx.f.block? 1 = some blk ∧ uL35 lc (uIn35 lc 1) blk 14 = [] := by
+      lc.ctx.f.block? 1 = some blk ∧
+      uL35 lc (uIn35 lc 1) blk 14 = [(8, 32, true), (9, 32, true)] := by
   have hf := g57_facts
   simp only [gFacts, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem, and_assoc] at hf
   obtain ⟨hres, hm1, hbs, hu⟩ := hf
@@ -93,7 +94,13 @@ theorem genG57_witness :
   have hv0 : lc0.ctx.f.value? 12 = some (val 12) := by rw [← liveCtx_ctx (lc := lc0)]; exact hv
   obtain ⟨E1, m1, hx1, hE1, hp1, hm1', -, -⟩ := g57_value (H := GenG2.H0) (env := GenG2.env)
     hc hE hm0 hb0 hi hv0 (by rw [hop]; rfl) locMatch0 (g57aInv0 hk0 hk2 hk3)
-    (by change UOKL m0 (uL35 lc (uIn35 lc 1) blk 14); rw [hu]; intro e he; cases he)
+    (by
+      change UOKL m0 (uL35 lc (uIn35 lc 1) blk 14)
+      rw [hu]
+      intro e he
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at he
+      rcases he with rfl | rfl <;> intro k hk hobj <;>
+        (simp [objX?] at hobj; rw [← hobj]; unfold ExtOK; decide))
     (pre12 hop)
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
     (GenG10.icallOK_ne (by rw [hop]; rfl))
