@@ -100,6 +100,7 @@ import GoFV.Proof.Gen.G54a
 import GoFV.Proof.Gen.G54b
 import GoFV.Proof.Gen.G55
 import GoFV.Proof.Gen.G55a
+import GoFV.Proof.Gen.G55b
 import GoFV.Proof.Gen.G6
 import GoFV.Proof.Gen.G7
 import GoFV.Proof.Gen.G8
@@ -173,6 +174,7 @@ import GoFV.Proof.Gen.Spec54
 import GoFV.Proof.Gen.Spec54a
 import GoFV.Proof.Gen.Spec55
 import GoFV.Proof.Gen.Spec55a
+import GoFV.Proof.Gen.Spec55b
 import GoFV.Proof.Gen.Spec6
 import GoFV.Proof.Gen.Spec7
 import GoFV.Proof.Gen.Spec8

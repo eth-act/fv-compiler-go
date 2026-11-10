@@ -1,17 +1,21 @@
 import GoFV.Proof.Gen.G54
 import GoFV.Proof.Gen.G55a
+import GoFV.Proof.Gen.G55b
 import GoFV.Proof.Gen.Spec55
 
 variable [GoFV.SSA.Sem.Addrs]
 
 /-!
-# Slice G55 of the genssa validator: `VCNT`, `VUADDLV`, `FRINT*` (`docs/plans/proofs3.md` §4)
+# Slice G55 of the genssa validator: `VCNT`, `VUADDLV`, `FRINT*`; shifted `NEG`, `CLZW`, `MULL`,
+`EXTR` (`docs/plans/proofs3.md` §4)
 
 `checkG55 lc` (`GoFV/Gen/Check55.lean`) is G54 with the values of `Check55a.lean` (`VCNT Va.B8,
-Vd.B8`, `VUADDLV Va.B8, Vd` and the `FRINT` rounds `op Fa, Fd`), each one Prog on V registers,
-proven one value at a time in `G55a.lean` (`vk55a_step`) with no run premise; the upper-bit table
-is empty after them. `g55_value` takes G54's premise `G54Pre`; `g55_initMem`, `g55_term`,
-`g55_nilPanic`, `g55_boundsPanic` are G54's statements over `checkG55`, under `G49Env`.
+Vd.B8`, `VUADDLV Va.B8, Vd` and the `FRINT` rounds `op Fa, Fd`, each one Prog on V registers) and
+of `Check55b.lean` (`NEG Rm SHIFT k, Rd`, `CLZW Rm, Rd`, `SMULL Rm, Rn, Rd`, `EXTR`/`EXTRW $k, Rn,
+Rm, Rd`, each one Prog on X registers), proven one value at a time in `G55a.lean` (`vk55a_step`)
+and `G55b.lean` (`vk55b_step`) with no run premise; the upper-bit table is empty after them.
+`g55_value` takes G54's premise `G54Pre`; `g55_initMem`, `g55_term`, `g55_nilPanic`,
+`g55_boundsPanic` are G54's statements over `checkG55`, under `G49Env`.
 -/
 
 namespace GoFV.Proof.Gen
@@ -54,6 +58,10 @@ theorem vk55_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     obtain ⟨m', h1, h2, h3, h4⟩ := vk55a_step (H := H) (L := L) F hVK hvs htemp hj hj' hreads hm
       hinv hs
     exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, h3, h4⟩
+  | b htemp hVK =>
+    obtain ⟨m', h1, h2, h3, h4⟩ := vk55b_step (H := H) (L := L) F hVK hvs htemp hj hj' hreads hm
+      hinv hs
+    exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, h3, h4⟩
 
 /-- G55's group A has no nil check. -/
 private theorem vk55a_nil {lc : LocCtx} {v : Value} {kd : VKind2} (h : VK55a lc v kd) :
@@ -66,6 +74,7 @@ theorem vk55_nil {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK55 lc
   cases h with
   | g54 h => exact vk54_nil h hop
   | a _ h => exact absurd hop (vk55a_nil h)
+  | b _ h => exact absurd hop (aluOp55b_facts (aluOp55b_of (vk55b_op h))).2.1
 
 /-- A bounds check of G55's kinds is G28's. -/
 theorem vk55_pb {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK55 lc g v kd)
@@ -75,10 +84,13 @@ theorem vk55_pb {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK55 lc 
   | a _ h =>
     rw [(ops55a_facts (ops55a_of (vk55a_op h))).2.2.2.2.2.2.2.2.2.2.1] at hop
     cases hop
+  | b _ h =>
+    rw [(aluOp55b_facts (aluOp55b_of (vk55b_op h))).2.2] at hop
+    cases hop
 
 /-! ## The theorems on G55's check -/
 
-/-- G54's values and G55's group A under G55's check, under `G54Pre`. -/
+/-- G54's values and G55's groups A and B under G55's check, under `G54Pre`. -/
 theorem g55L_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
     {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s s' : LocState} {m : MState}
@@ -317,7 +329,7 @@ theorem g55L_term {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Pr
 /-! ## The slice: the theorems on `checkG55 lc`, on `liveCtx lc` -/
 
 /-- **G55, values.** `g54_value`'s statement over `checkG55`, under `G49Env` and `G54Pre` (G55's
-group A needs no premise). -/
+groups need no premise). -/
 theorem g55_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
     {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s s' : LocState} {m : MState}

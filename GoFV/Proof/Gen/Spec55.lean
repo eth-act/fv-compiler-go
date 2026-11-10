@@ -1,14 +1,16 @@
 import GoFV.Gen.Check55
 import GoFV.Proof.Gen.Spec54
 import GoFV.Proof.Gen.Spec55a
+import GoFV.Proof.Gen.Spec55b
 
 variable [GoFV.SSA.Sem.Addrs]
 
 /-!
 # What `checkG55` accepted (`GoFV/Gen/Check55.lean`)
 
-`VK55`: G54's kinds (`VK54`, through `vkind54`) and G55's group A (`VK55a`,
-`Spec55a.lean`, with no temporary). On `InitMem`, `vkind55` is `vkind54` (`vkind55_initMem`).
+`VK55`: G54's kinds (`VK54`, through `vkind54`) and G55's groups A (`VK55a`, `Spec55a.lean`) and B
+(`VK55b`, `Spec55b.lean`), each with no temporary. On `InitMem`, `vkind55` is `vkind54`
+(`vkind55_initMem`).
 `checkG55L_spec` is `checkG54L_spec` with `vkind55`, and `checkG55_spec` splits off `refsLive`.
 -/
 
@@ -22,6 +24,8 @@ inductive VK55 (lc : LocCtx) (g : G2In) (v : Value) : VKind2 → Prop
   | g54 {kd : VKind2} : VK54 lc g v kd → VK55 lc g v kd
   /-- A value of G55's group A (`Check55a.lean`), with no temporary. -/
   | a {kd : VKind2} : (lc.temps[v.id]?).join = none → VK55a lc v kd → VK55 lc g v kd
+  /-- A value of G55's group B (`Check55b.lean`), with no temporary. -/
+  | b {kd : VKind2} : (lc.temps[v.id]?).join = none → VK55b lc v kd → VK55 lc g v kd
 
 /-- What `vkind55` accepted of a value that is not an entry value. -/
 theorem vkind55_spec {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2}
@@ -43,7 +47,16 @@ theorem vkind55_spec {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2}
       exact .a ht hVK
     | none =>
       rw [ha] at h
-      cases h
+      simp only at h
+      cases hb : vkind55b lc v with
+      | some r =>
+        rw [hb] at h
+        subst h
+        obtain ⟨ht, hVK⟩ := vkind55b_spec hb
+        exact .b ht hVK
+      | none =>
+        rw [hb] at h
+        cases h
 
 /-- On `InitMem`, `vkind55` is `vkind54`. -/
 theorem vkind55_initMem {lc : LocCtx} {g : G2In} {v : Value} (hop : v.op = .InitMem) :
@@ -53,7 +66,7 @@ theorem vkind55_initMem {lc : LocCtx} {g : G2In} {v : Value} (hop : v.op = .Init
   | ok _ => rfl
   | error e =>
     simp only
-    rw [vkind55a_none (by rw [hop]; rfl)]
+    rw [vkind55a_none (by rw [hop]; rfl), vkind55b_none (by rw [hop]; rfl)]
 
 /-- On a function with no arm64 op, G55's check is G33. -/
 theorem checkG33_of_55L {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}

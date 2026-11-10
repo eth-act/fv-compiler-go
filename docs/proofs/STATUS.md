@@ -960,15 +960,17 @@ its `MOVD`) accepts a function, they are G53's statements, under `G49Env`, `g54_
 `LoweredZeroLoop` with its temporary as the counter, which G53 rejects). Coverage on quick-v10
 (`lake exe gen-check`): 7,308 of 9,297 functions (78.60%), 231,647 values.
 
-## Phase 3: genssa, slice G55, `VCNT`, `VUADDLV` and the `FRINT` rounds (I7, #553)
+## Phase 3: genssa, slice G55, `VCNT`, `VUADDLV`, the `FRINT` rounds, shifted `NEG`, `CLZW`, `MULL`, `EXTR` (I7, #553)
 
 `GoFV.Proof.Gen.g55_value`, `g55_initMem`, `g55_term`, `g55_nilPanic`, `g55_boundsPanic`
 (`GoFV/Proof/Gen/G55.lean`): when slice G55 (`checkG55`: G54 with `VCNT x` as `VCNT Va.B8, Vd.B8`,
-`VUADDLV x` as `VUADDLV Va.B8, Vd`, of 64-bit values in V registers, and `FRINTN`/`FRINTP`/
-`FRINTM`/`FRINTZ`/`FRINTA` `D`/`S` as `op Fa, Fd`) accepts a function, they are G54's statements,
-under `G49Env`, `g55_value` under `G54Pre` (no new premise). Witness: `genG55_witness`
-(`math/bits.OnesCount`: `VCNT` then `VUADDLV` of `0x103` give 3 in `V0`, which G54 rejects).
-Coverage on quick-v10 (`lake exe gen-check`): 7,324 of 9,297 functions (78.77%), 232,274 values.
+`VUADDLV x` as `VUADDLV Va.B8, Vd`, of 64-bit values in V registers, `FRINTN`/`FRINTP`/
+`FRINTM`/`FRINTZ`/`FRINTA` `D`/`S` as `op Fa, Fd`, `NEGshift* [k] x` as `NEG Rm SHIFT k, Rd`,
+`CLZW x` as `CLZW Rm, Rd`, `MULL x y` as `SMULL Rm, Rn, Rd` and `EXTRconst`/`EXTRWconst [k] x y`
+as `EXTR`/`EXTRW $k, Rx, Ry, Rd`) accepts a function, they are G54's statements, under `G49Env`,
+`g55_value` under `G54Pre` (no new premise). Witness: `genG55_witness` (`math/bits.OnesCount`:
+`VCNT` then `VUADDLV` of `0x103` give 3 in `V0`, which G54 rejects). Coverage on quick-v10
+(`lake exe gen-check`): 7,331 of 9,297 functions (78.85%), 232,869 values.
 
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 

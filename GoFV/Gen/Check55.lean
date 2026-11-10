@@ -1,13 +1,16 @@
 import GoFV.Gen.Check54
 import GoFV.Gen.Check55a
+import GoFV.Gen.Check55b
 
 variable [GoFV.SSA.Sem.Addrs]
 
 /-!
-# The genssa validator, slice G55: `VCNT`, `VUADDLV`, `FRINT*` (`docs/plans/proofs3.md` §4)
+# The genssa validator, slice G55: `VCNT`, `VUADDLV`, `FRINT*`; shifted `NEG`, `CLZW`, `MULL`,
+`EXTR` (`docs/plans/proofs3.md` §4)
 
 `checkG55 lc ps bstart g` is slice G54 (`GoFV/Gen/Check54.lean`) with, in a function with an arm64
-op, the values of `Check55a.lean` (`vkind55a`: `VCNT`, `VUADDLV`, the `FRINT` rounds), tried when
+op, the values of `Check55a.lean` (`vkind55a`: `VCNT`, `VUADDLV`, the `FRINT` rounds) and of
+`Check55b.lean` (`vkind55b`: `NEGshift*`, `CLZW`, `MULL`, `EXTRconst`, `EXTRWconst`), tried when
 G54 rejects a value. `GoFV/Proof/Gen/G55.lean` proves what an accepted function satisfies.
 -/
 
@@ -15,15 +18,18 @@ namespace GoFV.Gen.Check
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Asm
 
-/-- What `v` emits in G55, or why it is outside the slice: G54's kinds, then G55's group A (`e` is
-G54's reason, kept for the other values). -/
+/-- What `v` emits in G55, or why it is outside the slice: G54's kinds, then G55's groups A and B
+(`e` is G54's reason, kept for the other values). -/
 def vkind55 (lc : LocCtx) (g : G2In) (v : Value) : Except String VKind2 :=
   match vkind54 lc g v with
   | .ok kd => .ok kd
   | .error e =>
     match vkind55a lc v with
     | some r => r
-    | none => .error e
+    | none =>
+      match vkind55b lc v with
+      | some r => r
+      | none => .error e
 
 /-- G54's check with G55's value check. -/
 def checkG55L (lc : LocCtx) (ps : Array Prog) (bstart : ID → Option Nat) (g : G2In) :
