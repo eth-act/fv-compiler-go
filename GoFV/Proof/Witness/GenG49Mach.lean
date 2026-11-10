@@ -1827,7 +1827,7 @@ theorem addrAgree_fixed_apart_witness :
   exact ha.symm
 
 /-- The activation `E` with the results' `local` blocks at their frame operands. -/
-def EM : MatchEnv := { E with ι := ιSP g L E.sp E.ι }
+def EM : MatchEnv := envAtSP g L E
 
 /-- The results' bases under `Addrs.atSP`: `SP + 24` and `SP + 32`. -/
 theorem iotaM : EM.ι (.local 0 3) = some (EM.sp + BitVec.ofInt 64 24) ∧

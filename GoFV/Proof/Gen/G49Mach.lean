@@ -210,6 +210,10 @@ theorem ιSP_local0 {g : G2In} {L : Link} {sp : BitVec 64} {ι : Blk → Option 
     ιSP g L sp ι (.local 0 x) = some (sp + BitVec.ofInt 64 (frameOff L nc o)) := by
   simp only [ιSP, ite_true, baseSP, h, BitVec.ofNat_toNat, BitVec.setWidth_eq]
 
+/-- The activation `E` with activation 0's `local` blocks at their frame operands from `E.sp`
+(`ιSP`): the activation `Addrs.atSP (baseSP g L E.sp)` relates. -/
+def envAtSP (g : G2In) (L : Link) (E : MatchEnv) : MatchEnv := { E with ι := ιSP g L E.sp E.ι }
+
 /-- `AddrAgree` at `Addrs.atSP` of `ιSP` from `AddrAgree` at `Addrs.fixed` of `ι`. -/
 theorem addrAgree_atSP {g : G2In} {L : Link} {sp : BitVec 64} {ι : Blk → Option (BitVec 64)}
     (hA : @AddrAgree Addrs.fixed ι) : @AddrAgree (Addrs.atSP (baseSP g L sp)) (ιSP g L sp ι) := by
@@ -235,13 +239,13 @@ theorem addrAgree_atSP {g : G2In} {L : Link} {sp : BitVec 64} {ι : Blk → Opti
     exact hA b n a hb' ha hnt
 
 /-- **`G49Env` at the machine-style assignment**: a function of activation 0 with a `G28Env` at
-`Addrs.fixed` has a `G49Env` at `Addrs.atSP (baseSP g L E.sp)` for `E` with its `local` blocks at
-their frame operands (`ιSP`): `VarsAt49` constrains nothing there, whatever the number of accessed
-`local` variables. -/
+`Addrs.fixed` has a `G49Env` at `Addrs.atSP (baseSP g L E.sp)` for `envAtSP g L E`, `E` with its
+`local` blocks at their frame operands (`ιSP`): `VarsAt49` constrains nothing there, whatever the
+number of accessed `local` variables. -/
 theorem g49Env_atSP {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog} {ret : BitVec 64}
     {tab : PcTab} {E : MatchEnv} (hE : @G28Env Addrs.fixed lc g L ps ret tab E)
     (hact : lc.ctx.act = 0) :
-    @G49Env (Addrs.atSP (baseSP g L E.sp)) lc g L ps ret tab { E with ι := ιSP g L E.sp E.ι } := by
+    @G49Env (Addrs.atSP (baseSP g L E.sp)) lc g L ps ret tab (envAtSP g L E) := by
   -- `obtain`, not projections: a projection would synthesize the instance
   obtain ⟨⟨⟨⟨⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩, hv⟩, hw⟩, hi⟩, hm⟩ := hE
   have hA := addrAgree_atSP (g := g) (L := L) (sp := E.sp) h5
