@@ -588,7 +588,14 @@ theorem checked_move {r : Rule} {n ty ai ax ar args c}
 theorem checked_qStore {r : Rule} {o n ty ai ax ar args c}
     (hp : r.pat = .op o n ty ai ax ar args c) (ho : qStore o = true) : ArmRule.Checked r :=
   .inr (.inr (.inr (.inl
-    ⟨o, n, ty, ai, ax, ar, args, c, hp, .inr (.inr (.inr (.inr (.inr (.inr ho)))))⟩)))
+    ⟨o, n, ty, ai, ax, ar, args, c, hp, .inr (.inr (.inr (.inr (.inr (.inr (.inl ho))))))⟩)))
+
+/-- A rule on an `STP` (`ArmRule.Mem`), the pair store lowering a `Zero [16]`. -/
+theorem checked_stp {r : Rule} {n ty ai ax ar args c}
+    (hp : r.pat = .op .ARM64STP n ty ai ax ar args c) : ArmRule.Checked r :=
+  .inr (.inr (.inr (.inl
+    ⟨.ARM64STP, n, ty, ai, ax, ar, args, c, hp,
+      .inr (.inr (.inr (.inr (.inr (.inr (.inr rfl))))))⟩)))
 
 /-- A strength-reduced multiplication by a constant (`ArmRule.Mul`). -/
 theorem checked_mul {r : Rule} (h : GoFV.Rules.Interp.mulResult r = true) : ArmRule.Checked r :=

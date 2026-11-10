@@ -159,7 +159,10 @@ theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
       · exact absurd huph (moveQLower_ops hq).1) (by
       cases hq : moveQ2Lower u w
       · rfl
-      · exact absurd huph (moveQ2Lower_ops hq).1)
+      · exact absurd huph (moveQ2Lower_ops hq).1) (by
+      cases hz : zeroLower tabs u w
+      · rfl
+      · rw [(zeroLower_facts hz).1] at huph; cases huph)
     have hzf : z ∈ fb.values := by
       obtain ⟨-, -, blk, hblk', hzv⟩ := hpu
       rw [hblk, hwb, B.hfb] at hblk'; cases hblk'; exact hzv
@@ -684,7 +687,7 @@ theorem arg_beforeL {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
 /-- A corresponding atom of a generic op of `g` has the same op in `f`. -/
 theorem atomPair_op_of_generic {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true)
     (hg : w.op.generic = true) : u.op = w.op := by
-  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h | h, -⟩ | h | h | h | h | h
+  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h | h, -⟩ | h | h | h | h | h | h
   · exact h
   · exfalso
     rcases renameOp_cases h with ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ |
@@ -708,6 +711,11 @@ theorem atomPair_op_of_generic {tabs : Tables} {u w : Value} (h : atomPair tabs 
     rcases (Sim.moveQLower_cases h).2 with hw | hw <;> rw [hw.2.1] at hg <;> cases hg
   · exfalso
     rcases qStore_cases (moveQ2Lower_qStore h) with h2 | h2 <;> rw [h2] at hg <;> cases hg
+  · exfalso
+    have hz := (zeroLower_facts h).2.2.2.2.1
+    unfold zStore at hz
+    simp only [Bool.or_eq_true, beq_iff_eq] at hz
+    rcases hz with (((h2 | h2) | h2) | h2) | h2 <;> rw [h2] at hg <;> cases hg
 
 /-- A split of a list without duplicates around `x` is unique. -/
 private theorem split_unique {x : ID} :

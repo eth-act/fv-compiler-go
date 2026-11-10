@@ -622,6 +622,19 @@ theorem argTermShL_apply (hfr : RegsFrame tabs 0 D FS) {k : Nat}
   exact addrAt_of_refines (denL_fuel_mono lowT E tabs ρ' m (max m M) y (Nat.le_max_left m M))
     (h p hp)
 
+/-- **`ArgTermZL` on registers**, the source's frame addresses and stack pointer those of
+activation 0. -/
+theorem argTermZL_apply (hfr : RegsFrame tabs 0 D FS) {y : ID}
+    (hT : ArgTermZL lowS D tabs lowT E tabs y) (hyT : VT y) : Sem.Refines (.i64 0) (rv FT y) := by
+  obtain ⟨ρ, ρ', hval, htD, htE, hρ, hρ', hρp, hFT⟩ :=
+    vals_exist hl hS hG hrel htyS htyT hsh hfT hlT hfr
+  obtain ⟨hF, hSP⟩ := frameVals_of hl hS hG hrel htyS htyT hsh hfT hlT hfr hρ hρp
+  obtain ⟨M, hM⟩ := (hG y hyT).2 ρ' hρ'
+  obtain ⟨m, h⟩ := hT
+  have h := h ρ ρ' hval htD htE hF hSP hFT
+  rw [← hM (max m M) (Nat.le_max_right m M)]
+  exact h.trans (denL_fuel_mono lowT E tabs ρ' m (max m M) y (Nat.le_max_left m M))
+
 /-- **The terminators on registers**, as functions of their controls' terms, the source's frame
 addresses and stack pointer those of activation 0. -/
 theorem termStepRefL_apply (hfr : RegsFrame tabs 0 D FS) {fb gb : Block}

@@ -785,6 +785,27 @@ def moveQ2Lower (u w : Value) : Bool :=
 def moveQ2In (u w : Value) : Bool :=
   (moveQ2Op u.auxInt).any fun (_, _, o, k) => w.op == o && w.args.size == k
 
+/-- The arm64 store `lower` zeroes `Zero [n]` with, and its number of arguments: `(Zero [1] ptr
+mem) => (MOVBstore ptr (MOVDconst [0]) mem)` (`ARM64.rules:336`), `MOVHstore` for `Zero [2]`
+(`337`), `MOVWstore` for `Zero [4]` (`338`), `MOVDstore` for `Zero [8]` (`351`), and `(Zero [16]
+ptr mem) => (STP [0] ptr (MOVDconst [0]) (MOVDconst [0]) mem)` (`373`). -/
+def zeroOp (n : Int64) : Option (Op × Nat) :=
+  if n == 1 then some (.ARM64MOVBstore, 3) else if n == 2 then some (.ARM64MOVHstore, 3)
+  else if n == 4 then some (.ARM64MOVWstore, 3) else if n == 8 then some (.ARM64MOVDstore, 3)
+  else if n == 16 then some (.ARM64STP, 4) else none
+
+/-- The stores lowering a `Zero` (`zeroOp`): the scalar integer stores and `STP`. -/
+def zStore (o : Op) : Bool :=
+  o == .ARM64MOVBstore || o == .ARM64MOVHstore || o == .ARM64MOVWstore || o == .ARM64MOVDstore ||
+    o == .ARM64STP
+
+/-- The atom `w` lowers the `Zero [n]` `u` (two arguments) to the store `zeroOp n` of the constant
+`0`, at a small non-negative offset (`offOK`: 0 as lowered, or a folded offset) and an aux
+`Sem.symAddr` reads (`stAux`: none, or a symbol or frame variable folded in). -/
+def zeroLower (tabs : Tables) (u w : Value) : Bool :=
+  u.op == .Zero && u.args.size == 2 && offOK w.auxInt && stAux tabs w.aux &&
+    (zeroOp u.auxInt).any fun (o, k) => w.op == o && w.args.size == k
+
 /-- The atom `w` lowers the frame address `u`: `(LocalAddr <t> {sym} base _) => (MOVDaddr {sym}
 base)` and `(MOVDaddr {sym} (SPanchored base mem))`, with the same frame variable `{sym}` (a
 `.name` aux) at offset 0 and one argument, whose value it ignores
@@ -953,6 +974,70 @@ theorem renameOp_qStore {o o' : Op} (h : renameOp o o' = true) :
       · rfl
       · unfold atomicRen at h
         rcases qStore_cases hq with rfl | rfl <;> simp at h <;> cases h
+
+/-- The stores lowering a `Zero` are scalar arm64 stores or `STP`. -/
+theorem zStore_cases {o : Op} (h : zStore o = true) : (stSize o).isSome = true ∨ o = .ARM64STP := by
+  unfold zStore at h
+  simp only [Bool.or_eq_true, beq_iff_eq] at h
+  rcases h with (((rfl | rfl) | rfl) | rfl) | rfl
+  all_goals first | exact .inr rfl | exact .inl rfl
+
+/-- No store lowering a `Zero` is a 128-bit store. -/
+theorem zStore_qStore {o : Op} (h : zStore o = true) : qStore o = false := by
+  rcases zStore_cases h with h | rfl
+  · exact qStore_of_st h
+  · rfl
+
+/-- Renamed atoms are no stores lowering a `Zero`. -/
+theorem renameOp_zStore {o o' : Op} (h : renameOp o o' = true) : zStore o = false := by
+  cases hz : zStore o
+  · rfl
+  · rcases zStore_cases hz with h1 | rfl
+    · rw [(renameOp_stSize h).1] at h1; cases h1
+    · unfold renameOp at h
+      simp only [Bool.or_eq_true] at h
+      rcases h with h | h
+      · unfold callRename at h; cases h
+      · cases (atomicRen_facts h).1
+
+/-- No store lowering a `Zero` is an indexed store. -/
+theorem zStore_idx {o : Op} (h : zStore o = true) : idxStore o = none := by
+  unfold zStore at h
+  simp only [Bool.or_eq_true, beq_iff_eq] at h
+  rcases h with (((rfl | rfl) | rfl) | rfl) | rfl <;> rfl
+
+/-- What `zeroOp` says: a store lowering a `Zero`, of at least three arguments. -/
+theorem zeroOp_some {n : Int64} {o : Op} {k : Nat} (h : zeroOp n = some (o, k)) :
+    zStore o = true ∧ 3 ≤ k := by
+  unfold zeroOp at h
+  split at h
+  · cases h; exact ⟨rfl, by omega⟩
+  split at h
+  · cases h; exact ⟨rfl, by omega⟩
+  split at h
+  · cases h; exact ⟨rfl, by omega⟩
+  split at h
+  · cases h; exact ⟨rfl, by omega⟩
+  split at h
+  · cases h; exact ⟨rfl, by omega⟩
+  · cases h
+
+/-- What `zeroLower` says: a `Zero` of two arguments and a store lowering it (`zeroOp`) at a small
+non-negative offset and an aux `Sem.symAddr` reads. -/
+theorem zeroLower_facts {tabs : Tables} {u w : Value} (h : zeroLower tabs u w = true) :
+    u.op = .Zero ∧ u.args.size = 2 ∧ offOK w.auxInt = true ∧ stAux tabs w.aux = true ∧
+      zStore w.op = true ∧ 3 ≤ w.args.size := by
+  unfold zeroLower at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨⟨⟨hu, h2⟩, hk⟩, hax⟩, h⟩ := h
+  cases hz : zeroOp u.auxInt with
+  | none => rw [hz] at h; cases h
+  | some p =>
+    obtain ⟨o, k⟩ := p
+    rw [hz] at h
+    simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨hzs, hk3⟩ := zeroOp_some hz
+    exact ⟨hu, h2, hk, hax, h.1 ▸ hzs, h.2 ▸ hk3⟩
 
 /-- What `moveQLower` says about the ops: a `Move` with three arguments and a 128-bit store. -/
 theorem moveQLower_qStore {tabs : Tables} {u w : Value} (h : moveQLower tabs u w = true) :
@@ -1169,7 +1254,7 @@ own. -/
 def ArmRule.Mem (r : Rule) : Prop :=
   ∃ o n ty ai ax ar args c, r.pat = .op o n ty ai ax ar args c ∧
     (o = .Store ∨ o = .LocalAddr ∨ ((stSize o).isSome ∨ (idxStore o).isSome) ∨ pbAtom o ∨
-      o = .Zero ∨ o = .Move ∨ qStore o)
+      o = .Zero ∨ o = .Move ∨ qStore o ∨ o = .ARM64STP)
 
 /-- A rule whose result is `mulStrengthReduce{,32}(v, x, c)` (`ARM64.rules:1043`, `1044`): the
 validator checks its events by their effect alone (`GoFV.Opt.LowerCheck.mulOKL`: the values the
