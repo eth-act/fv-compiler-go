@@ -310,6 +310,11 @@ GoFV.Proof.Witness.GenG51.g51_facts._native.native_decide.ax_1_1 4dfcc78ddf18081
 # `NAME_PARAM` operand, `frameOff 24`); `runLoc` runs `v2` on `x = 7`; compiled evaluation.
 GoFV.Proof.Witness.GenG49.g49_facts._native.native_decide.ax_1_1 75768085318fff879397640cc6878d6ad3690d9afac5b7f1fae4772cc2271275
 
+# genG49Mach_witness (GoFV/Proof/Witness/GenG49Mach.lean, #553): `checkG57` accepts
+# `runtime.secret_getStack`'s ABI0 wrapper, whose accessed frame variables are its results `~r0`
+# and `~r1` (`Blk.local`, `NAME_PARAM` 0 and 8, `frameOff` 24 and 32); compiled evaluation.
+GoFV.Proof.Witness.GenG49Mach.g49Mach_facts._native.native_decide.ax_1_1 9a49b4aba1c37cdff9e9028ecbe7572690839ff7f458db09305e2d6ef2782376
+
 # genG52_witness (GoFV/Proof/Witness/GenG52.lean, #553): `checkG52` accepts `test/ken_chan`'s
 # `main.nrand` and `checkG49` does not (`REM R0, R1, R0` `v32`, `MOD v26 v6`); `runLoc` runs `v32`
 # on `-17` and `5`; compiled evaluation.

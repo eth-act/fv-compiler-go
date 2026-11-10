@@ -86,6 +86,7 @@ import GoFV.Proof.Gen.G47
 import GoFV.Proof.Gen.G48
 import GoFV.Proof.Gen.G48a
 import GoFV.Proof.Gen.G49
+import GoFV.Proof.Gen.G49Mach
 import GoFV.Proof.Gen.G5
 import GoFV.Proof.Gen.G50
 import GoFV.Proof.Gen.G51
@@ -951,6 +952,7 @@ import GoFV.Proof.Witness.GenG46
 import GoFV.Proof.Witness.GenG47
 import GoFV.Proof.Witness.GenG48
 import GoFV.Proof.Witness.GenG49
+import GoFV.Proof.Witness.GenG49Mach
 import GoFV.Proof.Witness.GenG5
 import GoFV.Proof.Witness.GenG50
 import GoFV.Proof.Witness.GenG51
