@@ -88,6 +88,43 @@ def regVal (ty : Ty) (v : Val) : Val :=
     | _, _ => .poison
   | _ => .poison
 
+/-- `AND a b`: `op2` of `&&&`, except at the `bool` shape, where a `false` operand gives `false`
+whatever the other operand holds. On the machine `0 &&& r = 0` for every register `r`, and `false` is
+the register 0 (`LocMatch.ValRel`), so the result does not depend on the other register. Phase 1's
+parallel `AndB` (`Cmp.andB`: `false && poison` is `false`) lowers to it (`ARM64.rules:133`,
+`docs/plans/semantics2.md` §3). -/
+def and (ty : Ty) (args : List Val) : Val :=
+  match ty, args with
+  | .bool, [.bool false, _] | .bool, [_, .bool false] => .bool false
+  | _, args => op2 ty (· &&& ·) args
+
+theorem and_false_left (b : Val) : and .bool [.bool false, b] = .bool false := rfl
+
+theorem and_false_right (a : Val) : and .bool [a, .bool false] = .bool false := by
+  unfold and; split <;> simp_all
+
+/-- `and` is `op2` of `&&&` unless it is at the `bool` shape with a `false` operand. -/
+theorem and_eq_op2 {ty : Ty} {args : List Val}
+    (h : ¬ (ty = .bool ∧ ∃ a b, args = [a, b] ∧ (a = .bool false ∨ b = .bool false))) :
+    and ty args = op2 ty (· &&& ·) args := by
+  unfold and; split
+  · exact absurd ⟨rfl, _, _, rfl, .inl rfl⟩ h
+  · exact absurd ⟨rfl, _, _, rfl, .inr rfl⟩ h
+  · rfl
+
+/-- `and` at a shape other than `bool` is `op2` of `&&&`. -/
+theorem and_of_ne_bool {ty : Ty} (h : ¬ ty = .bool) (args : List Val) :
+    and ty args = op2 ty (· &&& ·) args :=
+  and_eq_op2 fun ⟨hb, _⟩ => h hb
+
+/-- `and` of two integers is `op2` of `&&&`. -/
+theorem and_int2 (ty : Ty) (w w' : Width) (x : BitVec w.bits) (y : BitVec w'.bits) :
+    and ty [.int w x, .int w' y] = op2 ty (· &&& ·) [.int w x, .int w' y] :=
+  and_eq_op2 fun ⟨_, _, _, h, hab⟩ => by
+    simp only [List.cons.injEq, and_true] at h
+    rcases h with ⟨rfl, rfl⟩
+    rcases hab with h | h <;> cases h
+
 /-- A ternary op on 64-bit registers. -/
 @[inline] def op3 (ty : Ty) (f : BitVec 64 → BitVec 64 → BitVec 64 → BitVec 64) :
     List Val → Val

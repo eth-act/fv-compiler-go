@@ -5,7 +5,7 @@ import GoFV.Proof.Low.ArmMonoRetype
 variable [GoFV.SSA.Sem.Addrs]
 
 /-!
-# Lowering rule lemmas: bit lengths, conditional selects, `TST` conditions, booleans, division (`ARM64.rules:15-35`, `104-106`, `135-137`, `187`, `271`, `564-570`, `1186-1195`)
+# Lowering rule lemmas: bit lengths, conditional selects, `TST` conditions, booleans, division (`ARM64.rules:15-35`, `104-106`, `133`, `135-137`, `187`, `271`, `564-570`, `1186-1195`)
 
 * `(BitLen64 x) => (SUB (MOVDconst [64]) (CLZ <typ.Int> x))` (`104`), `(BitLen32 x) => (SUB
   (MOVDconst [32]) (CLZW <typ.Int> x))` (`105`), `(BitLen(16|8) x) => (BitLen64
@@ -35,6 +35,10 @@ variable [GoFV.SSA.Sem.Addrs]
   `AND` whole (64 bits, `retypeL_res_wide`) or its low word (`retypeL_res_w32`).
 * `(Not x) => (XOR (MOVDconst [1]) x)` (`137`), `(EqB x y) => (XOR (MOVDconst [1]) (XOR <typ.Bool> x
   y))` (`135`), `(NeqB ...) => (XOR ...)` (`136`): the booleans' registers are 0 or 1.
+* `(AndB ...) => (AND ...)` (`133`): `AndB` is only at the `bool` shape (`topOKL`), where `AND`
+  gives `false` for a `false` operand whatever the other holds (`Arm64.and`), as Phase 1's parallel
+  `AndB` does (`Cmp.andB`); two `true`s give `true` (`1 &&& 1`), anything else is `poison` in the
+  source.
 * `(Slicemask <t> x) => (SRAconst (NEG <t> x) [63])` (`187`): for `x ≥ 0` (else the source is
   `poison`) `−x` is negative exactly when `x ≠ 0` (`sra63_neg`); the argument is a 64-bit integer
   (`hat`), so a narrower result shape reads no integer and the source is `poison`.
@@ -48,9 +52,10 @@ variable [GoFV.SSA.Sem.Addrs]
 
 Found false (not proven; `docs/proofs/rules.md` "Findings"):
 
-* `(AndB ...) => (AND ...)` (`133`) and `(OrB ...) => (OR ...)` (`134`): Phase 1's `AndB`/`OrB`
-  are parallel (`Cmp.andB`: `false && poison` is `false`), `AND`/`OR` read both registers:
-  `AndB false poison` is `false`, `AND` of it `poison` (`OrB true poison`: `true`, `poison`).
+* `(OrB ...) => (OR ...)` (`134`): Phase 1's `OrB` is parallel (`OrB true poison` is `true`), while
+  `OR` reads both registers. No lowered `OR` can give `true` there: on the machine `1 ||| r` is not
+  1 for every `r`, and `true` is the register 1 (`LocMatch.ValRel`). This is a model limit, not a Go
+  bug.
 -/
 
 namespace GoFV.Proof.Low.Rules
@@ -836,31 +841,37 @@ private theorem refines_tstw_const {op : Op} {c0 : Cond} (hop : Cond.ofOp op = s
 /-- `ARM64.rules:564`: `(Equal (CMPconst [0] z:(AND x y))) && z.Uses == 1 => (Equal (TST x y))` -/
 theorem r_ARM64_564_sound : ArmRule.Checked r_ARM64_564 := by
   left; arm_unfold; all_goals arm_norm
+  all_goals rw [Arm64.and_of_ne_bool (ne_bool_of_isBoolL harg.2.2.1.2)]
   all_goals exact refines_tst rfl (fun _ _ _ _ _ => rfl) harg.2.1 _ _ _ hc
 
 /-- `ARM64.rules:564`: `(GreaterEqual (CMPconst [0] z:(AND x y))) && z.Uses == 1 => (GreaterEqual (TST x y))` -/
 theorem r_ARM64_564_2_sound : ArmRule.Checked r_ARM64_564_2 := by
   left; arm_unfold; all_goals arm_norm
+  all_goals rw [Arm64.and_of_ne_bool (ne_bool_of_isBoolL harg.2.2.1.2)]
   all_goals exact refines_tst rfl (fun _ _ _ _ _ => rfl) harg.2.1 _ _ _ hc
 
 /-- `ARM64.rules:564`: `(GreaterThan (CMPconst [0] z:(AND x y))) && z.Uses == 1 => (GreaterThan (TST x y))` -/
 theorem r_ARM64_564_3_sound : ArmRule.Checked r_ARM64_564_3 := by
   left; arm_unfold; all_goals arm_norm
+  all_goals rw [Arm64.and_of_ne_bool (ne_bool_of_isBoolL harg.2.2.1.2)]
   all_goals exact refines_tst rfl (fun _ _ _ _ _ => rfl) harg.2.1 _ _ _ hc
 
 /-- `ARM64.rules:564`: `(LessEqual (CMPconst [0] z:(AND x y))) && z.Uses == 1 => (LessEqual (TST x y))` -/
 theorem r_ARM64_564_4_sound : ArmRule.Checked r_ARM64_564_4 := by
   left; arm_unfold; all_goals arm_norm
+  all_goals rw [Arm64.and_of_ne_bool (ne_bool_of_isBoolL harg.2.2.1.2)]
   all_goals exact refines_tst rfl (fun _ _ _ _ _ => rfl) harg.2.1 _ _ _ hc
 
 /-- `ARM64.rules:564`: `(LessThan (CMPconst [0] z:(AND x y))) && z.Uses == 1 => (LessThan (TST x y))` -/
 theorem r_ARM64_564_5_sound : ArmRule.Checked r_ARM64_564_5 := by
   left; arm_unfold; all_goals arm_norm
+  all_goals rw [Arm64.and_of_ne_bool (ne_bool_of_isBoolL harg.2.2.1.2)]
   all_goals exact refines_tst rfl (fun _ _ _ _ _ => rfl) harg.2.1 _ _ _ hc
 
 /-- `ARM64.rules:564`: `(NotEqual (CMPconst [0] z:(AND x y))) && z.Uses == 1 => (NotEqual (TST x y))` -/
 theorem r_ARM64_564_6_sound : ArmRule.Checked r_ARM64_564_6 := by
   left; arm_unfold; all_goals arm_norm
+  all_goals rw [Arm64.and_of_ne_bool (ne_bool_of_isBoolL harg.2.2.1.2)]
   all_goals exact refines_tst rfl (fun _ _ _ _ _ => rfl) harg.2.1 _ _ _ hc
 
 /-- `ARM64.rules:566`: `(Equal (CMPWconst [0] x:(ANDconst [c] y))) && x.Uses == 1 => (Equal (TSTWconst [int32(c)] y))` -/
@@ -896,31 +907,37 @@ theorem r_ARM64_566_6_sound : ArmRule.Checked r_ARM64_566_6 := by
 /-- `ARM64.rules:568`: `(Equal (CMPWconst [0] z:(AND x y))) && z.Uses == 1 => (Equal (TSTW x y))` -/
 theorem r_ARM64_568_sound : ArmRule.Checked r_ARM64_568 := by
   left; arm_unfold; all_goals arm_norm
+  all_goals rw [Arm64.and_of_ne_bool (ne_bool_of_isBoolL harg.2.2.1.2)]
   all_goals exact refines_tstw rfl (fun _ _ _ _ _ => rfl) harg.2.1 _ _ _ hc
 
 /-- `ARM64.rules:568`: `(GreaterEqual (CMPWconst [0] z:(AND x y))) && z.Uses == 1 => (GreaterEqual (TSTW x y))` -/
 theorem r_ARM64_568_2_sound : ArmRule.Checked r_ARM64_568_2 := by
   left; arm_unfold; all_goals arm_norm
+  all_goals rw [Arm64.and_of_ne_bool (ne_bool_of_isBoolL harg.2.2.1.2)]
   all_goals exact refines_tstw rfl (fun _ _ _ _ _ => rfl) harg.2.1 _ _ _ hc
 
 /-- `ARM64.rules:568`: `(GreaterThan (CMPWconst [0] z:(AND x y))) && z.Uses == 1 => (GreaterThan (TSTW x y))` -/
 theorem r_ARM64_568_3_sound : ArmRule.Checked r_ARM64_568_3 := by
   left; arm_unfold; all_goals arm_norm
+  all_goals rw [Arm64.and_of_ne_bool (ne_bool_of_isBoolL harg.2.2.1.2)]
   all_goals exact refines_tstw rfl (fun _ _ _ _ _ => rfl) harg.2.1 _ _ _ hc
 
 /-- `ARM64.rules:568`: `(LessEqual (CMPWconst [0] z:(AND x y))) && z.Uses == 1 => (LessEqual (TSTW x y))` -/
 theorem r_ARM64_568_4_sound : ArmRule.Checked r_ARM64_568_4 := by
   left; arm_unfold; all_goals arm_norm
+  all_goals rw [Arm64.and_of_ne_bool (ne_bool_of_isBoolL harg.2.2.1.2)]
   all_goals exact refines_tstw rfl (fun _ _ _ _ _ => rfl) harg.2.1 _ _ _ hc
 
 /-- `ARM64.rules:568`: `(LessThan (CMPWconst [0] z:(AND x y))) && z.Uses == 1 => (LessThan (TSTW x y))` -/
 theorem r_ARM64_568_5_sound : ArmRule.Checked r_ARM64_568_5 := by
   left; arm_unfold; all_goals arm_norm
+  all_goals rw [Arm64.and_of_ne_bool (ne_bool_of_isBoolL harg.2.2.1.2)]
   all_goals exact refines_tstw rfl (fun _ _ _ _ _ => rfl) harg.2.1 _ _ _ hc
 
 /-- `ARM64.rules:568`: `(NotEqual (CMPWconst [0] z:(AND x y))) && z.Uses == 1 => (NotEqual (TSTW x y))` -/
 theorem r_ARM64_568_6_sound : ArmRule.Checked r_ARM64_568_6 := by
   left; arm_unfold; all_goals arm_norm
+  all_goals rw [Arm64.and_of_ne_bool (ne_bool_of_isBoolL harg.2.2.1.2)]
   all_goals exact refines_tstw rfl (fun _ _ _ _ _ => rfl) harg.2.1 _ _ _ hc
 
 /-- `ARM64.rules:570`: `(Equal (CMPconst [0] x:(ANDconst [c] y))) && x.Uses == 1 => (Equal (TSTconst [c] y))` -/
@@ -1004,6 +1021,46 @@ private theorem s_NeqB_ARM64XOR : SetOpSound .NeqB .ARM64XOR := by
 theorem r_ARM64_136_sound : ArmRule.Checked r_ARM64_136 :=
   checked_setOp .NeqB .ARM64XOR rfl rfl rfl rfl (termVL_generic _ rfl rfl) (termVL_arm _ rfl rfl rfl)
     s_NeqB_ARM64XOR
+
+private theorem s_AndB_ARM64AND : SetOpSound .AndB .ARM64AND := by
+  intro tabs ty ai ax args ht
+  cases ty with
+  | bool =>
+    simp (disch := decide) only [opValL_arm, opValL_gen, reduceArmEvalPure, reduceEvalPure]
+    match args with
+    | [a, b] =>
+      cases ha : a.asBool with
+      | none =>
+        cases hb : b.asBool with
+        | none => simp only [Cmp.andB, ha, hb, retypeL_poison]; exact .poison _
+        | some y => cases y with
+          | false =>
+            rw [asBool_eq_some hb, Arm64.and_false_right]
+            simp only [Cmp.andB, ha, show (Val.bool false).asBool = some false from rfl]
+            exact Refines.refl _
+          | true => simp only [Cmp.andB, ha, hb, retypeL_poison]; exact .poison _
+      | some x => cases x with
+        | false =>
+          rw [asBool_eq_some ha, Arm64.and_false_left]
+          simp only [Cmp.andB, Val.asBool]; exact Refines.refl _
+        | true =>
+          cases hb : b.asBool with
+          | none => simp only [Cmp.andB, ha, hb, retypeL_poison]; exact .poison _
+          | some y => cases y with
+            | false =>
+              rw [asBool_eq_some hb, Arm64.and_false_right]
+              simp only [Cmp.andB, ha, show (Val.bool false).asBool = some false from rfl]
+              exact Refines.refl _
+            | true => rw [asBool_eq_some ha, asBool_eq_some hb]; exact Refines.refl _
+    | [] => exact .poison _
+    | [_] => exact .poison _
+    | _ :: _ :: _ :: _ => exact .poison _
+  | _ => first | exact absurd ht Bool.false_ne_true | exact absurd ht (by decide)
+
+/-- `ARM64.rules:133`: `(AndB ...) => (AND ...)` -/
+theorem r_ARM64_133_sound : ArmRule.Checked r_ARM64_133 :=
+  checked_setOp .AndB .ARM64AND rfl rfl rfl rfl (termVL_generic _ rfl rfl) (termVL_arm _ rfl rfl rfl)
+    s_AndB_ARM64AND
 
 /-! ## `Slicemask`, unsigned compares with zero -/
 

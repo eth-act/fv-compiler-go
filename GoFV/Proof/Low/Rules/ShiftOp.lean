@@ -160,40 +160,44 @@ theorem r_ARM64_1439_sound : ArmRule.Checked r_ARM64_1439 := by
   left; arm_unfold
   all_goals arm_norm
   all_goals simp only [opSh_eq]
+  all_goals arm_and_op2
   · exact refines_op2_op1 _ _ (fun a b b' h => and_low _ a b b' h)
-      (armReadW_low .ARM64AND _ 1 (by simp) ▸ harg.2.1) _ _
+      (armReadW_low .ARM64AND _ 1 (by simp) ▸ harg.2.1.1) _ _
   · exact refines_op2_op1_swap _ _ BitVec.and_comm (fun a b b' h => and_low _ a b b' h)
-      (armReadW_low .ARM64AND _ 0 (by simp) ▸ harg.1.1) _ _
+      (armReadW_low .ARM64AND _ 0 (by simp) ▸ harg.1.1.1) _ _
 
 /-- `ARM64.rules:1440`: `(AND x0 x1:(SRLconst [c] y)) && clobberIfDead(x1) => (ANDshiftRL x0 y [c])` -/
 theorem r_ARM64_1440_sound : ArmRule.Checked r_ARM64_1440 := by
   left; arm_unfold
   all_goals arm_norm
   all_goals simp only [opSh_eq]
+  all_goals arm_and_op2
   · exact refines_op2_op1 _ _ (fun a b b' h => and_low _ a b b' h)
-      (armReadW_low .ARM64AND _ 1 (by simp) ▸ harg.2.1) _ _
+      (armReadW_low .ARM64AND _ 1 (by simp) ▸ harg.2.1.1) _ _
   · exact refines_op2_op1_swap _ _ BitVec.and_comm (fun a b b' h => and_low _ a b b' h)
-      (armReadW_low .ARM64AND _ 0 (by simp) ▸ harg.1.1) _ _
+      (armReadW_low .ARM64AND _ 0 (by simp) ▸ harg.1.1.1) _ _
 
 /-- `ARM64.rules:1441`: `(AND x0 x1:(SRAconst [c] y)) && clobberIfDead(x1) => (ANDshiftRA x0 y [c])` -/
 theorem r_ARM64_1441_sound : ArmRule.Checked r_ARM64_1441 := by
   left; arm_unfold
   all_goals arm_norm
   all_goals simp only [opSh_eq]
+  all_goals arm_and_op2
   · exact refines_op2_op1 _ _ (fun a b b' h => and_low _ a b b' h)
-      (armReadW_low .ARM64AND _ 1 (by simp) ▸ harg.2.1) _ _
+      (armReadW_low .ARM64AND _ 1 (by simp) ▸ harg.2.1.1) _ _
   · exact refines_op2_op1_swap _ _ BitVec.and_comm (fun a b b' h => and_low _ a b b' h)
-      (armReadW_low .ARM64AND _ 0 (by simp) ▸ harg.1.1) _ _
+      (armReadW_low .ARM64AND _ 0 (by simp) ▸ harg.1.1.1) _ _
 
 /-- `ARM64.rules:1442`: `(AND x0 x1:(RORconst [c] y)) && clobberIfDead(x1) => (ANDshiftRO x0 y [c])` -/
 theorem r_ARM64_1442_sound : ArmRule.Checked r_ARM64_1442 := by
   left; arm_unfold
   all_goals arm_norm
   all_goals simp only [opSh_eq]
+  all_goals arm_and_op2
   · exact refines_op2_op1 _ _ (fun a b b' h => and_low _ a b b' h)
-      (armReadW_low .ARM64AND _ 1 (by simp) ▸ harg.2.1) _ _
+      (armReadW_low .ARM64AND _ 1 (by simp) ▸ harg.2.1.1) _ _
   · exact refines_op2_op1_swap _ _ BitVec.and_comm (fun a b b' h => and_low _ a b b' h)
-      (armReadW_low .ARM64AND _ 0 (by simp) ▸ harg.1.1) _ _
+      (armReadW_low .ARM64AND _ 0 (by simp) ▸ harg.1.1.1) _ _
 
 /-- `ARM64.rules:1443`: `(OR x0 x1:(SLLconst [c] y)) && clobberIfDead(x1) => (ORshiftLL x0 y [c])` -/
 theorem r_ARM64_1443_sound : ArmRule.Checked r_ARM64_1443 := by
@@ -269,10 +273,11 @@ theorem r_ARM64_1449_sound : ArmRule.Checked r_ARM64_1449 := by
 theorem r_ARM64_1179_sound : ArmRule.Checked r_ARM64_1179 := by
   left; arm_unfold
   all_goals arm_norm
+  all_goals arm_and_op2
   · exact refines_op2_op1 _ _ (fun a b b' h => and_low _ a b b' h)
-      (armReadW_low .ARM64AND _ 1 (by simp) ▸ harg.2.1) _ _
+      (armReadW_low .ARM64AND _ 1 (by simp) ▸ harg.2.1.1) _ _
   · exact refines_op2_op1_swap _ _ BitVec.and_comm (fun a b b' h => and_low _ a b b' h)
-      (armReadW_low .ARM64AND _ 0 (by simp) ▸ harg.1.1) _ _
+      (armReadW_low .ARM64AND _ 0 (by simp) ▸ harg.1.1.1) _ _
 
 /-- `ARM64.rules:1180`: `(XOR x (MVN y)) => (EON x y)` -/
 theorem r_ARM64_1180_sound : ArmRule.Checked r_ARM64_1180 := by

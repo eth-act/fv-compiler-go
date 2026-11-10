@@ -124,7 +124,7 @@ theorem evalPure_ARM64MVN (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : Refin
 
 theorem evalPure_ARM64AND (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
     Refines (Arm64.evalPure .ARM64AND ty k ax as) (Arm64.evalPure .ARM64AND ty k ax bs) :=
-  op2_mono ty (· &&& ·) hr
+  and_mono ty hr
 
 theorem evalPure_ARM64ANDconst (ty : Ty) (k : Int64) (ax : Option AuxRef) (hr : RefinesList as bs) :
     Refines (Arm64.evalPure .ARM64ANDconst ty k ax as) (Arm64.evalPure .ARM64ANDconst ty k ax bs) :=

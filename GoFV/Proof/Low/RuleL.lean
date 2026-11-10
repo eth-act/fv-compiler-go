@@ -383,6 +383,14 @@ def Pat.topOKL (ty : Ty) : Pat → Bool
   | .op o _ _ _ _ _ _ _ => GoFV.Proof.Low.topOKL o ty
   | _ => true
 
+/-- The `bool` shape (`Pat.argsOKL`'s `AND` clause). -/
+def isBoolL : Ty → Bool
+  | .bool => true
+  | _ => false
+
+theorem ne_bool_of_isBoolL {t : Ty} (h : (!isBoolL t) = true) : ¬ t = .bool := by
+  rintro rfl; cases h
+
 /-- The bits of a value of shape `t` a register holds defined: an integer its width, a boolean 1,
 a pointer, flags or another aggregate 64; 0 for other shapes. -/
 def argWidth : Ty → Nat
@@ -436,7 +444,9 @@ mutual
 non-word shape has no word-shaped argument (the shapes a pointer without an integer form has,
 `Val.hasTy`): its register then holds the low bits its result keeps, where a pointer argument's
 provenance case (`Arm64.add`, `addP`) moves the pointer by the other argument's whole register,
-which a narrow argument zero-extends (`ARM64.rules:970`). -/
+which a narrow argument zero-extends (`ARM64.rules:970`). An `AND` node is not at the `bool` shape:
+there `Arm64.and` gives `false` for a `false` operand whatever the other holds, which the ops
+Go's peepholes fold it into (`TST`, `ANDconst`, `ANDshift*`, `BIC`) do not. -/
 def Pat.argsOKL (ty : Path → Ty) (p : Path) : Pat → Bool
   | .op o _ _ _ _ _ args _ => Pat.argsOKLs ty p o 0 args
   | _ => true
@@ -445,6 +455,7 @@ def Pat.argsOKLs (ty : Path → Ty) (p : Path) (o : Op) (i : Nat) : List Pat →
   | [] => true
   | q :: qs => (o.generic || decide (armReadW o (ty p) i ≤ argWidth (ty (i :: p)))) &&
       (!provOp o || !wordShape (ty (i :: p)) || wordShape (ty p)) &&
+      (o != .ARM64AND || !isBoolL (ty p)) &&
       Pat.argsOKL ty (i :: p) q && Pat.argsOKLs ty p o (i + 1) qs
 end
 
@@ -455,7 +466,7 @@ def Pat.isOpL : Pat → Bool
 
 mutual
 /-- `Pat.argsOKL` without the width check at a leaf argument: an op may read more bits of a bound
-value than its shape holds, which `Arm64.reg` zero-extends (the provenance check stays). -/
+value than its shape holds, which `Arm64.reg` zero-extends (the provenance and `AND` checks stay). -/
 def Pat.argsOKLn (ty : Path → Ty) (p : Path) : Pat → Bool
   | .op o _ _ _ _ _ args _ => Pat.argsOKLns ty p o 0 args
   | _ => true
@@ -464,6 +475,7 @@ def Pat.argsOKLns (ty : Path → Ty) (p : Path) (o : Op) (i : Nat) : List Pat �
   | [] => true
   | q :: qs => (o.generic || !Pat.isOpL q || decide (armReadW o (ty p) i ≤ argWidth (ty (i :: p)))) &&
       (!provOp o || !wordShape (ty (i :: p)) || wordShape (ty p)) &&
+      (o != .ARM64AND || !isBoolL (ty p)) &&
       Pat.argsOKLn ty (i :: p) q && Pat.argsOKLns ty p o (i + 1) qs
 end
 
