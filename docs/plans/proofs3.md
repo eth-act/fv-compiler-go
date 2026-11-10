@@ -1370,6 +1370,29 @@ about it there. The sole reasons left are led by `op LoweredGetCallerPC` (26),
 `MOVDnop/MOVDreg: upper bits unknown` (25), `block kind JUMPTABLE` (19) and `block kind Defer`
 (13); 6 functions are left with `pair load shape` alone and 1 with `pair store shape` alone.
 
+**Slice G58, group B: G35's upper-bit table across more writes** (`GoFV/Gen/Check35.lean`,
+`GoFV/Proof/Gen/Keep35.lean`; no new group function, the statements of every slice from G35 on
+unchanged). Of the 25 functions G57 rejects only for `MOVDnop/MOVDreg: upper bits unknown`, the
+source's entry was dropped by: a word pair load and its select, which recorded nothing (`LDPW`,
+9 functions, 4 also needing `ORshiftLL`/`MOVWstore`); a G36/G37/G51b op writing only its register
+(`SLL` 1, `MULW` 1, `UMULH`+`MADD` 1, `SBFX`+`SBFIZ` 2); an acquire load (`LDAR`, 2); a narrow
+store (`MOVBstore`/`MOVHstore`, 2); G27's shifted logic ops (`ORshiftLL`, `ANDshiftRA`, 2); a `Copy`
+of a narrow load (3); a `Convert` (1); `runtime.sigdisable` (a join of blocks, not analysed further).
+`pairOp35` now also covers `LDPW`/`LDPSW` (G50, G57a), whose pair registers get the entries of a
+zero- or sign-extended word (`wEntries35`, `uStep35_ldpX`, `WPairW`, `uokl_wpair`), `LDAR`/`LDARW`/
+`LDARB` with home `(Rd;-)` (`homeRegs` gives `[Rd]`; `uStep35_ldar`, `uokl_one`), the selects of
+these and of `LDP` (no code: the table stays, `uStep35_sel`), and `SLL`, `SRL`, `SRA`, the G37 ops and
+`SBFIZ` (`keepOps35`, `uStep35_keepOps`, `uokl_xw`). Their case lemmas now conclude what the machine
+writes (`XW`: `g36_sh`, `g37_bin`/`un`/`madd`/`sbfx`, `g51b_sbfiz`; `g38_ldar`; `WPairW`:
+`g50_ldpX`, `g57_ldpwGlob`, `g57_ldpwVar`); `vk51b_step` and `vk57a_step` now take the table before
+the value (`hL`). No new premise. 12 of the 25 functions are accepted by `checkG57` with the new
+table (checked with the checker on the corpus files: `errors.as`, `hash/fnv.(*sum32).Write`,
+`(*sum128).Write`, `regexp.(*machine).add`, `makeOnePass`, `onePassPrefix`,
+`runtime.(*fixalloc).alloc`, `preprintpanics`, `runGCProg`, `vdsoFindVersion`,
+`unicode/utf8.decodeRuneSlow`, `decodeRuneInStringSlow`). The stores, G27's ops, `Copy` and
+`Convert` are VK33 kinds: keeping them needs their G1/G3/G12/G27 case lemmas to conclude `XW` and a
+case in `vk33_keep35` (8 more functions with the 3 `LDPW`+`ORshiftLL` ones).
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 

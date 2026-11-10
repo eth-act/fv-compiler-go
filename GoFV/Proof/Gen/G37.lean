@@ -108,38 +108,13 @@ theorem aluOp37_ne {op : Op} (h : AluOp37 op) :
   rcases h with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h <;> subst h <;>
     exact ⟨nofun, nofun, nofun, nofun, rfl⟩
 
-/-- A G37 op empties G35's table. -/
+/-- A G37 op writes only its register: G35's table keeps the entries of the other registers. -/
 theorem uStep35_alu37 {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value}
-    (hop : AluOp37 v.op) : uStep35 lc L v = [] := by
-  obtain ⟨-, hn1, hn2, -, -⟩ := aluOp37_ne hop
-  have hl : loadOp? v.op = none := by
-    unfold AluOp37 at hop
-    rcases hop with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;>
-      rfl
-  have hp : pairOp35 lc v = false := by
-    unfold AluOp37 at hop
-    simp only [pairOp35, Bool.or_eq_false_iff, Bool.and_eq_false_iff, beq_eq_false_iff_ne]
-    rcases hop with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h <;>
-      (rw [h]; exact ⟨nofun, .inl (by decide)⟩)
-  have hk : keep34 v = false := by
-    unfold AluOp37 at hop
-    unfold keep34 keep31
-    rcases hop with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h <;>
-      simp [h, keepOp31, keepOp34]
-  have hk31 : keep31 v = false := by
-    simp only [keep34, Bool.or_eq_false_iff] at hk
-    exact hk.1
-  have hue : uEntry lc v = none := by
-    have : narrowLd? lc v = none := by
-      unfold narrowLd?
-      have hi : loadIdxOp? v.op = none := by
-        unfold AluOp37 at hop
-        rcases hop with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h <;>
-          rw [h] <;> rfl
-      rw [hl, hi]
-    simp only [uEntry, this]
-  rw [uStep35_other (ldEntry35_none hl) hp, uStep34_other hk, uStep31_other hk31,
-    uStepL_other hue hn1 hn2]
+    (hop : AluOp37 v.op) : uStep35 lc L v = L.filter (!(homeRegs lc v.id).contains ·.1) := by
+  refine uStep35_keepOps ?_
+  unfold AluOp37 at hop
+  rcases hop with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h <;>
+    simp [keepOps35, h]
 
 /-! ## `runLoc` -/
 
@@ -563,7 +538,7 @@ theorem g37_bin (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j (.ofShape { as, from_ := regA rm, reg := rn, to := regA rd }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have halu := aluOp37_bin hop
@@ -589,10 +564,10 @@ theorem g37_bin (F : Facts lc sym text az ez psA.toList ret E)
   obtain rfl := mapM_res_two hargv hx hy
   rw [write_reg hvh hcv]
   have ht := cls_ne_bool hcv h8
-  refine (op_reg2 (H := H) F hm hinv hj hj' hvs hd hkd hor
+  refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor
     (valRel_retypeL_lo hA hcv ht ((lo_bin37 hA hop hxv hyv hxf hyf hcx hcy ht).mono (cls_le hcv)))
     (fits_retypeL hcv _) (knext_set hK hnp hvh hcv) (fun k0 hk0' hok => ?_)).imp
-    fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, .inr ⟨r, kd, _, hvh, hor, h4⟩⟩
   obtain ⟨hpa, hf, hr, ht', -⟩ := Shape.ok_eq hok
   rw [progStep_bin37 has hkn hkm hkd (nextAddr_pcAt F.nodup hk0') hpa hf hr ht', wX_pc]
   rfl
@@ -608,7 +583,7 @@ theorem g37_un (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j (.ofShape { as, from_ := regA rm, to := regA rd }) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have halu := aluOp37_un hop
@@ -627,10 +602,10 @@ theorem g37_un (F : Facts lc sym text az ez psA.toList ret E)
   obtain rfl := mapM_res_one hargv hx
   rw [write_reg hvh hcv]
   have ht := cls_ne_bool hcv h8
-  refine (op_reg2 (H := H) F hm hinv hj hj' hvs hd hkd hor
+  refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor
     (valRel_retypeL_lo hA hcv ht ((lo_un37 hA hop hxv hxf hcx ht).mono (cls_le hcv)))
     (fits_retypeL hcv _) (knext_set hK hnp hvh hcv) (fun k0 hk0' hok => ?_)).imp
-    fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, .inr ⟨r, kd, _, hvh, hor, h4⟩⟩
   obtain ⟨hpa, hf, -, ht', -⟩ := Shape.ok_eq hok
   rw [progStep_un37 has hkm hkd (nextAddr_pcAt F.nodup hk0') hpa hf ht', wX_pc]
   rfl
@@ -648,7 +623,7 @@ theorem g37_madd (F : Facts lc sym text az ez psA.toList ret E)
     (hvs : OneAt2 psA j ⟨maddOK as ra rm rn rd, as.name⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have halu := aluOp37_madd hop
@@ -675,10 +650,10 @@ theorem g37_madd (F : Facts lc sym text az ez psA.toList ret E)
   obtain rfl := mapM_res_three hargv ha hx hy
   rw [write_reg hvh hcv]
   have ht := cls_ne_bool hcv h8
-  refine (op_reg2 (H := H) F hm hinv hj hj' hvs hd hkd hor
+  refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor
     (valRel_retypeL_lo hA hcv ht (lo_madd37 hA hop hav hxv hyv haf hxf hyf (cls_le hcv) hw1 hw0 ht))
     (fits_retypeL hcv _) (knext_set hK hnp hvh hcv) (fun k0 hk0' hok => ?_)).imp
-    fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, .inr ⟨r, kd, _, hvh, hor, h4⟩⟩
   obtain ⟨hpa, hf, hr, ht', -, -, xr, hrest⟩ := maddOK_spec hok
   rw [progStep_madd37 has hka hkm hkn hkd (nextAddr_pcAt F.nodup hk0') hpa hf hr hrest ht', wX_pc]
   rfl
@@ -697,7 +672,7 @@ theorem g37_sbfx (F : Facts lc sym text az ez psA.toList ret E)
       ⟨sbfxOK (v.auxInt.toInt / 256) (v.auxInt.toInt % 256) rn rd, "SBFX"⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have halu : AluOp37 v.op := by unfold AluOp37; simp [hop]
@@ -714,10 +689,10 @@ theorem g37_sbfx (F : Facts lc sym text az ez psA.toList ret E)
   obtain rfl := mapM_res_one hargv hx
   rw [write_reg hvh hcv, hop]
   have ht := cls_ne_bool hcv h8
-  refine (op_reg2 (H := H) F hm hinv hj hj' hvs hd hkd hor
+  refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor
     (valRel_retypeL_lo hA hcv ht ((lo_sbfx37 hA hxv hxf hk0 hw0 hlw ht).mono (cls_le hcv)))
     (fits_retypeL hcv _) (knext_set hK hnp hvh hcv) (fun k0 hk0' hok => ?_)).imp
-    fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, .inr ⟨r, kd, _, hvh, hor, h4⟩⟩
   obtain ⟨has, hf, hr, ht', -, -, xr, hrest⟩ := sbfxOK_spec hok
   rw [progStep_sbfx37 hkn hkd (by omega) (by omega) (by omega) (nextAddr_pcAt F.nodup hk0') has hf
     hr ht' hrest, wX_pc]
@@ -755,43 +730,42 @@ theorem vk37_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
       UOKL m' (uStep35 lc L v) := by
   have fin : AluOp37 v.op → ∀ m', PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' →
       LocMatch E s' bid (i + 1) m' → CoreInv E.ι (StkAt E) (kStep lc K v).get s' →
-      SlotInv lc s' →
+      SlotInv lc s' → XW lc v m m' →
       ∃ E' m', E.Extends E' ∧ G28Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
         PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
         LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' ∧
-        UOKL m' (uStep35 lc L v) := fun halu m' h1 h2 h3 h4 => by
+        UOKL m' (uStep35 lc L v) := fun halu m' h1 h2 h3 h4 h5 => by
     refine ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩, ?_⟩
     rw [uStep35_alu37 halu]
-    intro e he
-    cases he
+    exact uokl_xw hL h5
   cases hVK with
   | g36 _ _ _ _ _ hVK36 =>
     exact vk36_step hE F hhome hcf hv hVK36 hvs htemp hj hj' hreads hm hinv hL hmem hpre hcall
       hcallz hicall hwb hclo hgetg hmeq hs
   | bin hop hsz hao hbo hro h8 hcx hcy =>
     obtain ⟨r2, hvh, -, -, -⟩ := resObj_spec hro
-    obtain ⟨m', h1, h2, h3, h4⟩ := g37_bin (H := H) F hm hinv.core hinv.slots
+    obtain ⟨m', h1, h2, h3, h4, h5⟩ := g37_bin (H := H) F hm hinv.core hinv.slots
       (kread_of_reads hreads) (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz hao hbo
       hro h8 hcx hcy hvs htemp hs
-    exact fin (aluOp37_bin hop) m' h1 h2 h3 h4
+    exact fin (aluOp37_bin hop) m' h1 h2 h3 h4 h5
   | un hop hsz hao hro h8 hcx =>
     obtain ⟨r2, hvh, -, -, -⟩ := resObj_spec hro
-    obtain ⟨m', h1, h2, h3, h4⟩ := g37_un (H := H) F hm hinv.core hinv.slots
+    obtain ⟨m', h1, h2, h3, h4, h5⟩ := g37_un (H := H) F hm hinv.core hinv.slots
       (kread_of_reads hreads) (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz hao hro
       h8 hcx hvs htemp hs
-    exact fin (aluOp37_un hop) m' h1 h2 h3 h4
+    exact fin (aluOp37_un hop) m' h1 h2 h3 h4 h5
   | madd hop hsz hao hxo hyo hro h8 hw1 hw0 =>
     obtain ⟨r2, hvh, -, -, -⟩ := resObj_spec hro
-    obtain ⟨m', h1, h2, h3, h4⟩ := g37_madd (H := H) F hm hinv.core hinv.slots
+    obtain ⟨m', h1, h2, h3, h4, h5⟩ := g37_madd (H := H) F hm hinv.core hinv.slots
       (kread_of_reads hreads) (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz hao hxo
       hyo hro h8 hw1 hw0 hvs htemp hs
-    exact fin (aluOp37_madd hop) m' h1 h2 h3 h4
+    exact fin (aluOp37_madd hop) m' h1 h2 h3 h4 h5
   | sbfx hop hsz hk0 hk16 hao hro h8 hw0 hlw =>
     obtain ⟨r2, hvh, -, -, -⟩ := resObj_spec hro
-    obtain ⟨m', h1, h2, h3, h4⟩ := g37_sbfx (H := H) F hm hinv.core hinv.slots
+    obtain ⟨m', h1, h2, h3, h4, h5⟩ := g37_sbfx (H := H) F hm hinv.core hinv.slots
       (kread_of_reads hreads) (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz hk0 hk16
       hao hro h8 hw0 hlw hvs htemp hs
-    exact fin (by unfold AluOp37; simp [hop]) m' h1 h2 h3 h4
+    exact fin (by unfold AluOp37; simp [hop]) m' h1 h2 h3 h4 h5
 
 /-- **G37, values.** `g36_value`'s statement over `checkG37`, carrying the upper-bit invariant
 `UOKL` of G35's table `uL35` (started from `uIn35 lc bid`) from value `i` to value `i + 1`. -/

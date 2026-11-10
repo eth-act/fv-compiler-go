@@ -642,9 +642,8 @@ theorem uStep35_logSh51c {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Valu
     rcases logSh?_some h with ⟨hop, -⟩ | ⟨hop, -⟩ | ⟨hop, -⟩ | ⟨hop, -⟩ <;>
       rcases hop with hop | hop | hop <;> rw [hop] <;> rfl
   have hp : pairOp35 lc v = false := by
-    simp only [pairOp35, Bool.or_eq_false_iff, Bool.and_eq_false_iff, beq_eq_false_iff_ne]
     rcases logSh?_some h with ⟨hop, -⟩ | ⟨hop, -⟩ | ⟨hop, -⟩ | ⟨hop, -⟩ <;>
-      rcases hop with hop | hop | hop <;> (rw [hop]; exact ⟨nofun, .inl (by decide)⟩)
+      rcases hop with hop | hop | hop <;> simp [pairOp35, hop]
   have hk : keep34 v = false := by
     unfold keep34 keep31
     rcases logSh?_some h with ⟨hop, -⟩ | ⟨hop, -⟩ | ⟨hop, -⟩ | ⟨hop, -⟩ <;>
@@ -712,7 +711,7 @@ theorem vk51c_step {env : Env} {H : Hooks} {lc : LocCtx} {sym : Nat → BitVec 6
         (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz hk0 hk64 hao hbo hro h8 hca
         hll hrr hvs htemp hs
       refine ⟨m', e1, e2, ⟨e3, e4⟩, ?_⟩
-      rw [uStep35_alu36 (aluOp36_shOp hop)]
+      rw [uStep35_alu36 (aluOp36_shOp hop) (shOp36_sh hop)]
       exact hempty m'
 
 end GoFV.Proof.Gen

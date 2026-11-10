@@ -63,8 +63,8 @@ theorem vk51_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
       hinv hpre.2 hs
     exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, h3, h4⟩
   | b hVK =>
-    obtain ⟨m', h1, h2, h3, h4⟩ := vk51b_step (H := H) (L := L) F hVK hvs htemp hj hj' hreads hm
-      hinv hs
+    obtain ⟨m', h1, h2, h3, h4⟩ := vk51b_step (H := H) F hVK hvs htemp hj hj' hreads hm hinv hL
+      hs
     exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, h3, h4⟩
   | c hVK =>
     obtain ⟨m', h1, h2, h3, h4⟩ := vk51c_step (H := H) F hVK hvs htemp hj hj' hreads hm hinv hL

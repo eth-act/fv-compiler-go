@@ -94,11 +94,20 @@ theorem aluOp51b_ne {op : Op} (h : AluOp51b op) : op ≠ .Phi := by
   unfold AluOp51b at h
   rcases h with h | h | h | h | h | h | h | h <;> subst h <;> nofun
 
-/-- A G51b op empties G35's table. -/
+/-- A G51b op other than `SBFIZ` (a kept op of G35's table, `uStep35_keepOps`) empties G35's
+table. -/
 theorem uStep35_alu51b {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value}
-    (hop : AluOp51b v.op) : uStep35 lc L v = [] := by
+    (hop : AluOp51b v.op) (hn : v.op ≠ .ARM64SBFIZ) : uStep35 lc L v = [] := by
   unfold AluOp51b at hop
-  rcases hop with h | h | h | h | h | h | h | h <;>
+  rcases hop with h | h | h | h | h | h | h | h
+  · simp [uStep35, ldEntry35, loadOp?, narrowLoad?, pairOp35, uStep34, keep34, keep31, keepOp31,
+      keepOp34, uStepL, uEntry, narrowLd?, loadIdxOp?, h]
+  · simp [uStep35, ldEntry35, loadOp?, narrowLoad?, pairOp35, uStep34, keep34, keep31, keepOp31,
+      keepOp34, uStepL, uEntry, narrowLd?, loadIdxOp?, h]
+  · simp [uStep35, ldEntry35, loadOp?, narrowLoad?, pairOp35, uStep34, keep34, keep31, keepOp31,
+      keepOp34, uStepL, uEntry, narrowLd?, loadIdxOp?, h]
+  · exact absurd h hn
+  all_goals
     simp [uStep35, ldEntry35, loadOp?, narrowLoad?, pairOp35, uStep34, keep34, keep31, keepOp31,
       keepOp34, uStepL, uEntry, narrowLd?, loadIdxOp?, h]
 
@@ -556,7 +565,7 @@ theorem g51b_sbfiz (F : Facts lc sym text az ez psA.toList ret E)
       ⟨sbfizOK (v.auxInt.toInt / 256) (v.auxInt.toInt % 256) rn rd, "SBFIZ"⟩ j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' := by
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' ∧ SlotInv lc s' ∧ XW lc v m m' := by
   have hl := F.lowered
   have hA := F.addr
   have halu : AluOp51b v.op := by unfold AluOp51b; simp [hop]
@@ -573,10 +582,10 @@ theorem g51b_sbfiz (F : Facts lc sym text az ez psA.toList ret E)
   obtain rfl := mapM_res_one hargv hx
   rw [write_reg hvh hcv, hop]
   have ht := cls_ne_bool hcv h8
-  refine (op_reg2 (H := H) F hm hinv hj hj' hvs hd hkd hor
+  refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor
     (valRel_retypeL_lo hA hcv ht (lo_sbfiz51b hA hxv hxf hk0 hw0 hw64 hw ht))
     (fits_retypeL hcv _) (knext_set hK hnp hvh hcv) (fun k0 hk0' hok => ?_)).imp
-    fun m' ⟨h1, h2, h3⟩ => ⟨h1, h2, h3, hsi⟩
+    fun m' ⟨h1, h2, h3, h4⟩ => ⟨h1, h2, h3, hsi, .inr ⟨r, kd, _, hvh, hor, h4⟩⟩
   obtain ⟨has, hf, hr, ht', -, -, xr, hrest⟩ := sbfizOK_spec hok
   rw [progStep_sbfiz51b hkn hkd (by omega) (by omega) (by omega) (nextAddr_pcAt F.nodup hk0') has
     hf hr ht' hrest, wX_pc]
@@ -663,8 +672,9 @@ end Cases
 
 /-! ## One value -/
 
-/-- One value of G51b's kinds: `vk50_step`'s conclusion for `VK51b` (no run premise), with the
-empty upper-bit table after it. -/
+/-- One value of G51b's kinds: `vk50_step`'s conclusion for `VK51b` (no run premise). `SBFIZ`
+keeps the entries of the other registers of the upper-bit table, which must hold before the value
+(`hL`); after the other ops the table is empty. -/
 theorem vk51b_step {env : Env} {H : Hooks} {lc : LocCtx} {sym : Nat → BitVec 64}
     {text : BitVec 64} {az ez : Int} {ps : Array Prog} {ret : BitVec 64}
     {E : MatchEnv} {bid : ID} {i j j' : Nat} {v : Value} {s s' : LocState}
@@ -673,19 +683,20 @@ theorem vk51b_step {env : Env} {H : Hooks} {lc : LocCtx} {sym : Nat → BitVec 6
     (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
     (hreads : ∀ rc ∈ kReads lc v, K.get rc.1 = some rc.2)
-    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s)
+    (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s) (hL : UOKL m L)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
       LocMatch E s' bid (i + 1) m' ∧ G3Inv E lc (kStep lc K v) s' ∧ UOKL m' (uStep35 lc L v) := by
   have hR := kread_of_reads hreads
-  have fin : AluOp51b v.op → ∀ m', PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' →
+  have fin : AluOp51b v.op → v.op ≠ .ARM64SBFIZ → ∀ m',
+      PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' →
       LocMatch E s' bid (i + 1) m' → CoreInv E.ι (StkAt E) (kStep lc K v).get s' →
       SlotInv lc s' →
       ∃ m', PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
         LocMatch E s' bid (i + 1) m' ∧ G3Inv E lc (kStep lc K v) s' ∧
-        UOKL m' (uStep35 lc L v) := fun halu m' h1 h2 h3 h4 => by
+        UOKL m' (uStep35 lc L v) := fun halu hn m' h1 h2 h3 h4 => by
     refine ⟨m', h1, h2, ⟨h3, h4⟩, ?_⟩
-    rw [uStep35_alu51b halu]
+    rw [uStep35_alu51b halu hn]
     intro e he
     cases he
   cases hVK with
@@ -694,22 +705,28 @@ theorem vk51b_step {env : Env} {H : Hooks} {lc : LocCtx} {sym : Nat → BitVec 6
     obtain ⟨m', h1, h2, h3, h4⟩ := g51b_mvnSh (H := H) F hm hinv.core hinv.slots hR
       (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz hk0 hk hao hro h8 hll hrr hvs
       htemp hs
-    exact fin (aluOp51b_mvnSh hop) m' h1 h2 h3 h4
+    exact fin (aluOp51b_mvnSh hop)
+      (by rcases mvnSh51b?_some hop with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> nofun)
+      m' h1 h2 h3 h4
   | sbfiz hop hsz hk0 hk16 hao hro h8 hw0 hw64 hw =>
     obtain ⟨r2, hvh, -, -, -⟩ := resObj_spec hro
-    obtain ⟨m', h1, h2, h3, h4⟩ := g51b_sbfiz (H := H) F hm hinv.core hinv.slots hR
+    obtain ⟨m', h1, h2, h3, h4, h5⟩ := g51b_sbfiz (H := H) F hm hinv.core hinv.slots hR
       (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz hk0 hk16 hao hro h8 hw0 hw64 hw
       hvs htemp hs
-    exact fin (by unfold AluOp51b; simp [hop]) m' h1 h2 h3 h4
+    refine ⟨m', h1, h2, ⟨h3, h4⟩, ?_⟩
+    rw [uStep35_keepOps (by simp [keepOps35, hop])]
+    exact uokl_xw hL h5
   | rorK hop hsz hao hro h8 hw hk0 hk =>
     obtain ⟨r2, hvh, -, -, -⟩ := resObj_spec hro
     obtain ⟨m', h1, h2, h3, h4⟩ := g51b_rorK (H := H) F hm hinv.core hinv.slots hR
       (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz hao hro h8 hw hk0 hvs htemp hs
-    exact fin (aluOp51b_rorK hop) m' h1 h2 h3 h4
+    exact fin (aluOp51b_rorK hop)
+      (by rcases rorK51b?_some hop with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> nofun) m' h1 h2 h3 h4
   | ror hop hsz hao hbo hro h8 hw hcb =>
     obtain ⟨r2, hvh, -, -, -⟩ := resObj_spec hro
     obtain ⟨m', h1, h2, h3, h4⟩ := g51b_ror (H := H) F hm hinv.core hinv.slots hR
       (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz hao hbo hro h8 hw hcb hvs htemp hs
-    exact fin (aluOp51b_ror hop) m' h1 h2 h3 h4
+    exact fin (aluOp51b_ror hop)
+      (by rcases ror51b?_some hop with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> nofun) m' h1 h2 h3 h4
 
 end GoFV.Proof.Gen

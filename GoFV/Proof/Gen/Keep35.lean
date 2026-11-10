@@ -54,11 +54,36 @@ theorem uStep35_ld {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value}
     uStep35 lc L v = e :: L.filter (·.1 != e.1) := by
   simp [uStep35, h]
 
-/-- The table across a pair load or a select of one. -/
-theorem uStep35_pair {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value}
-    (h0 : ldEntry35 lc v = none) (hp : pairOp35 lc v = true) :
+/-- The table across `LDP`: the entries of the registers other than its pair's. -/
+theorem uStep35_ldp {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value}
+    (hop : v.op = .ARM64LDP) :
     uStep35 lc L v = L.filter (!(homeRegs lc v.id).contains ·.1) := by
-  simp [uStep35, h0, hp]
+  have h0 : ldEntry35 lc v = none := ldEntry35_none (by rw [hop]; rfl)
+  simp [uStep35, h0, pairOp35, wEntries35, hop]
+
+/-- The table across a select of a pair or acquire load (`pairOp35`): unchanged. -/
+theorem uStep35_sel {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value}
+    (h0 : ldEntry35 lc v = none) (hp : pairOp35 lc v = true)
+    (hs : v.op = .Select0 ∨ v.op = .Select1) : uStep35 lc L v = L := by
+  rcases hs with h | h <;> simp [uStep35, h0, hp, h]
+
+/-- The table across any other value of `pairOp35`: the entries of a word pair load
+(`wEntries35`), and those of the registers other than the home's. -/
+theorem uStep35_pairW {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value}
+    (h0 : ldEntry35 lc v = none) (hp : pairOp35 lc v = true)
+    (hs : v.op ≠ .Select0 ∧ v.op ≠ .Select1) :
+    uStep35 lc L v =
+      wEntries35 v.op (homeRegs lc v.id) ++ L.filter (!(homeRegs lc v.id).contains ·.1) := by
+  simp [uStep35, h0, hp, hs.1, hs.2]
+
+/-- The table across a value of `pairOp35` that is no select and no word pair load (an acquire
+load, or an op writing only its register): the entries of the registers other than the home's. -/
+theorem uStep35_keepOp {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value}
+    (h0 : ldEntry35 lc v = none) (hp : pairOp35 lc v = true)
+    (hs : v.op ≠ .Select0 ∧ v.op ≠ .Select1) (hw : v.op ≠ .ARM64LDPW ∧ v.op ≠ .ARM64LDPSW) :
+    uStep35 lc L v = L.filter (!(homeRegs lc v.id).contains ·.1) := by
+  rw [uStep35_pairW h0 hp hs]
+  simp [wEntries35, hw.1, hw.2]
 
 /-- The table across any other value: G34's step. -/
 theorem uStep35_other {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value}
@@ -66,17 +91,37 @@ theorem uStep35_other {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value}
     uStep35 lc L v = uStep34 lc L v := by
   simp [uStep35, h0, hp]
 
-/-- The ops of the values `vk33_keep35` runs. -/
-def ops35 : List Op :=
-  [.ARM64LDP, .Select0, .Select1, .ARM64MOVBload, .ARM64MOVBUload, .ARM64MOVHload,
-    .ARM64MOVHUload, .ARM64MOVWload, .ARM64MOVWUload]
+/-- The ops of `pairOp35` that write only their register home (G36's register shifts, G37's ops,
+G51b's `SBFIZ`). -/
+def keepOps35 : List Op :=
+  [.ARM64SLL, .ARM64SRL, .ARM64SRA, .ARM64UMULH, .ARM64MULH, .ARM64UDIV, .ARM64DIV, .ARM64MULW,
+    .ARM64UDIVW, .ARM64DIVW, .ARM64UMULL, .ARM64RBIT, .ARM64REVW, .ARM64REV16W, .ARM64MADD,
+    .ARM64MSUB, .ARM64MADDW, .ARM64MSUBW, .ARM64SBFX, .ARM64SBFIZ]
 
-/-- A pair load, a select of one, or a narrow load with an entry has an op of `ops35`. -/
+/-- The table across an op of `keepOps35`: the entries of the registers other than the home's. -/
+theorem uStep35_keepOps {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value}
+    (hop : v.op ∈ keepOps35) :
+    uStep35 lc L v = L.filter (!(homeRegs lc v.id).contains ·.1) := by
+  simp only [keepOps35, List.mem_cons, List.not_mem_nil, or_false] at hop
+  rcases hop with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h <;>
+    exact uStep35_keepOp (ldEntry35_none (by rw [h]; rfl)) (by simp [pairOp35, h])
+      (by simp [h]) (by simp [h])
+
+/-- The ops of the values `vk33_keep35` runs (`pairOp35`'s and the narrow loads). -/
+def ops35 : List Op :=
+  [.ARM64LDP, .ARM64LDPW, .ARM64LDPSW, .ARM64LDAR, .ARM64LDARW, .ARM64LDARB, .Select0, .Select1,
+    .ARM64MOVBload, .ARM64MOVBUload, .ARM64MOVHload, .ARM64MOVHUload, .ARM64MOVWload,
+    .ARM64MOVWUload, .ARM64SLL, .ARM64SRL, .ARM64SRA, .ARM64UMULH, .ARM64MULH, .ARM64UDIV,
+    .ARM64DIV, .ARM64MULW, .ARM64UDIVW, .ARM64DIVW, .ARM64UMULL, .ARM64RBIT, .ARM64REVW,
+    .ARM64REV16W, .ARM64MADD, .ARM64MSUB, .ARM64MADDW, .ARM64MSUBW, .ARM64SBFX, .ARM64SBFIZ]
+
+/-- A value of `pairOp35`, or a narrow load with an entry, has an op of `ops35`. -/
 theorem ops35_mem {lc : LocCtx} {v : Value} (hk : pairOp35 lc v = true ∨ ldEntry35 lc v ≠ none) :
     v.op ∈ ops35 := by
   rcases hk with hk | hk
-  · simp only [pairOp35, Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at hk
-    rcases hk with h | ⟨h | h, -⟩ <;> simp [ops35, h]
+  · refine Classical.byContradiction fun hn => ?_
+    simp only [ops35, List.mem_cons, List.not_mem_nil, or_false, not_or] at hn
+    simp [pairOp35, hn] at hk
   · obtain ⟨⟨r, c, sg⟩, he⟩ := Option.ne_none_iff_exists'.1 hk
     obtain ⟨as, n, hl, -, -, hc, hn⟩ := ldEntry35_spec he
     rcases loadOp?_op hl with ⟨h, rfl, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩
@@ -88,23 +133,17 @@ theorem ops35_all {o : Op} {f : Op → Bool} (hall : ops35.all f = true) (h : o 
     f o = true :=
   List.all_eq_true.1 hall _ h
 
-/-- A select of a write-barrier request (G8) is no select of a pair load. -/
+/-- A select of a write-barrier request (G8) is no select of a pair or acquire load. -/
 theorem sel_wb_pair {lc : LocCtx} {v : Value} {c : ID}
     (hop : v.op = .Select0 ∨ v.op = .Select1) (hp : pairOp35 lc v = true)
     (hc : v.args[0]? = some c) (hw : wbArg lc c = true) : False := by
   simp only [wbArg, Bool.and_eq_true, beq_iff_eq] at hw
-  simp only [pairOp35, hc, Option.bind_some, Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at hp
-  have hnl : v.op ≠ .ARM64LDP := by rcases hop with h | h <;> rw [h] <;> nofun
-  rcases hp with h | ⟨-, hu⟩
-  · exact hnl h
-  · cases hv : lc.ctx.f.value? c with
-    | none => rw [hv] at hu; cases hu
-    | some u =>
-      rw [hv] at hu hw
-      simp only [Option.any_some, beq_iff_eq] at hu
-      simp only [Option.map_some, Option.some.injEq] at hw
-      rw [hu] at hw
-      cases hw.1.1
+  cases hv : lc.ctx.f.value? c with
+  | none => rw [hv] at hw; cases hw.1.1
+  | some u =>
+    rw [hv] at hw
+    have hu : u.op = .ARM64LoweredWB := by simpa using hw.1.1
+    rcases hop with h | h <;> simp [pairOp35, h, hc, hv, hu] at hp
 
 /-! ## The upper-bit invariant -/
 
@@ -161,6 +200,68 @@ theorem uokl_filter_x {m m' : MState} {L : List (Nat × Nat × Bool)}
     {p : Nat × Nat × Bool → Bool} (hL : UOKL m L) (hx : m'.x = m.x) : UOKL m' (L.filter p) :=
   fun e he => uok_of_x hx (hL e (List.mem_filter.1 he).1)
 
+/-- Across a value that writes at most its register home's X register (`XW`), the entries of the
+registers other than its home's. -/
+theorem uokl_xw {lc : LocCtx} {v : Value} {m m' : MState} {L : List (Nat × Nat × Bool)}
+    (hL : UOKL m L) (hx : XW lc v m m') :
+    UOKL m' (L.filter (!(homeRegs lc v.id).contains ·.1)) := by
+  rcases hx with hx | ⟨r, kd, val, hh, hor, hx⟩
+  · exact uokl_filter_x hL hx
+  · have hr : homeRegs lc v.id = [r] := by simp [homeRegs, hh]
+    rw [hr]
+    intro e he
+    apply uokl_filter hL (keepsX_wX hor hx) e
+    simp only [List.mem_filter, List.contains_cons, List.contains_nil, Bool.or_false,
+      Bool.not_eq_true'] at he
+    simp only [List.mem_filter, bne_iff_ne, ne_eq]
+    refine ⟨he.1, fun h => ?_⟩
+    simp [h] at he
+
+/-- Across a write of the X register of `r` alone, the entries of the other registers. -/
+theorem uokl_one {m m' : MState} {L : List (Nat × Nat × Bool)} {r kd : Nat} {val : BitVec 64}
+    (hL : UOKL m L) (hor : objOf? r = some (GoFV.Asm.ARM64.REG_R0 + kd))
+    (hx : m'.x = (m.wX (BitVec.ofNat 5 kd) val).x) :
+    UOKL m' (L.filter (!([r]).contains ·.1)) := by
+  intro e he
+  apply uokl_filter hL (keepsX_wX hor hx) e
+  simp only [List.mem_filter, List.contains_cons, List.contains_nil, Bool.or_false,
+    Bool.not_eq_true'] at he
+  simp only [List.mem_filter, bne_iff_ne, ne_eq]
+  refine ⟨he.1, fun h => ?_⟩
+  simp [h] at he
+
+/-- `m'` is `m` after a word pair load into the X registers of `ra` and `rb`: `LDPW` (`sg` false)
+zero-, `LDPSW` sign-extending a word into each. -/
+def WPairW (ra rb : Nat) (sg : Bool) (m m' : MState) : Prop :=
+  ∃ (ka kb : Nat) (Y0 Y1 : BitVec (8 * 4)), objOf? ra = some (GoFV.Asm.ARM64.REG_R0 + ka) ∧
+    objOf? rb = some (GoFV.Asm.ARM64.REG_R0 + kb) ∧
+    m'.x = ((m.wX (BitVec.ofNat 5 ka)
+      (if sg then ProgOp.sextTo64 4 (Y0.setWidth 64) else Y0.setWidth 64)).wX (BitVec.ofNat 5 kb)
+      (if sg then ProgOp.sextTo64 4 (Y1.setWidth 64) else Y1.setWidth 64)).x
+
+/-- After a word pair load into the X registers of `ra` and `rb` (`WPairW`), their entries and
+those of the other registers. -/
+theorem uokl_wpair {m m' : MState} {L : List (Nat × Nat × Bool)} {ra rb : Nat} {sg : Bool}
+    (hL : UOKL m L) (hne : ra ≠ rb) (hw : WPairW ra rb sg m m') :
+    UOKL m' ([ra, rb].map (fun r => (r, 32, sg)) ++ L.filter (!([ra, rb]).contains ·.1)) := by
+  obtain ⟨ka, kb, Y0, Y1, hoa, hob, hx⟩ := hw
+  intro e he
+  rcases List.mem_append.1 he with he | he
+  · have h0 : UOK (m.wX (BitVec.ofNat 5 ka)
+        (if sg then ProgOp.sextTo64 4 (Y0.setWidth 64) else Y0.setWidth 64)) (some (ra, 32, sg)) :=
+      uok_ldW hoa (by decide) (by decide) (by decide) rfl
+    have h1 : UOK m' (some (rb, 32, sg)) := uok_ldW hob (by decide) (by decide) (by decide) hx
+    have hk : KeepsX (m.wX (BitVec.ofNat 5 ka)
+        (if sg then ProgOp.sextTo64 4 (Y0.setWidth 64) else Y0.setWidth 64)) m' rb :=
+      keepsX_wX hob hx
+    simp only [List.map_cons, List.map_nil, List.mem_cons, List.not_mem_nil, or_false] at he
+    rcases he with rfl | rfl
+    · intro k hk31 hobj
+      rw [hk k hk31 (fun h => hne (objX?_inj hobj h))]
+      exact h0 k hk31 hobj
+    · exact h1
+  · exact uokl_pair hL ⟨ka, kb, _, _, hoa, hob, hx⟩ e he
+
 /-! ## The values -/
 
 /-- Refutes `h' : v.op = .X` for an op `.X` outside `ops35`, against `hops : v.op ∈ ops35`. -/
@@ -183,10 +284,8 @@ theorem ld_uokl {lc : LocCtx} {v : Value} {m m' : MState} {L : List (Nat × Nat 
       (if sg then ProgOp.sextTo64 n (Y.setWidth 64) else Y.setWidth 64)).x)
     (hL : UOKL m L) : UOKL m' (uStep35 lc L v) := by
   have hnp : pairOp35 lc v = false := by
-    have hm := ops35_mem hk
-    simp only [pairOp35, Bool.or_eq_false_iff, Bool.and_eq_false_iff, beq_eq_false_iff_ne]
     rcases loadOp?_op hop with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;>
-      (rw [h]; exact ⟨nofun, .inl (by decide)⟩)
+      simp [pairOp35, h]
   have he := hk.resolve_left (by rw [hnp]; nofun)
   obtain ⟨⟨r, c', sg'⟩, he⟩ := Option.ne_none_iff_exists'.1 he
   obtain ⟨as', n', hl', hr, hc', hcc, hn⟩ := ldEntry35_spec he
@@ -234,7 +333,7 @@ theorem vk33_keep35 {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat 
         UOKL m' (uStep35 lc L v) := by
     intro ra rb m' hop hh h1 h2 h3 h4 h5
     refine ⟨m', h1, h2, ⟨h3, h4⟩, ?_⟩
-    rw [uStep35_pair (ldEntry35_none (by rw [hop]; rfl)) (by simp [pairOp35, hop])]
+    rw [uStep35_ldp hop]
     have hr : homeRegs lc v.id = [ra, rb] := by simp [homeRegs, hh]
     rw [hr]
     exact uokl_pair hL h5
@@ -377,8 +476,8 @@ theorem vk33_keep35 {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat 
     have hl0 : loadOp? v.op = none := by rcases hop with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl
     have hp := hk.resolve_right (by rw [ldEntry35_none hl0]; nofun)
     refine ⟨m', h1, h2, ⟨h3, h4⟩, ?_⟩
-    rw [uStep35_pair (ldEntry35_none hl0) hp]
-    exact uokl_filter_x hL hx
+    rw [uStep35_sel (ldEntry35_none hl0) hp (hop.imp And.left And.left)]
+    exact fun e he => uok_of_x hx (hL e he)
   | g3 _ _ _ _ h3 =>
   cases h3 with
   | g2 _ _ h2 =>

@@ -1026,6 +1026,17 @@ instance, so `g57_value` says nothing about it there (group B's note). Coverage 
 (`lake exe gen-check`, with the fall-through over no-ops): 7,378 of 9,297 functions (79.35%,
 33 more than G55's 7,345), 235,204 values.
 
+## Phase 3: genssa, slice G58 group B, G35's upper-bit table across more writes (I7, #553)
+
+`GoFV.Gen.Check.uStep35` (`GoFV/Gen/Check35.lean`) follows `LDPW`/`LDPSW` (entries of the
+extended words), `LDAR*`, the selects of pair and acquire loads, and the G36 register shifts, G37
+ops and `SBFIZ` register by register (`pairOp35`); `GoFV/Proof/Gen/Keep35.lean` (`uStep35_ldp`,
+`uStep35_sel`, `uStep35_pairW`, `uStep35_keepOp`, `keepOps35`, `uStep35_keepOps`, `uokl_xw`,
+`uokl_one`, `WPairW`, `uokl_wpair`). Every `g*_value` statement from G35 to G57 is unchanged;
+`vk51b_step` and `vk57a_step` take `UOKL m L`. Exercised by `genG57_witness` (`main.grow`: the table
+before `STPW` now holds the `LDPSW` words' entries for `R8`, `R9`). 12 functions G57 rejected only
+for `upper bits unknown` are accepted (proofs3.md §4, slice G58 group B).
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g54_obj_value`, `g54_obj_term`, `g54_obj_nilPanic`, `g54_obj_boundsPanic`

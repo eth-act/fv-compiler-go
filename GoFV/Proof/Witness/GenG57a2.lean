@@ -4921,7 +4921,7 @@ theorem genG57a2_witness :
     unfold pcOfTab; rw [h2]
   obtain ⟨E1, m1, hx1, hE1, hp1, hm1', -, -⟩ := vk57a_step (H := GenG2.H0) (env := GenG2.env)
     (L := []) hE F hcf hv hVK hvs htemp hj hj' hrd locMatch0 (g57a2Inv0 hfit)
-    (pre46 hop hsy hoff hr0 hr1) hs1
+    (fun _ h => by cases h) (pre46 hop hsy hoff hr0 hr1) hs1
   exact ⟨h55, s1, E1, m1, hs1, hr1', hx1, hE1, hp1, hm1',
     (hm1'.regs 1 _ hr1').1 1 (by simp [objX?])⟩
 
