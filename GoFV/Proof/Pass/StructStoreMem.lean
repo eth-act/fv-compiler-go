@@ -32,8 +32,8 @@ theorem write_size_congr {m m1 : Mem} {p : Ptr} {bs bs' : Array Byte} (hw : m.wr
     simp only [he, ite_true]; rfl
   · obtain ⟨a, ha⟩ := write_find hw (by omega)
     obtain ⟨-, hv⟩ := write_spec ha hw
-    obtain ⟨h1, h2, h3, h4⟩ := hv (by omega)
-    exact ⟨_, write_of_valid ha (by omega) h1 (by omega) (by omega) (by rw [hs]; exact h4)⟩
+    obtain ⟨h1, h0, h2, h3, h4⟩ := hv (by omega)
+    exact ⟨_, write_of_valid ha (by omega) h1 h0 (by omega) (by omega) (by rw [hs]; exact h4)⟩
 
 theorem putBytes_getElem? {d src : Array Byte} {off : Nat} (h : off + src.size ≤ d.size) (j : Nat) :
     (putBytes d off src)[j]? = if off ≤ j ∧ j < off + src.size then src[j - off]? else d[j]? := by
@@ -61,7 +61,7 @@ theorem write_putBytes {m m1 : Mem} {p : Ptr} {buf E : Array Byte} {o : Nat}
     simp only [he, ite_true]; rfl
   obtain ⟨a, ha⟩ := write_find hw (by omega)
   obtain ⟨rfl, hv⟩ := write_spec ha hw
-  obtain ⟨hwr, h2, h3, h4⟩ := hv (by omega)
+  obtain ⟨hwr, h0, h2, h3, h4⟩ := hv (by omega)
   have hps : (putBytes buf o E).size = buf.size := putBytes_size _ _ _
   have hoff : (p.add (BitVec.ofNat 64 o)).off.toNat = p.off.toNat + o := by
     rw [Ptr.add_off, toNat_add_ofNat, Nat.mod_eq_of_lt (by omega)]
@@ -71,9 +71,10 @@ theorem write_putBytes {m m1 : Mem} {p : Ptr} {buf E : Array Byte} {o : Nat}
   have hf1 : (m.set p.blk { a with data := D1 }).find? (p.add (BitVec.ofNat 64 o)).blk =
       some { a with data := D1 } := by
     rw [Ptr.add_blk, find?_set, ite_eq_left rfl]
-  refine ⟨_, write_of_valid hf1 (by omega) hwr (by rw [hoff, hD1s]; omega) (by rw [hoff]; omega)
+  refine ⟨_, write_of_valid hf1 (by omega) hwr (by rw [Ptr.add_blk, hoff]; omega)
+    (by rw [hoff, hD1s]; omega) (by rw [hoff]; omega)
     (by rw [Ptr.add_blk, hoff]; exact endsInWindow_mono h4 (by omega)), ?_⟩
-  rw [write_of_valid ha (by omega) hwr (by rw [hps]; omega) (by rw [hps]; omega)
+  rw [write_of_valid ha (by omega) hwr h0 (by rw [hps]; omega) (by rw [hps]; omega)
     (by rw [hps]; exact h4), Ptr.add_blk, set_set]
   refine congrArg (fun d => some (m.set p.blk { a with data := d })) ?_
   apply Array.ext_getElem?
@@ -117,7 +118,7 @@ theorem write_poison_left {m m' m1 : Mem} (h : Mem.Refines m m') {p : Ptr} {n : 
     unfold Mem.write at hw; simp at hw; subst hw; exact h
   obtain ⟨a, ha⟩ := write_find hw (by simp; omega)
   obtain ⟨rfl, hv⟩ := write_spec ha hw
-  obtain ⟨-, h2, -, -⟩ := hv (by simp; omega)
+  obtain ⟨-, -, h2, -, -⟩ := hv (by simp; omega)
   simp only [Array.size_replicate] at h2
   obtain ⟨a', ha', har⟩ := h.find?_some ha
   have hsz := har.size_eq
@@ -184,7 +185,7 @@ theorem inWindow_of_write {M M1 : Mem} {P : Ptr} {bs : Array Byte} (hw : M.write
     {o : Nat} (ho : o < bs.size) : (P.add (BitVec.ofNat 64 o)).inWindow = true := by
   obtain ⟨a, ha⟩ := write_find hw (by omega)
   obtain ⟨-, hv⟩ := write_spec ha hw
-  obtain ⟨-, -, h3, h4⟩ := hv (by omega)
+  obtain ⟨-, -, -, h3, h4⟩ := hv (by omega)
   have hoff : (P.add (BitVec.ofNat 64 o)).off.toNat = P.off.toNat + o := by
     rw [Ptr.add_off, toNat_add_ofNat, Nat.mod_eq_of_lt (by omega)]
   unfold Ptr.inWindow

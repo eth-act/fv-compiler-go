@@ -259,6 +259,17 @@ executable `Mem` can use a `Std.HashMap` per allocation with a `@[csimp]`-free f
   for allocations smaller than their window. Invalid **load** = `poison` (loads are pure in Go SSA:
   `deadcode` deletes unused loads, so a load can never be the source of a panic; nil
   dereference panics come only from `NilCheck`, §6). Invalid **store/move/zero** = `stuck`.
+  A nonempty store/move/zero also needs `off ≥ Blk.writableFrom a` (8 for an outgoing-arguments
+  area `outargs`, else 0; `Mem.write`, `Mem.canWrite`; issue #553): on arm64
+  `FixedFrameSize = 8` (`cmd/internal/sys/arch.go:136`, `ArchARM64`), the word at `0(RSP)` is
+  the saved `LR`, which the prologue stores there (`cmd/internal/obj/arm64/obj7.go:610`, `:653`),
+  and Go places stack arguments and results from offset `FixedFrameSize` on
+  (`offsetForLocals`, `cmd/compile/internal/ssa/config.go:387-388`,
+  `cmd/compile/internal/abi/abiutils.go:318`; runtime calls' arguments,
+  `cmd/compile/internal/ssagen/ssa.go:5613`). So a store into `outargs[0, 8)` is no Go program
+  behaviour (only unsafe pointer arithmetic could reach it); it is `stuck`, which lets Phase 3
+  inject `outargs` at the machine `SP` with the saved `LR` in its first word (`SepFromW`).
+  Loads there stay valid (`frameAllocs` allocates the area `poison`).
   No alignment requirement for plain accesses (arm64 `unalignedOK`); atomics must be naturally
   aligned (`stuck` otherwise).
 - **Typed load/store**: a `Load` of type `T` reads `T.size` bytes and decodes them by

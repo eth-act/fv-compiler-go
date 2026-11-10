@@ -410,8 +410,9 @@ theorem write_spec {m m1 : Mem} {p : Ptr} {bs : Array Byte} {a : Alloc}
     (hm : m.find? p.blk = some a) (hw : m.write p bs = some m1) :
     m1 = m.set p.blk { a with data :=
         (List.range bs.size).foldl (fun d i => d.set! (p.off.toNat + i) bs[i]!) a.data } ∧
-      (0 < bs.size → a.writable = true ∧ p.off.toNat + bs.size ≤ a.data.size ∧
-        p.off.toNat + bs.size < 2 ^ 64 ∧ p.blk.endsInWindow (p.off.toNat + bs.size) = true) := by
+      (0 < bs.size → a.writable = true ∧ p.blk.writableFrom ≤ p.off.toNat ∧
+        p.off.toNat + bs.size ≤ a.data.size ∧ p.off.toNat + bs.size < 2 ^ 64 ∧
+        p.blk.endsInWindow (p.off.toNat + bs.size) = true) := by
   unfold Mem.write at hw
   by_cases he : bs.isEmpty = true
   · have hsz : bs.size = 0 := Array.isEmpty_iff_size_eq_zero.1 he
@@ -425,7 +426,7 @@ theorem write_spec {m m1 : Mem} {p : Ptr} {bs : Array Byte} {a : Alloc}
     · rename_i hc
       cases hw
       simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
-      exact ⟨rfl, fun _ => ⟨hc.1.1.1, hc.1.1.2, hc.1.2, hc.2⟩⟩
+      exact ⟨rfl, fun _ => ⟨hc.1.1.1.1, hc.1.1.1.2, hc.1.1.2, hc.1.2, hc.2⟩⟩
     · cases hw
 
 theorem write_find {m m1 : Mem} {p : Ptr} {bs : Array Byte} (hw : m.write p bs = some m1)
@@ -443,6 +444,7 @@ theorem write_find {m m1 : Mem} {p : Ptr} {bs : Array Byte} (hw : m.write p bs =
 
 theorem write_of_valid {m : Mem} {p : Ptr} {bs : Array Byte} {a : Alloc}
     (hm : m.find? p.blk = some a) (hpos : 0 < bs.size) (hw : a.writable = true)
+    (hwf : p.blk.writableFrom ≤ p.off.toNat)
     (h1 : p.off.toNat + bs.size ≤ a.data.size) (h2 : p.off.toNat + bs.size < 2 ^ 64)
     (h3 : p.blk.endsInWindow (p.off.toNat + bs.size) = true) :
     m.write p bs = some (m.set p.blk { a with
@@ -455,7 +457,7 @@ theorem write_of_valid {m : Mem} {p : Ptr} {bs : Array Byte} {a : Alloc}
     have := Array.isEmpty_iff_size_eq_zero.1 h'
     omega
   simp only [he, Bool.false_eq_true, ite_false, hm, Option.bind_eq_bind, Option.bind_some, hw,
-    Bool.and_eq_true, decide_eq_true_eq, h1, h2, h3, and_self, ite_true]
+    Bool.and_eq_true, decide_eq_true_eq, hwf, h1, h2, h3, and_self, ite_true]
 
 section Tiling
 
@@ -471,8 +473,9 @@ theorem tileStep_spec {m m1 : Mem} {p : Nat × Array Byte} {a : Alloc}
     (hm : m.find? Q.blk = some a) (hw : tileStep Q m p = some m1) :
     m1 = m.set Q.blk { a with data :=
         (List.range p.2.size).foldl (fun d i => d.set! (tileOff Q p + i) p.2[i]!) a.data } ∧
-      (0 < p.2.size → a.writable = true ∧ tileOff Q p + p.2.size ≤ a.data.size ∧
-        tileOff Q p + p.2.size < 2 ^ 64 ∧ Q.blk.endsInWindow (tileOff Q p + p.2.size) = true) := by
+      (0 < p.2.size → a.writable = true ∧ Q.blk.writableFrom ≤ tileOff Q p ∧
+        tileOff Q p + p.2.size ≤ a.data.size ∧ tileOff Q p + p.2.size < 2 ^ 64 ∧
+        Q.blk.endsInWindow (tileOff Q p + p.2.size) = true) := by
   have := write_spec (p := Q.add (BitVec.ofNat 64 p.1)) hm hw
   rwa [Ptr.add_off, toNat_add_ofNat, Ptr.add_blk] at this
 
@@ -498,8 +501,9 @@ theorem fold_find : ∀ (ws : List (Nat × Array Byte)) (m mr : Mem),
 /-- Every non-empty store of a successful tiling is valid in the starting block. -/
 theorem fold_valid : ∀ (ws : List (Nat × Array Byte)) (m mr : Mem) (a : Alloc),
     m.find? Q.blk = some a → ws.foldlM (tileStep Q) m = some mr →
-    ∀ p ∈ ws, 0 < p.2.size → a.writable = true ∧ tileOff Q p + p.2.size ≤ a.data.size ∧
-      tileOff Q p + p.2.size < 2 ^ 64 ∧ Q.blk.endsInWindow (tileOff Q p + p.2.size) = true
+    ∀ p ∈ ws, 0 < p.2.size → a.writable = true ∧ Q.blk.writableFrom ≤ tileOff Q p ∧
+      tileOff Q p + p.2.size ≤ a.data.size ∧ tileOff Q p + p.2.size < 2 ^ 64 ∧
+      Q.blk.endsInWindow (tileOff Q p + p.2.size) = true
   | [], _, _, _, _, _, _, h, _ => absurd h List.not_mem_nil
   | p :: ws, m, mr, a, hm, hf, q, hq, hpos => by
     rw [List.foldlM_cons] at hf
@@ -543,7 +547,7 @@ theorem fold_data : ∀ (ws : List (Nat × Array Byte)) (m mr : Mem) (a : Alloc)
         intro j
         rw [← hD1, ho]
         by_cases hpos : 0 < p.2.size
-        · exact foldl_set_getElem? _ _ _ _ (Nat.le_refl _) (hv hpos).2.1 j
+        · exact foldl_set_getElem? _ _ _ _ (Nat.le_refl _) (hv hpos).2.2.1 j
         · have hs : p.2.size = 0 := by omega
           rw [hs, ite_eq_right (by omega)]
           rfl
@@ -603,13 +607,17 @@ theorem write_tiling {m0 mr : Mem} {Q : Ptr} {W : Nat} (ws : List (Nat × Array 
     (fun r hr hpos => by
       obtain ⟨p, hp, rfl⟩ := List.mem_map.1 hr
       have := hv p hp hpos
-      exact ⟨this.2.1, this.2.2.1, this.2.2.2⟩)
+      exact ⟨this.2.2.1, this.2.2.2.1, this.2.2.2.2⟩)
     (fun k hk => by
       obtain ⟨p, hp, h1, h2⟩ := hcov k hk
       exact ⟨_, List.mem_map_of_mem hp, h1, h2⟩) (W - 1) (by omega)
   obtain ⟨D, rfl, hDs, hDu, hDw⟩ := fold_data Q ws m0 mr a0 ha0 hw
     (fun p hp => by have := hin p hp; omega) hdis
   have hwr := (hv p0 hp0 (by omega)).1
+  have hwf : Q.blk.writableFrom ≤ Q.off.toNat := by
+    have h := (hv p0 hp0 (by omega)).2.1
+    unfold tileOff at h
+    rwa [show p0.1 = 0 by omega, Nat.add_zero, Nat.mod_eq_of_lt Q.off.isLt] at h
   have hSs : (D.extract Q.off.toNat (Q.off.toNat + W)).size = W := by
     simp only [Array.size_extract]; omega
   refine ⟨D.extract Q.off.toNat (Q.off.toNat + W), hSs, fun d E h t ht => ?_, ?_⟩
@@ -618,7 +626,7 @@ theorem write_tiling {m0 mr : Mem} {Q : Ptr} {W : Nat} (ws : List (Nat × Array 
     exact hDw _ h t ht
   · have h3 := hb.2.2
     rw [Nat.add_assoc, Nat.sub_add_cancel (by omega)] at h3
-    rw [write_of_valid ha0 (by omega) hwr (by omega) (by omega) (by rw [hSs]; exact h3)]
+    rw [write_of_valid ha0 (by omega) hwr hwf (by omega) (by omega) (by rw [hSs]; exact h3)]
     refine congrArg (fun d => some (m0.set Q.blk { a0 with data := d })) ?_
     apply Array.ext_getElem?
     intro j

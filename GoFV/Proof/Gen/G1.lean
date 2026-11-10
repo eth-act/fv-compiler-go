@@ -63,6 +63,15 @@ def SepFrom (ι : Blk → Option (BitVec 64)) (P : BitVec 64 → Prop) (mm : Mem
   ∀ b al a, (b, al) ∈ mm.blocks → ι b = some a → ∀ y : BitVec 64, P y →
     ¬ (a.toNat ≤ y.toNat ∧ y.toNat < a.toNat + al.data.size)
 
+/-- `SepFrom` but for the bytes of a block below `Blk.writableFrom`, which no `Mem.write` reaches:
+a live block's byte at an address of `P` is one of those and `poison`. For an `outargs` block at
+`SP` (stack arguments, `docs/plans/proofs3.md` §8 item 7), whose first word is the saved `LR`;
+`SepFrom` implies it (`SepFrom.w`), Phase 1 writes keep it (`SepFromW.write`), and a machine
+memory that changes only at `P` keeps `MemInj` (`memInj_of_sepW`: `poison` relates to every byte). -/
+def SepFromW (ι : Blk → Option (BitVec 64)) (P : BitVec 64 → Prop) (mm : Mem) : Prop :=
+  ∀ b al a, (b, al) ∈ mm.blocks → ι b = some a → ∀ y : BitVec 64, P y →
+    ∀ i (hi : i < al.data.size), a.toNat + i = y.toNat → i < b.writableFrom ∧ al.data[i] = .poison
+
 /-- The invariant the value steps of every slice keep: every register other than `ZERO` holds a
 value of the class the class map `K` gives it (G1, G2: `regCls`, one class per register; G3: the
 class of its last writer, by dataflow), the memory's block keys are distinct, and the live blocks
@@ -506,10 +515,12 @@ theorem canWrite_of_write {mm mm' : Mem} {p : Ptr} {bs : Array Byte} (h : mm.wri
   cases hf : mm.find? p.blk with
   | none => simp [hf] at h
   | some a =>
-    simp only [hf] at h ⊢
-    simp at h
-    obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, -⟩ := h
-    simp [h1, h2, h3, h4]
+    simp only [hf, Option.bind_eq_bind, Option.bind_some] at h ⊢
+    split at h
+    · rename_i hc
+      rw [Bool.or_eq_true]
+      exact Or.inr hc
+    · cases h
 
 theorem setReg_zero {s : LocState} {x : Val} : s.setReg zeroReg x = s := by
   simp [LocState.setReg]

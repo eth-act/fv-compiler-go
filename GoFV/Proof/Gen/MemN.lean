@@ -102,8 +102,8 @@ private theorem canWrite_some {m : Mem} {p : Ptr} {n : Nat} (hn : 0 < n)
   cases hf : m.find? p.blk with
   | none => simp [hf] at h; omega
   | some al =>
-    simp [hf] at h
-    rcases h with h | ⟨⟨⟨-, h⟩, -⟩, -⟩
+    simp only [hf, Bool.or_eq_true, beq_iff_eq, Bool.and_eq_true, decide_eq_true_eq] at h
+    rcases h with h | ⟨⟨⟨⟨-, -⟩, h⟩, -⟩, -⟩
     · omega
     · exact ⟨al, rfl, h⟩
 

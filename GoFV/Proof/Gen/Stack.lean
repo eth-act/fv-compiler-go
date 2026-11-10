@@ -1,4 +1,5 @@
 import GoFV.Proof.Gen.G1
+import GoFV.Proof.ValRefine
 
 variable [GoFV.SSA.Sem.Addrs]
 
@@ -213,5 +214,76 @@ theorem ne_of_sep {P : BitVec 64 → Prop} {m : Mem} {mm : Memory} (h : MemInj �
     omega
   rw [← he, this]
   omega
+
+/-! ## `SepFromW`: away from `P` but for `poison` bytes below `Blk.writableFrom` -/
+
+theorem SepFrom.w {P : BitVec 64 → Prop} {m : Mem} (h : SepFrom ι P m) : SepFromW ι P m :=
+  fun b al a hb ha y hy i hi he => (h b al a hb ha y hy ⟨by omega, by omega⟩).elim
+
+/-- A Phase 1 write keeps `SepFromW` (it reaches no byte below `Blk.writableFrom`). -/
+theorem SepFromW.write {P : BitVec 64 → Prop} {m m' : Mem} (hk : KeysNodup m)
+    (h : SepFromW ι P m) {p : Ptr} {bs : Array Byte} (hw : m.write p bs = some m') :
+    SepFromW ι P m' := by
+  intro b al2 a hb ha y hy i hi he
+  obtain ⟨al1, hb1, hs, hlo⟩ := write_back hk hw b al2 hb
+  obtain ⟨hwf, hpz⟩ := h b al1 a hb1 ha y hy i (by omega) he
+  refine ⟨hwf, ?_⟩
+  have := hlo i hwf
+  rw [Array.getElem?_eq_getElem hi, Array.getElem?_eq_getElem (by omega), hpz] at this
+  exact Option.some.inj this
+
+/-- A byte of a pointer word of `bs` is not `poison`. -/
+theorem ne_poison_of_ptrWordAt {bs : Array Byte} {o : Nat} {p : Ptr} (h : ptrWordAt? bs o = some p)
+    {j : Nat} (hj : j < 8) (hi : o + j < bs.size) : bs[o + j] ≠ .poison := by
+  intro hpz
+  unfold ptrWordAt? at h
+  split at h
+  · rename_i ho
+    have hx : (bs.extract o (o + 8))[j]'(by simp only [Array.size_extract]; omega) = bs[o + j] := by
+      simp only [Array.getElem_extract]
+    rw [bytesNat?_poison ⟨_, Array.getElem_mem_toList _, hx.trans hpz⟩] at h
+    cases h
+  · cases h
+
+/-- `MemInj` survives a machine memory that differs only at `poison` bytes of the live blocks. -/
+theorem memInj_congr_poison {m : Mem} {mm M : Memory} (h : MemInj ι m mm)
+    (hag : ∀ b al a, (b, al) ∈ m.blocks → ι b = some a → ∀ i (hi : i < al.data.size),
+      al.data[i] ≠ .poison → M (a + BitVec.ofNat 64 i) = mm (a + BitVec.ofNat 64 i)) :
+    MemInj ι m M := by
+  obtain ⟨W, hW⟩ := h.bytes
+  refine ⟨h.nil, h.mapped, h.inj, W, fun b al a hb ha => ?_⟩
+  obtain ⟨hw1, hw2, hw3⟩ := hW b al a hb ha
+  refine ⟨fun o ho => ?_, hw2, fun i hi hno => ?_⟩
+  · obtain ⟨p, hp, hrel⟩ := hw1 o ho
+    have ho8 : o + 8 ≤ al.data.size := by
+      unfold ptrWordAt? at hp
+      split at hp
+      · assumption
+      · cases hp
+    refine ⟨p, hp, ?_⟩
+    unfold memWord at hrel ⊢
+    have hc : readMem M (a + BitVec.ofNat 64 o) 8 = readMem mm (a + BitVec.ofNat 64 o) 8 :=
+      readMem_congr 8 (a + BitVec.ofNat 64 o) (fun j hj => by
+        have := hag b al a hb ha (o + j) (by omega) (ne_poison_of_ptrWordAt hp hj (by omega))
+        rwa [← BitVec.ofNat_add_ofNat, ← BitVec.add_assoc] at this)
+    rw [hc]
+    exact hrel
+  · by_cases hpz : al.data[i] = .poison
+    · rw [hpz]; simp [ByteRel]
+    · rw [hag b al a hb ha i hi hpz]
+      exact hw3 i hi hno
+
+/-- A machine memory that changes only at addresses of `P` keeps `MemInj` when the live blocks are
+away from `P` but for `poison` bytes (`SepFromW`). -/
+theorem memInj_of_sepW {P : BitVec 64 → Prop} {m : Mem} {mm M : Memory} (h : MemInj ι m mm)
+    (hsep : SepFromW ι P m) (hM : ∀ y, ¬ P y → M y = mm y) : MemInj ι m M :=
+  memInj_congr_poison h fun b al a hb ha i hi hnp => hM _ fun hy => by
+    obtain ⟨a0, ha0, -, hhi⟩ := h.mapped b al hb
+    rw [ha] at ha0; cases ha0
+    have h64 : (2 : Nat) ^ 64 = 18446744073709551616 := rfl
+    have he : (a + BitVec.ofNat 64 i).toNat = a.toNat + i := by
+      simp only [BitVec.toNat_add, BitVec.toNat_ofNat, h64] at hhi ⊢
+      omega
+    exact hnp (hsep b al a hb ha _ hy i hi he.symm).2
 
 end GoFV.Proof.Gen

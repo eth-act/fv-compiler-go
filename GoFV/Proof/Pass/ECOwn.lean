@@ -1508,7 +1508,8 @@ theorem ecr_foldl_canWrite {tabs : Tables} {n : AuxRef} {sz0 : Nat} (hf : tabs.f
     simp only [Blk.endsInWindow, Blk.window?, decide_eq_true_eq]; omega
   simp only [h0, Nat.zero_add, hw, hwin, Bool.true_and, Bool.and_true, Bool.or_eq_true, beq_iff_eq,
     decide_eq_true_eq]
-  right; simp only [Bool.and_eq_true, decide_eq_true_eq, hs, hw', and_self]
+  right; simp only [Bool.and_eq_true, decide_eq_true_eq, hs, hw', Blk.writableFrom, Nat.le_refl,
+    and_self]
 
 /-- **The entry frame allocates the result slots** (`resSlotOK`: each stack-assigned result's
 variable is a `Blk.local` listed among the frame variables, each listing at least the result's

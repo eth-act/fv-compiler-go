@@ -1068,6 +1068,7 @@ import GoFV.Proof.Witness.SchedFast
 import GoFV.Proof.Witness.SchedL
 import GoFV.Proof.Witness.ScheduleL
 import GoFV.Proof.Witness.Seg
+import GoFV.Proof.Witness.SepFromW
 import GoFV.Proof.Witness.ShortCirc
 import GoFV.Proof.Witness.StackF0
 import GoFV.Proof.Witness.StackF2

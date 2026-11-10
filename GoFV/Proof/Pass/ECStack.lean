@@ -87,7 +87,8 @@ theorem ecs_outargsOK_write {m m' : Mem} {p : Ptr} {bs : Array Byte} (hw : m.wri
 
 theorem ecs_canWrite_pos {m : Mem} {p : Ptr} {n : Nat} (hn : n ≠ 0) :
     m.canWrite p n = (match m.find? p.blk with
-      | some a => a.writable && decide (p.off.toNat + n ≤ a.data.size) &&
+      | some a => a.writable && decide (p.blk.writableFrom ≤ p.off.toNat) &&
+          decide (p.off.toNat + n ≤ a.data.size) &&
           decide (p.off.toNat + n < 2 ^ 64) && p.blk.endsInWindow (p.off.toNat + n)
       | none => false) := by
   unfold Mem.canWrite
@@ -142,13 +143,13 @@ theorem ecs_canWrite_sub {m : Mem} {b : Blk} {o n k l : Nat} (hkl : k + l ≤ n)
   | some a =>
     rw [ha] at h
     simp only [Bool.and_eq_true, decide_eq_true_eq] at h ⊢
-    obtain ⟨⟨⟨hw, h1⟩, h2⟩, h3⟩ := h
+    obtain ⟨⟨⟨⟨hw, h0⟩, h1⟩, h2⟩, h3⟩ := h
     have e1 : (BitVec.ofNat 64 o).toNat = o := by simp [Nat.mod_eq_of_lt ho]
-    rw [e1] at h1 h2 h3
+    rw [e1] at h0 h1 h2 h3
     have e2 : (BitVec.ofNat 64 (o + k)).toNat = o + k := by
       simp [Nat.mod_eq_of_lt (show o + k < 2 ^ 64 by omega)]
     rw [e2]
-    refine ⟨⟨⟨hw, by omega⟩, by omega⟩, ?_⟩
+    refine ⟨⟨⟨⟨hw, by omega⟩, by omega⟩, by omega⟩, ?_⟩
     unfold Blk.endsInWindow at h3 ⊢
     split at h3
     · simp only [decide_eq_true_eq] at h3 ⊢
