@@ -1,6 +1,7 @@
 import GoFVTest.Driver.Back
 import GoFVTest.GenIn
 import GoFV.Gen.Entry49
+import GoFV.Gen.Check54
 import GoFV.Gen.Results
 import GoFV.Asm.CheckObj
 
@@ -8,9 +9,10 @@ import GoFV.Asm.CheckObj
 # `gofv-ssa-opt --check --verified --e2e`: end-to-end coverage (`docs/DRIVER.md`)
 
 `GoFV.Proof.Obj.verified_mach` applies to a function when the verified pipeline is
-`fullyVerified`, `checkG49` (the latest merged genssa slice) accepts genssa's P0 Progs against
+`fullyVerified`, `checkG54` (the latest merged genssa slice, its loops' branch targets included,
+`loopOK`) accepts genssa's P0 Progs against
 the pipeline's own output (`LocCtx.make` of its tables and function) with class tables `kt`,
-`entryStoresOK` holds of `liveCtx` of that context (the context `checkG49` runs `checkG49L` on)
+`entryStoresOK` holds of `liveCtx` of that context (the context `checkG54` runs `checkG54L` on)
 at its entry values' end (`entryLen`: the entry stores cover the windows of the
 register-assigned parameters the function accesses), `retRegsOK` holds of them on that context
 (every `Ret` block returns its results in their ABI registers),
@@ -21,7 +23,7 @@ function after `trim` and its tables:
   (homes and temporary registers from its `f.low`), and the given tables;
 - the frame layout (`allocFrame`) and `genssa` on it, its Progs in the input file's symbol
   numbers (`Back.genP0`, as the driver's back end `Back.chain`);
-- `checkG49` with G2's inputs of that frame (the symbols by the file's numbers,
+- `checkG54` with G2's inputs of that frame (the symbols by the file's numbers,
   `GenCheck.slotOpOf`, the frame size), `entryStoresOK` on `liveCtx` at `entryLen`, and
   `retRegsOK` on `liveCtx` and its class tables;
 - `Flushplist` (`GoFV.Asm.flush`) on the file with those Progs (`GenP0.progFile`) and `checkObj`
@@ -44,7 +46,7 @@ namespace GoFVTest.Driver.E2E
 open GoFV.SSA (ExportFile Tables Func GoStr)
 open GoFV.SSA.Sem (LocCtx)
 open GoFV.Asm GoFV.Asm.CheckObj
-open GoFV.Gen.Check (checkG49 liveCtx G2In retRegsOK ownOutRegs entryLen entryStoresOK
+open GoFV.Gen.Check (checkG54 liveCtx G2In retRegsOK ownOutRegs entryLen entryStoresOK
   entryStoresWhy pendWins)
 open GoFVTest.Driver.Back (genP0 GenP0 inputView)
 open GoFVTest.GenCheck (slotOpOf classOf)
@@ -84,13 +86,13 @@ def retWhy (lc : LocCtx) (kt : KTab) : String := Id.run do
 
 /-- The validators' verdicts on one function (`none`: accepted). -/
 structure Res where
-  /-- `checkG49`'s rejection. -/
+  /-- `checkG54`'s rejection. -/
   gen : Option String
-  /-- `entryStoresOK`'s rejection (`none` also when `checkG49` rejects: not run). -/
+  /-- `entryStoresOK`'s rejection (`none` also when `checkG54` rejects: not run). -/
   entry : Option String
-  /-- `checkG49` accepted and the function has a pending window (`pendWins`). -/
+  /-- `checkG54` accepted and the function has a pending window (`pendWins`). -/
   pend : Bool
-  /-- `retRegsOK`'s rejection (`none` also when `checkG49` rejects: not run). -/
+  /-- `retRegsOK`'s rejection (`none` also when `checkG54` rejects: not run). -/
   ret : Option String
   obj : Option String
   /-- The frame layout's `stksize` and `stkptrsize`. -/
@@ -212,7 +214,7 @@ def back (e : ExportFile) (pin : ProgFile)
   let bstart := fun b => (g.gout.st.bstart[b]?).join
   let lc := LocCtx.make tabs f
   let llc := liveCtx lc
-  let (gen, entry, pend, ret) := match checkG49 lc ps bstart gin with
+  let (gen, entry, pend, ret) := match checkG54 lc ps bstart gin with
     | .ok (_, kt) =>
       let k := entryLen llc
       (none, (if entryStoresOK llc gin k then none else some (entryStoresWhy llc gin k)),
@@ -240,34 +242,34 @@ def Why.merge (a b : Why) : Why :=
 /-- Counts of `back`'s verdicts. -/
 structure Counts where
   ran : Nat := 0
-  /-- `checkG49` alone. -/
-  g49 : Nat := 0
-  /-- `checkG49` ∧ `entryStoresOK`. -/
+  /-- `checkG54` alone. -/
+  g54 : Nat := 0
+  /-- `checkG54` ∧ `entryStoresOK`. -/
   gen : Nat := 0
-  /-- `checkG49` accepts, `entryStoresOK` rejects. -/
+  /-- `checkG54` accepts, `entryStoresOK` rejects. -/
   entryRej : Nat := 0
-  /-- `checkG49` accepts and the function has a pending window. -/
+  /-- `checkG54` accepts and the function has a pending window. -/
   pend : Nat := 0
   /-- End to end with a pending window (the entry stores run). -/
   pendAll : Nat := 0
-  /-- `checkG49` ∧ `entryStoresOK` ∧ `retRegsOK`. -/
+  /-- `checkG54` ∧ `entryStoresOK` ∧ `retRegsOK`. -/
   ret : Nat := 0
   obj : Nat := 0
-  /-- `checkG49` ∧ `entryStoresOK` ∧ `checkObj`. -/
+  /-- `checkG54` ∧ `entryStoresOK` ∧ `checkObj`. -/
   genObj : Nat := 0
-  /-- `checkG49` ∧ `entryStoresOK` ∧ `retRegsOK` ∧ `checkObj` (`Res.all`, end to end). -/
+  /-- `checkG54` ∧ `entryStoresOK` ∧ `retRegsOK` ∧ `checkObj` (`Res.all`, end to end). -/
   all : Nat := 0
   errWhy : Why := {}
   genWhy : Why := {}
   entryWhy : Why := {}
   retWhy : Why := {}
   objWhy : Why := {}
-  /-- `checkObj`'s rejections of the functions `checkG49`, `entryStoresOK` and `retRegsOK` accept:
+  /-- `checkObj`'s rejections of the functions `checkG54`, `entryStoresOK` and `retRegsOK` accept:
   what keeps them from end to end. -/
   e2eObjWhy : Why := {}
 
 def Counts.merge (a b : Counts) : Counts :=
-  { ran := a.ran + b.ran, g49 := a.g49 + b.g49, gen := a.gen + b.gen,
+  { ran := a.ran + b.ran, g54 := a.g54 + b.g54, gen := a.gen + b.gen,
     entryRej := a.entryRej + b.entryRej, pend := a.pend + b.pend, pendAll := a.pendAll + b.pendAll,
     ret := a.ret + b.ret, obj := a.obj + b.obj,
     genObj := a.genObj + b.genObj, all := a.all + b.all,
@@ -283,7 +285,7 @@ def Counts.add (c : Counts) (path : String) (res : Except String Res) : Counts :
   | .ok r =>
     let one (b : Bool) := if b then 1 else 0
     let ge := r.gen.isNone && r.entry.isNone
-    let c := { c with ran := c.ran + 1, g49 := c.g49 + one r.gen.isNone, gen := c.gen + one ge,
+    let c := { c with ran := c.ran + 1, g54 := c.g54 + one r.gen.isNone, gen := c.gen + one ge,
                       entryRej := c.entryRej + one (r.gen.isNone && r.entry.isSome),
                       pend := c.pend + one r.pend, pendAll := c.pendAll + one (r.all && r.pend),
                       ret := c.ret + one (ge && r.ret.isNone),
@@ -383,18 +385,18 @@ def Stats.text (st : Stats) (ms : Nat) : String := Id.run do
     | --- | ---: | ---: | ---: | ---: |\n"
   out := out ++ row "fully verified (Phase 2, through `trim`)" (some st.full) none
   out := out ++ row "… genssa and `Flushplist` ran" (some o.ran) (some s.ran)
-  out := out ++ row "… ∧ `checkG49` ∧ `entryStoresOK`" (some o.gen) (some s.gen)
-  out := out ++ row "… ∧ `checkG49` ∧ `entryStoresOK` ∧ `retRegsOK`" (some o.ret) (some s.ret)
+  out := out ++ row "… ∧ `checkG54` ∧ `entryStoresOK`" (some o.gen) (some s.gen)
+  out := out ++ row "… ∧ `checkG54` ∧ `entryStoresOK` ∧ `retRegsOK`" (some o.ret) (some s.ret)
   out := out ++ row "… ∧ `checkObj`" (some o.obj) (some s.obj)
-  out := out ++ row "… ∧ `checkG49` ∧ `entryStoresOK` ∧ `checkObj`" (some o.genObj)
+  out := out ++ row "… ∧ `checkG54` ∧ `entryStoresOK` ∧ `checkObj`" (some o.genObj)
     (some s.genObj)
-  out := out ++ row ("**… ∧ `checkG49` ∧ `entryStoresOK` ∧ `retRegsOK` ∧ `checkObj` " ++
+  out := out ++ row ("**… ∧ `checkG54` ∧ `entryStoresOK` ∧ `retRegsOK` ∧ `checkObj` " ++
     "(end to end, `verified_mach`)**") (some o.all) (some s.all)
   out := out ++ row "… end to end, pipeline output identical to stock after `trim`" (some st.allSame) none
   out := out ++ row "fully verified, pipeline output identical to stock" (some st.fullSame) none
   out := out ++ s!"\nThe stock column runs the same back end on the stock `trim` function with the \
     whole file's tables, on all {st.stockFns} parsed functions (not only the fully verified).\n"
-  out := out ++ s!"\nEntry stores (pipeline output; stock): `checkG49` accepts {o.g49}; {s.g49}; \
+  out := out ++ s!"\nEntry stores (pipeline output; stock): `checkG54` accepts {o.g54}; {s.g54}; \
     {o.pend}; {s.pend} of them have a pending window (a register-assigned parameter in a \
     `Blk.local` block); `entryStoresOK` rejects {o.entryRej}; {s.entryRej}; end to end with a \
     pending window: {o.pendAll}; {s.pendAll}.\n"
@@ -402,13 +404,13 @@ def Stats.text (st : Stats) (ms : Nat) : String := Id.run do
     verified functions whose output is identical to stock: stock `stksize`/`stkptrsize` \
     {st.frameSame}, other {st.frameDiff}{if st.frameDiffEx.isEmpty then "" else s!" ({st.frameDiffEx})"}.\n"
   out := out ++ whyTable "Back-end errors among the fully verified:" o.errWhy 30
-  out := out ++ whyTable "`checkG49` rejections among the fully verified (first reason):" o.genWhy 40
-  out := out ++ whyTable "`entryStoresOK` rejections among the fully verified accepted by `checkG49`:"
+  out := out ++ whyTable "`checkG54` rejections among the fully verified (first reason):" o.genWhy 40
+  out := out ++ whyTable "`entryStoresOK` rejections among the fully verified accepted by `checkG54`:"
     o.entryWhy 10
   out := out ++ whyTable ("`retRegsOK` rejections among the fully verified accepted by " ++
-    "`checkG49`:") o.retWhy 10
+    "`checkG54`:") o.retWhy 10
   out := out ++ whyTable "`checkObj` rejections among the fully verified:" o.objWhy 40
-  out := out ++ whyTable ("`checkObj` rejections among the fully verified accepted by `checkG49`, " ++
+  out := out ++ whyTable ("`checkObj` rejections among the fully verified accepted by `checkG54`, " ++
     "`entryStoresOK` and `retRegsOK`:") o.e2eObjWhy 40
   out := out ++ whyTable "Back-end errors on the stock `trim` function:" s.errWhy 20
   return out

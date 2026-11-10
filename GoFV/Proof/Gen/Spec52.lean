@@ -8,8 +8,9 @@ variable [GoFV.SSA.Sem.Addrs]
 # What `checkG52` accepted (`GoFV/Gen/Check52.lean`)
 
 `VK52`: G49's kinds (`VK49`, through `vkind49`) and the remainders (`VK52b`, `Spec52b.lean`). On
-`InitMem`, `vkind52` is `vkind49` (`vkind52_initMem`). `checkG52L_spec` is `checkG49L_spec` with
-`vkind52`, and `checkG52_spec` splits off `refsLive`.
+`InitMem`, `vkind52` is `vkind49` (`vkind52_initMem`), and so on any op off G52's group B
+(`vkind52_eq49`). `checkG52L_spec` is `checkG49L_spec` with `vkind52`, and `checkG52_spec` splits
+off `refsLive`.
 -/
 
 namespace GoFV.Gen.Check
@@ -56,6 +57,16 @@ theorem vkind52_initMem {lc : LocCtx} {g : G2In} {v : Value} (hop : v.op = .Init
   | error e =>
     simp only
     rw [vkind52b_none (by rw [hop]; rfl)]
+
+/-- On an op off G52's group B, `vkind52` is `vkind49`. -/
+theorem vkind52_eq49 {lc : LocCtx} {g : G2In} {v : Value} (h : op52b v.op = false) :
+    vkind52 lc g v = vkind49 lc g v := by
+  unfold vkind52
+  cases vkind49 lc g v with
+  | ok _ => rfl
+  | error e =>
+    simp only
+    rw [vkind52b_none h]
 
 /-- On a function with no arm64 op, G52's check is G33. -/
 theorem checkG33_of_52L {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}
