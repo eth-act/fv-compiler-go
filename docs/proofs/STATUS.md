@@ -1600,7 +1600,7 @@ from `RoImage`. `JUMPTABLE` needs its slice.
 The functions `verified_mach`'s function-level premises hold of (#553): the verified pipeline is
 `fullyVerified` (as `--check --verified` runs it: driver export environment, type rounds), and on
 the pipeline's own output (function and tables) genssa's Progs with `progedit`'s float constant
-loads (P0', the constant symbols numbered as `Flushplist` numbers them) are accepted by `checkG60`
+loads (P0', the constant symbols numbered as `Flushplist` numbers them) are accepted by `checkG61`
 against `LocCtx.make r.st.tables r.st.func`, `entryStoresOK` and `retRegsOK` hold of `liveCtx` of
 it and its class
 tables (and `memTyL` when the Progs load a float constant), and `checkObj`
@@ -1611,16 +1611,43 @@ declarations, then the autos the pipeline created). From the stock `.prog` file 
 input view is read (definitions, config, `Dcl` at `AllocFrame`'s start, `genin`). The stock
 column runs the same back end on the stock `trim` function of every function.
 
-| quick-v10 (9,297 functions, 5 min; the composition on G60, per function at either mode (`agent/lift60b` on main 70f8f2ec: objatom #687, ZeroIdx #686, G59 #685, Zero2 #684, objbar #683, G58 #682), P0' in `checkG60` and `checkObj`, `--jobs 2`) | pipeline output | share | stock `trim` |
+| quick-v10 (9,297 functions, 5.5 min; the composition on G61, per function at either mode (`agent/lift61` on main 0f930080: objatom part B #692, G61 #691, the composition on G60 #690), P0' in `checkG61` and `checkObj`, `--jobs 2`) | pipeline output | share | stock `trim` |
 | --- | ---: | ---: | ---: |
 | fully verified (Phase 2, through `trim`) | 7,878 | 84.73% | - |
 | … genssa and `Flushplist` ran | 7,878 | 84.73% | 9,297 |
-| … ∧ `checkG60` ∧ `entryStoresOK` | 6,748 | 72.58% | 7,638 |
-| … ∧ `checkG60` ∧ `entryStoresOK` ∧ `retRegsOK` | 6,748 | 72.58% | 7,637 |
+| … ∧ `checkG61` ∧ `entryStoresOK` | 7,007 | 75.36% | 7,944 |
+| … ∧ `checkG61` ∧ `entryStoresOK` ∧ `retRegsOK` | 7,007 | 75.36% | 7,943 |
 | … ∧ `checkObj` | 7,841 | 84.33% | 9,124 |
-| **… ∧ `checkG60` ∧ `entryStoresOK` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach` or `verified_mach_S`)** | **6,745** | **72.55%** | 7,597 |
-| … of which `needs48 = false`: `verified_mach` (`SepFrom`, `CallOK` …) | 6,550 | 70.45% | 7,384 |
-| … of which `needs48 = true`: `verified_mach_S` (G48's mode) | 195 | 2.10% | 213 |
+| **… ∧ `checkG61` ∧ `entryStoresOK` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach` or `verified_mach_S`)** | **7,003** | **75.32%** | 7,897 |
+| … of which `needs48 = false`: `verified_mach` (`SepFrom`, `CallOK` …) | 6,792 | 73.06% | 7,662 |
+| … of which `needs48 = true`: `verified_mach_S` (G48's mode) | 211 | 2.27% | 235 |
+| … end to end, pipeline output identical to stock after `trim` | 5,938 | 63.87% | - |
+
+The composition on G61 (G60 with the atomic read-modify-writes; `checkObj` with the atomics,
+#687, and `X27` across Progs, #692; the atomics' nil fault in `RunPanicPre`, `g61_obj_atomPanic`)
+counts 7,003 end to end (6,792 under `verified_mach`, 211 under `verified_mach_S`), 258 more than
+the composition on G60 (6,745 on main 0f930080) and none fewer: 170 of std/runtime, 78 of
+std/sync (52 of std/sync/atomic), 6 of std/encoding, 4 tests (`test/ken_chan` 3, `test/deferfin`
+1). `checkG61` ∧ `entryStoresOK` accepts 259 more fully verified functions than `checkG60` (7,007);
+`checkObj` rejects 4 of them (3 before: the stack check of a huge frame twice, `SBFIZ` not
+modelled, and now `runtime.poll_runtime_pollUnblock`, a `JMP` whose target is not the Prog
+`checkObj` expects). G61's 316 over G60 in `gen-check` are all functions, of any pipeline; among
+the fully verified, a function whose first `checkG60` rejection was an atomic op is now rejected
+by its next reason (`store shape` 358 → 381) or by `entryStoresOK` (19 → 28). `checkG61` accepts
+7,035; 69 have a pending window, `entryStoresOK` rejects 28, 41 are end to end with a pending
+window (stock column: 7,978, 76, 34, 42). Vacuous at `Addrs.fixed` (below): 20 of the 6,792
+under `verified_mach` (stock 23 of 7,662), 7 of the 211 under `verified_mach_S` (stock 7 of 235).
+The first rejection reasons of `checkG61` among the fully verified: `store shape` (381), `frame
+variable off another base` (229), `op CALLtail` (164), then `branch shape`, `argument v# in
+register #`, `load shape`, `op FMOVQload` (9 each); no atomic op is left among them. `checkObj`'s:
+`JMP` to a register (12), the stack check of a huge frame (11).
+
+| quick-v10, the composition on G60 (`agent/lift60b` on main 70f8f2ec: objatom #687, ZeroIdx #686, G59 #685, Zero2 #684, objbar #683, G58 #682), P0' in `checkG60` and `checkObj`, `--jobs 2` | pipeline output | share | stock `trim` |
+| --- | ---: | ---: | ---: |
+| … ∧ `checkG60` ∧ `entryStoresOK` | 6,748 | 72.58% | 7,638 |
+| **end to end, `verified_mach` or `verified_mach_S`** | **6,745** | **72.55%** | 7,597 |
+| … of which `needs48 = false`: `verified_mach` | 6,550 | 70.45% | 7,384 |
+| … of which `needs48 = true`: `verified_mach_S` | 195 | 2.10% | 213 |
 | … end to end, pipeline output identical to stock after `trim` | 5,729 | 61.62% | - |
 
 The composition on G60 (G59 with G56's float constants, through G48's stack arguments and
@@ -1662,14 +1689,16 @@ left (`checkG60` still rejects every function with an atomic op; slice G61).
 **Vacuous at `Addrs.fixed`, per theorem** (#553). `gofv-ssa-opt --e2e` counts, for each end-to-end
 function, the distinct frame operands of its accessed `Blk.local` variables (forgeable, with a
 `NAME_AUTO`/`NAME_PARAM` operand; `Res.locals`). Under `verified_mach` (mode `false`) a function
-with two or more has no `G49Env` at `Addrs.fixed` (`g49Env_fixed_apart`): 20 of the 6,550 (stock
-column 22 of 7,384), for which `verified_mach_fixed` holds only vacuously. Under
+with two or more has no `G49Env` at `Addrs.fixed` (`g49Env_fixed_apart`): 20 of the 6,792 on G61
+(stock column 23 of 7,662; 20 of 6,550 on G60), for which `verified_mach_fixed` holds only
+vacuously. Under
 `verified_mach_S` (G48's mode) `SPInv` puts `outargs 0` at `SP`, so at `Addrs.fixed` `SP` is
 `outargs 0`'s fixed base `2^62`, and `VarsAt49` would put a `Blk.local` variable `x` at
 `2^62 + frameOff`, where `AddrAgree` asks `2^62 + x·2^24`: no frame operand within the
 stack-variable limit is that (`g49Env_fixed_outSP`, witness `fixed_outSP_none` on
-`secret_getStack`'s wrapper), so a function with one has none: 7 of the 195 (stock column 7 of
-213), for which `verified_mach_S_fixed` holds only vacuously. `verified_mach_atSP` (at
+`secret_getStack`'s wrapper), so a function with one has none: 7 of the 211 on G61 (stock column 7
+of 235; 7 of 195 on G60), for which `verified_mach_S_fixed` holds only vacuously.
+`verified_mach_atSP` (at
 `Addrs.atSP`) and `verified_mach_S_atSP` (at `Addrs.atSPO`, `outargs 0` at `SP`) hold of all of
 them with a satisfiable activation premise.
 

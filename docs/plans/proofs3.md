@@ -3342,6 +3342,11 @@ the variable to `2^62 + x·2^24`, which no frame operand reaches (`g49Env_fixed_
 0's) so that an activation extending `envAtSP` can meet `CallSpec`'s `AddrAgree`.
 
 **Coverage** (quick-v10, `gofv-ssa-opt --check --verified --e2e`, STATUS End-to-end coverage): on
+G61, per function at either mode (`agent/lift61` on main 0f930080, with `checkObj`'s `X27At`),
+7,003 of 9,297 functions end to end (75.32%): 6,792 under `verified_mach` and 211 under
+`verified_mach_S`; 258 more than on G60 and none fewer (170 of std/runtime, 78 of std/sync, 6 of
+std/encoding, 4 tests); `checkG61` ∧ `entryStoresOK` accepts 7,007, `checkObj` rejects 4 of them;
+stock column 7,897; vacuous at `Addrs.fixed` 20 of the 6,792 and 7 of the 211. On
 G60, per function at either mode (`agent/lift60b` on main 70f8f2ec, with G59, objbar, Zero2,
 ZeroIdx and objatom), 6,745 of 9,297 functions end to end (72.55%): 6,550 under `verified_mach`
 (`needs48 = false`, the mode `false`) and 195 under `verified_mach_S` (G48's mode); 261 more than
