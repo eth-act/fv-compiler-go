@@ -22,6 +22,7 @@ namespace GoFV.Proof.Witness.ObjRo
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Gen.Check GoFV.Proof.Obj GoFV.Proof.Witness.ObjWhole
 open GoFV.Proof (enterListLoc)
+open GoFV.Proof.Gen (ro_byte)
 
 /-- `plRunEnv`'s write-barrier flag: four zero bytes, read-only. -/
 def wbFlag : Alloc := { data := #[.b 0, .b 0, .b 0, .b 0], writable := false }

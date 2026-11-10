@@ -1,5 +1,6 @@
 import GoFV.Proof.Obj.RoLoc
 import GoFV.Proof.Obj.Whole
+import GoFV.Proof.Gen.RoByte
 
 variable [GoFV.SSA.Sem.Addrs]
 
@@ -14,17 +15,17 @@ keep them (`Env.KeepsRo`, part of Phase 1's `RoImage` premise) and `memTyL`.
 
 At a state `LocMatch` relates to a machine state, the memory injection (`MemInj`, under
 `AddrAgree`) puts each concrete byte of such an allocation at the global's injected address
-(`ro_byte`), above the nil page (`ro_addr`); `G2Env.glob` puts the global named by the symbol
-`y` at `L.sym y`. So the machine's memory holds a read-only symbol's bytes at its linked address
-in every state the composition relates, the calls' included (`CallSpec`'s `MemInj` after the
-call): no trusted clause beyond the callee contracts and `Env.KeepsRo`.
+(`ro_byte`, `GoFV/Proof/Gen/RoByte.lean`), above the nil page (`ro_addr`); `G2Env.glob` puts the
+global named by the symbol `y` at `L.sym y`. So the machine's memory holds a read-only symbol's
+bytes at its linked address in every state the composition relates, the calls' included
+(`CallSpec`'s `MemInj` after the call): no trusted clause beyond the callee contracts and
+`Env.KeepsRo`.
 -/
 
 namespace GoFV.Proof.Obj
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Proof.MemInv GoFV.Opt.WBCheck GoFV.Gen.Check
 open GoFV.Proof (enterListLoc)
-open GoFV.Proof.Gen (memInj_byteRel)
 
 variable {P : Mem → Prop}
 
@@ -83,47 +84,5 @@ theorem lreach_roMem {ro : List (String × Alloc)} {env : Env} {lc : LocCtx} {ar
   have := (lreach_locMems (roMem_pred ro) (hK.contractsOK ro) (roMem_wbAlloc ro) hmt hI hr).mem
   rw [hm] at this
   exact this.mem
-
-/-! ## In the machine's memory -/
-
-private theorem find?_mem' {m : Mem} {b : Blk} {al : Alloc} (h : m.find? b = some al) :
-    (b, al) ∈ m.blocks := by
-  unfold Mem.find? at h
-  cases hf : m.blocks.find? (·.1 == b) with
-  | none => rw [hf] at h; cases h
-  | some e =>
-    rw [hf] at h
-    simp only [Option.map_some, Option.some.injEq] at h
-    subst h
-    have h1 := Array.mem_of_find?_eq_some hf
-    have h2 := Array.find?_some hf
-    obtain ⟨b', al'⟩ := e
-    simp only [beq_iff_eq] at h2
-    subst h2
-    exact h1
-
-/-- **A read-only symbol's bytes in the machine's memory**: a concrete byte of an allocation of
-`ro` lies at the global's injected address plus its offset. -/
-theorem ro_byte {ι : Blk → Option (BitVec 64)} {mm : Mem} {M : GoFV.Arm64.Memory}
-    (hA : GoFV.Proof.Gen.AddrAgree ι) (h : MemInj ι mm M) {ro : List (String × Alloc)}
-    (hro : RoMem ro mm) {name : String} {a : Alloc} (hn : (name, a) ∈ ro) {addr : BitVec 64}
-    (hι : ι (.global name) = some addr) {i : Nat} {x : BitVec 8} (hi : a.data[i]? = some (.b x)) :
-    M (addr + BitVec.ofNat 64 i) = x := by
-  obtain ⟨-, hf⟩ := hro name a hn
-  obtain ⟨hlt, hx⟩ := Array.getElem?_eq_some_iff.1 hi
-  have := memInj_byteRel hA h (find?_mem' hf) hι hlt
-  rw [hx] at this
-  exact this.symm
-
-/-- A read-only symbol with bytes lies above the nil page and below `2^64`. -/
-theorem ro_addr {ι : Blk → Option (BitVec 64)} {mm : Mem} {M : GoFV.Arm64.Memory}
-    (h : MemInj ι mm M) {ro : List (String × Alloc)} (hro : RoMem ro mm) {name : String}
-    {a : Alloc} (hn : (name, a) ∈ ro) {addr : BitVec 64} (hι : ι (.global name) = some addr)
-    (hpos : 0 < a.data.size) : 4096 ≤ addr.toNat ∧ addr.toNat + a.data.size ≤ 2 ^ 64 := by
-  obtain ⟨-, hf⟩ := hro name a hn
-  obtain ⟨a', ha', hlo, hhi⟩ := h.mapped _ _ (find?_mem' hf)
-  rw [hι] at ha'
-  cases ha'
-  exact ⟨hlo hpos, hhi⟩
 
 end GoFV.Proof.Obj

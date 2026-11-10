@@ -574,10 +574,13 @@ def addLo? (rd : Reg) : Insn → Option Reg
     if sf ∧ !sub ∧ !setf ∧ !sh ∧ imm12 = 0 ∧ rn = rd then some rd2 else none
   | _ => none
 
-/-- An integer load/store `[rd, #0]` of `2^sc` bytes: its `size`, `opc` and `rt`. -/
-def ldstLo? (rd : Reg) (sc : Nat) : Insn → Option (BitVec 2 × BitVec 2 × Reg)
+/-- A load/store `[rd, #0]` of `2^sc` bytes, integer or (`vec`) SIMD&FP `B`/`H`/`S`/`D` (no `Q`:
+`opc` below 2): its `size`, `vec`, `opc` and `rt`. -/
+def ldstLo? (rd : Reg) (sc : Nat) : Insn → Option (BitVec 2 × Bool × BitVec 2 × Reg)
   | .ldst size vec opc (.uimm imm12) rn rt =>
-    if !vec ∧ imm12 = 0 ∧ rn = rd ∧ size.toNat = sc then some (size, opc, rt) else none
+    if (!vec || decide (opc.toNat < 2)) ∧ imm12 = 0 ∧ rn = rd ∧ size.toNat = sc then
+      some (size, vec, opc, rt)
+    else none
   | _ => none
 
 /-- The target of a relocation `r` against symbol `y`: `y + r.add`. -/
@@ -587,6 +590,11 @@ def relTgt (y : Nat) (r : Reloc) : Ex := Ex.mkAdd (.sym y) (.k (BitVec.ofInt 64 
 (`symLdst`, `symPair2`, `symPairAt`, `symPair`, `symUnitRel`), so that the proofs about it
 (`symUnit_inv`) reduce one small match at a time. -/
 
+/-- The access of a relocated load/store at `a`: SIMD&FP (`symVAccess`) or integer (`symAccess`). -/
+def symLdstAcc (σ : Sym) (vec : Bool) (size opc : BitVec 2) (rt : Nat) (a : Ex) :
+    Except String Sym :=
+  if vec then symVAccess σ size opc rt a else symAccess σ size opc rt a
+
 /-- The access of an `R_ARM64_PCREL_LDST*` pair (`ADRP rd` then `i2`). -/
 def symLdst (σ : Sym) (y : Nat) (r : Reloc) (rd : Reg) (i2 : Insn) :
     Except String (Sym × MCtl × Nat) :=
@@ -595,8 +603,8 @@ def symLdst (σ : Sym) (y : Nat) (r : Reloc) (rd : Reg) (i2 : Insn) :
   | some sc =>
     match ldstLo? rd sc i2 with
     | none => throw "PCREL_LDST: access"
-    | some (size, opc, rt) => do
-      let σ2 ← symAccess (σ.wX rd.toNat (.page (relTgt y r))) size opc rt.toNat (relTgt y r)
+    | some (size, vec, opc, rt) => do
+      let σ2 ← symLdstAcc (σ.wX rd.toNat (.page (relTgt y r))) vec size opc rt.toNat (relTgt y r)
       pure (σ2, .fall, 2)
 
 /-- The second word `i2` of a relocated pair (`ADRP rd` first). -/

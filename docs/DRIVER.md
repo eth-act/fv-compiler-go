@@ -305,18 +305,22 @@ locals (`ownFrame`: `AllocFrame`'s input `Dcl` is the first `dcllen` of section 
 stock input, the frontend's, followed by the autos the pipeline created, the `name` aux values its
 tables define and section 0's do not, in creation order, with definitions made from the aux
 values; the stock passes' own autos are left out; a mismatch with the pipeline's `dcllen` after
-`trim` is an error), `genssa` with its Progs in the file's symbol numbers (as `chain`),
-`checkG54` (the latest merged genssa slice, its loops' branch targets included, `loopOK`) against
+`trim` is an error), `genssa` with its Progs in the file's symbol numbers (as `chain`), P0' of
+them (`GoFV.Asm.p0Prime`: `progedit`'s float constant loads, the constant symbols added to G2's
+symbols by `internConsts`; a function whose numbering differs from the one `Flushplist` gives,
+`symIdx`, is rejected as `P0': a constant symbol numbered otherwise than by the assembler`),
+`memTyL` on `liveCtx` of the pipeline's context (rejection `memTyL: …`),
+`checkG56` (the latest genssa slice, its loops' branch targets included, `loopOK`) on P0' against
 `LocCtx.make` of the pipeline's tables and function, then on `liveCtx` of it (the homes of
-removed values dropped, as `checkG54` runs
-`checkG54L`) `entryStoresOK` at the end of the entry block's entry values (`entryLen`: the entry
+removed values dropped, as `checkG56` runs
+`checkG56L`) `entryStoresOK` at the end of the entry block's entry values (`entryLen`: the entry
 stores cover the windows of the register-assigned parameters in `Blk.local` blocks, `pendWins`)
 and `retRegsOK` with its class tables (every `Ret` returns its results in their ABI
-registers, `MakeResult` components of no wider class), `Flushplist` on those Progs and `checkObj`
-on the same Progs. From
+registers, `MakeResult` components of no wider class), `Flushplist` on genssa's Progs and
+`checkObj` on P0' (numbered by `Flushplist`). From
 the `.prog` file it reads only the input view (`inputView`: definitions, config, `Dcl` at
 `AllocFrame`'s start, `genin`), no stock result. It prints the fully verified functions, those
-the back end ran on, those `checkG54` with `entryStoresOK`, `retRegsOK`, `checkObj` and all of
+the back end ran on, those `checkG56` with `memTyL`, `entryStoresOK`, `retRegsOK`, `checkObj` and all of
 them accept (the end-to-end count; a line counts the functions with a pending window and those
 `entryStoresOK` rejects), the end-to-end ones whose pipeline output equals
 stock, the frame sizes `ownFrame` gives on the functions whose output equals stock (against the

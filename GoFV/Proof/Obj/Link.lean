@@ -579,13 +579,13 @@ theorem decode_addLo {w : BitVec 32} {rn rd : Reg} {r : Reloc} {o y : Nat} {q : 
   rw [e]
   exact lnk_lo_arith _ _ (by omega)
 
-/-- The load/store of `R_ARM64_PCREL_LDST*`: the linked word's scaled offset is the target's
-offset in its page. -/
-theorem decode_ldstLo {w : BitVec 32} {size opc : BitVec 2} {rn rt : Reg} {r : Reloc} {o y : Nat}
-    {q : BitVec 32} (hd : decode w = some (.ldst size false opc (.uimm 0) rn rt))
+/-- The load/store of `R_ARM64_PCREL_LDST*` (integer or SIMD&FP): the linked word's scaled offset
+is the target's offset in its page. -/
+theorem decode_ldstLo {w : BitVec 32} {size opc : BitVec 2} {vec : Bool} {rn rt : Reg} {r : Reloc}
+    {o y : Nat} {q : BitVec 32} (hd : decode w = some (.ldst size vec opc (.uimm 0) rn rt))
     (hsc : ldstScale r.type = some size.toNat) (hoff : r.off = o) (hy : r.sym = some y)
     (hp : relocPatch base sym r (o + 4) = .ok q) (hsiz : r.siz ≠ 0) :
-    ∃ imm12, decode (w ||| q) = some (.ldst size false opc (.uimm imm12) rn rt) ∧
+    ∃ imm12, decode (w ||| q) = some (.ldst size vec opc (.uimm imm12) rn rt) ∧
       ((sym y + BitVec.ofInt 64 r.add) &&& ~~~(0xFFF : BitVec 64)) +
           BitVec.ofNat 64 (imm12.toNat * 2 ^ size.toNat) =
         sym y + BitVec.ofInt 64 r.add := by
@@ -620,7 +620,7 @@ theorem decode_ldstLo {w : BitVec 32} {size opc : BitVec 2} {rn rt : Reg} {r : R
       ((hb 28 (by omega)).trans b28) ((hb 29 (by omega)).trans b29)
     have e30 : fld (w ||| q) 30 2 = size := by
       rw [lnk_fld_or, hfz 30 2 (by omega), lnk_or_zero]; exact hs
-    have e26 : bit (w ||| q) 26 = false := (hb 26 (by omega)).trans hv
+    have e26 : bit (w ||| q) 26 = vec := (hb 26 (by omega)).trans hv
     have e22 : fld (w ||| q) 22 2 = opc := by
       rw [lnk_fld_or, hfz 22 2 (by omega), lnk_or_zero]; exact ho
     have e5 : fld (w ||| q) 5 5 = rn := by

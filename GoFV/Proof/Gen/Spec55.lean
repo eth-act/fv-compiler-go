@@ -68,6 +68,16 @@ theorem vkind55_initMem {lc : LocCtx} {g : G2In} {v : Value} (hop : v.op = .Init
     simp only
     rw [vkind55a_none (by rw [hop]; rfl), vkind55b_none (by rw [hop]; rfl)]
 
+/-- On an op off G55's groups A and B, `vkind55` is `vkind54`. -/
+theorem vkind55_eq54 {lc : LocCtx} {g : G2In} {v : Value} (ha : op55a v.op = false)
+    (hb : op55b v.op = false) : vkind55 lc g v = vkind54 lc g v := by
+  unfold vkind55
+  cases vkind54 lc g v with
+  | ok _ => rfl
+  | error e =>
+    simp only
+    rw [vkind55a_none ha, vkind55b_none hb]
+
 /-- On a function with no arm64 op, G55's check is G33. -/
 theorem checkG33_of_55L {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}
     {r : Except String (PcTab × KTab)} (hl : lc.ctx.f.lowered = false)

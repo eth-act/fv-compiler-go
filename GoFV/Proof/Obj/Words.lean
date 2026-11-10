@@ -12,8 +12,8 @@ control `mc`, then from a state at `base + o` that the starting effect describes
 runs (`MStar`, one machine step per word) to a state that `σ'` describes, with the PC (and for a
 call `X30`) where `mc` goes from the last word at `o + 4 n`. Units (`symUnit`): a plain word
 (`symInsn_sound`), a `BL`/`B` of `R_CALLARM64` (`decode_call`), the two words of `R_ADDRARM64`
-(`decode_adrp`, `decode_addLo`) and of `R_ARM64_PCREL_LDST*` (`decode_adrp`, `decode_ldstLo`,
-`symAccess_exec`).
+(`decode_adrp`, `decode_addLo`) and of `R_ARM64_PCREL_LDST*` (`decode_adrp`, `decode_ldstLo`;
+an integer access `symAccess_exec`, a SIMD&FP one `symVAccess_exec`).
 -/
 
 namespace GoFV.Proof.Obj
@@ -60,6 +60,13 @@ theorem SymLe.of_store (σ : Sym) (a : Ex) (n : Nat) (v : Ex) : SymLe σ (σ.sto
 
 theorem symAccess_le {σ σ' : Sym} {size opc : BitVec 2} {rt : Nat} {a : Ex}
     (h : symAccess σ size opc rt a = .ok σ') : SymLe σ σ' := symAccess_mono h
+
+theorem symLdstAcc_le {σ σ' : Sym} {vec : Bool} {size opc : BitVec 2} {rt : Nat} {a : Ex}
+    (h : symLdstAcc σ vec size opc rt a = .ok σ') : SymLe σ σ' := by
+  unfold symLdstAcc at h
+  cases vec
+  · exact symAccess_le h
+  · exact symVAccess_mono h
 
 theorem symInsn_le {i : Insn} {o : Nat} {σ σ' : Sym} {mc : MCtl}
     (h : symInsn i o σ = .ok (σ', mc)) : SymLe σ σ' := symInsn_mono h
@@ -113,13 +120,26 @@ theorem addLo?_eq {i : Insn} {rd rd2 : Reg} (h : addLo? rd i = some rd2) :
   cases i <;> simp [addLo?] at h
   obtain ⟨⟨rfl, rfl, rfl, rfl, rfl, rfl⟩, rfl⟩ := h; rfl
 
-theorem ldstLo?_eq {i : Insn} {rd : Reg} {sc : Nat} {q : BitVec 2 × BitVec 2 × Reg}
+theorem ldstLo?_eq {i : Insn} {rd : Reg} {sc : Nat} {q : BitVec 2 × Bool × BitVec 2 × Reg}
     (h : ldstLo? rd sc i = some q) :
-    i = .ldst q.1 false q.2.1 (.uimm 0) rd q.2.2 ∧ q.1.toNat = sc := by
+    i = .ldst q.1 q.2.1 q.2.2.1 (.uimm 0) rd q.2.2.2 ∧ q.1.toNat = sc ∧
+      (q.2.1 = true → q.2.2.1.toNat < 2) := by
   cases i <;> simp [ldstLo?] at h
   rename_i size vec opc mode rn rt
   cases mode <;> simp at h
-  obtain ⟨⟨rfl, rfl, rfl, hsc⟩, rfl⟩ := h; exact ⟨rfl, hsc⟩
+  obtain ⟨⟨hv, rfl, rfl, hsc⟩, rfl⟩ := h
+  refine ⟨rfl, hsc, fun h' => ?_⟩
+  simp only at h' ⊢
+  rcases hv with hv | hv
+  · simp [hv] at h'
+  · exact hv
+
+/-- A SIMD&FP access other than `Q` (`opc` below 2) moves `2 ^ size` bytes. -/
+theorem accessBytes_vec {size opc : BitVec 2} (h : opc.toNat < 2) :
+    accessBytes size true opc = 2 ^ size.toNat := by
+  have hb : opc[1] = false := by
+    rw [← BitVec.getLsbD_eq_getElem]; exact Nat.testBit_lt_two_pow (by simpa using h)
+  simp [accessBytes, hb]
 
 private theorem wd_bind_ok {ε α β : Type} {x : Except ε α} {g : α → Except ε β} {b : β}
     (h : (x >>= g) = .ok b) : ∃ a, x = .ok a ∧ g a = .ok b := by
@@ -147,8 +167,10 @@ theorem symUnit_inv {n o : Nat} {σ σ' : Sym} {mc : MCtl} {used : Nat}
        decode (wordAt t (o + 4)) = some i2 ∧ mc = .fall ∧ used = 2 ∧
        ((r.type = "R_ADDRARM64" ∧ ∃ rd2, i2 = .addSubImm true false false false 0 rd rd2 ∧
           σ' = (σ.wX rd.toNat (.page (relTgt y r))).wXsp rd2.toNat (relTgt y r)) ∨
-        (∃ size opc rt, ldstScale r.type = some size.toNat ∧ i2 = .ldst size false opc (.uimm 0) rd rt ∧
-          symAccess (σ.wX rd.toNat (.page (relTgt y r))) size opc rt.toNat (relTgt y r) = .ok σ')))) := by
+        (∃ size vec opc rt, ldstScale r.type = some size.toNat ∧ (vec = true → opc.toNat < 2) ∧
+          i2 = .ldst size vec opc (.uimm 0) rd rt ∧
+          symLdstAcc (σ.wX rd.toNat (.page (relTgt y r))) vec size opc rt.toNat (relTgt y r) =
+            .ok σ')))) := by
   unfold symUnit at h
   by_cases h1 : (decide (o + 4 > t.size) || o % 4 != 0) = true
   · simp only [h1, ↓reduceIte] at h; exact (wd_throw h).elim
@@ -230,23 +252,23 @@ theorem symUnit_inv {n o : Nat} {σ σ' : Sym} {mc : MCtl} {used : Nat}
   cases hl : ldstLo? rd sc i2 with
   | none => simp only [hl] at h; exact (wd_throw h).elim
   | some q =>
-  obtain ⟨size, opc, rt⟩ := q
+  obtain ⟨size, vec, opc, rt⟩ := q
   simp only [hl] at h
-  obtain ⟨rfl, hsz⟩ := ldstLo?_eq hl
+  obtain ⟨rfl, hsz, hv⟩ := ldstLo?_eq hl
   obtain ⟨σa, hac, h⟩ := wd_bind_ok h
   obtain ⟨rfl, rfl, rfl⟩ := wd_ok3 h
-  exact ⟨rfl, rfl, Or.inr ⟨size, opc, rt, by rw [hsz], rfl, hac⟩⟩
+  exact ⟨rfl, rfl, Or.inr ⟨size, vec, opc, rt, by rw [hsz], hv, rfl, hac⟩⟩
 
 
 theorem symUnit_le {n o : Nat} {σ σ' : Sym} {mc : MCtl} {used : Nat}
     (h : symUnit t rs n o σ = .ok (σ', mc, used)) : SymLe σ σ' := by
   obtain ⟨-, -, i, -, hcase⟩ := symUnit_inv h
   rcases hcase with ⟨-, -, hsi, -⟩ | ⟨r, y, link, -, -, -, -, rfl, -, -⟩ |
-    ⟨r, y, rd, i2, -, -, -, -, -, -, -, -, -, -, ⟨-, rd2, -, rfl⟩ | ⟨size, opc, rt, -, -, ha⟩⟩
+    ⟨r, y, rd, i2, -, -, -, -, -, -, -, -, -, -, ⟨-, rd2, -, rfl⟩ | ⟨size, vec, opc, rt, -, -, -, ha⟩⟩
   · exact symInsn_le hsi
   · exact SymLe.refl _
   · exact (SymLe.of_wX σ _ _).wXsp _ _
-  · exact (SymLe.of_wX σ _ _).trans (symAccess_le ha)
+  · exact (SymLe.of_wX σ _ _).trans (symLdstAcc_le ha)
 
 theorem symUnit_used {n o : Nat} {σ σ' : Sym} {mc : MCtl} {used : Nat}
     (h : symUnit t rs n o σ = .ok (σ', mc, used)) : used = 1 ∨ (used = 2 ∧ mc = .fall) := by
@@ -337,7 +359,7 @@ theorem symUnit_sound (hlink : linkCode base sym t rs = .ok code) (hsz : t.size 
     obtain ⟨w2, hlw2, hcw2⟩ := linkCode_at hlink (o := o + 4) (by omega) (by omega) hsz
     obtain ⟨q2, hq2, rfl⟩ := linkWord_one hlw2 hcov4
     have hs1 : MStep H code retM tm tm1 := mstep_word hcw hd1' hex1 hpc hret
-    rcases hpair with ⟨hty, rd2, rfl, rfl⟩ | ⟨size, opc, rt, hsc, rfl, ha⟩
+    rcases hpair with ⟨hty, rd2, rfl, rfl⟩ | ⟨size, vec, opc, rt, hsc, hvo, rfl, ha⟩
     · obtain ⟨imm12, hd2', hlo⟩ := decode_addLo hd2 hty hoff hy hq2 hsiz
       have hex2 : exec (.addSubImm true false false false imm12 rd rd2) tm1 =
           .ok ((tm1.wXsp rd2 (sym y + BitVec.ofInt 64 r.add)).next) := by
@@ -358,16 +380,27 @@ theorem symUnit_sound (hlink : linkCode base sym t rs = .ok code) (hsz : t.size 
       simp only [CtlPc, MState.next, MState.wXsp]
       split <;> (show tm1.pc + 4 = _; rw [hpc1]; exact at_close base (o + 4) 4 _ (by omega))
     · obtain ⟨imm12, hd2', hlo⟩ := decode_ldstLo hd2 hsc hoff hy hq2 hsiz
-      have haddr : (tm1.amode (.uimm imm12) rd (bytesOf size)).1 = (relTgt y r).eval c := by
-        simp only [MState.amode, hrx1, hev, bytesOf]; exact hlo
-      obtain ⟨tm2, hex2, hH2, hpc2⟩ := symAccess_exec ha hH1 rt.isLt haddr rfl hnil
-      have hrt : (BitVec.ofNat 5 rt.toNat : Reg) = rt := by simp
-      rw [hrt] at hex2
-      have hex2' : exec (.ldst size false opc (.uimm imm12) rd rt) tm1 = .ok tm2 := hex2
-      refine ⟨tm2, mstar_trans (mstar_single hs1) (mstar_single (mstep_word hcw2 hd2' hex2' hpc1 hret)),
-        hH2.toHoldsCore, fun _ => hH2.x30, ?_⟩
-      rw [CtlPc, hpc2, hpc1]
-      exact at_close base (o + 4) 4 _ (by omega)
+      unfold symLdstAcc at ha
+      cases vec <;> simp only [Bool.false_eq_true, ↓reduceIte] at ha
+      · have haddr : (tm1.amode (.uimm imm12) rd (bytesOf size)).1 = (relTgt y r).eval c := by
+          simp only [MState.amode, hrx1, hev, bytesOf]; exact hlo
+        obtain ⟨tm2, hex2, hH2, hpc2⟩ := symAccess_exec ha hH1 rt.isLt haddr rfl hnil
+        have hrt : (BitVec.ofNat 5 rt.toNat : Reg) = rt := by simp
+        rw [hrt] at hex2
+        have hex2' : exec (.ldst size false opc (.uimm imm12) rd rt) tm1 = .ok tm2 := hex2
+        refine ⟨tm2, mstar_trans (mstar_single hs1) (mstar_single (mstep_word hcw2 hd2' hex2' hpc1 hret)),
+          hH2.toHoldsCore, fun _ => hH2.x30, ?_⟩
+        rw [CtlPc, hpc2, hpc1]
+        exact at_close base (o + 4) 4 _ (by omega)
+      · have haddr : (tm1.amode (.uimm imm12) rd (accessBytes size true opc)).1 =
+            (relTgt y r).eval c := by
+          simp only [MState.amode, hrx1, hev, accessBytes_vec (hvo rfl)]; exact hlo
+        obtain ⟨tm2, hex2, hH2, hpc2⟩ := symVAccess_exec ha hH1 haddr rfl hnil
+        have hex2' : exec (.ldst size true opc (.uimm imm12) rd rt) tm1 = .ok tm2 := hex2
+        refine ⟨tm2, mstar_trans (mstar_single hs1) (mstar_single (mstep_word hcw2 hd2' hex2' hpc1 hret)),
+          hH2.toHoldsCore, fun _ => hH2.x30, ?_⟩
+        rw [CtlPc, hpc2, hpc1]
+        exact at_close base (o + 4) 4 _ (by omega)
 
 /-- `symWords` only adds loads and stores. -/
 theorem symWords_le : ∀ (n o : Nat) (σ σ' : Sym) (mc : MCtl),
@@ -511,7 +544,7 @@ theorem symUnit_fault (hlink : linkCode base sym t rs = .ok code) (hsz : t.size 
     rw [← hpc] at hcw
     exact ⟨tm, .refl, wordFault_of hret hcw hd hx⟩
   · exact absurd hN hbad
-  · rcases hpair with ⟨hty, rd2, rfl, rfl⟩ | ⟨size, opc, rt, hsc, rfl, ha⟩
+  · rcases hpair with ⟨hty, rd2, rfl, rfl⟩ | ⟨size, vec, opc, rt, hsc, hvo, rfl, ha⟩
     · exact absurd (NoNil.of_same (by simp) (by simp) hN) hbad
     obtain ⟨hcov, hoff, hsiz⟩ := relocAt_spec hr
     obtain ⟨q1, hq1, rfl⟩ := linkWord_one hlw hcov
@@ -544,15 +577,22 @@ theorem symUnit_fault (hlink : linkCode base sym t rs = .ok code) (hsz : t.size 
     obtain ⟨q2, hq2, rfl⟩ := linkWord_one hlw2 hcov4
     have hs1 : MStep H code retM tm tm1 := mstep_word hcw hd1' hex1 hpc hret
     obtain ⟨imm12, hd2', hlo⟩ := decode_ldstLo hd2 hsc hoff hy hq2 hsiz
-    have haddr : (tm1.amode (.uimm imm12) rd (bytesOf size)).1 = (relTgt y r).eval c := by
-      simp only [MState.amode, hrx1, hev, bytesOf]; exact hlo
     have hN1 : NoNil c (σ.wX rd.toNat (.page (relTgt y r))) :=
       NoNil.of_same (by simp) (by simp) hN
-    obtain ⟨x, hx⟩ := symAccess_fault ha (Prod.ext haddr rfl) hN1 hbad
-    have hrt : (BitVec.ofNat 5 rt.toNat : Reg) = rt := by simp
-    rw [hrt] at hx
     rw [← hpc1] at hcw2
-    exact ⟨tm1, mstar_single hs1, wordFault_of hret hcw2 hd2' hx⟩
+    unfold symLdstAcc at ha
+    cases vec <;> simp only [Bool.false_eq_true, ↓reduceIte] at ha
+    · have haddr : (tm1.amode (.uimm imm12) rd (bytesOf size)).1 = (relTgt y r).eval c := by
+        simp only [MState.amode, hrx1, hev, bytesOf]; exact hlo
+      obtain ⟨x, hx⟩ := symAccess_fault ha (Prod.ext haddr rfl) hN1 hbad
+      have hrt : (BitVec.ofNat 5 rt.toNat : Reg) = rt := by simp
+      rw [hrt] at hx
+      exact ⟨tm1, mstar_single hs1, wordFault_of hret hcw2 hd2' hx⟩
+    · have haddr : (tm1.amode (.uimm imm12) rd (accessBytes size true opc)).1 =
+          (relTgt y r).eval c := by
+        simp only [MState.amode, hrx1, hev, accessBytes_vec (hvo rfl)]; exact hlo
+      obtain ⟨x, hx⟩ := symVAccess_fault ha (Prod.ext haddr rfl) hN1 hbad
+      exact ⟨tm1, mstar_single hs1, wordFault_of hret hcw2 hd2' hx⟩
 
 /-- Words accepted by `symWords` whose effect has an access in the nil page (from a state
 without one): the machine runs to a word that faults. -/

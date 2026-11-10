@@ -709,6 +709,15 @@ private theorem insn_vaccess {σ σ1 : Sym} {c : Ctx} {t : MState} {size opc : B
       Except.pure]
     rfl
 
+/-- `symAccess_exec` for a SIMD&FP access (`symVAccess`). -/
+theorem symVAccess_exec {σ σ' : Sym} {c : Ctx} {t : MState} {size opc : BitVec 2} {rt : Reg}
+    {a : Ex} {mode : AMode} {rn : Reg} (h : symVAccess σ size opc rt.toNat a = .ok σ')
+    (hH : Holds c σ t) (haddr : (t.amode mode rn (accessBytes size true opc)).1 = a.eval c)
+    (hwb : (t.amode mode rn (accessBytes size true opc)).2 = none) (hnil : NoNil c σ') :
+    ∃ t', execLdSt t size true opc mode rn rt = .ok t' ∧ Holds c σ' t' ∧ t'.pc = t.pc + 4 := by
+  obtain ⟨t1, h1, hp1, he⟩ := insn_vaccess h hH (Prod.ext haddr hwb) hnil
+  exact ⟨_, he, insn_holds_pc h1 _, by show t1.pc + 4 = _; rw [hp1]⟩
+
 private theorem insn_vldst {size : BitVec 2} {opc : BitVec 2} {mode : AMode}
     {rn rt : Reg} {o : Nat} {σ σ' : Sym} {mc : MCtl} {c : Ctx} {t : MState} {base : BitVec 64}
     (h : symInsn (.ldst size true opc mode rn rt) o σ = .ok (σ', mc)) (hH : Holds c σ t)
@@ -1691,7 +1700,7 @@ private theorem insn_excl_fault {size : BitVec 2} {o2 ld o0 : Bool} {rs rn rt : 
       · simp only [load, hna, ↓reduceIte, bind, Except.bind]
 
 /-- The SIMD&FP single access of `symVAccess` at `a`, in the nil page: `execLdSt` faults. -/
-private theorem symVAccess_fault {σ σ1 : Sym} {c : Ctx} {t : MState} {size opc : BitVec 2}
+theorem symVAccess_fault {σ σ1 : Sym} {c : Ctx} {t : MState} {size opc : BitVec 2}
     {rt : Reg} {a : Ex} {mode : AMode} {rn : Reg} {wbv : Option (BitVec 64)}
     (h : symVAccess σ size opc rt.toNat a = .ok σ1)
     (hA : t.amode mode rn (accessBytes size true opc) = (a.eval c, wbv)) (hN : NoNil c σ)
