@@ -5,18 +5,18 @@ variable [GoFV.SSA.Sem.Addrs]
 /-!
 # Loads and stores that fault in the nil page (`docs/plans/proofs3.md` §9)
 
-A load or store of slice G61 whose `runLoc` step panics: `nilFaults` (memory ops fault under
+A load or store of slice G62 whose `runLoc` step panics: `nilFaults` (memory ops fault under
 `runLoc`) found its base nil (`Ptr.isNil`) and its address in the nil page (`Ptr.nilFault`), so it
 has no symbol (a global or frame variable is never in the nil block) and its base is a register
 (`off(Rn)`). That register holds the machine word 0 (`nil_word`), so the access's address
 `X[n] + off` is in the nil page (`nil_fault_page`) and the access faults (`progStep_loadN_nil`,
 `progStep_ldp_nil`, `progStep_storeN_nil`, `progStep_stp_nil`): `runProg` panics with
-`nilDeref`, as `runLoc` does (`g61_memPanic`), and so does `runMach` (`g61_obj_memPanic`,
+`nilDeref`, as `runLoc` does (`g62_memPanic`), and so does `runMach` (`g62_obj_memPanic`,
 `obj_panic`). The accesses are `loadOp?`'s `MOV{D,W,WU,H,HU,B,BU}load`, `LDP`, `storeOp?`'s
 `MOV{D,W,H,B}store` and `STP` (`memFaultOp`); the register-index loads and stores are not among
 them: `runLoc` faults on their nil base whatever the index, the machine only when the index keeps
-the address in the nil page. None of them is an op of G61's group A (so what `vkind61` accepts of
-it `vkind60` accepts, `vkind61_eq60`) or of G52's–G59's groups (a remainder,
+the address in the nil page. None of them is an op of G61's group A (so what `vkind62` accepts of
+it `vkind60` accepts, `vkind62_eq61`, `vkind61_eq60`) or of G52's–G59's groups (a remainder,
 `LoweredMove`, a loop, a float constant, `STPW`/`LDPW`, a frame float store, a narrow operand,
 `FLDPD`), so what `vkind60` accepts of it `vkind49` or G48's `kind48` accepts (`vkind60_ok49`); an
 access `kind48` takes is off `SP` (`spBase48`): its base relates to `SP` (`SPInv`, `sp_base48`),
@@ -25,10 +25,10 @@ Having no symbol, a
 faulting access is no access of a frame variable G49 accepts (`frameVar49?_none`), so `vkind49` of
 it is `vkind51`'s (`vkind49_eq51`), which is `vkind50`'s (`vkind51_eq50`).
 
-An acquire load (`LDAR`, `LDARW`, `LDARB`, `ldar?`) of slice G61 whose step panics faults alike:
+An acquire load (`LDAR`, `LDARW`, `LDARB`, `ldar?`) of slice G62 whose step panics faults alike:
 `nilFaults` found its address (argument 0, offset 0, no symbol) nil (`stepLoc_ldar_panic`), the
-register holds the machine word 0 and `LDAR* (Rn)` faults (`progStep_ldar_nil`; `g61_ldarPanic`,
-`g61_obj_ldarPanic`); what `vkind61` accepts of it `vkind60` accepts (`vkind61_eq60`), what
+register holds the machine word 0 and `LDAR* (Rn)` faults (`progStep_ldar_nil`; `g62_ldarPanic`,
+`g62_obj_ldarPanic`); what `vkind62` accepts of it `vkind60` accepts (`vkind62_eq61`, `vkind61_eq60`), what
 `vkind60` accepts of it `vkind49` accepts (G48's `kind48` takes no
 acquire load), and what `vkind49` accepts of it `vkind51`
 accepts (`vkind49_ok51`). An atomic of G61's group A that faults: `AtomPanic.lean`.
@@ -634,14 +634,14 @@ theorem vk6_mem {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (hVK : VK6 lc
           rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;>
             simp_all [extOp?]
 
-/-- **A load or store of slice G61 that faults**: from a `LocMatch`ed P0 state, a load or store
+/-- **A load or store of slice G62 that faults**: from a `LocMatch`ed P0 state, a load or store
 whose `runLoc` step panics (with `nilDeref`, `stepLoc_mem_panic`) is matched by the no-ops before
 its Prog, which faults in the nil page (`PPanics`). -/
-theorem g61_memPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+theorem g62_memPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab}
     {E : MatchEnv} {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState}
     {m : MState} {e : Panic} {mm : Mem} {osp : Bool}
-    (hc : checkG61L lc ps bstart g = .ok (tab, kt)) (hE : G28Env lc g L ps ret tab E)
+    (hc : checkG62L lc ps bstart g = .ok (tab, kt)) (hE : G28Env lc g L ps ret tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
     (hop : memFaultOp v.op = true) (hm : LocMatch E s bid i m)
@@ -657,7 +657,7 @@ theorem g61_memPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   refine ⟨rfl, ?_⟩
   cases hl0 : lc.ctx.f.lowered with
   | false =>
-    rcases nl30_ops (checkNL30_of_61L hl0 hc) hbid hb hi hv hen with
+    rcases nl30_ops (checkNL30_of_62L hl0 hc) hbid hb hi hv hen with
       h | h | h | h <;>
       rcases hcases with h' | h' | h' | h' | h' | h' | h' | h' | h' | h' | h' | h' | h' <;>
       rw [h] at h' <;> cases h'
@@ -669,7 +669,7 @@ theorem g61_memPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   rw [htext] at hpcOf
   subst hL
   obtain ⟨c, rfl, rfl, -, rfl, hvk, -, hl, hhome, -, hk, hlt, hnd, hblocks, -, -, -, -, -⟩ :=
-    checkG61L_spec hl0 hc
+    checkG62L_spec hl0 hc
   obtain ⟨b, j, js, e', next, hb', -, hvals, -, -, hrow⟩ := Cx2.blocks_spec hblocks bid hbid
   rw [hb] at hb'
   cases hb'
@@ -686,7 +686,9 @@ theorem g61_memPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
       op52b v.op = false ∧ op53a v.op = false ∧ op54a v.op = false := by
     rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;>
       exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
-  rw [hvk, vkind61_eq60 (by
+  rw [hvk, vkind62_eq61 (by
+    rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;> decide),
+    vkind61_eq60 (by
     rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;> rfl)] at hkd
   -- an access off `SP` (G48's `kind48`) does not fault: its base relates to `SP` (`SPInv`), above
   -- the nil page (`FrameOK`)
@@ -794,15 +796,15 @@ theorem g61_memPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     exact ⟨_, hstar, hne, .inl ⟨_, _, progAt?_pcAt F.nodup F.lt hk',
       progStep_stp_nil hkn hkx hky (nextAddr_pcAt F.nodup hk') has hf hsc ht hnil, rfl⟩⟩
 
-/-- **A load or store of slice G61 that faults, down to the machine words**: machine steps of the
+/-- **A load or store of slice G62 that faults, down to the machine words**: machine steps of the
 linked code to a state that panics with `nilDeref` (the access's nil-page fault, `MPanics`). -/
-theorem g61_obj_memPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+theorem g62_obj_memPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState} {m : MState}
     {e : Panic} {mm : Mem} {osp : Bool} {spills : Array Spill} {o : ObjIn} {otab : Tab}
     {base : BitVec 64}
     {code : Code} {retM : BitVec 64} {t : MState}
-    (hc : checkG61L lc ps bstart g = .ok (tab, kt))
+    (hc : checkG62L lc ps bstart g = .ok (tab, kt))
     (hE : G28Env lc g L ps (endP L.text ps.toList) tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
@@ -816,20 +818,20 @@ theorem g61_obj_memPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : L
     (hR : ObjRel (ObjEnv.map otab ps L base) m t) (hX : X27At otab L ps.toList m t)
     (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
     e = .nilDeref ∧ ∃ t', MStar H code retM t t' ∧ MPanics H code retM t' e := by
-  obtain ⟨he, m', hp, hpp⟩ := g61_memPanic (H := H) hc hE hbid hb hi hv hop hm hinv hsp hs
+  obtain ⟨he, m', hp, hpp⟩ := g62_memPanic (H := H) hc hE hbid hb hi hv hop hm hinv hsp hs
   obtain ⟨t1, ht1, hR1, hI1, hX1⟩ :=
     obj_star hO hH hp hR hX (locMatch_inv hE.env.env.env.env hm) hic
   obtain ⟨t2, ht2, hpan⟩ := obj_panic hO hHP hR1 hX1 (hI1.resolve_right hpp.1) hpp
   exact ⟨he, t2, mstar_trans ht1 ht2, hpan⟩
 
-/-- **An acquire load of slice G61 that faults**: from a `LocMatch`ed P0 state, an acquire load
+/-- **An acquire load of slice G62 that faults**: from a `LocMatch`ed P0 state, an acquire load
 whose `runLoc` step panics (with `nilDeref`, `stepLoc_ldar_panic`) is matched by the no-ops before
 its Prog, `LDAR* (Rn)`, which faults in the nil page (`PPanics`). -/
-theorem g61_ldarPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+theorem g62_ldarPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab}
     {E : MatchEnv} {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState}
     {m : MState} {e : Panic} {mm : Mem} {osp : Bool}
-    (hc : checkG61L lc ps bstart g = .ok (tab, kt)) (hE : G28Env lc g L ps ret tab E)
+    (hc : checkG62L lc ps bstart g = .ok (tab, kt)) (hE : G28Env lc g L ps ret tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
     (hop : (ldar? v.op).isSome = true) (hm : LocMatch E s bid i m)
@@ -842,7 +844,7 @@ theorem g61_ldarPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link
   refine ⟨rfl, ?_⟩
   cases hl0 : lc.ctx.f.lowered with
   | false =>
-    rcases nl30_ops (checkNL30_of_61L hl0 hc) hbid hb hi hv hen with h | h | h | h <;>
+    rcases nl30_ops (checkNL30_of_62L hl0 hc) hbid hb hi hv hen with h | h | h | h <;>
       rcases ldar?_some hop with ⟨h', -⟩ | ⟨h', -⟩ | ⟨h', -⟩ <;> rw [h] at h' <;> cases h'
   | true =>
   obtain ⟨⟨⟨⟨⟨-, hlink, hpcOf, hret, hA, -, -, -, -, -, -⟩, -⟩, -⟩, -⟩, -⟩ := hE
@@ -852,7 +854,7 @@ theorem g61_ldarPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link
   rw [htext] at hpcOf
   subst hL
   obtain ⟨c, rfl, rfl, -, rfl, hvk, -, hl, hhome, -, hk, hlt, hnd, hblocks, -, -, -, -, -⟩ :=
-    checkG61L_spec hl0 hc
+    checkG62L_spec hl0 hc
   obtain ⟨b, j, js, e', next, hb', -, hvals, -, -, hrow⟩ := Cx2.blocks_spec hblocks bid hbid
   rw [hb] at hb'
   cases hb'
@@ -868,7 +870,9 @@ theorem g61_ldarPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link
       op52b v.op = false ∧ op53a v.op = false ∧ op54a v.op = false := by
     rcases ldar?_some hop with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;>
       exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
-  rw [hvk, vkind61_eq60 (by
+  rw [hvk, vkind62_eq61 (by
+    rcases ldar?_some hop with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> decide),
+    vkind61_eq60 (by
     rcases ldar?_some hop with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl)] at hkd
   -- G48's `kind48` takes no acquire load
   have hkd := (vkind60_ok49 h7x.1 h7x.2.1 h7x.2.2.1 h7x.2.2.2 h5x.1 h5x.2.1 h5x.2.2.1
@@ -939,15 +943,15 @@ theorem g61_ldarPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link
   exact ⟨_, hstar, hne, .inl ⟨_, _, progAt?_pcAt F.nodup F.lt hk',
     progStep_ldar_nil hop hkn hkr (nextAddr_pcAt F.nodup hk') has hf hsc ht hnil, rfl⟩⟩
 
-/-- **An acquire load of slice G61 that faults, down to the machine words**: machine steps of the
+/-- **An acquire load of slice G62 that faults, down to the machine words**: machine steps of the
 linked code to a state that panics with `nilDeref` (the `LDAR*`'s nil-page fault, `MPanics`). -/
-theorem g61_obj_ldarPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+theorem g62_obj_ldarPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState} {m : MState}
     {e : Panic} {mm : Mem} {osp : Bool} {spills : Array Spill} {o : ObjIn} {otab : Tab}
     {base : BitVec 64}
     {code : Code} {retM : BitVec 64} {t : MState}
-    (hc : checkG61L lc ps bstart g = .ok (tab, kt))
+    (hc : checkG62L lc ps bstart g = .ok (tab, kt))
     (hE : G28Env lc g L ps (endP L.text ps.toList) tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
@@ -959,7 +963,7 @@ theorem g61_obj_ldarPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : 
     (hR : ObjRel (ObjEnv.map otab ps L base) m t) (hX : X27At otab L ps.toList m t)
     (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
     e = .nilDeref ∧ ∃ t', MStar H code retM t t' ∧ MPanics H code retM t' e := by
-  obtain ⟨he, m', hp, hpp⟩ := g61_ldarPanic (H := H) hc hE hbid hb hi hv hop hm hinv hs
+  obtain ⟨he, m', hp, hpp⟩ := g62_ldarPanic (H := H) hc hE hbid hb hi hv hop hm hinv hs
   obtain ⟨t1, ht1, hR1, hI1, hX1⟩ :=
     obj_star hO hH hp hR hX (locMatch_inv hE.env.env.env.env hm) hic
   obtain ⟨t2, ht2, hpan⟩ := obj_panic hO hHP hR1 hX1 (hI1.resolve_right hpp.1) hpp

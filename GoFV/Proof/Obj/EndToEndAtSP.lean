@@ -17,7 +17,7 @@ In G48's mode (`verified_mach_S`) `SPInv` pins `SP` to the `outargs` block's fix
 (`g49Env_fixed_outSP`); `verified_mach_S_atSP` states `verified_mach_S` at
 `Addrs.atSPO (baseSP g L E0.sp) E0.sp.toNat`, with activation 0's `outargs` block at `SP` too
 (`envAtSPO g L E0`).
-The checked premises (`verifiedPipelineFull`, `checkG61`, `needs48`, `retRegsOK`, `entryStoresOK`,
+The checked premises (`verifiedPipelineFull`, `checkG62`, `needs48`, `retRegsOK`, `entryStoresOK`,
 `memTyL`, `checkObj`'s `ObjEnv`) take no address assignment (§8 item 6,
 `GoFVTest/AddrsFree.lean`): they are the verdicts `gofv-ssa-opt --e2e` computes. The others
 (the input's `VPre`, the caller's entry relation, the callee contracts) are stated at the
@@ -57,7 +57,7 @@ theorem verified_mach_atSP
     {H : Hooks} {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab}
     {kt : KTab} {spills : Array Spill} {o : ObjIn} {otab : Tab}
     {base : BitVec 64} {code : Code} {room : Nat} {s0 : MState}
-    (hc : checkG61 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
+    (hc : checkG62 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
     (hn48 : needs48 lc = false)
     (hO : ObjEnv ps spills o otab L base code (s0.x 30))
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
@@ -128,7 +128,7 @@ theorem verified_mach_S_atSP
     {H : Hooks} {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab}
     {kt : KTab} {spills : Array Spill} {o : ObjIn} {otab : Tab}
     {base : BitVec 64} {code : Code} {room : Nat} {s0 : MState}
-    (hc : checkG61 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
+    (hc : checkG62 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
     (hO : ObjEnv ps spills o otab L base code (s0.x 30))
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hic : ∀ u, ICallOut L ps.toList u)

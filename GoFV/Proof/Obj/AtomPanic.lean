@@ -10,12 +10,12 @@ ors, as load-exclusive/store-exclusive loops or LSE instructions) whose `runLoc`
 only panic of an atomic is `nilFaults`' (the generic atomic, `atomicRoot`, never panics), on its
 pointer, argument 0 with no symbol (`nilFaults_atom61`), so the pointer is nil
 (`stepLoc_atom61_panic`) and the register that holds it the machine word 0 (`nil_fault_page`).
-What `vkind61` accepts of an atomic is `vkind61a`'s (`vkind61_atom`); its Progs (`atomPats61`)
+What `vkind62` accepts of an atomic is `vkind61`'s (`vkind62_eq61`) and so `vkind61a`'s (`vkind61_atom`); its Progs (`atomPats61`)
 access the location first by `LDAXR*` (the loops), by the LSE instruction (`SWPAL*`, `LDADDAL*`,
 `LDORAL*`), or, after `MVN Rv, R27` (`LDCLRAL*`) or `MOV Rold, R27` (`CASAL*`), by the LSE
 instruction, and each of these faults in the nil page (`progStep_ldaxr_nil`, `progStep_lse_nil`,
 `progStep_casal_nil`; `atom_nil_run`). So `runProg` panics with `nilDeref` as `runLoc` does
-(`g61_atomPanic`), and so does `runMach` (`g61_obj_atomPanic`, `obj_panic`).
+(`g62_atomPanic`), and so does `runMach` (`g62_obj_atomPanic`, `obj_panic`).
 -/
 
 namespace GoFV.Proof.Obj
@@ -250,16 +250,16 @@ theorem atom_nil_run (hnd : (psA.toList.map (·.id)).Nodup)
 
 end Machine
 
-/-! ## Slice G61 -/
+/-! ## Slice G62 -/
 
-/-- **An atomic of slice G61 that faults**: from a `LocMatch`ed P0 state, an atomic of group A
+/-- **An atomic of slice G62 that faults**: from a `LocMatch`ed P0 state, an atomic of group A
 whose `runLoc` step panics (with `nilDeref`, `stepLoc_atom61_panic`) is matched by its Progs up to
 their first access, which faults in the nil page (`PPanics`). -/
-theorem g61_atomPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+theorem g62_atomPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab}
     {E : MatchEnv} {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState}
     {m : MState} {e : Panic} {mm : Mem} {osp : Bool}
-    (hc : checkG61L lc ps bstart g = .ok (tab, kt)) (hE : G28Env lc g L ps ret tab E)
+    (hc : checkG62L lc ps bstart g = .ok (tab, kt)) (hE : G28Env lc g L ps ret tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
     (hop : (atom61? v.op).isSome = true) (hm : LocMatch E s bid i m)
@@ -271,7 +271,7 @@ theorem g61_atomPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link
   refine ⟨rfl, ?_⟩
   cases hl0 : lc.ctx.f.lowered with
   | false =>
-    rcases nl30_ops (checkNL30_of_61L hl0 hc) hbid hb hi hv hen with h | h | h | h <;>
+    rcases nl30_ops (checkNL30_of_62L hl0 hc) hbid hb hi hv hen with h | h | h | h <;>
       rw [h] at hop <;> cases hop
   | true =>
   obtain ⟨⟨⟨⟨⟨-, hlink, hpcOf, hret, hA, -, -, -, -, -, -⟩, -⟩, -⟩, -⟩, -⟩ := hE
@@ -281,7 +281,7 @@ theorem g61_atomPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link
   rw [htext] at hpcOf
   subst hL
   obtain ⟨c, rfl, rfl, -, rfl, hvk, -, hl, hhome, -, hk, hlt, hnd, hblocks, -⟩ :=
-    checkG61L_spec hl0 hc
+    checkG62L_spec hl0 hc
   obtain ⟨b, j, js, e', next, hb', -, hvals, -, -, hrow⟩ := Cx2.blocks_spec hblocks bid hbid
   rw [hb] at hb'
   cases hb'
@@ -291,7 +291,7 @@ theorem g61_atomPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link
   have hid' : blk.values.toList[i] = id := by simpa using hid
   rw [hid', hv] at hv'
   cases hv'
-  rw [hvk] at hkd
+  rw [hvk, vkind62_eq61 fun h => by rw [h] at hop; simp [atom61?] at hop] at hkd
   have hj : E.pcOf bid i = pcAt text c.cx.ps.toList ((js ++ [e']).getD i 0) := by
     rw [hpcOf]; simp only [pcOfTab, hrow, Option.getD_some]
   have hreads := ((checkK_spec hk).2 bid hbid blk hb).1 i id v hi hv
@@ -344,15 +344,15 @@ theorem g61_atomPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link
   | sel0 _ h => rw [h] at hop; cases hop
   | sel1 _ h => rw [h] at hop; cases hop
 
-/-- **An atomic of slice G61 that faults, down to the machine words**: machine steps of the
+/-- **An atomic of slice G62 that faults, down to the machine words**: machine steps of the
 linked code to a state that panics with `nilDeref` (the first access's nil-page fault,
 `MPanics`). -/
-theorem g61_obj_atomPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+theorem g62_obj_atomPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState} {m : MState}
     {e : Panic} {mm : Mem} {osp : Bool} {spills : Array Spill} {o : ObjIn} {otab : Tab}
     {base : BitVec 64} {code : Code} {retM : BitVec 64} {t : MState}
-    (hc : checkG61L lc ps bstart g = .ok (tab, kt))
+    (hc : checkG62L lc ps bstart g = .ok (tab, kt))
     (hE : G28Env lc g L ps (endP L.text ps.toList) tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
@@ -364,7 +364,7 @@ theorem g61_obj_atomPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : 
     (hR : ObjRel (ObjEnv.map otab ps L base) m t) (hX : X27At otab L ps.toList m t)
     (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
     e = .nilDeref ∧ ∃ t', MStar H code retM t t' ∧ MPanics H code retM t' e := by
-  obtain ⟨he, m', hp, hpp⟩ := g61_atomPanic (H := H) hc hE hbid hb hi hv hop hm hinv hs
+  obtain ⟨he, m', hp, hpp⟩ := g62_atomPanic (H := H) hc hE hbid hb hi hv hop hm hinv hs
   obtain ⟨t1, ht1, hR1, hI1, hX1⟩ :=
     obj_star hO hH hp hR hX (locMatch_inv hE.env.env.env.env hm) hic
   obtain ⟨t2, ht2, hpan⟩ := obj_panic hO hHP hR1 hX1 (hI1.resolve_right hpp.1) hpp
