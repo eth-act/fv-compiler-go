@@ -189,11 +189,12 @@ as activation `actM`'s blocks, every other block and address as `Addrs.fixed`. -
 /-! ## `G49Env` at `Addrs.atSP` -/
 
 /-- The bases of activation 0's `local` blocks at the frame operands from `sp`: variable `k`'s at
-`sp + frameOff L nc o` for its operand `(nc, o)` (`varOp`). -/
+`sp + frameOff L nc o` for its operand `(nc, o)` (`varOp`); a block without an operand keeps its
+fixed base `2^62 + k·2^24` (as activation `actM`'s block `k`, which the run never allocates). -/
 def baseSP (g : G2In) (L : Link) (sp : BitVec 64) (k : Nat) : Nat :=
   match varOp g k with
   | some (nc, o) => (sp + BitVec.ofInt 64 (frameOff L nc o)).toNat
-  | none => 0
+  | none => 2 ^ 62 + k * 2 ^ 24
 
 /-- The injection with activation 0's `local` blocks at `baseSP`, activation `actM`'s at their
 bases (activation 0's fixed bases, `baseM`), every other block as `ι`. Every block `ι` places,
