@@ -990,6 +990,18 @@ sym+off(SB), (Ra, Rb)` of a global or `op off'(RSP), (Ra, Rb)` of a frame variab
 G55 rejects; `X1`'s low word then holds `0x04030201`).
 Composition into `checkG57` and its coverage: the slice G57 entry.
 
+## Phase 3: genssa, slice G57 group B, `DMB`, `PRFM`, float stores to frame variables (I7, #553)
+
+`GoFV.Proof.Gen.vk57b_step` (`GoFV/Proof/Gen/G57b.lean`): one value `vkind57b` accepts (`VK57b`,
+`vkind57b_spec`: `DMB $k`, `PRFM 0(Rn), $k`, and `FMOVS`/`FMOVD Fs, off(<nc>)`,
+`FSTPS`/`FSTPD (Fa, Fb), off(<nc>)` to a frame variable in a `Blk.local` (G49) or `Blk.temp` (G6)
+block), in `vk55_step`'s form under `G49Env`: its Prog runs, the match and `G3Inv` hold after it
+under the same activation, and the upper-bit table is empty. No run premise. Composed into
+`checkG57` by the slice. `checkObj` does not model `DMB`/`PRFM` yet (object side). Witnesses:
+`genG57b_witness` (`test/gcgort` `main.init.func95.1`: `FSTPS` of `float32(1.5)` into the `temp`
+block of `.autotmp_1`, which G55 rejects) and `genG57b2_witness`
+(`runtime.mallocgcSmallNoscanReuse`: `DMB $14`, which G55 rejects).
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g54_obj_value`, `g54_obj_term`, `g54_obj_nilPanic`, `g54_obj_boundsPanic`

@@ -1297,6 +1297,39 @@ runtime.globalRand+328(SB), (R1, R2)`; from the global's bytes 328 to 335 `1, โ€
 0x04030201` and `X1`'s low word the same after Prog 17, under an activation with the function's
 home slot at its frame operand; `PairPre50` holds there).
 
+**Slice G57, group B: `DMB`, `PRFM`, float stores to frame variables** (`Check57b`/`Spec57b`, proof
+`G57b`, `vkind57b`, `VK57b`, `vk57b_step`; tried when G55 rejects a value, composed into G57 with
+group A). Each value is one Prog with no temporary:
+
+- `DMB [k] mem` (`PubBarrier`) as `DMB $k` (`dmbShape`), and `PRFM [k] addr mem`
+  (`PrefetchCache*`) as `PRFM 0(Rn), $k` (`prfmShape`, `Rn` the register of `addr`), a memory with
+  no home. Phase 1 (`arm64Op`) returns the memory unchanged and ignores `PRFM`'s address, so the
+  state stays (`stepLoc_dmb57`, `stepLoc_prfm57`); `progEffect`'s `DMB`/`PRFM` arm has no effect
+  (`progStep_barrier57`), and the machine of `GoFV/Arm64/Exec.lean` runs barriers and `PRFM` as
+  no-ops. `checkObj` (`GoFV/Asm/CheckObj.lean`, `CheckObjSym.lean`'s `throw "PRFM"`) does not
+  model either Prog yet: the whole-function composition (`GoFV/Proof/Obj`) of a function with one
+  waits for that object-side step.
+- `FMOVSstore`/`FMOVDstore [off] {x} SP val mem` as `FMOVS`/`FMOVD Fs, off(<nc>)` and
+  `FSTPS`/`FSTPD [off] {x} SP a b mem` as `FSTPS`/`FSTPD (Fa, Fb), off(<nc>)` (`fstpOf`,
+  `fstpAs`), floats of the op's width, of a frame variable `x` at its operand (`fvar57?`: G49's
+  `frameVar49?`, a `Blk.local` block at `NAME_PARAM` or `NAME_AUTO`, else G6's `frameVar?`, a
+  `Blk.temp` block at `NAME_AUTO`; `FVar57`). Both blocks are at `SP + frameOff` under the
+  injection (`VarsAt49` or G6's `VarsAt`, `varAt57`, `VarAt57`); `runLoc` writes the floats' raw
+  bits (`stepLoc_fstore`, `stPair` in `stepLoc_fstp57`), the machine the low bytes of the V
+  registers at the frame operand (`progStep_fstoreAt`, `progStep_fstp57`), related as G44's float
+  stores (`g57_fstore`, `g57_fstp` after `g49_store`/`g49_stp`).
+
+No run premise (a `poison` float stores `poison` bytes on both sides); the upper-bit table is empty
+after each value (`uStep35_57b`). `vk57b_step` has `vk55_step`'s form (under `G49Env`, the same
+activation after the value). The witnesses use `vk57b_step` directly (a hand PC table, `G49Env`
+built from compiled facts, as no `checkG57` exists yet): `genG57b_witness` (`test/gcgort`'s
+`main.init.func95.1`: `FSTPS (F0, F0), .autotmp_1-8(AUTO)` of `float32(1.5)` into a `temp`
+block, which `vkind55` rejects; G55 also rejects the function's `LoweredRound32F`) and
+`genG57b2_witness` (`runtime.mallocgcSmallNoscanReuse`: `DMB $14`, its only value G55 rejects;
+`stepLoc` returns the same state). The frame-variable witness is a `temp` block: under
+`Addrs.fixed` two accessed `Blk.local` variables (as `fandbits`'s `x` and `y`) cannot both sit at
+`SP + frameOff` (`AddrAgree` pins them `2^24` apart), so `VarsAt49` has no instance there.
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, ยง5; sole
 reason in parentheses):
 
