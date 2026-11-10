@@ -228,6 +228,9 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
                 match zeroDef tabs f M v defs.toList with
                 | some (u, c) => M := (M.put c.id c).put v u
                 | none =>
+                match zeroDef2 tabs f M v defs.toList with
+                | some (u, c, w) => M := ((M.put c.id c).put w.id w).put v u
+                | none =>
                 match frameFold tabs f M v defs.toList with
                 | some u => M := M.put v u
                 | none =>

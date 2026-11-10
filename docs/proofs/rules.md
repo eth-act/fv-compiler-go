@@ -2371,6 +2371,22 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   word (`zero_not_narrow`). Witness `zst_lower` (`Zero [8]` as `MOVDstore {g}`, `Zero [16]` as
   `STP {k}`).
 
+- **Two stores of `0`** (`:339`, `:342`, `:345`, `:348`, `:352`, `:355`, `:358`, `:361`, `:364`,
+  `:367`, `:370`; #385; `RuleL.zero2Op`, `ValReplay` `ReplayInvL.zeroDef2`,
+  `SimMoveQ.zero2_inner_eval`, `zero2_outer_eval`). `Zero [n]` with `n` 3, 5, 6, 7 or 9 to 15
+  lowers to an outer `MOV{B,H,W,D}store [k] ptr (MOVDconst [0])` on an inner
+  `MOV{H,W,D}store ptr (MOVDconst [0]) mem`, overlapping where `n` is not their sizes' sum. As for
+  a `Move` lowered to two 128-bit stores, the validator replays the event as a fresh `MOVDconst
+  [0]` term, the inner store at a fresh ID and the outer store at the `Zero` (`zeroDef2`), folds
+  offsets and symbols into either store (`qFold`; the inner one where `f` has no value), pairs
+  the outer store with the `Zero` (`zero2Lower`) and admits the inner one as an atom only `g` has,
+  scheduled right before the outer one (`compOKL`, `q2OKL`, now over `st2Lower`). The replay
+  relates them by `ZeroRefL2` (the outer address the pointer moved by `z2Off`, the inner store by
+  `ZeroRefL`); `ZeroRefL` of a top-level atom carries `zeroOp n` so that it never pairs with an
+  outer store. The simulation evaluates the inner store to the `Zero`'s first bytes zeroed
+  (`zPre`, `st2Pre` in `CompAtL`) and the outer one to the `Zero` (`write_overlap`). Witness
+  `zst2_lower` (`Zero [12]` of a global as `MOVWstore [8] {k}` on `MOVDstore {k}`).
+
 - **Compares with a pointer** (#385; module docs of `GoFV/Proof/Low/Rules/CmpNeg.lean` and
   `Invert.lean`). `CMP` compares a pointer without a concrete address with an integer as unequal
   (`Arm64.cmp`, `Z` clear). While `CMN` and `CMPshift*` read registers only (`Arm64.cmp1`/`cmp2`),

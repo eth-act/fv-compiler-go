@@ -806,6 +806,47 @@ def zeroLower (tabs : Tables) (u w : Value) : Bool :=
   u.op == .Zero && u.args.size == 2 && offOK w.auxInt && stAux tabs w.aux &&
     (zeroOp u.auxInt).any fun (o, k) => w.op == o && w.args.size == k
 
+/-- The two stores `lower` zeroes `Zero [n]` with (`ARM64.rules:339`-`370`): the outer store's op
+and offset, then the inner one's op (offset 0), all of three arguments, the outer store on the
+inner one's memory, the two overlapping where `n` is not their sizes' sum: `(Zero [3] ptr mem) =>
+(MOVBstore [2] ptr (MOVDconst [0]) (MOVHstore ptr (MOVDconst [0]) mem))` (`339`), `Zero [5]`,
+`[6]`, `[7]` on a `MOVWstore` (`342`, `345`, `348`), `Zero [9]` … `[15]` on a `MOVDstore` (`352`
+… `370`). -/
+def zero2Op (n : Int64) : Option (Op × Nat × Op) :=
+  if n == 3 then some (.ARM64MOVBstore, 2, .ARM64MOVHstore)
+  else if n == 5 then some (.ARM64MOVBstore, 4, .ARM64MOVWstore)
+  else if n == 6 then some (.ARM64MOVHstore, 4, .ARM64MOVWstore)
+  else if n == 7 then some (.ARM64MOVWstore, 3, .ARM64MOVWstore)
+  else if n == 9 then some (.ARM64MOVBstore, 8, .ARM64MOVDstore)
+  else if n == 10 then some (.ARM64MOVHstore, 8, .ARM64MOVDstore)
+  else if n == 11 then some (.ARM64MOVDstore, 3, .ARM64MOVDstore)
+  else if n == 12 then some (.ARM64MOVWstore, 8, .ARM64MOVDstore)
+  else if n == 13 then some (.ARM64MOVDstore, 5, .ARM64MOVDstore)
+  else if n == 14 then some (.ARM64MOVDstore, 6, .ARM64MOVDstore)
+  else if n == 15 then some (.ARM64MOVDstore, 7, .ARM64MOVDstore)
+  else none
+
+/-- The offset of the outer store of `Zero [n]`'s two stores (`zero2Op`). -/
+def z2Off (n : Int64) : Nat :=
+  match zero2Op n with
+  | some (_, k, _) => k
+  | none => 0
+
+/-- The atom `w` is the outer store of the two stores lowering the `Zero [n]` `u` (two arguments;
+`zero2Op`). Its last argument is the inner store (`zero2In`), a fresh atom
+(`GoFV.Opt.LowerCheck.zeroDef2`, `compOKL`; `GoFV.Proof.Low.Sim.zero2_outer_eval`). -/
+def zero2Lower (u w : Value) : Bool :=
+  u.op == .Zero && u.args.size == 2 &&
+    (zero2Op u.auxInt).any fun (o, _, _) => w.op == o && w.args.size == 3
+
+/-- The atom `w` is the inner store of the two stores lowering the `Zero [n]` `u` (`zero2Op`). -/
+def zero2In (u w : Value) : Bool :=
+  (zero2Op u.auxInt).any fun (_, _, o) => w.op == o && w.args.size == 3
+
+/-- The atom `w` is the outer store of two lowering `u`: a `Move` (`moveQ2Lower`) or a `Zero`
+(`zero2Lower`). -/
+def st2Lower (u w : Value) : Bool := moveQ2Lower u w || zero2Lower u w
+
 /-- The atom `w` lowers the frame address `u`: `(LocalAddr <t> {sym} base _) => (MOVDaddr {sym}
 base)` and `(MOVDaddr {sym} (SPanchored base mem))`, with the same frame variable `{sym}` (a
 `.name` aux) at offset 0 and one argument, whose value it ignores
@@ -1132,6 +1173,218 @@ theorem moveQ2Lower_not_moveQ {tabs : Tables} {u w w' : Value} (h : moveQ2Lower 
         have : u.auxInt.toInt = 32 := by rw [show u.auxInt = 32 by simpa using h32]; decide
         omega
       · simp at h2
+
+/-- A scalar integer store of `s` bytes (`MOV{B,H,W,D}store`). -/
+def ZSt (o : Op) (s : Nat) : Prop :=
+  (o = .ARM64MOVBstore ∧ s = 1) ∨ (o = .ARM64MOVHstore ∧ s = 2) ∨ (o = .ARM64MOVWstore ∧ s = 4) ∨
+    (o = .ARM64MOVDstore ∧ s = 8)
+
+/-- A scalar integer store lowers a `Zero` (`zStore`) and has its size (`stSize`). -/
+theorem ZSt.facts {o : Op} {s : Nat} (h : ZSt o s) : zStore o = true ∧ stSize o = some s := by
+  rcases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;> exact ⟨rfl, rfl⟩
+
+/-- What `zero2Op` says: two scalar integer stores, the outer of `so` bytes at `z2Off n` (`k`)
+writing up to `n`, the inner of `si` bytes from 0 up to at least `k` (`ARM64.rules:339`-`370`). -/
+theorem zero2Op_cases {n : Int64} {oo : Op} {k : Nat} {oi : Op}
+    (h : zero2Op n = some (oo, k, oi)) :
+    z2Off n = k ∧ ∃ so si, ZSt oo so ∧ ZSt oi si ∧ k + so = n.toInt.toNat ∧ 0 < k ∧ k ≤ si ∧
+      si ≤ n.toInt.toNat := by
+  refine ⟨by unfold z2Off; rw [h], ?_⟩
+  unfold zero2Op at h
+  split at h
+  · rename_i hc; cases h; obtain rfl : n = 3 := by simpa using hc
+    exact ⟨1, 2, by unfold ZSt; decide, by unfold ZSt; decide, by decide, by decide, by decide,
+      by decide⟩
+  split at h
+  · rename_i hc; cases h; obtain rfl : n = 5 := by simpa using hc
+    exact ⟨1, 4, by unfold ZSt; decide, by unfold ZSt; decide, by decide, by decide, by decide,
+      by decide⟩
+  split at h
+  · rename_i hc; cases h; obtain rfl : n = 6 := by simpa using hc
+    exact ⟨2, 4, by unfold ZSt; decide, by unfold ZSt; decide, by decide, by decide, by decide,
+      by decide⟩
+  split at h
+  · rename_i hc; cases h; obtain rfl : n = 7 := by simpa using hc
+    exact ⟨4, 4, by unfold ZSt; decide, by unfold ZSt; decide, by decide, by decide, by decide,
+      by decide⟩
+  split at h
+  · rename_i hc; cases h; obtain rfl : n = 9 := by simpa using hc
+    exact ⟨1, 8, by unfold ZSt; decide, by unfold ZSt; decide, by decide, by decide, by decide,
+      by decide⟩
+  split at h
+  · rename_i hc; cases h; obtain rfl : n = 10 := by simpa using hc
+    exact ⟨2, 8, by unfold ZSt; decide, by unfold ZSt; decide, by decide, by decide, by decide,
+      by decide⟩
+  split at h
+  · rename_i hc; cases h; obtain rfl : n = 11 := by simpa using hc
+    exact ⟨8, 8, by unfold ZSt; decide, by unfold ZSt; decide, by decide, by decide, by decide,
+      by decide⟩
+  split at h
+  · rename_i hc; cases h; obtain rfl : n = 12 := by simpa using hc
+    exact ⟨4, 8, by unfold ZSt; decide, by unfold ZSt; decide, by decide, by decide, by decide,
+      by decide⟩
+  split at h
+  · rename_i hc; cases h; obtain rfl : n = 13 := by simpa using hc
+    exact ⟨8, 8, by unfold ZSt; decide, by unfold ZSt; decide, by decide, by decide, by decide,
+      by decide⟩
+  split at h
+  · rename_i hc; cases h; obtain rfl : n = 14 := by simpa using hc
+    exact ⟨8, 8, by unfold ZSt; decide, by unfold ZSt; decide, by decide, by decide, by decide,
+      by decide⟩
+  split at h
+  · rename_i hc; cases h; obtain rfl : n = 15 := by simpa using hc
+    exact ⟨8, 8, by unfold ZSt; decide, by unfold ZSt; decide, by decide, by decide, by decide,
+      by decide⟩
+  · cases h
+
+/-- No `Zero` lowers to one store and to two. -/
+theorem zero2Op_zeroOp {n : Int64} {p : Op × Nat × Op} (h : zero2Op n = some p) :
+    zeroOp n = none := by
+  unfold zero2Op at h
+  split at h
+  · rename_i hc; obtain rfl : n = 3 := by simpa using hc
+    decide
+  split at h
+  · rename_i hc; obtain rfl : n = 5 := by simpa using hc
+    decide
+  split at h
+  · rename_i hc; obtain rfl : n = 6 := by simpa using hc
+    decide
+  split at h
+  · rename_i hc; obtain rfl : n = 7 := by simpa using hc
+    decide
+  split at h
+  · rename_i hc; obtain rfl : n = 9 := by simpa using hc
+    decide
+  split at h
+  · rename_i hc; obtain rfl : n = 10 := by simpa using hc
+    decide
+  split at h
+  · rename_i hc; obtain rfl : n = 11 := by simpa using hc
+    decide
+  split at h
+  · rename_i hc; obtain rfl : n = 12 := by simpa using hc
+    decide
+  split at h
+  · rename_i hc; obtain rfl : n = 13 := by simpa using hc
+    decide
+  split at h
+  · rename_i hc; obtain rfl : n = 14 := by simpa using hc
+    decide
+  split at h
+  · rename_i hc; obtain rfl : n = 15 := by simpa using hc
+    decide
+  · cases h
+
+/-- What `zero2Lower` says: a `Zero` of two arguments and the outer store of `zero2Op`, of three
+arguments. -/
+theorem zero2Lower_facts {u w : Value} (h : zero2Lower u w = true) :
+    u.op = .Zero ∧ u.args.size = 2 ∧ w.args.size = 3 ∧
+      ∃ k oi, zero2Op u.auxInt = some (w.op, k, oi) := by
+  unfold zero2Lower at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨hu, h2⟩, h⟩ := h
+  refine ⟨hu, h2, ?_⟩
+  cases hq : zero2Op u.auxInt with
+  | none => rw [hq] at h; cases h
+  | some q =>
+    obtain ⟨oo, k, oi⟩ := q
+    rw [hq] at h
+    simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at h
+    exact ⟨h.2, k, oi, by rw [h.1]⟩
+
+/-- What `zero2In` says: the inner store of `zero2Op`, of three arguments. -/
+theorem zero2In_facts {u w : Value} (h : zero2In u w = true) :
+    w.args.size = 3 ∧ ∃ oo k, zero2Op u.auxInt = some (oo, k, w.op) := by
+  unfold zero2In at h
+  cases hq : zero2Op u.auxInt with
+  | none => rw [hq] at h; cases h
+  | some q =>
+    obtain ⟨oo, k, oi⟩ := q
+    rw [hq] at h
+    simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at h
+    exact ⟨h.2, oo, k, by rw [h.1]⟩
+
+/-- The outer store of `zero2Lower` lowers a `Zero` (`zStore`), a scalar store. -/
+theorem zero2Lower_zStore {u w : Value} (h : zero2Lower u w = true) :
+    zStore w.op = true ∧ (stSize w.op).isSome = true := by
+  obtain ⟨-, -, -, k, oi, hq⟩ := zero2Lower_facts h
+  obtain ⟨-, so, -, hso, -⟩ := zero2Op_cases hq
+  rw [hso.facts.2]
+  exact ⟨hso.facts.1, rfl⟩
+
+/-- The inner store of `zero2In` lowers a `Zero` (`zStore`), a scalar store. -/
+theorem zero2In_zStore {u w : Value} (h : zero2In u w = true) :
+    zStore w.op = true ∧ (stSize w.op).isSome = true := by
+  obtain ⟨-, oo, k, hq⟩ := zero2In_facts h
+  obtain ⟨-, so, si, -, hsi, -⟩ := zero2Op_cases hq
+  rw [hsi.facts.2]
+  exact ⟨hsi.facts.1, rfl⟩
+
+/-- No `Zero` lowers to a single store and to two. -/
+theorem zero2Lower_not_zero {tabs : Tables} {u w w' : Value} (h : zero2Lower u w = true) :
+    zeroLower tabs u w' = false := by
+  obtain ⟨-, -, -, k, oi, hq⟩ := zero2Lower_facts h
+  unfold zeroLower
+  rw [zero2Op_zeroOp hq]
+  simp
+
+/-- The outer store of two lowering a `Zero` is no 128-bit store. -/
+theorem zero2Lower_not_moveQ2 {u w w' : Value} (h : zero2Lower u w = true) :
+    moveQ2Lower u w' = false := by
+  cases h2 : moveQ2Lower u w'
+  · rfl
+  · obtain ⟨hu, -⟩ := zero2Lower_facts h
+    rw [(moveQ2Lower_facts h2).1] at hu; cases hu
+
+/-- The atom `w` is the inner store of two lowering `u`: of a `Move` (`moveQ2In`) or of a `Zero`
+(`zero2In`). -/
+def st2In (u w : Value) : Bool := u.op == .Move && moveQ2In u w || u.op == .Zero && zero2In u w
+
+/-- What `st2Lower` says: the outer store of two lowering a `Move` or a `Zero`. -/
+theorem st2Lower_cases {u w : Value} (h : st2Lower u w = true) :
+    moveQ2Lower u w = true ∨ zero2Lower u w = true := by
+  unfold st2Lower at h; simpa using h
+
+/-- `st2In` of a `Move`: `moveQ2In`. -/
+theorem st2In_move {u w : Value} (hu : u.op = .Move) : st2In u w = moveQ2In u w := by
+  unfold st2In; simp [hu]
+
+/-- `st2In` of a `Zero`: `zero2In`. -/
+theorem st2In_zero {u w : Value} (hu : u.op = .Zero) : st2In u w = zero2In u w := by
+  unfold st2In; simp [hu]
+
+/-- The inner store of two is a 128-bit store or a store lowering a `Zero`. -/
+theorem st2In_store {u w : Value} (h : st2In u w = true) : (qStore w.op || zStore w.op) = true := by
+  unfold st2In at h
+  simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at h
+  rcases h with ⟨-, h⟩ | ⟨-, h⟩
+  · simp [moveQ2In_qStore h]
+  · simp [(zero2In_zStore h).1]
+
+/-- The outer store of two is a 128-bit store or a store lowering a `Zero`. -/
+theorem st2Lower_store {u w : Value} (h : st2Lower u w = true) :
+    (qStore w.op || zStore w.op) = true := by
+  rcases st2Lower_cases h with h | h
+  · simp [moveQ2Lower_qStore h]
+  · simp [(zero2Lower_zStore h).1]
+
+/-- The outer and inner stores of two lowering a `Move` (`moveQ2Lower`, `moveQ2In`) or a `Zero`
+(`zero2Lower`, `zero2In`). -/
+theorem st2_of {u w wi : Value}
+    (h : (moveQ2Lower u w && moveQ2In u wi || zero2Lower u w && zero2In u wi) = true) :
+    st2Lower u w = true ∧ st2In u wi = true := by
+  simp only [Bool.or_eq_true, Bool.and_eq_true] at h
+  rcases h with ⟨h1, h2⟩ | ⟨h1, h2⟩
+  · exact ⟨by simp [st2Lower, h1], by rw [st2In_move (moveQ2Lower_facts h1).1]; exact h2⟩
+  · exact ⟨by simp [st2Lower, h1], by rw [st2In_zero (zero2Lower_facts h1).1]; exact h2⟩
+
+/-- The outer store of two has at least three arguments. -/
+theorem st2Lower_size {u w : Value} (h : st2Lower u w = true) : 3 ≤ w.args.size := by
+  rcases st2Lower_cases h with h | h
+  · obtain ⟨-, -, ko, oi, ki, hq, hsz⟩ := moveQ2Lower_facts h
+    rcases (moveQ2Op_cases hq).1 with ⟨-, rfl⟩ | ⟨-, rfl⟩ <;> omega
+  · have := (zero2Lower_facts h).2.2.1; omega
 
 /-- Generic ops are no arm64 stores. -/
 theorem stSize_generic {o : Op} (h : o.generic = true) : stSize o = none := by
