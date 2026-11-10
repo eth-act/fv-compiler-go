@@ -533,6 +533,21 @@ theorem op2_const {ty : Ty} {f : BitVec 64 → BitVec 64 → BitVec 64} {a : Val
   unfold Arm64.op2 Arm64.op1
   dsimp only; rw [reg_w64]; cases Arm64.reg a <;> rfl
 
+/-- `AND` against a constant is `op1`: at the `bool` shape a `false` operand gives `false`, which
+is `res .bool (0 &&& K)` (`Arm64.and`). -/
+theorem and_const {ty : Ty} {a : Val} {K : BitVec 64} :
+    Arm64.and ty [a, .int .w64 K] = Arm64.op1 ty (fun x => x &&& K) [a] := by
+  by_cases h : ty = .bool ∧ a = .bool false
+  · obtain ⟨rfl, rfl⟩ := h
+    simp [Arm64.and, Arm64.op1, Arm64.reg, Arm64.res]
+  · rw [Arm64.and_eq_op2 fun ⟨hb, _, _, he, hab⟩ => by
+      simp only [List.cons.injEq, and_true] at he
+      obtain ⟨rfl, rfl⟩ := he
+      rcases hab with hab | hab
+      · exact h ⟨hb, hab⟩
+      · cases hab]
+    exact op2_const
+
 theorem flags2_const {f : BitVec 64 → BitVec 64 → Flags} {a : Val} {K : BitVec 64} :
     Arm64.flags2 f [a, .int .w64 K] = Arm64.flags1 (fun x => f x K) [a] := by
   unfold Arm64.flags2 Arm64.flags1
@@ -585,7 +600,7 @@ theorem imm_eval {o o' : Op} (h : immOf o = some o') :
     refine ⟨rfl, rfl, by decide, rfl, rfl, by decide, fun ty k k' ax ax' a => ?_⟩
   · exact add_const
   · exact sub_const
-  · exact op2_const
+  · exact and_const
   · exact op2_const
   · exact op2_const
   · exact flags2_const
