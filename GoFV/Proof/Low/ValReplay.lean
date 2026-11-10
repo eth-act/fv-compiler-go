@@ -1629,8 +1629,8 @@ theorem frameFold_cases {f : Func} {v : ID} {defs : List Value} {u : Value}
       u.auxInt = x.auxInt ∧ offOK x.auxInt = true ∧ termVL tabs x = true ∧
       termVL tabs u = true ∧ m.args.size = 1 ∧
       u.aux = m.aux ∧ (∃ l, f.value? a = some l ∧ l.op = .LocalAddr ∧ l.aux = m.aux) ∧
-      (((ldOp? x.op).isSome = true ∧ u.op = x.op ∧ x.aux = none ∧ x.args.size = 2 ∧
-          u.args = #[m.args[0]!, x.args[1]!]) ∨
+      ((ldAny x.op = true ∧ (ldQ? x.op ≠ some 32 ∨ offOK (x.auxInt + Int64.ofNat 16) = true) ∧
+          u.op = x.op ∧ x.aux = none ∧ x.args.size = 2 ∧ u.args = #[m.args[0]!, x.args[1]!]) ∨
         (x.op = .ARM64ADDconst ∧ u.op = .ARM64MOVDaddr ∧ x.args.size = 1 ∧
           wordShape (shpL tabs x.type) = true ∧ u.args = #[m.args[0]!])) := by
   unfold frameFold at h
@@ -1646,7 +1646,7 @@ theorem frameFold_cases {f : Func} {v : ID} {defs : List Value} {u : Value}
       split at h
       · rename_i hc
         cases h
-        simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hc
+        simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, bne_iff_ne, ne_eq] at hc
         obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, -⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h10⟩, h11⟩, h13⟩, h14⟩ := hc
         refine ⟨x, a, m, hx, hm, h3, h4, h5, h6, h7, h10, h11, ?_, ?_⟩
         · cases hl : f.value? a with
@@ -1655,8 +1655,8 @@ theorem frameFold_cases {f : Func} {v : ID} {defs : List Value} {u : Value}
             rw [hl] at h13
             simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at h13
             exact ⟨l, rfl, h13.1, h13.2⟩
-        · rcases h14 with ⟨⟨⟨⟨a1, a2⟩, a3⟩, a4⟩, a5⟩ | ⟨⟨⟨⟨a1, a2⟩, a3⟩, a4⟩, a5⟩
-          · exact .inl ⟨a1, a2, a3, a4, a5⟩
+        · rcases h14 with ⟨⟨⟨⟨⟨a0, a1⟩, a2⟩, a3⟩, a4⟩, a5⟩ | ⟨⟨⟨⟨a1, a2⟩, a3⟩, a4⟩, a5⟩
+          · exact .inl ⟨a0, a1, a2, a3, a4, a5⟩
           · exact .inr ⟨a1, a2, a3, a4, a5⟩
       · cases h
     · cases h
@@ -1708,6 +1708,33 @@ theorem ldVal_frameFold {n : AuxRef} (hn : GoFV.Opt.LowerTerm.auxIsName tabs (so
       cases X <;> simp only [ldVal, hp]
     rw [this]
     exact ldVal_mono tabs sz s T k (some n) (.cons (Sem.Refines.refl z) (.cons hX .nil))
+
+/-- **The folded 128-bit load** (`ARM64.rules:870`, `874`): `ldVal_frameFold` for `FMOVQload`
+and `FLDPQ` (`ldQVal`), whose second half reads at `k + 16`. -/
+theorem ldQVal_frameFold {n : AuxRef} (hn : GoFV.Opt.LowerTerm.auxIsName tabs (some n) = true)
+    {k : Int64} (hk : offOK k = true) {sz : Nat}
+    (hk16 : sz ≠ 32 ∨ offOK (k + Int64.ofNat 16) = true) {w X X' : Val}
+    (hw : w = .poison ∨ w = (framePtr tabs 0 n).word) (hX : Sem.Refines X X') (z : Val)
+    (T : Ty) :
+    Sem.Refines (ldQVal tabs sz T k none [w, X]) (ldQVal tabs sz T k (some n) [z, X']) := by
+  rcases hw with rfl | rfl
+  · have : ldQVal tabs sz T k none [.poison, X] = .poison := by
+      cases X <;> simp only [ldQVal] <;> split <;> rfl
+    rw [this]; exact .poison _
+  · have key : ∀ j : Int64, offOK j = true →
+        symPtr tabs j none (framePtr tabs 0 n).word = symPtr tabs j (some n) z := by
+      intro j hj
+      obtain ⟨b, -⟩ := offOK_toNat hj
+      rw [symPtr_name hn]
+      exact addr_framePtr tabs 0 n (by omega)
+    have : ldQVal tabs sz T k none [(framePtr tabs 0 n).word, X] =
+        ldQVal tabs sz T k (some n) [z, X] := by
+      by_cases h32 : sz = 32
+      · have h16 := hk16.resolve_left (by simpa using h32)
+        cases X <;> simp only [ldQVal, key k hk, key _ h16]
+      · cases X <;> simp only [ldQVal, key k hk, h32, ite_false]
+    rw [this]
+    exact ldQVal_mono tabs sz T k (some n) (.cons (Sem.Refines.refl z) (.cons hX .nil))
 
 /-- **The folded offset**: `ADDconst [k]` (at a word shape) of a frame variable `n`'s address
 register (`poison` or the address word in activation 0, `FrameVals`) is refined by `MOVDaddr [k]
@@ -3443,15 +3470,26 @@ theorem ReplayInvL.frameFold {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : I
           (shpL tabs u.type)) := by
     intro F G hFG hF
     rw [hty, hai, hua, hnn]
-    rcases hcase with ⟨hl0, hop, hxa, hsz, huargs⟩ | ⟨hop, huop, hsz, hw, huargs⟩
-    · obtain ⟨⟨sz, sg⟩, hl⟩ := Option.isSome_iff_exists.1 hl0
-      obtain ⟨hg, hmd⟩ := ldOp_arm hl
-      have hxl : x.args.toList = [x.args[0]!, x.args[1]!] := congrArg Array.toList (args_two hsz)
+    rcases hcase with ⟨hl0, h16, hop, hxa, hsz, huargs⟩ | ⟨hop, huop, hsz, hw, huargs⟩
+    · have hxl : x.args.toList = [x.args[0]!, x.args[1]!] := congrArg Array.toList (args_two hsz)
       have hul : u.args.toList = [m.args[0]!, x.args[1]!] := by rw [huargs]
       rw [hop, hxa, hxl, hul]
       simp only [List.map_cons, List.map_nil]
-      rw [opValL_ld hg hmd hl, opValL_ld hg hmd hl]
-      exact retypeL_mono _ (ldVal_frameFold hname hk hF (hFG _) _ _ _ _)
+      cases hlo : ldOp? x.op with
+      | some p =>
+        obtain ⟨hg, hmd⟩ := ldOp_arm hlo
+        rw [opValL_ld hg hmd hlo, opValL_ld hg hmd hlo]
+        exact retypeL_mono _ (ldVal_frameFold hname hk hF (hFG _) _ _ _ _)
+      | none =>
+        obtain ⟨sz, hq⟩ : ∃ sz, ldQ? x.op = some sz := by
+          simp only [ldAny, hlo, Option.isSome_none, Bool.false_or] at hl0
+          exact Option.isSome_iff_exists.1 hl0
+        rw [opValL_ldQ hq, opValL_ldQ hq]
+        have h16' : sz ≠ 32 ∨ offOK (x.auxInt + Int64.ofNat 16) = true := by
+          rcases h16 with h | h
+          · left; intro e; subst e; exact h hq
+          · exact .inr h
+        exact retypeL_mono _ (ldQVal_frameFold hname hk h16' hF (hFG _) _ _)
     · have hxl : x.args.toList = [x.args[0]!] := congrArg Array.toList (args_one hsz)
       have hul : u.args.toList = [m.args[0]!] := by rw [huargs]
       rw [hop, huop, hxl, hul]
@@ -3465,12 +3503,12 @@ theorem ReplayInvL.frameFold {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : I
   have hcl : C v → ∀ z ∈ u.args, C z := fun hv z hz => by
     have hxa' := closed_args hI.closed hx hv
     have hsz0 : 0 < x.args.size := by
-      rcases hcase with ⟨-, -, -, h, -⟩ | ⟨-, -, h, -, -⟩ <;> omega
+      rcases hcase with ⟨-, -, -, -, h, -⟩ | ⟨-, -, h, -, -⟩ <;> omega
     have h0 : C x.args[0]! :=
       hxa' _ (by rw [getElem!_pos x.args 0 hsz0]; exact Array.getElem_mem _)
     have hm0 : C m.args[0]! := closed_args hI.closed hm (frameAddr_closed hfa hI.closed h0) _
       (by rw [getElem!_pos m.args 0 (by omega)]; exact Array.getElem_mem _)
-    rcases hcase with ⟨-, -, -, hsz, huargs⟩ | ⟨-, -, -, -, huargs⟩
+    rcases hcase with ⟨-, -, -, -, hsz, huargs⟩ | ⟨-, -, -, -, huargs⟩
     · rw [huargs] at hz
       simp only [List.mem_toArray, List.mem_cons, List.not_mem_nil, or_false] at hz
       rcases hz with rfl | rfl

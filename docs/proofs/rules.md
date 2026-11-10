@@ -2404,6 +2404,17 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   `zsx_lower` (`Zero [8]` at `p + i<<3` as `MOVDstoreidx8 p i (MOVDconst [0]) mem`, read back by
   `MOVDloadidx8`).
 
+- **A frame variable's address folded into a 128-bit load** (`:870`, `:874`; #385;
+  `LowerCheck.frameFold`, `ValReplay` `ldQVal_frameFold`). A `Move` from a frame variable lowers
+  to `FMOVQload`/`FLDPQ` of the variable's `MOVDaddr {x} SP`, an atom (`addrLower`), which the
+  symbol rules then fold into the load (`FMOVQload [off] {x} SP`). The rules were proven, but the
+  validator replayed the fold only for the integer loads (`frameFold`: `ldOp?`), so the instance
+  did not match (`rule ARM64:872 FMOVQload [nomatch]`, `876 FLDPQ`: 497 + 582 functions at the
+  ceiling). `frameFold` now admits every load term (`ldAny`), an `FLDPQ` only with its second
+  half's offset small too (`offOK (k + 16)`); the folded load reads the variable's block in
+  activation 0 at the same offsets (`ldQVal_frameFold`, as `ldVal_frameFold`). Witness `lmqf_lower`
+  (`Move [32]` and `Move [16]` from a frame variable as `FLDPQ {x}` and `FMOVQload {x}`).
+
 - **Compares with a pointer** (#385; module docs of `GoFV/Proof/Low/Rules/CmpNeg.lean` and
   `Invert.lean`). `CMP` compares a pointer without a concrete address with an integer as unequal
   (`Arm64.cmp`, `Z` clear). While `CMN` and `CMPshift*` read registers only (`Arm64.cmp1`/`cmp2`),
