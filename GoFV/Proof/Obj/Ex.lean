@@ -15,6 +15,50 @@ namespace GoFV.Proof.Obj
 open GoFV.Arm64 GoFV.Asm GoFV.Asm.CheckObj
 open GoFV.SSA.Sem.Arm64 (Shift sext)
 
+/-- `writeMem` of the bytes already there leaves the memory as it is. -/
+theorem writeMem_readMem : ∀ (n : Nat) (m : Memory) (a : BitVec 64),
+    writeMem m a n (readMem m a n) = m
+  | 0, _, _ => rfl
+  | n + 1, m, a => by
+    have h1 : (readMem m a (n + 1)).extractLsb' 0 8 = m a := by
+      apply BitVec.eq_of_getLsbD_eq
+      intro i hi
+      simp only [readMem, BitVec.getLsbD_extractLsb', BitVec.getLsbD_cast, BitVec.getLsbD_append]
+      simp [hi]
+    have h2 : (readMem m a (n + 1)).extractLsb' 8 (8 * n) = readMem m (a + 1) n := by
+      apply BitVec.eq_of_getLsbD_eq
+      intro i hi
+      simp only [readMem, BitVec.getLsbD_extractLsb', BitVec.getLsbD_cast, BitVec.getLsbD_append]
+      simp only [hi, decide_true, Bool.true_and]
+      rw [ite_eq_right_of_eq_false _ _ (eq_false (by omega)), show 8 + i - 8 = i by omega]
+    simp only [writeMem, h1, h2]
+    have hm : (fun i => if i = a then m a else m i) = m := funext fun i => by
+      by_cases hi : i = a
+      · subst hi; simp
+      · simp [hi]
+    rw [hm]
+    exact writeMem_readMem n m (a + 1)
+
+/-- The new value of an LSE atomic (`execAtomic`, `ProgOp.rmw`) at 64 bits: `v` (`SWP`, `o3`), or
+the old value combined with `v` (`LDADD`, `LDCLR`, `LDEOR`, `LDSET` for `opc` 0–3). -/
+def rmwVal (o3 : Bool) (opc : BitVec 3) (old v : BitVec 64) : BitVec 64 :=
+  if o3 then v else
+  match opc.toNat with
+  | 0 => old + v
+  | 1 => old &&& ~~~v
+  | 2 => old ^^^ v
+  | _ => old ||| v
+
+theorem Ex.eval_rmwEx (c : Ctx) (o3 : Bool) (opc : BitVec 3) (old v : Ex) :
+    (rmwEx o3 opc old v).eval c = rmwVal o3 opc (old.eval c) (v.eval c) := by
+  unfold rmwEx rmwVal
+  cases o3
+  · simp only [Bool.false_eq_true, ↓reduceIte]
+    generalize opc.toNat = k
+    rcases k with _ | _ | _ | k <;>
+      simp [Ex.eval, logical, sizedF, sized, BitVec.setWidth_eq]
+  · rfl
+
 private theorem exT_trunc_trunc (sf : Bool) (x : BitVec 64) :
     ProgOp.trunc sf (ProgOp.trunc sf x) = ProgOp.trunc sf x := by
   cases sf <;> simp [ProgOp.trunc, BitVec.setWidth_setWidth_of_le]
@@ -321,6 +365,12 @@ theorem Ex.eval_congr {c c' : Ctx} (hsym : c.sym = c'.sym) (hsp : c.s.sp = c'.s.
   | vlo ft r => intro _; simp only [Ex.eval, hv]
   | vq r => intro _; simp only [Ex.eval, hv]
   | fcvtz ft u m r => intro _; simp only [Ex.eval, hv]
+  | eqsel n a b u w iha ihb ihu ihw =>
+    intro he; simp only [Ex.eval]
+    rw [iha (fun r h => he r (by simp [Ex.reads, h])),
+      ihb (fun r h => he r (by simp [Ex.reads, h])),
+      ihu (fun r h => he r (by simp [Ex.reads, h])),
+      ihw (fun r h => he r (by simp [Ex.reads, h]))]
 
 /-- `Ex.eval_congr` for `Ex.eval128`. -/
 theorem Ex.eval128_congr {c c' : Ctx} (hsym : c.sym = c'.sym) (hsp : c.s.sp = c'.s.sp)

@@ -2554,6 +2554,41 @@ Witnesses `objBarrier_dmb_witness` (`GoFV/Proof/Witness/ObjBarrier.lean`: `check
 that Prog) and `objBarrier_prfm_witness` (`PRFM PLDL1KEEP, [X0]` with `X0 = 0` runs through
 `symInsn_sound` and keeps the memory; `PRFM (R0), $0` has the same effect).
 
+**Atomics, per Prog** (8,729 → 8,729: no function gained yet, none lost; the obstacle moved from
+the atomics' opcodes to their `R27` reads, below): the exclusive accesses and the LSE single
+instructions genssa emits (`GoFV/Gen/Arm64ValueRt.lean` `atomic`) are modelled on both sides,
+mirroring `progEffect`'s atomics arms. `exclOp` has `LDAXR{,W,H,B}` (an acquire load; on one core
+the exclusive monitor has no effect). `atomOp`/`atomP` have `STLXR{,W,H,B} Rs, (Rn), Rstatus`
+(the store, the status register 0: the exclusive store succeeds, the single-core row of
+`docs/proofs/STATUS.md`), `CASAL{D,W,H,B} Rs, (Rn), Rt` (the old value to `Rs`; the store of
+`Ex.eqsel n old Rs Rt old`, a new `Ex` form: `Rt` if the low `8 n` bits of the old value and
+`Rs` agree, else the old value, whose store leaves the memory as it was) and the
+read-modify-writes `LDADDAL*`/`LDCLRAL*`/`LDEORAL*`/`LDORAL*`/`SWPAL*` (the old value to `Rt`, the
+store of `rmwEx o3 opc old Rs`, by `execAtomic`'s encoding: `LDADD`, `LDCLR`, `LDEOR`, `LDSET`,
+`SWP`). On the machine side `symExcl` now runs `STXR`/`STLXR` (store, then `Rs ← 0`, as
+`execExcl`), and `symInsn` has `.cas` and `.atomic` arms (`symRmw`: load, store, old value to the
+destination). Proof: `insn_excl`, `insn_cas`, `insn_atomic` (`insn_rmw`; a `CAS` mismatch stores
+the bytes read back, `writeMem_readMem`), their `_fault` cases (`insn_rmw_nil`: the load faults
+first) and `symInsn_mono`; on the Prog side `fam_excl` (`LDAXR*`) and `fam_atom` (`eff_atom`:
+`progEffect` of an `atomOp` name is its atomics branch `atomEff`). `progEffect` of a `CASAL`
+mismatch stores nothing while the symbolic effect stores the old value, so the family result
+`Out` has a fourth case: the relation for an effect with the same accesses and the same meaning
+(`apply_store_same`), which `progSym_sound`/`progSym_fault` use as the first (`sound_rel`,
+`fault_rel`). `ObjRel`, `ObjEnv` and the theorem statements are unchanged. Co-simulation
+(`scripts/arm64-cosim.sh --fuzz 0 --words`, the 483 distinct quick-v10 words of these classes):
+19 forms (`LDAXR`/`STLXR` B/W/X, `CASAL` W/X, `LDADDAL` W/X, `LDCLRAL`, `LDSETAL`, `SWPAL`
+B/W/X), 4,864 cases, 0 mismatches. All 417 quick-v10 functions with these words come from
+`goarm64 v8.0`, which pairs each LSE instruction with an LL/SC fallback; each still fails on a
+Prog that reads `R27` set by the previous Prog (`STLXR …, R27; CBNZ R27` 215, `MOVW R1, R27;
+CASAL R27, …` 171, `MVN R1, R27; LDCLRAL R27, …` 21), which `sameEffect`/`sameCtl` reject because
+`ObjRel` does not relate `X27`. Accepting them needs an `X27` agreement invariant at such
+readers in `obj_star` (next step). Witnesses `objAtomic_prog_witness`
+(`GoFV/Proof/Witness/ObjAtomic.lean`: `checkProg` accepts `sync/atomic.AddInt32`'s `LDADDALW`,
+`LDAXRW`, `STLXRW` against their words; `progSym` and `symInsn` give the same effects, and
+`CASALW R27, (R0), R2` and its word too), `objAtomic_ldadd_run`, `objAtomic_stlxr_run`,
+`objAtomic_cas_hit`, `objAtomic_cas_miss` (`symInsn_sound` on the decoded words from concrete
+states), `objAtomic_rmwEx`.
+
 **Proof** (`GoFV/Proof/Obj/`):
 
 - `Ex.lean`, `Bitfield.lean`: the smart constructors keep `eval`; the bitfield moves that the

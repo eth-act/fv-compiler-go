@@ -1075,6 +1075,7 @@ import GoFV.Proof.Witness.NilLateL
 import GoFV.Proof.Witness.NilMalloc
 import GoFV.Proof.Witness.NilSel
 import GoFV.Proof.Witness.NotIf
+import GoFV.Proof.Witness.ObjAtomic
 import GoFV.Proof.Witness.ObjBarrier
 import GoFV.Proof.Witness.ObjEndToEnd
 import GoFV.Proof.Witness.ObjEndToEndAtSP

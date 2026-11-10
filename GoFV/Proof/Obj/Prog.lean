@@ -547,13 +547,17 @@ private theorem pg_ofInt_toNat {off : Int} (h : ¬ off < 0) :
 
 /-! ## The families -/
 
-/-- What a family lemma gives: the relation, or a call (`X30` the fall-through). -/
+/-- What a family lemma gives: the relation, or a call (`X30` the fall-through), or the relation
+for an effect `e'` with the same accesses and the same meaning (a `CASAL` that stores nothing,
+`e`, against its symbolic store of the old value, `e'`). -/
 private def Out (L : Link) (p : Prog) (s : MState) (e : Eff) (σ : Sym) (pc : PCtl) : Prop :=
   (ERel ⟨s, L.sym⟩ e σ ∧ PRel L s e pc) ∨
   (∃ n add f, pc = .call n add ∧ σ = {} ∧ L.nextAddr p.id = some f ∧
     e = { x := [(30, f)], pc := some (L.sym n + BitVec.ofInt 64 add) }) ∨
   (∃ a f, pc = .callReg a ∧ σ = {} ∧ isICall p = true ∧ L.nextAddr p.id = some f ∧
-    e = { x := [(30, f)], pc := some (a.eval ⟨s, L.sym⟩) })
+    e = { x := [(30, f)], pc := some (a.eval ⟨s, L.sym⟩) }) ∨
+  (∃ e', ERel ⟨s, L.sym⟩ e' σ ∧ PRel L s e' pc ∧ e'.nilAccess? = e.nilAccess? ∧
+    ∀ next, e'.apply s next = e.apply s next)
 
 section fam
 variable {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl} {L : Link} {s : MState} {e : Eff}
@@ -1641,7 +1645,9 @@ private theorem excl_names {name : String} {ld : Bool} {n : Nat} (h : exclOp nam
     (name = "LDAR" ∧ ld = true ∧ n = 8) ∨ (name = "LDARW" ∧ ld = true ∧ n = 4) ∨
     (name = "LDARH" ∧ ld = true ∧ n = 2) ∨ (name = "LDARB" ∧ ld = true ∧ n = 1) ∨
     (name = "STLR" ∧ ld = false ∧ n = 8) ∨ (name = "STLRW" ∧ ld = false ∧ n = 4) ∨
-    (name = "STLRH" ∧ ld = false ∧ n = 2) ∨ (name = "STLRB" ∧ ld = false ∧ n = 1) := by
+    (name = "STLRH" ∧ ld = false ∧ n = 2) ∨ (name = "STLRB" ∧ ld = false ∧ n = 1) ∨
+    (name = "LDAXR" ∧ ld = true ∧ n = 8) ∨ (name = "LDAXRW" ∧ ld = true ∧ n = 4) ∨
+    (name = "LDAXRH" ∧ ld = true ∧ n = 2) ∨ (name = "LDAXRB" ∧ ld = true ∧ n = 1) := by
   unfold exclOp at h
   split at h <;> cases h <;> simp
 
@@ -1675,7 +1681,7 @@ local macro "excl_st_tac" : tactic => `(tactic| (
   exact .inl ⟨⟨rfl, by simp [Sym.store], rfl, rfl, rfl, by simp [Sym.store], rfl,
     by simp [Sym.store, xP_eval128 hx]⟩, rfl⟩))
 
-/-- `LDAR*`/`STLR*` (`exclOp`). -/
+/-- `LDAR*`/`LDAXR*`/`STLR*` (`exclOp`). -/
 private theorem fam_excl {az ez : Int} {ld : Bool} {n : Nat} (haz : L.autosize = az)
     (hez : L.extrasize = ez) (hx : exclOp p.as.name = some (ld, n))
     (hm : exclP az ez ld n p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) :
@@ -1683,6 +1689,7 @@ private theorem fam_excl {az ez : Int} {ld : Bool} {n : Nat} (haz : L.autosize =
   unfold progEffect at he
   unfold exclP at hm
   rcases excl_names hx with ⟨hn, rfl, rfl⟩ | ⟨hn, rfl, rfl⟩ | ⟨hn, rfl, rfl⟩ | ⟨hn, rfl, rfl⟩ |
+      ⟨hn, rfl, rfl⟩ | ⟨hn, rfl, rfl⟩ | ⟨hn, rfl, rfl⟩ | ⟨hn, rfl, rfl⟩ |
       ⟨hn, rfl, rfl⟩ | ⟨hn, rfl, rfl⟩ | ⟨hn, rfl, rfl⟩ | ⟨hn, rfl, rfl⟩
   all_goals
     simp (config := { decide := true }) only [hn, ProgOp.baseOf, ProgOp.movMem, ProgOp.pairOp,
@@ -1695,6 +1702,196 @@ private theorem fam_excl {az ez : Int} {ld : Bool} {n : Nat} (haz : L.autosize =
   · excl_st_tac
   · excl_st_tac
   · excl_st_tac
+  · excl_ld_tac
+  · excl_ld_tac
+  · excl_ld_tac
+  · excl_ld_tac
+
+/-! ### Exclusive stores and atomics (`atomOp`, `atomP`) -/
+
+/-- `progEffect`'s branch for an `atomOp` Prog of kind `k` and `n` bytes (`STLXR*`, `CASAL*`,
+`ProgOp.rmw`). -/
+private def atomEff (c : ProgCtx) (k : AtomK) (n : Nat) : Except String Eff := do
+  match k with
+  | .stlxr =>
+    let (a, _) ← c.mem c.p.to
+    let e ← ({} : Eff).wX c.p.regTo2 0
+    return { e with stores := (a, n, (← c.x c.p.from_.reg).toNat % 2 ^ (8 * n)) :: e.stores }
+  | .cas =>
+    let (a, _) ← c.mem c.p.to
+    let old := c.load a n
+    let cmp := ProgOp.maskN n (← c.x c.p.from_.reg)
+    let e ← (({} : Eff).ld a n).wX c.p.from_.reg old
+    if old == cmp then
+      return { e with stores := [(a, n, (← c.x c.p.regTo2).toNat % 2 ^ (8 * n))] }
+    return e
+  | .rmw o3 opc =>
+    let (a, _) ← c.mem c.p.to
+    let old := c.load a n
+    let nw := ProgOp.maskN n (rmwVal o3 opc old (← c.x c.p.from_.reg))
+    let e ← (({} : Eff).ld a n).wX c.p.regTo2 old
+    return { e with stores := [(a, n, nw.toNat)] }
+
+/-- `progEffect` of an `atomOp` Prog is its atomics branch. -/
+private theorem eff_atom {k : AtomK} {n : Nat} (hx : atomOp p.as.name = some (k, n)) :
+    progEffect ⟨L, s, p⟩ = atomEff ⟨L, s, p⟩ k n := by
+  unfold atomOp at hx
+  unfold progEffect
+  split at hx
+  all_goals first
+    | (cases hx; done)
+    | (next hn =>
+        cases hx
+        simp (config := { decide := true }) only [hn, ProgOp.baseOf, ProgOp.movMem,
+          ProgOp.pairOp, ProgOp.suffixBytes, ProgOp.rmw, ↓reduceIte]
+        rfl)
+
+/-- The bytes of an `atomOp` Prog. -/
+private theorem atom_bytes {name : String} {k : AtomK} {n : Nat} (h : atomOp name = some (k, n)) :
+    n = 8 ∨ n = 4 ∨ n = 2 ∨ n = 1 := by
+  unfold atomOp at h
+  split at h <;> cases h <;> simp
+
+private theorem maskN_toNat {n : Nat} (hn : n = 8 ∨ n = 4 ∨ n = 2 ∨ n = 1) (x : BitVec 64) :
+    (ProgOp.maskN n x).toNat = x.toNat % 2 ^ (8 * n) := by
+  have hk : ∀ k, k < 64 → (x &&& BitVec.ofNat 64 (2 ^ k - 1)).toNat = x.toNat % 2 ^ k := by
+    intro k hk
+    rw [BitVec.toNat_and, BitVec.toNat_ofNat,
+      Nat.mod_eq_of_lt (Nat.lt_of_lt_of_le (Nat.sub_lt (Nat.two_pow_pos k) Nat.one_pos)
+        (Nat.pow_le_pow_right (by omega) (by omega))),
+      Nat.and_two_pow_sub_one_eq_mod]
+  rcases hn with rfl | rfl | rfl | rfl
+  · simp [ProgOp.maskN, Nat.mod_eq_of_lt x.isLt]
+  · exact hk 32 (by omega)
+  · exact hk 16 (by omega)
+  · exact hk 8 (by omega)
+
+/-- A store of one symbolic value onto an effect without stores. -/
+private theorem erel_store1 {c : Ctx} {e : Eff} {σ : Sym} (hR : ERel c e σ) (hs : σ.stores = [])
+    (a v : Ex) (n : Nat) {val : Nat} (hv : (v.eval128 c).toNat % 2 ^ (8 * n) = val) :
+    ERel c { e with stores := [(a.eval c, n, val)] } (σ.store a n v) :=
+  ⟨hR.x, hR.xlt, hR.sp, hR.fl, hR.v, hR.vlt, hR.loads, by simp [Sym.store, hs, hv]⟩
+
+/-- `Ex.eval128` of a value other than `Ex.vq`. -/
+private theorem eval128_of {c : Ctx} {v : Ex} (h : ∀ r, v ≠ .vq r) :
+    (v.eval128 c).toNat = (v.eval c).toNat := by
+  unfold Ex.eval128
+  split
+  · exact absurd rfl (h _)
+  · rw [BitVec.toNat_setWidth_of_le (by omega)]
+
+/-- The store of an `n`-byte value that reads back the bytes there leaves the memory alone. -/
+private theorem apply_store_same {e : Eff} (hs : e.stores = []) (s : MState) (next a : BitVec 64)
+    (n : Nat) :
+    ({ e with stores := [(a, n, (readMem s.mem a n).toNat)] } : Eff).apply s next =
+      e.apply s next := by
+  have ho := foldr_wX_other e.x s
+  have hw := foldr_wV_other e.v
+    (e.x.foldr (fun (q : Nat × BitVec 64) (t : MState) => t.wX (BitVec.ofNat 5 q.1) q.2) s)
+  simp only [Eff.apply, hs, List.foldl_cons, List.foldl_nil]
+  rw [hw.2.2.2, ho.2.2.2, BitVec.ofNat_toNat, BitVec.setWidth_eq, writeMem_readMem]
+
+/-- `STLXR*`, `CASAL*`, the read-modify-writes (`atomOp`). -/
+private theorem fam_atom {az ez : Int} {k : AtomK} {n : Nat} (haz : L.autosize = az)
+    (hez : L.extrasize = ez) (hx : atomOp p.as.name = some (k, n))
+    (hm : atomP az ez k n p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) :
+    Out L p s e σ pc := by
+  have hn8 := atom_bytes hx
+  rw [eff_atom hx] at he
+  unfold atomP at hm
+  by_cases ht : p.to.type = .MEM
+  case neg => simp only [bne_iff_ne, ne_eq, ht, not_false_eq_true, ↓reduceIte] at hm; cases hm
+  simp only [ht, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte] at hm
+  obtain ⟨⟨a, wb⟩, hma, hm⟩ := pg_bind_ok hm
+  obtain ⟨x, hx', hm⟩ := pg_bind_ok hm
+  have hxe := (xP_eval (L := L) (s := s) (p := p) hx').1
+  have hme := memP_eval (L := L) (s := s) hma ht haz hez
+  simp only [atomEff] at he
+  rw [hme, pg_ok_bind] at he
+  cases k with
+  | stlxr =>
+    obtain ⟨σ1, hσ1, hm⟩ := pg_bind_ok hm
+    obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj hm)
+    obtain ⟨e1, he1, he⟩ := pg_bind_ok he
+    simp only [hxe, pg_ok_bind, pg_pure] at he
+    obtain rfl := pg_ok_inj he
+    obtain ⟨hR, -, hst, -, hpc⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he1 rfl
+    have he1s : e1.stores = [] := by rw [hR.stores, hst]; rfl
+    rw [he1s]
+    exact .inl ⟨erel_store1 hR hst a x n (by rw [xP_eval128 hx']), hpc⟩
+  | cas =>
+    obtain ⟨t, ht', hm⟩ := pg_bind_ok hm
+    obtain ⟨σ1, hσ1, hm⟩ := pg_bind_ok hm
+    obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj hm)
+    simp only [hxe, pg_ok_bind] at he
+    obtain ⟨e1, he1, he⟩ := pg_bind_ok he
+    obtain ⟨hR, hld1, hst, -, hpc⟩ := wP_rel (erel_ld (erel_init ⟨s, L.sym⟩) a n) hσ1 he1 rfl
+    have he1s : e1.stores = [] := by rw [hR.stores, hst]; rfl
+    have hlt : (ProgCtx.load ⟨L, s, p⟩ (a.eval ⟨s, L.sym⟩) n).toNat < 2 ^ (8 * n) := by
+      simp only [ProgCtx.load, BitVec.toNat_setWidth]
+      exact Nat.lt_of_le_of_lt (Nat.mod_le _ _) (BitVec.isLt _)
+    have hcond : ((Ex.ld n a).eval ⟨s, L.sym⟩).setWidth (8 * n) =
+        (x.eval ⟨s, L.sym⟩).setWidth (8 * n) ↔
+        ProgCtx.load ⟨L, s, p⟩ (a.eval ⟨s, L.sym⟩) n = ProgOp.maskN n (x.eval ⟨s, L.sym⟩) := by
+      show (ProgCtx.load ⟨L, s, p⟩ (a.eval ⟨s, L.sym⟩) n).setWidth (8 * n) = _ ↔ _
+      constructor
+      · intro h
+        apply BitVec.eq_of_toNat_eq
+        rw [maskN_toNat hn8]
+        have := congrArg BitVec.toNat h
+        simp only [BitVec.toNat_setWidth] at this
+        rwa [Nat.mod_eq_of_lt hlt] at this
+      · intro h
+        apply BitVec.eq_of_toNat_eq
+        have := congrArg BitVec.toNat h
+        rw [maskN_toNat hn8] at this
+        simp only [BitVec.toNat_setWidth, this, Nat.mod_mod]
+    have hne : ∀ r, Ex.eqsel n (.ld n a) x t (.ld n a) ≠ .vq r := fun _ h => by cases h
+    by_cases hc : ProgCtx.load ⟨L, s, p⟩ (a.eval ⟨s, L.sym⟩) n = ProgOp.maskN n (x.eval ⟨s, L.sym⟩)
+    · simp only [hc, beq_self_eq_true, ↓reduceIte, (xP_eval ht').1, pg_ok_bind, pg_pure] at he
+      obtain rfl := pg_ok_inj he
+      refine .inl ⟨erel_store1 hR hst a _ n ?_, hpc⟩
+      rw [eval128_of hne]
+      have hc2 : ((Ex.ld n a).eval ⟨s, L.sym⟩).setWidth (8 * n) =
+          (x.eval ⟨s, L.sym⟩).setWidth (8 * n) := hcond.2 hc
+      simp only [Ex.eval] at hc2 ⊢
+      simp only [hc2, ↓reduceIte]
+    · have hc' : (ProgCtx.load ⟨L, s, p⟩ (a.eval ⟨s, L.sym⟩) n ==
+          ProgOp.maskN n (x.eval ⟨s, L.sym⟩)) = false := by simpa using hc
+      simp only [hc', Bool.false_eq_true, ↓reduceIte, pg_pure] at he
+      obtain rfl := pg_ok_inj he
+      refine .inr (.inr (.inr ⟨_, erel_store1 hR hst a _ n (val := (readMem s.mem
+        (a.eval ⟨s, L.sym⟩) n).toNat) ?_, hpc, ?_, fun nx => apply_store_same he1s s nx _ n⟩))
+      · rw [eval128_of hne]
+        have hc2 : ¬ ((Ex.ld n a).eval ⟨s, L.sym⟩).setWidth (8 * n) =
+            (x.eval ⟨s, L.sym⟩).setWidth (8 * n) := fun h => hc (hcond.1 h)
+        simp only [Ex.eval] at hc2 ⊢
+        simp only [hc2, ↓reduceIte, BitVec.toNat_setWidth]
+        rw [Nat.mod_mod_of_dvd _ (Nat.pow_dvd_pow 2 (by rcases hn8 with rfl | rfl | rfl | rfl <;> omega)),
+          Nat.mod_eq_of_lt (BitVec.isLt _)]
+      · have hl : e1.loads = [(a.eval ⟨s, L.sym⟩, n)] := by rw [hR.loads, hld1]; rfl
+        simp only [Eff.nilAccess?, hl, he1s, List.map_cons, List.map_nil, List.cons_append,
+          List.nil_append, List.find?_cons]
+        split <;> rfl
+  | rmw o3 opc =>
+    obtain ⟨σ1, hσ1, hm⟩ := pg_bind_ok hm
+    obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj hm)
+    simp only [hxe, pg_ok_bind] at he
+    obtain ⟨e1, he1, he⟩ := pg_bind_ok he
+    obtain rfl := pg_ok_inj he
+    obtain ⟨hR, -, hst, -, hpc⟩ := wP_rel (erel_ld (erel_init ⟨s, L.sym⟩) a n) hσ1 he1 rfl
+    refine .inl ⟨erel_store1 hR hst a _ n ?_, hpc⟩
+    have h128 : ((rmwEx o3 opc (.ld n a) x).eval128 ⟨s, L.sym⟩).toNat =
+        ((rmwEx o3 opc (.ld n a) x).eval ⟨s, L.sym⟩).toNat := by
+      cases o3
+      · apply eval128_of
+        intro r h
+        unfold rmwEx at h
+        simp only [Bool.false_eq_true, ↓reduceIte] at h
+        split at h <;> cases h
+      · exact xP_eval128 hx' _
+    rw [h128, maskN_toNat hn8, Ex.eval_rmwEx]
+    rfl
 
 /-! ### Variable shifts, divisions, remainders, inverted logical operations (`dp2P`) -/
 
@@ -2142,13 +2339,13 @@ private theorem fam_rest
     (hmul : ProgOp.baseOf p.as.name ["MUL", "MNEG", "MADD", "MSUB", "UMULH", "SMULH"] = none)
     (hdp1 : ProgOp.baseOf p.as.name ["CLZ", "RBIT", "REV", "REV16", "REV32"] = none)
     (hcsel : ProgOp.baseOf p.as.name ["CSEL", "CSINC", "CSINV", "CSNEG", "CSET", "CSETM"] = none)
-    (hex : exclOp p.as.name = none)
+    (hex : exclOp p.as.name = none) (hat : atomOp p.as.name = none)
     (hdp2 : ProgOp.baseOf p.as.name
       ["ROR", "UDIV", "SDIV", "REM", "UREM", "BIC", "ORN", "EON", "MVN"] = none)
     (h : progSymCore az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) :
     Out L p s e σ pc := by
   unfold progSymCore at h
-  simp only [hb1, hb2, hb3, hb4, hb5, hm0, hp0, hc0, hmul, hdp1, hcsel, hex, hdp2] at h
+  simp only [hb1, hb2, hb3, hb4, hb5, hm0, hp0, hc0, hmul, hdp1, hcsel, hex, hat, hdp2] at h
   split at h
   · next _ hn =>
     by_cases h0 : (p.from_.offset == 0) = true
@@ -2257,7 +2454,7 @@ private theorem fam_rest
         obtain ⟨f, hf, he⟩ := pg_bind_ok he
         rw [wX_30, pg_ok_bind] at he
         obtain rfl := pg_ok_inj he
-        refine .inr (.inr ⟨a, f, rfl, rfl, ?_, fall_ok hf, rfl⟩)
+        refine .inr (.inr (.inl ⟨a, f, rfl, rfl, ?_, fall_ok hf, rfl⟩))
         have hbF : (p.to.type == AddrType.BRANCH) = false := by simpa using hb
         have hmF : (p.to.type == AddrType.MEM &&
             (p.to.name == AddrName.EXTERN || p.to.name == AddrName.STATIC)) = false := by
@@ -2353,14 +2550,20 @@ private theorem dispatch {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl} {L : Li
     simp only [hmul, hdp1, hcsel, hex] at h
     exact fam_excl haz hez hex h he
   | none =>
+  cases hat : atomOp p.as.name with
+  | some r =>
+    obtain ⟨k, n⟩ := r
+    simp only [hmul, hdp1, hcsel, hex, hat] at h
+    exact fam_atom haz hez hat h he
+  | none =>
   cases hdp2 : ProgOp.baseOf p.as.name
       ["ROR", "UDIV", "SDIV", "REM", "UREM", "BIC", "ORN", "EON", "MVN"] with
   | some r =>
     obtain ⟨op, sf⟩ := r
-    simp only [hmul, hdp1, hcsel, hex, hdp2] at h
+    simp only [hmul, hdp1, hcsel, hex, hat, hdp2] at h
     exact fam_dp2 hdp2 h he
   | none =>
-  exact fam_rest hb1 hb2 hb3 hb4 hb5 hm hp hc hmul hdp1 hcsel hex hdp2 h0 he
+  exact fam_rest hb1 hb2 hb3 hb4 hb5 hm hp hc hmul hdp1 hcsel hex hat hdp2 h0 he
 
 end fam
 
@@ -2389,6 +2592,39 @@ theorem progSym_ctl {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl}
     | (rename_i h'; simpa using h')
     | cases hc
 
+/-- `progSym_sound` from the relation (`Out`'s first and last cases). -/
+private theorem sound_rel {L : Link} {p : Prog} {σ : Sym} {pc : PCtl} {s : MState} {e : Eff}
+    {next : BitVec 64} (hR : ERel ⟨s, L.sym⟩ e σ) (hP : PRel L s e pc)
+    (hnil : e.nilAccess? = none) (hn : L.nextAddr p.id = some next) :
+    NoNil ⟨s, L.sym⟩ σ ∧ HoldsCore ⟨s, L.sym⟩ σ (e.apply s next) ∧
+      PcP L p σ s pc (e.apply s next) := by
+  obtain ⟨hN, hH, h30, hpc⟩ := erel_apply (next := next) hR hnil
+  refine ⟨hN, hH, ?_⟩
+  cases pc with
+  | fall =>
+    simp only [PRel] at hP
+    exact ⟨by rw [hpc, hP]; exact hn, h30⟩
+  | jmp id =>
+    obtain ⟨t, ht, hp⟩ := hP
+    exact ⟨by rw [hpc, hp]; exact ht, h30⟩
+  | cond cc id =>
+    obtain ⟨t, ht, hp⟩ := hP
+    refine ⟨⟨next, t, hn, ht, ?_⟩, h30⟩
+    rw [hpc, hp]; split <;> rfl
+  | cbz sf nz a id =>
+    obtain ⟨t, ht, hp⟩ := hP
+    refine ⟨⟨next, t, hn, ht, ?_⟩, h30⟩
+    rw [hpc, hp]; split <;> rfl
+  | tbz nz b a id =>
+    obtain ⟨t, ht, hp⟩ := hP
+    refine ⟨⟨next, t, hn, ht, ?_⟩, h30⟩
+    rw [hpc, hp]; split <;> rfl
+  | reg a =>
+    simp only [PRel] at hP
+    exact ⟨by rw [hpc, hP]; rfl, h30⟩
+  | call n add => exact hP.elim
+  | callReg a => exact hP.elim
+
 theorem progSym_sound {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl} {L : Link} {s s' : MState}
     (h : progSym az ez p = .ok (σ, pc)) (haz : L.autosize = az) (hez : L.extrasize = ez)
     (hskip : p.isSkip = false) (hs : progStep L p s = .ok s') :
@@ -2409,33 +2645,8 @@ theorem progSym_sound {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl} {L : Link}
   simp only [hnil] at hs
   obtain rfl := pg_ok_inj hs
   rcases dispatch (progSym_core h).1 he haz hez with ⟨hR, hP⟩ | ⟨n, add, f, rfl, rfl, hf, rfl⟩ |
-    ⟨a, f, rfl, rfl, hic, hf, rfl⟩
-  · obtain ⟨hN, hH, h30, hpc⟩ := erel_apply (next := next) hR hnil
-    refine ⟨hN, hH, ?_⟩
-    cases pc with
-    | fall =>
-      simp only [PRel] at hP
-      exact ⟨by rw [hpc, hP]; exact hn, h30⟩
-    | jmp id =>
-      obtain ⟨t, ht, hp⟩ := hP
-      exact ⟨by rw [hpc, hp]; exact ht, h30⟩
-    | cond cc id =>
-      obtain ⟨t, ht, hp⟩ := hP
-      refine ⟨⟨next, t, hn, ht, ?_⟩, h30⟩
-      rw [hpc, hp]; split <;> rfl
-    | cbz sf nz a id =>
-      obtain ⟨t, ht, hp⟩ := hP
-      refine ⟨⟨next, t, hn, ht, ?_⟩, h30⟩
-      rw [hpc, hp]; split <;> rfl
-    | tbz nz b a id =>
-      obtain ⟨t, ht, hp⟩ := hP
-      refine ⟨⟨next, t, hn, ht, ?_⟩, h30⟩
-      rw [hpc, hp]; split <;> rfl
-    | reg a =>
-      simp only [PRel] at hP
-      exact ⟨by rw [hpc, hP]; rfl, h30⟩
-    | call n add => exact hP.elim
-    | callReg a => exact hP.elim
+    ⟨a, f, rfl, rfl, hic, hf, rfl⟩ | ⟨e', hR, hP, hn', happ⟩
+  · exact sound_rel hR hP hnil hn
   · have hR : ERel ⟨s, L.sym⟩ { x := [(30, f)], pc := some (L.sym n + BitVec.ofInt 64 add) }
         { x := [(30, .k f)] } :=
       ⟨rfl, by simp, rfl, rfl, rfl, by simp, rfl, rfl⟩
@@ -2456,6 +2667,20 @@ theorem progSym_sound {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl} {L : Link}
       have : (r == 30) = false := by simp only [beq_eq_false_iff_ne, ne_eq]; omega
       simp only [Sym.getX, List.lookup, this]
     · rw [h30]; exact hf
+  · rw [← happ next]
+    exact sound_rel hR hP (hn'.trans hnil) hn
+
+/-- An effect related to a symbolic effect without access in the nil page has none. -/
+private theorem fault_rel {c : Ctx} {e : Eff} {σ : Sym} (hR : ERel c e σ) (hN : NoNil c σ) :
+    e.nilAccess? = none := by
+  unfold Eff.nilAccess?
+  rw [List.find?_eq_none]
+  intro x hx
+  rw [hR.loads, hR.stores] at hx
+  simp only [List.mem_append, List.map_map, List.mem_map, Function.comp_def] at hx
+  rcases hx with ⟨⟨a, n⟩, ha, rfl⟩ | ⟨⟨a, n, v⟩, ha, rfl⟩
+  · simp [hN.1 a n ha]
+  · simp [hN.2 a n v ha]
 
 /-- A Prog `progSym` describes whose step faults in the nil page has a symbolic access there. -/
 theorem progSym_fault {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl} {L : Link} {s : MState}
@@ -2478,24 +2703,11 @@ theorem progSym_fault {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl} {L : Link}
   cases hnil : e.nilAccess? with
   | none => simp only [hnil] at hs; cases hs
   | some a' =>
-  have hnil' := hnil
-  unfold Eff.nilAccess? at hnil'
-  have hfound := List.find?_some hnil'
-  have hmem := List.mem_of_find?_eq_some hnil'
   rcases dispatch (progSym_core h).1 he haz hez with ⟨hR, -⟩ | ⟨n, add, f, -, -, -, rfl⟩ |
-    ⟨b, f, -, -, -, -, rfl⟩
-  · rw [hR.loads, hR.stores] at hmem
-    simp only [List.mem_append, List.map_map, List.mem_map, Function.comp_def] at hmem
-    rcases hmem with ⟨⟨x, n⟩, hx, rfl⟩ | ⟨⟨x, n, v⟩, hx, rfl⟩
-    · have := hN.1 x n hx
-      simp only at hfound
-      rw [this] at hfound
-      cases hfound
-    · have := hN.2 x n v hx
-      simp only at hfound
-      rw [this] at hfound
-      cases hfound
-  · simp at hmem
-  · simp at hmem
+    ⟨b, f, -, -, -, -, rfl⟩ | ⟨e', hR, -, hn', -⟩
+  · rw [fault_rel hR hN] at hnil; cases hnil
+  · simp [Eff.nilAccess?] at hnil
+  · simp [Eff.nilAccess?] at hnil
+  · rw [← hn', fault_rel hR hN] at hnil; cases hnil
 
 end GoFV.Proof.Obj
