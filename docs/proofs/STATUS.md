@@ -1220,8 +1220,9 @@ guard: an integer an op reads as a pointer is a constant only below `2^62` (`opG
 admissible assignment decodes alike (`*_agree`). So `verifiedPipeline`, `verifiedPipelineFull` and
 the slice checkers `checkG*` take no `Addrs` instance (checked by `GoFVTest/AddrsFree.lean`), and
 the verdict `gofv-ssa-opt` computes is `verified_mach`'s premise under every instance, the
-machine's among them. Counts unchanged: `gofv-ssa-opt --check --verified` on quick-v10 and
-full-v11 is identical to main.
+machine's among them. Counts unchanged: `gofv-ssa-opt --check --verified` on quick-v10 (8,919
+through `rewrite tern`, 7,845 through `trim`, main 6f6f8ea0) and full-v11 (93,683 and 84,123,
+main 06837b1e; 93,683 and 83,919 on 7641ba1d) is identical to main, function by function.
 
 Witnesses:
 - `objWhole_ret_witness` (`GoFV/Proof/Witness/ObjWhole.lean`): `pallocSum.start` on `p = 7` in
