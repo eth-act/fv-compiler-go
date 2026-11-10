@@ -115,6 +115,13 @@ import GoFV.Proof.Gen.G59
 import GoFV.Proof.Gen.G59p
 import GoFV.Proof.Gen.G6
 import GoFV.Proof.Gen.G60
+import GoFV.Proof.Gen.G61
+import GoFV.Proof.Gen.G61V
+import GoFV.Proof.Gen.G61a
+import GoFV.Proof.Gen.G61b
+import GoFV.Proof.Gen.G61c
+import GoFV.Proof.Gen.G61d
+import GoFV.Proof.Gen.G61e
 import GoFV.Proof.Gen.G7
 import GoFV.Proof.Gen.G8
 import GoFV.Proof.Gen.G9
@@ -129,6 +136,7 @@ import GoFV.Proof.Gen.Progs2
 import GoFV.Proof.Gen.Progs3
 import GoFV.Proof.Gen.Progs4
 import GoFV.Proof.Gen.Progs50
+import GoFV.Proof.Gen.Progs61
 import GoFV.Proof.Gen.Progs7
 import GoFV.Proof.Gen.Rel
 import GoFV.Proof.Gen.RoByte
@@ -200,6 +208,8 @@ import GoFV.Proof.Gen.Spec59
 import GoFV.Proof.Gen.Spec59p
 import GoFV.Proof.Gen.Spec6
 import GoFV.Proof.Gen.Spec60
+import GoFV.Proof.Gen.Spec61
+import GoFV.Proof.Gen.Spec61a
 import GoFV.Proof.Gen.Spec7
 import GoFV.Proof.Gen.Spec8
 import GoFV.Proof.Gen.Spec9
@@ -209,6 +219,7 @@ import GoFV.Proof.Gen.Step
 import GoFV.Proof.Gen.Step3
 import GoFV.Proof.Gen.Step4
 import GoFV.Proof.Gen.Step5
+import GoFV.Proof.Gen.Step61
 import GoFV.Proof.Gen.Value
 import GoFV.Proof.Gen.Value3
 import GoFV.Proof.Low.AddrFold
@@ -991,6 +1002,7 @@ import GoFV.Proof.Witness.GenG59p
 import GoFV.Proof.Witness.GenG59u
 import GoFV.Proof.Witness.GenG6
 import GoFV.Proof.Witness.GenG60
+import GoFV.Proof.Witness.GenG61
 import GoFV.Proof.Witness.GenG7
 import GoFV.Proof.Witness.GenG8
 import GoFV.Proof.Witness.GenG9

@@ -1726,6 +1726,38 @@ runs at either (`vk48_stepM` at `false`: a G48 call is one on `callRegsZ`, `Call
 `take48_call`, and `g2_callAt` runs in either mode). `needs48 lc` (checked, Addrs-free) is the
 function-level flag; with it false a function runs at the mode `false`, as G57 and before.
 
+**Slice G61: the atomic read-modify-writes** (`GoFV/Gen/Check61.lean`, `checkG61 lc ps bstart g`,
+group A in `Check61a.lean`; proven sound, `g61_value`, `g61_initMem`, `g61_term`, `g61_nilPanic`,
+`g61_boundsPanic`, `GoFV/Proof/Gen/G61.lean`). `vkind61` is G60's `vkind60`, then, on a value G60
+rejects, `vkind61a`: `LoweredAtomic{Exchange,Add,Cas,And,Or}*`, their `*Variant` forms, and
+their `Select0`/`Select1` (no code, homed as an acquire load's). Genssa emits a
+load-exclusive/store-exclusive loop (`LDAXR (Rp), Rd`; the op; `STLXR Rs, (Rp), R27`;
+`CBNZ R27` back to the `LDAXR`; the compare-and-swap with `CMP Ro, R27; BNE` to its `CSET EQ, Rd`
+before the store) or one LSE instruction (`SWPAL`; `LDADDAL` and `ADD`; `MVN` and `LDCLRAL`;
+`LDORAL`; `MOV`, `CASAL`, `CMP` and `CSET`). `runLoc` runs the lowered op as the generic atomic
+it lowers (`Arm64.atomicOf`; `Atomic.rmw`/`Atomic.cas` with the operand fitted to the location,
+`fitPiece`). On one core a store-exclusive succeeds (`progEffect`, `GoFV.Arm64`'s single-core
+row): `R27 = 0` after it, so the loop runs once. `atomOK` checks on the whole function that each
+`CBNZ R27` branches to its `LDAXR` and each compare-and-swap's `BNE` to its `CSET` (`atomTgt`,
+`atomOK_spec`). The case lemmas, from `runLoc`'s step (`Step61.lean`: `stepLoc_rmw61`,
+`stepLoc_cas61`) and the machine's run of the Progs (`Progs61.lean`) to `LocMatch` and the
+invariants by `atom_finish` (`G61V.lean`, at either mode): `g61_xchg` (`G61a.lean`), `g61_add`
+and `g61_logic` (`G61b.lean`, the and/or loop through the value's temporary), `g61_cas`
+(`G61c.lean`, the `BNE` taken when the location does not hold `old`), `g61_lse` and `g61_casV`
+(`G61d.lean`); the components by G38's `g38_sel0`/`g38_sel1`; `vk61a_step` (`G61e.lean`), the
+upper-bit table empty after each value (`uStep35_atom61`, `uStep35_selAtom61`). `vk61_step` is
+`vk60_step`'s statement with the targets at the value's start (`hatom`); `g61L_*` are `g60L_*`
+with `checkG61L_spec` (`atomOK` included), `vkind61_spec` and `vkind61_initMem`. No new premise:
+a `stepLoc` that succeeds gives the aligned, valid location, and `addr_rel` its machine address
+outside the nil page; an atomic's own nil fault (`nilFaults`) is not among the slice's panics, as
+for G38's acquire loads. Witness `genG61_witness` (`GenG61.lean`, `sync/atomic.SwapInt64` on P0',
+at the mode `false`): `checkG60` rejects it and `checkG61` accepts it, and `g61_value` runs
+`v17 = LoweredAtomicExchange64` (`LDAXR (R0), R2; STLXR R1, (R0), R27; CBNZ R27`) from `addr`
+the pointer to the word 7 of `GenG14`'s `heap 1` and `new = 9`, after which the machine's
+`X2 = 7`. G61 on P0' accepts 7,983 functions (85.86%, +316 over G60's 7,667: 218 of std/runtime,
+84 of std/sync, 10 of std/encoding, 4 tests; std/sync/atomic is now accepted whole, 91 of 91),
+269,353 values (`--jobs 2`); G60 and every earlier slice are unchanged.
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -1829,6 +1861,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G58 (on G48) | 7,626 (82.02%) | 245,347 |
 | G59 (on G58) | 7,667 (82.46%) | 249,111 |
 | G60 (G59 with G56's float constants, P0') | 7,667 (82.46%) | 249,111 |
+| G61 (G60 with the atomics, P0') | 7,983 (85.86%) | 269,353 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -2243,6 +2276,17 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `checkG33_of_60L`, `checkG60L_spec`, `checkG60_spec`); `G60.lean`: `vk60_step`, `vk60_nil`,
   `vk60_pb`, `g60L_value` … `g60L_term`, `g60_value`, `g60_initMem`, `g60_nilPanic`,
   `g60_boundsPanic`, `g60_term`.
+- `Spec61a.lean`/`Step61.lean`/`Progs61.lean`/`G61V.lean` (G61's group A: `VK61a`,
+  `vkind61a_spec`, `vkind61a_none`, `vk61a_op`, `atomOK_spec`; `atom61?_facts`, `stepLoc_rmw61`,
+  `stepLoc_cas61`, `write_atom61`; `progStep_ldaxr`, `progStep_stlxr`, `progStep_casal`,
+  `progStep_lse`, `progStep_addTo`; `old_rel61`, `res_rel61`, `valRel_int2`, `fit_asInt61`,
+  `maskN_store`, `subFlags_z64`/`_z32`, `atom_finish`); `G61a.lean`: `xchg_run`, `atom_store61`,
+  `g61_xchg`; `G61b.lean`: `add_run`, `logic_run`, `g61_add`, `g61_logic`; `G61c.lean`:
+  `cas_run`, `g61_cas`; `G61d.lean`: `g61_lse`, `g61_casV`; `G61e.lean`: `uStep35_atom61`,
+  `uStep35_selAtom61`, `vk61a_step`; `Spec61.lean`: `VK61`, `vkind61_spec`, `vkind61_initMem`,
+  `checkG33_of_61L`, `checkG61L_spec`, `checkG61_spec`; `G61.lean`: `vk61_step`, `vk61_nil`,
+  `vk61_pb`, `g61L_value` … `g61L_term`, `g61_value`, `g61_initMem`, `g61_nilPanic`,
+  `g61_boundsPanic`, `g61_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
