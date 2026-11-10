@@ -525,11 +525,12 @@ def amodeSym (σ : Sym) (mode : AMode) (rn : Nat) (n : Nat) : Ex × Option Ex :=
   | .reg rm option sc =>
     (Ex.mkAdd base (Ex.mkExt option (if sc then Nat.log2 n else 0) (σ.rX rm.toNat)), none)
 
-/-- The symbolic integer single-register access of `ldst` at address `a` (no write-back). -/
+/-- The symbolic integer single-register access of `ldst` at address `a` (no write-back); `PRFM`
+(`size = 3`, `opc = 2`) has no effect (`execLdSt`). -/
 def symAccess (σ : Sym) (size : BitVec 2) (opc : BitVec 2) (rt : Nat) (a : Ex) :
     Except String Sym := do
   let n := bytesOf size
-  if size = 3 && opc = 2 then throw "PRFM"
+  if size = 3 && opc = 2 then return σ
   if opc != 0 then
     let (σ, v) ← σ.load a n
     pure (σ.wX rt (loadVal opc n v))

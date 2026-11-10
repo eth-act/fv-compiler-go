@@ -794,4 +794,113 @@ theorem zeroSt_lower_eval {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame} {u w : V
       exact .ok (.mem hm2)
     · simp at hlen; omega
 
+/-! ## Two stores of `0` (`ARM64.rules:339`-`370`) -/
+
+/-- The memory after the inner store of a `Zero [n]` lowered to two stores: its `a` zero bytes
+written at the `Zero`'s pointer `d` in the memory `m` (`poison` if that write fails). -/
+def zPre (a : Nat) (d m : Val) : Val :=
+  match d.asPtrWord, m with
+  | some P, .mem mm =>
+    match mm.write P (Array.replicate a (.b 0)) with
+    | some m2 => .mem m2
+    | none => .poison
+  | _, _ => .poison
+
+/-- A scalar integer store (`ZSt`) of `s` bytes writes `s` zero bytes for the word `0`. -/
+private theorem zSt_zero {o : Op} {s : Nat} (h : ZSt o s) :
+    Arm64.storeBytes s (.i64 0) = Array.replicate s (.b 0) := by
+  apply storeBytes_zero
+  rcases h with ⟨-, rfl⟩ | ⟨-, rfl⟩ | ⟨-, rfl⟩ | ⟨-, rfl⟩ <;> simp
+
+/-- **The inner store of `Zero [n]` lowered to two stores** (`ARM64.rules:339`-`370`): when the
+`Zero` does not get stuck, the inner store `w1` (`si ≤ n` bytes) at an address related to the
+`Zero`'s pointer (`AddrRef`), of the word `0` on a refined memory, writes a memory refining
+`zPre`. -/
+theorem zero2_inner_eval {env : Env} {ctx ctx' : Ctx} {fr fr1 : Frame} {u w1 : Value}
+    (hu : u.op = .Zero) {si : Nat} (h1 : ZSt w1.op si) (hsn : si ≤ u.auxInt.toInt.toNat)
+    {ty ty1 : Ty} {d m d1 m' x y : Val}
+    (hd1 : AddrRef ctx'.tabs ctx'.act w1.aux w1.auxInt d d1)
+    (hm : Sem.Refines m m') (hx : Sem.Refines (.i64 0) x)
+    (hok : evalOp env ctx fr u [d, m] ty = .ok y) :
+    ∃ r, evalOpL false env ctx' fr1 w1 [d1, x, m'] ty1 = .ok r ∧ Sem.Refines (zPre si d m) r := by
+  have hsi : 0 < si := by rcases h1 with ⟨-, rfl⟩ | ⟨-, rfl⟩ | ⟨-, rfl⟩ | ⟨-, rfl⟩ <;> omega
+  have hS : evalOp env ctx fr u [d, m] ty = memRoot ctx u [d, m] := by
+    unfold evalOp; rw [hu]
+  rw [hS] at hok
+  rcases memRoot_zero_inv (ctx := ctx) hu [d, m] with ⟨msg, hst⟩ |
+    ⟨a, mm, P, m1, harg, hP, hw, -⟩
+  · rw [hst] at hok; cases hok
+  simp only [List.cons.injEq, and_true] at harg
+  obtain ⟨rfl, rfl⟩ := harg
+  cases hm with | @mem _ mm' hmm =>
+  cases hx
+  have hov := write_overlap (a := si) (k := 0) hsi (by omega)
+    (by rw [Array.size_replicate]; omega) (by rw [Array.size_replicate]; omega) hw
+  cases hw1 : mm.write P ((Array.replicate u.auxInt.toInt.toNat (Byte.b 0)).extract 0 si) with
+  | none => rw [hw1] at hov; cases hov
+  | some m2 =>
+  rw [Array.extract_replicate, Nat.min_eq_left hsn, Nat.sub_zero] at hw1
+  obtain ⟨m2', hw2', hm2⟩ := hmm.write (BytesRefineA.refl _) hw1
+  have hP1 : symAddr ctx' w1 d1 = some P := (show symAddr ctx' w1 d1 =
+    addrAt ctx'.tabs ctx'.act w1.aux w1.auxInt d1 by unfold symAddr addrAt; rfl).trans (hd1 P hP)
+  obtain ⟨what, he⟩ := evalOpL_movSt (env := env) (fr := fr1) (ty := ty1) (x := .i64 0)
+    (m := mm') h1 hP1
+  refine ⟨.mem m2', ?_, ?_⟩
+  · rw [he]
+    simp only [writeRes, Arm64.storeN, zSt_zero h1, hw2']
+  · unfold zPre
+    rw [hP]
+    dsimp only
+    rw [hw1]
+    exact .mem hm2
+
+/-- **The outer store of `Zero [n]` lowered to two stores** (`ARM64.rules:339`-`370`): the outer
+store `w2` (`so` bytes) `k` bytes into the `Zero`'s pointer (`AddrRef` of the pointer moved by
+`k`, `shiftW`; `k + so = n`, `k ≤ si ≤ n`), of the word `0`, on a memory refining the inner
+store's (`zPre` of its `si` bytes; the two may overlap, `write_overlap`), refines the generic
+`Zero` (both shaped). -/
+theorem zero2_outer_eval {env : Env} {ctx ctx' : Ctx} {fr fr2 : Frame} {u w2 : Value}
+    (hu : u.op = .Zero) {si so k : Nat} (h2 : ZSt w2.op so)
+    (hn : k + so = u.auxInt.toInt.toNat) (hks : k ≤ si) (hsn : si ≤ u.auxInt.toInt.toNat)
+    (hsi : 0 < si) {ty : Ty} (lS : Bool) {d m d2 mw x : Val}
+    (hd2 : AddrRef ctx'.tabs ctx'.act w2.aux w2.auxInt (shiftW k d) d2)
+    (hmw : Sem.Refines (zPre si d m) mw) (hx : Sem.Refines (.i64 0) x) :
+    Res.Refines ((evalOp env ctx fr u [d, m] ty).bind fun r => .ok (rty lS ty r))
+      ((evalOpL false env ctx' fr2 w2 [d2, x, mw] ty).bind fun r => .ok (rty true ty r)) := by
+  have hso : 0 < so := by rcases h2 with ⟨-, rfl⟩ | ⟨-, rfl⟩ | ⟨-, rfl⟩ | ⟨-, rfl⟩ <;> omega
+  have hS : evalOp env ctx fr u [d, m] ty = memRoot ctx u [d, m] := by
+    unfold evalOp; rw [hu]
+  rw [hS]
+  refine Res.Rel.bind ?_ fun x y hxy => .ok (rty_le (fun _ => rfl) ty hxy)
+  rcases memRoot_zero_inv (ctx := ctx) hu [d, m] with ⟨msg, hst⟩ |
+    ⟨a, mm, P, m1, harg, hP, hw, hres⟩
+  · rw [hst]; exact .stuck _ _
+  simp only [List.cons.injEq, and_true] at harg
+  obtain ⟨rfl, rfl⟩ := harg
+  rw [hres]
+  cases hx
+  have hov := write_overlap (a := si) (k := k) hsi hks (by rw [Array.size_replicate]; omega)
+    (by rw [Array.size_replicate]; omega) hw
+  cases hw1 : mm.write P ((Array.replicate u.auxInt.toInt.toNat (Byte.b 0)).extract 0 si) with
+  | none => rw [hw1] at hov; cases hov
+  | some m2 =>
+  rw [hw1, Option.bind_some, Array.extract_replicate, Array.size_replicate, Nat.min_self,
+    ← hn, show k + so - k = so by omega] at hov
+  rw [Array.extract_replicate, Nat.min_eq_left hsn, Nat.sub_zero] at hw1
+  unfold zPre at hmw
+  rw [hP] at hmw
+  dsimp only at hmw
+  rw [hw1] at hmw
+  cases hmw with | @mem _ m2' hm2 =>
+  obtain ⟨m3', hw3', hm3⟩ := hm2.write (BytesRefineA.refl _) hov
+  have hP2 : symAddr ctx' w2 d2 = some (P.add (BitVec.ofNat 64 k)) :=
+    (show symAddr ctx' w2 d2 = addrAt ctx'.tabs ctx'.act w2.aux w2.auxInt d2 by
+      unfold symAddr addrAt; rfl).trans
+      (hd2 _ (shiftW_of hP (inWindow_of_write hw (k := k) (by rw [Array.size_replicate]; omega))))
+  obtain ⟨what, he⟩ := evalOpL_movSt (env := env) (fr := fr2) (ty := ty) (x := .i64 0)
+    (m := m2') h2 hP2
+  rw [he]
+  simp only [writeRes, Arm64.storeN, zSt_zero h2, hw3']
+  exact .ok (.mem hm3)
+
 end GoFV.Proof.Low.Sim

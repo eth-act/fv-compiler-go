@@ -162,7 +162,10 @@ theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
       · exact absurd huph (moveQ2Lower_ops hq).1) (by
       cases hz : zeroLower tabs u w
       · rfl
-      · rw [(zeroLower_facts hz).1] at huph; cases huph)
+      · rw [(zeroLower_facts hz).1] at huph; cases huph) (by
+      cases hz : zero2Lower u w
+      · rfl
+      · rw [(zero2Lower_facts hz).1] at huph; cases huph)
     have hzf : z ∈ fb.values := by
       obtain ⟨-, -, blk, hblk', hzv⟩ := hpu
       rw [hblk, hwb, B.hfb] at hblk'; cases hblk'; exact hzv
@@ -346,14 +349,14 @@ theorem atomL_sched {x : ID} (hx : x ∈ og.toList) {w : Value} (hw : g.value? x
   · obtain ⟨hf, -⟩ := compOKL_cases hco
     rw [hf] at hfs; cases hfs
 
-/-- The outer of two 128-bit stores lowering a `Move` reads, as its memory, a value of the
+/-- The outer of two stores lowering a `Move` or a `Zero` reads, as its memory, a value of the
 schedule (`q2OKL`). -/
 theorem q2_last_og {x : ID} (hx : x ∈ og.toList) {u w : Value} (hu : f.value? x = some u)
-    (hw : g.value? x = some w) (hq2 : moveQ2Lower u w = true) :
+    (hw : g.value? x = some w) (hq2 : st2Lower u w = true) :
     w.args[w.args.size - 1]! ∈ og.toList := by
   obtain ⟨hxb, w', hw', -⟩ := (B.mT x).1 hx
   rw [hw] at hw'; cases hw'
-  have ht : termVL tabs w = false := termVL_qStoreOp (moveQ2Lower_qStore hq2)
+  have ht : termVL tabs w = false := termVL_qzStore (st2Lower_store hq2)
   rcases B.ba.sub x hxb w hw ht with ⟨-, u', hu', -, -, hq⟩ | hfa | hco
   · rw [hu] at hu'; cases hu'
     rw [B.sT] at hq
@@ -361,19 +364,19 @@ theorem q2_last_og {x : ID} (hx : x ∈ og.toList) {u w : Value} (hu : f.value? 
       beq_iff_eq] at hq
     obtain ⟨A, B', C, hsplit, -⟩ := nextAtomL_spec hq
     rw [hsplit]; simp
-  · have := moveQ2Lower_qStore hq2
+  · have := st2Lower_store hq2
     rw [(frameAtomG_cases hfa).1] at this; cases this
   · obtain ⟨hf, -⟩ := compOKL_cases hco
     rw [hu] at hf; cases hf
 
-/-- The inner store of two 128-bit stores lowering a `Move` (`compOKL`, `f` has no value at `x`)
-and its owner `v`: the next atom of the schedule, a root of `f` and an atom of `g` (`rootAtL`),
-the outer store reading `x` as its memory. -/
+/-- The inner store of two stores lowering a `Move` or a `Zero` (`compOKL`, `f` has no value at
+`x`) and its owner `v`: the next atom of the schedule, a root of `f` and an atom of `g`
+(`rootAtL`), the outer store reading `x` as its memory. -/
 theorem comp_owner {x : ID} (hx : x ∈ og.toList) {w : Value} (hw : g.value? x = some w)
     (ht : termVL tabs w = false) (hfn : f.value? x = none) :
     ∃ v u wv A B' C, og.toList = A ++ x :: (B' ++ v :: C) ∧
       (∀ y ∈ B', (g.value? y).any (!termVL tabs ·) = false) ∧ f.value? v = some u ∧
-      Placed g v wv ∧ moveQ2Lower u wv = true ∧ wv.args[wv.args.size - 1]! = x ∧
+      Placed g v wv ∧ st2Lower u wv = true ∧ wv.args[wv.args.size - 1]! = x ∧
       rootAtL tabs f g v = true := by
   obtain ⟨hxb, w', hw', -⟩ := (B.mT x).1 hx
   rw [hw] at hw'; cases hw'
@@ -390,8 +393,11 @@ theorem comp_owner {x : ID} (hx : x ∈ og.toList) {w : Value} (hw : g.value? x 
     rw [hwv] at hwv'; cases hwv'
     refine ⟨v, u, wv, A, B', C, hsplit, hB', hu, (placed_in H.wg B.bmT B.hgb hvb hwv).1, hq2,
       hlast, ?_⟩
-    have hr : isRoot u.op = true := by rw [(moveQ2Lower_facts hq2).1]; rfl
-    have ht' := termVL_qStoreOp (tabs := tabs) (moveQ2Lower_qStore hq2)
+    have hr : isRoot u.op = true := by
+      rcases st2Lower_cases hq2 with h | h
+      · rw [(moveQ2Lower_facts h).1]; rfl
+      · rw [(zero2Lower_facts h).1]; rfl
+    have ht' := termVL_qzStore (tabs := tabs) (st2Lower_store hq2)
     simp [rootAtL, rootL, hu, hwv, hr, ht']
 
 /-- Atoms placed outside `b` where `f` has no term, a value, keep their registers through block
@@ -687,7 +693,7 @@ theorem arg_beforeL {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
 /-- A corresponding atom of a generic op of `g` has the same op in `f`. -/
 theorem atomPair_op_of_generic {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true)
     (hg : w.op.generic = true) : u.op = w.op := by
-  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h | h, -⟩ | h | h | h | h | h | h
+  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h | h, -⟩ | h | h | h | h | h | h | h
   · exact h
   · exfalso
     rcases renameOp_cases h with ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ |
@@ -716,6 +722,9 @@ theorem atomPair_op_of_generic {tabs : Tables} {u w : Value} (h : atomPair tabs 
     unfold zStore at hz
     simp only [Bool.or_eq_true, beq_iff_eq] at hz
     rcases hz with (((h2 | h2) | h2) | h2) | h2 <;> rw [h2] at hg <;> cases hg
+  · exfalso
+    obtain ⟨-, so, -, hso, -⟩ := zero2Op_cases (zero2Lower_facts h).2.2.2.choose_spec.choose_spec
+    rcases hso with ⟨h2, -⟩ | ⟨h2, -⟩ | ⟨h2, -⟩ | ⟨h2, -⟩ <;> rw [h2] at hg <;> cases hg
 
 /-- A split of a list without duplicates around `x` is unique. -/
 private theorem split_unique {x : ID} :
@@ -855,6 +864,20 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
     · revert h; decide
     · revert h; decide
     · exact absurd h (by simp)
+  -- nor does a `Zero`
+  have hnzero : ur.op ≠ .Zero := fun hm => by
+    have hp := evalValueL_panic_op hevr
+    rw [hm] at hp
+    rcases hp with h | h | ⟨h, -⟩
+    · revert h; decide
+    · revert h; decide
+    · exact absurd h (by simp)
+  have hnst2 : ∀ w, st2Lower ur w = false := fun w => by
+    cases h : st2Lower ur w
+    · rfl
+    · rcases st2Lower_cases h with h | h
+      · exact absurd (moveQ2Lower_facts h).1 hnmove
+      · exact absurd (zero2Lower_facts h).1 hnzero
   obtain ⟨T, hevT, l1, l2, l3, l4, l5, l6, l7, -⟩ := tgt_loop H hE (og := og.toList) (L := preT)
     (M := r :: postT) (P := pre) hog hfrT (by rw [pT1, R.szT]) g3 htyPT g4 hfrG
     (regsFrameL_phis R.framesT pT3) hT1
@@ -905,7 +928,7 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
         rw [← hfl] at this
         exact ⟨v, u, wv, (List.mem_filter.1 this).1, hu, hpv, hq2, hlast⟩
       · rw [hur] at hu; cases hu
-        exact absurd (moveQ2Lower_facts hq2).1 hnmove)
+        rw [hnst2] at hq2; cases hq2)
     (fun v hv => by
       obtain ⟨u, y, hu, hy, hev⟩ := g6 v hv
       exact ⟨u, hu, hargsS v (.inl hv) u hu, y, hy, hev⟩)
@@ -924,7 +947,7 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
       · right
         have htop := B.tpT; rw [hog] at htop h
         exact topoRem_before htop (by rw [argsF_of hwr]; exact Array.mem_toList_iff.2 ha) h)
-    hwrph fun hq2 => absurd (moveQ2Lower_facts hq2).1 hnmove
+    hwrph fun hq2 => by rw [hnst2] at hq2; cases hq2
   rw [hevr] at hrT
   obtain ⟨m', hT', hm⟩ := res_panic_of_refines hrT
   refine ⟨m', enterBlockL_of hpsT (by rw [schedL_of_block B.hgb B.idT, B.sT]) ?_, hm⟩

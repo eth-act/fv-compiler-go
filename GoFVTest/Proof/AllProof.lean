@@ -1061,6 +1061,7 @@ import GoFV.Proof.Witness.LowerTruncW
 import GoFV.Proof.Witness.LowerWBPanic
 import GoFV.Proof.Witness.LowerZero
 import GoFV.Proof.Witness.LowerZeroSt
+import GoFV.Proof.Witness.LowerZeroSt2
 import GoFV.Proof.Witness.MakeSel
 import GoFV.Proof.Witness.Max3
 import GoFV.Proof.Witness.MemCombine
@@ -1073,6 +1074,7 @@ import GoFV.Proof.Witness.NilLateL
 import GoFV.Proof.Witness.NilMalloc
 import GoFV.Proof.Witness.NilSel
 import GoFV.Proof.Witness.NotIf
+import GoFV.Proof.Witness.ObjBarrier
 import GoFV.Proof.Witness.ObjEndToEnd
 import GoFV.Proof.Witness.ObjEndToEndAtSP
 import GoFV.Proof.Witness.ObjEntry49

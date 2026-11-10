@@ -1323,9 +1323,12 @@ group A). Each value is one Prog with no temporary:
   no home. Phase 1 (`arm64Op`) returns the memory unchanged and ignores `PRFM`'s address, so the
   state stays (`stepLoc_dmb57`, `stepLoc_prfm57`); `progEffect`'s `DMB`/`PRFM` arm has no effect
   (`progStep_barrier57`), and the machine of `GoFV/Arm64/Exec.lean` runs barriers and `PRFM` as
-  no-ops. `checkObj` (`GoFV/Asm/CheckObj.lean`, `CheckObjSym.lean`'s `throw "PRFM"`) does not
-  model either Prog yet: the whole-function composition (`GoFV/Proof/Obj`) of a function with one
-  waits for that object-side step.
+  no-ops. `checkObj` models both Progs as no-ops (§7, **Barriers**): `progSym` has `DMB`/`PRFM`
+  arms, and `symAccess` runs a `PRFM` word with no effect. `checkObj` accepts
+  `mallocgcSmallNoscanReuse` and `(*mspan).userArenaNextFree`; it rejects `scanObject` (`SBFIZ`)
+  and `scanObjectSmall` (`VCNT`) for other opcodes. None of the four is end to end: the
+  composition (`verified_mach`) is on G56, which rejects `DMB`/`PRFM`, and Phase 2 does not fully
+  verify any of them (`lower`: checked variant incomplete).
 - `FMOVSstore`/`FMOVDstore [off] {x} SP val mem` as `FMOVS`/`FMOVD Fs, off(<nc>)` and
   `FSTPS`/`FSTPD [off] {x} SP a b mem` as `FSTPS`/`FSTPD (Fa, Fb), off(<nc>)` (`fstpOf`,
   `fstpAs`), floats of the op's width, of a frame variable `x` at its operand (`fvar57?`: G49's
@@ -2462,7 +2465,7 @@ below; 0 parse or port errors):
 
 | Functions | Accepted | P0 Progs in accepted functions |
 | --: | --: | --: |
-| 9,297 | 8,703 (93.61%) | 354,101 of 429,130 |
+| 9,297 | 8,729 (93.89%) | 358,922 of 429,130 |
 | G7 slice: 2,109 | 2,108 (99.95%) | |
 | G8 slice: 2,323 | 2,322 (99.95%) | |
 | G9 slice: 2,551 | 2,550 (99.96%) | 51,122 of 51,143 |
@@ -2529,6 +2532,21 @@ integer one). Proof: `decode_ldstLo` for either kind of access (bit 26 is `vec`)
 `accessBytes_vec` (a non-`Q` vector access moves `2 ^ size` bytes, the relocation's scale),
 `symVAccess_exec` (`insn_vaccess`) and the now public `symVAccess_fault` in `symUnit_sound` and
 `symUnit_fault`. `ObjRel`, `ObjEnv` and the theorem statements are unchanged.
+
+**Barriers** (8,703 → 8,729, +26: 26 of the 31 quick-v10 functions with a `DMB` or `PRFM`; the
+other 5 stop at `LDORALB` 2, `VCNT` 2, `SBFIZ` 1): `DMB $k` and `PRFM 0(Rn), $k` (G57 group B, §4)
+are no-ops on both sides. `progSymCore` has a `DMB` arm (`From` a constant, no `To`) and a `PRFM`
+arm (`From` `MEM`, name `NONE`, offset 0, no index; `To` a constant), each `({}, .fall)`. Both
+mirror `progEffect`'s `DMB`/`PRFM` arm (`fam_rest`, `eff_barrier`). On the machine side
+`symInsn` already ran `.barrier` as a no-op. `symAccess` now returns `σ` for `PRFM` (`size = 3`,
+`opc = 2`), as `execLdSt` does: no access, so no nil-page check, and no write-back for the
+unsigned-offset form the assembler emits. The proof extends `insn_access` (the machine state
+unchanged, PC moved on), `symAccess_mono` and `symAccess_fault` (a `PRFM` adds no access, so it
+cannot reach the nil page). `ObjRel`, `ObjEnv` and the theorem statements are unchanged.
+Witnesses `objBarrier_dmb_witness` (`GoFV/Proof/Witness/ObjBarrier.lean`: `checkObj` accepts
+`runtime.mallocgcSmallNoscanReuse`; its `DMB $14` decodes to `.barrier 5 14`; `progSym_sound` on
+that Prog) and `objBarrier_prfm_witness` (`PRFM PLDL1KEEP, [X0]` with `X0 = 0` runs through
+`symInsn_sound` and keeps the memory; `PRFM (R0), $0` has the same effect).
 
 **Proof** (`GoFV/Proof/Obj/`):
 

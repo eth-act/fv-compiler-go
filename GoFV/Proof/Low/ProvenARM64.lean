@@ -343,7 +343,7 @@ theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
       ⟨r_ARM64_45_2_sound, trivial⟩,
       ⟨r_ARM64_45_3_sound, trivial⟩,
       ⟨r_ARM64_45_4_sound, trivial⟩,
-      ⟨r_ARM64_336_sound, r_ARM64_337_sound, r_ARM64_338_sound, r_ARM64_351_sound, r_ARM64_373_sound, r_ARM64_376_sound, r_ARM64_377_sound, trivial⟩,
+      ⟨r_ARM64_336_sound, r_ARM64_337_sound, r_ARM64_338_sound, r_ARM64_339_sound, r_ARM64_342_sound, r_ARM64_345_sound, r_ARM64_348_sound, r_ARM64_351_sound, r_ARM64_352_sound, r_ARM64_355_sound, r_ARM64_358_sound, r_ARM64_361_sound, r_ARM64_364_sound, r_ARM64_367_sound, r_ARM64_370_sound, r_ARM64_373_sound, r_ARM64_376_sound, r_ARM64_377_sound, trivial⟩,
       ⟨r_ARM64_201_sound, trivial⟩,
       ⟨r_ARM64_203_sound, trivial⟩,
       ⟨r_ARM64_204_sound, trivial⟩,

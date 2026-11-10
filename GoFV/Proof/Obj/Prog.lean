@@ -2122,6 +2122,14 @@ private theorem fam_fp {k : FpOp} (hk : fpOp? p.as.name = some k)
   | cvtz => exact fam_fcvtz hk h he
   | cvtf => exact fam_fcvtf hk h he
 
+/-- `DMB` and `PRFM` have no effect (`progEffect`'s `DMB`/`PRFM` arm). -/
+private theorem eff_barrier (hn : p.as.name = "DMB" ∨ p.as.name = "PRFM") :
+    progEffect ⟨L, s, p⟩ = .ok {} := by
+  unfold progEffect
+  rcases hn with hn | hn <;>
+    simp (config := { decide := true }) only [hn, ProgOp.baseOf, ↓reduceIte, ProgOp.movMem,
+      ProgOp.pairOp, ProgOp.rmw, ProgOp.bcond, ProgOp.startsS] <;> rfl
+
 /-- The opcodes `progSym` matches by name. -/
 private theorem fam_rest
     (hb1 : ProgOp.baseOf p.as.name ["LSL", "LSR", "ASR"] = none)
@@ -2151,6 +2159,21 @@ private theorem fam_rest
     simp (config := { decide := true }) only [hn, ProgOp.baseOf, ProgOp.movMem, ProgOp.pairOp,
       ProgOp.rmw, ProgOp.bcond, ↓reduceIte] at he
     obtain rfl := pg_ok_inj he
+    exact .inl ⟨erel_init _, rfl⟩
+  · next _ hn =>
+    by_cases h0 : (p.from_.type == .CONST && p.to.type == .NONE) = true
+    case neg => simp only [h0, Bool.false_eq_true, ↓reduceIte] at h; cases h
+    simp only [h0, ↓reduceIte] at h
+    obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj h)
+    obtain rfl := pg_ok_inj ((eff_barrier (.inl hn)).symm.trans he)
+    exact .inl ⟨erel_init _, rfl⟩
+  · next _ hn =>
+    by_cases h0 : (p.from_.type == .MEM && p.from_.name == .NONE && p.from_.offset == 0 &&
+      p.from_.index == 0 && p.to.type == .CONST) = true
+    case neg => simp only [h0, Bool.false_eq_true, ↓reduceIte] at h; cases h
+    simp only [h0, ↓reduceIte] at h
+    obtain ⟨rfl, rfl⟩ := Prod.mk.inj (pg_ok_inj h)
+    obtain rfl := pg_ok_inj ((eff_barrier (.inr hn)).symm.trans he)
     exact .inl ⟨erel_init _, rfl⟩
   · next _ hn =>
     by_cases hb : p.to.type = .BRANCH

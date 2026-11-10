@@ -581,7 +581,7 @@ def atomDef1 (tabs : Tables) (f : Func) (M : Defs) (v : ID) (x u : Value) :
         qFold tabs f M x u && match f.value? v with
           | some a =>
             a.op == .Move && qStore x.op || a.op == .Zero && a.args.size == 2 && zStore x.op
-          | none => qStore x.op)
+          | none => qStore x.op || zStore x.op)
     then some (u, none)
   else none
 
@@ -716,7 +716,7 @@ def moveDef2 (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value) 
   | _, _ => none
 
 /-- A fresh `MOVDconst [0]` term `c` (no aux or arguments) at a fresh ID of `M` other than `v`, at
-the 64-bit integer shape: the value of the stores lowering a `Zero` (`zeroDef`). -/
+the 64-bit integer shape: the value of the stores lowering a `Zero` (`zeroDef`, `zeroDef2`). -/
 def zConst (tabs : Tables) (M : Defs) (v : ID) (c : Value) : Bool :=
   c.op == .ARM64MOVDconst && c.auxInt == 0 && c.aux == none && c.args.size == 0 && c.id != v &&
     (M.get? c.id).isNone && termVL tabs c && Sem.Ty.beq (shpL tabs c.type) (.int .w64)
@@ -737,6 +737,31 @@ def zeroDef (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value) :
       | some (o, k) =>
         if u.op == o && u.args == (if k == 3 then #[x.args[0]!, c.id, x.args[1]!]
             else #[x.args[0]!, c.id, c.id, x.args[1]!]) then some (u, c)
+        else none
+      | none => none
+    else none
+  | _, _ => none
+
+/-- A rule event at the `Zero [n]` `x` at `v` (a `Zero` in `f`) lowering it to two stores of `0`
+(`ARM64.rules:339`-`370`; `zero2Op`), replayed as its new definitions: the outer store `u` at `v`
+(`x`'s type, the outer offset, no aux) on `x`'s pointer, the fresh term `c` (`zConst`) and the
+inner store `w`; `w` (`x`'s type, an atom at a fresh ID `f` does not define, offset 0, no aux) on
+`x`'s pointer, `c` and `x`'s memory. The log lists the nodes in pre-order: `u`, `c`, `w`. The
+result is `u`, `c` and `w`. -/
+def zeroDef2 (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value) :
+    Option (Value × Value × Value) :=
+  match M.get? v, defs with
+  | some x, [_, u, c, w] =>
+    if x.id == v && u.id == v && x.op == .Zero && x.args.size == 2 && !termVL tabs x &&
+        !termVL tabs u && u.type == x.type && u.aux == none && zConst tabs M v c &&
+        (f.value? v).any (fun a => a.op == .Zero && a.auxInt == x.auxInt) then
+      match zero2Op x.auxInt with
+      | some (oo, k, oi) =>
+        if u.op == oo && u.auxInt == Int64.ofNat k && w.op == oi && w.auxInt == 0 &&
+            w.aux == none && w.type == x.type && !termVL tabs w && w.id != v && w.id != c.id &&
+            (M.get? w.id).isNone && (f.value? w.id).isNone &&
+            w.args == #[x.args[0]!, c.id, x.args[1]!] && u.args == #[x.args[0]!, c.id, w.id] then
+          some (u, c, w)
         else none
       | none => none
     else none
@@ -1153,6 +1178,9 @@ def replayL (tabs : Tables) (t : Interp.Table) (f : Func) :
               match zeroDef tabs f M v defs.toList with
               | some (u, c) => replayL tabs t f ((M.put c.id c).put v u) B evs
               | none =>
+              match zeroDef2 tabs f M v defs.toList with
+              | some (u, c, w) => replayL tabs t f (((M.put c.id c).put w.id w).put v u) B evs
+              | none =>
               match frameFold tabs f M v defs.toList with
               | some u => replayL tabs t f (M.put v u) B evs
               | none =>
@@ -1208,13 +1236,14 @@ def atomsOfL (tabs : Tables) (h : Func) (b : Block) : List ID :=
 (`renameOp`) with the same type, auxint, aux and number of arguments, or `w` lowers the store `u`
 (`memLower`) or the `Zero` or `Move` `u` (`bulkLower`) with the same type and number of
 arguments, or the frame address `u` (`addrLower`), the bounds panic `u` with constant operands
-(`pbLower`), the store `u` to an indexed store (`idxLower`) or the `Move` `u` to a 128-bit store
-(`moveQLower`) or to two, the outer one (`moveQ2Lower`), with the same type. -/
+(`pbLower`), the store `u` to an indexed store (`idxLower`), the `Move` `u` to a 128-bit store
+(`moveQLower`) or to two, the outer one (`moveQ2Lower`), or the `Zero` `u` to a store of `0`
+(`zeroLower`) or to two, the outer one (`zero2Lower`), with the same type. -/
 def atomPair (tabs : Tables) (u w : Value) : Bool :=
   (((u.op == w.op || renameOp u.op w.op) && u.auxInt == w.auxInt && u.aux == w.aux ||
     memLower tabs u w || bulkLower u w) && u.args.size == w.args.size || addrLower tabs u w ||
     pbLower u w || idxLower tabs u w || moveQLower tabs u w || moveQ2Lower u w ||
-    zeroLower tabs u w) &&
+    zeroLower tabs u w || zero2Lower u w) &&
   u.type == w.type && u.block == w.block && u.id == w.id
 
 /-- The operands of `PanicBounds [kind] x y mem` a lowered bounds panic with constant operands
@@ -1261,24 +1290,27 @@ def nextAtomL (tabs : Tables) (g : Func) (og : List ID) (x : ID) : Option ID :=
   | _ :: rest => rest.find? fun y => (g.value? y).any (!termVL tabs ·)
   | [] => none
 
-/-- The atom `w` of `g` at `x`, where `f` has no value, is the inner store of the two 128-bit
-stores lowering a `Move` (`moveQ2In`, `ARM64.rules:423`, `431`, `434`; `moveDef2` replays it at a
-fresh ID), a memory: the next atom `v` of `g`'s schedule `og` is the outer one (`moveQ2Lower`) of
-the `Move` of `f` at `v`, its last argument `x`. -/
+/-- The atom `w` of `g` at `x`, where `f` has no value, is the inner store of the two stores
+lowering a `Move` (`moveQ2In`, `ARM64.rules:423`, `431`, `434`; `moveDef2` replays it at a fresh
+ID) or a `Zero` (`zero2In`, `339`-`370`; `zeroDef2`), a memory: the next atom `v` of `g`'s
+schedule `og` is the outer one (`moveQ2Lower`, `zero2Lower`) of the `Move` or `Zero` of `f` at
+`v`, its last argument `x`. -/
 def compOKL (tabs : Tables) (f g : Func) (og : List ID) (x : ID) (w : Value) : Bool :=
   (f.value? x).isNone && !termVL tabs w && Sem.Ty.beq (shpL tabs w.type) .mem &&
   match nextAtomL tabs g og x with
   | some v =>
     match f.value? v, g.value? v with
-    | some u, some wv => moveQ2Lower u wv && moveQ2In u w && wv.args[wv.args.size - 1]! == x
+    | some u, some wv =>
+      (moveQ2Lower u wv && moveQ2In u w || zero2Lower u wv && zero2In u w) &&
+        wv.args[wv.args.size - 1]! == x
     | _, _ => false
   | none => false
 
-/-- The outer store `w` at `x` of a `Move` `u` lowered to two 128-bit stores (`moveQ2Lower`) is
+/-- The outer store `w` at `x` of a `Move` or `Zero` `u` lowered to two stores (`st2Lower`) is
 the next atom of `g`'s schedule `og` after its memory, the inner store (`compOKL` from that side):
 both are in the same block, the inner one evaluated first. -/
 def q2OKL (tabs : Tables) (g : Func) (og : List ID) (x : ID) (u w : Value) : Bool :=
-  !moveQ2Lower u w || nextAtomL tabs g og w.args[w.args.size - 1]! == some x
+  !st2Lower u w || nextAtomL tabs g og w.args[w.args.size - 1]! == some x
 
 /-- `RewriteCheck.atomsOK` with `atomPair` (and `pbConstOK`, `q2OKL`): the same entry, blocks and
 own aux; every atom of `g` corresponds to an atom of `f` or is a lowered frame address where `f`
