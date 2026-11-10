@@ -24,8 +24,17 @@ open GoFV.Rules.Generated.ARM64
 /-- `ARM64.rules:418`: `(Move [16] dst src mem) => (FMOVQstore dst (FMOVQload src mem) mem)` -/
 theorem r_ARM64_418_sound : ArmRule.Checked r_ARM64_418 := checked_move rfl
 
+/-- `ARM64.rules:423`: `(Move [s] dst src mem) && s > 24 && s < 32 => (FMOVQstore [int32(s-16)] dst (FMOVQload [int32(s-16)] src mem) (FMOVQstore dst (FMOVQload src mem) mem))` -/
+theorem r_ARM64_423_sound : ArmRule.Checked r_ARM64_423 := checked_move rfl
+
 /-- `ARM64.rules:426`: `(Move [32] dst src mem) => (FSTPQ dst (Select0 <typ.Vec128> (FLDPQ src mem)) (Select1 <typ.Vec128> (FLDPQ src mem)) mem)` -/
 theorem r_ARM64_426_sound : ArmRule.Checked r_ARM64_426 := checked_move rfl
+
+/-- `ARM64.rules:431`: `(Move [s] dst src mem) && s > 40 && s <= 48 => (FMOVQstore [int32(s-16)] dst (FMOVQload [int32(s-16)] src mem) (FSTPQ dst (Select0 <typ.Vec128> (FLDPQ src mem)) (Select1 <typ.Vec128> (FLDPQ src mem)) mem))` -/
+theorem r_ARM64_431_sound : ArmRule.Checked r_ARM64_431 := checked_move rfl
+
+/-- `ARM64.rules:434`: `(Move [s] dst src mem) && s > 48 && s <= 64 => (FSTPQ [int32(s-32)] dst (Select0 <typ.Vec128> (FLDPQ [int32(s-32)] src mem)) (Select1 <typ.Vec128> (FLDPQ [int32(s-32)] src mem)) (FSTPQ dst (Select0 <typ.Vec128> (FLDPQ src mem)) (Select1 <typ.Vec128> (FLDPQ src mem)) mem))` -/
+theorem r_ARM64_434_sound : ArmRule.Checked r_ARM64_434 := checked_move rfl
 
 /-- `ARM64.rules:779`: `(FMOVQstore [off1] {sym} (ADDconst [off2] ptr) val mem) && is32Bit(int64(off1)+off2) && (ptr.Op != OpSB || !config.ctxt.Flag_dynlink) => (FMOVQstore [off1+int32(off2)] {sym} ptr val mem)` -/
 theorem r_ARM64_779_sound : ArmRule.Checked r_ARM64_779 := checked_qStore rfl rfl

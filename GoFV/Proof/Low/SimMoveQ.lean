@@ -329,4 +329,266 @@ theorem moveQ_lower_eval {env : Env} {ctx ctx' : Ctx} {fr fr' : Frame} {u w : Va
       exact .ok (.mem hm2)
     · simp at hlen; omega
 
+/-! ## Two 128-bit stores (`ARM64.rules:423`, `431`, `434`) -/
+
+/-- **Overlapping writes**: a write of `bs` at `p` is the write of its first `a` bytes at `p`, then
+of its bytes from `k ≤ a` on, `k` bytes higher (the bytes both write are the same). -/
+theorem write_overlap {m m1 : Mem} {p : Ptr} {bs : Array Byte} {a k : Nat} (ha : 0 < a)
+    (hka : k ≤ a) (han : a ≤ bs.size) (hk : k < bs.size) (h : m.write p bs = some m1) :
+    (m.write p (bs.extract 0 a)).bind
+      (·.write (p.add (BitVec.ofNat 64 k)) (bs.extract k bs.size)) = some m1 := by
+  have hpos : 0 < bs.size := by omega
+  obtain ⟨al, hal⟩ := write_find h hpos
+  obtain ⟨rfl, hv⟩ := write_spec hal h
+  obtain ⟨hwr, h1, h2, h3⟩ := hv hpos
+  have hA : (bs.extract 0 a).size = a := by rw [Array.size_extract]; omega
+  have hB : (bs.extract k bs.size).size = bs.size - k := by rw [Array.size_extract]; omega
+  rw [write_of_valid hal (by omega) hwr (by omega) (by omega)
+    (endsInWindow_mono h3 (by omega)), Option.bind_some]
+  generalize hD1 : (List.range (bs.extract 0 a).size).foldl
+    (fun d i => d.set! (p.off.toNat + i) (bs.extract 0 a)[i]!) al.data = D1
+  have hs1 : D1.size = al.data.size := by rw [← hD1, foldl_set_size]
+  have hoff : (p.add (BitVec.ofNat 64 k)).off.toNat = p.off.toNat + k := by
+    rw [Ptr.add_off, toNat_add_ofNat, Nat.mod_eq_of_lt (by omega)]
+  have hf : (m.set p.blk { al with data := D1 }).find? (p.add (BitVec.ofNat 64 k)).blk =
+      some { al with data := D1 } := by
+    rw [find?_set, Ptr.add_blk, ite_eq_left rfl]
+  rw [write_of_valid hf (by omega) hwr (by rw [hoff, hs1]; omega) (by rw [hoff]; omega)
+    (by rw [hoff, Ptr.add_blk]; exact endsInWindow_mono h3 (by omega)), Ptr.add_blk, set_set]
+  congr 3
+  apply Array.ext_getElem?
+  intro j
+  rw [hoff, foldl_set_getElem? _ _ D1 _ (Nat.le_refl _) (by omega) j,
+    foldl_set_getElem? _ bs al.data _ (Nat.le_refl _) (by omega) j,
+    ← hD1, foldl_set_getElem? _ _ al.data _ (Nat.le_refl _) (by omega) j, hA, hB]
+  by_cases hj1 : p.off.toNat + k ≤ j ∧ j < p.off.toNat + k + (bs.size - k)
+  · rw [ite_eq_left hj1, ite_eq_left (by omega), Array.getElem?_extract,
+      ite_eq_left (by omega)]
+    congr 1
+    omega
+  · rw [ite_eq_right hj1]
+    by_cases hj2 : p.off.toNat ≤ j ∧ j < p.off.toNat + a
+    · rw [ite_eq_left hj2, ite_eq_left (by omega), Array.getElem?_extract, ite_eq_left (by omega)]
+      congr 1
+      omega
+    · rw [ite_eq_right hj2, ite_eq_right (by omega)]
+
+/-- The 16-byte values a 128-bit store writes: one for `FMOVQstore`, two for `FSTPQ`. -/
+def qHalves (o : Op) : Option Nat :=
+  if o == .ARM64FMOVQstore then some 1 else if o == .ARM64FSTPQ then some 2 else none
+
+theorem qHalves_cases {o : Op} {c : Nat} (h : qHalves o = some c) :
+    (o = .ARM64FMOVQstore ∧ c = 1) ∨ (o = .ARM64FSTPQ ∧ c = 2) := by
+  unfold qHalves at h
+  by_cases h1 : o = .ARM64FMOVQstore
+  · rw [h1] at h; cases h; exact .inl ⟨h1, rfl⟩
+  · rw [ite_eq_right (by simpa using h1)] at h
+    by_cases h2 : o = .ARM64FSTPQ
+    · rw [h2] at h; cases h; exact .inr ⟨h2, rfl⟩
+    · rw [ite_eq_right (by simpa using h2)] at h; cases h
+
+/-- The bytes a 128-bit store of the values `xs` writes. -/
+def qBytes : List Val → Array Byte
+  | [] => #[]
+  | x :: xs => Arm64.storeBytes 16 x ++ qBytes xs
+
+/-- The 16 bytes `j` bytes into a `Move`'s read. -/
+private theorem qAt_read {s : Val} {S : Ptr} (hS : s.asPtrWord = some S) {mm : Mem} {n : Nat}
+    {bs : Array Byte} (hr : mm.read S n = some bs) {j : Nat} (hj : j + 16 ≤ n) :
+    qAt j s (.mem mm) = .blob (bs.extract j (j + 16)).toList := by
+  unfold qAt
+  rw [hS]
+  dsimp only
+  unfold Arm64.load16
+  rw [read_extract hr hj]
+
+/-- The bytes values refining consecutive 16-byte parts of a `Move`'s read store refine them. -/
+private theorem qBytes_ref {s : Val} {S : Ptr} (hS : s.asPtrWord = some S) {mm : Mem} {n : Nat}
+    {bs : Array Byte} (hr : mm.read S n = some bs) (hn : bs.size = n) :
+    ∀ (xs : List Val) (j : Nat), (∀ i x, xs[i]? = some x →
+      Sem.Refines (qAt (j + 16 * i) s (.mem mm)) x) → j + 16 * xs.length ≤ n →
+      BytesRefineA (bs.extract j (j + 16 * xs.length)) (qBytes xs)
+  | [], j, _, _ => by
+    simp only [List.length_nil, Nat.mul_zero, Nat.add_zero, qBytes, BytesRefineA]
+    rw [show (bs.extract j j).toList = [] by simp]
+    exact .nil
+  | x :: xs, j, hx, hj => by
+    simp only [List.length_cons] at hj ⊢
+    have h0 := hx 0 x rfl
+    rw [Nat.mul_zero, Nat.add_zero, qAt_read hS hr (by omega)] at h0
+    have hb0 := storeBytes_blob (by simp only [Array.length_toList, Array.size_extract]; omega) h0
+    have ih := qBytes_ref hS hr hn xs (j + 16) (fun i y hy => by
+      have := hx (i + 1) y (by simpa using hy)
+      rwa [show j + 16 * (i + 1) = j + 16 + 16 * i by omega] at this) (by omega)
+    have he : bs.extract j (j + 16 * (xs.length + 1)) =
+        bs.extract j (j + 16) ++ bs.extract (j + 16) (j + 16 + 16 * xs.length) := by
+      rw [Array.extract_append_extract, Nat.min_eq_left (by omega), Nat.max_eq_right (by omega)]
+      congr 1
+      omega
+    rw [he]
+    simp only [qBytes, BytesRefineA, Array.toList_append]
+    exact BytesRefine.append hb0 ih
+
+/-- A 128-bit store (`qHalves`) of the values `xs` at `symAddr` `Q` writes `qBytes xs` there. -/
+private theorem evalOpL_qStore {env : Env} {ctx : Ctx} {fr : Frame} {w : Value} {ty : Ty}
+    {c : Nat} (hw : qHalves w.op = some c) {d : Val} {Q : Ptr} (hQ : symAddr ctx w d = some Q)
+    {xs : List Val} (hl : xs.length = c) (hs : ∀ x ∈ xs, (Arm64.storeBytes 16 x).size = 16)
+    {mm m2 : Mem} (hwr : mm.write Q (qBytes xs) = some m2) :
+    evalOpL false env ctx fr w (d :: xs ++ [.mem mm]) ty = .ok (.mem m2) := by
+  rcases qHalves_cases hw with ⟨hwo, rfl⟩ | ⟨hwo, rfl⟩
+  · match xs, hl with
+    | [x], _ =>
+      obtain ⟨what, he⟩ := evalOpL_fmovq (env := env) (fr := fr) (ty := ty) (x := x) (m := mm)
+        hwo hQ
+      simp only [qBytes, Array.append_empty] at hwr
+      simp only [List.cons_append, List.nil_append]
+      rw [he]
+      simp only [writeRes, Arm64.storeN, hwr]
+  · match xs, hl with
+    | [x, y], _ =>
+      simp only [qBytes, Array.append_empty] at hwr
+      have hs0 := hs x (by simp)
+      have hs1 := hs y (by simp)
+      have hpair := write_append (by omega) (by omega) hwr
+      rw [hs0] at hpair
+      have hQ2 := symAddr_add (n := 16) hQ
+        (inWindow_of_write hwr (k := 16) (by rw [Array.size_append]; omega))
+      have hpq : pairAddr ctx w 16 d = some (Q, Q.add (BitVec.ofNat 64 16)) := by
+        unfold pairAddr
+        rw [hQ]
+        simp only [Option.bind_some, hQ2, Option.map_some]
+      obtain ⟨what, he⟩ := evalOpL_fstpq (env := env) (fr := fr) (ty := ty) (x := x) (y := y)
+        (m := mm) hwo hpq
+      simp only [List.cons_append, List.nil_append]
+      rw [he]
+      simp only [writeRes, Arm64.storePair, hpair]
+
+/-- The memory after the inner store of a `Move [n]` lowered to two 128-bit stores: the first `a`
+bytes of the `Move`'s read of `n` bytes at its source `s` written at its destination `d` in the
+memory `m` (`poison` if the `Move`'s read or that write fails). -/
+def qPre (n a : Nat) (d s m : Val) : Val :=
+  match d.asPtrWord, s.asPtrWord, m with
+  | some P, some S, .mem mm =>
+    match mm.read S n with
+    | some bs =>
+      match mm.write P (bs.extract 0 a) with
+      | some m2 => .mem m2
+      | none => .poison
+    | none => .poison
+  | _, _, _ => .poison
+
+/-- The bytes of values refining the parts at `j, j + 16, …` of a `Move`'s read are 16 each. -/
+private theorem qVals_size {s : Val} {S : Ptr} (hS : s.asPtrWord = some S) {mm : Mem} {n : Nat}
+    {bs : Array Byte} (hr : mm.read S n = some bs) (hbs : bs.size = n) {xs : List Val} {j : Nat}
+    (hj : j + 16 * xs.length ≤ n)
+    (hx : ∀ i x, xs[i]? = some x → Sem.Refines (qAt (j + 16 * i) s (.mem mm)) x) :
+    ∀ x ∈ xs, (Arm64.storeBytes 16 x).size = 16 := by
+  intro x hx'
+  obtain ⟨i, hi, rfl⟩ := List.getElem_of_mem hx'
+  have := hx i _ (List.getElem?_eq_getElem hi)
+  rw [qAt_read hS hr (j := j + 16 * i) (by omega)] at this
+  have hl := (storeBytes_blob (by simp only [Array.length_toList, Array.size_extract]; omega)
+    this).length_eq
+  simp only [Array.length_toList, Array.size_extract] at hl
+  omega
+
+/-- **The inner store of `Move [n]` lowered to two 128-bit stores** (`ARM64.rules:423`, `431`,
+`434`): when the `Move` does not get stuck, the inner store `w1` (`c1` halves, `16 c1 ≤ n`) at an
+address related to the `Move`'s destination (`AddrRef`), of values refining the parts at
+`0, 16, …` of its source (`qAt`) on a refined memory, writes a memory refining `qPre`. -/
+theorem moveQ2_inner_eval {env : Env} {ctx ctx' : Ctx} {fr fr1 : Frame} {u w1 : Value}
+    (hu : u.op = .Move) {c1 : Nat} (h1 : qHalves w1.op = some c1)
+    (hcn : 16 * c1 ≤ u.auxInt.toInt.toNat) {ty ty1 : Ty} {d s m d1 m' y : Val} {xs1 : List Val}
+    (hd1 : AddrRef ctx'.tabs ctx'.act w1.aux w1.auxInt d d1)
+    (hm : Sem.Refines m m') (hl1 : xs1.length = c1)
+    (hx1 : ∀ i x, xs1[i]? = some x → Sem.Refines (qAt (16 * i) s m) x)
+    (hok : evalOp env ctx fr u [d, s, m] ty = .ok y) :
+    ∃ r, evalOpL false env ctx' fr1 w1 (d1 :: xs1 ++ [m']) ty1 = .ok r ∧
+      Sem.Refines (qPre u.auxInt.toInt.toNat (16 * c1) d s m) r := by
+  have hc1 : 1 ≤ c1 := by rcases qHalves_cases h1 with ⟨-, rfl⟩ | ⟨-, rfl⟩ <;> omega
+  have hS : evalOp env ctx fr u [d, s, m] ty = memRoot ctx u [d, s, m] := by
+    unfold evalOp; rw [hu]
+  rw [hS] at hok
+  rcases memRoot_move_inv (ctx := ctx) hu [d, s, m] with ⟨msg, hst⟩ |
+    ⟨a, b, mm, P, S, bs, m1, harg, hP, hSp, hr, hw, -⟩
+  · rw [hst] at hok; cases hok
+  simp only [List.cons.injEq, and_true] at harg
+  obtain ⟨rfl, rfl, rfl⟩ := harg
+  cases hm with | @mem _ mm' hmm =>
+  have hbs := read_size16 (by omega) hr
+  have hX := qBytes_ref hSp hr hbs xs1 0 (fun i x hx => by rw [Nat.zero_add]; exact hx1 i x hx)
+    (by omega)
+  rw [hl1, Nat.zero_add] at hX
+  have hov := write_overlap (a := 16 * c1) (k := 0) (by omega) (by omega) (by omega) (by omega) hw
+  cases hw1 : mm.write P (bs.extract 0 (16 * c1)) with
+  | none => rw [hw1] at hov; cases hov
+  | some m2 =>
+  obtain ⟨m2', hw2', hm2⟩ := hmm.write hX hw1
+  have hs1 := qVals_size hSp hr hbs (xs := xs1) (j := 0) (by omega)
+    (fun i x hx => by rw [Nat.zero_add]; exact hx1 i x hx)
+  have hP1 : symAddr ctx' w1 d1 = some P := (show symAddr ctx' w1 d1 =
+    addrAt ctx'.tabs ctx'.act w1.aux w1.auxInt d1 by unfold symAddr addrAt; rfl).trans (hd1 P hP)
+  refine ⟨_, evalOpL_qStore h1 hP1 hl1 hs1 hw2', ?_⟩
+  unfold qPre
+  rw [hP, hSp]
+  dsimp only
+  rw [hr]
+  dsimp only
+  rw [hw1]
+  exact .mem hm2
+
+/-- **The outer store of `Move [n]` lowered to two 128-bit stores** (`ARM64.rules:423`, `431`,
+`434`): the outer store `w2` (`c2` halves) `k` bytes into the `Move`'s destination (`AddrRef` of
+the destination moved by `k`, `shiftW`), of values refining the parts at `k, k + 16, …` of its
+source (`qAt`; `k + 16 c2 = n`, `k ≤ 16 c1 ≤ n`), on a memory refining the inner store's
+(`qPre` of the first `16 c1` bytes; the two may overlap, both read the `Move`'s memory,
+`write_overlap`), refines the generic `Move` (both shaped). -/
+theorem moveQ2_outer_eval {env : Env} {ctx ctx' : Ctx} {fr fr2 : Frame} {u w2 : Value}
+    (hu : u.op = .Move) {c1 c2 k : Nat} (h2 : qHalves w2.op = some c2)
+    (hn : k + 16 * c2 = u.auxInt.toInt.toNat) (hka : k ≤ 16 * c1) (ha : 16 * c1 ≤ k + 16 * c2)
+    (hc1 : 1 ≤ c1) {ty : Ty} (lS : Bool) {d s m d2 mw : Val} {xs2 : List Val}
+    (hd2 : AddrRef ctx'.tabs ctx'.act w2.aux w2.auxInt (shiftW k d) d2)
+    (hmw : Sem.Refines (qPre u.auxInt.toInt.toNat (16 * c1) d s m) mw) (hl2 : xs2.length = c2)
+    (hx2 : ∀ i x, xs2[i]? = some x → Sem.Refines (qAt (k + 16 * i) s m) x) :
+    Res.Refines ((evalOp env ctx fr u [d, s, m] ty).bind fun r => .ok (rty lS ty r))
+      ((evalOpL false env ctx' fr2 w2 (d2 :: xs2 ++ [mw]) ty).bind
+        fun r => .ok (rty true ty r)) := by
+  have hc2 : 1 ≤ c2 := by rcases qHalves_cases h2 with ⟨-, rfl⟩ | ⟨-, rfl⟩ <;> omega
+  have hS : evalOp env ctx fr u [d, s, m] ty = memRoot ctx u [d, s, m] := by
+    unfold evalOp; rw [hu]
+  rw [hS]
+  rcases memRoot_move_inv (ctx := ctx) hu [d, s, m] with ⟨msg, hst⟩ |
+    ⟨a, b, mm, P, S, bs, m1, harg, hP, hSp, hr, hw, hres⟩
+  · rw [hst]; exact .stuck _ _
+  simp only [List.cons.injEq, and_true] at harg
+  obtain ⟨rfl, rfl, rfl⟩ := harg
+  rw [hres]
+  have hbs := read_size16 (by omega) hr
+  have hov := write_overlap (a := 16 * c1) (k := k) (by omega) hka (by omega) (by omega) hw
+  cases hw1 : mm.write P (bs.extract 0 (16 * c1)) with
+  | none => rw [hw1] at hov; cases hov
+  | some m2 =>
+  rw [hw1, Option.bind_some, hbs] at hov
+  have hpre : qPre u.auxInt.toInt.toNat (16 * c1) d s (.mem mm) = .mem m2 := by
+    unfold qPre
+    rw [hP, hSp]
+    dsimp only
+    rw [hr]
+    dsimp only
+    rw [hw1]
+  rw [hpre] at hmw
+  cases hmw with | @mem _ m2' hm2 =>
+  rw [← hn] at hr hov
+  have hY := qBytes_ref hSp hr (by rw [hbs, hn]) xs2 k hx2 (by omega)
+  rw [hl2] at hY
+  obtain ⟨m3', hw3', hm3⟩ := hm2.write hY hov
+  have hs2 := qVals_size hSp hr (by rw [hbs, hn]) (xs := xs2) (j := k) (by omega) hx2
+  have hP2 : symAddr ctx' w2 d2 = some (P.add (BitVec.ofNat 64 k)) :=
+    (show symAddr ctx' w2 d2 = addrAt ctx'.tabs ctx'.act w2.aux w2.auxInt d2 by
+      unfold symAddr addrAt; rfl).trans
+      (hd2 _ (shiftW_of hP (inWindow_of_write hw (k := k) (by omega))))
+  rw [evalOpL_qStore h2 hP2 hl2 hs2 hw3']
+  simp only [Res.bind_ok]
+  exact .ok (rty_le (fun _ => rfl) ty (.mem hm3))
+
 end GoFV.Proof.Low.Sim

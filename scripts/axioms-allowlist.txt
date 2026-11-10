@@ -13,7 +13,7 @@
 GoFV.Proof.Witness.plF_pipeline._native.native_decide.ax_1_1 0151a53b6067e0fdd75e947a33b9446337d0319c48949a29b9c4fef4e34fb615
 # verifiedPipelineFull_witness (GoFV/Proof/Witness/PipelineFull.lean, #385/#189): the verified
 # pipeline through `trim` on isNaN; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.pfF_pipeline._native.native_decide.ax_1_1 8386d91ed67fb51610d94f90bf968a98281787b18d9fb9e82778f98a33800ad8
+GoFV.Proof.Witness.pfF_pipeline._native.native_decide.ax_1_1 c90b0ea9ea1d9e2becfcd06b47248c75f7d47799e76a6036f32c30a2fe0a5534
 # The pins of the GenG1–GenG11 entries below updated for #554 (`genssa` fills `GenState.progAfter`).
 # genG1_witness_50/_30 (GoFV/Proof/Witness/GenG1.lean, #553): `checkG1` accepts `clamp` (parsed,
 # `Env.load`, `genssa`) and `runLoc` runs its compare and branch; compiled evaluation, as plF_pipeline.
@@ -104,7 +104,7 @@ GoFV.Proof.Witness.ObjWhole.start_facts._native.native_decide.ax_1_1 bb5e4c15cd1
 # generic SSA through the verified pipeline to genssa's Progs (`refsLive` of the output, `lcFacts`,
 # `checkG54L`, on `liveCtx` of it; `entryStoresOK`) and the linked words; compiled evaluation, as
 # plF_pipeline.
-GoFV.Proof.Witness.ObjEndToEnd.e2e_facts._native.native_decide.ax_1_1 329f24ab77877e8dc9979c0f34a250f068e54365f6b63b6165f0fda008ec5f39
+GoFV.Proof.Witness.ObjEndToEnd.e2e_facts._native.native_decide.ax_1_1 0140bdc7262f480c0f99274afe099fd84451a4be9551eda1cbc50a90bd6a7859
 # objWholeNL_ret_witness (GoFV/Proof/Witness/ObjWholeNL.lean, #553): `checkObj`, `linkCode` and the
 # machine-side facts of `runtime.gclinkptr.ptr` (no arm64 op), and `lcFacts` plus the returning
 # run of `runLoc` in Phase 1's mode; compiled evaluation, as plF_pipeline.

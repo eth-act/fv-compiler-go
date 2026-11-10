@@ -83,6 +83,51 @@ def qPart (i : Nat) (s m : Val) : Val :=
   | some p, .mem mm => Arm64.load16 mm (p.add (BitVec.ofNat 64 (16 * i)))
   | _, _ => .poison
 
+/-- The 16 bytes a `Move` copies from the pointer word `s` in the memory `m`, `k` bytes in
+(`qPart i` is `qAt (16 i)`): what each 128-bit store of a `Move` lowered to two stores
+(`ARM64.rules:423`, `431`, `434`) writes, the outer one at `k = s - 16` or `s - 32`. -/
+def qAt (k : Nat) (s m : Val) : Val :=
+  match s.asPtrWord, m with
+  | some p, .mem mm => Arm64.load16 mm (p.add (BitVec.ofNat 64 k))
+  | _, _ => .poison
+
+theorem qPart_eq_qAt (i : Nat) (s m : Val) : qPart i s m = qAt (16 * i) s m := rfl
+
+/-- The pointer word `x` moved by `k` bytes, as a pointer, if that stays in its window (`poison`
+otherwise, or without a pointer word): the address the outer store of a `Move` lowered to two
+128-bit stores writes at (`ARM64.rules:423`, `431`, `434`), `k` bytes into the `Move`'s
+destination, inside the window the `Move`'s write stays in. -/
+def shiftW (k : Nat) (x : Val) : Val :=
+  match x.asPtrWord with
+  | some p => if (p.add (BitVec.ofNat 64 k)).inWindow then .ptr (p.add (BitVec.ofNat 64 k))
+    else .poison
+  | none => .poison
+
+theorem shiftW_of {x : Val} {p : Ptr} (h : x.asPtrWord = some p) {k : Nat}
+    (hw : (p.add (BitVec.ofNat 64 k)).inWindow = true) :
+    (shiftW k x).asPtrWord = some (p.add (BitVec.ofNat 64 k)) := by
+  unfold shiftW; rw [h]; simp only [hw, ite_true]; rfl
+
+/-- A pointer word of `shiftW` is that of its argument, moved, inside its window. -/
+theorem shiftW_asPtrWord {x : Val} {k : Nat} {q : Ptr} (h : (shiftW k x).asPtrWord = some q) :
+    ∃ p, x.asPtrWord = some p ∧ q = p.add (BitVec.ofNat 64 k) ∧
+      (p.add (BitVec.ofNat 64 k)).inWindow = true := by
+  unfold shiftW at h
+  cases hx : x.asPtrWord with
+  | none => rw [hx] at h; cases h
+  | some p =>
+    rw [hx] at h
+    by_cases hw : (p.add (BitVec.ofNat 64 k)).inWindow = true
+    · simp only [hw, ite_true, Val.asPtrWord, Option.some.injEq] at h
+      exact ⟨p, rfl, h.symm, hw⟩
+    · simp only [hw, Bool.false_eq_true, ite_false, Val.asPtrWord, reduceCtorEq] at h
+
+/-- `shiftW` of a refinement's source: the same pointer word. -/
+theorem shiftW_of_refines {x y : Val} {k : Nat} {q : Ptr} (h : Sem.Refines x y)
+    (hq : (shiftW k x).asPtrWord = some q) : shiftW k y = shiftW k x := by
+  obtain ⟨p, hp, -, -⟩ := shiftW_asPtrWord hq
+  cases h <;> first | rfl | simp [Val.asPtrWord] at hp
+
 /-- How argument `i` of the atom `w` relates to argument `i` of the atom `u` it corresponds to:
 the address of an arm64 store lowering a `Store` (argument 0) at the store's offset and aux
 (`AddrRef`; `ARM64.rules:758-776` fold `ADDconst` offsets into it, `881-905` symbols and frame
@@ -145,10 +190,13 @@ def framePtr (tabs : Tables) (act : Nat) (n : AuxRef) : Ptr := ⟨frameBlk tabs 
 
 /-- The atoms of `D` that are frame addresses (`LocalAddr {n}`) hold, under `ρ`, the address of
 `n` in activation `act` as a word (`Ptr.word`) at a word shape, or `poison` (as `runL`'s
-registers do, `Sem.frameVal` shaped). -/
+registers do, `Sem.frameVal` shaped); the values `D` does not define hold `poison` (they have no
+register: in the input, the inner store of a `Move` lowered to two 128-bit stores,
+`ARM64.rules:423`). -/
 def FrameVals (tabs : Tables) (act : Nat) (D : ID → Option Value) (ρ : ID → Val) : Prop :=
-  ∀ a l n, D a = some l → l.op = .LocalAddr → l.aux = some n →
-    ρ a = .poison ∨ (ρ a = (framePtr tabs act n).word ∧ wordShape (shpL tabs l.type) = true)
+  (∀ a l n, D a = some l → l.op = .LocalAddr → l.aux = some n →
+    ρ a = .poison ∨ (ρ a = (framePtr tabs act n).word ∧ wordShape (shpL tabs l.type) = true)) ∧
+  ∀ a, D a = none → ρ a = .poison
 
 /-- The stack pointer of activation `act` (`Sem.evalOp` of `SP`: the outgoing-arguments block at
 offset 0). -/
@@ -257,6 +305,25 @@ def ArgTermQL (i : Nat) (lowD : Bool) (D : ID → Option Value) (tabs : Tables) 
       Sem.Refines (qPart i (denL lowD D tabs ρ n s) (denL lowD D tabs ρ n m))
         (denL lowE E tabs' ρ' k y)
 
+/-- `y` in `E` holds a refinement of the 16 bytes `k` bytes into what a `Move` copies from the
+source `s` in the memory `m` of `D` (`qAt`), as terms over the atoms (as `ArgTermRefL`). -/
+def ArgTermQAtL (k : Nat) (lowD : Bool) (D : ID → Option Value) (tabs : Tables) (s m : ID)
+    (lowE : Bool) (E : ID → Option Value) (tabs' : Tables) (y : ID) : Prop :=
+  ∀ n, ∃ j, ∀ ρ ρ', ValRef ρ ρ' → TypedL lowD D tabs ρ → TypedL lowE E tabs' ρ' →
+    FrameVals tabs 0 D ρ → SPVals tabs 0 D ρ → FrameValsL tabs' 0 E ρ' →
+      Sem.Refines (qAt k (denL lowD D tabs ρ n s) (denL lowD D tabs ρ n m))
+        (denL lowE E tabs' ρ' j y)
+
+/-- The store address of `y` in `E` at the offset and aux `o` (`AddrRef`) is the pointer word `x`
+in `D` moved by `k` bytes (`shiftW`), as terms over the atoms (as `ArgTermRefL`): the outer store
+of a `Move` lowered to two 128-bit stores. -/
+def ArgTermShL (k : Nat) (o : Int64 × Option AuxRef) (lowD : Bool) (D : ID → Option Value)
+    (tabs : Tables) (x : ID) (lowE : Bool) (E : ID → Option Value) (tabs' : Tables) (y : ID) :
+    Prop :=
+  ∀ n, ∃ m, ∀ ρ ρ', ValRef ρ ρ' → TypedL lowD D tabs ρ → TypedL lowE E tabs' ρ' →
+    FrameVals tabs 0 D ρ → SPVals tabs 0 D ρ → FrameValsL tabs' 0 E ρ' →
+      AddrRef tabs 0 o.2 o.1 (shiftW k (denL lowD D tabs ρ n x)) (denL lowE E tabs' ρ' m y)
+
 /-- A refinement whose source is a pointer word is that word. -/
 theorem asPtrWord_of_refines {x y : Val} {p : Ptr} (h : Sem.Refines x y)
     (hp : x.asPtrWord = some p) : y = x := by
@@ -325,13 +392,19 @@ piece, a `Phi`'s argument or a narrow store's value, refine fitted to the leaf i
 address); a `Store` lowered to an indexed store (`idxLower`) has its address given by the base and
 the index (`ArgTermIdxL`), its value refined (or fitted, as above) and its memory refined; a `Move`
 lowered to a 128-bit store (`moveQLower`) has its address related at the store's offset and aux,
-its values refining the halves the `Move` copies (`ArgTermQL`) and its memory refined. A lowered
-frame address where `f` has a term (`frameAtomG`) corresponds to no atom and reads no argument. -/
+its values refining the halves the `Move` copies (`ArgTermQL`) and its memory refined; a `Move`
+lowered to two 128-bit stores (`moveQ2Lower`) has the outer one's address the destination moved by
+its offset `q2Off` (`ArgTermShL`), its values refining the parts the `Move` copies there
+(`ArgTermQAtL`), and its memory a listed inner store (`moveQ2In`, a memory) related to the `Move`
+as a 128-bit store lowering it. A lowered frame address where `f` has a term (`frameAtomG`)
+corresponds to no atom and reads no argument. An atom where `f` has no value (the inner store of
+two 128-bit stores, `compOKL`) is not constrained here: the outer store's relation covers it. -/
 def AtomArgsRefL (tabs : Tables) (f g : Func) : Prop :=
   ∀ b ∈ g.blocks, ∀ gb, g.block? b = some gb → ∀ a ∈ gb.values, ∀ u, g.value? a = some u →
-    termVL tabs u = false → frameAtomG tabs f a u = true ∨
+    termVL tabs u = false → (f.value? a).isSome = true → frameAtomG tabs f a u = true ∨
     ∃ u', f.value? a = some u' ∧ atomPair tabs u' u = true ∧ pbConstOK tabs f u' u = true ∧
       (argFree tabs u = true ∨ (idxLower tabs u' u = false ∧ moveQLower tabs u' u = false ∧
+        moveQ2Lower u' u = false ∧
         ∀ i < u.args.size, ArgTermRefL
         (stArg u' u i) f.lowered f.value? tabs u'.args[argIx u' u i]! g.lowered (listedDefs g) tabs
           u.args[i]! ∨
@@ -352,7 +425,20 @@ def AtomArgsRefL (tabs : Tables) (f g : Func) : Prop :=
           (∀ i, i + 2 < u.args.size → ArgTermQL i f.lowered f.value? tabs u'.args[1]! u'.args[2]!
             g.lowered (listedDefs g) tabs u.args[i + 1]!) ∧
           ArgTermRefL none f.lowered f.value? tabs u'.args[2]! g.lowered (listedDefs g) tabs
-            u.args[u.args.size - 1]!))
+            u.args[u.args.size - 1]!) ∨
+        (moveQ2Lower u' u = true ∧ ∃ x wi, u.args[u.args.size - 1]! = x ∧
+          listedDefs g x = some wi ∧ f.value? x = none ∧ moveQ2In u' wi = true ∧
+          termVL tabs wi = false ∧ shpL tabs wi.type = .mem ∧
+          ArgTermRefL (some (wi.auxInt, wi.aux)) f.lowered f.value? tabs u'.args[0]! g.lowered
+            (listedDefs g) tabs wi.args[0]! ∧
+          (∀ i, i + 2 < wi.args.size → ArgTermQL i f.lowered f.value? tabs u'.args[1]!
+            u'.args[2]! g.lowered (listedDefs g) tabs wi.args[i + 1]!) ∧
+          ArgTermRefL none f.lowered f.value? tabs u'.args[2]! g.lowered (listedDefs g) tabs
+            wi.args[wi.args.size - 1]! ∧
+          ArgTermShL (q2Off u'.auxInt) (u.auxInt, u.aux) f.lowered f.value? tabs u'.args[0]!
+            g.lowered (listedDefs g) tabs u.args[0]! ∧
+          ∀ i, i + 2 < u.args.size → ArgTermQAtL (q2Off u'.auxInt + 16 * i) f.lowered f.value?
+            tabs u'.args[1]! u'.args[2]! g.lowered (listedDefs g) tabs u.args[i + 1]!))
 
 /-- The terminator of `b` (`Sem.stepTermL`) on the control values `cs`. -/
 def stepValsL (b : Block) (cs : List Val) : Res Next :=

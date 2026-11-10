@@ -32,6 +32,7 @@ structure BRel (tabs : Tables) (f g : Func) (frS frT : Frame) (b : ID) (i : Nat)
   treeS : ((make f).depthOf b).isSome
   treeT : ((make g).depthOf b).isSome
   atoms : ∀ a w, Placed g a w → termVL tabs w = false → ¬ IsTermL tabs f.value? a →
+    (f.value? a).isSome = true →
     ∀ y', frT.regs[a]? = some (some y') → ∃ y, frS.regs[a]? = some (some y) ∧ Sem.Refines y y'
   frames : RegsFrame tabs 0 f.value? frS
   framesT : RegsFrameL tabs 0 g.value? frT
@@ -91,15 +92,20 @@ theorem atomL_of_not_term {tabs : Tables} {g : Func} {a : ID} {w : Value} (hp : 
   · rfl
   · exact absurd ⟨w, placed_listed hp, h⟩ hat
 
-/-- The atoms the entry frames both hold are refined. -/
+/-- The atoms the entry frames both hold are refined (`poison` in the source where `f` has no
+value, `RegsFrame`). -/
 theorem BRel.rel {tabs : Tables} {f g : Func} {frS frT : Frame} {b : ID} {i : Nat}
     (R : BRel tabs f g frS frT b i) {VT VS : ID → Prop}
     (hDT : DenOKL g.lowered (listedDefs g) tabs frT VT) (hVT : ∀ a, VT a → ∃ w, Placed g a w) :
     ∀ a, VT a → VS a → ¬ IsTermL tabs f.value? a → ¬ IsTermL tabs (listedDefs g) a →
       Sem.Refines (rv frS a) (rv frT a) := fun a ha _ hnf hat => by
-  obtain ⟨w, hp⟩ := hVT a ha
-  obtain ⟨y, hy, hyy⟩ := R.atoms a w hp (atomL_of_not_term hp hat) hnf _ (reg_rv (hDT a ha).1)
-  rw [rv_of hy]; exact hyy
+  cases hfa : f.value? a with
+  | none => rw [R.frames.rv_none hfa]; exact .poison _
+  | some _ =>
+    obtain ⟨w, hp⟩ := hVT a ha
+    obtain ⟨y, hy, hyy⟩ := R.atoms a w hp (atomL_of_not_term hp hat) hnf (by rw [hfa]; rfl) _
+      (reg_rv (hDT a ha).1)
+    rw [rv_of hy]; exact hyy
 
 /-! ## `Phi`s -/
 
@@ -134,6 +140,7 @@ theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
     obtain ⟨hpw, hwb, -⟩ := placed_in H.wg B.bmT B.hgb hz hw
     have ht : termVL tabs w = false := termVL_phi hph
     obtain ⟨u, hpu, hut, hs⟩ := gatomL H hpw ht (not_termL_f_of_op H hpw ht (by rw [hph]; decide))
+      (.inr (by rw [hph]; rfl))
     have huph : u.op = .Phi := (atomPair_phi hs).1 hph
     obtain ⟨-, hty, hblk, -⟩ := atomPair_spec hs
     have hnpb : pbLower u w = false := by
@@ -149,7 +156,10 @@ theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
       · exact absurd huph (idxLower_ops hix).1) (by
       cases hq : moveQLower tabs u w
       · rfl
-      · exact absurd huph (moveQLower_ops hq).1)
+      · exact absurd huph (moveQLower_ops hq).1) (by
+      cases hq : moveQ2Lower u w
+      · rfl
+      · exact absurd huph (moveQ2Lower_ops hq).1)
     have hzf : z ∈ fb.values := by
       obtain ⟨-, -, blk, hblk', hzv⟩ := hpu
       rw [hblk, hwb, B.hfb] at hblk'; cases hblk'; exact hzv
@@ -317,30 +327,83 @@ theorem src_evalL {env : Env} (htree : ((make f).depthOf b).isSome) {frP G : Fra
     rw [makeL_tabs, (hown x hx v hv).1, tysL_of_value hv] at hy'
     rw [hy, hy']; rfl
 
-/-- A scheduled atom of `g` where `f` has no term is scheduled in `f`, as a corresponding atom. -/
+/-- A scheduled atom of `g` where `f` has no term, a value, is scheduled in `f`, as a
+corresponding atom. -/
 theorem atomL_sched {x : ID} (hx : x ∈ og.toList) {w : Value} (hw : g.value? x = some w)
-    (ht : termVL tabs w = false) (hnf : ¬ IsTermL tabs f.value? x) :
+    (ht : termVL tabs w = false) (hnf : ¬ IsTermL tabs f.value? x)
+    (hfs : (f.value? x).isSome = true) :
     ∃ u, f.value? x = some u ∧ termVL tabs u = false ∧ atomPair tabs u w = true ∧ x ∈ of.toList ∧
       Placed g x w := by
   obtain ⟨hxb, w', hw', hph⟩ := (B.mT x).1 hx
   rw [hw] at hw'; cases hw'
   have hpw := (placed_in H.wg B.bmT B.hgb hxb hw).1
-  obtain ⟨hxf, u, hu, hut, hs⟩ := (B.ba.sub x hxb w hw ht).resolve_right
-    fun hfa => hnf (frameAtomG_cases hfa).2.2.2
-  exact ⟨u, hu, hut, hs, (B.mS x).2 ⟨hxf, u, hu, fun h => hph ((atomPair_phi hs).2 h)⟩, hpw⟩
+  rcases B.ba.sub x hxb w hw ht with ⟨hxf, u, hu, hut, hs, -⟩ | hfa | hco
+  · exact ⟨u, hu, hut, hs, (B.mS x).2 ⟨hxf, u, hu, fun h => hph ((atomPair_phi hs).2 h)⟩, hpw⟩
+  · exact absurd (frameAtomG_cases hfa).2.2.2 hnf
+  · obtain ⟨hf, -⟩ := compOKL_cases hco
+    rw [hf] at hfs; cases hfs
 
-/-- Atoms placed outside `b` where `f` has no term keep their registers through block `b`, in `f`
-too. -/
+/-- The outer of two 128-bit stores lowering a `Move` reads, as its memory, a value of the
+schedule (`q2OKL`). -/
+theorem q2_last_og {x : ID} (hx : x ∈ og.toList) {u w : Value} (hu : f.value? x = some u)
+    (hw : g.value? x = some w) (hq2 : moveQ2Lower u w = true) :
+    w.args[w.args.size - 1]! ∈ og.toList := by
+  obtain ⟨hxb, w', hw', -⟩ := (B.mT x).1 hx
+  rw [hw] at hw'; cases hw'
+  have ht : termVL tabs w = false := termVL_qStoreOp (moveQ2Lower_qStore hq2)
+  rcases B.ba.sub x hxb w hw ht with ⟨-, u', hu', -, -, hq⟩ | hfa | hco
+  · rw [hu] at hu'; cases hu'
+    rw [B.sT] at hq
+    simp only [Option.map_some, Option.getD_some, q2OKL, hq2, Bool.not_true, Bool.false_or,
+      beq_iff_eq] at hq
+    obtain ⟨A, B', C, hsplit, -⟩ := nextAtomL_spec hq
+    rw [hsplit]; simp
+  · have := moveQ2Lower_qStore hq2
+    rw [(frameAtomG_cases hfa).1] at this; cases this
+  · obtain ⟨hf, -⟩ := compOKL_cases hco
+    rw [hu] at hf; cases hf
+
+/-- The inner store of two 128-bit stores lowering a `Move` (`compOKL`, `f` has no value at `x`)
+and its owner `v`: the next atom of the schedule, a root of `f` and an atom of `g` (`rootAtL`),
+the outer store reading `x` as its memory. -/
+theorem comp_owner {x : ID} (hx : x ∈ og.toList) {w : Value} (hw : g.value? x = some w)
+    (ht : termVL tabs w = false) (hfn : f.value? x = none) :
+    ∃ v u wv A B' C, og.toList = A ++ x :: (B' ++ v :: C) ∧
+      (∀ y ∈ B', (g.value? y).any (!termVL tabs ·) = false) ∧ f.value? v = some u ∧
+      Placed g v wv ∧ moveQ2Lower u wv = true ∧ wv.args[wv.args.size - 1]! = x ∧
+      rootAtL tabs f g v = true := by
+  obtain ⟨hxb, w', hw', -⟩ := (B.mT x).1 hx
+  rw [hw] at hw'; cases hw'
+  rcases B.ba.sub x hxb w hw ht with ⟨-, u, hu, -⟩ | hfa | hco
+  · rw [hfn] at hu; cases hu
+  · obtain ⟨v, hv, -⟩ := (frameAtomG_cases hfa).2.2.2
+    rw [hfn] at hv; cases hv
+  · rw [B.sT] at hco
+    simp only [Option.map_some, Option.getD_some] at hco
+    obtain ⟨-, -, -, v, u, wv, hnext, hu, hwv, hq2, -, hlast⟩ := compOKL_cases hco
+    obtain ⟨A, B', C, hsplit, -, hB', -⟩ := nextAtomL_spec hnext
+    have hvog : v ∈ og.toList := by rw [hsplit]; simp
+    obtain ⟨hvb, wv', hwv', -⟩ := (B.mT v).1 hvog
+    rw [hwv] at hwv'; cases hwv'
+    refine ⟨v, u, wv, A, B', C, hsplit, hB', hu, (placed_in H.wg B.bmT B.hgb hvb hwv).1, hq2,
+      hlast, ?_⟩
+    have hr : isRoot u.op = true := by rw [(moveQ2Lower_facts hq2).1]; rfl
+    have ht' := termVL_qStoreOp (tabs := tabs) (moveQ2Lower_qStore hq2)
+    simp [rootAtL, rootL, hu, hwv, hr, ht']
+
+/-- Atoms placed outside `b` where `f` has no term, a value, keep their registers through block
+`b`, in `f` too. -/
 theorem atomL_out {a : ID} {w : Value} (hp : Placed g a w) (ht : termVL tabs w = false)
-    (hnf : ¬ IsTermL tabs f.value? a) (hne : w.block ≠ b) : a ∉ gb.values ∧ a ∉ fb.values := by
-  obtain ⟨u, hpu, -, hs⟩ := gatomL H hp ht hnf
+    (hnf : ¬ IsTermL tabs f.value? a) (hfs : (f.value? a).isSome = true) (hne : w.block ≠ b) :
+    a ∉ gb.values ∧ a ∉ fb.values := by
+  obtain ⟨u, hpu, -, hs⟩ := gatomL H hp ht hnf (.inl hfs)
   exact ⟨not_mem_of_placed H.wg hp B.bmT B.hgb hne,
     not_mem_of_placed H.wf hpu B.bmS B.hfb ((atomPair_spec hs).2.2.1 ▸ hne)⟩
 
 /-- **The source's frame addresses and stack pointer after a schedule prefix** `P`, evaluated
 from the frame after the `Phi`s: a `LocalAddr` (`SP`) of `P` evaluates to its address word
 (`evalValueL_localAddr`, `evalValueL_sp`), the others keep their registers from the block entry
-(`setPhis` writes only `Phi`s). -/
+(`setPhis` writes only `Phi`s); the IDs `f` does not define are in no block's values. -/
 theorem regsFrame_eval {env : Env} {frS G : Frame} {P : List ID} {psS : List (ID × Val)}
     (hfrS : RegsFrame tabs 0 f.value? frS) (hPof : ∀ x ∈ P, x ∈ of.toList)
     (hphi : ∀ z, (z ∉ fb.values ∨ ∃ v, f.value? z = some v ∧ v.op ≠ .Phi) →
@@ -349,7 +412,7 @@ theorem regsFrame_eval {env : Env} {frS G : Frame} {P : List ID} {psS : List (ID
     (hev : ∀ x ∈ P, ∃ u y, f.value? x = some u ∧ G.regs[x]? = some (some y) ∧
       evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) G u = .ok y) :
     RegsFrame tabs 0 f.value? G := by
-  refine ⟨fun a l n y hl hop hax hy => ?_, fun a s y hs hop hy => ?_⟩
+  refine ⟨fun a l n y hl hop hax hy => ?_, fun a s y hs hop hy => ?_, fun a y ha hy => ?_⟩
   · by_cases haP : a ∈ P
     · obtain ⟨u, y', hu, hy', hevu⟩ := hev a haP
       rw [hl] at hu; cases hu
@@ -369,7 +432,15 @@ theorem regsFrame_eval {env : Env} {frS G : Frame} {P : List ID} {psS : List (ID
         H.glow] at h
       exact h
     · rw [hkeep a haP, hphi a (.inr ⟨s, hs, by rw [hop]; decide⟩)] at hy
-      exact hfrS.2 a s y hs hop hy
+      exact hfrS.2.1 a s y hs hop hy
+  · by_cases haP : a ∈ P
+    · obtain ⟨u, -, hu, -⟩ := hev a haP
+      rw [ha] at hu; cases hu
+    · have hab : a ∉ fb.values := fun hm => by
+        obtain ⟨w, hw, -⟩ := H.wf.valueId b fb ⟨B.bmS, B.hfb⟩ a hm
+        rw [ha] at hw; cases hw
+      rw [hkeep a haP, hphi a (.inl hab)] at hy
+      exact hfrS.2.2 a y ha hy
 
 end
 
@@ -398,6 +469,7 @@ structure EndRel (tabs : Tables) (f g : Func) (b : ID) (fb gb : Block) (of og : 
   rel : ∀ a, (V1 g b gb a ∨ a ∈ og.toList) → (V1 f b fb a ∨ a ∈ of.toList) →
     ¬ IsTermL tabs f.value? a → ¬ IsTermL tabs (listedDefs g) a → Sem.Refines (rv FS a) (rv FT a)
   atoms : ∀ a w, Placed g a w → termVL tabs w = false → ¬ IsTermL tabs f.value? a →
+    (f.value? a).isSome = true →
     ∀ y', FT.regs[a]? = some (some y') → ∃ y, FS.regs[a]? = some (some y) ∧ Sem.Refines y y'
   frames : RegsFrame tabs 0 f.value? FS
   framesT : RegsFrameL tabs 0 g.value? FT
@@ -423,8 +495,9 @@ private theorem after_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
       (∀ z ∈ gb.values, ∀ w, g.value? z = some w → w.op = .Phi →
         ∃ y y', (setPhis psS frS.regs)[z]? = some (some y) ∧
           (setPhis psT frT.regs)[z]? = some (some y') ∧ Sem.Refines y y') ∧
-      -- the atoms both frames hold after the `Phi`s, where `f` has no term
+      -- the atoms both frames hold after the `Phi`s, where `f` has a value and no term
       (∀ a, V1 g b gb a → ¬ IsTermL tabs f.value? a → ¬ IsTermL tabs (listedDefs g) a →
+        (f.value? a).isSome = true →
         ∃ y, (setPhis psS frS.regs)[a]? = some (some y) ∧ a ∉ of.toList ∧
           Sem.Refines y (rv { frT with regs := setPhis psT frT.regs } a)) := by
   obtain ⟨psT, hpsT, hphis⟩ := tgt_phis H R B hpsS
@@ -438,16 +511,17 @@ private theorem after_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
   have htyPS := regsTyped_phis (frP := { frS with regs := setPhis psS frS.regs }) R.tyS pS1 pS3 pS4 pS2
   have htyPT := regsTyped_phis (frP := { frT with regs := setPhis psT frT.regs }) R.tyT pT1 pT3 pT4 pT2
   rw [makeL_f] at pS3 pT3
-  refine ⟨psT, hpsT, hS1, hT1, htyPS, htyPT, pS1, pT1, pS3, pT3, hphis, fun a ha hnf hatE => ?_⟩
+  refine ⟨psT, hpsT, hS1, hT1, htyPS, htyPT, pS1, pT1, pS3, pT3, hphis,
+    fun a ha hnf hatE hfs => ?_⟩
   obtain ⟨w, hpw⟩ := v1_placed H.wg B.bmT B.hgb a ha
   have hwt := atomL_of_not_term hpw hatE
   rcases ha with ⟨w', hpw', hanc, hne⟩ | ⟨haz, w', hw', hph⟩
   · have hww := placed_val hpw' hpw.1; subst hww
-    obtain ⟨hnT, hnS⟩ := atomL_out H B hpw hwt hnf hne
+    obtain ⟨hnT, hnS⟩ := atomL_out H B hpw hwt hnf hfs hne
     have hreg := reg_rv (hT1 a (.inl ⟨w, hpw, hanc, hne⟩)).1
     change (setPhis psT frT.regs)[a]? = _ at hreg
     rw [pT3 a (.inl hnT)] at hreg
-    obtain ⟨y, hy, hyy⟩ := R.atoms a w hpw hwt hnf _ hreg
+    obtain ⟨y, hy, hyy⟩ := R.atoms a w hpw hwt hnf hfs _ hreg
     have hof : a ∉ of.toList := fun hm => hnS ((B.mS a).1 hm).1
     refine ⟨y, (pS3 a (.inl hnS)).trans hy, hof, ?_⟩
     unfold rv; change Sem.Refines y (((setPhis psT frT.regs)[a]?).join.getD .poison)
@@ -455,7 +529,7 @@ private theorem after_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
   · obtain ⟨y, y', hy, hy', hyy⟩ := hphis a haz w' hw' hph
     have hof : a ∉ of.toList := fun hm => by
       obtain ⟨-, u, hu, hph'⟩ := (B.mS a).1 hm
-      obtain ⟨u', hpu, -, hs⟩ := gatomL H hpw hwt hnf
+      obtain ⟨u', hpu, -, hs⟩ := gatomL H hpw hwt hnf (.inl hfs)
       rw [placed_val hpw hw'] at hph
       rw [hpu.1] at hu; cases hu; exact hph' ((atomPair_phi hs).1 hph)
     refine ⟨y, hy, hof, ?_⟩
@@ -479,39 +553,56 @@ theorem enter_ok {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
   have hfrT : { frT with regs := setPhis psT frT.regs } =
       { FS with regs := ({ frT with regs := setPhis psT frT.regs } : Frame).regs } :=
     frame_trans (frame_trans rfl R.fr) (frame_symm (frame_trans g1 rfl))
+  have hfrFS := regsFrame_eval H B R.frames (P := of.toList) (fun x hx => hx) pS3 g5 g6
   have hrel0 : ∀ a, V1 g b gb a → (V1 f b fb a ∨ a ∈ of.toList) → ¬ IsTermL tabs f.value? a →
       ¬ IsTermL tabs (listedDefs g) a →
       Sem.Refines (rv FS a) (rv { frT with regs := setPhis psT frT.regs } a) := by
     intro a ha _ hnf hatE
-    obtain ⟨y, hy, hof, hyy⟩ := hat0 a ha hnf hatE
-    rw [rv_of (show FS.regs[a]? = some (some y) by rw [g5 a hof]; exact hy)]
-    exact hyy
-  have hfrFS := regsFrame_eval H B R.frames (P := of.toList) (fun x hx => hx) pS3 g5 g6
-  obtain ⟨FT, hevT, l1, l2, l3, l4, l5, l6, l7⟩ := tgt_loop H hE (og := og.toList) (L := og.toList)
-    (M := []) (P := of.toList) (by simp) hfrT (by rw [pT1, R.szT]) g3 htyPT g4 hfrFS
-    (regsFrameL_phis R.framesT pT3) hT1
+    cases hfa : f.value? a with
+    | none => rw [hfrFS.rv_none hfa]; exact .poison _
+    | some _ =>
+      obtain ⟨y, hy, hof, hyy⟩ := hat0 a ha hnf hatE (by rw [hfa]; rfl)
+      rw [rv_of (show FS.regs[a]? = some (some y) by rw [g5 a hof]; exact hy)]
+      exact hyy
+  obtain ⟨FT, hevT, l1, l2, l3, l4, l5, l6, l7, -⟩ := tgt_loop H hE (og := og.toList)
+    (L := og.toList) (M := []) (P := of.toList) (by simp) hfrT (by rw [pT1, R.szT]) g3 htyPT g4
+    hfrFS (regsFrameL_phis R.framesT pT3) hT1
     (v1_placed H.wg B.bmT B.hgb) (v1_disj H.wg B.bmT B.hgb B.mT) hrel0 B.ndT B.tpT
     (fun x hx => by
       obtain ⟨hxb, w, hw, hph⟩ := (B.mT x).1 hx
       obtain ⟨hp, -, hid⟩ := placed_in H.wg B.bmT B.hgb hxb hw
       exact ⟨w, hp, hid, hph⟩)
     (sched_args H.wg H.cg B.bmT B.hgb R.treeT B.mT)
-    (fun a ha _ hnf hat => by
+    (fun a ha _ hnf hat hfs => by
       obtain ⟨hxb, w, hw, -⟩ := (B.mT a).1 ha
       obtain ⟨-, -, -, -, hof, -⟩ := atomL_sched H B ha hw (atomL_of_not_term
-        (placed_in H.wg B.bmT B.hgb hxb hw).1 hat) hnf
+        (placed_in H.wg B.bmT B.hgb hxb hw).1 hat) hnf hfs
       exact hof)
-    (fun x hx w hw ht hnf => by
-      obtain ⟨u, hu, -, -, hof, -⟩ := atomL_sched H B hx hw ht hnf
+    (fun x hx w hw ht hnf hfs => by
+      obtain ⟨u, hu, -, -, hof, -⟩ := atomL_sched H B hx hw ht hnf hfs
       refine ⟨u, hu, fun _ => ⟨fun a ha => sched_args H.wf H.cf B.bmS B.hfb R.treeS B.mS x hof
         u hu a ha, ?_⟩, fun h => absurd hof h⟩
       obtain ⟨u', y, hu', hy, hev⟩ := g6 x hof
       rw [hu] at hu'; cases hu'
       exact ⟨y, hy, hev⟩)
+    (fun x hx u w hu hw hq2 => q2_last_og H B hx hu hw hq2)
+    (fun x hx w hw ht hfn => by
+      obtain ⟨v, u, wv, A, B', C, hsplit, -, hu, hpv, hq2, hlast, hroot⟩ :=
+        comp_owner H B hx hw ht hfn
+      have hvog : v ∈ og.toList := by rw [hsplit]; simp
+      have hvof : v ∈ of.toList := by
+        have : v ∈ og.toList.filter (rootAtL tabs f g) := List.mem_filter.2 ⟨hvog, hroot⟩
+        rw [← B.fl] at this
+        exact (List.mem_filter.1 this).1
+      exact ⟨v, u, wv, hvof, hu, hpv, hq2, hlast⟩)
+    (fun v hv => by
+      obtain ⟨u, y, hu, hy, hev⟩ := g6 v hv
+      exact ⟨u, hu, fun a ha => sched_args H.wf H.cf B.bmS B.hfb R.treeS B.mS v hv u hu a ha, y,
+        hy, hev⟩)
   refine ⟨FT, enterBlockL_of hpsT (by rw [schedL_of_block B.hgb B.idT, B.sT]) hevT, ?_⟩
   have hfr : FT = { FS with regs := FT.regs } := frame_trans l1 hfrT
   refine ⟨hfr, by rw [g2, pS1, R.szS], by rw [l2, pT1, R.szT], g3, l3, g4, l4,
-    fun a h1 h2 h3 h4 => l6 a h1 h2 h3 h4, fun a w hpw hwt hnf y' hy' => ?_, hfrFS, l7⟩
+    fun a h1 h2 h3 h4 => l6 a h1 h2 h3 h4, fun a w hpw hwt hnf hfs y' hy' => ?_, hfrFS, l7⟩
   by_cases hwb : w.block = b
   · have haz : a ∈ gb.values := by
       obtain ⟨-, -, blk, hblk, hx⟩ := hpw
@@ -524,23 +615,23 @@ theorem enter_ok {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
       rw [l5 a hog, hy''] at hy'; cases hy'
       have hof : a ∉ of.toList := fun hm => by
         obtain ⟨-, u, hu, hph'⟩ := (B.mS a).1 hm
-        obtain ⟨u', hpu, -, hs⟩ := gatomL H hpw hwt hnf
+        obtain ⟨u', hpu, -, hs⟩ := gatomL H hpw hwt hnf (.inl hfs)
         rw [hpu.1] at hu; cases hu; exact hph' ((atomPair_phi hs).1 hph)
       exact ⟨y, by rw [g5 a hof]; exact hy, hyy⟩
     · have hog : a ∈ og.toList := (B.mT a).2 ⟨haz, w, hpw.1, hph⟩
-      obtain ⟨u, hu, -, -, hof, -⟩ := atomL_sched H B hog hpw.1 hwt hnf
+      obtain ⟨u, hu, -, -, hof, -⟩ := atomL_sched H B hog hpw.1 hwt hnf hfs
       have hr := l6 a (.inr hog) (.inr hof) hnf
         (fun ⟨w', hw', ht'⟩ => by rw [placed_listed hpw] at hw'; cases hw'; rw [hwt] at ht'; cases ht')
       obtain ⟨u', y, hu', hy, -⟩ := g6 a hof
       rw [rv_of hy, rv_of hy'] at hr
       exact ⟨y, hy, hr⟩
-  · obtain ⟨hnT, hnS⟩ := atomL_out H B hpw hwt hnf hwb
+  · obtain ⟨hnT, hnS⟩ := atomL_out H B hpw hwt hnf hfs hwb
     have hog : a ∉ og.toList := fun hm => hnT ((B.mT a).1 hm).1
     have hof : a ∉ of.toList := fun hm => hnS ((B.mS a).1 hm).1
     rw [l5 a hog] at hy'
     change (setPhis psT frT.regs)[a]? = _ at hy'
     rw [pT3 a (.inl hnT)] at hy'
-    obtain ⟨y, hy, hyy⟩ := R.atoms a w hpw hwt hnf y' hy'
+    obtain ⟨y, hy, hyy⟩ := R.atoms a w hpw hwt hnf hfs y' hy'
     exact ⟨y, by rw [g5 a hof]; exact (pS3 a (.inl hnS)).trans hy, hyy⟩
 
 /-! ## A panicking block entry -/
@@ -593,7 +684,7 @@ theorem arg_beforeL {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
 /-- A corresponding atom of a generic op of `g` has the same op in `f`. -/
 theorem atomPair_op_of_generic {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true)
     (hg : w.op.generic = true) : u.op = w.op := by
-  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h | h, -⟩ | h | h | h | h
+  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h | h, -⟩ | h | h | h | h | h
   · exact h
   · exfalso
     rcases renameOp_cases h with ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ |
@@ -615,6 +706,49 @@ theorem atomPair_op_of_generic {tabs : Tables} {u w : Value} (h : atomPair tabs 
     rw [(idxStore_facts hp).1] at hg; cases hg
   · exfalso
     rcases (Sim.moveQLower_cases h).2 with hw | hw <;> rw [hw.2.1] at hg <;> cases hg
+  · exfalso
+    rcases qStore_cases (moveQ2Lower_qStore h) with h2 | h2 <;> rw [h2] at hg <;> cases hg
+
+/-- A split of a list without duplicates around `x` is unique. -/
+private theorem split_unique {x : ID} :
+    ∀ {A P s t : List ID}, A ++ x :: s = P ++ x :: t → x ∉ A → x ∉ P → A = P ∧ s = t
+  | [], [], _, _, h, _, _ => ⟨rfl, (List.cons.inj h).2⟩
+  | [], p :: P, _, _, h, _, hP => by
+    obtain ⟨rfl, -⟩ := List.cons.inj h
+    exact absurd (List.mem_cons_self) hP
+  | a :: A, [], _, _, h, hA, _ => by
+    obtain ⟨rfl, -⟩ := List.cons.inj h
+    exact absurd (List.mem_cons_self) hA
+  | a :: A, p :: P, _, _, h, hA, hP => by
+    obtain ⟨rfl, h'⟩ := List.cons.inj h
+    obtain ⟨rfl, rfl⟩ := split_unique h' (fun hm => hA (List.mem_cons_of_mem _ hm))
+      (fun hm => hP (List.mem_cons_of_mem _ hm))
+    exact ⟨rfl, rfl⟩
+
+/-- In a list without duplicates split as `A ++ x :: (B ++ v :: C)` and as `P ++ r :: Q` with
+`x ∈ P` and `r ∉ B`, `v` is in `P` or is `r`. -/
+private theorem mem_before {l A B C P Q : List ID} {x v r : ID} (h1 : l = A ++ x :: (B ++ v :: C))
+    (h2 : l = P ++ r :: Q) (hnd : l.Nodup) (hx : x ∈ P) (hr : r ∉ B) : v ∈ P ∨ v = r := by
+  obtain ⟨P1, D, rfl⟩ := List.append_of_mem hx
+  have e : A ++ x :: (B ++ v :: C) = P1 ++ x :: (D ++ r :: Q) := by rw [← h1, h2]; simp
+  have hxA : x ∉ A := fun hm => by
+    rw [h1] at hnd; exact (List.nodup_append.1 hnd).2.2 x hm x List.mem_cons_self rfl
+  have hxP : x ∉ P1 := fun hm => by
+    rw [h2] at hnd
+    have hnd' : (P1 ++ x :: (D ++ r :: Q)).Nodup := by simpa using hnd
+    exact (List.nodup_append.1 hnd').2.2 x hm x List.mem_cons_self rfl
+  obtain ⟨-, e2⟩ := split_unique e hxA hxP
+  rcases List.append_eq_append_iff.1 e2 with ⟨a', hD, hv⟩ | ⟨c', hB, hr'⟩
+  · cases a' with
+    | nil => exact .inr (List.cons.inj hv).1
+    | cons b a'' =>
+      obtain ⟨rfl, -⟩ := List.cons.inj hv
+      exact .inl (by rw [hD]; simp)
+  · cases c' with
+    | nil => exact .inr (List.cons.inj hr').1.symm
+    | cons b c'' =>
+      obtain ⟨rfl, -⟩ := List.cons.inj hr'
+      exact absurd (by rw [hB]; simp) hr
 
 /-- **A panicking block entry.** -/
 theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')
@@ -661,7 +795,7 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
     rw [hur] at hv; cases hv
     exact evalValueL_termL_ne_panic (ctx := Ctx.makeL tabs f) (by rw [makeL_tabs]; exact hvt)
       (makeL_act tabs f) hevr
-  obtain ⟨u, hu, hurt, hpair, -, hpwr⟩ := atomL_sched H B hrog.1 hwr hwrt hnfr
+  obtain ⟨u, hu, hurt, hpair, -, hpwr⟩ := atomL_sched H B hrog.1 hwr hwrt hnfr (by rw [hur]; rfl)
   rw [hur] at hu; cases hu
   -- the `Phi`s and the frames after them
   obtain ⟨psT, hpsT, hS1, hT1, htyPS, htyPT, pS1, pT1, pS3, pT3, -, hat0⟩ := after_phis H R B hpsS
@@ -691,18 +825,29 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
       · have htop := B.tpS; rw [hof] at htop
         rw [hof] at h
         exact topoRem_before htop hfa h
+  have hfrG := regsFrame_eval H B R.frames (P := pre) hpreof pS3 g5 g6
   have hrelT0 : ∀ a, V1 g b gb a → (V1 f b fb a ∨ a ∈ pre) → ¬ IsTermL tabs f.value? a →
       ¬ IsTermL tabs (listedDefs g) a →
       Sem.Refines (rv G a) (rv { frT with regs := setPhis psT frT.regs } a) := by
     intro a ha _ hnf hatE
-    obtain ⟨y, hy, hof', hyt⟩ := hat0 a ha hnf hatE
-    have hnpre : a ∉ pre := fun hm => hof' (hpreof a hm)
-    rw [rv_of (show G.regs[a]? = some (some y) by rw [g5 a hnpre]; exact hy)]
-    exact hyt
+    cases hfa : f.value? a with
+    | none => rw [hfrG.rv_none hfa]; exact .poison _
+    | some _ =>
+      obtain ⟨y, hy, hof', hyt⟩ := hat0 a ha hnf hatE (by rw [hfa]; rfl)
+      have hnpre : a ∉ pre := fun hm => hof' (hpreof a hm)
+      rw [rv_of (show G.regs[a]? = some (some y) by rw [g5 a hnpre]; exact hy)]
+      exact hyt
   have hogpre : ∀ x ∈ preT, x ∈ og.toList := fun x hx => by
     rw [hog]; exact List.mem_append_left _ hx
-  have hfrG := regsFrame_eval H B R.frames (P := pre) hpreof pS3 g5 g6
-  obtain ⟨T, hevT, l1, l2, l3, l4, l5, l6, l7⟩ := tgt_loop H hE (og := og.toList) (L := preT)
+  -- a `Move` does not panic
+  have hnmove : ur.op ≠ .Move := fun hm => by
+    have hp := evalValueL_panic_op hevr
+    rw [hm] at hp
+    rcases hp with h | h | ⟨h, -⟩
+    · revert h; decide
+    · revert h; decide
+    · exact absurd h (by simp)
+  obtain ⟨T, hevT, l1, l2, l3, l4, l5, l6, l7, -⟩ := tgt_loop H hE (og := og.toList) (L := preT)
     (M := r :: postT) (P := pre) hog hfrT (by rw [pT1, R.szT]) g3 htyPT g4 hfrG
     (regsFrameL_phis R.framesT pT3) hT1
     (v1_placed H.wg B.bmT B.hgb) (v1_disj H.wg B.bmT B.hgb B.mT) hrelT0 B.ndT B.tpT
@@ -711,16 +856,16 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
       obtain ⟨hp, -, hid⟩ := placed_in H.wg B.bmT B.hgb hxb hw
       exact ⟨w, hp, hid, hph⟩)
     (sched_args H.wg H.cg B.bmT B.hgb R.treeT B.mT)
-    (fun a ha hVS hnf hat => by
+    (fun a ha hVS hnf hat hfs => by
       rcases hVS with h | h
       · exfalso
         obtain ⟨hxb, w, hw, -⟩ := (B.mT a).1 ha
         obtain ⟨-, -, -, -, hof', -⟩ := atomL_sched H B ha hw (atomL_of_not_term
-          (placed_in H.wg B.bmT B.hgb hxb hw).1 hat) hnf
+          (placed_in H.wg B.bmT B.hgb hxb hw).1 hat) hnf hfs
         exact v1_disj H.wf B.bmS B.hfb B.mS a hof' h
       · exact h)
-    (fun x hx w hw ht hnf => by
-      obtain ⟨u, hu, -, hs', hxof, -⟩ := atomL_sched H B (hogpre x hx) hw ht hnf
+    (fun x hx w hw ht hnf hfs => by
+      obtain ⟨u, hu, -, hs', hxof, -⟩ := atomL_sched H B (hogpre x hx) hw ht hnf hfs
       refine ⟨u, hu, fun hxp => ⟨hargsS x (.inl hxp) u hu, ?_⟩, fun hxp => ?_⟩
       · obtain ⟨u', y, hu', hy, hev⟩ := g6 x hxp
         rw [hu] at hu'; cases hu'
@@ -739,6 +884,23 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
             simp [rootAtL, rootL, hw, hu, ht, atomPair_root hs' hroot]⟩
           rw [← hfl] at this
           exact hxp (List.mem_filter.1 this).1)
+    (fun x hx u w hu hw hq2 => q2_last_og H B (hogpre x hx) hu hw hq2)
+    (fun x hx w hw ht hfn => by
+      obtain ⟨v, u, wv, A, B', C, hsplit, hB', hu, hpv, hq2, hlast, hroot⟩ :=
+        comp_owner H B (hogpre x hx) hw ht hfn
+      have hrB : r ∉ B' := fun hm => by
+        have := hB' r hm
+        rw [hwr] at this
+        simp [hwrt] at this
+      rcases mem_before hsplit hog B.ndT hx hrB with hv | rfl
+      · have : v ∈ preT.filter (rootAtL tabs f g) := List.mem_filter.2 ⟨hv, hroot⟩
+        rw [← hfl] at this
+        exact ⟨v, u, wv, (List.mem_filter.1 this).1, hu, hpv, hq2, hlast⟩
+      · rw [hur] at hu; cases hu
+        exact absurd (moveQ2Lower_facts hq2).1 hnmove)
+    (fun v hv => by
+      obtain ⟨u, y, hu, hy, hev⟩ := g6 v hv
+      exact ⟨u, hu, hargsS v (.inl hv) u hu, y, hy, hev⟩)
   -- the root `r` in the target
   have hwrph : wr.op ≠ .Phi := by
     obtain ⟨-, w', hw', hph⟩ := (B.mT r).1 hrog.1
@@ -754,7 +916,7 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
       · right
         have htop := B.tpT; rw [hog] at htop h
         exact topoRem_before htop (by rw [argsF_of hwr]; exact Array.mem_toList_iff.2 ha) h)
-    hwrph
+    hwrph fun hq2 => absurd (moveQ2Lower_facts hq2).1 hnmove
   rw [hevr] at hrT
   obtain ⟨m', hT', hm⟩ := res_panic_of_refines hrT
   refine ⟨m', enterBlockL_of hpsT (by rw [schedL_of_block B.hgb B.idT, B.sT]) ?_, hm⟩
