@@ -408,7 +408,9 @@ as a 128-bit store lowering it; a `Zero` lowered to a store of `0` (`zeroLower`)
 related at the store's offset and aux, its values the word `0` (`ArgTermZL`) and its memory
 refined; a `Zero` lowered to two (`zero2Lower`) has the outer one's address the pointer moved by
 its offset `z2Off` (`ArgTermShL`), its value the word `0`, and its memory a listed inner store
-(`zero2In`, a memory) related to the `Zero` as a store of `0` lowering it. A lowered frame address
+(`zero2In`, a memory) related to the `Zero` as a store of `0` lowering it; a `Zero` lowered to an
+indexed store of `0` (`zeroIdxLower`) has its address given by the base and the index
+(`ArgTermIdxL`), its value the word `0` and its memory refined. A lowered frame address
 where `f` has a term (`frameAtomG`) corresponds to no atom and reads no argument. An atom where
 `f` has no value (the inner store of two, `compOKL`) is not constrained here: the outer store's
 relation covers it. -/
@@ -418,6 +420,7 @@ def AtomArgsRefL (tabs : Tables) (f g : Func) : Prop :=
     ∃ u', f.value? a = some u' ∧ atomPair tabs u' u = true ∧ pbConstOK tabs f u' u = true ∧
       (argFree tabs u = true ∨ (idxLower tabs u' u = false ∧ moveQLower tabs u' u = false ∧
         moveQ2Lower u' u = false ∧ zeroLower tabs u' u = false ∧ zero2Lower u' u = false ∧
+        zeroIdxLower u' u = false ∧
         ∀ i < u.args.size, ArgTermRefL
         (stArg u' u i) f.lowered f.value? tabs u'.args[argIx u' u i]! g.lowered (listedDefs g) tabs
           u.args[i]! ∨
@@ -471,7 +474,13 @@ def AtomArgsRefL (tabs : Tables) (f g : Func) : Prop :=
           ArgTermShL (z2Off u'.auxInt) (u.auxInt, u.aux) f.lowered f.value? tabs u'.args[0]!
             g.lowered (listedDefs g) tabs u.args[0]! ∧
           ∀ i, i + 2 < u.args.size → ArgTermZL f.lowered f.value? tabs g.lowered (listedDefs g)
-            tabs u.args[i + 1]!))
+            tabs u.args[i + 1]!) ∨
+        (zeroIdxLower u' u = true ∧
+          ArgTermIdxL (idxScale u.op) f.lowered f.value? tabs u'.args[0]! g.lowered (listedDefs g)
+            tabs u.args[0]! u.args[1]! ∧
+          ArgTermZL f.lowered f.value? tabs g.lowered (listedDefs g) tabs u.args[2]! ∧
+          ArgTermRefL none f.lowered f.value? tabs u'.args[1]! g.lowered (listedDefs g) tabs
+            u.args[3]!))
 
 /-- The terminator of `b` (`Sem.stepTermL`) on the control values `cs`. -/
 def stepValsL (b : Block) (cs : List Val) : Res Next :=

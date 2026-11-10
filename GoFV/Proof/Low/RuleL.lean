@@ -806,6 +806,14 @@ def zeroLower (tabs : Tables) (u w : Value) : Bool :=
   u.op == .Zero && u.args.size == 2 && offOK w.auxInt && stAux tabs w.aux &&
     (zeroOp u.auxInt).any fun (o, k) => w.op == o && w.args.size == k
 
+/-- The atom `w` lowers the `Zero [n]` `u` (two arguments) to an indexed store (`idxStore`) of the
+store `zeroOp n` of the constant `0`: the store at offset 0 without aux indexed (`ARM64.rules:786`
+-`791`, `806`-`808`) and its index scaled (`809`, `810`), with four arguments `ptr idx val mem` and
+no offset or aux (`GoFV.Opt.LowerCheck.atomDef1`; `GoFV.Proof.Low.Sim.zeroIdx_lower_eval`). -/
+def zeroIdxLower (u w : Value) : Bool :=
+  u.op == .Zero && u.args.size == 2 && w.args.size == 4 && w.auxInt == 0 && w.aux == none &&
+    (zeroOp u.auxInt).any fun (o, _) => (idxStore w.op).any (·.1 == o)
+
 /-- The two stores `lower` zeroes `Zero [n]` with (`ARM64.rules:339`-`370`): the outer store's op
 and offset, then the inner one's op (offset 0), all of three arguments, the outer store on the
 inner one's memory, the two overlapping where `n` is not their sizes' sum: `(Zero [3] ptr mem) =>
@@ -1041,6 +1049,16 @@ theorem renameOp_zStore {o o' : Op} (h : renameOp o o' = true) : zStore o = fals
       · unfold callRename at h; cases h
       · cases (atomicRen_facts h).1
 
+/-- A `Zero` is renamed to no atom. -/
+theorem renameOp_zero (o' : Op) : renameOp .Zero o' = false := by
+  cases h : renameOp .Zero o'
+  · rfl
+  · unfold renameOp at h
+    simp only [Bool.or_eq_true] at h
+    rcases h with h | h
+    · unfold callRename at h; cases h
+    · exact absurd (atomicRen_facts h).2.2.2.2.2.2.2.2.2 (by decide)
+
 /-- No store lowering a `Zero` is an indexed store. -/
 theorem zStore_idx {o : Op} (h : zStore o = true) : idxStore o = none := by
   unfold zStore at h
@@ -1079,6 +1097,60 @@ theorem zeroLower_facts {tabs : Tables} {u w : Value} (h : zeroLower tabs u w = 
     simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at h
     obtain ⟨hzs, hk3⟩ := zeroOp_some hz
     exact ⟨hu, h2, hk, hax, h.1 ▸ hzs, h.2 ▸ hk3⟩
+
+/-- A scalar arm64 store `zeroOp n` gives is of `n` bytes, 1, 2, 4 or 8. -/
+theorem zeroOp_st {n : Int64} {o : Op} {k : Nat} (h : zeroOp n = some (o, k))
+    (hs : (stSize o).isSome = true) :
+    stSize o = some n.toInt.toNat ∧
+      (n.toInt.toNat = 1 ∨ n.toInt.toNat = 2 ∨ n.toInt.toNat = 4 ∨ n.toInt.toNat = 8) := by
+  unfold zeroOp at h
+  split at h
+  · rename_i hc; cases h; obtain rfl : n = 1 := by simpa using hc
+    exact ⟨rfl, by decide⟩
+  split at h
+  · rename_i hc; cases h; obtain rfl : n = 2 := by simpa using hc
+    exact ⟨rfl, by decide⟩
+  split at h
+  · rename_i hc; cases h; obtain rfl : n = 4 := by simpa using hc
+    exact ⟨rfl, by decide⟩
+  split at h
+  · rename_i hc; cases h; obtain rfl : n = 8 := by simpa using hc
+    exact ⟨rfl, by decide⟩
+  split at h
+  · cases h; exact absurd hs (by decide)
+  · cases h
+
+/-- What `zeroIdxLower` says: a `Zero` of two arguments and an indexed store of four arguments
+without offset or aux, indexing the store `zeroOp` gives. -/
+theorem zeroIdxLower_facts {u w : Value} (h : zeroIdxLower u w = true) :
+    u.op = .Zero ∧ u.args.size = 2 ∧ w.args.size = 4 ∧ w.auxInt = 0 ∧ w.aux = none ∧
+      ∃ o k s, zeroOp u.auxInt = some (o, k) ∧ idxStore w.op = some (o, s) := by
+  unfold zeroIdxLower at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨⟨⟨⟨hu, h2⟩, h4⟩, hk⟩, hax⟩, h⟩ := h
+  refine ⟨hu, h2, h4, hk, hax, ?_⟩
+  cases hz : zeroOp u.auxInt with
+  | none => rw [hz] at h; cases h
+  | some p =>
+    obtain ⟨o, k⟩ := p
+    rw [hz] at h
+    simp only [Option.any_some] at h
+    cases hi : idxStore w.op with
+    | none => rw [hi] at h; cases h
+    | some q =>
+      obtain ⟨o', s⟩ := q
+      rw [hi] at h
+      simp only [Option.any_some, beq_iff_eq] at h
+      exact ⟨o, k, s, rfl, by rw [h]⟩
+
+/-- The indexed store of `zeroIdxLower` stores `n` bytes, 1, 2, 4 or 8, of the `Zero [n]`. -/
+theorem zeroIdxLower_size {u w : Value} (h : zeroIdxLower u w = true) :
+    ∃ o s, idxStore w.op = some (o, s) ∧ stSize o = some u.auxInt.toInt.toNat ∧
+      (u.auxInt.toInt.toNat = 1 ∨ u.auxInt.toInt.toNat = 2 ∨ u.auxInt.toInt.toNat = 4 ∨
+        u.auxInt.toInt.toNat = 8) := by
+  obtain ⟨-, -, -, -, -, o, k, s, hz, hi⟩ := zeroIdxLower_facts h
+  obtain ⟨h1, h2⟩ := zeroOp_st hz (idxStore_facts hi).2.2.1
+  exact ⟨o, s, hi, h1, h2⟩
 
 /-- What `moveQLower` says about the ops: a `Move` with three arguments and a 128-bit store. -/
 theorem moveQLower_qStore {tabs : Tables} {u w : Value} (h : moveQLower tabs u w = true) :

@@ -4,7 +4,7 @@
 
 Corpus: `full-v9/plain`; 96560 `lower` sections.
 
-The checked lower (proven rules) equals stock on 89614 of them. `lower` fires only proven rules on 91508: the greedy cover below starts there and adds, at each step, the rule whose proof completes the most functions (all the rules `lower` fires on them proven; the validator may still reject an instance). Columns: the rule (`ARM64.rules` line and op, or block kind), the functions covered with it, the functions it completes, the functions that fire it. The validator's ceiling (every rule assumed proven) and its rejections follow the table.
+The checked lower (proven rules) equals stock on 89618 of them. `lower` fires only proven rules on 91508: the greedy cover below starts there and adds, at each step, the rule whose proof completes the most functions (all the rules `lower` fires on them proven; the validator may still reject an instance). Columns: the rule (`ARM64.rules` line and op, or block kind), the functions covered with it, the functions it completes, the functions that fire it. The validator's ceiling (every rule assumed proven) and its rejections follow the table.
 
 | step | rule | covered | completes | fired in |
 |---:|---|---:|---:|---:|
@@ -240,120 +240,120 @@ The checked lower (proven rules) equals stock on 89614 of them. `lower` fires on
 
 ## The next rules by functions gained at stock
 
-The same greedy cover over the 90114 functions the validator accepts with every rule (below): there the checked lower equals stock once every rule `lower` fires is proven. Of them, 88535 fire only proven rules. A step's completed functions are the functions its proof adds at stock, up to the validator's verdict on the proven rules alone.
+The same greedy cover over the 90118 functions the validator accepts with every rule (below): there the checked lower equals stock once every rule `lower` fires is proven. Of them, 88539 fire only proven rules. A step's completed functions are the functions its proof adds at stock, up to the validator's verdict on the proven rules alone.
 
 | step | rule | covered | completes | fired in |
 |---:|---|---:|---:|---:|
-| 1 | `ARM64:1197 SUB` | 89115 | 580 | 804 |
-| 2 | `ARM64:1198 SUB` | 89279 | 164 | 222 |
-| 3 | `ARM64:134 OrB` | 89368 | 89 | 131 |
-| 4 | `ARM64:133 AndB` | 89438 | 70 | 690 |
-| 5 | `ARM64:230 Cvt32Fto64F` | 89461 | 23 | 89 |
-| 6 | `ARM64:575 block GT` | 89482 | 21 | 34 |
-| 7 | `ARM64:183 Const64F` | 89502 | 20 | 387 |
-| 8 | `ARM64:78 Ctz64` | 89522 | 20 | 141 |
-| 9 | `ARM64:76 Ctz64NonZero` | 89583 | 61 | 103 |
-| 10 | `ARM64:74 RotateLeft64` | 89600 | 17 | 59 |
-| 11 | `ARM64:121 UMOD` | 89616 | 16 | 27 |
-| 12 | `ARM64:225 Cvt64Fto64` | 89629 | 13 | 94 |
-| 13 | `ARM64:53 Abs` | 89642 | 13 | 74 |
-| 14 | `ARM64:575 block EQ` | 89654 | 12 | 24 |
-| 15 | `ARM64:41 Avg64u` | 89664 | 10 | 16 |
-| 16 | `ARM64:1605 ORshiftLL` | 89673 | 9 | 20 |
-| 17 | `ARM64:231 Cvt64Fto32F` | 89682 | 9 | 70 |
-| 18 | `ARM64:29 Div32u` | 89690 | 8 | 34 |
-| 19 | `ARM64:618 block NZ` | 89698 | 8 | 16 |
-| 20 | `ARM64:13 Mul64F` | 89705 | 7 | 194 |
-| 21 | `ARM64:217 Cvt64to64F` | 89719 | 14 | 172 |
-| 22 | `ARM64:31 Div64F` | 89740 | 21 | 171 |
-| 23 | `ARM64:6 Add64F` | 89758 | 18 | 119 |
-| 24 | `ARM64:298 FCMPD` | 89771 | 13 | 113 |
-| 25 | `ARM64:49 Neg64F` | 89790 | 19 | 86 |
-| 26 | `ARM64:9 Sub64F` | 89804 | 14 | 92 |
-| 27 | `ARM64:1799 FADDD` | 89814 | 10 | 55 |
-| 28 | `ARM64:221 Cvt64Uto64F` | 89825 | 11 | 49 |
-| 29 | `ARM64:236 Round64F` | 89846 | 21 | 37 |
-| 30 | `ARM64:821 FMOVDstore` | 89856 | 10 | 20 |
-| 31 | `ARM64:823 FMOVDstoreidx` | 89866 | 10 | 12 |
-| 32 | `ARM64:23 Div32` | 89873 | 7 | 17 |
-| 33 | `ARM64:1008 MUL` | 89879 | 6 | 47 |
-| 34 | `ARM64:1225 MSUB` | 89885 | 6 | 14 |
-| 35 | `ARM64:34 Mod32` | 89891 | 6 | 13 |
-| 36 | `ARM64:73 RotateLeft32` | 89897 | 6 | 45 |
-| 37 | `ARM64:79 Ctz32` | 89903 | 6 | 12 |
-| 38 | `ARM64:1207 XORconst` | 89908 | 5 | 7 |
-| 39 | `ARM64:229 Cvt64Fto64U` | 89913 | 5 | 15 |
-| 40 | `ARM64:299 FCMPD` | 89918 | 5 | 58 |
-| 41 | `ARM64:1342 block FLT` | 89924 | 6 | 18 |
-| 42 | `ARM64:617 block Z` | 89929 | 5 | 12 |
-| 43 | `ARM64:1090 MADD` | 89933 | 4 | 5 |
-| 44 | `ARM64:1170 ADD` | 89937 | 4 | 6 |
-| 45 | `ARM64:183 Const32F` | 89941 | 4 | 33 |
-| 46 | `ARM64:579 block EQ` | 89945 | 4 | 4 |
-| 47 | `ARM64:590 Equal` | 89949 | 4 | 4 |
-| 48 | `ARM64:114 BitRev16` | 89952 | 3 | 5 |
-| 49 | `ARM64:1205 ORconst` | 89955 | 3 | 10 |
-| 50 | `ARM64:1604 ADDshiftLL` | 89958 | 3 | 4 |
-| 51 | `ARM64:1850 MUL` | 89962 | 4 | 6 |
-| 52 | `ARM64:1792 FMULD` | 89965 | 3 | 12 |
-| 53 | `ARM64:56 Floor` | 89969 | 4 | 9 |
-| 54 | `ARM64:1849 MUL` | 89972 | 3 | 35 |
-| 55 | `ARM64:215 Cvt32to64F` | 89975 | 3 | 10 |
-| 56 | `ARM64:54 Sqrt` | 89978 | 3 | 18 |
-| 57 | `ARM64:1801 FSUBD` | 89982 | 4 | 22 |
-| 58 | `ARM64:1803 FSUBD` | 89987 | 5 | 15 |
-| 59 | `ARM64:822 FMOVSstore` | 89990 | 3 | 4 |
-| 60 | `ARM64:1790 FNEGD` | 89992 | 2 | 4 |
-| 61 | `ARM64:24 Div16` | 89994 | 2 | 2 |
-| 62 | `ARM64:38 Mod16u` | 89996 | 2 | 2 |
-| 63 | `ARM64:573 block LT` | 89998 | 2 | 3 |
-| 64 | `ARM64:575 block NE` | 90000 | 2 | 2 |
-| 65 | `ARM64:580 Equal` | 90002 | 2 | 2 |
-| 66 | `ARM64:593 NotEqual` | 90004 | 2 | 2 |
-| 67 | `ARM64:112 BitRev64` | 90005 | 1 | 1 |
-| 68 | `ARM64:1634 ADD` | 90006 | 1 | 1 |
-| 69 | `ARM64:1805 FADDD` | 90007 | 1 | 3 |
-| 70 | `ARM64:223 Cvt64Fto32` | 90008 | 1 | 4 |
-| 71 | `ARM64:25 Div16u` | 90009 | 1 | 1 |
-| 72 | `ARM64:26 Div8` | 90010 | 1 | 1 |
-| 73 | `ARM64:27 Div8u` | 90011 | 1 | 1 |
-| 74 | `ARM64:37 Mod16` | 90012 | 1 | 1 |
-| 75 | `ARM64:37 Mod8` | 90013 | 1 | 1 |
-| 76 | `ARM64:38 Mod8u` | 90014 | 1 | 1 |
-| 77 | `ARM64:49 Neg32F` | 90015 | 1 | 6 |
-| 78 | `ARM64:55 Ceil` | 90016 | 1 | 3 |
-| 79 | `ARM64:57 Round` | 90017 | 1 | 2 |
-| 80 | `ARM64:576 block EQ` | 90018 | 1 | 1 |
-| 81 | `ARM64:576 block NE` | 90019 | 1 | 1 |
-| 82 | `ARM64:619 block ZW` | 90020 | 1 | 2 |
-| 83 | `ARM64:626 block NZ` | 90021 | 1 | 2 |
-| 84 | `ARM64:65 Max64F` | 90022 | 1 | 1 |
-| 85 | `ARM64:70 RotateLeft8` | 90023 | 1 | 1 |
-| 86 | `ARM64:72 RotateLeft16` | 90024 | 1 | 1 |
-| 87 | `ARM64:76 Ctz8NonZero` | 90025 | 1 | 1 |
-| 88 | `ARM64:80 Ctz16` | 90026 | 1 | 3 |
-| 89 | `ARM64:81 Ctz8` | 90027 | 1 | 3 |
-| 90 | `ARM64:1253 NEG` | 90027 | 0 | 62 |
-| 91 | `ARM64:996 RORW` | 90048 | 21 | 37 |
-| 92 | `ARM64:995 ROR` | 90068 | 20 | 25 |
-| 93 | `ARM64:1450 XOR` | 90070 | 2 | 3 |
-| 94 | `ARM64:1454 BIC` | 90071 | 1 | 1 |
-| 95 | `ARM64:1263 CMPconst` | 90071 | 0 | 64 |
-| 96 | `ARM64:1284 block NE` | 90101 | 30 | 36 |
-| 97 | `ARM64:1404 CSEL0` | 90105 | 4 | 25 |
-| 98 | `ARM64:1403 CSEL` | 90106 | 1 | 3 |
-| 99 | `ARM64:122 UMODW` | 90106 | 0 | 43 |
-| 100 | `ARM64:36 Mod32u` | 90111 | 5 | 43 |
-| 101 | `ARM64:595 Equal` | 90112 | 1 | 1 |
-| 102 | `ARM64:1027 SUB` | 90112 | 0 | 2 |
-| 103 | `ARM64:1224 MADD` | 90113 | 1 | 1 |
-| 104 | `ARM64:13 Mul32F` | 90113 | 0 | 11 |
-| 105 | `ARM64:220 Cvt64Uto32F` | 90113 | 0 | 2 |
-| 106 | `ARM64:30 Div32F` | 90114 | 1 | 4 |
+| 1 | `ARM64:1197 SUB` | 89119 | 580 | 804 |
+| 2 | `ARM64:1198 SUB` | 89283 | 164 | 222 |
+| 3 | `ARM64:134 OrB` | 89372 | 89 | 131 |
+| 4 | `ARM64:133 AndB` | 89442 | 70 | 690 |
+| 5 | `ARM64:230 Cvt32Fto64F` | 89465 | 23 | 89 |
+| 6 | `ARM64:575 block GT` | 89486 | 21 | 34 |
+| 7 | `ARM64:183 Const64F` | 89506 | 20 | 387 |
+| 8 | `ARM64:78 Ctz64` | 89526 | 20 | 141 |
+| 9 | `ARM64:76 Ctz64NonZero` | 89587 | 61 | 103 |
+| 10 | `ARM64:74 RotateLeft64` | 89604 | 17 | 59 |
+| 11 | `ARM64:121 UMOD` | 89620 | 16 | 27 |
+| 12 | `ARM64:225 Cvt64Fto64` | 89633 | 13 | 94 |
+| 13 | `ARM64:53 Abs` | 89646 | 13 | 74 |
+| 14 | `ARM64:575 block EQ` | 89658 | 12 | 24 |
+| 15 | `ARM64:41 Avg64u` | 89668 | 10 | 16 |
+| 16 | `ARM64:1605 ORshiftLL` | 89677 | 9 | 20 |
+| 17 | `ARM64:231 Cvt64Fto32F` | 89686 | 9 | 70 |
+| 18 | `ARM64:29 Div32u` | 89694 | 8 | 34 |
+| 19 | `ARM64:618 block NZ` | 89702 | 8 | 16 |
+| 20 | `ARM64:13 Mul64F` | 89709 | 7 | 194 |
+| 21 | `ARM64:217 Cvt64to64F` | 89723 | 14 | 172 |
+| 22 | `ARM64:31 Div64F` | 89744 | 21 | 171 |
+| 23 | `ARM64:6 Add64F` | 89762 | 18 | 119 |
+| 24 | `ARM64:298 FCMPD` | 89775 | 13 | 113 |
+| 25 | `ARM64:49 Neg64F` | 89794 | 19 | 86 |
+| 26 | `ARM64:9 Sub64F` | 89808 | 14 | 92 |
+| 27 | `ARM64:1799 FADDD` | 89818 | 10 | 55 |
+| 28 | `ARM64:221 Cvt64Uto64F` | 89829 | 11 | 49 |
+| 29 | `ARM64:236 Round64F` | 89850 | 21 | 37 |
+| 30 | `ARM64:821 FMOVDstore` | 89860 | 10 | 20 |
+| 31 | `ARM64:823 FMOVDstoreidx` | 89870 | 10 | 12 |
+| 32 | `ARM64:23 Div32` | 89877 | 7 | 17 |
+| 33 | `ARM64:1008 MUL` | 89883 | 6 | 47 |
+| 34 | `ARM64:1225 MSUB` | 89889 | 6 | 14 |
+| 35 | `ARM64:34 Mod32` | 89895 | 6 | 13 |
+| 36 | `ARM64:73 RotateLeft32` | 89901 | 6 | 45 |
+| 37 | `ARM64:79 Ctz32` | 89907 | 6 | 12 |
+| 38 | `ARM64:1207 XORconst` | 89912 | 5 | 7 |
+| 39 | `ARM64:229 Cvt64Fto64U` | 89917 | 5 | 15 |
+| 40 | `ARM64:299 FCMPD` | 89922 | 5 | 58 |
+| 41 | `ARM64:1342 block FLT` | 89928 | 6 | 18 |
+| 42 | `ARM64:617 block Z` | 89933 | 5 | 12 |
+| 43 | `ARM64:1090 MADD` | 89937 | 4 | 5 |
+| 44 | `ARM64:1170 ADD` | 89941 | 4 | 6 |
+| 45 | `ARM64:183 Const32F` | 89945 | 4 | 33 |
+| 46 | `ARM64:579 block EQ` | 89949 | 4 | 4 |
+| 47 | `ARM64:590 Equal` | 89953 | 4 | 4 |
+| 48 | `ARM64:114 BitRev16` | 89956 | 3 | 5 |
+| 49 | `ARM64:1205 ORconst` | 89959 | 3 | 10 |
+| 50 | `ARM64:1604 ADDshiftLL` | 89962 | 3 | 4 |
+| 51 | `ARM64:1850 MUL` | 89966 | 4 | 6 |
+| 52 | `ARM64:1792 FMULD` | 89969 | 3 | 12 |
+| 53 | `ARM64:56 Floor` | 89973 | 4 | 9 |
+| 54 | `ARM64:1849 MUL` | 89976 | 3 | 35 |
+| 55 | `ARM64:215 Cvt32to64F` | 89979 | 3 | 10 |
+| 56 | `ARM64:54 Sqrt` | 89982 | 3 | 18 |
+| 57 | `ARM64:1801 FSUBD` | 89986 | 4 | 22 |
+| 58 | `ARM64:1803 FSUBD` | 89991 | 5 | 15 |
+| 59 | `ARM64:822 FMOVSstore` | 89994 | 3 | 4 |
+| 60 | `ARM64:1790 FNEGD` | 89996 | 2 | 4 |
+| 61 | `ARM64:24 Div16` | 89998 | 2 | 2 |
+| 62 | `ARM64:38 Mod16u` | 90000 | 2 | 2 |
+| 63 | `ARM64:573 block LT` | 90002 | 2 | 3 |
+| 64 | `ARM64:575 block NE` | 90004 | 2 | 2 |
+| 65 | `ARM64:580 Equal` | 90006 | 2 | 2 |
+| 66 | `ARM64:593 NotEqual` | 90008 | 2 | 2 |
+| 67 | `ARM64:112 BitRev64` | 90009 | 1 | 1 |
+| 68 | `ARM64:1634 ADD` | 90010 | 1 | 1 |
+| 69 | `ARM64:1805 FADDD` | 90011 | 1 | 3 |
+| 70 | `ARM64:223 Cvt64Fto32` | 90012 | 1 | 4 |
+| 71 | `ARM64:25 Div16u` | 90013 | 1 | 1 |
+| 72 | `ARM64:26 Div8` | 90014 | 1 | 1 |
+| 73 | `ARM64:27 Div8u` | 90015 | 1 | 1 |
+| 74 | `ARM64:37 Mod16` | 90016 | 1 | 1 |
+| 75 | `ARM64:37 Mod8` | 90017 | 1 | 1 |
+| 76 | `ARM64:38 Mod8u` | 90018 | 1 | 1 |
+| 77 | `ARM64:49 Neg32F` | 90019 | 1 | 6 |
+| 78 | `ARM64:55 Ceil` | 90020 | 1 | 3 |
+| 79 | `ARM64:57 Round` | 90021 | 1 | 2 |
+| 80 | `ARM64:576 block EQ` | 90022 | 1 | 1 |
+| 81 | `ARM64:576 block NE` | 90023 | 1 | 1 |
+| 82 | `ARM64:619 block ZW` | 90024 | 1 | 2 |
+| 83 | `ARM64:626 block NZ` | 90025 | 1 | 2 |
+| 84 | `ARM64:65 Max64F` | 90026 | 1 | 1 |
+| 85 | `ARM64:70 RotateLeft8` | 90027 | 1 | 1 |
+| 86 | `ARM64:72 RotateLeft16` | 90028 | 1 | 1 |
+| 87 | `ARM64:76 Ctz8NonZero` | 90029 | 1 | 1 |
+| 88 | `ARM64:80 Ctz16` | 90030 | 1 | 3 |
+| 89 | `ARM64:81 Ctz8` | 90031 | 1 | 3 |
+| 90 | `ARM64:1253 NEG` | 90031 | 0 | 62 |
+| 91 | `ARM64:996 RORW` | 90052 | 21 | 37 |
+| 92 | `ARM64:995 ROR` | 90072 | 20 | 25 |
+| 93 | `ARM64:1450 XOR` | 90074 | 2 | 3 |
+| 94 | `ARM64:1454 BIC` | 90075 | 1 | 1 |
+| 95 | `ARM64:1263 CMPconst` | 90075 | 0 | 64 |
+| 96 | `ARM64:1284 block NE` | 90105 | 30 | 36 |
+| 97 | `ARM64:1404 CSEL0` | 90109 | 4 | 25 |
+| 98 | `ARM64:1403 CSEL` | 90110 | 1 | 3 |
+| 99 | `ARM64:122 UMODW` | 90110 | 0 | 43 |
+| 100 | `ARM64:36 Mod32u` | 90115 | 5 | 43 |
+| 101 | `ARM64:595 Equal` | 90116 | 1 | 1 |
+| 102 | `ARM64:1027 SUB` | 90116 | 0 | 2 |
+| 103 | `ARM64:1224 MADD` | 90117 | 1 | 1 |
+| 104 | `ARM64:13 Mul32F` | 90117 | 0 | 11 |
+| 105 | `ARM64:220 Cvt64Uto32F` | 90117 | 0 | 2 |
+| 106 | `ARM64:30 Div32F` | 90118 | 1 | 4 |
 
 ## The validator's ceiling
 
-With every rule of `ARM64.rules` (the derived forms of the proven set included), the validator accepts 90114 of the 96560 functions. Each rejected function counts once, under the first check that rejects it (`whyL`): its class is the reason without value IDs, a rule's reasons one per commutation choice (`nomatch`: the pattern does not match the replayed definitions; `top`/`argsL`: a shape check; `ctrls`: the new block controls; `result`: the built values). Fixing a class gains at most its functions: a function may fail a later check too.
+With every rule of `ARM64.rules` (the derived forms of the proven set included), the validator accepts 90118 of the 96560 functions. Each rejected function counts once, under the first check that rejects it (`whyL`): its class is the reason without value IDs, a rule's reasons one per commutation choice (`nomatch`: the pattern does not match the replayed definitions; `top`/`argsL`: a shape check; `ctrls`: the new block controls; `result`: the built values). Fixing a class gains at most its functions: a function may fail a later check too.
 
 ### By family (the rule, the atom's input op, the final check)
 

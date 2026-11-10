@@ -2387,6 +2387,23 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   (`zPre`, `st2Pre` in `CompAtL`) and the outer one to the `Zero` (`write_overlap`). Witness
   `zst2_lower` (`Zero [12]` of a global as `MOVWstore [8] {k}` on `MOVDstore {k}`).
 
+- **Indexed stores of `0`** (`:351` and the other single stores of `zeroOp`, then `:786`–`:791`,
+  `:806`–`:808`, `:809`, `:810`; #385; `RuleL.zeroIdxLower`, `ValReplay` `ZeroIdxRefL`,
+  `SimMem.zeroIdx_lower_eval`). A `Zero [n]` (`n` 1, 2, 4 or 8) whose pointer is `ADD p i` or
+  `ADDshiftLL [k] p i` lowers to `MOV{B,H,W,D}store ptr (MOVDconst [0]) mem`, which the indexed
+  store rules then turn into `MOV…storeidx{,2,4,8} p i (MOVDconst [0]) mem` (full-v9: the
+  `golang.org/x/text/unicode/norm` `(*reorderBuffer).appendRune`/`assignRune`, `Zero [8]` at
+  `ADDshiftLL [3]`). `atomDef1` admits `stIdxFold` and `stIdxScale` on such a store when `f`'s
+  value is a `Zero` of two arguments whose `zeroOp` is a single store (so never the outer store of
+  two, whose address is moved by `z2Off`), and `atomPair` pairs the indexed store with the `Zero`
+  (`zeroIdxLower`: four arguments, no offset or aux, indexing `zeroOp n`'s store, hence of `n`
+  bytes). The replay relates them by `ZeroIdxRefL` (`ReplayInvL.idxFold`, `scaleIdx` from
+  `ZeroRefL` and `ZeroIdxRefL`): the indexed address of base and index is the `Zero`'s pointer,
+  the value the word `0`, the memory the `Zero`'s (`ArgTermIdxL`, `ArgTermZL` in
+  `AtomArgsRefL`); the indexed store writes the `n` zero bytes there (`storeBytes_zero`). Witness
+  `zsx_lower` (`Zero [8]` at `p + i<<3` as `MOVDstoreidx8 p i (MOVDconst [0]) mem`, read back by
+  `MOVDloadidx8`).
+
 - **Compares with a pointer** (#385; module docs of `GoFV/Proof/Low/Rules/CmpNeg.lean` and
   `Invert.lean`). `CMP` compares a pointer without a concrete address with an integer as unequal
   (`Arm64.cmp`, `Z` clear). While `CMN` and `CMPshift*` read registers only (`Arm64.cmp1`/`cmp2`),
