@@ -968,8 +968,11 @@ its `MOVD`) accepts a function, they are G53's statements, under `G49Env`, `g54_
 `FRINTM`/`FRINTZ`/`FRINTA` `D`/`S` as `op Fa, Fd`, `NEGshift* [k] x` as `NEG Rm SHIFT k, Rd`,
 `CLZW x` as `CLZW Rm, Rd`, `MULL x y` as `SMULL Rm, Rn, Rd` and `EXTRconst`/`EXTRWconst [k] x y`
 as `EXTR`/`EXTRW $k, Rx, Ry, Rd`) accepts a function, they are G54's statements, under `G49Env`,
-`g55_value` under `G54Pre` (no new premise). Witness: `genG55_witness` (`math/bits.OnesCount`:
-`VCNT` then `VUADDLV` of `0x103` give 3 in `V0`, which G54 rejects). Coverage on quick-v10
+`g55_value` under `G54Pre` (no new premise: the rounds' mode is fixed by the opcode on both sides,
+a NaN is processed by the same `IEEE.roundInt`, and `FZ = DN = 0` is the standing `FPCR = 0`).
+Witnesses: `genG55_witness` (`math/bits.OnesCount`:
+`VCNT` then `VUADDLV` of `0x103` give 3 in `V0`, which G54 rejects) and `genG55b_witness`
+(`math/bits.LeadingZeros32`: `CLZW` of the 32-bit `0x10000` gives 15 in `X0`). Coverage on quick-v10
 (`lake exe gen-check`): 7,331 of 9,297 functions (78.85%), 232,869 values.
 
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)

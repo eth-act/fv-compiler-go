@@ -1224,7 +1224,13 @@ tried when G54 rejects a value, each value one Prog with no temporary.
   machine (`progStep_simd55`, `progStep_frint55`) reads the `ARNG` and `V` operands as the V
   register's number (`fpIdx?_arng`, `fpIdx?_vOfF`), applies the same function to the low 64 bits
   and zero-extends it, and runs the rounds as `fp1Op` with `frintOf`'s `opc` (`IEEE.roundInt` on
-  both sides, a NaN's processing included).
+  both sides, a NaN's processing included). No mismatch, so no run premise: each round's mode is
+  fixed by its opcode (`8`–`12`: `rne`/`rpi`/`rmi`/`rz`/`rna`, the ARM ARM's `FRINTN`/`P`/`M`/`Z`/
+  `A`, which ignore `FPCR.RMode`) and is the mode Phase 1's `Floor`/`Ceil`/`Trunc`/`Round`/
+  `RoundToEven` use; a NaN is quietened with its payload and sign kept and a zero result keeps the
+  operand's sign on both sides. The machine's `FZ = DN = 0` is the model's standing `FPCR = 0`
+  (`docs/plans/semantics3.md` §3), not a G55 premise; `FRINTX`/`FRINTI` (which read
+  `FPCR.RMode`) are not taken.
 - Group B (`Check55b`/`Spec55b`, proof `G55b`), on X registers: `NEGshiftLL`/`RL`/`RA [k] x` as
   `NEG Rm SHIFT k, Rd` (G51b's shifted `MVN` with G32's `unF .NEG`: `LL` of an `x` of at least the
   result's class, `RL`/`RA` of a 64-bit `x`), `CLZW x` as `CLZW Rm, Rd` and `MULL x y` as
@@ -1233,8 +1239,10 @@ tried when G54 rejects a value, each value one Prog with no temporary.
   (`extrOK`: `x`, the high half, the one `RestArgs` source; arguments of at least the width,
   `0 ≤ k <` the width; `extrF55b`, `sized`).
 
-No new premise: `g55_value` takes `G54Pre`. Witness `genG55_witness` (`math/bits.OnesCount`: from
-`x = 0x103` in `F0`, `VCNT` gives `0x102` and `VUADDLV` 3, in `V0`'s low 64 bits after each Prog).
+No new premise: `g55_value` takes `G54Pre`. Witnesses `genG55_witness` (`math/bits.OnesCount`: from
+`x = 0x103` in `F0`, `VCNT` gives `0x102` and `VUADDLV` 3, in `V0`'s low 64 bits after each Prog)
+and, for group B, `genG55b_witness` (`math/bits.LeadingZeros32`: from the 32-bit `x = 0x10000` in
+`R0`, `CLZW` gives 15, `X0 = 15` after its Prog).
 G55 accepts 7,331 functions (+23 over G54: 16 by group A, 7 by group B).
 
 Blockers recorded and not taken after G55 (counts among G54's 1,989 rejected functions, `--sets`):
