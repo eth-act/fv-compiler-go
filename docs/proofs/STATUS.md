@@ -1273,6 +1273,29 @@ of 9,297 functions (82.46%, as G59 on P0), 249,111 values, 69 of them loading a 
 from a constant symbol (61 by G56). Composed into `verified_mach` (`GoFV/Proof/Obj/G60.lean`,
 `g60_obj_*`, below).
 
+## Phase 3: genssa, slice G61, the atomic read-modify-writes (I7, #553)
+
+`GoFV.Proof.Gen.g61_value`, `g61_initMem`, `g61_term`, `g61_nilPanic`, `g61_boundsPanic`
+(`GoFV/Proof/Gen/G61.lean`): `checkG61` (on P0', `GoFV/Gen/Check61.lean`) is G60 with group A
+(`vkind61a`, `GoFV/Gen/Check61a.lean`, tried when G60 rejects a value): the lowered atomic
+exchanges, adds, compare-and-swaps, ands and ors (`LoweredAtomic*`), both genssa's
+load-exclusive/store-exclusive loops and the LSE `*Variant` forms, and their `Select0`/`Select1`;
+and `atomOK`, on the whole function: each loop's `CBNZ R27` branches to its `LDAXR`, each
+compare-and-swap's `BNE` to its `CSET`. When it accepts a function, they are G60's statements at
+either mode `osp`, with G60's premises and no new one (`vk61_step`: G60's values by `vk60_step`,
+group A by `vk61a_step`, `GoFV/Proof/Gen/G61e.lean`, from the case lemmas `g61_xchg`, `g61_add`,
+`g61_logic`, `g61_cas`, `g61_lse`, `g61_casV` and G38's components, each closed by `atom_finish`).
+The loops run once: on one core a store-exclusive succeeds and leaves `R27 = 0` (`GoFV.Arm64`'s
+single-core row). An atomic's own nil fault is not among the slice's panics, as for G38's acquire
+loads. Witness: `genG61_witness` (`sync/atomic.SwapInt64` on P0', mode `false`: `checkG60`
+rejects it, `checkG61` accepts it; `LDAXR (R0), R2; STLXR R1, (R0), R27; CBNZ R27` from `addr`
+the pointer to the word 7 of `GenG14`'s `heap 1` and `new = 9` leaves `X2 = 7`). Coverage on
+quick-v10 (`lake exe gen-check --jobs 2`, G61 on P0', on main 2320a5d3): 7,983 of 9,297 functions
+(85.86%, +316 over G60's 7,667: 218 of std/runtime, 84 of std/sync, 10 of std/encoding, 4 tests;
+all 91 of std/sync/atomic), 269,353 values; G60 and every earlier slice unchanged. Not yet
+composed into `verified_mach` (which is on G60; the object side's atomics are `checkObj` part B,
+`agent/objatom`).
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g60_obj_value`, `g60_obj_term`, `g60_obj_nilPanic`, `g60_obj_boundsPanic`
