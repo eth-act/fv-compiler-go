@@ -343,7 +343,8 @@ theorem g49Env {lc : LocCtx} (hc : checkG60L lc ps GenG3.bs GenG3.g = .ok (GenG3
         simp [hop] at h2
       slot := fun k hk => by simp [List.isEmpty_iff.1 hsl] at hk
       extra := by decide
-      frame := ⟨show 4096 + 8 ≤ spO.toNat by decide, show spO.toNat + 8 ≤ 2 ^ 64 by decide, fun k off h => by cases h⟩ }
+      frame := ⟨show 4096 + 8 ≤ spO.toNat by decide, show spO.toNat + 8 ≤ 2 ^ 64 by decide,
+        fun k off h => by cases h⟩ }
   exact
     { env := {
         env := {

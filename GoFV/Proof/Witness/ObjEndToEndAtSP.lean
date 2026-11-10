@@ -22,8 +22,8 @@ vacuously. `verified_mach_atSP` applies with every premise discharged:
   within `CALL`'s range of the code at `ObjG7.base`;
 * the environment `env` is the Phase 1 test environment `plRunEnv` with `runtime/secret.getStack`
   returning `0x11` and `0x22` and the memory unchanged (`getStackC`); its `VPre` facts hold at the
-  machine layout `AM = Addrs.atSP (baseSP g L sp0) sp0.toNat` (`env_vpre`); the generic `run` returns
-  `[0x11, 0x22]`;
+  machine layout `AM = Addrs.atSP (baseSP g L sp0) sp0.toNat` (`env_vpre`); the generic `run`
+  returns `[0x11, 0x22]`;
 * the machine: the hook `H` returns to `X30` with `X0 = 0x11`, `X1 = 0x22` and everything else
   kept (`HookMap`: `hookMap_H`; the callee contract `CallSpec` at every `LocMatch`ed state of an
   activation extending `envAtSP g L (E0 lc)`: `callSpecH`, whose `AddrAgree` holds since `ιSP`

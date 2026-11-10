@@ -15,7 +15,8 @@ with stack arguments or results, on `callRegsS`; `CallPanicOKAt`): `g60_callPani
 with no arm64 op has no call (`nl30_ops`); in one with, what `vkind60` accepts of a call `vkind49`
 accepts (a call is no op of G52–G59's groups, `vkind60_ok49`) or G48's `callKind48` (a call with
 stack arguments or results, on `callRegsS`, `callKind48_facts`, in G48's mode); what `vkind49`
-accepts of a call `vkind51` accepts (`vkind49_ok51`: a call is no frame-variable access), and `vkind51` of a call is
+accepts of a call `vkind51` accepts (`vkind49_ok51`: a call is no frame-variable access), and
+`vkind51` of a call is
 `vkind47`'s (`vkind51_eq50`, `vkind50_eq47`: a call is no G51 op, pair load or select), which is
 `vkind46`'s or G47's
 `callKind47`
@@ -888,7 +889,8 @@ theorem g60_icallPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   obtain ⟨mm0, hmm0, hkn, hsep⟩ := hinv.core.mem
   rw [hmm] at hmm0
   cases hmm0
-  obtain ⟨hret1, haddr1, m', hcallH⟩ := hok.spec n cabi ins outs a0 rc (BitVec.ofNat 5 kc) args mm m₁
+  obtain ⟨hret1, haddr1, m', hcallH⟩ :=
+    hok.spec n cabi ins outs a0 rc (BitVec.ofNat 5 kc) args mm m₁
     hn hcabi hcr ha0 hrc hkc'.2 rfl hcode hctxR hal (fun j a x ha hx => (hargsP j a x ha hx).1)
     hmm rfl rfl rfl rfl hm1x (by rw [hal, hlen])
     (fun j r x hr hx => by
@@ -906,7 +908,8 @@ words**: machine steps of the linked code to a state that panics with `e` (`MPan
 theorem g60_obj_icallPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState} {m : MState}
-    {e : Panic} {n : Nat} {osp : Bool} {spills : Array Spill} {o : ObjIn} {otab : Tab} {base : BitVec 64}
+    {e : Panic} {n : Nat} {osp : Bool} {spills : Array Spill} {o : ObjIn} {otab : Tab}
+    {base : BitVec 64}
     {code : Code} {retM : BitVec 64} {t : MState}
     (hc : checkG60L lc ps bstart g = .ok (tab, kt))
     (hE : G28Env lc g L ps (endP L.text ps.toList) tab E)

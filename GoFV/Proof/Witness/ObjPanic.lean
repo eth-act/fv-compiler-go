@@ -511,7 +511,8 @@ theorem inv_w {E : MatchEnv} {lc : LocCtx} {K : KMap} {s : LocState} (h : G3Inv 
   obtain ⟨⟨hr, mm, hm, hk, hs⟩, hsl⟩ := h
   exact ⟨⟨hr, mm, hm, hk, SepAt.of_sep hs⟩, hsl⟩
 
-/-- **A static call whose callee panics** (`g60_callPanic` on `fint64to32`, in G48's mode): `runLoc`'s step of
+/-- **A static call whose callee panics** (`g60_callPanic` on `fint64to32`, in G48's mode):
+`runLoc`'s step of
 `v8` panics with `nilDeref` (the callee's panic), and from the `LocMatch`ed machine state before it
 the P0 Progs run through the `CALL` to the callee's symbol, where `runProg` panics with
 `nilDeref` (the hook `Hp`, `CallPanicOKS`). -/
