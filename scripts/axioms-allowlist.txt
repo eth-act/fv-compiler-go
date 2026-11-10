@@ -312,6 +312,11 @@ GoFV.Proof.Witness.GenG52.g52_facts._native.native_decide.ax_1_1 1a6ac69d36fc8c7
 # `runLoc` runs `v10` from one heap block to another; compiled evaluation.
 GoFV.Proof.Witness.GenG53.g53_facts._native.native_decide.ax_1_1 5f91de43fa9e42129db4f0b759ba8610397ca1db0e0f74beeb95e64fc673d50f
 
+# genG54_witness (GoFV/Proof/Witness/GenG54.lean, #553): `checkG54` accepts
+# `runtime.(*consistentHeapStats).unsafeClear` and `checkG53` does not (`LoweredZeroLoop [3504]`
+# `v33`); `runLoc` runs `v33` on a heap block; compiled evaluation.
+GoFV.Proof.Witness.GenG54.g54_facts._native.native_decide.ax_1_1 62b6557c0d55ecdc6b28261a96596d8f062dbfcfb40b45afeb1d3fb7ebdbd762
+
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
 # test code only: the parity runner's pointer-equality fast path (GoFVTest/Parity/Compare.lean).

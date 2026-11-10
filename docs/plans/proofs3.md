@@ -1179,6 +1179,37 @@ in `runLoc`; the upper-bit table is empty after the move. Witness `genG53_witnes
 destination's first machine byte is then the source's). G53 accepts 7,260 functions (+97 over
 G52).
 
+**Slice G54: `LoweredZeroLoop`, `LoweredMoveLoop`** (`GoFV/Gen/Check54.lean`,
+`checkG54 lc ps bstart g`; proven sound, `g54_value`, `g54_initMem`, `g54_term`, `g54_nilPanic`,
+`g54_boundsPanic`, `GoFV/Proof/Gen/G54.lean`). G53 with one group (`Check54a`/`Spec54a`, proofs
+`G54L`, `G54a`, `G54b`) tried when G53 rejects a value, and a whole-function check `loopOK`.
+Genssa emits `MOVD $n/64, Rc`, a body of four post-indexed `STP.P (ZR, ZR), 16(Rp)` (`ZeroLoop`,
+`Rc` its temporary) or two `FLDPQ.P 32(Rsrc), (F16, F17)`; `FSTPQ.P (F16, F17), 32(Rdst)` pairs
+(`MoveLoop`, `Rc = R24`; nothing when `dst` and `src` share their register), `SUB $1, Rc`,
+`CBNZ Rc, <head>`, then `zeroTail`'s stores or `moveTail`'s chunks of the `n mod 64` bytes left
+off the advanced pointers. No new `VKind2` constructor: the value emits `.progs` (`loopPats`)
+whose `CBNZ` pattern takes any target, and `loopOK` fixes, at each loop value's start in the PC
+table, the target of its `CBNZ` (the seventh Prog after no-ops, `nextIdx`) to the Prog after its
+`MOVD` (`loopTgt`, `loopTgt_spec`). The checker requires `64 ≤ n`, the pointers in registers a
+value may write (Go 0–25, `argDest`), the counter another (`ZeroLoop`: distinct from `p`;
+`MoveLoop`: neither pointer `R24` or `R25`), and the tail inside and covering the `n mod 64`
+bytes (`zeroCovers`/`moveCovers`; `n mod 64` in 1–7 would need negative offsets and is rejected).
+The machine side (`G54L.lean`): step lemmas for the post-indexed pair accesses
+(`progStep_stpP`, `progStep_fldpqP`, `progStep_fstpqP`) and `SUB $1` (`progStep_subOne`), the
+counter and branch (`count_run`), and `loop_run`, an induction over the iterations left from a
+per-iteration step keeping an invariant. `zloop_run` (invariant after `i` iterations: `Rp = p +
+64 i`, `Rc = n/64 - i`, the memory `zeroMem` of `zloopStores i`) and `mloop_run` (both pointers
+advanced by `64 i`, `R24 = n/64 - i`, the memory `cpMem` of `mloopChunks i`, a pair being
+`cpW` at the pointers' offset, `cpP_one`, `cpW_shift`) end with G13's `zero_run` or G53a's
+`move_run` of the tail at the advanced pointers (`zeroMem_shift`, `cpMem_shift`). Phase 1 writes
+or copies all `n` bytes at once; the clobbered argument registers, the temporary and `R24`,
+`R25`, `F16`, `F17` are `poison` in `runLoc` (`clobber_get54`), the only registers the machine
+changes. New run premises `Pre54a` (the zeroing writes `n` bytes at a valid address) and
+`Pre54b` (`Pre53a` for `MoveLoop`): `G54Pre := G53Pre ∧ Pre54a ∧ Pre54b`. Witness
+`genG54_witness` (`runtime.(*consistentHeapStats).unsafeClear`, `clear(m.stats[:])`: a 3504-byte
+zeroing, 54 iterations and a tail of three `STP`s, counter the temporary `R1`; the machine's byte
+at the end of the block, 1 before, is then 0). G54 accepts 7,308 functions (+48 over G53).
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -1201,18 +1232,7 @@ reason in parentheses):
    (33), `CC` 170 (22)) are done in G19 but for #541's 2 functions.
 4. **Loops and indirect jumps** (counts after G53, among the 2,037 rejected functions):
    - `LoweredZeroLoop` (in 75 functions; rejected as `temporary register`, sole reason in 31) and
-     `LoweredMoveLoop` (33 (9)): 48 functions have no other blocker. Genssa emits
-     `MOVD $n/64, Rc`, a body of post-indexed `STP.P (ZR, ZR), 16(Rp)` (four) or
-     `FLDPQ.P`/`FSTPQ.P` (two pairs), `SUB $1, Rc`, `CBNZ Rc, <head>` back to the first body Prog,
-     then `zeroTail`/`moveTail` of `n mod 64`. Design: no new `VKind2` constructor; the value
-     emits `.progs` with a `CBNZ` pattern that takes any `TYPE_BRANCH` operand, and a whole-function
-     check like `pbOK` (`loopOK`) fixes each loop's `CBNZ` target to the Prog ID after the
-     counter's `MOVD` (branch targets are Prog IDs, `.target p`; `RunProg.mem` already has
-     `C_XPOST`). The proof is an induction over the `n/64` iterations (machine memory after `k`
-     iterations: the first `64k` bytes at `p` written, `Rp` advanced by `64k`, `Rc = n/64 - k`),
-     then G13's/G53a's tail lemmas at the advanced base; Phase 1 writes all `n` bytes at once, and
-     the clobbered argument registers and `Rc` are `poison`. The checker also needs the
-     temporary (`ZeroLoop`'s `regTmp`) in `kStep`, and `MoveLoop` `Pre53a`'s overlap premise.
+     `LoweredMoveLoop` (33 (9)): 48 functions have no other blocker; done in G54 (all 48).
    - `JUMPTABLE` (38 (19)): `MOVD (Rtab)(Ridx<<3), R27; JMP (R27)`. Blocked on the object side:
      `checkObj` rejects `JMP` to a register and `ObjIn` has no data symbols; the table's words are
      `R_ADDR` relocations to the function symbol plus each target's PC (`span7`), which P0
@@ -1283,6 +1303,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G49 | 7,142 (76.82%) | 220,164 |
 | G52 | 7,163 (77.04%) | 221,257 |
 | G53 | 7,260 (78.08%) | 227,056 |
+| G54 | 7,308 (78.60%) | 231,647 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -1624,6 +1645,17 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
 - `G53a.lean`: `Pre53a`, `vk53a_step`; `G53.lean`: `G53Pre`, `vk53_step`, `vk53_nil`, `vk53_pb`,
   `g53L_value` … `g53L_term`, `g53_value`, `g53_initMem`, `g53_nilPanic`, `g53_boundsPanic`,
   `g53_term`.
+- `Spec54a.lean`: what `vkind54a` accepted (`VK54a`, `zeroLoopKind_spec`, `moveLoopKind_spec`,
+  `vkind54a_spec`, `vkind54a_none`, `vk54a_op`, `argDest_spec`), `loopOK_spec`, `skipFrom_eq`,
+  `oneAt2_next`, `manyAt2_append`, `loopTgt_spec`; `Spec54.lean`: `VK54`, `vkind54_spec`,
+  `vkind54_initMem`, `checkG33_of_54L`, `checkG54L_spec`, `checkG54_spec`.
+- `G54L.lean`: `Keeps54`, `ctx_mem_post`, `progStep_stpP`, `progStep_fldpqP`,
+  `progStep_fstpqP`, `progStep_subOne`, `pstar_one54`, `count_run`, `loop_run`, `clobber_get54`,
+  `clobber_keeps54`; `G54a.lean`: `Pre54a`, `stepLoc_zloop`, `zloopStores`, `stpP_run`,
+  `zloop_run`, `g54a_zero`; `G54b.lean`: `Pre54b`, `stepLoc_mloop`, `mloopChunks`, `cpW_shift`,
+  `cpMem_shift`, `cpP_one`, `mloop_run`, `g54b_move`; `G54.lean`: `G54Pre`, `vk54_step`,
+  `vk54_nil`, `vk54_pb`, `g54L_value` … `g54L_term`, `g54_value`, `g54_initMem`,
+  `g54_nilPanic`, `g54_boundsPanic`, `g54_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a
