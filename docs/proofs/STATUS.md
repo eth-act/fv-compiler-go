@@ -1068,6 +1068,20 @@ they are G57's statements, under `G49Env`, `g58_value` under `G54Pre` (no new pr
 (`lake exe gen-check --jobs 1`): 7,409 of 9,297 functions (79.69%, 31 more than G57's 7,378:
 19 by group A, 12 by group B), 238,245 values; no earlier slice's count drops.
 
+## Phase 3: genssa, slice G59 group D, `Defer` blocks (I7, #553)
+
+`GoFV.Gen.Check.Cx.term` (`GoFV/Gen/Check.lean`), the terminator check every slice reaches through
+`Cx.termG3`/`Cx.termG2`, accepts a `Defer` block (two successors, one control) as `Plain`'s
+fall-through or `JMP` to `Succs[0]`: Go's `ssaGenBlock` emits nothing else for it (`case
+ssa.BlockPlain, ssa.BlockDefer`), and Phase 1's `stepTerm` goes to successor 0 (the `deferproc`
+call returned; a recovery returns through `finish`). `TermOK` (`GoFV/Proof/Gen/Spec.lean`) has a
+`defer` field and `branch` takes `b.kind ≠ .Defer`; `Cx.term_spec`, `stepTermL_defer` and
+`term_core`'s `Defer` case (`GoFV/Proof/Gen/G1.lean`). Every `g*_term` statement from G1 to G58 is
+unchanged. Witness: `genG59d_witness` (`GoFV/Proof/Witness/GenG59d.lean`, `test/defer`
+`main.test1helper`: `checkG58` accepts it, and `g58_term` relates `b3`'s `Defer` step to its
+`JMP` to `b4`). The 13 functions G58 rejected only for `block kind Defer` are accepted by
+`checkG58` (proofs3.md §4, slice G59 group D).
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g54_obj_value`, `g54_obj_term`, `g54_obj_nilPanic`, `g54_obj_boundsPanic`

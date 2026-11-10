@@ -1114,6 +1114,12 @@ theorem stepTermL_plain {fr : GoFV.SSA.Sem.Frame} {b : Block} {n : Next} (hk : b
   unfold stepTermL stepTerm at h
   simpa [BlockKind.isArm64, hk] using h
 
+/-- A `Defer` block goes to its successor 0 (the `deferproc` call returned). -/
+theorem stepTermL_defer {fr : GoFV.SSA.Sem.Frame} {b : Block} {n : Next} (hk : b.kind = .Defer)
+    (h : stepTermL fr b = .ok n) : succ b 0 = .ok n := by
+  unfold stepTermL stepTerm at h
+  simpa [BlockKind.isArm64, hk] using h
+
 theorem stepTermL_ret {fr : GoFV.SSA.Sem.Frame} {b : Block} {e : Edge} (hk : b.kind = .Ret)
     (h : stepTermL fr b = .ok (.goto e)) : False := by
   unfold stepTermL stepTerm at h
@@ -1259,10 +1265,21 @@ theorem term_core {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az e
     refine hfin e0 (by simp [hs0]) hsn.symm ⟨R, hR⟩ ?_
     rw [← hm0]
     exact fall_path F hst hnext (hsucc e0 (by simp [hs0])) hfall m
+  by_cases hd : blk.kind = .Defer
+  · obtain ⟨e0, hs0, hfall⟩ := hterm.defer hd
+    have he0 : e0 ∈ blk.succs.toList := by
+      obtain ⟨i, hi, rfl⟩ := Array.getElem?_eq_some_iff.1 hs0
+      simp
+    obtain ⟨R, hR, hn⟩ := stepTermLoc_gen ht
+    have hsn := stepTermL_defer hd hn
+    simp [succ, hs0, Res.ofOption] at hsn
+    refine hfin e0 he0 hsn.symm ⟨R, hR⟩ ?_
+    rw [← hm0]
+    exact fall_path F hst hnext (hsucc e0 he0) hfall m
   by_cases hr : blk.kind = .Ret
   · obtain ⟨R, -, hn⟩ := stepTermLoc_gen ht
     exact (stepTermL_ret hr hn).elim
-  obtain ⟨e0, e1, c, hs01, hcs, hcase⟩ := hterm.branch hk hr
+  obtain ⟨e0, e1, c, hs01, hcs, hcase⟩ := hterm.branch hk hr hd
   have he0 : e0 ∈ blk.succs.toList := by simp [hs01]
   have he1 : e1 ∈ blk.succs.toList := by simp [hs01]
   obtain ⟨x, R, hx, hR, hctl, hn⟩ := stepTermLoc_one hcs ht

@@ -366,7 +366,9 @@ def Cx.values (cx : Cx) (entry : Bool) : List ID → Nat → Bool → Except Str
     return (j :: js, e)
 
 /-- The terminator of `b` from index `j`; `stop`: where the next block starts, if one is laid out
-after `b`. -/
+after `b`. A `Defer` block (`ssaGenBlock`'s `BlockPlain, BlockDefer` case) is `Plain`'s jump to
+`Succs[0]`: its `deferproc` call returned (Phase 1's `stepTerm`); `Succs[1]` is the recovery edge
+the runtime takes, not code. -/
 def Cx.term (cx : Cx) (b : Block) (j : Nat) (next : Option (ID × Nat)) : Except String Unit := do
   let tgt (s : ID) : Except String Addr := do
     let some id := cx.bstart s | throw s!"b{s}: no start"
@@ -381,6 +383,11 @@ def Cx.term (cx : Cx) (b : Block) (j : Nat) (next : Option (ID × Nat)) : Except
   | .Plain =>
     let some e := b.succs[0]? | throw s!"b{b.id}: no successor"
     unless b.succs.size == 1 && b.controls.isEmpty do throw s!"b{b.id}: plain shape"
+    unless cx.falls next j e.b do
+      let _ ← cx.one j { as := .JMP, to := ← tgt e.b }
+  | .Defer =>
+    let some e := b.succs[0]? | throw s!"b{b.id}: no successor"
+    unless b.succs.size == 2 && b.controls.size == 1 do throw s!"b{b.id}: defer shape"
     unless cx.falls next j e.b do
       let _ ← cx.one j { as := .JMP, to := ← tgt e.b }
   | .Ret =>

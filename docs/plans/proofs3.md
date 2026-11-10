@@ -1467,6 +1467,29 @@ sole reasons left (105 functions) are led by `op LoweredGetCallerPC` (26), `bloc
 (19), `MOVDnop/MOVDreg: upper bits unknown` (13), `block kind Defer` (13), `a register read at
 another class` (7), `FMSUBD: negated multiplicand` (7) and `pair load shape` (6).
 
+**Slice G59, group D: `Defer` blocks** (`GoFV/Gen/Check.lean`'s `Cx.term`, `GoFV/Proof/Gen/Spec.lean`,
+`GoFV/Proof/Gen/G1.lean`; no new group function, the statements of every slice unchanged). The 13
+functions G58 rejects only for `block kind Defer` (`examples/defers` `main.withCleanup`,
+`test/defer` `main.test1helper`/`test2helper`, `test/print` `main.main`, `test/range4`'s `func7`,
+`func7-range1`, `func8`, `func8-range1`, `func8-range1-range1`, `func8-range2`, `func9` and the two
+`func9-range1-range1`) end a block in a `deferproc` call. Go's arm64 `ssaGenBlock` (`arm64/ssa.go:2009`,
+`case ssa.BlockPlain, ssa.BlockDefer`) emits `Plain`'s `JMP Succs[0]` unless `Succs[0]` is next:
+`deferproc` returns no result and there is no `CBNZ R0` (older Go's recovery test); `Succs[1]`,
+`f.DeferReturn`, is reached only by the runtime's recovery. Phase 1's `stepTerm` (`Run.lean`) takes
+successor 0 (semantics §9.7: a recovery returns through `finish`), and the `deferproc` call before
+it is a static call of the existing call slices. `Cx.term`, which every slice reaches through
+`Cx.termG3`/`Cx.termG2`, now has a `Defer` arm (two successors, one control, then `Plain`'s
+fall-through or `JMP`); `TermOK` gains `defer` (successor 0, `FallAt` or a `JMP` there) and
+`branch` takes `b.kind ≠ .Defer`; `Cx.term_spec` proves the arm, and `term_core` handles `Defer`
+as `Plain` with `stepTermL_defer` (`stepTermL` of a `Defer` block is `succ b 0`). Shared
+definitions changed: `Cx.term` and `TermOK`, so every `checkGN` from G1 on accepts these blocks
+(checks of earlier slices whose sole reason was the `Defer` block may now pass too). No new
+premise. A probe of `checkG58` with the new `Cx.term` accepts all 13. Witness `genG59d_witness`
+(`GenG59d.lean`, `test/defer` `main.test1helper` embedded): `checkG58` accepts it, block `b3`
+(`v24 = CALLstatic {runtime.deferproc}`; successors `b4`, `b7`) is a `Defer` block, and from a
+state at its end `stepTermLoc` goes to `b4` and `g58_term` relates it to a machine run of its
+`JMP` (Prog 19) to `b4`'s start (`G49Env` with the function's home slot at its frame operand).
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
