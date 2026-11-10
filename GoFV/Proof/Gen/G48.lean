@@ -97,7 +97,9 @@ theorem uokl_x48 {lc : LocCtx} {v : Value} {m m' : MState} {L : List (Nat × Nat
     o != .ARM64MOVDnop && o != .ARM64MOVDreg) = true by decide) _ hop
   simp only [Bool.and_eq_true, Option.isNone_iff_eq_none, bne_iff_ne, ne_eq] at h
   obtain ⟨⟨⟨⟨⟨⟨hl, hi⟩, hp1⟩, hp2⟩, hp3⟩, h1⟩, h2⟩ := h
-  have hp : pairOp35 lc v = false := by simp [pairOp35, hp1, hp2, hp3]
+  have hp : pairOp35 lc v = false := by
+    simp only [opsX48, List.mem_cons, List.not_mem_nil, or_false] at hop
+    rcases hop with h | h | h | h | h | h | h | h | h | h | h <;> simp [pairOp35, h]
   intro e he
   rw [uStep35_other (ldEntry35_none hl) hp] at he
   unfold uStep34 at he
@@ -127,7 +129,9 @@ theorem uokl_spLoad48 {lc : LocCtx} {v : Value} {m m' : MState} {L : List (Nat �
       rcases loadOp?_op hop with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;>
         rw [h] <;> exact ⟨nofun, nofun, nofun, nofun, nofun⟩
     obtain ⟨hp1, hp2, hp3, h1, h2⟩ := hops
-    have hp : pairOp35 lc v = false := by simp [pairOp35, hp1, hp2, hp3]
+    have hp : pairOp35 lc v = false := by
+      rcases loadOp?_op hop with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;>
+        simp [pairOp35, h]
     rw [uStep35_other h0 hp]
     unfold uStep34
     split
