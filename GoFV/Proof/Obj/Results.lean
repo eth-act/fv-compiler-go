@@ -156,11 +156,11 @@ theorem lmode_retype_mem (f : Func) {mm : Mem} : (LMode.loc f).retype .mem (.mem
 section Read
 
 variable {E : MatchEnv} {lc : LocCtx} {s : LocState} {b : ID} {i : Nat} {m : MState}
-  {ι : Blk → Option (BitVec 64)} {P : BitVec 64 → Prop} {K : Nat → Option Nat}
+  {ι : Blk → Option (BitVec 64)} {P : BitVec 64 → Prop} {K : Nat → Option Nat} {w : Bool}
 
 /-- A register argument read at its shape (either mode): related to its machine register and
 of its class. -/
-theorem arg_relL (hA : AddrAgree E.ι) (hm : LocMatch E s b i m) (hinv : CoreInv ι P K s)
+theorem arg_relL (hA : AddrAgree E.ι) (hm : LocMatch E s b i m) (hinv : CoreInv ι P K s w)
     {a r c k : Nat} (hh : lc.home a = some (.reg r)) (hc : cls (lc.ty a) = some c)
     (hK : r ≠ zeroReg → K r = some c)
     (hk : (r = zeroReg ∧ k = 31) ∨ (k < 31 ∧ objX? r = some (BitVec.ofNat 5 k))) :
@@ -171,7 +171,7 @@ theorem arg_relL (hA : AddrAgree E.ι) (hm : LocMatch E s b i m) (hinv : CoreInv
 
 /-- A register argument in a V register, read at its float shape (either mode): related to the V
 register and of its class. -/
-theorem arg_relVL (hm : LocMatch E s b i m) (hinv : CoreInv ι P K s) {a r c : Nat}
+theorem arg_relVL (hm : LocMatch E s b i m) (hinv : CoreInv ι P K s w) {a r c : Nat}
     {k : GoFV.Arm64.Reg} (hh : lc.home a = some (.reg r)) (hft : fTy (lc.ty a) = true)
     (hc : cls (lc.ty a) = some c) (hK : K r = some c) (hobj : objV? r = some k) :
     ∃ x, s.read lc a = .ok x ∧ FValRel x (m.v k) ∧ Fits c x := by
@@ -234,9 +234,9 @@ result registers `outs`, its terminator returning `(rs, mm)` from a state `s` `L
 X or V registers, and `s`'s memory; in either mode. -/
 theorem ret_results {E : MatchEnv} {lc : LocCtx} {kt : KTab} {P : BitVec 64 → Prop}
     {s s' : LocState} {b : ID} {blk : Block} {m : MState} {outs : List Nat} {rs : List Val}
-    {mm : Mem} (hA : AddrAgree E.ι)
+    {mm : Mem} {w : Bool} (hA : AddrAgree E.ι)
     (hm : LocMatch E s b blk.values.size m)
-    (hinv : CoreInv E.ι P (kAt lc kt b blk blk.values.size).get s)
+    (hinv : CoreInv E.ι P (kAt lc kt b blk blk.values.size).get s w)
     (hok : retBlockOK lc kt outs b blk = true) (hk : blk.kind = .Ret)
     (ht : stepTermLoc lc s blk = .ok (.ret rs mm, s')) :
     ResultRel E outs rs mm m := by

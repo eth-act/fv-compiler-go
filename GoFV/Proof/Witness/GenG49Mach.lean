@@ -1809,6 +1809,18 @@ theorem fixed_none (L' : Link) (ps' : Array GoFV.Asm.Prog) (ret : BitVec 64) (ta
   simp only [frameOff]
   omega
 
+/-- A concrete instance of `g49Env_fixed_outSP`: at `Addrs.fixed`, in G48's mode, no activation
+of the wrapper at its link `L` is a `G49Env`, its result `~r0` alone ruling one out (at
+`SP + 24`, not `SP + 3·2^24`). -/
+theorem fixed_outSP_none (ps' : Array GoFV.Asm.Prog) (ret : BitVec 64) (tab' : PcTab)
+    (E' : MatchEnv) (s : LocState) (hosp : E'.outSP = true) (hsp : SPInv E' s) :
+    ¬ G49Env lc g L ps' ret tab' E' := by
+  obtain ⟨-, -, hav, h3, -, hf3, -, hact, -, ho0, -⟩ := facts
+  intro hE
+  refine g49Env_fixed_outSP hE hosp hsp hact (x := 3) (by simp [hav]) h3 (.inr rfl) hf3 ?_
+  rw [ho0]
+  decide
+
 end Fixed
 
 /-- A concrete instance of `addrAgree_fixed_apart`'s premises: at `Addrs.fixed`, the `local`

@@ -59,4 +59,20 @@ def checkG58 (lc : LocCtx) (ps : Array Prog) (bstart : ID → Option Nat) (g : G
   unless refsLive lc do throw "a value refers to an ID that is no value of the function"
   checkG58L (liveCtx lc) ps bstart g
 
+/-- `v` may take one of G48's own kinds, which need G48's mode (`MatchEnv.outSP`): a static call
+whose ABI registers without its stack-assigned parameters (`callRegsS`) are not those without its
+zero-sized stack inputs (`callRegsZ`), i.e. a call with stack arguments or results, or an access
+off `SP` without an aux whose base is homed in `SP` (`spArg`, `spBase48`). -/
+def take48 (lc : LocCtx) (v : Value) : Bool :=
+  (v.op == .ARM64CALLstatic && match callOf? lc.ctx.tabs v.aux with
+    | some (_, _, c) => (callRegsS c).toOption != (callRegsZ lc.ctx.tabs c).toOption
+    | none => false) ||
+  (v.aux.isNone && spArg lc v && spBase48 lc v)
+
+/-- **The function needs G48's mode**: it has an arm64 op and a value that may take one of G48's
+own kinds (`take48`). With `needs48 lc = false` every slice from G48 on runs in the mode `false`
+(`SepFrom`, the contracts `CallOK` …), as G57 and before. -/
+def needs48 (lc : LocCtx) : Bool :=
+  lc.ctx.f.lowered && lc.ctx.f.valueTab.any fun | some v => take48 lc v | none => false
+
 end GoFV.Gen.Check

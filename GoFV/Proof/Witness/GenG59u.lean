@@ -3218,7 +3218,7 @@ theorem genG59u_witness :
   have hv0 : lc0.ctx.f.value? 29 = some (val 29) := by rw [← liveCtx_ctx (lc := lc0)]; exact hv
   obtain ⟨E1, m1, hx1, hE1, hp1, hm1, -, -, hu1⟩ := g58_value (H := GenG2.H0)
     (env := GenG2.env) hc hE hl0 hm0 hb0 hi hv0 (by rw [hop]; rfl) locMatch59 (inv59 hk1 hk2 hk3)
-    (spInv59 hact) rfl
+    (fun _ => spInv59 hact) (fun _ => rfl) (fun _ => rfl)
     (by
       change UOKL m0 (uL35 lc (uIn35 lc 4) blk 6)
       rw [hu6]
@@ -3228,7 +3228,7 @@ theorem genG59u_witness :
     (fun _ _ _ _ _ _ _ _ _ _ hn => by rw [hop] at hn; cases hn)
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
-    (fun h => absurd h (hne _ (by decide))) hs1
+    (fun _ h => absurd h (hne _ (by decide))) hs1
   have hu1' : UOKL m1 [(3, 8, false), (2, 32, false)] := by
     change UOKL m1 (uL35 lc (uIn35 lc 4) blk 7) at hu1
     rwa [hu7] at hu1

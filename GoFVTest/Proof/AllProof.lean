@@ -114,6 +114,7 @@ import GoFV.Proof.Gen.G58a
 import GoFV.Proof.Gen.G59
 import GoFV.Proof.Gen.G59p
 import GoFV.Proof.Gen.G6
+import GoFV.Proof.Gen.G60
 import GoFV.Proof.Gen.G7
 import GoFV.Proof.Gen.G8
 import GoFV.Proof.Gen.G9
@@ -198,6 +199,7 @@ import GoFV.Proof.Gen.Spec58a
 import GoFV.Proof.Gen.Spec59
 import GoFV.Proof.Gen.Spec59p
 import GoFV.Proof.Gen.Spec6
+import GoFV.Proof.Gen.Spec60
 import GoFV.Proof.Gen.Spec7
 import GoFV.Proof.Gen.Spec8
 import GoFV.Proof.Gen.Spec9
@@ -281,7 +283,7 @@ import GoFV.Proof.Obj.EndToEndFixed
 import GoFV.Proof.Obj.Entry49
 import GoFV.Proof.Obj.Ex
 import GoFV.Proof.Obj.Frame
-import GoFV.Proof.Obj.G56
+import GoFV.Proof.Obj.G60
 import GoFV.Proof.Obj.G7
 import GoFV.Proof.Obj.Insn
 import GoFV.Proof.Obj.Link
@@ -988,6 +990,7 @@ import GoFV.Proof.Witness.GenG59k
 import GoFV.Proof.Witness.GenG59p
 import GoFV.Proof.Witness.GenG59u
 import GoFV.Proof.Witness.GenG6
+import GoFV.Proof.Witness.GenG60
 import GoFV.Proof.Witness.GenG7
 import GoFV.Proof.Witness.GenG8
 import GoFV.Proof.Witness.GenG9
@@ -1076,6 +1079,8 @@ import GoFV.Proof.Witness.ObjAtomic
 import GoFV.Proof.Witness.ObjBarrier
 import GoFV.Proof.Witness.ObjEndToEnd
 import GoFV.Proof.Witness.ObjEndToEndAtSP
+import GoFV.Proof.Witness.ObjEndToEndAtSPS
+import GoFV.Proof.Witness.ObjEndToEndS
 import GoFV.Proof.Witness.ObjEntry49
 import GoFV.Proof.Witness.ObjFrame
 import GoFV.Proof.Witness.ObjG7
@@ -1085,6 +1090,7 @@ import GoFV.Proof.Witness.ObjPanic
 import GoFV.Proof.Witness.ObjRo
 import GoFV.Proof.Witness.ObjWhole
 import GoFV.Proof.Witness.ObjWholeNL
+import GoFV.Proof.Witness.ObjWholeS
 import GoFV.Proof.Witness.OutSP
 import GoFV.Proof.Witness.PairL
 import GoFV.Proof.Witness.PhiConst

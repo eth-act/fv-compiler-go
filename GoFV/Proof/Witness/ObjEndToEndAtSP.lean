@@ -16,7 +16,7 @@ vacuously. `verified_mach_atSP` applies with every premise discharged:
 
 * the Progs are the stock `.prog` file's (`pf.prog0`, the Progs genssa's port reproduces; P0' is
   the identity: no float constant), numbered by the assembler's `flush` (`g`: `GenG49Mach.g` with
-  the `flush` symbol table), so that `checkG56` (`refsLive`, `checkG56L` on `liveCtx` of the
+  the `flush` symbol table), so that `checkG60` (`refsLive`, `checkG60L` on `liveCtx` of the
   pipeline's output), `retRegsOK`, `entryStoresOK` (no pending window) and `checkObj` (the port's
   words, 16-byte frame, no stack check) accept the same list; every symbol at `symS = 0x8000`,
   within `CALL`'s range of the code at `ObjG7.base`;
@@ -114,7 +114,7 @@ def pf : ProgFile :=
 /-- Its P0 Progs, numbered by the assembler. -/
 def ps : Array Prog := pf.prog0.progs
 
-/-- `checkG56`'s input: `GenG49Mach.g` with the symbols numbered as the assembler's `flush`. -/
+/-- `checkG60`'s input: `GenG49Mach.g` with the symbols numbered as the assembler's `flush`. -/
 def g : G2In :=
   match flush pf with
   | .ok fo => { GenG49Mach.g with syms := fo.st.syms }
@@ -207,8 +207,8 @@ def blkOf (lc : LocCtx) : Block := (lc.ctx.f.block? 1).getD default
 /-- The call `v7` of `lc`. -/
 def v7Of (lc : LocCtx) : Value := (lc.ctx.f.value? 7).getD default
 
-/-- The tables `checkG56L` gives on `lc`. -/
-def ktOf (lc : LocCtx) : KTab := (getOk (checkG56L lc ps bs g)).2
+/-- The tables `checkG60L` gives on `lc`. -/
+def ktOf (lc : LocCtx) : KTab := (getOk (checkG60L lc ps bs g)).2
 
 def isInt64 : Val → Bool
   | .int .w64 _ => true
@@ -281,14 +281,14 @@ def objFacts : Bool :=
 theorem obj_facts : objFacts = true := by
   native_decide
 
-/-- What compiled evaluation checks of a `runLoc` context `lc` with no instance: `checkG56L`
+/-- What compiled evaluation checks of a `runLoc` context `lc` with no instance: `checkG60L`
 accepts the Progs with `tab`, `retRegsOK` the return (no register result), the accessed frame
 variables are the results (aux 4 and 3, `Blk.local`), no home slot; the entry `b1`
 has nine values, the third the static call `v7` (`callFacts`); `R30` has class 64 after the entry
 values, no upper-bit fact is carried; simple ops after the call (`simpleFrom`); `entryStoresOK`
 holds with no pending window; `memTyL`. -/
 def lcFactsC (lc : LocCtx) : Bool :=
-  isOk (checkG56L lc ps bs g) && (getOk (checkG56L lc ps bs g)).1 == tab &&
+  isOk (checkG60L lc ps bs g) && (getOk (checkG60L lc ps bs g)).1 == tab &&
     retRegsOK lc (ktOf lc) && ownOutRegs lc == [] &&
     accessedVars lc == [4, 3] && lc.ctx.tabs.forgeable 3 && lc.ctx.tabs.forgeable 4 &&
     (homeSlots lc).isEmpty && lc.ctx.f.entry == 1 && lc.ctx.f.blocks.toList.contains 1 && (lc.ctx.f.block? 1).isSome &&
@@ -296,7 +296,7 @@ def lcFactsC (lc : LocCtx) : Bool :=
     (lc.ctx.f.value? 7).isSome && (v7Of lc).op == .ARM64CALLstatic && callFacts lc (v7Of lc) &&
     (kAt lc (ktOf lc) 1 (blkOf lc) 2).get 30 == some 64 && simpleFrom lc.ctx.f 1 3 &&
     (uL35 lc [] (blkOf lc) 2).isEmpty && entryStoresOK lc g 2 && (pendWins lc g).isEmpty &&
-    memTyL lc && (constRo (symNames g)).isEmpty
+    memTyL lc && (constRo (symNames g)).isEmpty && !needs48 lc
 
 /-! ## At `Addrs.fixed`: the activation without the variables' places -/
 
@@ -504,7 +504,7 @@ theorem e2e_facts : e2eFacts = true := by
 theorem ιM_total (b : Blk) (hb : b ≠ .wbuf) : ∃ a, ιM b = some a := by
   cases b with
   | «local» a k =>
-    simp only [ιM, ιSP]
+    simp only [ιM, ιSP, ιSPM]
     split
     · exact ⟨_, rfl⟩
     · split
@@ -512,7 +512,7 @@ theorem ιM_total (b : Blk) (hb : b ≠ .wbuf) : ∃ a, ιM b = some a := by
       · exact ⟨_, rfl⟩
   | wbuf => exact absurd rfl hb
   | global n =>
-    simp only [ιM, ιSP, ιF]
+    simp only [ιM, ιSP, ιSPM, ιF]
     split
     · exact ⟨_, rfl⟩
     · split
@@ -532,7 +532,7 @@ theorem addrAgree_ext {lc : LocCtx} {E : MatchEnv} (hx : (envAtSP g L (E0 lc)).E
   intro b n a hb ha hnt
   have hw : b ≠ .wbuf := by
     rintro rfl
-    have h : baseM (baseSP g L sp0) Blk.wbuf = some n := hb
+    have h : baseM (baseSP g L sp0) none Blk.wbuf = some n := hb
     simp [baseM, Blk.fixedBase?] at h
   obtain ⟨a0, h0⟩ := ιM_total b hw
   have h1 := hx.2 b a0 h0
@@ -645,7 +645,7 @@ theorem sCallIs_spec {s : LocState} (h : sCallIs s = true) :
 
 /-- The checks of `lcFactsC` as propositions. -/
 theorem lcC_spec {lc : LocCtx} (h : lcFactsC lc = true) :
-    checkG56L lc ps bs g = .ok (tab, ktOf lc) ∧ retRegsOK lc (ktOf lc) = true ∧
+    checkG60L lc ps bs g = .ok (tab, ktOf lc) ∧ retRegsOK lc (ktOf lc) = true ∧
     ownOutRegs lc = [] ∧ accessedVars lc = [4, 3] ∧ lc.ctx.tabs.forgeable 3 = true ∧
     lc.ctx.tabs.forgeable 4 = true ∧ (homeSlots lc).isEmpty = true ∧ lc.ctx.f.entry = 1 ∧
     1 ∈ lc.ctx.f.blocks.toList ∧ lc.ctx.f.block? 1 = some (blkOf lc) ∧
@@ -654,11 +654,12 @@ theorem lcC_spec {lc : LocCtx} (h : lcFactsC lc = true) :
     callFacts lc (v7Of lc) = true ∧ (kAt lc (ktOf lc) 1 (blkOf lc) 2).get 30 = some 64 ∧
     simpleFrom lc.ctx.f 1 3 = true ∧ uL35 lc [] (blkOf lc) 2 = [] ∧
     entryStoresOK lc g 2 = true ∧ pendWins lc g = [] ∧ memTyL lc = true ∧
-    constRo (symNames g) = [] := by
-  simp only [lcFactsC, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem, and_assoc] at h
+    constRo (symNames g) = [] ∧ needs48 lc = false := by
+  simp only [lcFactsC, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem, and_assoc,
+    Bool.not_eq_true'] at h
   obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, h12, h13, h14, h15, h16, h17, h18, h19,
-    h20, h21, h22, h23⟩ := h
-  have hc : checkG56L lc ps bs g = .ok (tab, ktOf lc) := by
+    h20, h21, h22, h23, h24⟩ := h
+  have hc : checkG60L lc ps bs g = .ok (tab, ktOf lc) := by
     rw [← h2]
     exact eq_getOk h1
   have hb : lc.ctx.f.block? 1 = some (blkOf lc) := by
@@ -668,7 +669,7 @@ theorem lcC_spec {lc : LocCtx} (h : lcFactsC lc = true) :
     obtain ⟨v, hv⟩ := Option.isSome_iff_exists.1 h14
     simp [v7Of, hv]
   exact ⟨hc, h3, h4, h5, h6, h7, h8, h9, h10, hb, h12, h13, hv, h15, h16, h17, h18,
-    List.isEmpty_iff.1 h19, h20, List.isEmpty_iff.1 h21, h22, List.isEmpty_iff.1 h23⟩
+    List.isEmpty_iff.1 h19, h20, List.isEmpty_iff.1 h21, h22, List.isEmpty_iff.1 h23, h24⟩
 
 /-! ## The callee -/
 
@@ -1111,7 +1112,7 @@ theorem verified_mach_atSP_witness :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Bool.and_eq_true] at hp
     obtain ⟨⟨⟨⟨hv, hn⟩, hrl⟩, hC⟩, hR⟩ := hp
     obtain ⟨hcL, hrok, houts, hav, hf3, hf4, hsl, hentry, hbm, hb1, hsz, hi2, hv7, hop, hcf, hk30,
-      hsim, hu, hes, -, hmt, hcr⟩ := lcC_spec hC
+      hsim, hu, hes, -, hmt, hcr, hn48⟩ := lcC_spec hC
     simp only [lcFactsR, Bool.and_eq_true] at hR
     obtain ⟨hR, hFin⟩ := hR
     obtain ⟨sI, hsI, hR'⟩ := GenG1.okThen_spec hR
@@ -1134,9 +1135,9 @@ theorem verified_mach_atSP_witness :
     obtain ⟨m0, hrun0⟩ := isRet2_spec hrun
     have hd : (GoFV.SSA.run env penv.tables f0 [] {} 5).Defined := by
       rw [hrun0]; trivial
-    have hc56 : checkG56 (LocCtx.make r.st.tables r.st.func) ps bs g = .ok (tab, ktOf
+    have hc60 : checkG60 (LocCtx.make r.st.tables r.st.func) ps bs g = .ok (tab, ktOf
         (liveCtx (LocCtx.make r.st.tables r.st.func))) := by
-      simpa [checkG56, hrl] using hcL
+      simpa [checkG60, hrl] using hcL
     have hm3 := ιM_l3 h3 ho0
     have hm4 := ιM_l4 h4 ho8
     have hE := g28Env (lc := liveCtx (LocCtx.make r.st.tables r.st.func)) hlt hav hf3 hf4 hsl hso
@@ -1196,7 +1197,7 @@ theorem verified_mach_atSP_witness :
     obtain ⟨fuel', href, raw, hraw, hfin, hdef, hret, -⟩ :=
       verified_mach_atSP (A := AM) (g := g) (L := L)
         (E0 := E0 (liveCtx (LocCtx.make r.st.tables r.st.func))) rfl hpe hv
-        (env_vpre hdict hro _) hnn hap hnp hd rfl hc56 hO hookMap_H
+        (env_vpre hdict hro _) hnn hap hnp hd rfl hc60 hn48 hO hookMap_H
         (ObjG7.noICall_spec hni L) hrok hME (by rw [haz]; decide) (by decide)
         (fun _ _ _ h => by rw [hnone] at h; cases h) (fun _ _ _ h => by rw [hnone] at h; cases h)
         hE hEE hb1 hbm (by rw [hsz]; decide) hsI hes hent
