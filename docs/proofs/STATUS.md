@@ -1026,6 +1026,26 @@ instance, so `g57_value` says nothing about it there (group B's note). Coverage 
 (`lake exe gen-check`, with the fall-through over no-ops): 7,378 of 9,297 functions (79.35%,
 33 more than G55's 7,345), 235,204 values.
 
+## Phase 3: genssa, slice G58 group A, narrow and boolean operands, wider store-release sources, `LoweredRound*F` (I7, #553)
+
+`GoFV.Proof.Gen.vk58a_step` (`GoFV/Proof/Gen/G58a.lean`): one value `vkind58a`
+(`GoFV/Gen/Check58a.lean`, tried after G57's value check) accepts (`VK58a`, `vkind58a_spec`),
+in `vk57a_step`'s form under `G49Env` with no run premise and with `hL : UOKL m L` (as
+`vk51c_step`: G32's ops keep the upper-bit table's other entries): `REV16W` of a 16-bit argument
+for a result of at most 16 bits; `MADDW`/`MSUBW` for a result of class `c ≤ 32` of arguments of
+at least `c` bits; G32's register and constant ops, G36's register shifts (as the amount), G33's
+`UBFIZ` and G32's `CSINC` with a boolean argument (0 or 1 in the whole register); `STLRW`/`STLRB`
+of a source wider than the access (Phase 1's `fitPiece` truncates; `encode_fit58`); and
+`LoweredRound32F`/`64F` with no code, the result in the argument's `F` register (`FOps.round` is
+the identity). Composition into `checkG58` is the slice's. A probe of G57's check with `vkind58a`
+accepts 19 of the 20 functions with one of these sole reasons
+(`runtime.checkFinalizersAndCleanups.func1` then fails at a `Phi`'s class). Witnesses:
+`genG58a_witness` (`math/bits.ReverseBytes16`: `REV16W` of `0x1234`), `genG58a2_witness`
+(`test/copy` `main.u16`: `MSUBW` of a 16-bit divisor), `genG58a3_witness`
+(`runtime.(*pinState).set`: `LSL` by the boolean `multipin`), `genG58a4_witness`
+(`runtime.(*timers).unlock`: `STLRW` of a 64-bit `int`, `0x88` stored at the address),
+`genG58a5_witness` (`test/gcgort` `main.init.func95.1`: `LoweredRound32F` of `float32(1.5)`).
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g54_obj_value`, `g54_obj_term`, `g54_obj_nilPanic`, `g54_obj_boundsPanic`
