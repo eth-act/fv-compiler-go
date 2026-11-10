@@ -2958,11 +2958,12 @@ def kt59 : KTab :=
 /-- P0's layout: `GenG58a`'s, a 16-byte frame with 8 bytes of extra space. -/
 def L : Link := Link.byId (fun _ => GenG2.symA) GenG2.text 16 8 ps.toList
 
-/-- A framed activation (`SP = 0x7fff0000`, `g = 0x9000`, saved `LR` and `FP` 0) with the globals
-at `symA`, no home slot, the PC table `tab59`. -/
+/-- A framed activation whose `outargs` block sits at `SP` (`GenG48.ι48`, `SP = GenG48.spO`,
+`g = 0x9000`, saved `LR` and `FP` 0) with the globals at `symA`, no home slot, the PC table
+`tab59`. -/
 def E59 : MatchEnv :=
-  { lc, ι := GenG2.ι, sp := GenG2.sp0, slot := fun _ => none, g := 0x9000, lr := 0, fp := 0,
-    framed := true, pcOf := pcOfTab GenG2.text ps.toList tab59 }
+  { lc, ι := GenG48.ι48, sp := GenG48.spO, slot := fun _ => none, g := 0x9000, lr := 0, fp := 0,
+    framed := true, pcOf := pcOfTab GenG2.text ps.toList tab59, outSP := true }
 
 /-- The `runLoc` state before `v29`: `R1 = 5` (`v25`), `R2 = 7` (`v5`, a 32-bit word),
 `R3 = 3` (`v26`), every other register `poison`, the empty memory. -/
@@ -2977,8 +2978,8 @@ def s0 : LocState :=
 `v29`, a zero memory. -/
 def m0 : MState :=
   { x := fun k => if k = 1 then 5 else if k = 2 then 7 else if k = 3 then 3
-      else if k = 28 then 0x9000 else if k = 29 then GenG2.sp0 - 8 else 0,
-    sp := GenG2.sp0, v := fun _ => 0, nzcv := ⟨false, false, false, false⟩,
+      else if k = 28 then 0x9000 else if k = 29 then GenG48.spO - 8 else 0,
+    sp := GenG48.spO, v := fun _ => 0, nzcv := ⟨false, false, false, false⟩,
     pc := E59.pcOf 4 6, mem := fun _ => 0 }
 
 /-- The register value `.int .w64 0xC000005` (`5 ||| 3 <<< 26`). -/
@@ -2996,8 +2997,9 @@ theorem isRes_spec {o : Option Val} (h : isRes o = true) : o = some (.int .w64 0
 `tab59` and `kt59`; the Progs have IDs below `2^32`; no frame variable is accessed and there is no
 home slot; `b4` is a block holding `v29 = ORshiftLL` at index 6; the class table before `v29` holds
 `R1`, `R3` at 64 and `R2` at 32 bits; G35's table before `v29` holds `R3`, `R1`, `R2` and after it
-`R3`, `R2`, while G34's step (G35's across `ORshiftLL` before slice G59 group U) empties it; and
-`stepLoc` runs `v29` to `.int .w64 0xC000005` in `R1`. -/
+`R3`, `R2`, while G34's step (G35's across `ORshiftLL` before slice G59 group U) empties it;
+`stepLoc` runs `v29` to `.int .w64 0xC000005` in `R1`; it holds an arm64 op; its activation is
+`0`. -/
 def gFacts : Bool :=
   (checkG58 lc0 ps bs g).toOption == some (tab59, kt59) && ps.toList.all (·.id < 2 ^ 32) &&
     (accessedVars lc).isEmpty && (homeSlots lc).isEmpty && lc.ctx.f.blocks.toList.contains 4 &&
@@ -3007,7 +3009,8 @@ def gFacts : Bool :=
     uL35 lc (uIn35 lc 4) blk 6 == [(3, 8, false), (1, 32, false), (2, 32, false)] &&
     uL35 lc (uIn35 lc 4) blk 7 == [(3, 8, false), (2, 32, false)] &&
     uStep34 lc (uL35 lc (uIn35 lc 4) blk 6) (val 29) == [] &&
-    GenG1.okThen (stepLoc GenG2.env lc s0 (val 29)) (fun s1 => isRes s1.regs[1]?)
+    GenG1.okThen (stepLoc GenG2.env lc s0 (val 29)) (fun s1 => isRes s1.regs[1]?) &&
+    lc.ctx.f.lowered && lc.ctx.act == 0
 
 theorem g59u_facts : gFacts = true := by
   native_decide
@@ -3023,12 +3026,14 @@ theorem facts :
       uL35 lc (uIn35 lc 4) blk 6 = [(3, 8, false), (1, 32, false), (2, 32, false)] ∧
       uL35 lc (uIn35 lc 4) blk 7 = [(3, 8, false), (2, 32, false)] ∧
       uStep34 lc (uL35 lc (uIn35 lc 4) blk 6) (val 29) = [] ∧
-      GenG1.okThen (stepLoc GenG2.env lc s0 (val 29)) (fun s1 => isRes s1.regs[1]?) = true := by
+      GenG1.okThen (stepLoc GenG2.env lc s0 (val 29)) (fun s1 => isRes s1.regs[1]?) = true ∧
+      lc.ctx.f.lowered = true ∧ lc.ctx.act = 0 := by
   have hf := g59u_facts
   simp only [gFacts, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem, and_assoc,
     List.all_eq_true, decide_eq_true_eq] at hf
-  obtain ⟨hres, hlt, hav, hsl, hm4, hbs, hvs, hi, hop, hk1, hk2, hk3, hu6, hu7, hold, hrun⟩ := hf
-  refine ⟨?_, hlt, hav, hsl, hm4, ?_, ?_, hi, hop, hk1, hk2, hk3, hu6, hu7, hold, hrun⟩
+  obtain ⟨hres, hlt, hav, hsl, hm4, hbs, hvs, hi, hop, hk1, hk2, hk3, hu6, hu7, hold, hrun, hl,
+    hact⟩ := hf
+  refine ⟨?_, hlt, hav, hsl, hm4, ?_, ?_, hi, hop, hk1, hk2, hk3, hu6, hu7, hold, hrun, hl, hact⟩
   · revert hres; cases checkG58 lc0 ps bs g <;> simp [Except.toOption]
   · obtain ⟨b, hb⟩ := Option.isSome_iff_exists.1 hbs
     simp [blk, hb]
@@ -3048,7 +3053,7 @@ theorem env59 (hlt : ∀ p ∈ ps.toList, p.id < 2 ^ 32) (hav : (accessedVars lc
             link := rfl
             pcOf := rfl
             retOut := fun p hp => GenG2.prog_addr_ne (hlt p hp) hp (by simp) (by simp)
-            addr := GenG2.addrAgree
+            addr := GenG48.addrAgree48
             glob := fun _ _ _ _ => rfl
             syms := by
               intro y
@@ -3113,9 +3118,10 @@ theorem locMatch59 : LocMatch E59 s0 4 6 m0 where
     fun h => by cases h⟩
   pc := rfl
 
-/-- `s0` under any class map with `R1`, `R3` at 64 and `R2` at 32 bits. -/
+/-- `s0` under any class map with `R1`, `R3` at 64 and `R2` at 32 bits, in the mode `outSP`
+(`SepFromW` of the empty memory). -/
 theorem inv59 {K : KMap} (hk1 : K.get 1 = some 64) (hk2 : K.get 2 = some 32)
-    (hk3 : K.get 3 = some 64) : G3Inv E59 lc K s0 where
+    (hk3 : K.get 3 = some 64) : G3Inv E59 lc K s0 E59.outSP where
   core := by
     refine ⟨fun r v c hr hv hc => ?_, GenG2.mem0, rfl, by simp [KeysNodup, GenG2.mem0],
       fun b al a h => by simp [GenG2.mem0] at h⟩
@@ -3125,6 +3131,15 @@ theorem inv59 {K : KMap} (hk1 : K.get 1 = some 64) (hk2 : K.get 2 = some 32)
     · rw [hk3] at hc; cases hc; rfl
     · trivial
   slots := by intro k v h; simp [s0] at h
+
+/-- `SPInv`: `outargs 0` at `SP`; the Go register `SP` holds `poison`. -/
+theorem spInv59 (hact : lc.ctx.act = 0) : SPInv E59 s0 := by
+  refine fun _ => ⟨?_, fun x hx => ?_⟩
+  · show GenG48.ι48 (.outargs lc.ctx.act) = some GenG48.spO
+    rw [hact]
+    rfl
+  · rcases s0_regs hx with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | rfl
+    all_goals first | (simp [spReg] at h; done) | trivial
 
 /-- An entry of a register below `R18` holds when its X register is so extended. -/
 theorem uok_lt18 {m : MState} {r c : Nat} {sg : Bool} (hr : r < 18)
@@ -3174,10 +3189,11 @@ theorem pre29 {s : LocState} (hop : (val 29).op = .ARM64ORshiftLL) : G54Pre lc s
 uint64`, on arm64 `LDPW (R0), (R1, R2)`, `MOVBU 8(R0), R3`, `ORR R3<<26, R1, R1`,
 `ORR R2<<32, R1, R0`): `checkG58` accepts the function; G34's step across `v29 = ORshiftLL`, G35's
 before slice G59 group U, empties the upper-bit table, which now keeps `R3`'s and `R2`'s entries
-for `v31 = MOVDnop v5`. From `s0`, with `R1 = 5`, `R2 = 7`, `R3 = 3`, `stepLoc` runs `v29` to
-`0xC000005` in `R1`, and `g58_value` relates it to a machine run of its `ORR` (Prog 10) to a state
-whose `X1` holds `0xC000005` (`ValRel`) and whose `X2` is still the zero extension of its low 32
-bits (the table's `R2` entry), under an activation extending `E59` that is again a `G49Env`. -/
+for `v31 = MOVDnop v5`. In an activation whose `outargs` block sits at `SP` (`outSP`, `SPInv`), from
+`s0`, with `R1 = 5`, `R2 = 7`, `R3 = 3`, `stepLoc` runs `v29` to `0xC000005` in `R1`, and
+`g58_value` relates it to a machine run of its `ORR` (Prog 10) to a state whose `X1` holds
+`0xC000005` (`ValRel`) and whose `X2` is still the zero extension of its low 32 bits (the table's
+`R2` entry), under an activation extending `E59` that is again a `G49Env`. -/
 theorem genG59u_witness :
     checkG58 lc0 ps bs g = .ok (tab59, kt59) ∧
       uStep34 lc (uL35 lc (uIn35 lc 4) blk 6) (val 29) = [] ∧
@@ -3187,7 +3203,8 @@ theorem genG59u_witness :
         E59.Extends E1 ∧ G49Env lc g L ps 0 tab59 E1 ∧ PStar GenG2.H0 L ps.toList 0 m0 m1 ∧
         LocMatch E1 s1 4 7 m1 ∧ ValRel E1.ι (.int .w64 0xC000005) (m1.x 1) ∧
         ExtOK (m1.x 2) 32 false := by
-  obtain ⟨hc, hlt, hav, hsl, hm4, hb, hv, hi, hop, hk1, hk2, hk3, hu6, hu7, hold, hrun⟩ := facts
+  obtain ⟨hc, hlt, hav, hsl, hm4, hb, hv, hi, hop, hk1, hk2, hk3, hu6, hu7, hold, hrun, hl,
+    hact⟩ := facts
   obtain ⟨s1, hs1, hr⟩ := GenG1.okThen_spec hrun
   have hr1 := isRes_spec hr
   have hE := env59 hlt hav hsl
@@ -3195,20 +3212,23 @@ theorem genG59u_witness :
     h (h'.symm.trans hop)
   -- `g58_value` reads the blocks and values of `lc0`: rewrite rather than unfold (the kernel
   -- would evaluate `lc0`).
+  have hl0 : lc0.ctx.f.lowered = true := by rw [← liveCtx_ctx (lc := lc0)]; exact hl
   have hm0 : 4 ∈ lc0.ctx.f.blocks.toList := by rw [← liveCtx_ctx (lc := lc0)]; exact hm4
   have hb0 : lc0.ctx.f.block? 4 = some blk := by rw [← liveCtx_ctx (lc := lc0)]; exact hb
   have hv0 : lc0.ctx.f.value? 29 = some (val 29) := by rw [← liveCtx_ctx (lc := lc0)]; exact hv
-  obtain ⟨E1, m1, hx1, hE1, hp1, hm1, -, hu1⟩ := g58_value (H := GenG2.H0) (env := GenG2.env)
-    hc hE hm0 hb0 hi hv0 (by rw [hop]; rfl) locMatch59 (inv59 hk1 hk2 hk3)
+  obtain ⟨E1, m1, hx1, hE1, hp1, hm1, -, -, hu1⟩ := g58_value (H := GenG2.H0)
+    (env := GenG2.env) hc hE hl0 hm0 hb0 hi hv0 (by rw [hop]; rfl) locMatch59 (inv59 hk1 hk2 hk3)
+    (spInv59 hact) rfl
     (by
       change UOKL m0 (uL35 lc (uIn35 lc 4) blk 6)
       rw [hu6]
       exact uokl0)
     (pre29 hop)
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
-    (GenG10.icallOK_ne (by rw [hop]; rfl))
+    (fun _ _ _ _ _ _ _ _ _ _ hn => by rw [hop] at hn; cases hn)
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
-    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide))) hs1
+    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
+    (fun h => absurd h (hne _ (by decide))) hs1
   have hu1' : UOKL m1 [(3, 8, false), (2, 32, false)] := by
     change UOKL m1 (uL35 lc (uIn35 lc 4) blk 7) at hu1
     rwa [hu7] at hu1

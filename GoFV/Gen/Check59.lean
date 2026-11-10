@@ -41,6 +41,7 @@ def checkG59L (lc : LocCtx) (ps : Array Prog) (bstart : ID → Option Nat) (g : 
     unless movdOK35 lc && uEdgesOK35 lc do throw "MOVDnop/MOVDreg: upper bits unknown"
     if let some i := (List.range lc.homes.size).find? (!homeOK10 lc ·) then throw (homeErr lc i)
     unless cloFirst lc do throw "LoweredGetClosurePtr after code"
+    unless spHomes48 lc do throw "a value other than SP homed in SP"
     checkFrame lc g
     checkVars49 lc g
     let kin := kFlow lc (65 * lc.ctx.f.blocks.size + 2)

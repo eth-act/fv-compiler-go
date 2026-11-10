@@ -1,6 +1,6 @@
 import GoFV.Gen.Check59
 import GoFV.Proof.Gen.G59
-import GoFV.Proof.Witness.GenG10
+import GoFV.Proof.Witness.GenG48
 import GoFV.Proof.Witness.GenG59p
 
 /-!
@@ -10,8 +10,9 @@ import GoFV.Proof.Witness.GenG59p
 `.ssa`/`.prog`, `lc0`, `ps`, `bs`, `g`, the state `s0` with `main.d = complex(1.5, 2.5)`). G58's
 check rejects it (`v24: pair load shape`, its `FLDPD main.d(SB), (F2, F3)`); `checkG59` accepts it
 with the PC table `tab59` and the class table `kt59`, and `g59_value` relates `v24`'s run to the
-machine's `FLDPD`. The activation `E59` and machine `m59` are `GenG59p`'s with the check's PC
-table.
+machine's `FLDPD`. The activation `E59` is G48's mode: its `outargs` block sits at `SP` (`outSP`,
+`SPInv`; `SP` is `GenG48.spO`), `.autotmp_1`'s block at `SP + 40` as in `GenG59p`, with the
+check's PC table.
 -/
 
 open scoped GoFV.SSA.Sem.Fixed
@@ -35,15 +36,21 @@ def kt59 : KTab :=
 /-- `b2`, the block of `v24`. -/
 def blk : Block := (lc.ctx.f.block? 2).getD default
 
-/-- `GenG59p.E` with the PC table `tab59`. -/
-def E59 : MatchEnv :=
-  { lc, ι := ι59, sp := GenG2.sp0, slot := fun _ => none, g := 0x9000, lr := 0, fp := 0,
-    framed := true, pcOf := pcOfTab GenG2.text ps.toList tab59 }
+/-- `ι`: `GenG48.ι48` (the globals at `symA`, `outargs 0` at `SP`), and `.autotmp_1`'s block (aux
+7, a `temp` block of activation 0) at `SP + 40`. -/
+def ι59s (b : Blk) : Option (BitVec 64) :=
+  if b = .temp 0 7 then some (GenG48.spO + 40) else GenG48.ι48 b
 
-/-- `GenG59p.m0` at `v24`'s PC under `tab59`. -/
+/-- A framed activation whose `outargs` block sits at `SP` (`SP = GenG48.spO`), with the PC table
+`tab59`. -/
+def E59 : MatchEnv :=
+  { lc, ι := ι59s, sp := GenG48.spO, slot := fun _ => none, g := 0x9000, lr := 0, fp := 0,
+    framed := true, pcOf := pcOfTab GenG2.text ps.toList tab59, outSP := true }
+
+/-- `GenG59p.m0` at `E59`'s `SP` and at `v24`'s PC under `tab59`. -/
 def m59 : MState :=
-  { x := fun k => if k = 28 then 0x9000 else if k = 29 then GenG2.sp0 - 8 else 0,
-    sp := GenG2.sp0, v := fun _ => 0, nzcv := ⟨false, false, false, false⟩,
+  { x := fun k => if k = 28 then 0x9000 else if k = 29 then GenG48.spO - 8 else 0,
+    sp := GenG48.spO, v := fun _ => 0, nzcv := ⟨false, false, false, false⟩,
     pc := E59.pcOf 2 3, mem := MD }
 
 /-- What compiled evaluation checks on `main.init.func33` beyond `GenG59p.gFacts`: `checkG58`
@@ -71,7 +78,19 @@ theorem facts :
   · obtain ⟨b, hb⟩ := Option.isSome_iff_exists.1 hbs
     simp [blk, hb]
 
-/-- `GenG59p.env59` under `tab59`. -/
+theorem ι59s_temp : ι59s (.temp 0 7) = some (GenG48.spO + 40) := by simp [ι59s]
+
+theorem ι59s_ne {b : Blk} (h : b ≠ .temp 0 7) : ι59s b = GenG48.ι48 b := by simp [ι59s, h]
+
+theorem ι59s_glob (name : String) : ι59s (.global name) = some GenG2.symA := by
+  simp [ι59s, GenG48.ι48]
+
+theorem addrAgree59s : AddrAgree ι59s := by
+  intro b n a hb ha hnt
+  rw [ι59s_ne (hnt 0 7)] at ha
+  exact GenG48.addrAgree48 b n a hb ha hnt
+
+/-- `GenG59p.env59` at `E59`. -/
 theorem env59' (hlt : ∀ p ∈ ps.toList, p.id < 2 ^ 32) (hav : accessedVars lc = [7])
     (hvo : varOp g 7 = some (.AUTO, -16)) (hfg : lc.ctx.tabs.forgeable 7 = false)
     (hact : lc.ctx.act = 0) (hsl : (homeSlots lc).isEmpty = true)
@@ -85,8 +104,8 @@ theorem env59' (hlt : ∀ p ∈ ps.toList, p.id < 2 ^ 32) (hav : accessedVars lc
             link := rfl
             pcOf := rfl
             retOut := fun p hp => GenG2.prog_addr_ne (hlt p hp) hp (by simp) (by simp)
-            addr := addrAgree59
-            glob := fun _ name _ _ => ι59_glob name.toStringLossy
+            addr := addrAgree59s
+            glob := fun _ name _ _ => ι59s_glob name.toStringLossy
             syms := by
               intro y
               have hs : L.sym y = GenG2.symA := rfl
@@ -104,8 +123,8 @@ theorem env59' (hlt : ∀ p ∈ ps.toList, p.id < 2 ^ 32) (hav : accessedVars lc
             rw [hvo] at ho
             cases ho
             rw [hact, hoff]
-            show ι59 (.temp 0 7) = some (GenG2.sp0 + BitVec.ofInt 64 40)
-            rw [ι59_temp]
+            show ι59s (.temp 0 7) = some (GenG48.spO + BitVec.ofInt 64 40)
+            rw [ι59s_temp]
             rfl }
         wbs := fun h => by cases h }
       icalls := fun h => by cases h }
@@ -117,12 +136,36 @@ theorem env59' (hlt : ∀ p ∈ ps.toList, p.id < 2 ^ 32) (hav : accessedVars lc
     rw [hfg] at hf
     cases hf
 
-theorem sep59 : SepFrom ι59 (StkAt E59) memD := by
+/-- `GenG59p.memInjD` under `ι59s`: `main.d`'s bytes at `symA`. -/
+theorem memInjDs : MemInj ι59s memD MD where
+  nil := by simp [ι59s, GenG48.ι48]
+  mapped := by
+    intro b al h
+    obtain ⟨rfl, rfl⟩ := memD_blocks h
+    exact ⟨GenG2.symA, ι59s_glob _, fun _ => by decide, by simp [bytesD, GenG2.symA]⟩
+  inj := by
+    intro b al b' al' a a' h h' hne
+    obtain ⟨rfl, -⟩ := memD_blocks h
+    obtain ⟨rfl, -⟩ := memD_blocks h'
+    exact absurd rfl hne
+  bytes := by
+    refine ⟨fun _ _ => False, fun b al a h ha => ?_⟩
+    obtain ⟨rfl, rfl⟩ := memD_blocks h
+    rw [ι59s_glob] at ha
+    cases ha
+    refine ⟨fun o h => h.elim, fun o _ h => h.elim, fun i hi _ => ?_⟩
+    have hi' : i < 16 := by simpa [bytesD] using hi
+    have hd : (GenG2.symA + BitVec.ofNat 64 i - GenG2.symA).toNat = i := by
+      rw [BitVec.add_comm, BitVec.add_sub_cancel, BitVec.toNat_ofNat]
+      omega
+    simp [ByteRel, MD, hd, hi', bytesD]
+
+theorem sep59 : SepFrom ι59s (StkAt E59) memD := by
   intro b al a h ha y hy
   obtain ⟨rfl, rfl⟩ := memD_blocks h
-  rw [ι59_glob] at ha
+  rw [ι59s_glob] at ha
   cases ha
-  have hsp : E59.sp.toNat = 0x7fff0000 := rfl
+  have hsp : E59.sp.toNat = 0x4000000000000000 := rfl
   have hA : GenG2.symA.toNat = 0x10000000000 := rfl
   simp only [hA, bytesD, Array.size_ofFn]
   rcases hy with ⟨-, -, h2⟩ | ⟨k, off, hk, -, h2⟩
@@ -138,19 +181,28 @@ theorem locMatch59 : LocMatch E59 s0 2 3 m59 where
     exact ⟨fun _ _ => trivial, fun _ _ => trivial⟩
   flags := trivial
   slots := by intro k v h; simp [s0] at h
-  mem := ⟨memD, rfl, memInjD⟩
+  mem := ⟨memD, rfl, memInjDs⟩
   frame := ⟨rfl, rfl, fun _ => ⟨rfl, by simp only [MState.word, readMem, m59, MD, E59]; decide,
     by simp only [MState.word, readMem, m59, MD, E59]; decide⟩,
     fun h => by cases h⟩
   pc := rfl
 
-/-- `GenG59p.inv0` for any class map (every register of `s0` is `poison`). -/
-theorem inv59 {K : KMap} : G3Inv E59 lc K s0 where
+/-- `GenG59p.inv0` in the mode `outSP` for any class map (every register of `s0` is `poison`). -/
+theorem inv59 {K : KMap} : G3Inv E59 lc K s0 E59.outSP where
   core := by
-    refine ⟨fun r v c hr hv hc => ?_, memD, rfl, keysD, sep59⟩
+    refine ⟨fun r v c hr hv hc => ?_, memD, rfl, keysD, sep59.w⟩
     rw [s0_regs hv]
     trivial
   slots := by intro k v h; simp [s0] at h
+
+/-- `SPInv`: `outargs 0` at `SP`; the Go register `SP` holds `poison`. -/
+theorem spInv59 (hact : lc.ctx.act = 0) : SPInv E59 s0 := by
+  refine fun _ => ⟨?_, fun x hx => ?_⟩
+  · show ι59s (.outargs lc.ctx.act) = some GenG48.spO
+    rw [hact]
+    rfl
+  · rw [s0_regs hx]
+    trivial
 
 /-- G54's premises on `v24` (`FLDPD`): G50's `PairPre50` (`GenG59p.pre24`); none of the others
 applies. -/
@@ -188,19 +240,19 @@ theorem pre24' (hid : (val 24).id = 24) (hop : (val 24).op = .ARM64FLDPD)
 
 /-- **G59 on `main.init.func33`** (`test/zerodivide`; `GenG59p.genG59p_witness`'s function and
 state, through the slice's theorem): `checkG58` rejects the function (`v24: pair load shape`) and
-`checkG59` accepts it. From `s0`, with `main.d = complex(1.5, 2.5)`, `stepLoc` runs `v24` (`FLDPD
-{main.d} [0] v3 v1`) to `c0` (the bits of `1.5`) in `F2` and `c1` (the bits of `2.5`) in `F3`, and
-`g59_value` relates it to a machine state after `FLDPD main.d(SB), (F2, F3)` (Prog 3) whose `V2` and
-`V3` hold `c0` and `c1` in their low 64 bits, under an activation extending `E59` that is again a
-`G49Env`. -/
+`checkG59` accepts it. In an activation whose `outargs` block sits at `SP` (`outSP`, `SPInv`), from
+`s0`, with `main.d = complex(1.5, 2.5)`, `stepLoc` runs `v24` (`FLDPD {main.d} [0] v3 v1`) to `c0`
+(the bits of `1.5`) in `F2` and `c1` (the bits of `2.5`) in `F3`, and `g59_value` relates it to a
+machine state after `FLDPD main.d(SB), (F2, F3)` (Prog 3) whose `V2` and `V3` hold `c0` and `c1` in
+their low 64 bits, under an activation extending `E59` that is again a `G49Env`. -/
 theorem genG59_witness :
     (checkG58 lc0 ps bs g).toOption = none ∧ checkG59 lc0 ps bs g = .ok (tab59, kt59) ∧
       ∃ s1 E1 m1, stepLoc GenG2.env lc s0 (val 24) = .ok s1 ∧
         s1.regs[33]? = some (.int .w64 c0) ∧ s1.regs[34]? = some (.int .w64 c1) ∧
         E59.Extends E1 ∧ G49Env lc g L ps 0 tab59 E1 ∧ PStar GenG2.H0 L ps.toList 0 m59 m1 ∧
         LocMatch E1 s1 2 4 m1 ∧ (m1.v 2).setWidth 64 = c0 ∧ (m1.v 3).setWidth 64 = c1 := by
-  obtain ⟨-, -, -, -, hlt, -, -, -, hv, hid, hop, hty, hsy, hoff, hr0, hr1, hl0, hl1, hav, hvo, hfg,
-    hact, hsl, hfo, -, hrun⟩ := GenG59p.facts
+  obtain ⟨hl, -, -, -, hlt, -, -, -, hv, hid, hop, hty, hsy, hoff, hr0, hr1, hl0, hl1, hav, hvo,
+    hfg, hact, hsl, hfo, -, hrun⟩ := GenG59p.facts
   obtain ⟨h58, hc, hm2, hb, hi, hu⟩ := facts
   obtain ⟨s1, hs1, hr⟩ := GenG1.okThen_spec hrun
   simp only [Bool.and_eq_true] at hr
@@ -211,11 +263,12 @@ theorem genG59_witness :
     h (h'.symm.trans hop)
   -- `g59_value` reads the blocks and values of `lc0`: rewrite rather than unfold (the kernel
   -- would evaluate `lc0`).
+  have hl0' : lc0.ctx.f.lowered = true := by rw [← liveCtx_ctx (lc := lc0)]; exact hl
   have hm0 : 2 ∈ lc0.ctx.f.blocks.toList := by rw [← liveCtx_ctx (lc := lc0)]; exact hm2
   have hb0 : lc0.ctx.f.block? 2 = some blk := by rw [← liveCtx_ctx (lc := lc0)]; exact hb
   have hv0 : lc0.ctx.f.value? 24 = some (val 24) := by rw [← liveCtx_ctx (lc := lc0)]; exact hv
-  obtain ⟨E1, m1, hx1, hE1, hp1, hm1, -, -⟩ := g59_value (H := GenG2.H0) (env := GenG2.env)
-    hc hE hm0 hb0 hi hv0 (by rw [hop]; rfl) locMatch59 inv59
+  obtain ⟨E1, m1, hx1, hE1, hp1, hm1, -, -, -⟩ := g59_value (H := GenG2.H0) (env := GenG2.env)
+    hc hE hl0' hm0 hb0 hi hv0 (by rw [hop]; rfl) locMatch59 inv59 (spInv59 hact) rfl
     (by
       change UOKL m59 (uL35 lc (uIn35 lc 2) blk 3)
       rw [hu]
@@ -223,9 +276,10 @@ theorem genG59_witness :
       cases he)
     (pre24' hid hop hty hsy hoff hr0 hr1 hl0 hl1)
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
-    (GenG10.icallOK_ne (by rw [hop]; rfl))
+    (fun _ _ _ _ _ _ _ _ _ _ hn => by rw [hop] at hn; cases hn)
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
-    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide))) hs1
+    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
+    (fun h => absurd h (hne _ (by decide))) hs1
   exact ⟨h58, hc, s1, E1, m1, hs1, hr33, hr34, hx1, hE1, hp1, hm1,
     (hm1.regs 33 _ hr33).2 _ rfl, (hm1.regs 34 _ hr34).2 _ rfl⟩
 
