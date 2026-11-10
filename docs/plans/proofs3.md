@@ -1343,9 +1343,12 @@ built from compiled facts, written before `checkG57`): `genG57b_witness` (`test/
 `main.init.func95.1`: `FSTPS (F0, F0), .autotmp_1-8(AUTO)` of `float32(1.5)` into a `temp`
 block, which `vkind55` rejects; G55 also rejects the function's `LoweredRound32F`) and
 `genG57b2_witness` (`runtime.mallocgcSmallNoscanReuse`: `DMB $14`, its only value G55 rejects;
-`stepLoc` returns the same state). The frame-variable witness is a `temp` block: under
-`Addrs.fixed` two accessed `Blk.local` variables (as `fandbits`'s `x` and `y`) cannot both sit at
-`SP + frameOff` (`AddrAgree` pins them `2^24` apart), so `VarsAt49` has no instance there.
+`stepLoc` returns the same state). The frame-variable witness is a `temp` block. Under
+`Addrs.fixed` two accessed `Blk.local` variables at distinct operands cannot both sit at
+`SP + frameOff` (`AddrAgree` pins them a multiple of `2^24` apart), so `VarsAt49` has no instance
+there for such a function (21 of G57's, `docs/proofs/STATUS.md` § slice G49, e.g. the ABI0 wrapper
+`runtime.time_now` with three stack results). `fandbits` is not one: after `trim` it accesses
+only `x` (`FMOVSstore {x}`), so at `Addrs.fixed` `VarsAt49` only fixes its `SP`.
 
 **Slice G57: groups A and B composed** (`GoFV/Gen/Check57.lean`, `checkG57 lc ps bstart g`; proven
 sound, `g57_value`, `g57_initMem`, `g57_term`, `g57_nilPanic`, `g57_boundsPanic`,
@@ -1364,11 +1367,12 @@ group A's ops (`main.grow`, `runtime.(*fixalloc).init`, `runtime.bootstrapRand`,
 `fandbits`/`forbits`' 4, `FMOVS`/`FMOVDstore` to a parameter; 6 `test/gcgort` closures,
 `ken_cplx4`'s `doprint`, `generics`' and `complit`'s `main`; `DMB` in
 `mallocgcSmallNoscanReuse` and `(*mspan).userArenaNextFree`, `PRFM` in `scanObject` and
-`scanObjectSmall`). As group B notes, under `Addrs.fixed` a function that accesses two
-`Blk.local` variables (as `fandbits`) has no `VarsAt49` instance, so `g57_value` says nothing
-about it there. The sole reasons left are led by `op LoweredGetCallerPC` (26),
-`MOVDnop/MOVDreg: upper bits unknown` (25), `block kind JUMPTABLE` (19) and `block kind Defer`
-(13); 6 functions are left with `pair load shape` alone and 1 with `pair store shape` alone.
+`scanObjectSmall`). As group B notes, under `Addrs.fixed` a function that accesses two or more
+`Blk.local` variables at distinct operands has no `VarsAt49` instance, so `g57_value` holds of it
+only vacuously there (21 functions, all also accepted by G49). The sole reasons left are led by
+`op LoweredGetCallerPC` (26), `MOVDnop/MOVDreg: upper bits unknown` (25), `block kind JUMPTABLE`
+(19) and `block kind Defer` (13); 6 functions are left with `pair load shape` alone and 1 with
+`pair store shape` alone.
 
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
