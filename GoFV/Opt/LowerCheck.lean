@@ -33,12 +33,14 @@ input `f`, and the output `g` must have the replayed definitions. The difference
   `renameOp` with the same type, auxint, aux and arguments' count, or a `Store` lowered to an
   arm64 store (`memLower`), or a `Zero` or `Move` lowered to `LoweredZero`/`LoweredZeroLoop` or
   `LoweredMove`/`LoweredMoveLoop` (`bulkLower`), or a `LocalAddr` lowered to `MOVDaddr`
-  (`addrLower`), or a `Store` lowered to an indexed store (`idxLower`); a rule event lowering a
+  (`addrLower`), or a `Store` lowered to an indexed store (`idxLower`), or a `Zero` to an indexed
+  store of `0` (`zeroIdxLower`); a rule event lowering a
   store, a `Zero`, a `Move` or a frame address, or folding an `ADDconst` offset (`stFold`) or a
   global symbol's or frame variable's `MOVDaddr` (`stFoldAddr`) into an arm64 store, or indexing
   an arm64 store at offset 0 without aux whose address is `ADD p i` or `ADDshiftLL [k] p i`
-  (`stIdxFold`), or scaling such an indexed store's index `SLLconst [k] i` (`stIdxScale`), is
-  replayed as its new definitions (`atomDef`); a rule event folding a lowered
+  (`stIdxFold`), or scaling such an indexed store's index `SLLconst [k] i` (`stIdxScale`), of a
+  `Store` or of a single-store `Zero`, is replayed as its new definitions (`atomDef`); a rule
+  event folding a lowered
   frame address into an integer load (a term) or into an `ADDconst` is replayed as the folded term
   (`frameFold`); one folding
   `ADDconst [0]` into the lowered frame address it reads (`650` at offset 0, whose result is an
@@ -578,6 +580,8 @@ def atomDef1 (tabs : Tables) (f : Func) (M : Defs) (v : ID) (x u : Value) :
         (stFold tabs M x u || stFoldAddr tabs f M x u || stIdxFold tabs M x u) &&
           (f.value? v).any (·.op == .Store) ||
         stIdxScale tabs M x u && (f.value? v).any (fun a => a.op == .Store && a.args.size == 3) ||
+        (stIdxFold tabs M x u || stIdxScale tabs M x u) &&
+          (f.value? v).any (fun a => a.op == .Zero && a.args.size == 2 && (zeroOp a.auxInt).isSome) ||
         qFold tabs f M x u && match f.value? v with
           | some a =>
             a.op == .Move && qStore x.op || a.op == .Zero && a.args.size == 2 && zStore x.op
@@ -595,6 +599,9 @@ value read back through the narrowing `Copy` `lower` eliminated (`stValPick`):
 * an offset folded into an arm64 store lowering a `Store` of `f` (`stFold`), or a global symbol's
   or frame variable's address (`stFoldAddr`), or the store indexed (`stIdxFold`), or the index of
   such an indexed store scaled (`stIdxScale`);
+* the store of `0` lowering a `Zero [n]` of `f` (two arguments, `zeroOp n` a single store, so not
+  the outer of two) indexed (`stIdxFold`), or its index scaled (`stIdxScale`): paired with the
+  `Zero` by `zeroIdxLower`;
 * a lowered frame address (`addrLower`): `(LocalAddr {sym} base _) => (MOVDaddr {sym} base)` on
   some of `v`'s arguments, or `(MOVDaddr {sym} (SPanchored base mem))`, whose second node `s` is a
   fresh term on some of `v`'s arguments (`u` reads no argument, `argFree`).
@@ -1238,12 +1245,13 @@ def atomsOfL (tabs : Tables) (h : Func) (b : Block) : List ID :=
 arguments, or the frame address `u` (`addrLower`), the bounds panic `u` with constant operands
 (`pbLower`), the store `u` to an indexed store (`idxLower`), the `Move` `u` to a 128-bit store
 (`moveQLower`) or to two, the outer one (`moveQ2Lower`), or the `Zero` `u` to a store of `0`
-(`zeroLower`) or to two, the outer one (`zero2Lower`), with the same type. -/
+(`zeroLower`), to two, the outer one (`zero2Lower`), or to an indexed one (`zeroIdxLower`), with
+the same type. -/
 def atomPair (tabs : Tables) (u w : Value) : Bool :=
   (((u.op == w.op || renameOp u.op w.op) && u.auxInt == w.auxInt && u.aux == w.aux ||
     memLower tabs u w || bulkLower u w) && u.args.size == w.args.size || addrLower tabs u w ||
     pbLower u w || idxLower tabs u w || moveQLower tabs u w || moveQ2Lower u w ||
-    zeroLower tabs u w || zero2Lower u w) &&
+    zeroLower tabs u w || zero2Lower u w || zeroIdxLower u w) &&
   u.type == w.type && u.block == w.block && u.id == w.id
 
 /-- The operands of `PanicBounds [kind] x y mem` a lowered bounds panic with constant operands

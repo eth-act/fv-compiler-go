@@ -165,7 +165,10 @@ theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
       · rw [(zeroLower_facts hz).1] at huph; cases huph) (by
       cases hz : zero2Lower u w
       · rfl
-      · rw [(zero2Lower_facts hz).1] at huph; cases huph)
+      · rw [(zero2Lower_facts hz).1] at huph; cases huph) (by
+      cases hz : zeroIdxLower u w
+      · rfl
+      · rw [(zeroIdxLower_facts hz).1] at huph; cases huph)
     have hzf : z ∈ fb.values := by
       obtain ⟨-, -, blk, hblk', hzv⟩ := hpu
       rw [hblk, hwb, B.hfb] at hblk'; cases hblk'; exact hzv
@@ -693,7 +696,7 @@ theorem arg_beforeL {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
 /-- A corresponding atom of a generic op of `g` has the same op in `f`. -/
 theorem atomPair_op_of_generic {tabs : Tables} {u w : Value} (h : atomPair tabs u w = true)
     (hg : w.op.generic = true) : u.op = w.op := by
-  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h | h, -⟩ | h | h | h | h | h | h | h
+  rcases (atomPair_spec h).1 with ⟨⟨h | h, -⟩ | h | h, -⟩ | h | h | h | h | h | h | h | h
   · exact h
   · exfalso
     rcases renameOp_cases h with ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ | ⟨-, h2⟩ |
@@ -725,6 +728,9 @@ theorem atomPair_op_of_generic {tabs : Tables} {u w : Value} (h : atomPair tabs 
   · exfalso
     obtain ⟨-, so, -, hso, -⟩ := zero2Op_cases (zero2Lower_facts h).2.2.2.choose_spec.choose_spec
     rcases hso with ⟨h2, -⟩ | ⟨h2, -⟩ | ⟨h2, -⟩ | ⟨h2, -⟩ <;> rw [h2] at hg <;> cases hg
+  · exfalso
+    obtain ⟨-, -, -, -, -, o, k, s, -, hp⟩ := zeroIdxLower_facts h
+    rw [(idxStore_facts hp).1] at hg; cases hg
 
 /-- A split of a list without duplicates around `x` is unique. -/
 private theorem split_unique {x : ID} :
