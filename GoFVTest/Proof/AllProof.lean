@@ -285,6 +285,7 @@ import GoFV.Proof.MemRefine
 import GoFV.Proof.Merge
 import GoFV.Proof.Mixed
 import GoFV.Proof.NilPre
+import GoFV.Proof.Obj.AtomPanic
 import GoFV.Proof.Obj.Basic
 import GoFV.Proof.Obj.Bitfield
 import GoFV.Proof.Obj.CallPanic
@@ -294,7 +295,7 @@ import GoFV.Proof.Obj.EndToEndFixed
 import GoFV.Proof.Obj.Entry49
 import GoFV.Proof.Obj.Ex
 import GoFV.Proof.Obj.Frame
-import GoFV.Proof.Obj.G60
+import GoFV.Proof.Obj.G61
 import GoFV.Proof.Obj.G7
 import GoFV.Proof.Obj.Insn
 import GoFV.Proof.Obj.Link
