@@ -489,12 +489,13 @@ theorem g60_obj_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     (hO : ObjEnv ps spills o otab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hHP : HookPanicMap H L ps.toList (ObjEnv.map otab ps L base))
-    (hR : ObjRel (ObjEnv.map otab ps L base) m t)
+    (hR : ObjRel (ObjEnv.map otab ps L base) m t) (hX : X27At otab L ps.toList m t)
     (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
     ∃ t', MStar H code retM t t' ∧ MPanics H code retM t' e := by
   obtain ⟨m', hp, hpp⟩ := g60_callPanic hc hE hbid hb hi hv hop hm hinv hok hn48
-  obtain ⟨t1, ht1, hR1, hI1⟩ := obj_star hO hH hp hR (locMatch_inv hE.env.env.env.env hm) hic
-  obtain ⟨t2, ht2, hpan⟩ := obj_panic hO hHP hR1 (hI1.resolve_right hpp.1) hpp
+  obtain ⟨t1, ht1, hR1, hI1, hX1⟩ :=
+    obj_star hO hH hp hR hX (locMatch_inv hE.env.env.env.env hm) hic
+  obtain ⟨t2, ht2, hpan⟩ := obj_panic hO hHP hR1 hX1 (hI1.resolve_right hpp.1) hpp
   exact ⟨t2, mstar_trans ht1 ht2, hpan⟩
 
 /-! ## Interface and closure calls -/
@@ -929,12 +930,13 @@ theorem g60_obj_icallPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     (hO : ObjEnv ps spills o otab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hHP : HookPanicMap H L ps.toList (ObjEnv.map otab ps L base))
-    (hR : ObjRel (ObjEnv.map otab ps L base) m t)
+    (hR : ObjRel (ObjEnv.map otab ps L base) m t) (hX : X27At otab L ps.toList m t)
     (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
     ∃ t', MStar H code retM t t' ∧ MPanics H code retM t' e := by
   obtain ⟨m', hp, hpp⟩ := g60_icallPanic hc hE hbid hb hi hv hn hm hinv hok
-  obtain ⟨t1, ht1, hR1, hI1⟩ := obj_star hO hH hp hR (locMatch_inv hE.env.env.env.env hm) hic
-  obtain ⟨t2, ht2, hpan⟩ := obj_panic hO hHP hR1 (hI1.resolve_right hpp.1) hpp
+  obtain ⟨t1, ht1, hR1, hI1, hX1⟩ :=
+    obj_star hO hH hp hR hX (locMatch_inv hE.env.env.env.env hm) hic
+  obtain ⟨t2, ht2, hpan⟩ := obj_panic hO hHP hR1 hX1 (hI1.resolve_right hpp.1) hpp
   exact ⟨t2, mstar_trans ht1 ht2, hpan⟩
 
 end GoFV.Proof.Obj

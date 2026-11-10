@@ -238,11 +238,15 @@ def progOf (a : As) : Prog := ps[(ps.findIdx? (·.as == a)).getD 0]!
 /-- The offset the assembler placed the Prog with ID `id` at. -/
 def pcOf (id : Nat) : Nat := ((obj.progs.find? (·.id == id)).map (·.pc.toNat)).getD 0
 
-/-- `checkProg` (a frameless function: `autosize` and `extrasize` 0) accepts `p` against its one
-word, and the word decodes to `i`. -/
-def okProg (p : Prog) (i : Insn) : Bool :=
-  isOk (checkProg obj.text obj.relocs.toList [] 0 0 p (pcOf p.id) (pcOf p.id + 4)) &&
-    decode (wordAt obj.text (pcOf p.id)) == some i
+/-- `checkProg` of `p` (a frameless function: `autosize` and `extrasize` 0; `X27` not related
+before it) against its one word. -/
+def chk (p : Prog) : Except String Bool :=
+  checkProg obj.text obj.relocs.toList [] 0 0 false p (pcOf p.id) (pcOf p.id + 4)
+
+/-- `checkProg` accepts `p` against its one word, returning `b` (whether `X27` is related after
+it), and the word decodes to `i`. -/
+def okProg (p : Prog) (i : Insn) (b : Bool) : Bool :=
+  isOk (chk p) && getOk (chk p) == b && decode (wordAt obj.text (pcOf p.id)) == some i
 
 /-- `LDADDAL W1, W2, [X0]`. -/
 def insnAdd : Insn := .atomic 2 true true 1 false 0 0 2
@@ -272,10 +276,11 @@ def casP : Prog :=
     regTo2 := REG_R0 + 2 }
 
 /-- What compiled evaluation checks: `checkProg` accepts `AddInt32`'s `LDADDALW`, `LDAXRW` and
-`STLXRW` against their words; `progSym` gives `σAdd`, `σStx`, and `σCas` for `casP`. -/
+`STLXRW` against their words (only `STLXRW`, which sets `R27` to `0` on both sides, leaves `X27`
+related); `progSym` gives `σAdd`, `σStx`, and `σCas` for `casP`. -/
 def atomicFacts : Bool :=
-  okProg (progOf .LDADDALW) insnAdd && okProg (progOf .LDAXRW) insnLdx &&
-    okProg (progOf .STLXRW) insnStx &&
+  okProg (progOf .LDADDALW) insnAdd false && okProg (progOf .LDAXRW) insnLdx false &&
+    okProg (progOf .STLXRW) insnStx true &&
     (progOf .LDADDALW).as == .LDADDALW && (progOf .LDAXRW).as == .LDAXRW &&
     (progOf .STLXRW).as == .STLXRW &&
     isOk (progSym 0 0 (progOf .LDADDALW)) && getOk (progSym 0 0 (progOf .LDADDALW)) == (σAdd, .fall) &&
@@ -286,17 +291,20 @@ theorem atomic_facts : atomicFacts = true := by
   native_decide
 
 /-- **`checkProg` on `AddInt32`'s atomics**: its `LDADDALW`, `LDAXRW` and `STLXRW` are accepted
-against the words the assembler gave them; the Prog side and the word side have the effects
-`σAdd` and `σStx`; `CASALW R27, (R0), R2` and its word `CASAL W27, W2, [X0]` have the same effect
-`σCas`. -/
+against the words the assembler gave them, and only `STLXRW` leaves `X27` related to `R27` (its
+status `0` on both sides, `est27`); the Prog side and the word side have the effects `σAdd` and
+`σStx`; `CASALW R27, (R0), R2` and its word `CASAL W27, W2, [X0]` have the same effect `σCas`. -/
 theorem objAtomic_prog_witness :
     let pA := progOf .LDADDALW
     let pL := progOf .LDAXRW
     let pS := progOf .STLXRW
     pA.as = .LDADDALW ∧ pL.as = .LDAXRW ∧ pS.as = .STLXRW ∧
-      checkProg obj.text obj.relocs.toList [] 0 0 pA (pcOf pA.id) (pcOf pA.id + 4) = .ok () ∧
-      checkProg obj.text obj.relocs.toList [] 0 0 pL (pcOf pL.id) (pcOf pL.id + 4) = .ok () ∧
-      checkProg obj.text obj.relocs.toList [] 0 0 pS (pcOf pS.id) (pcOf pS.id + 4) = .ok () ∧
+      checkProg obj.text obj.relocs.toList [] 0 0 false pA (pcOf pA.id) (pcOf pA.id + 4) =
+        .ok false ∧
+      checkProg obj.text obj.relocs.toList [] 0 0 false pL (pcOf pL.id) (pcOf pL.id + 4) =
+        .ok false ∧
+      checkProg obj.text obj.relocs.toList [] 0 0 false pS (pcOf pS.id) (pcOf pS.id + 4) =
+        .ok true ∧
       decode (wordAt obj.text (pcOf pA.id)) = some insnAdd ∧
       decode (wordAt obj.text (pcOf pL.id)) = some insnLdx ∧
       decode (wordAt obj.text (pcOf pS.id)) = some insnStx ∧
@@ -305,11 +313,10 @@ theorem objAtomic_prog_witness :
       progSym 0 0 casP = .ok (σCas, .fall) ∧ symInsn insnCas 16 {} = .ok (σCas, .fall) := by
   have hf := atomic_facts
   simp only [atomicFacts, okProg, Bool.and_eq_true, beq_iff_eq] at hf
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hA, hdA⟩, hL, hdL⟩, hS, hdS⟩, haA⟩, haL⟩, haS⟩, hpA⟩, hpA'⟩, hpS⟩, hpS'⟩,
-    hpC⟩, hpC'⟩ := hf
-  have hck (r : Except String Unit) (h : isOk r = true) : r = .ok () := by
-    cases r <;> simp_all [isOk]
-  exact ⟨haA, haL, haS, hck _ hA, hck _ hL, hck _ hS, hdA, hdL, hdS,
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨hA, hbA⟩, hdA⟩, ⟨hL, hbL⟩, hdL⟩, ⟨hS, hbS⟩, hdS⟩, haA⟩, haL⟩, haS⟩, hpA⟩,
+    hpA'⟩, hpS⟩, hpS'⟩, hpC⟩, hpC'⟩ := hf
+  exact ⟨haA, haL, haS, by rw [← hbA]; exact eq_getOk hA, by rw [← hbL]; exact eq_getOk hL,
+    by rw [← hbS]; exact eq_getOk hS, hdA, hdL, hdS,
     by rw [eq_getOk hpA, hpA'], rfl, by rw [eq_getOk hpS, hpS'], rfl,
     by rw [eq_getOk hpC, hpC'], rfl⟩
 

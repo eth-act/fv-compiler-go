@@ -117,6 +117,18 @@ def ObjEnv.map (tab : Tab) (ps : Array Prog) (L : Link) (base : BitVec 64) :
     BitVec 64 → BitVec 64 :=
   objMap ps.toList tab.offs.toList tab.endOff L.text base
 
+/-- Where `X27` agrees, at a Prog or the end (e.g. a P0 state made from the machine state):
+`X27At`. -/
+theorem x27At_of_eq {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab : Tab} {L : Link}
+    {base : BitVec 64} {code : Code} {retM : BitVec 64}
+    (hE : ObjEnv ps spills o tab L base code retM) {s t : MState} (h27 : t.x 27 = s.x 27)
+    (hpc : IsProgAddr L.text ps.toList s.pc ∨ s.pc = endP L.text ps.toList) :
+    X27At tab L ps.toList s t :=
+  ⟨fun _ _ _ _ => h27, fun ⟨y, hy⟩ _ _ _ _ => by
+    rcases hpc with h | h
+    · exact (hE.syms y).2.2.1 (hy ▸ h)
+    · exact (hE.syms y).2.2.2 (hy ▸ h)⟩
+
 /-- At a `CALL (Rn)` (`isICall`), the register holds a symbol's address: the step goes to a
 linked function entry (a function value's code pointer, an itab's `fun` entry; trusted per run,
 `docs/plans/proofs3.md` §6, §7). -/

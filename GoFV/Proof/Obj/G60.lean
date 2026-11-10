@@ -209,13 +209,14 @@ theorem g60_obj_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link
     (hs : stepLoc env lc s v = .ok s')
     (hO : ObjEnv ps spills o otab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
-    (hR : ObjRel (ObjEnv.map otab ps L base) m t)
+    (hR : ObjRel (ObjEnv.map otab ps L base) m t) (hX : X27At otab L ps.toList m t)
     (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
     ∃ E' m' t', E.Extends E' ∧ G49Env lc g L ps (endP L.text ps.toList) tab E' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' osp ∧
       (osp = true → lc.ctx.f.lowered = true → SPInv E' s') ∧
       UOKL m' (uL35 lc (uIn35 lc bid) blk (i + 1)) ∧
       MStar H code retM t t' ∧ ObjRel (ObjEnv.map otab ps L base) m' t' ∧
+      X27At otab L ps.toList m' t' ∧
       (otab.leaf = true → ¬ IsProgAddr L.text ps.toList (m.x 30) →
         m.x 30 ≠ endP L.text ps.toList → m'.x 30 = m.x 30) := by
   have hstep : ∃ E' m', E.Extends E' ∧ G49Env lc g L ps (endP L.text ps.toList) tab E' ∧
@@ -233,9 +234,9 @@ theorem g60_obj_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link
       exact ⟨E', m', hx, hE', h1, h2, h3, fun ho _ => h4 ho, h5⟩
   obtain ⟨E', m', hx, hE', hp, hlm, hinv', hsp', hu'⟩ := hstep
   have hI := locMatch_inv hE.env.env.env.env.env hm
-  obtain ⟨t', ht, hR', -⟩ := obj_star hO hH hp hR hI hic
-  exact ⟨E', m', t', hx, hE', hlm, hinv', hsp', hu', ht, hR',
-    fun hl h1 h2 => obj_star_leaf hO hH hp hR hI hic hl ⟨h1, h2⟩⟩
+  obtain ⟨t', ht, hR', -, hX'⟩ := obj_star hO hH hp hR hX hI hic
+  exact ⟨E', m', t', hx, hE', hlm, hinv', hsp', hu', ht, hR', hX',
+    fun hl h1 h2 => obj_star_leaf hO hH hp hR hX hI hic hl ⟨h1, h2⟩⟩
 
 /-- **A terminator of slice G60 that goes to a block, down to the machine words**, at the mode
 `osp`. -/
@@ -254,20 +255,21 @@ theorem g60_obj_term {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array
     (ht : stepTermLoc lc s blk = .ok (.goto e, s'))
     (hO : ObjEnv ps spills o otab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
-    (hR : ObjRel (ObjEnv.map otab ps L base) m t)
+    (hR : ObjRel (ObjEnv.map otab ps L base) m t) (hX : X27At otab L ps.toList m t)
     (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
     ∃ m' t', LocMatch E s' e.b 0 m' ∧ G3Inv E lc (kt.at e.b) s' osp ∧
       (osp = true → lc.ctx.f.lowered = true → SPInv E s') ∧
       e.b ∈ lc.ctx.f.blocks.toList ∧ UOKL m' (uIn35 lc e.b) ∧
       MStar H code retM t t' ∧ ObjRel (ObjEnv.map otab ps L base) m' t' ∧
+      X27At otab L ps.toList m' t' ∧
       (otab.leaf = true → ¬ IsProgAddr L.text ps.toList (m.x 30) →
         m.x 30 ≠ endP L.text ps.toList → m'.x 30 = m.x 30) := by
   obtain ⟨m', hp, hlm, hinv', hsp', hmem, hu'⟩ :=
     g60L_termX (H := H) hc hE hbid hb hm hinv hsp hpre hu ht
   have hI := locMatch_inv hE.env.env.env.env.env hm
-  obtain ⟨t', htm, hR', -⟩ := obj_star hO hH hp hR hI hic
-  exact ⟨m', t', hlm, hinv', hsp', hmem, hu', htm, hR',
-    fun hl h1 h2 => obj_star_leaf hO hH hp hR hI hic hl ⟨h1, h2⟩⟩
+  obtain ⟨t', htm, hR', -, hX'⟩ := obj_star hO hH hp hR hX hI hic
+  exact ⟨m', t', hlm, hinv', hsp', hmem, hu', htm, hR', hX',
+    fun hl h1 h2 => obj_star_leaf hO hH hp hR hX hI hic hl ⟨h1, h2⟩⟩
 
 /-- **A nil check of slice G60 that panics, down to the machine words**: machine steps of the
 linked code to a state that panics with `runLoc`'s panic `nilDeref` (the `MOVB` at the nil page,
@@ -287,13 +289,14 @@ theorem g60_obj_nilPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : L
     (hO : ObjEnv ps spills o otab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hHP : HookPanicMap H L ps.toList (ObjEnv.map otab ps L base))
-    (hR : ObjRel (ObjEnv.map otab ps L base) m t)
+    (hR : ObjRel (ObjEnv.map otab ps L base) m t) (hX : X27At otab L ps.toList m t)
     (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
     e = .nilDeref ∧ ∃ t', MStar H code retM t t' ∧ MPanics H code retM t' e := by
   obtain ⟨he, m', hp, hpp⟩ := g60L_nilPanic (H := H) hc hE hbid hb hi hv hop hm hinv hs
-  obtain ⟨t1, ht1, hR1, hI1⟩ := obj_star hO hH hp hR (locMatch_inv hE.env.env.env.env.env hm) hic
+  obtain ⟨t1, ht1, hR1, hI1, hX1⟩ :=
+    obj_star hO hH hp hR hX (locMatch_inv hE.env.env.env.env.env hm) hic
   have hI : ObjInv L ps.toList m' := hI1.resolve_right hpp.1
-  obtain ⟨t2, ht2, hpan⟩ := obj_panic hO hHP hR1 hI hpp
+  obtain ⟨t2, ht2, hpan⟩ := obj_panic hO hHP hR1 hX1 hI hpp
   exact ⟨he, t2, mstar_trans ht1 ht2, hpan⟩
 
 /-- **A bounds check of slice G60 that panics, down to the machine words**: machine steps of the
@@ -315,14 +318,15 @@ theorem g60_obj_boundsPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L 
     (hO : ObjEnv ps spills o otab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hHP : HookPanicMap H L ps.toList (ObjEnv.map otab ps L base))
-    (hR : ObjRel (ObjEnv.map otab ps L base) m t)
+    (hR : ObjRel (ObjEnv.map otab ps L base) m t) (hX : X27At otab L ps.toList m t)
     (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
     ∃ e', BoundsAgree e e' ∧ ∃ t', MStar H code retM t t' ∧ MPanics H code retM t' e' := by
   obtain ⟨e', m', he, hp, hpp⟩ :=
     g60L_boundsPanic (H := H) hc hE hbid hb hi hv hop hm hinv hbok hs
-  obtain ⟨t1, ht1, hR1, hI1⟩ := obj_star hO hH hp hR (locMatch_inv hE.env.env.env.env.env hm) hic
+  obtain ⟨t1, ht1, hR1, hI1, hX1⟩ :=
+    obj_star hO hH hp hR hX (locMatch_inv hE.env.env.env.env.env hm) hic
   have hI : ObjInv L ps.toList m' := hI1.resolve_right hpp.1
-  obtain ⟨t2, ht2, hpan⟩ := obj_panic hO hHP hR1 hI hpp
+  obtain ⟨t2, ht2, hpan⟩ := obj_panic hO hHP hR1 hX1 hI hpp
   exact ⟨e', he, t2, mstar_trans ht1 ht2, hpan⟩
 
 end GoFV.Proof.Obj
