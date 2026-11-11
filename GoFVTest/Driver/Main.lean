@@ -661,6 +661,43 @@ structure VFile where
   schedWhy : Option String := none
   /-- A proven `schedule` run relies on `NilPtrsOK` (`SchedClass.relyNilPtrs`). -/
   nilRely : Bool := false
+  /-- A rejected `lower` run: why `lowerGuard` fails on its input (throwaway). -/
+  lowWhy : Option String := none
+
+/-- Why `lowerGuard` rejects `f` (throwaway): its first non-generic op or arm64 block kind, else
+an FMA shape. -/
+def lowerWhy (f : Func) : String :=
+  let ops := f.valueTab.toList.filterMap fun | some v => if v.op.generic then none else some v.op.name | none => none
+  let bks := f.blockTab.toList.filterMap fun | some b => if b.kind.isArm64 then some b.kind.name else none | none => none
+  match ops.eraseDups, bks.eraseDups with
+  | o :: _, _ => s!"lowered input: op {o}"
+  | [], b :: _ => s!"lowered input: block {b}"
+  | [], [] => if decide (FmaContract.contractAll f = f) then "guard ?" else "FMA shape"
+
+/-- Why `LateLowerCheck.lateB` rejects (throwaway): the first failing conjunct; for a value, the
+ops of its input and output forms. -/
+def lateWhy (tabs tabs' : Tables) (f g : Func) : String := Id.run do
+  if !LowerCheck.tabsAgreeL tabs tabs' f then return "tabsAgreeL"
+  if !(f.lowered && g.lowered) then return "not lowered"
+  if !(g.entry == f.entry && g.ownAux == f.ownAux && g.blockTab.size == f.blockTab.size) then
+    return "entry/ownAux/blocks"
+  let tysF := LateLowerCheck.shapesL tabs' f
+  let tysG := LateLowerCheck.shapesL tabs' g
+  for i in List.range (max f.valueTab.size g.valueTab.size) do
+    if !LateLowerCheck.valOK tysF tysG f g i then
+      let fo := ((f.value? i).map (·.op.name)).getD "-"
+      let go := ((g.value? i).map (·.op.name)).getD "-"
+      return s!"value {fo} -> {go}"
+  for b in List.range f.blockTab.size do
+    if !LateLowerCheck.blkOK f g b then return "block order"
+  if !LateLowerCheck.sxOK f g then return "sxOK"
+  return "?"
+
+/-- Why `deadGuardL` rejects (throwaway). -/
+def deadWhyL (tabs : Tables) (f g : Func) : String :=
+  if !GoFV.Proof.Dead.deadFragB tabs f then "deadFragB"
+  else if !GoFV.Proof.Dead.deadFragLB tabs f then "deadFragLB"
+  else if g.lowered != f.lowered then "form" else "?"
 
 /-- The first conjunct of `LowerCheck.tabsAgreeL tabs tabs' f` that fails, with the first value or
 aux it fails on. -/
@@ -738,6 +775,7 @@ def walkVerified (e : ExportFile) (x : ExportExt) (env : PassEnv) (t0 : Tables) 
   let mut raWhy : Option (String × String) := none
   let mut schedWhy : Option String := none
   let mut nilRely := false
+  let mut lowWhy : Option String := none
   -- the stock section `k` against the state after pass `name` (verdict `v`)
   let cmp (k : Nat) (want : Tables) (name v : String) (func : Func) (tables : Tables)
       (dcl : Option Nat) : Option (String × String × String) × Tables :=
@@ -771,6 +809,15 @@ def walkVerified (e : ExportFile) (x : ExportExt) (env : PassEnv) (t0 : Tables) 
     { st, dclLen := (x.dclLen? 0).getD 0 + newAutos t0 st.tables, genVerified := st.verified }
   for p in loweredVPasses do
     let fs' ← runPassL env fs p
+    if p.name == "lower" then
+      if let some (_, .unverified "rejected") := fs'.st.log.back? then
+        lowWhy := some (lowerWhy fs.st.func)
+    if p.name == "late lower" then
+      if let some (_, .unverified "rejected") := fs'.st.log.back? then
+        lowWhy := some s!"{(lowWhy.map (· ++ "; ")).getD ""}late lower: {lateWhy (fs.passEnv env p.name).tables fs'.st.tables fs.st.func fs'.st.func}"
+    if p.name == "lowered deadcode" then
+      if let some (_, .unverified "rejected") := fs'.st.log.back? then
+        lowWhy := some s!"{(lowWhy.map (· ++ "; ")).getD ""}lowered deadcode: {deadWhyL (fs.passEnv env p.name).tables fs.st.func fs'.st.func}"
     if p.name == "regalloc" then
       if let some (_, .unverified "rejected") := fs'.st.log.back? then
         raWhy := some (raClass (fs.passEnv env p.name) fs.st.func diff)
@@ -789,7 +836,7 @@ def walkVerified (e : ExportFile) (x : ExportExt) (env : PassEnv) (t0 : Tables) 
       k := k + 1
     fs := fs'
   if diff.isNone && k == e.sections.size then
-    return { st := fs, diff, same := true, frag, raWhy, schedWhy, nilRely }
+    return { st := fs, diff, same := true, frag, raWhy, schedWhy, nilRely, lowWhy }
   if diff.isNone then
     diff := some (fs.st.last, "-", s!"{e.sections.size - k} stock sections after the last pass")
   let wantAll := (e.sections.extract 1 e.sections.size).foldl (fun t s => t.addAll s.defs) t0
@@ -798,7 +845,7 @@ def walkVerified (e : ExportFile) (x : ExportExt) (env : PassEnv) (t0 : Tables) 
       (compare t0 { func := fs.st.func, tables := fs.st.tables } (eraseCallRegs wantAll) s
         (loose := true)).isNone
     | none => false
-  return { st := fs, diff, same, frag, raWhy, schedWhy, nilRely }
+  return { st := fs, diff, same, frag, raWhy, schedWhy, nilRely, lowWhy }
 
 /-- The verified pipeline on one export file, with the driver's type rounds. -/
 def verifiedExport (wholeFile : Bool) (e : ExportFile) (x : ExportExt) :
@@ -1124,7 +1171,7 @@ def e2eFile (wholeFile : Bool) (path : System.FilePath) (st : E2E.Stats) : IO E2
       let log := r.st.st.log
       let gen := (log.toList.filter fun (q, v) => isGen q && !v.ok).map fun (q, v) => clean s!"{q}: {v}"
       let low := (log.toList.filter fun (q, v) => !isGen q && !v.ok).map fun (q, v) => clean s!"{q}: {v}"
-      let vst := s!"VST\t{clean (vstatsFields r.st)}\tgen={"; ".intercalate gen}\tlow={"; ".intercalate low}"
+      let vst := s!"VST\t{clean (vstatsFields r.st)}\tgen={"; ".intercalate gen}\tlow={"; ".intercalate low}\tlowwhy={clean (r.lowWhy.getD "-")}\tsched={clean (r.schedWhy.getD "-")}"
       let row (p : String) := (row p) ++ "\t" ++ vst
       if !r.st.fullyVerified then return { st with rows := st.rows.push (row "notfull") }
       let t0 := ({} : Tables).addAll (((e.sections[0]?).map (·.defs)).getD #[])
@@ -1139,6 +1186,8 @@ def runE2E (o : Opts) : IO UInt32 := do
   let t0 ← IO.monoMsNow
   let mut files := #[]
   for p in o.paths do files := files ++ (← ssaFiles p)
+  if let some l := (← IO.getEnv "GOFV_E2E_LIST") then
+    files := ((← IO.FS.lines l).filter (!·.isEmpty)).map (System.FilePath.mk ·)
   let next ← IO.mkRef 0
   let tasks ← (List.range o.jobs).toArray.mapM fun _ => IO.asTask (prio := .dedicated) do
     let mut st : E2E.Stats := {}
