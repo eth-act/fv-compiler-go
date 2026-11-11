@@ -101,6 +101,48 @@ def argsWhy (lc : LocCtx) (g : G2In) (spills : List GoFV.Asm.Spill) (k : Nat) : 
   else if !spills.isEmpty then "Arg with morestack spills"
   else "accepted"
 
+open GoFV.SSA (Op Value ID) in
+open GoFV.Gen.Check (entryOp24 loadOp?) in
+/-- **Vacuity at the entry** (every `verified_mach` variant): the run from `(entry, k)` reaches,
+through the entry block's values from `k` that step without a panic or that make the run stuck
+(`Defined` then fails: no value here panics), a value `RunPre` (`RunPreM`, `RunPreS`) cannot
+hold at:
+
+- `"entry value after the start"`: an `ArgIntReg`/`ArgFloatReg` (or an `InitMem` of an unlowered
+  function) at or after `k` (`RunPre`'s `entryOp24 v.op = false ∨ (InitMem ∧ lowered)`), as in a
+  closure whose `LoweredGetClosurePtr` comes first (`entryLen` stops there);
+- `"closure context load"`: a load (`loadOp?`, `LDP`) off the closure pointer
+  (`LoweredGetClosurePtr`): the top-level `run`/`locInit` has no closure context
+  (`fr.closure = none`), so the pointer is `poison` and `G3Pre`/`G4Pre` (a load reads valid bytes
+  at `symAddr`) fail there.
+
+The values passed on the way are those that cannot panic: the entry values, the closure pointer,
+spills, `VarDef`/`VarLive`/`InlMark`, `Copy`, `MOVDconst`, `ZERO`, and loads off the closure
+pointer themselves (a `poison` base is no nil base, `nilFaults`). `none`: not vacuous by these. -/
+def entryVacuous (lc : LocCtx) (k : Nat) : Option String :=
+  match lc.ctx.f.block? lc.ctx.f.entry with
+  | none => none
+  | some blk =>
+    let vals := (blk.values.toList.drop k).filterMap lc.ctx.f.value?
+    let clos : List ID := vals.filterMap fun v =>
+      if v.op == .ARM64LoweredGetClosurePtr then some v.id else none
+    let ctxLoad (v : Value) : Bool :=
+      ((loadOp? v.op).isSome || v.op == .ARM64LDP) &&
+        (v.args[0]?.map clos.contains).getD false
+    let safe (op : Op) : Bool :=
+      op == .ARM64LoweredGetClosurePtr || op == .SP || op == .SB || op == .InitMem ||
+        op == .StoreReg || op == .VarDef || op == .VarLive || op == .InlMark || op == .Copy ||
+        op == .ARM64MOVDconst || op == .ARM64ZERO
+    let rec go : List Value → Option String
+      | [] => none
+      | v :: vs =>
+        if entryOp24 v.op && !(v.op == .InitMem && lc.ctx.f.lowered) then
+          some "entry value after the start"
+        else if ctxLoad v then some "closure context load"
+        else if safe v.op then go vs
+        else none
+    go vals
+
 /-- The validators' verdicts on one function (`none`: accepted). -/
 structure Res where
   /-- `checkG64`'s rejection (also P0' numbering and, with a float constant load, `memTyL`). -/
@@ -126,10 +168,18 @@ structure Res where
   within the stack-variable limit reaches): there `verified_mach_fixed`/`verified_mach_S_fixed`
   hold only vacuously; `verified_mach_atSP`/`verified_mach_S_atSP` cover them. -/
   locals : Nat := 0
+  /-- `entryVacuous` at `entryLen` (`none` also when `checkG64` rejects): `RunPre` cannot hold,
+  so every `verified_mach` variant holds of the function only vacuously. -/
+  vac : Option String := none
 
 /-- Accepted by all five: `verified_mach`'s back-end premises hold. -/
 def Res.all (r : Res) : Bool :=
   r.gen.isNone && r.entry.isNone && r.args.isNone && r.ret.isNone && r.obj.isNone
+
+/-- End to end: the back-end premises hold and the function is not vacuous at the entry
+(`entryVacuous`), so some `verified_mach` variant applies to it non-vacuously (those vacuous at
+`Addrs.fixed` only are covered by the `_atSP` variants). -/
+def Res.e2e (r : Res) : Bool := r.all && r.vac.isNone
 
 /-- The `.prog` type for a new auto of `.ssa` type `st`: a `type` definition of the file with
 the same string, size, alignment and pointer data, else one made from `st` when it has no
@@ -249,20 +299,20 @@ def back (e : ExportFile) (pin : ProgFile)
     { syms := syms', slotOp := slotOpOf env (GoFV.Gen.Ctx.ofFrame env g.fr).offsets,
       stksize := g.fr.stksize }
   let spills := pf.prog0.fn.spills
-  let (gen, entry, args, pend, ret) :=
+  let (gen, entry, args, pend, ret, vac) :=
     if (ps'.map (·.from_.sym)) != (psF.map (·.from_.sym)) then
       (some "P0': a constant symbol numbered otherwise than by the assembler", none, none, false,
-        none)
+        none, none)
     else if !(GoFV.SSA.Sem.constRo (GoFV.Gen.Check.symNames gin)).isEmpty && !memTyL llc then
-      (some s!"memTyL: {memTyLWhy llc}", none, none, false, none)
+      (some s!"memTyL: {memTyLWhy llc}", none, none, false, none, none)
     else match checkG64 lc ps' bstart gin with
     | .ok (_, kt) =>
       let k := entryLen llc
       (none, (if entryStoresOK llc gin k then none else some (entryStoresWhy llc gin k)),
         (if argsOK llc gin spills.toList k then none else some (argsWhy llc gin spills.toList k)),
         !(pendWins llc gin).isEmpty,
-        if retRegsOK llc kt then none else some (retWhy llc kt))
-    | .error m => (some m, none, none, false, none)
+        (if retRegsOK llc kt then none else some (retWhy llc kt)), entryVacuous llc k)
+    | .error m => (some m, none, none, false, none, none)
   let ops := ((accessedVars llc).filterMap fun x =>
     if llc.ctx.tabs.forgeable x then match varOp gin x with
       | some (nc, o) => if nc == .AUTO || nc == .PARAM then some (nc == .AUTO, o) else none
@@ -273,7 +323,7 @@ def back (e : ExportFile) (pin : ProgFile)
     | .ok _ => none
     | .error m => some m
   return { gen, entry, args, pend, ret, obj, frame := (g.fr.stksize, g.fr.stkptrsize),
-           n48 := needs48 llc, locals := ops.length }
+           n48 := needs48 llc, locals := ops.length, vac }
 
 /-- Reasons by class (numbers replaced): count and an example (`file: message`). -/
 abbrev Why := Std.HashMap String (Nat × String)
@@ -306,8 +356,12 @@ structure Counts where
   obj : Nat := 0
   /-- `checkG64` ∧ `entryStoresOK` ∧ `argsOK` ∧ `checkObj`. -/
   genObj : Nat := 0
-  /-- `checkG64` ∧ `entryStoresOK` ∧ `argsOK` ∧ `retRegsOK` ∧ `checkObj` (`Res.all`, end to
-  end). -/
+  /-- `checkG64` ∧ `entryStoresOK` ∧ `argsOK` ∧ `retRegsOK` ∧ `checkObj` (`Res.all`: the
+  back-end premises hold). -/
+  prem : Nat := 0
+  /-- … and vacuous at the entry (`entryVacuous`, every variant). -/
+  vac : Nat := 0
+  /-- End to end (`Res.e2e`: the premises hold, not vacuous at the entry). -/
   all : Nat := 0
   /-- End to end and `needs48 = false` (`verified_mach`), and of those with two or more `locals`
   (vacuous at `Addrs.fixed`). -/
@@ -326,18 +380,21 @@ structure Counts where
   /-- `checkObj`'s rejections of the functions `checkG64`, `entryStoresOK`, `argsOK` and
   `retRegsOK` accept: what keeps them from end to end. -/
   e2eObjWhy : Why := {}
+  /-- `entryVacuous`'s reasons of the functions whose premises hold. -/
+  vacWhy : Why := {}
 
 def Counts.merge (a b : Counts) : Counts :=
   { ran := a.ran + b.ran, g64 := a.g64 + b.g64, gen := a.gen + b.gen,
     entryRej := a.entryRej + b.entryRej, argsRej := a.argsRej + b.argsRej, pend := a.pend + b.pend,
     pendAll := a.pendAll + b.pendAll,
     ret := a.ret + b.ret, obj := a.obj + b.obj,
-    genObj := a.genObj + b.genObj, all := a.all + b.all, allF := a.allF + b.allF,
+    genObj := a.genObj + b.genObj, prem := a.prem + b.prem, vac := a.vac + b.vac,
+    all := a.all + b.all, allF := a.allF + b.allF,
     allFVac := a.allFVac + b.allFVac, allS := a.allS + b.allS, allSVac := a.allSVac + b.allSVac,
     errWhy := a.errWhy.merge b.errWhy, genWhy := a.genWhy.merge b.genWhy,
     entryWhy := a.entryWhy.merge b.entryWhy, argsWhy := a.argsWhy.merge b.argsWhy,
     retWhy := a.retWhy.merge b.retWhy, objWhy := a.objWhy.merge b.objWhy,
-    e2eObjWhy := a.e2eObjWhy.merge b.e2eObjWhy }
+    e2eObjWhy := a.e2eObjWhy.merge b.e2eObjWhy, vacWhy := a.vacWhy.merge b.vacWhy }
 
 def Counts.add (c : Counts) (path : String) (res : Except String Res) : Counts :=
   let ex (m : String) := s!"{path}: {m}"
@@ -349,15 +406,20 @@ def Counts.add (c : Counts) (path : String) (res : Except String Res) : Counts :
     let c := { c with ran := c.ran + 1, g64 := c.g64 + one r.gen.isNone, gen := c.gen + one ge,
                       entryRej := c.entryRej + one (r.gen.isNone && r.entry.isSome),
                       argsRej := c.argsRej + one (r.gen.isNone && r.entry.isNone && r.args.isSome),
-                      pend := c.pend + one r.pend, pendAll := c.pendAll + one (r.all && r.pend),
+                      pend := c.pend + one r.pend, pendAll := c.pendAll + one (r.e2e && r.pend),
                       ret := c.ret + one (ge && r.ret.isNone),
                       obj := c.obj + one r.obj.isNone,
                       genObj := c.genObj + one (ge && r.obj.isNone),
-                      all := c.all + one r.all,
-                      allF := c.allF + one (r.all && !r.n48),
-                      allFVac := c.allFVac + one (r.all && !r.n48 && 2 ≤ r.locals),
-                      allS := c.allS + one (r.all && r.n48),
-                      allSVac := c.allSVac + one (r.all && r.n48 && 1 ≤ r.locals) }
+                      prem := c.prem + one r.all,
+                      vac := c.vac + one (r.all && r.vac.isSome),
+                      all := c.all + one r.e2e,
+                      allF := c.allF + one (r.e2e && !r.n48),
+                      allFVac := c.allFVac + one (r.e2e && !r.n48 && 2 ≤ r.locals),
+                      allS := c.allS + one (r.e2e && r.n48),
+                      allSVac := c.allSVac + one (r.e2e && r.n48 && 1 ≤ r.locals) }
+    let c := match r.all, r.vac with
+      | true, some m => { c with vacWhy := c.vacWhy.note m (ex m) }
+      | _, _ => c
     let c := match r.gen with | some m => { c with genWhy := c.genWhy.note m (ex m) } | none => c
     let c := match r.entry with
       | some m => { c with entryWhy := c.entryWhy.note m (ex m) } | none => c
@@ -420,7 +482,7 @@ def Stats.addFull (st : Stats) (path : String) (same : Bool) (stockFrame : Int �
       else { st with frameDiff := st.frameDiff + 1,
                      frameDiffEx := if st.frameDiffEx.isEmpty then
                        s!"{path}: {r.frame} (stock {stockFrame})" else st.frameDiffEx }
-    if r.all then
+    if r.e2e then
       { st with allSame := st.allSame + (if same then 1 else 0), accept := st.accept.push path }
     else st
   | .error _ => st
@@ -459,8 +521,12 @@ def Stats.text (st : Stats) (ms : Nat) : String := Id.run do
   out := out ++ row "… ∧ `checkObj`" (some o.obj) (some s.obj)
   out := out ++ row "… ∧ `checkG64` ∧ `entryStoresOK` ∧ `argsOK` ∧ `checkObj`" (some o.genObj)
     (some s.genObj)
-  out := out ++ row ("**… ∧ `checkG64` ∧ `entryStoresOK` ∧ `argsOK` ∧ `retRegsOK` ∧ `checkObj` " ++
-    "(end to end, `verified_mach`)**") (some o.all) (some s.all)
+  out := out ++ row ("… ∧ `checkG64` ∧ `entryStoresOK` ∧ `argsOK` ∧ `retRegsOK` ∧ `checkObj` " ++
+    "(the premises hold)") (some o.prem) (some s.prem)
+  out := out ++ row "… of them vacuous (closure context: `entryVacuous`, every variant)" (some o.vac)
+    (some s.vac)
+  out := out ++ row "**… premises hold, not vacuous (end to end, `verified_mach`)**" (some o.all)
+    (some s.all)
   out := out ++ row "… end to end, pipeline output identical to stock after `trim`" (some st.allSame) none
   out := out ++ row "fully verified, pipeline output identical to stock" (some st.fullSame) none
   out := out ++ s!"\nThe stock column runs the same back end on the stock `trim` function with the \
@@ -477,6 +543,10 @@ def Stats.text (st : Stats) (ms : Nat) : String := Id.run do
     (G48's mode, `needs48 = true`) {o.allS}; {s.allS}, of which vacuous at `Addrs.fixed` (a \
     `Blk.local` access, `g49Env_fixed_outSP`) {o.allSVac}; {s.allSVac}. The `_atSP` variants hold \
     of all of them non-vacuously.\n"
+  out := out ++ s!"\nVacuous at the entry (pipeline output; stock), of the functions whose premises \
+    hold, not counted end to end: {o.vac}; {s.vac} (`entryVacuous`: `RunPre` cannot hold of the \
+    run, under every variant: an entry value after the start `entryLen`, or a load off the closure \
+    pointer, `poison` since the top-level run has no closure context).\n"
   out := out ++ s!"\nFrame (`ownFrame`, `AllocFrame` on the pipeline's own `Dcl`) of the fully \
     verified functions whose output is identical to stock: stock `stksize`/`stkptrsize` \
     {st.frameSame}, other {st.frameDiff}{if st.frameDiffEx.isEmpty then "" else s!" ({st.frameDiffEx})"}.\n"
@@ -491,6 +561,8 @@ def Stats.text (st : Stats) (ms : Nat) : String := Id.run do
   out := out ++ whyTable "`checkObj` rejections among the fully verified:" o.objWhy 40
   out := out ++ whyTable ("`checkObj` rejections among the fully verified accepted by `checkG64`, " ++
     "`entryStoresOK`, `argsOK` and `retRegsOK`:") o.e2eObjWhy 40
+  out := out ++ whyTable ("Vacuous at the entry among the fully verified whose premises hold " ++
+    "(`entryVacuous`):") o.vacWhy 10
   out := out ++ whyTable "Back-end errors on the stock `trim` function:" s.errWhy 20
   return out
 

@@ -330,8 +330,13 @@ the `.prog` file it reads only the input view (`inputView`: definitions, config,
 `AllocFrame`'s start, `genin`), no stock result. It prints the fully verified functions, those
 the back end ran on, those `checkG64` with `memTyL`, `entryStoresOK`, `argsOK`, `retRegsOK`,
 `checkObj` and all of
-them accept (the end-to-end count; a line counts the functions with a pending window and those
-`entryStoresOK` rejects; a line those `argsOK` rejects; another the end-to-end functions by mode:
+them accept (the premises hold), of those the ones vacuous at the entry under every variant
+(`entryVacuous` at `entryLen`: through the entry block's values that cannot panic, an entry
+value after the start, which `RunPre` excludes, or a load off the closure pointer, `poison`
+since the top-level run has no closure context, #705), and the others (the end-to-end count;
+a line counts the functions with a pending window and those
+`entryStoresOK` rejects; a line those `argsOK` rejects; a line the vacuous ones; another the
+end-to-end functions by mode:
 under `verified_mach`, those
 that do not need G48's mode, `needs48` of `liveCtx` false, and of them those with two or more
 distinct `Blk.local` frame operands, vacuous at `Addrs.fixed` (`g49Env_fixed_apart`); under
@@ -342,7 +347,8 @@ stock, the frame sizes `ownFrame` gives on the functions whose output equals sto
 stock `stksize`/`stkptrsize`), the top back-end errors and rejection reasons (numbers replaced by
 `#`; for `retRegsOK` the first failing condition, `retWhy`), and as a cross-check the same back
 end on the stock `trim` function (whole-file tables, stock `Dcl`). `--accepted FILE` writes the
-end-to-end accepted files. Exit 1 only for parse errors (including a missing `.prog`) or no
+end-to-end accepted files (not the vacuous ones). Exit 1 only for parse errors (including a
+missing `.prog`) or no
 input.
 
 `gofv-ssa-opt --verified --profile <in.ssa>` prints to stderr where the verified pipeline spends

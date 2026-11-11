@@ -1736,17 +1736,45 @@ declarations, then the autos the pipeline created). From the stock `.prog` file 
 input view is read (definitions, config, `Dcl` at `AllocFrame`'s start, `genin`). The stock
 column runs the same back end on the stock `trim` function of every function.
 
-| quick-v10 (9,297 functions, 5.2 min; the composition on G64, per function at either mode (`agent/lift64` on main 8c5e41b7, G63 #700, G64 #701), P0' in `checkG64` and `checkObj`, `--jobs 2`) | pipeline output | share | stock `trim` |
+| quick-v10 (9,297 functions, 9.9 min; the composition on G64, per function at either mode (main 1187b1e7 with the vacuity audit `entryVacuous`), P0' in `checkG64` and `checkObj`, `--jobs 2`) | pipeline output | share | stock `trim` |
 | --- | ---: | ---: | ---: |
 | fully verified (Phase 2, through `trim`) | 7,895 | 84.91% | - |
 | … genssa and `Flushplist` ran | 7,895 | 84.91% | 9,297 |
 | … ∧ `checkG64` ∧ `entryStoresOK` ∧ `argsOK` | 7,225 | 77.71% | 8,204 |
 | … ∧ `checkG64` ∧ `entryStoresOK` ∧ `argsOK` ∧ `retRegsOK` | 7,225 | 77.71% | 8,203 |
 | … ∧ `checkObj` | 7,858 | 84.52% | 9,124 |
-| **… ∧ `checkG64` ∧ `entryStoresOK` ∧ `argsOK` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach` or `verified_mach_S`)** | **7,221** | **77.67%** | 8,157 |
-| … of which `needs48 = false`: `verified_mach` (`SepFrom`, `CallOK` …) | 7,010 | 75.40% | 7,914 |
-| … of which `needs48 = true`: `verified_mach_S` (G48's mode) | 211 | 2.27% | 243 |
-| … end to end, pipeline output identical to stock after `trim` | 6,152 | 66.17% | - |
+| … ∧ `checkG64` ∧ `entryStoresOK` ∧ `argsOK` ∧ `retRegsOK` ∧ `checkObj` (the premises hold) | 7,221 | 77.67% | 8,157 |
+| … of them vacuous (closure context, `entryVacuous`: every variant) | 547 | 5.88% | 600 |
+| **… premises hold, not vacuous (end to end, `verified_mach` or `verified_mach_S`)** | **6,674** | **71.78%** | 7,557 |
+| … of which `needs48 = false`: `verified_mach` (`SepFrom`, `CallOK` …) | 6,471 | 69.60% | 7,324 |
+| … of which `needs48 = true`: `verified_mach_S` (G48's mode) | 203 | 2.18% | 233 |
+| … end to end, pipeline output identical to stock after `trim` | 5,636 | 60.62% | - |
+
+**Vacuous at the entry (closure context; correction).** The end-to-end counts before this
+table, here, on #189 and on #553, counted closures whose premises hold but of which every
+`verified_mach` variant holds only vacuously: quick-v10 7,221 (G64) included 547 such
+closures, and full-v11 75,229 (G61) included about 7,315. The top-level run (`GoFV.SSA.run`,
+`runLoc`, `locInit`) has no closure context (`fr.closure = none`), so a closure's
+`LoweredGetClosurePtr` is `poison`, and `RunPre` (`RunPreS`, `RunPreM`) cannot hold of its run:
+
+- 399 (quick-v10) load off the closure pointer at a position every run reaches, where `G3Pre`
+  (`G4Pre` for `LDP`) asks for valid bytes at `symAddr` of `poison`;
+- 148 have register arguments: their entry block is `LoweredGetClosurePtr, ArgIntReg…`, the
+  start `entryLen` stops at the closure pointer (k = 0), and `RunPre`'s
+  `entryOp24 v.op = false ∨ (InitMem ∧ lowered)` fails at the first `ArgIntReg`.
+
+The driver now finds them (`entryVacuous`: the entry block's values from `entryLen` that cannot
+panic, up to an entry value or a load off the closure pointer) and counts them in a column of
+their own, outside the end-to-end headline. Functions vacuous at `Addrs.fixed` stay counted,
+because the `_atSP` variants cover them. No other op stops `RunPre` this way:
+`entryVacuous`'s first reason covers any entry value after the start. The full-v11 figure is
+estimated, by a mirror of the check on the stock `trim` functions of the G61 run's accepted
+lists (the mirror gives 548 on quick-v10 against the driver's 547), so the G61 count corrected is
+about 67,914. The next full-v11 run measures it with the driver. None of the 562
+end-to-end closures leaves its closure pointer unused, so counting `LoweredGetClosurePtr` in
+`entryLen` alone would make none of them non-vacuous. The fix is a closure context in the
+top-level run (#705, design review first). All the earlier quick-v10 and full-v11 end-to-end
+counts below include such closures as well.
 
 The composition on G64 (G62 with G63's float spills and reloads and G64's 128-bit blob moves;
 `FReloadPre` and `QLoadPre` in `RunPre`'s per-step conjunction) counts 7,221 end to end (7,010
@@ -1987,6 +2015,11 @@ run on the composition on G64 (main b26adfeb) is under way.
 | … of which `needs48 = true`: `verified_mach_S` (G48's mode) | 573 | 0.59% | 655 | 0.67% |
 | … end to end, pipeline output identical to stock after `trim` | 64,661 | 66.88% | - | - |
 | fully verified, pipeline output identical to stock | 69,843 | 72.24% | - | - |
+
+**Correction (vacuous closures, above).** This table predates the driver's `entryVacuous`. Its
+75,229 includes about 7,315 closures (an estimate from the mirror of the check) of which
+every variant holds only vacuously, so the corrected count is about 67,914. The full-v11 run on
+the composition on G64 reports the exact figure.
 
 The composition on G61 counts 75,229 end to end (77.81%; 74,656 under `verified_mach`, 573 under
 `verified_mach_S`), 1,961 more than the previous full-v11 measurement, the composition on G60
