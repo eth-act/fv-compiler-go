@@ -294,7 +294,7 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
 address, inside a live block and away from the frame; `p`'s register and the temporary are
 `poison` in `runLoc`, the only X registers the machine changes. -/
 theorem g54a_zero (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8)
     (hm : LocMatch E s b i m) (hinv : G3Inv E lc K s osp) (hR : KRead lc v K.get)
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {t : Nat} {rp rc : Int} (hop : v.op = .ARM64LoweredZeroLoop)

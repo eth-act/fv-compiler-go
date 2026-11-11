@@ -652,7 +652,7 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
 /-- `LoweredMove [n] dst src mem`: the chunks copy the `n` bytes at `src`'s injected address to
 `dst`'s, inside a live block and away from the frame; `R25`, `F16`, `F17` are `poison`. -/
 private theorem g53a_move (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8)
     (hm : LocMatch E s b i m) (hinv : G3Inv E lc K s osp) (hR : KRead lc v K.get)
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {rd rs : Int} (hop : v.op = .ARM64LoweredMove) (hsz3 : v.args.size = 3)
@@ -844,7 +844,7 @@ theorem vk53a_step {env : Env} {H : Hooks} {lc : LocCtx} {sym : Nat → BitVec 6
     {E : MatchEnv} {bid : ID} {i j j' : Nat} {v : Value} {s s' : LocState}
     {m : MState} {K : KMap} {kd : VKind2} {L : List (Nat × Nat × Bool)}
     (F : Facts lc sym text az ez ps.toList ret E) (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8)
     (hVK : VK53a lc v kd)
     (hvs : VStep2 ps kd j j') (htemp : (lc.temps[v.id]?).join = none)
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')

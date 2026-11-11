@@ -85,7 +85,7 @@ def varWin (lc : LocCtx) (g : G2In) (x : AuxRef) : Option (Int × Int) := do
 def winApart (w w' : Int × Int) : Bool := w.2 ≤ w'.1 || w'.2 ≤ w.1
 
 /-- The frame checks of slice G6 (module doc): each accessed variable's window inside the locals,
-the windows pairwise disjoint and away from the home slots' (8 bytes each). -/
+the windows pairwise disjoint and away from the home slots' (each of its slot's size). -/
 def checkVars (lc : LocCtx) (g : G2In) : Except String Unit := do
   let xs := accessedVars lc
   let ws ← xs.mapM fun x => match varWin lc g x with
@@ -96,7 +96,7 @@ def checkVars (lc : LocCtx) (g : G2In) : Except String Unit := do
   unless (ws.zipIdx).all fun (w, i) => (ws.zipIdx).all fun (w', i') => i == i' || winApart w w' do
     throw "two frame variables overlap"
   let slots := (homeSlots lc).filterMap fun k => match g.slotOp k with
-    | some (.AUTO, o) => some (o, o + 8)
+    | some (.AUTO, o) => some (o, o + (lc.slotTy k).size)
     | _ => none
   unless ws.all fun w => slots.all (winApart w) do
     throw "frame variable over a spill slot"

@@ -263,7 +263,7 @@ base `SP`'s read related to the machine's `SP`, `hsp`). The machine store lies o
 words and the spill slots (`SepFromW`, the write at or above `Blk.writableFrom`), so `LocMatch`
 holds after it; the memory keeps distinct keys and its separation, the X registers are kept. -/
 theorem g48_spStore (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8)
     (hm : LocMatch E s b i m) {mm : Mem} (hmm : s.mem = .mem mm) (hkn : KeysNodup mm)
     {w : Bool} (hsep : SepAt w E.ι (StkAt E) mm)
     (hregs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → K r = some c → FitsW c v)
@@ -415,7 +415,7 @@ theorem g48_spLoad (F : Facts lc sym text az ez psA.toList ret E)
 `⟨outargs act, o⟩` and 8 bytes above (`g4_stp` with the base `SP`, `hsp`, in the separation of
 mode `w`). -/
 theorem g48_spStp (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8)
     (hm : LocMatch E s b i m) {mm : Mem} (hmm : s.mem = .mem mm) (hkn : KeysNodup mm)
     {w : Bool} (hsep : SepAt w E.ι (StkAt E) mm)
     (hregs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → K r = some c → FitsW c v)
@@ -500,7 +500,7 @@ theorem g48_spStp (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
 registers of at least 32 bits at `⟨outargs act, o⟩` and 4 bytes above (`g48_spStp` at 4
 bytes). -/
 theorem g48_spStpw (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8)
     (hm : LocMatch E s b i m) {mm : Mem} (hmm : s.mem = .mem mm) (hkn : KeysNodup mm)
     {w : Bool} (hsep : SepAt w E.ι (StkAt E) mm)
     (hregs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → K r = some c → FitsW c v)
@@ -587,7 +587,7 @@ theorem g48_spStpw (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK 
 /-- **A float pair store off `SP`**: `FSTPD (Fx, Fy), o(RSP)` stores the low 8 bytes of two V
 registers at `⟨outargs act, o⟩` and 8 bytes above (`g48_spStp` on V registers). -/
 theorem g48_spFstpd (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8)
     (hm : LocMatch E s b i m) {mm : Mem} (hmm : s.mem = .mem mm) (hkn : KeysNodup mm)
     {w : Bool} (hsep : SepAt w E.ι (StkAt E) mm)
     (hregs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → K r = some c → FitsW c v)
@@ -680,7 +680,7 @@ theorem g48_spFstpd (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK
 /-- **A float store off `SP`**: `FMOV{S,D} Fs, o(RSP)` stores the low bytes of a V register at
 `⟨outargs act, o⟩` (`g44_fstore` with the base `SP`, `hsp`, in the separation of mode `w`). -/
 theorem g48_spFStore (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8)
     (hm : LocMatch E s b i m) {mm : Mem} (hmm : s.mem = .mem mm) (hkn : KeysNodup mm)
     {w : Bool} (hsep : SepAt w E.ι (StkAt E) mm)
     (hregs : ∀ r v c, r ≠ zeroReg → s.regs[r]? = some v → K r = some c → FitsW c v)

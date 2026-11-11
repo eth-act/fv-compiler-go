@@ -85,11 +85,34 @@ theorem win0_toNat {sp : BitVec 64} {off : Int} (h0 : 0 ≤ off)
 /-! ## The frame -/
 
 /-- The machine addresses `LocMatch` keeps in the frame: the saved `LR`/`FP` words of a framed
-activation (`[SP - 8, SP + 8)`) and the 8 bytes of every spill slot. -/
+activation (`[SP - 8, SP + 8)`) and the bytes of every spill slot, as many as its `runLoc` shape
+has (`SlotRel` reads them; 8 for every slot before slice G66, `StkAt_eq_of_slots8`). -/
 def StkAt (E : MatchEnv) (y : BitVec 64) : Prop :=
   (E.framed = true ∧ E.sp.toNat - 8 ≤ y.toNat ∧ y.toNat < E.sp.toNat + 8) ∨
   ∃ k off, E.slot k = some off ∧ E.sp.toNat + off.toNat ≤ y.toNat ∧
+    y.toNat < E.sp.toNat + off.toNat + (E.lc.slotTy k).size
+
+/-- `StkAt` before slice G66: 8 bytes at every spill slot. -/
+def StkAt8 (E : MatchEnv) (y : BitVec 64) : Prop :=
+  (E.framed = true ∧ E.sp.toNat - 8 ≤ y.toNat ∧ y.toNat < E.sp.toNat + 8) ∨
+  ∃ k off, E.slot k = some off ∧ E.sp.toNat + off.toNat ≤ y.toNat ∧
     y.toNat < E.sp.toNat + off.toNat + 8
+
+/-- **`StkAt` is the set it was before slice G66** for an activation whose spill slots all have
+8 bytes (every function a slice before G66 accepts: `checkFrame` then had 8-byte slots only), so
+the contracts and invariants stated with `StkAt` (`CallSpec*`, `CoreInv`) are the same there. -/
+theorem StkAt_eq_of_slots8 {E : MatchEnv}
+    (h8 : ∀ k off, E.slot k = some off → (E.lc.slotTy k).size = 8) : StkAt E = StkAt8 E := by
+  funext y
+  apply propext
+  unfold StkAt StkAt8
+  constructor
+  · rintro (h | ⟨k, off, hk, h1, h2⟩)
+    · exact .inl h
+    · exact .inr ⟨k, off, hk, h1, by rw [← h8 k off hk]; exact h2⟩
+  · rintro (h | ⟨k, off, hk, h1, h2⟩)
+    · exact .inl h
+    · exact .inr ⟨k, off, hk, h1, by rw [h8 k off hk]; exact h2⟩
 
 /-- The frame layout of an activation: `SP` above the nil page with the saved `FP` below it, the
 saved `LR` word not wrapping around, every spill slot above the saved `LR` and not wrapping
@@ -99,8 +122,9 @@ structure FrameOK (E : MatchEnv) : Prop where
   hi : E.sp.toNat + 8 ≤ 2 ^ 64
   slot : ∀ k off, E.slot k = some off → 8 ≤ off ∧ E.sp.toNat + off.toNat + 8 ≤ 2 ^ 64
 
+/-- Byte `j` of a slot's window (`j` below its size and below 8) is in `StkAt`. -/
 theorem stk_slot {E : MatchEnv} (hF : FrameOK E) {k : SlotKey} {off : Int}
-    (hk : E.slot k = some off) {j : Nat} (hj : j < 8) :
+    (hk : E.slot k = some off) {j : Nat} (hj : j < 8) (hjk : j < (E.lc.slotTy k).size) :
     StkAt E (E.sp + BitVec.ofInt 64 off + BitVec.ofNat 64 j) := by
   obtain ⟨h8, hhi⟩ := hF.slot k off hk
   right
@@ -132,7 +156,7 @@ and a machine state `m'` whose memory agrees with `m`'s at `StkAt E` and whose `
 (and `X30` in a leaf) are `m`'s. -/
 theorem stk_slots_frame {E E' : MatchEnv} {s : LocState} {b : ID} {i : Nat} {m m' : MState}
     (hm : LocMatch E s b i m) (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8)
     (hE' : E' = { E with ι := E'.ι }) (hext : ∀ b a, E.ι b = some a → E'.ι b = some a)
     (hmem : ∀ y, StkAt E y → m'.mem y = m.mem y) (hsp : m'.sp = m.sp) (h28 : m'.x 28 = m.x 28)
     (h29 : m'.x 29 = m.x 29) (h30 : E.framed = false → m'.x 30 = m.x 30) :
@@ -146,8 +170,8 @@ theorem stk_slots_frame {E E' : MatchEnv} {s : LocState} {b : ID} {i : Nat} {m m
     unfold SlotRel at hrel ⊢
     have h8 := hsz k v hk
     simp only at h8 ⊢
-    rw [h8] at hrel ⊢
-    rw [readMem_congr 8 (E.sp + BitVec.ofInt 64 off) (fun j hj => hmem _ (stk_slot hF hoff hj))]
+    rw [readMem_congr _ (E.sp + BitVec.ofInt 64 off)
+      (fun j hj => hmem _ (stk_slot hF hoff (by omega) hj))]
     exact valRel_mono hext hrel
   · obtain ⟨h1, h2, h3, h4⟩ := hm.frame
     refine ⟨by rw [hsp, h1], by rw [h28, h2], fun hf => ?_, fun hf => ?_⟩
@@ -167,7 +191,7 @@ theorem stk_slots_frame {E E' : MatchEnv} {s : LocState} {b : ID} {i : Nat} {m m
 /-- A memory agreeing at `StkAt E` keeps `LocMatch`'s slots and frame. -/
 theorem stk_keeps {E : MatchEnv} {s : LocState} {b : ID} {i : Nat} {m : MState}
     (hm : LocMatch E s b i m) (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8) :
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8) :
     Keeps E (StkAt E) s m := fun M hM =>
   stk_slots_frame (E' := E) (m' := { m with mem := M }) hm hF hsz rfl (fun _ _ h => h) hM rfl rfl
     rfl (fun _ => rfl)

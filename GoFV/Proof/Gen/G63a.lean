@@ -71,7 +71,7 @@ theorem g63_fspill (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK 
   rw [hx] at hx'
   cases hx'
   rw [write_slot hh]
-  obtain ⟨h8, nc', off', hso', hnc⟩ := home_slot hcf hh
+  obtain ⟨h8, nc', off', hso', hnc⟩ := home_slot hcf hh hcv
   rw [hso] at hso'
   cases hso'
   have hsl := hslot k (mem_homeSlots hh) nc off hso
@@ -126,13 +126,14 @@ theorem g63_fspill (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK 
         have hap := slot_apart hcf hslot hext (mem_homeSlots hh) (mem_homeSlots hi') (Ne.symm hne)
           hsl ho'
         unfold SlotRel at hsr ⊢
-        have h8' : (E.lc.slotTy k').size = 8 := slot_sizes hlc hcf hsi k' v' hold
-        rw [h8'] at hsr ⊢
-        rw [readMem_congr 8 (E.sp + BitVec.ofInt 64 o')
-          (fun j hj => hMout _ (fun j' hj' => slot_windows_apart hF hsl ho' hap hj' hj))]
+        rw [hlc] at hsr ⊢
+        have h8' : (lc.slotTy k').size ≤ 8 := hlc ▸ slot_sizes hlc hcf hsi k' v' hold
+        rw [readMem_congr _ (E.sp + BitVec.ofInt 64 o')
+          (fun j hj => hMout _ (fun j' hj' => slot_windows_apart hF hsl ho' hap hj' (by omega)
+            (by rw [h8]; exact hj') hj))]
         exact hsr
     · exact memInj_of_sepW hMI hsep.sepW fun y hy =>
-        hMout y fun j hj he => hy (he ▸ stk_slot hF hsl hj)
+        hMout y fun j hj he => hy (he ▸ stk_slot hF hsl hj (by rw [hlc, h8]; exact hj))
     · refine frameRel_mem hF hm.frame (fun _ j hj => ⟨hMout _ (fun j' hj' he => ?_),
         hMout _ (fun j' hj' he => ?_)⟩)
       · have := congrArg BitVec.toNat he
@@ -146,7 +147,7 @@ theorem g63_fspill (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK 
       (knext_same hK (Or.inr fun r _ => by rw [hh]; nofun))
   · intro k' v' hk'
     rcases lookup_setSlot hk' with ⟨rfl, rfl⟩ | ⟨-, hold⟩
-    · exact ⟨fits_retypeL hcv _, v.id, hh⟩
+    · exact ⟨by rw [slotCls_home hcf hh hcv]; exact fits_retypeL hcv _, v.id, hh⟩
     · exact hsi k' v' hold
 
 /-- A float reload: `FMOVD off(RSP), Fd` of the slot's 8 bytes, under `FReloadPre`. -/
@@ -177,7 +178,7 @@ theorem g63_freload (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK
   rw [read_slot hl hah] at hx
   cases hx
   rw [write_reg hvh hcv]
-  obtain ⟨h8, nc', off', hso', hnc⟩ := home_slot hcf hah
+  obtain ⟨h8, nc', off', hso', hnc⟩ := home_slot hcf hah hca
   rw [hso] at hso'
   cases hso'
   have hsl := hslot k (mem_homeSlots hah) nc off hso
@@ -195,7 +196,8 @@ theorem g63_freload (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK
       unfold SlotRel at hsr
       rw [hlc, h8] at hsr
       rw [hsp]
-      exact valRel_retypeL hA hca (hsi k v0 hk).1 hsr
+      have hfk : Fits 64 v0 := by rw [← slotCls_home hcf hah hca]; exact (hsi k v0 hk).1
+      exact valRel_retypeL hA hca hfk hsr
   obtain ⟨hw, -⟩ := fTy_eq (n := 8) hft hcv
   have hz := valRel_retypeL hA hcv (fits_retypeL hca _) hrel
   have hfz := fvalRel_of_valRel hA hz hnptr

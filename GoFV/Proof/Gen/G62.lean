@@ -58,7 +58,7 @@ theorem vk62_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
       h48 hsp hcall hcallz hicall hwb hclo hgetg hmeq hcallk hs
   | @arg x o htemp hop _ hx _ hcv hh hso =>
     obtain ⟨h1, h2, h3⟩ := g62_arg (H := H) hE.env.env.env.env.env F.lowered hvs hj hj' hm hinv
-      htemp hop hx hcv hh hso harg hs
+      htemp hop hx hcf hcv hh hso harg hs
     exact ⟨E, m, ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, h3,
       by rw [uStep35_arg hop]; exact fun e he => by cases he⟩
 

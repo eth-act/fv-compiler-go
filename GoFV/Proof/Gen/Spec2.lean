@@ -125,7 +125,7 @@ def VKind.v2 : VKind → VKind2
   | .none => .none
   | .prog sh => .prog (.ofShape sh)
 
-private theorem slotHome?_eq {lc : LocCtx} {a : ID} {k : SlotKey} :
+theorem slotHome?_eq {lc : LocCtx} {a : ID} {k : SlotKey} :
     slotHome? lc a = some k ↔ lc.home a = some (.slot k) := by
   unfold slotHome?
   split <;> simp_all
@@ -425,25 +425,44 @@ theorem mem_homeSlots {lc : LocCtx} {i : Nat} {k : SlotKey} (h : lc.home i = som
     simp [LocCtx.home, getElem?_neg lc.homes i (Nat.not_lt_of_le hn)] at h
   exact List.mem_filterMap.mpr ⟨i, List.mem_range.mpr hi, slotHome?_eq.mpr h⟩
 
-/-- What `checkFrame` accepted: every home slot `slotOK`, distinct home slots at distinct frame
-operands. -/
-theorem checkFrame_spec {lc : LocCtx} {g : G2In} (h : checkFrame lc g = .ok ()) :
+/-- What `checkFrame` accepted, in full: every home slot `slotOK`, distinct home slots at distinct
+frame operands with disjoint windows (`slotsApart`), every homed value of its slot's class and
+size (`homeFits`). -/
+theorem checkFrame_full {lc : LocCtx} {g : G2In} (h : checkFrame lc g = .ok ()) :
     (∀ k ∈ homeSlots lc, slotOK lc g k = true) ∧
-    ∀ k ∈ homeSlots lc, ∀ k' ∈ homeSlots lc, k ≠ k' → g.slotOp k' ≠ g.slotOp k := by
+    (∀ k ∈ homeSlots lc, ∀ k' ∈ homeSlots lc, k ≠ k' → g.slotOp k' ≠ g.slotOp k) ∧
+    (∀ k ∈ homeSlots lc, ∀ k' ∈ homeSlots lc, k ≠ k' → slotsApart lc g k k' = true) ∧
+    ∀ i, i < lc.homes.size → homeFits lc i = true := by
   unfold checkFrame at h
   cases hf : (homeSlots lc).find? (fun k => !slotOK lc g k) with
   | some k => simp [hf, ex_throw, ex_bind_error] at h
   | none =>
     simp only [hf] at h
-    split at h
-    next hall =>
-      simp only [List.all_eq_true, Bool.or_eq_true, beq_iff_eq, bne_iff_ne, ne_eq] at hall
-      refine ⟨fun k hk => ?_, fun k hk k' hk' hne => ?_⟩
-      · simpa using List.find?_eq_none.mp hf k hk
-      · rcases hall k hk k' hk' with he | he
-        · exact absurd he.symm hne
-        · exact he
-    next => simp [ex_throw] at h
+    by_cases hall : ((homeSlots lc).all fun k => (homeSlots lc).all fun k' =>
+        k' == k || g.slotOp k' != g.slotOp k) = true
+    · by_cases hap : ((homeSlots lc).all fun k => (homeSlots lc).all fun k' =>
+          k' == k || slotsApart lc g k k') = true
+      · by_cases hfit : ((List.range lc.homes.size).all (homeFits lc)) = true
+        · simp only [List.all_eq_true, Bool.or_eq_true, beq_iff_eq, bne_iff_ne, ne_eq,
+            List.mem_range] at hall hap hfit
+          refine ⟨fun k hk => ?_, fun k hk k' hk' hne => ?_, fun k hk k' hk' hne => ?_, hfit⟩
+          · simpa using List.find?_eq_none.mp hf k hk
+          · rcases hall k hk k' hk' with he | he
+            · exact absurd he.symm hne
+            · exact he
+          · rcases hap k hk k' hk' with he | he
+            · exact absurd he.symm hne
+            · exact he
+        · simp [hall, hap, hfit, ex_throw, ex_bind_error] at h
+      · simp [hall, hap, ex_throw, ex_bind_error] at h
+    · simp [hall, ex_throw, ex_bind_error] at h
+
+/-- What `checkFrame` accepted: every home slot `slotOK`, distinct home slots at distinct frame
+operands. -/
+theorem checkFrame_spec {lc : LocCtx} {g : G2In} (h : checkFrame lc g = .ok ()) :
+    (∀ k ∈ homeSlots lc, slotOK lc g k = true) ∧
+    ∀ k ∈ homeSlots lc, ∀ k' ∈ homeSlots lc, k ≠ k' → g.slotOp k' ≠ g.slotOp k :=
+  ⟨(checkFrame_full h).1, (checkFrame_full h).2.1⟩
 
 theorem checkG2_spec {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}
     {tab : PcTab} (h : checkG2 lc ps bstart g = .ok tab) :

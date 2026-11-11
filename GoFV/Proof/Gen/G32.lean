@@ -887,7 +887,7 @@ theorem g32_csinc (F : Facts lc sym text az ez psA.toList ret E)
 
 /-- `STLR{,W,B} Rs, (Rn)`: G3's store argument with the generic atomic store's bytes. -/
 theorem g32_stlr (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')

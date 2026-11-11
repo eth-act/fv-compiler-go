@@ -225,7 +225,7 @@ theorem objOf?_lt31 {r : Nat} {k : Nat} (hk : k < 32)
 /-- `LoweredAtomicExchange{64,32,8} p x mem`: the loop loads the location's old value into `Rd`,
 stores `x` and runs once. -/
 theorem g61_xchg (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hj : E.pcOf b i = pcAt text psA.toList j)
     (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')

@@ -152,7 +152,7 @@ theorem g65_fvload (F : Facts lc sym text az ez psA.toList ret E)
 /-- `FSTPS`/`FSTPD (Fa, Fb), off(Rn)`: the low `n` bytes of `Fa` at the address and of `Fb` `n`
 bytes above (`g57_stpw` with V registers), outside the frame. -/
 theorem g65_fstpReg (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
@@ -242,7 +242,7 @@ theorem g65_fstpReg (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK
 /-- `FSTPS`/`FSTPD (Fa, Fb), sym+off(SB)`: the two `n`-byte stores into the global's block, at its
 injected address (`g22_stp` with V registers). -/
 theorem g65_fstpGlob (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8)
     (hglob : ∀ y name abi, g.syms[y]? = some (name, abi) →
       E.ι (.global name.toStringLossy) = some (sym y))
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
