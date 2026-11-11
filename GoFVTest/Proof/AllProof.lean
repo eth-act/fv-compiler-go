@@ -310,6 +310,7 @@ import GoFV.Proof.Obj.EndToEnd
 import GoFV.Proof.Obj.EndToEndAtSP
 import GoFV.Proof.Obj.EndToEndFixed
 import GoFV.Proof.Obj.Entry49
+import GoFV.Proof.Obj.EntrySkip
 import GoFV.Proof.Obj.Ex
 import GoFV.Proof.Obj.Frame
 import GoFV.Proof.Obj.G64
@@ -1123,6 +1124,7 @@ import GoFV.Proof.Witness.ObjEndToEndAtSP
 import GoFV.Proof.Witness.ObjEndToEndAtSPS
 import GoFV.Proof.Witness.ObjEndToEndS
 import GoFV.Proof.Witness.ObjEntry49
+import GoFV.Proof.Witness.ObjEntrySkip
 import GoFV.Proof.Witness.ObjFrame
 import GoFV.Proof.Witness.ObjG7
 import GoFV.Proof.Witness.ObjMoreF

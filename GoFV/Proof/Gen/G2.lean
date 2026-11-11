@@ -979,14 +979,17 @@ theorem g2_addr (F : Facts lc sym text az ez psA.toList ret E)
   have hyy : sym y' = sym y := Option.some.inj ((hglob y' name abi hy').symm.trans (hglob y name abi hy))
   rw [show (Link.byId sym text az ez psA.toList).sym y' = sym y from hyy]
 
-/-- A spill of a 64-bit value to its slot. -/
-theorem g2_spill (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E) (hlc : E.lc = lc)
+/-- A spill of a 64-bit value to its slot, from a relation on `m` with its memory replaced by
+`M0` (the bytes of `W` relaxed: `M0` agrees with `m.mem` outside `W`): the P0 step runs on `m`,
+the relation after it is on `m'` with its memory replaced by `M'`, which agrees with `m'.mem`
+outside `W` (both memories get the same 8-byte write). `g2_spill` is the case `M0 = m.mem`. -/
+theorem g2_spillW (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E) (hlc : E.lc = lc)
     (hcf : checkFrame lc g = .ok ())
     (hslot : ∀ k ∈ homeSlots lc, ∀ nc off, g.slotOp k = some (nc, off) →
       E.slot k = some (frameOff (Link.byId sym text az ez psA.toList) nc off))
-    (hext : 0 ≤ (Link.byId sym text az ez psA.toList).extrasize)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
-    (hR : KRead lc v K) (hK : KNext lc v K K')
+    (hext : 0 ≤ (Link.byId sym text az ez psA.toList).extrasize) {M0 : Memory}
+    (hm : LocMatch E s b i { m with mem := M0 }) (hinv : CoreInv E.ι (StkAt E) K s osp)
+    (hsi : SlotInv lc s) (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {k : SlotKey} {nc : AddrName} {off : Int} {rs : Int} {pat : Pat}
     (hop : v.op = .StoreReg) (hh : lc.home v.id = some (.slot k)) (hso : g.slotOp k = some (nc, off))
@@ -994,10 +997,11 @@ theorem g2_spill (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
     (hpat : ∀ p, pat.ok p = true → p.as = .MOVD ∧ p.from_ = regA rs ∧ slotA p.to nc off = true ∧
       p.reg = 0 ∧ p.scond = 0 ∧ p.rest.isEmpty = true ∧ p.regTo2 = 0)
     (hvs : OneAt2 psA j pat j') (htemp : (lc.temps[v.id]?).join = none)
-    (hs : stepLoc env lc s v = .ok s') :
-    ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' ∧
-      XW lc v m m' := by
+    (hs : stepLoc env lc s v = .ok s') {W : BitVec 64 → Prop}
+    (hW : ∀ y, ¬ W y → M0 y = m.mem y) :
+    ∃ m' M', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
+      LocMatch E s' b (i + 1) { m' with mem := M' } ∧ CoreInv E.ι (StkAt E) K' s' osp ∧
+      SlotInv lc s' ∧ m'.x = m.x ∧ ∀ y, ¬ W y → M' y = m'.mem y := by
   have hl := F.lowered
   have hA := F.addr
   obtain ⟨a, r1, ha0, hah, hor1, hca⟩ := argObj_spec hao
@@ -1016,7 +1020,9 @@ theorem g2_spill (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
   obtain ⟨ho8, hohi⟩ := hF.slot k o hsl
   have hsp : m.sp = E.sp := hm.frame.1
   obtain ⟨k0, rfl, hk0, hok, hstar⟩ := pstar_oneAt2 (H := H) F.nodup F.lt F.ret hvs m
-  rw [pc_eta hm hj] at hstar
+  have hpc : ({ m with pc := pcAt text psA.toList j } : MState) = m := by
+    rw [← hj, ← show ({ m with mem := M0 } : MState).pc = E.pcOf b i from hm.pc]
+  rw [hpc] at hstar
   obtain ⟨has, hf, ht, -, -, -, -⟩ := hpat _ hok
   obtain ⟨A, hAe⟩ : ∃ A, A = E.sp + BitVec.ofInt 64 o := ⟨_, rfl⟩
   obtain ⟨V, hVe⟩ : ∃ V : BitVec 64,
@@ -1035,9 +1041,10 @@ theorem g2_spill (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
   subst hAe
   have hxV : ValRel E.ι x V := by rw [hVe]; exact hxv
   have hMout : ∀ y : BitVec 64, (∀ j, j < 8 → y ≠ E.sp + BitVec.ofInt 64 o + BitVec.ofNat 64 j) →
-      writeMem m.mem (E.sp + BitVec.ofInt 64 o) 8 V y = m.mem y :=
+      writeMem M0 (E.sp + BitVec.ofInt 64 o) 8 V y = M0 y :=
     fun y hy => writeMem_other 8 _ _ _ y hy
-  refine ⟨_, hstar.tail (pstep_at F.nodup F.lt F.ret hk0 rfl hstep), ?_, ?_⟩
+  refine ⟨_, writeMem M0 (E.sp + BitVec.ofInt 64 o) 8 V,
+    hstar.tail (pstep_at F.nodup F.lt F.ret hk0 rfl hstep), ?_, ?_⟩
   · obtain ⟨mm, hmm, hMI⟩ := hm.mem
     obtain ⟨mm0, hmm0, -, hsep⟩ := hinv.mem
     rw [hmm] at hmm0
@@ -1063,8 +1070,8 @@ theorem g2_spill (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
         exact hsr
     · exact memInj_of_sepW hMI hsep.sepW fun y hy =>
         hMout y fun j hj he => hy (he ▸ stk_slot hF hsl hj (by rw [hlc, h8]; exact hj))
-    · refine frameRel_mem hF hm.frame (fun _ j hj => ⟨hMout _ (fun j' hj' he => ?_),
-        hMout _ (fun j' hj' he => ?_)⟩)
+    · refine frameRel_mem (m := { m with mem := M0 }) hF hm.frame
+        (fun _ j hj => ⟨hMout _ (fun j' hj' he => ?_), hMout _ (fun j' hj' he => ?_)⟩)
       · have := congrArg BitVec.toNat he
         rw [sp_toNat hF hj, win_toNat (by omega) hohi hj'] at this
         omega
@@ -1073,10 +1080,37 @@ theorem g2_spill (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
         have := hF.lo
         omega
   · refine ⟨CoreInv.mono ⟨hinv.regs, hinv.mem⟩
-      (knext_same hK (Or.inr fun r _ => by rw [hh]; nofun)), fun k' v' hk' => ?_, .inl rfl⟩
+      (knext_same hK (Or.inr fun r _ => by rw [hh]; nofun)), fun k' v' hk' => ?_, rfl,
+      fun y hy => writeMem_pt 8 _ _ _ _ y (hW y hy)⟩
     rcases lookup_setSlot hk' with ⟨rfl, rfl⟩ | ⟨-, hold⟩
     · exact ⟨by rw [slotCls_home hcf hh hcv]; exact fits_retypeL hcv _, v.id, hh⟩
     · exact hsi k' v' hold
+
+/-- A spill of a 64-bit value to its slot: `g2_spillW` with the relation on `m` itself. -/
+theorem g2_spill (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E) (hlc : E.lc = lc)
+    (hcf : checkFrame lc g = .ok ())
+    (hslot : ∀ k ∈ homeSlots lc, ∀ nc off, g.slotOp k = some (nc, off) →
+      E.slot k = some (frameOff (Link.byId sym text az ez psA.toList) nc off))
+    (hext : 0 ≤ (Link.byId sym text az ez psA.toList).extrasize)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
+    (hR : KRead lc v K) (hK : KNext lc v K K')
+    (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
+    {k : SlotKey} {nc : AddrName} {off : Int} {rs : Int} {pat : Pat}
+    (hop : v.op = .StoreReg) (hh : lc.home v.id = some (.slot k)) (hso : g.slotOp k = some (nc, off))
+    (hsz1 : v.args.size = 1) (hcv : cls (lc.ty v.id) = some 64) (hao : argObj lc v 0 = .ok (64, rs))
+    (hpat : ∀ p, pat.ok p = true → p.as = .MOVD ∧ p.from_ = regA rs ∧ slotA p.to nc off = true ∧
+      p.reg = 0 ∧ p.scond = 0 ∧ p.rest.isEmpty = true ∧ p.regTo2 = 0)
+    (hvs : OneAt2 psA j pat j') (htemp : (lc.temps[v.id]?).join = none)
+    (hs : stepLoc env lc s v = .ok s') :
+    ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' ∧
+      XW lc v m m' := by
+  obtain ⟨m', M', h1, h2, h3, h4, h5, h6⟩ := g2_spillW (H := H) F hF hlc hcf hslot hext
+    (M0 := m.mem) hm hinv hsi hR hK hj hj' hop hh hso hsz1 hcv hao hpat hvs htemp hs
+    (W := fun _ => False) fun _ _ => rfl
+  have hM : M' = m'.mem := funext fun y => h6 y id
+  subst hM
+  exact ⟨m', h1, h2, h3, h4, .inl h5⟩
 
 /-- A read of a call's tuple: the components of a `callTy` tuple read from the call's home. -/
 theorem read_call {c : ID} {ts' : List Ty} (hl : lc.ctx.f.lowered = true)

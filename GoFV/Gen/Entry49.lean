@@ -13,7 +13,14 @@ registers there. So the relation at the function's entry (`EntryMatch`) leaves t
 out (`pendWins`: the windows of the register-assigned parameters the function accesses), and the
 whole-function simulation runs the entry stores (`entryStores`: the stores of registers to frame
 variables at their `NAME_PARAM` operands that only G49's frame-variable path accepts, from value
-`k` of the entry block, as long as they last) before it relates the memory in full.
+`k` of the entry block, as long as they last, past the values `entrySkip` takes) before it relates
+the memory in full.
+
+Between the entry values and the entry stores genssa may place spills (`StoreReg`: `MOVD Rs,
+off(RSP)`, `FMOVD Fs, off(RSP)`) and the values without code `SP`, `SB` and `InitMem`
+(`entrySkip`). They write no byte of a pending window (a spill writes its slot, which is apart from
+the `NAME_PARAM` operands), so the entry stores after them still cover the windows: `storesFrom`
+steps over them.
 
 `entryStoresOK lc g k`: the entry stores from value `k` cover every byte of every pending
 window. It is a premise of the end-to-end theorem, checked by the driver.
@@ -37,13 +44,20 @@ def entryStore? (lc : LocCtx) (g : G2In) (v : Value) : Option (Int × Nat) :=
       | none => if v.op == .ARM64STP then some (off, 16) else none
     | _ => none
 
-/-- The entry stores at the head of `ids`, as long as they last. -/
+/-- A value the entry stores may come after (module doc), in a function with an arm64 op: a spill
+(`StoreReg` without an aux) or a value without code (`SP`, `SB` without an aux, `InitMem`). -/
+def entrySkip (lc : LocCtx) (v : Value) : Bool :=
+  lc.ctx.f.lowered && (v.op == .SP || v.op == .InitMem ||
+    v.aux == none && (v.op == .StoreReg || v.op == .SB))
+
+/-- The entry stores at the head of `ids`, as long as they last, past the values `entrySkip`
+takes. -/
 def storesFrom (lc : LocCtx) (g : G2In) : List ID → List (Int × Nat)
   | [] => []
   | id :: ids =>
     match (lc.ctx.f.value? id).bind (entryStore? lc g) with
     | some w => w :: storesFrom lc g ids
-    | none => []
+    | none => if (lc.ctx.f.value? id).any (entrySkip lc) then storesFrom lc g ids else []
 
 /-- The entry stores from value `k` of the entry block. -/
 def entryStores (lc : LocCtx) (g : G2In) (k : Nat) : List (Int × Nat) :=
@@ -69,7 +83,8 @@ def pendWins (lc : LocCtx) (g : G2In) : List (Int × Nat) :=
 def inWins (ws : List (Int × Nat)) (o : Int) : Bool :=
   ws.any fun (o', n) => o' ≤ o && o < o' + n
 
-/-- The entry stores from value `k` cover every byte of every pending window. -/
+/-- The entry stores from value `k` (past the values `entrySkip` takes) cover every byte of every
+pending window. -/
 def entryStoresOK (lc : LocCtx) (g : G2In) (k : Nat) : Bool :=
   let st := entryStores lc g k
   (pendWins lc g).all fun (o, n) => (List.range n).all fun j => inWins st (o + j)

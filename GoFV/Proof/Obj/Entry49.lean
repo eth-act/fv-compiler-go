@@ -34,15 +34,6 @@ open GoFV.Proof.Gen
 
 /-! ## Writes of the machine memory -/
 
-/-- `writeMem` at `y` reads the memory only at `y`. -/
-theorem writeMem_pt : ∀ (n : Nat) (M1 M2 : Memory) (A : BitVec 64) (V : BitVec (8 * n))
-    (y : BitVec 64), M1 y = M2 y → writeMem M1 A n V y = writeMem M2 A n V y
-  | 0, _, _, _, _, _, h => h
-  | n + 1, M1, M2, A, V, y, h => by
-    simp only [writeMem]
-    apply writeMem_pt n
-    by_cases hy : y = A <;> simp [hy, h]
-
 /-- Inside its window, `writeMem` does not read the memory. -/
 theorem writeMem_in : ∀ (n : Nat) (M1 M2 : Memory) (A : BitVec 64) (V : BitVec (8 * n)) (j : Nat),
     j < n → writeMem M1 A n V (A + BitVec.ofNat 64 j) = writeMem M2 A n V (A + BitVec.ofNat 64 j)

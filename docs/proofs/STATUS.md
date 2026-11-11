@@ -1603,8 +1603,13 @@ replaced by one that agrees with it outside `W`, but for the saved `LR`/`FP` wor
 stores (`sim_entryStores`: each entry store, `entryStore?`, is a store or `STP` of G49's
 frame-variable path, `entryStore?_spec`, whose Prog writes its window alike in both memories,
 `g64L_entryStore`, `GoFV/Proof/Obj/Entry49.lean`, over `op_mem2W`, `g49_storeW`, `g49_stpW`,
-`writeMem_agree`; no entry store panics, it has a symbol; after them no byte is left out and
-`SimAtW` is `SimAt`), each value (`sim_value`, over
+`writeMem_agree`; no entry store panics, it has a symbol; the spills and values without code
+between the entry values and the entry stores, which `storesFrom` steps over (`entrySkip`: a
+`StoreReg` or `SB` without an aux, `SP`, `InitMem`), run against the same relaxed memory,
+`sim_entrySkip`, `g64L_entrySkip`, `GoFV/Proof/Obj/EntrySkip.lean`, over the W-forms
+`g2_spillW`, `g63_fspillW`, `g24_spW`, `g3_sbW`: a spill writes its slot alike in both memories,
+the others run no code, none panics, `stepLoc_entrySkip_ne_panic`; after them no byte is left
+out and `SimAtW` is `SimAt`), each value (`sim_value`, over
 `g64_obj_value`, at a value that is no `Arg`, `NoArgRun`), each terminator (`sim_goto`, over
 `g64_obj_term`), the return (`sim_ret`: the
 `RET` after no-ops, `termG3_ret`, `obj_exit`, `ret_results`), the run by induction on the fuel
@@ -1805,6 +1810,14 @@ ports' own; the frame is laid out on the pipeline's own locals (`ownFrame`: the 
 declarations, then the autos the pipeline created). From the stock `.prog` file only the driver
 input view is read (definitions, config, `Dcl` at `AllocFrame`'s start, `genin`). The stock
 column runs the same back end on the stock `trim` function of every function.
+
+**Entry stores after spills (`entrySkip`).** `storesFrom` steps over the spills (`StoreReg`) and
+the values without code (`SP`, `SB`, `InitMem`) genssa places between the entry values and the
+entry stores (`GoFV/Gen/Entry49.lean`; proof `sim_entrySkip`, `g64L_entrySkip`). quick-v10, main
+3f22d5c4's driver against `agent/entryspill` on it (`--jobs 2`): end to end 6,675 → 6,698
+(`verified_mach` 6,472 → 6,493, `verified_mach_S` 203 → 205), 0 lost (`comm` of the accepted
+lists); `entryStoresOK` rejects 35 → 12 of the 77 with a pending window (stock 51 → 21), end to
+end with a pending window 42 → 65; vacuous at `Addrs.fixed` under `verified_mach_S` 7 → 9.
 
 | quick-v10 (9,297 functions, 8.5 min; the composition on G64 with `SBFIZ` in `checkObj`, per function at either mode (`agent/sbfiz` on main a6c37a47, the vacuity audit `entryVacuous`), P0' in `checkG64` and `checkObj`, `--jobs 2`) | pipeline output | share | stock `trim` |
 | --- | ---: | ---: | ---: |

@@ -83,6 +83,15 @@ theorem writeMem_other : ∀ (k : Nat) (mm : Memory) (A : BitVec 64) (V : BitVec
     simp only [BitVec.add_zero] at this
     simp only [this, ↓reduceIte]
 
+/-- `writeMem` at `y` reads the memory only at `y`. -/
+theorem writeMem_pt : ∀ (n : Nat) (M1 M2 : Memory) (A : BitVec 64) (V : BitVec (8 * n))
+    (y : BitVec 64), M1 y = M2 y → writeMem M1 A n V y = writeMem M2 A n V y
+  | 0, _, _, _, _, _, h => h
+  | n + 1, M1, M2, A, V, y, h => by
+    simp only [writeMem]
+    apply writeMem_pt n
+    by_cases hy : y = A <;> simp [hy, h]
+
 theorem writeMem_at : ∀ (k : Nat) (mm : Memory) (A : BitVec 64) (V : BitVec (8 * k))
     (j : Nat), j < k → k ≤ 8 → writeMem mm A k V (A + BitVec.ofNat 64 j) = V.extractLsb' (8 * j) 8
   | 0, _, _, _, _, h, _ => absurd h (Nat.not_lt_zero _)

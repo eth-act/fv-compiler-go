@@ -551,3 +551,9 @@ GoFV.Proof.Witness.GenG66s.g66s_facts._native.native_decide.ax_1_1 872f31c13a304
 # `checkObj` (#553) moved the Obj pins whose facts run `checkObj` (re-taken from the audit;
 # no statement changed).
 GoFV.Proof.Witness.ObjSbfiz.sbfiz_facts._native.native_decide.ax_1_1 edb12065e7107a92450100036cabffc7f0ce48afe03d7deff6b312b4849a278d
+# entrySkip_witness (GoFV/Proof/Witness/ObjEntrySkip.lean, #553): `checkG64` accepts `fmt.Sscan`,
+# `entryStoresOK` holds at `entryLen` past its spills, `SB`, `SP`, `InitMem` (`entrySkip`) and the
+# check without that step does not; compiled evaluation, as plF_pipeline. `storesFrom`'s step over
+# `entrySkip` (#553) moved the Obj pins whose facts run `entryStoresOK` (re-taken from the audit;
+# no statement changed).
+GoFV.Proof.Witness.ObjEntrySkip.skip_facts._native.native_decide.ax_1_1 0000000000000000000000000000000000000000000000000000000000000000
