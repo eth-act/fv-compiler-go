@@ -150,6 +150,81 @@ type checked, `RewriteCheck.selMROK`; a selection of a call folded in the same l
 selection, `LoadFwd.selDC_den`) -/
 theorem r_generic_1343_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1343 := rfl
 
+/-! Pointer comparisons folded to a constant (issue #69: the comparison `RewriteCheck.ptrCmp?`
+tells, `RewriteCheck.ptrCmpOK`, `LoadFwd.ptrCmp_den`) -/
+
+/-- `generic.rules:1649`: `(EqPtr (Addr {x} _) (OffPtr [o] (Addr {y} _))) => (ConstBool [x == y && o == 0])` -/
+theorem r_generic_1649_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1649 := rfl
+
+/-- `generic.rules:1650`: `(EqPtr (OffPtr [o1] (Addr {x} _)) (OffPtr [o2] (Addr {y} _))) => (ConstBool [x == y && o1 == o2])` -/
+theorem r_generic_1650_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1650 := rfl
+
+/-- `generic.rules:1652`: `(NeqPtr (Addr {x} _) (OffPtr [o] (Addr {y} _))) => (ConstBool [x != y || o != 0])` -/
+theorem r_generic_1652_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1652 := rfl
+
+/-- `generic.rules:1653`: `(NeqPtr (OffPtr [o1] (Addr {x} _)) (OffPtr [o2] (Addr {y} _))) => (ConstBool [x != y || o1 != o2])` -/
+theorem r_generic_1653_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1653 := rfl
+
+/-- `generic.rules:1654`: `(EqPtr (LocalAddr {x} _ _) (LocalAddr {y} _ _)) => (ConstBool [x == y])` -/
+theorem r_generic_1654_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1654 := rfl
+
+/-- `generic.rules:1655`: `(EqPtr (LocalAddr {x} _ _) (OffPtr [o] (LocalAddr {y} _ _))) => (ConstBool [x == y && o == 0])` -/
+theorem r_generic_1655_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1655 := rfl
+
+/-- `generic.rules:1656`: `(EqPtr (OffPtr [o1] (LocalAddr {x} _ _)) (OffPtr [o2] (LocalAddr {y} _ _))) => (ConstBool [x == y && o1 == o2])` -/
+theorem r_generic_1656_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1656 := rfl
+
+/-- `generic.rules:1657`: `(NeqPtr (LocalAddr {x} _ _) (LocalAddr {y} _ _)) => (ConstBool [x != y])` -/
+theorem r_generic_1657_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1657 := rfl
+
+/-- `generic.rules:1658`: `(NeqPtr (LocalAddr {x} _ _) (OffPtr [o] (LocalAddr {y} _ _))) => (ConstBool [x != y || o != 0])` -/
+theorem r_generic_1658_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1658 := rfl
+
+/-- `generic.rules:1659`: `(NeqPtr (OffPtr [o1] (LocalAddr {x} _ _)) (OffPtr [o2] (LocalAddr {y} _ _))) => (ConstBool [x != y || o1 != o2])` -/
+theorem r_generic_1659_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1659 := rfl
+
+/-- `generic.rules:1660`: `(EqPtr (OffPtr [o1] p1) p2) && isSamePtr(p1, p2) => (ConstBool [o1 == 0])` -/
+theorem r_generic_1660_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1660 := rfl
+
+/-- `generic.rules:1661`: `(NeqPtr (OffPtr [o1] p1) p2) && isSamePtr(p1, p2) => (ConstBool [o1 != 0])` -/
+theorem r_generic_1661_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1661 := rfl
+
+/-- `generic.rules:1662`: `(EqPtr (OffPtr [o1] p1) (OffPtr [o2] p2)) && isSamePtr(p1, p2) => (ConstBool [o1 == o2])` -/
+theorem r_generic_1662_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1662 := rfl
+
+/-- `generic.rules:1663`: `(NeqPtr (OffPtr [o1] p1) (OffPtr [o2] p2)) && isSamePtr(p1, p2) => (ConstBool [o1 != o2])` -/
+theorem r_generic_1663_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1663 := rfl
+
+/-- `generic.rules:1666`: `(EqPtr (Convert (Addr {x} _) _) (Addr {y} _)) => (ConstBool [x==y])` -/
+theorem r_generic_1666_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1666 := rfl
+
+/-- `generic.rules:1667`: `(NeqPtr (Convert (Addr {x} _) _) (Addr {y} _)) => (ConstBool [x!=y])` -/
+theorem r_generic_1667_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1667 := rfl
+
+/-- `generic.rules:1669`: `(EqPtr (LocalAddr _ _) (Addr _)) => (ConstBool [false])` -/
+theorem r_generic_1669_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1669 := rfl
+
+/-- `generic.rules:1670`: `(EqPtr (OffPtr (LocalAddr _ _)) (Addr _)) => (ConstBool [false])` -/
+theorem r_generic_1670_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1670 := rfl
+
+/-- `generic.rules:1671`: `(EqPtr (LocalAddr _ _) (OffPtr (Addr _))) => (ConstBool [false])` -/
+theorem r_generic_1671_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1671 := rfl
+
+/-- `generic.rules:1672`: `(EqPtr (OffPtr (LocalAddr _ _)) (OffPtr (Addr _))) => (ConstBool [false])` -/
+theorem r_generic_1672_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1672 := rfl
+
+/-- `generic.rules:1673`: `(NeqPtr (LocalAddr _ _) (Addr _)) => (ConstBool [true])` -/
+theorem r_generic_1673_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1673 := rfl
+
+/-- `generic.rules:1674`: `(NeqPtr (OffPtr (LocalAddr _ _)) (Addr _)) => (ConstBool [true])` -/
+theorem r_generic_1674_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1674 := rfl
+
+/-- `generic.rules:1675`: `(NeqPtr (LocalAddr _ _) (OffPtr (Addr _))) => (ConstBool [true])` -/
+theorem r_generic_1675_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1675 := rfl
+
+/-- `generic.rules:1676`: `(NeqPtr (OffPtr (LocalAddr _ _)) (OffPtr (Addr _))) => (ConstBool [true])` -/
+theorem r_generic_1676_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1676 := rfl
+
 /-- Non-vacuity: the Load-from-`Zero` rule `:842` (a `Load` rebuilt through a `Store` over a
 `Zero`) and the `Store` rule `:997` (`(Store dst (ArrayMake1 e) mem) => (Store {e.Type} dst e
 mem)`, a changed write) do not have the shape. -/
