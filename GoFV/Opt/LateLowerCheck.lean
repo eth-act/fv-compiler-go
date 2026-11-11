@@ -25,13 +25,24 @@ tables `tabs`, agreeing with `tabs'` for `f`, `tabsAgreeL`) when `g` is `f` with
 * new values (an ID `f` does not use) that are `MOVDconst`s without arguments (`freshK`: at
   the 64-bit integer shape and `c` for the one an immediate rewrite reads), listed in a block of
   `g` before the values that read them (`freshBefore`);
+* values of `f` gone from `g` (`gone`), each removed by line 29,
+  `(MOVBUreg x:(Equal|NotEqual|…|GreaterEqualF _)) => x` (`rw29`): a `MOVBUreg` at an integer
+  shape of a condition op `x` of both at the `bool` shape. Its readers in `g` read `x` instead
+  (`argsOK`), only where they read the argument as a register (`regPos`: an op of `regOps`, where
+  `Arm64.reg` reads the boolean as the integer 0 or 1 the `MOVBUreg` holds; the stored value of a
+  store, whose bytes are the register's; a `Phi` at an integer shape, whose `Val.widen`
+  zero-extends the boolean), and only while `x` holds the value the gone one was computed from
+  (`winOK`: along `f`'s order of a block, no reader between a run of `x` and the run of the gone
+  value, which is in `x`'s block, and none by a `Phi` there);
 
 and otherwise unchanged: the same values (up to positions and use counts) whose arguments are
-values of `f`, the same blocks up to positions, predictions and the new constants in their value
-lists, `runL`'s order (`Sem.schedule`) of each block of `g` that of `f` with the new constants
+values of both, the same blocks up to positions, predictions, the new constants and the gone
+values in their value lists, controls that are values of both, `runL`'s order (`Sem.schedule`)
+of each block of `g` that of `f` without the gone values and with the new constants
 interleaved, and every `MOVDreg`/`MOVDnop` of `g` reads whether its argument sign-extends as in
 `f` (`sxOK`). Then `g` runs as `f` (`GoFV.Proof.LateLowerL.lateLower_refinesL`). Sections where
-any other rule fires (the copies of lines 29 and 32, line 95) are rejected.
+any other rule fires (the copies of line 32, line 95) or whose gone values are read otherwise
+(by a call, from another block) are rejected.
 -/
 
 namespace GoFV.Opt.LateLowerCheck
