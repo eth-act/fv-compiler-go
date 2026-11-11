@@ -679,6 +679,18 @@ avoiding): the problem, the trick, the numbers, where it is used.
 - **Effect:** the re-export of the same tree is deterministic (0 differing files, was 205), with
   dwarf-parity unchanged at 100%.
 
+#### Lowered `AND` absorbing `false`: a case split costs G32 about 8 % (#385, S1)
+- **Problem:** S1 makes the lowered `AND` absorb a `.bool false` operand (`Arm64.and`, rule 133).
+  `Gen/G32` proved every register op through `Arm64.op2 t (binF as)`; `AND` now needs its own
+  value function `binV` and `valRel_andBool`, a `by_cases` on a `false` operand with
+  `and_false_left`/`and_false_right`, before falling back to the `op2` proof.
+- **Trick:** keep the split in one place: `binV` (`AND` ↦ `Arm64.and`, others `op2`),
+  `binV_of_ne_bool` rewrites it back to `op2` at every non-`bool` shape, so the 8-way `rcases` of
+  `evalPure_bin32` and the non-bool lemmas stay as they were, and only `valRel_binBool` splits.
+- **Effect:** `lake env lean GoFV/Proof/Gen/G32.lean`, wall time, main vs S1 alternating, 3 runs
+  each on the loaded shared machine (`tmp/g32time.sh`): main 9.24/8.04/8.76 s, S1 10.15/8.93/9.46 s;
+  medians 8.76 → 9.46 s (+8 %), peak RSS unchanged (1.62–1.75 GB both). Accepted under the 15 % bar.
+
 ## Inherited from clifv (measured there, eth-act/clifv `LEARNINGS.md`)
 
 None of these weaken what is proven: every compiler theorem still prints only `propext`,
