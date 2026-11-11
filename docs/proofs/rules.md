@@ -418,7 +418,7 @@ their offsets are; from the starts of two different known allocations (`baseBlk?
 No new assumption beyond the layer's: `LoadFwd.ptrCmp_den` reads both pointers through
 `ptrBase_den`, `baseSame_den` and `baseBlk_den` (`Ptr.add` keeps the block and adds the offset
 modulo `2^64`), and `fwd_den`'s new case refines the comparison by the constant (`poison` if an
-operand is no pointer word). Witness: `pc_checkedRewrite`/`pc_rwPre` (`Witness/FwdPtrCmp.lean`:
+operand is no pointer word). Witness: `FwdPtrCmp.pc_checkedRewrite`/`pc_rwPre` (`Witness/FwdPtrCmp.lean`:
 `&t[0] != &a` becomes `true` by `:1673`, `&t[0] == &t[1]` becomes `false` by `:1655`).
 
 **`growslice` lengths** (`:2128`, issue #69): `(SliceLen (SelectN [0] (StaticLECall {sym} _
