@@ -78,16 +78,20 @@ def whyLate (tabs tabs' : Tables) (f g : Func) : String := Id.run do
         | some u, none => s!"value {u.op.name} removed"
         | none, some w => s!"new {w.op.name}"
         | none, none => "value ?"
+  let gs := goneL f g
   for b in [0:f.blockTab.size] do
-    if !blkOK f g b then
+    if !blkOK f g gs b then
       return match f.block? b, g.block? b with
         | some fb, some gb =>
           if !decide ({ gb with values := fb.values, pos := fb.pos, likely := fb.likely } = fb) then
             "block shape"
-          else if !(gb.values.toList.filter (inF f) == fb.values.toList) then "block values"
+          else if !(gb.values.toList.filter (inF f) == fb.values.toList.filter (inF g)) then
+            "block values"
+          else if !fb.controls.all (fun c => inF f c && inF g c) then "block controls"
           else match Sem.schedule f fb, Sem.schedule g gb with
             | some oS, some oT =>
-              if !(oT.toList.filter (inF f) == oS.toList) then "block order" else "fresh order"
+              if !(oT.toList.filter (inF f) == oS.toList.filter (inF g)) then "block order"
+              else if !winOK f g gs [] oS.toList then "gone window" else "fresh order"
             | _, _ => "block schedule"
         | _, _ => "block missing"
   if !sxOK f g then return "sxOK"

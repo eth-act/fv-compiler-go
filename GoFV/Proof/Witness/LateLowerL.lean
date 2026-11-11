@@ -2,6 +2,7 @@ import GoFV.Proof.Pass.LateLowerL
 import GoFV.Proof.Witness.LicmL
 import GoFV.Proof.Witness.AddZero
 import GoFV.Proof.Witness.LowerTrunc
+import GoFV.Proof.Witness.LowerCondSel
 
 open scoped GoFV.SSA.Sem.Fixed
 
@@ -18,6 +19,11 @@ evaluation.
 MOVWreg v4`) checks a dropped extension: `late lower` turns `v5` into `MOVDnop v4`
 (`ARM64latelower.rules:46`, `(MOVWreg x:(MOVWload _ _)) => (MOVDreg x)`, then line 91), `lateB`
 accepts, and the result returns `-5` on `g` holding `2^32 - 5`, as the lowered input does.
+
+`llb` (`int(b2u8(x < y)) + 1`, lowered: `v5 = LessThan (CMP x y)`, `v6 = MOVBUreg v5`, `v7 =
+ADDconst [1] v6`) checks a removed extension: `late lower` deletes `v6`
+(`ARM64latelower.rules:29`, `(MOVBUreg x:(LessThan _)) => x`) and `v7` reads `v5`, `lateB`
+accepts, and the result returns 2 for `x = 3, y = 4`, as the input does.
 -/
 
 namespace GoFV.Proof.Witness
@@ -91,5 +97,59 @@ theorem lateLowerExt_witness :
   obtain ⟨out, hp, hv, hz⟩ := ok_of_toOption hl
   obtain ⟨m, hm⟩ := returnsInt_iff.1 hr
   exact ⟨o, out, ho, hp, h5, hz, RefinesL.returned_int (lateLower_refinesL hp hv) hm⟩
+
+/-- `b2i(x, y int) int { return int(b2u8(x < y)) + 1 }` as `lower` leaves it (the tables of `smin`,
+`GoFV/Proof/Witness/LowerCondSel.lean`: `bool` type 3, `flags` 29). -/
+def llbFunc : Func where
+  entry := 1
+  type := 1
+  ownAux := some 1
+  vidLast := 8
+  bidLast := 1
+  blocks := #[1]
+  blockTab := #[none, some (mkB 1 .Ret p0 #[8] #[] #[] #[1, 2, 3, 4, 5, 6, 7, 8])]
+  valueTab := #[none,
+    some (mkV 1 .InitMem 28 none p0 1 #[] 1),
+    some (mkVI 2 .ArgIntReg 2 0 (some 6) p0 1 #[] 1),
+    some (mkVI 3 .ArgIntReg 2 1 (some 7) p0 1 #[] 1),
+    some (mkV 4 .ARM64CMP 29 none p0 1 #[2, 3] 1),
+    some (mkV 5 .ARM64LessThan 3 none p0 1 #[4] 1),
+    some (mkV 6 .ARM64MOVBUreg 2 none p0 1 #[5] 1),
+    some (mkVI 7 .ARM64ADDconst 2 1 none p0 1 #[6] 1),
+    some (mkV 8 .MakeResult 33 none p0 1 #[7, 1] 1)]
+  names := #[]
+  namedx := #[]
+  splits := #[]
+  canon := #[]
+  consts := #[]
+  freeValues := []
+  freeBlocks := []
+  cache := { lineStarts := some #[] }
+
+/-- The pass environment of `late lower` on `llb`. -/
+def llbPassEnv : PassEnv :=
+  { lcsPassEnv with passName := "late lower", funcName := GoStr.ofString "b2i" }
+
+/-- By kernel evaluation: `llb` returns 2 for `x = 3, y = 4` under `runL`; `late lower` deletes
+`v6` and `v7` reads `v5`, and `lateB` accepts. -/
+theorem llb_lateLower_facts :
+    returnsInt (runL Env.p1 lcsTabs llbFunc [.int .w64 3, .int .w64 4] {} 1) 2 = true ∧
+    ((lateLower llbPassEnv llbFunc).toOption.map fun o =>
+      decide (LateLowerCheck.lateB llbPassEnv.tables o.tables llbFunc o.func = true ∧
+        (o.func.value? 6).isNone = true ∧ (o.func.value? 7).map (·.args) = some #[5])) =
+      some true := by
+  decide +kernel
+
+/-- **`lateLower_refinesL` on a removed extension**: `late lower` deletes the `MOVBUreg` of
+`llb`'s `LessThan` (its reader `v7` reads the `LessThan`), and its output returns 2 under `runL`. -/
+theorem lateLowerGone_witness :
+    ∃ out, lateLower llbPassEnv llbFunc = .ok out ∧ (out.func.value? 6).isNone = true ∧
+      (out.func.value? 7).map (·.args) = some #[5] ∧
+      ∃ fuel m, runL Env.p1 out.tables out.func [.int .w64 3, .int .w64 4] {} fuel =
+        .returned [.i64 2] m := by
+  obtain ⟨hr, hl⟩ := llb_lateLower_facts
+  obtain ⟨out, hp, hv, h6, h7⟩ := ok_of_toOption hl
+  obtain ⟨m, hm⟩ := returnsInt_iff.1 hr
+  exact ⟨out, hp, h6, h7, RefinesL.returned_int (lateLower_refinesL hp hv) hm⟩
 
 end GoFV.Proof.Witness
