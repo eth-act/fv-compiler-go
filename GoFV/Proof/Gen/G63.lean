@@ -59,14 +59,22 @@ theorem vk63_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     obtain ⟨m', h1, h2, h3, h4, h5⟩ := g63_fspill (H := H) F hF hlcE hcf hslot hextra hm
       hinv.core hinv.slots (kread_of_reads hreads) (knext_kStep fun _ => (hs_slot hh).noRegs)
       hj hj' hop hh hso hsz hft hcv hao hvs htemp hs
-    exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩, uokl_f63 (.inl hop) h5 hL⟩
+    exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩,
+      uokl_f63 (.inl hop) (fun h => by rw [hop] at h; cases h) h5 hL⟩
   | freload htemp hop hsz ha hah hso hca hro =>
     obtain ⟨hlcE, -, -, -, -, -, -, -, hslot, -, hF⟩ := hE.env.env.env.env.env
-    obtain ⟨r, hvh, -, -, -⟩ := fresObj_spec hro
+    obtain ⟨r, hvh, hfo, -, -⟩ := fresObj_spec hro
     obtain ⟨m', h1, h2, h3, h4, h5⟩ := g63_freload (H := H) F hF hlcE hcf hslot hm
       hinv.core hinv.slots (knext_kStep fun _ => (hs_reg hvh).noRegs)
       hj hj' hop hsz ha hah hso hca hro hvs htemp hfr hs
-    exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩, uokl_f63 (.inr hop) h5 hL⟩
+    have hfx : ∀ r', regHome? lc v.id = some r' → objX? r' = none := fun r' hr' => by
+      rw [regHome?_eq.2 hvh] at hr'
+      cases hr'
+      simp only [fobjOf?, Option.map_eq_some_iff] at hfo
+      obtain ⟨k, hk, -⟩ := hfo
+      exact objX?_high (objV?_lt hk)
+    exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩,
+      uokl_f63 (.inr hop) (fun _ => hfx) h5 hL⟩
 
 /-- A nil check of G63's kinds is G7's. -/
 theorem vk63_nil {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK63 lc g v kd)

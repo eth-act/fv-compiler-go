@@ -443,7 +443,8 @@ theorem g64L_entryStore {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Li
         have : narrowLd? c.cx.lc v = none := by
           unfold narrowLd?; rcases hops with h | h | h | h <;> rw [h] <;> rfl
         unfold uEntry; rw [this]
-      rw [uStep35_nil hue (ldEntry35_none hl0)
+      rw [uStep35_nil hue
+        (ldEntry35_none hl0 (by rcases hops with h | h | h | h <;> rw [h] <;> nofun))
         (by rcases hops with h | h | h | h <;> simp [pairOp35, h, hfv.aux])
         (by rcases hops with h | h | h | h <;>
           simp [keep34, keep31, keepOp31, keepOp34, h, hfv.aux])
@@ -462,7 +463,8 @@ theorem g64L_entryStore {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Li
     have hue : uEntry c.cx.lc v = none := by
       have : narrowLd? c.cx.lc v = none := by unfold narrowLd?; rw [hop]; rfl
       unfold uEntry; rw [this]
-    rw [uStep35_nil hue (ldEntry35_none (by rw [hop]; rfl)) (by simp [pairOp35, hop])
+    rw [uStep35_nil hue (ldEntry35_none (by rw [hop]; rfl) (by rw [hop]; nofun))
+      (by simp [pairOp35, hop])
       (by simp [keep34, keep31, keepOp31, keepOp34, hop]) (by rw [hop]; nofun)
       (by rw [hop]; nofun)]
     intro e he'

@@ -123,7 +123,8 @@ theorem uStep35_alu36 {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value}
         rcases hop' with h | h | h | h | h | h <;> rw [h] <;> rfl
       rw [hl, hi]
     simp only [uEntry, this]
-  rw [uStep35_other (ldEntry35_none hl) hp
+  rw [uStep35_other (ldEntry35_none hl
+      (by rcases hop' with h | h | h | h | h | h <;> rw [h] <;> nofun)) hp
       (by rcases hop' with h | h | h | h | h | h <;> rw [h] <;> nofun), uStep34_other hk,
     uStep31_other hk31,
     uStepL_other hue hn1 hn2]
