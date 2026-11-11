@@ -1792,6 +1792,43 @@ pair and a narrow stack parameter stay rejected (`Arg width`; 8-byte slots only,
 `ArgOK` is trusted at the slices (STATUS Assumptions); the lift to G62 discharges it from the
 entry condition (§9 *The lift to G62*).
 
+**Slice G63: float spills and reloads** (`GoFV/Gen/Check63.lean`, `checkG63 lc ps bstart g`;
+proven sound, `g63_value`, `g63_initMem`, `g63_term`, `g63_nilPanic`, `g63_boundsPanic`,
+`GoFV/Proof/Gen/G63.lean`). The 32 functions whose whole reason set was `argument v# in register
+#` with `writes register #` spill a `float64` homed in an `F` register (`StoreReg` of `F0`–`F31`)
+and reload it into one (`LoadReg`); G2's spill and reload (`vkind2`) take X registers only
+(`argObj`, `resObj`). Genssa emits them by `storeByType`/`loadByType` of the value's type
+(`cmd/compile/internal/arm64/ssa.go`, `ssa.OpStoreReg`/`ssa.OpLoadReg`): `FMOVD Fs, off(RSP)` and
+`FMOVD off(RSP), Fd` at the slot's frame operand (`AddrAuto`, G2's `slotOp`). `vkind63` is G62's
+`vkind62`, then, on a `StoreReg` or `LoadReg` G62 rejects, `vkind63a`: `fspill63` (no temporary,
+the argument in an `F` register at a float shape of class 64, `fargObj`, the value of a float shape
+of class 64 homed in a slot with a frame operand: `plain .FMOVD (· == regA rs) (slotA · nc off)`)
+or `freload63` (no temporary, the argument of class 64 homed in such a slot, the value in an `F`
+register at a float shape of class 64, `fresObj`: `plain .FMOVD (slotA · nc off) (· == regA
+rd)`); a `StoreReg` whose argument, or a `LoadReg` whose home, is no `F` register keeps G62's
+reason. The slots are `checkFrame`'s 8-byte slots, as G2's. `g63_fspill` (`G63a.lean`) is
+`g2_spill` with the V register: `arg_relV` relates the argument to the V register's low bits
+(`FValRel`), `progStep_fstoreAt` with `ctx_mem_slot` stores its low 64 bits at the slot, which
+relate as a register (`valRel_of_fvalRel`, `SlotRel`); the other slots, the blocks and the frame
+words lie outside the written window, as for G2's spill. `g63_freload` is `g2_reload` with the V
+register: `progStep_floadAt` loads the slot's 8 bytes into its low 64 bits; the slot relates the
+value to them as a register, and `fvalRel_of_valRel` relates it to the V register when it is no
+pointer (a V register relates only integers and `poison`; the value is no boolean at a float
+shape, `retypeL_int_ne_bool`). That is the new run premise `FReloadPre` (as G44's `FLoadPre`, a
+fact of the run, not trusted): a float reload reads, at its float shape, no pointer without an
+integer form. Neither writes an X register, so G35's table keeps the other registers' entries
+(`uokl_f63`); the class table follows `kStep`. `vk63_step` is `vk62_step`'s statement with
+`FReloadPre`; `g63L_*` are `g62L_*` with `checkG63L_spec`, `vkind63_spec` and `vkind63_initMem`.
+Witness `genG63_witness` (`GenG63.lean`, `doprint` of `test/ken_cplx0` on P0', at the mode
+`false`): `checkG62` rejects it and `checkG63` accepts it, and `g63_value` runs `v2 = StoreReg
+v15` (`FMOVD F0, c+0(FP)`) from a state with `1.5` in `F0`, after which the slot of `c`'s first
+piece holds `0x3FF8000000000000` and the machine's word at `SP + 24` is the same. G63 on P0'
+accepts 8,206 functions (88.26%, +31 over G62's 8,175: 31 of the 32; the 32nd, `test/ken_convert`
+`main`, then fails G35's `MOVDnop/MOVDreg: upper bits unknown`), 274,435 values (`--jobs 2`); G62
+and every earlier slice are unchanged, and the rejected set is a subset of G62's. The 11 `float
+spill shape` and 12 `float reload shape` functions spill `float32` values (4-byte slots, which
+`slotOK` rejects). The lift to G63 adds `FReloadPre` to `RunPre`'s per-step premises.
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -1897,6 +1934,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G60 (G59 with G56's float constants, P0') | 7,667 (82.46%) | 249,111 |
 | G61 (G60 with the atomics, P0') | 7,983 (85.86%) | 269,353 |
 | G62 (G61 with the incoming stack arguments, P0') | 8,175 (87.93%) | 271,361 |
+| G63 (G62 with the float spills and reloads, P0') | 8,206 (88.26%) | 274,435 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
@@ -2326,6 +2364,10 @@ slices of §4. Sole blockers: not lowered 248, `LoweredNilCheck` 120, `LoweredGe
   `checkG62L_spec`, `checkG62_spec`; `G62a.lean`: `ArgOK`, `stepLoc_arg`, `kStep_arg`,
   `uStep35_arg`, `g62_arg`; `G62.lean`: `vk62_step`, `vk62_nil`, `vk62_pb`, `g62L_value` …
   `g62L_term`, `g62_value`, `g62_initMem`, `g62_nilPanic`, `g62_boundsPanic`, `g62_term`.
+- `Spec63.lean`: `VK63`, `fspill63_spec`, `freload63_spec`, `vkind63_spec`, `vkind63_initMem`,
+  `checkG33_of_63L`, `checkG63L_spec`, `checkG63_spec`; `G63a.lean`: `FReloadPre`, `g63_fspill`,
+  `g63_freload`, `uokl_f63`; `G63.lean`: `vk63_step`, `vk63_nil`, `vk63_pb`, `g63L_value` …
+  `g63L_term`, `g63_value`, `g63_initMem`, `g63_nilPanic`, `g63_boundsPanic`, `g63_term`.
 
 **Witnesses** (`GoFV/Proof/Witness/`): `GenG1.lean` (`clamp`: `g1_value`, `g1_term`),
 `GenG2.lean` (`testInts`: `g2_value` on a spill, a static call, its memory and a reload, with a

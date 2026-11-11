@@ -492,6 +492,10 @@ GoFV.Proof.Witness.GenG61.g61_facts._native.native_decide.ax_1_1 60a7640c27d993f
 # from the first state of an activation on `code = 7` to the slot of `code` holding 7, and the
 # machine's word at `SP + 24` is 7 (`argFacts`, the caller's stack argument); compiled evaluation.
 GoFV.Proof.Witness.GenG62.g62_facts._native.native_decide.ax_1_1 069f55ec8c356bf1ba2eaf00056628b3ec7d1e908658a6ab90ccd10898e250a4
+# genG63_witness (GoFV/Proof/Witness/GenG63.lean, #553): on P0', `checkG63` accepts `doprint` of
+# `test/ken_cplx0` and `checkG62` rejects it; `runLoc` runs `v2` (`StoreReg` of `F0`, the float
+# spill `FMOVD F0, c+0(FP)`) from `1.5` in `F0`; compiled evaluation.
+GoFV.Proof.Witness.GenG63.g63_facts._native.native_decide.ax_1_1 28a78bc746829b11ada0e720b6f01cd0310e18533a1adc050f248790ee21cb2f
 # objWhole_ret_witness in G48's mode (GoFV/Proof/Witness/ObjWholeS.lean, #553): `ObjWhole`'s facts
 # with the activation at `outargs 0`'s fixed base; compiled evaluation.
 GoFV.Proof.Witness.ObjWholeS.obj_facts._native.native_decide.ax_1_1 92778712e9ede9f127bc66e5b18b511f38318121b1576c48abf79f1866f0c9db
