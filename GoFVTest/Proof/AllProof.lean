@@ -314,7 +314,7 @@ import GoFV.Proof.Obj.Entry49
 import GoFV.Proof.Obj.EntrySkip
 import GoFV.Proof.Obj.Ex
 import GoFV.Proof.Obj.Frame
-import GoFV.Proof.Obj.G64
+import GoFV.Proof.Obj.G66
 import GoFV.Proof.Obj.G7
 import GoFV.Proof.Obj.Insn
 import GoFV.Proof.Obj.Link
