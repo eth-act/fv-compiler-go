@@ -699,7 +699,8 @@ evaluation).
 the same `Store`s over the `Zero`'s memory, `:1638`/`:1721`/`:1730` replace `SelectN [0]` of a
 call to `runtime.memclrNoHeapPointers`/`runtime.memmove` (its only use) by `Zero`/`Move`, and
 `:1743` replaces a `Move` from a read-only symbol whose bytes are zero (`symIsROZero`) by a
-`Zero`. Each
+`Zero`, and `:1740`/`:1742` a `Move` from a source a `Zero` (under a `VarDef`) just cleared.
+Each
 rewrites a *segment* of a block: the rule's value `x` (the anchor) is redefined in place, the
 values it clobbers (`D`: the inner `Store`s and the `Zero`, or the call) are gone, and fresh
 values (`N`: the new inner `Store`s) are put in. Only the anchor's memory agrees with the
@@ -722,7 +723,10 @@ relates its input to the result by `segRel`:
   `retype` at a slice shape checks only `Val.sliceOK`, which does not read the pointer,
   `AtomSim.opVal_sliceComp`; `copy(a[i:j], …)` with constant bounds; `constSize` 6 deep;
   `termConst_reg`: an available term's register is its value; witness
-  `callSeg_witness_sliceLen`), `g`'s `Zero`/`Move` on the call's arguments) or `roSeg?` (in `f` `Move [n] dst src mem`
+  `callSeg_witness_sliceLen`), `g`'s `Zero`/`Move` on the call's arguments) or `zeroSeg?`
+  (`:1740`, `:1742`, issue #69: in `f` `Move [n] dst p m` whose memory is, up to copies `mc`, (a
+  `VarDef` of) a `Zero [n] p' _` up to copies, `p'` and `p` `samePtr`, `0 ≤ n`; in `g` `Zero [n]
+  dst mc`; nothing dropped or fresh; tried before `roSeg?`) or `roSeg?` (in `f` `Move [n] dst src mem`
   with `src` an `Addr` of a symbol, in `g` `Zero [n] dst mem`; nothing dropped or fresh) or
   `moveSeg?` (`:1978`/`:1992`/`:2011`/`:2035` and the `VarDef` forms `:2049`/`:2064`/`:2084`/`:2109`,
   issue #69: in `f` `Move [n] dst p m` whose memory is, up to copies, (a `VarDef` of) `k` `Store`s
@@ -746,7 +750,8 @@ relates its input to the result by `segRel`:
   `Sem.rodataAlloc` of their bytes `Sem.rodataBytes?`, and type descriptors (`typeinfo` set,
   not `SRODATA` data, as `Sem.globalImage`: `Sem.typeDescAlloc`, the header words from the
   `rtype` line or the type table; issue #69, for `newobject`); the zero `..stmp_N` symbols are
-  exported with an empty `data`): the symbol of each read-only segment is one of `ro` whose
+  exported with an empty `data`): the symbol of each read-only segment (a `Move` of `f` that is a
+  `Zero` of `g` and no zero segment) is one of `ro` whose
   bytes are all zero, and `f` passes `WBCheck.memTyOK` (values of memory shape are memory ops;
   moved to `GoFV/Opt/MemTy.lean`).
 
@@ -770,7 +775,10 @@ order and refine the source's anchor: `chainSeg_sound` (`SegChain.lean`, with
 memory), `callSeg_sound (hE : env.MemOps)` (`SegCallSeg.lean`, with
 `SegCall.callOp_memclr`/`callOp_memmove`: the call's memory is refined by the plain write) and
 `roSeg_sound` (`SegRo.lean`, with `Q := RoQ tabs ro f`, `RoMem ro` when `f` passes `memTyOK`: the
-`Move` read the symbol's zero bytes, `read_zeros`, which the `Zero` writes) and `moveSeg_sound`
+`Move` read the symbol's zero bytes, `read_zeros`, which the `Zero` writes), `zeroSeg_sound`
+(`SegMove.lean`: the `Zero`'s memory reads zeros at `P`, `read_write_self` with `samePtr_reg`; the
+`Move`'s memory, that one or with a frame block poisoned, reads bytes they refine, and the
+target's `Zero` writes the zeros at `Dst` over the same memory; witness `zeroSeg_witness`) and `moveSeg_sound`
 (`SegMove.lean`: the stores' memory has at `P` the zeros with the stores' bytes put in,
 `read_write_putBytes`; the `Move`'s memory, that one or with a frame block poisoned, reads bytes
 they refine; the target's `Zero` and stores write those bytes at `Dst`, `writes_putBytes`, inside
@@ -792,7 +800,7 @@ theorem seg_refines (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
 `LayerChain.seg` and `chain_refines` take it into `checkedRewrite_refines` (statement
 unchanged; `Env.MemOps` and `RoImage (roSyms tabs f)` are conjuncts of `RwPre`). `checkedTiers`
 tries a table without `segs` first when the full table is rejected. Proven: `:1833`, `:1844`,
-`:1857`, `:1638`, `:1721`, `:1730`, `:1743`; witness `GoFV.Proof.Witness.zp_checkedRewrite`
+`:1857`, `:1638`, `:1721`, `:1730`, `:1740`, `:1742`, `:1743`; witness `GoFV.Proof.Witness.zp_checkedRewrite`
 (`*p = [2]int{}; p[0] = x; p[1] = x` with `{:1833}`: the `Zero` and the first `Store` dropped, the
 anchor stores over a fresh `Store` on the input memory; kernel evaluation), `callSeg_witness`
 (`callSeg?` on a `memclr` call), `callSeg_witness_str` (its size `len("0123456789abcdef") * 1`),
@@ -1283,7 +1291,7 @@ needs a later phase of the semantics.
 | `generic` | Lsh | 67 | 21 | 0 | 0 | 88 |
 | `generic` | MemEq | 2 | 9 | 0 | 0 | 11 |
 | `generic` | Mod | 29 | 0 | 0 | 0 | 29 |
-| `generic` | Move | 11 | 0 | 0 | 25 | 25 |
+| `generic` | Move | 13 | 0 | 0 | 25 | 25 |
 | `generic` | Mul | 45 | 8 | 0 | 8 | 60 |
 | `generic` | Neg | 24 | 0 | 0 | 2 | 26 |
 | `generic` | Neq | 54 | 0 | 0 | 2 | 54 |
@@ -1323,7 +1331,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 60 | 4 | 4 | 0 | 68 |
 | `generic` | Zero | 2 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1421 | 188 | 31 | 258 | 1762 |
+| all | | 1423 | 188 | 31 | 258 | 1762 |
 
 <!-- END coverage -->
 
