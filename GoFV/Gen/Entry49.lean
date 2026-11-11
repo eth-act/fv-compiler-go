@@ -86,6 +86,18 @@ def entryLen (lc : LocCtx) : Nat :=
       (lc.ctx.f.value? id).any fun v => entryOp v.op || v.op == .Arg).length
   | none => 0
 
+/-- A value among the first `k` of the entry block writes the closure context register `R26`
+(`ctxReg`; its home has the register): the entry state's `R26` may then hold a value, which the
+morestack path must keep, so the morestack tail must call `runtime.morestack` (a function with
+`NEEDCTXT`), not `runtime.morestack_noctxt`, which zeroes `R26` (`MorestackOK`'s context). -/
+def ctxtBefore (lc : LocCtx) (k : Nat) : Bool :=
+  match lc.ctx.f.block? lc.ctx.f.entry with
+  | some blk =>
+    (blk.values.toList.take k).any fun id =>
+      (lc.ctx.f.value? id).any fun v =>
+        (lc.home v.id).any fun h => h.regList.contains (some ctxReg)
+  | none => false
+
 /-- Why `entryStoresOK lc g k` fails: the first pending window with a byte no entry store
 writes. -/
 def entryStoresWhy (lc : LocCtx) (g : G2In) (k : Nat) : String :=

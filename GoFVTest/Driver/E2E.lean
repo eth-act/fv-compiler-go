@@ -35,7 +35,10 @@ a function after `trim` and its tables:
   (with the object's morestack spills) on `liveCtx` at `entryLen`, and `retRegsOK` on `liveCtx`
   and its class tables;
 - `Flushplist` (`GoFV.Asm.flush`) on the file with genssa's Progs (`GenP0.progFile`) and
-  `checkObj` on P0', their register-argument spills and the port's text, relocations and Progs.
+  `checkObj` on P0', their register-argument spills and the port's text, relocations and Progs;
+  when an entry value before `entryLen` writes `R26` (`ctxtBefore`), the morestack tail must call
+  `runtime.morestack`, which keeps it (`morestackCtxtWhy`: the context `verified_mach`'s
+  `MorestackOK` premise takes, `ctxtBefore lc k`).
 
 Inputs taken from the stock `.prog` file: only its input view (`Back.inputView`, what the
 driver input file holds, no stock result): the definitions (names, types, symbols), the
@@ -56,7 +59,26 @@ open GoFV.SSA.Sem (LocCtx)
 open GoFV.Asm GoFV.Asm.CheckObj
 open GoFV.Gen.Check (checkG64 liveCtx G2In retRegsOK ownOutRegs entryLen entryStoresOK memTyL
   memTyLWhy accessedVars varOp needs48
-  entryStoresWhy pendWins argsOK argsBefore noArg)
+  entryStoresWhy pendWins argsOK argsBefore noArg ctxtBefore)
+
+/-- **The tail's context** (the checked fact behind `MorestackOK`'s context, #708): when an entry
+value before `k` writes `R26` (`ctxtBefore lc k`), the morestack tail of `checkObj`'s table must
+call `runtime.morestack` (symbol table `syms`), which keeps `R26` (`runtime/asm_arm64.s:449`,
+`:269`), not `runtime.morestack_noctxt`, which zeroes it (`:493-502`); the assembler calls the
+former in a function with `NEEDCTXT` (`cmd/internal/obj/arm64/obj7.go:283-289`). `none`: holds. -/
+def morestackCtxtWhy (lc : LocCtx) (k : Nat) (syms : Array (GoStr × Nat)) (o : ObjIn)
+    (tab : Tab) : Option String :=
+  match tab.check with
+  | some (_, tail, _) =>
+    if !ctxtBefore lc k then none else
+    match tailCall o.text o.relocs.toList tail with
+    | some (n, _) =>
+      let name := (syms[n]?.map (·.1.toStringLossy)).getD "?"
+      if name == "runtime.morestack" then none
+      else some s!"tail: R26 written before the entry's end, but the tail calls {name}"
+    | none => some "tail: no call"
+  | none => none
+
 open GoFVTest.Driver.Back (genP0 GenP0 inputView)
 open GoFVTest.GenCheck (slotOpOf classOf)
 
@@ -320,7 +342,7 @@ def back (e : ExportFile) (pin : ProgFile)
     else none).eraseDups
   let o : ObjIn := { text := fo.st.textP, relocs := fo.st.textR, progs := fo.progs }
   let obj := match checkObj psF spills o with
-    | .ok _ => none
+    | .ok t => morestackCtxtWhy llc (entryLen llc) fo.st.syms o t
     | .error m => some m
   return { gen, entry, args, pend, ret, obj, frame := (g.fr.stksize, g.fr.stkptrsize),
            n48 := needs48 llc, locals := ops.length, vac }

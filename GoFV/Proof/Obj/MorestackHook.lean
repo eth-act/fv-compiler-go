@@ -9,11 +9,12 @@ variable [GoFV.SSA.Sem.Addrs]
 
 `MorestackOK` (`GoFV/Proof/Obj/Morestack.lean`) is the trusted contract of `runtime.morestack`
 that the prologue's morestack path (`more_loop`, `obj_entry`) rests on. `morestackHook`
-(`GoFV/SSA/Sem/Hooks.lean`), the hook `RtInfo.hooks` runs at `runtime.morestack` and
-`runtime.morestack_noctxt`, meets it for a stack check reading `stackguard0` (`16(g)`) when the
-stack can grow: `growBy > 0` and the floor `stack.lo + StackGuard` (`0(g)`) below the check's limit.
-The guard it writes (`MState.withWrites`, through a hash map of the 8 bytes) is lower: `growBy`
-lower, or the floor, which the failing check puts below it.
+(`GoFV/SSA/Sem/Hooks.lean`), the hook `RtInfo.hooks` runs at `runtime.morestack` (keeping `R26`)
+and `runtime.morestack_noctxt` (zeroing it), meets it for a stack check reading `stackguard0`
+(`16(g)`) when the stack can grow: `growBy > 0` and the floor `stack.lo + StackGuard` (`0(g)`)
+below the check's limit; at `runtime.morestack` with or without a context, at
+`runtime.morestack_noctxt` without. The guard it writes (`MState.withWrites`, through a hash map
+of the 8 bytes) is lower: `growBy` lower, or the floor, which the failing check puts below it.
 -/
 
 namespace GoFV.Proof.Obj
@@ -71,36 +72,36 @@ private theorem mh_read {A v : BitVec 64} {M : Memory} :
   rw [show 2 ^ (8 * j) = 256 ^ j by rw [Nat.pow_mul], show 2 ^ 8 = 256 from rfl]
 
 /-- What `morestackHook` returns when the stack can grow. -/
-private theorem mh_ret {R : RtInfo} {s : MState}
+private theorem mh_ret {R : RtInfo} {ctxt : Bool} {s : MState}
     (hgrow : ¬ (s.word (s.x 28 + 16)).toNat ≤ (s.word (s.x 28) + BitVec.ofNat 64 stackGuard).toNat) :
-    ∃ st, morestackHook R s = .ret st (mhBytes (s.x 28 + 16)
+    ∃ st, morestackHook R ctxt s = .ret st (mhBytes (s.x 28 + 16)
         (if (s.word (s.x 28 + 16)).toNat ≥ (s.word (s.x 28) + BitVec.ofNat 64 stackGuard).toNat +
             R.growBy then s.word (s.x 28 + 16) - BitVec.ofNat 64 R.growBy
           else s.word (s.x 28) + BitVec.ofNat 64 stackGuard)).toArray ∧
-      st.pc = s.x 30 ∧ st.sp = s.sp ∧ st.x 26 = s.x 26 ∧ st.x 28 = s.x 28 ∧ st.x 29 = s.x 29 ∧
-      st.x 30 = s.x 3 ∧ st.mem = s.mem := by
+      st.pc = s.x 30 ∧ st.sp = s.sp ∧ (ctxt = true → st.x 26 = s.x 26) ∧ st.x 28 = s.x 28 ∧
+      st.x 29 = s.x 29 ∧ st.x 30 = s.x 3 ∧ st.mem = s.mem := by
   unfold morestackHook
   simp only [hgrow, ↓reduceIte]
   refine ⟨{ clobber s with
-    x := fun i => if i = 30 then s.x 3 else if (i = 26 ∨ i = 28 ∨ i = 29) then s.x i
-      else (clobber s).x i
-    pc := s.x 30 }, ?_, rfl, rfl, by simp, by simp, by simp, by simp, rfl⟩
+    x := fun i => if i = 30 then s.x 3 else if i = 26 then (if ctxt then s.x 26 else 0)
+      else if (i = 28 ∨ i = 29) then s.x i else (clobber s).x i
+    pc := s.x 30 }, ?_, rfl, rfl, fun h => by simp [h], by simp, by simp, by simp, rfl⟩
   congr 1
   simp only [mhBytes, List.map_toArray]
 
-/-- **`morestackHook` meets `MorestackOK`** at the address of `runtime.morestack` or
-`runtime.morestack_noctxt` (`RtInfo.hooks`), for a stack check reading `stackguard0` (`16(g)`)
-of a function entered in `s0`, when the stack can grow (`growBy > 0`, the floor
-`stack.lo + StackGuard` below the check's limit). -/
+/-- **`morestackHook` meets `MorestackOK`** at the address of `runtime.morestack`, or of
+`runtime.morestack_noctxt` without a context (`RtInfo.hooks`), for a stack check reading
+`stackguard0` (`16(g)`) of a function entered in `s0`, when the stack can grow (`growBy > 0`, the
+floor `stack.lo + StackGuard` below the check's limit). -/
 theorem morestackHook_ok {R : RtInfo} {code : Code} {retM tgt : BitVec 64} {az : Int}
-    {s0 : MState}
+    {ctxt : Bool} {s0 : MState}
     (hname : R.entry? tgt = some "runtime.morestack" ∨
-      R.entry? tgt = some "runtime.morestack_noctxt")
+      (R.entry? tgt = some "runtime.morestack_noctxt" ∧ ctxt = false))
     (hcode : code tgt = none) (hne : tgt ≠ retM) (hgrow : 0 < R.growBy)
     (hg : (s0.x 28).toNat + 32 ≤ 2 ^ 64)
     (hfloor : (s0.word (s0.x 28)).toNat + stackGuard <
       (if az ≤ 128 then s0.sp else s0.sp + BitVec.ofInt 64 (-(az - 128))).toNat) :
-    MorestackOK R.hooks code retM tgt az 16 s0 := by
+    MorestackOK R.hooks code retM tgt az 16 ctxt s0 := by
   refine ⟨hcode, hne, fun s hpc hsp h28 hlo hfail => ?_⟩
   have hg' : (s.x 28).toNat + 32 ≤ 2 ^ 64 := by rw [h28]; exact hg
   have hA : (s.x 28 + 16).toNat = (s.x 28).toNat + 16 := by
@@ -126,13 +127,19 @@ theorem morestackHook_ok {R : RtInfo} {code : Code} {retM tgt : BitVec 64} {az :
       (s.word (s.x 28) + BitVec.ofNat 64 stackGuard).toNat := by
     rw [hguard, hfl]
     omega
-  obtain ⟨st, hmh, hpc', hsp', h26, h28', h29, h30, hmem⟩ := mh_ret (R := R) hng
+  -- the hook's context: `true` at `runtime.morestack`, `false` at `runtime.morestack_noctxt`
+  obtain ⟨b, hb, hent⟩ : ∃ b : Bool, (ctxt = true → b = true) ∧ R.entry? s.pc = some
+      (if b then "runtime.morestack" else "runtime.morestack_noctxt") := by
+    rcases hname with h | ⟨h, rfl⟩
+    · exact ⟨true, fun _ => rfl, by rw [hpc, h]; rfl⟩
+    · exact ⟨false, fun h => h, by rw [hpc, h]; rfl⟩
+  obtain ⟨st, hmh, hpc', hsp', h26, h28', h29, h30, hmem⟩ := mh_ret (R := R) (ctxt := b) hng
   have hcall : R.hooks.call s = some (.ret (st.withWrites (mhBytes (s.x 28 + 16)
       (if (s.word (s.x 28 + 16)).toNat ≥ (s.word (s.x 28) + BitVec.ofNat 64 stackGuard).toNat +
           R.growBy then s.word (s.x 28 + 16) - BitVec.ofNat 64 R.growBy
         else s.word (s.x 28) + BitVec.ofNat 64 stackGuard)).toArray)) := by
     show (rtHook R s).map HookRes.out = _
-    rcases hname with h | h <;> simp [rtHook, hpc, h, rtHookNamed, hmh, HookRes.out]
+    cases b <;> simp [rtHook, hent, rtHookNamed, hmh, HookRes.out]
   have hne8 : (mhBytes (s.x 28 + 16) (if (s.word (s.x 28 + 16)).toNat ≥
       (s.word (s.x 28) + BitVec.ofNat 64 stackGuard).toNat + R.growBy then
         s.word (s.x 28 + 16) - BitVec.ofNat 64 R.growBy
@@ -142,7 +149,7 @@ theorem morestackHook_ok {R : RtInfo} {code : Code} {retM tgt : BitVec 64} {az :
   all_goals simp only [MState.withWrites, hne8, Bool.false_eq_true, ↓reduceIte]
   · exact hpc'
   · exact hsp'
-  · exact h26
+  · exact fun h => h26 (hb h)
   · exact h28'
   · exact h29
   · exact h30

@@ -15,7 +15,7 @@ the machine:
 | Entry point | Hook |
 | --- | --- |
 | any entry point with a Phase 1 contract (`Env.runtime`: allocation, `memmove`, `memequal`, `concatstring*`, `convT*`, `growslice`, `panicdivide`, `panicshift`, `gopanic`, …) | `liftContract`: the Go-typed arguments read from their ABI registers and stack slots (`ABIParam.regs`: `abi.RegIndex`, integer `R0`–`R15` then floating `F0`–`F15`; stack slots at `SP + offset`, the offsets including arm64's fixed frame word), the memory pulled back through `ι` from the blocks the arguments reach (`Layout.pull`), the contract run, its memory pushed forward (`Layout.pushWrites`, new heap blocks recorded in the allocator table), every register a call clobbers (`R0`–`R17`, `R19`–`R27`, `V0`–`V31`) and the flags overwritten with garbage (`clobber`), the results written to their ABI locations, and the PC set to `X30`; a contract that panics is `panicked` with the contract's `Panic` |
-| `runtime.morestack`, `runtime.morestack_noctxt` (prologue slow path) | `newstack` grows the stack in place (`δ = 0`: nothing moves): `stackguard0` (`16(g)`) lowered by `growBy` bytes, no lower than `stack.lo` (`0(g)`) + `StackGuard`; `gogo` resumes after the `BL` with `X30` = the `R3` the prologue saved, `SP`, `R26`, `R28`, `R29` as at the call; every other register and the flags garbage. Stuck when the stack cannot grow |
+| `runtime.morestack`, `runtime.morestack_noctxt` (prologue slow path) | `newstack` grows the stack in place (`δ = 0`: nothing moves): `stackguard0` (`16(g)`) lowered by `growBy` bytes, no lower than `stack.lo` (`0(g)`) + `StackGuard`; `gogo` resumes after the `BL` with `X30` = the `R3` the prologue saved, `SP`, `R28`, `R29` as at the call, and `R26` as at the call at `runtime.morestack` (saved in `g.sched.ctxt`, `runtime/asm_arm64.s:449`; restored by `gogo`, `:269`) but `0` at `runtime.morestack_noctxt` (`MOVW $0, R26; B runtime·morestack`, `:493-502`); every other register and the flags garbage. Stuck when the stack cannot grow |
 | `runtime.gcWriteBarrier<n>` | Phase 1's `WbPre` buffer: `R25` = the address of `8n` buffer bytes (`Layout`'s `wbuf`), `R27` and the flags garbage, other registers preserved |
 | `runtime.panicBounds` | `panicBounds64` (`runtime/panic.go:211-236`): the caller's `PCDATA_PanicBounds` value at `X30 - 1` (`pcvalue`), `abi.BoundsDecode`, `x`/`y` from `R0`–`R15` or constants: `panicked (.bounds kind x y)` with `kind` the `ssa.BoundsKind` (`2·code`, `+1` when unsigned; 16 for `BoundsConvert`) (`boundsPanic`) |
 
@@ -183,8 +183,9 @@ def fixedABI : String → Option (List AbiSlot × List AbiSlot)
     some ([⟨.ptr none, [0], 0⟩, ⟨.ptr none, [1], 0⟩, ⟨.int .w64, [2], 0⟩], [⟨.bool, [0], 0⟩])
   | _ => none
 
-/-- `runtime.morestack`: grow the stack in place and resume after the call (module comment). -/
-def morestackHook (R : RtInfo) (s : MState) : HookRes :=
+/-- `runtime.morestack` (`ctxt`) or `runtime.morestack_noctxt` (`ctxt = false`, which zeroes
+`R26` first): grow the stack in place and resume after the call (module comment). -/
+def morestackHook (R : RtInfo) (ctxt : Bool) (s : MState) : HookRes :=
   let g := s.x 28
   let lo := s.word g
   let guard := s.word (g + 16)
@@ -196,8 +197,9 @@ def morestackHook (R : RtInfo) (s : MState) : HookRes :=
     let ws := (List.range 8).toArray.map fun i =>
       (g + 16 + BitVec.ofNat 64 i, guard'.extractLsb' (8 * i) 8)
     let c := clobber s
-    let keep := fun (i : Reg) => i = 26 ∨ i = 28 ∨ i = 29
-    let x := fun i => if i = 30 then s.x 3 else if keep i then s.x i else c.x i
+    let keep := fun (i : Reg) => i = 28 ∨ i = 29
+    let x := fun i => if i = 30 then s.x 3 else if i = 26 then (if ctxt then s.x 26 else 0)
+      else if keep i then s.x i else c.x i
     .ret { c with x, pc := s.x 30 } ws
 
 /-- `runtime.gcWriteBarrier<n>`: the buffer in `R25`. -/
@@ -267,7 +269,8 @@ def panicBoundsHook (R : RtInfo) (s : MState) : HookRes :=
 
 /-- The hook of runtime entry point `name` called from the state `s`. -/
 def rtHookNamed (R : RtInfo) (name : String) (s : MState) : HookRes :=
-  if name == "runtime.morestack" || name == "runtime.morestack_noctxt" then morestackHook R s
+  if name == "runtime.morestack" then morestackHook R true s
+  else if name == "runtime.morestack_noctxt" then morestackHook R false s
   else if name.startsWith "runtime.gcWriteBarrier" then wbHook R s
   else if name == "runtime.panicBounds" then panicBoundsHook R s
   else

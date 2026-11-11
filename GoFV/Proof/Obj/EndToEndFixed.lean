@@ -62,13 +62,14 @@ theorem verified_mach_fixed
     (hrok : retRegsOK lc kt = true)
     (hME : MachEntry code base room s0) (hroom : otab.autosize + 8 ≤ room)
     (hg : (s0.x 28).toNat + 32 ≤ 2 ^ 64)
+    {sI : LocState} {blkE : Block} {k : Nat}
     (hms : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) → ∀ n add,
       tailCall o.text o.relocs.toList tail = some (n, add) →
-      MorestackOK H code (s0.x 30) (L.sym n + BitVec.ofInt 64 add) otab.autosize gOff s0)
+      MorestackOK H code (s0.x 30) (L.sym n + BitVec.ofInt 64 add) otab.autosize gOff
+        (ctxtBefore lc k) s0)
     (hsep : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) → TailSep spills.toList s0)
     (hE : G49Env lc g L ps (endP L.text ps.toList) tab E0)
     (hEE : EntryEnv E0 L ps.toList otab.autosize s0)
-    {sI : LocState} {blkE : Block} {k : Nat}
     (hbE : lc.ctx.f.block? lc.ctx.f.entry = some blkE)
     (hbm : lc.ctx.f.entry ∈ lc.ctx.f.blocks.toList) (hk : k ≤ blkE.values.size)
     (hpre : enterListLoc e lc (locInit e lc args mem) (blkE.values.toList.take k) = .ok sI)
@@ -122,13 +123,14 @@ theorem verified_mach_S_fixed
     (hrok : retRegsOK lc kt = true)
     (hME : MachEntry code base room s0) (hroom : otab.autosize + 8 ≤ room)
     (hg : (s0.x 28).toNat + 32 ≤ 2 ^ 64)
+    {sI : LocState} {blkE : Block} {k : Nat}
     (hms : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) → ∀ n add,
       tailCall o.text o.relocs.toList tail = some (n, add) →
-      MorestackOK H code (s0.x 30) (L.sym n + BitVec.ofInt 64 add) otab.autosize gOff s0)
+      MorestackOK H code (s0.x 30) (L.sym n + BitVec.ofInt 64 add) otab.autosize gOff
+        (ctxtBefore lc k) s0)
     (hsep : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) → TailSep spills.toList s0)
     (hE : G49Env lc g L ps (endP L.text ps.toList) tab E0)
     (hEE : EntryEnv E0 L ps.toList otab.autosize s0)
-    {sI : LocState} {blkE : Block} {k : Nat}
     (hbE : lc.ctx.f.block? lc.ctx.f.entry = some blkE)
     (hbm : lc.ctx.f.entry ∈ lc.ctx.f.blocks.toList) (hk : k ≤ blkE.values.size)
     (hpre : enterListLoc e lc (locInit e lc args mem) (blkE.values.toList.take k) = .ok sI)

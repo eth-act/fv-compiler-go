@@ -471,7 +471,8 @@ the allocator table; every caller-saved register, `R27` and the flags overwritte
 the results written to their ABI locations; a panicking contract is `panicked` with its
 `Panic`); `morestack`/`morestack_noctxt` grows the stack in place (`δ = 0`: `stackguard0`
 lowered, no lower than `stack.lo + StackGuard`) and resumes after the call with `X30` = the
-saved `R3`; `gcWriteBarrier<n>` returns the buffer in `R25`; `panicBounds` decodes the caller's
+saved `R3`, `R26` kept by `morestack` and zeroed by `morestack_noctxt` (`runtime/asm_arm64.s:449`,
+`:269`, `:493-502`); `gcWriteBarrier<n>` returns the buffer in `R25`; `panicBounds` decodes the caller's
 `PCDATA_PanicBounds` (`pcvalue` at `X30 − 1`, `abi.BoundsDecode`) and panics with
 `.bounds kind x y`. Not modelled (a call is `stuck`): the defer machinery (`deferproc*`,
 `deferreturn`, `gorecover`), runtime entry points called through function values, asynchronous

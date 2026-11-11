@@ -1,4 +1,6 @@
 import GoFV.Proof.Witness.ObjFrame
+import GoFV.Proof.Obj.Whole
+import GoFV.Proof.Witness.GenG11
 
 open scoped GoFV.SSA.Sem.Fixed
 
@@ -28,6 +30,13 @@ links it as `ObjFrame` does; the tail calls symbol 6, which has no code. From th
 clears the guard and clobbers every vector register, `obj_entry` runs the morestack path and the
 prologue to the body, and `MoreStep`'s reload of `V0` (`vreloadVal 8`) gives back `π`
 (`objMoreF_witness`). `fvalRel_vreloadVal_witness` instantiates `fvalRel_vreloadVal`.
+
+The tail's context (#708): `math.Tan` has no `NEEDCTXT`, so its tail calls
+`runtime.morestack_noctxt`, which zeroes `R26`; `msHookV_ok` gives `MorestackOK` without a context.
+`ctxtBefore_witness` instantiates `ctxtBefore_of_live26_from` on `adder.func1` (`GenG11`): from
+the closure call's state `GenG11.s0` (`R26` `poison`), the entry value `v7 = LoweredGetClosurePtr`,
+homed in `R26`, puts the context there (`live26`), and `ctxtBefore` holds at 1 (compiled
+evaluation, `r26_facts`).
 -/
 
 namespace GoFV.Proof.Witness.ObjMoreF
@@ -300,7 +309,7 @@ def msHookV : Hooks := ⟨fun s => some (.ret
 /-- `msHookV` meets the contract of `runtime.morestack` for `math.Tan` entered with
 `g = 0x9000` and `SP = 0x7fff0000`. -/
 theorem msHookV_ok {s : MState} (hg : s.x 28 = 0x9000) (hsp : s.sp = sp0) :
-    MorestackOK msHookV code retM (sym 6 + BitVec.ofInt 64 0) 32 16 s := by
+    MorestackOK msHookV code retM (sym 6 + BitVec.ofInt 64 0) 32 16 false s := by
   obtain ⟨-, -, -, -, -, -, -, -, hcode, -⟩ := facts
   refine ⟨hcode, by decide, fun t hpc hsp' h28 _ hfail => ⟨_, rfl, rfl, rfl, by simp, by simp,
     by simp, by simp, fun a ha => by show (if _ then _ else _) = _; simp only [ha, ↓reduceIte],
@@ -342,7 +351,7 @@ body at offset 24 with the frame of `BodyEntry 32`; `F0` (`V0`) holds `π` again
 passing stack check (`MoreStep.vregs`) and at the body. -/
 theorem objMoreF_witness :
     ¬ CheckPasses 32 16 s0m ∧ tailPlan spills.toList = .ok [⟨0, 8, 8, false, true⟩] ∧
-      ∃ s' s1, MoreRel tab.check spills.toList s0m s' ∧ MStar msHookV code retM s0m s1 ∧
+      ∃ s' s1, MoreRel false tab.check spills.toList s0m s' ∧ MStar msHookV code retM s0m s1 ∧
         BodyEntry 32 s0m s1 ∧ s1.pc = base + BitVec.ofNat 64 24 ∧ s'.v 0 = pi64 ∧
         s1.v 0 = pi64 := by
   obtain ⟨hc, haz, hchk, h0, hl, hsz, hret, htc, -, hpl⟩ := facts
@@ -383,5 +392,41 @@ theorem fvalRel_vreloadVal_witness :
     FValRel (.int .w64 0x400921fb54442d18)
       (vreloadVal 8 (0xdead0000000000000000000000000000 ||| pi64)) :=
   fvalRel_vreloadVal (by decide) (by unfold FValRel; decide) (by unfold ValFits; decide)
+
+/-! ## The tail's context: `R26` at the entry (`ctxtBefore_of_live26_from`) -/
+
+open GoFV.SSA.Sem in
+open GoFV.Gen.Check (ctxtBefore) in
+/-- What compiled evaluation checks on `adder.func1`: its entry block is `b1`, `GenG11.s0`'s
+`R26` holds no value, the entry value `v7` steps from it to a state whose `R26` holds the
+context, and `ctxtBefore` holds at 1. -/
+def r26Facts : Bool :=
+  GenG11.lc.ctx.f.entry == 1 && !live26 GenG11.s0 && ctxtBefore GenG11.lc 1 &&
+    match GoFV.Proof.enterListLoc GenG2.env GenG11.lc GenG11.s0
+        (GenG11.blk1.values.toList.take 1) with
+    | .ok sI => live26 sI
+    | _ => false
+
+theorem r26_facts : r26Facts = true := by
+  native_decide
+
+open GoFV.SSA.Sem in
+open GoFV.Gen.Check (ctxtBefore) in
+/-- **`ctxtBefore_of_live26_from` non-vacuously**: on `adder.func1` (`GenG11`), from the closure
+call's state `s0` (`R26` `poison`), the first entry value `v7 = LoweredGetClosurePtr` puts the
+context in `R26`, and `ctxtBefore` holds at 1, as the lemma concludes. -/
+theorem ctxtBefore_witness : live26 GenG11.s0 = false ∧ ∃ sI,
+    GoFV.Proof.enterListLoc GenG2.env GenG11.lc GenG11.s0 (GenG11.blk1.values.toList.take 1) =
+      .ok sI ∧ live26 sI = true ∧ ctxtBefore GenG11.lc 1 = true := by
+  have hf := r26_facts
+  simp only [r26Facts, Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at hf
+  obtain ⟨⟨⟨he, h0⟩, -⟩, hr⟩ := hf
+  obtain ⟨-, -, -, -, hb1, -⟩ := GenG11.facts
+  have hb : GenG11.lc.ctx.f.block? GenG11.lc.ctx.f.entry = some GenG11.blk1 := by
+    rw [he]; exact hb1
+  split at hr
+  · rename_i sI hsI
+    exact ⟨h0, sI, hsI, hr, ctxtBefore_of_live26_from h0 hb hsI hr⟩
+  · cases hr
 
 end GoFV.Proof.Witness.ObjMoreF

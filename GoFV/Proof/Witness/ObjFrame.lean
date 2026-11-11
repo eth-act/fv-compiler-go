@@ -173,7 +173,7 @@ def msHook : Hooks := ⟨fun s => some (.ret
 /-- `msHook` meets the contract of `runtime.morestack` for `testInts` entered with `g = 0x9000`
 and `SP = 0x7fff0000`. -/
 theorem msHook_ok {s : MState} (hg : s.x 28 = 0x9000) (hsp : s.sp = sp0) :
-    MorestackOK msHook code retM (sym 9 + BitVec.ofInt 64 0) 32 16 s := by
+    MorestackOK msHook code retM (sym 9 + BitVec.ofInt 64 0) 32 16 false s := by
   obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, hcode, -⟩ := facts
   refine ⟨hcode, by decide, fun t hpc hsp' h28 _ hfail => ⟨_, rfl, rfl, rfl, by simp, by simp,
     by simp, by simp, fun a ha => by show (if _ then _ else _) = _; simp only [ha, ↓reduceIte],
@@ -214,7 +214,7 @@ theorem tailSep {s : MState} (hg : s.x 28 = 0x9000) (hsp : s.sp = sp0) : TailSep
 body at offset 24 with the frame of `BodyEntry 32` over `s`. -/
 theorem entry_of {s : MState} (hE : MachEntry code base 4096 s) (hg : s.x 28 = 0x9000)
     (hsp : s.sp = sp0) :
-    ∃ s' s1, MoreRel tab.check spills.toList s s' ∧ MStar msHook code retM s s1 ∧
+    ∃ s' s1, MoreRel false tab.check spills.toList s s' ∧ MStar msHook code retM s s1 ∧
       BodyEntry 32 s s1 ∧ s1.pc = base + BitVec.ofNat 64 24 ∧
       (∀ k : Reg, k ≠ 16 → k ≠ 17 → k ≠ 20 → k ≠ 27 → k ≠ 29 → s1.x k = s'.x k) := by
   obtain ⟨hc, haz, -, hchk, h0, -, hl, hsz, hret, -, -, htc, -⟩ := facts
@@ -242,7 +242,7 @@ theorem entry_of {s : MState} (hE : MachEntry code base 4096 s) (hg : s.x 28 = 0
 /-- **The prologue of `testInts`**: from the entry `s0`, whose stack check passes, to the body at
 offset 24 with the frame of `BodyEntry 32`. -/
 theorem objFrame_entry_witness :
-    CheckPasses 32 16 s0 ∧ ∃ s' s1, MoreRel tab.check spills.toList s0 s' ∧
+    CheckPasses 32 16 s0 ∧ ∃ s' s1, MoreRel false tab.check spills.toList s0 s' ∧
       MStar msHook code retM s0 s1 ∧ BodyEntry 32 s0 s1 ∧ s1.pc = base + BitVec.ofNat 64 24 ∧
       (∀ k : Reg, k ≠ 16 → k ≠ 17 → k ≠ 20 → k ≠ 27 → k ≠ 29 → s1.x k = s'.x k) := by
   obtain ⟨-, -, -, -, -, -, -, -, -, hpass, -⟩ := facts
@@ -252,7 +252,7 @@ theorem objFrame_entry_witness :
 (`stackguard0` all ones), through the morestack tail (`msHook` clears the guard) and back to the
 passing stack check, to the body at offset 24 with the frame of `BodyEntry 32`. -/
 theorem objFrame_morestack_witness :
-    ¬ CheckPasses 32 16 s0m ∧ ∃ s' s1, MoreRel tab.check spills.toList s0m s' ∧
+    ¬ CheckPasses 32 16 s0m ∧ ∃ s' s1, MoreRel false tab.check spills.toList s0m s' ∧
       MStar msHook code retM s0m s1 ∧ BodyEntry 32 s0m s1 ∧ s1.pc = base + BitVec.ofNat 64 24 ∧
       (∀ k : Reg, k ≠ 16 → k ≠ 17 → k ≠ 20 → k ≠ 27 → k ≠ 29 → s1.x k = s'.x k) :=
   ⟨by decide, entry_of machEntry_m rfl rfl⟩
