@@ -401,6 +401,26 @@ and `LoadFwd.zeroLd_load` decodes a successful read of zeros as the constant (`p
 fails). Witness: `zl_checkedRewrite`/`zl_rwPre` (`Witness/FwdZeroLoad.lean`: `*p = [2]int{};
 return p[1]`, the `Load` at offset 8 of the 16 zeroed bytes becomes `Const64 [0]`).
 
+**Pointer comparisons** (`:1649`, `:1650`, `:1652`–`:1663`, `:1666`, `:1667`, `:1669`–`:1676`, 24 alternatives, issue
+#69, Phase1Tail6): `EqPtr`/`NeqPtr` of `LocalAddr`s, `Addr`s, their `OffPtr`s (and a `Convert` of
+an `Addr`), and of `OffPtr`s from `isSamePtr` bases, folded to `(ConstBool [c])`, are forwarding
+rules (`fwdShapeOK`: an `EqPtr`/`NeqPtr` pattern with a `ConstBool` built in place; the
+interpreter tries `loads` on an `EqPtr`/`NeqPtr` after its row, `Interp.rewriteValue`,
+`Table.segBase`, and `fwdEvent?` takes their events). A `LocalAddr` is an atom of the
+denotation, so these are no `Rule.Sound`: only the forwarding layer's valuations hold each
+`LocalAddr` at its frame variable (`AtomSim.MemAtoms`). `fwdNewOK` accepts `ptrCmpOK tabs f u w`:
+`u` is an `EqPtr`/`NeqPtr` of `a` and `b`, `w` an argument-less `ConstBool` whose value is
+`ptrCmp? tabs f a b` (negated for `NeqPtr`): from one base (`baseSameB` of the `ptrBase`s:
+through `OffPtr`, `Copy`, constant-index `PtrIndex` and `Convert` steps, then the same value, one
+known allocation, or `AddPtr`/`PtrIndex` nodes by equal indices) the pointers are equal iff
+their offsets are; from the starts of two different known allocations (`baseBlk?`: a
+`LocalAddr`'s frame variable, an `Addr`'s global) they are not; otherwise the event is rejected.
+No new assumption beyond the layer's: `LoadFwd.ptrCmp_den` reads both pointers through
+`ptrBase_den`, `baseSame_den` and `baseBlk_den` (`Ptr.add` keeps the block and adds the offset
+modulo `2^64`), and `fwd_den`'s new case refines the comparison by the constant (`poison` if an
+operand is no pointer word). Witness: `pc_checkedRewrite`/`pc_rwPre` (`Witness/FwdPtrCmp.lean`:
+`&t[0] != &a` becomes `true` by `:1673`, `&t[0] == &t[1]` becomes `false` by `:1655`).
+
 **`growslice` lengths** (`:2128`, issue #69): `(SliceLen (SelectN [0] (StaticLECall {sym} _
 newLen:(Const64) _ _ _ _))) && (isSameCall(sym, "runtime.growslice") || isSameCall(sym,
 "runtime.growsliceNoAlias")) => newLen` is a forwarding rule (`fwdShapeOK`; the interpreter tries
@@ -1101,7 +1121,7 @@ arguments are `Addr`s whose auxes are symbols `na`, `nb`, and `v` becomes `Const
 (`Rules.addrVal`, `Run.frameVal`), and `Ptr.eq` of two such pointers is the comparison of the
 names (`eqPtr_globals`), so `ACFacts.step` refines the denotations of a closed set at the same
 fuel; `ReplayInv.addrCmp` keeps the replay invariant. The `OffPtr` (`:1649`, `:1650`, …) and
-`Convert` (`:1666`, `:1667`) forms stay open. Pass execution witness:
+`Convert` (`:1666`, `:1667`) forms are forwarding rules ("Pointer comparisons" above). Pass execution witness:
 `GoFV.Proof.Witness.ac_checkedRewrite` (`same`, `&a == &b`, `{generic.rules:1648}`).
 
 **Selections of a `Make`: `makeSelOK`, `Rule.MakeSel`** (`GoFV/Proof/Rules/AllSound.lean`,
@@ -1228,7 +1248,7 @@ needs a later phase of the semantics.
 | `generic` | Eq | 58 | 0 | 0 | 2 | 58 |
 | `generic` | EqB | 5 | 0 | 0 | 0 | 5 |
 | `generic` | EqInter | 1 | 0 | 0 | 0 | 1 |
-| `generic` | EqPtr | 3 | 7 | 0 | 11 | 20 |
+| `generic` | EqPtr | 15 | 5 | 0 | 11 | 20 |
 | `generic` | EqSlice | 1 | 0 | 0 | 0 | 1 |
 | `generic` | Floor | 0 | 0 | 0 | 1 | 1 |
 | `generic` | IMake | 1 | 1 | 0 | 1 | 2 |
@@ -1248,7 +1268,7 @@ needs a later phase of the semantics.
 | `generic` | Neq | 54 | 0 | 0 | 2 | 54 |
 | `generic` | NeqB | 5 | 0 | 0 | 0 | 5 |
 | `generic` | NeqInter | 1 | 0 | 0 | 0 | 1 |
-| `generic` | NeqPtr | 4 | 6 | 0 | 11 | 20 |
+| `generic` | NeqPtr | 16 | 4 | 0 | 11 | 20 |
 | `generic` | NeqSlice | 1 | 0 | 0 | 0 | 1 |
 | `generic` | NilCheck | 8 | 0 | 0 | 8 | 8 |
 | `generic` | Not | 27 | 2 | 0 | 4 | 33 |
@@ -1282,7 +1302,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 60 | 4 | 4 | 0 | 68 |
 | `generic` | Zero | 2 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1393 | 192 | 31 | 258 | 1762 |
+| all | | 1417 | 188 | 31 | 258 | 1762 |
 
 <!-- END coverage -->
 
