@@ -560,3 +560,10 @@ GoFV.Proof.Witness.ObjEntrySkip.skip_facts._native.native_decide.ax_1_1 f9409aa4
 # `Env.closure` (#705, the top-level closure context, read by `entryFrame`) moved the 97 pins
 # above whose facts reach `Env`/`entryFrame` (GenG*, Obj*, pfF_pipeline; re-taken from the audit;
 # no statement changed).
+# verified_mach_clo_witness (GoFV/Proof/Witness/ObjEndToEndClo.lean, #705): `adder.func1` (GenG11)
+# from its generic SSA through the verified pipeline to genssa's Progs and the linked words, in
+# plRunEnv with the closure context a funcval `heap 1` capturing 5 (`lcFacts`: `checkG64L`,
+# `cloBefore` at 3, the load `v9` reads valid bytes; `sameRun`; the runs return 12); compiled
+# evaluation, as plF_pipeline.
+GoFV.Proof.Witness.ObjEndToEndClo.obj_facts._native.native_decide.ax_1_1 eb25c0bd33a6318f952b747956f1f37dfb0898849ec61aa3efde0ddb93c44ed5
+GoFV.Proof.Witness.ObjEndToEndClo.e2e_facts._native.native_decide.ax_1_1 14bc014d2571df12a3475987e95738f60eb01eddb6ce0c3fe4d923a4b2f30a9e

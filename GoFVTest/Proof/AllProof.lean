@@ -1122,6 +1122,7 @@ import GoFV.Proof.Witness.ObjBarrier
 import GoFV.Proof.Witness.ObjEndToEnd
 import GoFV.Proof.Witness.ObjEndToEndAtSP
 import GoFV.Proof.Witness.ObjEndToEndAtSPS
+import GoFV.Proof.Witness.ObjEndToEndClo
 import GoFV.Proof.Witness.ObjEndToEndS
 import GoFV.Proof.Witness.ObjEntry49
 import GoFV.Proof.Witness.ObjEntrySkip
