@@ -636,7 +636,7 @@ theorem uStep35_keep51c {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value
     uStep35 lc L v = L.filter fun e => regHome? lc v.id != some e.1 := by
   have hl : loadOp? v.op = none := by
     rcases h with h | h | h | h | h <;> rw [h] <;> rfl
-  rw [uStep35_other (ldEntry35_none hl)
+  rw [uStep35_other (ldEntry35_none hl (by rcases h with h | h | h | h | h <;> rw [h] <;> nofun))
       (by rcases h with h | h | h | h | h <;> simp [pairOp35, h])
       (by rcases h with h | h | h | h | h <;> rw [h] <;> nofun),
     uStep34_keep (by rcases h with h | h | h | h | h <;> simp [keep34, keep31, keepOp31, keepOp34, h])]

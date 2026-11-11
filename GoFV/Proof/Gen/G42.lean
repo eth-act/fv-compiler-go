@@ -127,7 +127,8 @@ end Cases
 theorem uStep35_andK {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value}
     (hop : v.op = .ARM64ANDconst) :
     uStep35 lc L v = L.filter fun e => regHome? lc v.id != some e.1 := by
-  rw [uStep35_other (ldEntry35_none (by rw [hop]; rfl)) (by simp [pairOp35, hop])
+  rw [uStep35_other (ldEntry35_none (by rw [hop]; rfl) (by rw [hop]; nofun))
+      (by simp [pairOp35, hop])
       (by rw [hop]; nofun),
     uStep34_keep (by simp [keep34, keep31, keepOp31, keepOp34, hop])]
 

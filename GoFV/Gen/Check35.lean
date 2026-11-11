@@ -83,13 +83,28 @@ def wEntries35 (op : Op) (rs : List Nat) : List (Nat × Nat × Bool) :=
   else if op == .ARM64LDPSW then rs.map fun r => (r, 32, true)
   else []
 
+/-- The entry of a narrow integer reload (slice G66b, `docs/plans/slot-size.md` §2.4): a `LoadReg`
+homed in a register `r` with an X register at class `c ∈ {8, 16, 32}`; genssa loads it by its type
+(`loadByType`: `MOVB`/`MOVH`/`MOVW` for a signed type, `MOVBU`/`MOVHU`/`MOVWU` otherwise), so `r`
+holds the sign (`typeSigned`, as `LocCtx.signOf` says of a `LoadReg`) or zero extension of its low
+`c` bits. -/
+def reloadEntry35 (lc : LocCtx) (v : Value) : Option (Nat × Nat × Bool) :=
+  match regHome? lc v.id, cls (lc.ty v.id) with
+  | some r, some c =>
+    if v.op == .LoadReg && (objX? r).isSome && (c == 8 || c == 16 || c == 32) then
+      some (r, c, typeSigned lc.ctx.tabs v.type)
+    else none
+  | _, _ => none
+
 /-- The entry of a narrow load of `n` bytes (`loadOp?`, at any operand: G3's through a register or
 of a global, G6's of a frame variable) homed in register `r` at class `c ∈ {8, 16, 32}`, `8n ≤ c`:
-`r` holds the sign (`sg`) or zero extension of its low `c` bits. -/
+`r` holds the sign (`sg`) or zero extension of its low `c` bits; that of a narrow integer reload
+(`reloadEntry35`, slice G66b). -/
 def ldEntry35 (lc : LocCtx) (v : Value) : Option (Nat × Nat × Bool) :=
   match loadOp? v.op, regHome? lc v.id, cls (lc.ty v.id) with
   | some (as, n, sg), some r, some c =>
     if as != .MOVD && (c == 8 || c == 16 || c == 32) && 8 * n ≤ c then some (r, c, sg) else none
+  | none, _, _ => reloadEntry35 lc v
   | _, _, _ => none
 
 /-- The upper-bit table after `Copy` (slice G59 group U): a copy between registers gives the

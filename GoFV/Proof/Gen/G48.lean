@@ -95,10 +95,11 @@ theorem uokl_x48 {lc : LocCtx} {v : Value} {m m' : MState} {L : List (Nat × Nat
     (hop : v.op ∈ opsX48) (hx : m'.x = m.x) (hL : UOKL m L) : UOKL m' (uStep35 lc L v) := by
   have h := List.all_eq_true.1 (show opsX48.all (fun o => (loadOp? o).isNone &&
     (loadIdxOp? o).isNone && o != .ARM64LDPW && o != .ARM64LDPSW && o != .Select0 &&
-    o != .Select1 && o != .Copy && o != .ARM64MOVDnop && o != .ARM64MOVDreg) = true by decide) _ hop
+    o != .Select1 && o != .Copy && o != .ARM64MOVDnop && o != .ARM64MOVDreg &&
+    o != .LoadReg) = true by decide) _ hop
   simp only [Bool.and_eq_true, Option.isNone_iff_eq_none, bne_iff_ne, ne_eq] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨hl, hi⟩, hw1⟩, hw2⟩, hs1⟩, hs2⟩, hc⟩, h1⟩, h2⟩ := h
-  exact uokl_xw35 hL (.inl hx) (ldEntry35_none hl) (by simp [uEntry, narrowLd?, hl, hi])
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨hl, hi⟩, hw1⟩, hw2⟩, hs1⟩, hs2⟩, hc⟩, h1⟩, h2⟩, hr⟩ := h
+  exact uokl_xw35 hL (.inl hx) (ldEntry35_none hl hr) (by simp [uEntry, narrowLd?, hl, hi])
     ⟨hs1, hs2⟩ ⟨hw1, hw2⟩ hc ⟨h1, h2⟩
 
 /-! ## One value -/

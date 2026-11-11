@@ -401,9 +401,11 @@ theorem uStep35_ldpX {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value} {
       L.filter (!(homeRegs lc v.id).contains ·.1) := by
   rcases pairOp50_cases hpo with ⟨h, -, -, rfl, -⟩ | ⟨h, -, -, rfl, -⟩ | ⟨-, -, -, -, h⟩ |
     ⟨-, -, -, -, h⟩
-  · rw [uStep35_pairW (ldEntry35_none (by rw [h]; rfl)) (by simp [pairOp35, h]) (by simp [h])]
+  · rw [uStep35_pairW (ldEntry35_none (by rw [h]; rfl) (by rw [h]; nofun))
+      (by simp [pairOp35, h]) (by simp [h])]
     simp [wEntries35, h]
-  · rw [uStep35_pairW (ldEntry35_none (by rw [h]; rfl)) (by simp [pairOp35, h]) (by simp [h])]
+  · rw [uStep35_pairW (ldEntry35_none (by rw [h]; rfl) (by rw [h]; nofun))
+      (by simp [pairOp35, h]) (by simp [h])]
     simp [wEntries35, h]
   · cases h
   · cases h
@@ -427,7 +429,7 @@ theorem uStep35_selX50 {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v u : Valu
     (hc0 : v.args[0]? = some c) (hu : lc.ctx.f.value? c = some u)
     (hpo : pairOp50 u.op = some (as, n, sg, false)) : uStep35 lc L v = L := by
   have hl : loadOp? v.op = none := by rcases hop with h | h <;> rw [h] <;> rfl
-  refine uStep35_sel (ldEntry35_none hl) ?_ hop
+  refine uStep35_sel (ldEntry35_none hl (by rcases hop with h | h <;> rw [h] <;> nofun)) ?_ hop
   rcases pairOp50_cases hpo with ⟨h, -⟩ | ⟨h, -⟩ | ⟨-, -, -, -, h⟩ | ⟨-, -, -, -, h⟩
   · rcases hop with hop | hop <;> simp [pairOp35, hop, hc0, hu, h]
   · rcases hop with hop | hop <;> simp [pairOp35, hop, hc0, hu, h]

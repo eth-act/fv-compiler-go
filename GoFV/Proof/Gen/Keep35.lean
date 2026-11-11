@@ -35,11 +35,38 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Gen.Check GoFV.Arm64 GoFV.Asm GoFV.Asm.ARM64
 
 /-! ## The table -/
 
-/-- What `ldEntry35` gave. -/
+/-- What `reloadEntry35` gave. -/
+theorem reloadEntry35_spec {lc : LocCtx} {v : Value} {r c : Nat} {sg : Bool}
+    (h : reloadEntry35 lc v = some (r, c, sg)) :
+    v.op = .LoadReg ∧ regHome? lc v.id = some r ∧ (objX? r).isSome = true ∧
+      cls (lc.ty v.id) = some c ∧ (c = 8 ∨ c = 16 ∨ c = 32) ∧
+      sg = typeSigned lc.ctx.tabs v.type := by
+  unfold reloadEntry35 at h
+  split at h
+  · rename_i r' c' hr hc
+    split at h
+    · rename_i hcc
+      simp only [Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, rfl, rfl⟩ := h
+      simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hcc
+      exact ⟨hcc.1.1, hr, hcc.1.2, hc, by rcases hcc.2 with (h | h) | h <;> simp [h], rfl⟩
+    · cases h
+  · cases h
+
+/-- No value other than a `LoadReg` has a reload entry. -/
+theorem reloadEntry35_none {lc : LocCtx} {v : Value} (h : v.op ≠ .LoadReg) :
+    reloadEntry35 lc v = none := by
+  cases he : reloadEntry35 lc v with
+  | none => rfl
+  | some e => exact absurd (reloadEntry35_spec (e := e) he).1 h
+
+/-- What `ldEntry35` gave: a narrow load's entry, or a narrow integer reload's
+(`reloadEntry35`). -/
 theorem ldEntry35_spec {lc : LocCtx} {v : Value} {r c : Nat} {sg : Bool}
     (h : ldEntry35 lc v = some (r, c, sg)) :
-    ∃ as n, loadOp? v.op = some (as, n, sg) ∧ regHome? lc v.id = some r ∧
-      cls (lc.ty v.id) = some c ∧ (c = 8 ∨ c = 16 ∨ c = 32) ∧ 8 * n ≤ c := by
+    (∃ as n, loadOp? v.op = some (as, n, sg) ∧ regHome? lc v.id = some r ∧
+      cls (lc.ty v.id) = some c ∧ (c = 8 ∨ c = 16 ∨ c = 32) ∧ 8 * n ≤ c) ∨
+    (loadOp? v.op = none ∧ reloadEntry35 lc v = some (r, c, sg)) := by
   unfold ldEntry35 at h
   split at h
   · rename_i as n sg' r' c' hl hr hc
@@ -48,14 +75,31 @@ theorem ldEntry35_spec {lc : LocCtx} {v : Value} {r c : Nat} {sg : Bool}
       simp only [Option.some.injEq, Prod.mk.injEq] at h
       obtain ⟨rfl, rfl, rfl⟩ := h
       simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, decide_eq_true_eq] at hcc
-      refine ⟨as, n, hl, hr, hc, ?_, hcc.2⟩
+      refine .inl ⟨as, n, hl, hr, hc, ?_, hcc.2⟩
       rcases hcc.1.2 with (h | h) | h <;> simp [h]
     · cases h
+  · rename_i hl
+    exact .inr ⟨hl, h⟩
   · cases h
 
-theorem ldEntry35_none {lc : LocCtx} {v : Value} (h : loadOp? v.op = none) :
+theorem ldEntry35_none {lc : LocCtx} {v : Value} (h : loadOp? v.op = none)
+    (hr : v.op ≠ .LoadReg) : ldEntry35 lc v = none := by
+  simp [ldEntry35, h, reloadEntry35_none hr]
+
+/-- A `LoadReg` homed in no X register, or at a class outside `{8, 16, 32}`, has no entry. -/
+theorem ldEntry35_reload_none {lc : LocCtx} {v : Value} (hop : v.op = .LoadReg)
+    (h : ∀ r c, regHome? lc v.id = some r → cls (lc.ty v.id) = some c →
+      (objX? r).isSome = true → c = 8 ∨ c = 16 ∨ c = 32 → False) :
     ldEntry35 lc v = none := by
-  simp [ldEntry35, h]
+  have hl : loadOp? v.op = none := by rw [hop]; rfl
+  cases he : ldEntry35 lc v with
+  | none => rfl
+  | some e =>
+    obtain ⟨r, c, sg⟩ := e
+    rcases ldEntry35_spec he with ⟨_, _, hl', -⟩ | ⟨-, hre⟩
+    · rw [hl] at hl'; cases hl'
+    · obtain ⟨-, hr, hx, hc, hcc, -⟩ := reloadEntry35_spec hre
+      exact (h r c hr hc hx hcc).elim
 
 /-- The table across a narrow load with an entry. -/
 theorem uStep35_ld {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value}
@@ -67,7 +111,7 @@ theorem uStep35_ld {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value}
 theorem uStep35_ldp {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value}
     (hop : v.op = .ARM64LDP) :
     uStep35 lc L v = L.filter (!(homeRegs lc v.id).contains ·.1) := by
-  have h0 : ldEntry35 lc v = none := ldEntry35_none (by rw [hop]; rfl)
+  have h0 : ldEntry35 lc v = none := ldEntry35_none (by rw [hop]; rfl) (by rw [hop]; nofun)
   simp [uStep35, h0, pairOp35, wEntries35, hop]
 
 /-- The table across a select of a pair or acquire load (`pairOp35`): unchanged. -/
@@ -104,7 +148,7 @@ theorem uStep35_other {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value}
 /-- The table across `Copy`: `copyStep35`. -/
 theorem uStep35_copy {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value}
     (hop : v.op = .Copy) : uStep35 lc L v = copyStep35 lc L v := by
-  have h0 : ldEntry35 lc v = none := ldEntry35_none (by rw [hop]; rfl)
+  have h0 : ldEntry35 lc v = none := ldEntry35_none (by rw [hop]; rfl) (by rw [hop]; nofun)
   have hp : pairOp35 lc v = false := by simp [pairOp35, hop]
   simp [uStep35, h0, hp, hop]
 
@@ -123,15 +167,17 @@ theorem uStep35_keepOps {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value
     (hop : v.op ∈ keepOps35) :
     uStep35 lc L v = L.filter (!(homeRegs lc v.id).contains ·.1) := by
   have hall := List.all_eq_true.1 (show keepOps35.all (fun o => (loadOp? o).isNone &&
-    o != .Select0 && o != .Select1 && o != .ARM64LDPW && o != .ARM64LDPSW) = true by decide) _ hop
+    o != .Select0 && o != .Select1 && o != .ARM64LDPW && o != .ARM64LDPSW && o != .LoadReg) = true
+    by decide) _ hop
   simp only [Bool.and_eq_true, Option.isNone_iff_eq_none, bne_iff_ne, ne_eq] at hall
-  obtain ⟨⟨⟨⟨hl, hs0⟩, hs1⟩, hw0⟩, hw1⟩ := hall
-  refine uStep35_keepOp (ldEntry35_none hl) ?_ ⟨hs0, hs1⟩ ⟨hw0, hw1⟩
+  obtain ⟨⟨⟨⟨⟨hl, hs0⟩, hs1⟩, hw0⟩, hw1⟩, hr⟩ := hall
+  refine uStep35_keepOp (ldEntry35_none hl hr) ?_ ⟨hs0, hs1⟩ ⟨hw0, hw1⟩
   simp only [keepOps35, List.mem_cons, List.not_mem_nil, or_false] at hop
   rcases hop with h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h | h |
     h | h | h | h | h | h | h | h | h | h | h | h | h <;> simp [pairOp35, h]
 
-/-- The ops of the values `vk33_keep35` runs (`pairOp35`'s, the narrow loads and `Copy`). -/
+/-- The ops of the values `vk33_keep35` runs (`pairOp35`'s, the narrow loads and reloads, and
+`Copy`). -/
 def ops35 : List Op :=
   [.ARM64LDP, .ARM64LDPW, .ARM64LDPSW, .ARM64LDAR, .ARM64LDARW, .ARM64LDARB, .Select0, .Select1,
     .ARM64MOVBload, .ARM64MOVBUload, .ARM64MOVHload, .ARM64MOVHUload, .ARM64MOVWload,
@@ -141,9 +187,10 @@ def ops35 : List Op :=
     .ARM64MOVBstore, .ARM64MOVHstore, .ARM64MOVWstore, .ARM64ANDshiftLL, .ARM64ANDshiftRL,
     .ARM64ANDshiftRA, .ARM64ORshiftLL, .ARM64ORshiftRL, .ARM64ORshiftRA, .ARM64XORshiftLL,
     .ARM64XORshiftRL, .ARM64XORshiftRA, .ARM64BICshiftLL, .ARM64BICshiftRL, .ARM64BICshiftRA,
-    .Convert, .Copy]
+    .Convert, .Copy, .LoadReg]
 
-/-- A value of `pairOp35`, a narrow load with an entry, or a `Copy` has an op of `ops35`. -/
+/-- A value of `pairOp35`, a narrow load or reload with an entry, or a `Copy` has an op of
+`ops35`. -/
 theorem ops35_mem {lc : LocCtx} {v : Value}
     (hk : pairOp35 lc v = true ∨ ldEntry35 lc v ≠ none ∨ v.op = .Copy) : v.op ∈ ops35 := by
   rcases hk with hk | hk | hk
@@ -151,10 +198,11 @@ theorem ops35_mem {lc : LocCtx} {v : Value}
     simp only [ops35, List.mem_cons, List.not_mem_nil, or_false, not_or] at hn
     simp [pairOp35, hn] at hk
   · obtain ⟨⟨r, c, sg⟩, he⟩ := Option.ne_none_iff_exists'.1 hk
-    obtain ⟨as, n, hl, -, -, hc, hn⟩ := ldEntry35_spec he
-    rcases loadOp?_op hl with ⟨h, rfl, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩
-    · rcases hc with rfl | rfl | rfl <;> omega
-    all_goals simp [ops35, h]
+    rcases ldEntry35_spec he with ⟨as, n, hl, -, -, hc, hn⟩ | ⟨-, hre⟩
+    · rcases loadOp?_op hl with ⟨h, rfl, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩
+      · rcases hc with rfl | rfl | rfl <;> omega
+      all_goals simp [ops35, h]
+    · simp [ops35, (reloadEntry35_spec hre).1]
   · simp [ops35, hk]
 
 /-- A property every op of `ops35` has holds of `o ∈ ops35`. -/
@@ -329,7 +377,7 @@ theorem st_uokl {lc : LocCtx} {v : Value} {m m' : MState} {L : List (Nat × Nat 
     {as : As} {n : Nat} (hop : storeOp? v.op = some (as, n)) (hL : UOKL m L)
     (hx : XW lc v m m') : UOKL m' (uStep35 lc L v) := by
   rcases storeOp?_op hop with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;>
-    exact uokl_xw35 hL hx (ldEntry35_none (by rw [h]; rfl))
+    exact uokl_xw35 hL hx (ldEntry35_none (by rw [h]; rfl) (by rw [h]; nofun))
       (by simp [uEntry, narrowLd?, loadOp?, narrowLoad?, loadIdxOp?, h]) (by simp [h])
       (by simp [h]) (by simp [h]) (by simp [h])
 
@@ -419,7 +467,9 @@ theorem ld_uokl {lc : LocCtx} {v : Value} {m m' : MState} {L : List (Nat × Nat 
       exact uokl_xw hL hxw
   | some e =>
     obtain ⟨r, c', sg'⟩ := e
-    obtain ⟨as', n', hl', hr, hc', hcc, hn⟩ := ldEntry35_spec he
+    rcases ldEntry35_spec he with ⟨as', n', hl', hr, hc', hcc, hn⟩ | ⟨hl', -⟩
+    swap
+    · rw [hop] at hl'; cases hl'
     rw [hop] at hl'
     simp only [Option.some.injEq, Prod.mk.injEq] at hl'
     obtain ⟨rfl, rfl, rfl⟩ := hl'
@@ -552,9 +602,10 @@ theorem vk33_keep35 {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat 
   -- a select is in `pairOp35` (no load, no `Copy`)
   have hselp : (v.op = .Select0 ∨ v.op = .Select1) → pairOp35 lc v = true := fun hop => by
     have hl0 : loadOp? v.op = none := by rcases hop with h | h <;> rw [h] <;> rfl
+    have hr0 : v.op ≠ .LoadReg := by rcases hop with h | h <;> rw [h] <;> nofun
     rcases hk with hk | hk | hk
     · exact hk
-    · exact absurd (ldEntry35_none hl0) hk
+    · exact absurd (ldEntry35_none hl0 hr0) hk
     · rcases hop with h | h <;> rw [h] at hk <;> cases hk
   cases hVK with
   | un h' => refuteF35 hops h' un33?
@@ -702,9 +753,10 @@ theorem vk33_keep35 {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat 
       (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz1 hc0 hpt hhc hvh hrz hd hob hcl
       (fun c0 hc0' => ksel4_of_reads hreads hop hc0 hhc (hcl.trans hc0')) hvs htemp hs
     have hl0 : loadOp? v.op = none := by rcases hop with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl
+    have hr0 : v.op ≠ .LoadReg := by rcases hop with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> nofun
     have hp := hselp (hop.imp And.left And.left)
     refine ⟨m', h1, h2, ⟨h3, h4⟩, ?_⟩
-    rw [uStep35_sel (ldEntry35_none hl0) hp (hop.imp And.left And.left)]
+    rw [uStep35_sel (ldEntry35_none hl0 hr0) hp (hop.imp And.left And.left)]
     exact fun e he => uok_of_x hx (hL e he)
   | g3 _ _ _ _ h3 =>
   cases h3 with
@@ -766,7 +818,15 @@ theorem vk33_keep35 {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat 
     | selReg h' => refute35 hops h'
     | addr h' => refute35 hops h'
     | spill h' => refute35 hops h'
-    | reload h' => refute35 hops h'
+    | reload hop _ _ _ _ _ hro _ =>
+      -- a reload of a 64-bit value has no entry (`reloadEntry35`: classes 8, 16, 32)
+      exfalso
+      obtain ⟨-, -, -, -, hcv⟩ := resObj_spec hro
+      rcases hk with hk | hk | hk
+      · simp [pairOp35, hop] at hk
+      · exact hk (ldEntry35_reload_none hop fun r c _ hc _ hcc => by
+          rw [hcv] at hc; cases hc; omega)
+      · rw [hop] at hk; cases hk
   | load hop _ hsz2 hacc hma hro hcw hpat =>
     obtain ⟨m', h1, h2, h3, h4, kd, Y, hrd, hx'⟩ := g3_loadW (H := H) F
       (fun y name abi h => hglob y name abi h) hm hinv.core hinv.slots hR

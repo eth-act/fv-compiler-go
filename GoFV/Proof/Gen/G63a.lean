@@ -257,16 +257,22 @@ end Cases
 
 /-! ## The tables -/
 
-/-- G35's upper-bit table across a float spill or reload: the entries of the other registers. -/
+/-- G35's upper-bit table across a float spill or reload (a reload homed in no X register, so with
+no entry, `reloadEntry35`): the entries of the other registers. -/
 theorem uokl_f63 {lc : LocCtx} {v : Value} {m m' : MState} {L : List (Nat × Nat × Bool)}
-    (hop : v.op = .StoreReg ∨ v.op = .LoadReg) (hx : m'.x = m.x) (hL : UOKL m L) :
+    (hop : v.op = .StoreReg ∨ v.op = .LoadReg)
+    (hf : v.op = .LoadReg → ∀ r, regHome? lc v.id = some r → objX? r = none)
+    (hx : m'.x = m.x) (hL : UOKL m L) :
     UOKL m' (uStep35 lc L v) := by
-  have hl : loadOp? v.op = none := by rcases hop with h | h <;> rw [h] <;> rfl
+  have h0 : ldEntry35 lc v = none := by
+    rcases hop with h | h
+    · exact ldEntry35_none (by rw [h]; rfl) (by rw [h]; nofun)
+    · exact ldEntry35_reload_none h fun r _ hr _ hx' _ => by
+        rw [hf h r hr] at hx'; cases hx'
   have hp : pairOp35 lc v = false := by rcases hop with h | h <;> simp [pairOp35, h]
   have hk : keep34 v = true := by
     rcases hop with h | h <;> simp [keep34, keep31, keepOp31, keepOp34, h]
-  rw [uStep35_other (ldEntry35_none hl) hp (by rcases hop with h | h <;> rw [h] <;> nofun),
-    uStep34_keep hk]
+  rw [uStep35_other h0 hp (by rcases hop with h | h <;> rw [h] <;> nofun), uStep34_keep hk]
   exact uokl_keep hL (.inl hx)
 
 end GoFV.Proof.Gen

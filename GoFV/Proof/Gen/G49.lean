@@ -565,7 +565,8 @@ theorem vk49_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat â†
         htemp hs
       refine same m' h1 h2 h3 h4 ?_
       have hl0 : loadOp? v.op = none := by rw [hop]; rfl
-      rw [uStep35_other (ldEntry35_none hl0) (by simp [pairOp35, hop]) (by rw [hop]; nofun),
+      rw [uStep35_other (ldEntry35_none hl0 (by rw [hop]; nofun)) (by simp [pairOp35, hop])
+          (by rw [hop]; nofun),
         uStep34_keep (by simp [keep34, keepOp34, hop])]
       exact uokl_keep hL hxw
     | load hop hsz2 hma hro hc =>
@@ -596,7 +597,8 @@ theorem vk49_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat â†
       have hue : uEntry lc v = none := by
         have : narrowLd? lc v = none := by unfold narrowLd?; rw [hop]; rfl
         unfold uEntry; rw [this]
-      rw [uStep35_nil hue (ldEntry35_none (by rw [hop]; rfl)) (by simp [pairOp35, hop])
+      rw [uStep35_nil hue (ldEntry35_none (by rw [hop]; rfl) (by rw [hop]; nofun))
+        (by simp [pairOp35, hop])
         (by simp [keep34, keep31, keepOp31, keepOp34, hop]) (by rw [hop]; nofun)
         (by rw [hop]; nofun)]
       intro e he'

@@ -62,7 +62,8 @@ theorem uStep35_ldar {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value} {
     uStep35 lc L v = L.filter (!(homeRegs lc v.id).contains ·.1) := by
   obtain ⟨-, -, -, -, -, hl, -, -⟩ := ldar_ne hop
   rcases ldar?_some hop with ⟨h, -⟩ | ⟨h, -⟩ | ⟨h, -⟩ <;>
-    exact uStep35_keepOp (ldEntry35_none hl) (by simp [pairOp35, h]) (by simp [h]) (by simp [h])
+    exact uStep35_keepOp (ldEntry35_none hl (by rw [h]; nofun)) (by simp [pairOp35, h])
+      (by simp [h]) (by simp [h])
 
 /-- A component of an acquire load (of the value `c`) emits no code: G35's table stays. -/
 theorem uStep35_selLdar {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value} {c : ID}
@@ -70,7 +71,7 @@ theorem uStep35_selLdar {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value
     (hu : ((lc.ctx.f.value? c).any fun u => (ldar? u.op).isSome) = true) :
     uStep35 lc L v = L := by
   have hl : loadOp? v.op = none := by rcases hop with h | h <;> rw [h] <;> rfl
-  refine uStep35_sel (ldEntry35_none hl) ?_ hop
+  refine uStep35_sel (ldEntry35_none hl (by rcases hop with h | h <;> rw [h] <;> nofun)) ?_ hop
   cases hv : lc.ctx.f.value? c with
   | none => rw [hv] at hu; cases hu
   | some u =>
