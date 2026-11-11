@@ -11,8 +11,9 @@ open scoped GoFV.SSA.Sem.Fixed
 
 For every `late lower` section (input: the previous section), runs the Lean `late lower` with its
 rewrite log and counts the sections it changes, those `lateB` accepts (the `late lower`
-validator, `GoFV.Opt.LateLowerCheck`; rejected sections by the first failing check, with a file
-per check) and, per `ARM64latelower.rules` rule (by source line), the
+validator, `GoFV.Opt.LateLowerCheck`; among them those that remove a value, line 29's `MOVBUreg`;
+rejected sections by the first failing check, with a file per check) and, per
+`ARM64latelower.rules` rule (by source line), the
 sections where it fires (and where it fires in a rejected section); for every `pair` section, the
 sections `pair` changes and the ops of the values it adds (`LDP*`, `STP*`, selectors, copies),
 split into sections that only pair loads within a block and the rest, and the changed sections
@@ -29,6 +30,9 @@ structure Cnt where
   llChanged : Nat := 0
   llAcc : Nat := 0
   llAccChanged : Nat := 0
+  /-- Accepted sections that remove a value (line 29's `MOVBUreg`; `lateB` before #385's line-29
+  extension rejected exactly these among the accepted ones). -/
+  llAccGone : Nat := 0
   llRejRules : Std.HashMap String Nat := {}
   llRules : Std.HashMap String Nat := {}
   llSets : Std.HashMap String Nat := {}
@@ -51,6 +55,7 @@ def Cnt.merge (a b : Cnt) : Cnt :=
   { llSecs := a.llSecs + b.llSecs, llErr := a.llErr + b.llErr
     llChanged := a.llChanged + b.llChanged, llRules := mg a.llRules b.llRules
     llAcc := a.llAcc + b.llAcc, llAccChanged := a.llAccChanged + b.llAccChanged
+    llAccGone := a.llAccGone + b.llAccGone
     llRejRules := mg a.llRejRules b.llRejRules, llWhy := mg a.llWhy b.llWhy
     llWhyEx := b.llWhyEx.fold (fun m k p => if m.contains k then m else m.insert k p) a.llWhyEx
     llSets := mg a.llSets b.llSets, prSecs := a.prSecs + b.prSecs, prErr := a.prErr + b.prErr
@@ -164,6 +169,8 @@ def doFile (path : System.FilePath) (c : Cnt) : IO Cnt := do
                           else c.llWhyEx.insert k path.toString }
         let changed := out.func.valueTab != f.valueTab || out.func.blockTab != f.blockTab
         if acc then c := { c with llAcc := c.llAcc + 1 }
+        if acc && !(LateLowerCheck.goneL f out.func).isEmpty then
+          c := { c with llAccGone := c.llAccGone + 1 }
         if changed then
           let rs := (firedRules lateLowerTable f log).qsort (· < ·)
           c := { c with llChanged := c.llChanged + 1, llSets := bump c.llSets s!"{rs}" }
@@ -214,7 +221,7 @@ def main (args : List String) : IO UInt32 := do
     | .ok x => c := c.merge x
     | .error err => IO.eprintln s!"task error: {err}"; return 1
   IO.println s!"late lower: sections {c.llSecs}, errors {c.llErr}, changed {c.llChanged}"
-  IO.println s!"lateB accepts {c.llAcc} (changed {c.llAccChanged}), rejects {c.llSecs - c.llErr - c.llAcc}"
+  IO.println s!"lateB accepts {c.llAcc} (changed {c.llAccChanged}; removing a value, rule 29: {c.llAccGone}), rejects {c.llSecs - c.llErr - c.llAcc}"
   IO.println "lateB rejections by first failing check:"
   for (k, n) in (sorted c.llWhy).extract 0 40 do
     IO.println s!"  {n} {k}    e.g. {c.llWhyEx.getD k ""}"
