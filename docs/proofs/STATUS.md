@@ -1733,6 +1733,38 @@ declarations, then the autos the pipeline created). From the stock `.prog` file 
 input view is read (definitions, config, `Dcl` at `AllocFrame`'s start, `genin`). The stock
 column runs the same back end on the stock `trim` function of every function.
 
+| quick-v10 (9,297 functions, 5.2 min; the composition on G64, per function at either mode (`agent/lift64` on main 8c5e41b7, G63 #700, G64 #701), P0' in `checkG64` and `checkObj`, `--jobs 2`) | pipeline output | share | stock `trim` |
+| --- | ---: | ---: | ---: |
+| fully verified (Phase 2, through `trim`) | 7,895 | 84.91% | - |
+| … genssa and `Flushplist` ran | 7,895 | 84.91% | 9,297 |
+| … ∧ `checkG64` ∧ `entryStoresOK` ∧ `argsOK` | 7,225 | 77.71% | 8,204 |
+| … ∧ `checkG64` ∧ `entryStoresOK` ∧ `argsOK` ∧ `retRegsOK` | 7,225 | 77.71% | 8,203 |
+| … ∧ `checkObj` | 7,858 | 84.52% | 9,124 |
+| **… ∧ `checkG64` ∧ `entryStoresOK` ∧ `argsOK` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach` or `verified_mach_S`)** | **7,221** | **77.67%** | 8,157 |
+| … of which `needs48 = false`: `verified_mach` (`SepFrom`, `CallOK` …) | 7,010 | 75.40% | 7,914 |
+| … of which `needs48 = true`: `verified_mach_S` (G48's mode) | 211 | 2.27% | 243 |
+| … end to end, pipeline output identical to stock after `trim` | 6,152 | 66.17% | - |
+
+The composition on G64 (G62 with G63's float spills and reloads and G64's 128-bit blob moves;
+`FReloadPre` and `QLoadPre` in `RunPre`'s per-step conjunction) counts 7,221 end to end (7,010
+under `verified_mach`, 211 under `verified_mach_S`), 26 more than the composition on G62 (7,195)
+and none fewer (`comm` of the accepted lists), in either mode (`needs48` is unchanged: +26 under
+`verified_mach`, +0 under `verified_mach_S`): 5 of std/runtime, 4 of std/fmt, 2 each of
+std/strconv and std/hash, 1 each of std/strings and std/regexp, 11 tests; 17 of the 26 hold a
+128-bit move (`FMOVQ`, `FLDPQ`, `FSTPQ`), the others a float spill or reload. **`checkObj` and
+the new Progs:** `checkObj` already models `FMOVQ` loads and stores, `FLDPQ`/`FSTPQ` and `FMOVD`
+to and from a frame slot (`fmovP`, `fpairP`; the SIMD&FP paragraph of the assembler entry), and
+it rejects none of the functions G63 and G64 add: of the 7,225 that `checkG64`, `entryStoresOK`,
+`argsOK` and `retRegsOK` accept it rejects 4, the same 4 as on G62 (the stack check of a huge
+frame twice, `SBFIZ`, `runtime.poll_runtime_pollUnblock`'s `JMP`); 125 of the 7,221 end-to-end
+functions contain a `FMOVQ`, `FLDPQ` or `FSTPQ` Prog and 10 an `FMOVD` to or from a frame slot.
+`argsOK` rejects none (stock column: none). `checkG64` accepts 7,260; 77 have a pending window,
+`entryStoresOK` rejects 35, 42 are end to end with a pending window (stock column: 8,255, 95, 51,
+44). Vacuous at `Addrs.fixed`: 30 of the 7,010 under `verified_mach` (stock 33 of 7,914), 7 of
+the 211 under `verified_mach_S` (stock 7 of 243). The first rejection reasons of `checkG64` among
+the fully verified: `store shape` (382), `op CALLtail` (164), `Arg width` (37), `branch shape`
+and `load shape` (9 each); `op FMOVQload` no longer occurs.
+
 | quick-v10 (9,297 functions, 5.5 min; the composition on G62, per function at either mode (`agent/lift62` on main e3ac04bb, G62 #698), P0' in `checkG62` and `checkObj`, `--jobs 2`) | pipeline output | share | stock `trim` |
 | --- | ---: | ---: | ---: |
 | fully verified (Phase 2, through `trim`) | 7,895 | 84.91% | - |
