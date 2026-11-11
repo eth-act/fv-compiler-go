@@ -11,14 +11,15 @@ of the register-assigned parameters (`pendWins`, `GoFV/Gen/Entry49.lean`) are no
 blocks' images. The entry relation (`EntryMatch`) therefore relates `runLoc`'s memory to a
 machine memory `M` that agrees with the machine's but for a set `W` of bytes, and the entry stores
 (`entryStore?`) are run against it: an entry store is a store of G49's frame-variable path
-(`entryStore?_spec`; no op of G64's, spill or reload, and no op of G61's group A, so what
-`vkind64` accepts of it `vkind60` accepts, `vkind64_eq63`, `vkind63_eq62`, `vkind62_eq61`,
+(`entryStore?_spec`; no spill, reload, `Arg`, extension or op of G65's or G64's, and no op of
+G61's group A, so what `vkind66` accepts of it `vkind60` accepts, `vkind66_eq65`, `vkind65_eq64`,
+`vkind64_eq63`, `vkind63_eq62`, `vkind62_eq61`,
 `vkind61_eq60`; no op of G52's–G59's groups and no access off `SP` without an aux, so what
 `vkind60` accepts of it `vkind49` accepts, `vkind60_ok49`, in any mode), whose
 P0 Prog writes its window in the machine's memory as in `M`. So from
 `LocMatch E s b i {m with mem := M}` (`M` agreeing with `m.mem` outside `W` and the store's
 window) the Prog runs `m` to `m'` with `LocMatch E s' b (i + 1) {m' with mem := M'}`, `M'`
-agreeing with `m'.mem` outside `W` (`g64L_entryStore`): the window is written alike in both
+agreeing with `m'.mem` outside `W` (`g66L_entryStore`): the window is written alike in both
 (`writeMem_in`), every other byte is kept (`writeMem_pt`). When the windows of the entry stores
 cover `W`, after them `M'` is `m'.mem` and the relation is `LocMatch` (`Whole.lean`,
 `sim_entryStores`).
@@ -329,17 +330,17 @@ theorem entryStore?_aux {lc : LocCtx} {g : G2In} {v : Value} {off : Int} {n : Na
   · cases h
   · rw [frameVar49?_none ha] at h; cases h
 
-/-- **An entry store of slice G64 against a memory related but for some bytes.** From a relation
+/-- **An entry store of slice G66 against a memory related but for some bytes.** From a relation
 on `{m with mem := M0}`, `M0` agreeing with `m`'s memory outside `W` and the store's window
 (`SP + frameOff` of its `NAME_PARAM` operand, `n` bytes), an entry store (`entryStore?`) that
-`checkG64L` accepted runs its Prog from `m` to `m'` (the X registers kept) with a relation on
+`checkG66L` accepted runs its Prog from `m` to `m'` (the X registers kept) with a relation on
 `{m' with mem := M'}`, `M'` agreeing with `m'`'s memory outside `W`, the class map and G35's
 table after the value. -/
-theorem g64L_entryStore {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+theorem g66L_entryStore {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab}
     {E : MatchEnv} {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s s' : LocState}
     {m : MState} {M0 : Memory} {off : Int} {n : Nat} {W : BitVec 64 → Prop} {osp : Bool}
-    (hc : checkG64L lc ps bstart g = .ok (tab, kt)) (hE : G49Env lc g L ps ret tab E)
+    (hc : checkG66L lc ps bstart g = .ok (tab, kt)) (hE : G49Env lc g L ps ret tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
     (hes : entryStore? lc g v = some (off, n))
@@ -357,7 +358,7 @@ theorem g64L_entryStore {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Li
     rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;> rfl
   cases hl0 : lc.ctx.f.lowered with
   | false =>
-    rcases nl30_ops (checkNL30_of_64L hl0 hc) hbid hb hi hv hen with h | h | h | h <;>
+    rcases nl30_ops (checkNL30_of_66L hl0 hc) hbid hb hi hv hen with h | h | h | h <;>
       rcases hcases with h' | h' | h' | h' | h' | h' | h' | h' | h' | h' | h' | h' | h' <;>
       rw [h] at h' <;> cases h'
   | true =>
@@ -370,7 +371,7 @@ theorem g64L_entryStore {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Li
   rw [htext] at hpcOf
   subst hL
   obtain ⟨c, rfl, rfl, -, rfl, hvk, -, hl, hhome, hcf, hk, hlt, hnd, hblocks, -, -, -, -, -⟩ :=
-    checkG64L_spec hl0 hc
+    checkG66L_spec hl0 hc
   obtain ⟨b, j, js, e, next, hb', -, hvals, -, -, hrow⟩ := Cx2.blocks_spec hblocks bid hbid
   rw [hb] at hb'
   cases hb'
@@ -387,7 +388,17 @@ theorem g64L_entryStore {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Li
       op52b v.op = false ∧ op53a v.op = false ∧ op54a v.op = false := by
     rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;>
       exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
-  rw [hvk, vkind64_eq63 (by
+  rw [hvk, vkind66_eq65 (by
+    rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;> decide)
+    (by
+    rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;> decide)
+    (by
+    rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;> decide)
+    (by
+    rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;> rfl),
+    vkind65_eq64 (by
+    rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;> rfl),
+    vkind64_eq63 (by
     rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;> rfl),
     vkind63_eq62 (by
     rcases hcases with h | h | h | h | h | h | h | h | h | h | h | h | h <;> rw [h] <;> decide)

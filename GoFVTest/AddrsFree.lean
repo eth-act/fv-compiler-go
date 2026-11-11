@@ -51,9 +51,10 @@ run_meta do
       ``GoFV.Gen.Check.checkG58, ``GoFV.Gen.Check.checkG59,
       ``GoFV.Gen.Check.checkG60, ``GoFV.Gen.Check.checkG61,
       ``GoFV.Gen.Check.checkG62, ``GoFV.Gen.Check.checkG63,
-      ``GoFV.Gen.Check.checkG64, ``GoFV.Gen.Check.checkG65].all roots.contains do
+      ``GoFV.Gen.Check.checkG64, ``GoFV.Gen.Check.checkG65,
+      ``GoFV.Gen.Check.checkG66].all roots.contains do
     throwError "AddrsFree: the slice checkers \
-      checkG46/G47/G50/G51/G49/G52..G57/G48/G58/G59/G60/G61/G62/G63/G64/G65 are not in scope"
+      checkG46/G47/G50/G51/G49/G52..G57/G48/G58/G59/G60/G61/G62/G63/G64/G65/G66 are not in scope"
   for n in roots do
     let some ci := env.find? n | throwError "AddrsFree: {n} not found"
     if hasAddrsBinder ci.type then

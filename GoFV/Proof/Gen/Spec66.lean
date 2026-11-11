@@ -291,6 +291,15 @@ theorem vkind66_initMem {lc : LocCtx} {g : G2In} {v : Value} (hop : v.op = .Init
   simp only [he, Option.isSome_none, Bool.false_eq_true, ↓reduceIte]
   cases vkind65 lc g v <;> simp [hn]
 
+/-- Off spills, reloads, `Arg`s and extensions (`extOp?`), `vkind66` is `vkind65`. -/
+theorem vkind66_eq65 {lc : LocCtx} {g : G2In} {v : Value} (hs : v.op ≠ .StoreReg)
+    (hl : v.op ≠ .LoadReg) (ha : v.op ≠ .Arg) (he : extOp? v.op = none) :
+    vkind66 lc g v = vkind65 lc g v := by
+  have hn : ∀ e, vkind66a lc g v e = none := fun _ => vkind66a_none hs hl ha
+  unfold vkind66
+  simp only [elide66b_none he, Option.isSome_none, Bool.false_eq_true, ↓reduceIte]
+  cases vkind65 lc g v <;> simp [hn]
+
 /-- On a function with no arm64 op, G66's check is G33. -/
 theorem checkG33_of_66L {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}
     {r : Except String (PcTab × KTab)} (hl : lc.ctx.f.lowered = false)

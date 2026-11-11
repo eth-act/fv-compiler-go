@@ -24,6 +24,10 @@ slot's own bytes; nothing here changes the relation.
   the `V` register (`progStep_fstoreAt`, `progStep_floadAt`); a 32-bit value has no pointer form,
   so the reload needs no premise (`g66_fspill`, `g66_freload`).
 * A narrow incoming stack argument (`VK66.narg`) is G62's `g62_arg`, at any class.
+
+As `g2_spillW`/`g63_fspillW`, `g66_nspillW` and `g66_fspillW` take the relation on the machine
+state with its memory replaced by one that agrees with it outside some bytes `W` (the entry
+stores' pending windows, `GoFV/Proof/Obj/EntrySkip.lean`): both memories get the same write.
 -/
 
 namespace GoFV.Proof.Gen
@@ -219,14 +223,16 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
   {ret : BitVec 64} {E : MatchEnv} {lc : LocCtx} {g : G2In} {s s' : LocState} {b : ID} {i : Nat}
   {m : MState} {env : Env} {v : Value} {j j' : Nat} {K K' : Nat → Option Nat}
 
-/-- **A narrow spill**: `MOVB`/`MOVH`/`MOVW Rs, off(RSP)` of the register's low `n` bytes. -/
-theorem g66_nspill (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
+/-- **A narrow spill**: `MOVB`/`MOVH`/`MOVW Rs, off(RSP)` of the register's low `n` bytes, from a
+relation on `m` with its memory replaced by `M0` (agreeing with `m.mem` outside `W`), as
+`g2_spillW`: both memories get the same write. `g66_nspill` is the case `M0 = m.mem`. -/
+theorem g66_nspillW (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
     (hlc : E.lc = lc) (hcf : checkFrame lc g = .ok ())
     (hslot : ∀ k ∈ homeSlots lc, ∀ nc off, g.slotOp k = some (nc, off) →
       E.slot k = some (frameOff (Link.byId sym text az ez psA.toList) nc off))
-    (hext : 0 ≤ (Link.byId sym text az ez psA.toList).extrasize)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
-    (hR : KRead lc v K) (hK : KNext lc v K K')
+    (hext : 0 ≤ (Link.byId sym text az ez psA.toList).extrasize) {M0 : Memory}
+    (hm : LocMatch E s b i { m with mem := M0 }) (hinv : CoreInv E.ι (StkAt E) K s osp)
+    (hsi : SlotInv lc s) (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {k : SlotKey} {nc : AddrName} {off : Int} {rs : Int} {n c : Nat}
     (hop : v.op = .StoreReg) (hn : narrowBytes lc v.type = some n)
@@ -234,10 +240,11 @@ theorem g66_nspill (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK 
     (hsz1 : v.args.size = 1) (hts : (lc.ty v.id).size = n) (hao : argObj lc v 0 = .ok (c, rs))
     (hcv : cls (lc.ty v.id) = some c)
     (hvs : OneAt2 psA j ⟨plain (nstoreAs n) (· == regA rs) (slotA · nc off), "narrow spill"⟩ j')
-    (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
-    ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' ∧
-      m'.x = m.x := by
+    (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s')
+    {W : BitVec 64 → Prop} (hW : ∀ y, ¬ W y → M0 y = m.mem y) :
+    ∃ m' M', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
+      LocMatch E s' b (i + 1) { m' with mem := M' } ∧ CoreInv E.ι (StkAt E) K' s' osp ∧
+      SlotInv lc s' ∧ m'.x = m.x ∧ ∀ y, ¬ W y → M' y = m'.mem y := by
   have hl := F.lowered
   have hA := F.addr
   have hn3 := narrowBytes_spec hn
@@ -259,32 +266,62 @@ theorem g66_nspill (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK 
   obtain ⟨ho8, hohi⟩ := hF.slot k o hsl
   have hsp : m.sp = E.sp := hm.frame.1
   obtain ⟨k0, rfl, hk0, hok, hstar⟩ := pstar_oneAt2 (H := H) F.nodup F.lt F.ret hvs m
-  rw [pc_eta hm hj] at hstar
+  have hpc : ({ m with pc := pcAt text psA.toList j } : MState) = m := by
+    rw [← hj, ← show ({ m with mem := M0 } : MState).pc = E.pcOf b i from hm.pc]
+  rw [hpc] at hstar
   simp only [plain, Bool.and_eq_true, beq_iff_eq, and_assoc] at hok
   obtain ⟨has, hf, -, ht, -, -, -⟩ := hok
   obtain ⟨V, hVe⟩ : ∃ V : BitVec 64,
       V = ({ m with pc := pcAt text psA.toList k0 } : MState).rX (BitVec.ofNat 5 ks) := ⟨_, rfl⟩
-  obtain ⟨W, hW⟩ : ∃ W : BitVec (8 * n), W = BitVec.ofNat (8 * n) (V.toNat % 2 ^ (8 * n)) :=
+  obtain ⟨Y, hY⟩ : ∃ Y : BitVec (8 * n), Y = BitVec.ofNat (8 * n) (V.toNat % 2 ^ (8 * n)) :=
     ⟨_, rfl⟩
   have hstep : progStep (Link.byId sym text az ez psA.toList) psA.toList[k0]
       { m with pc := pcAt text psA.toList k0 } =
-      .ok { m with mem := (writeMem m.mem (E.sp + BitVec.ofInt 64 o) n W),
+      .ok { m with mem := (writeMem m.mem (E.sp + BitVec.ofInt 64 o) n Y),
                    pc := pcAt text psA.toList (k0 + 1) } := by
     rw [progStep_slotStoreN hks (nextAddr_pcAt F.nodup hk0) (by rw [has]; exact nstoreAs_movMem hn3)
       hf ht hnc]
-    · rw [← hVe, ← hW, hsp, ho]
+    · rw [← hVe, ← hY, hsp, ho]
     · simp only [nilPage, decide_eq_false_iff_not, Nat.not_lt]
       show 4096 ≤ (m.sp + BitVec.ofInt 64 _).toNat
       rw [hsp, ho, win0_toNat (by omega) hohi]
       have := hF.lo; omega
   have hxV : ValRel E.ι (x.retypeL (lc.ty v.id)) V := by
     rw [hVe]; exact valRel_retypeL hA hcv hxf hxv
-  have hyW : ValRel E.ι (x.retypeL (lc.ty v.id)) (W.setWidth 64) := by
-    rw [hW]; exact valRel_lowN hn3 hcn (fits_retypeL hcv _) hxV
-  refine ⟨_, hstar.tail (pstep_at F.nodup F.lt F.ret hk0 rfl hstep),
-    slot_write_match hF hlc hcf hslot hext hm hinv hsi hh hsl hkn hyW hj'.symm, ?_,
-    slotInv_setSlot hcf hsi hh hcv (fits_retypeL hcv _), rfl⟩
+  have hyW : ValRel E.ι (x.retypeL (lc.ty v.id)) (Y.setWidth 64) := by
+    rw [hY]; exact valRel_lowN hn3 hcn (fits_retypeL hcv _) hxV
+  refine ⟨_, writeMem M0 (E.sp + BitVec.ofInt 64 o) n Y,
+    hstar.tail (pstep_at F.nodup F.lt F.ret hk0 rfl hstep),
+    slot_write_match (m := { m with mem := M0 }) hF hlc hcf hslot hext hm hinv hsi hh hsl hkn hyW
+      hj'.symm, ?_, slotInv_setSlot hcf hsi hh hcv (fits_retypeL hcv _), rfl,
+    fun y hy => writeMem_pt n _ _ _ _ y (hW y hy)⟩
   exact CoreInv.mono ⟨hinv.regs, hinv.mem⟩ (knext_same hK (Or.inr fun r _ => by rw [hh]; nofun))
+
+/-- **A narrow spill**: `g66_nspillW` with the relation on `m` itself. -/
+theorem g66_nspill (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
+    (hlc : E.lc = lc) (hcf : checkFrame lc g = .ok ())
+    (hslot : ∀ k ∈ homeSlots lc, ∀ nc off, g.slotOp k = some (nc, off) →
+      E.slot k = some (frameOff (Link.byId sym text az ez psA.toList) nc off))
+    (hext : 0 ≤ (Link.byId sym text az ez psA.toList).extrasize)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
+    (hR : KRead lc v K) (hK : KNext lc v K K')
+    (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
+    {k : SlotKey} {nc : AddrName} {off : Int} {rs : Int} {n c : Nat}
+    (hop : v.op = .StoreReg) (hn : narrowBytes lc v.type = some n)
+    (hh : lc.home v.id = some (.slot k)) (hso : g.slotOp k = some (nc, off))
+    (hsz1 : v.args.size = 1) (hts : (lc.ty v.id).size = n) (hao : argObj lc v 0 = .ok (c, rs))
+    (hcv : cls (lc.ty v.id) = some c)
+    (hvs : OneAt2 psA j ⟨plain (nstoreAs n) (· == regA rs) (slotA · nc off), "narrow spill"⟩ j')
+    (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
+    ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' ∧
+      m'.x = m.x := by
+  obtain ⟨m', M', h1, h2, h3, h4, h5, h6⟩ := g66_nspillW (H := H) F hF hlc hcf hslot hext
+    (M0 := m.mem) hm hinv hsi hR hK hj hj' hop hn hh hso hsz1 hts hao hcv hvs htemp hs
+    (W := fun _ => False) fun _ _ => rfl
+  have hM : M' = m'.mem := funext fun y => h6 y id
+  subst hM
+  exact ⟨m', h1, h2, h3, h4, h5⟩
 
 
 /-- **A narrow reload**: `loadByType`'s `MOV{B,H,W}` (signed type) or `MOV{B,H,W}U off(RSP), Rd`
@@ -360,24 +397,27 @@ theorem g66_nreload (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK
   rw [hsp, win0_toNat (by omega) hohi]
   have := hF.lo; omega
 
-/-- **A `float32` spill**: `FMOVS Fs, off(RSP)` of the low 4 bytes of the argument's V register. -/
-theorem g66_fspill (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
+/-- **A `float32` spill**: `FMOVS Fs, off(RSP)` of the low 4 bytes of the argument's V register,
+from a relation on `m` with its memory replaced by `M0` (agreeing with `m.mem` outside `W`), as
+`g63_fspillW`. `g66_fspill` is the case `M0 = m.mem`. -/
+theorem g66_fspillW (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
     (hlc : E.lc = lc) (hcf : checkFrame lc g = .ok ())
     (hslot : ∀ k ∈ homeSlots lc, ∀ nc off, g.slotOp k = some (nc, off) →
       E.slot k = some (frameOff (Link.byId sym text az ez psA.toList) nc off))
-    (hext : 0 ≤ (Link.byId sym text az ez psA.toList).extrasize)
-    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
-    (hR : KRead lc v K) (hK : KNext lc v K K')
+    (hext : 0 ≤ (Link.byId sym text az ez psA.toList).extrasize) {M0 : Memory}
+    (hm : LocMatch E s b i { m with mem := M0 }) (hinv : CoreInv E.ι (StkAt E) K s osp)
+    (hsi : SlotInv lc s) (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
     {k : SlotKey} {nc : AddrName} {off : Int} {rs : Int}
     (hop : v.op = .StoreReg) (hh : lc.home v.id = some (.slot k))
     (hso : g.slotOp k = some (nc, off)) (hsz1 : v.args.size = 1) (hft : fTy (lc.ty v.id) = true)
     (hcv : cls (lc.ty v.id) = some 32) (hao : fargObj lc v 0 = .ok (32, rs))
     (hvs : OneAt2 psA j ⟨plain .FMOVS (· == regA rs) (slotA · nc off), "FMOVS spill"⟩ j')
-    (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
-    ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' ∧
-      m'.x = m.x := by
+    (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s')
+    {W : BitVec 64 → Prop} (hW : ∀ y, ¬ W y → M0 y = m.mem y) :
+    ∃ m' M', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
+      LocMatch E s' b (i + 1) { m' with mem := M' } ∧ CoreInv E.ι (StkAt E) K' s' osp ∧
+      SlotInv lc s' ∧ m'.x = m.x ∧ ∀ y, ¬ W y → M' y = m'.mem y := by
   have hl := F.lowered
   have hnp : v.op ≠ .Phi := by rw [hop]; nofun
   obtain ⟨a, r1, ha0, hah, hfo1, hft1, hca⟩ := fargObj_spec hao
@@ -399,38 +439,67 @@ theorem g66_fspill (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK 
   obtain ⟨ho8, hohi⟩ := hF.slot k o hsl
   have hsp : m.sp = E.sp := hm.frame.1
   obtain ⟨k0, rfl, hk0, hok, hstar⟩ := pstar_oneAt2 (H := H) F.nodup F.lt F.ret hvs m
-  rw [pc_eta hm hj] at hstar
+  have hpc : ({ m with pc := pcAt text psA.toList j } : MState) = m := by
+    rw [← hj, ← show ({ m with mem := M0 } : MState).pc = E.pcOf b i from hm.pc]
+  rw [hpc] at hstar
   simp only [plain, Bool.and_eq_true, beq_iff_eq, and_assoc] at hok
   obtain ⟨has, hf, -, ht, -, -, -⟩ := hok
   obtain ⟨q, hq⟩ : ∃ q : BitVec 128,
       q = ({ m with pc := pcAt text psA.toList k0 } : MState).v (BitVec.ofNat 5 ks) := ⟨_, rfl⟩
-  obtain ⟨W, hW⟩ : ∃ W : BitVec (8 * 4), W = BitVec.ofNat (8 * 4) (q.toNat % 2 ^ (8 * 4)) :=
+  obtain ⟨Y, hY⟩ : ∃ Y : BitVec (8 * 4), Y = BitVec.ofNat (8 * 4) (q.toNat % 2 ^ (8 * 4)) :=
     ⟨_, rfl⟩
   have hstep : progStep (Link.byId sym text az ez psA.toList) psA.toList[k0]
       { m with pc := pcAt text psA.toList k0 } =
-      .ok { m with mem := (writeMem m.mem (E.sp + BitVec.ofInt 64 o) 4 W),
+      .ok { m with mem := (writeMem m.mem (E.sp + BitVec.ofInt 64 o) 4 Y),
                    pc := pcAt text psA.toList (k0 + 1) } := by
     rw [progStep_fstoreAt hks (nextAddr_pcAt F.nodup hk0) (by rw [has]; rfl) hf (slotA_eq ht).1
       (ctx_mem_slot ht hnc)]
-    · rw [← hq, ← hW, hsp, ho]
+    · rw [← hq, ← hY, hsp, ho]
     · simp only [nilPage, decide_eq_false_iff_not, Nat.not_lt]
       show 4096 ≤ (m.sp + BitVec.ofInt 64 _).toNat
       rw [hsp, ho, win0_toNat (by omega) hohi]
       have := hF.lo; omega
   have hxV : ValRel E.ι (x.retypeL (lc.ty v.id)) (q.setWidth 64) := by
     rw [hq]; exact valRel_of_fvalRel (fvalRel_retypeL hxv hxf hft hcv)
-  have hyW : ValRel E.ι (x.retypeL (lc.ty v.id)) (W.setWidth 64) := by
+  have hyW : ValRel E.ι (x.retypeL (lc.ty v.id)) (Y.setWidth 64) := by
     have h := valRel_lowN (n := 4) (by omega) (by omega) (fits_retypeL hcv _) hxV
-    have hqW : (BitVec.ofNat (8 * 4) ((q.setWidth 64).toNat % 2 ^ (8 * 4)) : BitVec (8 * 4)) = W := by
-      rw [hW]
+    have hqY : (BitVec.ofNat (8 * 4) ((q.setWidth 64).toNat % 2 ^ (8 * 4)) : BitVec (8 * 4)) = Y := by
+      rw [hY]
       apply BitVec.eq_of_toNat_eq
       simp only [BitVec.toNat_ofNat, BitVec.toNat_setWidth]
       rw [Nat.mod_mod_of_dvd _ (by decide : 2 ^ (8 * 4) ∣ 2 ^ 64)]
-    rwa [hqW] at h
-  refine ⟨_, hstar.tail (pstep_at F.nodup F.lt F.ret hk0 rfl hstep),
-    slot_write_match hF hlc hcf hslot hext hm hinv hsi hh hsl hkn hyW hj'.symm, ?_,
-    slotInv_setSlot hcf hsi hh hcv (fits_retypeL hcv _), rfl⟩
+    rwa [hqY] at h
+  refine ⟨_, writeMem M0 (E.sp + BitVec.ofInt 64 o) 4 Y,
+    hstar.tail (pstep_at F.nodup F.lt F.ret hk0 rfl hstep),
+    slot_write_match (m := { m with mem := M0 }) hF hlc hcf hslot hext hm hinv hsi hh hsl hkn hyW
+      hj'.symm, ?_, slotInv_setSlot hcf hsi hh hcv (fits_retypeL hcv _), rfl,
+    fun y hy => writeMem_pt 4 _ _ _ _ y (hW y hy)⟩
   exact CoreInv.mono ⟨hinv.regs, hinv.mem⟩ (knext_same hK (Or.inr fun r _ => by rw [hh]; nofun))
+
+/-- **A `float32` spill**: `g66_fspillW` with the relation on `m` itself. -/
+theorem g66_fspill (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
+    (hlc : E.lc = lc) (hcf : checkFrame lc g = .ok ())
+    (hslot : ∀ k ∈ homeSlots lc, ∀ nc off, g.slotOp k = some (nc, off) →
+      E.slot k = some (frameOff (Link.byId sym text az ez psA.toList) nc off))
+    (hext : 0 ≤ (Link.byId sym text az ez psA.toList).extrasize)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
+    (hR : KRead lc v K) (hK : KNext lc v K K')
+    (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
+    {k : SlotKey} {nc : AddrName} {off : Int} {rs : Int}
+    (hop : v.op = .StoreReg) (hh : lc.home v.id = some (.slot k))
+    (hso : g.slotOp k = some (nc, off)) (hsz1 : v.args.size = 1) (hft : fTy (lc.ty v.id) = true)
+    (hcv : cls (lc.ty v.id) = some 32) (hao : fargObj lc v 0 = .ok (32, rs))
+    (hvs : OneAt2 psA j ⟨plain .FMOVS (· == regA rs) (slotA · nc off), "FMOVS spill"⟩ j')
+    (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
+    ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' ∧
+      m'.x = m.x := by
+  obtain ⟨m', M', h1, h2, h3, h4, h5, h6⟩ := g66_fspillW (H := H) F hF hlc hcf hslot hext
+    (M0 := m.mem) hm hinv hsi hR hK hj hj' hop hh hso hsz1 hft hcv hao hvs htemp hs
+    (W := fun _ => False) fun _ _ => rfl
+  have hM : M' = m'.mem := funext fun y => h6 y id
+  subst hM
+  exact ⟨m', h1, h2, h3, h4, h5⟩
 
 /-- A value of class 32 related to the zero extension of 4 bytes `Y` as a register is related to
 them in the low bits of a V register. -/

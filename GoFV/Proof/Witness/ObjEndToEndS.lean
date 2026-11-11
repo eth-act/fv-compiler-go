@@ -96,9 +96,9 @@ theorem verified_mach_S_witness :
     obtain ⟨hO, hH, hME, hroom, hg, hnone, -, hEE, hpc, -, -, hic⟩ := ObjWholeS.obj_premises
     obtain ⟨hc, hrok, houts, hE, hb1, hbm, hk, hentry, hu, hes, hargs, sI, hsI, hent, hinv, hspI,
       hP⟩ := ObjWholeS.lc_premises hlcf
-    have hc64 : checkG64 (LocCtx.make r.st.tables r.st.func) GenG3.ps GenG3.bs GenG3.g =
+    have hc64 : checkG66 (LocCtx.make r.st.tables r.st.func) GenG3.ps GenG3.bs GenG3.g =
         .ok (GenG3.tab, GenG3.kt) := by
-      simpa [checkG64, hrl] using hc
+      simpa [checkG66, hrl] using hc
     rw [← hentry] at hpc
     obtain ⟨hmt, hcr⟩ := ObjWholeS.lc_ro hlcf
     obtain ⟨fuel', href, raw, hraw, hfin, hdef, hret, -⟩ :=

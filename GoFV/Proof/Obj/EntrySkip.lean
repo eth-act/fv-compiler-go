@@ -8,19 +8,22 @@ variable [GoFV.SSA.Sem.Addrs]
 Between the entry values and the entry stores genssa may place spills and values without code;
 `storesFrom` steps over them (`entrySkip`: a `StoreReg` or `SB` without an aux, `SP`, `InitMem`,
 in a function with an arm64 op). The whole-function simulation runs them against the memory
-related but for the pending windows `W` (`Whole.lean`, `sim_entrySkip`), so `g64L_entrySkip` is
-`g64L_entryStore`'s statement for them: from a relation on `{m with mem := M0}`, `M0` agreeing
+related but for the pending windows `W` (`Whole.lean`, `sim_entrySkip`), so `g66L_entrySkip` is
+`g66L_entryStore`'s statement for them: from a relation on `{m with mem := M0}`, `M0` agreeing
 with `m.mem` outside `W`, the value's Prog runs `m` to `m'` (the X registers kept) with a relation
 on `{m' with mem := M'}`, `M'` agreeing with `m'.mem` outside `W`.
 
-What `checkG64L` accepted of such a value: `vkind64` of a `StoreReg`, `SP` or `SB` is `vkind28`'s
-or, for a `StoreReg`, G63's float spill (`vkind64_skip28`: no op of G38's–G64's groups, and G48's
-`kind48` takes no call and no access off `SP`); `vkind28` of `SP` is `vkind24`'s
-(`vkind28_eq24`), and of a `StoreReg` or `SB` without an aux `vkind3`'s (`vkind28_ok3`: no op of
-G4's–G28's groups, and `frameVar?` is `none` without an aux). So the value is G2's spill
-(`g2_spillW`), G63's float spill (`g63_fspillW`), G24's `SP` (`g24_spW`), G3's `SB` (`g3_sbW`) or
-`InitMem` (as `g64L_initMem`, at a clean position, `MemAt`): the spills write their slot in both
-memories alike, the others run no code.
+What `checkG66L` accepted of such a value: `vkind66` of `SP` or `SB` is `vkind64`'s
+(`vkind66_eq65`, `vkind65_eq64`), and of a `StoreReg` `vkind64`'s or G66's `float32` or narrow
+spill (`vkind66_spill64`: a `StoreReg` is no extension and no op of G65's); `vkind64` of a
+`StoreReg`, `SP` or `SB` is `vkind28`'s or, for a `StoreReg`, G63's float spill (`vkind64_skip28`:
+no op of G38's–G64's groups, and G48's `kind48` takes no call and no access off `SP`); `vkind28`
+of `SP` is `vkind24`'s (`vkind28_eq24`), and of a `StoreReg` or `SB` without an aux `vkind3`'s
+(`vkind28_ok3`: no op of G4's–G28's groups, and `frameVar?` is `none` without an aux). So the
+value is G2's spill (`g2_spillW`), G63's float spill (`g63_fspillW`), G66's `float32` or narrow
+spill (`g66_fspillW`, `g66_nspillW`), G24's `SP` (`g24_spW`), G3's `SB` (`g3_sbW`) or `InitMem`
+(as `g66L_initMem`, at a clean position, `MemAt`): the spills write their slot in both memories
+alike, the others run no code.
 
 None of them panics (`stepLoc_entrySkip_ne_panic`): a `StoreReg` moves its argument, and `SP`,
 `SB`, `InitMem` are generic ops that are no call and no nil check (`evalOpL_panic_op`).
@@ -31,7 +34,7 @@ namespace GoFV.Proof.Obj
 open GoFV.SSA GoFV.SSA.Sem GoFV.Gen.Check GoFV.Arm64 GoFV.Asm GoFV.Asm.ARM64
 open GoFV.Proof.Gen
 
-/-! ## What `checkG64L` accepted of a skipped value -/
+/-! ## What `checkG66L` accepted of a skipped value -/
 
 /-- What `vkind28` accepted of a `StoreReg` or `SB` without an aux, `vkind3` accepted: it is no
 op of G4's–G28's groups, and `frameVar?` is `none` without an aux. -/
@@ -187,6 +190,89 @@ theorem fspill63_ok {lc : LocCtx} {g : G2In} {v : Value} {e : String} {kd : VKin
     · simp at h
   · simp at h
 
+/-- What `fspill66` accepted: `VK66.fspill`'s facts. -/
+theorem fspill66_ok {lc : LocCtx} {g : G2In} {v : Value} {e : String} {kd : VKind2}
+    (h : fspill66 lc g v e = .ok kd) :
+    ∃ k nc off rs, (lc.temps[v.id]?).join = none ∧ lc.home v.id = some (.slot k) ∧
+      g.slotOp k = some (nc, off) ∧ v.args.size = 1 ∧ fTy (lc.ty v.id) = true ∧
+      cls (lc.ty v.id) = some 32 ∧ fargObj lc v 0 = .ok (32, rs) ∧
+      kd = .prog ⟨plain .FMOVS (· == regA rs) (slotA · nc off), "FMOVS spill"⟩ := by
+  unfold fspill66 at h
+  obtain ⟨-, h⟩ := ex_guard h
+  obtain ⟨ht, h⟩ := ex_guard h
+  split at h
+  · rename_i k hk
+    split at h
+    · rename_i nc off hso
+      obtain ⟨hsz, h⟩ := ex_guard h
+      simp only [Bool.and_eq_true, beq_iff_eq] at hsz
+      obtain ⟨⟨c, rs⟩, hao, h⟩ := ex_bind_eq_ok h
+      obtain ⟨hc, h⟩ := ex_guard h
+      simp only [beq_iff_eq] at hc
+      subst hc
+      cases h
+      refine ⟨k, nc, off, rs, by simpa using ht, ?_, hso, hsz.1.1, hsz.1.2, hsz.2, hao, rfl⟩
+      unfold slotHome? at hk
+      split at hk <;> simp_all
+    · simp at h
+  · simp at h
+
+/-- What `nspill66` accepted: `VK66.nspill`'s facts. -/
+theorem nspill66_ok {lc : LocCtx} {g : G2In} {v : Value} {e : String} {kd : VKind2}
+    (h : nspill66 lc g v e = .ok kd) :
+    ∃ k nc off rs n c, (lc.temps[v.id]?).join = none ∧ narrowBytes lc v.type = some n ∧
+      lc.home v.id = some (.slot k) ∧ g.slotOp k = some (nc, off) ∧ v.args.size = 1 ∧
+      (lc.ty v.id).size = n ∧ argObj lc v 0 = .ok (c, rs) ∧ cls (lc.ty v.id) = some c ∧
+      kd = .prog ⟨plain (nstoreAs n) (· == regA rs) (slotA · nc off), "narrow spill"⟩ := by
+  unfold nspill66 at h
+  obtain ⟨-, h⟩ := ex_guard h
+  split at h
+  · rename_i n hn
+    obtain ⟨ht, h⟩ := ex_guard h
+    split at h
+    · rename_i k hk
+      split at h
+      · rename_i nc off hso
+        obtain ⟨hsz, h⟩ := ex_guard h
+        simp only [Bool.and_eq_true, beq_iff_eq] at hsz
+        obtain ⟨⟨c, rs⟩, hao, h⟩ := ex_bind_eq_ok h
+        obtain ⟨hc, h⟩ := ex_guard h
+        simp only [beq_iff_eq] at hc
+        cases h
+        refine ⟨k, nc, off, rs, n, c, by simpa using ht, hn, ?_, hso, hsz.1, hsz.2, hao, hc, rfl⟩
+        unfold slotHome? at hk
+        split at hk <;> simp_all
+      · first | exact (ex_throw_bind h).elim | simp [ex_throw] at h
+    · first | exact (ex_throw_bind h).elim | simp [ex_throw] at h
+  · first | exact (ex_throw_bind h).elim | simp [ex_throw] at h
+
+/-- What `vkind66` accepted of a `StoreReg`, `vkind64` accepted, or G66's `float32` spill
+(`fspill66`) or narrow spill (`nspill66`): a `StoreReg` is no extension (`elide66b` is `none`)
+and no op of G65's (`vkind65_eq64`). -/
+theorem vkind66_spill64 {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2}
+    (hop : v.op = .StoreReg) (h : vkind66 lc g v = .ok kd) :
+    vkind64 lc g v = .ok kd ∨ ∃ e, fspill66 lc g v e = .ok kd ∨ nspill66 lc g v e = .ok kd := by
+  have he : elide66b lc v = none := elide66b_none (by rw [hop]; rfl)
+  unfold vkind66 at h
+  simp only [he, Option.isSome_none, Bool.false_eq_true, ↓reduceIte] at h
+  cases h65 : vkind65 lc g v with
+  | ok kd' =>
+    rw [h65] at h
+    cases h
+    rw [vkind65_eq64 (by rw [hop]; rfl)] at h65
+    exact .inl h65
+  | error e =>
+    rw [h65] at h
+    simp only at h
+    refine .inr ⟨e, ?_⟩
+    by_cases hf : ((v.args[0]?).bind (regHome? lc) |>.bind fobjOf?).isSome = true
+    · have ha : vkind66a lc g v e = some (fspill66 lc g v e) := by simp [vkind66a, hop, hf]
+      rw [ha] at h
+      exact .inl h
+    · have ha : vkind66a lc g v e = some (nspill66 lc g v e) := by simp [vkind66a, hop, hf]
+      rw [ha] at h
+      exact .inr h
+
 /-- The values `entrySkip` takes. -/
 theorem entrySkip_cases {lc : LocCtx} {v : Value} (h : entrySkip lc v = true) :
     lc.ctx.f.lowered = true ∧ (v.op = .SP ∨ v.op = .InitMem ∨
@@ -196,16 +282,16 @@ theorem entrySkip_cases {lc : LocCtx} {v : Value} (h : entrySkip lc v = true) :
 /-! ## A skipped value against a memory related but for some bytes -/
 
 /-- **A value the entry stores come after (`entrySkip`), against a memory related but for some
-bytes**: `g64L_entryStore`'s statement. From a relation on `{m with mem := M0}`, `M0` agreeing with
-`m`'s memory outside `W`, a value `entrySkip` takes that `checkG64L` accepted runs its Prog (a
+bytes**: `g66L_entryStore`'s statement. From a relation on `{m with mem := M0}`, `M0` agreeing with
+`m`'s memory outside `W`, a value `entrySkip` takes that `checkG66L` accepted runs its Prog (a
 spill's store to its slot, or none) from `m` to `m'` (the X registers kept) with a relation on
 `{m' with mem := M'}`, `M'` agreeing with `m'`'s memory outside `W`, the class map and G35's table
 after the value. -/
-theorem g64L_entrySkip {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+theorem g66L_entrySkip {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab}
     {E : MatchEnv} {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s s' : LocState}
     {m : MState} {M0 : Memory} {W : BitVec 64 → Prop} {osp : Bool}
-    (hc : checkG64L lc ps bstart g = .ok (tab, kt)) (hE : G49Env lc g L ps ret tab E)
+    (hc : checkG66L lc ps bstart g = .ok (tab, kt)) (hE : G49Env lc g L ps ret tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
     (hsk : entrySkip lc v = true)
@@ -227,7 +313,7 @@ theorem g64L_entrySkip {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Lin
   subst hL
   have hok0 := hc
   obtain ⟨c, rfl, rfl, -, rfl, hvk, -, hl, hhome, hcf, hk, hlt, hnd, hblocks, -, -, -, -, -, -⟩ :=
-    checkG64L_spec hl0 hc
+    checkG66L_spec hl0 hc
   obtain ⟨b, j, js, e, next, hb', -, hvals, -, -, hrow⟩ := Cx2.blocks_spec hblocks bid hbid
   rw [hb] at hb'
   cases hb'
@@ -263,6 +349,8 @@ theorem g64L_entrySkip {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Lin
           (by simp [h]) (by simp [h]) (by simp [h]), hW⟩
   rcases hops with hop | hop | ⟨hx, hop | hop⟩
   · -- `SP`
+    rw [vkind66_eq65 (by rw [hop]; decide) (by rw [hop]; decide) (by rw [hop]; decide)
+      (by rw [hop]; rfl), vkind65_eq64 (by rw [hop]; rfl)] at hkd
     rcases vkind64_skip28 (.inr (.inl hop)) hkd with h28 | ⟨h, -⟩
     · rw [vkind28_eq24 hop] at h28
       obtain ⟨htemp, hVK⟩ := vkind24_spec h28 (by rw [hop]; rfl)
@@ -279,7 +367,8 @@ theorem g64L_entrySkip {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Lin
         exact hnone (.inl hop) h1 h2 h3
     · rw [hop] at h; cases h
   · -- `InitMem`
-    rw [vkind64_initMem hop, vkind63_initMem hop, vkind62_initMem hop, vkind61_initMem hop,
+    rw [vkind66_initMem hop, vkind65_initMem hop, vkind64_initMem hop, vkind63_initMem hop,
+      vkind62_initMem hop, vkind61_initMem hop,
       vkind60_initMem hop, vkind59_initMem hop, vkind58_initMem hop] at hkd
     have hkd := vkind48_initMem hop hkd
     rw [vkind57_initMem hop, vkind55_initMem hop, vkind54_initMem hop, vkind53_initMem hop,
@@ -289,7 +378,7 @@ theorem g64L_entrySkip {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Lin
       vkind45_initMem hop, vkind44_initMem hop] at hkd
     obtain ⟨-, -, ht, -, hh, hmt, rfl⟩ := vkind43_initMem hkd hop
     have hpc : E.pcOf bid (i + 1) = E.pcOf bid i := by rw [hj', hj, hvs]
-    obtain ⟨hok, hcl⟩ := g64L_clean hok0 hl hbid hb hi hv hop
+    obtain ⟨hok, hcl⟩ := g66L_clean hok0 hl hbid hb hi hv hop
     have hss : s' = s := by
       rw [stepLoc_initMem hl ht hop hh hmt hs]
       exact congrArg (fun x => { s with mem := x }) (hmi hl hok hcl).symm
@@ -302,6 +391,21 @@ theorem g64L_entrySkip {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Lin
     intro e he
     cases he
   · -- a spill
+    obtain hkd | ⟨e66, hfs66 | hns66⟩ := vkind66_spill64 hop hkd
+    rotate_left
+    · obtain ⟨k, nc, off, rs, htemp, hh, hso, hsz1, hft, hcv, hao, rfl⟩ := fspill66_ok hfs66
+      obtain ⟨m', M', h1, h2, h3, h4, h5, h6⟩ := g66_fspillW (H := H) F hF hlcE hcf hslot hextra
+        hm hinv.core hinv.slots (kread_of_reads hreads)
+        (knext_kStep fun _ => (hs_slot hh).noRegs) hj hj' hop hh hso hsz1 hft hcv hao hvs
+        htemp hs hW
+      exact ⟨m', M', h1, h5, h2, ⟨h3, h4⟩, uokl_f63 (.inl hop) h5 hu, h6⟩
+    · obtain ⟨k, nc, off, rs, n, c', htemp, hn, hh, hso, hsz1, hts, hao, hcv, rfl⟩ :=
+        nspill66_ok hns66
+      obtain ⟨m', M', h1, h2, h3, h4, h5, h6⟩ := g66_nspillW (H := H) F hF hlcE hcf hslot hextra
+        hm hinv.core hinv.slots (kread_of_reads hreads)
+        (knext_kStep fun _ => (hs_slot hh).noRegs) hj hj' hop hn hh hso hsz1 hts hao hcv hvs
+        htemp hs hW
+      exact ⟨m', M', h1, h5, h2, ⟨h3, h4⟩, uokl_f63 (.inl hop) h5 hu, h6⟩
     rcases vkind64_skip28 (.inl hop) hkd with h28 | ⟨-, e', hfs⟩
     · obtain ⟨htemp, hVK⟩ := vkind3_spec (vkind28_ok3 (.inl hop) hx h28) (by rw [hop]; rfl)
       have hl0 : loadOp? v.op = none := by rw [hop]; rfl
@@ -339,6 +443,8 @@ theorem g64L_entrySkip {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Lin
       exact ⟨m', M', h1, h5, h2, ⟨h3, h4⟩,
         uokl_f63 (.inl hop) (fun h => by rw [hop] at h; cases h) h5 hu, h6⟩
   · -- `SB`
+    rw [vkind66_eq65 (by rw [hop]; decide) (by rw [hop]; decide) (by rw [hop]; decide)
+      (by rw [hop]; rfl), vkind65_eq64 (by rw [hop]; rfl)] at hkd
     rcases vkind64_skip28 (.inr (.inr hop)) hkd with h28 | ⟨h, -⟩
     · obtain ⟨htemp, hVK⟩ := vkind3_spec (vkind28_ok3 (.inr hop) hx h28) (by rw [hop]; rfl)
       have hl0 : loadOp? v.op = none := by rw [hop]; rfl

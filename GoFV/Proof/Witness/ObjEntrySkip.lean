@@ -14,7 +14,7 @@ then the entry store `v39 = STP (R0, R1), str+0(FP)` of the register-assigned pa
 window `[0, 16)` the function accesses (`pendWins`). `storesFrom` steps over the spills and the
 values without code (`entrySkip`), so `entryStoresOK lc g (entryLen lc)` holds; the entry stores
 as long as they last from `entryLen lc` without that step (`storesFromNoSkip`, `storesFrom`
-before it) are none, and that check fails. `checkG64` accepts the function. By compiled
+before it) are none, and that check fails. `checkG66` accepts the function. By compiled
 evaluation (`native_decide`, listed in `scripts/axioms-allowlist.txt`; `skip_facts`):
 `entrySkip_witness`.
 -/
@@ -3304,7 +3304,7 @@ def lc0 : LocCtx :=
   | .ok x => x.1
   | .error _ => { ctx := default, homes := #[], temps := #[] }
 
-/-- The context `checkG64` runs `checkG64L` on and the end-to-end checks take (`liveCtx`). -/
+/-- The context `checkG66` runs `checkG66L` on and the end-to-end checks take (`liveCtx`). -/
 def lc : LocCtx := liveCtx lc0
 
 def ps : Array GoFV.Asm.Prog :=
@@ -3343,23 +3343,23 @@ def first : Option Value :=
   (lc.ctx.f.block? lc.ctx.f.entry).bind fun blk =>
     (blk.values[entryLen lc]?).bind lc.ctx.f.value?
 
-/-- What compiled evaluation checks: `checkG64` accepts `Sscan`; `entryStoresOK` holds at
+/-- What compiled evaluation checks: `checkG66` accepts `Sscan`; `entryStoresOK` holds at
 `entryLen` and `entryStoresOKNoSkip` does not; a window is pending; the value at `entryLen` is a
 spill that `entrySkip` takes. -/
 def sFacts : Bool :=
-  (checkG64 lc0 ps bs g).toBool && entryStoresOK lc g (entryLen lc) &&
+  (checkG66 lc0 ps bs g).toBool && entryStoresOK lc g (entryLen lc) &&
     !entryStoresOKNoSkip lc g (entryLen lc) && !(pendWins lc g).isEmpty &&
     first.any fun v => v.op == .StoreReg && entrySkip lc v
 
 theorem skip_facts : sFacts = true := by
   native_decide
 
-/-- **Entry stores after a spill** (`storesFrom`'s step over `entrySkip`): `checkG64` accepts
+/-- **Entry stores after a spill** (`storesFrom`'s step over `entrySkip`): `checkG66` accepts
 `fmt.Sscan`, whose entry stores come after spills and values without code; `entryStoresOK` holds
 at `entryLen`, the check without that step does not, a window is pending, and the value at
 `entryLen` is a spill `entrySkip` takes. -/
 theorem entrySkip_witness :
-    (checkG64 lc0 ps bs g).toBool = true ∧ entryStoresOK lc g (entryLen lc) = true ∧
+    (checkG66 lc0 ps bs g).toBool = true ∧ entryStoresOK lc g (entryLen lc) = true ∧
       entryStoresOKNoSkip lc g (entryLen lc) = false ∧ pendWins lc g ≠ [] ∧
       ∃ v, first = some v ∧ v.op = .StoreReg ∧ entrySkip lc v = true := by
   have h := skip_facts

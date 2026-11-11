@@ -8,10 +8,10 @@ variable [GoFV.SSA.Sem.Addrs]
 
 `verifiedPipelineFull_refines` (Phase 2: every returning or panicking `run` of the generic SSA
 input is refined by a `runLoc` of `trim`'s output) composed with `obj_whole_ret` (Phase 3: a
-returning `runLoc` body of a function `checkG64L`, `retRegsOK` and `checkObj` accept is matched by
+returning `runLoc` body of a function `checkG66L`, `retRegsOK` and `checkObj` accept is matched by
 `runMach` of the linked words, with the results in their ABI registers) and `obj_whole_panic` (a
-panicking body by a panicking `runMach`), on slice G64: `checkG64` accepts the pipeline's output
-`LocCtx.make tabs f` when `refsLive` holds of it and `checkG64L` accepts `liveCtx` of it (the homes
+panicking body by a panicking `runMach`), on slice G66: `checkG66` accepts the pipeline's output
+`LocCtx.make tabs f` when `refsLive` holds of it and `checkG66L` accepts `liveCtx` of it (the homes
 of removed values dropped), under which `runLoc` runs alike (`runLoopLoc_live`). `runLoc` is
 `finish` of its body `runLoopLoc` (`runLoc_eq`), whose outcome is returned or panicked when
 `runLoc`'s is (`finish_defined`). The entry relation leaves out the windows of the
@@ -64,7 +64,7 @@ theorem verified_mach_M {osp : Bool}
     {H : Hooks} {g : G2In} {L : Link} {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab}
     {kt : KTab} {E0 : MatchEnv} {spills : Array Spill} {o : ObjIn} {otab : Tab}
     {base : BitVec 64} {code : Code} {room : Nat} {s0 : MState}
-    (hc : checkG64 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
+    (hc : checkG66 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
     (hn48 : needs48 lc = true → osp = true)
     (hO : ObjEnv ps spills o otab L base code (s0.x 30))
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
@@ -112,7 +112,7 @@ theorem verified_mach_M {osp : Bool}
   obtain ⟨fuel', href⟩ := verifiedPipelineFull_refines hpipe hv hP hn ha hnp hd
   have hd' : (runLoc e r.st.tables r.st.func args mem fuel').Defined := href.defined_right
   have hargs := runLoc_args hd'
-  obtain ⟨hr, hc⟩ := checkG64_spec hc
+  obtain ⟨hr, hc⟩ := checkG66_spec hc
   have hRo : RoRun g e lc lc.ctx.f.entry k sI := by
     by_cases hcr : constRo (symNames g) = []
     · exact roRun_nil hcr
@@ -136,7 +136,7 @@ theorem verified_mach_M {osp : Bool}
 
 /-- **Generic SSA to machine words.** `f` goes through the verified pipeline (`fullyVerified`)
 to the allocated function `r.st.func` (tables `r.st.tables`); genssa's Progs with `progedit`'s
-float constant loads, P0' `ps`, are accepted by `checkG64` (so `checkG64L` accepts them on `lc`,
+float constant loads, P0' `ps`, are accepted by `checkG66` (so `checkG66L` accepts them on `lc`,
 `LocCtx.make` of the pipeline's output without the homes of removed values, `liveCtx`), its
 returns by `retRegsOK` (the register results in their ABI registers, `ownOutRegs`), the memory
 types by `memTyL`, and the assembler's output `o` by `checkObj`
@@ -182,7 +182,7 @@ theorem verified_mach
     {H : Hooks} {g : G2In} {L : Link} {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab}
     {kt : KTab} {E0 : MatchEnv} {spills : Array Spill} {o : ObjIn} {otab : Tab}
     {base : BitVec 64} {code : Code} {room : Nat} {s0 : MState}
-    (hc : checkG64 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
+    (hc : checkG66 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
     (hn48 : needs48 lc = false)
     (hO : ObjEnv ps spills o otab L base code (s0.x 30))
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
@@ -235,12 +235,12 @@ theorem verified_mach
 
 /-- **Generic SSA to machine words, in G48's mode** (for a function that needs it, `needs48`: a
 call with stack arguments or results, an access off `SP` that G48 alone accepts; it holds of any
-function `checkG64` accepts). `verified_mach`'s statement with the activation's `outargs` block at
+function `checkG66` accepts). `verified_mach`'s statement with the activation's `outargs` block at
 `SP` (`hosp`, `SPInv` at the entry, `hspI`), the separation `SepFromW` (`G3Inv … true`) and the
 callee contracts of that mode (`RunPreS`: the `CallOKS` family and `CallOKStk`; `RunPanicPreS`:
 `CallPanicOKS`, `ICallPanicOKS`). `f` goes through the verified pipeline (`fullyVerified`)
 to the allocated function `r.st.func` (tables `r.st.tables`); genssa's Progs with `progedit`'s
-float constant loads, P0' `ps`, are accepted by `checkG64` (so `checkG64L` accepts them on `lc`,
+float constant loads, P0' `ps`, are accepted by `checkG66` (so `checkG66L` accepts them on `lc`,
 `LocCtx.make` of the pipeline's output without the homes of removed values, `liveCtx`), its
 returns by `retRegsOK` (the register results in their ABI registers, `ownOutRegs`), the memory
 types by `memTyL`, and the assembler's output `o` by `checkObj`
@@ -288,7 +288,7 @@ theorem verified_mach_S
     {H : Hooks} {g : G2In} {L : Link} {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab}
     {kt : KTab} {E0 : MatchEnv} {spills : Array Spill} {o : ObjIn} {otab : Tab}
     {base : BitVec 64} {code : Code} {room : Nat} {s0 : MState}
-    (hc : checkG64 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
+    (hc : checkG66 (LocCtx.make r.st.tables r.st.func) ps bstart g = .ok (tab, kt))
     (hO : ObjEnv ps spills o otab L base code (s0.x 30))
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hic : ∀ u, ICallOut L ps.toList u)
