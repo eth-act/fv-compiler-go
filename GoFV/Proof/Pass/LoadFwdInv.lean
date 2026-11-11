@@ -721,6 +721,266 @@ theorem grow_eval {env : Env} (hG : env.GrowLen) {fr : Frame} {c : ID} {cv : Val
         · exact .inr ⟨p'', L, cap'', hA, rfl⟩
   · exact absurd (by rw [hA]) (hnptr q)
 
+/-! ### Post-`expand calls` `growslice` calls (`generic.rules:2131`) -/
+
+/-- What a post-`expand calls` `StaticCall` that returns gives: the contract's call on the
+arguments decoded from the register pieces (`decodeArgs`) on the memory argument, and the
+register pieces of the results retyped at the ABI's results (`encodeResults`), then the memory
+and the result addresses. -/
+private theorem callOp_post {env : Env} {ctx : Ctx} {v : Value} {argv : List Val} {r : Val}
+    (hop : v.op = .StaticCall) (h : callOp env ctx v argv = .ok r) :
+    ∃ name c m args rs m' ps m'' addrs, v.aux.bind ctx.tabs.callee? = some name ∧
+      (env.atAct ctx.act).extern name = some c ∧
+      decodeArgs ctx.tabs ctx.act m ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD
+        []).filter (!·.out)) argv.dropLast = some args ∧ args.any Val.hasPoison = false ∧
+      c args none (m.poisonBelow (.outargs ctx.act) (callFrame ctx.tabs v.aux
+        ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD []).filter (!·.out))
+        (!env.noSpill name))) = .returned rs m' ∧
+      encodeResults ctx.tabs ctx.act ((((callABI? ctx.tabs v.aux).map (·.params.toList)).getD
+        []).filter (·.out)) (retypeResults ctx.tabs ((((callABI? ctx.tabs v.aux).map
+        (·.params.toList)).getD []).filter (·.out)) rs) m' = some (ps, m'') ∧
+      r = .tuple (ps ++ [.mem m'', addrs]) := by
+  unfold callOp at h
+  simp only [callTarget, hop, nilClosure_none] at h
+  have hb : (Op.StaticCall == Op.StaticCall || Op.StaticCall == Op.ClosureCall ||
+      Op.StaticCall == Op.InterCall) = true := by decide
+  simp only [Res.ofOption, bind, Res.bind, pure, hb, Option.map_none, Option.getD_none,
+    Bool.or_false, Bool.false_eq_true, ↓reduceIte] at h
+  split at h
+  · next m hm =>
+    cases hdec : decodeArgs ctx.tabs ctx.act m ((((callABI? ctx.tabs v.aux).map
+        (·.params.toList)).getD []).filter (!·.out)) argv.dropLast with
+    | none => rw [hdec] at h; cases h
+    | some args =>
+      rw [hdec] at h
+      simp only at h
+      split at h
+      · cases h
+      next hpz =>
+      split at h
+      · cases h
+      cases hname : v.aux.bind ctx.tabs.callee? with
+      | none => rw [hname] at h; cases h
+      | some name =>
+      rw [hname] at h
+      simp only at h
+      cases hc : (env.atAct ctx.act).extern name with
+      | none => rw [hc] at h; cases h
+      | some c =>
+        rw [hc] at h
+        simp only at h
+        split at h
+        · next rs m' hret =>
+          split at h
+          · next pm he =>
+            cases h
+            split at he
+            · rename_i a heq
+              injection he with he'
+              subst he'
+              exact ⟨name, c, m, args, rs, m', a.1, a.2, _, rfl, hc, hdec, by simpa using hpz,
+                hret, heq, rfl⟩
+            · cases he
+          all_goals cases h
+        · cases h
+        · cases h
+  · cases h
+
+/-- An integer decoded from register pieces: `poison`, a 64-bit integer or a pointer (the word of
+stored pointer fragments, `decodeInt`). -/
+theorem ofPieces_i64_cases (ps : List Val) :
+    ofPieces (.int .w64) ps = .poison ∨ (∃ L, ofPieces (.int .w64) ps = .int .w64 L) ∨
+      ∃ q, ofPieces (.int .w64) ps = .ptr q := by
+  obtain ⟨bs, h⟩ : ∃ bs, ofPieces (.int .w64) ps = decodeInt .w64 bs := ⟨_, rfl⟩
+  rw [h]
+  unfold decodeInt
+  split
+  · exact .inr (.inl ⟨_, rfl⟩)
+  · split
+    · rename_i p _ _
+      rcases Ptr.word_cases p with ⟨-, h⟩ | ⟨-, a, -, h⟩ | ⟨-, h⟩ <;> rw [h]
+      · exact .inr (.inr ⟨_, rfl⟩)
+      · exact .inr (.inl ⟨_, rfl⟩)
+      · exact .inl rfl
+    · exact .inl rfl
+
+/-- A value of the 64-bit integer shape decodes from its one register piece as itself. -/
+theorem ofPieces_i64_of_hasTy {a : Val} (ha : a.hasTy (.int .w64) = true) :
+    ofPieces (.int .w64) [a] = a := by
+  rw [ABI.ofPieces_eq_build rfl (by show ABI.List.Forall₂ _ _ [(0, _)]; exact .cons ha .nil)]; rfl
+
+/-- The first two register arguments, one piece each, decode from the first two pieces. -/
+private theorem decodeArgs_reg2 {tabs : Tables} {act : Nat} {m : Mem} {i0 i1 : ABIParam}
+    {irest : List ABIParam} {q0 q1 : Val} {qs : List Val} {args : List Val}
+    (h0 : i0.regs.size = 1) (h1 : i1.regs.size = 1)
+    (h : decodeArgs tabs act m (i0 :: i1 :: irest) (q0 :: q1 :: qs) = some args) :
+    args[1]? = some (ofPieces (tabs.ty i1.type) [q1]) := by
+  simp only [decodeArgs, Array.isEmpty, h0, h1, List.length_cons, List.take, List.drop,
+    Nat.reduceEqDiff, decide_false, Bool.false_eq_true, ite_false] at h
+  cases hd : decodeArgs tabs act m irest qs with
+  | none => simp [hd] at h
+  | some l =>
+    simp only [hd] at h
+    simp at h
+    rw [← h]
+    rfl
+
+/-- One register result: its pieces are all of the call's register results. -/
+private theorem encodeResults_reg1 {tabs : Tables} {act : Nat} {o : ABIParam} {r : Val}
+    {rs : List Val} {m : Mem} {res : List Val × Mem} (ho : o.regs.isEmpty = false)
+    (h : encodeResults tabs act [o] (r :: rs) m = some res) :
+    res.1 = toPieces (tabs.ty o.type) r := by
+  cases rs with
+  | nil =>
+    simp only [encodeResults, ho, Bool.false_eq_true, ite_false, Option.bind_eq_bind,
+      Option.bind_some, Option.pure_def, Option.some.injEq] at h
+    subst h
+    simp
+  | cons r' rs => simp [encodeResults, ho] at h
+
+/-- A tuple retyped at a tuple shape of two or more components: `poison` or its first two
+components retyped first. -/
+theorem tuple_retype_two (t0 t1 : Ty) (ts : List Ty) (v0 v1 : Val) (vs : List Val) :
+    (Val.tuple (v0 :: v1 :: vs)).retype (.tuple (t0 :: t1 :: ts)) = .poison ∨
+      ∃ l, (Val.tuple (v0 :: v1 :: vs)).retype (.tuple (t0 :: t1 :: ts)) =
+        .tuple (v0.retype t0 :: v1.retype t1 :: l) := by
+  have h : (Val.tuple (v0 :: v1 :: vs)).retype (.tuple (t0 :: t1 :: ts)) =
+      (match ((Val.retypePre ts vs).map (Val.retype t1 v1 :: ·)).map (Val.retype t0 v0 :: ·) with
+       | some vs' => .tuple vs'
+       | none => .poison) := rfl
+  rw [h]
+  cases Val.retypePre ts vs with
+  | none => exact .inl rfl
+  | some l => exact .inr ⟨l, rfl⟩
+
+/-- The register `y` of a post-`expand calls` `growslice` call (`RewriteCheck.growPV`) whose
+length piece is `a`: its second component, the result slice's length register, is `poison`, or
+the 64-bit integer `L` the piece decodes to (`ofPieces`, as the callee gets its parameter). -/
+def GrowResP (a y : Val) : Prop :=
+  Tuple.selectN 1 [y] = .poison ∨
+    ∃ L, ofPieces (.int .w64) [a] = .int .w64 L ∧ Tuple.selectN 1 [y] = .int .w64 L
+
+/-- The forwarding layer's relation of a post-`expand calls` `growslice` call's register to its
+arguments' values `argv` (`SrcInv.R`, `GrowResP` of the length piece). -/
+def growPR (tabs : Tables) (v : Value) (argv : List Val) (y : Val) : Prop :=
+  growPV tabs v = true → GrowResP (argv[1]?.getD .poison) y
+
+/-- **A post-`expand calls` `growslice` call's register** (`growPV`): under `Env.GrowLen`, the
+contract gets the length piece decoded at its parameter (one register, the 64-bit integer shape),
+which, as the call returns, is neither `poison` (the call would be stuck) nor a pointer
+(`Env.GrowLen`), but a 64-bit integer `L`, and returns a slice of length `L`, whose register
+pieces at the call's result shape have `L` or `poison` second, as the call's tuple at its type. -/
+theorem growP_eval {env : Env} (hG : env.GrowLen) {fr : Frame} {c : ID} {cv : Value}
+    (hcv : f.value? c = some cv) (hid : cv.id = c) (hgv : growPV tabs cv = true) {y : Val}
+    (hev : evalValue env (Ctx.make tabs f) fr cv = .ok y) :
+    GrowResP ((cv.args.toList.map (rv fr))[1]?.getD .poison) y := by
+  have hgv' := hgv
+  unfold growPV at hgv'
+  simp only [Bool.and_eq_true, beq_iff_eq] at hgv'
+  obtain ⟨⟨⟨⟨⟨hop, hsz⟩, hname⟩, hty⟩, hout⟩, hin⟩ := hgv'
+  obtain ⟨t0, ts, hts⟩ : ∃ t0 ts, tabs.ty cv.type = .tuple (t0 :: .int .w64 :: ts) := by
+    split at hty
+    · exact ⟨_, _, by assumption⟩
+    · cases hty
+  obtain ⟨vs, hvs⟩ := argVals_of_eval (env := env) (ctx := Ctx.make tabs f) (fr := fr) (v := cv)
+    (by rw [hev]; nofun)
+  rw [evalValue_of_argVals hvs] at hev
+  have htys : (Ctx.make tabs f).tys[cv.id]?.getD .other = .tuple (t0 :: .int .w64 :: ts) := by
+    rw [hid, tys_of_value hcv]; simpa using hts
+  rw [htys] at hev
+  obtain ⟨r, hr, rfl⟩ := bind_ok hev
+  have hco : evalOp env (Ctx.make tabs f) fr cv vs (.tuple (t0 :: .int .w64 :: ts)) =
+      callOp env (Ctx.make tabs f) cv vs := by simp only [evalOp, hop]
+  rw [hco] at hr
+  obtain ⟨name, c', m, args, rs, m', ps, m'', addrs, hn, hc, hdec, hnp, hret, henc, rfl⟩ :=
+    callOp_post hop hr
+  have hvs' := argVals_rv hvs
+  subst hvs'
+  have hctx : (Ctx.make tabs f).tabs = tabs := rfl
+  rw [hctx] at hdec henc hn
+  rw [hn] at hname
+  simp only [Option.any_some, Bool.or_eq_true, beq_iff_eq] at hname
+  obtain ⟨a0, a1, a2, a3, a4, a5, hl⟩ :
+      ∃ a0 a1 a2 a3 a4 a5, cv.args.toList = [a0, a1, a2, a3, a4, a5] := by
+    have hlen : cv.args.toList.length = 6 := by simpa using hsz
+    generalize cv.args.toList = L at hlen ⊢
+    match L, hlen with
+    | [a0, a1, a2, a3, a4, a5], _ => exact ⟨a0, a1, a2, a3, a4, a5, rfl⟩
+  rw [hl] at hdec
+  rw [hl]
+  simp only [List.map_cons, List.map_nil, List.getElem?_cons_succ, List.getElem?_cons_zero,
+    Option.getD_some]
+  -- the ABI's parameters: the first two in one register each, the second of the 64-bit integer
+  -- shape; one slice result in registers
+  obtain ⟨i0, i1, irest, hins, h0, h1, hi1⟩ : ∃ i0 i1 irest,
+      ((((callABI? tabs cv.aux).map (·.params.toList)).getD []).filter (!·.out)) =
+        i0 :: i1 :: irest ∧ i0.regs.size = 1 ∧ i1.regs.size = 1 ∧ tabs.ty i1.type = .int .w64 := by
+    generalize ((((callABI? tabs cv.aux).map (·.params.toList)).getD []).filter (!·.out)) = L
+      at hin
+    rcases L with _ | ⟨i0, _ | ⟨i1, irest⟩⟩
+    · cases hin
+    · cases hin
+    · simp only [Bool.and_eq_true, beq_iff_eq] at hin
+      obtain ⟨⟨h0, h1⟩, hi⟩ := hin
+      refine ⟨i0, i1, irest, rfl, h0, h1, ?_⟩
+      split at hi
+      · assumption
+      · cases hi
+  obtain ⟨o, e1, hos, ho, hreg⟩ : ∃ o e1,
+      ((((callABI? tabs cv.aux).map (·.params.toList)).getD []).filter (·.out)) = [o] ∧
+        tabs.ty o.type = .slice e1 ∧ o.regs.isEmpty = false := by
+    generalize ((((callABI? tabs cv.aux).map (·.params.toList)).getD []).filter (·.out)) = L
+      at hout
+    rcases L with _ | ⟨o, _ | ⟨o', L⟩⟩
+    · cases hout
+    · simp only [Bool.and_eq_true, Bool.not_eq_true'] at hout
+      obtain ⟨hs, hr⟩ := hout
+      refine ⟨o, ?_⟩
+      split at hs
+      · exact ⟨_, rfl, by assumption, hr⟩
+      · cases hs
+    · cases hout
+  rw [hins] at hdec
+  rw [hos] at henc
+  simp only [List.map_cons, List.map_nil, List.dropLast_cons_cons, List.dropLast_singleton] at hdec
+  have ha1 := decodeArgs_reg2 h0 h1 hdec
+  rw [hi1] at ha1
+  -- the contract's result: a slice of length `L`, the decoded length piece
+  obtain ⟨hnptr, hlen⟩ := (hG.atAct _) name c' hname hc _ _ _ _ _ hret
+  obtain ⟨L, hd⟩ : ∃ L, ofPieces (.int .w64) [rv fr a1] = .int .w64 L := by
+    rcases ofPieces_i64_cases [rv fr a1] with h | h | ⟨q, h⟩
+    · rw [h] at ha1
+      have : args.any Val.hasPoison = true :=
+        List.any_eq_true.2 ⟨_, List.mem_of_getElem? ha1, rfl⟩
+      rw [hnp] at this; cases this
+    · exact h
+    · rw [h] at ha1; exact absurd ha1 (hnptr q)
+  rw [hd] at ha1
+  obtain ⟨p, cap, rest, rfl⟩ := hlen L ha1
+  simp only [retypeResults] at henc
+  have hps := encodeResults_reg1 hreg henc
+  simp only at hps
+  rw [ho] at hps
+  have hpw : ps = ABI.leafVals (.slice e1) ((Val.agg [p, .int .w64 L, cap]).retype (.slice e1)) := by
+    rw [hps]; exact ABI.toPieces_eq_leafVals rfl (Val.retype_hasTy _ _)
+  -- its length register: `L` or `poison`
+  obtain ⟨q0, q1, q2, hq, hq1⟩ : ∃ q0 q1 q2, ps = [q0, q1, q2] ∧
+      (q1 = .poison ∨ q1 = .int .w64 L) := by
+    rw [hpw]
+    rcases retype_slice_len e1 p cap L with h1 | ⟨p', cap', h1⟩ <;> rw [h1]
+    · exact ⟨_, _, _, rfl, .inl rfl⟩
+    · exact ⟨_, _, _, rfl, .inr (retype_i64 L)⟩
+  rw [hq]
+  simp only [List.cons_append, List.nil_append]
+  rcases tuple_retype_two t0 (.int .w64) ts q0 q1 (q2 :: ([.mem m'', addrs] : List Val)) with h | ⟨l, h⟩ <;>
+    rw [h]
+  · left; rfl
+  · show Tuple.selectN 1 [.tuple (q0.retype t0 :: q1.retype (.int .w64) :: l)] = .poison ∨ _
+    simp only [Tuple.selectN]
+    rcases hq1 with rfl | rfl
+    · exact .inl rfl
+    · exact .inr ⟨L, hd, by simp [retype_i64]⟩
+
 /-! ### Folded `ifaceeq`/`efaceeq` calls (`generic.rules:2279`, `:2287`) -/
 
 theorem wordTy_cases {t : Ty} (h : wordTy t = true) : t = .int .w64 ∨ ∃ e, t = .ptr e := by
@@ -1345,10 +1605,11 @@ theorem argPtr_phis {fr : Frame} {bb : Block} {i : Nat} {ps : List (ID × Val)}
   rw [setPhis_not_mem ps fr.regs c hnm]
 
 /-- The forwarding layer's relation of atoms to their arguments (`SrcInv.R`): `growslice` calls
-(`growR`) and folded `ifaceeq`/`efaceeq` calls (`eqR`). -/
+(`growR`), folded `ifaceeq`/`efaceeq` calls (`eqR`) and post-`expand calls` `growslice` calls
+(`growPR`). -/
 def fwdR (tabs : Tables) (eq : List String × List String) (v : Value) (argv : List Val)
     (y : Val) : Prop :=
-  growR tabs v argv y ∧ eqR tabs eq v argv y
+  growR tabs v argv y ∧ eqR tabs eq v argv y ∧ growPR tabs v argv y
 
 /-- **The forwarding layer's source invariant** (issue #69): constants' and `Addr`s' registers
 hold their values (`ConstReg`) and descriptor chains' registers their symbol's start
@@ -1356,8 +1617,8 @@ hold their values (`ConstReg`) and descriptor chains' registers their symbol's s
 `ro` and argument pointers no pointer into a frame temporary (`FwdQ`), under `Env.AllocZero`,
 `Env.KeepsRo`, `Env.GrowLen` and `Env.IfaceEq eq` from an initial memory with the symbols and
 argument images without such pointers; `growslice` calls' registers slices of their length
-argument (`growR`, `grow_eval`), folded calls' registers the equality of their data words
-(`eqR`, `eq_eval`). -/
+argument (`growR`, `grow_eval`; post-`expand calls`: `growPR`, `growP_eval`), folded calls'
+registers the equality of their data words (`eqR`, `eq_eval`). -/
 def fwdInv (tabs : Tables) (ro : List (String × Alloc)) (eq : List String × List String)
     (f : Func) (hro : fwdRoOK tabs ro f = true) : SrcInv tabs f where
   P _ a y := ConstReg tabs f a y ∧ DescReg tabs f a y
@@ -1420,7 +1681,8 @@ def fwdInv (tabs : Tables) (ro : List (String × Alloc)) (eq : List String × Li
       · exact ro_step hE.2.1 hm hb hbb hx hv hid hE.2.2.1 (hq.2.1 hm) he
       · exact hq.2.1 hm a
   rstep _ _ hv hid _ _ _ _ hE _ he :=
-    ⟨fun hgv => grow_eval hE.2.2.2.2.1 hv hid hgv he, eq_eval hE.2.2.2.2.2 hv hid he⟩
+    ⟨fun hgv => grow_eval hE.2.2.2.2.1 hv hid hgv he, eq_eval hE.2.2.2.2.2 hv hid he,
+      fun hgv => growP_eval hE.2.2.2.2.1 hv hid hgv he⟩
 
 end
 

@@ -416,6 +416,23 @@ length the argument at the 64-bit integer shape, `GrowRes`) and `E` with `Env.Gr
 refines by the argument's term in `g`. `LoadFwd.fwd_refines`' precondition gets
 `env.GrowLen`. Witness: `gr_checkedRewrite`/`gr_rwPre` (`Witness/FwdGrow.lean`).
 
+Its post-`expand calls` form (`:2131`, issue #69, Phase1Tail5): `(SelectN [1] (StaticCall {sym} _
+newLen:(Const64) _ _ _ _)) && v.Type.IsInteger() && (isSameCall(sym, "runtime.growslice") ||
+isSameCall(sym, "runtime.growsliceNoAlias")) => newLen` reads the length register of the call's
+result instead of `SliceLen` of a slice. `fwdNewOK` accepts `growPOK tabs f u w`: `u` is `SelectN
+[1] c` of the 64-bit integer shape, `c` a call `growPV` accepts (a `StaticCall` of
+`runtime.growslice`/`runtime.growsliceNoAlias` with six arguments, the register pieces of
+`oldPtr`, `newLen`, `oldCap`, `num`, `et` and the memory, a type `(_, int, …)`, its first two ABI
+parameters in one register each, the second of the 64-bit integer shape, and one slice ABI result
+in registers), and `w` is `Copy` of `c`'s second argument, of the 64-bit integer shape, whatever
+its definition (as for `:2128`; requiring the `Const64` lost 15 of the 44 functions where `:2131`
+was the only obstacle). It uses the same contract `Env.GrowLen`, so no new assumption: `fwdR`
+becomes `growR ∧ eqR ∧ growPR`, where `growP_eval` gives the call's register `y` as one whose
+`Tuple.selectN 1 [y]` is `poison` or the 64-bit integer the call's second register argument
+decodes to (`GrowResP`; `decodeArgs_reg2`, `encodeResults_reg1`, `ofPieces_i64_cases`), and
+`growP_src` refines `SelectN [1] c` by that argument's term in `g` at the 64-bit integer shape.
+Witness: `gp_checkedRewrite`/`gp_rwPre` (`Witness/FwdGrowPost.lean`).
+
 **Fixed loads** (`:2251`–`:2258`, issue #69): `(Load (OffPtr [off] (Addr {s} sb)) _) &&
 isFixedLoad(v, s, off) => rewriteFixedLoad(v, s, sb, off)` (and its forms at offset 0, through
 `Convert` and through `ITab (IMake …)`) resets the
@@ -1233,7 +1250,7 @@ needs a later phase of the semantics.
 | `generic` | RoundToEven | 0 | 0 | 0 | 1 | 1 |
 | `generic` | Rsh | 120 | 20 | 0 | 0 | 140 |
 | `generic` | Select | 0 | 3 | 0 | 0 | 3 |
-| `generic` | SelectN | 4 | 0 | 0 | 15 | 15 |
+| `generic` | SelectN | 5 | 0 | 0 | 15 | 15 |
 | `generic` | SignExt | 15 | 0 | 0 | 0 | 15 |
 | `generic` | SliceCap | 4 | 1 | 0 | 1 | 5 |
 | `generic` | SliceLen | 4 | 1 | 0 | 3 | 6 |
@@ -1252,7 +1269,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 60 | 4 | 4 | 0 | 68 |
 | `generic` | Zero | 2 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1387 | 192 | 31 | 258 | 1762 |
+| all | | 1388 | 192 | 31 | 258 | 1762 |
 
 <!-- END coverage -->
 

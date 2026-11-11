@@ -327,6 +327,8 @@ open GoFV.Rules
 """
     thm = hdr + "import GoFV.Rules.Proven\nimport GoFV.Proof.Rules.AllSound\n" + "".join(
         f"import GoFV.Proof.Rules.{m}\n" for m in sorted(set(done.values()))) + """
+variable [GoFV.SSA.Sem.Addrs]
+
 /-!
 # Every rule of the proven-only rule sets is sound
 

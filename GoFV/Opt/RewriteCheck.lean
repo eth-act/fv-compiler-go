@@ -2001,6 +2001,34 @@ def growOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
       (f.value? s.args[0]!).any fun cv => growV tabs cv && cv.args[1]! == w.args[0]!
   | none => false
 
+/-- A post-`expand calls` call of `runtime.growslice` or `runtime.growsliceNoAlias`
+(`generic.rules:2131`): a `StaticCall` with six arguments (the register pieces of `oldPtr`,
+`newLen`, `oldCap`, `num`, `et`, then the memory) of a type `(_, int, …)`, its first two ABI
+parameters in one register each, the second of the 64-bit integer shape, and its one ABI result
+a slice in registers. -/
+def growPV (tabs : Tables) (cv : Value) : Bool :=
+  cv.op == .StaticCall && cv.args.size == 6 &&
+    ((cv.aux.bind tabs.callee?).any fun n =>
+      n == "runtime.growslice" || n == "runtime.growsliceNoAlias") &&
+    (tabs.ty cv.type matches .tuple (_ :: .int .w64 :: _)) &&
+    (match (((Sem.callABI? tabs cv.aux).map (·.params.toList)).getD []).filter (·.out) with
+     | [o] => (tabs.ty o.type matches .slice _) && !o.regs.isEmpty
+     | _ => false) &&
+    (match (((Sem.callABI? tabs cv.aux).map (·.params.toList)).getD []).filter (!·.out) with
+     | i0 :: i1 :: _ => i0.regs.size == 1 && i1.regs.size == 1 && (tabs.ty i1.type matches .int .w64)
+     | _ => false)
+
+/-- The length register of a post-`expand calls` `growslice` call becomes its length argument
+(`generic.rules:2131`, `(SelectN [1] (StaticCall {sym} _ newLen:(Const64) _ _ _ _)) => newLen`):
+`u` is `SelectN [1] c` of the 64-bit integer shape, `c` a call `growPV` accepts, and `w` is
+`Copy x` of `c`'s second argument `x`, of the 64-bit integer shape (any value: the layer's input
+may still hold the `Const64`'s unfolded form, e.g. an `Add64` the same pass folds). -/
+def growPOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
+  u.op == .SelectN && u.auxInt == 1 && u.args.size == 1 && (tabs.ty u.type matches .int .w64) &&
+  w.op == .Copy && w.args.size == 1 &&
+  (f.value? u.args[0]!).any (fun cv => growPV tabs cv && cv.args[1]! == w.args[0]!) &&
+  (f.value? w.args[0]!).any fun x => (tabs.ty x.type matches .int .w64)
+
 /-! ### Folded `runtime.ifaceeq`/`efaceeq` calls (`generic.rules:2279`, `:2287`, `:1343`)
 
 `(StaticLECall {f} itab x y mem) && isSameCall(f, "runtime.ifaceeq") &&
@@ -2158,12 +2186,13 @@ from the read-only symbols `ro` (`fixedOK`); or of the memory root `u`, a `Copy`
 (`dropOK`), or a `Move` from another source (`moveSrcOK`); or of the `SliceLen` `u` of a
 `growslice` result, a `Copy` of its length argument (`growOK`); or of a folded `ifaceeq`/`efaceeq`
 call `u` with a descriptor symbol of `eq` (`eqCallOK`) or a selection of a `MakeResult`
-(`selMROK`). -/
+(`selMROK`); or of the length register `u` of a post-`expand calls` `growslice` call, a `Copy`
+of its length argument (`growPOK`). -/
 def fwdNewOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (eq : List String × List String)
     (f g : Func) (u w : Value) : Bool :=
   (w.op == .Copy && w.args.size == 1 && fwdOK tabs f u (w.args[0]?.getD 0)) || fwdConstOK tabs f u w ||
     dropOK tabs f g u w || moveSrcOK tabs f u w || fixedOK tabs ro f u w || growOK tabs f u w ||
-    eqCallOK tabs eq f g u w || selMROK tabs f u w
+    eqCallOK tabs eq f g u w || selMROK tabs f u w || growPOK tabs f u w
 
 /-- The `Load` `u` of `f` reads, at offset `o` (`offp`'s auxint), the bytes a `Move [n] dst src
 mem` copied (`generic.rules:827`): its memory is the `Move`, its pointer `dst + o` (`ptrBase`,
@@ -2299,9 +2328,11 @@ fixed load `(Load p _) && isFixedLoad(v, s, off) => rewriteFixedLoad(v, s, sb, o
 pointer `p` is `(Addr {s} _)`, through `Convert`, `ITab (IMake …)` and an `OffPtr [off]`
 (`fixedPtrPat`; `generic.rules:2251`–`:2258`; `fixedOK`, which follows them by `wordStep?`); or
 the length of a `growslice` result `(SliceLen (SelectN [0] (StaticLECall _ newLen:(Const64) …)))
-=> newLen` (`:2128`; `growOK`); or a folded `ifaceeq`/`efaceeq` call `(StaticLECall {f} d x y mem)
-&& … => (MakeResult (EqPtr x y) mem)` (`:2279`, `:2287`; `eqCallOK`) or a selection of a
-`MakeResult` `(SelectN [n] m:(MakeResult ___)) => m.Args[n]` (`:1343`; `selMROK`). -/
+=> newLen` (`:2128`; `growOK`) and its post-`expand calls` form `(SelectN [1] (StaticCall _
+newLen:(Const64) …)) => newLen` (`:2131`; `growPOK`); or a folded `ifaceeq`/`efaceeq` call
+`(StaticLECall {f} d x y mem) && … => (MakeResult (EqPtr x y) mem)` (`:2279`, `:2287`;
+`eqCallOK`) or a selection of a `MakeResult` `(SelectN [n] m:(MakeResult ___)) => m.Args[n]`
+(`:1343`; `selMROK`). -/
 def fwdShapeOK (r : Rule) : Bool :=
   match r.pat, r.result, r.block with
   | .op .Load none _ _ _ .fixed [_, m] _, .copy (.var y), none => storesBind y 4 m
@@ -2322,6 +2353,9 @@ def fwdShapeOK (r : Rule) : Bool :=
   | .op .StaticLECall none _ _ _ (.exact 4) [_, _, _, _] _, .build [n0, n1], none =>
     n0.op == .MakeResult && n1.op == .EqPtr
   | .op .SelectN none _ _ _ .fixed [.op .MakeResult ..] _, .copy _, none => true
+  | .op .SelectN none _ _ _ .fixed
+      [.op .StaticCall none _ _ _ _ (_ :: .op .Const64 (some y) .. :: _) _] _, .copy (.var z),
+      none => y == z
   | _, _, _ => false
 
 /-- The `Load` `v` of `f` that event `ev` forwards (or the `Store`/`Zero` it drops, the `Move`
