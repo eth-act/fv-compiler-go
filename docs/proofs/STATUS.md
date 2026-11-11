@@ -1806,19 +1806,26 @@ declarations, then the autos the pipeline created). From the stock `.prog` file 
 input view is read (definitions, config, `Dcl` at `AllocFrame`'s start, `genin`). The stock
 column runs the same back end on the stock `trim` function of every function.
 
-| quick-v10 (9,297 functions, 9.9 min; the composition on G64, per function at either mode (main 1187b1e7 with the vacuity audit `entryVacuous`), P0' in `checkG64` and `checkObj`, `--jobs 2`) | pipeline output | share | stock `trim` |
+| quick-v10 (9,297 functions, 8.5 min; the composition on G64 with `SBFIZ` in `checkObj`, per function at either mode (`agent/sbfiz` on main a6c37a47, the vacuity audit `entryVacuous`), P0' in `checkG64` and `checkObj`, `--jobs 2`) | pipeline output | share | stock `trim` |
 | --- | ---: | ---: | ---: |
 | fully verified (Phase 2, through `trim`) | 7,895 | 84.91% | - |
 | … genssa and `Flushplist` ran | 7,895 | 84.91% | 9,297 |
 | … ∧ `checkG64` ∧ `entryStoresOK` ∧ `argsOK` | 7,225 | 77.71% | 8,204 |
 | … ∧ `checkG64` ∧ `entryStoresOK` ∧ `argsOK` ∧ `retRegsOK` | 7,225 | 77.71% | 8,203 |
-| … ∧ `checkObj` | 7,858 | 84.52% | 9,124 |
-| … ∧ `checkG64` ∧ `entryStoresOK` ∧ `argsOK` ∧ `retRegsOK` ∧ `checkObj` (the premises hold) | 7,221 | 77.67% | 8,157 |
+| … ∧ `checkObj` | 7,861 | 84.55% | 9,135 |
+| … ∧ `checkG64` ∧ `entryStoresOK` ∧ `argsOK` ∧ `retRegsOK` ∧ `checkObj` (the premises hold) | 7,222 | 77.68% | 8,163 |
 | … of them vacuous (closure context, `entryVacuous`: every variant) | 547 | 5.88% | 600 |
-| **… premises hold, not vacuous (end to end, `verified_mach` or `verified_mach_S`)** | **6,674** | **71.78%** | 7,557 |
-| … of which `needs48 = false`: `verified_mach` (`SepFrom`, `CallOK` …) | 6,471 | 69.60% | 7,324 |
+| **… premises hold, not vacuous (end to end, `verified_mach` or `verified_mach_S`)** | **6,675** | **71.79%** | 7,563 |
+| … of which `needs48 = false`: `verified_mach` (`SepFrom`, `CallOK` …) | 6,472 | 69.61% | 7,330 |
 | … of which `needs48 = true`: `verified_mach_S` (G48's mode) | 203 | 2.18% | 233 |
-| … end to end, pipeline output identical to stock after `trim` | 5,636 | 60.62% | - |
+| … end to end, pipeline output identical to stock after `trim` | 5,637 | 60.63% | - |
+
+`SBFIZ` in `checkObj` adds 1 end-to-end function, `runtime.(*stkframe).argBytes`, under
+`verified_mach`. It loses none: the sorted accepted lists, `comm`'d against main a6c37a47
+(6,674: 6,471 + 203), show +1 / +0 per mode. Stock column: 7,557 → 7,563. Of the functions whose
+other premises hold, `checkObj` now rejects 3 (the stack check of a huge frame twice,
+`runtime.poll_runtime_pollUnblock`'s `JMP`); on full-v11 (G61), `SBFIZ` was the first `checkObj`
+reason for 58 of them.
 
 **Vacuous at the entry (closure context; correction).** The end-to-end counts before this
 table, here, on #189 and on #553, counted closures whose premises hold but of which every
