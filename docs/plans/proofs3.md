@@ -1884,7 +1884,7 @@ variable, and no slice stores one through a register or to a global (`op FSTPD`)
 (`arg_relV`, `valRel_of_fvalRel`) and the machine's pair store at an operand address
 (`progStep_fstpAt`). The theorems `g65_*` (`G65.lean`) are G64's statements over `checkG65` with
 G64's premises: the loads take `FLoadPre`, already among `G54Pre`'s, so no run premise is added and
-the lift changes only `checkG64` to `checkG65`. G65 on P0' accepts 8,274 functions (88.99%, +13
+the composition goes straight to G66 (§9 *The lift to G66*). G65 on P0' accepts 8,274 functions (88.99%, +13
 over G64's 8,261, every function whose whole reason set was these accesses), 284,888 values
 (`--jobs 2`); G64 and every earlier slice are unchanged, and the rejected set is a subset of G64's.
 Witness `genG65_witness` (`GenG65.lean`, `init.func82` of `test/gcgort` on P0', at the mode
@@ -3648,6 +3648,17 @@ excludes `LoadReg`, `FMOVQload` and `FLDPQ`, so `runPre_simple` discharges the t
 `checkG64 (LocCtx.make …) ps bstart g`, otherwise their statements on G62. A G64 128-bit load or
 store whose step panics (a nil base) is outside `RunPanicPre`, as G50's pair loads are.
 
+*The lift to G66* (done; directly from G64, no separate lift to G65; no run premise added):
+`Obj/G64.lean` → `Obj/G66.lean` (`g66_obj_*` over `g66L_*`, whose statements are `g64L_*`'s over
+`checkG66L`: G65's float frame-variable loads use G44's `FLoadPre`, already in `G54Pre`, and G66's
+narrow spills, reloads, `Arg`s and elided extensions add none). The panics' `vkind66` is read
+through `vkind66_eq65` (no access, call, atomic or entry store is a `StoreReg`, `LoadReg`, `Arg` or
+extension, `extOp?`, so `elide66b` is `none` and `vkind66a` is not tried) and `vkind65_eq64` (none
+is an op of G65's, `op65`), then `vkind64_eq63` as before; an `InitMem`'s through `vkind66_initMem`
+and `vkind65_initMem`. `RunPre`, `RunPreS` and `RunPreM` are unchanged. `verified_mach`,
+`verified_mach_S` (and `_fixed`, `_atSP`) take `checkG66 (LocCtx.make …) ps bstart g`, otherwise
+their statements on G64.
+
 ## 10. Read-only data: float constants and jump tables
 
 **The gap.** Two kinds of machine loads read data that the assembler or genssa put in read-only
@@ -3773,6 +3784,10 @@ only the slices know.
    - **The lift to G64** (the float spills and reloads, §4 G63, and the 128-bit blob moves, §4
      G64; §9 *The lift to G64*): `Obj/G62.lean` → `Obj/G64.lean`, `FReloadPre` and `QLoadPre` in
      `RunPre`'s per-step conjunction, `checkG64` in the statements.
+   - **The lift to G66** (the float frame-variable loads and pair stores, §4 G65, and the spill
+     slots of 1, 2 and 4 bytes with the elided extensions, §4 G66/G66b; §9 *The lift to G66*):
+     `Obj/G64.lean` → `Obj/G66.lean`, the panics through `vkind66_eq65` and `vkind65_eq64`,
+     `checkG66` in the statements; no run premise added.
    - The `RoMem` premise is about the input memory: Phase 1's export image (`globalImage`) has no
      assembler symbols, so `addGlobals` adds none and the input `mem` must hold the constant
      symbols' allocations. With `EntryMatch`'s `MemInj` and `G2Env.glob` it says that the loaded

@@ -1136,7 +1136,7 @@ it). Coverage on quick-v10 (`lake exe gen-check`, G56 on P0'): 7,331 of 9,297 fu
 as G55 on P0), 232,869 values, 61 of them loading a float constant. Composed into
 `verified_mach` (`RoRun` in `obj_whole_ret`/`obj_whole_panic`, below) on G56 at main e8621cd0
 (`Obj/G56.lean`), now through slice G64 (G63, G62, G61, G60, G59 with these float constants,
-below; `GoFV/Proof/Obj/G64.lean`).
+below; `GoFV/Proof/Obj/G66.lean`).
 
 ## Phase 3: genssa, slice G48, stack arguments and stack results (I7, #553)
 
@@ -1299,7 +1299,7 @@ the function (the load), `checkG56` rejects it (`v96`'s `SLL` of a narrow argume
 Coverage on quick-v10 (`lake exe gen-check --jobs 2`, G60 on P0', `agent/lift60b` on main 70f8f2ec): 7,667
 of 9,297 functions (82.46%, as G59 on P0), 249,111 values, 69 of them loading a float constant
 from a constant symbol (61 by G56). Composed into `verified_mach` through slice G64
-(`GoFV/Proof/Obj/G64.lean`, `g64_obj_*`, below).
+(`GoFV/Proof/Obj/G66.lean`, `g66_obj_*`, below).
 
 ## Phase 3: genssa, slice G61, the atomic read-modify-writes (I7, #553)
 
@@ -1328,7 +1328,7 @@ the pointer to the word 7 of `GenG14`'s `heap 1` and `new = 9` leaves `X2 = 7`).
 quick-v10 (`lake exe gen-check --jobs 2`, G61 on P0', on main 2320a5d3): 7,983 of 9,297 functions
 (85.86%, +316 over G60's 7,667: 218 of std/runtime, 84 of std/sync, 10 of std/encoding, 4 tests;
 all 91 of std/sync/atomic), 269,353 values; G60 and every earlier slice unchanged. Composed into
-`verified_mach` (`GoFV/Proof/Obj/G64.lean`, below), with `checkObj`'s atomics (#687, #692).
+`verified_mach` (`GoFV/Proof/Obj/G66.lean`, below), with `checkObj`'s atomics (#687, #692).
 
 ## Phase 3: genssa, slice G62, incoming stack arguments (I7, #553)
 
@@ -1449,7 +1449,8 @@ values; rows G1 to G64 identical to G64's run, the rejected set a subset of G64'
 `genG65_witness` (`GenG65.lean`, `init.func82` of `test/gcgort` on P0', mode `false`: `checkG64`
 rejects it, `checkG65` accepts it; `v21 = FMOVDload {u}` runs `FMOVD u-8(SP), F1` from a memory
 holding `u = 1.01` in its `temp` block at `SP + 16` and leaves `1.01`'s bits in `F1` and in `V1`'s
-low word; `FLoadPre` holds by the valid read of `u`). Not yet composed into `verified_mach`.
+low word; `FLoadPre` holds by the valid read of `u`). Composed into `verified_mach` with G66 (the
+composition on G66, below).
 
 ## Phase 3: genssa, slice G66, spill slots of 1, 2 and 4 bytes (I7, #553)
 
@@ -1478,8 +1479,8 @@ G65's 8,274); rows G1 to G65 identical to G65's run, the rejected set a subset o
 rejects it, `checkG66` accepts it; the narrow stack argument `v5 = Arg {cycles}` and the narrow
 reload `v2 = LoadReg v5`, `MOVWU cycles+0(FP), R0`, after which the slot's 4 bytes and `X0`'s low
 32 bits hold 7) and `genG66s_witness` (`GenG66s.lean`, `runtime.randn`: the narrow spill
-`v17 = StoreReg v6`, `MOVW R0, n+0(FP)`, after which the slot's 4 bytes hold 7). Not yet composed
-into `verified_mach` (the lift follows G66b).
+`v17 = StoreReg v6`, `MOVW R0, n+0(FP)`, after which the slot's 4 bytes hold 7). Composed into
+`verified_mach` with G66b (the composition on G66, below; no premise added).
 
 **G66b** (in place, `GoFV/Gen/Check66b.lean`, `GoFV/Proof/Gen/G66b.lean`): G35's table holds the
 entry of a narrow integer reload (`reloadEntry35`, by `loadByType`'s sign or zero extension), and
@@ -1492,41 +1493,45 @@ a `MOVWU` reload, the table exactly `(R1, 32, unsigned)` before it).
 
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
-`GoFV.Proof.Obj.g64_obj_value`, `g64_obj_term`, `g64_obj_nilPanic`, `g64_obj_boundsPanic`
-(`GoFV/Proof/Obj/G64.lean`): G64's statements on `checkG64L` (`g64L_value`/`g64L_initMem`/
-`g64L_term`/`g64L_nilPanic`/`g64L_boundsPanic`; slice G64 is G63, G62, G61, G60 with the atomics,
-with the incoming stack arguments, the float spills and reloads and the 128-bit blob moves;
-`g64_obj_value` takes `ArgOK`, which the whole-function run discharges, `NoArgRun`, and
+`GoFV.Proof.Obj.g66_obj_value`, `g66_obj_term`, `g66_obj_nilPanic`, `g66_obj_boundsPanic`
+(`GoFV/Proof/Obj/G66.lean`): G66's statements on `checkG66L` (`g66L_value`/`g66L_initMem`/
+`g66L_term`/`g66L_nilPanic`/`g66L_boundsPanic`; slice G66 is G65, G64, G63, G62, G61, G60 with
+the atomics, with the incoming stack arguments, the float spills and reloads, the 128-bit blob
+moves, the float frame-variable loads and pair stores, the spill slots of 1, 2 and 4 bytes and
+the extensions genssa elides;
+`g66_obj_value` takes `ArgOK`, which the whole-function run discharges, `NoArgRun`, and
 `FReloadPre` and `QLoadPre`, run facts in `RunPre`)
 composed
 with `obj_star` and `obj_panic`, as `g7_obj_value`/`g7_obj_term` for G7, under `G49Env` (`G28Env`
 and `VarsAt49`) and G35's
 upper-bit table of the P0 state (`UOKL m (uL35 lc (uIn35 lc b) blk i)`; a terminator hands the
-successor's start `uIn35 lc e.b` on). `g64_obj_value` also covers an `InitMem` in a lowered
+successor's start `uIn35 lc e.b` on). `g66_obj_value` also covers an `InitMem` in a lowered
 function, from a state holding the initial memory (`MemInit`) at a clean position (`MemAt`;
-`checkG64L` accepts it only there, `g64L_clean`): no code, the state unchanged. A panic is matched
+`checkG66L` accepts it only there, `g66L_clean`): no code, the state unchanged. A panic is matched
 by machine steps to a state that
 panics (`MPanics`) with `nilDeref`, or with a bounds panic that `BoundsAgree`s with `runLoc`'s.
-`GoFV.Proof.Obj.g64_obj_callPanic` (`GoFV/Proof/Obj/CallPanic.lean`): a static call whose callee
+`GoFV.Proof.Obj.g66_obj_callPanic` (`GoFV/Proof/Obj/CallPanic.lean`): a static call whose callee
 panics, under the trusted `CallPanicOK` (§ Assumptions), is matched by machine steps to a state
-that panics with the same panic; `g64_obj_icallPanic`: the same for an interface or closure call
+that panics with the same panic; `g66_obj_icallPanic`: the same for an interface or closure call
 (`CALL (Rn)`), under the trusted `ICallPanicOK`; at G48's mode (the mode `true`, which a function
 that needs it takes, `hn48`) under `CallPanicOKS`/`ICallPanicOKS` (`CallPanicOKAt`,
 `ICallPanicOKAt`: `SepFromW`; a call with stack arguments or results, G48's `callKind48`, at the
 registers of `callRegsS`; at the mode `false` such a call has the registers of `callRegsZ`,
 `take48_call`).
-Both cover every call `checkG64L` accepts (a call
-is no op of G64's (`qop64`), no spill or reload, no `Arg`, no op of G61's group A, G52–G59's
-groups, G49 frame-variable access, G51 op, G50 pair load or select: `vkind64_eq63`,
+Both cover every call `checkG66L` accepts (a call
+is no spill, reload, `Arg` or extension, no op of G65's (`op65`) or G64's (`qop64`), no op of
+G61's group A, G52–G59's groups, G49 frame-variable access, G51 op, G50 pair load or select:
+`vkind66_eq65`, `vkind65_eq64`, `vkind64_eq63`,
 `vkind63_eq62`, `vkind62_eq61`, `vkind61_eq60`, `vkind60_eq48`, `vkind48_ok`, `vkind56_eq49`,
 `vkind49_ok51`, `vkind51_eq50`, `vkind50_eq47`): one
 of G46's kinds (ABI registers in `R0`–`R15`) or G47's `callKind47`/`icallKind47` (`F0`–`F15`
 admitted; an argument there is read at its float shape from its V register, `argsV`,
-`vkind47_call`, `vkind47_icall`). `GoFV.Proof.Obj.g64_obj_memPanic`
+`vkind47_call`, `vkind47_icall`). `GoFV.Proof.Obj.g66_obj_memPanic`
 (`GoFV/Proof/Obj/MemPanic.lean`): a load (`MOV{D,W,WU,H,HU,B,BU}load`, `LDP`) or store
 (`MOV{D,W,H,B}store`, `STP`; `memFaultOp`) whose step panics (`nilFaults`: a nil base, the address
 in the nil page) has no symbol, so it is no G49 frame-variable access (`frameVar49?_none`,
-`vkind49_eq51`; nor an op of G64's, a spill or a reload, `vkind64_eq63`, `vkind63_eq62`, nor of
+`vkind49_eq51`; nor a spill, reload, `Arg`, extension or op of G65's or G64's, `vkind66_eq65`,
+`vkind65_eq64`, `vkind64_eq63`, `vkind63_eq62`, nor of
 G61's group A or G52–G59's groups, `vkind61_eq60`, `vkind60_ok49`; an
 access off `SP`, G48's
 `kind48`, takes G48's mode, `take48`, and does not fault: under `SPInv` its base relates to
@@ -1535,10 +1540,10 @@ base in a register holding the
 machine word 0, so its Prog
 faults in the nil page (`nil_fault_page`, `progStep_loadN_nil`, `progStep_ldp_nil`,
 `progStep_storeN_nil`, `progStep_stp_nil`): the machine panics with `nilDeref`, no premise.
-`GoFV.Proof.Obj.g64_obj_ldarPanic`: the same for an acquire load (`LDAR`, `LDARW`, `LDARB`,
+`GoFV.Proof.Obj.g66_obj_ldarPanic`: the same for an acquire load (`LDAR`, `LDARW`, `LDARB`,
 `ldar?`) whose step panics: its address (argument 0, offset 0, no symbol) is nil
 (`stepLoc_ldar_panic`), so `LDAR* (Rn)` faults at address 0 (`progStep_ldar_nil`).
-`GoFV.Proof.Obj.g64_obj_atomPanic` (`GoFV/Proof/Obj/AtomPanic.lean`): the same for an atomic of
+`GoFV.Proof.Obj.g66_obj_atomPanic` (`GoFV/Proof/Obj/AtomPanic.lean`): the same for an atomic of
 G61's group A (`atom61?`) whose step panics: the generic atomic never panics, so the panic is
 `nilFaults`' on its pointer (argument 0, no symbol; `nilFaults_atom61`, `stepLoc_atom61_panic`),
 which is nil, its register the machine word 0; what `vkind61` accepts of it is `vkind61a`'s
@@ -1548,10 +1553,11 @@ instruction, which faults at address 0 (`progStep_ldaxr_nil`, `progStep_lse_nil`
 `progStep_casal_nil`; `atom_nil_run`): no premise. The
 register-index loads and stores are excluded: `runLoc` faults on their nil base whatever the
 index, the machine only when the index keeps the address in the nil page. A G50 pair load
-(`LDPW`, `LDPSW`, `FLDPD`, `FLDPS`), a G53 `LoweredMove`, a G54 loop or a G64 128-bit load or
-store (`FMOVQload`, `FLDPQ`, `FMOVQstore`, `FSTPQ`) whose step panics is outside `RunPanicPre`.
+(`LDPW`, `LDPSW`, `FLDPD`, `FLDPS`), a G53 `LoweredMove`, a G54 loop, a G64 128-bit load or
+store (`FMOVQload`, `FLDPQ`, `FMOVQstore`, `FSTPQ`) or a G65 float pair store (`FSTPS`, `FSTPD`)
+whose step panics is outside `RunPanicPre`.
 
-`GoFV.Proof.Obj.obj_whole_ret` (`GoFV/Proof/Obj/Whole.lean`): when `checkG64L` and `checkObj` accept
+`GoFV.Proof.Obj.obj_whole_ret` (`GoFV/Proof/Obj/Whole.lean`): when `checkG66L` and `checkObj` accept
 a function and `retRegsOK` its returns, the machine starts at its entry (`MachEntry`, return
 address `s0.x 30`; when the stack check fails, the prologue loops through the morestack tail under
 `runtime.morestack`'s contract `MorestackOK`, with the spill slots apart from `g`, `TailSep`, and
@@ -1569,7 +1575,7 @@ the memory injected into a memory that is the machine's but for the bytes `W`, h
 the register-assigned parameters in `Blk.local` blocks the function accesses, `InWins L E0.sp
 (pendWins lc g)`; `EntryEnv`: the frame, `g`, the caller's `LR`/`FP`; no upper-bit fact carried
 into the body: G49's table (G35's) after the entry values is empty, `uL35 lc [] … k = []`, the entry
-block's start being empty, `checkG64L_uIn_entry`), whose entry stores from value `k` cover those
+block's start being empty, `checkG66L_uIn_entry`), whose entry stores from value `k` cover those
 windows (`entryStoresOK lc g k`, `GoFV/Gen/Entry49.lean`, checked: `entryStoresOK_cover`), whose
 `Arg`s all run before `k` (`argsOK lc g spills k`, `GoFV/Gen/Entry62.lean`, checked: every `Arg`
 in the entry block before `k`, no edge to the entry block, so no `Arg` runs after `k`, `NoArgRun`,
@@ -1611,18 +1617,18 @@ prologue (`sim_entry`, over `obj_entry`, to `SimAtW`: the P0 state related with 
 replaced by one that agrees with it outside `W`, but for the saved `LR`/`FP` words), the entry
 stores (`sim_entryStores`: each entry store, `entryStore?`, is a store or `STP` of G49's
 frame-variable path, `entryStore?_spec`, whose Prog writes its window alike in both memories,
-`g64L_entryStore`, `GoFV/Proof/Obj/Entry49.lean`, over `op_mem2W`, `g49_storeW`, `g49_stpW`,
+`g66L_entryStore`, `GoFV/Proof/Obj/Entry49.lean`, over `op_mem2W`, `g49_storeW`, `g49_stpW`,
 `writeMem_agree`; no entry store panics, it has a symbol; the spills and values without code
 between the entry values and the entry stores, which `storesFrom` steps over (`entrySkip`: a
 `StoreReg` or `SB` without an aux, `SP`, `InitMem`), run against the same relaxed memory,
-`sim_entrySkip`, `g64L_entrySkip`, `GoFV/Proof/Obj/EntrySkip.lean`, over the W-forms
-`g2_spillW`, `g63_fspillW`, `g24_spW`, `g3_sbW`: a spill writes its slot alike in both memories,
-the others run no code, none panics, `stepLoc_entrySkip_ne_panic`; after them no byte is left
-out and `SimAtW` is `SimAt`), each value (`sim_value`, over
-`g64_obj_value`, at a value that is no `Arg`, `NoArgRun`), each terminator (`sim_goto`, over
-`g64_obj_term`), the return (`sim_ret`: the
+`sim_entrySkip`, `g66L_entrySkip`, `GoFV/Proof/Obj/EntrySkip.lean`, over the W-forms
+`g2_spillW`, `g63_fspillW`, `g66_fspillW`, `g66_nspillW`, `g24_spW`, `g3_sbW`: a spill writes its
+slot alike in both memories, the others run no code, none panics, `stepLoc_entrySkip_ne_panic`;
+after them no byte is left out and `SimAtW` is `SimAt`), each value (`sim_value`, over
+`g66_obj_value`, at a value that is no `Arg`, `NoArgRun`), each terminator (`sim_goto`, over
+`g66_obj_term`), the return (`sim_ret`: the
 `RET` after no-ops, `termG3_ret`, `obj_exit`, `ret_results`), the run by induction on the fuel
-(`sim_from_ret`). `checkG64L_cx` covers lowered functions and those with no arm64 op (G26). A
+(`sim_from_ret`). `checkG66L_cx` covers lowered functions and those with no arm64 op (G26). A
 leaf (`checkObj`'s `leaf`: no `CALL`), framed or not, returns through `X30`: `SimAt` carries the
 caller's return address in the P0 state's `X30` of a leaf, from the prologue (which keeps it)
 through every P0 run of a value or terminator (`GoFV.Proof.Obj.obj_star_leaf`,
@@ -1642,9 +1648,10 @@ interface or closure call whose callee
 panics as `CallPanicOK` or `ICallPanicOK` says at every `LocMatch`ed machine state): if the run of
 `runLoc` panics with `e`, `runMach` panics with `e'`, `BoundsAgree e e'` (the same panic, or for a
 bounds check the runtime's report of the same failure). The pieces: `sim_valuePanic` (over
-`g64_obj_nilPanic`, `g64_obj_memPanic`, `g64_obj_ldarPanic`, `g64_obj_atomPanic`,
-`g64_obj_boundsPanic`, `g64_obj_callPanic`, `g64_obj_icallPanic`; an access's `vkind64` is
-`vkind62`'s, `vkind64_eq63`, `vkind63_eq62`, its `vkind62` `vkind61`'s, `vkind62_eq61`, its
+`g66_obj_nilPanic`, `g66_obj_memPanic`, `g66_obj_ldarPanic`, `g66_obj_atomPanic`,
+`g66_obj_boundsPanic`, `g66_obj_callPanic`, `g66_obj_icallPanic`; an access's `vkind66` is
+`vkind62`'s, `vkind66_eq65`, `vkind65_eq64`, `vkind64_eq63`, `vkind63_eq62`, its `vkind62`
+`vkind61`'s, `vkind62_eq61`, its
 `vkind61` `vkind60`'s, `vkind61_eq60`, and its `vkind56` is `vkind49`'s, `vkind56_eq49`
 (`vkind56_eq55`, `vkind55_eq54`, `vkind54_eq53`, `vkind53_eq52`, `vkind52_eq49`), which is
 `vkind28`'s, `vkind49_eq51`,
@@ -1658,8 +1665,8 @@ never panic (`stepTermLoc_ne_panic`).
 `GoFV.Proof.Obj.verified_mach` (`GoFV/Proof/Obj/EndToEnd.lean`): `verifiedPipelineFull_refines`
 composed with `obj_whole_ret` and `obj_whole_panic`. For `f` through the verified pipeline
 (`fullyVerified`) and its output's genssa Progs with the float constant loads (P0') and assembled
-words accepted by `checkG64` (slice G64 on `LocCtx.make` of the output: `refsLive`, and
-`checkG64L` on `lc = liveCtx` of it,
+words accepted by `checkG66` (slice G66 on `LocCtx.make` of the output: `refsLive`, and
+`checkG66L` on `lc = liveCtx` of it,
 its loops' branch targets included, `loopOK`),
 `entryStoresOK` (on `lc`, at the entry stores' position `k`), `argsOK` (on `lc`, at `k`, with the
 object's morestack spills), `retRegsOK` (on `lc`) and
@@ -1675,12 +1682,13 @@ to the caller with the results in their registers (`obj_whole_ret`'s conclusion)
 and the panic
 premises hold, `runMach` panics alike (`obj_whole_panic`'s conclusion). `verified_mach` is for a
 function that does not need G48's mode (`hn48 : needs48 lc = false`, checked); it is main's
-statement over `checkG64`, with G63's `FReloadPre` and G64's `QLoadPre` among `RunPre`'s per-step
-premises (over `checkG62` before the lift to G64; with `argsOK` and the stack clause of `EntryMatch`
+statement over `checkG66`, with G63's `FReloadPre` and G64's `QLoadPre` among `RunPre`'s per-step
+premises (over `checkG64` before the lift to G66, which adds no premise; over `checkG62` before
+the lift to G64; with `argsOK` and the stack clause of `EntryMatch`
 since the lift to G62, over `checkG61`, with `EntryMatch`'s `slots = []`, before it; over
 `checkG60` before the lift to G61, where `RunPanicPre` came to admit an
 atomic's nil fault), with `SepFrom` and the contracts `CallOK` …, `CallPanicOK`,
-`ICallPanicOK`. `GoFV.Proof.Obj.verified_mach_S` covers every function `checkG64` accepts, in G48's
+`ICallPanicOK`. `GoFV.Proof.Obj.verified_mach_S` covers every function `checkG66` accepts, in G48's
 mode: `hinv : G3Inv … sI true` (`SepFromW`), `hosp : E0.outSP = true`, `hspI` (`SPInv E0 sI` of a
 lowered function: the `outargs` block at `SP`, the Go register `SP` holding `SP`), `RunPreS` (the
 `CallOKS` family, `CallOKStk`) and `RunPanicPreS` (`CallPanicOKS`, `ICallPanicOKS`). Both are
@@ -1710,7 +1718,7 @@ main 06837b1e; 93,683 and 83,919 on 7641ba1d) is identical to main, function by 
 `SP` too, G48's mode), for `envAtSPO g L E0`; both with the premise `G49Env` replaced by
 `G28Env` of `E0` at `Addrs.fixed`, which asks no place of a frame variable (`g49Env_atSP`, `g49Env_atSPO`; the
 pipeline's context is activation 0, `liveCtx_make_act`). Their other premises are the theorems
-(the table below) at that instance; the checked ones (`verifiedPipelineFull`, `checkG64`, `argsOK`,
+(the table below) at that instance; the checked ones (`verifiedPipelineFull`, `checkG66`, `argsOK`,
 `needs48`, `liveCtx`, `retRegsOK`, `entryStoresOK`, `pendWins`, `memTyL`, `checkObj`) take no instance
 (`GoFVTest/AddrsFree.lean`), so they are what `gofv-ssa-opt --e2e` computes. Unlike
 `verified_mach_fixed`, `verified_mach_atSP` holds non-vacuously of the functions that access two
@@ -1731,18 +1739,18 @@ Witnesses:
   `runtime.gclinkptr.ptr`, a function with no arm64 op (G26), `ret_results` in Phase 1's mode.
 - `objWhole_panic_witness` (`GoFV/Proof/Witness/ObjPanic.lean`): `obj_whole_panic` on `(*A).g` with
   a nil receiver: the nil check's `MOVB` faults in the nil page.
-  `g64_callPanic_witness`: `g64_callPanic` (P0) on `fint64to32`'s call (`CallPanicOK`, the mode
+  `g66_callPanic_witness`: `g66_callPanic` (P0) on `fint64to32`'s call (`CallPanicOK`, the mode
   `false`: `needs48` is false of it), under a hook whose callee panics with `nilDeref`;
-  `g64_icallPanic_witness`: `g64_icallPanic` on `Locker.Lock`'s interface call `v11`;
-  `g64_storePanic_witness`: `g64_memPanic` on `(*queueOnePass).next`'s `MOVW R2, 52(R0)` with a
-  nil `q`, which faults at address 52; `g64_loadPanic_witness`: `g64_memPanic` on its
-  `MOVWU 52(R0), R3`; `g64_ldarPanic_witness`: `g64_ldarPanic` on `sync/atomic.LoadInt64`'s
-  `LDAR (R0), R0` with a nil `addr`, which faults at address 0; `g64_atomPanic_witness`:
-  `g64_atomPanic` on `sync/atomic.SwapInt64`'s `LDAXR (R0), R2; STLXR R1, (R0), R27; CBNZ R27`
+  `g66_icallPanic_witness`: `g66_icallPanic` on `Locker.Lock`'s interface call `v11`;
+  `g66_storePanic_witness`: `g66_memPanic` on `(*queueOnePass).next`'s `MOVW R2, 52(R0)` with a
+  nil `q`, which faults at address 52; `g66_loadPanic_witness`: `g66_memPanic` on its
+  `MOVWU 52(R0), R3`; `g66_ldarPanic_witness`: `g66_ldarPanic` on `sync/atomic.LoadInt64`'s
+  `LDAR (R0), R0` with a nil `addr`, which faults at address 0; `g66_atomPanic_witness`:
+  `g66_atomPanic` on `sync/atomic.SwapInt64`'s `LDAXR (R0), R2; STLXR R1, (R0), R27; CBNZ R27`
   with a nil `addr`, whose `LDAXR` faults at address 0.
 - `objStarLeaf_witness` (`GoFV/Proof/Witness/ObjG7.lean`): `obj_star_leaf` on `(*A).g`, a leaf:
   the P0 run of its nil check `v6` keeps the caller's `0x40` in `X30`.
-- `entryStore_witness` (`GoFV/Proof/Witness/ObjEntry49.lean`): `g64L_entryStore` on
+- `entryStore_witness` (`GoFV/Proof/Witness/ObjEntry49.lean`): `g66L_entryStore` on
   `runtime.getm`'s ABI0 wrapper's `MOVD R0, ~r0+0(FP)` (`entryStore?`: operand offset 0, 8 bytes)
   from a machine whose `~r0` window holds garbage (`0xAB`), related to `runLoc`'s state with its
   memory replaced in that window (as `EntryMatch` leaves a pending window out): after the `MOVD`
@@ -1750,7 +1758,7 @@ Witnesses:
 - `verified_mach_witness` (`GoFV/Proof/Witness/ObjEndToEnd.lean`): `pallocSum.start` from its
   generic SSA (the export's first section, the whole-file pass environment of
   `gofv-ssa-opt --verified`) through the verified pipeline (`fullyVerified`), with every premise
-  of `verified_mach` discharged (`checkG64` on its output: `refsLive`, `checkG64L` on `liveCtx`;
+  of `verified_mach` discharged (`checkG66` on its output: `refsLive`, `checkG66L` on `liveCtx`;
   `entryStoresOK`: no pending window, `EntryMatch` with nothing left out; `argsOK`: no `Arg`, so
   the stack clause holds of no slot; `needs48` false).
   `verified_mach_S_witness` (`GoFV/Proof/Witness/ObjEndToEndS.lean`): the same for
@@ -1761,7 +1769,7 @@ Witnesses:
   (`fullyVerified`), with every premise of `verified_mach_atSP` discharged: `plRunEnv` with
   `runtime/secret.getStack` returning `0x11` and `0x22` (`VPre` at the machine layout), a hook
   that returns them in `R0`/`R1` (`CallSpec` at every activation extending `envAtSP`), the stock
-  Progs accepted by `checkG64`, `retRegsOK`, `entryStoresOK`, `argsOK` and `checkObj` (`needs48`
+  Progs accepted by `checkG66`, `retRegsOK`, `entryStoresOK`, `argsOK` and `checkObj` (`needs48`
   false),
   `EntryMatch` with the results' blocks at `SP + 24` and `SP + 32`, `RunPre` with the call's
   contract. `runMach` returns to the caller's `0x40` (`MachRet`, `ResultRel`) with `0x11` and
@@ -1808,7 +1816,7 @@ from `RoImage`. `JUMPTABLE` needs its slice.
 The functions `verified_mach`'s function-level premises hold of (#553): the verified pipeline is
 `fullyVerified` (as `--check --verified` runs it: driver export environment, type rounds), and on
 the pipeline's own output (function and tables) genssa's Progs with `progedit`'s float constant
-loads (P0', the constant symbols numbered as `Flushplist` numbers them) are accepted by `checkG64`
+loads (P0', the constant symbols numbered as `Flushplist` numbers them) are accepted by `checkG66`
 against `LocCtx.make r.st.tables r.st.func`, `entryStoresOK`, `argsOK` and `retRegsOK` hold of
 `liveCtx` of
 it and its class
