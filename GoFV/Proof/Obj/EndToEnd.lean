@@ -58,7 +58,8 @@ theorem verified_mach_M {osp : Bool}
       mem)
     (hn : ∀ x ∈ r.nnf, NoNilFault x.1 x.2 e args mem)
     (ha : ∀ x ∈ r.nnf, ArgPtrsOK x.1 x.2 e args mem)
-    (hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 e args mem) {fuel : Nat}
+    (hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 e args mem)
+    (hnh : ∀ x ∈ r.nhs, NilHoistOK x.1 x.2.1 x.2.2 e args mem) {fuel : Nat}
     (hd : (GoFV.SSA.run e penv.tables f args mem fuel).Defined)
     {lc : LocCtx} (hlc : lc = liveCtx (LocCtx.make r.st.tables r.st.func))
     {H : Hooks} {g : G2In} {L : Link} {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab}
@@ -109,7 +110,7 @@ theorem verified_mach_M {osp : Bool}
         BoundsOK H g L ps.toList →
         RunPanicPreM osp e H lc g L (endP L.text ps.toList) E0 lc.ctx.f.entry k sI →
         ∃ pe' n t', BoundsAgree pe pe' ∧ runMach H code (s0.x 30) n s0 = .panicked pe' t') := by
-  obtain ⟨fuel', href⟩ := verifiedPipelineFull_refines hpipe hv hP hn ha hnp hd
+  obtain ⟨fuel', href⟩ := verifiedPipelineFull_refines hpipe hv hP hn ha hnp hnh hd
   have hd' : (runLoc e r.st.tables r.st.func args mem fuel').Defined := href.defined_right
   have hargs := runLoc_args hd'
   obtain ⟨hr, hc⟩ := checkG64_spec hc
@@ -176,7 +177,8 @@ theorem verified_mach
       mem)
     (hn : ∀ x ∈ r.nnf, NoNilFault x.1 x.2 e args mem)
     (ha : ∀ x ∈ r.nnf, ArgPtrsOK x.1 x.2 e args mem)
-    (hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 e args mem) {fuel : Nat}
+    (hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 e args mem)
+    (hnh : ∀ x ∈ r.nhs, NilHoistOK x.1 x.2.1 x.2.2 e args mem) {fuel : Nat}
     (hd : (GoFV.SSA.run e penv.tables f args mem fuel).Defined)
     {lc : LocCtx} (hlc : lc = liveCtx (LocCtx.make r.st.tables r.st.func))
     {H : Hooks} {g : G2In} {L : Link} {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab}
@@ -226,7 +228,7 @@ theorem verified_mach
         RunPanicPre e H lc g L (endP L.text ps.toList) E0 lc.ctx.f.entry k sI →
         ∃ pe' n t', BoundsAgree pe pe' ∧ runMach H code (s0.x 30) n s0 = .panicked pe' t') := by
   obtain ⟨fuel', href, raw, hraw, hfin, hdef, hret, hpan⟩ :=
-    verified_mach_M (osp := false) hpipe hv hP hn ha hnp hd hlc hc
+    verified_mach_M (osp := false) hpipe hv hP hn ha hnp hnh hd hlc hc
       (fun h => by rw [hn48] at h; cases h) hO hH hic hrok hME hroom hg hms hsep hE hEE hbE hbm
       hk hpre hes hargs hent hmore hinv (fun h => by cases h) (fun h => by cases h) huE hpc hRP.m
       hmt hro
@@ -282,7 +284,8 @@ theorem verified_mach_S
       mem)
     (hn : ∀ x ∈ r.nnf, NoNilFault x.1 x.2 e args mem)
     (ha : ∀ x ∈ r.nnf, ArgPtrsOK x.1 x.2 e args mem)
-    (hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 e args mem) {fuel : Nat}
+    (hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 e args mem)
+    (hnh : ∀ x ∈ r.nhs, NilHoistOK x.1 x.2.1 x.2.2 e args mem) {fuel : Nat}
     (hd : (GoFV.SSA.run e penv.tables f args mem fuel).Defined)
     {lc : LocCtx} (hlc : lc = liveCtx (LocCtx.make r.st.tables r.st.func))
     {H : Hooks} {g : G2In} {L : Link} {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab}
@@ -332,7 +335,7 @@ theorem verified_mach_S
         RunPanicPreS e H lc g L (endP L.text ps.toList) E0 lc.ctx.f.entry k sI →
         ∃ pe' n t', BoundsAgree pe pe' ∧ runMach H code (s0.x 30) n s0 = .panicked pe' t') := by
   obtain ⟨fuel', href, raw, hraw, hfin, hdef, hret, hpan⟩ :=
-    verified_mach_M (osp := true) hpipe hv hP hn ha hnp hd hlc hc (fun _ => rfl) hO hH hic hrok
+    verified_mach_M (osp := true) hpipe hv hP hn ha hnp hnh hd hlc hc (fun _ => rfl) hO hH hic hrok
       hME hroom hg hms hsep hE hEE hbE hbm hk hpre hes hargs hent hmore hinv (fun _ => hosp)
       (fun _ => hspI) huE hpc hRP.m hmt hro
   exact ⟨fuel', href, raw, hraw, hfin, hdef, hret, fun pe mm hr hHP hbok hPP =>

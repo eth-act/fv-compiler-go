@@ -60,7 +60,10 @@ variant incomplete)`. A `schedule` run adds its input to `FState.nnf`: the refin
 `schedule` holds on the inputs on which that function does not fault in the nil page
 (`NoNilFault`, `GoFV.Proof.RefinesSchedLFFrom.schedL`) and its pointer-shaped parameter pieces
 and checked pointer-shaped values read nil or pointers that are not wild (`ArgPtrsOK`,
-`NilPtrsOK`), preconditions of the end-to-end theorem.
+`NilPtrsOK`), preconditions of the end-to-end theorem. A `schedule` run that hoists a checked
+pointer above a fault (`ScheduleCheck.hoistNeeded`) also adds its input and output to
+`FState.nhs`: the end-to-end theorem assumes those pointers read nil or pointers that are not
+wild (`NilHoistOK`); a run without such a swap adds nothing there.
 
 The result is `fullyVerified` when every verdict is `proven`, `identity` or `skipped`, the
 state is allocated (`loc`) and it has no `InvertFlags` (`Func.noInvertFlags`, as Go's codegen
@@ -267,6 +270,10 @@ structure FState where
   and checked pointer-shaped values read nil or pointers that are not wild (`ArgPtrsOK`,
   `NilPtrsOK`). -/
   nnf : List (Tables × Func) := []
+  /-- The inputs and outputs (tables, input, output) of the `schedule` runs that hoist a checked
+  pointer above a fault (`ScheduleCheck.hoistNeeded`): the end-to-end theorem assumes that those
+  pointers read nil or pointers that are not wild (`NilHoistOK`). -/
+  nhs : List (Tables × Func × Func) := []
   /-- `len(curfn.Dcl)` (`PassEnv.dclLen`): the input's, plus the autos the passes created. -/
   dclLen : Nat := 0
   /-- Every verdict of the passes before `lower` is `Verdict.ok`. -/
@@ -288,11 +295,11 @@ not SSA, and whose theorems do not ask for it). -/
 def outWf (env : PassEnv) (p : LPass) (out : PassOut) : Bool :=
   p.out != .loc && (check (checkEnv env out.tables) out.func).toBool
 
-/-- `s` with pass `p`'s result `out` (`wf`: whether it passes `check`; verdict `v`; `nnf` the
-recorded `schedule` inputs). -/
+/-- `s` with pass `p`'s result `out` (`wf`: whether it passes `check`; verdict `v`; `nnf` and
+`nhs` the recorded `schedule` runs). -/
 def FState.adopt (s : FState) (p : LPass) (out : PassOut) (wf : Bool) (v : Verdict)
-    (nnf : List (Tables × Func)) : FState :=
-  { s with st := s.st.adopt p.name out wf v, layer := p.out, nnf
+    (nnf : List (Tables × Func)) (nhs : List (Tables × Func × Func)) : FState :=
+  { s with st := s.st.adopt p.name out wf v, layer := p.out, nnf, nhs
            dclLen := s.dclLen + newAutos s.st.tables out.tables }
 
 /-- `s` after pass `p` with its result dropped. -/
@@ -317,20 +324,29 @@ def FState.whyNot (s : FState) (penv : PassEnv) (rel : LRel) (wfReq : Bool)
 
 /-- `s` continued with the result `out` of pass `p`: the identity when nothing changed in the
 same layer; else `bad` (why its theorem does not apply, given whether `out` passes `check`)
-decides between `proven` (with the `schedule` inputs `nnf`) and, for a required pass,
+decides between `proven` (with the `schedule` runs `nnf` and `nhs`) and, for a required pass,
 `unverified` or, for an optional one, `skipped`. -/
 def FState.next (s : FState) (env : PassEnv) (p : LPass) (out : PassOut)
-    (bad : Bool → Option String) (nnf : List (Tables × Func)) : FState :=
-  if s.st.same out && s.layer == p.out then s.adopt p out s.st.wf .identity s.nnf
+    (bad : Bool → Option String) (nnf : List (Tables × Func))
+    (nhs : List (Tables × Func × Func)) : FState :=
+  if s.st.same out && s.layer == p.out then s.adopt p out s.st.wf .identity s.nnf s.nhs
   else
     let wf := outWf env p out
     match bad wf with
-    | none => s.adopt p out wf .proven nnf
-    | some why => if p.required then s.adopt p out wf (.unverified why) s.nnf else s.skip p why
+    | none => s.adopt p out wf .proven nnf nhs
+    | some why =>
+      if p.required then s.adopt p out wf (.unverified why) s.nnf s.nhs else s.skip p why
 
 /-- The `nnf` after a proven run of `rel` on `s`. -/
 def FState.nnfAfter (s : FState) (rel : LRel) : List (Tables × Func) :=
   if rel == .sched then (s.st.tables, s.st.func) :: s.nnf else s.nnf
+
+/-- The `nhs` after a proven run of `rel` on `s` with result `out`: a `schedule` run that hoists
+a checked pointer above a fault (`ScheduleCheck.hoistNeeded`) adds its input and output. -/
+def FState.nhsAfter (s : FState) (rel : LRel) (out : PassOut) : List (Tables × Func × Func) :=
+  if rel == .sched && ScheduleCheck.hoistNeeded s.st.tables s.st.func out.func then
+    (s.st.tables, s.st.func, out.func) :: s.nhs
+  else s.nhs
 
 /-- The environment of pass `name` on `s`. -/
 def FState.passEnv (s : FState) (env : PassEnv) (name : String) : PassEnv :=
@@ -348,21 +364,24 @@ def runPassL (env : PassEnv) (s : FState) (p : LPass) : Except VError FState :=
       match run penv s.st.func with
       | .error e => .error ⟨p.name, e⟩
       | .ok out =>
-        .ok (if s.st.same out && s.layer == p.out then s.adopt p out s.st.wf .identity s.nnf
-          else s.adopt p out (outWf env p out) (.unverified "no theorem") s.nnf)
+        .ok (if s.st.same out && s.layer == p.out then s.adopt p out s.st.wf .identity s.nnf s.nhs
+          else s.adopt p out (outWf env p out) (.unverified "no theorem") s.nnf s.nhs)
     | .proven run rel wfReq guard =>
       match run penv s.st.func with
       | .error e => .error ⟨p.name, e⟩
       | .ok out =>
         match p.full with
-        | none => .ok (s.next env p out (s.whyNot penv rel wfReq guard out) (s.nnfAfter rel))
+        | none => .ok (s.next env p out (s.whyNot penv rel wfReq guard out) (s.nnfAfter rel)
+            (s.nhsAfter rel out))
         | some full =>
           match full penv s.st.func with
           | .error e => .error ⟨p.name, e⟩
           | .ok so =>
             if decide (so.func = out.func) then
-              .ok (s.next env p out (s.whyNot penv rel wfReq guard out) (s.nnfAfter rel))
-            else .ok (s.adopt p so (outWf env p so) (.unverified "checked variant incomplete") s.nnf)
+              .ok (s.next env p out (s.whyNot penv rel wfReq guard out) (s.nnfAfter rel)
+                (s.nhsAfter rel out))
+            else .ok (s.adopt p so (outWf env p so) (.unverified "checked variant incomplete")
+              s.nnf s.nhs)
 
 /-- Run the passes `ps` in order. -/
 def runPassesL (env : PassEnv) : List LPass → FState → Except VError FState

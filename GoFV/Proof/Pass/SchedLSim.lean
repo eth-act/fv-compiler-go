@@ -83,6 +83,85 @@ theorem nilPtrsOK_of_none {tabs : Tables} {f : Func}
     (env : Env) (args : List Val) (mem : Mem) : NilPtrsOK tabs f env args mem :=
   fun _ _ _ _ _ _ _ _ _ _ _ _ _ => nilRegsOK_of_none h _
 
+/-- At the entry of block `b` along edge `i` with frame `fr` (mode `md`), for the scheduling `g`
+of `f`: after the block's `Phi`s and the prefix of its `runL` order `oS` before a value `x`, if
+`g`'s order runs a value `y` before `x` and only `swapOK`'s `hoistSwap` case allows that
+(`ScheduleCheck.hoistOnly`: `y` is a nil check of a value `q` that the source runs after `x`),
+then `q`, hoisted (its arguments bypassed, `hoisted`) and evaluated from that state (or from the
+state extended by other hoisted values, `HoistExt`), reads nil or a pointer that is not wild
+(`HoistOKAt`). -/
+def NilHoistAt (md : LMode) (env : Env) (tabs : Tables) (f g : Func) (fr : Frame) (b : ID)
+    (i : Nat) : Prop :=
+  ∀ blk ps oS oT k H, f.block? b = some blk →
+    blk.values.toList.filterMapM (phiStepL md (Ctx.makeL tabs f) fr i) = .ok ps →
+    ((Ctx.makeL tabs f).sched[b]?).join = some oS →
+    ((Ctx.makeSched tabs g).sched[b]?).join = some oT →
+    evalAllL md env (Ctx.makeL tabs f) { fr with regs := setPhis ps fr.regs } (oS.toList.take k) =
+      .ok H →
+    ∀ (x y : ID) (i' j : Nat), oS.toList[k]? = some x → oT.toList[i']? = some y →
+      oT.toList[j]? = some x → i' < j →
+      GoFV.Opt.ScheduleCheck.mayFail tabs f y = true →
+      GoFV.Opt.ScheduleCheck.mayFail tabs f x = true →
+      (GoFV.Opt.ScheduleCheck.srcPos f.valueTab.size oS.toList)[x]! <
+        (GoFV.Opt.ScheduleCheck.srcPos f.valueTab.size oS.toList)[y]! →
+      GoFV.Opt.ScheduleCheck.hoistOnly tabs (Ctx.makeL tabs f).params (Ctx.makeL tabs f).tys f
+        (GoFV.Opt.ScheduleCheck.srcPos f.valueTab.size oS.toList) x y = true →
+      HoistOKAt md env tabs f y H
+
+/-- `NilHoistAt` at every block entry reached from `(fr, b, i)`. -/
+def NilHoistFrom (md : LMode) (env : Env) (tabs : Tables) (f g : Func) (fr : Frame) (b : ID)
+    (i : Nat) : Prop :=
+  ∀ fr' b' i', ReachL md env (Ctx.makeL tabs f) fr b i fr' b' i' →
+    NilHoistAt md env tabs f g fr' b' i'
+
+/-- **Hoisted checked pointers are valid**: on the input `args`, `mem`, in every state `runLF` of
+`f` reaches before a value `x` (a block entry, after its `Phi`s and a prefix of its order), when
+the scheduling `g` runs before `x` a nil check `y` of a value `q` that `f` runs after `x`, which
+only `ScheduleCheck.hoistSwap` allows (`hoistOnly`), `q`'s op on its arguments' registers (each
+bypassed through its nil checks, `hoisted`; also after other such hoisted values, `HoistExt`)
+reads nil or a pointer that is not wild. A Go-level assumption, separate from `NilPtrsOK` (which
+covers only values the source computes): `q` is a pointer-typed load or a selection of a tuple
+the source computed, and Go's heap holds nil or a valid pointer at every pointer-typed word (the
+garbage collector's invariant); `schedule.go` (`ScoreNilCheck`, the nil checks first) evaluates
+`q` there itself. It holds trivially for every scheduling that needs no such swap
+(`nilHoistOK_of_noHoist`). -/
+def NilHoistOK (tabs : Tables) (f g : Func) (env : Env) (args : List Val) (mem : Mem) : Prop :=
+  NilHoistFrom ⟨f.lowered, true⟩ env tabs f g (entryFrame env (Ctx.makeL tabs f) args mem) f.entry 0
+
+/-- `NilHoistAt` holds when no block of `g` needs `hoistSwap` (`ScheduleCheck.hoistNeeded`). -/
+theorem nilHoistAt_of_noHoist {md : LMode} {env : Env} {tabs : Tables} {f g : Func}
+    (h : GoFV.Opt.ScheduleCheck.hoistNeeded tabs f g = false) (fr : Frame) (b : ID) (i : Nat) :
+    NilHoistAt md env tabs f g fr b i := by
+  intro blk ps oS oT k H hb _ hoS hoT _ x y i' j _ hy hx hij hfy hfx hpos hho
+  exfalso
+  have hbl : b < f.blockTab.size := by
+    simp only [Func.block?, Option.join_eq_some_iff] at hb
+    exact (Array.getElem?_eq_some_iff.1 hb).1
+  have hjl : j < oT.size := by
+    have := (List.getElem?_eq_some_iff.1 hx).1; simpa using this
+  have hy' : oT[i']! = y := by
+    have h1 := (List.getElem?_eq_some_iff.1 hy)
+    simp only [Array.length_toList] at h1
+    rw [getElem!_pos oT i' h1.1]; simpa using h1.2
+  have hx' : oT[j]! = x := by
+    have h1 := (List.getElem?_eq_some_iff.1 hx)
+    simp only [Array.length_toList] at h1
+    rw [getElem!_pos oT j h1.1]; simpa using h1.2
+  unfold GoFV.Opt.ScheduleCheck.hoistNeeded at h
+  have h1 := List.any_eq_false.1 h b (List.mem_range.2 hbl)
+  rw [hoS, hoT] at h1
+  dsimp only at h1
+  have h2 := List.any_eq_false.1 (Bool.eq_false_iff.2 h1) j (List.mem_range.2 hjl)
+  have h3 := List.any_eq_false.1 (Bool.eq_false_iff.2 h2) i' (List.mem_range.2 hij)
+  rw [hy', hx', hfy, hfx, hho, decide_eq_true hpos] at h3
+  exact h3 rfl
+
+/-- `NilHoistOK` holds when no block of `g` needs `hoistSwap` (`ScheduleCheck.hoistNeeded`). -/
+theorem nilHoistOK_of_noHoist {tabs : Tables} {f g : Func}
+    (h : GoFV.Opt.ScheduleCheck.hoistNeeded tabs f g = false) (env : Env) (args : List Val)
+    (mem : Mem) : NilHoistOK tabs f g env args mem :=
+  fun fr' b' i' _ => nilHoistAt_of_noHoist h fr' b' i'
+
 end GoFV.Proof
 
 namespace GoFV.Proof.SchedL
@@ -98,8 +177,8 @@ structure Setup (tabs : Tables) (f g : Func) : Prop where
   rel : SchedRel tabs f g
 
 /-- The simulation invariant at the entry of block `bid` along edge `i`: source frame `frS`,
-target frame `frT`. -/
-structure AtS (md : LMode) (env : Env) (tabs : Tables) (f : Func) (frS frT : Frame) (bid : ID)
+target frame `frT` (`g`: the scheduling). -/
+structure AtS (md : LMode) (env : Env) (tabs : Tables) (f g : Func) (frS frT : Frame) (bid : ID)
     (i : Nat) : Prop where
   tree : bid ∈ f.blocks ∧ ((make f).depthOf bid).isSome
   size : frS.regs.size = f.valueTab.size
@@ -119,6 +198,8 @@ structure AtS (md : LMode) (env : Env) (tabs : Tables) (f : Func) (frS frT : Fra
   argPtr : ArgPtrsAt md env tabs f frS
   /-- Checked pointer-shaped values read nil or pointers that are not wild from here on. -/
   nilPtr : NilPtrsFrom md env tabs f frS bid i
+  /-- Hoisted checked pointers read nil or pointers that are not wild from here on. -/
+  nilHoist : NilHoistFrom md env tabs f g frS bid i
 
 /-! ## Facts of `f` -/
 
@@ -229,7 +310,7 @@ private theorem enterBlockL_of' {ctx : Ctx} {fr : Frame} {b : Block} {i : Nat}
 /-- **The `Phi`s of a block entry agree**, and the block's orders and frames after them are a
 `BStep`. -/
 theorem bstep (Su : Setup tabs f g) {frS frT : Frame} {bid : ID} {i : Nat}
-    (hA : AtS md env tabs f frS frT bid i) {fb gb : Block} (hfb : f.block? bid = some fb)
+    (hA : AtS md env tabs f g frS frT bid i) {fb gb : Block} (hfb : f.block? bid = some fb)
     (hgb : g.block? bid = some gb)
     (hperm : gb.values.toList.Perm (fb.values.toList.filter (!isSPA f ·)))
     {oS oT : Array ID} (hsS : schedule f fb = some oS)
@@ -471,8 +552,8 @@ theorem bstep (Su : Setup tabs f g) {frS frT : Frame} {bid : ID} {i : Nat}
 
 /-- **One block step of `schedule`'s simulation.** -/
 theorem stepS (Su : Setup tabs f g) (hmd : md.faulting = true) {frS frT : Frame} {bid : ID}
-    {i : Nat} (hA : AtS md env tabs f frS frT bid i) :
-    StepSim (fun frS frT b i => AtS md env tabs f frS frT b i)
+    {i : Nat} (hA : AtS md env tabs f g frS frT bid i) :
+    StepSim (fun frS frT b i => AtS md env tabs f g frS frT b i)
       (blockStepL md env (Ctx.makeL tabs f) frS bid i)
       (blockStepL md env (Ctx.makeSched tabs g) frT bid i) := by
   obtain ⟨ce, hwf⟩ := Su.wf
@@ -502,7 +583,10 @@ theorem stepS (Su : Setup tabs f g) (hmd : md.faulting = true) {frS frT : Frame}
     rw [hsSid] at ho; cases ho
     obtain ⟨psT, hpsT, B⟩ := bstep Su hA hfb hgb hperm hsS' hoT htopoT hord hps
     have hT := walk_panic S hmd B (hA.argPtr.regs rfl)
-      (fun k H hk => hA.nilPtr _ _ _ (.refl _ _ _) fb ps oS k H hfb hps hsS hk) hev
+      (fun k H hk => hA.nilPtr _ _ _ (.refl _ _ _) fb ps oS k H hfb hps hsS hk)
+      (fun k H hk x y i' j hx hy hx' hij hfy hfx hpos hho =>
+        hA.nilHoist _ _ _ (.refl _ _ _) fb ps oS oT k H hfb hps hsS hsT hk x y i' j hx hy hx' hij
+          hfy hfx hpos hho) hev
     rw [enterBlockL_of' hpsT hsTid, hT]
     all_goals rfl
   | ok GS =>
@@ -584,7 +668,8 @@ theorem stepS (Su : Setup tabs f g) (hmd : md.faulting = true) {frS frT : Frame}
       refine ⟨GT, rfl, ⟨heb, hedge.2.1⟩, by rw [hGSsz, hA.size], hGTsz, hGTfr, hGSty,
         dinvL_edge hc hb hfb htr hem hD, hagree, ?_, by rw [himg]; exact hA.img,
         by rw [hclo]; exact hA.clo, hA.argPtr.regs (by rw [e1]),
-        fun fr' b' i' hr => hA.nilPtr fr' b' i' (.step hbs hr)⟩
+        fun fr' b' i' hr => hA.nilPtr fr' b' i' (.step hbs hr),
+        fun fr' b' i' hr => hA.nilHoist fr' b' i' (.step hbs hr)⟩
       intro blk z v a hblk hz hv hp ha
       rw [hcblk] at hblk; cases hblk
       have hanc := hc.domRel.phiUse heb hcblk hedge.2.1 hz hv hp ha hcp htr
@@ -628,8 +713,8 @@ theorem entryFrame_sched (S : SchedRel tabs f g) (env : Env) (args : List Val) (
 /-- The invariant at the entry block (`hn`: `runCtxL`'s arity check). -/
 theorem atS_entry (Su : Setup tabs f g) (env : Env) {args : List Val} (mem : Mem)
     (hn : args.length = (Ctx.makeL tabs f).params.size) (ha : ArgPtrsOK tabs f env args mem)
-    (hnp : NilPtrsOK tabs f env args mem) :
-    AtS ⟨f.lowered, true⟩ env tabs f (entryFrame env (Ctx.makeL tabs f) args mem)
+    (hnp : NilPtrsOK tabs f env args mem) (hnh : NilHoistOK tabs f g env args mem) :
+    AtS ⟨f.lowered, true⟩ env tabs f g (entryFrame env (Ctx.makeL tabs f) args mem)
       (entryFrame env (Ctx.makeL tabs f) args mem) f.entry 0 := by
   obtain ⟨ce, hwf⟩ := Su.wf
   have hps : (Ctx.makeL tabs f).paramTys.size = (Ctx.makeL tabs f).params.size := by
@@ -640,7 +725,7 @@ theorem atS_entry (Su : Setup tabs f g) (env : Env) {args : List Val} (mem : Mem
       Nat.min_self]
   refine ⟨⟨hwf.entry, Su.cf.domRel.entry⟩, by simp [entryFrame, makeL_f], rfl, rfl,
     typedL_replicate _ _ _ _ rfl, dinvL_entry Su.cf _, fun _ _ _ => rfl, ?_, himg, ha.2, ha.1,
-    hnp⟩
+    hnp, hnh⟩
   intro blk z v a hblk hz hv hp ha
   have h1 := hwf.phiArity _ _ _ _ ⟨⟨hwf.entry, hblk⟩, hz, hv⟩ hp
   have h2 := hwf.entryPreds blk hblk
@@ -648,13 +733,13 @@ theorem atS_entry (Su : Setup tabs f g) (env : Env) {args : List Val} (mem : Mem
 
 /-- **A scheduling validated by `scheduleCheck` refines its checked input**: every returning or
 panicking `runLF` of `f` on an input whose pointer-shaped parameter pieces are nil or not wild
-(`ArgPtrsOK`) and whose checked pointer-shaped values are (`NilPtrsOK`) is matched by a
-`runSched` of `g`. -/
+(`ArgPtrsOK`), whose checked pointer-shaped values are (`NilPtrsOK`) and whose checked pointers
+that `g` hoists are (`NilHoistOK`) is matched by a `runSched` of `g`. -/
 theorem refinesSchedLF_of_rel (Su : Setup tabs f g) :
     RefinesSchedLFFrom (fun env args mem => ArgPtrsOK tabs f env args mem ∧
-      NilPtrsOK tabs f env args mem) tabs g tabs f := by
+      NilPtrsOK tabs f env args mem ∧ NilHoistOK tabs f g env args mem) tabs g tabs f := by
   have S := Su.rel
-  intro env args mem ⟨ha, hnp⟩ fuel hd
+  intro env args mem ⟨ha, hnp, hnh⟩ fuel hd
   refine ⟨fuel, ?_⟩
   unfold runLF runCtxL at hd
   unfold runLF runSched runCtxL LMode.sched
@@ -676,8 +761,8 @@ theorem refinesSchedLF_of_rel (Su : Setup tabs f g) :
     have hact : (Ctx.makeSched tabs g).act = (Ctx.makeL tabs f).act := act_eq
     rw [entryFrame_sched S, hout, hdef, hact, hent]
     exact finish_refines hd (runLoopL_sim
-      (fun frS frT b i => AtS ⟨f.lowered, true⟩ env tabs f frS frT b i)
+      (fun frS frT b i => AtS ⟨f.lowered, true⟩ env tabs f g frS frT b i)
       (fun _ _ _ _ hR => stepS Su rfl hR) fuel _ _ _ _
-      (by rw [makeL_f]; exact atS_entry Su env mem hlen ha hnp) (finish_defined hd))
+      (by rw [makeL_f]; exact atS_entry Su env mem hlen ha hnp hnh) (finish_defined hd))
 
 end GoFV.Proof.SchedL

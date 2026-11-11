@@ -807,23 +807,72 @@ theorem inv_step {frPT H T : Frame} {P : List ID} {oT : List ID} (hnd : oT.Nodup
       rw [Frame.set_regs_ne hya]; exact I.some a ha
     · simp at ha; subst ha; exact ⟨z, Frame.set_regs_self hlt⟩
 
+/-- The values `D` the target ran hold their evaluation in the target's frame `T`. -/
+def Ran (md : LMode) (env : Env) (tabs : Tables) (g : Func) (T : Frame) (D : List ID) : Prop :=
+  ∀ a ∈ D, ∃ ga z, g.value? a = some ga ∧ T.regs[a]? = some (some z) ∧
+    evalValueL md env (Ctx.makeSched tabs g) T ga = .ok z
+
+/-- In a dependency order, no value takes a later one as argument. -/
+theorem not_arg_later {D : ID → List ID} {o : List ID} (ht : TopoRem D o) {i j : Nat} {a y : ID}
+    (ha : o[i]? = some a) (hy : o[j]? = some y) (hij : i ≤ j) : y ∉ D a := by
+  intro hm
+  have hs := split_at ha
+  rw [hs] at ht
+  apply topo_mid ht y hm
+  rcases Nat.eq_or_lt_of_le hij with rfl | hlt
+  · rw [ha] at hy; cases hy; exact List.mem_cons_self
+  · refine List.mem_cons_of_mem _ (List.mem_of_getElem? (i := j - (i + 1)) ?_)
+    rw [List.getElem?_drop, show i + 1 + (j - (i + 1)) = j by omega, hy]
+
+/-- `Ran` after one more target value. -/
+theorem ran_step {oT : List ID} (ht : TopoRem (argsF g) oT) (hnd : oT.Nodup) {T : Frame} {j : Nat}
+    (R : Ran md env tabs g T (oT.take j)) {y : ID} (hyj : oT[j]? = some y) {gv : Value}
+    (hgv : g.value? y = some gv) {z : Val}
+    (hz : evalValueL md env (Ctx.makeSched tabs g) T gv = .ok z) (hlt : y < T.regs.size) :
+    Ran md env tabs g (T.set y z) (oT.take (j + 1)) := by
+  have hev : ∀ a i ga, oT[i]? = some a → i ≤ j → g.value? a = some ga →
+      evalValueL md env (Ctx.makeSched tabs g) (T.set y z) ga =
+        evalValueL md env (Ctx.makeSched tabs g) T ga := by
+    intro a i ga hi hij hga
+    refine (evalValueL_congr (fr := T) rfl fun c hc => ?_).symm
+    have hyc : y ≠ c := by
+      rintro rfl
+      exact not_arg_later ht hi hyj hij (by rw [argsF_of hga]; exact Array.mem_toList_iff.2 hc)
+    exact (Frame.set_regs_ne hyc).symm
+  rw [take_succ_of hyj]
+  intro a ha
+  rcases List.mem_append.1 ha with ha | ha
+  · obtain ⟨i, hi⟩ := List.mem_iff_getElem?.1 ha
+    rw [List.getElem?_take] at hi
+    split at hi
+    · rename_i hij
+      obtain ⟨ga, w, hga, hw, hew⟩ := R a ha
+      have hya : y ≠ a := fun h => not_mem_take_of hnd hyj (h ▸ ha)
+      exact ⟨ga, w, hga, by rw [Frame.set_regs_ne hya, hw],
+        by rw [hev a i ga hi (by omega) hga, hew]⟩
+    · cases hi
+  · simp only [List.mem_singleton] at ha
+    subst ha
+    exact ⟨gv, z, hgv, Frame.set_regs_self hlt, by rw [hev _ j gv hyj (Nat.le_refl _) hgv, hz]⟩
+
 /-- **The walk along the target order**, given what each value does. -/
 theorem walk_gen (S : SchedRel tabs f g) {oS oT : List ID} {frPS frPT H : Frame} {P : List ID}
     (B : BStep tabs f g md oS oT frPS frPT) {e : Panic} {m : Mem} :
     ∀ (n : Nat), n ≤ oT.length →
-      (∀ j T y gv, j < n → Inv f frPT H T P (oT.take j) → oT[j]? = some y →
-        g.value? y = some gv →
+      (∀ j T y gv, j < n → Inv f frPT H T P (oT.take j) → Ran md env tabs g T (oT.take j) →
+        oT[j]? = some y → g.value? y = some gv →
         evalValueL md env (Ctx.makeSched tabs g) T gv = .panic e m ∨
           ∃ z, evalValueL md env (Ctx.makeSched tabs g) T gv = .ok z ∧
             (y ∈ P → isNC f y = false → H.regs[y]? = some (some z))) →
       evalAllL md env (Ctx.makeSched tabs g) frPT (oT.take n) = .panic e m ∨
         ∃ T, evalAllL md env (Ctx.makeSched tabs g) frPT (oT.take n) = .ok T ∧
-          Inv f frPT H T P (oT.take n)
+          Inv f frPT H T P (oT.take n) ∧ Ran md env tabs g T (oT.take n)
   | 0, _, _ => .inr ⟨frPT, by simp; rfl, ⟨by rfl, rfl, fun _ _ => rfl, fun _ h => by simp at h,
-      fun _ h => by simp at h⟩⟩
+      fun _ h => by simp at h⟩, fun _ h => by simp at h⟩
   | n + 1, hn, hstep => by
     obtain ⟨y, hy⟩ : ∃ y, oT[n]? = some y := ⟨oT[n], List.getElem?_eq_getElem (by omega)⟩
-    rcases walk_gen S B n (by omega) (fun j T y gv hj => hstep j T y gv (by omega)) with h | ⟨T, hT, I⟩
+    rcases walk_gen S B n (by omega) (fun j T y gv hj => hstep j T y gv (by omega)) with
+      h | ⟨T, hT, I, R⟩
     · left
       rw [take_succ_of hy, evalAllL_append, h]
     · obtain ⟨fv, gv, hfv, hgv, -⟩ := tval S B (List.mem_of_getElem? hy)
@@ -831,11 +880,12 @@ theorem walk_gen (S : SchedRel tabs f g) {oS oT : List ID} {frPS frPT H : Frame}
           evalAllL md env (Ctx.makeSched tabs g) T [y] := by
         rw [take_succ_of hy, evalAllL_append, hT]
       rw [hev, evalAllL_cons, stepVL_of (by rw [makeSched_f]; exact hgv)]
-      rcases hstep n T y gv (by omega) I hy hgv with hp | ⟨z, hz, hin⟩
+      rcases hstep n T y gv (by omega) I R hy hgv with hp | ⟨z, hz, hin⟩
       · rw [hp]; exact .inl rfl
       · rw [hz]
         have hlt : y < T.regs.size := by
           rw [I.size, B.size, B.sizeS]; exact lt_of_value? hfv
-        exact .inr ⟨T.set y z, rfl, inv_step B.tNodup I hy hlt hin⟩
+        exact .inr ⟨T.set y z, rfl, inv_step B.tNodup I hy hlt hin,
+          ran_step B.tTopo B.tNodup R hy hgv hz hlt⟩
 
 end GoFV.Proof.SchedL

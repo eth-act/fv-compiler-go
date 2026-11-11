@@ -1195,6 +1195,41 @@ theorem evalValueL_select1_ldar {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame
       exact argsM_last hml (atomicLoad_mem (Res.ok.inj hevl) h2)
   · cases h2
 
+/-! ## The function of the context -/
+
+/-- `arm64Op` reads its context's function only for `MOVDreg`/`MOVDnop`. -/
+theorem arm64Op_withF {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
+    {argv : List Val} {ty : Ty} (F : Func) (hm : v.op ≠ .ARM64MOVDreg)
+    (hn : v.op ≠ .ARM64MOVDnop) :
+    arm64Op faulting env { ctx with f := F } fr v argv ty = arm64Op faulting env ctx fr v argv ty := by
+  unfold arm64Op
+  rw [show nilFaults faulting { ctx with f := F } v argv = nilFaults faulting ctx v argv from rfl]
+  cases nilFaults faulting ctx v argv with
+  | some m => rfl
+  | none =>
+    dsimp only
+    split
+    all_goals first | rfl | (exfalso; simp_all; done)
+
+/-- `evalOpL` reads its context's function only for `MOVDreg`/`MOVDnop`. -/
+theorem evalOpL_withF {faulting : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
+    {argv : List Val} {ty : Ty} (F : Func) (hm : v.op ≠ .ARM64MOVDreg)
+    (hn : v.op ≠ .ARM64MOVDnop) :
+    evalOpL faulting env { ctx with f := F } fr v argv ty = evalOpL faulting env ctx fr v argv ty := by
+  rw [evalOpL_eq, evalOpL_eq]
+  split
+  · exact evalOp_congr rfl rfl rfl rfl rfl rfl rfl
+  · split
+    · exact arm64Op_withF F hm hn
+    · rfl
+
+/-- `evalValueL` reads its context's function only for `MOVDreg`/`MOVDnop`. -/
+theorem evalValueL_withF {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value}
+    (F : Func) (hm : v.op ≠ .ARM64MOVDreg) (hn : v.op ≠ .ARM64MOVDnop) :
+    evalValueL md env { ctx with f := F } fr v = evalValueL md env ctx fr v := by
+  unfold evalValueL
+  simp only [evalOpL_withF F hm hn]
+
 end GoFV.Proof.SchedL
 
 namespace GoFV.Proof
@@ -1271,5 +1306,27 @@ def NilRegsOK (tabs : Tables) (f : Func) (fr : Frame) : Prop :=
   ∀ y vy q, f.value? y = some vy → vy.op.nilCheck = true → vy.args[0]? = some q →
     ScheduleCheck.ptrShape ((Ctx.makeL tabs f).tys[q]?.getD .other) = true →
     ∀ z, fr.regs[q]? = some (some z) → PtrOK z
+
+/-- Value `v` of `f` with its arguments bypassed (`ScheduleCheck.rep`): what `schedule`'s output
+evaluates in its place. -/
+def hoisted (f : Func) (v : Value) : Value := { v with args := v.args.map (ScheduleCheck.rep f) }
+
+/-- `H'` is frame `H` with the registers of some values of `f` that `schedule` may hoist
+(`ScheduleCheck.hoistOp`: 64-bit loads and selections) set, one after the other, to their
+evaluation (`hoisted`, mode `md`) in the frame so far. -/
+inductive HoistExt (md : LMode) (env : Env) (tabs : Tables) (f : Func) (H : Frame) : Frame → Prop
+  | refl : HoistExt md env tabs f H H
+  | step {H' : Frame} {a : ID} {va : Value} {z : Val} : HoistExt md env tabs f H H' →
+      f.value? a = some va → ScheduleCheck.hoistOp va.op = true →
+      evalValueL md env (Ctx.makeL tabs f) H' (hoisted f va) = .ok z →
+      HoistExt md env tabs f H (H'.set a z)
+
+/-- From frame `H`: the value `q` that the nil check `y` of `f` checks, bypassed (`rep`),
+evaluated as `schedule` hoists it (`hoisted`) in any frame that extends `H` by hoisted values
+(`HoistExt`), reads nil or a pointer that is not wild. -/
+def HoistOKAt (md : LMode) (env : Env) (tabs : Tables) (f : Func) (y : ID) (H : Frame) : Prop :=
+  ∀ H', HoistExt md env tabs f H H' → ∀ vy q0 vq, f.value? y = some vy → vy.args[0]? = some q0 →
+    f.value? (ScheduleCheck.rep f q0) = some vq →
+    ∀ z, evalValueL md env (Ctx.makeL tabs f) H' (hoisted f vq) = .ok z → PtrOK z
 
 end GoFV.Proof
