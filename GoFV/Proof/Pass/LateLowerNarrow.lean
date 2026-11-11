@@ -9,7 +9,8 @@ The facts `GoFV.Proof.LateLowerL.lateLower_refinesL` needs of line 29 of `ARM64l
 `(MOVBUreg x:(Equal|…|GreaterEqualF _)) => x`, which `lateB` accepts (`rw29`): `x`, at the `bool`
 shape, holds a boolean or `poison` (`BoolV`), so its `MOVBUreg` holds the integer 0 or 1 or
 `poison` (`movbu_narrow`; `NarrowR` relates it to `x`). A reader that reads its argument as a
-register (`regPos`) reads both alike: the ops of `regOps` (`evalPure_rl`, by the register
+register (`regPos`) reads both alike: the ops of `regOps` (`evalPure_rl`, an `AND` off the
+`bool` shape, where it absorbs a `false` operand: `and_rl`; by the register
 families `op1`, `op2`, `add`, `sub`, `addSh`, `subSh`, `addK`, whose pointer cases neither value
 takes: `RegLike`), the stored value of a store (`st_narrow`: `storeBytes` writes the register's
 low bytes), a `Phi` at an integer shape (`retype_narrow`: `Val.widen` zero-extends the boolean).
@@ -229,9 +230,15 @@ theorem stOps_act : ∀ o ∈ stOps, o.generic = false ∧ LowerTerm.actOp o = t
     o ≠ .ARM64MOVDreg ∧ o ≠ .ARM64MOVDnop ∧ o ≠ .Phi := by
   decide +kernel
 
-/-- **A `regOps` op reads registers alike.** -/
-theorem evalPure_rl {o : Op} (ho : o ∈ regOps) {ty : Ty} {k : Int64} {ax : Option AuxRef}
-    {l l' : List Val} (h : RegLikeL l l') :
+/-- `AND` off the `bool` shape (where it absorbs a `false` operand) reads registers alike. -/
+theorem and_rl {ty : Ty} (hb : ty ≠ .bool) {l l' : List Val} (h : RegLikeL l l') :
+    Arm64.and ty l = Arm64.and ty l' := by
+  rw [Arm64.and_of_ne_bool hb, Arm64.and_of_ne_bool hb]
+  exact op2_rl h
+
+/-- **A `regOps` op reads registers alike** (an `AND` off the `bool` shape). -/
+theorem evalPure_rl {o : Op} (ho : o ∈ regOps) {ty : Ty} (hand : o = .ARM64AND → ty ≠ .bool)
+    {k : Int64} {ax : Option AuxRef} {l l' : List Val} (h : RegLikeL l l') :
     Arm64.evalPure o ty k ax l = Arm64.evalPure o ty k ax l' := by
   simp only [regOps, List.mem_cons, List.not_mem_nil, or_false] at ho
   repeat' (rcases ho with rfl | ho)
@@ -242,7 +249,7 @@ theorem evalPure_rl {o : Op} (ho : o ∈ regOps) {ty : Ty} {k : Int64} {ax : Opt
   · exact op2_rl h
   · exact op1_rl h
   · exact op1_rl h
-  · exact op2_rl h
+  · exact and_rl (hand rfl) h
   · exact op1_rl h
   · exact op2_rl h
   · exact op1_rl h

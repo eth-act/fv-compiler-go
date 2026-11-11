@@ -202,11 +202,12 @@ def regOps : List Op :=
 (`Arm64.storeBytes`). -/
 def stOps : List Op := [.ARM64MOVBstore, .ARM64MOVHstore, .ARM64MOVWstore, .ARM64MOVDstore]
 
-/-- `u` reads its argument `j` as a register: a `regOps` op, a stored value, or a `Phi` at an
-integer shape (it reads its argument at its shape, `Val.widen` zero-extends a `bool`). -/
+/-- `u` reads its argument `j` as a register: a `regOps` op (an `AND` off the `bool` shape, where
+`Arm64.and` absorbs a `false` operand), a stored value, or a `Phi` at an integer shape (it reads
+its argument at its shape, `Val.widen` zero-extends a `bool`). -/
 def regPos (tysF : Array Ty) (u : Value) (j : Nat) : Bool :=
-  regOps.contains u.op || (stOps.contains u.op && j == 1) ||
-    (u.op == .Phi && isInt tysF[u.id]?)
+  (regOps.contains u.op && (u.op != .ARM64AND || !isBool tysF[u.id]?)) ||
+    (stOps.contains u.op && j == 1) || (u.op == .Phi && isInt tysF[u.id]?)
 
 /-- Argument `j` of `w` (`b`) is `u`'s (`a`), a value of both, or `u`'s is gone and `w` reads its
 `x` instead, as a register. -/

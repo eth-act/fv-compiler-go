@@ -499,15 +499,16 @@ theorem st_shape {env : Env} {ctx : Ctx} {fr : Frame} {u : Value} (ho : u.op ∈
 /-- **A reader of a gone value** (a `regOps` op or a store, `regPos`) does on its target
 arguments what it does on its source's. -/
 theorem reader_eq {fl : Bool} (hfl : fl = false) {env : Env} {ctx : Ctx} {fr : Frame} {u : Value}
-    {tys : Array Ty} (ho : u.op ∈ regOps ∨ u.op ∈ stOps) {argvS argvT : List Val} {ty : Ty}
+    {tys : Array Ty} {ty : Ty} (ho : (u.op ∈ regOps ∧ (u.op = .ARM64AND → ty ≠ .bool)) ∨ u.op ∈ stOps)
+    {argvS argvT : List Val}
     (hrel : ArgRel tys u argvS argvT) {r : Res Val} (hS : evalOpL fl env ctx fr u argvS ty = r)
     (hr : ∀ msg, r ≠ .stuck msg) : evalOpL fl env ctx fr u argvT ty = r := by
   subst hfl
   obtain ⟨hl, hj⟩ := hrel
-  rcases ho with ho | ho
+  rcases ho with ⟨ho, hand⟩ | ho
   · obtain ⟨hg, ha, hroot, -⟩ := regOps_pure _ ho
     rw [evalOpL_pure hg ha hroot] at hS ⊢
-    rw [← hS, evalPure_rl ho (regLikeL_of hl fun j s hs => ?_)]
+    rw [← hS, evalPure_rl ho hand (regLikeL_of hl fun j s hs => ?_)]
     obtain ⟨t, ht, hc⟩ := hj j s hs
     exact ⟨t, ht, hc.imp_right (·.2)⟩
   · obtain ⟨hg, ha, -⟩ := stOps_act _ ho
@@ -515,7 +516,10 @@ theorem reader_eq {fl : Bool} (hfl : fl = false) {env : Env} {ctx : Ctx} {fr : F
     have hpos : ∀ j, j ≠ 1 → regPos tys u j = false := by
       intro j hj1
       have hnp : u.op ≠ .Phi := (stOps_act _ ho).2.2.2.2
-      simp [regPos, hnr, hj1, hnp]
+      have hnr' : regOps.contains u.op = false := by simpa using hnr
+      unfold regPos
+      rw [hnr']
+      simp [hj1, hnp]
     rw [evalOpL_act hg ha] at hS ⊢
     obtain ⟨a, xs, m, rfl⟩ := st_shape ho hS hr
     have h0 := hj 0 a rfl
@@ -581,15 +585,28 @@ theorem step_val (H : Hyp T f g) {env : Env} {W : List ID} {frS frT : Frame}
       · rw [hg0] at h; cases h
       · exact ⟨h1, h3⟩
     have hnphi : u.op ≠ .Phi := (hW _ ha0 hgone).2
-    have hfam : u.op ∈ regOps ∨ u.op ∈ stOps := by
+    have hfam : (u.op ∈ regOps ∧ (u.op = .ARM64AND →
+        (Ctx.makeL T f).tys[u.id]?.getD .other ≠ .bool)) ∨ u.op ∈ stOps := by
       unfold regPos at hpos
-      simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem] at hpos
-      rcases hpos with (h | ⟨h, -⟩) | ⟨h, -⟩
-      · exact .inl h
+      simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq, List.contains_iff_mem,
+        bne_iff_ne, ne_eq, Bool.not_eq_true'] at hpos
+      rcases hpos with (⟨h, hb⟩ | ⟨h, -⟩) | ⟨h, -⟩
+      · refine .inl ⟨h, fun hand => ?_⟩
+        rw [makeL_tys H.flow]
+        rcases hb with hb | hb
+        · exact absurd hand hb
+        · unfold isBool at hb
+          split at hb
+          · cases hb
+          · rename_i hnb
+            intro he
+            cases hs : (shapesL T f)[u.id]? with
+            | none => rw [hs] at he; cases he
+            | some t => rw [hs] at he hnb; simp at he; subst he; exact hnb rfl
       · exact .inr h
       · exact absurd h hnphi
     have hnm : u.op ≠ .ARM64MOVDreg ∧ u.op ≠ .ARM64MOVDnop := by
-      rcases hfam with h | h
+      rcases hfam with ⟨h, -⟩ | h
       · exact ⟨(regOps_pure _ h).2.2.2.1, (regOps_pure _ h).2.2.2.2.1⟩
       · exact ⟨(stOps_act _ h).2.2.1, (stOps_act _ h).2.2.2.1⟩
     have hswap := evalOpL_swap H (fl := mdL.faulting) (env := env) R.fr hop haux hai hwid
