@@ -613,6 +613,10 @@ theorem checked_mul {r : Rule} (h : GoFV.Rules.Interp.mulResult r = true) : ArmR
 theorem checked_lsh {r : Rule} {o o' : Op} {c : Bool}
     (hp : r.pat = .op o none .any .any .any .ellipsis [] c) (hr : r.result = .setOp o')
     (hw : GoFV.Rules.Derive.lshWide o = some o') : ArmRule.Checked r :=
-  .inr (.inr (.inr (.inr (.inr ⟨o, o', by rw [hp]; simp [ellipsisOn], hr, hw⟩))))
+  .inr (.inr (.inr (.inr (.inr (.inl ⟨o, o', by rw [hp]; simp [ellipsisOn], hr, hw⟩)))))
+
+/-- A read-only load (`ArmRule.RoLoad`, `ARM64.rules:1811-1817`). -/
+theorem checked_roLoad {r : Rule} (h : roLoadRule r = true) : ArmRule.Checked r :=
+  .inr (.inr (.inr (.inr (.inr (.inr h)))))
 
 end GoFV.Proof.Low.Rules

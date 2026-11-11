@@ -2,6 +2,7 @@ import GoFV.Proof.Low.ValBlock
 import GoFV.Proof.Low.AddrFold
 import GoFV.Proof.Low.ValMul
 import GoFV.Proof.Low.QPart
+import GoFV.Proof.Low.RoLoad
 
 variable [GoFV.SSA.Sem.Addrs]
 
@@ -20,8 +21,10 @@ global symbol's or frame variable's address, `ReplayInvL.foldAddr`, the latter i
 whose frame addresses the valuation holds, `FrameVals`; a `Store` lowered to an indexed store
 relates its address to the indexed store's base and index, `IdxRefL`, `ReplayInvL.idxFold`).
 Value rule events use `RuleFactsL.step` and `ArmRule.Sound1`, ellipsis events on terms
-`SetOpSoundT` (`setOp_den`), atom replacements change no denotation (`rename_den`); terminators
-keep `BInvL`.
+`SetOpSoundT` (`setOp_den`), atom replacements change no denotation (`rename_den`); a load of a
+read-only symbol replayed as its constant reads, from the memory atom, what the validator read
+from the symbol's allocation alone (`ReplayInvL.roLoadDef`, under the valuation's `RoVals`);
+terminators keep `BInvL`.
 -/
 
 namespace GoFV.Proof.Low.Val
@@ -3036,7 +3039,7 @@ theorem ReplayInvL.putComp {s : Value} {P : Prop} (hI : ReplayInvL tabs D₀ C�
       have hyk : y ≠ s.id := fun h => by subst h; rw [hk] at hm; cases hm
       exact ⟨m, by rw [get?_put]; simp [hyk, hm], fun a h => .inl (ha a h)⟩
     · exact ⟨s, by rw [get?_put]; simp, fun a h => .inl (hcl hp a h)⟩
-  typed := fun ρ h hF => put_poison_typed (hI.typed ρ h hF) (hF.2 _ hD)
+  typed := fun ρ h hF => put_poison_typed (hI.typed ρ h hF) (hF.2.1 _ hD)
   atoms := fun y a hy ha hargs => by
     obtain ⟨a', ha', hat, hrest⟩ := hI.atoms y a hy ha hargs
     have hyk : y ≠ s.id := fun h => by subst h; rw [hk] at ha'; cases ha'
@@ -3657,6 +3660,144 @@ theorem ReplayInvL.ldOffFold {v : ID} {defs : List Value} {u : Value}
     hr.step (g := id) (fun _ h => h) hI.typed hstep
       (compKeep_put (.inr fun b hb hbt => by rw [hx] at hb; cases hb; rw [hxt] at hbt; cases hbt))⟩
 
+/-! ### A load of a read-only symbol replayed as a constant (`roLoadDef`) -/
+
+/-- `memTyAll` gives `MemTyD` of `f`'s definitions. -/
+theorem memTyAll_spec {f : Func} (h : memTyAll tabs f = true) : MemTyD tabs f.value? := by
+  intro a v hv
+  have ho : f.valueTab[a]? = some (some v) := Option.join_eq_some_iff.1 hv
+  have hm := Array.mem_of_getElem? ho
+  have := (Array.all_eq_true_iff_forall_mem.1 h) _ hm
+  simpa [Option.all, Bool.and_eq_true] using this
+
+/-- An `Addr` of `f` with the aux `ax`, from `roLoadDef`'s search. -/
+theorem addr_of_any {f : Func} {ax : Option AuxRef}
+    (h : f.valueTab.any (fun o => o.any fun w => w.op == .Addr && w.aux == ax) = true) :
+    ∃ a w, f.value? a = some w ∧ w.op = .Addr ∧ w.aux = ax := by
+  obtain ⟨o, ho, hw⟩ := Array.any_eq_true'.1 h
+  cases o with
+  | none => simp at hw
+  | some w =>
+    simp only [Option.any_some, Bool.and_eq_true, beq_iff_eq] at hw
+    obtain ⟨i, hi, hio⟩ := Array.mem_iff_getElem.1 ho
+    exact ⟨i, w, by simp [Func.value?, Array.getElem?_eq_getElem hi, hio], hw.1, hw.2⟩
+
+/-- The address of a read-only symbol's load: the symbol's block at the offset, whatever the
+base. -/
+theorem symPtr_roSym {ax : Option AuxRef} {name : String} {al : Alloc}
+    (h : GoFV.Opt.RewriteCheck.roSym? tabs ax = some (name, al)) (ai : Int64) (z : Val) :
+    symPtr tabs ai ax z = some ⟨.global name, BitVec.ofInt 64 ai.toInt⟩ := by
+  cases ax with
+  | none => simp [GoFV.Opt.RewriteCheck.roSym?] at h
+  | some n =>
+    unfold GoFV.Opt.RewriteCheck.roSym? at h
+    simp only [Option.bind_some] at h
+    split at h
+    · rename_i he
+      simp only [symPtr, he]
+      split at h <;> cases h <;> try rfl
+    · cases h
+
+/-- What `roLoadDef` says. -/
+theorem roLoadDef_cases {f : Func} {v : ID} {defs : List Value} {u : Value}
+    (h : roLoadDef tabs f M v defs = some u) :
+    ∃ x n s name al r, M.get? v = some x ∧ ldOp? x.op = some (n, s) ∧
+      GoFV.Opt.RewriteCheck.roSym? tabs x.aux = some (name, al) ∧ u.op = .ARM64MOVDconst ∧
+      u.args.size = 0 ∧ u.type = x.type ∧ u.aux = none ∧ x.args.size = 2 ∧
+      termVL tabs u = true ∧ (M.get? x.args[1]!).all (fun w => !termVL tabs w) = true ∧
+      (∃ a w, f.value? a = some w ∧ w.op = .Addr ∧ w.aux = x.aux) ∧ memTyAll tabs f = true ∧
+      roLoadWord name al n s (BitVec.ofInt 64 x.auxInt.toInt) = some r ∧
+      (∀ w, r = some w → w = Arm64.imm u.auxInt) := by
+  unfold roLoadDef at h
+  split at h
+  · rename_i x _ u' hx
+    split at h
+    · rename_i n s name al hl hro
+      rw [Option.ite_none_right_eq_some] at h
+      obtain ⟨hc, h⟩ := h
+      cases h
+      simp only [Bool.and_eq_true, beq_iff_eq] at hc
+      obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨-, -⟩, -⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, -⟩, h9⟩, h10⟩, h11⟩, h12⟩, h14⟩ := hc
+      split at h14
+      · rename_i hw
+        exact ⟨x, n, s, name, al, none, hx, hl, hro, h3, h4, h5, h6, h7, h9, h10,
+          addr_of_any h11, h12, hw, fun _ h => by cases h⟩
+      · rename_i w hw
+        simp only [beq_iff_eq] at h14
+        exact ⟨x, n, s, name, al, some w, hx, hl, hro, h3, h4, h5, h6, h7, h9, h10,
+          addr_of_any h11, h12, hw, fun _ h => by cases h; exact h14⟩
+      · cases h14
+    · cases h
+  · cases h
+
+/-- **A load of a read-only symbol replayed as a constant** (`roLoadDef`): the load `x` at `v` of
+a symbol an `Addr` of `f` names becomes `MOVDconst [c]`. The memory it reads is an atom, whose
+value holds the symbol's allocation (`RoVals` of the valuation, `memTyAll`), so the load reads
+what `roLoadWord` read from the allocation alone (`roLoadWord_loadN`): `poison` or `c`'s word.
+The step `M → M.put v u` refines every denotation (`termPut_den`), and `ReplayInvL` carries over. -/
+theorem ReplayInvL.roLoadDef {f : Func} (hD : ∀ y, D₀ y = f.value? y) {v : ID}
+    {defs : List Value} {u : Value}
+    (hI : ReplayInvL tabs D₀ C₀ M C) (hld : roLoadDef tabs f M v defs = some u) :
+    ReplayInvL tabs D₀ C₀ (M.put v u) C ∧
+      ∀ ρ, TypedL true M.get? tabs ρ → FrameVals tabs 0 D₀ ρ → ∀ n y, C y →
+        Sem.Refines (denL true M.get? tabs ρ n y) (denL true (M.put v u).get? tabs ρ (id n) y) := by
+  obtain ⟨x, sz, sg, name, al, r, hx, hl, hro, huop, husz, hty, hua, hsz, hut, hmem,
+    ⟨a0, w0, hw0, hw0op, hw0ax⟩, hmt, hr, hrw⟩ := roLoadDef_cases hld
+  obtain ⟨hg, hmd⟩ := ldOp_arm hl
+  have hxt : termVL tabs x = true := termVL_ld hl
+  have hxl : x.args.toList = [x.args[0]!, x.args[1]!] := congrArg Array.toList (args_two hsz)
+  have hul : u.args.toList = [] := by
+    have : u.args = #[] := Array.eq_empty_of_size_eq_zero husz
+    rw [this]
+  have hMT : MemTyD tabs D₀ := fun a w hw => memTyAll_spec hmt a w (by rw [← hD]; exact hw)
+  -- the memory a valuation's atoms hold has the symbol's allocation
+  have hRo : ∀ m, RoMemD tabs D₀ m → al.writable = false ∧ m.find? (.global name) = some al :=
+    fun m hm => hm a0 w0 name al (by rw [hD]; exact hw0) hw0op (by rw [hw0ax]; exact hro)
+  let P : (ID → Val) → Prop := fun F => GoFV.Proof.MemInv.MemsOK (RoMemD tabs D₀) (F x.args[1]!)
+  have hmovd : ∀ T : Ty, opValL tabs u.op T u.auxInt u.aux [] = Arm64.res T (Arm64.imm u.auxInt) :=
+    fun T => by rw [huop, opValL_evalPure rfl rfl rfl]; rfl
+  have htop : ∀ F G : ID → Val, (∀ a, Sem.Refines (F a) (G a)) → P F →
+      Sem.Refines
+        ((opValL tabs x.op (shpL tabs x.type) x.auxInt x.aux (x.args.toList.map F)).retypeL
+          (shpL tabs x.type))
+        ((opValL tabs u.op (shpL tabs u.type) u.auxInt u.aux (u.args.toList.map G)).retypeL
+          (shpL tabs u.type)) := by
+    intro F G _ hPF
+    rw [hty, hxl, hul]
+    simp only [List.map_cons, List.map_nil]
+    rw [opValL_ld hg hmd hl, hmovd]
+    apply retypeL_mono
+    cases hFm : F x.args[1]! with
+    | mem m =>
+      have hm : RoMemD tabs D₀ m := hPF m (by rw [hFm]; simp [Val.mems])
+      simp only [ldVal, symPtr_roSym hro, Option.elim]
+      rw [roLoadWord_loadN hr (hRo m hm).2]
+      cases r with
+      | none => exact .poison _
+      | some w => rw [hrw w rfl]; exact Sem.Refines.refl _
+    | _ => simp only [ldVal]; exact .poison _
+  have hP : ∀ ρ, FrameVals tabs 0 D₀ ρ → ∀ k, P (denL true M.get? tabs ρ k) := fun ρ hF k => by
+    rcases k with _ | k
+    · exact GoFV.Proof.MemInv.memsOK_poison
+    · have hna : ¬ IsTermL tabs M.get? x.args[1]! := fun ⟨w, hw, hwt⟩ => by
+        rw [hw] at hmem; simp [hwt] at hmem
+      show GoFV.Proof.MemInv.MemsOK _ (denL true M.get? tabs ρ (k + 1) x.args[1]!)
+      rw [denL_succ_atom hna]
+      exact hF.2.2 hMT _
+  have hstep : ∀ ρ, TypedL true M.get? tabs ρ → FrameVals tabs 0 D₀ ρ → ∀ n y, C y →
+      Sem.Refines (denL true M.get? tabs ρ n y) (denL true (M.put v u).get? tabs ρ (id n) y) :=
+    fun ρ _ hF n z _ => termPut_den hx hxt hut (hP ρ hF) htop n z
+  have hcl : C v → ∀ z ∈ u.args, C z := fun _ z hz => by
+    rw [Array.eq_empty_of_size_eq_zero husz] at hz; simp at hz
+  refine ⟨{ closed := put_closed hcl hI.closed
+            typed := fun ρ h hF => put_typed hx hty (by rw [hxt, hut]) (hI.typed ρ h hF)
+            atoms := fun y a hy ha hargs => ?_ }, hstep⟩
+  obtain ⟨a', ha', hat, hrest⟩ := hI.atoms y a hy ha hargs
+  have hyv : y ≠ v := fun h => by subst h; rw [hx] at ha'; cases ha'; rw [hxt] at hat; cases hat
+  exact ⟨a', by rw [get?_put]; simp [hyv, ha'], hat, hrest.imp id fun hr =>
+    hr.step (g := id) (fun _ h => h) hI.typed hstep
+      (compKeep_put (.inr fun b hb hbt => by rw [hx] at hb; cases hb; rw [hxt] at hbt; cases hbt))⟩
+
 /-! ### A `Store`'s arm64 store indexed (`stIdxFold`) -/
 
 /-- What `stIdxFold` says. -/
@@ -4163,11 +4304,11 @@ theorem ReplayInvL.mul {v : ID} {defs ds : List Value} (hI : ReplayInvL tabs D�
 
 end Inv
 
-/-- What `ruleOKL` establishes: the matched value is a term and some commutation choice
-validates the definitions it returns. -/
+/-- What `ruleOKL` establishes: the rule is no read-only load, the matched value is a term and
+some commutation choice validates the definitions it returns. -/
 theorem ruleOKL_facts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs ds : List Value}
     (h : ruleOKL tabs M r v defs = some ds) :
-    ∃ sw ∈ choices (GoFV.Opt.RewriteCheck.Pat.commutes r.pat),
+    roLoadRule r = false ∧ ∃ sw ∈ choices (GoFV.Opt.RewriteCheck.Pat.commutes r.pat),
       Nonempty (RuleFactsL tabs M (Rule.swapC r sw) v ds) := by
   unfold ruleOKL at h
   split at h
@@ -4175,26 +4316,27 @@ theorem ruleOKL_facts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs ds : 
   · rename_i x hx
     split at h
     · rename_i hc
-      simp only [Bool.and_eq_true, beq_iff_eq] at hc
+      simp only [Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true'] at hc
       obtain ⟨sw, hsw, h1⟩ := List.exists_of_findSome?_eq_some h
       dsimp only at h1
       split at h1
       · rename_i h2
         cases h1
-        exact ⟨sw, hsw, ruleFactsL hx hc.1 hc.2 h2⟩
+        exact ⟨hc.2, sw, hsw, ruleFactsL hx hc.1.1 hc.1.2 h2⟩
       · cases h1
     · cases h
 
 /-- A `Checked` rule whose result is no ellipsis (`hnot`) and no strength-reduced multiplication
-(`hmul`) that matched in the replay (`RuleFactsL`) is `Sound1` on the matched commutation choice:
-a rule on a memory or frame atom never matches, as those atoms are no terms. -/
+(`hmul`), and no read-only load (`hro`, which `ruleOKL` rejects), that matched in the replay
+(`RuleFactsL`) is `Sound1` on the matched commutation choice: a rule on a memory or frame atom
+never matches, as those atoms are no terms. -/
 theorem checked_sound1 {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {ds : List Value}
     (hck : ArmRule.Checked r) (hnot : ∀ o, ¬ r.result = .setOp o)
-    (hmul : ¬ GoFV.Rules.Interp.mulResult r = true) {sw : List Bool}
+    (hmul : ¬ GoFV.Rules.Interp.mulResult r = true) (hro : roLoadRule r = false) {sw : List Bool}
     (hsw : sw ∈ choices (GoFV.Opt.RewriteCheck.Pat.commutes r.pat))
     (F : RuleFactsL tabs M (Rule.swapC r sw) v ds) : ArmRule.Sound1 (Rule.swapC r sw) := by
   rcases hck with hsd | ⟨o, o3, -, hr3, -⟩ | ⟨o, o3, -, hr3, -⟩ |
-      ⟨om, n, pty, pai, pax, par, pargs, pc, hpat, hom⟩ | hm | ⟨o, o3, -, hr3, -⟩
+      ⟨om, n, pty, pai, pax, par, pargs, pc, hpat, hom⟩ | hm | ⟨o, o3, -, hr3, -⟩ | hrl
   · exact hsd sw hsw
   · exact absurd hr3 (hnot o3)
   · exact absurd hr3 (hnot o3)
@@ -4209,6 +4351,7 @@ theorem checked_sound1 {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {ds : List
     rw [termVL_mem tabs x' hom (hop.trans ho)] at ht'; cases ht'
   · exact (hmul hm).elim
   · exact absurd hr3 (hnot o3)
+  · exact absurd (hrl.symm.trans hro) (by decide)
 
 /-- The rule `lshRule` gives at a renamed narrow left shift: a `Checked` rule of the table (of
 the narrow shift's row) that builds its result and is no strength-reduced multiplication. -/
@@ -4260,8 +4403,8 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
       split at h
       · -- a rule of `Lsh64x<a>` in its derived form on the narrow shift (`lshRule`)
         rename_i ds hok
-        obtain ⟨sw, hsw, ⟨F⟩⟩ := ruleOKL_facts hok
-        have hsd := checked_sound1 hck hnot hmul hsw F
+        obtain ⟨hrl, sw, hsw, ⟨F⟩⟩ := ruleOKL_facts hok
+        have hsd := checked_sound1 hck hnot hmul hrl hsw F
         have hput : ds.foldl (fun M u => M.put u.id u) M = putAll M ds := by
           simp [putAll, Array.foldl_toList]
         rw [hput] at h
@@ -4287,7 +4430,7 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
         rcases hk with ⟨ht, ht', htop, hsa⟩ | ⟨hren, ht⟩
         · have hso : SetOpSoundT x.op o' := by
             rcases hck with hsd | ⟨o, o3, he3, hr3, -, -, -, -, hso⟩ | ⟨o, o3, he3, hr3, -, -, hren⟩ |
-                ⟨om, n, pty, pai, pax, par, pargs, pc, hpat, hom⟩ | hm | ⟨o, o3, he3, hr3, hw3⟩
+                ⟨om, n, pty, pai, pax, par, pargs, pc, hpat, hom⟩ | hm | ⟨o, o3, he3, hr3, hw3⟩ | hrl
             · exact absurd hsd (not_sound_of_ellipsis he)
             · obtain ⟨c, hc⟩ := ellipsisOn_eq he
               obtain ⟨c', hc'⟩ := ellipsisOn_eq he3
@@ -4307,6 +4450,8 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
               obtain ⟨c', hc'⟩ := ellipsisOn_eq he3
               rw [hc] at hc'; cases hc'
               rw [hw] at hw3; cases hw3
+            · obtain ⟨c, hc⟩ := ellipsisOn_eq he
+              simp [ArmRule.RoLoad, roLoadRule, hc] at hrl
           exact replayL_inv hs hD evs _ M' B B' C h
             (copyFixL_inv _ (hI.setOp hx ht ht' htop hsa hso)
               (hB.mono (g := id) (fun _ h => h) hI.typed fun ρ hρ _ n y _ =>
@@ -4347,8 +4492,8 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
       rename_i hmul
       split at h
       · rename_i ds hok
-        obtain ⟨sw, hsw, ⟨F⟩⟩ := ruleOKL_facts hok
-        have hsd := checked_sound1 hck hnot hmul hsw F
+        obtain ⟨hrl, sw, hsw, ⟨F⟩⟩ := ruleOKL_facts hok
+        have hsd := checked_sound1 hck hnot hmul hrl hsw F
         have hput : ds.foldl (fun M u => M.put u.id u) M = putAll M ds := by
           simp [putAll, Array.foldl_toList]
         rw [hput] at h
@@ -4484,7 +4629,13 @@ theorem replayL_inv {tabs : Tables} {s : RuleSet} (hs : ArmRuleSet.AllSound s)
               obtain ⟨hI', hstep⟩ := hI.ldOffFold hld
               exact replayL_inv hs hD evs _ M' B B' C h hI'
                 (hB.mono (g := id) (fun _ h => h) hI.typed hstep)
-            · cases h
+            · -- a load of a read-only symbol replayed as a constant (`roLoadDef`)
+              split at h
+              · rename_i u hld
+                obtain ⟨hI', hstep⟩ := hI.roLoadDef hD hld
+                exact replayL_inv hs hD evs _ M' B B' C h hI'
+                  (hB.mono (g := id) (fun _ h => h) hI.typed hstep)
+              · cases h
   | .copyArg v i src :: evs, M, M', B, B', C, h, hI, hB => by
     unfold replayL at h
     split at h
