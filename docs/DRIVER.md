@@ -35,7 +35,7 @@ gofv-ssa-opt [--from <pass>] [--to <pass>] [--partial] <in.ssa>
 gofv-ssa-opt --verified [--from <pass>] [--vstats FILE] [--profile] <in.ssa>
 gofv-ssa-opt --list
 gofv-ssa-opt --check [--mixed] [--whole-file-env] [--strict] [--jobs N] [--max-report N] [--table FILE] <dir|file>...
-gofv-ssa-opt --check --verified [--whole-file-env] [--jobs N] [--max-report N] [--table FILE] <dir|file>...
+gofv-ssa-opt --check --verified [--whole-file-env] [--jobs N] [--max-report N] [--table FILE] [--vstats FILE] <dir|file>...
 gofv-ssa-opt --check --verified --e2e [--whole-file-env] [--jobs N] [--table FILE] [--accepted FILE] <dir|file>...
 gofv-ssa-opt --back <in>
 gofv-ssa-opt --back-check [--jobs N] [--max-report N] [--table FILE] <dir|file>...
@@ -292,8 +292,11 @@ runs are such deadcode runs. It also counts the functions fully verified through
 `schedule` step relies on `NilPtrsOK` (a swap that only `nilPtrSwap` allows,
 `GoFVTest.SchedClass.relyNilPtrs`), and lists the rejected `regalloc` runs (`raClass`) and the
 rejected `schedule` runs (`SchedClass.schedClass`: the classes of the pairs `swapOK` rejects) by
-class, first unverified from `lower` on / all. It exits 1 only for parse errors or no input. The
-nightly gate runs
+class, first unverified from `lower` on / all. `--vstats FILE` writes one line per function, sorted:
+the input file, the `--vstats` fields of driver mode, then `low=` the unverified runs from `lower`
+on (`pass: verdict`, `;`-separated), tab-separated; two runs' Phase 1 (`verified`) or `trim`
+(`trim=verified`) sets compare per function with `comm` (the 0-lost check of a PR that changes a
+checked pass). It exits 1 only for parse errors or no input. The nightly gate runs
 it on the full corpus, and `driver-e2e.sh --verified`, as reports (`docs/GATE.md`).
 
 `gofv-ssa-opt --check --verified --e2e <dir|file>...` counts the functions the end-to-end theorem
