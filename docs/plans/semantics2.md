@@ -243,7 +243,7 @@ no `AND` pattern node at the `bool` shape (`Pat.argsOKLs`; counterexample `AND <
 (MOVDconst [0])`, which is `false`, while `ANDconst [0] poison` is `poison`). The parallel `OrB`
 (`134`) stays unproven: `OrB true poison = true` has no machine counterpart, as `true` is the
 register 1 and `1 ||| r` depends on `r` (a model limit, `docs/proofs/rules.md` Findings).
-sem-difftest (native and the quick-v7 corpus) is unchanged.
+sem-difftest (native and the quick-v10 corpus) is unchanged.
 
 **Pointers outside their window (#385, a Phase 1 change).** Each block with addresses has a
 window (`Blk.window?`: `2^40` for nil and heap blocks, `2^24` for frame blocks; globals have
