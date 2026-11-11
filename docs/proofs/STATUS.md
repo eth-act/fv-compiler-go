@@ -1828,6 +1828,7 @@ declarations, then the autos the pipeline created). From the stock `.prog` file 
 input view is read (definitions, config, `Dcl` at `AllocFrame`'s start, `genin`). The stock
 column runs the same back end on the stock `trim` function of every function.
 
+<<<<<<< HEAD
 **Entry stores after spills (`entrySkip`).** `storesFrom` steps over the spills (`StoreReg`) and
 the values without code (`SP`, `SB`, `InitMem`) genssa places between the entry values and the
 entry stores (`GoFV/Gen/Entry49.lean`; proof `sim_entrySkip`, `g64L_entrySkip`). On quick-v10
@@ -1840,18 +1841,34 @@ entry stores (`GoFV/Gen/Entry49.lean`; proof `sim_entrySkip`, `g64L_entrySkip`).
 - vacuous at `Addrs.fixed` under `verified_mach_S`: 7 → 9.
 
 | quick-v10 (9,297 functions, 8.5 min; the composition on G64 with `SBFIZ` in `checkObj`, per function at either mode (`agent/sbfiz` on main a6c37a47, the vacuity audit `entryVacuous`), P0' in `checkG64` and `checkObj`, `--jobs 2`) | pipeline output | share | stock `trim` |
+=======
+| quick-v10 (9,297 functions, 8.9 min; the composition on G66 (G66a and G66b), per function at either mode (`agent/g66lift` on `agent/g66b`, main 3f22d5c4, the vacuity audit `entryVacuous`), P0' in `checkG66` and `checkObj`, `--jobs 2`) | pipeline output | share | stock `trim` |
+>>>>>>> 8b74682d (docs: quick-v10 e2e on the composition on G66: 7,057 (6,821 verified_mach + 236 verified_mach_S), +382 over G64's 6,675, 0 lost by comm (refs #553))
 | --- | ---: | ---: | ---: |
 | fully verified (Phase 2, through `trim`) | 7,895 | 84.91% | - |
 | … genssa and `Flushplist` ran | 7,895 | 84.91% | 9,297 |
-| … ∧ `checkG64` ∧ `entryStoresOK` ∧ `argsOK` | 7,225 | 77.71% | 8,204 |
-| … ∧ `checkG64` ∧ `entryStoresOK` ∧ `argsOK` ∧ `retRegsOK` | 7,225 | 77.71% | 8,203 |
+| … ∧ `checkG66` ∧ `entryStoresOK` ∧ `argsOK` | 7,632 | 82.09% | 8,865 |
+| … ∧ `checkG66` ∧ `entryStoresOK` ∧ `argsOK` ∧ `retRegsOK` | 7,632 | 82.09% | 8,864 |
 | … ∧ `checkObj` | 7,861 | 84.55% | 9,135 |
-| … ∧ `checkG64` ∧ `entryStoresOK` ∧ `argsOK` ∧ `retRegsOK` ∧ `checkObj` (the premises hold) | 7,222 | 77.68% | 8,163 |
-| … of them vacuous (closure context, `entryVacuous`: every variant) | 547 | 5.88% | 600 |
-| **… premises hold, not vacuous (end to end, `verified_mach` or `verified_mach_S`)** | **6,675** | **71.79%** | 7,563 |
-| … of which `needs48 = false`: `verified_mach` (`SepFrom`, `CallOK` …) | 6,472 | 69.61% | 7,330 |
-| … of which `needs48 = true`: `verified_mach_S` (G48's mode) | 203 | 2.18% | 233 |
-| … end to end, pipeline output identical to stock after `trim` | 5,637 | 60.63% | - |
+| … ∧ `checkG66` ∧ `entryStoresOK` ∧ `argsOK` ∧ `retRegsOK` ∧ `checkObj` (the premises hold) | 7,622 | 81.98% | 8,806 |
+| … of them vacuous (closure context, `entryVacuous`: every variant) | 565 | 6.07% | 628 |
+| **… premises hold, not vacuous (end to end, `verified_mach` or `verified_mach_S`)** | **7,057** | **75.90%** | 8,178 |
+| … of which `needs48 = false`: `verified_mach` (`SepFrom`, `CallOK` …) | 6,821 | 73.37% | 7,882 |
+| … of which `needs48 = true`: `verified_mach_S` (G48's mode) | 236 | 2.54% | 296 |
+| … end to end, pipeline output identical to stock after `trim` | 5,882 | 63.26% | - |
+
+The composition on G66 (G64 with G65's float frame-variable loads and pair stores, G66a's spill
+slots of 1, 2 and 4 bytes and G66b's elided extensions; no run premise added) counts 7,057 end to
+end, 382 more than the composition on G64 (6,675 on main 3f22d5c4) and none fewer (`comm` of the
+sorted accepted lists): +349 under `verified_mach` (6,472 → 6,821), +33 under `verified_mach_S`
+(203 → 236); `needs48` reads `liveCtx` only, so no function changes mode. 210 of the 382 are of
+std/runtime, 31 std/regexp, 27 std/fmt, 14 each std/strings and std/bytes, 54 tests. Stock column:
+7,563 → 8,178. Of the functions whose other premises hold, `checkObj` rejects 10 (3 before): the
+stack check of a huge frame (4), a `JMP` (4) or `TBZ` (2) to a branch target off a Prog start.
+18 more are vacuous at the entry (547 → 565, closures).
+
+The composition on G64 with `SBFIZ` in `checkObj` (`agent/sbfiz` on main a6c37a47) counted
+6,675 (6,472 + 203).
 
 `SBFIZ` in `checkObj` adds 1 end-to-end function, `runtime.(*stkframe).argBytes`, under
 `verified_mach`. It loses none: the sorted accepted lists, `comm`'d against main a6c37a47

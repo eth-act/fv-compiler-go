@@ -3559,6 +3559,12 @@ the variable to `2^62 + x·2^24`, which no frame operand reaches (`g49Env_fixed_
 0's) so that an activation extending `envAtSP` can meet `CallSpec`'s `AddrAgree`.
 
 **Coverage** (quick-v10, `gofv-ssa-opt --check --verified --e2e`, STATUS End-to-end coverage): on
+G66, per function at either mode, the closures vacuous at the entry (`entryVacuous`) left out
+(`agent/g66lift` on G66b, main 3f22d5c4), 7,057 of 9,297 functions end to end (75.90%): 6,821
+under `verified_mach` and 236 under `verified_mach_S`; 382 more than on G64 (6,675, the same count)
+and none fewer (+349, +33); the premises hold of 7,622 (`checkObj` rejects 10 of those the other
+premises accept), 565 of them vacuous at the entry; stock column 8,178; vacuous at `Addrs.fixed`
+40 of the 6,821 and 9 of the 236. On
 G61, per function at either mode (`agent/lift61` on main 0f930080, with `checkObj`'s `X27At`),
 7,003 of 9,297 functions end to end (75.32%): 6,792 under `verified_mach` and 211 under
 `verified_mach_S`; 258 more than on G60 and none fewer (170 of std/runtime, 78 of std/sync, 6 of
@@ -3577,26 +3583,26 @@ of the 195 (any `Blk.local` access in G48's mode); the `_atSP` variants cover al
 from `locInit` and `runMach` from the entry to the caller's `0x40`, through `b1`'s `TBNZ` and
 `b2`'s `ANDconst`/`MakeResult`/`RET`, with 7 in `X0`. `objWholeNL_ret_witness`
 (`runtime.gclinkptr.ptr`, no arm64 op: `ret_results` in Phase 1's mode). `objWhole_panic_witness`
-(`(*A).g` on a nil receiver: the nil check faults). `g64_callPanic_witness` (`fint64to32`, a callee
-that panics), `g64_icallPanic_witness` (`Locker.Lock`'s interface call), `g64_storePanic_witness`
-and `g64_loadPanic_witness` (`(*queueOnePass).next`'s `MOVW R2, 52(R0)` and `MOVWU 52(R0), R3`
-with a nil `q`), `g64_ldarPanic_witness` (`sync/atomic.LoadInt64`'s `LDAR (R0), R0` with a nil
-`addr`), `g64_atomPanic_witness` (`sync/atomic.SwapInt64`'s `LDAXR`). `objStarLeaf_witness`
+(`(*A).g` on a nil receiver: the nil check faults). `g66_callPanic_witness` (`fint64to32`, a callee
+that panics), `g66_icallPanic_witness` (`Locker.Lock`'s interface call), `g66_storePanic_witness`
+and `g66_loadPanic_witness` (`(*queueOnePass).next`'s `MOVW R2, 52(R0)` and `MOVWU 52(R0), R3`
+with a nil `q`), `g66_ldarPanic_witness` (`sync/atomic.LoadInt64`'s `LDAR (R0), R0` with a nil
+`addr`), `g66_atomPanic_witness` (`sync/atomic.SwapInt64`'s `LDAXR`). `objStarLeaf_witness`
 (`(*A).g`, a leaf: the P0 run of its nil check keeps the
 caller's `0x40` in `X30`). `entryStore_witness` (`GoFV/Proof/Witness/ObjEntry49.lean`:
-`g64L_entryStore` on `runtime.getm`'s ABI0 wrapper's `MOVD R0, ~r0+0(FP)` (`checkG64` accepts the
+`g66L_entryStore` on `runtime.getm`'s ABI0 wrapper's `MOVD R0, ~r0+0(FP)` (`checkG66` accepts the
 wrapper with `checkG49`'s tables) from a machine whose
 `~r0` window holds `0xAB`, to a full `LocMatch`). `verified_mach_witness`:
 `pallocSum.start` from its generic SSA (the export's first
 section, in the whole-file environment of `gofv-ssa-opt --verified`) through
 `verifiedPipelineFull` (`fullyVerified`), with every premise of `verified_mach` discharged;
-`checkG64` accepts genssa's Progs against the pipeline's own output, `entryStoresOK` holds (no
-pending window). `RunPre` there is `runPre_simple`. The witnesses' facts check `checkG64L` (or
-`checkG64`) and `constRo (symNames g) = []` on the same functions with the same tables as before
+`checkG66` accepts genssa's Progs against the pipeline's own output, `entryStoresOK` holds (no
+pending window). `RunPre` there is `runPre_simple`. The witnesses' facts check `checkG66L` (or
+`checkG66`) and `constRo (symNames g) = []` on the same functions with the same tables as before
 (none of them has a remainder, `LoweredMove` or loop); they run at the mode `false` (`needs48`
 false, checked), as on main. Their G48-mode versions: `ObjWholeS.objWhole_ret_witness` and
 `verified_mach_S_witness` (`ObjEndToEndS`: `SP` at `outargs 0`'s fixed base `0x4000000000000000`,
-`SepFromW`, `SPInv`, `RunPreS`), `g64_callPanicS_witness` (`CallPanicOKS`).
+`SepFromW`, `SPInv`, `RunPreS`), `g66_callPanicS_witness` (`CallPanicOKS`).
 `verified_mach_atSP_witness` (`GoFV/Proof/Witness/ObjEndToEndAtSP.lean`): `secret_getStack`'s
 ABI0 wrapper, with every premise of `verified_mach_atSP` discharged (a callee contract returning
 `0x11`, `0x22`; its hook; the results' blocks at `SP + 24`/`SP + 32`), returning with them at the
