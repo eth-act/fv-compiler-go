@@ -274,23 +274,23 @@ private theorem fr_az_nonneg {ps : Array Prog} {spills : Array Spill} {o : ObjIn
 
 /-- **The prologue.** From the entry `s0`, the machine reaches the state `s0'` at the entry whose
 stack check passes (`MoreRel`: `s0`, or `s0` after round trips through the morestack tail, under
-`runtime.morestack`'s contract `MorestackOK` at the tail's call and the slots' separation
-`TailSep`; both premises only for a function with a stack check), then the body's first offset
-in a state `s1` with the frame of `BodyEntry` over `s0'` (`s1 = s0'` if frameless), registers but
-`R16`, `R17`, `R20`, `R27`, `R29`, the vector registers and the memory outside the frame's two
-words as in `s0'`. -/
+`runtime.morestack`'s contract `MorestackOK` at the tail's call, with a context if `ctxt`, and the
+slots' separation `TailSep`; both premises only for a function with a stack check), then the
+body's first offset in a state `s1` with the frame of `BodyEntry` over `s0'` (`s1 = s0'` if
+frameless), registers but `R16`, `R17`, `R20`, `R27`, `R29`, the vector registers and the memory
+outside the frame's two words as in `s0'`. -/
 theorem obj_entry {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab : Tab}
     {base : BitVec 64} {sym : Nat → BitVec 64} {code : Code} {H : Hooks} {retM : BitVec 64}
-    {room : Nat} {s0 : MState}
+    {room : Nat} {ctxt : Bool} {s0 : MState}
     (hc : checkObj ps spills o = .ok tab) (hlink : linkCode base sym o.text o.relocs.toList = .ok code)
     (hsz : o.text.size ≤ 2 ^ 64) (hret : code retM = none)
     (hE : MachEntry code base room s0) (hroom : tab.autosize + 8 ≤ room)
     (hg : (s0.x 28).toNat + 32 ≤ 2 ^ 64)
     (hms : ∀ ce tail gOff, tab.check = some (ce, tail, gOff) → ∀ n add,
       tailCall o.text o.relocs.toList tail = some (n, add) →
-      MorestackOK H code retM (sym n + BitVec.ofInt 64 add) tab.autosize gOff s0)
+      MorestackOK H code retM (sym n + BitVec.ofInt 64 add) tab.autosize gOff ctxt s0)
     (hsep : ∀ ce tail gOff, tab.check = some (ce, tail, gOff) → TailSep spills.toList s0) :
-    ∃ s0' s1, MoreRel tab.check spills.toList s0 s0' ∧ MStar H code retM s0 s1 ∧
+    ∃ s0' s1, MoreRel ctxt tab.check spills.toList s0 s0' ∧ MStar H code retM s0 s1 ∧
       (if tab.autosize = 0 then s1 = s0' else BodyEntry tab.autosize.toNat s0' s1) ∧
       s1.pc = base + BitVec.ofNat 64 (tab.offs[0]!) ∧
       (∀ k : Reg, k ≠ 16 → k ≠ 17 → k ≠ 20 → k ≠ 27 → k ≠ 29 → s1.x k = s0'.x k) ∧
@@ -304,7 +304,7 @@ theorem obj_entry {ps : Array Prog} {spills : Array Spill} {o : ObjIn} {tab : Ta
       fun _ _ => rfl⟩
   -- the state at the frame words, after the stack check passed from `s0'`
   obtain ⟨s0', sA, hmr, hrunA, hpcA, hspA, hxA, hvA, hmA⟩ :
-      ∃ s0' sA, MoreRel tab.check spills.toList s0 s0' ∧ MStar H code retM s0 sA ∧
+      ∃ s0' sA, MoreRel ctxt tab.check spills.toList s0 s0' ∧ MStar H code retM s0 sA ∧
         sA.pc = base + BitVec.ofNat 64 fo ∧ sA.sp = s0'.sp ∧
         (∀ k : Reg, k ≠ 16 → k ≠ 17 → k ≠ 27 → sA.x k = s0'.x k) ∧ sA.v = s0'.v ∧
         sA.mem = s0'.mem := by

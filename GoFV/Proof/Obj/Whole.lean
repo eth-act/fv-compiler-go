@@ -1077,11 +1077,11 @@ theorem EntryMatch_stack_nil {E : MatchEnv} {g : G2In} {W : BitVec 64 → Prop} 
 
 /-- The caller's side of the morestack path (`sim_entry`, a function whose stack check reads
 `gOff(g)` and whose morestack tail spills `spills`) for the run's first state `s` and the entry
-state `s0`: every register holding a value but `R26` (the closure context, which
-`runtime.morestack` keeps) is reloaded by the tail from a slot the value fits (`ValFits`; a
-vector register from a slot of its `F` register, whose value `FValRel` reads in its low bits
-only: the hook clobbers the vector registers), and the live blocks of `s`'s memory lie apart from
-the slots and the guard word. -/
+state `s0`: every register holding a value but `R26` (the closure context, which the tail's call
+keeps when `s` holds a value there, `live26`) is reloaded by the tail from a slot the value fits
+(`ValFits`; a vector register from a slot of its `F` register, whose value `FValRel` reads in its
+low bits only: the hook clobbers the vector registers), and the live blocks of `s`'s memory lie
+apart from the slots and the guard word. -/
 structure MoreEntry (E : MatchEnv) (spills : List Spill) (gOff : Nat) (s : LocState) (s0 : MState) :
     Prop where
   regs : ∀ r v, s.regs[r]? = some v → v ≠ .poison →
@@ -1111,13 +1111,219 @@ private theorem argAddr_toNat {sp : BitVec 64} {off : Int} {n j : Nat} (h0 : 0 �
   simp only [BitVec.toNat_add, BitVec.toNat_ofNat, h64] at h ⊢
   omega
 
+/-- The run's state `s` holds a value (not `poison`) in `R26` (Go register 25, `ctxReg`), the
+closure context register: the morestack path must then keep it (`MorestackOK`'s context). -/
+def live26 (s : LocState) : Bool :=
+  match (s.regs[25]? : Option Val) with
+  | some Val.poison => false
+  | some _ => true
+  | none => false
+
+theorem live26_eq_false {s : LocState} :
+    live26 s = false ↔ ∀ v, s.regs[25]? = some v → v = .poison := by
+  unfold live26
+  cases s.regs[25]? with
+  | none => simp
+  | some v => cases v <;> simp
+
+/-- `X26` is the X register of Go register 25 alone. -/
+theorem objX?_eq_26 {r : Nat} (h : objX? r = some 26) : r = 25 := by
+  have h26 : (26 : GoFV.Arm64.Reg).toNat = 26 := rfl
+  unfold objX? at h
+  split at h
+  · have := congrArg BitVec.toNat (Option.some.inj h)
+    simp only [BitVec.toNat_ofNat, h26] at this
+    omega
+  · split at h
+    · have := congrArg BitVec.toNat (Option.some.inj h)
+      simp only [BitVec.toNat_ofNat, h26] at this
+      omega
+    · split at h
+      · have := congrArg BitVec.toNat (Option.some.inj h)
+        simp only [BitVec.toNat_ofNat, h26] at this
+        omega
+      · cases h
+
+/-! ### `R26` before value `k` of the entry block (`ctxtBefore`) -/
+
+/-- `R26` holds no value. -/
+private def Dead26 (s : LocState) : Prop := ∀ v, s.regs[25]? = some v → v = .poison
+
+private theorem dead26_setReg {s : LocState} {r : Nat} {x : Val} (h : Dead26 s)
+    (hx : r = 25 → x = .poison) : Dead26 (s.setReg r x) := by
+  intro v hv
+  simp only [LocState.setReg] at hv
+  split at hv
+  · change (s.regs.setIfInBounds r x)[25]? = some v at hv
+    rw [Array.getElem?_setIfInBounds] at hv
+    split at hv
+    · rename_i hr
+      split at hv
+      · cases hv; exact hx hr
+      · cases hv
+    · exact h v hv
+  · exact h v hv
+
+private theorem regs25_setReg {s : LocState} {r : Nat} {x : Val} (hr : r ≠ 25) :
+    (s.setReg r x).regs[25]? = s.regs[25]? := by
+  simp only [LocState.setReg]
+  split
+  · exact Array.getElem?_setIfInBounds_ne hr
+  · rfl
+
+private theorem regs25_writeParts : ∀ (s : LocState) (ts : List Ty) (xs : List Val)
+    (rs : List (Option Nat)), (∀ r ∈ rs, r ≠ some 25) →
+    (s.writeParts ts xs rs).regs[25]? = s.regs[25]?
+  | s, t :: ts, x :: xs, rs, h => by
+    unfold LocState.writeParts
+    split
+    · exact regs25_writeParts _ ts xs rs h
+    · split
+      · exact regs25_writeParts _ ts xs rs h
+      · split
+        · rename_i r rs'
+          rw [regs25_writeParts _ ts xs _ (fun q hq => h q (List.mem_cons_of_mem _ hq)),
+            regs25_setReg (fun e => h (some r) List.mem_cons_self (by rw [e]))]
+        · exact regs25_writeParts _ ts xs _ (fun q hq => h q (List.mem_cons_of_mem _ hq))
+        · exact regs25_writeParts _ ts xs _ (fun _ hq => by cases hq)
+  | s, [], _, _, _ => by simp [LocState.writeParts]
+  | s, _ :: _, [], _, _ => by simp [LocState.writeParts]
+
+private theorem regs25_write {lc : LocCtx} {s : LocState} {id : ID} {x : Val}
+    (h : (lc.home id).any (fun h => h.regList.contains (some 25)) = false) :
+    (s.write lc id x).regs[25]? = s.regs[25]? := by
+  unfold LocState.write
+  dsimp only
+  split
+  · rfl
+  · apply regs25_writeParts
+    intro r hr he
+    subst he
+    cases hh : lc.home id with
+    | none => simp [hh] at hr
+    | some l => simp_all
+  · rename_i r _ _
+    apply regs25_setReg
+    intro e
+    subst e
+    simp_all [GoFV.SSA.Location.regList]
+  · rfl
+  · split <;> rfl
+
+private theorem dead26_clobberMask {s : LocState} {m : RegMask} (h : Dead26 s) :
+    Dead26 (s.clobberMask m) := by
+  unfold LocState.clobberMask
+  split
+  · exact h
+  · intro v hv
+    simp only [Array.getElem?_mapIdx] at hv
+    cases h25 : s.regs[25]? with
+    | none => rw [h25] at hv; cases hv
+    | some w =>
+      rw [h25] at hv
+      simp only [Option.map_some] at hv
+      split at hv
+      · injection hv with hv; exact hv.symm
+      · injection hv with hv; subst hv; exact h _ h25
+
+private theorem dead26_clobber {lc : LocCtx} {s : LocState} {v : Value} (h : Dead26 s) :
+    Dead26 (s.clobber lc v) := by
+  unfold LocState.clobber
+  have h1 := dead26_clobberMask (m := v.op.regInfo.clobbers) h
+  have harg : ∀ (b : Bool) (i : Nat) (s : LocState), Dead26 s → Dead26 (if !b then s else
+      match v.args[i]?.bind lc.regOf with
+      | some r => s.setReg r .poison
+      | none => s) := by
+    intro b i s hs
+    split
+    · exact hs
+    · split
+      · exact dead26_setReg hs fun _ => rfl
+      · exact hs
+  have h2 := harg v.op.regInfo.clobbersArg0 0 _ (harg v.op.regInfo.clobbersArg1 1 _ h1)
+  have h3 : ∀ (s : LocState), Dead26 s → Dead26 (match (lc.temps[v.id]?).join with
+      | some r => s.setReg r .poison
+      | none => s) := by
+    intro s hs
+    split
+    · exact dead26_setReg hs fun _ => rfl
+    · exact hs
+  have h4 := h3 _ h2
+  dsimp only
+  split
+  · exact fun w hw => h4 w hw
+  · exact h4
+
+private theorem wh_res_bind_ok {α β : Type} {x : Res α} {k : α → Res β} {y : β}
+    (h : (x >>= k) = .ok y) : ∃ a, x = .ok a ∧ k a = .ok y := by
+  cases x with
+  | ok a => exact ⟨a, rfl, h⟩
+  | panic e m => cases h
+  | stuck msg => cases h
+
+private theorem dead26_stepLoc {env : Env} {lc : LocCtx} {s s' : LocState} {v : Value}
+    (hs : stepLoc env lc s v = .ok s')
+    (hh : (lc.home v.id).any (fun h => h.regList.contains (some 25)) = false) (h : Dead26 s) :
+    Dead26 s' := by
+  unfold stepLoc at hs
+  split at hs
+  · split at hs
+    · cases hs; exact h
+    · cases hs
+  · obtain ⟨argv, -, hs⟩ := wh_res_bind_ok hs
+    dsimp only at hs
+    split at hs <;> obtain ⟨r, -, hs⟩ := wh_res_bind_ok hs <;> cases hs <;>
+      exact fun w hw => dead26_clobber h w ((regs25_write hh).symm.trans hw)
+
+private theorem dead26_enter {env : Env} {lc : LocCtx} :
+    ∀ {s s' : LocState} {l : List ID}, enterListLoc env lc s l = .ok s' →
+      (∀ id ∈ l, ∀ v, lc.ctx.f.value? id = some v →
+        (lc.home v.id).any (fun h => h.regList.contains (some 25)) = false) →
+      Dead26 s → Dead26 s'
+  | s, s', [], h, _, hd => by cases h; exact hd
+  | s, s', id :: ids, h, hh, hd => by
+    simp only [enterListLoc] at h
+    split at h
+    · cases h
+    · rename_i v hv
+      split at h
+      · rename_i s1 hs1
+        exact dead26_enter h (fun j hj => hh j (List.mem_cons_of_mem _ hj))
+          (dead26_stepLoc hs1 (hh id List.mem_cons_self v hv) hd)
+      · cases h
+      · cases h
+
+/-- **`R26` at the entry state.** The run's state after the first `k` values of the entry block
+holds a value in `R26` only if one of them writes it (`ctxtBefore`): `locInit`'s registers are
+`poison`, and a step writes a register of its value's home or `poison`. -/
+theorem ctxtBefore_of_live26 {env : Env} {lc : LocCtx} {args : List Val} {mem : Mem}
+    {blk : Block} {k : Nat} {sI : LocState} (hb : lc.ctx.f.block? lc.ctx.f.entry = some blk)
+    (hpre : enterListLoc env lc (locInit env lc args mem) (blk.values.toList.take k) = .ok sI)
+    (hl : live26 sI = true) : ctxtBefore lc k = true := by
+  cases hc : ctxtBefore lc k
+  · exfalso
+    have hd : Dead26 sI := by
+      refine dead26_enter hpre (fun id hid v hv => ?_) (fun w hw => ?_)
+      · simp only [ctxtBefore, hb, List.any_eq_false] at hc
+        have := hc id hid
+        simp only [hv, Option.any_some, Bool.not_eq_true] at this
+        exact this
+      · simp only [locInit, Array.getElem?_replicate] at hw
+        split at hw
+        · cases hw; rfl
+        · cases hw
+    rw [live26_eq_false.2 hd] at hl
+    cases hl
+  · rfl
+
 /-- `EntryMatch` survives the morestack path: a function with a slot at the entry (an `Arg`) has
-no morestack spill slot (`argsOK`), and the caller's stack arguments lie apart from the guard
-word, among `g`'s first 32 bytes (`gOff` 16 or 24). -/
+no morestack spill slot (`argsOK`), the caller's stack arguments lie apart from the guard word,
+among `g`'s first 32 bytes (`gOff` 16 or 24), and `R26` survives where `s` holds a value in it
+(`live26`: the tail's call then has a context; a `poison` there relates to anything). -/
 theorem EntryMatch.more {E : MatchEnv} {g : G2In} {W : BitVec 64 → Prop} {spills : List Spill}
     {gOff : Nat} {sl : List TailSlot} {s : LocState} {s0 s0' : MState} (h : EntryMatch E g W s s0)
     (hm : MoreEntry E spills gOff s s0) (hpl : tailPlan spills = .ok sl)
-    (hst : MoreStep sl gOff s0 s0') (hsl : ∀ k v, s.slots.lookup k = some v → sl = [])
+    (hst : MoreStep (live26 s) sl gOff s0 s0') (hsl : ∀ k v, s.slots.lookup k = some v → sl = [])
     (hgo : gOff ≤ 24) (hg : (s0.x 28).toNat + 32 ≤ 2 ^ 64) : EntryMatch E g W s s0' := by
   obtain ⟨-, hslot⟩ := tailPlan_spec hpl
   refine ⟨fun r v hv => ?_, h.flags, ?_, ?_⟩
@@ -1128,7 +1334,13 @@ theorem EntryMatch.more {E : MatchEnv} {g : G2In} {W : BitVec 64 → Prop} {spil
     obtain ⟨hmX, hmV⟩ := hm.regs r v hv hp
     refine ⟨fun q hq => ⟨(hX q hq).1, ?_⟩, fun q hq => ?_⟩
     · rcases hmX q hq with rfl | hfit
-      · rw [hst.x26]
+      · have hr := objX?_eq_26 hq
+        subst hr
+        have hl : live26 s = true := by
+          cases hl : live26 s
+          · exact absurd (live26_eq_false.1 hl v hv) hp
+          · rfl
+        rw [hst.x26 hl]
         exact (hX 26 hq).2
       · obtain ⟨sq, hsq, hf⟩ := hfit sl hpl
         have hn := hslot sq (reloadOf_mem hsq).1
@@ -1184,8 +1396,9 @@ theorem EntryMatch.more {E : MatchEnv} {g : G2In} {W : BitVec 64 → Prop} {spil
 
 /-- `EntryEnv` survives the morestack path. -/
 theorem EntryEnv.more {E : MatchEnv} {L : Link} {ps : List Prog} {az : Int}
-    {check : Option (Nat × Nat × Nat)} {spills : List Spill} {s0 s0' : MState}
-    (h : EntryEnv E L ps az s0) (hm : MoreRel check spills s0 s0') : EntryEnv E L ps az s0' := by
+    {ctxt : Bool} {check : Option (Nat × Nat × Nat)} {spills : List Spill} {s0 s0' : MState}
+    (h : EntryEnv E L ps az s0) (hm : MoreRel ctxt check spills s0 s0') :
+    EntryEnv E L ps az s0' := by
   obtain ⟨-, hsp, -, h28, h29, h30⟩ := hm.keep
   exact ⟨by rw [hsp]; exact h.sp, by rw [h28]; exact h.g, by rw [h30]; exact h.lr,
     by rw [h29]; exact h.fp, by rw [h29, hsp]; exact h.fp0, h.framed, by rw [h30]; exact h.lrOut⟩
@@ -1291,13 +1504,13 @@ words, which are the machine's. -/
 theorem sim_entry (hO : ObjEnv ps spills o otab L base code retM)
     {room : Nat} {s0 : MState} (hME : MachEntry code base room s0)
     (hroom : otab.autosize + 8 ≤ room) (hg : (s0.x 28).toNat + 32 ≤ 2 ^ 64)
+    {W : BitVec 64 → Prop} {sI : LocState} {b : ID} {blk : Block} {k : Nat}
     (hms : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) → ∀ n add,
       tailCall o.text o.relocs.toList tail = some (n, add) →
-      MorestackOK H code retM (L.sym n + BitVec.ofInt 64 add) otab.autosize gOff s0)
+      MorestackOK H code retM (L.sym n + BitVec.ofInt 64 add) otab.autosize gOff (live26 sI) s0)
     (hsep : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) → TailSep spills.toList s0)
     (hE : G49Env lc g L ps (endP L.text ps.toList) tab E0)
     (hEE : EntryEnv E0 L ps.toList otab.autosize s0)
-    {W : BitVec 64 → Prop} {sI : LocState} {b : ID} {blk : Block} {k : Nat}
     (hent : EntryMatch E0 g W sI s0)
     (hstk : ∀ k v, sI.slots.lookup k = some v → (∀ y, ¬ W y) ∧ spills = #[])
     (hmore : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) →
@@ -1602,13 +1815,14 @@ theorem obj_whole_ret (hc : checkG64L lc ps bstart g = .ok (tab, kt))
     (hrok : retRegsOK lc kt = true)
     (hME : MachEntry code base room s0) (hroom : otab.autosize + 8 ≤ room)
     (hg : (s0.x 28).toNat + 32 ≤ 2 ^ 64)
+    {s sI : LocState} {blkE : Block} {k : Nat}
     (hms : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) → ∀ n add,
       tailCall o.text o.relocs.toList tail = some (n, add) →
-      MorestackOK H code (s0.x 30) (L.sym n + BitVec.ofInt 64 add) otab.autosize gOff s0)
+      MorestackOK H code (s0.x 30) (L.sym n + BitVec.ofInt 64 add) otab.autosize gOff (live26 sI)
+        s0)
     (hsep : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) → TailSep spills.toList s0)
     (hE : G49Env lc g L ps (endP L.text ps.toList) tab E0)
     (hEE : EntryEnv E0 L ps.toList otab.autosize s0)
-    {s sI : LocState} {blkE : Block} {k : Nat}
     (hbE : lc.ctx.f.block? lc.ctx.f.entry = some blkE)
     (hbm : lc.ctx.f.entry ∈ lc.ctx.f.blocks.toList) (hk : k ≤ blkE.values.size)
     (hMs : MemInit s)
@@ -1964,13 +2178,14 @@ theorem obj_whole_panic (hc : checkG64L lc ps bstart g = .ok (tab, kt))
     (hic : ∀ u, ICallOut L ps.toList u)
     (hME : MachEntry code base room s0) (hroom : otab.autosize + 8 ≤ room)
     (hg : (s0.x 28).toNat + 32 ≤ 2 ^ 64)
+    {s sI : LocState} {blkE : Block} {k : Nat}
     (hms : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) → ∀ n add,
       tailCall o.text o.relocs.toList tail = some (n, add) →
-      MorestackOK H code (s0.x 30) (L.sym n + BitVec.ofInt 64 add) otab.autosize gOff s0)
+      MorestackOK H code (s0.x 30) (L.sym n + BitVec.ofInt 64 add) otab.autosize gOff (live26 sI)
+        s0)
     (hsep : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) → TailSep spills.toList s0)
     (hE : G49Env lc g L ps (endP L.text ps.toList) tab E0)
     (hEE : EntryEnv E0 L ps.toList otab.autosize s0)
-    {s sI : LocState} {blkE : Block} {k : Nat}
     (hbE : lc.ctx.f.block? lc.ctx.f.entry = some blkE)
     (hbm : lc.ctx.f.entry ∈ lc.ctx.f.blocks.toList) (hk : k ≤ blkE.values.size)
     (hMs : MemInit s)

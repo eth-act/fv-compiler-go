@@ -15,14 +15,17 @@ by chunk (`symWords_sound`).
 
 The morestack tail (`checkTail`, `checkTail_spec`) stores the argument registers (`R0`–`R15`
 and the `S`/`D` parts of `F0`–`F15`) in their slots (`tailPlan`: `off(SP)` of the entry's `SP`),
-copies `R30` to `R3`, calls `runtime.morestack`, reloads the registers and branches back to the
-stack check. `runtime.morestack` is trusted (`MorestackOK`, the contract of `morestackHook`): it
-returns to `X30` with `X30` set to `R3`, `SP`, `R26`, `R28`, `R29` kept, the memory kept but the
-guard word, and the guard lowered; it says nothing of the vector registers. `more_loop`: from the
-entry, round trips through the tail end at the entry in a state whose stack check passes
-(induction on the guard); the state is the entry's but for the reloaded registers (`reloadVal`:
-the slot's low bytes, extended; `vreloadVal`: the slot's low bytes, zero-extended to 128 bits),
-the other registers but `R26`, `R28`, `R29`, `R30`, the slots and the guard word (`MoreStep`).
+copies `R30` to `R3`, calls `runtime.morestack` (`runtime.morestack_noctxt` in a function without
+`NEEDCTXT`, `cmd/internal/obj/arm64/obj7.go:283-289`), reloads the registers and branches back to
+the stack check. The call is trusted (`MorestackOK`, the contract of `morestackHook`): it returns
+to `X30` with `X30` set to `R3`, `SP`, `R28`, `R29` kept, `R26` kept when the call has a context
+(`ctxt`: `runtime.morestack` saves and restores it, `runtime/asm_arm64.s:449`, `:269`;
+`runtime.morestack_noctxt` zeroes it, `:493-502`), the memory kept but the guard word, and the
+guard lowered; it says nothing of the vector registers. `more_loop`: from the entry, round trips
+through the tail end at the entry in a state whose stack check passes (induction on the guard);
+the state is the entry's but for the reloaded registers (`reloadVal`: the slot's low bytes,
+extended; `vreloadVal`: the slot's low bytes, zero-extended to 128 bits), the other registers but
+`R26` (with a context), `R28`, `R29`, `R30`, the slots and the guard word (`MoreStep`).
 -/
 
 namespace GoFV.Proof.Obj
@@ -66,19 +69,29 @@ part) is reloaded with: the low `8 n` bits, zero-extended to 128 (`LDR S`/`D` cl
 def vreloadVal (n : Nat) (v : BitVec 128) : BitVec 128 := (v.setWidth (8 * n)).setWidth 128
 
 /-- **The contract of `runtime.morestack`** (trusted; `morestackHook`) at `tgt`, for the stack
-check of a frame of `az` bytes reading `gOff(g)` of a function entered in `s0`: `tgt` has no
-code and is not the return address; from a state at `tgt` with the entry's `SP`, `g` and stack
-bound `0(g)` whose stack check fails, the hook returns to `X30` with `X30` set to `R3`, `SP`,
-`R26`, `R28`, `R29` kept, the memory kept but the guard word, and the guard lower. -/
+check of a frame of `az` bytes reading `gOff(g)` of a function entered in `s0`, with a context
+(`ctxt`: the call is to `runtime.morestack`, not `runtime.morestack_noctxt`): `tgt` has no code
+and is not the return address; from a state at `tgt` with the entry's `SP`, `g` and stack bound
+`0(g)` whose stack check fails, the hook returns to `X30` with `X30` set to `R3`, `SP`, `R28`,
+`R29` kept, `R26` kept if `ctxt`, the memory kept but the guard word, and the guard lower. -/
 def MorestackOK (H : Hooks) (code : Code) (retM tgt : BitVec 64) (az : Int) (gOff : Nat)
-    (s0 : MState) : Prop :=
+    (ctxt : Bool) (s0 : MState) : Prop :=
   code tgt = none ∧ tgt ≠ retM ∧
   ∀ s : MState, s.pc = tgt → s.sp = s0.sp → s.x 28 = s0.x 28 →
     s.word (s.x 28) = s0.word (s0.x 28) → ¬ CheckPasses az gOff s →
-    ∃ s', H.call s = some (.ret s') ∧ s'.pc = s.x 30 ∧ s'.sp = s.sp ∧ s'.x 26 = s.x 26 ∧
+    ∃ s', H.call s = some (.ret s') ∧ s'.pc = s.x 30 ∧ s'.sp = s.sp ∧
+      (ctxt = true → s'.x 26 = s.x 26) ∧
       s'.x 28 = s.x 28 ∧ s'.x 29 = s.x 29 ∧ s'.x 30 = s.x 3 ∧
       (∀ a, ¬ InWord (s.x 28 + BitVec.ofNat 64 gOff) a → s'.mem a = s.mem a) ∧
       guardOf gOff s' < guardOf gOff s
+
+/-- The contract with a context gives it without (`R26` kept is more than nothing said). -/
+theorem MorestackOK.mono {H : Hooks} {code : Code} {retM tgt : BitVec 64} {az : Int}
+    {gOff : Nat} {c c' : Bool} {s0 : MState} (hc : c' = true → c = true)
+    (h : MorestackOK H code retM tgt az gOff c s0) : MorestackOK H code retM tgt az gOff c' s0 := by
+  refine ⟨h.1, h.2.1, fun s hpc hsp h28 hlo hf => ?_⟩
+  obtain ⟨s', hcall, hpc', hsp', h26, hrest⟩ := h.2.2 s hpc hsp h28 hlo hf
+  exact ⟨s', hcall, hpc', hsp', fun h' => h26 (hc h'), hrest⟩
 
 /-- The caller's side of the morestack path from the entry `s0`: the spill slots (`tailPlan`,
 `off(SP)`) lie below `2^64` and apart from `g`'s first 32 bytes (the stack bounds and guards). -/
@@ -87,13 +100,14 @@ def TailSep (spills : List Spill) (s0 : MState) : Prop :=
     (s0.sp.toNat + s.off + s.n ≤ (s0.x 28).toNat ∨ (s0.x 28).toNat + 32 ≤ s0.sp.toNat + s.off)
 
 /-- `s` is the entry state `s0` after round trips through the morestack tail with slots `sl` and
-the guard at `gOff(g)`: at the entry with `SP`, `R26`, `R28`, `R29`, `R30` kept, each reloaded
-general register its own value or its reload, each reloaded vector register its own value or its
-reload (`vreloadVal`), the memory kept but the slots and the guard word. -/
-structure MoreStep (sl : List TailSlot) (gOff : Nat) (s0 s : MState) : Prop where
+the guard at `gOff(g)`, whose call has a context if `ctxt`: at the entry with `SP`, `R28`, `R29`,
+`R30` kept, `R26` kept if `ctxt`, each reloaded general register its own value or its reload,
+each reloaded vector register its own value or its reload (`vreloadVal`), the memory kept but the
+slots and the guard word. -/
+structure MoreStep (ctxt : Bool) (sl : List TailSlot) (gOff : Nat) (s0 s : MState) : Prop where
   pc : s.pc = s0.pc
   sp : s.sp = s0.sp
-  x26 : s.x 26 = s0.x 26
+  x26 : ctxt = true → s.x 26 = s0.x 26
   x28 : s.x 28 = s0.x 28
   x29 : s.x 29 = s0.x 29
   x30 : s.x 30 = s0.x 30
@@ -105,17 +119,20 @@ structure MoreStep (sl : List TailSlot) (gOff : Nat) (s0 s : MState) : Prop wher
     s.mem a = s0.mem a
 
 /-- The state `s` where the stack check of the function entered in `s0` passes: `s0` itself, or
-(when the function has a stack check) `s0` after round trips through the morestack tail. -/
-def MoreRel (check : Option (Nat × Nat × Nat)) (spills : List Spill) (s0 s : MState) : Prop :=
+(when the function has a stack check) `s0` after round trips through the morestack tail, whose
+call has a context if `ctxt`. -/
+def MoreRel (ctxt : Bool) (check : Option (Nat × Nat × Nat)) (spills : List Spill)
+    (s0 s : MState) : Prop :=
   s = s0 ∨ ∃ ce tail gOff sl, check = some (ce, tail, gOff) ∧ tailPlan spills = .ok sl ∧
-    MoreStep sl gOff s0 s
+    MoreStep ctxt sl gOff s0 s
 
-/-- What the morestack path keeps: the PC, `SP`, `R26`, `R28`, `R29`, `R30`. -/
-theorem MoreRel.keep {check : Option (Nat × Nat × Nat)} {spills : List Spill} {s0 s : MState}
-    (h : MoreRel check spills s0 s) : s.pc = s0.pc ∧ s.sp = s0.sp ∧ s.x 26 = s0.x 26 ∧
-      s.x 28 = s0.x 28 ∧ s.x 29 = s0.x 29 ∧ s.x 30 = s0.x 30 := by
+/-- What the morestack path keeps: the PC, `SP`, `R26` (with a context), `R28`, `R29`, `R30`. -/
+theorem MoreRel.keep {ctxt : Bool} {check : Option (Nat × Nat × Nat)} {spills : List Spill}
+    {s0 s : MState} (h : MoreRel ctxt check spills s0 s) : s.pc = s0.pc ∧ s.sp = s0.sp ∧
+      (ctxt = true → s.x 26 = s0.x 26) ∧ s.x 28 = s0.x 28 ∧ s.x 29 = s0.x 29 ∧
+      s.x 30 = s0.x 30 := by
   rcases h with rfl | ⟨ce, tail, gOff, sl, -, -, hm⟩
-  · exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+  · exact ⟨rfl, rfl, fun _ => rfl, rfl, rfl, rfl⟩
   · exact ⟨hm.pc, hm.sp, hm.x26, hm.x28, hm.x29, hm.x30⟩
 
 /-! ## `symUntil` -/
@@ -530,20 +547,20 @@ private theorem ms_word32 {M M' : Memory} {g : BitVec 64} {k : Nat} (hk : k ≤ 
     exact h (k + j) (by omega)
 
 /-- One round trip through the morestack tail from the entry `u` whose stack check fails: back at
-the entry with `SP`, `R26`, `R28`, `R29`, `R30` kept, the spilled general and vector registers
-reloaded, the memory kept but the slots and the guard word, the guard lower. -/
+the entry with `SP`, `R26` (with a context), `R28`, `R29`, `R30` kept, the spilled general and
+vector registers reloaded, the memory kept but the slots and the guard word, the guard lower. -/
 private theorem more_round (hlink : linkCode base sym t rs = .ok code) (hsz : t.size ≤ 2 ^ 64)
     (hret : code retM = none) {az : Int} {gOff ce tail e : Nat} {spills : List Spill}
-    {sl : List TailSlot} {s0 u : MState}
+    {sl : List TailSlot} {ctxt : Bool} {s0 u : MState}
     (hc : checkStackCheck t rs az 0 gOff = .ok (ce, tail)) (hgo : gOff = 16 ∨ gOff = 24)
     (htl : checkTail t rs spills 0 tail = .ok e) (hpl : tailPlan spills = .ok sl)
     (hms : ∀ n add, tailCall t rs tail = some (n, add) →
-      MorestackOK H code retM (sym n + BitVec.ofInt 64 add) az gOff s0)
+      MorestackOK H code retM (sym n + BitVec.ofInt 64 add) az gOff ctxt s0)
     (hsep : TailSep spills s0) (hspn : 4096 ≤ s0.sp.toNat)
     (hg0 : 4096 ≤ (s0.x 28).toNat) (hg1 : (s0.x 28).toNat + 32 ≤ 2 ^ 64)
     (hpc : u.pc = base) (hsp : u.sp = s0.sp) (h28 : u.x 28 = s0.x 28)
     (hlo : u.word (u.x 28) = s0.word (s0.x 28)) (hfail : ¬ CheckPasses az gOff u) :
-    ∃ u', MStar H code retM u u' ∧ u'.pc = base ∧ u'.sp = u.sp ∧ u'.x 26 = u.x 26 ∧
+    ∃ u', MStar H code retM u u' ∧ u'.pc = base ∧ u'.sp = u.sp ∧ (ctxt = true → u'.x 26 = u.x 26) ∧
       u'.x 28 = u.x 28 ∧ u'.x 29 = u.x 29 ∧ u'.x 30 = u.x 30 ∧
       (∀ (k : Reg) (q : TailSlot), reloadOf sl false k.toNat = some q →
         u'.x k = reloadVal q.n q.sg (u.x k)) ∧
@@ -696,8 +713,8 @@ private theorem more_round (hlink : linkCode base sym t rs = .ok code) (hsz : t.
   have h303 : t3.x 30 = t2.x 30 := by
     rw [hx3 rfl, h302]
     rfl
-  have hk26 : t3.x 26 = u.x 26 :=
-    (hkeep 26 (by omega) (by omega) (by decide)).trans (h262.trans
+  have hk26 : ctxt = true → t3.x 26 = u.x 26 := fun hct =>
+    (hkeep 26 (by omega) (by omega) (by decide)).trans ((h262 hct).trans
       ((hx1' 26 (by omega) (by decide) (by decide)).trans (hxA 26 (by decide) (by decide) (by decide))))
   have hk28 : t3.x 28 = u.x 28 :=
     (hkeep 28 (by omega) (by omega) (by decide)).trans (h282.trans (hg28.trans h28.symm))
@@ -751,29 +768,33 @@ private theorem more_round (hlink : linkCode base sym t rs = .ok code) (hsz : t.
     rw [hm3, hk28]
     exact hgd
 
-theorem MoreStep.refl (sl : List TailSlot) (gOff : Nat) (s0 : MState) : MoreStep sl gOff s0 s0 :=
-  ⟨rfl, rfl, rfl, rfl, rfl, rfl, fun _ _ _ => Or.inl rfl, fun _ _ _ => Or.inl rfl, fun _ _ _ => rfl⟩
+theorem MoreStep.refl (ctxt : Bool) (sl : List TailSlot) (gOff : Nat) (s0 : MState) :
+    MoreStep ctxt sl gOff s0 s0 :=
+  ⟨rfl, rfl, fun _ => rfl, rfl, rfl, rfl, fun _ _ _ => Or.inl rfl, fun _ _ _ => Or.inl rfl,
+    fun _ _ _ => rfl⟩
 
 /-- **The morestack loop.** From the entry `s0` of a function whose stack check (at `0`, ending
 at `ce`, its tail at `tail`, reading `gOff(g)`) and morestack tail `checkObj` accepted, under
-`runtime.morestack`'s contract (`MorestackOK`) and with the spill slots apart from `g`
-(`TailSep`), the machine runs (zero or more round trips through the tail) to a state at the
-entry whose stack check passes, `s0` but for the reloaded general and vector registers, the other
-registers but `R26`, `R28`–`R30`, the slots and the guard word (`MoreStep`). -/
+`runtime.morestack`'s contract (`MorestackOK`, with a context if `ctxt`) and with the spill slots
+apart from `g` (`TailSep`), the machine runs (zero or more round trips through the tail) to a
+state at the entry whose stack check passes, `s0` but for the reloaded general and vector
+registers, the other registers but `R26` (with a context), `R28`–`R30`, the slots and the guard
+word (`MoreStep`). -/
 theorem more_loop (hlink : linkCode base sym t rs = .ok code) (hsz : t.size ≤ 2 ^ 64)
     (hret : code retM = none) {az : Int} {gOff ce tail e : Nat} {spills : List Spill}
-    {sl : List TailSlot} {s0 : MState}
+    {sl : List TailSlot} {ctxt : Bool} {s0 : MState}
     (hc : checkStackCheck t rs az 0 gOff = .ok (ce, tail)) (hgo : gOff = 16 ∨ gOff = 24)
     (htl : checkTail t rs spills 0 tail = .ok e) (hpl : tailPlan spills = .ok sl)
     (hms : ∀ n add, tailCall t rs tail = some (n, add) →
-      MorestackOK H code retM (sym n + BitVec.ofInt 64 add) az gOff s0)
+      MorestackOK H code retM (sym n + BitVec.ofInt 64 add) az gOff ctxt s0)
     (hsep : TailSep spills s0) (hspn : 4096 ≤ s0.sp.toNat)
     (hg0 : 4096 ≤ (s0.x 28).toNat) (hg1 : (s0.x 28).toNat + 32 ≤ 2 ^ 64) (hpc0 : s0.pc = base) :
-    ∃ u, MStar H code retM s0 u ∧ MoreStep sl gOff s0 u ∧ CheckPasses az gOff u := by
+    ∃ u, MStar H code retM s0 u ∧ MoreStep ctxt sl gOff s0 u ∧ CheckPasses az gOff u := by
   obtain ⟨-, hslot⟩ := tailPlan_spec hpl
   have hsep' := hsep sl hpl
-  have step : ∀ u, MStar H code retM s0 u → MoreStep sl gOff s0 u → ¬ CheckPasses az gOff u →
-      ∃ u', MStar H code retM s0 u' ∧ MoreStep sl gOff s0 u' ∧ guardOf gOff u' < guardOf gOff u := by
+  have step : ∀ u, MStar H code retM s0 u → MoreStep ctxt sl gOff s0 u →
+      ¬ CheckPasses az gOff u → ∃ u', MStar H code retM s0 u' ∧ MoreStep ctxt sl gOff s0 u' ∧
+        guardOf gOff u' < guardOf gOff u := by
     intro u hs hm hfail
     have hlo : u.word (u.x 28) = s0.word (s0.x 28) := by
       unfold MState.word
@@ -788,7 +809,8 @@ theorem more_loop (hlink : linkCode base sym t rs = .ok code) (hsz : t.size ≤ 
     obtain ⟨u', hr, hpc', hsp', h26', h28', h29', h30', hregs', hvregs', hmem', hgd⟩ :=
       more_round (H := H) hlink hsz hret hc hgo htl hpl hms hsep hspn hg0 hg1
         (hm.pc.trans hpc0) hm.sp hm.x28 hlo hfail
-    refine ⟨u', mstar_trans hs hr, ⟨hpc'.trans hpc0.symm, hsp'.trans hm.sp, h26'.trans hm.x26,
+    refine ⟨u', mstar_trans hs hr, ⟨hpc'.trans hpc0.symm, hsp'.trans hm.sp,
+      fun hct => (h26' hct).trans (hm.x26 hct),
       h28'.trans hm.x28, h29'.trans hm.x29, h30'.trans hm.x30, fun k q hkq => Or.inr ?_,
       fun k q hkq => Or.inr ?_, fun a ha hw => ?_⟩, hgd⟩
     · have hq := hslot q (reloadOf_mem hkq).1
@@ -802,9 +824,9 @@ theorem more_loop (hlink : linkCode base sym t rs = .ok code) (hsz : t.size ≤ 
       · rw [h]
       · rw [h, vreloadVal_idem hq.2.2.1]
     · rw [hmem' a (by rwa [hm.sp]) (by rwa [hm.x28]), hm.mem a ha hw]
-  suffices h : ∀ N u, guardOf gOff u ≤ N → MStar H code retM s0 u → MoreStep sl gOff s0 u →
-      ∃ u', MStar H code retM s0 u' ∧ MoreStep sl gOff s0 u' ∧ CheckPasses az gOff u' from
-    h _ s0 (Nat.le_refl _) .refl (MoreStep.refl sl gOff s0)
+  suffices h : ∀ N u, guardOf gOff u ≤ N → MStar H code retM s0 u → MoreStep ctxt sl gOff s0 u →
+      ∃ u', MStar H code retM s0 u' ∧ MoreStep ctxt sl gOff s0 u' ∧ CheckPasses az gOff u' from
+    h _ s0 (Nat.le_refl _) .refl (MoreStep.refl ctxt sl gOff s0)
   intro N
   induction N with
   | zero =>

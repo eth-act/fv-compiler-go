@@ -300,7 +300,7 @@ def msHookV : Hooks := ⟨fun s => some (.ret
 /-- `msHookV` meets the contract of `runtime.morestack` for `math.Tan` entered with
 `g = 0x9000` and `SP = 0x7fff0000`. -/
 theorem msHookV_ok {s : MState} (hg : s.x 28 = 0x9000) (hsp : s.sp = sp0) :
-    MorestackOK msHookV code retM (sym 6 + BitVec.ofInt 64 0) 32 16 s := by
+    MorestackOK msHookV code retM (sym 6 + BitVec.ofInt 64 0) 32 16 false s := by
   obtain ⟨-, -, -, -, -, -, -, -, hcode, -⟩ := facts
   refine ⟨hcode, by decide, fun t hpc hsp' h28 _ hfail => ⟨_, rfl, rfl, rfl, by simp, by simp,
     by simp, by simp, fun a ha => by show (if _ then _ else _) = _; simp only [ha, ↓reduceIte],
@@ -342,7 +342,7 @@ body at offset 24 with the frame of `BodyEntry 32`; `F0` (`V0`) holds `π` again
 passing stack check (`MoreStep.vregs`) and at the body. -/
 theorem objMoreF_witness :
     ¬ CheckPasses 32 16 s0m ∧ tailPlan spills.toList = .ok [⟨0, 8, 8, false, true⟩] ∧
-      ∃ s' s1, MoreRel tab.check spills.toList s0m s' ∧ MStar msHookV code retM s0m s1 ∧
+      ∃ s' s1, MoreRel false tab.check spills.toList s0m s' ∧ MStar msHookV code retM s0m s1 ∧
         BodyEntry 32 s0m s1 ∧ s1.pc = base + BitVec.ofNat 64 24 ∧ s'.v 0 = pi64 ∧
         s1.v 0 = pi64 := by
   obtain ⟨hc, haz, hchk, h0, hl, hsz, hret, htc, -, hpl⟩ := facts

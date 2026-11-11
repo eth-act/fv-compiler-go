@@ -72,13 +72,14 @@ theorem verified_mach_M {osp : Bool}
     (hrok : retRegsOK lc kt = true)
     (hME : MachEntry code base room s0) (hroom : otab.autosize + 8 ≤ room)
     (hg : (s0.x 28).toNat + 32 ≤ 2 ^ 64)
+    {sI : LocState} {blkE : Block} {k : Nat}
     (hms : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) → ∀ n add,
       tailCall o.text o.relocs.toList tail = some (n, add) →
-      MorestackOK H code (s0.x 30) (L.sym n + BitVec.ofInt 64 add) otab.autosize gOff s0)
+      MorestackOK H code (s0.x 30) (L.sym n + BitVec.ofInt 64 add) otab.autosize gOff
+        (ctxtBefore lc k) s0)
     (hsep : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) → TailSep spills.toList s0)
     (hE : G49Env lc g L ps (endP L.text ps.toList) tab E0)
     (hEE : EntryEnv E0 L ps.toList otab.autosize s0)
-    {sI : LocState} {blkE : Block} {k : Nat}
     (hbE : lc.ctx.f.block? lc.ctx.f.entry = some blkE)
     (hbm : lc.ctx.f.entry ∈ lc.ctx.f.blocks.toList) (hk : k ≤ blkE.values.size)
     (hpre : enterListLoc e lc (locInit e lc args mem) (blkE.values.toList.take k) = .ok sI)
@@ -122,12 +123,14 @@ theorem verified_mach_M {osp : Bool}
         (runLoopLoc e lc fuel' (locInit e lc args mem) lc.ctx.f.entry) := by
     rw [runLoc_eq hargs, hlc, runLoopLoc_live hr]
     rfl
+  have hms' := fun ce tail gOff hck n add htc =>
+    (hms ce tail gOff hck n add htc).mono (ctxtBefore_of_live26 hbE hpre)
   subst hlc
   refine ⟨fuel', href, _, rfl, heq, finish_defined (heq ▸ hd'), fun rs mm hraw => ?_,
     fun pe mm hraw hHP hbok hPP => ?_⟩
-  · exact obj_whole_ret hc hO hH hic hrok hME hroom hg hms hsep hE hEE hbE hbm hk
+  · exact obj_whole_ret hc hO hH hic hrok hME hroom hg hms' hsep hE hEE hbE hbm hk
       (by exact rfl) hpre hes hargs hent hmore hinv hosp hn48 hspI huE hpc hRP hRo hraw
-  · exact obj_whole_panic hc hO hH hHP hbok hic hME hroom hg hms hsep hE hEE hbE hbm hk
+  · exact obj_whole_panic hc hO hH hHP hbok hic hME hroom hg hms' hsep hE hEE hbE hbm hk
       (by exact rfl) hpre hes hargs hent hmore hinv hosp hn48 hspI huE hpc hRP hRo hPP hraw
 
 
@@ -155,8 +158,9 @@ closure calls whose callee panics by the trusted `CallPanicOK`, `ICallPanicOK`),
 with `pe` or, for a bounds check, with the runtime's report of the same failure (`BoundsAgree`).
 
 Premises of the machine side: those of `obj_whole_ret` (trusted: `HookMap`, `runtime.morestack`'s
-contract `MorestackOK` at the morestack tail's call, and in `RunPre` the callee contracts
-`CallOK`, `CallOKZ`, `ICallOK`, `WbOK`, `CloOK`, `MemEqOK`; the caller's side: `MachEntry`,
+contract `MorestackOK` at the morestack tail's call, keeping `R26` only when an entry value before
+`k` writes it (`ctxtBefore`; `runtime.morestack_noctxt` zeroes it), and in `RunPre` the callee
+contracts `CallOK`, `CallOKZ`, `ICallOK`, `WbOK`, `CloOK`, `MemEqOK`; the caller's side: `MachEntry`,
 `EntryMatch`/`EntryEnv` of the arguments, memory and frame at the entry (the memory but for the
 windows of the register-assigned parameters the function accesses, `pendWins`, which the entry
 stores from value `k` cover, `entryStoresOK`; the incoming stack arguments, which the `Arg`s before
@@ -186,13 +190,14 @@ theorem verified_mach
     (hrok : retRegsOK lc kt = true)
     (hME : MachEntry code base room s0) (hroom : otab.autosize + 8 ≤ room)
     (hg : (s0.x 28).toNat + 32 ≤ 2 ^ 64)
+    {sI : LocState} {blkE : Block} {k : Nat}
     (hms : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) → ∀ n add,
       tailCall o.text o.relocs.toList tail = some (n, add) →
-      MorestackOK H code (s0.x 30) (L.sym n + BitVec.ofInt 64 add) otab.autosize gOff s0)
+      MorestackOK H code (s0.x 30) (L.sym n + BitVec.ofInt 64 add) otab.autosize gOff
+        (ctxtBefore lc k) s0)
     (hsep : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) → TailSep spills.toList s0)
     (hE : G49Env lc g L ps (endP L.text ps.toList) tab E0)
     (hEE : EntryEnv E0 L ps.toList otab.autosize s0)
-    {sI : LocState} {blkE : Block} {k : Nat}
     (hbE : lc.ctx.f.block? lc.ctx.f.entry = some blkE)
     (hbm : lc.ctx.f.entry ∈ lc.ctx.f.blocks.toList) (hk : k ≤ blkE.values.size)
     (hpre : enterListLoc e lc (locInit e lc args mem) (blkE.values.toList.take k) = .ok sI)
@@ -256,7 +261,8 @@ activation's mode), `runMach` panics
 with `pe` or, for a bounds check, with the runtime's report of the same failure (`BoundsAgree`).
 
 Premises of the machine side: those of `obj_whole_ret` (trusted: `HookMap`, `runtime.morestack`'s
-contract `MorestackOK` at the morestack tail's call, and in `RunPre` the callee contracts of the
+contract `MorestackOK` at the morestack tail's call, keeping `R26` only when an entry value before
+`k` writes it (`ctxtBefore`), and in `RunPre` the callee contracts of the
 activation's mode `E0.outSP` (`CallOKAt`, `CallOKZAt`, `ICallOKAt`, `WbOKAt`, `MemEqOKAt` at the
 mode `true`:
 the `CallOKS` family), `CloOK` and `CallOKStk`; the
@@ -289,13 +295,14 @@ theorem verified_mach_S
     (hrok : retRegsOK lc kt = true)
     (hME : MachEntry code base room s0) (hroom : otab.autosize + 8 ≤ room)
     (hg : (s0.x 28).toNat + 32 ≤ 2 ^ 64)
+    {sI : LocState} {blkE : Block} {k : Nat}
     (hms : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) → ∀ n add,
       tailCall o.text o.relocs.toList tail = some (n, add) →
-      MorestackOK H code (s0.x 30) (L.sym n + BitVec.ofInt 64 add) otab.autosize gOff s0)
+      MorestackOK H code (s0.x 30) (L.sym n + BitVec.ofInt 64 add) otab.autosize gOff
+        (ctxtBefore lc k) s0)
     (hsep : ∀ ce tail gOff, otab.check = some (ce, tail, gOff) → TailSep spills.toList s0)
     (hE : G49Env lc g L ps (endP L.text ps.toList) tab E0)
     (hEE : EntryEnv E0 L ps.toList otab.autosize s0)
-    {sI : LocState} {blkE : Block} {k : Nat}
     (hbE : lc.ctx.f.block? lc.ctx.f.entry = some blkE)
     (hbm : lc.ctx.f.entry ∈ lc.ctx.f.blocks.toList) (hk : k ≤ blkE.values.size)
     (hpre : enterListLoc e lc (locInit e lc args mem) (blkE.values.toList.take k) = .ok sI)
