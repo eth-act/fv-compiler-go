@@ -23,7 +23,7 @@ and `v5` start the different allocations `baseBlk?` names, `v4` and `v7` share t
 offsets 0 and 8), and `LoadFwd.ptrCmp_den` proves it under the forwarding layer's `MemAtoms`.
 -/
 
-namespace GoFV.Proof.Witness
+namespace GoFV.Proof.Witness.FwdPtrCmp
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Rules
 
@@ -127,4 +127,4 @@ theorem pc_rwPre :
   GoFV.Proof.Pass.Rewrite.RwPre.p1 (by decide +kernel) (by decide +kernel)
     (GoFV.Proof.Pass.Rewrite.initAvoids_empty (fun v hv _ _ => by simp at hv) rfl)
 
-end GoFV.Proof.Witness
+end GoFV.Proof.Witness.FwdPtrCmp
