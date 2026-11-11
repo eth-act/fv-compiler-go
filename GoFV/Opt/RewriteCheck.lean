@@ -1877,6 +1877,29 @@ def fwdZeroOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
   u.op == .Load && u.args.size == 2 && zeroLdOp (tabs.ty u.type) w.op && w.args.size == 0 &&
     w.auxInt == 0 && zeroChain tabs f u.args[0]! (tabs.ty u.type).size 8 u.args[1]!
 
+/-- Whether pointers `a` and `b` of `f` are equal wherever both read as pointers, if the
+validator can tell: from one base (`baseSameB` of their `ptrBase`s) they are iff their offsets
+are; from the starts of two different known allocations (`baseBlk?`: frame variables of
+`LocalAddr`s, globals of `Addr`s) they are not. -/
+def ptrCmp? (tabs : Tables) (f : Func) (a b : ID) : Option Bool :=
+  let pa := ptrBase tabs f 8 a
+  let pb := ptrBase tabs f 8 b
+  if baseSameB tabs f 8 pa.1 pb.1 then some (pa.2 == pb.2)
+  else
+    match baseBlk? tabs f pa.1, baseBlk? tabs f pb.1 with
+    | some x, some y => if x != y then some false else none
+    | _, _ => none
+
+/-- The pointer comparison `u` of `f` (`EqPtr`/`NeqPtr`) becomes the constant `w`
+(`generic.rules:1649`–`:1676`: `LocalAddr`s, `Addr`s and `OffPtr`s of them, `isSamePtr` bases):
+an argument-less `ConstBool` whose value is the comparison `ptrCmp?` tells. -/
+def ptrCmpOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
+  (u.op == .EqPtr || u.op == .NeqPtr) && u.args.size == 2 && w.op == .ConstBool &&
+    w.args.size == 0 &&
+    match ptrCmp? tabs f u.args[0]! u.args[1]! with
+    | some e => (w.auxInt != 0) == (e != (u.op == .NeqPtr))
+    | none => false
+
 /-- `y` is listed in `g` (`Proof.listedDefs`): a value of a block of `g` that lists it. -/
 def listedB (g : Func) (y : ID) : Bool :=
   (g.value? y).any fun v => g.blocks.contains v.block && (g.block? v.block).any (·.values.contains y)
@@ -2207,12 +2230,13 @@ from the read-only symbols `ro` (`fixedOK`); or of the memory root `u`, a `Copy`
 call `u` with a descriptor symbol of `eq` (`eqCallOK`) or a selection of a `MakeResult`
 (`selMROK`); or of the length register `u` of a post-`expand calls` `growslice` call, a `Copy`
 of its length argument (`growPOK`); or of a `Load` `u` reading zero bytes, the zero constant
-(`fwdZeroOK`). -/
+(`fwdZeroOK`); or of a pointer comparison `u`, its constant (`ptrCmpOK`). -/
 def fwdNewOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (eq : List String × List String)
     (f g : Func) (u w : Value) : Bool :=
   (w.op == .Copy && w.args.size == 1 && fwdOK tabs f u (w.args[0]?.getD 0)) || fwdConstOK tabs f u w ||
     dropOK tabs f g u w || moveSrcOK tabs f u w || fixedOK tabs ro f u w || growOK tabs f u w ||
-    eqCallOK tabs eq f g u w || selMROK tabs f u w || growPOK tabs f u w || fwdZeroOK tabs f u w
+    eqCallOK tabs eq f g u w || selMROK tabs f u w || growPOK tabs f u w || fwdZeroOK tabs f u w ||
+    ptrCmpOK tabs f u w
 
 /-- The `Load` `u` of `f` reads, at offset `o` (`offp`'s auxint), the bytes a `Move [n] dst src
 mem` copied (`generic.rules:827`): its memory is the `Move`, its pointer `dst + o` (`ptrBase`,
@@ -2354,7 +2378,8 @@ newLen:(Const64) …)) => newLen` (`:2131`; `growPOK`); or a folded `ifaceeq`/`e
 `eqCallOK`) or a selection of a `MakeResult` `(SelectN [n] m:(MakeResult ___)) => m.Args[n]`
 (`:1343`; `selMROK`); or a `Load` of a `Zero` folded to a zero constant `(Load (OffPtr [o] p1)
 (Zero [n] p2 _)) && isSamePtr(p1, p2) && n >= o + size => (Const* [0])` (`:882`–`:902`;
-`fwdZeroOK`). -/
+`fwdZeroOK`); or a pointer comparison folded to a constant `(EqPtr x y) => (ConstBool [c])`
+(and `NeqPtr`; `:1649`–`:1676`, `ptrCmpOK`). -/
 def fwdShapeOK (r : Rule) : Bool :=
   match r.pat, r.result, r.block with
   | .op .Load none _ _ _ .fixed [_, m] _, .copy (.var y), none => storesBind y 4 m
@@ -2381,21 +2406,23 @@ def fwdShapeOK (r : Rule) : Bool :=
   | .op .SelectN none _ _ _ .fixed
       [.op .StaticCall none _ _ _ _ (_ :: .op .Const64 (some y) .. :: _) _] _, .copy (.var z),
       none => y == z
+  | .op .EqPtr none _ _ _ .fixed [_, _] _, .build [n], none => n.op == .ConstBool && n.args.isEmpty
+  | .op .NeqPtr none _ _ _ .fixed [_, _] _, .build [n], none => n.op == .ConstBool && n.args.isEmpty
   | _, _, _ => false
 
 /-- The `Load` `v` of `f` that event `ev` forwards (or the `Store`/`Zero` it drops, the `Move`
-whose source it changes, the `SliceLen` of a `growslice` result, the call it folds or the
-`SelectN` of a `MakeResult`), its new definition (a `Copy`, a constant, an `Addr`, a `Move` or a
-`MakeResult`) and the fresh values to put in first (`:827`: the `OffPtr`, then the `Load`; a
-folded call: its `EqPtr`, logged after the call's definition twice, `Interp.tryRule`), if it is
-a `loads` rule event (`fwdShapeOK`; tried on a `Store` after its `structStores`,
-`Interp.rewriteValue`). -/
+whose source it changes, the `SliceLen` of a `growslice` result, the call it folds, the
+`SelectN` of a `MakeResult` or the pointer comparison it folds), its new definition (a `Copy`, a
+constant, an `Addr`, a `Move` or a `MakeResult`) and the fresh values to put in first (`:827`:
+the `OffPtr`, then the `Load`; a folded call: its `EqPtr`, logged after the call's definition
+twice, `Interp.tryRule`), if it is a `loads` rule event (`fwdShapeOK`; tried on a `Store` after
+its `structStores`, `Interp.rewriteValue`). -/
 def fwdEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × Value × List Value)
   | .rule v i _ defs =>
     match f.value? v with
     | some u =>
       if u.op == .Load || u.op == .Store || u.op == .Zero || u.op == .Move || u.op == .SliceLen ||
-          u.op == .StaticLECall || u.op == .SelectN then
+          u.op == .StaticLECall || u.op == .SelectN || u.op == .EqPtr || u.op == .NeqPtr then
         let n := ((t.values[u.op.ctorIdx]?).map (·.size)).getD 0 +
           if u.op == .Store then t.structStores.size else 0
         if n ≤ i then
