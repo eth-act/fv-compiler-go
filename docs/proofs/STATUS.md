@@ -1830,7 +1830,7 @@ reason for 58 of them.
 **Vacuous at the entry (closure context; correction).** The end-to-end counts before this
 table, here, on #189 and on #553, counted closures whose premises hold but of which every
 `verified_mach` variant holds only vacuously: quick-v10 7,221 (G64) included 547 such
-closures, and full-v11 75,229 (G61) included about 7,315. The top-level run (`GoFV.SSA.run`,
+closures, and full-v11 75,229 (G61) included 7,314. The top-level run (`GoFV.SSA.run`,
 `runLoc`, `locInit`) has no closure context (`fr.closure = none`), so a closure's
 `LoweredGetClosurePtr` is `poison`, and `RunPre` (`RunPreS`, `RunPreM`) cannot hold of its run:
 
@@ -1844,10 +1844,10 @@ The driver now finds them (`entryVacuous`: the entry block's values from `entryL
 panic, up to an entry value or a load off the closure pointer) and counts them in a column of
 their own, outside the end-to-end headline. Functions vacuous at `Addrs.fixed` stay counted,
 because the `_atSP` variants cover them. No other op stops `RunPre` this way:
-`entryVacuous`'s first reason covers any entry value after the start. The full-v11 figure is
-estimated, by a mirror of the check on the stock `trim` functions of the G61 run's accepted
-lists (the mirror gives 548 on quick-v10 against the driver's 547), so the G61 count corrected is
-about 67,914. The next full-v11 run measures it with the driver. None of the 562
+`entryVacuous`'s first reason covers any entry value after the start. On full-v11 the driver
+finds 7,338 of the 76,036 functions whose premises hold on the composition on G64 vacuous (the
+full-v11 table below), 7,314 of them among the G61 run's 75,229, so the G61 count corrected is
+67,915 (a mirror of the check on the stock `trim` functions had estimated about 67,914). None of the 562
 end-to-end closures leaves its closure pointer unused, so counting `LoweredGetClosurePtr` in
 `entryLen` alone would make none of them non-vacuous. The fix is a closure context in the
 top-level run (#705, design review first). All the earlier quick-v10 and full-v11 end-to-end
@@ -2073,65 +2073,80 @@ ops; `Pre51a` in `RunPre`) added 25 (6,011). `ownFrame` gives the stock
 `stksize`/`stkptrsize` on all fully verified functions whose output is identical to stock.
 `pallocSum.start` (the witness `verified_mach_witness`) is among the accepted.
 
-The full-v11 table below is the composition on G61 (main e80f022b, #694; binary `gofv-ssa-opt`
-built on `agent/lift61` abe844a3, whose tree is main's): per function `verified_mach`
-(`needs48 = false`) or `verified_mach_S` (G48's mode), P0' in `checkG61` and `checkObj` (with
-#692's `X27` across Progs). It predates the compositions on G62 (#699) and G64 (#702); a full-v11
-run on the composition on G64 (main b26adfeb) is under way.
+The full-v11 table below is the composition on G64 (main b26adfeb, #702; binary `gofv-ssa-opt`
+built on `agent/lift64`, whose code is main's): per function `verified_mach` (`needs48 = false`)
+or `verified_mach_S` (G48's mode), P0' in `checkG64` and `checkObj`. That binary predates the
+driver's `entryVacuous` (#706), so the vacuity rows come from a second run, main aeb502b8's
+driver over the 76,036 functions whose premises hold (the six parts' accepted lists in 29 chunks
+of at most 3,000 files, `--jobs 2`, 7 h 32 min summed). Its verdicts agree with the first run's
+on all 76,036 (fully verified, every premise holding on the pipeline output), and it finds 7,338
+of them vacuous at the entry. The table predates `SBFIZ` in `checkObj` (#714).
 
-| full-v11 (96,674 functions, in six parts, 10 h 48 min summed; composition on G61, main e80f022b; `--jobs 2`) | pipeline output | share | stock `trim` | share |
+| full-v11 (96,674 functions, in six parts, 14 h 1 min summed; composition on G64, main b26adfeb; vacuity: main aeb502b8's driver on the accepted lists; `--jobs 2`) | pipeline output | share | stock `trim` | share |
 | --- | ---: | ---: | ---: | ---: |
 | fully verified (Phase 2, through `trim`) | 84,855 | 87.77% | - | - |
 | … genssa and `Flushplist` ran | 84,768 | 87.68% | 96,674 | 100.00% |
-| … ∧ `checkG61` ∧ `entryStoresOK` | 75,314 | 77.90% | 82,171 | 84.99% |
-| … ∧ `checkG61` ∧ `entryStoresOK` ∧ `retRegsOK` | 75,311 | 77.90% | 82,152 | 84.97% |
+| … ∧ `checkG64` ∧ `entryStoresOK` ∧ `argsOK` | 76,136 | 78.75% | 83,720 | 86.60% |
+| … ∧ `checkG64` ∧ `entryStoresOK` ∧ `argsOK` ∧ `retRegsOK` | 76,133 | 78.75% | 83,701 | 86.58% |
 | … ∧ `checkObj` | 84,242 | 87.14% | 95,154 | 98.42% |
-| … ∧ `checkG61` ∧ `entryStoresOK` ∧ `checkObj` | 75,232 | 77.82% | 81,899 | 84.71% |
-| **… ∧ `checkG61` ∧ `entryStoresOK` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach` or `verified_mach_S`)** | **75,229** | **77.81%** | 81,880 | 84.69% |
-| … of which `needs48 = false`: `verified_mach` | 74,656 | 77.22% | 81,225 | 84.01% |
-| … of which `needs48 = true`: `verified_mach_S` (G48's mode) | 573 | 0.59% | 655 | 0.67% |
-| … end to end, pipeline output identical to stock after `trim` | 64,661 | 66.88% | - | - |
+| … ∧ `checkG64` ∧ `entryStoresOK` ∧ `argsOK` ∧ `checkObj` | 76,039 | 78.65% | 83,421 | 86.29% |
+| … ∧ `checkG64` ∧ `entryStoresOK` ∧ `argsOK` ∧ `retRegsOK` ∧ `checkObj` (the premises hold) | 76,036 | 78.65% | 83,402 | 86.27% |
+| … of them vacuous (closure context, `entryVacuous`: every variant) | 7,338 | 7.59% | - | - |
+| **… premises hold, not vacuous (end to end, `verified_mach` or `verified_mach_S`)** | **68,698** | **71.06%** | - | - |
+| … of which `needs48 = false`: `verified_mach` | 68,130 | 70.47% | - | - |
+| … of which `needs48 = true`: `verified_mach_S` (G48's mode) | 568 | 0.58% | - | - |
+| … end to end, pipeline output identical to stock after `trim` | 58,790 | 60.81% | - | - |
 | fully verified, pipeline output identical to stock | 69,843 | 72.24% | - | - |
 
-**Correction (vacuous closures, above).** This table predates the driver's `entryVacuous`. Its
-75,229 includes about 7,315 closures (an estimate from the mirror of the check) of which
-every variant holds only vacuously, so the corrected count is about 67,914. The full-v11 run on
-the composition on G64 reports the exact figure.
+The stock column has no vacuity rows: the second run covers only the functions whose premises
+hold on the pipeline output (on those, 7,336 of the 76,002 whose premises hold on stock are
+vacuous). Before the vacuity audit, the premises hold of 83,402 stock functions (82,721 under
+`verified_mach`, 681 under `verified_mach_S`).
 
-The composition on G61 counts 75,229 end to end (77.81%; 74,656 under `verified_mach`, 573 under
-`verified_mach_S`), 1,961 more than the previous full-v11 measurement, the composition on G60
-(main 2320a5d3, #690, 6 h 28 min summed: 73,268, 75.78%; 72,713 + 555; fully verified 84,244; main
-has since gained #693's frame-variable folds into `FMOVQload`/`FLDPQ`, so the fully verified count
-rose too). `checkG61` accepts 76,684 fully verified functions; 1,944 have a pending window,
-`entryStoresOK` rejects 1,370, 574 are end to end with a pending window (stock column: 83,694,
-2,015, 1,523, 492). Vacuous at `Addrs.fixed`: 260 of the 74,656 under `verified_mach` (stock
-column 358 of 81,225), 13 of the 573 under `verified_mach_S` (stock column 33 of 655); the `_atSP`
-variants hold of all of them non-vacuously. `ownFrame` gives the stock `stksize`/`stkptrsize` on
-all 69,843 fully verified functions whose output is identical to stock. Earlier: the composition
-on G44 (main c3414814 plus #650) 67,896 (70.23%), on G34 (main 0d51e03e, framed leaves excluded)
-60,599 (62.68%), the G18 probe (stock locals, main 8c5b1472 plus #606) 28,813 (29.80%). full-v11
-runs as six invocations (`cmdmain`, `cmd/vendor`, the rest of `cmd` but `compile`,
+The composition on G64 counts **68,698** end to end (71.06%; 68,130 under `verified_mach`, 568
+under `verified_mach_S`). The premises hold of 76,036 (78.65%; 75,458 + 578), 807 more than on
+the composition on G61, and none fewer: all of the G61 run's 75,229 are among them (`comm` of the
+sorted accepted lists). 7,338 of the 76,036 are closures vacuous at the entry (7,328 under
+`verified_mach`, 10 under `verified_mach_S`): in 4,286 an entry value comes after the start, and
+3,052 load off the closure pointer. **Correction of the G61 count.** 7,314 of the 7,338 are
+among the G61 run's 75,229, so the composition on G61 counts 67,915 end to end (70.25%), not
+about 67,914 as the mirror estimated.
+
+`checkG64` accepts 77,575 fully verified functions. 2,034 of them have a pending window,
+`entryStoresOK` rejects 1,433, `argsOK` 6, and 600 have a pending window and hold before the
+vacuity audit (stock column: 85,437, 2,253, 1,705, 12, 547). Vacuous at `Addrs.fixed`: 305 of
+the 68,130 under `verified_mach` and 13 of the 568 under `verified_mach_S`; the `_atSP` variants
+hold of all of them non-vacuously. `ownFrame` gives the stock `stksize`/`stkptrsize` on all
+69,843 fully verified functions whose output is identical to stock.
+
+Earlier: the composition on G61 (main e80f022b, #694, 10 h 48 min summed) 75,229 premises hold
+(77.81%; 74,656 + 573), 67,915 end to end. On G60 (main 2320a5d3, #690) 73,268 premises hold
+(75.78%). On G44 (main c3414814 plus #650) 67,896 (70.23%). On G34 (main 0d51e03e, framed
+leaves excluded) 60,599 (62.68%). The G18 probe (stock locals, main 8c5b1472 plus #606) 28,813
+(29.80%). The counts before G64 include the vacuous closures.
+
+full-v11 runs as six invocations (`cmdmain`, `cmd/vendor`, the rest of `cmd` but `compile`,
 `cmd/compile`, `stdall/std` in two halves), each at `--jobs 2` under `nice -n 10`, whose tables
-are summed (`merge-parts.py`; the per-mode, pending-window and vacuity lines summed separately);
-`cmd/vendor` took 2 h 46 min and `cmd/compile` 6 h 28 min (the machine at load ~220, with the G64
-run alongside; peak RSS 1.6 GB), with no OOM kill. Top reasons among the fully verified (first
-reason; no part hit a table's cap):
+are summed (`merge-parts.py`; the per-mode, pending-window and vacuity lines summed
+separately). `cmd/vendor` took 5 h 52 min: `golang.org/x/arch`'s `ppc64asm.init` and
+`s390xasm.init` alone took 5 h 25 min and 5 h 44 min. `cmd/compile` took 6 h 11 min, of which
+`ssagen.simdAMD64Intrinsics` took 4 h 25 min. The machine was at load ~210, peak RSS 1.6 GB, with
+no OOM kill. Top reasons among the fully verified (first reason; no part hit a table's cap):
 
-- back-end errors: 87, all `Flushplist: PosTable.Pos: no position base`; `entryStoresOK`: 1,370,
-  all `entry stores do not cover the pending window`; `retRegsOK`: 3 (`result of class # read at
-  class #`);
-- `checkG61`: `store shape` (4,286), `op CALLtail` (1,425), `frame variable aux on FLDPQ` (362),
-  `frame variable off another base` (333; G62), `op FLDPQ` (330; G64), `MOVDnop/MOVDreg: upper
-  bits unknown` (257), `pair store shape` (173), `SP access MOVDaddr` (171), `op CALLtailinter`
-  (144), `branch shape` (138), `load shape` (113), `bounds panic: constant index outside` (61),
-  `op FMOVQload` (52; G64), `op LoweredGetCallerSP` (48), `frame variable aux on FMOVQload` (40);
-  no atomic op is left among them;
-- `checkObj`: `JMP` to a register (169), `SBFIZ` not modelled (162), `RET` through another
-  register (144), a branch whose target is not the Prog `checkObj` expects (24), the stack check
-  of a huge frame (20), a Prog writing `R#` (6); the atomics' `CBNZ: CBZ` and `CASAL*` rejections
-  of the G60 run are gone (#692). Among the functions `checkG61`, `entryStoresOK` and `retRegsOK`
-  accept, `checkObj` rejects 82: `SBFIZ` (58), the stack check of a huge frame (12), a branch
-  whose target is not the Prog `checkObj` expects (12).
+- back-end errors: 87, all `Flushplist: PosTable.Pos: no position base`;
+- `entryStoresOK`: 1,433, all `entry stores do not cover the pending window`;
+- `retRegsOK`: 3 (`result of class # read at class #`);
+- `checkG64`: `store shape` (4,308), `op CALLtail` (1,425), `MOVDnop/MOVDreg: upper bits unknown`
+  (267), `SP access MOVDaddr` (186), `pair store shape` (175), `op CALLtailinter` (144),
+  `branch shape` (140), `load shape` (119), `two frame variables overlap` (84), `bounds panic:
+  constant index outside` (65), `argument v# in register #` (59), `Arg width` (53),
+  `op LoweredGetCallerSP` (48). G61's `FLDPQ`/`FMOVQload` reasons are gone (G64);
+- `checkObj`: `JMP` to a register (169), `SBFIZ` not modelled (162; #714 since), `RET` through
+  another register (144), a branch whose target is not the Prog `checkObj` expects (24), the
+  stack check of a huge frame (20), a Prog writing `R#` (6). Among the functions `checkG64`,
+  `entryStoresOK`, `argsOK` and `retRegsOK` accept, `checkObj` rejects 97: `SBFIZ` (72), the
+  stack check of a huge frame (13), and a branch whose target is not the Prog `checkObj` expects
+  (12).
 
 ## Per-pass fragment coverage (verified pipeline, full-v6)
 
