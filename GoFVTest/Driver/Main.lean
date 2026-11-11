@@ -1090,6 +1090,17 @@ def e2eFile (wholeFile : Bool) (path : System.FilePath) (st : E2E.Stats) : IO E2
     return { st with parseErrors := st.parseErrors + 1 }
   let data ← IO.FS.readBinFile path
   let progData ← IO.FS.readBinFile progPath
+  if (← IO.getEnv "GOFV_E2E_STOCK_ONLY").isSome then
+    match parseExportExt data, GoFV.Asm.parseProgFile progData with
+    | .ok (e, _), .ok pf =>
+      let stockF := ((e.sections.back?).map (·.func)).getD default
+      let sres := E2E.back e (Back.inputView pf) #[] e.frontendTables stockF
+      let st := st.addStock path.toString sres
+      let row := ((s!"{path}\tSTOCK\t{E2E.verdict sres}\tPIPE\tskipped").replace "\n" " ")
+      return { st with rows := st.rows.push row }
+    | _, _ =>
+      IO.eprintln s!"PARSE ERROR {path}"
+      return { st with parseErrors := st.parseErrors + 1 }
   let parsed := do
     let (e, x) ← parseExportExt data
     let pf ← GoFV.Asm.parseProgFile progData
@@ -1104,7 +1115,7 @@ def e2eFile (wholeFile : Bool) (path : System.FilePath) (st : E2E.Stats) : IO E2
     let stockF := ((e.sections.back?).map (·.func)).getD default
     let sres := E2E.back e pin #[] e.frontendTables stockF
     let st := st.addStock file sres
-    let clean (s : String) := (s.replace "\n" " ").replace "\t" " "
+    let clean (s : String) := s.replace "\n" " "
     let row (p : String) := clean s!"{file}\tSTOCK\t{E2E.verdict sres}\tPIPE\t{p}"
     match r with
     | .error m => return { st with passErrors := st.passErrors + 1,
