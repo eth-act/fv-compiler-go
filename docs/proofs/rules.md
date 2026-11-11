@@ -401,6 +401,27 @@ and `LoadFwd.zeroLd_load` decodes a successful read of zeros as the constant (`p
 fails). Witness: `zl_checkedRewrite`/`zl_rwPre` (`Witness/FwdZeroLoad.lean`: `*p = [2]int{};
 return p[1]`, the `Load` at offset 8 of the 16 zeroed bytes becomes `Const64 [0]`).
 
+**Loads through disjoint `Store`s to a `Zero`** (`:842`, `:851`, `:862`, `:875`, issue #69,
+Phase1Tail7): `(Load <t1> op:(OffPtr [o1] p1) (Store {t2} p2 _ … mem:(Zero [n] q _))) && o1 >= 0
+&& o1+t1.Size() <= n && isSamePtr(p1, q) && CanSSA(t1) && disjoint(op, t1.Size(), p2, t2.Size())
+&& … => @mem.Block (Load <t1> (OffPtr <op.Type> [o1] q) mem)`, through one to four `Store`s,
+reads the bytes in the `Zero`'s memory; the fresh `Load` is then a `Load` of a `Zero` (`:882`–`:902`
+fold it at the integer and `bool` shapes). Forwarding rules as `:827` (`fwdShapeOK`: a `Load` of
+an `OffPtr` and a `Store` with two built values in a named block); `fwdMoveRep` (and `fwdEvOK`)
+accept `fwdSepOK` besides `fwdMoveOK`: `top` is `Load <u.Type> offp z` of a `Zero` `z`, `offp`
+the pointer-shaped `OffPtr [o] q` of the `Zero`'s pointer `q`, `0 ≤ o`, the Load's shape of
+positive size, its memory reaches `z` through at most eight `Copy`s and `Store`s/`StoreWB`s
+`disjointB` from the read (`sepChain`), and its pointer is `q + o` (`ptrBase` offsets,
+`baseSameB` bases). The `Zero`'s length (`o1+t1.Size() <= n`) is not needed: the bytes read the
+same in both memories wherever they are. No new assumption beyond the layer's: `LoadFwd.sep_den`
+reads the bytes through the writes (`sepChain_read`: `disjoint_sep` + `read_write_sep`, as
+`zeroChain_read`), takes `q`'s pointer from the `Zero`'s write (`memDef_zero`), and the fresh
+`OffPtr` is the Load's pointer when the read succeeds (`read_inWindow`; a failed read is `poison`,
+`load_of_read_none`); `sepChain_rank`/`sepChain_ndc` put the `Zero` and `q` below the `Load` for
+the induction. Witness: `zs_checkedRewrite`/`zs_rwPre` (`Witness/FwdZeroStore.lean`: `*p =
+[2]int{}; p[0] = x; return p[1]`, the `Load` at offset 8 reads the `Zero`'s memory past the
+`Store` at offset 0).
+
 **Pointer comparisons** (`:1649`, `:1650`, `:1652`–`:1663`, `:1666`, `:1667`, `:1669`–`:1676`, 24 alternatives, issue
 #69, Phase1Tail6): `EqPtr`/`NeqPtr` of `LocalAddr`s, `Addr`s, their `OffPtr`s (and a `Convert` of
 an `Addr`), and of `OffPtr`s from `isSamePtr` bases, folded to `(ConstBool [c])`, are forwarding
@@ -1258,7 +1279,7 @@ needs a later phase of the semantics.
 | `generic` | IsSliceInBounds | 5 | 3 | 0 | 0 | 8 |
 | `generic` | Leq | 62 | 0 | 0 | 2 | 62 |
 | `generic` | Less | 62 | 0 | 0 | 2 | 62 |
-| `generic` | Load | 22 | 1 | 0 | 33 | 35 |
+| `generic` | Load | 26 | 1 | 0 | 33 | 35 |
 | `generic` | Lsh | 67 | 21 | 0 | 0 | 88 |
 | `generic` | MemEq | 2 | 9 | 0 | 0 | 11 |
 | `generic` | Mod | 29 | 0 | 0 | 0 | 29 |
@@ -1302,7 +1323,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 60 | 4 | 4 | 0 | 68 |
 | `generic` | Zero | 2 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1417 | 188 | 31 | 258 | 1762 |
+| all | | 1421 | 188 | 31 | 258 | 1762 |
 
 <!-- END coverage -->
 
