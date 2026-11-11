@@ -206,6 +206,8 @@ structure Stats where
   accept : Array String := #[]
   /-- Rejected functions with their reason sets (`path\treason\t…`). -/
   sets : Array String := #[]
+  /-- PROBE: per function, the home slots main's `slotOK` rejects. -/
+  slots : Array String := #[]
 
 def mergeMap (a b : Std.HashMap String Nat) : Std.HashMap String Nat :=
   b.fold (fun m k n => m.insert k (m.getD k 0 + n)) a
@@ -322,7 +324,37 @@ def Stats.merge (a b : Stats) : Stats :=
     acceptedValues63 := a.acceptedValues63 + b.acceptedValues63,
     acceptedValues64 := a.acceptedValues64 + b.acceptedValues64,
     sole := mergeMap a.sole b.sole, occurs := mergeMap a.occurs b.occurs,
-    accept := a.accept ++ b.accept, sets := a.sets ++ b.sets }
+    accept := a.accept ++ b.accept, sets := a.sets ++ b.sets, slots := a.slots ++ b.slots }
+
+/-- PROBE: the home slots of `lc` main's `slotOK` rejects, described. -/
+def slotInfo (lc0 : GoFV.SSA.Sem.LocCtx) (g : Check.G2In) : List String := Id.run do
+  let lc := Check.liveCtx lc0
+  let mut out : List String := []
+  for k in (Check.homeSlots lc).eraseDups do
+    if Check.slotOK8 lc g k then continue
+    let ts := GoFV.SSA.Sem.typeSize? lc.ctx.tabs k.type
+    let n := (lc.slotTy k).size
+    let fl := match lc.ctx.tabs.type? k.type with
+      | some d => d.kind == GoFV.SSA.TypeKind.FLOAT32 || d.kind == GoFV.SSA.TypeKind.FLOAT64
+      | none => false
+    let sg := GoFV.SSA.Sem.typeSigned lc.ctx.tabs k.type
+    let op := match g.slotOp k with
+      | some (.AUTO, o) => s!"AUTO:{o}"
+      | some (.PARAM, o) => s!"PARAM:{o}"
+      | some (_, o) => s!"OTHER:{o}"
+      | none => "NOOP"
+    let homers := ((List.range lc.homes.size).filter fun i => Check.slotHome? lc i == some k).filterMap
+      fun i => (lc.ctx.f.value? i).map (·.op.name)
+    -- reloads whose type differs in size from the slot
+    let mut mism := 0
+    for i in List.range lc.homes.size do
+      let some v := lc.ctx.f.value? i | continue
+      if v.op == .LoadReg then
+        if let some a := v.args[0]? then
+          if Check.slotHome? lc a == some k &&
+              GoFV.SSA.Sem.typeSize? lc.ctx.tabs v.type != ts then mism := mism + 1
+    out := s!"size={ts.getD 0};shape={n};float={fl};signed={sg};{op};split={k.splitOf.isSome};koff={k.off};by={homers.eraseDups};mism={mism}" :: out
+  return out
 
 /-- Record a rejected function with its reasons. -/
 def Stats.reject (st : Stats) (path : System.FilePath) (msgs : List String) : Stats :=
@@ -656,6 +688,10 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
   let st := if ok63 then
       { st with accepted63 := st.accepted63 + 1, acceptedValues63 := st.acceptedValues63 + nv }
     else st
+  let si := slotInfo lc g'
+  let st := if si.isEmpty then st else
+    { st with slots := st.slots.push ("\t".intercalate (path.toString ::
+        (if (Check.checkG64 lc ps' bstart g').toOption.isSome then "ACC" else "REJ") :: si)) }
   match Check.checkG64 lc ps' bstart g' with
   | .ok _ =>
     let tag := if ok4 then "" else if ok5 then " (G5)" else if ok6 then " (G6)"
@@ -683,6 +719,8 @@ def checkFile (path : System.FilePath) (st : Stats) : IO Stats := do
                      accept := st.accept.push s!"{path}{tag}" }
   | .error msg =>
     let rs := reasons64 lc ps' bstart g'
+    let st := { st with slots := st.slots.push ("\t".intercalate (path.toString :: "RAW" ::
+      (if rs.isEmpty then [msg] else rs))) }
     return st.reject path (if rs.isEmpty then [msg] else rs)
 
 def progFiles (p : System.FilePath) : IO (Array System.FilePath) := do
@@ -797,6 +835,8 @@ def main (args : List String) : IO UInt32 := do
   if let some f := table then IO.FS.writeFile f out
   if let some f := sets then
     IO.FS.writeFile f (String.join ((st.sets.qsort (· < ·)).toList.map (· ++ "\n")))
+  if let some f ← IO.getEnv "SLOTINFO" then
+    IO.FS.writeFile f (String.join ((st.slots.qsort (· < ·)).toList.map (· ++ "\n")))
   return 0
 
 end GoFVTest.GenCheck

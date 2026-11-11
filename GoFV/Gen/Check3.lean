@@ -289,6 +289,25 @@ def sbReg : Nat := 63
 value without code. -/
 def entryOp3 (op : Op) : Bool := entryOp op && op != .SB
 
+/-- PROBE: `v`'s argument, through `Copy`/`MOVDreg`, is a `LoadReg` of `w / 8` bytes and
+signedness `sg` (`ssa.go`, `OpARM64MOV*reg`). -/
+def probeExtOfReload (lc : LocCtx) (v : Value) (w : Nat) (sg : Bool) : Bool :=
+  let rec go : Nat → ID → Bool
+    | 0, _ => false
+    | n + 1, a =>
+      match lc.ctx.f.value? a with
+      | some u =>
+        if u.op == .Copy || u.op == .ARM64MOVDreg then
+          match u.args[0]? with
+          | some b => go n b
+          | none => false
+        else u.op == .LoadReg && typeSize? lc.ctx.tabs u.type == some (w / 8) &&
+          typeSigned lc.ctx.tabs u.type == sg
+      | none => false
+  match v.args[0]? with
+  | some a => go 64 a
+  | none => false
+
 /-- What `v` emits in G3, or why it is outside the slice. -/
 def vkind3 (lc : LocCtx) (g : G2In) (v : Value) : Except String VKind2 := do
   if (lc.temps[v.id]?).join != none then throw s!"v{v.id}: temporary register"
@@ -315,11 +334,15 @@ def vkind3 (lc : LocCtx) (g : G2In) (v : Value) : Except String VKind2 := do
         (lc.home v.id == none || lc.home v.id == some (.reg sbReg)) do
       throw s!"v{v.id}: SB home"
     return .none
-  if let some (as, w, _) := extOp? v.op then
+  if let some (as, w, sg) := extOp? v.op then
     unless v.args.size == 1 do throw s!"v{v.id}: extension shape"
     let (ca, rn) ← argObj lc v 0
     let (c, rd) ← resObj lc v
     unless (w ≤ ca || ca == 1) && 8 ≤ c do throw s!"v{v.id}: extension widths"
+    -- PROBE: `ssa.go`'s extension of a reload of its own size and signedness: no code, or `MOVD`
+    if probeExtOfReload lc v w sg then
+      if rn == rd then return .none
+      return .prog (.ofShape { as := .MOVD, from_ := regA rn, to := regA rd })
     return .prog (.ofShape { as, from_ := regA rn, to := regA rd })
   match v.op with
   | .ARM64ANDconst | .ARM64SLLconst | .ARM64SRLconst =>

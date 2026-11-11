@@ -40,11 +40,12 @@ def fspill63 (lc : LocCtx) (g : G2In) (v : Value) (e : String) : Except String V
   unless (lc.temps[v.id]?).join == none do throw s!"v{v.id}: temporary register"
   let some k := slotHome? lc v.id | throw s!"v{v.id}: store home"
   let some (nc, off) := g.slotOp k | throw s!"v{v.id}: slot without frame offset"
-  unless v.args.size == 1 && fTy (lc.ty v.id) && cls (lc.ty v.id) == some 64 do
+  unless v.args.size == 1 && fTy (lc.ty v.id) && (cls (lc.ty v.id) == some 64 ||
+      (cls (lc.ty v.id) == some 32 && slotN lc k == some 4)) do
     throw s!"v{v.id}: float spill shape"
   let (c, rs) ← fargObj lc v 0
-  unless c == 64 do throw s!"v{v.id}: narrow float spill"
-  return .prog ⟨plain .FMOVD (· == regA rs) (slotA · nc off), "FMOVD spill"⟩
+  unless some c == cls (lc.ty v.id) do throw s!"v{v.id}: narrow float spill"
+  return .prog ⟨plain (fmovAs c) (· == regA rs) (slotA · nc off), "FMOV spill"⟩
 
 /-- A float reload (module doc): `FMOVD off(RSP), Fd`; `e` is G62's reason, kept for a `LoadReg`
 not homed in an `F` register. -/
@@ -54,10 +55,12 @@ def freload63 (lc : LocCtx) (g : G2In) (v : Value) (e : String) : Except String 
   let some a := v.args[0]? | throw s!"v{v.id}: load shape"
   let some k := slotHome? lc a | throw s!"v{v.id}: reload of v{a} without slot"
   let some (nc, off) := g.slotOp k | throw s!"v{v.id}: slot without frame offset"
-  unless v.args.size == 1 && cls (lc.ty a) == some 64 do throw s!"v{v.id}: float reload shape"
+  unless v.args.size == 1 && (cls (lc.ty a) == some 64 ||
+      (cls (lc.ty a) == some 32 && slotN lc k == some 4)) do
+    throw s!"v{v.id}: float reload shape"
   let (c, rd) ← fresObj lc v
-  unless c == 64 do throw s!"v{v.id}: narrow float reload"
-  return .prog ⟨plain .FMOVD (slotA · nc off) (· == regA rd), "FMOVD reload"⟩
+  unless some c == cls (lc.ty a) do throw s!"v{v.id}: narrow float reload"
+  return .prog ⟨plain (fmovAs c) (slotA · nc off) (· == regA rd), "FMOV reload"⟩
 
 /-- G63's values: a float spill or reload (module doc); `none` off `StoreReg`/`LoadReg`. -/
 def vkind63a (lc : LocCtx) (g : G2In) (v : Value) (e : String) : Option (Except String VKind2) :=

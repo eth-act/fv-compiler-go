@@ -42,7 +42,7 @@ def argKind62 (lc : LocCtx) (g : G2In) (v : Value) : Except String VKind2 := do
   unless v.args.size == 0 do throw s!"v{v.id}: Arg shape"
   let some x := v.aux | throw s!"v{v.id}: Arg without name"
   unless stackParam lc x do throw s!"v{v.id}: Arg of a register parameter"
-  unless cls (lc.ty v.id) == some 64 do throw s!"v{v.id}: Arg width"
+  unless (cls (lc.ty v.id)).isSome do throw s!"v{v.id}: Arg width"
   unless lc.home v.id == some (.slot (argKey x v.type v.auxInt.toInt)) do
     throw s!"v{v.id}: Arg home"
   let some (.PARAM, _) := g.slotOp (argKey x v.type v.auxInt.toInt)

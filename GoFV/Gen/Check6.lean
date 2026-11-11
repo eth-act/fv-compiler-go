@@ -96,7 +96,7 @@ def checkVars (lc : LocCtx) (g : G2In) : Except String Unit := do
   unless (ws.zipIdx).all fun (w, i) => (ws.zipIdx).all fun (w', i') => i == i' || winApart w w' do
     throw "two frame variables overlap"
   let slots := (homeSlots lc).filterMap fun k => match g.slotOp k with
-    | some (.AUTO, o) => some (o, o + 8)
+    | some (.AUTO, o) => some (o, o + slotW lc k)
     | _ => none
   unless ws.all fun w => slots.all (winApart w) do
     throw "frame variable over a spill slot"

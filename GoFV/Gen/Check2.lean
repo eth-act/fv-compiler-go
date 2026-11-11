@@ -127,6 +127,42 @@ def callTy (n : Nat) : Ty → Bool
 def resultReg (lc : LocCtx) (t : Ty) (r : Nat) : Bool :=
   (cls t).isSome && (regCls lc r == none || regCls lc r == cls t)
 
+/-- PROBE (`agent/slot-size-probe`, not for merge): 1 = slot windows of 8 bytes (`StkAt` as on
+main), 2 = slot windows of the slot's size. -/
+def probeMode : Nat := 2
+
+/-- PROBE: the bytes of a narrow (1, 2, 4) non-float type. -/
+def probeIntBytes (lc : LocCtx) (t : TypeRef) : Option Nat :=
+  match lc.ctx.tabs.type? t with
+  | some d =>
+    if d.kind == .FLOAT32 || d.kind == .FLOAT64 then none else
+    match typeSize? lc.ctx.tabs t with
+    | some n => if n == 1 || n == 2 || n == 4 then some n else none
+    | none => none
+  | none => none
+
+/-- PROBE: the size of slot `k` when its type and its `runLoc` shape agree on 1, 2, 4 or 8. -/
+def slotN (lc : LocCtx) (k : SlotKey) : Option Nat :=
+  let n := (lc.slotTy k).size
+  if typeSize? lc.ctx.tabs k.type == some n && (n == 1 || n == 2 || n == 4 || n == 8) then some n
+  else none
+
+/-- PROBE: the window of slot `k` (`probeMode`). -/
+def slotW (lc : LocCtx) (k : SlotKey) : Nat :=
+  if probeMode == 1 then 8 else (slotN lc k).getD 8
+
+/-- PROBE: `storeByType` of an integer of `n` bytes. -/
+def storeAsN : Nat → As
+  | 1 => .MOVB | 2 => .MOVH | 4 => .MOVW | _ => .MOVD
+
+/-- PROBE: `loadByType` of an integer of `n` bytes. -/
+def loadAsN (n : Nat) (sg : Bool) : As :=
+  match n with
+  | 1 => if sg then .MOVB else .MOVBU
+  | 2 => if sg then .MOVH else .MOVHU
+  | 4 => if sg then .MOVW else .MOVWU
+  | _ => .MOVD
+
 /-- What `v` emits in G2, or why it is outside the slice. -/
 def vkind2 (lc : LocCtx) (g : G2In) (v : Value) : Except String VKind2 := do
   let ty := lc.ty v.id
@@ -192,18 +228,34 @@ def vkind2 (lc : LocCtx) (g : G2In) (v : Value) : Except String VKind2 := do
   | .StoreReg =>
     let some k := slotHome? lc v.id | throw s!"v{v.id}: store home"
     let some (cls', off) := g.slotOp k | throw s!"v{v.id}: slot without frame offset"
-    unless v.args.size == 1 && cls ty == some 64 do throw s!"v{v.id}: store shape"
+    if cls ty == some 64 then
+      unless v.args.size == 1 do throw s!"v{v.id}: store shape"
+      let (c, rs) ← argObj lc v 0
+      unless c == 64 do throw s!"v{v.id}: narrow spill"
+      return .prog ⟨plain .MOVD (· == regA rs) (slotA · cls' off), "MOVD spill"⟩
+    -- PROBE: a narrow integer or boolean spill (`storeByType`)
+    let some n := probeIntBytes lc v.type | throw s!"v{v.id}: store shape"
+    unless v.args.size == 1 && slotN lc k == some n do throw s!"v{v.id}: store shape"
     let (c, rs) ← argObj lc v 0
-    unless c == 64 do throw s!"v{v.id}: narrow spill"
-    return .prog ⟨plain .MOVD (· == regA rs) (slotA · cls' off), "MOVD spill"⟩
+    unless some c == cls ty do throw s!"v{v.id}: narrow spill"
+    return .prog ⟨plain (storeAsN n) (· == regA rs) (slotA · cls' off), "narrow spill"⟩
   | .LoadReg =>
     let some a := v.args[0]? | throw s!"v{v.id}: load shape"
     let some k := slotHome? lc a | throw s!"v{v.id}: reload of v{a} without slot"
     let some (cls', off) := g.slotOp k | throw s!"v{v.id}: slot without frame offset"
-    unless v.args.size == 1 && cls (lc.ty a) == some 64 do throw s!"v{v.id}: load shape"
+    if cls (lc.ty a) == some 64 then
+      unless v.args.size == 1 do throw s!"v{v.id}: load shape"
+      let (c, rd) ← resObj lc v
+      unless c == 64 do throw s!"v{v.id}: narrow reload"
+      return .prog ⟨plain .MOVD (slotA · cls' off) (· == regA rd), "MOVD reload"⟩
+    -- PROBE: a narrow integer or boolean reload (`loadByType`)
+    let some n := probeIntBytes lc v.type | throw s!"v{v.id}: load shape"
+    unless v.args.size == 1 && slotN lc k == some n && cls (lc.ty a) == cls ty do
+      throw s!"v{v.id}: load shape"
     let (c, rd) ← resObj lc v
-    unless c == 64 do throw s!"v{v.id}: narrow reload"
-    return .prog ⟨plain .MOVD (slotA · cls' off) (· == regA rd), "MOVD reload"⟩
+    unless some c == cls ty do throw s!"v{v.id}: narrow reload"
+    return .prog ⟨plain (loadAsN n (typeSigned lc.ctx.tabs v.type)) (slotA · cls' off) (· == regA rd),
+      "narrow reload"⟩
   | _ =>
     match ← vkind lc v with
     | .entry => return .entry
@@ -226,11 +278,22 @@ def homeSlots (lc : LocCtx) : List SlotKey := (List.range lc.homes.size).filterM
 /-- A spill slot G2 handles: its operand in Go's frame layout, 8 bytes (in the frame layout and
 at its `runLoc` shape), 8-aligned, `NAME_AUTO` inside the locals, `NAME_PARAM` at a non-negative
 offset. -/
-def slotOK (lc : LocCtx) (g : G2In) (k : SlotKey) : Bool :=
+def slotOK8 (lc : LocCtx) (g : G2In) (k : SlotKey) : Bool :=
   typeSize? lc.ctx.tabs k.type == some 8 && (lc.slotTy k).size == 8 &&
     match g.slotOp k with
     | some (.AUTO, off) => off % 8 == 0 && -g.stksize ≤ off && off + 8 ≤ 0
     | some (.PARAM, off) => off % 8 == 0 && 0 ≤ off
+    | _ => false
+
+/-- PROBE: a slot of 1, 2, 4 or 8 bytes, aligned to its size, its window (`slotW`) inside the
+locals or at a non-negative parameter offset. -/
+def slotOK (lc : LocCtx) (g : G2In) (k : SlotKey) : Bool :=
+  match slotN lc k with
+  | none => false
+  | some n =>
+    match g.slotOp k with
+    | some (.AUTO, off) => off % n == 0 && -g.stksize ≤ off && off + slotW lc k ≤ 0
+    | some (.PARAM, off) => off % n == 0 && 0 ≤ off
     | _ => false
 
 /-- checkFrame for the spill slots used as homes (module doc): each `slotOK`, and distinct slots
@@ -241,6 +304,13 @@ def checkFrame (lc : LocCtx) (g : G2In) : Except String Unit := do
     throw s!"slot n{k.name}+{k.off}: frame operand, size or alignment"
   unless ks.all fun k => ks.all fun k' => k' == k || g.slotOp k' != g.slotOp k do
     throw "two slots at one frame operand"
+  -- PROBE: the windows of distinct slots of one operand class are disjoint
+  unless ks.all fun k => ks.all fun k' => k' == k ||
+      match g.slotOp k, g.slotOp k' with
+      | some (c, o), some (c', o') =>
+        c != c' || o + ((slotN lc k).getD 8) ≤ o' || o' + ((slotN lc k').getD 8) ≤ o
+      | _, _ => true do
+    throw "slot windows overlap"
 
 /-- The context of the check: G1's, the inputs of G2, and the checks of a value and of a
 terminator (G2's, or a later slice's). -/

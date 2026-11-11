@@ -143,7 +143,7 @@ def checkVars49 (lc : LocCtx) (g : G2In) : Except String Unit := do
     throw "frame variable outside the locals or the argument area"
   unless (ws.zipIdx).all fun (w, i) => (ws.zipIdx).all fun (w', i') => i == i' || winApart49 w w' do
     throw "two frame variables overlap"
-  let slots := (homeSlots lc).filterMap fun k => (g.slotOp k).map fun (nc, o) => (nc, o, o + 8)
+  let slots := (homeSlots lc).filterMap fun k => (g.slotOp k).map fun (nc, o) => (nc, o, o + slotW lc k)
   unless ws.all fun w => slots.all (winApart49 w) do
     throw "frame variable over a spill slot"
 

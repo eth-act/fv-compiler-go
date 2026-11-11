@@ -87,6 +87,14 @@ def wEntries35 (op : Op) (rs : List Nat) : List (Nat × Nat × Bool) :=
 of a global, G6's of a frame variable) homed in register `r` at class `c ∈ {8, 16, 32}`, `8n ≤ c`:
 `r` holds the sign (`sg`) or zero extension of its low `c` bits. -/
 def ldEntry35 (lc : LocCtx) (v : Value) : Option (Nat × Nat × Bool) :=
+  -- PROBE: a narrow integer reload (`loadByType`) sign- or zero-extends by its type
+  if v.op == .LoadReg then
+    match probeIntBytes lc v.type, regHome? lc v.id, cls (lc.ty v.id) with
+    | some n, some r, some c =>
+      if (c == 8 || c == 16 || c == 32) && 8 * n ≤ c then some (r, c, typeSigned lc.ctx.tabs v.type)
+      else none
+    | _, _, _ => none
+  else
   match loadOp? v.op, regHome? lc v.id, cls (lc.ty v.id) with
   | some (as, n, sg), some r, some c =>
     if as != .MOVD && (c == 8 || c == 16 || c == 32) && 8 * n ≤ c then some (r, c, sg) else none
