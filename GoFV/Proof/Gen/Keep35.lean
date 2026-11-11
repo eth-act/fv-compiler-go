@@ -58,7 +58,9 @@ theorem reloadEntry35_none {lc : LocCtx} {v : Value} (h : v.op ≠ .LoadReg) :
     reloadEntry35 lc v = none := by
   cases he : reloadEntry35 lc v with
   | none => rfl
-  | some e => exact absurd (reloadEntry35_spec (e := e) he).1 h
+  | some e =>
+    obtain ⟨r, c, sg⟩ := e
+    exact absurd (reloadEntry35_spec he).1 h
 
 /-- What `ldEntry35` gave: a narrow load's entry, or a narrow integer reload's
 (`reloadEntry35`). -/
@@ -69,6 +71,10 @@ theorem ldEntry35_spec {lc : LocCtx} {v : Value} {r c : Nat} {sg : Bool}
     (loadOp? v.op = none ∧ reloadEntry35 lc v = some (r, c, sg)) := by
   unfold ldEntry35 at h
   split at h
+  · rename_i hop
+    have hop' : v.op = .LoadReg := by simpa using hop
+    exact .inr ⟨by rw [hop']; rfl, h⟩
+  split at h
   · rename_i as n sg' r' c' hl hr hc
     split at h
     · rename_i hcc
@@ -78,13 +84,12 @@ theorem ldEntry35_spec {lc : LocCtx} {v : Value} {r c : Nat} {sg : Bool}
       refine .inl ⟨as, n, hl, hr, hc, ?_, hcc.2⟩
       rcases hcc.1.2 with (h | h) | h <;> simp [h]
     · cases h
-  · rename_i hl
-    exact .inr ⟨hl, h⟩
   · cases h
 
 theorem ldEntry35_none {lc : LocCtx} {v : Value} (h : loadOp? v.op = none)
     (hr : v.op ≠ .LoadReg) : ldEntry35 lc v = none := by
-  simp [ldEntry35, h, reloadEntry35_none hr]
+  have hr' : (v.op == .LoadReg) = false := by simpa using hr
+  simp [ldEntry35, h, hr']
 
 /-- A `LoadReg` homed in no X register, or at a class outside `{8, 16, 32}`, has no entry. -/
 theorem ldEntry35_reload_none {lc : LocCtx} {v : Value} (hop : v.op = .LoadReg)
@@ -468,7 +473,7 @@ theorem ld_uokl {lc : LocCtx} {v : Value} {m m' : MState} {L : List (Nat × Nat 
   | some e =>
     obtain ⟨r, c', sg'⟩ := e
     rcases ldEntry35_spec he with ⟨as', n', hl', hr, hc', hcc, hn⟩ | ⟨hl', -⟩
-    swap
+    rotate_left
     · rw [hop] at hl'; cases hl'
     rw [hop] at hl'
     simp only [Option.some.injEq, Prod.mk.injEq] at hl'
