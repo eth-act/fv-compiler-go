@@ -1753,7 +1753,9 @@ and none fewer (`comm` of the accepted lists), in either mode (`needs48` is unch
 std/strconv and std/hash, 1 each of std/strings and std/regexp, 11 tests; 17 of the 26 hold a
 128-bit move (`FMOVQ`, `FLDPQ`, `FSTPQ`), the others a float spill or reload. **`checkObj` and
 the new Progs:** `checkObj` already models `FMOVQ` loads and stores, `FLDPQ`/`FSTPQ` and `FMOVD`
-to and from a frame slot (`fmovP`, `fpairP`; the SIMD&FP paragraph of the assembler entry), and
+to and from a frame slot (`fmovP`, `fpairP`; the SIMD&FP paragraph of the assembler entry; the
+machine semantics of their words, `LDR`/`STR`/`LDP`/`STP` of `Q` and `D` registers, are among the
+forms I6's qemu co-simulation covers, #566: every corpus form, 0 mismatches), and
 it rejects none of the functions G63 and G64 add: of the 7,225 that `checkG64`, `entryStoresOK`,
 `argsOK` and `retRegsOK` accept it rejects 4, the same 4 as on G62 (the stack check of a huge
 frame twice, `SBFIZ`, `runtime.poll_runtime_pollUnblock`'s `JMP`); 125 of the 7,221 end-to-end
