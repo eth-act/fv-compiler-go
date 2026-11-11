@@ -1102,15 +1102,25 @@ def e2eFile (wholeFile : Bool) (path : System.FilePath) (st : E2E.Stats) : IO E2
   | .ok (e, x, pin, stockFrame, r) =>
     let file := path.toString
     let stockF := ((e.sections.back?).map (·.func)).getD default
-    let st := st.addStock file (E2E.back e pin #[] e.frontendTables stockF)
+    let sres := E2E.back e pin #[] e.frontendTables stockF
+    let st := st.addStock file sres
+    let clean (s : String) := (s.replace "\n" " ").replace "\t" " "
+    let row (p : String) := clean s!"{file}\tSTOCK\t{E2E.verdict sres}\tPIPE\t{p}"
     match r with
-    | .error _ => return { st with passErrors := st.passErrors + 1 }
+    | .error m => return { st with passErrors := st.passErrors + 1,
+                                   rows := st.rows.push (row s!"passerr\t{clean s!"{m.pass}: {m.msg}"}") }
     | .ok r =>
-      if !r.st.fullyVerified then return st
+      let log := r.st.st.log
+      let gen := (log.toList.filter fun (q, v) => isGen q && !v.ok).map fun (q, v) => clean s!"{q}: {v}"
+      let low := (log.toList.filter fun (q, v) => !isGen q && !v.ok).map fun (q, v) => clean s!"{q}: {v}"
+      let vst := s!"VST\t{clean (vstatsFields r.st)}\tgen={"; ".intercalate gen}\tlow={"; ".intercalate low}"
+      let row (p : String) := (row p) ++ "\t" ++ vst
+      if !r.st.fullyVerified then return { st with rows := st.rows.push (row "notfull") }
       let t0 := ({} : Tables).addAll (((e.sections[0]?).map (·.defs)).getD #[])
       let res := do
         let (pin, links) ← E2E.ownFrame pin t0 r.st.st.tables ((x.dclLen? 0).getD 0) r.st.dclLen
         E2E.back e pin links r.st.st.tables r.st.st.func
+      let st := { st with rows := st.rows.push (row s!"same={r.same}\t{E2E.verdict res}") }
       return st.addFull file r.same stockFrame res
 
 /-- `--check --verified --e2e`: end-to-end coverage (exit 1 only for parse errors or no files). -/
@@ -1140,6 +1150,8 @@ def runE2E (o : Opts) : IO UInt32 := do
   if let some p := o.table then IO.FS.writeFile p text
   if let some p := o.accepted then
     IO.FS.writeFile p (String.join ((st.accept.qsort (· < ·)).toList.map (· ++ "\n")))
+  if let some p := o.vstats then
+    IO.FS.writeFile p (String.join ((st.rows.qsort (· < ·)).toList.map (· ++ "\n")))
   return if st.parseErrors > 0 || st.files == 0 then 1 else 0
 
 def main (args : List String) : IO UInt32 := do

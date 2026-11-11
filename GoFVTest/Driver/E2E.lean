@@ -203,6 +203,18 @@ def Res.all (r : Res) : Bool :=
 `Addrs.fixed` only are covered by the `_atSP` variants). -/
 def Res.e2e (r : Res) : Bool := r.all && r.vac.isNone
 
+def verdict : Except String Res → String
+  | .error m => s!"err\t{m}"
+  | .ok r =>
+    let fl := s!"pend={r.pend} n48={r.n48} locals={r.locals} vac={r.vac.getD "-"}"
+    match r.gen, r.entry, r.args, r.ret, r.obj with
+    | some m, _, _, _, _ => s!"gen\t{m}\t{fl}"
+    | none, some m, _, _, _ => s!"entry\t{m}\t{fl}"
+    | none, none, some m, _, _ => s!"args\t{m}\t{fl}"
+    | none, none, none, some m, _ => s!"ret\t{m}\t{fl}"
+    | none, none, none, none, some m => s!"obj\t{m}\t{fl}"
+    | none, none, none, none, none => s!"ok\t-\t{fl}"
+
 /-- The `.prog` type for a new auto of `.ssa` type `st`: a `type` definition of the file with
 the same string, size, alignment and pointer data, else one made from `st` when it has no
 pointer words or is one pointer word (`PTR`, `UNSAFEPTR`, `MAP`, `CHAN`, `FUNC`: the shapes of
@@ -477,6 +489,7 @@ structure Stats where
   frameSame : Nat := 0
   frameDiff : Nat := 0
   frameDiffEx : String := ""
+  rows : Array String := #[]
 
 def Stats.merge (a b : Stats) : Stats :=
   { files := a.files + b.files, parseErrors := a.parseErrors + b.parseErrors,
@@ -485,7 +498,8 @@ def Stats.merge (a b : Stats) : Stats :=
     allSame := a.allSame + b.allSame, stockFns := a.stockFns + b.stockFns,
     stock := a.stock.merge b.stock, accept := a.accept ++ b.accept,
     frameSame := a.frameSame + b.frameSame, frameDiff := a.frameDiff + b.frameDiff,
-    frameDiffEx := if a.frameDiffEx.isEmpty then b.frameDiffEx else a.frameDiffEx }
+    frameDiffEx := if a.frameDiffEx.isEmpty then b.frameDiffEx else a.frameDiffEx,
+    rows := a.rows ++ b.rows }
 
 /-- Records the cross-check on the stock `trim` function. -/
 def Stats.addStock (st : Stats) (path : String) (res : Except String Res) : Stats :=
