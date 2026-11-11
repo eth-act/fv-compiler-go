@@ -121,11 +121,11 @@ theorem lad_lower :
       (out.func.value? 11).map (·.op) = some .SPanchored ∧
       (∃ f', GoFV.Proof.Low.Contract ladFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms ladPassEnv.tables ladFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre ladPassEnv.tables ladFunc) env mem)
         out.tables out.func ladPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms ladPassEnv.tables ladFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre ladPassEnv.tables ladFunc) env mem → ∀ fuel,
         (run env ladTabs ladFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env ladTabs ladFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

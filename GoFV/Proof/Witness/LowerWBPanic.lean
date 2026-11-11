@@ -90,11 +90,11 @@ theorem wbp_lower :
         some (.ARM64LoweredPanicBoundsCC, 0, #[5]) ∧
       (∃ f', GoFV.Proof.Low.Contract wbpFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms wbpPassEnv.tables wbpFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre wbpPassEnv.tables wbpFunc) env mem)
         out.tables out.func wbpPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms wbpPassEnv.tables wbpFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre wbpPassEnv.tables wbpFunc) env mem → ∀ fuel,
         (run env wbpTabs wbpFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env wbpTabs wbpFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

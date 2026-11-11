@@ -51,11 +51,11 @@ theorem lac_lower :
         some (.ARM64ADDconst, 5, #[2]) ∧
       (∃ f', GoFV.Proof.Low.Contract lacFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms lacPassEnv.tables lacFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre lacPassEnv.tables lacFunc) env mem)
         out.tables out.func lacPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms lacPassEnv.tables lacFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre lacPassEnv.tables lacFunc) env mem → ∀ fuel,
         (run env laTabs lacFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env laTabs lacFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

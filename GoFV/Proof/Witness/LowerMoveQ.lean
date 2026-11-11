@@ -114,11 +114,11 @@ theorem mvq_lower :
       mvqShow out.func = mvqOut ∧
       (∃ f', GoFV.Proof.Low.Contract mvqFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms mvqPassEnv.tables mvqFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre mvqPassEnv.tables mvqFunc) env mem)
         out.tables out.func mvqPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms mvqPassEnv.tables mvqFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre mvqPassEnv.tables mvqFunc) env mem → ∀ fuel,
         (run env mvqTabs mvqFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env mvqTabs mvqFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

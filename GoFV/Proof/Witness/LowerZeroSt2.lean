@@ -91,11 +91,11 @@ theorem zst2_lower :
       zst2Show out.func = zst2Out ∧
       (∃ f', GoFV.Proof.Low.Contract zst2Func f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms zst2PassEnv.tables zst2Func) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre zst2PassEnv.tables zst2Func) env mem)
         out.tables out.func zst2PassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms zst2PassEnv.tables zst2Func) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre zst2PassEnv.tables zst2Func) env mem → ∀ fuel,
         (run env zst2Tabs zst2Func args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env zst2Tabs zst2Func args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

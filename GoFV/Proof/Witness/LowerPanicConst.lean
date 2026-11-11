@@ -73,11 +73,11 @@ theorem pbx_lower :
         some (.ARM64LoweredPanicBoundsRC, 0, #[2, 1]) ∧
       (∃ f', GoFV.Proof.Low.Contract pbxFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms pbxPassEnv.tables pbxFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre pbxPassEnv.tables pbxFunc) env mem)
         out.tables out.func pbxPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms pbxPassEnv.tables pbxFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre pbxPassEnv.tables pbxFunc) env mem → ∀ fuel,
         (run env laTabs pbxFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env laTabs pbxFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

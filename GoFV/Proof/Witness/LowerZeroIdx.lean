@@ -94,11 +94,11 @@ theorem zsx_lower :
         some (.ARM64MOVDstoreidx8, 0, #[2, 3, 10, 1]) ∧
       (∃ f', GoFV.Proof.Low.Contract zsxFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms zsxPassEnv.tables zsxFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre zsxPassEnv.tables zsxFunc) env mem)
         out.tables out.func zsxPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms zsxPassEnv.tables zsxFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre zsxPassEnv.tables zsxFunc) env mem → ∀ fuel,
         (run env zsxTabs zsxFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env zsxTabs zsxFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

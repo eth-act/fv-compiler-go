@@ -72,11 +72,11 @@ theorem lsh_lower :
       (∃ f', GoFV.Proof.Low.Contract lshFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
           GoFV.SSA.Sem.RoImage
-            (GoFV.Opt.RewriteCheck.roSyms (narPassEnv "lsh").tables lshFunc) env mem)
+            (GoFV.Opt.LowerCheck.roPre (narPassEnv "lsh").tables lshFunc) env mem)
         out.tables out.func (narPassEnv "lsh").tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms (narPassEnv "lsh").tables lshFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre (narPassEnv "lsh").tables lshFunc) env mem → ∀ fuel,
         (run env narTabs lshFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env narTabs lshFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

@@ -94,11 +94,11 @@ theorem meq_lower :
         some (.ARM64LoweredMemEq, #[3, 3, 4, 1]) ∧
       (∃ f', GoFV.Proof.Low.Contract meqFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms meqPassEnv.tables meqFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre meqPassEnv.tables meqFunc) env mem)
         out.tables out.func meqPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms meqPassEnv.tables meqFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre meqPassEnv.tables meqFunc) env mem → ∀ fuel,
         (run env meqTabs meqFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env meqTabs meqFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

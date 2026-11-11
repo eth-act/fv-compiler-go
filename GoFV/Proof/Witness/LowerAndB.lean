@@ -69,11 +69,11 @@ theorem andb_lower :
       (∃ f', GoFV.Proof.Low.Contract andbFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
           GoFV.SSA.Sem.RoImage
-            (GoFV.Opt.RewriteCheck.roSyms (narPassEnv "andb").tables andbFunc) env mem)
+            (GoFV.Opt.LowerCheck.roPre (narPassEnv "andb").tables andbFunc) env mem)
         out.tables out.func (narPassEnv "andb").tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms (narPassEnv "andb").tables andbFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre (narPassEnv "andb").tables andbFunc) env mem → ∀ fuel,
         (run env narTabs andbFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env narTabs andbFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

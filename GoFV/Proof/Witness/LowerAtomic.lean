@@ -100,11 +100,11 @@ theorem ald_lower :
         some (.ARM64MOVDaddr, 0, some 4, #[2]) ∧
       (∃ f', GoFV.Proof.Low.Contract aldFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms aldPassEnv.tables aldFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre aldPassEnv.tables aldFunc) env mem)
         out.tables out.func aldPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms aldPassEnv.tables aldFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre aldPassEnv.tables aldFunc) env mem → ∀ fuel,
         (run env aldTabs aldFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env aldTabs aldFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

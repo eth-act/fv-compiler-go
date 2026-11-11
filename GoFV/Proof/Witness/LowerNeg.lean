@@ -79,11 +79,11 @@ theorem nsb_lower :
       (out.func.value? 5).map (fun v => (v.op, v.args)) = some (.ARM64SUB, #[3, 2]) ∧
       (∃ f', GoFV.Proof.Low.Contract nsbFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms nsbPassEnv.tables nsbFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre nsbPassEnv.tables nsbFunc) env mem)
         out.tables out.func nsbPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms nsbPassEnv.tables nsbFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre nsbPassEnv.tables nsbFunc) env mem → ∀ fuel,
         (run env laTabs nsbFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env laTabs nsbFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
@@ -154,11 +154,11 @@ theorem nng_lower :
       (out.func.value? 6).map (fun v => (v.op, v.args)) = some (.ARM64AND, #[2, 3]) ∧
       (∃ f', GoFV.Proof.Low.Contract nngFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms nngPassEnv.tables nngFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre nngPassEnv.tables nngFunc) env mem)
         out.tables out.func nngPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms nngPassEnv.tables nngFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre nngPassEnv.tables nngFunc) env mem → ∀ fuel,
         (run env laTabs nngFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env laTabs nngFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

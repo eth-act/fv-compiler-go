@@ -100,11 +100,11 @@ theorem stx_lower (scaled : Bool) :
       (∃ f', GoFV.Proof.Low.Contract (stxFunc scaled) f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
           GoFV.SSA.Sem.RoImage
-            (GoFV.Opt.RewriteCheck.roSyms stxPassEnv.tables (stxFunc scaled)) env mem)
+            (GoFV.Opt.LowerCheck.roPre stxPassEnv.tables (stxFunc scaled)) env mem)
         out.tables out.func stxPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms stxPassEnv.tables (stxFunc scaled)) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre stxPassEnv.tables (stxFunc scaled)) env mem → ∀ fuel,
         (run env stxTabs (stxFunc scaled) args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env stxTabs (stxFunc scaled) args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

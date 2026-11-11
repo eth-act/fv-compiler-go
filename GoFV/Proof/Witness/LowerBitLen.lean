@@ -75,11 +75,11 @@ theorem lbl_lower :
       (out.func.value? 4).map (·.op) = some .ARM64SUB ∧
       (∃ f', GoFV.Proof.Low.Contract lblFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms lblPassEnv.tables lblFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre lblPassEnv.tables lblFunc) env mem)
         out.tables out.func lblPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms lblPassEnv.tables lblFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre lblPassEnv.tables lblFunc) env mem → ∀ fuel,
         (run env lblTabs lblFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env lblTabs lblFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

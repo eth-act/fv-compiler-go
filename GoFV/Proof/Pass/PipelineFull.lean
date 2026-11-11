@@ -138,7 +138,7 @@ end
 
 /-- The precondition of a lowered pass theorem on input `f` in `tabs`. -/
 def lrelPre : LRel → Tables → Func → Env → List Val → Mem → Prop
-  | .lower, tabs, f => fun env _ mem => env.Mono ∧ RoImage (RewriteCheck.roSyms tabs f) env mem
+  | .lower, tabs, f => fun env _ mem => env.Mono ∧ RoImage (LowerCheck.roPre tabs f) env mem
   | .lowFrame, _, _ => fun env args mem => env.FrameSafe ∧ InitAvoids env args mem
   | .sched, tabs, f => fun env args mem =>
     NoNilFault tabs f env args mem ∧ ArgPtrsOK tabs f env args mem ∧ NilPtrsOK tabs f env args mem
@@ -363,7 +363,7 @@ theorem whyNot_none {s : FState} {penv : PassEnv} {rel : LRel} {wfReq : Bool}
     (h : s.whyNot penv rel wfReq guard out wf = none) :
     s.layer = rel.src ∧ (wfReq = true → s.st.wf = true ∧ wf = true) ∧
       guard penv s.st.func out = true ∧
-      (rel = .lower → (RewriteCheck.roSyms s.st.tables s.st.func).all s.st.ro.contains = true) := by
+      (rel = .lower → (LowerCheck.roPre s.st.tables s.st.func).all s.st.ro.contains = true) := by
   unfold FState.whyNot at h
   split at h
   · cases h
@@ -387,7 +387,7 @@ theorem whyNot_none {s : FState} {penv : PassEnv} {rel : LRel} {wfReq : Bool}
 
 theorem pre_lrel {k : List Nat} {ro : List (String × Alloc)} {eq : List String × List String}
     {s : FState} (rel : LRel) {e : Env} {args : List Val} {mem : Mem}
-    (hro : rel = .lower → ∀ x ∈ RewriteCheck.roSyms s.st.tables s.st.func, x ∈ ro)
+    (hro : rel = .lower → ∀ x ∈ LowerCheck.roPre s.st.tables s.st.func, x ∈ ro)
     (h : PreFull k ro eq (s.nnfAfter rel) e args mem) :
     lrelPre rel s.st.tables s.st.func e args mem := by
   cases rel with

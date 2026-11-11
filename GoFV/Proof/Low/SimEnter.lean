@@ -105,16 +105,38 @@ theorem sinv_phisL {P : Mem → Prop} {md : LMode} {ctx : Ctx} {fr : Frame} {B :
 
 end
 
+/-- Generic memory-typed values: `memTyAll` holds (the converse of `memTyAll_spec`). -/
+theorem memTyAll_of {tabs : Tables} {f : Func} (h : MemTyD tabs f.value?) :
+    memTyAll tabs f = true := by
+  unfold memTyAll
+  rw [Array.all_eq_true]
+  intro i hi
+  cases ho : f.valueTab[i] with
+  | none => rfl
+  | some v =>
+    have hv : f.value? i = some v := by
+      simp only [Func.value?, Array.getElem?_eq_getElem hi, ho, Option.join_some]
+    obtain ⟨h1, h2⟩ := h i v hv
+    simp [Option.all, h1, h2]
+
+/-- On generic memory-typed values the precondition's symbols (`roPre`) are those of `f`'s
+`Addr`s. -/
+theorem roPre_of {tabs : Tables} {f : Func} (h : MemTyD tabs f.value?) :
+    roPre tabs f = GoFV.Opt.RewriteCheck.roSyms tabs f := by
+  simp [roPre, memTyAll_of h]
+
 section
 variable {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
 
-/-- The entry frame has the invariant, from the precondition (`RoImage`'s second half). -/
+/-- The entry frame has the invariant, from the precondition (`RoImage`'s second half, of
+`roPre`). -/
 theorem roQL_entry (H : Hyp tabs f g ce ce') {env : Env} (args : List Val) {mem : Mem}
-    (h : RoMem (GoFV.Opt.RewriteCheck.roSyms tabs f) (addGlobals env mem)) :
+    (h : RoMem (roPre tabs f) (addGlobals env mem)) :
     MemInv.SInv (RoQL tabs f) (entryFrame env (Ctx.makeL tabs f) args mem) := by
   by_cases hmt : MemTyD tabs f.value?
   · have hmk : Ctx.makeL tabs f = Ctx.make tabs f := by
       simp [Ctx.makeL, lowered_of_memTyD hmt H.fblk]
+    rw [roPre_of hmt] at h
     rw [hmk]
     exact MemInv.sinv_entry (fun a h hg hw hc => roMem_set a (h hc) hg hw) fun _ => h
   · exact MemInv.SInv.of_not hmt _

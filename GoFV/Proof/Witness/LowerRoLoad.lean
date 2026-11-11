@@ -16,8 +16,8 @@ symIsRO(sym) => (MOVDconst [int64(read64(sym, int64(off), config.ctxt.Arch.ByteO
 (`GoFV.Opt.LowerCheck.roLoadDef`: the load from `tab`'s allocation alone gives 7,
 `LowerCheck.roLoadWord`). By `lower_refines` every returning or panicking `run` of `rld` is, up to
 refinement, a `runL` of the result on the inputs whose memory holds `tab`'s read-only allocation
-(`RoImage` of `RewriteCheck.roSyms`, `[("main.tab", rldAlloc)]`); `rld_pre` gives one such input,
-on which both return 7.
+(`RoImage` of `LowerCheck.roPre`: `rld`'s values are generic memory-typed ops, so the symbols its
+`Addr`s name, `[("main.tab", rldAlloc)]`); `rld_pre` gives one such input, on which both return 7.
 -/
 
 namespace GoFV.Proof.Witness
@@ -48,16 +48,16 @@ def rldAlloc : Alloc := rodataAlloc rldBytes 16 #[]
 /-- A memory holding `main.tab`'s read-only allocation. -/
 def rldMem : Mem := { blocks := #[(.global "main.tab", rldAlloc)] }
 
-/-- The read-only symbols of `rld`: `main.tab` with its allocation. -/
-theorem rld_roSyms :
-    RewriteCheck.roSyms rldPassEnv.tables gldFunc = [("main.tab", rldAlloc)] := by
+/-- The precondition's read-only symbols of `rld`: `main.tab` with its allocation. -/
+theorem rld_roPre :
+    LowerCheck.roPre rldPassEnv.tables gldFunc = [("main.tab", rldAlloc)] := by
   decide +kernel
 
 /-- **The precondition is satisfiable**: `Env.p1` keeps the read-only allocations, and `rldMem`
 holds `main.tab`'s. -/
-theorem rld_pre : RoImage (RewriteCheck.roSyms rldPassEnv.tables gldFunc) Env.p1 rldMem := by
+theorem rld_pre : RoImage (LowerCheck.roPre rldPassEnv.tables gldFunc) Env.p1 rldMem := by
   refine ⟨Env.p1_keepsRo, fun n a h => ?_⟩
-  rw [rld_roSyms, List.mem_singleton, Prod.mk.injEq] at h
+  rw [rld_roPre, List.mem_singleton, Prod.mk.injEq] at h
   obtain ⟨rfl, rfl⟩ := h
   exact ⟨by decide +kernel, by decide +kernel⟩
 
@@ -81,11 +81,11 @@ theorem rld_lower :
         some (.ARM64MOVDconst, 7, #[]) ∧
       (∃ f', GoFV.Proof.Low.Contract gldFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms rldPassEnv.tables gldFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre rldPassEnv.tables gldFunc) env mem)
         out.tables out.func rldPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms rldPassEnv.tables gldFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre rldPassEnv.tables gldFunc) env mem → ∀ fuel,
         (run env rldTabs gldFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env rldTabs gldFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

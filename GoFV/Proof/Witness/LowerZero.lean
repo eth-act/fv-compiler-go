@@ -85,11 +85,11 @@ theorem gzr_lower :
         some (.ARM64LoweredZero, 32, #[3, 1]) ∧
       (∃ f', GoFV.Proof.Low.Contract gzrFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms gzrPassEnv.tables gzrFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre gzrPassEnv.tables gzrFunc) env mem)
         out.tables out.func gzrPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms gzrPassEnv.tables gzrFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre gzrPassEnv.tables gzrFunc) env mem → ∀ fuel,
         (run env gzrTabs gzrFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env gzrTabs gzrFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

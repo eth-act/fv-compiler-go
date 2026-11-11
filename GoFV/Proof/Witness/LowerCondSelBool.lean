@@ -92,11 +92,11 @@ theorem lcb_lower :
         some (.ARM64TSTWconst, 1, #[2]) ∧
       (∃ f', GoFV.Proof.Low.Contract lcbFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms lcbPassEnv.tables lcbFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre lcbPassEnv.tables lcbFunc) env mem)
         out.tables out.func lcbPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms lcbPassEnv.tables lcbFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre lcbPassEnv.tables lcbFunc) env mem → ∀ fuel,
         (run env lcbTabs lcbFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env lcbTabs lcbFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

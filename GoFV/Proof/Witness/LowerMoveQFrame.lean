@@ -127,11 +127,11 @@ theorem lmqf_lower :
       lmqfLoads out.func = lmqfOut ∧
       (∃ f', GoFV.Proof.Low.Contract lmqfFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms lmqfPassEnv.tables lmqfFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre lmqfPassEnv.tables lmqfFunc) env mem)
         out.tables out.func lmqfPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms lmqfPassEnv.tables lmqfFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre lmqfPassEnv.tables lmqfFunc) env mem → ∀ fuel,
         (run env lmqfTabs lmqfFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env lmqfTabs lmqfFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

@@ -74,11 +74,11 @@ theorem asp_lower :
       (out.func.value? 4).map (fun v => (v.op, v.args)) = some (.ARM64STLR, #[3, 3, 1]) ∧
       (∃ f', GoFV.Proof.Low.Contract aspFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms aspPassEnv.tables aspFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre aspPassEnv.tables aspFunc) env mem)
         out.tables out.func aspPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms aspPassEnv.tables aspFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre aspPassEnv.tables aspFunc) env mem → ∀ fuel,
         (run env aldTabs aspFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env aldTabs aspFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

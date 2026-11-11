@@ -194,11 +194,11 @@ theorem nsel_lower :
       (∃ f', GoFV.Proof.Low.Contract nselFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
           GoFV.SSA.Sem.RoImage
-            (GoFV.Opt.RewriteCheck.roSyms (narPassEnv "nsel").tables nselFunc) env mem)
+            (GoFV.Opt.LowerCheck.roPre (narPassEnv "nsel").tables nselFunc) env mem)
         out.tables out.func (narPassEnv "nsel").tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms (narPassEnv "nsel").tables nselFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre (narPassEnv "nsel").tables nselFunc) env mem → ∀ fuel,
         (run env narTabs nselFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env narTabs nselFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
@@ -222,11 +222,11 @@ theorem nchn_lower :
       (∃ f', GoFV.Proof.Low.Contract nchnFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
           GoFV.SSA.Sem.RoImage
-            (GoFV.Opt.RewriteCheck.roSyms (narPassEnv "nchn").tables nchnFunc) env mem)
+            (GoFV.Opt.LowerCheck.roPre (narPassEnv "nchn").tables nchnFunc) env mem)
         out.tables out.func (narPassEnv "nchn").tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms (narPassEnv "nchn").tables nchnFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre (narPassEnv "nchn").tables nchnFunc) env mem → ∀ fuel,
         (run env narTabs nchnFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env narTabs nchnFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
@@ -251,11 +251,11 @@ theorem ntst_lower :
       (∃ f', GoFV.Proof.Low.Contract ntstFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
           GoFV.SSA.Sem.RoImage
-            (GoFV.Opt.RewriteCheck.roSyms (narPassEnv "ntst").tables ntstFunc) env mem)
+            (GoFV.Opt.LowerCheck.roPre (narPassEnv "ntst").tables ntstFunc) env mem)
         out.tables out.func (narPassEnv "ntst").tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms (narPassEnv "ntst").tables ntstFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre (narPassEnv "ntst").tables ntstFunc) env mem → ∀ fuel,
         (run env narTabs ntstFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env narTabs ntstFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
@@ -281,11 +281,11 @@ theorem nand_lower :
       (∃ f', GoFV.Proof.Low.Contract nandFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
           GoFV.SSA.Sem.RoImage
-            (GoFV.Opt.RewriteCheck.roSyms (narPassEnv "nand").tables nandFunc) env mem)
+            (GoFV.Opt.LowerCheck.roPre (narPassEnv "nand").tables nandFunc) env mem)
         out.tables out.func (narPassEnv "nand").tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms (narPassEnv "nand").tables nandFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre (narPassEnv "nand").tables nandFunc) env mem → ∀ fuel,
         (run env narTabs nandFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env narTabs nandFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

@@ -101,11 +101,11 @@ theorem tcl_lower :
       (out.func.value? 6).map (fun v => (v.op, v.args)) = some (.ARM64CALLstatic, #[4, 1]) ∧
       (∃ f', GoFV.Proof.Low.Contract tclFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms tclPassEnv.tables tclFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre tclPassEnv.tables tclFunc) env mem)
         out.tables out.func tclPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms tclPassEnv.tables tclFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre tclPassEnv.tables tclFunc) env mem → ∀ fuel,
         (run env tclTabs tclFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env tclTabs tclFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

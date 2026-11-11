@@ -83,11 +83,11 @@ theorem trc_lower :
       (out.func.value? 6).map (fun v => (v.op, v.args)) = some (.ARM64MOVWreg, #[4]) ∧
       (∃ f', GoFV.Proof.Low.Contract trcFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms trcPassEnv.tables trcFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre trcPassEnv.tables trcFunc) env mem)
         out.tables out.func trcPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms trcPassEnv.tables trcFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre trcPassEnv.tables trcFunc) env mem → ∀ fuel,
         (run env trcTabs trcFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env trcTabs trcFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

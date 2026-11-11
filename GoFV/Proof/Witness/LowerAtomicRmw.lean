@@ -82,11 +82,11 @@ theorem aad_lower :
         some (.ARM64LoweredAtomicAdd64, 0, none, #[3, 4, 1]) ∧
       (∃ f', GoFV.Proof.Low.Contract aadFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms aadPassEnv.tables aadFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre aadPassEnv.tables aadFunc) env mem)
         out.tables out.func aadPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms aadPassEnv.tables aadFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre aadPassEnv.tables aadFunc) env mem → ∀ fuel,
         (run env aldTabs aadFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env aldTabs aadFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

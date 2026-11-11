@@ -95,11 +95,11 @@ theorem cpy_lower :
         some (.ARM64MOVDload, 0, #[2, 1]) ∧
       (∃ f', GoFV.Proof.Low.Contract cpyFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms cpyPassEnv.tables cpyFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre cpyPassEnv.tables cpyFunc) env mem)
         out.tables out.func cpyPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms cpyPassEnv.tables cpyFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre cpyPassEnv.tables cpyFunc) env mem → ∀ fuel,
         (run env cpyTabs cpyFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env cpyTabs cpyFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

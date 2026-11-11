@@ -85,11 +85,11 @@ theorem jtb_lower :
       (out.func.block? 1).map (fun b => (b.kind, b.controls)) = some (.ARM64JUMPTABLE, #[2, 7]) ∧
       (∃ f', GoFV.Proof.Low.Contract jtbFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms jtbPassEnv.tables jtbFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre jtbPassEnv.tables jtbFunc) env mem)
         out.tables out.func jtbPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms jtbPassEnv.tables jtbFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre jtbPassEnv.tables jtbFunc) env mem → ∀ fuel,
         (run env jtbTabs jtbFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env jtbTabs jtbFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

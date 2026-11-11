@@ -82,11 +82,11 @@ theorem nts_lower :
         some (.ARM64SRLconst, 3, #[4]) ∧
       (∃ f', GoFV.Proof.Low.Contract ntsFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms ntsPassEnv.tables ntsFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre ntsPassEnv.tables ntsFunc) env mem)
         out.tables out.func ntsPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms ntsPassEnv.tables ntsFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre ntsPassEnv.tables ntsFunc) env mem → ∀ fuel,
         (run env trcTabs ntsFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env trcTabs ntsFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

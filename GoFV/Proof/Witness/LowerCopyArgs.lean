@@ -107,11 +107,11 @@ theorem cpa_lower :
       (out.func.value? 9).map (fun v => (v.op, v.args)) = some (.ARM64ADD, #[8, 2]) ∧
       (∃ f', GoFV.Proof.Low.Contract cpaFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms cpaPassEnv.tables cpaFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre cpaPassEnv.tables cpaFunc) env mem)
         out.tables out.func cpaPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms cpaPassEnv.tables cpaFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre cpaPassEnv.tables cpaFunc) env mem → ∀ fuel,
         (run env cpaTabs cpaFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env cpaTabs cpaFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
@@ -196,11 +196,11 @@ theorem cpm_lower :
       (out.func.value? 6).map (fun v => (v.op, v.args)) = some (.MakeResult, #[4, 1]) ∧
       (∃ f', GoFV.Proof.Low.Contract cpmFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms cpmPassEnv.tables cpmFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre cpmPassEnv.tables cpmFunc) env mem)
         out.tables out.func cpmPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms cpmPassEnv.tables cpmFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre cpmPassEnv.tables cpmFunc) env mem → ∀ fuel,
         (run env cpmTabs cpmFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env cpmTabs cpmFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

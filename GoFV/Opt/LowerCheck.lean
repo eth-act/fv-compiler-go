@@ -49,8 +49,9 @@ input `f`, and the output `g` must have the replayed definitions. The difference
   then folds as an offset (`stFold`) and a load replays as the folded load (`ldOffFold`);
 * a rule event at an integer load of a read-only symbol (`ARM64.rules:1811-1817`, `roLoadRule`,
   which `ruleOKL` rejects) is replayed as the `MOVDconst` it builds when the load from the
-  symbol's allocation alone gives its word (`roLoadDef`); the precondition pins the symbols
-  `f`'s `Addr`s name (`RoImage`);
+  symbol's allocation alone gives its word (`roLoadDef`, only on an `f` whose values are generic
+  memory-typed ops, `memTyAll`); the precondition pins the symbols `f`'s `Addr`s name on such an
+  `f` (`RoImage` of `roPre`);
 * a rule event folding a constant operand into a lowered bounds panic (`ARM64.rules:513-516`) is
   replayed as no change (`pbFoldEv`): the output's `LoweredPanicBounds{RC,CR,CC}` must keep the
   replayed `LoweredPanicBoundsRR`'s other arguments (`pbFinal`), and its aux constants are the
@@ -849,6 +850,12 @@ Phase 1's `run` and every memory its run holds keeps the read-only symbols of it
 def memTyAll (tabs : Tables) (f : Func) : Bool :=
   f.valueTab.all fun o => o.all fun v => v.op.generic && memTyV tabs v
 
+/-- The read-only symbols `GoFV.Proof.Low.lower_refines`'s precondition pins for `f`: those its
+`Addr`s name (`RewriteCheck.roSyms`) when `roLoadDef` may replay a load of `f` (`memTyAll`), else
+none. -/
+def roPre (tabs : Tables) (f : Func) : List (String × Sem.Alloc) :=
+  if memTyAll tabs f then roSyms tabs f else []
+
 /-- The 64-bit register word an `n`-byte integer load (`signed`, `Arm64.loadN`) at offset `o` of
 the global `name` reads from its allocation `a` alone, at `Addrs.fixed` (if the allocation holds
 no frame pointer, so that every address assignment reads it alike, `Mem.load_agree`): `some none`
@@ -1530,15 +1537,15 @@ def tabsAgreeL (tabs tabs' : Tables) (f : Func) : Bool :=
     Sem.Ty.beq (Sem.valueTy (Sem.typeShapesL tabs') o) (Sem.valueTy (Sem.typeShapesL tabs) o)
 
 /-- `applyRewrite` with the lowering table `t` and its log; the result if the tables agree for
-`f` (`tabsAgreeL`) and give it the same read-only symbols (`RewriteCheck.roSyms`, which the
-precondition of `GoFV.Proof.Low.lower_refines` pins in the input's tables), both functions pass
-`check` and `validateL` accepts it, else `none`. -/
+`f` (`tabsAgreeL`) and give it the same read-only symbols (`roPre`, which the precondition of
+`GoFV.Proof.Low.lower_refines` pins in the input's tables), both functions pass `check` and
+`validateL` accepts it, else `none`. -/
 def checkedRunL (t : Interp.Table) (env : PassEnv) (f : Func) : Except String (Option PassOut) := do
   let (out, _, log) ← GoFV.Rules.rewriteRun t true true env f
   let ce : CheckEnv := { tabs := out.tables, typs := env.typs }
   return if tabsAgreeL env.tables out.tables f && checkOK { tabs := env.tables, typs := env.typs } f &&
       checkOK ce out.func && validateL out.tables t f out.func log &&
-      decide (roSyms out.tables f = roSyms env.tables f) then some out else none
+      decide (roPre out.tables f = roPre env.tables f) then some out else none
 
 /-- **The checked lowering pass** with table `t`: the validated result, else the input. -/
 def checkedLowerWith (t : Interp.Table) : Pass := fun env f => do

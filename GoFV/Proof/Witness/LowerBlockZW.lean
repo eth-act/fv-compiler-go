@@ -83,11 +83,11 @@ theorem nzw_lower :
       (out.func.block? 1).map (fun b => (b.kind, b.controls)) = some (.ARM64NZW, #[2]) ∧
       (∃ f', GoFV.Proof.Low.Contract nzwFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms nzwPassEnv.tables nzwFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre nzwPassEnv.tables nzwFunc) env mem)
         out.tables out.func nzwPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms nzwPassEnv.tables nzwFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre nzwPassEnv.tables nzwFunc) env mem → ∀ fuel,
         (run env cpaTabs nzwFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env cpaTabs nzwFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

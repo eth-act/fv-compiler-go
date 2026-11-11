@@ -95,11 +95,11 @@ theorem lcs_lower :
       (out.func.value? 8).map (fun v => (v.op, v.args)) = some (.ARM64CMP, #[3, 2]) ∧
       (∃ f', GoFV.Proof.Low.Contract lcsFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms lcsPassEnv.tables lcsFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre lcsPassEnv.tables lcsFunc) env mem)
         out.tables out.func lcsPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms lcsPassEnv.tables lcsFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre lcsPassEnv.tables lcsFunc) env mem → ∀ fuel,
         (run env lcsTabs lcsFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env lcsTabs lcsFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

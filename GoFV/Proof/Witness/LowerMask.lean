@@ -71,11 +71,11 @@ theorem msk_lower :
       (∃ f', GoFV.Proof.Low.Contract mskFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
           GoFV.SSA.Sem.RoImage
-            (GoFV.Opt.RewriteCheck.roSyms (narPassEnv "msk").tables mskFunc) env mem)
+            (GoFV.Opt.LowerCheck.roPre (narPassEnv "msk").tables mskFunc) env mem)
         out.tables out.func (narPassEnv "msk").tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms (narPassEnv "msk").tables mskFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre (narPassEnv "msk").tables mskFunc) env mem → ∀ fuel,
         (run env narTabs mskFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env narTabs mskFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

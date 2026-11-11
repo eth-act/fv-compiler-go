@@ -89,11 +89,11 @@ theorem fpa_lower :
         some (.ARM64MOVDstore, 3, some 7) ∧
       (∃ f', GoFV.Proof.Low.Contract fpaFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms fpaPassEnv.tables fpaFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre fpaPassEnv.tables fpaFunc) env mem)
         out.tables out.func fpaPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms fpaPassEnv.tables fpaFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre fpaPassEnv.tables fpaFunc) env mem → ∀ fuel,
         (run env ladTabs fpaFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env ladTabs fpaFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

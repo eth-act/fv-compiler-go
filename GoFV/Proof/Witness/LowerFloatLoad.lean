@@ -71,11 +71,11 @@ theorem fld_lower :
       fldShow out.func = some (.ARM64FMOVDload, 0, some 4, #[2, 1]) ∧
       (∃ f', GoFV.Proof.Low.Contract fldFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms fldPassEnv.tables fldFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre fldPassEnv.tables fldFunc) env mem)
         out.tables out.func fldPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms fldPassEnv.tables fldFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre fldPassEnv.tables fldFunc) env mem → ∀ fuel,
         (run env fldTabs fldFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env fldTabs fldFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

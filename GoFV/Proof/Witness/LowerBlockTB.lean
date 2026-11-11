@@ -81,11 +81,11 @@ theorem tbn_lower :
         some (.ARM64TBNZ, 63, #[2]) ∧
       (∃ f', GoFV.Proof.Low.Contract tbnFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms tbnPassEnv.tables tbnFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre tbnPassEnv.tables tbnFunc) env mem)
         out.tables out.func tbnPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms tbnPassEnv.tables tbnFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre tbnPassEnv.tables tbnFunc) env mem → ∀ fuel,
         (run env lcsTabs tbnFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env lcsTabs tbnFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

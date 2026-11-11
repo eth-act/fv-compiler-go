@@ -72,11 +72,11 @@ theorem sto_lower :
         some (.ARM64MOVDstore, 8, #[2, 4, 1]) ∧
       (∃ f', GoFV.Proof.Low.Contract stoFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms ldsPassEnv.tables stoFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre ldsPassEnv.tables stoFunc) env mem)
         out.tables out.func ldsPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms ldsPassEnv.tables stoFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre ldsPassEnv.tables stoFunc) env mem → ∀ fuel,
         (run env ldsTabs stoFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env ldsTabs stoFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

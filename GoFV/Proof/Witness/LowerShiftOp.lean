@@ -80,11 +80,11 @@ theorem sho_lower :
         some (.ARM64ADDshiftLL, 3, #[2, 3]) ∧
       (∃ f', GoFV.Proof.Low.Contract shoFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms shoPassEnv.tables shoFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre shoPassEnv.tables shoFunc) env mem)
         out.tables out.func shoPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms shoPassEnv.tables shoFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre shoPassEnv.tables shoFunc) env mem → ∀ fuel,
         (run env laTabs shoFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env laTabs shoFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

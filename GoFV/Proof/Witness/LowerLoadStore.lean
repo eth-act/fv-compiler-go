@@ -107,11 +107,11 @@ theorem lds_lower :
       (out.func.value? 5).map (·.op) = some .ARM64MOVDload ∧
       (∃ f', GoFV.Proof.Low.Contract ldsFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms ldsPassEnv.tables ldsFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre ldsPassEnv.tables ldsFunc) env mem)
         out.tables out.func ldsPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms ldsPassEnv.tables ldsFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre ldsPassEnv.tables ldsFunc) env mem → ∀ fuel,
         (run env ldsTabs ldsFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env ldsTabs ldsFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

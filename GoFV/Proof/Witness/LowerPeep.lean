@@ -134,11 +134,11 @@ theorem pkf_lower :
       (∃ f', GoFV.Proof.Low.Contract pkfFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
           GoFV.SSA.Sem.RoImage
-            (GoFV.Opt.RewriteCheck.roSyms (narPassEnv "pkf").tables pkfFunc) env mem)
+            (GoFV.Opt.LowerCheck.roPre (narPassEnv "pkf").tables pkfFunc) env mem)
         out.tables out.func (narPassEnv "pkf").tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms (narPassEnv "pkf").tables pkfFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre (narPassEnv "pkf").tables pkfFunc) env mem → ∀ fuel,
         (run env narTabs pkfFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env narTabs pkfFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
@@ -164,11 +164,11 @@ theorem tbx_lower :
       (∃ f', GoFV.Proof.Low.Contract tbxFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
           GoFV.SSA.Sem.RoImage
-            (GoFV.Opt.RewriteCheck.roSyms (narPassEnv "tbx").tables tbxFunc) env mem)
+            (GoFV.Opt.LowerCheck.roPre (narPassEnv "tbx").tables tbxFunc) env mem)
         out.tables out.func (narPassEnv "tbx").tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms (narPassEnv "tbx").tables tbxFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre (narPassEnv "tbx").tables tbxFunc) env mem → ∀ fuel,
         (run env narTabs tbxFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env narTabs tbxFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

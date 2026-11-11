@@ -106,11 +106,11 @@ theorem ldx_lower :
       (out.func.value? 5).map (fun v => (v.op, v.args)) = some (.ARM64MOVDloadidx, #[2, 3, 1]) ∧
       (∃ f', GoFV.Proof.Low.Contract ldxFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms ldxPassEnv.tables ldxFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre ldxPassEnv.tables ldxFunc) env mem)
         out.tables out.func ldxPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms ldxPassEnv.tables ldxFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre ldxPassEnv.tables ldxFunc) env mem → ∀ fuel,
         (run env ldxTabs ldxFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env ldxTabs ldxFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

@@ -82,11 +82,11 @@ theorem inv_lower :
       (out.func.value? 8).map (fun v => (v.op, v.args)) = some (.ARM64CMP, #[3, 2]) ∧
       (∃ f', GoFV.Proof.Low.Contract invFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms invPassEnv.tables invFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre invPassEnv.tables invFunc) env mem)
         out.tables out.func invPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms invPassEnv.tables invFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre invPassEnv.tables invFunc) env mem → ∀ fuel,
         (run env lcsTabs invFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env lcsTabs invFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

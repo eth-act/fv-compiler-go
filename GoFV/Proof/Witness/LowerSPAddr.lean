@@ -88,11 +88,11 @@ theorem osp_lower :
       (out.func.value? 6).map (fun v => (v.op, v.args[1]?)) = some (.ARM64MOVDstore, some 5) ∧
       (∃ f', GoFV.Proof.Low.Contract ospFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms ospPassEnv.tables ospFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre ospPassEnv.tables ospFunc) env mem)
         out.tables out.func ospPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms ospPassEnv.tables ospFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre ospPassEnv.tables ospFunc) env mem → ∀ fuel,
         (run env ospTabs ospFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env ospTabs ospFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by

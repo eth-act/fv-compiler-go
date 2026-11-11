@@ -18,9 +18,9 @@ not panic, `enter_ok`, then the terminators, `termStepRefL_regs`; a panicking on
 The source runs in `f`'s mode (`Func.lowered`), the target in `g`'s, which is lowered; `f` is
 lowered or has the same shapes in both modes (`shapesOK`), and `f`'s atoms are generic ops and its
 blocks generic (true of every function `lower` gets, `Func.generic_of_lowered`). The precondition
-`RoImage` of the read-only symbols `f`'s `Addr`s name gives them to every memory the source holds
-when its values are generic memory-typed ops (`RoQL`, `BRel.ro`): the validator's read-only loads
-(`LowerCheck.roLoadDef`) read them.
+`RoImage` of the read-only symbols `f`'s `Addr`s name, when its values are generic memory-typed ops
+(`LowerCheck.roPre`), gives them to every memory the source then holds (`RoQL`, `BRel.ro`): the
+validator's read-only loads (`LowerCheck.roLoadDef`, only on such an `f`) read them.
 -/
 
 namespace GoFV.Proof.Low.Sim
@@ -103,10 +103,10 @@ theorem block_simL {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tab
     | stuck msg => trivial
 
 /-- The entry frames are related; the source's has the read-only symbols of `f` if the memory with
-the global image has them. -/
+the global image has those of the precondition (`roPre`). -/
 theorem entry_relL {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')
     (env : Env) (args : List Val) (mem : Mem)
-    (hro : RoMem (GoFV.Opt.RewriteCheck.roSyms tabs f) (addGlobals env mem)) :
+    (hro : RoMem (GoFV.Opt.LowerCheck.roPre tabs f) (addGlobals env mem)) :
     BRel tabs f g (entryFrame env (Ctx.makeL tabs f) args mem)
       (entryFrame env (Ctx.makeL tabs g) args mem) f.entry 0 := by
   have hT : entryFrame env (Ctx.makeL tabs g) args mem =
@@ -180,11 +180,11 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Proof GoFV.Proof.Dom GoFV.Proof
 
 /-- **The lowered atom simulation.** `g` (lowered, `runL` in lowered mode) refines `f` (`runL`
 in `f`'s mode) under monotone contracts and the read-only symbols of `f` in the memory with the
-global image (`RoImage`), when both pass `check`, their atoms correspond (`atomsOKL`), the atoms'
-arguments and the terminators refine as terms (`AtomArgsRefL`, `TermStepRefL`), `f` is lowered or
-has the same shapes in both modes, and `f`'s atoms are generic ops and its blocks generic (`hfa`,
-`hfb`; every function with `f.lowered = false` has them, `Func.generic_of_lowered`,
-`Func.notArm64_of_lowered`). -/
+global image (`RoImage` of `roPre`), when both pass `check`, their atoms correspond (`atomsOKL`),
+the atoms' arguments and the terminators refine as terms (`AtomArgsRefL`, `TermStepRefL`), `f` is
+lowered or has the same shapes in both modes, and `f`'s atoms are generic ops and its blocks
+generic (`hfa`, `hfb`; every function with `f.lowered = false` has them,
+`Func.generic_of_lowered`, `Func.notArm64_of_lowered`). -/
 theorem atomSimL_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
     (hA : GoFV.Opt.LowerCheck.atomsOKL tabs f g = true)
@@ -194,7 +194,7 @@ theorem atomSimL_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     (hfa : ∀ x u, f.value? x = some u → termVL tabs u = false → u.op.generic = true)
     (hfb : ∀ id b, f.block? id = some b → b.kind.isArm64 = false)
     (h1 : AtomArgsRefL tabs f g) (h2 : TermStepRefL tabs f g) :
-    RefinesLFrom (fun env _ mem => env.Mono ∧ RoImage (GoFV.Opt.RewriteCheck.roSyms tabs f) env mem)
+    RefinesLFrom (fun env _ mem => env.Mono ∧ RoImage (GoFV.Opt.LowerCheck.roPre tabs f) env mem)
       tabs g tabs f := by
   have H : Sim.Hyp tabs f g ce ce' := ⟨check_wf hf, check_wf hg,
     certOK_of_check (check_domCert hf), certOK_of_check (check_domCert hg), atomsOKL_spec hA, h1,

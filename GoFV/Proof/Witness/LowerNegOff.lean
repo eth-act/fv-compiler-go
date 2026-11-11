@@ -73,11 +73,11 @@ theorem neg_lower :
         some (.ARM64MOVDload, 0, #[2, 1]) ∧
       (∃ f', GoFV.Proof.Low.Contract negFunc f' ∧
         RefinesLFrom (fun env _ mem => env.Mono ∧
-          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms negPassEnv.tables negFunc) env mem)
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre negPassEnv.tables negFunc) env mem)
         out.tables out.func negPassEnv.tables f') ∧
       ∀ env, env.Mono → ∀ args mem,
         GoFV.SSA.Sem.RoImage
-          (GoFV.Opt.RewriteCheck.roSyms negPassEnv.tables negFunc) env mem → ∀ fuel,
+          (GoFV.Opt.LowerCheck.roPre negPassEnv.tables negFunc) env mem → ∀ fuel,
         (run env cpyTabs negFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env cpyTabs negFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
