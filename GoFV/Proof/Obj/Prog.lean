@@ -754,14 +754,14 @@ private theorem fam_neg {op : String} {sf : Bool}
   exact .inl ⟨⟨hR.x, hR.xlt, hR.sp, by rw [hfl]; rfl, hR.v, hR.vlt, hR.loads, hR.stores⟩, hpc⟩
 
 private theorem ubfx_pre {name op : String} {sf : Bool}
-    (hb : ProgOp.baseOf name ["UBFX", "SBFX", "UBFIZ"] = some (op, sf)) :
+    (hb : ProgOp.baseOf name ["UBFX", "SBFX", "UBFIZ", "SBFIZ"] = some (op, sf)) :
     ProgOp.baseOf name ProgOp.binNames = none ∧
       ProgOp.baseOf name ["NEG", "NEGS", "MVN", "NGC", "NGCS"] = none ∧
       ProgOp.baseOf name ["CLZ", "RBIT", "REV", "REV16", "REV32"] = none ∧
       ProgOp.baseOf name ["MADD", "MSUB"] = none ∧
       ProgOp.baseOf name ["UBFX", "SBFX", "UBFIZ", "SBFIZ", "BFI", "BFXIL"] = some (op, sf) := by
   obtain ⟨hop, rfl⟩ := baseOf_some hb
-  have key : ∀ op ∈ ["UBFX", "SBFX", "UBFIZ"], ∀ sf : Bool,
+  have key : ∀ op ∈ ["UBFX", "SBFX", "UBFIZ", "SBFIZ"], ∀ sf : Bool,
       ProgOp.baseOf (if sf then op else op ++ "W") ProgOp.binNames = none ∧
       ProgOp.baseOf (if sf then op else op ++ "W") ["NEG", "NEGS", "MVN", "NGC", "NGCS"] = none ∧
       ProgOp.baseOf (if sf then op else op ++ "W") ["CLZ", "RBIT", "REV", "REV16", "REV32"] = none ∧
@@ -770,13 +770,13 @@ private theorem ubfx_pre {name op : String} {sf : Bool}
         some (op, sf) := by decide
   exact key op hop sf
 
-/-- `UBFX`/`SBFX`/`UBFIZ` (and `W`). -/
+/-- `UBFX`/`SBFX`/`UBFIZ`/`SBFIZ` (and `W`). -/
 private theorem fam_ubfx {op : String} {sf : Bool}
     (hb1 : ProgOp.baseOf p.as.name ["LSL", "LSR", "ASR"] = none)
     (hb2 : ProgOp.baseOf p.as.name ["ADD", "SUB", "AND", "ORR", "EOR", "ADDS", "SUBS", "ANDS"] = none)
     (hb3 : ProgOp.baseOf p.as.name ["CMP", "CMN", "TST"] = none)
     (hb4 : ProgOp.baseOf p.as.name ["NEG"] = none)
-    (hb : ProgOp.baseOf p.as.name ["UBFX", "SBFX", "UBFIZ"] = some (op, sf))
+    (hb : ProgOp.baseOf p.as.name ["UBFX", "SBFX", "UBFIZ", "SBFIZ"] = some (op, sf))
     (h : progSymCore az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) :
     Out L p s e σ pc := by
   obtain ⟨hop, -⟩ := baseOf_some hb
@@ -802,7 +802,7 @@ private theorem fam_ubfx {op : String} {sf : Bool}
   have hw' : 0 < a.offset.toNat ∧ p.from_.offset.toNat + a.offset.toNat ≤ wOf sf := by
     simp only [wOf]; omega
   simp only [List.mem_cons, List.not_mem_nil, or_false] at hop
-  rcases hop with rfl | rfl | rfl
+  rcases hop with rfl | rfl | rfl | rfl
   · simp (config := { decide := true }) only at he hσ1
     obtain ⟨hR, -, -, -, hpc⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he (by
       rw [Ex.eval_mkBfm]; exact ubfx_bfm sf _ _ hw'.1 hw'.2 _)
@@ -814,6 +814,10 @@ private theorem fam_ubfx {op : String} {sf : Bool}
   · simp (config := { decide := true }) only at he hσ1
     obtain ⟨hR, -, -, -, hpc⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he (by
       rw [Ex.eval_mkBfm]; exact ubfiz_bfm sf _ _ hw'.1 hw'.2 _)
+    exact .inl ⟨hR, hpc⟩
+  · simp (config := { decide := true }) only at he hσ1
+    obtain ⟨hR, -, -, -, hpc⟩ := wP_rel (erel_init ⟨s, L.sym⟩) hσ1 he (by
+      rw [Ex.eval_mkBfm]; exact sbfiz_bfm sf _ _ hw'.1 hw'.2 _)
     exact .inl ⟨hR, hpc⟩
 
 /-- The opcode names none of `progEffect`'s branches before the `movMem` one takes. -/
@@ -1079,7 +1083,7 @@ private theorem fam_mov {n : Nat} {sg fp : Bool}
     (hb2 : ProgOp.baseOf p.as.name ["ADD", "SUB", "AND", "ORR", "EOR", "ADDS", "SUBS", "ANDS"] = none)
     (hb3 : ProgOp.baseOf p.as.name ["CMP", "CMN", "TST"] = none)
     (hb4 : ProgOp.baseOf p.as.name ["NEG"] = none)
-    (hb5 : ProgOp.baseOf p.as.name ["UBFX", "SBFX", "UBFIZ"] = none)
+    (hb5 : ProgOp.baseOf p.as.name ["UBFX", "SBFX", "UBFIZ", "SBFIZ"] = none)
     (hm : ProgOp.movMem p.as.name = some (n, sg, fp))
     (h : progSymCore az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e)
     (haz : L.autosize = az) (hez : L.extrasize = ez) :
@@ -1193,7 +1197,7 @@ private theorem fam_pair {ld : Bool} {n : Nat} {sg fp : Bool}
     (hb2 : ProgOp.baseOf p.as.name ["ADD", "SUB", "AND", "ORR", "EOR", "ADDS", "SUBS", "ANDS"] = none)
     (hb3 : ProgOp.baseOf p.as.name ["CMP", "CMN", "TST"] = none)
     (hb4 : ProgOp.baseOf p.as.name ["NEG"] = none)
-    (hb5 : ProgOp.baseOf p.as.name ["UBFX", "SBFX", "UBFIZ"] = none)
+    (hb5 : ProgOp.baseOf p.as.name ["UBFX", "SBFX", "UBFIZ", "SBFIZ"] = none)
     (hm0 : ProgOp.movMem p.as.name = none)
     (hp : ProgOp.pairOp p.as.name = some (ld, n, sg, fp))
     (h : progSymCore az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e)
@@ -1287,7 +1291,7 @@ private theorem fam_bcond {k : Nat}
     (hb2 : ProgOp.baseOf p.as.name ["ADD", "SUB", "AND", "ORR", "EOR", "ADDS", "SUBS", "ANDS"] = none)
     (hb3 : ProgOp.baseOf p.as.name ["CMP", "CMN", "TST"] = none)
     (hb4 : ProgOp.baseOf p.as.name ["NEG"] = none)
-    (hb5 : ProgOp.baseOf p.as.name ["UBFX", "SBFX", "UBFIZ"] = none)
+    (hb5 : ProgOp.baseOf p.as.name ["UBFX", "SBFX", "UBFIZ", "SBFIZ"] = none)
     (hm0 : ProgOp.movMem p.as.name = none) (hp0 : ProgOp.pairOp p.as.name = none)
     (hc : ProgOp.bcond p.as.name = some k)
     (h : progSymCore az ez p = .ok (σ, pc)) (he : progEffect ⟨L, s, p⟩ = .ok e) :
@@ -2333,7 +2337,7 @@ private theorem fam_rest
     (hb2 : ProgOp.baseOf p.as.name ["ADD", "SUB", "AND", "ORR", "EOR", "ADDS", "SUBS", "ANDS"] = none)
     (hb3 : ProgOp.baseOf p.as.name ["CMP", "CMN", "TST"] = none)
     (hb4 : ProgOp.baseOf p.as.name ["NEG"] = none)
-    (hb5 : ProgOp.baseOf p.as.name ["UBFX", "SBFX", "UBFIZ"] = none)
+    (hb5 : ProgOp.baseOf p.as.name ["UBFX", "SBFX", "UBFIZ", "SBFIZ"] = none)
     (hm0 : ProgOp.movMem p.as.name = none) (hp0 : ProgOp.pairOp p.as.name = none)
     (hc0 : ProgOp.bcond p.as.name = none)
     (hmul : ProgOp.baseOf p.as.name ["MUL", "MNEG", "MADD", "MSUB", "UMULH", "SMULH"] = none)
@@ -2509,7 +2513,7 @@ private theorem dispatch {az ez : Int} {p : Prog} {σ : Sym} {pc : PCtl} {L : Li
   cases hb4 : ProgOp.baseOf p.as.name ["NEG"] with
   | some r => obtain ⟨op, sf⟩ := r; exact fam_neg hb1 hb2 hb3 hb4 h he
   | none =>
-  cases hb5 : ProgOp.baseOf p.as.name ["UBFX", "SBFX", "UBFIZ"] with
+  cases hb5 : ProgOp.baseOf p.as.name ["UBFX", "SBFX", "UBFIZ", "SBFIZ"] with
   | some r => obtain ⟨op, sf⟩ := r; exact fam_ubfx hb1 hb2 hb3 hb4 hb5 h he
   | none =>
   cases hm : ProgOp.movMem p.as.name with

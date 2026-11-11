@@ -14,7 +14,7 @@ them as; here each equals what `progEffect` computes (`dp2Op` of a constant amou
 namespace GoFV.Proof.Obj
 
 open GoFV.Arm64 GoFV.Asm GoFV.Arm64.ProgOp
-open GoFV.SSA.Sem.Arm64 (sext ubfx sbfx ubfiz)
+open GoFV.SSA.Sem.Arm64 (sext ubfx sbfx ubfiz sbfiz)
 
 /-- The datasize in bits. -/
 abbrev wOf (sf : Bool) : Nat := if sf then 64 else 32
@@ -361,6 +361,39 @@ theorem ubfiz_bfm (sf : Bool) (lsb width : Nat) (hw : 0 < width) (hb : lsb + wid
       BitVec.getLsbD_shiftLeft, BitVec.getLsbD_ofNat, Nat.testBit_two_pow_sub_one]
     by_cases h1 : lsb ≤ i
     · by_cases h2 : i < lsb + width
+      · rw [show (i + (64 - lsb) % 64) % 64 = i - lsb by omega]; bfT_simp
+      · bfT_simp
+    · bfT_simp
+
+theorem sbfiz_bfm (sf : Bool) (lsb width : Nat) (hw : 0 < width) (hb : lsb + width ≤ wOf sf)
+    (x : BitVec 64) :
+    trunc sf (sbfiz (Int64.ofNat (lsb * 256 + width)) x) =
+      bitfieldMove sf 0 (BitVec.ofNat 6 ((wOf sf - lsb) % wOf sf)) (BitVec.ofNat 6 (width - 1)) 0 x := by
+  apply BitVec.eq_of_getLsbD_eq
+  intro i hi
+  cases sf
+  · simp only [wOf, Bool.false_eq_true, ↓reduceIte] at hb ⊢
+    rw [bfT_bit32 0 (by decide) _ _ ((32 - lsb) % 32) (width - 1)
+      (by simp only [BitVec.toNat_ofNat]; omega) (by simp only [BitVec.toNat_ofNat]; omega)
+      (by omega) (by omega)]
+    simp only [trunc, Bool.false_eq_true, ↓reduceIte, sbfiz, bfT_bf lsb width (by omega) (by omega),
+      BitVec.getLsbD_setWidth, BitVec.getLsbD_shiftLeft]
+    by_cases hi32 : i < 32
+    · by_cases h1 : lsb ≤ i
+      · rw [bfT_sext_bit width ⟨hw, by omega⟩ _ (i - lsb) (by omega)]
+        by_cases h2 : i < lsb + width
+        · rw [show (i + (32 - lsb) % 32) % 32 = i - lsb by omega]; bfT_simp
+        · bfT_simp
+      · bfT_simp
+    · bfT_simp
+  · simp only [wOf, ↓reduceIte] at hb ⊢
+    rw [bfT_bit64 0 (by decide) _ _ ((64 - lsb) % 64) (width - 1)
+      (by simp only [BitVec.toNat_ofNat]; omega) (by simp only [BitVec.toNat_ofNat]; omega)]
+    simp only [trunc, ↓reduceIte, sbfiz, bfT_bf lsb width (by omega) (by omega),
+      BitVec.getLsbD_shiftLeft]
+    by_cases h1 : lsb ≤ i
+    · rw [bfT_sext_bit width ⟨hw, by omega⟩ _ (i - lsb) (by omega)]
+      by_cases h2 : i < lsb + width
       · rw [show (i + (64 - lsb) % 64) % 64 = i - lsb by omega]; bfT_simp
       · bfT_simp
     · bfT_simp
