@@ -1,4 +1,5 @@
 import GoFV.Proof.Gen.G66a
+import GoFV.Proof.Gen.G66b
 
 variable [GoFV.SSA.Sem.Addrs]
 
@@ -9,7 +10,9 @@ variable [GoFV.SSA.Sem.Addrs]
 `VK66.nreload`: `storeByType`/`loadByType` of an integer or boolean of 1, 2 or 4 bytes), the
 `float32` ones (`VK66.fspill`, `VK66.freload`: `FMOVS`) and the incoming stack arguments of any
 class (`VK66.narg`). A value of G65 is `vk65_step`'s; the new ones are `g66_nspill`,
-`g66_nreload`, `g66_fspill`, `g66_freload` (`G66a.lean`) and G62's `g62_arg`. The theorems are G65's
+`g66_nreload`, `g66_fspill`, `g66_freload` (`G66a.lean`) and G62's `g62_arg`; slice G66b's elided
+extensions are `g66b_elideSame` and `g66b_elideMov` (`G66b.lean`), read off G35's table before the
+value (`elideOK66b`), which holds a narrow reload's entry (`reload_uokl`). The theorems are G65's
 over `checkG66`, at either mode `osp`, with G65's premises: no new one.
 -/
 
@@ -19,18 +22,23 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Gen.Check GoFV.Arm64 GoFV.Asm GoFV.Asm.ARM64
 
 /-! ## One value -/
 
-/-- G35's upper-bit table across a spill or reload that writes at most its `X` register home
-(`XW`): the entries of the other registers. -/
+/-- G35's upper-bit table across a spill, which writes no `X` register: the entries of the other
+registers. -/
 theorem uokl_xw66 {lc : LocCtx} {v : Value} {m m' : MState} {L : List (Nat × Nat × Bool)}
-    (hop : v.op = .StoreReg ∨ v.op = .LoadReg) (hx : XW lc v m m') (hL : UOKL m L) :
+    (hop : v.op = .StoreReg) (hx : XW lc v m m') (hL : UOKL m L) :
     UOKL m' (uStep35 lc L v) := by
-  have hl : loadOp? v.op = none := by rcases hop with h | h <;> rw [h] <;> rfl
-  have hp : pairOp35 lc v = false := by rcases hop with h | h <;> simp [pairOp35, h]
-  have hk : keep34 v = true := by
-    rcases hop with h | h <;> simp [keep34, keep31, keepOp31, keepOp34, h]
-  rw [uStep35_other (ldEntry35_none hl) hp (by rcases hop with h | h <;> rw [h] <;> nofun),
+  have hl : loadOp? v.op = none := by rw [hop]; rfl
+  have hp : pairOp35 lc v = false := by simp [pairOp35, hop]
+  have hk : keep34 v = true := by simp [keep34, keep31, keepOp31, keepOp34, hop]
+  rw [uStep35_other (ldEntry35_none hl (by rw [hop]; nofun)) hp (by rw [hop]; nofun),
     uStep34_keep hk]
   exact uokl_keep hL hx
+
+/-- A Go register homed in an `F` register (`fobjOf?`) has no `X` register. -/
+theorem objX?_of_fobj {r : Nat} {o : Int} (h : fobjOf? r = some o) : objX? r = none := by
+  simp only [fobjOf?, Option.map_eq_some_iff] at h
+  obtain ⟨k, hk, -⟩ := h
+  exact objX?_high (objV?_lt hk)
 
 /-- One value of G66's kinds: `vk65_step`'s statement. -/
 theorem vk66_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat → BitVec 64}
@@ -48,6 +56,8 @@ theorem vk66_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     (hmem : ∀ x, (v.op = .ARM64MOVDnop ∨ v.op = .ARM64MOVDreg) → v.args[0]? = some x →
       ∃ r c, regHome? lc x = some r ∧ cls (lc.ty x) = some c ∧
         (r, c, lc.signOf lc.ctx.f.valueTab.size x) ∈ L)
+    (hext : ∀ w sg x r, elide66b lc v = some (w, sg) → v.args[0]? = some x →
+      regHome? lc x = some r → (r, w, sg) ∈ L)
     (hpre : G54Pre lc s v) (hro : RoPre56 g s) (h48 : take48 lc v = true → osp = true)
     (hsp : osp = true → SPInv E s ∧ E.outSP = true)
     (hcall : CallOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
@@ -74,29 +84,47 @@ theorem vk66_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     obtain ⟨m', h1, h2, h3, h4, h5⟩ := g66_nspill (H := H) F hF hlcE hcf hslot hextra hm
       hinv.core hinv.slots hR (knext_kStep fun _ => (hs_slot hh).noRegs) hj hj' hop hn hh hso hsz
       hts hao hcv hvs htemp hs
-    exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩, uokl_xw66 (.inl hop) (.inl h5) hL⟩
-  | nreload htemp hop hn hsz ha hah hso hta hca hro =>
-    obtain ⟨r, hvh, -, -, -⟩ := resObj_spec hro
-    obtain ⟨m', h1, h2, h3, h4, h5, -⟩ := g66_nreload (H := H) F hF hlcE hcf hslot hm
+    exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩, uokl_xw66 hop (.inl h5) hL⟩
+  | @nreload a k nc off rd n c htemp hop hn hsz ha hah hso hta hca hro =>
+    obtain ⟨r, hvh, -, -, hcv⟩ := resObj_spec hro
+    obtain ⟨m', h1, h2, h3, h4, -, kd, Y, hrd, hx⟩ := g66_nreload (H := H) F hF hlcE hcf hslot hm
       hinv.core hinv.slots (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hn hsz ha hah hso
       hta hca hro hvs htemp hs
-    exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩, uokl_xw66 (.inr hop) h5 hL⟩
+    have hnc : 8 * n = c ∨ c = 1 :=
+      (cls_size (hca.trans hcv)).imp (fun h => by rw [h, hta]) And.left
+    exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩,
+      reload_uokl hop hro hrd (by rcases narrowBytes_spec hn with h | h | h <;> omega) hnc hx hL⟩
   | fspill htemp hop hh hso hsz hft hcv hao =>
     obtain ⟨m', h1, h2, h3, h4, h5⟩ := g66_fspill (H := H) F hF hlcE hcf hslot hextra hm
       hinv.core hinv.slots hR (knext_kStep fun _ => (hs_slot hh).noRegs) hj hj' hop hh hso hsz hft
       hcv hao hvs htemp hs
-    exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩, uokl_f63 (.inl hop) h5 hL⟩
+    exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩,
+      uokl_f63 (.inl hop) (fun h => by rw [hop] at h; cases h) h5 hL⟩
   | freload htemp hop hsz ha hah hso hca hro =>
-    obtain ⟨r, hvh, -, -, -⟩ := fresObj_spec hro
+    obtain ⟨r, hvh, hfo, -, -⟩ := fresObj_spec hro
     obtain ⟨m', h1, h2, h3, h4, h5⟩ := g66_freload (H := H) F hF hlcE hcf hslot hm
       hinv.core hinv.slots (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hop hsz ha hah hso hca
       hro hvs htemp hs
-    exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩, uokl_f63 (.inr hop) h5 hL⟩
+    exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩,
+      uokl_f63 (.inr hop) (fun _ r' hr' => by
+        rw [regHome?_eq.2 hvh] at hr'; cases hr'; exact objX?_of_fobj hfo) h5 hL⟩
   | @narg x o c htemp hop _ hx _ hcv hh hso =>
     obtain ⟨h1, h2, h3⟩ := g62_arg (H := H) hE.env.env.env.env.env F.lowered hvs hj hj' hm hinv
       htemp hop hx hcf hcv hh hso harg hs
     exact ⟨E, m, ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, h3,
       by rw [uStep35_arg hop]; exact fun e he => by cases he⟩
+  | elideSame htemp hel he hsz hao hro hw h8 =>
+    obtain ⟨r, hvh, -, -, -⟩ := resObj_spec hro
+    obtain ⟨m', h1, h2, h3, h4, h5⟩ := g66b_elideSame (H := H) F hm hinv.core hinv.slots hR
+      (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' hvs he hsz hao hro hw h8
+      (fun x r hx hr => hL _ (hext _ _ x r hel hx hr)) htemp hs
+    exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩, uokl_ext66b he (.inl h5) hL⟩
+  | elideMov htemp hel he hsz hao hro hw h8 =>
+    obtain ⟨r, hvh, -, -, -⟩ := resObj_spec hro
+    obtain ⟨m', h1, h2, h3, h4, h5⟩ := g66b_elideMov (H := H) F hm hinv.core hinv.slots hR
+      (knext_kStep fun _ => (hs_reg hvh).noRegs) hj hj' he hsz hao hro hw h8
+      (fun x r hx hr => hL _ (hext _ _ x r hel hx hr)) hvs htemp hs
+    exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩, uokl_ext66b he h5 hL⟩
 
 /-- A nil check of G66's kinds is G7's. -/
 theorem vk66_nil {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK66 lc g v kd)
@@ -108,6 +136,8 @@ theorem vk66_nil {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK66 lc
   | fspill _ hop' => rw [hop'] at hop; cases hop
   | freload _ hop' => rw [hop'] at hop; cases hop
   | narg _ hop' => rw [hop'] at hop; cases hop
+  | elideSame _ _ he => rw [hop] at he; cases he
+  | elideMov _ _ he => rw [hop] at he; cases he
 
 /-- A bounds check of G66's kinds is G28's. -/
 theorem vk66_pb {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK66 lc g v kd)
@@ -119,6 +149,10 @@ theorem vk66_pb {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK66 lc 
   | fspill _ hop' => rw [hop'] at hop; cases hop
   | freload _ hop' => rw [hop'] at hop; cases hop
   | narg _ hop' => rw [hop'] at hop; cases hop
+  | elideSame _ _ he =>
+    rcases extOp?_op he with h | h | h | h | h | h <;> rw [h] at hop <;> cases hop
+  | elideMov _ _ he =>
+    rcases extOp?_op he with h | h | h | h | h | h <;> rw [h] at hop <;> cases hop
 
 /-! ## The theorems on G66's check -/
 
@@ -168,7 +202,7 @@ theorem g66L_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   rw [htext] at hpcOf
   subst hL
   obtain ⟨c, rfl, rfl, -, rfl, hvk, -, hl, hhome, hcf, hk, hlt, hnd, hblocks, -, hmovd, -, hlp,
-    -, hat⟩ := checkG66L_spec hl hc
+    -, hat, hel⟩ := checkG66L_spec hl hc
   obtain ⟨b, j, js, e, next, hb', -, hvals, -, -, hrow⟩ := Cx2.blocks_spec hblocks bid hbid
   rw [hb] at hb'
   cases hb'
@@ -195,6 +229,7 @@ theorem g66L_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   rw [kAt_succ hi hv]
   exact vk66_step hE0 F hhome hcf hv hVK hvs hloop hatom hj hj' hreads hm hinv hu
     (fun x hop hx => movdOK35_spec hmovd hbid hb hi hv hop hx)
+    (fun _ _ x r he hx hr => elideOK66b_spec hel hbid hb hi hv he hx hr)
     hpre hro h48 (fun ho => ⟨hsp ho, hosp ho⟩) hcall hcallz hicall hwb hclo hgetg hmeq hcallk harg
     hfr hq hs
 

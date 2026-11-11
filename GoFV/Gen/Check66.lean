@@ -1,4 +1,4 @@
-import GoFV.Gen.Check65
+import GoFV.Gen.Check66b
 
 variable [GoFV.SSA.Sem.Addrs]
 
@@ -22,7 +22,11 @@ slot its own size. Every earlier slice's spill and reload is of a 64-bit value; 
 * a `float32` spill or reload (`fspill66`, `freload66`) through an `F` register: `FMOVS Fs,
   off(RSP)` / `FMOVS off(RSP), Fd`;
 * an incoming stack argument (`Arg`) of a narrow class (`argKind66`): G62's `argKind62` at any
-  class; no code.
+  class; no code;
+* (slice G66b, `GoFV/Gen/Check66b.lean`) an extension of a narrow reload that genssa elides
+  (`elide66b`, tried first): no code, or `MOVD Rx, Rv` (`extElide66b`), where G35's table, which
+  holds the reload's entry (`reloadEntry35`), says the argument's register already holds the
+  extension (`elideOK66b`).
 
 A value of another kind keeps G65's reason. `GoFV/Proof/Gen/G66.lean` proves what an accepted
 function satisfies, with G65's premises.
@@ -132,9 +136,10 @@ def vkind66a (lc : LocCtx) (g : G2In) (v : Value) (e : String) : Option (Except 
   else if v.op == .Arg then some (argKind66 lc g v)
   else none
 
-/-- What `v` emits in G66, or why it is outside the slice: G65's kinds, then G66's (`e` is G65's
-reason, kept for the other values). -/
+/-- What `v` emits in G66, or why it is outside the slice: an extension genssa elides
+(`extElide66b`), else G65's kinds, then G66's (`e` is G65's reason, kept for the other values). -/
 def vkind66 (lc : LocCtx) (g : G2In) (v : Value) : Except String VKind2 :=
+  if (elide66b lc v).isSome then extElide66b lc v else
   match vkind65 lc g v with
   | .ok kd => .ok kd
   | .error e =>
@@ -154,6 +159,7 @@ def checkG66L (lc : LocCtx) (ps : Array Prog) (bstart : ID → Option Nat) (g : 
     unless loopOK lc ps tab do throw "loop branch target"
     unless atomOK lc ps tab do throw "atomic branch target"
     unless movdOK35 lc && uEdgesOK35 lc do throw "MOVDnop/MOVDreg: upper bits unknown"
+    unless elideOK66b lc do throw "elided extension: upper bits unknown"
     if let some i := (List.range lc.homes.size).find? (!homeOK10 lc ·) then throw (homeErr lc i)
     unless cloFirst lc do throw "LoweredGetClosurePtr after code"
     unless spHomes48 lc do throw "a value other than SP homed in SP"

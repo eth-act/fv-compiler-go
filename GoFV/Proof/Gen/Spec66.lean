@@ -8,9 +8,11 @@ variable [GoFV.SSA.Sem.Addrs]
 
 `VK66`: G65's kinds (`VK65`), a narrow spill (`VK66.nspill`: `MOVB`/`MOVH`/`MOVW Rs, off(RSP)`), a
 narrow reload (`VK66.nreload`: `loadByType`'s `MOV{B,H,W}{,U} off(RSP), Rd`), a `float32` spill or
-reload (`VK66.fspill`, `VK66.freload`: `FMOVS`) and an incoming stack argument of any class
-(`VK66.narg`). On `InitMem`, `vkind66` is `vkind65` (`vkind66_initMem`). `checkG66L_spec` is
-`checkG65L_spec` with `vkind66`, and `checkG66_spec` splits off `refsLive`.
+reload (`VK66.fspill`, `VK66.freload`: `FMOVS`), an incoming stack argument of any class
+(`VK66.narg`) and (slice G66b) an extension genssa elides (`VK66.elideSame`: no code;
+`VK66.elideMov`: `MOVD Rx, Rv`). On `InitMem`, `vkind66` is `vkind65` (`vkind66_initMem`).
+`checkG66L_spec` is `checkG65L_spec` with `vkind66` and `elideOK66b`, and `checkG66_spec` splits
+off `refsLive`.
 -/
 
 namespace GoFV.Gen.Check
@@ -57,6 +59,38 @@ inductive VK66 (lc : LocCtx) (g : G2In) (v : Value) : VKind2 → Prop
       (hsp : stackParam lc x = true) (hcv : cls (lc.ty v.id) = some c)
       (hh : lc.home v.id = some (.slot (argKey x v.type v.auxInt.toInt)))
       (hso : g.slotOp (argKey x v.type v.auxInt.toInt) = some (.PARAM, o)) : VK66 lc g v .none
+  /-- An extension genssa elides (`elide66b`), of a value in its own register: no code. -/
+  | elideSame {as : As} {w ca c : Nat} {sg : Bool} {r : Int}
+      (htemp : (lc.temps[v.id]?).join = none) (hel : elide66b lc v = some (w, sg))
+      (he : extOp? v.op = some (as, w, sg)) (hsz : v.args.size = 1)
+      (hao : argObj lc v 0 = .ok (ca, r)) (hro : resObj lc v = .ok (c, r))
+      (hw : w ≤ ca ∨ ca = 1) (h8 : 8 ≤ c) : VK66 lc g v .none
+  /-- An extension genssa elides (`elide66b`), of a value in another register: `MOVD Rx, Rv`. -/
+  | elideMov {as : As} {w ca c : Nat} {sg : Bool} {rn rd : Int}
+      (htemp : (lc.temps[v.id]?).join = none) (hel : elide66b lc v = some (w, sg))
+      (he : extOp? v.op = some (as, w, sg)) (hsz : v.args.size = 1)
+      (hao : argObj lc v 0 = .ok (ca, rn)) (hro : resObj lc v = .ok (c, rd))
+      (hw : w ≤ ca ∨ ca = 1) (h8 : 8 ≤ c) :
+      VK66 lc g v (.prog (.ofShape { as := .MOVD, from_ := regA rn, to := regA rd }))
+
+/-- `elide66b` gave the width and signedness of an extension (`extOp?`). -/
+theorem elide66b_ext {lc : LocCtx} {v : Value} {w : Nat} {sg : Bool}
+    (h : elide66b lc v = some (w, sg)) : ∃ as, extOp? v.op = some (as, w, sg) := by
+  unfold elide66b at h
+  split at h
+  · rename_i as w' sg' a he ha
+    split at h
+    · split at h
+      · simp only [Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        exact ⟨as, he⟩
+      · cases h
+    · cases h
+  · cases h
+
+/-- No extension, no `elide66b`. -/
+theorem elide66b_none {lc : LocCtx} {v : Value} (h : extOp? v.op = none) : elide66b lc v = none := by
+  simp [elide66b, h]
 
 section Helpers
 
@@ -169,6 +203,28 @@ private theorem argKind66_spec (hop : v.op = .Arg) (h : argKind66 lc g v = .ok k
     · simp [ex_throw] at h
   · first | exact (ex_throw_bind h).elim | simp [ex_throw] at h
 
+private theorem extElide66b_spec {w : Nat} {sg : Bool} (hel : elide66b lc v = some (w, sg))
+    (h : extElide66b lc v = .ok kd) : VK66 lc g v kd := by
+  obtain ⟨as, he⟩ := elide66b_ext hel
+  unfold extElide66b at h
+  obtain ⟨ht, h⟩ := ex_guard h
+  rw [he] at h
+  simp only at h
+  obtain ⟨hsz, h⟩ := ex_guard h
+  obtain ⟨⟨ca, rn⟩, hao, h⟩ := ex_bind_eq_ok h
+  obtain ⟨⟨c, rd⟩, hro, h⟩ := ex_bind_eq_ok h
+  obtain ⟨hwc, h⟩ := ex_guard h
+  simp only [Bool.and_eq_true, Bool.or_eq_true, decide_eq_true_eq, beq_iff_eq] at hwc
+  simp only at h
+  split at h
+  · rename_i hrr
+    obtain rfl : kd = .none := (Except.ok.inj h).symm
+    have hr : rn = rd := by simpa using hrr
+    rw [← hr] at hro
+    exact .elideSame (by simpa using ht) hel he (by simpa using hsz) hao hro hwc.1 hwc.2
+  · obtain rfl := (Except.ok.inj h).symm
+    exact .elideMov (by simpa using ht) hel he (by simpa using hsz) hao hro hwc.1 hwc.2
+
 end Helpers
 
 /-- What `vkind66a` accepted. -/
@@ -204,6 +260,10 @@ theorem vkind66a_spec {lc : LocCtx} {g : G2In} {v : Value} {e : String} {kd : VK
 theorem vkind66_spec {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2}
     (h : vkind66 lc g v = .ok kd) (hen : entryOp24 v.op = false) : VK66 lc g v kd := by
   unfold vkind66 at h
+  split at h
+  · rename_i hel
+    obtain ⟨⟨w, sg⟩, hel'⟩ := Option.isSome_iff_exists.mp hel
+    exact extElide66b_spec hel' h
   cases h65 : vkind65 lc g v with
   | ok kd' =>
     rw [h65] at h
@@ -226,7 +286,9 @@ theorem vkind66_initMem {lc : LocCtx} {g : G2In} {v : Value} (hop : v.op = .Init
     vkind66 lc g v = vkind65 lc g v := by
   have hn : ∀ e, vkind66a lc g v e = none := fun _ =>
     vkind66a_none (by rw [hop]; nofun) (by rw [hop]; nofun) (by rw [hop]; nofun)
+  have he : elide66b lc v = none := elide66b_none (by rw [hop]; rfl)
   unfold vkind66
+  simp only [he, Option.isSome_none, Bool.false_eq_true, ↓reduceIte]
   cases vkind65 lc g v <;> simp [hn]
 
 /-- On a function with no arm64 op, G66's check is G33. -/
@@ -235,7 +297,8 @@ theorem checkG33_of_66L {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option 
     (h : checkG66L lc ps bstart g = r) : checkG33 lc ps bstart g = r := by
   simpa [checkG33, checkG66L, hl] using h
 
-/-- What `checkG66L` accepted of a function with an arm64 op: G65's facts with G66's value check. -/
+/-- What `checkG66L` accepted of a function with an arm64 op: G65's facts with G66's value check
+and `elideOK66b`. -/
 theorem checkG66L_spec {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}
     {tab : PcTab} {kt : KTab} (hl : lc.ctx.f.lowered = true)
     (h : checkG66L lc ps bstart g = .ok (tab, kt)) :
@@ -245,7 +308,7 @@ theorem checkG66L_spec {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option N
       checkK lc kt = .ok () ∧ (∀ p ∈ ps.toList, p.id < 2 ^ 32) ∧ (ps.toList.map (·.id)).Nodup ∧
       c.blocks lc.ctx.f.blocks.toList = .ok tab ∧ pbOK lc ps.toList tab = true ∧
       movdOK35 lc = true ∧ uEdgesOK35 lc = true ∧ loopOK lc ps tab = true ∧
-      spHomes48 lc = true ∧ atomOK lc ps tab = true := by
+      spHomes48 lc = true ∧ atomOK lc ps tab = true ∧ elideOK66b lc = true := by
   simp only [checkG66L, hl, ↓reduceIte] at h
   obtain ⟨tab', hb, h⟩ := ex_bind_eq_ok h
   obtain ⟨hpb, h⟩ := ex_guard h
@@ -253,6 +316,7 @@ theorem checkG66L_spec {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option N
   obtain ⟨hat, h⟩ := ex_guard h
   obtain ⟨hmovd, h⟩ := ex_guard h
   simp only [Bool.and_eq_true] at hmovd
+  obtain ⟨hel, h⟩ := ex_guard h
   cases hf : List.find? (fun x => !homeOK10 lc x) (List.range lc.homes.size) with
   | some i =>
     rw [hf] at h
@@ -270,7 +334,7 @@ theorem checkG66L_spec {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option N
     simp only [Bool.and_eq_true, List.all_eq_true, decide_eq_true_eq] at hids
     refine ⟨_, rfl, rfl, rfl, rfl, rfl, rfl, hl, fun i => ?_, hfr, hk,
       fun p hp => hids.1 _ (List.mem_map_of_mem hp), hids.2, hb, hpb, hmovd.1, hmovd.2, hlp,
-      hsph, hat⟩
+      hsph, hat, hel⟩
     by_cases hi : i < lc.homes.size
     · have := List.find?_eq_none.mp hf i (List.mem_range.mpr hi)
       simpa using this
