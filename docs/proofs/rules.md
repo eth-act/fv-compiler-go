@@ -1319,7 +1319,7 @@ needs a later phase of the semantics.
 | `generic` | NeqPtr | 16 | 4 | 0 | 11 | 20 |
 | `generic` | NeqSlice | 1 | 0 | 0 | 0 | 1 |
 | `generic` | NilCheck | 8 | 0 | 0 | 8 | 8 |
-| `generic` | Not | 27 | 2 | 0 | 4 | 33 |
+| `generic` | Not | 33 | 0 | 0 | 4 | 33 |
 | `generic` | OffPtr | 2 | 0 | 0 | 0 | 2 |
 | `generic` | Or | 76 | 0 | 4 | 0 | 80 |
 | `generic` | OrB | 48 | 0 | 0 | 20 | 56 |
