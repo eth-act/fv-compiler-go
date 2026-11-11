@@ -31,7 +31,7 @@
 GoFV.Proof.Witness.plF_pipeline._native.native_decide.ax_1_1 827a512448e5ad275272db153a9d3848cf6b34f13899c4c5e3be824cf0a866a3
 # verifiedPipelineFull_witness (GoFV/Proof/Witness/PipelineFull.lean, #385/#189): the verified
 # pipeline through `trim` on isNaN; compiled evaluation, as plF_pipeline.
-GoFV.Proof.Witness.pfF_pipeline._native.native_decide.ax_1_1 18980f11c9e5ff36258bf07d714b9cdc160c53faf577e13d82411d3b355b71b7
+GoFV.Proof.Witness.pfF_pipeline._native.native_decide.ax_1_1 0abe3bfb2dd23cf171bc60d3b702eed5a3eb83fabded98f7bccd1badc0ce257e
 # The pins of the GenG1–GenG11 entries below updated for #554 (`genssa` fills `GenState.progAfter`).
 # genG1_witness_50/_30 (GoFV/Proof/Witness/GenG1.lean, #553): `checkG1` accepts `clamp` (parsed,
 # `Env.load`, `genssa`) and `runLoc` runs its compare and branch; compiled evaluation, as plF_pipeline.
@@ -126,7 +126,7 @@ GoFV.Proof.Witness.ObjWhole.start_facts._native.native_decide.ax_1_1 9f192541c75
 # generic SSA through the verified pipeline to genssa's Progs (`refsLive` of the output, `lcFacts`,
 # `checkG54L`, on `liveCtx` of it; `entryStoresOK`) and the linked words; compiled evaluation, as
 # plF_pipeline.
-GoFV.Proof.Witness.ObjEndToEnd.e2e_facts._native.native_decide.ax_1_1 859002dd52b8e5a66df5bebcefbe8610e57e43d49a050687fa00a1899c5630d7
+GoFV.Proof.Witness.ObjEndToEnd.e2e_facts._native.native_decide.ax_1_1 b5b27657636ab2c6c2eda56e68889fc9611b2852ea4e8cf13c9cab6d0f313cd1
 # objWholeNL_ret_witness (GoFV/Proof/Witness/ObjWholeNL.lean, #553): `checkObj`, `linkCode` and the
 # machine-side facts of `runtime.gclinkptr.ptr` (no arm64 op), and `lcFacts` plus the returning
 # run of `runLoc` in Phase 1's mode; compiled evaluation, as plF_pipeline.
@@ -346,7 +346,7 @@ GoFV.Proof.Witness.GenG49Mach.g49Mach_facts._native.native_decide.ax_1_1 e01ff83
 # facts), and the runs of `run`/`runLoc` at `Addrs.atSP` (entry values, the call, the return's
 # memory); compiled evaluation.
 GoFV.Proof.Witness.ObjEndToEndAtSP.obj_facts._native.native_decide.ax_1_1 68cb4a57d54cec8ada1f564594b2e4bf9dcf36c1b096f544c4f5b939e742f644
-GoFV.Proof.Witness.ObjEndToEndAtSP.e2e_facts._native.native_decide.ax_1_1 411bd2a884520f23abba4a76cf3a8e3cc4b27cb65bcb201abf8712a045596554
+GoFV.Proof.Witness.ObjEndToEndAtSP.e2e_facts._native.native_decide.ax_1_1 3a7cdd3a140848a701834082e7314eb3efee51a7b90bd3562e1cd61916b4c4ff
 
 # genG52_witness (GoFV/Proof/Witness/GenG52.lean, #553): `checkG52` accepts `test/ken_chan`'s
 # `main.nrand` and `checkG49` does not (`REM R0, R1, R0` `v32`, `MOD v26 v6`); `runLoc` runs `v32`
@@ -524,12 +524,12 @@ GoFV.Proof.Witness.ObjWholeS.obj_facts._native.native_decide.ax_1_1 20ec0217850f
 GoFV.Proof.Witness.ObjWholeS.start_facts._native.native_decide.ax_1_1 3c1d03ff921f3d495f8aa602bc994142267ae4dace74d8ee105cd88a90e6d79d
 # verified_mach_S_witness (GoFV/Proof/Witness/ObjEndToEndS.lean, #553): `ObjEndToEnd`'s facts with
 # `ObjWholeS.lcFacts`; compiled evaluation.
-GoFV.Proof.Witness.ObjEndToEndS.e2e_factsS._native.native_decide.ax_1_1 eb1fd2e901182fbd1ca1962d8bb84e956dfe24cb6a94680055266ea154227766
+GoFV.Proof.Witness.ObjEndToEndS.e2e_factsS._native.native_decide.ax_1_1 b1f10afb22e4d064c36648f7dd2aeaca96ecb9c6eecd4c8c64f784c35d7e9fa9
 # verified_mach_S_atSP_witness (GoFV/Proof/Witness/ObjEndToEndAtSPS.lean, #553): `ObjEndToEndAtSP`'s
 # facts in G48's mode (`Addrs.atSPO`: `SP` holds the pointer to `outargs 0`, `callRegsS`); compiled
 # evaluation.
 GoFV.Proof.Witness.ObjEndToEndAtSPS.obj_facts._native.native_decide.ax_1_1 6e90a2eb924dd31dafda7c5b895ed1b71ef857795e8dba3a42f485108f0deea6
-GoFV.Proof.Witness.ObjEndToEndAtSPS.e2e_facts._native.native_decide.ax_1_1 8e751b008792b925ea22bc89806d539fd613f62a458fe8c0d0b4311e1c538fac
+GoFV.Proof.Witness.ObjEndToEndAtSPS.e2e_facts._native.native_decide.ax_1_1 c0e9deffdf58454e41a7aa577a467d066297c58a2104c62de0d45fcf5d8a6d07
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
