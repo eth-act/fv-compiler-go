@@ -99,6 +99,21 @@ theorem r_generic_2128_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r
 /-- `generic.rules:2131`: `(SelectN [1] (StaticCall {sym} _ newLen:(Const64) _ _ _ _)) && v.Type.IsInteger() && (isSameCall(sym, "runtime.growslice") || isSameCall(sym, "runtime.growsliceNoAlias")) => newLen` (issue #69: the post-`expand calls` form of `:2128`, `RewriteCheck.growPOK`) -/
 theorem r_generic_2131_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2131 := rfl
 
+/-- `generic.rules:882`: `(Load <t1> (OffPtr [o] p1) (Zero [n] p2 _)) && t1.IsBoolean() && isSamePtr(p1, p2) && n >= o + 1 => (ConstBool [false])` (issue #69: the Load reads zero bytes, `RewriteCheck.fwdZeroOK`) -/
+theorem r_generic_882_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_882 := rfl
+
+/-- `generic.rules:887`: `(Load <t1> (OffPtr [o] p1) (Zero [n] p2 _)) && is8BitInt(t1) && isSamePtr(p1, p2) && n >= o + 1 => (Const8 [0])` -/
+theorem r_generic_887_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_887 := rfl
+
+/-- `generic.rules:892`: `(Load <t1> (OffPtr [o] p1) (Zero [n] p2 _)) && is16BitInt(t1) && isSamePtr(p1, p2) && n >= o + 2 => (Const16 [0])` -/
+theorem r_generic_892_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_892 := rfl
+
+/-- `generic.rules:897`: `(Load <t1> (OffPtr [o] p1) (Zero [n] p2 _)) && is32BitInt(t1) && isSamePtr(p1, p2) && n >= o + 4 => (Const32 [0])` -/
+theorem r_generic_897_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_897 := rfl
+
+/-- `generic.rules:902`: `(Load <t1> (OffPtr [o] p1) (Zero [n] p2 _)) && is64BitInt(t1) && isSamePtr(p1, p2) && n >= o + 8 => (Const64 [0])` -/
+theorem r_generic_902_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_902 := rfl
+
 /-- `generic.rules:2251`: `(Load (Addr {s} sb) _) && isFixedLoad(v, s, 0) => rewriteFixedLoad(v, s, sb, 0)` (issue #69: the read from the read-only symbol's allocation, `RewriteCheck.fixedOK`,
 under `Sem.RoImage`) -/
 theorem r_generic_2251_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2251 := rfl

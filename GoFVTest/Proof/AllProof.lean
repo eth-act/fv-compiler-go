@@ -940,6 +940,7 @@ import GoFV.Proof.Witness.FwdGrow
 import GoFV.Proof.Witness.FwdGrowPost
 import GoFV.Proof.Witness.FwdMalloc
 import GoFV.Proof.Witness.FwdNew
+import GoFV.Proof.Witness.FwdZeroLoad
 import GoFV.Proof.Witness.FwdZeroStr
 import GoFV.Proof.Witness.GenG1
 import GoFV.Proof.Witness.GenG10

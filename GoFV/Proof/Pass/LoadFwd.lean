@@ -603,6 +603,44 @@ theorem growP_src {tabs : Tables} {f : Func} {ρ : ID → Val} (hT : Term.Typed 
     · rw [hG]; exact .poison _
     · rw [hs, hL, retype_i64]; exact .refl _
 
+/-! ## Loads of zero bytes (`generic.rules:882`–`:902`) -/
+
+theorem zeroLdOp_cases {t : Ty} {op : Op} (h : zeroLdOp t op = true) :
+    (t = .bool ∧ op = .ConstBool) ∨ (t = .int .w8 ∧ op = .Const8) ∨
+      (t = .int .w16 ∧ op = .Const16) ∨ (t = .int .w32 ∧ op = .Const32) ∨
+      (t = .int .w64 ∧ op = .Const64) := by
+  cases t <;> (try cases ‹Width›) <;> simp [zeroLdOp] at h <;> simp [h]
+
+theorem zeroLdOp_term {t : Ty} {op : Op} (h : zeroLdOp t op = true) : termOp op = true := by
+  rcases zeroLdOp_cases h with ⟨-, rfl⟩ | ⟨-, rfl⟩ | ⟨-, rfl⟩ | ⟨-, rfl⟩ | ⟨-, rfl⟩ <;> rfl
+
+theorem zeroLdOp_size {t : Ty} {op : Op} (h : zeroLdOp t op = true) : t.size ≠ 0 := by
+  rcases zeroLdOp_cases h with ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> decide
+
+theorem fwdZeroOK_spec {tabs : Tables} {f : Func} {u w : Value} (h : fwdZeroOK tabs f u w = true) :
+    u.op = .Load ∧ u.args.size = 2 ∧ zeroLdOp (tabs.ty u.type) w.op = true ∧ w.args.size = 0 ∧
+      w.auxInt = 0 ∧ zeroChain tabs f u.args[0]! (tabs.ty u.type).size 8 u.args[1]! = true := by
+  unfold fwdZeroOK at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩ := h
+  exact ⟨h1, h2, h3, h4, h5, h6⟩
+
+/-- **A `Load` of zero bytes is the zero constant** (`zeroLdOp`): if every successful read of the
+shape's size at `P` gives zero bytes, the `Load` at that shape is refined by the constant
+(`poison` if the read fails). -/
+theorem zeroLd_load {tabs : Tables} {t : Ty} {op : Op} (h : zeroLdOp t op = true)
+    (ax : Option AuxRef) {M : Mem} {P : Ptr}
+    (hz : ∀ {bs : Array Byte}, M.read P t.size = some bs → bs = Array.replicate t.size (.b 0)) :
+    Sem.Refines ((M.load t P).retype t) ((GoFV.Proof.Rules.opVal tabs op t 0 ax []).retype t) := by
+  rcases zeroLdOp_cases h with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
+  · rw [GoFV.Proof.Rules.opVal_pure rfl]
+    simp only [Mem.load]
+    split
+    · next bs hr =>
+      rw [hz hr]
+      exact Sem.Refines.refl _
+    · exact .poison _
+
 section
 variable {tabs : Tables} {ro : List (String × Alloc)} {eq : List String × List String} {f g : Func}
   (F : FwdFacts tabs ro eq f g)
@@ -624,7 +662,8 @@ theorem rep_of {x : ID} {u : Value} (hu : f.value? x = some u) :
        fwdConstOK tabs f u w = true ∨ dropOK tabs f g u w = true ∨
        fwdMoveRep tabs f g u w = true ∨ moveSrcOK tabs f u w = true ∨
        fixedOK tabs ro f u w = true ∨ growOK tabs f u w = true ∨
-       eqCallOK tabs eq f g u w = true ∨ selMROK tabs f u w = true ∨ growPOK tabs f u w = true) := by
+       eqCallOK tabs eq f g u w = true ∨ selMROK tabs f u w = true ∨ growPOK tabs f u w = true ∨
+       fwdZeroOK tabs f u w = true) := by
   have h := F.rep x (lt_of_value? hu)
   unfold fwdRepOK fwdNewOK at h
   rw [hu] at h
@@ -636,7 +675,7 @@ theorem rep_of {x : ID} {u : Value} (hu : f.value? x = some u) :
     obtain ⟨⟨⟨hid, hblk⟩, hty⟩, h⟩ := h
     refine ⟨w, rfl, hid, hblk, hty, ?_⟩
     rcases h with (⟨⟨⟨hop, hai⟩, hax⟩, hargs⟩ |
-      (((((((⟨⟨hop, hsz⟩, hok⟩ | hc) | hd) | hs) | hx) | hg) | he) | hm') | hp) | hm
+      ((((((((⟨⟨hop, hsz⟩, hok⟩ | hc) | hd) | hs) | hx) | hg) | he) | hm') | hp) | hz) | hm
     · exact .inl ⟨hop, hai, hax, hargs⟩
     · exact .inr (.inl ⟨hop, hsz, hok⟩)
     · exact .inr (.inr (.inl hc))
@@ -646,7 +685,8 @@ theorem rep_of {x : ID} {u : Value} (hu : f.value? x = some u) :
     · exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inl hg)))))))
     · exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inl he))))))))
     · exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inl hm')))))))))
-    · exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr hp)))))))))
+    · exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inl hp))))))))))
+    · exact .inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr (.inr hz))))))))))
     · exact .inr (.inr (.inr (.inr (.inl hm))))
 
 /-- The arguments of a value listed in `f` are listed. -/
@@ -1138,7 +1178,8 @@ theorem rep_call {x : ID} {u : Value} (hu : f.value? x = some u) (hop : u.op = .
     (hn : rootP g x = false) : ∃ w, g.value? x = some w ∧ eqCallOK tabs eq f g u w = true := by
   obtain ⟨w, hw, -, -, -, hrep⟩ := rep_of F hu
   refine ⟨w, hw, ?_⟩
-  rcases hrep with ⟨hwop, -⟩ | ⟨-, -, hok⟩ | hok | hok | hok | hok | hok | hok | hok | hok | hok
+  rcases hrep with ⟨hwop, -⟩ | ⟨-, -, hok⟩ | hok | hok | hok | hok | hok | hok | hok | hok | hok |
+    hok
   · exfalso
     simp only [rootP, hw, Option.any_some, hwop, hop] at hn
     cases hn
@@ -1153,6 +1194,7 @@ theorem rep_call {x : ID} {u : Value} (hu : f.value? x = some u) (hop : u.op = .
   · exact hok
   · unfold selMROK at hok; simp [hop] at hok
   · rw [(growPOK_spec hok).1] at hop; cases hop
+  · rw [(fwdZeroOK_spec hok).1] at hop; cases hop
 
 /-- **The dropped calls do not panic** (`AtomSim.DropNP`): a folded call's descriptor register
 points at the start of a symbol of its list (`DescReg`, part of the invariant), so under
@@ -1188,7 +1230,7 @@ theorem fwd_den {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.v
       Sem.Refines (den f.value? tabs ρ n a) (den (listedDefs g) tabs ρ' m a) :=
     fun a ha hla hda => ih _ ha a rfl hla hda
   rcases hrep with ⟨hop, hai, hax, hargs⟩ | ⟨hop, hsz, hok⟩ | hok | hdrop | hmv | hms | hfx | hgr |
-    hec | hsm | hgp
+    hec | hsm | hgp | hz
   rotate_left 3
   · exact drop_den F hT hM hQ.1 hQ.2.2 hx hu hL hwty hdrop
       (fun a ha hla hda => hIH a (hr ▸ ha) hla hda) n
@@ -1261,6 +1303,22 @@ theorem fwd_den {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.v
     rw [den_succ_term hL (by rw [hwop]; rfl), hwop, toList_one hwsz, List.map_cons, List.map_nil,
       GoFV.Proof.Rules.opVal_pure (op := Op.Copy) rfl, evalPure_copy, hwty, huty, ← harg]
     exact (hN (n + 1) N (Nat.le_refl N)).trans (retype_mono _ hm)
+  · -- a `Load` of zero bytes: the zero constant
+    obtain ⟨hld, hsz2, hzop, hwsz, hwai, hch⟩ := fwdZeroOK_spec hz
+    have hLt : termOp u.op = true := by rw [hld]; decide
+    have hw0 : w.args.toList = [] := by rw [Array.eq_empty_of_size_eq_zero hwsz]
+    refine ⟨0 + 1, ?_⟩
+    rw [den_succ_term hu hLt, toList_two hsz2, List.map_cons, List.map_cons, List.map_nil, hld,
+      GoFV.Proof.Rules.opVal_pure (op := Op.Load) rfl, evalPure_load,
+      den_succ_term hL (zeroLdOp_term hzop), hw0, List.map_nil, hwty, hwai]
+    by_cases hcase : ∃ a M, (den f.value? tabs ρ n u.args[0]!).asPtrWord = some a ∧
+      den f.value? tabs ρ n u.args[1]! = .mem M
+    · obtain ⟨a, M, hpa, hsM⟩ := hcase
+      rw [hsM]
+      simp only [loadOp, hpa]
+      exact zeroLd_load hzop w.aux fun hbs =>
+        zeroChain_read hT hM hQ.1 hQ.2.2 (zeroLdOp_size hzop) hpa 8 _ hch hsM hbs
+    · rw [loadOp_other hcase, AtomSim.retype_poison]; exact .poison _
   · by_cases ht : termOp u.op = true
     · by_cases hsd : u.op = .SelectN ∧ u.args.size = 1 ∧ dcB tabs eq f g u.args[0]! = true
       · -- a selection of a folded call
@@ -1512,7 +1570,7 @@ theorem fwd_atomArgs (hro : fwdRoOK tabs ro f = true) :
   have hargs := (closedOK_facts F.cf b hbf fb hfb).2 a haf u' hu'
   have hns : u'.op ≠ .SelectN := fun h => by rw [hop] at h; rw [h] at ht; cases ht
   have hsame : (u.aux = u'.aux ∧ u.args = u'.args) ∨ moveSrcOK tabs f u' u = true := by
-    rcases hrep with ⟨-, -, hax, h⟩ | ⟨h, -⟩ | h | h | h | h | h | h | h | h | h
+    rcases hrep with ⟨-, -, hax, h⟩ | ⟨h, -⟩ | h | h | h | h | h | h | h | h | h | h
     · exact .inl ⟨hax, h⟩
     · rw [h] at ht; cases ht
     · rcases const64Op_cases (fwdConstOK_spec h).2.2.1 with h | h <;> rw [h] at ht <;> cases ht
@@ -1526,6 +1584,7 @@ theorem fwd_atomArgs (hro : fwdRoOK tabs ro f = true) :
         unfold selMROK at h; simp only [Bool.and_eq_true, beq_iff_eq] at h; exact h.1.1.2
       rw [hc] at ht; cases ht
     · rw [(growPOK_spec h).2.2.2.2.1] at ht; cases ht
+    · rw [zeroLdOp_term (fwdZeroOK_spec h).2.2.1] at ht; cases ht
   rcases hsame with hsame | hms
   · refine .inl ⟨u', hu', hop, hty, hai, hsame.1.symm, hsz, fun i hi => ?_⟩
     have hi' : i < u'.args.size := hsame.2 ▸ hi

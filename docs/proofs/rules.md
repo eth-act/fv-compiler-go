@@ -388,6 +388,19 @@ env.Mono ∧ env.AllocZero ∧ RoImage ro env mem)`. `zeroChain_read` reads zero
 `fm_checkedRewrite` (`mallocgcSmallNoScanSC2`), `fn_checkedRewrite`/`fn_rwPre` (`newobject`,
 `Witness/FwdNew.lean`).
 
+**Loads of a `Zero`** (`:882`, `:887`, `:892`, `:897`, `:902`, issue #69, Phase1Tail5): `(Load
+<t1> (OffPtr [o] p1) (Zero [n] p2 _)) && isSamePtr(p1, p2) && n >= o + size => (Const* [0])`, at
+`bool` (`ConstBool [false]`) and the integer widths, is a forwarding rule (`fwdShapeOK`; `fwdEvent?`
+takes `Const16` and `ConstBool` definitions too). `fwdNewOK` accepts `fwdZeroOK tabs f u w`: `u`
+is a `Load` of shape `t`, `w` the argument-less `zeroLdOp t` constant (`ConstBool` at `bool`,
+`Const8`/`16`/`32`/`64` at the widths) of auxint 0, and the Load's memory holds zeros at its
+pointer for `t.size` bytes (`zeroChain`, eight deep, as for the dropped writes above: through
+disjoint `Store`s to a `Zero` that cleared them, or to the memory of a fresh zeroed allocation).
+No new assumption beyond the layer's: `fwd_den`'s new case reads the bytes with `zeroChain_read`
+and `LoadFwd.zeroLd_load` decodes a successful read of zeros as the constant (`poison` if the read
+fails). Witness: `zl_checkedRewrite`/`zl_rwPre` (`Witness/FwdZeroLoad.lean`: `*p = [2]int{};
+return p[1]`, the `Load` at offset 8 of the 16 zeroed bytes becomes `Const64 [0]`).
+
 **`growslice` lengths** (`:2128`, issue #69): `(SliceLen (SelectN [0] (StaticLECall {sym} _
 newLen:(Const64) _ _ _ _))) && (isSameCall(sym, "runtime.growslice") || isSameCall(sym,
 "runtime.growsliceNoAlias")) => newLen` is a forwarding rule (`fwdShapeOK`; the interpreter tries
@@ -1225,7 +1238,7 @@ needs a later phase of the semantics.
 | `generic` | IsSliceInBounds | 5 | 3 | 0 | 0 | 8 |
 | `generic` | Leq | 62 | 0 | 0 | 2 | 62 |
 | `generic` | Less | 62 | 0 | 0 | 2 | 62 |
-| `generic` | Load | 17 | 1 | 0 | 33 | 35 |
+| `generic` | Load | 22 | 1 | 0 | 33 | 35 |
 | `generic` | Lsh | 67 | 21 | 0 | 0 | 88 |
 | `generic` | MemEq | 2 | 9 | 0 | 0 | 11 |
 | `generic` | Mod | 29 | 0 | 0 | 0 | 29 |
@@ -1269,7 +1282,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 60 | 4 | 4 | 0 | 68 |
 | `generic` | Zero | 2 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1388 | 192 | 31 | 258 | 1762 |
+| all | | 1393 | 192 | 31 | 258 | 1762 |
 
 <!-- END coverage -->
 
