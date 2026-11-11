@@ -384,8 +384,8 @@ structure BStep (tabs : Tables) (f g : Func) (md : LMode) (oS oT : List ID)
   sLt : ∀ x ∈ oS, x < f.valueTab.size
   /-- An image per parameter (`argOK` pieces evaluate). -/
   img : frPS.images.size = (Ctx.makeL tabs f).params.size
-  /-- No closure context (`GetClosurePtr` is `poison`). -/
-  clo : frPS.closure = none
+  /-- The closure context has no nil base (`poison` without one; `ArgPtrsOK` at the entry). -/
+  clo : ∀ c, frPS.closure = some c → ¬ NilBase c
   /-- The pointer-shaped parameter pieces that the block's values take from outside it read nil
   or pointers that are not wild. -/
   argOut : ∀ x ∈ oS, ∀ a ∈ argsF f x, a ∉ oS →
@@ -641,17 +641,19 @@ theorem argOK_congr {fv gv : Value} (hr : VRel f g fv gv) (params : Array (Optio
   rw [hr.op, hr.aux, hsz]
 
 theorem isNN_cases {tys : Array Ty} {a : ID} (h : isNN tys f a = true) :
-    ∃ v, f.value? a = some v ∧ (isNC f a = true ∨ v.op = .ARM64LoweredGetClosurePtr ∨
+    ∃ v, f.value? a = some v ∧ (isNC f a = true ∨
+      (v.op = .ARM64LoweredGetClosurePtr ∧ wordShape (tys[a]?.getD .other) = true) ∨
       ((v.op = .SP ∨ v.op = .GetG) ∧ wordShape (tys[a]?.getD .other) = true)) := by
   unfold isNN at h
   split at h
   · rename_i v hv
     refine ⟨v, hv, ?_⟩
     simp only [Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq] at h
-    rcases h with (h | h) | h
+    rcases h with h | ⟨(h | h) | h, hw⟩
     · exact .inl (by rw [isNC_of hv]; exact h)
-    · exact .inr (.inl h)
-    · exact .inr (.inr h)
+    · exact .inr (.inl ⟨h, hw⟩)
+    · exact .inr (.inr ⟨.inl h, hw⟩)
+    · exact .inr (.inr ⟨.inr h, hw⟩)
   · cases h
 
 theorem tval (S : SchedRel tabs f g) {oS oT : List ID} {frPS frPT : Frame}

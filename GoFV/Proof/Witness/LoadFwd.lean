@@ -349,7 +349,7 @@ theorem sla_rwPre (x y : BitVec 64) :
       rcases hv with rfl | rfl | rfl
       · intro h; cases h
       · trivial
-      · trivial) rfl)
+      · trivial) rfl (fun _ h => nomatch h))
 
 /-! ## An aggregate: `storeLoadStr` (`generic.rules:800` at a string)
 

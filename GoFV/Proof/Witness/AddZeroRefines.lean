@@ -28,7 +28,7 @@ theorem addZero_refines :
   obtain ⟨fuel', ho⟩ := hR Env.p1 [.i64 7] {}
     (Pass.Rewrite.RwPre.p1 (by decide +kernel) (by decide +kernel)
       (Pass.Rewrite.initAvoids_empty (fun v hv _ _ => by
-        simp only [List.mem_singleton] at hv; subst hv; trivial) rfl)) 1 (by rw [show azPassEnv.tables = azTabs from rfl, hm]; trivial)
+        simp only [List.mem_singleton] at hv; subst hv; trivial) rfl (fun _ h => nomatch h))) 1 (by rw [show azPassEnv.tables = azTabs from rfl, hm]; trivial)
   rw [show azPassEnv.tables = azTabs from rfl, hm] at ho
   refine ⟨fuel', ?_⟩
   generalize run Env.p1 out.tables out.func [.i64 7] {} fuel' = o at ho ⊢

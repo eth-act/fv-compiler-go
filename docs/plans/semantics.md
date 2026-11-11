@@ -574,8 +574,8 @@ inductive Outcome
   | panicked (e : Panic) (mem : Mem)
   | stuck (msg : String)
   | outOfFuel
-def run (env : Env) (f : Func) (args : List Val) (closure : Option Val) (mem : Mem)
-    (fuel : Nat) : Outcome
+def run (env : Env) (tabs : Tables) (f : Func) (args : List Val) (mem : Mem) (fuel : Nat) :
+    Outcome
 ```
 
 Fuel counts block entries and calls (clifv counts statements; per-block is enough here since
@@ -583,6 +583,16 @@ pure evaluation within a block terminates structurally). `runLoop` is structural
 on fuel; calls to program functions recurse with the remaining fuel (no well-founded
 recursion — LEARNINGS). `args` are Go-typed per `f.Type`; the frame and the results area are
 allocated in `mem` and freed before returning.
+
+The closure context of the top-level activation (`GetClosurePtr`; the funcval the caller called
+through, `R26` at entry) is `env.closure : Option Val` (default `none`: a run outside a closure),
+an input like `args`. Only `entryFrame` reads it, so every runner (`run`, `runL`, `runSched`,
+`runLF`, `runLoc`, `runFrame`, `locInit`) gets it, and every theorem that quantifies over `env`
+covers every context; a run with `env.closure = none` is the run without one
+(`entryFrame_of_none`). A called program function gets the context of its call
+(`runActivation`'s `clo`), never `env.closure`. The input conditions on it are in `InitAvoids`
+(it points into no frame temporary) and `ArgPtrsOK` (it has no nil base);
+`docs/plans/closure-ctx.md`.
 
 ## 9. Phased subset
 

@@ -76,7 +76,7 @@ theorem verified_mach_S_witness :
     have hnn : ∀ x ∈ r.nnf, NoNilFault x.1 x.2 plRunEnv ObjWholeS.args {} := fun x hx =>
       noNilFault_of_noAct (hx2 x hx).1.1 plRunEnv ObjWholeS.args {}
     have hap : ∀ x ∈ r.nnf, ArgPtrsOK x.1 x.2 plRunEnv ObjWholeS.args {} := fun x hx =>
-      argPtrsOK_of_none (hx2 x hx).1.2 plRunEnv ObjWholeS.args {}
+      argPtrsOK_of_none (hx2 x hx).1.2 plRunEnv ObjWholeS.args {} (fun _ h => nomatch h)
     have hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 plRunEnv ObjWholeS.args {} := fun x hx =>
       nilPtrsOK_of_none (hx2 x hx).2 plRunEnv ObjWholeS.args {}
     have hvpre : VPre (NilCheck.dictParams penv.tables f0) (pipelineRo penv f0)

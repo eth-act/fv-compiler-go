@@ -517,7 +517,9 @@ structure Frame where
   /-- The in-memory image of each argument (its encoding by the parameter's shape), which
   `Arg`/`ArgIntReg` pieces are read from. -/
   images : Array (Array Byte) := #[]
-  /-- The closure context of the activation (`GetClosurePtr`; `none` outside closure calls). -/
+  /-- The closure context of the activation (`GetClosurePtr`): `Env.closure` at the top-level
+  activation (`entryFrame`), the call's context in a called one (`runActivation`); `none`
+  outside a closure. -/
   closure : Option Val := none
 
 /-- The value of input parameter `name` at byte offset `off`, as a value of shape `ty` (`Arg`,
@@ -1224,11 +1226,24 @@ def frameMem (env : Env) (ctx : Ctx) (images : Array (Array Byte)) (mem : Mem) :
   frameAllocs ctx images (addGlobals env mem)
 
 /-- The frame of a new activation on `args` from memory `mem`: no registers, the arguments'
-images, the frame allocations (`frameMem`). -/
+images, the frame allocations (`frameMem`), the top-level closure context (`Env.closure`). -/
 def entryFrame (env : Env) (ctx : Ctx) (args : List Val) (mem : Mem) : Frame :=
   let images := (args.toArray.zip ctx.paramTys).map fun (a, t) => encode t a
   { regs := Array.replicate ctx.f.valueTab.size none, args,
-    mem0 := frameMem env ctx images mem, images }
+    mem0 := frameMem env ctx images mem, images, closure := env.closure }
+
+/-- The top-level activation's closure context is the environment's. -/
+theorem entryFrame_closure (env : Env) (ctx : Ctx) (args : List Val) (mem : Mem) :
+    (entryFrame env ctx args mem).closure = env.closure := rfl
+
+/-- Outside a closure (`env.closure = none`), `entryFrame` is the frame without a context. -/
+theorem entryFrame_of_none {env : Env} (h : env.closure = none) (ctx : Ctx) (args : List Val)
+    (mem : Mem) :
+    entryFrame env ctx args mem =
+      let images := (args.toArray.zip ctx.paramTys).map fun (a, t) => encode t a
+      { regs := Array.replicate ctx.f.valueTab.size none, args,
+        mem0 := frameMem env ctx images mem, images } := by
+  unfold entryFrame; rw [h]
 
 /-- The next deferred call of activation `act` (§9.7): the closure of the highest set bit of
 the open-coded `deferBits` (the bit cleared), else the newest `deferproc` entry of `act`

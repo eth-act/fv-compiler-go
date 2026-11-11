@@ -199,7 +199,9 @@ theorem entry_ok {args : List Val} {mem : Mem} (hinit : InitAvoids env args mem)
     val_avoids_UE fun n => (hinit 0 n).1 v hv
   have hmem : mem.Avoids (UE E) := mem_avoids_UE fun n => (hinit 0 n).2.1
   have hglob : ∀ g ∈ env.globals, BAv (UE E) g.2.data := fun g hg x hx =>
-    byte_avoids_UE fun n => (hinit 0 n).2.2.2 g hg x hx
+    byte_avoids_UE fun n => (hinit 0 n).2.2.2.1 g hg x hx
+  have hclo : ∀ c, env.closure = some c → Val.Avoids (UE E) c := fun c hc =>
+    val_avoids_UE fun n => (hinit 0 n).2.2.2.2 c hc
   have himg : ∀ img ∈ (args.toArray.zip (Ctx.make tabs f).paramTys).map
       (fun (a, t) => encode t a), BAv (UE E) img := by
     intro img hi
@@ -210,7 +212,7 @@ theorem entry_ok {args : List Val} {mem : Mem} (hinit : InitAvoids env args mem)
       simpa using this
     exact encode_avoids t (hargs a ha)
   refine ⟨by simp [Ctx.make, entryFrame], rfl, rfl, fun z y h => ⟨y, h, .refl y⟩,
-    fun z y h => ?_, ⟨himg, rfl, ?_⟩, .inl rfl⟩
+    fun z y h => ?_, ⟨himg, hclo, ?_⟩, .inl rfl⟩
   · simp [entryFrame, Array.getElem?_replicate] at h
   · exact frameAllocs_avoids himg (addGlobals_avoids hglob hmem)
 

@@ -113,8 +113,8 @@ structure AtS (md : LMode) (env : Env) (tabs : Tables) (f : Func) (frS frT : Fra
     (∃ y, frS.regs[a]? = some (some y)) ∧ (isNC f a = true → frS.regs[rep f a]? = frS.regs[a]?)
   /-- An image per parameter (`argOK` pieces evaluate). -/
   img : frS.images.size = (Ctx.makeL tabs f).params.size
-  /-- No closure context (`GetClosurePtr` is `poison`). -/
-  clo : frS.closure = none
+  /-- The closure context has no nil base (`poison` without one; `ArgPtrsOK` at the entry). -/
+  clo : ∀ c, frS.closure = some c → ¬ NilBase c
   /-- The pointer-shaped parameter pieces read nil or pointers that are not wild. -/
   argPtr : ArgPtrsAt md env tabs f frS
   /-- Checked pointer-shaped values read nil or pointers that are not wild from here on. -/
@@ -371,7 +371,7 @@ theorem bstep (Su : Setup tabs f g) {frS frT : Frame} {bid : ID} {i : Nat}
         · rfl
         · obtain ⟨v', hv', hcs⟩ := isNN_cases h
           rw [hpa.1] at hv'; cases hv'
-          rcases hcs with h' | hop | ⟨hop, -⟩
+          rcases hcs with h' | ⟨hop, -⟩ | ⟨hop, -⟩
           · exact absurd (hn.symm.trans h') (by decide)
           · rw [hap] at hop; cases hop
           · rcases hop with h' | h' <;> rw [hap] at h' <;> cases h'
@@ -405,12 +405,12 @@ theorem bstep (Su : Setup tabs f g) {frS frT : Frame} {bid : ID} {i : Nat}
           rw [← hkeep a va hpa hvb]; exact hz
         obtain ⟨va', hva', hcs⟩ := isNN_cases hn
         rw [hpa.1] at hva'; cases hva'
-        rcases hcs with hnc | hop | ⟨hop, hw⟩
+        rcases hcs with hnc | ⟨hop, hw⟩ | ⟨hop, hw⟩
         · exact (ncFactNN hwf hA.up hA.typed hpa hstrict hu hnc z hz').not_nilBase
         · have hnp : va.op ≠ .Phi := by rw [hop]; decide
           obtain ⟨y', hy', hev⟩ := hA.up a va (by rw [hcF]; exact hpa) hstrict
           rw [hz'] at hy'; cases hy'
-          exact evalValueL_clo hop hA.clo (hev hnp)
+          exact evalValueL_clo hop hA.clo (by rw [placed_id hwf hpa]; exact hw) (hev hnp)
         · have hnp : va.op ≠ .Phi := by rcases hop with h | h <;> rw [h] <;> decide
           obtain ⟨y', hy', hev⟩ := hA.up a va (by rw [hcF]; exact hpa) hstrict
           rw [hz'] at hy'; cases hy'
@@ -639,7 +639,8 @@ theorem atS_entry (Su : Setup tabs f g) (env : Env) {args : List Val} (mem : Mem
     simp only [entryFrame, Array.size_map, Array.size_zip, List.size_toArray, hps, hn,
       Nat.min_self]
   refine ⟨⟨hwf.entry, Su.cf.domRel.entry⟩, by simp [entryFrame, makeL_f], rfl, rfl,
-    typedL_replicate _ _ _ _ rfl, dinvL_entry Su.cf _, fun _ _ _ => rfl, ?_, himg, rfl, ha, hnp⟩
+    typedL_replicate _ _ _ _ rfl, dinvL_entry Su.cf _, fun _ _ _ => rfl, ?_, himg, ha.2, ha.1,
+    hnp⟩
   intro blk z v a hblk hz hv hp ha
   have h1 := hwf.phiArity _ _ _ _ ⟨⟨hwf.entry, hblk⟩, hz, hv⟩ hp
   have h2 := hwf.entryPreds blk hblk

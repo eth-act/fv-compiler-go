@@ -152,7 +152,7 @@ theorem gr_rwPre :
   ⟨GoFV.Proof.Pass.Rewrite.RwPre.p1 (by decide +kernel) (by decide +kernel)
     (GoFV.Proof.Pass.Rewrite.initAvoids_empty (fun v hv _ _ => by
       simp only [List.mem_cons, List.mem_nil_iff, or_false] at hv
-      rcases hv with rfl | rfl <;> intro h <;> cases h) rfl),
+      rcases hv with rfl | rfl <;> intro h <;> cases h) rfl (fun _ h => nomatch h)),
     Env.runtime_growLen⟩
 
 end GoFV.Proof.Witness

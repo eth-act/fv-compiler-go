@@ -1137,7 +1137,7 @@ theorem verified_mach_atSP_witness :
     have hnn : ∀ x ∈ r.nnf, GoFV.Proof.NoNilFault x.1 x.2 env [] {} := fun x hx =>
       sameRun_spec (hx2 x hx).1.1
     have hap : ∀ x ∈ r.nnf, GoFV.Proof.ArgPtrsOK x.1 x.2 env [] {} := fun x hx =>
-      argPtrsOK_of_none (hx2 x hx).1.2 env [] {}
+      argPtrsOK_of_none (hx2 x hx).1.2 env [] {} (fun _ h => nomatch h)
     have hnp : ∀ x ∈ r.nnf, GoFV.Proof.NilPtrsOK x.1 x.2 env [] {} := fun x hx =>
       nilPtrsOK_of_none (hx2 x hx).2 env [] {}
     obtain ⟨m0, hrun0⟩ := isRet2_spec hrun

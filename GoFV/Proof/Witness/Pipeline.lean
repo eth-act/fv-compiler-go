@@ -185,7 +185,8 @@ theorem plF_v8 : (plF.value? 8).map (·.op) = some .Zero := by
 
 theorem plRunEnv_initAvoids : InitAvoids plRunEnv [] {} := by
   intro a n
-  refine ⟨fun _ h => absurd h List.not_mem_nil, fun _ _ h => ?_, rfl, fun g hg x hx => ?_⟩
+  refine ⟨fun _ h => absurd h List.not_mem_nil, fun _ _ h => ?_, rfl, fun g hg x hx => ?_,
+    fun _ h => nomatch h⟩
   · simp at h
   · simp only [plRunEnv, List.mem_cons, List.not_mem_nil, or_false] at hg
     rcases hg with rfl | rfl

@@ -35,6 +35,11 @@ structure Env where
   `runtime.wbZero`/`runtime.wbMove` are relied on); a call of one clobbers only the slots of
   its stack arguments (`callFrame`). -/
   noSpill : String → Bool := fun _ => false
+  /-- The closure context of the top-level activation (`R26` at entry, the funcval the caller
+  called through; `docs/plans/closure-ctx.md`); `none` outside a closure. Read only by
+  `entryFrame`: `runActivation` ignores it (a called program function gets the context its
+  call passes, `clo`). -/
+  closure : Option Val := none
 
 namespace Env
 
