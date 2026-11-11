@@ -84,8 +84,13 @@ theorem tbt_lower :
       (out.func.block? 1).map (fun b => (b.kind, b.auxInt, b.controls)) =
         some (.ARM64TBNZ, 2, #[2]) ∧
       (∃ f', GoFV.Proof.Low.Contract tbtFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func tbtPassEnv.tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env lcsTabs tbtFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms tbtPassEnv.tables tbtFunc) env mem)
+        out.tables out.func tbtPassEnv.tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.RewriteCheck.roSyms tbtPassEnv.tables tbtFunc) env mem → ∀ fuel,
+        (run env lcsTabs tbtFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env lcsTabs tbtFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := tbt_checks
@@ -96,6 +101,7 @@ theorem tbt_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨hb, hl, -⟩ := h1
     exact ⟨out, rfl, hl, hb, GoFV.Proof.Low.lower_refines hc tbt_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc tbt_generic tbt_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc tbt_generic tbt_noFma hE hro hd⟩
 
 end GoFV.Proof.Witness

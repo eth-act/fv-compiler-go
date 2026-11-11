@@ -51,8 +51,13 @@ theorem ladf_lower :
       (out.func.value? 7).map (fun v => (v.op, v.auxInt, v.aux, v.args)) =
         some (.ARM64MOVDstore, 0, some 5, #[11, 4, 5]) ∧
       (∃ f', GoFV.Proof.Low.Contract ladFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func ladPassEnv.tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env ladTabs ladFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms ladPassEnv.tables ladFunc) env mem)
+        out.tables out.func ladPassEnv.tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.RewriteCheck.roSyms ladPassEnv.tables ladFunc) env mem → ∀ fuel,
+        (run env ladTabs ladFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env ladTabs ladFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   have h1 := ladf_checks
@@ -63,7 +68,8 @@ theorem ladf_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨h5, h7, hl⟩ := h1
     exact ⟨out, rfl, hl, h5, h7, GoFV.Proof.Low.lower_refines hc lad_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc lad_generic lad_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc lad_generic lad_noFma hE hro hd⟩
 
 /-- The definition tables of `gst`: `int` (type 2), `*int` (3), `uintptr` (4), `mem` (28), the
 results tuple (33), the `AuxCall` of `gst`, its result name, the global `main.g` (aux 4) and the
@@ -147,8 +153,13 @@ theorem gst_lower :
       (out.func.value? 5).map (fun v => (v.op, v.auxInt, v.aux, v.args)) =
         some (.ARM64MOVDstore, 0, some 4, #[2, 4, 1]) ∧
       (∃ f', GoFV.Proof.Low.Contract gstFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func gstPassEnv.tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env gstTabs gstFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms gstPassEnv.tables gstFunc) env mem)
+        out.tables out.func gstPassEnv.tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.RewriteCheck.roSyms gstPassEnv.tables gstFunc) env mem → ∀ fuel,
+        (run env gstTabs gstFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env gstTabs gstFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := gst_checks
@@ -159,6 +170,7 @@ theorem gst_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨h5, hl, -⟩ := h1
     exact ⟨out, rfl, hl, h5, GoFV.Proof.Low.lower_refines hc gst_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc gst_generic gst_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc gst_generic gst_noFma hE hro hd⟩
 
 end GoFV.Proof.Witness

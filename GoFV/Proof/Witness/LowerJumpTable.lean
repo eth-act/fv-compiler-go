@@ -84,8 +84,13 @@ theorem jtb_lower :
     ∃ out, lowerChecked jtbPassEnv jtbFunc = .ok out ∧ out.func.lowered = true ∧
       (out.func.block? 1).map (fun b => (b.kind, b.controls)) = some (.ARM64JUMPTABLE, #[2, 7]) ∧
       (∃ f', GoFV.Proof.Low.Contract jtbFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func jtbPassEnv.tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env jtbTabs jtbFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms jtbPassEnv.tables jtbFunc) env mem)
+        out.tables out.func jtbPassEnv.tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.RewriteCheck.roSyms jtbPassEnv.tables jtbFunc) env mem → ∀ fuel,
+        (run env jtbTabs jtbFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env jtbTabs jtbFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := jtb_checks
@@ -96,6 +101,7 @@ theorem jtb_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨hb, hl, -⟩ := h1
     exact ⟨out, rfl, hl, hb, GoFV.Proof.Low.lower_refines hc jtb_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc jtb_generic jtb_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc jtb_generic jtb_noFma hE hro hd⟩
 
 end GoFV.Proof.Witness

@@ -67,8 +67,14 @@ theorem andb_lower :
       andbShow out.func = [some (.ARM64GreaterThan, 0, #[15]), some (.ARM64LessThan, 0, #[14]),
         some (.ARM64AND, 0, #[6, 8])] ∧
       (∃ f', GoFV.Proof.Low.Contract andbFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func (narPassEnv "andb").tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env narTabs andbFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage
+            (GoFV.Opt.RewriteCheck.roSyms (narPassEnv "andb").tables andbFunc) env mem)
+        out.tables out.func (narPassEnv "andb").tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.RewriteCheck.roSyms (narPassEnv "andb").tables andbFunc) env mem → ∀ fuel,
+        (run env narTabs andbFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env narTabs andbFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := andb_checks
@@ -79,6 +85,7 @@ theorem andb_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨hv, hl, -⟩ := h1
     exact ⟨out, rfl, hl, hv, GoFV.Proof.Low.lower_refines hc andb_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc andb_generic andb_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc andb_generic andb_noFma hE hro hd⟩
 
 end GoFV.Proof.Witness

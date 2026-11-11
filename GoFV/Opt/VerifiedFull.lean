@@ -299,13 +299,17 @@ def FState.skip (s : FState) (p : LPass) (why : String) : FState :=
   { s with st := s.st.skip p.name why }
 
 /-- Why a proven step's theorem does not apply to `s` and the result `out` (`wf`: whether `out`
-passes `check`), if so. -/
+passes `check`), if so. `lower`'s theorem asks for the read-only symbols of its input
+(`RewriteCheck.roSyms`) in the memory with the global image: those the pipeline's precondition
+pins (`st.ro`). -/
 def FState.whyNot (s : FState) (penv : PassEnv) (rel : LRel) (wfReq : Bool)
     (guard : PassEnv → Func → PassOut → Bool) (out : PassOut) (wf : Bool) : Option String :=
   if s.layer != rel.src then some "layer"
   else if wfReq && !s.st.wf then some "input fails check"
   else if wfReq && !wf then some "output fails check"
   else if !guard penv s.st.func out then some "rejected"
+  else if rel == .lower && !(RewriteCheck.roSyms s.st.tables s.st.func).all s.st.ro.contains then
+    some "read-only symbols"
   else none
 
 /-- `s` continued with the result `out` of pass `p`: the identity when nothing changed in the

@@ -89,8 +89,13 @@ theorem wbp_lower :
       (out.func.value? 6).map (fun v => (v.op, v.auxInt, v.args)) =
         some (.ARM64LoweredPanicBoundsCC, 0, #[5]) ∧
       (∃ f', GoFV.Proof.Low.Contract wbpFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func wbpPassEnv.tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env wbpTabs wbpFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms wbpPassEnv.tables wbpFunc) env mem)
+        out.tables out.func wbpPassEnv.tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.RewriteCheck.roSyms wbpPassEnv.tables wbpFunc) env mem → ∀ fuel,
+        (run env wbpTabs wbpFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env wbpTabs wbpFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := wbp_checks
@@ -101,6 +106,7 @@ theorem wbp_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨h4, h6, hl, -⟩ := h1
     exact ⟨out, rfl, hl, h4, h6, GoFV.Proof.Low.lower_refines hc wbp_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc wbp_generic wbp_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc wbp_generic wbp_noFma hE hro hd⟩
 
 end GoFV.Proof.Witness

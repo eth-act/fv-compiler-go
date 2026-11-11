@@ -81,8 +81,13 @@ theorem inv_lower :
         some (.ARM64GT, 0, #[8]) ∧
       (out.func.value? 8).map (fun v => (v.op, v.args)) = some (.ARM64CMP, #[3, 2]) ∧
       (∃ f', GoFV.Proof.Low.Contract invFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func invPassEnv.tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env lcsTabs invFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms invPassEnv.tables invFunc) env mem)
+        out.tables out.func invPassEnv.tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.RewriteCheck.roSyms invPassEnv.tables invFunc) env mem → ∀ fuel,
+        (run env lcsTabs invFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env lcsTabs invFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := inv_checks
@@ -93,6 +98,7 @@ theorem inv_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨hb, h8, hl, -⟩ := h1
     exact ⟨out, rfl, hl, hb, h8, GoFV.Proof.Low.lower_refines hc inv_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc inv_generic inv_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc inv_generic inv_noFma hE hro hd⟩
 
 end GoFV.Proof.Witness

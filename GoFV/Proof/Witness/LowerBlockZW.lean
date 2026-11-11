@@ -82,8 +82,13 @@ theorem nzw_lower :
     ∃ out, lowerChecked nzwPassEnv nzwFunc = .ok out ∧ out.func.lowered = true ∧
       (out.func.block? 1).map (fun b => (b.kind, b.controls)) = some (.ARM64NZW, #[2]) ∧
       (∃ f', GoFV.Proof.Low.Contract nzwFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func nzwPassEnv.tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env cpaTabs nzwFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms nzwPassEnv.tables nzwFunc) env mem)
+        out.tables out.func nzwPassEnv.tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.RewriteCheck.roSyms nzwPassEnv.tables nzwFunc) env mem → ∀ fuel,
+        (run env cpaTabs nzwFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env cpaTabs nzwFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := nzw_checks
@@ -94,6 +99,7 @@ theorem nzw_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨hb, hl, -⟩ := h1
     exact ⟨out, rfl, hl, hb, GoFV.Proof.Low.lower_refines hc nzw_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc nzw_generic nzw_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc nzw_generic nzw_noFma hE hro hd⟩
 
 end GoFV.Proof.Witness

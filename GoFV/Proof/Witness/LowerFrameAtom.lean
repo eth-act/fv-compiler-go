@@ -88,8 +88,13 @@ theorem fpa_lower :
       (out.func.value? 8).map (fun v => (v.op, v.args.size, v.args[1]?)) =
         some (.ARM64MOVDstore, 3, some 7) ∧
       (∃ f', GoFV.Proof.Low.Contract fpaFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func fpaPassEnv.tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env ladTabs fpaFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms fpaPassEnv.tables fpaFunc) env mem)
+        out.tables out.func fpaPassEnv.tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.RewriteCheck.roSyms fpaPassEnv.tables fpaFunc) env mem → ∀ fuel,
+        (run env ladTabs fpaFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env ladTabs fpaFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := fpa_checks
@@ -100,6 +105,7 @@ theorem fpa_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨h7, h8, hl, -⟩ := h1
     exact ⟨out, rfl, hl, h7, h8, GoFV.Proof.Low.lower_refines hc fpa_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc fpa_generic fpa_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc fpa_generic fpa_noFma hE hro hd⟩
 
 end GoFV.Proof.Witness

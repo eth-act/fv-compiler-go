@@ -138,7 +138,7 @@ end
 
 /-- The precondition of a lowered pass theorem on input `f` in `tabs`. -/
 def lrelPre : LRel → Tables → Func → Env → List Val → Mem → Prop
-  | .lower, _, _ => fun env _ _ => env.Mono
+  | .lower, tabs, f => fun env _ mem => env.Mono ∧ RoImage (RewriteCheck.roSyms tabs f) env mem
   | .lowFrame, _, _ => fun env args mem => env.FrameSafe ∧ InitAvoids env args mem
   | .sched, tabs, f => fun env args mem =>
     NoNilFault tabs f env args mem ∧ ArgPtrsOK tabs f env args mem ∧ NilPtrsOK tabs f env args mem
@@ -193,7 +193,7 @@ theorem loweredVPasses_sound : ∀ p ∈ loweredVPasses.toList, stepSoundL p := 
   · refine ⟨rfl, fun penv f out h _ hg => ?_⟩
     simp only [lowerGuard, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hg
     intro env args mem hM fuel hd
-    exact Low.lower_refines_run h hg.1 hg.2 hM hd
+    exact Low.lower_refines_run h hg.1 hg.2 hM.1 hM.2 hd
   -- addressing modes
   · exact ⟨rfl, fun _ _ _ h _ _ => low_of (addressingModes_refinesL h)⟩
   -- late lower
@@ -297,12 +297,14 @@ def PreFull (k : List Nat) (ro : List (String × Alloc)) (eq : List String × Li
 variable {env : PassEnv} {f0 : Func} {l0 : Layer}
 
 /-- The invariant of the states from input `f0` (layer `l0`): a verified state refines the
-input under `PreFull` of its `schedule` inputs, and `wf` means the state passes `check`. -/
+input under `PreFull` of its `schedule` inputs, `wf` means the state passes `check`, and the
+state records the pipeline's read-only symbols. -/
 def InvF (env : PassEnv) (f0 : Func) (l0 : Layer) (s : FState) : Prop :=
   (s.st.verified = true → LayerRefines (PreFull (NilCheck.dictParams env.tables f0)
     (pipelineRo env f0) (pipelineEq env) s.nnf) s.layer s.st.tables s.st.func
     l0 env.tables f0) ∧
-  (s.st.wf = true → check (checkEnv env s.st.tables) s.st.func = .ok ())
+  (s.st.wf = true → check (checkEnv env s.st.tables) s.st.func = .ok ()) ∧
+  s.st.ro = pipelineRo env f0
 
 theorem PreFull.sub {k : List Nat} {ro : List (String × Alloc)} {eq : List String × List String}
     {n n' : List (Tables × Func)} (hn : ∀ x ∈ n, x ∈ n') {e : Env} {args : List Val} {mem : Mem}
@@ -316,7 +318,7 @@ theorem InvF.adopt {s : FState} (h : InvF env f0 l0 s) {p : LPass} {out : PassOu
       s.layer s.st.tables s.st.func)
     (hwf : wf = true → check (checkEnv env out.tables) out.func = .ok ()) :
     InvF env f0 l0 (s.adopt p out wf v nnf) := by
-  refine ⟨fun hver => ?_, hwf⟩
+  refine ⟨fun hver => ?_, hwf, h.2.2⟩
   simp only [FState.adopt, VState.adopt, Bool.and_eq_true] at hver
   exact LayerRefines.trans ((h.1 hver.1).mono fun _ _ _ hp => hp.sub hn) (hv hver.2)
 
@@ -336,7 +338,7 @@ theorem InvF.same {s : FState} (h : InvF env f0 l0 s) {p : LPass} {out : PassOut
   obtain ⟨hf, ht⟩ := VState.same_eq hs.1
   refine h.adopt (fun _ hx => hx) (fun _ => ?_) (fun hw => ?_)
   · rw [hf, ht, hs.2]; exact LayerRefines.refl _ _ _ _
-  · rw [hf, ht]; exact h.2 hw
+  · rw [hf, ht]; exact h.2.1 hw
 
 theorem InvF.next {s : FState} (h : InvF env f0 l0 s) {p : LPass} {out : PassOut}
     {bad : Bool → Option String} {nnf : List (Tables × Func)} (hn : ∀ x ∈ s.nnf, x ∈ nnf)
@@ -360,7 +362,8 @@ theorem whyNot_none {s : FState} {penv : PassEnv} {rel : LRel} {wfReq : Bool}
     {guard : PassEnv → Func → PassOut → Bool} {out : PassOut} {wf : Bool}
     (h : s.whyNot penv rel wfReq guard out wf = none) :
     s.layer = rel.src ∧ (wfReq = true → s.st.wf = true ∧ wf = true) ∧
-      guard penv s.st.func out = true := by
+      guard penv s.st.func out = true ∧
+      (rel = .lower → (RewriteCheck.roSyms s.st.tables s.st.func).all s.st.ro.contains = true) := by
   unfold FState.whyNot at h
   split at h
   · cases h
@@ -374,16 +377,21 @@ theorem whyNot_none {s : FState} {penv : PassEnv} {rel : LRel} {wfReq : Bool}
         split at h
         · cases h
         · next h4 =>
-          refine ⟨by simpa using h1, fun hw => ⟨?_, ?_⟩, by simpa using h4⟩
-          · simpa [hw] using h2
-          · simpa [hw] using h3
+          split at h
+          · cases h
+          · next h5 =>
+            refine ⟨by simpa using h1, fun hw => ⟨?_, ?_⟩, by simpa using h4, fun hl => ?_⟩
+            · simpa [hw] using h2
+            · simpa [hw] using h3
+            · simpa [hl] using h5
 
 theorem pre_lrel {k : List Nat} {ro : List (String × Alloc)} {eq : List String × List String}
     {s : FState} (rel : LRel) {e : Env} {args : List Val} {mem : Mem}
+    (hro : rel = .lower → ∀ x ∈ RewriteCheck.roSyms s.st.tables s.st.func, x ∈ ro)
     (h : PreFull k ro eq (s.nnfAfter rel) e args mem) :
     lrelPre rel s.st.tables s.st.func e args mem := by
   cases rel with
-  | lower => exact h.1.1
+  | lower => exact ⟨h.1.1, h.1.2.2.2.2.2.2.2.2.1.sub (hro rfl)⟩
   | lowFrame => exact ⟨h.1.2.1, h.1.2.2.1⟩
   | sched =>
     have hm : (s.st.tables, s.st.func) ∈ s.nnfAfter .sched := by
@@ -429,12 +437,12 @@ theorem runPassL_inv {s s' : FState} {p : LPass} (hp : stepSoundL p) (h : InvF e
               (pipelineEq env)
               (s.nnfAfter rel)) out o.tables o.func s.layer s.st.tables s.st.func := by
           intro wf hw hwf
-          obtain ⟨hl, hc, hg⟩ := whyNot_none hw
+          obtain ⟨hl, hc, hg, hro⟩ := whyNot_none hw
           have R := hsound _ _ _ hrun
-            (fun hreq => ⟨h.2 (hc hreq).1, hwf (hc hreq).2⟩) hg
+            (fun hreq => ⟨h.2.1 (hc hreq).1, hwf (hc hreq).2⟩) hg
           simp only at htgt
           rw [← htgt, hl]
-          exact R.mono fun _ _ _ hP => pre_lrel rel hP
+          exact R.mono fun _ _ _ hP => pre_lrel rel (fun hr => h.2.2 ▸ ro_sub (hro hr)) hP
         cases full with
         | none =>
           cases hr
@@ -481,7 +489,7 @@ theorem verifiedPipelineFull_layer {env : PassEnv} {f : Func} {start : Nat}
     have I0 : InvF env f (startLayer start)
         { st, layer := startLayer start, dclLen := dcl + newAutos env.tables st.tables
           genVerified := st.verified } := by
-      refine ⟨fun hver => ?_, I.2.1⟩
+      refine ⟨fun hver => ?_, I.2.1, I.2.2.2.1⟩
       by_cases hs : start ≤ stockPasses.size
       · have hl : startLayer start = .gen := by simp [startLayer, hs]
         simp only [hl]

@@ -135,8 +135,13 @@ theorem pnn_lower :
       (out.func.value? 5).map (fun v => (v.op, v.auxInt, v.args)) =
         some (.ARM64CMPconst, 0, #[2]) ∧
       (∃ f', GoFV.Proof.Low.Contract pnnFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func pcPassEnv.tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env pcTabs pnnFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms pcPassEnv.tables pnnFunc) env mem)
+        out.tables out.func pcPassEnv.tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.RewriteCheck.roSyms pcPassEnv.tables pnnFunc) env mem → ∀ fuel,
+        (run env pcTabs pnnFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env pcTabs pnnFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := pnn_checks
@@ -147,7 +152,8 @@ theorem pnn_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨h3, h5, hl, -⟩ := h1
     exact ⟨out, rfl, hl, h3, h5, GoFV.Proof.Low.lower_refines hc pnn_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc pnn_generic pnn_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc pnn_generic pnn_noFma hE hro hd⟩
 
 /-- By kernel evaluation: the checked lower keeps a lowered result whose `v4` is `Equal v7` and
 `v7` `CMP v3 v2`, and `peq` returns `false` on `local 0 1 + 0` and `temp 0 1 + 0` (one address)
@@ -174,8 +180,13 @@ theorem peq_lower :
       (out.func.value? 4).map (fun v => (v.op, v.args)) = some (.ARM64Equal, #[7]) ∧
       (out.func.value? 7).map (fun v => (v.op, v.args)) = some (.ARM64CMP, #[3, 2]) ∧
       (∃ f', GoFV.Proof.Low.Contract peqFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func pcPassEnv.tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env pcTabs peqFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms pcPassEnv.tables peqFunc) env mem)
+        out.tables out.func pcPassEnv.tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.RewriteCheck.roSyms pcPassEnv.tables peqFunc) env mem → ∀ fuel,
+        (run env pcTabs peqFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env pcTabs peqFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := peq_checks
@@ -186,6 +197,7 @@ theorem peq_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨h4, h7, hl, -⟩ := h1
     exact ⟨out, rfl, hl, h4, h7, GoFV.Proof.Low.lower_refines hc peq_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc peq_generic peq_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc peq_generic peq_noFma hE hro hd⟩
 
 end GoFV.Proof.Witness

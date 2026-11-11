@@ -198,6 +198,8 @@ structure Hyp (tabs : Tables) (f g : Func) (ce ce' : CheckEnv) : Prop where
   glow : g.lowered = true
   gen : ∀ x u, f.value? x = some u → termVL tabs u = false → u.op.generic = true
   shp : ∀ x u, f.value? x = some u → shp f.lowered tabs u.type = shp g.lowered tabs u.type
+  /-- `f`'s blocks are generic (so `f` is generic when its values are, `RoQL`). -/
+  fblk : ∀ id b, f.block? id = some b → b.kind.isArm64 = false
 
 section
 variable {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')

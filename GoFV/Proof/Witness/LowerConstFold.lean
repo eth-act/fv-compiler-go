@@ -75,8 +75,13 @@ theorem zxc_lower :
       (out.func.value? 3).map (fun v => (v.op, v.auxInt, v.args)) =
         some (.ARM64MOVDconst, 255, #[]) ∧
       (∃ f', GoFV.Proof.Low.Contract zxcFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func zxcPassEnv.tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env zxcTabs zxcFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.RewriteCheck.roSyms zxcPassEnv.tables zxcFunc) env mem)
+        out.tables out.func zxcPassEnv.tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.RewriteCheck.roSyms zxcPassEnv.tables zxcFunc) env mem → ∀ fuel,
+        (run env zxcTabs zxcFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env zxcTabs zxcFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := zxc_checks
@@ -87,6 +92,7 @@ theorem zxc_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨-, h3, hl, -⟩ := h1
     exact ⟨out, rfl, hl, h3, GoFV.Proof.Low.lower_refines hc zxc_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc zxc_generic zxc_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc zxc_generic zxc_noFma hE hro hd⟩
 
 end GoFV.Proof.Witness

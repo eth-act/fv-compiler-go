@@ -132,8 +132,14 @@ theorem pkf_lower :
       pkfShow out.func = [some (.ARM64SUBconst, 2, #[4]), some (.ARM64MVNshiftRL, 3, #[4]),
         some (.ARM64SLL, 0, #[4, 4]), some (.ARM64ANDconst, 127, #[18])] ∧
       (∃ f', GoFV.Proof.Low.Contract pkfFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func (narPassEnv "pkf").tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env narTabs pkfFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage
+            (GoFV.Opt.RewriteCheck.roSyms (narPassEnv "pkf").tables pkfFunc) env mem)
+        out.tables out.func (narPassEnv "pkf").tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.RewriteCheck.roSyms (narPassEnv "pkf").tables pkfFunc) env mem → ∀ fuel,
+        (run env narTabs pkfFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env narTabs pkfFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := pkf_checks
@@ -144,7 +150,8 @@ theorem pkf_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨hv, hl, -⟩ := h1
     exact ⟨out, rfl, hl, hv, GoFV.Proof.Low.lower_refines hc pkf_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc pkf_generic pkf_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc pkf_generic pkf_noFma hE hro hd⟩
 
 /-- **Pass execution witness** for `lower_refines` (`lower_refines_run`) on a bit test of a
 negated condition: on `tbx`, the checked lower's `b1` is `TBZ [0] v6` (`ARM64.rules:556`,
@@ -155,8 +162,14 @@ theorem tbx_lower :
       (out.func.block? 1).map (fun b => (b.kind, b.auxInt, b.controls)) =
         some (.ARM64TBZ, 0, #[6]) ∧
       (∃ f', GoFV.Proof.Low.Contract tbxFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func (narPassEnv "tbx").tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env narTabs tbxFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage
+            (GoFV.Opt.RewriteCheck.roSyms (narPassEnv "tbx").tables tbxFunc) env mem)
+        out.tables out.func (narPassEnv "tbx").tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.RewriteCheck.roSyms (narPassEnv "tbx").tables tbxFunc) env mem → ∀ fuel,
+        (run env narTabs tbxFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env narTabs tbxFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := tbx_checks
@@ -167,6 +180,7 @@ theorem tbx_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨hb, hl, -⟩ := h1
     exact ⟨out, rfl, hl, hb, GoFV.Proof.Low.lower_refines hc tbx_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc tbx_generic tbx_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc tbx_generic tbx_noFma hE hro hd⟩
 
 end GoFV.Proof.Witness
