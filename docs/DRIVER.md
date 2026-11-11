@@ -330,10 +330,12 @@ the `.prog` file it reads only the input view (`inputView`: definitions, config,
 `AllocFrame`'s start, `genin`), no stock result. It prints the fully verified functions, those
 the back end ran on, those `checkG64` with `memTyL`, `entryStoresOK`, `argsOK`, `retRegsOK`,
 `checkObj` and all of
-them accept (the premises hold), of those the ones vacuous at the entry under every variant
-(`entryVacuous` at `entryLen`: through the entry block's values that cannot panic, an entry
-value after the start, which `RunPre` excludes, or a load off the closure pointer, `poison`
-since the top-level run has no closure context, #705), and the others (the end-to-end count;
+them accept (the premises hold), of those the ones vacuous at the entry under every variant or
+with `CloOK` not discharged (`entryVacuous` at `entryLen`: a closure pointer after the start,
+`cloBefore` failing, so `cloOK_of_cloBefore` does not discharge the trusted `CloOK`; or, through
+the entry block's values that cannot panic, an entry value after the start, which `RunPre`
+excludes; a load off the closure pointer is no reason since the top-level run's closure context
+is `env.closure`, #705), and the others (the end-to-end count;
 a line counts the functions with a pending window and those
 `entryStoresOK` rejects; a line those `argsOK` rejects; a line the vacuous ones; another the
 end-to-end functions by mode:
