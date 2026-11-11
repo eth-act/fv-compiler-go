@@ -1171,7 +1171,10 @@ def e2eFile (wholeFile : Bool) (path : System.FilePath) (st : E2E.Stats) : IO E2
       let log := r.st.st.log
       let gen := (log.toList.filter fun (q, v) => isGen q && !v.ok).map fun (q, v) => clean s!"{q}: {v}"
       let low := (log.toList.filter fun (q, v) => !isGen q && !v.ok).map fun (q, v) => clean s!"{q}: {v}"
-      let vst := s!"VST\t{clean (vstatsFields r.st)}\tgen={"; ".intercalate gen}\tlow={"; ".intercalate low}\tlowwhy={clean (r.lowWhy.getD "-")}\tsched={clean (r.schedWhy.getD "-")}"
+      let dff := match r.diff with
+        | some (p, v, _) => s!"{p}: {v}"
+        | none => "-"
+      let vst := s!"VST\t{clean (vstatsFields r.st)}\tgen={"; ".intercalate gen}\tlow={"; ".intercalate low}\tlowwhy={clean (r.lowWhy.getD "-")}\tsched={clean (r.schedWhy.getD "-")}\tdiff={clean dff}"
       let row (p : String) := (row p) ++ "\t" ++ vst
       if !r.st.fullyVerified then return { st with rows := st.rows.push (row "notfull") }
       let t0 := ({} : Tables).addAll (((e.sections[0]?).map (·.defs)).getD #[])
