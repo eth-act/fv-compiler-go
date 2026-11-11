@@ -45,4 +45,19 @@ def noArg (lc : LocCtx) : Bool :=
 def argsOK (lc : LocCtx) (g : G2In) (spills : List Spill) (k : Nat) : Bool :=
   argsBefore lc k && (noArg lc || ((pendWins lc g).isEmpty && spills.isEmpty))
 
+/-- Every `LoweredGetClosurePtr` of the function sits in the entry block before value `k`, and
+no edge goes to the entry block, as `argsBefore` for `Arg`: no closure pointer runs after `k`, so
+`CloOK`, `RunPre`'s conjunct at a closure pointer, holds at every state the run reaches from
+`(entry, k)` (`cloOK_of_cloBefore`). The closure context is the caller's side at the entry
+(`EntryMatch.regs`: `R26`). -/
+def cloBefore (lc : LocCtx) (k : Nat) : Bool :=
+  (List.range lc.ctx.f.blockTab.size).all fun b =>
+    match lc.ctx.f.block? b with
+    | none => true
+    | some blk =>
+      blk.succs.all (·.b != lc.ctx.f.entry) &&
+        (List.range blk.values.size).all fun i =>
+          (b == lc.ctx.f.entry && decide (i < k)) ||
+            (blk.values[i]?.bind lc.ctx.f.value?).all (·.op != .ARM64LoweredGetClosurePtr)
+
 end GoFV.Gen.Check
