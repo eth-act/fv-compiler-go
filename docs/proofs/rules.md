@@ -2466,12 +2466,16 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   `poison` (`roLoadWord`, at `Addrs.fixed`, for an allocation without frame pointers), its memory
   argument is an atom, and every value of the input is a generic memory-typed op (`memTyAll`: no
   write-barrier op). Then the memory the load reads holds the allocation: `lower_refines` takes
-  `RoImage` of the input's read-only symbols (`RewriteCheck.roSyms`), the source run keeps them in
-  every memory it holds (`Sim.RoQL`, `MemInv.SInv`), and `RoVals` gives them to the valuation of
-  the atoms (`FrameVals`). The pipeline discharges the precondition from `PreFull`'s `RoImage
-  (pipelineRo …)` when the input's read-only symbols are the state's (`FState.whyNot` checks
-  `roSyms ⊆ st.ro`; `InvF` carries `st.ro = pipelineRo`); `checkedRunL` checks that the output's
-  tables give the input the same read-only symbols. Witness `rld_lower` (`tab[1]` of a read-only
+  `RoImage` of the input's read-only symbols when its values are generic memory-typed ops
+  (`LowerCheck.roPre`: `RewriteCheck.roSyms` if `memTyAll`, else none), the source run keeps them
+  in every memory it holds (`Sim.RoQL`, `MemInv.SInv`), and `RoVals` gives them to the valuation
+  of the atoms (`FrameVals`). The pipeline discharges the precondition from `PreFull`'s `RoImage
+  (pipelineRo …)` when those symbols are the state's (`FState.whyNot` checks `roPre ⊆ st.ro`;
+  `InvF` carries `st.ro = pipelineRo`); `checkedRunL` checks that the output's tables give the
+  input the same `roPre`. Gating on `memTyAll` keeps the guard off the functions `roLoadDef` never
+  applies to: checking `roSyms ⊆ st.ro` on every input lost 5 quick-v10 end-to-end functions (all
+  with write barriers, whose `Addr`s name type descriptors the pipeline's precondition does not
+  pin). Witness `rld_lower` (`tab[1]` of a read-only
   `[0, 7]` as `MOVDconst [7]`, precondition satisfiable: `rld_pre`).
 
 - **`ADDshiftLL` of a constant** (`:1512`, `(ADDshiftLL x (MOVDconst [c]) [d]) => (ADDconst x
