@@ -12,7 +12,8 @@ driver's `entryVacuous`). Semantics: `docs/plans/semantics.md` §8, `semantics2.
 - **Problem.** No top-level run has a closure context, so `GetClosurePtr` and
   `LoweredGetClosurePtr` evaluate to `poison`. As a result 547 of quick-v10's 7,221 functions
   whose premises hold satisfy every `verified_mach` variant only vacuously: 539 under
-  `verified_mach`, 8 under `verified_mach_S`. On full-v11 the figure is about 7,315.
+  `verified_mach`, 8 under `verified_mach_S`. On full-v11 the figure is 7,314 at G61 and 7,338 at
+  G64 (driver, STATUS's full-v11 table).
 - **Recommended change (design E).** The top-level closure context becomes an input carried by
   `Env`, the way `Env.globals` already is: a field `Env.closure : Option Val := none`, read by
   `entryFrame` alone.
@@ -29,7 +30,7 @@ driver's `entryVacuous`). Semantics: `docs/plans/semantics.md` §8, `semantics2.
   (8–10 agent-days against 4–5). It also hits a type problem: the pass preconditions
   `P : Env → List Val → Mem → Prop` cannot mention `clo`.
 - **Gain.** quick-v10 goes from 6,674 to 7,221 end to end (+547, exact). full-v11 goes up by
-  about 7,315, from about 67,914 to about 75,229 at G61.
+  7,314, from 67,915 to 75,229 at G61, and by 7,338, from 68,698 to 76,036 at G64.
 - **Finding on the way (§3.3).** The trusted model of `runtime.morestack_noctxt` keeps `R26`, but
   the runtime zeroes it (`asm_arm64.s:501`). `MorestackOK` at `morestack_noctxt` is therefore
   false of the real runtime whenever `R26 ≠ 0` at entry, and every non-closure function with a
@@ -376,11 +377,12 @@ The witness is `examples/closures/main/adder.func1`. Its entry block at `trim` i
   - Per mode: `verified_mach` 6,471 → 7,010 (+539); `verified_mach_S` 203 → 211 (+8).
   - The stock column: 600.
   - This assumes no other premise changes, which the composition PR measures with 0 lost.
-- **full-v11** (G61, #703): about **+7,315**, from about 67,914 to about 75,229.
-  - Method: a mirror of `entryVacuous` on the stock `trim` functions of the accepted lists. The
-    mirror gives 548 on quick against the driver's 547.
-  - The G64 run started for #702 gives the exact base. The PR's full-v11 run gives the exact
-    gain.
+- **full-v11**: at G61 (#703) **+7,314**, from 67,915 to 75,229; at G64 (#702) **+7,338**, from
+  68,698 to 76,036.
+  - Method: main aeb502b8's driver (`entryVacuous`) over the G64 run's accepted lists; every G61
+    accepted function is among them. A mirror of `entryVacuous` on the stock `trim` functions
+    had estimated about 7,315 at G61 (548 on quick against the driver's 547).
+  - The PR's full-v11 run gives the exact gain.
 - **Not counted:** closures whose context loads lie past the entry prefix. They are counted
   today, but their theorem is non-vacuous only on inputs that never reach the load. With the
   context they hold on all inputs.
