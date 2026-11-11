@@ -508,6 +508,10 @@ GoFV.Proof.Witness.GenG63.g63_facts._native.native_decide.ax_1_1 0f9cf1502616fe9
 # the 128-bit pair load of the literal `[5]int{1, 2, 3, 4, 5}`) from a memory holding the literal;
 # compiled evaluation.
 GoFV.Proof.Witness.GenG64.g64_facts._native.native_decide.ax_1_1 cae79283667c32b99692f5fa7813fa6c1ca75193ba5c1c28e9ab0b64381a0ec3
+# genG65_witness (GoFV/Proof/Witness/GenG65.lean, #553): on P0', `checkG65` accepts `init.func82`
+# of `test/gcgort` and `checkG64` rejects it; `runLoc` runs `v21` (`FMOVDload` of the frame
+# variable `u`, `FMOVD u-8(SP), F1`) from a memory holding `u = 1.01`; compiled evaluation.
+GoFV.Proof.Witness.GenG65.g65_facts._native.native_decide.ax_1_1 088851e4c35ff0f3cb36cd89b1e50c71b011f180f58c62a2760036ca4b3d32d9
 # objWhole_ret_witness in G48's mode (GoFV/Proof/Witness/ObjWholeS.lean, #553): `ObjWhole`'s facts
 # with the activation at `outargs 0`'s fixed base; compiled evaluation.
 GoFV.Proof.Witness.ObjWholeS.obj_facts._native.native_decide.ax_1_1 92778712e9ede9f127bc66e5b18b511f38318121b1576c48abf79f1866f0c9db

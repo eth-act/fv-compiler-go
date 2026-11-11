@@ -1411,6 +1411,29 @@ accepts it; `v10 = FLDPQ` from a memory holding `main..stmp_16` runs `FLDPQ main
 128 bits in `V0`/`V1`; `QLoadPre` holds by the two valid reads). Composed into `verified_mach`
 (the composition on G64, below), `QLoadPre` among `RunPre`'s per-step premises.
 
+## Phase 3: genssa, slice G65, float frame-variable loads and float pair stores (I7, #553)
+
+`GoFV.Proof.Gen.g65_value`, `g65_initMem`, `g65_term`, `g65_nilPanic`, `g65_boundsPanic`
+(`GoFV/Proof/Gen/G65.lean`): `checkG65` (on P0', `GoFV/Gen/Check65.lean`) is G64 with, tried when
+G64 rejects a value (`vkind65a`): `FMOVSload`/`FMOVDload` of a frame variable (G57b's `fvar57?`:
+G6's `Blk.temp` or G49's `Blk.local` variables) into an `F` register at the op's width (`FMOVS`/
+`FMOVD off(<nc>), Fd`), and `FSTPS`/`FSTPD` through a 64-bit register without a symbol or to a
+global (G3's `accessA`: `FSTPS`/`FSTPD (Fa, Fb), off(Rn)` or `sym+off(SB)`), floats of the op's
+element width in `F` registers. Before G65, G44 loaded floats through a register or of a global only
+and G57 stored float pairs to frame variables only. When `checkG65` accepts a function, they are
+G64's statements at either mode `osp` (`vk65_step`: G64's values by `vk64_step`;
+`GoFV/Proof/Gen/G65a.lean`: `g65_fvload` is G44's float load at the variable's block (`VarAt57`),
+`g65_fstpReg`/`g65_fstpGlob` are G57's `STPW`/G22's `STP` with V registers and the machine's pair
+store at the operand's address, `progStep_fstpAt`). **No premise added:** the loads use G44's
+`FLoadPre`, already in `G54Pre`, so the lift replaces only `checkG64` by `checkG65`. Coverage on
+quick-v10 (`lake exe gen-check --jobs 2`, G65 on P0', on main 1187b1e7): 8,274 of 9,297 functions
+(88.99%, +13 over G64's 8,261: every function whose whole reason set was these accesses), 284,888
+values; rows G1 to G64 identical to G64's run, the rejected set a subset of G64's. Witness:
+`genG65_witness` (`GenG65.lean`, `init.func82` of `test/gcgort` on P0', mode `false`: `checkG64`
+rejects it, `checkG65` accepts it; `v21 = FMOVDload {u}` runs `FMOVD u-8(SP), F1` from a memory
+holding `u = 1.01` in its `temp` block at `SP + 16` and leaves `1.01`'s bits in `F1` and in `V1`'s
+low word; `FLoadPre` holds by the valid read of `u`). Not yet composed into `verified_mach`.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g64_obj_value`, `g64_obj_term`, `g64_obj_nilPanic`, `g64_obj_boundsPanic`
