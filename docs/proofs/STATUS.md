@@ -30,13 +30,13 @@ the semantic phase of their ops (`GoFVTest/Proof/RuleClass.lean`; "Classificatio
 | --- | --: | --: | --: | --: |
 | P1 (integers, booleans) | 1,212 | 30 | 153 | 1,395 |
 | P2 (pointers, composites, `Load` values, `SelectN`) | 73 | 1 | 35 | 109 |
-| mem (memory ops) | 72 | 0 | 40 | 112 |
+| mem (memory ops) | 76 | 0 | 36 | 112 |
 | call | 12 | 0 | 35 | 47 |
 | float | 22 | 0 | 46 | 68 |
 | ptr (`ConstString`, `Addr`, `NilCheck`, pointer comparisons) | 18 | 0 | 5 | 23 |
 | phi | 5 | 0 | 0 | 5 |
 | block | 3 | 0 | 0 | 3 |
-| all | 1,417 | 31 | 314 | 1,762 |
+| all | 1,421 | 31 | 310 | 1,762 |
 
 *Proven*: a merged lemma (`Rule.Sound`, `Rule.SoundT`, `Rule.SoundW`, `Rule.MakeSel`,
 `Rule.LoadSel`, `Rule.Drop`, `Rule.IMakeSM`, `Rule.AddrCmp`, `BlockRule.Sound`,
@@ -60,7 +60,10 @@ Phase1Tail5), the `Load`s of a `Zero` folded to a zero constant (`:882`–`:902`
 forwarding layer (`RewriteCheck.fwdZeroOK`, `LoadFwd.zeroLd_load`) (#69, Phase1Tail5), and the
 pointer comparisons of `LocalAddr`s, `Addr`s, their `OffPtr`s and `isSamePtr` bases folded to a
 constant (`:1649`–`:1663` but `:1651`, `:1666`, `:1667`, `:1669`–`:1676`; 24 alternatives) in the forwarding layer
-(`RewriteCheck.ptrCmpOK`, `LoadFwd.ptrCmp_den`) (#69, Phase1Tail6).
+(`RewriteCheck.ptrCmpOK`, `LoadFwd.ptrCmp_den`) (#69, Phase1Tail6), and the `Load`s through one
+to four disjoint `Store`s to a `Zero` rebuilt as a `Load` of the `Zero`'s memory (`:842`,
+`:851`, `:862`, `:875`) in the forwarding layer (`RewriteCheck.fwdSepOK`, `LoadFwd.sep_den`) (#69,
+Phase1Tail7).
 
 **False under the semantics, with the reason** (31, each marked `-- FALSE r_… #N` in its proof
 module; "Findings" in `rules.md`):
@@ -94,13 +97,13 @@ obstacle counts on full-v6, "Findings" in `rules.md` has the counterexamples):
 - The `CondSelect` folds (about 240 functions on the unmarked alternatives of `:2322–:2393`) and
   `divmod.rules:136–148` (59) are false as above.
 
-**Open** (314):
+**Open** (310):
 
 - `P1`/`P2` alternatives without a lemma (188): most never fire on the corpus; those that fire
   are in the `fire-full` table of `rules.md` (sole obstacles by rule).
-- `mem` (40) and `ptr` (5): memory and pointer rules inside the model without an effect
-  obligation proof: `Load` forwardings of other shapes (`:831–:877`, `:907`, `:912`; the
-  integer and `bool` `Load`s of a `Zero` `:882–:902` are proven), `Move` chains and
+- `mem` (36) and `ptr` (5): memory and pointer rules inside the model without an effect
+  obligation proof: `Load` forwardings of other shapes (`:831–:877` but `:842`/`:851`/`:862`/`:875`,
+  `:907`, `:912`; the integer and `bool` `Load`s of a `Zero` `:882–:902` are proven), `Move` chains and
   `Move`/`Zero` of `Store`s (`:1740–:1942`), dropped writes `:919`/`:924`/`:930`/`:937` (open:
   the `not disjoint` class), `IsNonNil (Convert (Addr _) _)` (`:1690`; the pointer comparisons
   `:1646`–`:1676` are proven except the ones of two constants, `:1664`/`:1665`), and `ConstString` under
