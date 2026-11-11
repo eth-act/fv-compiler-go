@@ -202,11 +202,34 @@ theorem fwdMoveOK_spec {tabs : Tables} {f : Func} {u top offp : Value}
     exact ⟨mv, hmv, g1, g2, g3, g4, g5, g6, g7⟩
   · cases h
 
+theorem fwdSepOK_spec {tabs : Tables} {f : Func} {u top offp : Value}
+    (h : fwdSepOK tabs f u top offp = true) :
+    u.op = .Load ∧ u.args.size = 2 ∧ top.op = .Load ∧ top.type = u.type ∧ top.args.size = 2 ∧
+    offp.op = .OffPtr ∧ offp.args.size = 1 ∧ isPtrTy (tabs.ty offp.type) = true ∧
+    0 ≤ offp.auxInt.toInt ∧ 0 < (tabs.ty u.type).size ∧
+    sepChain tabs f u.args[0]! (tabs.ty u.type).size top.args[1]! 8 u.args[1]! = true ∧
+    ∃ z, f.value? top.args[1]! = some z ∧ z.op = .Zero ∧ z.args.size = 2 ∧
+    offp.args[0]! = z.args[0]! ∧
+    (ptrBase tabs f 8 u.args[0]!).2 =
+      (ptrBase tabs f 8 z.args[0]!).2 + BitVec.ofInt 64 offp.auxInt.toInt ∧
+    baseSameB tabs f 8 (ptrBase tabs f 8 u.args[0]!).1 (ptrBase tabs f 8 z.args[0]!).1 = true := by
+  unfold fwdSepOK at h
+  simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩, h9⟩, h10⟩, h11⟩, h⟩ := h
+  refine ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, ?_⟩
+  split at h
+  · next z hz =>
+    simp only [Bool.and_eq_true, beq_iff_eq] at h
+    obtain ⟨⟨⟨⟨g1, g2⟩, g3⟩, g4⟩, g5⟩ := h
+    exact ⟨z, hz, g1, g2, g3, g4, g5⟩
+  · cases h
+
 theorem fwdMoveRep_spec {tabs : Tables} {f g : Func} {u w : Value}
     (h : fwdMoveRep tabs f g u w = true) :
     w.op = .Copy ∧ w.args.size = 1 ∧ listedB g w.args[0]! = true ∧ ∃ top,
       g.value? w.args[0]! = some top ∧ top.args.size = 2 ∧ listedB g top.args[0]! = true ∧
-      ∃ offp, g.value? top.args[0]! = some offp ∧ fwdMoveOK tabs f u top offp = true := by
+      ∃ offp, g.value? top.args[0]! = some offp ∧
+        (fwdMoveOK tabs f u top offp = true ∨ fwdSepOK tabs f u top offp = true) := by
   unfold fwdMoveRep at h
   simp only [Bool.and_eq_true, beq_iff_eq] at h
   obtain ⟨⟨⟨h1, h2⟩, h3⟩, h⟩ := h
@@ -216,7 +239,7 @@ theorem fwdMoveRep_spec {tabs : Tables} {f g : Func} {u w : Value}
     simp only [Bool.and_eq_true, beq_iff_eq] at h
     obtain ⟨⟨g1, g2⟩, h⟩ := h
     split at h
-    · next offp hoffp => exact ⟨top, htop, g1, g2, offp, hoffp, h⟩
+    · next offp hoffp => exact ⟨top, htop, g1, g2, offp, hoffp, by simpa using h⟩
     · cases h
   · cases h
 
@@ -687,6 +710,60 @@ theorem ptrCmp_den {tabs : Tables} {f : Func} {ρ : ID → Val} (hM : MemAtoms f
       · cases h
     · cases h
 
+/-! ## Loads through disjoint writes to a `Zero` (`generic.rules:842`–`:875`) -/
+
+/-- **Reads through disjoint writes** (`sepChain`): the bytes at the pointer read the same in the
+chain's memory as in the memory at its end. -/
+theorem sepChain_read {tabs : Tables} {f : Func} {ρ : ID → Val} (hM : MemAtoms f.value? tabs ρ)
+    (hA : ArgAv tabs f ρ) {p e : ID} {n : Nat} {kp : Nat} {P : Ptr}
+    (hp : (den f.value? tabs ρ kp p).asPtrWord = some P) :
+    ∀ (d : Nat) (m : ID), sepChain tabs f p n e d m = true → ∀ {k : Nat} {M : Mem},
+      den f.value? tabs ρ k m = .mem M →
+        ∃ k' M0, den f.value? tabs ρ k' e = .mem M0 ∧ M.read P n = M0.read P n
+  | 0, m, h, k, M, hm => by
+    simp only [sepChain, beq_iff_eq] at h
+    subst h
+    exact ⟨k, M, hm, rfl⟩
+  | d + 1, m, h, k, M, hm => by
+    unfold sepChain at h
+    simp only [Bool.or_eq_true, beq_iff_eq] at h
+    rcases h with rfl | h
+    · exact ⟨k, M, hm, rfl⟩
+    cases hs : f.value? m with
+    | none => rw [hs] at h; cases h
+    | some s =>
+    rw [hs] at h
+    simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
+    rcases h with ⟨⟨hcop, hcsz⟩, hch⟩ | ⟨⟨⟨hsop, hssz⟩, hdis⟩, hch⟩
+    · -- a `Copy` of memory
+      have ht : termOp s.op = true := by rw [hcop]; rfl
+      cases k with
+      | zero => simp [den] at hm
+      | succ k =>
+      rw [den_succ_term hs ht, toList_one hcsz, List.map_cons, List.map_nil, hcop,
+        GoFV.Proof.Rules.opVal_pure (op := Op.Copy) rfl, evalPure_copy] at hm
+      exact sepChain_read hM hA hp d _ hch (retype_eq_mem hm)
+    · -- a `Store` at a disjoint pointer
+      have hmem : memOp s.op = true := by rcases hsop with h | h <;> rw [h] <;> rfl
+      cases k with
+      | zero => simp [den] at hm
+      | succ k =>
+      rw [den_succ_atom (not_term_of hs (by rw [memOp_not_term hmem]; decide))] at hm
+      obtain ⟨N, hN⟩ := hM m s hs hmem (by rw [hm]; nofun)
+      obtain ⟨y, hy, hρs⟩ := hN N (Nat.le_refl _)
+      rw [toList_three hssz, List.map_cons, List.map_cons, List.map_cons, List.map_nil] at hy
+      obtain ⟨q, m0, M', hq, hm0, hwr, rfl⟩ := memDef_store hsop hy
+      rw [hm] at hρs
+      have hMM := retype_mem hρs.symm
+      subst hMM
+      rw [read_write_sep hwr (by rw [GoFV.Proof.CSE.Mem.encode_size]; exact disjoint_sep hM hA hdis hp hq)]
+      exact sepChain_read hM hA hp d _ hch hm0
+
+/-- A `Load` of a shape of positive size whose read fails is `poison`. -/
+theorem load_of_read_none {m : Mem} {t : Ty} {p : Ptr} (hs : t.size ≠ 0)
+    (h : m.read p t.size = none) : m.load t p = .poison := by
+  cases t <;> simp_all [Mem.load, Ty.size]
+
 section
 variable {tabs : Tables} {ro : List (String × Alloc)} {eq : List String × List String} {f g : Func}
   (F : FwdFacts tabs ro eq f g)
@@ -892,17 +969,175 @@ theorem chain_ndc {p x : ID} {t : Ty} :
         (ndc_arg F hs hns (hmem 1 (by omega)))
     · exact chain_ndc d _ hch (lm_arg F hm hs _ (hmem 2 (by omega)))
 
+/-- The end of a chain of disjoint writes (`sepChain`) from a listed memory is listed and ranks
+no higher. -/
+theorem sepChain_rank {p e : ID} {n : Nat} :
+    ∀ (d : Nat) (m : ID), sepChain tabs f p n e d m = true → LM f m →
+      LM f e ∧ (fwdRank f)[e]?.getD 0 ≤ (fwdRank f)[m]?.getD 0
+  | 0, m, h, hm => by
+    simp only [sepChain, beq_iff_eq] at h
+    subst h
+    exact ⟨hm, Nat.le_refl _⟩
+  | d + 1, m, h, hm => by
+    unfold sepChain at h
+    simp only [Bool.or_eq_true, beq_iff_eq] at h
+    rcases h with rfl | h
+    · exact ⟨hm, Nat.le_refl _⟩
+    cases hs : f.value? m with
+    | none => rw [hs] at h; cases h
+    | some s =>
+    rw [hs] at h
+    simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
+    rcases h with ⟨⟨hcop, hcsz⟩, hch⟩ | ⟨⟨⟨hsop, hssz⟩, -⟩, hch⟩
+    · have hc : s.args[0]! ∈ s.args := by
+        rw [getElem!_pos s.args 0 (by omega)]; exact Array.getElem_mem _
+      have hph : s.op ≠ .Phi := by rw [hcop]; decide
+      obtain ⟨hle, hre⟩ := sepChain_rank d _ hch (lm_arg F hm hs _ hc)
+      exact ⟨hle, Nat.le_trans hre (Nat.le_of_lt (fwdRankOK_spec F.rank hm hs hph _ hc))⟩
+    · have hc : s.args[2]! ∈ s.args := by
+        rw [getElem!_pos s.args 2 (by omega)]; exact Array.getElem_mem _
+      have hph : s.op ≠ .Phi := by rcases hsop with h | h <;> rw [h] <;> decide
+      obtain ⟨hle, hre⟩ := sepChain_rank d _ hch (lm_arg F hm hs _ hc)
+      exact ⟨hle, Nat.le_trans hre (Nat.le_of_lt (fwdRankOK_spec F.rank hm hs hph _ hc))⟩
+
+/-- The end of a chain of disjoint writes (`sepChain`) from a memory that is no folded call is
+none. -/
+theorem sepChain_ndc {p e : ID} {n : Nat} :
+    ∀ (d : Nat) (m : ID), sepChain tabs f p n e d m = true → dcB tabs eq f g m = false →
+      dcB tabs eq f g e = false
+  | 0, m, h, hd => by
+    simp only [sepChain, beq_iff_eq] at h
+    subst h
+    exact hd
+  | d + 1, m, h, hd => by
+    unfold sepChain at h
+    simp only [Bool.or_eq_true, beq_iff_eq] at h
+    rcases h with rfl | h
+    · exact hd
+    cases hs : f.value? m with
+    | none => rw [hs] at h; cases h
+    | some s =>
+    rw [hs] at h
+    simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
+    rcases h with ⟨⟨hcop, hcsz⟩, hch⟩ | ⟨⟨⟨hsop, hssz⟩, -⟩, hch⟩
+    · have hc : s.args[0]! ∈ s.args := by
+        rw [getElem!_pos s.args 0 (by omega)]; exact Array.getElem_mem _
+      exact sepChain_ndc d _ hch (ndc_arg F hs (by rw [hcop]; decide) hc)
+    · have hc : s.args[2]! ∈ s.args := by
+        rw [getElem!_pos s.args 2 (by omega)]; exact Array.getElem_mem _
+      have hns : s.op ≠ .SelectN := by rcases hsop with h | h <;> rw [h] <;> decide
+      exact sepChain_ndc d _ hch (ndc_arg F hs hns hc)
+
+/-- **A `Load` through disjoint writes to a `Zero`** (`fwdSepOK`): it reads, in the `Zero`'s
+memory, the same bytes at the same pointer (the `Zero`'s plus the offset), as the fresh `Load`
+that its `Copy` in `g` reads does. -/
+theorem sep_den {ρ ρ' : ID → Val} (hM : MemAtoms f.value? tabs ρ) (hA : ArgAv tabs f ρ)
+    {x : ID} {u w top offp : Value} (hx : LM f x) (hu : f.value? x = some u)
+    (hL : listedDefs g x = some w) (hwty : w.type = u.type) (hwop : w.op = .Copy)
+    (hwsz : w.args.size = 1) (hly : listedB g w.args[0]! = true)
+    (htop : g.value? w.args[0]! = some top) (hlo : listedB g top.args[0]! = true)
+    (hoffp : g.value? top.args[0]! = some offp) (h : fwdSepOK tabs f u top offp = true)
+    (hIH : ∀ a, (fwdRank f)[a]?.getD 0 < (fwdRank f)[x]?.getD 0 → LM f a →
+      dcB tabs eq f g a = false → ∀ n, ∃ m,
+      Sem.Refines (den f.value? tabs ρ n a) (den (listedDefs g) tabs ρ' m a)) (n : Nat) :
+    ∃ m, Sem.Refines (den f.value? tabs ρ (n + 1) x) (den (listedDefs g) tabs ρ' m x) := by
+  obtain ⟨hld, hsz2, htopop, htty, htsz, hoop, hosz, hoty, hopos, hsize, hch, z, hz, hzop, hzsz,
+    hoz, hoff, hbase⟩ := fwdSepOK_spec h
+  have hLt : termOp u.op = true := by rw [hld]; decide
+  have hu1 : u.args[1]! ∈ u.args := by
+    rw [getElem!_pos u.args 1 (by omega)]; exact Array.getElem_mem _
+  have hph : u.op ≠ .Phi := by rw [hld]; decide
+  have hlm : LM f u.args[1]! := lm_arg F hx hu _ hu1
+  have hrm := fwdRankOK_spec F.rank hx hu hph _ hu1
+  -- the chain's end: the `Zero`, listed, below `x`; its pointer below it
+  obtain ⟨hle, hre⟩ := sepChain_rank F 8 _ hch hlm
+  have hde := sepChain_ndc F 8 _ hch (ndc_arg F hu (by rw [hld]; decide) hu1)
+  have hz0 : z.args[0]! ∈ z.args := by
+    rw [getElem!_pos z.args 0 (by omega)]; exact Array.getElem_mem _
+  have hlq : LM f z.args[0]! := lm_arg F hle hz _ hz0
+  have hrq := fwdRankOK_spec F.rank hle hz (by rw [hzop]; decide) _ hz0
+  have hdq := ndc_arg F hz (by rw [hzop]; decide) hz0
+  -- the source: a Load through the disjoint writes
+  rw [den_succ_term hu hLt, toList_two hsz2, List.map_cons, List.map_cons, List.map_nil, hld,
+    GoFV.Proof.Rules.opVal_pure (op := Op.Load) rfl, evalPure_load]
+  by_cases hcase : ∃ a M, (den f.value? tabs ρ n u.args[0]!).asPtrWord = some a ∧
+    den f.value? tabs ρ n u.args[1]! = .mem M
+  rotate_left
+  · rw [loadOp_other hcase, AtomSim.retype_poison]; exact ⟨0, .poison _⟩
+  obtain ⟨P, M, hpa, hsM⟩ := hcase
+  rw [hsM]
+  simp only [loadOp, hpa]
+  obtain ⟨k, M0, hM0, hrd⟩ := sepChain_read hM hA hpa 8 _ hch hsM
+  rw [load_congr_read hrd]
+  -- the `Zero`'s pointer `Q`: the Load's pointer is `Q` plus the offset
+  cases k with
+  | zero => simp [den] at hM0
+  | succ k =>
+  have hZ := hM0
+  rw [den_succ_atom (not_term_of hz (by rw [hzop]; decide))] at hZ
+  obtain ⟨N0, hN0⟩ := hM _ z hz (by rw [hzop]; rfl) (by rw [hZ]; nofun)
+  obtain ⟨y, hy, -⟩ := hN0 N0 (Nat.le_refl _)
+  rw [toList_two hzsz, List.map_cons, List.map_cons, List.map_nil] at hy
+  obtain ⟨Q, -, -, hQ, -, -, -⟩ := memDef_zero hzop hy
+  have hc := ofInt_nonneg hopos
+  obtain ⟨k1, q1, h1, e1⟩ := ptrBase_den 8 u.args[0]! _ P hpa
+  obtain ⟨k2, q2, h2, e2⟩ := ptrBase_den 8 z.args[0]! _ Q hQ
+  have hq12 := baseSame_den hM 8 _ _ hbase h1 h2
+  have hP : P = Q.add (BitVec.ofNat 64 offp.auxInt.toInt.toNat) := by
+    rw [e1, e2, hoff, hq12, ptr_add_add, hc]
+  -- the target's arguments: the `Zero`'s pointer and the `Zero`
+  obtain ⟨m1, hm1⟩ := hIH _ (by omega) hlq hdq N0
+  obtain ⟨m2, hm2⟩ := hIH _ (by omega) hle hde (k + 1)
+  rw [hM0] at hm2
+  have hsrc : (den (listedDefs g) tabs ρ' (m1 + m2) z.args[0]!).asPtrWord = some Q :=
+    (hm1.trans (den_fuel_mono _ _ _ _ _ _ (Nat.le_add_right _ _))).asPtrWord hQ
+  obtain ⟨e, he⟩ : ∃ e, tabs.ty offp.type = .ptr e := by
+    revert hoty; cases tabs.ty offp.type <;> simp [isPtrTy]
+  have hmemR : Sem.Refines (.mem M0) (den (listedDefs g) tabs ρ' (m1 + m2 + 1) top.args[1]!) :=
+    hm2.trans (den_fuel_mono _ _ _ _ _ _ (by omega))
+  generalize hzv : den (listedDefs g) tabs ρ' (m1 + m2 + 1) top.args[1]! = zv at hmemR
+  cases hmemR with
+  | mem hmr =>
+  rename_i M0'
+  -- the read at `P` fails (`poison`), or `P` is in its window, so the fresh `OffPtr` is `P`
+  cases hrP : M0.read P (tabs.ty u.type).size with
+  | none =>
+    rw [load_of_read_none (by omega) hrP, AtomSim.retype_poison]; exact ⟨0, .poison _⟩
+  | some bs =>
+  have hwin : P.inWindow = true := by
+    have := read_inWindow hrP (o := 0) hsize
+    rwa [show BitVec.ofNat 64 0 = (0 : BitVec 64) from rfl, ptr_add_zero] at this
+  have hoffw : ((PtrOps.offPtr offp.auxInt [den (listedDefs g) tabs ρ' (m1 + m2) z.args[0]!]).retype
+      (tabs.ty offp.type)).asPtrWord = some P := by
+    rw [he, PtrOps.offPtr_retype_ptr, PtrOps.offPtr_asPtrWord, hsrc, Option.bind_some, hc]
+    simp only [Ptr.step?, ← hP, hwin, ite_true]
+  have hLy : listedDefs g w.args[0]! = some top := by rw [listedB_spec hly, htop]
+  have hLo : listedDefs g top.args[0]! = some offp := by rw [listedB_spec hlo, hoffp]
+  refine ⟨m1 + m2 + 1 + 1 + 1, ?_⟩
+  rw [den_succ_term hL (by rw [hwop]; decide), hwop, toList_one hwsz, List.map_cons,
+    List.map_nil, GoFV.Proof.Rules.opVal_pure (op := Op.Copy) rfl, evalPure_copy, hwty,
+    den_succ_term hLy (by rw [htopop]; decide), htopop, toList_two htsz, List.map_cons,
+    List.map_cons, List.map_nil, GoFV.Proof.Rules.opVal_pure (op := Op.Load) rfl, evalPure_load,
+    htty, hzv, den_succ_term hLo (by rw [hoop]; decide), hoop, toList_one hosz,
+    List.map_cons, List.map_nil, GoFV.Proof.Rules.opVal_pure (op := Op.OffPtr) rfl,
+    evalPure_offPtr, hoz]
+  simp only [loadOp, hoffw, Val.retype_idem]
+  exact retype_mono _ (load_mono hmr _ _)
+
 /-- **A `Load` from a `Move`'s destination** (`fwdMoveRep`): it reads, in the `Move`'s memory, the
-source at the same offset, as the fresh `Load` that its `Copy` in `g` reads does. -/
+source at the same offset, as the fresh `Load` that its `Copy` in `g` reads does; or through
+disjoint writes to a `Zero` (`sep_den`). -/
 theorem move_den {ρ ρ' : ID → Val} (hT : Term.Typed f.value? tabs ρ)
-    (hM : MemAtoms f.value? tabs ρ) {x : ID} {u w : Value} (hx : LM f x)
+    (hM : MemAtoms f.value? tabs ρ) (hA : ArgAv tabs f ρ) {x : ID} {u w : Value} (hx : LM f x)
     (hu : f.value? x = some u) (hL : listedDefs g x = some w) (hwty : w.type = u.type)
     (h : fwdMoveRep tabs f g u w = true)
     (hIH : ∀ a, (fwdRank f)[a]?.getD 0 < (fwdRank f)[x]?.getD 0 → LM f a →
       dcB tabs eq f g a = false → ∀ n, ∃ m,
       Sem.Refines (den f.value? tabs ρ n a) (den (listedDefs g) tabs ρ' m a)) (n : Nat) :
     ∃ m, Sem.Refines (den f.value? tabs ρ (n + 1) x) (den (listedDefs g) tabs ρ' m x) := by
-  obtain ⟨hwop, hwsz, hly, top, htop, htsz, hlo, offp, hoffp, h⟩ := fwdMoveRep_spec h
+  obtain ⟨hwop, hwsz, hly, top, htop, htsz, hlo, offp, hoffp, h | h⟩ := fwdMoveRep_spec h
+  rotate_left
+  · exact sep_den F hM hA hx hu hL hwty hwop hwsz hly htop hlo hoffp h hIH n
   obtain ⟨hld, hsz2, htopop, htty, -, hoop, hosz, hoty, hopos, hsize, mv, hmv, hmop, hmsz, htm,
     hos, hlen, hoff, hbase⟩ := fwdMoveOK_spec h
   have hLt : termOp u.op = true := by rw [hld]; decide
@@ -1233,8 +1468,9 @@ theorem rep_call {x : ID} {u : Value} (hu : f.value? x = some u) (hop : u.op = .
   · unfold fwdOK at hok; simp [hop] at hok
   · rw [(fwdConstOK_spec hok).1] at hop; cases hop
   · rcases (dropOK_spec hok).2.2.1 with h | h <;> rw [h] at hop <;> cases hop
-  · obtain ⟨-, -, -, top, -, -, -, offp, -, h⟩ := fwdMoveRep_spec hok
-    rw [(fwdMoveOK_spec h).1] at hop; cases hop
+  · obtain ⟨-, -, -, top, -, -, -, offp, -, h | h⟩ := fwdMoveRep_spec hok
+    · rw [(fwdMoveOK_spec h).1] at hop; cases hop
+    · rw [(fwdSepOK_spec h).1] at hop; cases hop
   · rw [(moveSrcOK_spec hok).1] at hop; cases hop
   · rw [(fixedOK_spec hok).1] at hop; cases hop
   · rw [(growOK_spec hok).1] at hop; cases hop
@@ -1282,7 +1518,8 @@ theorem fwd_den {ρ ρ' : ID → Val} (hρ : ValRef ρ ρ') (hT : Term.Typed f.v
   rotate_left 3
   · exact drop_den F hT hM hQ.1 hQ.2.2 hx hu hL hwty hdrop
       (fun a ha hla hda => hIH a (hr ▸ ha) hla hda) n
-  · exact move_den F hT hM hx hu hL hwty hmv (fun a ha hla hda => hIH a (hr ▸ ha) hla hda) n
+  · exact move_den F hT hM hQ.2.2 hx hu hL hwty hmv
+      (fun a ha hla hda => hIH a (hr ▸ ha) hla hda) n
   · -- a `Move` with a changed source: an atom of both
     obtain ⟨huop, hwop, -⟩ := moveSrcOK_spec hms
     refine ⟨1, ?_⟩

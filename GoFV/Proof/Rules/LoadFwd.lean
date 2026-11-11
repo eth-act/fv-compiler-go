@@ -99,6 +99,18 @@ theorem r_generic_2128_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r
 /-- `generic.rules:2131`: `(SelectN [1] (StaticCall {sym} _ newLen:(Const64) _ _ _ _)) && v.Type.IsInteger() && (isSameCall(sym, "runtime.growslice") || isSameCall(sym, "runtime.growsliceNoAlias")) => newLen` (issue #69: the post-`expand calls` form of `:2128`, `RewriteCheck.growPOK`) -/
 theorem r_generic_2131_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2131 := rfl
 
+/-- `generic.rules:842`: `(Load <t1> op:(OffPtr [o1] p1) (Store {t2} p2 _ mem:(Zero [n] p3 _))) && o1 >= 0 && o1+t1.Size() <= n && isSamePtr(p1, p3) && CanSSA(t1) && disjoint(op, t1.Size(), p2, t2.Size()) => @mem.Block (Load <t1> (OffPtr <op.Type> [o1] p3) mem)` (issue #69: the Load reads the `Zero`'s bytes through the disjoint `Store`, `RewriteCheck.fwdSepOK`) -/
+theorem r_generic_842_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_842 := rfl
+
+/-- `generic.rules:851`: `(Load <t1> op:(OffPtr [o1] p1) (Store {t2} p2 _ (Store {t3} p3 _ mem:(Zero [n] p4 _)))) && … => @mem.Block (Load <t1> (OffPtr <op.Type> [o1] p4) mem)` -/
+theorem r_generic_851_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_851 := rfl
+
+/-- `generic.rules:862`: `(Load <t1> op:(OffPtr [o1] p1) (Store {t2} p2 _ (Store {t3} p3 _ (Store {t4} p4 _ mem:(Zero [n] p5 _))))) && … => @mem.Block (Load <t1> (OffPtr <op.Type> [o1] p5) mem)` -/
+theorem r_generic_862_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_862 := rfl
+
+/-- `generic.rules:875`: `(Load <t1> op:(OffPtr [o1] p1) (Store {t2} p2 _ (Store {t3} p3 _ (Store {t4} p4 _ (Store {t5} p5 _ mem:(Zero [n] p6 _)))))) && … => @mem.Block (Load <t1> (OffPtr <op.Type> [o1] p6) mem)` -/
+theorem r_generic_875_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_875 := rfl
+
 /-- `generic.rules:882`: `(Load <t1> (OffPtr [o] p1) (Zero [n] p2 _)) && t1.IsBoolean() && isSamePtr(p1, p2) && n >= o + 1 => (ConstBool [false])` (issue #69: the Load reads zero bytes, `RewriteCheck.fwdZeroOK`) -/
 theorem r_generic_882_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_882 := rfl
 
@@ -225,10 +237,10 @@ theorem r_generic_1675_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r
 /-- `generic.rules:1676`: `(NeqPtr (OffPtr (LocalAddr _ _)) (OffPtr (Addr _))) => (ConstBool [true])` -/
 theorem r_generic_1676_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1676 := rfl
 
-/-- Non-vacuity: the Load-from-`Zero` rule `:842` (a `Load` rebuilt through a `Store` over a
-`Zero`) and the `Store` rule `:997` (`(Store dst (ArrayMake1 e) mem) => (Store {e.Type} dst e
-mem)`, a changed write) do not have the shape. -/
-example : GoFV.Opt.RewriteCheck.fwdShapeOK GoFV.Rules.Generated.Generic.r_generic_842 = false := rfl
+/-- Non-vacuity: the struct-load expansion `:974` (`(Load <t> _ _) && t.IsStruct() && … =>
+rewriteStructLoad(v)`) and the `Store` rule `:997` (`(Store dst (ArrayMake1 e) mem) => (Store
+{e.Type} dst e mem)`, a changed write) do not have the shape. -/
+example : GoFV.Opt.RewriteCheck.fwdShapeOK GoFV.Rules.Generated.Generic.r_generic_974 = false := rfl
 example : GoFV.Opt.RewriteCheck.fwdShapeOK GoFV.Rules.Generated.Generic.r_generic_997 = false := rfl
 
 end GoFV.Proof.Rules

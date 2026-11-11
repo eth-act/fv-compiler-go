@@ -2257,15 +2257,48 @@ def fwdMoveOK (tabs : Tables) (f : Func) (u top offp : Value) : Bool :=
     baseSameB tabs f 8 (ptrBase tabs f 8 u.args[0]!).1 (ptrBase tabs f 8 mv.args[0]!).1
   | none => false
 
+/-- Memory `m` of `f` reaches memory `e` through at most `d` `Copy`s and `Store`s at pointers
+disjoint from the `n` bytes at pointer `p` (`disjointB`): those bytes read the same in both. -/
+def sepChain (tabs : Tables) (f : Func) (p : ID) (n : Nat) (e : ID) : Nat → ID → Bool
+  | 0, m => m == e
+  | d + 1, m =>
+    m == e ||
+    match f.value? m with
+    | some s =>
+      (s.op == .Copy && s.args.size == 1 && sepChain tabs f p n e d s.args[0]!) ||
+      ((s.op == .Store || s.op == .StoreWB) && s.args.size == 3 &&
+        disjointB tabs f p n s.args[0]! (Sem.auxTy tabs s.aux).size &&
+        sepChain tabs f p n e d s.args[2]!)
+    | none => false
+
+/-- The `Load` `u` of `f` reads, through `Store`s disjoint from it (`sepChain`, eight deep), the
+bytes at offset `o` (`offp`'s auxint) of the pointer `q` of a `Zero` `z` (`generic.rules:842`,
+`:851`, `:862`, `:875`): its pointer is `q + o` (`ptrBase`, `baseSameB`), `0 ≤ o`, its shape of
+positive size; `top` is `Load <u.Type> offp z` and `offp` the pointer-shaped `OffPtr [o] q`. -/
+def fwdSepOK (tabs : Tables) (f : Func) (u top offp : Value) : Bool :=
+  u.op == .Load && u.args.size == 2 && top.op == .Load && top.type == u.type &&
+  top.args.size == 2 && offp.op == .OffPtr && offp.args.size == 1 &&
+  isPtrTy (tabs.ty offp.type) && decide (0 ≤ offp.auxInt.toInt) &&
+  decide (0 < (tabs.ty u.type).size) &&
+  sepChain tabs f u.args[0]! (tabs.ty u.type).size top.args[1]! 8 u.args[1]! &&
+  match f.value? top.args[1]! with
+  | some z =>
+    z.op == .Zero && z.args.size == 2 && offp.args[0]! == z.args[0]! &&
+    (ptrBase tabs f 8 u.args[0]!).2 ==
+      (ptrBase tabs f 8 z.args[0]!).2 + BitVec.ofInt 64 offp.auxInt.toInt &&
+    baseSameB tabs f 8 (ptrBase tabs f 8 u.args[0]!).1 (ptrBase tabs f 8 z.args[0]!).1
+  | none => false
+
 /-- The new definition `w` of the `Load` `u` of `f` in `g`: `Copy y` of the listed `Load` `y` of
-`g` through the listed `OffPtr` of the `Move`'s source that `fwdMoveOK` accepts. -/
+`g` through the listed `OffPtr` that `fwdMoveOK` (of the `Move`'s source) or `fwdSepOK` (of the
+`Zero`'s pointer) accepts. -/
 def fwdMoveRep (tabs : Tables) (f g : Func) (u w : Value) : Bool :=
   w.op == .Copy && w.args.size == 1 && listedB g w.args[0]! &&
   match g.value? w.args[0]! with
   | some top =>
     top.args.size == 2 && listedB g top.args[0]! &&
     match g.value? top.args[0]! with
-    | some offp => fwdMoveOK tabs f u top offp
+    | some offp => fwdMoveOK tabs f u top offp || fwdSepOK tabs f u top offp
     | none => false
   | none => false
 
@@ -2314,7 +2347,7 @@ def fwdRepOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (eq : List String
      fwdNewOK tabs ro eq f g u w || fwdMoveRep tabs f g u w)
 
 /-- `g`'s blocks are `f`'s, but for values appended to their lists (the fresh values of a
-forwarding through a `Move`, `fwdMoveRep`). -/
+forwarding through a `Move` or to a `Zero`, `fwdMoveRep`). -/
 def blocksExtOK (f g : Func) : Bool :=
   g.blocks == f.blocks && f.blocks.all fun b =>
     match f.block? b, g.block? b with
@@ -2363,11 +2396,14 @@ def fixedPtrPat (p : Pat) : Bool :=
 /-- A Load-of-Store forwarding rule: `(Load _ m) => x` with `x` stored by one of the up to four
 `Store`s of the chain `m` (`generic.rules:800`, `:806`, `:813`, `:821`),
 `(Load _ (Store _ (Const64 [x]) _)) => (Const64F [x'])` and its converse (`:830`, `:832`), or
-`(Load (OffPtr [o] _) (Move _ src mem)) => @move.Block (Load (OffPtr [o] src) mem)` (`:827`); or
+`(Load (OffPtr [o] _) (Move _ src mem)) => @move.Block (Load (OffPtr [o] src) mem)` (`:827`) and
+`(Load (OffPtr [o] _) (Store _ _ … mem:(Zero _ q _))) => @mem.Block (Load (OffPtr [o] q) mem)`
+through one to four `Store`s (`:842`, `:851`, `:862`, `:875`); or
 a dropped identity write `(Store _ _ mem) => mem`, `(Zero _ mem) => mem` (`:1005`, `:943`,
 `:948`, `:954`, `:961`, `:2158`); or a changed `Move` source `(Move dst tmp m:(Move tmp' src _))
 => (Move dst src m)` and its form through a `VarDef` (`:2146`, `:2155`); the validator checks
-each instance by `fwdNewOK` or `fwdMoveOK`, the `isSamePtr`/`disjoint` conditions included; or a
+each instance by `fwdNewOK`, `fwdMoveOK` or `fwdSepOK`, the `isSamePtr`/`disjoint` conditions
+included; or a
 fixed load `(Load p _) && isFixedLoad(v, s, off) => rewriteFixedLoad(v, s, sb, off)` whose
 pointer `p` is `(Addr {s} _)`, through `Convert`, `ITab (IMake …)` and an `OffPtr [off]`
 (`fixedPtrPat`; `generic.rules:2251`–`:2258`; `fixedOK`, which follows them by `wordStep?`); or
@@ -2388,6 +2424,8 @@ def fwdShapeOK (r : Rule) : Bool :=
   | .op .Load none _ _ _ .fixed [_, .op .Store none _ _ _ .fixed [_, .op o none _ _ _ .fixed [] _, _] _]
       _, .build [n], none => const64Op o && const64Op n.op && n.args.isEmpty
   | .op .Load none _ _ _ .fixed [.op .OffPtr .., .op .Move ..] _, .build [n0, n1], some _ =>
+    n0.op == .Load && n1.op == .OffPtr
+  | .op .Load none _ _ _ .fixed [.op .OffPtr .., .op .Store ..] _, .build [n0, n1], some _ =>
     n0.op == .Load && n1.op == .OffPtr
   | .op .Load none _ _ _ .fixed [.op .OffPtr .., .op .Zero ..] _, .build [n], none =>
     (n.op == .ConstBool || n.op == .Const8 || n.op == .Const16 || n.op == .Const32 ||
@@ -2468,14 +2506,15 @@ def fwdCopy (f : Func) (v : ID) (w : Value) : Func :=
 /-- The forwarding of the `Load` `u` of `f` to `w` with the fresh values `ds` (`fwdEvent?`) is
 one the validator accepts in `f` alone: `fwdNewOK` (with `f` for the output, so a dropped write
 whose memory was dropped in the same layer is not selected; fixed loads from the read-only
-symbols `ro`, folds of calls with descriptor symbols of `eq`), `fwdMoveOK` of the fresh
-`[offp, top]` with `w` a `Copy` of `top`, or `eqCallOK` with the fresh `EqPtr` put in. -/
+symbols `ro`, folds of calls with descriptor symbols of `eq`), `fwdMoveOK` or `fwdSepOK` of the
+fresh `[offp, top]` with `w` a `Copy` of `top`, or `eqCallOK` with the fresh `EqPtr` put in. -/
 def fwdEvOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (eq : List String × List String)
     (f : Func) (u w : Value) : List Value → Bool
   | [] => fwdNewOK tabs ro eq f f u w
   | [q] => eqCallOK tabs eq f (ssPut f q) u w
   | [offp, top] =>
-    w.args == #[top.id] && top.args[0]! == offp.id && fwdMoveOK tabs f u top offp
+    w.args == #[top.id] && top.args[0]! == offp.id &&
+      (fwdMoveOK tabs f u top offp || fwdSepOK tabs f u top offp)
   | _ => false
 
 /-- One event of `fwdPre`: a forwarding of `f` is applied (with `sel` only one `fwdEvOK` holds of
