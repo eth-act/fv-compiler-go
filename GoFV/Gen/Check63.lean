@@ -24,7 +24,7 @@ rejects a `StoreReg` or `LoadReg` (`vkind63a`):
   `FMOVD off(RSP), Fd`.
 
 A `StoreReg` whose argument, or a `LoadReg` whose home, is no `F` register keeps G62's reason. The
-slots are `checkFrame`'s 8-byte slots, as G2's (a `float32` slot of 4 bytes fails `slotOK`).
+slots have 8 bytes, as G2's (a `float32` spill or reload, at a slot of 4 bytes, is slice G66's).
 `GoFV/Proof/Gen/G63.lean` proves what an accepted function satisfies, given that a float reload
 reads no pointer without an integer form (`FReloadPre`, as G44's `FLoadPre`).
 -/

@@ -3681,9 +3681,10 @@ def m0 : MState :=
     sp := GenG2.sp0, v := fun _ => 0, nzcv := ⟨false, false, false, false⟩, pc := E.pcOf 5 1,
     mem := M1 }
 
-/-- The home slots lie above the saved `LR` and below `2^64`. -/
+/-- The home slots have at most 8 bytes and lie above the saved `LR` and below `2^64`. -/
 def slotsFit : Bool :=
   (homeSlots lc).all fun k =>
+    decide ((E.lc.slotTy k).size ≤ 8) &&
     match g.slotOp k with
     | some (nc, off) => decide (8 ≤ frameOff L nc off) &&
         decide (GenG2.sp0.toNat + (frameOff L nc off).toNat + 8 ≤ 2 ^ 64)
@@ -3837,7 +3838,7 @@ theorem g65Env (hc : checkG65 lc0 ps bs g = .ok (tab, kt)) (hl : lc.ctx.f.lowere
                 obtain ⟨⟨nc, o⟩, hso, rfl⟩ := Option.map_eq_some_iff.1 hk
                 have := List.all_eq_true.1 hfit k hmem
                 simp only [hso, Bool.and_eq_true, decide_eq_true_eq] at this
-                exact this
+                exact this.2
               · cases hk }
           vars := by
             intro x hx o ho _

@@ -1893,6 +1893,40 @@ Witness `genG65_witness` (`GenG65.lean`, `init.func82` of `test/gcgort` on P0', 
 `u = 1.01` (a `temp` block at `SP + 16`), after which `F1` holds `1.01`'s bits and the machine's
 `V1` holds them in its low word.
 
+**Slice G66: spill slots of 1, 2 and 4 bytes** (`GoFV/Gen/Check66.lean`, `checkG66 lc ps bstart g`;
+on P0'; design review `docs/plans/slot-size.md`, #711). `stackalloc` homes a value in a slot of its
+own type, so a narrow value (`bool`, `int8`/`uint8`, `int16`/`uint16`, `int32`/`uint32`,
+`float32`) has a slot of 1, 2 or 4 bytes. `checkFrame` (G2, shared by every slice) accepts them:
+`slotOK` takes 1, 2, 4 or 8 bytes (type and `runLoc` shape agreeing), aligned, `NAME_AUTO` windows
+of the slot's size inside the locals; `slotsApart` keeps the windows of distinct slots disjoint;
+`homeFits` gives every value homed in a slot the slot's class and size. Every earlier slice's
+spills, reloads and `Arg`s are of class 64, so their slots still have 8 bytes (`home_slot`, now
+from `home_slot_gen` and `size_of_cls64`) and their accepted sets are unchanged. `checkVars*` use
+each slot's own window. `StkAt` gives each slot its own size (`(E.lc.slotTy k).size`; the 8 bytes
+of before are `StkAt8`, the same set when every slot has 8 bytes, `StkAt_eq_of_slots8`);
+`SlotInv` holds each live slot's value at the slot's class (`slotCls`, 64 at every 8-byte slot);
+`slot_sizes` gives `≤ 8`, `slot_apart` and `slot_windows_apart` the slots' sizes. `vkind66a`,
+tried when G65 rejects a value: a narrow integer spill from an `X` register (`nspill66`:
+`MOVB`/`MOVH`/`MOVW Rs, off(RSP)`, `storeByType`), a narrow reload into one (`nreload66`:
+`loadByType`'s `MOV{B,H,W}` for a signed type, `MOV{B,H,W}U` otherwise), a `float32` spill or reload
+through an `F` register (`fspill66`, `freload66`: `FMOVS`) and an incoming stack argument of any
+class (`argKind66`). `GoFV/Proof/Gen/G66a.lean`: `slot_write_match` (a store of a slot's `n` bytes
+keeps the other slots, the blocks and the frame words, which lie outside them), `g66_nspill`
+(`progStep_slotStoreN`; `valRel_lowN`: a value of class `8n`, or a boolean, relates to the
+register's low `n` bytes), `g66_nreload` (`progStep_slotLoadN`; `valRel_extN`: to their sign or
+zero extension alike), `g66_fspill`/`g66_freload` (`progStep_fstoreAt`/`progStep_floadAt` at 4
+bytes; a 32-bit value has no pointer form, so `FReloadPre` is not needed), and G62's `g62_arg`
+generalised to any class. The theorems `g66_*` (`G66.lean`) are G65's statements over `checkG66`
+with G65's premises: no run premise is added. G66 on P0' accepts 8,789 functions (94.54%, +515
+over G65's 8,274), `--jobs 2` on main 0faee08f; G1 to G65 are unchanged, and the rejected set is a
+subset of G65's. The extension of a narrow reload that genssa elides (`ssa.go`'s `MOV*reg` of a
+`LoadReg`) and the upper-bit table entry of a narrow reload (`MOVDnop/MOVDreg: upper bits
+unknown`) are G66b. Witnesses: `genG66_witness` (`GenG66.lean`, `runtime.procyield`'s ABI0 wrapper:
+`v5 = Arg {cycles}` of a `uint32` stack argument, then `v1 = InitMem` and the narrow reload
+`v2 = LoadReg v5`, `MOVWU cycles+0(FP), R0`; the slot's 4 bytes and `X0`'s low 32 bits hold 7) and
+`genG66s_witness` (`GenG66s.lean`, `runtime.randn`: the narrow spill `v17 = StoreReg v6`,
+`MOVW R0, n+0(FP)`, after which the machine's 4 bytes at the slot hold 7).
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
