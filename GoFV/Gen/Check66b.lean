@@ -60,7 +60,7 @@ def elide66b (lc : LocCtx) (v : Value) : Option (Nat × Bool) :=
 /-- An extension genssa elides (module doc): `vkind3`'s checks of an extension, then no code when
 `v` shares its argument's register, `MOVD Rx, Rv` otherwise. -/
 def extElide66b (lc : LocCtx) (v : Value) : Except String VKind2 := do
-  if (lc.temps[v.id]?).join != none then throw s!"v{v.id}: temporary register"
+  unless (lc.temps[v.id]?).join == none do throw s!"v{v.id}: temporary register"
   let some (_, w, _) := extOp? v.op | throw s!"v{v.id}: no extension"
   unless v.args.size == 1 do throw s!"v{v.id}: extension shape"
   let (ca, rn) ← argObj lc v 0

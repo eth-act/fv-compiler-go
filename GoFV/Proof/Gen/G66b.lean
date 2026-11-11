@@ -105,6 +105,32 @@ theorem reload_uokl {lc : LocCtx} {v : Value} {m m' : MState} {L : List (Nat × 
     rw [uStep35_ld he]
     exact uokl_ld hL (uok_ldW hor0 hn (by omega) (by omega) hx) hor0 hx
 
+/-- What `elideOK66b` asks of an extension genssa elides: its argument's register at the
+extension's class and signedness in the table before it. -/
+theorem elideOK66b_spec {lc : LocCtx} (h : elideOK66b lc = true) {bid : ID}
+    (hbid : bid ∈ lc.ctx.f.blocks.toList) {b : Block} (hb : lc.ctx.f.block? bid = some b)
+    {i : Nat} {id : ID} (hi : b.values[i]? = some id) {v : Value}
+    (hv : lc.ctx.f.value? id = some v) {w : Nat} {sg : Bool} (hel : elide66b lc v = some (w, sg))
+    {x : ID} {r : Nat} (hx : v.args[0]? = some x) (hr : regHome? lc x = some r) :
+    (r, w, sg) ∈ uL35 lc (uIn35 lc bid) b i := by
+  unfold elideOK66b at h
+  have := List.all_eq_true.1 h _ hbid
+  simp only [hb] at this
+  have hi' : i < b.values.size := (Array.getElem?_eq_some_iff.1 hi).1
+  have := List.all_eq_true.1 this i (List.mem_range.2 hi')
+  simp only [hi, Option.bind_some, hv, hel, hx, hr] at this
+  simpa using this
+
+/-- G35's table across an extension that writes at most its register home (`XW`): the entries of
+the other registers. -/
+theorem uokl_ext66b {lc : LocCtx} {v : Value} {m m' : MState} {L : List (Nat × Nat × Bool)}
+    {as : As} {w : Nat} {sg : Bool} (he : extOp? v.op = some (as, w, sg)) (hx : XW lc v m m')
+    (hL : UOKL m L) : UOKL m' (uStep35 lc L v) := by
+  rcases extOp?_op he with h | h | h | h | h | h <;>
+    exact uokl_xw35 hL hx (ldEntry35_none (by rw [h]; rfl) (by rw [h]; nofun))
+      (by simp [uEntry, narrowLd?, loadOp?, narrowLoad?, loadIdxOp?, h]) (by simp [h])
+      (by simp [h]) (by simp [h]) (by simp [h])
+
 /-! ## Elided extensions -/
 
 section Cases
