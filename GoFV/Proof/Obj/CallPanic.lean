@@ -1,18 +1,20 @@
-import GoFV.Proof.Obj.G62
+import GoFV.Proof.Obj.G64
 
 variable [GoFV.SSA.Sem.Addrs]
 
 /-!
 # Calls whose callee panics (`docs/plans/proofs3.md` §6, §9)
 
-A static call of slice G62 that panics in `runLoc` (its callee panicked, `callOp`): genssa's
+A static call of slice G64 that panics in `runLoc` (its callee panicked, `callOp`): genssa's
 Progs run the no-ops before the `CALL sym(SB)` and the `CALL` (`X30` the return address, the PC the
 callee's symbol), where the runtime hook panics with the same panic by the callee contract of the
 activation's mode (trusted): `CallPanicOK` (as `CallOK` for a callee that returns) or, in G48's
 mode (the `outargs` block at `SP`, `SepFromW`), `CallPanicOKS` (as `CallOKS`, also at G48's calls
-with stack arguments or results, on `callRegsS`; `CallPanicOKAt`): `g62_callPanic` (`runLoc` →
-`runProg` on P0), `g62_obj_callPanic` (→ `runMach` on the linked words, `obj_panic`). A function
-with no arm64 op has no call (`nl30_ops`); in one with, what `vkind62` accepts of a call `vkind61` accepts
+with stack arguments or results, on `callRegsS`; `CallPanicOKAt`): `g64_callPanic` (`runLoc` →
+`runProg` on P0), `g64_obj_callPanic` (→ `runMach` on the linked words, `obj_panic`). A function
+with no arm64 op has no call (`nl30_ops`); in one with, what `vkind64` accepts of a call `vkind62`
+accepts (a call is no op of G64's, `vkind64_eq63`, nor a spill or reload, `vkind63_eq62`), what
+`vkind62` accepts `vkind61` accepts
 (no `Arg`, `vkind62_eq61`) and `vkind60` accepts (a call is no op of G61's group A, `vkind61_eq60`), and what `vkind60` accepts of it
 `vkind49` accepts (a call is no op of G52–G59's groups, `vkind60_ok49`) or G48's `callKind48` (a call with
 stack arguments or results, on `callRegsS`, `callKind48_facts`, in G48's mode); what `vkind49`
@@ -31,8 +33,8 @@ shape read from its V register (`argsV`).
 An interface or closure call that panics: the no-ops, then `CALL (Rn)` to the code pointer in
 `Rn`, where the callee's hook panics with the same panic by `ICallPanicOK` (trusted, as `ICallOK`)
 or, in G48's mode, `ICallPanicOKS` (as `ICallOKS`; `ICallPanicOKAt`):
-`g62_icallPanic`, `g62_obj_icallPanic`. What `vkind62` accepts of such a call `vkind60` accepts
-(`vkind62_eq61`, `vkind61_eq60`), what `vkind60` accepts of it `vkind49` accepts
+`g64_icallPanic`, `g64_obj_icallPanic`. What `vkind64` accepts of such a call `vkind60` accepts
+(`vkind64_eq63`, `vkind63_eq62`, `vkind62_eq61`, `vkind61_eq60`), what `vkind60` accepts of it `vkind49` accepts
 (`vkind60_ok49`; G48's `kind48` takes none, `kind48_icall`), what `vkind49` accepts of it
 `vkind51` accepts (`vkind49_ok51`), and `vkind51`'s is `vkind47`'s (`vkind51_eq50`, `vkind50_eq47`),
 which is `vkind10`'s, `icallKind`
@@ -325,16 +327,16 @@ theorem callKind48_facts {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2}
     next => simp [ex_throw] at h
   · simp [ht, ex_throw, ex_bind_error] at h
 
-/-- **A static call of slice G62 whose callee panics**: from a `LocMatch`ed P0 state, the Progs
+/-- **A static call of slice G64 whose callee panics**: from a `LocMatch`ed P0 state, the Progs
 of the call run to the callee's symbol, where the runtime panics with `e` (`CallPanicOKAt` of the
 mode `osp`, which is `true` for a function that needs G48's mode, `hn48`: a call G48 accepts, on
 `callRegsS`, is
 `CallPanicOKS`'s). -/
-theorem g62_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+theorem g64_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab}
     {E : MatchEnv} {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState}
     {m : MState} {e : Panic} {osp : Bool}
-    (hc : checkG62L lc ps bstart g = .ok (tab, kt)) (hE : G28Env lc g L ps ret tab E)
+    (hc : checkG64L lc ps bstart g = .ok (tab, kt)) (hE : G28Env lc g L ps ret tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
     (hop : v.op = .ARM64CALLstatic) (hm : LocMatch E s bid i m)
@@ -343,7 +345,7 @@ theorem g62_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     ∃ m', PStar H L ps.toList ret m m' ∧ PPanics H L ps.toList ret m' e := by
   cases hl0 : lc.ctx.f.lowered with
   | false =>
-    rcases nl30_ops (checkNL30_of_62L hl0 hc) hbid hb hi hv (by rw [hop]; rfl) with
+    rcases nl30_ops (checkNL30_of_64L hl0 hc) hbid hb hi hv (by rw [hop]; rfl) with
       h | h | h | h <;>
       rw [h] at hop <;> cases hop
   | true =>
@@ -354,7 +356,7 @@ theorem g62_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   rw [htext] at hpcOf
   subst hL
   obtain ⟨c, rfl, rfl, -, rfl, hvk, -, hl, hhome, -, hk, hlt, hnd, hblocks, -, -, -, -, -⟩ :=
-    checkG62L_spec hl0 hc
+    checkG64L_spec hl0 hc
   obtain ⟨b, j, js, e', next, hb', -, hvals, -, -, hrow⟩ := Cx2.blocks_spec hblocks bid hbid
   rw [hb] at hb'
   cases hb'
@@ -364,7 +366,9 @@ theorem g62_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   have hid' : blk.values.toList[i] = id := by simpa using hid
   rw [hid', hv] at hv'
   cases hv'
-  rw [hvk, vkind62_eq61 (by rw [hop]; decide), vkind61_eq60 (by rw [hop]; rfl)] at hkd
+  rw [hvk, vkind64_eq63 (by rw [hop]; rfl), vkind63_eq62 (by rw [hop]; decide)
+    (by rw [hop]; decide), vkind62_eq61 (by rw [hop]; decide), vkind61_eq60 (by rw [hop]; rfl)]
+    at hkd
   -- the call's ABI registers: `vkind47`'s (`callRegsZ`), or G48's on `callRegsS` (mode `true`)
   have hfacts : ∃ name abi cabi ins outs, callOf? c.cx.lc.ctx.tabs v.aux = some (name, abi, cabi) ∧
       (callRegsZ c.cx.lc.ctx.tabs cabi = .ok (ins, outs) ∨
@@ -473,15 +477,15 @@ theorem g62_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   refine ⟨m₁, hstar.tail (pstep_at F.nodup F.lt F.ret hk' rfl hcstep),
     (hsyms y).1, Or.inr ⟨progAt?_none (hsyms y).2, m', hcallH⟩⟩
 
-/-- **A static call of slice G62 whose callee panics, down to the machine words**: machine steps
+/-- **A static call of slice G64 whose callee panics, down to the machine words**: machine steps
 of the linked code to a state that panics with `e` (the hook at the callee's symbol,
 `MPanics`). -/
-theorem g62_obj_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+theorem g64_obj_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState} {m : MState}
     {e : Panic} {osp : Bool} {spills : Array Spill} {o : ObjIn} {otab : Tab} {base : BitVec 64}
     {code : Code} {retM : BitVec 64} {t : MState}
-    (hc : checkG62L lc ps bstart g = .ok (tab, kt))
+    (hc : checkG64L lc ps bstart g = .ok (tab, kt))
     (hE : G28Env lc g L ps (endP L.text ps.toList) tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
@@ -494,7 +498,7 @@ theorem g62_obj_callPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     (hR : ObjRel (ObjEnv.map otab ps L base) m t) (hX : X27At otab L ps.toList m t)
     (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
     ∃ t', MStar H code retM t t' ∧ MPanics H code retM t' e := by
-  obtain ⟨m', hp, hpp⟩ := g62_callPanic hc hE hbid hb hi hv hop hm hinv hok hn48
+  obtain ⟨m', hp, hpp⟩ := g64_callPanic hc hE hbid hb hi hv hop hm hinv hok hn48
   obtain ⟨t1, ht1, hR1, hI1, hX1⟩ :=
     obj_star hO hH hp hR hX (locMatch_inv hE.env.env.env.env hm) hic
   obtain ⟨t2, ht2, hpan⟩ := obj_panic hO hHP hR1 hX1 (hI1.resolve_right hpp.1) hpp
@@ -732,14 +736,14 @@ theorem vkind47_icall {lc : LocCtx} {g : G2In} {v : Value} {n : Nat} {kd : VKind
     simp only [fcall47, hne, hn, ↓reduceIte] at h
     exact icallKind47_facts h
 
-/-- **An interface or closure call of slice G62 whose callee panics**: from a `LocMatch`ed P0
+/-- **An interface or closure call of slice G64 whose callee panics**: from a `LocMatch`ed P0
 state, the no-ops and the `CALL (Rn)` run to the callee's code, where the hook panics with `e`
 (`ICallPanicOK`). -/
-theorem g62_icallPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+theorem g64_icallPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab}
     {E : MatchEnv} {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState}
     {m : MState} {e : Panic} {n : Nat} {osp : Bool}
-    (hc : checkG62L lc ps bstart g = .ok (tab, kt)) (hE : G28Env lc g L ps ret tab E)
+    (hc : checkG64L lc ps bstart g = .ok (tab, kt)) (hE : G28Env lc g L ps ret tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
     (hn : icallLead v.op = some n) (hm : LocMatch E s bid i m)
@@ -750,7 +754,7 @@ theorem g62_icallPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl
   cases hl0 : lc.ctx.f.lowered with
   | false =>
-    rcases nl30_ops (checkNL30_of_62L hl0 hc) hbid hb hi hv hen with
+    rcases nl30_ops (checkNL30_of_64L hl0 hc) hbid hb hi hv hen with
       h | h | h | h <;>
       rcases icallLead_some hn with ⟨h', -⟩ | ⟨h', -⟩ <;> rw [h] at h' <;> cases h'
   | true =>
@@ -761,7 +765,7 @@ theorem g62_icallPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   rw [htext] at hpcOf
   subst hL
   obtain ⟨c, rfl, rfl, -, rfl, hvk, -, hl, hhome, -, hk, hlt, hnd, hblocks, -, -, -, -, -⟩ :=
-    checkG62L_spec hl0 hc
+    checkG64L_spec hl0 hc
   obtain ⟨b, j, js, e', next, hb', -, hvals, -, -, hrow⟩ := Cx2.blocks_spec hblocks bid hbid
   rw [hb] at hb'
   cases hb'
@@ -777,7 +781,10 @@ theorem g62_icallPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
       op52b v.op = false ∧ op53a v.op = false ∧ op54a v.op = false := by
     rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;>
       exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
-  rw [hvk, vkind62_eq61
+  rw [hvk, vkind64_eq63
+    (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl), vkind63_eq62
+    (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> decide)
+    (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> decide), vkind62_eq61
     (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> decide), vkind61_eq60
     (by rcases icallLead_some hn with ⟨h, -⟩ | ⟨h, -⟩ <;> rw [h] <;> rfl)] at hkd
   have hkd : vkind49 _ _ v = .ok kd :=
@@ -916,15 +923,15 @@ theorem g62_icallPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   exact ⟨m₁, hstar.tail (pstep_at F.nodup F.lt F.ret hk' rfl hcstep), hret1,
     Or.inr ⟨progAt?_none fun p _ => haddr1 p.id, m', hcallH⟩⟩
 
-/-- **An interface or closure call of slice G62 whose callee panics, down to the machine
+/-- **An interface or closure call of slice G64 whose callee panics, down to the machine
 words**: machine steps of the linked code to a state that panics with `e` (`MPanics`). -/
-theorem g62_obj_icallPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+theorem g64_obj_icallPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState} {m : MState}
     {e : Panic} {n : Nat} {osp : Bool} {spills : Array Spill} {o : ObjIn} {otab : Tab}
     {base : BitVec 64}
     {code : Code} {retM : BitVec 64} {t : MState}
-    (hc : checkG62L lc ps bstart g = .ok (tab, kt))
+    (hc : checkG64L lc ps bstart g = .ok (tab, kt))
     (hE : G28Env lc g L ps (endP L.text ps.toList) tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
@@ -937,7 +944,7 @@ theorem g62_obj_icallPanic {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     (hR : ObjRel (ObjEnv.map otab ps L base) m t) (hX : X27At otab L ps.toList m t)
     (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
     ∃ t', MStar H code retM t t' ∧ MPanics H code retM t' e := by
-  obtain ⟨m', hp, hpp⟩ := g62_icallPanic hc hE hbid hb hi hv hn hm hinv hok
+  obtain ⟨m', hp, hpp⟩ := g64_icallPanic hc hE hbid hb hi hv hn hm hinv hok
   obtain ⟨t1, ht1, hR1, hI1, hX1⟩ :=
     obj_star hO hH hp hR hX (locMatch_inv hE.env.env.env.env hm) hic
   obtain ⟨t2, ht2, hpan⟩ := obj_panic hO hHP hR1 hX1 (hI1.resolve_right hpp.1) hpp

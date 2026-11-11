@@ -1,41 +1,43 @@
-import GoFV.Proof.Gen.G62
+import GoFV.Proof.Gen.G64
 import GoFV.Proof.Obj.G7
 
 variable [GoFV.SSA.Sem.Addrs]
 
 /-!
-# `runLoc` → `runMach` on slice G62 (`docs/plans/proofs3.md` §1, §7, §9, §10)
+# `runLoc` → `runMach` on slice G64 (`docs/plans/proofs3.md` §1, §7, §9, §10)
 
-`g7_obj_value`/`g7_obj_term`'s composition for the latest slice: `g62L_value`/
-`g62L_initMem`/`g62L_term` (at either mode; at G48's, the activation's `outargs` block at `SP`,
+`g7_obj_value`/`g7_obj_term`'s composition for the latest slice: `g64L_value`/
+`g64L_initMem`/`g64L_term` (at either mode; at G48's, the activation's `outargs` block at `SP`,
 `hosp`, `SPInv`; for a lowered function) or G33's theorems (for a function with no arm64 op, in any
-mode), `g62L_nilPanic`/`g62L_boundsPanic` (any mode) (`runLoc` → `runProg` on P0' under
+mode), `g64L_nilPanic`/`g64L_boundsPanic` (any mode) (`runLoc` → `runProg` on P0' under
 `G49Env` with P0's return address `endP`: G28's activation and the accessed frame variables in
-`Blk.local` blocks at their operands, `VarsAt49`; `checkG62L`, the check `checkG62` runs on
+`Blk.local` blocks at their operands, `VarsAt49`; `checkG64L`, the check `checkG64` runs on
 `liveCtx`) with `obj_star` and `obj_panic` (`runProg` on P0' → `runMach` on the linked words).
 The value and terminator steps hold at a mode `osp` (`G3Inv … osp`, the contracts of that
 mode), which is `true` for a function that needs G48's mode (`needs48`, `hn48`; then the
 activation's `outargs` block sits at `SP`, `hosp`), and keep `SPInv` of a lowered function at the
-mode `true` (`g62L_valueX`, `g62L_termX`).
+mode `true` (`g64L_valueX`, `g64L_termX`).
 
-* `g62_obj_value`: a value step of a function that `checkG62L` and `checkObj` both accept (not an
+* `g64_obj_value`: a value step of a function that `checkG64L` and `checkObj` both accept (not an
   entry value, or an `InitMem` in a lowered function, from a state holding the initial memory
-  (`MemInit`) at a clean position (`MemAt`): `checkG62L` accepted the `InitMem` only where the
+  (`MemInit`) at a clean position (`MemAt`): `checkG64L` accepted the `InitMem` only where the
   function's clean blocks are closed backwards (`cleanOK`) and its position is clean
-  (`cleanAt`, `g62L_clean`)), from a `LocMatch`ed state `m` (its X registers meeting G35's
+  (`cleanAt`, `g64L_clean`)), from a `LocMatch`ed state `m` (its X registers meeting G35's
   upper-bit table `uL35`, started from the block's `uIn35`, `UOKL`) whose machine state `t` is
   `ObjRel`-related to it, is matched by machine steps of the linked code to a state related to a
   `LocMatch`ed `m'` after the value; in a leaf (`checkObj`'s `leaf`), `m'` keeps `m`'s `X30` when
   it is no P0 address (`obj_star_leaf`).
-* `g62_obj_term`: the same for a terminator that goes to the next block, whose start `uIn35` the
+* `g64_obj_term`: the same for a terminator that goes to the next block, whose start `uIn35` the
   state meets.
-* `g62_obj_nilPanic`: a nil check that panics is matched by machine steps to a state that panics
+* `g64_obj_nilPanic`: a nil check that panics is matched by machine steps to a state that panics
   with `nilDeref` (`MPanics`).
-* `g62_obj_boundsPanic`: a bounds check that panics is matched by machine steps to a state that
+* `g64_obj_boundsPanic`: a bounds check that panics is matched by machine steps to a state that
   panics with a panic `BoundsAgree`ing with it.
 
-The premises are `g62L_value`'s (G61's atomics add none; G62's incoming stack arguments add the
-caller's side `ArgOK`, which the composition derives at the entry, `Whole.lean`; `RoPre56`: the
+The premises are `g64L_value`'s (G61's atomics add none; G62's incoming stack arguments add the
+caller's side `ArgOK`, which the composition derives at the entry, `Whole.lean`; G63's float
+spills and reloads add `FReloadPre`, a float reload reads no pointer without an integer form;
+G64's 128-bit moves add `QLoadPre`, a 128-bit load reads valid bytes; `RoPre56`: the
 state's memory has the
 float constant symbols among the Prog list's symbols; G48's `CallOKStk` at a static call with
 stack arguments or results, at the mode `true`; the contracts of the mode `osp`, `CallOKAt` …, the
@@ -62,11 +64,11 @@ namespace GoFV.Proof.Obj
 open GoFV.SSA GoFV.SSA.Sem GoFV.Gen.Check GoFV.Arm64 GoFV.Asm GoFV.Asm.CheckObj
 open GoFV.Proof.Gen
 
-/-- On a function with no arm64 op, G62's check is `checkNL30`. -/
-theorem checkNL30_of_62L {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}
+/-- On a function with no arm64 op, G64's check is `checkNL30`. -/
+theorem checkNL30_of_64L {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}
     {r : Except String (PcTab × KTab)} (hl : lc.ctx.f.lowered = false)
-    (h : checkG62L lc ps bstart g = r) : checkNL30 lc ps bstart g = r := by
-  simpa [checkG62L, hl] using h
+    (h : checkG64L lc ps bstart g = r) : checkNL30 lc ps bstart g = r := by
+  simpa [checkG64L, hl] using h
 
 /-- Position `i` of block `b` (`blk`) holds the initial memory if it is clean (`cleanAt`) in a
 lowered function whose clean blocks are closed backwards (`cleanOK`). -/
@@ -74,17 +76,17 @@ def MemAt (lc : LocCtx) (b : ID) (blk : Block) (i : Nat) (s : LocState) : Prop :
   lc.ctx.f.lowered = true → cleanOK lc (cleanBlocks lc) = true →
     cleanAt lc (cleanBlocks lc) b blk i = true → MemInit s
 
-/-- An `InitMem` that `checkG62L` accepted in a function with an arm64 op sits at a clean
+/-- An `InitMem` that `checkG64L` accepted in a function with an arm64 op sits at a clean
 position of a function whose clean blocks are closed backwards. -/
-theorem g62L_clean {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}
+theorem g64L_clean {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}
     {tab : PcTab} {kt : KTab} {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value}
-    (hc : checkG62L lc ps bstart g = .ok (tab, kt)) (hl : lc.ctx.f.lowered = true)
+    (hc : checkG64L lc ps bstart g = .ok (tab, kt)) (hl : lc.ctx.f.lowered = true)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
     (hop : v.op = .InitMem) :
     cleanOK lc (cleanBlocks lc) = true ∧ cleanAt lc (cleanBlocks lc) bid blk i = true := by
   obtain ⟨c, rfl, rfl, -, rfl, hvk, -, -, -, -, -, -, -, hblocks, -, -, -, -, -, -⟩ :=
-    checkG62L_spec hl hc
+    checkG64L_spec hl hc
   obtain ⟨b, j, js, e, next, hb', -, hvals, -, -, -⟩ := Cx2.blocks_spec hblocks bid hbid
   rw [hb] at hb'
   cases hb'
@@ -94,8 +96,8 @@ theorem g62L_clean {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} 
   have hid' : blk.values.toList[i] = id := by simpa using hid
   rw [hid', hv] at hv'
   cases hv'
-  rw [hvk, vkind62_initMem hop, vkind61_initMem hop, vkind60_initMem hop, vkind59_initMem hop,
-    vkind58_initMem hop]
+  rw [hvk, vkind64_initMem hop, vkind63_initMem hop, vkind62_initMem hop, vkind61_initMem hop,
+    vkind60_initMem hop, vkind59_initMem hop, vkind58_initMem hop]
     at hkd
   have hkd := vkind48_initMem hop hkd
   rw [vkind57_initMem hop, vkind55_initMem hop, vkind54_initMem hop, vkind53_initMem hop,
@@ -114,18 +116,18 @@ theorem _root_.GoFV.SSA.Sem.MatchEnv.Extends.outSP {E E' : MatchEnv} (h : E.Exte
 
 /-! ## One value and one terminator in the mode of the activation
 
-`g62L_value`/`g62L_initMem`/`g62L_term` hold at either mode `osp`, the mode `true` for a function
+`g64L_value`/`g64L_initMem`/`g64L_term` hold at either mode `osp`, the mode `true` for a function
 that needs G48's mode (`hn48`); at the mode `true` the activation's `outargs` block sits at `SP`
 (`hosp`) and they keep `SPInv`. A function with no arm64 op runs by G33's theorems
 (`checkNL30`), which take any mode. The composition carries `SPInv` at the mode `true` for a
 lowered function only (`osp = true → lc.ctx.f.lowered = true → …`). -/
 
-/-- A value of slice G62 (not an entry value) at the mode `osp`. -/
-theorem g62L_valueX {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+/-- A value of slice G64 (not an entry value) at the mode `osp`. -/
+theorem g64L_valueX {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab}
     {E : MatchEnv} {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s s' : LocState}
     {m : MState} {osp : Bool}
-    (hc : checkG62L lc ps bstart g = .ok (tab, kt)) (hE : G49Env lc g L ps ret tab E)
+    (hc : checkG64L lc ps bstart g = .ok (tab, kt)) (hE : G49Env lc g L ps ret tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
     (hen : entryOp24 v.op = false) (hm : LocMatch E s bid i m)
@@ -139,14 +141,15 @@ theorem g62L_valueX {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     (hicall : ICallOKAt osp H E L ret lc s s' v m)
     (hwb : WbOKAt osp H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
     (hmeq : MemEqOKAt osp H E g L lc s v m) (hcallk : osp = true → CallOKStk H E g L lc s s' v m)
-    (harg : ArgOK E lc s v m) (hs : stepLoc env lc s v = .ok s') :
+    (harg : ArgOK E lc s v m) (hfr : FReloadPre lc s v) (hq : QLoadPre lc s v)
+    (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G49Env lc g L ps ret tab E' ∧ PStar H L ps.toList ret m m' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' osp ∧
       (osp = true → lc.ctx.f.lowered = true → SPInv E' s') ∧
       UOKL m' (uL35 lc (uIn35 lc bid) blk (i + 1)) := by
   cases hl : lc.ctx.f.lowered with
   | false =>
-    obtain ⟨E', m', hx, hE', h1, h2, h3, -⟩ := g33_value (checkG33_of_62L hl hc) hE.env hbid hb
+    obtain ⟨E', m', hx, hE', h1, h2, h3, -⟩ := g33_value (checkG33_of_64L hl hc) hE.env hbid hb
       hi hv hen hm hinv (by rw [uL31_nl hl]; intro e he; cases he) hpre.1.1.1.1.1.1.1.1.1 hcall
       hcallz hicall hwb hclo hgetg hmeq hs
     refine ⟨E', m', hx, ⟨hE', hE.vars.extend hx⟩, h1, h2, h3, (fun _ h => by cases h), ?_⟩
@@ -154,16 +157,16 @@ theorem g62L_valueX {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     intro e he
     cases he
   | true =>
-    obtain ⟨E', m', hx, hE', h1, h2, h3, h4, h5⟩ := g62L_value hc hE hl hbid hb hi hv hen hm hinv
+    obtain ⟨E', m', hx, hE', h1, h2, h3, h4, h5⟩ := g64L_value hc hE hl hbid hb hi hv hen hm hinv
       (fun ho => hsp ho hl) hosp hn48 hu hpre hro hcall hcallz hicall hwb hclo hgetg hmeq hcallk
-      harg hs
+      harg hfr hq hs
     exact ⟨E', m', hx, hE', h1, h2, h3, fun ho _ => h4 ho, h5⟩
 
-/-- A terminator of slice G62 that goes to a block, at the mode `osp`. -/
-theorem g62L_termX {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
+/-- A terminator of slice G64 that goes to a block, at the mode `osp`. -/
+theorem g64L_termX {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
     {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {e : Edge} {s s' : LocState} {m : MState} {osp : Bool}
-    (hc : checkG62L lc ps bstart g = .ok (tab, kt)) (hE : G49Env lc g L ps ret tab E)
+    (hc : checkG64L lc ps bstart g = .ok (tab, kt)) (hE : G49Env lc g L ps ret tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hm : LocMatch E s bid blk.values.size m)
     (hinv : G3Inv E lc (kAt lc kt bid blk blk.values.size) s osp)
@@ -175,28 +178,28 @@ theorem g62L_termX {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array P
       e.b ∈ lc.ctx.f.blocks.toList ∧ UOKL m' (uIn35 lc e.b) := by
   cases hl : lc.ctx.f.lowered with
   | false =>
-    obtain ⟨m', h1, h2, h3, h4, -⟩ := g33_term (checkG33_of_62L hl hc) hE.env hbid hb hm hinv hpre
+    obtain ⟨m', h1, h2, h3, h4, -⟩ := g33_term (checkG33_of_64L hl hc) hE.env hbid hb hm hinv hpre
       (by rw [uL31_nl hl]; intro e he; cases he) ht
     refine ⟨m', h1, h2, h3, (fun _ h => by cases h), h4, ?_⟩
     rw [uIn35_nl hl]
     intro e he
     cases he
   | true =>
-    obtain ⟨m', h1, h2, h3, h4, h5, h6⟩ := g62L_term (H := H) hc hE hbid hb hm hinv
+    obtain ⟨m', h1, h2, h3, h4, h5, h6⟩ := g64L_term (H := H) hc hE hbid hb hm hinv
       (fun ho => hsp ho hl) hpre hu ht
     exact ⟨m', h1, h2, h3, fun ho _ => h4 ho, h5, h6⟩
 
 /-! ## Down to the machine words -/
 
-/-- **A value step of slice G62, down to the machine words**, at the mode `osp` (`true` for a
+/-- **A value step of slice G64, down to the machine words**, at the mode `osp` (`true` for a
 function that needs G48's mode, `hn48`; there the `outargs` block sits at `SP`, `hosp`), keeping
 `SPInv` of a lowered function at the mode `true`. -/
-theorem g62_obj_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+theorem g64_obj_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s s' : LocState} {m : MState}
     {spills : Array Spill} {o : ObjIn} {otab : Tab} {base : BitVec 64} {code : Code}
     {retM : BitVec 64} {t : MState} {osp : Bool}
-    (hc : checkG62L lc ps bstart g = .ok (tab, kt))
+    (hc : checkG64L lc ps bstart g = .ok (tab, kt))
     (hE : G49Env lc g L ps (endP L.text ps.toList) tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
@@ -212,7 +215,8 @@ theorem g62_obj_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link
     (hicall : ICallOKAt osp H E L (endP L.text ps.toList) lc s s' v m)
     (hwb : WbOKAt osp H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
     (hmeq : MemEqOKAt osp H E g L lc s v m) (hcallk : osp = true → CallOKStk H E g L lc s s' v m)
-    (harg : ArgOK E lc s v m) (hs : stepLoc env lc s v = .ok s')
+    (harg : ArgOK E lc s v m) (hfr : FReloadPre lc s v) (hq : QLoadPre lc s v)
+    (hs : stepLoc env lc s v = .ok s')
     (hO : ObjEnv ps spills o otab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
     (hR : ObjRel (ObjEnv.map otab ps L base) m t) (hX : X27At otab L ps.toList m t)
@@ -231,11 +235,11 @@ theorem g62_obj_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link
       (osp = true → lc.ctx.f.lowered = true → SPInv E' s') ∧
       UOKL m' (uL35 lc (uIn35 lc bid) blk (i + 1)) := by
     rcases hen with hen | ⟨hop, hl⟩
-    · exact g62L_valueX hc hE hbid hb hi hv hen hm hinv hsp hosp hn48 hu hpre hro hcall hcallz
-        hicall hwb hclo hgetg hmeq hcallk harg hs
-    · obtain ⟨hok, hcl⟩ := g62L_clean hc hl hbid hb hi hv hop
+    · exact g64L_valueX hc hE hbid hb hi hv hen hm hinv hsp hosp hn48 hu hpre hro hcall hcallz
+        hicall hwb hclo hgetg hmeq hcallk harg hfr hq hs
+    · obtain ⟨hok, hcl⟩ := g64L_clean hc hl hbid hb hi hv hop
       obtain ⟨E', m', hx, hE', h1, h2, h3, h4, h5⟩ :=
-        g62L_initMem (H := H) hc hE hl hbid hb hi hv hop hm hinv (fun ho => hsp ho hl)
+        g64L_initMem (H := H) hc hE hl hbid hb hi hv hop hm hinv (fun ho => hsp ho hl)
           (hmi hl hok hcl) hs
       exact ⟨E', m', hx, hE', h1, h2, h3, fun ho _ => h4 ho, h5⟩
   obtain ⟨E', m', hx, hE', hp, hlm, hinv', hsp', hu'⟩ := hstep
@@ -244,14 +248,14 @@ theorem g62_obj_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link
   exact ⟨E', m', t', hx, hE', hlm, hinv', hsp', hu', ht, hR', hX',
     fun hl h1 h2 => obj_star_leaf hO hH hp hR hX hI hic hl ⟨h1, h2⟩⟩
 
-/-- **A terminator of slice G62 that goes to a block, down to the machine words**, at the mode
+/-- **A terminator of slice G64 that goes to a block, down to the machine words**, at the mode
 `osp`. -/
-theorem g62_obj_term {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
+theorem g64_obj_term {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
     {bstart : ID → Option Nat} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {e : Edge} {s s' : LocState} {m : MState}
     {spills : Array Spill} {o : ObjIn} {otab : Tab} {base : BitVec 64} {code : Code}
     {retM : BitVec 64} {t : MState} {osp : Bool}
-    (hc : checkG62L lc ps bstart g = .ok (tab, kt))
+    (hc : checkG64L lc ps bstart g = .ok (tab, kt))
     (hE : G49Env lc g L ps (endP L.text ps.toList) tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hm : LocMatch E s bid blk.values.size m)
@@ -271,22 +275,22 @@ theorem g62_obj_term {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array
       (otab.leaf = true → ¬ IsProgAddr L.text ps.toList (m.x 30) →
         m.x 30 ≠ endP L.text ps.toList → m'.x 30 = m.x 30) := by
   obtain ⟨m', hp, hlm, hinv', hsp', hmem, hu'⟩ :=
-    g62L_termX (H := H) hc hE hbid hb hm hinv hsp hpre hu ht
+    g64L_termX (H := H) hc hE hbid hb hm hinv hsp hpre hu ht
   have hI := locMatch_inv hE.env.env.env.env.env hm
   obtain ⟨t', htm, hR', -, hX'⟩ := obj_star hO hH hp hR hX hI hic
   exact ⟨m', t', hlm, hinv', hsp', hmem, hu', htm, hR', hX',
     fun hl h1 h2 => obj_star_leaf hO hH hp hR hX hI hic hl ⟨h1, h2⟩⟩
 
-/-- **A nil check of slice G62 that panics, down to the machine words**: machine steps of the
+/-- **A nil check of slice G64 that panics, down to the machine words**: machine steps of the
 linked code to a state that panics with `runLoc`'s panic `nilDeref` (the `MOVB` at the nil page,
 `MPanics`). -/
-theorem g62_obj_nilPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+theorem g64_obj_nilPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState} {m : MState}
     {e : Panic} {mm' : Mem} {osp : Bool}
     {spills : Array Spill} {o : ObjIn} {otab : Tab} {base : BitVec 64} {code : Code}
     {retM : BitVec 64} {t : MState}
-    (hc : checkG62L lc ps bstart g = .ok (tab, kt))
+    (hc : checkG64L lc ps bstart g = .ok (tab, kt))
     (hE : G49Env lc g L ps (endP L.text ps.toList) tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
@@ -298,23 +302,23 @@ theorem g62_obj_nilPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : L
     (hR : ObjRel (ObjEnv.map otab ps L base) m t) (hX : X27At otab L ps.toList m t)
     (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
     e = .nilDeref ∧ ∃ t', MStar H code retM t t' ∧ MPanics H code retM t' e := by
-  obtain ⟨he, m', hp, hpp⟩ := g62L_nilPanic (H := H) hc hE hbid hb hi hv hop hm hinv hs
+  obtain ⟨he, m', hp, hpp⟩ := g64L_nilPanic (H := H) hc hE hbid hb hi hv hop hm hinv hs
   obtain ⟨t1, ht1, hR1, hI1, hX1⟩ :=
     obj_star hO hH hp hR hX (locMatch_inv hE.env.env.env.env.env hm) hic
   have hI : ObjInv L ps.toList m' := hI1.resolve_right hpp.1
   obtain ⟨t2, ht2, hpan⟩ := obj_panic hO hHP hR1 hX1 hI hpp
   exact ⟨he, t2, mstar_trans ht1 ht2, hpan⟩
 
-/-- **A bounds check of slice G62 that panics, down to the machine words**: machine steps of the
+/-- **A bounds check of slice G64 that panics, down to the machine words**: machine steps of the
 linked code to a state that panics with the runtime's bounds panic (`BoundsOK`), which
 `BoundsAgree`s with `runLoc`'s. -/
-theorem g62_obj_boundsPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
+theorem g64_obj_boundsPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s : LocState} {m : MState}
     {e : Panic} {mm' : Mem} {osp : Bool}
     {spills : Array Spill} {o : ObjIn} {otab : Tab} {base : BitVec 64} {code : Code}
     {retM : BitVec 64} {t : MState}
-    (hc : checkG62L lc ps bstart g = .ok (tab, kt))
+    (hc : checkG64L lc ps bstart g = .ok (tab, kt))
     (hE : G49Env lc g L ps (endP L.text ps.toList) tab E)
     (hbid : bid ∈ lc.ctx.f.blocks.toList) (hb : lc.ctx.f.block? bid = some blk)
     (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v)
@@ -328,7 +332,7 @@ theorem g62_obj_boundsPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L 
     (hic : ∀ u, PStar H L ps.toList (endP L.text ps.toList) m u → ICallOut L ps.toList u) :
     ∃ e', BoundsAgree e e' ∧ ∃ t', MStar H code retM t t' ∧ MPanics H code retM t' e' := by
   obtain ⟨e', m', he, hp, hpp⟩ :=
-    g62L_boundsPanic (H := H) hc hE hbid hb hi hv hop hm hinv hbok hs
+    g64L_boundsPanic (H := H) hc hE hbid hb hi hv hop hm hinv hbok hs
   obtain ⟨t1, ht1, hR1, hI1, hX1⟩ :=
     obj_star hO hH hp hR hX (locMatch_inv hE.env.env.env.env.env hm) hic
   have hI : ObjInv L ps.toList m' := hI1.resolve_right hpp.1

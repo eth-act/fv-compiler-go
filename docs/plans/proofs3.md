@@ -3496,25 +3496,26 @@ of the 195 (any `Blk.local` access in G48's mode); the `_atSP` variants cover al
 from `locInit` and `runMach` from the entry to the caller's `0x40`, through `b1`'s `TBNZ` and
 `b2`'s `ANDconst`/`MakeResult`/`RET`, with 7 in `X0`. `objWholeNL_ret_witness`
 (`runtime.gclinkptr.ptr`, no arm64 op: `ret_results` in Phase 1's mode). `objWhole_panic_witness`
-(`(*A).g` on a nil receiver: the nil check faults). `g61_callPanic_witness` (`fint64to32`, a callee
-that panics), `g61_icallPanic_witness` (`Locker.Lock`'s interface call), `g61_storePanic_witness`
-and `g61_loadPanic_witness` (`(*queueOnePass).next`'s `MOVW R2, 52(R0)` and `MOVWU 52(R0), R3`
-with a nil `q`), `g61_ldarPanic_witness` (`sync/atomic.LoadInt64`'s `LDAR (R0), R0` with a nil
-`addr`). `objStarLeaf_witness` (`(*A).g`, a leaf: the P0 run of its nil check keeps the
+(`(*A).g` on a nil receiver: the nil check faults). `g64_callPanic_witness` (`fint64to32`, a callee
+that panics), `g64_icallPanic_witness` (`Locker.Lock`'s interface call), `g64_storePanic_witness`
+and `g64_loadPanic_witness` (`(*queueOnePass).next`'s `MOVW R2, 52(R0)` and `MOVWU 52(R0), R3`
+with a nil `q`), `g64_ldarPanic_witness` (`sync/atomic.LoadInt64`'s `LDAR (R0), R0` with a nil
+`addr`), `g64_atomPanic_witness` (`sync/atomic.SwapInt64`'s `LDAXR`). `objStarLeaf_witness`
+(`(*A).g`, a leaf: the P0 run of its nil check keeps the
 caller's `0x40` in `X30`). `entryStore_witness` (`GoFV/Proof/Witness/ObjEntry49.lean`:
-`g61L_entryStore` on `runtime.getm`'s ABI0 wrapper's `MOVD R0, ~r0+0(FP)` (`checkG61` accepts the
+`g64L_entryStore` on `runtime.getm`'s ABI0 wrapper's `MOVD R0, ~r0+0(FP)` (`checkG64` accepts the
 wrapper with `checkG49`'s tables) from a machine whose
 `~r0` window holds `0xAB`, to a full `LocMatch`). `verified_mach_witness`:
 `pallocSum.start` from its generic SSA (the export's first
 section, in the whole-file environment of `gofv-ssa-opt --verified`) through
 `verifiedPipelineFull` (`fullyVerified`), with every premise of `verified_mach` discharged;
-`checkG61` accepts genssa's Progs against the pipeline's own output, `entryStoresOK` holds (no
-pending window). `RunPre` there is `runPre_simple`. The witnesses' facts check `checkG61L` (or
-`checkG61`) and `constRo (symNames g) = []` on the same functions with the same tables as before
+`checkG64` accepts genssa's Progs against the pipeline's own output, `entryStoresOK` holds (no
+pending window). `RunPre` there is `runPre_simple`. The witnesses' facts check `checkG64L` (or
+`checkG64`) and `constRo (symNames g) = []` on the same functions with the same tables as before
 (none of them has a remainder, `LoweredMove` or loop); they run at the mode `false` (`needs48`
 false, checked), as on main. Their G48-mode versions: `ObjWholeS.objWhole_ret_witness` and
 `verified_mach_S_witness` (`ObjEndToEndS`: `SP` at `outargs 0`'s fixed base `0x4000000000000000`,
-`SepFromW`, `SPInv`, `RunPreS`), `g61_callPanicS_witness` (`CallPanicOKS`).
+`SepFromW`, `SPInv`, `RunPreS`), `g64_callPanicS_witness` (`CallPanicOKS`).
 `verified_mach_atSP_witness` (`GoFV/Proof/Witness/ObjEndToEndAtSP.lean`): `secret_getStack`'s
 ABI0 wrapper, with every premise of `verified_mach_atSP` discharged (a callee contract returning
 `0x11`, `0x22`; its hook; the results' blocks at `SP + 24`/`SP + 32`), returning with them at the
@@ -3553,6 +3554,18 @@ added to `RunPre`):
    `verified_mach`, `verified_mach_S` (and `_fixed`, `_atSP`) take `checkG62`, `argsOK lc g
    spills.toList k` and `EntryMatch E0 g …`, otherwise their statements on G61. STATUS lists the
    clause in the entry condition with the ABI0 citations and marks `ArgOK` discharged.
+
+*The lift to G64* (done; G63's and G64's run premises join `RunPre`'s per-step conjunction):
+`Obj/G62.lean` → `Obj/G64.lean` (`g64_obj_*` over `g64L_*`; `g64_obj_value` takes `FReloadPre`
+and `QLoadPre`). `RunPre`, `RunPreS` and `RunPreM` ask, at a value whose step succeeds,
+`G54Pre lc s v ∧ FReloadPre lc s v ∧ QLoadPre lc s v` in place of `G54Pre lc s v`, and nothing
+else; `sim_value` passes the two to `g64_obj_value`. The panics' `vkind64` is read through
+`vkind64_eq63` (no access, call, atomic or entry store is an op of G64's, `qop64`) and
+`vkind63_eq62` (none is a `StoreReg` or `LoadReg`), then `vkind62_eq61` as before. `simpleOp`
+excludes `LoadReg`, `FMOVQload` and `FLDPQ`, so `runPre_simple` discharges the two
+(`pre64_simple`). `verified_mach`, `verified_mach_S` (and `_fixed`, `_atSP`) take
+`checkG64 (LocCtx.make …) ps bstart g`, otherwise their statements on G62. A G64 128-bit load or
+store whose step panics (a nil base) is outside `RunPanicPre`, as G50's pair loads are.
 
 ## 10. Read-only data: float constants and jump tables
 
@@ -3676,6 +3689,9 @@ only the slices know.
      the panics' `vkind62` read through `vkind62_eq61` (no access, call, atomic or entry store is
      an `Arg`), `Whole.lean` on `checkG62L` with `NoArgRun`; `EntryMatch` with the stack clause
      and `argsOK` in the statements.
+   - **The lift to G64** (the float spills and reloads, §4 G63, and the 128-bit blob moves, §4
+     G64; §9 *The lift to G64*): `Obj/G62.lean` → `Obj/G64.lean`, `FReloadPre` and `QLoadPre` in
+     `RunPre`'s per-step conjunction, `checkG64` in the statements.
    - The `RoMem` premise is about the input memory: Phase 1's export image (`globalImage`) has no
      assembler symbols, so `addGlobals` adds none and the input `mem` must hold the constant
      symbols' allocations. With `EntryMatch`'s `MemInj` and `G2Env.glob` it says that the loaded

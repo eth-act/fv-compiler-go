@@ -310,11 +310,12 @@ them (`GoFV.Asm.p0Prime`: `progedit`'s float constant loads, the constant symbol
 symbols by `internConsts`; a function whose numbering differs from the one `Flushplist` gives,
 `symIdx`, is rejected as `P0': a constant symbol numbered otherwise than by the assembler`),
 `memTyL` on `liveCtx` of the pipeline's context (rejection `memTyL: …`),
-`checkG62` (the latest genssa slice, G61 with the incoming stack arguments, its loops' and atomics'
+`checkG64` (the latest genssa slice, G61 with the incoming stack arguments (G62), the float spills
+and reloads (G63) and the 128-bit blob moves (G64), its loops' and atomics'
 branch targets
 included, `loopOK`, `atomOK`) on P0' against `LocCtx.make` of the pipeline's tables and function,
-then on `liveCtx` of it (the homes of removed values dropped, as `checkG62` runs
-`checkG62L`) `entryStoresOK` at the end of the entry block's entry values and `Arg`s (`entryLen`:
+then on `liveCtx` of it (the homes of removed values dropped, as `checkG64` runs
+`checkG64L`) `entryStoresOK` at the end of the entry block's entry values and `Arg`s (`entryLen`:
 the entry stores cover the windows of the register-assigned parameters in `Blk.local` blocks,
 `pendWins`), `argsOK` there (every `Arg` before `entryLen`, no edge to the entry block, and a
 function with an `Arg` has no pending window and no morestack spill, `GoFV/Gen/Entry62.lean`; the
@@ -324,7 +325,7 @@ registers, `MakeResult` components of no wider class), `Flushplist` on genssa's 
 `checkObj` on P0' (numbered by `Flushplist`). From
 the `.prog` file it reads only the input view (`inputView`: definitions, config, `Dcl` at
 `AllocFrame`'s start, `genin`), no stock result. It prints the fully verified functions, those
-the back end ran on, those `checkG62` with `memTyL`, `entryStoresOK`, `argsOK`, `retRegsOK`,
+the back end ran on, those `checkG64` with `memTyL`, `entryStoresOK`, `argsOK`, `retRegsOK`,
 `checkObj` and all of
 them accept (the end-to-end count; a line counts the functions with a pending window and those
 `entryStoresOK` rejects; a line those `argsOK` rejects; another the end-to-end functions by mode:
