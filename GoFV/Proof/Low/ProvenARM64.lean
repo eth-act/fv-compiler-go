@@ -47,6 +47,7 @@ theorem arm64_allSound : ArmRuleSet.AllSound ProvenARM64.lower := by
   · simp only [ProvenARM64.lower, ForallL, ForallL.append_iff]
     exact ⟨⟨r_ARM64_970_sound, r_ARM64_1012_sound, r_ARM64_1014_sound, r_ARM64_1017_sound, r_ARM64_1433_sound, r_ARM64_1434_sound, r_ARM64_1435_sound, r_ARM64_1635_sound, trivial⟩,
       ⟨r_ARM64_650_sound, r_ARM64_1000_sound, r_ARM64_1201_sound, r_ARM64_1211_sound, r_ARM64_1212_sound, r_ARM64_1213_sound, trivial⟩,
+      ⟨r_ARM64_1512_sound, trivial⟩,
       ⟨r_ARM64_972_sound, r_ARM64_1179_sound, r_ARM64_1439_sound, r_ARM64_1440_sound, r_ARM64_1441_sound, r_ARM64_1442_sound, trivial⟩,
       ⟨r_ARM64_1241_sound, r_ARM64_1242_sound, r_ARM64_1243_sound, r_ARM64_1244_sound, r_ARM64_1697_sound, r_ARM64_1713_sound, r_ARM64_1718_sound, r_ARM64_1853_sound, r_ARM64_1854_sound, r_ARM64_1855_sound, trivial⟩,
       ⟨r_ARM64_598_sound, trivial⟩,

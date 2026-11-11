@@ -3,7 +3,7 @@ import GoFV.Proof.Low.Rules.ConstFold
 variable [GoFV.SSA.Sem.Addrs]
 
 /-!
-# Lowering rule lemmas: folded operand producers (`ARM64.rules:986-988`, `1012-1018`, `1179-1184`, `1426-1449`, `1635`)
+# Lowering rule lemmas: folded operand producers (`ARM64.rules:986-988`, `1012-1018`, `1179-1184`, `1426-1449`, `1512`, `1635`)
 
 Peepholes of lowered code (#385) that fold an operand's producer into its consumer:
 
@@ -40,6 +40,10 @@ Peepholes of lowered code (#385) that fold an operand's producer into its consum
   [c] y)` and `(MVN x:(RORconst [c] y)) && … => (MVNshiftRO [c] y)` (1426-1432): the outer op reads
   the low bits of the shifted operand (`refines_op1_inner`), which the shifted-register form
   computes from `y`.
+* `(ADDshiftLL x (MOVDconst [c]) [d]) => (ADDconst x [int64(uint64(c)<<uint64(d))])` (1512): the
+  constant is read whole (`armReadW`), and with `0 ≤ d < 64` (`auxRangeL`, as Go builds every
+  `ADDshiftLL`) Go's `uint64(c) << d` is the register shifted by `Arm64.amt d`; a negative `d`
+  would differ (`amt` reads it as 0, Go's `uint64(d) ≥ 64` gives 0).
 
 False under the semantics (docs/proofs/rules.md, Findings; counterexamples evaluated with
 `#eval`), so not proven: 1197 (`x = heap (2^22) + 0`, `y = z = 2^41`: the target's `ADD x z`
@@ -515,6 +519,67 @@ theorem r_ARM64_1438_sound : ArmRule.Checked r_ARM64_1438 := by
   left; arm_unfold; arm_norm
   exact refines_subSh .ra _ (armReadW_addSub .ARM64SUB _ 1 (.inr rfl) ▸ harg.2.1.1) harg.1.2
     _ _ hty.1
+
+/-! ## A constant shifted operand folded into the immediate (1512) -/
+
+omit [GoFV.SSA.Sem.Addrs] in
+private theorem ofInt64_ofInt (i : Int) :
+    BitVec.ofInt 64 (Int64.ofInt i).toInt = BitVec.ofInt 64 i := by
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.toNat_ofInt, BitVec.toNat_ofInt, Int64.toInt_ofInt]
+  congr 1
+  exact Int.bmod_emod
+
+omit [GoFV.SSA.Sem.Addrs] in
+private theorem ofInt64_wrapS (i : Int) : BitVec.ofInt 64 (wrapInt 64 true i) = BitVec.ofInt 64 i := by
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.toNat_ofInt, BitVec.toNat_ofInt]
+  congr 1
+  exact Int.bmod_emod
+
+omit [GoFV.SSA.Sem.Addrs] in
+private theorem ofInt64_wrapU (i : Int) : BitVec.ofInt 64 (wrapInt 64 false i) = BitVec.ofInt 64 i := by
+  apply BitVec.eq_of_toNat_eq
+  rw [BitVec.toNat_ofInt, BitVec.toNat_ofInt]
+  congr 1
+  exact Int.emod_emod _ _
+
+omit [GoFV.SSA.Sem.Addrs] in
+/-- Go's `uint64(c) << d` (`goShl`, below 64) on the register: `c`'s word shifted left by `d`. -/
+private theorem ofInt64_shl (c : Int) (n : Nat) :
+    BitVec.ofInt 64 (wrapInt 64 false c * 2 ^ n) = BitVec.ofInt 64 c <<< n := by
+  rw [BitVec.shiftLeft_eq_mul_twoPow, BitVec.ofInt_mul, ofInt64_wrapU]
+  congr 1
+  have h : ((2 : Int) ^ n) = ((2 ^ n : Nat) : Int) := by push_cast; rfl
+  rw [h, BitVec.ofInt_natCast]
+  apply BitVec.eq_of_toNat_eq
+  simp [BitVec.toNat_twoPow]
+
+/-- `ARM64.rules:1512`: `(ADDshiftLL x (MOVDconst [c]) [d]) => (ADDconst x [int64(uint64(c)<<uint64(d))])`.
+The shift `d` is below 64 (`auxRangeL`): `Arm64.amt` reads a negative `d` as 0, where Go's
+`uint64(d) ≥ 64` gives a 0 immediate. The constant is read whole (`armReadW`: 64). -/
+theorem r_ARM64_1512_sound : ArmRule.Checked r_ARM64_1512 := by
+  left; arm_unfold
+  all_goals arm_norm
+  simp (config := { decide := true }) only [Pat.rangeL, Pat.rangeLs, auxRangeL,
+    Bool.and_eq_true, decide_eq_true_eq, and_true, ite_true, ite_false] at hrng
+  obtain ⟨hd0, hd1⟩ := hrng
+  have hw : wrapInt 64 false (e.auxInt []).toInt = (e.auxInt []).toInt := by
+    simp only [wrapInt, Bool.false_eq_true, ite_false]
+    exact Int.emod_eq_of_lt hd0 (by omega)
+  have h1 : ¬ ((e.auxInt []).toInt < 0) := by omega
+  have h2 : ¬ ((e.auxInt []).toInt.toNat ≥ 64) := by omega
+  simp only [hw, goShl, h1, h2, ite_false]
+  rw [ofInt64_ofInt, ofInt64_wrapS, ofInt64_wrapU, ofInt64_shl]
+  have h64 : 64 ≤ argWidth (e.ty [1]) := harg.2.1
+  have hs : (e.auxInt []).toInt.toNat % 64 = (e.auxInt []).toInt.toNat :=
+    Nat.mod_eq_of_lt (by omega)
+  rcases retypeL_res_wide h64 (BitVec.ofInt 64 (e.auxInt [1]).toInt) with h | h <;> rw [h]
+  · simp only [Arm64.addSh, Arm64.reg, BitVec.setWidth_eq, Arm64.shifted, Arm64.Shift.apply,
+      Arm64.amt, hs]
+    exact Refines.refl _
+  · simp only [Arm64.addSh, show Arm64.reg .poison = none from rfl, retypeL_poison]
+    exact .poison _
 
 /-! ## `NEG` of `SUB` and of `NEG` (1183, 1184) -/
 

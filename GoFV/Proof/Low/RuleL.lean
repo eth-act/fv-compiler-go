@@ -566,12 +566,15 @@ def bfOK (k : Int64) : Bool :=
     decide (k.toInt / 256 + k.toInt % 256 ≤ 64)
 
 /-- The auxint of an arm64 op in the range Go builds it in: a constant shift amount below 64
-(`SLLconst`, `SRLconst`, `SRAconst`; Go's rules mask or bound every one), a bit field (`bfOK`:
+(`SLLconst`, `SRLconst`, `SRAconst`, and `ADDshiftLL`'s shift, which Go's rules build from an
+`SLLconst`'s, `ARM64.rules:1433`, a small constant or `log64` of a power of two; they mask or
+bound every one), a bit field (`bfOK`:
 `UBFX`, `UBFIZ`, `SBFX`, `SBFIZ`, `BFI`, `BFXIL`). The semantics reads any auxint
-(`Arm64.amt`, `Arm64.bf`); Go's helpers on them (`armBFAuxInt`, `bfc.lsb()`) agree with it in
-these ranges. -/
+(`Arm64.amt`, `Arm64.bf`); Go's helpers on them (`armBFAuxInt`, `bfc.lsb()`, `uint64(d)` of a
+shift) agree with it in these ranges. -/
 def auxRangeL (o : Op) (k : Int64) : Bool :=
-  if o == .ARM64SLLconst || o == .ARM64SRLconst || o == .ARM64SRAconst then
+  if o == .ARM64SLLconst || o == .ARM64SRLconst || o == .ARM64SRAconst ||
+      o == .ARM64ADDshiftLL then
     decide (0 ≤ k.toInt) && decide (k.toInt < 64)
   else if o == .ARM64UBFX || o == .ARM64UBFIZ || o == .ARM64SBFX || o == .ARM64SBFIZ ||
       o == .ARM64BFI || o == .ARM64BFXIL then bfOK k
