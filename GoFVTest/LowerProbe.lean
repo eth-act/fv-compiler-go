@@ -237,7 +237,10 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
                 | none =>
                   match ldOffFold tabs M v defs.toList with
                   | some u => M := M.put v u
-                  | none => return s!"rule {key cr.rule} v{v} {ruleWhyL tabs M cr.rule v defs.toList}"
+                  | none =>
+                    match roLoadDef tabs f M v defs.toList with
+                    | some u => M := M.put v u
+                    | none => return s!"rule {key cr.rule} v{v} {ruleWhyL tabs M cr.rule v defs.toList}"
     | .copyArg v i src =>
       match M.get? v with
       | none => return "copyArg missing"

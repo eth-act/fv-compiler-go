@@ -52,7 +52,7 @@ theorem roMemD_of {m : Mem} (h : RoMem (GoFV.Opt.RewriteCheck.roSyms tabs f) m) 
 /-- The registers of a frame with the invariant hold memories with the read-only symbols of `f`'s
 definitions (`RegsFrame`'s last clause). -/
 theorem roQL_regs {fr : Frame} (h : MemInv.SInv (RoQL tabs f) fr) :
-    MemTyD tabs f.value? → ∀ a y, fr.regs[a]? = some (some y) →
+    MemTyD tabs f.value? → ∀ (a : ID) (y : Val), fr.regs[a]? = some (some y) →
       MemInv.MemsOK (RoMemD tabs f.value?) y :=
   fun hmt a y hy m hm => roMemD_of (h.2 a y hy m hm hmt)
 
@@ -544,7 +544,7 @@ theorem regsFrame_eval {env : Env} {frS G : Frame} {P : List ID} {psS : List (ID
     (hkeep : ∀ z, z ∉ P → G.regs[z]? = (setPhis psS frS.regs)[z]?)
     (hev : ∀ x ∈ P, ∃ u y, f.value? x = some u ∧ G.regs[x]? = some (some y) ∧
       evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) G u = .ok y)
-    (hro : MemTyD tabs f.value? → ∀ a y, G.regs[a]? = some (some y) →
+    (hro : MemTyD tabs f.value? → ∀ (a : ID) (y : Val), G.regs[a]? = some (some y) →
       MemInv.MemsOK (RoMemD tabs f.value?) y) :
     RegsFrame tabs 0 f.value? G := by
   refine ⟨fun a l n y hl hop hax hy => ?_, fun a s y hs hop hy => ?_, fun a y ha hy => ?_, hro⟩

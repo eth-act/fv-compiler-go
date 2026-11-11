@@ -1530,12 +1530,15 @@ def tabsAgreeL (tabs tabs' : Tables) (f : Func) : Bool :=
     Sem.Ty.beq (Sem.valueTy (Sem.typeShapesL tabs') o) (Sem.valueTy (Sem.typeShapesL tabs) o)
 
 /-- `applyRewrite` with the lowering table `t` and its log; the result if the tables agree for
-`f` (`tabsAgreeL`), both functions pass `check` and `validateL` accepts it, else `none`. -/
+`f` (`tabsAgreeL`) and give it the same read-only symbols (`RewriteCheck.roSyms`, which the
+precondition of `GoFV.Proof.Low.lower_refines` pins in the input's tables), both functions pass
+`check` and `validateL` accepts it, else `none`. -/
 def checkedRunL (t : Interp.Table) (env : PassEnv) (f : Func) : Except String (Option PassOut) := do
   let (out, _, log) ← GoFV.Rules.rewriteRun t true true env f
   let ce : CheckEnv := { tabs := out.tables, typs := env.typs }
   return if tabsAgreeL env.tables out.tables f && checkOK { tabs := env.tables, typs := env.typs } f &&
-      checkOK ce out.func && validateL out.tables t f out.func log then some out else none
+      checkOK ce out.func && validateL out.tables t f out.func log &&
+      decide (roSyms out.tables f = roSyms env.tables f) then some out else none
 
 /-- **The checked lowering pass** with table `t`: the validated result, else the input. -/
 def checkedLowerWith (t : Interp.Table) : Pass := fun env f => do

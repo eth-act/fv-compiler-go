@@ -22,8 +22,8 @@ input's `Addr`s name in the memory with the global image (`RoImage` of `RewriteC
 validator's read-only loads, `LowerCheck.roLoadDef`, read them). A rejected result is the input; an
 accepted one is related by the validator (`validateL_termRef`: atoms' arguments and terminators
 refine as terms in lowered mode) and the atom simulation over `runL` (`atomSimL_refines`), and the
-input runs alike in both tables (`runL_tabsAgreeL`; its read-only symbols are the same,
-`roSyms_tabsAgreeL`).
+input runs alike in both tables (`runL_tabsAgreeL`; `checkedRunL` checks that it has the same
+read-only symbols in both).
 
 `lower_refines`: the instance for `GoFV.Opt.lowerChecked` (the checked lower with the proven
 `ARM64.rules`, `GoFV.Rules.ProvenARM64.lower`, `arm64_allSound`, on the input with its `useFMA`
@@ -71,32 +71,14 @@ theorem roSyms_contractAt {tabs : Tables} {f : Func} {C : List ID} {e : String �
   · have := fmaOf_op hw
     rw [hop] at this; exact absurd this (by decide)
 
-/-- Tables that agree for `f` (`tabsAgreeL`) give it the same read-only symbols. -/
-theorem roSyms_tabsAgreeL {tabs tabs' : Tables} {f : Func}
-    (h : tabsAgreeL tabs tabs' f = true) :
-    RewriteCheck.roSyms tabs' f = RewriteCheck.roSyms tabs f := by
-  unfold tabsAgreeL at h
-  rw [Bool.and_eq_true] at h
-  have A := TabsAgree.tabsAgree_sound h.1
-  unfold RewriteCheck.roSyms
-  refine List.filterMap_congr fun o ho => ?_
-  cases o with
-  | none => rfl
-  | some v =>
-    obtain ⟨i, hi⟩ := List.getElem?_of_mem ho
-    rw [Array.getElem?_toList] at hi
-    have hav := A.value i v (by simp [Func.value?, hi])
-    have hr : RewriteCheck.roSym? tabs' v.aux = RewriteCheck.roSym? tabs v.aux := by
-      unfold RewriteCheck.roSym?; rw [hav.lookup]
-    simp only [Option.bind_some, hr]
-
 /-- What `checkedRunL` accepted. -/
 theorem checkedRunL_some {t : Interp.Table} {penv : PassEnv} {f : Func} {out : PassOut}
     (h : checkedRunL t penv f = .ok (some out)) :
     ∃ log, tabsAgreeL penv.tables out.tables f = true ∧
       checkOK { tabs := penv.tables, typs := penv.typs } f = true ∧
       checkOK { tabs := out.tables, typs := penv.typs } out.func = true ∧
-      validateL out.tables t f out.func log = true := by
+      validateL out.tables t f out.func log = true ∧
+      RewriteCheck.roSyms out.tables f = RewriteCheck.roSyms penv.tables f := by
   unfold checkedRunL at h
   cases hr : rewriteRun t true true penv f with
   | error e => rw [hr] at h; cases h
@@ -107,8 +89,8 @@ theorem checkedRunL_some {t : Interp.Table} {penv : PassEnv} {f : Func} {out : P
     split at h
     · rename_i hc
       cases h
-      simp only [Bool.and_eq_true] at hc
-      exact ⟨log, hc.1.1.1, hc.1.1.2, hc.1.2, hc.2⟩
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+      exact ⟨log, hc.1.1.1.1, hc.1.1.1.2, hc.1.1.2, hc.1.2, hc.2⟩
     · cases h
 
 /-- The checked lowering pass keeps the input or a result `checkedRunL` accepted. -/
@@ -135,14 +117,14 @@ theorem checkedLowerWith_refines {s : RuleSet} (hs : ArmRuleSet.AllSound s) {pen
       out.tables out.func penv.tables f := by
   rcases checkedLowerWith_cases h with ⟨he, ht⟩ | hc
   · rw [he, ht]; exact RefinesLFrom.refl _ _ _
-  obtain ⟨log, hta, hcf, hcg, hv⟩ := checkedRunL_some hc
+  obtain ⟨log, hta, hcf, hcg, hv, hro⟩ := checkedRunL_some hc
   obtain ⟨hgl, hsh, hA, hclf, hclg⟩ := validateL_parts hv
   obtain ⟨h1, h2⟩ := validateL_termRef hs hv
   have R := atomSimL_refines (checkOK_sound hcf) (checkOK_sound hcg) hA hclf hclg hsh hgl
     (hfa out.tables) hfb h1 h2
   intro env args mem hP fuel hd
   rw [← runL_tabsAgreeL hta] at hd ⊢
-  exact R env args mem ⟨hP.1, by rw [roSyms_tabsAgreeL hta]; exact hP.2⟩ fuel hd
+  exact R env args mem ⟨hP.1, by rw [hro]; exact hP.2⟩ fuel hd
 
 /-- **`lower` refines its input up to contraction**: the checked lower with the proven
 `ARM64.rules` (`GoFV.Opt.lowerChecked`) on a generic function refines its contraction at the

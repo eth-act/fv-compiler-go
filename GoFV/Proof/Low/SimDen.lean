@@ -291,7 +291,7 @@ def RegsFrame (tabs : Tables) (act : Nat) (D : ID → Option Value) (fr : Frame)
   (∀ a s y, D a = some s → s.op = .SP → fr.regs[a]? = some (some y) →
     y = .poison ∨ (y = (spPtr act).word ∧ wordShape (shpL tabs s.type) = true)) ∧
   (∀ a y, D a = none → fr.regs[a]? = some (some y) → y = .poison) ∧
-  (MemTyD tabs D → ∀ a y, fr.regs[a]? = some (some y) →
+  (MemTyD tabs D → ∀ (a : ID) (y : Val), fr.regs[a]? = some (some y) →
     GoFV.Proof.MemInv.MemsOK (RoMemD tabs D) y)
 
 /-- A register of a value `D` does not define holds `poison` (`RegsFrame`). -/
