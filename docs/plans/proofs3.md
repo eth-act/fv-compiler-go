@@ -1927,6 +1927,28 @@ unknown`) are G66b. Witnesses: `genG66_witness` (`GenG66.lean`, `runtime.procyie
 `genG66s_witness` (`GenG66s.lean`, `runtime.randn`: the narrow spill `v17 = StoreReg v6`,
 `MOVW R0, n+0(FP)`, after which the machine's 4 bytes at the slot hold 7).
 
+**Slice G66b: narrow reload entries and elided extensions** (in place in `checkG66`; design review
+`docs/plans/slot-size.md` §2.3, §2.4). G35's upper-bit table gains the entry of a narrow integer
+reload (`reloadEntry35`, tried by `ldEntry35` on a `LoadReg`): a `LoadReg` homed in an `X` register
+at class 8, 16 or 32 leaves it the sign (a signed type, `typeSigned`, as `LocCtx.signOf` says) or
+zero extension of its low bits, as `loadByType`'s `MOV{B,H,W}{,U}` does. Genssa emits no code for an
+extension `MOV{B,H,W}{,U}reg x` whose argument, through `Copy`/`MOVDreg`, is a `LoadReg` of its size
+and signedness when the two share a register, and `MOVD Rx, Rv` otherwise (`ssa.go:1353-1383`);
+`GoFV/Gen/Check66b.lean`: `elide66b` is that test, `extElide66b` the kind (`vkind66` tries it
+first), and `elideOK66b` (in `checkG66L`) asks that each elided extension find its argument's
+register at the extension's class and signedness in the table before it, so the proof reads the
+extension off the table, not the SSA chain. `GoFV/Proof/Gen/G66b.lean`: `reload_uokl` (the table
+across a narrow reload, with its entry: `extOK_load`), `g66b_elideSame`/`g66b_elideMov` (G3's
+`valRel_ext` of a register that already holds the extension, `ext_of_extOK`); `vk66_step` reads the
+entry through `elideOK66b_spec`. Every earlier slice's reloads are of class 64 or into `F` registers,
+so they have no entry (`ldEntry35_reload_none`; `ldEntry35_none` now also asks for no `LoadReg`) and
+their accepted sets are unchanged. No run premise is added. G66 on P0' accepts 8,927 functions
+(96.02%, +138 over G66a's 8,789, 0 lost by `comm`), 381,543 values. Witness `genG66b_witness`
+(`GenG66b.lean`, `u32rand` of `test/ken_divconst`, mode `false`: `checkG65` rejects it, `checkG66`
+accepts it): `v4 = MOVWUreg v16` of the reload `v16 = LoadReg v2` (`MOVWU a-4(SP), R1`), both in
+`R1`, has no code; before it the table is exactly `(R1, 32, unsigned)`, and `g66_value` relates the
+step from a machine whose `X1` holds `0xDEADBEEF` to `R1`'s `uint64` `0xDEADBEEF`.
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 

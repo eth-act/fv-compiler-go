@@ -1505,6 +1505,15 @@ reload `v2 = LoadReg v5`, `MOVWU cycles+0(FP), R0`, after which the slot's 4 byt
 `v17 = StoreReg v6`, `MOVW R0, n+0(FP)`, after which the slot's 4 bytes hold 7). Not yet composed
 into `verified_mach` (the lift follows G66b).
 
+**G66b** (in place, `GoFV/Gen/Check66b.lean`, `GoFV/Proof/Gen/G66b.lean`): G35's table holds the
+entry of a narrow integer reload (`reloadEntry35`, by `loadByType`'s sign or zero extension), and
+`checkG66` takes an extension genssa elides after such a reload (no code, or `MOVD Rx, Rv`) when the
+table before it has the argument register's entry (`elideOK66b`; proof `g66b_elideSame`,
+`g66b_elideMov`, `reload_uokl`). No premise added; earlier slices' accepted sets unchanged.
+Coverage on quick-v10 (`gen-check --jobs 2`): G66 8,927 of 9,297 (96.02%, +138 over G66a's 8,789,
+0 lost by `comm`). Witness `genG66b_witness` (`GenG66b.lean`, `u32rand`: the elided `MOVWUreg` of
+a `MOVWU` reload, the table exactly `(R1, 32, unsigned)` before it).
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g64_obj_value`, `g64_obj_term`, `g64_obj_nilPanic`, `g64_obj_boundsPanic`
