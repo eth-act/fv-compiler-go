@@ -1293,28 +1293,43 @@ private theorem dead26_enter {env : Env} {lc : LocCtx} :
       · cases h
       · cases h
 
-/-- **`R26` at the entry state.** The run's state after the first `k` values of the entry block
-holds a value in `R26` only if one of them writes it (`ctxtBefore`): `locInit`'s registers are
-`poison`, and a step writes a register of its value's home or `poison`. -/
-theorem ctxtBefore_of_live26 {env : Env} {lc : LocCtx} {args : List Val} {mem : Mem}
-    {blk : Block} {k : Nat} {sI : LocState} (hb : lc.ctx.f.block? lc.ctx.f.entry = some blk)
-    (hpre : enterListLoc env lc (locInit env lc args mem) (blk.values.toList.take k) = .ok sI)
+/-- **`R26` after the first values of the entry block.** From a state whose `R26` holds no value,
+the state after the first `k` values of the entry block holds a value in `R26` only if one of
+them writes it (`ctxtBefore`): a step writes a register of its value's home or `poison`. -/
+theorem ctxtBefore_of_live26_from {env : Env} {lc : LocCtx} {s : LocState} {blk : Block}
+    {k : Nat} {sI : LocState} (hs : live26 s = false)
+    (hb : lc.ctx.f.block? lc.ctx.f.entry = some blk)
+    (hpre : enterListLoc env lc s (blk.values.toList.take k) = .ok sI)
     (hl : live26 sI = true) : ctxtBefore lc k = true := by
   cases hc : ctxtBefore lc k
   · exfalso
     have hd : Dead26 sI := by
-      refine dead26_enter hpre (fun id hid v hv => ?_) (fun w hw => ?_)
-      · simp only [ctxtBefore, hb, List.any_eq_false] at hc
-        have := hc id hid
-        simp only [hv, Option.any_some, Bool.not_eq_true] at this
-        exact this
-      · simp only [locInit, Array.getElem?_replicate] at hw
-        split at hw
-        · cases hw; rfl
-        · cases hw
+      refine dead26_enter hpre (fun id hid v hv => ?_) (live26_eq_false.1 hs)
+      simp only [ctxtBefore, hb, List.any_eq_false] at hc
+      have := hc id hid
+      simp only [hv, Option.any_some, Bool.not_eq_true] at this
+      exact this
     rw [live26_eq_false.2 hd] at hl
     cases hl
   · rfl
+
+/-- `locInit`'s registers are `poison`. -/
+theorem live26_locInit (env : Env) (lc : LocCtx) (args : List Val) (mem : Mem) :
+    live26 (locInit env lc args mem) = false := by
+  refine live26_eq_false.2 fun w hw => ?_
+  simp only [locInit, Array.getElem?_replicate] at hw
+  split at hw
+  · cases hw; rfl
+  · cases hw
+
+/-- **`R26` at the entry state** (`ctxtBefore_of_live26_from` from `locInit`): the run's state
+after the first `k` values of the entry block holds a value in `R26` only if one of them writes
+it. -/
+theorem ctxtBefore_of_live26 {env : Env} {lc : LocCtx} {args : List Val} {mem : Mem}
+    {blk : Block} {k : Nat} {sI : LocState} (hb : lc.ctx.f.block? lc.ctx.f.entry = some blk)
+    (hpre : enterListLoc env lc (locInit env lc args mem) (blk.values.toList.take k) = .ok sI)
+    (hl : live26 sI = true) : ctxtBefore lc k = true :=
+  ctxtBefore_of_live26_from (live26_locInit env lc args mem) hb hpre hl
 
 /-- `EntryMatch` survives the morestack path: a function with a slot at the entry (an `Arg`) has
 no morestack spill slot (`argsOK`), the caller's stack arguments lie apart from the guard word,
