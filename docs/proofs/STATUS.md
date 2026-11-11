@@ -1965,56 +1965,60 @@ ops; `Pre51a` in `RunPre`) added 25 (6,011). `ownFrame` gives the stock
 `stksize`/`stkptrsize` on all fully verified functions whose output is identical to stock.
 `pallocSum.start` (the witness `verified_mach_witness`) is among the accepted.
 
-The full-v11 table below is the composition on G60 (main 2320a5d3, #690; binary `gofv-ssa-opt`
-built on `agent/lift60b` baac5870, whose tree is main's): per function `verified_mach`
-(`needs48 = false`) or `verified_mach_S` (G48's mode), P0' in `checkG60` and `checkObj`. It
-predates #692 (`X27` across Progs in `checkObj`) and the composition on G61 (#694, the atomics);
-the next full-v11 run is on the composition on G61.
+The full-v11 table below is the composition on G61 (main e80f022b, #694; binary `gofv-ssa-opt`
+built on `agent/lift61` abe844a3, whose tree is main's): per function `verified_mach`
+(`needs48 = false`) or `verified_mach_S` (G48's mode), P0' in `checkG61` and `checkObj` (with
+#692's `X27` across Progs). It predates the compositions on G62 (#699) and G64 (#702); a full-v11
+run on the composition on G64 (main b26adfeb) is under way.
 
-| full-v11 (96,674 functions, in six parts, 6 h 28 min summed; composition on G60, main 2320a5d3; `--jobs 2`) | pipeline output | share | stock `trim` | share |
+| full-v11 (96,674 functions, in six parts, 10 h 48 min summed; composition on G61, main e80f022b; `--jobs 2`) | pipeline output | share | stock `trim` | share |
 | --- | ---: | ---: | ---: | ---: |
-| fully verified (Phase 2, through `trim`) | 84,244 | 87.14% | - | - |
-| … genssa and `Flushplist` ran | 84,159 | 87.05% | 96,674 | 100.00% |
-| … ∧ `checkG60` ∧ `entryStoresOK` | 73,352 | 75.87% | 80,080 | 82.83% |
-| … ∧ `checkG60` ∧ `entryStoresOK` ∧ `retRegsOK` | 73,349 | 75.87% | 80,061 | 82.81% |
-| … ∧ `checkObj` | 81,041 | 83.82% | 92,213 | 95.38% |
-| … ∧ `checkG60` ∧ `entryStoresOK` ∧ `checkObj` | 73,271 | 75.79% | 79,815 | 82.56% |
-| **… ∧ `checkG60` ∧ `entryStoresOK` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach` or `verified_mach_S`)** | **73,268** | **75.78%** | 79,796 | 82.54% |
-| … of which `needs48 = false`: `verified_mach` | 72,713 | 75.21% | 79,167 | 81.89% |
-| … of which `needs48 = true`: `verified_mach_S` (G48's mode) | 555 | 0.57% | 629 | 0.65% |
-| … end to end, pipeline output identical to stock after `trim` | 62,979 | 65.14% | - | - |
-| fully verified, pipeline output identical to stock | 69,430 | 71.81% | - | - |
+| fully verified (Phase 2, through `trim`) | 84,855 | 87.77% | - | - |
+| … genssa and `Flushplist` ran | 84,768 | 87.68% | 96,674 | 100.00% |
+| … ∧ `checkG61` ∧ `entryStoresOK` | 75,314 | 77.90% | 82,171 | 84.99% |
+| … ∧ `checkG61` ∧ `entryStoresOK` ∧ `retRegsOK` | 75,311 | 77.90% | 82,152 | 84.97% |
+| … ∧ `checkObj` | 84,242 | 87.14% | 95,154 | 98.42% |
+| … ∧ `checkG61` ∧ `entryStoresOK` ∧ `checkObj` | 75,232 | 77.82% | 81,899 | 84.71% |
+| **… ∧ `checkG61` ∧ `entryStoresOK` ∧ `retRegsOK` ∧ `checkObj` (end to end, `verified_mach` or `verified_mach_S`)** | **75,229** | **77.81%** | 81,880 | 84.69% |
+| … of which `needs48 = false`: `verified_mach` | 74,656 | 77.22% | 81,225 | 84.01% |
+| … of which `needs48 = true`: `verified_mach_S` (G48's mode) | 573 | 0.59% | 655 | 0.67% |
+| … end to end, pipeline output identical to stock after `trim` | 64,661 | 66.88% | - | - |
+| fully verified, pipeline output identical to stock | 69,843 | 72.24% | - | - |
 
-The composition on G60 counts 73,268 end to end (75.78%; 72,713 under `verified_mach`, 555 under
-`verified_mach_S`), 5,372 more than the previous full-v11 measurement, the composition on G44
-(main c3414814 plus #650, 7 h 39 min summed: 67,896, 70.23%; fully verified 83,839). `checkG60`
-accepts 74,182 fully verified functions; 1,398 have a pending window, `entryStoresOK` rejects 830,
-568 are end to end with a pending window (stock column: 81,061, 1,467, 981, 486). Vacuous at
-`Addrs.fixed`: 210 of the 72,713 under `verified_mach` (stock column 287 of 79,167), 13 of the 555
-under `verified_mach_S` (stock column 32 of 629); the `_atSP` variants hold of all of them
-non-vacuously. `ownFrame` gives the stock `stksize`/`stkptrsize` on all 69,430 fully verified
-functions whose output is identical to stock. Before G44: the composition on G34 (main 0d51e03e,
-framed leaves excluded) 60,599 (62.68%), the G18 probe (stock locals, main 8c5b1472 plus #606)
-28,813 (29.80%). full-v11 runs as six invocations (`cmdmain`, `cmd/vendor`, the rest of `cmd` but
-`compile`, `cmd/compile`, `stdall/std` in two halves), each at `--jobs 2` under `nice -n 10`,
-whose tables are summed; `cmd/vendor` took 2 h 48 min and `cmd/compile` 2 h 50 min (peak RSS
-1.6 GB), with no OOM kill. Top reasons among the fully verified (first reason; no part hit a
-table's cap):
+The composition on G61 counts 75,229 end to end (77.81%; 74,656 under `verified_mach`, 573 under
+`verified_mach_S`), 1,961 more than the previous full-v11 measurement, the composition on G60
+(main 2320a5d3, #690, 6 h 28 min summed: 73,268, 75.78%; 72,713 + 555; fully verified 84,244; main
+has since gained #693's frame-variable folds into `FMOVQload`/`FLDPQ`, so the fully verified count
+rose too). `checkG61` accepts 76,684 fully verified functions; 1,944 have a pending window,
+`entryStoresOK` rejects 1,370, 574 are end to end with a pending window (stock column: 83,694,
+2,015, 1,523, 492). Vacuous at `Addrs.fixed`: 260 of the 74,656 under `verified_mach` (stock
+column 358 of 81,225), 13 of the 573 under `verified_mach_S` (stock column 33 of 655); the `_atSP`
+variants hold of all of them non-vacuously. `ownFrame` gives the stock `stksize`/`stkptrsize` on
+all 69,843 fully verified functions whose output is identical to stock. Earlier: the composition
+on G44 (main c3414814 plus #650) 67,896 (70.23%), on G34 (main 0d51e03e, framed leaves excluded)
+60,599 (62.68%), the G18 probe (stock locals, main 8c5b1472 plus #606) 28,813 (29.80%). full-v11
+runs as six invocations (`cmdmain`, `cmd/vendor`, the rest of `cmd` but `compile`,
+`cmd/compile`, `stdall/std` in two halves), each at `--jobs 2` under `nice -n 10`, whose tables
+are summed (`merge-parts.py`; the per-mode, pending-window and vacuity lines summed separately);
+`cmd/vendor` took 2 h 46 min and `cmd/compile` 6 h 28 min (the machine at load ~220, with the G64
+run alongside; peak RSS 1.6 GB), with no OOM kill. Top reasons among the fully verified (first
+reason; no part hit a table's cap):
 
-- back-end errors: 85, all `Flushplist: PosTable.Pos: no position base`; `entryStoresOK`: 830,
+- back-end errors: 87, all `Flushplist: PosTable.Pos: no position base`; `entryStoresOK`: 1,370,
   all `entry stores do not cover the pending window`; `retRegsOK`: 3 (`result of class # read at
   class #`);
-- `checkG60`: `store shape` (4,134), `op CALLtail` (1,425), the atomic read-modify-writes
-  (`LoweredAtomicCas#Variant` 1,270, `…Add…` 1,241, `…Exchange…` 37, `…Or…` 30, `…And…` 23; G61),
-  `frame variable off another base` (333), `MOVDnop/MOVDreg: upper bits unknown` (254), `op FLDPQ`
-  (204), `pair store shape` (170), `SP access MOVDaddr` (165), `op CALLtailinter` (144), `branch
-  shape` (136), `load shape` (112), `bounds panic: constant index outside` (60), `op
-  LoweredGetCallerSP` (48), `op FMOVQload` (34);
-- `checkObj`: `CBNZ: CBZ` (1,323) and `CASALW`/`CASALD` reading `R#` (1,172/131), the atomics'
-  `R27` that #692 models; `JMP` to a register (163), `RET` through another register (144), `SBFIZ`
-  not modelled (117), the stack check of a huge frame (18). Among the functions `checkG60`,
-  `entryStoresOK` and `retRegsOK` accept, `checkObj` rejects 81: `SBFIZ` (58), the stack check of
-  a huge frame (12), a branch whose target is not the Prog `checkObj` expects (11).
+- `checkG61`: `store shape` (4,286), `op CALLtail` (1,425), `frame variable aux on FLDPQ` (362),
+  `frame variable off another base` (333; G62), `op FLDPQ` (330; G64), `MOVDnop/MOVDreg: upper
+  bits unknown` (257), `pair store shape` (173), `SP access MOVDaddr` (171), `op CALLtailinter`
+  (144), `branch shape` (138), `load shape` (113), `bounds panic: constant index outside` (61),
+  `op FMOVQload` (52; G64), `op LoweredGetCallerSP` (48), `frame variable aux on FMOVQload` (40);
+  no atomic op is left among them;
+- `checkObj`: `JMP` to a register (169), `SBFIZ` not modelled (162), `RET` through another
+  register (144), a branch whose target is not the Prog `checkObj` expects (24), the stack check
+  of a huge frame (20), a Prog writing `R#` (6); the atomics' `CBNZ: CBZ` and `CASAL*` rejections
+  of the G60 run are gone (#692). Among the functions `checkG61`, `entryStoresOK` and `retRegsOK`
+  accept, `checkObj` rejects 82: `SBFIZ` (58), the stack check of a huge frame (12), a branch
+  whose target is not the Prog `checkObj` expects (12).
 
 ## Per-pass fragment coverage (verified pipeline, full-v6)
 
