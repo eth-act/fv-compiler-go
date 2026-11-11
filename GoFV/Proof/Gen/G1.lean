@@ -404,13 +404,15 @@ theorem knext_set {v : Value} (hK : KNext lc v K K') (hop : v.op ≠ .Phi) {r c 
     simp only [hne, and_false, ↓reduceIte] at this
     simp [kSet, hrr, this]
 
-/-- A register home G1 handles (`homeOK`) other than `ZERO` holds a value with a class. -/
+/-- A register home G1 handles (`homeOK`) other than `ZERO` holds a value with a class (`Facts`'
+form, whose blob case G1 never takes). -/
 theorem clsReg_of_home (hhome : ∀ i r, lc.home i = some (.reg r) → homeOK lc i = true) :
-    ∀ i r, lc.home i = some (.reg r) → r ≠ zeroReg → (cls (lc.ty i)).isSome = true := by
+    ∀ i r, lc.home i = some (.reg r) → r ≠ zeroReg →
+      (cls (lc.ty i)).isSome = true ∨ (31 ≤ r ∧ r < 63 ∧ lc.ty i = .blob 16) := by
   intro i r hh hr
   have := hhome i r hh
   simp only [homeOK, hh, Bool.or_eq_true, Bool.and_eq_true, beq_iff_eq, hr, false_or] at this
-  exact this.1
+  exact .inl this.1
 
 /-- G1's and G2's class map (`regCls`, one class per register) gives each read register its
 class. -/
@@ -687,12 +689,20 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
 structure Facts (lc : LocCtx) (sym : Nat → BitVec 64) (text : BitVec 64) (az ez : Int)
     (ps : List Prog) (ret : BitVec 64) (E : MatchEnv) : Prop where
   lowered : lc.ctx.f.lowered = true
-  /-- A value homed in a register (other than `ZERO`) has a width class. -/
-  clsReg : ∀ i r, lc.home i = some (.reg r) → r ≠ zeroReg → (cls (lc.ty i)).isSome = true
+  /-- A value homed in a register (other than `ZERO`) has a width class, or is a 16-byte blob in a
+  V register (G64's 128-bit moves; `homeOK10`). -/
+  clsReg : ∀ i r, lc.home i = some (.reg r) → r ≠ zeroReg →
+    (cls (lc.ty i)).isSome = true ∨ (31 ≤ r ∧ r < 63 ∧ lc.ty i = .blob 16)
   nodup : (ps.map (·.id)).Nodup
   lt : ∀ p ∈ ps, p.id < 2 ^ 32
   ret : ∀ p ∈ ps, (Link.byId sym text az ez ps).addr p.id ≠ some ret
   addr : AddrAgree E.ι
+
+/-- A value homed in a register below the V registers (other than `ZERO`) has a width class. -/
+theorem Facts.clsLow {ps : List Prog} (F : Facts lc sym text az ez ps ret E) {i r : Nat}
+    (hh : lc.home i = some (.reg r)) (hr : r ≠ zeroReg) (h31 : r < 31) :
+    (cls (lc.ty i)).isSome = true :=
+  (F.clsReg i r hh hr).resolve_right fun h => absurd h.1 (by omega)
 
 theorem pc_eta (hm : LocMatch E s b i m) {j : Nat} {ps : List Prog}
     (hj : E.pcOf b i = pcAt text ps j) : ({ m with pc := pcAt text ps j } : MState) = m := by

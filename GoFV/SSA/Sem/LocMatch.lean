@@ -20,7 +20,9 @@ nor trivial.
   be Phase 1's encoding of a pointer (`Ptr.word`: a convertible pointer is held, loaded and
   offset as its Phase 1 address, `Ptr.ofAddr` reads it back), and then the register holds the
   pointer's injected address; a boolean is 0/1; a pointer is its injected address `ι blk + off`;
-  `poison` (clobbered registers) is anything.
+  `poison` (clobbered registers) is anything. A V register holds a float's bits in its low bits
+  (`FValRel`) or the 16 bytes of a `Vec128` blob (`BlobRel`, related as memory bytes are: G64's
+  128-bit moves), `VRel`.
 * **Flags** (`FlagsRel`): `runLoc`'s `.agg [n, z, c, v, g]` bitwise against `NZCV` (`g` is no
   machine state); `poison` (the initial flags, `clobberFlags`) is anything.
 * **Memory** (`MemInj`): CompCert's `Mem.inject` with offsets for a flat memory. `ι` maps every
@@ -215,6 +217,34 @@ def BytesRel (ι : Blk → Option (BitVec 64)) (W : Nat → Prop) (bs : Array By
   (∀ i (h : i < bs.size), (∀ o, W o → ¬ (o ≤ i ∧ i < o + 8)) →
     ByteRel ι bs[i] (mm (a + BitVec.ofNat 64 i)))
 
+/-- The bytes `bs` of a 16-byte blob (`Ty.blob 16`: `FMOVQload`, a component of `FLDPQ`,
+`Arm64.load16`) and the V register holding them: each byte related to the register's byte at its
+position as memory bytes are (`ByteRel`: a pointer fragment is the byte of the injected
+address). -/
+def BlobRel (ι : Blk → Option (BitVec 64)) (bs : List Byte) (q : BitVec 128) : Prop :=
+  bs.length = 16 ∧ ∀ i (h : i < bs.length), ByteRel ι bs[i] (q.extractLsb' (8 * i) 8)
+
+/-- A value and the V register holding it: a blob's bytes (`BlobRel`, G64's 128-bit moves), every
+other value a float's bits in the low bits (`FValRel`, the only case before G64; on a value that
+is no blob `VRel` is `FValRel` by definition). -/
+def VRel (ι : Blk → Option (BitVec 64)) : Val → BitVec 128 → Prop
+  | .blob bs, q => BlobRel ι bs q
+  | v, q => FValRel v q
+
+/-- A float relation is `VRel`'s. -/
+theorem VRel.of_fval {ι : Blk → Option (BitVec 64)} {v : Val} {q : BitVec 128}
+    (h : FValRel v q) : VRel ι v q := by
+  cases v with
+  | blob bs => exact absurd h id
+  | _ => exact h
+
+/-- On a value that is no blob, `VRel` is the float relation. -/
+theorem VRel.fval {ι : Blk → Option (BitVec 64)} {v : Val} {q : BitVec 128} (h : VRel ι v q)
+    (hb : ∀ bs, v ≠ .blob bs) : FValRel v q := by
+  cases v with
+  | blob bs => exact absurd rfl (hb bs)
+  | _ => exact h
+
 /-- `ι` is injective on the windows of the live blocks of `m`: distinct blocks have disjoint
 address ranges. -/
 def InjectiveOnLive (ι : Blk → Option (BitVec 64)) (m : Mem) : Prop :=
@@ -253,7 +283,7 @@ memory outside live blocks and slots, the V registers' upper bits beyond a value
 structure LocMatch (E : MatchEnv) (s : LocState) (b : ID) (i : Nat) (m : GoFV.Arm64.MState) :
     Prop where
   regs : ∀ r v, s.regs[r]? = some v →
-    (∀ k, objX? r = some k → ValRel E.ι v (m.x k)) ∧ (∀ k, objV? r = some k → FValRel v (m.v k))
+    (∀ k, objX? r = some k → ValRel E.ι v (m.x k)) ∧ (∀ k, objV? r = some k → VRel E.ι v (m.v k))
   flags : FlagsRel s.flags m.nzcv
   slots : ∀ k v, s.slots.lookup k = some v → ∃ off, E.slot k = some off ∧
     SlotRel E.ι (E.lc.slotTy k) v m.mem (E.sp + BitVec.ofInt 64 off)

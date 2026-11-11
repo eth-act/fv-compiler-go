@@ -350,7 +350,7 @@ theorem atom_finish (hF : FrameOK E)
       · obtain ⟨hx1, hv1⟩ := hm.regs r' x h2
         refine ⟨fun q hq => ?_, fun q hq => ?_⟩
         · rw [hx0 q hq]; exact hx1 q hq
-        · show FValRel x (m'.v q); rw [hv]; exact hv1 q hq
+        · show VRel E.ι x (m'.v q); rw [hv]; exact hv1 q hq
     · show FlagsRel (s.clobber lc v).flags m'.nzcv
       rw [clobber_flags61]
       split

@@ -3387,7 +3387,7 @@ theorem genG57a_witness :
   obtain ⟨mm, al, hmm, hal, hal8, hpw⟩ := memIs_spec hd
   have hE := g57aEnv hlt hav hsl
   have F : Facts lc (fun _ => GenG2.symA) GenG2.text 16 8 ps.toList 0 E :=
-    ⟨hl, clsReg0 hho, hnd, hlt,
+    ⟨hl, fun i r hh hr => .inl (clsReg0 hho i r hh hr), hnd, hlt,
       fun p hp => GenG2.prog_addr_ne (hlt p hp) hp (by simp) (by simp), addrAgree57⟩
   obtain ⟨htemp, hVK⟩ := vkind57a_spec hvk
   have hvs : VStep2 ps (.prog pt) 15 16 :=

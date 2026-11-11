@@ -1369,6 +1369,44 @@ values; rows G1 to G62 identical to G62's run, the rejected set a subset of G62'
 spill shape` and 12 `float reload shape` functions are `float32` spills (4-byte slots). Not yet
 composed into `verified_mach`.
 
+## Phase 3: genssa, slice G64, 128-bit moves of blobs (I7, #553)
+
+`GoFV.Proof.Gen.g64_value`, `g64_initMem`, `g64_term`, `g64_nilPanic`, `g64_boundsPanic`
+(`GoFV/Proof/Gen/G64.lean`): `checkG64` (on P0', `GoFV/Gen/Check64.lean`) is G63 with the 128-bit
+moves `lower` makes of a `Move` of 16 to 64 bytes (`ARM64.rules` 420–428): `FMOVQload` into an
+`F` register at the shape `blob 16` (`FMOVQ src, Fd`), `FMOVQstore` of such a blob (`FMOVQ Fs,
+dst`), `FLDPQ` into two distinct `F` registers (`FLDPQ src, (Fa, Fb)`), `FSTPQ` (`FSTPQ (Fx, Fy),
+dst`) and the selects of `FLDPQ`'s components homed in their registers (no code) (`vkind64a`,
+tried when G63 rejects one of these ops). The operand (`qaccessA`) is G3's (`off(Rn)` through a
+64-bit register, `sym+off(SB)` of a global) or a frame variable's (G57b's `fvar57?`: G6's `Blk.temp`
+or G49's `Blk.local` variables); accesses off `SP` without a symbol (G48's outgoing area) stay
+rejected. A blob's V register home is accepted by `homeOK10` (`blobHome`; every slice before G64
+rejects the blob values themselves by their value check). `runLoc` loads a blob as its 16 raw bytes
+(`Arm64.load16`) and stores them back (`Arm64.storeBytes 16`); the machine moves the 128 bits.
+**Relation change:** `LocMatch` relates a V register by `VRel` (`GoFV/SSA/Sem/LocMatch.lean`): a
+blob bytewise (`BlobRel`: each byte `ByteRel` to the register's byte at its position, pointer
+fragments as bytes of the injected address, as memory bytes are), every other value by `FValRel`
+as before (by definition, so the earlier slices' `poison` and float cases are unchanged; the callee
+contracts' `RegRel` keeps `FValRel`, `RegRel.loc`). `Facts.clsReg` admits a blob in a V register.
+When `checkG64` accepts a function, they are G63's statements at either mode `osp` (`vk64_step`:
+G63's values by `vk63_step`; `GoFV/Proof/Gen/G64a.lean`: `g64_qload`/`g64_qldp` relate the loaded
+bytes of a live block to the 128 bits the machine loads (`blobRel_load`, `memInj_byteRel`);
+`g64_qstore`/`g64_qstp` write the bytes of the register's content read at the blob shape (`poison`
+or a 16-byte blob, `store16_rel`) and keep `MemInj` (`memInj_write16`); `g64_qsel` reads the
+component's register; the operand's machine address by `qbase64`). **Run premise added:
+`QLoadPre`** (not trusted, a fact of the run, as G3's loads and G44's `FLoadPre`): an `FMOVQload`
+reads 16 valid bytes at its address (`symAddr`), an `FLDPQ` 16 at each of its two (`pairAddr`); Go
+copies memory it owns. It joins `RunPre`'s per-step premises at the lift. Coverage on quick-v10
+(`lake exe gen-check --jobs 2`, G64 on P0', on agent/g63 b19f5edd): 8,261 of 9,297 functions
+(88.85%, +55 over G63's 8,206; the ceiling of the 61 functions whose whole reason set was the blob
+moves is 58, the 3 others store to the outgoing area off `SP`), 281,544 values; rows G1 to G63
+identical to G63's run, the rejected set a subset of G63's. Witness: `genG64_witness`
+(`GenG64.lean`, `makearray` of `test/range` on P0', mode `false`: `checkG63` rejects it, `checkG64`
+accepts it; `v10 = FLDPQ` from a memory holding `main..stmp_16` runs `FLDPQ main..stmp_16(SB),
+(F0, F1)` and leaves the blobs of the literal's first two 16-byte halves in `F0`/`F1` and their
+128 bits in `V0`/`V1`; `QLoadPre` holds by the two valid reads). Not yet composed into
+`verified_mach`.
+
 ## Phase 3: whole functions, and generic SSA to machine words (I7, #553)
 
 `GoFV.Proof.Obj.g62_obj_value`, `g62_obj_term`, `g62_obj_nilPanic`, `g62_obj_boundsPanic`

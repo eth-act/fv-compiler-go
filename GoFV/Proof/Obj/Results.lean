@@ -182,7 +182,8 @@ theorem arg_relVL (hm : LocMatch E s b i m) (hinv : CoreInv ι P K s w) {a r c :
     | none => simp only [Option.getD_none, retypeL_poison]; trivial
     | some v =>
       simp only [Option.getD_some]
-      exact fvalRel_retypeLW ((hm.regs r v hv).2 k hobj) (hinv.regs r v c hrz hv hK) hft hc
+      have hfit := hinv.regs r v c hrz hv hK
+      exact fvalRel_retypeLW (vrel_fvalW ((hm.regs r v hv).2 k hobj) hfit) hfit hft hc
   cases hl : lc.ctx.f.lowered
   · refine ⟨_, read_regP hl hh hc, ?_, fits_retype hc _⟩
     rcases retype_cases hc (s.reg (lc.ty a) r) with h | h

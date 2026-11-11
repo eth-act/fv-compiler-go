@@ -866,13 +866,15 @@ theorem term_test {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az e
 
 /-! ## Static facts of an accepted function -/
 
-/-- A register home G3 handles (`homeOK3`) other than `ZERO` holds a value with a class. -/
+/-- A register home G3 handles (`homeOK3`) other than `ZERO` holds a value with a class (`Facts`'
+form). -/
 theorem clsReg_of_home3 {lc : LocCtx} (h : ∀ i, homeOK3 lc i = true) :
-    ∀ i r, lc.home i = some (.reg r) → r ≠ zeroReg → (cls (lc.ty i)).isSome = true := by
+    ∀ i r, lc.home i = some (.reg r) → r ≠ zeroReg →
+      (cls (lc.ty i)).isSome = true ∨ (31 ≤ r ∧ r < 63 ∧ lc.ty i = .blob 16) := by
   intro i r hh hr
   have := h i
   simp only [homeOK3, hh, Bool.or_eq_true, beq_iff_eq, hr, false_or] at this
-  exact this
+  exact .inl this
 
 /-- A call's home is no slot (`homeOK3`). -/
 theorem call_not_slot3 {lc : LocCtx} {c : ID} {u : Value} (h : ∀ i, homeOK3 lc i = true)
