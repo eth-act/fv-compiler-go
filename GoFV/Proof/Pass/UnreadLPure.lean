@@ -103,8 +103,8 @@ theorem evalPure_av (hU : TempU U) (op : Op) (ty : Ty) (k : Int64) (aux : Option
     show Val.Avoids U (Arm64.op1 ty (~~~ ·) args)
     exact op1_av _ _ _
   case ARM64AND =>
-    show Val.Avoids U (Arm64.op2 ty (· &&& ·) args)
-    exact op2_av _ _ _
+    show Val.Avoids U (Arm64.and ty args)
+    exact and_av _ _
   case ARM64ANDconst =>
     show Val.Avoids U (Arm64.op1 ty (· &&& Arm64.imm k) args)
     exact op1_av _ _ _

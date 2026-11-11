@@ -2207,9 +2207,20 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
     were rejected while `CSEL` read its arms at 64 bits: an arm narrower than the result's
     argument shape has unknown high bits. `CSEL` reads its arms at the result's width
     (`armReadW`), and the `CselBits` lemmas take `lowW T ≤ argWidth T1` (witness `nsel_lower`).
-  - `:133`, `:134` (`(AndB ...) => (AND ...)`, `(OrB ...) => (OR ...)`): Phase 1's `AndB`/`OrB`
-    are parallel (`Cmp.andB`: `false && poison` is `false`), `AND`/`OR` read both registers:
-    `AndB false poison` is `false`, `AND` of it `poison` (`OrB true poison` likewise).
+  - `:134` (`(OrB ...) => (OR ...)`): Phase 1's `OrB` is parallel (`Cmp.orB`: `true || poison`
+    is `true`), `OR` reads both registers. A model limit, not a Go bug: Go booleans are 0/1 in a
+    register and `ValRel (.bool true) r` is `r = 1`, so `OrB true poison = true` has no machine
+    counterpart (`1 ||| r` depends on `r`), unlike `AND`'s `0 &&& r = 0` below.
+  - `:133` (`(AndB ...) => (AND ...)`) was false while `AND` read both registers (`AndB false
+    poison` is `false`, `AND` of it `poison`). Proven (`Rules/CselBits.lean`,
+    `r_ARM64_133_sound`, witness `andb_lower`) since the lowered `AND` absorbs `.bool false` at
+    the `bool` shape (`Arm64.and`, S1, `docs/plans/semantics2.md` §3). The peepholes that fold an
+    `AND` (`:972` → `ANDconst`, `:1179` → `BIC`, `:1439`–`:1442` → `ANDshift*`, `:564`/`:568` →
+    `TST`/`TSTW`, block rules `:558`/`:560`) do not absorb and are false at the `bool` shape:
+    `AND <bool> poison (MOVDconst [0])` is `false`, `ANDconst [0] poison` is `poison`. Their
+    soundness statements are unchanged; the lowering validator instead admits no `AND` pattern
+    node at the `bool` shape (`Pat.argsOKLs`/`argsOKLns`), at a cost of 1 ceiling function
+    (`os.newFile`, full-v9) and none at stock.
   Recorded also in the module docs of `GoFV/Proof/Low/Rules/Shift.lean` and `CselBits.lean`.
 
 - **`InvertFlags` rules outside the ghost-bit semantics** (#385; model limits, not Go bugs).

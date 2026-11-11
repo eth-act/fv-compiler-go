@@ -52,6 +52,9 @@ theorem op1_av (ty : Ty) (f : BitVec 64 → BitVec 64) (args : List Val) :
 theorem op2_av (ty : Ty) (f : BitVec 64 → BitVec 64 → BitVec 64) (args : List Val) :
     Val.Avoids U (Arm64.op2 ty f args) := by unfold Arm64.op2; avL_tac
 
+theorem and_av (ty : Ty) (args : List Val) : Val.Avoids U (Arm64.and ty args) := by
+  unfold Arm64.and; split <;> first | trivial | exact op2_av _ _ _
+
 theorem op3_av (ty : Ty) (f : BitVec 64 → BitVec 64 → BitVec 64 → BitVec 64) (args : List Val) :
     Val.Avoids U (Arm64.op3 ty f args) := by unfold Arm64.op3; avL_tac
 

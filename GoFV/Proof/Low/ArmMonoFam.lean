@@ -84,6 +84,40 @@ theorem op2_mono (ty : Ty) (f : BitVec 64 → BitVec 64 → BitVec 64) :
       | some y => rw [reg_of h ha, reg_of h' hc]; exact Refines.refl _
   | .cons _ (.cons _ (.cons _ _)) => .poison _
 
+/-- A value refining to `false` is `false` or `poison`. -/
+theorem ref_false (h : Refines a b) (hb : b = .bool false) : a = .bool false ∨ a = .poison := by
+  subst hb; cases h
+  · exact .inr rfl
+  · exact .inl rfl
+
+/-- `Arm64.and` (`AND`, absorbing a `false` operand at the `bool` shape) is monotone. -/
+theorem and_mono (ty : Ty) (hr : RefinesList as bs) : Refines (Arm64.and ty as) (Arm64.and ty bs) := by
+  by_cases hs : ty = .bool ∧ ∃ a b, as = [a, b] ∧ (a = .bool false ∨ b = .bool false)
+  · obtain ⟨rfl, a, c, rfl, hac⟩ := hs
+    rcases hr with _ | ⟨h, _ | ⟨h', _ | _⟩⟩
+    rcases hac with rfl | rfl
+    · cases h; exact Refines.refl _
+    · cases h'; rw [and_false_right, and_false_right]; exact Refines.refl _
+  · rw [and_eq_op2 hs]
+    by_cases ht : ty = .bool ∧ ∃ a b, bs = [a, b] ∧ (a = .bool false ∨ b = .bool false)
+    · obtain ⟨rfl, b1, b2, rfl, hb⟩ := ht
+      rcases hr with _ | ⟨h, _ | ⟨h', _ | _⟩⟩
+      rename_i a c
+      have hp : a = .poison ∨ c = .poison := by
+        rcases hb with hb | hb
+        · rcases ref_false h hb with ha | ha
+          · exact absurd ⟨rfl, a, c, rfl, .inl ha⟩ hs
+          · exact .inl ha
+        · rcases ref_false h' hb with hc | hc
+          · exact absurd ⟨rfl, a, c, rfl, .inr hc⟩ hs
+          · exact .inr hc
+      rcases hp with rfl | rfl
+      · exact .poison _
+      · have : op2 .bool (· &&& ·) [a, .poison] = .poison := by
+          simp only [op2]; cases reg a <;> rfl
+        rw [this]; exact .poison _
+    · rw [and_eq_op2 ht]; exact op2_mono ty _ hr
+
 theorem op3_mono (ty : Ty) (f : BitVec 64 → BitVec 64 → BitVec 64 → BitVec 64) :
     RefinesList as bs → Refines (op3 ty f as) (op3 ty f bs)
   | .nil => .poison _

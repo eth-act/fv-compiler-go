@@ -94,7 +94,7 @@ def evalPure (op : Op) (ty : Ty) (k : Int64) (_aux : Option AuxRef) (args : List
   | .ARM64NEG => op1 ty (- ·) args
   | .ARM64MVN => op1 ty (~~~ ·) args
   -- logic
-  | .ARM64AND => op2 ty (· &&& ·) args
+  | .ARM64AND => and ty args
   | .ARM64ANDconst => op1 ty (· &&& imm k) args
   | .ARM64OR => op2 ty (· ||| ·) args
   | .ARM64ORconst => op1 ty (· ||| imm k) args

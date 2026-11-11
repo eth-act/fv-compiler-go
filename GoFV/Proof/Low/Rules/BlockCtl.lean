@@ -226,6 +226,7 @@ local macro "arm_tst2" : tactic => `(tactic| (
   arm_bbuild
   all_goals (
     rw [hc, show BitVec.ofInt 64 0 = 0 from rfl] at hbr
+    rw [Arm64.and_of_ne_bool (ne_bool_of_isBoolL harg.2.1.2)] at hbr
     have h1 := tst2_core (by decide) harg.1 (Mono.onVal_of (retypeL_cmp_ref _ _ _) hbr)
     first | exact h1.1 | exact h1.2)))
 
@@ -279,6 +280,7 @@ local macro "arm_tstw2" : tactic => `(tactic| (
   arm_bbuild
   all_goals (
     rw [imm32_of_zero hc] at hbr
+    rw [Arm64.and_of_ne_bool (ne_bool_of_isBoolL harg.2.1.2)] at hbr
     have h1 := tstw2_core (by decide) harg.1 (Mono.onVal_of (retypeL_cmp1w_ref _ _ _) hbr)
     first | exact h1.1 | exact h1.2)))
 

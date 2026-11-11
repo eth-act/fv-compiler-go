@@ -39,6 +39,23 @@ theorem op2_swap {ty : Ty} {g : BitVec 64 → BitVec 64 → BitVec 64} (hg : ∀
     cases Arm64.reg b <;> cases Arm64.reg a <;> dsimp only <;> first | rfl | exact congrArg _ (hg _ _)
   | cons _ _ => rfl
 
+/-- `Arm64.and` is commutative: its `false` case is symmetric, and otherwise it is `op2`. -/
+theorem and_swap {ty : Ty} (a b : Val) (rest : List Val) :
+    Arm64.and ty (b :: a :: rest) = Arm64.and ty (a :: b :: rest) := by
+  by_cases h : ty = .bool ∧ rest = [] ∧ (a = .bool false ∨ b = .bool false)
+  · obtain ⟨rfl, rfl, h | h⟩ := h <;> subst h <;>
+      rw [Arm64.and_false_left, Arm64.and_false_right]
+  · have hn : ∀ x y, (x = a ∧ y = b ∨ x = b ∧ y = a) →
+        ¬ (ty = .bool ∧ ∃ c d, x :: y :: rest = [c, d] ∧ (c = .bool false ∨ d = .bool false)) := by
+      rintro x y hxy ⟨ht, c, d, he, hcd⟩
+      simp only [List.cons.injEq] at he
+      obtain ⟨rfl, rfl, hr⟩ := he
+      rcases hxy with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+      · exact h ⟨ht, hr, hcd⟩
+      · exact h ⟨ht, hr, hcd.symm⟩
+    rw [Arm64.and_eq_op2 (hn b a (.inr ⟨rfl, rfl⟩)), Arm64.and_eq_op2 (hn a b (.inl ⟨rfl, rfl⟩))]
+    exact op2_swap (fun x y => BitVec.and_comm x y) a b rest
+
 theorem op2w_swap {ty : Ty} {g : BitVec 32 → BitVec 32 → BitVec 32} (hg : ∀ x y, g x y = g y x)
     (a b : Val) (rest : List Val) :
     Arm64.op2w ty g (b :: a :: rest) = Arm64.op2w ty g (a :: b :: rest) := by
@@ -175,7 +192,7 @@ theorem armEvalPure_swap {op : Op} {ty : Ty} {k : Int64} {aux : Option AuxRef} {
     exact op2_swap (fun x y => by delta Arm64.smull; rw [BitVec.mul_comm]) a b rest
   case ARM64UMULL =>
     exact op2_swap (fun x y => by delta Arm64.umull; rw [BitVec.mul_comm]) a b rest
-  case ARM64AND => exact op2_swap (fun x y => BitVec.and_comm x y) a b rest
+  case ARM64AND => exact and_swap a b rest
   case ARM64OR => exact op2_swap (fun x y => BitVec.or_comm x y) a b rest
   case ARM64XOR => exact op2_swap (fun x y => BitVec.xor_comm x y) a b rest
   case ARM64CMN =>

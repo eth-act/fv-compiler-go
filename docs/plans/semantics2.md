@@ -228,6 +228,23 @@ y z)) => (SUB (ADD x z) y)` and `(SUB (SUB x y) z) => (SUB x (ADD y z))` (`1197`
 target moves a pointer through an intermediate outside its window. `(NEG (SUB x y)) => (SUB y x)`
 and `(NEG (NEG x)) => x` (`1183`, `1184`) are proven since the window rule below.
 
+**The lowered `AND` at the `bool` shape (#385, S1, lowered layer only).** `AND a b`
+(`Arm64.and`) is `op2` of `&&&`, except at the `bool` shape, where a `.bool false` operand gives
+`.bool false` whatever the other operand holds (`poison` included). On the machine `0 &&& r = 0`
+for every register `r`, and `ValRel (.bool false) r` is `r = 0`, so the result does not depend
+on the other register: the case is faithful and strictly more defined. Phase 1's parallel `AndB`
+(`Cmp.andB`: `false && poison` is `false`) lowers to it, so `(AndB x y) => (AND x y)`
+(`ARM64.rules:133`) is proven (`r_ARM64_133_sound`). Phase 1 and the `GoFV/Arm64` machine model
+are unchanged; absorption applies to no other op and never to an integer 0. The Phase 3 `AND`
+case relates it by `GoFV.Proof.Gen.valRel_andBool`. The peepholes that fold an `AND` into
+another op (`ANDconst`, `BIC`, `ANDshift*`, `TST`/`TSTW`; `ARM64.rules:972`, `1179`,
+`1439–1442`, `564`/`568`, block rules `558`/`560`) do not absorb, so the lowering validator admits
+no `AND` pattern node at the `bool` shape (`Pat.argsOKLs`; counterexample `AND <bool> poison
+(MOVDconst [0])`, which is `false`, while `ANDconst [0] poison` is `poison`). The parallel `OrB`
+(`134`) stays unproven: `OrB true poison = true` has no machine counterpart, as `true` is the
+register 1 and `1 ||| r` depends on `r` (a model limit, `docs/proofs/rules.md` Findings).
+sem-difftest (native and the quick-v10 corpus) is unchanged.
+
 **Pointers outside their window (#385, a Phase 1 change).** Each block with addresses has a
 window (`Blk.window?`: `2^40` for nil and heap blocks, `2^24` for frame blocks; globals have
 none), and Phase 1 already made pointer arithmetic that leaves it `poison` (`PtrOps.ptrRes`,

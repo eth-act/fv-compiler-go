@@ -250,12 +250,20 @@ registers of integer arguments. -/
 macro "arm_reg" : tactic => `(tactic| (
   intros
   simp (disch := decide) only [opValL_arm, opValL_gen, reduceArmEvalPure, reduceEvalPure,
-    Arm64.add, Arm64.sub, Arm64.op1, Arm64.op2, Arm64.op1w, Arm64.op2w, Arm64.res32, Arm64.reg,
+    Arm64.add, Arm64.sub, Arm64.and_int2, Arm64.op1, Arm64.op2, Arm64.op1w, Arm64.op2w, Arm64.res32,
+    Arm64.reg,
     Arm64.reg32, Option.map_some, BitVec.setWidth_eq, BitVec.setWidth_and, BitVec.setWidth_or,
     BitVec.setWidth_xor, retypeL_res_int, BitVec.setWidth_setWidth_of_le, BitVec.sub_eq_add_neg,
     BitVec.setWidth_add, BitVec.setWidth_mul, BitVec.setWidth_neg_of_le, BitVec.setWidth_not,
     BitVec.setWidth_setWidth, ext_false_setWidth', ext_true_setWidth', setWidth_signExtend_le,
     retypeL_int_int, Width.bits]))
+
+set_option hygiene false in
+/-- The pattern's top `AND` node is not at the `bool` shape (`Pat.argsOKL`'s `AND` clause, the
+first or second argument's conjunct of `harg`), so `Arm64.and` there is `op2` of `&&&`. -/
+macro "arm_and_op2" : tactic => `(tactic| (first
+  | rw [Arm64.and_of_ne_bool (ne_bool_of_isBoolL harg.1.2)]
+  | rw [Arm64.and_of_ne_bool (ne_bool_of_isBoolL harg.2.2)]))
 
 /-- `topOKL o ty` at an integer op of width `w` forces `ty = .int w`. -/
 macro "arm_top" : tactic => `(tactic| (

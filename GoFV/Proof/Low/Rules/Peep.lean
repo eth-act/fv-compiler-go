@@ -471,11 +471,12 @@ theorem r_ARM64_970_sound : ArmRule.Checked r_ARM64_970 := by
 theorem r_ARM64_972_sound : ArmRule.Checked r_ARM64_972 := by
   left; arm_unfold
   all_goals arm_norm
+  all_goals rw [Arm64.and_of_ne_bool (ne_bool_of_isBoolL harg.1.2)]
   · exact refines_bitop_const _ (fun n a b b' h => by simp only [BitVec.setWidth_and, h])
-      (armReadW_low .ARM64AND _ 1 (by simp) ▸ harg.2) _ _
+      (armReadW_low .ARM64AND _ 1 (by simp) ▸ harg.2.1) _ _
   · rw [op2_comm _ (fun a b => BitVec.and_comm a b)]
     exact refines_bitop_const _ (fun n a b b' h => by simp only [BitVec.setWidth_and, h])
-      (armReadW_low .ARM64AND _ 0 (by simp) ▸ harg.1) _ _
+      (armReadW_low .ARM64AND _ 0 (by simp) ▸ harg.1.1) _ _
 
 /-- `ARM64.rules:973`: `(OR x (MOVDconst [c])) => (ORconst [c] x)` -/
 theorem r_ARM64_973_sound : ArmRule.Checked r_ARM64_973 := by
