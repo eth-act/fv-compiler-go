@@ -399,10 +399,21 @@ Witnesses:
   exactly at its `CBNZ R27`, where `X27At` holds iff the machine's `X27` is P0's),
   `objAtomic_ldadd_run`, `objAtomic_stlxr_run`, `objAtomic_cas_hit`, `objAtomic_cas_miss`
   (`symInsn_sound` on `LDADDAL`, `STLXR` and `CASAL` words, a `CAS` mismatch keeping the memory),
-  `objAtomic_rmwEx`.
+  `objAtomic_rmwEx`;
+- `objSbfiz_witness` (`GoFV/Proof/Witness/ObjSbfiz.lean`: `checkObj` accepts
+  `runtime.(*stkframe).argBytes`, whose `SBFIZ $3, R0, $32, R0` assembles to
+  `SBFM X0, X0, #61, #31`; from `R0 = 0x80000001` the Prog gives `R0 = 0xfffffffc00000008`, the
+  negative 32-bit field sign-extended and shifted, and `progSym_sound` relates the step to the
+  Prog's symbolic effect).
 
-Coverage on quick-v10 (`lake exe obj-check`, on P0'): 9,124 of 9,297 functions (98.13%; 395,421 of
-429,130 P0 Progs in accepted functions), with `CSEL`/`CSINC`/`CSINV`/`CSNEG`/`CSET`/`CSETM`,
+**`SBFIZ`.** `SBFIZ $lsb, Rn, $width, Rd` (and `SBFIZW`) is the bitfield move
+`SBFM Rd, Rn, #(-lsb mod w), #(width - 1)` (`Ex.mkBfm sf 0`; `sbfiz_bfm` in `Bitfield.lean`:
+P0's `sbfiz`, the low `width` bits sign-extended and shifted left by `lsb`, is that move), next to
+`UBFX`/`SBFX`/`UBFIZ` (`fam_ubfx`); the word is the `SBFM` that `SBFX` already decodes to.
+
+Coverage on quick-v10 (`lake exe obj-check`, on P0'): 9,135 of 9,297 functions (98.25%; 396,700 of
+429,130 P0 Progs in accepted functions; 9,124 before `SBFIZ`: the 11 functions whose first
+rejection was `SBFIZ`, none lost), with `CSEL`/`CSINC`/`CSINV`/`CSNEG`/`CSET`/`CSETM`,
 `MUL`/`MNEG`/`MADD`/`MSUB`/`UMULH`/`SMULH`, `CLZ`/`RBIT`/`REV*`, `LDAR*`/`STLR*`, `CALL (Rn)`, the
 variable shifts, divisions, `REM`/`UREM`, `BIC`/`ORN`/`EON`/`MVN`, the SIMD&FP forms Go emits
 (below), the morestack tail's `F` spills, the float constants loaded from constant symbols,

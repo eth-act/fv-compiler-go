@@ -477,7 +477,7 @@ def progSymCore (az ez : Int) (p : Prog) : Except String (Sym × PCtl) := do
   if let some (_, sf) := baseOf name ["NEG"] then
     let y ← srcP sf p.from_
     return (← wP σ p.to.reg (Ex.mkAddSub sf true (.k 0) y), .fall)
-  if let some (op, sf) := baseOf name ["UBFX", "SBFX", "UBFIZ"] then
+  if let some (op, sf) := baseOf name ["UBFX", "SBFX", "UBFIZ", "SBFIZ"] then
     let lsb := p.from_.offset.toNat
     let width := (← match p.rest[0]? with
       | some (_, a) => pure a
@@ -488,7 +488,8 @@ def progSymCore (az ez : Int) (p : Prog) : Except String (Sym × PCtl) := do
     let r := match op with
       | "UBFX" => Ex.mkBfm sf 2 (BitVec.ofNat 6 lsb) (BitVec.ofNat 6 (lsb + width - 1)) (.k 0) x
       | "SBFX" => Ex.mkBfm sf 0 (BitVec.ofNat 6 lsb) (BitVec.ofNat 6 (lsb + width - 1)) (.k 0) x
-      | _ => Ex.mkBfm sf 2 (BitVec.ofNat 6 ((w - lsb) % w)) (BitVec.ofNat 6 (width - 1)) (.k 0) x
+      | "UBFIZ" => Ex.mkBfm sf 2 (BitVec.ofNat 6 ((w - lsb) % w)) (BitVec.ofNat 6 (width - 1)) (.k 0) x
+      | _ => Ex.mkBfm sf 0 (BitVec.ofNat 6 ((w - lsb) % w)) (BitVec.ofNat 6 (width - 1)) (.k 0) x
     return (← wP σ p.to.reg r, .fall)
   if let some (n, signed, fp) := movMem name then
     if fp then return ← fmovP az ez n p

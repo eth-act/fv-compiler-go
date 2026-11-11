@@ -1125,6 +1125,7 @@ import GoFV.Proof.Witness.ObjMoreF
 import GoFV.Proof.Witness.ObjOps
 import GoFV.Proof.Witness.ObjPanic
 import GoFV.Proof.Witness.ObjRo
+import GoFV.Proof.Witness.ObjSbfiz
 import GoFV.Proof.Witness.ObjWhole
 import GoFV.Proof.Witness.ObjWholeNL
 import GoFV.Proof.Witness.ObjWholeS
