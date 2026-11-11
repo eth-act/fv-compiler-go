@@ -531,3 +531,6 @@ GoFV.Proof.Witness.ObjEndToEndAtSPS.e2e_facts._native.native_decide.ax_1_1 c2481
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
 # test code only: the parity runner's pointer-equality fast path (GoFVTest/Parity/Compare.lean).
 implemented_by GoFVTest.Parity.sameObj _private.GoFVTest.Parity.Compare.0.GoFVTest.Parity.sameObjImpl 38dd296984bed7246910175a8c849fbda0ed17dd3a164835e181a401e0312771
+# ctxtBefore_witness (GoFV/Proof/Witness/ObjMoreF.lean, #708): adder.func1 (GenG11), from the closure
+# call state the entry value v7 puts the context in R26, and ctxtBefore holds at 1.
+GoFV.Proof.Witness.ObjMoreF.r26_facts._native.native_decide.ax_1_1 ddf78afdc8b6910db68b51a4c7887780075211779ed9c2e35a39b41503b77407
