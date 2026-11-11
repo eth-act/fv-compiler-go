@@ -253,6 +253,13 @@ theorem vkind64_initMem {lc : LocCtx} {g : G2In} {v : Value} (hop : v.op = .Init
   unfold vkind64
   cases vkind63 lc g v <;> simp [hn]
 
+/-- Off G64's ops (`qop64`), `vkind64` is `vkind63`. -/
+theorem vkind64_eq63 {lc : LocCtx} {g : G2In} {v : Value} (hq : qop64 v.op = false) :
+    vkind64 lc g v = vkind63 lc g v := by
+  have hn : vkind64a lc g v = none := by simp [vkind64a, hq]
+  unfold vkind64
+  cases vkind63 lc g v <;> simp [hn]
+
 /-- On a function with no arm64 op, G64's check is G33. -/
 theorem checkG33_of_64L {lc : LocCtx} {ps : Array Prog} {bstart : ID → Option Nat} {g : G2In}
     {r : Except String (PcTab × KTab)} (hl : lc.ctx.f.lowered = false)

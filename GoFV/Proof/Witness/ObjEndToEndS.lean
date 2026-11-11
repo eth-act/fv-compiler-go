@@ -96,13 +96,13 @@ theorem verified_mach_S_witness :
     obtain ⟨hO, hH, hME, hroom, hg, hnone, -, hEE, hpc, -, -, hic⟩ := ObjWholeS.obj_premises
     obtain ⟨hc, hrok, houts, hE, hb1, hbm, hk, hentry, hu, hes, hargs, sI, hsI, hent, hinv, hspI,
       hP⟩ := ObjWholeS.lc_premises hlcf
-    have hc62 : checkG62 (LocCtx.make r.st.tables r.st.func) GenG3.ps GenG3.bs GenG3.g =
+    have hc64 : checkG64 (LocCtx.make r.st.tables r.st.func) GenG3.ps GenG3.bs GenG3.g =
         .ok (GenG3.tab, GenG3.kt) := by
-      simpa [checkG62, hrl] using hc
+      simpa [checkG64, hrl] using hc
     rw [← hentry] at hpc
     obtain ⟨hmt, hcr⟩ := ObjWholeS.lc_ro hlcf
     obtain ⟨fuel', href, raw, hraw, hfin, hdef, hret, -⟩ :=
-      verified_mach_S hpe hv hvpre hnn hap hnp hd rfl hc62 hO hH hic hrok hME hroom hg
+      verified_mach_S hpe hv hvpre hnn hap hnp hd rfl hc64 hO hH hic hrok hME hroom hg
         (fun _ _ _ h => by rw [hnone] at h; cases h) (fun _ _ _ h => by rw [hnone] at h; cases h)
         hE (hEE _) hb1 hbm hk hsI hes hargs hent (fun _ _ _ h => by rw [hnone] at h; cases h) hinv
         rfl (fun _ => hspI) hu
