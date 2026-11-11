@@ -48,6 +48,12 @@ theorem r_generic_1721_sound : EffectRule.Seg GoFV.Rules.Generated.Generic.r_gen
 /-- `generic.rules:1730`: `memmove` (`StaticLECall`) becomes `Move` -/
 theorem r_generic_1730_sound : EffectRule.Seg GoFV.Rules.Generated.Generic.r_generic_1730 := rfl
 
+/-- `generic.rules:1740`: `(Move {t} [n] dst1 src mem:(Zero {t} [n] dst2 _)) && isSamePtr(src, dst2) => (Zero {t} [n] dst1 mem)` (issue #69: a zero segment, `RewriteCheck.zeroSeg?`) -/
+theorem r_generic_1740_sound : EffectRule.Seg GoFV.Rules.Generated.Generic.r_generic_1740 := rfl
+
+/-- `generic.rules:1742`: `(Move {t} [n] dst1 src mem:(VarDef (Zero {t} [n] dst0 _))) && isSamePtr(src, dst0) => (Zero {t} [n] dst1 mem)` (`zeroSeg?`) -/
+theorem r_generic_1742_sound : EffectRule.Seg GoFV.Rules.Generated.Generic.r_generic_1742 := rfl
+
 /-- `generic.rules:1743`: `Move` from a read-only zero symbol becomes `Zero` -/
 theorem r_generic_1743_sound : EffectRule.Seg GoFV.Rules.Generated.Generic.r_generic_1743 := rfl
 

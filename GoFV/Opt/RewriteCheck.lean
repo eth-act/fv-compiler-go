@@ -3218,6 +3218,24 @@ def moveSeg? (tabs : Tables) (f g : Func) (x : ID) (fv gv : Value) : Option (Lis
     | _, _ => none
   | _, _ => none
 
+/-- A zero segment at the `Move` `x` (`generic.rules:1740`, `:1742`; `f`'s `fv`, `g`'s `gv`): in
+`f` `Move [n] dst p mem` whose memory is, up to copies (`mc`), (a `VarDef` of) a `Zero [n] p' _`
+(up to copies; `p'` equal to `p`, `samePtr`), in `g` `Zero [n] dst mc`: the `Move` copies the
+zeros (or the bytes of the `VarDef`'s poisoned block, which zeros refine). Nothing is dropped or
+fresh. -/
+def zeroSeg? (tabs : Tables) (f : Func) (fv gv : Value) : Option (List ID × List ID) :=
+  match fv.op, fv.args.toList with
+  | .Move, [d, p, m] =>
+    let mc := copyEnd tabs f.valueTab f.valueTab.size m
+    match f.value? (copyEnd tabs f.valueTab f.valueTab.size (underVarDef f mc)) with
+    | some zv =>
+      if gv.op == .Zero && gv.args == #[d, mc] && gv.auxInt == fv.auxInt &&
+          decide (0 ≤ fv.auxInt.toInt) && zv.op == .Zero && zv.args.size == 2 &&
+          zv.auxInt == fv.auxInt && samePtr tabs f zv.args[0]! p then some ([], [])
+      else none
+    | none => none
+  | _, _ => none
+
 /-- `a` is an argument of `s` in `f`, or an argument of one of its arguments, … (`k` levels),
 through values that are no `Phi`s. -/
 def argReach (f : Func) : Nat → ID → ID → Bool
@@ -3225,8 +3243,8 @@ def argReach (f : Func) : Nat → ID → ID → Bool
   | k + 1, s, a => (f.value? s).any fun sv => sv.op != .Phi &&
       (sv.args.contains a || sv.args.any fun b => argReach f k b a)
 
-/-- Value `x` of `f` is a segment's anchor in `g` (`chainSeg?`, `callSeg?`, `roSeg?` or
-`moveSeg?`): listed in its block, a `Store`, `SelectN` or `Move` redefined in place (its ID, block
+/-- Value `x` of `f` is a segment's anchor in `g` (`chainSeg?`, `callSeg?`, `zeroSeg?`, `roSeg?`
+or `moveSeg?`): listed in its block, a `Store`, `SelectN` or `Move` redefined in place (its ID, block
 and type kept); its dropped values are listed in that block, its fresh values in that block of
 `g`; the anchor is a root of `g`, and so is each fresh value but `OffPtr`s of arguments of roots
 of `f` of the segment (a dropped root, or the anchor); each argument of the fresh values and of
@@ -3239,8 +3257,9 @@ def segOK (tabs : Tables) (f g : Func) (x : ID) : Option (List ID × List ID) :=
     if !ssSame fv gv && gv.id == x && gv.block == fv.block && gv.type == fv.type &&
         (fv.op == .Store || fv.op == .SelectN || fv.op == .Move) && f.blocks.contains fv.block &&
         listed x then
-      match (((chainSeg? tabs f g x fv gv).orElse fun _ => callSeg? tabs f g fv gv).orElse
-          fun _ => roSeg? tabs f fv gv).orElse fun _ => moveSeg? tabs f g x fv gv with
+      match ((((chainSeg? tabs f g x fv gv).orElse fun _ => callSeg? tabs f g fv gv).orElse
+          fun _ => zeroSeg? tabs f fv gv).orElse fun _ => roSeg? tabs f fv gv).orElse
+          fun _ => moveSeg? tabs f g x fv gv with
       | some (D, N) =>
         let L := N ++ [x]
         let ext (a : ID) : Bool := !D.contains a && !L.contains a &&
@@ -3370,12 +3389,15 @@ def roSrcOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f : Func) (fv : V
       ro.any fun e => e.1 == n && e.2.data.all (· == .b 0)
   | _ => false
 
-/-- The read-only segments (`roSeg?`; the anchors that are `Move`s of `f` and `Zero`s of `g`) copy from symbols of
+/-- The read-only segments (`roSeg?`; the anchors that are `Move`s of `f` and `Zero`s of `g` but
+the zero segments, `zeroSeg?`) copy from symbols of
 `ro` whose bytes are zero, and `f` passes `WBCheck.memTyOK` (so every memory a run of `f` holds
 has the symbols of `ro`, `GoFV.Proof.MemInv`). -/
 def roSegsOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f g : Func) : Bool :=
   let movs := (segList (segArr tabs f g)).filter fun s =>
-    (f.value? s.1).any (·.op == .Move) && (g.value? s.1).any (·.op == .Zero)
+    match f.value? s.1, g.value? s.1 with
+    | some fv, some gv => fv.op == .Move && gv.op == .Zero && (zeroSeg? tabs f fv gv).isNone
+    | _, _ => false
   movs.isEmpty ||
     (WBCheck.memTyOK tabs f && movs.all fun s => (f.value? s.1).all (roSrcOK tabs ro f))
 
