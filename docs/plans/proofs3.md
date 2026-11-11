@@ -1869,6 +1869,30 @@ literal `[5]int{1, 2, 3, 4, 5}`, after which `F0`/`F1` hold the blobs of its fir
 halves and the machine's `V0`/`V1` their 128 bits. The lift to G64 adds `QLoadPre` to `RunPre`'s
 per-step premises.
 
+**Slice G65: float loads of frame variables, float pair stores through a register or to a
+global** (`GoFV/Gen/Check65.lean`, `checkG65 lc ps bstart g`; on P0'). Each of these float accesses
+was handled at one operand form only: G44 loads a float through a register or of a global
+(`accessA`) and rejects a frame variable (`access of a frame variable`, G49's `frame variable aux on
+FMOVDload`), while G57 stores one to it; G57 stores a float pair (`FSTPS`/`FSTPD`) to a frame
+variable, and no slice stores one through a register or to a global (`op FSTPD`), as G4 and G22 do
+`STP`. `vkind65a`, tried when G64 rejects a value: an `FMOVSload`/`FMOVDload` of a frame variable
+(`fvar57?`, G49's `Blk.local` or G6's `Blk.temp`) into an `F` register at the op's width
+(`fvload65`: `FMOVS`/`FMOVD off(<nc>), Fd`), and an `FSTPS`/`FSTPD` at G3's operands (`fstp65`:
+`FSTPS`/`FSTPD (Fa, Fb), dst`, `dst` `off(Rn)` or `sym+off(SB)`). `GoFV/Proof/Gen/G65a.lean`:
+`g65_fvload` is `g44_fload` at the variable's block (`VarAt57`, the frame operand by
+`ctx_mem_slot`); `g65_fstpReg` is `g57_stpw` and `g65_fstpGlob` is `g22_stp` with V registers
+(`arg_relV`, `valRel_of_fvalRel`) and the machine's pair store at an operand address
+(`progStep_fstpAt`). The theorems `g65_*` (`G65.lean`) are G64's statements over `checkG65` with
+G64's premises: the loads take `FLoadPre`, already among `G54Pre`'s, so no run premise is added and
+the lift changes only `checkG64` to `checkG65`. G65 on P0' accepts 8,274 functions (88.99%, +13
+over G64's 8,261, every function whose whole reason set was these accesses), 284,888 values
+(`--jobs 2`); G64 and every earlier slice are unchanged, and the rejected set is a subset of G64's.
+Witness `genG65_witness` (`GenG65.lean`, `init.func82` of `test/gcgort` on P0', at the mode
+`false`): `checkG64` rejects it (`v21: access of a frame variable`) and `checkG65` accepts it, and
+`g65_value` runs `v21 = FMOVDload {u} [0] v2 v36` (`FMOVD u-8(SP), F1`) from a memory holding
+`u = 1.01` (a `temp` block at `SP + 16`), after which `F1` holds `1.01`'s bits and the machine's
+`V1` holds them in its low word.
+
 Later slices, by how many functions outside G18 each blocker occurs in (quick-v10, §5; sole
 reason in parentheses):
 
@@ -1976,6 +2000,7 @@ as in `gen-parity`; 9,297 functions, 426,323 values, 0 parse, env or genssa erro
 | G62 (G61 with the incoming stack arguments, P0') | 8,175 (87.93%) | 271,361 |
 | G63 (G62 with the float spills and reloads, P0') | 8,206 (88.26%) | 274,435 |
 | G64 (G63 with the 128-bit moves of blobs, P0') | 8,261 (88.85%) | 281,544 |
+| G65 (G64 with the float frame-variable loads and pair stores, P0') | 8,274 (88.99%) | 284,888 |
 
 (Before G6 was restricted to frame temporaries for the proof — parameters and variables whose
 address is converted to an integer were accepted — its validator accepted 2,022.)
