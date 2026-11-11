@@ -104,6 +104,56 @@ theorem writes_putBytes {Mm : Mem} {Dst : Ptr} :
     refine ⟨T, ?_, h4⟩
     rw [writes, h1, Option.bind_some]; exact h3
 
+/-- A read that succeeds after a write succeeds before it (a write keeps every block's size). -/
+theorem read_some_of_write {m m' : Mem} {q p : Ptr} {bs R : Array Byte} {n : Nat}
+    (hw : m.write q bs = some m') (hr : m'.read p n = some R) : ∃ B, m.read p n = some B := by
+  by_cases hn : n = 0
+  · subst hn; exact ⟨#[], rfl⟩
+  by_cases hb : bs.size = 0
+  · have he : bs.isEmpty = true := Array.isEmpty_iff_size_eq_zero.2 hb
+    unfold Mem.write at hw
+    simp only [he, ite_true] at hw
+    cases hw
+    exact ⟨R, hr⟩
+  obtain ⟨a0, ha0⟩ := write_find hw (by omega)
+  obtain ⟨rfl, -⟩ := write_spec ha0 hw
+  obtain ⟨a, ha, h1, h2, h3, -⟩ := (read_eq_some hn).1 hr
+  rw [CSE.Mem.find?_set] at ha
+  split at ha
+  · rename_i heq
+    cases ha
+    simp only [CSE.Mem.foldl_set_size] at h1
+    exact ⟨_, (read_eq_some hn).2 ⟨a0, by rw [← heq]; exact ha0, h1, h2, h3, rfl⟩⟩
+  · exact ⟨_, (read_eq_some hn).2 ⟨a, ha, h1, h2, h3, rfl⟩⟩
+
+/-- **Writes tiling a range** put the same bytes into any two buffers that agree outside it. -/
+theorem putAll_tiles_eq : ∀ {lo n : Nat} {ws : List (Nat × Array Byte)} {A B : Array Byte},
+    Tiles lo n ws → A.size = B.size → n ≤ A.size →
+    (∀ j, ¬ (lo ≤ j ∧ j < n) → A[j]? = B[j]?) → putAll A ws = putAll B ws
+  | lo, n, [], A, B, ht, _, _, hag => by
+    have h' : lo = n := ht
+    subst h'
+    show A = B
+    exact Array.ext_getElem? fun j => hag j (by omega)
+  | lo, n, (o, E) :: ws, A, B, ⟨ho, _, ht⟩, hs, hn, hag => by
+    subst ho
+    have hb := (Tiles.bounds ht).1
+    show putAll (putBytes A o E) ws = putAll (putBytes B o E) ws
+    refine putAll_tiles_eq ht (by rw [putBytes_size, putBytes_size, hs])
+      (by rw [putBytes_size]; exact hn) fun j hj => ?_
+    rw [StructStore.putBytes_getElem? (by omega), StructStore.putBytes_getElem? (by omega)]
+    split
+    · rfl
+    · exact hag j (by omega)
+
+/-- `tilesB` of the shapes of `ws` is `Tiles`. -/
+theorem tilesB_tiles : ∀ {lo n : Nat} {ws : List (Nat × Array Byte)},
+    tilesB lo n (ws.map fun w => (w.1, w.2.size)) = true → Tiles lo n ws
+  | lo, n, [], h => by simpa [tilesB] using h
+  | lo, n, (o, E) :: ws, h => by
+    simp only [List.map_cons, tilesB, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
+    exact ⟨h.1.1, h.1.2, tilesB_tiles h.2⟩
+
 /-! ## Evaluations -/
 
 private theorem prio_move : prio .Move ≠ 0 := by decide
@@ -274,6 +324,11 @@ theorem fchain_fresh {f g : Func} : ∀ {t m0 : ID} {ns : List ID},
     rcases List.mem_cons.1 hu with rfl | hu
     · exact hf
     · exact fchain_fresh h u hu
+
+theorem fchain_gchain' {f g : Func} : ∀ {t m0 : ID} {ns : List ID},
+    FChain f g t ns m0 → GChain g t ns m0
+  | _, _, [], h => h
+  | _, _, _ :: _, ⟨h1, _, uv, huv, h⟩ => ⟨h1, uv, huv, fchain_gchain' h⟩
 
 /-- Every value of `gs` has its pair in `fs` when the lists are as long. -/
 theorem zip_all_right {P : ID × ID → Bool} : ∀ {fs gs : List ID},
@@ -559,6 +614,126 @@ theorem move_below (H : Avail env tabs f S A) (hT : Proof.Typed (Ctx.make tabs f
       · simp only [List.mem_singleton] at hw'; subst hw'
         show q'.auxInt.toInt.toNat + (encode (auxTy tabs sv.aux) xv).size ≤ _
         rw [he]; exact hle'
+    intro Tz T hW Fr hag hfsz hoff hz' hnew
+    obtain ⟨W1, hW1, hw1⟩ := writes_snoc hW
+    obtain ⟨Fr1, he1, hr1', hag1, hsz1, hoff1⟩ := htg Tz W1 hW1 Fr hag hfsz
+      (fun b hb => hoff b (List.mem_cons_of_mem _ hb)) hz'
+      (fun u hu => hnew u (List.mem_cons_of_mem _ hu))
+    -- the target's store `t`
+    have hoffT := hoff1 _ hoff t List.mem_cons_self tv q' htv hq' hq'op
+    obtain ⟨yq, hyq, hyqw⟩ := hoffT
+    have hta' : tv.args = #[tv.args[0]!, sv.args[1]!, lastArg tv] := by
+      rw [lastArg_three hta, ← hval]; exact CSE.Mem.args_three hta
+    have hev := store_eval (env := env) (ctx := Ctx.make tabs g) htop hta' hyq hyqw
+      (by rw [hag1 _ hA1]; exact hxv) hr1'
+      (by rw [show (Ctx.make tabs g).tabs = tabs from rfl, haux]; exact hw1)
+    rw [hgid t List.mem_cons_self tv htv, Proof.tys_of_value htv, Option.getD_some, htype, hty]
+      at hev
+    have htlt : t < Fr1.regs.size := Nat.lt_of_lt_of_le (CheckFacts.lt_of_value? htv) hsz1
+    refine ⟨Fr1.set t (.mem T), ?_, Proof.Frame.set_regs_self htlt, fun a ha' => ?_, ?_,
+      fun L hL => (hoff1 L hL).set_other htv (by rw [htop]; decide) _⟩
+    · rw [List.reverse_cons, Proof.evalAll_append, he1]
+      dsimp only
+      rw [Proof.evalAll_cons]
+      simp only [Proof.stepV, show (Ctx.make tabs g).f = g from rfl, htv, hev]
+      rfl
+    · have hne : t ≠ a := by
+        rintro rfl
+        obtain ⟨_, _, hv, -⟩ := H.val t ha'
+        rw [hnew t List.mem_cons_self] at hv
+        cases hv
+      rw [Proof.Frame.set_regs_ne hne, hag1 a ha']
+    · simpa [Frame.set] using hsz1
+
+/-- **The stores below the anchor of a tile segment**: if the source's stores from `s` evaluated
+to `M` whose `n` bytes at `P` are readable, those bytes are the bytes `B` under the stores with
+the stores' bytes `ws` put in (bottom first; `ws` has the shapes of the target's stores `gs`),
+and the target's stores from `t` (over `z'`) evaluate to the writes `ws` at `Dst` over `z'`'s
+memory. -/
+theorem tile_below (H : Avail env tabs f S A) (hT : Proof.Typed (Ctx.make tabs f) S)
+    (hid : ∀ z v, A z → f.value? z = some v → v.id = z) {pz z z' dst b : ID} {P Dst : Ptr}
+    {pv : Val} {n : Int64} (hpA : A pz) (hP : S.regs[pz]? = some (some pv))
+    (hpv : pv.asPtrWord = some P) :
+    ∀ (fs gs : List ID) (s t : ID) (M : Mem), CChain tabs f s fs z → GChain g t gs z' →
+      fs.length = gs.length → (∀ u ∈ gs, ∀ v, g.value? u = some v → v.id = u) →
+      (fs.zip gs).all (fun (a, c) => match f.value? a, g.value? c with
+        | some sa, some sb => moveStoreOK tabs f g pz dst n b sa sb
+        | _, _ => false) = true →
+      S.regs[s]? = some (some (.mem M)) → A s → ∀ {R : Array Byte},
+      M.read P n.toInt.toNat = some R →
+      ∃ ws B, B.size = n.toInt.toNat ∧ M.read P n.toInt.toNat = some (putAll B ws) ∧
+        (∀ w ∈ ws, w.1 + w.2.size ≤ n.toInt.toNat) ∧
+        ws.map (fun w => (w.1, w.2.size)) = storeShapes tabs g gs.reverse ∧
+        ∀ Tz T, writes Dst Tz ws = some T →
+        ∀ Fr : Frame, (∀ a, A a → Fr.regs[a]? = S.regs[a]?) → g.valueTab.size ≤ Fr.regs.size →
+          OffOK g Dst Fr gs → Fr.regs[z']? = some (some (.mem Tz)) →
+          (∀ u ∈ gs, f.value? u = none) →
+          ∃ Fr', evalAll env (Ctx.make tabs g) Fr gs.reverse = .ok Fr' ∧
+            Fr'.regs[t]? = some (some (.mem T)) ∧ (∀ a, A a → Fr'.regs[a]? = S.regs[a]?) ∧
+            g.valueTab.size ≤ Fr'.regs.size ∧ (∀ L, OffOK g Dst Fr L → OffOK g Dst Fr' L)
+  | [], gs, s, t, M, _, hgc, hlen, _, _, _, _, R, hR => by
+    cases gs with
+    | cons _ _ => cases hlen
+    | nil =>
+    have ht : t = z' := hgc
+    subst ht
+    refine ⟨[], R, DSE.read_size hR, hR, by simp, rfl, fun Tz T hW Fr hag hsz _ hz' _ => ?_⟩
+    cases hW
+    exact ⟨Fr, rfl, hz', hag, hsz, fun _ h => h⟩
+  | s' :: fs1, gs, s, t, M, hsc, hgc, hlen, hgid, hzip, hM, hA, R, hR => by
+    cases gs with
+    | nil => cases hlen
+    | cons t' gs1 =>
+    obtain ⟨hs', sv, hs, hop, hsz3, hsc1⟩ := hsc
+    subst s'
+    obtain ⟨ht', tv, htv, hgc1⟩ := hgc
+    subst t'
+    simp only [List.zip_cons_cons, List.all_cons, hs, htv, Bool.and_eq_true] at hzip
+    obtain ⟨hpair, hzip1⟩ := hzip
+    obtain ⟨hsop, htop, hsa, hta, haux, htype, hval, -, hszp, hqf, q', hq', hce, hq'op, hq'a,
+      hq'ty, h0, hle⟩ := moveStoreOK_spec hpair
+    -- the source's store
+    have ha := CSE.Mem.args_three hsa
+    have hcl := H.cl s sv hA hs (by rw [hop]; decide)
+    have hA0 := hcl sv.args[0]! (by rw [ha]; simp)
+    have hA1 := hcl sv.args[1]! (by rw [ha]; simp)
+    have hA2 := hcl sv.args[2]! (by rw [ha]; simp)
+    obtain ⟨_, qv, -, hqv, -⟩ := H.val _ hA0
+    obtain ⟨_, xv, -, hxv, -⟩ := H.val _ hA1
+    obtain ⟨_, mv, -, hmv, -⟩ := H.val _ hA2
+    obtain ⟨v', y, hv', hy, hev⟩ := H.val s hA
+    rw [hs] at hv'
+    cases hv'
+    obtain ⟨Q, M1, M2, hQ, rfl, hw, rfl⟩ := store_ok hop ha hqv hxv hmv (hev (by rw [hop]; decide))
+    change M1.write _ (encode (auxTy tabs sv.aux) xv) = some M2 at hw
+    have hQe : Q = P.add (BitVec.ofNat 64 q'.auxInt.toInt.toNat) := by
+      rw [offFrom_reg H hT hid hpA hP hpv 4 hA0 hqv hQ hce, ← BitVec.ofInt_natCast,
+        Int.toNat_of_nonneg h0]
+    subst hQe
+    rw [hid s sv hA hs, Proof.tys_of_value hs, Option.getD_some, hM] at hy
+    obtain ⟨hty, rfl⟩ := retype_mem_eq (Option.some.inj (Option.some.inj hy)).symm
+    obtain ⟨hcA, hcr⟩ := StructStore.copy_reg H hT hid f.valueTab.size hA2
+      (StructStore.copyReach_copyEnd f.valueTab f.valueTab.size sv.args[2]!)
+    obtain ⟨R1, hR1⟩ := read_some_of_write hw hR
+    obtain ⟨ws1, B, hBs, hr1, hin1, hsh1, htg⟩ := tile_below H hT hid hpA hP hpv fs1 gs1 _
+      (lastArg tv) M1 hsc1 hgc1 (by simpa using hlen)
+      (fun u hu => hgid u (List.mem_cons_of_mem _ hu)) hzip1 (hcr.trans hmv) hcA hR1
+    have he : (encode (auxTy tabs sv.aux) xv).size = (auxTy tabs sv.aux).size := Sem.encode_size _ _
+    have hle' : q'.auxInt.toInt.toNat + (auxTy tabs sv.aux).size ≤ n.toInt.toNat := by omega
+    refine ⟨ws1 ++ [(q'.auxInt.toInt.toNat, encode (auxTy tabs sv.aux) xv)], B, hBs, ?_, ?_, ?_, ?_⟩
+    · rw [putAll_snoc]
+      exact read_write_putBytes hr1 hw (by rw [he]; exact hle')
+    · intro w hw'
+      rcases List.mem_append.1 hw' with hw' | hw'
+      · exact hin1 w hw'
+      · simp only [List.mem_singleton] at hw'; subst hw'
+        show q'.auxInt.toInt.toNat + (encode (auxTy tabs sv.aux) xv).size ≤ _
+        rw [he]; exact hle'
+    · rw [List.map_append, hsh1, List.reverse_cons]
+      unfold storeShapes
+      rw [List.filterMap_append]
+      simp only [List.filterMap_cons, List.filterMap_nil, htv, hq', Option.bind_some,
+        Option.map_some, List.map_cons, List.map_nil, he, haux]
     intro Tz T hW Fr hag hfsz hoff hz' hnew
     obtain ⟨W1, hW1, hw1⟩ := writes_snoc hW
     obtain ⟨Fr1, he1, hr1', hag1, hsz1, hoff1⟩ := htg Tz W1 hW1 Fr hag hfsz
@@ -1031,6 +1206,238 @@ theorem zeroSeg_sound {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D N
     rfl
   · rw [hid x fv hxA hfv, Proof.tys_of_value hfv, Option.getD_some, ← hty]
     exact retype_mono _ (.mem hMsT)
+
+/-! ## Tile segments: a `Move` of stores that tile its source (`generic.rules:1871` family) -/
+
+/-- What `tileSeg?` says. -/
+theorem tileSeg_spec {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D N : List ID}
+    (h : tileSeg? tabs f g x fv gv = some (D, N)) :
+    D = [] ∧ fv.op = .Move ∧ ∃ d p m mc m1 ns fs z1, fv.args.toList = [d, p, m] ∧
+      copyReach tabs f.valueTab f.valueTab.size m mc = true ∧
+      (m1 = mc ∨ ∃ mv : Value, f.value? mc = some mv ∧ mv.op = .VarDef ∧ mv.args = #[m1]) ∧
+      FChain f g (lastArg gv) ns mc ∧ storesC tabs f (ns.length + 1) m1 = some (fs, z1) ∧
+      gv.op = .Store ∧ 0 ≤ fv.auxInt.toInt ∧
+      (fs.zip (x :: ns)).all (fun (a, b) => match f.value? a, g.value? b with
+        | some sa, some sb => moveStoreOK tabs f g p d fv.auxInt fv.block sa sb
+        | _, _ => false) = true ∧
+      tilesB 0 fv.auxInt.toInt.toNat (storeShapes tabs g (x :: ns).reverse) = true ∧
+      N = ((x :: ns).filterMap fun b => (g.value? b).map (·.args[0]!)) ++ ns.reverse := by
+  unfold tileSeg? at h
+  split at h
+  case h_2 => cases h
+  rename_i d p m hop hargs
+  have hmc := StructStore.copyReach_copyEnd (tabs := tabs) f.valueTab f.valueTab.size m
+  generalize copyEnd tabs f.valueTab f.valueTab.size m = mc at h hmc
+  dsimp only at h
+  generalize hm1 : underVarDef f mc = m1 at h
+  have hm1' : m1 = mc ∨ ∃ mv : Value, f.value? mc = some mv ∧ mv.op = .VarDef ∧ mv.args = #[m1] := by
+    unfold underVarDef at hm1
+    cases hmv : f.value? mc with
+    | none => rw [hmv] at hm1; exact .inl hm1.symm
+    | some mv =>
+      rw [hmv] at hm1
+      simp only at hm1
+      split at hm1
+      · rename_i hc
+        simp only [Bool.and_eq_true, beq_iff_eq] at hc
+        exact .inr ⟨mv, rfl, hc.1, by rw [StructStore.args1 hc.2, hm1]⟩
+      · exact .inl hm1.symm
+  generalize hfc : freshChain f g 5 (lastArg gv) = r at h
+  obtain ⟨ns, m0⟩ := r
+  simp only at h
+  cases hsf : storesC tabs f (ns.length + 1) m1 with
+  | none => rw [hsf] at h; cases h
+  | some r =>
+  obtain ⟨fs, z1⟩ := r
+  rw [hsf] at h
+  simp only at h
+  split at h
+  case isFalse => cases h
+  rename_i hc
+  simp only [Option.some.injEq, Prod.mk.injEq] at h
+  obtain ⟨rfl, rfl⟩ := h
+  simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hc
+  obtain ⟨⟨⟨⟨hgop, hm0⟩, h0⟩, hzip⟩, htile⟩ := hc
+  have hfc' := freshChain_chain hfc
+  rw [hm0] at hfc'
+  exact ⟨rfl, hop, d, p, m, mc, m1, ns, fs, z1, hargs, hmc, hm1', hfc', hsf, hgop, h0, hzip, htile,
+    rfl⟩
+
+/-- **Tile segments are sound**: the `Move` read, in its memory (the stores', or that one with a
+frame block poisoned), bytes refined by the stores' bytes, which tile them; the target's fresh
+`OffPtr`s and stores (the anchor the top one) write those bytes at `Dst` over the same memory,
+which is the `Move`'s write of them (the `Move`'s own write is overwritten,
+`writes_over_write_eq`). -/
+theorem tileSeg_sound {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D N : List ID}
+    (hfv : f.value? x = some fv) (hgv : g.value? x = some gv)
+    (h : tileSeg? tabs f g x fv gv = some (D, N))
+    (hgid : ∀ n ∈ N ++ [x], ∀ v, g.value? n = some v → v.id = n) (hty : gv.type = fv.type)
+    (Q : Mem → Prop) (env : Env) :
+    SegSound Q env tabs f g x D N := by
+  obtain ⟨rfl, hop, d, p, m, mc, m1, ns, fs, z1, hfa, hmc, hm1, hfc, hsf, hgop, h0, hzip, htile,
+    rfl⟩ := tileSeg_spec h
+  have hnphi : fv.op ≠ .Phi := by rw [hop]; decide
+  have hroot : CSE.rootNode f x = true := by
+    simp only [CSE.rootNode, hfv, Option.map_some, Option.getD_some, hop]; decide
+  refine ⟨fun s hs _ sv fr e mm hsv hpan => ?_, fun S A H hT _ hid hsize hroots => ?_⟩
+  · simp only [List.nil_append, List.mem_singleton] at hs
+    subst hs
+    rw [hfv] at hsv; cases hsv
+    rcases Proof.evalValue_panic_op hpan with hc | hc <;> rw [hop] at hc <;> revert hc <;> decide
+  have hxA : A x := hroots x (by simp) hroot
+  have hfa' : fv.args = #[d, p, m] := Array.ext' hfa
+  have hcx := H.cl x fv hxA hfv hnphi
+  have hdA := hcx d (by rw [hfa']; simp)
+  have hpA := hcx p (by rw [hfa']; simp)
+  have hmA := hcx m (by rw [hfa']; simp)
+  obtain ⟨dv, hdv⟩ := Avail.reg H hdA
+  obtain ⟨pv, hpv⟩ := Avail.reg H hpA
+  obtain ⟨mv, hmv⟩ := Avail.reg H hmA
+  obtain ⟨yx, hyx⟩ := Avail.reg H hxA
+  -- the source's `Move`
+  obtain ⟨Dst, P, Mm, R, Ms, hD, hP, rfl, hR, hMs, rfl⟩ :=
+    move_ok hop hfa hdv hpv hmv (Avail.eval H hxA hfv hnphi hyx)
+  have hRs : R.size = fv.auxInt.toInt.toNat := DSE.read_size hR
+  obtain ⟨hmcA, hmcr⟩ := StructStore.copy_reg H hT hid f.valueTab.size hmA hmc
+  have hmcv := hmcr.trans hmv
+  -- the stores' memory, which the `Move`'s refines
+  obtain ⟨M1, hM1, hm1A, href⟩ : ∃ M1, S.regs[m1]? = some (some (.mem M1)) ∧ A m1 ∧
+      Mem.Refines Mm M1 := by
+    rcases hm1 with rfl | ⟨mvv, hmvv, hvd, hva⟩
+    · exact ⟨Mm, hmcv, hmcA, Mem.Refines.refl _⟩
+    · have hm1A := H.cl mc mvv hmcA hmvv (by rw [hvd]; decide) m1 (by rw [hva]; simp)
+      obtain ⟨y1, hy1⟩ := Avail.reg H hm1A
+      have hev := Avail.eval H hmcA hmvv (by rw [hvd]; decide) hmcv
+      obtain ⟨M1, b, rfl, hy⟩ := varDef_ok hvd hva hy1 hev
+      rw [hid mc mvv hmcA hmvv, Proof.tys_of_value hmvv, Option.getD_some] at hy
+      obtain ⟨-, hMm⟩ := retype_mem_eq hy.symm
+      subst hMm
+      exact ⟨M1, hy1, hm1A, poisonBlock_refines M1 b⟩
+  -- the `Move` read bytes refined by the stores' memory's
+  obtain ⟨R', hR', hRR⟩ := href.read hR
+  -- the chains
+  obtain ⟨hsc, hlen⟩ := storesC_chain hsf
+  have hgc := fchain_gchain' hfc
+  have hnsf : ∀ u ∈ ns, f.value? u = none := fchain_fresh hfc
+  cases fs with
+  | nil => cases hlen
+  | cons m1' fs1 =>
+  obtain ⟨hm1', sv1, hsv1, hop1, hsz1, hsc1⟩ := hsc
+  subst m1'
+  have hzip0 := hzip
+  simp only [List.zip_cons_cons, List.all_cons, hsv1, hgv, Bool.and_eq_true] at hzip
+  obtain ⟨hpair, hzip1⟩ := hzip
+  -- the anchor's source store and the stores below it
+  have ha1 := CSE.Mem.args_three hsz1
+  have hcl1 := H.cl m1 sv1 hm1A hsv1 (by rw [hop1]; decide)
+  have hA0 := hcl1 sv1.args[0]! (by rw [ha1]; simp)
+  have hA1 := hcl1 sv1.args[1]! (by rw [ha1]; simp)
+  have hA2 := hcl1 sv1.args[2]! (by rw [ha1]; simp)
+  obtain ⟨_, qv1, -, hqv1, -⟩ := H.val _ hA0
+  obtain ⟨_, xv1, -, hxv1, -⟩ := H.val _ hA1
+  obtain ⟨_, mv2, -, hmv2, -⟩ := H.val _ hA2
+  obtain ⟨v1, y1, hv1, hy1, hev1⟩ := H.val m1 hm1A
+  rw [hsv1] at hv1; cases hv1
+  obtain ⟨Q1, M2, M1', hQ1, rfl, hw1, rfl⟩ :=
+    store_ok hop1 ha1 hqv1 hxv1 hmv2 (hev1 (by rw [hop1]; decide))
+  obtain ⟨hsop, htop, hsa, hta, haux, htype, hval, -, hszp, hqf, q', hq', hce1, hq'op, hq'a,
+    hq'ty, h0q, hle⟩ := moveStoreOK_spec hpair
+  have hQe : Q1 = P.add (BitVec.ofNat 64 q'.auxInt.toInt.toNat) := by
+    rw [offFrom_reg H hT hid hpA hpv hP 4 hA0 hqv1 hQ1 hce1, ← BitVec.ofInt_natCast,
+      Int.toNat_of_nonneg h0q]
+  subst hQe
+  rw [hid m1 sv1 hm1A hsv1, Proof.tys_of_value hsv1, Option.getD_some, hM1] at hy1
+  obtain ⟨hty1, hM1'⟩ := retype_mem_eq (Option.some.inj (Option.some.inj hy1)).symm
+  subst M1'
+  change M2.write _ (encode (auxTy tabs sv1.aux) xv1) = some M1 at hw1
+  obtain ⟨hcA2, hcr2⟩ := StructStore.copy_reg H hT hid f.valueTab.size hA2
+    (StructStore.copyReach_copyEnd f.valueTab f.valueTab.size sv1.args[2]!)
+  obtain ⟨R2, hR2⟩ := read_some_of_write hw1 hR'
+  obtain ⟨ws1, B, hBs, hr1, hin1, hsh1, htg⟩ := tile_below (b := fv.block) (dst := d)
+    (z' := mc) (Dst := Dst) H hT hid hpA hpv hP fs1 ns _ (lastArg gv) M2 hsc1 hgc
+    (by simpa using hlen) (fun u hu v hv => hgid u (by simp [hu]) v hv) hzip1 (hcr2.trans hmv2)
+    hcA2 hR2
+  have he : (encode (auxTy tabs sv1.aux) xv1).size = (auxTy tabs sv1.aux).size :=
+    Sem.encode_size _ _
+  have hle' : q'.auxInt.toInt.toNat + (auxTy tabs sv1.aux).size ≤ fv.auxInt.toInt.toNat := by
+    omega
+  obtain ⟨ws, hws⟩ : ∃ ws, ws = ws1 ++ [(q'.auxInt.toInt.toNat, encode (auxTy tabs sv1.aux) xv1)] :=
+    ⟨_, rfl⟩
+  have hW : M1.read P fv.auxInt.toInt.toNat = some (putAll B ws) := by
+    rw [hws, putAll_snoc]
+    exact read_write_putBytes hr1 hw1 (by rw [he]; exact hle')
+  have hin : ∀ w ∈ ws, w.1 + w.2.size ≤ fv.auxInt.toInt.toNat := by
+    intro w hw'
+    rw [hws] at hw'
+    rcases List.mem_append.1 hw' with hw' | hw'
+    · exact hin1 w hw'
+    · simp only [List.mem_singleton] at hw'; subst hw'
+      show q'.auxInt.toInt.toNat + (encode (auxTy tabs sv1.aux) xv1).size ≤ _
+      rw [he]; exact hle'
+  rw [hW] at hR'; cases hR'
+  -- the stores' bytes tile the `n` bytes
+  have hsh : ws.map (fun w => (w.1, w.2.size)) = storeShapes tabs g (x :: ns).reverse := by
+    rw [hws, List.map_append, hsh1, List.reverse_cons]
+    unfold storeShapes
+    rw [List.filterMap_append]
+    simp only [List.filterMap_cons, List.filterMap_nil, hgv, hq', Option.bind_some,
+      Option.map_some, List.map_cons, List.map_nil, he, haux]
+  have ht : Tiles 0 fv.auxInt.toInt.toNat ws := tilesB_tiles (by rw [hsh]; exact htile)
+  -- the target's stores over `Mm`: the `Move`'s write overwritten by the stores' bytes
+  obtain ⟨T, hWs, hT⟩ := writes_putBytes ws hMs fun w hw' => by rw [hRs]; exact hin w hw'
+  have hpe : putAll R ws = putAll B ws := by
+    have hRB : R.size = B.size := by rw [hRs, hBs]
+    refine putAll_tiles_eq ht hRB (by rw [hRs]) fun j hj => ?_
+    rw [Array.getElem?_eq_none (by omega), Array.getElem?_eq_none (by omega)]
+  rw [hpe] at hT
+  have hTm : writes Dst Mm ws = some T := writes_over_write_eq hRs hMs hWs ht
+  obtain ⟨T', hT', hMsT⟩ := (Mem.Refines.refl Mm).write hRR hMs
+  rw [hT] at hT'; cases hT'
+  -- the fresh `OffPtr`s
+  have hoffs : ∀ b ∈ x :: ns, ∀ sb, g.value? b = some sb → ∃ qv, g.value? sb.args[0]! = some qv ∧
+      qv.id = sb.args[0]! ∧ qv.op = .OffPtr ∧ qv.args = #[d] ∧
+      isPtrTy (tabs.ty qv.type) = true ∧ 0 ≤ qv.auxInt.toInt ∧
+      (Dst.add (BitVec.ofNat 64 qv.auxInt.toInt.toNat)).inWindow = true ∧
+      f.value? sb.args[0]! = none := by
+    intro b hb sb hsb
+    obtain ⟨a, hpa⟩ := zip_all_right hzip0 (by simpa using hlen) b hb
+    cases hfa' : f.value? a with
+    | none => simp only [hfa', hsb] at hpa; cases hpa
+    | some sa =>
+    simp only [hfa', hsb] at hpa
+    obtain ⟨-, -, -, -, -, -, -, -, hszp', hqf', qb, hqb, -, hqbop, hqba, hqbty, h0a,
+      hlea⟩ := moveStoreOK_spec hpa
+    have hqbm : sb.args[0]! ∈ (x :: ns).filterMap fun b => (g.value? b).map (·.args[0]!) :=
+      List.mem_filterMap.2 ⟨b, hb, by simp [hsb]⟩
+    refine ⟨qb, hqb, hgid _ (by simp [hqbm]) qb hqb, hqbop, hqba, hqbty, h0a, ?_, hqf'⟩
+    exact StructStore.inWindow_of_write hMs (by rw [hRs]; omega)
+  obtain ⟨FrA, heA, hagA, hszA, hoffA, -⟩ :=
+    eval_offs (g := g) H hdA hdv hD (x :: ns) hoffs S (fun _ _ => rfl) hsize
+  -- the fresh stores below the anchor, over `Mm`
+  rw [hws] at hTm
+  obtain ⟨W1, hW1, hwT⟩ := writes_snoc hTm
+  obtain ⟨FrC, heC, hrC, hagC, hszC, hoffC⟩ := htg Mm W1 hW1 FrA hagA hszA
+    (fun b hb => hoffA b (List.mem_cons_of_mem _ hb)) (by rw [hagA mc hmcA]; exact hmcv) hnsf
+  -- the anchor
+  obtain ⟨yq, hyq, hyqw⟩ := hoffC _ hoffA x List.mem_cons_self gv q' hgv hq' hq'op
+  have hga : gv.args = #[gv.args[0]!, sv1.args[1]!, lastArg gv] := by
+    rw [lastArg_three hta, ← hval]; exact CSE.Mem.args_three hta
+  have hev := store_eval (env := env) (ctx := Ctx.make tabs g) htop hga hyq hyqw
+    (by rw [hagC _ hA1]; exact hxv1) hrC
+    (by rw [show (Ctx.make tabs g).tabs = tabs from rfl, haux]; exact hwT)
+  rw [hgid x (by simp) gv hgv, Proof.tys_of_value hgv, Option.getD_some] at hev
+  have hxlt : x < FrC.regs.size := Nat.lt_of_lt_of_le (CheckFacts.lt_of_value? hgv) hszC
+  refine ⟨FrC.set x ((Val.mem T).retype (tabs.ty gv.type)), ?_, fun _ => ⟨_, _, hyx,
+    Proof.Frame.set_regs_self hxlt, ?_⟩⟩
+  · rw [List.append_assoc, Proof.evalAll_append, heA]
+    dsimp only
+    rw [Proof.evalAll_append, heC]
+    dsimp only
+    rw [Proof.evalAll_cons]
+    simp only [Proof.stepV, show (Ctx.make tabs g).f = g from rfl, hgv, hev]
+    rfl
+  · rw [hid x fv hxA hfv, Proof.tys_of_value hfv, Option.getD_some, ← hty]
+    exact retype_mono _ (.mem hMsT)
 /-! ## Non-vacuity: a `Move` of a store over a zeroed temporary
 
 `f`: `v4 = Zero [16] v3 v1` (`v3 = OffPtr [16] SP`), `v7 = Store {int64} (OffPtr [8] v3) v6 v4`,
@@ -1120,6 +1527,29 @@ private def zf : Func :=
 theorem zeroSeg_witness :
     zeroSeg? tabs zf (mv 8 .Move 2 16 (some 2) #[2, 3, 5]) (mv 8 .Zero 2 16 (some 2) #[2, 5]) =
       some ([], []) := by
+  decide +kernel
+
+/-- A tile segment (`generic.rules:1871`): `v9 = Move [16] SP v3 v8` from the temporary `v3`
+whose 16 bytes the stores `v6` (at `OffPtr [0] v3`) and `v8` (at `OffPtr [8] v3`) wrote; in `g`
+`v9 = Store (OffPtr [8] SP) v5 v11` over the fresh `v11 = Store (OffPtr [0] SP) v5 v8`. Nothing
+is dropped; `[v10, v12, v11]` are fresh. -/
+private def tf : Func :=
+  { (default : Func) with
+    valueTab := #[none, some (mv 1 .InitMem 2 0 none #[]), some (mv 2 .SP 1 0 none #[]),
+      some (mv 3 .OffPtr 1 16 none #[2]), some (mv 4 .OffPtr 1 0 none #[3]),
+      some (mv 5 .Const64 0 0 none #[]), some (mv 6 .Store 2 0 (some 2) #[4, 5, 1]),
+      some (mv 7 .OffPtr 1 8 none #[3]), some (mv 8 .Store 2 0 (some 2) #[7, 5, 6]),
+      some (mv 9 .Move 2 16 (some 2) #[2, 3, 8])] }
+
+private def tg : Func :=
+  { tf with
+    valueTab := (tf.valueTab.set! 9 (some (mv 9 .Store 2 0 (some 2) #[10, 5, 11]))) ++
+      #[some (mv 10 .OffPtr 1 8 none #[2]), some (mv 11 .Store 2 0 (some 2) #[12, 5, 8]),
+        some (mv 12 .OffPtr 1 0 none #[2])] }
+
+theorem tileSeg_witness :
+    tileSeg? tabs tf tg 9 (mv 9 .Move 2 16 (some 2) #[2, 3, 8])
+      (mv 9 .Store 2 0 (some 2) #[10, 5, 11]) = some ([], [10, 12, 11]) := by
   decide +kernel
 
 end Witness

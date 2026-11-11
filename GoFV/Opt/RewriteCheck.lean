@@ -3236,6 +3236,43 @@ def zeroSeg? (tabs : Tables) (f : Func) (fv gv : Value) : Option (List ID × Lis
     | none => none
   | _, _ => none
 
+/-- `(offset, size)` pieces tile `[lo, n)`: consecutive, non-empty, in increasing order. -/
+def tilesB : Nat → Nat → List (Nat × Nat) → Bool
+  | lo, n, [] => lo == n
+  | lo, n, (o, s) :: ws => o == lo && decide (0 < s) && tilesB (lo + s) n ws
+
+/-- The `(offset, size)` of the `Store`s `gs` of `g`: their `OffPtr`'s auxint, their type's
+size. -/
+def storeShapes (tabs : Tables) (g : Func) (gs : List ID) : List (Nat × Nat) :=
+  gs.filterMap fun b => (g.value? b).bind fun sb =>
+    (g.value? sb.args[0]!).map fun q => (q.auxInt.toInt.toNat, (Sem.auxTy tabs sb.aux).size)
+
+/-- A tile segment at the `Move` `x` (`generic.rules:1871`, `:1887`, `:1908`, `:1925`; `f`'s
+`fv`, `g`'s `gv`): in `f` `Move [n] dst p mem` whose memory is, up to copies (`mc`), (a `VarDef`
+of) `k ≥ 1` `Store`s (`storesC`: through copies) at pointers `o` bytes past `p` that tile `[0, n)`
+bottom first (`tilesB` of the target's stores), in `g` the same `Store`s (`moveStoreOK`) at fresh
+`OffPtr`s of `dst`, the anchor the first, the last over `mc`: the `Move` copies exactly the
+stores' bytes. Nothing is dropped; the fresh values in dependency order: the `OffPtr`s, the
+stores below the anchor bottom first. -/
+def tileSeg? (tabs : Tables) (f g : Func) (x : ID) (fv gv : Value) : Option (List ID × List ID) :=
+  match fv.op, fv.args.toList with
+  | .Move, [d, p, m] =>
+    let mc := copyEnd tabs f.valueTab f.valueTab.size m
+    let (ns, m0) := freshChain f g 5 (lastArg gv)
+    match storesC tabs f (ns.length + 1) (underVarDef f mc) with
+    | some (fs, _) =>
+      let n := fv.auxInt
+      let gs := x :: ns
+      if gv.op == .Store && m0 == mc && decide (0 ≤ n.toInt) &&
+          (fs.zip gs).all (fun (a, b) => match f.value? a, g.value? b with
+            | some sa, some sb => moveStoreOK tabs f g p d n fv.block sa sb
+            | _, _ => false) &&
+          tilesB 0 n.toInt.toNat (storeShapes tabs g gs.reverse) then
+        some ([], (gs.filterMap fun b => (g.value? b).map (·.args[0]!)) ++ ns.reverse)
+      else none
+    | none => none
+  | _, _ => none
+
 /-- `a` is an argument of `s` in `f`, or an argument of one of its arguments, … (`k` levels),
 through values that are no `Phi`s. -/
 def argReach (f : Func) : Nat → ID → ID → Bool
@@ -3243,8 +3280,8 @@ def argReach (f : Func) : Nat → ID → ID → Bool
   | k + 1, s, a => (f.value? s).any fun sv => sv.op != .Phi &&
       (sv.args.contains a || sv.args.any fun b => argReach f k b a)
 
-/-- Value `x` of `f` is a segment's anchor in `g` (`chainSeg?`, `callSeg?`, `zeroSeg?`, `roSeg?`
-or `moveSeg?`): listed in its block, a `Store`, `SelectN` or `Move` redefined in place (its ID, block
+/-- Value `x` of `f` is a segment's anchor in `g` (`chainSeg?`, `callSeg?`, `zeroSeg?`, `roSeg?`,
+`moveSeg?` or `tileSeg?`): listed in its block, a `Store`, `SelectN` or `Move` redefined in place (its ID, block
 and type kept); its dropped values are listed in that block, its fresh values in that block of
 `g`; the anchor is a root of `g`, and so is each fresh value but `OffPtr`s of arguments of roots
 of `f` of the segment (a dropped root, or the anchor); each argument of the fresh values and of
@@ -3257,9 +3294,9 @@ def segOK (tabs : Tables) (f g : Func) (x : ID) : Option (List ID × List ID) :=
     if !ssSame fv gv && gv.id == x && gv.block == fv.block && gv.type == fv.type &&
         (fv.op == .Store || fv.op == .SelectN || fv.op == .Move) && f.blocks.contains fv.block &&
         listed x then
-      match ((((chainSeg? tabs f g x fv gv).orElse fun _ => callSeg? tabs f g fv gv).orElse
+      match (((((chainSeg? tabs f g x fv gv).orElse fun _ => callSeg? tabs f g fv gv).orElse
           fun _ => zeroSeg? tabs f fv gv).orElse fun _ => roSeg? tabs f fv gv).orElse
-          fun _ => moveSeg? tabs f g x fv gv with
+          fun _ => moveSeg? tabs f g x fv gv).orElse fun _ => tileSeg? tabs f g x fv gv with
       | some (D, N) =>
         let L := N ++ [x]
         let ext (a : ID) : Bool := !D.contains a && !L.contains a &&
