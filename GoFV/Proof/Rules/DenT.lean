@@ -151,6 +151,12 @@ def numElem1Vars : Expr → List Nat
   | .binop .eq (.method (.var x) "NumElem" [] _) (.lit _ (.int 1)) _ => [x]
   | _ => []
 
+/-- The rule variables `x` of the condition's conjuncts `x.Size() == 0` (`&&` chains). -/
+def size0Vars : Expr → List Nat
+  | .binop .land a b _ => size0Vars a ++ size0Vars b
+  | .binop .eq (.method (.var x) "Size" [] _) (.lit _ (.int 0)) _ => [x]
+  | _ => []
+
 /-- The field binds variable `x`. -/
 def _root_.GoFV.Rules.Field.bindsVar (f : GoFV.Rules.Field) (x : Nat) : Bool :=
   match f with
@@ -179,8 +185,9 @@ data symbol of the (non-empty) string aux bound to `x`, an auxint `int64(len(x))
 such node); a conjunct `x == ""` of the condition holds of the string aux bound to `x`; a
 conjunct `isSamePtr(x, y)` of leaves `x`, `y` holds of their values (the validator: the same
 value); a conjunct `x.NumElem() == 1` makes the type `x` a one-element array, whose shape
-(`Sem.tyOf`) is an aggregate of one field at offset 0 that fills it; and the positions of
-`sameLeaves r` hold the same value. -/
+(`Sem.tyOf`) is an aggregate of one field at offset 0 that fills it; a conjunct `x.Size() == 0`
+makes the type `x` of size 0, whose shape (`Sem.tyOf` of a zero-size struct or array) is
+`.empty`; and the positions of `sameLeaves r` hold the same value. -/
 def FrameOK (tabs : Tables) (e : PEnv) (ev : Expr → DV) (or : Oracle) (r : Rule) : Prop :=
   (∀ n ∈ r.result.nodes,
     (∀ xe x, n.aux = some xe → strDataVar? xe = some x →
@@ -198,6 +205,7 @@ def FrameOK (tabs : Tables) (e : PEnv) (ev : Expr → DV) (or : Oracle) (r : Rul
     ∃ p q, Pat.leafPos xy.1 [] r.pat = some p ∧ Pat.leafPos xy.2 [] r.pat = some q ∧
       e.leaf p = e.leaf q) ∧
   (∀ x ∈ (r.cond.map numElem1Vars).getD [], ∃ f, ev (.var x) = .ty (.agg [(0, f)] f.size)) ∧
+  (∀ x ∈ (r.cond.map size0Vars).getD [], ev (.var x) = .ty .empty) ∧
   ∀ pq ∈ sameLeaves r, e.leaf pq.1 = e.leaf pq.2
 
 /-- **The obligation of a value rule over table-evaluated nodes**: `Rule.Sound` with the

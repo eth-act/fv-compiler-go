@@ -540,6 +540,7 @@ theorem loadOp_hasTy {t : Ty} (h : loadShape t = true) (args : List Val) :
            | _ => first
              | simpa only [decodeLoad] using
                  decode_hasTy_scalar bs 0 (by simpa using h)
+             | exact absurd rfl ‹Ty.empty = Ty.empty → False›
              | simp [scalarTy] at h
          · rfl)
   · rfl

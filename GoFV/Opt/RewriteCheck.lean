@@ -385,11 +385,13 @@ def scalarTy : Sem.Ty → Bool
   | .int _ | .bool | .ptr _ => true
   | _ => false
 
-/-- Shapes a `Load` decodes to a value of the shape: scalars and aggregates of scalars (strings,
-slices, interfaces, complex numbers; issue #17). -/
+/-- Shapes a `Load` decodes to a value of the shape: scalars, aggregates of scalars (strings,
+slices, interfaces, complex numbers; issue #17) and the empty shape (zero-size types,
+`generic.rules:1004`). -/
 def loadShape (t : Sem.Ty) : Bool :=
   match t.asAgg with
   | .agg fs _ => fs.all (scalarTy ·.2)
+  | .empty => true
   | t => scalarTy t
 
 /-- A `Load` at a `loadShape`. -/
@@ -528,9 +530,9 @@ def frameNodeOK (tabs : Tables) (ev : GoFV.Rules.Expr → DV) (e : PEnv) (pat : 
 
 /-- The condition's conjuncts `x == ""` hold of the string aux bound to `x`, its conjuncts
 `isSamePtr(x, y)` of leaves `x`, `y` match the same value, its conjuncts
-`x.NumElem() == 1` have a type `x` of the shape of one field at offset 0 that fills it, and the
-positions `same` (`GoFV.Proof.Rules.sameLeaves`) match the same value
-(`GoFV.Proof.Rules.FrameOK`). -/
+`x.NumElem() == 1` have a type `x` of the shape of one field at offset 0 that fills it, its
+conjuncts `x.Size() == 0` a type `x` of the empty shape, and the positions `same`
+(`GoFV.Proof.Rules.sameLeaves`) match the same value (`GoFV.Proof.Rules.FrameOK`). -/
 def condFrameOK (tabs : Tables) (ev : GoFV.Rules.Expr → DV) (e : PEnv) (I : Inst) (pat : Pat)
     (cond : Option GoFV.Rules.Expr) (same : List (Path × Path)) : Bool :=
   ((cond.map emptyStrVars).getD []).all (fun x => match strOf tabs e pat x with
@@ -542,6 +544,9 @@ def condFrameOK (tabs : Tables) (ev : GoFV.Rules.Expr → DV) (e : PEnv) (I : In
     | _, _ => false) &&
   ((cond.map numElem1Vars).getD []).all (fun x => match ev (.var x) with
     | .ty (.agg [(0, f)] n) => f.size == n
+    | _ => false) &&
+  ((cond.map size0Vars).getD []).all (fun x => match ev (.var x) with
+    | .ty .empty => true
     | _ => false) &&
   same.all fun (p, q) => I.at p == I.at q
 

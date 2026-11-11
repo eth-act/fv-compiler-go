@@ -1044,6 +1044,7 @@ import GoFV.Proof.Witness.InitF10
 import GoFV.Proof.Witness.KnownBits
 import GoFV.Proof.Witness.LateLowerL
 import GoFV.Proof.Witness.LicmL
+import GoFV.Proof.Witness.LoadEmpty
 import GoFV.Proof.Witness.LoadFwd
 import GoFV.Proof.Witness.LoadSel
 import GoFV.Proof.Witness.LoadSplit
