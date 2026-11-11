@@ -561,6 +561,14 @@ GoFV.Proof.Witness.GenG66.g66_facts._native.native_decide.ax_1_1 d6774b27c1faad5
 # genG66s_witness (GoFV/Proof/Witness/GenG66s.lean, #553): `checkG66` accepts `runtime.randn` and
 # `checkG65` does not; `runLoc` runs its narrow spill; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.GenG66s.g66s_facts._native.native_decide.ax_1_1 8c5315529184c52f224e05a8cb4a47059733aa34058a62995f3f1ffa119ad8a9
+# genG66b_witness (GoFV/Proof/Witness/GenG66b.lean, #553): `checkG66` accepts `u32rand` of
+# test/ken_divconst and `checkG65` does not; `elide66b` finds the elided `MOVWUreg v4` of the
+# `MOVWU` reload `v16`, and G35's table before v4 is exactly `[(R1, 32, unsigned)]`; compiled
+# evaluation, as plF_pipeline. G66b changed `ldEntry35` (G35's table takes a narrow reload's
+# entry, `reloadEntry35`), which every check reaching G35's table runs, so it moved the pins of
+# the GenG35+ witnesses and of the Obj* witnesses whose facts run a slice check from G35 on
+# (re-taken from the audit; no statement changed).
+GoFV.Proof.Witness.GenG66b.g66b_facts._native.native_decide.ax_1_1 0000000000000000000000000000000000000000000000000000000000000000
 # objSbfiz_witness (GoFV/Proof/Witness/ObjSbfiz.lean, #553): `checkObj` accepts
 # runtime.(*stkframe).argBytes with its SBFIZ, the word decodes to SBFM, progStep of the Prog from
 # R0 = 0x80000001 gives 0xfffffffc00000008; compiled evaluation, as barrier_facts. SBFIZ in
