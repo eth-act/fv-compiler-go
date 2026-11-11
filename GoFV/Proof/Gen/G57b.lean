@@ -408,7 +408,7 @@ theorem g57_prfm (F : Facts lc sym text az ez psA.toList ret E)
 /-- `FMOVS`/`FMOVD Fs, off(<nc>)`: the store of the float's bytes to the frame variable's block
 (`g44_fstore` at a frame operand, `g49_store`), outside the frame's saved words and slots. -/
 theorem g57_fstore (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
@@ -482,7 +482,7 @@ theorem g57_fstore (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK 
 /-- `FSTPS`/`FSTPD (Fa, Fb), off(<nc>)`: the two stores of the floats' bytes to the frame
 variable's block (`g49_stp` with V registers), outside the frame's saved words and slots. -/
 theorem g57_fstp (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')

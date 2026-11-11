@@ -263,7 +263,7 @@ theorem g6_load (F : Facts lc sym text az ez psA.toList ret E)
 /-- A store of `n` bytes to a frame variable at `off(RSP)`, outside the frame's saved words and
 slots; it writes no X register (`XW`). -/
 theorem g6_store (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
@@ -411,7 +411,7 @@ theorem g6_ldp (F : Facts lc sym text az ez psA.toList ret E)
 /-- `STP (Rx, Ry), off(RSP)`: the 8 bytes of `Rx` at a frame variable's offset, those of `Ry` 8
 bytes above, outside the frame's saved words and slots. -/
 theorem g6_stp (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')

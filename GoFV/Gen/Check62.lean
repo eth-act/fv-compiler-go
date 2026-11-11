@@ -17,7 +17,7 @@ stored the argument. Genssa emits no code for it (`cmd/compile/internal/ssagen/s
 `checkG62 lc ps bstart g` is slice G61 (`GoFV/Gen/Check61.lean`, on P0') with, in a function with
 an arm64 op, such an `Arg` (`vkind62a`), tried when G61 rejects a value: no temporary, no argument,
 the aux `x` an input parameter that the ABI assigns to the stack, the value of a 64-bit class
-(G2's spill slots hold 8 bytes, `checkFrame`'s `slotOK`), homed in the slot `argKey x type off`
+(an 8-byte slot; a narrow one is slice G66's `argKind66`), homed in the slot `argKey x type off`
 with a `NAME_PARAM` operand; no code. `homeOK10` accepts the slot home of an `Arg` (every slice
 before G62 rejects the `Arg` itself). `GoFV/Proof/Gen/G62.lean` proves what an accepted function
 satisfies, given the argument in the machine's slot when the `Arg` runs (`ArgOK`: the caller's

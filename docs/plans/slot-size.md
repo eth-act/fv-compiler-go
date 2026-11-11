@@ -1,9 +1,14 @@
 # Design review: spill slots of another size (genssa, #553)
 
-Status: design review, nothing implemented (issue #553; class ranked in #553 comment 6790861163,
-where it was marked out of scope as needing the blob-register design of `blob-regs.md`, #689).
-Phase 3: `docs/plans/proofs3.md`, `docs/plans/semantics3.md`. Probe branch
-`agent/slot-size-probe` (81fcb100 on main a6c37a47, not for merge).
+Status: **P3 approved** (integrator on #553, 2026-11-11: `StkAt` per slot size, with the lemma
+`StkAt_eq_of_slots8` and a STATUS line on each contract row and on `G3Inv`). Slice G66a (the
+narrow spills and reloads, `FMOVS`, narrow stack arguments; `checkFrame`/`StkAt` per slot size)
+is implemented (`GoFV/Gen/Check66.lean`, `GoFV/Proof/Gen/G66a.lean`, `G66.lean`; STATUS slice
+G66); G66b (the elided extensions and the reloads' upper-bit entries) and the lift follow. The
+class was ranked in #553 comment 6790861163, where it was marked out of scope as needing the
+blob-register design of `blob-regs.md`, #689. Phase 3: `docs/plans/proofs3.md`,
+`docs/plans/semantics3.md`. Probe branch `agent/slot-size-probe` (81fcb100 on main a6c37a47, not
+for merge).
 
 ## 0. Summary
 

@@ -378,7 +378,7 @@ theorem g3_load (F : Facts lc sym text az ez psA.toList ret E)
 /-- A store of `n` bytes, through a 64-bit register (`off(Rn)`) or to a global (`sym+off(SB)`);
 it writes no X register (`XW`). -/
 theorem g3_store (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8)
     (hglob : ∀ y name abi, g.syms[y]? = some (name, abi) →
       E.ι (.global name.toStringLossy) = some (sym y))
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)

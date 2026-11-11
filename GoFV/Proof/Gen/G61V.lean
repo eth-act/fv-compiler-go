@@ -291,7 +291,7 @@ of the new memory says and not in the frame, the flags only if the op clobbers t
 the next value's PC: `runLoc`'s clobbers, `y` in `r` and the new memory are related to it, with
 the invariants. -/
 theorem atom_finish (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     {r kd : Nat} (hkd : kd < 32) (hrk : objOf? r = some (REG_R0 + kd)) (hd : destOK r = true)
     (hrz : r ≠ zeroReg) {y : Val} {c : Nat} (hfy : Fits c y)

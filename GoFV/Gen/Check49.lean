@@ -27,7 +27,7 @@ variables' places as a premise of the activation (`VarsAt49`), which the machine
 `Ctx.locals`; a `NAME_AUTO` window lies inside the locals, a `NAME_PARAM` window inside the
 function's argument area (`argEnd`: the end of its ABI's spill area, without the fixed frame
 word); windows of one operand class are pairwise disjoint and away from the home slots of that
-class (8 bytes each).
+class (each of its slot's size).
 
 `checkG49 lc ps bstart g` is slice G51 (`GoFV/Gen/Check51.lean`, which G49 follows: G48 is
 reserved) with these values (tried when G51 rejects a value) and this frame check.
@@ -143,7 +143,8 @@ def checkVars49 (lc : LocCtx) (g : G2In) : Except String Unit := do
     throw "frame variable outside the locals or the argument area"
   unless (ws.zipIdx).all fun (w, i) => (ws.zipIdx).all fun (w', i') => i == i' || winApart49 w w' do
     throw "two frame variables overlap"
-  let slots := (homeSlots lc).filterMap fun k => (g.slotOp k).map fun (nc, o) => (nc, o, o + 8)
+  let slots := (homeSlots lc).filterMap fun k =>
+    (g.slotOp k).map fun (nc, o) => (nc, o, o + (lc.slotTy k).size)
   unless ws.all fun w => slots.all (winApart49 w) do
     throw "frame variable over a spill slot"
 

@@ -18,8 +18,8 @@ The activation (`G2Env`): G1's premises, but with a frame (`framed` when the fun
 globals at their linked symbol addresses under `ι`, the callees' symbols outside the Prog list,
 each spill slot at its frame operand (`frameOff`), and the frame layout `FrameOK`. The invariant
 (`G2Inv`): G1's register classes and distinct block keys, the live blocks away from the saved
-`LR`/`FP` words and the spill slots (`CoreInv … (StkAt E)`), and every live slot a 64-bit value of a
-home slot.
+`LR`/`FP` words and the spill slots (`CoreInv … (StkAt E)`), and every live slot a value of its
+slot's class (`slotCls`, 64 at every 8-byte slot) of a home slot.
 
 A call runs the callee through the runtime hook `H.call`. Its behaviour is the trusted callee
 contract of semantics3 §6 (the hook lifts the callee's Phase 1 contract through the ABI), assumed
@@ -59,9 +59,13 @@ structure G2Env (lc : LocCtx) (g : G2In) (L : Link) (ps : Array Prog) (ret : Bit
   extra : 0 ≤ L.extrasize
   frame : FrameOK E
 
-/-- Every live slot holds a 64-bit value and is the home of a value. -/
+/-- The class of the values spill slot `k` holds: its shape's (`cls`), 64 for a shape of no class
+(and at every 8-byte shape: `.int .w64`, `.ptr`). -/
+def slotCls (lc : LocCtx) (k : SlotKey) : Nat := (cls (lc.slotTy k)).getD 64
+
+/-- Every live slot holds a value of its class (`slotCls`) and is the home of a value. -/
 abbrev SlotInv (lc : LocCtx) (s : LocState) : Prop :=
-  ∀ k v, s.slots.lookup k = some v → Fits 64 v ∧ ∃ i, lc.home i = some (.slot k)
+  ∀ k v, s.slots.lookup k = some v → Fits (slotCls lc k) v ∧ ∃ i, lc.home i = some (.slot k)
 
 /-- The invariant of G2's `runLoc` states. -/
 structure G2Inv (E : MatchEnv) (lc : LocCtx) (s : LocState) : Prop where
@@ -689,37 +693,49 @@ end Machine
 
 /-! ## Frame facts from `checkFrame` -/
 
-/-- Two distinct home slots lie 8 bytes apart. -/
+/-- A slot `slotOK` accepts: 1, 2, 4 or 8 bytes, at a frame operand of the locals (its window
+below 0) or of the parameters (at a non-negative offset). -/
+theorem slotOK_spec {lc : LocCtx} {g : G2In} {k : SlotKey} (h : slotOK lc g k = true) :
+    ((lc.slotTy k).size = 1 ∨ (lc.slotTy k).size = 2 ∨ (lc.slotTy k).size = 4 ∨
+      (lc.slotTy k).size = 8) ∧
+    ∃ nc off, g.slotOp k = some (nc, off) ∧
+      ((nc = .AUTO ∧ off + ((lc.slotTy k).size : Int) ≤ 0) ∨ (nc = .PARAM ∧ 0 ≤ off)) := by
+  unfold slotOK at h
+  cases hs : g.slotOp k with
+  | none => simp [hs] at h
+  | some p =>
+    obtain ⟨nc, off⟩ := p
+    simp only [hs, Bool.and_eq_true, beq_iff_eq, Bool.or_eq_true] at h
+    refine ⟨by have := h.1.2; omega, nc, off, rfl, ?_⟩
+    cases nc <;> simp_all
+
+/-- Two distinct home slots lie apart by their sizes. -/
 theorem slot_apart {lc : LocCtx} {g : G2In} {L : Link} {E : MatchEnv}
     (hcf : checkFrame lc g = .ok ())
     (hslot : ∀ k ∈ homeSlots lc, ∀ nc off, g.slotOp k = some (nc, off) →
       E.slot k = some (frameOff L nc off))
     (hext : 0 ≤ L.extrasize) {k k' : SlotKey} (hk : k ∈ homeSlots lc) (hk' : k' ∈ homeSlots lc)
     (hne : k ≠ k') {o o' : Int} (ho : E.slot k = some o) (ho' : E.slot k' = some o') :
-    o + 8 ≤ o' ∨ o' + 8 ≤ o := by
-  obtain ⟨hok, hdis⟩ := checkFrame_spec hcf
-  have h1 := hok k hk
-  have h2 := hok k' hk'
-  have hd := hdis k hk k' hk' hne
-  obtain ⟨⟨nc, off⟩, hs⟩ : ∃ p, g.slotOp k = some p := by
-    cases h : g.slotOp k with
-    | none => simp [slotOK, h] at h1
-    | some p => exact ⟨p, rfl⟩
-  obtain ⟨⟨nc', off'⟩, hs'⟩ : ∃ p, g.slotOp k' = some p := by
-    cases h : g.slotOp k' with
-    | none => simp [slotOK, h] at h2
-    | some p => exact ⟨p, rfl⟩
+    o + (lc.slotTy k).size ≤ o' ∨ o' + (lc.slotTy k').size ≤ o := by
+  obtain ⟨hok, -, hap, -⟩ := checkFrame_full hcf
+  obtain ⟨-, nc, off, hs, h1⟩ := slotOK_spec (hok k hk)
+  obtain ⟨-, nc', off', hs', h2⟩ := slotOK_spec (hok k' hk')
+  have hd := hap k hk k' hk' hne
   rw [hslot k hk nc off hs] at ho
   rw [hslot k' hk' nc' off' hs'] at ho'
   cases ho; cases ho'
+  unfold slotsApart at hd
   rw [hs, hs'] at hd
-  simp only [slotOK, hs, hs', Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h1 h2
-  cases nc <;> cases nc' <;> simp_all [frameOff] <;> omega
+  simp only [Bool.or_eq_true, bne_iff_ne, ne_eq, decide_eq_true_eq] at hd
+  rcases h1 with ⟨rfl, h1⟩ | ⟨rfl, h1⟩ <;> rcases h2 with ⟨rfl, h2⟩ | ⟨rfl, h2⟩ <;>
+    simp only [frameOff, not_true_eq_false, reduceCtorEq, not_false_eq_true, true_or,
+      false_or] at hd ⊢ <;> omega
 
 /-- `StkAt`: the window of a spill slot is in it, the window of another home slot is not. -/
 theorem slot_windows_apart {E : MatchEnv} (hF : FrameOK E) {k k' : SlotKey} {o o' : Int}
-    (ho : E.slot k = some o) (ho' : E.slot k' = some o') (hap : o + 8 ≤ o' ∨ o' + 8 ≤ o)
-    {j j' : Nat} (hj : j < 8) (hj' : j' < 8) :
+    {n n' : Nat} (ho : E.slot k = some o) (ho' : E.slot k' = some o')
+    (hap : o + n ≤ o' ∨ o' + n' ≤ o)
+    {j j' : Nat} (hj : j < 8) (hj' : j' < 8) (hjn : j < n) (hjn' : j' < n') :
     E.sp + BitVec.ofInt 64 o' + BitVec.ofNat 64 j' ≠ E.sp + BitVec.ofInt 64 o + BitVec.ofNat 64 j := by
   obtain ⟨h8, hhi⟩ := hF.slot k o ho
   obtain ⟨h8', hhi'⟩ := hF.slot k' o' ho'
@@ -728,20 +744,46 @@ theorem slot_windows_apart {E : MatchEnv} (hF : FrameOK E) {k k' : SlotKey} {o o
   rw [win_toNat (by omega) hhi' hj', win_toNat (by omega) hhi hj] at this
   omega
 
-/-- A home slot that `checkFrame` accepted: 8 bytes at its `runLoc` shape, a frame operand of
-the locals or the parameters. -/
+/-- A home slot that `checkFrame` accepted, homing value `i`: at most 8 bytes, the size and the
+class of `i`'s shape, a frame operand of the locals or the parameters. -/
+theorem home_slot_gen {lc : LocCtx} {g : G2In} (hcf : checkFrame lc g = .ok ()) {i : Nat}
+    {k : SlotKey} (hh : lc.home i = some (.slot k)) :
+    (lc.slotTy k).size ≤ 8 ∧ (lc.slotTy k).size = (lc.ty i).size ∧
+      cls (lc.slotTy k) = cls (lc.ty i) ∧
+      ∃ nc off, g.slotOp k = some (nc, off) ∧ (nc = .AUTO ∨ nc = .PARAM) := by
+  obtain ⟨hok, -, -, hfit⟩ := checkFrame_full hcf
+  obtain ⟨hn, nc, off, hs, hnc⟩ := slotOK_spec (hok k (mem_homeSlots hh))
+  have hi : i < lc.homes.size := by
+    refine Nat.lt_of_not_le fun hn => ?_
+    simp [LocCtx.home, getElem?_neg lc.homes i (Nat.not_lt_of_le hn)] at hh
+  have hf := hfit i hi
+  unfold homeFits at hf
+  rw [slotHome?_eq.mpr hh] at hf
+  simp only [Bool.and_eq_true, beq_iff_eq] at hf
+  refine ⟨by omega, hf.2.symm, hf.1.symm, nc, off, hs, ?_⟩
+  rcases hnc with ⟨rfl, -⟩ | ⟨rfl, -⟩ <;> simp
+
+/-- A shape of class 64 has 8 bytes. -/
+theorem size_of_cls64 {t : Ty} (h : cls t = some 64) : t.size = 8 := by
+  cases t with
+  | int w => cases w <;> simp_all [GoFV.Gen.Check.cls, Ty.size, Width.bytes, Width.bits]
+  | ptr _ => rfl
+  | _ => simp [GoFV.Gen.Check.cls] at h
+
+/-- A home slot that `checkFrame` accepted, homing a value of class 64: 8 bytes at its `runLoc`
+shape (and of class 64), a frame operand of the locals or the parameters. -/
 theorem home_slot {lc : LocCtx} {g : G2In} (hcf : checkFrame lc g = .ok ()) {i : Nat} {k : SlotKey}
-    (hh : lc.home i = some (.slot k)) :
+    (hh : lc.home i = some (.slot k)) (hc : cls (lc.ty i) = some 64) :
     (lc.slotTy k).size = 8 ∧ ∃ nc off, g.slotOp k = some (nc, off) ∧ (nc = .AUTO ∨ nc = .PARAM) := by
-  have h := (checkFrame_spec hcf).1 k (mem_homeSlots hh)
-  unfold slotOK at h
-  cases hs : g.slotOp k with
-  | none => simp [hs] at h
-  | some p =>
-    obtain ⟨nc, off⟩ := p
-    simp only [hs, Bool.and_eq_true, beq_iff_eq] at h
-    refine ⟨h.1.2, nc, off, rfl, ?_⟩
-    cases nc <;> simp_all
+  obtain ⟨-, hsz, -, h⟩ := home_slot_gen hcf hh
+  exact ⟨hsz.trans (size_of_cls64 hc), h⟩
+
+/-- The class of a home slot is its homed value's. -/
+theorem slotCls_home {lc : LocCtx} {g : G2In} (hcf : checkFrame lc g = .ok ()) {i : Nat}
+    {k : SlotKey} (hh : lc.home i = some (.slot k)) {c : Nat} (hc : cls (lc.ty i) = some c) :
+    slotCls lc k = c := by
+  obtain ⟨-, -, hcl, -⟩ := home_slot_gen hcf hh
+  simp [slotCls, hcl, hc]
 
 /-- G2's class map follows itself across a call whose result registers hold their results'
 classes (`resultReg`). -/
@@ -784,13 +826,13 @@ theorem callTy_split {n : Nat} {ts : List Ty} (h : callTy n (.tuple ts) = true) 
   obtain ⟨ys, rfl⟩ := List.getLast?_eq_some_iff.1 ht
   refine ⟨ys, rfl, by simpa using hlen, fun t h => hall t (by simpa using h)⟩
 
-/-- The slots `SlotInv` allows have 8-byte shapes. -/
+/-- The slots `SlotInv` allows have shapes of at most 8 bytes. -/
 theorem slot_sizes {E : MatchEnv} {lc : LocCtx} {g : G2In} {s : LocState} (hlc : E.lc = lc)
     (hcf : checkFrame lc g = .ok ()) (hsi : SlotInv lc s) :
-    ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8 := by
+    ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8 := by
   intro k v hk
   obtain ⟨-, i, hh⟩ := hsi k v hk
-  rw [hlc]; exact (home_slot hcf hh).1
+  rw [hlc]; exact (home_slot_gen hcf hh).1
 
 /-- The frame of a memory that agrees on the saved `LR`/`FP` words. -/
 theorem frameRel_mem {E : MatchEnv} {m : MState} {M : Memory} (hF : FrameOK E) (h : FrameRel E m)
@@ -815,7 +857,7 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
 /-- A value of slice G1, in a framed activation with slots (and what it does to the X
 registers, `XW`). -/
 theorem g2_g1 (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     {kd : VKind}
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
@@ -857,7 +899,7 @@ theorem g2_reload (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
   rw [read_slot hl hah] at hx
   cases hx
   rw [write_reg hvh hcv]
-  obtain ⟨h8, nc', off', hso', hnc⟩ := home_slot hcf hah
+  obtain ⟨h8, nc', off', hso', hnc⟩ := home_slot hcf hah hca
   rw [hso] at hso'
   cases hso'
   have hsl := hslot k (mem_homeSlots hah) nc off hso
@@ -876,7 +918,8 @@ theorem g2_reload (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
       unfold SlotRel at hsr
       rw [hlc, h8] at hsr
       rw [hsp]
-      exact valRel_retypeL hA hca (hsi k v0 hk).1 hsr
+      have hfk : Fits 64 v0 := by rw [← slotCls_home hcf hah hca]; exact (hsi k v0 hk).1
+      exact valRel_retypeL hA hca hfk hsr
   refine (op_reg2W (H := H) F hm hinv hj hj' hvs hd hkd hor
     (valRel_retypeL hA hcv (fits_retypeL hca _) hrel) (fits_retypeL hcv _)
     (knext_set hK (by rw [hop]; nofun) hvh hcv)
@@ -965,7 +1008,7 @@ theorem g2_spill (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
   rw [hx] at hx'
   cases hx'
   rw [write_slot hh]
-  obtain ⟨h8, nc', off', hso', hnc⟩ := home_slot hcf hh
+  obtain ⟨h8, nc', off', hso', hnc⟩ := home_slot hcf hh hcv
   rw [hso] at hso'
   cases hso'
   have hsl := hslot k (mem_homeSlots hh) nc off hso
@@ -1012,13 +1055,14 @@ theorem g2_spill (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
         have hap := slot_apart hcf hslot hext (mem_homeSlots hh) (mem_homeSlots hi') (Ne.symm hne)
           hsl ho'
         unfold SlotRel at hsr ⊢
-        have h8' : (E.lc.slotTy k').size = 8 := slot_sizes hlc hcf hsi k' v' hold
-        rw [h8'] at hsr ⊢
-        rw [readMem_congr 8 (E.sp + BitVec.ofInt 64 o')
-          (fun j hj => hMout _ (fun j' hj' => slot_windows_apart hF hsl ho' hap hj' hj))]
+        rw [hlc] at hsr ⊢
+        have h8' : (lc.slotTy k').size ≤ 8 := hlc ▸ slot_sizes hlc hcf hsi k' v' hold
+        rw [readMem_congr _ (E.sp + BitVec.ofInt 64 o')
+          (fun j hj => hMout _ (fun j' hj' => slot_windows_apart hF hsl ho' hap hj' (by omega)
+            (by rw [h8]; exact hj') hj))]
         exact hsr
     · exact memInj_of_sepW hMI hsep.sepW fun y hy =>
-        hMout y fun j hj he => hy (he ▸ stk_slot hF hsl hj)
+        hMout y fun j hj he => hy (he ▸ stk_slot hF hsl hj (by rw [hlc, h8]; exact hj))
     · refine frameRel_mem hF hm.frame (fun _ j hj => ⟨hMout _ (fun j' hj' he => ?_),
         hMout _ (fun j' hj' he => ?_)⟩)
       · have := congrArg BitVec.toNat he
@@ -1031,7 +1075,7 @@ theorem g2_spill (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
   · refine ⟨CoreInv.mono ⟨hinv.regs, hinv.mem⟩
       (knext_same hK (Or.inr fun r _ => by rw [hh]; nofun)), fun k' v' hk' => ?_, .inl rfl⟩
     rcases lookup_setSlot hk' with ⟨rfl, rfl⟩ | ⟨-, hold⟩
-    · exact ⟨fits_retypeL hcv _, v.id, hh⟩
+    · exact ⟨by rw [slotCls_home hcf hh hcv]; exact fits_retypeL hcv _, v.id, hh⟩
     · exact hsi k' v' hold
 
 /-- A read of a call's tuple: the components of a `callTy` tuple read from the call's home. -/

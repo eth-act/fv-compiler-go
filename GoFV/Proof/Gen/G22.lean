@@ -204,7 +204,7 @@ theorem g22_ldp (F : Facts lc sym text az ez psA.toList ret E)
 /-- `STP (Rx, Ry), sym+off(SB)` of two 64-bit registers: the two 8-byte stores into the global's
 block, at its injected address. -/
 theorem g22_stp (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8)
     (hglob : ∀ y name abi, g.syms[y]? = some (name, abi) →
       E.ι (.global name.toStringLossy) = some (sym y))
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)

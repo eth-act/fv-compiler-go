@@ -72,19 +72,20 @@ theorem uStep35_arg {lc : LocCtx} {L : List (Nat × Nat × Bool)} {v : Value}
     uStep31_other hk31,
     uStepL_other hue (by rw [hop]; nofun) (by rw [hop]; nofun)]
 
-/-- **An incoming stack argument** (`VK62.arg`): no code; under `ArgOK` the slot of its piece
-holds it in the machine, so the match and the invariants hold after it at either mode `osp`. -/
+/-- **An incoming stack argument** (`VK62.arg`, G66's narrow ones): no code; under `ArgOK` the slot
+of its piece holds it in the machine, so the match and the invariants hold after it at either
+mode `osp`. -/
 theorem g62_arg {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat → BitVec 64}
     {text : BitVec 64} {az ez : Int} {ps : Array Prog} {ret : BitVec 64} {tab : PcTab}
     {E : MatchEnv} {bid : ID} {i j j' : Nat} {v : Value} {s s' : LocState}
-    {m : MState} {K : KMap} {osp : Bool} {x : AuxRef} {o : Int}
+    {m : MState} {K : KMap} {osp : Bool} {x : AuxRef} {o : Int} {c : Nat}
     (hE : G2Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E)
     (hl : lc.ctx.f.lowered = true)
     (hvs : VStep2 ps .none j j')
     (hj : E.pcOf bid i = pcAt text ps.toList j) (hj' : E.pcOf bid (i + 1) = pcAt text ps.toList j')
     (hm : LocMatch E s bid i m) (hinv : G3Inv E lc K s osp)
     (htemp : (lc.temps[v.id]?).join = none) (hop : v.op = .Arg) (hx : v.aux = some x)
-    (hcv : cls (lc.ty v.id) = some 64)
+    (hcf : checkFrame lc g = .ok ()) (hcv : cls (lc.ty v.id) = some c)
     (hh : lc.home v.id = some (.slot (argKey x v.type v.auxInt.toInt)))
     (hso : g.slotOp (argKey x v.type v.auxInt.toInt) = some (.PARAM, o))
     (harg : ArgOK E lc s v m) (hs : stepLoc env lc s v = .ok s') :
@@ -104,7 +105,7 @@ theorem g62_arg {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat → 
   · exact hinv.core.mem
   · intro k' v' hk'
     rcases lookup_setSlot hk' with ⟨rfl, rfl⟩ | ⟨-, hold⟩
-    · exact ⟨fits_retypeL hcv _, v.id, hh⟩
+    · exact ⟨by rw [slotCls_home hcf hh hcv]; exact fits_retypeL hcv _, v.id, hh⟩
     · exact hinv.slots k' v' hold
 
 end GoFV.Proof.Gen

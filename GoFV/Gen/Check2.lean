@@ -31,9 +31,11 @@ G1 accepts and
   memory) at the head of the entry block.
 
 **checkFrame** (proofs3 §2, the spill-slot part): every slot used as a home has an operand in the
-frame layout, 8 bytes (in the layout and at its `runLoc` shape), 8-aligned, `NAME_AUTO` slots
-inside the locals (`[-stksize, 0)`), `NAME_PARAM` slots at non-negative offsets, and distinct slots
-at distinct operands (so they are disjoint).
+frame layout, 1, 2, 4 or 8 bytes (in the layout and at its `runLoc` shape; 8 before slice G66,
+`docs/plans/slot-size.md`), aligned to its size, `NAME_AUTO` slots inside the locals
+(`[-stksize, 0)`), `NAME_PARAM` slots at non-negative offsets, distinct slots at distinct operands
+with disjoint windows, and every value homed in a slot of the slot's class and size. G2's own
+spills and reloads are of 64-bit values, so their slots have 8 bytes.
 
 `GoFV/Proof/Gen/G2.lean` proves what an accepted function satisfies (`g2_value`, `g2_term`).
 -/
@@ -223,24 +225,45 @@ def homeOK2 (lc : LocCtx) (i : Nat) : Bool :=
 /-- The spill slots used as homes. -/
 def homeSlots (lc : LocCtx) : List SlotKey := (List.range lc.homes.size).filterMap (slotHome? lc)
 
-/-- A spill slot G2 handles: its operand in Go's frame layout, 8 bytes (in the frame layout and
-at its `runLoc` shape), 8-aligned, `NAME_AUTO` inside the locals, `NAME_PARAM` at a non-negative
+/-- A spill slot G2 handles (slice G66 widened it from 8 bytes, `docs/plans/slot-size.md`): its
+operand in Go's frame layout, 1, 2, 4 or 8 bytes (the same in the frame layout and at its `runLoc`
+shape), aligned to its size, `NAME_AUTO` inside the locals, `NAME_PARAM` at a non-negative
 offset. -/
 def slotOK (lc : LocCtx) (g : G2In) (k : SlotKey) : Bool :=
-  typeSize? lc.ctx.tabs k.type == some 8 && (lc.slotTy k).size == 8 &&
+  let n := (lc.slotTy k).size
+  typeSize? lc.ctx.tabs k.type == some n && (n == 1 || n == 2 || n == 4 || n == 8) &&
     match g.slotOp k with
-    | some (.AUTO, off) => off % 8 == 0 && -g.stksize ≤ off && off + 8 ≤ 0
-    | some (.PARAM, off) => off % 8 == 0 && 0 ≤ off
+    | some (.AUTO, off) => off % n == 0 && -g.stksize ≤ off && off + n ≤ 0
+    | some (.PARAM, off) => off % n == 0 && 0 ≤ off
     | _ => false
 
-/-- checkFrame for the spill slots used as homes (module doc): each `slotOK`, and distinct slots
-at distinct operands. -/
+/-- The windows of slots `k` and `k'` at their frame operands are disjoint: operands of different
+classes (the locals lie below the parameters), or byte ranges of the slots' sizes apart. -/
+def slotsApart (lc : LocCtx) (g : G2In) (k k' : SlotKey) : Bool :=
+  match g.slotOp k, g.slotOp k' with
+  | some (c, o), some (c', o') =>
+    c != c' || o + (lc.slotTy k).size ≤ o' || o' + (lc.slotTy k').size ≤ o
+  | _, _ => false
+
+/-- Value `i`, if homed in a slot, has the slot's class and size (`stackalloc` homes a value in a
+slot of its own type). -/
+def homeFits (lc : LocCtx) (i : Nat) : Bool :=
+  match slotHome? lc i with
+  | some k => cls (lc.ty i) == cls (lc.slotTy k) && (lc.ty i).size == (lc.slotTy k).size
+  | none => true
+
+/-- checkFrame for the spill slots used as homes (module doc): each `slotOK`, distinct slots at
+distinct operands with disjoint windows, and every homed value of its slot's class and size. -/
 def checkFrame (lc : LocCtx) (g : G2In) : Except String Unit := do
   let ks := homeSlots lc
   if let some k := ks.find? (!slotOK lc g ·) then
     throw s!"slot n{k.name}+{k.off}: frame operand, size or alignment"
   unless ks.all fun k => ks.all fun k' => k' == k || g.slotOp k' != g.slotOp k do
     throw "two slots at one frame operand"
+  unless ks.all fun k => ks.all fun k' => k' == k || slotsApart lc g k k' do
+    throw "two slots overlap"
+  unless (List.range lc.homes.size).all (homeFits lc) do
+    throw "a value homed in a slot of another shape"
 
 /-- The context of the check: G1's, the inputs of G2, and the checks of a value and of a
 terminator (G2's, or a later slice's). -/

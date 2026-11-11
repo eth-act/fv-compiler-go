@@ -745,7 +745,7 @@ theorem g64_qload (F : Facts lc sym text az ez psA.toList ret E)
 /-- `FMOVQ Fs, dst`: the 16 bytes of `V ks` at the operand's address, outside the frame's saved
 words and slots. -/
 theorem g64_qstore (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
@@ -865,7 +865,7 @@ theorem g64_qldp (F : Facts lc sym text az ez psA.toList ret E)
 /-- `FSTPQ (Fx, Fy), dst`: the 16 bytes of `V kx` at the operand's address, those of `V ky` 16
 above, outside the frame's saved words and slots. -/
 theorem g64_qstp (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8)
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
     (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')

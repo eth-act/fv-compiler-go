@@ -128,7 +128,7 @@ theorem op_mem2W {P : BitVec 64 → Prop} (F : Facts lc sym text az ez psA.toLis
 `W` and the store's window: the same store, from `m`, to a relation on `{m' with mem := M'}`,
 `M'` agreeing with `m'`'s memory outside `W`. -/
 theorem g49_storeW (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8) {M0 : Memory}
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8) {M0 : Memory}
     (hm : LocMatch E s b i { m with mem := M0 }) (hinv : CoreInv E.ι (StkAt E) K s osp)
     (hsi : SlotInv lc s) (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
@@ -206,7 +206,7 @@ theorem g49_storeW (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK 
 
 /-- `g49_stp` from a relation on `{m with mem := M0}`, as `g49_storeW`. -/
 theorem g49_stpW (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E)
-    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size = 8) {M0 : Memory}
+    (hsz : ∀ k v, s.slots.lookup k = some v → (E.lc.slotTy k).size ≤ 8) {M0 : Memory}
     (hm : LocMatch E s b i { m with mem := M0 }) (hinv : CoreInv E.ι (StkAt E) K s osp)
     (hsi : SlotInv lc s) (hR : KRead lc v K) (hK : KNext lc v K K')
     (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
