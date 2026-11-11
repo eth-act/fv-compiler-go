@@ -1858,6 +1858,25 @@ def zeroChain (tabs : Tables) (f : Func) (p : ID) (n : Nat) : Nat → ID → Boo
         | none => false)
     | none => false
 
+/-- The zero constant a `Load` of shape `t` reading zero bytes becomes (`generic.rules:882`–`:902`):
+`ConstBool` at `bool`, `Const8`/`Const16`/`Const32`/`Const64` at the integer widths. -/
+def zeroLdOp (t : Sem.Ty) (op : Op) : Bool :=
+  match t with
+  | .bool => op == .ConstBool
+  | .int .w8 => op == .Const8
+  | .int .w16 => op == .Const16
+  | .int .w32 => op == .Const32
+  | .int .w64 => op == .Const64
+  | _ => false
+
+/-- The `Load` `u` of `f` reads zero bytes and becomes the zero constant `w`
+(`generic.rules:882`–`:902`, `(Load <t1> (OffPtr [o] p1) (Zero [n] p2 _)) && isSamePtr(p1, p2) &&
+n >= o + size => (Const* [0])`): `w` an argument-less `zeroLdOp` of `u`'s shape and auxint 0, and
+the Load's memory holds zeros at its pointer for its shape's size (`zeroChain`, eight deep). -/
+def fwdZeroOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
+  u.op == .Load && u.args.size == 2 && zeroLdOp (tabs.ty u.type) w.op && w.args.size == 0 &&
+    w.auxInt == 0 && zeroChain tabs f u.args[0]! (tabs.ty u.type).size 8 u.args[1]!
+
 /-- `y` is listed in `g` (`Proof.listedDefs`): a value of a block of `g` that lists it. -/
 def listedB (g : Func) (y : ID) : Bool :=
   (g.value? y).any fun v => g.blocks.contains v.block && (g.block? v.block).any (·.values.contains y)
@@ -2187,12 +2206,13 @@ from the read-only symbols `ro` (`fixedOK`); or of the memory root `u`, a `Copy`
 `growslice` result, a `Copy` of its length argument (`growOK`); or of a folded `ifaceeq`/`efaceeq`
 call `u` with a descriptor symbol of `eq` (`eqCallOK`) or a selection of a `MakeResult`
 (`selMROK`); or of the length register `u` of a post-`expand calls` `growslice` call, a `Copy`
-of its length argument (`growPOK`). -/
+of its length argument (`growPOK`); or of a `Load` `u` reading zero bytes, the zero constant
+(`fwdZeroOK`). -/
 def fwdNewOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (eq : List String × List String)
     (f g : Func) (u w : Value) : Bool :=
   (w.op == .Copy && w.args.size == 1 && fwdOK tabs f u (w.args[0]?.getD 0)) || fwdConstOK tabs f u w ||
     dropOK tabs f g u w || moveSrcOK tabs f u w || fixedOK tabs ro f u w || growOK tabs f u w ||
-    eqCallOK tabs eq f g u w || selMROK tabs f u w || growPOK tabs f u w
+    eqCallOK tabs eq f g u w || selMROK tabs f u w || growPOK tabs f u w || fwdZeroOK tabs f u w
 
 /-- The `Load` `u` of `f` reads, at offset `o` (`offp`'s auxint), the bytes a `Move [n] dst src
 mem` copied (`generic.rules:827`): its memory is the `Move`, its pointer `dst + o` (`ptrBase`,
@@ -2332,7 +2352,9 @@ the length of a `growslice` result `(SliceLen (SelectN [0] (StaticLECall _ newLe
 newLen:(Const64) …)) => newLen` (`:2131`; `growPOK`); or a folded `ifaceeq`/`efaceeq` call
 `(StaticLECall {f} d x y mem) && … => (MakeResult (EqPtr x y) mem)` (`:2279`, `:2287`;
 `eqCallOK`) or a selection of a `MakeResult` `(SelectN [n] m:(MakeResult ___)) => m.Args[n]`
-(`:1343`; `selMROK`). -/
+(`:1343`; `selMROK`); or a `Load` of a `Zero` folded to a zero constant `(Load (OffPtr [o] p1)
+(Zero [n] p2 _)) && isSamePtr(p1, p2) && n >= o + size => (Const* [0])` (`:882`–`:902`;
+`fwdZeroOK`). -/
 def fwdShapeOK (r : Rule) : Bool :=
   match r.pat, r.result, r.block with
   | .op .Load none _ _ _ .fixed [_, m] _, .copy (.var y), none => storesBind y 4 m
@@ -2342,6 +2364,9 @@ def fwdShapeOK (r : Rule) : Bool :=
       _, .build [n], none => const64Op o && const64Op n.op && n.args.isEmpty
   | .op .Load none _ _ _ .fixed [.op .OffPtr .., .op .Move ..] _, .build [n0, n1], some _ =>
     n0.op == .Load && n1.op == .OffPtr
+  | .op .Load none _ _ _ .fixed [.op .OffPtr .., .op .Zero ..] _, .build [n], none =>
+    (n.op == .ConstBool || n.op == .Const8 || n.op == .Const16 || n.op == .Const32 ||
+      n.op == .Const64) && n.args.isEmpty
   | .op .Store none _ _ _ .fixed [_, _, m] _, .copy (.var y), none => patBinds y m
   | .op .Zero none _ _ _ .fixed [_, m] _, .copy (.var y), none => patBinds y m
   | .op .Move none _ _ _ .fixed [_, _, .op .Move ..] _, .build [n], none => n.op == .Move
@@ -2384,7 +2409,8 @@ def fwdEvent? (t : Interp.Table) (f : Func) : RwEvent → Option (ID × Value ×
           | some cr, w :: _ =>
             if fwdShapeOK cr.rule &&
                 ((w.op == .Copy && w.args.size == 1) || const64Op w.op || w.op == .Move ||
-                  w.op == .Addr || w.op == .Const32 || w.op == .Const8) then
+                  w.op == .Addr || w.op == .Const32 || w.op == .Const8 || w.op == .Const16 ||
+                  w.op == .ConstBool) then
               some (v, w, [])
             else none
           | _, _ => none
