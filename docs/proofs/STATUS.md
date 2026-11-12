@@ -141,11 +141,12 @@ main fa54a58a with `--jobs 4`: full-v9 through `rewrite tern` 93,475 on both, th
 `lower` on inputs with values Go reset in place to `Invalid` (memcombine's `clobber`,
 writebarrier's unused nil check, late fuse; `lowerGuard` rejected them as lowered), validated with
 `Invalid` read as `Unknown` (`lower_refines_runU`, `run_invUnknown`; `run` evaluates both to
-`poison`, so the earlier theorems are not vacuous on them; `docs/PASSES2.md`, lower), measured
-against main 3f22d5c4 with `--jobs 2`: full-v11 through `rewrite tern` 93,779 on both, through
-`trim` 84,902 → 87,820 (identical to stock 69,867 → 71,677; first unverified run `lower
-(rejected)` 3,119 → 0), no function lost; quick-v10 end to end 6,675 → 6,800 (`verified_mach`
-6,472 → 6,595, `verified_mach_S` 203 → 205), no function lost.
+`poison`, so the earlier theorems are not vacuous on them; the precondition's read-only symbols
+are `roPre` of that reading; `docs/PASSES2.md`, lower), measured with `--jobs 2` against main
+a0bab4f7 (R1): full-v11 through `rewrite tern` 93,779 on both, through `trim` 84,965 → 87,887
+(+2,922; identical to stock 69,900 → 71,712; first unverified run `lower (rejected)` 3,123 → 0,
+none stops at `read-only symbols`), no function lost (`comm` of the `trim=verified` sets);
+quick-v10 end to end against main 885ce778 7,252 → 7,396 (below).
 
 Every pass from `lower` to `trim` has a theorem (addressing modes `addressingModes_refinesL`,
 late lower `lateLower_refinesL`, pair `pair_refinesL`, flagalloc `flagalloc_refinesSched`).
@@ -1840,6 +1841,14 @@ entry stores (`GoFV/Gen/Entry49.lean`; proof `sim_entrySkip`, `g64L_entrySkip`).
 - end to end 6,702 → 7,252 (`verified_mach` 6,497 → 7,039, `verified_mach_S` 205 → 213), 0 lost
   and 550 gained (`comm` of the accepted lists); stock column 7,593 → 8,200;
 - vacuous at the entry (`entryVacuous`, every variant) 547 → 0 (stock 600 → 0).
+
+**`lower` on inputs with `Invalid` values (#385).** `lowerGuard` reads the input with its
+`Invalid` values as `Unknown` (`lower_refines_runU`; Phase 2 above). On quick-v10 (`--jobs 2`),
+main 885ce778 against `agent/invguard` rebased on it:
+
+- through `trim` 7,900 → 8,083;
+- end to end 7,252 → 7,396 (`verified_mach` 7,039 → 7,181, `verified_mach_S` 213 → 215), 0 lost
+  and 144 gained (`comm` of the accepted lists); stock column 8,200 on both.
 
 | quick-v10 (9,297 functions, 8.5 min; the composition on G64 with `SBFIZ` in `checkObj`, per function at either mode (`agent/sbfiz` on main a6c37a47, the vacuity audit `entryVacuous`), P0' in `checkG64` and `checkObj`, `--jobs 2`) | pipeline output | share | stock `trim` |
 | --- | ---: | ---: | ---: |
