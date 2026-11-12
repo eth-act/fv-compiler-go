@@ -3148,9 +3148,19 @@ def samePtr (tabs : Tables) (f : Func) (a b : ID) : Bool :=
         va.aux == vb.aux && va.type == vb.type
     | _, _ => false
 
+/-- The element size of a constant-index pointer step: `1` for an `AddPtr`, the element size of
+a `PtrIndex`'s pointer shape. -/
+def idxScale (tabs : Tables) (v : Value) : Option Nat :=
+  if v.op == .AddPtr then some 1
+  else match tabs.ty v.type with
+    | .ptr (some e) => some e
+    | _ => none
+
 /-- The offset of the pointer `a` of `f` from `p`: `0` if `a` equals `p` (`samePtr`), else
-through at most `k` `OffPtr`s of pointer shape the sum of their offsets down to a value equal
-to `p`. -/
+through at most `k` `OffPtr`s, and `AddPtr`s and `PtrIndex`es by a constant index (`constIdx?`,
+times `idxScale`), of pointer shape the sum of their offsets down to a value equal to `p` (the
+segment layer's input may still hold the `PtrIndex`/`AddPtr` that value rules fold to `OffPtr`s
+before the `Move` rule matches). -/
 def offFrom (tabs : Tables) (f : Func) (p : ID) : Nat → ID → Option Int
   | 0, a => if samePtr tabs f a p then some 0 else none
   | k + 1, a =>
@@ -3159,6 +3169,11 @@ def offFrom (tabs : Tables) (f : Func) (p : ID) : Nat → ID → Option Int
     | some v =>
       if v.op == .OffPtr && v.args.size == 1 && isPtrTy (tabs.ty v.type) then
         (offFrom tabs f p k v.args[0]!).map (v.auxInt.toInt + ·)
+      else if (v.op == .AddPtr || v.op == .PtrIndex) && v.args.size == 2 &&
+          isPtrTy (tabs.ty v.type) then
+        match constIdx? tabs f v.args[1]!, idxScale tabs v with
+        | some kk, some e => (offFrom tabs f p k v.args[0]!).map ((kk * BitVec.ofNat 64 e).toInt + ·)
+        | _, _ => none
       else none
     | none => none
 

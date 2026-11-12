@@ -3,6 +3,7 @@ import GoFV.Proof.Pass.SegRo
 import GoFV.Proof.Pass.SegCall
 import GoFV.Proof.Pass.StructStoreMem
 import GoFV.Proof.Pass.LoadFwdMem
+import GoFV.Proof.Pass.SegCallSeg
 
 variable [GoFV.SSA.Sem.Addrs]
 
@@ -529,7 +530,77 @@ theorem offFrom_reg (H : Avail env tabs f S A) (hT : Proof.Typed (Ctx.make tabs 
       rw [← hCQ, ih hcA hcv hC ho']
       simp only [Ptr.add, BitVec.ofInt_add, BitVec.add_assoc, BitVec.add_comm
         (BitVec.ofInt 64 o')]
-    · cases ho
+    · split at ho
+      · rename_i hc
+        simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hc
+        obtain ⟨⟨hop, hsz⟩, hty⟩ := hc
+        split at ho
+        · rename_i kk e hci he
+          obtain ⟨o', ho', rfl⟩ := Option.map_eq_some_iff.1 ho
+          have hargs : v.args = #[v.args[0]!, v.args[1]!] := CSE.Mem.args_two hsz
+          have hnp : v.op ≠ .Phi := by rcases hop with h | h <;> rw [h] <;> decide
+          have hcA : A v.args[0]! := H.cl a v hA hv hnp _ (by rw [hargs]; simp)
+          have hiA : A v.args[1]! := H.cl a v hA hv hnp _ (by rw [hargs]; simp)
+          obtain ⟨cv, hcv⟩ := Avail.reg H hcA
+          have hiv : S.regs[v.args[1]!]? = some (some (.int .w64 kk)) :=
+            termConst_reg H hid 4 _ _ hiA (Pass.LoadFwd.constIdx_spec hci)
+          have hev := Avail.eval H hA hv hnp ha
+          rw [evalValue_of_regs (fun b hb => by
+            rw [hargs] at hb
+            simp only [List.mem_toArray, List.mem_cons, List.not_mem_nil, or_false] at hb
+            rcases hb with rfl | rfl
+            · exact ⟨_, hcv⟩
+            · exact ⟨_, hiv⟩)] at hev
+          have hl : v.args.toList.map (rv S) = [cv, .int .w64 kk] := by
+            rw [hargs]; simp [rv_of hcv, rv_of hiv]
+          rw [hl, hid a v hA hv, Proof.tys_of_value hv, Option.getD_some] at hev
+          have hstep : ∃ C, cv.asPtrWord = some C ∧ C.add (kk * BitVec.ofNat 64 e) = Q := by
+            rcases hop with hop | hop
+            · have he1 : e = 1 := by
+                simp only [idxScale, hop, beq_self_eq_true, ite_true, Option.some.injEq] at he
+                exact he.symm
+              subst he1
+              rw [show ∀ ty, evalOp env (Ctx.make tabs f) S v [cv, .int .w64 kk] ty =
+                  .ok (evalPure .AddPtr ty v.auxInt v.aux [cv, .int .w64 kk]) from
+                fun ty => by simp only [evalOp, frameVal, hop]; rfl, Pass.LoadFwd.evalPure_addPtr] at hev
+              simp only [pure, Res.bind, bind] at hev
+              cases hev
+              revert hq hty
+              generalize tabs.ty v.type = ty
+              intro hty hq
+              cases ty <;> simp [isPtrTy] at hty
+              rw [PtrOps.addPtr_retype_ptr, PtrOps.addPtr_asPtrWord] at hq
+              obtain ⟨C, hC, hCQ⟩ := Option.bind_eq_some_iff.1 hq
+              simp only [asOffset, Option.bind_some, BitVec.signExtend_eq] at hCQ
+              refine ⟨C, hC, ?_⟩
+              unfold Ptr.step? at hCQ
+              split at hCQ <;> cases hCQ
+              simp
+            · have hne : (v.op == .AddPtr) = false := by rw [hop]; rfl
+              have hte : tabs.ty v.type = .ptr (some e) := by
+                simp only [idxScale, hne, Bool.false_eq_true, ite_false] at he
+                split at he
+                · rename_i e' h; cases he; exact h
+                · cases he
+              rw [show ∀ ty, evalOp env (Ctx.make tabs f) S v [cv, .int .w64 kk] ty =
+                  .ok (evalPure .PtrIndex ty v.auxInt v.aux [cv, .int .w64 kk]) from
+                fun ty => by simp only [evalOp, frameVal, hop]; rfl, Pass.LoadFwd.evalPure_ptrIndex,
+                hte] at hev
+              simp only [pure, Res.bind, bind] at hev
+              cases hev
+              rw [PtrOps.ptrIndex_retype_ptr, PtrOps.ptrIndex_asPtrWord] at hq
+              obtain ⟨C, hC, hCQ⟩ := Option.bind_eq_some_iff.1 hq
+              simp only [asOffset, Option.bind_some, BitVec.signExtend_eq] at hCQ
+              refine ⟨C, hC, ?_⟩
+              unfold Ptr.step? at hCQ
+              split at hCQ <;> cases hCQ
+              rfl
+          obtain ⟨C, hC, hCQ⟩ := hstep
+          rw [← hCQ, ih hcA hcv hC ho']
+          simp only [Ptr.add, BitVec.ofInt_add, BitVec.ofInt_toInt, BitVec.add_assoc,
+            BitVec.add_comm (BitVec.ofInt 64 o')]
+        · cases ho
+      · cases ho
 
 /-- **The stores below the anchor**: if the source's stores from `s` (over `z`) evaluated to `M`,
 its `n` bytes at `P` are the zeros with the stores' bytes `ws` put in (bottom first), and the
