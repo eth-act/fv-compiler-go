@@ -383,6 +383,12 @@ The witness is `examples/closures/main/adder.func1`. Its entry block at `trim` i
     accepted function is among them. A mirror of `entryVacuous` on the stock `trim` functions
     had estimated about 7,315 at G61 (548 on quick against the driver's 547).
   - The PR's full-v11 run gives the exact gain.
+- **Measured (PR2, #724).**
+  - **quick-v10:** 6,702 → 7,252 against main after #720: +550, 0 lost, `entryVacuous` 547 → 0.
+  - **full-v11** (#724's code on main 68c0d997 plus #715): 68,698 → 76,093 end to end (+7,395).
+    - The 7,338 vacuous closures are now 0.
+    - The premises hold of 76,036 → 76,093, and none fewer.
+    - STATUS "End-to-end coverage" has the table.
 - **Not counted:** closures whose context loads lie past the entry prefix. They are counted
   today, but their theorem is non-vacuous only on inputs that never reach the load. With the
   context they hold on all inputs.
