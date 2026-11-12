@@ -1,5 +1,5 @@
 import GoFV.Proof.Obj.AtomPanic
-import GoFV.Proof.Obj.Entry49
+import GoFV.Proof.Obj.EntrySkip
 import GoFV.Gen.Entry62
 import GoFV.Proof.Pass.DeadRelL
 import GoFV.Proof.Obj.Results
@@ -1720,10 +1720,40 @@ theorem sim_entryStore (hc : checkG64L lc ps bstart g = .ok (tab, kt))
     fun hl => ⟨(congrFun hxm 30).trans (hlr hl).1, (hlr hl).2⟩,
     fun hl hok hcl => memInit_clean_step hl hi hv (hma hl hok) hs hcl⟩
 
+/-- **One value the entry stores come after** (`entrySkip`) from `SimAtW` with `W` to `SimAtW`
+with `W` (`g64L_entrySkip`, `obj_star`). -/
+theorem sim_entrySkip (hc : checkG64L lc ps bstart g = .ok (tab, kt))
+    (hO : ObjEnv ps spills o otab L base code retM)
+    (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
+    (hic : ∀ u, ICallOut L ps.toList u)
+    {b : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s s' : LocState} {t : MState}
+    {W : BitVec 64 → Prop}
+    (hb : lc.ctx.f.block? b = some blk) (hi : blk.values[i]? = some id)
+    (hv : lc.ctx.f.value? id = some v) (hsk : entrySkip lc v = true)
+    (hs : stepLoc env lc s v = .ok s')
+    (hS : SimAtW lc g L ps tab kt E0 osp otab base W b blk i s t) :
+    ∃ t', MStar H code retM t t' ∧
+      SimAtW lc g L ps tab kt E0 osp otab base W b blk (i + 1) s' t' := by
+  obtain ⟨E, m, M, hx, hE, hm, hag, hinv, hspI, hu, hR, hX, hbid, hlr, hma⟩ := hS
+  have hspI' : osp = true → lc.ctx.f.lowered = true → SPInv E s' := fun ho hl => by
+    obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, -, hsh, -⟩ := checkG64L_spec hl hc
+    exact spInv_step hE.env.env.env.env.env.addr ⟨rfl, fun _ _ h => h⟩
+      hE.env.env.env.env.env.lcEq (fun _ => ⟨hl, spHomes48_spec hsh⟩) hv (hspI ho hl) hs
+  obtain ⟨m', M', hp, hxm, hm', hinv', hu', hag'⟩ := g64L_entrySkip (H := H) hc hE hbid hb hi hv
+    hsk hm hag hinv hu hma hs
+  have hI0 := locMatch_inv hE.env.env.env.env.env hm
+  have hI : ObjInv L ps.toList m ∨ m.pc = endP L.text ps.toList := hI0
+  obtain ⟨t', ht, hR', -, hX'⟩ := obj_star hO hH hp hR hX hI (fun u _ => hic u)
+  exact ⟨t', ht, E, m', M', hx, hE, hm', hag', hinv', hspI', hu', hR', hX', hbid,
+    fun hl => ⟨(congrFun hxm 30).trans (hlr hl).1, (hlr hl).2⟩,
+    fun hl hok hcl => memInit_clean_step hl hi hv (hma hl hok) hs hcl⟩
+
 /-- **The entry stores.** From `SimAtW` with the windows of the entry stores at the head of the
-rest `ids` of block `b` from value `i`, a run that is defined runs them (no entry store panics: it
-has a symbol, `stepLoc_mem_panic_aux`) to a state related by `SimAt`, from which the run
-continues alike. -/
+rest `ids` of block `b` from value `i` (past the values `entrySkip` takes), a run that is defined
+runs them and the skipped values (none panics: an entry store has a symbol,
+`stepLoc_mem_panic_aux`; a skipped value is a spill or has no code,
+`stepLoc_entrySkip_ne_panic`) to a state related by `SimAt`, from which the run continues
+alike. -/
 theorem sim_entryStores (hc : checkG64L lc ps bstart g = .ok (tab, kt))
     (hO : ObjEnv ps spills o otab L base code retM)
     (hH : HookMap H L ps.toList (ObjEnv.map otab ps L base))
@@ -1740,37 +1770,60 @@ theorem sim_entryStores (hc : checkG64L lc ps bstart g = .ok (tab, kt))
   | [], i, s, t, _, hi, hr, hS, _ =>
     ⟨i, s, t, hr, hi, .refl, hS.simAt fun _ => inWins_nil, rfl⟩
   | id :: ids, i, s, t, hd, hi, hr, hS, hdef => by
+    have hidx : blk.values[i]? = some id := by
+      have := congrArg List.head? hd
+      simpa using this
+    have hlt : i < blk.values.size := (Array.getElem?_eq_some_iff.1 hidx).1
+    have hd1 : blk.values.toList.drop (i + 1) = ids := by
+      have := congrArg (List.drop 1) hd
+      simpa [List.drop_drop, Nat.add_comm] using this
+    -- a value that does not panic and steps to a state related with the rest's windows
+    have step : ∀ v, lc.ctx.f.value? id = some v → (∀ e mm, stepLoc env lc s v ≠ .panic e mm) →
+        (∀ s1, stepLoc env lc s v = .ok s1 → ∃ t1, MStar H code retM t t1 ∧
+          SimAtW lc g L ps tab kt E0 osp otab base (InWins L E0.sp (storesFrom lc g ids)) b blk
+            (i + 1) s1 t1) →
+        ∃ i' s' t', LReach env lc b0 i0 sI b i' s' ∧ i' ≤ blk.values.size ∧
+          MStar H code retM t t' ∧ SimAt lc g L ps tab kt E0 osp otab base b blk i' s' t' ∧
+          runFromLoc env lc fuel s' b i' = runFromLoc env lc fuel s b i := fun v hv hnp hone => by
+      cases hst : stepLoc env lc s v with
+      | ok s1 =>
+        obtain ⟨t1, ht1, hS1⟩ := hone s1 hst
+        have hrun := runFromLoc_val (fuel := fuel) hb hd hv hst
+        obtain ⟨i', s', t', hr', hi', ht', hS', hrun'⟩ := sim_entryStores hc hO hH hic hb ids
+          (i + 1) s1 t1 hd1 (by omega) (.val hr hb hidx hv hst) hS1 (hrun ▸ hdef)
+        exact ⟨i', s', t', hr', hi', mstar_trans ht1 ht', hS', hrun'.trans hrun.symm⟩
+      | panic e mm => exact absurd hst (hnp e mm)
+      | stuck msg =>
+        exfalso
+        simp only [runFromLoc, hb, hd, enterListLoc, hv, hst] at hdef
+        exact hdef
     cases hw : (lc.ctx.f.value? id).bind (entryStore? lc g) with
-    | none =>
-      have hsf : storesFrom lc g (id :: ids) = [] := by simp only [storesFrom, hw]
-      rw [hsf] at hS
-      exact ⟨i, s, t, hr, hi, .refl, hS.simAt fun _ => inWins_nil, rfl⟩
     | some w =>
       obtain ⟨v, hv, hes⟩ := Option.bind_eq_some_iff.1 hw
       have hsf : storesFrom lc g (id :: ids) = w :: storesFrom lc g ids := by
         simp only [storesFrom, hw]
       rw [hsf] at hS
-      have hidx : blk.values[i]? = some id := by
-        have := congrArg List.head? hd
-        simpa using this
-      have hlt : i < blk.values.size := (Array.getElem?_eq_some_iff.1 hidx).1
-      cases hst : stepLoc env lc s v with
-      | ok s1 =>
-        obtain ⟨t1, ht1, hS1⟩ := sim_entryStore hc hO hH hic hb hidx hv hes hst
+      exact step v hv
+        (fun e mm hst => absurd (stepLoc_mem_panic_aux (entryStore?_memFault hes) hst)
+          (entryStore?_aux hes))
+        fun s1 hst => sim_entryStore hc hO hH hic hb hidx hv hes hst
           (hS.mono fun y hy => inWins_cons.1 hy)
-        have hrun := runFromLoc_val (fuel := fuel) hb hd hv hst
-        have hd1 : blk.values.toList.drop (i + 1) = ids := by
-          have := congrArg (List.drop 1) hd
-          simpa [List.drop_drop, Nat.add_comm] using this
-        obtain ⟨i', s', t', hr', hi', ht', hS', hrun'⟩ := sim_entryStores hc hO hH hic hb ids
-          (i + 1) s1 t1 hd1 (by omega) (.val hr hb hidx hv hst) hS1 (hrun ▸ hdef)
-        exact ⟨i', s', t', hr', hi', mstar_trans ht1 ht', hS', hrun'.trans hrun.symm⟩
-      | panic e mm =>
-        exact absurd (stepLoc_mem_panic_aux (entryStore?_memFault hes) hst) (entryStore?_aux hes)
-      | stuck msg =>
-        exfalso
-        simp only [runFromLoc, hb, hd, enterListLoc, hv, hst] at hdef
-        exact hdef
+    | none =>
+      cases hk : (lc.ctx.f.value? id).any (entrySkip lc) with
+      | false =>
+        have hsf : storesFrom lc g (id :: ids) = [] := by simp [storesFrom, hw, hk]
+        rw [hsf] at hS
+        exact ⟨i, s, t, hr, hi, .refl, hS.simAt fun _ => inWins_nil, rfl⟩
+      | true =>
+        obtain ⟨v, hv, hsk⟩ : ∃ v, lc.ctx.f.value? id = some v ∧ entrySkip lc v = true := by
+          cases hv : lc.ctx.f.value? id with
+          | none => rw [hv] at hk; cases hk
+          | some v => rw [hv] at hk; exact ⟨v, rfl, hk⟩
+        have hsf : storesFrom lc g (id :: ids) = storesFrom lc g ids := by
+          simp [storesFrom, hw, hk]
+        rw [hsf] at hS
+        exact step v hv (fun e mm => stepLoc_entrySkip_ne_panic hsk) fun s1 hst =>
+          sim_entrySkip hc hO hH hic hb hidx hv hsk hst hS
 
 /-- The entry stores from value `k` of the entry block (`entryStores`) are those at the head of
 its values from `k` (`storesFrom`). -/

@@ -704,6 +704,28 @@ theorem locMatch_setReg_none (h : LocMatch E s b i m) {r : Nat} {x : Val}
       exact h.regs r' v' hv'
     · exact h.regs r' v' hv'
 
+/-- `SB`: no code; it writes no machine register, so the relation holds on the same machine
+state, whatever its memory (the W-form of `g3_sb`). -/
+theorem g3_sbW (F : Facts lc sym text az ez psA.toList ret E)
+    (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
+    (hK : KNext lc v K K')
+    (hj : E.pcOf b i = pcAt text psA.toList j) (hj' : E.pcOf b (i + 1) = pcAt text psA.toList j')
+    (hop : v.op = .SB) (hcl : (cls (lc.ty v.id)).isSome = true)
+    (hh : lc.home v.id = none ∨ lc.home v.id = some (.reg sbReg)) (hvs : j' = j)
+    (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
+    LocMatch E s' b (i + 1) m ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
+  have hnp : v.op ≠ .Phi := by rw [hop]; nofun
+  obtain ⟨c, hcv⟩ := Option.isSome_iff_exists.1 hcl
+  obtain ⟨x, rfl⟩ := stepLoc_sb F.lowered htemp hop hs
+  have hpc : E.pcOf b (i + 1) = m.pc := by rw [hj', hvs, ← hj, hm.pc]
+  rcases hh with hh | hh
+  · rw [write_none_cls hh hcl]
+    exact ⟨locMatch_pc hm hpc,
+      hinv.mono (knext_same hK (Or.inr fun _ _ => by rw [hh]; nofun)), hsi⟩
+  · rw [write_reg hh hcv]
+    exact ⟨locMatch_pc (locMatch_setReg_none hm (by decide) (by decide)) hpc,
+      (core_setReg hinv (fits_retypeL hcv _)).mono (knext_set hK hnp hh hcv), hsi⟩
+
 /-- `SB`: no code; it writes no machine register. -/
 theorem g3_sb (F : Facts lc sym text az ez psA.toList ret E)
     (hm : LocMatch E s b i m) (hinv : CoreInv E.ι (StkAt E) K s osp) (hsi : SlotInv lc s)
@@ -713,18 +735,8 @@ theorem g3_sb (F : Facts lc sym text az ez psA.toList ret E)
     (hh : lc.home v.id = none ∨ lc.home v.id = some (.reg sbReg)) (hvs : j' = j)
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s') :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
-      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
-  have hnp : v.op ≠ .Phi := by rw [hop]; nofun
-  obtain ⟨c, hcv⟩ := Option.isSome_iff_exists.1 hcl
-  obtain ⟨x, rfl⟩ := stepLoc_sb F.lowered htemp hop hs
-  have hpc : E.pcOf b (i + 1) = m.pc := by rw [hj', hvs, ← hj, hm.pc]
-  rcases hh with hh | hh
-  · rw [write_none_cls hh hcl]
-    exact ⟨m, .refl, locMatch_pc hm hpc,
-      hinv.mono (knext_same hK (Or.inr fun _ _ => by rw [hh]; nofun)), hsi⟩
-  · rw [write_reg hh hcv]
-    exact ⟨m, .refl, locMatch_pc (locMatch_setReg_none hm (by decide) (by decide)) hpc,
-      (core_setReg hinv (fits_retypeL hcv _)).mono (knext_set hK hnp hh hcv), hsi⟩
+      LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' :=
+  ⟨m, .refl, g3_sbW F hm hinv hsi hK hj hj' hop hcl hh hvs htemp hs⟩
 
 end Cases
 
