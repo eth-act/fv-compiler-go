@@ -579,3 +579,6 @@ GoFV.Proof.Witness.ObjEndToEndClo.obj_facts._native.native_decide.ax_1_1 6e46adb
 GoFV.Proof.Witness.ObjEndToEndClo.e2e_facts._native.native_decide.ax_1_1 8a41f3d56c15a6ada32d4fa612eea829114e1a1e8a1d5a74b933b785caacf81f
 # `entryLen` counting `LoweredGetClosurePtr` and `opBefore` (#705 PR2) moved the 11 Obj* pins above
 # whose facts run `entryLen`/`argsOK` (re-taken from the audit; no statement changed).
+# `lateB` accepting ARM64latelower.rules:29 (#719) moved the 6 pins whose facts run the verified
+# pipeline through `lateB` (pfF_pipeline, ObjEndToEnd, ObjEndToEndS, ObjEndToEndAtSP,
+# ObjEndToEndAtSPS, ObjEndToEndClo e2e facts; re-taken from the audit; no statement changed).
