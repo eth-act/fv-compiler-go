@@ -90,8 +90,13 @@ theorem zst2_lower :
     ∃ out, lowerChecked zst2PassEnv zst2Func = .ok out ∧ out.func.lowered = true ∧
       zst2Show out.func = zst2Out ∧
       (∃ f', GoFV.Proof.Low.Contract zst2Func f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func zst2PassEnv.tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env zst2Tabs zst2Func args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre zst2PassEnv.tables zst2Func) env mem)
+        out.tables out.func zst2PassEnv.tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.LowerCheck.roPre zst2PassEnv.tables zst2Func) env mem → ∀ fuel,
+        (run env zst2Tabs zst2Func args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env zst2Tabs zst2Func args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := zst2_checks
@@ -102,7 +107,7 @@ theorem zst2_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨h5, hl, -⟩ := h1
     exact ⟨out, rfl, hl, h5, GoFV.Proof.Low.lower_refines hc zst2_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc zst2_generic zst2_noFma hE
-        hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc zst2_generic zst2_noFma hE hro hd⟩
 
 end GoFV.Proof.Witness

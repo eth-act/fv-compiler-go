@@ -2456,6 +2456,32 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   activation 0 at the same offsets (`ldQVal_frameFold`, as `ldVal_frameFold`). Witness `lmqf_lower`
   (`Move [32]` and `Move [16]` from a frame variable as `FLDPQ {x}` and `FMOVQload {x}`).
 
+- **Loads of a read-only symbol folded to a constant** (`:1811`–`:1817`, `(MOV{B,H,W,D}{U,}load
+  [off] {sym} (SB) _) && symIsRO(sym) => (MOVDconst [int64(read…(sym, int64(off), …))])`; #385,
+  R1; `ArmRule.RoLoad`, `Kit.checked_roLoad`, `LowerCheck.roLoadDef`, `ValReplay`
+  `ReplayInvL.roLoadDef`). The rules read the symbol's bytes from the tables, not the memory, so
+  `ruleOKL` rejects them (`roLoadRule`) and the validator replays the event itself: the load's
+  symbol is one an `Addr` of the input names (`RewriteCheck.roSym?`: `SRODATA` with its bytes, or
+  a type descriptor), the load from the symbol's allocation alone gives the constant's word or
+  `poison` (`roLoadWord`, at `Addrs.fixed`, for an allocation without frame pointers), its memory
+  argument is an atom, and every value of the input is a generic memory-typed op (`memTyAll`: no
+  write-barrier op). Then the memory the load reads holds the allocation: `lower_refines` takes
+  `RoImage` of the input's read-only symbols when its values are generic memory-typed ops
+  (`LowerCheck.roPre`: `RewriteCheck.roSyms` if `memTyAll`, else none), the source run keeps them
+  in every memory it holds (`Sim.RoQL`, `MemInv.SInv`), and `RoVals` gives them to the valuation
+  of the atoms (`FrameVals`). The pipeline discharges the precondition from `PreFull`'s `RoImage
+  (pipelineRo …)` when those symbols are the state's (`FState.whyNot` checks `roPre ⊆ st.ro`;
+  `InvF` carries `st.ro = pipelineRo`); `checkedRunL` checks that the output's tables give the
+  input the same `roPre`. Gating on `memTyAll` keeps the guard off the functions `roLoadDef` never
+  applies to: checking `roSyms ⊆ st.ro` on every input lost 5 quick-v10 end-to-end functions (all
+  with write barriers, whose `Addr`s name type descriptors the pipeline's precondition does not
+  pin). Witness `rld_lower` (`tab[1]` of a read-only
+  `[0, 7]` as `MOVDconst [7]`, precondition satisfiable: `rld_pre`).
+
+- **`ADDshiftLL` of a constant** (`:1512`, `(ADDshiftLL x (MOVDconst [c]) [d]) => (ADDconst x
+  [int64(uint64(c)<<uint64(d))])`; #385). Proven (`GoFV/Proof/Low/Rules/ShiftOp.lean`);
+  `auxRangeL` bounds `ADDshiftLL`'s shift and `ruleWhyL` mirrors `addrOKL` (probe diagnostics).
+
 - **Compares with a pointer** (#385; module docs of `GoFV/Proof/Low/Rules/CmpNeg.lean` and
   `Invert.lean`). `CMP` compares a pointer without a concrete address with an integer as unequal
   (`Arm64.cmp`, `Z` clear). While `CMN` and `CMPshift*` read registers only (`Arm64.cmp1`/`cmp2`),

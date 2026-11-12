@@ -113,6 +113,7 @@ def ruleWhyL (tabs : Tables) (M : Defs) (r0 : Rule) (v : ID) (defs : List Value)
         else if !Pat.topOKL (e.ty []) r.pat then s!"top {repr (e.ty [])}"
         else if !argsOKLr r.loc e.ty r.pat then "argsL"
         else if !resFitsL (e.ty []) r.result then s!"fits {repr (e.ty [])}"
+        else if !Pat.addrOKL e.ty e.aux e.auxInt [] r.pat then "addr"
         else if !Pat.rangeL e.auxInt [] r.pat then "range"
         else if !leavesOK M I [] r.pat then "leaves"
         else if !resultOKL tabs M e r.pat ev or σ I r x (ruleDefsL tabs M r v defs) then
@@ -236,7 +237,10 @@ def whyL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEvent) :
                 | none =>
                   match ldOffFold tabs M v defs.toList with
                   | some u => M := M.put v u
-                  | none => return s!"rule {key cr.rule} v{v} {ruleWhyL tabs M cr.rule v defs.toList}"
+                  | none =>
+                    match roLoadDef tabs f M v defs.toList with
+                    | some u => M := M.put v u
+                    | none => return s!"rule {key cr.rule} v{v} {ruleWhyL tabs M cr.rule v defs.toList}"
     | .copyArg v i src =>
       match M.get? v with
       | none => return "copyArg missing"

@@ -1,4 +1,5 @@
 import GoFV.Proof.Low.SimSet
+import GoFV.Proof.RoImage
 
 variable [GoFV.SSA.Sem.Addrs]
 
@@ -10,16 +11,157 @@ trivial source invariant. `BRel frS frT b i`: the source and target frames at th
 `b` along edge `i`: the same activation inputs, registers typed in each function's mode, `b` a
 tree block of both dominator trees, every atom of `g` the target holds where `f` has no term
 refined from the source's register, the frame addresses and the source's stack pointer those of
-activation 0 (`RegsFrame`, `RegsFrameL`), and sets `VS`/`VT` with `DenOKL` that contain the
-values of the strict ancestors of `b` and the `Phi` arguments along edge `i`. `enter_ok`: a source
-block entry without panic is matched by the target's, the frames afterwards related (`EndRel`);
-`enter_panic`: a panicking one by a target panic with a refined memory.
+activation 0 (`RegsFrame`, `RegsFrameL`), the source's memories those with the read-only symbols
+its `Addr`s name when it is generic and memory-typed (`RoQL`), and sets `VS`/`VT` with `DenOKL`
+that contain the values of the strict ancestors of `b` and the `Phi` arguments along edge `i`.
+`enter_ok`: a source block entry without panic is matched by the target's, the frames afterwards
+related (`EndRel`); `enter_panic`: a panicking one by a target panic with a refined memory.
 -/
 
 namespace GoFV.Proof.Low.Sim
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Proof GoFV.Proof.Dom GoFV.Proof.Low
   GoFV.Proof.Term GoFV.Proof.AtomSim GoFV.Opt.LowerCheck GoFV.Opt.LowerTerm
+
+/-! ## The source's read-only symbols -/
+
+/-- The source's memory invariant: the read-only symbols `f`'s `Addr`s name
+(`RewriteCheck.roSyms`), for an `f` whose values are generic memory-typed ops (`MemTyD`; else no
+invariant). `runL` of such an `f` is `run` (`Hyp.fblk`: its blocks are generic too), whose
+registers keep them (`MemInv.SInv`, from the precondition `RoImage`). -/
+def RoQL (tabs : Tables) (f : Func) : Mem → Prop :=
+  fun m => MemTyD tabs f.value? → RoMem (GoFV.Opt.RewriteCheck.roSyms tabs f) m
+
+section
+variable {tabs : Tables} {f : Func}
+
+theorem roQL_pred : MemInv.MemPred (RoQL tabs f) := (roMem_pred _).imp
+
+theorem roQL_contracts {env : Env} (hK : env.KeepsRo) : MemInv.ContractsOK (RoQL tabs f) env :=
+  MemInv.ContractsOK.imp fun _ => hK.contractsOK _
+
+/-- The read-only symbols of `f` (`roSyms`) give those of its definitions (`RoMemD`). -/
+theorem roMemD_of {m : Mem} (h : RoMem (GoFV.Opt.RewriteCheck.roSyms tabs f) m) :
+    RoMemD tabs f.value? m := by
+  intro a v name al hv hop hro
+  refine h name al (List.mem_filterMap.2 ⟨some v, ?_, ?_⟩)
+  · have : f.valueTab[a]? = some (some v) := Option.join_eq_some_iff.1 hv
+    exact Array.mem_toList_iff.2 (Array.mem_of_getElem? this)
+  · simp [hop, hro]
+
+/-- The registers of a frame with the invariant hold memories with the read-only symbols of `f`'s
+definitions (`RegsFrame`'s last clause). -/
+theorem roQL_regs {fr : Frame} (h : MemInv.SInv (RoQL tabs f) fr) :
+    MemTyD tabs f.value? → ∀ (a : ID) (y : Val), fr.regs[a]? = some (some y) →
+      MemInv.MemsOK (RoMemD tabs f.value?) y :=
+  fun hmt a y hy m hm => roMemD_of (h.2 a y hy m hm hmt)
+
+/-- Generic memory-typed values and generic blocks: `f` is not lowered. -/
+theorem lowered_of_memTyD (h : MemTyD tabs f.value?)
+    (hb : ∀ id b, f.block? id = some b → b.kind.isArm64 = false) : f.lowered = false := by
+  simp only [Func.lowered, Bool.or_eq_false_iff]
+  refine ⟨Array.any_eq_false.2 fun i hi => ?_, Array.any_eq_false.2 fun i hi => ?_⟩
+  · cases ho : f.valueTab[i] with
+    | none => simp
+    | some v =>
+      have hv : f.value? i = some v := by
+        simp only [Func.value?, Array.getElem?_eq_getElem hi, ho, Option.join_some]
+      simp [(h i v hv).1]
+  · cases ho : f.blockTab[i] with
+    | none => simp
+    | some b =>
+      have hbk : f.block? i = some b := by
+        simp only [Func.block?, Array.getElem?_eq_getElem hi, ho, Option.join_some]
+      simp [hb i b hbk]
+
+/-- Generic memory-typed values pass `WBCheck.memTyOK`. -/
+theorem memTyOK_of {ce : CheckEnv} (hwf : WF ce f) (h : MemTyD tabs f.value?) :
+    GoFV.Opt.WBCheck.memTyOK tabs f = true := by
+  unfold GoFV.Opt.WBCheck.memTyOK
+  rw [Array.all_eq_true']
+  intro b hb
+  rw [Array.all_eq_true']
+  intro x hx
+  obtain ⟨B, hB, -⟩ := hwf.blockId b hb
+  have hxB : x ∈ B.values := by
+    unfold GoFV.Opt.WBCheck.vals at hx; rw [hB] at hx; exact hx
+  obtain ⟨v, hv, -, -⟩ := hwf.valueId b B ⟨hb, hB⟩ x hxB
+  rw [hv]
+  exact (h x v hv).2
+
+/-- Setting the `Phi`s keeps a memory invariant (`MemInv.sinv_phis` in either mode). -/
+theorem sinv_phisL {P : Mem → Prop} {md : LMode} {ctx : Ctx} {fr : Frame} {B : Block} {i : Nat}
+    {ps : List (ID × Val)} (hs : MemInv.SInv P fr)
+    (hps : B.values.toList.filterMapM (phiStepL md ctx fr i) = .ok ps) :
+    MemInv.SInv P { fr with regs := setPhis ps fr.regs } := by
+  obtain ⟨-, hsome, -⟩ := filterMapM_phiL hps
+  refine ⟨hs.1, MemInv.setPhis_mems ps fr.regs (fun p hp => ?_) hs.2⟩
+  obtain ⟨-, v, a, y, -, -, -, hy, hp2⟩ := phiStepL_some (hsome p hp)
+  rw [hp2]
+  unfold LMode.retype
+  split
+  · exact (hs.2 a y hy).retypeL _
+  · exact (hs.2 a y hy).retype _
+
+end
+
+/-- Generic memory-typed values: `memTyAll` holds (the converse of `memTyAll_spec`). -/
+theorem memTyAll_of {tabs : Tables} {f : Func} (h : MemTyD tabs f.value?) :
+    memTyAll tabs f = true := by
+  unfold memTyAll
+  rw [Array.all_eq_true]
+  intro i hi
+  cases ho : f.valueTab[i] with
+  | none => rfl
+  | some v =>
+    have hv : f.value? i = some v := by
+      simp only [Func.value?, Array.getElem?_eq_getElem hi, ho, Option.join_some]
+    obtain ⟨h1, h2⟩ := h i v hv
+    simp [Option.all, h1, h2]
+
+/-- On generic memory-typed values the precondition's symbols (`roPre`) are those of `f`'s
+`Addr`s. -/
+theorem roPre_of {tabs : Tables} {f : Func} (h : MemTyD tabs f.value?) :
+    roPre tabs f = GoFV.Opt.RewriteCheck.roSyms tabs f := by
+  simp [roPre, memTyAll_of h]
+
+section
+variable {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
+
+/-- The entry frame has the invariant, from the precondition (`RoImage`'s second half, of
+`roPre`). -/
+theorem roQL_entry (H : Hyp tabs f g ce ce') {env : Env} (args : List Val) {mem : Mem}
+    (h : RoMem (roPre tabs f) (addGlobals env mem)) :
+    MemInv.SInv (RoQL tabs f) (entryFrame env (Ctx.makeL tabs f) args mem) := by
+  by_cases hmt : MemTyD tabs f.value?
+  · have hmk : Ctx.makeL tabs f = Ctx.make tabs f := by
+      simp [Ctx.makeL, lowered_of_memTyD hmt H.fblk]
+    rw [roPre_of hmt] at h
+    rw [hmk]
+    exact MemInv.sinv_entry (fun a h hg hw hc => roMem_set a (h hc) hg hw) fun _ => h
+  · exact MemInv.SInv.of_not hmt _
+
+/-- The `Phi`s and a part `P` of block `b`'s schedule keep the invariant. -/
+theorem roQL_eval (H : Hyp tabs f g ce ce') {env : Env} (hK : env.KeepsRo) {b : ID} {fb : Block}
+    (hb : b ∈ f.blocks) (hfb : f.block? b = some fb) {frS G : Frame} {i : Nat}
+    {psS : List (ID × Val)} {P : List ID} (hP : ∀ x ∈ P, x ∈ fb.values)
+    (hs : MemInv.SInv (RoQL tabs f) frS)
+    (hps : fb.values.toList.filterMapM
+      (phiStepL ⟨f.lowered, false⟩ (Ctx.makeL tabs f) frS i) = .ok psS)
+    (hev : evalAllL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f)
+      { frS with regs := setPhis psS frS.regs } P = .ok G) :
+    MemInv.SInv (RoQL tabs f) G := by
+  by_cases hmt : MemTyD tabs f.value?
+  · have hlow := lowered_of_memTyD hmt H.fblk
+    have hmk : Ctx.makeL tabs f = Ctx.make tabs f := by simp [Ctx.makeL, hlow]
+    rw [hmk, evalAllL_generic (md := ⟨f.lowered, false⟩) hlow env _
+      (fun id v hv => (hmt id v hv).1)] at hev
+    exact MemInv.sinv_evalAll roQL_pred (roQL_contracts hK) H.wf (memTyOK_of H.wf hmt)
+      (fun x hx => ⟨b, hb, by unfold GoFV.Opt.WBCheck.vals; rw [hfb]; exact hP x hx⟩)
+      (sinv_phisL hs hps) hev
+  · exact MemInv.SInv.of_not hmt G
+
+end
 
 /-- The frame relation at a block entry. -/
 structure BRel (tabs : Tables) (f g : Func) (frS frT : Frame) (b : ID) (i : Nat) : Prop where
@@ -36,6 +178,7 @@ structure BRel (tabs : Tables) (f g : Func) (frS frT : Frame) (b : ID) (i : Nat)
     ∀ y', frT.regs[a]? = some (some y') → ∃ y, frS.regs[a]? = some (some y) ∧ Sem.Refines y y'
   frames : RegsFrame tabs 0 f.value? frS
   framesT : RegsFrameL tabs 0 g.value? frT
+  ro : MemInv.SInv (RoQL tabs f) frS
   den : ∃ VS VT, DenOKL f.lowered f.value? tabs frS VS ∧
     DenOKL g.lowered (listedDefs g) tabs frT VT ∧
     (∀ x, VT x → ∃ w, Placed g x w) ∧ (∀ x, SAnc f b x → VS x) ∧ (∀ x, SAnc g b x → VT x) ∧
@@ -422,9 +565,11 @@ theorem regsFrame_eval {env : Env} {frS G : Frame} {P : List ID} {psS : List (ID
       (setPhis psS frS.regs)[z]? = frS.regs[z]?)
     (hkeep : ∀ z, z ∉ P → G.regs[z]? = (setPhis psS frS.regs)[z]?)
     (hev : ∀ x ∈ P, ∃ u y, f.value? x = some u ∧ G.regs[x]? = some (some y) ∧
-      evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) G u = .ok y) :
+      evalValueL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) G u = .ok y)
+    (hro : MemTyD tabs f.value? → ∀ (a : ID) (y : Val), G.regs[a]? = some (some y) →
+      MemInv.MemsOK (RoMemD tabs f.value?) y) :
     RegsFrame tabs 0 f.value? G := by
-  refine ⟨fun a l n y hl hop hax hy => ?_, fun a s y hs hop hy => ?_, fun a y ha hy => ?_⟩
+  refine ⟨fun a l n y hl hop hax hy => ?_, fun a s y hs hop hy => ?_, fun a y ha hy => ?_, hro⟩
   · by_cases haP : a ∈ P
     · obtain ⟨u, y', hu, hy', hevu⟩ := hev a haP
       rw [hl] at hu; cases hu
@@ -452,7 +597,7 @@ theorem regsFrame_eval {env : Env} {frS G : Frame} {P : List ID} {psS : List (ID
         obtain ⟨w, hw, -⟩ := H.wf.valueId b fb ⟨B.bmS, B.hfb⟩ a hm
         rw [ha] at hw; cases hw
       rw [hkeep a haP, hphi a (.inl hab)] at hy
-      exact hfrS.2.2 a y ha hy
+      exact hfrS.2.2.1 a y ha hy
 
 end
 
@@ -485,6 +630,7 @@ structure EndRel (tabs : Tables) (f g : Func) (b : ID) (fb gb : Block) (of og : 
     ∀ y', FT.regs[a]? = some (some y') → ∃ y, FS.regs[a]? = some (some y) ∧ Sem.Refines y y'
   frames : RegsFrame tabs 0 f.value? FS
   framesT : RegsFrameL tabs 0 g.value? FT
+  ro : MemInv.SInv (RoQL tabs f) FS
 
 /-- The frames after the `Phi`s, and their relation. -/
 private theorem after_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
@@ -550,7 +696,7 @@ private theorem after_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
 
 /-- **A block entry without panic.** -/
 theorem enter_ok {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')
-    {env : Env} (hE : env.Mono) {frS frT : Frame} {b : ID} {i : Nat}
+    {env : Env} (hE : env.Mono) (hK : env.KeepsRo) {frS frT : Frame} {b : ID} {i : Nat}
     (R : BRel tabs f g frS frT b i) {fb gb : Block} {of og : Array ID}
     (B : BlockData tabs f g b fb gb of og) {FS : Frame}
     (he : enterBlockL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) frS fb i = .ok FS) :
@@ -565,7 +711,9 @@ theorem enter_ok {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
   have hfrT : { frT with regs := setPhis psT frT.regs } =
       { FS with regs := ({ frT with regs := setPhis psT frT.regs } : Frame).regs } :=
     frame_trans (frame_trans rfl R.fr) (frame_symm (frame_trans g1 rfl))
+  have hroFS := roQL_eval H hK B.bmS B.hfb (fun x hx => ((B.mS x).1 hx).1) R.ro hpsS hevS
   have hfrFS := regsFrame_eval H B R.frames (P := of.toList) (fun x hx => hx) pS3 g5 g6
+    (roQL_regs hroFS)
   have hrel0 : ∀ a, V1 g b gb a → (V1 f b fb a ∨ a ∈ of.toList) → ¬ IsTermL tabs f.value? a →
       ¬ IsTermL tabs (listedDefs g) a →
       Sem.Refines (rv FS a) (rv { frT with regs := setPhis psT frT.regs } a) := by
@@ -614,7 +762,7 @@ theorem enter_ok {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs 
   refine ⟨FT, enterBlockL_of hpsT (by rw [schedL_of_block B.hgb B.idT, B.sT]) hevT, ?_⟩
   have hfr : FT = { FS with regs := FT.regs } := frame_trans l1 hfrT
   refine ⟨hfr, by rw [g2, pS1, R.szS], by rw [l2, pT1, R.szT], g3, l3, g4, l4,
-    fun a h1 h2 h3 h4 => l6 a h1 h2 h3 h4, fun a w hpw hwt hnf hfs y' hy' => ?_, hfrFS, l7⟩
+    fun a h1 h2 h3 h4 => l6 a h1 h2 h3 h4, fun a w hpw hwt hnf hfs y' hy' => ?_, hfrFS, l7, hroFS⟩
   by_cases hwb : w.block = b
   · have haz : a ∈ gb.values := by
       obtain ⟨-, -, blk, hblk, hx⟩ := hpw
@@ -775,7 +923,7 @@ private theorem mem_before {l A B C P Q : List ID} {x v r : ID} (h1 : l = A ++ x
 
 /-- **A panicking block entry.** -/
 theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')
-    {env : Env} (hE : env.Mono) {frS frT : Frame} {b : ID} {i : Nat}
+    {env : Env} (hE : env.Mono) (hK : env.KeepsRo) {frS frT : Frame} {b : ID} {i : Nat}
     (R : BRel tabs f g frS frT b i) {fb gb : Block} {of og : Array ID}
     (B : BlockData tabs f g b fb gb of og) {e : Panic} {m : Mem}
     (he : enterBlockL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) frS fb i = .panic e m) :
@@ -848,7 +996,9 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp ta
       · have htop := B.tpS; rw [hof] at htop
         rw [hof] at h
         exact topoRem_before htop hfa h
-  have hfrG := regsFrame_eval H B R.frames (P := pre) hpreof pS3 g5 g6
+  have hroG := roQL_eval H hK B.bmS B.hfb (fun x hx => ((B.mS x).1 (hpreof x hx)).1) R.ro hpsS
+    hpre
+  have hfrG := regsFrame_eval H B R.frames (P := pre) hpreof pS3 g5 g6 (roQL_regs hroG)
   have hrelT0 : ∀ a, V1 g b gb a → (V1 f b fb a ∨ a ∈ pre) → ¬ IsTermL tabs f.value? a →
       ¬ IsTermL tabs (listedDefs g) a →
       Sem.Refines (rv G a) (rv { frT with regs := setPhis psT frT.regs } a) := by

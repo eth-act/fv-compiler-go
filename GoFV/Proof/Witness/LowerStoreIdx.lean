@@ -98,8 +98,14 @@ theorem stx_lower (scaled : Bool) :
       (out.func.value? 6).map (fun v => (v.op, v.args)) =
         some (if scaled then .ARM64MOVDstoreidx8 else .ARM64MOVDstoreidx, #[2, 3, 5, 1]) ∧
       (∃ f', GoFV.Proof.Low.Contract (stxFunc scaled) f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func stxPassEnv.tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env stxTabs (stxFunc scaled) args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage
+            (GoFV.Opt.LowerCheck.roPre stxPassEnv.tables (stxFunc scaled)) env mem)
+        out.tables out.func stxPassEnv.tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.LowerCheck.roPre stxPassEnv.tables (stxFunc scaled)) env mem → ∀ fuel,
+        (run env stxTabs (stxFunc scaled) args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env stxTabs (stxFunc scaled) args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := stx_checks scaled
@@ -110,7 +116,7 @@ theorem stx_lower (scaled : Bool) :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨h6, hl, -⟩ := h1
     exact ⟨out, rfl, hl, h6, GoFV.Proof.Low.lower_refines hc (stx_generic scaled),
-      fun env hE args mem fuel hd =>
-        GoFV.Proof.Low.lower_refines_run hc (stx_generic scaled) (stx_noFma scaled) hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc (stx_generic scaled) (stx_noFma scaled) hE hro hd⟩
 
 end GoFV.Proof.Witness

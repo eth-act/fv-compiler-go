@@ -16,8 +16,11 @@ corresponding atoms' arguments in `g` refine those of `f` as lowered terms over 
 not panic, `enter_ok`, then the terminators, `termStepRefL_regs`; a panicking one,
 `enter_panic`), entry frames equal but their registers (`entry_relL`), and `finish_refines_mono`.
 The source runs in `f`'s mode (`Func.lowered`), the target in `g`'s, which is lowered; `f` is
-lowered or has the same shapes in both modes (`shapesOK`), and `f`'s atoms are generic ops (true
-of every function `lower` gets, `Func.generic_of_lowered`).
+lowered or has the same shapes in both modes (`shapesOK`), and `f`'s atoms are generic ops and its
+blocks generic (true of every function `lower` gets, `Func.generic_of_lowered`). The precondition
+`RoImage` of the read-only symbols `f`'s `Addr`s name, when its values are generic memory-typed ops
+(`LowerCheck.roPre`), gives them to every memory the source then holds (`RoQL`, `BRel.ro`): the
+validator's read-only loads (`LowerCheck.roLoadDef`, only on such an `f`) read them.
 -/
 
 namespace GoFV.Proof.Low.Sim
@@ -59,13 +62,13 @@ theorem next_relL {frS frT : Frame} {i : Nat} (R : BRel tabs f g frS frT b i) {F
     ((H.ctrls b B.bmT fb gb B.hfb B.hgb).1 e he)
   exact { fr := E.fr, szS := E.szS, szT := E.szT, tyS := E.tyS, tyT := E.tyT, mem := n4,
           treeS := n3, treeT := m3, atoms := E.atoms, frames := E.frames, framesT := E.framesT,
-          den := ⟨_, _, E.dS, E.dT, vt_placedL H B, n1, m1, n2, m2⟩ }
+          ro := E.ro, den := ⟨_, _, E.dS, E.dT, vt_placedL H B, n1, m1, n2, m2⟩ }
 
 end
 
 /-- **One block entry.** -/
 theorem block_simL {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')
-    {env : Env} (hE : env.Mono) {frS frT : Frame} {b : ID} {i : Nat}
+    {env : Env} (hE : env.Mono) (hK : env.KeepsRo) {frS frT : Frame} {b : ID} {i : Nat}
     (R : BRel tabs f g frS frT b i) :
     StepSimE Mem.Refines (SimR tabs f g)
       (blockStepL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) frS b i)
@@ -80,7 +83,7 @@ theorem block_simL {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tab
     dsimp only
     cases he : enterBlockL ⟨f.lowered, false⟩ env (Ctx.makeL tabs f) frS fb i with
     | ok FS =>
-      obtain ⟨FT, heT, E⟩ := enter_ok H hE R B he
+      obtain ⟨FT, heT, E⟩ := enter_ok H hE hK R B he
       rw [heT]
       dsimp only
       have hst := term_simL H B R E
@@ -94,14 +97,16 @@ theorem block_simL {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tab
       | panic e hm => exact ⟨_, rfl, hm⟩
       | stuck msg r => trivial
     | panic e m =>
-      obtain ⟨m', heT, hm⟩ := enter_panic H hE R B he
+      obtain ⟨m', heT, hm⟩ := enter_panic H hE hK R B he
       rw [heT]
       exact ⟨m', rfl, hm⟩
     | stuck msg => trivial
 
-/-- The entry frames are related. -/
+/-- The entry frames are related; the source's has the read-only symbols of `f` if the memory with
+the global image has those of the precondition (`roPre`). -/
 theorem entry_relL {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tabs f g ce ce')
-    (env : Env) (args : List Val) (mem : Mem) :
+    (env : Env) (args : List Val) (mem : Mem)
+    (hro : RoMem (GoFV.Opt.LowerCheck.roPre tabs f) (addGlobals env mem)) :
     BRel tabs f g (entryFrame env (Ctx.makeL tabs f) args mem)
       (entryFrame env (Ctx.makeL tabs g) args mem) f.entry 0 := by
   have hT : entryFrame env (Ctx.makeL tabs g) args mem =
@@ -133,9 +138,12 @@ theorem entry_relL {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} (H : Hyp tab
         simp only [entryFrame, makeL_f, Array.getElem?_replicate]
         split <;> simp), fun a s y _ _ h => absurd h (by
         simp only [entryFrame, makeL_f, Array.getElem?_replicate]
-        split <;> simp), fun a y _ h => absurd h (by
+        split <;> simp), fun _ _ _ h => absurd h (by
+        simp only [entryFrame, makeL_f, Array.getElem?_replicate]
+        split <;> simp), fun _ _ _ h => absurd h (by
         simp only [entryFrame, makeL_f, Array.getElem?_replicate]
         split <;> simp)⟩,
+      ro := roQL_entry H args hro,
       den := ⟨fun _ => False, fun _ => False, denOKL_empty _ _ _ _, denOKL_empty _ _ _ _,
         fun _ h => h.elim, fun x h => hentry f ce H.wf H.cf x h,
         fun x h => hentry g ce' H.wg H.cg x (hge ▸ h), hphi f ce H.wf _, hge ▸ hphi g ce' H.wg _⟩ }
@@ -171,10 +179,12 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.SSA.DomCert GoFV.Proof GoFV.Proof.Dom GoFV.Proof
   GoFV.Opt.LowerCheck GoFV.Opt.LowerTerm Sim
 
 /-- **The lowered atom simulation.** `g` (lowered, `runL` in lowered mode) refines `f` (`runL`
-in `f`'s mode) under monotone contracts, when both pass `check`, their atoms correspond
-(`atomsOKL`), the atoms' arguments and the terminators refine as terms (`AtomArgsRefL`,
-`TermStepRefL`), `f` is lowered or has the same shapes in both modes, and `f`'s atoms are generic
-ops (`hfa`; every function with `f.lowered = false` has it, `Func.generic_of_lowered`). -/
+in `f`'s mode) under monotone contracts and the read-only symbols of `f` in the memory with the
+global image (`RoImage` of `roPre`), when both pass `check`, their atoms correspond (`atomsOKL`),
+the atoms' arguments and the terminators refine as terms (`AtomArgsRefL`, `TermStepRefL`), `f` is
+lowered or has the same shapes in both modes, and `f`'s atoms are generic ops and its blocks
+generic (`hfa`, `hfb`; every function with `f.lowered = false` has them,
+`Func.generic_of_lowered`, `Func.notArm64_of_lowered`). -/
 theorem atomSimL_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
     (hA : GoFV.Opt.LowerCheck.atomsOKL tabs f g = true)
@@ -182,12 +192,14 @@ theorem atomSimL_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     (hsh : f.lowered = true ∨ GoFV.Opt.LowerCheck.shapesOK tabs f = true)
     (hgl : g.lowered = true)
     (hfa : ∀ x u, f.value? x = some u → termVL tabs u = false → u.op.generic = true)
+    (hfb : ∀ id b, f.block? id = some b → b.kind.isArm64 = false)
     (h1 : AtomArgsRefL tabs f g) (h2 : TermStepRefL tabs f g) :
-    RefinesLFrom (fun env _ _ => env.Mono) tabs g tabs f := by
+    RefinesLFrom (fun env _ mem => env.Mono ∧ RoImage (GoFV.Opt.LowerCheck.roPre tabs f) env mem)
+      tabs g tabs f := by
   have H : Sim.Hyp tabs f g ce ce' := ⟨check_wf hf, check_wf hg,
     certOK_of_check (check_domCert hf), certOK_of_check (check_domCert hg), atomsOKL_spec hA, h1,
-    h2, fun _ => hgl, hgl, hfa, shp_eq_of hsh hgl⟩
-  intro env args mem hE fuel hd
+    h2, fun _ => hgl, hgl, hfa, shp_eq_of hsh hgl, hfb⟩
+  intro env args mem hP fuel hd
   refine ⟨fuel, ?_⟩
   have hc := ctxL_eq (tabs := tabs) H.ok.ownAux
   have hpar : (Ctx.makeL tabs g).params = (Ctx.makeL tabs f).params := by rw [hc]
@@ -203,10 +215,10 @@ theorem atomSimL_refines {tabs : Tables} {f g : Func} {ce ce' : CheckEnv}
     simp only [hn] at hd
     rw [makeL_f, makeL_f]
     rw [makeL_f] at hd
-    refine finish_refines_mono hE hd (runLoopL_simE (SimR tabs f g)
+    refine finish_refines_mono hP.1 hd (runLoopL_simE (SimR tabs f g)
       (fun frS bS iS frT bT iT hR => ?_) fuel _ _ _ _ _ _
-      ⟨H.ok.entry.symm, rfl, entry_relL H env args mem⟩ (finish_defined hd))
+      ⟨H.ok.entry.symm, rfl, entry_relL H env args mem hP.2.2⟩ (finish_defined hd))
     obtain ⟨rfl, rfl, R⟩ := hR
-    exact block_simL H hE R
+    exact block_simL H hP.1 hP.2.1 R
 
 end GoFV.Proof.Low

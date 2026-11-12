@@ -69,8 +69,14 @@ theorem msk_lower :
       mskShow out.func = [some (.ARM64ANDconst, 16777215, #[4]), some (.ARM64ANDconst, -32, #[4]),
         some (.ARM64MUL, 0, #[7, 10])] ∧
       (∃ f', GoFV.Proof.Low.Contract mskFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func (narPassEnv "msk").tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env narTabs mskFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage
+            (GoFV.Opt.LowerCheck.roPre (narPassEnv "msk").tables mskFunc) env mem)
+        out.tables out.func (narPassEnv "msk").tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.LowerCheck.roPre (narPassEnv "msk").tables mskFunc) env mem → ∀ fuel,
+        (run env narTabs mskFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env narTabs mskFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := msk_checks
@@ -81,6 +87,7 @@ theorem msk_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨hv, hl, -⟩ := h1
     exact ⟨out, rfl, hl, hv, GoFV.Proof.Low.lower_refines hc msk_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc msk_generic msk_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc msk_generic msk_noFma hE hro hd⟩
 
 end GoFV.Proof.Witness

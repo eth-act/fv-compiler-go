@@ -566,12 +566,15 @@ def bfOK (k : Int64) : Bool :=
     decide (k.toInt / 256 + k.toInt % 256 ≤ 64)
 
 /-- The auxint of an arm64 op in the range Go builds it in: a constant shift amount below 64
-(`SLLconst`, `SRLconst`, `SRAconst`; Go's rules mask or bound every one), a bit field (`bfOK`:
+(`SLLconst`, `SRLconst`, `SRAconst`, and `ADDshiftLL`'s shift, which Go's rules build from an
+`SLLconst`'s, `ARM64.rules:1433`, a small constant or `log64` of a power of two; they mask or
+bound every one), a bit field (`bfOK`:
 `UBFX`, `UBFIZ`, `SBFX`, `SBFIZ`, `BFI`, `BFXIL`). The semantics reads any auxint
-(`Arm64.amt`, `Arm64.bf`); Go's helpers on them (`armBFAuxInt`, `bfc.lsb()`) agree with it in
-these ranges. -/
+(`Arm64.amt`, `Arm64.bf`); Go's helpers on them (`armBFAuxInt`, `bfc.lsb()`, `uint64(d)` of a
+shift) agree with it in these ranges. -/
 def auxRangeL (o : Op) (k : Int64) : Bool :=
-  if o == .ARM64SLLconst || o == .ARM64SRLconst || o == .ARM64SRAconst then
+  if o == .ARM64SLLconst || o == .ARM64SRLconst || o == .ARM64SRAconst ||
+      o == .ARM64ADDshiftLL then
     decide (0 ≤ k.toInt) && decide (k.toInt < 64)
   else if o == .ARM64UBFX || o == .ARM64UBFIZ || o == .ARM64SBFX || o == .ARM64SBFIZ ||
       o == .ARM64BFI || o == .ARM64BFXIL then bfOK k
@@ -1593,6 +1596,21 @@ def ArmRule.Mem (r : Rule) : Prop :=
     (o = .Store ∨ o = .LocalAddr ∨ ((stSize o).isSome ∨ (idxStore o).isSome) ∨ pbAtom o ∨
       o = .Zero ∨ o = .Move ∨ qStore o ∨ o = .ARM64STP)
 
+/-- The read-only-load rules (`ARM64.rules:1811-1817`: `(MOV…load [off] {sym} (SB) _) &&
+symIsRO(sym) => (MOVDconst [int64(read…(sym, int64(off)))])`): an integer load whose address
+argument is `SB`. They are not `ArmRule.Sound` (the load reads the memory atom, which the term
+relation does not fix): the validator rejects them as rule instances
+(`GoFV.Opt.LowerCheck.ruleOKL`) and checks each event by its value
+(`GoFV.Opt.LowerCheck.roLoadDef`, under the read-only symbols of the precondition). -/
+def roLoadRule (r : Rule) : Bool :=
+  match r.pat with
+  | .op o _ _ _ _ _ (.op .SB .. :: _) _ => (ldOp? o).isSome
+  | _ => false
+
+/-- A read-only-load rule (`roLoadRule`): the validator checks its events by their value alone,
+so the rule carries no obligation of its own. -/
+def ArmRule.RoLoad (r : Rule) : Prop := roLoadRule r = true
+
 /-- A rule whose result is `mulStrengthReduce{,32}(v, x, c)` (`ARM64.rules:1043`, `1044`): the
 validator checks its events by their effect alone (`GoFV.Opt.LowerCheck.mulOKL`: the values the
 helper built compute the product in the bits `v` keeps), so the rule carries no obligation of its
@@ -1610,10 +1628,10 @@ def ArmRule.Lsh (r : Rule) : Prop :=
 
 /-- A value rule of a lowering rule set the checked `lower` may fire: a sound rule, a sound
 ellipsis rule on terms, an atom rename, a rule on a memory or frame atom, a strength-reduced
-multiplication, or a narrow left shift's rename. -/
+multiplication, a narrow left shift's rename, or a read-only load. -/
 def ArmRule.Checked (r : Rule) : Prop :=
   ArmRule.Sound r ∨ ArmRule.SetOp r ∨ ArmRule.Rename r ∨ ArmRule.Mem r ∨ ArmRule.Mul r ∨
-    ArmRule.Lsh r
+    ArmRule.Lsh r ∨ ArmRule.RoLoad r
 
 /-- Every value rule of `s` is `ArmRule.Checked`, every block rule `BlockRuleL.Checked`, and `s`
 has no rules in the per-instance tables (`nilChecks` … `phiSels`, Phase 1's generic layers). -/

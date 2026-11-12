@@ -105,8 +105,13 @@ theorem ldx_lower :
     ∃ out, lowerChecked ldxPassEnv ldxFunc = .ok out ∧ out.func.lowered = true ∧
       (out.func.value? 5).map (fun v => (v.op, v.args)) = some (.ARM64MOVDloadidx, #[2, 3, 1]) ∧
       (∃ f', GoFV.Proof.Low.Contract ldxFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func ldxPassEnv.tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env ldxTabs ldxFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre ldxPassEnv.tables ldxFunc) env mem)
+        out.tables out.func ldxPassEnv.tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.LowerCheck.roPre ldxPassEnv.tables ldxFunc) env mem → ∀ fuel,
+        (run env ldxTabs ldxFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env ldxTabs ldxFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := ldx_checks
@@ -117,6 +122,7 @@ theorem ldx_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨h5, hl, -⟩ := h1
     exact ⟨out, rfl, hl, h5, GoFV.Proof.Low.lower_refines hc ldx_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc ldx_generic ldx_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc ldx_generic ldx_noFma hE hro hd⟩
 
 end GoFV.Proof.Witness

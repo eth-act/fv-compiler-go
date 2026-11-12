@@ -118,8 +118,13 @@ theorem gld_lower :
       (out.func.value? 5).map (fun v => (v.op, v.auxInt, v.aux, v.args)) =
         some (.ARM64MOVDload, 8, some 4, #[2, 1]) ∧
       (∃ f', GoFV.Proof.Low.Contract gldFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func gldPassEnv.tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env gldTabs gldFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre gldPassEnv.tables gldFunc) env mem)
+        out.tables out.func gldPassEnv.tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.LowerCheck.roPre gldPassEnv.tables gldFunc) env mem → ∀ fuel,
+        (run env gldTabs gldFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env gldTabs gldFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := gld_checks
@@ -130,7 +135,8 @@ theorem gld_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨h4, h5, hl, -⟩ := h1
     exact ⟨out, rfl, hl, h4, h5, GoFV.Proof.Low.lower_refines hc gld_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc gld_generic gld_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc gld_generic gld_noFma hE hro hd⟩
 
 /-- The definition tables of `fra`: `gst`'s, `[2]int` (type 5), `*[2]int` (6), and the frame
 variable `a` (aux 4) of type `[2]int`. -/
@@ -200,8 +206,13 @@ theorem fra_lower :
       (out.func.value? 7).map (fun v => (v.op, v.auxInt, v.aux, v.args)) =
         some (.ARM64MOVDload, 8, some 4, #[2, 6]) ∧
       (∃ f', GoFV.Proof.Low.Contract fraFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func fraPassEnv.tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env fraTabs fraFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre fraPassEnv.tables fraFunc) env mem)
+        out.tables out.func fraPassEnv.tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.LowerCheck.roPre fraPassEnv.tables fraFunc) env mem → ∀ fuel,
+        (run env fraTabs fraFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env fraTabs fraFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := fra_checks
@@ -212,7 +223,8 @@ theorem fra_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨h6, h7, hl, -⟩ := h1
     exact ⟨out, rfl, hl, h6, h7, GoFV.Proof.Low.lower_refines hc fra_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc fra_generic fra_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc fra_generic fra_noFma hE hro hd⟩
 
 /-- `fr0`, the input of `lower`: `fra` with the offset 0. -/
 def fr0Func : Func :=
@@ -255,8 +267,13 @@ theorem fr0_lower :
       (out.func.value? 7).map (fun v => (v.op, v.auxInt, v.aux, v.args)) =
         some (.ARM64MOVDload, 0, some 4, #[2, 6]) ∧
       (∃ f', GoFV.Proof.Low.Contract fr0Func f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func fr0PassEnv.tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env fraTabs fr0Func args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre fr0PassEnv.tables fr0Func) env mem)
+        out.tables out.func fr0PassEnv.tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.LowerCheck.roPre fr0PassEnv.tables fr0Func) env mem → ∀ fuel,
+        (run env fraTabs fr0Func args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env fraTabs fr0Func args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := fr0_checks
@@ -267,7 +284,8 @@ theorem fr0_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨-, h5, h6, h7, hl, -⟩ := h1
     exact ⟨out, rfl, hl, h5, h6, h7, GoFV.Proof.Low.lower_refines hc fr0_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc fr0_generic fr0_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc fr0_generic fr0_noFma hE hro hd⟩
 
 /-- The ABI of `spo`'s `AuxCall`: one `int` argument on the stack at offset 8. -/
 def spoABI : CallABI :=
@@ -343,8 +361,13 @@ theorem spo_lower :
       (out.func.value? 6).map (fun v => (v.op, v.auxInt, v.aux, v.args)) =
         some (.ARM64MOVDload, 8, none, #[2, 5]) ∧
       (∃ f', GoFV.Proof.Low.Contract spoFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func spoPassEnv.tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env spoTabs spoFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre spoPassEnv.tables spoFunc) env mem)
+        out.tables out.func spoPassEnv.tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.LowerCheck.roPre spoPassEnv.tables spoFunc) env mem → ∀ fuel,
+        (run env spoTabs spoFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env spoTabs spoFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := spo_checks
@@ -355,6 +378,7 @@ theorem spo_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨h4, h5, h6, hl, -⟩ := h1
     exact ⟨out, rfl, hl, h4, h5, h6, GoFV.Proof.Low.lower_refines hc spo_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc spo_generic spo_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc spo_generic spo_noFma hE hro hd⟩
 
 end GoFV.Proof.Witness

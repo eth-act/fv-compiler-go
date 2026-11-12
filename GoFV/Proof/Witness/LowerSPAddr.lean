@@ -87,8 +87,13 @@ theorem osp_lower :
         some (.ARM64MOVDaddr, 8, none, #[4]) ∧
       (out.func.value? 6).map (fun v => (v.op, v.args[1]?)) = some (.ARM64MOVDstore, some 5) ∧
       (∃ f', GoFV.Proof.Low.Contract ospFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func ospPassEnv.tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env ospTabs ospFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre ospPassEnv.tables ospFunc) env mem)
+        out.tables out.func ospPassEnv.tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.LowerCheck.roPre ospPassEnv.tables ospFunc) env mem → ∀ fuel,
+        (run env ospTabs ospFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env ospTabs ospFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := osp_checks
@@ -99,6 +104,7 @@ theorem osp_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨h5, h6, hl, -⟩ := h1
     exact ⟨out, rfl, hl, h5, h6, GoFV.Proof.Low.lower_refines hc osp_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc osp_generic osp_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc osp_generic osp_noFma hE hro hd⟩
 
 end GoFV.Proof.Witness

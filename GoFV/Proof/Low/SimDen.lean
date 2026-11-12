@@ -282,13 +282,17 @@ theorem evalValueL_termL_eq {low : Bool} {env : Env} {ctx : Ctx} {fr : Frame} {v
 /-- The registers of the frame addresses (`LocalAddr {n}`) of `D` in `fr`: `poison` or the
 address word of `n` in activation `act` at a word shape (`FrameVals` of the registers); those of
 the stack pointer (`SP`): `poison` or its word in activation `act` at a word shape (`SPVals`);
-those of the values `D` does not define: `poison` (`FrameVals`). -/
+those of the values `D` does not define: `poison` (`FrameVals`); if every value of `D` is a
+generic memory-typed op (`MemTyD`), the memories every register holds have the read-only symbols
+`D`'s `Addr`s name (`RoVals`). -/
 def RegsFrame (tabs : Tables) (act : Nat) (D : ID → Option Value) (fr : Frame) : Prop :=
   (∀ a l n y, D a = some l → l.op = .LocalAddr → l.aux = some n → fr.regs[a]? = some (some y) →
     y = .poison ∨ (y = (framePtr tabs act n).word ∧ wordShape (shpL tabs l.type) = true)) ∧
   (∀ a s y, D a = some s → s.op = .SP → fr.regs[a]? = some (some y) →
     y = .poison ∨ (y = (spPtr act).word ∧ wordShape (shpL tabs s.type) = true)) ∧
-  ∀ a y, D a = none → fr.regs[a]? = some (some y) → y = .poison
+  (∀ a y, D a = none → fr.regs[a]? = some (some y) → y = .poison) ∧
+  (MemTyD tabs D → ∀ (a : ID) (y : Val), fr.regs[a]? = some (some y) →
+    GoFV.Proof.MemInv.MemsOK (RoMemD tabs D) y)
 
 /-- A register of a value `D` does not define holds `poison` (`RegsFrame`). -/
 theorem RegsFrame.rv_none {tabs : Tables} {act : Nat} {D : ID → Option Value} {fr : Frame}
@@ -299,7 +303,19 @@ theorem RegsFrame.rv_none {tabs : Tables} {act : Nat} {D : ID → Option Value} 
   | some o =>
     cases o with
     | none => rfl
-    | some y => simp only [Option.join_some, Option.getD_some]; exact h.2.2 a y ha hr
+    | some y => simp only [Option.join_some, Option.getD_some]; exact h.2.2.1 a y ha hr
+
+/-- The memories of every register have the read-only symbols of `D` (`RegsFrame`). -/
+theorem RegsFrame.rv_ro {tabs : Tables} {act : Nat} {D : ID → Option Value} {fr : Frame}
+    (h : RegsFrame tabs act D fr) (hmt : MemTyD tabs D) (a : ID) :
+    GoFV.Proof.MemInv.MemsOK (RoMemD tabs D) (rv fr a) := by
+  unfold rv
+  cases hr : fr.regs[a]? with
+  | none => exact GoFV.Proof.MemInv.memsOK_poison
+  | some o =>
+    cases o with
+    | none => exact GoFV.Proof.MemInv.memsOK_poison
+    | some y => simp only [Option.join_some, Option.getD_some]; exact h.2.2.2 hmt a y hr
 
 /-- A pointer at shape `T` (`Val.retype`, `Val.retypeL`) is `poison` or its word at a word
 shape. -/
@@ -493,12 +509,13 @@ private theorem vals_exist (hfr : RegsFrame tabs 0 D FS) : ∃ ρ ρ' : ID → V
     · rw [e1 a h1, hw, Option.bind_some, hwn]
 
 /-- The source's valuation of the atoms from its registers holds the frame addresses and the
-stack pointer of activation 0 (`RegsFrame`; `poison` elsewhere). -/
+stack pointer of activation 0 and memories with the read-only symbols (`RegsFrame`; `poison`
+elsewhere). -/
 private theorem frameVals_of (hfr : RegsFrame tabs 0 D FS) {ρ : ID → Val}
     (hρ : ∀ a, VS a → ¬ IsTermL tabs D a → ρ a = rv FS a)
     (hρp : ∀ a, ¬ (VS a ∧ ¬ IsTermL tabs D a) → ρ a = .poison) :
     FrameVals tabs 0 D ρ ∧ SPVals tabs 0 D ρ := by
-  refine ⟨⟨fun a l n hl' hop hax => ?_, fun a hn => ?_⟩, fun a s hs' hop => ?_⟩
+  refine ⟨⟨fun a l n hl' hop hax => ?_, fun a hn => ?_, fun hmt a => ?_⟩, fun a s hs' hop => ?_⟩
   · by_cases h : VS a ∧ ¬ IsTermL tabs D a
     · rw [hρ a h.1 h.2]
       obtain ⟨z, hz⟩ := (hS a h.1).1
@@ -509,8 +526,11 @@ private theorem frameVals_of (hfr : RegsFrame tabs 0 D FS) {ρ : ID → Val}
     · rw [hρ a h.1 h.2]
       obtain ⟨z, hz⟩ := (hS a h.1).1
       rw [rv_of hz]
-      exact hfr.2.2 a z hn hz
+      exact hfr.2.2.1 a z hn hz
     · exact hρp a h
+  · by_cases h : VS a ∧ ¬ IsTermL tabs D a
+    · rw [hρ a h.1 h.2]; exact hfr.rv_ro hmt a
+    · rw [hρp a h]; exact GoFV.Proof.MemInv.memsOK_poison
   · by_cases h : VS a ∧ ¬ IsTermL tabs D a
     · rw [hρ a h.1 h.2]
       obtain ⟨z, hz⟩ := (hS a h.1).1

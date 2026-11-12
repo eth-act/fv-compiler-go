@@ -1,4 +1,5 @@
 import GoFV.Proof.TermStep
+import GoFV.Proof.MemInvL
 import GoFV.Opt.LowerCheck
 
 variable [GoFV.SSA.Sem.Addrs]
@@ -188,15 +189,33 @@ def idxScale (o : Op) : Nat := ((idxStore o).map (·.2)).getD 1
 /-- The address of the frame variable `n` in activation `act` (`Sem.frameVal`). -/
 def framePtr (tabs : Tables) (act : Nat) (n : AuxRef) : Ptr := ⟨frameBlk tabs act n, 0⟩
 
+/-- The read-only symbols the `Addr`s of `D` name (`RewriteCheck.roSym?`) have their allocations,
+read-only, in the memory `m` (`RoMem` of `RewriteCheck.roSyms`). -/
+def RoMemD (tabs : Tables) (D : ID → Option Value) (m : Mem) : Prop :=
+  ∀ a v name al, D a = some v → v.op = .Addr →
+    GoFV.Opt.RewriteCheck.roSym? tabs v.aux = some (name, al) →
+      al.writable = false ∧ m.find? (.global name) = some al
+
+/-- Every value of `D` is a generic op and, if its shape may hold a memory, a memory op
+(`LowerCheck.memTyV`, `WBCheck.memTyOK`'s condition). -/
+def MemTyD (tabs : Tables) (D : ID → Option Value) : Prop :=
+  ∀ a v, D a = some v → v.op.generic = true ∧ memTyV tabs v = true
+
+/-- If every value of `D` is a generic memory-typed op (`MemTyD`), every memory in the values of
+`ρ` (`MemInv.MemsOK`) has the read-only symbols `D`'s `Addr`s name (`RoMemD`): `run` keeps them
+in every memory its registers hold, from a precondition `RoImage` (`GoFV.Proof.MemInv`). -/
+def RoVals (tabs : Tables) (D : ID → Option Value) (ρ : ID → Val) : Prop :=
+  MemTyD tabs D → ∀ a, GoFV.Proof.MemInv.MemsOK (RoMemD tabs D) (ρ a)
+
 /-- The atoms of `D` that are frame addresses (`LocalAddr {n}`) hold, under `ρ`, the address of
 `n` in activation `act` as a word (`Ptr.word`) at a word shape, or `poison` (as `runL`'s
 registers do, `Sem.frameVal` shaped); the values `D` does not define hold `poison` (they have no
 register: in the input, the inner store of a `Move` lowered to two 128-bit stores,
-`ARM64.rules:423`). -/
+`ARM64.rules:423`); the memories `ρ` holds have the read-only symbols of `D` (`RoVals`). -/
 def FrameVals (tabs : Tables) (act : Nat) (D : ID → Option Value) (ρ : ID → Val) : Prop :=
   (∀ a l n, D a = some l → l.op = .LocalAddr → l.aux = some n →
     ρ a = .poison ∨ (ρ a = (framePtr tabs act n).word ∧ wordShape (shpL tabs l.type) = true)) ∧
-  ∀ a, D a = none → ρ a = .poison
+  (∀ a, D a = none → ρ a = .poison) ∧ RoVals tabs D ρ
 
 /-- The stack pointer of activation `act` (`Sem.evalOp` of `SP`: the outgoing-arguments block at
 offset 0). -/

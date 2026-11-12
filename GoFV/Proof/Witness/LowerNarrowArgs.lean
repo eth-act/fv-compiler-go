@@ -192,8 +192,14 @@ theorem nsel_lower :
     ∃ out, lowerChecked (narPassEnv "nsel") nselFunc = .ok out ∧ out.func.lowered = true ∧
       (out.func.value? 6).map (·.op) = some .ARM64CSEL0 ∧
       (∃ f', GoFV.Proof.Low.Contract nselFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func (narPassEnv "nsel").tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env narTabs nselFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage
+            (GoFV.Opt.LowerCheck.roPre (narPassEnv "nsel").tables nselFunc) env mem)
+        out.tables out.func (narPassEnv "nsel").tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.LowerCheck.roPre (narPassEnv "nsel").tables nselFunc) env mem → ∀ fuel,
+        (run env narTabs nselFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env narTabs nselFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := nsel_checks
@@ -204,7 +210,8 @@ theorem nsel_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨h6, hl, -⟩ := h1
     exact ⟨out, rfl, hl, h6, GoFV.Proof.Low.lower_refines hc nsel_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc nsel_generic nsel_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc nsel_generic nsel_noFma hE hro hd⟩
 
 /-- **Pass execution witness** for `lower_refines` (`lower_refines_run`) through two narrowing
 copies: on `nchn`, the checked lower's `v7` is `MOVBUreg v4` (`narrowReachL`), and every returning
@@ -213,8 +220,14 @@ theorem nchn_lower :
     ∃ out, lowerChecked (narPassEnv "nchn") nchnFunc = .ok out ∧ out.func.lowered = true ∧
       (out.func.value? 7).map (fun v => (v.op, v.args)) = some (.ARM64MOVBUreg, #[4]) ∧
       (∃ f', GoFV.Proof.Low.Contract nchnFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func (narPassEnv "nchn").tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env narTabs nchnFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage
+            (GoFV.Opt.LowerCheck.roPre (narPassEnv "nchn").tables nchnFunc) env mem)
+        out.tables out.func (narPassEnv "nchn").tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.LowerCheck.roPre (narPassEnv "nchn").tables nchnFunc) env mem → ∀ fuel,
+        (run env narTabs nchnFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env narTabs nchnFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := nchn_checks
@@ -225,7 +238,8 @@ theorem nchn_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨h7, hl, -⟩ := h1
     exact ⟨out, rfl, hl, h7, GoFV.Proof.Low.lower_refines hc nchn_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc nchn_generic nchn_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc nchn_generic nchn_noFma hE hro hd⟩
 
 /-- **Pass execution witness** for `lower_refines` (`lower_refines_run`) on `TSTWconst` of a
 narrowing copy's source: on `ntst`, the checked lower's `v18` is `TSTWconst [2] v4` (`tstReadW`),
@@ -235,8 +249,14 @@ theorem ntst_lower :
       (out.func.value? 18).map (fun v => (v.op, v.auxInt, v.args)) =
         some (.ARM64TSTWconst, 2, #[4]) ∧
       (∃ f', GoFV.Proof.Low.Contract ntstFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func (narPassEnv "ntst").tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env narTabs ntstFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage
+            (GoFV.Opt.LowerCheck.roPre (narPassEnv "ntst").tables ntstFunc) env mem)
+        out.tables out.func (narPassEnv "ntst").tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.LowerCheck.roPre (narPassEnv "ntst").tables ntstFunc) env mem → ∀ fuel,
+        (run env narTabs ntstFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env narTabs ntstFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := ntst_checks
@@ -247,7 +267,8 @@ theorem ntst_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨-, h18, hl, -⟩ := h1
     exact ⟨out, rfl, hl, h18, GoFV.Proof.Low.lower_refines hc ntst_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc ntst_generic ntst_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc ntst_generic ntst_noFma hE hro hd⟩
 
 /-- **Pass execution witness** for `lower_refines` (`lower_refines_run`) on a rule matching through
 a narrowing copy `lower` eliminated: on `nand`, the checked lower's `v8` is `ANDconst [127] v4`
@@ -258,8 +279,14 @@ theorem nand_lower :
       (out.func.value? 8).map (fun v => (v.op, v.auxInt, v.args)) =
         some (.ARM64ANDconst, 127, #[4]) ∧
       (∃ f', GoFV.Proof.Low.Contract nandFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func (narPassEnv "nand").tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env narTabs nandFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage
+            (GoFV.Opt.LowerCheck.roPre (narPassEnv "nand").tables nandFunc) env mem)
+        out.tables out.func (narPassEnv "nand").tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.LowerCheck.roPre (narPassEnv "nand").tables nandFunc) env mem → ∀ fuel,
+        (run env narTabs nandFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env narTabs nandFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := nand_checks
@@ -270,6 +297,7 @@ theorem nand_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨h8, hl, -⟩ := h1
     exact ⟨out, rfl, hl, h8, GoFV.Proof.Low.lower_refines hc nand_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc nand_generic nand_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc nand_generic nand_noFma hE hro hd⟩
 
 end GoFV.Proof.Witness

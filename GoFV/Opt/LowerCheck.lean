@@ -47,6 +47,11 @@ input `f`, and the output `g` must have the replayed definitions. The difference
   atom) is replayed as no change (`addrFoldEv`), and the later folds see through it (`frameAddr`);
   so is one lowering `OffPtr [off] SP` to `MOVDaddr [off] SP` (`305`, `spFoldEv`), which a store
   then folds as an offset (`stFold`) and a load replays as the folded load (`ldOffFold`);
+* a rule event at an integer load of a read-only symbol (`ARM64.rules:1811-1817`, `roLoadRule`,
+  which `ruleOKL` rejects) is replayed as the `MOVDconst` it builds when the load from the
+  symbol's allocation alone gives its word (`roLoadDef`, only on an `f` whose values are generic
+  memory-typed ops, `memTyAll`); the precondition pins the symbols `f`'s `Addr`s name on such an
+  `f` (`RoImage` of `roPre`);
 * a rule event folding a constant operand into a lowered bounds panic (`ARM64.rules:513-516`) is
   replayed as no change (`pbFoldEv`): the output's `LoweredPanicBounds{RC,CR,CC}` must keep the
   replayed `LoweredPanicBoundsRR`'s other arguments (`pbFinal`), and its aux constants are the
@@ -199,13 +204,14 @@ def ruleDefsL (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value)
   | _, _, _ => defs
 
 /-- The rule event `(v, r, defs)` is a sound instance of one commutation choice of `r` on `M`
-(`ArmRule.Sound`): the definitions to replay (`ruleDefsL` of that choice). -/
+(`ArmRule.Sound`): the definitions to replay (`ruleDefsL` of that choice). The read-only-load
+rules (`roLoadRule`) are rejected. -/
 def ruleOKL (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) :
     Option (List Value) :=
   match M.get? v with
   | none => none
   | some x =>
-    if termVL tabs x && x.id == v then
+    if termVL tabs x && x.id == v && !roLoadRule r then
       (choices (Pat.commutes r.pat)).findSome? fun sw =>
         let ds := ruleDefsL tabs M (Rule.swapC r sw) v defs
         if ruleOK1 tabs M (Rule.swapC r sw) v x ds then some ds else none
@@ -831,6 +837,66 @@ def ldOffFold (tabs : Tables) (M : Defs) (v : ID) (defs : List Value) : Option V
     | none => none
   | _, _ => none
 
+/-- A value whose shape may hold a memory is a memory op or of `memFreeOps`, and no write-barrier
+op: `WBCheck.memTyOK`'s condition on one value. -/
+def memTyV (tabs : Tables) (v : Value) : Bool :=
+  v.op != .WB && v.op != .WBend && v.op != .StoreWB && v.op != .MoveWB && v.op != .ZeroWB &&
+    (WBCheck.memFree (tabs.ty v.type) || WBCheck.memOpOK v.op ||
+      WBCheck.memFreeOps.contains v.op)
+
+/-- Every value of `f`'s table (listed or not) is a generic op passing `memTyV`: then `f` runs as
+Phase 1's `run` and every memory its run holds keeps the read-only symbols of its precondition
+(`GoFV.Proof.MemInv`, `WBCheck.memTyOK`). -/
+def memTyAll (tabs : Tables) (f : Func) : Bool :=
+  f.valueTab.all fun o => o.all fun v => v.op.generic && memTyV tabs v
+
+/-- The read-only symbols `GoFV.Proof.Low.lower_refines`'s precondition pins for `f`: those its
+`Addr`s name (`RewriteCheck.roSyms`) when `roLoadDef` may replay a load of `f` (`memTyAll`), else
+none. -/
+def roPre (tabs : Tables) (f : Func) : List (String × Sem.Alloc) :=
+  if memTyAll tabs f then roSyms tabs f else []
+
+/-- The 64-bit register word an `n`-byte integer load (`signed`, `Arm64.loadN`) at offset `o` of
+the global `name` reads from its allocation `a` alone, at `Addrs.fixed` (if the allocation holds
+no frame pointer, so that every address assignment reads it alike, `Mem.load_agree`): `some none`
+if the load gives `poison` (out of the allocation), `some (some x)` for the word `x`, `none`
+otherwise (a pointer the register would hold). -/
+def roLoadWord (name : String) (a : Sem.Alloc) (n : Nat) (signed : Bool) (o : BitVec 64) :
+    Option (Option (BitVec 64)) :=
+  let m := ({} : Sem.Mem).set (.global name) a
+  if m.lowB then
+    match @Sem.Arm64.loadN Sem.Addrs.fixed .other n signed m ⟨.global name, o⟩ with
+    | .int .w64 x => some (some x)
+    | .poison => some none
+    | _ => none
+  else none
+
+/-- A rule event at the integer load `x` at `v` of a read-only symbol (`{sym}`: an `SRODATA`
+symbol or a type descriptor, `RewriteCheck.roSym?`, that an `Addr` of `f` names, so that the
+precondition's `RoImage` pins it) replayed as the constant `u` (`ARM64.rules:1811-1817`,
+`roLoadRule`): `u` is `MOVDconst [c]` with `x`'s type, and the load from the symbol's allocation
+alone gives `c`'s word or `poison` (`roLoadWord`); `x`'s memory argument is an atom of `M`, and
+every value of `f` that may hold a memory is a memory op (`memTyAll`), so the memory it reads
+holds the allocation. -/
+def roLoadDef (tabs : Tables) (f : Func) (M : Defs) (v : ID) (defs : List Value) :
+    Option Value :=
+  match M.get? v, defs with
+  | some x, [_, u] =>
+    match ldOp? x.op, roSym? tabs x.aux with
+    | some (n, s), some (name, a) =>
+      if x.id == v && u.id == v && u.op == .ARM64MOVDconst && u.args.size == 0 &&
+          u.type == x.type && u.aux == none && x.args.size == 2 && termVL tabs x &&
+          termVL tabs u && (M.get? x.args[1]!).all (fun w => !termVL tabs w) &&
+          f.valueTab.any (fun o => o.any fun w => w.op == .Addr && w.aux == x.aux) &&
+          memTyAll tabs f &&
+          (match roLoadWord name a n s (BitVec.ofInt 64 x.auxInt.toInt) with
+           | some none => true
+           | some (some w) => w == Sem.Arm64.imm u.auxInt
+           | none => false)
+      then some u else none
+    | _, _ => none
+  | _, _ => none
+
 /-- A rule event at the renamed bounds panic `LoweredPanicBoundsRR` at `v` building a lowered
 bounds panic with constant operands (`pbKeep`; `ARM64.rules:513-516`, the later ones on the
 result of the first): the replay keeps `v`'s definition, which `finalOKL` relates to the output's
@@ -1195,7 +1261,10 @@ def replayL (tabs : Tables) (t : Interp.Table) (f : Func) :
               | none =>
                 match ldOffFold tabs M v defs.toList with
                 | some u => replayL tabs t f (M.put v u) B evs
-                | none => none
+                | none =>
+                  match roLoadDef tabs f M v defs.toList with
+                  | some u => replayL tabs t f (M.put v u) B evs
+                  | none => none
   | M, B, .copyArg v i src :: evs =>
     match M.get? v with
     | none => none
@@ -1468,12 +1537,15 @@ def tabsAgreeL (tabs tabs' : Tables) (f : Func) : Bool :=
     Sem.Ty.beq (Sem.valueTy (Sem.typeShapesL tabs') o) (Sem.valueTy (Sem.typeShapesL tabs) o)
 
 /-- `applyRewrite` with the lowering table `t` and its log; the result if the tables agree for
-`f` (`tabsAgreeL`), both functions pass `check` and `validateL` accepts it, else `none`. -/
+`f` (`tabsAgreeL`) and give it the same read-only symbols (`roPre`, which the precondition of
+`GoFV.Proof.Low.lower_refines` pins in the input's tables), both functions pass `check` and
+`validateL` accepts it, else `none`. -/
 def checkedRunL (t : Interp.Table) (env : PassEnv) (f : Func) : Except String (Option PassOut) := do
   let (out, _, log) ← GoFV.Rules.rewriteRun t true true env f
   let ce : CheckEnv := { tabs := out.tables, typs := env.typs }
   return if tabsAgreeL env.tables out.tables f && checkOK { tabs := env.tables, typs := env.typs } f &&
-      checkOK ce out.func && validateL out.tables t f out.func log then some out else none
+      checkOK ce out.func && validateL out.tables t f out.func log &&
+      decide (roPre out.tables f = roPre env.tables f) then some out else none
 
 /-- **The checked lowering pass** with table `t`: the validated result, else the input. -/
 def checkedLowerWith (t : Interp.Table) : Pass := fun env f => do

@@ -247,6 +247,7 @@ import GoFV.Proof.Low.DenL
 import GoFV.Proof.Low.Lower
 import GoFV.Proof.Low.ProvenARM64
 import GoFV.Proof.Low.QPart
+import GoFV.Proof.Low.RoLoad
 import GoFV.Proof.Low.RuleL
 import GoFV.Proof.Low.Rules.Attr
 import GoFV.Proof.Low.Rules.Bitfield
@@ -295,6 +296,7 @@ import GoFV.Proof.Low.ValReplay
 import GoFV.Proof.Low.ValRule
 import GoFV.Proof.Low.ValStep
 import GoFV.Proof.MemInv
+import GoFV.Proof.MemInvL
 import GoFV.Proof.MemOpsPre
 import GoFV.Proof.MemRefine
 import GoFV.Proof.Merge
@@ -1086,6 +1088,7 @@ import GoFV.Proof.Witness.LowerPanicConst
 import GoFV.Proof.Witness.LowerPeep
 import GoFV.Proof.Witness.LowerProv
 import GoFV.Proof.Witness.LowerPtrCmp
+import GoFV.Proof.Witness.LowerRoLoad
 import GoFV.Proof.Witness.LowerSPAddr
 import GoFV.Proof.Witness.LowerShiftNarrow
 import GoFV.Proof.Witness.LowerShiftOp

@@ -95,8 +95,13 @@ theorem stw_lower :
     ∃ out, lowerChecked stwPassEnv stwFunc = .ok out ∧ out.func.lowered = true ∧
       (out.func.value? 7).map (fun v => (v.op, v.args)) = some (.ARM64MOVWstore, #[3, 5, 1]) ∧
       (∃ f', GoFV.Proof.Low.Contract stwFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func stwPassEnv.tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env stwTabs stwFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre stwPassEnv.tables stwFunc) env mem)
+        out.tables out.func stwPassEnv.tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.LowerCheck.roPre stwPassEnv.tables stwFunc) env mem → ∀ fuel,
+        (run env stwTabs stwFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env stwTabs stwFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := stw_checks
@@ -107,7 +112,8 @@ theorem stw_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨h7, hl, -⟩ := h1
     exact ⟨out, rfl, hl, h7, GoFV.Proof.Low.lower_refines hc stw_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc stw_generic stw_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc stw_generic stw_noFma hE hro hd⟩
 
 /-- The tables of `stx` with `int32` (type 5) and the `Store`'s type aux `int32` (aux 9). -/
 def sxwTabs : Tables :=
@@ -169,8 +175,13 @@ theorem sxw_lower :
     ∃ out, lowerChecked sxwPassEnv sxwFunc = .ok out ∧ out.func.lowered = true ∧
       (out.func.value? 6).map (fun v => (v.op, v.args)) = some (.ARM64MOVWstoreidx, #[2, 3, 3, 1]) ∧
       (∃ f', GoFV.Proof.Low.Contract sxwFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func sxwPassEnv.tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env sxwTabs sxwFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre sxwPassEnv.tables sxwFunc) env mem)
+        out.tables out.func sxwPassEnv.tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.LowerCheck.roPre sxwPassEnv.tables sxwFunc) env mem → ∀ fuel,
+        (run env sxwTabs sxwFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env sxwTabs sxwFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := sxw_checks
@@ -181,6 +192,7 @@ theorem sxw_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨h6, hl, -⟩ := h1
     exact ⟨out, rfl, hl, h6, GoFV.Proof.Low.lower_refines hc sxw_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc sxw_generic sxw_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc sxw_generic sxw_noFma hE hro hd⟩
 
 end GoFV.Proof.Witness

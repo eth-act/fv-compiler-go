@@ -102,8 +102,13 @@ theorem la_lower :
     ∃ out, lowerChecked laPassEnv laFunc = .ok out ∧ out.func.lowered = true ∧
       (out.func.value? 4).map (·.op) = some .ARM64ADD ∧
       (∃ f', GoFV.Proof.Low.Contract laFunc f' ∧
-        RefinesLFrom (fun env _ _ => env.Mono) out.tables out.func laPassEnv.tables f') ∧
-      ∀ env, env.Mono → ∀ args mem fuel, (run env laTabs laFunc args mem fuel).Defined →
+        RefinesLFrom (fun env _ mem => env.Mono ∧
+          GoFV.SSA.Sem.RoImage (GoFV.Opt.LowerCheck.roPre laPassEnv.tables laFunc) env mem)
+        out.tables out.func laPassEnv.tables f') ∧
+      ∀ env, env.Mono → ∀ args mem,
+        GoFV.SSA.Sem.RoImage
+          (GoFV.Opt.LowerCheck.roPre laPassEnv.tables laFunc) env mem → ∀ fuel,
+        (run env laTabs laFunc args mem fuel).Defined →
         ∃ fuel', OutcomeRefines 0 (run env laTabs laFunc args mem fuel)
           (runL env out.tables out.func args mem fuel') := by
   obtain ⟨h1, -⟩ := la_checks
@@ -114,7 +119,8 @@ theorem la_lower :
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h1
     obtain ⟨h4, hl, -⟩ := h1
     refine ⟨out, rfl, hl, ?_, GoFV.Proof.Low.lower_refines hc la_generic,
-      fun env hE args mem fuel hd => GoFV.Proof.Low.lower_refines_run hc la_generic la_noFma hE hd⟩
+      fun env hE args mem hro fuel hd =>
+        GoFV.Proof.Low.lower_refines_run hc la_generic la_noFma hE hro hd⟩
     cases hv : out.func.value? 4 with
     | none => rw [hv] at h4; cases h4
     | some v =>

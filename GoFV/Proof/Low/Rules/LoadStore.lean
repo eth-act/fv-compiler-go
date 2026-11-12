@@ -6,7 +6,7 @@ variable [GoFV.SSA.Sem.Addrs]
 
 /-!
 # Lowering rule lemmas: frame addresses, scalar loads and scalar stores (`ARM64.rules:309-310`,
-`313-322`, `326-331`)
+`313-322`, `326-331`), loads of read-only symbols (`1811-1817`)
 
 `(Load <t> ptr mem) && … => (MOV{B,BU,H,HU,W,WU,D}load ptr mem)` and `FMOV{S,D}load`: the scalar
 loads are lowered terms (`termVL`, `opValL`'s `ldVal`; a float load reads as `MOVWUload` or
@@ -25,6 +25,13 @@ lowers (`memLower`, `Sim.store_lower_eval`), so these rules are `ArmRule.Mem` (`
 base)`: frame addresses are atoms, the validator pairs each `MOVDaddr` with the `LocalAddr` it
 lowers (`addrLower`, `addr_lower_eval`: the frame variable's address, whatever the argument), so
 these rules are `ArmRule.Mem` (`checked_localAddr`).
+
+`(MOV…load [off] {sym} (SB) _) && symIsRO(sym) => (MOVDconst [read…(sym, off)])`: a load of a
+read-only symbol is a term that reads the memory atom, which the term relation does not fix, so
+these rules are `ArmRule.RoLoad` (`checked_roLoad`): the validator rejects them as rule instances
+and checks each event by its value (`GoFV.Opt.LowerCheck.roLoadDef`: the load from the symbol's
+allocation alone gives the constant, and the precondition's `RoImage` puts the allocation into
+every memory of the run).
 
 Not covered: `FMOVQload` (323), a 128-bit load term (`ldQ?`, not `ldOp?`); `FMOVQstore` (332)
 stores a 16-byte shape `memLower` does not pair.
@@ -161,5 +168,26 @@ theorem r_ARM64_330_sound : ArmRule.Checked r_ARM64_330 := checked_store rfl
 
 /-- `ARM64.rules:331`: `(Store {t} ptr val mem) && t.Size() == 8 &&  t.IsFloat() => (FMOVDstore ptr val mem)` -/
 theorem r_ARM64_331_sound : ArmRule.Checked r_ARM64_331 := checked_store rfl
+
+/-- `ARM64.rules:1811`: `(MOVBUload [off] {sym} (SB) _) && symIsRO(sym) => (MOVDconst [int64(read8(sym, int64(off)))])` (`ArmRule.RoLoad`) -/
+theorem r_ARM64_1811_sound : ArmRule.Checked r_ARM64_1811 := checked_roLoad rfl
+
+/-- `ARM64.rules:1812`: `(MOVHUload [off] {sym} (SB) _) && symIsRO(sym) => (MOVDconst [int64(read16(sym, int64(off), config.ctxt.Arch.ByteOrder))])` -/
+theorem r_ARM64_1812_sound : ArmRule.Checked r_ARM64_1812 := checked_roLoad rfl
+
+/-- `ARM64.rules:1813`: `(MOVWUload [off] {sym} (SB) _) && symIsRO(sym) => (MOVDconst [int64(read32(sym, int64(off), config.ctxt.Arch.ByteOrder))])` -/
+theorem r_ARM64_1813_sound : ArmRule.Checked r_ARM64_1813 := checked_roLoad rfl
+
+/-- `ARM64.rules:1814`: `(MOVDload [off] {sym} (SB) _) && symIsRO(sym) => (MOVDconst [int64(read64(sym, int64(off), config.ctxt.Arch.ByteOrder))])` -/
+theorem r_ARM64_1814_sound : ArmRule.Checked r_ARM64_1814 := checked_roLoad rfl
+
+/-- `ARM64.rules:1815`: `(MOVBload [off] {sym} (SB) _) && symIsRO(sym) => (MOVDconst [int64(int8(read8(sym, int64(off))))])` -/
+theorem r_ARM64_1815_sound : ArmRule.Checked r_ARM64_1815 := checked_roLoad rfl
+
+/-- `ARM64.rules:1816`: `(MOVHload [off] {sym} (SB) _) && symIsRO(sym) => (MOVDconst [int64(int16(read16(sym, int64(off), config.ctxt.Arch.ByteOrder)))])` -/
+theorem r_ARM64_1816_sound : ArmRule.Checked r_ARM64_1816 := checked_roLoad rfl
+
+/-- `ARM64.rules:1817`: `(MOVWload [off] {sym} (SB) _) && symIsRO(sym) => (MOVDconst [int64(int32(read32(sym, int64(off), config.ctxt.Arch.ByteOrder)))])` -/
+theorem r_ARM64_1817_sound : ArmRule.Checked r_ARM64_1817 := checked_roLoad rfl
 
 end GoFV.Proof.Low.Rules

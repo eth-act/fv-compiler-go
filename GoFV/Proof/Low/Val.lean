@@ -1027,16 +1027,24 @@ theorem mid_typed (tabs : Tables) (f : Func) (ρ : ID → Val) :
     exact retypeL_idem _ _
 
 /-- `midVal` keeps the frame addresses of `f`'s `LocalAddr`s (`FrameVals`): `poison` and an
-address word at a word shape are fixed by `retypeL` there. -/
+address word at a word shape are fixed by `retypeL` there; `retypeL` keeps the memories of a
+value (`MemInv.MemsOK.retypeL`). -/
 theorem mid_frame {tabs : Tables} {f : Func} {ρ : ID → Val} {act : Nat}
     (hF : FrameVals tabs act f.value? ρ) : FrameVals tabs act f.value? (midVal tabs f ρ) := by
-  refine ⟨fun a l n hl hop hax => ?_, fun a ha => ?_⟩
+  refine ⟨fun a l n hl hop hax => ?_, fun a ha => ?_, fun hm a => ?_⟩
   · have hlt : termVL tabs l = false := termVL_localAddr tabs l hop
     simp only [midVal, hl, hlt, Bool.false_eq_true, ite_false]
     rcases hF.1 a l n hl hop hax with h | ⟨h, hw⟩
     · exact .inl (by rw [h]; exact retypeL_poison _)
     · exact .inr ⟨by rw [h]; exact word_retypeL (wordShape_cases hw) _, hw⟩
-  · simp only [midVal, ha]; exact hF.2 a ha
+  · simp only [midVal, ha]; exact hF.2.1 a ha
+  · have h := hF.2.2 hm a
+    unfold midVal
+    split
+    · split
+      · exact h
+      · exact h.retypeL _
+    · exact h
 
 theorem mid_sp {tabs : Tables} {f : Func} {ρ : ID → Val} {act : Nat}
     (hS : SPVals tabs act f.value? ρ) : SPVals tabs act f.value? (midVal tabs f ρ) := by
