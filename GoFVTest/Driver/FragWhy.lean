@@ -9,7 +9,7 @@ open scoped GoFV.SSA.Sem.Fixed
 (`deadGuard`, `copyGuard`) rejects `f`, the failing conditions in the guard's order, each with
 the first offending value (`copyFrag`: size, `shape <op> <arg shape> ~ <value shape>` (a
 `Stable` phi, `stableB`, is exempt), `copyNZ`, `acyclic`; `emptyFragB`: `empty <op> <shape>`,
-a zero-size tree value that is not `EmptyOK`),
+a zero-size tree value that is not `EmptyOK`; `CopyZero.zeroGuard`: its first failing check),
 followed by ` @` and the value and its type (`whyKey` drops that part). `gofv-ssa-opt --check
 --verified` reports them as a histogram (`fragment conditions`) and lists examples as
 `FRAGMENT` reports.
@@ -37,6 +37,20 @@ def shapeName : Ty → String
 /-- The listed values of `f` in block order. -/
 def listed (f : Func) : Array ID :=
   f.blocks.foldl (fun acc bid => acc ++ (((f.block? bid).map (·.values)).getD #[])) #[]
+
+/-- The first check of `CopyZero.zeroGuard env f` that fails, `none` if it holds. -/
+def zeroWhy (env : PassEnv) (f : Func) : Option String :=
+  let tabs := env.tables
+  let k := CopyZero.zeroReset tabs f
+  match copyelim tabs f with
+  | .error _ => some "copyelim"
+  | .ok g =>
+    if !(check { tabs, typs := env.typs } k).toBool then some "check"
+    else if !emptyFragB tabs k then some "emptyFrag"
+    else if !RewriteCheck.atomsOK f k then some "atoms"
+    else if !(RewriteCheck.closedOK f && RewriteCheck.closedOK k) then some "closed"
+    else if !CopyZero.copyRelB tabs k g then some "copyRel"
+    else none
 
 /-- Why `copyFrag tabs f` fails (the first offending value), `none` if it holds. -/
 def copyWhy (tabs : Tables) (f : Func) : Option String := Id.run do
@@ -92,8 +106,12 @@ inputs in the fragment). -/
 def fragWhy (name : String) (env : PassEnv) (f : Func) : Array String :=
   if name.endsWith "deadcode" then deadWhy env.tables f
   else if name == "early phielim and copyelim" then
-    (#[copyWhy env.tables f |>.map (s!"copyFrag: " ++ ·),
-       emptyWhy env.tables f |>.map (s!"emptyFrag: " ++ ·)]).filterMap id
+    match zeroWhy env f with
+    | none => #[]
+    | some z =>
+      let old := (#[copyWhy env.tables f |>.map (s!"copyFrag: " ++ ·),
+        emptyWhy env.tables f |>.map (s!"emptyFrag: " ++ ·)]).filterMap id
+      if old.isEmpty then #[] else old.push s!"zeroGuard: {z}"
   else #[]
 
 end GoFVTest.Driver.FragWhy
