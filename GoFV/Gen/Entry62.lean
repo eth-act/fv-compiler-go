@@ -25,9 +25,9 @@ namespace GoFV.Gen.Check
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Asm
 
-/-- Every `Arg` of the function sits in the entry block before value `k`, and no edge goes to the
-entry block. -/
-def argsBefore (lc : LocCtx) (k : Nat) : Bool :=
+/-- Every value of the function with op `op` sits in the entry block before value `k`, and no
+edge goes to the entry block: no value with op `op` runs from `(entry, k)`. -/
+def opBefore (lc : LocCtx) (op : Op) (k : Nat) : Bool :=
   (List.range lc.ctx.f.blockTab.size).all fun b =>
     match lc.ctx.f.block? b with
     | none => true
@@ -35,7 +35,11 @@ def argsBefore (lc : LocCtx) (k : Nat) : Bool :=
       blk.succs.all (·.b != lc.ctx.f.entry) &&
         (List.range blk.values.size).all fun i =>
           (b == lc.ctx.f.entry && decide (i < k)) ||
-            (blk.values[i]?.bind lc.ctx.f.value?).all (·.op != .Arg)
+            (blk.values[i]?.bind lc.ctx.f.value?).all (·.op != op)
+
+/-- Every `Arg` of the function sits in the entry block before value `k`, and no edge goes to the
+entry block. -/
+def argsBefore (lc : LocCtx) (k : Nat) : Bool := opBefore lc .Arg k
 
 /-- The function has no `Arg`. -/
 def noArg (lc : LocCtx) : Bool :=
@@ -44,5 +48,12 @@ def noArg (lc : LocCtx) : Bool :=
 /-- The checks of the incoming stack arguments at the entry (module doc). -/
 def argsOK (lc : LocCtx) (g : G2In) (spills : List Spill) (k : Nat) : Bool :=
   argsBefore lc k && (noArg lc || ((pendWins lc g).isEmpty && spills.isEmpty))
+
+/-- Every `LoweredGetClosurePtr` of the function sits in the entry block before value `k`, and
+no edge goes to the entry block, as `argsBefore` for `Arg`: no closure pointer runs after `k`, so
+`CloOK`, `RunPre`'s conjunct at a closure pointer, holds at every state the run reaches from
+`(entry, k)` (`cloOK_of_cloBefore`). The closure context is the caller's side at the entry
+(`EntryMatch.regs`: `R26`). -/
+def cloBefore (lc : LocCtx) (k : Nat) : Bool := opBefore lc .ARM64LoweredGetClosurePtr k
 
 end GoFV.Gen.Check

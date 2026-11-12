@@ -381,27 +381,35 @@ theorem lreach_of_panicAt {env : Env} {lc : LocCtx} {b0 : ID} {i0 : Nat} {s0 : L
     rw [← hsz] at hi
     simp at hi
 
-/-! ## No `Arg` after the start
+/-! ## No `Arg` and no closure pointer after the start
 
 G62's `Arg`s run at the head of the entry block before the start `k` (`entryLen`), on `runLoc`'s
 side only; their slots are related at the entry by the caller's side (`EntryMatch.stack`). No
 state the run reaches from `(entry, k)` is at an `Arg` (`argsBefore`, checked), so `ArgOK`,
-`g64_value`'s premise, holds vacuously along the run. -/
+`g64_value`'s premise, holds vacuously along the run.
+
+G11's `LoweredGetClosurePtr` runs there too (`cloFirst`, no code): `runLoc` writes the closure
+context `env.closure` to its home `R26`, which the caller's side relates at the entry
+(`EntryMatch.regs`). No state the run reaches from `(entry, k)` is at a closure pointer
+(`cloBefore`, checked), so the trusted `CloOK`, `RunPre`'s conjunct at `LoweredGetClosurePtr`,
+holds along the run of the top-level activation (`cloOK_of_cloBefore`). -/
 
 /-- No state the run reaches from `(b0, i0, s0)` is at an `Arg`. -/
 def NoArgRun (env : Env) (lc : LocCtx) (b0 : ID) (i0 : Nat) (s0 : LocState) : Prop :=
   ∀ b i s blk id v, LReach env lc b0 i0 s0 b i s → lc.ctx.f.block? b = some blk →
     blk.values[i]? = some id → lc.ctx.f.value? id = some v → v.op ≠ .Arg
 
-/-- Every `Arg` before value `k` of the entry block, no edge to the entry block (`argsBefore`):
-no `Arg` runs from `(entry, k)`. -/
-theorem noArgRun_of_argsBefore {env : Env} {lc : LocCtx} {k : Nat} {s0 : LocState}
-    (h : argsBefore lc k = true) : NoArgRun env lc lc.ctx.f.entry k s0 := by
+/-- Every value with op `op` before value `k` of the entry block, no edge to the entry block
+(`opBefore`): no state the run reaches from `(entry, k)` is at a value with op `op`. -/
+theorem op_ne_of_opBefore {env : Env} {lc : LocCtx} {op : Op} {k : Nat} {s0 : LocState}
+    (h : opBefore lc op k = true) {b : ID} {i : Nat} {s : LocState} {blk : Block} {id : ID}
+    {v : Value} (hr : LReach env lc lc.ctx.f.entry k s0 b i s) (hb : lc.ctx.f.block? b = some blk)
+    (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v) : v.op ≠ op := by
   have hall := List.all_eq_true.1 h
   have hblk : ∀ b blk, lc.ctx.f.block? b = some blk →
       (∀ e ∈ blk.succs.toList, e.b ≠ lc.ctx.f.entry) ∧
       ∀ i id v, blk.values[i]? = some id → lc.ctx.f.value? id = some v →
-        (b = lc.ctx.f.entry ∧ i < k) ∨ v.op ≠ .Arg := by
+        (b = lc.ctx.f.entry ∧ i < k) ∨ v.op ≠ op := by
     intro b blk hb
     have hlt : b < lc.ctx.f.blockTab.size := by
       have hb' : (lc.ctx.f.blockTab[b]?).join = some blk := hb
@@ -421,12 +429,27 @@ theorem noArgRun_of_argsBefore {env : Env} {lc : LocCtx} {k : Nat} {s0 : LocStat
     simp only [Option.bind_some, hval, Option.all_some, Bool.or_eq_true, Bool.and_eq_true,
       beq_iff_eq, decide_eq_true_eq, bne_iff_ne, ne_eq] at this
     exact this
-  intro b i s blk id v hr hb hi hv
   rcases (hblk b blk hb).2 i id v hi hv with ⟨rfl, hik⟩ | h
   · rcases lreach_cases hr with ⟨-, h⟩ | ⟨b', blk', e, hb', he, hbe⟩
     · omega
     · exact absurd hbe ((hblk b' blk' hb').1 e he)
   · exact h
+
+/-- Every `Arg` before value `k` of the entry block, no edge to the entry block (`argsBefore`):
+no `Arg` runs from `(entry, k)`. -/
+theorem noArgRun_of_argsBefore {env : Env} {lc : LocCtx} {k : Nat} {s0 : LocState}
+    (h : argsBefore lc k = true) : NoArgRun env lc lc.ctx.f.entry k s0 :=
+  fun _ _ _ _ _ _ hr hb hi hv => op_ne_of_opBefore h hr hb hi hv
+
+/-- **`CloOK` at the top-level activation**: every `LoweredGetClosurePtr` before value `k` of the
+entry block, no edge to the entry block (`cloBefore`, checked by the driver at `entryLen`): at
+every state the run reaches from `(entry, k)` the trusted `CloOK` holds, vacuously. -/
+theorem cloOK_of_cloBefore {env : Env} {lc : LocCtx} {k : Nat} {s0 : LocState}
+    (h : cloBefore lc k = true) {b : ID} {i : Nat} {s : LocState} {blk : Block} {id : ID}
+    {v : Value} (hr : LReach env lc lc.ctx.f.entry k s0 b i s) (hb : lc.ctx.f.block? b = some blk)
+    (hi : blk.values[i]? = some id) (hv : lc.ctx.f.value? id = some v) (E : MatchEnv)
+    (m : MState) : CloOK E s v m :=
+  fun hop => absurd hop (op_ne_of_opBefore h hr hb hi hv)
 
 /-- A function with an `Arg` is no `noArg` one. -/
 theorem noArg_false {lc : LocCtx} {id : ID} {u : Value} (hu : lc.ctx.f.value? id = some u)

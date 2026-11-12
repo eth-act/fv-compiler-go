@@ -3626,6 +3626,26 @@ excludes `LoadReg`, `FMOVQload` and `FLDPQ`, so `runPre_simple` discharges the t
 `checkG64 (LocCtx.make …) ps bstart g`, otherwise their statements on G62. A G64 128-bit load or
 store whose step panics (a nil base) is outside `RunPanicPre`, as G50's pair loads are.
 
+*The closure context* (done, #705, `docs/plans/closure-ctx.md`; no statement changes, `CloOK`
+discharged at the top-level activation):
+
+1. The top-level run has a closure context, `Env.closure` (PR1, #715): `entryFrame` sets
+   `fr.closure := env.closure`, so every `verified_mach` variant, quantifying over `e : Env`, covers
+   every closure context with its text unchanged.
+2. `entryLen` also counts `LoweredGetClosurePtr` (`cloFirst` puts it among the entry values; no
+   code), so `hpre` runs it (`stepLoc_clo` writes `env.closure` to its home `R26`) and
+   `EntryMatch.regs` asks the entry state's `X26` to hold the closure object's address: the
+   caller's side of ABIInternal (STATUS, the `EntryMatch` row). The other k-side premises are
+   per function, as at the old `k`: the closure pointer is no load, pair op or `Copy`, so it adds
+   no upper-bit fact (`huE`: `uL35 lc [] blkE k = []`); it emits no code, so the PC table maps it
+   to the next value's Prog (`hpc`); `R26` holds a pointer at class 64 (`hinv`).
+   `verified_mach_clo_witness` discharges all three on `adder.func1`.
+3. `cloBefore lc k` (`GoFV/Gen/Entry62.lean`, `opBefore` as `argsBefore`) puts every
+   `LoweredGetClosurePtr` before `k` with no edge to the entry block; `cloOK_of_cloBefore` gives
+   `CloOK` at every state the run reaches from `(entry, k)`. The driver checks `cloBefore` at
+   `entryLen` (`entryVacuous`, whose "closure context load" branch is gone: a load off the context
+   reads the closure object).
+
 ## 10. Read-only data: float constants and jump tables
 
 **The gap.** Two kinds of machine loads read data that the assembler or genssa put in read-only

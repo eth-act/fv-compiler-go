@@ -36,9 +36,14 @@ a function after `trim` and its tables:
   and its class tables;
 - `Flushplist` (`GoFV.Asm.flush`) on the file with genssa's Progs (`GenP0.progFile`) and
   `checkObj` on P0', their register-argument spills and the port's text, relocations and Progs;
-  when an entry value before `entryLen` writes `R26` (`ctxtBefore`), the morestack tail must call
+  when an entry value before `entryLen` writes `R26` (`ctxtBefore`; a closure's
+  `LoweredGetClosurePtr`, which `entryLen` counts), the morestack tail must call
   `runtime.morestack`, which keeps it (`morestackCtxtWhy`: the context `verified_mach`'s
-  `MorestackOK` premise takes, `ctxtBefore lc k`).
+  `MorestackOK` premise takes, `ctxtBefore lc k`);
+- end to end, also `entryVacuous` at `entryLen`: no entry value after it (else `RunPre` cannot
+  hold) and every closure pointer before it (`cloBefore`, so `cloOK_of_cloBefore` discharges the
+  trusted `CloOK` along the run of the top-level activation, whose closure context is
+  `env.closure`, #705).
 
 Inputs taken from the stock `.prog` file: only its input view (`Back.inputView`, what the
 driver input file holds, no stock result): the definitions (names, types, symbols), the
@@ -123,36 +128,34 @@ def argsWhy (lc : LocCtx) (g : G2In) (spills : List GoFV.Asm.Spill) (k : Nat) : 
   else if !spills.isEmpty then "Arg with morestack spills"
   else "accepted"
 
-open GoFV.SSA (Op Value ID) in
-open GoFV.Gen.Check (entryOp24 loadOp?) in
-/-- **Vacuity at the entry** (every `verified_mach` variant): the run from `(entry, k)` reaches,
-through the entry block's values from `k` that step without a panic or that make the run stuck
-(`Defined` then fails: no value here panics), a value `RunPre` (`RunPreM`, `RunPreS`) cannot
-hold at:
+open GoFV.SSA (Op Value) in
+open GoFV.Gen.Check (entryOp24 cloBefore) in
+/-- **Vacuity at the entry** (every `verified_mach` variant), and `CloOK` at the top-level
+activation:
 
-- `"entry value after the start"`: an `ArgIntReg`/`ArgFloatReg` (or an `InitMem` of an unlowered
-  function) at or after `k` (`RunPre`'s `entryOp24 v.op = false ∨ (InitMem ∧ lowered)`), as in a
-  closure whose `LoweredGetClosurePtr` comes first (`entryLen` stops there);
-- `"closure context load"`: a load (`loadOp?`, `LDP`) off the closure pointer
-  (`LoweredGetClosurePtr`): the top-level `run`/`locInit` has no closure context
-  (`fr.closure = none`), so the pointer is `poison` and `G3Pre`/`G4Pre` (a load reads valid bytes
-  at `symAddr`) fail there.
+- `"closure pointer after the start"`: a `LoweredGetClosurePtr` at or after `k`, or an edge to
+  the entry block (`cloBefore lc k` fails): `cloOK_of_cloBefore` does not discharge the trusted
+  `CloOK` along the run, so the function is not counted end to end (`checkG11`'s `cloFirst` puts
+  the closure pointer among the entry values, which `entryLen` counts);
+- `"entry value after the start"`: the run from `(entry, k)` reaches, through the entry block's
+  values from `k` that step without a panic or that make the run stuck (`Defined` then fails: no
+  value here panics), an `ArgIntReg`/`ArgFloatReg` (or an `InitMem` of an unlowered function) at
+  or after `k`, where `RunPre` (`RunPreM`, `RunPreS`) cannot hold (`entryOp24 v.op = false ∨
+  (InitMem ∧ lowered)`).
 
-The values passed on the way are those that cannot panic: the entry values, the closure pointer,
-spills, `VarDef`/`VarLive`/`InlMark`, `Copy`, `MOVDconst`, `ZERO`, and loads off the closure
-pointer themselves (a `poison` base is no nil base, `nilFaults`). `none`: not vacuous by these. -/
+The values passed on the way are those that cannot panic: the entry values, spills,
+`VarDef`/`VarLive`/`InlMark`, `Copy`, `MOVDconst` and `ZERO`. A load off the closure pointer is no
+reason (#705): the top-level run's closure pointer is the closure context `env.closure`, and
+`G3Pre`/`G4Pre` ask it to point to valid bytes as they ask of any other pointer. `none`: neither.
+-/
 def entryVacuous (lc : LocCtx) (k : Nat) : Option String :=
+  if !cloBefore lc k then some "closure pointer after the start" else
   match lc.ctx.f.block? lc.ctx.f.entry with
   | none => none
   | some blk =>
     let vals := (blk.values.toList.drop k).filterMap lc.ctx.f.value?
-    let clos : List ID := vals.filterMap fun v =>
-      if v.op == .ARM64LoweredGetClosurePtr then some v.id else none
-    let ctxLoad (v : Value) : Bool :=
-      ((loadOp? v.op).isSome || v.op == .ARM64LDP) &&
-        (v.args[0]?.map clos.contains).getD false
     let safe (op : Op) : Bool :=
-      op == .ARM64LoweredGetClosurePtr || op == .SP || op == .SB || op == .InitMem ||
+      op == .SP || op == .SB || op == .InitMem ||
         op == .StoreReg || op == .VarDef || op == .VarLive || op == .InlMark || op == .Copy ||
         op == .ARM64MOVDconst || op == .ARM64ZERO
     let rec go : List Value → Option String
@@ -160,7 +163,6 @@ def entryVacuous (lc : LocCtx) (k : Nat) : Option String :=
       | v :: vs =>
         if entryOp24 v.op && !(v.op == .InitMem && lc.ctx.f.lowered) then
           some "entry value after the start"
-        else if ctxLoad v then some "closure context load"
         else if safe v.op then go vs
         else none
     go vals
@@ -191,7 +193,8 @@ structure Res where
   hold only vacuously; `verified_mach_atSP`/`verified_mach_S_atSP` cover them. -/
   locals : Nat := 0
   /-- `entryVacuous` at `entryLen` (`none` also when `checkG64` rejects): `RunPre` cannot hold,
-  so every `verified_mach` variant holds of the function only vacuously. -/
+  so every `verified_mach` variant holds of the function only vacuously, or a closure pointer runs
+  after the start (`cloBefore` fails), so `CloOK` is not discharged. -/
   vac : Option String := none
 
 /-- Accepted by all five: `verified_mach`'s back-end premises hold. -/
@@ -545,8 +548,8 @@ def Stats.text (st : Stats) (ms : Nat) : String := Id.run do
     (some s.genObj)
   out := out ++ row ("… ∧ `checkG64` ∧ `entryStoresOK` ∧ `argsOK` ∧ `retRegsOK` ∧ `checkObj` " ++
     "(the premises hold)") (some o.prem) (some s.prem)
-  out := out ++ row "… of them vacuous (closure context: `entryVacuous`, every variant)" (some o.vac)
-    (some s.vac)
+  out := out ++ row ("… of them vacuous or with `CloOK` not discharged (`entryVacuous`, every " ++
+    "variant)") (some o.vac) (some s.vac)
   out := out ++ row "**… premises hold, not vacuous (end to end, `verified_mach`)**" (some o.all)
     (some s.all)
   out := out ++ row "… end to end, pipeline output identical to stock after `trim`" (some st.allSame) none
@@ -566,9 +569,9 @@ def Stats.text (st : Stats) (ms : Nat) : String := Id.run do
     `Blk.local` access, `g49Env_fixed_outSP`) {o.allSVac}; {s.allSVac}. The `_atSP` variants hold \
     of all of them non-vacuously.\n"
   out := out ++ s!"\nVacuous at the entry (pipeline output; stock), of the functions whose premises \
-    hold, not counted end to end: {o.vac}; {s.vac} (`entryVacuous`: `RunPre` cannot hold of the \
-    run, under every variant: an entry value after the start `entryLen`, or a load off the closure \
-    pointer, `poison` since the top-level run has no closure context).\n"
+    hold, not counted end to end: {o.vac}; {s.vac} (`entryVacuous`: an entry value after the \
+    start `entryLen`, where `RunPre` cannot hold of the run under any variant, or a closure \
+    pointer after it, `cloBefore`, where `cloOK_of_cloBefore` does not discharge `CloOK`).\n"
   out := out ++ s!"\nFrame (`ownFrame`, `AllocFrame` on the pipeline's own `Dcl`) of the fully \
     verified functions whose output is identical to stock: stock `stksize`/`stkptrsize` \
     {st.frameSame}, other {st.frameDiff}{if st.frameDiffEx.isEmpty then "" else s!" ({st.frameDiffEx})"}.\n"
