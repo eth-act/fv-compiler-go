@@ -389,7 +389,9 @@ theorem run_tabsAgreeMod {tabs tabs' : Tables} {f : Func} {ce : CheckEnv}
     have hmem : mem.Avoids (fun b => extraX tabs tabs' b = true) :=
       mem_avoids_of hU fun a n => (hinit a n).2.1
     have hglob : ∀ g ∈ env.globals, DAE.BAv (fun b => extraX tabs tabs' b = true) g.2.data :=
-      fun g hg x hx => byte_avoids_of hU fun a n => (hinit a n).2.2.2 g hg x hx
+      fun g hg x hx => byte_avoids_of hU fun a n => (hinit a n).2.2.2.1 g hg x hx
+    have hclo : ∀ c, env.closure = some c → Val.Avoids (fun b => extraX tabs tabs' b = true) c :=
+      fun c hc => val_avoids_of hU fun a n => (hinit a n).2.2.2.2 c hc
     have himg : ∀ img ∈ (args.toArray.zip (Ctx.make tabs f).paramTys).map (fun (a, t) => encode t a),
         DAE.BAv (fun b => extraX tabs tabs' b = true) img := by
       intro img hi
@@ -405,7 +407,7 @@ theorem run_tabsAgreeMod {tabs tabs' : Tables} {f : Func} {ce : CheckEnv}
         (entryFrame env (Ctx.make tabs' f) args mem) := by
       refine ⟨by simp [Ctx.make, entryFrame], by simp [entryFrame, hvsz], ?_, ?_,
         fun z y hz => ?_, fun z y hz => ?_, typed_replicate _ _ _ rfl,
-        ⟨himg, rfl, frameAllocs_avoids himg (addGlobals_avoids hglob hmem)⟩⟩
+        ⟨himg, hclo, frameAllocs_avoids himg (addGlobals_avoids hglob hmem)⟩⟩
       · unfold entryFrame; rw [hpty, hvsz]
       · unfold entryFrame; rw [hpty]; exact frameMem_eqX A.toModAgreeF env _ mem
       · simp [entryFrame, Array.getElem?_replicate] at hz

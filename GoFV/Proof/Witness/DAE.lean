@@ -60,9 +60,35 @@ theorem p1_atAct_frameSafe : (Env.p1.atAct 0).FrameSafe ∧
 
 theorem stackF0_initAvoids : InitAvoids Env.p1 [] {} := by
   intro a n
-  refine ⟨fun _ h => absurd h List.not_mem_nil, fun _ _ h => ?_, rfl, fun _ h => ?_⟩
+  refine ⟨fun _ h => absurd h List.not_mem_nil, fun _ _ h => ?_, rfl, fun _ h => ?_,
+    fun _ h => nomatch h⟩
   · simp at h
   · simp [Env.p1] at h
+
+/-- `Env.p1` with a closure context: a pointer to a heap object (a funcval). -/
+def p1Clo : Env := { Env.p1 with closure := some (.ptr ⟨.heap 0, 0⟩) }
+
+/-- **The closure conjunct of `InitAvoids` is not vacuous** (#705): a closure context pointing to
+a heap object avoids every frame temporary; outside a closure (`Env.p1`) `InitAvoids` is the
+condition on the arguments, the memory and the global image (`initAvoids_iff_of_none`). -/
+theorem initAvoids_closure_witness :
+    InitAvoids p1Clo [] {} ∧
+      ∀ a n, (∀ v ∈ ([] : List Val), v.Avoids (· = .temp a n)) ∧
+        (({} : Mem)).Avoids (· = .temp a n) ∧ ({} : Mem).find? (.temp a n) = none ∧
+        ∀ g ∈ Env.p1.globals, ∀ x ∈ g.2.data.toList, Byte.Avoids (· = .temp a n) x := by
+  refine ⟨fun a n => ?_, (initAvoids_iff_of_none rfl).1 stackF0_initAvoids⟩
+  refine ⟨fun _ h => absurd h List.not_mem_nil, fun _ _ h => ?_, rfl, fun _ h => ?_,
+    fun c h => ?_⟩
+  · simp at h
+  · simp [p1Clo, Env.p1] at h
+  · cases h; intro h; cases h
+
+/-- **`entryFrame_closure` and `entryFrame_of_none` are not vacuous**: the entry frame of `f0`
+under `p1Clo` has its closure context, under `Env.p1` none. -/
+theorem entryFrame_closure_witness :
+    (entryFrame p1Clo (Ctx.make stackF0Tabs stackF0) [] {}).closure = some (.ptr ⟨.heap 0, 0⟩) ∧
+      (entryFrame Env.p1 (Ctx.make stackF0Tabs stackF0) [] {}).closure = none :=
+  ⟨entryFrame_closure _ _ _ _, by rw [entryFrame_of_none rfl]⟩
 
 /-! ## The witness -/
 

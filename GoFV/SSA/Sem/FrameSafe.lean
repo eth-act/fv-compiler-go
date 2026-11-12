@@ -93,12 +93,28 @@ def Contract.TempOblivious (c : Contract) : Prop :=
 def Env.TempOblivious (env : Env) : Prop := ∀ name c, env.extern name = some c → c.TempOblivious
 
 /-- The inputs of a run hold no pointer into a `temp` block and the memory has none yet: the
-arguments, the memory's other allocations and the global image avoid every `temp` block (a
-pointer into the run's frame temporaries cannot exist before the frame does). -/
+arguments, the memory's other allocations, the global image and the top-level closure context
+(`Env.closure`) avoid every `temp` block (a pointer into the run's frame temporaries cannot
+exist before the frame does; the funcval exists before its callee's activation). -/
 def InitAvoids (env : Env) (args : List Val) (mem : Mem) : Prop :=
   ∀ a n, (∀ v ∈ args, v.Avoids (· = .temp a n)) ∧ mem.Avoids (· = .temp a n) ∧
     mem.find? (.temp a n) = none ∧
-    ∀ g ∈ env.globals, ∀ x ∈ g.2.data.toList, Byte.Avoids (· = .temp a n) x
+    (∀ g ∈ env.globals, ∀ x ∈ g.2.data.toList, Byte.Avoids (· = .temp a n) x) ∧
+    ∀ c, env.closure = some c → c.Avoids (· = .temp a n)
+
+/-- Outside a closure (`env.closure = none`), `InitAvoids` is the condition on the arguments,
+the memory and the global image alone. -/
+theorem initAvoids_iff_of_none {env : Env} (h : env.closure = none) {args : List Val}
+    {mem : Mem} :
+    InitAvoids env args mem ↔
+      ∀ a n, (∀ v ∈ args, v.Avoids (· = .temp a n)) ∧ mem.Avoids (· = .temp a n) ∧
+        mem.find? (.temp a n) = none ∧
+        ∀ g ∈ env.globals, ∀ x ∈ g.2.data.toList, Byte.Avoids (· = .temp a n) x := by
+  refine ⟨fun hi a n => ?_, fun hi a n => ?_⟩
+  · obtain ⟨h1, h2, h3, h4, -⟩ := hi a n
+    exact ⟨h1, h2, h3, h4⟩
+  · obtain ⟨h1, h2, h3, h4⟩ := hi a n
+    exact ⟨h1, h2, h3, h4, fun c hc => by rw [h] at hc; cases hc⟩
 
 theorem frameBlk_temp {tabs : Tables} {n : AuxRef} (h : tabs.forgeable n = false) (act : Nat) :
     frameBlk tabs act n = .temp act n := by

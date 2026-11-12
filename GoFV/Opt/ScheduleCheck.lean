@@ -158,14 +158,17 @@ def isSPA (f : Func) (a : ID) : Bool := ((f.value? a).map (·.op == .SPanchored)
 /-- The value `a` is a nil check. -/
 def isNC (f : Func) (a : ID) : Bool := ((f.value? a).map (·.op.nilCheck)).getD false
 
-/-- Value `a`, once evaluated, holds no nil base: a nil check (it passed), an `SP` (the
-outgoing-arguments area) or `GetG` (the current goroutine) at a word shape (`tys`: `f`'s `runL`
-shapes), or the closure pointer (`poison`: a run of the function itself has no closure
-context). -/
+/-- Value `a`, once evaluated, holds no nil base: a nil check (it passed), or at a word shape
+(`tys`: `f`'s `runL` shapes) an `SP` (the outgoing-arguments area), a `GetG` (the current
+goroutine) or the closure pointer (`poison` outside a closure; in a closure, the funcval the caller
+called through, which is not nil, `GoFV.Proof.ArgPtrsOK`). The closure pointer's shape is checked
+as `SP`'s: at a narrower shape a non-nil word could truncate to 0. Go types it `BytePtr`
+(`cmd/compile/internal/ssagen/ssa.go:519`), a word shape. -/
 def isNN (tys : Array Ty) (f : Func) (a : ID) : Bool :=
   match f.value? a with
-  | some v => v.op.nilCheck || v.op == .ARM64LoweredGetClosurePtr ||
-      (v.op == .SP || v.op == .GetG) && wordShape (tys[a]?.getD .other)
+  | some v => v.op.nilCheck ||
+      (v.op == .ARM64LoweredGetClosurePtr || v.op == .SP || v.op == .GetG) &&
+        wordShape (tys[a]?.getD .other)
   | none => false
 
 /-- A load or nil check whose pointer is `isNN`: its base is not nil, so it does not fault

@@ -10,7 +10,7 @@ variable [GoFV.SSA.Sem.Addrs]
 `U = UE E`: the frame temporaries (activation 0) of the eliminated names. In the source run,
 every register `x` satisfies `SInv`: a tainted `x` (its tag in `E`) holds `poison` or a pointer
 into the temporary of its tag; any other `x` holds no pointer into `U` (`Val.Avoids`). The
-frame's inputs avoid `U` (`FrameOK`: argument images, initial memory, no closure context).
+frame's inputs avoid `U` (`FrameOK`: argument images, initial memory, closure context).
 
 `src_step`: a value the source evaluates keeps the invariant, from its arguments': a tagged
 (word-shaped, `wordShaped`) `LocalAddr` or pointer op (`propOp`) points into its tag's temporary
@@ -39,7 +39,7 @@ def SInv (T : ID → Option AuxRef) (E : List AuxRef) (x : ID) (y : Val) : Prop 
 /-- The inputs of a frame avoid `U`. -/
 structure FrameOK (U : Blk → Prop) (fr : Frame) : Prop where
   images : ∀ img ∈ fr.images, BAv U img
-  closure : fr.closure = none
+  closure : ∀ c, fr.closure = some c → Val.Avoids U c
   mem0 : fr.mem0.Avoids U
 
 /-- A property of every register of a frame. -/
@@ -47,6 +47,13 @@ def RegsP (P : ID → Val → Prop) (fr : Frame) : Prop :=
   ∀ x y, fr.regs[x]? = some (some y) → P x y
 
 variable {U : Blk → Prop}
+
+/-- `GetClosurePtr`'s value (the context, `poison` without one) avoids `U`. -/
+theorem FrameOK.closure_getD {fr : Frame} (h : FrameOK U fr) :
+    Val.Avoids U (fr.closure.getD .poison) := by
+  cases hc : fr.closure with
+  | none => exact True.intro
+  | some c => exact h.closure c hc
 
 /-! ## Evaluation pieces -/
 
@@ -222,7 +229,7 @@ theorem evalOp_avoids {env : Env} (hU : TempU U) {ctx : Ctx} {fr : Frame} (hfr :
     · trivial
   · exact absurd h panicBounds_not_ok
   iterate 6 exact hcall _ h
-  · cases h; rw [hfr.closure]; trivial
+  · cases h; exact hfr.closure_getD
   iterate 11 exact memRoot_avoids hU hargs h
   · split at h
     · cases h; exact frameVal_avoids hU hloc (by assumption)

@@ -144,7 +144,8 @@ theorem notIf_refines :
       obtain ⟨fuel', ho⟩ := hR Env.p1 [.bool false] {}
         (Pass.Rewrite.RwPre.p1 (by decide +kernel) (by decide +kernel)
           (Pass.Rewrite.initAvoids_empty (fun v hv _ _ => by
-            simp only [List.mem_singleton] at hv; subst hv; trivial) rfl)) 2 (by rw [hm]; trivial)
+            simp only [List.mem_singleton] at hv; subst hv; trivial) rfl (fun _ h => nomatch h)))
+              2 (by rw [hm]; trivial)
       rw [hm] at ho
       refine ⟨fuel', ?_⟩
       generalize run Env.p1 out.tables out.func [.bool false] {} fuel' = o at ho ⊢

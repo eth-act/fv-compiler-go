@@ -46,6 +46,11 @@ theorem runL_generic (h : f.lowered = false) : runL env tabs f args mem fuel = r
 (`GoFV/SSA/Sem/RunL.lean`; witness `runL_generic_witness`, `clamp`). The `lower` theorem relates
 `run` of its input to `runL` of its output; the L0 → L0 passes are stated over `runL`.
 
+All three runners start from Phase 1's `entryFrame`, so the top-level closure context is
+`env.closure` in each (`LoweredGetClosurePtr` reads `fr.closure`, as `GetClosurePtr` does;
+`docs/plans/semantics.md` §8, `docs/plans/closure-ctx.md`). Both sides of every refinement run
+in the same `env`, so they see the same context.
+
 ## 2. Correctness criterion
 
 As Phase 1 (`docs/PLAN.md` §1): a pass `p` is correct when every returning or panicking run of
@@ -490,7 +495,11 @@ it is right for L0. From `schedule` on two things change:
   such a piece before a load or nil check of another pointer on the same memory that the source
   order runs first; under the assumption the moved check panics with `nilDeref` of that memory
   (as the other value would) or passes (`ScheduleCheck.swapOKB`'s `argPtr` case), also when the
-  piece is outside the block.
+  piece is outside the block. `ArgPtrsOK` also says that the top-level closure context
+  (`env.closure`) has no nil base (#705): the caller loads the code word from the funcval before
+  the call (`cmd/compile/internal/ssagen/ssa.go:5141-5149`), and that load faults on nil. A load
+  or nil check off `LoweredGetClosurePtr` at a word shape (`ScheduleCheck.isNN`, as `SP` and
+  `GetG`) therefore cannot fault.
   **Checked pointers (decision, #385):** the theorems also assume `GoFV.Proof.NilPtrsOK`: in
   every state `runLF` of the `schedule` input reaches (a block entry, after its `Phi`s and any
   prefix of its order), every pointer-shaped value that a nil check checks reads nil or a pointer

@@ -228,14 +228,14 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
           obtain ⟨vq, y, hvq, hy, hevq⟩ := Sr.eval q hqP
           obtain ⟨vq', hvq', hc⟩ := isNN_cases hqnn
           rw [hvq] at hvq'; cases hvq'
-          rcases hc with hqnc | hop | ⟨hop, hw⟩
+          rcases hc with hqnc | ⟨hop, hw⟩ | ⟨hop, hw⟩
           · have hu := S.argUse hvr hq0
             obtain ⟨hne, hsh⟩ := nc_step1 hu hqnc
             exact (ncNonNil hvq (B.sOwn q hqS vq hvq) hqnc ⟨y, hy, hevq⟩ Sr.typed hsh hne a
               hHp).not_nilBase
           · rw [hHp] at hy; cases hy
-            have hc : H.closure = none := by rw [Sr.frH]; exact B.clo
-            exact evalValueL_clo hop hc hevq
+            have hc : ∀ c, H.closure = some c → ¬ NilBase c := by rw [Sr.frH]; exact B.clo
+            exact evalValueL_clo hop hc (by rw [B.sOwn q hqS vq hvq]; exact hw) hevq
           · rw [hHp] at hy; cases hy
             exact (evalValueL_spg hop (by rw [B.sOwn q hqS vq hvq]; exact hw) hevq).not_nilBase
         · have hHq : H.regs[q]? = frPS.regs[q]? := Sr.out q (fun h => hqS (hPS q h))

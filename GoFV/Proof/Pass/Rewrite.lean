@@ -98,13 +98,17 @@ def byteNoTemp : Byte → Bool
   | .frag p _ => !RewriteCheck.tempBlk p.blk
   | _ => true
 
-/-- `InitAvoids` from an empty memory, for arguments that hold no pointer into a frame temporary
-and a global image without fragments of such pointers (`byteNoTemp`, decidable). -/
+/-- `InitAvoids` from an empty memory, for arguments and a closure context that hold no pointer
+into a frame temporary and a global image without fragments of such pointers (`byteNoTemp`,
+decidable). -/
 theorem initAvoids_empty {env : Env} {args : List Val}
     (hargs : ∀ v ∈ args, ∀ a n, v.Avoids (· = .temp a n))
-    (hg : env.globals.all (fun g => g.2.data.all byteNoTemp) = true) : InitAvoids env args {} := by
+    (hg : env.globals.all (fun g => g.2.data.all byteNoTemp) = true)
+    (hc : ∀ c, env.closure = some c → ∀ a n, c.Avoids (· = .temp a n)) :
+    InitAvoids env args {} := by
   intro a n
-  refine ⟨fun v hv => hargs v hv a n, fun _ _ h => ?_, rfl, fun g hg' x hx => ?_⟩
+  refine ⟨fun v hv => hargs v hv a n, fun _ _ h => ?_, rfl, fun g hg' x hx => ?_,
+    fun c h => hc c h a n⟩
   · simp at h
   · have h1 := List.all_eq_true.1 hg g hg'
     rw [Array.all_eq_true_iff_forall_mem] at h1

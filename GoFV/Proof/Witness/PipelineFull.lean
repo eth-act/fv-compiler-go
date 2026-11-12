@@ -279,7 +279,7 @@ theorem pfF_ro : GoFV.Opt.Verified.pipelineRo pfEnv pfF = [] := by decide +kerne
 
 theorem pfRunEnv_initAvoids : InitAvoids plRunEnv pfArgs {} := by
   intro a n
-  refine ⟨fun v h => ?_, fun _ _ h => ?_, rfl, fun g hg x hx => ?_⟩
+  refine ⟨fun v h => ?_, fun _ _ h => ?_, rfl, fun g hg x hx => ?_, fun _ h => nomatch h⟩
   · simp only [pfArgs, List.mem_cons, List.not_mem_nil, or_false] at h
     subst h
     trivial
@@ -325,7 +325,7 @@ theorem verifiedPipelineFull_witness :
     have hnn : ∀ x ∈ r.nnf, NoNilFault x.1 x.2 plRunEnv pfArgs {} := fun x hx =>
       noNilFault_of_noAct (hx2 x hx).1.1 plRunEnv pfArgs {}
     have hap : ∀ x ∈ r.nnf, ArgPtrsOK x.1 x.2 plRunEnv pfArgs {} := fun x hx =>
-      argPtrsOK_of_none (hx2 x hx).1.2 plRunEnv pfArgs {}
+      argPtrsOK_of_none (hx2 x hx).1.2 plRunEnv pfArgs {} (fun _ h => nomatch h)
     have hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 plRunEnv pfArgs {} := fun x hx =>
       nilPtrsOK_of_none (hx2 x hx).2 plRunEnv pfArgs {}
     obtain ⟨fuel', ho⟩ := verifiedPipelineFull_refines hpe hv pfRunEnv_vpre hnn hap hnp

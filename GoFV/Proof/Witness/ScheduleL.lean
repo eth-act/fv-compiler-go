@@ -65,8 +65,24 @@ theorem schedule_witness :
   refine ⟨out, hp, hv, hb, ?_⟩
   obtain ⟨m, hm⟩ := returnsInt_iff.1 clampL_runLF.1
   exact (schedule_refinesSchedLF (penv := clampSchedPassEnv) hp (ok_of_toBool clampL_check) hv).returned_int
-    ⟨argPtrsOK_of_none clampL_noArgPtr Env.p1 (clampArgs 5) {},
+    ⟨argPtrsOK_of_none clampL_noArgPtr Env.p1 (clampArgs 5) {} (fun _ h => nomatch h),
       nilPtrsOK_of_none clampL_noNilPtr Env.p1 (clampArgs 5) {}⟩ hm
+
+/-- **The closure conjunct of `ArgPtrsOK` is not vacuous** (#705): with a closure context that
+points to a heap object (a funcval), `ArgPtrsOK` of `clampL` holds; and outside a closure
+(`Env.p1`) it is the condition on the parameter pieces (`argPtrsOK_iff_of_none`). -/
+theorem argPtrsOK_closure_witness :
+    ArgPtrsOK clampLTabs clampL { Env.p1 with closure := some (.ptr ⟨.heap 0, 0⟩) }
+        (clampArgs 5) {} ∧
+      ArgPtrsAt ⟨clampL.lowered, true⟩ Env.p1 clampLTabs clampL
+        (entryFrame Env.p1 (Ctx.makeL clampLTabs clampL) (clampArgs 5) {}) := by
+  refine ⟨argPtrsOK_of_none clampL_noArgPtr _ _ _ ?_, (argPtrsOK_iff_of_none rfl).1
+    (argPtrsOK_of_none clampL_noArgPtr Env.p1 (clampArgs 5) {} (fun _ h => nomatch h))⟩
+  rintro c h ⟨b, hb, hnil⟩
+  cases h
+  simp only [Arm64.addr, Option.some.injEq] at hb
+  subst hb
+  simp [Ptr.isNil, Ptr.add] at hnil
 
 /-- `clampL` has no value evaluated by `arm64Op`. -/
 theorem clampL_noAct :
@@ -86,7 +102,7 @@ theorem schedule_refinesSchedL_witness :
   obtain ⟨fuel', ho⟩ := schedule_refinesSchedL (penv := clampSchedPassEnv) hp
     (ok_of_toBool clampL_check) hv Env.p1 (clampArgs 5) {}
     ⟨noNilFault_of_noAct clampL_noAct Env.p1 (clampArgs 5) {},
-      argPtrsOK_of_none clampL_noArgPtr Env.p1 (clampArgs 5) {},
+      argPtrsOK_of_none clampL_noArgPtr Env.p1 (clampArgs 5) {} (fun _ h => nomatch h),
       nilPtrsOK_of_none clampL_noNilPtr Env.p1 (clampArgs 5) {}⟩ 3
     (by show (runL Env.p1 clampLTabs clampL (clampArgs 5) {} 3).Defined; rw [hm]; trivial)
   change OutcomeRefines 0 (runL Env.p1 clampLTabs clampL (clampArgs 5) {} 3) _ at ho
@@ -295,7 +311,7 @@ theorem schedule_chain_witness :
   obtain ⟨m, hm⟩ := returnsInt_iff.1 clampCh_runLF
   exact (schedule_refinesSchedLF (penv := clampSchedPassEnv) hp (ok_of_toBool clampCh_check)
     hv).returned_int
-    ⟨argPtrsOK_of_none clampCh_noArgPtr Env.p1 (clampArgs 5) {},
+    ⟨argPtrsOK_of_none clampCh_noArgPtr Env.p1 (clampArgs 5) {} (fun _ h => nomatch h),
       nilPtrsOK_of_none clampCh_noNilPtr Env.p1 (clampArgs 5) {}⟩ hm
 
 end GoFV.Proof.Witness

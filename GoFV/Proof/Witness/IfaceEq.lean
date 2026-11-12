@@ -268,7 +268,7 @@ theorem ie_rwPre :
       exact RoImage.nil Env.ifaceEqDemo_keepsRo {},
     GoFV.Proof.Pass.Rewrite.initAvoids_empty (fun v hv _ _ => by
       simp only [List.mem_cons, List.mem_nil_iff, or_false] at hv
-      rcases hv with rfl | rfl | rfl <;> intro h <;> cases h) rfl,
+      rcases hv with rfl | rfl | rfl <;> intro h <;> cases h) rfl (fun _ h => nomatch h),
     Env.ifaceEqDemo_growLen, Env.ifaceEqDemo_ifaceEq _⟩
 
 end GoFV.Proof.Witness

@@ -51,7 +51,7 @@ theorem p1_atAct_tempOblivious : (Env.p1.atAct 0).TempOblivious ∧
 
 theorem clampArgs_initAvoids (x : BitVec 64) : InitAvoids Env.p1 (clampArgs x) {} := by
   intro a n
-  refine ⟨fun v hv => ?_, fun _ _ h => ?_, rfl, fun _ h => ?_⟩
+  refine ⟨fun v hv => ?_, fun _ _ h => ?_, rfl, fun _ h => ?_, fun _ h => nomatch h⟩
   · simp only [clampArgs, List.mem_cons, List.mem_nil_iff, or_false] at hv
     rcases hv with rfl | rfl | rfl <;> trivial
   · simp at h

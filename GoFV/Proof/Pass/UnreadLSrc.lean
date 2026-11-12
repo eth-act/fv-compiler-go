@@ -80,7 +80,7 @@ theorem arm64Op_av {env : Env} (hfs : env.FrameSafe) (hU : TempU U) {ctx : Ctx} 
         | exact elim_addr hs (hargs _ (by simp))
         | exact res_av _ _
         | exact regVal_av _ (hargs _ (by simp))
-        | (rw [hfr.closure]; exact True.intro)
+        | exact hfr.closure_getD
         | exact memEq_avoids _
         | exact hargs (.mem _) (by simp)
         | exact evalPure_av hU _ _ _ _ hargs)

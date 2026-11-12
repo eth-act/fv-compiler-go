@@ -107,7 +107,7 @@ theorem e2e_facts : e2eFacts = true := by
 
 theorem initAvoids : InitAvoids plRunEnv ObjWhole.args {} := by
   intro a n
-  refine ⟨fun v h => ?_, fun _ _ h => ?_, rfl, fun g hg x hx => ?_⟩
+  refine ⟨fun v h => ?_, fun _ _ h => ?_, rfl, fun g hg x hx => ?_, fun _ h => nomatch h⟩
   · simp only [ObjWhole.args, List.mem_cons, List.not_mem_nil, or_false] at h
     subst h
     trivial
@@ -160,7 +160,7 @@ theorem verified_mach_witness :
     have hnn : ∀ x ∈ r.nnf, NoNilFault x.1 x.2 plRunEnv ObjWhole.args {} := fun x hx =>
       noNilFault_of_noAct (hx2 x hx).1.1 plRunEnv ObjWhole.args {}
     have hap : ∀ x ∈ r.nnf, ArgPtrsOK x.1 x.2 plRunEnv ObjWhole.args {} := fun x hx =>
-      argPtrsOK_of_none (hx2 x hx).1.2 plRunEnv ObjWhole.args {}
+      argPtrsOK_of_none (hx2 x hx).1.2 plRunEnv ObjWhole.args {} (fun _ h => nomatch h)
     have hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 plRunEnv ObjWhole.args {} := fun x hx =>
       nilPtrsOK_of_none (hx2 x hx).2 plRunEnv ObjWhole.args {}
     have hvpre : VPre (NilCheck.dictParams penv.tables f0) (pipelineRo penv f0)

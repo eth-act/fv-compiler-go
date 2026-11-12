@@ -895,23 +895,67 @@ theorem evalValueL_spg {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v : Va
     rw [he] at h; cases h
     exact nonNil_retype_ptr md hw (by simp) (Ptr.inWindow_zero _)
 
-/-- **Without a closure context** (a run of the function itself: `entryFrame` sets none),
-`GetClosurePtr` is `poison`, which has no nil base. -/
+/-- At a word shape, a value has a nil base only if it had one: `md.retype` keeps an integer's
+or a boolean's register and a pointer's address (`Ptr.word`), and makes anything else `poison`. -/
+theorem nilBase_of_retype_word (md : LMode) {t : Ty} (ht : wordShape t = true) {c : Val}
+    (h : NilBase (md.retype t c)) : NilBase c := by
+  obtain ⟨b, hb, hnil⟩ := h
+  refine ⟨b, ?_, hnil⟩
+  -- a pointer's word addresses the pointer
+  have hword : ∀ p : Ptr, Arm64.addr p.word 0 = some b → Arm64.addr (.ptr p) 0 = some b := by
+    intro p hp
+    rcases Ptr.word_cases p with ⟨-, e⟩ | ⟨hc, a, ha, e⟩ | ⟨-, e⟩ <;> rw [e] at hp
+    · exact hp
+    · have hq : (Val.int .w64 a).asPtrWord = some p := by
+        simp only [Val.asPtrWord, Ptr.ofAddr_addr hc ha]
+      rw [addr_of_asPtrWord hq] at hp
+      rw [addr_of_asPtrWord (rfl : (Val.ptr p).asPtrWord = some p)]
+      exact hp
+    · simp [Arm64.addr, Arm64.reg] at hp
+  have ht' : t = .int .w64 ∨ ∃ e, t = .ptr e := by
+    unfold wordShape at ht
+    split at ht
+    · exact .inl rfl
+    · exact .inr ⟨_, rfl⟩
+    · cases ht
+  obtain ⟨low, faulting⟩ := md
+  rcases ht' with rfl | ⟨e, rfl⟩ <;>
+  · cases c with
+    | ptr p =>
+      apply hword
+      cases low <;> simpa [LMode.retype, Val.retypeL, Val.widen, Val.retype] using hb
+    | int w x =>
+      clear hword
+      cases low <;> cases w <;>
+        simp_all [LMode.retype, Val.retypeL, Val.widen, Val.retype, Arm64.addr, Arm64.reg,
+          Width.bits]
+    | _ =>
+      clear hword
+      cases low <;>
+        simp_all [LMode.retype, Val.retypeL, Val.widen, Val.retype, Arm64.addr, Arm64.reg]
+
+/-- **The closure pointer has no nil base** at a word shape when the frame's closure context has
+none (`poison` without a context; `ArgPtrsOK`: the top-level context is no nil pointer). -/
 theorem evalValueL_clo {md : LMode} {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {y : Val}
-    (hop : v.op = .ARM64LoweredGetClosurePtr) (hc : fr.closure = none)
+    (hop : v.op = .ARM64LoweredGetClosurePtr) (hc : ∀ c, fr.closure = some c → ¬ NilBase c)
+    (hw : wordShape (ctx.tys[v.id]?.getD .other) = true)
     (h : evalValueL md env ctx fr v = .ok y) : ¬ NilBase y := by
   obtain ⟨argv, hm⟩ := evalValueL_args_ok h (by intro msg hh; cases hh)
   rw [evalValueL_bind hm, evalOpL_act (by rw [hop]; decide)] at h
-  have he : arm64Op md.faulting env ctx fr v argv (ctx.tys[v.id]?.getD .other) = .ok .poison := by
+  have he : arm64Op md.faulting env ctx fr v argv (ctx.tys[v.id]?.getD .other) =
+      .ok (fr.closure.getD .poison) := by
     have hnf : nilFaults md.faulting ctx v argv = none := by
       apply nilFaults_none_of <;> rw [hop] <;> rfl
-    unfold arm64Op; simp only [hnf]; rw [hop]; dsimp only; rw [hc]; rfl
+    (unfold arm64Op; simp only [hnf]; rw [hop]) <;> rfl
   rw [he] at h; cases h
-  rintro ⟨b, hb, -⟩
-  cases md with
-  | mk low faulting =>
-    cases low <;> simp [LMode.retype, Val.retypeL, Val.widen, Val.retype, Arm64.addr,
-      Arm64.reg] at hb
+  intro hb
+  have hb' := nilBase_of_retype_word md hw hb
+  cases hcl : fr.closure with
+  | none =>
+    rw [hcl] at hb'
+    obtain ⟨b, hb'', -⟩ := hb'
+    simp [Arm64.addr, Arm64.reg] at hb''
+  | some c => rw [hcl] at hb'; exact hc c hcl hb'
 
 /-! ## Value correspondence -/
 
@@ -1172,9 +1216,23 @@ def ArgPtrsAt (md : LMode) (env : Env) (tabs : Tables) (f : Func) (fr : Frame) :
 reads nil or a pointer that is not wild, in `runLF`'s entry frame. A Go-level assumption: Go's
 type system and the garbage collector require a pointer parameter to be nil or valid; `unsafe`
 code that forges a wild pointer is outside the model. `schedule` may move a nil check of such a
-piece before a fault on the same memory (`ScheduleCheck.swapOK`). -/
+piece before a fault on the same memory (`ScheduleCheck.swapOK`).
+
+The top-level closure context (`Env.closure`) has no nil base: a closure is entered through its
+funcval, and the caller loads the code word from it before the call
+(`cmd/compile/internal/ssagen/ssa.go:5141-5149`, `rawLoad` of the closure), a load that faults
+on nil. So a load off the closure pointer cannot fault (`ScheduleCheck.isNN`). -/
 def ArgPtrsOK (tabs : Tables) (f : Func) (env : Env) (args : List Val) (mem : Mem) : Prop :=
-  ArgPtrsAt ⟨f.lowered, true⟩ env tabs f (entryFrame env (Ctx.makeL tabs f) args mem)
+  ArgPtrsAt ⟨f.lowered, true⟩ env tabs f (entryFrame env (Ctx.makeL tabs f) args mem) ∧
+    ∀ c, env.closure = some c → ¬ SchedL.NilBase c
+
+/-- Outside a closure (`env.closure = none`), `ArgPtrsOK` is the condition on the parameter
+pieces alone. -/
+theorem argPtrsOK_iff_of_none {tabs : Tables} {f : Func} {env : Env} (h : env.closure = none)
+    {args : List Val} {mem : Mem} :
+    ArgPtrsOK tabs f env args mem ↔
+      ArgPtrsAt ⟨f.lowered, true⟩ env tabs f (entryFrame env (Ctx.makeL tabs f) args mem) :=
+  ⟨fun h' => h'.1, fun h' => ⟨h', fun c hc => by rw [h] at hc; cases hc⟩⟩
 
 /-- A parameter's register piece reads no register: `ArgPtrsAt` holds in every frame equal up
 to the registers. -/
@@ -1190,13 +1248,16 @@ theorem ArgPtrsAt.regs {md : LMode} {env : Env} {tabs : Tables} {f : Func} {fr f
   rw [← evalValueL_congr hfr (fun a h => by rw [ha] at h; simp at h)] at hy
   exact h x v hv hp y hy
 
-/-- `ArgPtrsOK` holds when `f` has no pointer-shaped register piece of a parameter. -/
+/-- `ArgPtrsOK` holds when `f` has no pointer-shaped register piece of a parameter and the
+closure context, if any, has no nil base. -/
 theorem argPtrsOK_of_none {tabs : Tables} {f : Func}
     (h : (List.range f.valueTab.size).all
       (fun x => !ScheduleCheck.argPtr tabs (Ctx.makeL tabs f).params (Ctx.makeL tabs f).tys f x) =
         true)
-    (env : Env) (args : List Val) (mem : Mem) : ArgPtrsOK tabs f env args mem := by
-  intro x v hv hp
+    (env : Env) (args : List Val) (mem : Mem)
+    (hc : ∀ c, env.closure = some c → ¬ SchedL.NilBase c) :
+    ArgPtrsOK tabs f env args mem := by
+  refine ⟨fun x v hv hp => ?_, hc⟩
   have hx : x < f.valueTab.size := by
     simp only [Func.value?, Option.join_eq_some_iff] at hv
     exact (Array.getElem?_eq_some_iff.1 hv).1
