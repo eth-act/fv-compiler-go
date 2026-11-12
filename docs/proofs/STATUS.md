@@ -104,9 +104,9 @@ obstacle counts on full-v6, "Findings" in `rules.md` has the counterexamples):
 - The `CondSelect` folds (about 240 functions on the unmarked alternatives of `:2322–:2393`) and
   `divmod.rules:136–148` (59) are false as above.
 
-**Open** (302):
+**Open** (295):
 
-- `P1`/`P2` alternatives without a lemma (188): most never fire on the corpus; those that fire
+- `P1`/`P2` alternatives without a lemma (185): most never fire on the corpus; those that fire
   are in the `fire-full` table of `rules.md` (sole obstacles by rule).
 - `mem` (28) and `ptr` (5): memory and pointer rules inside the model without an effect
   obligation proof: `Load` forwardings of other shapes (`:831–:877` but `:842`/`:851`/`:862`/`:875`,
@@ -116,9 +116,10 @@ obstacle counts on full-v6, "Findings" in `rules.md` has the counterexamples):
   `:1646`–`:1676` are proven except the ones of two constants, `:1664`/`:1665`), and `ConstString` under
   `config.PtrSize == 4` (`:1013`, `:1017`; never true
   for linux/arm64).
-- `float` (46): inside the model (`Sem/Float.lean`, the AArch64 instruction of each op with
+- `float` (42): inside the model (`Sem/Float.lean`, the AArch64 instruction of each op with
   RNE): constant folds of `Add/Sub/Mul/Div/Neg{32,64}F`, `Cvt*` of constants,
-  `Ceil/Floor/Trunc/Round/RoundToEven/Sqrt` of constants, `OrB`/`Not` of float comparisons.
+  `Ceil/Floor/Trunc/Round/RoundToEven/Sqrt` of constants, `OrB` of float comparisons (the `Not`s
+  of float comparisons, `:397`/`:398`, are proven).
 - `call` (35): `memequal` folds (`:1395–:1557`; `memequal` has a contract), the `Const32`
   alternatives of the proven call segments, `growslice` lengths at `Const32`
   (`:2128`/`:2131` alternatives), devirtualisation `:1733`, and **outside the model**: the
