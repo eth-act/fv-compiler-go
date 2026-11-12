@@ -398,14 +398,16 @@ theorem g66L_entrySkip {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Lin
         hm hinv.core hinv.slots (kread_of_reads hreads)
         (knext_kStep fun _ => (hs_slot hh).noRegs) hj hj' hop hh hso hsz1 hft hcv hao hvs
         htemp hs hW
-      exact ⟨m', M', h1, h5, h2, ⟨h3, h4⟩, uokl_f63 (.inl hop) h5 hu, h6⟩
+      exact ⟨m', M', h1, h5, h2, ⟨h3, h4⟩,
+        uokl_f63 (.inl hop) (fun h => by rw [hop] at h; cases h) h5 hu, h6⟩
     · obtain ⟨k, nc, off, rs, n, c', htemp, hn, hh, hso, hsz1, hts, hao, hcv, rfl⟩ :=
         nspill66_ok hns66
       obtain ⟨m', M', h1, h2, h3, h4, h5, h6⟩ := g66_nspillW (H := H) F hF hlcE hcf hslot hextra
         hm hinv.core hinv.slots (kread_of_reads hreads)
         (knext_kStep fun _ => (hs_slot hh).noRegs) hj hj' hop hn hh hso hsz1 hts hao hcv hvs
         htemp hs hW
-      exact ⟨m', M', h1, h5, h2, ⟨h3, h4⟩, uokl_f63 (.inl hop) h5 hu, h6⟩
+      exact ⟨m', M', h1, h5, h2, ⟨h3, h4⟩,
+        uokl_f63 (.inl hop) (fun h => by rw [hop] at h; cases h) h5 hu, h6⟩
     rcases vkind64_skip28 (.inl hop) hkd with h28 | ⟨-, e', hfs⟩
     · obtain ⟨htemp, hVK⟩ := vkind3_spec (vkind28_ok3 (.inl hop) hx h28) (by rw [hop]; rfl)
       have hl0 : loadOp? v.op = none := by rw [hop]; rfl
