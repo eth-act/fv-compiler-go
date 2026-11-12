@@ -114,6 +114,6 @@ theorem le_rwPre :
       simp only [List.mem_cons, List.mem_nil_iff, or_false] at hv
       rcases hv with rfl | rfl
       · intro h; cases h
-      · trivial) rfl)
+      · trivial) rfl (fun _ h => nomatch h))
 
 end GoFV.Proof.Witness
