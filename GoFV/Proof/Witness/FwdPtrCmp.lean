@@ -125,6 +125,7 @@ arguments from an empty memory. -/
 theorem pc_rwPre :
     GoFV.Proof.Pass.Rewrite.RwPre pcPassEnv.tables pcPassEnv.frontend pcFunc Env.p1 [] {} :=
   GoFV.Proof.Pass.Rewrite.RwPre.p1 (by decide +kernel) (by decide +kernel)
-    (GoFV.Proof.Pass.Rewrite.initAvoids_empty (fun v hv _ _ => by simp at hv) rfl)
+    (GoFV.Proof.Pass.Rewrite.initAvoids_empty (fun v hv _ _ => by simp at hv) rfl
+      (fun _ h => nomatch h))
 
 end GoFV.Proof.Witness.FwdPtrCmp
