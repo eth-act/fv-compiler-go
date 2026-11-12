@@ -20,10 +20,15 @@
   for file tools; in bash, `cd` into the worktree in the same command.
 - Every lake/lean/go/test command goes through `scripts/memcap.sh` (default cap 8G, shared
   Lake cache `../gofv-lake-cache`; `lean -j4` via the lakefile's `weakLeanArgs`). One heavy process at a time per
-  agent; anything above 8G only under `flock /home/kev/work/gofv-heavy.lock` (`..` of the main
-  checkout, next to the Lake cache; not `../` of a worktree). The machine is shared with
-  other heavy projects: never pattern-kill (kill only PIDs you started), temporary files under
-  `<worktree>/tmp/`, never `/tmp`. Check `free -g` before large builds.
+  agent; anything above 8G, and every whole-tree `lake build GoFV GoFVTest` or `axioms-audit` at
+  any cap, only under `flock /home/kev/work/gofv-heavy.lock` (`..` of the main checkout, next to
+  the Lake cache; not `../` of a worktree): concurrent 8G builds have been killed by
+  `systemd-oomd` under machine-wide memory pressure. Wait for memory before taking the lock (poll
+  `free -g` outside it, re-check inside, release and retry if it dropped); never hold the lock
+  while waiting. Corpus measurement runs at 8G (`gofv-ssa-opt`, `gen-check`, `lower-probe`,
+  `--jobs 2`, `nice -n 10`) need no lock. The machine is shared with other heavy projects: never
+  pattern-kill (kill only PIDs you started) and never delete files you did not create;
+  temporary files under `<worktree>/tmp/`, never `/tmp`. Check `free -g` before large builds.
 - Never `git stash` (shared across worktrees). Commit on your own branch instead.
 - Merge: the author merges. Once the per-PR checks pass (build of affected modules,
   parity on the corpus for touched passes, `#print axioms` of new theorems), rebase on
