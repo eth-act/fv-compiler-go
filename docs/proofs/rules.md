@@ -418,7 +418,7 @@ reads the bytes through the writes (`sepChain_read`: `disjoint_sep` + `read_writ
 `zeroChain_read`), takes `q`'s pointer from the `Zero`'s write (`memDef_zero`), and the fresh
 `OffPtr` is the Load's pointer when the read succeeds (`read_inWindow`; a failed read is `poison`,
 `load_of_read_none`); `sepChain_rank`/`sepChain_ndc` put the `Zero` and `q` below the `Load` for
-the induction. Witness: `zs_checkedRewrite`/`zs_rwPre` (`Witness/FwdZeroStore.lean`: `*p =
+the induction. Witness: `FwdZeroStore.zs_checkedRewrite`/`zs_rwPre` (`Witness/FwdZeroStore.lean`: `*p =
 [2]int{}; p[0] = x; return p[1]`, the `Load` at offset 8 reads the `Zero`'s memory past the
 `Store` at offset 0).
 

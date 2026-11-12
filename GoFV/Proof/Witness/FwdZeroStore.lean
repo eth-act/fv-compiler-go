@@ -20,7 +20,7 @@ offset 8 (`RewriteCheck.fwdSepOK`, `sepChain`), and the fresh `OffPtr` is the Lo
 (`LoadFwd.sep_den`).
 -/
 
-namespace GoFV.Proof.Witness
+namespace GoFV.Proof.Witness.FwdZeroStore
 
 open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Rules
 
@@ -113,4 +113,4 @@ theorem zs_rwPre :
       · intro h; cases h
       · trivial) rfl)
 
-end GoFV.Proof.Witness
+end GoFV.Proof.Witness.FwdZeroStore
