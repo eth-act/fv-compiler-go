@@ -121,23 +121,23 @@ GoFV.Proof.Witness.ObjG7.g_leaf_facts._native.native_decide.ax_1_1 705531b5f6bd8
 # machine-side facts of `pallocSum.start` (no `CALL (Rn)`), and `lcFacts` (`checkG54L`) plus the
 # returning run of `runLoc` on p = 7 in plRunEnv; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.ObjWhole.obj_facts._native.native_decide.ax_1_1 af99d800f41e337ef5c22831b426a7f8a66ed8d3a115ba8459f4b5cd3d73334b
-GoFV.Proof.Witness.ObjWhole.start_facts._native.native_decide.ax_1_1 a34b5e67f39c80d774827661c7b1969de964d671be9ed6914a5fb5769cb54d36
+GoFV.Proof.Witness.ObjWhole.start_facts._native.native_decide.ax_1_1 9b4b6197431be311907aea7d83569b80662d4d1b93e105c23082aa3e40254e93
 # verified_mach_witness (GoFV/Proof/Witness/ObjEndToEnd.lean, #553): `pallocSum.start` from its
 # generic SSA through the verified pipeline to genssa's Progs (`refsLive` of the output, `lcFacts`,
 # `checkG54L`, on `liveCtx` of it; `entryStoresOK`) and the linked words; compiled evaluation, as
 # plF_pipeline.
-GoFV.Proof.Witness.ObjEndToEnd.e2e_facts._native.native_decide.ax_1_1 47fffae64939d71155c6c15792546dca961731db7583cde5f4941702844131dd
+GoFV.Proof.Witness.ObjEndToEnd.e2e_facts._native.native_decide.ax_1_1 52e35fa464525ee01f7596240c52b5acb8603eaca7836c8250457d81279fe166
 # objWholeNL_ret_witness (GoFV/Proof/Witness/ObjWholeNL.lean, #553): `checkObj`, `linkCode` and the
 # machine-side facts of `runtime.gclinkptr.ptr` (no arm64 op), and `lcFacts` plus the returning
 # run of `runLoc` in Phase 1's mode; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.ObjWholeNL.nl_obj_facts._native.native_decide.ax_1_1 86c91dcb8fd0c98de3f95c34d3bcd7c8a59e656ee0eec577d7a28b2b1851b6fc
-GoFV.Proof.Witness.ObjWholeNL.nl_lc_facts._native.native_decide.ax_1_1 20cb3e2a77e7acac25de359e1ac1a3289739ea1e2eb46a29731adc38bcce6a8e
+GoFV.Proof.Witness.ObjWholeNL.nl_lc_facts._native.native_decide.ax_1_1 4c7f5e4c5884f3c2fda6c5babd9808d7206c86f18da78ca2e6215327b3e1f569
 # objWhole_panic_witness, g54_callPanic_witness (GoFV/Proof/Witness/ObjPanic.lean, #553): `checkObj`,
 # `linkCode` and the machine-side facts of `(*A).g`, `lcFacts` with the nil check's panic from
 # `runLoc`'s first state on a nil receiver; `checkG54L` on `fint64to32` and its call's panic in
 # `envP`; compiled evaluation, as plF_pipeline.
 GoFV.Proof.Witness.ObjPanic.panic_obj_facts._native.native_decide.ax_1_1 55a712f3dd782916c360545e842dc14c6a2d1ec7ce32990718965f1fceae7ca2
-GoFV.Proof.Witness.ObjPanic.panic_lc_facts._native.native_decide.ax_1_1 5db5a9ece102d57068207bfd9608f2f898d515cc27d3eeda7591ca94635774bb
+GoFV.Proof.Witness.ObjPanic.panic_lc_facts._native.native_decide.ax_1_1 fa5bdc5a751ee352e658667dab75f9c86f9fee4c6a0fc66c2423def7e175e025
 GoFV.Proof.Witness.ObjPanic.callPanic_facts._native.native_decide.ax_1_1 2e506823c528e0c0074e77b1842cabda2afaa15fc9efb147605db2121f53373e
 # g54_icallPanic_witness, g54_storePanic_witness (GoFV/Proof/Witness/ObjPanic.lean, #553): `checkG54L`
 # on `Locker.Lock` and its interface call's panic in `envP`; `checkG54L` on `(*queueOnePass).next`
@@ -346,7 +346,7 @@ GoFV.Proof.Witness.GenG49Mach.g49Mach_facts._native.native_decide.ax_1_1 e01ff83
 # facts), and the runs of `run`/`runLoc` at `Addrs.atSP` (entry values, the call, the return's
 # memory); compiled evaluation.
 GoFV.Proof.Witness.ObjEndToEndAtSP.obj_facts._native.native_decide.ax_1_1 68cb4a57d54cec8ada1f564594b2e4bf9dcf36c1b096f544c4f5b939e742f644
-GoFV.Proof.Witness.ObjEndToEndAtSP.e2e_facts._native.native_decide.ax_1_1 5835207743d44ac76c34625d73fcec85b3a669a736ced0c3ccd29262753e164d
+GoFV.Proof.Witness.ObjEndToEndAtSP.e2e_facts._native.native_decide.ax_1_1 2fbc1f5fbbb8398bebec6235abeb94237b773a820641a68f80630b8d30b2fe31
 
 # genG52_witness (GoFV/Proof/Witness/GenG52.lean, #553): `checkG52` accepts `test/ken_chan`'s
 # `main.nrand` and `checkG49` does not (`REM R0, R1, R0` `v32`, `MOD v26 v6`); `runLoc` runs `v32`
@@ -521,15 +521,15 @@ GoFV.Proof.Witness.GenG65.g65_facts._native.native_decide.ax_1_1 b7d65be1eb3f8df
 # objWhole_ret_witness in G48's mode (GoFV/Proof/Witness/ObjWholeS.lean, #553): `ObjWhole`'s facts
 # with the activation at `outargs 0`'s fixed base; compiled evaluation.
 GoFV.Proof.Witness.ObjWholeS.obj_facts._native.native_decide.ax_1_1 20ec0217850f6e67a9440796ce2172b4fbc8d917206261c671107bde043885be
-GoFV.Proof.Witness.ObjWholeS.start_facts._native.native_decide.ax_1_1 0c7634983d625039fa2285ae35023d2a715a053535263a41b8bdb2c3511547d6
+GoFV.Proof.Witness.ObjWholeS.start_facts._native.native_decide.ax_1_1 bdaa4aec930bf20ca667d2767d0a09da59ed352da6205ce00da562d27fd1ffe8
 # verified_mach_S_witness (GoFV/Proof/Witness/ObjEndToEndS.lean, #553): `ObjEndToEnd`'s facts with
 # `ObjWholeS.lcFacts`; compiled evaluation.
-GoFV.Proof.Witness.ObjEndToEndS.e2e_factsS._native.native_decide.ax_1_1 212d05a71292e5594ae31b229758533a62d77226d8bc685ab3df6eb1128cf44b
+GoFV.Proof.Witness.ObjEndToEndS.e2e_factsS._native.native_decide.ax_1_1 11fb3275821d686e3f6f4213a1ec6e1458555c3709fb1d9fa06b53f75d06682d
 # verified_mach_S_atSP_witness (GoFV/Proof/Witness/ObjEndToEndAtSPS.lean, #553): `ObjEndToEndAtSP`'s
 # facts in G48's mode (`Addrs.atSPO`: `SP` holds the pointer to `outargs 0`, `callRegsS`); compiled
 # evaluation.
 GoFV.Proof.Witness.ObjEndToEndAtSPS.obj_facts._native.native_decide.ax_1_1 6e90a2eb924dd31dafda7c5b895ed1b71ef857795e8dba3a42f485108f0deea6
-GoFV.Proof.Witness.ObjEndToEndAtSPS.e2e_facts._native.native_decide.ax_1_1 fd1ea4299c9606caacfb1132bc475b0ab6e06d45abcd2d8acf929a39df920dee
+GoFV.Proof.Witness.ObjEndToEndAtSPS.e2e_facts._native.native_decide.ax_1_1 544230b7afe5a5b70e9b1f89f1e4dcc1da967d1954cc5254375588b36d232a07
 
 # `@[implemented_by]` / `@[extern]` declarations (they replace compiled code; GoFVTest/AxiomsAudit.lean),
 # `implemented_by NAME TARGET PIN` with PIN the SHA-256 of the target's value's `repr`:
@@ -556,7 +556,7 @@ GoFV.Proof.Witness.ObjSbfiz.sbfiz_facts._native.native_decide.ax_1_1 edb12065e71
 # check without that step does not; compiled evaluation, as plF_pipeline. `storesFrom`'s step over
 # `entrySkip` (#553) moved the Obj pins whose facts run `entryStoresOK` (re-taken from the audit;
 # no statement changed).
-GoFV.Proof.Witness.ObjEntrySkip.skip_facts._native.native_decide.ax_1_1 f9409aa4837ca7cfbb7acced1a01e04580007c076d2bff08ec75b56958595abf
+GoFV.Proof.Witness.ObjEntrySkip.skip_facts._native.native_decide.ax_1_1 dab4f2cda7c2b3ee368fde8147915d4640dd81949269b5080d4699798f4bad4f
 # `Env.closure` (#705, the top-level closure context, read by `entryFrame`) moved the 97 pins
 # above whose facts reach `Env`/`entryFrame` (GenG*, Obj*, pfF_pipeline; re-taken from the audit;
 # no statement changed).
@@ -565,5 +565,7 @@ GoFV.Proof.Witness.ObjEntrySkip.skip_facts._native.native_decide.ax_1_1 f9409aa4
 # plRunEnv with the closure context a funcval `heap 1` capturing 5 (`lcFacts`: `checkG64L`,
 # `cloBefore` at 3, the load `v9` reads valid bytes; `sameRun`; the runs return 12); compiled
 # evaluation, as plF_pipeline.
-GoFV.Proof.Witness.ObjEndToEndClo.obj_facts._native.native_decide.ax_1_1 eb25c0bd33a6318f952b747956f1f37dfb0898849ec61aa3efde0ddb93c44ed5
-GoFV.Proof.Witness.ObjEndToEndClo.e2e_facts._native.native_decide.ax_1_1 14bc014d2571df12a3475987e95738f60eb01eddb6ce0c3fe4d923a4b2f30a9e
+GoFV.Proof.Witness.ObjEndToEndClo.obj_facts._native.native_decide.ax_1_1 6e46adb7a65f642f91461c9e17a3285036e3ca57c6e0281475379158ebbfbb49
+GoFV.Proof.Witness.ObjEndToEndClo.e2e_facts._native.native_decide.ax_1_1 59bf28407e0a54fa94686da2da6978c522c2faa7332cf8da1c986f2041c5107f
+# `entryLen` counting `LoweredGetClosurePtr` and `opBefore` (#705 PR2) moved the 11 Obj* pins above
+# whose facts run `entryLen`/`argsOK` (re-taken from the audit; no statement changed).
