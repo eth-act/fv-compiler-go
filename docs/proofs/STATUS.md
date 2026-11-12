@@ -1828,7 +1828,6 @@ declarations, then the autos the pipeline created). From the stock `.prog` file 
 input view is read (definitions, config, `Dcl` at `AllocFrame`'s start, `genin`). The stock
 column runs the same back end on the stock `trim` function of every function.
 
-<<<<<<< HEAD
 **Entry stores after spills (`entrySkip`).** `storesFrom` steps over the spills (`StoreReg`) and
 the values without code (`SP`, `SB`, `InitMem`) genssa places between the entry values and the
 entry stores (`GoFV/Gen/Entry49.lean`; proof `sim_entrySkip`, `g64L_entrySkip`). On quick-v10
@@ -1840,10 +1839,7 @@ entry stores (`GoFV/Gen/Entry49.lean`; proof `sim_entrySkip`, `g64L_entrySkip`).
   a pending window 42 → 65;
 - vacuous at `Addrs.fixed` under `verified_mach_S`: 7 → 9.
 
-| quick-v10 (9,297 functions, 8.5 min; the composition on G64 with `SBFIZ` in `checkObj`, per function at either mode (`agent/sbfiz` on main a6c37a47, the vacuity audit `entryVacuous`), P0' in `checkG64` and `checkObj`, `--jobs 2`) | pipeline output | share | stock `trim` |
-=======
-| quick-v10 (9,297 functions, 8.9 min; the composition on G66 (G66a and G66b), per function at either mode (`agent/g66lift` on `agent/g66b`, main 3f22d5c4, the vacuity audit `entryVacuous`), P0' in `checkG66` and `checkObj`, `--jobs 2`) | pipeline output | share | stock `trim` |
->>>>>>> 8b74682d (docs: quick-v10 e2e on the composition on G66: 7,057 (6,821 verified_mach + 236 verified_mach_S), +382 over G64's 6,675, 0 lost by comm (refs #553))
+| quick-v10 (9,297 functions, 8.9 min; the composition on G66 (G66a and G66b), per function at either mode (`agent/g66lift` on `agent/g66b`, main 3f22d5c4 before `entrySkip`, the vacuity audit `entryVacuous`; TO RE-MEASURE on current main against its 6,702), P0' in `checkG66` and `checkObj`, `--jobs 2`) | pipeline output | share | stock `trim` |
 | --- | ---: | ---: | ---: |
 | fully verified (Phase 2, through `trim`) | 7,895 | 84.91% | - |
 | … genssa and `Flushplist` ran | 7,895 | 84.91% | 9,297 |
