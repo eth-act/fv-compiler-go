@@ -556,4 +556,4 @@ GoFV.Proof.Witness.ObjSbfiz.sbfiz_facts._native.native_decide.ax_1_1 edb12065e71
 # check without that step does not; compiled evaluation, as plF_pipeline. `storesFrom`'s step over
 # `entrySkip` (#553) moved the Obj pins whose facts run `entryStoresOK` (re-taken from the audit;
 # no statement changed).
-GoFV.Proof.Witness.ObjEntrySkip.skip_facts._native.native_decide.ax_1_1 0000000000000000000000000000000000000000000000000000000000000000
+GoFV.Proof.Witness.ObjEntrySkip.skip_facts._native.native_decide.ax_1_1 f9409aa4837ca7cfbb7acced1a01e04580007c076d2bff08ec75b56958595abf
