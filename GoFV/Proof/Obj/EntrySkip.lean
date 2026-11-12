@@ -258,7 +258,7 @@ theorem g64L_entrySkip {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Lin
         ∀ y, ¬ W y → M' y = m'.mem y := fun hx h1 h2 h3 =>
     ⟨m, M0, .refl, rfl, h1, ⟨h2, h3⟩, by
       rcases hx with h | h <;>
-        exact uokl_xw35 hu (.inl rfl) (ldEntry35_none (by rw [h]; rfl))
+        exact uokl_xw35 hu (.inl rfl) (ldEntry35_none (by rw [h]; rfl) (by rw [h]; nofun))
           (by simp [uEntry, narrowLd?, loadOp?, narrowLoad?, loadIdxOp?, h]) (by simp [h])
           (by simp [h]) (by simp [h]) (by simp [h]), hW⟩
   rcases hops with hop | hop | ⟨hx, hop | hop⟩
@@ -321,7 +321,8 @@ theorem g64L_entrySkip {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Lin
             hm hinv.core hinv.slots (kread_of_reads hreads)
             (knext_kStep fun _ => (hs_slot hh).noRegs) hj hj' hop hh hso hsz1 hcv hao hpat hvs
             htemp hs hW
-          exact ⟨m', M', h1, h5, h2, ⟨h3, h4⟩, uokl_f63 (.inl hop) h5 hu, h6⟩
+          exact ⟨m', M', h1, h5, h2, ⟨h3, h4⟩,
+            uokl_f63 (.inl hop) (fun h => by rw [hop] at h; cases h) h5 hu, h6⟩
       | load h' => rw [hl0] at h'; cases h'
       | store h' => rw [hs0] at h'; cases h'
       | sb h' => rw [hop] at h'; cases h'
@@ -335,7 +336,8 @@ theorem g64L_entrySkip {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Lin
         hm hinv.core hinv.slots (kread_of_reads hreads)
         (knext_kStep fun _ => (hs_slot hh).noRegs) hj hj' hop hh hso hsz1 hft hcv hao hvs
         htemp hs hW
-      exact ⟨m', M', h1, h5, h2, ⟨h3, h4⟩, uokl_f63 (.inl hop) h5 hu, h6⟩
+      exact ⟨m', M', h1, h5, h2, ⟨h3, h4⟩,
+        uokl_f63 (.inl hop) (fun h => by rw [hop] at h; cases h) h5 hu, h6⟩
   · -- `SB`
     rcases vkind64_skip28 (.inr (.inr hop)) hkd with h28 | ⟨h, -⟩
     · obtain ⟨htemp, hVK⟩ := vkind3_spec (vkind28_ok3 (.inr hop) hx h28) (by rw [hop]; rfl)
