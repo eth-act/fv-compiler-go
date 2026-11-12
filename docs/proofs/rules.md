@@ -737,7 +737,12 @@ relates its input to the result by `segRel`:
   pointers equal up to copies or `LocalAddr`s of one variable (`samePtr`); in `g` the same
   `Store`s at fresh
   `OffPtr [o]`s of `dst` over a fresh `Zero [n] dst m'`, `m'` the end of `m`'s copies,
-  `moveStoreOK`; nothing dropped), the
+  `moveStoreOK`; nothing dropped) or `tileSeg?` (`:1871`/`:1887`/`:1908` and the `VarDef` forms
+  `:1925`/`:1942`/`:1964`, issue #69: in `f` `Move [n] dst p m` whose memory is, up to copies `mc`,
+  (a `VarDef` of) `k ≥ 1` `Store`s at pointers `o` bytes past `p` (`offFrom`, `storesC` as for
+  `moveSeg?`) whose offsets and sizes tile `[0, n)` bottom first (`tilesB`, `storeShapes`); in `g`
+  the same `Store`s at fresh `OffPtr [o]`s of `dst`, the last over `mc`, `moveStoreOK`; nothing
+  dropped; tried after `moveSeg?`), the
   dropped values listed roots of the block, the fresh ones listed in `g`'s block, the anchor and
   the fresh values roots of `g` but `OffPtr`s of arguments of the segment's roots, `N ++ [x]` in
   dependency order, their other arguments reached from the segment's roots (`argReach`, 8 levels:
@@ -778,12 +783,17 @@ memory), `callSeg_sound (hE : env.MemOps)` (`SegCallSeg.lean`, with
 `Move` read the symbol's zero bytes, `read_zeros`, which the `Zero` writes), `zeroSeg_sound`
 (`SegMove.lean`: the `Zero`'s memory reads zeros at `P`, `read_write_self` with `samePtr_reg`; the
 `Move`'s memory, that one or with a frame block poisoned, reads bytes they refine, and the
-target's `Zero` writes the zeros at `Dst` over the same memory; witness `zeroSeg_witness`) and `moveSeg_sound`
+target's `Zero` writes the zeros at `Dst` over the same memory; witness `zeroSeg_witness`), `moveSeg_sound`
 (`SegMove.lean`: the stores' memory has at `P` the zeros with the stores' bytes put in,
 `read_write_putBytes`; the `Move`'s memory, that one or with a frame block poisoned, reads bytes
 they refine; the target's `Zero` and stores write those bytes at `Dst`, `writes_putBytes`, inside
 the bytes the `Move` wrote, so the fresh `OffPtr`s stay in the window; witness
-`moveSeg_witness`; `moveSeg_witness_nested`: nested `OffPtr`s and copies). A fresh `OffPtr` is
+`moveSeg_witness`; `moveSeg_witness_nested`: nested `OffPtr`s and copies) and `tileSeg_sound`
+(`SegMove.lean`: the stores' memory has at `P` some bytes `B` with the stores' bytes put in,
+`tile_below`; since they tile `[0, n)` that is the stores' bytes whatever `B`,
+`putAll_tiles_eq`; the target's stores over `mc`'s memory write exactly what the `Move` wrote,
+`SegZeroMem.writes_over_write_eq`: stores tiling a written region give the memory they give
+without that write; witness `tileSeg_witness`). A fresh `OffPtr` is
 pure and may be scheduled before the segment's roots:
 `Blk.step` evaluates it by `segStep` when the source evaluated the segment's roots, else purely
 (`pureEval`; its argument is an argument of a segment root, evaluated before it). The simulation
@@ -800,7 +810,8 @@ theorem seg_refines (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
 `LayerChain.seg` and `chain_refines` take it into `checkedRewrite_refines` (statement
 unchanged; `Env.MemOps` and `RoImage (roSyms tabs f)` are conjuncts of `RwPre`). `checkedTiers`
 tries a table without `segs` first when the full table is rejected. Proven: `:1833`, `:1844`,
-`:1857`, `:1638`, `:1721`, `:1730`, `:1740`, `:1742`, `:1743`; witness `GoFV.Proof.Witness.zp_checkedRewrite`
+`:1857`, `:1638`, `:1721`, `:1730`, `:1740`, `:1742`, `:1743`, `:1871`, `:1887`, `:1908`, `:1925`, `:1942`,
+`:1964`; witness `GoFV.Proof.Witness.zp_checkedRewrite`
 (`*p = [2]int{}; p[0] = x; p[1] = x` with `{:1833}`: the `Zero` and the first `Store` dropped, the
 anchor stores over a fresh `Store` on the input memory; kernel evaluation), `callSeg_witness`
 (`callSeg?` on a `memclr` call), `callSeg_witness_str` (its size `len("0123456789abcdef") * 1`),
@@ -1291,7 +1302,7 @@ needs a later phase of the semantics.
 | `generic` | Lsh | 67 | 21 | 0 | 0 | 88 |
 | `generic` | MemEq | 2 | 9 | 0 | 0 | 11 |
 | `generic` | Mod | 29 | 0 | 0 | 0 | 29 |
-| `generic` | Move | 13 | 0 | 0 | 25 | 25 |
+| `generic` | Move | 19 | 0 | 0 | 25 | 25 |
 | `generic` | Mul | 45 | 8 | 0 | 8 | 60 |
 | `generic` | Neg | 24 | 0 | 0 | 2 | 26 |
 | `generic` | Neq | 54 | 0 | 0 | 2 | 54 |
@@ -1331,7 +1342,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 60 | 4 | 4 | 0 | 68 |
 | `generic` | Zero | 2 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1423 | 188 | 31 | 258 | 1762 |
+| all | | 1429 | 188 | 31 | 258 | 1762 |
 
 <!-- END coverage -->
 

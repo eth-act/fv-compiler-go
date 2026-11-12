@@ -149,7 +149,7 @@ theorem putAll_tiles_eq : ∀ {lo n : Nat} {ws : List (Nat × Array Byte)} {A B 
 /-- `tilesB` of the shapes of `ws` is `Tiles`. -/
 theorem tilesB_tiles : ∀ {lo n : Nat} {ws : List (Nat × Array Byte)},
     tilesB lo n (ws.map fun w => (w.1, w.2.size)) = true → Tiles lo n ws
-  | lo, n, [], h => by simpa [tilesB] using h
+  | lo, n, [], h => by show lo = n; simpa [tilesB] using h
   | lo, n, (o, E) :: ws, h => by
     simp only [List.map_cons, tilesB, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at h
     exact ⟨h.1.1, h.1.2, tilesB_tiles h.2⟩
@@ -1387,7 +1387,7 @@ theorem tileSeg_sound {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D N
   obtain ⟨T, hWs, hT⟩ := writes_putBytes ws hMs fun w hw' => by rw [hRs]; exact hin w hw'
   have hpe : putAll R ws = putAll B ws := by
     have hRB : R.size = B.size := by rw [hRs, hBs]
-    refine putAll_tiles_eq ht hRB (by rw [hRs]) fun j hj => ?_
+    refine putAll_tiles_eq ht hRB (by rw [hRs]; exact Nat.le_refl _) fun j hj => ?_
     rw [Array.getElem?_eq_none (by omega), Array.getElem?_eq_none (by omega)]
   rw [hpe] at hT
   have hTm : writes Dst Mm ws = some T := writes_over_write_eq hRs hMs hWs ht
