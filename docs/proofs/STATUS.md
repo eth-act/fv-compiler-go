@@ -138,6 +138,15 @@ main fa54a58a with `--jobs 4`: full-v9 through `rewrite tern` 93,475 on both, th
 79,148 → 80,392 (identical to stock 66,495 → 67,041; only `lower`'s proven runs change, 80,718 →
 82,086), checked lower at stock (`lower-probe`) 83,523 → 84,876 with no function lost.
 
+`lower` on inputs with values Go reset in place to `Invalid` (memcombine's `clobber`,
+writebarrier's unused nil check, late fuse; `lowerGuard` rejected them as lowered), validated with
+`Invalid` read as `Unknown` (`lower_refines_runU`, `run_invUnknown`; `run` evaluates both to
+`poison`, so the earlier theorems are not vacuous on them; `docs/PASSES2.md`, lower), measured
+against main 3f22d5c4 with `--jobs 2`: full-v11 through `rewrite tern` 93,779 on both, through
+`trim` 84,902 → 87,820 (identical to stock 69,867 → 71,677; first unverified run `lower
+(rejected)` 3,119 → 0), no function lost; quick-v10 end to end 6,675 → 6,800 (`verified_mach`
+6,472 → 6,595, `verified_mach_S` 203 → 205), no function lost.
+
 Every pass from `lower` to `trim` has a theorem (addressing modes `addressingModes_refinesL`,
 late lower `lateLower_refinesL`, pair `pair_refinesL`, flagalloc `flagalloc_refinesSched`).
 `regalloc` now accepts all 96,560 full-v9 runs (`tabsAgreeModL` takes the new spill autos that
