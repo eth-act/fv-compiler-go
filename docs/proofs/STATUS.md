@@ -1813,11 +1813,14 @@ column runs the same back end on the stock `trim` function of every function.
 
 **Entry stores after spills (`entrySkip`).** `storesFrom` steps over the spills (`StoreReg`) and
 the values without code (`SP`, `SB`, `InitMem`) genssa places between the entry values and the
-entry stores (`GoFV/Gen/Entry49.lean`; proof `sim_entrySkip`, `g64L_entrySkip`). quick-v10, main
-3f22d5c4's driver against `agent/entryspill` on it (`--jobs 2`): end to end 6,675 → 6,698
-(`verified_mach` 6,472 → 6,493, `verified_mach_S` 203 → 205), 0 lost (`comm` of the accepted
-lists); `entryStoresOK` rejects 35 → 12 of the 77 with a pending window (stock 51 → 21), end to
-end with a pending window 42 → 65; vacuous at `Addrs.fixed` under `verified_mach_S` 7 → 9.
+entry stores (`GoFV/Gen/Entry49.lean`; proof `sim_entrySkip`, `g64L_entrySkip`). On quick-v10
+(`--jobs 2`), main a0bab4f7's driver against `agent/entryspill` rebased on it:
+
+- end to end 6,679 → 6,702 (`verified_mach` 6,476 → 6,497, `verified_mach_S` 203 → 205), 0 lost
+  and 23 gained (`comm` of the accepted lists); stock column 7,563 → 7,593;
+- `entryStoresOK` rejects 35 → 12 of the 77 with a pending window (stock 51 → 21); end to end with
+  a pending window 42 → 65;
+- vacuous at `Addrs.fixed` under `verified_mach_S`: 7 → 9.
 
 | quick-v10 (9,297 functions, 8.5 min; the composition on G64 with `SBFIZ` in `checkObj`, per function at either mode (`agent/sbfiz` on main a6c37a47, the vacuity audit `entryVacuous`), P0' in `checkG64` and `checkObj`, `--jobs 2`) | pipeline output | share | stock `trim` |
 | --- | ---: | ---: | ---: |
