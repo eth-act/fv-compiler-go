@@ -1822,6 +1822,16 @@ entry stores (`GoFV/Gen/Entry49.lean`; proof `sim_entrySkip`, `g64L_entrySkip`).
   a pending window 42 → 65;
 - vacuous at `Addrs.fixed` under `verified_mach_S`: 7 → 9.
 
+**Closure context at the top-level activation (#705).** `entryLen` counts the closure pointer
+`LoweredGetClosurePtr` (G11, no code), and `cloBefore` (checked) discharges `CloOK` along the run
+(`cloOK_of_cloBefore`), so the driver no longer sets closures aside as vacuous. On quick-v10
+(`--jobs 2`), main's list after #720 (6,702; #715 leaves the driver unchanged) against
+`agent/closure-comp` rebased on main 529ed6be:
+
+- end to end 6,702 → 7,252 (`verified_mach` 6,497 → 7,039, `verified_mach_S` 205 → 213), 0 lost
+  and 550 gained (`comm` of the accepted lists); stock column 7,593 → 8,200;
+- vacuous at the entry (`entryVacuous`, every variant) 547 → 0 (stock 600 → 0).
+
 | quick-v10 (9,297 functions, 8.5 min; the composition on G64 with `SBFIZ` in `checkObj`, per function at either mode (`agent/sbfiz` on main a6c37a47, the vacuity audit `entryVacuous`), P0' in `checkG64` and `checkObj`, `--jobs 2`) | pipeline output | share | stock `trim` |
 | --- | ---: | ---: | ---: |
 | fully verified (Phase 2, through `trim`) | 7,895 | 84.91% | - |
