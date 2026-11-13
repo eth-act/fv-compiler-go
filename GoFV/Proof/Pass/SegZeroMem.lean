@@ -10,7 +10,7 @@ variable [GoFV.SSA.Sem.Addrs]
 (`Store op1 d1 (Store op2 d2 (Store op3 d3 (Zero [n] p mem)))` with the stores tiling `[0, n)`
 becomes the same stores over `mem`). `writes P m ws` applies stores `(offset, bytes)` at
 `P + offset` in order; `Tiles 0 n ws` says they tile `[0, n)`. Over a zeroed region they give
-exactly the memory they give over the original one (`writes_over_zero_eq`: the zero write is
+exactly the memory they give over the original one (`writes_over_write_eq`, for any first write: it is
 valid, so every store is, and every zero byte is overwritten), and hence a refinement of the
 original memory gives a refinement of the result (`writes_over_zero`).
 -/
@@ -117,9 +117,11 @@ private theorem fold_ok (Q : Ptr) : ∀ (ws : List (Nat × Array Byte)) (m : Mem
       rw [hs]
       exact fold_ok Q ws m a hm hwr fun q hq hq0 => hv q (List.mem_cons_of_mem _ hq) hq0
 
-/-- **Stores tiling a zeroed region** give exactly the memory they give without the zeroing. -/
-theorem writes_over_zero_eq {m Z W : Mem} {P : Ptr} {n : Nat} {ws : List (Nat × Array Byte)}
-    (hz : m.write P (Array.replicate n (.b 0)) = some Z) (hw : writes P Z ws = some W)
+/-- **Stores tiling a written region** (a zeroing, or any write of `n` bytes) give exactly the
+memory they give without that write. -/
+theorem writes_over_write_eq {m Z W : Mem} {P : Ptr} {n : Nat} {bz : Array Byte}
+    {ws : List (Nat × Array Byte)} (hbz : bz.size = n)
+    (hz : m.write P bz = some Z) (hw : writes P Z ws = some W)
     (ht : Tiles 0 n ws) : writes P m ws = some W := by
   have hb := ht.bounds
   by_cases hn : n = 0
@@ -127,14 +129,14 @@ theorem writes_over_zero_eq {m Z W : Mem} {P : Ptr} {n : Nat} {ws : List (Nat ×
     rcases ws with _ | ⟨⟨o, bs⟩, ws⟩
     · have hZ : Z = m := by
         unfold Mem.write at hz
-        simp only [Array.isEmpty_replicate, ite_true] at hz
+        simp only [Array.isEmpty_iff_size_eq_zero.2 hbz, ite_true] at hz
         exact (Option.some.inj hz).symm
       subst hZ
       exact hw
     · have := hb.2 (o, bs) List.mem_cons_self
       have h0 : 0 < bs.size := ht.2.1
       exact (by simp only at this; omega : False).elim
-  have hrs : (Array.replicate n (Byte.b 0)).size = n := Array.size_replicate
+  have hrs : bz.size = n := hbz
   obtain ⟨a0, ha0⟩ := write_find hz (by omega)
   obtain ⟨hZ, hv⟩ := write_spec ha0 hz
   obtain ⟨hwr, hv0, hv1, hv2, hv3⟩ := hv (by omega)
@@ -181,7 +183,7 @@ theorem writes_over_zero {m m' Z W : Mem} {P : Ptr} {n : Nat} {ws : List (Nat ×
     (hz : m.write P (Array.replicate n (.b 0)) = some Z) (hw : writes P Z ws = some W)
     (ht : Tiles 0 n ws) (hm : Mem.Refines m m') :
     ∃ W', writes P m' ws = some W' ∧ Mem.Refines W W' :=
-  writes_mono hm (writes_over_zero_eq hz hw ht)
+  writes_mono hm (writes_over_write_eq Array.size_replicate hz hw ht)
 
 /-! ## Non-vacuity: a 16-byte heap allocation, zeroed, then two 8-byte stores -/
 

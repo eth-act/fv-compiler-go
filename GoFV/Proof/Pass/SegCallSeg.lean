@@ -102,7 +102,7 @@ private theorem constSize_spec {tabs : Tables} {f : Func} {n : ID} {k : Int64}
 
 /-- **A constant term's register** in a frame where it is available is its value
 (`termConst`): each node evaluated from its arguments' registers (`evalValue_term`). -/
-private theorem termConst_reg {env : Env} {tabs : Tables} {f : Func} {S : Frame}
+theorem termConst_reg {env : Env} {tabs : Tables} {f : Func} {S : Frame}
     {A : ID → Prop} (hA : Avail env tabs f S A) (hid : ∀ z v, A z → f.value? z = some v → v.id = z) :
     ∀ (k : Nat) (a : ID) (y : Val), A a → termConst tabs f k a = some y →
       S.regs[a]? = some (some y)

@@ -11,7 +11,9 @@ variable [GoFV.SSA.Sem.Addrs]
 `Zero`/`Move`, and `:1743` turns a `Move` from a read-only symbol whose bytes are zero into a
 `Zero`, and `:1978`/`:1992`/`:2011`/`:2035` (and the `VarDef` forms `:2049`/`:2064`/`:2084`/`:2109`)
 turn a `Move` of stores over a `Zero` into the same stores at the destination over a `Zero` of it
-(`RewriteCheck.moveSeg?`, issue #69). They rewrite a segment of a block's memory roots (the anchor redefined in place,
+(`RewriteCheck.moveSeg?`, issue #69), and `:1871`/`:1887`/`:1908` (and the `VarDef` forms
+`:1925`/`:1942`/`:1964`) turn a `Move` of stores that tile its source into the same stores at the
+destination over the `Move`'s memory (`RewriteCheck.tileSeg?`, issue #69). They rewrite a segment of a block's memory roots (the anchor redefined in place,
 clobbered values dropped, fresh `Store`s put in), whose intermediate memories differ from the
 source's, so `Rule.SoundT` does not apply; the checked rewrite takes each instance out of the log
 and relates the input to the function with the segment rewritten (`GoFV.Opt.RewriteCheck.segRel`;
@@ -56,6 +58,24 @@ theorem r_generic_1742_sound : EffectRule.Seg GoFV.Rules.Generated.Generic.r_gen
 
 /-- `generic.rules:1743`: `Move` from a read-only zero symbol becomes `Zero` -/
 theorem r_generic_1743_sound : EffectRule.Seg GoFV.Rules.Generated.Generic.r_generic_1743 := rfl
+
+/-- `generic.rules:1871`: `Move` of 2 `Store`s that tile its source becomes the stores at `dst` over the `Move`'s memory (issue #69: a tile segment, `RewriteCheck.tileSeg?`) -/
+theorem r_generic_1871_sound : EffectRule.Seg GoFV.Rules.Generated.Generic.r_generic_1871 := rfl
+
+/-- `generic.rules:1887`: `Move` of 3 `Store`s that tile its source becomes the stores at `dst` over the `Move`'s memory (`tileSeg?`) -/
+theorem r_generic_1887_sound : EffectRule.Seg GoFV.Rules.Generated.Generic.r_generic_1887 := rfl
+
+/-- `generic.rules:1908`: `Move` of 4 `Store`s that tile its source becomes the stores at `dst` over the `Move`'s memory (`tileSeg?`) -/
+theorem r_generic_1908_sound : EffectRule.Seg GoFV.Rules.Generated.Generic.r_generic_1908 := rfl
+
+/-- `generic.rules:1925`: `Move` of a `VarDef` of 2 `Store`s that tile its source becomes the stores at `dst` over the `Move`'s memory (`tileSeg?`) -/
+theorem r_generic_1925_sound : EffectRule.Seg GoFV.Rules.Generated.Generic.r_generic_1925 := rfl
+
+/-- `generic.rules:1942`: `Move` of a `VarDef` of 3 `Store`s that tile its source becomes the stores at `dst` over the `Move`'s memory (`tileSeg?`) -/
+theorem r_generic_1942_sound : EffectRule.Seg GoFV.Rules.Generated.Generic.r_generic_1942 := rfl
+
+/-- `generic.rules:1964`: `Move` of a `VarDef` of 4 `Store`s that tile its source becomes the stores at `dst` over the `Move`'s memory (`tileSeg?`) -/
+theorem r_generic_1964_sound : EffectRule.Seg GoFV.Rules.Generated.Generic.r_generic_1964 := rfl
 
 /-- `generic.rules:1978`: `Move` of 1 `Store` over a `Zero` becomes the stores at `dst` over a `Zero` (`moveSeg?`) -/
 theorem r_generic_1978_sound : EffectRule.Seg GoFV.Rules.Generated.Generic.r_generic_1978 := rfl

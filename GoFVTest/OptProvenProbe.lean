@@ -351,6 +351,29 @@ def moveSegWhy (tabs : Tables) (f g : Func) (x : ID) (fv gv : Value) : String :=
   | _, _ => "not a Move"
 
 open GoFV.Rules RewriteCheck in
+/-- Which part of `tileSeg?` fails for the `Move` `x` (diagnostics). -/
+def tileSegWhy (tabs : Tables) (f g : Func) (x : ID) (fv gv : Value) : String :=
+  match fv.op, fv.args.toList with
+  | .Move, [d, p, m] =>
+    let mc := copyEnd tabs f.valueTab f.valueTab.size m
+    let (ns, m0) := freshChain f g 5 (lastArg gv)
+    match storesC tabs f (ns.length + 1) (underVarDef f mc) with
+    | some (fs, _) =>
+      let n := fv.auxInt
+      let gs := x :: ns
+      if gv.op != .Store then "anchor op"
+      else if m0 != mc then s!"mem {desc tabs f 2 mc} vs {desc tabs g 2 m0}"
+      else match (fs.zip gs).find? (fun (a, b) => match f.value? a, g.value? b with
+          | some sa, some sb => !moveStoreOK tabs f g p d n fv.block sa sb
+          | _, _ => true) with
+        | some (a, b) => s!"store {desc tabs f 3 a} vs {desc tabs g 3 b} \
+            (offFrom {(f.value? a).bind fun sa => offFrom tabs f p 4 sa.args[0]!})"
+        | none => s!"tiles {storeShapes tabs g gs.reverse} n {n}"
+    | none =>
+      s!"no stores of {ns.length + 1} under {memChain f 7 (underVarDef f mc)} (g {memChain g 7 (lastArg gv)})"
+  | _, _ => "not a Move"
+
+open GoFV.Rules RewriteCheck in
 /-- Which part of `callSeg?` fails for the `SelectN` `fv` (diagnostics). -/
 def callSegWhy (tabs : Tables) (f g : Func) (fv gv : Value) : String :=
   match fv.args.toList with
@@ -375,8 +398,8 @@ def segRelWhy (env : PassEnv) (tabs : Tables) (f f' : Func) : Option String := I
       if !ssSame u w && (segOK tabs f f' z).isNone then
         return some s!"v{z} {u.op.name}→{w.op.name}: no segment (chain \
           {(chainSeg? tabs f f' z u w).isSome}, call {(callSeg? tabs f f' u w).isSome}, \
-          move {(moveSeg? tabs f f' z u w).isSome}){if u.op == .Move then
-            " ⟨" ++ moveSegWhy tabs f f' z u w ++ "⟩" else if u.op == .SelectN then
+          move {(moveSeg? tabs f f' z u w).isSome}, tile {(tileSeg? tabs f f' z u w).isSome}){if u.op == .Move then
+            " ⟨" ++ moveSegWhy tabs f f' z u w ++ "⟩ ⟨tile: " ++ tileSegWhy tabs f f' z u w ++ "⟩" else if u.op == .SelectN then
             " ⟨" ++ callSegWhy tabs f f' u w ++ "⟩" else ""}"
     | _, _ => pure ()
   if !segRel tabs f f' then return some "rel"

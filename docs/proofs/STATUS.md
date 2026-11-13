@@ -30,13 +30,13 @@ the semantic phase of their ops (`GoFVTest/Proof/RuleClass.lean`; "Classificatio
 | --- | --: | --: | --: | --: |
 | P1 (integers, booleans) | 1,212 | 30 | 153 | 1,395 |
 | P2 (pointers, composites, `Load` values, `SelectN`) | 73 | 1 | 35 | 109 |
-| mem (memory ops) | 78 | 0 | 34 | 112 |
+| mem (memory ops) | 84 | 0 | 28 | 112 |
 | call | 12 | 0 | 35 | 47 |
 | float | 22 | 0 | 46 | 68 |
 | ptr (`ConstString`, `Addr`, `NilCheck`, pointer comparisons) | 18 | 0 | 5 | 23 |
 | phi | 5 | 0 | 0 | 5 |
 | block | 3 | 0 | 0 | 3 |
-| all | 1,423 | 31 | 308 | 1,762 |
+| all | 1,429 | 31 | 302 | 1,762 |
 
 *Proven*: a merged lemma (`Rule.Sound`, `Rule.SoundT`, `Rule.SoundW`, `Rule.MakeSel`,
 `Rule.LoadSel`, `Rule.Drop`, `Rule.IMakeSM`, `Rule.AddrCmp`, `BlockRule.Sound`,
@@ -63,9 +63,11 @@ constant (`:1649`–`:1663` but `:1651`, `:1666`, `:1667`, `:1669`–`:1676`; 24
 (`RewriteCheck.ptrCmpOK`, `LoadFwd.ptrCmp_den`) (#69, Phase1Tail6), the `Load`s through one
 to four disjoint `Store`s to a `Zero` rebuilt as a `Load` of the `Zero`'s memory (`:842`,
 `:851`, `:862`, `:875`) in the forwarding layer (`RewriteCheck.fwdSepOK`, `LoadFwd.sep_den`) (#69,
-Phase1Tail7), and the `Move`s from a source a `Zero` (under a `VarDef`) just cleared turned into a
+Phase1Tail7), the `Move`s from a source a `Zero` (under a `VarDef`) just cleared turned into a
 `Zero` (`:1740`, `:1742`) as zero segments (`RewriteCheck.zeroSeg?`, `Seg.zeroSeg_sound`) (#69,
-Phase1Tail7).
+Phase1Tail7), and the `Move`s of (a `VarDef` of) two to four `Store`s that tile their source
+turned into the same stores at the destination (`:1871`, `:1887`, `:1908`, `:1925`, `:1942`,
+`:1964`) as tile segments (`RewriteCheck.tileSeg?`, `Seg.tileSeg_sound`) (#69, Phase1Tail8).
 
 **False under the semantics, with the reason** (31, each marked `-- FALSE r_… #N` in its proof
 module; "Findings" in `rules.md`):
@@ -99,14 +101,14 @@ obstacle counts on full-v6, "Findings" in `rules.md` has the counterexamples):
 - The `CondSelect` folds (about 240 functions on the unmarked alternatives of `:2322–:2393`) and
   `divmod.rules:136–148` (59) are false as above.
 
-**Open** (308):
+**Open** (302):
 
 - `P1`/`P2` alternatives without a lemma (188): most never fire on the corpus; those that fire
   are in the `fire-full` table of `rules.md` (sole obstacles by rule).
-- `mem` (34) and `ptr` (5): memory and pointer rules inside the model without an effect
+- `mem` (28) and `ptr` (5): memory and pointer rules inside the model without an effect
   obligation proof: `Load` forwardings of other shapes (`:831–:877` but `:842`/`:851`/`:862`/`:875`,
   `:907`, `:912`; the integer and `bool` `Load`s of a `Zero` `:882–:902` are proven), `Move` chains and
-  `Move`/`Zero` of `Store`s (`:1744–:1942`; `:1740`/`:1742`/`:1743` are proven), dropped writes `:919`/`:924`/`:930`/`:937` (open:
+  `Move`/`Zero` of `Store`s (`:1744–:1824`; `:1740`/`:1742`/`:1743` and `:1871`–`:1964` are proven), dropped writes `:919`/`:924`/`:930`/`:937` (open:
   the `not disjoint` class), `IsNonNil (Convert (Addr _) _)` (`:1690`; the pointer comparisons
   `:1646`–`:1676` are proven except the ones of two constants, `:1664`/`:1665`), and `ConstString` under
   `config.PtrSize == 4` (`:1013`, `:1017`; never true

@@ -12,7 +12,7 @@ variable [GoFV.SSA.Sem.Addrs]
 `nk = Store opk dk m0`, every `opj` a pointer-shaped `OffPtr` of `p` (up to copies), the stores
 tiling `[0, n)`. The source's registers give `x`'s memory as `writes P Z ws` over the zeroed
 memory `Z` (`P` the pointer word of `p`'s register, `Val.asPtrWord`; the `OffPtr`s hold words of
-`P` plus their offsets), with `Tiles 0 n ws`; by `writes_over_zero_eq` it is `writes P M0 ws`,
+`P` plus their offsets), with `Tiles 0 n ws`; by `writes_over_write_eq` it is `writes P M0 ws`,
 which the target's fresh stores and anchor compute from `M0`, bottom first.
 -/
 
@@ -495,7 +495,7 @@ theorem chainSeg_sound {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D 
     (fun n hn => hgid n (by simp [hn])) hzip1 hst1 hm1 hA2
   have hsrc : writes P Z (ws1 ++ [(mid, encode (auxTy tabs fv.aux) xv)]) = some M2 := by
     rw [writes_append, hz1, Option.bind_some, writes_one, hw]
-  have htgt := writes_over_zero_eq hZ hsrc (Tiles.append ht1 htile)
+  have htgt := writes_over_write_eq Array.size_replicate hZ hsrc (Tiles.append ht1 htile)
   obtain ⟨W1, hW1, hw1⟩ := writes_snoc htgt
   obtain ⟨Fr1, he1, hr1, hag1, hsz1⟩ := htg W1 hW1 S (fun _ _ => rfl) hsize
   unfold segStoreSame at hss
