@@ -28,6 +28,7 @@ import GoFV.Opt.CpuFeatures
 import GoFV.Opt.TabsAgree
 import GoFV.Proof.Pass.CopyFrag
 import GoFV.Proof.Pass.DeadFrag
+import GoFV.Opt.CopyZero
 
 variable [GoFV.SSA.Sem.Addrs]
 
@@ -151,8 +152,10 @@ namespace Verified
 
 open GoFV.Proof.CopyElim GoFV.Proof.Dead
 
-/-- `copyelim_refines`' fragment (`CopyFrag`, `EmptyFrag`), decided. -/
-def copyGuard (env : PassEnv) (f : Func) : Bool := copyFrag env.tables f && emptyFragB env.tables f
+/-- `copyelim_refines`' fragment (`CopyFrag`, `EmptyFrag`), decided, or `copyelim_refines_zero`'s
+(`CopyZero.zeroGuard`: zero-size values phielim resets to `Empty`). -/
+def copyGuard (env : PassEnv) (f : Func) : Bool :=
+  (copyFrag env.tables f && emptyFragB env.tables f) || CopyZero.zeroGuard env f
 
 /-- `deadcode_refines`' fragment (`DeadFrag`), decided. -/
 def deadGuard (env : PassEnv) (f : Func) : Bool := deadFragB env.tables f
@@ -185,7 +188,7 @@ open Verified in
 /-- `compile.go` `passes`, `number lines` … `rewrite tern`, in order. -/
 def stockPasses : Array StockPass := #[
   { name := "number lines", required := true, step := .proven numberLinesPass .refines noGuard },
-  { name := "early phielim and copyelim", step := .proven copyelimPass .refines copyGuard },
+  { name := "early phielim and copyelim", step := .proven copyelimPass .mono copyGuard },
   { name := "early deadcode", step := deadcodeStep },
   { name := "short circuit", step := .proven shortcircuitPass .refines noGuard },
   { name := "decompose user", required := true,

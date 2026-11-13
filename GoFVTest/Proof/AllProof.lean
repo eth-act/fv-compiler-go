@@ -383,6 +383,7 @@ import GoFV.Proof.Pass.CopyElimWF
 import GoFV.Proof.Pass.CopyFrag
 import GoFV.Proof.Pass.CopyFragL
 import GoFV.Proof.Pass.CopyRelCheck
+import GoFV.Proof.Pass.CopyZero
 import GoFV.Proof.Pass.CriticalL
 import GoFV.Proof.Pass.DAE
 import GoFV.Proof.Pass.DAEAvoid
@@ -915,6 +916,7 @@ import GoFV.Proof.Witness.ConstString
 import GoFV.Proof.Witness.CopyElim
 import GoFV.Proof.Witness.CopyElimL
 import GoFV.Proof.Witness.CopyElimRel
+import GoFV.Proof.Witness.CopyZero
 import GoFV.Proof.Witness.CriticalL
 import GoFV.Proof.Witness.DAE
 import GoFV.Proof.Witness.DSE

@@ -22,6 +22,7 @@ import GoFV.Proof.Pass.FuseLatePass
 import GoFV.Proof.Pass.WBSim
 import GoFV.Proof.TabsAgree
 import GoFV.Proof.Pass.Decompose
+import GoFV.Proof.Pass.CopyZero
 
 variable [GoFV.SSA.Sem.Addrs]
 
@@ -173,9 +174,11 @@ theorem stockPasses_sound : ∀ p ∈ stockPasses.toList, stepSound p.step := by
   · exact fun _ _ _ _ _ h _ _ _ => numberLines_refines h
   -- early phielim and copyelim
   · intro _ _ _ _ _ h hf hg hd
-    simp only [copyGuard, Bool.and_eq_true] at hd
-    exact CopyElim.copyelim_refines h hf hg (CopyElim.copyFrag_sound hd.1)
-      (CopyElim.emptyFrag_of hd.2)
+    simp only [copyGuard, Bool.or_eq_true, Bool.and_eq_true] at hd
+    rcases hd with hd | hd
+    · exact (CopyElim.copyelim_refines h hf hg (CopyElim.copyFrag_sound hd.1)
+        (CopyElim.emptyFrag_of hd.2)).under _
+    · exact CopyZero.copyelim_refines_zero h hf hg hd
   · exact deadcodeStep_sound
   -- short circuit
   · exact fun _ _ _ _ _ h _ _ _ => ShortCirc.shortcircuit_refines h
