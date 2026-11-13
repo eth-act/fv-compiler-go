@@ -137,4 +137,91 @@ theorem wb_encode_concrete :
       #[.b 1, .b 2, .b 3, .b 4] := by
   decide +kernel
 
+/-! ## Through a disjoint `Store` (`generic.rules:924`)
+
+```go
+func writeBack2(p *int32) int {
+	x := *p                                  // v3 = Load <int32> p mem
+	(*[2]int32)(unsafe.Pointer(p))[1] = 7    // v6 = Store {int32} (OffPtr [4] p) 7 mem
+	*p = x                                   // v7 = Store {int32} p v3 v6   (generic.rules:924)
+	return 0
+}
+```
+
+The checked rewrite pass with `{:924}` drops `v7` (`writeBackOK`: the `Load`'s memory is reached
+from `v7`'s through `v6`, disjoint from the write, `wbChain`); the result's `MakeResult` takes
+`v6`. -/
+
+/-- `writeBack2`, the input of `opt`. -/
+def wb2Func : Func where
+  entry := 1
+  type := 1
+  ownAux := some 1
+  vidLast := 9
+  bidLast := 1
+  blocks := #[1]
+  blockTab := #[none, some (mkB 1 .Ret p0 #[9] #[] #[] #[1, 2, 3, 4, 5, 6, 7, 8, 9])]
+  valueTab := #[none,
+    some (mkVi 1 .InitMem 29 0 p0 2 #[] 1),
+    some (mkV 2 .Arg 5 (some 3) p0 3 #[] 1),
+    some (mkVi 3 .Load 4 0 p0 1 #[2, 1] 1),
+    some (mkVi 4 .OffPtr 5 4 p0 1 #[2] 1),
+    some (mkVi 5 .Const32 4 7 p0 1 #[] 1),
+    some (mkV 6 .Store 29 (some 5) p0 1 #[4, 5, 1] 1),
+    some (mkV 7 .Store 29 (some 5) p0 1 #[2, 3, 6] 1),
+    some (mkVi 8 .Const64 2 0 p0 1 #[] 1),
+    some (mkVi 9 .MakeResult 35 0 p0 1 #[8, 7] 1)]
+  names := #[]
+  namedx := #[]
+  splits := #[]
+  canon := #[]
+  consts := #[]
+  freeValues := []
+  freeBlocks := []
+  cache := { lineStarts := some #[] }
+
+/-- The rule set `{generic.rules:924}`, as a forwarding. -/
+def wb2Rules : RuleSet where
+  name := "generic"
+  values := []
+  blocks := []
+  loads := [Generated.Generic.r_generic_924]
+
+theorem wb2Rules_allSound : wb2Rules.AllSound :=
+  GoFV.Proof.Rules.RuleSet.allSound_of trivial trivial
+
+/-- By kernel evaluation: the input passes `check`, and `checkedRewrite` keeps a result, which
+passes `check`, whose `MakeResult` takes `v6`'s memory, with the one `Store` `v6` left. -/
+theorem wb2_checks :
+    (check wbCheckEnv wb2Func).toBool = true ∧
+    (checkedRewrite (Interp.Table.ofRuleSet wb2Rules) wbPassEnv wb2Func).toOption.map
+      (fun o => ((check { tabs := o.tables, typs := slTyps } o.func).toBool,
+        (o.func.value? 9).map (·.args),
+        ((o.func.block? 1).map fun b => b.values.toList.filter fun x =>
+          (o.func.value? x).any fun v => v.op == .Store))) =
+      some (true, some #[8, 6], some [6]) := by
+  decide +kernel
+
+/-- **Pass execution witness** for the write-back through a disjoint `Store`
+(`generic.rules:924`): on `writeBack2`, the checked rewrite pass returns the disjoint `Store`'s
+memory (`v9 = MakeResult v8 v6`), and the result refines the input (`checkedRewrite_refines`,
+through `LoadFwd.writeBack_bytes` and `LoadFwd.wbChain_read`). -/
+theorem wb2_checkedRewrite :
+    ∃ out, checkedRewrite (Interp.Table.ofRuleSet wb2Rules) wbPassEnv wb2Func = .ok out ∧
+      (out.func.value? 9).map (·.args) = some #[8, 6] ∧
+      check wbCheckEnv wb2Func = .ok () ∧
+      check { tabs := out.tables, typs := slTyps } out.func = .ok () ∧
+      RefinesFrom (GoFV.Proof.Pass.Rewrite.RwPre wbPassEnv.tables wbPassEnv.frontend wb2Func)
+        out.tables out.func wbPassEnv.tables wb2Func := by
+  obtain ⟨h1, h2⟩ := wb2_checks
+  cases hc : checkedRewrite (Interp.Table.ofRuleSet wb2Rules) wbPassEnv wb2Func with
+  | error e => rw [hc] at h2; cases h2
+  | ok out =>
+    rw [hc] at h2
+    simp only [Except.toOption, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h2
+    obtain ⟨hg, h9, -⟩ := h2
+    exact ⟨out, rfl, h9, ok_of_toBool h1, ok_of_toBool hg,
+      GoFV.Proof.Pass.Rewrite.checkedRewrite_refines (s := wb2Rules) (penv := wbPassEnv)
+        (f := wb2Func) (out := out) wb2Rules_allSound hc (ok_of_toBool h1) (ok_of_toBool hg)⟩
+
 end GoFV.Proof.Witness.FwdWriteBack
