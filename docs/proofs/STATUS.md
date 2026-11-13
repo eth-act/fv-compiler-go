@@ -29,14 +29,14 @@ the semantic phase of their ops (`GoFVTest/Proof/RuleClass.lean`; "Classificatio
 | Class | Proven | False | Open | Total |
 | --- | --: | --: | --: | --: |
 | P1 (integers, booleans) | 1,212 | 30 | 153 | 1,395 |
-| P2 (pointers, composites, `Load` values, `SelectN`) | 73 | 1 | 35 | 109 |
+| P2 (pointers, composites, `Load` values, `SelectN`) | 76 | 1 | 32 | 109 |
 | mem (memory ops) | 84 | 0 | 28 | 112 |
 | call | 12 | 0 | 35 | 47 |
-| float | 22 | 0 | 46 | 68 |
+| float | 26 | 0 | 42 | 68 |
 | ptr (`ConstString`, `Addr`, `NilCheck`, pointer comparisons) | 18 | 0 | 5 | 23 |
 | phi | 5 | 0 | 0 | 5 |
 | block | 3 | 0 | 0 | 3 |
-| all | 1,429 | 31 | 302 | 1,762 |
+| all | 1,436 | 31 | 295 | 1,762 |
 
 *Proven*: a merged lemma (`Rule.Sound`, `Rule.SoundT`, `Rule.SoundW`, `Rule.MakeSel`,
 `Rule.LoadSel`, `Rule.Drop`, `Rule.IMakeSM`, `Rule.AddrCmp`, `BlockRule.Sound`,
@@ -65,9 +65,12 @@ to four disjoint `Store`s to a `Zero` rebuilt as a `Load` of the `Zero`'s memory
 `:851`, `:862`, `:875`) in the forwarding layer (`RewriteCheck.fwdSepOK`, `LoadFwd.sep_den`) (#69,
 Phase1Tail7), the `Move`s from a source a `Zero` (under a `VarDef`) just cleared turned into a
 `Zero` (`:1740`, `:1742`) as zero segments (`RewriteCheck.zeroSeg?`, `Seg.zeroSeg_sound`) (#69,
-Phase1Tail7), and the `Move`s of (a `VarDef` of) two to four `Store`s that tile their source
+Phase1Tail7), the `Move`s of (a `VarDef` of) two to four `Store`s that tile their source
 turned into the same stores at the destination (`:1871`, `:1887`, `:1908`, `:1925`, `:1942`,
-`:1964`) as tile segments (`RewriteCheck.tileSeg?`, `Seg.tileSeg_sound`) (#69, Phase1Tail8).
+`:1964`) as tile segments (`RewriteCheck.tileSeg?`, `Seg.tileSeg_sound`) (#69, Phase1Tail8), and the
+`Load` of a zero-size type (`:1004`, `Rule.SoundT` with the frame fact `t.Size() == 0` → empty
+shape, `size0Vars`) and the `EqPtr`/`NeqPtr`/float variants of `Not (Eq …)`/`Not (Neq …)`
+(`:397`/`:398`) (#69, P1OptRules397).
 
 **False under the semantics, with the reason** (31, each marked `-- FALSE r_… #N` in its proof
 module; "Findings" in `rules.md`):
@@ -101,9 +104,9 @@ obstacle counts on full-v6, "Findings" in `rules.md` has the counterexamples):
 - The `CondSelect` folds (about 240 functions on the unmarked alternatives of `:2322–:2393`) and
   `divmod.rules:136–148` (59) are false as above.
 
-**Open** (302):
+**Open** (295):
 
-- `P1`/`P2` alternatives without a lemma (188): most never fire on the corpus; those that fire
+- `P1`/`P2` alternatives without a lemma (185): most never fire on the corpus; those that fire
   are in the `fire-full` table of `rules.md` (sole obstacles by rule).
 - `mem` (28) and `ptr` (5): memory and pointer rules inside the model without an effect
   obligation proof: `Load` forwardings of other shapes (`:831–:877` but `:842`/`:851`/`:862`/`:875`,
@@ -113,9 +116,10 @@ obstacle counts on full-v6, "Findings" in `rules.md` has the counterexamples):
   `:1646`–`:1676` are proven except the ones of two constants, `:1664`/`:1665`), and `ConstString` under
   `config.PtrSize == 4` (`:1013`, `:1017`; never true
   for linux/arm64).
-- `float` (46): inside the model (`Sem/Float.lean`, the AArch64 instruction of each op with
+- `float` (42): inside the model (`Sem/Float.lean`, the AArch64 instruction of each op with
   RNE): constant folds of `Add/Sub/Mul/Div/Neg{32,64}F`, `Cvt*` of constants,
-  `Ceil/Floor/Trunc/Round/RoundToEven/Sqrt` of constants, `OrB`/`Not` of float comparisons.
+  `Ceil/Floor/Trunc/Round/RoundToEven/Sqrt` of constants, `OrB` of float comparisons (the `Not`s
+  of float comparisons, `:397`/`:398`, are proven).
 - `call` (35): `memequal` folds (`:1395–:1557`; `memequal` has a contract), the `Const32`
   alternatives of the proven call segments, `growslice` lengths at `Const32`
   (`:2128`/`:2131` alternatives), devirtualisation `:1733`, and **outside the model**: the

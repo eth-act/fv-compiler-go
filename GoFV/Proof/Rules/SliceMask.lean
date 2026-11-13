@@ -74,7 +74,8 @@ theorem r_generic_1053_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generi
   refine ⟨rfl, fun tabs e or _ => ?_⟩
   intro σ ev hfr hwf hcons hcond hty htyped hargs hnn
   have hz : e.leaf [0, 1, 1, 0] = e.leaf [2] :=
-    hfr.2.2.2.2 ([0, 1, 1, 0], [2]) (by simp [GoFV.Rules.Generated.Generic.r_generic_1053, sameLeaves])
+    hfr.2.2.2.2.2 ([0, 1, 1, 0], [2])
+      (by simp [GoFV.Rules.Generated.Generic.r_generic_1053, sameLeaves])
   clear hfr
   simp only [GoFV.Rules.Generated.Generic.r_generic_1053, Pat.rawT, Pat.densT, Pat.denT,
     opVal, reduceCtorEq, ite_false, reduceEvalPure, hz, Nat.zero_add, Nat.reduceAdd] at hty ⊢
@@ -171,7 +172,8 @@ theorem inst_r_generic_1053 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_
     (Oracle.const true) := by
   refine ⟨Oracle.const_boolTyped true, ?_⟩
   simp [GoFV.Rules.Generated.Generic.r_generic_1053, FrameOK, Result.nodes, samePtrVars,
-    sameLeaves, numElem1Vars, shiftAmt?, Pat.leafPos, Pat.leafPoss, Pat.rawT, Pat.densT, Pat.denT,
+    sameLeaves, numElem1Vars, size0Vars, shiftAmt?, Pat.leafPos, Pat.leafPoss, Pat.rawT,
+    Pat.densT, Pat.denT,
     emptyStrVars, opVal]
   rule_eval
   simp [sigmaT, Pat.bindsT, Pat.bindssT, List.lookup, auxIntDV, Comp.make]

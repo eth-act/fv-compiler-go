@@ -976,7 +976,10 @@ condition conjunct `isSamePtr(x, y)` of leaves `x`, `y` holds as equality of the
 (`condFrameOK` checks that both leaves matched the same value; `samePtrVars`), and a condition
 conjunct `x.NumElem() == 1` makes the type `x` the shape `.agg [(0, f)] f.size` of a
 one-element array (`Sem.tyOf` of `[1]T`; `condFrameOK` checks the evaluated type;
-`numElem1Vars`), whose `t.Elem()` `evalE` evaluates to `f`.
+`numElem1Vars`), whose `t.Elem()` `evalE` evaluates to `f`, and a condition conjunct
+`x.Size() == 0` makes the type `x` the empty shape `.empty` (`Sem.tyOf` of a zero-size struct or
+array; `condFrameOK` checks the evaluated type; `size0Vars`; `evalE` leaves `t.Size()` of the
+empty shape to the oracle).
 `Rule.soundT_of_sound` lifts the `Rule.Sound` lemmas of rules without such nodes.
 `fe.StringData` appends a symbol to the tables: `checkedRewrite` keeps the result's tables when
 the input cannot tell them from its own (`tabsAgree`). Proven: `generic.rules:1022`
@@ -987,13 +990,18 @@ of one pointer twice is `poison` or `true`, `MemEqSame.lean`), `:574` (both rule
 `((x >> c) & d) << e => (x >> (c-e)) & (d<<e)` with `c >= e`: the built `d<<e` gives `e ≥ 0`,
 without which the rule is false in the model; then a bit identity, `ShiftMask.lean`), `:994`
 (`Load` of a one-element array `=> ArrayMake1 (Load <t.Elem()> ptr mem)`: both loads read the
-same `f.size` bytes, `load_one`, `ArrayLoad.lean`); witnesses
-`GoFV.Proof.Witness.hi_checkedRewrite` (`func hi() string { return "hi" }`, kernel evaluation)
+same `f.size` bytes, `load_one`, `ArrayLoad.lean`), `:1004` (`(Load <t> _ _) && t.Size() == 0 =>
+(Empty)`: a `Load` at the empty shape is `poison` or the empty value, `ArrayLoad.lean`; it fires
+on the zero-size fields that the struct-load expansion `:974` creates, `_ [0]func()`,
+`sys.NotInHeap`, after which `:1005` drops a `Store` of the `Empty`); witnesses
+`GoFV.Proof.Witness.hi_checkedRewrite` (`func hi() string { return "hi" }`, kernel evaluation),
+`GoFV.Proof.Witness.le_checkedRewrite` (`*p = *p` for `p *struct{}`: the `Load` becomes
+`Empty`; `le_rwPre`)
 and, since `rule-sat` draws no tables, `Rule.InstT` instances `inst_r_generic_1015` (aux `""`),
 `inst_r_generic_1011` (an `Addr` of a symbol under a string of length 2),
 `inst_r_generic_1592` (`MemEq p p 0 mem`), `inst_r_generic_574`, `inst_r_generic_574_2`
-(`((0x1234 >> 4) & 0xff) << 2`) and `inst_r_generic_994` (a `Load <[1]int64>` of eight zero
-bytes).
+(`((0x1234 >> 4) & 0xff) << 2`), `inst_r_generic_994` (a `Load <[1]int64>` of eight zero
+bytes) and `inst_r_generic_1004` (a `Load <struct {}>`).
 
 ### Dec rules: decompose builtin (`GoFV/Proof/Rules/Dec.lean`, issue #17)
 
@@ -1012,8 +1020,8 @@ layer events (witness `GoFV.Proof.Witness.addZero_validate_refines`).
 is the top's shape (`compSub`: `shapeSub`, or a `.int .w64` component at a pointer top, since a
 64-bit integer and an address-less pointer have every pointer shape, `Val.hasTy`; the interface's
 `uintptr` itab word read by an `ITab <*uint8>`), or the argument is a scalar (the selection is
-then `poison`): `selTop`, proved by `raw_selTop` (`compSub_hasTy`). A `Load` at a scalar shape or
-an aggregate of scalars is a top (`loadTop`,
+then `poison`): `selTop`, proved by `raw_selTop` (`compSub_hasTy`). A `Load` at a scalar shape,
+an aggregate of scalars or the empty shape is a top (`loadTop`,
 `loadOp_hasTy`), and so is a `CondSelect` whose arms' shapes are its own (`condTop`, `armSub`:
 `compSub`, or a pointer arm at the 64-bit integer shape; its value is an arm or `poison`,
 `condSelect_hasTy`; `branchelim`'s selects that `generic.rules:292–294` fold in late opt, e.g. a
@@ -1298,7 +1306,7 @@ needs a later phase of the semantics.
 | `generic` | IsSliceInBounds | 5 | 3 | 0 | 0 | 8 |
 | `generic` | Leq | 62 | 0 | 0 | 2 | 62 |
 | `generic` | Less | 62 | 0 | 0 | 2 | 62 |
-| `generic` | Load | 26 | 1 | 0 | 33 | 35 |
+| `generic` | Load | 27 | 0 | 0 | 33 | 35 |
 | `generic` | Lsh | 67 | 21 | 0 | 0 | 88 |
 | `generic` | MemEq | 2 | 9 | 0 | 0 | 11 |
 | `generic` | Mod | 29 | 0 | 0 | 0 | 29 |
@@ -1311,7 +1319,7 @@ needs a later phase of the semantics.
 | `generic` | NeqPtr | 16 | 4 | 0 | 11 | 20 |
 | `generic` | NeqSlice | 1 | 0 | 0 | 0 | 1 |
 | `generic` | NilCheck | 8 | 0 | 0 | 8 | 8 |
-| `generic` | Not | 27 | 2 | 0 | 4 | 33 |
+| `generic` | Not | 33 | 0 | 0 | 4 | 33 |
 | `generic` | OffPtr | 2 | 0 | 0 | 0 | 2 |
 | `generic` | Or | 76 | 0 | 4 | 0 | 80 |
 | `generic` | OrB | 48 | 0 | 0 | 20 | 56 |
@@ -1342,7 +1350,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 60 | 4 | 4 | 0 | 68 |
 | `generic` | Zero | 2 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1429 | 188 | 31 | 258 | 1762 |
+| all | | 1436 | 185 | 31 | 258 | 1762 |
 
 <!-- END coverage -->
 
@@ -2024,6 +2032,15 @@ and `argShapeOk` gives the float ops' arguments the integer shape of their width
   four binary places below where `x * (1/c)` rounds `m * 2^52` (`div_eq_mul_pow2` by
   `round_scale`, both operand orders; NaN, infinity and zero cases agree). The 32-bit form
   (`:1330`) is not proved (no firings).
+- `generic.rules:397`/`:398` at `EqPtr`/`NeqPtr`, `Eq64F`/`Neq64F`, `Eq32F`/`Neq32F`
+  (`r_generic_397_6..8`, `398_6..8`, `Not.lean`, #69 P1OptRules397): `rule_auto` does not
+  unfold `FOps`/`PtrOps`. In the semantics `NeqPtr` is `EqPtr` negated (`eqPtr neg`: `poison`
+  unless both arguments are pointer words, then block-and-offset equality; `eqPtr_not`) and
+  `Neq{32,64}F` is `Eq{32,64}F` negated (`cmpC (· != .eq)` against `cmpC (· == .eq)` of the
+  same `ordered` `FPCompare`; a NaN operand gives `un`, so `Eq` is false and `Neq` true, as
+  Go's `FCMP` + `CSET NE`/`EQ`; `fneq_not`, `feq_not`). So the matched comparison is `poison`
+  or a Boolean `c`, and `Not` of it retyped is `poison` or `!c`, which the result refines
+  (`notCmp_refines`).
 
 **Bounds checks, comparisons, selections** (#69, RuleProofs14).
 - `IsInBounds.lean`, `IsSliceInBounds.lean`: `rule_auto` closes `:240`, `:242`, `:247`, `:250`,
