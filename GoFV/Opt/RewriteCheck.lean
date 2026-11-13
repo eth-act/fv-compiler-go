@@ -650,6 +650,11 @@ def nonNegOKD (tabs : Tables) (D : ID → Option Value) (I : Inst) (pat : Pat) :
     | none => true
   | none => true
 
+/-- The rule-keyed leaves `GoFV.Proof.Rules.nonNegLeaves r` of `GoFV.Proof.Rules.FrameOK`,
+decided on the definitions `D` (those after the event): each is `nonNegD`. -/
+def nonNegLeavesD (tabs : Tables) (D : ID → Option Value) (I : Inst) (r : Rule) : Bool :=
+  (GoFV.Proof.Rules.nonNegLeaves r).all fun p => nonNegD tabs D nnFuel (I.at p)
+
 /-- The rule event `(v, r, defs)` is a sound instance of `r` on `M`. The definition at `v` is
 `v`'s (its ID, which the result's nodes are compared with), and the matched values below the
 top are not `v` (no cyclic match). -/
@@ -684,7 +689,8 @@ def ruleOK (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : 
         resultOK tabs M ev or σ I r x defs &&
         nodes.all (fun (n, u) => frameNodeOK tabs ev e r.pat n u) &&
         condFrameOK tabs ev e I r.pat r.cond (GoFV.Proof.Rules.sameLeaves r) &&
-        nonNegOKD tabs (defs.foldl (fun M u => M.put u.id u) M).get? I r.pat r.cond
+        nonNegOKD tabs (defs.foldl (fun M u => M.put u.id u) M).get? I r.pat r.cond &&
+        nonNegLeavesD tabs (defs.foldl (fun M u => M.put u.id u) M).get? I r
 
 /-- `w` is `a`, or reached from `a` through at most `n` `Copy`s each compatible with its
 argument (`copyCompat`: the identity on its argument's value). -/

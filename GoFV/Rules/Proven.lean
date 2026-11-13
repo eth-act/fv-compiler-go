@@ -280,18 +280,18 @@ def divisible : RuleSet where
   segs := []
   phiSels := []
 
-/-- `divmod.rules` restricted to its 17 proven value rules, 0 proven block rules, 0
+/-- `divmod.rules` restricted to its 21 proven value rules, 0 proven block rules, 0
 nil-check eliminations, 0 Load-of-Store forwardings, 0 struct-load
 expansions, 0 struct-store splits, 0 segment rules and 0 `Phi`
 rules validated per instance. -/
 def divmod : RuleSet where
   name := "divmod"
   values := [(.Div16, [Generated.Divmod.r_divmod_25, Generated.Divmod.r_divmod_93]),
-    (.Div16u, [Generated.Divmod.r_divmod_159]),
+    (.Div16u, [Generated.Divmod.r_divmod_136, Generated.Divmod.r_divmod_159]),
     (.Div32, [Generated.Divmod.r_divmod_29, Generated.Divmod.r_divmod_99, Generated.Divmod.r_divmod_121]),
-    (.Div32u, [Generated.Divmod.r_divmod_171, Generated.Divmod.r_divmod_221]),
+    (.Div32u, [Generated.Divmod.r_divmod_140, Generated.Divmod.r_divmod_144, Generated.Divmod.r_divmod_171, Generated.Divmod.r_divmod_221]),
     (.Div64, [Generated.Divmod.r_divmod_33, Generated.Divmod.r_divmod_113, Generated.Divmod.r_divmod_127]),
-    (.Div64u, [Generated.Divmod.r_divmod_180, Generated.Divmod.r_divmod_206, Generated.Divmod.r_divmod_232]),
+    (.Div64u, [Generated.Divmod.r_divmod_148, Generated.Divmod.r_divmod_180, Generated.Divmod.r_divmod_206, Generated.Divmod.r_divmod_232]),
     (.Div8, [Generated.Divmod.r_divmod_21, Generated.Divmod.r_divmod_87]),
     (.Div8u, [Generated.Divmod.r_divmod_154])]
   blocks := []

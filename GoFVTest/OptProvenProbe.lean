@@ -82,6 +82,10 @@ def ruleWhy (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) :
         else if !resultOK tabs M ev or σ I r x defs then "result"
         else if !nodes.all (fun (n, u) => frameNodeOK tabs ev e r.pat n u) then "frame"
         else if !condFrameOK tabs ev e I r.pat r.cond (GoFV.Proof.Rules.sameLeaves r) then "condFrame"
+        else if !nonNegOKD tabs (defs.foldl (fun (M : Defs) (u : Value) => M.put u.id u) M).get? I
+            r.pat r.cond then "nonNeg"
+        else if !nonNegLeavesD tabs (defs.foldl (fun (M : Defs) (u : Value) => M.put u.id u) M).get?
+            I r then "nonNegLeaves"
         else "ok"
     s!"{r.loc.file}:{r.loc.line} {rs}"
 

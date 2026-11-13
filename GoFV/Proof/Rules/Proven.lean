@@ -41,6 +41,7 @@ import GoFV.Proof.Rules.DivisibleU
 import GoFV.Proof.Rules.DivisibleU2
 import GoFV.Proof.Rules.DivmodS
 import GoFV.Proof.Rules.DivmodS2
+import GoFV.Proof.Rules.DivmodSU
 import GoFV.Proof.Rules.DivmodU
 import GoFV.Proof.Rules.DivmodU2
 import GoFV.Proof.Rules.DivmodU3
@@ -405,11 +406,11 @@ theorem divmod_allSound : Proven.divmod.AllSound :=
   RuleSet.allSound_of (by
     simp only [Proven.divmod, ForallL]
     exact ⟨⟨Rule.checked_of_sound r_divmod_25_sound rfl, Rule.checked_of_sound r_divmod_93_sound rfl, trivial⟩,
-    ⟨Rule.checked_of_sound r_divmod_159_sound rfl, trivial⟩,
+    ⟨Rule.checked_of_soundT r_divmod_136_sound, Rule.checked_of_sound r_divmod_159_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_divmod_29_sound rfl, Rule.checked_of_sound r_divmod_99_sound rfl, Rule.checked_of_sound r_divmod_121_sound rfl, trivial⟩,
-    ⟨Rule.checked_of_sound r_divmod_171_sound rfl, Rule.checked_of_sound r_divmod_221_sound rfl, trivial⟩,
+    ⟨Rule.checked_of_soundT r_divmod_140_sound, Rule.checked_of_soundT r_divmod_144_sound, Rule.checked_of_sound r_divmod_171_sound rfl, Rule.checked_of_sound r_divmod_221_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_divmod_33_sound rfl, Rule.checked_of_sound r_divmod_113_sound rfl, Rule.checked_of_sound r_divmod_127_sound rfl, trivial⟩,
-    ⟨Rule.checked_of_sound r_divmod_180_sound rfl, Rule.checked_of_sound r_divmod_206_sound rfl, Rule.checked_of_sound r_divmod_232_sound rfl, trivial⟩,
+    ⟨Rule.checked_of_soundT r_divmod_148_sound, Rule.checked_of_sound r_divmod_180_sound rfl, Rule.checked_of_sound r_divmod_206_sound rfl, Rule.checked_of_sound r_divmod_232_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_divmod_21_sound rfl, Rule.checked_of_sound r_divmod_87_sound rfl, trivial⟩,
     ⟨Rule.checked_of_sound r_divmod_154_sound rfl, trivial⟩, trivial⟩)
     (by simp [Proven.divmod, ForallL])

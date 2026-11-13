@@ -330,14 +330,16 @@ theorem RuleFacts.top_ty (F : RuleFacts tabs M r v defs) (L : ID → Val) :
   simp only [semEnv, env, F.at_top, F.hxv, Option.map_some, Option.getD_some]
 
 /-- The validator's `frameNodeOK` gives `Rule.SoundT`'s frame premise (`FrameOK`) on the semantic
-instance (same aux fields as the static one). -/
+instance (same aux fields as the static one), given its rule-keyed leaf facts (`hnnl`, from
+`nonNegLeavesD`). -/
 theorem RuleFacts.frameT (F : RuleFacts tabs M r v defs) (L : ID → Val)
-    {ev' : GoFV.Rules.Expr → DV} (hev : ∀ x, (stEv tabs M r defs F.I x).erase = (ev' x).erase) :
+    {ev' : GoFV.Rules.Expr → DV} (hev : ∀ x, (stEv tabs M r defs F.I x).erase = (ev' x).erase)
+    (hnnl : ∀ p ∈ GoFV.Proof.Rules.nonNegLeaves r, (L (F.I.at p)).nonNeg = true) :
     GoFV.Proof.Rules.FrameOK tabs (semEnv tabs M F.I L) ev' (stOr tabs r defs) r := by
   have hcf := F.hcf
   simp only [condFrameOK, Bool.and_eq_true] at hcf
   refine ⟨fun n hn => ?_, fun x hx => ?_, fun xy hxy => ?_, fun x hx => ?_, fun x hx => ?_,
-    fun pq hpq => ?_⟩
+    fun pq hpq => ?_, hnnl⟩
   rotate_left
   · have h := List.all_eq_true.1 hcf.1.1.1.1 x hx
     simp only [strOf] at h
@@ -500,7 +502,8 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.SoundTop r)
       F.hnodup r.pat [] v F.hmatch (.inr (by rw [F.hpat]; rfl)) F.hleaves
   have hargs : GoFV.Proof.Rules.Pat.argsOK
       (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty [] r.pat = true := F.hargs
-  have hframe := F.frameT (den (putAll M defs).get? tabs ρ B) hev
+  have hframe := F.frameT (den (putAll M defs).get? tabs ρ B) hev fun p hp =>
+    nonNegD_den tabs _ ρ hT _ B _ (List.all_eq_true.1 F.hnnl p hp)
   -- lower bound, before the top's `retype`
   have hlow0 : Sem.Refines (den M.get? tabs ρ (n + 1) v)
       ((Pat.rawT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat).retype

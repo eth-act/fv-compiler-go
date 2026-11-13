@@ -753,6 +753,7 @@ import GoFV.Proof.Rules.DivmodS2
 import GoFV.Proof.Rules.DivmodSBV
 import GoFV.Proof.Rules.DivmodSMagic
 import GoFV.Proof.Rules.DivmodSPow2
+import GoFV.Proof.Rules.DivmodSU
 import GoFV.Proof.Rules.DivmodU
 import GoFV.Proof.Rules.DivmodU2
 import GoFV.Proof.Rules.DivmodU3

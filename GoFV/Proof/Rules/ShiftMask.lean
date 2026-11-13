@@ -112,7 +112,8 @@ local macro "shift_mask_inst" r:ident : tactic => `(tactic| (
   · unfold FrameOK
     refine ⟨fun n hn => ?_, by simp [$r:ident, emptyStrVars],
       by simp [$r:ident, samePtrVars], by simp [$r:ident, numElem1Vars],
-      by simp [$r:ident, size0Vars], by simp [$r:ident, sameLeaves]⟩
+      by simp [$r:ident, size0Vars], by simp [$r:ident, sameLeaves],
+      by simp [$r:ident, nonNegLeaves]⟩
     simp only [$r:ident, Result.nodes, List.mem_cons,
       List.not_mem_nil, or_false] at hn
     rcases hn with rfl | rfl | rfl | rfl <;> refine ⟨?_, ?_, ?_, ?_⟩ <;> intro a b h hb <;>

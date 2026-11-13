@@ -173,6 +173,7 @@ structure RuleFacts (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List 
     (GoFV.Proof.Rules.sameLeaves r) = true
   hreach : ∀ C : ID → Prop, ArgClosed M C → C v → ∀ y ∈ I, C y.2
   hnn : nonNegOKD tabs (putAll M defs).get? I r.pat r.cond = true
+  hnnl : nonNegLeavesD tabs (putAll M defs).get? I r = true
 
 theorem ruleFacts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs : List Value}
     (h : ruleOK tabs M r v defs = true) : Nonempty (RuleFacts tabs M r v defs) := by
@@ -188,7 +189,8 @@ theorem ruleFacts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs : List Va
   · cases h
   rename_i I sw' hm
   simp only [Bool.and_eq_true] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨htail, hcons⟩, hwf⟩, hcond⟩, hnat⟩, hargs⟩, hleaves⟩, hres⟩, hframe⟩, hcf⟩, hnn⟩ := h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨htail, hcons⟩, hwf⟩, hcond⟩, hnat⟩, hargs⟩, hleaves⟩, hres⟩, hframe⟩, hcf⟩, hnn⟩,
+    hnnl⟩ := h
   have hframe' : ∀ nu ∈ stNodes r defs,
       frameNodeOK tabs (stEv tabs M r defs I) (env tabs M I) r.pat nu.1 nu.2 = true :=
     List.all_eq_true.1 hframe
@@ -225,7 +227,8 @@ theorem ruleFacts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs : List Va
     pargs := pargs, pcm := pcm, hpat := hrp, hxv := hxv, hterm := hterm, hid := hid,
     hS := hS, hmatch := hmo, hnodup := hn, hhead := hh, htail := htail', hcons := hcons,
     hwf := hwf, hcond := hcond', hnat := hnat', hargs := hargs, hleaves := hleaves, hres := hres,
-    hframe := hframe', hcf := hcf, hreach := fun C hC hv => matchPat_closed hC hm hv, hnn := hnn }⟩
+    hframe := hframe', hcf := hcf, hreach := fun C hC hv => matchPat_closed hC hm hv, hnn := hnn,
+    hnnl := hnnl }⟩
 
 /-! ## Facts about the matched instance -/
 

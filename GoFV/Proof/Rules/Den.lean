@@ -783,6 +783,17 @@ checks them on the instance (`RewriteCheck.condFrameOK`: the same value). -/
 def sameLeaves (r : Rule) : List (Path × Path) :=
   if r.loc = ⟨"generic", 1053⟩ then [([0, 1, 1, 0], [2])] else []
 
+/-- Leaf positions of a rule's pattern whose value must be a nonnegative integer (or `poison`,
+`Val.nonNeg`) although the condition does not say so, as the compiler applies the rule:
+`divmod.rules:136–148` (`(Div<N>u <t> x (Const<N> [c])) && t.IsSigned() && smagicOK<N>(c)`)
+divide the dividend `x` by a signed magic number, which is exact for a nonnegative `x` only. Go's
+prove pass builds a signed-typed `Div<N>u` only after it has shown the dividend nonnegative
+(`prove.go`); the condition's `t.IsSigned()` is an oracle atom. The rewrite validator decides
+them by `isNonNegative`'s analysis (`RewriteCheck.nonNegLeavesD`: `nonNegD`). -/
+def nonNegLeaves (r : Rule) : List Path :=
+  if r.loc = ⟨"divmod", 136⟩ ∨ r.loc = ⟨"divmod", 140⟩ ∨ r.loc = ⟨"divmod", 144⟩ ∨
+      r.loc = ⟨"divmod", 148⟩ then [[0]] else []
+
 mutual
 /-- Every argument of every op node of the pattern at `p` has the shape `argShapeOk` asks for,
 by the instance's types `ty` (`docs/proofs/rules.md`, "Assumptions to discharge"). -/

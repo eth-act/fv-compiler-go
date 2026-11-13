@@ -187,7 +187,8 @@ conjunct `isSamePtr(x, y)` of leaves `x`, `y` holds of their values (the validat
 value); a conjunct `x.NumElem() == 1` makes the type `x` a one-element array, whose shape
 (`Sem.tyOf`) is an aggregate of one field at offset 0 that fills it; a conjunct `x.Size() == 0`
 makes the type `x` of size 0, whose shape (`Sem.tyOf` of a zero-size struct or array) is
-`.empty`; and the positions of `sameLeaves r` hold the same value. -/
+`.empty`; the positions of `sameLeaves r` hold the same value; and the leaves of
+`nonNegLeaves r` are nonnegative integers or `poison`. -/
 def FrameOK (tabs : Tables) (e : PEnv) (ev : Expr → DV) (or : Oracle) (r : Rule) : Prop :=
   (∀ n ∈ r.result.nodes,
     (∀ xe x, n.aux = some xe → strDataVar? xe = some x →
@@ -206,7 +207,8 @@ def FrameOK (tabs : Tables) (e : PEnv) (ev : Expr → DV) (or : Oracle) (r : Rul
       e.leaf p = e.leaf q) ∧
   (∀ x ∈ (r.cond.map numElem1Vars).getD [], ∃ f, ev (.var x) = .ty (.agg [(0, f)] f.size)) ∧
   (∀ x ∈ (r.cond.map size0Vars).getD [], ev (.var x) = .ty .empty) ∧
-  ∀ pq ∈ sameLeaves r, e.leaf pq.1 = e.leaf pq.2
+  (∀ pq ∈ sameLeaves r, e.leaf pq.1 = e.leaf pq.2) ∧
+  ∀ p ∈ nonNegLeaves r, (e.leaf p).nonNeg = true
 
 /-- **The obligation of a value rule over table-evaluated nodes**: `Rule.Sound` with the
 denotation `opVal tabs`, for all tables, under the frame helpers' facts (`FrameOK`). -/
@@ -330,5 +332,33 @@ theorem Rule.soundT_of_sound {r : Rule} (hs : Rule.Sound r) (hp : Rule.pure r = 
     resDenT_pure tabs _ or _ _ hp.2]
   intro _ hwf hcons hcond hraw htyped hargs hnn
   exact hs.2 e or hbt hwf hcons hcond hraw htyped hargs hnn
+
+/-- `Rule.Sound` under the rule-keyed facts of `FrameOK` about the matched instance: the
+leaves of `nonNegLeaves r` are nonnegative integers or `poison` (`divmod.rules:136–148`). -/
+def Rule.SoundNN (r : Rule) : Prop :=
+  Pat.arityOk r.pat = true ∧
+  ∀ (e : PEnv) (or : Oracle), Oracle.BoolTyped or →
+    let σ := sigma e r.pat
+    let ev := evalE (r.vars.map (·.ty)) σ or e (Pat.den e [] r.pat)
+    Pat.wf e [] r.pat →
+    Pat.cons ev σ e [] r.pat →
+    condHolds ev r.cond →
+    (Pat.raw e r.pat).hasTy (e.ty []) = true →
+    Pat.typed e [] r.pat →
+    Pat.argsOK e.ty [] r.pat = true →
+    Pat.nonNegOK e r.pat r.cond = true →
+    (∀ p ∈ nonNegLeaves r, (e.leaf p).nonNeg = true) →
+    Refines (Pat.raw e r.pat) (resDen ev or σ (e.ty []) r.result)
+
+/-- A rule without table-evaluated nodes, sound under the leaf facts of `nonNegLeaves`,
+satisfies the obligation over the tables (`FrameOK` gives the facts). -/
+theorem Rule.soundT_of_soundNN {r : Rule} (hs : Rule.SoundNN r) (hp : Rule.pure r = true) :
+    Rule.SoundT r := by
+  simp only [Rule.pure, Bool.and_eq_true] at hp
+  refine ⟨hs.1, fun tabs e or hbt => ?_⟩
+  simp only [sigmaT_pure tabs e hp.1, Pat.denT_pure tabs e [] r.pat hp.1, Pat.rawT_pure tabs e hp.1,
+    resDenT_pure tabs _ or _ _ hp.2]
+  intro hfr hwf hcons hcond hraw htyped hargs hnn
+  exact hs.2 e or hbt hwf hcons hcond hraw htyped hargs hnn hfr.2.2.2.2.2.2
 
 end GoFV.Proof.Rules
