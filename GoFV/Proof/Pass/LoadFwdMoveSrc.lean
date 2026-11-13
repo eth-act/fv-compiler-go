@@ -28,6 +28,14 @@ theorem read_poisonBlock_ne {m : Mem} {b : Blk} {p : Ptr} (n : Nat) (h : p.blk �
   | some a =>
     simp only [Mem.read, find?_set, ite_eq_right (fun e : b = p.blk => h e.symm)]
 
+/-- `VarDef`'s memory leaves the bytes of the other blocks. -/
+theorem read_varDefMem_ne {m : Mem} {tabs : Tables} {act : Nat} {x : AuxRef} {p : Ptr} (n : Nat)
+    (h : p.blk ≠ frameBlk tabs act x) : (varDefMem tabs act x m).read p n = m.read p n := by
+  unfold varDefMem
+  split
+  · exact read_poisonBlock_ne n h
+  · rfl
+
 private theorem read_size' {M : Mem} {p : Ptr} {n : Nat} {bs : Array Byte}
     (h : M.read p n = some bs) : bs.size = n := by
   by_cases hn : n = 0
@@ -54,10 +62,11 @@ theorem moveSrc_mem {M M2 M1 M0 Mt M' : Mem} {T S Dp : Ptr} {n : Nat} {bs bs0 : 
   obtain ⟨Mt', hw', hMM⟩ := (hM.trans ht).write (BytesRefine.trans hbb1 hbb') hwD
   exact ⟨b', Mt', hb', hw', hMM⟩
 
-/-- A `VarDef`'s value: its memory with its frame variable (activation 0) poisoned. -/
+/-- A `VarDef`'s value: its memory with its frame variable (activation 0) poisoned if it is a
+`PAUTO` (`varDefMem`). -/
 theorem memDef_varDef {tabs : Tables} {s : Value} (hs : s.op = .VarDef) {a y : Val}
     (h : memDef tabs s [a] = some y) :
-    ∃ m n, a = .mem m ∧ s.aux = some n ∧ y = .mem (m.poisonBlock (frameBlk tabs 0 n)) := by
+    ∃ m n, a = .mem m ∧ s.aux = some n ∧ y = .mem (varDefMem tabs 0 n m) := by
   cases a <;> try (simp [memDef, hs] at h; done)
   rename_i m
   simp only [memDef, hs, Option.map_eq_some_iff] at h

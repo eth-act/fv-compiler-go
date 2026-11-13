@@ -356,6 +356,14 @@ theorem poisonBlock_refines (m : Mem) (b : Blk) : Mem.Refines (m.poisonBlock b) 
       (a' := a) ⟨rfl, BytesRefineA.replicate_poison _ rfl⟩
     rwa [DSE.set_self h] at this
 
+/-- `VarDef`'s memory refines the memory before it. -/
+theorem varDefMem_refines (tabs : Tables) (act : Nat) (n : AuxRef) (m : Mem) :
+    Mem.Refines (varDefMem tabs act n m) m := by
+  unfold varDefMem
+  split
+  · exact poisonBlock_refines _ _
+  · exact Mem.Refines.refl m
+
 /-- Poisoning the bytes of a block below an offset refines the memory. -/
 theorem poisonBelow_refines (m : Mem) (b : Blk) (n : Nat) : Mem.Refines (m.poisonBelow b n) m := by
   unfold Mem.poisonBelow

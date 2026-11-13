@@ -281,7 +281,7 @@ theorem store_inv {ctx : Sem.Ctx} {u : Value} {argv : List Val} {y : Val} (hu : 
 
 theorem varDef_inv {ctx : Sem.Ctx} {u : Value} {argv : List Val} {y : Val} (hu : u.op = .VarDef)
     (h : memRoot ctx u argv = .ok y) : ∃ M n, argv = [.mem M] ∧ u.aux = some n ∧
-      y = .mem (M.poisonBlock (frameBlk ctx.tabs ctx.act n)) := by
+      y = .mem (varDefMem ctx.tabs ctx.act n M) := by
   unfold memRoot at h
   rw [hu] at h
   split at h
@@ -370,7 +370,7 @@ theorem memRoot_copy {ctxS ctxT : Sem.Ctx} (htabs : ctxT.tabs = ctxS.tabs) (hact
   · obtain ⟨M0, n, he, hn, rfl⟩ := varDef_inv hu h
     obtain ⟨hL, hM⟩ := append_single_inj (L' := []) (b := .mem M0) he
     cases hM; subst hL
-    refine ⟨_, _, rfl, ?_, hW.poison (frameBlk_ne_wbuf _ _ _)⟩
+    refine ⟨_, _, rfl, ?_, varDefMem_rel (R := W) hW (hW.poison (frameBlk_ne_wbuf _ _ _))⟩
     simp only [memRoot, hop, hu, List.nil_append, haux, hn, htabs, hact]
   · obtain ⟨M0, he, rfl⟩ := varLive_inv hu h
     obtain ⟨hL, hM⟩ := append_single_inj (L' := []) (b := .mem M0) he

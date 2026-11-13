@@ -1182,6 +1182,7 @@ import GoFV.Proof.Witness.TupleSelL
 import GoFV.Proof.Witness.UnreadL
 import GoFV.Proof.Witness.Util
 import GoFV.Proof.Witness.UuidNew
+import GoFV.Proof.Witness.VarDefS3
 import GoFV.Proof.Witness.WFCheck
 import GoFV.Proof.Witness.WriteBarrier
 import GoFV.Proof.Witness.ZCSE

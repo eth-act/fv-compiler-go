@@ -17,7 +17,8 @@ value, with the registers at the classes of the successor's start (`kt.at`).
 
 The activation, the invariant and the per-value premises are G4's (`G2Env`, `G3Inv`, `G4Pre`).
 G4's values go through `vk4_step`; G5's own are the memory markers (`g5_mark`), which emit no code
-and change only Phase 1's memory: `VarDef` poisons a block (`memInj_poison`), `WBend` frees the
+and change only Phase 1's memory: `VarDef` poisons a block of a `PAUTO` (`memInj_poison`) or
+keeps the memory, `WBend` frees the
 write-barrier buffer (`memInj_free`), `VarLive` and `KeepAlive` keep the memory.
 -/
 

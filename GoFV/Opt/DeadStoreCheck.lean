@@ -15,7 +15,8 @@ value (`pend`): the byte ranges (an allocation named by an `Addr`/`LocalAddr` ba
 
 * An eliminated store adds its range (its pointer an `OffPtr` chain from an `Addr`/`LocalAddr`
   base, `ptrLoc`); a kept `Store`/`Zero`/`Move` removes the range it writes (`sub`), a kept
-  `VarDef` its variable; a kept `Move` must read an allocation with no pending range; any other
+  `VarDef` of a `PAUTO` its variable (`Sem.varDefMem`: it poisons no other); a kept `Move` must
+  read an allocation with no pending range; any other
   op has an empty pending set (`pendStep`).
 * A value with pending ranges is used only in its block, by no `Phi` and no control, as the
   memory argument (last, once) of a `Store`/`Zero`/`Move`/`VarDef`, or by an op that ignores
@@ -110,7 +111,7 @@ def pendStep (tabs : Tables) (f g : Func) (P : ID → List Iv) (x : ID) : Option
         | none => none
     else if fv.op == .VarDef then
       some (match fv.aux with
-        | some n => pm.filter (·.1 != CSE.frameAlloc tabs n)
+        | some n => if tabs.varDefPoisons n then pm.filter (·.1 != CSE.frameAlloc tabs n) else pm
         | none => pm)
     else some []
   | _, _ => some []

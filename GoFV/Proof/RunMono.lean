@@ -819,7 +819,7 @@ theorem memRoot_mono (ctx : Ctx) (v : Value) {as bs : List Val} (h : RefinesList
     cases h1 with | mem hm =>
     rw [heq]; dsimp only
     split
-    · exact .ok (.mem (hm.poisonBlock _))
+    · exact .ok (.mem (varDefMem_rel (R := Mem.Refines) hm (hm.poisonBlock _)))
     · exact .stuck _ _
   · next heq =>
     obtain ⟨_, _, rfl, h1, h⟩ := h.cons_inv

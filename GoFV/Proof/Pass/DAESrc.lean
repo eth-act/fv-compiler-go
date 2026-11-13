@@ -164,7 +164,7 @@ theorem memRoot_avoids (hU : TempU U) {ctx : Ctx} {v : Value} {argv : List Val}
       · cases h
   · dsimp only at h
     split at h
-    · cases h; exact memAvoids_poison (hav _ m1) _
+    · cases h; exact memAvoids_varDefMem (hav _ m1) _ _ _
     · cases h
   · cases h; exact hav _ m1
   · cases h; exact DeferRel.memAvoids_filter (hav _ m1) _
@@ -475,7 +475,7 @@ theorem src_step {env : Env} (hfs : env.FrameSafe) {tabs : Tables} {f g : Func}
       rotate_right
       · rw [evalOp_memRoot (.inr (.inr (.inr (.inl hop))))] at hr
         obtain ⟨M, n', rfl, -, rfl, -⟩ := DSE.varDef_shape hop hr
-        exact memAvoids_poison (hmA M (by simp)) _
+        exact memAvoids_varDefMem (hmA M (by simp)) _ _ _
       all_goals
         have hop3 : fv.op = .Store ∨ fv.op = .Zero ∨ fv.op = .Move := by simp [hop]
         rw [evalOp_memRoot (by simp [hop])] at hr

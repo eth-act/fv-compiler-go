@@ -179,11 +179,12 @@ theorem move_ok {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {d p m : ID} {d
   obtain ⟨Dst, P, Mm, R, Ms, hD, hP, rfl, hr, hw, rfl⟩ := memRoot_move hop ho'
   exact ⟨Dst, P, Mm, R, Ms, hD, hP, rfl, hr, hw, rfl⟩
 
-/-- A `VarDef`'s evaluation: its memory with a block poisoned. -/
+/-- A `VarDef`'s evaluation: its memory after `varDefMem` of its variable. -/
 theorem varDef_ok {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {m : ID} {mv : Val} {y : Val}
     (hop : v.op = .VarDef) (ha : v.args = #[m]) (hm : fr.regs[m]? = some (some mv))
     (h : evalValue env ctx fr v = .ok y) :
-    ∃ M b, mv = .mem M ∧ y = (Val.mem (M.poisonBlock b)).retype (ctx.tys[v.id]?.getD .other) := by
+    ∃ M n, mv = .mem M ∧
+      y = (Val.mem (varDefMem ctx.tabs ctx.act n M)).retype (ctx.tys[v.id]?.getD .other) := by
   obtain ⟨argv, r, hargs, ho, rfl⟩ := CSE.Mem.evalValue_ok h
   have : argv = [mv] := CSE.Mem.map_some_inj (by rw [← hargs, ha]; simp [hm])
   subst this
@@ -964,7 +965,7 @@ theorem moveSeg_sound {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D N
       rw [hid mc mvv hmcA hmvv, Proof.tys_of_value hmvv, Option.getD_some] at hy
       obtain ⟨-, hMm⟩ := retype_mem_eq hy.symm
       subst hMm
-      exact ⟨M1, hy1, hm1A, poisonBlock_refines M1 b⟩
+      exact ⟨M1, hy1, hm1A, varDefMem_refines _ _ b M1⟩
   -- the chains
   obtain ⟨hsc, hlen⟩ := storesC_chain hsf
   have hgc := fchain_gchain hfc
@@ -1233,7 +1234,7 @@ theorem zeroSeg_sound {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D N
       rw [hid mc mvv hmcA hmvv, Proof.tys_of_value hmvv, Option.getD_some] at hy
       obtain ⟨-, hMm⟩ := retype_mem_eq hy.symm
       subst hMm
-      exact ⟨M1, hy1, hm1A, poisonBlock_refines M1 b⟩
+      exact ⟨M1, hy1, hm1A, varDefMem_refines _ _ b M1⟩
   -- the `Zero`: its memory, `M1` through copies, holds zeros at `P`
   obtain ⟨hzA, hzr⟩ := StructStore.copy_reg H hT hid f.valueTab.size hm1A hz1
   have hW : M1.read P fv.auxInt.toInt.toNat =
@@ -1383,7 +1384,7 @@ theorem tileSeg_sound {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D N
       rw [hid mc mvv hmcA hmvv, Proof.tys_of_value hmvv, Option.getD_some] at hy
       obtain ⟨-, hMm⟩ := retype_mem_eq hy.symm
       subst hMm
-      exact ⟨M1, hy1, hm1A, poisonBlock_refines M1 b⟩
+      exact ⟨M1, hy1, hm1A, varDefMem_refines _ _ b M1⟩
   -- the `Move` read bytes refined by the stores' memory's
   obtain ⟨R', hR', hRR⟩ := href.read hR
   -- the chains

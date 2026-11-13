@@ -132,10 +132,24 @@ theorem step_ok (hrel : DRel tabs f g P) {S T : Frame} {A : ID → Prop}
       have hvsT : argVals T gv.args = some ([] ++ [.mem MT]) := by
         rw [hgargs]; exact argVals_last (L := []) (by simpa using hvs) hback hpop hTa
       refine ⟨_, by rw [hevT _ hvsT, evalOp_chain hop4]; simp only [List.nil_append, htgt]; rfl,
-        VRel.retype_mem _ ((hMem.poison _).mono ?_)⟩
-      intro b k ⟨hq, hb⟩
-      rw [pend_varDef hfv hgv hne hop hpend, hax, hpm]
-      exact ivQ_filter hq (by rw [blkOf_frameAlloc]; exact hb)
+        VRel.retype_mem _ ?_⟩
+      have hpx := pend_varDef hfv hgv hne hop hpend
+      rw [hax, hpm] at hpx
+      dsimp only at hpx
+      unfold varDefMem
+      split
+      · next hpa =>
+        rw [if_pos (show tabs.varDefPoisons n = true from hpa)] at hpx
+        refine (hMem.poison _).mono ?_
+        intro b k ⟨hq, hb⟩
+        rw [hpx]
+        exact ivQ_filter hq (by rw [blkOf_frameAlloc]; exact hb)
+      · next hpa =>
+        rw [if_neg (show ¬ tabs.varDefPoisons n = true from hpa)] at hpx
+        refine hMem.mono ?_
+        intro b k hq
+        rw [hpx]
+        exact hq
     all_goals
       have hop3 : fv.op = .Store ∨ fv.op = .Zero ∨ fv.op = .Move := by simp [hop]
       obtain ⟨a0, p, L, M, bs, M1, hvsE, hap, hw, rfl, hbs, -, htgt⟩ := write_shape hop3 hr
