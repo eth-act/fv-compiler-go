@@ -173,7 +173,7 @@ theorem inst_r_generic_1053 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_
   refine ⟨Oracle.const_boolTyped true, ?_⟩
   simp [GoFV.Rules.Generated.Generic.r_generic_1053, FrameOK, Result.nodes, samePtrVars,
     sameLeaves, nonNegLeaves, numElem1Vars, size0Vars, shiftAmt?, Pat.leafPos, Pat.leafPoss,
-    Pat.rawT,
+    Pat.rawT, nonNegAuxs,
     Pat.densT, Pat.denT,
     emptyStrVars, opVal]
   rule_eval

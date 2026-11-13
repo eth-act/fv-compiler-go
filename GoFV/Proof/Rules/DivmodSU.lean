@@ -143,7 +143,7 @@ set_option hygiene false in
 (`nonNegLeaves`), `smagicOK` out of the condition, and close by `divu_smagic`. -/
 local macro "divu_nn" : tactic => `(tactic| (
   rule_unfold
-  intro hnl
+  intro hnl _
   have hx := hnl [0] (by simp [nonNegLeaves])
   clear hnl
   (try simp only [binE_land_bool, rule_unfold_s] at hcond)
@@ -183,7 +183,7 @@ local macro "divu_inst" r:ident : tactic => `(tactic| (
   refine ⟨Oracle.const_boolTyped true, ?_, ?_⟩
   · refine ⟨fun n hn => ?_, by simp [$r:ident, emptyStrVars], by simp [$r:ident, samePtrVars],
       by simp [$r:ident, numElem1Vars], by simp [$r:ident, size0Vars],
-      by simp [$r:ident, sameLeaves], fun p hp => ?_⟩
+      by simp [$r:ident, sameLeaves], fun p hp => ?_, by simp [$r:ident, nonNegAuxs]⟩
     · simp only [$r:ident, Result.nodes, List.mem_cons, List.not_mem_nil, or_false] at hn
       rcases hn with rfl | rfl | rfl | rfl | rfl <;> refine ⟨?_, ?_, ?_, ?_⟩ <;> intro a b h hb <;>
         simp only [reduceCtorEq, Option.some.injEq] at h <;> subst h <;>

@@ -531,10 +531,11 @@ def frameNodeOK (tabs : Tables) (ev : GoFV.Rules.Expr → DV) (e : PEnv) (pat : 
 /-- The condition's conjuncts `x == ""` hold of the string aux bound to `x`, its conjuncts
 `isSamePtr(x, y)` of leaves `x`, `y` match the same value, its conjuncts
 `x.NumElem() == 1` have a type `x` of the shape of one field at offset 0 that fills it, its
-conjuncts `x.Size() == 0` a type `x` of the empty shape, and the positions `same`
-(`GoFV.Proof.Rules.sameLeaves`) match the same value (`GoFV.Proof.Rules.FrameOK`). -/
+conjuncts `x.Size() == 0` a type `x` of the empty shape, the positions `same`
+(`GoFV.Proof.Rules.sameLeaves`) match the same value, and the auxints at the positions `nnAux`
+(`GoFV.Proof.Rules.nonNegAuxs`) are nonnegative (`GoFV.Proof.Rules.FrameOK`). -/
 def condFrameOK (tabs : Tables) (ev : GoFV.Rules.Expr → DV) (e : PEnv) (I : Inst) (pat : Pat)
-    (cond : Option GoFV.Rules.Expr) (same : List (Path × Path)) : Bool :=
+    (cond : Option GoFV.Rules.Expr) (same : List (Path × Path)) (nnAux : List Path) : Bool :=
   ((cond.map emptyStrVars).getD []).all (fun x => match strOf tabs e pat x with
     | some (s, _) => s.size == 0
     | none => false) &&
@@ -548,7 +549,8 @@ def condFrameOK (tabs : Tables) (ev : GoFV.Rules.Expr → DV) (e : PEnv) (I : In
   ((cond.map size0Vars).getD []).all (fun x => match ev (.var x) with
     | .ty .empty => true
     | _ => false) &&
-  same.all fun (p, q) => I.at p == I.at q
+  same.all (fun (p, q) => I.at p == I.at q) &&
+  nnAux.all fun p => decide (0 ≤ (e.auxInt p).toInt)
 
 /-- How `isNonNegative` (`rewrite.go`) decides an op whose value is an integer of width `w`. -/
 inductive NNKind where
@@ -688,7 +690,8 @@ def ruleOK (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : 
         leavesOK M I [] r.pat &&
         resultOK tabs M ev or σ I r x defs &&
         nodes.all (fun (n, u) => frameNodeOK tabs ev e r.pat n u) &&
-        condFrameOK tabs ev e I r.pat r.cond (GoFV.Proof.Rules.sameLeaves r) &&
+        condFrameOK tabs ev e I r.pat r.cond (GoFV.Proof.Rules.sameLeaves r)
+          (GoFV.Proof.Rules.nonNegAuxs r) &&
         nonNegOKD tabs (defs.foldl (fun M u => M.put u.id u) M).get? I r.pat r.cond &&
         nonNegLeavesD tabs (defs.foldl (fun M u => M.put u.id u) M).get? I r
 

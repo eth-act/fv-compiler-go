@@ -10,20 +10,8 @@ variable [GoFV.SSA.Sem.Addrs]
 `Add` family (`docs/proofs/rules.md`).
 -/
 
-/-! False rules (`docs/proofs/rules.md`, "Findings"); `scripts/rule-proofs.py table` reads these lines.
--- FALSE r_generic_2168 #90
--- FALSE r_generic_2167 #90
--- FALSE r_generic_2166 #90
--- FALSE r_generic_2169 #90
--- FALSE r_generic_2168_2 #90
--- FALSE r_generic_2167_2 #90
--- FALSE r_generic_2166_2 #90
--- FALSE r_generic_2169_2 #90
--- FALSE r_generic_2168_3 #90
--- FALSE r_generic_2167_3 #90
--- FALSE r_generic_2166_3 #90
--- FALSE r_generic_2169_3 #90
--/
+/-! The constant rotate rules `generic.rules:2166–2169` (false at a negative `c`, #90) are proven
+in `RotConst.lean` under `Rule.SoundT`, with `0 ≤ c` from `FrameOK` (`nonNegAuxs`). -/
 
 namespace GoFV.Proof.Rules
 

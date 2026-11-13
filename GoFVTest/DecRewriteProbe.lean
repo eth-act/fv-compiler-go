@@ -102,7 +102,8 @@ def why (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : Str
         if !resultOK tabs M ev or σ I r x defs then
           (if r.block.isSome then "resultOK (@b block)" else "resultOK") else
         if !nodes.all (fun (n, u) => frameNodeOK tabs ev e r.pat n u) then "frameNodeOK" else
-        if !condFrameOK tabs ev e I r.pat r.cond (GoFV.Proof.Rules.sameLeaves r) then "condFrameOK" else "ok"
+        if !condFrameOK tabs ev e I r.pat r.cond (GoFV.Proof.Rules.sameLeaves r)
+            (GoFV.Proof.Rules.nonNegAuxs r) then "condFrameOK" else "ok"
     if res.contains "ok" then "ok" else res.headD "no choice"
 
 structure Stats where

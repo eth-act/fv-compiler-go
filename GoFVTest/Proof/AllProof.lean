@@ -831,6 +831,7 @@ import GoFV.Proof.Rules.Proven
 import GoFV.Proof.Rules.PtrIndex
 import GoFV.Proof.Rules.RangeLemmas
 import GoFV.Proof.Rules.RangeLemmas2
+import GoFV.Proof.Rules.RotConst
 import GoFV.Proof.Rules.RotateLeft
 import GoFV.Proof.Rules.RotateLeft10
 import GoFV.Proof.Rules.RotateLeft11

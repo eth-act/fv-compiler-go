@@ -329,9 +329,9 @@ theorem RuleFacts.top_ty (F : RuleFacts tabs M r v defs) (L : ID → Val) :
     (semEnv tabs M F.I L).ty [] = tabs.ty F.xv.type := by
   simp only [semEnv, env, F.at_top, F.hxv, Option.map_some, Option.getD_some]
 
-/-- The validator's `frameNodeOK` gives `Rule.SoundT`'s frame premise (`FrameOK`) on the semantic
-instance (same aux fields as the static one), given its rule-keyed leaf facts (`hnnl`, from
-`nonNegLeavesD`). -/
+/-- The validator's `frameNodeOK` and `condFrameOK` give `Rule.SoundT`'s frame premise
+(`FrameOK`) on the semantic instance (same aux fields as the static one), given its rule-keyed
+leaf facts (`hnnl`, from `nonNegLeavesD`). -/
 theorem RuleFacts.frameT (F : RuleFacts tabs M r v defs) (L : ID → Val)
     {ev' : GoFV.Rules.Expr → DV} (hev : ∀ x, (stEv tabs M r defs F.I x).erase = (ev' x).erase)
     (hnnl : ∀ p ∈ GoFV.Proof.Rules.nonNegLeaves r, (L (F.I.at p)).nonNeg = true) :
@@ -339,9 +339,9 @@ theorem RuleFacts.frameT (F : RuleFacts tabs M r v defs) (L : ID → Val)
   have hcf := F.hcf
   simp only [condFrameOK, Bool.and_eq_true] at hcf
   refine ⟨fun n hn => ?_, fun x hx => ?_, fun xy hxy => ?_, fun x hx => ?_, fun x hx => ?_,
-    fun pq hpq => ?_, hnnl⟩
+    fun pq hpq => ?_, hnnl, fun p hp => ?_⟩
   rotate_left
-  · have h := List.all_eq_true.1 hcf.1.1.1.1 x hx
+  · have h := List.all_eq_true.1 hcf.1.1.1.1.1 x hx
     simp only [strOf] at h
     cases hp : GoFV.Proof.Rules.Pat.auxPos x [] r.pat with
     | none => simp [hp] at h
@@ -353,14 +353,14 @@ theorem RuleFacts.frameT (F : RuleFacts tabs M r v defs) (L : ID → Val)
         obtain ⟨s, d⟩ := sd
         simp only [hs, beq_iff_eq] at h
         exact ⟨p, s, d, rfl, hs, h⟩
-  · have h := List.all_eq_true.1 hcf.1.1.1.2 xy hxy
+  · have h := List.all_eq_true.1 hcf.1.1.1.1.2 xy hxy
     revert h
     split
     · rename_i p q hp hq
       intro h
       exact ⟨p, q, hp, hq, by simp only [semEnv, beq_iff_eq.1 h]⟩
     · intro h; cases h
-  · have h := List.all_eq_true.1 hcf.1.1.2 x hx
+  · have h := List.all_eq_true.1 hcf.1.1.1.2 x hx
     revert h
     split
     · rename_i f n hd
@@ -370,7 +370,7 @@ theorem RuleFacts.frameT (F : RuleFacts tabs M r v defs) (L : ID → Val)
       · rw [← h', hd, beq_iff_eq.1 h]
       · rw [hd] at h'; cases h'
     · intro h; cases h
-  · have h := List.all_eq_true.1 hcf.1.2 x hx
+  · have h := List.all_eq_true.1 hcf.1.1.2 x hx
     revert h
     split
     · rename_i hd
@@ -380,8 +380,9 @@ theorem RuleFacts.frameT (F : RuleFacts tabs M r v defs) (L : ID → Val)
       · rw [hd] at h'; cases h'
     · intro h; cases h
   · obtain ⟨p, q⟩ := pq
-    have h := List.all_eq_true.1 hcf.2 (p, q) hpq
+    have h := List.all_eq_true.1 hcf.1.2 (p, q) hpq
     simp only [semEnv, beq_iff_eq.1 h]
+  · exact of_decide_eq_true (List.all_eq_true.1 hcf.2 p hp)
   rcases F.result with hR | hR
   · obtain ⟨R⟩ := hR
     rw [R.hres] at hn; simp [GoFV.Rules.Result.nodes] at hn

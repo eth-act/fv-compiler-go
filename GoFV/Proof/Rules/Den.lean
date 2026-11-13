@@ -794,6 +794,17 @@ def nonNegLeaves (r : Rule) : List Path :=
   if r.loc = ⟨"divmod", 136⟩ ∨ r.loc = ⟨"divmod", 140⟩ ∨ r.loc = ⟨"divmod", 144⟩ ∨
       r.loc = ⟨"divmod", 148⟩ then [[0]] else []
 
+/-- Auxint positions of a rule's pattern whose auxint must be nonnegative although the
+condition does not say so: the constant rotate rules `generic.rules:2166–2169` (`((Add|Or|Xor)<w>
+(Lsh<w>x64 x z:(Const64 [c])) (Rsh<w>Ux64 x (Const64 [d]))) && c < w && d == w-c &&
+canRotate(config, w) => (RotateLeft<w> x z)`) compare `c` signed, and at `c < 0` both shifts are
+0 while `RotateLeft` rotates by `c mod w` (#90). The compiler builds no negative shift constant
+the rule matches (its out-of-range shift folds win); the rewrite validator checks the instance's
+auxint (`RewriteCheck.condFrameOK`). -/
+def nonNegAuxs (r : Rule) : List Path :=
+  if r.loc = ⟨"generic", 2166⟩ ∨ r.loc = ⟨"generic", 2167⟩ ∨ r.loc = ⟨"generic", 2168⟩ ∨
+      r.loc = ⟨"generic", 2169⟩ then [[1, 0]] else []
+
 mutual
 /-- Every argument of every op node of the pattern at `p` has the shape `argShapeOk` asks for,
 by the instance's types `ty` (`docs/proofs/rules.md`, "Assumptions to discharge"). -/

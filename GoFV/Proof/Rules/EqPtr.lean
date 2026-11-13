@@ -215,7 +215,7 @@ theorem inst_r_generic_1689 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_
   refine ⟨Oracle.const_boolTyped true, ?_⟩
   simp [GoFV.Rules.Generated.Generic.r_generic_1689, FrameOK, Result.nodes, strDataVar?, lenVar?,
     sameLeaves, nonNegLeaves, shiftAmt?, auxVar?, Pat.auxPos, Pat.auxPoss, Field.bindsVar,
-    hiSymTabs,
+    hiSymTabs, nonNegAuxs,
     Tables.aux?, Pat.rawT, Pat.densT, Pat.denT, opVal, addrVal]
   rule_eval
   refine ⟨⟨fun ae x h => ?_, fun ae b h => ?_⟩, ?_⟩

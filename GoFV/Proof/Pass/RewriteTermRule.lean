@@ -170,7 +170,7 @@ structure RuleFacts (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List 
   hframe : ∀ nu ∈ stNodes r defs,
     frameNodeOK tabs (stEv tabs M r defs I) (env tabs M I) r.pat nu.1 nu.2 = true
   hcf : condFrameOK tabs (stEv tabs M r defs I) (env tabs M I) I r.pat r.cond
-    (GoFV.Proof.Rules.sameLeaves r) = true
+    (GoFV.Proof.Rules.sameLeaves r) (GoFV.Proof.Rules.nonNegAuxs r) = true
   hreach : ∀ C : ID → Prop, ArgClosed M C → C v → ∀ y ∈ I, C y.2
   hnn : nonNegOKD tabs (putAll M defs).get? I r.pat r.cond = true
   hnnl : nonNegLeavesD tabs (putAll M defs).get? I r = true

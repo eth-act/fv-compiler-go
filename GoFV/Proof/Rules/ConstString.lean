@@ -181,7 +181,7 @@ theorem inst_r_generic_1015 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_
     (Oracle.const true) := by
   refine ⟨Oracle.const_boolTyped true, ?_⟩
   simp [GoFV.Rules.Generated.Generic.r_generic_1015, FrameOK, Result.nodes, emptyStrVars, sameLeaves,
-    nonNegLeaves,
+    nonNegLeaves, nonNegAuxs,
     samePtrVars, numElem1Vars, size0Vars, shiftAmt?, Pat.auxPos, Field.bindsVar, strAux?,
     emptyStrTabs, Tables.aux?, Pat.rawT, Pat.densT, opVal_constString, strVal, sigmaT,
     Pat.bindsT, Pat.bindssT, Pat.denT, Val.ofStr, Val.strOK]
@@ -206,7 +206,7 @@ theorem inst_r_generic_1011 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_
   refine ⟨Oracle.boolTyped_const_dv true _ _ _ _, ?_⟩
   simp [GoFV.Rules.Generated.Generic.r_generic_1011, FrameOK, Result.nodes, strDataVar?, lenVar?,
     sameLeaves, nonNegLeaves, shiftAmt?, auxVar?, numElem1Vars, size0Vars, Pat.auxPos,
-    Pat.auxPoss,
+    Pat.auxPoss, nonNegAuxs,
     Field.bindsVar, hiSymTabs, Tables.aux?, Pat.rawT, Pat.densT, Pat.denT, opVal, addrVal, sigmaT,
     Pat.bindsT, Pat.bindssT, strTy]
   rule_eval
