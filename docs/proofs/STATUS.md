@@ -2302,6 +2302,12 @@ sees a rerouted state it cannot yet validate (class `NIL CHECK OF ANOTHER PTR VA
 hoist class NilHoistOK targets). No statement is weakened. Compile's output was not identical to
 stock before either. This is tracked in #385.
 
+`zeroGuard` also resets zero-size `Phi`s and `Arg`s to `Empty`, as Go's phielim does (#69,
+Phase1Tail11; the atom simulation drops them, `RewriteCheck.dropAtom`; witness
+`copyelim_zero_phi_witness`; no semantics or statement change). Full-v11 on main cad4a601,
+per function: Phase 1 94,286 → 94,316 (+30, 0 lost), `trim` 88,446 → 88,458 (+12, 0 lost);
+quick-v10 end to end 7,438 → 7,440 (`verified_mach` 7,222 → 7,224, `_S` 216 → 216, 0 lost).
+
 The `decompose user` runs that are unverified (59 on full-v9) are not in `decompose-probe`'s count
 of stock inputs outside `decUserFrag` (0 of 96,560): the probe checks the stock section before the
 pass, `--verified` the verified pipeline's state. When `early phielim and copyelim` and `early

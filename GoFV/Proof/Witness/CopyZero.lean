@@ -204,4 +204,94 @@ theorem copyelim_zero_witness :
       (out := { func := g, tables := dlogTabs }) (ce := dlogCheckEnv) (ce' := dlogCheckEnv) hp hf hg hz
     exact ⟨_, hp, h3, hz, hr⟩
 
+/-! ## A zero-size `Phi`
+
+`dlogPhi`: `dlogB` with a join, by hand. Block 2 branches on `x` (`v8`) to the return block 4
+directly or through a new empty block 5, and block 4 returns the copy of
+`v24 = Phi <dloggerFake> v18 v9` (the loaded `*l` from block 2, the entry's `Empty` from block 5).
+phielim resets the `Phi` to `Empty` as well; `zeroReset` resets it too (a droppable atom), so
+`zeroGuard` accepts the function. -/
+
+/-- The values of `dlogPhi`, by ID. -/
+def phiValues : Array (Option Value) :=
+  (dlogValues.set! 1 (some (mkV 1 .InitMem 30 none p0 6 #[] 1))
+    |>.set! 8 (some (mkV 8 .Arg 4 (some 4) (pos 1 1 0 2) 1 #[] 1))
+    |>.set! 9 (some (mkV 9 .Empty 3 none p0 1 #[] 1))
+    |>.set! 16 (some (mkV 16 .Copy 30 none (pos 1 1 0 2) 3 #[1] 2))
+    |>.set! 21 (some (mkV 21 .Copy 3 none (pos 1 1 0 2) 1 #[24] 4))
+    |>.set! 22 (some (mkV 22 .Copy 30 none (pos 1 1 0 2) 1 #[1] 4))).push
+  (some (mkV 24 .Phi 3 none (pos 1 1 0 2) 1 #[18, 9] 4))
+
+/-- The blocks of `dlogPhi`, by ID. -/
+def phiBlocks : Array (Option Block) := #[none,
+  some (mkB 1 .If (pos 1 1 0 0) #[11] #[⟨3, 0⟩, ⟨2, 0⟩] #[] #[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 19]),
+  some (mkB 2 .If (pos 1 1 0 1) #[8] #[⟨4, 0⟩, ⟨5, 0⟩] #[⟨1, 1⟩] #[15, 16, 17, 18, 20]),
+  some (mkB 3 .Exit (pos 1 1 0 0) #[14] #[] #[⟨1, 0⟩] #[12, 13, 14]),
+  some (mkB 4 .Ret (pos 1 1 0 1) #[23] #[] #[⟨2, 0⟩, ⟨5, 0⟩] #[24, 21, 22, 23]),
+  some (mkB 5 .Plain (pos 1 1 0 1) #[] #[⟨4, 1⟩] #[⟨2, 1⟩] #[])]
+
+/-- `dlogB` with a zero-size `Phi` at the join of a branch on `x`. -/
+def dlogPhi : Func where
+  entry := 1
+  type := 1
+  ownAux := some 1
+  vidLast := 24
+  bidLast := 5
+  blocks := #[1, 2, 3, 4, 5]
+  blockTab := phiBlocks
+  valueTab := phiValues
+  names := dlogB.names
+  namedx := #[]
+  splits := #[]
+  canon := dlogB.canon
+  consts := dlogB.consts
+  freeValues := []
+  freeBlocks := []
+  cache := {}
+
+/-- By kernel evaluation: the input and copyelim's output pass `check`; the old fragment rejects
+the input; `zeroReset` resets the `Phi` `v24` to `Empty`, and `copyGuard` accepts the input (by
+`zeroGuard`); copyelim resets `v24` to `Empty`. -/
+theorem dlogPhi_facts :
+    (check dlogCheckEnv dlogPhi).toBool = true ∧
+    ((copyelim dlogTabs dlogPhi).toOption.map fun g =>
+      (check dlogCheckEnv g).toBool && (g.value? 24).map (·.op) == some .Empty) = some true ∧
+    (copyFrag dlogTabs dlogPhi && emptyFragB dlogTabs dlogPhi) = false ∧
+    (dlogPhi.value? 24).map (·.op) = some .Phi ∧
+    ((CopyZero.zeroReset dlogTabs dlogPhi).value? 24).map (·.op) = some .Empty ∧
+    copyGuard dlogPassEnv dlogPhi = true := by
+  decide +kernel
+
+/-- **Non-vacuity of `copyelim_refines_zero` with a zero-size `Phi`**: copyelim runs on
+`dlogPhi`, which is outside `copyelim_refines`' fragment and has a zero-size `Phi`, its guard
+holds, and its output refines the input under monotone contracts. -/
+theorem copyelim_zero_phi_witness :
+    ∃ out, copyelimPass dlogPassEnv dlogPhi = .ok out ∧
+      (copyFrag dlogTabs dlogPhi && emptyFragB dlogTabs dlogPhi) = false ∧
+      (dlogPhi.value? 24).map (·.op) = some .Phi ∧
+      CopyZero.zeroGuard dlogPassEnv dlogPhi = true ∧
+      RefinesUnder Env.Mono out.tables out.func dlogTabs dlogPhi := by
+  obtain ⟨h1, h2, h3, hphi, -, h4⟩ := dlogPhi_facts
+  have hf : check dlogCheckEnv dlogPhi = .ok () := by
+    revert h1; cases check dlogCheckEnv dlogPhi <;> simp [Except.toBool]
+  have hz : CopyZero.zeroGuard dlogPassEnv dlogPhi = true := by
+    have h3' : (copyFrag dlogPassEnv.tables dlogPhi && emptyFragB dlogPassEnv.tables dlogPhi) =
+        false := h3
+    simp only [copyGuard, Bool.or_eq_true, h3', Bool.false_eq_true, false_or] at h4
+    exact h4
+  cases hc : copyelim dlogTabs dlogPhi with
+  | error e => rw [hc] at h2; cases h2
+  | ok g =>
+    rw [hc] at h2
+    have hg : check dlogCheckEnv g = .ok () := by
+      simp only [Except.toOption, Option.map_some, Option.some.injEq, Bool.and_eq_true] at h2
+      have := h2.1
+      revert this; cases check dlogCheckEnv g <;> simp [Except.toBool]
+    have hp : copyelimPass dlogPassEnv dlogPhi = .ok { func := g, tables := dlogTabs } := by
+      simp only [copyelimPass, Pass.ofFunc, dlogPassEnv]
+      rw [hc]; rfl
+    have hr := CopyZero.copyelim_refines_zero (penv := dlogPassEnv) (f := dlogPhi)
+      (out := { func := g, tables := dlogTabs }) (ce := dlogCheckEnv) (ce' := dlogCheckEnv) hp hf hg hz
+    exact ⟨_, hp, h3, hphi, hz, hr⟩
+
 end GoFV.Proof.Witness.CopyZero

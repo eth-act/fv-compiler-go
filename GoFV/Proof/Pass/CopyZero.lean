@@ -11,10 +11,12 @@ variable [GoFV.SSA.Sem.Addrs]
 refines `f` under monotone contracts. The output `g` is related by copyelim's relation to
 `k := zeroReset tabs f` (`copyRelB_sound`), and `k` lies in the old fragment `EmptyFrag`, so `g`
 refines `k` (`CopyElim.refines_of_rel`). `k` refines `f` by the atom simulation
-(`AtomSim.atomSim_refines`). The two have the same atoms with the same fields
-(`atomArgsRef_zeroReset`) and the same controls (`termStepRef_zeroReset`), and every listed value
-of `k` refines `f`'s as a term (`den_zeroReset`). A reset value is `Empty`, i.e. `.empty`, and the
-source value of shape `empty` it replaces is `.empty` or `poison` (`refines_retype_empty`).
+(`AtomSim.atomSim_refines`). The atoms of `k` are `f`'s with the same fields
+(`atomArgsRef_zeroReset`; `k` drops the reset `Phi`s and `Arg`s, which `atomsOK` allows), the
+controls are the same (`termStepRef_zeroReset`), and every listed value of `k` refines `f`'s as
+a term (`den_zeroReset`). A reset value is `Empty`, i.e. `.empty`, and the source value of shape
+`empty` it replaces, a term's value or an atom's register (fixed by `retype` at its shape,
+`Term.Typed`), is `.empty` or `poison` (`refines_retype_empty`).
 -/
 
 namespace GoFV.Proof.CopyZero
@@ -154,12 +156,6 @@ theorem resetB_ty {tabs : Tables} {v : Value} (h : resetB tabs v = true) : tabs.
   · assumption
   · cases h
 
-theorem resetB_term {tabs : Tables} {v : Value} (h : resetB tabs v = true) :
-    RewriteCheck.termOp v.op = true := by
-  unfold resetB at h
-  simp only [Bool.and_eq_true] at h
-  exact h.2
-
 /-- A value retyped at shape `empty` is `.empty` or `poison`: it refines `.empty`. -/
 theorem refines_retype_empty (y : Val) : Sem.Refines (y.retype .empty) .empty := by
   cases y <;> first | exact .empty | exact .poison _
@@ -173,9 +169,10 @@ private theorem listedDefs_of {g : Func} {c : ID} {cv : Value} (hc : g.value? c 
     listedDefs g c = some cv := by
   simp only [listedDefs, hc, Option.filter, hl.1, hl.2, Bool.and_self, ↓reduceIte]
 
-/-- **Every listed value of `zeroReset tabs f` refines `f`'s as a term.** -/
+/-- **Every listed value of `zeroReset tabs f` refines `f`'s as a term**, for source atoms fixed
+by `retype` at their shapes. -/
 theorem den_zeroReset {ce : CheckEnv} {tabs : Tables} {f : Func} (hwf : WF ce f)
-    (ρ ρ' : ID → Val) (hρ : ValRef ρ ρ') :
+    (ρ ρ' : ID → Val) (hρ : ValRef ρ ρ') (hty : Term.Typed f.value? tabs ρ) :
     ∀ n x, Listed f x →
       Sem.Refines (den f.value? tabs ρ n x) (den (listedDefs (zeroReset tabs f)) tabs ρ' n x)
   | 0, _, _ => .poison _
@@ -192,17 +189,26 @@ theorem den_zeroReset {ce : CheckEnv} {tabs : Tables} {f : Func} (hwf : WF ce f)
     · have hz : zr tabs fv = { fv with op := .Empty, args := #[], auxInt := 0, aux := none } := by
         unfold zr; rw [if_pos hr]
       rw [hz] at hl
-      rw [AtomSim.den_succ_term hfv (resetB_term hr), AtomSim.den_succ_term hl (show RewriteCheck.termOp Op.Empty = true by decide)]
+      rw [AtomSim.den_succ_term hl (show RewriteCheck.termOp Op.Empty = true by decide)]
       simp only [resetB_ty hr, Array.toList_empty, List.map_nil]
       rw [opVal_empty]
-      exact refines_retype_empty _
+      by_cases ht : RewriteCheck.termOp fv.op = true
+      · rw [AtomSim.den_succ_term hfv ht, resetB_ty hr]
+        exact refines_retype_empty _
+      · have hf : ¬ IsTerm f.value? x := fun ⟨v, hv, hv'⟩ => by
+          rw [hfv] at hv; cases hv; exact ht hv'
+        rw [AtomSim.den_succ_atom hf]
+        have h := hty x hf (by rw [hfv]; rfl)
+        simp only [shape, hfv, Option.map_some, Option.getD_some, resetB_ty hr] at h
+        rw [← h]
+        exact refines_retype_empty _
     · have hz : zr tabs fv = fv := by unfold zr; rw [if_neg hr]
       rw [hz] at hl
       by_cases ht : RewriteCheck.termOp fv.op = true
       · rw [AtomSim.den_succ_term hfv ht, AtomSim.den_succ_term hl ht]
         refine retype_mono _ (GoFV.Proof.Rules.opVal_mono _ _ _ _ _ ?_)
         exact AtomSim.refinesList_map fun a ha =>
-          den_zeroReset hwf ρ ρ' hρ n a (hwf.argListed bid b x fv ⟨hb, hx, hfv⟩ a
+          den_zeroReset hwf ρ ρ' hρ hty n a (hwf.argListed bid b x fv ⟨hb, hx, hfv⟩ a
             (Array.mem_toList_iff.1 ha))
       · have hf : ¬ IsTerm f.value? x := fun ⟨v, hv, hv'⟩ => by
           rw [hfv] at hv; cases hv; exact ht hv'
@@ -213,7 +219,7 @@ theorem den_zeroReset {ce : CheckEnv} {tabs : Tables} {f : Func} (hwf : WF ce f)
 
 theorem termRef_zeroReset {ce : CheckEnv} {tabs : Tables} {f : Func} (hwf : WF ce f) {x : ID}
     (hx : Listed f x) : TermRef f.value? tabs x (listedDefs (zeroReset tabs f)) tabs x :=
-  fun n => ⟨n, fun ρ ρ' hρ _ _ => den_zeroReset hwf ρ ρ' hρ n x hx⟩
+  fun n => ⟨n, fun ρ ρ' hρ hty _ => den_zeroReset hwf ρ ρ' hρ hty n x hx⟩
 
 /-- The atoms of `zeroReset tabs f` are `f`'s, with arguments refining as terms. -/
 theorem atomArgsRef_zeroReset {ce : CheckEnv} {tabs : Tables} {f : Func} (hwf : WF ce f) :

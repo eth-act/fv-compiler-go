@@ -9,29 +9,32 @@ variable [GoFV.SSA.Sem.Addrs]
 # copyelim on zero-size values: a checked second fragment (issue #69)
 
 `copyelim_refines`' fragment `EmptyFrag` admits only zero-size values that already evaluate to
-`.empty` without arguments (`Empty`, `Arg` at offset 0). `phielim` also resets zero-size `Load`s,
-copies and selections to `Empty`, dropping their arguments; a target `Empty` then no longer
-depends on, say, the `NilCheck` its source `Load` read, which the simulation's schedule argument
-(equal frames, the roots' dependencies kept) cannot follow.
+`.empty` without arguments (`Empty`, `Arg` at offset 0). `phielim` resets every zero-size value
+to `Empty`, dropping its arguments: `Load`s, copies, selections, and also `Phi`s; a target
+`Empty` then no longer depends on, say, the `NilCheck` its source `Load` read, which the
+simulation's schedule argument (equal frames, the roots' dependencies kept) cannot follow.
 
 `zeroGuard` validates such an input in two steps. `zeroReset tabs f` is `f` with every zero-size
-term value of shape `empty` reset to `Empty` (use counts recounted). `f` to `zeroReset tabs f` is
-checked as a rewrite by the atom simulation: the same atoms, the roots in the same order
-(`RewriteCheck.atomsOK`), and every value as a term refined (a value of shape `empty` is `.empty`
-or `poison`, `Empty` is `.empty`). `zeroReset tabs f` to copyelim's output `g` is copyelim's
-relation (`CopyElim.CopyRel`), decided on the output by `copyRelB`, with the old fragment
-`EmptyFrag` on `zeroReset tabs f`. The proofs are in `GoFV.Proof.Pass.CopyZero`.
+value of shape `empty` that is a term or a droppable atom (`Phi`, `Arg`) reset to `Empty` (use
+counts recounted). `f` to `zeroReset tabs f` is checked as a rewrite by the atom simulation: the
+same atoms but the dropped `Phi`s and `Arg`s, the roots in the same order
+(`RewriteCheck.atomsOK`), and every value as a term refined (a value of shape `empty`, a term or
+an atom's register, is `.empty` or `poison`, `Empty` is `.empty`). `zeroReset tabs f` to
+copyelim's output `g` is copyelim's relation (`CopyElim.CopyRel`), decided on the output by
+`copyRelB`, with the old fragment `EmptyFrag` on `zeroReset tabs f`. The proofs are in
+`GoFV.Proof.Pass.CopyZero`.
 -/
 
 namespace GoFV.Opt.CopyZero
 
 open GoFV.SSA GoFV.Proof.CopyElim
 
-/-- `v` is reset by `zeroReset`: a term (`RewriteCheck.termOp`) of a zero-size struct or array
-type with shape `empty`. -/
+/-- `v` is reset by `zeroReset`: a value of a zero-size struct or array type with shape `empty`
+that is a term (`RewriteCheck.termOp`) or an atom the atom simulation may drop
+(`RewriteCheck.dropAtom`, e.g. a `Phi` or an `Arg`). -/
 def resetB (tabs : Tables) (v : Value) : Bool :=
   zeroSizeB tabs v.type && (match tabs.ty v.type with | .empty => true | _ => false) &&
-    RewriteCheck.termOp v.op
+    (RewriteCheck.termOp v.op || RewriteCheck.dropAtom v.op)
 
 /-- `v` reset to `Empty` when `resetB`. -/
 def zr (tabs : Tables) (v : Value) : Value :=
