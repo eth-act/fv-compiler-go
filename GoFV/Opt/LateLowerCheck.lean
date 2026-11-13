@@ -25,13 +25,24 @@ tables `tabs`, agreeing with `tabs'` for `f`, `tabsAgreeL`) when `g` is `f` with
 * new values (an ID `f` does not use) that are `MOVDconst`s without arguments (`freshK`: at
   the 64-bit integer shape and `c` for the one an immediate rewrite reads), listed in a block of
   `g` before the values that read them (`freshBefore`);
+* values of `f` gone from `g` (`gone`), each removed by line 29,
+  `(MOVBUreg x:(Equal|NotEqual|…|GreaterEqualF _)) => x` (`rw29`): a `MOVBUreg` at an integer
+  shape of a condition op `x` of both at the `bool` shape. Its readers in `g` read `x` instead
+  (`argsOK`), only where they read the argument as a register (`regPos`: an op of `regOps`, where
+  `Arm64.reg` reads the boolean as the integer 0 or 1 the `MOVBUreg` holds; the stored value of a
+  store, whose bytes are the register's; a `Phi` at an integer shape, whose `Val.widen`
+  zero-extends the boolean), and only while `x` holds the value the gone one was computed from
+  (`winOK`: along `f`'s order of a block, no reader between a run of `x` and the run of the gone
+  value, which is in `x`'s block, and none by a `Phi` there);
 
 and otherwise unchanged: the same values (up to positions and use counts) whose arguments are
-values of `f`, the same blocks up to positions, predictions and the new constants in their value
-lists, `runL`'s order (`Sem.schedule`) of each block of `g` that of `f` with the new constants
+values of both, the same blocks up to positions, predictions, the new constants and the gone
+values in their value lists, controls that are values of both, `runL`'s order (`Sem.schedule`)
+of each block of `g` that of `f` without the gone values and with the new constants
 interleaved, and every `MOVDreg`/`MOVDnop` of `g` reads whether its argument sign-extends as in
 `f` (`sxOK`). Then `g` runs as `f` (`GoFV.Proof.LateLowerL.lateLower_refinesL`). Sections where
-any other rule fires (the copies of lines 29 and 32, line 95) are rejected.
+any other rule fires (the copies of line 32, line 95) or whose gone values are read otherwise
+(by a call, from another block) are rejected.
 -/
 
 namespace GoFV.Opt.LateLowerCheck
@@ -142,17 +153,86 @@ def rwImm (tysG : Array Ty) (f g : Func) (u w : Value) : Bool :=
 def rwOK (tysF tysG : Array Ty) (f g : Func) (u w : Value) : Bool :=
   rw91 f u w || rw98 u w || rw103 f u w || rwExt tysF f u w || rwImm tysG f g u w
 
-/-- Value `i` of `g` is `f`'s (with ID `i`), `f`'s rewritten, or a new constant. -/
+/-! ## Removed extensions (line 29) -/
+
+/-- Value `a` of `f` is gone from `g`. -/
+@[inline] def gone (f g : Func) (a : ID) : Bool := inF f a && !inF g a
+
+/-- The condition ops (`CSET`s) of line 29. -/
+def condOps : List Op :=
+  [.ARM64Equal, .ARM64NotEqual, .ARM64LessThan, .ARM64LessThanU, .ARM64LessThanF,
+   .ARM64LessEqual, .ARM64LessEqualU, .ARM64LessEqualF, .ARM64GreaterThan, .ARM64GreaterThanU,
+   .ARM64GreaterThanF, .ARM64GreaterEqual, .ARM64GreaterEqualU, .ARM64GreaterEqualF]
+
+/-- The shape is an integer one. -/
+def isInt : Option Ty → Bool
+  | some (.int _) => true
+  | _ => false
+
+/-- The shape is `bool`. -/
+def isBool : Option Ty → Bool
+  | some .bool => true
+  | _ => false
+
+/-- The first argument of value `a` of `f` (for a gone value: the `x` its users read in `g`). -/
+def base (f : Func) (a : ID) : Option ID := (f.value? a).bind (·.args[0]?)
+
+/-- Line 29, `(MOVBUreg x:(Equal|NotEqual|…|GreaterEqualF _)) => x`: `u` (gone from `g`) is the
+`MOVBUreg`, at an integer shape, of a condition op `x` of `g` at the `bool` shape. -/
+def rw29 (tysF : Array Ty) (f g : Func) (u : Value) : Bool :=
+  u.op == .ARM64MOVBUreg && isInt tysF[u.id]? &&
+    match u.args.toList with
+    | [x] => inF g x && isBool tysF[x]? &&
+      ((f.value? x).map fun v => condOps.contains v.op).getD false
+    | _ => false
+
+/-- The pure ops that read every argument as its register (`Arm64.op1`, `op2`, `opSh`, `add`,
+`sub`, `addSh`, `subSh`, `addK`), where a `bool` reads as the integer 0 or 1. -/
+def regOps : List Op :=
+  [.ARM64ADD, .ARM64ADDconst, .ARM64SUB, .ARM64SUBconst, .ARM64MUL, .ARM64NEG, .ARM64MVN,
+   .ARM64AND, .ARM64ANDconst, .ARM64OR, .ARM64ORconst, .ARM64XOR, .ARM64XORconst, .ARM64BIC,
+   .ARM64EON, .ARM64ORN, .ARM64SLL, .ARM64SRL, .ARM64SRA, .ARM64SLLconst, .ARM64SRLconst,
+   .ARM64SRAconst, .ARM64ADDshiftLL, .ARM64ADDshiftRL, .ARM64ADDshiftRA, .ARM64SUBshiftLL,
+   .ARM64SUBshiftRL, .ARM64SUBshiftRA, .ARM64ANDshiftLL, .ARM64ANDshiftRL, .ARM64ANDshiftRA,
+   .ARM64ORshiftLL, .ARM64ORshiftRL, .ARM64ORshiftRA, .ARM64XORshiftLL, .ARM64XORshiftRL,
+   .ARM64XORshiftRA, .ARM64BICshiftLL, .ARM64BICshiftRL, .ARM64BICshiftRA, .ARM64MOVBreg,
+   .ARM64MOVBUreg, .ARM64MOVHreg, .ARM64MOVHUreg, .ARM64MOVWreg, .ARM64MOVWUreg]
+
+/-- The stores whose stored value (argument 1) is the low bytes of its register
+(`Arm64.storeBytes`). -/
+def stOps : List Op := [.ARM64MOVBstore, .ARM64MOVHstore, .ARM64MOVWstore, .ARM64MOVDstore]
+
+/-- `u` reads its argument `j` as a register: a `regOps` op (an `AND` off the `bool` shape, where
+`Arm64.and` absorbs a `false` operand), a stored value, or a `Phi` at an integer shape (it reads
+its argument at its shape, `Val.widen` zero-extends a `bool`). -/
+def regPos (tysF : Array Ty) (u : Value) (j : Nat) : Bool :=
+  (regOps.contains u.op && (u.op != .ARM64AND || !isBool tysF[u.id]?)) ||
+    (stOps.contains u.op && j == 1) || (u.op == .Phi && isInt tysF[u.id]?)
+
+/-- Argument `j` of `w` (`b`) is `u`'s (`a`), a value of both, or `u`'s is gone and `w` reads its
+`x` instead, as a register. -/
+def argOK (tysF : Array Ty) (f g : Func) (u : Value) (j : Nat) (a b : ID) : Bool :=
+  (a == b && inF f a && inF g a) || (gone f g a && base f a == some b && regPos tysF u j)
+
+/-- The arguments of `w` are `u`'s, up to gone ones (`argOK`). -/
+def argsOK (tysF : Array Ty) (f g : Func) (u w : Value) : Bool :=
+  w.args.size == u.args.size &&
+    (List.range u.args.size).all fun j =>
+      match u.args[j]?, w.args[j]? with
+      | some a, some b => argOK tysF f g u j a b
+      | _, _ => false
+
+/-- Value `i` of `g` is `f`'s (with ID `i`, up to gone arguments), `f`'s rewritten, or a new
+constant; a value of `f` gone from `g` is line 29's. -/
 def valOK (tysF tysG : Array Ty) (f g : Func) (i : ID) : Bool :=
   match f.value? i, g.value? i with
   | none, none => true
   | none, some w => w.op == .ARM64MOVDconst && w.args.isEmpty && w.id == i
-  | some _, none => false
+  | some u, none => u.id == i && rw29 tysF f g u
   | some u, some w =>
     u.id == i && w.id == u.id && w.type == u.type &&
-      ((w.op == u.op && w.aux == u.aux && w.auxInt == u.auxInt && w.args == u.args &&
-          u.args.all (inF f)) ||
-        (u.op != .Phi && rwOK tysF tysG f g u w))
+      ((w.op == u.op && w.aux == u.aux && w.auxInt == u.auxInt && argsOK tysF f g u w) ||
+        (u.op != .Phi && u.args.all (inF g) && rwOK tysF tysG f g u w))
 
 /-- Whether the first argument of `v` sign-extends in `f` (`arm64Op`'s `MOVDreg`/`MOVDnop`). -/
 def sxIn (f : Func) (v : Value) : Option Bool :=
@@ -173,20 +253,39 @@ def freshBefore (f g : Func) : List ID → List ID → Bool
     ((g.value? x).map fun w => w.args.all fun a => inF f a || seen.contains a).getD true &&
       freshBefore f g (x :: seen) xs
 
-/-- Block `b` of `g` is `f`'s up to position, prediction and the new constants of its values
-(values of `g`), its controls are values of `f`, and its `runL` order is `f`'s with the new
-constants interleaved, each before its readers. -/
-def blkOK (f g : Func) (b : ID) : Bool :=
+/-- The values of `f` gone from `g` (line 29's `MOVBUreg`s). -/
+def goneL (f g : Func) : List ID := (List.range f.valueTab.size).filter (gone f g)
+
+/-- Along `f`'s order of a block (`gs`: `goneL`), a gone value is read (by a value of `g`, which
+reads its `x`) only while `x` holds the value it was computed from, and not by a `Phi`. `W` is
+the gone values whose `x` ran after them (from this block on: running `x` opens its gone
+values, running one closes it); no reader reads one of `W`, and the block ends with `W` empty. -/
+def winOK (f g : Func) (gs : List ID) : List ID → List ID → Bool
+  | W, [] => W.isEmpty
+  | W, y :: ys =>
+    if inF g y then
+      ((f.value? y).map fun u =>
+          u.args.all fun a => !gone f g a || (u.op != .Phi && !W.contains a)).getD true &&
+        winOK f g gs (W ++ gs.filter fun v => base f v == some y) ys
+    else winOK f g gs (W.filter (· != y)) ys
+
+/-- Block `b` of `g` is `f`'s up to position, prediction, the new constants of its values (values
+of `g`) and the gone values of `f`'s, its controls are values of both, and its `runL` order is
+`f`'s without the gone values and with the new constants interleaved, each before its readers;
+the gone values are read while their `x` holds what they were computed from (`winOK`). -/
+def blkOK (f g : Func) (gs : List ID) (b : ID) : Bool :=
   match f.block? b, g.block? b with
   | none, none => true
   | some fb, some gb =>
     decide ({ gb with values := fb.values, pos := fb.pos, likely := fb.likely } = fb) &&
-      gb.values.toList.filter (inF f) == fb.values.toList &&
-      gb.values.all (fun x => (g.value? x).isSome) && fb.controls.all (inF f) &&
+      gb.values.toList.filter (inF f) == fb.values.toList.filter (inF g) &&
+      fb.values.all (inF f) && gb.values.all (fun x => (g.value? x).isSome) &&
+      fb.controls.all (fun c => inF f c && inF g c) &&
       match schedule f fb, schedule g gb with
       | some oS, some oT =>
-        oT.toList.filter (inF f) == oS.toList && oT.all (fun x => (g.value? x).isSome) &&
-          freshBefore f g [] oT.toList
+        oT.toList.filter (inF f) == oS.toList.filter (inF g) && oS.all (inF f) &&
+          oT.all (fun x => (g.value? x).isSome) && freshBefore f g [] oT.toList &&
+          winOK f g gs [] oS.toList
       | _, _ => false
   | _, _ => false
 
@@ -202,6 +301,7 @@ def lateB (tabs tabs' : Tables) (f g : Func) : Bool :=
     (let tysF := shapesL tabs' f
      let tysG := shapesL tabs' g
      (List.range (max f.valueTab.size g.valueTab.size)).all (valOK tysF tysG f g)) &&
-    (List.range f.blockTab.size).all (blkOK f g) && sxOK f g
+    (let gs := goneL f g
+     (List.range f.blockTab.size).all (blkOK f g gs)) && sxOK f g
 
 end GoFV.Opt.LateLowerCheck

@@ -1860,6 +1860,20 @@ main 885ce778 against `agent/invguard` rebased on it:
 - end to end 7,252 → 7,396 (`verified_mach` 7,039 → 7,181, `verified_mach_S` 213 → 215), 0 lost
   and 144 gained (`comm` of the accepted lists); stock column 8,200 on both.
 
+**Late lower rule 29 (#385).** `lateB` accepts the `MOVBUreg`s of a condition op that
+`ARM64latelower.rules:29` removes, whose readers read the condition as a register
+(`docs/PASSES2.md`, late lower; `lateLower_refinesL` unchanged), `--jobs 2`:
+
+- quick-v10, main eeb02430 against `agent/p2latelower` rebased on it: end to end 7,397 → 7,399
+  (`verified_mach` 7,182 → 7,184, `verified_mach_S` 215 → 215), 0 lost and 2 gained (`comm` of
+  the accepted lists: `runtime.funcdata`, `runtime.checkFinalizersAndCleanups.func1`); fully
+  verified through `trim` 8,085 → 8,087; stock column 8,200 on both;
+- full-v11 `--check --verified --vstats`, measured on main 885ce778 (before #718; the next full
+  run updates it): through `rewrite tern` 93,779 on both, through `trim` 84,965 → 85,060 (+95),
+  0 lost per function (`comm` of the `verified` and `trim=verified` sets);
+- full-v11 `stocklow-probe` (885ce778): `lateB` accepts 94,805 → 95,309 sections (504 removing a
+  value by rule 29), rejects 1,869 → 1,365.
+
 | quick-v10 (9,297 functions, 8.5 min; the composition on G64 with `SBFIZ` in `checkObj`, per function at either mode (`agent/sbfiz` on main a6c37a47, the vacuity audit `entryVacuous`), P0' in `checkG64` and `checkObj`, `--jobs 2`) | pipeline output | share | stock `trim` |
 | --- | ---: | ---: | ---: |
 | fully verified (Phase 2, through `trim`) | 7,895 | 84.91% | - |
