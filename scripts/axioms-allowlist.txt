@@ -592,3 +592,7 @@ GoFV.Proof.Witness.ObjEndToEndClo.e2e_facts._native.native_decide.ax_1_1 afe48dd
 # `lateB` accepting ARM64latelower.rules:29 (#719) moved the 6 pins whose facts run the verified
 # pipeline through `lateB` (pfF_pipeline, ObjEndToEnd, ObjEndToEndS, ObjEndToEndAtSP,
 # ObjEndToEndAtSPS, ObjEndToEndClo e2e facts; re-taken from the audit; no statement changed).
+# NilHoistOK (#385, P2NilHoist): the same 6 pins moved again; their facts now also check
+# `r.nhs.isEmpty` (the statements gained that conjunct; an empty `r.nhs` discharges the new premise
+# `hnh`), and `verifiedPipelineFull` records `FState.nhs` and runs `scheduleCheck` with `hoistSwap`
+# (re-taken from the audit).
