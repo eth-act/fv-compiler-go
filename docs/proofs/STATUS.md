@@ -1864,10 +1864,10 @@ main 885ce778 against `agent/invguard` rebased on it:
 `ARM64latelower.rules:29` removes, whose readers read the condition as a register
 (`docs/PASSES2.md`, late lower; `lateLower_refinesL` unchanged), `--jobs 2`:
 
-- quick-v10, main b1f5aefa against `agent/p2latelower` rebased on it: end to end 7,396 → 7,398
-  (`verified_mach` 7,181 → 7,183, `verified_mach_S` 215 → 215), 0 lost and 2 gained (`comm` of
+- quick-v10, main eeb02430 against `agent/p2latelower` rebased on it: end to end 7,397 → 7,399
+  (`verified_mach` 7,182 → 7,184, `verified_mach_S` 215 → 215), 0 lost and 2 gained (`comm` of
   the accepted lists: `runtime.funcdata`, `runtime.checkFinalizersAndCleanups.func1`); fully
-  verified through `trim` 8,083 → 8,085; stock column 8,200 on both;
+  verified through `trim` 8,085 → 8,087; stock column 8,200 on both;
 - full-v11 `--check --verified --vstats`, measured on main 885ce778 (before #718; the next full
   run updates it): through `rewrite tern` 93,779 on both, through `trim` 84,965 → 85,060 (+95),
   0 lost per function (`comm` of the `verified` and `trim=verified` sets);
