@@ -30,13 +30,13 @@ the semantic phase of their ops (`GoFVTest/Proof/RuleClass.lean`; "Classificatio
 | --- | --: | --: | --: | --: |
 | P1 (integers, booleans) | 1,212 | 30 | 153 | 1,395 |
 | P2 (pointers, composites, `Load` values, `SelectN`) | 76 | 1 | 32 | 109 |
-| mem (memory ops) | 84 | 0 | 28 | 112 |
+| mem (memory ops) | 85 | 0 | 27 | 112 |
 | call | 12 | 0 | 35 | 47 |
 | float | 26 | 0 | 42 | 68 |
 | ptr (`ConstString`, `Addr`, `NilCheck`, pointer comparisons) | 18 | 0 | 5 | 23 |
 | phi | 5 | 0 | 0 | 5 |
 | block | 3 | 0 | 0 | 3 |
-| all | 1,436 | 31 | 295 | 1,762 |
+| all | 1,437 | 31 | 294 | 1,762 |
 
 *Proven*: a merged lemma (`Rule.Sound`, `Rule.SoundT`, `Rule.SoundW`, `Rule.MakeSel`,
 `Rule.LoadSel`, `Rule.Drop`, `Rule.IMakeSM`, `Rule.AddrCmp`, `BlockRule.Sound`,
@@ -70,7 +70,9 @@ turned into the same stores at the destination (`:1871`, `:1887`, `:1908`, `:192
 `:1964`) as tile segments (`RewriteCheck.tileSeg?`, `Seg.tileSeg_sound`) (#69, Phase1Tail8), and the
 `Load` of a zero-size type (`:1004`, `Rule.SoundT` with the frame fact `t.Size() == 0` → empty
 shape, `size0Vars`) and the `EqPtr`/`NeqPtr`/float variants of `Not (Eq …)`/`Not (Neq …)`
-(`:397`/`:398`) (#69, P1OptRules397).
+(`:397`/`:398`) (#69, P1OptRules397), and the write-back of what a `Load` of the same memory read
+at the same pointer, at a narrow integer or `bool` shape (`:919`), dropped in the forwarding layer
+(`RewriteCheck.writeBackOK`, `LoadFwd.writeBack_bytes`) (#69, Phase1Tail12).
 
 **False under the semantics, with the reason** (31, each marked `-- FALSE r_… #N` in its proof
 module; "Findings" in `rules.md`):
@@ -104,15 +106,17 @@ obstacle counts on full-v6, "Findings" in `rules.md` has the counterexamples):
 - The `CondSelect` folds (about 240 functions on the unmarked alternatives of `:2322–:2393`) and
   `divmod.rules:136–148` (59) are false as above.
 
-**Open** (295):
+**Open** (294):
 
 - `P1`/`P2` alternatives without a lemma (185): most never fire on the corpus; those that fire
   are in the `fire-full` table of `rules.md` (sole obstacles by rule).
-- `mem` (28) and `ptr` (5): memory and pointer rules inside the model without an effect
+- `mem` (27) and `ptr` (5): memory and pointer rules inside the model without an effect
   obligation proof: `Load` forwardings of other shapes (`:831–:877` but `:842`/`:851`/`:862`/`:875`,
   `:907`, `:912`; the integer and `bool` `Load`s of a `Zero` `:882–:902` are proven), `Move` chains and
-  `Move`/`Zero` of `Store`s (`:1744–:1824`; `:1740`/`:1742`/`:1743` and `:1871`–`:1964` are proven), dropped writes `:919`/`:924`/`:930`/`:937` (open:
-  the `not disjoint` class), `IsNonNil (Convert (Addr _) _)` (`:1690`; the pointer comparisons
+  `Move`/`Zero` of `Store`s (`:1744–:1824`; `:1740`/`:1742`/`:1743` and `:1871`–`:1964` are proven), the
+  write-backs through disjoint `Store`s `:924`/`:930`/`:937` (the write-back `:919` is proven at the
+  narrow integer and `bool` shapes; at the word shapes both are false in the model, as a convertible
+  pointer's fragments reload as its address word), `IsNonNil (Convert (Addr _) _)` (`:1690`; the pointer comparisons
   `:1646`–`:1676` are proven except the ones of two constants, `:1664`/`:1665`), and `ConstString` under
   `config.PtrSize == 4` (`:1013`, `:1017`; never true
   for linux/arm64).
