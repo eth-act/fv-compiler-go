@@ -950,6 +950,7 @@ import GoFV.Proof.Witness.FwdGrowPost
 import GoFV.Proof.Witness.FwdMalloc
 import GoFV.Proof.Witness.FwdNew
 import GoFV.Proof.Witness.FwdPtrCmp
+import GoFV.Proof.Witness.FwdWriteBack
 import GoFV.Proof.Witness.FwdZeroLoad
 import GoFV.Proof.Witness.FwdZeroStore
 import GoFV.Proof.Witness.FwdZeroStr
