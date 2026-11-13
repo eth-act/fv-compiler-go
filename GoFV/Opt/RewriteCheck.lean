@@ -164,12 +164,25 @@ def env (tabs : Tables) (M : Defs) (I : Inst) : PEnv where
   auxInt p := ((M.get? (I.at p)).map (·.auxInt)).getD 0
   aux p := ((M.get? (I.at p)).map (·.aux)).getD none
 
-/-- The oracle of the validator: an unmodelled boolean expression is `true` (so the oracle is
-`Oracle.BoolTyped`: every expression `exprTy` types `bool` gets a boolean), others `other`;
-result fields come from the built nodes (`fields`: per result node, its expressions and the
-built value). -/
-def oracle (vtys : List GoTy) (tabs : Tables) (nodes : List (RNode × Value)) : Oracle where
-  dv e := if exprTy [] e == .bool || exprTy vtys e == .bool then .bool true else .other
+/-- The subexpressions of a condition under an odd number of negations (through `&&`, `||`
+and `!`): the validators' oracles answer an unmodelled boolean there `false`, elsewhere `true`,
+so that a condition Go found true is true under the oracle too (any boolean answers are sound:
+the obligations quantify over every `Oracle.BoolTyped` oracle). `generic.rules:2338`, `:2342`
+(`!rewriteCondSelectIntoMath(config, op.Op, c) && rewriteCondSelectIntoMath(config,
+addToSub(op.Op), -c)`) need it. -/
+def negAtoms : Bool → GoFV.Rules.Expr → List GoFV.Rules.Expr
+  | neg, .unop .not y _ => negAtoms (!neg) y
+  | neg, .binop .land a b _ => negAtoms neg a ++ negAtoms neg b
+  | neg, .binop .lor a b _ => negAtoms neg a ++ negAtoms neg b
+  | neg, e => if neg then [e] else []
+
+/-- The oracle of the validator: an unmodelled boolean expression is `true`, or `false` if it is
+one of `negs` (`negAtoms` of the condition; so the oracle is `Oracle.BoolTyped`: every expression
+`exprTy` types `bool` gets a boolean), others `other`; result fields come from the built nodes
+(`fields`: per result node, its expressions and the built value). -/
+def oracle (vtys : List GoTy) (tabs : Tables) (negs : List GoFV.Rules.Expr)
+    (nodes : List (RNode × Value)) : Oracle where
+  dv e := if exprTy [] e == .bool || exprTy vtys e == .bool then .bool !(negs.contains e) else .other
   ty e := ((nodes.find? fun (n, _) => match n.ty with
       | some te => te == e | none => false).map fun (_, u) => tabs.ty u.type).getD .other
   auxInt e := ((nodes.find? fun (n, _) => match n.auxInt with
@@ -650,6 +663,77 @@ def nonNegOKD (tabs : Tables) (D : ID → Option Value) (I : Inst) (pat : Pat) :
     | none => true
   | none => true
 
+/-- The ops whose value is an integer or `poison` on any arguments (`Sem.evalPure`: `int1`,
+`int2`, `Shift.shift`, `Conv.const`, `Conv.boolToUint8`). -/
+def intTable : List Op :=
+  [.Const8, .Const16, .Const32, .Const64,
+   .Add8, .Add16, .Add32, .Add64, .Sub8, .Sub16, .Sub32, .Sub64, .Mul8, .Mul16, .Mul32, .Mul64,
+   .And8, .And16, .And32, .And64, .Or8, .Or16, .Or32, .Or64, .Xor8, .Xor16, .Xor32, .Xor64,
+   .Neg8, .Neg16, .Neg32, .Neg64, .Com8, .Com16, .Com32, .Com64,
+   .Lsh8x8, .Lsh8x16, .Lsh8x32, .Lsh8x64, .Lsh16x8, .Lsh16x16, .Lsh16x32, .Lsh16x64,
+   .Lsh32x8, .Lsh32x16, .Lsh32x32, .Lsh32x64, .Lsh64x8, .Lsh64x16, .Lsh64x32, .Lsh64x64,
+   .Rsh8x8, .Rsh8x16, .Rsh8x32, .Rsh8x64, .Rsh16x8, .Rsh16x16, .Rsh16x32, .Rsh16x64,
+   .Rsh32x8, .Rsh32x16, .Rsh32x32, .Rsh32x64, .Rsh64x8, .Rsh64x16, .Rsh64x32, .Rsh64x64,
+   .Rsh8Ux8, .Rsh8Ux16, .Rsh8Ux32, .Rsh8Ux64, .Rsh16Ux8, .Rsh16Ux16, .Rsh16Ux32, .Rsh16Ux64,
+   .Rsh32Ux8, .Rsh32Ux16, .Rsh32Ux32, .Rsh32Ux64, .Rsh64Ux8, .Rsh64Ux16, .Rsh64Ux32, .Rsh64Ux64,
+   .ZeroExt8to16, .ZeroExt8to32, .ZeroExt8to64, .ZeroExt16to32, .ZeroExt16to64, .ZeroExt32to64,
+   .SignExt8to16, .SignExt8to32, .SignExt8to64, .SignExt16to32, .SignExt16to64, .SignExt32to64,
+   .Trunc16to8, .Trunc32to8, .Trunc32to16, .Trunc64to8, .Trunc64to16, .Trunc64to32,
+   .CvtBoolToUint8]
+
+/-- `t` is an integer shape. -/
+def isIntTy (t : Sem.Ty) : Bool :=
+  match t with
+  | .int _ => true
+  | _ => false
+
+/-- `x` is an integer or `poison` in every evaluation as a term (`GoFV.Proof.Term.den`;
+`GoFV.Proof.Pass.Rewrite.intD_den`), with `k` levels: a term at an integer type whose op is in
+`intTable`, or a `CondSelect` or `Copy` of such values. Not a `Phi` or another atom: a 64-bit
+integer register may hold a pointer without an integer form (`Val.hasTy`). -/
+def intD (tabs : Tables) (D : ID → Option Value) : Nat → ID → Bool
+  | 0, _ => false
+  | k + 1, x =>
+    match D x with
+    | none => false
+    | some v =>
+      termOp v.op && isIntTy (tabs.ty v.type) &&
+      (intTable.contains v.op ||
+        (v.op == .CondSelect && match v.args[0]?, v.args[1]? with
+          | some a, some b => intD tabs D k a && intD tabs D k b
+          | _, _ => false) ||
+        (v.op == .Copy && match v.args[0]? with
+          | some a => intD tabs D k a
+          | none => false))
+
+/-- `intD` at a value of the integer type of width `w`: then every evaluation is an integer of
+width `w` or `poison`. -/
+def intDW (tabs : Tables) (D : ID → Option Value) (w : Sem.Width) (k : Nat) (x : ID) : Bool :=
+  match D x with
+  | some v => isIntW (tabs.ty v.type) w && intD tabs D k x
+  | none => false
+
+/-- The leaf `x` of a `CondSelect` into arithmetic is an integer of width `w` or `poison` in
+every evaluation: `intDW` at 64 bits (that shape may hold a pointer without an integer form);
+at a narrower width a value of that integer type suffices (`Term.Typed`: its shape has no
+pointer). -/
+def intLeafD (tabs : Tables) (D : ID → Option Value) (w : Sem.Width) (x : ID) : Bool :=
+  if w = .w64 then intDW tabs D .w64 nnFuel x
+  else match D x with
+    | some v => isIntW (tabs.ty v.type) w
+    | none => false
+
+/-- `GoFV.Proof.Rules.condMathFacts` of a `CondSelect` into arithmetic instance
+(`GoFV.Proof.Rules.condMath?`), decided on the instance's types `e` and the definitions `D`
+(those after the event): the shapes, and `intLeafD` of the leaf `x`. -/
+def condMathOKD (tabs : Tables) (D : ID → Option Value) (e : PEnv) (I : Inst) (r : Rule) :
+    Bool :=
+  match GoFV.Proof.Rules.condMath? r with
+  | none => true
+  | some (w, wc, q, px) =>
+    isIntW (e.ty []) w && isIntW (e.ty q) w && isIntW (e.ty px) w && isIntW (e.ty (1 :: q)) wc &&
+      intLeafD tabs D w (I.at px)
+
 /-- The rule event `(v, r, defs)` is a sound instance of `r` on `M`. The definition at `v` is
 `v`'s (its ID, which the result's nodes are compared with), and the matched values below the
 top are not `v` (no cyclic match). -/
@@ -669,7 +753,7 @@ def ruleOK (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : 
         let nodes := match r.result, defs with
           | .build ns, _ :: us => ns.zip us
           | _, _ => []
-        let or := oracle vtys tabs nodes
+        let or := oracle vtys tabs ((r.cond.map (negAtoms false)).getD []) nodes
         let ev := evalE vtys σ or e (@Pat.denT Sem.Addrs.fixed tabs e [] r.pat)
         I.tail.all (·.2 != v) &&
         consOK ev σ e I [] r.pat && wfOK e [] r.pat &&
@@ -684,7 +768,8 @@ def ruleOK (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : 
         resultOK tabs M ev or σ I r x defs &&
         nodes.all (fun (n, u) => frameNodeOK tabs ev e r.pat n u) &&
         condFrameOK tabs ev e I r.pat r.cond (GoFV.Proof.Rules.sameLeaves r) &&
-        nonNegOKD tabs (defs.foldl (fun M u => M.put u.id u) M).get? I r.pat r.cond
+        nonNegOKD tabs (defs.foldl (fun M u => M.put u.id u) M).get? I r.pat r.cond &&
+        condMathOKD tabs (defs.foldl (fun M u => M.put u.id u) M).get? e I r
 
 /-- `w` is `a`, or reached from `a` through at most `n` `Copy`s each compatible with its
 argument (`copyCompat`: the identity on its argument's value). -/

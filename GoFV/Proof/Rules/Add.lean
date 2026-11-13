@@ -25,21 +25,6 @@ variable [GoFV.SSA.Sem.Addrs]
 -- FALSE r_generic_2169_3 #90
 -/
 
-/-! False rules (`docs/proofs/rules.md`, "Findings"); `scripts/rule-proofs.py table` reads these lines.
-`CondSelect` into `Sub` (`generic.rules:2342`): at `bool = false` the matched value is `x`, the
-result `x - 0`, `poison` when `x` is an address-less pointer in a 64-bit integer register
-(#69, RuleProofs10).
--- FALSE r_generic_2342 #69
--- FALSE r_generic_2342_2 #69
--- FALSE r_generic_2342_3 #69
-`generic.rules:2325` (`CondSelect` into `Add` and `Mul` by the condition): the same at
-`bool = false` (`x + c*0`), and the leaf `x` of the narrower forms is not constrained to the
-`Add`'s width (RuleProofs17).
--- FALSE r_generic_2325 #69
--- FALSE r_generic_2325_2 #69
--- FALSE r_generic_2325_3 #69
--/
-
 namespace GoFV.Proof.Rules
 
 /-- `generic.rules:121`: `(Add16 (Const16 [c]) (Const16 [d])) => (Const16 [c+d])` -/

@@ -1,9 +1,27 @@
 # Design review: the Phase 1 rule classes false under the semantics (#69)
 
-Status: design review, nothing implemented. Issue #69 (ranking: comment 6865422368). The
-recorded findings are in `docs/proofs/rules.md` ("Findings"); the hard criteria for a semantics
-change are those of `docs/plans/blob-regs.md` §10. **Every recommendation below waits for the
-integrator's decision (§9).**
+Status: design review (#732), decided. Issue #69 (ranking: comment 6865422368). The recorded
+findings are in `docs/proofs/rules.md` ("Findings"); the hard criteria for a semantics change are
+those of `docs/plans/blob-regs.md` §10.
+
+**Decisions (integrator, 2026-11-13; #69):**
+1. **`condselect` (U): approved and implemented** (§4): the rule-scoped `condMathFacts` in
+   `FrameOK`, checked by `RewriteCheck.condMathOKD` (`intLeafD`: `intD` at 64 bits); the 56 rules
+   are `Rule.SoundT` lemmas (`GoFV/Proof/Rules/CondMath.lean`). The validator's oracle answers an
+   unmodelled boolean under a negation `false` (`negAtoms`, as the lowering validator's), which
+   `:2338`/`:2342`/`:2351` (`!rewriteCondSelectIntoMath(…) && rewriteCondSelectIntoMath(…)`)
+   need. Includes the probe fix of §8.1.
+2. **`rotate` (`0 ≤ c`): approved**, low priority.
+3. **`divmod`: C1 approved**; branch facts deferred.
+4. **`:2159` S3: approved** under the hard criteria, as a dedicated semantics PR then the
+   validator PR; `PAUTO` poisoning unchanged (Phase 3's MergeLocals keeps its lifetime fact), the
+   lowered/Phase 3 `VarDef` semantics kept consistent, the dse restriction losing no function.
+5. **`memeq`: the provenance-free byte model is deferred** (a foundational memory-model change of
+   #290's scale, 16–26 agent-days, with `Mem.Refines` implications; up to 988 Phase 1 functions,
+   607 end to end at stock; no design review now). The read-only loads and `:1628` go ahead.
+6. **`convert`: never.** `:1071`/`:1075` are false only on inputs that violate unsafe rule (3);
+   M1 is rejected (the source would be less defined).
+7. **Probe fix (§8.1): yes**, with item 1.
 
 ## 1. Scope and method
 

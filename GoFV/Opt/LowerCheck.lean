@@ -105,16 +105,6 @@ def envL (tabs : Tables) (M : Defs) (I : Inst) : PEnv where
   auxInt p := ((M.get? (I.at p)).map (·.auxInt)).getD 0
   aux p := ((M.get? (I.at p)).map (·.aux)).getD none
 
-/-- The subexpressions of a condition under an odd number of negations (through `&&`, `||`
-and `!`): the validator's oracle answers an unmodelled boolean there `false`, elsewhere `true`,
-so that a condition Go found true is true under the oracle too (any boolean answers are sound:
-the obligations quantify over every `Oracle.BoolTyped` oracle). -/
-def negAtoms : Bool → Expr → List Expr
-  | neg, .unop .not y _ => negAtoms (!neg) y
-  | neg, .binop .land a b _ => negAtoms neg a ++ negAtoms neg b
-  | neg, .binop .lor a b _ => negAtoms neg a ++ negAtoms neg b
-  | neg, e => if neg then [e] else []
-
 /-- The validator's oracle (`RewriteCheck.oracle`) with the built nodes' lowered shapes and the
 unmodelled booleans of `negs` answered `false`. -/
 def oracleL (vtys : List GoTy) (tabs : Tables) (negs : List Expr) (nodes : List (RNode × Value)) :

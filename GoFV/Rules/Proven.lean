@@ -23,7 +23,7 @@ namespace GoFV.Rules.Proven
 
 open GoFV.Rules
 
-/-- `generic.rules` restricted to its 1233 proven value rules, 3 proven block rules, 9
+/-- `generic.rules` restricted to its 1289 proven value rules, 3 proven block rules, 9
 nil-check eliminations, 66 Load-of-Store forwardings, 1 struct-load
 expansions, 2 struct-store splits, 23 segment rules and 7 `Phi`
 rules validated per instance. -/
@@ -48,7 +48,7 @@ def generic : RuleSet where
     (.Com32, [Generated.Generic.r_generic_651_2, Generated.Generic.r_generic_652_2, Generated.Generic.r_generic_679_2]),
     (.Com64, [Generated.Generic.r_generic_651_3, Generated.Generic.r_generic_652_3, Generated.Generic.r_generic_679_3]),
     (.Com8, [Generated.Generic.r_generic_651_4, Generated.Generic.r_generic_652_4, Generated.Generic.r_generic_679_4]),
-    (.CondSelect, [Generated.Generic.r_generic_292, Generated.Generic.r_generic_293, Generated.Generic.r_generic_294]),
+    (.CondSelect, [Generated.Generic.r_generic_292, Generated.Generic.r_generic_293, Generated.Generic.r_generic_294, Generated.Generic.r_generic_2322, Generated.Generic.r_generic_2325, Generated.Generic.r_generic_2325_2, Generated.Generic.r_generic_2325_3, Generated.Generic.r_generic_2329, Generated.Generic.r_generic_2332, Generated.Generic.r_generic_2332_2, Generated.Generic.r_generic_2332_3, Generated.Generic.r_generic_2338, Generated.Generic.r_generic_2342, Generated.Generic.r_generic_2342_2, Generated.Generic.r_generic_2342_3, Generated.Generic.r_generic_2347, Generated.Generic.r_generic_2351, Generated.Generic.r_generic_2351_2, Generated.Generic.r_generic_2351_3, Generated.Generic.r_generic_2355, Generated.Generic.r_generic_2355_2, Generated.Generic.r_generic_2355_3, Generated.Generic.r_generic_2355_4, Generated.Generic.r_generic_2357, Generated.Generic.r_generic_2357_2, Generated.Generic.r_generic_2357_3, Generated.Generic.r_generic_2357_4, Generated.Generic.r_generic_2360, Generated.Generic.r_generic_2360_2, Generated.Generic.r_generic_2360_3, Generated.Generic.r_generic_2360_4, Generated.Generic.r_generic_2361, Generated.Generic.r_generic_2361_2, Generated.Generic.r_generic_2361_3, Generated.Generic.r_generic_2361_4, Generated.Generic.r_generic_2363, Generated.Generic.r_generic_2363_2, Generated.Generic.r_generic_2363_3, Generated.Generic.r_generic_2363_4, Generated.Generic.r_generic_2364, Generated.Generic.r_generic_2364_2, Generated.Generic.r_generic_2364_3, Generated.Generic.r_generic_2364_4, Generated.Generic.r_generic_2368, Generated.Generic.r_generic_2371, Generated.Generic.r_generic_2371_2, Generated.Generic.r_generic_2371_3, Generated.Generic.r_generic_2375, Generated.Generic.r_generic_2378, Generated.Generic.r_generic_2378_2, Generated.Generic.r_generic_2378_3, Generated.Generic.r_generic_2383, Generated.Generic.r_generic_2386, Generated.Generic.r_generic_2386_2, Generated.Generic.r_generic_2386_3, Generated.Generic.r_generic_2390, Generated.Generic.r_generic_2393, Generated.Generic.r_generic_2393_2, Generated.Generic.r_generic_2393_3]),
     (.ConstInterface, [Generated.Generic.r_generic_1057]),
     (.ConstSlice, [Generated.Generic.r_generic_1044]),
     (.ConstString, [Generated.Generic.r_generic_1015, Generated.Generic.r_generic_1022]),

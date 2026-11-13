@@ -52,15 +52,24 @@ def variants : List (String × RuleSet × RuleSet × Interp.Table × Interp.Tabl
      divisibleProvenTable),
    ("divmod", Generated.Divmod.ruleSet, Proven.divmod, divmodTable, divmodProvenTable)]
 
-/-- The proven set `p` (its value and block rules and its
-per-instance validated tables) with the rule `extra` of the full set `s` added as a value or block
-rule, in `s`'s matching order. -/
+/-- A value rule's identity: the width variants of one source rule share their `key`. -/
+def ident (r : Rule) : String := reprStr r
+
+/-- The identities of the proven value rules. -/
+def provenIdents : Std.HashSet String :=
+  [Proven.generic, Proven.divisible, Proven.divmod].foldl
+    (fun s p => p.values.foldl (fun s (_, rs) => rs.foldl (fun s r => s.insert (ident r)) s) s) {}
+
+/-- The proven set `p` (its value and block rules and its per-instance validated tables) with
+the rule `extra` of the full set `s` added as a value or block rule, in `s`'s matching order.
+A value rule of `s` is kept if it is proven itself (`ident`), not if another width variant of
+its source rule is (a lookup by `key` would replace `(Not (Neq8 x y))` by the proven `Neq64`
+variant). -/
 def withExtra (s p : RuleSet) (extra : String) : Interp.Table :=
   Interp.Table.ofRuleSet
     { p with
       values := s.values.map fun (o, rs) =>
-        (o, rs.filterMap fun r =>
-          if key r == extra then some r else (p.rulesOf o).find? (key · == key r))
+        (o, rs.filter fun r => key r == extra || provenIdents.contains (ident r))
       blocks := s.blocks.map fun (k, rs) =>
         (k, rs.filterMap fun r =>
           if blockKey r == extra then some r

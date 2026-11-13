@@ -67,7 +67,7 @@ def ruleWhy (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) :
         let nodes := match r.result, defs with
           | .build ns, _ :: us => ns.zip us
           | _, _ => []
-        let or := oracle vtys tabs nodes
+        let or := oracle vtys tabs ((r.cond.map (negAtoms false)).getD []) nodes
         let ev := evalE vtys σ or e (Pat.den e [] r.pat)
         if !consOK ev σ e I [] r.pat then "cons"
         else if !wfOK e [] r.pat then "wf"
@@ -82,6 +82,9 @@ def ruleWhy (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) :
         else if !resultOK tabs M ev or σ I r x defs then "result"
         else if !nodes.all (fun (n, u) => frameNodeOK tabs ev e r.pat n u) then "frame"
         else if !condFrameOK tabs ev e I r.pat r.cond (GoFV.Proof.Rules.sameLeaves r) then "condFrame"
+        else if !condMathOKD tabs (defs.foldl (fun (M : Defs) (u : Value) => M.put u.id u) M).get?
+            e I r then
+          "condMath"
         else "ok"
     s!"{r.loc.file}:{r.loc.line} {rs}"
 
