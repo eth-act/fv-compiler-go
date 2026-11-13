@@ -723,7 +723,7 @@ theorem vk37_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     (hicall : ICallOKAt osp H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
     (hwb : WbOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
     (hgetg : GetGOK E v) (hmeq : MemEqOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m)
-    (hs : stepLoc env lc s v = .ok s') :
+    (hmp : MemEqPre lc s v) (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G28Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp ∧
@@ -741,7 +741,7 @@ theorem vk37_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
   cases hVK with
   | g36 _ _ _ _ _ hVK36 =>
     exact vk36_step hE F hhome hcf hv hVK36 hvs htemp hj hj' hreads hm hinv hL hmem hpre hcall
-      hcallz hicall hwb hclo hgetg hmeq hs
+      hcallz hicall hwb hclo hgetg hmeq hmp hs
   | bin hop hsz hao hbo hro h8 hcx hcy =>
     obtain ⟨r2, hvh, -, -, -⟩ := resObj_spec hro
     obtain ⟨m', h1, h2, h3, h4, h5⟩ := g37_bin (H := H) F hm hinv.core hinv.slots
@@ -781,7 +781,8 @@ theorem g37_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
     (hcall : CallOK H E g L lc s s' v m) (hcallz : CallOKZ H E g L lc s s' v m)
     (hicall : ICallOK H E L ret lc s s' v m)
     (hwb : WbOK H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
-    (hmeq : MemEqOK H E g L lc s v m) (hs : stepLoc env lc s v = .ok s') :
+    (hmeq : MemEqOK H E g L lc s v m) (hmp : MemEqPre lc s v)
+    (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G28Env lc g L ps ret tab E' ∧ PStar H L ps.toList ret m m' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' ∧
       UOKL m' (uL35 lc (uIn35 lc bid) blk (i + 1)) := by
@@ -789,7 +790,7 @@ theorem g37_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
   | false =>
     obtain ⟨E', m', hx, hE', h1, h2, h3, -⟩ := g33_value (checkG33_of_37 hl hc) hE hbid hb hi hv
       hen hm hinv (by rw [uL31_nl hl]; intro e he; cases he) hpre hcall hcallz hicall hwb hclo
-      hgetg hmeq hs
+      hgetg hmeq hmp hs
     refine ⟨E', m', hx, hE', h1, h2, h3, ?_⟩
     rw [uL35_nl hl]
     intro e he
@@ -826,7 +827,7 @@ theorem g37_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
   rw [kAt_succ hi hv]
   exact vk37_step hE0 F hhome hcf hv hVK hvs htemp hj hj' hreads hm hinv hu
     (fun x hop hx => movdOK35_spec hmovd hbid hb hi hv hop hx)
-    hpre hcall hcallz hicall hwb hclo hgetg hmeq hs
+    hpre hcall hcallz hicall hwb hclo hgetg hmeq hmp hs
 
 /-- A nil check of G37's kinds is G7's. -/
 theorem vk37_nil {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK37 lc g v kd)

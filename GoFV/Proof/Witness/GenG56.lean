@@ -1814,7 +1814,8 @@ theorem genG56_witness :
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
     (GenG10.icallOK_ne (by rw [hop]; rfl))
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
-    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide))) hs1
+    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
+    (fun h => absurd h (hne _ (by decide))) hs1
   have hV : (m1.v 0).setWidth 64 = 0x7ff0000000000000 :=
     (hm1'.regs 31 _ hr31).2 0 rfl
   exact ⟨h54, rfl, s1, E1, m1, hs1, hr31, hx1, hE1, hp1, hm1', hV⟩

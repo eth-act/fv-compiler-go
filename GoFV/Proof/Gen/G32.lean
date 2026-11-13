@@ -1040,7 +1040,7 @@ theorem vk32_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     (hicall : ICallOKAt osp H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
     (hwb : WbOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
     (hgetg : GetGOK E v) (hmeq : MemEqOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m)
-    (hs : stepLoc env lc s v = .ok s') :
+    (hmp : MemEqPre lc s v) (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G28Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp ∧ UOK m' (uEntry lc v) := by
@@ -1057,7 +1057,7 @@ theorem vk32_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
   cases hVK with
   | g28 _ _ _ _ _ hVK28 =>
     exact vk28_step hE F hhome hcf hv hVK28 hvs htemp hj hj' hreads hm hinv hu hpre hcall hcallz
-      hicall hwb hclo hgetg hmeq hs
+      hicall hwb hclo hgetg hmeq hmp hs
   | bin hop hsz hao hbo hro hw =>
     obtain ⟨r2, hvh, -, -, -⟩ := resObj_spec hro
     obtain ⟨m', h1, h2, h3, h4, -⟩ := g32_bin (H := H) F hm hinv.core hinv.slots
@@ -1114,7 +1114,7 @@ theorem vk32_stepU {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     (hicall : ICallOKAt osp H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
     (hwb : WbOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
     (hgetg : GetGOK E v) (hmeq : MemEqOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m)
-    (hs : stepLoc env lc s v = .ok s') :
+    (hmp : MemEqPre lc s v) (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G28Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp ∧
@@ -1128,7 +1128,7 @@ theorem vk32_stepU {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     have hue : uEntry lc v = none := by simp only [uEntry, hnl]
     obtain ⟨E', m', hx, hE', hp, hlm, hinv', -⟩ := vk32_step hE F hhome hcf hv hVK' hvs htemp hj
       hj' hreads hm hinv (fun x hop _ => absurd hop (by rintro (h | h) <;> contradiction)) hpre
-      hcall hcallz hicall hwb hclo hgetg hmeq hs
+      hcall hcallz hicall hwb hclo hgetg hmeq hmp hs
     refine ⟨E', m', hx, hE', hp, hlm, hinv', ?_⟩
     rw [uStepL_other hue h1 h2]
     intro e he
@@ -1136,7 +1136,7 @@ theorem vk32_stepU {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
   cases hVK with
   | g28 _ _ _ _ _ hVK28 =>
     exact vk29_step hE F hhome hcf hv hVK28 hvs htemp hj hj' hreads hm hinv hL hmem hpre hcall
-      hcallz hicall hwb hclo hgetg hmeq hs
+      hcallz hicall hwb hclo hgetg hmeq hmp hs
   | bin hop hsz hao hbo hro hw =>
     obtain ⟨-, h1, h2, -, -⟩ := aluOp32_ne (aluOp32_bin hop)
     exact fin (.bin hop hsz hao hbo hro hw) h1 h2 (narrowLd?_alu32 (aluOp32_bin hop))
@@ -1168,14 +1168,15 @@ theorem g32_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
     (hcall : CallOK H E g L lc s s' v m) (hcallz : CallOKZ H E g L lc s s' v m)
     (hicall : ICallOK H E L ret lc s s' v m)
     (hwb : WbOK H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
-    (hmeq : MemEqOK H E g L lc s v m) (hs : stepLoc env lc s v = .ok s') :
+    (hmeq : MemEqOK H E g L lc s v m) (hmp : MemEqPre lc s v)
+    (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G28Env lc g L ps ret tab E' ∧ PStar H L ps.toList ret m m' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' ∧
       UOKL m' (uL lc blk (i + 1)) := by
   cases hl : lc.ctx.f.lowered with
   | false =>
     exact g30_value (checkG30_of_32 hl hc) hE hbid hb hi hv hen hm hinv hu hpre hcall hcallz
-      hicall hwb hclo hgetg hmeq hs
+      hicall hwb hclo hgetg hmeq hmp hs
   | true =>
   rw [uL_succ hi hv]
   have hE0 := hE
@@ -1208,7 +1209,7 @@ theorem g32_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
   rw [kAt_succ hi hv]
   exact vk32_stepU hE0 F hhome hcf hv hVK hvs htemp hj hj' hreads hm hinv hu
     (fun x hop hx => movdOK29_spec hmovd hbid hb hi hv hop hx)
-    hpre hcall hcallz hicall hwb hclo hgetg hmeq hs
+    hpre hcall hcallz hicall hwb hclo hgetg hmeq hmp hs
 
 /-- A nil check of G32's kinds is G7's. -/
 theorem vk32_nil {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK32 lc g v kd)

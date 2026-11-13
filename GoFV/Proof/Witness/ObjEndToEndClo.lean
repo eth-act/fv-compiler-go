@@ -640,9 +640,9 @@ theorem g54Pre_load {lc : LocCtx} {s : LocState} {v : Value} (hop : v.op = .ARM6
   all_goals exact absurd h (hne _ (by decide))
 
 theorem pre64_load {lc : LocCtx} {s : LocState} {v : Value} (hop : v.op = .ARM64MOVDload) :
-    FReloadPre lc s v ∧ QLoadPre lc s v :=
-  ⟨fun h => absurd (h.symm.trans hop) (by decide), fun h => absurd (h.symm.trans hop) (by decide),
-    fun h => absurd (h.symm.trans hop) (by decide)⟩
+    FReloadPre lc s v ∧ QLoadPre lc s v ∧ MemEqPre lc s v :=
+  ⟨fun h => absurd (h.symm.trans hop) (by decide), ⟨fun h => absurd (h.symm.trans hop) (by decide),
+    fun h => absurd (h.symm.trans hop) (by decide)⟩, fun h => absurd (h.symm.trans hop) (by decide)⟩
 
 /-- A run from value `i0 > 0` of a block no edge enters is at its start state when back at
 `(b0, i0)` (`ObjEndToEndAtSP.lreach_start`, which is stated at that witness's layout). -/

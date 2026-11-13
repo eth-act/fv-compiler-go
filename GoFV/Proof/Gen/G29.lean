@@ -288,7 +288,7 @@ theorem vk29_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     (hicall : ICallOKAt osp H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
     (hwb : WbOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
     (hgetg : GetGOK E v) (hmeq : MemEqOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m)
-    (hs : stepLoc env lc s v = .ok s') :
+    (hmp : MemEqPre lc s v) (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G28Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp ∧
@@ -314,7 +314,7 @@ theorem vk29_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
       (fun x hop hx => by
         obtain ⟨r, c, hr, hc, he⟩ := hmem x hop hx
         exact ⟨r, c, hr, hc, hL _ he⟩)
-      hpre hcall hcallz hicall hwb hclo hgetg hmeq hs
+      hpre hcall hcallz hicall hwb hclo hgetg hmeq hmp hs
     refine ⟨E', m', hx, hE', hp, hlm, hinv', ?_⟩
     rw [uStepL_other hue h1 h2]
     intro e he
@@ -334,7 +334,8 @@ theorem g29_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
     (hcall : CallOKAt osp H E g L lc s s' v m) (hcallz : CallOKZAt osp H E g L lc s s' v m)
     (hicall : ICallOKAt osp H E L ret lc s s' v m)
     (hwb : WbOKAt osp H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
-    (hmeq : MemEqOKAt osp H E g L lc s v m) (hs : stepLoc env lc s v = .ok s') :
+    (hmeq : MemEqOKAt osp H E g L lc s v m) (hmp : MemEqPre lc s v)
+    (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G28Env lc g L ps ret tab E' ∧ PStar H L ps.toList ret m m' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' osp ∧
       UOKL m' (uL lc blk (i + 1)) := by
@@ -342,7 +343,7 @@ theorem g29_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
   cases hl : lc.ctx.f.lowered with
   | false =>
     obtain ⟨E', m', hx, hE', h1, h2, h3, -⟩ := g28_value (checkG28_of_29 hl hc) hE hbid hb hi hv
-      hen hm hinv (uok_of_uokl hu) hpre hcall hcallz hicall hwb hclo hgetg hmeq hs
+      hen hm hinv (uok_of_uokl hu) hpre hcall hcallz hicall hwb hclo hgetg hmeq hmp hs
     refine ⟨E', m', hx, hE', h1, h2, h3, ?_⟩
     have hnl : checkNL lc ps bstart g = .ok (tab, kt) := by simpa [checkG29, hl] using hc
     have hops := nl_ops hnl hbid hb hi hv hen
@@ -382,7 +383,7 @@ theorem g29_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
   rw [kAt_succ hi hv]
   exact vk29_step hE0 F hhome hcf hv hVK hvs htemp hj hj' hreads hm hinv hu
     (fun x hop hx => movdOK29_spec hmovd hbid hb hi hv hop hx)
-    hpre hcall hcallz hicall hwb hclo hgetg hmeq hs
+    hpre hcall hcallz hicall hwb hclo hgetg hmeq hmp hs
 
 /-- **G29, nil panics.** `g28_nilPanic`'s statement over `checkG29`. -/
 theorem g29_nilPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}

@@ -134,14 +134,15 @@ theorem g30_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
     (hcall : CallOKAt osp H E g L lc s s' v m) (hcallz : CallOKZAt osp H E g L lc s s' v m)
     (hicall : ICallOKAt osp H E L ret lc s s' v m)
     (hwb : WbOKAt osp H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
-    (hmeq : MemEqOKAt osp H E g L lc s v m) (hs : stepLoc env lc s v = .ok s') :
+    (hmeq : MemEqOKAt osp H E g L lc s v m) (hmp : MemEqPre lc s v)
+    (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G28Env lc g L ps ret tab E' ∧ PStar H L ps.toList ret m m' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' osp ∧
       UOKL m' (uL lc blk (i + 1)) := by
   cases hl : lc.ctx.f.lowered with
   | true =>
     exact g29_value (checkG30_lowered hl hc) hE hbid hb hi hv hen hm hinv hu hpre hcall hcallz
-      hicall hwb hclo hgetg hmeq hs
+      hicall hwb hclo hgetg hmeq hmp hs
   | false =>
   rw [uL_succ hi hv]
   have hE0 := hE

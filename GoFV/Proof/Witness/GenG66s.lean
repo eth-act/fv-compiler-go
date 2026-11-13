@@ -2281,6 +2281,7 @@ theorem genG66s_witness :
     (fun _ _ _ _ _ _ _ _ _ _ hn => by rw [hop] at hn; cases hn)
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
+    (fun h => absurd h (hne _ (by decide)))
     (fun h => by cases h) (fun h => absurd h (hne _ (by decide)))
     (fun h => absurd h (hne _ (by decide)))
     ⟨fun h => absurd h (hne _ (by decide)), fun h => absurd h (hne _ (by decide))⟩ hs1

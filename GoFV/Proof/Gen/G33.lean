@@ -506,7 +506,7 @@ theorem vk33_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     (hicall : ICallOKAt osp H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
     (hwb : WbOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
     (hgetg : GetGOK E v) (hmeq : MemEqOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m)
-    (hs : stepLoc env lc s v = .ok s') :
+    (hmp : MemEqPre lc s v) (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G28Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp ∧
@@ -527,7 +527,7 @@ theorem vk33_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
   cases hVK with
   | g32 _ _ _ _ hVK32 =>
     exact vk31_step hE F hhome hcf hv hVK32 hvs htemp hj hj' hreads hm hinv hL hmem hpre hcall
-      hcallz hicall hwb hclo hgetg hmeq hs
+      hcallz hicall hwb hclo hgetg hmeq hmp hs
   | un hop hsz hao hro h8 hca =>
     obtain ⟨r2, hvh, -, -, -⟩ := resObj_spec hro
     obtain ⟨m', h1, h2, h3, h4, -⟩ := g33_un (H := H) F hm hinv.core hinv.slots
@@ -566,14 +566,15 @@ theorem g33_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
     (hcall : CallOKAt osp H E g L lc s s' v m) (hcallz : CallOKZAt osp H E g L lc s s' v m)
     (hicall : ICallOKAt osp H E L ret lc s s' v m)
     (hwb : WbOKAt osp H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
-    (hmeq : MemEqOKAt osp H E g L lc s v m) (hs : stepLoc env lc s v = .ok s') :
+    (hmeq : MemEqOKAt osp H E g L lc s v m) (hmp : MemEqPre lc s v)
+    (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G28Env lc g L ps ret tab E' ∧ PStar H L ps.toList ret m m' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' osp ∧
       UOKL m' (uL31 lc (uIn lc bid) blk (i + 1)) := by
   cases hl : lc.ctx.f.lowered with
   | false =>
     exact g31_value (checkG31_of_33 hl hc) hE hbid hb hi hv hen hm hinv hu hpre hcall hcallz
-      hicall hwb hclo hgetg hmeq hs
+      hicall hwb hclo hgetg hmeq hmp hs
   | true =>
   rw [uL31_succ hl hi hv]
   have hE0 := hE
@@ -606,7 +607,7 @@ theorem g33_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
   rw [kAt_succ hi hv]
   exact vk33_step hE0 F hhome hcf hv hVK hvs htemp hj hj' hreads hm hinv hu
     (fun x hop hx => movdOK31_spec hmovd hbid hb hi hv hop hx)
-    hpre hcall hcallz hicall hwb hclo hgetg hmeq hs
+    hpre hcall hcallz hicall hwb hclo hgetg hmeq hmp hs
 
 /-- A nil check of G33's kinds is G7's. -/
 theorem vk33_nil {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK33 lc g v kd)

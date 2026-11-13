@@ -240,6 +240,7 @@ theorem vk48_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     (hwb : WbOKAt true H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
     (hgetg : GetGOK E v)
     (hmeq : MemEqOKAt true H E g (Link.byId sym text az ez ps.toList) lc s v m)
+    (hmp : MemEqPre lc s v)
     (hcallk : CallOKStk H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G49Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
@@ -249,7 +250,7 @@ theorem vk48_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
   cases hVK with
   | g57 hVK57 =>
     exact vk57_step hE F hhome hcf hv hVK57 hvs hloop hj hj' hreads hm hinv hL hmem hpre hcall
-      hcallz hicall hwb hclo hgetg hmeq hs
+      hcallz hicall hwb hclo hgetg hmeq hmp hs
   | call htemp hop hcall' hcr hnd _ _ _ h16 hlen hargs hfa hres hct =>
     have hR := kread_of_reads hreads
     have hE28 := hE.env
@@ -344,7 +345,8 @@ theorem g48L_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     (hcallz : CallOKZAt E.outSP H E g L lc s s' v m)
     (hicall : ICallOKAt E.outSP H E L ret lc s s' v m)
     (hwb : WbOKAt E.outSP H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
-    (hmeq : MemEqOKAt E.outSP H E g L lc s v m) (hcallk : CallOKStk H E g L lc s s' v m)
+    (hmeq : MemEqOKAt E.outSP H E g L lc s v m) (hmp : MemEqPre lc s v)
+    (hcallk : CallOKStk H E g L lc s s' v m)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G49Env lc g L ps ret tab E' ∧ PStar H L ps.toList ret m m' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' E.outSP ∧
@@ -393,7 +395,7 @@ theorem g48L_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   rw [kAt_succ hi hv]
   exact vk48_step hE0 F hhome hcf hv hVK hvs hloop hj hj' hreads hm hinv hu
     (fun x hop hx => movdOK35_spec hmovd hbid hb hi hv hop hx)
-    hpre hsp hosp hcall hcallz hicall hwb hclo hgetg hmeq hcallk hs
+    hpre hsp hosp hcall hcallz hicall hwb hclo hgetg hmeq hmp hcallk hs
 
 /-- `InitMem` under G48's check: `g53L_initMemS`'s statement over `checkG48L`, `SPInv` kept by
 `spHomes48`. -/
@@ -610,14 +612,14 @@ theorem g48_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     (hicall : ICallOKAt E.outSP H E L ret (liveCtx lc) s s' v m)
     (hwb : WbOKAt E.outSP H E g L (liveCtx lc) s v m) (hclo : CloOK E s v m)
     (hgetg : GetGOK E v) (hmeq : MemEqOKAt E.outSP H E g L (liveCtx lc) s v m)
-    (hcallk : CallOKStk H E g L (liveCtx lc) s s' v m)
+    (hmp : MemEqPre (liveCtx lc) s v) (hcallk : CallOKStk H E g L (liveCtx lc) s s' v m)
     (hs : stepLoc env (liveCtx lc) s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G49Env (liveCtx lc) g L ps ret tab E' ∧
       PStar H L ps.toList ret m m' ∧ LocMatch E' s' bid (i + 1) m' ∧
       G3Inv E' (liveCtx lc) (kAt (liveCtx lc) kt bid blk (i + 1)) s' E.outSP ∧ SPInv E' s' ∧
       UOKL m' (uL35 (liveCtx lc) (uIn35 (liveCtx lc) bid) blk (i + 1)) :=
   g48L_value (checkG48_spec hc).2 hE hl hbid hb hi hv hen hm hinv hsp hosp hu hpre hcall hcallz
-    hicall hwb hclo hgetg hmeq hcallk hs
+    hicall hwb hclo hgetg hmeq hmp hcallk hs
 
 /-- **G48, `InitMem`.** `g53_initMemS`'s statement over `checkG48`, `SPInv` kept by the checker's
 `spHomes48`. -/

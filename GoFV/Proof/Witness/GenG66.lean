@@ -1978,6 +1978,7 @@ theorem genG66_witness :
     (fun _ _ _ _ _ _ _ _ _ _ hn => by rw [hop5] at hn; cases hn)
     (fun h => absurd h (hne5 _ (by decide))) (fun h => absurd h (hne5 _ (by decide)))
     (fun h => absurd h (hne5 _ (by decide))) (fun h => absurd h (hne5 _ (by decide)))
+    (fun h => absurd h (hne5 _ (by decide)))
     (fun h => by cases h) (argOK0 harg hid5) (fun h => absurd h (hne5 _ (by decide)))
     ⟨fun h => absurd h (hne5 _ (by decide)), fun h => absurd h (hne5 _ (by decide))⟩ hs1
   -- the slot's bytes in `m1`
@@ -2022,6 +2023,7 @@ theorem genG66_witness :
     (fun _ _ _ _ _ _ _ _ _ _ hn => by rw [hop2] at hn; cases hn)
     (fun h => absurd h (hne2 _ (by decide))) (fun h => absurd h (hne2 _ (by decide)))
     (fun h => absurd h (hne2 _ (by decide))) (fun h => absurd h (hne2 _ (by decide)))
+    (fun h => absurd h (hne2 _ (by decide)))
     (fun h => by cases h) (fun h => absurd h (hne2 _ (by decide))) hfr
     ⟨fun h => absurd h (hne2 _ (by decide)), fun h => absurd h (hne2 _ (by decide))⟩ hs3
   have hx0 : (m3.x 0).setWidth 32 = 7 := by

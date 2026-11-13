@@ -178,8 +178,9 @@ theorem roRun_nil {g : G2In} {env : Env} {lc : LocCtx} {b0 : ID} {i0 : Nat} {s0 
 `g64L_value` at a value whose step succeeds (`G54Pre`: `G53Pre`, that is `G51Pre` (G49 and G52
 adding none: `G50Pre` (`G46Pre`, G47 adding none: `G38Pre`, `CmpPre` and `FLoadPre`; and G50's
 `PairPre50`) and G51's `Pre51a`) and G53's `Pre53a`; and G54's `Pre54a` and `Pre54b`; G55–G62
-adding none; G63's `FReloadPre` (a float reload reads no pointer without an integer form) and
-G64's `QLoadPre` (a 128-bit load reads valid bytes);
+adding none; G63's `FReloadPre` (a float reload reads no pointer without an integer form),
+G64's `QLoadPre` (a 128-bit load reads valid bytes) and G28's `MemEqPre` (the bytes a
+`LoweredMemEq` compares differ, if at all, where the machine sees it);
 `GetGOK` and the trusted contracts `CallOK`,
 `CallOKZ`, `ICallOK`, `WbOK`, `CloOK`, `MemEqOK` at every `LocMatch`ed machine state of an
 activation extending `E0`; nothing at a step that panics, which `RunPanicPre`
@@ -191,7 +192,8 @@ def RunPre (env : Env) (H : Hooks) (lc : LocCtx) (g : G2In) (L : Link) (ret : Bi
     (∀ id v, blk.values[i]? = some id → lc.ctx.f.value? id = some v →
       (entryOp24 v.op = false ∨ (v.op = .InitMem ∧ lc.ctx.f.lowered = true)) ∧
       ∀ s', stepLoc env lc s v = .ok s' →
-        (G54Pre lc s v ∧ FReloadPre lc s v ∧ QLoadPre lc s v) ∧ ∀ E m, E0.Extends E →
+        (G54Pre lc s v ∧ FReloadPre lc s v ∧ QLoadPre lc s v ∧ MemEqPre lc s v) ∧
+        ∀ E m, E0.Extends E →
         LocMatch E s b i m →
         CallOK H E g L lc s s' v m ∧ CallOKZ H E g L lc s s' v m ∧ ICallOK H E L ret lc s s' v m ∧
           WbOK H E g L lc s v m ∧ CloOK E s v m ∧ GetGOK E v ∧ MemEqOK H E g L lc s v m) ∧
@@ -207,7 +209,8 @@ def RunPreS (env : Env) (H : Hooks) (lc : LocCtx) (g : G2In) (L : Link) (ret : B
     (∀ id v, blk.values[i]? = some id → lc.ctx.f.value? id = some v →
       (entryOp24 v.op = false ∨ (v.op = .InitMem ∧ lc.ctx.f.lowered = true)) ∧
       ∀ s', stepLoc env lc s v = .ok s' →
-        (G54Pre lc s v ∧ FReloadPre lc s v ∧ QLoadPre lc s v) ∧ ∀ E m, E0.Extends E →
+        (G54Pre lc s v ∧ FReloadPre lc s v ∧ QLoadPre lc s v ∧ MemEqPre lc s v) ∧
+        ∀ E m, E0.Extends E →
         LocMatch E s b i m →
         CallOKS H E g L lc s s' v m ∧ CallOKZS H E g L lc s s' v m ∧
           ICallOKS H E L ret lc s s' v m ∧ WbOKS H E g L lc s v m ∧ CloOK E s v m ∧
@@ -222,7 +225,8 @@ def RunPreM (osp : Bool) (env : Env) (H : Hooks) (lc : LocCtx) (g : G2In) (L : L
     (∀ id v, blk.values[i]? = some id → lc.ctx.f.value? id = some v →
       (entryOp24 v.op = false ∨ (v.op = .InitMem ∧ lc.ctx.f.lowered = true)) ∧
       ∀ s', stepLoc env lc s v = .ok s' →
-        (G54Pre lc s v ∧ FReloadPre lc s v ∧ QLoadPre lc s v) ∧ ∀ E m, E0.Extends E →
+        (G54Pre lc s v ∧ FReloadPre lc s v ∧ QLoadPre lc s v ∧ MemEqPre lc s v) ∧
+        ∀ E m, E0.Extends E →
         LocMatch E s b i m →
         CallOKAt osp H E g L lc s s' v m ∧ CallOKZAt osp H E g L lc s s' v m ∧
           ICallOKAt osp H E L ret lc s s' v m ∧ WbOKAt osp H E g L lc s v m ∧
@@ -279,7 +283,8 @@ register-index load, subtraction, nil check, zeroing, call, write barrier, closu
 `GetG`, `LoweredMemEq`, acquire load, G41 compare, float load, float register-index load, G46
 float op (`fops46`), G50 pair load (`pairOp50`), G51 `CMN`/`CMPshiftRA` (`Pre51a`), G53
 `LoweredMove` (`Pre53a`) or G54 loop (`Pre54a`, `Pre54b`), G63 reload (`LoadReg`, `FReloadPre`)
-or G64 128-bit load (`FMOVQload`, `FLDPQ`, `QLoadPre`), and no entry value. -/
+or G64 128-bit load (`FMOVQload`, `FLDPQ`, `QLoadPre`), no `LoweredMemEq` (`MemEqPre`), and no
+entry value. -/
 def simpleOp (op : Op) : Bool :=
   op != .LoadReg && op != .ARM64FMOVQload && op != .ARM64FLDPQ &&
     op != .ARM64CMP && op != .ARM64CMPconst && (loadOp? op).isNone && op != .ARM64LDP &&
@@ -512,14 +517,15 @@ theorem g54Pre_simple {lc : LocCtx} {v : Value} (h : simpleOp v.op = true) (s : 
   · exact absurd hop h.1.2
   · exact absurd hop h.2
 
-/-- G63's and G64's premises of a simple op: no `LoadReg`, `FMOVQload` or `FLDPQ`. -/
+/-- G63's, G64's and G28's run premises of a simple op: no `LoadReg`, `FMOVQload`, `FLDPQ` or
+`LoweredMemEq`. -/
 theorem pre64_simple {lc : LocCtx} {v : Value} (h : simpleOp v.op = true) (s : LocState) :
-    FReloadPre lc s v ∧ QLoadPre lc s v := by
+    FReloadPre lc s v ∧ QLoadPre lc s v ∧ MemEqPre lc s v := by
   have hne : ∀ o, simpleOp o = false → v.op ≠ o := fun _ ho hop => by
     rw [hop, ho] at h
     cases h
-  exact ⟨fun hop => absurd hop (hne _ (by decide)), fun hop => absurd hop (hne _ (by decide)),
-    fun hop => absurd hop (hne _ (by decide))⟩
+  exact ⟨fun hop => absurd hop (hne _ (by decide)), ⟨fun hop => absurd hop (hne _ (by decide)),
+    fun hop => absurd hop (hne _ (by decide))⟩, fun hop => absurd hop (hne _ (by decide))⟩
 
 /-- **`RunPreM` of a function of simple ops** (`simpleFrom`): every premise is vacuous. -/
 theorem runPreM_simple {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
@@ -643,7 +649,8 @@ theorem sim_value (hc : checkG64L lc ps bstart g = .ok (tab, kt))
     (hv : lc.ctx.f.value? id = some v) (hs : stepLoc env lc s v = .ok s')
     (hS : SimAt lc g L ps tab kt E0 osp otab base b blk i s t)
     (hen : entryOp24 v.op = false ∨ (v.op = .InitMem ∧ lc.ctx.f.lowered = true))
-    (hpre : G54Pre lc s v ∧ FReloadPre lc s v ∧ QLoadPre lc s v) (hro : RoPre56 g s)
+    (hpre : G54Pre lc s v ∧ FReloadPre lc s v ∧ QLoadPre lc s v ∧ MemEqPre lc s v)
+    (hro : RoPre56 g s)
     (hok : ∀ E m, E0.Extends E → LocMatch E s b i m →
       CallOKAt osp H E g L lc s s' v m ∧ CallOKZAt osp H E g L lc s s' v m ∧
         ICallOKAt osp H E L (endP L.text ps.toList) lc s s' v m ∧
@@ -656,8 +663,8 @@ theorem sim_value (hc : checkG64L lc ps bstart g = .ok (tab, kt))
   obtain ⟨hcall, hcallz, hicall, hwb, hclo, hgetg, hmeq, hcallk⟩ := hok E m hx hm
   obtain ⟨E', m', t', hx', hE', hm', hinv', hsp', hu', ht, hR', hX', hk⟩ :=
     g64_obj_value hc hE hbid hb hi hv hen hma hm hinv hsp (fun h => ho.trans (hosp h)) hn48 hu
-      hpre.1 hro hcall hcallz hicall hwb hclo hgetg hmeq hcallk (fun hop => absurd hop hna)
-      hpre.2.1 hpre.2.2 hs hO hH
+      hpre.1 hro hcall hcallz hicall hwb hclo hgetg hmeq hpre.2.2.2 hcallk
+      (fun hop => absurd hop hna) hpre.2.1 hpre.2.2.1 hs hO hH
       hR hX (fun u _ => hic u)
   exact ⟨t', ht, E', m', MatchEnv.Extends.trans hx hx', hE', hm', hinv', hsp', hu', hR', hX', hbid,
     leafLR_keep hlr hk, fun hl hok hcl => memInit_clean_step hl hi hv (hma hl hok) hs hcl⟩

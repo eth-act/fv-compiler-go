@@ -54,9 +54,9 @@ and `FLoadPre`, a float load's valid bytes, no bare pointer) and `FIdxPre`, the 
 register-index load; and `FArithPre`, no `FADD`/`FMUL` on a `FNaNSwap` pair and no
 `FMADD`/`FNMSUB` multiplying an `FSameNaN` pair; and G50's `PairPre50`, a pair load's valid bytes
 at both addresses, no pointer read into a V register; `GetGOK`, the trusted contracts `CallOKAt`,
-`CallOKZAt`, `ICallOKAt`, `WbOKAt`, `CloOK`, `MemEqOKAt`) and `obj_star`'s (`ObjEnv`, the trusted
-`HookMap`); a panic also `obj_panic`'s (the trusted `HookPanicMap`), a bounds panic the trusted
-`BoundsOK`.
+`CallOKZAt`, `ICallOKAt`, `WbOKAt`, `CloOK`, `MemEqOKAt`, and the Phase 1 premise `MemEqPre`)
+and `obj_star`'s (`ObjEnv`, the trusted `HookMap`); a panic also `obj_panic`'s (the trusted
+`HookPanicMap`), a bounds panic the trusted `BoundsOK`.
 -/
 
 namespace GoFV.Proof.Obj
@@ -140,7 +140,8 @@ theorem g64L_valueX {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     (hcallz : CallOKZAt osp H E g L lc s s' v m)
     (hicall : ICallOKAt osp H E L ret lc s s' v m)
     (hwb : WbOKAt osp H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
-    (hmeq : MemEqOKAt osp H E g L lc s v m) (hcallk : osp = true → CallOKStk H E g L lc s s' v m)
+    (hmeq : MemEqOKAt osp H E g L lc s v m) (hmp : MemEqPre lc s v)
+    (hcallk : osp = true → CallOKStk H E g L lc s s' v m)
     (harg : ArgOK E lc s v m) (hfr : FReloadPre lc s v) (hq : QLoadPre lc s v)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G49Env lc g L ps ret tab E' ∧ PStar H L ps.toList ret m m' ∧
@@ -151,14 +152,14 @@ theorem g64L_valueX {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   | false =>
     obtain ⟨E', m', hx, hE', h1, h2, h3, -⟩ := g33_value (checkG33_of_64L hl hc) hE.env hbid hb
       hi hv hen hm hinv (by rw [uL31_nl hl]; intro e he; cases he) hpre.1.1.1.1.1.1.1.1.1 hcall
-      hcallz hicall hwb hclo hgetg hmeq hs
+      hcallz hicall hwb hclo hgetg hmeq hmp hs
     refine ⟨E', m', hx, ⟨hE', hE.vars.extend hx⟩, h1, h2, h3, (fun _ h => by cases h), ?_⟩
     rw [uL35_nl hl]
     intro e he
     cases he
   | true =>
     obtain ⟨E', m', hx, hE', h1, h2, h3, h4, h5⟩ := g64L_value hc hE hl hbid hb hi hv hen hm hinv
-      (fun ho => hsp ho hl) hosp hn48 hu hpre hro hcall hcallz hicall hwb hclo hgetg hmeq hcallk
+      (fun ho => hsp ho hl) hosp hn48 hu hpre hro hcall hcallz hicall hwb hclo hgetg hmeq hmp hcallk
       harg hfr hq hs
     exact ⟨E', m', hx, hE', h1, h2, h3, fun ho _ => h4 ho, h5⟩
 
@@ -214,7 +215,8 @@ theorem g64_obj_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link
     (hcallz : CallOKZAt osp H E g L lc s s' v m)
     (hicall : ICallOKAt osp H E L (endP L.text ps.toList) lc s s' v m)
     (hwb : WbOKAt osp H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
-    (hmeq : MemEqOKAt osp H E g L lc s v m) (hcallk : osp = true → CallOKStk H E g L lc s s' v m)
+    (hmeq : MemEqOKAt osp H E g L lc s v m) (hmp : MemEqPre lc s v)
+    (hcallk : osp = true → CallOKStk H E g L lc s s' v m)
     (harg : ArgOK E lc s v m) (hfr : FReloadPre lc s v) (hq : QLoadPre lc s v)
     (hs : stepLoc env lc s v = .ok s')
     (hO : ObjEnv ps spills o otab L base code retM)
@@ -236,7 +238,7 @@ theorem g64_obj_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link
       UOKL m' (uL35 lc (uIn35 lc bid) blk (i + 1)) := by
     rcases hen with hen | ⟨hop, hl⟩
     · exact g64L_valueX hc hE hbid hb hi hv hen hm hinv hsp hosp hn48 hu hpre hro hcall hcallz
-        hicall hwb hclo hgetg hmeq hcallk harg hfr hq hs
+        hicall hwb hclo hgetg hmeq hmp hcallk harg hfr hq hs
     · obtain ⟨hok, hcl⟩ := g64L_clean hc hl hbid hb hi hv hop
       obtain ⟨E', m', hx, hE', h1, h2, h3, h4, h5⟩ :=
         g64L_initMem (H := H) hc hE hl hbid hb hi hv hop hm hinv (fun ho => hsp ho hl)

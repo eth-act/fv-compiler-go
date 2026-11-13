@@ -1867,14 +1867,16 @@ theorem genG55_witness :
     (fun h => absurd h (hne5 _ (by decide))) (fun h => absurd h (hne5 _ (by decide)))
     (GenG10.icallOK_ne (by rw [hop5]; rfl))
     (fun h => absurd h (hne5 _ (by decide))) (fun h => absurd h (hne5 _ (by decide)))
-    (fun h => absurd h (hne5 _ (by decide))) (fun h => absurd h (hne5 _ (by decide))) hs1
+    (fun h => absurd h (hne5 _ (by decide))) (fun h => absurd h (hne5 _ (by decide)))
+    (fun h => absurd h (hne5 _ (by decide))) hs1
   obtain ⟨E2, m2, hx2, hE2, hp2, hm2', -, -⟩ := g55_value (H := GenG2.H0) (env := GenG2.env)
     hc hE1 hm0 hb0 hi4 hv40 (by rw [hop4]; rfl) hm1' hinv1 hu1
     (pre4 hop4)
     (fun h => absurd h (hne4 _ (by decide))) (fun h => absurd h (hne4 _ (by decide)))
     (GenG10.icallOK_ne (by rw [hop4]; rfl))
     (fun h => absurd h (hne4 _ (by decide))) (fun h => absurd h (hne4 _ (by decide)))
-    (fun h => absurd h (hne4 _ (by decide))) (fun h => absurd h (hne4 _ (by decide))) hs2
+    (fun h => absurd h (hne4 _ (by decide))) (fun h => absurd h (hne4 _ (by decide)))
+    (fun h => absurd h (hne4 _ (by decide))) hs2
   refine ⟨h54, by decide, s1, s2, E1, E2, m1, m2, hs1, hr1, hs2, hr2, hx1, hx2, hE2, hp1, hp2,
     hm1', ?_, hm2', ?_⟩
   · exact (hm1'.regs 31 _ hr1).2 0 (by simp [objV?])

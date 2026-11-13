@@ -1939,7 +1939,8 @@ theorem genG47_witness :
       exact callSpec0 (E' := E) GenG12.addrAgree rfl hr (by rw [hv1]; exact hm0v))
     (GenG10.icallOK_ne (by rw [hop]; rfl))
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
-    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide))) hs1
+    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
+    (fun h => absurd h (hne _ (by decide))) hs1
   refine ⟨h46, s1, E1, m1, hs1, hr1, hx1, hE1, hp1, hm1', ?_⟩
   exact (hm1'.regs 31 _ hr1).2 0 (by simp [objV?])
 

@@ -3228,7 +3228,7 @@ theorem genG59u_witness :
     (fun _ _ _ _ _ _ _ _ _ _ hn => by rw [hop] at hn; cases hn)
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
-    (fun _ h => absurd h (hne _ (by decide))) hs1
+    (fun h => absurd h (hne _ (by decide))) (fun _ h => absurd h (hne _ (by decide))) hs1
   have hu1' : UOKL m1 [(3, 8, false), (2, 32, false)] := by
     change UOKL m1 (uL35 lc (uIn35 lc 4) blk 7) at hu1
     rwa [hu7] at hu1

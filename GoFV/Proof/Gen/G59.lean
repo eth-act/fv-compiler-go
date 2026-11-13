@@ -51,6 +51,7 @@ theorem vk59_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     (hwb : WbOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
     (hgetg : GetGOK E v)
     (hmeq : MemEqOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m)
+    (hmp : MemEqPre lc s v)
     (hcallk : osp = true → CallOKStk H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G49Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
@@ -60,7 +61,7 @@ theorem vk59_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
   cases hVK with
   | g58 hVK58 =>
     exact vk58_step hE F hhome hcf hv hVK58 hvs hloop hj hj' hreads hm hinv hL hmem hpre h48 hsp
-      hcall hcallz hicall hwb hclo hgetg hmeq hcallk hs
+      hcall hcallz hicall hwb hclo hgetg hmeq hmp hcallk hs
   | p htemp hVK =>
     exact vk59p_step hE F hcf hv hVK hvs htemp hj hj' hreads hm hinv hL hpre.1.1.1.2 hs
 
@@ -102,7 +103,8 @@ theorem g59L_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     (hcallz : CallOKZAt osp H E g L lc s s' v m)
     (hicall : ICallOKAt osp H E L ret lc s s' v m)
     (hwb : WbOKAt osp H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
-    (hmeq : MemEqOKAt osp H E g L lc s v m) (hcallk : osp = true → CallOKStk H E g L lc s s' v m)
+    (hmeq : MemEqOKAt osp H E g L lc s v m) (hmp : MemEqPre lc s v)
+    (hcallk : osp = true → CallOKStk H E g L lc s s' v m)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G49Env lc g L ps ret tab E' ∧ PStar H L ps.toList ret m m' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' osp ∧
@@ -151,7 +153,7 @@ theorem g59L_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   rw [kAt_succ hi hv]
   exact vk59_step hE0 F hhome hcf hv hVK hvs hloop hj hj' hreads hm hinv hu
     (fun x hop hx => movdOK35_spec hmovd hbid hb hi hv hop hx)
-    hpre h48 (fun ho => ⟨hsp ho, hosp ho⟩) hcall hcallz hicall hwb hclo hgetg hmeq hcallk hs
+    hpre h48 (fun ho => ⟨hsp ho, hosp ho⟩) hcall hcallz hicall hwb hclo hgetg hmeq hmp hcallk hs
 
 /-- `InitMem` under G59's check: `g58L_initMem`'s statement over `checkG59L`. -/
 theorem g59L_initMem {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
@@ -370,6 +372,7 @@ theorem g59_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     (hicall : ICallOKAt osp H E L ret (liveCtx lc) s s' v m)
     (hwb : WbOKAt osp H E g L (liveCtx lc) s v m) (hclo : CloOK E s v m)
     (hgetg : GetGOK E v) (hmeq : MemEqOKAt osp H E g L (liveCtx lc) s v m)
+    (hmp : MemEqPre (liveCtx lc) s v)
     (hcallk : osp = true → CallOKStk H E g L (liveCtx lc) s s' v m)
     (hs : stepLoc env (liveCtx lc) s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G49Env (liveCtx lc) g L ps ret tab E' ∧
@@ -378,7 +381,7 @@ theorem g59_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
       (osp = true → SPInv E' s') ∧
       UOKL m' (uL35 (liveCtx lc) (uIn35 (liveCtx lc) bid) blk (i + 1)) :=
   g59L_value (checkG59_spec hc).2 hE hl hbid hb hi hv hen hm hinv hsp hosp hn48 hu hpre hcall hcallz
-    hicall hwb hclo hgetg hmeq hcallk hs
+    hicall hwb hclo hgetg hmeq hmp hcallk hs
 
 /-- **G59, `InitMem`.** `g58_initMem`'s statement over `checkG59`, `SPInv` kept by the checker's
 `spHomes48`. -/

@@ -248,12 +248,13 @@ theorem g53L_valueS {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     (hcallz : CallOKZAt E.outSP H E g L lc s s' v m)
     (hicall : ICallOKAt E.outSP H E L ret lc s s' v m)
     (hwb : WbOKAt E.outSP H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
-    (hmeq : MemEqOKAt E.outSP H E g L lc s v m) (hs : stepLoc env lc s v = .ok s') :
+    (hmeq : MemEqOKAt E.outSP H E g L lc s v m) (hmp : MemEqPre lc s v)
+    (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G49Env lc g L ps ret tab E' ∧ PStar H L ps.toList ret m m' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' E.outSP ∧
       SPInv E' s' ∧ UOKL m' (uL35 lc (uIn35 lc bid) blk (i + 1)) := by
   obtain ⟨E', m', hx, hE', h1, h2, h3, h4⟩ := g53L_value hc hE hbid hb hi hv hen hm hinv hu hpre
-    hcall hcallz hicall hwb hclo hgetg hmeq hs
+    hcall hcallz hicall hwb hclo hgetg hmeq hmp hs
   exact ⟨E', m', hx, hE', h1, h2, h3,
     spInv_step hE'.env.env.env.env.env.addr hx hE.env.env.env.env.env.lcEq hsph hv hsp hs, h4⟩
 
@@ -315,13 +316,13 @@ theorem g53_valueS {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     (hicall : ICallOKAt E.outSP H E L ret (liveCtx lc) s s' v m)
     (hwb : WbOKAt E.outSP H E g L (liveCtx lc) s v m) (hclo : CloOK E s v m)
     (hgetg : GetGOK E v) (hmeq : MemEqOKAt E.outSP H E g L (liveCtx lc) s v m)
-    (hs : stepLoc env (liveCtx lc) s v = .ok s') :
+    (hmp : MemEqPre (liveCtx lc) s v) (hs : stepLoc env (liveCtx lc) s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G49Env (liveCtx lc) g L ps ret tab E' ∧
       PStar H L ps.toList ret m m' ∧ LocMatch E' s' bid (i + 1) m' ∧
       G3Inv E' (liveCtx lc) (kAt (liveCtx lc) kt bid blk (i + 1)) s' E.outSP ∧ SPInv E' s' ∧
       UOKL m' (uL35 (liveCtx lc) (uIn35 (liveCtx lc) bid) blk (i + 1)) :=
   g53L_valueS (checkG53_spec hc).2 hE hbid hb hi hv hen hm hinv hsp hsph hu hpre hcall hcallz
-    hicall hwb hclo hgetg hmeq hs
+    hicall hwb hclo hgetg hmeq hmp hs
 
 /-- **G53, `InitMem`, `outargs` at `SP`.** `g53_initMem` in the mode `E.outSP`, keeping
 `SPInv`. -/

@@ -310,7 +310,7 @@ theorem vk41_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     (hicall : ICallOKAt osp H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
     (hwb : WbOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
     (hgetg : GetGOK E v) (hmeq : MemEqOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m)
-    (hs : stepLoc env lc s v = .ok s') :
+    (hmp : MemEqPre lc s v) (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G28Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp ∧
@@ -330,7 +330,7 @@ theorem vk41_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
   cases hVK with
   | g38 _ _ hVK38 =>
     exact vk38_step hE F hhome hcf hv hVK38 hvs htemp hj hj' hreads hm hinv hL hmem hpre.1 hcall
-      hcallz hicall hwb hclo hgetg hmeq hs
+      hcallz hicall hwb hclo hgetg hmeq hmp hs
   | cmn hop hsz hfl hhn hao =>
     obtain ⟨m', h1, h2, h3, h4, -⟩ := g41_cmn (H := H) F hm hinv.core hinv.slots
       (kread_of_reads hreads) (knext_kStep fun _ => (hs_none hhn).noRegs) hpre.2 hj hj' hop hsz
@@ -409,7 +409,8 @@ theorem g41L_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {
     (hcall : CallOK H E g L lc s s' v m) (hcallz : CallOKZ H E g L lc s s' v m)
     (hicall : ICallOK H E L ret lc s s' v m)
     (hwb : WbOK H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
-    (hmeq : MemEqOK H E g L lc s v m) (hs : stepLoc env lc s v = .ok s') :
+    (hmeq : MemEqOK H E g L lc s v m) (hmp : MemEqPre lc s v)
+    (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G28Env lc g L ps ret tab E' ∧ PStar H L ps.toList ret m m' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' ∧
       UOKL m' (uL35 lc (uIn35 lc bid) blk (i + 1)) := by
@@ -417,7 +418,7 @@ theorem g41L_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {
   | false =>
     obtain ⟨E', m', hx, hE', h1, h2, h3, -⟩ := g33_value (checkG33_of_41L hl hc) hE hbid hb hi hv
       hen hm hinv (by rw [uL31_nl hl]; intro e he; cases he) hpre.1.1 hcall hcallz hicall hwb
-      hclo hgetg hmeq hs
+      hclo hgetg hmeq hmp hs
     refine ⟨E', m', hx, hE', h1, h2, h3, ?_⟩
     rw [uL35_nl hl]
     intro e he
@@ -454,7 +455,7 @@ theorem g41L_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {
   rw [kAt_succ hi hv]
   exact vk41_step hE0 F hhome hcf hv hVK hvs htemp hj hj' hreads hm hinv hu
     (fun x hop hx => movdOK35_spec hmovd hbid hb hi hv hop hx)
-    hpre hcall hcallz hicall hwb hclo hgetg hmeq hs
+    hpre hcall hcallz hicall hwb hclo hgetg hmeq hmp hs
 
 /-- `InitMem` under G41's check: `g40L_initMem`'s statement. -/
 theorem g41L_initMem {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
@@ -645,12 +646,13 @@ theorem g41_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
     (hcall : CallOK H E g L (liveCtx lc) s s' v m) (hcallz : CallOKZ H E g L (liveCtx lc) s s' v m)
     (hicall : ICallOK H E L ret (liveCtx lc) s s' v m)
     (hwb : WbOK H E g L (liveCtx lc) s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
-    (hmeq : MemEqOK H E g L (liveCtx lc) s v m) (hs : stepLoc env (liveCtx lc) s v = .ok s') :
+    (hmeq : MemEqOK H E g L (liveCtx lc) s v m) (hmp : MemEqPre (liveCtx lc) s v)
+    (hs : stepLoc env (liveCtx lc) s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G28Env (liveCtx lc) g L ps ret tab E' ∧ PStar H L ps.toList ret m m' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' (liveCtx lc) (kAt (liveCtx lc) kt bid blk (i + 1)) s' ∧
       UOKL m' (uL35 (liveCtx lc) (uIn35 (liveCtx lc) bid) blk (i + 1)) :=
   g41L_value (checkG41_spec hc).2 hE hbid hb hi hv hen hm hinv hu hpre hcall hcallz hicall hwb hclo
-    hgetg hmeq hs
+    hgetg hmeq hmp hs
 
 /-- **G41, `InitMem`.** `g40_initMem`'s statement over `checkG41`. -/
 theorem g41_initMem {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}

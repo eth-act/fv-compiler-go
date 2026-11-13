@@ -2721,7 +2721,7 @@ theorem genG61_witness :
     (fun _ _ _ _ _ _ _ _ _ _ hn => by rw [hop] at hn; cases hn)
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
-    (fun h => by cases h) hs1
+    (fun h => absurd h (hne _ (by decide))) (fun h => by cases h) hs1
   refine ⟨h60, s1, E1, m1, hs1, hr2, hmem, hx1, hE1, hp1, hm1, ?_⟩
   have hrel := (hm1.regs 2 _ hr2).1 2 (by simp [objX?])
   rcases hrel with h | ⟨hn, -⟩
