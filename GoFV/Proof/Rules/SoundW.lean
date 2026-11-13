@@ -21,9 +21,12 @@ namespace GoFV.Proof.Rules
 open GoFV.SSA GoFV.SSA.Sem GoFV.Rules
 
 /-- The rules whose matches the checker accepts at any top type (`RewriteCheck.ruleOK`): the
-bounded-shift rules `generic.rules:1187–1198`. -/
+bounded-shift rules `generic.rules:1187–1198`, which only set the `bounded` flag of a shift whose
+amount is in range, and the tuple rules `:193` (`Mul32uover`/`Mul64uover` by 1), `:1339`/`:1340`
+(`Select0`/`Select1` of a `MakeTuple`), whose tops are tuples or selections of them. -/
 def anyTop (r : Rule) : Bool :=
-  decide (1187 ≤ r.loc.line ∧ r.loc.line ≤ 1198) && r.loc.file == "generic"
+  (decide (1187 ≤ r.loc.line ∧ r.loc.line ≤ 1198) || r.loc.line == 193 || r.loc.line == 1339 ||
+    r.loc.line == 1340) && r.loc.file == "generic"
 
 /-- **The obligation of a value rule at any top type**: `Rule.SoundT` without the shape premise
 of the raw value, for the matched value read at its type (`retype`). -/

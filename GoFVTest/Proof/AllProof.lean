@@ -795,6 +795,7 @@ import GoFV.Proof.Rules.Mod3
 import GoFV.Proof.Rules.Mul
 import GoFV.Proof.Rules.Mul2
 import GoFV.Proof.Rules.Mul3
+import GoFV.Proof.Rules.MulOver
 import GoFV.Proof.Rules.Names
 import GoFV.Proof.Rules.Neg
 import GoFV.Proof.Rules.Neq

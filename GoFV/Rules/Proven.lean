@@ -23,7 +23,7 @@ namespace GoFV.Rules.Proven
 
 open GoFV.Rules
 
-/-- `generic.rules` restricted to its 1233 proven value rules, 3 proven block rules, 9
+/-- `generic.rules` restricted to its 1237 proven value rules, 3 proven block rules, 9
 nil-check eliminations, 64 Load-of-Store forwardings, 1 struct-load
 expansions, 2 struct-store splits, 23 segment rules and 7 `Phi`
 rules validated per instance. -/
@@ -125,8 +125,10 @@ def generic : RuleSet where
     (.Mod8u, [Generated.Generic.r_generic_220, Generated.Generic.r_generic_1127, Generated.Generic.r_generic_1158]),
     (.Mul16, [Generated.Generic.r_generic_137, Generated.Generic.r_generic_192, Generated.Generic.r_generic_196, Generated.Generic.r_generic_199, Generated.Generic.r_generic_201, Generated.Generic.r_generic_413, Generated.Generic.r_generic_648, Generated.Generic.r_generic_1108, Generated.Generic.r_generic_1116, Generated.Generic.r_generic_1272, Generated.Generic.r_generic_1320]),
     (.Mul32, [Generated.Generic.r_generic_138, Generated.Generic.r_generic_192_2, Generated.Generic.r_generic_196_2, Generated.Generic.r_generic_199_2, Generated.Generic.r_generic_201_2, Generated.Generic.r_generic_411, Generated.Generic.r_generic_648_2, Generated.Generic.r_generic_1110, Generated.Generic.r_generic_1118, Generated.Generic.r_generic_1271, Generated.Generic.r_generic_1319]),
+    (.Mul32uover, [Generated.Generic.r_generic_193]),
     (.Mul64, [Generated.Generic.r_generic_139, Generated.Generic.r_generic_192_3, Generated.Generic.r_generic_196_3, Generated.Generic.r_generic_199_3, Generated.Generic.r_generic_201_3, Generated.Generic.r_generic_409, Generated.Generic.r_generic_648_3, Generated.Generic.r_generic_1112, Generated.Generic.r_generic_1120, Generated.Generic.r_generic_1270, Generated.Generic.r_generic_1318]),
     (.Mul64F, [Generated.Generic.r_generic_1328]),
+    (.Mul64uover, [Generated.Generic.r_generic_193_2]),
     (.Mul8, [Generated.Generic.r_generic_136, Generated.Generic.r_generic_192_4, Generated.Generic.r_generic_196_4, Generated.Generic.r_generic_199_4, Generated.Generic.r_generic_201_4, Generated.Generic.r_generic_415, Generated.Generic.r_generic_648_4, Generated.Generic.r_generic_1106, Generated.Generic.r_generic_1114, Generated.Generic.r_generic_1273, Generated.Generic.r_generic_1321]),
     (.Neg16, [Generated.Generic.r_generic_114, Generated.Generic.r_generic_204, Generated.Generic.r_generic_205, Generated.Generic.r_generic_654, Generated.Generic.r_generic_682, Generated.Generic.r_generic_685]),
     (.Neg32, [Generated.Generic.r_generic_115, Generated.Generic.r_generic_204_2, Generated.Generic.r_generic_205_2, Generated.Generic.r_generic_654_2, Generated.Generic.r_generic_682_2, Generated.Generic.r_generic_685_2]),
@@ -186,6 +188,8 @@ def generic : RuleSet where
     (.Rsh8x32, [Generated.Generic.r_generic_464, Generated.Generic.r_generic_493_2, Generated.Generic.r_generic_1198_2]),
     (.Rsh8x64, [Generated.Generic.r_generic_235, Generated.Generic.r_generic_473_4, Generated.Generic.r_generic_493_3, Generated.Generic.r_generic_1198_3]),
     (.Rsh8x8, [Generated.Generic.r_generic_466, Generated.Generic.r_generic_493_4, Generated.Generic.r_generic_1198_4]),
+    (.Select0, [Generated.Generic.r_generic_1339]),
+    (.Select1, [Generated.Generic.r_generic_1340]),
     (.SignExt16to32, [Generated.Generic.r_generic_109, Generated.Generic.r_generic_765]),
     (.SignExt16to64, [Generated.Generic.r_generic_110, Generated.Generic.r_generic_762]),
     (.SignExt32to64, [Generated.Generic.r_generic_111, Generated.Generic.r_generic_763]),

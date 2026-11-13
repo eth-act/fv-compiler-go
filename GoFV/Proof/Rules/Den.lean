@@ -538,9 +538,11 @@ whose first is a pointer `.ptr el` (or the 64-bit integer word, which has the sa
 pointer, `Val.hasTy_ptr_eq_i64`: `.ptr none`), is the element type known by its pointer type
 only, the record with the one attribute `PtrTo` (`t.Elem().PtrTo()` is `.ptr el`); `t.Elem()` of an
 aggregate of one field at offset 0 is that field's shape (`Sem.tyOf` of a one-element array
-`[1]T`: `T`'s shape); the kind predicates by `kindE`. The method name is matched first, so that
-a method of an unknown type shape is still `none`. An `arm64BitField` (an integer) has `lsb()`,
-`int64(uint64(bfc) >> 8)`, and `width()`, `int64(bfc) & 0xff`. -/
+`[1]T`: `T`'s shape); `t.FieldType(i)` of a tuple shape with a literal `i` is its component `i`
+(`generic.rules:193`: the flag of a `Mul64uover`); the kind predicates by `kindE`. The method
+name is matched first, so that a method of an unknown type shape is still `none`. An
+`arm64BitField` (an integer) has `lsb()`, `int64(uint64(bfc) >> 8)`, and `width()`,
+`int64(bfc) & 0xff`. -/
 def methodE (dy : DV) (n : String) (args : List Expr) : Option DV :=
   match n, args with
   | "Size", [] => match dy with
@@ -556,6 +558,9 @@ def methodE (dy : DV) (n : String) (args : List Expr) : Option DV :=
     | _ => none
   | "PtrTo", [] => match dy with
     | .strct fs => strctField fs "PtrTo"
+    | _ => none
+  | "FieldType", [.lit _ (.int i)] => match dy with
+    | .ty (.tuple ts) => if i < 0 then none else (ts[i.toNat]?).map .ty
     | _ => none
   | "lsb", [] => match dy with
     | .int i => some (.int ((i.emod (2 ^ 64)).toNat / 256 : Nat))
@@ -726,6 +731,12 @@ def idataArgOk : Ty → Bool
     | none => false
   | _ => false
 
+/-- Component `i` of the tuple shape `tt` is `t`. -/
+def tupleCompOk (tt : Ty) (i : Nat) (t : Ty) : Bool :=
+  match tt with
+  | .tuple ts => (ts[i]?).any (Ty.beq · t)
+  | _ => false
+
 /-- The shape the checker guarantees for argument `i` (of shape `t`) of an op `o` of shape `ty`:
 the pointer argument of `OffPtr`/`IsNonNil` a word (a pointer or a 64-bit integer: `SP` and
 some `ConstNil`s are `uintptr`-typed; the two word shapes have the same values and retype alike,
@@ -747,9 +758,12 @@ components of a `Make` op the shapes of its type's components (`makeArgOk`, issu
 needs it), the
 argument of `SlicePtr`/`SliceLen`/`SliceCap` a slice (so it is `poison` or has
 `0 ≤ len ≤ cap`: `generic.rules:278`), the argument of `IData` of the interface shape
-(`idataArgOk`), and the
-arguments of the float arithmetic and comparisons floats of their width (shape `.int w`). Other
-arguments are unconstrained. -/
+(`idataArgOk`), the
+arguments of the float arithmetic and comparisons floats of their width (shape `.int w`), a
+`Mul32uover`/`Mul64uover` itself of its tuple shape (the integer and the overflow flag), the
+components of a `MakeTuple` the shapes of its two-component tuple shape's, and the argument of a
+`Select0`/`Select1` a tuple whose selected component has the selection's shape (`tupleCompOk`;
+`generic.rules:193`, `:1339`, `:1340`). Other arguments are unconstrained. -/
 def argShapeOk (o : Op) (ty : Ty) (i : Nat) (t : Ty) : Bool :=
   match o with
   | .OffPtr | .IsNonNil => i != 0 || isPtrTy t || isInt64Ty t
@@ -772,6 +786,13 @@ def argShapeOk (o : Op) (ty : Ty) (i : Nat) (t : Ty) : Bool :=
   | .RoundToEven | .FMA | .Round64F => isIntWTy .w64 t
   | .Add32F | .Sub32F | .Mul32F | .Div32F | .Neg32F | .Min32F | .Max32F | .Eq32F | .Neq32F
   | .Less32F | .Leq32F | .Sqrt32 | .Round32F => isIntWTy .w32 t
+  | .Mul32uover => Ty.beq ty (.tuple [.int .w32, .bool])
+  | .Mul64uover => Ty.beq ty (.tuple [.int .w64, .bool])
+  | .MakeTuple => match ty with
+    | .tuple ts => ts.length == 2 && tupleCompOk ty i t
+    | _ => false
+  | .Select0 => i != 0 || tupleCompOk t 0 ty
+  | .Select1 => i != 0 || tupleCompOk t 1 ty
   | _ => true
 
 /-- Leaf positions of a rule's pattern that hold the same value although the rule does not say
