@@ -515,8 +515,20 @@ it is right for L0. From `schedule` on two things change:
   integer address, or nil plus an offset, obtained through `unsafe`). It covers only checked
   pointers, not every pointer-shaped value: a compiler-made `nil + k` (`ADDconst` of a nil base)
   is computed before the check of the base panics, so a run-wide "no wild pointer" would be
-  false. Not covered: a checked pointer the source computes after `x` (the source never computes
-  it on the panicking run). All assumptions of the end-to-end theorems: `docs/proofs/STATUS.md`
+  false. A checked pointer the source computes after `x` is the next assumption's.
+  **Hoisted checked pointers (decision, #385, a separate assumption):** the theorems also assume
+  `GoFV.Proof.NilHoistOK` of the `schedule` runs whose output needs it (`FState.nhs`, recorded
+  only when `ScheduleCheck.hoistNeeded`; trivial elsewhere, `nilHoistOK_of_noHoist`): in every
+  state `runLF` of the input reaches before a value `x`, when the output runs before `x` a nil
+  check of a value `q` the source runs after `x` (a 64-bit load or a tuple selection,
+  `hoistOp`, whose arguments the source has computed), `q`'s op on its arguments' registers
+  reads nil or a pointer that is not wild. On the run where `x` faults the source never computes
+  `q`; Go's `schedule` evaluates it there (`ScoreNilCheck`, `ScoreReadTuple`,
+  `schedule.go:20-22`, `:149-151`, `:174-177`), and Go's heap holds nil or a valid pointer at
+  every pointer-typed word (the collector throws on a bad one, `runtime/mbitmap.go:1310-1336`).
+  Falsified by a pointer-typed load of a word holding non-pointer data, or by `unsafe` code that
+  stores a wild pointer. `Convert` (an `unsafe.Pointer` from a `uintptr`) is not covered: such a
+  swap stays rejected. All assumptions of the end-to-end theorems: `docs/proofs/STATUS.md`
   § Assumptions.
 - **Order is the schedule.** `runSched` evaluates the non-phi values in `b.Values` order (no
   `kahn`), with one current memory (a memory-typed value updates it; a memory argument must be

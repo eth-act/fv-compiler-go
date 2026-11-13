@@ -295,7 +295,9 @@ copyelim runs before `lower` outside their fragment it adds which conditions of
 and type shapes): per run, for first unverified runs, and for functions whose only unverified
 runs are such deadcode runs. It also counts the functions fully verified through `trim` whose
 `schedule` step relies on `NilPtrsOK` (a swap that only `nilPtrSwap` allows,
-`GoFVTest.SchedClass.relyNilPtrs`), and lists the rejected `regalloc` runs (`raClass`) and the
+`GoFVTest.SchedClass.relyNilPtrs`) and those whose `FState.nhs` is non-empty (a `schedule` run
+that only `hoistSwap` allows, `hoistNeeded`: `NilHoistOK` is assumed of them), and lists the
+rejected `regalloc` runs (`raClass`) and the
 rejected `schedule` runs (`SchedClass.schedClass`: the classes of the pairs `swapOK` rejects) by
 class, first unverified from `lower` on / all. `--vstats FILE` writes one line per function, sorted:
 the input file, the `--vstats` fields of driver mode, then `low=` the unverified runs from `lower`
@@ -353,7 +355,9 @@ distinct `Blk.local` frame operands, vacuous at `Addrs.fixed` (`g49Env_fixed_apa
 `verified_mach_S`, the others, and of them those with one, vacuous at `Addrs.fixed` in G48's mode
 (`g49Env_fixed_outSP`); the `_atSP` variants cover them), the end-to-end ones whose pipeline output
 equals
-stock, the frame sizes `ownFrame` gives on the functions whose output equals stock (against the
+stock, the fully verified and the end-to-end functions whose `FState.nhs` is non-empty (the
+premise `hnh`, `NilHoistOK`, is not trivial for them),
+the frame sizes `ownFrame` gives on the functions whose output equals stock (against the
 stock `stksize`/`stkptrsize`), the top back-end errors and rejection reasons (numbers replaced by
 `#`; for `retRegsOK` the first failing condition, `retWhy`), and as a cross-check the same back
 end on the stock `trim` function (whole-file tables, stock `Dcl`). `--accepted FILE` writes the

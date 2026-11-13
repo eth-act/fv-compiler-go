@@ -32,7 +32,11 @@ accepts `g` as such a scheduling of `f` (decision (b) of #384, `docs/plans/seman
   or a pointer that is not wild, `GoFV.Proof.ArgPtrsOK`, it panics alike or passes) (`swapOKB`),
   or of another pointer-shaped value the source runs before `x` or outside the block
   (`nilPtrSwap`, on the inputs where checked pointers are nil or not wild,
-  `GoFV.Proof.NilPtrsOK`) (`swapOK`). This is the ready-root rule (#96) for runs where memory
+  `GoFV.Proof.NilPtrsOK`), or of a pointer-shaped value the source runs after `x`, a 64-bit load
+  or a tuple selection (`hoistOp`; not a `Convert`) whose arguments the source runs before `x`
+  or outside the block (`hoistSwap`, on the inputs where such a hoisted pointer is nil or not
+  wild, `GoFV.Proof.NilHoistOK`, a separate assumption that `hoistNeeded` records only for the
+  schedulings that need it) (`swapOK`). This is the ready-root rule (#96) for runs where memory
   ops fault (`LMode.faulting`).
 -/
 
