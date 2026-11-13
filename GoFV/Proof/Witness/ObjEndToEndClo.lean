@@ -738,6 +738,7 @@ def e2eFacts : Bool :=
   ((verifiedPipelineFull penv f0 0 sec0.zvar dcl).toOption.map fun r =>
       r.fullyVerified &&
         r.nnf.all (fun x => sameRun x.1 x.2 && noArgPtrB x.1 x.2 && noNilPtrB x.1 x.2) &&
+        r.nhs.isEmpty &&
         refsLive (LocCtx.make r.st.tables r.st.func) &&
         lcFacts (liveCtx (LocCtx.make r.st.tables r.st.func)) &&
         isRet12 (runLoopLoc env (liveCtx (LocCtx.make r.st.tables r.st.func)) 4
@@ -788,7 +789,7 @@ theorem verified_mach_clo_witness :
   | ok r =>
     rw [hpe] at hp
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Bool.and_eq_true] at hp
-    obtain ⟨⟨⟨⟨hv, hn⟩, hrl⟩, hC⟩, hF⟩ := hp
+    obtain ⟨⟨⟨⟨⟨hv, hn⟩, hnhs⟩, hrl⟩, hC⟩, hF⟩ := hp
     obtain ⟨hcL, hrok, houts, hav, hsl, hnc, hwi, hme, hentry, hbm, hb1, hsz, hi3, hv9, hop,
       ⟨sI, hsI, hsIIs, hld⟩, hk0, hk25, hsim, hu, hes, hargs, hcb, hmt, hcr, hn48⟩ := lc_spec hC
     obtain ⟨hregs, hflags, hslots, hmem⟩ := sIIs_spec hsIIs
@@ -806,6 +807,10 @@ theorem verified_mach_clo_witness :
         exact cloH_nilBase
     have hnp : ∀ x ∈ r.nnf, GoFV.Proof.NilPtrsOK x.1 x.2 env args mem := fun x hx =>
       nilPtrsOK_of_none (hx2 x hx).2 env args mem
+    have hnh : ∀ x ∈ r.nhs, GoFV.Proof.NilHoistOK x.1 x.2.1 x.2.2 env args mem := by
+      intro x hx
+      try simp only [List.isEmpty_iff] at hnhs
+      rw [hnhs] at hx; cases hx
     obtain ⟨m0, hrun0⟩ := isRet12_spec hrun
     have hd : (GoFV.SSA.run env penv.tables f0 args mem 5).Defined := by
       rw [hrun0]; trivial
@@ -866,7 +871,7 @@ theorem verified_mach_clo_witness :
       (ret := endP L.text ps.toList) hentry hsim hb1 hi3 hv9 hop hld hcb
     rw [← hentry] at hb1 hbm hpcF
     obtain ⟨fuel', href, raw, hraw, hfin, hdef, hret, -⟩ :=
-      verified_mach hpe hv (env_vpre hdict hro _) hnn hap hnp hd rfl hc64 hn48 hO hH hic hrok
+      verified_mach hpe hv (env_vpre hdict hro _) hnn hap hnp hnh hd rfl hc64 hn48 hO hH hic hrok
         hME hroom hg
         (fun _ _ _ h => by rw [hnone] at h; cases h) (fun _ _ _ h => by rw [hnone] at h; cases h)
         hE (hEE _) hb1 hbm (by rw [hsz]; decide) hsI hes hargs hent

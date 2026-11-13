@@ -531,6 +531,10 @@ structure Stats where
   frameSame : Nat := 0
   frameDiff : Nat := 0
   frameDiffEx : String := ""
+  /-- Fully verified with a `schedule` run that hoists a checked pointer above a fault
+  (`FState.nhs` non-empty: `NilHoistOK` is assumed of them), and of those end to end. -/
+  fullHoist : Nat := 0
+  allHoist : Nat := 0
 
 def Stats.merge (a b : Stats) : Stats :=
   { files := a.files + b.files, parseErrors := a.parseErrors + b.parseErrors,
@@ -539,18 +543,21 @@ def Stats.merge (a b : Stats) : Stats :=
     allSame := a.allSame + b.allSame, stockFns := a.stockFns + b.stockFns,
     stock := a.stock.merge b.stock, accept := a.accept ++ b.accept,
     frameSame := a.frameSame + b.frameSame, frameDiff := a.frameDiff + b.frameDiff,
-    frameDiffEx := if a.frameDiffEx.isEmpty then b.frameDiffEx else a.frameDiffEx }
+    frameDiffEx := if a.frameDiffEx.isEmpty then b.frameDiffEx else a.frameDiffEx,
+    fullHoist := a.fullHoist + b.fullHoist, allHoist := a.allHoist + b.allHoist }
 
 /-- Records the cross-check on the stock `trim` function. -/
 def Stats.addStock (st : Stats) (path : String) (res : Except String Res) : Stats :=
   { st with stockFns := st.stockFns + 1, stock := st.stock.add path res }
 
 /-- Records a fully verified function (`same`: its output is identical to stock; `stockFrame`:
-the stock `.prog`'s `stksize` and `stkptrsize`) and `back` on the pipeline's output. -/
+the stock `.prog`'s `stksize` and `stkptrsize`; `hoist`: its `FState.nhs` is non-empty) and
+`back` on the pipeline's output. -/
 def Stats.addFull (st : Stats) (path : String) (same : Bool) (stockFrame : Int × Int)
-    (res : Except String Res) : Stats :=
-  let st := { st with full := st.full + 1, fullSame := st.fullSame + (if same then 1 else 0),
-                      ours := st.ours.add path res }
+    (hoist : Bool) (res : Except String Res) : Stats :=
+  let one (b : Bool) := if b then 1 else 0
+  let st := { st with full := st.full + 1, fullSame := st.fullSame + one same,
+                      fullHoist := st.fullHoist + one hoist, ours := st.ours.add path res }
   match res with
   | .ok r =>
     let st := if !same then st
@@ -559,7 +566,8 @@ def Stats.addFull (st : Stats) (path : String) (same : Bool) (stockFrame : Int �
                      frameDiffEx := if st.frameDiffEx.isEmpty then
                        s!"{path}: {r.frame} (stock {stockFrame})" else st.frameDiffEx }
     if r.e2e then
-      { st with allSame := st.allSame + (if same then 1 else 0), accept := st.accept.push path }
+      { st with allSame := st.allSame + one same, allHoist := st.allHoist + one hoist,
+                accept := st.accept.push path }
     else st
   | .error _ => st
 
@@ -607,6 +615,9 @@ def Stats.text (st : Stats) (ms : Nat) : String := Id.run do
     (some s.all)
   out := out ++ row "… end to end, pipeline output identical to stock after `trim`" (some st.allSame) none
   out := out ++ row "fully verified, pipeline output identical to stock" (some st.fullSame) none
+  out := out ++ row ("fully verified, `NilHoistOK` assumed (`nhs` non-empty: a `schedule` run " ++
+    "through `hoistSwap`)") (some st.fullHoist) none
+  out := out ++ row "… end to end" (some st.allHoist) none
   out := out ++ s!"\nThe stock column runs the same back end on the stock `trim` function with the \
     whole file's tables, on all {st.stockFns} parsed functions (not only the fully verified).\n"
   out := out ++ s!"\nEntry stores (pipeline output; stock): `checkG64` accepts {o.g64}; {s.g64}; \

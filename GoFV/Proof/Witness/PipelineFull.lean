@@ -262,11 +262,12 @@ def noNilPtrB (tabs : Tables) (f : Func) : Bool :=
     (v.args[0]?.all fun q => !GoFV.Opt.ScheduleCheck.ptrShape
       ((Ctx.makeL tabs f).tys[q]?.getD .other)))
 
-/-- The pipeline returns a `fullyVerified` state whose `schedule` inputs have no memory op, no
-pointer-shaped parameter piece and no checked pointer-shaped value (compiled evaluation). -/
+/-- The pipeline returns a `fullyVerified` state with no `schedule` run that hoists a checked
+pointer (`nhs` empty) and whose `schedule` inputs have no memory op, no pointer-shaped parameter
+piece and no checked pointer-shaped value (compiled evaluation). -/
 theorem pfF_pipeline :
     ((verifiedPipelineFull pfEnv pfF).toOption.map fun r =>
-      r.fullyVerified &&
+      r.fullyVerified && r.nhs.isEmpty &&
         r.nnf.all (fun x => noActB x.2 && noArgPtrB x.1 x.2 && noNilPtrB x.1 x.2)) = some true := by
   native_decide
 
@@ -315,7 +316,7 @@ theorem verifiedPipelineFull_witness :
   | ok r =>
     rw [hpe] at hp
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Bool.and_eq_true] at hp
-    obtain ⟨hv, hn⟩ := hp
+    obtain ⟨⟨hv, hnhs⟩, hn⟩ := hp
     obtain ⟨m, hm⟩ := returnsBool_iff.1 pfF_run
     refine ⟨r, rfl, hv, ⟨m, hm⟩, ?_⟩
     have hx2 : ∀ x ∈ r.nnf,
@@ -328,7 +329,10 @@ theorem verifiedPipelineFull_witness :
       argPtrsOK_of_none (hx2 x hx).1.2 plRunEnv pfArgs {} (fun _ h => nomatch h)
     have hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 plRunEnv pfArgs {} := fun x hx =>
       nilPtrsOK_of_none (hx2 x hx).2 plRunEnv pfArgs {}
-    obtain ⟨fuel', ho⟩ := verifiedPipelineFull_refines hpe hv pfRunEnv_vpre hnn hap hnp
+    have hnh : ∀ x ∈ r.nhs, NilHoistOK x.1 x.2.1 x.2.2 plRunEnv pfArgs {} := by
+      intro x hx
+      rw [List.isEmpty_iff.1 hnhs] at hx; cases hx
+    obtain ⟨fuel', ho⟩ := verifiedPipelineFull_refines hpe hv pfRunEnv_vpre hnn hap hnp hnh
       (fuel := 1) (by rw [show pfEnv.tables = pfTabs from rfl, hm]; trivial)
     rw [show pfEnv.tables = pfTabs from rfl, hm] at ho
     refine ⟨fuel', ?_⟩

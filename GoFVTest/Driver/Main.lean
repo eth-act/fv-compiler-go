@@ -883,6 +883,9 @@ structure VStats where
   /-- Fully verified (through `trim`) functions whose `schedule` step relies on `NilPtrsOK`
   (`SchedClass.relyNilPtrs`). -/
   nilRelyFull : Nat := 0
+  /-- Fully verified (through `trim`) functions with a `schedule` run that hoists a checked
+  pointer above a fault (`FState.nhs` non-empty: `NilHoistOK` is assumed of them). -/
+  hoistFull : Nat := 0
   /-- Rejected `schedule` runs that are the first unverified run from `lower` on, by
   `SchedClass.schedClass`. -/
   schedFirst : Std.HashMap String Nat := {}
@@ -908,7 +911,7 @@ def VStats.merge (a b : VStats) : VStats :=
     reports := a.reports ++ b.reports, fragAll := mm a.fragAll b.fragAll
     fragFirst := mm a.fragFirst b.fragFirst, fragOnly := mm a.fragOnly b.fragOnly
     raFirst := mm a.raFirst b.raFirst, raAll := mm a.raAll b.raAll
-    nilRelyFull := a.nilRelyFull + b.nilRelyFull
+    nilRelyFull := a.nilRelyFull + b.nilRelyFull, hoistFull := a.hoistFull + b.hoistFull
     schedFirst := mm a.schedFirst b.schedFirst, schedAll := mm a.schedAll b.schedAll
     rows := a.rows ++ b.rows }
 
@@ -960,6 +963,7 @@ def verifiedFile (wholeFile : Bool) (maxReport : Nat) (path : System.FilePath) (
       st := { st with selVacuous := st.selVacuous + (if verified then 1 else 0)
                       selVacuousFull := st.selVacuousFull + (if full then 1 else 0) }
     if full && r.nilRely then st := { st with nilRelyFull := st.nilRelyFull + 1 }
+    if full && !r.st.nhs.isEmpty then st := { st with hoistFull := st.hoistFull + 1 }
     let low := (log.toList.filter fun (q, v) => !isGen q && !v.ok).map fun (q, v) => s!"{q}: {v}"
     let row := s!"{path}\t{vstatsFields r.st}\tlow={"; ".intercalate low}"
     st := { st with rows := st.rows.push row }
@@ -1016,6 +1020,7 @@ def verifiedText (st : VStats) (ms : Nat) : String := Id.run do
   out := out ++ s!"| … verified, no unmodelled op | {st.verified - st.vacuous} | {st.verifiedFull - st.vacuousFull} |\n"
   out := out ++ s!"| … verified, partially vacuous: input has a used always-`poison` selection (`selVacuousIn`, a `Mul64uover` flag) | {st.selVacuous} | {st.selVacuousFull} |\n"
   out := out ++ s!"| … relies on `NilPtrsOK` (a `schedule` swap through `nilPtrSwap`) | - | {st.nilRelyFull} |\n"
+  out := out ++ s!"| … relies on `NilHoistOK` (a `schedule` swap through `hoistSwap`, `nhs` non-empty) | - | {st.hoistFull} |\n"
   out := out ++ s!"| … and identical to stock after `trim` | {st.both} | {st.bothFull} |\n\n"
   out := out ++ s!"- verified-pipeline output identical to stock after `trim` (compared as the importer): {st.same}\n"
   out := out ++ s!"- verified (vacuous: unmodelled op), by op or block kind (through `rewrite tern` / through `trim`):\n"
@@ -1126,7 +1131,7 @@ def e2eFile (wholeFile : Bool) (path : System.FilePath) (st : E2E.Stats) : IO E2
       let res := do
         let (pin, links) ← E2E.ownFrame pin t0 r.st.st.tables ((x.dclLen? 0).getD 0) r.st.dclLen
         E2E.back e pin links r.st.st.tables r.st.st.func
-      return st.addFull file r.same stockFrame (mark res)
+      return st.addFull file r.same stockFrame (!r.st.nhs.isEmpty) (mark res)
 
 /-- `--check --verified --e2e`: end-to-end coverage (exit 1 only for parse errors or no files). -/
 def runE2E (o : Opts) : IO UInt32 := do
