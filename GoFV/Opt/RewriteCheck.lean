@@ -2044,16 +2044,18 @@ def fixedEq : Sem.Val → Sem.Val → Bool
   | .ptr p, .ptr q => p == q
   | _, _ => false
 
-/-- The value `w` a fixed load (`generic.rules:2251`, `:2255`, `rewriteFixedLoad`, issue #69)
-gives the `Load` `u` of `f`: the Load's pointer is an `Addr` of a read-only symbol `n` of `ro`
+/-- The value `w` a fixed load (`generic.rules:2251`, `:2255`, `rewriteFixedLoad`, issue #69) or
+a load from a read-only symbol (`:1564`, `:1572`, `:1580`, `:1588`, `symIsRO`) gives the `Load`
+`u` of `f`: the Load's pointer is an `Addr` of a read-only symbol `n` of `ro`
 (`baseBlk?`) at a constant offset (`ptrBase`), and the read at that offset from the symbol's
 allocation alone (`fixedSrc`) is `poison` or `w`'s value (`fixedEq`); `w` is an argument-less
-`Const64`, `Const32` or `Const8`, or an `Addr` (whose value ignores its argument,
+`Const64`, `Const32`, `Const16` or `Const8`, or an `Addr` (whose value ignores its argument,
 `Rules.opVal_addr`). `f` passes `WBCheck.memTyOK`, so the memory the Load reads holds the symbols
 `ro` (`LoadFwd.FwdQ`). -/
 def fixedOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f : Func) (u w : Value) : Bool :=
   u.op == .Load && u.args.size == 2 &&
-  (w.op == .Addr || ((w.op == .Const64 || w.op == .Const32 || w.op == .Const8) && w.args.size == 0)) &&
+  (w.op == .Addr || ((w.op == .Const64 || w.op == .Const32 || w.op == .Const16 ||
+    w.op == .Const8) && w.args.size == 0)) &&
   (match baseBlk? tabs f (ptrBase tabs f 8 u.args[0]!).1 with
    | some (.global n) =>
      ro.any fun e => e.1 == n &&
@@ -2458,7 +2460,9 @@ each instance by `fwdNewOK`, `fwdMoveOK` or `fwdSepOK`, the `isSamePtr`/`disjoin
 included; or a
 fixed load `(Load p _) && isFixedLoad(v, s, off) => rewriteFixedLoad(v, s, sb, off)` whose
 pointer `p` is `(Addr {s} _)`, through `Convert`, `ITab (IMake …)` and an `OffPtr [off]`
-(`fixedPtrPat`; `generic.rules:2251`–`:2258`; `fixedOK`, which follows them by `wordStep?`); or
+(`fixedPtrPat`; `generic.rules:2251`–`:2258`; `fixedOK`, which follows them by `wordStep?`), and
+a load from a read-only symbol `(Load <IntN> (Addr {s} (SB)) _) && symIsRO(s) => (ConstN [readN(s,
+0)])` (`:1564`, `:1572`, `:1580`, `:1588`; `fixedOK`); or
 the length of a `growslice` result `(SliceLen (SelectN [0] (StaticLECall _ newLen:(Const64) …)))
 => newLen` (`:2128`; `growOK`) and its post-`expand calls` form `(SelectN [1] (StaticCall _
 newLen:(Const64) …)) => newLen` (`:2131`; `growPOK`); or a folded `ifaceeq`/`efaceeq` call
@@ -2482,6 +2486,9 @@ def fwdShapeOK (r : Rule) : Bool :=
   | .op .Load none _ _ _ .fixed [.op .OffPtr .., .op .Zero ..] _, .build [n], none =>
     (n.op == .ConstBool || n.op == .Const8 || n.op == .Const16 || n.op == .Const32 ||
       n.op == .Const64) && n.args.isEmpty
+  | .op .Load none _ _ _ .fixed [.op .Addr _ _ _ _ .fixed [.op .SB ..] _, _] _, .build [n], none =>
+    (n.op == .Const8 || n.op == .Const16 || n.op == .Const32 || n.op == .Const64) &&
+      n.args.isEmpty
   | .op .Store none _ _ _ .fixed [_, .op .Load none _ _ _ .fixed [_, .bind z] _, .same z'] _,
       .copy (.var y), none => z == y && z' == y
   | .op .Store none _ _ _ .fixed [_, _, m] _, .copy (.var y), none => patBinds y m

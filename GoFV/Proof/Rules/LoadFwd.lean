@@ -32,7 +32,9 @@ its converse, or `(Load (OffPtr [o] _) (Move _ src mem)) => @move.Block (Load (O
 mem)`; or a dropped identity write `(Store _ _ mem) => mem`, `(Zero _ mem) => mem`; or the length
 of a `growslice` result `(SliceLen (SelectN [0] (StaticLECall _ newLen:(Const64) …))) => newLen`;
 or a folded `ifaceeq`/`efaceeq` call `(StaticLECall {f} d x y mem) && … => (MakeResult (EqPtr x
-y) mem)` and a selection of a `MakeResult` `(SelectN [n] m:(MakeResult ___)) => m.Args[n]`
+y) mem)` and a selection of a `MakeResult` `(SelectN [n] m:(MakeResult ___)) => m.Args[n]`; or
+a load from a read-only symbol `(Load <IntN> (Addr {s} (SB)) _) && symIsRO(s) => (ConstN [readN(s,
+0)])`, validated as the fixed loads (`RewriteCheck.fixedOK`)
 (`RewriteCheck.fwdShapeOK`); each instance is validated by `RewriteCheck.fwdRel`. -/
 def EffectRule.LoadFwd (r : Rule) : Prop := GoFV.Opt.RewriteCheck.fwdShapeOK r = true
 
@@ -165,6 +167,18 @@ theorem r_generic_2257_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r
 
 /-- `generic.rules:2258`: `(Load (OffPtr [off] (ITab (IMake (Convert (Addr {s} sb) _) _))) _) && isFixedLoad(v, s, off) => rewriteFixedLoad(v, s, sb, off)` -/
 theorem r_generic_2258_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2258 := rfl
+
+/-- `generic.rules:1564`: `(Load <typ.Int8> sptr:(Addr {scon} (SB)) mem) && symIsRO(scon) => (Const8 <typ.Int8> [int8(read8(scon,0))])` (issue #69: the read from the read-only symbol's allocation, `RewriteCheck.fixedOK`, under `Sem.RoImage`, as the fixed loads) -/
+theorem r_generic_1564_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1564 := rfl
+
+/-- `generic.rules:1572`: `(Load <typ.Int16> sptr:(Addr {scon} (SB)) mem) && symIsRO(scon) => (Const16 <typ.Int16> [int16(read16(scon,0,config.ctxt.Arch.ByteOrder))])` -/
+theorem r_generic_1572_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1572 := rfl
+
+/-- `generic.rules:1580`: `(Load <typ.Int32> sptr:(Addr {scon} (SB)) mem) && symIsRO(scon) => (Const32 <typ.Int32> [int32(read32(scon,0,config.ctxt.Arch.ByteOrder))])` -/
+theorem r_generic_1580_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1580 := rfl
+
+/-- `generic.rules:1588`: `(Load <typ.Int64> sptr:(Addr {scon} (SB)) mem) && symIsRO(scon) => (Const64 <typ.Int64> [int64(read64(scon,0,config.ctxt.Arch.ByteOrder))])` -/
+theorem r_generic_1588_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1588 := rfl
 
 /-- `generic.rules:2279`: `(StaticLECall {f} typ_ x y mem) && isSameCall(f, "runtime.efaceeq") && isDirectAndComparableType(typ_) && clobber(v) => (MakeResult (EqPtr x y) mem)` (issues #69, #189: the call's descriptor an `Addr` of a type symbol of the precondition's list, through `ITab (IMake …)` and copies, `RewriteCheck.eqCallOK`; it returns `x == y` under `Sem.Env.IfaceEq`) -/
 theorem r_generic_2279_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2279 := rfl

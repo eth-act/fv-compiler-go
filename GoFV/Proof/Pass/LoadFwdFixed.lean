@@ -8,7 +8,9 @@ variable [GoFV.SSA.Sem.Addrs]
 
 `generic.rules:2251`/`:2255` (`rewriteFixedLoad`) replace a `Load` from a read-only symbol at a
 constant offset (a relocation target in a `.dict.` symbol, a type descriptor's size word, …) by
-the `Addr` or constant it reads; the forwarding layer validates each instance
+the `Addr` or constant it reads, and `:1564`/`:1572`/`:1580`/`:1588` (`symIsRO`) a `Load <IntN>`
+of a read-only symbol's first bytes by the `ConstN` they hold; the forwarding layer validates each
+instance
 (`RewriteCheck.fixedOK`): the Load's pointer is an `Addr` of a symbol of `ro` at a constant
 offset, and the read from the symbol's allocation alone is `poison` or the new value.
 
@@ -107,7 +109,8 @@ theorem fixedEq_spec {a b : Val} (h : fixedEq a b = true) : a = .poison ∨ a = 
 theorem fixedOK_spec {tabs : Tables} {ro : List (String × Alloc)} {f : Func} {u w : Value}
     (h : fixedOK tabs ro f u w = true) :
     u.op = .Load ∧ u.args.size = 2 ∧
-      (w.op = .Addr ∨ (((w.op = .Const64 ∨ w.op = .Const32) ∨ w.op = .Const8) ∧ w.args.size = 0)) ∧
+      (w.op = .Addr ∨ ((((w.op = .Const64 ∨ w.op = .Const32) ∨ w.op = .Const16) ∨ w.op = .Const8) ∧
+        w.args.size = 0)) ∧
       ∃ n e s r, baseBlk? tabs f (ptrBase tabs f 8 u.args[0]!).1 = some (.global n) ∧ e ∈ ro ∧
         e.1 = n ∧ fixedSrc n e.2 (tabs.ty u.type) (ptrBase tabs f 8 u.args[0]!).2 = some s ∧
         GoFV.Proof.Rules.opValC tabs w.op (tabs.ty u.type) w.auxInt w.aux [] = some r ∧
@@ -146,7 +149,7 @@ theorem fixedSrc_eq {n : String} {a : Alloc} {t : Ty} {o : BitVec 64} {s : Val}
 theorem fixedOK_term {tabs : Tables} {ro : List (String × Alloc)} {f : Func} {u w : Value}
     (h : fixedOK tabs ro f u w = true) : termOp w.op = true := by
   obtain ⟨-, -, hw, -⟩ := fixedOK_spec h
-  rcases hw with h | ⟨(h | h) | h, -⟩ <;> rw [h] <;> rfl
+  rcases hw with h | ⟨((h | h) | h) | h, -⟩ <;> rw [h] <;> rfl
 
 theorem loadOp_other {t : Ty} {p m : Val} (h : ¬ ∃ a M, p.asPtrWord = some a ∧ m = .mem M) :
     loadOp t [p, m] = .poison := by

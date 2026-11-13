@@ -790,6 +790,7 @@ import GoFV.Proof.Rules.Lsh3
 import GoFV.Proof.Rules.Lsh4
 import GoFV.Proof.Rules.Lsh5
 import GoFV.Proof.Rules.MemEqSame
+import GoFV.Proof.Rules.MemEqSplit
 import GoFV.Proof.Rules.Mod
 import GoFV.Proof.Rules.Mod2
 import GoFV.Proof.Rules.Mod3
@@ -951,6 +952,7 @@ import GoFV.Proof.Witness.FwdGrowPost
 import GoFV.Proof.Witness.FwdMalloc
 import GoFV.Proof.Witness.FwdNew
 import GoFV.Proof.Witness.FwdPtrCmp
+import GoFV.Proof.Witness.FwdRO
 import GoFV.Proof.Witness.FwdWriteBack
 import GoFV.Proof.Witness.FwdZeroLoad
 import GoFV.Proof.Witness.FwdZeroStore
