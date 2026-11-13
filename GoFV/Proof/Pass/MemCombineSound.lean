@@ -123,20 +123,6 @@ theorem load_int (M : Mem) (wt : Width) (Q : Ptr) :
       | some bs => decodeInt wt (bs.extract 0 (0 + wt.bytes))
       | none => .poison := rfl
 
-theorem bytesNat?_concrete {bs : Array Byte} {k : Nat} (h : bytesNat? bs = some k) :
-    ∃ xs : List (BitVec 8), bs.toList = xs.map .b := by
-  rw [bytesNat?, ← Array.foldr_toList] at h
-  generalize bs.toList = l at h ⊢
-  induction l generalizing k with
-  | nil => exact ⟨[], rfl⟩
-  | cons x l ih =>
-    rw [List.foldr_cons] at h
-    split at h
-    · rename_i y n hacc
-      obtain ⟨xs, hxs⟩ := ih hacc
-      exact ⟨y :: xs, by rw [hxs]; rfl⟩
-    · cases h
-
 /-- **A load narrower than 8 bytes** that is an integer read concrete bytes through its split
 pointer, and the description's bytes are the integer's. -/
 theorem load_sound {D : ID → Option Value} {tabs : Tables} {ρ : ID → Val}

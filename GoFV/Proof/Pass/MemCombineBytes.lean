@@ -187,6 +187,20 @@ theorem bytesNat?_map {bs : Array Byte} {xs : List (BitVec 8)} (h : bs.toList = 
     rw [List.map_cons, List.foldr_cons, ih]
     rfl
 
+theorem bytesNat?_concrete {bs : Array Byte} {k : Nat} (h : bytesNat? bs = some k) :
+    ∃ xs : List (BitVec 8), bs.toList = xs.map .b := by
+  rw [bytesNat?, ← Array.foldr_toList] at h
+  generalize bs.toList = l at h ⊢
+  induction l generalizing k with
+  | nil => exact ⟨[], rfl⟩
+  | cons x l ih =>
+    rw [List.foldr_cons] at h
+    split at h
+    · rename_i y n hacc
+      obtain ⟨xs, hxs⟩ := ih hacc
+      exact ⟨y :: xs, by rw [hxs]; rfl⟩
+    · cases h
+
 theorem byteOf_zero (x : Nat) : byteOf x 0 = BitVec.ofNat 8 x := by
   simp [byteOf]
 

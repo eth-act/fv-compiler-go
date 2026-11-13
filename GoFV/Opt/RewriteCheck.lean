@@ -1926,12 +1926,33 @@ copies of `g` (`memCopyReach`: the writes between were dropped in the same layer
 def memReach (tabs : Tables) (f g : Func) (a w : ID) : Bool :=
   copyReach tabs f.valueTab f.valueTab.size a w || memCopyReach g g.valueTab.size a w
 
+/-- The shapes a `Load` and a `Store` at the same shape write back as a refinement of the bytes
+read: a narrow integer or a `bool` (`decodeInt` of bytes that are not all concrete, and `decode`
+of a byte other than `0` or `1` at `bool`, are `poison`, whose encoding is `poison` bytes;
+concrete bytes encode back to themselves). Not the word shapes: a stored pointer reloads as its
+address word, whose bytes do not refine its fragments. -/
+def wbTy : Sem.Ty → Bool
+  | .int .w8 | .int .w16 | .int .w32 | .bool => true
+  | _ => false
+
+/-- The `Store` `u` of `f` writes back what a `Load` of its own memory read at an equal pointer
+(`generic.rules:919`, `(Store {t1} p1 (Load <t2> p2 mem) mem) && isSamePtr(p1, p2) && t2.Size()
+== t1.Size() => mem`): its value a `Load` of `u`'s memory argument (the same ID) at a pointer
+equal to `u`'s (`samePtrB`), the `Load`'s shape `u`'s, a `wbTy` one. -/
+def writeBackOK (tabs : Tables) (f : Func) (u : Value) : Bool :=
+  wbTy (Sem.auxTy tabs u.aux) &&
+  match f.value? u.args[1]! with
+  | some ld => ld.op == .Load && ld.args.size == 2 && ld.args[1]! == u.args[2]! &&
+      Sem.Ty.beq (tabs.ty ld.type) (Sem.auxTy tabs u.aux) && samePtrB tabs f u.args[0]! ld.args[0]!
+  | none => false
+
 /-- The memory root `u` of `f` becomes `w` in `g`, a `Copy` of its memory (`memReach` from `u`'s
 memory argument), as its write changes no byte (`generic.rules:1005`, `:943`, `:948`, `:954`,
 `:961`, `:2158`, `:1352`, `:1357`, `:1362`): a `Store` of zero bytes (of a zero-sized type), a
 `Store` of a `zeroConst` into zero bytes (`zeroChain` through at most eight `Copy`s and
 `Store`s), a `Zero` of a `Zero` of the same size at an equal pointer (`samePtrB`, reached through
-copies of `f`), or a `Zero` of zero bytes (`zeroChain`). -/
+copies of `f`), or a `Zero` of zero bytes (`zeroChain`); or as it writes back the bytes a `Load`
+read there, or `poison` (`writeBackOK`, `:919`). -/
 def dropOK (tabs : Tables) (f g : Func) (u w : Value) : Bool :=
   w.op == .Copy && w.args.size == 1 &&
   ((u.op == .Store && u.args.size == 3 &&
@@ -1946,7 +1967,9 @@ def dropOK (tabs : Tables) (f g : Func) (u w : Value) : Bool :=
           samePtrB tabs f u.args[0]! z.args[0]!
       | none => false) ||
      (memReach tabs f g u.args[1]! w.args[0]! &&
-      zeroChain tabs f u.args[0]! u.auxInt.toInt.toNat 8 u.args[1]!))))
+      zeroChain tabs f u.args[0]! u.auxInt.toInt.toNat 8 u.args[1]!))) ||
+   (u.op == .Store && u.args.size == 3 && memReach tabs f g u.args[2]! w.args[0]! &&
+    writeBackOK tabs f u))
 
 /-- The inner `Move` `im` of a changed `Move` source (`moveSrcOK`): of `u`'s size, its
 destination equal to `u`'s source (`samePtrB`), its source reaching `w`'s through compatible
@@ -2405,7 +2428,8 @@ def fixedPtrPat (p : Pat) : Bool :=
 `(Load (OffPtr [o] _) (Store _ _ … mem:(Zero _ q _))) => @mem.Block (Load (OffPtr [o] q) mem)`
 through one to four `Store`s (`:842`, `:851`, `:862`, `:875`); or
 a dropped identity write `(Store _ _ mem) => mem`, `(Zero _ mem) => mem` (`:1005`, `:943`,
-`:948`, `:954`, `:961`, `:2158`); or a changed `Move` source `(Move dst tmp m:(Move tmp' src _))
+`:948`, `:954`, `:961`, `:2158`) and the write-back `(Store _ (Load _ mem) mem) => mem` (`:919`,
+`writeBackOK`); or a changed `Move` source `(Move dst tmp m:(Move tmp' src _))
 => (Move dst src m)` and its form through a `VarDef` (`:2146`, `:2155`); the validator checks
 each instance by `fwdNewOK`, `fwdMoveOK` or `fwdSepOK`, the `isSamePtr`/`disjoint` conditions
 included; or a
@@ -2435,6 +2459,8 @@ def fwdShapeOK (r : Rule) : Bool :=
   | .op .Load none _ _ _ .fixed [.op .OffPtr .., .op .Zero ..] _, .build [n], none =>
     (n.op == .ConstBool || n.op == .Const8 || n.op == .Const16 || n.op == .Const32 ||
       n.op == .Const64) && n.args.isEmpty
+  | .op .Store none _ _ _ .fixed [_, .op .Load none _ _ _ .fixed [_, .bind z] _, .same z'] _,
+      .copy (.var y), none => z == y && z' == y
   | .op .Store none _ _ _ .fixed [_, _, m] _, .copy (.var y), none => patBinds y m
   | .op .Zero none _ _ _ .fixed [_, m] _, .copy (.var y), none => patBinds y m
   | .op .Move none _ _ _ .fixed [_, _, .op .Move ..] _, .build [n], none => n.op == .Move
