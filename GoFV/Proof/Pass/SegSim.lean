@@ -35,11 +35,12 @@ theorem segs_sound (R : SRel tabs f g) (hM : env.MemOps) {ro : List (String × A
     (hs : segOK tabs f g x = some (D, N)) (hgid : ∀ n ∈ segL x N, ∀ v, g.value? n = some v → v.id = n) :
     SegSound (RoQ tabs ro f) env tabs f g x D N := by
   obtain ⟨d⟩ := segOK_spec hs
-  rcases d.hkind with h | h | h | h
+  rcases d.hkind with h | h | h | ⟨hz, h⟩ | h
   · exact chainSeg_sound d.hfv d.hgv h hgid _ env
   · exact callSeg_sound d.hfv d.hgv d.hgid d.hgty h hM
+  · exact zeroSeg_sound d.hfv d.hgv d.hgid h d.hgty _ env
   · obtain ⟨-, -, hop, -, -, -, -, hgop, -⟩ := roSeg_spec h
-    obtain ⟨hm, hsrc⟩ := roSegsOK_spec hro hs d.hfv hop d.hgv hgop
+    obtain ⟨hm, hsrc⟩ := roSegsOK_spec hro hs d.hfv hop d.hgv hgop hz
     exact roSeg_sound d.hfv d.hgv d.hgid d.hgty h hsrc hm env
   · exact moveSeg_sound d.hfv d.hgv h hgid d.hgty _ env
 

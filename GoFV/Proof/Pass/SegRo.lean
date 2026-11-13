@@ -171,19 +171,19 @@ theorem memRoot_move {ctx : Ctx} {v : Value} (hop : v.op = .Move) {a b c r : Val
     | (rename_i _ h2; cases h2; done)
     | (dsimp only at h; split at h <;> cases h)
 
-/-- What `roSegsOK` says of a segment whose anchor is a `Move`. -/
+/-- What `roSegsOK` says of a segment whose anchor is a `Move` and no zero segment. -/
 theorem roSegsOK_spec (h : roSegsOK tabs ro f g = true) {x : ID} {D N : List ID}
     (hs : segOK tabs f g x = some (D, N)) {fv : Value} (hfv : f.value? x = some fv)
-    (hop : fv.op = .Move) {gv : Value} (hgv : g.value? x = some gv) (hgop : gv.op = .Zero) :
+    (hop : fv.op = .Move) {gv : Value} (hgv : g.value? x = some gv) (hgop : gv.op = .Zero)
+    (hz : zeroSeg? tabs f fv gv = none) :
     WBCheck.memTyOK tabs f = true ∧ roSrcOK tabs ro f fv = true := by
   unfold roSegsOK at h
-  have hx : (x, D, N) ∈ (segList (segArr tabs f g)).filter
-      (fun s => (f.value? s.1).any (·.op == .Move) && (g.value? s.1).any (·.op == .Zero)) :=
-    List.mem_filter.2 ⟨mem_segList.2 hs, by simp [hfv, hop, hgv, hgop]⟩
   simp only [Bool.or_eq_true, Bool.and_eq_true, List.all_eq_true] at h
   rcases h with h | ⟨hm, hall⟩
-  · rw [List.isEmpty_iff] at h; rw [h] at hx; cases hx
-  · have := hall _ hx
+  · rw [List.isEmpty_iff, List.filter_eq_nil_iff] at h
+    have := h _ (mem_segList.2 hs)
+    simp [hfv, hop, hgv, hgop, hz] at this
+  · have := hall _ (List.mem_filter.2 ⟨mem_segList.2 hs, by simp [hfv, hop, hgv, hgop, hz]⟩)
     simp only [hfv, Option.all_some] at this
     exact ⟨hm, this⟩
 

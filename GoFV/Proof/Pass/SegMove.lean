@@ -892,6 +892,145 @@ theorem moveSeg_sound {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D N
     rfl
   · rw [hid x fv hxA hfv, Proof.tys_of_value hfv, Option.getD_some, ← hty]
     exact retype_mono _ (.mem hMsT)
+
+/-! ## Zero segments: a `Move` from a just-zeroed source (`generic.rules:1740`, `:1742`) -/
+
+theorem zeroSeg_spec {tabs : Tables} {f : Func} {fv gv : Value} {D N : List ID}
+    (h : zeroSeg? tabs f fv gv = some (D, N)) :
+    D = [] ∧ N = [] ∧ fv.op = .Move ∧ ∃ d p m mc m1 z zv, fv.args.toList = [d, p, m] ∧
+      copyReach tabs f.valueTab f.valueTab.size m mc = true ∧
+      (m1 = mc ∨ ∃ mv : Value, f.value? mc = some mv ∧ mv.op = .VarDef ∧ mv.args = #[m1]) ∧
+      copyReach tabs f.valueTab f.valueTab.size m1 z = true ∧ f.value? z = some zv ∧
+      gv.op = .Zero ∧ gv.args = #[d, mc] ∧ gv.auxInt = fv.auxInt ∧ 0 ≤ fv.auxInt.toInt ∧
+      zv.op = .Zero ∧ zv.args.size = 2 ∧ zv.auxInt = fv.auxInt ∧
+      samePtr tabs f zv.args[0]! p = true := by
+  unfold zeroSeg? at h
+  split at h
+  case h_2 => cases h
+  rename_i d p m hop hargs
+  have hmc := StructStore.copyReach_copyEnd (tabs := tabs) f.valueTab f.valueTab.size m
+  generalize copyEnd tabs f.valueTab f.valueTab.size m = mc at h hmc
+  dsimp only at h
+  generalize hm1 : underVarDef f mc = m1 at h
+  have hm1' : m1 = mc ∨ ∃ mv : Value, f.value? mc = some mv ∧ mv.op = .VarDef ∧ mv.args = #[m1] := by
+    unfold underVarDef at hm1
+    cases hmv : f.value? mc with
+    | none => rw [hmv] at hm1; exact .inl hm1.symm
+    | some mv =>
+      rw [hmv] at hm1
+      simp only at hm1
+      split at hm1
+      · rename_i hc
+        simp only [Bool.and_eq_true, beq_iff_eq] at hc
+        exact .inr ⟨mv, rfl, hc.1, by rw [StructStore.args1 hc.2, hm1]⟩
+      · exact .inl hm1.symm
+  have hz := StructStore.copyReach_copyEnd (tabs := tabs) f.valueTab f.valueTab.size m1
+  generalize copyEnd tabs f.valueTab f.valueTab.size m1 = z at h hz
+  cases hzv : f.value? z with
+  | none => rw [hzv] at h; cases h
+  | some zv =>
+  rw [hzv] at h
+  simp only at h
+  split at h
+  case isFalse => cases h
+  rename_i hc
+  simp only [Option.some.injEq, Prod.mk.injEq] at h
+  obtain ⟨rfl, rfl⟩ := h
+  simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hc
+  obtain ⟨⟨⟨⟨⟨⟨⟨hgop, hga⟩, hgai⟩, h0⟩, hzop⟩, hzsz⟩, hzai⟩, hce⟩ := hc
+  exact ⟨rfl, rfl, hop, d, p, m, mc, m1, z, zv, hargs, hmc, hm1', hz, hzv, hgop, hga, hgai, h0,
+    hzop, hzsz, hzai, hce⟩
+
+/-- **Zero segments are sound**: the `Move` read, in its memory (the `Zero`'s, or that one with a
+frame block poisoned by a `VarDef`), bytes the `Zero`'s zeros refine, and the target's `Zero`
+writes those zeros at the destination of the same memory. -/
+theorem zeroSeg_sound {tabs : Tables} {f g : Func} {x : ID} {fv gv : Value} {D N : List ID}
+    (hfv : f.value? x = some fv) (hgv : g.value? x = some gv) (hgid : gv.id = x)
+    (h : zeroSeg? tabs f fv gv = some (D, N)) (hty : gv.type = fv.type)
+    (Q : Mem → Prop) (env : Env) :
+    SegSound Q env tabs f g x D N := by
+  obtain ⟨rfl, rfl, hop, d, p, m, mc, m1, z, zv, hfa, hmc, hm1, hz1, hzv, hgop, hga, hgai, h0,
+    hzop, hzsz, hzai, hce⟩ := zeroSeg_spec h
+  have hnphi : fv.op ≠ .Phi := by rw [hop]; decide
+  have hroot : CSE.rootNode f x = true := by
+    simp only [CSE.rootNode, hfv, Option.map_some, Option.getD_some, hop]; decide
+  refine ⟨fun s hs _ sv fr e mm hsv hpan => ?_, fun S A H hT _ hid hsize hroots => ?_⟩
+  · simp only [List.nil_append, List.mem_singleton] at hs
+    subst hs
+    rw [hfv] at hsv; cases hsv
+    rcases Proof.evalValue_panic_op hpan with hc | hc <;> rw [hop] at hc <;> revert hc <;> decide
+  have hxA : A x := hroots x (by simp) hroot
+  have hfa' : fv.args = #[d, p, m] := Array.ext' hfa
+  have hcx := H.cl x fv hxA hfv hnphi
+  have hdA := hcx d (by rw [hfa']; simp)
+  have hpA := hcx p (by rw [hfa']; simp)
+  have hmA := hcx m (by rw [hfa']; simp)
+  obtain ⟨dv, hdv⟩ := Avail.reg H hdA
+  obtain ⟨pv, hpv⟩ := Avail.reg H hpA
+  obtain ⟨mv, hmv⟩ := Avail.reg H hmA
+  obtain ⟨yx, hyx⟩ := Avail.reg H hxA
+  -- the source's `Move`
+  obtain ⟨Dst, P, Mm, R, Ms, hD, hP, rfl, hR, hMs, rfl⟩ :=
+    move_ok hop hfa hdv hpv hmv (Avail.eval H hxA hfv hnphi hyx)
+  have hRs : R.size = fv.auxInt.toInt.toNat := DSE.read_size hR
+  obtain ⟨hmcA, hmcr⟩ := StructStore.copy_reg H hT hid f.valueTab.size hmA hmc
+  have hmcv := hmcr.trans hmv
+  -- the memory under the `VarDef`, which the `Move`'s refines
+  obtain ⟨M1, hM1, hm1A, href⟩ : ∃ M1, S.regs[m1]? = some (some (.mem M1)) ∧ A m1 ∧
+      Mem.Refines Mm M1 := by
+    rcases hm1 with rfl | ⟨mvv, hmvv, hvd, hva⟩
+    · exact ⟨Mm, hmcv, hmcA, Mem.Refines.refl _⟩
+    · have hm1A := H.cl mc mvv hmcA hmvv (by rw [hvd]; decide) m1 (by rw [hva]; simp)
+      obtain ⟨y1, hy1⟩ := Avail.reg H hm1A
+      have hev := Avail.eval H hmcA hmvv (by rw [hvd]; decide) hmcv
+      obtain ⟨M1, b, rfl, hy⟩ := varDef_ok hvd hva hy1 hev
+      rw [hid mc mvv hmcA hmvv, Proof.tys_of_value hmvv, Option.getD_some] at hy
+      obtain ⟨-, hMm⟩ := retype_mem_eq hy.symm
+      subst hMm
+      exact ⟨M1, hy1, hm1A, poisonBlock_refines M1 b⟩
+  -- the `Zero`: its memory, `M1` through copies, holds zeros at `P`
+  obtain ⟨hzA, hzr⟩ := StructStore.copy_reg H hT hid f.valueTab.size hm1A hz1
+  have hW : M1.read P fv.auxInt.toInt.toNat =
+      some (Array.replicate fv.auxInt.toInt.toNat (.b 0)) := by
+    have hza := CSE.Mem.args_two hzsz
+    have hzcl := H.cl z zv hzA hzv (by rw [hzop]; decide)
+    have hqA := hzcl zv.args[0]! (by rw [hza]; simp)
+    have hm0A := hzcl zv.args[1]! (by rw [hza]; simp)
+    obtain ⟨_, qv, -, hqv, -⟩ := H.val _ hqA
+    obtain ⟨_, m0v, -, hm0v, -⟩ := H.val _ hm0A
+    obtain ⟨zv2, yz, hzv2, hyz, hevz⟩ := H.val z hzA
+    rw [hzv] at hzv2; cases hzv2
+    obtain ⟨Q, M0, Z, hQw, rfl, hZ, rfl⟩ := zero_ok hzop hza hqv hm0v (hevz (by rw [hzop]; decide))
+    rw [hzr.trans hM1] at hyz
+    have hMZ := (retype_mem_eq (Option.some.inj (Option.some.inj hyz)).symm).2
+    subst hMZ
+    have h1 := samePtr_reg H hT hid hqA hpA hce
+    rw [hpv] at h1
+    rw [h1] at hqv
+    cases (Option.some.inj (Option.some.inj hqv))
+    rw [hP] at hQw; cases hQw
+    have := Pass.LoadFwd.read_write_self hZ
+    rwa [Array.size_replicate, hzai] at this
+  -- the `Move` read bytes the zeros refine
+  obtain ⟨R', hR', hRR⟩ := href.read hR
+  rw [hW] at hR'; cases hR'
+  -- the target's `Zero` writes the zeros at `Dst` over `Mm`
+  obtain ⟨Tz, hTz⟩ := StructStore.write_size_congr hMs
+    (bs' := Array.replicate fv.auxInt.toInt.toNat (.b 0)) (by rw [Array.size_replicate, hRs])
+  obtain ⟨T', hT', hMsT⟩ := (Mem.Refines.refl Mm).write hRR hMs
+  rw [hTz] at hT'; cases hT'
+  have hTz' : Mm.write Dst (Array.replicate gv.auxInt.toInt.toNat (.b 0)) = some Tz := by
+    rw [hgai]; exact hTz
+  have hev := zero_eval (env := env) (ctx := Ctx.make tabs g) (fr := S) hgop hga hdv hD hmcv hTz'
+  rw [hgid, Proof.tys_of_value hgv, Option.getD_some] at hev
+  have hxlt : x < S.regs.size := Nat.lt_of_lt_of_le (CheckFacts.lt_of_value? hgv) hsize
+  refine ⟨S.set x ((Val.mem Tz).retype (tabs.ty gv.type)), ?_, fun _ => ⟨_, _, hyx,
+    Proof.Frame.set_regs_self hxlt, ?_⟩⟩
+  · rw [List.nil_append, Proof.evalAll_cons]
+    simp only [Proof.stepV, show (Ctx.make tabs g).f = g from rfl, hgv, hev]
+    rfl
+  · rw [hid x fv hxA hfv, Proof.tys_of_value hfv, Option.getD_some, ← hty]
+    exact retype_mono _ (.mem hMsT)
 /-! ## Non-vacuity: a `Move` of a store over a zeroed temporary
 
 `f`: `v4 = Zero [16] v3 v1` (`v3 = OffPtr [16] SP`), `v7 = Store {int64} (OffPtr [8] v3) v6 v4`,
@@ -966,6 +1105,21 @@ private def mg3 : Func :=
 theorem moveSeg_witness_copy :
     moveSeg? tabs mf3 mg3 8 (mv 8 .Move 2 16 (some 2) #[2, 3, 14])
       (mv 8 .Store 2 0 (some 2) #[18, 6, 15]) = some ([], [18, 16, 17, 15]) := by
+  decide +kernel
+
+/-- A zero segment (`generic.rules:1742`): `v8 = Move [16] SP v3 v5` from the temporary `v3` that
+`v4 = Zero [16] v3 v1` cleared, under `v5 = VarDef v4`; in `g` `v8 = Zero [16] SP v5`. Nothing is
+dropped or fresh. -/
+private def zf : Func :=
+  { (default : Func) with
+    valueTab := #[none, some (mv 1 .InitMem 2 0 none #[]), some (mv 2 .SP 1 0 none #[]),
+      some (mv 3 .OffPtr 1 16 none #[2]), some (mv 4 .Zero 2 16 (some 2) #[3, 1]),
+      some (mv 5 .VarDef 2 0 (some 2) #[4]), none, none,
+      some (mv 8 .Move 2 16 (some 2) #[2, 3, 5])] }
+
+theorem zeroSeg_witness :
+    zeroSeg? tabs zf (mv 8 .Move 2 16 (some 2) #[2, 3, 5]) (mv 8 .Zero 2 16 (some 2) #[2, 5]) =
+      some ([], []) := by
   decide +kernel
 
 end Witness

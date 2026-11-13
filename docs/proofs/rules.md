@@ -401,6 +401,47 @@ and `LoadFwd.zeroLd_load` decodes a successful read of zeros as the constant (`p
 fails). Witness: `zl_checkedRewrite`/`zl_rwPre` (`Witness/FwdZeroLoad.lean`: `*p = [2]int{};
 return p[1]`, the `Load` at offset 8 of the 16 zeroed bytes becomes `Const64 [0]`).
 
+**Loads through disjoint `Store`s to a `Zero`** (`:842`, `:851`, `:862`, `:875`, issue #69,
+Phase1Tail7): `(Load <t1> op:(OffPtr [o1] p1) (Store {t2} p2 _ … mem:(Zero [n] q _))) && o1 >= 0
+&& o1+t1.Size() <= n && isSamePtr(p1, q) && CanSSA(t1) && disjoint(op, t1.Size(), p2, t2.Size())
+&& … => @mem.Block (Load <t1> (OffPtr <op.Type> [o1] q) mem)`, through one to four `Store`s,
+reads the bytes in the `Zero`'s memory; the fresh `Load` is then a `Load` of a `Zero` (`:882`–`:902`
+fold it at the integer and `bool` shapes). Forwarding rules as `:827` (`fwdShapeOK`: a `Load` of
+an `OffPtr` and a `Store` with two built values in a named block); `fwdMoveRep` (and `fwdEvOK`)
+accept `fwdSepOK` besides `fwdMoveOK`: `top` is `Load <u.Type> offp z` of a `Zero` `z`, `offp`
+the pointer-shaped `OffPtr [o] q` of the `Zero`'s pointer `q`, `0 ≤ o`, the Load's shape of
+positive size, its memory reaches `z` through at most eight `Copy`s and `Store`s/`StoreWB`s
+`disjointB` from the read (`sepChain`), and its pointer is `q + o` (`ptrBase` offsets,
+`baseSameB` bases). The `Zero`'s length (`o1+t1.Size() <= n`) is not needed: the bytes read the
+same in both memories wherever they are. No new assumption beyond the layer's: `LoadFwd.sep_den`
+reads the bytes through the writes (`sepChain_read`: `disjoint_sep` + `read_write_sep`, as
+`zeroChain_read`), takes `q`'s pointer from the `Zero`'s write (`memDef_zero`), and the fresh
+`OffPtr` is the Load's pointer when the read succeeds (`read_inWindow`; a failed read is `poison`,
+`load_of_read_none`); `sepChain_rank`/`sepChain_ndc` put the `Zero` and `q` below the `Load` for
+the induction. Witness: `FwdZeroStore.zs_checkedRewrite`/`zs_rwPre` (`Witness/FwdZeroStore.lean`: `*p =
+[2]int{}; p[0] = x; return p[1]`, the `Load` at offset 8 reads the `Zero`'s memory past the
+`Store` at offset 0).
+
+**Pointer comparisons** (`:1649`, `:1650`, `:1652`–`:1663`, `:1666`, `:1667`, `:1669`–`:1676`, 24 alternatives, issue
+#69, Phase1Tail6): `EqPtr`/`NeqPtr` of `LocalAddr`s, `Addr`s, their `OffPtr`s (and a `Convert` of
+an `Addr`), and of `OffPtr`s from `isSamePtr` bases, folded to `(ConstBool [c])`, are forwarding
+rules (`fwdShapeOK`: an `EqPtr`/`NeqPtr` pattern with a `ConstBool` built in place; the
+interpreter tries `loads` on an `EqPtr`/`NeqPtr` after its row, `Interp.rewriteValue`,
+`Table.segBase`, and `fwdEvent?` takes their events). A `LocalAddr` is an atom of the
+denotation, so these are no `Rule.Sound`: only the forwarding layer's valuations hold each
+`LocalAddr` at its frame variable (`AtomSim.MemAtoms`). `fwdNewOK` accepts `ptrCmpOK tabs f u w`:
+`u` is an `EqPtr`/`NeqPtr` of `a` and `b`, `w` an argument-less `ConstBool` whose value is
+`ptrCmp? tabs f a b` (negated for `NeqPtr`): from one base (`baseSameB` of the `ptrBase`s:
+through `OffPtr`, `Copy`, constant-index `PtrIndex` and `Convert` steps, then the same value, one
+known allocation, or `AddPtr`/`PtrIndex` nodes by equal indices) the pointers are equal iff
+their offsets are; from the starts of two different known allocations (`baseBlk?`: a
+`LocalAddr`'s frame variable, an `Addr`'s global) they are not; otherwise the event is rejected.
+No new assumption beyond the layer's: `LoadFwd.ptrCmp_den` reads both pointers through
+`ptrBase_den`, `baseSame_den` and `baseBlk_den` (`Ptr.add` keeps the block and adds the offset
+modulo `2^64`), and `fwd_den`'s new case refines the comparison by the constant (`poison` if an
+operand is no pointer word). Witness: `FwdPtrCmp.pc_checkedRewrite`/`pc_rwPre` (`Witness/FwdPtrCmp.lean`:
+`&t[0] != &a` becomes `true` by `:1673`, `&t[0] == &t[1]` becomes `false` by `:1655`).
+
 **`growslice` lengths** (`:2128`, issue #69): `(SliceLen (SelectN [0] (StaticLECall {sym} _
 newLen:(Const64) _ _ _ _))) && (isSameCall(sym, "runtime.growslice") || isSameCall(sym,
 "runtime.growsliceNoAlias")) => newLen` is a forwarding rule (`fwdShapeOK`; the interpreter tries
@@ -658,7 +699,8 @@ evaluation).
 the same `Store`s over the `Zero`'s memory, `:1638`/`:1721`/`:1730` replace `SelectN [0]` of a
 call to `runtime.memclrNoHeapPointers`/`runtime.memmove` (its only use) by `Zero`/`Move`, and
 `:1743` replaces a `Move` from a read-only symbol whose bytes are zero (`symIsROZero`) by a
-`Zero`. Each
+`Zero`, and `:1740`/`:1742` a `Move` from a source a `Zero` (under a `VarDef`) just cleared.
+Each
 rewrites a *segment* of a block: the rule's value `x` (the anchor) is redefined in place, the
 values it clobbers (`D`: the inner `Store`s and the `Zero`, or the call) are gone, and fresh
 values (`N`: the new inner `Store`s) are put in. Only the anchor's memory agrees with the
@@ -681,7 +723,10 @@ relates its input to the result by `segRel`:
   `retype` at a slice shape checks only `Val.sliceOK`, which does not read the pointer,
   `AtomSim.opVal_sliceComp`; `copy(a[i:j], …)` with constant bounds; `constSize` 6 deep;
   `termConst_reg`: an available term's register is its value; witness
-  `callSeg_witness_sliceLen`), `g`'s `Zero`/`Move` on the call's arguments) or `roSeg?` (in `f` `Move [n] dst src mem`
+  `callSeg_witness_sliceLen`), `g`'s `Zero`/`Move` on the call's arguments) or `zeroSeg?`
+  (`:1740`, `:1742`, issue #69: in `f` `Move [n] dst p m` whose memory is, up to copies `mc`, (a
+  `VarDef` of) a `Zero [n] p' _` up to copies, `p'` and `p` `samePtr`, `0 ≤ n`; in `g` `Zero [n]
+  dst mc`; nothing dropped or fresh; tried before `roSeg?`) or `roSeg?` (in `f` `Move [n] dst src mem`
   with `src` an `Addr` of a symbol, in `g` `Zero [n] dst mem`; nothing dropped or fresh) or
   `moveSeg?` (`:1978`/`:1992`/`:2011`/`:2035` and the `VarDef` forms `:2049`/`:2064`/`:2084`/`:2109`,
   issue #69: in `f` `Move [n] dst p m` whose memory is, up to copies, (a `VarDef` of) `k` `Store`s
@@ -705,7 +750,8 @@ relates its input to the result by `segRel`:
   `Sem.rodataAlloc` of their bytes `Sem.rodataBytes?`, and type descriptors (`typeinfo` set,
   not `SRODATA` data, as `Sem.globalImage`: `Sem.typeDescAlloc`, the header words from the
   `rtype` line or the type table; issue #69, for `newobject`); the zero `..stmp_N` symbols are
-  exported with an empty `data`): the symbol of each read-only segment is one of `ro` whose
+  exported with an empty `data`): the symbol of each read-only segment (a `Move` of `f` that is a
+  `Zero` of `g` and no zero segment) is one of `ro` whose
   bytes are all zero, and `f` passes `WBCheck.memTyOK` (values of memory shape are memory ops;
   moved to `GoFV/Opt/MemTy.lean`).
 
@@ -729,7 +775,10 @@ order and refine the source's anchor: `chainSeg_sound` (`SegChain.lean`, with
 memory), `callSeg_sound (hE : env.MemOps)` (`SegCallSeg.lean`, with
 `SegCall.callOp_memclr`/`callOp_memmove`: the call's memory is refined by the plain write) and
 `roSeg_sound` (`SegRo.lean`, with `Q := RoQ tabs ro f`, `RoMem ro` when `f` passes `memTyOK`: the
-`Move` read the symbol's zero bytes, `read_zeros`, which the `Zero` writes) and `moveSeg_sound`
+`Move` read the symbol's zero bytes, `read_zeros`, which the `Zero` writes), `zeroSeg_sound`
+(`SegMove.lean`: the `Zero`'s memory reads zeros at `P`, `read_write_self` with `samePtr_reg`; the
+`Move`'s memory, that one or with a frame block poisoned, reads bytes they refine, and the
+target's `Zero` writes the zeros at `Dst` over the same memory; witness `zeroSeg_witness`) and `moveSeg_sound`
 (`SegMove.lean`: the stores' memory has at `P` the zeros with the stores' bytes put in,
 `read_write_putBytes`; the `Move`'s memory, that one or with a frame block poisoned, reads bytes
 they refine; the target's `Zero` and stores write those bytes at `Dst`, `writes_putBytes`, inside
@@ -751,7 +800,7 @@ theorem seg_refines (hf : check ce f = .ok ()) (hg : check ce' g = .ok ())
 `LayerChain.seg` and `chain_refines` take it into `checkedRewrite_refines` (statement
 unchanged; `Env.MemOps` and `RoImage (roSyms tabs f)` are conjuncts of `RwPre`). `checkedTiers`
 tries a table without `segs` first when the full table is rejected. Proven: `:1833`, `:1844`,
-`:1857`, `:1638`, `:1721`, `:1730`, `:1743`; witness `GoFV.Proof.Witness.zp_checkedRewrite`
+`:1857`, `:1638`, `:1721`, `:1730`, `:1740`, `:1742`, `:1743`; witness `GoFV.Proof.Witness.zp_checkedRewrite`
 (`*p = [2]int{}; p[0] = x; p[1] = x` with `{:1833}`: the `Zero` and the first `Store` dropped, the
 anchor stores over a fresh `Store` on the input memory; kernel evaluation), `callSeg_witness`
 (`callSeg?` on a `memclr` call), `callSeg_witness_str` (its size `len("0123456789abcdef") * 1`),
@@ -1101,7 +1150,7 @@ arguments are `Addr`s whose auxes are symbols `na`, `nb`, and `v` becomes `Const
 (`Rules.addrVal`, `Run.frameVal`), and `Ptr.eq` of two such pointers is the comparison of the
 names (`eqPtr_globals`), so `ACFacts.step` refines the denotations of a closed set at the same
 fuel; `ReplayInv.addrCmp` keeps the replay invariant. The `OffPtr` (`:1649`, `:1650`, …) and
-`Convert` (`:1666`, `:1667`) forms stay open. Pass execution witness:
+`Convert` (`:1666`, `:1667`) forms are forwarding rules ("Pointer comparisons" above). Pass execution witness:
 `GoFV.Proof.Witness.ac_checkedRewrite` (`same`, `&a == &b`, `{generic.rules:1648}`).
 
 **Selections of a `Make`: `makeSelOK`, `Rule.MakeSel`** (`GoFV/Proof/Rules/AllSound.lean`,
@@ -1228,7 +1277,7 @@ needs a later phase of the semantics.
 | `generic` | Eq | 58 | 0 | 0 | 2 | 58 |
 | `generic` | EqB | 5 | 0 | 0 | 0 | 5 |
 | `generic` | EqInter | 1 | 0 | 0 | 0 | 1 |
-| `generic` | EqPtr | 3 | 7 | 0 | 11 | 20 |
+| `generic` | EqPtr | 15 | 5 | 0 | 11 | 20 |
 | `generic` | EqSlice | 1 | 0 | 0 | 0 | 1 |
 | `generic` | Floor | 0 | 0 | 0 | 1 | 1 |
 | `generic` | IMake | 1 | 1 | 0 | 1 | 2 |
@@ -1238,17 +1287,17 @@ needs a later phase of the semantics.
 | `generic` | IsSliceInBounds | 5 | 3 | 0 | 0 | 8 |
 | `generic` | Leq | 62 | 0 | 0 | 2 | 62 |
 | `generic` | Less | 62 | 0 | 0 | 2 | 62 |
-| `generic` | Load | 22 | 1 | 0 | 33 | 35 |
+| `generic` | Load | 26 | 1 | 0 | 33 | 35 |
 | `generic` | Lsh | 67 | 21 | 0 | 0 | 88 |
 | `generic` | MemEq | 2 | 9 | 0 | 0 | 11 |
 | `generic` | Mod | 29 | 0 | 0 | 0 | 29 |
-| `generic` | Move | 11 | 0 | 0 | 25 | 25 |
+| `generic` | Move | 13 | 0 | 0 | 25 | 25 |
 | `generic` | Mul | 45 | 8 | 0 | 8 | 60 |
 | `generic` | Neg | 24 | 0 | 0 | 2 | 26 |
 | `generic` | Neq | 54 | 0 | 0 | 2 | 54 |
 | `generic` | NeqB | 5 | 0 | 0 | 0 | 5 |
 | `generic` | NeqInter | 1 | 0 | 0 | 0 | 1 |
-| `generic` | NeqPtr | 4 | 6 | 0 | 11 | 20 |
+| `generic` | NeqPtr | 16 | 4 | 0 | 11 | 20 |
 | `generic` | NeqSlice | 1 | 0 | 0 | 0 | 1 |
 | `generic` | NilCheck | 8 | 0 | 0 | 8 | 8 |
 | `generic` | Not | 27 | 2 | 0 | 4 | 33 |
@@ -1282,7 +1331,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 60 | 4 | 4 | 0 | 68 |
 | `generic` | Zero | 2 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1393 | 192 | 31 | 258 | 1762 |
+| all | | 1423 | 188 | 31 | 258 | 1762 |
 
 <!-- END coverage -->
 
