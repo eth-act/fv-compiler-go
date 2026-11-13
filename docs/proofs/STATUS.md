@@ -2276,13 +2276,14 @@ Functions by first unverified run (3,635 of 96,553): opt 2,392, late opt 607, mi
 
 Since #723, `early phielim and copyelim` also has a zero-size fragment: `CopyZero.zeroGuard` with
 `copyelim_refines_zero`, and the step's relation is `.mono`. On full-v11, copyelim's skipped
-(fragment) runs go from 660 to 46, and so do early deadcode's. Per function, compared with #727's
-code: Phase 1 is 93,939 → 94,091 (+152, 0 lost). Among the 614 functions whose Phase 1 route
-changes, `trim` goes 359 → 485 (+127), and stock identity after `trim` goes 14 → 205 (+191, 0 lost).
-One function is lost through `trim`, `ssagen.Compile`. Its copyelim is now proven, so the schedule
-validator sees a rerouted state it cannot yet validate (class `NIL CHECK OF ANOTHER PTR VALUE AFTER
-X`, the hoist class NilHoistOK targets). No statement is weakened. Compile's output was not
-identical to stock before either. This is tracked in #385.
+(fragment) runs go from 660 to 46, and so do early deadcode's. These 614 functions are the only
+ones whose route changes. Among them, on a0ecbcea (#722): Phase 1 is 492 → 574 (+82, 0 lost),
+`trim` is 445 → 494 (+50), and stock identity after `trim` is 14 → 205 (+191, 0 lost). Against
+#727's code alone (before #722's `:1004`), Phase 1 is 93,939 → 94,091 (+152, 0 lost). One function
+is lost through `trim`, `ssagen.Compile`. Its copyelim is now proven, so the schedule validator
+sees a rerouted state it cannot yet validate (class `NIL CHECK OF ANOTHER PTR VALUE AFTER X`, the
+hoist class NilHoistOK targets). No statement is weakened. Compile's output was not identical to
+stock before either. This is tracked in #385.
 
 The `decompose user` runs that are unverified (59 on full-v9) are not in `decompose-probe`'s count
 of stock inputs outside `decUserFrag` (0 of 96,560): the probe checks the stock section before the
