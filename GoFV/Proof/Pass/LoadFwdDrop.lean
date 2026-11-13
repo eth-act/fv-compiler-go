@@ -227,6 +227,17 @@ theorem memDef_zero {tabs : Tables} {s : Value} (hs : s.op = .Zero) {a c y : Val
   obtain ⟨q, hq, M', hw, rfl⟩ := h
   exact ⟨q, m0, M', hq, rfl, hw, rfl⟩
 
+/-- A `VarDef`'s value: its memory with its frame variable (activation 0) poisoned if it is a
+`PAUTO` (`varDefMem`). -/
+theorem memDef_varDef {tabs : Tables} {s : Value} (hs : s.op = .VarDef) {a y : Val}
+    (h : memDef tabs s [a] = some y) :
+    ∃ m n, a = .mem m ∧ s.aux = some n ∧ y = .mem (varDefMem tabs 0 n m) := by
+  cases a <;> try (simp [memDef, hs] at h; done)
+  rename_i m
+  simp only [memDef, hs, Option.map_eq_some_iff] at h
+  obtain ⟨n, hn, rfl⟩ := h
+  exact ⟨m, n, rfl, hn, rfl⟩
+
 mutual
 theorem zeroVal_spec : ∀ {v : Val}, zeroVal v = true → ZeroV v
   | .poison, _ => .poison
@@ -571,8 +582,9 @@ theorem zeroChain_read (hT : Term.Typed f.value? tabs ρ) (hM : MemAtoms f.value
     | some s =>
     rw [hs] at h
     simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq, decide_eq_true_eq] at h
-    rcases h with ((⟨⟨hcop, hcsz⟩, hch⟩ | ⟨⟨⟨hsop, hssz⟩, hdis⟩, hch⟩) |
-      ⟨⟨⟨hzop, hzsz⟩, hle⟩, hbase⟩) | ⟨⟨⟨⟨⟨hsel, hs1⟩, hssz⟩, hfc⟩, hpv⟩, hfresh⟩
+    rcases h with (((⟨⟨hcop, hcsz⟩, hch⟩ | ⟨⟨⟨hsop, hssz⟩, hdis⟩, hch⟩) |
+      ⟨⟨⟨hzop, hzsz⟩, hle⟩, hbase⟩) | ⟨⟨⟨⟨⟨hsel, hs1⟩, hssz⟩, hfc⟩, hpv⟩, hfresh⟩) |
+      ⟨⟨⟨hvop, hvsz⟩, hvpo⟩, hch⟩
     · -- a `Copy` of memory
       have ht : termOp s.op = true := by rw [hcop]; rfl
       cases k with
@@ -637,6 +649,23 @@ theorem zeroChain_read (hT : Term.Typed f.value? tabs ρ) (hM : MemAtoms f.value
       have hz := fresh_blockZero hQ hs hsel hs1 hssz hfc hb hqop hq0 hqsz hqc hqt hm h1
       rw [e1] at hbs
       exact blockZero_read (by simpa [Ptr.add] using hz) hn hbs
+    · -- a `VarDef` of a variable it does not poison: the identity on memory
+      have hmem : memOp s.op = true := by rw [hvop]; rfl
+      cases k with
+      | zero => simp [den] at hm
+      | succ k =>
+      rw [den_succ_atom (not_term_of hs (by rw [memOp_not_term hmem]; decide))] at hm
+      obtain ⟨N, hN⟩ := hM m s hs hmem (by rw [hm]; nofun)
+      obtain ⟨y, hy, hρs⟩ := hN N (Nat.le_refl _)
+      rw [toList_one hvsz, List.map_cons, List.map_nil] at hy
+      obtain ⟨m0, x, hm0, hx, rfl⟩ := memDef_varDef hvop hy
+      rw [hm] at hρs
+      have hMM := retype_mem hρs.symm
+      subst hMM
+      have hnp : tabs.varDefPoisons x = false := by
+        rw [hx] at hvpo; simpa using hvpo
+      simp only [varDefMem, hnp, Bool.false_eq_true, ↓reduceIte] at hbs
+      exact zeroChain_read hT hM hQ hA hn hp d _ hch hm0 hbs
 
 /-! ## Write-backs (`generic.rules:919`) -/
 
