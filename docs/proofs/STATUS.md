@@ -147,6 +147,23 @@ main 51ef75c1 (6 min):
 | … relying on `NilPtrsOK` (a `schedule` swap through `nilPtrSwap`) | – | 3,014 (91883690: 2,983) | – | – |
 | … and identical to stock after `trim` | 74,651 (74,595) | 66,546 (66,331) | 7,233 | 5,699 |
 
+**Partially vacuous: the `Mul64uover` overflow flag (#69).** Go's ssagen types
+`math.MulUintptr`'s `Mul64uover` `(uint, uint)` (`ssagen/intrinsics.go`), while its `Select1` is
+the `bool` overflow flag, which `generic.rules:193`/`:649`/`:1339`/`:1340` and the ARM64 lowering
+(`(Select1 (Mul64uover x y)) => (NotEqual (CMPconst (UMULH x y) [0]))`) read as a flag. `run`
+retypes the op's `(int, bool)` result at the declared `(uint, uint)` shape, so the flag is `poison`
+and every run reaching the `If` on it is `stuck`: the theorems hold of such a function only
+vacuously on those runs. The driver now counts these apart (`E2E.selVacuousIn`: a used selection
+whose shape and its tuple's declared component shape are `bool` and not `bool`; a full-v11 scan of
+every `Select0`/`Select1` finds no other op with such a selection) and leaves them out of the end-to-end count.
+On main cad4a601, of the 135 full-v11 functions with a `Mul64uover` (all of them with a used
+flag): 32 fully verified through `rewrite tern`, none through `trim`, so none end to end (the
+headline counts are unchanged); quick-v10: 8 / 0 / 0 of 32, end to end 7,438 → 7,438, and the stock
+`trim` cross-check column 8,200 → 8,172. A faithful semantics (the flag a `bool` whatever the
+declared type) needs op-aware shapes for `Mul64uover`, `MakeTuple` and `ConstBool` (passes rewrite
+the op in place under the same `(uint, uint)` type: `:193` makes it `MakeTuple x (ConstBool
+<uint> [false])`), about 40 proof files; parked (`agent/phase1tail10-mul`, #69).
+
 The pointer window rule and `ARM64.rules:1183`/`1184` (#385, § Assumptions), measured against
 main fa54a58a with `--jobs 4`: full-v9 through `rewrite tern` 93,475 on both, through `trim`
 79,148 → 80,392 (identical to stock 66,495 → 67,041; only `lower`'s proven runs change, 80,718 →

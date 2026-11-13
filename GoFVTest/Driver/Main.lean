@@ -852,6 +852,11 @@ structure VStats where
   or block kind of their input. -/
   vacuousBy : Std.HashMap String Nat := {}
   vacuousByFull : Std.HashMap String Nat := {}
+  /-- Of `verified` / `verifiedFull`: those whose input has a used selection that is always
+  `poison` (`E2E.selVacuousIn`, a `Mul64uover` flag): verified vacuously on the inputs whose run
+  reaches its use (partially vacuous). -/
+  selVacuous : Nat := 0
+  selVacuousFull : Nat := 0
   /-- Unverified functions by their first unverified run before `lower` (`pass: verdict`). -/
   firstUnverified : Std.HashMap String Nat := {}
   /-- Functions verified through `rewrite tern` but not through `trim`, by their first unverified
@@ -895,6 +900,7 @@ def VStats.merge (a b : VStats) : VStats :=
     both := a.both + b.both, bothFull := a.bothFull + b.bothFull
     vacuous := a.vacuous + b.vacuous, vacuousFull := a.vacuousFull + b.vacuousFull
     vacuousBy := mm a.vacuousBy b.vacuousBy, vacuousByFull := mm a.vacuousByFull b.vacuousByFull
+    selVacuous := a.selVacuous + b.selVacuous, selVacuousFull := a.selVacuousFull + b.selVacuousFull
     firstUnverified := mm a.firstUnverified b.firstUnverified
     firstUnverifiedLow := mm a.firstUnverifiedLow b.firstUnverifiedLow
     reasons := mm a.reasons b.reasons, diverged := mm a.diverged b.diverged
@@ -915,13 +921,15 @@ def verifiedFile (wholeFile : Bool) (maxReport : Nat) (path : System.FilePath) (
       { st with reports := st.reports.push (path.toString, kind, detail) }
     else st
   match parseExportExt data >>= fun (e, x) =>
-      (verifiedExport wholeFile e x).map fun r => (r, (e.sections[0]?.map (unmodelledIn ·.func)).getD #[]) with
+      (verifiedExport wholeFile e x).map fun r =>
+        (r, (e.sections[0]?.map (unmodelledIn ·.func)).getD #[],
+          (e.sections[0]?.map fun s => E2E.selVacuousIn (e.tablesAt 0) s.func).getD #[]) with
   | .error m =>
     IO.eprintln s!"PARSE ERROR {path}: {m}"
     return { st with parseErrors := st.parseErrors + 1 }
-  | .ok (.error err, _) =>
+  | .ok (.error err, _, _) =>
     return report { st with errors := bumpMap st.errors err.pass } s!"error {err.pass}" err.msg
-  | .ok (.ok r, stuck) =>
+  | .ok (.ok r, stuck, selVac) =>
     let mut st := st
     let log := r.st.st.log
     for (name, v) in log do
@@ -948,6 +956,9 @@ def verifiedFile (wholeFile : Bool) (maxReport : Nat) (path : System.FilePath) (
       if full then
         st := { st with vacuousFull := st.vacuousFull + 1
                         vacuousByFull := stuck.foldl (fun m k => bumpMap m k) st.vacuousByFull }
+    if !selVac.isEmpty then
+      st := { st with selVacuous := st.selVacuous + (if verified then 1 else 0)
+                      selVacuousFull := st.selVacuousFull + (if full then 1 else 0) }
     if full && r.nilRely then st := { st with nilRelyFull := st.nilRelyFull + 1 }
     let low := (log.toList.filter fun (q, v) => !isGen q && !v.ok).map fun (q, v) => s!"{q}: {v}"
     let row := s!"{path}\t{vstatsFields r.st}\tlow={"; ".intercalate low}"
@@ -1003,6 +1014,7 @@ def verifiedText (st : VStats) (ms : Nat) : String := Id.run do
   out := out ++ s!"| fully verified (every run proven, identity or skipped) | {st.verified} | {st.verifiedFull} |\n"
   out := out ++ s!"| … verified (vacuous: unmodelled op), input has an op or block kind `run` leaves stuck | {st.vacuous} | {st.vacuousFull} |\n"
   out := out ++ s!"| … verified, no unmodelled op | {st.verified - st.vacuous} | {st.verifiedFull - st.vacuousFull} |\n"
+  out := out ++ s!"| … verified, partially vacuous: input has a used always-`poison` selection (`selVacuousIn`, a `Mul64uover` flag) | {st.selVacuous} | {st.selVacuousFull} |\n"
   out := out ++ s!"| … relies on `NilPtrsOK` (a `schedule` swap through `nilPtrSwap`) | - | {st.nilRelyFull} |\n"
   out := out ++ s!"| … and identical to stock after `trim` | {st.both} | {st.bothFull} |\n\n"
   out := out ++ s!"- verified-pipeline output identical to stock after `trim` (compared as the importer): {st.same}\n"
@@ -1102,7 +1114,10 @@ def e2eFile (wholeFile : Bool) (path : System.FilePath) (st : E2E.Stats) : IO E2
   | .ok (e, x, pin, stockFrame, r) =>
     let file := path.toString
     let stockF := ((e.sections.back?).map (·.func)).getD default
-    let st := st.addStock file (E2E.back e pin #[] e.frontendTables stockF)
+    let selVac := (((e.sections[0]?).map fun s =>
+      E2E.selVacuousIn (e.tablesAt 0) s.func).getD #[])[0]?
+    let mark (res : Except String E2E.Res) := res.map ({ · with selVac })
+    let st := st.addStock file (mark (E2E.back e pin #[] e.frontendTables stockF))
     match r with
     | .error _ => return { st with passErrors := st.passErrors + 1 }
     | .ok r =>
@@ -1111,7 +1126,7 @@ def e2eFile (wholeFile : Bool) (path : System.FilePath) (st : E2E.Stats) : IO E2
       let res := do
         let (pin, links) ← E2E.ownFrame pin t0 r.st.st.tables ((x.dclLen? 0).getD 0) r.st.dclLen
         E2E.back e pin links r.st.st.tables r.st.st.func
-      return st.addFull file r.same stockFrame res
+      return st.addFull file r.same stockFrame (mark res)
 
 /-- `--check --verified --e2e`: end-to-end coverage (exit 1 only for parse errors or no files). -/
 def runE2E (o : Opts) : IO UInt32 := do

@@ -280,7 +280,12 @@ input has an op or block kind that `run` leaves `stuck` whatever its arguments: 
 `evalOp` hands to `atomicRoot` and `Atomic.modelled` does not cover, such as `TailLECall`, or a
 block kind outside `stepTerm`'s arms other than `Exit`, such as `RetJmp`; `unmodelledIn` in
 `GoFVTest/Driver/Main.lean`; the theorems say nothing about the inputs that reach one), listed by
-op or block kind, and the ones whose final state equals stock. Then the functions whose final
+op or block kind, the ones verified partially vacuously (the input has a used `Select0`/`Select1`
+that is always `poison`, `E2E.selVacuousIn`: one of the selection's shape and its tuple
+argument's declared component shape is `bool` and the other is not; ssagen types
+`math.MulUintptr`'s `Mul64uover` `(uint, uint)` while its `Select1` is the `bool` overflow flag,
+so `run` holds the flag as `poison` and a run reaching the `If` on it is `stuck`; #69), and the
+ones whose final state equals stock. Then the functions whose final
 state equals stock, the unverified functions by first
 unverified run before `lower`, the functions verified through `rewrite tern` but not through
 `trim` by their first unverified run, the functions by first difference (pass and its verdict), a
@@ -335,9 +340,12 @@ with `CloOK` not discharged (`entryVacuous` at `entryLen`: a closure pointer aft
 `cloBefore` failing, so `cloOK_of_cloBefore` does not discharge the trusted `CloOK`; or, through
 the entry block's values that cannot panic, an entry value after the start, which `RunPre`
 excludes; a load off the closure pointer is no reason since the top-level run's closure context
-is `env.closure`, #705), and the others (the end-to-end count;
+is `env.closure`, #705), of the others the ones whose input has a used always-`poison` selection
+(`selVacuousIn`, as in the corpus report: the theorem holds only vacuously on the runs reaching
+its use), and the rest (the end-to-end count;
 a line counts the functions with a pending window and those
-`entryStoresOK` rejects; a line those `argsOK` rejects; a line the vacuous ones; another the
+`entryStoresOK` rejects; a line those `argsOK` rejects; a line the vacuous ones of both kinds;
+another the
 end-to-end functions by mode:
 under `verified_mach`, those
 that do not need G48's mode, `needs48` of `liveCtx` false, and of them those with two or more
