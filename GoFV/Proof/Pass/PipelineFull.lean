@@ -138,7 +138,8 @@ end
 
 /-- The precondition of a lowered pass theorem on input `f` in `tabs`. -/
 def lrelPre : LRel → Tables → Func → Env → List Val → Mem → Prop
-  | .lower, tabs, f => fun env _ mem => env.Mono ∧ RoImage (LowerCheck.roPre tabs f) env mem
+  | .lower, tabs, f => fun env _ mem =>
+    env.Mono ∧ RoImage (LowerCheck.roPre tabs (LowerCheck.invUnknown f)) env mem
   | .lowFrame, _, _ => fun env args mem => env.FrameSafe ∧ InitAvoids env args mem
   | .sched, tabs, f => fun env args mem =>
     NoNilFault tabs f env args mem ∧ ArgPtrsOK tabs f env args mem ∧ NilPtrsOK tabs f env args mem
@@ -193,7 +194,7 @@ theorem loweredVPasses_sound : ∀ p ∈ loweredVPasses.toList, stepSoundL p := 
   · refine ⟨rfl, fun penv f out h _ hg => ?_⟩
     simp only [lowerGuard, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hg
     intro env args mem hM fuel hd
-    exact Low.lower_refines_run h hg.1 hg.2 hM.1 hM.2 hd
+    exact Low.lower_refines_runU h hg.1 hg.2 hM.1 hM.2 hd
   -- addressing modes
   · exact ⟨rfl, fun _ _ _ h _ _ => low_of (addressingModes_refinesL h)⟩
   -- late lower
@@ -363,7 +364,8 @@ theorem whyNot_none {s : FState} {penv : PassEnv} {rel : LRel} {wfReq : Bool}
     (h : s.whyNot penv rel wfReq guard out wf = none) :
     s.layer = rel.src ∧ (wfReq = true → s.st.wf = true ∧ wf = true) ∧
       guard penv s.st.func out = true ∧
-      (rel = .lower → (LowerCheck.roPre s.st.tables s.st.func).all s.st.ro.contains = true) := by
+      (rel = .lower → (LowerCheck.roPre s.st.tables (LowerCheck.invUnknown s.st.func)).all
+        s.st.ro.contains = true) := by
   unfold FState.whyNot at h
   split at h
   · cases h
@@ -387,7 +389,8 @@ theorem whyNot_none {s : FState} {penv : PassEnv} {rel : LRel} {wfReq : Bool}
 
 theorem pre_lrel {k : List Nat} {ro : List (String × Alloc)} {eq : List String × List String}
     {s : FState} (rel : LRel) {e : Env} {args : List Val} {mem : Mem}
-    (hro : rel = .lower → ∀ x ∈ LowerCheck.roPre s.st.tables s.st.func, x ∈ ro)
+    (hro : rel = .lower → ∀ x ∈ LowerCheck.roPre s.st.tables (LowerCheck.invUnknown s.st.func),
+      x ∈ ro)
     (h : PreFull k ro eq (s.nnfAfter rel) e args mem) :
     lrelPre rel s.st.tables s.st.func e args mem := by
   cases rel with

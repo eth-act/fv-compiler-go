@@ -1527,6 +1527,25 @@ def validateL (tabs : Tables) (t : Interp.Table) (f g : Func) (log : Array RwEve
   | some (M, B) => finalOKL tabs f g M B
   | none => false
 
+/-! ## Values reset in place -/
+
+/-- `v`, read as `Unknown` if its op is `Invalid`. Go resets a value it gives up in place to
+`OpInvalid` (`clobber`, `rewrite.go:1053-1058`, which `memcombine` calls; `writebarrier.go:582-583`
+for an unused nil check; `fuse.go:172`): the value stays in its block without arguments (a value
+it left dead may still read it) until an `applyRewrite` frees it (`rewrite.go:208-235`; `lower`'s
+own). `run` reads both ops alike (neither is a root nor `frameVal`'s, and `evalPure` of either is
+`poison`), but `Invalid` is not a generic op, so such a function is `Func.lowered` and `runL`
+would read it in lowered mode. -/
+def invUnknownV (v : Value) : Value := if v.op == .Invalid then { v with op := .Unknown } else v
+
+/-- `f` holds a value whose op is `Invalid`. -/
+def hasInvalid (f : Func) : Bool := f.valueTab.any fun | some v => v.op == .Invalid | none => false
+
+/-- `f` with its `Invalid` values read as `Unknown` (`invUnknownV`), `f` itself if it has none:
+what `checkedRunL` validates `lower`'s result against. -/
+def invUnknown (f : Func) : Func :=
+  if hasInvalid f then { f with valueTab := f.valueTab.map (Option.map invUnknownV) } else f
+
 /-! ## The checked pass -/
 
 /-- `tabsAgree`, and every value of `f` has the same lowered shape in both tables (`Ctx.makeL`'s
@@ -1536,21 +1555,24 @@ def tabsAgreeL (tabs tabs' : Tables) (f : Func) : Bool :=
   f.valueTab.toList.all fun o =>
     Sem.Ty.beq (Sem.valueTy (Sem.typeShapesL tabs') o) (Sem.valueTy (Sem.typeShapesL tabs) o)
 
-/-- `applyRewrite` with the lowering table `t` and its log; the result if the tables agree for
-`f` (`tabsAgreeL`) and give it the same read-only symbols (`roPre`, which the precondition of
-`GoFV.Proof.Low.lower_refines` pins in the input's tables), both functions pass `check` and
-`validateL` accepts it, else `none`. -/
+/-- `applyRewrite` with the lowering table `t` and its log on `f`; the result if the tables agree
+for `f₀ = invUnknown f` (`tabsAgreeL`) and give it the same read-only symbols (`roPre`, which the
+precondition of `GoFV.Proof.Low.lower_refines` pins in the input's tables), `f₀` and the result
+pass `check` and `validateL` accepts the result against `f₀`, else `none`. (`f₀` is `f` unless
+`f` has `Invalid` values, which no rule matches and which `applyRewrite` frees.) -/
 def checkedRunL (t : Interp.Table) (env : PassEnv) (f : Func) : Except String (Option PassOut) := do
   let (out, _, log) ← GoFV.Rules.rewriteRun t true true env f
+  let f₀ := invUnknown f
   let ce : CheckEnv := { tabs := out.tables, typs := env.typs }
-  return if tabsAgreeL env.tables out.tables f && checkOK { tabs := env.tables, typs := env.typs } f &&
-      checkOK ce out.func && validateL out.tables t f out.func log &&
-      decide (roPre out.tables f = roPre env.tables f) then some out else none
+  return if tabsAgreeL env.tables out.tables f₀ && checkOK { tabs := env.tables, typs := env.typs } f₀ &&
+      checkOK ce out.func && validateL out.tables t f₀ out.func log &&
+      decide (roPre out.tables f₀ = roPre env.tables f₀) then some out else none
 
-/-- **The checked lowering pass** with table `t`: the validated result, else the input. -/
+/-- **The checked lowering pass** with table `t`: the validated result, else the input with its
+`Invalid` values read as `Unknown` (`invUnknown`). -/
 def checkedLowerWith (t : Interp.Table) : Pass := fun env f => do
   match ← checkedRunL t env f with
   | some out => return out
-  | none => return { func := f, tables := env.tables }
+  | none => return { func := invUnknown f, tables := env.tables }
 
 end GoFV.Opt.LowerCheck

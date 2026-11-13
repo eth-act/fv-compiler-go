@@ -1067,6 +1067,7 @@ import GoFV.Proof.Witness.LowerCopyPtr
 import GoFV.Proof.Witness.LowerCvtMask
 import GoFV.Proof.Witness.LowerFloatLoad
 import GoFV.Proof.Witness.LowerFrameAtom
+import GoFV.Proof.Witness.LowerInvalid
 import GoFV.Proof.Witness.LowerInvert
 import GoFV.Proof.Witness.LowerJumpTable
 import GoFV.Proof.Witness.LowerLoadFold

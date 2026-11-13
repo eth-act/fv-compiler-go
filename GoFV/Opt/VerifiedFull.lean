@@ -153,9 +153,10 @@ namespace Verified
 
 open GoFV.Proof
 
-/-- `lower_refines_run`'s hypotheses: a generic input without fused multiply-add shapes. -/
+/-- `lower_refines_runU`'s hypotheses: an input without fused multiply-add shapes that is generic
+once its `Invalid` values are read as `Unknown` (`LowerCheck.invUnknown`). -/
 def lowerGuard (_ : PassEnv) (f : Func) (_ : PassOut) : Bool :=
-  f.lowered == false && decide (FmaContract.contractAll f = f)
+  (LowerCheck.invUnknown f).lowered == false && decide (FmaContract.contractAll f = f)
 
 /-- `deadcode_refinesL`'s fragments (`DeadFrag`, `DeadFragL`) and form. -/
 def deadGuardL (penv : PassEnv) (f : Func) (out : PassOut) : Bool :=
@@ -300,15 +301,17 @@ def FState.skip (s : FState) (p : LPass) (why : String) : FState :=
 
 /-- Why a proven step's theorem does not apply to `s` and the result `out` (`wf`: whether `out`
 passes `check`), if so. `lower`'s theorem asks, on an input whose values are generic memory-typed
-ops, for the read-only symbols its `Addr`s name (`LowerCheck.roPre`) in the memory with the global
-image: those the pipeline's precondition pins (`st.ro`). -/
+ops once its `Invalid` values are read as `Unknown` (`LowerCheck.invUnknown`), for the read-only
+symbols its `Addr`s name (`LowerCheck.roPre`) in the memory with the global image: those the
+pipeline's precondition pins (`st.ro`). -/
 def FState.whyNot (s : FState) (penv : PassEnv) (rel : LRel) (wfReq : Bool)
     (guard : PassEnv → Func → PassOut → Bool) (out : PassOut) (wf : Bool) : Option String :=
   if s.layer != rel.src then some "layer"
   else if wfReq && !s.st.wf then some "input fails check"
   else if wfReq && !wf then some "output fails check"
   else if !guard penv s.st.func out then some "rejected"
-  else if rel == .lower && !(LowerCheck.roPre s.st.tables s.st.func).all s.st.ro.contains then
+  else if rel == .lower &&
+      !(LowerCheck.roPre s.st.tables (LowerCheck.invUnknown s.st.func)).all s.st.ro.contains then
     some "read-only symbols"
   else none
 
