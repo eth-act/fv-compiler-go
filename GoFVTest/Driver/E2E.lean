@@ -43,7 +43,10 @@ a function after `trim` and its tables:
 - end to end, also `entryVacuous` at `entryLen`: no entry value after it (else `RunPre` cannot
   hold) and every closure pointer before it (`cloBefore`, so `cloOK_of_cloBefore` discharges the
   trusted `CloOK` along the run of the top-level activation, whose closure context is
-  `env.closure`, #705).
+  `env.closure`, #705);
+- end to end, also no used selection that is always `poison` in the input (`selVacuousIn`, #69):
+  a run that reaches its use constrains nothing (an `If` on it is `stuck`), so the function would
+  be verified only vacuously there; it is counted apart, as the entry-vacuous ones are.
 
 Inputs taken from the stock `.prog` file: only its input view (`Back.inputView`, what the
 driver input file holds, no stock result): the definitions (names, types, symbols), the
@@ -167,6 +170,46 @@ def entryVacuous (lc : LocCtx) (k : Nat) : Option String :=
         else none
     go vals
 
+open GoFV.SSA.Sem (Ty) in
+/-- A selection at shape `s` of a tuple component of shape `c` is `poison` whatever the
+component holds: one of the two is `bool` and the other is not (`Val.retype` of a `bool` at
+any other shape, and of anything else at `bool`, is `poison`; the selection is the component's
+register retyped at `s`). -/
+def selPoison : Ty → Ty → Bool
+  | .bool, .bool => false
+  | .bool, _ | _, .bool => true
+  | _, _ => false
+
+open GoFV.SSA (Op Value ID) in
+/-- **Used selections that are always `poison`** (#69): each `Select0`/`Select1` of `f` that a
+value or a block control uses and whose shape and its tuple argument's declared component shape
+are `selPoison`, as `"<Select> of <op>"`, each once. Go's ssagen types `math.MulUintptr`'s
+`Mul64uover` (`Mul32uover` on 32-bit targets) `(uint, uint)` while its `Select1` is the `bool`
+overflow flag (`ssagen/intrinsics.go`; the generic rules `:193`/`:649`/`:1339`/`:1340` and the
+ARM64 lowering `(Select1 (Mul64uover x y)) => (NotEqual (CMPconst (UMULH x y) [0]))` read it
+as a flag): `run` holds the flag as `poison`, so every run reaching its use (an `If`) is
+`stuck` and the function is verified only vacuously there. A full-v11 scan finds no other op
+with such a selection. -/
+def selVacuousIn (tabs : Tables) (f : Func) : Array String := Id.run do
+  let mut used : Std.HashSet ID := {}
+  for o in f.valueTab do
+    if let some v := o then used := v.args.foldl (·.insert ·) used
+  for o in f.blockTab do
+    if let some b := o then used := b.controls.foldl (·.insert ·) used
+  let mut out : Array String := #[]
+  for o in f.valueTab do
+    let some v := o | continue
+    let i := if v.op == .Select0 then 0 else if v.op == .Select1 then 1 else 2
+    if i == 2 || !used.contains v.id then continue
+    let some a := v.args[0]? >>= f.value? | continue
+    let c := match tabs.ty a.type with
+      | .tuple ts => ts[i]?
+      | _ => none
+    let some c := c | continue
+    let k := s!"{v.op.name} of {a.op.name}"
+    if selPoison c (tabs.ty v.type) && !out.contains k then out := out.push k
+  return out
+
 /-- The validators' verdicts on one function (`none`: accepted). -/
 structure Res where
   /-- `checkG64`'s rejection (also P0' numbering and, with a float constant load, `memTyL`). -/
@@ -196,15 +239,19 @@ structure Res where
   so every `verified_mach` variant holds of the function only vacuously, or a closure pointer runs
   after the start (`cloBefore` fails), so `CloOK` is not discharged. -/
   vac : Option String := none
+  /-- The first of `selVacuousIn` of the input (section 0): a used selection that is always
+  `poison`, so every run reaching its use is `stuck` and the theorem holds only vacuously there. -/
+  selVac : Option String := none
 
 /-- Accepted by all five: `verified_mach`'s back-end premises hold. -/
 def Res.all (r : Res) : Bool :=
   r.gen.isNone && r.entry.isNone && r.args.isNone && r.ret.isNone && r.obj.isNone
 
 /-- End to end: the back-end premises hold and the function is not vacuous at the entry
-(`entryVacuous`), so some `verified_mach` variant applies to it non-vacuously (those vacuous at
-`Addrs.fixed` only are covered by the `_atSP` variants). -/
-def Res.e2e (r : Res) : Bool := r.all && r.vac.isNone
+(`entryVacuous`) nor at a used always-`poison` selection (`selVacuousIn`), so some
+`verified_mach` variant applies to it non-vacuously (those vacuous at `Addrs.fixed` only are
+covered by the `_atSP` variants). -/
+def Res.e2e (r : Res) : Bool := r.all && r.vac.isNone && r.selVac.isNone
 
 /-- The `.prog` type for a new auto of `.ssa` type `st`: a `type` definition of the file with
 the same string, size, alignment and pointer data, else one made from `st` when it has no
@@ -386,6 +433,8 @@ structure Counts where
   prem : Nat := 0
   /-- … and vacuous at the entry (`entryVacuous`, every variant). -/
   vac : Nat := 0
+  /-- … not vacuous at the entry, and with a used always-`poison` selection (`selVacuousIn`). -/
+  selVac : Nat := 0
   /-- End to end (`Res.e2e`: the premises hold, not vacuous at the entry). -/
   all : Nat := 0
   /-- End to end and `needs48 = false` (`verified_mach`), and of those with two or more `locals`
@@ -414,6 +463,7 @@ def Counts.merge (a b : Counts) : Counts :=
     pendAll := a.pendAll + b.pendAll,
     ret := a.ret + b.ret, obj := a.obj + b.obj,
     genObj := a.genObj + b.genObj, prem := a.prem + b.prem, vac := a.vac + b.vac,
+    selVac := a.selVac + b.selVac,
     all := a.all + b.all, allF := a.allF + b.allF,
     allFVac := a.allFVac + b.allFVac, allS := a.allS + b.allS, allSVac := a.allSVac + b.allSVac,
     errWhy := a.errWhy.merge b.errWhy, genWhy := a.genWhy.merge b.genWhy,
@@ -437,6 +487,7 @@ def Counts.add (c : Counts) (path : String) (res : Except String Res) : Counts :
                       genObj := c.genObj + one (ge && r.obj.isNone),
                       prem := c.prem + one r.all,
                       vac := c.vac + one (r.all && r.vac.isSome),
+                      selVac := c.selVac + one (r.all && r.vac.isNone && r.selVac.isSome),
                       all := c.all + one r.e2e,
                       allF := c.allF + one (r.e2e && !r.n48),
                       allFVac := c.allFVac + one (r.e2e && !r.n48 && 2 ≤ r.locals),
@@ -550,6 +601,8 @@ def Stats.text (st : Stats) (ms : Nat) : String := Id.run do
     "(the premises hold)") (some o.prem) (some s.prem)
   out := out ++ row ("… of them vacuous or with `CloOK` not discharged (`entryVacuous`, every " ++
     "variant)") (some o.vac) (some s.vac)
+  out := out ++ row ("… of the others vacuous at a used always-`poison` selection " ++
+    "(`selVacuousIn`: a `Mul64uover` flag)") (some o.selVac) (some s.selVac)
   out := out ++ row "**… premises hold, not vacuous (end to end, `verified_mach`)**" (some o.all)
     (some s.all)
   out := out ++ row "… end to end, pipeline output identical to stock after `trim`" (some st.allSame) none
@@ -571,7 +624,11 @@ def Stats.text (st : Stats) (ms : Nat) : String := Id.run do
   out := out ++ s!"\nVacuous at the entry (pipeline output; stock), of the functions whose premises \
     hold, not counted end to end: {o.vac}; {s.vac} (`entryVacuous`: an entry value after the \
     start `entryLen`, where `RunPre` cannot hold of the run under any variant, or a closure \
-    pointer after it, `cloBefore`, where `cloOK_of_cloBefore` does not discharge `CloOK`).\n"
+    pointer after it, `cloBefore`, where `cloOK_of_cloBefore` does not discharge `CloOK`). \
+    Vacuous at a used always-`poison` selection of the input (pipeline output; stock), of the \
+    others, not counted end to end: {o.selVac}; {s.selVac} (`selVacuousIn`: a `Select1` at `bool` \
+    of a `Mul64uover` typed `(uint, uint)`, whose flag `run` holds as `poison`, so a run reaching \
+    the `If` on it is `stuck`).\n"
   out := out ++ s!"\nFrame (`ownFrame`, `AllocFrame` on the pipeline's own `Dcl`) of the fully \
     verified functions whose output is identical to stock: stock `stksize`/`stkptrsize` \
     {st.frameSame}, other {st.frameDiff}{if st.frameDiffEx.isEmpty then "" else s!" ({st.frameDiffEx})"}.\n"
