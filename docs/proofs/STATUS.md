@@ -2274,6 +2274,16 @@ Runs per pass of `gofv-ssa-opt --check --verified` (96,553 functions, each pass 
 
 Functions by first unverified run (3,635 of 96,553): opt 2,392, late opt 607, middle opt 389, decompose builtin 113, decompose user 59, divmod 47, expand calls 27, opt deadcode 1. Skipped runs keep the input, so they cost no verification, only stock identity (functions by first difference from stock: nilcheckelim 11,147, prove 5,576 (its own result differs, `proveChecked`), generic cse 1,107, early phielim and copyelim 660, dead auto elim 245, memcombine 154, dse 32, the rest 12). The deadcode/copyelim fragment failures are mostly zero-size values (`emptyFrag`: `empty Load empty` 447, `empty StructSelect empty` 178).
 
+Since #723, `early phielim and copyelim` also has a zero-size fragment: `CopyZero.zeroGuard` with
+`copyelim_refines_zero`, and the step's relation is `.mono`. On full-v11, copyelim's skipped
+(fragment) runs go from 660 to 46, and so do early deadcode's. Per function, compared with #727's
+code: Phase 1 is 93,939 → 94,091 (+152, 0 lost). Among the 614 functions whose Phase 1 route
+changes, `trim` goes 359 → 485 (+127), and stock identity after `trim` goes 14 → 205 (+191, 0 lost).
+One function is lost through `trim`, `ssagen.Compile`. Its copyelim is now proven, so the schedule
+validator sees a rerouted state it cannot yet validate (class `NIL CHECK OF ANOTHER PTR VALUE AFTER
+X`, the hoist class NilHoistOK targets). No statement is weakened. Compile's output was not
+identical to stock before either. This is tracked in #385.
+
 The `decompose user` runs that are unverified (59 on full-v9) are not in `decompose-probe`'s count
 of stock inputs outside `decUserFrag` (0 of 96,560): the probe checks the stock section before the
 pass, `--verified` the verified pipeline's state. When `early phielim and copyelim` and `early
