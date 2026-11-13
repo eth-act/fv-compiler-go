@@ -17,8 +17,9 @@ term of a zero value (`ZeroV`: `0`, `false`, `poison`, the empty value or a comp
 of a zero component such as `SliceLen (SliceMake p (Const64 [0]) c)`; `zeroAt_den`) into zero
 bytes (`:943`, `:948`, `:954`, `:961`, `:1357`, `:1362`), a
 `Zero` of a `Zero` of the same size at an equal pointer (`:2158`), a `Zero` of zero bytes
-(`:1352`), a `Store` of what a `Load` of its memory read at its pointer, at a narrow integer or
-`bool` shape (`:919`, `writeBackOK`). `drop_mem`: the dropped root's memory is refined by its
+(`:1352`), a `Store` of what a `Load` read at its pointer from its memory or from one before up to
+eight disjoint writes, at a narrow integer or `bool` shape (`:919`, `:924`, `:930`, `:937`,
+`writeBackOK`). `drop_mem`: the dropped root's memory is refined by its
 memory argument's, as every byte written refines the byte already there (`write_refines_self`):
 the encoding of a zero value has `0` or `poison` bytes (`encode_zero`), and the bytes a successful
 write overwrites read back as zeros through the disjoint writes of the chain (`zeroChain_read`)
@@ -737,10 +738,49 @@ theorem encode_decodeLoad_wb {t : Ty} (ht : wbTy t = true) {bs : Array Byte}
     | _ => right; simp only [AtomSim.retype_poison, encode_poison, Ty.size]
   | _ => simp [wbTy] at ht
 
+/-- **Reads through disjoint writes, at any larger fuel** (`wbChain`): the bytes at the pointer
+read the same in the chain's memory as in the memory at its end, which a fuel of at least `K`
+denotes (the chain's `Store`s are atoms, whose memory arguments denote their memories at every
+large enough fuel, `MemAtoms`). -/
+theorem wbChain_read (hM : MemAtoms f.value? tabs ρ) (hA : ArgAv tabs f ρ) {p e : ID} {n : Nat}
+    {kp : Nat} {P : Ptr} (hp : (den f.value? tabs ρ kp p).asPtrWord = some P) :
+    ∀ (d : Nat) (m : ID), wbChain tabs f p n e d m = true → ∀ {k K : Nat} {M : Mem}, K ≤ k →
+      den f.value? tabs ρ k m = .mem M →
+        ∃ k' M0, K ≤ k' ∧ den f.value? tabs ρ k' e = .mem M0 ∧ M.read P n = M0.read P n
+  | 0, m, h, k, K, M, hK, hm => by
+    simp only [wbChain, beq_iff_eq] at h
+    subst h
+    exact ⟨k, M, hK, hm, rfl⟩
+  | d + 1, m, h, k, K, M, hK, hm => by
+    unfold wbChain at h
+    simp only [Bool.or_eq_true, beq_iff_eq] at h
+    rcases h with rfl | h
+    · exact ⟨k, M, hK, hm, rfl⟩
+    cases hs : f.value? m with
+    | none => rw [hs] at h; cases h
+    | some s =>
+    rw [hs] at h
+    simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
+    obtain ⟨⟨⟨hsop, hssz⟩, hdis⟩, hch⟩ := h
+    have hmem : memOp s.op = true := by rcases hsop with h | h <;> rw [h] <;> rfl
+    cases k with
+    | zero => simp [den] at hm
+    | succ k =>
+    rw [den_succ_atom (not_term_of hs (by rw [memOp_not_term hmem]; decide))] at hm
+    obtain ⟨N, hN⟩ := hM m s hs hmem (by rw [hm]; nofun)
+    obtain ⟨y, hy, hρs⟩ := hN (max N K) (Nat.le_max_left _ _)
+    rw [toList_three hssz, List.map_cons, List.map_cons, List.map_cons, List.map_nil] at hy
+    obtain ⟨q, m0, M', hq, hm0, hwr, rfl⟩ := memDef_store hsop hy
+    rw [hm] at hρs
+    have hMM := retype_mem hρs.symm
+    subst hMM
+    rw [read_write_sep hwr (by rw [GoFV.Proof.CSE.Mem.encode_size]; exact disjoint_sep hM hA hdis hp hq)]
+    exact wbChain_read hM hA hp d _ hch (Nat.le_max_right _ _) hm0
+
 /-- **A write-back changes no byte but to `poison`** (`writeBackOK`): the bytes the `Store` `u`
-writes, the encoding of what a `Load` of its memory read at its pointer, are refined by the bytes
-`bs0` there. -/
-theorem writeBack_bytes (hM : MemAtoms f.value? tabs ρ) {u : Value}
+writes, the encoding of what a `Load` read at its pointer from its memory or from one before
+writes disjoint from it (`wbChain_read`), are refined by the bytes `bs0` there. -/
+theorem writeBack_bytes (hM : MemAtoms f.value? tabs ρ) (hA : ArgAv tabs f ρ) {u : Value}
     (h : writeBackOK tabs f u = true) {k : Nat} {m0 : Mem} {q : Ptr} {bs0 : Array Byte}
     (hm0 : den f.value? tabs ρ k u.args[2]! = .mem m0)
     (hq : (den f.value? tabs ρ k u.args[0]!).asPtrWord = some q)
@@ -754,8 +794,8 @@ theorem writeBack_bytes (hM : MemAtoms f.value? tabs ρ) {u : Value}
   | some ld =>
   rw [hl] at hld
   simp only [Bool.and_eq_true, beq_iff_eq] at hld
-  obtain ⟨⟨⟨⟨hop, hsz2⟩, hmem⟩, hty⟩, hsame⟩ := hld
-  generalize hS : auxTy tabs u.aux = S at hwb hrd hty ⊢
+  obtain ⟨⟨⟨⟨hop, hsz2⟩, hch⟩, hty⟩, hsame⟩ := hld
+  generalize hS : auxTy tabs u.aux = S at hwb hrd hty hch ⊢
   have hty' := Ty.eq_of_beq hty
   have h0 := wbTy_size hwb
   have hpz : BytesRefineA (Array.replicate S.size .poison) bs0 :=
@@ -766,10 +806,12 @@ theorem writeBack_bytes (hM : MemAtoms f.value? tabs ρ) {u : Value}
     rw [encode_poison]; exact hpz
   | succ n =>
   rw [den_succ_term hl (by rw [hop]; decide), toList_two hsz2, List.map_cons, List.map_cons,
-    List.map_nil, hop, GoFV.Proof.Rules.opVal_pure (op := Op.Load) rfl, evalPure_load, hmem, hty']
-  have hmono := den_fuel_mono f.value? tabs ρ n (n + 1) u.args[2]! (by omega)
-  rw [hm0] at hmono
-  generalize den f.value? tabs ρ n u.args[2]! = dv at hmono ⊢
+    List.map_nil, hop, GoFV.Proof.Rules.opVal_pure (op := Op.Load) rfl, evalPure_load, hty']
+  obtain ⟨k', M0, hk', hM0, hrd0⟩ := wbChain_read hM hA hq 8 _ hch (K := n) (by omega) hm0
+  rw [hrd0] at hrd
+  have hmono := den_fuel_mono f.value? tabs ρ n k' ld.args[1]! hk'
+  rw [hM0] at hmono
+  generalize den f.value? tabs ρ n ld.args[1]! = dv at hmono ⊢
   cases hmono with
   | poison =>
     simp only [loadOp, AtomSim.retype_poison, encode_poison]; exact hpz
@@ -922,7 +964,7 @@ theorem drop_mem (hT : Term.Typed f.value? tabs ρ) (hM : MemAtoms f.value? tabs
     obtain ⟨bs0, hrd⟩ := read_of_write hwr (by rw [hsz]; exact wbTy_size hwt)
     refine write_refines_self (Mem.Refines.refl _) hrd hwr ?_
     rw [hsz] at hrd
-    exact writeBack_bytes hM hwb hm0 hq hrd
+    exact writeBack_bytes hM hA hwb hm0 hq hrd
 
 end
 

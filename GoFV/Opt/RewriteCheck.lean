@@ -1939,14 +1939,31 @@ def wbTy : Sem.Ty → Bool
   | .int .w8 | .int .w16 | .int .w32 | .bool => true
   | _ => false
 
-/-- The `Store` `u` of `f` writes back what a `Load` of its own memory read at an equal pointer
-(`generic.rules:919`, `(Store {t1} p1 (Load <t2> p2 mem) mem) && isSamePtr(p1, p2) && t2.Size()
-== t1.Size() => mem`): its value a `Load` of `u`'s memory argument (the same ID) at a pointer
-equal to `u`'s (`samePtrB`), the `Load`'s shape `u`'s, a `wbTy` one. -/
+/-- Memory `m` of `f` reaches memory `e` through at most `d` `Store`s at pointers disjoint from
+the `n` bytes at pointer `p` (`disjointB`), no `Copy`: those bytes read the same in both, and the
+memory of each `Store` (an atom) is its argument's at every fuel (`LoadFwd.wbChain_read`). -/
+def wbChain (tabs : Tables) (f : Func) (p : ID) (n : Nat) (e : ID) : Nat → ID → Bool
+  | 0, m => m == e
+  | d + 1, m =>
+    m == e ||
+    match f.value? m with
+    | some s =>
+      (s.op == .Store || s.op == .StoreWB) && s.args.size == 3 &&
+        disjointB tabs f p n s.args[0]! (Sem.auxTy tabs s.aux).size &&
+        wbChain tabs f p n e d s.args[2]!
+    | none => false
+
+/-- The `Store` `u` of `f` writes back what a `Load` read at an equal pointer from its memory or
+from a memory before up to eight writes disjoint from it (`generic.rules:919`, `(Store {t1} p1
+(Load <t2> p2 mem) mem) && isSamePtr(p1, p2) && t2.Size() == t1.Size() => mem`, and `:924`,
+`:930`, `:937` through one to three `Store`s `disjoint` from it): its value a `Load` whose memory
+argument `u`'s memory reaches through `wbChain`, at a pointer equal to `u`'s (`samePtrB`), the
+`Load`'s shape `u`'s, a `wbTy` one. -/
 def writeBackOK (tabs : Tables) (f : Func) (u : Value) : Bool :=
   wbTy (Sem.auxTy tabs u.aux) &&
   match f.value? u.args[1]! with
-  | some ld => ld.op == .Load && ld.args.size == 2 && ld.args[1]! == u.args[2]! &&
+  | some ld => ld.op == .Load && ld.args.size == 2 &&
+      wbChain tabs f u.args[0]! (Sem.auxTy tabs u.aux).size ld.args[1]! 8 u.args[2]! &&
       Sem.Ty.beq (tabs.ty ld.type) (Sem.auxTy tabs u.aux) && samePtrB tabs f u.args[0]! ld.args[0]!
   | none => false
 
@@ -1957,7 +1974,7 @@ type), a `Store` of a `zeroConst` into zero bytes (`zeroChain` through at most e
 `Store`s and non-poisoning `VarDef`s), a `Zero` of a `Zero` of the same size at an equal pointer
 (`samePtrB`, reached through copies of `f`), or a `Zero` of zero bytes (`zeroChain`; `:2159`'s
 `Zero` over `VarDef (Zero …)`); or as it writes back the bytes a `Load`
-read there, or `poison` (`writeBackOK`, `:919`). -/
+read there, or `poison` (`writeBackOK`, `:919`, `:924`, `:930`, `:937`). -/
 def dropOK (tabs : Tables) (f g : Func) (u w : Value) : Bool :=
   w.op == .Copy && w.args.size == 1 &&
   ((u.op == .Store && u.args.size == 3 &&
@@ -2434,7 +2451,8 @@ def fixedPtrPat (p : Pat) : Bool :=
 through one to four `Store`s (`:842`, `:851`, `:862`, `:875`); or
 a dropped identity write `(Store _ _ mem) => mem`, `(Zero _ mem) => mem` (`:1005`, `:943`,
 `:948`, `:954`, `:961`, `:2158`) and the write-back `(Store _ (Load _ mem) mem) => mem` (`:919`,
-`writeBackOK`); or a changed `Move` source `(Move dst tmp m:(Move tmp' src _))
+`writeBackOK`) and its forms through one to three `Store`s (`:924`, `:930`, `:937`); or a changed
+`Move` source `(Move dst tmp m:(Move tmp' src _))
 => (Move dst src m)` and its form through a `VarDef` (`:2146`, `:2155`); the validator checks
 each instance by `fwdNewOK`, `fwdMoveOK` or `fwdSepOK`, the `isSamePtr`/`disjoint` conditions
 included; or a

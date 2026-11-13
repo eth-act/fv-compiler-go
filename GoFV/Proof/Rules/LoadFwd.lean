@@ -60,6 +60,15 @@ theorem r_generic_832_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_
 /-- `generic.rules:919`: `(Store {t1} p1 (Load <t2> p2 mem) mem) && isSamePtr(p1, p2) && t2.Size() == t1.Size() => mem` (issue #69: the write-back of a narrow integer or `bool` the `Load` read, `RewriteCheck.writeBackOK`; false at the word shapes, whose reloaded pointer stores back as its address bytes) -/
 theorem r_generic_919_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_919 := rfl
 
+/-- `generic.rules:924`: `(Store {t1} p1 (Load <t2> p2 oldmem) mem:(Store {t3} p3 _ oldmem)) && isSamePtr(p1, p2) && t2.Size() == t1.Size() && disjoint(p1, t1.Size(), p3, t3.Size()) => mem` (issue #69: `:919` through a disjoint `Store`, `RewriteCheck.wbChain`; false at the word shapes) -/
+theorem r_generic_924_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_924 := rfl
+
+/-- `generic.rules:930`: `(Store {t1} p1 (Load <t2> p2 oldmem) mem:(Store {t3} p3 _ (Store {t4} p4 _ oldmem))) && isSamePtr(p1, p2) && t2.Size() == t1.Size() && disjoint(p1, t1.Size(), p3, t3.Size()) && disjoint(p1, t1.Size(), p4, t4.Size()) => mem` (issue #69: `:919` through two disjoint `Store`s; false at the word shapes) -/
+theorem r_generic_930_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_930 := rfl
+
+/-- `generic.rules:937`: `(Store {t1} p1 (Load <t2> p2 oldmem) mem:(Store {t3} p3 _ (Store {t4} p4 _ (Store {t5} p5 _ oldmem)))) && isSamePtr(p1, p2) && t2.Size() == t1.Size() && disjoint(p1, t1.Size(), p3, t3.Size()) && disjoint(p1, t1.Size(), p4, t4.Size()) && disjoint(p1, t1.Size(), p5, t5.Size()) => mem` (issue #69: `:919` through three disjoint `Store`s; false at the word shapes) -/
+theorem r_generic_937_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_937 := rfl
+
 /-- `generic.rules:943`: `(Store {t} (OffPtr [o] p1) x mem:(Zero [n] p2 _)) && isConstZero(x) && o >= 0 && t.Size() + o <= n && isSamePtr(p1, p2) => mem` -/
 theorem r_generic_943_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_943 := rfl
 

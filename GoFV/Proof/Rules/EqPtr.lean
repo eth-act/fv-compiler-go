@@ -15,6 +15,8 @@ or a 64-bit integer, `uintptr` itabs), so the nil constant reads as the nil poin
 (`val_of_hasTy_word`); pointer equality compares block and offset (#156), so equality with nil
 is `Ptr.isNil` (`null_eq`; an integer address is nil iff it is 0, `ofAddr_isNil`), which
 `IsNonNil` negates. A pointer word equals itself (`ptr_eq_self`; `generic.rules:1646`, `:1647`).
+A constant word is nil iff it is `0` (`PtrOps.isNonNil` of an integer, `:1688`; a `Const32` is no
+pointer word, so `poison` at the pointer shapes `Pat.argsOK` allows).
 
 `generic.rules:1689` (`(IsNonNil (Addr _)) => (ConstBool [true])`) under `Rule.SoundT`: the
 `Addr` is `addrVal` of its aux, a global's address (not nil) or `poison`.
@@ -92,6 +94,37 @@ theorem r_generic_1687_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic
   simp only [Val.retype, PtrOps.isNonNil, Ptr.isNil, Ptr.null] at hty ⊢
   exact refines_retype_of_hasTy hty
 
+/-- `generic.rules:1688`: `(IsNonNil (Const32 [c])) => (ConstBool [c != 0])` -/
+theorem r_generic_1688_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1688 := by
+  rule_unfold
+  obtain ⟨hr, -⟩ := wordShape_ptr hat
+  simp only [hr] at hty ⊢
+  simp only [Conv.const, Val.retype, PtrOps.isNonNil, Conv.constBool] at hty ⊢
+  exact .poison _
+
+/-- `generic.rules:1688`: `(IsNonNil (Const64 [c])) => (ConstBool [c != 0])` -/
+theorem r_generic_1688_2_sound : Rule.Sound GoFV.Rules.Generated.Generic.r_generic_1688_2 := by
+  rule_unfold
+  obtain ⟨hr, -⟩ := wordShape_ptr hat
+  simp only [hr] at hty ⊢
+  simp only [Conv.const, Val.retype, PtrOps.isNonNil, Conv.constBool] at hty ⊢
+  generalize e.auxInt [0] = c at hty ⊢
+  have hAB : (BitVec.ofInt Width.w64.bits c.toInt != 0) =
+      ((if ¬c.toInt = 0 then (1 : Int64) else 0) != 0) := by
+    have hti : c.toInt = c.toBitVec.toInt := rfl
+    rw [hti]
+    show (BitVec.ofInt 64 c.toBitVec.toInt != 0) = _
+    rw [BitVec.ofInt_toInt]
+    by_cases h0 : c.toBitVec.toInt = 0
+    · have : c.toBitVec = 0 := by rw [← BitVec.ofInt_toInt (x := c.toBitVec), h0]; rfl
+      simp [this]
+    · have h0' : ¬ c.toInt = 0 := h0
+      have : c.toBitVec ≠ 0 := by intro h; rw [h] at h0; simp at h0
+      simp [h0']
+      exact this
+  rw [hAB] at hty ⊢
+  exact refines_retype_of_hasTy hty
+
 /-- `generic.rules:1689`: `(IsNonNil (Addr _) ) => (ConstBool [true])` -/
 theorem r_generic_1689_sound : Rule.SoundT GoFV.Rules.Generated.Generic.r_generic_1689 := by
   refine ⟨rfl, fun tabs e or _ => ?_⟩
@@ -158,6 +191,20 @@ theorem inst_r_generic_1687_i64 : Rule.Inst GoFV.Rules.Generated.Generic.r_gener
   simp [GoFV.Rules.Generated.Generic.r_generic_1687]
   rule_eval
   simp [PtrOps.isNonNil, Ptr.isNil, Ptr.null, Val.retype]
+
+/-- `generic.rules:1688` at a `uintptr`-typed `Const64 [5]` (the result `ConstBool [true]`). -/
+theorem inst_r_generic_1688_2 : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1688_2
+    (PEnv.ofLists [] [([], .bool)] (.int .w64) [([0], 5)]) (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_1688_2]
+  rule_eval
+  simp [PtrOps.isNonNil]
+
+/-- `generic.rules:1688` at a pointer-typed `Const64 [0]` (the result `ConstBool [false]`). -/
+theorem inst_r_generic_1688_2_nil : Rule.Inst GoFV.Rules.Generated.Generic.r_generic_1688_2
+    (PEnv.ofLists [] [([], .bool)] (.ptr none) [([0], 0)]) (Oracle.const true) := by
+  simp [GoFV.Rules.Generated.Generic.r_generic_1688_2]
+  rule_eval
+  simp [PtrOps.isNonNil]
 
 /-- `generic.rules:1689` at `IsNonNil (Addr {go:string.hi} SB)`. -/
 theorem inst_r_generic_1689 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_1689 hiSymTabs
