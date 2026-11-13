@@ -75,7 +75,7 @@ def ruleWhy (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) :
           | some c => match ev c with | .bool true => true | _ => false
           | none => true) then "cond"
         else if !(match r.pat with
-          | .op o _ _ _ _ _ _ _ => topAll o e || makeTop o (e.ty [])
+          | .op o _ _ _ _ _ _ _ => topAll o e || makeTop o (e.ty []) || GoFV.Proof.Rules.anyTop r
           | _ => false) then "top"
         else if !Pat.argsOK e.ty [] r.pat then "args"
         else if !leavesOK M I [] r.pat then "leaves"
