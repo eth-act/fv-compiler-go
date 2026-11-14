@@ -26,7 +26,9 @@
   `systemd-oomd` under machine-wide memory pressure. Wait for memory before taking the lock (poll
   `free -g` outside it, re-check inside, release and retry if it dropped); never hold the lock
   while waiting. Corpus measurement runs at 8G (`gofv-ssa-opt`, `gen-check`, `lower-probe`,
-  `--jobs 2`, `nice -n 10`) need no lock. The machine is shared with other heavy projects: never
+  `--jobs 2`, `nice -n 10`) do not take the heavy lock; full-corpus runs go through
+  `scripts/measure-slot.sh` (two shared slots, waits for memory with no slot held), since several
+  agents' concurrent full-v11 runs were killed by `systemd-oomd` too. The machine is shared with other heavy projects: never
   pattern-kill (kill only PIDs you started) and never delete files you did not create;
   temporary files under `<worktree>/tmp/`, never `/tmp`. Check `free -g` before large builds.
 - Never `git stash` (shared across worktrees). Commit on your own branch instead.
