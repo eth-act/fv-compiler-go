@@ -1367,7 +1367,7 @@ needs a later phase of the semantics.
 | `generic` | Sqrt | 0 | 0 | 0 | 1 | 1 |
 | `generic` | StaticCall | 0 | 0 | 0 | 1 | 1 |
 | `generic` | StaticLECall | 2 | 0 | 0 | 24 | 24 |
-| `generic` | Store | 12 | 0 | 0 | 21 | 21 |
+| `generic` | Store | 13 | 0 | 0 | 21 | 21 |
 | `generic` | StringLen | 1 | 0 | 0 | 0 | 1 |
 | `generic` | StringPtr | 1 | 0 | 0 | 1 | 1 |
 | `generic` | StructSelect | 3 | 1 | 0 | 1 | 4 |
@@ -1376,7 +1376,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 60 | 4 | 4 | 0 | 68 |
 | `generic` | Zero | 2 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1492 | 143 | 17 | 258 | 1762 |
+| all | | 1493 | 143 | 17 | 258 | 1762 |
 
 <!-- END coverage -->
 
