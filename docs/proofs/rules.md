@@ -355,11 +355,14 @@ by `ptrBase`/`baseSameB` with `o + size ≤ k`); or a `Zero` of a `Zero` of the 
 (`zeroChain`; `:2159`, through a `VarDef` of a non-`PAUTO`: Go's `zeroResults` `VarDef r; Zero r`
 on a result, then a clearing assignment); or a write-back (`:919`, `(Store {t1} p1 (Load <t2> p2 mem) mem) &&
 isSamePtr(p1, p2) && t2.Size() == t1.Size() => mem`; `fwdShapeOK`'s own case, as the memory is
-bound inside the `Load`): `writeBackOK`, the stored value a `Load` of the root's memory argument (the
-same ID) at a `samePtrB` pointer and at the root's shape, a `wbTy` one (`int8`/`16`/`32`, `bool`).
-At the word shapes the rule is false in the model (a convertible pointer's fragments reload as its
-address word, which stores back as concrete bytes that do not refine the fragments), so those
-instances stay unverified. The
+bound inside the `Load`): `writeBackOK`, the stored value a `Load` at a `samePtrB` pointer and at
+the root's shape, a `wbTy` one (`int8`/`16`/`32`, `bool`), whose memory argument is the root's
+memory argument (the same ID) or reached from it through up to eight `Store`s `disjointB` from the
+write (`wbChain`; `:924`, `:930`, `:937`, `(Store {t1} p1 (Load <t2> p2 oldmem) mem:(Store {t3} p3 _
+oldmem)) && … && disjoint(p1, t1.Size(), p3, t3.Size()) => mem` through one to three `Store`s; #69,
+Phase1Tail12). At the word shapes the rules are false in the model (a convertible pointer's
+fragments reload as its address word, which stores back as concrete bytes that do not refine the
+fragments), so those instances stay unverified; every `:924` instance on full-v11 is word-sized. The
 dropped root is no root of `g`, so `fwdRel` compares atoms by `atomsXOK` (`atomsOK` but changed
 `Store`s and dropped `Store`/`Zero` roots; memcombine's check, now shared) instead of `atomsOK`.
 
@@ -506,7 +509,7 @@ or to a constant of a type descriptor's header (`Size_`, `PtrBytes`, `Hash`, `Ki
 `Convert` and the `ITab` of an `IMake` (`wordStep?`, `wordStep_den`: a `Convert` to a pointer
 type is the identity on the word; the itab word is the `IMake`'s first argument retyped as the
 interface's first field and then as a pointer, `retype_eq_agg`, `asPtrWord_of_retype`; witness
-`fi_checkedRewrite`, `Witness/FwdFixedItab.lean`); `fwdEvent?` accepts an `Addr`, `Const64`, `Const32` or `Const8`
+`fi_checkedRewrite`, `Witness/FwdFixedItab.lean`); `fwdEvent?` accepts an `Addr`, `Const64`, `Const32`, `Const16` or `Const8`
 definition. `fwdNewOK tabs ro f g` accepts `fixedOK tabs ro f u w`: the Load's pointer is an
 `Addr` of one of the pass input's read-only symbols `(n, a) ∈ ro` (`ptrBase`, `baseBlk?`), at
 offset `o`; `w` is an argument-less constant or an `Addr` (`opVal_addr` ignores its `SB`); the read
@@ -520,6 +523,12 @@ holds: the term ops that may hold memories are copies and selections, `term_memO
 symbol's block, where the memory's read is the allocation's (`read_congr_find`,
 `load_congr_read`): `fixed_den`. Witness: `ff_checkedRewrite`/`ff_rwPre`
 (`Witness/FwdFixed.lean`: a relocation to `main.T` at offset 8 of a 16-byte `.dict.` symbol).
+The loads from read-only symbols (`:1564`, `:1572`, `:1580`, `:1588`, `(Load <typ.Int8>
+sptr:(Addr {scon} (SB)) mem) && symIsRO(scon) => (Const8 <typ.Int8> [int8(read8(scon,0))])` and
+the 16/32/64-bit forms; #69, Phase1Tail12) are checked the same way: `fwdShapeOK` takes a `Load`
+of an `Addr` of `SB` built into an argument-less integer constant, and `fixedOK` (with `Const16`)
+compares the constant with the read from the symbol's allocation. Witness: `fr_checkedRewrite`,
+`fr_rwPre`, `fr_roPass` (`Witness/FwdRO.lean`: an `int16` load from `go:string."ab"`).
 
 **Folded `ifaceeq`/`efaceeq` calls** (`:2279`, `:2287`, `:1343`, issues #69, #189):
 `(StaticLECall {f} typ x y mem) && isSameCall(f, "runtime.efaceeq") &&
@@ -646,15 +655,18 @@ against the zeros `zeroChain_read` reads through the disjoint writes and non-poi
 where they are concrete and `poison` otherwise (`writeBack_bytes`: `encode_decodeLoad_wb`, concrete
 bytes encode back to themselves through `decodeInt_concrete`/`encode_int_bytes`, other bytes decode
 to `poison` at a narrow integer or `bool` shape; the `Load`'s memory at the lower fuel refines the
-root's, `den_fuel_mono`); a zero-sized write is the identity
+root's, `den_fuel_mono`; through disjoint `Store`s the written bytes read the same in the `Load`'s
+memory and the root's, `wbChain_read`); a zero-sized write is the identity
 (`Mem.write`'s empty case). `checkedRewrite_refines` composes the
 layers (`chain_refines`) and the atom simulation (statement unchanged). Proven:
-`generic.rules:800`, `:806`, `:813`, `:821`, `:827`, `:830`, `:832`, `:919`, `:943`, `:948`, `:954`,
+`generic.rules:800`, `:806`, `:813`, `:821`, `:827`, `:830`, `:832`, `:919`, `:924`, `:930`,
+`:937`, `:943`, `:948`, `:954`,
 `:961`, `:1005`, `:1352`, `:1357`, `:1362`, `:2146`, `:2155`, `:2158`, `:2159`; witnesses
 `z2_checkedRewrite` (a result cleared twice over its `VarDef`, `:2159`: the second `Zero` dropped,
 the result returns the `VarDef`; `z2_rwPre`; `GoFV/Proof/Witness/Zero2159.lean`),
 `wb_checkedRewrite` (`*p = *p` at `int32` with `:919`: the `Store` dropped, the result returns the
-initial memory; `GoFV/Proof/Witness/FwdWriteBack.lean`),
+initial memory; `GoFV/Proof/Witness/FwdWriteBack.lean`), `wb2_checkedRewrite` (the same
+write-back through a `Store` at a disjoint pointer, `:924`),
 `GoFV.Proof.Witness.sl_checkedRewrite` (`*p = x; return *p`), `sl2_checkedRewrite`
 (`p[0] = x; p[1] = y; return p[0]`, `:806`), `sls_checkedRewrite` (`*p = s; return *p` at a
 string; `sls_decodeLoad`), `fc_checkedRewrite` (the stored value a `Copy` of `x`),
@@ -1001,7 +1013,11 @@ the input cannot tell them from its own (`tabsAgree`). Proven: `generic.rules:10
 (`r_generic_1022_sound`), `:1015` (the empty string: `StringMake (ConstNil) (Const64 [0])`),
 `:1011` (`(StringPtr (StringMake (Addr <t> {s} base) _)) => (Addr <t> {s} base)`, rebuilt with
 the matched aux), `:1592` (`(MemEq p q _ _) && isSamePtr(p, q) => (ConstBool [true])`: `memEq`
-of one pointer twice is `poison` or `true`, `MemEqSame.lean`), `:574` (both rules,
+of one pointer twice is `poison` or `true`, `MemEqSame.lean`), `:1628` (`MemEq` of 25 to 32 bytes
+split into a `MemEq` of the first 16 bytes and one of the rest: `memEq` of the whole is the `AndB`
+of the parts where neither is `poison`, `MemEqSplit.lean`, witness `inst_r_generic_1628`), `:1688`
+(`IsNonNil` of a `Const32`/`Const64` constant, `EqPtr.lean`, witnesses `inst_r_generic_1688_2`,
+`inst_r_generic_1688_2_nil`), `:574` (both rules,
 `((x >> c) & d) << e => (x >> (c-e)) & (d<<e)` with `c >= e`: the built `d<<e` gives `e ≥ 0`,
 without which the rule is false in the model; then a bit identity, `ShiftMask.lean`), `:994`
 (`Load` of a one-element array `=> ArrayMake1 (Load <t.Elem()> ptr mem)`: both loads read the
@@ -1289,8 +1305,8 @@ needs a later phase of the semantics.
 | `dec` | StructSelect | 5 | 0 | 0 | 1 | 5 |
 | `divisible` | Eq | 16 | 0 | 0 | 0 | 16 |
 | `divisible` | Neq | 16 | 0 | 0 | 0 | 16 |
-| `divmod` | Div | 17 | 6 | 4 | 2 | 29 |
-| `generic` | Add | 88 | 1 | 4 | 2 | 95 |
+| `divmod` | Div | 21 | 6 | 0 | 2 | 29 |
+| `generic` | Add | 92 | 1 | 0 | 2 | 95 |
 | `generic` | AddPtr | 1 | 1 | 0 | 0 | 2 |
 | `generic` | And | 40 | 8 | 0 | 0 | 48 |
 | `generic` | AndB | 36 | 0 | 0 | 0 | 36 |
@@ -1317,13 +1333,13 @@ needs a later phase of the semantics.
 | `generic` | IMake | 1 | 1 | 0 | 1 | 2 |
 | `generic` | InterLECall | 0 | 0 | 0 | 1 | 1 |
 | `generic` | IsInBounds | 11 | 18 | 0 | 0 | 29 |
-| `generic` | IsNonNil | 3 | 2 | 0 | 3 | 6 |
+| `generic` | IsNonNil | 5 | 0 | 0 | 3 | 6 |
 | `generic` | IsSliceInBounds | 5 | 3 | 0 | 0 | 8 |
 | `generic` | Leq | 62 | 0 | 0 | 2 | 62 |
 | `generic` | Less | 62 | 0 | 0 | 2 | 62 |
-| `generic` | Load | 27 | 0 | 0 | 33 | 35 |
+| `generic` | Load | 31 | 0 | 0 | 33 | 35 |
 | `generic` | Lsh | 67 | 21 | 0 | 0 | 88 |
-| `generic` | MemEq | 2 | 9 | 0 | 0 | 11 |
+| `generic` | MemEq | 3 | 8 | 0 | 0 | 11 |
 | `generic` | Mod | 29 | 0 | 0 | 0 | 29 |
 | `generic` | Move | 19 | 0 | 0 | 25 | 25 |
 | `generic` | Mul | 45 | 8 | 0 | 8 | 60 |
@@ -1336,7 +1352,7 @@ needs a later phase of the semantics.
 | `generic` | NilCheck | 8 | 0 | 0 | 8 | 8 |
 | `generic` | Not | 33 | 0 | 0 | 4 | 33 |
 | `generic` | OffPtr | 2 | 0 | 0 | 0 | 2 |
-| `generic` | Or | 76 | 0 | 4 | 0 | 80 |
+| `generic` | Or | 80 | 0 | 0 | 0 | 80 |
 | `generic` | OrB | 48 | 0 | 0 | 20 | 56 |
 | `generic` | Phi | 5 | 0 | 0 | 5 | 5 |
 | `generic` | PopCount | 0 | 8 | 0 | 0 | 8 |
@@ -1356,16 +1372,16 @@ needs a later phase of the semantics.
 | `generic` | Sqrt | 0 | 0 | 0 | 1 | 1 |
 | `generic` | StaticCall | 0 | 0 | 0 | 1 | 1 |
 | `generic` | StaticLECall | 2 | 0 | 0 | 24 | 24 |
-| `generic` | Store | 12 | 0 | 0 | 21 | 21 |
+| `generic` | Store | 16 | 0 | 0 | 21 | 21 |
 | `generic` | StringLen | 1 | 0 | 0 | 0 | 1 |
 | `generic` | StringPtr | 1 | 0 | 0 | 1 | 1 |
 | `generic` | StructSelect | 3 | 1 | 0 | 1 | 4 |
 | `generic` | Sub | 68 | 0 | 0 | 2 | 70 |
 | `generic` | Trunc | 32 | 0 | 0 | 1 | 33 |
-| `generic` | Xor | 60 | 4 | 4 | 0 | 68 |
-| `generic` | Zero | 2 | 0 | 0 | 6 | 6 |
+| `generic` | Xor | 64 | 4 | 0 | 0 | 68 |
+| `generic` | Zero | 3 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1436 | 185 | 31 | 258 | 1762 |
+| all | | 1464 | 182 | 15 | 258 | 1762 |
 
 <!-- END coverage -->
 
@@ -2181,14 +2197,30 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
 - **#90 (`upstream-candidate`)**: constant rotate detection, `generic.rules:2166–2169` and
   their Or/Xor expansions (12 rules). The condition `c < w && d == w-c` compares the shift
   constant signed; for `c = -1`, `d = w+1` both shifts give 0 but `RotateLeft x (Const64 [-1])`
-  rotates by `w-1`. Missing precondition `c >= 0`. Marked `-- FALSE … #90` in
-  `GoFV/Proof/Rules/Add.lean`; `Rule.Sound` is false for them.
+  rotates by `w-1`. Missing precondition `c >= 0`. `Rule.Sound` is false for them as written.
+  **Proven under `0 ≤ c`** (#69, Phase1Tail12): `nonNegAuxs` names the auxint `c`, `FrameOK`
+  makes it nonnegative and the rewrite validator checks the instance's auxint
+  (`RewriteCheck.condFrameOK`); `r_generic_2166_sound` … `r_generic_2169_3_sound` as
+  `Rule.SoundT` through `Rule.soundT_of_soundNN` (`GoFV/Proof/Rules/RotConst.lean`: `rot_amts`,
+  then `rot_add`/`rot_or`/`rot_xor` of `Lemmas.lean`), witnesses `inst_r_generic_2166` …
+  `inst_r_generic_2169_3`.
+  The compiler builds no negative shift constant the rule matches (the out-of-range shift folds
+  win), so the conjunct costs nothing on the corpus (full-v11: 34 of the 34 functions whose sole
+  obstacle these rules were pass). #90 stays the upstream record.
 
 - **`divmod.rules:136–148`** (`Div16u/32u/64u` of a signed type by `smagic`): false under the
-  semantics, not a Go bug. `t.IsSigned()` is an oracle atom and nothing makes the dividend
-  non-negative, which Go establishes before (prove pass). Counterexamples (agent DivmodU):
+  semantics as written, not a Go bug. `t.IsSigned()` is an oracle atom and nothing makes the
+  dividend non-negative, which Go establishes before (prove pass). Counterexamples (agent DivmodU):
   136 at `c = 3`, `x = 0xFFFF` (21845 vs 32767); 140 at `c = 3`, `x = 2^32-1`; 144 at `c = 7`,
-  `x = 4294967291`; 148 at `c = 7`, `x = 2^64-3`. Marked `-- FALSE … #69` in `Div.lean`.
+  `x = 4294967291`; 148 at `c = 7`, `x = 2^64-3`. **Proven with the dividend nonnegative** (#69,
+  Phase1Tail12): `nonNegLeaves` names the dividend, `FrameOK` makes it a nonnegative integer or
+  `poison`, and the rewrite validator decides it per instance with `isNonNegative`'s analysis
+  (`RewriteCheck.nonNegLeavesD`, `nonNegD`); `r_divmod_136_sound` … `r_divmod_148_sound` as
+  `Rule.SoundT` through `Rule.SoundNN`/`Rule.soundT_of_soundNN` (`GoFV/Proof/Rules/DivmodSU.lean`:
+  `udiv_magic_nat`, `udiv_smagic_hmul`, `udiv_smagic_wide`), witnesses `inst_r_divmod_136` …
+  `inst_r_divmod_148`. On full-v11, 22 of the 45 functions whose sole obstacle they were pass; in
+  20 of the others the dividend is nonnegative only by a dominating branch, which the analysis
+  does not track.
 
 - **`generic.rules:1071`, `:1075` (`Convert` of an integer offset from a converted pointer)**:
   false under the semantics, not a Go bug: integers carry no provenance, so the pointer the

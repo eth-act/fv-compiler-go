@@ -28,15 +28,15 @@ the semantic phase of their ops (`GoFVTest/Proof/RuleClass.lean`; "Classificatio
 
 | Class | Proven | False | Open | Total |
 | --- | --: | --: | --: | --: |
-| P1 (integers, booleans) | 1,212 | 30 | 153 | 1,395 |
-| P2 (pointers, composites, `Load` values, `SelectN`) | 76 | 1 | 32 | 109 |
-| mem (memory ops) | 86 | 0 | 26 | 112 |
+| P1 (integers, booleans) | 1,228 | 14 | 153 | 1,395 |
+| P2 (pointers, composites, `Load` values, `SelectN`) | 79 | 1 | 29 | 109 |
+| mem (memory ops) | 93 | 0 | 19 | 112 |
 | call | 12 | 0 | 35 | 47 |
 | float | 26 | 0 | 42 | 68 |
 | ptr (`ConstString`, `Addr`, `NilCheck`, pointer comparisons) | 18 | 0 | 5 | 23 |
 | phi | 5 | 0 | 0 | 5 |
 | block | 3 | 0 | 0 | 3 |
-| all | 1,438 | 31 | 293 | 1,762 |
+| all | 1,464 | 15 | 283 | 1,762 |
 
 *Proven*: a merged lemma (`Rule.Sound`, `Rule.SoundT`, `Rule.SoundW`, `Rule.MakeSel`,
 `Rule.LoadSel`, `Rule.Drop`, `Rule.IMakeSM`, `Rule.AddrCmp`, `BlockRule.Sound`,
@@ -74,24 +74,29 @@ shape, `size0Vars`) and the `EqPtr`/`NeqPtr`/float variants of `Not (Eq …)`/`N
 at the same pointer, at a narrow integer or `bool` shape (`:919`), dropped in the forwarding layer
 (`RewriteCheck.writeBackOK`, `LoadFwd.writeBack_bytes`) (#69, Phase1Tail12; full-v11 on 0a04f238:
 Phase 1 94,316 → 94,343, through `trim` 88,458 → 88,479, 0 lost; quick-v10 end to end 7,440 →
-7,440, 0 lost), and the `Zero` of a `VarDef` of a `Zero` of the same pointer (`:2159`), dropped
+7,440, 0 lost), the `Zero` of a `VarDef` of a `Zero` of the same pointer (`:2159`), dropped
 in the forwarding layer when the `VarDef`'s variable is not a `PAUTO` (S3: such a `VarDef` is the
 identity on memory; `RewriteCheck.zeroChain` reads through it, `LoadFwd.zeroChain_read`) (#69,
 VarDefS3b; full-v11 per function: Phase 1 94,343 → 94,391, through `trim` 88,709 → 88,750, 0 lost;
-quick-v10 end to end 7,441 → 7,446, 0 lost).
+quick-v10 end to end 7,441 → 7,446, 0 lost), and (#69, Phase1Tail12/13) the write-backs through
+one to three disjoint `Store`s at the same narrow shapes (`:924`, `:930`, `:937`, `wbChain`; at
+the word shapes they stay false in the model like `:919`, and every `:924` instance on full-v11 is
+word-sized), the loads from read-only symbols (`:1564`, `:1572`, `:1580`, `:1588`) as fixed loads
+(`fixedOK`), the `MemEq` of 25 to 32 bytes split in two (`:1628`, `Rule.Sound`), `IsNonNil` of an
+integer constant (`:1688`), and two rule classes false under the semantics as written, proven
+under the condition the compiler establishes, which the rewrite validator checks per instance (a
+rule-keyed `FrameOK` conjunct, `Rule.SoundNN`): `divmod.rules:136–148` with the dividend
+nonnegative (`nonNegLeaves`, decided by `isNonNegative`'s analysis, `RewriteCheck.nonNegLeavesD`;
+`DivmodSU.lean`) and the constant rotate detection `generic.rules:2166–2169` with `0 ≤ c`
+(`nonNegAuxs`, `RewriteCheck.condFrameOK`; `RotConst.lean`; #90 keeps the upstream record)
+(MEASUREMENTS).
 
-**False under the semantics, with the reason** (31, each marked `-- FALSE r_… #N` in its proof
+**False under the semantics, with the reason** (15, each marked `-- FALSE r_… #N` in its proof
 module; "Findings" in `rules.md`):
 
-- `generic.rules:2166–2169`, three alternatives each (12): constant rotate detection compares the
-  shift constant signed; at `c = -1`, `d = w+1` both shifts give 0, but
-  `RotateLeft x (Const [-1])` rotates by `w-1`. A Go bug candidate (#90, `upstream-candidate`).
 - `CondSelect` into arithmetic, `:2325` (3), `:2342` (3), `:2355` (4), `:2368` (1), `:2371` (3)
   (14): at `bool = false` the match is the leaf `x`, the result recomputes it, and a 64-bit
   register may hold an address-less pointer on which `Sub64`/`Or64` are `poison`.
-- `divmod.rules:136`, `:140`, `:144`, `:148` (`Div16u/32u/64u` of a signed type by `smagic`, 4):
-  the dividend need not be non-negative; Go establishes that in `prove` before. Counterexamples
-  in `rules.md`.
 - `generic.rules:1039` (`config.PtrSize == 4`, 1): it builds 32-bit lengths into a 64-bit slice
   shape (`rule-sat` counterexample).
 
@@ -104,23 +109,31 @@ obstacle counts on full-v6, "Findings" in `rules.md` has the counterexamples):
 - `:579` (#542, a Go bug, upstream golang/go#82763; `Lsh32x64` of `And32 (Rsh32x64 x c) d` by `e`, `c < e`: false for `c < 0`, `x = -1`,
   `d = 1`, `c = -1`, `e = 1` gives `2` against `0`; 9 functions).
 - `MemEq` → `Eq*` of two `Load`s, `:1560`/`:1568`/`:1576`/`:1584` (with the read-only loads
-  `:1564`/`:1572`/`:1580`/`:1588` they fire on; about 330 functions, in pairs): `memEq` compares
-  the raw bytes, pointer fragments included, but an integer `Load` of a pointer's fragment bytes
-  is `poison`, so `true` becomes `poison`.
-- The `CondSelect` folds (about 240 functions on the unmarked alternatives of `:2322–:2393`) and
-  `divmod.rules:136–148` (59) are false as above.
+  `:1564`/`:1572`/`:1580`/`:1588` they fire on, which are proven; about 330 functions, in pairs):
+  `memEq` compares the raw bytes, pointer fragments included, but an integer `Load` of a pointer's
+  fragment bytes is `poison`, so `true` becomes `poison`.
+- The `CondSelect` folds (about 240 functions on the unmarked alternatives of `:2322–:2393`) are
+  false as above.
+- The write-backs `:919`/`:924`/`:930`/`:937` at the word shapes (proven at the narrow integer and
+  `bool` shapes): a convertible pointer's fragments reload as its address word, which stores back
+  as concrete bytes that do not refine the fragments. Every `:924` instance on full-v11 (18
+  functions as a sole obstacle) is word-sized.
 
-**Open** (293):
+Proven under a condition the compiler establishes elsewhere, which the rule does not state (the
+validator checks it per instance): `divmod.rules:136–148` (the dividend nonnegative, which Go's
+`prove` establishes; 22 of the 45 functions on full-v11 whose sole obstacle they were now pass;
+20 of the others need branch facts the validator does not track) and `generic.rules:2166–2169`
+(`0 ≤ c`; #90: Go builds no negative constant the rule matches; 34 of 34).
 
-- `P1`/`P2` alternatives without a lemma (185): most never fire on the corpus; those that fire
+**Open** (284):
+
+- `P1`/`P2` alternatives without a lemma (182): most never fire on the corpus; those that fire
   are in the `fire-full` table of `rules.md` (sole obstacles by rule).
-- `mem` (26) and `ptr` (5): memory and pointer rules inside the model without an effect
+- `mem` (19) and `ptr` (5): memory and pointer rules inside the model without an effect
   obligation proof: `Load` forwardings of other shapes (`:831–:877` but `:842`/`:851`/`:862`/`:875`,
   `:907`, `:912`; the integer and `bool` `Load`s of a `Zero` `:882–:902` are proven), `Move` chains and
-  `Move`/`Zero` of `Store`s (`:1744–:1824`; `:1740`/`:1742`/`:1743` and `:1871`–`:1964` are proven), the
-  write-backs through disjoint `Store`s `:924`/`:930`/`:937` (the write-back `:919` is proven at the
-  narrow integer and `bool` shapes; at the word shapes both are false in the model, as a convertible
-  pointer's fragments reload as its address word), `IsNonNil (Convert (Addr _) _)` (`:1690`; the pointer comparisons
+  `Move`/`Zero` of `Store`s (`:1744–:1824`; `:1740`/`:1742`/`:1743` and `:1871`–`:1964` are proven),
+  `IsNonNil (Convert (Addr _) _)` (`:1690`; the pointer comparisons
   `:1646`–`:1676` are proven except the ones of two constants, `:1664`/`:1665`), and `ConstString` under
   `config.PtrSize == 4` (`:1013`, `:1017`; never true
   for linux/arm64).
@@ -130,9 +143,12 @@ obstacle counts on full-v6, "Findings" in `rules.md` has the counterexamples):
   of float comparisons, `:397`/`:398`, are proven).
 - `call` (35): `memequal` folds (`:1395–:1557`; `memequal` has a contract), the `Const32`
   alternatives of the proven call segments, `growslice` lengths at `Const32`
-  (`:2128`/`:2131` alternatives), devirtualisation `:1733`, and **outside the model**: the
-  `runtime.cmpstring` rules `:2267`, `:2271` (no contract in `Env.runtime`) and the race
-  instrumentation cleanup `:2115`, `:2116` (race mode is not modelled).
+  (`:2128`/`:2131` alternatives), devirtualisation `:1733` (inside the model: both calls reach the
+  same contract; it needs a validator step for a call whose op, callee and arguments change, #69),
+  and **outside the model**: the `runtime.cmpstring` rules `:2267`, `:2271` (no contract in
+  `Env.runtime`), the `mapaccess1/2_faststr`/`mapdelete_faststr` fold of a `slicebytetostring` key
+  `:2306` (no contract for those runtime functions; the fold also drops the conversion's
+  allocation) and the race instrumentation cleanup `:2115`, `:2116` (race mode is not modelled).
 
 ## Phase 2: the verified pipeline through `trim` (#385, #189)
 
