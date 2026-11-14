@@ -198,7 +198,7 @@ theorem tgt_atom_ref {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcIn
     (hrel : ∀ a, VT a → VS a → ¬ IsTerm f.value? a → ¬ IsTerm (listedDefs g) a →
       Sem.Refines (rv G a) (rv T a))
     (htyS : Proof.Typed (Ctx.make tabs f) G) (htyT : Proof.Typed (Ctx.make tabs g) T)
-    {x : ID} {u w : Value} (hpw : Placed g x w) (hu : f.value? x = some u) (hs : SameAtomX u w)
+    {x : ID} {u w : Value} (hpw : Placed g x w) (hu : f.value? x = some u) (hs : AtomRel u w)
     (ht : termOp w.op = false) (hnp : w.op ≠ .Phi) (hargsS : ∀ a ∈ u.args, VS a)
     (hargsT : ∀ a ∈ w.args, VT a)
     (hinv : ∀ a, I.P w.block a (rv G a)) (hq : I.Q w.block (rv G))
@@ -207,7 +207,7 @@ theorem tgt_atom_ref {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcIn
   obtain ⟨hw, hbm, blk, hblk, hx⟩ := hpw
   obtain ⟨w', hw', hwid, -⟩ := H.wg.valueId w.block blk ⟨hbm, hblk⟩ x hx
   rw [hw] at hw'; cases hw'
-  have huid : u.id = x := hs.2.2.2.2.2.2.trans hwid
+  have huid : u.id = x := hs.id.trans hwid
   have htyS' : ∀ a, VS a → ¬ IsTerm f.value? a →
       (rv G a).retype (shape f.value? tabs a) = rv G a := fun a ha _ => by
     rw [← tys_shape]; exact htyS a _ (reg_rv (hDS a ha).1)
@@ -215,14 +215,14 @@ theorem tgt_atom_ref {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcIn
     obtain ⟨v, hp⟩ := hVT a ha
     simp [shape, placed_listed hp, hp.1]
   have hty : (Ctx.make tabs g).tys[w.id]?.getD .other = (Ctx.make tabs f).tys[u.id]?.getD .other := by
-    rw [hwid, huid, tys_of_value hw, tys_of_value hu, hs.2.1]
-  rcases H.args w.block hbm blk hblk x hx w hw ht with ⟨u', hu', -, -, -, hax, -, hTR⟩ |
-    ⟨u', hu', hus, hws, hC⟩
+    rw [hwid, huid, tys_of_value hw, tys_of_value hu, hs.type]
+  rcases H.args w.block hbm blk hblk x hx w hw ht with ⟨u', hu', hop, hty', hai, hax, hsz, hTR⟩ |
+    ⟨u', hu', hus, hws, hC⟩ | ⟨u', hu', hdv, hTR, nm, hnm, hcode⟩
   · rw [hu] at hu'; cases hu'
     refine atom_eval_mono hE (ctx_eq H.ok.ownAux) hfr
-      ⟨hs.1, hs.2.1, hs.2.2.1, hax, hs.2.2.2.2⟩ hty (fun a ha => (hDS a (hargsS a ha)).1)
+      ⟨hop, hty', hai, hax, hsz, hs.block, hs.id⟩ hty (fun a ha => (hDS a (hargsS a ha)).1)
       (fun a ha => (hDT a (hargsT a ha)).1) fun i hi => ?_
-    have hi' : i < w.args.size := hs.2.2.2.2.1 ▸ hi
+    have hi' : i < w.args.size := hsz ▸ hi
     refine termRef_apply ((hTR i hi').1 hnp) hDS (hargsS _ (getElem!_mem' hi)) hDT
       (hargsT _ (getElem!_mem' hi')) (fun a h1 h2 h3 h4 => hrel a h3 h1 h2 h4) htyS'
       (fun a ha _ => by rw [hshT a ha, ← tys_shape]; exact htyT a _ (reg_rv (hDT a ha).1))
@@ -248,6 +248,40 @@ theorem tgt_atom_ref {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcIn
         evalOp_memOp hmw (by rcases hws with h | h <;> rw [h] <;> decide),
         memRoot_of_memDef_chg (ctx := Ctx.make tabs g) hws hr', hty]
       exact .ok (retype_mono _ hrr)
+  · -- a devirtualised interface call: the same contract as the source's (`atom_eval_devirt`)
+    rw [hu] at hu'; cases hu'
+    have hsz : u.args.size = w.args.size + 1 := hdv.2.2.2.2.2.1
+    have h0 : 0 < u.args.size := by omega
+    cases hsplit : u.args.toList with
+    | nil =>
+      have := congrArg List.length hsplit
+      simp only [Array.length_toList, List.length_nil] at this
+      omega
+    | cons c rest =>
+      have hc : u.args[0]! = c := by
+        have h1 : u.args.toList[0]? = some c := by rw [hsplit]; rfl
+        rw [Array.getElem?_toList] at h1
+        obtain ⟨h0', hc⟩ := Array.getElem?_eq_some_iff.1 h1
+        rw [getElem!_pos u.args 0 h0', hc]
+      refine atom_eval_devirt (ctxS := Ctx.make tabs f) (ctxT := Ctx.make tabs g) hE rfl rfl hdv hty
+        (fun a ha => (hDS a (hargsS a ha)).1)
+        (fun a ha => (hDT a (hargsT a ha)).1) hsplit (fun s hs' => ?_) fun i a a' ha ha' => ?_
+      · have hca : c ∈ u.args := by rw [← hc]; exact getElem!_mem' h0
+        obtain ⟨N, hN⟩ := (hDS c (hargsS c hca)).2 (rv G) (fun _ _ _ => rfl)
+        have hs'' := hcode (rv G) N s (by rw [hc, hN N (Nat.le_refl N)]; exact hs')
+        subst hs''
+        exact hnm
+      · have ha2 : u.args.toList[i + 1]? = some a := by rw [hsplit]; exact ha
+        rw [Array.getElem?_toList] at ha2 ha'
+        obtain ⟨hi1, rfl⟩ := Array.getElem?_eq_some_iff.1 ha2
+        obtain ⟨hi, rfl⟩ := Array.getElem?_eq_some_iff.1 ha'
+        have := termRef_apply (hTR i hi) hDS (hargsS _ (getElem!_mem' hi1)) hDT
+          (hargsT _ (getElem!_mem' hi)) (fun a h1 h2 h3 h4 => hrel a h3 h1 h2 h4) htyS'
+          (fun a ha _ => by rw [hshT a ha, ← tys_shape]; exact htyT a _ (reg_rv (hDT a ha).1))
+          (fun a ha hat hat' hdef _ => by rw [shape_atom_def H hat' hdef]; exact htyS' a ha hat)
+          hinv (I.poisonAtom _) hSV
+          (fun ρ hρ hV hp => ⟨I.qpois _ _ ρ hq hρ, rAtoms_of hDS hRS hV hp⟩) hMS
+        rwa [getElem!_pos u.args (i + 1) hi1, getElem!_pos w.args i hi] at this
 
 /-- Induction along `evalAll` with an invariant of the evaluated prefix. -/
 theorem evalAll_induct {env : Env} {ctx : Ctx} (L : List ID) (Inv : List ID → Frame → Prop)
@@ -287,7 +321,7 @@ theorem tgt_loop {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
     (hargsT : ∀ x ∈ og, ∀ w, g.value? x = some w → ∀ a ∈ w.args, VT1 a ∨ a ∈ og)
     (hVSog : ∀ a ∈ og, VS a → ¬ IsTerm (listedDefs g) a → a ∈ P)
     (hatom : ∀ x ∈ L, ∀ w, g.value? x = some w → termOp w.op = false →
-      ∃ u, f.value? x = some u ∧ SameAtomX u w ∧
+      ∃ u, f.value? x = some u ∧ AtomRel u w ∧
         (x ∈ P → (∀ a ∈ u.args, VS a) ∧
           ∃ y, G.regs[x]? = some (some y) ∧ evalValue env (Ctx.make tabs f) G u = .ok y) ∧
         (x ∉ P → isRoot w.op = false ∧ w.op ≠ .Arg ∧ w.op ≠ .ArgIntReg)) :

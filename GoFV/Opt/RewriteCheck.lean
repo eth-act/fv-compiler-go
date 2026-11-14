@@ -1156,21 +1156,29 @@ def atomFieldsOK (u w : Value) : Bool :=
   u.op == w.op && u.type == w.type && u.auxInt == w.auxInt && (u.aux == w.aux || u.op == .Store) &&
     u.args.size == w.args.size && u.block == w.block && u.id == w.id
 
+/-- The atom `w` of `g` is the devirtualised interface call `u` of `f` (`dvOK`): a
+`StaticLECall` with the fields of the `InterLECall` `u` and one argument fewer (its code
+pointer). -/
+def dvFieldsOK (u w : Value) : Bool :=
+  u.op == .InterLECall && w.op == .StaticLECall && u.type == w.type && u.auxInt == w.auxInt &&
+    u.aux == w.aux && u.args.size == w.args.size + 1 && u.block == w.block && u.id == w.id
+
 /-- `atomsOK` with changed and dropped memory roots (`GoFV.Proof.AtomSim.AtomsX`; memcombine's
 combined stores, issue #35, and the forwarding layer's dropped identity writes, issue #151): the
 same entry, blocks and own aux; every atom of `g` is an atom of `f` with the same fields but the
-arguments and, for a `Store`, the aux; each block evaluates the roots both functions have in
+arguments and, for a `Store`, the aux (with `dv`, or a devirtualised interface call,
+`dvFieldsOK`); each block evaluates the roots both functions have in
 the same order (`Sem.schedule`), and a root of `f` that is no root of `g` is a `Store` or a
 `Zero` (which never panic), or with `calls` a `StaticLECall` (the forwarding layer's folded
 `runtime.ifaceeq`/`efaceeq` calls, which return under their contract, `Sem.Env.IfaceEq`). -/
-def atomsXOK (f g : Func) (calls : Bool := false) : Bool :=
+def atomsXOK (f g : Func) (calls : Bool := false) (dv : Bool := false) : Bool :=
   f.entry == g.entry && f.blocks == g.blocks && f.ownAux == g.ownAux &&
   f.blocks.all fun b =>
     match f.block? b, g.block? b with
     | some fb, some gb =>
       fb.id == gb.id &&
       (atomsOf g gb).all (fun x => (atomsOf f fb).contains x && match f.value? x, g.value? x with
-        | some u, some w => atomFieldsOK u w
+        | some u, some w => atomFieldsOK u w || (dv && dvFieldsOK u w)
         | _, _ => false) &&
       match Sem.schedule f fb, Sem.schedule g gb with
       | some of, some og =>
@@ -1465,27 +1473,29 @@ def constIdx? (tabs : Tables) (f : Func) (i : ID) : Option (BitVec 64) :=
   | some (.int .w64 k) => some k
   | _ => none
 
-/-- A pointer-shaped value that reads as its argument's pointer word: a `Convert` (to a pointer
-type, the identity on the word, `Sem.PtrOps.convert`) or an `ITab` of an `IMake` (the `IMake`'s
-first argument, retyped as the interface's first field and then as a pointer; the fixed loads
-`generic.rules:2252`–`:2258`). -/
+/-- A word-shaped value (`wordTy`: a pointer or a `uintptr`, which retype alike) that reads as its
+argument's pointer word: a `Convert` (to a pointer type, the identity on the word,
+`Sem.PtrOps.convert`) or an `ITab` of an `IMake` (the `IMake`'s first argument, retyped as the
+interface's first field and then at the `ITab`'s shape; the fixed loads
+`generic.rules:2252`–`:2258`, an itab's method word through the `uintptr` `ITab` of an interface
+call). -/
 def wordStep? (tabs : Tables) (f : Func) (u : Value) : Option ID :=
-  if !isPtrTy (tabs.ty u.type) then none
-  else if u.op == .Convert && u.args.size == 2 then some u.args[0]!
+  if !wordTy (tabs.ty u.type) then none
+  else if u.op == .Convert && u.args.size == 2 && isPtrTy (tabs.ty u.type) then some u.args[0]!
   else if u.op == .ITab && u.args.size == 1 then
     match f.value? u.args[0]! with
     | some m => if m.op == .IMake && m.args.size == 2 then some m.args[0]! else none
     | none => none
   else none
 
-/-- One step of `ptrBase`: an `OffPtr` or `Copy` of pointer shape on a pointer-shaped argument,
-or a `PtrIndex` of element size `e` (its pointer shape) by a constant index `k` (`constIdx?`),
-its argument and its offset (`k * e`); or a `wordStep?`, at offset `0`. -/
+/-- One step of `ptrBase`: an `OffPtr` or `Copy` of word shape (`wordTy`) on a word-shaped
+argument (`wordVal`), or a `PtrIndex` of element size `e` (its pointer shape) by a constant index
+`k` (`constIdx?`), its argument and its offset (`k * e`); or a `wordStep?`, at offset `0`. -/
 def ptrStep? (tabs : Tables) (f : Func) (a : ID) : Option (ID × BitVec 64) :=
   match f.value? a with
   | some u =>
-    if (u.op == .OffPtr || u.op == .Copy) && u.args.size == 1 && isPtrTy (tabs.ty u.type) &&
-        ptrVal tabs f u.args[0]! then
+    if (u.op == .OffPtr || u.op == .Copy) && u.args.size == 1 && wordTy (tabs.ty u.type) &&
+        wordVal tabs f.valueTab u.args[0]! then
       some (u.args[0]!, if u.op == .OffPtr then BitVec.ofInt 64 u.auxInt.toInt else 0)
     else if u.op == .PtrIndex && u.args.size == 2 && ptrVal tabs f u.args[0]! then
       match tabs.ty u.type, constIdx? tabs f u.args[1]! with
@@ -2516,6 +2526,8 @@ def fwdShapeOK (r : Rule) : Bool :=
       none => y == z
   | .op .EqPtr none _ _ _ .fixed [_, _] _, .build [n], none => n.op == .ConstBool && n.args.isEmpty
   | .op .NeqPtr none _ _ _ .fixed [_, _] _, .build [n], none => n.op == .ConstBool && n.args.isEmpty
+  | .op .InterLECall none _ _ _ _ [.op .Addr none _ _ _ .fixed [.op .SB ..] _] _,
+      .copy (.call "devirtLECall" _ _), none => true
   | _, _, _ => false
 
 /-- The `Load` `v` of `f` that event `ev` forwards (or the `Store`/`Zero` it drops, the `Move`
@@ -4161,6 +4173,95 @@ def pnRel (tabs : Tables) (f g : Func) : Bool :=
             | _, _ => false)
       | _, _ => false
 
+/-! ## Devirtualised interface calls as a layer (issue #69)
+
+`(InterLECall {auxCall} (Addr {fn} (SB)) ___) => devirtLECall(v, fn)` (`generic.rules:1733`)
+turns the interface call `v` into `StaticLECall {auxCall}` without its code pointer and redefines
+the shared `*AuxCall` to call `fn` (`Rules.Helpers.devirtLECall`). Each instance is logged after
+a snapshot (`Interp.snapRule`): it is the first event of its segment, whose input has the
+`Addr` a fixed load built. `dvOK` checks it in the result's tables, where the aux is redefined:
+the code pointer reaches, through compatible copies, an `Addr` of the global the aux's callee
+names, so both calls reach the same contract (`GoFV.Proof.Pass.Devirt`). -/
+
+/-- A devirtualisation rule: `(InterLECall (Addr {fn} (SB)) ___) => devirtLECall(v, fn)`. -/
+def dvShapeOK (r : Rule) : Bool :=
+  match r.pat, r.result, r.block with
+  | .op .InterLECall none _ _ _ _ [.op .Addr none _ _ _ .fixed [.op .SB ..] _] _,
+      .copy (.call "devirtLECall" _ _), none => true
+  | _, _, _ => false
+
+/-- The interface call `v` of `f` that event `ev` devirtualises, if it is a `loads` rule event of
+a devirtualisation rule (`dvShapeOK`; tried on an `InterLECall` after its row). -/
+def dvEvent? (t : Interp.Table) (f : Func) : RwEvent → Option ID
+  | .rule v i _ _ =>
+    match f.value? v with
+    | some u =>
+      if u.op == .InterLECall then
+        let n := ((t.values[u.op.ctorIdx]?).map (·.size)).getD 0
+        if n ≤ i then
+          match t.loads[i - n]? with
+          | some cr => if dvShapeOK cr.rule then some v else none
+          | none => none
+        else none
+      else none
+    | none => none
+  | _ => none
+
+/-- `devirtLECall`'s edit of the function: the call `v` becomes a `StaticLECall` without its
+first argument (`v.RemoveArg(0)`), which loses a use. -/
+def dvApply (f : Func) (v : ID) : Func :=
+  match f.value? v with
+  | some u =>
+    let f' := f.modV v fun z => { z with op := .StaticLECall, args := z.args.extract 1 z.args.size }
+    match u.args[0]? with
+    | some a => f'.decUses a
+    | none => f'
+  | none => f
+
+/-- One event of `dvPre`: a devirtualisation is applied, any other event kept. -/
+def dvStep (t : Interp.Table) (f : Func) (p : Func × Array RwEvent) (ev : RwEvent) :
+    Func × Array RwEvent :=
+  match dvEvent? t f ev with
+  | some v => (dvApply p.1 v, p.2)
+  | none => (p.1, p.2.push ev)
+
+/-- The input with the log's devirtualisations applied, and the remaining events. -/
+def dvPre (t : Interp.Table) (f : Func) (log : Array RwEvent) : Func × Array RwEvent :=
+  log.foldl (dvStep t f) (f, #[])
+
+/-- The global the code pointer `a` of `f` points to: `a` reaches, through compatible copies
+(`copyEnd`, `copyReach`), an `Addr` of that global (`addrSymOf`). -/
+def dvCode? (tabs : Tables) (f : Func) (a : ID) : Option String :=
+  let e := copyEnd tabs f.valueTab f.valueTab.size a
+  if copyReach tabs f.valueTab f.valueTab.size a e then addrSymOf tabs f.valueTab e else none
+
+/-- The call `u` of `f` became the call `w` of `g` by a devirtualisation the tables `tabs` (the
+result's, with the redefined aux) justify: `w` is the `StaticLECall` with `u`'s fields and its
+arguments but the first, and the aux's callee is the global `u`'s code pointer points to
+(`dvCode?`). -/
+def dvOK (tabs : Tables) (f : Func) (u w : Value) : Bool :=
+  dvFieldsOK u w && w.args == u.args.extract 1 u.args.size &&
+    match u.args[0]?, u.aux with
+    | some a, some ax => (dvCode? tabs f a).isSome && tabs.callee? ax == dvCode? tabs f a
+    | _, _ => false
+
+/-- The values of `f` and `g` at `x`: the same (but for their use counts), or `dvOK`. -/
+def dvValOK (tabs : Tables) (f g : Func) (x : ID) : Bool :=
+  match f.value? x, g.value? x with
+  | some u, some w =>
+    (u.id == w.id && u.op == w.op && u.type == w.type && u.auxInt == w.auxInt && u.aux == w.aux &&
+      u.args == w.args && u.block == w.block) || dvOK tabs f u w
+  | none, none => true
+  | _, _ => false
+
+/-- `g` is `f` with interface calls devirtualised: the same blocks (`f.block? b = g.block? b`)
+and atoms but the devirtualised calls (`atomsXOK` with `dv`), every value the same or
+devirtualised (`dvValOK`). -/
+def dvRel (tabs : Tables) (f g : Func) : Bool :=
+  atomsXOK f g false true && closedOK f && closedOK g && f.blockTab == g.blockTab &&
+    f.valueTab.size == g.valueTab.size &&
+    (List.range f.valueTab.size).all (dvValOK tabs f g ·)
+
 /-! ## Layers (issue #151)
 
 The log's nil-check eliminations, Load-of-Store forwardings, struct-load expansions,
@@ -4177,7 +4278,7 @@ check's pointer may be a forwarded `Load`, and a segment's `Store`s may be a spl
 leave the rewrites `fwdLate` names), struct-load expansions (`slPre`), struct-store splits
 (`ssPre`), value-rule `Load` expansions (`ldPre`), segment rewrites (`segPre`; selective ones leave
 those `segLate` names), selections of `Phi`s of `SliceMake`s (`psPre`), constant `Phi`s
-(`pcPre`), `Phi`s of `Not`s (`pnPre`). -/
+(`pcPre`), `Phi`s of `Not`s (`pnPre`), devirtualised interface calls (`dvPre`). -/
 inductive Layer where
   | nil (sel : Bool)
   | fwd (sel : Bool)
@@ -4188,6 +4289,7 @@ inductive Layer where
   | ps
   | pc
   | pn
+  | dv
 
 /-- The input with the layer's events of the log applied, and the remaining events. -/
 def Layer.pre (t : Interp.Table) (tabs : Tables) : Layer → Func → Array RwEvent →
@@ -4201,17 +4303,19 @@ def Layer.pre (t : Interp.Table) (tabs : Tables) : Layer → Func → Array RwEv
   | .ps => psPre t
   | .pc => pcPre t
   | .pn => pnPre t
+  | .dv => dvPre t
 
 /-- The layers of `RewriteCheck.accepts`, in order (a second struct-load layer and a second split
 layer for nested structs; the value-rule `Load` expansions and selections of `Make`s and `Load`s
 before the splits, which store their results; a struct-load layer after the first split layer
 for `Load`s whose memory a split rebased, before the splits of their expansions; a second segment
 layer for segments over another's result; selective forwarding rounds after the segments for
-forwardings through `Move`s whose sources earlier forwardings changed). A constant `Phi` and a
-`Phi` of `Not`s are the first event of their segment, so their layers come first. -/
+forwardings through `Move`s whose sources earlier forwardings changed). A constant `Phi`, a
+`Phi` of `Not`s and a devirtualisation are the first event of their segment, so their layers come
+first. -/
 def layers : List Layer :=
-  [.pc, .pn, .ps, .nil true, .fwd true, .sl, .sl, .ld, .ss, .sl, .ss, .ss, .seg true, .seg false,
-   .fwd true, .fwd true, .fwd true, .fwd true, .sl, .ss, .fwd false, .nil false]
+  [.dv, .pc, .pn, .ps, .nil true, .fwd true, .sl, .sl, .ld, .ss, .sl, .ss, .ss, .seg true,
+   .seg false, .fwd true, .fwd true, .fwd true, .fwd true, .sl, .ss, .fwd false, .nil false]
 
 /-- The layers of the decompose builtin rewrite step (issue #17): its value-rule `Load`
 expansions, then its splits (twice, for nested structs). -/
@@ -4295,6 +4399,8 @@ def RewriteCheck.layerOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (tabs : G
   | .ld, f, log, f' =>
     RewriteCheck.validate tabs t f f' (RewriteCheck.ldTaken t tabs f log) &&
       checkOK { tabs := tabs, typs := env.typs } f'
+  | .dv, f, _, f' =>
+    RewriteCheck.dvRel tabs f f' && checkOK { tabs := tabs, typs := env.typs } f'
 
 /-- Two log events of the same kind at the same value (block) and index (rule, argument, source):
 a layer that takes no event leaves every event in place. -/
@@ -4357,7 +4463,7 @@ definitions the input looks up), and `RewriteCheck.segsOK` accepts it in the res
 between phi eliminations, `RewriteCheck.layersOK` through the `RewriteCheck.layers`. -/
 def RewriteCheck.accepts (env : PassEnv) (t : GoFV.Rules.Interp.Table)
     (f : GoFV.SSA.Func) (out : PassOut) (log : Array GoFV.Rules.RwEvent) : Bool :=
-  tabsAgree env.tables out.tables f && RewriteCheck.segsOK env t f out f #[] log.toList
+  tabsAgreeDv env.tables out.tables f && RewriteCheck.segsOK env t f out f #[] log.toList
 
 /-- `applyRewrite` with the table `t` and its log; the result if `RewriteCheck.accepts` it. -/
 def checkedRun (t : GoFV.Rules.Interp.Table) (env : PassEnv) (f : GoFV.SSA.Func) :

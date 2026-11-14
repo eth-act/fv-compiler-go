@@ -327,9 +327,6 @@ theorem wordStep_den {a c : ID} {u : Value} (hu : f.value? a = some u)
   unfold wordStep? at hs
   split at hs
   · cases hs
-  rename_i hpt
-  obtain ⟨e, he⟩ : ∃ e, tabs.ty u.type = .ptr e := by
-    revert hpt; cases tabs.ty u.type <;> simp [isPtrTy]
   cases k with
   | zero => simp [den, Val.asPtrWord] at h
   | succ k =>
@@ -337,7 +334,9 @@ theorem wordStep_den {a c : ID} {u : Value} (hu : f.value? a = some u)
   · -- `Convert` to a pointer type: the identity on the word
     rename_i hc
     simp only [Bool.and_eq_true, beq_iff_eq] at hc
-    obtain ⟨hop, hsz⟩ := hc
+    obtain ⟨⟨hop, hsz⟩, hpt⟩ := hc
+    obtain ⟨e, he⟩ : ∃ e, tabs.ty u.type = .ptr e := by
+      revert hpt; cases tabs.ty u.type <;> simp [isPtrTy]
     cases hs
     have ht : termOp u.op = true := by rw [hop]; rfl
     have hfo : GoFV.Proof.Rules.frameOp u.op = false := by rw [hop]; rfl
@@ -361,7 +360,7 @@ theorem wordStep_den {a c : ID} {u : Value} (hu : f.value? a = some u)
           have ht : termOp u.op = true := by rw [hop]; rfl
           have hfo : GoFV.Proof.Rules.frameOp u.op = false := by rw [hop]; rfl
           rw [den_succ_term hu ht, toList_one hsz, List.map_cons, List.map_nil,
-            GoFV.Proof.Rules.opVal_pure hfo, he] at h
+            GoFV.Proof.Rules.opVal_pure hfo] at h
           replace h := asPtrWord_of_retype h
           rw [hop] at h
           change (Comp.select 0 [den f.value? tabs ρ k u.args[0]!]).asPtrWord = some p at h
@@ -403,9 +402,7 @@ theorem ptrStep_den {a c : ID} {o : BitVec 64} (hs : ptrStep? tabs f a = some (c
     simp only [Option.some.injEq, Prod.mk.injEq] at hs
     obtain ⟨rfl, rfl⟩ := hs
     simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hc
-    obtain ⟨⟨⟨hop, hsz⟩, hpt⟩, -⟩ := hc
-    obtain ⟨e, he⟩ : ∃ e, tabs.ty u.type = .ptr e := by
-      revert hpt; cases tabs.ty u.type <;> simp [isPtrTy]
+    obtain ⟨⟨⟨hop, hsz⟩, -⟩, -⟩ := hc
     have ht : termOp u.op = true := by rcases hop with h | h <;> rw [h] <;> rfl
     have hfo : GoFV.Proof.Rules.frameOp u.op = false := by
       rcases hop with h | h <;> rw [h] <;> rfl
@@ -414,7 +411,7 @@ theorem ptrStep_den {a c : ID} {o : BitVec 64} (hs : ptrStep? tabs f a = some (c
     | succ k =>
     refine ⟨k, ?_⟩
     rw [den_succ_term hu ht, toList_one hsz, List.map_cons, List.map_nil,
-      GoFV.Proof.Rules.opVal_pure hfo, he] at h
+      GoFV.Proof.Rules.opVal_pure hfo] at h
     replace h := asPtrWord_of_retype h
     rcases hop with hop | hop
     · rw [hop, evalPure_offPtr, PtrOps.offPtr_asPtrWord] at h

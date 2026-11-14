@@ -266,6 +266,11 @@ theorem r_generic_1675_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r
 /-- `generic.rules:1676`: `(NeqPtr (OffPtr (LocalAddr _ _)) (OffPtr (Addr _))) => (ConstBool [true])` -/
 theorem r_generic_1676_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1676 := rfl
 
+/-- `generic.rules:1733`: `(InterLECall [argsize] {auxCall} (Addr {fn} (SB)) ___) => devirtLECall(v, fn.(*obj.LSym))`
+(issue #69: the interface call becomes the static call of `fn`; each instance is validated by
+`RewriteCheck.dvRel` in its own layer, `GoFV.Proof.Pass.Devirt.dv_refines`) -/
+theorem r_generic_1733_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1733 := rfl
+
 /-- Non-vacuity: the struct-load expansion `:974` (`(Load <t> _ _) && t.IsStruct() && … =>
 rewriteStructLoad(v)`) and the `Store` rule `:997` (`(Store dst (ArrayMake1 e) mem) => (Store
 {e.Type} dst e mem)`, a changed write) do not have the shape. -/

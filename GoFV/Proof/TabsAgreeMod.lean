@@ -369,7 +369,7 @@ theorem run_tabsAgreeMod {tabs tabs' : Tables} {f : Func} {ce : CheckEnv}
     funext fr bid i
     rw [A.ctx]
     have hH : ∀ id v, ({ (Ctx.make tabs f) with locals := (frameLocals tabs' (Ctx.make tabs f).params) } : Ctx).f.value? id = some v →
-        AuxAgree ({ (Ctx.make tabs f) with locals := (frameLocals tabs' (Ctx.make tabs f).params) } : Ctx).tabs tabs' v.aux := fun id v hv => A.value id v hv
+        AuxAgreeV ({ (Ctx.make tabs f) with locals := (frameLocals tabs' (Ctx.make tabs f).params) } : Ctx).tabs tabs' v := fun id v hv => .inl (A.value id v hv)
     have h1 := runLoop_tabs (ctx := { (Ctx.make tabs f) with locals := (frameLocals tabs' (Ctx.make tabs f).params) }) hH env fuel fr bid i
     exact h1.trans (runLoop_locals env (Ctx.make tabs f) (frameLocals tabs' (Ctx.make tabs f).params) fuel fr bid i)
   unfold run runCtx at hd ⊢

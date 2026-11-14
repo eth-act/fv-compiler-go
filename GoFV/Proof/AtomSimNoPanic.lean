@@ -92,12 +92,12 @@ theorem v1_disj {ce : CheckEnv} {h : Func} (hwf : WF ce h) {b : ID} {hb : Block}
 theorem atom_sched {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
     {b : ID} {fb gb : Block} {of og : Array ID} (B : BlockData f g b fb gb of og)
     {x : ID} (hx : x ∈ og.toList) {w : Value} (hw : g.value? x = some w) (ht : termOp w.op = false) :
-    ∃ u, f.value? x = some u ∧ SameAtomX u w ∧ x ∈ of.toList ∧ Placed g x w := by
+    ∃ u, f.value? x = some u ∧ AtomRel u w ∧ x ∈ of.toList ∧ Placed g x w := by
   obtain ⟨hxb, w', hw', hph⟩ := (B.mT x).1 hx
   rw [hw] at hw'; cases hw'
   have hpw := (placed_in H.wg B.bmT B.hgb hxb hw).1
   obtain ⟨hxf, u, hu, hs⟩ := B.ba.sub x hxb w hw ht
-  exact ⟨u, hu, hs, (B.mS x).2 ⟨hxf, u, hu, hs.1 ▸ hph⟩, hpw⟩
+  exact ⟨u, hu, hs, (B.mS x).2 ⟨hxf, u, hu, fun h => hph (hs.phi_iff.1 h)⟩, hpw⟩
 
 /-- An atom of `g` is not a term node of `f`. -/
 theorem not_term_f {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
@@ -105,7 +105,7 @@ theorem not_term_f {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv 
   intro ⟨u', hu', ht'⟩
   obtain ⟨u, hpu, hs⟩ := gatom_f H hp ht
   rw [hpu.1] at hu'; cases hu'
-  rw [hs.1, ht] at ht'; cases ht'
+  rw [hs.termOp, ht] at ht'; cases ht'
 
 theorem atom_of_not_term {g : Func} {a : ID} {w : Value} (hp : Placed g a w)
     (hat : ¬ IsTerm (listedDefs g) a) : termOp w.op = false := by
@@ -120,7 +120,7 @@ theorem atom_out {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
     a ∉ gb.values ∧ a ∉ fb.values := by
   obtain ⟨u, hpu, hs⟩ := gatom_f H hp ht
   exact ⟨not_mem_of_placed H.wg hp B.bmT B.hgb hne,
-    not_mem_of_placed H.wf hpu B.bmS B.hfb (hs.2.2.2.2.2.1 ▸ hne)⟩
+    not_mem_of_placed H.wf hpu B.bmS B.hfb (hs.block ▸ hne)⟩
 
 /-- The frames after a block entry. -/
 structure EndRel (tabs : Tables) (f g : Func) (I : SrcInv tabs f) (b : ID) (fb gb : Block)
@@ -199,7 +199,7 @@ theorem enter_ok {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
         obtain ⟨-, u, hu, hph'⟩ := (B.mS a).1 hm
         obtain ⟨u', hpu, hs⟩ := gatom_f H hpw hwt
         rw [placed_val hpw hw'] at hph
-        rw [hpu.1] at hu; cases hu; exact hph' (hs.1.trans hph)
+        rw [hpu.1] at hu; cases hu; exact hph' (hs.phi_iff.2 hph)
       rw [rv_of (show FS.regs[a]? = some (some y) by rw [g5 a hof]; exact hy)]
       show Sem.Refines y (rv { frT with regs := setPhis psT frT.regs } a)
       rw [rv_of hy']; exact hyy
@@ -240,7 +240,7 @@ theorem enter_ok {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
       have hof : a ∉ of.toList := fun hm => by
         obtain ⟨-, u, hu, hph'⟩ := (B.mS a).1 hm
         obtain ⟨u', hpu, hs⟩ := gatom_f H hpw hwt
-        rw [hpu.1] at hu; cases hu; exact hph' (hs.1.trans hph)
+        rw [hpu.1] at hu; cases hu; exact hph' (hs.phi_iff.2 hph)
       exact ⟨y, by rw [g5 a hof]; exact hy, hyy⟩
     · have hog : a ∈ og.toList := (B.mT a).2 ⟨haz, w, hpw.1, hph⟩
       obtain ⟨u, hu, hs, hof, -⟩ := atom_sched H B hog hpw.1 hwt

@@ -1867,9 +1867,9 @@ theorem fwd_atomArgs (hro : fwdRoOK tabs ro f = true) :
     AtomArgsRefX (fwdInv tabs ro eq f hro) g := by
   intro b hb gb hgb a ha u hu ht
   have hbf : b ∈ f.blocks := F.blocks ▸ hb
-  obtain ⟨fb, gb', hfb, hgb', BA⟩ := (atomsXOK_spec F.atoms).block b hbf
+  obtain ⟨fb, gb', hfb, hgb', -⟩ := (atomsXOK_spec F.atoms).block b hbf
   rw [hgb] at hgb'; cases hgb'
-  obtain ⟨haf, u', hu', hop, hty, hai, -, hsz, -, -⟩ := BA.sub a ha u hu ht
+  obtain ⟨haf, u', hu', hop, hty, hai, -, hsz, -, -⟩ := atomsXOK_same F.atoms hbf hfb hgb ha hu ht
   obtain ⟨w, hw, -, -, -, hrep⟩ := rep_of F hu'
   rw [hu] at hw; cases hw
   have hargs := (closedOK_facts F.cf b hbf fb hfb).2 a haf u' hu'
@@ -1900,7 +1900,7 @@ theorem fwd_atomArgs (hro : fwdRoOK tabs ro f = true) :
     have hdx := ndc_arg F hu' hns hmi
     exact ⟨fun _ => fwd_termRefP F hx hdx _ _, fun _ _ _ _ _ _ _ => fwd_termRefP F hx hdx _ _⟩
   · obtain ⟨huop, hwop, -⟩ := moveSrcOK_spec hms
-    exact .inr ⟨u', hu', huop.trans hwop.symm, .inr hwop, moveSrc_chgRef F hu' hargs hms⟩
+    exact .inr (.inl ⟨u', hu', huop.trans hwop.symm, .inr hwop, moveSrc_chgRef F hu' hargs hms⟩)
 
 theorem fwd_steps (hro : fwdRoOK tabs ro f = true) :
     StepRefsP (fwdInv tabs ro eq f hro) g := by

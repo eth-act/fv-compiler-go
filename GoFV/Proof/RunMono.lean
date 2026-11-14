@@ -592,13 +592,23 @@ theorem panicBounds_mono (k : Int64) {as bs : List Val} (h : RefinesList as bs) 
     cases h.nil_inv; cases h1; cases h2; cases h3 with | mem hm => exact .panic _ hm
   · exact .stuck _ _
 
-theorem callOp_mono {env : Env} (hE : env.Mono) (ctx : Ctx) (v : Value) {as bs : List Val}
-    (h : RefinesList as bs) : Res.Refines (callOp env ctx v as) (callOp env ctx v bs) := by
-  obtain ⟨hc, hclo, hrest⟩ := callTarget_mono ctx v h
+/-- `callOp` of two call values with the same aux and the same form (pre- or post-`expand calls`)
+on callees (unless the source's is unknown), closure contexts and remaining arguments that
+`callTarget` gives refined: the call `v'` refines the call `v` (`callOp_mono`; a devirtualised
+interface call, `callOp_devirt`). -/
+theorem callOp_mono_of {env : Env} (hE : env.Mono) (ctx : Ctx) {v v' : Value} {as bs : List Val}
+    (haux : v'.aux = v.aux)
+    (hpost : (v'.op == Op.StaticCall || v'.op == Op.ClosureCall || v'.op == Op.InterCall) =
+      (v.op == Op.StaticCall || v.op == Op.ClosureCall || v.op == Op.InterCall))
+    (hc : (callTarget ctx v as).1 = none ∨ (callTarget ctx v' bs).1 = (callTarget ctx v as).1)
+    (hclo : OptRefines (callTarget ctx v as).2.1 (callTarget ctx v' bs).2.1)
+    (hrest : RefinesList (callTarget ctx v as).2.2 (callTarget ctx v' bs).2.2) :
+    Res.Refines (callOp env ctx v as) (callOp env ctx v' bs) := by
   unfold callOp
+  rw [haux, hpost]
   revert hc hclo hrest
   generalize callTarget ctx v as = T
-  generalize callTarget ctx v bs = T'
+  generalize callTarget ctx v' bs = T'
   rcases T with ⟨callee?, clo, rest⟩
   rcases T' with ⟨callee?', clo', rest'⟩
   intro hc hclo hrest
@@ -723,6 +733,32 @@ theorem callOp_mono {env : Env} (hE : env.Mono) (ctx : Ctx) (v : Value) {as bs :
               | panicked e hm' => exact .panic e hm'
               | stuck msg o => exact .stuck _ _
     | _ => exact .stuck _ _
+
+theorem callOp_mono {env : Env} (hE : env.Mono) (ctx : Ctx) (v : Value) {as bs : List Val}
+    (h : RefinesList as bs) : Res.Refines (callOp env ctx v as) (callOp env ctx v bs) := by
+  obtain ⟨hc, hclo, hrest⟩ := callTarget_mono ctx v h
+  exact callOp_mono_of hE ctx rfl rfl hc hclo hrest
+
+/-- **A devirtualised interface call** (`generic.rules:1733`): the `StaticLECall` `w` of the
+interface call `u`'s aux, on refined arguments but `u`'s code pointer `c`, refines `u` when the
+aux's callee is the function `c` points to (if it points to one: else `u` is `stuck` without a
+known callee). Both calls then reach the same contract under the same ABI. -/
+theorem callOp_devirt {env : Env} (hE : env.Mono) (ctx : Ctx) {u w : Value}
+    (hu : u.op = .InterLECall) (hw : w.op = .StaticLECall) (hax : w.aux = u.aux) {c : Val}
+    {as bs : List Val}
+    (hcode : ∀ s, codeTarget? c = some s → w.aux.bind ctx.tabs.callee? = some s)
+    (h : RefinesList as bs) :
+    Res.Refines (callOp env ctx u (c :: as)) (callOp env ctx w bs) := by
+  have h1 : callTarget ctx u (c :: as) = (codeTarget? c, none, as) := by simp [callTarget, hu]
+  have h2 : callTarget ctx w bs = (w.aux.bind ctx.tabs.callee?, none, bs) := by
+    simp [callTarget, hw]
+  refine callOp_mono_of hE ctx hax (by rw [hu, hw]; rfl) ?_ ?_ ?_
+  · rw [h1, h2]
+    cases hct : codeTarget? c with
+    | none => exact .inl rfl
+    | some s => exact .inr (hcode s hct)
+  · rw [h1, h2]; exact .none
+  · rw [h1, h2]; exact h
 
 theorem writeRes_mono (w w' : String) {a b : Option Mem}
     (h : ∀ m, a = some m → ∃ m', b = some m' ∧ Mem.Refines m m') :

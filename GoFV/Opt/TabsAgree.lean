@@ -60,5 +60,42 @@ def tabsAgree (tabs tabs' : Tables) (f : Func) : Bool :=
   decide (deferInfo tabs' = deferInfo tabs) &&
   f.valueTab.toList.all fun o => Ty.beq (valueTy sh' o) (valueTy sh o) && valueAuxAgree tabs tabs' o
 
+/-- The lookups of an interface call's aux `a` agree in `tabs` and `tabs'`: its call ABI and the
+shapes of its parameters' types. An `InterLECall` reads its aux only so (`Sem.callOp`; its callee
+is its code pointer's, `Sem.callTarget`). -/
+def callAgree (tabs tabs' : Tables) (a : AuxRef) : Bool :=
+  decide (callABI? tabs' (some a) = callABI? tabs (some a)) &&
+  match callABI? tabs (some a) with
+  | some abi => abi.params.toList.all fun p => Ty.beq (tabs'.ty p.type) (tabs.ty p.type)
+  | none => true
+
+/-- `valueAuxAgree`, but for an `InterLECall` only `callAgree`. -/
+def valueAuxAgreeDv (tabs tabs' : Tables) : Option Value → Bool
+  | some v =>
+    if v.op == .InterLECall then
+      match v.aux with
+      | some a => callAgree tabs tabs' a
+      | none => true
+    else valueAuxAgree tabs tabs' (some v)
+  | none => true
+
+/-- `tabsAgree`, but an interface call's aux may be redefined with another callee (`callAgree`):
+the checked rewrite's devirtualisations redefine the shared `*AuxCall` of the calls they turn into
+static calls (`generic.rules:1733`). `f` still runs alike in both tables
+(`GoFV.Proof.run_tabsAgreeDv`). -/
+def tabsAgreeDv (tabs tabs' : Tables) (f : Func) : Bool :=
+  let ps := abiParams tabs f
+  let params := (ps.filter (!·.out)).map (·.name)
+  let ls := frameLocals tabs params
+  let sh := typeShapes tabs
+  let sh' := typeShapes tabs'
+  decide ((abiParams tabs' f).toList = ps.toList) &&
+  ps.toList.all (fun p => Ty.beq (tabs'.ty p.type) (tabs.ty p.type)) &&
+  decide ((frameLocals tabs' params).toList = ls.toList) &&
+  ls.toList.all (fun l => tabs'.forgeable l.1 == tabs.forgeable l.1) &&
+  outargsSize tabs' == outargsSize tabs &&
+  decide (deferInfo tabs' = deferInfo tabs) &&
+  f.valueTab.toList.all fun o => Ty.beq (valueTy sh' o) (valueTy sh o) && valueAuxAgreeDv tabs tabs' o
+
 
 end GoFV.Opt

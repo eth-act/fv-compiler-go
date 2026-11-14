@@ -103,11 +103,54 @@ def SameAtomX (u w : Value) : Prop :=
 theorem SameAtom.toX {u w : Value} (h : SameAtom u w) : SameAtomX u w :=
   ⟨h.1, h.2.1, h.2.2.1, .inl h.2.2.2.1, h.2.2.2.2⟩
 
+/-- The atom `w` of `g` is the devirtualised interface call `u` of `f` (`generic.rules:1733`,
+`RewriteCheck.dvFieldsOK`): a `StaticLECall` with `u`'s fields and one argument fewer, its code
+pointer (the simulation takes its evaluation from `AtomArgsRefX`). -/
+def DvAtom (u w : Value) : Prop :=
+  u.op = .InterLECall ∧ w.op = .StaticLECall ∧ u.type = w.type ∧ u.auxInt = w.auxInt ∧
+    u.aux = w.aux ∧ u.args.size = w.args.size + 1 ∧ u.block = w.block ∧ u.id = w.id
+
+/-- `SameAtomX` or `DvAtom`: what the atom simulation assumes of an atom of `g` and `f`'s at its
+ID. -/
+def AtomRel (u w : Value) : Prop := SameAtomX u w ∨ DvAtom u w
+
+theorem AtomRel.type {u w : Value} (h : AtomRel u w) : u.type = w.type := by
+  rcases h with h | h
+  · exact h.2.1
+  · exact h.2.2.1
+
+theorem AtomRel.block {u w : Value} (h : AtomRel u w) : u.block = w.block := by
+  rcases h with h | h
+  · exact h.2.2.2.2.2.1
+  · exact h.2.2.2.2.2.2.1
+
+theorem AtomRel.id {u w : Value} (h : AtomRel u w) : u.id = w.id := by
+  rcases h with h | h
+  · exact h.2.2.2.2.2.2
+  · exact h.2.2.2.2.2.2.2
+
+theorem AtomRel.termOp {u w : Value} (h : AtomRel u w) : termOp u.op = termOp w.op := by
+  rcases h with h | h
+  · rw [h.1]
+  · rw [h.1, h.2.1]; rfl
+
+theorem AtomRel.phi_iff {u w : Value} (h : AtomRel u w) : u.op = .Phi ↔ w.op = .Phi := by
+  rcases h with h | h
+  · rw [h.1]
+  · rw [h.1, h.2.1]; exact Iff.intro (fun h => nomatch h) (fun h => nomatch h)
+
+/-- The op of an atom of `g` that is no `StaticLECall` is the op of `f`'s at its ID. -/
+theorem AtomRel.op_of {u w : Value} (h : AtomRel u w) {o : Op} (ho : w.op = o)
+    (hne : o ≠ .StaticLECall) : u.op = o := by
+  rcases h with h | h
+  · exact h.1.trans ho
+  · exact absurd (ho.symm.trans h.2.1) hne
+
 /-- One block of `AtomsX`. -/
 structure BlockAtomsX (f g : Func) (fb gb : Block) : Prop where
   id : fb.id = gb.id
   sub : ∀ x ∈ gb.values, ∀ w, g.value? x = some w → termOp w.op = false →
-    x ∈ fb.values ∧ ∃ u, f.value? x = some u ∧ SameAtomX u w
+    x ∈ fb.values ∧ ∃ u, f.value? x = some u ∧ AtomRel u w
   sched : ∃ of og, schedule f fb = some of ∧ schedule g gb = some og ∧
     of.toList.filter (fun x => rootP f x && rootP g x) = og.toList.filter (rootP g) ∧
     ∀ x ∈ of.toList, rootP f x = true → rootP g x = false →
@@ -130,7 +173,7 @@ theorem BlockAtoms.toX {f g : Func} {fb gb : Block} (h : BlockAtoms f g fb gb) :
     exact (List.mem_filter.1 this).2
   refine ⟨h.id, fun x hx w hw ht => ?_, of, og, hof, hog, ?_, fun x hx hr hn => ?_⟩
   · obtain ⟨h1, u, hu, hs⟩ := h.sub x hx w hw ht
-    exact ⟨h1, u, hu, hs.toX⟩
+    exact ⟨h1, u, hu, .inl hs.toX⟩
   · have h1 : of.toList.filter (fun x => rootP f x && rootP g x) =
         (of.toList.filter (rootP f)).filter (rootP g) := by
       rw [List.filter_filter]
@@ -145,7 +188,52 @@ theorem AtomsOK.toX {f g : Func} (h : AtomsOK f g) : AtomsX f g := by
   obtain ⟨fb, gb, hfb, hgb, hB⟩ := h.block b hb
   exact ⟨fb, gb, hfb, hgb, hB.toX⟩
 
-theorem atomsXOK_spec {f g : Func} {calls : Bool} (h : atomsXOK f g calls = true) : AtomsX f g := by
+/-- An atom of `g` that `atomsXOK` (with `dv`) relates to `f`'s. -/
+theorem atomsXOK_sub {f g : Func} {calls dv : Bool} (h : atomsXOK f g calls dv = true) {b : ID}
+    (hb : b ∈ f.blocks) {fb gb : Block} (hfb : f.block? b = some fb) (hgb : g.block? b = some gb)
+    {x : ID} (hx : x ∈ gb.values) {w : Value} (hw : g.value? x = some w)
+    (ht : termOp w.op = false) :
+    x ∈ fb.values ∧ ∃ u, f.value? x = some u ∧ (SameAtomX u w ∨ (dv = true ∧ DvAtom u w)) := by
+  unfold atomsXOK at h
+  simp only [Bool.and_eq_true, beq_iff_eq, Array.all_eq_true'] at h
+  have h := h.2 b hb
+  rw [hfb, hgb] at h
+  simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at h
+  obtain ⟨⟨-, hsub⟩, -⟩ := h
+  have hm : x ∈ atomsOf g gb := mem_atomsOf.2 ⟨hx, w, hw, ht⟩
+  have h2 := hsub x hm
+  simp only [List.contains_iff_mem] at h2
+  obtain ⟨hxf, h2⟩ := h2
+  refine ⟨(mem_atomsOf.1 hxf).1, ?_⟩
+  cases hu : f.value? x with
+  | none => rw [hu] at h2; cases h2
+  | some u =>
+    rw [hu, hw] at h2
+    simp only [Bool.or_eq_true, Bool.and_eq_true] at h2
+    refine ⟨u, rfl, ?_⟩
+    rcases h2 with h2 | ⟨hdv, h2⟩
+    · unfold atomFieldsOK at h2
+      simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h2
+      obtain ⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩ := h2
+      exact .inl ⟨h1, h2, h3, h4, h5, h6, h7⟩
+    · unfold dvFieldsOK at h2
+      simp only [Bool.and_eq_true, beq_iff_eq] at h2
+      obtain ⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩ := h2
+      exact .inr ⟨hdv, h1, h2, h3, h4, h5, h6, h7, h8⟩
+
+/-- Without `dv`, `atomsXOK` relates every atom of `g` to one of `f` by `SameAtomX`. -/
+theorem atomsXOK_same {f g : Func} {calls : Bool} (h : atomsXOK f g calls = true) {b : ID}
+    (hb : b ∈ f.blocks) {fb gb : Block} (hfb : f.block? b = some fb) (hgb : g.block? b = some gb)
+    {x : ID} (hx : x ∈ gb.values) {w : Value} (hw : g.value? x = some w)
+    (ht : termOp w.op = false) :
+    x ∈ fb.values ∧ ∃ u, f.value? x = some u ∧ SameAtomX u w := by
+  obtain ⟨h1, u, hu, hs | ⟨hdv, -⟩⟩ := atomsXOK_sub h hb hfb hgb hx hw ht
+  · exact ⟨h1, u, hu, hs⟩
+  · cases hdv
+
+theorem atomsXOK_spec {f g : Func} {calls dv : Bool} (h : atomsXOK f g calls dv = true) :
+    AtomsX f g := by
+  have h₀ := h
   unfold atomsXOK at h
   simp only [Bool.and_eq_true, beq_iff_eq, Array.all_eq_true'] at h
   obtain ⟨⟨⟨he, hb⟩, ho⟩, hall⟩ := h
@@ -154,21 +242,10 @@ theorem atomsXOK_spec {f g : Func} {calls : Bool} (h : atomsXOK f g calls = true
   split at h
   · rename_i fb gb hfb hgb
     simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at h
-    obtain ⟨⟨hid, hsub⟩, hsch⟩ := h
+    obtain ⟨⟨hid, -⟩, hsch⟩ := h
     refine ⟨fb, gb, hfb, hgb, hid, fun x hx w hw ht => ?_, ?_⟩
-    · have hm : x ∈ atomsOf g gb := mem_atomsOf.2 ⟨hx, w, hw, ht⟩
-      have h2 := hsub x hm
-      simp only [List.contains_iff_mem] at h2
-      obtain ⟨hxf, h2⟩ := h2
-      refine ⟨(mem_atomsOf.1 hxf).1, ?_⟩
-      split at h2
-      · rename_i u w' hu hw'
-        rw [hw] at hw'; cases hw'
-        unfold atomFieldsOK at h2
-        simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h2
-        obtain ⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩ := h2
-        exact ⟨u, hu, h1, h2, h3, h4, h5, h6, h7⟩
-      · cases h2
+    · obtain ⟨h1, u, hu, hs⟩ := atomsXOK_sub h₀ hbm hfb hgb hx hw ht
+      exact ⟨h1, u, hu, hs.elim .inl fun h => .inr h.2⟩
     · split at hsch
       · rename_i of og hof hog
         simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true, Bool.or_eq_true,

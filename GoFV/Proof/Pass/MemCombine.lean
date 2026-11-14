@@ -30,9 +30,9 @@ refined memory. -/
 theorem mc_atomArgs : AtomArgsRefX (SrcInv.triv tabs f) g := by
   intro b hb gb hgb a ha u hu ht
   have hbf : b ∈ f.blocks := K.blocks_eq ▸ hb
-  obtain ⟨fb, gb', hfb, hgb', BA⟩ := (atomsXOK_spec K.atoms).block b hbf
+  obtain ⟨fb, gb', hfb, hgb', -⟩ := (atomsXOK_spec K.atoms).block b hbf
   rw [hgb] at hgb'; cases hgb'
-  obtain ⟨haf, u', hu', hop, hty, hai, -, hsz, -, -⟩ := BA.sub a ha u hu ht
+  obtain ⟨haf, u', hu', hop, hty, hai, -, hsz, -, -⟩ := atomsXOK_same K.atoms hbf hfb hgb ha hu ht
   have hlg := listed_of_wf hwg hb hgb ha hu
   have hlf := listed_of_wf hwf hbf hfb haf hu'
   have hv := K.val a (GoFV.Proof.CheckFacts.lt_of_value? hu)
@@ -44,7 +44,7 @@ theorem mc_atomArgs : AtomArgsRefX (SrcInv.triv tabs f) g := by
     exact .inl ⟨u', hu', hop, hty, hai, (sameVal_spec hv).2.2.2.1, hsz, fun i hi =>
       ⟨fun _ => TermRef.toP (hT i hi) _ _ _, fun _ _ _ _ _ _ _ => TermRef.toP (hT i hi) _ _ _⟩⟩
   · obtain ⟨h1, h2⟩ := storeOK_op hv
-    exact .inr ⟨u', hu', h1.trans h2.symm, .inl h2, store_chgRef hwf hwg K hu' hv⟩
+    exact .inr (.inl ⟨u', hu', h1.trans h2.symm, .inl h2, store_chgRef hwf hwg K hu' hv⟩)
 
 end
 

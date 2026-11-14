@@ -182,9 +182,16 @@ def ChgRefP (Q : (ID → Val) → Prop) (D : ID → Option Value) (tabs : Tables
     ∀ n y, memDef tabs u (u.args.toList.map (den D tabs ρ n)) = some y →
       ∃ m y', memDef tabs w (w.args.toList.map (den E tabs ρ' m)) = some y' ∧ Sem.Refines y y'
 
-/-- `AtomArgsRefP`, or a changed store or `Move`: every atom of `g` has the fields of the atom of
-`f` with its ID and arguments refining as terms, or both are `Store`s or both `Move`s and `g`'s
-writes a memory refining `f`'s (`ChgRefP`). -/
+/-- The term `x` of `D`, at any atoms and fuel, points to no function but `n` (`Sem.codeTarget?`):
+the code pointer of a devirtualised interface call (issue #69). -/
+def CodeP (D : ID → Option Value) (tabs : Tables) (x : ID) (n : String) : Prop :=
+  ∀ ρ k s, codeTarget? (den D tabs ρ k x) = some s → s = n
+
+/-- `AtomArgsRefP`, or a changed store or `Move`, or a devirtualised interface call: every atom
+of `g` has the fields of the atom of `f` with its ID and arguments refining as terms, or both are
+`Store`s or both `Move`s and `g`'s writes a memory refining `f`'s (`ChgRefP`), or `g`'s is the
+`StaticLECall` of `f`'s `InterLECall` (`DvAtom`) whose arguments refine `f`'s but the first, the
+code pointer, which points to no function but the one `g`'s aux calls (`CodeP`). -/
 def AtomArgsRefX {tabs : Tables} {f : Func} (I : SrcInv tabs f) (g : Func) : Prop :=
   ∀ b ∈ g.blocks, ∀ gb, g.block? b = some gb → ∀ a ∈ gb.values, ∀ u, g.value? a = some u →
     termOp u.op = false →
@@ -199,7 +206,12 @@ def AtomArgsRefX {tabs : Tables} {f : Func} (I : SrcInv tabs f) (g : Func) : Pro
           TermRefP (I.P p) (I.QR p) (AncV f p) f.value? tabs u'.args[i]! (listedDefs g) tabs
             u.args[i]!)) ∨
     (∃ u', f.value? a = some u' ∧ u'.op = u.op ∧ (u.op = .Store ∨ u.op = .Move) ∧
-      ChgRefP (I.QR b) f.value? tabs u' (listedDefs g) u)
+      ChgRefP (I.QR b) f.value? tabs u' (listedDefs g) u) ∨
+    (∃ u', f.value? a = some u' ∧ DvAtom u' u ∧
+      (∀ i < u.args.size,
+        TermRefP (I.P b) (I.QR b) (SAnc f b) f.value? tabs u'.args[i + 1]! (listedDefs g) tabs
+          u.args[i]!) ∧
+      ∃ n, u.aux.bind tabs.callee? = some n ∧ CodeP f.value? tabs u'.args[0]! n)
 
 theorem AtomArgsRefP.toX {tabs : Tables} {f g : Func} {I : SrcInv tabs f}
     (h : AtomArgsRefP I g) : AtomArgsRefX I g :=
@@ -228,7 +240,7 @@ theorem AtomsOK.dropNP {tabs : Tables} {f g : Func} (h : AtomsOK f g) (I : SrcIn
   cases hn
 
 /-- `atomsXOK` without `calls` drops no call. -/
-theorem atomsXOK_dropNP {tabs : Tables} {f g : Func} (h : atomsXOK f g = true)
+theorem atomsXOK_dropNP {tabs : Tables} {f g : Func} {dv : Bool} (h : atomsXOK f g false dv = true)
     (I : SrcInv tabs f) : DropNP I g := by
   intro _ _ _ _ b fb of hb hfb hof x hx u hu hop hr hn
   unfold atomsXOK at h
@@ -351,18 +363,19 @@ theorem closed_sanc_g {ce : CheckEnv} {g : Func} (hwf : WF ce g) (hc : CertOK g)
 
 /-! ## Atoms of `g` -/
 
-/-- An atom placed in `g` is placed in the same block of `f` with the same fields. -/
+/-- An atom placed in `g` is placed in the same block of `f` with the same fields (or is the
+devirtualised call of an interface call there, `DvAtom`). -/
 theorem gatom_f {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
     {a : ID} {w : Value} (hp : Placed g a w) (ht : termOp w.op = false) :
-    ∃ u, Placed f a u ∧ SameAtomX u w := by
+    ∃ u, Placed f a u ∧ AtomRel u w := by
   obtain ⟨hw, hbm, blk, hblk, hx⟩ := hp
   have hbm' : w.block ∈ f.blocks := by rw [H.ok.blocks]; exact hbm
   obtain ⟨fc, gc, hfc, hgc, hBA⟩ := H.ok.block w.block hbm'
   rw [hblk] at hgc; cases hgc
   obtain ⟨hxf, u, hu, hs⟩ := hBA.sub a hx w hw ht
   refine ⟨u, ⟨hu, ?_, fc, ?_, hxf⟩, hs⟩
-  · rw [hs.2.2.2.2.2.1]; exact hbm'
-  · rw [hs.2.2.2.2.2.1]; exact hfc
+  · rw [hs.block]; exact hbm'
+  · rw [hs.block]; exact hfc
 
 /-- The shape of an atom of `g` is its shape in `f`. -/
 theorem shape_atom {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
@@ -377,7 +390,7 @@ theorem shape_atom {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv 
       · rfl
       · exact absurd ⟨w, hl, h⟩ hat
     obtain ⟨u, hpu, hs⟩ := gatom_f H (listed_placed hl) ht
-    simp [shape, hl, hpu.1, hs.2.1]
+    simp [shape, hl, hpu.1, hs.type]
 
 /-- An atom the target defines has the source's shape. -/
 theorem shape_atom_def {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv tabs f} (H : Hyp tabs f g ce ce' I)
@@ -391,7 +404,7 @@ theorem shape_atom_def {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : Src
       · rfl
       · exact absurd ⟨w, hl, h⟩ hat
     obtain ⟨u, hpu, hs⟩ := gatom_f H (listed_placed hl) ht
-    simp [shape, hl, hpu.1, hs.2.1]
+    simp [shape, hl, hpu.1, hs.type]
 
 /-! ## `DenOK` in one frame -/
 

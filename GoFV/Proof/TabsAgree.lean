@@ -128,15 +128,21 @@ theorem callTarget_tabs (h : AuxAgree ctx.tabs tabs' v.aux) (argv : List Val) :
   unfold callTarget
   rw [h.callee]
 
-theorem callOp_tabs (h : AuxAgree ctx.tabs tabs' v.aux) (env : Env) (argv : List Val) :
+/-- `callOp` reads the tables through the call's callee, closure context and remaining arguments
+(`callTarget`), its ABI and the shapes of its parameters' types. -/
+theorem callOp_tabs_of {env : Env} {argv : List Val}
+    (ht : callTarget { ctx with tabs := tabs' } v argv = callTarget ctx v argv)
+    (hc : callABI? tabs' v.aux = callABI? ctx.tabs v.aux)
+    (habi : ∀ abi, callABI? ctx.tabs v.aux = some abi →
+      ∀ p ∈ abi.params.toList, tabs'.ty p.type = ctx.tabs.ty p.type) :
     callOp env { ctx with tabs := tabs' } v argv = callOp env ctx v argv := by
   unfold callOp
-  rw [callTarget_tabs h, h.callABI]
+  rw [ht, hc]
   have hP : ∀ p ∈ ((callABI? ctx.tabs v.aux).map (·.params.toList)).getD [],
       tabs'.ty p.type = ctx.tabs.ty p.type := by
     cases hc : callABI? ctx.tabs v.aux with
     | none => intro p hp; simp at hp
-    | some abi => exact h.abiTy abi hc
+    | some abi => exact habi abi hc
   generalize ((callABI? ctx.tabs v.aux).map (·.params.toList)).getD [] = P at hP ⊢
   have hin : ∀ act m pieces, decodeArgs tabs' act m (P.filter (!·.out)) pieces =
       decodeArgs ctx.tabs act m (P.filter (!·.out)) pieces := fun act m =>
@@ -153,8 +159,25 @@ theorem callOp_tabs (h : AuxAgree ctx.tabs tabs' v.aux) (env : Env) (argv : List
     outargsOK_tabs act m _ fun p hp => hP p (List.mem_filter.mp hp).1
   have hfr : ∀ sp, callFrame tabs' v.aux (P.filter (!·.out)) sp =
       callFrame ctx.tabs v.aux (P.filter (!·.out)) sp :=
-    callFrame_tabs h.callABI _ fun p hp => hP p (List.mem_filter.mp hp).1
+    callFrame_tabs hc _ fun p hp => hP p (List.mem_filter.mp hp).1
   simp only [hin, hout, hret, hreta, hoa, hfr]
+
+theorem callOp_tabs (h : AuxAgree ctx.tabs tabs' v.aux) (env : Env) (argv : List Val) :
+    callOp env { ctx with tabs := tabs' } v argv = callOp env ctx v argv :=
+  callOp_tabs_of (callTarget_tabs h argv) h.callABI h.abiTy
+
+/-- An interface call reads its aux only through `callOp`'s ABI lookups: its callee is its code
+pointer's (`callTarget`), and without arguments it has no memory argument either way. -/
+theorem callOp_tabs_inter (hop : v.op = .InterLECall)
+    (hc : callABI? tabs' v.aux = callABI? ctx.tabs v.aux)
+    (habi : ∀ abi, callABI? ctx.tabs v.aux = some abi →
+      ∀ p ∈ abi.params.toList, tabs'.ty p.type = ctx.tabs.ty p.type)
+    (env : Env) (argv : List Val) :
+    callOp env { ctx with tabs := tabs' } v argv = callOp env ctx v argv := by
+  cases argv with
+  | nil => simp [callOp, callTarget, hop, bind, Res.bind]
+  | cons c rest =>
+    exact callOp_tabs_of (by simp [callTarget, hop]) hc habi
 
 theorem memRoot_tabs (h : AuxAgree ctx.tabs tabs' v.aux) (argv : List Val) :
     memRoot { ctx with tabs := tabs' } v argv = memRoot ctx v argv := by
@@ -203,13 +226,33 @@ theorem evalValue_tabs (h : AuxAgree ctx.tabs tabs' v.aux) (env : Env) (fr : Fra
   unfold evalValue
   rw [he]
 
+/-- The lookups the semantics makes through value `v`'s aux agree (`AuxAgree`), or `v` is an
+interface call whose ABI lookups agree (`GoFV.Opt.callAgree`; `callOp_tabs_inter`). -/
+def AuxAgreeV (tabs tabs' : Tables) (v : Value) : Prop :=
+  AuxAgree tabs tabs' v.aux ∨
+    (v.op = .InterLECall ∧ callABI? tabs' v.aux = callABI? tabs v.aux ∧
+      ∀ abi, callABI? tabs v.aux = some abi →
+        ∀ p ∈ abi.params.toList, tabs'.ty p.type = tabs.ty p.type)
+
+theorem evalValue_tabsV (h : AuxAgreeV ctx.tabs tabs' v) (env : Env) (fr : Frame) :
+    evalValue env { ctx with tabs := tabs' } fr v = evalValue env ctx fr v := by
+  rcases h with h | ⟨hop, hc, habi⟩
+  · exact evalValue_tabs h env fr
+  · have he : evalOp env { ctx with tabs := tabs' } fr v = evalOp env ctx fr v := by
+      funext argv ty
+      unfold evalOp
+      simp only [hop]
+      exact callOp_tabs_inter hop hc habi env argv
+    unfold evalValue
+    rw [he]
+
 end
 
 /-! ## Blocks, the loop, the activation -/
 
 section
 variable {ctx : Ctx} {tabs' : Tables}
-  (H : ∀ id v, ctx.f.value? id = some v → AuxAgree ctx.tabs tabs' v.aux) (env : Env)
+  (H : ∀ id v, ctx.f.value? id = some v → AuxAgreeV ctx.tabs tabs' v) (env : Env)
 include H
 
 theorem evalAll_tabs :
@@ -222,7 +265,7 @@ theorem evalAll_tabs :
     | none => rfl
     | some v =>
       dsimp only
-      rw [evalValue_tabs (H id v hv)]
+      rw [evalValue_tabsV (H id v hv)]
       cases evalValue env ctx fr v with
       | ok x => exact evalAll_tabs ids _
       | panic e m => rfl
@@ -316,6 +359,61 @@ theorem tabsAgree_sound {tabs tabs' : Tables} {f : Func} (h : tabsAgree tabs tab
       exact Array.mem_def.mp (Array.mem_of_getElem? h1)
     exact valueAuxAgree_sound (hvals (some v) hm).2
 
+theorem callAgree_sound {tabs tabs' : Tables} {a : AuxRef} (h : callAgree tabs tabs' a = true) :
+    callABI? tabs' (some a) = callABI? tabs (some a) ∧
+      ∀ abi, callABI? tabs (some a) = some abi →
+        ∀ p ∈ abi.params.toList, tabs'.ty p.type = tabs.ty p.type := by
+  unfold callAgree at h
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+  refine ⟨h.1, fun abi hab p hp => ?_⟩
+  have h2 := h.2
+  rw [hab] at h2
+  exact Ty.eq_of_beq (List.all_eq_true.mp h2 p hp)
+
+theorem valueAuxAgreeDv_sound {tabs tabs' : Tables} {v : Value}
+    (h : valueAuxAgreeDv tabs tabs' (some v) = true) : AuxAgreeV tabs tabs' v := by
+  unfold valueAuxAgreeDv at h
+  by_cases hop : v.op = .InterLECall
+  · simp only [hop, beq_self_eq_true, ite_true] at h
+    cases hax : v.aux with
+    | none => exact .inl (hax ▸ AuxAgree.none tabs tabs')
+    | some a =>
+      rw [hax] at h
+      obtain ⟨hc, habi⟩ := callAgree_sound h
+      exact .inr ⟨hop, hax ▸ hc, hax ▸ habi⟩
+  · have hne : (v.op == .InterLECall) = false := by simpa using hop
+    simp only [hne, Bool.false_eq_true, ite_false] at h
+    exact .inl (valueAuxAgree_sound h)
+
+/-- What `tabsAgreeDv` gives: `Agree`, but an interface call's aux agrees only in its ABI
+lookups (`AuxAgreeV`). -/
+structure AgreeDv (tabs tabs' : Tables) (f : Func) : Prop where
+  ctx : Ctx.make tabs' f = { Ctx.make tabs f with tabs := tabs' }
+  outargs : outargsSize tabs' = outargsSize tabs
+  forgeable : ∀ l ∈ (Ctx.make tabs f).locals.toList, tabs'.forgeable l.1 = tabs.forgeable l.1
+  value : ∀ id v, f.value? id = some v → AuxAgreeV tabs tabs' v
+
+theorem tabsAgreeDv_sound {tabs tabs' : Tables} {f : Func} (h : tabsAgreeDv tabs tabs' f = true) :
+    AgreeDv tabs tabs' f := by
+  unfold tabsAgreeDv at h
+  simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true, beq_iff_eq] at h
+  obtain ⟨⟨⟨⟨⟨⟨hps, hpty⟩, hls⟩, hforg⟩, hout⟩, hdi⟩, hvals⟩ := h
+  have hps' : abiParams tabs' f = abiParams tabs f := Array.toList_inj.mp hps
+  have hty : ∀ p ∈ abiParams tabs f, tabs'.ty p.type = tabs.ty p.type :=
+    fun p hp => Ty.eq_of_beq (hpty p (Array.mem_def.mp hp))
+  refine ⟨?_, hout, hforg, fun id v hv => ?_⟩
+  · unfold Ctx.make
+    simp only [hps']
+    congr 1
+    · exact Array.map_congr_left fun o ho => Ty.eq_of_beq (hvals o (Array.mem_def.mp ho)).1
+    · exact Array.map_congr_left fun p hp => hty p (Array.mem_filter.mp hp).1
+    · exact Array.map_congr_left fun p hp => by rw [hty p (Array.mem_filter.mp hp).1]
+    · exact Array.toList_inj.mp hls
+  · have hm : some v ∈ f.valueTab.toList := by
+      have h1 : f.valueTab[id]? = some (some v) := Option.join_eq_some_iff.mp hv
+      exact Array.mem_def.mp (Array.mem_of_getElem? h1)
+    exact valueAuxAgreeDv_sound (hvals (some v) hm).2
+
 end GoFV.Proof.TabsAgree
 
 namespace GoFV.Proof
@@ -330,7 +428,26 @@ theorem run_tabsAgree {tabs tabs' : Tables} {f : Func} (h : GoFV.Opt.tabsAgree t
   have A := tabsAgree_sound h
   show runCtx env (Ctx.make tabs' f) args mem fuel = runCtx env (Ctx.make tabs f) args mem fuel
   rw [A.ctx]
+  exact runCtx_tabs (ctx := Ctx.make tabs f) (fun id v hv => .inl (A.value id v hv)) env A.outargs
+    A.forgeable args mem fuel
+
+/-- **Running a function in tables with a redefined interface-call aux.** When
+`tabsAgreeDv tabs tabs' f` holds, `f` has the same outcomes in `tabs'` as in `tabs`. -/
+theorem run_tabsAgreeDv {tabs tabs' : Tables} {f : Func}
+    (h : GoFV.Opt.tabsAgreeDv tabs tabs' f = true)
+    (env : Sem.Env) (args : List Sem.Val) (mem : Sem.Mem) (fuel : Nat) :
+    run env tabs' f args mem fuel = run env tabs f args mem fuel := by
+  have A := tabsAgreeDv_sound h
+  show runCtx env (Ctx.make tabs' f) args mem fuel = runCtx env (Ctx.make tabs f) args mem fuel
+  rw [A.ctx]
   exact runCtx_tabs (ctx := Ctx.make tabs f) A.value env A.outargs A.forgeable args mem fuel
+
+theorem refinesFrom_of_tabsAgreeDv {P : Env → List Val → Mem → Prop} {tabs tabs' tabs'' : Tables}
+    {f g : Func} (h : GoFV.Opt.tabsAgreeDv tabs tabs' f = true)
+    (hr : RefinesFrom P tabs'' g tabs' f) : RefinesFrom P tabs'' g tabs f := by
+  intro env args mem hP fuel hd
+  rw [← run_tabsAgreeDv h] at hd ⊢
+  exact hr env args mem hP fuel hd
 
 /-- A refinement of `f` in `tabs'` is one in `tabs` (`tabsAgree tabs tabs' f`). -/
 theorem refines_of_tabsAgree {tabs tabs' tabs'' : Tables} {f g : Func}

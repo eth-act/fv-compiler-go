@@ -195,7 +195,8 @@ theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
     obtain ⟨hpw, hwb, -⟩ := placed_in H.wg B.bmT B.hgb hz hw
     have ht : termOp w.op = false := by rw [hph]; exact termOp_phi
     obtain ⟨u, hpu, hs⟩ := gatom_f H hpw ht
-    obtain ⟨hop, hty, -, -, hsz, hblk, -⟩ := hs
+    obtain ⟨hop, hty, -, -, hsz, hblk, -⟩ : SameAtomX u w := hs.resolve_right fun h => by
+      rw [h.2.1] at hph; cases hph
     have hzf : z ∈ fb.values := by
       obtain ⟨-, -, blk, hblk', hzv⟩ := hpu
       rw [hblk, hwb, B.hfb] at hblk'; cases hblk'; exact hzv
@@ -210,7 +211,10 @@ theorem tgt_phis {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv ta
     refine retype_mono _ ?_
     obtain ⟨-, hwb', blk, hblk', hzv⟩ := hpw
     obtain ⟨u', hu', -, -, -, -, -, hTR⟩ := (H.args w.block hwb' blk hblk' z hzv w hw ht).resolve_right
-      fun ⟨_, _, _, hst, _⟩ => by rw [hph] at hst; rcases hst with h | h <;> cases h
+      fun h => by
+        rcases h with ⟨_, _, _, hst, _⟩ | ⟨_, _, hdv, _⟩
+        · rw [hph] at hst; rcases hst with h | h <;> cases h
+        · rw [hdv.2.1] at hph; cases hph
     rw [hpu.1] at hu'; cases hu'
     rcases R.pre with hno | ⟨p, pb, k, VP, hpm, hpb, hk, hinvP, hqP, hDP, hAncP, hPhiP, hMP, hRP⟩
     · exact (hno fb B.hfb z hzf u hpu.1 (hop.trans hph) a ha).elim

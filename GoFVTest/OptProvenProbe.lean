@@ -636,6 +636,10 @@ def layersWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f0 g : Func) :
       | .ld =>
         if RewriteCheck.layerOK env t tabs f0 L f log f' then none
         else some s!"ld({k}): {why tabs t f f' (ldTaken t tabs f log)}"
+      | .dv =>
+        if RewriteCheck.layerOK env t tabs f0 L f log f' then none
+        else if !dvRel tabs f f' then some s!"dv({k}): dvRel"
+        else some s!"dv({k}): check"
     match r with
     | some s => s
     | none =>
@@ -649,6 +653,7 @@ def layersWhy (env : PassEnv) (tabs : Tables) (t : Interp.Table) (f0 g : Func) :
         | .pc => s!"pc({k})"
         | .pn => s!"pn({k})"
         | .ld => s!"ld({k})"
+        | .dv => s!"dv({k})"
       s!"{pre} → {layersWhy env tabs t f0 g Ls f' log'}"
 
 open GoFV.Rules RewriteCheck in
@@ -762,7 +767,7 @@ def checkFile (path : System.FilePath) (S : St) : IO St := do
           match GoFV.Rules.rewriteRun t' true true env input with
           | .ok (o2, _, log2) =>
             if RewriteCheck.accepts env t' input o2 log2 || o2.func == input then none else
-            some (if !tabsAgree prev o2.tables input then "tables"
+            some (if !tabsAgreeDv prev o2.tables input then "tables"
               else segsWhy env o2.tables t' input o2.func 0 input #[] log2.toList)
           | .error e => some s!"error {e}"
         let fb := if proven.phiSels.isEmpty then some "" else fbOf tp
@@ -772,8 +777,8 @@ def checkFile (path : System.FilePath) (S : St) : IO St := do
         let fb := if fb.isSome && !proven.nilChecks.isEmpty then fbOf t''' else fb
         if fb.isSome then c := { c with rejected := c.rejected + 1 }
         else c := { c with fallback := c.fallback + 1 }
-        let reason := if !tabsAgree prev out.tables input then
-            "tables: the input tells the result's tables from its own (tabsAgree)"
+        let reason := if !tabsAgreeDv prev out.tables input then
+            "tables: the input tells the result's tables from its own (tabsAgreeDv)"
           else segsWhy env out.tables proven input out.func 0 input #[] log.toList
         rep := rep.push s!"{if fb.isSome then "REJECT" else "FALLBACK"} {name} {path}: {reason}"
         if provenSec then blockers := blockers.push s!"{name}: {reason.take 160}"

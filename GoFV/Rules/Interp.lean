@@ -460,7 +460,7 @@ def Table.segBase (t : Table) (o : Op) : Nat :=
     (if o == .Load then t.loads.size + t.structLoads.size else 0) +
     (if o == .Store then t.structStores.size + t.loads.size else 0) +
     (if o == .Zero || o == .Move || o == .SliceLen || o == .StaticLECall || o == .SelectN ||
-        o == .EqPtr || o == .NeqPtr then t.loads.size else 0)
+        o == .EqPtr || o == .NeqPtr || o == .InterLECall then t.loads.size else 0)
 
 /-- The index of the first `phiSels` rule on a value of op `o`: after the `segs`. -/
 def Table.psBase (t : Table) (o : Op) : Nat := t.segBase o + t.segs.size
@@ -481,14 +481,17 @@ def Table.ofRuleSet (s : RuleSet) : Table := Id.run do
 
 /-- A per-instance validated rule whose matched value earlier rewrites usually built: the
 nil-check eliminations of an `IsNonNil` (from `NeqPtr p (ConstNil)`) and of a `Convert` (of an
-`Addr` a fixed load produced), and the fixed loads (`isFixedLoad`; their `Load` or pointer often
-comes from an expansion or a selection). It is logged after a snapshot (`tryRule`'s `snap`), so
-the validator's layer starts from a function that has the matched values. -/
+`Addr` a fixed load produced), the fixed loads (`isFixedLoad`; their `Load` or pointer often
+comes from an expansion or a selection), and the devirtualisation of an interface call
+(`generic.rules:1733`; its code pointer is the `Addr` a fixed load produced). It is logged after a
+snapshot (`tryRule`'s `snap`), so the validator's layer starts from a function that has the
+matched values. -/
 def snapRule (r : Rule) : Bool :=
   match r.pat with
   | .op .IsNonNil .. => true
   | .op .NilCheck _ _ _ _ _ (.op .Convert .. :: _) _ => true
   | .op .Load .. => (r.cond matches some (.call "isFixedLoad" ..))
+  | .op .InterLECall .. => true
   | _ => false
 
 /-- The `Load` `v` is not one of the pass's input (`RwState.input`): an earlier rewrite built it
@@ -526,10 +529,10 @@ def rewriteValue (t : Table) (v : ID) : RwM Bool := do
     for h : i in [0:ls.size] do
       if ← tryRule v ls[i] (rs.size + ss.size + i) then return true
   if o == .Zero || o == .Move || o == .SliceLen || o == .StaticLECall || o == .SelectN ||
-      o == .EqPtr || o == .NeqPtr then
+      o == .EqPtr || o == .NeqPtr || o == .InterLECall then
     let ls := t.loads
     for h : i in [0:ls.size] do
-      if ← tryRule v ls[i] (rs.size + i) then return true
+      if ← tryRule v ls[i] (rs.size + i) (snap := snapRule ls[i].rule) then return true
   let gs := t.segs
   let n := t.segBase o
   for h : i in [0:gs.size] do

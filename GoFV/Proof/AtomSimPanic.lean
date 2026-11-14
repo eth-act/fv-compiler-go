@@ -184,7 +184,7 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv
         obtain ⟨-, u'', hu'', hph'⟩ := (B.mS a).1 (hpreof a hm)
         rw [hpu.1] at hu''; cases hu''
         rw [placed_val hpw hw'] at hph
-        exact absurd (hs'.1.trans hph) hph')
+        exact absurd (hs'.phi_iff.2 hph) hph')
     rcases ha with ⟨w', hpw', hanc, hne⟩ | ⟨haz, w', hw', hph⟩
     · have hww := placed_val hpw' hpw.1; subst hww
       obtain ⟨hnT, hnS⟩ := atom_out H B hpw hwt hne
@@ -222,8 +222,10 @@ theorem enter_panic {tabs : Tables} {f g : Func} {ce ce' : CheckEnv} {I : SrcInv
         rw [hu] at hu'; cases hu'
         exact ⟨y, hy, hev⟩
       · have hxr : x ≠ r := fun h => hrpreT (h ▸ hx)
-        refine ⟨?_, fun ha => hxp (arg_before H B hof hur hrp hxof hxr hu (.inl (hs'.1.trans ha))),
-          fun ha => hxp (arg_before H B hof hur hrp hxof hxr hu (.inr (hs'.1.trans ha)))⟩
+        refine ⟨?_, fun ha => hxp (arg_before H B hof hur hrp hxof hxr hu
+            (.inl (hs'.op_of ha fun h => nomatch h))),
+          fun ha => hxp (arg_before H B hof hur hrp hxof hxr hu
+            (.inr (hs'.op_of ha fun h => nomatch h)))⟩
         cases hroot : isRoot w.op
         · rfl
         · exfalso

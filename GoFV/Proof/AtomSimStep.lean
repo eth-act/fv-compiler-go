@@ -51,6 +51,44 @@ theorem atom_eval_mono {env : Env} (hE : env.Mono) {ctxS ctxT : Ctx}
     hai.symm hid.symm rfl rfl rfl] at hmono
   exact Res.Rel.bind hmono fun x y hxy => .ok (retype_mono _ hxy)
 
+/-- `callOp` reads its context only through the tables and the activation. -/
+theorem callOp_ctx {env : Env} {ctx ctx' : Ctx} (ht : ctx'.tabs = ctx.tabs) (ha : ctx'.act = ctx.act)
+    (v : Value) (argv : List Val) : callOp env ctx' v argv = callOp env ctx v argv := by
+  have hc : callTarget ctx' v argv = callTarget ctx v argv := by unfold callTarget; rw [ht]
+  unfold callOp
+  rw [hc, ht, ha]
+
+/-- **A devirtualised interface call** (`DvAtom`) on refined arguments (the source's from its
+second on, `rest`), whose source code pointer `c` points to no function but the one the aux
+calls, evaluates to a refinement (`callOp_devirt`). -/
+theorem atom_eval_devirt {env : Env} (hE : env.Mono) {ctxS ctxT : Ctx}
+    (htabs : ctxT.tabs = ctxS.tabs) (hact : ctxT.act = ctxS.act)
+    {GS GT : Frame} {u w : Value} (hdv : DvAtom u w)
+    (hty : ctxT.tys[w.id]?.getD .other = ctxS.tys[u.id]?.getD .other)
+    (hregS : ∀ a ∈ u.args, Reg GS a) (hregT : ∀ a ∈ w.args, Reg GT a)
+    {c : ID} {rest : List ID} (hsplit : u.args.toList = c :: rest)
+    (hcode : ∀ s, codeTarget? (rv GS c) = some s → w.aux.bind ctxS.tabs.callee? = some s)
+    (hargs : ∀ (i : Nat) a a', rest[i]? = some a → w.args.toList[i]? = some a' →
+      Sem.Refines (rv GS a) (rv GT a')) :
+    Res.Refines (evalValue env ctxS GS u) (evalValue env ctxT GT w) := by
+  obtain ⟨hu, hw, -, -, hax, hsz, -, -⟩ := hdv
+  rw [evalValue_of_regs hregS, evalValue_of_regs hregT, hty]
+  have hS : ∀ ty, evalOp env ctxS GS u (u.args.toList.map (rv GS)) ty =
+      callOp env ctxS u (u.args.toList.map (rv GS)) := fun ty => by
+    unfold evalOp; simp only [hu]
+  have hT : ∀ ty, evalOp env ctxT GT w (w.args.toList.map (rv GT)) ty =
+      callOp env ctxT w (w.args.toList.map (rv GT)) := fun ty => by
+    unfold evalOp; simp only [hw]
+  rw [hS, hT, callOp_ctx htabs hact, hsplit, List.map_cons]
+  have hlen : rest.length = w.args.toList.length := by
+    have := congrArg List.length hsplit
+    simp only [Array.length_toList, List.length_cons] at this
+    simp only [Array.length_toList]; omega
+  have hl : RefinesList (rest.map (rv GS)) (w.args.toList.map (rv GT)) :=
+    refinesList_idx hlen hargs
+  exact Res.Rel.bind (callOp_devirt hE ctxS hu hw hax.symm hcode hl)
+    fun x y hxy => .ok (retype_mono _ hxy)
+
 /-- An op that is neither a root nor `Arg`/`ArgIntReg` evaluates. -/
 theorem evalOp_safe {env : Env} {ctx : Ctx} {fr : Frame} {v : Value} {argv : List Val} {ty : Ty}
     (hr : isRoot v.op = false) (ha : v.op ≠ .Arg) (hai : v.op ≠ .ArgIntReg) :
