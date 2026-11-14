@@ -1915,7 +1915,7 @@ theorem genG62_witness :
     (fun _ _ _ _ _ _ _ _ _ _ hn => by rw [hop] at hn; cases hn)
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
-    (fun h => by cases h) (argOK0 harg hid) hs1
+    (fun h => absurd h (hne _ (by decide))) (fun h => by cases h) (argOK0 harg hid) hs1
   refine ⟨h61, s1, E1, m1, k, hs1, hk, hlook, hx1, hE1, hp1, hm1', ?_⟩
   obtain ⟨o, ho, hrel⟩ := hm1'.slots k _ hlook
   obtain ⟨hEq, -⟩ := hx1

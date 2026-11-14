@@ -2706,7 +2706,8 @@ theorem genG29_value_witness :
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
     (GenG10.icallOK_ne (by rw [hop]; rfl))
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
-    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide))) hs1
+    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
+    (fun h => absurd h (hne _ (by decide))) hs1
   have hext : ExtOK (m1.x 1) 16 false := by
     have h := hu1
     rw [hu4] at h

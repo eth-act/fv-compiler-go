@@ -2381,6 +2381,7 @@ theorem genG63_witness :
     (fun _ _ _ _ _ _ _ _ _ _ hn => by rw [hop] at hn; cases hn)
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
+    (fun h => absurd h (hne _ (by decide)))
     (fun h => by cases h) (fun h => absurd h (hne _ (by decide)))
     (fun h => absurd h (hne _ (by decide))) hs1
   refine ⟨h62, s1, E1, m1, k, hs1, hk, hlook, hx1, hE1, hp1, hm1', ?_⟩

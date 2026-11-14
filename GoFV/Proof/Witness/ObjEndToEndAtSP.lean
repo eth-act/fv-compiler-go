@@ -786,9 +786,9 @@ theorem g54Pre_call {lc : LocCtx} {s : LocState} {v : Value} (hop : v.op = .ARM6
   all_goals exact absurd h (hne _ (by decide))
 
 theorem pre64_call {lc : LocCtx} {s : LocState} {v : Value} (hop : v.op = .ARM64CALLstatic) :
-    FReloadPre lc s v ∧ QLoadPre lc s v :=
-  ⟨fun h => absurd (h.symm.trans hop) (by decide), fun h => absurd (h.symm.trans hop) (by decide),
-    fun h => absurd (h.symm.trans hop) (by decide)⟩
+    FReloadPre lc s v ∧ QLoadPre lc s v ∧ MemEqPre lc s v :=
+  ⟨fun h => absurd (h.symm.trans hop) (by decide), ⟨fun h => absurd (h.symm.trans hop) (by decide),
+    fun h => absurd (h.symm.trans hop) (by decide)⟩, fun h => absurd (h.symm.trans hop) (by decide)⟩
 
 /-- The blocks of a function `simpleFrom` accepts. -/
 theorem simpleFrom_blk {f : Func} {b0 : ID} {i0 : Nat} (h : simpleFrom f b0 i0 = true) :

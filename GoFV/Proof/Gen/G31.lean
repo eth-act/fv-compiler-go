@@ -176,7 +176,7 @@ theorem vk31_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     (hicall : ICallOKAt osp H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
     (hwb : WbOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
     (hgetg : GetGOK E v) (hmeq : MemEqOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m)
-    (hs : stepLoc env lc s v = .ok s') :
+    (hmp : MemEqPre lc s v) (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G28Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp ∧
@@ -191,7 +191,7 @@ theorem vk31_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
   | false =>
     rw [uStep31_other hk]
     exact vk32_stepU hE F hhome hcf hv hVK hvs htemp hj hj' hreads hm hinv hL hmem hpre hcall
-      hcallz hicall hwb hclo hgetg hmeq hs
+      hcallz hicall hwb hclo hgetg hmeq hmp hs
 
 /-- On a function with no arm64 op that `checkNL30` accepted, G29's table is empty: no value is a
 narrow load, `MOVDnop` or `MOVDreg`. -/
@@ -240,7 +240,8 @@ theorem g31_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
     (hcall : CallOKAt osp H E g L lc s s' v m) (hcallz : CallOKZAt osp H E g L lc s s' v m)
     (hicall : ICallOKAt osp H E L ret lc s s' v m)
     (hwb : WbOKAt osp H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
-    (hmeq : MemEqOKAt osp H E g L lc s v m) (hs : stepLoc env lc s v = .ok s') :
+    (hmeq : MemEqOKAt osp H E g L lc s v m) (hmp : MemEqPre lc s v)
+    (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G28Env lc g L ps ret tab E' ∧ PStar H L ps.toList ret m m' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' osp ∧
       UOKL m' (uL31 lc (uIn lc bid) blk (i + 1)) := by
@@ -251,7 +252,7 @@ theorem g31_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
       simpa [checkG30, hl] using this
     obtain ⟨E', m', hx, hE', h1, h2, h3, -⟩ := g30_value hc30 hE hbid hb hi hv hen hm hinv
       (by rw [uL_nl30 (checkG31_nl hl hc) hbid hb i]; intro e he; cases he) hpre hcall hcallz
-      hicall hwb hclo hgetg hmeq hs
+      hicall hwb hclo hgetg hmeq hmp hs
     refine ⟨E', m', hx, hE', h1, h2, h3, ?_⟩
     rw [uL31_nl hl]
     intro e he
@@ -288,7 +289,7 @@ theorem g31_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
   rw [kAt_succ hi hv]
   exact vk31_step hE0 F hhome hcf hv hVK hvs htemp hj hj' hreads hm hinv hu
     (fun x hop hx => movdOK31_spec hmovd hbid hb hi hv hop hx)
-    hpre hcall hcallz hicall hwb hclo hgetg hmeq hs
+    hpre hcall hcallz hicall hwb hclo hgetg hmeq hmp hs
 
 /-- **G31, nil panics.** `g32_nilPanic`'s statement over `checkG31`. -/
 theorem g31_nilPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}

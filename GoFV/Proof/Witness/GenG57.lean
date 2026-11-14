@@ -105,7 +105,8 @@ theorem genG57_witness :
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
     (GenG10.icallOK_ne (by rw [hop]; rfl))
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
-    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide))) hs1
+    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
+    (fun h => absurd h (hne _ (by decide))) hs1
   -- Byte 8 of `heap 1` after the store, read through `MemInj`: no pointer word covers it.
   have hA : m1.mem (A + BitVec.ofNat 64 8) = 0x44 := by
     obtain ⟨mm1, hmm1, hinj⟩ := hm1'.mem

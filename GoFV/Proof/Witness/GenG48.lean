@@ -1993,7 +1993,7 @@ theorem genG48_witness :
     (fun _ _ _ _ _ _ _ _ _ _ hn => by rw [hop] at hn; cases hn)
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
-    (fun h => absurd h (hne _ (by decide))) hs1
+    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide))) hs1
   -- Byte 8 of `outargs 0` after the store, read through `MemInj`: no pointer word covers it.
   have h8 : m1.mem (spO + 8) = 7 := by
     obtain ⟨mm1, hmm1, hinj⟩ := hm1'.mem
@@ -2271,7 +2271,7 @@ theorem genG48_call_witness :
     (fun _ _ _ _ _ _ _ _ _ _ hn => by rw [hop] at hn; cases hn)
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
-    (callOKStkC hst hmem1) hs2
+    (fun h => absurd h (hne _ (by decide))) (callOKStkC hst hmem1) hs2
   exact ⟨by decide, s2, E2, m2, hs2, hmem1, hx2, hE2, hp2, hm2, hinv2, hsp2⟩
 
 end GoFV.Proof.Witness.GenG48

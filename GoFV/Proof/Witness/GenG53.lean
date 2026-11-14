@@ -2979,7 +2979,8 @@ theorem genG53_witness :
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
     (GenG10.icallOK_ne (by rw [hop]; rfl))
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
-    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide))) hs1
+    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
+    (fun h => absurd h (hne _ (by decide))) hs1
   -- The first byte of `heap 1` after the copy, read through `MemInj`: no pointer word covers it.
   have hA : m1.mem A = byteS 0 := by
     obtain ⟨mm1, hmm1, hinj⟩ := hm1'.mem

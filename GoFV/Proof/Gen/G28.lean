@@ -1,4 +1,5 @@
 import GoFV.Proof.Gen.G27
+import GoFV.Proof.Gen.MemEq28
 import GoFV.Proof.Gen.Spec28
 
 variable [GoFV.SSA.Sem.Addrs]
@@ -9,14 +10,15 @@ variable [GoFV.SSA.Sem.Addrs]
 `g28_value`, `g28_term`, `g28_nilPanic`, `g28_boundsPanic`: `g27_value`'s, `g27_term`'s,
 `g27_nilPanic`'s and `g27_boundsPanic`'s statements over `checkG28`, under `G28Env` (a function
 with `LoweredMemEq` has a frame) and, for values, the trusted `runtime.memequal` contract
-`MemEqOK`.
+`MemEqOK` and the Phase 1 premise `MemEqPre` (`MemEq28.lean`).
 
 `LoweredMemEq p q n mem` runs under `runLoc` as a call's clobbers, then `memEq [p, q, n, mem]` in
 `R0` (`stepLoc`, `evalOpL_memEq`), with `p`, `q`, `n` read from `R0`, `R1`, `R2`. genssa emits
 `CALL runtime.memequal(SB)`: the return address in `X30`, then the runtime hook, which by
-`MemEqOK` returns to `X30` with `SP`, `R28`, `R29` and the memory kept and `X0` related to
-`memEq` of the arguments it was given in `X0`–`X2` and of the memory (`g28_memEq`). Every other
-register is `poison` in `runLoc`'s state, as after a static call.
+`MemEqOK` returns to `X30` with `SP`, `R28`, `R29` and the memory kept and `X0` 1 if the `X2`
+machine bytes at `X0` and `X1` agree, 0 if not (`MemEqRes`, `internal/bytealg/equal_arm64.s`).
+Under `AddrAgree`, `MemInj` and `MemEqPre` that is `memEq`'s answer (`memEq_res`, `g28_memEq`).
+Every other register is `poison` in `runLoc`'s state, as after a static call.
 -/
 
 namespace GoFV.Proof.Gen
@@ -25,16 +27,17 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Gen.Check GoFV.Arm64 GoFV.Asm GoFV.Asm.ARM64
 
 /-! ## The premises -/
 
-/-- **The `runtime.memequal` contract** (trusted, `docs/proofs/STATUS.md` Assumptions): from the
-machine state `m` at `runtime.memequal`'s entry, if `X0`, `X1`, `X2` hold `p`, `q`, `n` and the
-memory injects `runLoc`'s memory `mm` (distinct keys, the live blocks away from the frame), the
-hook returns to `X30` with `SP`, `R28`, `R29` and the memory kept, and `X0` holds whether the `n`
-bytes at `p` and at `q` agree (`memEq`). -/
+/-- **The `runtime.memequal` contract** (trusted, `docs/proofs/STATUS.md` Assumptions;
+`internal/bytealg/equal_arm64.s`): from the machine state `m` at `runtime.memequal`'s entry, if
+`X0`, `X1`, `X2` hold `p`, `q`, `n` and the memory injects `runLoc`'s memory `mm` (distinct keys,
+the live blocks away from the frame), the hook returns to `X30` with `SP`, `R28`, `R29` and the
+memory kept, and `X0` is 1 if the `X2` machine bytes at `X0` and at `X1` agree, 0 if not
+(`MemEqRes`). -/
 def MemEqSpec (H : Hooks) (E : MatchEnv) (p q n : Val) (mm : Mem) (m : MState) : Prop :=
   ValRel E.ι p (m.x 0) → ValRel E.ι q (m.x 1) → ValRel E.ι n (m.x 2) →
     MemInj E.ι mm m.mem → KeysNodup mm → SepFrom E.ι (StkAt E) mm →
   ∃ m', H.call m = some (.ret m') ∧ m'.pc = m.x 30 ∧ m'.sp = m.sp ∧ m'.x 28 = m.x 28 ∧
-    m'.x 29 = m.x 29 ∧ m'.mem = m.mem ∧ ValRel E.ι (memEq [p, q, n, .mem mm]) (m'.x 0)
+    m'.x 29 = m.x 29 ∧ m'.mem = m.mem ∧ MemEqRes m m'
 
 /-- The `runtime.memequal` contract (`MemEqSpec`) at the value `v` from `s`, with the arguments
 `runLoc` reads, at every machine state at the symbol of `runtime.memequal` that is `m` but for
@@ -54,7 +57,7 @@ def MemEqSpecS (H : Hooks) (E : MatchEnv) (p q n : Val) (mm : Mem) (m : MState) 
   ValRel E.ι p (m.x 0) → ValRel E.ι q (m.x 1) → ValRel E.ι n (m.x 2) →
     MemInj E.ι mm m.mem → KeysNodup mm → SepFromW E.ι (StkAt E) mm →
   ∃ m', H.call m = some (.ret m') ∧ m'.pc = m.x 30 ∧ m'.sp = m.sp ∧ m'.x 28 = m.x 28 ∧
-    m'.x 29 = m.x 29 ∧ m'.mem = m.mem ∧ ValRel E.ι (memEq [p, q, n, .mem mm]) (m'.x 0)
+    m'.x 29 = m.x 29 ∧ m'.mem = m.mem ∧ MemEqRes m m'
 
 /-- `MemEqOK` with `MemEqSpecS` (trusted; a function whose `outargs` block sits at `SP`). -/
 def MemEqOKS (H : Hooks) (E : MatchEnv) (g : G2In) (L : Link) (lc : LocCtx) (s : LocState)
@@ -71,7 +74,7 @@ def MemEqSpecM (w : Bool) (H : Hooks) (E : MatchEnv) (p q n : Val) (mm : Mem) (m
   ValRel E.ι p (m.x 0) → ValRel E.ι q (m.x 1) → ValRel E.ι n (m.x 2) →
     MemInj E.ι mm m.mem → KeysNodup mm → SepAt w E.ι (StkAt E) mm →
   ∃ m', H.call m = some (.ret m') ∧ m'.pc = m.x 30 ∧ m'.sp = m.sp ∧ m'.x 28 = m.x 28 ∧
-    m'.x 29 = m.x 29 ∧ m'.mem = m.mem ∧ ValRel E.ι (memEq [p, q, n, .mem mm]) (m'.x 0)
+    m'.x 29 = m.x 29 ∧ m'.mem = m.mem ∧ MemEqRes m m'
 
 /-- The `runtime.memequal` contract of mode `w`: `MemEqOK` (`false`) or `MemEqOKS` (`true`). -/
 def MemEqOKAt : Bool → Hooks → MatchEnv → G2In → Link → LocCtx → LocState → Value → MState →
@@ -193,8 +196,8 @@ variable {H : Hooks} {sym : Nat → BitVec 64} {text : BitVec 64} {az ez : Int} 
   {m : MState} {env : Env} {v : Value} {j j' : Nat} {K K' : Nat → Option Nat}
 
 /-- `LoweredMemEq p q n mem`: `CALL runtime.memequal(SB)` with the return address in `X30`, the
-hook by the trusted contract (`MemEqOK`): `memEq` of the arguments in `R0`, every other register
-`poison`, the memory unchanged. -/
+hook by the trusted contract (`MemEqOK`): the machine's answer in `R0`, which is `memEq`'s under
+`MemEqPre` (`memEq_res`), every other register `poison`, the memory unchanged. -/
 theorem g28_memEq (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E) (hlc : E.lc = lc)
     (hcf : checkFrame lc g = .ok ()) (hframed : E.framed = true)
     (hsyms : ∀ y, (Link.byId sym text az ez psA.toList).sym y ≠ ret ∧ ∀ p ∈ psA.toList,
@@ -211,7 +214,8 @@ theorem g28_memEq (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
     (hc1 : cls (lc.ty a1) = some 64) (hc2 : cls (lc.ty a2) = some 64)
     (hma : memArg lc v 3 = .ok ()) (hvs : OneAt2 psA j (memEqPat g) j')
     (htemp : (lc.temps[v.id]?).join = none) (hs : stepLoc env lc s v = .ok s')
-    (hok : MemEqOKAt osp H E g (Link.byId sym text az ez psA.toList) lc s v m) :
+    (hok : MemEqOKAt osp H E g (Link.byId sym text az ez psA.toList) lc s v m)
+    (hmp : MemEqPre lc s v) :
     ∃ m', PStar H (Link.byId sym text az ez psA.toList) psA.toList ret m m' ∧
       LocMatch E s' b (i + 1) m' ∧ CoreInv E.ι (StkAt E) K' s' osp ∧ SlotInv lc s' := by
   have hl := F.lowered
@@ -223,11 +227,11 @@ theorem g28_memEq (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
   rw [hmm] at hmm0
   cases hmm0
   -- the arguments, read from `R0`, `R1`, `R2`
-  obtain ⟨x0, hx0, hx0v, -⟩ := arg_rel (k := 0) hA hl hm hinv hh0 hc0
+  obtain ⟨x0, hx0, hx0v, hf0⟩ := arg_rel (k := 0) hA hl hm hinv hh0 hc0
     (kread_arg hR hnp ha0 hh0 hc0) (Or.inr ⟨by decide, objX?_low (by decide)⟩)
-  obtain ⟨x1, hx1, hx1v, -⟩ := arg_rel (k := 1) hA hl hm hinv hh1 hc1
+  obtain ⟨x1, hx1, hx1v, hf1⟩ := arg_rel (k := 1) hA hl hm hinv hh1 hc1
     (kread_arg hR hnp ha1 hh1 hc1) (Or.inr ⟨by decide, objX?_low (by decide)⟩)
-  obtain ⟨x2, hx2, hx2v, -⟩ := arg_rel (k := 2) hA hl hm hinv hh2 hc2
+  obtain ⟨x2, hx2, hx2v, hf2⟩ := arg_rel (k := 2) hA hl hm hinv hh2 hc2
     (kread_arg hR hnp ha2 hh2 hc2) (Or.inr ⟨by decide, objX?_low (by decide)⟩)
   rw [rX_lt (by decide)] at hx0v hx1v hx2v
   -- `runLoc`'s state after the value
@@ -273,8 +277,15 @@ theorem g28_memEq (F : Facts lc sym text az ez psA.toList ret E) (hF : FrameOK E
     .hook (hsyms y).1 (progAt?_none (hsyms y).2) hcallH
   have hstar' := (hstar.tail (pstep_at F.nodup F.lt F.ret hk rfl hcstep)).tail hstep2
   -- the result in `R0`
-  have hres' : ValRel E.ι ((memEq [x0, x1, x2, .mem mm]).retypeL (lc.ty v.id)) (m'.x 0) :=
-    valRel_retypeL hA hcb (fits_memEq _) hres
+  have hres' : ValRel E.ι ((memEq [x0, x1, x2, .mem mm]).retypeL (lc.ty v.id)) (m'.x 0) := by
+    have hx0' : m₁.x 0 = m.x 0 := hm1x 0 (by decide)
+    have hx1' : m₁.x 1 = m.x 1 := hm1x 1 (by decide)
+    have hx2' : m₁.x 2 = m.x 2 := hm1x 2 (by decide)
+    have hmm₁ : m₁.mem = m.mem := rfl
+    unfold MemEqRes at hres
+    rw [hx0', hx1', hx2', hmm₁] at hres
+    exact valRel_retypeL hA hcb (fits_memEq _) (memEq_res hA hMI hx0v hx1v hx2v hf0 hf1 hf2
+      (hmp hop a0 a1 a2 x0 x1 x2 mm ha0 ha1 ha2 hx0 hx1 hx2 hmm) hres)
   -- the frame and the slots
   obtain ⟨hslots', hframe'⟩ := stk_slots_frame (E' := E) (m' := m') hm hF
     (slot_sizes hlc hcf hsi) rfl (fun _ _ h => h) (fun q _ => by rw [hmem']) hsp'
@@ -371,7 +382,7 @@ theorem vk28_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     (hicall : ICallOKAt osp H E (Link.byId sym text az ez ps.toList) ret lc s s' v m)
     (hwb : WbOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
     (hgetg : GetGOK E v) (hmeq : MemEqOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m)
-    (hs : stepLoc env lc s v = .ok s') :
+    (hmp : MemEqPre lc s v) (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G28Env lc g (Link.byId sym text az ez ps.toList) ps ret tab E' ∧
       PStar H (Link.byId sym text az ez ps.toList) ps.toList ret m m' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kStep lc K v) s' osp ∧ UOK m' (uEntry lc v) := by
@@ -390,12 +401,12 @@ theorem vk28_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     rw [hue]
     obtain ⟨m', h1, h2, h3, h4⟩ := g28_memEq (H := H) F hF hlcE hcf hframed hsyms hm hinv.core
       hinv.slots (kread_of_reads hreads) (knext_kStep fun _ => (hs_reg hh).noRegs) hj hj' hop hsz
-      hh hty ha0 ha1 ha2 hh0 hh1 hh2 hc0 hc1 hc2 hma hvs htemp hs hmeq
+      hh hty ha0 ha1 ha2 hh0 hh1 hh2 hc0 hc1 hc2 hma hvs htemp hs hmeq hmp
     exact ⟨E, m', ⟨rfl, fun _ _ h => h⟩, hE, h1, h2, ⟨h3, h4⟩, trivial⟩
 
 /-- **G28, values.** `g27_value`'s statement over `checkG28`, under `G28Env`, with the trusted
 `runtime.memequal` contract `MemEqOK` next to `CallOK`, `CallOKZ`, `ICallOK`, `WbOK`, `CloOK` and
-`GetGOK`. -/
+`GetGOK`, and the Phase 1 premise `MemEqPre`. -/
 theorem g28_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {ps : Array Prog}
     {bstart : ID → Option Nat} {ret : BitVec 64} {tab : PcTab} {kt : KTab} {E : MatchEnv}
     {bid : ID} {blk : Block} {i : Nat} {id : ID} {v : Value} {s s' : LocState} {m : MState}
@@ -408,7 +419,8 @@ theorem g28_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
     (hcall : CallOKAt osp H E g L lc s s' v m) (hcallz : CallOKZAt osp H E g L lc s s' v m)
     (hicall : ICallOKAt osp H E L ret lc s s' v m)
     (hwb : WbOKAt osp H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
-    (hmeq : MemEqOKAt osp H E g L lc s v m) (hs : stepLoc env lc s v = .ok s') :
+    (hmeq : MemEqOKAt osp H E g L lc s v m) (hmp : MemEqPre lc s v)
+    (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G28Env lc g L ps ret tab E' ∧ PStar H L ps.toList ret m m' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' lc (kAt lc kt bid blk (i + 1)) s' osp ∧
       UOK m' (uAt lc blk (i + 1)) := by
@@ -451,7 +463,7 @@ theorem g28_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
     (fun x hop hx => by
       obtain ⟨r, c', hr, hc', hu0⟩ := movdOK_spec hmovd hbid hb hi hv hop hx
       exact ⟨r, c', hr, hc', hu0 ▸ hu⟩)
-    hpre hcall hcallz hicall hwb hclo hgetg hmeq hs
+    hpre hcall hcallz hicall hwb hclo hgetg hmeq hmp hs
 
 /-- A nil check of G28's kinds is G7's. -/
 theorem vk28_nil {lc : LocCtx} {g : G2In} {v : Value} {kd : VKind2} (h : VK28 lc g v kd)

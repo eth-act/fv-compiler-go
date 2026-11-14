@@ -8406,7 +8406,7 @@ theorem genG60_witness :
     (fun _ _ _ _ _ _ _ _ _ _ hn => by rw [hop] at hn; cases hn)
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
-    (fun _ h => absurd h (hne _ (by decide))) hs1
+    (fun h => absurd h (hne _ (by decide))) (fun _ h => absurd h (hne _ (by decide))) hs1
   have hV : (m1.v 1).setWidth 64 = 0x7fefffffffffffff :=
     (hm1'.regs 32 _ hr32).2 1 rfl
   exact ⟨h56, h59, rfl, s1, E1, m1, hs1, hr32, hx1, hE1, hp1, hm1', hV⟩

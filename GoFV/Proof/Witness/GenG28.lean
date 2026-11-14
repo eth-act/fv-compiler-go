@@ -24,12 +24,19 @@ the class table `kt`. Block `b2` (the lengths agree) moves the arguments into pl
 
 The runtime `Hm` implements `runtime.memequal` on the machine: it compares the `X2` bytes at `X0`
 and at `X1` and returns 1 or 0 in `X0` to `X30`. It satisfies the trusted contract `MemEqOK` at
-`v24` (`memEqOK0`). By compiled evaluation (`native_decide`, listed in
+every value and state (`memEqOK_Hm`): the contract is what `equal_arm64.s` does. By compiled
+evaluation (`native_decide`, listed in
 `scripts/axioms-allowlist.txt`; `g28_facts`), `stepLoc` runs `v24` from a state with `a` the
 start of `heap 1` (`GenG13.pB`) in `R0`, `b` 8 bytes into it in `R1`, the length 8 in `R2` and
-`heap 1` 64 bytes 7 (`GenG13.mem7`): the bytes agree and `R0` then holds `true`. On a framed
-activation with `G28Env` with `heap 1` at `GenG13.A` (`GenG13.M7`), `g28_value` runs the `CALL`
-and the hook: the machine's `X0` is 1 (`genG28_value_witness`).
+`heap 1` 64 bytes 7 (`GenG13.mem7`): the bytes agree (so `MemEqPre` holds, `memEqPre0`) and `R0`
+then holds `true`. On a framed activation with `G28Env` with `heap 1` at `GenG13.A`
+(`GenG13.M7`), `g28_value` runs the `CALL` and the hook: the machine's `X0` is 1
+(`genG28_value_witness`).
+
+`MemEqPre` on structs with pointer fields (`memEqDiff_ptrs`): two 16-byte structs `{p *T; n int}`
+with equal `n` whose `p` point to different live objects differ where the machine sees it, for
+pointers without an integer form (globals, as fragments), a heap pointer (the concrete word of
+its address) against a global, and a pointer against nil; `memEq` finds each pair different.
 -/
 
 namespace GoFV.Proof.Witness.GenG28
@@ -2546,14 +2553,32 @@ theorem pre24 {s : LocState} (hop : (val 24).op = .ARM64LoweredMemEq) : G14Pre l
   · intro h; exact absurd h (hne _ (by decide))
   · intro _ _ _ _ hl; rw [hop] at hl; cases hl
 
-/-- `Hm` keeps the contract `MemEqOK` at `v24` from `s0` and `m0`: the arguments `runLoc` reads
-compare equal (`memEq … = true`), and so do the 8 machine bytes at `A` and at `A + 8`. -/
-theorem memEqOK0 (hargs : (val 24).args = #[20, 22, 23, 1])
+/-- `memeqW` is `runtime.memequal`'s comparison (`MachBytesEq`). -/
+theorem memeqW_iff (m : MState) :
+    memeqW m = true ↔ MachBytesEq m.mem (m.x 0) (m.x 1) (m.x 2) := by
+  simp only [memeqW, List.all_eq_true, List.mem_range, beq_iff_eq, MachBytesEq]
+
+/-- `Hm` keeps the contract `MemEqOK` at every value from every state: it returns to `X30` with
+`X0` 1 if the `X2` machine bytes at `X0` and `X1` agree and 0 if not (`MemEqRes`), the rest of the
+machine kept. -/
+theorem memEqOK_Hm (v : Value) (s : LocState) (m : MState) : MemEqOK Hm E g L lc s v m := by
+  intro _ y a0 a1 a2 p q n mm m₁ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+  refine ⟨_, rfl, rfl, rfl,
+    show (if (28 : Reg) = 0 then (if memeqW m₁ then 1 else 0) else m₁.x 28) = m₁.x 28 from
+      if_neg (by decide),
+    show (if (29 : Reg) = 0 then (if memeqW m₁ then 1 else 0) else m₁.x 29) = m₁.x 29 from
+      if_neg (by decide), rfl, ⟨fun h => ?_, fun h => ?_⟩⟩
+  · show (if (0 : Reg) = 0 then (if memeqW m₁ then 1 else 0) else m₁.x 0) = 1
+    rw [(memeqW_iff m₁).2 h]; rfl
+  · show (if (0 : Reg) = 0 then (if memeqW m₁ then 1 else 0) else m₁.x 0) = 0
+    rw [show memeqW m₁ = false from Bool.eq_false_iff.2 fun h' => h ((memeqW_iff m₁).1 h')]; rfl
+
+/-- The Phase 1 premise `MemEqPre` at `v24` from `s0`: the bytes it compares agree. -/
+theorem memEqPre0 (hargs : (val 24).args = #[20, 22, 23, 1])
     (hmeq : GenG1.okThen (s0.read lc 20) (fun p => GenG1.okThen (s0.read lc 22) fun q =>
       GenG1.okThen (s0.read lc 23) fun n =>
-        isTrue (memEq [p, q, n, .mem GenG13.mem7])) = true)
-    (hw : memeqW m0 = true) : MemEqOK Hm E g L lc s0 (val 24) m0 := by
-  intro _ y a0 a1 a2 p q n mm m₁ _ ha0 ha1 ha2 hp hq hn hmm _ _ _ _ hmem hx _ _ _ _ _ _
+        isTrue (memEq [p, q, n, .mem GenG13.mem7])) = true) : MemEqPre lc s0 (val 24) := by
+  intro _ a0 a1 a2 x0 x1 x2 mm ha0 ha1 ha2 hp hq hn hmm
   rw [hargs] at ha0 ha1 ha2
   simp at ha0 ha1 ha2
   subst ha0 ha1 ha2
@@ -2567,19 +2592,7 @@ theorem memEqOK0 (hargs : (val 24).args = #[20, 22, 23, 1])
   rw [hp0] at hp; cases hp
   rw [hq0] at hq; cases hq
   rw [hn0] at hn; cases hn
-  have hw1 : memeqW m₁ = true := by
-    rw [← hw]
-    unfold memeqW
-    rw [hx 0 (by decide), hx 1 (by decide), hx 2 (by decide), hmem]
-  refine ⟨_, rfl, rfl, rfl,
-    show (if (28 : Reg) = 0 then (if memeqW m₁ then 1 else 0) else m₁.x 28) = m₁.x 28 from
-      if_neg (by decide),
-    show (if (29 : Reg) = 0 then (if memeqW m₁ then 1 else 0) else m₁.x 29) = m₁.x 29 from
-      if_neg (by decide), rfl, ?_⟩
-  show ValRel E.ι (memEq [p, q, n, .mem GenG13.mem7]) (if (0 : Reg) = 0 then
-    (if memeqW m₁ then 1 else 0) else m₁.x 0)
-  rw [isTrue_spec hmeq, hw1]
-  rfl
+  exact memEqDiff_of_true (isTrue_spec hmeq)
 
 /-- **G28 on `runtime.envKeyEqual`**: from the state before `v24` with `a` at `A` in `R0` (`X0`),
 `b` at `A + 8` in `R1` (`X1`), the length 8 in `R2` (`X2`) and `heap 1` 64 bytes 7, under the
@@ -2590,7 +2603,7 @@ theorem genG28_value_witness :
     ∃ s1 E1 m1, stepLoc GenG2.env lc s0 (val 24) = .ok s1 ∧ s1.regs[0]? = some (.bool true) ∧
       E.Extends E1 ∧ G28Env lc g L ps 0 tab E1 ∧ PStar Hm L ps.toList 0 m0 m1 ∧
       LocMatch E1 s1 2 4 m1 ∧ m1.x 0 = 1 := by
-  obtain ⟨hl, hc, hav, hsl, hm2, hb, hv24, hi3, hop, hargs, hk0, hk1, hk2, hu, hmeq, hw, hrun⟩ :=
+  obtain ⟨hl, hc, hav, hsl, hm2, hb, hv24, hi3, hop, hargs, hk0, hk1, hk2, hu, hmeq, -, hrun⟩ :=
     facts
   obtain ⟨s1, hs1, hr1⟩ := GenG1.okThen_spec hrun
   have hr1' := isTrueR_spec hr1
@@ -2604,8 +2617,89 @@ theorem genG28_value_witness :
     (fun n _ _ _ _ _ _ _ _ _ hn => by
       rw [show icallLead (val 24).op = none by rw [hop]; rfl] at hn; cases hn)
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
-    (fun h => absurd h (hne _ (by decide))) (memEqOK0 hargs hmeq hw) hs1
+    (fun h => absurd h (hne _ (by decide))) (memEqOK_Hm _ _ _) (memEqPre0 hargs hmeq) hs1
   have h0 := (hm1'.regs 0 _ hr1').1 0 rfl
   exact ⟨s1, E1, m1, hs1, hr1', hx1, hE1, hp1, hm1', by simpa [ValRel] using h0⟩
+
+/-! ## `MemEqPre` on structs with pointer fields -/
+
+/-- Two 8-byte globals `x` and `y`. -/
+def gx : Ptr := ⟨.global "x", 0⟩
+def gy : Ptr := ⟨.global "y", 0⟩
+
+/-- Structs `{p *T; n int}` with `n = 5`: `p` the global `x` (its fragments), the global `y`, the
+start of `heap 0` (the concrete word of its Phase 1 address `2^40`, `Ptr.word`) and nil. -/
+def sX : Array Byte := ptrBytes gx ++ intBytes 8 5
+def sY : Array Byte := ptrBytes gy ++ intBytes 8 5
+def sH : Array Byte := intBytes 8 (2 ^ 40) ++ intBytes 8 5
+def sN : Array Byte := intBytes 8 0 ++ intBytes 8 5
+
+/-- A memory with the pointees `x`, `y`, `heap 0` (8 bytes each) and the structs at the globals
+`a` (`sX`), `b` (`sY`), `h` (`sH`) and `z` (`sN`). -/
+def memP : Mem :=
+  { blocks := #[(.global "x", { data := Array.replicate 8 (.b 1) }),
+      (.global "y", { data := Array.replicate 8 (.b 2) }),
+      (.heap 0, { data := Array.replicate 8 (.b 3) }),
+      (.global "a", { data := sX }), (.global "b", { data := sY }),
+      (.global "h", { data := sH }), (.global "z", { data := sN })],
+    nextHeap := 1 }
+
+/-- `MemEqDiff` of two 16-byte structs read whole. -/
+theorem memEqDiff_of_reads {mm : Mem} {pa pb : Ptr} {A B : Array Byte}
+    (ha : mm.read pa (16 : BitVec 64).toNat = some A)
+    (hb : mm.read pb (16 : BitVec 64).toNat = some B) (hd : ∃ j, DiffAt mm A B j) :
+    MemEqDiff mm (.ptr pa) (.ptr pb) (.int .w64 16) := by
+  intro p q w n bs cs hp hq hn hra hrb _ _ _
+  simp only [Val.asPtrWord, Option.some.injEq] at hp hq
+  subst hp hq
+  cases hn
+  rw [ha] at hra; rw [hb] at hrb
+  cases hra; cases hrb
+  exact hd
+
+/-- `memEq` of two 16-byte structs read whole, with no `poison` byte, that differ. -/
+theorem memEq_false_of_reads {mm : Mem} {pa pb : Ptr} {A B : Array Byte}
+    (ha : mm.read pa (16 : BitVec 64).toNat = some A)
+    (hb : mm.read pb (16 : BitVec 64).toNat = some B)
+    (hp : (A.any (· == .poison) || B.any (· == .poison)) = false) (hne : (A == B) = false) :
+    memEq [.ptr pa, .ptr pb, .int .w64 16, .mem mm] = .bool false := by
+  simp only [memEq, Val.asPtrWord, ha, hb, hp, hne]
+  rfl
+
+theorem readA : memP.read ⟨.global "a", 0⟩ (16 : BitVec 64).toNat = some sX := by decide +kernel
+theorem readB : memP.read ⟨.global "b", 0⟩ (16 : BitVec 64).toNat = some sY := by decide +kernel
+theorem readH : memP.read ⟨.global "h", 0⟩ (16 : BitVec 64).toNat = some sH := by decide +kernel
+theorem readZ : memP.read ⟨.global "z", 0⟩ (16 : BitVec 64).toNat = some sN := by decide +kernel
+
+theorem liveX : LiveWordAt memP sX 0 gx :=
+  ⟨Or.inl (by decide +kernel), { data := Array.replicate 8 (.b 1) }, by decide +kernel,
+    by decide +kernel⟩
+
+theorem liveY : LiveWordAt memP sY 0 gy :=
+  ⟨Or.inl (by decide +kernel), { data := Array.replicate 8 (.b 2) }, by decide +kernel,
+    by decide +kernel⟩
+
+theorem liveH : LiveWordAt memP sH 0 ⟨.heap 0, 0⟩ :=
+  ⟨Or.inr ⟨BitVec.ofNat 64 (2 ^ 40), by decide +kernel, by decide +kernel⟩,
+    { data := Array.replicate 8 (.b 3) }, by decide +kernel, by decide +kernel⟩
+
+/-- **`MemEqPre` holds of structs whose pointer fields point to different live objects**: `x`
+against `y` (fragments of two globals), `x` against `heap 0` (a fragment against the concrete
+word of a heap address) and `x` against nil. `memEq` finds each pair different, so the premise is
+exercised, not vacuous. -/
+theorem memEqDiff_ptrs :
+    memEq [.ptr ⟨.global "a", 0⟩, .ptr ⟨.global "b", 0⟩, .int .w64 16, .mem memP] = .bool false ∧
+    MemEqDiff memP (.ptr ⟨.global "a", 0⟩) (.ptr ⟨.global "b", 0⟩) (.int .w64 16) ∧
+    memEq [.ptr ⟨.global "a", 0⟩, .ptr ⟨.global "h", 0⟩, .int .w64 16, .mem memP] = .bool false ∧
+    MemEqDiff memP (.ptr ⟨.global "a", 0⟩) (.ptr ⟨.global "h", 0⟩) (.int .w64 16) ∧
+    memEq [.ptr ⟨.global "a", 0⟩, .ptr ⟨.global "z", 0⟩, .int .w64 16, .mem memP] = .bool false ∧
+    MemEqDiff memP (.ptr ⟨.global "a", 0⟩) (.ptr ⟨.global "z", 0⟩) (.int .w64 16) :=
+  ⟨memEq_false_of_reads readA readB (by decide +kernel) (by decide +kernel),
+    memEqDiff_of_reads readA readB ⟨0, Or.inr (Or.inl ⟨gx, gy, liveX, liveY, by decide⟩)⟩,
+    memEq_false_of_reads readA readH (by decide +kernel) (by decide +kernel),
+    memEqDiff_of_reads readA readH ⟨0, Or.inr (Or.inl ⟨gx, _, liveX, liveH, by decide⟩)⟩,
+    memEq_false_of_reads readA readZ (by decide +kernel) (by decide +kernel),
+    memEqDiff_of_reads readA readZ
+      ⟨0, Or.inr (Or.inr (Or.inl ⟨gx, liveX, by decide +kernel⟩))⟩⟩
 
 end GoFV.Proof.Witness.GenG28

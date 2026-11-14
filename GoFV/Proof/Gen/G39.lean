@@ -224,12 +224,13 @@ theorem g39_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link} {p
     (hcall : CallOK H E g L (liveCtx lc) s s' v m) (hcallz : CallOKZ H E g L (liveCtx lc) s s' v m)
     (hicall : ICallOK H E L ret (liveCtx lc) s s' v m)
     (hwb : WbOK H E g L (liveCtx lc) s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
-    (hmeq : MemEqOK H E g L (liveCtx lc) s v m) (hs : stepLoc env (liveCtx lc) s v = .ok s') :
+    (hmeq : MemEqOK H E g L (liveCtx lc) s v m) (hmp : MemEqPre (liveCtx lc) s v)
+    (hs : stepLoc env (liveCtx lc) s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G28Env (liveCtx lc) g L ps ret tab E' ∧ PStar H L ps.toList ret m m' ∧
       LocMatch E' s' bid (i + 1) m' ∧ G3Inv E' (liveCtx lc) (kAt (liveCtx lc) kt bid blk (i + 1)) s' ∧
       UOKL m' (uL35 (liveCtx lc) (uIn35 (liveCtx lc) bid) blk (i + 1)) :=
   g38_value (checkG39_spec hc).2 hE hbid hb hi hv hen hm hinv hu hpre hcall hcallz hicall hwb hclo
-    hgetg hmeq hs
+    hgetg hmeq hmp hs
 
 /-- **G39, nil panics.** `g38_nilPanic`'s statement on `liveCtx lc`, over `checkG39 lc`. -/
 theorem g39_nilPanic {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}

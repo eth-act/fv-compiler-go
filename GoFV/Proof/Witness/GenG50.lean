@@ -2638,7 +2638,8 @@ theorem genG50_witness :
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
     (GenG10.icallOK_ne (by rw [hop]; rfl))
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
-    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide))) hs1
+    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
+    (fun h => absurd h (hne _ (by decide))) hs1
   refine ⟨h47, s1, E1, m1, hs1, hr0, hr1, hx1, hE1, hp1, hm1', ?_, ?_⟩
   · exact (hm1'.regs 31 _ hr0).2 0 (by simp [objV?])
   · exact (hm1'.regs 32 _ hr1).2 1 (by simp [objV?])

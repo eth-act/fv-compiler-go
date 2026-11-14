@@ -140,6 +140,7 @@ import GoFV.Proof.Gen.Keep34
 import GoFV.Proof.Gen.Keep35
 import GoFV.Proof.Gen.Loc
 import GoFV.Proof.Gen.Mem
+import GoFV.Proof.Gen.MemEq28
 import GoFV.Proof.Gen.MemN
 import GoFV.Proof.Gen.Progs
 import GoFV.Proof.Gen.Progs2

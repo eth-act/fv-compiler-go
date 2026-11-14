@@ -1794,7 +1794,8 @@ theorem genG55b_witness :
     (fun h => absurd h (hne4 _ (by decide))) (fun h => absurd h (hne4 _ (by decide)))
     (GenG10.icallOK_ne (by rw [hop4]; rfl))
     (fun h => absurd h (hne4 _ (by decide))) (fun h => absurd h (hne4 _ (by decide)))
-    (fun h => absurd h (hne4 _ (by decide))) (fun h => absurd h (hne4 _ (by decide))) hs1
+    (fun h => absurd h (hne4 _ (by decide))) (fun h => absurd h (hne4 _ (by decide)))
+    (fun h => absurd h (hne4 _ (by decide))) hs1
   refine ⟨h54, by decide, s1, E1, m1, hs1, hr1, hx1, hE1, hp1, hm1', ?_⟩
   have h := (hm1'.regs 0 _ hr1).1 0 (by simp [objX?])
   rcases h with h | ⟨hnil, -⟩

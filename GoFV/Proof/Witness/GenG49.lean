@@ -1874,7 +1874,8 @@ theorem genG49_witness :
     (fun h => absurd h (hne _ (by decide)))
     (GenG10.icallOK_ne (by rw [hop]; rfl))
     (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
-    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide))) hs1
+    (fun h => absurd h (hne _ (by decide))) (fun h => absurd h (hne _ (by decide)))
+    (fun h => absurd h (hne _ (by decide))) hs1
   exact ⟨h47, s1, E1, m1, hs1, hx1, hE1, hp1, hm1'⟩
 
 end GoFV.Proof.Witness.GenG49

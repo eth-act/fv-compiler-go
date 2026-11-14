@@ -43,6 +43,7 @@ theorem vk64_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
     (hwb : WbOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m) (hclo : CloOK E s v m)
     (hgetg : GetGOK E v)
     (hmeq : MemEqOKAt osp H E g (Link.byId sym text az ez ps.toList) lc s v m)
+    (hmp : MemEqPre lc s v)
     (hcallk : osp = true → CallOKStk H E g (Link.byId sym text az ez ps.toList) lc s s' v m)
     (harg : ArgOK E lc s v m) (hfr : FReloadPre lc s v)
     (hq : QLoadPre lc s v)
@@ -61,7 +62,7 @@ theorem vk64_step {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {sym : Nat �
   cases hVK with
   | g63 hVK63 =>
     exact vk63_step hE F hhome hcf hv hVK63 hvs hloop hatom hj hj' hreads hm hinv hL hmem hpre hro
-      h48 hsp hcall hcallz hicall hwb hclo hgetg hmeq hcallk harg hfr hs
+      h48 hsp hcall hcallz hicall hwb hclo hgetg hmeq hmp hcallk harg hfr hs
   | qload htemp hop hsz2 hro' hma hacc =>
     have hnp : v.op ≠ .Phi := by rw [hop]; nofun
     obtain ⟨r, hvh, -, -⟩ := qresObj_spec hro'
@@ -156,7 +157,8 @@ theorem g64L_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     (hcallz : CallOKZAt osp H E g L lc s s' v m)
     (hicall : ICallOKAt osp H E L ret lc s s' v m)
     (hwb : WbOKAt osp H E g L lc s v m) (hclo : CloOK E s v m) (hgetg : GetGOK E v)
-    (hmeq : MemEqOKAt osp H E g L lc s v m) (hcallk : osp = true → CallOKStk H E g L lc s s' v m)
+    (hmeq : MemEqOKAt osp H E g L lc s v m) (hmp : MemEqPre lc s v)
+    (hcallk : osp = true → CallOKStk H E g L lc s s' v m)
     (harg : ArgOK E lc s v m) (hfr : FReloadPre lc s v) (hq : QLoadPre lc s v)
     (hs : stepLoc env lc s v = .ok s') :
     ∃ E' m', E.Extends E' ∧ G49Env lc g L ps ret tab E' ∧ PStar H L ps.toList ret m m' ∧
@@ -209,8 +211,8 @@ theorem g64L_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
   rw [kAt_succ hi hv]
   exact vk64_step hE0 F hhome hcf hv hVK hvs hloop hatom hj hj' hreads hm hinv hu
     (fun x hop hx => movdOK35_spec hmovd hbid hb hi hv hop hx)
-    hpre hro h48 (fun ho => ⟨hsp ho, hosp ho⟩) hcall hcallz hicall hwb hclo hgetg hmeq hcallk harg
-    hfr hq hs
+    hpre hro h48 (fun ho => ⟨hsp ho, hosp ho⟩) hcall hcallz hicall hwb hclo hgetg hmeq hmp hcallk
+    harg hfr hq hs
 
 /-- `InitMem` under G64's check: `g63L_initMem`'s statement over `checkG64L`. -/
 theorem g64L_initMem {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
@@ -432,6 +434,7 @@ theorem g64_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
     (hicall : ICallOKAt osp H E L ret (liveCtx lc) s s' v m)
     (hwb : WbOKAt osp H E g L (liveCtx lc) s v m) (hclo : CloOK E s v m)
     (hgetg : GetGOK E v) (hmeq : MemEqOKAt osp H E g L (liveCtx lc) s v m)
+    (hmp : MemEqPre (liveCtx lc) s v)
     (hcallk : osp = true → CallOKStk H E g L (liveCtx lc) s s' v m)
     (harg : ArgOK E (liveCtx lc) s v m) (hfr : FReloadPre (liveCtx lc) s v)
     (hq : QLoadPre (liveCtx lc) s v)
@@ -442,7 +445,7 @@ theorem g64_value {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
       (osp = true → SPInv E' s') ∧
       UOKL m' (uL35 (liveCtx lc) (uIn35 (liveCtx lc) bid) blk (i + 1)) :=
   g64L_value (checkG64_spec hc).2 hE hl hbid hb hi hv hen hm hinv hsp hosp hn48 hu hpre hro hcall
-    hcallz hicall hwb hclo hgetg hmeq hcallk harg hfr hq hs
+    hcallz hicall hwb hclo hgetg hmeq hmp hcallk harg hfr hq hs
 
 /-- **G64, `InitMem`.** `g63_initMem`'s statement over `checkG64`. -/
 theorem g64_initMem {env : Env} {H : Hooks} {lc : LocCtx} {g : G2In} {L : Link}
