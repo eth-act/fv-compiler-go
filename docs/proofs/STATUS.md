@@ -72,7 +72,9 @@ turned into the same stores at the destination (`:1871`, `:1887`, `:1908`, `:192
 shape, `size0Vars`) and the `EqPtr`/`NeqPtr`/float variants of `Not (Eq …)`/`Not (Neq …)`
 (`:397`/`:398`) (#69, P1OptRules397), and the write-back of what a `Load` of the same memory read
 at the same pointer, at a narrow integer or `bool` shape (`:919`), dropped in the forwarding layer
-(`RewriteCheck.writeBackOK`, `LoadFwd.writeBack_bytes`) (#69, Phase1Tail12).
+(`RewriteCheck.writeBackOK`, `LoadFwd.writeBack_bytes`) (#69, Phase1Tail12; full-v11 on 0a04f238:
+Phase 1 94,316 → 94,343, through `trim` 88,458 → 88,479, 0 lost; quick-v10 end to end 7,440 →
+7,440, 0 lost).
 
 **False under the semantics, with the reason** (31, each marked `-- FALSE r_… #N` in its proof
 module; "Findings" in `rules.md`):
