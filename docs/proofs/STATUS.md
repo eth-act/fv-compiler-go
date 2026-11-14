@@ -158,8 +158,8 @@ main 51ef75c1 (6 min):
 unchanged (0 lost), `trim` +228, 0 lost, exactly the functions whose `r.nhs` is non-empty (among
 them `ssagen.Compile`, #723's one `trim` loss); end to end 79,910. Fully verified with a non-empty
 `nhs` (`NilHoistOK` assumed): full-v11 228, of them 132 end to end; quick-v10 3 / 1. Quick-v10 on
-57da3b9a: fully verified 8,129 → 8,132, end to end 7,440 → 7,441 (`verified_mach` 7,224 → 7,225,
-`_S` 216 → 216, 0 lost).
+bda59446 (the driver is unchanged through ac07a871): fully verified 8,129 → 8,132, end to end
+7,440 → 7,441 (`verified_mach` 7,224 → 7,225, `_S` 216 → 216, 0 lost).
 
 **Partially vacuous: the `Mul64uover` overflow flag (#69).** Go's ssagen types
 `math.MulUintptr`'s `Mul64uover` `(uint, uint)` (`ssagen/intrinsics.go`), while its `Select1` is
