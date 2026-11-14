@@ -1952,10 +1952,11 @@ def writeBackOK (tabs : Tables) (f : Func) (u : Value) : Bool :=
 
 /-- The memory root `u` of `f` becomes `w` in `g`, a `Copy` of its memory (`memReach` from `u`'s
 memory argument), as its write changes no byte (`generic.rules:1005`, `:943`, `:948`, `:954`,
-`:961`, `:2158`, `:1352`, `:1357`, `:1362`): a `Store` of zero bytes (of a zero-sized type), a
-`Store` of a `zeroConst` into zero bytes (`zeroChain` through at most eight `Copy`s and
-`Store`s), a `Zero` of a `Zero` of the same size at an equal pointer (`samePtrB`, reached through
-copies of `f`), or a `Zero` of zero bytes (`zeroChain`); or as it writes back the bytes a `Load`
+`:961`, `:2158`, `:2159`, `:1352`, `:1357`, `:1362`): a `Store` of zero bytes (of a zero-sized
+type), a `Store` of a `zeroConst` into zero bytes (`zeroChain` through at most eight `Copy`s,
+`Store`s and non-poisoning `VarDef`s), a `Zero` of a `Zero` of the same size at an equal pointer
+(`samePtrB`, reached through copies of `f`), or a `Zero` of zero bytes (`zeroChain`; `:2159`'s
+`Zero` over `VarDef (Zero …)`); or as it writes back the bytes a `Load`
 read there, or `poison` (`writeBackOK`, `:919`). -/
 def dropOK (tabs : Tables) (f g : Func) (u w : Value) : Bool :=
   w.op == .Copy && w.args.size == 1 &&
