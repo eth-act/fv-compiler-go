@@ -78,6 +78,9 @@ theorem r_generic_1005_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r
 /-- `generic.rules:2158`: `(Zero {t} [s] dst1 zero:(Zero {t} [s] dst2 _)) && isSamePtr(dst1, dst2) => zero` -/
 theorem r_generic_2158_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2158 := rfl
 
+/-- `generic.rules:2159`: `(Zero {t} [s] dst1 vardef:(VarDef (Zero {t} [s] dst2 _))) && isSamePtr(dst1, dst2) => vardef` (a `Zero` of zero bytes, `RewriteCheck.zeroChain` through a `VarDef` of a variable that is not a `PAUTO`, `Sem.varDefMem`) -/
+theorem r_generic_2159_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_2159 := rfl
+
 /-- `generic.rules:1352`: `(Zero (SelectN [0] call:(StaticLECall ___)) mem:(SelectN [1] call)) && isMalloc(call.Aux) => mem` (issue #69: a `Zero` of zero bytes, `RewriteCheck.zeroChain` from a
 fresh zeroed allocation, `RewriteCheck.freshCall`, under `Sem.Env.AllocZero`) -/
 theorem r_generic_1352_sound : EffectRule.LoadFwd GoFV.Rules.Generated.Generic.r_generic_1352 := rfl

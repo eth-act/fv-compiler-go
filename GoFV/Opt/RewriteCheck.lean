@@ -1838,7 +1838,9 @@ def fwdRoOK (tabs : Tables) (ro : List (String × Sem.Alloc)) (f : Func) : Bool 
   ns.isEmpty || (WBCheck.memTyOK tabs f && ns.all (newSymOK tabs ro f))
 
 /-- Memory `m` of `f` holds zero bytes at the `n` bytes at pointer `p` where they can be read:
-through at most `d` `Copy`s and `Store`s at pointers disjoint from them (`disjointB`), a
+through at most `d` `Copy`s, `Store`s at pointers disjoint from them (`disjointB`) and `VarDef`s
+of a variable that is not a `PAUTO` (`Tables.varDefPoisons`: the identity on memory, so
+`generic.rules:2159`'s `Zero` over `VarDef (Zero …)` drops), a
 `Zero [k] q _` with `p` at offset `o` of `q` (`ptrBase`, `baseSameB`) and `o + n ≤ k`, or the
 memory `SelectN [1] c` of a call `c` that returns a fresh zeroed block (`freshCall`) with `p`
 in its first result `SelectN [0] c` (`ptrBase`, of pointer shape). -/
@@ -1860,7 +1862,9 @@ def zeroChain (tabs : Tables) (f : Func) (p : ID) (n : Nat) : Nat → ID → Boo
         match f.value? (ptrBase tabs f 8 p).1 with
         | some q => q.op == .SelectN && q.auxInt == 0 && q.args.size == 1 &&
             q.args[0]! == s.args[0]!
-        | none => false)
+        | none => false) ||
+      (s.op == .VarDef && s.args.size == 1 && s.aux.any (fun x => !tabs.varDefPoisons x) &&
+        zeroChain tabs f p n d s.args[0]!)
     | none => false
 
 /-- The zero constant a `Load` of shape `t` reading zero bytes becomes (`generic.rules:882`–`:902`):
@@ -1948,10 +1952,11 @@ def writeBackOK (tabs : Tables) (f : Func) (u : Value) : Bool :=
 
 /-- The memory root `u` of `f` becomes `w` in `g`, a `Copy` of its memory (`memReach` from `u`'s
 memory argument), as its write changes no byte (`generic.rules:1005`, `:943`, `:948`, `:954`,
-`:961`, `:2158`, `:1352`, `:1357`, `:1362`): a `Store` of zero bytes (of a zero-sized type), a
-`Store` of a `zeroConst` into zero bytes (`zeroChain` through at most eight `Copy`s and
-`Store`s), a `Zero` of a `Zero` of the same size at an equal pointer (`samePtrB`, reached through
-copies of `f`), or a `Zero` of zero bytes (`zeroChain`); or as it writes back the bytes a `Load`
+`:961`, `:2158`, `:2159`, `:1352`, `:1357`, `:1362`): a `Store` of zero bytes (of a zero-sized
+type), a `Store` of a `zeroConst` into zero bytes (`zeroChain` through at most eight `Copy`s,
+`Store`s and non-poisoning `VarDef`s), a `Zero` of a `Zero` of the same size at an equal pointer
+(`samePtrB`, reached through copies of `f`), or a `Zero` of zero bytes (`zeroChain`; `:2159`'s
+`Zero` over `VarDef (Zero …)`); or as it writes back the bytes a `Load`
 read there, or `poison` (`writeBackOK`, `:919`). -/
 def dropOK (tabs : Tables) (f g : Func) (u w : Value) : Bool :=
   w.op == .Copy && w.args.size == 1 &&

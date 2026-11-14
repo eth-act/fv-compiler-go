@@ -62,17 +62,6 @@ theorem moveSrc_mem {M M2 M1 M0 Mt M' : Mem} {T S Dp : Ptr} {n : Nat} {bs bs0 : 
   obtain ⟨Mt', hw', hMM⟩ := (hM.trans ht).write (BytesRefine.trans hbb1 hbb') hwD
   exact ⟨b', Mt', hb', hw', hMM⟩
 
-/-- A `VarDef`'s value: its memory with its frame variable (activation 0) poisoned if it is a
-`PAUTO` (`varDefMem`). -/
-theorem memDef_varDef {tabs : Tables} {s : Value} (hs : s.op = .VarDef) {a y : Val}
-    (h : memDef tabs s [a] = some y) :
-    ∃ m n, a = .mem m ∧ s.aux = some n ∧ y = .mem (varDefMem tabs 0 n m) := by
-  cases a <;> try (simp [memDef, hs] at h; done)
-  rename_i m
-  simp only [memDef, hs, Option.map_eq_some_iff] at h
-  obtain ⟨n, hn, rfl⟩ := h
-  exact ⟨m, n, rfl, hn, rfl⟩
-
 theorem moveInnerOK_spec {tabs : Tables} {f : Func} {u w im : Value} {B : Option Blk}
     (h : moveInnerOK tabs f u w im B = true) :
     im.op = .Move ∧ im.args.size = 3 ∧ im.auxInt = u.auxInt ∧

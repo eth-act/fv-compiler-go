@@ -328,10 +328,11 @@ dst src mem` that is the Load's memory, the `OffPtr` of pointer shape, `0 ≤ o`
 of positive size with `o + size ≤ n`, and the Load's pointer `dst + o` (`ptrBase` offsets,
 `baseSameB` bases).
 
-**Dropped identity writes** (`:1005`, `:943`, `:948`, `:954`, `:961`, `:2158`): `(Store _ (Empty)
+**Dropped identity writes** (`:1005`, `:943`, `:948`, `:954`, `:961`, `:2158`, `:2159`): `(Store _ (Empty)
 mem) => mem`, `(Store {t} (OffPtr [o] p1) x mem:(Zero [n] p2 _)) && isConstZero(x) && … => mem`
-(also through one to three `Store`s at pointers `disjoint` from the write) and `(Zero {t} [s] dst1
-zero:(Zero {t} [s] dst2 _)) && isSamePtr(dst1, dst2) => zero` turn a memory root into a `Copy` of
+(also through one to three `Store`s at pointers `disjoint` from the write), `(Zero {t} [s] dst1
+zero:(Zero {t} [s] dst2 _)) && isSamePtr(dst1, dst2) => zero` and `(Zero {t} [s] dst1
+vardef:(VarDef (Zero {t} [s] dst2 _))) && isSamePtr(dst1, dst2) => vardef` turn a memory root into a `Copy` of
 its memory (`fwdShapeOK`'s `Store`/`Zero` cases: the result is the pattern's memory argument,
 `patBinds`). `Interp.rewriteValue` tries `loads` on a `Store` after its `structStores` (index
 row + `structStores` + i) and on a `Zero` after its row; `fwdEvent?` takes the offset per op and
@@ -347,9 +348,12 @@ composite of such, e.g. `Const64 [0]`, `ConstNil` (the word `0`, #290), `ConstSt
 component is zero, e.g. `SliceLen (SliceMake p (Const64 [0]) c)`, `ITab (StructSelect [0]
 (StructMake (ConstInterface) x))`, through make ops `ECCheck.isMake`; witness
 `zs_checkedRewrite`, `Witness/FwdZeroStr.lean`) at a pointer `p` whose bytes a `Zero [k] q _` cleared (`zeroChain`: through at
-most eight `Copy`s and `Store`s `disjointB` from the write, then `p = q + o` by `ptrBase`/`baseSameB`
-with `o + size ≤ k`); or a `Zero` of a `Zero` of the same auxint at a `samePtrB` pointer (reached
-through copies of `f`); or a write-back (`:919`, `(Store {t1} p1 (Load <t2> p2 mem) mem) &&
+most eight `Copy`s, `Store`s `disjointB` from the write and `VarDef`s of a variable that is not a
+`PAUTO` (`Tables.varDefPoisons`; S3, such a `VarDef` is the identity on memory), then `p = q + o`
+by `ptrBase`/`baseSameB` with `o + size ≤ k`); or a `Zero` of a `Zero` of the same auxint at a
+`samePtrB` pointer (reached through copies of `f`); or a `Zero` whose bytes are already zero
+(`zeroChain`; `:2159`, through a `VarDef` of a non-`PAUTO`: Go's `zeroResults` `VarDef r; Zero r`
+on a result, then a clearing assignment); or a write-back (`:919`, `(Store {t1} p1 (Load <t2> p2 mem) mem) &&
 isSamePtr(p1, p2) && t2.Size() == t1.Size() => mem`; `fwdShapeOK`'s own case, as the memory is
 bound inside the `Load`): `writeBackOK`, the stored value a `Load` of the root's memory argument (the
 same ID) at a `samePtrB` pointer and at the root's shape, a `wbTy` one (`int8`/`16`/`32`, `bool`).
@@ -582,10 +586,6 @@ data word is nil, which no contract here states), the other 5 are forwarding dis
 segment and atom failures. The verified pipeline (`gofv-ssa-opt --check --verified`) skips no run
 of them for "descriptor symbols changed" or "read-only symbols changed".
 
-Not done: `:2159` (`Zero` over `VarDef (Zero …)` → the `VarDef`): `Sem` poisons the variable's
-block at a `VarDef`, so when the zeroed bytes are that variable's (Go's use), dropping the second
-`Zero` leaves `poison` where the source has zeros.
-
 **Changed `Move` sources** (`:2146`, `:2155`): `(Move {t1} [s] dst tmp1 midmem:(Move {t2} [s] tmp2
 src _)) && isSamePtr(tmp1, tmp2) && isStackPtr(src) && disjoint(src, s, tmp2, s) && … => (Move
 {t1} [s] dst src midmem)` and its form with `midmem:(VarDef (Move …))` keep the root but change
@@ -640,7 +640,8 @@ or by the memory argument's term in `g` (`fwd_den`'s induction: it ranks below t
 of a `ZeroV` value at any shape are `0` or `poison`; `zeroAt_den`: the component `valPath ps` of
 a `zeroAt` term's value is `ZeroV` at every fuel, through `termConst_den`, `zeroV_path_of_refines`,
 `valPath_select` and `zeroV_path_retype`)
-against the zeros `zeroChain_read` reads through the disjoint writes from the `Zero`
+against the zeros `zeroChain_read` reads through the disjoint writes and non-poisoning `VarDef`s
+(`memDef_varDef`: the memory unchanged unless the variable is a `PAUTO`) from the `Zero`
 (`read_write_sep`, `read_write_self`, `read_sub`); a write-back writes the bytes the `Load` read
 where they are concrete and `poison` otherwise (`writeBack_bytes`: `encode_decodeLoad_wb`, concrete
 bytes encode back to themselves through `decodeInt_concrete`/`encode_int_bytes`, other bytes decode
@@ -649,7 +650,9 @@ root's, `den_fuel_mono`); a zero-sized write is the identity
 (`Mem.write`'s empty case). `checkedRewrite_refines` composes the
 layers (`chain_refines`) and the atom simulation (statement unchanged). Proven:
 `generic.rules:800`, `:806`, `:813`, `:821`, `:827`, `:830`, `:832`, `:919`, `:943`, `:948`, `:954`,
-`:961`, `:1005`, `:1352`, `:1357`, `:1362`, `:2146`, `:2155`, `:2158`; witnesses
+`:961`, `:1005`, `:1352`, `:1357`, `:1362`, `:2146`, `:2155`, `:2158`, `:2159`; witnesses
+`z2_checkedRewrite` (a result cleared twice over its `VarDef`, `:2159`: the second `Zero` dropped,
+the result returns the `VarDef`; `z2_rwPre`; `GoFV/Proof/Witness/Zero2159.lean`),
 `wb_checkedRewrite` (`*p = *p` at `int32` with `:919`: the `Store` dropped, the result returns the
 initial memory; `GoFV/Proof/Witness/FwdWriteBack.lean`),
 `GoFV.Proof.Witness.sl_checkedRewrite` (`*p = x; return *p`), `sl2_checkedRewrite`
@@ -2657,11 +2660,14 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   discussion), which the semantics does not have.
 
 - **`generic.rules:2159`** (`(Zero {t} [s] dst1 vardef:(VarDef (Zero {t} [s] dst2 _))) &&
-  isSamePtr(dst1, dst2) => vardef`; Phase1Tail, #69): false under the semantics, not a Go bug.
-  `VarDef` starts the variable's lifetime with `poison` bytes, so the outer `Zero` is not an
-  identity write: at `dst1 = dst2 = LocalAddr {x}` of an 8-byte `x`, a later `Load` of `x` reads
-  `0` in the source and `poison` in the target. Go relies on the `VarDef` not clobbering the
-  zeroed bytes. 48 functions on full-v6 as a sole obstacle.
+  isSamePtr(dst1, dst2) => vardef`; Phase1Tail, #69): false under the semantics before S3, not a
+  Go bug. `VarDef` started the variable's lifetime with `poison` bytes, so the outer `Zero` was
+  not an identity write: at `dst1 = dst2 = LocalAddr {x}` of an 8-byte `x`, a later `Load` of `x`
+  reads `0` in the source and `poison` in the target. Go relies on the `VarDef` not clobbering
+  the zeroed bytes. 48 functions on full-v6 as a sole obstacle. Since S3
+  (`docs/plans/false-classes.md` §5) `VarDef` poisons only a `PAUTO`, so the rule is proven for
+  every other variable (all of Go's `zeroResults` instances, on a `PPARAMOUT`) and stays false
+  on a `PAUTO`.
 
 - **Go bugs found by `lake exe arm-sat`** (`GoFVTest/Proof/ArmSat.lean`, "Non-vacuity"; each
   confirmed by a program under `qemu-aarch64-static`, `upstream-candidate`):
