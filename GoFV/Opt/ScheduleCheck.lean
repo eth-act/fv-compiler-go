@@ -306,14 +306,30 @@ def hoistOp (op : Op) : Bool :=
   op == .ARM64MOVDload || op == .ARM64MOVDloadidx || op == .ARM64MOVDloadidx8 || op == .Select0 ||
     op == .SelectN
 
+/-- An argument `a` of a value `schedule` hoists above `x` (`hoistSwap`), at depth `k`: its bypass
+(`rep`) runs in the source before `x` or is outside the block (`pS`), or, for `k > 0`, it is a
+`hoistOp` whose arguments are such arguments at depth `k - 1` (a chain `*(*q).f` hoisted as a
+whole). -/
+def hoistArg (f : Func) (pS : Array Nat) (x : ID) : Nat → ID → Bool
+  | 0, a => pS[rep f a]! < pS[x]!
+  | k + 1, a =>
+    pS[rep f a]! < pS[x]! ||
+      (f.value? (rep f a)).any fun va => hoistOp va.op && va.args.all fun b => hoistArg f pS x k b
+
+/-- The depth of the chains `hoistSwap` hoists (`hoistArg`): on full-v11's 249 functions that only
+the nil check of another pointer value blocked at `schedule`, depth 1 (`*(*(*q).f).g`) accepts 92
+more, depth 2 one more, deeper none. -/
+def hoistDepth : Nat := 2
+
 /-- `swapOK`'s `NilHoistOK` case: `x` is a `faultOp` or a nil check and `y` a nil check on the
 same memory (`sameMem`) of a value whose bypass `q` (`rep`) is pointer-shaped (`tys`), no nil
 check or `SPanchored`, a `hoistOp` whose arguments' bypasses the source runs before `x` or are
-outside the block (`pS`): the source may never evaluate `q` (it stops at `x`), but `q`'s op on
-the registers its arguments' bypasses hold before `x` gives `q`'s value. On the inputs where that
-value is nil or a pointer that is not wild (`GoFV.Proof.NilHoistOK`, a Go-level assumption: Go's
-heap holds nil or valid pointers at pointer-typed words, and `schedule.go` evaluates `q` there),
-`y` panics with `nilDeref` of that memory, as `x` would, or passes. -/
+outside the block, or are themselves such hoisted values (`hoistArg`, up to `hoistDepth`): the
+source may never evaluate `q` (it stops at `x`), but `q`'s op on the registers its arguments'
+bypasses hold before `x` (or as hoisted) gives `q`'s value. On the inputs where that value is
+nil or a pointer that is not wild (`GoFV.Proof.NilHoistOK`, a Go-level assumption: Go's heap
+holds nil or valid pointers at pointer-typed words, and `schedule.go` evaluates `q` there), `y`
+panics with `nilDeref` of that memory, as `x` would, or passes. -/
 def hoistSwap (tabs : Tables) (tys : Array Ty) (f : Func) (pS : Array Nat) (x y : ID) : Bool :=
   match f.value? x, f.value? y with
   | some vx, some vy =>
@@ -321,7 +337,7 @@ def hoistSwap (tabs : Tables) (tys : Array Ty) (f : Func) (pS : Array Nat) (x y 
       (vy.args[0]?.any fun q0 =>
         ptrShape (tys[rep f q0]?.getD .other) && !isNC f (rep f q0) && !isSPA f (rep f q0) &&
           (f.value? (rep f q0)).any fun vq =>
-            hoistOp vq.op && vq.args.all fun a => pS[rep f a]! < pS[x]!)
+            hoistOp vq.op && vq.args.all fun a => hoistArg f pS x hoistDepth a)
   | _, _ => false
 
 /-- The source runs `x` before `y`, the target `y` before `x` (both may fail): allowed by
