@@ -3,6 +3,7 @@ import GoFV.Proof.Pass.DSEMem
 import GoFV.Proof.NilPre
 import GoFV.Proof.Pass.ECChain
 import GoFV.Proof.Pass.ECTree
+import GoFV.Proof.Pass.MemCombineBytes
 
 variable [GoFV.SSA.Sem.Addrs]
 
@@ -16,13 +17,15 @@ term of a zero value (`ZeroV`: `0`, `false`, `poison`, the empty value or a comp
 of a zero component such as `SliceLen (SliceMake p (Const64 [0]) c)`; `zeroAt_den`) into zero
 bytes (`:943`, `:948`, `:954`, `:961`, `:1357`, `:1362`), a
 `Zero` of a `Zero` of the same size at an equal pointer (`:2158`), a `Zero` of zero bytes
-(`:1352`). `drop_mem`: the dropped root's memory is refined by its memory argument's, as every
-byte written refines the byte already there (`write_refines_self`): the encoding of a zero
-value has `0` or `poison` bytes (`encode_zero`), and the bytes a successful write
-overwrites read back as zeros through the disjoint writes of the chain (`zeroChain_read`) from a
-`Zero` that cleared them or from the memory of a malloc call that returned a fresh zeroed block
-(`fresh_blockZero`, under the frame invariant `FreshQ` the forwarding layer's source invariant
-keeps with `Env.AllocZero`); a zero-sized write is the identity.
+(`:1352`), a `Store` of what a `Load` of its memory read at its pointer, at a narrow integer or
+`bool` shape (`:919`, `writeBackOK`). `drop_mem`: the dropped root's memory is refined by its
+memory argument's, as every byte written refines the byte already there (`write_refines_self`):
+the encoding of a zero value has `0` or `poison` bytes (`encode_zero`), and the bytes a successful
+write overwrites read back as zeros through the disjoint writes of the chain (`zeroChain_read`)
+from a `Zero` that cleared them or from the memory of a malloc call that returned a fresh zeroed
+block (`fresh_blockZero`, under the frame invariant `FreshQ` the forwarding layer's source
+invariant keeps with `Env.AllocZero`); a write-back writes the bytes the `Load` read where they
+are concrete, else `poison` (`writeBack_bytes`); a zero-sized write is the identity.
 -/
 
 namespace GoFV.Proof.Pass.LoadFwd
@@ -635,15 +638,141 @@ theorem zeroChain_read (hT : Term.Typed f.value? tabs ρ) (hM : MemAtoms f.value
       rw [e1] at hbs
       exact blockZero_read (by simpa [Ptr.add] using hz) hn hbs
 
+/-! ## Write-backs (`generic.rules:919`) -/
+
+theorem wbTy_size {t : Ty} (h : wbTy t = true) : t.size ≠ 0 := by
+  cases t with
+  | int w => cases w <;> simp [wbTy, Ty.size, Width.bytes, Width.bits] at h ⊢
+  | bool => simp [Ty.size]
+  | _ => simp [wbTy] at h
+
+/-- A `Load` at a `wbTy` shape decodes the bytes its read gives, or is `poison`. -/
+theorem load_wb {t : Ty} (h : wbTy t = true) (M : Mem) (p : Ptr) :
+    M.load t p = match M.read p t.size with
+      | some bs => decodeLoad bs 0 t
+      | none => .poison := by
+  cases t with
+  | int w => rfl
+  | bool => rfl
+  | _ => simp [wbTy] at h
+
+/-- **Encoding what a `Load` read** at a `wbTy` shape `t` from its `t.size` bytes `bs` gives `bs`
+back (concrete bytes encode back to themselves) or `poison` bytes (other bytes decode to
+`poison`). -/
+theorem encode_decodeLoad_wb {t : Ty} (ht : wbTy t = true) {bs : Array Byte}
+    (hs : bs.size = t.size) :
+    encode t ((decodeLoad bs 0 t).retype t) = bs ∨
+      encode t ((decodeLoad bs 0 t).retype t) = Array.replicate t.size .poison := by
+  cases t with
+  | int w =>
+    have hw : w ≠ .w64 := by rintro rfl; simp [wbTy] at ht
+    simp only [Ty.size] at hs
+    have hx : bs.extract 0 (0 + w.bytes) = bs := by
+      rw [Nat.zero_add, ← hs, Array.extract_size]
+    simp only [decodeLoad, decode, hx]
+    cases hn : bytesNat? bs with
+    | none =>
+      right
+      have hp : decodeInt w bs = .poison := by
+        unfold decodeInt; rw [hn]; cases w <;> simp_all
+      rw [hp, AtomSim.retype_poison, encode_poison]
+    | some n =>
+      left
+      obtain ⟨xs, hxs⟩ := GoFV.Proof.MemCombine.bytesNat?_concrete hn
+      have hl : xs.length = w.bytes := by
+        have := congrArg List.length hxs
+        simp only [Array.length_toList, List.length_map] at this
+        omega
+      obtain ⟨X, hX, hb⟩ := GoFV.Proof.MemCombine.decodeInt_concrete hxs hl
+      rw [hX, Val.retype_of_hasTy (by simp [Val.hasTy]), GoFV.Proof.MemCombine.encode_int_bytes]
+      apply Array.ext
+      · simp [hs]
+      · intro i h1 h2
+        have hi : i < w.bytes := by simpa using h1
+        simp only [Array.getElem_map, List.getElem_toArray, List.getElem_range, hb i hi]
+        rw [← Array.getElem_toList]
+        simp only [hxs, List.getElem_map]
+  | bool =>
+    simp only [Ty.size] at hs
+    rcases bs with ⟨_ | ⟨c, _ | ⟨c', l⟩⟩⟩ <;> simp at hs
+    simp only [decodeLoad, decode, List.getElem?_toArray, List.getElem?_cons_zero]
+    cases c with
+    | b x =>
+      by_cases hx : x.toNat ≤ 1
+      · left
+        simp only [hx, ite_true]
+        have hx' : x = 0 ∨ x = 1 := by bv_omega
+        rcases hx' with rfl | rfl <;> rfl
+      · right
+        simp only [hx, ite_false, AtomSim.retype_poison, encode_poison, Ty.size]
+    | _ => right; simp only [AtomSim.retype_poison, encode_poison, Ty.size]
+  | _ => simp [wbTy] at ht
+
+/-- **A write-back changes no byte but to `poison`** (`writeBackOK`): the bytes the `Store` `u`
+writes, the encoding of what a `Load` of its memory read at its pointer, are refined by the bytes
+`bs0` there. -/
+theorem writeBack_bytes (hM : MemAtoms f.value? tabs ρ) {u : Value}
+    (h : writeBackOK tabs f u = true) {k : Nat} {m0 : Mem} {q : Ptr} {bs0 : Array Byte}
+    (hm0 : den f.value? tabs ρ k u.args[2]! = .mem m0)
+    (hq : (den f.value? tabs ρ k u.args[0]!).asPtrWord = some q)
+    (hrd : m0.read q (auxTy tabs u.aux).size = some bs0) :
+    BytesRefineA (encode (auxTy tabs u.aux) (den f.value? tabs ρ k u.args[1]!)) bs0 := by
+  unfold writeBackOK at h
+  rw [Bool.and_eq_true] at h
+  obtain ⟨hwb, hld⟩ := h
+  cases hl : f.value? u.args[1]! with
+  | none => rw [hl] at hld; cases hld
+  | some ld =>
+  rw [hl] at hld
+  simp only [Bool.and_eq_true, beq_iff_eq] at hld
+  obtain ⟨⟨⟨⟨hop, hsz2⟩, hmem⟩, hty⟩, hsame⟩ := hld
+  generalize hS : auxTy tabs u.aux = S at hwb hrd hty ⊢
+  have hty' := Ty.eq_of_beq hty
+  have h0 := wbTy_size hwb
+  have hpz : BytesRefineA (Array.replicate S.size .poison) bs0 :=
+    BytesRefineA.replicate_poison _ (read_size h0 hrd)
+  cases k with
+  | zero =>
+    show BytesRefineA (encode S .poison) bs0
+    rw [encode_poison]; exact hpz
+  | succ n =>
+  rw [den_succ_term hl (by rw [hop]; decide), toList_two hsz2, List.map_cons, List.map_cons,
+    List.map_nil, hop, GoFV.Proof.Rules.opVal_pure (op := Op.Load) rfl, evalPure_load, hmem, hty']
+  have hmono := den_fuel_mono f.value? tabs ρ n (n + 1) u.args[2]! (by omega)
+  rw [hm0] at hmono
+  generalize den f.value? tabs ρ n u.args[2]! = dv at hmono ⊢
+  cases hmono with
+  | poison =>
+    simp only [loadOp, AtomSim.retype_poison, encode_poison]; exact hpz
+  | mem hR =>
+  rename_i M
+  cases hp : (den f.value? tabs ρ n ld.args[0]!).asPtrWord with
+  | none => simp only [loadOp, hp, AtomSim.retype_poison, encode_poison]; exact hpz
+  | some p =>
+  have hpq := samePtr_den hM hsame hq hp
+  subst hpq
+  simp only [loadOp, hp, load_wb hwb]
+  cases hr : M.read q S.size with
+  | none => simp only [AtomSim.retype_poison, encode_poison]; exact hpz
+  | some bs =>
+  obtain ⟨bs0', hrd', hbs⟩ := hR.read hr
+  rw [hrd] at hrd'
+  cases hrd'
+  rcases encode_decodeLoad_wb hwb (read_size h0 hr) with he | he <;> rw [he]
+  · exact hbs
+  · exact hpz
+
 theorem dropOK_spec {g : Func} {u w : Value} (h : dropOK tabs f g u w = true) :
     w.op = .Copy ∧ w.args.size = 1 ∧ (u.op = .Store ∨ u.op = .Zero) ∧ ∃ i < u.args.size,
       memReach tabs f g u.args[i]! w.args[0]! = true := by
   unfold dropOK at h
   simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
-  obtain ⟨⟨hc, hs⟩, (⟨⟨⟨hop, hsz⟩, hcr⟩, -⟩ | ⟨⟨hop, hsz⟩, (⟨hcr, -⟩ | ⟨hcr, -⟩)⟩)⟩ := h
+  obtain ⟨⟨hc, hs⟩, ((⟨⟨⟨hop, hsz⟩, hcr⟩, -⟩ | ⟨⟨hop, hsz⟩, (⟨hcr, -⟩ | ⟨hcr, -⟩)⟩) |
+    ⟨⟨⟨hop, hsz⟩, hcr⟩, -⟩)⟩ := h
   · exact ⟨hc, hs, .inl hop, 2, by omega, hcr⟩
   · exact ⟨hc, hs, .inr hop, 1, by omega, by simp [memReach, hcr]⟩
   · exact ⟨hc, hs, .inr hop, 1, by omega, hcr⟩
+  · exact ⟨hc, hs, .inl hop, 2, by omega, hcr⟩
 
 /-- A memory refined by a value is a memory. -/
 theorem refines_mem' {M : Mem} {v : Val} (h : Sem.Refines (.mem M) v) :
@@ -681,7 +810,8 @@ theorem drop_mem (hT : Term.Typed f.value? tabs ρ) (hM : MemAtoms f.value? tabs
     · exact .inr ⟨i, hi, hcr, m0, hm0, hW⟩
   unfold dropOK at h
   simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at h
-  obtain ⟨-, (⟨⟨⟨hsop, hssz⟩, hcr⟩, hcase⟩ | ⟨⟨hzop, hzsz⟩, (⟨hcr, hcase⟩ | ⟨hcr, hch⟩)⟩)⟩ := h
+  obtain ⟨-, ((⟨⟨⟨hsop, hssz⟩, hcr⟩, hcase⟩ | ⟨⟨hzop, hzsz⟩, (⟨hcr, hcase⟩ | ⟨hcr, hch⟩)⟩) |
+    ⟨⟨⟨hsop, hssz⟩, hcr⟩, hwb⟩)⟩ := h
   · -- a `Store`
     rw [toList_three hssz, List.map_cons, List.map_cons, List.map_cons, List.map_nil] at hy
     obtain ⟨q, m0, M', hq, hm0, hwr, rfl⟩ := memDef_store (.inl hsop) hy
@@ -752,6 +882,18 @@ theorem drop_mem (hT : Term.Typed f.value? tabs ρ) (hM : MemAtoms f.value? tabs
     subst hz
     exact write_refines_self (Mem.Refines.refl _) (by rw [Array.size_replicate]; exact hrd) hwr
       (BytesRefineA.refl _)
+  · -- a write-back of what a `Load` of its memory read at its pointer (`:919`)
+    rw [toList_three hssz, List.map_cons, List.map_cons, List.map_cons, List.map_nil] at hy
+    obtain ⟨q, m0, M', hq, hm0, hwr, rfl⟩ := memDef_store (.inl hsop) hy
+    refine ⟨M', rfl, reach (by omega) hcr hm0 ?_⟩
+    have hwt : wbTy (auxTy tabs u.aux) = true := by
+      unfold writeBackOK at hwb; rw [Bool.and_eq_true] at hwb; exact hwb.1
+    have hsz : (encode (auxTy tabs u.aux) (den f.value? tabs ρ k u.args[1]!)).size =
+        (auxTy tabs u.aux).size := GoFV.Proof.CSE.Mem.encode_size _ _
+    obtain ⟨bs0, hrd⟩ := read_of_write hwr (by rw [hsz]; exact wbTy_size hwt)
+    refine write_refines_self (Mem.Refines.refl _) hrd hwr ?_
+    rw [hsz] at hrd
+    exact writeBack_bytes hM hwb hm0 hq hrd
 
 end
 

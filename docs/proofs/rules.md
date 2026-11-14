@@ -349,7 +349,13 @@ component is zero, e.g. `SliceLen (SliceMake p (Const64 [0]) c)`, `ITab (StructS
 `zs_checkedRewrite`, `Witness/FwdZeroStr.lean`) at a pointer `p` whose bytes a `Zero [k] q _` cleared (`zeroChain`: through at
 most eight `Copy`s and `Store`s `disjointB` from the write, then `p = q + o` by `ptrBase`/`baseSameB`
 with `o + size ≤ k`); or a `Zero` of a `Zero` of the same auxint at a `samePtrB` pointer (reached
-through copies of `f`). The
+through copies of `f`); or a write-back (`:919`, `(Store {t1} p1 (Load <t2> p2 mem) mem) &&
+isSamePtr(p1, p2) && t2.Size() == t1.Size() => mem`; `fwdShapeOK`'s own case, as the memory is
+bound inside the `Load`): `writeBackOK`, the stored value a `Load` of the root's memory argument (the
+same ID) at a `samePtrB` pointer and at the root's shape, a `wbTy` one (`int8`/`16`/`32`, `bool`).
+At the word shapes the rule is false in the model (a convertible pointer's fragments reload as its
+address word, which stores back as concrete bytes that do not refine the fragments), so those
+instances stay unverified. The
 dropped root is no root of `g`, so `fwdRel` compares atoms by `atomsXOK` (`atomsOK` but changed
 `Store`s and dropped `Store`/`Zero` roots; memcombine's check, now shared) instead of `atomsOK`.
 
@@ -635,11 +641,17 @@ of a `ZeroV` value at any shape are `0` or `poison`; `zeroAt_den`: the component
 a `zeroAt` term's value is `ZeroV` at every fuel, through `termConst_den`, `zeroV_path_of_refines`,
 `valPath_select` and `zeroV_path_retype`)
 against the zeros `zeroChain_read` reads through the disjoint writes from the `Zero`
-(`read_write_sep`, `read_write_self`, `read_sub`); a zero-sized write is the identity
+(`read_write_sep`, `read_write_self`, `read_sub`); a write-back writes the bytes the `Load` read
+where they are concrete and `poison` otherwise (`writeBack_bytes`: `encode_decodeLoad_wb`, concrete
+bytes encode back to themselves through `decodeInt_concrete`/`encode_int_bytes`, other bytes decode
+to `poison` at a narrow integer or `bool` shape; the `Load`'s memory at the lower fuel refines the
+root's, `den_fuel_mono`); a zero-sized write is the identity
 (`Mem.write`'s empty case). `checkedRewrite_refines` composes the
 layers (`chain_refines`) and the atom simulation (statement unchanged). Proven:
-`generic.rules:800`, `:806`, `:813`, `:821`, `:827`, `:830`, `:832`, `:943`, `:948`, `:954`,
+`generic.rules:800`, `:806`, `:813`, `:821`, `:827`, `:830`, `:832`, `:919`, `:943`, `:948`, `:954`,
 `:961`, `:1005`, `:1352`, `:1357`, `:1362`, `:2146`, `:2155`, `:2158`; witnesses
+`wb_checkedRewrite` (`*p = *p` at `int32` with `:919`: the `Store` dropped, the result returns the
+initial memory; `GoFV/Proof/Witness/FwdWriteBack.lean`),
 `GoFV.Proof.Witness.sl_checkedRewrite` (`*p = x; return *p`), `sl2_checkedRewrite`
 (`p[0] = x; p[1] = y; return p[0]`, `:806`), `sls_checkedRewrite` (`*p = s; return *p` at a
 string; `sls_decodeLoad`), `fc_checkedRewrite` (the stored value a `Copy` of `x`),
