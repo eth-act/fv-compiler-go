@@ -436,6 +436,7 @@ import GoFV.Proof.Pass.DecPhiBlock
 import GoFV.Proof.Pass.DecPhiRel
 import GoFV.Proof.Pass.DecPhiSim
 import GoFV.Proof.Pass.Decompose
+import GoFV.Proof.Pass.Devirt
 import GoFV.Proof.Pass.ECArgSel
 import GoFV.Proof.Pass.ECCall
 import GoFV.Proof.Pass.ECChain
@@ -946,6 +947,7 @@ import GoFV.Proof.Witness.FuseLate
 import GoFV.Proof.Witness.FusePlain
 import GoFV.Proof.Witness.FwdChain
 import GoFV.Proof.Witness.FwdCopy
+import GoFV.Proof.Witness.FwdDevirt
 import GoFV.Proof.Witness.FwdDrop
 import GoFV.Proof.Witness.FwdFixed
 import GoFV.Proof.Witness.FwdFixedItab

@@ -442,6 +442,13 @@ theorem run_tabsAgreeDv {tabs tabs' : Tables} {f : Func}
   rw [A.ctx]
   exact runCtx_tabs (ctx := Ctx.make tabs f) A.value env A.outargs A.forgeable args mem fuel
 
+theorem refinesUnder_of_tabsAgreeDv {P : Env → Prop} {tabs tabs' tabs'' : Tables} {f g : Func}
+    (h : GoFV.Opt.tabsAgreeDv tabs tabs' f = true) (hr : RefinesUnder P tabs'' g tabs' f) :
+    RefinesUnder P tabs'' g tabs f := by
+  intro env hP args mem fuel hd
+  rw [← run_tabsAgreeDv h] at hd ⊢
+  exact hr env hP args mem fuel hd
+
 theorem refinesFrom_of_tabsAgreeDv {P : Env → List Val → Mem → Prop} {tabs tabs' tabs'' : Tables}
     {f g : Func} (h : GoFV.Opt.tabsAgreeDv tabs tabs' f = true)
     (hr : RefinesFrom P tabs'' g tabs' f) : RefinesFrom P tabs'' g tabs f := by

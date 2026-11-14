@@ -11,6 +11,7 @@ import GoFV.Proof.Pass.SegSim
 import GoFV.Proof.Pass.PhiSelSim
 import GoFV.Proof.Pass.PhiConst
 import GoFV.Proof.Pass.PhiNotSim
+import GoFV.Proof.Pass.Devirt
 import GoFV.Proof.Checked
 import GoFV.Proof.MemOpsPre
 import GoFV.Proof.RoImage
@@ -34,10 +35,11 @@ all-zero heap blocks, `Env.AllocZero`; inputs without pointers into frame tempor
 `InitAvoids`), in the pass's extended tables. A rejected result is the input
 (`RefinesUnder.refl`); an accepted one relates the atoms' arguments and the controls as terms in
 the extended tables (`validate_termRef`), which the atom simulation lifts to the function
-(`AtomSim.atomSim_refines`), and the input runs alike in both tables (`tabsAgree`,
-`refinesFrom_of_tabsAgree`). The log's nil-check eliminations, Load-of-Store forwardings and
+(`AtomSim.atomSim_refines`), and the input runs alike in both tables (`tabsAgreeDv`,
+`refinesFrom_of_tabsAgreeDv`). The log's nil-check eliminations, Load-of-Store forwardings and
 struct-store splits (issue #151) are applied to the input first, each by its own refinement
-(`Nil.refinesFrom_of_rel`, `LoadFwd.fwd_refines`, `StructStore.ss_refines`). The log is
+(`Nil.refinesFrom_of_rel`, `LoadFwd.fwd_refines`, `StructStore.ss_refines`; devirtualised
+interface calls, `Devirt.dv_refines`). The log is
 validated in segments between its phi eliminations (issue #69, `segs_refines`): each segment
 ends at the function logged at the elimination, which the function with the `Phi` turned copy
 refines by copyelim's simulation (`CopyRelCheck.copyOK_spec`, `CopyElim.refines_of_rel`).
@@ -55,18 +57,18 @@ open GoFV.SSA GoFV.SSA.Sem GoFV.Opt GoFV.Rules GoFV.Proof GoFV.Proof.Rules
 
 /-- **The validator alone** (issue #17): a rewrite of `f` into `g` that `RewriteCheck.validate`
 accepts in the tables `tabs'` with a sound rule table, both checked, refines in `tabs'`; with
-`tabsAgree tabs tabs' f` the source may run in its own tables `tabs`. For a rewrite step whose
+`tabsAgreeDv tabs tabs' f` the source may run in its own tables `tabs`. For a rewrite step whose
 log has no nil-check eliminations or Load forwardings (the dec rules: decompose builtin, run with
-`removeDead := false`), `RewriteCheck.accepts` is `tabsAgree` and `validate`. -/
+`removeDead := false`), `RewriteCheck.accepts` is `tabsAgreeDv` and `validate`. -/
 theorem validate_refines {s : RuleSet} (hs : s.AllSound) {tabs tabs' : Tables} {f g : Func}
     {log : Array RwEvent} {ce ce' : CheckEnv}
     (hv : RewriteCheck.validate tabs' (Interp.Table.ofRuleSet s) f g log = true)
-    (hta : tabsAgree tabs tabs' f = true)
+    (hta : tabsAgreeDv tabs tabs' f = true)
     (hf : check ce f = .ok ()) (hg : check ce' g = .ok ()) :
     RefinesUnder Env.Mono tabs' g tabs f := by
   obtain ⟨hA, hcf, hcg⟩ := validate_parts hv
   obtain ⟨h1, h2⟩ := validate_termRef hv hs
-  exact refinesUnder_of_tabsAgree hta (AtomSim.atomSim_refines hf hg hA hcf hcg h1 h2)
+  exact refinesUnder_of_tabsAgreeDv hta (AtomSim.atomSim_refines hf hg hA hcf hcg h1 h2)
 
 /-- The precondition of the checked rewrite passes on `f` in the tables `tabs` with the frontend
 tables `fe`: monotone contracts, malloc-family contracts that return non-nil pointers, non-nil
@@ -139,7 +141,8 @@ passes' seeds, `Nil.refinesFrom_of_rel`; forwardings: `LoadFwd.fwd_refines`; str
 expansions: the validator and the atom simulation; struct-store splits:
 `StructStore.ss_refines`; segment rewrites: `Seg.seg_refines`; selections of `Phi`s of
 `SliceMake`s: `PhiSel.ps_refines`; constant `Phi`s: `PhiConst.pc_refines`; `Phi`s of `Not`s:
-`PhiNot.pn_refines`), and its end is checked. -/
+`PhiNot.pn_refines`; devirtualised interface calls: `Devirt.dv_refines`), and its end is
+checked. -/
 theorem chain_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {tabs : Tables}
     {f0 f g : Func} (hc : LayerChain penv tabs f0 (Interp.Table.ofRuleSet s) f g) {ce : CheckEnv}
     (hf : check ce f = .ok ()) :
@@ -189,6 +192,10 @@ theorem chain_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {tabs : T
     have hf' := checkOK_sound hck
     obtain ⟨ce', hg, R'⟩ := ih hf'
     exact ⟨ce', hg, (RefinesUnder.toRw (PhiNot.pn_refines hf hf' hr)).trans R'⟩
+  | @dv f f' g hr hck _ ih =>
+    have hf' := checkOK_sound hck
+    obtain ⟨ce', hg, R'⟩ := ih hf'
+    exact ⟨ce', hg, (RefinesUnder.toRw (Devirt.dv_refines hf hf' hr)).trans R'⟩
 
 /-- **Layers without nil-check eliminations and forwardings refine** under monotone contracts
 alone (issue #17, the decompose builtin rewrite step, `RewriteCheck.decLayers`): each layer
@@ -259,6 +266,11 @@ theorem layersOK_refines {s : RuleSet} (hs : s.AllSound) {penv : PassEnv} {f0 : 
         have hf' := checkOK_sound hL.2
         exact (PhiNot.pn_refines hf hf' hL.1).trans
           (layersOK_refines hs hg Ls hn' hns' f' log' hf' hr)
+      | dv =>
+        simp only [RewriteCheck.layerOK, Bool.and_eq_true] at hL
+        have hf' := checkOK_sound hL.2
+        exact (Devirt.dv_refines hf hf' hL.1).trans
+          (layersOK_refines hs hg Ls hn' hns' f' log' hf' hr)
 
 /-- **One segment of the log**: what `layersOK` accepts (with a table of the rule set's value and
 block rules) from a checked function to a checked one refines it. -/
@@ -325,7 +337,7 @@ theorem checkedRewrite_refinesT {s : RuleSet} (hs : s.AllSound) {t : Interp.Tabl
     RefinesFrom (RwPre penv.tables penv.frontend f) out.tables out.func penv.tables f := by
   rcases checkedRewrite_cases h with ⟨he, ht⟩ | ⟨hta, T, hvs, hbs, log, hseg⟩
   · rw [he, ht]; exact RefinesUnder.toRw (RefinesUnder.refl _ _ _)
-  exact refinesFrom_of_tabsAgree hta
+  exact refinesFrom_of_tabsAgreeDv hta
     (segs_refines hs (hvs.trans htv) (hbs.trans htb) hg _ f #[] hf hseg)
 
 theorem checkedRewrite_refines {s : RuleSet} (hs : s.AllSound)

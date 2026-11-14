@@ -4457,9 +4457,12 @@ def RewriteCheck.segsOK (env : PassEnv) (t : GoFV.Rules.Interp.Table) (f0 : GoFV
   | f, seg, ev :: evs => RewriteCheck.segsOK env t f0 out f (seg.push ev) evs
 
 /-- `checkedRewrite` keeps the rewrite result `out` of `f` (input environment `env`, rewrite
-log `log`): `f` cannot tell the result's tables from the input's (`tabsAgree`: rules create
+log `log`): `f` cannot tell the result's tables from the input's (`tabsAgreeDv`: rules create
 types such as `ConstNil <v.Type.Elem().PtrTo()>` and symbols such as `fe.StringData(s)`, but no
-definitions the input looks up), and `RewriteCheck.segsOK` accepts it in the result's tables:
+definitions the input looks up; a devirtualisation, `generic.rules:1733`, redefines the shared
+`*AuxCall` of interface calls with a callee, which an `InterLECall` never reads: its callee is
+its code pointer's, so for an interface call only its call ABI and the shapes of its parameters'
+types must agree, `callAgree`), and `RewriteCheck.segsOK` accepts it in the result's tables:
 between phi eliminations, `RewriteCheck.layersOK` through the `RewriteCheck.layers`. -/
 def RewriteCheck.accepts (env : PassEnv) (t : GoFV.Rules.Interp.Table)
     (f : GoFV.SSA.Func) (out : PassOut) (log : Array GoFV.Rules.RwEvent) : Bool :=

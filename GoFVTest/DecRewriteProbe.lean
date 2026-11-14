@@ -240,7 +240,7 @@ def finalWhy (tabs : Tables) (f g : Func) (M : Defs) (B : BMap) : String := Id.r
 struct-store splits, which the dec table does not have) that fails. -/
 def rejectWhy (env : PassEnv) (t : Interp.Table) (f : Func) (out : PassOut) (log : Array RwEvent) :
     String :=
-  if !tabsAgree env.tables out.tables f then "tabsAgree" else
+  if !tabsAgreeDv env.tables out.tables f then "tabsAgreeDv" else
   let tabs := out.tables
   let g := out.func
   if !atomsOK f g then "atomsOK" else

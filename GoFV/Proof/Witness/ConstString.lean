@@ -19,7 +19,7 @@ one-rule set `{generic.rules:1022}`: `(ConstString {str}) && str != "" => (Strin
 fires the rule: `v2` becomes `StringMake` of a new `Addr` of the string's data symbol, which
 `fe.StringData` appends to the tables (aux 5), and a `Const64 [2]`. The validator accepts the log
 in the extended tables (the built `Addr` names the string's data symbol, its `Const64` the
-string's length: `FrameOK`), and the input cannot tell them from its own (`tabsAgree`).
+string's length: `FrameOK`), and the input cannot tell them from its own (`tabsAgreeDv`).
 -/
 
 namespace GoFV.Proof.Witness
@@ -124,7 +124,7 @@ validator accepted the result against the input and the log, and the result refi
 theorem hi_checkedRewrite :
     ∃ out, checkedRewrite (Interp.Table.ofRuleSet hiRules) hiPassEnv hiFunc = .ok out ∧
       (out.func.value? 2).map (·.op) = some .StringMake ∧ out.tables.auxes.size = 6 ∧
-      tabsAgree hiPassEnv.tables out.tables hiFunc = true ∧
+      tabsAgreeDv hiPassEnv.tables out.tables hiFunc = true ∧
       (∃ log, RewriteCheck.validate out.tables (Interp.Table.ofRuleSet hiRules) hiFunc out.func
         log = true) ∧
       check hiCheckEnv hiFunc = .ok () ∧ check { tabs := out.tables, typs := hiTyps } out.func = .ok () ∧
