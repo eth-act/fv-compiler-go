@@ -53,6 +53,17 @@ theorem clampL_noNilPtr :
       true := by
   decide +kernel
 
+/-- `schedule`'s output on `clampL` hoists no checked pointer above a fault (`hoistNeeded`). -/
+theorem clampL_noHoist :
+    ((schedulePass clampSchedPassEnv clampL).toOption.map fun o =>
+      hoistNeeded clampLTabs clampL o.func) = some false := by
+  decide +kernel
+
+theorem clampL_noHoist_of {out : PassOut} (hp : schedulePass clampSchedPassEnv clampL = .ok out) :
+    hoistNeeded clampLTabs clampL out.func = false := by
+  have h := clampL_noHoist
+  simpa only [hp, Except.toOption, Option.map_some, Option.some.injEq] using h
+
 /-- **`schedule_refinesSchedLF` is not vacuous**: `schedule` accepts `clampL`, `scheduleCheck`
 accepts its output, and the output's `runSched` returns `clamp(5, 0, 10) = 5`. -/
 theorem schedule_witness :
@@ -66,7 +77,8 @@ theorem schedule_witness :
   obtain ⟨m, hm⟩ := returnsInt_iff.1 clampL_runLF.1
   exact (schedule_refinesSchedLF (penv := clampSchedPassEnv) hp (ok_of_toBool clampL_check) hv).returned_int
     ⟨argPtrsOK_of_none clampL_noArgPtr Env.p1 (clampArgs 5) {} (fun _ h => nomatch h),
-      nilPtrsOK_of_none clampL_noNilPtr Env.p1 (clampArgs 5) {}⟩ hm
+      nilPtrsOK_of_none clampL_noNilPtr Env.p1 (clampArgs 5) {},
+      nilHoistOK_of_noHoist (clampL_noHoist_of hp) Env.p1 (clampArgs 5) {}⟩ hm
 
 /-- **The closure conjunct of `ArgPtrsOK` is not vacuous** (#705): with a closure context that
 points to a heap object (a funcval), `ArgPtrsOK` of `clampL` holds; and outside a closure
@@ -103,7 +115,8 @@ theorem schedule_refinesSchedL_witness :
     (ok_of_toBool clampL_check) hv Env.p1 (clampArgs 5) {}
     ⟨noNilFault_of_noAct clampL_noAct Env.p1 (clampArgs 5) {},
       argPtrsOK_of_none clampL_noArgPtr Env.p1 (clampArgs 5) {} (fun _ h => nomatch h),
-      nilPtrsOK_of_none clampL_noNilPtr Env.p1 (clampArgs 5) {}⟩ 3
+      nilPtrsOK_of_none clampL_noNilPtr Env.p1 (clampArgs 5) {},
+      nilHoistOK_of_noHoist (clampL_noHoist_of hp) Env.p1 (clampArgs 5) {}⟩ 3
     (by show (runL Env.p1 clampLTabs clampL (clampArgs 5) {} 3).Defined; rw [hm]; trivial)
   change OutcomeRefines 0 (runL Env.p1 clampLTabs clampL (clampArgs 5) {} 3) _ at ho
   rw [hm] at ho
@@ -200,14 +213,20 @@ def clampNPTys : Array Ty := (Array.replicate 28 Ty.other).set! 25 (.ptr none)
 /-- **`swapOK`'s `NilPtrsOK` case (`nilPtrSwap`) is not vacuous**: with the source order
 `v1 v8 v9 v10 v25 v26 v27 v22`, the target may run the nil check `v27` of the loaded pointer
 `v25` before the load `v26` on the same memory, only through `nilPtrSwap` (`swapOKB` rejects the
-swap); with `v25` listed after the load it may not. -/
+swap). With `v25` listed after the load `nilPtrSwap` does not apply (the source has not computed
+`v25` when `v26` faults); only its `NilHoistOK` case `hoistSwap` allows the swap (`v25` is a
+`MOVDload` of the parameter piece `v9`, which the source runs before `v26`). -/
 theorem clampNP_nilPtr :
     swapOK clampLTabs (Ctx.makeL clampLTabs clampNP).params clampNPTys clampNP
         (srcPos 28 [1, 8, 9, 10, 25, 26, 27, 22]) 26 27 = true ∧
       swapOKB clampLTabs (Ctx.makeL clampLTabs clampNP).params clampNPTys clampNP
         (srcPos 28 [1, 8, 9, 10, 25, 26, 27, 22]) 26 27 = false ∧
-      swapOK clampLTabs (Ctx.makeL clampLTabs clampNP).params clampNPTys clampNP
-        (srcPos 28 [1, 8, 9, 10, 26, 25, 27, 22]) 26 27 = false := by
+      swapOKB clampLTabs (Ctx.makeL clampLTabs clampNP).params clampNPTys clampNP
+        (srcPos 28 [1, 8, 9, 10, 26, 25, 27, 22]) 26 27 = false ∧
+      nilPtrSwap clampLTabs clampNPTys clampNP (srcPos 28 [1, 8, 9, 10, 26, 25, 27, 22]) 26 27 =
+        false ∧
+      hoistSwap clampLTabs clampNPTys clampNP (srcPos 28 [1, 8, 9, 10, 26, 25, 27, 22]) 26 27 =
+        true := by
   decide +kernel
 
 /-- `clampNP` with `v27 = LoweredNilCheck v28 v1` of `v28 = LoweredNilCheck v25 v1`. -/
@@ -292,6 +311,19 @@ theorem clampCh_noNilPtr :
       true := by
   decide +kernel
 
+/-- `schedule`'s output on `clampCh` hoists no checked pointer above a fault (`hoistNeeded`: its
+nil checks check `SP`, a `uintptr`). -/
+theorem clampCh_noHoist :
+    ((schedulePass clampSchedPassEnv clampCh).toOption.map fun o =>
+      hoistNeeded clampLTabs clampCh o.func) = some false := by
+  decide +kernel
+
+theorem clampCh_noHoist_of {out : PassOut}
+    (hp : schedulePass clampSchedPassEnv clampCh = .ok out) :
+    hoistNeeded clampLTabs clampCh out.func = false := by
+  have h := clampCh_noHoist
+  simpa only [hp, Except.toOption, Option.map_some, Option.some.injEq] using h
+
 /-- **The multi-step bypass (`rep`, `ncChain`) is not vacuous**: in `clampCh` the nil check `v26`
 checks the nil check `v25` (one step of `rep1` ends at a nil check, which a one-step bypass
 rejects), `rep` follows the chain to `SP` (`v27`), `schedule` rewires `v28` to it and
@@ -312,6 +344,7 @@ theorem schedule_chain_witness :
   exact (schedule_refinesSchedLF (penv := clampSchedPassEnv) hp (ok_of_toBool clampCh_check)
     hv).returned_int
     ⟨argPtrsOK_of_none clampCh_noArgPtr Env.p1 (clampArgs 5) {} (fun _ h => nomatch h),
-      nilPtrsOK_of_none clampCh_noNilPtr Env.p1 (clampArgs 5) {}⟩ hm
+      nilPtrsOK_of_none clampCh_noNilPtr Env.p1 (clampArgs 5) {},
+      nilHoistOK_of_noHoist (clampCh_noHoist_of hp) Env.p1 (clampArgs 5) {}⟩ hm
 
 end GoFV.Proof.Witness

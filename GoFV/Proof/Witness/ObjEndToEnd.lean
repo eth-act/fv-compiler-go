@@ -97,6 +97,7 @@ def e2eFacts : Bool :=
   ((verifiedPipelineFull penv f0 0 sec0.zvar dcl).toOption.map fun r =>
       r.fullyVerified &&
         r.nnf.all (fun x => noActB x.2 && noArgPtrB x.1 x.2 && noNilPtrB x.1 x.2) &&
+        r.nhs.isEmpty &&
         refsLive (LocCtx.make r.st.tables r.st.func) &&
         ObjWhole.lcFacts plRunEnv (liveCtx (LocCtx.make r.st.tables r.st.func))) == some true &&
     isRetG (GoFV.SSA.run plRunEnv penv.tables f0 ObjWhole.args {} 5) &&
@@ -152,7 +153,7 @@ theorem verified_mach_witness :
   | ok r =>
     rw [hpe] at hp
     simp only [Except.toOption, Option.map_some, Option.some.injEq, Bool.and_eq_true] at hp
-    obtain ⟨⟨⟨hv, hn⟩, hrl⟩, hlcf⟩ := hp
+    obtain ⟨⟨⟨⟨hv, hn⟩, hnhs⟩, hrl⟩, hlcf⟩ := hp
     have hx2 : ∀ x ∈ r.nnf,
         (noActB x.2 = true ∧ noArgPtrB x.1 x.2 = true) ∧ noNilPtrB x.1 x.2 = true := fun x hx => by
       have := List.all_eq_true.1 hn x hx
@@ -163,6 +164,10 @@ theorem verified_mach_witness :
       argPtrsOK_of_none (hx2 x hx).1.2 plRunEnv ObjWhole.args {} (fun _ h => nomatch h)
     have hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 plRunEnv ObjWhole.args {} := fun x hx =>
       nilPtrsOK_of_none (hx2 x hx).2 plRunEnv ObjWhole.args {}
+    have hnh : ∀ x ∈ r.nhs, NilHoistOK x.1 x.2.1 x.2.2 plRunEnv ObjWhole.args {} := by
+      intro x hx
+      try simp only [List.isEmpty_iff] at hnhs
+      rw [hnhs] at hx; cases hx
     have hvpre : VPre (NilCheck.dictParams penv.tables f0) (pipelineRo penv f0)
         (pipelineEq penv) plRunEnv ObjWhole.args {} :=
       ⟨plRunEnv_mono, plRunEnv_frameSafe, initAvoids, plRunEnv_allocNonNil,
@@ -186,7 +191,7 @@ theorem verified_mach_witness :
     rw [← hentry] at hpc
     obtain ⟨hmt, hcr⟩ := ObjWhole.lc_ro hlcf
     obtain ⟨fuel', href, raw, hraw, hfin, hdef, hret, -⟩ :=
-      verified_mach hpe hv hvpre hnn hap hnp hd rfl hc64 (ObjWhole.lc_n48 hlcf) hO hH hic hrok hME
+      verified_mach hpe hv hvpre hnn hap hnp hnh hd rfl hc64 (ObjWhole.lc_n48 hlcf) hO hH hic hrok hME
         hroom hg
         (fun _ _ _ h => by rw [hnone] at h; cases h) (fun _ _ _ h => by rw [hnone] at h; cases h)
         hE (hEE _) hb1 hbm hk hsI hes hargs hent (fun _ _ _ h => by rw [hnone] at h; cases h) hinv

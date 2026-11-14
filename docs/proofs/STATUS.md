@@ -138,7 +138,8 @@ obstacle counts on full-v6, "Findings" in `rules.md` has the counterexamples):
 `verifiedPipelineFull`, every returning or panicking `run` of the input is, up to refinement, a
 `runLoc` of the allocated function after `trim`, under Phase 1's `VPre`, no nil-page fault of
 the recorded `schedule` inputs, valid pointer parameters and valid checked pointers (`ArgPtrsOK`,
-`NilPtrsOK`; all assumptions in one table below, § Assumptions)
+`NilPtrsOK`), and valid hoisted checked pointers of the recorded `schedule` runs that hoist one
+(`NilHoistOK`, `r.nhs`; all assumptions in one table below, § Assumptions)
 (`docs/PASSES2.md` §0; witness `verifiedPipelineFull_witness`).
 Measured with `gofv-ssa-opt --check --verified`: full-v9 on main 3b3d4ba0 (`--jobs 6`, after
 #540 constant `Phi`s and `IMake` of `StructMake`, #558 symbol-address comparisons and `IData`
@@ -152,6 +153,13 @@ main 51ef75c1 (6 min):
 | … verified (vacuous: unmodelled op): the input has an op or block kind `run` leaves stuck (`TailLECall*`, `RetJmp`) | 1,576 | 1,568 | 168 | 168 |
 | … relying on `NilPtrsOK` (a `schedule` swap through `nilPtrSwap`) | – | 3,014 (91883690: 2,983) | – | – |
 | … and identical to stock after `trim` | 74,651 (74,595) | 66,546 (66,331) | 7,233 | 5,699 |
+
+**`NilHoistOK` (#729).** On full-v11, per function against cad4a601 (`--vstats`, `comm`): Phase 1
+unchanged (0 lost), `trim` +228, 0 lost, exactly the functions whose `r.nhs` is non-empty (among
+them `ssagen.Compile`, #723's one `trim` loss); end to end 79,910. Fully verified with a non-empty
+`nhs` (`NilHoistOK` assumed): full-v11 228, of them 132 end to end; quick-v10 3 / 1. Quick-v10 on
+bda59446 (the driver is unchanged through ac07a871): fully verified 8,129 → 8,132, end to end
+7,440 → 7,441 (`verified_mach` 7,224 → 7,225, `_S` 216 → 216, 0 lost).
 
 **Partially vacuous: the `Mul64uover` overflow flag (#69).** Go's ssagen types
 `math.MulUintptr`'s `Mul64uover` `(uint, uint)` (`ssagen/intrinsics.go`), while its `Select1` is
@@ -2314,11 +2322,9 @@ Since #723, `early phielim and copyelim` also has a zero-size fragment: `CopyZer
 (fragment) runs go from 660 to 46, and so do early deadcode's. These 614 functions are the only
 ones whose route changes. Among them, on a0ecbcea (#722): Phase 1 is 492 → 574 (+82, 0 lost),
 `trim` is 445 → 494 (+50), and stock identity after `trim` is 14 → 205 (+191, 0 lost). Against
-#727's code alone (before #722's `:1004`), Phase 1 is 93,939 → 94,091 (+152, 0 lost). One function
-is lost through `trim`, `ssagen.Compile`. Its copyelim is now proven, so the schedule validator
-sees a rerouted state it cannot yet validate (class `NIL CHECK OF ANOTHER PTR VALUE AFTER X`, the
-hoist class NilHoistOK targets). No statement is weakened. Compile's output was not identical to
-stock before either. This is tracked in #385.
+#727's code alone (before #722's `:1004`), Phase 1 is 93,939 → 94,091 (+152, 0 lost). The one
+function #723 lost through `trim`, `ssagen.Compile` (its rerouted state needed the schedule hoist
+class), is verified through `trim` again since `NilHoistOK` (#729; `nhs` non-empty).
 
 `zeroGuard` also resets zero-size `Phi`s and `Arg`s to `Empty`, as Go's phielim does (#69,
 Phase1Tail11; the atom simulation drops them, `RewriteCheck.dropAtom`; witness
@@ -2375,7 +2381,9 @@ Not validator classes, recorded with the remaining gaps:
 `verifiedPipeline_refines` concludes `RefinesFrom (VPre k ro)` (`GoFV/Proof/Pass/Pipeline.lean`);
 every pass theorem's precondition is a conjunct. `k` are the input's dictionary parameters, `ro`
 its read-only symbols. `verifiedPipelineFull_refines` adds three assumptions on the recorded
-`schedule` inputs `r.nnf` (its `hn`, `ha`, `hnp`). Every assumption of the end-to-end theorems,
+`schedule` inputs `r.nnf` (its `hn`, `ha`, `hnp`) and one on the recorded `schedule` runs that
+hoist a checked pointer above a fault, `r.nhs` (its `hnh`; `r.nhs = []` unless such a run fired).
+Every assumption of the end-to-end theorems,
 in one table: what it assumes, why it is justified, what would falsify it, and what
 discharges it (the runtime model `Env.runtime`, the Phase 1 test environment `Env.p1`, or the
 witnesses). `verified_mach_fixed` and `verified_mach_atSP` take `verified_mach`'s assumptions, at
@@ -2405,6 +2413,7 @@ its assumptions:
 | `NoNilFault tabs f env args mem` (`r.nnf`) | no run of the `schedule` input faults in the nil page or checks a wild pointer (`runL` and `runLF` agree) | `schedule`'s theorem is stated against `runLF` (memory ops fault), the passes before it against `runL`; this restricts the end-to-end statement to such inputs | — (a restriction, not a claim about Go) | `noNilFault_of_noAct` (witnesses) |
 | `ArgPtrsOK tabs f env args mem` (`r.nnf`) | every pointer-shaped register piece of a parameter (`ArgIntReg` at a `.ptr` shape) reads nil or a pointer that is not wild (`Ptr.wild`: into the nil block but not nil); the top-level closure context (`env.closure`, #705), if any, has no nil base (`NilBase`) | Go-level: Go's type system and the garbage collector require a pointer parameter to be nil or valid; `unsafe` code that forges a wild pointer is outside the model. `swapOKB`'s `argPtr` case moves a nil check of such a piece before a fault on the same memory: it panics alike or passes, where a wild pointer would leave it `stuck`. The closure context: a closure is entered through its funcval, and the caller loads the code word from it before the call (`cmd/compile/internal/ssagen/ssa.go:5141-5149`, `rawLoad` of the closure), a load that faults on nil; so a load off `LoweredGetClosurePtr` at a word shape (`ScheduleCheck.isNN`; Go types `GetClosurePtr` as `BytePtr`, `ssagen/ssa.go:519`) cannot fault | a caller passing a forged pointer (an integer address, or nil plus an offset) as a pointer argument, or calling a closure through a forged funcval | `argPtrsOK_of_none` (witnesses); outside a closure the closure conjunct is trivial (`argPtrsOK_iff_of_none`) |
 | `NilPtrsOK tabs f env args mem` (`r.nnf`, approved on #385) | in every state `runLF` of the `schedule` input reaches (a block entry, after its `Phi`s and any prefix of its order), every pointer-shaped value that a nil check checks reads nil or a pointer that is not wild, once it has a register (`NilRegsOK`) | Go-level, as `ArgPtrsOK`: a Go pointer is nil or points into an allocated object (the `unsafe.Pointer` rules); the runtime throws on a pointer in the nil page (`runtime/stack.go:676`, "invalid pointer found on stack", `0 < p < minLegalPointer`). Only checked pointers: a compiler-made `nil + k` may be computed before the check of its base panics. `nilPtrSwap` moves such a check before a fault on the same memory | a function that loads, converts or receives a forged pointer and nil-checks it (`unsafe` misuse) | `nilPtrsOK_of_none` (witnesses: `clampL_noNilPtr`, `pfF_pipeline`'s `noNilPtrB`) |
+| `NilHoistOK tabs f g env args mem` (`r.nhs`, `hnh`; approved on #385, comment 6802853445) | for a recorded `schedule` run (input `f`, output `g`; recorded only when `ScheduleCheck.hoistNeeded`): in every state `runLF` of `f` reaches before a value `x` (a block entry, after its `Phi`s and a prefix of its order), when `g` runs before `x` a nil check `y` of a value `q` that only `hoistSwap` lets `g` check there (`hoistOnly`: `q`, a 64-bit load `MOVDload`/`MOVDloadidx`/`MOVDloadidx8` or a tuple selection `Select0`/`SelectN` at a pointer shape, the source runs after `x`, its arguments before), `q`'s op on its arguments' registers (bypassed through their nil checks, `hoisted`; also after other such hoisted values, `HoistExt`) reads nil or a pointer that is not wild (`HoistOKAt`) | Go-level, separate from `NilPtrsOK` (which covers values the run computes; on the run where `x` faults the source never computes `q`): Go's heap holds nil or a valid pointer at every pointer-typed word, the garbage collector's invariant (`runtime/mbitmap.go:1310-1336`, `badPointer`: "found bad pointer in Go heap"; `runtime/stack.go:681`, "invalid pointer found on stack"), and Go's `schedule` evaluates `q` at that place itself: it scores nil checks before memory ops and loads and tuple selectors right after their tuple (`schedule.go:15-30` `ScoreReadTuple` < `ScoreNilCheck` < `ScoreMemory`; `:149-151` "Nil checks must come before loads from the same address"; `:174-177`). Scoped to the nil checks `hoistSwap` moved: for every scheduling without one it holds trivially (`nilHoistOK_of_noHoist`), and `r.nhs` records a run only when it fired (`verifiedPipelineFull_nhs`). `Convert` (an `unsafe.Pointer` from a `uintptr`) is not a `hoistOp`: such swaps stay rejected | a hoisted pointer load whose address holds non-pointer data (a pointer-typed load of a word that holds no pointer), or `unsafe` code that stores a wild pointer into a pointer-typed word | `phF_nilHoistOK` (witness `schedule_hoist_witness`, `GoFV/Proof/Witness/ScheduleHoist.lean`: `go/parser.(*parser).parseBinaryExpr.func1`, the hoisted nil check reads the parser object before the load of a nil `&n` faults); `nilHoistOK_of_noHoist` when `r.nhs = []` (`verifiedPipelineFull_witness` and the `verified_mach*` witnesses check `r.nhs.isEmpty`) |
 | hook `liftContract` (Phase 3, `GoFV/SSA/Sem/Hooks.lean`, `rtHookNamed`) | a call of a runtime entry point with a Phase 1 contract (`Env.runtime`) behaves as that contract lifted through ABIInternal: arguments read from their `abi.RegIndex` registers and `SP + offset` stack slots (or `fixedABI`'s registers for `LoweredMemEq` → `runtime.memequal`), memory pulled back and pushed forward through `ι`, results written to their ABI locations, `R0`–`R17`, `R19`–`R27`, `V0`–`V31` and the flags clobbered, `SP`, `R18`, `R28`–`R30` and every byte the contract does not write kept; returns to `X30` | the contracts carry the Phase 1 assumptions above; the ABI is Go's `ABIInternal` for arm64 (`cmd/compile/internal/abi`, `internal/abi`); every allocatable register is caller-saved there. Agreement with native: `mach-difftest`, 9,480/9,480 calls | a runtime routine that keeps a value in a clobbered register the caller relies on, writes memory its contract does not, or changes `R28`/`SP`; a proof that depends on the fixed `garbage` values (they stand for arbitrary values) | trusted (no theorem uses it yet) |
 | hook `morestackHook` (`runtime.morestack`, `runtime.morestack_noctxt`) | the stack grows in place (`δ = 0`): `stackguard0` lowered by `growBy`, not below `stack.lo + StackGuard`; resumes after the `BL` with `X30` = the saved `R3`, `SP`, `R28`, `R29` kept, `R26` kept at `runtime.morestack` and `0` at `runtime.morestack_noctxt`, the rest clobbered; stuck when the stack cannot grow | `runtime/asm_arm64.s` `morestack` → `newstack` → `gogo`: `morestack` saves `R26` in `g.sched.ctxt` (`:449`) and `gogo` restores it (`:269`); `morestack_noctxt` is `MOVW $0, R26; B runtime·morestack` (`:493-502`; until #708 the model kept `R26` there too); a moved stack (`δ ≠ 0`) is outside the model (semantics3 §6, §10) | a run that needs a stack move (`copystack`) to agree with native | trusted |
 | hook `wbHook` (`runtime.gcWriteBarrier<n>`) | returns the write-barrier buffer (`8n` bytes at `RtInfo.wbuf`) in `R25`; `R27` and the flags clobbered, every other register kept | `runtime/asm_arm64.s` `gcWriteBarrier`; Phase 1's `WbPre` protocol (row above) | a buffer flush that changes other registers or memory the code reads | trusted |

@@ -36,6 +36,9 @@ structure Cnt where
   viaNilPtr : Nat := 0
   /-- Accepted sections where some swap needs a memory through an `LDAR*` (`ldReach`). -/
   viaLdMem : Nat := 0
+  /-- Accepted sections where some swap needs `swapOK`'s `NilHoistOK` case (`hoistNeeded`). -/
+  viaHoist : Nat := 0
+  hoistCands : Array (Nat × String) := #[]
   whys : Std.HashMap String Nat := {}
   /-- An example function per rejection reason. -/
   whyEx : Std.HashMap String String := {}
@@ -51,6 +54,7 @@ def Cnt.merge (a b : Cnt) : Cnt :=
     acceptedChanged := a.acceptedChanged + b.acceptedChanged
     viaArgPtr := a.viaArgPtr + b.viaArgPtr, argPtrCands := a.argPtrCands ++ b.argPtrCands
     viaNilPtr := a.viaNilPtr + b.viaNilPtr, viaLdMem := a.viaLdMem + b.viaLdMem
+    viaHoist := a.viaHoist + b.viaHoist, hoistCands := a.hoistCands ++ b.hoistCands
     whys := b.whys.fold (fun m k n => m.insert k (m.getD k 0 + n)) a.whys
     whyEx := b.whyEx.fold (fun m k e => if m.contains k then m else m.insert k e) a.whyEx
     fnCls := b.fnCls.fold (fun m k n => m.insert k (m.getD k 0 + n)) a.fnCls
@@ -105,6 +109,9 @@ def doFile (pass : String) (path : System.FilePath) (c : Cnt) : IO Cnt := do
                         argPtrCands := c.argPtrCands.push (listed f, s!"{path} section {k - 1} -> {k}: {listed f} values") }
         if relyNilPtrs prev f g then c := { c with viaNilPtr := c.viaNilPtr + 1 }
         if relyLdMem prev f g then c := { c with viaLdMem := c.viaLdMem + 1 }
+        if GoFV.Opt.ScheduleCheck.hoistNeeded prev f g then
+          c := { c with viaHoist := c.viaHoist + 1
+                        hoistCands := c.hoistCands.push (listed f, s!"{path} section {k - 1} -> {k}: {f.blocks.size} blocks, {listed f} values") }
       else
         let w := why prev f g
         c := { c with whys := c.whys.insert w (c.whys.getD w 0 + 1)
@@ -145,6 +152,9 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"accepted through swapOK's argPtr case (ArgPtrsOK): {c.viaArgPtr}"
   IO.println s!"accepted through swapOK's NilPtrsOK case: {c.viaNilPtr}"
   IO.println s!"accepted through a memory of an LDAR* (ldReach): {c.viaLdMem}"
+  IO.println s!"accepted through swapOK's NilHoistOK case (hoistNeeded): {c.viaHoist}"
+  for (_, l) in (c.hoistCands.qsort (fun a b => a.1 < b.1)).extract 0 5 do
+    IO.println s!"  {l}"
   for (_, l) in (c.argPtrCands.qsort (fun a b => a.1 < b.1)).extract 0 5 do
     IO.println s!"  {l}"
   IO.println "outside (first failing condition):"

@@ -51,7 +51,8 @@ theorem verified_mach_atSP
       mem)
     (hn : ∀ x ∈ r.nnf, NoNilFault x.1 x.2 e args mem)
     (ha : ∀ x ∈ r.nnf, ArgPtrsOK x.1 x.2 e args mem)
-    (hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 e args mem) {fuel : Nat}
+    (hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 e args mem)
+    (hnh : ∀ x ∈ r.nhs, NilHoistOK x.1 x.2.1 x.2.2 e args mem) {fuel : Nat}
     (hd : (GoFV.SSA.run e penv.tables f args mem fuel).Defined)
     {lc : LocCtx} (hlc : lc = liveCtx (LocCtx.make r.st.tables r.st.func))
     {H : Hooks} {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab}
@@ -103,7 +104,7 @@ theorem verified_mach_atSP
   subst hA
   have hact : lc.ctx.act = 0 := hlc ▸ liveCtx_make_act _ _
   letI : Addrs := Addrs.atSP (baseSP g L E0.sp)
-  exact verified_mach hpipe hv hP hn ha hnp hd hlc hc hn48 hO hH hic hrok hME hroom hg hms hsep
+  exact verified_mach hpipe hv hP hn ha hnp hnh hd hlc hc hn48 hO hH hic hrok hME hroom hg hms hsep
     (g49Env_atSP hE hact) hEE hbE hbm hk hpre hes hargs hent hmore hinv huE hpc hRP hmt hro
 
 /-- **Generic SSA to machine words at the machine layout, in G48's mode.** `verified_mach_S` at
@@ -123,7 +124,8 @@ theorem verified_mach_S_atSP
       mem)
     (hn : ∀ x ∈ r.nnf, NoNilFault x.1 x.2 e args mem)
     (ha : ∀ x ∈ r.nnf, ArgPtrsOK x.1 x.2 e args mem)
-    (hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 e args mem) {fuel : Nat}
+    (hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 e args mem)
+    (hnh : ∀ x ∈ r.nhs, NilHoistOK x.1 x.2.1 x.2.2 e args mem) {fuel : Nat}
     (hd : (GoFV.SSA.run e penv.tables f args mem fuel).Defined)
     {lc : LocCtx} (hlc : lc = liveCtx (LocCtx.make r.st.tables r.st.func))
     {H : Hooks} {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab}
@@ -176,7 +178,7 @@ theorem verified_mach_S_atSP
   subst hA
   have hact : lc.ctx.act = 0 := hlc ▸ liveCtx_make_act _ _
   letI : Addrs := Addrs.atSPO (baseSP g L E0.sp) E0.sp.toNat
-  exact verified_mach_S hpipe hv hP hn ha hnp hd hlc hc hO hH hic hrok hME hroom hg hms hsep
+  exact verified_mach_S hpipe hv hP hn ha hnp hnh hd hlc hc hO hH hic hrok hME hroom hg hms hsep
     (g49Env_atSPO hE hact) hEE hbE hbm hk hpre hes hargs hent hmore hinv hosp hspI huE hpc hRP
     hmt hro
 

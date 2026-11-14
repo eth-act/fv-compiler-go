@@ -136,20 +136,21 @@ end
 
 /-! ## The lowered steps -/
 
-/-- The precondition of a lowered pass theorem on input `f` in `tabs`. -/
-def lrelPre : LRel → Tables → Func → Env → List Val → Mem → Prop
-  | .lower, tabs, f => fun env _ mem =>
+/-- The precondition of a lowered pass theorem on input `f` in `tabs` with output `f'`. -/
+def lrelPre : LRel → Tables → Func → Func → Env → List Val → Mem → Prop
+  | .lower, tabs, f, _ => fun env _ mem =>
     env.Mono ∧ RoImage (LowerCheck.roPre tabs (LowerCheck.invUnknown f)) env mem
-  | .lowFrame, _, _ => fun env args mem => env.FrameSafe ∧ InitAvoids env args mem
-  | .sched, tabs, f => fun env args mem =>
-    NoNilFault tabs f env args mem ∧ ArgPtrsOK tabs f env args mem ∧ NilPtrsOK tabs f env args mem
-  | .ls, _, _ => fun env args mem =>
+  | .lowFrame, _, _, _ => fun env args mem => env.FrameSafe ∧ InitAvoids env args mem
+  | .sched, tabs, f, f' => fun env args mem =>
+    NoNilFault tabs f env args mem ∧ ArgPtrsOK tabs f env args mem ∧
+      NilPtrsOK tabs f env args mem ∧ NilHoistOK tabs f f' env args mem
+  | .ls, _, _, _ => fun env args mem =>
     env.TempOblivious ∧ env.FrameSafe ∧ InitAvoids env args mem
-  | _, _, _ => fun _ _ _ => True
+  | _, _, _, _ => fun _ _ _ => True
 
 /-- The relation an `LRel` names. -/
 def lrelHolds (r : LRel) (tabs' : Tables) (f' : Func) (tabs : Tables) (f : Func) : Prop :=
-  LayerRefines (lrelPre r tabs f) r.tgt tabs' f' r.src tabs f
+  LayerRefines (lrelPre r tabs f f') r.tgt tabs' f' r.src tabs f
 
 /-- A `proven` step's theorem: its relation ends in the pass's layer, and the result relates to
 the input when both pass `check` (if the step asks for it) and the guard accepts. -/
@@ -288,40 +289,45 @@ theorem loweredVPasses_names : loweredVPasses.map (·.name) = loweredPasses := b
 parameters `k` and read-only symbols `ro`, no nil-page fault of the `schedule` inputs `nnf`
 (`NoNilFault`: `runL` and `runLF` of each agree), and their pointer-shaped parameter pieces
 (`ArgPtrsOK`) and checked pointer-shaped values (`NilPtrsOK`) read nil or pointers that are not
-wild (Go-level assumptions). -/
+wild, and so do the checked pointers that the `schedule` runs `nhs` (input, output) hoist above a
+fault (`NilHoistOK`) (Go-level assumptions). -/
 def PreFull (k : List Nat) (ro : List (String × Alloc)) (eq : List String × List String)
-    (nnf : List (Tables × Func)) (env : Env) (args : List Val) (mem : Mem) : Prop :=
+    (nnf : List (Tables × Func)) (nhs : List (Tables × Func × Func)) (env : Env) (args : List Val)
+    (mem : Mem) : Prop :=
   VPre k ro eq env args mem ∧
-    ∀ x ∈ nnf, NoNilFault x.1 x.2 env args mem ∧ ArgPtrsOK x.1 x.2 env args mem ∧
-      NilPtrsOK x.1 x.2 env args mem
+    (∀ x ∈ nnf, NoNilFault x.1 x.2 env args mem ∧ ArgPtrsOK x.1 x.2 env args mem ∧
+      NilPtrsOK x.1 x.2 env args mem) ∧
+    ∀ x ∈ nhs, NilHoistOK x.1 x.2.1 x.2.2 env args mem
 
 variable {env : PassEnv} {f0 : Func} {l0 : Layer}
 
 /-- The invariant of the states from input `f0` (layer `l0`): a verified state refines the
-input under `PreFull` of its `schedule` inputs, `wf` means the state passes `check`, and the
+input under `PreFull` of its `schedule` runs, `wf` means the state passes `check`, and the
 state records the pipeline's read-only symbols. -/
 def InvF (env : PassEnv) (f0 : Func) (l0 : Layer) (s : FState) : Prop :=
   (s.st.verified = true → LayerRefines (PreFull (NilCheck.dictParams env.tables f0)
-    (pipelineRo env f0) (pipelineEq env) s.nnf) s.layer s.st.tables s.st.func
+    (pipelineRo env f0) (pipelineEq env) s.nnf s.nhs) s.layer s.st.tables s.st.func
     l0 env.tables f0) ∧
   (s.st.wf = true → check (checkEnv env s.st.tables) s.st.func = .ok ()) ∧
   s.st.ro = pipelineRo env f0
 
 theorem PreFull.sub {k : List Nat} {ro : List (String × Alloc)} {eq : List String × List String}
-    {n n' : List (Tables × Func)} (hn : ∀ x ∈ n, x ∈ n') {e : Env} {args : List Val} {mem : Mem}
-    (h : PreFull k ro eq n' e args mem) : PreFull k ro eq n e args mem :=
-  ⟨h.1, fun x hx => h.2 x (hn x hx)⟩
+    {n n' : List (Tables × Func)} {h h' : List (Tables × Func × Func)} (hn : ∀ x ∈ n, x ∈ n')
+    (hh : ∀ x ∈ h, x ∈ h') {e : Env} {args : List Val} {mem : Mem}
+    (hP : PreFull k ro eq n' h' e args mem) : PreFull k ro eq n h e args mem :=
+  ⟨hP.1, fun x hx => hP.2.1 x (hn x hx), fun x hx => hP.2.2 x (hh x hx)⟩
 
 theorem InvF.adopt {s : FState} (h : InvF env f0 l0 s) {p : LPass} {out : PassOut} {wf : Bool}
-    {v : Verdict} {nnf : List (Tables × Func)} (hn : ∀ x ∈ s.nnf, x ∈ nnf)
+    {v : Verdict} {nnf : List (Tables × Func)} {nhs : List (Tables × Func × Func)}
+    (hn : ∀ x ∈ s.nnf, x ∈ nnf) (hh : ∀ x ∈ s.nhs, x ∈ nhs)
     (hv : v.ok = true → LayerRefines (PreFull (NilCheck.dictParams env.tables f0)
-      (pipelineRo env f0) (pipelineEq env) nnf) p.out out.tables out.func
+      (pipelineRo env f0) (pipelineEq env) nnf nhs) p.out out.tables out.func
       s.layer s.st.tables s.st.func)
     (hwf : wf = true → check (checkEnv env out.tables) out.func = .ok ()) :
-    InvF env f0 l0 (s.adopt p out wf v nnf) := by
+    InvF env f0 l0 (s.adopt p out wf v nnf nhs) := by
   refine ⟨fun hver => ?_, hwf, h.2.2⟩
   simp only [FState.adopt, VState.adopt, Bool.and_eq_true] at hver
-  exact LayerRefines.trans ((h.1 hver.1).mono fun _ _ _ hp => hp.sub hn) (hv hver.2)
+  exact LayerRefines.trans ((h.1 hver.1).mono fun _ _ _ hp => hp.sub hn hh) (hv hver.2)
 
 theorem InvF.skip {s : FState} (h : InvF env f0 l0 s) (p : LPass) (why : String) :
     InvF env f0 l0 (s.skip p why) := h
@@ -334,28 +340,29 @@ theorem outWf_sound {p : LPass} {out : PassOut} (h : outWf env p out = true) :
 /-- An unchanged result in the same layer is the identity. -/
 theorem InvF.same {s : FState} (h : InvF env f0 l0 s) {p : LPass} {out : PassOut}
     (hs : (s.st.same out && s.layer == p.out) = true) :
-    InvF env f0 l0 (s.adopt p out s.st.wf .identity s.nnf) := by
+    InvF env f0 l0 (s.adopt p out s.st.wf .identity s.nnf s.nhs) := by
   simp only [Bool.and_eq_true, beq_iff_eq] at hs
   obtain ⟨hf, ht⟩ := VState.same_eq hs.1
-  refine h.adopt (fun _ hx => hx) (fun _ => ?_) (fun hw => ?_)
+  refine h.adopt (fun _ hx => hx) (fun _ hx => hx) (fun _ => ?_) (fun hw => ?_)
   · rw [hf, ht, hs.2]; exact LayerRefines.refl _ _ _ _
   · rw [hf, ht]; exact h.2.1 hw
 
 theorem InvF.next {s : FState} (h : InvF env f0 l0 s) {p : LPass} {out : PassOut}
-    {bad : Bool → Option String} {nnf : List (Tables × Func)} (hn : ∀ x ∈ s.nnf, x ∈ nnf)
+    {bad : Bool → Option String} {nnf : List (Tables × Func)}
+    {nhs : List (Tables × Func × Func)} (hn : ∀ x ∈ s.nnf, x ∈ nnf) (hh : ∀ x ∈ s.nhs, x ∈ nhs)
     (hb : ∀ wf, bad wf = none → (wf = true → check (checkEnv env out.tables) out.func = .ok ()) →
       LayerRefines (PreFull (NilCheck.dictParams env.tables f0) (pipelineRo env f0)
-        (pipelineEq env) nnf) p.out
+        (pipelineEq env) nnf nhs) p.out
         out.tables out.func s.layer s.st.tables s.st.func) :
-    InvF env f0 l0 (s.next env p out bad nnf) := by
+    InvF env f0 l0 (s.next env p out bad nnf nhs) := by
   unfold FState.next
   split
   · next hs => exact h.same hs
   · dsimp only
     split
-    · next hbad => exact h.adopt hn (fun _ => hb _ hbad outWf_sound) outWf_sound
+    · next hbad => exact h.adopt hn hh (fun _ => hb _ hbad outWf_sound) outWf_sound
     · split
-      · exact h.adopt (fun _ hx => hx) (fun hv => by cases hv) outWf_sound
+      · exact h.adopt (fun _ hx => hx) (fun _ hx => hx) (fun hv => by cases hv) outWf_sound
       · exact h.skip _ _
 
 /-- What `whyNot = none` gives. -/
@@ -388,11 +395,11 @@ theorem whyNot_none {s : FState} {penv : PassEnv} {rel : LRel} {wfReq : Bool}
             · simpa [hl] using h5
 
 theorem pre_lrel {k : List Nat} {ro : List (String × Alloc)} {eq : List String × List String}
-    {s : FState} (rel : LRel) {e : Env} {args : List Val} {mem : Mem}
+    {s : FState} (rel : LRel) {out : PassOut} {e : Env} {args : List Val} {mem : Mem}
     (hro : rel = .lower → ∀ x ∈ LowerCheck.roPre s.st.tables (LowerCheck.invUnknown s.st.func),
       x ∈ ro)
-    (h : PreFull k ro eq (s.nnfAfter rel) e args mem) :
-    lrelPre rel s.st.tables s.st.func e args mem := by
+    (h : PreFull k ro eq (s.nnfAfter rel) (s.nhsAfter rel out) e args mem) :
+    lrelPre rel s.st.tables s.st.func out.func e args mem := by
   cases rel with
   | lower => exact ⟨h.1.1, h.1.2.2.2.2.2.2.2.2.1.sub (hro rfl)⟩
   | lowFrame => exact ⟨h.1.2.1, h.1.2.2.1⟩
@@ -400,13 +407,29 @@ theorem pre_lrel {k : List Nat} {ro : List (String × Alloc)} {eq : List String 
     have hm : (s.st.tables, s.st.func) ∈ s.nnfAfter .sched := by
       unfold FState.nnfAfter
       exact List.mem_cons_self
-    exact h.2 _ hm
+    obtain ⟨h1, h2, h3⟩ := h.2.1 _ hm
+    refine ⟨h1, h2, h3, ?_⟩
+    cases hh : ScheduleCheck.hoistNeeded s.st.tables s.st.func out.func
+    · exact nilHoistOK_of_noHoist hh e args mem
+    · have hm' : (s.st.tables, s.st.func, out.func) ∈ s.nhsAfter .sched out := by
+        unfold FState.nhsAfter
+        simp only [hh]
+        exact List.mem_cons_self
+      exact h.2.2 _ hm'
   | ls => exact ⟨h.1.2.2.2.2.2.2.1, h.1.2.1, h.1.2.2.1⟩
   | low | schedS | loc => trivial
 
 theorem nnfAfter_sub (s : FState) (rel : LRel) : ∀ x ∈ s.nnf, x ∈ s.nnfAfter rel := by
   intro x hx
   unfold FState.nnfAfter
+  split
+  · exact List.mem_cons_of_mem _ hx
+  · exact hx
+
+theorem nhsAfter_sub (s : FState) (rel : LRel) (out : PassOut) :
+    ∀ x ∈ s.nhs, x ∈ s.nhsAfter rel out := by
+  intro x hx
+  unfold FState.nhsAfter
   split
   · exact List.mem_cons_of_mem _ hx
   · exact hx
@@ -427,7 +450,7 @@ theorem runPassL_inv {s s' : FState} {p : LPass} (hp : stepSoundL p) (h : InvF e
       · cases hr
         split
         · next hs => exact h.same hs
-        · exact h.adopt (fun _ hx => hx) (fun hv => by cases hv) outWf_sound
+        · exact h.adopt (fun _ hx => hx) (fun _ hx => hx) (fun hv => by cases hv) outWf_sound
     | proven run rel wfReq guard =>
       obtain ⟨htgt, hsound⟩ := hp
       simp only at hr
@@ -438,7 +461,8 @@ theorem runPassL_inv {s s' : FState} {p : LPass} (hp : stepSoundL p) (h : InvF e
             (wf = true → check (checkEnv env o.tables) o.func = .ok ()) →
             LayerRefines (PreFull (NilCheck.dictParams env.tables f0) (pipelineRo env f0)
               (pipelineEq env)
-              (s.nnfAfter rel)) out o.tables o.func s.layer s.st.tables s.st.func := by
+              (s.nnfAfter rel) (s.nhsAfter rel o)) out o.tables o.func s.layer s.st.tables
+              s.st.func := by
           intro wf hw hwf
           obtain ⟨hl, hc, hg, hro⟩ := whyNot_none hw
           have R := hsound _ _ _ hrun
@@ -449,16 +473,16 @@ theorem runPassL_inv {s s' : FState} {p : LPass} (hp : stepSoundL p) (h : InvF e
         cases full with
         | none =>
           cases hr
-          exact h.next (nnfAfter_sub s rel) key
+          exact h.next (nnfAfter_sub s rel) (nhsAfter_sub s rel o) key
         | some fp =>
           simp only at hr
           split at hr
           · cases hr
           · split at hr
             · cases hr
-              exact h.next (nnfAfter_sub s rel) key
+              exact h.next (nnfAfter_sub s rel) (nhsAfter_sub s rel o) key
             · cases hr
-              exact h.adopt (fun _ hx => hx) (fun hv => by cases hv) outWf_sound
+              exact h.adopt (fun _ hx => hx) (fun _ hx => hx) (fun hv => by cases hv) outWf_sound
 
 theorem runPassesL_inv : ∀ {ps : List LPass} {s s' : FState},
     (∀ p ∈ ps, stepSoundL p) → InvF env f0 l0 s → runPassesL env ps s = .ok s' → InvF env f0 l0 s'
@@ -471,6 +495,86 @@ theorem runPassesL_inv : ∀ {ps : List LPass} {s s' : FState},
       exact runPassesL_inv (fun q hq => hs q (List.mem_cons_of_mem _ hq))
         (runPassL_inv (hs p List.mem_cons_self) h h1) hr
 
+/-- A pass records a `schedule` run in `nhs` only when it hoists a checked pointer above a fault
+(`ScheduleCheck.hoistNeeded`). -/
+theorem runPassL_nhs {s s' : FState} {p : LPass}
+    (h : ∀ x ∈ s.nhs, ScheduleCheck.hoistNeeded x.1 x.2.1 x.2.2 = true)
+    (hr : runPassL env s p = .ok s') :
+    ∀ x ∈ s'.nhs, ScheduleCheck.hoistNeeded x.1 x.2.1 x.2.2 = true := by
+  have hA : ∀ (rel : LRel) (o : PassOut), ∀ x ∈ s.nhsAfter rel o,
+      ScheduleCheck.hoistNeeded x.1 x.2.1 x.2.2 = true := by
+    intro rel o x hx
+    unfold FState.nhsAfter at hx
+    split at hx
+    · next hc =>
+      rcases List.mem_cons.1 hx with rfl | hx
+      · simp only [Bool.and_eq_true] at hc; exact hc.2
+      · exact h x hx
+    · exact h x hx
+  have hN : ∀ {q : LPass} {o : PassOut} {bad : Bool → Option String} {n : List (Tables × Func)}
+      {nh : List (Tables × Func × Func)},
+      (∀ x ∈ nh, ScheduleCheck.hoistNeeded x.1 x.2.1 x.2.2 = true) →
+      ∀ x ∈ (s.next env q o bad n nh).nhs, ScheduleCheck.hoistNeeded x.1 x.2.1 x.2.2 = true := by
+    intro q o bad n nh hnh x hx
+    unfold FState.next at hx
+    split at hx
+    · exact h x hx
+    · dsimp only at hx
+      split at hx
+      · exact hnh x hx
+      · split at hx
+        · exact h x hx
+        · exact h x hx
+  rcases p with ⟨name, required, out, step, full⟩
+  unfold runPassL at hr
+  simp only at hr
+  split at hr
+  · cases hr
+  · cases hr; exact h
+  · cases step with
+    | stock run =>
+      simp only at hr
+      split at hr
+      · cases hr
+      · cases hr
+        split <;> exact h
+    | proven run rel wfReq guard =>
+      simp only at hr
+      split at hr
+      · cases hr
+      · next o hrun =>
+        cases full with
+        | none => cases hr; exact hN (hA rel o)
+        | some fp =>
+          simp only at hr
+          split at hr
+          · cases hr
+          · split at hr
+            · cases hr; exact hN (hA rel o)
+            · cases hr; exact h
+
+theorem runPassesL_nhs : ∀ {ps : List LPass} {s s' : FState},
+    (∀ x ∈ s.nhs, ScheduleCheck.hoistNeeded x.1 x.2.1 x.2.2 = true) →
+    runPassesL env ps s = .ok s' → ∀ x ∈ s'.nhs, ScheduleCheck.hoistNeeded x.1 x.2.1 x.2.2 = true
+  | [], _, _, h, hr => by cases hr; exact h
+  | p :: ps, s, s', h, hr => by
+    unfold runPassesL at hr
+    split at hr
+    · cases hr
+    · next s1 h1 => exact runPassesL_nhs (runPassL_nhs h h1) hr
+
+/-- **`nhs` records only the `schedule` runs that hoist a checked pointer above a fault**
+(`ScheduleCheck.hoistNeeded`): for a function whose `schedule` run needs no such swap, `r.nhs`
+is empty and `NilHoistOK` assumes nothing. -/
+theorem verifiedPipelineFull_nhs {env : PassEnv} {f : Func} {start : Nat}
+    {zv : Array (ID × Nat)} {dcl : Nat} {r : FState}
+    (h : verifiedPipelineFull env f start zv dcl = .ok r) :
+    ∀ x ∈ r.nhs, ScheduleCheck.hoistNeeded x.1 x.2.1 x.2.2 = true := by
+  unfold verifiedPipelineFull at h
+  split at h
+  · cases h
+  · exact runPassesL_nhs (fun _ hx => by simp at hx) h
+
 /-- **The verified pipeline through `trim` refines its input across the layers**: when
 `verifiedPipelineFull` (from any start pass) returns a `verified` state, its function, run in its
 layer, refines the input `f` run in the layer of the start pass (`startLayer`), on every
@@ -481,7 +585,7 @@ theorem verifiedPipelineFull_layer {env : PassEnv} {f : Func} {start : Nat}
     {zv : Array (ID × Nat)} {dcl : Nat} {r : FState}
     (h : verifiedPipelineFull env f start zv dcl = .ok r) (hv : r.st.verified = true) :
     LayerRefines (PreFull (NilCheck.dictParams env.tables f) (pipelineRo env f)
-      (pipelineEq env) r.nnf) r.layer
+      (pipelineEq env) r.nnf r.nhs) r.layer
       r.st.tables r.st.func (startLayer start) env.tables f := by
   unfold verifiedPipelineFull at h
   split at h
@@ -513,7 +617,8 @@ identity or skipped, the state allocated and free of `InvertFlags`), every retur
 on every environment and input in Phase 1's `VPre` (with `f`'s dictionary parameters and
 read-only symbols) on which the recorded `schedule` inputs do not fault in the nil page and
 their pointer-shaped parameter pieces and checked pointer-shaped values read nil or pointers
-that are not wild. -/
+that are not wild, and so do the checked pointers that the recorded `schedule` runs hoist above a
+fault (`NilHoistOK`; none for a run without such a swap, `verifiedPipelineFull_nhs`). -/
 theorem verifiedPipelineFull_refines {env : PassEnv} {f : Func} {zv : Array (ID × Nat)}
     {dcl : Nat} {r : FState} (h : verifiedPipelineFull env f 0 zv dcl = .ok r)
     (hv : r.fullyVerified = true) {e : Env} {args : List Val} {mem : Mem}
@@ -521,13 +626,14 @@ theorem verifiedPipelineFull_refines {env : PassEnv} {f : Func} {zv : Array (ID 
       (pipelineEq env) e args mem)
     (hn : ∀ x ∈ r.nnf, NoNilFault x.1 x.2 e args mem)
     (ha : ∀ x ∈ r.nnf, ArgPtrsOK x.1 x.2 e args mem)
-    (hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 e args mem) {fuel : Nat}
+    (hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 e args mem)
+    (hnh : ∀ x ∈ r.nhs, NilHoistOK x.1 x.2.1 x.2.2 e args mem) {fuel : Nat}
     (hd : (GoFV.SSA.run e env.tables f args mem fuel).Defined) :
     ∃ fuel', OutcomeRefines 0 (GoFV.SSA.run e env.tables f args mem fuel)
       (runLoc e r.st.tables r.st.func args mem fuel') := by
   simp only [FState.fullyVerified, Bool.and_eq_true, beq_iff_eq] at hv
   have R := verifiedPipelineFull_layer h hv.1.1
   rw [hv.1.2, show startLayer 0 = .gen by simp [startLayer]] at R
-  exact R e args mem ⟨hP, fun x hx => ⟨hn x hx, ha x hx, hnp x hx⟩⟩ fuel hd
+  exact R e args mem ⟨hP, fun x hx => ⟨hn x hx, ha x hx, hnp x hx⟩, hnh⟩ fuel hd
 
 end GoFV.Proof.PipelineFull

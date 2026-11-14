@@ -32,7 +32,11 @@ accepts `g` as such a scheduling of `f` (decision (b) of #384, `docs/plans/seman
   or a pointer that is not wild, `GoFV.Proof.ArgPtrsOK`, it panics alike or passes) (`swapOKB`),
   or of another pointer-shaped value the source runs before `x` or outside the block
   (`nilPtrSwap`, on the inputs where checked pointers are nil or not wild,
-  `GoFV.Proof.NilPtrsOK`) (`swapOK`). This is the ready-root rule (#96) for runs where memory
+  `GoFV.Proof.NilPtrsOK`), or of a pointer-shaped value the source runs after `x`, a 64-bit load
+  or a tuple selection (`hoistOp`; not a `Convert`) whose arguments the source runs before `x`
+  or outside the block (`hoistSwap`, on the inputs where such a hoisted pointer is nil or not
+  wild, `GoFV.Proof.NilHoistOK`, a separate assumption that `hoistNeeded` records only for the
+  schedulings that need it) (`swapOK`). This is the ready-root rule (#96) for runs where memory
   ops fault (`LMode.faulting`).
 -/
 
@@ -295,11 +299,42 @@ def nilPtrSwap (tabs : Tables) (tys : Array Ty) (f : Func) (pS : Array Nat) (x y
         !isSPA f (rep f q) && pS[rep f q]! < pS[x]!)
   | _, _ => false
 
+/-- The ops of a checked pointer that `schedule` may hoist above a fault (`hoistSwap`): a 64-bit
+load (`MOVDload`, `MOVDloadidx`, `MOVDloadidx8`) or a selection (`Select0`, `SelectN`) of a tuple
+(an `LDP`, a call). -/
+def hoistOp (op : Op) : Bool :=
+  op == .ARM64MOVDload || op == .ARM64MOVDloadidx || op == .ARM64MOVDloadidx8 || op == .Select0 ||
+    op == .SelectN
+
+/-- `swapOK`'s `NilHoistOK` case: `x` is a `faultOp` or a nil check and `y` a nil check on the
+same memory (`sameMem`) of a value whose bypass `q` (`rep`) is pointer-shaped (`tys`), no nil
+check or `SPanchored`, a `hoistOp` whose arguments' bypasses the source runs before `x` or are
+outside the block (`pS`): the source may never evaluate `q` (it stops at `x`), but `q`'s op on
+the registers its arguments' bypasses hold before `x` gives `q`'s value. On the inputs where that
+value is nil or a pointer that is not wild (`GoFV.Proof.NilHoistOK`, a Go-level assumption: Go's
+heap holds nil or valid pointers at pointer-typed words, and `schedule.go` evaluates `q` there),
+`y` panics with `nilDeref` of that memory, as `x` would, or passes. -/
+def hoistSwap (tabs : Tables) (tys : Array Ty) (f : Func) (pS : Array Nat) (x y : ID) : Bool :=
+  match f.value? x, f.value? y with
+  | some vx, some vy =>
+    (cls tabs vx == .load || cls tabs vx == .nil) && sameMem f pS vx vy && cls tabs vy == .nil &&
+      (vy.args[0]?.any fun q0 =>
+        ptrShape (tys[rep f q0]?.getD .other) && !isNC f (rep f q0) && !isSPA f (rep f q0) &&
+          (f.value? (rep f q0)).any fun vq =>
+            hoistOp vq.op && vq.args.all fun a => pS[rep f a]! < pS[x]!)
+  | _, _ => false
+
 /-- The source runs `x` before `y`, the target `y` before `x` (both may fail): allowed by
-`swapOKB` or by its `NilPtrsOK` case `nilPtrSwap`. -/
+`swapOKB`, by its `NilPtrsOK` case `nilPtrSwap` or by its `NilHoistOK` case `hoistSwap`. -/
 def swapOK (tabs : Tables) (params : Array (Option AuxRef)) (tys : Array Ty) (f : Func)
     (pS : Array Nat) (x y : ID) : Bool :=
-  swapOKB tabs params tys f pS x y || nilPtrSwap tabs tys f pS x y
+  swapOKB tabs params tys f pS x y || nilPtrSwap tabs tys f pS x y || hoistSwap tabs tys f pS x y
+
+/-- The pair `(x, y)` (the source runs `x` first, the target `y`) needs `hoistSwap`: no other case
+of `swapOK` allows it. -/
+def hoistOnly (tabs : Tables) (params : Array (Option AuxRef)) (tys : Array Ty) (f : Func)
+    (pS : Array Nat) (x y : ID) : Bool :=
+  !(swapOKB tabs params tys f pS x y || nilPtrSwap tabs tys f pS x y) && hoistSwap tabs tys f pS x y
 
 /-- `posFill l i a`: `a` with each element of `l` set to its position (from `i`). -/
 def posFill : List ID → Nat → Array Nat → Array Nat
@@ -404,6 +439,21 @@ def ordersOK (tabs : Tables) (f g : Func) : Bool :=
         oT.toList == gb.values.toList.filter (!isPhi g ·) && topoB g oT.toList &&
           orderOK tabs cS.params cS.tys f f.valueTab.size oS oT
       | _, _, _ => false
+
+/-- Some block's order in `g` runs a value `y` that may fail before a value `x` that may fail and
+that `f`'s order runs first, and only `hoistSwap` allows the pair (`hoistOnly`): the scheduling
+relies on `GoFV.Proof.NilHoistOK`. -/
+def hoistNeeded (tabs : Tables) (f g : Func) : Bool :=
+  let cS := Ctx.makeL tabs f
+  let sT := (Ctx.makeSched tabs g).sched
+  (List.range f.blockTab.size).any fun b =>
+    match cS.sched[b]?.join, sT[b]?.join with
+    | some oS, some oT =>
+      let pS := srcPos f.valueTab.size oS.toList
+      (List.range oT.size).any fun j => (List.range j).any fun i =>
+        mayFail tabs f oT[i]! && mayFail tabs f oT[j]! && decide (pS[oT[j]!]! < pS[oT[i]!]!) &&
+          hoistOnly tabs cS.params cS.tys f pS oT[j]! oT[i]!
+    | _, _ => false
 
 /-- The shape conditions of `scheduleCheck` (see the module doc). -/
 def shapeOK (tabs : Tables) (f g : Func) : Bool :=

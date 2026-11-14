@@ -33,11 +33,12 @@ theorem verifiedPipelineFull_refines_fixed {env : PassEnv} {f : Func} {zv : Arra
       (pipelineEq env) e args mem)
     (hn : ∀ x ∈ r.nnf, NoNilFault x.1 x.2 e args mem)
     (ha : ∀ x ∈ r.nnf, ArgPtrsOK x.1 x.2 e args mem)
-    (hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 e args mem) {fuel : Nat}
+    (hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 e args mem)
+    (hnh : ∀ x ∈ r.nhs, NilHoistOK x.1 x.2.1 x.2.2 e args mem) {fuel : Nat}
     (hd : (GoFV.SSA.run e env.tables f args mem fuel).Defined) :
     ∃ fuel', OutcomeRefines 0 (GoFV.SSA.run e env.tables f args mem fuel)
       (runLoc e r.st.tables r.st.func args mem fuel') :=
-  verifiedPipelineFull_refines h hv hP hn ha hnp hd
+  verifiedPipelineFull_refines h hv hP hn ha hnp hnh hd
 
 /-- `verified_mach` at `Addrs.fixed`. -/
 theorem verified_mach_fixed
@@ -48,7 +49,8 @@ theorem verified_mach_fixed
       mem)
     (hn : ∀ x ∈ r.nnf, NoNilFault x.1 x.2 e args mem)
     (ha : ∀ x ∈ r.nnf, ArgPtrsOK x.1 x.2 e args mem)
-    (hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 e args mem) {fuel : Nat}
+    (hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 e args mem)
+    (hnh : ∀ x ∈ r.nhs, NilHoistOK x.1 x.2.1 x.2.2 e args mem) {fuel : Nat}
     (hd : (GoFV.SSA.run e penv.tables f args mem fuel).Defined)
     {lc : LocCtx} (hlc : lc = liveCtx (LocCtx.make r.st.tables r.st.func))
     {H : Hooks} {g : G2In} {L : Link} {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab}
@@ -97,7 +99,7 @@ theorem verified_mach_fixed
         BoundsOK H g L ps.toList →
         RunPanicPre e H lc g L (endP L.text ps.toList) E0 lc.ctx.f.entry k sI →
         ∃ pe' n t', BoundsAgree pe pe' ∧ runMach H code (s0.x 30) n s0 = .panicked pe' t') :=
-  verified_mach hpipe hv hP hn ha hnp hd hlc hc hn48 hO hH hic hrok hME hroom hg hms hsep hE hEE
+  verified_mach hpipe hv hP hn ha hnp hnh hd hlc hc hn48 hO hH hic hrok hME hroom hg hms hsep hE hEE
     hbE hbm
     hk hpre hes hargs hent hmore hinv huE hpc hRP hmt hro
 
@@ -110,7 +112,8 @@ theorem verified_mach_S_fixed
       mem)
     (hn : ∀ x ∈ r.nnf, NoNilFault x.1 x.2 e args mem)
     (ha : ∀ x ∈ r.nnf, ArgPtrsOK x.1 x.2 e args mem)
-    (hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 e args mem) {fuel : Nat}
+    (hnp : ∀ x ∈ r.nnf, NilPtrsOK x.1 x.2 e args mem)
+    (hnh : ∀ x ∈ r.nhs, NilHoistOK x.1 x.2.1 x.2.2 e args mem) {fuel : Nat}
     (hd : (GoFV.SSA.run e penv.tables f args mem fuel).Defined)
     {lc : LocCtx} (hlc : lc = liveCtx (LocCtx.make r.st.tables r.st.func))
     {H : Hooks} {g : G2In} {L : Link} {ps : Array Prog} {bstart : ID → Option Nat} {tab : PcTab}
@@ -159,7 +162,7 @@ theorem verified_mach_S_fixed
         BoundsOK H g L ps.toList →
         RunPanicPreS e H lc g L (endP L.text ps.toList) E0 lc.ctx.f.entry k sI →
         ∃ pe' n t', BoundsAgree pe pe' ∧ runMach H code (s0.x 30) n s0 = .panicked pe' t') :=
-  verified_mach_S hpipe hv hP hn ha hnp hd hlc hc hO hH hic hrok hME hroom hg hms hsep hE hEE
+  verified_mach_S hpipe hv hP hn ha hnp hnh hd hlc hc hO hH hic hrok hME hroom hg hms hsep hE hEE
     hbE hbm
     hk hpre hes hargs hent hmore hinv hosp hspI huE hpc hRP hmt hro
 
