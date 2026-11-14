@@ -77,7 +77,8 @@ Phase 1 94,316 → 94,343, through `trim` 88,458 → 88,479, 0 lost; quick-v10 e
 7,440, 0 lost), and the `Zero` of a `VarDef` of a `Zero` of the same pointer (`:2159`), dropped
 in the forwarding layer when the `VarDef`'s variable is not a `PAUTO` (S3: such a `VarDef` is the
 identity on memory; `RewriteCheck.zeroChain` reads through it, `LoadFwd.zeroChain_read`) (#69,
-VarDefS3b; MEASURE).
+VarDefS3b; full-v11 per function: Phase 1 94,343 → 94,391, through `trim` 88,709 → 88,750, 0 lost;
+quick-v10 end to end 7,441 → 7,446, 0 lost).
 
 **False under the semantics, with the reason** (31, each marked `-- FALSE r_… #N` in its proof
 module; "Findings" in `rules.md`):
