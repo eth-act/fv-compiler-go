@@ -383,8 +383,11 @@ back end.
    - **Example:** at `:2378`, 153 of 156 instances need the proven `generic.rules:398` variant 4 (`Not
      (Neq8 …)`) afterwards, which the table replaces by the `Neq64` variant. Hence "sole 99, unblocks
      0".
-   - **Scope:** the sole-blocker sets used here come from the `OFF` lines and are not affected. The
-     fix is to keep the proven rules by identity.
+   - **Scope:** the sole-blocker sets used here come from the `OFF` lines and are not affected.
+   - **Fixed** (with item 1 of the decisions): `withExtra` keeps a full-set rule that is proven
+     itself (`ident`, its `reprStr`). On main's proven set over the 363 `condselect` files,
+     "Unblocks" goes `:2378` 1 → 124, `:2342` 46 → 73, `:2371` 42 → 45, `:2368` 30 → 41, `:2322`
+     0 → 29: each now equals its sole count.
 2. **`MemEqSpec` can be unsatisfiable** (`Gen/G28.lean:28-37`) `[INFERENCE]`.
    - The contract asks the machine's `X0` to match `memEq`.
    - `memEq` says `false` for a fragment against concrete bytes, where `runtime.memequal` returns `true`
