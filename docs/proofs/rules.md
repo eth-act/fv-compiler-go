@@ -1374,9 +1374,9 @@ needs a later phase of the semantics.
 | `generic` | Sub | 68 | 0 | 0 | 2 | 70 |
 | `generic` | Trunc | 32 | 0 | 0 | 1 | 33 |
 | `generic` | Xor | 60 | 4 | 4 | 0 | 68 |
-| `generic` | Zero | 2 | 0 | 0 | 6 | 6 |
+| `generic` | Zero | 3 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1493 | 143 | 17 | 258 | 1762 |
+| all | | 1494 | 143 | 17 | 258 | 1762 |
 
 <!-- END coverage -->
 
