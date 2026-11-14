@@ -154,6 +154,13 @@ main 51ef75c1 (6 min):
 | … relying on `NilPtrsOK` (a `schedule` swap through `nilPtrSwap`) | – | 3,014 (91883690: 2,983) | – | – |
 | … and identical to stock after `trim` | 74,651 (74,595) | 66,546 (66,331) | 7,233 | 5,699 |
 
+**`NilHoistOK` (#729).** On full-v11, per function against cad4a601 (`--vstats`, `comm`): Phase 1
+unchanged (0 lost), `trim` +228, 0 lost, exactly the functions whose `r.nhs` is non-empty (among
+them `ssagen.Compile`, #723's one `trim` loss); end to end 79,910. Fully verified with a non-empty
+`nhs` (`NilHoistOK` assumed): full-v11 228, of them 132 end to end; quick-v10 3 / 1. Quick-v10 on
+57da3b9a: fully verified 8,129 → 8,132, end to end 7,440 → 7,441 (`verified_mach` 7,224 → 7,225,
+`_S` 216 → 216, 0 lost).
+
 **Partially vacuous: the `Mul64uover` overflow flag (#69).** Go's ssagen types
 `math.MulUintptr`'s `Mul64uover` `(uint, uint)` (`ssagen/intrinsics.go`), while its `Select1` is
 the `bool` overflow flag, which `generic.rules:193`/`:649`/`:1339`/`:1340` and the ARM64 lowering
@@ -2315,11 +2322,9 @@ Since #723, `early phielim and copyelim` also has a zero-size fragment: `CopyZer
 (fragment) runs go from 660 to 46, and so do early deadcode's. These 614 functions are the only
 ones whose route changes. Among them, on a0ecbcea (#722): Phase 1 is 492 → 574 (+82, 0 lost),
 `trim` is 445 → 494 (+50), and stock identity after `trim` is 14 → 205 (+191, 0 lost). Against
-#727's code alone (before #722's `:1004`), Phase 1 is 93,939 → 94,091 (+152, 0 lost). One function
-is lost through `trim`, `ssagen.Compile`. Its copyelim is now proven, so the schedule validator
-sees a rerouted state it cannot yet validate (class `NIL CHECK OF ANOTHER PTR VALUE AFTER X`, the
-hoist class NilHoistOK targets). No statement is weakened. Compile's output was not identical to
-stock before either. This is tracked in #385.
+#727's code alone (before #722's `:1004`), Phase 1 is 93,939 → 94,091 (+152, 0 lost). The one
+function #723 lost through `trim`, `ssagen.Compile` (its rerouted state needed the schedule hoist
+class), is verified through `trim` again since `NilHoistOK` (#729; `nhs` non-empty).
 
 `zeroGuard` also resets zero-size `Phi`s and `Arg`s to `Empty`, as Go's phielim does (#69,
 Phase1Tail11; the atom simulation drops them, `RewriteCheck.dropAtom`; witness
