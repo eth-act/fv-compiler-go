@@ -38,10 +38,11 @@ def divisible : Pass := rewritePass divisibleTable true
 /-- `divmod`. -/
 def divmod : Pass := rewritePass divmodTable true
 
-/-- The proven-only rule tables. -/
+/-- The proven-only rule tables. `divmod`'s is `guarded` (`Interp.checkedGuard`: `:136`–`:148`
+fire only on a dividend `isNonNegative` shows nonnegative, as the validator requires). -/
 def genericProvenTable : Interp.Table := Interp.Table.ofRuleSet Proven.generic
 def divisibleProvenTable : Interp.Table := Interp.Table.ofRuleSet Proven.divisible
-def divmodProvenTable : Interp.Table := Interp.Table.ofRuleSet Proven.divmod
+def divmodProvenTable : Interp.Table := { Interp.Table.ofRuleSet Proven.divmod with guarded := true }
 
 /-- `opt` firing only proven rules. -/
 def optProven : Pass := rewritePass genericProvenTable true

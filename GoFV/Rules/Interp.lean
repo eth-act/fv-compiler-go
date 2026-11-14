@@ -384,9 +384,10 @@ def mulDefs (f : Func) (v : ID) : Array Value :=
 /-- Try rule `cr` (index `idx` in its table row) on `v`; true if it fired. `slDefs`: log the
 values a struct-load expansion built (`structLoadDefs`) after `v`; `ssDefs`: those of a
 struct-store split (`structStoreDefs`); `snap`: log the function before the rule's edit as a
-`snap` event before the rule's. -/
+`snap` event before the rule's; `guard`: a further condition (`checkedGuard`) the rule must
+meet to fire. -/
 def tryRule (v : ID) (cr : CRule) (idx : Nat) (slDefs : Bool := false) (ssDefs : Bool := false)
-    (snap : Bool := false) : RwM Bool := do
+    (snap : Bool := false) (guard : Option Expr := none) : RwM Bool := do
   let r := cr.rule
   let x ← val v
   let sc : Scope := { v := some v, b := x.block, binds := cr.unbound, vtys := cr.vtys }
@@ -396,6 +397,8 @@ def tryRule (v : ID) (cr : CRule) (idx : Nat) (slDefs : Bool := false) (ssDefs :
     if !(← pendingOk sc st) then return false
     if let some c := r.cond then
       if !(← liftE (← eval sc c).asBool) then return false
+    if let some g := guard then
+      if !(← liftE (← eval sc g).asBool) then return false
     -- the function before a struct-store split (its fresh values are those it lacks) or a
     -- snapshot; kept only then, as holding it makes the rule's edits copy the tables
     let f0? ← if (ssDefs || snap) && (← get).log.isSome then some <$> getF else pure none
@@ -413,6 +416,19 @@ def tryRule (v : ID) (cr : CRule) (idx : Nat) (slDefs : Bool := false) (ssDefs :
       if snap then if let some f0 := f0? then logEv fun _ => .snap f0
       logEv fun _ => .rule v idx st.binds defs
     return true
+
+/-- The condition a validated rewrite pass adds to a rule (a `guarded` table): the
+rule-keyed facts of `GoFV.Proof.Rules.FrameOK` that the validator checks per instance and that
+the rule's own condition does not state, as a matching condition, so that where they fail the
+rule does not fire and a later rule of the row may. `divmod.rules:136–148` (`(Div<N>u <t> x
+(Const<N> [c])) && t.IsSigned() && smagicOK<N>(c)`) need the dividend `x` (variable 1)
+nonnegative (`GoFV.Proof.Rules.nonNegLeaves`, which the validator decides with
+`RewriteCheck.nonNegLeavesD`); without the guard they fire on a dividend `isNonNegative` does not
+show nonnegative, the validator rejects the instance, and the unsigned rules `:180`–`:232`, which
+often build the same value, never get to fire. -/
+def checkedGuard (r : Rule) : Option Expr :=
+  if r.loc = ⟨"divmod", 136⟩ ∨ r.loc = ⟨"divmod", 140⟩ ∨ r.loc = ⟨"divmod", 144⟩ ∨
+      r.loc = ⟨"divmod", 148⟩ then some (.call "isNonNegative" [.var 1] .bool) else none
 
 /-- Per-op rule table of a rule set, indexed by `Op.ctorIdx`; `nilChecks`/`loads`: the rule
 set's `nilChecks`/`loads`, tried on a `NilCheck` or `IsNonNil`/`Load` after its row (their index
@@ -434,6 +450,8 @@ structure Table where
   structStores : Array CRule := #[]
   segs : Array CRule := #[]
   phiSels : Array CRule := #[]
+  /-- The value rules also meet `checkedGuard` (the tables of a validated rewrite pass). -/
+  guarded : Bool := false
 
 /-- The index of the first `segs` rule on a value of op `o`: after its row and the tables
 `rewriteValue` tries on `o` before `segs`. -/
@@ -486,7 +504,8 @@ def rewriteValue (t : Table) (v : ID) : RwM Bool := do
   let o := (← val v).op
   let rs := t.values[o.ctorIdx]!
   for h : i in [0:rs.size] do
-    if ← tryRule v rs[i] i then return true
+    if ← tryRule v rs[i] i (guard := if t.guarded then checkedGuard rs[i].rule else none) then
+      return true
   if o == .NilCheck || o == .IsNonNil then
     let ns := t.nilChecks
     for h : i in [0:ns.size] do

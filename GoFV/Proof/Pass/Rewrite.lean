@@ -314,14 +314,26 @@ theorem segs_refines {s : RuleSet} (hs : s.AllSound) {T : Interp.Table}
       simp only [RewriteCheck.segsOK] at h
       exact segs_refines hs hvs hbs hg evs f _ hf h
 
-theorem checkedRewrite_refines {s : RuleSet} (hs : s.AllSound)
+/-- `checkedRewrite` with a table of the rule set's value and block rules (e.g. a `guarded` one,
+whose matching conditions only make rules fire less). -/
+theorem checkedRewrite_refinesT {s : RuleSet} (hs : s.AllSound) {t : Interp.Table}
+    (htv : t.values = (Interp.Table.ofRuleSet s).values)
+    (htb : t.blocks = (Interp.Table.ofRuleSet s).blocks)
     {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : CheckEnv}
-    (h : checkedRewrite (Interp.Table.ofRuleSet s) penv f = .ok out)
+    (h : checkedRewrite t penv f = .ok out)
     (hf : check ce f = .ok ()) (hg : check ce' out.func = .ok ()) :
     RefinesFrom (RwPre penv.tables penv.frontend f) out.tables out.func penv.tables f := by
   rcases checkedRewrite_cases h with ⟨he, ht⟩ | ⟨hta, T, hvs, hbs, log, hseg⟩
   · rw [he, ht]; exact RefinesUnder.toRw (RefinesUnder.refl _ _ _)
-  exact refinesFrom_of_tabsAgree hta (segs_refines hs hvs hbs hg _ f #[] hf hseg)
+  exact refinesFrom_of_tabsAgree hta
+    (segs_refines hs (hvs.trans htv) (hbs.trans htb) hg _ f #[] hf hseg)
+
+theorem checkedRewrite_refines {s : RuleSet} (hs : s.AllSound)
+    {penv : PassEnv} {f : Func} {out : PassOut} {ce ce' : CheckEnv}
+    (h : checkedRewrite (Interp.Table.ofRuleSet s) penv f = .ok out)
+    (hf : check ce f = .ok ()) (hg : check ce' out.func = .ok ()) :
+    RefinesFrom (RwPre penv.tables penv.frontend f) out.tables out.func penv.tables f :=
+  checkedRewrite_refinesT hs rfl rfl h hf hg
 
 /-- `opt`, `middle opt` and `late opt` with the proven generic rules, validated. -/
 theorem opt_refines {penv : PassEnv} {f : Func} {out : PassOut}
@@ -342,6 +354,6 @@ theorem divmod_refines {penv : PassEnv} {f : Func} {out : PassOut}
     {ce ce' : CheckEnv} (h : divmodChecked penv f = .ok out) (hf : check ce f = .ok ())
     (hg : check ce' out.func = .ok ()) :
     RefinesFrom (RwPre penv.tables penv.frontend f) out.tables out.func penv.tables f :=
-  checkedRewrite_refines divmod_allSound h hf hg
+  checkedRewrite_refinesT divmod_allSound rfl rfl h hf hg
 
 end GoFV.Proof.Pass.Rewrite
