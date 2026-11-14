@@ -125,7 +125,7 @@ validator checks it per instance): `divmod.rules:136–148` (the dividend nonneg
 20 of the others need branch facts the validator does not track) and `generic.rules:2166–2169`
 (`0 ≤ c`; #90: Go builds no negative constant the rule matches; 34 of 34).
 
-**Open** (284):
+**Open** (283):
 
 - `P1`/`P2` alternatives without a lemma (182): most never fire on the corpus; those that fire
   are in the `fire-full` table of `rules.md` (sole obstacles by rule).
