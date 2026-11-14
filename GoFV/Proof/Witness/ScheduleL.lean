@@ -229,6 +229,30 @@ theorem clampNP_nilPtr :
         true := by
   decide +kernel
 
+/-- `clampL` plus `v25 = MOVDload v9 v1` (a loaded pointer), `v26 = MOVDload v8 v1`,
+`v27 = MOVDload v25 v1` (a pointer loaded through it, `*(*v9)`) and `v28 = LoweredNilCheck v27 v1`
+in `b1`. -/
+def clampNH : Func :=
+  { clampL with
+    vidLast := 28
+    valueTab := (((clampLValues.push (some (mkV 25 .ARM64MOVDload 2 none p0 1 #[9, 1] 1))).push
+      (some (mkV 26 .ARM64MOVDload 2 none p0 1 #[8, 1] 1))).push
+      (some (mkV 27 .ARM64MOVDload 2 none p0 1 #[25, 1] 1))).push
+      (some (mkV 28 .ARM64LoweredNilCheck 0 none p0 1 #[27, 1] 1)) }
+
+/-- **`hoistSwap`'s chains (`hoistArg` past depth 0) are not vacuous**: with the source order
+`v1 v8 v9 v10 v26 v25 v27 v28 v22`, the target may run the nil check `v28` of `v27` before the
+load `v26` only through `hoistSwap`, whose `v27` loads through `v25`, which the source runs after
+`v26` too: `v25` is hoisted as well (`hoistArg` at depth 1, a `MOVDload` of the parameter piece
+`v9` run before `v26`), not at depth 0. -/
+theorem clampNH_hoist :
+    hoistOnly clampLTabs (Ctx.makeL clampLTabs clampNH).params
+        ((Array.replicate 29 Ty.other).set! 27 (.ptr none)) clampNH
+        (srcPos 29 [1, 8, 9, 10, 26, 25, 27, 28, 22]) 26 28 = true ∧
+      hoistArg clampNH (srcPos 29 [1, 8, 9, 10, 26, 25, 27, 28, 22]) 26 0 25 = false ∧
+      hoistArg clampNH (srcPos 29 [1, 8, 9, 10, 26, 25, 27, 28, 22]) 26 1 25 = true := by
+  decide +kernel
+
 /-- `clampNP` with `v27 = LoweredNilCheck v28 v1` of `v28 = LoweredNilCheck v25 v1`. -/
 def clampNQ : Func :=
   { clampL with

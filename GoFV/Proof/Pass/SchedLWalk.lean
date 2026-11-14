@@ -169,6 +169,188 @@ theorem walk_ok (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : List 
     rw [evalAllL_cons, stepVL_of (by rw [makeSched_f]; exact hgv), hz']
     all_goals rfl
 
+/-! ## Hoisted chains (`hoistArg`) -/
+
+/-- `H2` keeps every register that `T` and `H1` agree on. -/
+private abbrev KeepT (T H1 H2 : Frame) : Prop :=
+  ∀ (c : ID) (w : Val), T.regs[c]? = some (some w) → H1.regs[c]? = some (some w) →
+    H2.regs[c]? = some (some w)
+
+private theorem keepT_trans {T A B C : Frame} (h1 : KeepT T A B) (h2 : KeepT T B C) :
+    KeepT T A C :=
+  fun c w hT hA => h2 c w hT (h1 c w hT hA)
+
+private theorem hoistExt_frame {H H' : Frame} (h : HoistExt md env tabs f H H') :
+    H' = { H with regs := H'.regs } ∧ H'.regs.size = H.regs.size := by
+  induction h with
+  | refl => exact ⟨rfl, rfl⟩
+  | @step H' a va z _ _ _ _ ih =>
+    obtain ⟨h1, h2⟩ := ih
+    exact ⟨by rw [h1]; rfl, by simp [Frame.set, h2]⟩
+
+/-- An argument in the target's order of a value the target ran before step `j` ran before it. -/
+private theorem take_arg {oT : List ID} (ht : TopoRem (argsF g) oT) {j : Nat} {p a : ID}
+    (hp : p ∈ oT.take j) (ha : a ∈ argsF g p) (hm : a ∈ oT) : a ∈ oT.take j := by
+  obtain ⟨jp, hjp⟩ := List.mem_iff_getElem?.1 hp
+  rw [List.getElem?_take] at hjp
+  split at hjp
+  · rename_i hlt
+    obtain ⟨ia, hia⟩ := List.mem_iff_getElem?.1 (topo_before ht hjp ha hm)
+    rw [List.getElem?_take] at hia
+    split at hia
+    · exact List.mem_of_getElem? (i := ia) (by rw [List.getElem?_take, if_pos (by omega)]; exact hia)
+    · cases hia
+  · cases hjp
+
+/-- A value the source ran before `r`, or outside the block, holds in the source frame `H` the
+register it holds in the target's `T`. -/
+private theorem hoist_base {oT pre post : List ID} {r : ID} {frPS frPT H T : Frame} {j : Nat}
+    (B : BStep tabs f g md (pre ++ r :: post) oT frPS frPT) (Sr : Src tabs f md env frPS H pre)
+    (I : Inv f frPT H T pre (oT.take j)) {c : ID} {w : Val}
+    (hpb : (srcPos f.valueTab.size (pre ++ r :: post))[c]! <
+      (srcPos f.valueTab.size (pre ++ r :: post))[r]!)
+    (hrn : isNC f c = false) (hrs : isSPA f c = false) (hD : c ∈ oT → c ∈ oT.take j)
+    (hw : T.regs[c]? = some (some w)) : H.regs[c]? = some (some w) := by
+  have hk : (pre ++ r :: post)[pre.length]? = some r := by simp
+  by_cases hbS : c ∈ pre ++ r :: post
+  · obtain ⟨kb, hkb⟩ := List.mem_iff_getElem?.1 hbS
+    rw [srcPos_get B.sNodup B.sLt hkb, srcPos_get B.sNodup B.sLt hk] at hpb
+    have hbP : c ∈ pre := by
+      rw [List.getElem?_append_left (by omega)] at hkb
+      exact List.mem_of_getElem? hkb
+    rw [← I.inP _ (hD ((B.tMem _).2 ⟨hbS, hrs⟩)) hbP hrn, hw]
+  · have hbT : c ∉ oT.take j := fun h => hbS ((B.tMem _).1 (List.mem_of_mem_take h)).1
+    rw [I.out _ hbT, B.agree _ hrn hrs, ← Sr.out _ (fun h => hbS (List.mem_append_left _ h))] at hw
+    exact hw
+
+/-- Hoisting the arguments `l` one after the other (`hP` for one), from a frame `H1` that extends
+`H` by hoisted values keeping what `T` and `H` agree on. -/
+private theorem hoist_fold {T H : Frame} {P : ID → Prop}
+    (hP : ∀ b, P b → ∀ w, T.regs[rep f b]? = some (some w) → ∀ H1, HoistExt md env tabs f H H1 →
+      KeepT T H H1 → ∃ H2, HoistExt md env tabs f H H2 ∧ KeepT T H1 H2 ∧
+        H2.regs[rep f b]? = some (some w)) :
+    ∀ (l : List ID), (∀ b ∈ l, P b) → (∀ b ∈ l, ∃ w, T.regs[rep f b]? = some (some w)) →
+      ∀ H1, HoistExt md env tabs f H H1 → KeepT T H H1 →
+      ∃ H2, HoistExt md env tabs f H H2 ∧ KeepT T H1 H2 ∧
+        ∀ b ∈ l, ∃ w, T.regs[rep f b]? = some (some w) ∧ H2.regs[rep f b]? = some (some w)
+  | [], _, _, H1, hE, _ => ⟨H1, hE, fun _ _ _ h => h, fun _ hb => absurd hb List.not_mem_nil⟩
+  | b :: l, hPl, hTl, H1, hE, hK => by
+    obtain ⟨w, hw⟩ := hTl b List.mem_cons_self
+    obtain ⟨H2, hE2, hK12, hb2⟩ := hP b (hPl b List.mem_cons_self) w hw H1 hE hK
+    obtain ⟨H3, hE3, hK23, hl3⟩ := hoist_fold hP l (fun b' h => hPl b' (List.mem_cons_of_mem _ h))
+      (fun b' h => hTl b' (List.mem_cons_of_mem _ h)) H2 hE2 (keepT_trans hK hK12)
+    refine ⟨H3, hE3, keepT_trans hK12 hK23, fun b' hb' => ?_⟩
+    rcases List.mem_cons.1 hb' with rfl | hb'
+    · exact ⟨w, hw, hK23 _ _ hw hb2⟩
+    · exact hl3 b' hb'
+
+/-- **A hoisted argument** (`hoistArg` at depth `k`) of a value of `f`, whose bypass the target ran
+before step `j` (register `w`): some extension of `H` by hoisted values (`HoistExt`; each one's
+hoisted evaluation is its target register) holds `w` there, keeping what `T` and `H1` agree on. -/
+private theorem hoist_arg (S : SchedRel tabs f g) (hf : md.faulting = true)
+    {oT pre post : List ID} {r : ID} {frPS frPT H T : Frame} {j : Nat}
+    (B : BStep tabs f g md (pre ++ r :: post) oT frPS frPT) (Sr : Src tabs f md env frPS H pre)
+    (I : Inv f frPT H T pre (oT.take j)) (R : Ran md env tabs g T (oT.take j))
+    (hfrH : H = { T with regs := H.regs }) :
+    ∀ (k : Nat) (b : ID), (∃ (u : ID) (vu : Value) (i : Nat), f.value? u = some vu ∧
+      vu.args[i]? = some b) →
+      hoistArg f (srcPos f.valueTab.size (pre ++ r :: post)) r k b = true →
+      (rep f b ∈ oT → rep f b ∈ oT.take j) →
+      ∀ w, T.regs[rep f b]? = some (some w) → ∀ H1, HoistExt md env tabs f H H1 → KeepT T H H1 →
+      ∃ H2, HoistExt md env tabs f H H2 ∧ KeepT T H1 H2 ∧ H2.regs[rep f b]? = some (some w) := by
+  intro k
+  induction k with
+  | zero =>
+    intro b ⟨u, vu, i, hu, hb⟩ hh hD w hw H1 hE hK
+    obtain ⟨hrn, hrs, -, -⟩ := use_rep (S.argUse hu hb)
+    exact ⟨H1, hE, fun _ _ _ h => h,
+      hK _ _ hw (hoist_base B Sr I (by simpa [hoistArg] using hh) hrn hrs hD hw)⟩
+  | succ k ih =>
+    intro b ⟨u, vu, i, hu, hb⟩ hh hD w hw H1 hE hK
+    obtain ⟨hrn, hrs, -, -⟩ := use_rep (S.argUse hu hb)
+    generalize hc : rep f b = c at hrn hrs hD hw hh
+    simp only [hoistArg, hc, Bool.or_eq_true, decide_eq_true_eq] at hh
+    by_cases hlt : (srcPos f.valueTab.size (pre ++ r :: post))[c]! <
+        (srcPos f.valueTab.size (pre ++ r :: post))[r]!
+    · exact ⟨H1, hE, fun _ _ _ h => h, hK _ _ hw (hoist_base B Sr I hlt hrn hrs hD hw)⟩
+    rcases hh with hh | hh
+    · exact absurd hh hlt
+    simp only [Option.any_eq_true, Bool.and_eq_true, Array.all_eq_true] at hh
+    obtain ⟨vc, hvc, hop, hargs⟩ := hh
+    -- `c` is in the block after `r`: the target ran it, a `hoistOp` of hoisted arguments
+    have hcS : c ∈ pre ++ r :: post := Classical.byContradiction fun h => hlt (by
+      rw [srcPos_out h, srcPos_get B.sNodup B.sLt (show (pre ++ r :: post)[pre.length]? = some r by
+        simp)]
+      omega)
+    have hcD := hD ((B.tMem c).2 ⟨hcS, hrs⟩)
+    obtain ⟨gc, z, hgc, hTc, hevc⟩ := R c hcD
+    obtain ⟨fc, gc', hfc, hgc', hrc⟩ := tval S B ((B.tMem c).2 ⟨hcS, hrs⟩)
+    rw [hvc] at hfc; cases hfc
+    rw [hgc] at hgc'; cases hgc'
+    have hwz : w = z := by rw [hTc] at hw; simp at hw; exact hw.symm
+    subst hwz
+    have hcid : vc.id = c := B.sOwn c hcS vc hvc
+    have hcnc : vc.op.nilCheck = false := by rw [← isNC_of hvc]; exact hrn
+    have hcty : gc.type = vc.type := by
+      rcases hrc.type with h | h
+      · rw [hcnc] at h; cases h
+      · exact h
+    obtain ⟨argv, hm⟩ := evalValueL_args_ok hevc (by intro msg h; cases h)
+    obtain ⟨H2, hE2, hK12, hargs2⟩ := hoist_fold
+      (P := fun b' => (∃ (u : ID) (vu : Value) (i : Nat), f.value? u = some vu ∧
+        vu.args[i]? = some b') ∧
+        hoistArg f (srcPos f.valueTab.size (pre ++ r :: post)) r k b' = true ∧
+        (rep f b' ∈ oT → rep f b' ∈ oT.take j))
+      (fun b' hP w' hw' H1 hE hK => ih b' hP.1 hP.2.1 hP.2.2 w' hw' H1 hE hK) vc.args.toList
+      (fun b' hb' => by
+        obtain ⟨i', hi'⟩ := Array.mem_iff_getElem?.1 (Array.mem_toList_iff.1 hb')
+        obtain ⟨hil, hib⟩ := Array.getElem?_eq_some_iff.1 hi'
+        exact ⟨⟨c, vc, i', hvc, hi'⟩, hib ▸ hargs i' hil,
+          take_arg B.tTopo hcD (argsF_g hgc hrc hi').2⟩)
+      (fun b' hb' => by
+        obtain ⟨i', hi'⟩ := Array.mem_iff_getElem?.1 (Array.mem_toList_iff.1 hb')
+        obtain ⟨w', hw', -⟩ := argsM_get hm (argsF_g hgc hrc hi').1
+        exact ⟨w', hw'⟩)
+      H1 hE hK
+    have hfr2 : H2 = { T with regs := H2.regs } := by
+      have h := (hoistExt_frame hE2).1
+      rw [hfrH] at h
+      exact h
+    have hvc' := evalValueL_vc (md := md) (env := env) (ctx := Ctx.makeSched tabs g)
+      (ctx' := { Ctx.makeL tabs f with f := g }) (fr := T) (fr' := H2) (v := gc)
+      (v' := hoisted f vc) hf hrc.op.symm hrc.aux.symm hrc.auxInt.symm hrc.id.symm
+      (by simp [hoisted, hrc.args]) (by rw [makeSched_tabs]; exact tabs_makeL tabs f)
+      (params_eq S).symm act_eq.symm
+      (by rw [makeSched_f]; unfold sxOf; simp [hoisted, hrc.args]) hfr2
+      (.inl (by rw [hrc.id, hcid]; exact (tys_eq S hvc hgc hcty).symm))
+      (fun k a ha => by
+        have : ∃ b, vc.args[k]? = some b ∧ a = rep f b := by
+          rw [hrc.args, Array.getElem?_map] at ha
+          cases h : vc.args[k]? with
+          | none => rw [h] at ha; cases ha
+          | some b => rw [h] at ha; cases ha; exact ⟨b, rfl, rfl⟩
+        obtain ⟨b, hb, rfl⟩ := this
+        obtain ⟨w, hwT, hwH⟩ := hargs2 b (Array.mem_toList_iff.2 (Array.mem_of_getElem? hb))
+        exact ⟨rep f b, w, by simp [hoisted, hb], hwT, w, hwH, .inl rfl⟩)
+    obtain ⟨z', hz', hzz⟩ := hvc'.1 w hevc
+    have hnm : vc.op ≠ .ARM64MOVDreg ∧ vc.op ≠ .ARM64MOVDnop := by
+      simp only [hoistOp, Bool.or_eq_true, beq_iff_eq] at hop
+      rcases hop with (((h | h) | h) | h) | h <;> rw [h] <;> exact ⟨by decide, by decide⟩
+    replace hz' : evalValueL md env (Ctx.makeL tabs f) H2 (hoisted f vc) = .ok z' := by
+      rw [← evalValueL_withF (ctx := Ctx.makeL tabs f) (v := hoisted f vc) g hnm.1 hnm.2]
+      exact hz'
+    rw [hzz (by rw [hrc.id, hcid]; exact (tys_eq S hvc hgc hcty).symm)] at hz'
+    have hlt2 : c < H2.regs.size := by
+      rw [(hoistExt_frame hE2).2, Sr.size, B.sizeS]; exact lt_of_value? hvc
+    refine ⟨H2.set c w, .step hE2 hvc hop hz', fun c' w' hT' h1 => ?_, Frame.set_regs_self hlt2⟩
+    by_cases hcc : c = c'
+    · subst hcc
+      rw [hTc] at hT'
+      simp only [Option.some.injEq] at hT'
+      rw [← hT']
+      exact Frame.set_regs_self hlt2
+    · rw [Frame.set_regs_ne hcc]; exact hK12 c' w' hT' h1
+
 /-- **The target panics where the source does, alike.** -/
 theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : List ID}
     {frPS frPT : Frame} (B : BStep tabs f g md oS oT frPS frPT)
@@ -375,52 +557,37 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
       rcases hrq.type with h | h
       · rw [hqnc'] at h; cases h
       · exact h
-    -- the arguments of `q`'s hoisted form hold the same registers in `H` and `T`
-    obtain ⟨jq, hjq⟩ := List.mem_iff_getElem?.1 hqD
-    rw [List.getElem?_take] at hjq
-    split at hjq
-    case isFalse => cases hjq
-    rename_i hjqj
-    have hargsH : ∀ (k : Nat) (b : ID), vq.args[k]? = some b → ∃ w,
-        T.regs[rep f b]? = some (some w) ∧ H.regs[rep f b]? = some (some w) := by
-      intro k b hb
-      have hgb : gq.args[k]? = some (rep f b) := by rw [hrq.args, Array.getElem?_map, hb]; rfl
-      obtain ⟨argv, hm⟩ := evalValueL_args_ok hevq (by intro msg h; cases h)
-      obtain ⟨w, hw, -⟩ := argsM_get hm hgb
-      refine ⟨w, hw, ?_⟩
-      obtain ⟨hrn, hrs, -, -⟩ := use_rep (S.argUse hvq hb)
-      obtain ⟨hkl, hkb⟩ := Array.getElem?_eq_some_iff.1 hb
-      have hpb := hqargs k hkl
-      rw [hkb] at hpb
-      by_cases hbS : rep f b ∈ pre ++ r :: post
-      · obtain ⟨kb, hkb⟩ := List.mem_iff_getElem?.1 hbS
-        rw [srcPos_get B.sNodup B.sLt hkb, srcPos_get B.sNodup B.sLt hk] at hpb
-        have hbP : rep f b ∈ pre := by
-          rw [List.getElem?_append_left (by omega)] at hkb
-          exact List.mem_of_getElem? hkb
-        have hbT : rep f b ∈ oT := (B.tMem _).2 ⟨hbS, hrs⟩
-        have hbm : rep f b ∈ argsF g q := by
-          rw [argsF_of hgq]; exact Array.mem_toList_iff.2 (Array.mem_of_getElem? hgb)
-        have hbq := topo_before B.tTopo hjq hbm hbT
-        have hbD : rep f b ∈ oT.take j := by
-          obtain ⟨ib, hib⟩ := List.mem_iff_getElem?.1 hbq
-          rw [List.getElem?_take] at hib
-          split at hib
-          · rename_i hibq
-            exact List.mem_of_getElem? (i := ib)
-              (by rw [List.getElem?_take, if_pos (by omega)]; exact hib)
-          · cases hib
-        rw [← I.inP _ hbD hbP hrn, hw]
-      · have hbT : rep f b ∉ oT.take j := fun h => hbS ((B.tMem _).1 (List.mem_of_mem_take h)).1
-        rw [I.out _ hbT, B.agree _ hrn hrs, ← Sr.out _ (fun h => hbS (hPS _ h))] at hw
-        exact hw
+    -- the arguments of `q`'s hoisted form hold their target registers in an extension `H2` of `H`
+    -- by hoisted values (`hoist_arg`)
     have hfrH : H = { T with regs := H.regs } := by rw [frame_eq B.frT Sr.frH I.frT]
+    obtain ⟨argv, hm⟩ := evalValueL_args_ok hevq (by intro msg h; cases h)
+    obtain ⟨H2, hE2, -, hargs2⟩ := hoist_fold
+      (P := fun b => (∃ (u : ID) (vu : Value) (i : Nat), f.value? u = some vu ∧
+        vu.args[i]? = some b) ∧
+        hoistArg f (srcPos f.valueTab.size (pre ++ r :: post)) r hoistDepth b = true ∧
+        (rep f b ∈ oT → rep f b ∈ oT.take j))
+      (fun b hP w hw H1 hE hK =>
+        hoist_arg S hf B Sr I R hfrH hoistDepth b hP.1 hP.2.1 hP.2.2 w hw H1 hE hK)
+      vq.args.toList
+      (fun b hb => by
+        obtain ⟨i, hi⟩ := Array.mem_iff_getElem?.1 (Array.mem_toList_iff.1 hb)
+        obtain ⟨hil, hib⟩ := Array.getElem?_eq_some_iff.1 hi
+        exact ⟨⟨q, vq, i, hvq, hi⟩, hib ▸ hqargs i hil, take_arg B.tTopo hqD (argsF_g hgq hrq hi).2⟩)
+      (fun b hb => by
+        obtain ⟨i, hi⟩ := Array.mem_iff_getElem?.1 (Array.mem_toList_iff.1 hb)
+        obtain ⟨w, hw, -⟩ := argsM_get hm (argsF_g hgq hrq hi).1
+        exact ⟨w, hw⟩)
+      H .refl (fun _ _ _ h => h)
+    have hfr2 : H2 = { T with regs := H2.regs } := by
+      have h := (hoistExt_frame hE2).1
+      rw [hfrH] at h
+      exact h
     have hvc := evalValueL_vc (md := md) (env := env) (ctx := Ctx.makeSched tabs g)
-      (ctx' := { Ctx.makeL tabs f with f := g }) (fr := T) (fr' := H) (v := gq)
+      (ctx' := { Ctx.makeL tabs f with f := g }) (fr := T) (fr' := H2) (v := gq)
       (v' := hoisted f vq) hf hrq.op.symm hrq.aux.symm hrq.auxInt.symm hrq.id.symm
       (by simp [hoisted, hrq.args]) (by rw [makeSched_tabs]; exact tabs_makeL tabs f)
       (params_eq S).symm act_eq.symm
-      (by rw [makeSched_f]; unfold sxOf; simp [hoisted, hrq.args]) hfrH
+      (by rw [makeSched_f]; unfold sxOf; simp [hoisted, hrq.args]) hfr2
       (.inl (by rw [hrq.id, hqid]; exact (tys_eq S hvq hgq hqty).symm))
       (fun k a ha => by
         have : ∃ b, vq.args[k]? = some b ∧ a = rep f b := by
@@ -429,18 +596,18 @@ theorem walk_panic (S : SchedRel tabs f g) (hf : md.faulting = true) {oS oT : Li
           | none => rw [h] at ha; cases ha
           | some b => rw [h] at ha; cases ha; exact ⟨b, rfl, rfl⟩
         obtain ⟨b, hb, rfl⟩ := this
-        obtain ⟨w, hwT, hwH⟩ := hargsH k b hb
+        obtain ⟨w, hwT, hwH⟩ := hargs2 b (Array.mem_toList_iff.2 (Array.mem_of_getElem? hb))
         exact ⟨rep f b, w, by simp [hoisted, hb], hwT, w, hwH, .inl rfl⟩)
     obtain ⟨z', hz', hzz⟩ := hvc.1 z hevq
     have hnm : vq.op ≠ .ARM64MOVDreg ∧ vq.op ≠ .ARM64MOVDnop := by
       simp only [hoistOp, Bool.or_eq_true, beq_iff_eq] at hop
       rcases hop with (((h | h) | h) | h) | h <;> rw [h] <;> exact ⟨by decide, by decide⟩
-    replace hz' : evalValueL md env (Ctx.makeL tabs f) H (hoisted f vq) = .ok z' := by
+    replace hz' : evalValueL md env (Ctx.makeL tabs f) H2 (hoisted f vq) = .ok z' := by
       rw [← evalValueL_withF (ctx := Ctx.makeL tabs f) (v := hoisted f vq) g hnm.1 hnm.2]
       exact hz'
     have hzeq : z' = z := hzz (by rw [hrq.id, hqid]; exact (tys_eq S hvq hgq hqty).symm)
     subst hzeq
-    obtain ⟨p, hp, hpw⟩ := hHK H .refl fv q0 vq hfv hq0 (by rw [hqdef]; exact hvq) z' hz'
+    obtain ⟨p, hp, hpw⟩ := hHK H2 hE2 fv q0 vq hfv hq0 (by rw [hqdef]; exact hvq) z' hz'
     obtain ⟨rfl, ℓx, hℓx, hHℓx⟩ := hld hcr
     have hDo : ∀ a ∈ oT.take j, a ∈ oT := fun a ha => List.mem_of_mem_take ha
     obtain ⟨ℓ, hfb, hreach, hℓspa⟩ : ∃ ℓ, fv.args.back? = some ℓ ∧
