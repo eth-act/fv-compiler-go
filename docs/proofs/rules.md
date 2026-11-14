@@ -1331,7 +1331,7 @@ needs a later phase of the semantics.
 | `generic` | EqSlice | 1 | 0 | 0 | 0 | 1 |
 | `generic` | Floor | 0 | 0 | 0 | 1 | 1 |
 | `generic` | IMake | 1 | 1 | 0 | 1 | 2 |
-| `generic` | InterLECall | 0 | 0 | 0 | 1 | 1 |
+| `generic` | InterLECall | 1 | 0 | 0 | 1 | 1 |
 | `generic` | IsInBounds | 11 | 18 | 0 | 0 | 29 |
 | `generic` | IsNonNil | 5 | 0 | 0 | 3 | 6 |
 | `generic` | IsSliceInBounds | 5 | 3 | 0 | 0 | 8 |
@@ -1381,7 +1381,7 @@ needs a later phase of the semantics.
 | `generic` | Xor | 64 | 4 | 0 | 0 | 68 |
 | `generic` | Zero | 3 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1464 | 182 | 15 | 258 | 1762 |
+| all | | 1465 | 182 | 15 | 258 | 1762 |
 
 <!-- END coverage -->
 

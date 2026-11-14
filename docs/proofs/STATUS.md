@@ -31,12 +31,12 @@ the semantic phase of their ops (`GoFVTest/Proof/RuleClass.lean`; "Classificatio
 | P1 (integers, booleans) | 1,228 | 14 | 153 | 1,395 |
 | P2 (pointers, composites, `Load` values, `SelectN`) | 79 | 1 | 29 | 109 |
 | mem (memory ops) | 93 | 0 | 19 | 112 |
-| call | 12 | 0 | 35 | 47 |
+| call | 13 | 0 | 34 | 47 |
 | float | 26 | 0 | 42 | 68 |
 | ptr (`ConstString`, `Addr`, `NilCheck`, pointer comparisons) | 18 | 0 | 5 | 23 |
 | phi | 5 | 0 | 0 | 5 |
 | block | 3 | 0 | 0 | 3 |
-| all | 1,464 | 15 | 283 | 1,762 |
+| all | 1,465 | 15 | 282 | 1,762 |
 
 *Proven*: a merged lemma (`Rule.Sound`, `Rule.SoundT`, `Rule.SoundW`, `Rule.MakeSel`,
 `Rule.LoadSel`, `Rule.Drop`, `Rule.IMakeSM`, `Rule.AddrCmp`, `BlockRule.Sound`,
@@ -125,7 +125,7 @@ validator checks it per instance): `divmod.rules:136–148` (the dividend nonneg
 20 of the others need branch facts the validator does not track) and `generic.rules:2166–2169`
 (`0 ≤ c`; #90: Go builds no negative constant the rule matches; 34 of 34).
 
-**Open** (283):
+**Open** (282):
 
 - `P1`/`P2` alternatives without a lemma (182): most never fire on the corpus; those that fire
   are in the `fire-full` table of `rules.md` (sole obstacles by rule).
@@ -141,10 +141,9 @@ validator checks it per instance): `divmod.rules:136–148` (the dividend nonneg
   RNE): constant folds of `Add/Sub/Mul/Div/Neg{32,64}F`, `Cvt*` of constants,
   `Ceil/Floor/Trunc/Round/RoundToEven/Sqrt` of constants, `OrB` of float comparisons (the `Not`s
   of float comparisons, `:397`/`:398`, are proven).
-- `call` (35): `memequal` folds (`:1395–:1557`; `memequal` has a contract), the `Const32`
+- `call` (34): `memequal` folds (`:1395–:1557`; `memequal` has a contract), the `Const32`
   alternatives of the proven call segments, `growslice` lengths at `Const32`
-  (`:2128`/`:2131` alternatives), devirtualisation `:1733` (inside the model: both calls reach the
-  same contract; it needs a validator step for a call whose op, callee and arguments change, #69),
+  (`:2128`/`:2131` alternatives),
   and **outside the model**: the `runtime.cmpstring` rules `:2267`, `:2271` (no contract in
   `Env.runtime`), the `mapaccess1/2_faststr`/`mapdelete_faststr` fold of a `slicebytetostring` key
   `:2306` (no contract for those runtime functions; the fold also drops the conversion's
