@@ -1162,6 +1162,7 @@ import GoFV.Proof.Witness.Sccp
 import GoFV.Proof.Witness.SchedFast
 import GoFV.Proof.Witness.SchedL
 import GoFV.Proof.Witness.ScheduleHoist
+import GoFV.Proof.Witness.ScheduleHoistChain
 import GoFV.Proof.Witness.ScheduleL
 import GoFV.Proof.Witness.Seg
 import GoFV.Proof.Witness.SepFromW
