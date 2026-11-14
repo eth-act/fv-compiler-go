@@ -253,6 +253,26 @@ in `late opt`):
 
 **Recommendation: do (U).**
 
+**Implemented** (decision 1). Differences from the design above:
+- **The leaf fact holds at every width**: `condMathFacts` asks `x` to be an integer of width `w`
+  or `poison` at all four widths. The validator checks `intD` at 64 bits and only the leaf's
+  integer type at a narrower width (`intLeafD`; `den_hasTy` makes that an integer or `poison`),
+  so the lemmas never split on `Pat.typed`.
+- **The `Sub` forms needed the oracle's polarity.** `:2338`, `:2342`, `:2351` read `!rewriteCondSelectIntoMath(c)
+  && rewriteCondSelectIntoMath(-c)`; the validator's oracle answered both calls `true`, so the
+  condition was `false` and the validator rejected every instance (`[nomatch, cond]`). Its oracle
+  now answers an unmodelled boolean under a negation `false` (`negAtoms`, moved from the lowering
+  validator, which already did so); any boolean answers are sound.
+- **Measured** (full-v11, per function, 0 lost both times):
+  - on 57da3b9a: Phase 1 94,316 → 94,627 (+311), through `trim` 88,458 → 88,593 (+135);
+  - on bda59446 (#734's run as the base): Phase 1 94,343 → 94,654 (+311), `trim` 88,479 → 88,614
+    (+135);
+  - quick-v10 end to end on 57da3b9a: 7,440 → 7,457 (+17, 0 lost; `verified_mach` 7,224 → 7,241,
+    `_S` 216 → 216).
+  Of the 363 sole-blocker functions, 306 now pass Phase 1 (the estimate was 318); the other 57
+  stop at other validator obstacles (e.g. `fwd₁ … final: Copy` fields). The other 5 gained
+  functions are outside the class (`runtime.(*addrRanges).add`, `go/token.(*File).MergeLine`, …).
+
 ## 5. `zero2159`: `Zero` over `VarDef (Zero …)` (55 functions): (M), do S3
 
 **Rule** (`:2159`): `(Zero {t} [s] dst1 vardef:(VarDef (Zero {t} [s] dst2 _))) && isSamePtr(dst1,
