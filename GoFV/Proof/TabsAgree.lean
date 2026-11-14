@@ -44,6 +44,12 @@ theorem AuxAgree.frameBlk {tabs tabs' : Tables} {n : AuxRef} (h : AuxAgree tabs 
   have ha : tabs'.aux? n = tabs.aux? n := h.lookup
   unfold Sem.frameBlk Tables.forgeable; rw [ha]
 
+theorem AuxAgree.varDefMem {tabs tabs' : Tables} {n : AuxRef} (h : AuxAgree tabs tabs' (some n))
+    (act : Nat) : Sem.varDefMem tabs' act n = Sem.varDefMem tabs act n := by
+  have ha : tabs'.aux? n = tabs.aux? n := h.lookup
+  funext m
+  unfold Sem.varDefMem Tables.varDefPoisons; rw [ha, h.frameBlk]
+
 theorem auxAgree_sound {tabs tabs' : Tables} {a : AuxRef} (h : auxAgree tabs tabs' a = true) :
     AuxAgree tabs tabs' (some a) := by
   unfold auxAgree at h
@@ -159,7 +165,7 @@ theorem memRoot_tabs (h : AuxAgree ctx.tabs tabs' v.aux) (argv : List Val) :
   | some n =>
     rw [hv] at h
     dsimp only
-    rw [h.frameBlk]
+    rw [h.varDefMem]
 
 theorem frameVal_tabs (h : AuxAgree ctx.tabs tabs' v.aux) :
     frameVal { ctx with tabs := tabs' } v = frameVal ctx v := by

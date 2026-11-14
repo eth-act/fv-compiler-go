@@ -240,9 +240,13 @@ executable `Mem` can use a `Std.HashMap` per allocation with a `@[csimp]`-free f
   = `ptr ⟨alloc n, 0⟩` (the memory argument only orders it). All frame allocations die at
   return. Frame layout (`FrameOffset`) is not semantic: offsets between different autos are not
   observable through provenance.
-- **Auto contents**: initially `poison` bytes. `VarDef {n} mem` resets the bytes of `n` to
-  `poison` (the variable is "about to be initialised", gO 562); this is what lets `dse` drop
-  stores shadowed by a `VarDef` (`deadstore.go:54,282`). `VarLive`, `KeepAlive`,
+- **Auto contents**: initially `poison` bytes. `VarDef {n} mem` of a `PAUTO` `n` resets the
+  bytes of `n` to `poison` (the variable is "about to be initialised", gO 562): MergeLocals
+  shares the slots of `PAUTO`s with disjoint live ranges, which start at `VarDef`
+  (`mergelocals.go`, `ssa/func.go:869-880`). It never merges a `PPARAM`/`PPARAMOUT`, and
+  `VarDef` itself writes nothing, so `VarDef` of any other name is the identity on memory
+  (`Sem.varDefMem`, S3 of `false-classes.md` §5; Go's dse does not shadow by `VarDef`,
+  `deadstore.go:54,125-171`). `VarLive`, `KeepAlive`,
   `PubBarrier`, `PrefetchCache*` are the identity on memory (`KeepAlive` still forces arg 0);
   `WBend` frees the write-barrier buffer (§9.6).
 - **Heap**: only runtime contracts allocate (`newobject`, `makeslice`, `growslice`, …; §5),
@@ -675,7 +679,7 @@ and checks that every section agrees with section 0 whenever section 0 is define
   address and a pointer-typed integer into the pointer at that address.
 - **Frame**: one allocation per `PAUTO`/`PPARAM`/`PPARAMOUT` name the section's tables define
   (not per referenced name: deleting values never changes the frame); a `PPARAM` holds its
-  argument's bytes, the rest are poison; `VarDef` re-poisons. The frame is removed from the
+  argument's bytes, the rest are poison; `VarDef` re-poisons a `PAUTO`. The frame is removed from the
   returned memory. `LocalAddr {n}` = `⟨local act n, 0⟩`, `SP` = `⟨outargs act, 0⟩`.
 - **Arguments and results** are bytes: each Go-typed argument is encoded by its parameter's
   shape (`Frame.images`); `Arg {n} [off]` and `ArgIntReg {n+off}` decode a piece at `off`.
@@ -1014,7 +1018,10 @@ files). `sched-probe` (quick-v4): 2,961,638 blocks, every Kahn schedule valid.
   refinement (the target returns poison: a gap in `sem-difftest corpus`). This is a **model
   gap**, not a Go bug: natively the two `Zero`s are adjacent on the memory chain and nothing can
   clobber the slot in between; only the semantics' re-poisoning `VarDef` is stricter than what
-  Go relies on. The rule stays out of the proven set.
+  Go relies on. Since S3 (`false-classes.md` §5) `VarDef` poisons only a `PAUTO` (the only class
+  MergeLocals merges) and is the identity on a `PPARAM`/`PPARAMOUT`: the rule is a refinement
+  when `x` is not a `PAUTO` (Go's main use: `zeroResults`' `VarDef r; Zero r` on a result,
+  `ssagen/ssa.go`), and stays false on a `PAUTO`.
 
 - **`SlicePtr` non-nil** (gO 521-523, `nilcheck.go:57-59`): `nilcheckelim` treats
   `SlicePtr` as non-nil, but `EqSlice` (`generic.rules:792`) shows it is used on nil slices.
@@ -1440,7 +1447,7 @@ against Go's own evaluation).
 | LoadReg | 554 | 1 |  |  |  | pure | — | 0 | regalloc only; identity |
 | FwdRef | 557 | 0 | Sym |  |  | data | — | 0 | SSA construction only; stuck |
 | Unknown | 560 | 0 |  |  |  | data | P1 | 0 | poison (§3.5) |
-| VarDef | 562 | 1 | Sym | Mem |  | mem | P2 | 0 | mem: bytes of auto aux become uninitialised (poison) (§3.4) |
+| VarDef | 562 | 1 | Sym | Mem |  | mem | P2 | 0 | mem: bytes of a `PAUTO` aux become uninitialised (poison); identity on any other aux (§3.4) |
 | VarLive | 564 | 1 | Sym |  |  | mem | P2 | 0 | identity on mem |
 | KeepAlive | 565 | 2 |  | Mem |  | mem | P2 | 0 | identity on mem (arg0 must be evaluated) |
 | InlMark | 569 | 1 | Int32 | Void |  | pure | P2 | 0 | no effect (Void) |

@@ -398,7 +398,8 @@ theorem tgt_rel {env : Env} (hfs : env.FrameSafe) {tabs : Tables} {f g : Func} {
       rw [hax] at hn; cases hn
       obtain ⟨rfl, rfl⟩ := snoc_inj (L' := []) hL
       obtain ⟨M', rfl, hM⟩ := VR.mem_inv hVm
-      refine .mem (EqOff.poison_left hM ⟨n, hnE, ?_⟩)
+      refine .mem (varDefMem_of (P := fun m => Mem.EqOff _ m M') hM ?_)
+      refine EqOff.poison_left hM ⟨n, hnE, ?_⟩
       rw [tabs_makeL, act_makeL0, frameBlk_temp (R.temp n hnE)]
     · obtain ⟨M, M1, rfl, rfl, hM1, -⟩ := elimStore (elimOps_store hop hvd) hop
         (fun k => symAddr_elim (v := { fv with auxInt := k }) hn hnE (R.temp n hnE)) hr
@@ -432,7 +433,7 @@ theorem src_av {env : Env} (hfs : env.FrameSafe) {tabs : Tables} {f g : Func} {E
     by_cases hvd : fv.op = .VarDef
     · rw [evalOpL_generic _ _ _ _ _ _ (by rw [hvd]; rfl), evalOp_memRoot (by simp [hvd])] at hr
       obtain ⟨M, n0, hL, -, rfl, -⟩ := DSE.varDef_shape hvd hr
-      exact memAvoids_poison (hav (.mem M) (by rw [hL]; simp)) _
+      exact memAvoids_varDefMem (hav (.mem M) (by rw [hL]; simp)) _ _ _
     · obtain ⟨M, M1, rfl, rfl, -, hA⟩ := elimStore (elimOps_store hop hvd) hop
         (fun k => symAddr_elim (v := { fv with auxInt := k }) hn hnE (R.temp n hnE)) hr
       exact hA hav

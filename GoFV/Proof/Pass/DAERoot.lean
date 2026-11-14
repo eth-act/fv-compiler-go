@@ -181,8 +181,8 @@ theorem varDef_rel {ctx : Ctx} {v : Value} (hop : v.op = .VarDef) {L : List Val}
   obtain ⟨M, n, he, hax, rfl, htgt⟩ := DSE.varDef_shape hop h
   obtain ⟨rfl, rfl⟩ := snoc_inj (L' := []) he
   obtain ⟨M', rfl, hm⟩ := VR.mem_inv hw
-  exact ⟨⟨_, htgt M', .mem (EqOff.poison hm _)⟩, fun M1 h1 hM => by
-    cases h1; exact memAvoids_poison hM _⟩
+  exact ⟨⟨_, htgt M', .mem (EqOff.varDefMem hm _ _ _)⟩, fun M1 h1 hM => by
+    cases h1; exact memAvoids_varDefMem hM _ _ _⟩
 
 /-! ## `NilCheck` and `PanicBounds` -/
 

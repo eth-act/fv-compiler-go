@@ -8,8 +8,9 @@ variable [GoFV.SSA.Sem.Addrs]
 # `stepLoc` on the memory markers of slice G5 (`docs/plans/proofs3.md` §4)
 
 The memory markers (`markOp?`: `VarDef`, `VarLive`, `KeepAlive`, `WBend`) are Phase 1's memory
-roots (`memRoot`): with the memory argument last, `VarDef {x}` makes frame variable `x`'s block
-poison, `VarLive` and `KeepAlive` keep the memory, `WBend` frees the write-barrier buffer
+roots (`memRoot`): with the memory argument last, `VarDef {x}` makes a `PAUTO` `x`'s block
+poison and keeps the memory for any other `x` (`varDefMem`), `VarLive` and `KeepAlive` keep the
+memory, `WBend` frees the write-barrier buffer
 (`stepLoc_mark`).
 -/
 
@@ -59,7 +60,12 @@ theorem stepLoc_mark (hl : lc.ctx.f.lowered = true) (ht : (lc.temps[v.id]?).join
     rw [hm] at hmap; cases hmap
     unfold memRoot at hr; rw [hv] at hr; simp only at hr
     split at hr
-    · cases hr; exact ⟨_, rfl, .inr (.inl ⟨_, rfl⟩)⟩
+    · cases hr
+      refine ⟨_, rfl, ?_⟩
+      unfold varDefMem
+      split
+      · exact .inr (.inl ⟨_, rfl⟩)
+      · exact .inl rfl
     · cases hr
   · rw [arr1 hsz ha] at hmap
     change ((s.read lc a).bind fun x => Res.ok [x]) = _ at hmap

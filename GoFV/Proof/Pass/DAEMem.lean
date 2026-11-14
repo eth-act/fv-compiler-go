@@ -231,6 +231,12 @@ theorem EqOff.poison {U : Blk → Prop} {m m' : Mem} (h : Mem.EqOff U m m') (b :
     obtain ⟨-, hs, hwr, -⟩ := hA
     exact EqOff.set h ⟨rfl, by simp [hs], hwr, fun _ => by simp [hs]⟩
 
+/-- `VarDef` on both sides. -/
+theorem EqOff.varDefMem {U : Blk → Prop} {m m' : Mem} (h : Mem.EqOff U m m') (tabs : Tables)
+    (act : Nat) (n : AuxRef) :
+    Mem.EqOff U (Sem.varDefMem tabs act n m) (Sem.varDefMem tabs act n m') :=
+  varDefMem_rel (R := Mem.EqOff U) h (EqOff.poison h _)
+
 /-- `poisonBelow` on both sides. -/
 theorem EqOff.poisonBelow {U : Blk → Prop} {m m' : Mem} (h : Mem.EqOff U m m') (b : Blk)
     (n : Nat) : Mem.EqOff U (m.poisonBelow b n) (m'.poisonBelow b n) := by

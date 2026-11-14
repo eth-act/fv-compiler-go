@@ -382,8 +382,9 @@ theorem tgt_rel {env : Env} (hfs : env.FrameSafe) {tabs : Tables} {f g : Func}
       obtain ⟨M', rfl, hm⟩ := VR.mem_inv hVm
       have hfb : frameBlk (Ctx.make tabs f).tabs (Ctx.make tabs f).act n0 = .temp 0 n0 :=
         frameBlk_temp (R.temp n0 hnE) 0
+      refine .mem (varDefMem_of (P := fun m => Mem.EqOff _ m M') hm ?_)
       rw [hfb]
-      exact .mem (EqOff.poison_left hm ⟨n0, hnE, rfl⟩)
+      exact EqOff.poison_left hm ⟨n0, hnE, rfl⟩
     all_goals
       have hop3 : fv.op = .Store ∨ fv.op = .Zero ∨ fv.op = .Move := by simp [hop]
       rw [evalOp_memRoot (by simp [hop])] at hr

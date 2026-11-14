@@ -730,8 +730,8 @@ theorem memRoot_mems (hP : MemPred P) {ctx : Sem.Ctx} {v : Value} {argv : List V
        | exact wr (hm _ (by simp)) h
        | (cases h; done)
        | (cases h; exact memsOK_of_mems_nil rfl)
-       | (cases h; exact memsOK_mem (hP.poison (hm _ (by simp)) (frameBlk_ne _ _ _).1
-           (frameBlk_ne _ _ _).2))
+       | (cases h; exact memsOK_mem (varDefMem_of (hm _ (by simp)) (hP.poison (hm _ (by simp))
+           (frameBlk_ne _ _ _).1 (frameBlk_ne _ _ _).2)))
        | (cases h; exact ha _ (by simp))
        | (split at h <;> first
           | exact wr (hm _ (by simp)) h

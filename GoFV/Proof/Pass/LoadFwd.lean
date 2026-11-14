@@ -1820,7 +1820,7 @@ theorem moveSrc_chgRef {z : ID} {u w : Value} (hz : f.value? z = some u)
           · simp only [hfg, Bool.false_eq_true, ↓reduceIte]; exact ⟨n, rfl⟩
       exact ⟨im, K, hlim, fun a ha => ndc_arg F him (by rw [himop]; decide) ha, hi3, hsp, hcr1,
         hdj, T2, S, M0, Mi, bs0, hT2, hS, hr0, hw0,
-        GoFV.Proof.Seg.poisonBlock_refines _ _, read_poisonBlock_ne _ hSb⟩
+        GoFV.Proof.Seg.varDefMem_refines _ _ _ _, read_varDefMem_ne _ hSb⟩
   -- the source's pointers against the inner `Move`'s
   have hTe : T = T2 := samePtr_den hM hsp hT1 hT2
   subst hTe

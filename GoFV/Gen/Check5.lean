@@ -11,7 +11,8 @@ does not see.
 
 **Values** beyond G4's (`vkind5`), each of the memory shape with no home, its memory argument last:
 
-* `VarDef {x} mem`: frame variable `x`'s block becomes poison (`Mem.poisonBlock`);
+* `VarDef {x} mem`: a `PAUTO` `x`'s block becomes poison (`Mem.poisonBlock`), for any other `x`
+  the memory is unchanged (`Sem.varDefMem`);
 * `VarLive {x} mem` and `KeepAlive a mem`: the memory unchanged;
 * `WBend mem`: the write-barrier buffer is freed (`Mem.free .wbuf`).
 

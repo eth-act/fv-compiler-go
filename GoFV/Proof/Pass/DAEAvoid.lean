@@ -375,6 +375,10 @@ theorem memAvoids_poison {U : Blk → Prop} {m : Mem} (h : m.Avoids U) (b : Blk)
   · exact memAvoids_set h fun _ => bav_replicate_poison _ _
   · exact h
 
+theorem memAvoids_varDefMem {U : Blk → Prop} {m : Mem} (h : m.Avoids U) (tabs : Tables)
+    (act : Nat) (n : AuxRef) : (varDefMem tabs act n m).Avoids U :=
+  varDefMem_of (P := (·.Avoids U)) h (memAvoids_poison h _)
+
 theorem memAvoids_poisonBelow {U : Blk → Prop} {m : Mem} (h : m.Avoids U) (b : Blk) (n : Nat) :
     (m.poisonBelow b n).Avoids U := by
   unfold Mem.poisonBelow

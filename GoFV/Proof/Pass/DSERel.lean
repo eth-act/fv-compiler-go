@@ -145,7 +145,8 @@ theorem pendStep_eq {tabs : Tables} {f g : Func} {P : ID → List Iv} {x : ID} {
           | none => none
       else if fv.op == .VarDef then
         some (match fv.aux with
-          | some n => (pm P fv).filter (·.1 != CSE.frameAlloc tabs n)
+          | some n => if tabs.varDefPoisons n then (pm P fv).filter (·.1 != CSE.frameAlloc tabs n)
+            else pm P fv
           | none => pm P fv)
       else some [] := by
   unfold pendStep
@@ -217,12 +218,14 @@ theorem pend_move_nil {tabs : Tables} {f g : Func} {P : ID → List Iv} {x : ID}
   rw [pendStep_eq hfv hgv, he, hop, hnil] at h
   exact (Option.some.inj h).symm
 
-/-- A kept `VarDef`: its memory argument's pending set without its variable. -/
+/-- A kept `VarDef`: its memory argument's pending set, without its variable if it is a `PAUTO`
+(`Sem.varDefMem`). -/
 theorem pend_varDef {tabs : Tables} {f g : Func} {P : ID → List Iv} {x : ID} {fv gv : Value}
     (hfv : f.value? x = some fv) (hgv : g.value? x = some gv) (he : elimV fv gv = false)
     (hop : fv.op = .VarDef) (h : pendStep tabs f g P x = some (P x)) :
     P x = match fv.aux with
-      | some n => (pm P fv).filter (·.1 != CSE.frameAlloc tabs n)
+      | some n => if tabs.varDefPoisons n then (pm P fv).filter (·.1 != CSE.frameAlloc tabs n)
+        else pm P fv
       | none => pm P fv := by
   rw [pendStep_eq hfv hgv, he, hop] at h
   exact (Option.some.inj h).symm

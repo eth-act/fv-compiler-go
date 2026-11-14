@@ -455,6 +455,35 @@ def deferInfo (tabs : Tables) : DeferInfo :=
 def frameBlk (tabs : Tables) (act : Nat) (n : AuxRef) : Blk :=
   if tabs.forgeable n then .local act n else .temp act n
 
+/-- `VarDef {n}` poisons `n`'s block only when `n` is a `PAUTO`. `VarDef` is a zero-width
+liveness annotation (`genericOps.go:562`): it writes nothing. A variable's bytes can change at
+the start of its live range only through MergeLocals, which shares the slots of `PAUTO`s with
+disjoint live ranges, starting at `VarDef` (`mergelocals.go`, `ssa/func.go:869-880`); it never
+merges a `PPARAM`/`PPARAMOUT`. On those (and on any other aux) `VarDef` is the identity, as
+`VarLive` is. -/
+def _root_.GoFV.SSA.Tables.varDefPoisons (tabs : Tables) (n : AuxRef) : Bool :=
+  match tabs.aux? n with
+  | some { kind := .name _ cls .., .. } => cls == .PAUTO
+  | _ => false
+
+/-- The memory after `VarDef {n}` of activation `act` (`Tables.varDefPoisons`). -/
+def varDefMem (tabs : Tables) (act : Nat) (n : AuxRef) (m : Mem) : Mem :=
+  if tabs.varDefPoisons n then m.poisonBlock (frameBlk tabs act n) else m
+
+/-- A property of memories that holds before a `VarDef` and after poisoning its block holds
+after the `VarDef`. -/
+theorem varDefMem_of {P : Mem → Prop} {tabs : Tables} {act : Nat} {n : AuxRef} {m : Mem}
+    (h : P m) (hp : P (m.poisonBlock (frameBlk tabs act n))) : P (varDefMem tabs act n m) := by
+  unfold varDefMem; split <;> assumption
+
+/-- A relation between memories that holds before a `VarDef` and after poisoning its block on
+both sides holds after the `VarDef` on both sides. -/
+theorem varDefMem_rel {R : Mem → Mem → Prop} {tabs : Tables} {act : Nat} {n : AuxRef}
+    {m m' : Mem} (h : R m m')
+    (hp : R (m.poisonBlock (frameBlk tabs act n)) (m'.poisonBlock (frameBlk tabs act n))) :
+    R (varDefMem tabs act n m) (varDefMem tabs act n m') := by
+  unfold varDefMem; split <;> assumption
+
 /-- The callee symbol of an `*AuxCall`. -/
 def _root_.GoFV.SSA.Tables.callee? (tabs : Tables) (a : AuxRef) : Option String :=
   match tabs.aux? a with
@@ -950,7 +979,8 @@ def auxTy (tabs : Tables) (aux : Option AuxRef) : Ty :=
 
 /-- The memory roots of P2 (§3.4): `Store {T} p x mem`, `Move {T} [n] dst src mem`,
 `Zero {T} [n] p mem` (and their write-barrier forms, which have the same semantics),
-`VarDef {n} mem`, `VarLive {n} mem`, `KeepAlive x mem`, `WBend mem` (the end of a
+`VarDef {n} mem` (poisons a `PAUTO` `n`, else the identity: `varDefMem`), `VarLive {n} mem`,
+`KeepAlive x mem`, `WBend mem` (the end of a
 write-barrier sequence: the GC has taken the buffer, `Blk.wbuf` is freed), `NilCheck p mem`
 (§6). The address of a write and the pointer of a nil check are observation points; an
 integer word is the pointer at its address (`Val.asPtrWord`, §3.3). -/
@@ -974,7 +1004,7 @@ def memRoot (ctx : Ctx) (v : Value) (argv : List Val) : Res Val :=
     | none => .stuck s!"{what}: undefined or ill-typed address"
   | .VarDef, [.mem m] =>
     match v.aux with
-    | some n => .ok (.mem (m.poisonBlock (frameBlk ctx.tabs ctx.act n)))
+    | some n => .ok (.mem (varDefMem ctx.tabs ctx.act n m))
     | none => .stuck s!"{what}: no name"
   | .VarLive, [.mem m] => .ok (.mem m)
   | .WBend, [.mem m] => .ok (.mem (m.free .wbuf))

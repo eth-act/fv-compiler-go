@@ -314,8 +314,8 @@ theorem opVal_sliceComp (tabs : Tables) (op : Op) (ty : Ty) (ai ai' : Int64)
 /-! ## Memory roots as writes of their arguments (issue #151)
 
 A memory root (`memOp`: `Store`, `Move`, `Zero` and their write-barrier forms, `VarDef`)
-evaluates to the write of its arguments' values (`memDef`, as `Sem.memRoot`; a `VarDef` poisons
-its frame variable), a `LocalAddr` to its symbol's
+evaluates to the write of its arguments' values (`memDef`, as `Sem.memRoot`; a `VarDef` of a
+`PAUTO` poisons its frame variable, `Sem.varDefMem`), a `LocalAddr` to its symbol's
 frame variable in the activation the atom simulation runs (`Ctx.make`: activation 0;
 `Sem.frameVal`). `MemDefs`: the roots of a set of values hold this value of their arguments'
 registers, which are in the set (the source's frame keeps this along a block entry: a root's
@@ -342,7 +342,7 @@ def memDef (tabs : Tables) (v : Value) (argv : List Val) : Option Val :=
       (m.read s v.auxInt.toInt.toNat).bind fun bs => (m.write d bs).map .mem
   | .Zero, [a, .mem m] | .ZeroWB, [a, .mem m] =>
     a.asPtrWord.bind fun p => (m.write p (Array.replicate v.auxInt.toInt.toNat (.b 0))).map .mem
-  | .VarDef, [.mem m] => v.aux.map fun n => .mem (m.poisonBlock (frameBlk tabs 0 n))
+  | .VarDef, [.mem m] => v.aux.map fun n => .mem (varDefMem tabs 0 n m)
   | .LocalAddr, _ => some ((v.aux.map fun n => Val.ptr ⟨frameBlk tabs 0 n, 0⟩).getD .poison)
   | _, _ => none
 

@@ -211,7 +211,7 @@ theorem varDef_rel {ctx : Ctx} {v : Value} (hop : v.op = .VarDef) {L : List Val}
   obtain ⟨M, n, he, hax, rfl, htgt⟩ := DSE.varDef_shape hop h
   obtain ⟨rfl, rfl⟩ := DAE.snoc_inj (L' := []) he
   obtain ⟨M', rfl, hm⟩ := VR.mem_inv hw
-  exact ⟨_, htgt M', .mem (EqX.poison hm _)⟩
+  exact ⟨_, htgt M', .mem (varDefMem_rel (R := EqX X) hm (EqX.poison hm _))⟩
 
 /-- **`NilCheck`** on related memories. -/
 theorem nilCheck_rel {ctx : Ctx} {v : Value} (hop : v.op = .NilCheck) {L : List Val} {w w' : Val}
