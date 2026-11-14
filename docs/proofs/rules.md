@@ -2220,7 +2220,13 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   `udiv_magic_nat`, `udiv_smagic_hmul`, `udiv_smagic_wide`), witnesses `inst_r_divmod_136` …
   `inst_r_divmod_148`. On full-v11, 22 of the 45 functions whose sole obstacle they were pass; in
   20 of the others the dividend is nonnegative only by a dominating branch, which the analysis
-  does not track.
+  does not track. The validated pass's table is `guarded` (`Interp.checkedGuard`,
+  `Opt.divmodProvenTable`): the four rules fire only on a dividend `isNonNegative` shows
+  nonnegative. Without the guard they fire on the others too, the validator rejects the instance,
+  and the unsigned rules `:180`–`:232`, which often build the same value (`x / 20` at `int`: both
+  give `Hmul64u x 0xCCCC…CD >> 4`), never get to fire; quick-v10 lost 9 end-to-end functions that
+  way. The proof does not depend on which rules fire (`checkedRewrite_refinesT`: any table with
+  the rule set's rows).
 
 - **`generic.rules:1071`, `:1075` (`Convert` of an integer offset from a converted pointer)**:
   false under the semantics, not a Go bug: integers carry no provenance, so the pointer the

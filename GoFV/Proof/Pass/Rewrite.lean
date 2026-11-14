@@ -354,6 +354,6 @@ theorem divmod_refines {penv : PassEnv} {f : Func} {out : PassOut}
     {ce ce' : CheckEnv} (h : divmodChecked penv f = .ok out) (hf : check ce f = .ok ())
     (hg : check ce' out.func = .ok ()) :
     RefinesFrom (RwPre penv.tables penv.frontend f) out.tables out.func penv.tables f :=
-  checkedRewrite_refinesT divmod_allSound rfl rfl h hf hg
+  checkedRewrite_refinesT (t := divmodProvenTable) divmod_allSound rfl rfl h hf hg
 
 end GoFV.Proof.Pass.Rewrite
