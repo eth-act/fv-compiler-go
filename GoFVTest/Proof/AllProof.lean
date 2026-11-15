@@ -574,6 +574,7 @@ import GoFV.Proof.Pass.RewriteTerm
 import GoFV.Proof.Pass.RewriteTermBlock
 import GoFV.Proof.Pass.RewriteTermDen
 import GoFV.Proof.Pass.RewriteTermEval
+import GoFV.Proof.Pass.RewriteTermInt
 import GoFV.Proof.Pass.RewriteTermMatch
 import GoFV.Proof.Pass.RewriteTermNat
 import GoFV.Proof.Pass.RewriteTermNonNeg
@@ -725,6 +726,7 @@ import GoFV.Proof.Rules.Block
 import GoFV.Proof.Rules.BlockIf
 import GoFV.Proof.Rules.Com
 import GoFV.Proof.Rules.Comm
+import GoFV.Proof.Rules.CondMath
 import GoFV.Proof.Rules.CondSelect
 import GoFV.Proof.Rules.ConstComp
 import GoFV.Proof.Rules.ConstString

@@ -71,6 +71,17 @@ those of the semantics, `GoFV.SSA.Sem.evalValue`: a pure value is
   argument has the string or a slice shape: `retype` gives such values `0 ≤ len ≤ cap` (#270,
   `Val.hasTy_str`/`Val.hasTy_slice`), and under `Term.Typed` every evaluation of a defined
   value has its shape (`den_hasTy`), so `nonNegD_den` takes `Typed` of the atom valuation.
+- **`CondSelect` into arithmetic** (`FrameOK`'s `CondMathOK`, #69; `Rule.SoundT` only):
+  `generic.rules:2321–2394` (`condMath?`, 56 rules) need the select, its arm op, the arm's
+  constant and the leaf `x` at the arm op's integer shape, and `x` an integer of that width or
+  `poison` (`condMathFacts`): at the plain arm the source is `x` and the result recomputes `x op
+  0`, which a 64-bit integer shape holding a pointer without an integer form, or a mistyped
+  node, makes `poison`. The checked rewrite decides it with `condMathOKD` (`RewriteCheck`: the
+  instance's types, and `intLeafD`: at 64 bits `intD`, an integer op of `intTable` or a
+  `CondSelect`/`Copy` of such values, proven by `intD_den`/`intDW_den` in
+  `GoFV/Proof/Pass/RewriteTermInt.lean`; narrower, the leaf's integer type with `den_hasTy`).
+  The lemmas (`CondMath.lean`) are `Rule.soundT_of_condMath` of `Rule.SoundCM` (`Rule.Sound`
+  with `condMathFacts` as a last premise).
 - **Expressions** (conditions, `[auxint]`, `<type>`) are evaluated by `evalE`, a total pure
   evaluator mirroring `GoFV.Rules.Eval.eval` on integers, booleans, op constants, type shapes
   (`typ.<T>` incl. `typ.BytePtr` = `.ptr (some 1)`, `types.Types[k]`, `t.Size()` of an
@@ -1299,7 +1310,7 @@ needs a later phase of the semantics.
 | `generic` | Block | 3 | 0 | 0 | 3 | 3 |
 | `generic` | Ceil | 0 | 0 | 0 | 1 | 1 |
 | `generic` | Com | 12 | 0 | 0 | 0 | 12 |
-| `generic` | CondSelect | 3 | 42 | 14 | 0 | 59 |
+| `generic` | CondSelect | 59 | 0 | 0 | 0 | 59 |
 | `generic` | ConstInterface | 1 | 0 | 0 | 0 | 1 |
 | `generic` | ConstSlice | 1 | 0 | 1 | 0 | 2 |
 | `generic` | ConstString | 2 | 0 | 0 | 4 | 4 |
@@ -1356,16 +1367,16 @@ needs a later phase of the semantics.
 | `generic` | Sqrt | 0 | 0 | 0 | 1 | 1 |
 | `generic` | StaticCall | 0 | 0 | 0 | 1 | 1 |
 | `generic` | StaticLECall | 2 | 0 | 0 | 24 | 24 |
-| `generic` | Store | 12 | 0 | 0 | 21 | 21 |
+| `generic` | Store | 13 | 0 | 0 | 21 | 21 |
 | `generic` | StringLen | 1 | 0 | 0 | 0 | 1 |
 | `generic` | StringPtr | 1 | 0 | 0 | 1 | 1 |
 | `generic` | StructSelect | 3 | 1 | 0 | 1 | 4 |
 | `generic` | Sub | 68 | 0 | 0 | 2 | 70 |
 | `generic` | Trunc | 32 | 0 | 0 | 1 | 33 |
 | `generic` | Xor | 60 | 4 | 4 | 0 | 68 |
-| `generic` | Zero | 2 | 0 | 0 | 6 | 6 |
+| `generic` | Zero | 3 | 0 | 0 | 6 | 6 |
 | `generic` | ZeroExt | 12 | 0 | 0 | 0 | 12 |
-| all | | 1436 | 185 | 31 | 258 | 1762 |
+| all | | 1494 | 143 | 17 | 258 | 1762 |
 
 <!-- END coverage -->
 
@@ -2193,6 +2204,9 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
 - **`generic.rules:1071`, `:1075` (`Convert` of an integer offset from a converted pointer)**:
   false under the semantics, not a Go bug: integers carry no provenance, so the pointer the
   outer `Convert` makes from `addr(p) + off` need not be `p`'s allocation (Semantics, #156).
+  The two sides differ only when the result leaves `p`'s window, which unsafe rule (3) makes
+  invalid Go; **decision (integrator, 2026-11-13): never** (provenance-tagged integers would
+  make the source less defined; `docs/plans/false-classes.md` §2).
   `:1072` (`(Convert (Convert p mem) mem) => p`) and `:1683`/`:1684` became provable with
   #156's pointer model (address windows, convertible pointers, nil comparison by block);
   `:1072` was proven (`Convert.lean`, RuleProofs11) once `convArgOk` ruled out a `Convert` of a
@@ -2235,17 +2249,19 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   are proven (`Less.lean`, `Div.lean` with `sdiv_intMin64_of_msb`, `Mod.lean` with
   `mods_pow2`/`srem_pow2_of_msb` in `DivmodSPow2.lean`).
 
-- **`CondSelect` into arithmetic** (`generic.rules:2342`, `:2371`; RuleProofs10): false under
-  the semantics, not Go bugs. At `bool = false` the matched value is the leaf `x` itself, the
-  result recomputes it (`x - 0`, `x | 0`); a 64-bit integer register may hold an address-less
-  pointer (`Val.hasTy`), on which `Sub64`/`Or64` are `poison`. Also the `Add64`/`Or64` node
-  and its `Const64` argument are op nodes whose type `Rule.Sound` does not constrain (a
-  mistyped node is `poison`, the leaf is not). The other `CondSelect` rules of
-  `generic.rules:2325–2393` have the same shape. Marked `-- FALSE … #69` in `Add.lean`,
-  `Or.lean` for the two rows of the firing table.
-  RuleProofs17 marked `:2325` (`Add.lean`), `:2355` (`Lsh.lean`) and `:2368` (`Or.lean`) the
-  same way: `rule_auto` stops at `bool = false` with the leaf `x` not an integer of the op's
-  width, where the result is `poison` and `x` is not.
+- **`CondSelect` into arithmetic** (`generic.rules:2321–2394`, 56 rules; RuleProofs10,
+  RuleProofs17; proven by FalseClassReview, #69): false under the bare semantics, not Go bugs.
+  Where the select takes the plain arm (`bool = false` in the `op`-first forms, `true` in the
+  `x`-first ones) the matched value is the leaf `x` itself, the result recomputes it (`x - 0`,
+  `x | 0`, `x << 0`); a 64-bit integer register may hold an address-less pointer
+  (`Val.hasTy`), on which `Sub64`/`Or64` are `poison`. Also the arm op and its constant are op
+  nodes whose type `Rule.Sound` does not constrain (a mistyped node is `poison`, the leaf is
+  not), and the leaf `x` of the narrower forms was not constrained to the op's width. Go builds
+  them all at the op's width (`branchelim`), so the rules are proven under `condMathFacts`
+  (`CondMath.lean`, `Rule.SoundT` with `FrameOK`'s `CondMathOK`; see "The obligation"), which
+  the validator checks on the instance (`condMathOKD`, `intLeafD`; design review
+  `docs/plans/false-classes.md` §4). Witnesses `inst_r_generic_2325` (64 bits),
+  `inst_r_generic_2322` (8 bits).
 
 - **`generic.rules:369`, `:372`** (`(OrB (Eq64 x cv:(Const64 [c])) (Eq64 x (Const64 [d])))
   && c|d == c && oneBit(c^d) => (Eq64 (Or64 x (Const64 [c^d])) cv)`, and the `AndB`/`Neq`
@@ -2657,7 +2673,9 @@ rather than per lemma (agreed with Main), in `GoFV/Proof/Rules/NonVacuous.lean`:
   poison`. The same holds at 2, 4 and 8 bytes. On full-v6 they fire in about 330 functions as a
   sole obstacle, in pairs with the read-only loads `:1564`/`:1572`/`:1580`/`:1588`. A proof needs
   integer loads that read the bytes of pointers (a provenance-free byte model, #290's
-  discussion), which the semantics does not have.
+  discussion), which the semantics does not have. **Decision (integrator, 2026-11-13): deferred**
+  (`docs/plans/false-classes.md` §3: up to 988 Phase 1 functions on full-v11, 607 end to end at
+  stock, 16–26 agent-days, `Mem.Refines` implications).
 
 - **`generic.rules:2159`** (`(Zero {t} [s] dst1 vardef:(VarDef (Zero {t} [s] dst2 _))) &&
   isSamePtr(dst1, dst2) => vardef`; Phase1Tail, #69): false under the semantics before S3, not a

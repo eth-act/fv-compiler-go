@@ -166,7 +166,7 @@ theorem inst_r_generic_1689 : Rule.InstT GoFV.Rules.Generated.Generic.r_generic_
       auxInt := fun _ => 0, aux := fun _ => some 1 }
     (Oracle.const true) := by
   refine ⟨Oracle.const_boolTyped true, ?_⟩
-  simp [GoFV.Rules.Generated.Generic.r_generic_1689, FrameOK, Result.nodes, strDataVar?, lenVar?,
+  simp [GoFV.Rules.Generated.Generic.r_generic_1689, FrameOK, CondMathOK, condMath?, Result.nodes, strDataVar?, lenVar?,
     sameLeaves, shiftAmt?, auxVar?, Pat.auxPos, Pat.auxPoss, Field.bindsVar, hiSymTabs,
     Tables.aux?, Pat.rawT, Pat.densT, Pat.denT, opVal, addrVal]
   rule_eval

@@ -1,6 +1,7 @@
 import GoFV.Proof.Pass.RewriteTermRule
 import GoFV.Proof.Pass.RewriteTermNat
 import GoFV.Proof.Pass.RewriteTermNonNeg
+import GoFV.Proof.Pass.RewriteTermInt
 
 variable [GoFV.SSA.Sem.Addrs]
 
@@ -330,14 +331,15 @@ theorem RuleFacts.top_ty (F : RuleFacts tabs M r v defs) (L : ID → Val) :
   simp only [semEnv, env, F.at_top, F.hxv, Option.map_some, Option.getD_some]
 
 /-- The validator's `frameNodeOK` gives `Rule.SoundT`'s frame premise (`FrameOK`) on the semantic
-instance (same aux fields as the static one). -/
+instance (same aux fields as the static one), given its `CondMathOK` (`RuleFacts.condMath`). -/
 theorem RuleFacts.frameT (F : RuleFacts tabs M r v defs) (L : ID → Val)
-    {ev' : GoFV.Rules.Expr → DV} (hev : ∀ x, (stEv tabs M r defs F.I x).erase = (ev' x).erase) :
+    {ev' : GoFV.Rules.Expr → DV} (hev : ∀ x, (stEv tabs M r defs F.I x).erase = (ev' x).erase)
+    (hcm : GoFV.Proof.Rules.CondMathOK (semEnv tabs M F.I L) r) :
     GoFV.Proof.Rules.FrameOK tabs (semEnv tabs M F.I L) ev' (stOr tabs r defs) r := by
   have hcf := F.hcf
   simp only [condFrameOK, Bool.and_eq_true] at hcf
   refine ⟨fun n hn => ?_, fun x hx => ?_, fun xy hxy => ?_, fun x hx => ?_, fun x hx => ?_,
-    fun pq hpq => ?_⟩
+    ⟨fun pq hpq => ?_, hcm⟩⟩
   rotate_left
   · have h := List.all_eq_true.1 hcf.1.1.1.1 x hx
     simp only [strOf] at h
@@ -445,6 +447,18 @@ theorem RuleFacts.frameT (F : RuleFacts tabs M r v defs) (L : ID → Val)
         · rw [hd] at h'; cases h'
       | _ => intro h; cases h
 
+/-- The validator's `condMathOKD` gives the `CondMathOK` part of `FrameOK` on the semantic
+instance: the shapes from the instance's types, the leaf fact from `intLeafD_den`. -/
+theorem RuleFacts.condMath (F : RuleFacts tabs M r v defs) {ρ : ID → Val}
+    (hT : Term.Typed (putAll M defs).get? tabs ρ) (B : Nat) :
+    GoFV.Proof.Rules.CondMathOK (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r := by
+  intro w wc q px hm
+  have h := F.hcm
+  simp only [condMathOKD, hm, Bool.and_eq_true] at h
+  obtain ⟨⟨⟨⟨h0, h1⟩, h2⟩, h3⟩, h4⟩ := h
+  exact ⟨isIntW_eq h0, isIntW_eq h1, isIntW_eq h2, isIntW_eq h3,
+    intLeafD_den tabs _ ρ hT h4 B⟩
+
 /-- The validator's `nonNegOKD` gives `Rule.SoundT`'s premise `Pat.nonNegOK` on the semantic
 instance (`nonNegD_den`). -/
 theorem nonNegOK_of {tabs : Tables} {D : ID → Option Value} {M : Defs} {I : Inst} {pat : Pat}
@@ -485,7 +499,8 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.SoundTop r)
       (putAll M defs).get? w = some x := fun p w x hm hp hx => F.keep hx (F.ne_v hm hp)
   -- the hypotheses of `Rule.SoundT`
   have hbt : GoFV.Proof.Rules.Oracle.BoolTyped (stOr tabs r defs) := by
-    intro x hx; exact ⟨true, by simp [stOr, oracle, hx]⟩
+    intro x hx
+    exact ⟨!(((r.cond.map (negAtoms false)).getD []).contains x), by simp [stOr, oracle, hx]⟩
   have hwf := wf_of (e := env tabs M F.I) (e' := semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) rfl [] r.pat F.hwf
   have hcons := cons_of (pat := r.pat) (I := F.I) (e := env tabs M F.I) (e' := semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B))
     rfl rfl hev hσ (fun x w p' h hn => sigma_leaf h hn)
@@ -500,7 +515,7 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.SoundTop r)
       F.hnodup r.pat [] v F.hmatch (.inr (by rw [F.hpat]; rfl)) F.hleaves
   have hargs : GoFV.Proof.Rules.Pat.argsOK
       (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)).ty [] r.pat = true := F.hargs
-  have hframe := F.frameT (den (putAll M defs).get? tabs ρ B) hev
+  have hframe := F.frameT (den (putAll M defs).get? tabs ρ B) hev (F.condMath hT B)
   -- lower bound, before the top's `retype`
   have hlow0 : Sem.Refines (den M.get? tabs ρ (n + 1) v)
       ((Pat.rawT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) r.pat).retype
@@ -573,7 +588,7 @@ theorem RuleFacts.top (hs : GoFV.Proof.Rules.Rule.SoundTop r)
         (stOr tabs r defs) (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B))
         (Pat.denT tabs (semEnv tabs M F.I (den (putAll M defs).get? tabs ρ B)) [] r.pat) x) :=
     evalE_good _ _ _ (fun x => good_mono (fun w p h _ => h.2) (hσ2 x)) (fun h => absurd rfl h)
-      (fun x => good_of_flat (oracle_flat _ _ _ x))
+      (fun x => good_of_flat (oracle_flat _ _ _ _ x))
   rcases F.result with hR | hR
   · -- copy
     obtain ⟨R⟩ := hR

@@ -127,7 +127,7 @@ def stNodes (r : Rule) (defs : List Value) : List (RNode × Value) :=
   | _, _ => []
 
 def stOr (tabs : Tables) (r : Rule) (defs : List Value) : Oracle :=
-  oracle (stVtys r) tabs (stNodes r defs)
+  oracle (stVtys r) tabs ((r.cond.map (negAtoms false)).getD []) (stNodes r defs)
 
 /-- The validator's bindings (`RewriteCheck.ruleOK`): at `Addrs.fixed`, which the semantic side
 relates to its instance up to values (`sigma_erase`). -/
@@ -173,6 +173,7 @@ structure RuleFacts (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List 
     (GoFV.Proof.Rules.sameLeaves r) = true
   hreach : ∀ C : ID → Prop, ArgClosed M C → C v → ∀ y ∈ I, C y.2
   hnn : nonNegOKD tabs (putAll M defs).get? I r.pat r.cond = true
+  hcm : condMathOKD tabs (putAll M defs).get? (env tabs M I) I r = true
 
 theorem ruleFacts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs : List Value}
     (h : ruleOK tabs M r v defs = true) : Nonempty (RuleFacts tabs M r v defs) := by
@@ -188,7 +189,8 @@ theorem ruleFacts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs : List Va
   · cases h
   rename_i I sw' hm
   simp only [Bool.and_eq_true] at h
-  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨htail, hcons⟩, hwf⟩, hcond⟩, hnat⟩, hargs⟩, hleaves⟩, hres⟩, hframe⟩, hcf⟩, hnn⟩ := h
+  obtain ⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨⟨htail, hcons⟩, hwf⟩, hcond⟩, hnat⟩, hargs⟩, hleaves⟩, hres⟩, hframe⟩, hcf⟩, hnn⟩,
+    hcm⟩ := h
   have hframe' : ∀ nu ∈ stNodes r defs,
       frameNodeOK tabs (stEv tabs M r defs I) (env tabs M I) r.pat nu.1 nu.2 = true :=
     List.all_eq_true.1 hframe
@@ -214,7 +216,7 @@ theorem ruleFacts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs : List Va
     rw [hc] at hcond
     simp only at hcond
     split at hcond
-    · rename_i heq; exact heq
+    · rename_i heq; unfold stEv stOr; rw [hc]; exact heq
     · cases hcond
   have hnat' : (topAll o (env tabs M I) || makeTop o ((env tabs M I).ty []) ||
       GoFV.Proof.Rules.anyTop r) = true := hnat
@@ -225,7 +227,8 @@ theorem ruleFacts {tabs : Tables} {M : Defs} {r : Rule} {v : ID} {defs : List Va
     pargs := pargs, pcm := pcm, hpat := hrp, hxv := hxv, hterm := hterm, hid := hid,
     hS := hS, hmatch := hmo, hnodup := hn, hhead := hh, htail := htail', hcons := hcons,
     hwf := hwf, hcond := hcond', hnat := hnat', hargs := hargs, hleaves := hleaves, hres := hres,
-    hframe := hframe', hcf := hcf, hreach := fun C hC hv => matchPat_closed hC hm hv, hnn := hnn }⟩
+    hframe := hframe', hcf := hcf, hreach := fun C hC hv => matchPat_closed hC hm hv, hnn := hnn,
+    hcm := hcm }⟩
 
 /-! ## Facts about the matched instance -/
 
@@ -262,8 +265,9 @@ theorem RuleFacts.at_eq (F : RuleFacts tabs M r v defs) {p : Path} {w : ID} (h :
 /-- Matched values of the static instance: positioned values are matched positions. -/
 def InI (I : Inst) : Val → Path → Prop := fun _ p => ∃ w, (p, w) ∈ I
 
-theorem oracle_flat (vtys : List GoFV.Rules.GoTy) (tabs : Tables) (nodes : List (RNode × Value))
-    (x : GoFV.Rules.Expr) : ((oracle vtys tabs nodes).dv x).flat = true := by
+theorem oracle_flat (vtys : List GoFV.Rules.GoTy) (tabs : Tables) (negs : List GoFV.Rules.Expr)
+    (nodes : List (RNode × Value)) (x : GoFV.Rules.Expr) :
+    ((oracle vtys tabs negs nodes).dv x).flat = true := by
   simp only [oracle]; split <;> rfl
 
 theorem RuleFacts.stσ_good (F : RuleFacts tabs M r v defs) (x : Nat) :
@@ -278,7 +282,7 @@ theorem RuleFacts.stσ_good (F : RuleFacts tabs M r v defs) (x : Nat) :
 theorem RuleFacts.stEv_good (F : RuleFacts tabs M r v defs) (x : GoFV.Rules.Expr) :
     Good (InI F.I) (stEv tabs M r defs F.I x) :=
   evalE_good _ _ _ F.stσ_good ⟨v, F.top_mem⟩
-    (fun x => good_of_flat (oracle_flat _ _ _ x)) x
+    (fun x => good_of_flat (oracle_flat _ _ _ _ x)) x
 
 theorem RuleFacts.pos_mem (F : RuleFacts tabs M r v defs) {d : DV} (hd : Good (InI F.I) d)
     {p : Path} (h : DV.pos? d = some p) : (p, F.I.at p) ∈ F.I := by

@@ -78,7 +78,7 @@ def why (tabs : Tables) (M : Defs) (r : Rule) (v : ID) (defs : List Value) : Str
         let nodes := match r.result, defs with
           | .build ns, _ :: us => ns.zip us
           | _, _ => []
-        let or := oracle vtys tabs nodes
+        let or := oracle vtys tabs ((r.cond.map (negAtoms false)).getD []) nodes
         let ev := evalE vtys σ or e (Pat.denT tabs e [] r.pat)
         if !I.tail.all (·.2 != v) then "cyclic" else
         if !consOK ev σ e I [] r.pat then "cons" else

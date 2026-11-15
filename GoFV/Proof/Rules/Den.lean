@@ -783,6 +783,46 @@ checks them on the instance (`RewriteCheck.condFrameOK`: the same value). -/
 def sameLeaves (r : Rule) : List (Path × Path) :=
   if r.loc = ⟨"generic", 1053⟩ then [([0, 1, 1, 0], [2])] else []
 
+/-- The arm op of a `CondSelect` into arithmetic (`generic.rules:2321–2394`): its width, and the
+width of its constant operand (a `Const64` shift amount for the shifts). -/
+def condMathOp : Op → Option (Width × Width)
+  | .Add8 | .Or8 | .Xor8 => some (.w8, .w8)
+  | .Add16 | .Or16 | .Xor16 => some (.w16, .w16)
+  | .Add32 | .Or32 | .Xor32 => some (.w32, .w32)
+  | .Add64 | .Or64 | .Xor64 => some (.w64, .w64)
+  | .Lsh8x64 | .Rsh8x64 | .Rsh8Ux64 => some (.w8, .w64)
+  | .Lsh16x64 | .Rsh16x64 | .Rsh16Ux64 => some (.w16, .w64)
+  | .Lsh32x64 | .Rsh32x64 | .Rsh32Ux64 => some (.w32, .w64)
+  | .Lsh64x64 | .Rsh64x64 | .Rsh64Ux64 => some (.w64, .w64)
+  | _ => none
+
+/-- `condMathOp` of a binary op node of a pattern. -/
+def condMathArm : Pat → Option (Width × Width)
+  | .op o _ _ _ _ _ [_, _] _ => condMathOp o
+  | _ => none
+
+/-- The `CondSelect` into arithmetic rules (`generic.rules:2321–2394`, `(CondSelect op:(Add64 x
+c:(Const64)) x bool) => (Add64 x (Mul64 c (ZeroExt8to64 (CvtBoolToUint8 bool))))`, the `x`-first
+forms on `Not bool`, the `Sub`, `Or`, `Xor` and shift-by-1 forms): the width `w` of the arm op,
+the width of its constant, the arm's position `q` and the position of the leaf `x`. At the
+unselected-arm value the source is `x` itself and the result recomputes `x op 0`, so the rules
+need `x`, the arm, its constant and the select at the integer shape of width `w` (Go types them
+so), and at 64 bits an `x` that is an integer or `poison`, not a pointer without an integer
+form (a 64-bit integer shape may hold one, `Val.hasTy`). The rewrite validator checks both on
+the instance (`RewriteCheck.condMathOKD`; `FrameOK`). -/
+def condMath? (r : Rule) : Option (Width × Width × Path × Path) :=
+  if r.loc.file = "generic" ∧ 2321 ≤ r.loc.line ∧ r.loc.line ≤ 2394 then
+    match r.pat with
+    | .op o _ _ _ _ _ [a, b, _] _ =>
+      if o = .CondSelect then
+        match condMathArm a, condMathArm b with
+        | some (w, wc), _ => some (w, wc, [0], [0, 0])
+        | none, some (w, wc) => some (w, wc, [1], [0])
+        | none, none => none
+      else none
+    | _ => none
+  else none
+
 mutual
 /-- Every argument of every op node of the pattern at `p` has the shape `argShapeOk` asks for,
 by the instance's types `ty` (`docs/proofs/rules.md`, "Assumptions to discharge"). -/

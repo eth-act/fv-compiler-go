@@ -28,7 +28,7 @@ the semantic phase of their ops (`GoFVTest/Proof/RuleClass.lean`; "Classificatio
 
 | Class | Proven | False | Open | Total |
 | --- | --: | --: | --: | --: |
-| P1 (integers, booleans) | 1,212 | 30 | 153 | 1,395 |
+| P1 (integers, booleans) | 1,268 | 16 | 111 | 1,395 |
 | P2 (pointers, composites, `Load` values, `SelectN`) | 76 | 1 | 32 | 109 |
 | mem (memory ops) | 86 | 0 | 26 | 112 |
 | call | 12 | 0 | 35 | 47 |
@@ -36,7 +36,7 @@ the semantic phase of their ops (`GoFVTest/Proof/RuleClass.lean`; "Classificatio
 | ptr (`ConstString`, `Addr`, `NilCheck`, pointer comparisons) | 18 | 0 | 5 | 23 |
 | phi | 5 | 0 | 0 | 5 |
 | block | 3 | 0 | 0 | 3 |
-| all | 1,438 | 31 | 293 | 1,762 |
+| all | 1,494 | 17 | 251 | 1,762 |
 
 *Proven*: a merged lemma (`Rule.Sound`, `Rule.SoundT`, `Rule.SoundW`, `Rule.MakeSel`,
 `Rule.LoadSel`, `Rule.Drop`, `Rule.IMakeSM`, `Rule.AddrCmp`, `BlockRule.Sound`,
@@ -78,17 +78,20 @@ Phase 1 94,316 → 94,343, through `trim` 88,458 → 88,479, 0 lost; quick-v10 e
 in the forwarding layer when the `VarDef`'s variable is not a `PAUTO` (S3: such a `VarDef` is the
 identity on memory; `RewriteCheck.zeroChain` reads through it, `LoadFwd.zeroChain_read`) (#69,
 VarDefS3b; full-v11 per function: Phase 1 94,343 → 94,391, through `trim` 88,709 → 88,750, 0 lost;
-quick-v10 end to end 7,441 → 7,446, 0 lost).
+quick-v10 end to end 7,441 → 7,446, 0 lost), and the `CondSelect` into arithmetic rules (`:2321–2394`, 56 rules, `Rule.SoundT`
+under the frame facts `condMathFacts`: the select, its arm op, the arm's constant and the leaf
+`x` at the op's integer width, `x` an integer or `poison`, checked per instance by
+`RewriteCheck.condMathOKD`/`intLeafD`; `CondMath.lean`), with the validator's oracle answering an
+unmodelled boolean under a negation `false` (`negAtoms`) (#69, FalseClassReview; design review
+`docs/plans/false-classes.md`; full-v11 per function on 1a1d4d15: Phase 1 94,343 → 94,654, through
+`trim` 88,709 → 88,844, 0 lost; quick-v10 end to end 7,441 → 7,458, 0 lost).
 
-**False under the semantics, with the reason** (31, each marked `-- FALSE r_… #N` in its proof
+**False under the semantics, with the reason** (17, each marked `-- FALSE r_… #N` in its proof
 module; "Findings" in `rules.md`):
 
 - `generic.rules:2166–2169`, three alternatives each (12): constant rotate detection compares the
   shift constant signed; at `c = -1`, `d = w+1` both shifts give 0, but
   `RotateLeft x (Const [-1])` rotates by `w-1`. A Go bug candidate (#90, `upstream-candidate`).
-- `CondSelect` into arithmetic, `:2325` (3), `:2342` (3), `:2355` (4), `:2368` (1), `:2371` (3)
-  (14): at `bool = false` the match is the leaf `x`, the result recomputes it, and a 64-bit
-  register may hold an address-less pointer on which `Sub64`/`Or64` are `poison`.
 - `divmod.rules:136`, `:140`, `:144`, `:148` (`Div16u/32u/64u` of a signed type by `smagic`, 4):
   the dividend need not be non-negative; Go establishes that in `prove` before. Counterexamples
   in `rules.md`.
@@ -100,19 +103,20 @@ obstacle counts on full-v6, "Findings" in `rules.md` has the counterexamples):
 
 - `generic.rules:1071`/`:1075` (`Convert` of an integer offset from a converted pointer: integers
   carry no provenance, so the pointer made from `addr(p) + off` need not be in `p`'s allocation,
-  #156; the most frequent sole obstacle on full-v6, 255 functions).
+  #156; the most frequent sole obstacle on full-v6, 255 functions). False only on inputs that
+  violate unsafe rule (3); decision (2026-11-13): never (`docs/plans/false-classes.md` §2).
 - `:579` (#542, a Go bug, upstream golang/go#82763; `Lsh32x64` of `And32 (Rsh32x64 x c) d` by `e`, `c < e`: false for `c < 0`, `x = -1`,
   `d = 1`, `c = -1`, `e = 1` gives `2` against `0`; 9 functions).
 - `MemEq` → `Eq*` of two `Load`s, `:1560`/`:1568`/`:1576`/`:1584` (with the read-only loads
   `:1564`/`:1572`/`:1580`/`:1588` they fire on; about 330 functions, in pairs): `memEq` compares
   the raw bytes, pointer fragments included, but an integer `Load` of a pointer's fragment bytes
-  is `poison`, so `true` becomes `poison`.
-- The `CondSelect` folds (about 240 functions on the unmarked alternatives of `:2322–:2393`) and
-  `divmod.rules:136–148` (59) are false as above.
+  is `poison`, so `true` becomes `poison`. Decision (2026-11-13): the provenance-free byte model
+  it needs is deferred (`docs/plans/false-classes.md` §3).
+- `divmod.rules:136–148` (59) are false as above (C1, the `nonNegD` side-condition, approved).
 
-**Open** (293):
+**Open** (251):
 
-- `P1`/`P2` alternatives without a lemma (185): most never fire on the corpus; those that fire
+- `P1`/`P2` alternatives without a lemma (143): most never fire on the corpus; those that fire
   are in the `fire-full` table of `rules.md` (sole obstacles by rule).
 - `mem` (26) and `ptr` (5): memory and pointer rules inside the model without an effect
   obligation proof: `Load` forwardings of other shapes (`:831–:877` but `:842`/`:851`/`:862`/`:875`,
