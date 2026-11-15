@@ -267,6 +267,7 @@ in `late opt`):
   - on 57da3b9a: Phase 1 94,316 → 94,627 (+311), through `trim` 88,458 → 88,593 (+135);
   - on bda59446 (#734's run as the base): Phase 1 94,343 → 94,654 (+311), `trim` 88,479 → 88,614
     (+135);
+  - on 8d176c88 (the merge base): Phase 1 94,391 → 94,703 (+312), `trim` 88,856 → 88,991 (+135);
   - quick-v10 end to end on 57da3b9a: 7,440 → 7,457 (+17, 0 lost; `verified_mach` 7,224 → 7,241,
     `_S` 216 → 216).
   Of the 363 sole-blocker functions, 306 now pass Phase 1 (the estimate was 318); the other 57
